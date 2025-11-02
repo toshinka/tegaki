@@ -1,9 +1,9 @@
-// ===== core-engine.js - Phase 4完全修正版 =====
+// ===== core-engine.js - BrushCore初期化修正版 =====
 
 (function() {
     'use strict';
     
-    // 依存関係チェック（エラー修正版）
+    // 依存関係チェック
     if (!window.TegakiCameraSystem) throw new Error('system/camera-system.js required');
     if (!window.TegakiLayerSystem) throw new Error('system/layer-system.js required');
     if (!window.TegakiDrawingClipboard) throw new Error('system/drawing-clipboard.js required');
@@ -677,6 +677,9 @@
         }
         
         initialize() {
+            console.log('🚀 [CoreEngine] Starting initialization...');
+            
+            // ★★★ Phase 1: 基本システム初期化 ★★★
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
@@ -690,6 +693,62 @@
                 window.History.setLayerSystem(this.layerSystem);
             }
             
+            // ★★★ Phase 2: グローバル参照設定 ★★★
+            window.layerManager = this.layerSystem;
+            window.cameraSystem = this.cameraSystem;
+            console.log('✅ [CoreEngine] Global references set');
+            
+            // ★★★ Phase 3: StrokeRecorder/StrokeRenderer生成（BrushCore依存） ★★★
+            if (!window.StrokeRecorder) {
+                throw new Error('[CoreEngine] StrokeRecorder class not loaded - check script load order in index.html');
+            }
+            
+            window.strokeRecorder = new window.StrokeRecorder(
+                window.pressureHandler,
+                this.cameraSystem
+            );
+            console.log('✅ [CoreEngine] window.strokeRecorder created');
+            
+            if (!window.StrokeRenderer) {
+                throw new Error('[CoreEngine] StrokeRenderer class not loaded - check script load order in index.html');
+            }
+            
+            window.strokeRenderer = new window.StrokeRenderer(
+                this.app,
+                this.layerSystem,
+                this.cameraSystem
+            );
+            console.log('✅ [CoreEngine] window.strokeRenderer created');
+            
+            // ★★★ Phase 4: BrushCore初期化（依存確認後） ★★★
+            if (!window.BrushCore) {
+                throw new Error('[CoreEngine] window.BrushCore not found - check brush-core.js load order');
+            }
+            
+            if (!window.BrushCore.init) {
+                throw new Error('[CoreEngine] window.BrushCore.init method not found');
+            }
+            
+            // BrushCore初期化実行
+            window.BrushCore.init();
+            
+            // 初期化検証
+            if (!window.BrushCore.strokeRecorder || !window.BrushCore.layerManager) {
+                console.error('[CoreEngine] BrushCore dependencies check:');
+                console.error('  - strokeRecorder:', window.BrushCore.strokeRecorder);
+                console.error('  - layerManager:', window.BrushCore.layerManager);
+                console.error('  - strokeRenderer:', window.BrushCore.strokeRenderer);
+                console.error('  - coordinateSystem:', window.BrushCore.coordinateSystem);
+                throw new Error('[CoreEngine] BrushCore.init() failed - dependencies not set');
+            }
+            
+            console.log('✅ [CoreEngine] BrushCore initialized and validated');
+            console.log('   - strokeRecorder:', !!window.BrushCore.strokeRecorder);
+            console.log('   - layerManager:', !!window.BrushCore.layerManager);
+            console.log('   - strokeRenderer:', !!window.BrushCore.strokeRenderer);
+            console.log('   - coordinateSystem:', !!window.BrushCore.coordinateSystem);
+            
+            // ★★★ Phase 5: アニメーションシステム初期化 ★★★
             this.initializeAnimationSystem();
             
             setTimeout(() => {
@@ -743,12 +802,12 @@
             });
             
             window.drawingEngine = this.drawingEngine;
-            window.layerManager = this.layerSystem;
-            window.cameraSystem = this.cameraSystem;
             
             this.eventBus.emit('core:initialized', {
                 systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
             });
+            
+            console.log('✅ [CoreEngine] Initialization complete');
             
             return this;
         }
@@ -767,5 +826,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase 4完全修正版) loaded');
+    console.log('✅ core-engine.js (BrushCore初期化修正版) loaded');
+    console.log('   ✓ BrushCore.init()を明示的に呼び出し');
+    console.log('   ✓ StrokeRecorder/StrokeRenderer初期化順序修正');
+    console.log('   ✓ 依存関係検証強化');
+
 })();
