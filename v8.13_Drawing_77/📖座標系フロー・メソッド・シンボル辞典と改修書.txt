@@ -1,0 +1,1256 @@
+================================================================================
+座標系フロー・メソッド・シンボル辞典と改修書
+v8.13_Drawing_76 - タブレットペン問題解析
+================================================================================
+
+目次
+--------------------------------------------------------------------------------
+1. 問題の症状と根本原因
+2. 座標変換パイプライン全体フロー
+3. 各ファイルの責務とシンボル辞典
+4. 初期化順序の依存関係図
+5. タブレットペン問題の根本原因
+6. 改修実施書（優先順位付き）
+
+
+================================================================================
+1. 問題の症状と根本原因
+================================================================================
+
+【症状】
+- マウスでは描画可能、タブレットペンでは描画不可
+- レイヤーパネルのドラッグ移動もマウス可・ペン不可
+- アクティブレイヤー変更ボタンは押せる（ペン入力自体は受付）
+
+【根本原因】
+★★★ BrushCore が初期化されていない ★★★
+
+証拠：
+- brush-core.js は window.BrushCore = new BrushCore() でインスタンス生成
+- しかし BrushCore.init() が呼ばれていないため、依存オブジェクトがすべて null
+- 特に this.strokeRecorder = null のまま
+- drawing-engine.js が BrushCore.startStroke() を呼ぶが、内部で strokeRecorder が null
+
+【二重の問題】
+1. BrushCore.init() が呼ばれていない（初期化不足）
+2. drawing-engine.js が BrushCore を new で再生成している（インスタンス二重化）
+
+
+================================================================================
+2. 座標変換パイプライン全体フロー
+================================================================================
+
+【正常なフロー】
+PointerEvent
+  ↓
+pointer-handler.js: normalizeEvent()
+  ↓ { clientX, clientY, pressure, pointerType }
+drawing-engine.js: _handlePointerDown()
+  ↓
+drawing-engine.js: _screenToLocal()
+  ├─ CoordinateSystem.screenClientToCanvas(clientX, clientY)
+  │   → { canvasX, canvasY }
+  ├─ CoordinateSystem.canvasToWorld(canvasX, canvasY)
+  │   → { worldX, worldY }
+  └─ CoordinateSystem.worldToLocal(worldX, worldY, activeLayer)
+      → { localX, localY }
+  ↓
+drawing-engine.js: brushCore.startStroke(localX, localY, pressure)
+  ↓
+brush-core.js: startStroke()
+  ├─ this.strokeRecorder が null でエラー ★★★ 問題箇所 ★★★
+  └─ 処理中断
+
+【現在のフロー（エラー発生）】
+PointerEvent
+  ↓
+pointer-handler.js ✅ OK
+  ↓
+drawing-engine.js._handlePointerDown() ✅ OK
+  ↓
+drawing-engine.js._screenToLocal() ✅ OK（座標変換完了）
+  ↓
+brushCore.startStroke() ❌ ERROR
+  reason: this.strokeRecorder === null
+
+
+================================================================================
+3. 各ファイルの責務とシンボル辞典
+================================================================================
+
+--------------------------------------------------------------------------------
+3-1. coordinate-system.js
+--------------------------------------------------------------------------------
+
+【責務】
+- Screen/Canvas/World/Local 座標変換の一元管理
+- DPI/DPR補正
+- worldContainer/親チェーン遡査による正確な座標計算
+
+【クラス】
+CoordinateSystem
+
+【主要メソッド】
+init(app, config, eventBus)
+  - 初期化
+
+setContainers(containers)
+  - worldContainer/canvasContainer 設定
+
+setCameraSystem(cameraSystem)
+  - CameraSystem 参照設定
+
+screenClientToCanvas(clientX, clientY)
+  - Screen → Canvas 変換（DPI補正）
+  - return: { canvasX, canvasY }
+
+canvasToWorld(canvasX, canvasY)
+  - Canvas → World 変換（worldContainer逆行列適用）
+  - return: { worldX, worldY }
+
+worldToLocal(worldX, worldY, container)
+  - World → Local 変換（親チェーン遡査）
+  - return: { localX, localY }
+  - ⚠️ PIXI v8 toLocal() 使用禁止
+
+screenClientToWorld(clientX, clientY)
+  - Screen → World 統合変換
+  - return: { worldX, worldY }
+
+screenClientToLocal(clientX, clientY, container)
+  - Screen → Local 統合変換
+  - return: { localX, localY }
+
+localToWorld(localX, localY, container)
+  - Local → World 順変換
+
+worldToCanvas(worldX, worldY)
+  - World → Canvas 順変換
+
+canvasToScreen(canvasX, canvasY)
+  - Canvas → Screen 順変換
+
+【グローバルシンボル】
+window.CoordinateSystem
+  - 型: CoordinateSystem インスタンス
+  - 初期化: coordinate-system.js ロード時（即時実行関数）
+
+【依存】
+- window.TEGAKI_CONFIG
+- window.TegakiEventBus
+- this.cameraSystem（setCameraSystem経由）
+- this.worldContainer（setContainers経由）
+
+
+--------------------------------------------------------------------------------
+3-2. pointer-handler.js
+--------------------------------------------------------------------------------
+
+【責務】
+- PointerEvent統一処理（mouse/touch/pen）
+- pointerType誤認補正ヒューリスティック
+- setPointerCapture/releasePointerCapture管理
+
+【クラス】
+PointerHandler（静的メソッドのみ）
+
+【主要メソッド】
+static attach(element, handlers, options)
+  - 要素にPointerEventリスナーをアタッチ
+  - handlers: { down, move, up, cancel }
+  - options: { preventDefault, capture }
+  - return: detach関数
+
+normalizeEvent(e)（内部関数）
+  - PointerEvent → 正規化情報
+  - pointerType補正（mouse + pressure → pen）
+  - return: { pointerId, pointerType, clientX, clientY, pressure, tiltX, tiltY, twist, button, buttons, originalEvent }
+
+【グローバルシンボル】
+window.PointerHandler
+  - 型: PointerHandler クラス
+  - 初期化: pointer-handler.js ロード時（即時実行関数）
+
+【依存】
+- なし（標準PointerEventのみ）
+
+
+--------------------------------------------------------------------------------
+3-3. drawing-engine.js
+--------------------------------------------------------------------------------
+
+【責務】
+- PointerEvent受信とLocal座標変換統括
+- BrushCoreへのストローク開始/更新/終了通知
+- アクティブポインター管理
+
+【クラス】
+DrawingEngine
+
+【主要メソッド】
+constructor(app, layerSystem, cameraSystem, history)
+  - 初期化
+  - this.brushCore = new window.BrushCore(...) ★★★ 問題箇所1 ★★★
+
+_initializeCanvas()
+  - canvas 取得
+  - PointerHandler.attach() でイベント接続
+
+_handlePointerDown(info, e)
+  - PointerDown受信
+  - _screenToLocal() で座標変換
+  - brushCore.startStroke() 呼び出し
+
+_handlePointerMove(info, e)
+  - PointerMove受信
+  - brushCore.addPoint() 呼び出し
+
+_handlePointerUp(info, e)
+  - PointerUp受信
+  - brushCore.endStroke() 呼び出し
+
+_screenToLocal(clientX, clientY)
+  - 座標変換パイプライン統括
+  - CoordinateSystem の各メソッドを順次呼び出し
+  - return: { localX, localY }
+
+【グローバルシンボル】
+window.DrawingEngine
+  - 型: DrawingEngine クラス
+  - 初期化: drawing-engine.js ロード時
+
+【依存】
+- window.BrushCore
+- window.CoordinateSystem
+- window.PointerHandler
+- this.layerSystem
+- this.cameraSystem
+
+【問題点】
+❌ constructor で new window.BrushCore() を実行
+  → グローバルの window.BrushCore（インスタンス）とは別インスタンス生成
+  → グローバル側の init() が呼ばれても、このインスタンスは未初期化
+
+
+--------------------------------------------------------------------------------
+3-4. brush-core.js
+--------------------------------------------------------------------------------
+
+【責務】
+- ペン/消しゴム共通コアロジック
+- ストローク記録制御（StrokeRecorder呼び出し）
+- 筆圧処理統合（PressureHandler）
+- モード管理（pen/eraser）
+
+【クラス】
+BrushCore
+
+【主要メソッド】
+constructor()
+  - プロパティ初期化
+  - ⚠️ 依存オブジェクトは null のまま
+
+init()
+  - グローバル依存取得
+  - this.coordinateSystem = window.CoordinateSystem
+  - this.strokeRecorder = window.strokeRecorder ★★★ 重要 ★★★
+  - this.layerManager = window.layerManager
+  - this.strokeRenderer = window.strokeRenderer
+  - 必須依存チェック
+
+setMode(mode)
+  - ペン/消しゴム切替
+  - 'pen' | 'eraser'
+
+updateSettings(settings)
+  - ブラシ設定更新
+  - { size, opacity, color, ... }
+
+startStroke(clientX, clientY, pressure)
+  - ストローク開始
+  - 座標変換（Screen → Local）
+  - this.strokeRecorder.startStroke() 呼び出し
+  - ⚠️ this.strokeRecorder が null だとエラー
+
+updateStroke(clientX, clientY, pressure)
+  - ストローク更新
+  - this.strokeRecorder.addPoint() 呼び出し
+
+finalizeStroke()
+  - ストローク確定
+  - this.strokeRecorder.endStroke() 呼び出し
+  - StrokeRenderer.renderStroke() で描画
+
+cancelStroke()
+  - ストロークキャンセル
+
+【グローバルシンボル】
+window.BrushCore
+  - 型: BrushCore インスタンス
+  - 初期化: brush-core.js ロード時（new BrushCore()）
+  - ⚠️ init() は別途呼び出し必須
+
+【依存】
+- window.CoordinateSystem（init()内で取得）
+- window.strokeRecorder（init()内で取得）
+- window.layerManager（init()内で取得）
+- window.strokeRenderer（init()内で取得）
+- window.pressureHandler（オプション）
+- window.curveInterpolator（オプション）
+- window.eventBus
+
+【問題点】
+❌ init() が呼ばれていない
+  → すべての依存オブジェクトが null
+  → startStroke() で this.strokeRecorder が null → エラー
+
+
+--------------------------------------------------------------------------------
+3-5. stroke-recorder.js
+--------------------------------------------------------------------------------
+
+【責務】
+- ローカル座標のポイント記録専用
+- 座標変換は行わない（二重変換防止）
+
+【クラス】
+StrokeRecorder
+
+【主要メソッド】
+constructor(pressureHandler, cameraSystem)
+  - 初期化
+
+startStroke(localX, localY, rawPressure)
+  - ストローク記録開始
+  - 初回ポイント追加
+
+addPoint(localX, localY, rawPressure)
+  - ポイント追加
+  - 筆圧補正適用（pressureHandler経由）
+
+endStroke()
+  - ストローク記録終了
+  - return: { points, isSingleDot }
+
+getCurrentPoints()
+  - 記録中ポイント取得（プレビュー用）
+
+【グローバルシンボル】
+window.StrokeRecorder
+  - 型: StrokeRecorder クラス（コンストラクタ）
+  - 初期化: stroke-recorder.js ロード時（クラス定義）
+  - ⚠️ インスタンス化は core-engine.js で実行
+
+【依存】
+- window.pressureHandler（コンストラクタ引数）
+- this.cameraSystem（コンストラクタ引数）
+
+
+--------------------------------------------------------------------------------
+3-6. core-engine.js
+--------------------------------------------------------------------------------
+
+【責務】
+- システム全体の初期化オーケストレーション
+- 依存注入（DI）の中核
+- グローバル参照の設定
+
+【クラス】
+CoreEngine
+
+【主要メソッド】
+constructor(app, config)
+  - 各システムのインスタンス生成
+  - this.brushCore = window.BrushCore
+
+setupCrossReferences()
+  - システム間の相互参照設定
+
+initialize()
+  - 初期化メインフロー
+  - ★★★ 重要：この中で依存初期化とBrushCore.init()を実行
+
+【initialize()の重要な処理順序】
+1. CameraSystem.init()
+2. LayerSystem.init()
+3. グローバル参照設定
+   window.layerManager = this.layerSystem
+   window.cameraSystem = this.cameraSystem
+4. StrokeRecorder インスタンス生成 ★★★
+   window.strokeRecorder = new window.StrokeRecorder(...)
+5. StrokeRenderer インスタンス生成 ★★★
+   window.strokeRenderer = new window.StrokeRenderer(...)
+6. BrushCore.init() 呼び出し ★★★
+   this.brushCore.init()
+
+【グローバルシンボル】
+window.coreEngine
+  - 型: CoreEngine インスタンス
+  - 初期化: core-initializer.js の DrawingApp.initialize() 内
+
+【問題点】
+✅ 正しく実装されている（BrushCore.init() 呼び出しあり）
+❌ ただし drawing-engine.js が別インスタンス生成している問題
+
+
+--------------------------------------------------------------------------------
+3-7. core-initializer.js
+--------------------------------------------------------------------------------
+
+【責務】
+- アプリケーション起動エントリーポイント
+- DOM構築
+- CoreEngine.initialize() 呼び出し
+
+【クラス】
+DrawingApp
+
+【主要メソッド】
+async initialize()
+  - PixiJS Application 初期化
+  - CoreEngine 生成
+  - CoreEngine.initialize() 呼び出し ★★★
+  - UIController 初期化
+  - PopupManager 初期化
+  - WebGPU 初期化
+
+【グローバルシンボル】
+window.CoreInitializer
+  - 型: { initialize, checkDependencies, DrawingApp, ... }
+  - 初期化: core-initializer.js ロード時
+
+【依存】
+- window.TegakiCore.CoreEngine
+
+
+================================================================================
+4. 初期化順序の依存関係図
+================================================================================
+
+【スクリプトロード順序】
+1. config.js
+2. coordinate-system.js → window.CoordinateSystem 生成
+3. pointer-handler.js → window.PointerHandler 生成
+4. stroke-recorder.js → window.StrokeRecorder クラス定義
+5. brush-core.js → window.BrushCore インスタンス生成（未初期化）
+6. drawing-engine.js → window.DrawingEngine クラス定義
+7. core-engine.js → TegakiCore.CoreEngine クラス定義
+8. core-initializer.js → window.CoreInitializer 生成
+
+【実行時初期化順序（CoreEngine.initialize()内）】
+Step 1: CameraSystem.init()
+Step 2: LayerSystem.init()
+Step 3: ClipboardSystem.init()
+Step 4: グローバル参照設定
+  - window.layerManager = this.layerSystem
+  - window.cameraSystem = this.cameraSystem
+Step 5: StrokeRecorder インスタンス生成 ★★★
+  - window.strokeRecorder = new window.StrokeRecorder(...)
+Step 6: StrokeRenderer インスタンス生成 ★★★
+  - window.strokeRenderer = new window.StrokeRenderer(...)
+Step 7: BrushCore.init() 呼び出し ★★★
+  - this.brushCore.init()
+  - 内部で window.strokeRecorder 等を取得
+Step 8: ThumbnailSystem.init()
+Step 9: AnimationSystem.init()
+Step 10: UnifiedKeyHandler 生成
+
+【依存関係図】
+```
+BrushCore.init()
+  ├── requires: window.CoordinateSystem（ロード時生成済み）
+  ├── requires: window.strokeRecorder（Step 5で生成）
+  ├── requires: window.layerManager（Step 4で設定）
+  ├── requires: window.strokeRenderer（Step 6で生成）
+  └── requires: window.eventBus（config.js/event-bus.jsロード済み）
+
+DrawingEngine.constructor()
+  ├── requires: window.BrushCore（brush-core.jsロード時生成）
+  ├── requires: window.CoordinateSystem
+  └── requires: window.PointerHandler
+
+PointerHandler（依存なし）
+
+CoordinateSystem.init()
+  ├── requires: app（PixiJS Application）
+  ├── requires: config（window.TEGAKI_CONFIG）
+  └── requires: eventBus
+```
+
+
+================================================================================
+5. タブレットペン問題の根本原因
+================================================================================
+
+【問題1：BrushCore初期化不足】
+❌ 現状：
+- brush-core.js が window.BrushCore = new BrushCore() で生成
+- core-engine.js が this.brushCore = window.BrushCore で参照取得
+- core-engine.js が this.brushCore.init() を呼び出し ✅
+- しかし drawing-engine.js が new window.BrushCore() で再生成 ❌
+
+結果：
+- core-engine.js が初期化した BrushCore（グローバル）は正常
+- drawing-engine.js が生成した BrushCore は未初期化
+- drawing-engine.js が使うのは後者（未初期化）
+- → startStroke() で this.strokeRecorder === null → エラー
+
+【問題2：インスタンス二重化】
+❌ drawing-engine.js:
+```javascript
+constructor(app, layerSystem, cameraSystem, history) {
+    this.brushCore = new window.BrushCore(app, layerSystem, cameraSystem, this.config);
+    // ↑ これが問題
+}
+```
+
+正しくは：
+```javascript
+constructor(app, layerSystem, cameraSystem, history) {
+    this.brushCore = window.BrushCore; // グローバルインスタンスを参照
+}
+```
+
+【問題3：マウスでは動く理由】
+- 謎：同じコードパスなのになぜ？
+- 推測：
+  - マウスでは別の古いコードパス（レガシーAPI）が動いている？
+  - または pointerType 判定で分岐がある？
+  - ログを見る限り、座標変換は成功している
+  - つまり問題はその後の BrushCore.startStroke() 内部
+
+【問題4：レイヤードラッグも動かない理由】
+- レイヤーパネルは別のイベントハンドラ（Sortable.js?）
+- タブレットペンのイベントが正しく伝播していない？
+- または pointer-handler.js の normalizeEvent() 問題？
+- ただし「アクティブレイヤー変更ボタンは押せる」
+  → ペン入力自体は受け付けている
+  → ドラッグ系のイベント（pointermove + pointerCapture）で問題？
+
+
+================================================================================
+6. 改修実施書（優先順位付き）
+================================================================================
+
+--------------------------------------------------------------------------------
+【最優先】修正1：drawing-engine.js のインスタンス二重化を解消
+--------------------------------------------------------------------------------
+
+ファイル: system/drawing/drawing-engine.js
+
+【現在】
+```javascript
+constructor(app, layerSystem, cameraSystem, history) {
+    this.app = app;
+    this.layerSystem = layerSystem;
+    this.cameraSystem = cameraSystem;
+    this.history = history;
+    this.config = window.TEGAKI_CONFIG;
+
+    this.brushCore = new window.BrushCore(app, layerSystem, cameraSystem, this.config); // ❌
+```
+
+【修正後】
+```javascript
+constructor(app, layerSystem, cameraSystem, history) {
+    this.app = app;
+    this.layerSystem = layerSystem;
+    this.cameraSystem = cameraSystem;
+    this.history = history;
+    this.config = window.TEGAKI_CONFIG;
+
+    // グローバルインスタンスを参照（core-engine.jsで初期化済み）
+    this.brushCore = window.BrushCore;
+    
+    if (!this.brushCore) {
+        throw new Error('[DrawingEngine] window.BrushCore not initialized. Check core-engine.js initialization order.');
+    }
+```
+
+【理由】
+- BrushCore はシングルトンパターンで管理すべき
+- グローバル window.BrushCore が core-engine.js で初期化済み
+- drawing-engine.js は参照のみ行う
+
+
+--------------------------------------------------------------------------------
+【優先度：高】修正2：BrushCore.init()の冪等性強化
+--------------------------------------------------------------------------------
+
+ファイル: system/drawing/brush-core.js
+
+【現在】
+```javascript
+init() {
+    if (this.coordinateSystem) {
+        console.warn('BrushCore: Already initialized');
+        return; // 二重初期化防止
+    }
+```
+
+【修正後】
+```javascript
+init() {
+    // 冪等性チェック強化
+    if (this.coordinateSystem && this.strokeRecorder && this.layerManager) {
+        console.warn('[BrushCore] Already initialized - skipping');
+        return;
+    }
+    
+    // 部分的初期化状態の警告
+    if (this.coordinateSystem || this.strokeRecorder || this.layerManager) {
+        console.error('[BrushCore] Partial initialization detected - forcing re-init');
+        this.coordinateSystem = null;
+        this.strokeRecorder = null;
+        this.layerManager = null;
+        this.strokeRenderer = null;
+    }
+```
+
+
+--------------------------------------------------------------------------------
+【優先度：高】修正3：BrushCore依存チェックの明確化
+--------------------------------------------------------------------------------
+
+ファイル: system/drawing/brush-core.js
+
+【現在】
+```javascript
+startStroke(clientX, clientY, pressure) {
+    if (this.isDrawing) return;
+    
+    const activeLayer = this.layerManager.getActiveLayer();
+    if (!activeLayer || activeLayer.locked) return;
+    
+    // 座標変換...
+    // this.strokeRecorder.startStroke(...) // ← ここでエラー
+}
+```
+
+【修正後】
+```javascript
+startStroke(clientX, clientY, pressure) {
+    // 必須依存の事前チェック
+    if (!this.strokeRecorder) {
+        console.error('[BrushCore] startStroke called but strokeRecorder is null. init() may not have been called.');
+        console.error('  coordinateSystem:', !!this.coordinateSystem);
+        console.error('  layerManager:', !!this.layerManager);
+        console.error('  strokeRenderer:', !!this.strokeRenderer);
+        return;
+    }
+    
+    if (this.isDrawing) return;
+    
+    if (!this.layerManager) {
+        console.error('[BrushCore] layerManager is null');
+        return;
+    }
+    
+    const activeLayer = this.layerManager.getActiveLayer();
+    if (!activeLayer || activeLayer.locked) return;
+```
+
+
+--------------------------------------------------------------------------------
+【優先度：中】修正4：初期化順序の明示的ガード
+--------------------------------------------------------------------------------
+
+ファイル: core-engine.js
+
+【現在】
+```javascript
+initialize() {
+    // ...
+    // ★★★ Phase 2: BrushCore初期化（依存初期化後）★★★
+    if (this.brushCore && this.brushCore.init) {
+        this.brushCore.init();
+        console.log('✅ BrushCore initialized in CoreEngine');
+    } else {
+        throw new Error('BrushCore not found - check script load order');
+    }
+}
+```
+
+【修正後】
+```javascript
+initialize() {
+    // ...
+    
+    // ★★★ Phase 2-A: StrokeRecorder/StrokeRenderer初期化（先行）★★★
+    if (!window.strokeRecorder) {
+        if (!window.StrokeRecorder) {
+            throw new Error('[CoreEngine] StrokeRecorder class not loaded - check script load order');
+        }
+        window.strokeRecorder = new window.StrokeRecorder(
+            window.pressureHandler,
+            this.cameraSystem
+        );
+        console.log('✅ [CoreEngine] window.strokeRecorder created');
+    }
+    
+    if (!window.strokeRenderer) {
+        if (!window.StrokeRenderer) {
+            throw new Error('[CoreEngine] StrokeRenderer class not loaded - check script load order');
+        }
+        window.strokeRenderer = new window.StrokeRenderer(
+            this.app,
+            this.layerSystem,
+            this.cameraSystem
+        );
+        console.log('✅ [CoreEngine] window.strokeRenderer created');
+    }
+    
+    // ★★★ Phase 2-B: BrushCore初期化（依存確認後）★★★
+    if (!this.brushCore) {
+        throw new Error('[CoreEngine] BrushCore not found - check script load order');
+    }
+    
+    if (!this.brushCore.init) {
+        throw new Error('[CoreEngine] BrushCore.init method not found');
+    }
+    
+    // 初期化実行
+    this.brushCore.init();
+    
+    // 初期化確認
+    if (!this.brushCore.strokeRecorder || !this.brushCore.layerManager) {
+        throw new Error('[CoreEngine] BrushCore.init() failed - dependencies not set');
+    }
+    
+    console.log('✅ [CoreEngine] BrushCore initialized and validated');
+    console.log('   - strokeRecorder:', !!this.brushCore.strokeRecorder);
+    console.log('   - layerManager:', !!this.brushCore.layerManager);
+    console.log('   - strokeRenderer:', !!this.brushCore.strokeRenderer);
+    console.log('   - coordinateSystem:', !!this.brushCore.coordinateSystem);
+```
+
+
+--------------------------------------------------------------------------------
+【優先度：中】修正5：デバッグログの整理
+--------------------------------------------------------------------------------
+
+【削除対象】
+1. drawing-engine.js の過剰なログ
+   - 座標変換の Step 1/2/3 ログ（確認済み）
+   - PointerDown/Move/Up の詳細ログ（本番不要）
+
+2. coordinate-system.js のログ
+   - Phase 1改修完了メッセージは残す
+   - それ以外の細かいログは削除
+
+【追加対象】
+1. 初期化時のみ詳細ログ
+2. エラー時の依存状態ダンプ
+
+
+--------------------------------------------------------------------------------
+【優先度：低】修正6：レイヤードラッグ問題の調査
+--------------------------------------------------------------------------------
+
+ファイル: ui/layer-panel-renderer.js（推測）
+
+【調査項目】
+1. Sortable.js の設定確認
+   - pointerdown/pointermove/pointerup を正しく処理しているか
+   - setPointerCapture を使用しているか
+
+2. pointer-handler.js の normalizeEvent()
+   - pointerType='pen' でも正しく処理されるか
+   - preventDefault が適切か
+
+3. イベントバブリング/キャプチャ
+   - canvas の touch-action: none が影響していないか
+   - pointer-events CSS プロパティの確認
+
+
+--------------------------------------------------------------------------------
+【実施手順】
+--------------------------------------------------------------------------------
+
+1. drawing-engine.js の修正1を適用（最優先）
+   → ブラウザリロード → タブレットペンで描画テスト
+
+2. 問題が解決しない場合：
+   - ブラウザコンソールで確認：
+     ```javascript
+     console.log('BrushCore:', window.BrushCore);
+     console.log('BrushCore.init exists:', typeof window.BrushCore.init);
+     console.log('BrushCore.strokeRecorder:', window.BrushCore.strokeRecorder);
+     console.log('BrushCore.layerManager:', window.BrushCore.layerManager);
+     ```
+
+3. BrushCore.strokeRecorder が null の場合：
+   - 修正2〜4を順次適用
+   - core-engine.js の初期化順序を確認
+
+4. レイヤードラッグ問題：
+   - 修正6の調査項目を実施
+   - Sortable.js のイベントハンドラを確認
+
+
+--------------------------------------------------------------------------------
+【検証コマンド（ブラウザコンソール）】
+--------------------------------------------------------------------------------
+
+```javascript
+// 初期化状態確認
+console.log('=== 初期化状態確認 ===');
+console.log('CoordinateSystem:', window.CoordinateSystem);
+console.log('BrushCore:', window.BrushCore);
+console.log('strokeRecorder:', window.strokeRecorder);
+console.log('layerManager:', window.layerManager);
+console.log('strokeRenderer:', window.strokeRenderer);
+console.log('');
+
+// BrushCore詳細確認
+console.log('=== BrushCore詳細 ===');
+if (window.BrushCore) {
+    console.log('BrushCore.coordinateSystem:', window.BrushCore.coordinateSystem);
+    console.log('BrushCore.strokeRecorder:', window.BrushCore.strokeRecorder);
+    console.log('BrushCore.layerManager:', window.BrushCore.layerManager);
+    console.log('BrushCore.strokeRenderer:', window.BrushCore.strokeRenderer);
+    console.log('BrushCore.isDrawing:', window.BrushCore.isDrawing);
+    console.log('BrushCore.currentMode:', window.BrushCore.currentMode);
+} else {
+    console.error('BrushCore not found!');
+}
+console.log('');
+
+// DrawingEngine確認
+console.log('=== DrawingEngine確認 ===');
+if (window.coreEngine && window.coreEngine.brushCore) {
+    console.log('coreEngine.brushCore:', window.coreEngine.brushCore);
+    console.log('Same as window.BrushCore?', window.coreEngine.brushCore === window.BrushCore);
+}
+console.log('');
+
+// 座標変換テスト
+console.log('=== 座標変換テスト ===');
+const testX = 100;
+const testY = 100;
+console.log('Input (clientX, clientY):', testX, testY);
+if (window.CoordinateSystem) {
+    const canvas = window.CoordinateSystem.screenClientToCanvas(testX, testY);
+    console.log('Canvas coords:', canvas);
+    const world = window.CoordinateSystem.canvasToWorld(canvas.canvasX, canvas.canvasY);
+    console.log('World coords:', world);
+    if (window.layerManager) {
+        const activeLayer = window.layerManager.getActiveLayer();
+        if (activeLayer) {
+            const local = window.CoordinateSystem.worldToLocal(world.worldX, world.worldY, activeLayer);
+            console.log('Local coords:', local);
+        }
+    }
+}
+```
+
+
+================================================================================
+7. 二重実装・SOLID違反の確認と撲滅
+================================================================================
+
+--------------------------------------------------------------------------------
+7-1. 座標変換の二重実装チェック
+--------------------------------------------------------------------------------
+
+【現状】
+✅ OK: drawing-engine.js は CoordinateSystem のみ使用
+✅ OK: brush-core.js は CoordinateSystem のみ使用
+✅ OK: stroke-recorder.js は座標変換を行わない（Local座標をそのまま記録）
+
+【潜在的問題】
+⚠️ 注意: stroke-recorder.js に addPointFromEvent() メソッドが残存
+   - これは cameraSystem.screenToLayer() を呼び出す
+   - レガシー互換API
+   - 新コードでは使用しないこと
+   - 削除候補（非推奨マーク必須）
+
+【推奨】
+stroke-recorder.js の addPointFromEvent() を非推奨化：
+```javascript
+/**
+ * @deprecated レガシー互換API。新コードでは使用しないこと。
+ * BrushCore側で座標変換してから addPoint() を呼ぶこと。
+ */
+addPointFromEvent(event, rawPressure) {
+    console.warn('[StrokeRecorder] addPointFromEvent() is deprecated. Use addPoint() with pre-converted coordinates.');
+    // ...
+}
+```
+
+
+--------------------------------------------------------------------------------
+7-2. グローバルシンボルの重複チェック
+--------------------------------------------------------------------------------
+
+【確認項目】
+1. window.BrushCore（インスタンス） vs window.BrushCore（クラス）
+   現状: インスタンス（brush-core.js で new BrushCore()）
+   結論: ✅ OK（シングルトン）
+
+2. window.CoordinateSystem（インスタンス） vs window.TEGAKI_COORDINATE_SYSTEM
+   現状: window.CoordinateSystem のみ
+   結論: ✅ OK（Phase 1改修で統一済み）
+
+3. window.strokeRecorder（インスタンス） vs window.StrokeRecorder（クラス）
+   現状: 両方存在（クラスとインスタンス）
+   結論: ✅ OK（意図的な設計）
+
+4. window.drawingEngine vs window.coreEngine.brushCore
+   現状: drawing-engine.js が new DrawingEngine() を生成
+          core-engine.js は window.BrushCore を参照
+   結論: ⚠️ 問題あり（修正1で解消）
+
+
+--------------------------------------------------------------------------------
+7-3. 循環依存のチェック
+--------------------------------------------------------------------------------
+
+【依存グラフ】
+```
+pointer-handler.js
+  → （依存なし）
+
+coordinate-system.js
+  → eventBus
+  → cameraSystem（setCameraSystem経由、循環なし）
+
+stroke-recorder.js
+  → pressureHandler
+  → cameraSystem
+
+brush-core.js
+  → CoordinateSystem
+  → strokeRecorder
+  → layerManager
+  → strokeRenderer
+  → pressureHandler（オプション）
+  → curveInterpolator（オプション）
+  → eventBus
+
+drawing-engine.js
+  → BrushCore
+  → CoordinateSystem
+  → PointerHandler
+  → layerSystem
+  → cameraSystem
+
+core-engine.js
+  → すべてのシステム（orchestrator）
+```
+
+【結論】
+✅ 循環依存なし
+✅ 依存方向は一方向（下位→上位のみ）
+
+
+--------------------------------------------------------------------------------
+7-4. DRY違反のチェック
+--------------------------------------------------------------------------------
+
+【座標変換ロジック】
+✅ OK: coordinate-system.js に一元化
+❌ NG: stroke-recorder.js の addPointFromEvent() が screenToLayer() 呼び出し
+   → 削除または非推奨化
+
+【PointerEvent正規化】
+✅ OK: pointer-handler.js の normalizeEvent() に一元化
+
+【ストローク記録】
+✅ OK: stroke-recorder.js に一元化
+
+【ストローク描画】
+✅ OK: stroke-renderer.js に一元化（確認必要）
+
+【レイヤー管理】
+✅ OK: layer-system.js に一元化
+
+
+--------------------------------------------------------------------------------
+7-5. 過剰なコンソールログの削除
+--------------------------------------------------------------------------------
+
+【削除対象】
+1. drawing-engine.js
+   - _screenToLocal() の Step 1/2/3 ログ
+   - _handlePointerDown/Move/Up の詳細ログ
+   - 座標値の逐次出力
+
+2. coordinate-system.js
+   - 座標変換の逐次ログ
+   - Phase 1改修メッセージは初回のみ残す
+
+3. brush-core.js
+   - startStroke/updateStroke の詳細ログ
+   - エラー時のみ出力
+
+【保持対象】
+1. 初期化完了ログ（各ファイル1回のみ）
+2. エラーログ（console.error）
+3. 警告ログ（console.warn）
+
+【推奨パターン】
+```javascript
+// グローバルデバッグフラグ
+window.TEGAKI_DEBUG = false; // 本番は false
+
+// ログ出力
+if (window.TEGAKI_DEBUG) {
+    console.log('[DrawingEngine] PointerDown:', info);
+}
+
+// エラーは常に出力
+console.error('[BrushCore] strokeRecorder is null');
+```
+
+
+================================================================================
+8. 修正後の動作確認チェックリスト
+================================================================================
+
+【必須確認項目】
+□ 1. マウスで描画できる
+□ 2. タブレットペンで描画できる ★★★ 重要 ★★★
+□ 3. タッチで描画できる（可能な場合）
+□ 4. 筆圧が正しく反映される
+□ 5. ペン/消しゴム切替が動作する
+□ 6. レイヤーパネルのドラッグ移動（マウス）
+□ 7. レイヤーパネルのドラッグ移動（ペン） ★★★ 重要 ★★★
+□ 8. アクティブレイヤー変更（ボタンクリック）
+□ 9. アクティブレイヤー変更（矢印キー）
+□ 10. Undo/Redo が正常動作
+
+【パフォーマンス確認】
+□ 11. 描画時のFPS低下がない
+□ 12. コンソールエラーがない
+□ 13. メモリリークがない（長時間使用）
+
+【エッジケース確認】
+□ 14. レイヤーロック中は描画できない
+□ 15. 背景レイヤーは削除できない
+□ 16. 複数レイヤーでの描画
+□ 17. ズーム/パン中の描画
+□ 18. キャンバスリサイズ後の描画
+
+
+================================================================================
+9. 将来的な改善提案（Phase 3以降）
+================================================================================
+
+--------------------------------------------------------------------------------
+9-1. 完全なDI（依存注入）化
+--------------------------------------------------------------------------------
+
+【現状】
+- BrushCore が window.* のグローバル参照に依存
+- 初期化順序に依存（グローバルが先に設定される必要）
+
+【改善案】
+```javascript
+// core-engine.js
+this.brushCore = new BrushCore({
+    coordinateSystem: this.coordinateSystem, // グローバル不要
+    strokeRecorder: this.strokeRecorder,
+    layerManager: this.layerSystem,
+    strokeRenderer: this.strokeRenderer,
+    pressureHandler: window.pressureHandler,
+    curveInterpolator: window.CurveInterpolator,
+    eventBus: this.eventBus
+});
+```
+
+【メリット】
+- テストが容易（モックの注入）
+- 初期化順序の依存を排除
+- グローバル汚染の削減
+
+
+--------------------------------------------------------------------------------
+9-2. イベントバス経由の疎結合化
+--------------------------------------------------------------------------------
+
+【現状】
+- BrushCore が StrokeRecorder を直接呼び出し
+
+【改善案】
+```javascript
+// BrushCore
+startStroke(localX, localY, pressure) {
+    this.eventBus.emit('stroke:start-requested', {
+        localX, localY, pressure, layerId: this.getActiveLayerId()
+    });
+}
+
+// StrokeRecorder
+this.eventBus.on('stroke:start-requested', (data) => {
+    this.startStroke(data.localX, data.localY, data.pressure);
+});
+```
+
+【メリット】
+- コンポーネント間の疎結合
+- 機能追加が容易（イベントリスナー追加のみ）
+- テストが容易（イベント発火のみテスト）
+
+
+--------------------------------------------------------------------------------
+9-3. ログレベルの実装
+--------------------------------------------------------------------------------
+
+【現状】
+- console.log/warn/error の直接呼び出し
+- window.TEGAKI_DEBUG フラグによるON/OFF
+
+【改善案】
+```javascript
+// logger.js
+class Logger {
+    static TRACE = 0;
+    static DEBUG = 1;
+    static INFO = 2;
+    static WARN = 3;
+    static ERROR = 4;
+    
+    constructor(name, level = Logger.INFO) {
+        this.name = name;
+        this.level = level;
+    }
+    
+    trace(...args) {
+        if (this.level <= Logger.TRACE) {
+            console.log(`[${this.name}] TRACE:`, ...args);
+        }
+    }
+    
+    debug(...args) {
+        if (this.level <= Logger.DEBUG) {
+            console.log(`[${this.name}] DEBUG:`, ...args);
+        }
+    }
+    
+    info(...args) {
+        if (this.level <= Logger.INFO) {
+            console.log(`[${this.name}] INFO:`, ...args);
+        }
+    }
+    
+    warn(...args) {
+        if (this.level <= Logger.WARN) {
+            console.warn(`[${this.name}] WARN:`, ...args);
+        }
+    }
+    
+    error(...args) {
+        if (this.level <= Logger.ERROR) {
+            console.error(`[${this.name}] ERROR:`, ...args);
+        }
+    }
+}
+
+// 使用例
+const logger = new Logger('BrushCore', Logger.INFO);
+logger.trace('座標変換開始'); // 本番では出力されない
+logger.error('strokeRecorder is null'); // 常に出力
+```
+
+
+--------------------------------------------------------------------------------
+9-4. 型定義の追加（JSDoc）
+--------------------------------------------------------------------------------
+
+【現状】
+- 型情報が不明瞭
+- IDEの補完が不十分
+
+【改善案】
+```javascript
+/**
+ * @typedef {Object} LocalCoords
+ * @property {number} localX - ローカル座標X
+ * @property {number} localY - ローカル座標Y
+ */
+
+/**
+ * @typedef {Object} StrokePoint
+ * @property {number} x - X座標
+ * @property {number} y - Y座標
+ * @property {number} pressure - 筆圧 (0.0-1.0)
+ * @property {number} time - タイムスタンプ
+ * @property {number} tiltX - 傾きX
+ * @property {number} tiltY - 傾きY
+ * @property {number} twist - 回転
+ */
+
+/**
+ * ストローク開始
+ * @param {number} clientX - Screen X座標
+ * @param {number} clientY - Screen Y座標
+ * @param {number} pressure - 筆圧
+ * @returns {void}
+ */
+startStroke(clientX, clientY, pressure) {
+    // ...
+}
+```
+
+
+================================================================================
+10. まとめ：即座に実施すべき修正
+================================================================================
+
+【最優先（今すぐ実施）】
+1. drawing-engine.js: constructor の修正
+   this.brushCore = new window.BrushCore(...) 
+   → this.brushCore = window.BrushCore
+
+2. brush-core.js: startStroke() の依存チェック追加
+   if (!this.strokeRecorder) { console.error(...); return; }
+
+【次に実施】
+3. core-engine.js: BrushCore初期化の検証強化
+   init()後に依存が正しく設定されたか確認
+
+4. stroke-recorder.js: addPointFromEvent() の非推奨化
+
+5. 過剰なログの削除
+   - drawing-engine.js の詳細ログ
+   - coordinate-system.js の逐次ログ
+
+【検証】
+6. タブレットペンで描画テスト
+7. レイヤードラッグテスト
+8. コンソールエラー確認
+
+【報告】
+- 修正前: マウス○ ペン× レイヤードラッグ（マウス○ ペン×）
+- 修正後: マウス○ ペン○ レイヤードラッグ（マウス○ ペン○）
+
+
+================================================================================
+補足：pointerType誤認問題について
+================================================================================
+
+【pointer-handler.js の normalizeEvent()】
+現在、以下のヒューリスティックで補正済み：
+- pointerType='mouse' かつ pressure > 0.01 → 'pen' に補正
+- pointerType='mouse' かつ tiltX/tiltY != 0 → 'pen' に補正
+
+【確認方法】
+```javascript
+// ブラウザコンソール
+canvas.addEventListener('pointerdown', (e) => {
+    console.log('Native pointerType:', e.pointerType);
+    console.log('Pressure:', e.pressure);
+    console.log('Tilt:', e.tiltX, e.tiltY);
+});
+```
+
+【もし補正が不十分な場合】
+- Windows環境でペンドライバーの設定確認
+- Chrome flags: chrome://flags/ で "Touch Events API" 確認
+- ブラウザのペンサポート状況確認
+
+
+================================================================================
+終わり
+================================================================================

@@ -1,5 +1,4 @@
-// ===== system/drawing/drawing-engine.js - デバッグ版 =====
-// タブレットペン問題調査用：詳細ログ追加
+// ===== system/drawing/drawing-engine.js - 修正版 =====
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
@@ -9,13 +8,22 @@ class DrawingEngine {
         this.history = history;
         this.config = window.TEGAKI_CONFIG;
 
-        this.brushCore = new window.BrushCore(app, layerSystem, cameraSystem, this.config);
+        // ★★★ 修正: グローバルインスタンスを参照 ★★★
+        this.brushCore = window.BrushCore;
+        
+        if (!this.brushCore) {
+            console.error('❌ [DrawingEngine] window.BrushCore not initialized');
+            throw new Error('[DrawingEngine] window.BrushCore not initialized. Check core-engine.js initialization order.');
+        }
+
         this.brushSettings = null;
         this.pointerDetach = null;
         this.coordSystem = window.CoordinateSystem;
         this.activePointers = new Map();
 
-        console.log('🔧 [DrawingEngine] Initializing with debug logs...');
+        console.log('🔧 [DrawingEngine] Initializing...');
+        console.log('   BrushCore reference:', !!this.brushCore);
+        
         this._initializeCanvas();
     }
 
@@ -27,15 +35,12 @@ class DrawingEngine {
         }
 
         canvas.style.touchAction = 'none';
-        console.log('✅ [DrawingEngine] Canvas found:', canvas);
+        console.log('✅ [DrawingEngine] Canvas found');
 
-        // PointerHandler.attach 前にチェック
         if (!window.PointerHandler) {
             console.error('❌ [DrawingEngine] window.PointerHandler not available!');
             return;
         }
-
-        console.log('✅ [DrawingEngine] PointerHandler available');
 
         this.pointerDetach = window.PointerHandler.attach(canvas, {
             down: this._handlePointerDown.bind(this),
@@ -46,19 +51,14 @@ class DrawingEngine {
             preventDefault: true
         });
 
-        console.log('✅ [DrawingEngine] PointerHandler attached successfully');
-        console.log('   Canvas element:', canvas.tagName);
-        console.log('   Canvas size:', canvas.width, 'x', canvas.height);
+        console.log('✅ [DrawingEngine] PointerHandler attached');
     }
 
     _handlePointerDown(info, e) {
-        console.log('🖱️ [DrawingEngine] PointerDown received:', {
+        console.log('🖱️ [DrawingEngine] PointerDown:', {
             type: info.pointerType,
             id: info.pointerId,
-            client: `(${info.clientX}, ${info.clientY})`,
-            pressure: info.pressure,
-            button: info.button,
-            vKeyPressed: this.layerSystem?.vKeyPressed
+            pressure: info.pressure
         });
 
         // レイヤー移動モード中は描画しない
@@ -69,11 +69,8 @@ class DrawingEngine {
 
         // 右クリック無視
         if (info.button === 2) {
-            console.log('⏸️ [DrawingEngine] Skipped: right button');
             return;
         }
-
-        console.log('🔄 [DrawingEngine] Starting coordinate conversion...');
 
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
         if (!localCoords) {
@@ -81,25 +78,25 @@ class DrawingEngine {
             return;
         }
 
-        console.log('✅ [DrawingEngine] Local coords:', localCoords);
-
         // アクティブポインター登録
         this.activePointers.set(info.pointerId, {
             type: info.pointerType || 'unknown',
             isDrawing: true
         });
 
-        console.log('📊 [DrawingEngine] Active pointers:', this.activePointers.size);
-
-        // BrushCoreにストローク開始を通知
-        console.log('🎨 [DrawingEngine] Calling brushCore.startStroke...');
-        this.brushCore.startStroke(
-            localCoords.localX,
-            localCoords.localY,
-            info.pressure,
-            info.pointerId
-        );
-        console.log('✅ [DrawingEngine] startStroke completed');
+        // ★★★ 修正: BrushCore.startStroke()を呼び出し ★★★
+        // BrushCoreは既にLocal座標を受け取る設計なので、clientX/clientYではなくlocalX/localYを渡す
+        if (this.brushCore && this.brushCore.startStroke) {
+            // BrushCore.startStroke()はclientX/clientYを期待しているので
+            // 一旦元の座標を渡す（BrushCore内部で変換される）
+            this.brushCore.startStroke(
+                info.clientX,
+                info.clientY,
+                info.pressure
+            );
+        } else {
+            console.error('❌ [DrawingEngine] BrushCore.startStroke not available');
+        }
     }
 
     _handlePointerMove(info, e) {
@@ -108,44 +105,41 @@ class DrawingEngine {
             return;
         }
 
-        if (!this.brushCore.getIsDrawing()) {
+        if (!this.brushCore || !this.brushCore.isActive || !this.brushCore.isActive()) {
             return;
         }
 
-        const localCoords = this._screenToLocal(info.clientX, info.clientY);
-        if (!localCoords) return;
-
-        this.brushCore.addPoint(
-            localCoords.localX,
-            localCoords.localY,
-            info.pressure,
-            info.pointerId
-        );
+        if (this.brushCore.updateStroke) {
+            this.brushCore.updateStroke(
+                info.clientX,
+                info.clientY,
+                info.pressure
+            );
+        }
     }
 
     _handlePointerUp(info, e) {
-        console.log('🖱️ [DrawingEngine] PointerUp received:', {
+        console.log('🖱️ [DrawingEngine] PointerUp:', {
             type: info.pointerType,
             id: info.pointerId
         });
 
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo) {
-            console.log('⚠️ [DrawingEngine] PointerUp: pointer not found in activePointers');
             return;
         }
 
-        if (this.brushCore.getIsDrawing()) {
-            console.log('🎨 [DrawingEngine] Calling brushCore.endStroke...');
-            this.brushCore.endStroke(info.pointerId);
+        if (this.brushCore && this.brushCore.isActive && this.brushCore.isActive()) {
+            if (this.brushCore.finalizeStroke) {
+                this.brushCore.finalizeStroke();
+            }
         }
 
         this.activePointers.delete(info.pointerId);
-        console.log('📊 [DrawingEngine] Active pointers after up:', this.activePointers.size);
     }
 
     _handlePointerCancel(info, e) {
-        console.log('🖱️ [DrawingEngine] PointerCancel received:', {
+        console.log('🖱️ [DrawingEngine] PointerCancel:', {
             type: info.pointerType,
             id: info.pointerId
         });
@@ -155,8 +149,8 @@ class DrawingEngine {
             return;
         }
 
-        if (this.brushCore.getIsDrawing()) {
-            this.brushCore.cancelStroke(info.pointerId);
+        if (this.brushCore && this.brushCore.cancelStroke) {
+            this.brushCore.cancelStroke();
         }
 
         this.activePointers.delete(info.pointerId);
@@ -174,23 +168,18 @@ class DrawingEngine {
             return null;
         }
 
-        console.log('  Step 1: screenClientToCanvas...');
         const canvasCoords = this.coordSystem.screenClientToCanvas(clientX, clientY);
         if (!canvasCoords || canvasCoords.canvasX === undefined) {
             console.error('❌ [DrawingEngine] screenClientToCanvas failed');
             return null;
         }
-        console.log('    Canvas coords:', canvasCoords);
 
-        console.log('  Step 2: canvasToWorld...');
         const worldCoords = this.coordSystem.canvasToWorld(canvasCoords.canvasX, canvasCoords.canvasY);
         if (!worldCoords || worldCoords.worldX === undefined) {
             console.error('❌ [DrawingEngine] canvasToWorld failed');
             return null;
         }
-        console.log('    World coords:', worldCoords);
 
-        console.log('  Step 3: worldToLocal...');
         const localCoords = this.coordSystem.worldToLocal(
             worldCoords.worldX,
             worldCoords.worldY,
@@ -207,51 +196,45 @@ class DrawingEngine {
             return null;
         }
 
-        console.log('    Local coords:', localCoords);
-
         return {
             localX: localCoords.localX,
             localY: localCoords.localY
         };
     }
 
+    // ★★★ 修正: setBrushSettings → updateSettings ★★★
     setBrushSettings(settings) {
         this.brushSettings = settings;
-        if (this.brushCore) {
-            this.brushCore.setBrushSettings(settings);
+        if (this.brushCore && this.brushCore.updateSettings) {
+            this.brushCore.updateSettings({
+                size: settings.getSize ? settings.getSize() : settings.size,
+                opacity: settings.getAlpha ? settings.getAlpha() : settings.opacity,
+                color: settings.getColor ? settings.getColor() : settings.color
+            });
+        } else {
+            console.warn('⚠️ [DrawingEngine] BrushCore.updateSettings not available');
         }
     }
 
     setTool(tool) {
         console.log('🔧 [DrawingEngine] setTool:', tool);
-        if (this.brushCore) {
-            this.brushCore.setTool(tool);
+        if (this.brushCore && this.brushCore.setMode) {
+            this.brushCore.setMode(tool);
+        } else {
+            console.warn('⚠️ [DrawingEngine] BrushCore.setMode not available');
         }
     }
 
     getTool() {
-        return this.brushCore ? this.brushCore.getTool() : 'pen';
+        return this.brushCore && this.brushCore.getMode ? this.brushCore.getMode() : 'pen';
     }
 
     get currentTool() {
-        return this.brushCore ? this.brushCore.getTool() : 'pen';
+        return this.getTool();
     }
 
     get isDrawing() {
-        return this.brushCore ? this.brushCore.getIsDrawing() : false;
-    }
-
-    // ✅ 後方互換性API（削除予定）
-    startDrawing(x, y, nativeEvent) {
-        console.warn('⚠️ [DrawingEngine] Legacy API called: startDrawing()');
-    }
-
-    continueDrawing(x, y, nativeEvent) {
-        // 何もしない（PointerHandlerが処理）
-    }
-
-    stopDrawing() {
-        console.warn('⚠️ [DrawingEngine] Legacy API called: stopDrawing()');
+        return this.brushCore && this.brushCore.isActive ? this.brushCore.isActive() : false;
     }
 
     destroy() {
@@ -266,6 +249,6 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js (デバッグ版) loaded');
-console.log('   ✓ Detailed logging enabled');
-console.log('   ✓ All pointer events will be logged');
+console.log('✅ drawing-engine.js (修正版) loaded');
+console.log('   ✓ グローバルBrushCore参照');
+console.log('   ✓ setBrushSettings → updateSettings');
