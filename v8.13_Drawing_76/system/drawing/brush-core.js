@@ -1,5 +1,5 @@
-// ===== system/drawing/brush-core.js - Phase 4-A: WebGPU対応版 =====
-// BrushCore - ペン/消しゴム統合処理（WebGPU非同期描画対応）
+// ===== system/drawing/brush-core.js - デバッグ版 =====
+// BrushCore - ペン/消しゴム統合処理（デバッグログ追加）
 
 (function() {
     'use strict';
@@ -21,13 +21,21 @@
             this.strokeRecorder = null;
             this.strokeRenderer = null;
             
+            console.log('🔧 [BrushCore] Initializing...');
+            
             if (window.StrokeRecorder && window.PressureHandler) {
                 const pressureHandler = new window.PressureHandler();
                 this.strokeRecorder = new window.StrokeRecorder(pressureHandler, this.cameraSystem);
+                console.log('✅ [BrushCore] StrokeRecorder initialized');
+            } else {
+                console.error('❌ [BrushCore] StrokeRecorder or PressureHandler not available');
             }
             
             if (window.StrokeRenderer) {
                 this.strokeRenderer = new window.StrokeRenderer(this.app, this.layerSystem, this.cameraSystem);
+                console.log('✅ [BrushCore] StrokeRenderer initialized');
+            } else {
+                console.error('❌ [BrushCore] StrokeRenderer not available');
             }
             
             this.coordSystem = window.CoordinateSystem;
@@ -67,6 +75,7 @@
             if (tool !== 'pen' && tool !== 'eraser') {
                 return;
             }
+            console.log('🔧 [BrushCore] setTool:', tool);
             this.currentTool = tool;
             if (this.strokeRenderer) {
                 this.strokeRenderer.setTool(tool);
@@ -119,17 +128,36 @@
         }
 
         startStroke(localX, localY, pressure, pointerId) {
-            if (this.isDrawing) return;
+            console.log('🎨 [BrushCore] startStroke:', {
+                localX, localY, pressure, pointerId,
+                isDrawing: this.isDrawing
+            });
+
+            if (this.isDrawing) {
+                console.warn('⚠️ [BrushCore] Already drawing, ignoring');
+                return;
+            }
 
             const activeLayer = this.layerSystem.getActiveLayer();
-            if (!activeLayer || !activeLayer.layerData) return;
-            if (activeLayer.layerData.isBackground) return;
-            if (isNaN(localX) || isNaN(localY)) return;
+            if (!activeLayer || !activeLayer.layerData) {
+                console.error('❌ [BrushCore] No active layer');
+                return;
+            }
+            if (activeLayer.layerData.isBackground) {
+                console.warn('⚠️ [BrushCore] Cannot draw on background layer');
+                return;
+            }
+            if (isNaN(localX) || isNaN(localY)) {
+                console.error('❌ [BrushCore] Invalid coordinates');
+                return;
+            }
 
             this.isDrawing = true;
             this.currentPointerId = pointerId;
 
             const settings = this._getCurrentSettings();
+            console.log('  Settings:', settings);
+            
             this.currentStroke = {
                 ...settings,
                 tool: this.currentTool
@@ -139,6 +167,9 @@
 
             if (this.strokeRecorder) {
                 this.strokeRecorder.startStroke(localX, localY, pressure);
+                console.log('✅ [BrushCore] StrokeRecorder started');
+            } else {
+                console.error('❌ [BrushCore] No strokeRecorder');
             }
         }
 
@@ -147,6 +178,7 @@
             this.previewGraphics = new PIXI.Graphics();
             layer.addChild(this.previewGraphics);
             this.previewContainer = layer;
+            console.log('✅ [BrushCore] Preview container initialized');
         }
 
         addPoint(localX, localY, pressure, pointerId) {
@@ -196,39 +228,63 @@
         }
 
         /**
-         * ストローク終了（Phase 4-A: 非同期対応）
+         * ストローク終了（デバッグ版）
          */
         async endStroke(pointerId) {
-            if (!this.isDrawing) return;
-            if (pointerId !== undefined && pointerId !== this.currentPointerId) return;
+            console.log('🎨 [BrushCore] endStroke:', {
+                pointerId,
+                isDrawing: this.isDrawing,
+                currentPointerId: this.currentPointerId
+            });
+
+            if (!this.isDrawing) {
+                console.warn('⚠️ [BrushCore] Not drawing, ignoring endStroke');
+                return;
+            }
+            if (pointerId !== undefined && pointerId !== this.currentPointerId) {
+                console.warn('⚠️ [BrushCore] PointerId mismatch, ignoring endStroke');
+                return;
+            }
 
             const activeLayer = this.layerSystem.getActiveLayer();
             if (!activeLayer || !activeLayer.layerData) {
+                console.error('❌ [BrushCore] No active layer in endStroke');
                 this._clearPreview();
                 this.isDrawing = false;
                 return;
             }
 
             if (!this.strokeRecorder) {
+                console.error('❌ [BrushCore] No strokeRecorder in endStroke');
                 this._clearPreview();
                 this.isDrawing = false;
                 return;
             }
 
+            console.log('  Calling strokeRecorder.endStroke...');
             const strokeData = this.strokeRecorder.endStroke();
+            console.log('  strokeData:', {
+                pointCount: strokeData?.points?.length || 0,
+                isSingleDot: strokeData?.isSingleDot
+            });
             
             if (strokeData && strokeData.points && strokeData.points.length > 0) {
-                // 非同期描画（WebGPU対応）
+                console.log('  Calling _renderStroke...');
                 await this._renderStroke(activeLayer, strokeData);
+                console.log('✅ [BrushCore] _renderStroke completed');
+            } else {
+                console.warn('⚠️ [BrushCore] No points to render');
             }
 
             this._clearPreview();
             this.isDrawing = false;
             this.currentPointerId = null;
             this.currentStroke = null;
+            console.log('✅ [BrushCore] endStroke completed');
         }
 
         cancelStroke(pointerId) {
+            console.log('🎨 [BrushCore] cancelStroke');
             if (!this.isDrawing) return;
             if (pointerId !== undefined && pointerId !== this.currentPointerId) return;
 
@@ -244,27 +300,44 @@
         }
 
         /**
-         * ストローク描画（Phase 4-A: 非同期対応）
+         * ストローク描画（デバッグ版）
          */
         async _renderStroke(layer, strokeData) {
-            if (!this.strokeRenderer || !this.currentStroke) return;
+            console.log('🖌️ [BrushCore] _renderStroke:', {
+                layerId: layer.layerData.id,
+                pointCount: strokeData.points.length,
+                tool: this.currentTool
+            });
+
+            if (!this.strokeRenderer || !this.currentStroke) {
+                console.error('❌ [BrushCore] No strokeRenderer or currentStroke');
+                return;
+            }
 
             const settings = {
                 color: this.currentStroke.color,
                 size: this.currentStroke.size,
                 alpha: this.currentStroke.opacity
             };
+            console.log('  Render settings:', settings);
 
             // WebGPU/Legacy自動選択（非同期）
+            console.log('  Calling strokeRenderer.renderFinalStroke...');
             const strokeGraphics = await this.strokeRenderer.renderFinalStroke(
                 strokeData,
                 settings,
                 null
             );
+            console.log('  strokeGraphics:', strokeGraphics);
 
-            if (!strokeGraphics) return;
+            if (!strokeGraphics) {
+                console.error('❌ [BrushCore] renderFinalStroke returned null');
+                return;
+            }
 
+            console.log('  Adding graphics to layer...');
             layer.addChild(strokeGraphics);
+            console.log('✅ [BrushCore] Graphics added to layer');
 
             if (!layer.layerData.paths) {
                 layer.layerData.paths = [];
@@ -297,6 +370,8 @@
             if (window.History && (!window.History._manager || !window.History._manager.isApplying)) {
                 this._recordHistory(layer, strokeGraphics);
             }
+            
+            console.log('✅ [BrushCore] _renderStroke fully completed');
         }
 
         _recordHistory(layer, graphics) {
@@ -341,5 +416,6 @@
 
     window.BrushCore = BrushCore;
 
-    console.log('✅ brush-core.js (Phase 4-A: WebGPU非同期対応版) loaded');
+    console.log('✅ brush-core.js (デバッグ版) loaded');
+    console.log('   ✓ Detailed logging enabled');
 })();

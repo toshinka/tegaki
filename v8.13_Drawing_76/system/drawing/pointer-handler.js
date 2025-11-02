@@ -1,6 +1,6 @@
 // ===== system/drawing/pointer-handler.js =====
 // PointerEvent統一ハンドラ（マウス・タッチ・ペン対応）
-// DRY原則：全UIコンポーネントでこのハンドラを使用
+// Phase 2: pointerType='mouse'のペン誤認を補正
 
 (function() {
     'use strict';
@@ -35,10 +35,27 @@
             // ポインター状態管理
             const activePointers = new Map();
 
+            /**
+             * Phase 2修正: pointerType補正ヒューリスティック
+             * Windows等で pen が mouse として報告される問題に対応
+             */
             function normalizeEvent(e) {
+                let pType = e.pointerType;
+                
+                // ヒューリスティック: mouseでも筆圧・傾きがあればペン扱い
+                if (pType === 'mouse') {
+                    const hasPressure = typeof e.pressure === 'number' && e.pressure > 0.01;
+                    const hasTilt = typeof e.tiltX === 'number' && 
+                                   (e.tiltX !== 0 || e.tiltY !== 0);
+                    
+                    if (hasPressure || hasTilt) {
+                        pType = 'pen';
+                    }
+                }
+                
                 return {
                     pointerId: e.pointerId,
-                    pointerType: e.pointerType, // 'pen' | 'touch' | 'mouse'
+                    pointerType: pType, // 補正後のpointerType
                     clientX: e.clientX,
                     clientY: e.clientY,
                     pressure: e.pressure ?? 0.5,
@@ -160,5 +177,7 @@
     // グローバル公開
     window.PointerHandler = PointerHandler;
 
-    console.log('✅ pointer-handler.js loaded');
+    console.log('✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded');
+    console.log('   ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"');
+
 })();

@@ -1,8 +1,6 @@
-// ===== system/layer-system.js - v2.1: レイヤーナンバリング修正版 =====
-// 修正1: renderFrameToTexture()でcanvasサイズを現在値から取得・テクスチャ再作成
-// 修正2: リサイズ時のテクスチャ管理を強化
-// 修正3: flipActiveLayer()とonFlipRequestコールバック接続を修正
-// ★修正4: レイヤー名のナンバリングを自動インクリメントに変更
+// ===== system/layer-system.js - v2.2: 背景レイヤー初期塗り・リサイズサムネイル対応版 =====
+// ★追加1: 背景レイヤー初期塗り (#f0e0d6)
+// ★追加2: リサイズ後のサムネイル自動更新
 
 (function() {
     'use strict';
@@ -24,7 +22,6 @@
             this.transform = null;
             this.isInitialized = false;
             
-            // ★追加: レイヤーナンバリング管理
             this.layerCounter = 0;
         }
 
@@ -42,7 +39,7 @@
             this.currentFrameContainer = new PIXI.Container();
             this.currentFrameContainer.label = 'temporary_frame_container';
             
-            // ★修正: 背景レイヤーはカウント対象外
+            // 背景レイヤー作成
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_bg_' + Date.now(),
@@ -51,12 +48,18 @@
             });
             bgLayer.label = bgLayerModel.id;
             bgLayer.layerData = bgLayerModel;
-            const bg = this._createCheckerPatternBackground(this.config.canvas.width, this.config.canvas.height);
+            
+            // ★修正: 背景レイヤーに #f0e0d6 を初期塗り
+            const bg = this._createSolidBackground(
+                this.config.canvas.width, 
+                this.config.canvas.height,
+                0xf0e0d6  // --futaba-cream
+            );
             bgLayer.addChild(bg);
             bgLayer.layerData.backgroundGraphics = bg;
             this.currentFrameContainer.addChild(bgLayer);
             
-            // ★修正: レイヤーカウンターを1から開始
+            // レイヤーカウンター初期化
             this.layerCounter = 1;
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
@@ -75,9 +78,26 @@
             this._setupAnimationSystemIntegration();
             this._setupVKeyEvents();
             this._startThumbnailUpdateProcess();
+            
+            // ★追加: リサイズイベントリスナー
+            this._setupResizeEvents();
+            
             this.isInitialized = true;
         }
 
+        /**
+         * ★新規: 単色背景作成（チェッカーではなく単色塗りつぶし）
+         */
+        _createSolidBackground(width, height, color = 0xf0e0d6) {
+            const g = new PIXI.Graphics();
+            g.rect(0, 0, width, height);
+            g.fill({ color: color, alpha: 1.0 });
+            return g;
+        }
+
+        /**
+         * ★廃止: チェッカーパターン背景作成（後方互換のため残す）
+         */
         _createCheckerPatternBackground(width, height) {
             const g = new PIXI.Graphics();
             const color1 = 0xe9c2ba;
@@ -94,6 +114,28 @@
                 }
             }
             return g;
+        }
+
+        /**
+         * ★追加: リサイズイベント処理
+         */
+        _setupResizeEvents() {
+            if (!this.eventBus) return;
+            
+            this.eventBus.on('camera:resized', (data) => {
+                // リサイズ後にサムネイル再生成
+                const layers = this.getLayers();
+                for (let i = 0; i < layers.length; i++) {
+                    this.requestThumbnailUpdate(i);
+                }
+                
+                // UI更新
+                setTimeout(() => {
+                    this.updateLayerPanelUI();
+                }, 100);
+                
+                console.log('[LayerSystem] Thumbnails queued after resize:', data.width, 'x', data.height);
+            });
         }
         
         _setupVKeyEvents() {
@@ -540,7 +582,7 @@
                 this.activeLayerIndex = layers.length - 1;
             }
             
-            // ★追加: 最大レイヤー番号を検出してカウンターを更新
+            // 最大レイヤー番号を検出してカウンターを更新
             let maxLayerNum = 0;
             layers.forEach(layer => {
                 if (layer.layerData && !layer.layerData.isBackground) {
@@ -840,7 +882,6 @@
         createLayer(name, isBackground = false) {
             if (!this.currentFrameContainer) return null;
             
-            // ★修正: レイヤーカウンターをインクリメント
             if (!isBackground) {
                 this.layerCounter++;
             }
@@ -867,13 +908,18 @@
             if (this.transform) {
                 this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
+            
+            // ★修正: 背景レイヤーは単色塗りつぶし
             if (isBackground) {
-                const bg = new PIXI.Graphics();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
-                bg.fill(this.config.background.color);
+                const bg = this._createSolidBackground(
+                    this.config.canvas.width, 
+                    this.config.canvas.height,
+                    0xf0e0d6
+                );
                 layer.addChild(bg);
                 layer.layerData.backgroundGraphics = bg;
             }
+            
             if (window.History && !window.History._manager.isApplying) {
                 const entry = {
                     name: 'layer-create',
@@ -889,7 +935,6 @@
                             layer.layerData.destroyMask();
                         }
                         this.currentFrameContainer.removeChild(layer);
-                        // ★追加: Undo時にカウンターをデクリメント
                         if (!isBackground) {
                             this.layerCounter--;
                         }
@@ -1273,4 +1318,6 @@
 
 })();
 
-console.log('✅ layer-system.js (v2.1: レイヤーナンバリング修正版) loaded');
+console.log('✅ layer-system.js (v2.2: 背景塗り・リサイズ対応版) loaded');
+console.log('   ✓ Background layer with #f0e0d6 solid color');
+console.log('   ✓ Thumbnail auto-update after resize');

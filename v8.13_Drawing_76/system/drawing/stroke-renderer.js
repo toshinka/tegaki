@@ -1,5 +1,6 @@
 /**
- * StrokeRenderer - ストローク描画専用クラス (Phase 4-B-4: MSDF完全統合版)
+ * StrokeRenderer - ストローク描画専用クラス
+ * Phase 5: 消しゴム修正版（DST_OUT使用）
  * 
  * 責務: ストロークデータ → PIXI描画オブジェクト変換
  * 
@@ -7,6 +8,8 @@
  * 1. WebGPU MSDF（最高品質・RGB 3チャンネル）
  * 2. WebGPU SDF（高品質・シングルチャンネル）
  * 3. Legacy Graphics（フォールバック・互換性）
+ * 
+ * 消しゴム: PIXI.BLEND_MODES.DST_OUT（レイヤー内アルファのみ削除）
  */
 
 (function() {
@@ -88,6 +91,7 @@
 
         /**
          * リアルタイムプレビュー描画
+         * Phase 5修正: 消しゴムはDST_OUT使用
          */
         renderPreview(points, settings, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
@@ -96,8 +100,11 @@
                 return graphics;
             }
 
+            // ★修正: 消しゴムはDST_OUTモード（レイヤー内アルファのみ削除）
             if (this.currentTool === 'eraser') {
-                graphics.blendMode = 'erase';
+                graphics.blendMode = PIXI.BLEND_MODES.DST_OUT;
+            } else {
+                graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
             }
 
             if (points.length === 1) {
@@ -105,8 +112,9 @@
                 const width = this.calculateWidth(p.pressure, settings.size);
                 graphics.circle(p.x, p.y, width / 2);
                 
+                // DST_OUTモードでは黒（不透明）で描画→対象のアルファを削る
                 if (this.currentTool === 'eraser') {
-                    graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+                    graphics.fill({ color: 0x000000, alpha: 1.0 });
                 } else {
                     graphics.fill({ color: settings.color, alpha: settings.alpha || 1.0 });
                 }
@@ -123,13 +131,25 @@
 
                 graphics.moveTo(p1.x, p1.y);
                 graphics.lineTo(p2.x, p2.y);
-                graphics.stroke({
-                    width: avgWidth,
-                    color: this.currentTool === 'eraser' ? 0xFFFFFF : settings.color,
-                    alpha: this.currentTool === 'eraser' ? 1.0 : (settings.alpha || 1.0),
-                    cap: 'round',
-                    join: 'round'
-                });
+                
+                // DST_OUTモードでは黒（不透明）で描画
+                if (this.currentTool === 'eraser') {
+                    graphics.stroke({
+                        width: avgWidth,
+                        color: 0x000000,
+                        alpha: 1.0,
+                        cap: 'round',
+                        join: 'round'
+                    });
+                } else {
+                    graphics.stroke({
+                        width: avgWidth,
+                        color: settings.color,
+                        alpha: settings.alpha || 1.0,
+                        cap: 'round',
+                        join: 'round'
+                    });
+                }
             }
 
             return graphics;
@@ -164,7 +184,7 @@
         }
 
         /**
-         * WebGPU MSDF描画（Phase 4-B-4新規実装）
+         * WebGPU MSDF描画
          */
         async _renderFinalStrokeMSDF(strokeData, settings, targetGraphics = null) {
             const points = strokeData.points;
@@ -231,9 +251,9 @@
             });
             sprite.shader = msdfShader;
 
-            // ブレンドモード・色設定
+            // ★修正: 消しゴムはDST_OUT
             if (this.currentTool === 'eraser') {
-                sprite.blendMode = 'erase';
+                sprite.blendMode = PIXI.BLEND_MODES.DST_OUT;
             } else {
                 sprite.tint = settings.color;
                 sprite.alpha = settings.alpha || 1.0;
@@ -301,8 +321,9 @@
             const sprite = new PIXI.Sprite(sdfTexture);
             sprite.position.set(minX, minY);
 
+            // ★修正: 消しゴムはDST_OUT
             if (this.currentTool === 'eraser') {
-                sprite.blendMode = 'erase';
+                sprite.blendMode = PIXI.BLEND_MODES.DST_OUT;
             } else {
                 sprite.tint = settings.color;
                 sprite.alpha = settings.alpha || 1.0;
@@ -313,12 +334,16 @@
 
         /**
          * Legacy Graphics描画（フォールバック）
+         * Phase 5修正: 消しゴムはDST_OUT使用
          */
         _renderFinalStrokeLegacy(strokeData, settings, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
 
+            // ★修正: 消しゴムはDST_OUT
             if (this.currentTool === 'eraser') {
-                graphics.blendMode = 'erase';
+                graphics.blendMode = PIXI.BLEND_MODES.DST_OUT;
+            } else {
+                graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
             }
 
             if (strokeData.isSingleDot || strokeData.points.length === 1) {
@@ -340,13 +365,25 @@
 
                 graphics.moveTo(p1.x, p1.y);
                 graphics.lineTo(p2.x, p2.y);
-                graphics.stroke({
-                    width: avgWidth,
-                    color: this.currentTool === 'eraser' ? 0xFFFFFF : settings.color,
-                    alpha: this.currentTool === 'eraser' ? 1.0 : (settings.alpha || 1.0),
-                    cap: 'round',
-                    join: 'round'
-                });
+                
+                // DST_OUTモードでは黒（不透明）で描画
+                if (this.currentTool === 'eraser') {
+                    graphics.stroke({
+                        width: avgWidth,
+                        color: 0x000000,
+                        alpha: 1.0,
+                        cap: 'round',
+                        join: 'round'
+                    });
+                } else {
+                    graphics.stroke({
+                        width: avgWidth,
+                        color: settings.color,
+                        alpha: settings.alpha || 1.0,
+                        cap: 'round',
+                        join: 'round'
+                    });
+                }
             }
 
             return graphics;
@@ -354,20 +391,27 @@
 
         /**
          * 単独点描画
+         * Phase 5修正: 消しゴムはDST_OUT使用
          */
         renderDot(point, settings, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
             const width = this.calculateWidth(point.pressure, settings.size);
 
+            // ★修正: 消しゴムはDST_OUT
             if (this.currentTool === 'eraser') {
-                graphics.blendMode = 'erase';
+                graphics.blendMode = PIXI.BLEND_MODES.DST_OUT;
+            } else {
+                graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
             }
 
             graphics.circle(point.x, point.y, width / 2);
-            graphics.fill({
-                color: this.currentTool === 'eraser' ? 0xFFFFFF : settings.color,
-                alpha: this.currentTool === 'eraser' ? 1.0 : (settings.alpha || 1.0)
-            });
+            
+            // DST_OUTモードでは黒（不透明）で描画
+            if (this.currentTool === 'eraser') {
+                graphics.fill({ color: 0x000000, alpha: 1.0 });
+            } else {
+                graphics.fill({ color: settings.color, alpha: settings.alpha || 1.0 });
+            }
 
             return graphics;
         }
@@ -383,6 +427,8 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ system/drawing/stroke-renderer.js (Phase 4-B-4: MSDF完全統合版) loaded');
+    console.log('✅ stroke-renderer.js (Phase 5: 消しゴムDST_OUT修正版) loaded');
+    console.log('   ✓ Eraser uses PIXI.BLEND_MODES.DST_OUT');
+    console.log('   ✓ Eraser only affects current layer alpha');
 
 })();

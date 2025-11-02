@@ -1,5 +1,5 @@
-// ===== system/drawing/drawing-engine.js - ユニバーサルポインター対応版 =====
-// 修正: すべてのpointerTypeを同等に扱う（'mouse'も'pen'も区別しない）
+// ===== system/drawing/drawing-engine.js - デバッグ版 =====
+// タブレットペン問題調査用：詳細ログ追加
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
@@ -15,17 +15,27 @@ class DrawingEngine {
         this.coordSystem = window.CoordinateSystem;
         this.activePointers = new Map();
 
+        console.log('🔧 [DrawingEngine] Initializing with debug logs...');
         this._initializeCanvas();
     }
 
     _initializeCanvas() {
         const canvas = this.app.canvas || this.app.view;
         if (!canvas) {
-            console.error('[DrawingEngine] Canvas not found');
+            console.error('❌ [DrawingEngine] Canvas not found');
             return;
         }
 
         canvas.style.touchAction = 'none';
+        console.log('✅ [DrawingEngine] Canvas found:', canvas);
+
+        // PointerHandler.attach 前にチェック
+        if (!window.PointerHandler) {
+            console.error('❌ [DrawingEngine] window.PointerHandler not available!');
+            return;
+        }
+
+        console.log('✅ [DrawingEngine] PointerHandler available');
 
         this.pointerDetach = window.PointerHandler.attach(canvas, {
             down: this._handlePointerDown.bind(this),
@@ -36,34 +46,42 @@ class DrawingEngine {
             preventDefault: true
         });
 
-        console.log('[DrawingEngine] Canvas pointer events initialized (universal mode)');
+        console.log('✅ [DrawingEngine] PointerHandler attached successfully');
+        console.log('   Canvas element:', canvas.tagName);
+        console.log('   Canvas size:', canvas.width, 'x', canvas.height);
     }
 
     _handlePointerDown(info, e) {
+        console.log('🖱️ [DrawingEngine] PointerDown received:', {
+            type: info.pointerType,
+            id: info.pointerId,
+            client: `(${info.clientX}, ${info.clientY})`,
+            pressure: info.pressure,
+            button: info.button,
+            vKeyPressed: this.layerSystem?.vKeyPressed
+        });
+
         // レイヤー移動モード中は描画しない
-        if (this.layerSystem.vKeyPressed) {
+        if (this.layerSystem?.vKeyPressed) {
+            console.log('⏸️ [DrawingEngine] Skipped: vKey mode active');
             return;
         }
 
         // 右クリック無視
         if (info.button === 2) {
+            console.log('⏸️ [DrawingEngine] Skipped: right button');
             return;
         }
 
-        // ✅ 修正: すべてのpointerTypeを受け入れる（'mouse'も'pen'も同等）
-        console.log('[DrawingEngine] PointerDown:', {
-            type: info.pointerType || 'unknown',
-            id: info.pointerId,
-            client: `(${info.clientX}, ${info.clientY})`,
-            pressure: info.pressure,
-            button: info.button
-        });
+        console.log('🔄 [DrawingEngine] Starting coordinate conversion...');
 
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
         if (!localCoords) {
-            console.warn('[DrawingEngine] Coordinate conversion failed');
+            console.error('❌ [DrawingEngine] Coordinate conversion failed');
             return;
         }
+
+        console.log('✅ [DrawingEngine] Local coords:', localCoords);
 
         // アクティブポインター登録
         this.activePointers.set(info.pointerId, {
@@ -71,13 +89,17 @@ class DrawingEngine {
             isDrawing: true
         });
 
+        console.log('📊 [DrawingEngine] Active pointers:', this.activePointers.size);
+
         // BrushCoreにストローク開始を通知
+        console.log('🎨 [DrawingEngine] Calling brushCore.startStroke...');
         this.brushCore.startStroke(
             localCoords.localX,
             localCoords.localY,
             info.pressure,
             info.pointerId
         );
+        console.log('✅ [DrawingEngine] startStroke completed');
     }
 
     _handlePointerMove(info, e) {
@@ -102,19 +124,32 @@ class DrawingEngine {
     }
 
     _handlePointerUp(info, e) {
+        console.log('🖱️ [DrawingEngine] PointerUp received:', {
+            type: info.pointerType,
+            id: info.pointerId
+        });
+
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo) {
+            console.log('⚠️ [DrawingEngine] PointerUp: pointer not found in activePointers');
             return;
         }
 
         if (this.brushCore.getIsDrawing()) {
+            console.log('🎨 [DrawingEngine] Calling brushCore.endStroke...');
             this.brushCore.endStroke(info.pointerId);
         }
 
         this.activePointers.delete(info.pointerId);
+        console.log('📊 [DrawingEngine] Active pointers after up:', this.activePointers.size);
     }
 
     _handlePointerCancel(info, e) {
+        console.log('🖱️ [DrawingEngine] PointerCancel received:', {
+            type: info.pointerType,
+            id: info.pointerId
+        });
+
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo) {
             return;
@@ -129,28 +164,33 @@ class DrawingEngine {
 
     _screenToLocal(clientX, clientY) {
         if (!this.coordSystem) {
-            console.error('[DrawingEngine] CoordinateSystem not available');
+            console.error('❌ [DrawingEngine] CoordinateSystem not available');
             return null;
         }
 
         const activeLayer = this.layerSystem.getActiveLayer();
         if (!activeLayer) {
-            console.warn('[DrawingEngine] No active layer');
+            console.warn('⚠️ [DrawingEngine] No active layer');
             return null;
         }
 
+        console.log('  Step 1: screenClientToCanvas...');
         const canvasCoords = this.coordSystem.screenClientToCanvas(clientX, clientY);
         if (!canvasCoords || canvasCoords.canvasX === undefined) {
-            console.error('[DrawingEngine] screenClientToCanvas failed');
+            console.error('❌ [DrawingEngine] screenClientToCanvas failed');
             return null;
         }
+        console.log('    Canvas coords:', canvasCoords);
 
+        console.log('  Step 2: canvasToWorld...');
         const worldCoords = this.coordSystem.canvasToWorld(canvasCoords.canvasX, canvasCoords.canvasY);
         if (!worldCoords || worldCoords.worldX === undefined) {
-            console.error('[DrawingEngine] canvasToWorld failed');
+            console.error('❌ [DrawingEngine] canvasToWorld failed');
             return null;
         }
+        console.log('    World coords:', worldCoords);
 
+        console.log('  Step 3: worldToLocal...');
         const localCoords = this.coordSystem.worldToLocal(
             worldCoords.worldX,
             worldCoords.worldY,
@@ -158,14 +198,16 @@ class DrawingEngine {
         );
         
         if (!localCoords || localCoords.localX === undefined || localCoords.localY === undefined) {
-            console.error('[DrawingEngine] worldToLocal failed');
+            console.error('❌ [DrawingEngine] worldToLocal failed');
             return null;
         }
 
         if (isNaN(localCoords.localX) || isNaN(localCoords.localY)) {
-            console.error('[DrawingEngine] worldToLocal returned NaN:', localCoords);
+            console.error('❌ [DrawingEngine] worldToLocal returned NaN:', localCoords);
             return null;
         }
+
+        console.log('    Local coords:', localCoords);
 
         return {
             localX: localCoords.localX,
@@ -181,6 +223,7 @@ class DrawingEngine {
     }
 
     setTool(tool) {
+        console.log('🔧 [DrawingEngine] setTool:', tool);
         if (this.brushCore) {
             this.brushCore.setTool(tool);
         }
@@ -200,8 +243,7 @@ class DrawingEngine {
 
     // ✅ 後方互換性API（削除予定）
     startDrawing(x, y, nativeEvent) {
-        console.warn('[DrawingEngine] Legacy API called: startDrawing()');
-        // 何もしない（PointerHandlerが処理）
+        console.warn('⚠️ [DrawingEngine] Legacy API called: startDrawing()');
     }
 
     continueDrawing(x, y, nativeEvent) {
@@ -209,11 +251,11 @@ class DrawingEngine {
     }
 
     stopDrawing() {
-        console.warn('[DrawingEngine] Legacy API called: stopDrawing()');
-        // 何もしない（PointerHandlerが処理）
+        console.warn('⚠️ [DrawingEngine] Legacy API called: stopDrawing()');
     }
 
     destroy() {
+        console.log('🔧 [DrawingEngine] Destroying...');
         if (this.pointerDetach) {
             this.pointerDetach();
             this.pointerDetach = null;
@@ -224,6 +266,6 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js (ユニバーサルポインター対応版) loaded');
-console.log('   ✓ All pointer types accepted (mouse/pen/touch)');
-console.log('   ✓ Legacy CoreRuntime APIs deprecated');
+console.log('✅ drawing-engine.js (デバッグ版) loaded');
+console.log('   ✓ Detailed logging enabled');
+console.log('   ✓ All pointer events will be logged');
