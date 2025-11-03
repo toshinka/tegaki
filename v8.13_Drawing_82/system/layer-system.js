@@ -1,6 +1,7 @@
-// ===== system/layer-system.js - Phase 2&3対応版 =====
+// ===== system/layer-system.js - Phase 2&3&6対応版 =====
 // Phase 2: 背景チェックパターン実装
 // Phase 3: 消しゴム透明化（blendMode処理はstroke-rendererで実施）
+// Phase 6: レイヤー透明度設定メソッド追加
 
 (function() {
     'use strict';
@@ -20,7 +21,6 @@
             this.transform = null;
             this.isInitialized = false;
             
-            // Phase 2: チェッカーパターン参照
             this.checkerPattern = null;
         }
 
@@ -38,7 +38,6 @@
             this.currentFrameContainer = new PIXI.Container();
             this.currentFrameContainer.label = 'temporary_frame_container';
             
-            // Phase 2: チェッカーパターン作成（worldContainerに配置）
             this.checkerPattern = this._createCheckerPatternBackground(
                 this.config.canvas.width, 
                 this.config.canvas.height
@@ -79,14 +78,13 @@
             this._setupTransformEventListeners();
             this.isInitialized = true;
             
-            console.log('✅ LayerSystem Phase 2&3 initialized');
+            console.log('✅ LayerSystem Phase 2&3&6 initialized');
         }
 
-        // Phase 2: チェッカーパターン生成（futaba配色）
         _createCheckerPatternBackground(width, height) {
             const g = new PIXI.Graphics();
-            const color1 = 0xf0e0d6; // --futaba-cream
-            const color2 = 0xffffee; // --futaba-background
+            const color1 = 0xf0e0d6;
+            const color2 = 0xffffee;
             const squareSize = 16;
             
             for (let y = 0; y < height; y += squareSize) {
@@ -103,12 +101,47 @@
             return g;
         }
 
-        // Phase 2: worldContainerではなくcanvasContainerに配置
         attachCheckerPatternToWorld(canvasContainer) {
             if (!this.checkerPattern || !canvasContainer) return;
-            
-            // canvasContainerの最背面に配置
             canvasContainer.addChildAt(this.checkerPattern, 0);
+        }
+
+        // Phase 6: レイヤー透明度設定メソッド
+        setLayerOpacity(layerIndex, opacity) {
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
+            const layer = layers[layerIndex];
+            
+            // 背景レイヤーは透明度変更不可
+            if (layer.layerData?.isBackground) return;
+            
+            // 0.0 ~ 1.0 の範囲にクランプ
+            opacity = Math.max(0, Math.min(1, opacity));
+            
+            // レイヤーのalpha設定
+            layer.alpha = opacity;
+            
+            // データモデルにも保存
+            if (layer.layerData) {
+                layer.layerData.opacity = opacity;
+            }
+            
+            // サムネイル更新
+            this.requestThumbnailUpdate(layerIndex);
+            
+            // EventBus通知
+            if (this.eventBus) {
+                this.eventBus.emit('layer:opacity-changed', {
+                    component: 'layer-system',
+                    action: 'opacity-changed',
+                    data: {
+                        layerIndex,
+                        layerId: layer.layerData?.id,
+                        opacity
+                    }
+                });
+            }
         }
         
         _setupVKeyEvents() {
@@ -946,7 +979,6 @@
             }
         }
 
-        // Phase 2: 背景レイヤー表示/非表示でチェッカーパターン連動
         toggleLayerVisibility(layerIndex) {
             const layers = this.getLayers();
             if (layerIndex >= 0 && layerIndex < layers.length) {
@@ -954,7 +986,6 @@
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
                 
-                // Phase 2: 背景レイヤーの場合、チェッカーパターンを連動表示
                 if (layer.layerData?.isBackground && this.checkerPattern) {
                     this.checkerPattern.visible = !layer.layerData.visible;
                 }
@@ -1199,7 +1230,6 @@
         }
 
         processThumbnailUpdates() {
-            // ThumbnailSystemに委譲
             if (window.ThumbnailSystem && window.ThumbnailSystem.processPendingUpdates) {
                 window.ThumbnailSystem.processPendingUpdates();
             }
@@ -1210,6 +1240,6 @@
 
 })();
 
-console.log('✅ layer-system.js Phase 2&3 loaded');
-console.log('   Phase 2: 背景チェックパターン実装完了');
-console.log('   Phase 3: 消しゴム透明化対応（stroke-rendererと連携）');
+console.log('✅ layer-system.js (Phase 6: 透明度設定メソッド追加) loaded');
+console.log('   ✓ setLayerOpacity() メソッド実装');
+console.log('   ✓ EventBus通知対応');
