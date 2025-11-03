@@ -1,13 +1,15 @@
 /**
- * StrokeRenderer - Phase 1: BrushSettings統一版
- * settingsパラメータを受け取るが、無ければwindow.brushSettingsを参照
+ * StrokeRenderer - Phase 3: 消しゴム透明化対応版
+ * 
+ * Phase 3改修:
+ * - 消しゴムモードで blendMode='erase' を正しく設定
+ * - レイヤーコンテナのblendMode確認・設定
+ * - 完全透明化（アルファ削除）実装
  * 
  * 描画方式優先順位:
  * 1. WebGPU MSDF（最高品質）
  * 2. WebGPU SDF（高品質）
  * 3. Legacy Graphics（フォールバック）
- * 
- * 消しゴム: 'erase' blendMode（レイヤー内アルファのみ削除）
  */
 
 (function() {
@@ -37,7 +39,6 @@
             this.config = window.TEGAKI_CONFIG?.webgpu || {};
         }
 
-        // ★Phase 1追加: 設定取得ヘルパー
         _getSettings(providedSettings = null) {
             if (providedSettings) {
                 return providedSettings;
@@ -47,7 +48,6 @@
                 return window.brushSettings.getSettings();
             }
             
-            console.warn('[StrokeRenderer] No settings available, using defaults');
             return {
                 size: 3,
                 opacity: 1.0,
@@ -78,13 +78,11 @@
                 }
                 
                 this.webgpuEnabled = true;
-                console.log('[StrokeRenderer] WebGPU + MSDF integration enabled');
             }
         }
 
         setTool(tool) {
             this.currentTool = tool;
-            console.log(`[StrokeRenderer] Tool set to: ${tool}`);
         }
 
         calculateWidth(pressure, brushSize) {
@@ -93,7 +91,19 @@
             return Math.max(this.minPhysicalWidth, brushSize * ratio);
         }
 
-        // ★Phase 1修正: settingsパラメータはオプションに
+        // Phase 3: レイヤーコンテナのblendMode設定確認
+        _ensureLayerBlendMode(targetGraphics) {
+            if (!targetGraphics || !targetGraphics.parent) return;
+            
+            const parentLayer = targetGraphics.parent;
+            
+            // レイヤーコンテナ自体は'normal'に設定
+            if (parentLayer && !parentLayer._blendModeSet) {
+                parentLayer.blendMode = 'normal';
+                parentLayer._blendModeSet = true;
+            }
+        }
+
         renderPreview(points, providedSettings = null, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
             const settings = this._getSettings(providedSettings);
@@ -102,6 +112,10 @@
                 return graphics;
             }
 
+            // Phase 3: レイヤーblendMode確認
+            this._ensureLayerBlendMode(graphics);
+
+            // Phase 3: 消しゴムモードでblendMode設定（文字列で設定）
             if (this.currentTool === 'eraser') {
                 graphics.blendMode = 'erase';
             } else {
@@ -114,6 +128,7 @@
                 graphics.circle(p.x, p.y, width / 2);
                 
                 if (this.currentTool === 'eraser') {
+                    // Phase 3: 白色・完全不透明で消去
                     graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
                 } else {
                     graphics.fill({ color: settings.color, alpha: settings.opacity || settings.alpha || 1.0 });
@@ -133,6 +148,7 @@
                 graphics.lineTo(p2.x, p2.y);
                 
                 if (this.currentTool === 'eraser') {
+                    // Phase 3: 白色・完全不透明で消去
                     graphics.stroke({
                         width: avgWidth,
                         color: 0xFFFFFF,
@@ -154,7 +170,6 @@
             return graphics;
         }
 
-        // ★Phase 1修正: settingsパラメータはオプションに
         async renderFinalStroke(strokeData, providedSettings = null, targetGraphics = null) {
             const settings = this._getSettings(providedSettings);
             const minPoints = this.config.sdf?.minPointsForGPU || 5;
@@ -240,8 +255,9 @@
             });
             sprite.shader = msdfShader;
 
+            // Phase 3: 消しゴムモードでblendMode設定（PIXI定数使用）
             if (this.currentTool === 'eraser') {
-                sprite.blendMode = 'erase';
+                sprite.blendMode = PIXI.BLEND_MODES.ERASE;
             } else {
                 sprite.tint = settings.color;
                 sprite.alpha = settings.opacity || settings.alpha || 1.0;
@@ -301,8 +317,9 @@
             const sprite = new PIXI.Sprite(sdfTexture);
             sprite.position.set(minX, minY);
 
+            // Phase 3: 消しゴムモードでblendMode設定（PIXI定数使用）
             if (this.currentTool === 'eraser') {
-                sprite.blendMode = 'erase';
+                sprite.blendMode = PIXI.BLEND_MODES.ERASE;
             } else {
                 sprite.tint = settings.color;
                 sprite.alpha = settings.opacity || settings.alpha || 1.0;
@@ -314,10 +331,14 @@
         _renderFinalStrokeLegacy(strokeData, settings, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
 
+            // Phase 3: レイヤーblendMode確認
+            this._ensureLayerBlendMode(graphics);
+
+            // Phase 3: 消しゴムモードでblendMode設定（PIXI定数使用）
             if (this.currentTool === 'eraser') {
-                graphics.blendMode = 'erase';
+                graphics.blendMode = PIXI.BLEND_MODES.ERASE;
             } else {
-                graphics.blendMode = 'normal';
+                graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
             }
 
             if (strokeData.isSingleDot || strokeData.points.length === 1) {
@@ -341,6 +362,7 @@
                 graphics.lineTo(p2.x, p2.y);
                 
                 if (this.currentTool === 'eraser') {
+                    // Phase 3: 白色・完全不透明で消去
                     graphics.stroke({
                         width: avgWidth,
                         color: 0xFFFFFF,
@@ -367,15 +389,20 @@
             const settings = this._getSettings(providedSettings);
             const width = this.calculateWidth(point.pressure, settings.size);
 
+            // Phase 3: レイヤーblendMode確認
+            this._ensureLayerBlendMode(graphics);
+
+            // Phase 3: 消しゴムモードでblendMode設定（PIXI定数使用）
             if (this.currentTool === 'eraser') {
-                graphics.blendMode = 'erase';
+                graphics.blendMode = PIXI.BLEND_MODES.ERASE;
             } else {
-                graphics.blendMode = 'normal';
+                graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
             }
 
             graphics.circle(point.x, point.y, width / 2);
             
             if (this.currentTool === 'eraser') {
+                // Phase 3: 白色・完全不透明で消去
                 graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
             } else {
                 graphics.fill({ color: settings.color, alpha: settings.opacity || settings.alpha || 1.0 });
@@ -384,14 +411,11 @@
             return graphics;
         }
 
-        // ★Phase 1追加: renderStroke()メソッド（BrushCoreから呼ばれる）
         renderStroke(layer, strokeData, providedSettings = null) {
             const settings = this._getSettings(providedSettings);
             
-            // 同期的にLegacy描画を実行
             const graphics = this._renderFinalStrokeLegacy(strokeData, settings);
             
-            // pathDataオブジェクトを返す
             return {
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 graphics: graphics,
@@ -409,9 +433,8 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js (Phase 1: BrushSettings統一版) loaded');
-    console.log('   ✓ Settings parameter now optional');
-    console.log('   ✓ Falls back to window.brushSettings');
-    console.log('   ✓ renderStroke() method added for BrushCore');
+    console.log('✅ stroke-renderer.js (Phase 3: 消しゴム透明化対応版) loaded');
+    console.log('   Phase 3: blendMode="erase" 正しく設定');
+    console.log('   Phase 3: レイヤーコンテナblendMode確認機能追加');
 
 })();
