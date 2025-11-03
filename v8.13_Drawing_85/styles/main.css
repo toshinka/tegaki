@@ -1,7 +1,7 @@
-/* Tegaki Tool - Main Stylesheet (v2.1: タブレットペン完全対応版) */
-/* ✅ レイヤー: アクティブ枠#ff8c42、背景半透明#f0e0d6、hover演出 */
-/* ✅ v2.0: layer-transform-panel スライダー色をmaroon系に統一 */
-/* ✅ v2.1: タブレットペン対応 - touch-action: none を追加 */
+/* Tegaki Tool - Main Stylesheet (v2.2: Phase 6完全版 - レイヤーパネルレイアウト改修) */
+/* ✅ Phase 6: レイヤーパネルのグリッドレイアウト改修 */
+/* ✅ 透明度表示を上部、中央に機能アイコン、下部にレイヤー名を配置 */
+/* ✅ サムネイルを右側に配置 */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -90,7 +90,6 @@ body {
     align-items: center; 
 }
 
-/* ★★★ タブレットペン対応: touch-action 追加 ★★★ */
 #drawing-canvas,
 canvas { 
     cursor: crosshair; 
@@ -205,7 +204,7 @@ canvas {
     overflow-y: auto; 
 }
 
-/* ★★★ タブレットペン対応: layer-item と layer-thumbnail に touch-action 追加 ★★★ */
+/* ★★★ Phase 6: レイヤーアイテム完全改修 ★★★ */
 .layer-item { 
     width: 170px; 
     height: 56px; 
@@ -214,17 +213,19 @@ canvas {
     border-radius: 4px; 
     padding: 4px 6px; 
     cursor: pointer; 
+    
+    /* Phase 6: 3列2行グリッド */
     display: grid; 
-    grid-template-columns: 18px 1fr auto; 
-    grid-template-rows: 1fr 1fr; 
-    gap: 3px 6px; 
+    grid-template-columns: 18px 1fr 64px; 
+    grid-template-rows: 20px 24px; 
+    gap: 2px 6px; 
     align-items: center; 
+    
     user-select: none; 
     position: relative;
     backdrop-filter: blur(8px);
     transition: all 0.2s ease;
     touch-action: none;
-    -ms-touch-action: none;
 }
 
 .layer-item:hover { 
@@ -241,13 +242,15 @@ canvas {
     padding: 3px 5px;
 }
 
+/* Phase 6: チェックボックス（左側、中央縦配置） */
 .layer-visibility { 
     grid-column: 1; 
     grid-row: 1 / 3; 
     width: 18px; 
     height: 18px; 
     cursor: pointer; 
-    align-self: center; 
+    align-self: center;
+    justify-self: center;
 }
 
 .layer-visibility:hover { 
@@ -261,14 +264,35 @@ canvas {
     stroke: var(--futaba-maroon); 
 }
 
+/* Phase 6: 透明度表示（上部） */
 .layer-opacity { 
     grid-column: 2; 
     grid-row: 1; 
-    font-size: 9px; 
+    font-size: 10px; 
     color: var(--futaba-maroon); 
-    font-family: monospace; 
+    font-family: monospace;
+    font-weight: 600;
+    align-self: center;
 }
 
+/* Phase 6: 機能アイコンエリア（中央） */
+.layer-feature-icons {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.layer-feature-icons svg {
+    width: 12px;
+    height: 12px;
+    stroke: var(--futaba-maroon);
+    opacity: 0.6;
+}
+
+/* Phase 6: レイヤー名（下部） */
 .layer-name { 
     grid-column: 2; 
     grid-row: 2; 
@@ -278,9 +302,10 @@ canvas {
     white-space: nowrap; 
     overflow: hidden; 
     text-overflow: ellipsis; 
+    align-self: center;
 }
 
-/* ★★★ タブレットペン対応: layer-thumbnail に touch-action 追加 ★★★ */
+/* Phase 6: サムネイル（右側、2行分） */
 .layer-thumbnail { 
     grid-column: 3; 
     grid-row: 1 / 3; 
@@ -288,17 +313,29 @@ canvas {
     height: 44px; 
     background: var(--futaba-background); 
     border: 1px solid var(--futaba-light-medium); 
-    border-radius: 3px; 
+    border-radius: 0; /* Phase 6: 真四角 */
     overflow: hidden; 
     touch-action: none;
-    -ms-touch-action: none;
     pointer-events: auto;
+    align-self: center;
+    justify-self: center;
+    
+    /* チェック柄背景 */
+    background-image: 
+        linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+        linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+        linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+    background-color: #ffffff;
 }
 
 .layer-thumbnail img { 
     width: 100%; 
     height: 100%; 
-    object-fit: cover; 
+    object-fit: contain;
+    display: block;
 }
 
 .layer-delete-button {
@@ -730,7 +767,6 @@ canvas {
     } 
 }
 
-/* v2.0: layer-transform-panel スライダー色をmaroon系に統一 */
 .layer-transform-panel .slider-track {
     background: #8b4545;
 }
@@ -977,7 +1013,6 @@ canvas {
     padding-bottom: 0;
 }
 
-/* ドラッグ中のプレースホルダー */
 .layer-item-placeholder {
     width: 170px;
     height: 56px;
@@ -988,7 +1023,6 @@ canvas {
     pointer-events: none;
 }
 
-/* ドラッグ中のレイヤーアイテム */
 .layer-item.dragging {
     opacity: 0.8;
     cursor: grabbing;
