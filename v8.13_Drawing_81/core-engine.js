@@ -1,9 +1,8 @@
-// ===== core-engine.js - BrushCore初期化修正版 =====
+// ===== core-engine.js - Phase 2対応: チェッカーパターン配置 =====
 
 (function() {
     'use strict';
     
-    // 依存関係チェック
     if (!window.TegakiCameraSystem) throw new Error('system/camera-system.js required');
     if (!window.TegakiLayerSystem) throw new Error('system/layer-system.js required');
     if (!window.TegakiDrawingClipboard) throw new Error('system/drawing-clipboard.js required');
@@ -585,6 +584,24 @@
             
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
+            // Phase 2: チェッカーパターンも再生成
+            if (this.layerSystem.checkerPattern) {
+                const oldChecker = this.layerSystem.checkerPattern;
+                const wasVisible = oldChecker.visible;
+                
+                if (oldChecker.parent) {
+                    oldChecker.parent.removeChild(oldChecker);
+                }
+                oldChecker.destroy();
+                
+                this.layerSystem.checkerPattern = this.layerSystem._createCheckerPatternBackground(newWidth, newHeight);
+                this.layerSystem.checkerPattern.visible = wasVisible;
+                
+                if (this.cameraSystem.canvasContainer) {
+                    this.cameraSystem.canvasContainer.addChildAt(this.layerSystem.checkerPattern, 0);
+                }
+            }
+            
             const frames = this.animationSystem?.animationData?.frames || [];
             frames.forEach(frame => {
                 const layers = frame.getLayers();
@@ -679,10 +696,15 @@
         initialize() {
             console.log('🚀 [CoreEngine] Starting initialization...');
             
-            // ★★★ Phase 1: 基本システム初期化 ★★★
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
+            
+            // ★★★ Phase 2: チェッカーパターンをcanvasContainerに配置 ★★★
+            if (this.layerSystem.checkerPattern && this.cameraSystem.canvasContainer) {
+                this.layerSystem.attachCheckerPatternToWorld(this.cameraSystem.canvasContainer);
+                console.log('✅ [CoreEngine] Checker pattern attached to canvasContainer');
+            }
             
             if (window.ThumbnailSystem) {
                 window.ThumbnailSystem.app = this.app;
@@ -693,12 +715,10 @@
                 window.History.setLayerSystem(this.layerSystem);
             }
             
-            // ★★★ Phase 2: グローバル参照設定 ★★★
             window.layerManager = this.layerSystem;
             window.cameraSystem = this.cameraSystem;
             console.log('✅ [CoreEngine] Global references set');
             
-            // ★★★ Phase 3: StrokeRecorder/StrokeRenderer生成（BrushCore依存） ★★★
             if (!window.StrokeRecorder) {
                 throw new Error('[CoreEngine] StrokeRecorder class not loaded - check script load order in index.html');
             }
@@ -720,7 +740,6 @@
             );
             console.log('✅ [CoreEngine] window.strokeRenderer created');
             
-            // ★★★ Phase 4: BrushCore初期化（依存確認後） ★★★
             if (!window.BrushCore) {
                 throw new Error('[CoreEngine] window.BrushCore not found - check brush-core.js load order');
             }
@@ -729,10 +748,8 @@
                 throw new Error('[CoreEngine] window.BrushCore.init method not found');
             }
             
-            // BrushCore初期化実行
             window.BrushCore.init();
             
-            // 初期化検証
             if (!window.BrushCore.strokeRecorder || !window.BrushCore.layerManager) {
                 console.error('[CoreEngine] BrushCore dependencies check:');
                 console.error('  - strokeRecorder:', window.BrushCore.strokeRecorder);
@@ -743,12 +760,7 @@
             }
             
             console.log('✅ [CoreEngine] BrushCore initialized and validated');
-            console.log('   - strokeRecorder:', !!window.BrushCore.strokeRecorder);
-            console.log('   - layerManager:', !!window.BrushCore.layerManager);
-            console.log('   - strokeRenderer:', !!window.BrushCore.strokeRenderer);
-            console.log('   - coordinateSystem:', !!window.BrushCore.coordinateSystem);
             
-            // ★★★ Phase 5: アニメーションシステム初期化 ★★★
             this.initializeAnimationSystem();
             
             setTimeout(() => {
@@ -808,6 +820,8 @@
             });
             
             console.log('✅ [CoreEngine] Initialization complete');
+            console.log('   Phase 2: Checker pattern configured');
+            console.log('   Phase 3: Eraser transparency ready');
             
             return this;
         }
@@ -826,9 +840,8 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (BrushCore初期化修正版) loaded');
-    console.log('   ✓ BrushCore.init()を明示的に呼び出し');
-    console.log('   ✓ StrokeRecorder/StrokeRenderer初期化順序修正');
-    console.log('   ✓ 依存関係検証強化');
+    console.log('✅ core-engine.js (Phase 2&3対応版) loaded');
+    console.log('   Phase 2: チェッカーパターン配置処理追加');
+    console.log('   Phase 3: 消しゴム透明化対応完了');
 
 })();
