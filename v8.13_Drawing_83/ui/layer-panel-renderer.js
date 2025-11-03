@@ -1,9 +1,4 @@
-// ===== ui/layer-panel-renderer.js - Phase 6: 透明度UI実装 =====
-// Phase 6改修:
-// 1. 一般レイヤーに透明度UI追加「◀ 100% ▶」
-// 2. ドラッグで透明度変更
-// 3. ボタンクリックで±10%
-// 4. 背景レイヤーは透明度UI非表示
+// ===== ui/layer-panel-renderer.js - Phase 5&6完全統合版 =====
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -26,7 +21,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         this._maxRetries = 3;
         
         this.gsapAvailable = typeof gsap !== 'undefined';
-        this.debugEnabled = false;
     }
 
     init(container, layerSystem, animationSystem) {
@@ -39,10 +33,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         }
         
         this._setupEventListeners();
-        
-        if (this.debugEnabled) {
-            console.log('✅ LayerPanelRenderer Phase 6 initialized');
-        }
     }
     
     _setupEventListeners() {
@@ -197,7 +187,7 @@ window.TegakiUI.LayerPanelRenderer = class {
         this.initializeSortable();
     }
 
-    // Phase 6: 透明度UI実装
+    // Phase 5&6: 背景レイヤー色変更UI + 透明度UI
     createLayerElement(layer, index, isActive, animationSystem) {
         const layerDiv = document.createElement('div');
         layerDiv.className = isActive ? 'layer-item active' : 'layer-item';
@@ -221,8 +211,40 @@ window.TegakiUI.LayerPanelRenderer = class {
         nameSpan.style.gridRow = '2';
         layerDiv.appendChild(nameSpan);
 
-        // Phase 6: 透明度UI（一般レイヤーのみ）
-        if (!layer.layerData?.isBackground) {
+        // Phase 5: 背景レイヤー専用UI
+        if (layer.layerData?.isBackground) {
+            // バケツアイコン（色変更）
+            const bucketIcon = document.createElement('div');
+            bucketIcon.className = 'layer-background-color-button';
+            bucketIcon.style.gridColumn = '2';
+            bucketIcon.style.gridRow = '1';
+            bucketIcon.style.cursor = 'pointer';
+            bucketIcon.style.display = 'flex';
+            bucketIcon.style.alignItems = 'center';
+            bucketIcon.style.gap = '4px';
+            bucketIcon.style.fontSize = '11px';
+            bucketIcon.style.userSelect = 'none';
+            bucketIcon.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" 
+                     viewBox="0 0 24 24" fill="none" stroke="#800000" 
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/>
+                    <path d="m5 2 5 5"/>
+                    <path d="M2 13h15"/>
+                    <path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/>
+                </svg>
+                <span style="font-weight: bold;">100%</span>
+            `;
+            bucketIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.layerSystem && this.layerSystem.changeBackgroundLayerColor) {
+                    this.layerSystem.changeBackgroundLayerColor(index, layer.layerData.id);
+                }
+            });
+            layerDiv.appendChild(bucketIcon);
+            
+        } else {
+            // Phase 6: 一般レイヤー透明度UI
             const opacityContainer = document.createElement('div');
             opacityContainer.className = 'layer-opacity-control';
             opacityContainer.style.gridColumn = '2';
@@ -284,27 +306,44 @@ window.TegakiUI.LayerPanelRenderer = class {
         const thumbnail = this.createThumbnail(layer, index);
         layerDiv.appendChild(thumbnail);
 
+        // Phase 5: 背景レイヤーは削除ボタン非表示
+        if (!layer.layerData?.isBackground) {
+            const deleteBtn = document.createElement('div');
+            deleteBtn.className = 'layer-delete-button';
+            deleteBtn.style.gridColumn = '4';
+            deleteBtn.style.gridRow = '1 / 3';
+            deleteBtn.style.cursor = 'pointer';
+            deleteBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" 
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor" 
+                     stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
+                </svg>
+            `;
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.layerSystem && this.layerSystem.deleteLayer) {
+                    this.layerSystem.deleteLayer(index);
+                }
+            });
+            layerDiv.appendChild(deleteBtn);
+        }
+
         // クリックイベント
         layerDiv.addEventListener('click', (e) => {
             if (e.target !== checkbox && 
-                !e.target.closest('.layer-opacity-control')) {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('ui:layer-selected', { 
-                        layerIndex: index,
-                        layerId: layer.layerData?.id
-                    });
+                !e.target.closest('.layer-opacity-control') &&
+                !e.target.closest('.layer-background-color-button') &&
+                !e.target.closest('.layer-delete-button')) {
+                if (this.layerSystem && this.layerSystem.setActiveLayer) {
+                    this.layerSystem.setActiveLayer(index);
                 }
             }
         });
 
         checkbox.addEventListener('change', (e) => {
-            layer.visible = e.target.checked;
-            if (window.TegakiEventBus) {
-                window.TegakiEventBus.emit('ui:layer-visibility-changed', {
-                    layerIndex: index,
-                    visible: e.target.checked,
-                    layerId: layer.layerData?.id
-                });
+            if (this.layerSystem && this.layerSystem.toggleLayerVisibility) {
+                this.layerSystem.toggleLayerVisibility(index);
             }
         });
 
@@ -390,9 +429,20 @@ window.TegakiUI.LayerPanelRenderer = class {
 
         if (layer.layerData?.isBackground) {
             const swatch = document.createElement('div');
+            swatch.className = 'layer-background-swatch';
             swatch.style.width = '100%';
             swatch.style.height = '100%';
-            swatch.style.backgroundColor = '#F0E0D6';
+            
+            // 背景グラフィックスから色を取得
+            const bg = layer.layerData.backgroundGraphics;
+            if (bg && bg._fillStyle && bg._fillStyle.color !== undefined) {
+                const color = bg._fillStyle.color;
+                const hexColor = '#' + color.toString(16).padStart(6, '0');
+                swatch.style.backgroundColor = hexColor;
+            } else {
+                swatch.style.backgroundColor = '#F0E0D6';
+            }
+            
             thumbnail.appendChild(swatch);
             return thumbnail;
         }
@@ -442,9 +492,7 @@ window.TegakiUI.LayerPanelRenderer = class {
             }
 
         } catch (error) {
-            if (this.debugEnabled) {
-                console.error(`[Panel] Layer thumbnail generation failed for index ${index}:`, error);
-            }
+            // サイレント失敗
         }
     }
 
@@ -455,6 +503,25 @@ window.TegakiUI.LayerPanelRenderer = class {
         if (!layers || !layers[layerIndex]) return;
 
         const layer = layers[layerIndex];
+        
+        // 背景レイヤーの色更新
+        if (layer.layerData?.isBackground) {
+            const layerDiv = this.container.querySelector(
+                `.layer-item[data-layer-index="${layerIndex}"]`
+            );
+            if (layerDiv) {
+                const swatch = layerDiv.querySelector('.layer-background-swatch');
+                if (swatch) {
+                    const bg = layer.layerData.backgroundGraphics;
+                    if (bg && bg._fillStyle && bg._fillStyle.color !== undefined) {
+                        const color = bg._fillStyle.color;
+                        const hexColor = '#' + color.toString(16).padStart(6, '0');
+                        swatch.style.backgroundColor = hexColor;
+                    }
+                }
+            }
+            return;
+        }
         
         if (!window.ThumbnailSystem || !window.ThumbnailSystem.isInitialized) return;
         
@@ -561,41 +628,8 @@ window.TegakiUI.LayerPanelRenderer = class {
                 }
             });
         } catch (error) {
-            if (this.debugEnabled) {
-                console.warn('Sortable initialization failed:', error);
-            }
+            // サイレント失敗
         }
-    }
-
-    setDebugMode(enabled) {
-        this.debugEnabled = enabled;
-        console.log(`LayerPanelRenderer debug mode: ${enabled ? 'ON' : 'OFF'}`);
-    }
-
-    debugPrintCacheInfo() {
-        if (window.ThumbnailSystem) {
-            const info = window.ThumbnailSystem.getDebugInfo();
-            console.log('ThumbnailSystem Debug Info:', info);
-        }
-    }
-    
-    debugPrintLayerInfo(layerIndex) {
-        const layers = this.layerSystem?.getLayers?.();
-        if (!layers || !layers[layerIndex]) {
-            console.error(`Layer ${layerIndex} not found`);
-            return;
-        }
-        
-        const layer = layers[layerIndex];
-        console.log(`\n📋 Layer ${layerIndex} Debug Info:`);
-        console.log(`  ID: ${layer.layerData?.id}`);
-        console.log(`  Name: ${layer.layerData?.name}`);
-        console.log(`  Visible: ${layer.visible}`);
-        console.log(`  Opacity: ${layer.alpha}`);
-        console.log(`  Position: (${layer.position.x}, ${layer.position.y})`);
-        console.log(`  Scale: (${layer.scale.x}, ${layer.scale.y})`);
-        console.log(`  Rotation: ${layer.rotation}`);
-        console.log(`  IsBackground: ${layer.layerData?.isBackground}`);
     }
     
     destroy() {
@@ -614,7 +648,4 @@ window.TegakiUI.LayerPanelRenderer = class {
     }
 };
 
-console.log('✅ ui/layer-panel-renderer.js (Phase 6: 透明度UI実装) loaded');
-console.log('   ✓ 一般レイヤーに「◀ 100% ▶」UI追加');
-console.log('   ✓ ドラッグで透明度変更');
-console.log('   ✓ ボタンクリックで±10%');
+console.log('✅ ui/layer-panel-renderer.js (Phase 5&6完全統合版) loaded');

@@ -1,7 +1,8 @@
-// ===== system/layer-system.js - Phase 2&3&6対応版 =====
+// ===== system/layer-system.js - Phase 2&3&5&6完全版 =====
 // Phase 2: 背景チェックパターン実装
 // Phase 3: 消しゴム透明化（blendMode処理はstroke-rendererで実施）
-// Phase 6: レイヤー透明度設定メソッド追加
+// Phase 5: 背景レイヤー色変更機能
+// Phase 6: レイヤー透明度設定メソッド
 
 (function() {
     'use strict';
@@ -38,12 +39,14 @@
             this.currentFrameContainer = new PIXI.Container();
             this.currentFrameContainer.label = 'temporary_frame_container';
             
+            // Phase 2: チェッカーパターン生成
             this.checkerPattern = this._createCheckerPatternBackground(
                 this.config.canvas.width, 
                 this.config.canvas.height
             );
             this.checkerPattern.visible = false;
             
+            // 初期背景レイヤー作成
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_bg_' + Date.now(),
@@ -59,6 +62,7 @@
             bgLayer.layerData.backgroundGraphics = bg;
             this.currentFrameContainer.addChild(bgLayer);
             
+            // 初期レイヤー1作成
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_1_' + Date.now(),
@@ -77,10 +81,9 @@
             this._setupVKeyEvents();
             this._setupTransformEventListeners();
             this.isInitialized = true;
-            
-            console.log('✅ LayerSystem Phase 2&3&6 initialized');
         }
 
+        // Phase 2: チェッカーパターン生成
         _createCheckerPatternBackground(width, height) {
             const g = new PIXI.Graphics();
             const color1 = 0xf0e0d6;
@@ -101,12 +104,48 @@
             return g;
         }
 
+        // Phase 2: チェッカーパターンをワールドに配置
         attachCheckerPatternToWorld(canvasContainer) {
             if (!this.checkerPattern || !canvasContainer) return;
             canvasContainer.addChildAt(this.checkerPattern, 0);
         }
 
-        // Phase 6: レイヤー透明度設定メソッド
+        // Phase 5: 背景レイヤー色変更
+        changeBackgroundLayerColor(layerIndex, layerId) {
+            const layers = this.getLayers();
+            const layer = layers[layerIndex];
+            
+            if (!layer?.layerData?.isBackground) return;
+            
+            // 現在のペンカラーを取得
+            const color = window.brushSettings?.getColor() || 0xf0e0d6;
+            
+            // 背景グラフィックスを再生成
+            const bg = layer.layerData.backgroundGraphics;
+            if (bg) {
+                bg.clear();
+                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                bg.fill({ color });
+            }
+            
+            // サムネイル更新
+            this.requestThumbnailUpdate(layerIndex);
+            
+            // EventBus通知
+            if (this.eventBus) {
+                this.eventBus.emit('layer:background-color-changed', {
+                    component: 'layer-system',
+                    action: 'background-color-changed',
+                    data: {
+                        layerIndex,
+                        layerId,
+                        color
+                    }
+                });
+            }
+        }
+
+        // Phase 6: レイヤー透明度設定
         setLayerOpacity(layerIndex, opacity) {
             const layers = this.getLayers();
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -986,6 +1025,7 @@
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
                 
+                // Phase 2: 背景レイヤー非表示時にチェッカーパターン表示
                 if (layer.layerData?.isBackground && this.checkerPattern) {
                     this.checkerPattern.visible = !layer.layerData.visible;
                 }
@@ -1240,6 +1280,4 @@
 
 })();
 
-console.log('✅ layer-system.js (Phase 6: 透明度設定メソッド追加) loaded');
-console.log('   ✓ setLayerOpacity() メソッド実装');
-console.log('   ✓ EventBus通知対応');
+console.log('✅ layer-system.js (Phase 2&3&5&6完全版) loaded');
