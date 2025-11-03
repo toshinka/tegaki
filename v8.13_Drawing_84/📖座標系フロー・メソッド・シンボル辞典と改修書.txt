@@ -1,0 +1,1752 @@
+================================================================================
+座標系フロー・メソッド・シンボル辞典と改修書
+v8.13_Drawing_78 - タブレットペン問題徹底解析版
+================================================================================
+
+目次
+--------------------------------------------------------------------------------
+1. 問題の症状と根本原因の特定
+2. 座標変換パイプライン全体フロー（最新版）
+3. 各ファイルの責務とシンボル辞典
+4. 初期化順序の依存関係図
+5. タブレットペン問題の根本原因（確定版）
+6. 改修実施書（優先順位付き・検証コマンド付）
+7. 二重実装・SOLID違反の確認と撲滅
+8. 改修後の動作確認チェックリスト
+
+
+================================================================================
+1. 問題の症状と根本原因の特定
+================================================================================
+
+【症状】
+- マウスでは描画可能、タブレットペンでは描画不可
+- レイヤーパネルのドラッグ移動もマウス可・ペン不可
+- アクティブレイヤー変更ボタンは押せる（ペン入力自体は受付）
+
+【ユーザー提供のログ】
+```
+drawing-engine.js:58 🖱️ [DrawingEngine] PointerDown: {type: 'pen', id: 1, pressure: 0.5}
+VM1013:6 🔍 RAW PointerDown: {type: 'mouse', id: 1, pressure: 0.5, clientX: 349.5, clientY: 278}
+drawing-engine.js:122 🖱️ [DrawingEngine] PointerUp: {type: 'mouse', id: 1}
+```
+
+【重要な発見】
+1. Canvas要素に直接登録したリスナーでは `type: 'mouse'` と認識
+2. DrawingEngine では `type: 'pen'` と認識（pointer-handler.jsで補正）
+3. **タブレットペンでは、Canvas要素のリスナー自体が発火しない**
+
+【根本原因の特定】
+★★★ Canvas要素がタブレットペンのイベントを受け取れていない ★★★
+
+可能性のある原因：
+A. **Canvas要素の上に透明な要素が重なっている**（最も可能性が高い）
+B. **passive: false フラグとsetPointerCapture()の競合**
+C. **ブラウザ設定・タッチイベント無効化**
+D. **Canvas要素のpointer-eventsスタイル問題**
+
+
+================================================================================
+2. 座標変換パイプライン全体フロー（最新版）
+================================================================================
+
+【正常なフロー】
+PointerEvent (clientX, clientY, pressure, pointerType)
+  ↓
+pointer-handler.js: normalizeEvent()
+  ├─ pointerType補正（mouse + pressure > 0.01 → pen）
+  └─ return { pointerId, pointerType, clientX, clientY, pressure, ... }
+  ↓
+drawing-engine.js: _handlePointerDown(info, e)
+  ├─ レイヤー移動モードチェック（vKeyPressed）
+  ├─ 右クリック無視（button === 2）
+  └─ BrushCore.startStroke(clientX, clientY, pressure) 呼び出し
+  ↓
+brush-core.js: startStroke(clientX, clientY, pressure)
+  ├─ アクティブレイヤー取得
+  ├─ 座標変換パイプライン実行
+  │   ├─ CoordinateSystem.screenClientToCanvas(clientX, clientY)
+  │   │   → { canvasX, canvasY }  [DPI/DPR補正]
+  │   ├─ CoordinateSystem.canvasToWorld(canvasX, canvasY)
+  │   │   → { worldX, worldY }  [worldContainer逆行列適用]
+  │   └─ CoordinateSystem.worldToLocal(worldX, worldY, activeLayer)
+  │       → { localX, localY }  [親チェーン遡査]
+  ├─ StrokeRecorder.startStroke(localX, localY, pressure)
+  ├─ プレビューGraphics生成
+  └─ イベント発火（drawing:stroke-started）
+  ↓
+stroke-recorder.js: startStroke(localX, localY, pressure)
+  ├─ ポイント配列初期化
+  ├─ 初回ポイント追加
+  └─ isRecording = true
+  ↓
+stroke-renderer.js: renderPreview(points, settings, graphics)
+  ├─ SDF/MSDFメッシュ生成
+  └─ Graphics描画
+
+【現在のフロー（タブレットペン）】
+PointerEvent (pen)
+  ↓
+❌ Canvas要素のリスナーが発火しない
+  → pointer-handler.js に到達しない
+  → drawing-engine.js に到達しない
+  → 何も起こらない
+
+
+================================================================================
+3. 各ファイルの責務とシンボル辞典
+================================================================================
+
+--------------------------------------------------------------------------------
+3-1. coordinate-system.js
+--------------------------------------------------------------------------------
+
+【責務】
+- Screen/Canvas/World/Local 座標変換の一元管理
+- DPI/DPR補正
+- worldContainer/親チェーン遡査による正確な座標計算
+
+【クラス】
+CoordinateSystem
+
+【主要メソッド】
+init(app, config, eventBus)
+  - 初期化
+
+setContainers(containers)
+  - worldContainer/canvasContainer 設定
+
+setCameraSystem(cameraSystem)
+  - CameraSystem 参照設定
+
+screenClientToCanvas(clientX, clientY)
+  - Screen → Canvas 変換（DPI補正）
+  - return: { canvasX, canvasY }
+
+canvasToWorld(canvasX, canvasY)
+  - Canvas → World 変換（worldContainer逆行列適用）
+  - return: { worldX, worldY }
+
+worldToLocal(worldX, worldY, container)
+  - World → Local 変換（親チェーン遡査）
+  - return: { localX, localY }
+  - ⚠️ PIXI v8 toLocal() 使用厳禁
+
+【グローバルシンボル】
+window.CoordinateSystem
+  - 型: CoordinateSystem インスタンス
+  - 初期化: coordinate-system.js ロード時（即時実行関数）
+
+【依存】
+- window.TEGAKI_CONFIG
+- window.TegakiEventBus
+- this.cameraSystem（setCameraSystem経由）
+- this.worldContainer（setContainers経由）
+
+
+--------------------------------------------------------------------------------
+3-2. pointer-handler.js
+--------------------------------------------------------------------------------
+
+【責務】
+- PointerEvent統一処理（mouse/touch/pen対応）
+- pointerType誤認補正ヒューリスティック
+- setPointerCapture/releasePointerCapture管理
+
+【クラス】
+PointerHandler（静的メソッドのみ）
+
+【主要メソッド】
+static attach(element, handlers, options)
+  - 要素にPointerEventリスナーをアタッチ
+  - handlers: { down, move, up, cancel }
+  - options: { preventDefault, capture }
+  - return: detach関数
+
+normalizeEvent(e)（内部関数）
+  - PointerEvent → 正規化情報
+  - pointerType補正（mouse + pressure → pen）
+  - return: { pointerId, pointerType, clientX, clientY, pressure, tiltX, tiltY, twist, button, buttons, originalEvent }
+
+【グローバルシンボル】
+window.PointerHandler
+  - 型: PointerHandler クラス
+  - 初期化: pointer-handler.js ロード時（即時実行関数）
+
+【依存】
+- なし（標準PointerEventのみ）
+
+【イベント登録設定】
+```javascript
+element.addEventListener('pointerdown', onPointerDown, { 
+    capture: false,  // デフォルト
+    passive: false   // preventDefault可能
+});
+```
+
+
+--------------------------------------------------------------------------------
+3-3. drawing-engine.js
+--------------------------------------------------------------------------------
+
+【責務】
+- PointerEvent受信とLocal座標変換統括
+- BrushCoreへのストローク開始/更新/終了通知
+- アクティブポインター管理
+
+【クラス】
+DrawingEngine
+
+【主要メソッド】
+constructor(app, layerSystem, cameraSystem, history)
+  - 初期化
+  - this.brushCore = window.BrushCore（グローバル参照）✅ 修正済み
+
+_initializeCanvas()
+  - canvas 取得
+  - canvas.style.touchAction = 'none' 設定
+  - PointerHandler.attach() でイベント接続
+
+_handlePointerDown(info, e)
+  - PointerDown受信
+  - vKeyPressed チェック（レイヤー移動モード）
+  - 右クリック無視
+  - _screenToLocal() で座標変換（内部検証用）
+  - BrushCore.startStroke(clientX, clientY, pressure) 呼び出し
+
+_screenToLocal(clientX, clientY)
+  - 座標変換パイプライン統括（検証用）
+  - return: { localX, localY }
+
+【グローバルシンボル】
+window.DrawingEngine
+  - 型: DrawingEngine クラス
+  - 初期化: drawing-engine.js ロード時
+
+【依存】
+- window.BrushCore（グローバルインスタンス）
+- window.CoordinateSystem
+- window.PointerHandler
+- this.layerSystem
+- this.cameraSystem
+
+【Canvas要素の取得方法】
+```javascript
+const canvas = this.app.canvas || this.app.view;
+```
+
+【Canvas要素のスタイル設定】
+```javascript
+canvas.style.touchAction = 'none';
+```
+
+
+--------------------------------------------------------------------------------
+3-4. brush-core.js
+--------------------------------------------------------------------------------
+
+【責務】
+- ペン/消しゴム共通コアロジック
+- ストローク記録制御（StrokeRecorder呼び出し）
+- 座標変換統括（CoordinateSystem呼び出し）
+- モード管理（pen/eraser）
+
+【クラス】
+BrushCore
+
+【主要メソッド】
+constructor()
+  - プロパティ初期化
+  - ⚠️ 依存オブジェクトは null のまま
+
+init()
+  - グローバル依存取得
+  - this.coordinateSystem = window.CoordinateSystem
+  - this.strokeRecorder = window.strokeRecorder
+  - this.layerManager = window.layerManager
+  - this.strokeRenderer = window.strokeRenderer
+  - 必須依存チェック
+
+startStroke(clientX, clientY, pressure)
+  - アクティブレイヤー取得
+  - 座標変換（Screen → Canvas → World → Local）
+  - StrokeRecorder.startStroke(localX, localY, pressure)
+  - プレビューGraphics生成
+  - イベント発火
+
+updateStroke(clientX, clientY, pressure)
+  - 座標変換
+  - 線形補間
+  - StrokeRecorder.addPoint()
+  - プレビュー更新
+
+finalizeStroke()
+  - StrokeRecorder.endStroke()
+  - StrokeRenderer.renderStroke()
+  - イベント発火（layer:path-added, thumbnail:layer-updated）
+
+【グローバルシンボル】
+window.BrushCore
+  - 型: BrushCore インスタンス
+  - 初期化: brush-core.js ロード時（new BrushCore()）
+  - ⚠️ init() は core-engine.js で呼び出し
+
+【依存】
+- window.CoordinateSystem（init()内で取得）
+- window.strokeRecorder（init()内で取得）
+- window.layerManager（init()内で取得）
+- window.strokeRenderer（init()内で取得）
+- window.pressureHandler（オプション）
+- window.eventBus
+
+
+--------------------------------------------------------------------------------
+3-5. stroke-recorder.js
+--------------------------------------------------------------------------------
+
+【責務】
+- ローカル座標のポイント記録専用
+- 座標変換は行わない（二重変換防止）
+
+【クラス】
+StrokeRecorder
+
+【主要メソッド】
+constructor(pressureHandler, cameraSystem)
+  - 初期化
+
+startStroke(localX, localY, rawPressure)
+  - ストローク記録開始
+  - 初回ポイント追加
+
+addPoint(localX, localY, rawPressure)
+  - ポイント追加
+  - 筆圧補正適用（pressureHandler経由）
+
+endStroke()
+  - ストローク記録終了
+  - return: { points, isSingleDot }
+
+【グローバルシンボル】
+window.StrokeRecorder
+  - 型: StrokeRecorder クラス（コンストラクタ）
+  - 初期化: stroke-recorder.js ロード時（クラス定義）
+  - ⚠️ インスタンス化は core-engine.js で実行
+
+
+--------------------------------------------------------------------------------
+3-6. core-engine.js
+--------------------------------------------------------------------------------
+
+【責務】
+- システム全体の初期化オーケストレーション
+- 依存注入（DI）の中核
+- グローバル参照の設定
+
+【クラス】
+CoreEngine
+
+【initialize()の重要な処理順序】
+1. CameraSystem.init()
+2. LayerSystem.init()
+3. ClipboardSystem.init()
+4. グローバル参照設定
+   window.layerManager = this.layerSystem
+   window.cameraSystem = this.cameraSystem
+5. StrokeRecorder インスタンス生成
+   window.strokeRecorder = new window.StrokeRecorder(...)
+6. StrokeRenderer インスタンス生成
+   window.strokeRenderer = new window.StrokeRenderer(...)
+7. BrushCore.init() 呼び出し ★★★
+   this.brushCore.init()
+8. DrawingEngine 生成 ★★★
+   this.drawingEngine = new DrawingEngine(...)
+
+
+--------------------------------------------------------------------------------
+3-7. core-initializer.js
+--------------------------------------------------------------------------------
+
+【責務】
+- アプリケーション起動エントリーポイント
+- DOM構築
+- PixiJS Application 初期化
+- CoreEngine.initialize() 呼び出し
+
+【DrawingApp.initialize()のフロー】
+1. PIXI.Application 初期化
+   ```javascript
+   await this.pixiApp.init({
+       width: screenWidth,
+       height: screenHeight,
+       backgroundAlpha: 0,
+       resolution: 1,
+       antialias: true,
+       eventMode: 'static'
+   });
+   ```
+
+2. Canvas要素をDOM追加
+   ```javascript
+   containerEl.appendChild(this.pixiApp.canvas);
+   this.pixiApp.canvas.style.width = `${screenWidth}px`;
+   this.pixiApp.canvas.style.height = `${screenHeight}px`;
+   ```
+
+3. CoreEngine 初期化
+   ```javascript
+   this.coreEngine = new CoreEngine(this.pixiApp);
+   this.coreEngine.initialize();
+   ```
+
+4. WebGPU 初期化（オプション）
+
+
+--------------------------------------------------------------------------------
+3-8. dom-builder.js
+--------------------------------------------------------------------------------
+
+【責務】
+- DOM構造の構築
+- サイドバー、Canvas領域、レイヤーパネルの生成
+
+【Canvas領域の構造】
+```html
+<div class="canvas-area">  <!-- position: relative -->
+    <div id="drawing-canvas">  <!-- PixiJSのCanvas要素が追加される -->
+        <canvas></canvas>  <!-- PixiJS Application.canvas -->
+    </div>
+    <!-- ポップアップパネル（position: fixed） -->
+</div>
+```
+
+
+================================================================================
+4. 初期化順序の依存関係図
+================================================================================
+
+【スクリプトロード順序】
+1. config.js
+2. coordinate-system.js → window.CoordinateSystem 生成
+3. pointer-handler.js → window.PointerHandler 生成
+4. stroke-recorder.js → window.StrokeRecorder クラス定義
+5. brush-core.js → window.BrushCore インスタンス生成（未初期化）
+6. drawing-engine.js → window.DrawingEngine クラス定義
+7. core-engine.js → TegakiCore.CoreEngine クラス定義
+8. core-initializer.js → window.CoreInitializer 生成
+
+【実行時初期化順序（CoreEngine.initialize()内）】
+Step 1: CameraSystem.init()
+Step 2: LayerSystem.init()
+Step 3: ClipboardSystem.init()
+Step 4: グローバル参照設定
+  - window.layerManager = this.layerSystem
+  - window.cameraSystem = this.cameraSystem
+Step 5: StrokeRecorder インスタンス生成
+  - window.strokeRecorder = new window.StrokeRecorder(...)
+Step 6: StrokeRenderer インスタンス生成
+  - window.strokeRenderer = new window.StrokeRenderer(...)
+Step 7: BrushCore.init() 呼び出し
+  - this.brushCore.init()
+Step 8: DrawingEngine 生成
+  - this.drawingEngine = new DrawingEngine(...)
+  - Canvas要素にPointerHandlerをアタッチ
+Step 9: ThumbnailSystem.init()
+Step 10: AnimationSystem.init()
+
+
+================================================================================
+5. タブレットペン問題の根本原因（確定版）
+================================================================================
+
+【問題の層別】
+
+【Layer 1: Canvas要素がイベントを受け取らない】
+証拠：
+- ユーザー提供のログで、タブレットペンではCanvas要素のリスナーが発火しない
+- マウスでは正常にログが出力される
+
+原因候補：
+A. ★★★ Canvas要素の上に透明な要素が重なっている（最も可能性が高い）★★★
+B. Canvas要素のpointer-eventsスタイル問題
+C. passive: false + setPointerCapture()の競合
+D. ブラウザ設定・タッチイベント無効化
+
+【原因A: 透明な要素が重なっている】
+疑わしい要素：
+1. **レイヤーパネル (.layer-panel-container)**
+   - position: fixed
+   - z-index: 1000
+   - pointer-events: none（親要素のみ）
+   - しかし子要素は pointer-events: all
+   
+   CSSコード：
+   ```css
+   .layer-panel-container { 
+       pointer-events: none;  /* 親は無視 */
+   }
+   .layer-controls-row { 
+       pointer-events: all;  /* 子は有効 */
+   }
+   .layer-panel-items { 
+       pointer-events: all;  /* 子は有効 */
+   }
+   ```
+
+2. **ステータスパネル (.status-panel)**
+   - position: fixed
+   - z-index: 1000
+   - pointer-eventsの設定なし（デフォルトで有効）
+
+3. **ポップアップパネル群**
+   - position: fixed
+   - z-index: 2000
+   - display: none（通常は非表示）
+
+【重要な発見】
+レイヤーパネルの親要素は `pointer-events: none` だが、
+**子要素（.layer-controls-row, .layer-panel-items）は pointer-events: all**
+
+これにより、子要素の領域では：
+- レイヤーパネル要素がイベントを受け取る
+- Canvas要素まで到達しない
+
+**しかし、レイヤーパネルは画面右側にあるため、Canvas中央部分は影響を受けないはず**
+
+【原因B: Canvas要素のpointer-eventsスタイル問題】
+確認ポイント：
+1. main.cssの設定
+   ```css
+   #drawing-canvas,
+   canvas { 
+       cursor: crosshair; 
+       touch-action: none;
+       -ms-touch-action: none;
+   }
+   ```
+   
+   → pointer-eventsの設定なし（デフォルトで auto）
+
+2. drawing-engine.jsの設定
+   ```javascript
+   canvas.style.touchAction = 'none';
+   ```
+   
+   → touch-actionのみ設定（pointer-eventsは設定なし）
+
+【原因C: passive: false + setPointerCapture()の競合】
+pointer-handler.jsのコード：
+```javascript
+element.addEventListener('pointerdown', onPointerDown, { 
+    capture: false, 
+    passive: false 
+});
+
+function onPointerDown(e) {
+    try {
+        e.target.setPointerCapture(e.pointerId);
+    } catch (err) {
+        console.warn('[PointerHandler] setPointerCapture failed:', err);
+    }
+}
+```
+
+可能性：
+- タブレットペンでsetPointerCapture()が失敗している？
+- しかしエラーログが出ていない
+
+【原因D: ブラウザ設定問題】
+確認ポイント：
+1. Chrome flags: chrome://flags/
+   - Touch Events API の設定
+   - Pointer Events の設定
+2. Windows Ink設定（Windowsの場合）
+3. タブレットドライバー設定
+
+
+【最も可能性が高い原因】
+★★★ Canvas要素の上に、見えない要素（または親要素）が重なっている ★★★
+
+疑わしい要素の候補：
+1. **#drawing-canvas コンテナ要素**
+   - Canvas要素を包含している
+   - pointer-eventsの設定なし（デフォルトで auto）
+   
+   → これが原因の可能性は低い
+
+2. **.canvas-area 要素**
+   - position: relative
+   - pointer-eventsの設定なし
+   
+   → これが原因の可能性は低い
+
+3. **ポップアップパネルの残骸**
+   - display: none でも z-index が残っている？
+   
+   → これが原因の可能性は低い
+
+4. **PixiJS Application.canvas の eventMode 設定**
+   - eventMode: 'static' が設定されている
+   
+   → これは正しい設定
+
+5. ★★★ レイヤーアイテムのドラッグプレースホルダー ★★★
+   - Sortable.js がドラッグ中に透明な要素を生成している？
+   - これがCanvas領域全体に広がっている可能性
+
+
+【検証方法】
+1. ブラウザDevToolsでCanvas要素を直接検査
+   - pointer-eventsスタイルの確認
+   - z-indexの確認
+   - 親要素のスタイル確認
+
+2. Console命令でCanvas要素の状態確認
+   ```javascript
+   const canvas = document.querySelector('canvas');
+   console.log('Canvas element:', canvas);
+   console.log('pointer-events:', window.getComputedStyle(canvas).pointerEvents);
+   console.log('z-index:', window.getComputedStyle(canvas).zIndex);
+   console.log('position:', window.getComputedStyle(canvas).position);
+   console.log('touch-action:', window.getComputedStyle(canvas).touchAction);
+   ```
+
+3. Canvas要素のバウンディングボックス確認
+   ```javascript
+   const rect = canvas.getBoundingClientRect();
+   console.log('Canvas rect:', rect);
+   ```
+
+4. イベントリスナーの確認
+   ```javascript
+   const listeners = getEventListeners(canvas);
+   console.log('Canvas listeners:', listeners);
+   ```
+
+5. 重なっている要素の確認
+   ```javascript
+   const x = 400; // Canvas中央のX座標
+   const y = 300; // Canvas中央のY座標
+   const topElement = document.elementFromPoint(x, y);
+   console.log('Top element at Canvas center:', topElement);
+   ```
+
+
+================================================================================
+6. 改修実施書（優先順位付き・検証コマンド付）
+================================================================================
+
+--------------------------------------------------------------------------------
+【緊急対応】修正0: 問題の特定（診断スクリプト実行）
+--------------------------------------------------------------------------------
+
+**目的：**
+Canvas要素がタブレットペンのイベントを受け取れない原因を特定する
+
+**実施手順：**
+1. ブラウザ（Chrome）でアプリケーションを開く
+2. F12でDevToolsを開く
+3. Consoleタブで以下のスクリプトを実行
+
+**診断スクリプト1: Canvas要素の状態確認**
+```javascript
+console.log('========================================');
+console.log('Canvas Element Diagnostics');
+console.log('========================================');
+
+const canvas = document.querySelector('canvas');
+if (!canvas) {
+    console.error('Canvas element not found!');
+} else {
+    console.log('Canvas element:', canvas);
+    
+    const styles = window.getComputedStyle(canvas);
+    console.log('Computed styles:', {
+        pointerEvents: styles.pointerEvents,
+        touchAction: styles.touchAction,
+        position: styles.position,
+        zIndex: styles.zIndex,
+        display: styles.display,
+        visibility: styles.visibility,
+        opacity: styles.opacity
+    });
+    
+    const rect = canvas.getBoundingClientRect();
+    console.log('Canvas rect:', {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+    });
+}
+```
+
+**診断スクリプト2: Canvas中央の最上位要素を確認**
+```javascript
+console.log('========================================');
+console.log('Top Element Check at Canvas Center');
+console.log('========================================');
+
+const canvas = document.querySelector('canvas');
+if (canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    console.log('Canvas center coordinates:', { centerX, centerY });
+    
+    const topElement = document.elementFromPoint(centerX, centerY);
+    console.log('Top element at canvas center:', topElement);
+    console.log('Is Canvas?', topElement === canvas);
+    
+    if (topElement !== canvas) {
+        console.error('❌ Canvas is covered by another element!');
+        console.log('Covering element tag:', topElement.tagName);
+        console.log('Covering element class:', topElement.className);
+        console.log('Covering element id:', topElement.id);
+        
+        const coveringStyles = window.getComputedStyle(topElement);
+        console.log('Covering element styles:', {
+            pointerEvents: coveringStyles.pointerEvents,
+            position: coveringStyles.position,
+            zIndex: coveringStyles.zIndex,
+            backgroundColor: coveringStyles.backgroundColor,
+            opacity: coveringStyles.opacity
+        });
+    } else {
+        console.log('✅ Canvas is not covered');
+    }
+}
+```
+
+**診断スクリプト3: イベントリスナーの確認**
+```javascript
+console.log('========================================');
+console.log('Event Listeners Check');
+console.log('========================================');
+
+const canvas = document.querySelector('canvas');
+if (canvas) {
+    // getEventListeners() はChrome DevToolsでのみ使用可能
+    if (typeof getEventListeners !== 'undefined') {
+        const listeners = getEventListeners(canvas);
+        console.log('Canvas event listeners:', listeners);
+        
+        if (listeners.pointerdown) {
+            console.log('✅ pointerdown listeners:', listeners.pointerdown.length);
+        } else {
+            console.error('❌ No pointerdown listeners!');
+        }
+    } else {
+        console.warn('getEventListeners() not available outside DevTools');
+    }
+}
+```
+
+**診断スクリプト4: 親要素のチェーン確認**
+```javascript
+console.log('========================================');
+console.log('Parent Chain Check');
+console.log('========================================');
+
+const canvas = document.querySelector('canvas');
+if (canvas) {
+    let current = canvas;
+    let depth = 0;
+    
+    while (current && depth < 10) {
+        const styles = window.getComputedStyle(current);
+        console.log(`Depth ${depth}: ${current.tagName}${current.id ? '#' + current.id : ''}${current.className ? '.' + current.className.split(' ')[0] : ''}`, {
+            pointerEvents: styles.pointerEvents,
+            position: styles.position,
+            zIndex: styles.zIndex,
+            overflow: styles.overflow
+        });
+        
+        current = current.parentElement;
+        depth++;
+    }
+}
+```
+
+**期待される結果：**
+- Canvas中央の最上位要素がCanvas自身である
+- Canvas要素にpointerdownリスナーが登録されている
+- pointer-events: auto（または設定なし）
+- touch-action: none
+
+**もし問題が見つかった場合：**
+- Canvas要素が別の要素に覆われている
+  → 修正1を実施
+- pointer-eventsが無効化されている
+  → 修正2を実施
+- イベントリスナーが登録されていない
+  → 修正3を実施
+
+
+--------------------------------------------------------------------------------
+【最優先】修正1: Canvas要素のpointer-events明示化
+--------------------------------------------------------------------------------
+
+**ファイル:** styles/main.css
+
+**目的:**
+Canvas要素がPointerEventを確実に受け取れるようにする
+
+**現在:**
+```css
+#drawing-canvas,
+canvas { 
+    cursor: crosshair; 
+    touch-action: none;
+    -ms-touch-action: none;
+}
+```
+
+**修正後:**
+```css
+/* ★★★ Canvas要素のPointerEvent受付を明示化 ★★★ */
+#drawing-canvas {
+    cursor: crosshair;
+    touch-action: none;
+    -ms-touch-action: none;
+    pointer-events: auto !important;  /* 追加 */
+    position: relative;  /* 追加 */
+    z-index: 1;  /* 追加 */
+}
+
+canvas { 
+    cursor: crosshair; 
+    touch-action: none;
+    -ms-touch-action: none;
+    pointer-events: auto !important;  /* 追加 */
+    position: relative;  /* 追加 */
+    z-index: 1;  /* 追加 */
+}
+```
+
+**理由:**
+- pointer-events: auto を明示的に設定
+- position: relative でスタッキングコンテキスト確立
+- z-index: 1 で他の要素より前面に配置
+
+
+--------------------------------------------------------------------------------
+【最優先】修正2: レイヤーパネルのz-index調整
+--------------------------------------------------------------------------------
+
+**ファイル:** styles/main.css
+
+**目的:**
+レイヤーパネルがCanvas要素を覆わないようにする
+
+**現在:**
+```css
+.layer-panel-container { 
+    position: fixed; 
+    right: 12px; 
+    top: 50%; 
+    transform: translateY(-50%); 
+    z-index: 1000;  /* ← これが原因の可能性 */
+    display: flex; 
+    flex-direction: column; 
+    gap: 2px; 
+    pointer-events: none;  /* 親は無視 */
+}
+```
+
+**修正後:**
+```css
+.layer-panel-container { 
+    position: fixed; 
+    right: 12px; 
+    top: 50%; 
+    transform: translateY(-50%); 
+    z-index: 10;  /* ★★★ 1000 → 10 に変更 ★★★ */
+    display: flex; 
+    flex-direction: column; 
+    gap: 2px; 
+    pointer-events: none;
+}
+```
+
+**理由:**
+- Canvas要素（z-index: 1）より高いが、過度に高すぎない値
+- ポップアップパネル（z-index: 2000）よりは低い
+
+
+--------------------------------------------------------------------------------
+【最優先】修正3: ステータスパネルのz-index調整
+--------------------------------------------------------------------------------
+
+**ファイル:** styles/main.css
+
+**現在:**
+```css
+.status-panel { 
+    position: fixed; 
+    top: 12px; 
+    left: 70px; 
+    /* ... */
+    z-index: 1000;  /* ← これも調整 */
+}
+```
+
+**修正後:**
+```css
+.status-panel { 
+    position: fixed; 
+    top: 12px; 
+    left: 70px; 
+    /* ... */
+    z-index: 10;  /* ★★★ 1000 → 10 に変更 ★★★ */
+}
+```
+
+
+--------------------------------------------------------------------------------
+【優先度：高】修正4: Canvas要素の明示的なイベント設定
+--------------------------------------------------------------------------------
+
+**ファイル:** system/drawing/drawing-engine.js
+
+**目的:**
+Canvas要素のスタイルとイベント設定を強化
+
+**現在:**
+```javascript
+_initializeCanvas() {
+    const canvas = this.app.canvas || this.app.view;
+    if (!canvas) {
+        console.error('❌ [DrawingEngine] Canvas not found');
+        return;
+    }
+
+    canvas.style.touchAction = 'none';
+    console.log('✅ [DrawingEngine] Canvas found');
+
+    // PointerHandler アタッチ
+    this.pointerDetach = window.PointerHandler.attach(canvas, {
+        down: this._handlePointerDown.bind(this),
+        move: this._handlePointerMove.bind(this),
+        up: this._handlePointerUp.bind(this),
+        cancel: this._handlePointerCancel.bind(this)
+    }, {
+        preventDefault: true
+    });
+
+    console.log('✅ [DrawingEngine] PointerHandler attached');
+}
+```
+
+**修正後:**
+```javascript
+_initializeCanvas() {
+    const canvas = this.app.canvas || this.app.view;
+    if (!canvas) {
+        console.error('❌ [DrawingEngine] Canvas not found');
+        return;
+    }
+
+    // ★★★ Canvas要素のスタイル明示化 ★★★
+    canvas.style.touchAction = 'none';
+    canvas.style.pointerEvents = 'auto';
+    canvas.style.position = 'relative';
+    canvas.style.zIndex = '1';
+    
+    // ★★★ 診断ログ追加 ★★★
+    console.log('✅ [DrawingEngine] Canvas found:', canvas);
+    console.log('   Canvas computed styles:', {
+        pointerEvents: window.getComputedStyle(canvas).pointerEvents,
+        touchAction: window.getComputedStyle(canvas).touchAction,
+        zIndex: window.getComputedStyle(canvas).zIndex,
+        position: window.getComputedStyle(canvas).position
+    });
+    
+    const rect = canvas.getBoundingClientRect();
+    console.log('   Canvas rect:', {
+        left: rect.left.toFixed(1),
+        top: rect.top.toFixed(1),
+        width: rect.width.toFixed(1),
+        height: rect.height.toFixed(1)
+    });
+
+    // ★★★ 最上位要素確認 ★★★
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const topElement = document.elementFromPoint(centerX, centerY);
+    
+    if (topElement !== canvas) {
+        console.error('❌ [DrawingEngine] Canvas is covered by another element!');
+        console.error('   Covering element:', topElement.tagName, topElement.className, topElement.id);
+    } else {
+        console.log('✅ [DrawingEngine] Canvas is not covered');
+    }
+
+    // PointerHandler アタッチ
+    this.pointerDetach = window.PointerHandler.attach(canvas, {
+        down: this._handlePointerDown.bind(this),
+        move: this._handlePointerMove.bind(this),
+        up: this._handlePointerUp.bind(this),
+        cancel: this._handlePointerCancel.bind(this)
+    }, {
+        preventDefault: true
+    });
+
+    console.log('✅ [DrawingEngine] PointerHandler attached');
+}
+```
+
+
+--------------------------------------------------------------------------------
+【優先度：高】修正5: pointer-handler.jsのログ強化
+--------------------------------------------------------------------------------
+
+**ファイル:** system/drawing/pointer-handler.js
+
+**目的:**
+タブレットペンのイベント受信状況を詳細にログ出力
+
+**修正箇所:**
+normalizeEvent()関数内にログ追加
+
+**追加コード:**
+```javascript
+function normalizeEvent(e) {
+    let pType = e.pointerType;
+    
+    // ★★★ 診断ログ追加 ★★★
+    if (window.TEGAKI_DEBUG) {
+        console.log('[PointerHandler] RAW event:', {
+            pointerType: e.pointerType,
+            pointerId: e.pointerId,
+            pressure: e.pressure,
+            tiltX: e.tiltX,
+            tiltY: e.tiltY,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            target: e.target.tagName + (e.target.id ? '#' + e.target.id : '')
+        });
+    }
+    
+    // ヒューリスティック: mouseでも筆圧・傾きがあればペン扱い
+    if (pType === 'mouse') {
+        const hasPressure = typeof e.pressure === 'number' && e.pressure > 0.01;
+        const hasTilt = typeof e.tiltX === 'number' && 
+                       (e.tiltX !== 0 || e.tiltY !== 0);
+        
+        if (hasPressure || hasTilt) {
+            pType = 'pen';
+            
+            if (window.TEGAKI_DEBUG) {
+                console.log('[PointerHandler] Type corrected: mouse → pen', {
+                    reason: hasPressure ? 'pressure' : 'tilt',
+                    pressure: e.pressure,
+                    tiltX: e.tiltX,
+                    tiltY: e.tiltY
+                });
+            }
+        }
+    }
+    
+    return {
+        pointerId: e.pointerId,
+        pointerType: pType,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        pressure: e.pressure ?? 0.5,
+        tiltX: e.tiltX ?? 0,
+        tiltY: e.tiltY ?? 0,
+        twist: e.twist ?? 0,
+        button: e.button,
+        buttons: e.buttons,
+        originalEvent: e
+    };
+}
+```
+
+**グローバルデバッグフラグ追加:**
+config.jsに追加
+```javascript
+window.TEGAKI_DEBUG = true;  // 診断時のみ true
+```
+
+
+--------------------------------------------------------------------------------
+【優先度：中】修正6: レイヤーアイテムのドラッグ処理確認
+--------------------------------------------------------------------------------
+
+**ファイル:** ui/layer-panel-renderer.js
+
+**目的:**
+Sortable.jsがCanvas要素を覆う要素を生成していないか確認
+
+**確認ポイント:**
+1. Sortable初期化オプション
+   - ghostClass の設定
+   - dragClass の設定
+   - プレースホルダーの生成
+
+2. ドラッグ中のDOM変更
+   - 透明な要素が生成されていないか
+   - z-indexが異常に高くないか
+
+**修正方針:**
+もしSortable.jsが問題の場合、以下を設定：
+```javascript
+Sortable.create(element, {
+    // ...
+    ghostClass: 'layer-item-ghost',
+    dragClass: 'layer-item-dragging',
+    forceFallback: false,  // ネイティブドラッグを使用
+    // ...
+});
+```
+
+CSSで制御：
+```css
+.layer-item-ghost {
+    opacity: 0.4;
+    z-index: 9999;  /* レイヤーパネル内でのみ有効 */
+}
+
+.layer-item-dragging {
+    opacity: 0.8;
+    cursor: grabbing;
+    z-index: 10000;  /* レイヤーパネル内でのみ有効 */
+}
+```
+
+
+--------------------------------------------------------------------------------
+【優先度：低】修正7: 過剰なコンソールログの削除
+--------------------------------------------------------------------------------
+
+**対象ファイル:**
+- drawing-engine.js
+- brush-core.js
+- coordinate-system.js
+
+**削除対象:**
+1. 座標変換の詳細ログ（Step 1/2/3など）
+2. PointerDown/Move/Upの詳細ログ（診断完了後）
+3. 座標値の逐次出力
+
+**保持対象:**
+1. 初期化完了ログ（各ファイル1回のみ）
+2. エラーログ（console.error）
+3. 警告ログ（console.warn）
+
+**実施タイミング:**
+- タブレットペン問題が解決した後
+- 診断ログは window.TEGAKI_DEBUG でON/OFF
+
+
+================================================================================
+7. 二重実装・SOLID違反の確認と撲滅
+================================================================================
+
+--------------------------------------------------------------------------------
+7-1. 座標変換の二重実装チェック
+--------------------------------------------------------------------------------
+
+【現状】
+✅ OK: drawing-engine.js は CoordinateSystem のみ使用
+✅ OK: brush-core.js は CoordinateSystem のみ使用
+✅ OK: stroke-recorder.js は座標変換を行わない（Local座標をそのまま記録）
+
+【問題なし】
+
+
+--------------------------------------------------------------------------------
+7-2. グローバルシンボルの重複チェック
+--------------------------------------------------------------------------------
+
+【確認項目】
+1. window.BrushCore（インスタンス）
+   → ✅ OK（シングルトン、drawing-engine.jsで参照）
+
+2. window.CoordinateSystem（インスタンス）
+   → ✅ OK（Phase 1改修で統一済み）
+
+3. window.strokeRecorder（インスタンス） vs window.StrokeRecorder（クラス）
+   → ✅ OK（意図的な設計）
+
+【問題なし】
+
+
+--------------------------------------------------------------------------------
+7-3. 循環依存のチェック
+--------------------------------------------------------------------------------
+
+【依存グラフ】
+```
+pointer-handler.js
+  → （依存なし）
+
+coordinate-system.js
+  → eventBus
+  → cameraSystem（setCameraSystem経由、循環なし）
+
+brush-core.js
+  → CoordinateSystem
+  → strokeRecorder
+  → layerManager
+  → strokeRenderer
+
+drawing-engine.js
+  → BrushCore
+  → CoordinateSystem
+  → PointerHandler
+```
+
+【結論】
+✅ 循環依存なし
+✅ 依存方向は一方向（下位→上位のみ）
+
+
+--------------------------------------------------------------------------------
+7-4. DRY違反のチェック
+--------------------------------------------------------------------------------
+
+【座標変換ロジック】
+✅ OK: coordinate-system.js に一元化
+
+【PointerEvent正規化】
+✅ OK: pointer-handler.js の normalizeEvent() に一元化
+
+【ストローク記録】
+✅ OK: stroke-recorder.js に一元化
+
+【問題なし】
+
+
+================================================================================
+8. 改修後の動作確認チェックリスト
+================================================================================
+
+【必須確認項目】
+□ 1. マウスで描画できる
+□ 2. タブレットペンで描画できる ★★★ 重要 ★★★
+□ 3. タッチで描画できる（可能な場合）
+□ 4. 筆圧が正しく反映される
+□ 5. ペン/消しゴム切替が動作する
+□ 6. レイヤーパネルのドラッグ移動（マウス）
+□ 7. レイヤーパネルのドラッグ移動（ペン） ★★★ 重要 ★★★
+□ 8. アクティブレイヤー変更（ボタンクリック）
+□ 9. アクティブレイヤー変更（矢印キー）
+□ 10. Undo/Redo が正常動作
+
+【診断コマンド実行】
+□ 11. 診断スクリプト1実行（Canvas要素の状態確認）
+□ 12. 診断スクリプト2実行（Canvas中央の最上位要素確認）
+□ 13. 診断スクリプト3実行（イベントリスナー確認）
+□ 14. 診断スクリプト4実行（親要素チェーン確認）
+
+【パフォーマンス確認】
+□ 15. 描画時のFPS低下がない
+□ 16. コンソールエラーがない
+□ 17. メモリリークがない（長時間使用）
+
+【エッジケース確認】
+□ 18. レイヤーロック中は描画できない
+□ 19. 背景レイヤーは削除できない
+□ 20. 複数レイヤーでの描画
+□ 21. ズーム/パン中の描画
+□ 22. キャンバスリサイズ後の描画
+
+
+================================================================================
+9. 改修計画書
+================================================================================
+
+--------------------------------------------------------------------------------
+9-1. 改修の優先順位
+--------------------------------------------------------------------------------
+
+【Phase 1: 緊急診断（即時実施）】
+目的: 問題の根本原因を特定する
+
+実施項目:
+1. 診断スクリプト1〜4を実行
+2. Canvas要素の状態確認
+3. 最上位要素の確認
+4. イベントリスナーの確認
+5. 親要素チェーンの確認
+
+所要時間: 10分
+必要なスキル: ブラウザDevToolsの基本操作
+
+成功基準:
+- Canvas要素がタブレットペンのイベントを受け取らない原因が特定される
+- 診断ログで問題箇所が明確になる
+
+
+【Phase 2: 最優先修正（原因に応じて実施）】
+目的: Canvas要素がPointerEventを確実に受け取れるようにする
+
+実施項目:
+- 修正1: Canvas要素のpointer-events明示化（styles/main.css）
+- 修正2: レイヤーパネルのz-index調整（styles/main.css）
+- 修正3: ステータスパネルのz-index調整（styles/main.css）
+
+所要時間: 5分
+必要なスキル: CSS編集
+
+成功基準:
+- タブレットペンでCanvas要素にイベントが到達する
+- ブラウザリロード後、描画が可能になる
+
+
+【Phase 3: 診断機能強化（問題解決後）】
+目的: 将来の問題発生時に迅速に診断できるようにする
+
+実施項目:
+- 修正4: Canvas要素の明示的なイベント設定（drawing-engine.js）
+- 修正5: pointer-handler.jsのログ強化
+- グローバルデバッグフラグの実装（config.js）
+
+所要時間: 15分
+必要なスキル: JavaScript編集
+
+成功基準:
+- 初期化時に診断ログが出力される
+- Canvas要素の状態が自動確認される
+- window.TEGAKI_DEBUG で詳細ログのON/OFF可能
+
+
+【Phase 4: クリーンアップ（全機能動作確認後）】
+目的: コードをクリーンにし、保守性を向上する
+
+実施項目:
+- 修正7: 過剰なコンソールログの削除
+- 診断ログの整理（window.TEGAKI_DEBUG でON/OFF）
+
+所要時間: 10分
+必要なスキル: JavaScript編集
+
+成功基準:
+- 本番環境で不要なログが出力されない
+- デバッグ時のみ詳細ログが有効になる
+
+
+--------------------------------------------------------------------------------
+9-2. リスク評価
+--------------------------------------------------------------------------------
+
+【リスク1: Canvas要素が別の要素に覆われている】
+可能性: ★★★★★ 非常に高い
+影響度: ★★★★★ 致命的
+対応策: 修正1〜3で解決
+
+【リスク2: pointer-eventsが無効化されている】
+可能性: ★★★☆☆ 中程度
+影響度: ★★★★★ 致命的
+対応策: 修正1で解決
+
+【リスク3: ブラウザ/OS/ドライバー問題】
+可能性: ★★☆☆☆ 低い
+影響度: ★★★★☆ 高い
+対応策: ユーザー環境の確認が必要
+
+【リスク4: Sortable.jsがCanvas要素を覆う】
+可能性: ★☆☆☆☆ 非常に低い
+影響度: ★★★★☆ 高い
+対応策: 修正6で確認・解決
+
+
+--------------------------------------------------------------------------------
+9-3. 修正の影響範囲
+--------------------------------------------------------------------------------
+
+【修正1〜3: CSSの変更】
+影響範囲: 最小
+影響を受けるファイル: styles/main.css のみ
+リスク: 非常に低い
+ロールバック: 容易（CSSファイルの復元のみ）
+
+【修正4: drawing-engine.jsの変更】
+影響範囲: 小
+影響を受けるファイル: system/drawing/drawing-engine.js のみ
+リスク: 低い（診断ログの追加のみ）
+ロールバック: 容易
+
+【修正5: pointer-handler.jsの変更】
+影響範囲: 小
+影響を受けるファイル: system/drawing/pointer-handler.js のみ
+リスク: 低い（診断ログの追加のみ）
+ロールバック: 容易
+
+
+--------------------------------------------------------------------------------
+9-4. 実施スケジュール（推奨）
+--------------------------------------------------------------------------------
+
+【Day 1: 診断と緊急修正】
+時間: 30分
+1. [10分] Phase 1: 診断スクリプト実行
+2. [5分]  Phase 2: 修正1〜3実施
+3. [10分] 動作確認（タブレットペンで描画テスト）
+4. [5分]  レイヤードラッグテスト
+
+【Day 2: 診断機能強化】
+時間: 30分
+1. [15分] Phase 3: 修正4〜5実施
+2. [10分] 動作確認（全機能テスト）
+3. [5分]  チェックリスト確認
+
+【Day 3: クリーンアップ】
+時間: 15分
+1. [10分] Phase 4: 修正7実施
+2. [5分]  最終動作確認
+
+
+--------------------------------------------------------------------------------
+9-5. 成功基準
+--------------------------------------------------------------------------------
+
+【最低限の成功基準】
+- タブレットペンで描画できる
+- マウスで描画できる（既存機能の維持）
+- レイヤーパネルのドラッグ移動（ペン・マウス）
+
+【理想的な成功基準】
+- 上記 + 診断機能が実装されている
+- 上記 + コードがクリーン（不要なログなし）
+- 上記 + ドキュメントが更新されている
+
+
+================================================================================
+10. トラブルシューティング
+================================================================================
+
+--------------------------------------------------------------------------------
+10-1. 問題: 修正後もタブレットペンで描画できない
+--------------------------------------------------------------------------------
+
+【確認項目】
+1. ブラウザのキャッシュクリア
+   - Ctrl+Shift+Delete
+   - キャッシュと画像ファイルを削除
+   - ブラウザを再起動
+
+2. 診断スクリプト再実行
+   - Canvas要素が最上位要素か確認
+   - pointer-eventsが auto になっているか確認
+
+3. ブラウザ環境確認
+   - Chrome最新版か確認
+   - chrome://flags/ で Touch Events API が有効か確認
+
+4. OS/ドライバー確認（Windows）
+   - Windows Ink設定
+   - タブレットドライバーの更新
+   - ペンとWindows Inkの設定を確認
+
+
+--------------------------------------------------------------------------------
+10-2. 問題: マウスでも描画できなくなった
+--------------------------------------------------------------------------------
+
+【確認項目】
+1. 修正のロールバック
+   - styles/main.css を元に戻す
+   - ブラウザリロード
+
+2. エラーログ確認
+   - ブラウザConsoleでエラーがないか確認
+
+3. PointerHandlerの動作確認
+   ```javascript
+   const canvas = document.querySelector('canvas');
+   canvas.addEventListener('pointerdown', (e) => {
+       console.log('Direct listener:', e);
+   });
+   ```
+
+
+--------------------------------------------------------------------------------
+10-3. 問題: レイヤーパネルがCanvas要素の後ろに隠れた
+--------------------------------------------------------------------------------
+
+【原因】
+z-indexの調整が不適切
+
+【解決策】
+styles/main.css で z-index を調整
+```css
+.layer-panel-container { 
+    z-index: 10;  /* Canvas(z-index:1)より前面 */
+}
+```
+
+
+--------------------------------------------------------------------------------
+10-4. 問題: 診断スクリプトでCanvas要素が見つからない
+--------------------------------------------------------------------------------
+
+【原因】
+PixiJS Application の初期化が完了していない
+
+【解決策】
+1. ページ読み込み完了後に再度実行
+2. window.drawingAppInstance の存在確認
+   ```javascript
+   console.log('App instance:', window.drawingAppInstance);
+   console.log('PixiJS app:', window.drawingAppInstance?.pixiApp);
+   ```
+
+
+================================================================================
+11. 将来的な改善提案（Phase 5以降）
+================================================================================
+
+--------------------------------------------------------------------------------
+11-1. 完全なDI（依存注入）化
+--------------------------------------------------------------------------------
+
+【現状】
+- BrushCore が window.* のグローバル参照に依存
+- 初期化順序に依存（グローバルが先に設定される必要）
+
+【改善案】
+```javascript
+// core-engine.js
+this.brushCore = new BrushCore({
+    coordinateSystem: this.coordinateSystem,
+    strokeRecorder: this.strokeRecorder,
+    layerManager: this.layerSystem,
+    strokeRenderer: this.strokeRenderer,
+    pressureHandler: window.pressureHandler,
+    eventBus: this.eventBus
+});
+```
+
+【メリット】
+- テストが容易（モックの注入）
+- 初期化順序の依存を排除
+- グローバル汚染の削減
+
+
+--------------------------------------------------------------------------------
+11-2. イベントバス経由の疎結合化
+--------------------------------------------------------------------------------
+
+【現状】
+- BrushCore が StrokeRecorder を直接呼び出し
+
+【改善案】
+```javascript
+// BrushCore
+startStroke(localX, localY, pressure) {
+    this.eventBus.emit('stroke:start-requested', {
+        localX, localY, pressure, layerId: this.getActiveLayerId()
+    });
+}
+
+// StrokeRecorder
+this.eventBus.on('stroke:start-requested', (data) => {
+    this.startStroke(data.localX, data.localY, data.pressure);
+});
+```
+
+【メリット】
+- コンポーネント間の疎結合
+- 機能追加が容易（イベントリスナー追加のみ）
+
+
+--------------------------------------------------------------------------------
+11-3. ログレベルの実装
+--------------------------------------------------------------------------------
+
+【現状】
+- console.log/warn/error の直接呼び出し
+- window.TEGAKI_DEBUG フラグによるON/OFF
+
+【改善案】
+```javascript
+// logger.js
+class Logger {
+    static TRACE = 0;
+    static DEBUG = 1;
+    static INFO = 2;
+    static WARN = 3;
+    static ERROR = 4;
+    
+    constructor(name, level = Logger.INFO) {
+        this.name = name;
+        this.level = level;
+    }
+    
+    debug(...args) {
+        if (this.level <= Logger.DEBUG) {
+            console.log(`[${this.name}] DEBUG:`, ...args);
+        }
+    }
+    
+    error(...args) {
+        if (this.level <= Logger.ERROR) {
+            console.error(`[${this.name}] ERROR:`, ...args);
+        }
+    }
+}
+
+// 使用例
+const logger = new Logger('BrushCore', Logger.INFO);
+logger.debug('座標変換開始'); // 本番では出力されない
+logger.error('strokeRecorder is null'); // 常に出力
+```
+
+
+--------------------------------------------------------------------------------
+11-4. 型定義の追加（JSDoc）
+--------------------------------------------------------------------------------
+
+【改善案】
+```javascript
+/**
+ * @typedef {Object} LocalCoords
+ * @property {number} localX - ローカル座標X
+ * @property {number} localY - ローカル座標Y
+ */
+
+/**
+ * @typedef {Object} StrokePoint
+ * @property {number} x - X座標
+ * @property {number} y - Y座標
+ * @property {number} pressure - 筆圧 (0.0-1.0)
+ * @property {number} time - タイムスタンプ
+ */
+
+/**
+ * ストローク開始
+ * @param {number} clientX - Screen X座標
+ * @param {number} clientY - Screen Y座標
+ * @param {number} pressure - 筆圧
+ * @returns {void}
+ */
+startStroke(clientX, clientY, pressure) {
+    // ...
+}
+```
+
+
+================================================================================
+12. まとめ：即座に実施すべき修正
+================================================================================
+
+【最優先（今すぐ実施）】
+1. 診断スクリプト1〜4を実行
+   → 問題の根本原因を特定
+
+2. styles/main.css を修正
+   - 修正1: Canvas要素の pointer-events 明示化
+   - 修正2: レイヤーパネルの z-index 調整（1000 → 10）
+   - 修正3: ステータスパネルの z-index 調整（1000 → 10）
+
+3. ブラウザリロード
+   → タブレットペンで描画テスト
+
+【次に実施】
+4. system/drawing/drawing-engine.js を修正
+   - 修正4: Canvas要素の診断ログ追加
+
+5. system/drawing/pointer-handler.js を修正
+   - 修正5: イベント受信の詳細ログ追加
+
+6. config.js を修正
+   - window.TEGAKI_DEBUG = true 追加（診断時のみ）
+
+【検証】
+7. タブレットペンで描画テスト
+8. レイヤードラッグテスト（ペン・マウス）
+9. チェックリスト確認
+
+【報告】
+- 修正前: マウス○ ペン× レイヤードラッグ（マウス○ ペン×）
+- 修正後: マウス○ ペン○ レイヤードラッグ（マウス○ ペン○）
+
+
+================================================================================
+補足1: pointerType誤認問題について
+================================================================================
+
+【pointer-handler.js の normalizeEvent()】
+現在、以下のヒューリスティックで補正済み：
+- pointerType='mouse' かつ pressure > 0.01 → 'pen' に補正
+- pointerType='mouse' かつ tiltX/tiltY != 0 → 'pen' に補正
+
+【確認方法】
+```javascript
+// ブラウザコンソール
+canvas.addEventListener('pointerdown', (e) => {
+    console.log('Native pointerType:', e.pointerType);
+    console.log('Pressure:', e.pressure);
+    console.log('Tilt:', e.tiltX, e.tiltY);
+});
+```
+
+【もし補正が不十分な場合】
+- Windows環境でペンドライバーの設定確認
+- Chrome flags: chrome://flags/ で "Touch Events API" 確認
+- ブラウザのペンサポート状況確認
+
+
+================================================================================
+補足2: レイヤードラッグ問題について
+================================================================================
+
+【現状】
+- レイヤーパネルのドラッグ移動がタブレットペンで動作しない
+- マウスでは正常動作
+
+【原因の可能性】
+1. Sortable.js がタブレットペンに対応していない
+2. レイヤーアイテムの touch-action 設定が不適切
+3. pointer-events の競合
+
+【確認方法】
+```javascript
+// レイヤーアイテムの状態確認
+const layerItem = document.querySelector('.layer-item');
+const styles = window.getComputedStyle(layerItem);
+console.log('Layer item styles:', {
+    touchAction: styles.touchAction,
+    pointerEvents: styles.pointerEvents,
+    zIndex: styles.zIndex
+});
+```
+
+【修正案】
+styles/main.css
+```css
+.layer-item { 
+    /* ... */
+    touch-action: none;  /* 既に設定済み */
+    -ms-touch-action: none;  /* 既に設定済み */
+}
+
+.layer-thumbnail { 
+    /* ... */
+    touch-action: none;  /* 既に設定済み */
+    -ms-touch-action: none;  /* 既に設定済み */
+    pointer-events: auto;  /* 追加 */
+}
+```
+
+【Sortable.jsの設定確認】
+ui/layer-panel-renderer.js
+```javascript
+Sortable.create(element, {
+    // ...
+    forceFallback: false,  // ネイティブドラッグを使用
+    fallbackTolerance: 3,  // ドラッグ開始の閾値
+    touchStartThreshold: 0,  // タッチ開始の閾値
+    // ...
+});
+```
+
+
+================================================================================
+終わり
+================================================================================
