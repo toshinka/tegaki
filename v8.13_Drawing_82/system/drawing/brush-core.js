@@ -1,6 +1,9 @@
 /**
- * BrushCore - Phase 1: BrushSettings統一版
- * グローバルwindow.brushSettingsを参照し、ローカル変数を削除
+ * BrushCore - Phase 1: BrushSettings統一版（エラー修正）
+ * 
+ * 🔧 修正内容:
+ * - EventBusイベントペイロード形式を修正: { data } → data 直接アクセス
+ * - brush:size-changed イベントハンドラの参照エラーを解消
  */
 
 (function() {
@@ -22,12 +25,7 @@
             this.strokeRenderer = null;
             this.eventBus = null;
             
-            // ★Phase 1修正: ローカルbrusSettings変数を削除
-            // window.brushSettingsを参照する
-            
             this.previewGraphics = null;
-            
-            // ★Phase 1追加: EventBus購読フラグ
             this.eventListenersSetup = false;
         }
         
@@ -57,7 +55,6 @@
                 throw new Error('[BrushCore] window.strokeRenderer not initialized');
             }
             
-            // ★Phase 1追加: window.brushSettingsの確認
             if (!window.brushSettings) {
                 console.warn('[BrushCore] window.brushSettings not found - will retry on first draw');
             } else {
@@ -68,7 +65,6 @@
                 console.warn('[BrushCore] window.pressureHandler not found - pressure sensitivity disabled');
             }
             
-            // ★Phase 1追加: EventBus購読設定
             this._setupEventListeners();
             
             console.log('✅ [BrushCore] Initialized (Phase 1: BrushSettings統一版)');
@@ -80,32 +76,37 @@
             console.log('   - BrushSettings:', !!window.brushSettings);
         }
         
-        // ★Phase 1追加: EventBusリスナー設定
+        // 🔧 修正: EventBusイベントハンドラのペイロード形式修正
         _setupEventListeners() {
             if (this.eventListenersSetup || !this.eventBus) {
                 return;
             }
             
-            // ペンサイズ変更イベント
-            this.eventBus.on('brush:size-changed', ({ data }) => {
-                console.log(`[BrushCore] Size changed event received: ${data.size}`);
+            // ペンサイズ変更イベント（修正: data直接アクセス）
+            this.eventBus.on('brush:size-changed', (data) => {
+                if (data && typeof data.size === 'number') {
+                    console.log(`[BrushCore] Size changed: ${data.size}`);
+                }
             });
             
-            // 色変更イベント
-            this.eventBus.on('brush:color-changed', ({ data }) => {
-                console.log(`[BrushCore] Color changed event received: 0x${data.color.toString(16)}`);
+            // 色変更イベント（修正: data直接アクセス）
+            this.eventBus.on('brush:color-changed', (data) => {
+                if (data && typeof data.color === 'number') {
+                    console.log(`[BrushCore] Color changed: 0x${data.color.toString(16)}`);
+                }
             });
             
-            // 不透明度変更イベント
-            this.eventBus.on('brush:opacity-changed', ({ data }) => {
-                console.log(`[BrushCore] Opacity changed event received: ${(data.opacity * 100).toFixed(0)}%`);
+            // 不透明度変更イベント（修正: data直接アクセス）
+            this.eventBus.on('brush:opacity-changed', (data) => {
+                if (data && typeof data.opacity === 'number') {
+                    console.log(`[BrushCore] Opacity changed: ${(data.opacity * 100).toFixed(0)}%`);
+                }
             });
             
             this.eventListenersSetup = true;
             console.log('✅ [BrushCore] EventBus listeners setup complete');
         }
         
-        // ★Phase 1修正: window.brushSettingsから設定取得
         _getCurrentSettings() {
             if (!window.brushSettings) {
                 console.warn('[BrushCore] window.brushSettings not available, using defaults');
@@ -140,8 +141,6 @@
             console.log(`[BrushCore] Mode switched: ${oldMode} → ${mode}`);
         }
         
-        // ★Phase 1: このメソッドは不要（window.brushSettingsが直接管理）
-        // 互換性のため残すが、内部では何もしない
         updateSettings(settings) {
             console.warn('[BrushCore] updateSettings() is deprecated. Use window.brushSettings directly.');
         }
@@ -169,7 +168,6 @@
             this.previewGraphics.label = 'strokePreview';
             activeLayer.addChild(this.previewGraphics);
             
-            // ★Phase 1修正: window.brushSettingsから設定取得
             const settings = this._getCurrentSettings();
             
             this.strokeRenderer.renderPreview(
@@ -203,7 +201,6 @@
             
             const processedPressure = pressure;
             
-            // 線形補間
             const dx = localX - this.lastLocalX;
             const dy = localY - this.lastLocalY;
             const distance = Math.sqrt(dx * dx + dy * dy);
@@ -222,8 +219,6 @@
             
             if (this.previewGraphics) {
                 const currentPoints = this.strokeRecorder.getCurrentPoints();
-                
-                // ★Phase 1修正: window.brushSettingsから設定取得
                 const settings = this._getCurrentSettings();
                 
                 this.previewGraphics.clear();
@@ -253,7 +248,6 @@
                 this.previewGraphics = null;
             }
             
-            // ★Phase 1修正: window.brushSettingsから設定取得
             const settings = this._getCurrentSettings();
             
             const pathData = this.strokeRenderer.renderStroke(
@@ -283,8 +277,6 @@
                 const layerIndex = this.layerManager.getLayerIndex(activeLayer);
                 
                 if (this.eventBus && layerIndex !== -1) {
-                    console.log(`✏️ [BrushCore] Stroke completed - emitting layer:path-added for layer ${layerIndex}`);
-                    
                     this.eventBus.emit('layer:path-added', {
                         component: 'drawing',
                         action: 'path-added',
@@ -349,9 +341,8 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js (Phase 1: BrushSettings統一版) loaded');
-    console.log('   ✓ Removed local brushSettings variable');
-    console.log('   ✓ Using global window.brushSettings');
-    console.log('   ✓ EventBus listeners for real-time settings update');
+    console.log('✅ brush-core.js (エラー修正版) loaded');
+    console.log('   ✓ EventBus ペイロード形式修正');
+    console.log('   ✓ brush:size-changed エラー解消');
 
 })();
