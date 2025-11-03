@@ -1,5 +1,4 @@
 // ui/layer-panel-renderer.js - Phase 5, 6 完全実装版
-// レイヤーパネルのUI描画とインタラクション管理
 // Phase 5: 背景レイヤー仕様（バケツアイコン、透明度非表示、削除ボタン非表示）
 // Phase 6: 一般レイヤー透明度UI（◀ 100% ▶、ドラッグ対応）
 
@@ -227,25 +226,41 @@
             if (!isBackground) {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'layer-delete-button';
-                deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2.5">
-                    <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
-                </svg>`;
-                deleteBtn.style.padding = '4px';
+                deleteBtn.style.padding = '0';
                 deleteBtn.style.width = '20px';
                 deleteBtn.style.height = '20px';
                 deleteBtn.style.display = 'flex';
                 deleteBtn.style.alignItems = 'center';
                 deleteBtn.style.justifyContent = 'center';
                 deleteBtn.style.cursor = 'pointer';
-                deleteBtn.style.border = 'none';
+                deleteBtn.style.border = '1.5px solid #800000';
+                deleteBtn.style.borderRadius = '50%';
                 deleteBtn.style.backgroundColor = 'transparent';
+                deleteBtn.style.transition = 'background-color 0.2s';
+                deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2.5">
+                    <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
+                </svg>`;
                 deleteBtn.title = 'レイヤーを削除';
+                
+                deleteBtn.addEventListener('mouseenter', function() {
+                    this.style.backgroundColor = '#800000';
+                    const svg = this.querySelector('svg');
+                    if (svg) svg.setAttribute('stroke', '#ffffff');
+                });
+                
+                deleteBtn.addEventListener('mouseleave', function() {
+                    this.style.backgroundColor = 'transparent';
+                    const svg = this.querySelector('svg');
+                    if (svg) svg.setAttribute('stroke', '#800000');
+                });
+                
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     if (this.layerSystem?.deleteLayer) {
                         this.layerSystem.deleteLayer(index);
                     }
                 });
+                
                 layerDiv.appendChild(deleteBtn);
             }
 
@@ -318,7 +333,7 @@
             element.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
                 const dx = e.clientX - startX;
-                const delta = dx / 200; // 200pxで100%変化
+                const delta = dx / 200;
                 const newOpacity = Math.max(0, Math.min(1, startOpacity + delta));
                 this._setLayerOpacity(layerIndex, newOpacity);
                 e.stopPropagation();
@@ -339,7 +354,6 @@
                 element.style.cursor = 'ew-resize';
             });
             
-            // ホバー時のカーソル
             element.addEventListener('pointerenter', () => {
                 if (!isDragging) {
                     element.style.cursor = 'ew-resize';
