@@ -1,7 +1,8 @@
-/* Tegaki Tool - Main Stylesheet (v2.1: タブレットペン完全対応版) */
-/* ✅ レイヤー: アクティブ枠#ff8c42、背景半透明#f0e0d6、hover演出 */
+/* Tegaki Tool - Main Stylesheet (v2.2: JavaScript管理への移行完了版) */
+/* ✅ レイヤーパネル: 動的要素はJavaScript管理に移行 */
 /* ✅ v2.0: layer-transform-panel スライダー色をmaroon系に統一 */
 /* ✅ v2.1: タブレットペン対応 - touch-action: none を追加 */
+/* ✅ v2.2: 二重実装削除、DRY/SOLID原則準拠 */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -90,7 +91,6 @@ body {
     align-items: center; 
 }
 
-/* ★★★ タブレットペン対応: touch-action 追加 ★★★ */
 #drawing-canvas,
 canvas { 
     cursor: crosshair; 
@@ -195,6 +195,10 @@ canvas {
     cursor: not-allowed; 
 }
 
+/* ===== レイヤーパネル（JavaScript管理に移行） ===== */
+/* 詳細なレイアウトはlayer-panel-renderer.jsで管理 */
+/* CSSは最小限のスタイル定義のみ */
+
 .layer-panel-items { 
     display: flex; 
     flex-direction: column; 
@@ -203,133 +207,114 @@ canvas {
     pointer-events: all; 
     max-height: 60vh; 
     overflow-y: auto; 
+    overflow-x: hidden;
 }
 
-/* ★★★ タブレットペン対応: layer-item と layer-thumbnail に touch-action 追加 ★★★ */
-.layer-item { 
-    width: 170px; 
-    height: 56px; 
-    background: rgba(240, 224, 214, 0.5);
-    border: 2px solid var(--futaba-cream); 
-    border-radius: 4px; 
-    padding: 4px 6px; 
-    cursor: pointer; 
-    display: grid; 
-    grid-template-columns: 18px 1fr auto; 
-    grid-template-rows: 1fr 1fr; 
-    gap: 3px 6px; 
-    align-items: center; 
-    user-select: none; 
-    position: relative;
-    backdrop-filter: blur(8px);
-    transition: all 0.2s ease;
-    touch-action: none;
-    -ms-touch-action: none;
+/* Webkit系ブラウザ用スクロールバー */
+.layer-panel-items::-webkit-scrollbar {
+    width: 10px;
 }
 
-.layer-item:hover { 
-    border-color: var(--futaba-medium); 
-    background: var(--futaba-cream);
+.layer-panel-items::-webkit-scrollbar-track {
+    background: #e9c2ba;
+    border-radius: 5px;
+}
+
+.layer-panel-items::-webkit-scrollbar-thumb {
+    background: #800000;
+    border-radius: 5px;
+    border: 2px solid #e9c2ba;
+}
+
+.layer-panel-items::-webkit-scrollbar-thumb:hover {
+    background: #aa5a56;
+}
+
+/* Firefox用スクロールバー */
+.layer-panel-items {
+    scrollbar-width: thin;
+    scrollbar-color: #800000 #e9c2ba;
+}
+
+/* ホバーエフェクト（CSS管理が適切） */
+.layer-item:hover {
+    border-color: var(--futaba-medium) !important;
+    background: var(--futaba-cream) !important;
     transform: translateX(-2px);
     box-shadow: 2px 0 4px rgba(128, 0, 0, 0.1);
 }
 
-.layer-item.active { 
-    border-color: #ff8c42;
-    border-width: 3px;
-    background: var(--futaba-cream);
-    padding: 3px 5px;
+.layer-item.active {
+    border-color: #ff8c42 !important;
 }
 
-.layer-visibility { 
-    grid-column: 1; 
-    grid-row: 1 / 3; 
-    width: 18px; 
-    height: 18px; 
-    cursor: pointer; 
-    align-self: center; 
+/* Sortable.jsドラッグエフェクト */
+.sortable-ghost {
+    opacity: 0.3;
+    background-color: var(--futaba-light-maroon) !important;
+    border-color: var(--futaba-maroon) !important;
 }
 
-.layer-visibility:hover { 
-    background: var(--futaba-light-medium); 
-    border-radius: 2px; 
+.sortable-drag {
+    opacity: 1.0 !important;
+    transform: rotate(2deg) !important;
+    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.3) !important;
+    cursor: grabbing !important;
+    background: var(--futaba-cream) !important;
+    border-color: #ff8c42 !important;
+    z-index: 10000;
 }
 
-.layer-visibility svg { 
-    width: 14px; 
-    height: 14px; 
-    stroke: var(--futaba-maroon); 
+.sortable-chosen {
+    background-color: rgba(255, 140, 66, 0.2) !important;
+    border-color: #ff8c42 !important;
 }
 
-.layer-opacity { 
-    grid-column: 2; 
-    grid-row: 1; 
-    font-size: 9px; 
-    color: var(--futaba-maroon); 
-    font-family: monospace; 
+/* 背景レイヤーの特殊処理 */
+.layer-item.background-layer {
+    cursor: default !important;
 }
 
-.layer-name { 
-    grid-column: 2; 
-    grid-row: 2; 
-    font-size: 11px; 
-    color: var(--futaba-maroon); 
-    font-weight: 500; 
-    white-space: nowrap; 
-    overflow: hidden; 
-    text-overflow: ellipsis; 
+.layer-item.background-layer:hover {
+    border-color: var(--futaba-cream) !important;
+    background: rgba(240, 224, 214, 0.5) !important;
+    transform: none !important;
+    box-shadow: none !important;
 }
 
-/* ★★★ タブレットペン対応: layer-thumbnail に touch-action 追加 ★★★ */
-.layer-thumbnail { 
-    grid-column: 3; 
-    grid-row: 1 / 3; 
-    width: 64px; 
-    height: 44px; 
-    background: var(--futaba-background); 
-    border: 1px solid var(--futaba-light-medium); 
-    border-radius: 3px; 
-    overflow: hidden; 
-    touch-action: none;
-    -ms-touch-action: none;
-    pointer-events: auto;
-}
-
-.layer-thumbnail img { 
-    width: 100%; 
-    height: 100%; 
-    object-fit: cover; 
-}
-
-.layer-delete-button {
-    position: absolute;
-    top: 3px;
-    right: 3px;
-    width: 14px;
-    height: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
+/* レイヤー名編集用input */
+.layer-item input[type="text"] {
+    border: 1px solid var(--futaba-maroon);
     border-radius: 2px;
-    transition: all 0.15s ease;
-    background: rgba(128, 0, 0, 0.08);
-    opacity: 0;
+    padding: 0 2px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    outline: none;
 }
 
-.layer-item:hover .layer-delete-button { 
-    opacity: 1; 
+.layer-item input[type="text"]:focus {
+    border-color: #ff6600;
+    box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.2);
 }
 
-.layer-delete-button:hover { 
-    background: rgba(128, 0, 0, 0.18); 
+/* ドラッグ中のプレースホルダー */
+.layer-item-placeholder {
+    width: 170px;
+    height: 56px;
+    border: 2px dashed var(--futaba-maroon);
+    background: rgba(255, 140, 66, 0.1);
+    margin: 2px 0;
+    border-radius: 4px;
+    pointer-events: none;
+    animation: pulse 1s ease-in-out infinite;
 }
 
-.layer-delete-button svg { 
-    width: 9px; 
-    height: 9px; 
-    stroke: #800000; 
+@keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.8; }
 }
+
+/* ===== ポップアップパネル ===== */
 
 .popup-panel { 
     position: fixed; 
@@ -730,7 +715,6 @@ canvas {
     } 
 }
 
-/* v2.0: layer-transform-panel スライダー色をmaroon系に統一 */
 .layer-transform-panel .slider-track {
     background: #8b4545;
 }
@@ -975,452 +959,4 @@ canvas {
     border-bottom: none;
     margin-bottom: 0;
     padding-bottom: 0;
-}
-
-/* ドラッグ中のプレースホルダー */
-.layer-item-placeholder {
-    width: 170px;
-    height: 56px;
-    border: 2px dashed #666;
-    background: rgba(255, 255, 255, 0.1);
-    margin: 2px 0;
-    border-radius: 4px;
-    pointer-events: none;
-}
-
-/* ドラッグ中のレイヤーアイテム */
-.layer-item.dragging {
-    opacity: 0.8;
-    cursor: grabbing;
-    z-index: 10000;
-}
-
-/* ===== Phase 5-7 追加スタイル ===== */
-/* 既存のmain.cssに追加してください */
-
-/* Phase 5: 背景レイヤー色変更ボタン */
-.layer-background-color-button {
-    grid-column: 2;
-    grid-row: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    border-radius: 4px;
-    padding: 2px;
-}
-
-.layer-background-color-button:hover {
-    background: rgba(128, 0, 0, 0.08);
-}
-
-.layer-background-color-button:active {
-    transform: scale(0.95);
-}
-
-.layer-background-color-button svg {
-    width: 16px;
-    height: 16px;
-}
-
-/* Phase 6: レイヤー透明度コントロール */
-.layer-opacity-control {
-    grid-column: 2;
-    grid-row: 1;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    user-select: none;
-}
-
-.layer-opacity-decrease,
-.layer-opacity-increase {
-    padding: 0 4px;
-    cursor: pointer;
-    border: none;
-    background: transparent;
-    color: var(--futaba-maroon);
-    font-size: 11px;
-    line-height: 1;
-    transition: all 0.15s ease;
-}
-
-.layer-opacity-decrease:hover,
-.layer-opacity-increase:hover {
-    background: rgba(128, 0, 0, 0.08);
-    border-radius: 2px;
-}
-
-.layer-opacity-decrease:active,
-.layer-opacity-increase:active {
-    transform: scale(0.9);
-}
-
-.layer-opacity-value {
-    cursor: ew-resize;
-    user-select: none;
-    min-width: 35px;
-    text-align: center;
-    color: var(--futaba-maroon);
-    font-family: monospace;
-    font-weight: 600;
-    padding: 2px 4px;
-    border-radius: 3px;
-    transition: background 0.15s ease;
-}
-
-.layer-opacity-value:hover {
-    background: rgba(128, 0, 0, 0.06);
-}
-
-.layer-opacity-value:active {
-    background: rgba(128, 0, 0, 0.12);
-    cursor: grabbing;
-}
-
-/* Phase 7: レイヤードラッグ改善 - Sortable.js スタイル */
-.sortable-ghost {
-    opacity: 0.3;
-    background-color: var(--futaba-light-maroon);
-    border-color: var(--futaba-maroon);
-}
-
-.sortable-drag {
-    opacity: 1.0 !important;
-    transform: rotate(2deg);
-    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.3);
-    cursor: grabbing !important;
-    background: var(--futaba-cream);
-    border-color: #ff8c42;
-    z-index: 10000;
-}
-
-.sortable-chosen {
-    background-color: rgba(255, 140, 66, 0.2);
-    border-color: #ff8c42;
-}
-
-.layer-item {
-    cursor: grab;
-    transition: all 0.2s ease;
-}
-
-.layer-item:active {
-    cursor: grabbing;
-}
-
-/* Phase 7: ドラッグ中のプレースホルダー強化 */
-.layer-item-placeholder {
-    width: 170px;
-    height: 56px;
-    border: 2px dashed var(--futaba-maroon);
-    background: rgba(255, 140, 66, 0.1);
-    margin: 2px 0;
-    border-radius: 4px;
-    pointer-events: none;
-    animation: pulse 1s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 0.8; }
-}
-
-/* Phase 5 & 6: レイヤーアイテムのグリッドレイアウト調整 */
-.layer-item {
-    grid-template-columns: 18px 1fr 64px 14px;
-    grid-template-rows: 1fr 1fr;
-}
-
-.layer-visibility {
-    grid-column: 1;
-    grid-row: 1 / 3;
-}
-
-.layer-opacity-control,
-.layer-background-color-button {
-    grid-column: 2;
-    grid-row: 1;
-}
-
-.layer-name {
-    grid-column: 2;
-    grid-row: 2;
-}
-
-.layer-thumbnail {
-    grid-column: 3;
-    grid-row: 1 / 3;
-}
-
-.layer-delete-button {
-    grid-column: 4;
-    grid-row: 1 / 3;
-    position: static;
-    width: 14px;
-    height: 14px;
-    align-self: center;
-}
-
-/* 背景レイヤーは削除ボタンを非表示 */
-.layer-item[data-layer-id*="temp_layer_bg"] .layer-delete-button,
-.layer-item.background-layer .layer-delete-button {
-    display: none;
-}
-
-/* ===== Phase 5-7 追加スタイルv2 ===== */
-/* 既存のmain.cssに追加してください */
-
-/* Phase 5: 背景レイヤー色変更ボタン */
-.layer-background-color-button {
-    grid-column: 2;
-    grid-row: 1;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    border-radius: 4px;
-    padding: 2px 4px;
-}
-
-.layer-background-color-button:hover {
-    background: rgba(128, 0, 0, 0.08);
-}
-
-.layer-background-color-button:active {
-    transform: scale(0.95);
-}
-
-.layer-background-color-button svg {
-    width: 16px;
-    height: 16px;
-}
-
-/* Phase 6: レイヤー透明度コントロール（ボタンのみ） */
-.layer-opacity-control {
-    grid-column: 2;
-    grid-row: 1;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    font-size: 11px;
-    user-select: none;
-    justify-content: flex-start;
-    padding-left: 4px;
-    height: 100%;
-}
-
-.layer-opacity-decrease,
-.layer-opacity-increase {
-    padding: 0 3px;
-    cursor: pointer;
-    border: none;
-    background: transparent;
-    color: var(--futaba-maroon);
-    font-size: 11px;
-    line-height: 1;
-    transition: all 0.15s ease;
-    height: 100%;
-    display: flex;
-    align-items: center;
-}
-
-.layer-opacity-decrease:hover,
-.layer-opacity-increase:hover {
-    background: rgba(128, 0, 0, 0.08);
-    border-radius: 2px;
-}
-
-.layer-opacity-decrease:active,
-.layer-opacity-increase:active {
-    transform: scale(0.9);
-}
-
-.layer-opacity-value {
-    user-select: none;
-    min-width: 35px;
-    text-align: center;
-    color: var(--futaba-maroon);
-    font-family: monospace;
-    font-weight: 600;
-    padding: 2px 4px;
-    border-radius: 3px;
-    cursor: default;
-}
-
-/* レイヤー名スタイル */
-.layer-name {
-    text-align: left !important;
-    padding-left: 4px;
-    cursor: text;
-}
-
-.layer-name:hover {
-    background: rgba(128, 0, 0, 0.04);
-    border-radius: 2px;
-}
-
-/* Phase 7: レイヤードラッグ改善 - Sortable.js スタイル */
-.sortable-ghost {
-    opacity: 0.3;
-    background-color: var(--futaba-light-maroon);
-    border-color: var(--futaba-maroon);
-}
-
-.sortable-drag {
-    opacity: 1.0 !important;
-    transform: rotate(2deg);
-    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.3);
-    cursor: grabbing !important;
-    background: var(--futaba-cream);
-    border-color: #ff8c42;
-    z-index: 10000;
-}
-
-.sortable-chosen {
-    background-color: rgba(255, 140, 66, 0.2);
-    border-color: #ff8c42;
-}
-
-.layer-item {
-    cursor: grab;
-    transition: all 0.2s ease;
-}
-
-.layer-item:active {
-    cursor: grabbing;
-}
-
-/* Phase 5: 背景レイヤー固定化 - ドラッグ無効、ホバー無効 */
-.layer-item.background-layer {
-    cursor: default !important;
-}
-
-.layer-item.background-layer:hover {
-    border-color: var(--futaba-cream) !important;
-    background: rgba(240, 224, 214, 0.5) !important;
-    transform: none !important;
-    box-shadow: none !important;
-}
-
-.layer-item.background-layer:active {
-    cursor: default !important;
-}
-
-/* Phase 7: ドラッグ中のプレースホルダー強化 */
-.layer-item-placeholder {
-    width: 170px;
-    height: 56px;
-    border: 2px dashed var(--futaba-maroon);
-    background: rgba(255, 140, 66, 0.1);
-    margin: 2px 0;
-    border-radius: 4px;
-    pointer-events: none;
-    animation: pulse 1s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 0.8; }
-}
-
-/* Phase 5 & 6: レイヤーアイテムのグリッドレイアウト調整 */
-.layer-item {
-    grid-template-columns: 18px 1fr 64px 14px;
-    grid-template-rows: 1fr 1fr;
-}
-
-.layer-visibility {
-    grid-column: 1;
-    grid-row: 1 / 3;
-}
-
-.layer-opacity-control,
-.layer-background-color-button {
-    grid-column: 2;
-    grid-row: 1;
-}
-
-.layer-name {
-    grid-column: 2;
-    grid-row: 2;
-}
-
-.layer-thumbnail {
-    grid-column: 3;
-    grid-row: 1 / 3;
-}
-
-.layer-delete-button {
-    grid-column: 4;
-    grid-row: 1 / 3;
-    position: static;
-    width: 14px;
-    height: 14px;
-    align-self: center;
-}
-
-/* 背景レイヤーは削除ボタンを非表示 */
-.layer-item.background-layer .layer-delete-button {
-    display: none;
-}
-
-/* レイヤー名編集用input */
-.layer-item input[type="text"] {
-    grid-column: 2;
-    grid-row: 2;
-    border: 1px solid var(--futaba-maroon);
-    border-radius: 2px;
-    padding: 0 4px;
-    font-size: 11px;
-    width: 100%;
-    background: var(--futaba-background);
-    color: var(--futaba-maroon);
-    outline: none;
-}
-
-.layer-item input[type="text"]:focus {
-    border-color: #ff8c42;
-    box-shadow: 0 0 0 2px rgba(255, 140, 66, 0.2);
-}
-
-/* レイヤーパネルスクロールバー（レイヤーが溢れた時のみ表示） */
-.layer-panel-items {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 4px;
-    pointer-events: all;
-    max-height: 60vh;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
-/* Webkit系ブラウザ用スクロールバー */
-.layer-panel-items::-webkit-scrollbar {
-    width: 10px;
-}
-
-.layer-panel-items::-webkit-scrollbar-track {
-    background: #e9c2ba;
-    border-radius: 5px;
-}
-
-.layer-panel-items::-webkit-scrollbar-thumb {
-    background: #800000;
-    border-radius: 5px;
-    border: 2px solid #e9c2ba;
-}
-
-.layer-panel-items::-webkit-scrollbar-thumb:hover {
-    background: #aa5a56;
-}
-
-/* Firefox用スクロールバー */
-.layer-panel-items {
-    scrollbar-width: thin;
-    scrollbar-color: #800000 #e9c2ba;
 }
