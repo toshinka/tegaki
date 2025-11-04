@@ -1,4 +1,8 @@
-// ui/layer-panel-renderer.js - Phase 6完全改修版
+// ui/layer-panel-renderer.js - CheckerUtils統合版
+// 改修内容:
+// - _createCheckerPattern()をCheckerUtils.createCheckerCanvas()に置換
+// - futabaカラー自動取得
+// - ui:checker-theme-changed イベント購読追加
 
 (function() {
     'use strict';
@@ -16,6 +20,11 @@
 
         _setupEventListeners() {
             if (!this.eventBus) return;
+
+            // チェックパターンテーマ変更時
+            this.eventBus.on('ui:checker-theme-changed', () => {
+                this.requestUpdate();
+            });
 
             this.eventBus.on('layer:created', () => this.requestUpdate());
             this.eventBus.on('layer:deleted', () => this.requestUpdate());
@@ -283,7 +292,6 @@
             nameSpan.style.textOverflow = 'ellipsis';
             layerDiv.appendChild(nameSpan);
 
-            // クリックイベント（背景レイヤーは選択不可）
             if (!isBackground) {
                 layerDiv.addEventListener('click', (e) => {
                     if (window.stateManager) {
@@ -325,6 +333,7 @@
             thumbnailContainer.style.overflow = 'hidden';
             thumbnailContainer.style.borderRadius = '2px';
 
+            // CheckerUtils使用（旧実装削除）
             const checkerPattern = this._createCheckerPattern(thumbnailWidth, thumbnailHeight);
             thumbnailContainer.appendChild(checkerPattern);
 
@@ -352,6 +361,16 @@
         }
 
         _createCheckerPattern(width, height) {
+            if (window.CheckerUtils) {
+                const colors = window.CheckerUtils.getColorsFromCSS();
+                return window.CheckerUtils.createCheckerCanvas(width, height, {
+                    tilePx: 4,
+                    colorA: colors.colorA,
+                    colorB: colors.colorB
+                });
+            }
+            
+            // フォールバック（CheckerUtils未ロード時）
             const canvas = document.createElement('canvas');
             canvas.width = width;
             canvas.height = height;
@@ -563,4 +582,5 @@
     }
 
     window.LayerPanelRenderer = LayerPanelRenderer;
+    console.log('✅ ui/layer-panel-renderer.js (checker-utils統合版) loaded');
 })();

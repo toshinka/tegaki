@@ -1,5 +1,8 @@
-// ===== system/camera-system.js - v2.0: リサイズ修正版 =====
-// 修正: resizeCanvas()のworldContainer位置調整ロジック
+// ===== system/camera-system.js - チェック柄背景統合版 =====
+// 改修内容:
+// - CheckerUtils統合によるカメラ背景チェックパターン追加
+// - カメラビューポートに固定されたチェック柄表示
+// - futabaカラー自動適用
 
 (function() {
     'use strict';
@@ -36,6 +39,7 @@
             this.cameraFrame = null;
             this.guideLines = null;
             this.canvasMask = null;
+            this.backgroundChecker = null; // 新規: チェック柄背景
             
             this.layerManager = null;
             this.drawingEngine = null;
@@ -58,6 +62,14 @@
             this._setupEvents();
             this.initializeCamera();
             this._drawCameraFrame();
+            this._createBackgroundChecker();
+            
+            // チェックパターンテーマ変更監視
+            if (this.eventBus) {
+                this.eventBus.on('ui:checker-theme-changed', () => {
+                    this._updateBackgroundChecker();
+                });
+            }
         }
 
         _createContainers() {
@@ -85,6 +97,61 @@
             this.canvasContainer.mask = this.canvasMask;
         }
 
+        /**
+         * 背景チェックパターン生成（CheckerUtils統合）
+         */
+        _createBackgroundChecker() {
+            if (!window.CheckerUtils) return;
+            
+            const colors = window.CheckerUtils.getColorsFromCSS();
+            const texture = window.CheckerUtils.createCheckerTexture({
+                tilePx: 16,
+                colorA: colors.colorA,
+                colorB: colors.colorB,
+                density: 1,
+                devicePixelRatio: window.devicePixelRatio || 1
+            });
+            
+            if (this.backgroundChecker) {
+                this.canvasContainer.removeChild(this.backgroundChecker);
+                this.backgroundChecker.destroy(true);
+            }
+            
+            this.backgroundChecker = new PIXI.TilingSprite(
+                texture,
+                this.config.canvas.width,
+                this.config.canvas.height
+            );
+            
+            this.backgroundChecker.label = 'backgroundChecker';
+            this.backgroundChecker.position.set(0, 0);
+            
+            // canvasContainerの最背面に配置
+            this.canvasContainer.addChildAt(this.backgroundChecker, 0);
+        }
+
+        /**
+         * 背景チェックパターン更新
+         */
+        _updateBackgroundChecker() {
+            if (!window.CheckerUtils) return;
+            
+            const colors = window.CheckerUtils.getColorsFromCSS();
+            const texture = window.CheckerUtils.createCheckerTexture({
+                tilePx: 16,
+                colorA: colors.colorA,
+                colorB: colors.colorB,
+                density: 1,
+                devicePixelRatio: window.devicePixelRatio || 1
+            });
+            
+            if (this.backgroundChecker) {
+                this.backgroundChecker.texture = texture;
+            } else {
+                this._createBackgroundChecker();
+            }
+        }
+
         createGuideLines() {
             this.guideLines.removeChildren();
             
@@ -110,6 +177,12 @@
             this.canvasMask.clear();
             this.canvasMask.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
             this.canvasMask.fill(0xffffff);
+            
+            // 背景チェック柄もリサイズ
+            if (this.backgroundChecker) {
+                this.backgroundChecker.width = this.config.canvas.width;
+                this.backgroundChecker.height = this.config.canvas.height;
+            }
         }
 
         showGuideLines() {
@@ -170,80 +243,59 @@
             return { x: screenPoint.x, y: screenPoint.y };
         }
 
-        /**
-         * v2.0: リサイズ処理修正版
-         * 問題: worldContainer位置調整が不正確
-         * 修正: キャンバス中心を基準とした正確な位置調整
-         */
         resizeCanvas(newWidth, newHeight, alignOptions = { horizontal: 'center', vertical: 'center' }) {
             if (!this.app) return;
             
             const oldWidth = this.config.canvas.width;
             const oldHeight = this.config.canvas.height;
             
-            // Step 1: CONFIG更新
             this.config.canvas.width = newWidth;
             this.config.canvas.height = newHeight;
             
-            // Step 2: renderer.resize()
             if (this.app.stage?.parent?.resize) {
                 this.app.stage.parent.resize(newWidth, newHeight);
             }
             
-            // Step 3: worldContainer位置調整（修正版）
             const widthDiff = newWidth - oldWidth;
             const heightDiff = newHeight - oldHeight;
             
             let offsetX = 0;
             let offsetY = 0;
             
-            // 横方向オフセット計算（修正）
             switch(alignOptions.horizontal) {
                 case 'left':
-                    // 左端基準：オフセットなし
                     offsetX = 0;
                     break;
                 case 'center':
-                    // 中央基準：差分の半分を加算
                     offsetX = widthDiff / 2;
                     break;
                 case 'right':
-                    // 右端基準：差分全体を加算
                     offsetX = widthDiff;
                     break;
             }
             
-            // 縦方向オフセット計算（修正）
             switch(alignOptions.vertical) {
                 case 'top':
-                    // 上端基準：オフセットなし
                     offsetY = 0;
                     break;
                 case 'center':
-                    // 中央基準：差分の半分を加算
                     offsetY = heightDiff / 2;
                     break;
                 case 'bottom':
-                    // 下端基準：差分全体を加算
                     offsetY = heightDiff;
                     break;
             }
             
-            // worldContainerの位置を調整
             this.worldContainer.position.x += offsetX;
             this.worldContainer.position.y += offsetY;
             
-            // Step 4: ビジュアル更新
             this.updateGuideLinesForCanvasResize();
             
-            // Step 5: 座標系キャッシュクリア
             if (this.coordinateSystem && typeof this.coordinateSystem.clearCache === 'function') {
                 this.coordinateSystem.clearCache();
             }
             
-            // Step 6: イベント発火
             if (this.eventBus) {
-                // camera:resized イベント（座標系クリアトリガー）
                 this.eventBus.emit('camera:resized', { 
                     width: newWidth, 
                     height: newHeight,
@@ -252,7 +304,6 @@
                     align: alignOptions
                 });
                 
-                // camera:transform-changed イベント
                 this.eventBus.emit('camera:transform-changed');
             }
         }
@@ -698,7 +749,6 @@
     }
 
     window.TegakiCameraSystem = CameraSystem;
+    console.log('✅ system/camera-system.js (チェック柄背景統合版) loaded');
 
 })();
-
-console.log('✅ camera-system.js (v2.0: リサイズ修正版) loaded');
