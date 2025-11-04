@@ -1,8 +1,7 @@
-// ===== system/layer-system.js - Phase 2&3&5&6完全版 =====
-// Phase 2: 背景チェックパターン実装
-// Phase 3: 消しゴム透明化（blendMode処理はstroke-rendererで実施）
-// Phase 5: 背景レイヤー色変更機能
-// Phase 6: レイヤー透明度設定メソッド
+// ===== system/layer-system.js - Phase 2/5/6完全版 =====
+// Phase 2改修: チェッカーパターン実装
+// Phase 5改修: 背景レイヤー色変更機能
+// Phase 6改修: レイヤー透明度設定機能
 
 (function() {
     'use strict';
@@ -22,7 +21,53 @@
             this.transform = null;
             this.isInitialized = false;
             
+            // ★ Phase 2: チェッカーパターン参照
             this.checkerPattern = null;
+        }
+
+        // ★ Phase 2: チェッカーパターンをworldContainerに配置
+        attachCheckerPatternToWorld(worldContainer) {
+            if (!this.checkerPattern) {
+                console.warn('[LayerSystem] Checker pattern not initialized');
+                return;
+            }
+            
+            if (!worldContainer) {
+                console.warn('[LayerSystem] worldContainer not provided');
+                return;
+            }
+            
+            // 既に親がある場合は削除
+            if (this.checkerPattern.parent) {
+                this.checkerPattern.parent.removeChild(this.checkerPattern);
+            }
+            
+            // worldContainerの最背面に配置
+            worldContainer.addChildAt(this.checkerPattern, 0);
+            
+            console.log('✅ [LayerSystem] Checker pattern attached to worldContainer');
+        }
+
+        // ★ Phase 2: チェッカーパターン生成（フォールバック用）
+        _createCheckerPatternBackground(width, height) {
+            const g = new PIXI.Graphics();
+            const color1 = 0xf0e0d6;  // --futaba-cream
+            const color2 = 0xffffee;  // --futaba-background
+            const squareSize = 16;
+            
+            for (let y = 0; y < height; y += squareSize) {
+                for (let x = 0; x < width; x += squareSize) {
+                    const isEvenX = Math.floor(x / squareSize) % 2 === 0;
+                    const isEvenY = Math.floor(y / squareSize) % 2 === 0;
+                    const color = (isEvenX === isEvenY) ? color1 : color2;
+                    g.rect(x, y, squareSize, squareSize);
+                    g.fill({ color });
+                }
+            }
+            
+            g.label = 'checkerPattern';
+            g.visible = false;
+            return g;
         }
 
         init(canvasContainer, eventBus, config) {
@@ -39,14 +84,23 @@
             this.currentFrameContainer = new PIXI.Container();
             this.currentFrameContainer.label = 'temporary_frame_container';
             
-            // Phase 2: チェッカーパターン生成
-            this.checkerPattern = this._createCheckerPatternBackground(
-                this.config.canvas.width, 
-                this.config.canvas.height
-            );
+            // ★ Phase 2: チェッカーパターン生成（独立して管理）
+            if (window.checkerUtils) {
+                this.checkerPattern = window.checkerUtils.createCheckerPattern(
+                    this.config.canvas.width,
+                    this.config.canvas.height
+                );
+            } else {
+                // フォールバック: 自前で生成
+                this.checkerPattern = this._createCheckerPatternBackground(
+                    this.config.canvas.width,
+                    this.config.canvas.height
+                );
+            }
             this.checkerPattern.visible = false;
+            // NOTE: attachCheckerPatternToWorld()でworldContainerに配置される
             
-            // 初期背景レイヤー作成
+            // 背景レイヤー作成
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_bg_' + Date.now(),
@@ -55,14 +109,16 @@
             });
             bgLayer.label = bgLayerModel.id;
             bgLayer.layerData = bgLayerModel;
+            
             const bg = new PIXI.Graphics();
             bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
             bg.fill({ color: this.config.background.color });
             bgLayer.addChild(bg);
             bgLayer.layerData.backgroundGraphics = bg;
+            
             this.currentFrameContainer.addChild(bgLayer);
             
-            // 初期レイヤー1作成
+            // レイヤー1作成
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_1_' + Date.now(),
@@ -81,106 +137,6 @@
             this._setupVKeyEvents();
             this._setupTransformEventListeners();
             this.isInitialized = true;
-        }
-
-        // Phase 2: チェッカーパターン生成
-        _createCheckerPatternBackground(width, height) {
-            const g = new PIXI.Graphics();
-            const color1 = 0xf0e0d6;
-            const color2 = 0xffffee;
-            const squareSize = 16;
-            
-            for (let y = 0; y < height; y += squareSize) {
-                for (let x = 0; x < width; x += squareSize) {
-                    const isEvenX = Math.floor(x / squareSize) % 2 === 0;
-                    const isEvenY = Math.floor(y / squareSize) % 2 === 0;
-                    const color = (isEvenX === isEvenY) ? color1 : color2;
-                    g.rect(x, y, squareSize, squareSize);
-                    g.fill({ color });
-                }
-            }
-            
-            g.label = 'checkerPattern';
-            return g;
-        }
-
-        // Phase 2: チェッカーパターンをワールドに配置
-        attachCheckerPatternToWorld(canvasContainer) {
-            if (!this.checkerPattern || !canvasContainer) return;
-            canvasContainer.addChildAt(this.checkerPattern, 0);
-        }
-
-        // Phase 5: 背景レイヤー色変更
-        changeBackgroundLayerColor(layerIndex, layerId) {
-            const layers = this.getLayers();
-            const layer = layers[layerIndex];
-            
-            if (!layer?.layerData?.isBackground) return;
-            
-            // 現在のペンカラーを取得
-            const color = window.brushSettings?.getColor() || 0xf0e0d6;
-            
-            // 背景グラフィックスを再生成
-            const bg = layer.layerData.backgroundGraphics;
-            if (bg) {
-                bg.clear();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
-                bg.fill({ color });
-            }
-            
-            // サムネイル更新
-            this.requestThumbnailUpdate(layerIndex);
-            
-            // EventBus通知
-            if (this.eventBus) {
-                this.eventBus.emit('layer:background-color-changed', {
-                    component: 'layer-system',
-                    action: 'background-color-changed',
-                    data: {
-                        layerIndex,
-                        layerId,
-                        color
-                    }
-                });
-            }
-        }
-
-        // Phase 6: レイヤー透明度設定
-        setLayerOpacity(layerIndex, opacity) {
-            const layers = this.getLayers();
-            if (layerIndex < 0 || layerIndex >= layers.length) return;
-            
-            const layer = layers[layerIndex];
-            
-            // 背景レイヤーは透明度変更不可
-            if (layer.layerData?.isBackground) return;
-            
-            // 0.0 ~ 1.0 の範囲にクランプ
-            opacity = Math.max(0, Math.min(1, opacity));
-            
-            // レイヤーのalpha設定
-            layer.alpha = opacity;
-            
-            // データモデルにも保存
-            if (layer.layerData) {
-                layer.layerData.opacity = opacity;
-            }
-            
-            // サムネイル更新
-            this.requestThumbnailUpdate(layerIndex);
-            
-            // EventBus通知
-            if (this.eventBus) {
-                this.eventBus.emit('layer:opacity-changed', {
-                    component: 'layer-system',
-                    action: 'opacity-changed',
-                    data: {
-                        layerIndex,
-                        layerId: layer.layerData?.id,
-                        opacity
-                    }
-                });
-            }
         }
         
         _setupVKeyEvents() {
@@ -1018,6 +974,7 @@
             }
         }
 
+        // ★ Phase 2: 背景レイヤー表示切替時にチェッカー連動
         toggleLayerVisibility(layerIndex) {
             const layers = this.getLayers();
             if (layerIndex >= 0 && layerIndex < layers.length) {
@@ -1025,7 +982,7 @@
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
                 
-                // Phase 2: 背景レイヤー非表示時にチェッカーパターン表示
+                // ★ Phase 2: 背景レイヤーの場合、チェッカーパターン連動
                 if (layer.layerData?.isBackground && this.checkerPattern) {
                     this.checkerPattern.visible = !layer.layerData.visible;
                 }
@@ -1035,6 +992,63 @@
                 if (this.eventBus) {
                     this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
                 }
+            }
+        }
+
+        // ★ Phase 5: 背景レイヤー色変更機能
+        _changeBackgroundLayerColor(layerIndex, layerId) {
+            const layers = this.getLayers();
+            const layer = layers[layerIndex];
+            
+            if (!layer?.layerData?.isBackground) return;
+            
+            // 現在のペンカラーを取得
+            const color = window.brushSettings?.getColor?.() || this.config.background.color;
+            
+            // 背景グラフィックスを再生成
+            const bg = layer.layerData.backgroundGraphics;
+            if (bg) {
+                bg.clear();
+                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                bg.fill({ color });
+            }
+            
+            // サムネイル更新
+            this.requestThumbnailUpdate(layerIndex);
+            
+            // EventBus通知
+            if (this.eventBus) {
+                this.eventBus.emit('layer:background-color-changed', {
+                    layerIndex,
+                    layerId,
+                    color
+                });
+            }
+        }
+
+        // ★ Phase 6: レイヤー透明度設定機能
+        setLayerOpacity(layerIndex, opacity) {
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
+            const layer = layers[layerIndex];
+            if (layer.layerData?.isBackground) return; // 背景レイヤーは常に100%
+            
+            opacity = Math.max(0, Math.min(1, opacity));
+            
+            layer.alpha = opacity;
+            if (layer.layerData) {
+                layer.layerData.opacity = opacity;
+            }
+            
+            this.requestThumbnailUpdate(layerIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:opacity-changed', {
+                    layerIndex,
+                    layerId: layer.layerData?.id,
+                    opacity
+                });
             }
         }
 
@@ -1062,6 +1076,12 @@
                     }
                 });
             }
+        }
+
+        // ★ Phase 2: サムネイル更新処理（ticker用）
+        processThumbnailUpdates() {
+            // 現在は即座更新のため、バッチ処理不要
+            // 将来的に最適化が必要な場合はここで実装
         }
 
         updateLayerPanelUI() {
@@ -1268,16 +1288,10 @@
                 return false;
             }
         }
-
-        processThumbnailUpdates() {
-            if (window.ThumbnailSystem && window.ThumbnailSystem.processPendingUpdates) {
-                window.ThumbnailSystem.processPendingUpdates();
-            }
-        }
     }
 
     window.TegakiLayerSystem = LayerSystem;
 
 })();
 
-console.log('✅ layer-system.js (Phase 2&3&5&6完全版) loaded');
+console.log('✅ layer-system.js Phase 2/5/6完全版 loaded');
