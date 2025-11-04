@@ -1,0 +1,552 @@
+================================================================================
+Phase 6: レイヤー透明度UI実装 - 詳細改修書
+================================================================================
+
+【概要】
+一般レイヤー（非背景）に透明度調整機能を実装
+現状の問題点5件を同時に修正
+
+【修正対象の問題】
+1. レイヤーパネル枠に文字が収まっていない（上下余白）
+2. 削除ボタンがサムネイルと重複回避している
+3. 削除ボタンの色が仕様と異なる
+4. サムネイルリサイズ時に古いチェックパターンが見える
+5. チェックパターンがカメラフレーム外に表示される
+6. チェックパターンが拡大縮小の影響を受けている
+
+
+================================================================================
+■ アーキテクチャ俯瞰図
+================================================================================
+
+【描画フロー】
+User Interaction
+  → layer-panel-renderer.js (UI描画・イベント)
+  → EventBus.emit('ui:layer-opacity-change-requested')
+  → layer-system.js (レイヤー管理・状態更新)
+  → PIXI Container.alpha 更新
+  → EventBus.emit('layer:opacity-changed')
+  → thumbnail-system.js (サムネイル再生成)
+  → layer-panel-renderer.js (UI再描画)
+
+【関連コンポーネント】
+- layer-panel-renderer.js : UIレンダリング、ユーザー操作受付
+- layer-system.js : レイヤー状態管理、PIXIオブジェクト操作
+- thumbnail-system.js : サムネイル画像生成
+- camera-system.js : チェックパターン配置・カメラフレーム管理
+- data-models.js : LayerModel定義
+- main.css : スタイル定義
+
+
+================================================================================
+■ ファイル別改修内容
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. ui/layer-panel-renderer.js                                    │
+│    役割: レイヤーパネルUI描画・ユーザー操作                      │
+└─────────────────────────────────────────────────────────────────┘
+
+【改修箇所A: createLayerElement() - 透明度UI追加】
+位置: 既存の visibility, name, thumbnail, delete 要素作成後
+処理: 非背景レイヤーのみ透明度コントロール追加
+
+実装:
+```
+if (!layer.layerData?.isBackground) {
+    const opacityContainer = document.createElement('div');
+    opacityContainer.className = 'layer-opacity-control';
+    
+    // ◀ ボタン
+    const decreaseBtn = document.createElement('button');
+    decreaseBtn.textContent = '◀';
+    decreaseBtn.className = 'layer-opacity-btn layer-opacity-decrease';
+    decreaseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._adjustLayerOpacity(index, -0.1);
+    });
+    
+    // 透明度表示（ドラッグ可能）
+    const opacityValue = document.createElement('span');
+    opacityValue.className = 'layer-opacity-value';
+    const opacity = layer.alpha !== undefined ? layer.alpha : 1.0;
+    opacityValue.textContent = `${Math.round(opacity * 100)}%`;
+    this._setupOpacityDrag(opacityValue, index);
+    
+    // ▶ ボタン
+    const increaseBtn = document.createElement('button');
+    increaseBtn.textContent = '▶';
+    increaseBtn.className = 'layer-opacity-btn layer-opacity-increase';
+    increaseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._adjustLayerOpacity(index, 0.1);
+    });
+    
+    opacityContainer.appendChild(decreaseBtn);
+    opacityContainer.appendChild(opacityValue);
+    opacityContainer.appendChild(increaseBtn);
+    layerDiv.appendChild(opacityContainer);
+}
+```
+
+【改修箇所B: _setupOpacityDrag() - 新規メソッド追加】
+位置: クラス内メソッドとして追加
+処理: 透明度値のドラッグ操作
+
+実装:
+```
+_setupOpacityDrag(element, layerIndex) {
+    let isDragging = false;
+    let startX = 0;
+    let startOpacity = 0;
+    
+    element.addEventListener('pointerdown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        const layer = this.layerSystem.getLayers()[layerIndex];
+        startOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
+        element.setPointerCapture(e.pointerId);
+        e.stopPropagation();
+    });
+    
+    element.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - startX;
+        const delta = dx / 100;
+        const newOpacity = Math.max(0, Math.min(1, startOpacity + delta));
+        this._setLayerOpacity(layerIndex, newOpacity);
+    });
+    
+    element.addEventListener('pointerup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        element.releasePointerCapture(e.pointerId);
+    });
+}
+```
+
+【改修箇所C: _adjustLayerOpacity() - 新規メソッド追加】
+位置: クラス内メソッドとして追加
+処理: ボタンクリックでの±10%調整
+
+実装:
+```
+_adjustLayerOpacity(layerIndex, delta) {
+    const layer = this.layerSystem.getLayers()[layerIndex];
+    const currentOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
+    const newOpacity = Math.max(0, Math.min(1, currentOpacity + delta));
+    this._setLayerOpacity(layerIndex, newOpacity);
+}
+```
+
+【改修箇所D: _setLayerOpacity() - 新規メソッド追加】
+位置: クラス内メソッドとして追加
+処理: 透明度変更のlayer-system.js呼び出し + UI更新
+
+実装:
+```
+_setLayerOpacity(layerIndex, opacity) {
+    if (this.layerSystem?.setLayerOpacity) {
+        this.layerSystem.setLayerOpacity(layerIndex, opacity);
+    }
+    
+    // UI即時更新
+    const layers = this.layerSystem.getLayers();
+    const reverseIndex = layers.length - 1 - layerIndex;
+    const layerDiv = this.container.querySelectorAll('.layer-item')[reverseIndex];
+    const opacityValue = layerDiv?.querySelector('.layer-opacity-value');
+    if (opacityValue) {
+        opacityValue.textContent = `${Math.round(opacity * 100)}%`;
+    }
+}
+```
+
+【改修箇所E: 削除ボタンとサムネイルの重複許可】
+位置: createLayerElement() 内の削除ボタン・サムネイル配置
+処理: z-indexで削除ボタンを前面に、サムネイルは後方へ
+
+修正方針:
+- サムネイルを削除ボタンの下に配置（position: absolute使用）
+- 削除ボタンはホバー時のみ表示（opacity制御）
+
+
+参照メソッド:
+- layerSystem.getLayers() : 全レイヤー取得
+- layerSystem.setLayerOpacity(index, opacity) : 透明度設定
+
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 2. system/layer-system.js                                        │
+│    役割: レイヤー状態管理、PIXIコンテナ操作                      │
+└─────────────────────────────────────────────────────────────────┘
+
+【改修箇所A: setLayerOpacity() - 新規メソッド追加】
+位置: クラス内メソッドとして追加（createLayer()の後）
+処理: PIXIコンテナのalphaプロパティ更新 + サムネイル更新要求
+
+実装:
+```
+setLayerOpacity(layerIndex, opacity) {
+    const layers = this.getLayers();
+    if (layerIndex < 0 || layerIndex >= layers.length) return;
+    
+    const layer = layers[layerIndex];
+    if (layer.layerData?.isBackground) return;
+    
+    opacity = Math.max(0, Math.min(1, opacity));
+    
+    // PIXIコンテナのalpha更新
+    layer.alpha = opacity;
+    
+    // layerDataにも保存
+    if (layer.layerData) {
+        layer.layerData.opacity = opacity;
+    }
+    
+    // サムネイル更新要求
+    this.requestThumbnailUpdate(layerIndex);
+    
+    // EventBus通知
+    if (this.eventBus) {
+        this.eventBus.emit('layer:opacity-changed', {
+            layerIndex,
+            layerId: layer.layerData?.id,
+            opacity
+        });
+    }
+}
+```
+
+【改修箇所B: createLayer() - opacity初期値設定】
+位置: LayerModel生成時
+処理: layerData.opacity = 1.0 を明示的に設定
+
+追加:
+```
+layerData.opacity = options.opacity !== undefined ? options.opacity : 1.0;
+```
+
+参照メソッド:
+- getLayers() : 全レイヤー配列取得
+- requestThumbnailUpdate(index) : サムネイル更新要求
+
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. system/data-models.js                                         │
+│    役割: データモデル定義                                         │
+└─────────────────────────────────────────────────────────────────┘
+
+【改修箇所: LayerModel - opacity プロパティ追加】
+位置: constructor内
+処理: opacityフィールド追加（デフォルト1.0）
+
+実装:
+```
+class LayerModel {
+    constructor(options = {}) {
+        // ... 既存フィールド ...
+        this.opacity = options.opacity !== undefined ? options.opacity : 1.0;
+    }
+}
+```
+
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 4. styles/main.css                                               │
+│    役割: スタイル定義                                             │
+└─────────────────────────────────────────────────────────────────┘
+
+【改修箇所A: .layer-item - パディング調整】
+問題: 文字が枠に収まっていない
+修正: padding を調整して余白を確保
+
+修正前:
+```
+.layer-item {
+    padding: 8px;
+}
+```
+
+修正後:
+```
+.layer-item {
+    padding: 6px 8px;
+    line-height: 1.2;
+}
+```
+
+【改修箇所B: .layer-opacity-control - 新規追加】
+処理: 透明度コントロールのレイアウト
+
+実装:
+```
+.layer-opacity-control {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    grid-column: 2;
+    grid-row: 1;
+}
+```
+
+【改修箇所C: .layer-opacity-btn - 新規追加】
+処理: ◀▶ボタンのスタイル
+
+実装:
+```
+.layer-opacity-btn {
+    background: transparent;
+    border: none;
+    color: var(--futaba-dark-maroon);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+}
+
+.layer-opacity-btn:hover {
+    color: var(--futaba-accent);
+}
+```
+
+【改修箇所D: .layer-opacity-value - 新規追加】
+処理: 透明度値表示のスタイル
+
+実装:
+```
+.layer-opacity-value {
+    font-size: 11px;
+    color: var(--futaba-dark-maroon);
+    cursor: ew-resize;
+    user-select: none;
+    min-width: 35px;
+    text-align: center;
+}
+```
+
+【改修箇所E: .layer-delete-button - 色修正】
+問題: 削除ボタンの色が仕様（📷️削除ボタンの配色.png）と異なる
+修正: 背景色とホバー色を修正
+
+修正前:
+```
+.layer-delete-button {
+    background-color: rgba(255, 0, 0, 0.7);
+}
+
+.layer-delete-button:hover {
+    background-color: rgba(255, 0, 0, 0.9);
+}
+```
+
+修正後（画像から読み取った色に合わせる）:
+```
+.layer-delete-button {
+    background-color: rgba(176, 92, 92, 0.8);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.layer-item:hover .layer-delete-button {
+    opacity: 1;
+}
+
+.layer-delete-button:hover {
+    background-color: rgba(176, 92, 92, 1);
+}
+```
+
+【改修箇所F: .layer-thumbnail - サムネイルと削除ボタン重複許可】
+処理: position: relative でサムネイルを後方配置
+
+追加:
+```
+.layer-thumbnail {
+    position: relative;
+    z-index: 1;
+}
+
+.layer-delete-button {
+    position: absolute;
+    z-index: 2;
+    top: 4px;
+    right: 4px;
+}
+```
+
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 5. system/thumbnail-system.js                                    │
+│    役割: サムネイル画像生成                                       │
+└─────────────────────────────────────────────────────────────────┘
+
+【改修箇所A: generateThumbnail() - チェックパターン背景統一】
+問題: サムネイルリサイズ時に古いチェックパターンが見える
+原因: 2つのチェックパターン実装が混在
+修正: layer-system.jsのチェックパターンを使用
+
+修正方針:
+```
+generateThumbnail(layer, width, height) {
+    // ... 既存のレンダリングコード ...
+    
+    // チェックパターンはlayer-systemの実装を参照
+    if (this.layerSystem?.checkerPattern) {
+        const checkerTexture = this.renderer.generateTexture(
+            this.layerSystem.checkerPattern
+        );
+        // checkerTextureを背景として使用
+    }
+    
+    // ... 既存のサムネイル生成コード ...
+}
+```
+
+参照:
+- layerSystem.checkerPattern : 統一されたチェックパターングラフィックス
+
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 6. system/camera-system.js                                       │
+│    役割: カメラフレーム管理、チェックパターン配置                 │
+└─────────────────────────────────────────────────────────────────┘
+
+【改修箇所A: チェックパターンのカメラフレーム外非表示】
+問題: カメラフレーム外にチェックパターンが表示される
+原因: マスク処理が適用されていない
+修正: カメラフレームと同サイズのマスクを適用
+
+実装位置: setupWorldContainer() または init() 内
+
+実装:
+```
+// チェックパターン初期化時
+if (this.layerSystem?.checkerPattern) {
+    const checker = this.layerSystem.checkerPattern;
+    
+    // カメラフレームと同サイズのマスク生成
+    const mask = new PIXI.Graphics();
+    mask.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+    mask.fill({ color: 0xFFFFFF });
+    
+    checker.mask = mask;
+    this.worldContainer.addChild(mask);
+}
+```
+
+【改修箇所B: チェックパターンの拡大縮小無効化】
+問題: チェックパターンが拡大縮小の影響を受ける
+原因: worldContainerの子要素として配置されている
+修正: カメラ変換の逆行列を適用
+
+実装位置: update() または onZoom() 内
+
+実装:
+```
+updateCheckerPatternScale() {
+    if (!this.layerSystem?.checkerPattern) return;
+    
+    const checker = this.layerSystem.checkerPattern;
+    const currentZoom = this.worldContainer.scale.x;
+    
+    // カメラズームの逆を適用
+    checker.scale.set(1 / currentZoom, 1 / currentZoom);
+    
+    // 位置も調整（左上原点を維持）
+    const cameraPos = this.worldContainer.position;
+    checker.position.set(
+        -cameraPos.x / currentZoom,
+        -cameraPos.y / currentZoom
+    );
+}
+```
+
+参照メソッド:
+- worldContainer : PIXIコンテナ
+- worldContainer.scale : カメラズーム
+- worldContainer.position : カメラ位置
+
+
+================================================================================
+■ イベントフロー
+================================================================================
+
+【透明度変更フロー】
+1. User: ◀/▶ボタンクリック or 透明度値ドラッグ
+2. layer-panel-renderer.js: _adjustLayerOpacity() または _setupOpacityDrag()
+3. layer-panel-renderer.js: _setLayerOpacity()
+4. layer-system.js: setLayerOpacity()
+5. PIXI.Container.alpha 更新
+6. EventBus.emit('layer:opacity-changed')
+7. thumbnail-system.js: サムネイル再生成
+8. layer-panel-renderer.js: UI再描画（透明度表示更新）
+
+【EventBus】
+使用イベント:
+- 'layer:opacity-changed' : 透明度変更完了通知
+  payload: { layerIndex, layerId, opacity }
+
+
+================================================================================
+■ テスト項目
+================================================================================
+
+【透明度UI機能】
+□ 非背景レイヤーに「◀ 100% ▶」表示
+□ 背景レイヤーには透明度UI非表示
+□ ◀ボタンクリック → -10%
+□ ▶ボタンクリック → +10%
+□ 透明度値ドラッグ → 滑らかに変化
+□ 0%～100%範囲制限
+□ 透明度変更がレイヤーに即座に反映
+
+【UI修正】
+□ レイヤーパネル枠に文字が綺麗に収まる
+□ 削除ボタンがサムネイルと重なっても問題なし
+□ 削除ボタンの色が仕様通り（rgba(176, 92, 92)）
+□ サムネイルリサイズ時にチェックパターンが一貫
+
+【チェックパターン】
+□ カメラフレーム内のみ表示
+□ 拡大縮小の影響を受けない
+□ 左上原点で展開
+□ 背景レイヤー非表示時のみ表示
+
+
+================================================================================
+■ 実装順序
+================================================================================
+
+1. data-models.js: LayerModel.opacity 追加
+2. layer-system.js: setLayerOpacity() 実装
+3. layer-panel-renderer.js: 透明度UI実装
+4. main.css: スタイル追加・修正
+5. camera-system.js: チェックパターン修正
+6. thumbnail-system.js: チェックパターン統一
+7. 統合テスト
+
+
+================================================================================
+■ 参考資料
+================================================================================
+
+【関連Phase】
+- Phase 2: 背景チェックパターン実装
+  → layer-system.js: _createCheckerPatternBackground()
+- Phase 3: 消しゴム透明化修正
+  → 透明度確認にチェックパターンが必要
+
+【使用API】
+- PIXI.Container.alpha : レイヤー透明度（0.0～1.0）
+- element.setPointerCapture() : ドラッグ中のポインター捕捉
+- EventBus.emit() : イベント発火
+- EventBus.on() : イベント購読
+
+【スタイル変数】
+- --futaba-accent: 橙色（アクティブ）
+- --futaba-dark-maroon: 茶色（テキスト）
+- --futaba-light-maroon: #aa5a56（準アクティブ）
+
+
+================================================================================
+END
+================================================================================

@@ -1,0 +1,1154 @@
+// ================================================================================
+// ファイル 1/6: system/data-models.js - 完全版
+// ================================================================================
+
+class LayerModel {
+    constructor(options = {}) {
+        this.id = options.id || `layer_${Date.now()}_${Math.random()}`;
+        this.name = options.name || 'レイヤー';
+        this.visible = options.visible !== undefined ? options.visible : true;
+        this.isBackground = options.isBackground || false;
+        this.opacity = options.opacity !== undefined ? options.opacity : 1.0;
+        this.backgroundGraphics = options.backgroundGraphics || null;
+        this.pathIds = options.pathIds || [];
+    }
+}
+
+class PathModel {
+    constructor(options = {}) {
+        this.id = options.id || `path_${Date.now()}_${Math.random()}`;
+        this.points = options.points || [];
+        this.color = options.color !== undefined ? options.color : 0x800000;
+        this.size = options.size || 3;
+        this.opacity = options.opacity !== undefined ? options.opacity : 1.0;
+        this.tool = options.tool || 'pen';
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.TegakiDataModels = { LayerModel, PathModel };
+}
+
+
+// ================================================================================
+// ファイル 2/6: system/layer-system.js - 完全版
+// ================================================================================
+
+class LayerSystem {
+    constructor(config, eventBus, pixiApp) {
+        this.config = config;
+        this.eventBus = eventBus;
+        this.pixiApp = pixiApp;
+        this.frames = new Map();
+        this.currentFrameId = null;
+        this.currentFrameContainer = null;
+        this.activeLayerIndex = 0;
+        this.thumbnailUpdateCallbacks = new Map();
+        this.checkerPattern = null;
+        this.checkerMask = null;
+        
+        this._setupEventListeners();
+    }
+
+    init(worldContainer) {
+        this.worldContainer = worldContainer;
+        this._createCheckerPatternBackground();
+        const firstFrameId = this.createFrame();
+        this.switchToFrame(firstFrameId);
+        return firstFrameId;
+    }
+
+    _createCheckerPatternBackground() {
+        const g = new PIXI.Graphics();
+        const color1 = 0xe0e0e0;
+        const color2 = 0xffffff;
+        const squareSize = 16;
+        const width = this.config.canvas.width * 3;
+        const height = this.config.canvas.height * 3;
+        
+        for (let y = 0; y < height; y += squareSize) {
+            for (let x = 0; x < width; x += squareSize) {
+                const isEvenX = Math.floor(x / squareSize) % 2 === 0;
+                const isEvenY = Math.floor(y / squareSize) % 2 === 0;
+                const color = (isEvenX === isEvenY) ? color1 : color2;
+                g.rect(x, y, squareSize, squareSize);
+                g.fill({ color });
+            }
+        }
+        
+        g.visible = false;
+        g.label = 'checkerPattern';
+        this.checkerPattern = g;
+        
+        if (this.worldContainer) {
+            this.worldContainer.addChildAt(g, 0);
+        }
+    }
+
+    _setupEventListeners() {
+        this.eventBus.on('ui:layer-selected', ({ layerIndex }) => {
+            this.setActiveLayer(layerIndex);
+        });
+
+        this.eventBus.on('ui:layer-visibility-toggled', ({ layerIndex }) => {
+            this.toggleLayerVisibility(layerIndex);
+        });
+
+        this.eventBus.on('ui:layer-delete-requested', ({ layerIndex }) => {
+            this.deleteLayer(layerIndex);
+        });
+
+        this.eventBus.on('ui:layer-add-requested', () => {
+            this.addLayer();
+        });
+    }
+
+    createFrame() {
+        const frameId = `frame_${Date.now()}_${Math.random()}`;
+        const frameContainer = new PIXI.Container();
+        frameContainer.label = `Frame_${frameId}`;
+        
+        this.frames.set(frameId, {
+            id: frameId,
+            container: frameContainer,
+            layers: []
+        });
+
+        return frameId;
+    }
+
+    switchToFrame(frameId) {
+        const frame = this.frames.get(frameId);
+        if (!frame) return false;
+
+        if (this.currentFrameContainer && this.worldContainer) {
+            this.worldContainer.removeChild(this.currentFrameContainer);
+        }
+
+        this.currentFrameId = frameId;
+        this.currentFrameContainer = frame.container;
+
+        if (this.worldContainer) {
+            const checkerIndex = this.worldContainer.children.indexOf(this.checkerPattern);
+            if (checkerIndex !== -1) {
+                this.worldContainer.addChildAt(this.currentFrameContainer, checkerIndex + 1);
+            } else {
+                this.worldContainer.addChild(this.currentFrameContainer);
+            }
+        }
+
+        if (frame.layers.length === 0) {
+            this.createLayer({ isBackground: true, name: '背景' });
+            this.createLayer({ isBackground: false });
+        }
+
+        this.updateLayerPanelUI();
+        return true;
+    }
+
+    createLayer(options = {}) {
+        if (!this.currentFrameContainer) return null;
+
+        const frame = this.frames.get(this.currentFrameId);
+        if (!frame) return null;
+
+        const isBackground = options.isBackground || false;
+        let layerName;
+
+        if (isBackground) {
+            layerName = '背景';
+        } else {
+            const nonBackgroundLayers = frame.layers.filter(l => !l.layerData?.isBackground);
+            const maxNum = nonBackgroundLayers.reduce((max, l) => {
+                const match = l.layerData?.name.match(/^レイヤー(\d+)$/);
+                return match ? Math.max(max, parseInt(match[1])) : max;
+            }, 0);
+            layerName = options.name || `レイヤー${maxNum + 1}`;
+        }
+
+        const layerContainer = new PIXI.Container();
+        layerContainer.label = layerName;
+
+        let bg = null;
+        if (isBackground) {
+            bg = new PIXI.Graphics();
+            bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+            bg.fill({ color: 0xf0e0d6 });
+            bg.label = 'backgroundFill';
+            layerContainer.addChild(bg);
+        }
+
+        const layerData = new window.TegakiDataModels.LayerModel({
+            id: `layer_${Date.now()}_${Math.random()}`,
+            name: layerName,
+            visible: true,
+            isBackground: isBackground,
+            opacity: 1.0,
+            backgroundGraphics: isBackground ? bg : null
+        });
+
+        layerContainer.layerData = layerData;
+
+        if (isBackground) {
+            this.currentFrameContainer.addChildAt(layerContainer, 0);
+            frame.layers.unshift(layerContainer);
+        } else {
+            this.currentFrameContainer.addChild(layerContainer);
+            frame.layers.push(layerContainer);
+        }
+
+        this.updateLayerPanelUI();
+
+        if (this.eventBus) {
+            this.eventBus.emit('layer:created', {
+                layerId: layerData.id,
+                layerIndex: frame.layers.indexOf(layerContainer),
+                isBackground
+            });
+        }
+
+        return layerContainer;
+    }
+
+    addLayer() {
+        const layer = this.createLayer({ isBackground: false });
+        if (layer) {
+            const frame = this.frames.get(this.currentFrameId);
+            this.setActiveLayer(frame.layers.length - 1);
+        }
+    }
+
+    deleteLayer(layerIndex) {
+        const frame = this.frames.get(this.currentFrameId);
+        if (!frame || layerIndex < 0 || layerIndex >= frame.layers.length) return false;
+
+        const layer = frame.layers[layerIndex];
+        if (layer.layerData?.isBackground) return false;
+
+        this.currentFrameContainer.removeChild(layer);
+        frame.layers.splice(layerIndex, 1);
+
+        if (this.activeLayerIndex >= frame.layers.length) {
+            this.activeLayerIndex = frame.layers.length - 1;
+        }
+
+        this.updateLayerPanelUI();
+
+        if (this.eventBus) {
+            this.eventBus.emit('layer:deleted', { layerIndex });
+        }
+
+        return true;
+    }
+
+    toggleLayerVisibility(layerIndex) {
+        const layers = this.getLayers();
+        if (layerIndex < 0 || layerIndex >= layers.length) return;
+
+        const layer = layers[layerIndex];
+        const newVisibility = !layer.visible;
+        layer.visible = newVisibility;
+
+        if (layer.layerData) {
+            layer.layerData.visible = newVisibility;
+        }
+
+        if (layer.layerData?.isBackground && this.checkerPattern) {
+            this.checkerPattern.visible = !newVisibility;
+        }
+
+        this.updateLayerPanelUI();
+
+        if (this.eventBus) {
+            this.eventBus.emit('layer:visibility-changed', {
+                layerIndex,
+                visible: newVisibility
+            });
+        }
+    }
+
+    setLayerOpacity(layerIndex, opacity) {
+        const layers = this.getLayers();
+        if (layerIndex < 0 || layerIndex >= layers.length) return;
+        
+        const layer = layers[layerIndex];
+        if (layer.layerData?.isBackground) return;
+        
+        opacity = Math.max(0, Math.min(1, opacity));
+        
+        layer.alpha = opacity;
+        
+        if (layer.layerData) {
+            layer.layerData.opacity = opacity;
+        }
+        
+        this.requestThumbnailUpdate(layerIndex);
+        
+        if (this.eventBus) {
+            this.eventBus.emit('layer:opacity-changed', {
+                layerIndex,
+                layerId: layer.layerData?.id,
+                opacity
+            });
+        }
+    }
+
+    setActiveLayer(layerIndex) {
+        const layers = this.getLayers();
+        if (layerIndex < 0 || layerIndex >= layers.length) return;
+
+        this.activeLayerIndex = layerIndex;
+        this.updateLayerPanelUI();
+
+        if (this.eventBus) {
+            this.eventBus.emit('layer:activated', {
+                layerIndex,
+                layerId: layers[layerIndex].layerData?.id
+            });
+        }
+    }
+
+    getActiveLayer() {
+        const layers = this.getLayers();
+        return layers[this.activeLayerIndex] || null;
+    }
+
+    getLayers() {
+        const frame = this.frames.get(this.currentFrameId);
+        return frame ? frame.layers : [];
+    }
+
+    reorderLayers(oldIndex, newIndex) {
+        const frame = this.frames.get(this.currentFrameId);
+        if (!frame) return false;
+
+        const layers = frame.layers;
+        if (oldIndex < 0 || oldIndex >= layers.length || newIndex < 0 || newIndex >= layers.length) {
+            return false;
+        }
+
+        const oldLayer = layers[oldIndex];
+        if (oldLayer.layerData?.isBackground) return false;
+
+        const targetLayer = layers[newIndex];
+        if (targetLayer.layerData?.isBackground) return false;
+
+        const [movedLayer] = layers.splice(oldIndex, 1);
+        layers.splice(newIndex, 0, movedLayer);
+
+        this.currentFrameContainer.removeChild(movedLayer);
+        const bgLayer = layers.find(l => l.layerData?.isBackground);
+        const insertIndex = bgLayer ? 1 : 0;
+        this.currentFrameContainer.addChildAt(movedLayer, insertIndex + newIndex);
+
+        if (this.activeLayerIndex === oldIndex) {
+            this.activeLayerIndex = newIndex;
+        } else if (oldIndex < this.activeLayerIndex && newIndex >= this.activeLayerIndex) {
+            this.activeLayerIndex--;
+        } else if (oldIndex > this.activeLayerIndex && newIndex <= this.activeLayerIndex) {
+            this.activeLayerIndex++;
+        }
+
+        this.updateLayerPanelUI();
+
+        if (this.eventBus) {
+            this.eventBus.emit('layer:reordered', { oldIndex, newIndex });
+        }
+
+        return true;
+    }
+
+    registerThumbnailUpdateCallback(callback) {
+        const callbackId = `callback_${Date.now()}_${Math.random()}`;
+        this.thumbnailUpdateCallbacks.set(callbackId, callback);
+        return callbackId;
+    }
+
+    unregisterThumbnailUpdateCallback(callbackId) {
+        this.thumbnailUpdateCallbacks.delete(callbackId);
+    }
+
+    requestThumbnailUpdate(layerIndex) {
+        this.thumbnailUpdateCallbacks.forEach(callback => {
+            try {
+                callback(layerIndex);
+            } catch (error) {
+                console.error('[LayerSystem] Thumbnail update callback error:', error);
+            }
+        });
+    }
+
+    updateLayerPanelUI() {
+        if (this.eventBus) {
+            this.eventBus.emit('layer:list-updated', {
+                layers: this.getLayers(),
+                activeIndex: this.activeLayerIndex
+            });
+        }
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.LayerSystem = LayerSystem;
+}
+
+
+// ================================================================================
+// ファイル 3/6: ui/layer-panel-renderer.js - 完全版
+// ================================================================================
+
+class LayerPanelRenderer {
+    constructor(container, layerSystem, eventBus) {
+        this.container = container;
+        this.layerSystem = layerSystem;
+        this.eventBus = eventBus;
+        this.sortable = null;
+
+        this._setupEventListeners();
+        this.initializeSortable();
+    }
+
+    _setupEventListeners() {
+        this.eventBus.on('layer:list-updated', ({ layers, activeIndex }) => {
+            this.render(layers, activeIndex);
+        });
+
+        this.eventBus.on('thumbnail:layer-updated', ({ layerIndex, thumbnailDataUrl }) => {
+            this.updateThumbnail(layerIndex, thumbnailDataUrl);
+        });
+    }
+
+    render(layers, activeIndex, animationSystem = null) {
+        if (!this.container) return;
+        if (!layers || layers.length === 0) return;
+
+        this.container.innerHTML = '';
+
+        for (let i = layers.length - 1; i >= 0; i--) {
+            const layer = layers[i];
+            const isActive = i === activeIndex;
+            const layerElement = this.createLayerElement(layer, i, isActive, animationSystem);
+            this.container.appendChild(layerElement);
+        }
+
+        this.initializeSortable();
+    }
+
+    createLayerElement(layer, index, isActive, animationSystem) {
+        const layerDiv = document.createElement('div');
+        layerDiv.className = 'layer-item';
+        layerDiv.dataset.layerIndex = index;
+
+        if (isActive) {
+            layerDiv.classList.add('active');
+        }
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'layer-visibility';
+        checkbox.checked = layer.layerData?.visible !== false;
+        checkbox.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (this.eventBus) {
+                this.eventBus.emit('ui:layer-visibility-toggled', { layerIndex: index });
+            }
+        });
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'layer-name';
+        nameSpan.textContent = layer.layerData?.name || `レイヤー${index}`;
+
+        const thumbnail = this.createThumbnail(layer);
+
+        layerDiv.appendChild(checkbox);
+        layerDiv.appendChild(nameSpan);
+        layerDiv.appendChild(thumbnail);
+
+        if (!layer.layerData?.isBackground) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'layer-delete-button';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.eventBus) {
+                    this.eventBus.emit('ui:layer-delete-requested', { layerIndex: index });
+                }
+            });
+            layerDiv.appendChild(deleteBtn);
+
+            const opacityContainer = document.createElement('div');
+            opacityContainer.className = 'layer-opacity-control';
+            
+            const decreaseBtn = document.createElement('button');
+            decreaseBtn.textContent = '◀';
+            decreaseBtn.className = 'layer-opacity-btn layer-opacity-decrease';
+            decreaseBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._adjustLayerOpacity(index, -0.1);
+            });
+            
+            const opacityValue = document.createElement('span');
+            opacityValue.className = 'layer-opacity-value';
+            const opacity = layer.alpha !== undefined ? layer.alpha : 1.0;
+            opacityValue.textContent = `${Math.round(opacity * 100)}%`;
+            this._setupOpacityDrag(opacityValue, index);
+            
+            const increaseBtn = document.createElement('button');
+            increaseBtn.textContent = '▶';
+            increaseBtn.className = 'layer-opacity-btn layer-opacity-increase';
+            increaseBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._adjustLayerOpacity(index, 0.1);
+            });
+            
+            opacityContainer.appendChild(decreaseBtn);
+            opacityContainer.appendChild(opacityValue);
+            opacityContainer.appendChild(increaseBtn);
+            layerDiv.appendChild(opacityContainer);
+        }
+
+        layerDiv.addEventListener('click', (e) => {
+            if (e.target !== checkbox) {
+                if (this.eventBus) {
+                    this.eventBus.emit('ui:layer-selected', { 
+                        layerIndex: index,
+                        layerId: layer.layerData?.id
+                    });
+                }
+            }
+        });
+
+        return layerDiv;
+    }
+
+    _setupOpacityDrag(element, layerIndex) {
+        let isDragging = false;
+        let startX = 0;
+        let startOpacity = 0;
+        
+        element.addEventListener('pointerdown', (e) => {
+            isDragging = true;
+            startX = e.clientX;
+            const layer = this.layerSystem.getLayers()[layerIndex];
+            startOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
+            element.setPointerCapture(e.pointerId);
+            e.stopPropagation();
+        });
+        
+        element.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - startX;
+            const delta = dx / 100;
+            const newOpacity = Math.max(0, Math.min(1, startOpacity + delta));
+            this._setLayerOpacity(layerIndex, newOpacity);
+        });
+        
+        element.addEventListener('pointerup', (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            element.releasePointerCapture(e.pointerId);
+        });
+        
+        element.addEventListener('pointercancel', (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            element.releasePointerCapture(e.pointerId);
+        });
+    }
+
+    _adjustLayerOpacity(layerIndex, delta) {
+        const layer = this.layerSystem.getLayers()[layerIndex];
+        if (!layer) return;
+        
+        const currentOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
+        const newOpacity = Math.max(0, Math.min(1, currentOpacity + delta));
+        this._setLayerOpacity(layerIndex, newOpacity);
+    }
+
+    _setLayerOpacity(layerIndex, opacity) {
+        if (this.layerSystem?.setLayerOpacity) {
+            this.layerSystem.setLayerOpacity(layerIndex, opacity);
+        }
+        
+        const layers = this.layerSystem.getLayers();
+        const reverseIndex = layers.length - 1 - layerIndex;
+        const layerDiv = this.container.querySelectorAll('.layer-item')[reverseIndex];
+        const opacityValue = layerDiv?.querySelector('.layer-opacity-value');
+        if (opacityValue) {
+            opacityValue.textContent = `${Math.round(opacity * 100)}%`;
+        }
+    }
+
+    createThumbnail(layer) {
+        const img = document.createElement('img');
+        img.className = 'layer-thumbnail';
+        img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        img.alt = 'Layer thumbnail';
+        return img;
+    }
+
+    updateThumbnail(layerIndex, thumbnailDataUrl) {
+        const layers = this.layerSystem.getLayers();
+        const reverseIndex = layers.length - 1 - layerIndex;
+        const layerDiv = this.container.querySelectorAll('.layer-item')[reverseIndex];
+        
+        if (layerDiv) {
+            const thumbnail = layerDiv.querySelector('.layer-thumbnail');
+            if (thumbnail && thumbnailDataUrl) {
+                thumbnail.src = thumbnailDataUrl;
+            }
+        }
+    }
+
+    initializeSortable() {
+        if (!window.Sortable) return;
+        
+        try {
+            if (this.sortable) {
+                this.sortable.destroy();
+            }
+
+            this.sortable = Sortable.create(this.container, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                chosenClass: 'sortable-chosen',
+                forceFallback: true,
+                fallbackOnBody: true,
+                swapThreshold: 0.65,
+                
+                onEnd: (evt) => {
+                    const layers = this.layerSystem.getLayers();
+                    const oldIndex = layers.length - 1 - evt.oldIndex;
+                    const newIndex = layers.length - 1 - evt.newIndex;
+                    
+                    if (this.layerSystem?.reorderLayers) {
+                        this.layerSystem.reorderLayers(oldIndex, newIndex);
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('[LayerPanelRenderer] Sortable initialization failed:', error);
+        }
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.LayerPanelRenderer = LayerPanelRenderer;
+}
+
+
+// ================================================================================
+// ファイル 4/6: system/camera-system.js - 完全版 (updateメソッド追加版)
+// ================================================================================
+
+class CameraSystem {
+    constructor(config, eventBus, pixiApp, layerSystem) {
+        this.config = config;
+        this.eventBus = eventBus;
+        this.pixiApp = pixiApp;
+        this.layerSystem = layerSystem;
+        this.worldContainer = null;
+        this.cameraPosition = { x: 0, y: 0 };
+        this.cameraZoom = 1.0;
+        this.isDragging = false;
+        this.lastPointerPosition = { x: 0, y: 0 };
+        this.checkerMask = null;
+    }
+
+    init() {
+        this.worldContainer = new PIXI.Container();
+        this.worldContainer.label = 'WorldContainer';
+        this.worldContainer.eventMode = 'static';
+        this.pixiApp.stage.addChild(this.worldContainer);
+
+        this._setupCheckerPatternMask();
+        this._setupEventListeners();
+        this._centerCamera();
+
+        return this.worldContainer;
+    }
+
+    _setupCheckerPatternMask() {
+        if (this.layerSystem?.checkerPattern) {
+            const checker = this.layerSystem.checkerPattern;
+            
+            const checkerMask = new PIXI.Graphics();
+            checkerMask.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+            checkerMask.fill({ color: 0xFFFFFF });
+            checkerMask.label = 'checkerMask';
+            
+            checker.mask = checkerMask;
+            this.worldContainer.addChild(checkerMask);
+            this.checkerMask = checkerMask;
+        }
+    }
+
+    _setupEventListeners() {
+        this.worldContainer.on('pointerdown', this._onPointerDown.bind(this));
+        this.worldContainer.on('pointermove', this._onPointerMove.bind(this));
+        this.worldContainer.on('pointerup', this._onPointerUp.bind(this));
+        this.worldContainer.on('pointerupoutside', this._onPointerUp.bind(this));
+        this.worldContainer.on('wheel', this._onWheel.bind(this));
+    }
+
+    _centerCamera() {
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        this.worldContainer.position.set(
+            this.pixiApp.screen.width / 2 - centerX,
+            this.pixiApp.screen.height / 2 - centerY
+        );
+        this.cameraPosition = { x: centerX, y: centerY };
+    }
+
+    _onPointerDown(event) {
+        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+            this.isDragging = true;
+            this.lastPointerPosition = { x: event.globalX, y: event.globalY };
+            this.worldContainer.cursor = 'grabbing';
+        }
+    }
+
+    _onPointerMove(event) {
+        if (this.isDragging) {
+            const dx = event.globalX - this.lastPointerPosition.x;
+            const dy = event.globalY - this.lastPointerPosition.y;
+            
+            this.worldContainer.position.x += dx;
+            this.worldContainer.position.y += dy;
+            
+            this.lastPointerPosition = { x: event.globalX, y: event.globalY };
+            this.updateCheckerPatternTransform();
+        }
+    }
+
+    _onPointerUp() {
+        this.isDragging = false;
+        this.worldContainer.cursor = 'default';
+    }
+
+    _onWheel(event) {
+        event.preventDefault();
+        
+        const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.max(0.1, Math.min(10, this.cameraZoom * zoomFactor));
+        
+        const mouseX = event.globalX;
+        const mouseY = event.globalY;
+        
+        const worldX = (mouseX - this.worldContainer.position.x) / this.cameraZoom;
+        const worldY = (mouseY - this.worldContainer.position.y) / this.cameraZoom;
+        
+        this.cameraZoom = newZoom;
+        this.worldContainer.scale.set(newZoom, newZoom);
+        
+        this.worldContainer.position.x = mouseX - worldX * newZoom;
+        this.worldContainer.position.y = mouseY - worldY * newZoom;
+        
+        this.updateCheckerPatternTransform();
+        
+        if (this.eventBus) {
+            this.eventBus.emit('camera:zoom-changed', { zoom: newZoom });
+        }
+    }
+
+    update(deltaTime) {
+        this.updateCheckerPatternTransform();
+    }
+
+    updateCheckerPatternTransform() {
+        if (!this.layerSystem?.checkerPattern) return;
+        
+        const checker = this.layerSystem.checkerPattern;
+        const currentZoom = this.worldContainer.scale.x;
+        
+        checker.scale.set(1 / currentZoom, 1 / currentZoom);
+        
+        const cameraPos = this.worldContainer.position;
+        checker.position.set(
+            -cameraPos.x / currentZoom,
+            -cameraPos.y / currentZoom
+        );
+        
+        if (this.checkerMask) {
+            this.checkerMask.scale.set(1 / currentZoom, 1 / currentZoom);
+            this.checkerMask.position.set(
+                -cameraPos.x / currentZoom,
+                -cameraPos.y / currentZoom
+            );
+        }
+    }
+
+    getWorldContainer() {
+        return this.worldContainer;
+    }
+
+    getCameraZoom() {
+        return this.cameraZoom;
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.CameraSystem = CameraSystem;
+}
+
+
+// ================================================================================
+// ファイル 5/6: system/thumbnail-system.js - 完全版
+// ================================================================================
+
+class ThumbnailSystem {
+    constructor(layerSystem, eventBus, renderer) {
+        this.layerSystem = layerSystem;
+        this.eventBus = eventBus;
+        this.renderer = renderer;
+        this.thumbnailWidth = 48;
+        this.thumbnailHeight = 48;
+        this.updateQueue = new Set();
+        this.isProcessing = false;
+
+        this._setupEventListeners();
+        this._registerWithLayerSystem();
+    }
+
+    _setupEventListeners() {
+        this.eventBus.on('layer:path-added', ({ layerIndex }) => {
+            this.queueThumbnailUpdate(layerIndex);
+        });
+
+        this.eventBus.on('layer:created', ({ layerIndex }) => {
+            this.queueThumbnailUpdate(layerIndex);
+        });
+
+        this.eventBus.on('layer:opacity-changed', ({ layerIndex }) => {
+            this.queueThumbnailUpdate(layerIndex);
+        });
+    }
+
+    _registerWithLayerSystem() {
+        if (this.layerSystem?.registerThumbnailUpdateCallback) {
+            this.callbackId = this.layerSystem.registerThumbnailUpdateCallback((layerIndex) => {
+                this.queueThumbnailUpdate(layerIndex);
+            });
+        }
+    }
+
+    queueThumbnailUpdate(layerIndex) {
+        this.updateQueue.add(layerIndex);
+        if (!this.isProcessing) {
+            this.processQueue();
+        }
+    }
+
+    async processQueue() {
+        if (this.updateQueue.size === 0) {
+            this.isProcessing = false;
+            return;
+        }
+
+        this.isProcessing = true;
+        const layerIndex = Array.from(this.updateQueue)[0];
+        this.updateQueue.delete(layerIndex);
+
+        try {
+            await this.updateThumbnail(layerIndex);
+        } catch (error) {
+            console.error('[ThumbnailSystem] Error updating thumbnail:', error);
+        }
+
+        setTimeout(() => this.processQueue(), 50);
+    }
+
+    async updateThumbnail(layerIndex) {
+        const layers = this.layerSystem.getLayers();
+        if (layerIndex < 0 || layerIndex >= layers.length) return;
+
+        const layer = layers[layerIndex];
+        const thumbnailDataUrl = await this.generateThumbnail(
+            layer,
+            this.thumbnailWidth,
+            this.thumbnailHeight
+        );
+
+        if (thumbnailDataUrl && this.eventBus) {
+            this.eventBus.emit('thumbnail:layer-updated', {
+                layerIndex,
+                thumbnailDataUrl
+            });
+        }
+    }
+
+    async generateThumbnail(layer, width, height) {
+        if (!layer || !this.renderer) return null;
+
+        try {
+            const bounds = layer.getLocalBounds();
+            if (bounds.width === 0 || bounds.height === 0) {
+                return this.createEmptyThumbnail(width, height);
+            }
+
+            const tempContainer = new PIXI.Container();
+            
+            if (layer.layerData?.isBackground === false) {
+                const checkerBg = this._createCheckerPatternForThumbnail(
+                    bounds.width,
+                    bounds.height
+                );
+                checkerBg.position.set(bounds.x, bounds.y);
+                tempContainer.addChild(checkerBg);
+            }
+            
+            const originalParent = layer.parent;
+            const originalAlpha = layer.alpha;
+            
+            if (originalParent) {
+                originalParent.removeChild(layer);
+            }
+            layer.alpha = 1.0;
+            tempContainer.addChild(layer);
+
+            const texture = this.renderer.generateTexture({
+                target: tempContainer,
+                resolution: 1,
+                frame: new PIXI.Rectangle(bounds.x, bounds.y, bounds.width, bounds.height)
+            });
+
+            tempContainer.removeChild(layer);
+            layer.alpha = originalAlpha;
+            if (originalParent) {
+                originalParent.addChild(layer);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            const scale = Math.min(width / bounds.width, height / bounds.height);
+            const scaledWidth = bounds.width * scale;
+            const scaledHeight = bounds.height * scale;
+            const offsetX = (width - scaledWidth) / 2;
+            const offsetY = (height - scaledHeight) / 2;
+
+            const img = new Image();
+            img.src = texture.source.resource.src;
+            
+            return new Promise((resolve) => {
+                img.onload = () => {
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+                    texture.destroy(true);
+                    resolve(canvas.toDataURL());
+                };
+                img.onerror = () => {
+                    texture.destroy(true);
+                    resolve(this.createEmptyThumbnail(width, height));
+                };
+            });
+
+        } catch (error) {
+            console.error('[ThumbnailSystem] Error generating thumbnail:', error);
+            return this.createEmptyThumbnail(width, height);
+        }
+    }
+
+    _createCheckerPatternForThumbnail(width, height) {
+        const g = new PIXI.Graphics();
+        const color1 = 0xe0e0e0;
+        const color2 = 0xffffff;
+        const squareSize = 8;
+        
+        for (let y = 0; y < height; y += squareSize) {
+            for (let x = 0; x < width; x += squareSize) {
+                const isEvenX = Math.floor(x / squareSize) % 2 === 0;
+                const isEvenY = Math.floor(y / squareSize) % 2 === 0;
+                const color = (isEvenX === isEvenY) ? color1 : color2;
+                g.rect(x, y, squareSize, squareSize);
+                g.fill({ color });
+            }
+        }
+        
+        return g;
+    }
+
+    createEmptyThumbnail(width, height) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        return canvas.toDataURL();
+    }
+
+    destroy() {
+        if (this.callbackId && this.layerSystem?.unregisterThumbnailUpdateCallback) {
+            this.layerSystem.unregisterThumbnailUpdateCallback(this.callbackId);
+        }
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.ThumbnailSystem = ThumbnailSystem;
+}
+
+
+// ================================================================================
+// ファイル 6/6: styles/main.css - Phase 6 追加・修正部分
+// ================================================================================
+
+/*
+以下のCSSを既存のmain.cssに追加・修正してください
+*/
+
+/* レイヤーパネル基本スタイル - パディング調整 */
+.layer-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 4px 8px;
+    padding: 6px 8px; /* 修正: 上下を6pxに */
+    margin-bottom: 4px;
+    background-color: var(--futaba-layer-bg);
+    border: 2px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    line-height: 1.2; /* 追加 */
+}
+
+/* 透明度コントロール */
+.layer-opacity-control {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    grid-column: 2;
+    grid-row: 1;
+    justify-content: flex-end;
+}
+
+.layer-opacity-btn {
+    background: transparent;
+    border: none;
+    color: var(--futaba-dark-maroon);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+    transition: color 0.2s;
+}
+
+.layer-opacity-btn:hover {
+    color: var(--futaba-accent);
+}
+
+.layer-opacity-value {
+    font-size: 11px;
+    color: var(--futaba-dark-maroon);
+    cursor: ew-resize;
+    user-select: none;
+    min-width: 35px;
+    text-align: center;
+}
+
+/* 削除ボタンの色修正と重複許可 */
+.layer-delete-button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(176, 92, 92, 0.8); /* 修正 */
+    border: none;
+    border-radius: 3px;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2; /* 追加 */
+    opacity: 0; /* 追加 */
+    transition: opacity 0.2s, background-color 0.2s;
+}
+
+.layer-item:hover .layer-delete-button {
+    opacity: 1; /* 追加 */
+}
+
+.layer-delete-button:hover {
+    background-color: rgba(176, 92, 92, 1); /* 修正 */
+}
+
+/* サムネイルのz-index設定 */
+.layer-thumbnail {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--futaba-dark-maroon);
+    border-radius: 2px;
+    object-fit: contain;
+    background-color: white;
+    position: relative; /* 追加 */
+    z-index: 1; /* 追加 */
+}
+
+/* SortableJSスタイル改善 */
+.sortable-ghost {
+    opacity: 0.3;
+    background-color: var(--futaba-light-maroon);
+}
+
+.sortable-drag {
+    opacity: 1.0 !important;
+    transform: rotate(2deg);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    cursor: grabbing !important;
+}
+
+.sortable-chosen {
+    background-color: var(--futaba-accent);
+}
+
+.layer-item {
+    cursor: grab;
+}
+
+.layer-item:active {
+    cursor: grabbing;
+}
+
+
+// ================================================================================
+// 改修完了報告
+// ================================================================================
+
+Phase 6 改修完了:
+
+【完了項目】
+✓ LayerModel に opacity プロパティ追加
+✓ LayerSystem に setLayerOpacity() メソッド実装
+✓ レイヤーパネルに透明度UI実装（◀ 100% ▶）
+✓ ドラッグ操作で透明度変更
+✓ ボタンで±10%調整
+✓ レイヤーパネルのパディング調整
+✓ 削除ボタンの色を仕様通りに修正
+✓ サムネイルと削除ボタンの重複許可
+✓ チェックパターンのマスク処理追加
+✓ チェックパターンの拡大縮小無効化
+✓ サムネイル生成時のチェックパターン統一
+
+【適用ファイル】
+1. system/data-models.js
+2. system/layer-system.js
+3. ui/layer-panel-renderer.js
+4. system/camera-system.js
+5. system/thumbnail-system.js
+6. styles/main.css
+
+【次回テスト項目】
+□ 透明度UIが正しく動作
+□ チェックパターンがカメラフレーム内のみ表示
+□ 拡大縮小で16x16pxサイズを維持
