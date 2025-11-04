@@ -1,5 +1,6 @@
 /**
  * StateManager - アプリケーション状態の一元管理
+ * Phase 8: アクティブ/準アクティブUI管理追加
  * Phase 3.1: Cuts対応版 + History統合完備 + Tool Size管理追加 + EventBus安全化
  */
 
@@ -8,6 +9,7 @@ class StateManager {
         this.state = this._createInitialState();
         this._eventBus = null;
         this.history = null;
+        this.lastActivePanel = 'layer'; // Phase 8: 'layer' | 'timeline'
     }
 
     /**
@@ -63,7 +65,6 @@ class StateManager {
                 color: '#000000',
                 lineWidth: 2,
                 opacity: 1.0,
-                // ツールサイズ管理
                 penSize: 10,
                 penOpacity: 0.85,
                 eraserSize: 20,
@@ -77,6 +78,37 @@ class StateManager {
      */
     _generateId(prefix) {
         return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    // ===== Phase 8: アクティブパネル管理 =====
+
+    /**
+     * 最後にアクティブになったパネルを設定
+     * @param {string} panel - 'layer' または 'timeline'
+     */
+    setLastActivePanel(panel) {
+        if (panel !== 'layer' && panel !== 'timeline') {
+            console.warn('Invalid panel type:', panel);
+            return;
+        }
+        
+        const oldPanel = this.lastActivePanel;
+        if (oldPanel === panel) return;
+        
+        this.lastActivePanel = panel;
+        
+        this._safeEmit('ui:active-panel-changed', {
+            activePanel: panel,
+            inactivePanel: oldPanel === 'layer' ? 'timeline' : 'layer'
+        });
+    }
+
+    /**
+     * 現在のアクティブパネルを取得
+     * @returns {string} 'layer' または 'timeline'
+     */
+    getLastActivePanel() {
+        return this.lastActivePanel;
     }
 
     // ===== Tool Size API =====
@@ -128,9 +160,6 @@ class StateManager {
 
     // ===== Cut Management =====
 
-    /**
-     * 現在のCutを取得
-     */
     getCurrentCut() {
         const cut = this.state.timeline.cuts.find(
             c => c.id === this.state.timeline.currentCutId
@@ -141,37 +170,22 @@ class StateManager {
         return cut;
     }
 
-    /**
-     * IDでCutを取得
-     */
     getCutById(cutId) {
         return this.state.timeline.cuts.find(c => c.id === cutId);
     }
 
-    /**
-     * CutのIndexを取得
-     */
     getCutIndex(cutId) {
         return this.state.timeline.cuts.findIndex(c => c.id === cutId);
     }
 
-    /**
-     * Cutの総数を取得
-     */
     getCutCount() {
         return this.state.timeline.cuts.length;
     }
 
-    /**
-     * 全Cutを取得
-     */
     getAllCuts() {
         return this.state.timeline.cuts;
     }
 
-    /**
-     * 現在のCutを設定
-     */
     setCurrentCutId(cutId) {
         const cut = this.getCutById(cutId);
         if (!cut) {
@@ -183,9 +197,6 @@ class StateManager {
         this._safeEmit('cut:selected', { cutId });
     }
 
-    /**
-     * 現在のCutをIndexで設定
-     */
     setCurrentCutIndex(index) {
         if (index < 0 || index >= this.state.timeline.cuts.length) {
             console.error('Invalid cut index:', index);
@@ -196,9 +207,6 @@ class StateManager {
         this.setCurrentCutId(cutId);
     }
 
-    /**
-     * Cut追加（History統合）
-     */
     addCut(name) {
         if (!this.history) {
             this.history = window.History;
@@ -256,9 +264,6 @@ class StateManager {
         return cut;
     }
 
-    /**
-     * Cut削除（History統合）
-     */
     removeCut(cutId) {
         if (!this.history) {
             this.history = window.History;
@@ -307,9 +312,6 @@ class StateManager {
         }
     }
 
-    /**
-     * Cut並び替え（History統合）
-     */
     reorderCuts(fromIndex, toIndex) {
         if (!this.history) {
             this.history = window.History;
@@ -341,9 +343,6 @@ class StateManager {
         }
     }
 
-    /**
-     * Cut名前変更
-     */
     updateCutName(cutId, name) {
         if (!this.history) {
             this.history = window.History;
@@ -374,9 +373,6 @@ class StateManager {
         }
     }
 
-    /**
-     * Cut時間変更
-     */
     updateCutDuration(cutId, duration) {
         if (!this.history) {
             this.history = window.History;
@@ -407,9 +403,6 @@ class StateManager {
         }
     }
 
-    /**
-     * Cutにレイヤー追加（History統合）
-     */
     addLayerToCut(cutId, name) {
         if (!this.history) {
             this.history = window.History;
@@ -459,9 +452,6 @@ class StateManager {
         return layer;
     }
 
-    /**
-     * Cutからレイヤー削除（History統合）
-     */
     removeLayerFromCut(cutId, layerId) {
         if (!this.history) {
             this.history = window.History;
@@ -513,9 +503,6 @@ class StateManager {
         }
     }
 
-    /**
-     * ストローク追加（History統合）
-     */
     addStroke(strokeData) {
         if (!this.history) {
             this.history = window.History;
@@ -568,9 +555,6 @@ class StateManager {
         return stroke;
     }
 
-    /**
-     * ストローク削除（History統合）
-     */
     removeStroke(strokeId) {
         if (!this.history) {
             this.history = window.History;
@@ -620,17 +604,11 @@ class StateManager {
         }
     }
 
-    /**
-     * 現在のアクティブレイヤーを取得
-     */
     getActiveLayer() {
         const cut = this.getCurrentCut();
         return cut.layers[cut.activeLayerIndex];
     }
 
-    /**
-     * アクティブレイヤーを設定
-     */
     setActiveLayerIndex(index) {
         const cut = this.getCurrentCut();
         if (index < 0 || index >= cut.layers.length) {
@@ -646,31 +624,19 @@ class StateManager {
         });
     }
 
-    /**
-     * ツール設定取得
-     */
     getToolSettings() {
         return this.state.tool;
     }
 
-    /**
-     * ツール設定更新
-     */
     updateToolSettings(settings) {
         Object.assign(this.state.tool, settings);
         this._safeEmit('tool:updated', settings);
     }
 
-    /**
-     * 状態のシリアライズ（保存用）
-     */
     serialize() {
         return JSON.stringify(this.state);
     }
 
-    /**
-     * 状態の復元（読み込み用）
-     */
     deserialize(json) {
         try {
             this.state = JSON.parse(json);
@@ -680,32 +646,24 @@ class StateManager {
         }
     }
 
-    /**
-     * 状態のリセット
-     */
     reset() {
         this.state = this._createInitialState();
+        this.lastActivePanel = 'layer';
         this._safeEmit('state:reset');
     }
 
-    // ===== 後方互換性API（段階的移行用） =====
+    // ===== 後方互換性API =====
     
-    /**
-     * @deprecated getCurrentCut() を使用してください
-     */
     getCurrentFrame() {
         console.warn('getCurrentFrame() is deprecated. Use getCurrentCut() instead.');
         return this.getCurrentCut();
     }
 
-    /**
-     * @deprecated getCutById() を使用してください
-     */
     getFrameById(frameId) {
         console.warn('getFrameById() is deprecated. Use getCutById() instead.');
         return this.getCutById(frameId);
     }
 }
 
-// グローバルに公開
 window.StateManager = new StateManager();
+console.log('✅ state-manager.js (Phase 8完全実装版) loaded');
