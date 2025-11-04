@@ -1,6 +1,7 @@
-// system/layer-system.js - Phase 5,6 実装版
+// system/layer-system.js - Phase 5,6完全統合版
 // Phase 5: 背景レイヤー色変更機能
 // Phase 6: レイヤー透明度設定機能
+// 修正: 背景非表示時のキャンバスチェックパターン表示
 
 (function() {
     'use strict';
@@ -21,8 +22,8 @@
             this.coordAPI = window.CoordinateSystem;
             this.transform = null;
             this.isInitialized = false;
-            
             this.layerCounter = 0;
+            this.checkerPattern = null;
         }
 
         init(canvasContainer, eventBus, config) {
@@ -39,7 +40,6 @@
             this.currentFrameContainer = new PIXI.Container();
             this.currentFrameContainer.label = 'temporary_frame_container';
             
-            // 背景レイヤー作成
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_bg_' + Date.now(),
@@ -88,10 +88,57 @@
             return g;
         }
 
+        _createCheckerPatternBackground(width, height) {
+            const g = new PIXI.Graphics();
+            const color1 = 0xf0e0d6;
+            const color2 = 0xffffee;
+            const squareSize = 32;
+            
+            const cols = Math.ceil(width / squareSize) + 2;
+            const rows = Math.ceil(height / squareSize) + 2;
+            
+            for (let row = -1; row < rows; row++) {
+                for (let col = -1; col < cols; col++) {
+                    const x = col * squareSize;
+                    const y = row * squareSize;
+                    const isEvenCol = col % 2 === 0;
+                    const isEvenRow = row % 2 === 0;
+                    const color = (isEvenCol === isEvenRow) ? color1 : color2;
+                    g.rect(x, y, squareSize, squareSize);
+                    g.fill({ color: color, alpha: 1.0 });
+                }
+            }
+            
+            g.visible = false;
+            g.label = 'checkerPattern';
+            g.zIndex = -1000;
+            return g;
+        }
+
         _setupResizeEvents() {
             if (!this.eventBus) return;
             
             this.eventBus.on('camera:resized', (data) => {
+                if (this.checkerPattern && this.checkerPattern.parent) {
+                    this.checkerPattern.parent.removeChild(this.checkerPattern);
+                    this.checkerPattern.destroy();
+                    this.checkerPattern = null;
+                }
+                
+                const worldContainer = this.cameraSystem?.worldContainer;
+                if (worldContainer) {
+                    this.checkerPattern = this._createCheckerPatternBackground(
+                        data.width * 3,
+                        data.height * 3
+                    );
+                    
+                    const bgLayer = this.getLayers()[0];
+                    const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
+                    this.checkerPattern.visible = !isBackgroundVisible;
+                    
+                    worldContainer.addChildAt(this.checkerPattern, 0);
+                }
+                
                 const layers = this.getLayers();
                 for (let i = 0; i < layers.length; i++) {
                     this.requestThumbnailUpdate(i);
@@ -103,7 +150,6 @@
             });
         }
 
-        // Phase 5: 背景レイヤー色変更
         changeBackgroundLayerColor(layerIndex, layerId) {
             const layers = this.getLayers();
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -131,7 +177,6 @@
             }
         }
 
-        // Phase 6: レイヤー透明度設定
         setLayerOpacity(layerIndex, opacity) {
             const layers = this.getLayers();
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -1005,6 +1050,11 @@
                 const layer = layers[layerIndex];
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
+                
+                if (layer.layerData?.isBackground && this.checkerPattern) {
+                    this.checkerPattern.visible = !layer.layerData.visible;
+                }
+                
                 this.updateLayerPanelUI();
                 this.requestThumbnailUpdate(layerIndex);
                 if (this.eventBus) {
@@ -1063,20 +1113,16 @@
             try {
                 const canvasAspectRatio = this.config.canvas.width / this.config.canvas.height;
                 let thumbnailWidth, thumbnailHeight;
-                const maxHeight = 64;
-                const maxWidth = 64;
+                const maxSize = 56;
+                
                 if (canvasAspectRatio >= 1) {
-                    if (maxHeight * canvasAspectRatio <= maxWidth) {
-                        thumbnailWidth = maxHeight * canvasAspectRatio;
-                        thumbnailHeight = maxHeight;
-                    } else {
-                        thumbnailWidth = maxWidth;
-                        thumbnailHeight = maxWidth / canvasAspectRatio;
-                    }
+                    thumbnailWidth = maxSize;
+                    thumbnailHeight = maxSize / canvasAspectRatio;
                 } else {
-                    thumbnailWidth = Math.max(24, maxHeight * canvasAspectRatio);
-                    thumbnailHeight = maxHeight;
+                    thumbnailWidth = maxSize * canvasAspectRatio;
+                    thumbnailHeight = maxSize;
                 }
+                
                 thumbnail.style.width = Math.round(thumbnailWidth) + 'px';
                 thumbnail.style.height = Math.round(thumbnailHeight) + 'px';
                 const renderScale = this.config.thumbnail?.RENDER_SCALE || 2;
@@ -1155,6 +1201,20 @@
 
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
+            
+            if (cameraSystem?.worldContainer) {
+                this.checkerPattern = this._createCheckerPatternBackground(
+                    this.config.canvas.width * 3,
+                    this.config.canvas.height * 3
+                );
+                
+                const bgLayer = this.getLayers()[0];
+                const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
+                this.checkerPattern.visible = !isBackgroundVisible;
+                
+                cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
+            }
+            
             if (this.transform && this.app && !this.transform.app) {
                 this.initTransform();
             }
