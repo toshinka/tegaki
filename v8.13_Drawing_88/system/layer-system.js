@@ -1,7 +1,4 @@
-// ===== system/layer-system.js - Phase 2/5/6完全版 =====
-// Phase 2改修: チェッカーパターン実装
-// Phase 5改修: 背景レイヤー色変更機能
-// Phase 6改修: レイヤー透明度設定機能
+// system/layer-system.js - レイヤー名変更・自動連番対応版
 
 (function() {
     'use strict';
@@ -15,59 +12,15 @@
             this.activeLayerIndex = -1;
             this.frameRenderTextures = new Map();
             this.frameThumbnailDirty = new Map();
+            this.thumbnailUpdateQueue = new Set();
+            this.thumbnailUpdateTimer = null;
             this.cameraSystem = null;
             this.animationSystem = null;
             this.coordAPI = window.CoordinateSystem;
             this.transform = null;
             this.isInitialized = false;
             
-            // ★ Phase 2: チェッカーパターン参照
-            this.checkerPattern = null;
-        }
-
-        // ★ Phase 2: チェッカーパターンをworldContainerに配置
-        attachCheckerPatternToWorld(worldContainer) {
-            if (!this.checkerPattern) {
-                console.warn('[LayerSystem] Checker pattern not initialized');
-                return;
-            }
-            
-            if (!worldContainer) {
-                console.warn('[LayerSystem] worldContainer not provided');
-                return;
-            }
-            
-            // 既に親がある場合は削除
-            if (this.checkerPattern.parent) {
-                this.checkerPattern.parent.removeChild(this.checkerPattern);
-            }
-            
-            // worldContainerの最背面に配置
-            worldContainer.addChildAt(this.checkerPattern, 0);
-            
-            console.log('✅ [LayerSystem] Checker pattern attached to worldContainer');
-        }
-
-        // ★ Phase 2: チェッカーパターン生成（フォールバック用）
-        _createCheckerPatternBackground(width, height) {
-            const g = new PIXI.Graphics();
-            const color1 = 0xf0e0d6;  // --futaba-cream
-            const color2 = 0xffffee;  // --futaba-background
-            const squareSize = 16;
-            
-            for (let y = 0; y < height; y += squareSize) {
-                for (let x = 0; x < width; x += squareSize) {
-                    const isEvenX = Math.floor(x / squareSize) % 2 === 0;
-                    const isEvenY = Math.floor(y / squareSize) % 2 === 0;
-                    const color = (isEvenX === isEvenY) ? color1 : color2;
-                    g.rect(x, y, squareSize, squareSize);
-                    g.fill({ color });
-                }
-            }
-            
-            g.label = 'checkerPattern';
-            g.visible = false;
-            return g;
+            this.layerCounter = 0;
         }
 
         init(canvasContainer, eventBus, config) {
@@ -84,22 +37,6 @@
             this.currentFrameContainer = new PIXI.Container();
             this.currentFrameContainer.label = 'temporary_frame_container';
             
-            // ★ Phase 2: チェッカーパターン生成（独立して管理）
-            if (window.checkerUtils) {
-                this.checkerPattern = window.checkerUtils.createCheckerPattern(
-                    this.config.canvas.width,
-                    this.config.canvas.height
-                );
-            } else {
-                // フォールバック: 自前で生成
-                this.checkerPattern = this._createCheckerPatternBackground(
-                    this.config.canvas.width,
-                    this.config.canvas.height
-                );
-            }
-            this.checkerPattern.visible = false;
-            // NOTE: attachCheckerPatternToWorld()でworldContainerに配置される
-            
             // 背景レイヤー作成
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
@@ -110,19 +47,20 @@
             bgLayer.label = bgLayerModel.id;
             bgLayer.layerData = bgLayerModel;
             
-            const bg = new PIXI.Graphics();
-            bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
-            bg.fill({ color: this.config.background.color });
+            const bg = this._createSolidBackground(
+                this.config.canvas.width, 
+                this.config.canvas.height,
+                0xf0e0d6
+            );
             bgLayer.addChild(bg);
             bgLayer.layerData.backgroundGraphics = bg;
-            
             this.currentFrameContainer.addChild(bgLayer);
             
-            // レイヤー1作成
+            this.layerCounter = 1;
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_1_' + Date.now(),
-                name: 'レイヤー1'
+                name: `レイヤー${this.layerCounter}`
             });
             layer1.label = layer1Model.id;
             layer1.layerData = layer1Model;
@@ -135,8 +73,110 @@
             this._setupLayerOperations();
             this._setupAnimationSystemIntegration();
             this._setupVKeyEvents();
-            this._setupTransformEventListeners();
+            this._startThumbnailUpdateProcess();
+            this._setupResizeEvents();
+            
             this.isInitialized = true;
+        }
+
+        _createSolidBackground(width, height, color = 0xf0e0d6) {
+            const g = new PIXI.Graphics();
+            g.rect(0, 0, width, height);
+            g.fill({ color: color, alpha: 1.0 });
+            return g;
+        }
+
+        _setupResizeEvents() {
+            if (!this.eventBus) return;
+            
+            this.eventBus.on('camera:resized', (data) => {
+                const layers = this.getLayers();
+                for (let i = 0; i < layers.length; i++) {
+                    this.requestThumbnailUpdate(i);
+                }
+                
+                setTimeout(() => {
+                    this.updateLayerPanelUI();
+                }, 100);
+            });
+        }
+
+        changeBackgroundLayerColor(layerIndex, layerId) {
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
+            const layer = layers[layerIndex];
+            if (!layer?.layerData?.isBackground) return;
+            
+            const color = window.brushSettings?.getColor() || 0xf0e0d6;
+            
+            const bg = layer.layerData.backgroundGraphics;
+            if (bg) {
+                bg.clear();
+                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                bg.fill({ color: color, alpha: 1.0 });
+            }
+            
+            this.requestThumbnailUpdate(layerIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:background-color-changed', {
+                    layerIndex,
+                    layerId,
+                    color
+                });
+            }
+        }
+
+        setLayerOpacity(layerIndex, opacity) {
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
+            const layer = layers[layerIndex];
+            if (layer.layerData?.isBackground) return;
+            
+            opacity = Math.max(0, Math.min(1, opacity));
+            
+            layer.alpha = opacity;
+            if (layer.layerData) {
+                layer.layerData.opacity = opacity;
+            }
+            
+            this.requestThumbnailUpdate(layerIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:opacity-changed', {
+                    layerIndex,
+                    layerId: layer.layerData?.id,
+                    opacity
+                });
+            }
+        }
+
+        renameLayer(layerIndex, newName) {
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
+            const layer = layers[layerIndex];
+            if (!layer?.layerData) return;
+            
+            const oldName = layer.layerData.name;
+            layer.layerData.name = newName;
+            
+            this.updateStatusDisplay();
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:name-changed', {
+                    layerIndex,
+                    layerId: layer.layerData.id,
+                    oldName,
+                    newName
+                });
+            }
+        }
+
+        getActiveLayerIndex() {
+            return this.activeLayerIndex;
         }
         
         _setupVKeyEvents() {
@@ -158,24 +198,6 @@
                 }
             }.bind(this));
             this.eventBus.on('keyboard:vkey-released', function() {}.bind(this));
-        }
-        
-        _setupTransformEventListeners() {
-            if (!this.eventBus) return;
-            
-            this.eventBus.on('layer:transform-updated', ({ data }) => {
-                const { layerIndex, layerId } = data || {};
-                
-                if (layerIndex !== undefined) {
-                    this.requestThumbnailUpdate(layerIndex);
-                } else if (layerId) {
-                    const layers = this.getLayers();
-                    const index = layers.findIndex(l => l.layerData?.id === layerId);
-                    if (index >= 0) {
-                        this.requestThumbnailUpdate(index);
-                    }
-                }
-            });
         }
         
         initTransform() {
@@ -600,6 +622,21 @@
             if (layers.length > 0) {
                 this.activeLayerIndex = layers.length - 1;
             }
+            
+            let maxLayerNum = 0;
+            layers.forEach(layer => {
+                if (layer.layerData && !layer.layerData.isBackground) {
+                    const match = layer.layerData.name.match(/^レイヤー(\d+)$/);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > maxLayerNum) {
+                            maxLayerNum = num;
+                        }
+                    }
+                }
+            });
+            this.layerCounter = maxLayerNum;
+            
             this.updateLayerPanelUI();
             this.updateStatusDisplay();
             if (this.isLayerMoveMode) {
@@ -885,15 +922,14 @@
         createLayer(name, isBackground = false) {
             if (!this.currentFrameContainer) return null;
             
-            const layers = this.getLayers();
-            const nonBackgroundCount = layers.filter(l => !l.layerData?.isBackground).length;
-            const layerName = name || (isBackground ? '背景' : `レイヤー${nonBackgroundCount + 1}`);
+            if (!isBackground) {
+                this.layerCounter++;
+            }
             
             const layerModel = new window.TegakiDataModels.LayerModel({
-                name: layerName,
+                name: name || (isBackground ? '背景' : `レイヤー${this.layerCounter}`),
                 isBackground: isBackground
             });
-            
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
             layer.layerData = layerModel;
@@ -912,13 +948,17 @@
             if (this.transform) {
                 this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
+            
             if (isBackground) {
-                const bg = new PIXI.Graphics();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
-                bg.fill(this.config.background.color);
+                const bg = this._createSolidBackground(
+                    this.config.canvas.width, 
+                    this.config.canvas.height,
+                    0xf0e0d6
+                );
                 layer.addChild(bg);
                 layer.layerData.backgroundGraphics = bg;
             }
+            
             if (window.History && !window.History._manager.isApplying) {
                 const entry = {
                     name: 'layer-create',
@@ -934,6 +974,9 @@
                             layer.layerData.destroyMask();
                         }
                         this.currentFrameContainer.removeChild(layer);
+                        if (!isBackground) {
+                            this.layerCounter--;
+                        }
                         const layers = this.getLayers();
                         if (this.activeLayerIndex >= layers.length) {
                             this.activeLayerIndex = Math.max(0, layers.length - 1);
@@ -954,8 +997,8 @@
             if (this.eventBus) {
                 this.eventBus.emit('layer:created', { layerId: layerModel.id, name: layerModel.name, isBackground });
             }
-            const finalLayers = this.getLayers();
-            return { layer, index: finalLayers.length - 1 };
+            const layers = this.getLayers();
+            return { layer, index: layers.length - 1 };
         }
         
         setActiveLayer(index) {
@@ -974,81 +1017,17 @@
             }
         }
 
-        // ★ Phase 2: 背景レイヤー表示切替時にチェッカー連動
         toggleLayerVisibility(layerIndex) {
             const layers = this.getLayers();
             if (layerIndex >= 0 && layerIndex < layers.length) {
                 const layer = layers[layerIndex];
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
-                
-                // ★ Phase 2: 背景レイヤーの場合、チェッカーパターン連動
-                if (layer.layerData?.isBackground && this.checkerPattern) {
-                    this.checkerPattern.visible = !layer.layerData.visible;
-                }
-                
                 this.updateLayerPanelUI();
                 this.requestThumbnailUpdate(layerIndex);
                 if (this.eventBus) {
                     this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
                 }
-            }
-        }
-
-        // ★ Phase 5: 背景レイヤー色変更機能
-        _changeBackgroundLayerColor(layerIndex, layerId) {
-            const layers = this.getLayers();
-            const layer = layers[layerIndex];
-            
-            if (!layer?.layerData?.isBackground) return;
-            
-            // 現在のペンカラーを取得
-            const color = window.brushSettings?.getColor?.() || this.config.background.color;
-            
-            // 背景グラフィックスを再生成
-            const bg = layer.layerData.backgroundGraphics;
-            if (bg) {
-                bg.clear();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
-                bg.fill({ color });
-            }
-            
-            // サムネイル更新
-            this.requestThumbnailUpdate(layerIndex);
-            
-            // EventBus通知
-            if (this.eventBus) {
-                this.eventBus.emit('layer:background-color-changed', {
-                    layerIndex,
-                    layerId,
-                    color
-                });
-            }
-        }
-
-        // ★ Phase 6: レイヤー透明度設定機能
-        setLayerOpacity(layerIndex, opacity) {
-            const layers = this.getLayers();
-            if (layerIndex < 0 || layerIndex >= layers.length) return;
-            
-            const layer = layers[layerIndex];
-            if (layer.layerData?.isBackground) return; // 背景レイヤーは常に100%
-            
-            opacity = Math.max(0, Math.min(1, opacity));
-            
-            layer.alpha = opacity;
-            if (layer.layerData) {
-                layer.layerData.opacity = opacity;
-            }
-            
-            this.requestThumbnailUpdate(layerIndex);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:opacity-changed', {
-                    layerIndex,
-                    layerId: layer.layerData?.id,
-                    opacity
-                });
             }
         }
 
@@ -1060,89 +1039,119 @@
 
         requestThumbnailUpdate(layerIndex) {
             const layers = this.getLayers();
-            if (layerIndex < 0 || layerIndex >= layers.length) return;
-            
-            const layer = layers[layerIndex];
-            const layerId = layer.layerData?.id;
-            
-            if (this.eventBus) {
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'update-requested',
-                    data: { 
-                        layerIndex, 
-                        layerId,
-                        immediate: false 
-                    }
-                });
+            if (layerIndex >= 0 && layerIndex < layers.length) {
+                this.thumbnailUpdateQueue.add(layerIndex);
+                if (this.thumbnailUpdateTimer) {
+                    clearTimeout(this.thumbnailUpdateTimer);
+                }
+                this.thumbnailUpdateTimer = setTimeout(() => {
+                    this.processThumbnailUpdates();
+                    this.thumbnailUpdateTimer = null;
+                }, 500);
             }
         }
 
-        // ★ Phase 2: サムネイル更新処理（ticker用）
+        _startThumbnailUpdateProcess() {
+            setInterval(() => {
+                if (this.thumbnailUpdateQueue.size > 0) {
+                    this.processThumbnailUpdates();
+                }
+            }, 500);
+        }
+
         processThumbnailUpdates() {
-            // 現在は即座更新のため、バッチ処理不要
-            // 将来的に最適化が必要な場合はここで実装
+            if (this.thumbnailUpdateQueue.size === 0) return;
+            const toUpdate = Array.from(this.thumbnailUpdateQueue);
+            toUpdate.forEach(layerIndex => {
+                this.updateThumbnail(layerIndex);
+                this.thumbnailUpdateQueue.delete(layerIndex);
+            });
+        }
+
+        updateThumbnail(layerIndex) {
+            if (!this.app?.renderer) return;
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            const layer = layers[layerIndex];
+            const layerItems = document.querySelectorAll('.layer-item');
+            const panelIndex = layers.length - 1 - layerIndex;
+            if (panelIndex < 0 || panelIndex >= layerItems.length) return;
+            const thumbnail = layerItems[panelIndex].querySelector('.layer-thumbnail');
+            if (!thumbnail) return;
+            try {
+                const canvasAspectRatio = this.config.canvas.width / this.config.canvas.height;
+                let thumbnailWidth, thumbnailHeight;
+                const maxHeight = 64;
+                const maxWidth = 64;
+                if (canvasAspectRatio >= 1) {
+                    if (maxHeight * canvasAspectRatio <= maxWidth) {
+                        thumbnailWidth = maxHeight * canvasAspectRatio;
+                        thumbnailHeight = maxHeight;
+                    } else {
+                        thumbnailWidth = maxWidth;
+                        thumbnailHeight = maxWidth / canvasAspectRatio;
+                    }
+                } else {
+                    thumbnailWidth = Math.max(24, maxHeight * canvasAspectRatio);
+                    thumbnailHeight = maxHeight;
+                }
+                thumbnail.style.width = Math.round(thumbnailWidth) + 'px';
+                thumbnail.style.height = Math.round(thumbnailHeight) + 'px';
+                const renderScale = this.config.thumbnail?.RENDER_SCALE || 2;
+                const renderTexture = PIXI.RenderTexture.create({
+                    width: this.config.canvas.width * renderScale,
+                    height: this.config.canvas.height * renderScale,
+                    resolution: renderScale
+                });
+                const tempContainer = new PIXI.Container();
+                const originalState = {
+                    pos: { x: layer.position.x, y: layer.position.y },
+                    scale: { x: layer.scale.x, y: layer.scale.y },
+                    rotation: layer.rotation,
+                    pivot: { x: layer.pivot.x, y: layer.pivot.y }
+                };
+                layer.position.set(0, 0);
+                layer.scale.set(1, 1);
+                layer.rotation = 0;
+                layer.pivot.set(0, 0);
+                tempContainer.addChild(layer);
+                tempContainer.scale.set(renderScale);
+                this.app.renderer.render({
+                    container: tempContainer,
+                    target: renderTexture
+                });
+                layer.position.set(originalState.pos.x, originalState.pos.y);
+                layer.scale.set(originalState.scale.x, originalState.scale.y);
+                layer.rotation = originalState.rotation;
+                layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
+                tempContainer.removeChild(layer);
+                this.currentFrameContainer.addChildAt(layer, layerIndex);
+                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+                const targetCanvas = document.createElement('canvas');
+                targetCanvas.width = Math.round(thumbnailWidth);
+                targetCanvas.height = Math.round(thumbnailHeight);
+                const ctx = targetCanvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = this.config.thumbnail?.QUALITY || 'high';
+                ctx.drawImage(sourceCanvas, 0, 0, Math.round(thumbnailWidth), Math.round(thumbnailHeight));
+                let img = thumbnail.querySelector('img');
+                if (!img) {
+                    img = document.createElement('img');
+                    thumbnail.innerHTML = '';
+                    thumbnail.appendChild(img);
+                }
+                img.src = targetCanvas.toDataURL();
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'contain';
+                renderTexture.destroy();
+                tempContainer.destroy();
+            } catch (error) {}
         }
 
         updateLayerPanelUI() {
-            const layerList = document.getElementById('layer-list');
-            if (!layerList) return;
-            layerList.innerHTML = '';
-            const layers = this.getLayers();
-            for (let i = layers.length - 1; i >= 0; i--) {
-                const layer = layers[i];
-                const isActive = (i === this.activeLayerIndex);
-                const layerItem = document.createElement('div');
-                layerItem.className = `layer-item ${isActive ? 'active' : ''}`;
-                layerItem.dataset.layerId = layer.layerData.id;
-                layerItem.dataset.layerIndex = i;
-                layerItem.innerHTML = `
-                    <div class="layer-visibility ${layer.layerData.visible ? '' : 'hidden'}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            ${layer.layerData.visible ? 
-                                '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' :
-                                '<path d="m15 18-.722-3.25"/><path d="m2 2 20 20"/><path d="M6.71 6.71C3.4 8.27 2 12 2 12s3 7 10 7c1.59 0 2.84-.3 3.79-.73"/><path d="m8.5 10.5 7 7"/><path d="M9.677 4.677C10.495 4.06 11.608 4 12 4c7 0 10 7 10 7a13.16 13.16 0 0 1-.64.77"/>'}
-                        </svg>
-                    </div>
-                    <div class="layer-opacity">${Math.round((layer.layerData.opacity || 1.0) * 100)}%</div>
-                    <div class="layer-name">${layer.layerData.name}</div>
-                    <div class="layer-thumbnail">
-                        <div class="layer-thumbnail-placeholder"></div>
-                    </div>
-                    <div class="layer-delete-button">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
-                        </svg>
-                    </div>
-                `;
-                layerItem.addEventListener('click', (e) => {
-                    const target = e.target.closest('[class*="layer-"]');
-                    if (target) {
-                        const action = target.className;
-                        if (action.includes('layer-visibility')) {
-                            this.toggleLayerVisibility(i);
-                            e.stopPropagation();
-                        } else if (action.includes('layer-delete')) {
-                            this.deleteLayer(i);
-                            e.stopPropagation();
-                        } else {
-                            this.setActiveLayer(i);
-                        }
-                    } else {
-                        this.setActiveLayer(i);
-                    }
-                });
-                layerList.appendChild(layerItem);
-            }
-            
-            for (let i = 0; i < layers.length; i++) {
-                this.requestThumbnailUpdate(i);
-            }
-            
-            if (window.TegakiUI?.initializeSortable) {
-                setTimeout(() => {
-                    window.TegakiUI.initializeSortable(this);
-                }, 50);
+            if (this.eventBus) {
+                this.eventBus.emit('layer:panel-update-requested');
             }
         }
 
@@ -1293,5 +1302,3 @@
     window.TegakiLayerSystem = LayerSystem;
 
 })();
-
-console.log('✅ layer-system.js Phase 2/5/6完全版 loaded');
