@@ -1,5 +1,6 @@
-// ===== system/camera-system.js - v2.0: リサイズ修正版 =====
-// 修正: resizeCanvas()のworldContainer位置調整ロジック
+// ===== system/camera-system.js - Phase 2完全実装版 =====
+// Phase 2: チェッカーパターン配置処理追加
+// v2.0: リサイズ修正版
 
 (function() {
     'use strict';
@@ -58,6 +59,22 @@
             this._setupEvents();
             this.initializeCamera();
             this._drawCameraFrame();
+            
+            // Phase 2: チェッカーパターンをLayerSystemから取得して配置
+            this._setupCheckerPattern();
+        }
+
+        // Phase 2: チェッカーパターン配置処理
+        _setupCheckerPattern() {
+            // LayerSystemの初期化を待機
+            const attachChecker = () => {
+                if (window.layerManager?.attachCheckerPatternToWorld) {
+                    window.layerManager.attachCheckerPatternToWorld(this.canvasContainer);
+                } else {
+                    setTimeout(attachChecker, 100);
+                }
+            };
+            attachChecker();
         }
 
         _createContainers() {
@@ -172,8 +189,7 @@
 
         /**
          * v2.0: リサイズ処理修正版
-         * 問題: worldContainer位置調整が不正確
-         * 修正: キャンバス中心を基準とした正確な位置調整
+         * Phase 2: 背景リサイズ時の拡大対応追加
          */
         resizeCanvas(newWidth, newHeight, alignOptions = { horizontal: 'center', vertical: 'center' }) {
             if (!this.app) return;
@@ -190,51 +206,55 @@
                 this.app.stage.parent.resize(newWidth, newHeight);
             }
             
-            // Step 3: worldContainer位置調整（修正版）
+            // Step 3: worldContainer位置調整
             const widthDiff = newWidth - oldWidth;
             const heightDiff = newHeight - oldHeight;
             
             let offsetX = 0;
             let offsetY = 0;
             
-            // 横方向オフセット計算（修正）
             switch(alignOptions.horizontal) {
                 case 'left':
-                    // 左端基準：オフセットなし
                     offsetX = 0;
                     break;
                 case 'center':
-                    // 中央基準：差分の半分を加算
                     offsetX = widthDiff / 2;
                     break;
                 case 'right':
-                    // 右端基準：差分全体を加算
                     offsetX = widthDiff;
                     break;
             }
             
-            // 縦方向オフセット計算（修正）
             switch(alignOptions.vertical) {
                 case 'top':
-                    // 上端基準：オフセットなし
                     offsetY = 0;
                     break;
                 case 'center':
-                    // 中央基準：差分の半分を加算
                     offsetY = heightDiff / 2;
                     break;
                 case 'bottom':
-                    // 下端基準：差分全体を加算
                     offsetY = heightDiff;
                     break;
             }
             
-            // worldContainerの位置を調整
             this.worldContainer.position.x += offsetX;
             this.worldContainer.position.y += offsetY;
             
             // Step 4: ビジュアル更新
             this.updateGuideLinesForCanvasResize();
+            
+            // Phase 2: 背景レイヤーリサイズ（拡大）
+            if (window.layerManager) {
+                const layers = window.layerManager.getLayers();
+                const bgLayer = layers.find(l => l.layerData?.isBackground);
+                if (bgLayer?.layerData?.backgroundGraphics) {
+                    const bg = bgLayer.layerData.backgroundGraphics;
+                    const currentColor = bg._fillStyle?.color || 0xf0e0d6;
+                    bg.clear();
+                    bg.rect(0, 0, newWidth, newHeight);
+                    bg.fill({ color: currentColor });
+                }
+            }
             
             // Step 5: 座標系キャッシュクリア
             if (this.coordinateSystem && typeof this.coordinateSystem.clearCache === 'function') {
@@ -243,7 +263,6 @@
             
             // Step 6: イベント発火
             if (this.eventBus) {
-                // camera:resized イベント（座標系クリアトリガー）
                 this.eventBus.emit('camera:resized', { 
                     width: newWidth, 
                     height: newHeight,
@@ -252,7 +271,6 @@
                     align: alignOptions
                 });
                 
-                // camera:transform-changed イベント
                 this.eventBus.emit('camera:transform-changed');
             }
         }
@@ -701,4 +719,4 @@
 
 })();
 
-console.log('✅ camera-system.js (v2.0: リサイズ修正版) loaded');
+console.log('✅ camera-system.js (Phase 2完全実装版) loaded');
