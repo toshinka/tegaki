@@ -1386,3 +1386,41 @@ canvas {
     border-color: #ff8c42;
     box-shadow: 0 0 0 2px rgba(255, 140, 66, 0.2);
 }
+
+/* レイヤーパネルスクロールバー（レイヤーが溢れた時のみ表示） */
+.layer-panel-items {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px;
+    pointer-events: all;
+    max-height: 60vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Webkit系ブラウザ用スクロールバー */
+.layer-panel-items::-webkit-scrollbar {
+    width: 10px;
+}
+
+.layer-panel-items::-webkit-scrollbar-track {
+    background: #e9c2ba;
+    border-radius: 5px;
+}
+
+.layer-panel-items::-webkit-scrollbar-thumb {
+    background: #800000;
+    border-radius: 5px;
+    border: 2px solid #e9c2ba;
+}
+
+.layer-panel-items::-webkit-scrollbar-thumb:hover {
+    background: #aa5a56;
+}
+
+/* Firefox用スクロールバー */
+.layer-panel-items {
+    scrollbar-width: thin;
+    scrollbar-color: #800000 #e9c2ba;
+}
