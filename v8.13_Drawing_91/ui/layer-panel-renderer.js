@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - レイヤーパネルUI改修版
+// ui/layer-panel-renderer.js - レイヤーパネルUI完全版（JavaScript管理）
 
 (function() {
     'use strict';
@@ -76,6 +76,9 @@
 
             const isBackground = layer.layerData?.isBackground || false;
             
+            // 基本スタイル（JavaScript管理）
+            layerDiv.style.width = '170px';
+            layerDiv.style.minHeight = '48px';
             layerDiv.style.backgroundColor = '#ffffee';
             layerDiv.style.opacity = '0.9';
             layerDiv.style.border = '1px solid #e9c2ba';
@@ -89,10 +92,13 @@
             layerDiv.style.gap = '1px 5px';
             layerDiv.style.alignItems = 'center';
             layerDiv.style.position = 'relative';
-            layerDiv.style.minHeight = '48px';
+            layerDiv.style.backdropFilter = 'blur(8px)';
+            layerDiv.style.transition = 'all 0.2s ease';
+            layerDiv.style.touchAction = 'none';
+            layerDiv.style.userSelect = 'none';
 
             if (isActive && !isBackground) {
-                layerDiv.style.borderColor = 'var(--futaba-accent, #ff6600)';
+                layerDiv.style.borderColor = '#ff6600';
                 layerDiv.style.borderWidth = '2px';
                 layerDiv.style.padding = '4px 6px';
             }
@@ -230,7 +236,7 @@
             const nameSpan = document.createElement('span');
             nameSpan.className = 'layer-name';
             nameSpan.textContent = layer.layerData?.name || `レイヤー${index}`;
-            nameSpan.style.gridColumn = isBackground ? '1 / 3' : '2';
+            nameSpan.style.gridColumn = '1 / 3';
             nameSpan.style.gridRow = '3';
             nameSpan.style.color = '#800000';
             nameSpan.style.fontSize = isBackground ? '9px' : '10px';
@@ -249,13 +255,12 @@
             
             layerDiv.appendChild(nameSpan);
 
-            // サムネイル（1-3行目、中央より少し上寄り）
+            // サムネイル（1-3行目、動的サイズ計算）
             const thumbnail = this.createThumbnail(layer, index);
             thumbnail.style.gridColumn = '3';
             thumbnail.style.gridRow = '1 / 4';
-            thumbnail.style.alignSelf = 'start';
+            thumbnail.style.alignSelf = 'center';
             thumbnail.style.justifySelf = 'center';
-            thumbnail.style.marginTop = '2px';
             layerDiv.appendChild(thumbnail);
 
             // 削除ボタン（右上、サムネイルに重なり、通常時は不可視）
@@ -379,12 +384,14 @@
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail';
             
+            // キャンバスのアスペクト比に基づく動的サイズ計算
             const canvasAspectRatio = this.layerSystem.config.canvas.width / this.layerSystem.config.canvas.height;
-            const maxWidth = 64;
-            const maxHeight = 36;
+            const maxWidth = 74;
+            const maxHeight = 42;
             
             let thumbnailWidth, thumbnailHeight;
             
+            // 16:9を基準に、横長は最大面積、縦長は最小面積
             if (canvasAspectRatio >= (16/9)) {
                 thumbnailWidth = maxWidth;
                 thumbnailHeight = maxWidth / canvasAspectRatio;
@@ -403,10 +410,14 @@
             thumbnailContainer.style.position = 'relative';
             thumbnailContainer.style.overflow = 'hidden';
             thumbnailContainer.style.borderRadius = '2px';
+            thumbnailContainer.style.backgroundColor = '#ffffee';
+            thumbnailContainer.style.touchAction = 'none';
+            thumbnailContainer.style.pointerEvents = 'auto';
 
             const checkerPattern = this._createCheckerPattern(thumbnailWidth, thumbnailHeight);
             thumbnailContainer.appendChild(checkerPattern);
 
+            // ThumbnailSystemとの連携
             if (window.ThumbnailSystem) {
                 window.ThumbnailSystem.generateLayerThumbnail(layer, index)
                     .then(thumbnailData => {
@@ -481,7 +492,7 @@
             if (!activeLayer) return;
 
             if (isActive) {
-                activeLayer.style.borderColor = 'var(--futaba-accent, #ff6600)';
+                activeLayer.style.borderColor = '#ff6600';
             } else {
                 activeLayer.style.borderColor = '#aa5a56';
             }
