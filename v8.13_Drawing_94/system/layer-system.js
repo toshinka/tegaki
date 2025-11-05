@@ -1,4 +1,4 @@
-// system/layer-system.js - レイヤーシステム完全版
+// system/layer-system.js - サムネイル二重実装削除、レイヤー連番修正版
 
 (function() {
     'use strict';
@@ -12,8 +12,6 @@
             this.activeLayerIndex = -1;
             this.frameRenderTextures = new Map();
             this.frameThumbnailDirty = new Map();
-            this.thumbnailUpdateQueue = new Set();
-            this.thumbnailUpdateTimer = null;
             this.cameraSystem = null;
             this.animationSystem = null;
             this.coordAPI = window.CoordinateSystem;
@@ -72,7 +70,6 @@
             this._setupLayerOperations();
             this._setupAnimationSystemIntegration();
             this._setupVKeyEvents();
-            this._startThumbnailUpdateProcess();
             this._setupResizeEvents();
             
             this.isInitialized = true;
@@ -136,11 +133,6 @@
                     worldContainer.addChildAt(this.checkerPattern, 0);
                 }
                 
-                const layers = this.getLayers();
-                for (let i = 0; i < layers.length; i++) {
-                    this.requestThumbnailUpdate(i);
-                }
-                
                 setTimeout(() => {
                     this.updateLayerPanelUI();
                 }, 100);
@@ -163,13 +155,16 @@
                 bg.fill({ color: color, alpha: 1.0 });
             }
             
-            this.requestThumbnailUpdate(layerIndex);
-            
             if (this.eventBus) {
                 this.eventBus.emit('layer:background-color-changed', {
                     layerIndex,
                     layerId,
                     color
+                });
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'background-color-changed',
+                    data: { layerIndex, layerId }
                 });
             }
         }
@@ -188,13 +183,16 @@
                 layer.layerData.opacity = opacity;
             }
             
-            this.requestThumbnailUpdate(layerIndex);
-            
             if (this.eventBus) {
                 this.eventBus.emit('layer:opacity-changed', {
                     layerIndex,
                     layerId: layer.layerData?.id,
                     opacity
+                });
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'opacity-changed',
+                    data: { layerIndex, layerId: layer.layerData?.id }
                 });
             }
         }
@@ -228,8 +226,12 @@
             if (!this.transform || !this.app) return;
             this.transform.init(this.app, this.cameraSystem);
             this.transform.onTransformComplete = (layer) => {
-                this.requestThumbnailUpdate(this.getLayerIndex(layer));
                 this.eventBus.emit('layer:transform-confirmed', {layerId: layer.layerData.id});
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'transform-confirmed',
+                    data: { layerIndex: this.getLayerIndex(layer), layerId: layer.layerData.id }
+                });
                 if (this.animationSystem?.generateFrameThumbnail) {
                     const frameIndex = this.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
@@ -239,7 +241,11 @@
             };
             this.transform.onTransformUpdate = (layer, transform) => {
                 if (!this.transform.isDragging) {
-                    this.requestThumbnailUpdate(this.getLayerIndex(layer));
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'layer-system',
+                        action: 'transform-update',
+                        data: { layerIndex: this.getLayerIndex(layer), layerId: layer.layerData.id }
+                    });
                 }
                 this.eventBus.emit('layer:updated', {layerId: layer.layerData.id, transform});
             };
@@ -346,9 +352,13 @@
                 }
                 activeLayer.addChild(path.graphics);
             }
-            this.requestThumbnailUpdate(layerIndex);
             if (this.eventBus) {
                 this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'stroke-added',
+                    data: { layerIndex, layerId: activeLayer.label }
+                });
             }
         }
 
@@ -358,7 +368,6 @@
                 const layer = layers[layerIndex];
                 layer.layerData.paths.push(path);
                 layer.addChild(path.graphics);
-                this.requestThumbnailUpdate(layerIndex);
                 if (this.animationSystem?.generateFrameThumbnail) {
                     const frameIndex = this.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
@@ -367,6 +376,11 @@
                 }
                 if (this.eventBus) {
                     this.eventBus.emit('layer:path-added', { layerIndex, pathId: path.id, layerId: layer.layerData.id });
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'layer-system',
+                        action: 'path-added',
+                        data: { layerIndex, layerId: layer.layerData.id }
+                    });
                 }
             }
         }
@@ -408,10 +422,14 @@
             const activeLayer = this.getActiveLayer();
             if (activeLayer) {
                 this.transform.flipLayer(activeLayer, direction);
-                this.requestThumbnailUpdate(this.activeLayerIndex);
                 if (this.eventBus) {
                     this.eventBus.emit('layer:transform-updated', { 
                         layerId: activeLayer.layerData.id 
+                    });
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'layer-system',
+                        action: 'flip',
+                        data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id, direction }
                     });
                 }
             }
@@ -422,7 +440,13 @@
             const activeLayer = this.getActiveLayer();
             if (activeLayer) {
                 this.transform.moveLayer(activeLayer, keyCode);
-                this.requestThumbnailUpdate(this.activeLayerIndex);
+                if (this.eventBus) {
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'layer-system',
+                        action: 'move',
+                        data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id }
+                    });
+                }
             }
         }
         
@@ -435,7 +459,13 @@
             } else if (keyCode === 'ArrowLeft' || keyCode === 'ArrowRight') {
                 this.transform.rotateLayer(activeLayer, keyCode);
             }
-            this.requestThumbnailUpdate(this.activeLayerIndex);
+            if (this.eventBus) {
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'transform',
+                    data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id }
+                });
+            }
         }
         
         confirmLayerTransform() {
@@ -459,14 +489,22 @@
                             activeLayer.rotation = 0;
                             activeLayer.scale.set(1, 1);
                             activeLayer.pivot.set(0, 0);
-                            this.requestThumbnailUpdate(this.activeLayerIndex);
+                            this.eventBus.emit('thumbnail:layer-updated', {
+                                component: 'layer-system',
+                                action: 'transform-confirmed',
+                                data: { layerIndex: this.activeLayerIndex, layerId }
+                            });
                         },
                         undo: () => {
                             this.transform.setTransform(layerId, transformBefore);
                             const centerX = this.config.canvas.width / 2;
                             const centerY = this.config.canvas.height / 2;
                             this.transform.applyTransform(activeLayer, transformBefore, centerX, centerY);
-                            this.requestThumbnailUpdate(this.activeLayerIndex);
+                            this.eventBus.emit('thumbnail:layer-updated', {
+                                component: 'layer-system',
+                                action: 'transform-undone',
+                                data: { layerIndex: this.activeLayerIndex, layerId }
+                            });
                         },
                         meta: { layerId, type: 'transform' }
                     };
@@ -528,7 +566,6 @@
             }
             this.transform.applyTransform(activeLayer, transform, centerX, centerY);
             this.transform.updateTransformPanelValues(activeLayer);
-            this.requestThumbnailUpdate(this.activeLayerIndex);
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
             }
@@ -647,6 +684,7 @@
                 this.activeLayerIndex = layers.length - 1;
             }
             
+            // レイヤー連番の最大値を再計算
             let maxLayerNum = 0;
             layers.forEach(layer => {
                 if (layer.layerData && !layer.layerData.isBackground) {
@@ -946,6 +984,7 @@
         createLayer(name, isBackground = false) {
             if (!this.currentFrameContainer) return null;
             
+            // 連番インクリメント（背景レイヤーでない場合のみ）
             if (!isBackground) {
                 this.layerCounter++;
             }
@@ -1053,9 +1092,13 @@
                 }
                 
                 this.updateLayerPanelUI();
-                this.requestThumbnailUpdate(layerIndex);
                 if (this.eventBus) {
                     this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'layer-system',
+                        action: 'visibility-changed',
+                        data: { layerIndex, layerId: layer.layerData.id }
+                    });
                 }
             }
         }
@@ -1064,119 +1107,6 @@
             if (this.eventBus) {
                 this.eventBus.emit('layer:clipboard-inserted', data);
             }
-        }
-
-        requestThumbnailUpdate(layerIndex) {
-            const layers = this.getLayers();
-            if (layerIndex >= 0 && layerIndex < layers.length) {
-                this.thumbnailUpdateQueue.add(layerIndex);
-                if (this.thumbnailUpdateTimer) {
-                    clearTimeout(this.thumbnailUpdateTimer);
-                }
-                this.thumbnailUpdateTimer = setTimeout(() => {
-                    this.processThumbnailUpdates();
-                    this.thumbnailUpdateTimer = null;
-                }, 500);
-            }
-        }
-
-        _startThumbnailUpdateProcess() {
-            setInterval(() => {
-                if (this.thumbnailUpdateQueue.size > 0) {
-                    this.processThumbnailUpdates();
-                }
-            }, 500);
-        }
-
-        processThumbnailUpdates() {
-            if (this.thumbnailUpdateQueue.size === 0) return;
-            const toUpdate = Array.from(this.thumbnailUpdateQueue);
-            toUpdate.forEach(layerIndex => {
-                this.updateThumbnail(layerIndex);
-                this.thumbnailUpdateQueue.delete(layerIndex);
-            });
-        }
-
-        updateThumbnail(layerIndex) {
-            if (!this.app?.renderer) return;
-            const layers = this.getLayers();
-            if (layerIndex < 0 || layerIndex >= layers.length) return;
-            const layer = layers[layerIndex];
-            const layerItems = document.querySelectorAll('.layer-item');
-            const panelIndex = layers.length - 1 - layerIndex;
-            if (panelIndex < 0 || panelIndex >= layerItems.length) return;
-            const thumbnail = layerItems[panelIndex].querySelector('.layer-thumbnail');
-            if (!thumbnail) return;
-            try {
-                const canvasAspectRatio = this.config.canvas.width / this.config.canvas.height;
-                const maxWidth = 80;
-                const maxHeight = 60;
-                let thumbnailWidth, thumbnailHeight;
-                
-                if (canvasAspectRatio >= maxWidth / maxHeight) {
-                    thumbnailWidth = maxWidth;
-                    thumbnailHeight = maxWidth / canvasAspectRatio;
-                } else {
-                    thumbnailHeight = maxHeight;
-                    thumbnailWidth = maxHeight * canvasAspectRatio;
-                }
-                
-                thumbnailWidth = Math.round(thumbnailWidth);
-                thumbnailHeight = Math.round(thumbnailHeight);
-                
-                thumbnail.style.width = thumbnailWidth + 'px';
-                thumbnail.style.height = thumbnailHeight + 'px';
-                
-                const renderScale = this.config.thumbnail?.RENDER_SCALE || 2;
-                const renderTexture = PIXI.RenderTexture.create({
-                    width: this.config.canvas.width * renderScale,
-                    height: this.config.canvas.height * renderScale,
-                    resolution: renderScale
-                });
-                const tempContainer = new PIXI.Container();
-                const originalState = {
-                    pos: { x: layer.position.x, y: layer.position.y },
-                    scale: { x: layer.scale.x, y: layer.scale.y },
-                    rotation: layer.rotation,
-                    pivot: { x: layer.pivot.x, y: layer.pivot.y }
-                };
-                layer.position.set(0, 0);
-                layer.scale.set(1, 1);
-                layer.rotation = 0;
-                layer.pivot.set(0, 0);
-                tempContainer.addChild(layer);
-                tempContainer.scale.set(renderScale);
-                this.app.renderer.render({
-                    container: tempContainer,
-                    target: renderTexture
-                });
-                layer.position.set(originalState.pos.x, originalState.pos.y);
-                layer.scale.set(originalState.scale.x, originalState.scale.y);
-                layer.rotation = originalState.rotation;
-                layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
-                tempContainer.removeChild(layer);
-                this.currentFrameContainer.addChildAt(layer, layerIndex);
-                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
-                const targetCanvas = document.createElement('canvas');
-                targetCanvas.width = thumbnailWidth;
-                targetCanvas.height = thumbnailHeight;
-                const ctx = targetCanvas.getContext('2d');
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = this.config.thumbnail?.QUALITY || 'high';
-                ctx.drawImage(sourceCanvas, 0, 0, thumbnailWidth, thumbnailHeight);
-                let img = thumbnail.querySelector('img');
-                if (!img) {
-                    img = document.createElement('img');
-                    thumbnail.innerHTML = '';
-                    thumbnail.appendChild(img);
-                }
-                img.src = targetCanvas.toDataURL();
-                img.style.width = '100%';
-                img.style.height = '100%';
-                img.style.objectFit = 'contain';
-                renderTexture.destroy();
-                tempContainer.destroy();
-            } catch (error) {}
         }
 
         updateLayerPanelUI() {
