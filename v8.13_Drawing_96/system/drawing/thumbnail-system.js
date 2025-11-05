@@ -1,4 +1,4 @@
-// system/drawing/thumbnail-system.js - 完全統合版（二重実装撲滅）
+// system/drawing/thumbnail-system.js - Vキー即座反映・統一スロットル版
 
 (function() {
     'use strict';
@@ -16,7 +16,6 @@
             this.defaultLayerThumbHeight = 40;
             this.defaultFrameThumbSize = 150;
             this.maxCacheSize = 200;
-            this.disableCacheDuringVMode = true;
             
             this.eventBus = null;
             this.isInitialized = false;
@@ -25,7 +24,10 @@
             this.renderTexturePool = [];
             this.poolMaxSize = 10;
             
-            this.thumbnailUpdateTimer = null;
+            // 統一スロットル管理（16ms = 60FPS）
+            this.updateThrottle = 16;
+            this.layerUpdateTimer = null;
+            this.timelineUpdateTimer = null;
         }
 
         init(eventBus) {
@@ -49,14 +51,18 @@
                 this.vKeyModeActive = false;
             });
             
-            this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+            // 🔥 Vキー変形中のリアルタイム更新（16msスロットル）
+            this.eventBus.on('layer:updated', ({ layerId }) => {
+                if (!this.vKeyModeActive) return;
+                
                 this._invalidateLayerCacheByLayerId(layerId);
                 
-                if (this.thumbnailUpdateTimer) {
-                    clearTimeout(this.thumbnailUpdateTimer);
+                // レイヤーパネル更新（16msスロットル）
+                if (this.layerUpdateTimer) {
+                    clearTimeout(this.layerUpdateTimer);
                 }
                 
-                this.thumbnailUpdateTimer = setTimeout(() => {
+                this.layerUpdateTimer = setTimeout(() => {
                     const layerMgr = window.CoreRuntime?.internal?.layerManager;
                     if (layerMgr) {
                         const layers = layerMgr.getLayers();
@@ -65,16 +71,44 @@
                         if (layerIndex >= 0) {
                             this.eventBus.emit('thumbnail:layer-updated', {
                                 component: 'thumbnail-system',
-                                action: 'transform-invalidated',
-                                data: {
-                                    layerIndex: layerIndex,
-                                    layerId: layerId
-                                }
+                                action: 'v-mode-transform',
+                                data: { layerIndex, layerId }
                             });
                         }
                     }
-                    this.thumbnailUpdateTimer = null;
-                }, 100);
+                    this.layerUpdateTimer = null;
+                }, this.updateThrottle);
+                
+                // タイムライン更新（同じ16msスロットル）
+                if (this.timelineUpdateTimer) {
+                    clearTimeout(this.timelineUpdateTimer);
+                }
+                
+                this.timelineUpdateTimer = setTimeout(() => {
+                    this.eventBus.emit('thumbnail:regenerate-all');
+                    this.timelineUpdateTimer = null;
+                }, this.updateThrottle);
+            });
+            
+            this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+                this._invalidateLayerCacheByLayerId(layerId);
+                
+                const layerMgr = window.CoreRuntime?.internal?.layerManager;
+                if (layerMgr) {
+                    const layers = layerMgr.getLayers();
+                    const layerIndex = layers.findIndex(l => l.layerData?.id === layerId);
+                    
+                    if (layerIndex >= 0) {
+                        this.eventBus.emit('thumbnail:layer-updated', {
+                            component: 'thumbnail-system',
+                            action: 'transform-confirmed',
+                            data: { layerIndex, layerId }
+                        });
+                    }
+                }
+                
+                // タイムラインも即座更新
+                this.eventBus.emit('thumbnail:regenerate-all');
             });
             
             this.eventBus.on('layer:stroke-added', ({ layerIndex }) => {
@@ -107,32 +141,22 @@
         }
 
         /**
-         * レイヤーサムネイル生成（後方互換シグネチャ対応）
-         * 新形式: generateLayerThumbnail(layer, layerIndex, maxWidth, maxHeight)
-         * 旧形式: generateLayerThumbnail(layer, layerIndex)
-         * 
-         * @param {PIXI.Container} layer - レイヤーコンテナ
-         * @param {number} layerIndex - レイヤーインデックス（後方互換用、使用しない）
-         * @param {number} maxWidth - 最大幅（デフォルト74）
-         * @param {number} maxHeight - 最大高さ（デフォルト40）
-         * @returns {Promise<{canvas: HTMLCanvasElement, dataUrl: string}|null>}
+         * レイヤーサムネイル生成（アスペクト比対応版）
          */
         async generateLayerThumbnail(layer, layerIndex = 0, maxWidth = null, maxHeight = null) {
             if (!layer || !this.app?.renderer) {
                 return null;
             }
 
-            // 後方互換: 引数が2つの場合は旧形式
             const actualMaxWidth = (typeof maxWidth === 'number') ? maxWidth : this.defaultLayerThumbWidth;
             const actualMaxHeight = (typeof maxHeight === 'number') ? maxHeight : this.defaultLayerThumbHeight;
 
-            // 背景レイヤーは特別扱い（UI側で処理）
             if (layer.layerData?.isBackground) {
                 return null;
             }
 
-            // Vキーモード中はキャッシュをスキップ
-            if (this.disableCacheDuringVMode && this.vKeyModeActive) {
+            // Vキーモード中は常にキャッシュスキップ
+            if (this.vKeyModeActive) {
                 return await this._renderLayerThumbnail(layer, actualMaxWidth, actualMaxHeight);
             }
 
@@ -163,17 +187,10 @@
         }
 
         /**
-         * 内部: レイヤーサムネイルレンダリング実行
-         * アスペクト比を保持してリサイズ
-         * 
-         * @param {PIXI.Container} layer
-         * @param {number} maxWidth
-         * @param {number} maxHeight
-         * @returns {Promise<{canvas: HTMLCanvasElement, dataUrl: string}|null>}
+         * 内部: レイヤーサムネイルレンダリング（変形状態保持版）
          */
         async _renderLayerThumbnail(layer, maxWidth, maxHeight) {
             try {
-                // キャンバスサイズ取得
                 const canvasWidth = this.config?.canvas?.width || 800;
                 const canvasHeight = this.config?.canvas?.height || 600;
                 const aspectRatio = canvasWidth / canvasHeight;
@@ -188,28 +205,9 @@
                     thumbWidth = Math.round(maxHeight * aspectRatio);
                 }
 
-                // レイヤーの状態を保存
-                const originalState = {
-                    pos: { x: layer.position.x, y: layer.position.y },
-                    scale: { x: layer.scale.x, y: layer.scale.y },
-                    rotation: layer.rotation,
-                    pivot: { x: layer.pivot.x, y: layer.pivot.y }
-                };
-
-                // レイヤーをニュートラル状態に設定
-                layer.position.set(0, 0);
-                layer.scale.set(1, 1);
-                layer.rotation = 0;
-                layer.pivot.set(0, 0);
-
-                // フルサイズでレンダリング
+                // 🔥 変形状態を保持したままレンダリング
                 const rt = this._acquireRenderTexture(canvasWidth, canvasHeight);
                 if (!rt) {
-                    // 状態を復元
-                    layer.position.set(originalState.pos.x, originalState.pos.y);
-                    layer.scale.set(originalState.scale.x, originalState.scale.y);
-                    layer.rotation = originalState.rotation;
-                    layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
                     return null;
                 }
 
@@ -219,10 +217,8 @@
                     clear: true
                 });
 
-                // GPU → Canvas
                 const fullCanvas = this.app.renderer.extract.canvas(rt);
 
-                // サムネイルサイズにリサイズ
                 const thumbCanvas = document.createElement('canvas');
                 thumbCanvas.width = thumbWidth;
                 thumbCanvas.height = thumbHeight;
@@ -234,21 +230,15 @@
                     ctx.drawImage(fullCanvas, 0, 0, thumbWidth, thumbHeight);
                 }
 
-                // レイヤーの状態を復元
-                layer.position.set(originalState.pos.x, originalState.pos.y);
-                layer.scale.set(originalState.scale.x, originalState.scale.y);
-                layer.rotation = originalState.rotation;
-                layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
-
-                // RenderTexture をプールに戻す
                 this._releaseRenderTexture(rt);
 
-                // DataURL 生成
                 const dataUrl = thumbCanvas.toDataURL('image/png');
 
                 return {
                     canvas: thumbCanvas,
-                    dataUrl: dataUrl
+                    dataUrl: dataUrl,
+                    width: thumbWidth,
+                    height: thumbHeight
                 };
 
             } catch (error) {
@@ -257,12 +247,7 @@
         }
 
         /**
-         * フレームサムネイル生成
-         * 
-         * @param {PIXI.Container} frame - フレームコンテナ
-         * @param {number} maxWidth - 最大幅（デフォルト150）
-         * @param {number} maxHeight - 最大高さ（デフォルト150）
-         * @returns {Promise<HTMLCanvasElement|null>}
+         * フレームサムネイル生成（アスペクト比対応版）
          */
         async generateFrameThumbnail(frame, maxWidth = this.defaultFrameThumbSize, maxHeight = this.defaultFrameThumbSize) {
             if (!frame || !this.app?.renderer) {
@@ -279,19 +264,21 @@
             
             if (aspectRatio > 1) {
                 thumbWidth = maxWidth;
-                thumbHeight = maxWidth / aspectRatio;
+                thumbHeight = Math.round(maxWidth / aspectRatio);
             } else {
                 thumbHeight = maxHeight;
-                thumbWidth = maxHeight * aspectRatio;
+                thumbWidth = Math.round(maxHeight * aspectRatio);
             }
-
-            thumbWidth = Math.round(thumbWidth);
-            thumbHeight = Math.round(thumbHeight);
 
             const cacheKey = `frame_${frameId}_${canvasWidth}_${canvasHeight}_${thumbWidth}_${thumbHeight}`;
             
             if (this.frameThumbnailCache.has(cacheKey)) {
-                return this.frameThumbnailCache.get(cacheKey);
+                const cached = this.frameThumbnailCache.get(cacheKey);
+                return { 
+                    canvas: cached,
+                    width: thumbWidth,
+                    height: thumbHeight
+                };
             }
 
             try {
@@ -326,7 +313,11 @@
                 
                 this._releaseRenderTexture(fullRT);
 
-                return thumbCanvas;
+                return {
+                    canvas: thumbCanvas,
+                    width: thumbWidth,
+                    height: thumbHeight
+                };
 
             } catch (error) {
                 return null;
@@ -424,7 +415,7 @@
                 poolSize: this.renderTexturePool.length,
                 isInitialized: this.isInitialized,
                 vKeyModeActive: this.vKeyModeActive,
-                disableCacheDuringVMode: this.disableCacheDuringVMode
+                updateThrottle: this.updateThrottle
             };
         }
 
