@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - ThumbnailSystem完全統合版、背景レイヤー制約完全実装
+// ui/layer-panel-renderer.js - アスペクト比対応・背景非表示時チェッカー対応版
 
 (function() {
     'use strict';
@@ -25,7 +25,6 @@
             this.eventBus.on('layer:name-changed', () => this.requestUpdate());
             this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
             
-            // ThumbnailSystem統合: サムネイル更新イベント
             this.eventBus.on('thumbnail:layer-updated', ({ data }) => {
                 if (data && typeof data.layerIndex === 'number') {
                     this._updateSingleThumbnail(data.layerIndex);
@@ -109,7 +108,6 @@
                 layerDiv.style.padding = '4px 6px';
             }
 
-            // 背景レイヤーのホバー無効化
             if (!isBackground) {
                 layerDiv.addEventListener('mouseenter', function() {
                     if (!this.classList.contains('active')) {
@@ -276,7 +274,7 @@
             
             layerDiv.appendChild(nameSpan);
 
-            // サムネイル（1-3行目）
+            // サムネイル（1-3行目）- アスペクト比対応
             const thumbnail = this.createThumbnail(layer, index);
             thumbnail.style.gridColumn = '3';
             thumbnail.style.gridRow = '1 / 4';
@@ -414,51 +412,96 @@
             thumbnailContainer.className = 'layer-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
-            const thumbnailWidth = 74;
-            const thumbnailHeight = 40;
+            const maxThumbnailWidth = 74;
+            const maxThumbnailHeight = 40;
             
-            thumbnailContainer.style.width = thumbnailWidth + 'px';
-            thumbnailContainer.style.height = thumbnailHeight + 'px';
-            thumbnailContainer.style.border = '1px solid #800000';
+            // 🔥 固定サイズコンテナではなく、最大サイズ制約のみ
+            thumbnailContainer.style.maxWidth = maxThumbnailWidth + 'px';
+            thumbnailContainer.style.maxHeight = maxThumbnailHeight + 'px';
+            thumbnailContainer.style.width = 'auto';
+            thumbnailContainer.style.height = 'auto';
+            thumbnailContainer.style.border = '1px solid #cf9c97';
             thumbnailContainer.style.position = 'relative';
             thumbnailContainer.style.overflow = 'hidden';
             thumbnailContainer.style.borderRadius = '2px';
-            thumbnailContainer.style.backgroundColor = '#ffffee';
+            thumbnailContainer.style.display = 'flex';
+            thumbnailContainer.style.alignItems = 'center';
+            thumbnailContainer.style.justifyContent = 'center';
             thumbnailContainer.style.touchAction = 'none';
             thumbnailContainer.style.pointerEvents = 'auto';
 
-            // ThumbnailSystem統合
-            if (window.ThumbnailSystem && layer && !layer.layerData?.isBackground) {
-                window.ThumbnailSystem.generateLayerThumbnail(layer, index, thumbnailWidth, thumbnailHeight)
+            // 背景レイヤーの処理
+            if (layer?.layerData?.isBackground) {
+                const isVisible = layer.layerData?.visible !== false;
+                
+                if (!isVisible) {
+                    // 背景非表示時はチェッカーパターン
+                    this._renderCheckerPattern(thumbnailContainer, maxThumbnailWidth, maxThumbnailHeight);
+                } else {
+                    // 背景表示時は背景色
+                    const bgColor = layer.layerData.backgroundGraphics?.geometry?.graphicsData?.[0]?.fillStyle?.color || 0xf0e0d6;
+                    const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
+                    thumbnailContainer.style.backgroundColor = colorHex;
+                }
+                return thumbnailContainer;
+            }
+
+            // 通常レイヤー - ThumbnailSystemでアスペクト比対応レンダリング
+            if (window.ThumbnailSystem && layer) {
+                thumbnailContainer.style.backgroundColor = 'transparent';
+                
+                window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxThumbnailWidth, maxThumbnailHeight)
                     .then(result => {
                         if (result && result.dataUrl) {
                             const img = document.createElement('img');
                             img.src = result.dataUrl;
-                            img.style.position = 'absolute';
-                            img.style.top = '50%';
-                            img.style.left = '50%';
-                            img.style.transform = 'translate(-50%, -50%)';
-                            img.style.maxWidth = '100%';
-                            img.style.maxHeight = '100%';
+                            img.style.width = result.width + 'px';
+                            img.style.height = result.height + 'px';
                             img.style.objectFit = 'contain';
                             thumbnailContainer.innerHTML = '';
                             thumbnailContainer.appendChild(img);
                         }
                     })
                     .catch(() => {});
-            } else if (layer?.layerData?.isBackground) {
-                // 背景レイヤーは背景色パッチを表示
-                const bgColor = layer.layerData.backgroundGraphics?.geometry?.graphicsData?.[0]?.fillStyle?.color || 0xf0e0d6;
-                const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
-                thumbnailContainer.style.backgroundColor = colorHex;
             }
 
             return thumbnailContainer;
         }
 
         /**
+         * チェッカーパターンを描画（背景非表示時用）
+         */
+        _renderCheckerPattern(container, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            
+            if (!ctx) return;
+
+            const color1 = '#f0e0d6';
+            const color2 = '#ffffee';
+            const squareSize = 8;
+
+            const cols = Math.ceil(width / squareSize);
+            const rows = Math.ceil(height / squareSize);
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const isEvenCol = col % 2 === 0;
+                    const isEvenRow = row % 2 === 0;
+                    ctx.fillStyle = (isEvenCol === isEvenRow) ? color1 : color2;
+                    ctx.fillRect(col * squareSize, row * squareSize, squareSize, squareSize);
+                }
+            }
+
+            container.style.backgroundColor = 'transparent';
+            container.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            container.style.backgroundRepeat = 'repeat';
+        }
+
+        /**
          * 単一レイヤーのサムネイルを更新
-         * @param {number} layerIndex 
          */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
@@ -472,23 +515,33 @@
             if (!thumbnailContainer) return;
 
             const layer = layers[layerIndex];
-            if (!layer || layer.layerData?.isBackground) return;
+            
+            // 背景レイヤーの場合
+            if (layer?.layerData?.isBackground) {
+                const isVisible = layer.layerData?.visible !== false;
+                
+                thumbnailContainer.innerHTML = '';
+                thumbnailContainer.style.backgroundImage = '';
+                
+                if (!isVisible) {
+                    this._renderCheckerPattern(thumbnailContainer, 74, 40);
+                } else {
+                    const bgColor = layer.layerData.backgroundGraphics?.geometry?.graphicsData?.[0]?.fillStyle?.color || 0xf0e0d6;
+                    const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
+                    thumbnailContainer.style.backgroundColor = colorHex;
+                }
+                return;
+            }
 
-            const thumbnailWidth = 74;
-            const thumbnailHeight = 40;
-
+            // 通常レイヤー
             if (window.ThumbnailSystem) {
                 try {
-                    const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, thumbnailWidth, thumbnailHeight);
+                    const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, 74, 40);
                     if (result && result.dataUrl) {
                         const img = document.createElement('img');
                         img.src = result.dataUrl;
-                        img.style.position = 'absolute';
-                        img.style.top = '50%';
-                        img.style.left = '50%';
-                        img.style.transform = 'translate(-50%, -50%)';
-                        img.style.maxWidth = '100%';
-                        img.style.maxHeight = '100%';
+                        img.style.width = result.width + 'px';
+                        img.style.height = result.height + 'px';
                         img.style.objectFit = 'contain';
                         thumbnailContainer.innerHTML = '';
                         thumbnailContainer.appendChild(img);
