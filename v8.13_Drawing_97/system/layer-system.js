@@ -1,4 +1,4 @@
-// system/layer-system.js - サムネイル二重実装削除、レイヤー連番修正版
+// system/layer-system.js - チェッカーパターン統一・背景レイヤーサムネイル即時反映版
 
 (function() {
     'use strict';
@@ -79,33 +79,7 @@
             const g = new PIXI.Graphics();
             g.rect(0, 0, width, height);
             g.fill({ color: color, alpha: 1.0 });
-            return g;
-        }
-
-        _createCheckerPatternBackground(width, height) {
-            const g = new PIXI.Graphics();
-            const color1 = 0xf0e0d6;
-            const color2 = 0xffffee;
-            const squareSize = 32;
-            
-            const cols = Math.ceil(width / squareSize) + 2;
-            const rows = Math.ceil(height / squareSize) + 2;
-            
-            for (let row = -1; row < rows; row++) {
-                for (let col = -1; col < cols; col++) {
-                    const x = col * squareSize;
-                    const y = row * squareSize;
-                    const isEvenCol = col % 2 === 0;
-                    const isEvenRow = row % 2 === 0;
-                    const color = (isEvenCol === isEvenRow) ? color1 : color2;
-                    g.rect(x, y, squareSize, squareSize);
-                    g.fill({ color: color, alpha: 1.0 });
-                }
-            }
-            
-            g.visible = false;
-            g.label = 'checkerPattern';
-            g.zIndex = -1000;
+            g.label = 'backgroundFill';
             return g;
         }
 
@@ -113,29 +87,46 @@
             if (!this.eventBus) return;
             
             this.eventBus.on('camera:resized', (data) => {
-                if (this.checkerPattern && this.checkerPattern.parent) {
-                    this.checkerPattern.parent.removeChild(this.checkerPattern);
-                    this.checkerPattern.destroy();
-                    this.checkerPattern = null;
-                }
-                
-                const worldContainer = this.cameraSystem?.worldContainer;
-                if (worldContainer) {
-                    this.checkerPattern = this._createCheckerPatternBackground(
-                        data.width * 3,
-                        data.height * 3
+                // チェッカーパターンをリサイズ
+                if (this.checkerPattern && this.checkerPattern.parent && window.checkerUtils) {
+                    const parent = this.checkerPattern.parent;
+                    const wasVisible = this.checkerPattern.visible;
+                    
+                    this.checkerPattern = window.checkerUtils.resizeCanvasChecker(
+                        this.checkerPattern,
+                        data.width,
+                        data.height
                     );
                     
+                    if (parent && !this.checkerPattern.parent) {
+                        parent.addChildAt(this.checkerPattern, 0);
+                    }
+                    
+                    // 背景レイヤーの表示状態に合わせる
                     const bgLayer = this.getLayers()[0];
                     const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
                     this.checkerPattern.visible = !isBackgroundVisible;
-                    
-                    worldContainer.addChildAt(this.checkerPattern, 0);
                 }
                 
-                setTimeout(() => {
-                    this.updateLayerPanelUI();
-                }, 100);
+                // 背景レイヤーの塗りをリサイズ
+                const bgLayer = this.getLayers()[0];
+                if (bgLayer?.layerData?.isBackground && bgLayer.layerData.backgroundGraphics) {
+                    const bg = bgLayer.layerData.backgroundGraphics;
+                    const currentColor = bgLayer.layerData.backgroundColor || 0xf0e0d6;
+                    
+                    bg.clear();
+                    bg.rect(0, 0, data.width, data.height);
+                    bg.fill({ color: currentColor, alpha: 1.0 });
+                }
+                
+                // サムネイル即時更新（setTimeoutなし）
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'canvas-resized',
+                    data: { layerIndex: 0, layerId: bgLayer?.layerData?.id }
+                });
+                
+                this.updateLayerPanelUI();
             });
         }
 
@@ -147,6 +138,9 @@
             if (!layer?.layerData?.isBackground) return;
             
             const color = window.brushSettings?.getColor() || 0xf0e0d6;
+            
+            // layerDataに色を保存
+            layer.layerData.backgroundColor = color;
             
             const bg = layer.layerData.backgroundGraphics;
             if (bg) {
@@ -684,7 +678,6 @@
                 this.activeLayerIndex = layers.length - 1;
             }
             
-            // レイヤー連番の最大値を再計算
             let maxLayerNum = 0;
             layers.forEach(layer => {
                 if (layer.layerData && !layer.layerData.isBackground) {
@@ -984,7 +977,6 @@
         createLayer(name, isBackground = false) {
             if (!this.currentFrameContainer) return null;
             
-            // 連番インクリメント（背景レイヤーでない場合のみ）
             if (!isBackground) {
                 this.layerCounter++;
             }
@@ -1134,10 +1126,10 @@
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
             
-            if (cameraSystem?.worldContainer) {
-                this.checkerPattern = this._createCheckerPatternBackground(
-                    this.config.canvas.width * 3,
-                    this.config.canvas.height * 3
+            if (cameraSystem?.worldContainer && window.checkerUtils) {
+                this.checkerPattern = window.checkerUtils.createCanvasChecker(
+                    this.config.canvas.width,
+                    this.config.canvas.height
                 );
                 
                 const bgLayer = this.getLayers()[0];

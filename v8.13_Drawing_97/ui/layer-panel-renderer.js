@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - アスペクト比対応・背景非表示時チェッカー対応版
+// ui/layer-panel-renderer.js - 背景レイヤーサムネイル即時反映・チェッカー統一版
 
 (function() {
     'use strict';
@@ -415,7 +415,6 @@
             const maxThumbnailWidth = 74;
             const maxThumbnailHeight = 40;
             
-            // 🔥 固定サイズコンテナではなく、最大サイズ制約のみ
             thumbnailContainer.style.maxWidth = maxThumbnailWidth + 'px';
             thumbnailContainer.style.maxHeight = maxThumbnailHeight + 'px';
             thumbnailContainer.style.width = 'auto';
@@ -435,11 +434,17 @@
                 const isVisible = layer.layerData?.visible !== false;
                 
                 if (!isVisible) {
-                    // 背景非表示時はチェッカーパターン
-                    this._renderCheckerPattern(thumbnailContainer, maxThumbnailWidth, maxThumbnailHeight);
+                    // 背景非表示時はチェッカーパターン（checker-utils.js使用）
+                    if (window.checkerUtils) {
+                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxThumbnailWidth, maxThumbnailHeight, 8);
+                        thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
+                        thumbnailContainer.style.backgroundRepeat = 'no-repeat';
+                        thumbnailContainer.style.backgroundColor = 'transparent';
+                    }
                 } else {
-                    // 背景表示時は背景色
-                    const bgColor = layer.layerData.backgroundGraphics?.geometry?.graphicsData?.[0]?.fillStyle?.color || 0xf0e0d6;
+                    // 背景表示時は背景色（layerData.backgroundColorから取得）
+                    thumbnailContainer.style.backgroundImage = 'none';
+                    const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
                 }
@@ -469,38 +474,6 @@
         }
 
         /**
-         * チェッカーパターンを描画（背景非表示時用）
-         */
-        _renderCheckerPattern(container, width, height) {
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            
-            if (!ctx) return;
-
-            const color1 = '#f0e0d6';
-            const color2 = '#ffffee';
-            const squareSize = 8;
-
-            const cols = Math.ceil(width / squareSize);
-            const rows = Math.ceil(height / squareSize);
-
-            for (let row = 0; row < rows; row++) {
-                for (let col = 0; col < cols; col++) {
-                    const isEvenCol = col % 2 === 0;
-                    const isEvenRow = row % 2 === 0;
-                    ctx.fillStyle = (isEvenCol === isEvenRow) ? color1 : color2;
-                    ctx.fillRect(col * squareSize, row * squareSize, squareSize, squareSize);
-                }
-            }
-
-            container.style.backgroundColor = 'transparent';
-            container.style.backgroundImage = `url(${canvas.toDataURL()})`;
-            container.style.backgroundRepeat = 'repeat';
-        }
-
-        /**
          * 単一レイヤーのサムネイルを更新
          */
         async _updateSingleThumbnail(layerIndex) {
@@ -524,9 +497,16 @@
                 thumbnailContainer.style.backgroundImage = '';
                 
                 if (!isVisible) {
-                    this._renderCheckerPattern(thumbnailContainer, 74, 40);
+                    // 背景非表示時はチェッカーパターン
+                    if (window.checkerUtils) {
+                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(74, 40, 8);
+                        thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
+                        thumbnailContainer.style.backgroundRepeat = 'no-repeat';
+                        thumbnailContainer.style.backgroundColor = 'transparent';
+                    }
                 } else {
-                    const bgColor = layer.layerData.backgroundGraphics?.geometry?.graphicsData?.[0]?.fillStyle?.color || 0xf0e0d6;
+                    // 背景表示時は背景色（layerData.backgroundColorから取得）
+                    const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
                 }
