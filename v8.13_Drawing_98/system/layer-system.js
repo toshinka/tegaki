@@ -1,4 +1,4 @@
-// system/layer-system.js - チェッカーパターン統一・背景レイヤーサムネイル即時反映版
+// system/layer-system.js - チェッカーパターン統一・Vキー即時反映・背景レイヤーサムネイル完全版
 
 (function() {
     'use strict';
@@ -35,6 +35,7 @@
             this.currentFrameContainer = new PIXI.Container();
             this.currentFrameContainer.label = 'temporary_frame_container';
             
+            // 背景レイヤー作成
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_bg_' + Date.now(),
@@ -44,6 +45,7 @@
             bgLayer.label = bgLayerModel.id;
             bgLayer.layerData = bgLayerModel;
             
+            // 背景塗り作成（初期色: 0xf0e0d6）
             const bg = this._createSolidBackground(
                 this.config.canvas.width, 
                 this.config.canvas.height,
@@ -51,8 +53,10 @@
             );
             bgLayer.addChild(bg);
             bgLayer.layerData.backgroundGraphics = bg;
+            bgLayer.layerData.backgroundColor = 0xf0e0d6;
             this.currentFrameContainer.addChild(bgLayer);
             
+            // レイヤー1作成
             this.layerCounter = 1;
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
@@ -89,7 +93,6 @@
             this.eventBus.on('camera:resized', (data) => {
                 // チェッカーパターンをリサイズ
                 if (this.checkerPattern && this.checkerPattern.parent && window.checkerUtils) {
-                    const parent = this.checkerPattern.parent;
                     const wasVisible = this.checkerPattern.visible;
                     
                     this.checkerPattern = window.checkerUtils.resizeCanvasChecker(
@@ -98,8 +101,8 @@
                         data.height
                     );
                     
-                    if (parent && !this.checkerPattern.parent) {
-                        parent.addChildAt(this.checkerPattern, 0);
+                    if (this.cameraSystem?.canvasContainer && !this.checkerPattern.parent) {
+                        this.cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
                     }
                     
                     // 背景レイヤーの表示状態に合わせる
@@ -119,7 +122,7 @@
                     bg.fill({ color: currentColor, alpha: 1.0 });
                 }
                 
-                // サムネイル即時更新（setTimeoutなし）
+                // 背景サムネイル即時更新
                 this.eventBus.emit('thumbnail:layer-updated', {
                     component: 'layer-system',
                     action: 'canvas-resized',
@@ -234,13 +237,12 @@
                 }
             };
             this.transform.onTransformUpdate = (layer, transform) => {
-                if (!this.transform.isDragging) {
-                    this.eventBus.emit('thumbnail:layer-updated', {
-                        component: 'layer-system',
-                        action: 'transform-update',
-                        data: { layerIndex: this.getLayerIndex(layer), layerId: layer.layerData.id }
-                    });
-                }
+                // 🔥 Vキードラッグ移動中の即座反映
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'transform-update',
+                    data: { layerIndex: this.getLayerIndex(layer), layerId: layer.layerData.id }
+                });
                 this.eventBus.emit('layer:updated', {layerId: layer.layerData.id, transform});
             };
             this.transform.onSliderChange = (sliderId, value) => {
@@ -251,6 +253,13 @@
                     value = value * Math.PI / 180;
                 }
                 this.transform.updateTransform(activeLayer, property, value);
+                
+                // 🔥 スライダー操作中の即座反映
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'slider-update',
+                    data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id }
+                });
             };
             this.transform.onFlipRequest = (direction) => {
                 this.flipActiveLayer(direction);
@@ -1012,6 +1021,7 @@
                 );
                 layer.addChild(bg);
                 layer.layerData.backgroundGraphics = bg;
+                layer.layerData.backgroundColor = 0xf0e0d6;
             }
             
             if (window.History && !window.History._manager.isApplying) {
@@ -1079,6 +1089,7 @@
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
                 
+                // 🔥 背景レイヤーの表示切替でチェッカーパターンも切り替え
                 if (layer.layerData?.isBackground && this.checkerPattern) {
                     this.checkerPattern.visible = !layer.layerData.visible;
                 }
@@ -1126,7 +1137,8 @@
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
             
-            if (cameraSystem?.worldContainer && window.checkerUtils) {
+            // 🔥 チェッカーパターン作成＆配置
+            if (cameraSystem?.canvasContainer && window.checkerUtils) {
                 this.checkerPattern = window.checkerUtils.createCanvasChecker(
                     this.config.canvas.width,
                     this.config.canvas.height
@@ -1136,7 +1148,7 @@
                 const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
                 this.checkerPattern.visible = !isBackgroundVisible;
                 
-                cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
+                cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
             }
             
             if (this.transform && this.app && !this.transform.app) {

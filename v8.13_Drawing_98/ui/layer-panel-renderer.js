@@ -82,25 +82,27 @@
 
             const isBackground = layer.layerData?.isBackground || false;
             
-            layerDiv.style.width = '170px';
-            layerDiv.style.minHeight = '48px';
-            layerDiv.style.backgroundColor = '#ffffee';
-            layerDiv.style.opacity = '0.9';
-            layerDiv.style.border = '1px solid #e9c2ba';
-            layerDiv.style.borderRadius = '4px';
-            layerDiv.style.padding = '5px 7px';
-            layerDiv.style.marginBottom = '4px';
-            layerDiv.style.cursor = isBackground ? 'default' : 'grab';
-            layerDiv.style.display = 'grid';
-            layerDiv.style.gridTemplateColumns = '18px 1fr 74px';
-            layerDiv.style.gridTemplateRows = '14px 14px 14px';
-            layerDiv.style.gap = '1px 5px';
-            layerDiv.style.alignItems = 'center';
-            layerDiv.style.position = 'relative';
-            layerDiv.style.backdropFilter = 'blur(8px)';
-            layerDiv.style.transition = isBackground ? 'none' : 'all 0.2s ease';
-            layerDiv.style.touchAction = 'none';
-            layerDiv.style.userSelect = 'none';
+            layerDiv.style.cssText = `
+                width:170px;
+                min-height:48px;
+                background-color:#ffffee;
+                opacity:0.9;
+                border:1px solid #e9c2ba;
+                border-radius:4px;
+                padding:5px 7px;
+                margin-bottom:4px;
+                cursor:${isBackground ? 'default' : 'grab'};
+                display:grid;
+                grid-template-columns:18px 1fr 74px;
+                grid-template-rows:14px 14px 14px;
+                gap:1px 5px;
+                align-items:center;
+                position:relative;
+                backdrop-filter:blur(8px);
+                transition:${isBackground ? 'none' : 'all 0.2s ease'};
+                touch-action:none;
+                user-select:none;
+            `;
 
             if (isActive && !isBackground) {
                 layerDiv.style.borderColor = '#ff6600';
@@ -122,31 +124,15 @@
                 });
             }
 
-            // 1行目: ◀100%▶
+            // 1行目: ◀100%▶（通常レイヤーのみ）
             if (!isBackground) {
                 const opacityContainer = document.createElement('div');
                 opacityContainer.className = 'layer-opacity-control';
-                opacityContainer.style.gridColumn = '1 / 3';
-                opacityContainer.style.gridRow = '1';
-                opacityContainer.style.display = 'flex';
-                opacityContainer.style.alignItems = 'center';
-                opacityContainer.style.gap = '2px';
-                opacityContainer.style.fontSize = '10px';
-                opacityContainer.style.userSelect = 'none';
-                opacityContainer.style.justifyContent = 'flex-start';
-                opacityContainer.style.height = '14px';
+                opacityContainer.style.cssText = 'grid-column:1/3;grid-row:1;display:flex;align-items:center;gap:2px;font-size:10px;user-select:none;justify-content:flex-start;height:14px';
 
                 const decreaseBtn = document.createElement('button');
                 decreaseBtn.textContent = '◀';
-                decreaseBtn.style.padding = '0';
-                decreaseBtn.style.fontSize = '9px';
-                decreaseBtn.style.lineHeight = '1';
-                decreaseBtn.style.height = '14px';
-                decreaseBtn.style.width = '14px';
-                decreaseBtn.style.cursor = 'pointer';
-                decreaseBtn.style.border = 'none';
-                decreaseBtn.style.backgroundColor = 'transparent';
-                decreaseBtn.style.color = '#800000';
+                decreaseBtn.style.cssText = 'padding:0;font-size:9px;line-height:1;height:14px;width:14px;cursor:pointer;border:none;background:transparent;color:#800000';
                 decreaseBtn.title = '透明度 -10%';
                 decreaseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -157,23 +143,11 @@
                 opacityValue.className = 'layer-opacity-value';
                 const currentOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
                 opacityValue.textContent = `${Math.round(currentOpacity * 100)}%`;
-                opacityValue.style.minWidth = '34px';
-                opacityValue.style.textAlign = 'center';
-                opacityValue.style.color = '#800000';
-                opacityValue.style.fontSize = '10px';
-                opacityValue.style.fontWeight = 'bold';
+                opacityValue.style.cssText = 'min-width:34px;text-align:center;color:#800000;font-size:10px;font-weight:bold';
 
                 const increaseBtn = document.createElement('button');
                 increaseBtn.textContent = '▶';
-                increaseBtn.style.padding = '0';
-                increaseBtn.style.fontSize = '9px';
-                increaseBtn.style.lineHeight = '1';
-                increaseBtn.style.height = '14px';
-                increaseBtn.style.width = '14px';
-                increaseBtn.style.cursor = 'pointer';
-                increaseBtn.style.border = 'none';
-                increaseBtn.style.backgroundColor = 'transparent';
-                increaseBtn.style.color = '#800000';
+                increaseBtn.style.cssText = 'padding:0;font-size:9px;line-height:1;height:14px;width:14px;cursor:pointer;border:none;background:transparent;color:#800000';
                 increaseBtn.title = '透明度 +10%';
                 increaseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -189,14 +163,7 @@
             // 2行目: 目アイコン + バケツ（背景のみ）
             const visibilityIcon = document.createElement('div');
             visibilityIcon.className = 'layer-visibility';
-            visibilityIcon.style.gridColumn = '1';
-            visibilityIcon.style.gridRow = '2';
-            visibilityIcon.style.cursor = 'pointer';
-            visibilityIcon.style.width = '18px';
-            visibilityIcon.style.height = '14px';
-            visibilityIcon.style.display = 'flex';
-            visibilityIcon.style.alignItems = 'center';
-            visibilityIcon.style.justifyContent = 'center';
+            visibilityIcon.style.cssText = 'grid-column:1;grid-row:2;cursor:pointer;width:18px;height:14px;display:flex;align-items:center;justify-content:center';
             
             const isVisible = layer.layerData?.visible !== false;
             visibilityIcon.innerHTML = isVisible ? 
@@ -219,15 +186,7 @@
             if (isBackground) {
                 const bucketIcon = document.createElement('div');
                 bucketIcon.className = 'layer-background-color-button';
-                bucketIcon.style.gridColumn = '2';
-                bucketIcon.style.gridRow = '2';
-                bucketIcon.style.cursor = 'pointer';
-                bucketIcon.style.width = '18px';
-                bucketIcon.style.height = '14px';
-                bucketIcon.style.display = 'flex';
-                bucketIcon.style.alignItems = 'center';
-                bucketIcon.style.justifyContent = 'flex-start';
-                bucketIcon.style.paddingLeft = '1px';
+                bucketIcon.style.cssText = 'grid-column:2;grid-row:2;cursor:pointer;width:18px;height:14px;display:flex;align-items:center;justify-content:flex-start;padding-left:1px';
                 bucketIcon.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" 
                          viewBox="0 0 24 24" fill="none" stroke="#800000" 
@@ -255,17 +214,7 @@
             const nameSpan = document.createElement('span');
             nameSpan.className = 'layer-name';
             nameSpan.textContent = layer.layerData?.name || `レイヤー${index}`;
-            nameSpan.style.gridColumn = '1 / 3';
-            nameSpan.style.gridRow = '3';
-            nameSpan.style.color = '#800000';
-            nameSpan.style.fontSize = isBackground ? '9px' : '10px';
-            nameSpan.style.fontWeight = 'bold';
-            nameSpan.style.whiteSpace = 'nowrap';
-            nameSpan.style.overflow = 'hidden';
-            nameSpan.style.textOverflow = 'ellipsis';
-            nameSpan.style.textAlign = 'left';
-            nameSpan.style.cursor = 'text';
-            nameSpan.style.paddingLeft = '0';
+            nameSpan.style.cssText = `grid-column:1/3;grid-row:3;color:#800000;font-size:${isBackground?'9px':'10px'};font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding-left:0`;
             
             nameSpan.addEventListener('dblclick', (e) => {
                 e.stopPropagation();
@@ -274,34 +223,16 @@
             
             layerDiv.appendChild(nameSpan);
 
-            // サムネイル（1-3行目）- アスペクト比対応
+            // サムネイル（1-3行目）
             const thumbnail = this.createThumbnail(layer, index);
-            thumbnail.style.gridColumn = '3';
-            thumbnail.style.gridRow = '1 / 4';
-            thumbnail.style.alignSelf = 'center';
-            thumbnail.style.justifySelf = 'center';
+            thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;align-self:center;justify-self:center';
             layerDiv.appendChild(thumbnail);
 
-            // 削除ボタン（右上）
+            // 削除ボタン（右上）- 通常レイヤーのみ
             if (!isBackground) {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'layer-delete-button';
-                deleteBtn.style.position = 'absolute';
-                deleteBtn.style.top = '3px';
-                deleteBtn.style.right = '3px';
-                deleteBtn.style.padding = '0';
-                deleteBtn.style.width = '13px';
-                deleteBtn.style.height = '13px';
-                deleteBtn.style.display = 'flex';
-                deleteBtn.style.alignItems = 'center';
-                deleteBtn.style.justifyContent = 'center';
-                deleteBtn.style.cursor = 'pointer';
-                deleteBtn.style.border = 'none';
-                deleteBtn.style.borderRadius = '50%';
-                deleteBtn.style.backgroundColor = '#cf9c97';
-                deleteBtn.style.transition = 'background-color 0.2s, transform 0.1s, opacity 0.2s';
-                deleteBtn.style.zIndex = '10';
-                deleteBtn.style.opacity = '0';
+                deleteBtn.style.cssText = 'position:absolute;top:3px;right:3px;padding:0;width:13px;height:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;border-radius:50%;background:#cf9c97;transition:background 0.2s,transform 0.1s,opacity 0.2s;z-index:10;opacity:0';
                 deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#ffffee" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
                 </svg>`;
@@ -335,7 +266,7 @@
                 });
             }
 
-            // クリックイベント
+            // クリックイベント - 通常レイヤーのみ
             if (!isBackground) {
                 layerDiv.addEventListener('click', (e) => {
                     if (window.stateManager) {
@@ -359,16 +290,7 @@
             const input = document.createElement('input');
             input.type = 'text';
             input.value = originalName;
-            input.style.gridColumn = nameSpan.style.gridColumn;
-            input.style.gridRow = nameSpan.style.gridRow;
-            input.style.color = '#800000';
-            input.style.fontSize = nameSpan.style.fontSize;
-            input.style.fontWeight = 'bold';
-            input.style.backgroundColor = '#ffffff';
-            input.style.border = '1px solid #800000';
-            input.style.borderRadius = '2px';
-            input.style.padding = '1px 2px';
-            input.style.width = '100%';
+            input.style.cssText = `grid-column:${nameSpan.style.gridColumn};grid-row:${nameSpan.style.gridRow};color:#800000;font-size:${nameSpan.style.fontSize};font-weight:bold;background:#fff;border:1px solid #800000;border-radius:2px;padding:1px 2px;width:100%`;
 
             nameSpan.replaceWith(input);
             input.focus();
@@ -415,34 +337,43 @@
             const maxThumbnailWidth = 74;
             const maxThumbnailHeight = 40;
             
-            thumbnailContainer.style.maxWidth = maxThumbnailWidth + 'px';
-            thumbnailContainer.style.maxHeight = maxThumbnailHeight + 'px';
-            thumbnailContainer.style.width = 'auto';
-            thumbnailContainer.style.height = 'auto';
-            thumbnailContainer.style.border = '1px solid #cf9c97';
-            thumbnailContainer.style.position = 'relative';
-            thumbnailContainer.style.overflow = 'hidden';
-            thumbnailContainer.style.borderRadius = '2px';
-            thumbnailContainer.style.display = 'flex';
-            thumbnailContainer.style.alignItems = 'center';
-            thumbnailContainer.style.justifyContent = 'center';
-            thumbnailContainer.style.touchAction = 'none';
-            thumbnailContainer.style.pointerEvents = 'auto';
+            // 🔥 常に枠を表示
+            thumbnailContainer.style.cssText = `
+                max-width:${maxThumbnailWidth}px;
+                max-height:${maxThumbnailHeight}px;
+                width:${maxThumbnailWidth}px;
+                height:${maxThumbnailHeight}px;
+                border:1px solid #cf9c97;
+                position:relative;
+                overflow:hidden;
+                border-radius:2px;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                touch-action:none;
+                pointer-events:auto;
+                box-sizing:border-box;
+            `;
 
             // 背景レイヤーの処理
             if (layer?.layerData?.isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
                 if (!isVisible) {
-                    // 背景非表示時はチェッカーパターン（checker-utils.js使用）
+                    // 背景非表示時はチェッカーパターン
                     if (window.checkerUtils) {
                         const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxThumbnailWidth, maxThumbnailHeight, 8);
                         thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
                         thumbnailContainer.style.backgroundRepeat = 'no-repeat';
+                        thumbnailContainer.style.backgroundSize = 'cover';
+                        thumbnailContainer.style.backgroundPosition = 'center';
                         thumbnailContainer.style.backgroundColor = 'transparent';
+                    } else {
+                        // フォールバック: グレー表示
+                        thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 背景表示時は背景色（layerData.backgroundColorから取得）
+                    // 背景表示時は背景色
                     thumbnailContainer.style.backgroundImage = 'none';
                     const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
@@ -451,7 +382,7 @@
                 return thumbnailContainer;
             }
 
-            // 通常レイヤー - ThumbnailSystemでアスペクト比対応レンダリング
+            // 通常レイヤー - ThumbnailSystemでレンダリング
             if (window.ThumbnailSystem && layer) {
                 thumbnailContainer.style.backgroundColor = 'transparent';
                 
@@ -473,9 +404,6 @@
             return thumbnailContainer;
         }
 
-        /**
-         * 単一レイヤーのサムネイルを更新
-         */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -502,10 +430,14 @@
                         const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(74, 40, 8);
                         thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
                         thumbnailContainer.style.backgroundRepeat = 'no-repeat';
+                        thumbnailContainer.style.backgroundSize = 'cover';
+                        thumbnailContainer.style.backgroundPosition = 'center';
                         thumbnailContainer.style.backgroundColor = 'transparent';
+                    } else {
+                        thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 背景表示時は背景色（layerData.backgroundColorから取得）
+                    // 背景表示時は背景色
                     const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
@@ -530,9 +462,6 @@
             }
         }
 
-        /**
-         * 全レイヤーのサムネイルを更新
-         */
         async updateAllThumbnails() {
             const layers = this.layerSystem?.getLayers() || [];
             for (let i = 0; i < layers.length; i++) {
