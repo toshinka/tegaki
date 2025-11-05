@@ -1,4 +1,4 @@
-// ===== core-engine.js - Phase 2対応: チェッカーパターン配置 =====
+// ===== core-engine.js - エラー修正版 =====
 
 (function() {
     'use strict';
@@ -138,7 +138,8 @@
             
             const childrenToRemove = [];
             for (let child of activeLayer.children) {
-                if (child !== activeLayer.layerData.backgroundGraphics) {
+                if (child !== activeLayer.layerData.backgroundGraphics &&
+                    child !== activeLayer.layerData.maskSprite) {
                     childrenToRemove.push(child);
                 }
             }
@@ -156,9 +157,13 @@
                             }
                         });
                         
-                        this.layerSystem.requestThumbnailUpdate(layerIndex);
-                        
                         if (this.eventBus) {
+                            this.eventBus.emit('thumbnail:layer-updated', {
+                                component: 'unified-key-handler',
+                                action: 'clear-drawings',
+                                data: { layerIndex, layerId: activeLayer.layerData.id }
+                            });
+                            
                             this.eventBus.emit('layer:cleared', { 
                                 layerIndex,
                                 objectCount: childrenToRemove.length 
@@ -170,9 +175,13 @@
                             activeLayer.addChild(child);
                         });
                         
-                        this.layerSystem.requestThumbnailUpdate(layerIndex);
-                        
                         if (this.eventBus) {
+                            this.eventBus.emit('thumbnail:layer-updated', {
+                                component: 'unified-key-handler',
+                                action: 'restore-drawings',
+                                data: { layerIndex, layerId: activeLayer.layerData.id }
+                            });
+                            
                             this.eventBus.emit('layer:restored', { 
                                 layerIndex,
                                 objectCount: childrenToRemove.length 
@@ -195,9 +204,13 @@
                     }
                 });
                 
-                this.layerSystem.requestThumbnailUpdate(layerIndex);
-                
                 if (this.eventBus) {
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'unified-key-handler',
+                        action: 'clear-drawings',
+                        data: { layerIndex, layerId: activeLayer.layerData.id }
+                    });
+                    
                     this.eventBus.emit('layer:cleared', { 
                         layerIndex,
                         objectCount: childrenToRemove.length 
@@ -221,8 +234,8 @@
                         const targetLayer = layers[activeIndex + 1];
                         
                         if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
-                            this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex + 1);
+                            this.layerSystem.currentFrameContainer.removeChildAt(activeIndex);
+                            this.layerSystem.currentFrameContainer.addChildAt(layer, activeIndex + 1);
                             this.layerSystem.activeLayerIndex = activeIndex + 1;
                             this.layerSystem.updateLayerPanelUI();
                             
@@ -239,8 +252,8 @@
                         const targetLayer = layers[activeIndex - 1];
                         
                         if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
-                            this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex - 1);
+                            this.layerSystem.currentFrameContainer.removeChildAt(activeIndex);
+                            this.layerSystem.currentFrameContainer.addChildAt(layer, activeIndex - 1);
                             this.layerSystem.activeLayerIndex = activeIndex - 1;
                             this.layerSystem.updateLayerPanelUI();
                             
@@ -380,7 +393,11 @@
                                 if (child.destroy) child.destroy({ children: true });
                             });
                             
-                            this.layerSystem.requestThumbnailUpdate(layerIndex);
+                            this.eventBus.emit('thumbnail:layer-updated', {
+                                component: 'core-engine',
+                                action: 'clear-layer',
+                                data: { layerIndex, layerId: activeLayer.layerData.id }
+                            });
                             
                             this.eventBus.emit('layer:cleared', { 
                                 layerIndex,
@@ -392,7 +409,11 @@
                                 activeLayer.addChild(child);
                             });
                             
-                            this.layerSystem.requestThumbnailUpdate(layerIndex);
+                            this.eventBus.emit('thumbnail:layer-updated', {
+                                component: 'core-engine',
+                                action: 'restore-layer',
+                                data: { layerIndex, layerId: activeLayer.layerData.id }
+                            });
                             
                             this.eventBus.emit('layer:restored', { 
                                 layerIndex,
@@ -546,10 +567,6 @@
             this.cameraSystem.updateCoordinates(x, y);
         }
         
-        processThumbnailUpdates() {
-            this.layerSystem.processThumbnailUpdates();
-        }
-        
         resizeCanvas(newWidth, newHeight, options = {}) {
             const oldWidth = CONFIG.canvas.width;
             const oldHeight = CONFIG.canvas.height;
@@ -584,7 +601,6 @@
             
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
-            // Phase 2: チェッカーパターンも再生成
             if (this.layerSystem.checkerPattern) {
                 const oldChecker = this.layerSystem.checkerPattern;
                 const wasVisible = oldChecker.visible;
@@ -597,8 +613,8 @@
                 this.layerSystem.checkerPattern = this.layerSystem._createCheckerPatternBackground(newWidth, newHeight);
                 this.layerSystem.checkerPattern.visible = wasVisible;
                 
-                if (this.cameraSystem.canvasContainer) {
-                    this.cameraSystem.canvasContainer.addChildAt(this.layerSystem.checkerPattern, 0);
+                if (this.cameraSystem.worldContainer) {
+                    this.cameraSystem.worldContainer.addChildAt(this.layerSystem.checkerPattern, 0);
                 }
             }
             
@@ -645,18 +661,20 @@
             });
             
             for (let i = 0; i < layers.length; i++) {
-                this.layerSystem.requestThumbnailUpdate(i);
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'core-engine',
+                    action: 'canvas-resized',
+                    data: { layerIndex: i, layerId: layers[i].layerData?.id }
+                });
             }
             
             if (this.animationSystem) {
                 setTimeout(() => {
                     const animData = this.animationSystem.getAnimationData();
-                    if (animData && animData.cuts) {
-                        for (let i = 0; i < animData.cuts.length; i++) {
-                            if (this.animationSystem.generateCutThumbnail) {
-                                this.animationSystem.generateCutThumbnail(i);
-                            } else if (this.animationSystem.generateCutThumbnailOptimized) {
-                                this.animationSystem.generateCutThumbnailOptimized(i);
+                    if (animData && animData.frames) {
+                        for (let i = 0; i < animData.frames.length; i++) {
+                            if (this.animationSystem.generateFrameThumbnail) {
+                                this.animationSystem.generateFrameThumbnail(i);
                             }
                         }
                     }
@@ -694,17 +712,9 @@
         }
         
         initialize() {
-            console.log('🚀 [CoreEngine] Starting initialization...');
-            
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
-            this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
+            this.layerSystem.init(this.cameraSystem.worldContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
-            
-            // ★★★ Phase 2: チェッカーパターンをcanvasContainerに配置 ★★★
-            if (this.layerSystem.checkerPattern && this.cameraSystem.canvasContainer) {
-                this.layerSystem.attachCheckerPatternToWorld(this.cameraSystem.canvasContainer);
-                console.log('✅ [CoreEngine] Checker pattern attached to canvasContainer');
-            }
             
             if (window.ThumbnailSystem) {
                 window.ThumbnailSystem.app = this.app;
@@ -717,20 +727,18 @@
             
             window.layerManager = this.layerSystem;
             window.cameraSystem = this.cameraSystem;
-            console.log('✅ [CoreEngine] Global references set');
             
             if (!window.StrokeRecorder) {
-                throw new Error('[CoreEngine] StrokeRecorder class not loaded - check script load order in index.html');
+                throw new Error('[CoreEngine] StrokeRecorder class not loaded');
             }
             
             window.strokeRecorder = new window.StrokeRecorder(
                 window.pressureHandler,
                 this.cameraSystem
             );
-            console.log('✅ [CoreEngine] window.strokeRecorder created');
             
             if (!window.StrokeRenderer) {
-                throw new Error('[CoreEngine] StrokeRenderer class not loaded - check script load order in index.html');
+                throw new Error('[CoreEngine] StrokeRenderer class not loaded');
             }
             
             window.strokeRenderer = new window.StrokeRenderer(
@@ -738,10 +746,9 @@
                 this.layerSystem,
                 this.cameraSystem
             );
-            console.log('✅ [CoreEngine] window.strokeRenderer created');
             
             if (!window.BrushCore) {
-                throw new Error('[CoreEngine] window.BrushCore not found - check brush-core.js load order');
+                throw new Error('[CoreEngine] window.BrushCore not found');
             }
             
             if (!window.BrushCore.init) {
@@ -751,15 +758,8 @@
             window.BrushCore.init();
             
             if (!window.BrushCore.strokeRecorder || !window.BrushCore.layerManager) {
-                console.error('[CoreEngine] BrushCore dependencies check:');
-                console.error('  - strokeRecorder:', window.BrushCore.strokeRecorder);
-                console.error('  - layerManager:', window.BrushCore.layerManager);
-                console.error('  - strokeRenderer:', window.BrushCore.strokeRenderer);
-                console.error('  - coordinateSystem:', window.BrushCore.coordinateSystem);
                 throw new Error('[CoreEngine] BrushCore.init() failed - dependencies not set');
             }
-            
-            console.log('✅ [CoreEngine] BrushCore initialized and validated');
             
             this.initializeAnimationSystem();
             
@@ -809,19 +809,11 @@
             
             this.setupCanvasEvents();
             
-            this.app.ticker.add(() => {
-                this.processThumbnailUpdates();
-            });
-            
             window.drawingEngine = this.drawingEngine;
             
             this.eventBus.emit('core:initialized', {
                 systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
             });
-            
-            console.log('✅ [CoreEngine] Initialization complete');
-            console.log('   Phase 2: Checker pattern configured');
-            console.log('   Phase 3: Eraser transparency ready');
             
             return this;
         }
@@ -840,8 +832,6 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase 2&3対応版) loaded');
-    console.log('   Phase 2: チェッカーパターン配置処理追加');
-    console.log('   Phase 3: 消しゴム透明化対応完了');
+    console.log('✅ core-engine.js loaded');
 
 })();
