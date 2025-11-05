@@ -1,5 +1,4 @@
-// ui/layer-panel-renderer.js - ThumbnailSystem完全統合版
-// Canvas2D廃止、チェックパターンはThumbnailSystemで生成
+// ui/layer-panel-renderer.js - ThumbnailSystem完全統合版、背景レイヤー制約完全実装
 
 (function() {
     'use strict';
@@ -25,6 +24,13 @@
             this.eventBus.on('layer:background-color-changed', () => this.requestUpdate());
             this.eventBus.on('layer:name-changed', () => this.requestUpdate());
             this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
+            
+            // ThumbnailSystem統合: サムネイル更新イベント
+            this.eventBus.on('thumbnail:layer-updated', ({ data }) => {
+                if (data && typeof data.layerIndex === 'number') {
+                    this._updateSingleThumbnail(data.layerIndex);
+                }
+            });
 
             this.eventBus.on('ui:background-color-change-requested', ({ layerIndex, layerId }) => {
                 if (this.layerSystem?.changeBackgroundLayerColor) {
@@ -93,7 +99,7 @@
             layerDiv.style.alignItems = 'center';
             layerDiv.style.position = 'relative';
             layerDiv.style.backdropFilter = 'blur(8px)';
-            layerDiv.style.transition = 'all 0.2s ease';
+            layerDiv.style.transition = isBackground ? 'none' : 'all 0.2s ease';
             layerDiv.style.touchAction = 'none';
             layerDiv.style.userSelect = 'none';
 
@@ -101,6 +107,21 @@
                 layerDiv.style.borderColor = '#ff6600';
                 layerDiv.style.borderWidth = '2px';
                 layerDiv.style.padding = '4px 6px';
+            }
+
+            // 背景レイヤーのホバー無効化
+            if (!isBackground) {
+                layerDiv.addEventListener('mouseenter', function() {
+                    if (!this.classList.contains('active')) {
+                        this.style.transform = 'translateY(-2px)';
+                        this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+                    }
+                });
+                
+                layerDiv.addEventListener('mouseleave', function() {
+                    this.style.transform = '';
+                    this.style.boxShadow = '';
+                });
             }
 
             // 1行目: ◀100%▶
@@ -358,8 +379,16 @@
             const finishEdit = () => {
                 const newName = input.value.trim();
                 if (newName && newName !== originalName) {
-                    if (this.layerSystem?.renameLayer) {
-                        this.layerSystem.renameLayer(index, newName);
+                    if (layer.layerData) {
+                        layer.layerData.name = newName;
+                    }
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:name-changed', {
+                            layerIndex: index,
+                            layerId: layer.layerData?.id,
+                            oldName: originalName,
+                            newName: newName
+                        });
                     }
                 }
                 input.replaceWith(nameSpan);
@@ -383,8 +412,8 @@
         createThumbnail(layer, index) {
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail';
+            thumbnailContainer.dataset.layerIndex = index;
             
-            // 固定サイズ: 幅74px、高さ40px（パネル内に収まるサイズ）
             const thumbnailWidth = 74;
             const thumbnailHeight = 40;
             
@@ -398,26 +427,84 @@
             thumbnailContainer.style.touchAction = 'none';
             thumbnailContainer.style.pointerEvents = 'auto';
 
-            // ThumbnailSystemとの統合
-            if (window.ThumbnailSystem) {
+            // ThumbnailSystem統合
+            if (window.ThumbnailSystem && layer && !layer.layerData?.isBackground) {
                 window.ThumbnailSystem.generateLayerThumbnail(layer, index, thumbnailWidth, thumbnailHeight)
                     .then(result => {
                         if (result && result.dataUrl) {
                             const img = document.createElement('img');
                             img.src = result.dataUrl;
                             img.style.position = 'absolute';
-                            img.style.top = '0';
-                            img.style.left = '0';
-                            img.style.width = '100%';
-                            img.style.height = '100%';
+                            img.style.top = '50%';
+                            img.style.left = '50%';
+                            img.style.transform = 'translate(-50%, -50%)';
+                            img.style.maxWidth = '100%';
+                            img.style.maxHeight = '100%';
                             img.style.objectFit = 'contain';
+                            thumbnailContainer.innerHTML = '';
                             thumbnailContainer.appendChild(img);
                         }
                     })
                     .catch(() => {});
+            } else if (layer?.layerData?.isBackground) {
+                // 背景レイヤーは背景色パッチを表示
+                const bgColor = layer.layerData.backgroundGraphics?.geometry?.graphicsData?.[0]?.fillStyle?.color || 0xf0e0d6;
+                const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
+                thumbnailContainer.style.backgroundColor = colorHex;
             }
 
             return thumbnailContainer;
+        }
+
+        /**
+         * 単一レイヤーのサムネイルを更新
+         * @param {number} layerIndex 
+         */
+        async _updateSingleThumbnail(layerIndex) {
+            const layers = this.layerSystem?.getLayers() || [];
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+
+            const reversedIndex = layers.length - 1 - layerIndex;
+            const layerItems = this.container.querySelectorAll('.layer-item');
+            if (reversedIndex < 0 || reversedIndex >= layerItems.length) return;
+
+            const thumbnailContainer = layerItems[reversedIndex].querySelector('.layer-thumbnail');
+            if (!thumbnailContainer) return;
+
+            const layer = layers[layerIndex];
+            if (!layer || layer.layerData?.isBackground) return;
+
+            const thumbnailWidth = 74;
+            const thumbnailHeight = 40;
+
+            if (window.ThumbnailSystem) {
+                try {
+                    const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, thumbnailWidth, thumbnailHeight);
+                    if (result && result.dataUrl) {
+                        const img = document.createElement('img');
+                        img.src = result.dataUrl;
+                        img.style.position = 'absolute';
+                        img.style.top = '50%';
+                        img.style.left = '50%';
+                        img.style.transform = 'translate(-50%, -50%)';
+                        img.style.maxWidth = '100%';
+                        img.style.maxHeight = '100%';
+                        img.style.objectFit = 'contain';
+                        thumbnailContainer.innerHTML = '';
+                        thumbnailContainer.appendChild(img);
+                    }
+                } catch (error) {}
+            }
+        }
+
+        /**
+         * 全レイヤーのサムネイルを更新
+         */
+        async updateAllThumbnails() {
+            const layers = this.layerSystem?.getLayers() || [];
+            for (let i = 0; i < layers.length; i++) {
+                await this._updateSingleThumbnail(i);
+            }
         }
 
         _adjustLayerOpacity(layerIndex, delta) {
