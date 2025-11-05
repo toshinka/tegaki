@@ -1,5 +1,4 @@
-// ===== system/data-models.js - マスク実装完了版 =====
-// 🔥 maskSpriteを不可視化してレンダリング防止
+// ===== system/data-models.js - backgroundColor追加版 =====
 
 (function() {
     'use strict';
@@ -10,6 +9,7 @@
         visible: { type: 'boolean', default: true, editable: true },
         opacity: { type: 'number', min: 0, max: 1, default: 1.0, editable: true },
         isBackground: { type: 'boolean', default: false, editable: false },
+        backgroundColor: { type: 'number', default: 0xf0e0d6, editable: true },
         clipping: { type: 'boolean', default: false, editable: true },
         blendMode: { type: 'string', default: 'normal', editable: true },
         locked: { type: 'boolean', default: false, editable: true }
@@ -22,6 +22,7 @@
             this.visible = data.visible !== undefined ? data.visible : true;
             this.opacity = data.opacity !== undefined ? data.opacity : 1.0;
             this.isBackground = data.isBackground || false;
+            this.backgroundColor = data.backgroundColor !== undefined ? data.backgroundColor : 0xf0e0d6;
             this.clipping = data.clipping || false;
             this.blendMode = data.blendMode || 'normal';
             this.locked = data.locked || false;
@@ -67,8 +68,6 @@
 
                 this.maskSprite = new PIXI.Sprite(this.maskTexture);
                 this.maskSprite.label = 'mask_sprite';
-                
-                // 🔥 マスクスプライト自体を不可視化（マスク機能は維持）
                 this.maskSprite.renderable = false;
 
                 this._maskInitialized = true;
@@ -106,6 +105,7 @@
                 visible: this.visible,
                 opacity: this.opacity,
                 isBackground: this.isBackground,
+                backgroundColor: this.backgroundColor,
                 clipping: this.clipping,
                 blendMode: this.blendMode,
                 locked: this.locked
@@ -273,4 +273,4 @@
 
 })();
 
-console.log('✅ data-models.js (マスクスプライト不可視版) loaded');
+console.log('✅ data-models.js (backgroundColor追加版) loaded');
