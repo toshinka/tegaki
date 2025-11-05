@@ -1,4 +1,5 @@
-// ui/layer-panel-renderer.js - レイヤーパネルUI完全版（JavaScript管理）
+// ui/layer-panel-renderer.js - ThumbnailSystem完全統合版
+// Canvas2D廃止、チェックパターンはThumbnailSystemで生成
 
 (function() {
     'use strict';
@@ -76,7 +77,6 @@
 
             const isBackground = layer.layerData?.isBackground || false;
             
-            // 基本スタイル（JavaScript管理）
             layerDiv.style.width = '170px';
             layerDiv.style.minHeight = '48px';
             layerDiv.style.backgroundColor = '#ffffee';
@@ -87,7 +87,7 @@
             layerDiv.style.marginBottom = '4px';
             layerDiv.style.cursor = isBackground ? 'default' : 'grab';
             layerDiv.style.display = 'grid';
-            layerDiv.style.gridTemplateColumns = '18px 1fr 70px';
+            layerDiv.style.gridTemplateColumns = '18px 1fr 74px';
             layerDiv.style.gridTemplateRows = '14px 14px 14px';
             layerDiv.style.gap = '1px 5px';
             layerDiv.style.alignItems = 'center';
@@ -255,7 +255,7 @@
             
             layerDiv.appendChild(nameSpan);
 
-            // サムネイル（1-3行目、動的サイズ計算）
+            // サムネイル（1-3行目）
             const thumbnail = this.createThumbnail(layer, index);
             thumbnail.style.gridColumn = '3';
             thumbnail.style.gridRow = '1 / 4';
@@ -263,7 +263,7 @@
             thumbnail.style.justifySelf = 'center';
             layerDiv.appendChild(thumbnail);
 
-            // 削除ボタン（右上、サムネイルに重なり、通常時は不可視）
+            // 削除ボタン（右上）
             if (!isBackground) {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'layer-delete-button';
@@ -384,28 +384,12 @@
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail';
             
-            // キャンバスのアスペクト比に基づく動的サイズ計算
-            const canvasAspectRatio = this.layerSystem.config.canvas.width / this.layerSystem.config.canvas.height;
-            const maxWidth = 74;
-            const maxHeight = 42;
+            // 固定サイズ: 幅74px、高さ40px（パネル内に収まるサイズ）
+            const thumbnailWidth = 74;
+            const thumbnailHeight = 40;
             
-            let thumbnailWidth, thumbnailHeight;
-            
-            // 16:9を基準に、横長は最大面積、縦長は最小面積
-            if (canvasAspectRatio >= (16/9)) {
-                thumbnailWidth = maxWidth;
-                thumbnailHeight = maxWidth / canvasAspectRatio;
-            } else {
-                thumbnailHeight = maxHeight;
-                thumbnailWidth = maxHeight * canvasAspectRatio;
-                if (thumbnailWidth > maxWidth) {
-                    thumbnailWidth = maxWidth;
-                    thumbnailHeight = maxWidth / canvasAspectRatio;
-                }
-            }
-            
-            thumbnailContainer.style.width = Math.round(thumbnailWidth) + 'px';
-            thumbnailContainer.style.height = Math.round(thumbnailHeight) + 'px';
+            thumbnailContainer.style.width = thumbnailWidth + 'px';
+            thumbnailContainer.style.height = thumbnailHeight + 'px';
             thumbnailContainer.style.border = '1px solid #800000';
             thumbnailContainer.style.position = 'relative';
             thumbnailContainer.style.overflow = 'hidden';
@@ -414,16 +398,13 @@
             thumbnailContainer.style.touchAction = 'none';
             thumbnailContainer.style.pointerEvents = 'auto';
 
-            const checkerPattern = this._createCheckerPattern(thumbnailWidth, thumbnailHeight);
-            thumbnailContainer.appendChild(checkerPattern);
-
-            // ThumbnailSystemとの連携
+            // ThumbnailSystemとの統合
             if (window.ThumbnailSystem) {
-                window.ThumbnailSystem.generateLayerThumbnail(layer, index)
-                    .then(thumbnailData => {
-                        if (thumbnailData && thumbnailData.dataUrl) {
+                window.ThumbnailSystem.generateLayerThumbnail(layer, index, thumbnailWidth, thumbnailHeight)
+                    .then(result => {
+                        if (result && result.dataUrl) {
                             const img = document.createElement('img');
-                            img.src = thumbnailData.dataUrl;
+                            img.src = result.dataUrl;
                             img.style.position = 'absolute';
                             img.style.top = '0';
                             img.style.left = '0';
@@ -437,33 +418,6 @@
             }
 
             return thumbnailContainer;
-        }
-
-        _createCheckerPattern(width, height) {
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            
-            const squareSize = 4;
-            const color1 = '#f0e0d6';
-            const color2 = '#ffffee';
-            
-            for (let y = 0; y < height; y += squareSize) {
-                for (let x = 0; x < width; x += squareSize) {
-                    const isEvenX = Math.floor(x / squareSize) % 2 === 0;
-                    const isEvenY = Math.floor(y / squareSize) % 2 === 0;
-                    ctx.fillStyle = (isEvenX === isEvenY) ? color1 : color2;
-                    ctx.fillRect(x, y, squareSize, squareSize);
-                }
-            }
-            
-            canvas.style.position = 'absolute';
-            canvas.style.top = '0';
-            canvas.style.left = '0';
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
-            return canvas;
         }
 
         _adjustLayerOpacity(layerIndex, delta) {
