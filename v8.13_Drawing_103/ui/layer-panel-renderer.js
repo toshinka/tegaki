@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - クリック選択・ドラッグ移動修正版
+// ui/layer-panel-renderer.js - Phase 1-3: 背景レイヤーサムネイル・枠線修正版
 
 (function() {
     'use strict';
@@ -61,7 +61,6 @@
                 this._updatePanelActiveState(activePanel === 'layer');
             });
 
-            // 🔥 レイヤー選択イベント購読（修正）
             this.eventBus.on('ui:layer-selected', ({ layerIndex }) => {
                 if (this.layerSystem?.setActiveLayer) {
                     this.layerSystem.setActiveLayer(layerIndex);
@@ -293,9 +292,8 @@
                 });
             }
 
-            // 🔥 クリックイベント修正
+            // クリックイベント
             layerDiv.addEventListener('click', (e) => {
-                // 削除ボタン、透明度ボタン、目アイコン、バケツアイコンのクリックは除外
                 if (e.target.closest('.layer-delete-button') ||
                     e.target.closest('.layer-opacity-control button') ||
                     e.target.closest('.layer-visibility') ||
@@ -359,6 +357,9 @@
             });
         }
 
+        /**
+         * Phase 1-2: サムネイル生成（背景レイヤー色反映・枠線修正）
+         */
         createThumbnail(layer, index) {
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail';
@@ -367,27 +368,34 @@
             const maxThumbnailWidth = 74;
             const maxThumbnailHeight = 40;
             
+            // Phase 2: 枠線を確実に表示
+            const isBackground = layer?.layerData?.isBackground || false;
+            const borderColor = isBackground ? '#aa5a56' : '#cf9c97';
+            
             thumbnailContainer.style.cssText = `
-                max-width:${maxThumbnailWidth}px;
-                max-height:${maxThumbnailHeight}px;
-                width:${maxThumbnailWidth}px;
-                height:${maxThumbnailHeight}px;
-                border:1px solid #cf9c97;
-                position:relative;
-                overflow:hidden;
-                border-radius:2px;
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                touch-action:none;
-                pointer-events:auto;
-                box-sizing:border-box;
+                box-sizing: border-box;
+                max-width: ${maxThumbnailWidth}px;
+                max-height: ${maxThumbnailHeight}px;
+                width: ${maxThumbnailWidth}px;
+                height: ${maxThumbnailHeight}px;
+                border: 2px solid ${borderColor};
+                border-style: solid;
+                position: relative;
+                overflow: hidden;
+                border-radius: 2px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                touch-action: none;
+                pointer-events: auto;
             `;
 
-            if (layer?.layerData?.isBackground) {
+            // Phase 1: 背景レイヤーの色反映を確実に
+            if (isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
                 if (!isVisible) {
+                    // 非表示時: チェッカーパターン
                     if (window.checkerUtils) {
                         const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxThumbnailWidth, maxThumbnailHeight, 8);
                         thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
@@ -399,14 +407,21 @@
                         thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
+                    // 表示時: 背景色を確実に反映
                     thumbnailContainer.style.backgroundImage = 'none';
+                    
+                    // backgroundColor取得と変換を確実に
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
+                    
+                    // スタイル適用
                     thumbnailContainer.style.backgroundColor = colorHex;
                 }
+                
                 return thumbnailContainer;
             }
 
+            // 通常レイヤー: ThumbnailSystemでレンダリング
             if (window.ThumbnailSystem && layer) {
                 thumbnailContainer.style.backgroundColor = 'transparent';
                 
@@ -428,6 +443,9 @@
             return thumbnailContainer;
         }
 
+        /**
+         * Phase 3: 単一サムネイル更新（背景レイヤー色反映・枠線適用）
+         */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -440,14 +458,24 @@
             if (!thumbnailContainer) return;
 
             const layer = layers[layerIndex];
+            const isBackground = layer?.layerData?.isBackground || false;
             
-            if (layer?.layerData?.isBackground) {
+            // Phase 2: 枠線を再適用
+            const borderColor = isBackground ? '#aa5a56' : '#cf9c97';
+            thumbnailContainer.style.border = `2px solid ${borderColor}`;
+            thumbnailContainer.style.borderStyle = 'solid';
+            thumbnailContainer.style.boxSizing = 'border-box';
+            
+            // Phase 3: 背景レイヤーの色反映
+            if (isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
+                // コンテンツをクリア
                 thumbnailContainer.innerHTML = '';
                 thumbnailContainer.style.backgroundImage = '';
                 
                 if (!isVisible) {
+                    // 非表示時: チェッカーパターン
                     if (window.checkerUtils) {
                         const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(74, 40, 8);
                         thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
@@ -459,13 +487,16 @@
                         thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
+                    // 表示時: 背景色を確実に反映
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
                 }
+                
                 return;
             }
 
+            // 通常レイヤー: ThumbnailSystemで再生成
             if (window.ThumbnailSystem) {
                 try {
                     const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, 74, 40);
@@ -598,4 +629,9 @@
     }
 
     window.LayerPanelRenderer = LayerPanelRenderer;
+    
+    console.log('✅ ui/layer-panel-renderer.js Phase 1-3修正版 loaded');
+    console.log('   Phase 1: 背景レイヤーサムネイル色反映修正');
+    console.log('   Phase 2: レイヤーサムネイル枠線修正');
+    console.log('   Phase 3: _updateSingleThumbnail同期修正');
 })();
