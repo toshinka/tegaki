@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - PixiJS v8対応・背景レイヤーサムネイル完全版
+// ui/layer-panel-renderer.js - 初期化順序・イベント購読修正版
 
 (function() {
     'use strict';
@@ -9,8 +9,30 @@
             this.layerSystem = layerSystem;
             this.eventBus = eventBus;
             this.sortable = null;
+            this._isInitialized = false;
 
             this._setupEventListeners();
+            
+            // 初期レンダリング（遅延実行で確実に背景レイヤーを取得）
+            requestAnimationFrame(() => {
+                this._initializeRender();
+            });
+        }
+
+        _initializeRender() {
+            if (this._isInitialized) return;
+            
+            const layers = this.layerSystem?.getLayers() || [];
+            if (layers.length === 0) {
+                // レイヤーがまだ準備できていない場合は再試行
+                setTimeout(() => this._initializeRender(), 50);
+                return;
+            }
+            
+            const activeIndex = this.layerSystem?.getActiveLayerIndex() || 0;
+            const animationSystem = window.animationSystem || null;
+            this.render(layers, activeIndex, animationSystem);
+            this._isInitialized = true;
         }
 
         _setupEventListeners() {
@@ -25,6 +47,7 @@
             this.eventBus.on('layer:name-changed', () => this.requestUpdate());
             this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
             
+            // 🔥 サムネイル更新イベント購読
             this.eventBus.on('thumbnail:layer-updated', ({ data }) => {
                 if (data && typeof data.layerIndex === 'number') {
                     this._updateSingleThumbnail(data.layerIndex);
@@ -337,6 +360,7 @@
             const maxThumbnailWidth = 74;
             const maxThumbnailHeight = 40;
             
+            // 🔥 デフォルト枠を確実に設定
             thumbnailContainer.style.cssText = `
                 max-width:${maxThumbnailWidth}px;
                 max-height:${maxThumbnailHeight}px;
@@ -354,7 +378,7 @@
                 box-sizing:border-box;
             `;
 
-            // 背景レイヤーの処理
+            // 🔥 背景レイヤーの処理（PixiJS v8対応）
             if (layer?.layerData?.isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
@@ -371,7 +395,7 @@
                         thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 🔥 背景表示時：layerData.backgroundColorのみを使用（PixiJS v8対応）
+                    // 🔥 背景表示時：layerData.backgroundColorを使用
                     thumbnailContainer.style.backgroundImage = 'none';
                     
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
@@ -416,7 +440,7 @@
 
             const layer = layers[layerIndex];
             
-            // 背景レイヤーの場合
+            // 🔥 背景レイヤーの更新（PixiJS v8対応）
             if (layer?.layerData?.isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
@@ -436,7 +460,7 @@
                         thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 🔥 背景表示時：layerData.backgroundColorのみを使用
+                    // 🔥 背景表示時：layerData.backgroundColorを使用
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
@@ -444,7 +468,7 @@
                 return;
             }
 
-            // 通常レイヤー
+            // 通常レイヤーの更新
             if (window.ThumbnailSystem) {
                 try {
                     const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, 74, 40);
@@ -575,4 +599,5 @@
     }
 
     window.LayerPanelRenderer = LayerPanelRenderer;
+    console.log('✅ layer-panel-renderer.js (初期化順序・サムネイル修正版) loaded');
 })();
