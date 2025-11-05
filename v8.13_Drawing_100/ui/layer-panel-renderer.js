@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - 背景レイヤーサムネイル即時反映・チェッカー統一版
+// ui/layer-panel-renderer.js - PixiJS v8対応・背景レイヤーサムネイル完全版
 
 (function() {
     'use strict';
@@ -337,7 +337,6 @@
             const maxThumbnailWidth = 74;
             const maxThumbnailHeight = 40;
             
-            // 🔥 常に枠を表示
             thumbnailContainer.style.cssText = `
                 max-width:${maxThumbnailWidth}px;
                 max-height:${maxThumbnailHeight}px;
@@ -369,20 +368,20 @@
                         thumbnailContainer.style.backgroundPosition = 'center';
                         thumbnailContainer.style.backgroundColor = 'transparent';
                     } else {
-                        // フォールバック: グレー表示
                         thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 背景表示時は背景色
+                    // 🔥 背景表示時：layerData.backgroundColorのみを使用（PixiJS v8対応）
                     thumbnailContainer.style.backgroundImage = 'none';
-                    const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
+                    
+                    const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
                 }
                 return thumbnailContainer;
             }
 
-            // 通常レイヤー - ThumbnailSystemでレンダリング
+            // 通常レイヤー
             if (window.ThumbnailSystem && layer) {
                 thumbnailContainer.style.backgroundColor = 'transparent';
                 
@@ -437,8 +436,8 @@
                         thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 背景表示時は背景色
-                    const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
+                    // 🔥 背景表示時：layerData.backgroundColorのみを使用
+                    const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
                 }
