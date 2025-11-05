@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - 初期化順序・イベント購読修正版
+// ui/layer-panel-renderer.js - クリック選択・ドラッグ移動修正版
 
 (function() {
     'use strict';
@@ -13,7 +13,6 @@
 
             this._setupEventListeners();
             
-            // 初期レンダリング（遅延実行で確実に背景レイヤーを取得）
             requestAnimationFrame(() => {
                 this._initializeRender();
             });
@@ -24,7 +23,6 @@
             
             const layers = this.layerSystem?.getLayers() || [];
             if (layers.length === 0) {
-                // レイヤーがまだ準備できていない場合は再試行
                 setTimeout(() => this._initializeRender(), 50);
                 return;
             }
@@ -47,7 +45,6 @@
             this.eventBus.on('layer:name-changed', () => this.requestUpdate());
             this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
             
-            // 🔥 サムネイル更新イベント購読
             this.eventBus.on('thumbnail:layer-updated', ({ data }) => {
                 if (data && typeof data.layerIndex === 'number') {
                     this._updateSingleThumbnail(data.layerIndex);
@@ -62,6 +59,13 @@
 
             this.eventBus.on('ui:active-panel-changed', ({ activePanel }) => {
                 this._updatePanelActiveState(activePanel === 'layer');
+            });
+
+            // 🔥 レイヤー選択イベント購読（修正）
+            this.eventBus.on('ui:layer-selected', ({ layerIndex }) => {
+                if (this.layerSystem?.setActiveLayer) {
+                    this.layerSystem.setActiveLayer(layerIndex);
+                }
             });
         }
 
@@ -289,21 +293,24 @@
                 });
             }
 
-            // クリックイベント - 通常レイヤーのみ
-            if (!isBackground) {
-                layerDiv.addEventListener('click', (e) => {
-                    if (window.stateManager) {
-                        window.stateManager.setLastActivePanel('layer');
-                    }
+            // 🔥 クリックイベント修正
+            layerDiv.addEventListener('click', (e) => {
+                // 削除ボタン、透明度ボタン、目アイコン、バケツアイコンのクリックは除外
+                if (e.target.closest('.layer-delete-button') ||
+                    e.target.closest('.layer-opacity-control button') ||
+                    e.target.closest('.layer-visibility') ||
+                    e.target.closest('.layer-background-color-button')) {
+                    return;
+                }
 
-                    if (this.eventBus) {
-                        this.eventBus.emit('ui:layer-selected', {
-                            layerIndex: index,
-                            layerId: layer.layerData?.id
-                        });
-                    }
-                });
-            }
+                if (window.stateManager) {
+                    window.stateManager.setLastActivePanel('layer');
+                }
+
+                if (this.layerSystem?.setActiveLayer) {
+                    this.layerSystem.setActiveLayer(index);
+                }
+            });
 
             return layerDiv;
         }
@@ -360,7 +367,6 @@
             const maxThumbnailWidth = 74;
             const maxThumbnailHeight = 40;
             
-            // 🔥 デフォルト枠を確実に設定
             thumbnailContainer.style.cssText = `
                 max-width:${maxThumbnailWidth}px;
                 max-height:${maxThumbnailHeight}px;
@@ -378,12 +384,10 @@
                 box-sizing:border-box;
             `;
 
-            // 🔥 背景レイヤーの処理（PixiJS v8対応）
             if (layer?.layerData?.isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
                 if (!isVisible) {
-                    // 背景非表示時はチェッカーパターン
                     if (window.checkerUtils) {
                         const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxThumbnailWidth, maxThumbnailHeight, 8);
                         thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
@@ -395,9 +399,7 @@
                         thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 🔥 背景表示時：layerData.backgroundColorを使用
                     thumbnailContainer.style.backgroundImage = 'none';
-                    
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
@@ -405,7 +407,6 @@
                 return thumbnailContainer;
             }
 
-            // 通常レイヤー
             if (window.ThumbnailSystem && layer) {
                 thumbnailContainer.style.backgroundColor = 'transparent';
                 
@@ -440,7 +441,6 @@
 
             const layer = layers[layerIndex];
             
-            // 🔥 背景レイヤーの更新（PixiJS v8対応）
             if (layer?.layerData?.isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
@@ -448,7 +448,6 @@
                 thumbnailContainer.style.backgroundImage = '';
                 
                 if (!isVisible) {
-                    // 背景非表示時はチェッカーパターン
                     if (window.checkerUtils) {
                         const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(74, 40, 8);
                         thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
@@ -460,7 +459,6 @@
                         thumbnailContainer.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 🔥 背景表示時：layerData.backgroundColorを使用
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
@@ -468,7 +466,6 @@
                 return;
             }
 
-            // 通常レイヤーの更新
             if (window.ThumbnailSystem) {
                 try {
                     const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, 74, 40);
@@ -540,6 +537,8 @@
                     forceFallback: true,
                     fallbackOnBody: true,
                     swapThreshold: 0.65,
+                    delay: 0,
+                    delayOnTouchOnly: false,
 
                     filter: (evt) => {
                         const item = evt.target.closest('.layer-item');
@@ -599,5 +598,4 @@
     }
 
     window.LayerPanelRenderer = LayerPanelRenderer;
-    console.log('✅ layer-panel-renderer.js (初期化順序・サムネイル修正版) loaded');
 })();

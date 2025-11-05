@@ -1,7 +1,4 @@
-// ===== ui/ui-panels.js - Phase 2: タブレットペンドラッグ対応版 =====
-// 🔥 改修1: P/Eショートカット時のサイドバーボタン同期
-// 🔥 改修2: 点灯色をmaroon→light-maroon、hover色をlight-mediumに変更
-// ✨ Phase 2: Sortable.jsにタブレットペン対応追加（forceFallback: true）
+// ui/ui-panels.js - Sortable二重実装削除版
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -90,7 +87,6 @@ window.TegakiUI.UIController = class {
             this.togglePopup('export');
         });
         
-        // 🔥 改修1: ショートカットキーからのツール切り替え時、サイドバー同期
         eventBus.on('ui:sidebar:sync-tool', ({ tool }) => {
             this.updateToolUI(tool);
         });
@@ -240,66 +236,8 @@ window.TegakiUI.UIController = class {
     }
 };
 
-/**
- * ✨ Phase 2: タブレットペン対応Sortable初期化
- * forceFallback: true でHTML5ドラッグを無効化し、独自実装を使用
- */
-window.TegakiUI.initializeSortable = function(layerSystem) {
-    const layerList = document.getElementById('layer-list');
-    if (!layerList || !window.Sortable) {
-        console.warn('[UI] Sortable initialization failed: element or library not found');
-        return;
-    }
-    
-    // 既存のSortableインスタンスを破棄
-    if (layerList._sortable) {
-        layerList._sortable.destroy();
-    }
-    
-    // ✨ Phase 2: タブレットペン対応設定
-    layerList._sortable = new Sortable(layerList, {
-        animation: 150,
-        handle: '.layer-item',
-        ghostClass: 'layer-ghost',
-        chosenClass: 'layer-chosen',
-        dragClass: 'layer-drag',
-        
-        // ✨ タブレットペン対応の重要設定
-        forceFallback: true,  // HTML5ドラッグを無効化し、PointerEventベース実装を使用
-        fallbackTolerance: 3, // ドラッグ開始までの移動許容値（px）
-        touchStartThreshold: 3, // タッチ開始の閾値
-        
-        // デバッグ用
-        onChoose: function(evt) {
-            console.log('[Sortable] Layer drag started:', evt.oldIndex);
-        },
-        
-        onEnd: function(evt) {
-            const fromIndex = evt.oldIndex;
-            const toIndex = evt.newIndex;
-            
-            console.log('[Sortable] Layer drag ended:', { fromIndex, toIndex });
-            
-            if (fromIndex !== toIndex && fromIndex !== undefined && toIndex !== undefined) {
-                const layers = layerSystem.getLayers();
-                const actualFromIndex = layers.length - 1 - fromIndex;
-                const actualToIndex = layers.length - 1 - toIndex;
-                
-                console.log('[Sortable] Reordering layers:', { actualFromIndex, actualToIndex });
-                layerSystem.reorderLayers(actualFromIndex, actualToIndex);
-            }
-        },
-        
-        onMove: function(evt) {
-            // 背景レイヤーへの移動を禁止
-            if (evt.related && evt.related.querySelector('.layer-name')?.textContent === '背景') {
-                return false;
-            }
-        }
-    });
-    
-    console.log('✅ Sortable initialized with tablet pen support');
-};
+// 🔥 Sortable初期化を削除（layer-panel-renderer.jsに一元化）
+// window.TegakiUI.initializeSortable は削除
 
 window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     const container = document.getElementById(sliderId);
@@ -350,7 +288,6 @@ window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     update(initial);
 };
 
-// 🔥 改修2: サイドバーボタンの色をlight-maroonに、hover色をlight-mediumに変更
 window.TegakiUI.setupPanelStyles = function() {
     const style = document.createElement('style');
     style.textContent = `
@@ -407,19 +344,6 @@ window.TegakiUI.setupPanelStyles = function() {
             cursor: grabbing;
         }
         
-        .layer-ghost {
-            opacity: 0.4;
-        }
-        
-        .layer-chosen {
-            background-color: rgba(74, 144, 226, 0.2);
-        }
-        
-        .layer-drag {
-            opacity: 0.8;
-        }
-        
-        /* 🔥 改修2: サイドバーツールボタンの色調整 */
         .tool-button.active {
             background-color: var(--futaba-light-maroon) !important;
             border-color: var(--futaba-maroon) !important;
@@ -435,7 +359,3 @@ window.TegakiUI.setupPanelStyles = function() {
         document.head.appendChild(style);
     }
 };
-
-console.log('✅ ui-panels.js (Phase 2: タブレットペンドラッグ対応版) loaded');
-console.log('   ✓ Sortable.js with forceFallback: true (tablet pen support)');
-console.log('   ✓ Layer drag & drop with pen input enabled');
