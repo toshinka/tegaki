@@ -1,4 +1,4 @@
-// core-initializer.js - LayerPanelRenderer初期化追加版
+// core-initializer.js - イベントハンドラー修正版
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -108,7 +108,6 @@ window.CoreInitializer = (function() {
         window.StatusDisplayRenderer = statusDisplay;
     }
 
-    // LayerPanelRenderer初期化
     function initializeLayerPanel(layerSystem, eventBus) {
         if (!window.LayerPanelRenderer) {
             console.warn('[CoreInit] LayerPanelRenderer not loaded');
@@ -127,13 +126,9 @@ window.CoreInitializer = (function() {
             eventBus
         );
 
-        // イベントリスナー設定
-        eventBus.on('layer:panel-update-requested', ({ layers, activeIndex }) => {
-            const animationSystem = window.animationSystem || null;
-            layerPanelRenderer.render(layers, activeIndex, animationSystem);
-        });
+        // LayerPanelRendererは内部で_setupEventListenersを呼び出し、
+        // requestUpdate()経由でレンダリングを行うため、ここでは重複登録しない
 
-        // 初回レンダリング
         const layers = layerSystem.getLayers();
         const activeIndex = layerSystem.getActiveLayerIndex();
         layerPanelRenderer.render(layers, activeIndex, null);
@@ -265,7 +260,6 @@ window.CoreInitializer = (function() {
             
             setupEventBusListeners();
             
-            // LayerPanelRenderer初期化
             this.layerPanelRenderer = initializeLayerPanel(
                 this.coreEngine.getLayerManager(),
                 window.TegakiEventBus
@@ -440,4 +434,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (LayerPanelRenderer初期化追加版) loaded');
+console.log('✅ core-initializer.js loaded');
