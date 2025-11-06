@@ -1,11 +1,6 @@
 // ================================================================================
-// system/animation-system.js - Phase 1改修版
+// system/animation-system.js - Phase 2完全版: WebGPUリソース管理強化
 // ================================================================================
-// 【Phase 1改修】フレーム名表記をFRAMEx → xF形式に統一
-// - renameFramesSequentially(): FRAME形式 → xF形式
-// - createNewBlankFrame(): 初期名表記を修正
-// - createInitialFrameIfNeeded(): 初期フレーム名を修正
-// - CUT→FRAME変換完了状態を継承
 
 (function() {
     'use strict';
@@ -216,25 +211,23 @@
             });
         }
         
-handleCanvasResize(newWidth, newHeight) {
-    if (!this.animationData?.frames || this.animationData.frames.length === 0) return;
-    
-    // ★ Phase 2修正: リサイズ時に全フレームの古いテクスチャを削除
-    this.animationData.frames.forEach(frame => {
-        if (this.layerSystem?.destroyFrameRenderTexture) {
-            this.layerSystem.destroyFrameRenderTexture(frame.id);
+        handleCanvasResize(newWidth, newHeight) {
+            if (!this.animationData?.frames || this.animationData.frames.length === 0) return;
+            
+            this.animationData.frames.forEach(frame => {
+                if (this.layerSystem?.destroyFrameRenderTexture) {
+                    this.layerSystem.destroyFrameRenderTexture(frame.id);
+                }
+            });
+            
+            setTimeout(() => {
+                this.regenerateAllThumbnails();
+            }, 200);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:thumbnails-need-update');
+            }
         }
-    });
-    
-    // ★ その後、新しいサイズで再生成
-    setTimeout(() => {
-        this.regenerateAllThumbnails();
-    }, 200);
-    
-    if (this.eventBus) {
-        this.eventBus.emit('animation:thumbnails-need-update');
-    }
-}
         
         async regenerateAllThumbnails() {
             if (!this.animationData?.frames) return;
@@ -1455,5 +1448,3 @@ handleCanvasResize(newWidth, newHeight) {
     window.animationSystem = new AnimationSystem();
 
 })();
-
-console.log('✅ animation-system.js (Phase 1改修版・フレーム名統一: xF形式) loaded');
