@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - Phase 1-3: 背景レイヤーサムネイル・枠線修正版
+// ui/layer-panel-renderer.js - 背景レイヤー統一版
 
 (function() {
     'use strict';
@@ -117,7 +117,7 @@
                 border-radius:4px;
                 padding:5px 7px;
                 margin-bottom:4px;
-                cursor:${isBackground ? 'default' : 'grab'};
+                cursor:${isBackground ? 'grab' : 'grab'};
                 display:grid;
                 grid-template-columns:18px 1fr 74px;
                 grid-template-rows:14px 14px 14px;
@@ -125,30 +125,18 @@
                 align-items:center;
                 position:relative;
                 backdrop-filter:blur(8px);
-                transition:${isBackground ? 'none' : 'all 0.2s ease'};
+                transition:all 0.2s ease;
                 touch-action:none;
                 user-select:none;
             `;
 
-            if (isActive && !isBackground) {
+            if (isActive) {
                 layerDiv.style.borderColor = '#ff6600';
                 layerDiv.style.borderWidth = '2px';
                 layerDiv.style.padding = '4px 6px';
             }
 
-            if (!isBackground) {
-                layerDiv.addEventListener('mouseenter', function() {
-                    if (!this.classList.contains('active')) {
-                        this.style.transform = 'translateY(-2px)';
-                        this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
-                    }
-                });
-                
-                layerDiv.addEventListener('mouseleave', function() {
-                    this.style.transform = '';
-                    this.style.boxShadow = '';
-                });
-            }
+            // hover効果はCSSで統一
 
             // 1行目: ◀100%▶（通常レイヤーのみ）
             if (!isBackground) {
@@ -249,7 +237,7 @@
             
             layerDiv.appendChild(nameSpan);
 
-            // サムネイル（1-3行目）
+            // サムネイル（1-3行目）- 背景レイヤーも通常レイヤーと同じ統一仕様
             const thumbnail = this.createThumbnail(layer, index);
             thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;align-self:center;justify-self:center';
             layerDiv.appendChild(thumbnail);
@@ -358,7 +346,8 @@
         }
 
         /**
-         * Phase 1-2: サムネイル生成（背景レイヤー色反映・枠線修正）
+         * 背景レイヤー統一版サムネイル生成
+         * 背景レイヤーも通常レイヤーと同じ枠線・サイズ
          */
         createThumbnail(layer, index) {
             const thumbnailContainer = document.createElement('div');
@@ -368,17 +357,14 @@
             const maxThumbnailWidth = 74;
             const maxThumbnailHeight = 40;
             
-            // Phase 2: 枠線を確実に表示
-            const isBackground = layer?.layerData?.isBackground || false;
-            const borderColor = isBackground ? '#aa5a56' : '#cf9c97';
-            
+            // 統一された枠線（CSSで定義済み）
             thumbnailContainer.style.cssText = `
                 box-sizing: border-box;
                 max-width: ${maxThumbnailWidth}px;
                 max-height: ${maxThumbnailHeight}px;
                 width: ${maxThumbnailWidth}px;
                 height: ${maxThumbnailHeight}px;
-                border: 2px solid ${borderColor};
+                border: 1px solid #cf9c97;
                 border-style: solid;
                 position: relative;
                 overflow: hidden;
@@ -390,7 +376,8 @@
                 pointer-events: auto;
             `;
 
-            // Phase 1: 背景レイヤーの色反映を確実に
+            const isBackground = layer.layerData?.isBackground || false;
+
             if (isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
@@ -410,11 +397,9 @@
                     // 表示時: 背景色を確実に反映
                     thumbnailContainer.style.backgroundImage = 'none';
                     
-                    // backgroundColor取得と変換を確実に
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     
-                    // スタイル適用
                     thumbnailContainer.style.backgroundColor = colorHex;
                 }
                 
@@ -444,7 +429,7 @@
         }
 
         /**
-         * Phase 3: 単一サムネイル更新（背景レイヤー色反映・枠線適用）
+         * 単一サムネイル更新（背景レイヤー統一仕様）
          */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
@@ -460,17 +445,14 @@
             const layer = layers[layerIndex];
             const isBackground = layer?.layerData?.isBackground || false;
             
-            // Phase 2: 枠線を再適用
-            const borderColor = isBackground ? '#aa5a56' : '#cf9c97';
-            thumbnailContainer.style.border = `2px solid ${borderColor}`;
+            // 枠線を再適用（統一仕様）
+            thumbnailContainer.style.border = '1px solid #cf9c97';
             thumbnailContainer.style.borderStyle = 'solid';
             thumbnailContainer.style.boxSizing = 'border-box';
             
-            // Phase 3: 背景レイヤーの色反映
             if (isBackground) {
                 const isVisible = layer.layerData?.visible !== false;
                 
-                // コンテンツをクリア
                 thumbnailContainer.innerHTML = '';
                 thumbnailContainer.style.backgroundImage = '';
                 
@@ -629,9 +611,4 @@
     }
 
     window.LayerPanelRenderer = LayerPanelRenderer;
-    
-    console.log('✅ ui/layer-panel-renderer.js Phase 1-3修正版 loaded');
-    console.log('   Phase 1: 背景レイヤーサムネイル色反映修正');
-    console.log('   Phase 2: レイヤーサムネイル枠線修正');
-    console.log('   Phase 3: _updateSingleThumbnail同期修正');
 })();

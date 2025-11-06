@@ -1,4 +1,4 @@
-// system/layer-system.js - チェッカーパターン統一・Vキー即時反映・背景レイヤーサムネイル完全版
+// system/layer-system.js - Phase 1-3: レイヤー連番名完全修正版
 
 (function() {
     'use strict';
@@ -17,7 +17,6 @@
             this.coordAPI = window.CoordinateSystem;
             this.transform = null;
             this.isInitialized = false;
-            this.layerCounter = 0;
             this.checkerPattern = null;
         }
 
@@ -45,7 +44,6 @@
             bgLayer.label = bgLayerModel.id;
             bgLayer.layerData = bgLayerModel;
             
-            // 背景塗り作成（初期色: 0xf0e0d6）
             const bg = this._createSolidBackground(
                 this.config.canvas.width, 
                 this.config.canvas.height,
@@ -56,12 +54,11 @@
             bgLayer.layerData.backgroundColor = 0xf0e0d6;
             this.currentFrameContainer.addChild(bgLayer);
             
-            // レイヤー1作成
-            this.layerCounter = 1;
+            // レイヤー1作成（連番を1に初期化）
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_1_' + Date.now(),
-                name: `レイヤー${this.layerCounter}`
+                name: 'レイヤー1'
             });
             layer1.label = layer1Model.id;
             layer1.layerData = layer1Model;
@@ -91,7 +88,6 @@
             if (!this.eventBus) return;
             
             this.eventBus.on('camera:resized', (data) => {
-                // チェッカーパターンをリサイズ
                 if (this.checkerPattern && this.checkerPattern.parent && window.checkerUtils) {
                     const wasVisible = this.checkerPattern.visible;
                     
@@ -105,13 +101,11 @@
                         this.cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
                     }
                     
-                    // 背景レイヤーの表示状態に合わせる
                     const bgLayer = this.getLayers()[0];
                     const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
                     this.checkerPattern.visible = !isBackgroundVisible;
                 }
                 
-                // 背景レイヤーの塗りをリサイズ
                 const bgLayer = this.getLayers()[0];
                 if (bgLayer?.layerData?.isBackground && bgLayer.layerData.backgroundGraphics) {
                     const bg = bgLayer.layerData.backgroundGraphics;
@@ -122,7 +116,6 @@
                     bg.fill({ color: currentColor, alpha: 1.0 });
                 }
                 
-                // 背景サムネイル即時更新
                 this.eventBus.emit('thumbnail:layer-updated', {
                     component: 'layer-system',
                     action: 'canvas-resized',
@@ -142,7 +135,6 @@
             
             const color = window.brushSettings?.getColor() || 0xf0e0d6;
             
-            // layerDataに色を保存
             layer.layerData.backgroundColor = color;
             
             const bg = layer.layerData.backgroundGraphics;
@@ -237,7 +229,6 @@
                 }
             };
             this.transform.onTransformUpdate = (layer, transform) => {
-                // 🔥 Vキードラッグ移動中の即座反映
                 this.eventBus.emit('thumbnail:layer-updated', {
                     component: 'layer-system',
                     action: 'transform-update',
@@ -254,7 +245,6 @@
                 }
                 this.transform.updateTransform(activeLayer, property, value);
                 
-                // 🔥 スライダー操作中の即座反映
                 this.eventBus.emit('thumbnail:layer-updated', {
                     component: 'layer-system',
                     action: 'slider-update',
@@ -341,6 +331,10 @@
             if (!this.getActiveLayer()) return;
             const activeLayer = this.getActiveLayer();
             const layerIndex = this.activeLayerIndex;
+            
+            // 背景レイヤーには描画させない
+            if (activeLayer.layerData?.isBackground) return;
+            
             if (activeLayer.layerData && activeLayer.layerData.paths) {
                 activeLayer.layerData.paths.push(path);
             }
@@ -369,6 +363,10 @@
             const layers = this.getLayers();
             if (layerIndex >= 0 && layerIndex < layers.length) {
                 const layer = layers[layerIndex];
+                
+                // 背景レイヤーには描画させない
+                if (layer.layerData?.isBackground) return;
+                
                 layer.layerData.paths.push(path);
                 layer.addChild(path.graphics);
                 if (this.animationSystem?.generateFrameThumbnail) {
@@ -687,20 +685,6 @@
                 this.activeLayerIndex = layers.length - 1;
             }
             
-            let maxLayerNum = 0;
-            layers.forEach(layer => {
-                if (layer.layerData && !layer.layerData.isBackground) {
-                    const match = layer.layerData.name.match(/^レイヤー(\d+)$/);
-                    if (match) {
-                        const num = parseInt(match[1], 10);
-                        if (num > maxLayerNum) {
-                            maxLayerNum = num;
-                        }
-                    }
-                }
-            });
-            this.layerCounter = maxLayerNum;
-            
             this.updateLayerPanelUI();
             this.updateStatusDisplay();
             if (this.isLayerMoveMode) {
@@ -983,15 +967,34 @@
             }
         }
 
+        /**
+         * Phase 1-3: レイヤー連番名生成
+         * 既存レイヤー名から最大番号を取得し、次番号を生成
+         */
+        _generateNextLayerName() {
+            const layers = this.getLayers();
+            const layerNames = layers
+                .filter(l => l.layerData && !l.layerData.isBackground)
+                .map(l => l.layerData.name);
+            
+            const numbers = layerNames
+                .map(name => {
+                    const match = name.match(/^レイヤー(\d+)$/);
+                    return match ? parseInt(match[1], 10) : 0;
+                })
+                .filter(n => n > 0);
+            
+            const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
+            const nextNumber = maxNumber + 1;
+            
+            return `レイヤー${nextNumber}`;
+        }
+
         createLayer(name, isBackground = false) {
             if (!this.currentFrameContainer) return null;
             
-            if (!isBackground) {
-                this.layerCounter++;
-            }
-            
             const layerModel = new window.TegakiDataModels.LayerModel({
-                name: name || (isBackground ? '背景' : `レイヤー${this.layerCounter}`),
+                name: name || (isBackground ? '背景' : this._generateNextLayerName()),
                 isBackground: isBackground
             });
             const layer = new PIXI.Container();
@@ -1039,9 +1042,6 @@
                             layer.layerData.destroyMask();
                         }
                         this.currentFrameContainer.removeChild(layer);
-                        if (!isBackground) {
-                            this.layerCounter--;
-                        }
                         const layers = this.getLayers();
                         if (this.activeLayerIndex >= layers.length) {
                             this.activeLayerIndex = Math.max(0, layers.length - 1);
@@ -1089,7 +1089,6 @@
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
                 
-                // 🔥 背景レイヤーの表示切替でチェッカーパターンも切り替え
                 if (layer.layerData?.isBackground && this.checkerPattern) {
                     this.checkerPattern.visible = !layer.layerData.visible;
                 }
@@ -1137,7 +1136,6 @@
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
             
-            // 🔥 チェッカーパターン作成＆配置
             if (cameraSystem?.canvasContainer && window.checkerUtils) {
                 this.checkerPattern = window.checkerUtils.createCanvasChecker(
                     this.config.canvas.width,
