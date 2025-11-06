@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - 背景レイヤー統一版
+// ui/layer-panel-renderer.js - 背景サムネイル色見本方式（backgroundColor反映版）
 
 (function() {
     'use strict';
@@ -117,7 +117,7 @@
                 border-radius:4px;
                 padding:5px 7px;
                 margin-bottom:4px;
-                cursor:${isBackground ? 'grab' : 'grab'};
+                cursor:${isBackground ? 'default' : 'grab'};
                 display:grid;
                 grid-template-columns:18px 1fr 74px;
                 grid-template-rows:14px 14px 14px;
@@ -135,8 +135,6 @@
                 layerDiv.style.borderWidth = '2px';
                 layerDiv.style.padding = '4px 6px';
             }
-
-            // hover効果はCSSで統一
 
             // 1行目: ◀100%▶（通常レイヤーのみ）
             if (!isBackground) {
@@ -237,7 +235,7 @@
             
             layerDiv.appendChild(nameSpan);
 
-            // サムネイル（1-3行目）- 背景レイヤーも通常レイヤーと同じ統一仕様
+            // サムネイル（1-3行目）
             const thumbnail = this.createThumbnail(layer, index);
             thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;align-self:center;justify-self:center';
             layerDiv.appendChild(thumbnail);
@@ -346,8 +344,7 @@
         }
 
         /**
-         * 背景レイヤー統一版サムネイル生成
-         * 背景レイヤーも通常レイヤーと同じ枠線・サイズ
+         * ✅ 背景レイヤー: 色見本方式（backgroundColor反映）
          */
         createThumbnail(layer, index) {
             const thumbnailContainer = document.createElement('div');
@@ -357,7 +354,6 @@
             const maxThumbnailWidth = 74;
             const maxThumbnailHeight = 40;
             
-            // 統一された枠線（CSSで定義済み）
             thumbnailContainer.style.cssText = `
                 box-sizing: border-box;
                 max-width: ${maxThumbnailWidth}px;
@@ -379,30 +375,32 @@
             const isBackground = layer.layerData?.isBackground || false;
 
             if (isBackground) {
+                // ✅ 色見本<div>を作成
+                const swatch = document.createElement('div');
+                swatch.className = 'background-color-swatch';
+                swatch.style.cssText = 'width:100%;height:100%;';
+                
                 const isVisible = layer.layerData?.visible !== false;
                 
                 if (!isVisible) {
                     // 非表示時: チェッカーパターン
                     if (window.checkerUtils) {
                         const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxThumbnailWidth, maxThumbnailHeight, 8);
-                        thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
-                        thumbnailContainer.style.backgroundRepeat = 'no-repeat';
-                        thumbnailContainer.style.backgroundSize = 'cover';
-                        thumbnailContainer.style.backgroundPosition = 'center';
-                        thumbnailContainer.style.backgroundColor = 'transparent';
+                        swatch.style.backgroundImage = `url(${dataUrl})`;
+                        swatch.style.backgroundRepeat = 'no-repeat';
+                        swatch.style.backgroundSize = 'cover';
+                        swatch.style.backgroundPosition = 'center';
                     } else {
-                        thumbnailContainer.style.backgroundColor = '#cccccc';
+                        swatch.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 表示時: 背景色を確実に反映
-                    thumbnailContainer.style.backgroundImage = 'none';
-                    
+                    // ✅ 表示時: backgroundColor を読み取って反映
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
-                    
-                    thumbnailContainer.style.backgroundColor = colorHex;
+                    swatch.style.backgroundColor = colorHex;
                 }
                 
+                thumbnailContainer.appendChild(swatch);
                 return thumbnailContainer;
             }
 
@@ -429,7 +427,7 @@
         }
 
         /**
-         * 単一サムネイル更新（背景レイヤー統一仕様）
+         * 単一サムネイル更新
          */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
@@ -445,7 +443,6 @@
             const layer = layers[layerIndex];
             const isBackground = layer?.layerData?.isBackground || false;
             
-            // 枠線を再適用（統一仕様）
             thumbnailContainer.style.border = '1px solid #cf9c97';
             thumbnailContainer.style.borderStyle = 'solid';
             thumbnailContainer.style.boxSizing = 'border-box';
@@ -454,31 +451,32 @@
                 const isVisible = layer.layerData?.visible !== false;
                 
                 thumbnailContainer.innerHTML = '';
-                thumbnailContainer.style.backgroundImage = '';
+                
+                const swatch = document.createElement('div');
+                swatch.className = 'background-color-swatch';
+                swatch.style.cssText = 'width:100%;height:100%;';
                 
                 if (!isVisible) {
-                    // 非表示時: チェッカーパターン
                     if (window.checkerUtils) {
                         const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(74, 40, 8);
-                        thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
-                        thumbnailContainer.style.backgroundRepeat = 'no-repeat';
-                        thumbnailContainer.style.backgroundSize = 'cover';
-                        thumbnailContainer.style.backgroundPosition = 'center';
-                        thumbnailContainer.style.backgroundColor = 'transparent';
+                        swatch.style.backgroundImage = `url(${dataUrl})`;
+                        swatch.style.backgroundRepeat = 'no-repeat';
+                        swatch.style.backgroundSize = 'cover';
+                        swatch.style.backgroundPosition = 'center';
                     } else {
-                        thumbnailContainer.style.backgroundColor = '#cccccc';
+                        swatch.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // 表示時: 背景色を確実に反映
+                    // ✅ backgroundColor を読み取って反映
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
-                    thumbnailContainer.style.backgroundColor = colorHex;
+                    swatch.style.backgroundColor = colorHex;
                 }
                 
+                thumbnailContainer.appendChild(swatch);
                 return;
             }
 
-            // 通常レイヤー: ThumbnailSystemで再生成
             if (window.ThumbnailSystem) {
                 try {
                     const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, 74, 40);
@@ -543,12 +541,13 @@
                 }
 
                 this.sortable = window.Sortable.create(this.container, {
-                    animation: 150,
+                    animation: 200,
+                    easing: 'cubic-bezier(0.25, 0.8, 0.25, 1)',
                     ghostClass: 'sortable-ghost',
                     dragClass: 'sortable-drag',
                     chosenClass: 'sortable-chosen',
-                    forceFallback: true,
-                    fallbackOnBody: true,
+                    forceFallback: false,
+                    fallbackOnBody: false,
                     swapThreshold: 0.65,
                     delay: 0,
                     delayOnTouchOnly: false,
@@ -564,24 +563,11 @@
 
                     onChoose: (evt) => {
                         const item = evt.item;
-                        const layerIndex = parseInt(item.dataset.layerIndex);
-                        const layers = this.layerSystem?.getLayers() || [];
-                        const layer = layers[layerIndex];
-                        if (layer?.layerData?.isBackground) {
-                            item.style.opacity = '1';
-                        } else {
-                            item.style.opacity = '0.5';
-                        }
+                        item.style.cursor = 'grabbing';
                     },
 
                     onStart: (evt) => {
-                        const item = evt.item;
-                        const layerIndex = parseInt(item.dataset.layerIndex);
-                        const layers = this.layerSystem?.getLayers() || [];
-                        const layer = layers[layerIndex];
-                        if (!layer?.layerData?.isBackground) {
-                            item.style.cursor = 'grabbing';
-                        }
+                        // ドラッグ開始時は何もしない
                     },
 
                     onEnd: (evt) => {
