@@ -1,0 +1,366 @@
+================================================================================
+レイヤーパネルサムネイル統合改修計画書
+================================================================================
+作成日: 2025-11-06
+対象バージョン: v8.13_Drawing_108
+
+================================================================================
+■ 現状解析結果
+================================================================================
+
+【シンボル辞典】
+- LayerPanelRenderer: レイヤーパネルUI生成・イベント処理
+- ThumbnailSystem: PixiJS RenderTextureによるサムネイル生成
+- ThumbnailUpdateManager: サムネイル更新トリガー一元管理（未統合）
+- EventBus: layer:*, thumbnail:*, ui:* イベント発行
+- checkerUtils: 透明背景用チェッカー生成
+
+【主要メソッド】
+- LayerPanelRenderer.createThumbnail(): サムネイル要素生成
+- LayerPanelRenderer._updateSingleThumbnail(): 単一サムネイル更新
+- ThumbnailSystem.generateLayerThumbnail(): PixiJSレンダリング
+- ThumbnailUpdateManager.requestUpdate(): デバウンス付き更新リクエスト
+
+【イベントフロー】
+描画/変形操作 → layer:stroke-added / layer:transform-confirmed
+  → ThumbnailUpdateManager (未接続)
+  → thumbnail:layer-updated
+  → LayerPanelRenderer._updateSingleThumbnail()
+
+
+================================================================================
+■ 問題点の特定
+================================================================================
+
+【問題1】背景レイヤーのサムネイルがパネル幅いっぱいに表示される
+原因: LayerPanelRenderer.createThumbnail() 内のグリッド配置
+      grid-column:3; grid-row:1/4 指定が正しいが、
+      サムネイル自体のサイズが74x40pxで固定されておらず
+      背景レイヤー用の色見本divがwidth:100%; height:100%で拡大している
+
+該当箇所: layer-panel-renderer.js L255-270
+修正方針: 背景レイヤーの色見本生成時にも74x40px内でのアスペクト比計算を適用
+
+
+【問題2】アクティブレイヤー以外のサムネイル更新が遅い
+原因: ThumbnailUpdateManager が history.js と連携していない
+      現状は個別イベント（stroke-added等）でのみ発火
+
+該当箇所: history.js (未取得だが構造から推測)
+修正方針: history.js の addHistory() / undo() / redo() 内で
+         ThumbnailUpdateManager.requestUpdate() を呼び出す
+
+
+【問題3】レイヤー名変更でダブルクリック後すぐに閉じられる
+原因: LayerPanelRenderer._editLayerName() のイベントハンドラ競合
+      blur イベントが即座に発火している可能性
+
+該当箇所: layer-panel-renderer.js L371-408
+修正方針: input要素生成後、次のフレームでfocus()を実行
+         またはpointerdownイベントのstopPropagation強化
+
+
+【問題4】標準レイヤーのサムネイルが右に飛び出している
+原因: 調査の結果、現行コードでは grid-column:3 で正しく配置されており
+      実装上の問題は見当たらない。CSSの grid-template-columns 定義を確認
+
+該当箇所: layer-panel-renderer.js L83-92
+修正方針: グリッド列定義を 18px 70px 74px から調整
+         または justify-self: start を明示
+
+
+================================================================================
+■ 二重実装の発見
+================================================================================
+
+【二重実装A】サムネイル更新トリガーの分散
+場所1: ThumbnailSystem._setupEventListeners() (L52-132)
+      → layer:stroke-added, layer:transform-updated を受信して
+        thumbnail:layer-updated を発行
+
+場所2: ThumbnailUpdateManager._setupEventListeners() (L35-105)
+      → 同じイベントを受信して thumbnail:layer-updated を発行
+
+問題: 同一イベントに対して2箇所で処理が走る
+     ThumbnailSystem側のイベントリスナーは不要
+
+修正: ThumbnailSystemから layer:* イベントリスナーを削除
+     ThumbnailUpdateManagerに一元化
+
+
+【二重実装B】キャッシュ無効化メソッド
+場所1: ThumbnailSystem.invalidateLayerCache(layerIndex)
+場所2: ThumbnailSystem._invalidateLayerCacheByLayerId(layerId)
+
+問題: layerIndexとlayerId両方のインターフェースが存在
+     実際には _invalidateLayerCacheByLayerId が正しい実装
+
+修正: invalidateLayerCache をラッパーとして残し内部でlayerId変換
+
+
+================================================================================
+■ 段階的改修計画
+================================================================================
+
+Phase 1: 背景レイヤーサムネイル修正
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル: ui/layer-panel-renderer.js
+参考ファイル: system/drawing/thumbnail-system.js
+修正箇所: LayerPanelRenderer.createThumbnail() メソッド (L224-304)
+
+修正内容:
+1. 背景レイヤー用サムネイル生成時にもcanvasアスペクト比を取得
+2. 最大74x40px内での実際のサイズ（thumbWidth, thumbHeight）を計算
+3. 色見本div（background-color-swatch）のサイズを計算値で固定
+   - 現状: width:100%; height:100%;
+   - 修正後: width:{thumbWidth-2}px; height:{thumbHeight-2}px; (border分引く)
+
+メソッド名: createThumbnail(layer, index)
+使用シンボル: this.layerSystem.config.canvas.width/height, aspectRatio計算
+
+
+Phase 2: ThumbnailUpdateManagerとhistory.js統合
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル: system/history.js (読み込み失敗・構造から推測実装)
+参考ファイル: system/thumbnail-update-manager.js
+
+修正内容:
+1. history.js の addHistory() メソッド末尾に追加:
+   ```
+   if (data.layerIndex !== undefined && window.ThumbnailUpdateManager) {
+       window.ThumbnailUpdateManager.requestUpdate(data.layerIndex, 'history-change');
+   }
+   ```
+
+2. undo() メソッド内の状態復元後に追加:
+   ```
+   if (historyEntry.layerIndex !== undefined && window.ThumbnailUpdateManager) {
+       window.ThumbnailUpdateManager.requestUpdate(historyEntry.layerIndex, 'undo', true);
+   }
+   ```
+
+3. redo() メソッドにも同様の処理を追加
+
+メソッド名: addHistory(), undo(), redo()
+使用シンボル: ThumbnailUpdateManager.requestUpdate(layerIndex, reason, immediate)
+
+
+Phase 3: 二重実装の削除（ThumbnailSystem側）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル: system/drawing/thumbnail-system.js
+参考ファイル: system/thumbnail-update-manager.js
+
+修正内容:
+1. ThumbnailSystem._setupEventListeners() メソッド (L52-132) から
+   以下のイベントリスナーを削除:
+   - layer:stroke-added (L94-96)
+   - layer:path-added (L98-100)
+   - layer:flip-horizontal (L102-104)
+   - layer:flip-vertical (L106-108)
+   - animation:frame-updated (L110-112)
+   - camera:resized (L114-116)
+   - camera:transform-changed (L118-120)
+
+2. 残すイベントリスナー（Vキーモード用）:
+   - keyboard:vkey-pressed
+   - keyboard:vkey-released
+   - layer:updated (Vキー時のみ)
+   - layer:transform-updated (変形中プレビュー用)
+
+理由: これらのトリガーはThumbnailUpdateManagerで一元管理
+
+
+Phase 4: ThumbnailUpdateManagerの初期化統合
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル: core-initializer.js (読み込み失敗・推測実装)
+参考ファイル: system/thumbnail-update-manager.js
+
+修正内容:
+1. ThumbnailSystemの初期化後に追加:
+   ```
+   window.thumbnailUpdateManager = new window.ThumbnailUpdateManager(eventBus);
+   window.thumbnailUpdateManager.init();
+   ```
+
+2. グローバルオブジェクト登録:
+   window.ThumbnailUpdateManager → クラス
+   window.thumbnailUpdateManager → インスタンス
+
+初期化順序:
+EventBus → ThumbnailSystem → ThumbnailUpdateManager → LayerPanelRenderer
+
+
+Phase 5: レイヤー名変更の入力フォーカス修正
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル: ui/layer-panel-renderer.js
+修正箇所: LayerPanelRenderer._editLayerName() メソッド (L371-408)
+
+修正内容:
+1. input要素のfocus()をrequestAnimationFrameで遅延:
+   ```
+   nameSpan.replaceWith(input);
+   requestAnimationFrame(() => {
+       input.focus();
+       input.select();
+   });
+   ```
+
+2. finishEdit()内にedit中フラグを追加してblurを制御:
+   ```
+   this._isEditingName = true;
+   // ...
+   input.addEventListener('blur', () => {
+       if (!this._isEditingName) return;
+       finishEdit();
+   });
+   ```
+
+理由: DOM更新と同期でfocus()が呼ばれるとイベント競合が発生
+
+
+Phase 6: サムネイル配置の右飛び出し修正
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル: ui/layer-panel-renderer.js
+修正箇所: LayerPanelRenderer.createLayerElement() メソッド (L82-92)
+
+修正内容:
+1. grid-template-columns定義を調整:
+   現状: grid-template-columns:18px 70px 74px;
+   修正: grid-template-columns:18px 68px 74px; (中央列を2px削減)
+
+2. サムネイル要素にjustify-self追加:
+   ```
+   thumbnail.style.cssText = 
+       'grid-column:3;grid-row:1/4;justify-self:start;align-self:center;';
+   ```
+
+理由: 合計幅170pxに対してpadding+border+gapを考慮した微調整
+
+
+Phase 7: キャッシュ無効化メソッドの統一
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル: system/drawing/thumbnail-system.js
+修正箇所: invalidateLayerCache() メソッド
+
+修正内容:
+1. invalidateLayerCache(layerIndex) を以下に変更:
+   ```
+   invalidateLayerCache(layerIndex) {
+       const layerMgr = window.CoreRuntime?.internal?.layerManager;
+       if (!layerMgr) return;
+       
+       const layers = layerMgr.getLayers();
+       if (layerIndex < 0 || layerIndex >= layers.length) return;
+       
+       const layerId = layers[layerIndex]?.layerData?.id;
+       if (layerId) {
+           this._invalidateLayerCacheByLayerId(layerId);
+       }
+   }
+   ```
+
+理由: layerId基準での削除が正確、layerIndex→layerId変換をラッパー化
+
+
+Phase 8: 過剰なコンソールログの削除
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル: 全ファイル
+検索対象: console.log, console.warn, console.error
+
+削除基準:
+- 正常動作時の情報ログ
+- デバッグ用の座標出力
+- イベント発火確認ログ
+
+残す基準:
+- 致命的エラー（catch句内）
+- WebGPU初期化失敗
+- ファイル読み込み失敗
+
+
+================================================================================
+■ 実装優先順位
+================================================================================
+
+優先度A（即座に実施）:
+- Phase 1: 背景レイヤーサムネイル修正 ← UIの視覚的問題
+- Phase 5: レイヤー名変更フォーカス修正 ← 操作性の問題
+
+優先度B（Phase 1-5の後）:
+- Phase 2: history.js統合 ← 機能強化
+- Phase 4: ThumbnailUpdateManager初期化 ← アーキテクチャ改善
+
+優先度C（Phase 2-4の後）:
+- Phase 3: 二重実装削除 ← パフォーマンス改善
+- Phase 7: キャッシュ統一 ← コード品質
+
+優先度D（最終クリーンアップ）:
+- Phase 6: サムネイル配置微調整 ← 視覚的微調整
+- Phase 8: コンソールログ削除 ← コード品質
+
+
+================================================================================
+■ テスト項目
+================================================================================
+
+Phase 1実施後:
+□ 背景レイヤーのサムネイルが74x40px内に収まっているか
+□ アスペクト比が16:9のキャンバスで横長サムネイルが表示されるか
+□ 背景レイヤーの色変更が即座に反映されるか
+
+Phase 2実施後:
+□ ペン描画後のアンドゥでサムネイルが更新されるか
+□ レイヤー移動のアンドゥでサムネイルが更新されるか
+□ デバウンスが効いて過剰な更新が発生していないか
+
+Phase 3実施後:
+□ ThumbnailSystem側のリスナー削除後も更新が動作するか
+□ thumbnail:layer-updated イベントが重複発火していないか
+
+Phase 5実施後:
+□ レイヤー名ダブルクリック後に入力フィールドが維持されるか
+□ Enterキーで確定、Escapeキーでキャンセルが動作するか
+
+
+================================================================================
+■ 追加調査が必要な項目
+================================================================================
+
+1. history.js の実際の構造
+   - addHistory()の引数仕様
+   - undo()/redo()の戻り値
+   - layerIndex情報の格納場所
+
+2. core-initializer.jsの初期化順序
+   - ThumbnailSystemの初期化タイミング
+   - EventBusの初期化完了確認方法
+
+3. サムネイルの右飛び出し問題の実機確認
+   - 現行コードで実際に飛び出しているか
+   - ブラウザ依存の問題か
+
+
+================================================================================
+補足: ThumbnailUpdateManager統合のメリット
+================================================================================
+
+1. DRY原則の遵守
+   - 更新トリガーが1箇所に集約
+   - 将来のバケツツール等も1行で対応可能
+
+2. デバウンス処理の一元化
+   - 過剰な更新を防止
+   - パフォーマンス向上
+
+3. 履歴との統合
+   - アンドゥ/リドゥで自動更新
+   - 一貫した更新タイミング
+
+4. 保守性の向上
+   - 更新ロジックの変更が1ファイルで完結
+   - トリガーの追加が容易
+
+
+================================================================================
+終了
+================================================================================
