@@ -1,4 +1,4 @@
-/* Tegaki Tool - Main Stylesheet (Phase 1-2: サムネイル枠線修正版) */
+/* Tegaki Tool - Main Stylesheet (改修版: 枠線細線化・ドラッグアニメーション強化) */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -239,10 +239,10 @@ canvas {
     border-color: #ff8c42 !important;
 }
 
-/* Phase 1-2: サムネイル枠線を確実に表示 */
+/* サムネイル枠を細線化（2px → 1px） */
 .layer-thumbnail {
     box-sizing: border-box;
-    border: 2px solid #cf9c97;
+    border: 1px solid #cf9c97;
     border-style: solid !important;
     border-radius: 2px;
     overflow: hidden;
@@ -251,31 +251,33 @@ canvas {
     justify-content: center;
 }
 
-/* 背景レイヤーのサムネイル枠は濃い色 */
-.layer-item .layer-thumbnail[data-layer-index="0"] {
-    border-color: #aa5a56;
-}
-
-/* Sortable.jsドラッグエフェクト */
+/* Sortable.jsドラッグエフェクト強化 */
 .sortable-ghost {
-    opacity: 0.3;
-    background-color: var(--futaba-light-maroon) !important;
-    border-color: var(--futaba-maroon) !important;
+    opacity: 0.4 !important;
+    background-color: rgba(170, 90, 86, 0.3) !important;
+    border: 2px dashed var(--futaba-maroon) !important;
+    transform: scale(0.95) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .sortable-drag {
-    opacity: 1.0 !important;
-    transform: rotate(2deg) !important;
-    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.3) !important;
+    opacity: 0.85 !important;
+    transform: rotate(3deg) scale(1.05) !important;
+    box-shadow: 0 8px 24px rgba(128, 0, 0, 0.4), 0 2px 8px rgba(128, 0, 0, 0.2) !important;
     cursor: grabbing !important;
     background: var(--futaba-cream) !important;
-    border-color: #ff8c42 !important;
-    z-index: 10000;
+    border: 2px solid #ff8c42 !important;
+    z-index: 10000 !important;
+    transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
+                box-shadow 0.15s ease-out,
+                opacity 0.15s ease-out !important;
 }
 
 .sortable-chosen {
-    background-color: rgba(255, 140, 66, 0.2) !important;
+    background-color: rgba(255, 140, 66, 0.15) !important;
     border-color: #ff8c42 !important;
+    transform: scale(0.98) !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .layer-item.background-layer {
@@ -311,12 +313,18 @@ canvas {
     margin: 2px 0;
     border-radius: 4px;
     pointer-events: none;
-    animation: pulse 1s ease-in-out infinite;
+    animation: placeholderPulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-@keyframes pulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 0.8; }
+@keyframes placeholderPulse {
+    0%, 100% { 
+        opacity: 0.4; 
+        transform: scale(0.98);
+    }
+    50% { 
+        opacity: 0.7; 
+        transform: scale(1);
+    }
 }
 
 /* ===== ポップアップパネル ===== */

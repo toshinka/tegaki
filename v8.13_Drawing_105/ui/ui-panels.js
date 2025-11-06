@@ -1,4 +1,4 @@
-// ui/ui-panels.js - Sortable二重実装削除版
+// ui/ui-panels.js - レイヤー連番生成修正版
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -102,8 +102,12 @@ window.TegakiUI.UIController = class {
 
             const layerAddBtn = e.target.closest('#add-layer-btn');
             if (layerAddBtn) {
-                const layerCount = this.layerManager?.layers?.length || 1;
-                const result = window.CoreRuntime.api.layer.create(`レイヤー${layerCount}`);
+                // ❌ 削除: const layerCount = this.layerManager?.layers?.length || 1;
+                // ❌ 削除: const result = window.CoreRuntime.api.layer.create(`レイヤー${layerCount}`);
+                
+                // ✅ 修正: createLayer()はlayer-system.js内で_generateNextLayerName()を呼び出す
+                const result = window.CoreRuntime.api.layer.create();
+                
                 if (result) {
                     window.CoreRuntime.api.layer.setActive(result.index);
                 }
@@ -235,9 +239,6 @@ window.TegakiUI.UIController = class {
         }
     }
 };
-
-// 🔥 Sortable初期化を削除（layer-panel-renderer.jsに一元化）
-// window.TegakiUI.initializeSortable は削除
 
 window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     const container = document.getElementById(sliderId);
