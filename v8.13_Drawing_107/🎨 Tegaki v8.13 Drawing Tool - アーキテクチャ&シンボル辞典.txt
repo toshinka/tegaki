@@ -1,0 +1,560 @@
+# 🎨 Tegaki v8.13 Drawing Tool - アーキテクチャ&シンボル辞典
+
+## 📋 目次
+1. [システム概要](#システム概要)
+2. [ファイル構造とフロー](#ファイル構造とフロー)
+3. [背景レイヤーサムネイル問題の診断](#背景レイヤーサムネイル問題の診断)
+4. [主要コンポーネント詳細](#主要コンポーネント詳細)
+5. [座標変換パイプライン](#座標変換パイプライン)
+6. [イベントフローマップ](#イベントフローマップ)
+
+---
+
+## システム概要
+
+### 🏗️ アーキテクチャ原則
+- **技術スタック**: PixiJS v8.13, ES2023, WebGPU
+- **禁止事項**: Canvas2D, TypeScript, ESM, bundler
+- **設計原則**: DRY/SOLID, 明確な責務分担, 二重実装の撲滅
+
+### 🎯 コア機能
+- SDF/MSDF技術によるペン・消しゴム描画
+- WebGPU GPU Computeによる距離場生成
+- レイヤー&アニメーションシステム
+- 変換・エクスポート機能
+
+---
+
+## ファイル構造とフロー
+
+### 📂 初期化シーケンス（index.html読み込み順）
+
+```
+1. PIXI.js, 外部ライブラリ
+   ↓
+2. config.js (設定・キーマップ)
+   ↓
+3. event-bus.js (グローバルイベントシステム)
+   ↓
+4. coordinate-system.js (座標変換コアAPI)
+   ↓
+5. システムコンポーネント
+   ├─ data-models.js (LayerModel, StrokeData定義)
+   ├─ batch-api.js
+   ├─ popup-manager.js
+   ├─ state-manager.js
+   ├─ settings-manager.js
+   ├─ camera-system.js (ズーム・パン・変換)
+   ├─ layer-transform.js (レイヤー変形)
+   ├─ checker-utils.js (チェッカーパターン生成)
+   ├─ layer-system.js (レイヤー管理・背景レイヤー生成)
+   ├─ drawing-clipboard.js
+   ├─ history.js
+   ├─ virtual-album.js
+   └─ animation-system.js
+   ↓
+6. WebGPU基盤
+   ├─ webgpu-capabilities.js
+   ├─ webgpu-drawing-layer.js
+   ├─ webgpu-compute-sdf.js
+   ├─ webgpu-compute-msdf.js
+   └─ webgpu-texture-bridge.js
+   ↓
+7. Drawing System
+   ├─ pointer-handler.js (ポインターイベント処理)
+   ├─ pressure-handler.js (筆圧処理)
+   ├─ curve-interpolator.js (曲線補間)
+   ├─ stroke-recorder.js (ストローク記録)
+   ├─ sdf-brush-shader.js (SDFシェーダー)
+   ├─ sdf-texture-generator.js
+   ├─ sdf-mesh-builder.js
+   ├─ stroke-renderer.js (描画レンダリング)
+   ├─ thumbnail-system.js (サムネイル生成)
+   ├─ brush-settings.js
+   ├─ brush-core.js
+   └─ drawing-engine.js (描画エンジン統合)
+   ↓
+8. エクスポートシステム
+   ├─ export-manager.js
+   ├─ png-exporter.js
+   ├─ apng-exporter.js
+   ├─ gif-exporter.js
+   ├─ webp-exporter.js
+   └─ mp4-exporter.js
+   ↓
+9. UI
+   ├─ dom-builder.js (DOM構築)
+   ├─ slider-utils.js
+   ├─ keyboard-handler.js
+   ├─ resize-popup.js
+   ├─ layer-panel-renderer.js (⚠️ 問題箇所)
+   ├─ status-display-renderer.js
+   ├─ timeline-thumbnail-utils.js
+   ├─ timeline-ui.js
+   ├─ album-popup.js
+   ├─ settings-popup.js
+   ├─ quick-access-popup.js
+   ├─ export-popup.js
+   └─ ui-panels.js
+   ↓
+10. コアランタイム
+    ├─ core-runtime.js (API公開)
+    ├─ core-engine.js (システム統合)
+    └─ core-initializer.js (初期化オーケストレーション)
+```
+
+---
+
+## 🔍 背景レイヤーサムネイル問題の診断
+
+### 問題の症状
+- 背景レイヤーのサムネイル枠内に**小さな点のみ表示**
+- サムネイル枠（border）は見えるが、**内容（色見本）が見えない**
+
+### 🔎 根本原因の特定
+
+#### 1. 実装フローの確認
+
+**layer-panel-renderer.js: createThumbnail()**
+```javascript
+// 背景レイヤーの場合の処理
+if (isBackground) {
+    const swatch = document.createElement('div');
+    swatch.className = 'background-color-swatch';
+    
+    // ⚠️ 問題箇所: インラインスタイル設定
+    swatch.style.width = '100%';
+    swatch.style.height = '100%';
+    swatch.style.display = 'block';
+    swatch.style.boxSizing = 'border-box';
+    
+    const isVisible = layer.layerData?.visible !== false;
+    
+    if (!isVisible) {
+        // 非表示時: チェッカーパターン
+        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(74, 40, 8);
+        swatch.style.backgroundImage = `url(${dataUrl})`;
+    } else {
+        // ✅ 表示時: backgroundColor を反映
+        const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
+        const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
+        swatch.style.backgroundColor = colorHex;
+    }
+    
+    thumbnailContainer.appendChild(swatch);
+    return thumbnailContainer;
+}
+```
+
+**thumbnailContainer の設定**
+```javascript
+thumbnailContainer.style.cssText = `
+    box-sizing: border-box;
+    max-width: ${maxThumbnailWidth}px;  // 74px
+    max-height: ${maxThumbnailHeight}px; // 40px
+    width: ${maxThumbnailWidth}px;
+    height: ${maxThumbnailHeight}px;
+    border: 1px solid #cf9c97;
+    display: flex;  // ⚠️ フレックスボックス
+    align-items: center;
+    justify-content: center;
+`;
+```
+
+### 🐛 問題の分析
+
+#### A. CSS競合の可能性
+親要素(`thumbnailContainer`)が`display: flex`で、子要素(`swatch`)が`display: block`の場合、サイズ計算に問題が発生する可能性があります。
+
+#### B. 初期化タイミング
+`layer.layerData.backgroundColor`が初期化前に読み取られている可能性。
+
+#### C. パーセンテージサイズの問題
+`width: 100%`, `height: 100%`が、フレックスボックスコンテキストで正しく機能していない可能性。
+
+### ✅ 修正方法
+
+#### 修正1: インラインスタイルの完全指定
+
+```javascript
+// createThumbnail() 内の背景レイヤー処理を修正
+if (isBackground) {
+    const swatch = document.createElement('div');
+    swatch.className = 'background-color-swatch';
+    
+    // ✅ 修正: 明示的なサイズ指定
+    swatch.style.cssText = `
+        width: 74px;
+        height: 40px;
+        display: block;
+        box-sizing: border-box;
+    `;
+    
+    const isVisible = layer.layerData?.visible !== false;
+    
+    if (!isVisible) {
+        if (window.checkerUtils) {
+            const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(74, 40, 8);
+            swatch.style.backgroundImage = `url(${dataUrl})`;
+            swatch.style.backgroundRepeat = 'no-repeat';
+            swatch.style.backgroundSize = 'cover';
+            swatch.style.backgroundPosition = 'center';
+        } else {
+            swatch.style.backgroundColor = '#cccccc';
+        }
+    } else {
+        const bgColor = layer.layerData?.backgroundColor ?? 0xf0e0d6;
+        const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
+        swatch.style.backgroundColor = colorHex;
+    }
+    
+    thumbnailContainer.appendChild(swatch);
+    return thumbnailContainer;
+}
+```
+
+#### 修正2: 親コンテナのdisplayをblockに変更
+
+```javascript
+thumbnailContainer.style.cssText = `
+    box-sizing: border-box;
+    width: 74px;
+    height: 40px;
+    border: 1px solid #cf9c97;
+    display: block;  // ✅ flexからblockに変更
+    overflow: hidden;
+    border-radius: 2px;
+`;
+```
+
+#### 修正3: main.cssの確認・追加
+
+```css
+/* main.css に追加 */
+.layer-thumbnail {
+    display: block !important;  /* flexを上書き */
+    width: 74px !important;
+    height: 40px !important;
+}
+
+.background-color-swatch {
+    width: 74px !important;
+    height: 40px !important;
+    display: block !important;
+    box-sizing: border-box;
+}
+```
+
+---
+
+## 主要コンポーネント詳細
+
+### 1️⃣ **layer-system.js** - レイヤー管理の中枢
+
+#### 責務
+- レイヤーの作成・削除・並び替え
+- 背景レイヤーの初期化と管理
+- レイヤーの可視性・透明度制御
+- ストロークデータの管理
+
+#### 主要メソッド
+
+| メソッド名 | 引数 | 戻り値 | 説明 |
+|-----------|------|--------|------|
+| `init(canvasContainer, eventBus, config)` | コンテナ, EventBus, 設定 | void | システム初期化、背景レイヤー作成 |
+| `createLayer(name, isBackground)` | 名前, 背景フラグ | {layer, index} | 新規レイヤー作成 |
+| `setActiveLayer(index)` | レイヤー番号 | void | アクティブレイヤー変更 |
+| `toggleLayerVisibility(index)` | レイヤー番号 | void | 表示/非表示切替 |
+| `changeBackgroundLayerColor(index, layerId)` | レイヤー番号, ID | void | 背景色を現在のペンカラーに変更 |
+| `setLayerOpacity(index, opacity)` | レイヤー番号, 透明度 | void | レイヤー透明度設定(0-1) |
+| `addPathToActiveLayer(path)` | パスオブジェクト | void | アクティブレイヤーに描画追加 |
+
+#### イベント発行
+```javascript
+'layer:created'              // レイヤー作成時
+'layer:deleted'              // レイヤー削除時
+'layer:activated'            // アクティブ化時
+'layer:visibility-changed'   // 可視性変更時
+'layer:opacity-changed'      // 透明度変更時
+'layer:background-color-changed' // 背景色変更時
+'layer:stroke-added'         // ストローク追加時
+'thumbnail:layer-updated'    // サムネイル更新要求
+```
+
+#### 背景レイヤーの初期化フロー
+```
+LayerSystem.init()
+  ↓
+背景レイヤーContainer作成
+  ↓
+LayerModel生成 (isBackground: true)
+  ↓
+_createSolidBackground() → PIXI.Graphics作成
+  ↓
+backgroundGraphics保存
+  ↓
+backgroundColor保存 (デフォルト: 0xf0e0d6)
+  ↓
+Container.addChild(background)
+```
+
+---
+
+### 2️⃣ **layer-panel-renderer.js** - UI表示ロジック
+
+#### 責務
+- レイヤーパネルのDOM構築
+- サムネイル表示（通常レイヤー・背景レイヤー）
+- ドラッグ&ドロップ順序変更
+- レイヤー名編集
+
+#### 主要メソッド
+
+| メソッド名 | 引数 | 戻り値 | 説明 |
+|-----------|------|--------|------|
+| `render(layers, activeIndex, animationSystem)` | レイヤー配列, アクティブ番号, アニメシステム | void | パネル全体再描画 |
+| `createLayerElement(layer, index, isActive, animationSystem)` | レイヤー, 番号, アクティブフラグ, アニメシステム | HTMLElement | 1レイヤー分のDOM生成 |
+| `createThumbnail(layer, index)` | レイヤー, 番号 | HTMLElement | **サムネイル生成（問題箇所）** |
+| `_updateSingleThumbnail(layerIndex)` | レイヤー番号 | Promise<void> | 単一サムネイル更新 |
+| `updateAllThumbnails()` | - | Promise<void> | 全サムネイル更新 |
+
+#### サムネイル生成フロー
+
+```
+createThumbnail(layer, index)
+  ↓
+layer.layerData.isBackground ? 
+  ├─ YES → 色見本<div>生成
+  │        ├─ visible=false → チェッカーパターン
+  │        └─ visible=true  → backgroundColor反映
+  │
+  └─ NO  → ThumbnailSystem.generateLayerThumbnail()
+           └─ PixiJS RenderTexture経由で画像化
+```
+
+---
+
+### 3️⃣ **thumbnail-system.js** - サムネイル生成エンジン
+
+#### 責務
+- 通常レイヤーのPixiJSレンダリング
+- フレームサムネイル生成
+- サムネイルキャッシュ管理
+- RenderTextureプール管理
+
+#### 主要メソッド
+
+| メソッド名 | 引数 | 戻り値 | 説明 |
+|-----------|------|--------|------|
+| `generateLayerThumbnail(layer, index, maxW, maxH)` | レイヤー, 番号, 最大幅, 最大高 | Promise<{dataUrl, width, height}> | **背景レイヤーは即座にnullを返す** |
+| `_renderLayerThumbnail(layer, maxW, maxH)` | レイヤー, 最大幅, 最大高 | Promise<Object> | 実際のレンダリング処理 |
+| `generateFrameThumbnail(frame, maxW, maxH)` | フレーム, 最大幅, 最大高 | Promise<Object> | アニメーションフレームサムネイル |
+| `invalidateLayerCache(index)` | レイヤー番号 | void | キャッシュ無効化 |
+
+#### 背景レイヤーの特別扱い
+```javascript
+async generateLayerThumbnail(layer, ...) {
+    // ⚠️ 背景レイヤーはここで即リターン
+    if (layer.layerData?.isBackground) {
+        return null;  // layer-panel-rendererで直接描画
+    }
+    // ...通常レイヤーの処理
+}
+```
+
+---
+
+### 4️⃣ **checker-utils.js** - チェッカーパターン生成
+
+#### 責務
+- キャンバス用チェッカーパターン（PIXI.Graphics）
+- サムネイル用チェッカーパターン（Canvas）
+- Futaba配色の統一管理
+
+#### 主要メソッド
+
+| メソッド名 | 引数 | 戻り値 | 説明 |
+|-----------|------|--------|------|
+| `createCanvasChecker(width, height)` | 幅, 高さ | PIXI.Graphics | キャンバス背景用チェッカー |
+| `createThumbnailCheckerCanvas(w, h, sq)` | 幅, 高さ, マスサイズ | HTMLCanvasElement | サムネイル用チェッカー |
+| `createThumbnailCheckerDataURL(w, h, sq)` | 幅, 高さ, マスサイズ | string | DataURL形式のチェッカー |
+| `resizeCanvasChecker(checker, newW, newH)` | 既存チェッカー, 新幅, 新高 | PIXI.Graphics | リサイズ |
+
+#### 配色定義
+```javascript
+color1 = 0xf0e0d6  // Futaba cream
+color2 = 0xffffee  // Futaba background
+squareSize = 16    // 16x16px固定（ズーム影響なし）
+```
+
+---
+
+### 5️⃣ **data-models.js** - データモデル定義
+
+#### LayerModel
+
+```javascript
+class LayerModel {
+    constructor(data = {}) {
+        this.id = data.id || 自動生成;
+        this.name = data.name || 'レイヤー';
+        this.visible = data.visible !== undefined ? data.visible : true;
+        this.opacity = data.opacity !== undefined ? data.opacity : 1.0;
+        this.isBackground = data.isBackground || false;
+        this.backgroundColor = data.backgroundColor ?? 0xf0e0d6; // ⚠️ 重要
+        this.paths = data.paths || [];
+        this.maskTexture = null;
+        this.maskSprite = null;
+    }
+    
+    initializeMask(width, height, renderer) { ... }
+    destroyMask() { ... }
+    hasMask() { ... }
+}
+```
+
+#### スキーマ定義
+```javascript
+LAYER_SCHEMA = {
+    backgroundColor: { 
+        type: 'number', 
+        default: 0xf0e0d6, 
+        editable: true 
+    },
+    // ...
+}
+```
+
+---
+
+## 座標変換パイプライン
+
+### 変換の流れ（厳格）
+
+```
+PointerEvent.clientX/Y
+  ↓ screenClientToCanvas() [DPI補正]
+Canvas座標 (DPR考慮)
+  ↓ canvasToWorld() [worldContainer逆行列]
+World座標
+  ↓ worldToLocal() [手動逆算]
+Local座標 (レイヤー相対)
+  ↓ strokeRecorder.addPoint()
+記録
+```
+
+### ⚠️ 二重変換の禁止
+
+❌ **禁止パターン**
+```javascript
+// drawing-engine.js
+const localX = worldToLocal(worldX, worldY);
+// ↓ 座標を渡す
+strokeRecorder.startStroke(localX, localY, pressure);
+// ↓ stroke-recorder.js
+startStroke(x, y, pressure) {
+    // ❌ 再度変換してはいけない
+    const {localX, localY} = this.screenToLayer(x, y);
+    this.addPoint(localX, localY, pressure);
+}
+```
+
+✅ **正しいパターン**
+```javascript
+// drawing-engine.js
+const localX = worldToLocal(worldX, worldY);
+strokeRecorder.startStroke(localX, localY, pressure);
+
+// stroke-recorder.js
+startStroke(localX, localY, pressure) {
+    // ✅ 受け取った座標をそのまま記録
+    this.addPoint(localX, localY, pressure);
+}
+```
+
+---
+
+## イベントフローマップ
+
+### レイヤー関連
+
+```
+ユーザー操作
+  ↓
+UI (layer-panel-renderer.js)
+  ↓ 'ui:background-color-change-requested'
+EventBus
+  ↓
+layer-system.js: changeBackgroundLayerColor()
+  ↓ Graphics更新
+  ↓ 'layer:background-color-changed'
+  ↓ 'thumbnail:layer-updated'
+EventBus
+  ↓
+layer-panel-renderer.js: _updateSingleThumbnail()
+  ↓
+createThumbnail() 再実行
+```
+
+### サムネイル更新トリガー
+
+| イベント名 | 発行元 | 受信先 | 内容 |
+|-----------|--------|--------|------|
+| `thumbnail:layer-updated` | layer-system.js | layer-panel-renderer.js | 単一レイヤー更新要求 |
+| `layer:stroke-added` | layer-system.js | thumbnail-system.js | ストローク追加 |
+| `layer:transform-updated` | layer-transform.js | thumbnail-system.js | 変形完了 |
+| `camera:resized` | camera-system.js | layer-system.js, thumbnail-system.js | キャンバスリサイズ |
+
+---
+
+## デバッグチェックリスト
+
+### 背景レイヤーサムネイル問題のチェック項目
+
+#### ブラウザコンソールでの確認
+```javascript
+// 1. レイヤー情報の確認
+const layers = window.layerManager.getLayers();
+const bgLayer = layers[0];
+console.log('背景レイヤー:', bgLayer);
+console.log('isBackground:', bgLayer.layerData.isBackground);
+console.log('backgroundColor:', bgLayer.layerData.backgroundColor);
+console.log('backgroundGraphics:', bgLayer.layerData.backgroundGraphics);
+
+// 2. DOM要素の確認
+const thumbnails = document.querySelectorAll('.layer-thumbnail');
+const bgThumbnail = thumbnails[thumbnails.length - 1]; // 最後が背景レイヤー
+console.log('サムネイルHTML:', bgThumbnail.outerHTML);
+
+// 3. 色見本要素の確認
+const swatch = bgThumbnail.querySelector('.background-color-swatch');
+console.log('色見本要素:', swatch);
+console.log('計算済みスタイル:', window.getComputedStyle(swatch));
+
+// 4. 強制更新
+window.layerPanelRenderer._updateSingleThumbnail(0);
+```
+
+#### 修正後の確認ポイント
+- ✅ サムネイル枠（74x40px）が表示されている
+- ✅ 色見本要素のサイズが74x40pxになっている
+- ✅ `backgroundColor`が16進数カラーコードとして適用されている
+- ✅ 背景レイヤーの表示/非表示で色見本とチェッカーが切り替わる
+
+---
+
+## まとめ
+
+### 🎯 問題の本質
+- **親要素のdisplay: flex**と**子要素のwidth/height: 100%**の組み合わせにより、色見本要素が正しくサイズ計算されていない
+- インラインスタイルが不完全で、CSS継承の影響を受けている
+
+### ✅ 推奨修正
+1. **layer-panel-renderer.js**: 色見本要素に明示的な固定サイズ（74x40px）を指定
+2. **thumbnailContainerのdisplay**: `flex` → `block`に変更
+3. **main.css**: `!important`でスタイルを強制適用
+
+### 📝 予防策
+- すべてのサイズ指定は`px`で明示的に
+- パーセンテージサイズは親要素の`display`属性を考慮
+- 背景レイヤーの特別扱いを忘れない（`isBackground`フラグで分岐）

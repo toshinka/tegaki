@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - 背景サムネイル色見本方式（backgroundColor反映版）+ 背景名前編集完全防止
+// ui/layer-panel-renderer.js - サムネイル完全修正版
 
 (function() {
     'use strict';
@@ -228,7 +228,6 @@
             nameSpan.textContent = layer.layerData?.name || `レイヤー${index}`;
             nameSpan.style.cssText = `grid-column:1/3;grid-row:3;color:#800000;font-size:${isBackground?'9px':'10px'};font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:${isBackground ? 'default' : 'text'};padding-left:0`;
             
-            // ✅ 背景レイヤー以外のみダブルクリックイベント登録
             if (!isBackground) {
                 nameSpan.addEventListener('dblclick', (e) => {
                     e.stopPropagation();
@@ -240,7 +239,7 @@
 
             // サムネイル（1-3行目）
             const thumbnail = this.createThumbnail(layer, index);
-            thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;align-self:center;justify-self:center';
+            thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;align-self:center;justify-self:center;';
             layerDiv.appendChild(thumbnail);
 
             // 削除ボタン（右上）- 通常レイヤーのみ
@@ -302,11 +301,7 @@
             return layerDiv;
         }
 
-        /**
-         * ✅ 背景レイヤー編集完全防止
-         */
         _editLayerName(nameSpan, layer, index) {
-            // ✅ 背景レイヤーの場合は即座にreturn
             if (layer.layerData?.isBackground) {
                 return;
             }
@@ -355,60 +350,59 @@
         }
 
         /**
-         * ✅ 背景レイヤー: 色見本方式（backgroundColor反映）
+         * ✅ サムネイル生成（完全修正版）
+         * - 背景レイヤー: 74x40px固定（アスペクト比無視）
+         * - 通常レイヤー: アスペクト比保持（最大74x40px内）
          */
         createThumbnail(layer, index) {
+            const maxWidth = 74;
+            const maxHeight = 40;
+            
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
-            const maxThumbnailWidth = 74;
-            const maxThumbnailHeight = 40;
-            
-            thumbnailContainer.style.cssText = `
-                box-sizing: border-box;
-                max-width: ${maxThumbnailWidth}px;
-                max-height: ${maxThumbnailHeight}px;
-                width: ${maxThumbnailWidth}px;
-                height: ${maxThumbnailHeight}px;
-                border: 1px solid #cf9c97;
-                border-style: solid;
-                position: relative;
-                overflow: hidden;
-                border-radius: 2px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                touch-action: none;
-                pointer-events: auto;
-            `;
-
             const isBackground = layer.layerData?.isBackground || false;
 
             if (isBackground) {
-                // ✅ 色見本<div>を作成（インラインスタイル完全指定）
+                // ✅ 背景レイヤー: 固定74x40px（min/maxも固定）
+                thumbnailContainer.style.cssText = `
+                    width: ${maxWidth}px;
+                    height: ${maxHeight}px;
+                    min-width: ${maxWidth}px;
+                    min-height: ${maxHeight}px;
+                    max-width: ${maxWidth}px;
+                    max-height: ${maxHeight}px;
+                    box-sizing: border-box;
+                    border: 1px solid #cf9c97;
+                    border-radius: 2px;
+                    overflow: hidden;
+                    position: relative;
+                    flex-shrink: 0;
+                `;
+
                 const swatch = document.createElement('div');
                 swatch.className = 'background-color-swatch';
-                swatch.style.width = '100%';
-                swatch.style.height = '100%';
-                swatch.style.display = 'block';
-                swatch.style.boxSizing = 'border-box';
+                swatch.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                `;
                 
                 const isVisible = layer.layerData?.visible !== false;
                 
                 if (!isVisible) {
-                    // 非表示時: チェッカーパターン
                     if (window.checkerUtils) {
-                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxThumbnailWidth, maxThumbnailHeight, 8);
+                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxWidth - 2, maxHeight - 2, 8);
                         swatch.style.backgroundImage = `url(${dataUrl})`;
-                        swatch.style.backgroundRepeat = 'no-repeat';
                         swatch.style.backgroundSize = 'cover';
                         swatch.style.backgroundPosition = 'center';
                     } else {
                         swatch.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // ✅ 表示時: backgroundColor を読み取って反映
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     swatch.style.backgroundColor = colorHex;
@@ -418,18 +412,38 @@
                 return thumbnailContainer;
             }
 
-            // 通常レイヤー: ThumbnailSystemでレンダリング
+            // ✅ 通常レイヤー: アスペクト比保持（初期は最小サイズ）
+            thumbnailContainer.style.cssText = `
+                box-sizing: border-box;
+                max-width: ${maxWidth}px;
+                max-height: ${maxHeight}px;
+                border: 1px solid #cf9c97;
+                border-radius: 2px;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                flex-shrink: 0;
+            `;
+
             if (window.ThumbnailSystem && layer) {
-                thumbnailContainer.style.backgroundColor = 'transparent';
-                
-                window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxThumbnailWidth, maxThumbnailHeight)
+                window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxWidth, maxHeight)
                     .then(result => {
                         if (result && result.dataUrl) {
+                            // ✅ 実際のサイズでコンテナを設定
+                            thumbnailContainer.style.width = result.width + 'px';
+                            thumbnailContainer.style.height = result.height + 'px';
+                            thumbnailContainer.style.minWidth = result.width + 'px';
+                            thumbnailContainer.style.minHeight = result.height + 'px';
+                            
                             const img = document.createElement('img');
                             img.src = result.dataUrl;
-                            img.style.width = result.width + 'px';
-                            img.style.height = result.height + 'px';
-                            img.style.objectFit = 'contain';
+                            img.style.cssText = `
+                                width: 100%;
+                                height: 100%;
+                                display: block;
+                            `;
                             thumbnailContainer.innerHTML = '';
                             thumbnailContainer.appendChild(img);
                         }
@@ -457,34 +471,50 @@
             const layer = layers[layerIndex];
             const isBackground = layer?.layerData?.isBackground || false;
             
-            thumbnailContainer.style.border = '1px solid #cf9c97';
-            thumbnailContainer.style.borderStyle = 'solid';
-            thumbnailContainer.style.boxSizing = 'border-box';
+            const maxWidth = 74;
+            const maxHeight = 40;
             
             if (isBackground) {
-                const isVisible = layer.layerData?.visible !== false;
+                // ✅ 背景レイヤー: 固定74x40px
+                thumbnailContainer.style.cssText = `
+                    width: ${maxWidth}px;
+                    height: ${maxHeight}px;
+                    min-width: ${maxWidth}px;
+                    min-height: ${maxHeight}px;
+                    max-width: ${maxWidth}px;
+                    max-height: ${maxHeight}px;
+                    box-sizing: border-box;
+                    border: 1px solid #cf9c97;
+                    border-radius: 2px;
+                    overflow: hidden;
+                    position: relative;
+                    flex-shrink: 0;
+                `;
                 
                 thumbnailContainer.innerHTML = '';
                 
                 const swatch = document.createElement('div');
                 swatch.className = 'background-color-swatch';
-                swatch.style.width = '100%';
-                swatch.style.height = '100%';
-                swatch.style.display = 'block';
-                swatch.style.boxSizing = 'border-box';
+                swatch.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                `;
+                
+                const isVisible = layer.layerData?.visible !== false;
                 
                 if (!isVisible) {
                     if (window.checkerUtils) {
-                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(74, 40, 8);
+                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxWidth - 2, maxHeight - 2, 8);
                         swatch.style.backgroundImage = `url(${dataUrl})`;
-                        swatch.style.backgroundRepeat = 'no-repeat';
                         swatch.style.backgroundSize = 'cover';
                         swatch.style.backgroundPosition = 'center';
                     } else {
                         swatch.style.backgroundColor = '#cccccc';
                     }
                 } else {
-                    // ✅ backgroundColor を読み取って反映
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     swatch.style.backgroundColor = colorHex;
@@ -494,15 +524,36 @@
                 return;
             }
 
+            // 通常レイヤー: アスペクト比保持で再描画
             if (window.ThumbnailSystem) {
                 try {
-                    const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, 74, 40);
+                    const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, maxWidth, maxHeight);
                     if (result && result.dataUrl) {
+                        thumbnailContainer.style.cssText = `
+                            width: ${result.width}px;
+                            height: ${result.height}px;
+                            min-width: ${result.width}px;
+                            min-height: ${result.height}px;
+                            box-sizing: border-box;
+                            max-width: ${maxWidth}px;
+                            max-height: ${maxHeight}px;
+                            border: 1px solid #cf9c97;
+                            border-radius: 2px;
+                            overflow: hidden;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            position: relative;
+                            flex-shrink: 0;
+                        `;
+                        
                         const img = document.createElement('img');
                         img.src = result.dataUrl;
-                        img.style.width = result.width + 'px';
-                        img.style.height = result.height + 'px';
-                        img.style.objectFit = 'contain';
+                        img.style.cssText = `
+                            width: 100%;
+                            height: 100%;
+                            display: block;
+                        `;
                         thumbnailContainer.innerHTML = '';
                         thumbnailContainer.appendChild(img);
                     }
@@ -581,10 +632,6 @@
                     onChoose: (evt) => {
                         const item = evt.item;
                         item.style.cursor = 'grabbing';
-                    },
-
-                    onStart: (evt) => {
-                        // ドラッグ開始時は何もしない
                     },
 
                     onEnd: (evt) => {
