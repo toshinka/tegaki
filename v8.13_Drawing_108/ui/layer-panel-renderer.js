@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - サムネイル完全修正版
+// ui/layer-panel-renderer.js - グリッドレイアウト根本修正版
 
 (function() {
     'use strict';
@@ -108,6 +108,7 @@
 
             const isBackground = layer.layerData?.isBackground || false;
             
+            // ✅ 修正: グリッド列を完全固定幅に変更
             layerDiv.style.cssText = `
                 width:170px;
                 min-height:48px;
@@ -119,9 +120,9 @@
                 margin-bottom:4px;
                 cursor:${isBackground ? 'default' : 'grab'};
                 display:grid;
-                grid-template-columns:18px 1fr 74px;
+                grid-template-columns:18px 70px 74px;
                 grid-template-rows:14px 14px 14px;
-                gap:1px 5px;
+                gap:1px 4px;
                 align-items:center;
                 position:relative;
                 backdrop-filter:blur(8px);
@@ -144,7 +145,7 @@
 
                 const decreaseBtn = document.createElement('button');
                 decreaseBtn.textContent = '◀';
-                decreaseBtn.style.cssText = 'padding:0;font-size:9px;line-height:1;height:14px;width:14px;cursor:pointer;border:none;background:transparent;color:#800000';
+                decreaseBtn.style.cssText = 'padding:0;font-size:9px;line-height:1;height:14px;width:14px;cursor:pointer;border:none;background:transparent;color:#800000;flex-shrink:0';
                 decreaseBtn.title = '透明度 -10%';
                 decreaseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -155,11 +156,11 @@
                 opacityValue.className = 'layer-opacity-value';
                 const currentOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
                 opacityValue.textContent = `${Math.round(currentOpacity * 100)}%`;
-                opacityValue.style.cssText = 'min-width:34px;text-align:center;color:#800000;font-size:10px;font-weight:bold';
+                opacityValue.style.cssText = 'min-width:34px;text-align:center;color:#800000;font-size:10px;font-weight:bold;flex-shrink:0';
 
                 const increaseBtn = document.createElement('button');
                 increaseBtn.textContent = '▶';
-                increaseBtn.style.cssText = 'padding:0;font-size:9px;line-height:1;height:14px;width:14px;cursor:pointer;border:none;background:transparent;color:#800000';
+                increaseBtn.style.cssText = 'padding:0;font-size:9px;line-height:1;height:14px;width:14px;cursor:pointer;border:none;background:transparent;color:#800000;flex-shrink:0';
                 increaseBtn.title = '透明度 +10%';
                 increaseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -175,7 +176,7 @@
             // 2行目: 目アイコン + バケツ（背景のみ）
             const visibilityIcon = document.createElement('div');
             visibilityIcon.className = 'layer-visibility';
-            visibilityIcon.style.cssText = 'grid-column:1;grid-row:2;cursor:pointer;width:18px;height:14px;display:flex;align-items:center;justify-content:center';
+            visibilityIcon.style.cssText = 'grid-column:1;grid-row:2;cursor:pointer;width:18px;height:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0';
             
             const isVisible = layer.layerData?.visible !== false;
             visibilityIcon.innerHTML = isVisible ? 
@@ -198,7 +199,7 @@
             if (isBackground) {
                 const bucketIcon = document.createElement('div');
                 bucketIcon.className = 'layer-background-color-button';
-                bucketIcon.style.cssText = 'grid-column:2;grid-row:2;cursor:pointer;width:18px;height:14px;display:flex;align-items:center;justify-content:flex-start;padding-left:1px';
+                bucketIcon.style.cssText = 'grid-column:2;grid-row:2;cursor:pointer;width:18px;height:14px;display:flex;align-items:center;justify-content:flex-start;padding-left:1px;flex-shrink:0';
                 bucketIcon.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" 
                          viewBox="0 0 24 24" fill="none" stroke="#800000" 
@@ -237,9 +238,9 @@
             
             layerDiv.appendChild(nameSpan);
 
-            // サムネイル（1-3行目）
+            // ✅ サムネイル（1-3行目）- 固定配置
             const thumbnail = this.createThumbnail(layer, index);
-            thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;align-self:center;justify-self:center;';
+            thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;justify-self:center;align-self:center;';
             layerDiv.appendChild(thumbnail);
 
             // 削除ボタン（右上）- 通常レイヤーのみ
@@ -350,37 +351,51 @@
         }
 
         /**
-         * ✅ サムネイル生成（完全修正版）
-         * - 背景レイヤー: 74x40px固定（アスペクト比無視）
-         * - 通常レイヤー: アスペクト比保持（最大74x40px内）
+         * ✅ サムネイル生成（統一版）
+         * - 背景・通常レイヤー共通: アスペクト比保持（最大74x40px内）
+         * - 背景レイヤーは色見本、通常レイヤーはPixiJSレンダリング
          */
         createThumbnail(layer, index) {
             const maxWidth = 74;
             const maxHeight = 40;
             
+            // ✅ キャンバスアスペクト比を取得
+            const canvasWidth = this.layerSystem?.config?.canvas?.width || 800;
+            const canvasHeight = this.layerSystem?.config?.canvas?.height || 600;
+            const aspectRatio = canvasWidth / canvasHeight;
+            
+            // ✅ サムネイルサイズを事前計算
+            let thumbWidth, thumbHeight;
+            if (aspectRatio >= maxWidth / maxHeight) {
+                thumbWidth = maxWidth;
+                thumbHeight = Math.round(maxWidth / aspectRatio);
+            } else {
+                thumbHeight = maxHeight;
+                thumbWidth = Math.round(maxHeight * aspectRatio);
+            }
+            
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
+            // ✅ 事前計算したサイズで固定
+            thumbnailContainer.style.cssText = `
+                width: ${thumbWidth}px;
+                height: ${thumbHeight}px;
+                box-sizing: border-box;
+                border: 1px solid #cf9c97;
+                border-radius: 2px;
+                overflow: hidden;
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+            
             const isBackground = layer.layerData?.isBackground || false;
 
             if (isBackground) {
-                // ✅ 背景レイヤー: 固定74x40px（min/maxも固定）
-                thumbnailContainer.style.cssText = `
-                    width: ${maxWidth}px;
-                    height: ${maxHeight}px;
-                    min-width: ${maxWidth}px;
-                    min-height: ${maxHeight}px;
-                    max-width: ${maxWidth}px;
-                    max-height: ${maxHeight}px;
-                    box-sizing: border-box;
-                    border: 1px solid #cf9c97;
-                    border-radius: 2px;
-                    overflow: hidden;
-                    position: relative;
-                    flex-shrink: 0;
-                `;
-
+                // 背景レイヤー: 色見本
                 const swatch = document.createElement('div');
                 swatch.className = 'background-color-swatch';
                 swatch.style.cssText = `
@@ -395,7 +410,7 @@
                 
                 if (!isVisible) {
                     if (window.checkerUtils) {
-                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxWidth - 2, maxHeight - 2, 8);
+                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(thumbWidth - 2, thumbHeight - 2, 8);
                         swatch.style.backgroundImage = `url(${dataUrl})`;
                         swatch.style.backgroundSize = 'cover';
                         swatch.style.backgroundPosition = 'center';
@@ -412,31 +427,11 @@
                 return thumbnailContainer;
             }
 
-            // ✅ 通常レイヤー: アスペクト比保持（初期は最小サイズ）
-            thumbnailContainer.style.cssText = `
-                box-sizing: border-box;
-                max-width: ${maxWidth}px;
-                max-height: ${maxHeight}px;
-                border: 1px solid #cf9c97;
-                border-radius: 2px;
-                overflow: hidden;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                position: relative;
-                flex-shrink: 0;
-            `;
-
+            // 通常レイヤー: ThumbnailSystemでレンダリング
             if (window.ThumbnailSystem && layer) {
                 window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxWidth, maxHeight)
                     .then(result => {
                         if (result && result.dataUrl) {
-                            // ✅ 実際のサイズでコンテナを設定
-                            thumbnailContainer.style.width = result.width + 'px';
-                            thumbnailContainer.style.height = result.height + 'px';
-                            thumbnailContainer.style.minWidth = result.width + 'px';
-                            thumbnailContainer.style.minHeight = result.height + 'px';
-                            
                             const img = document.createElement('img');
                             img.src = result.dataUrl;
                             img.style.cssText = `
@@ -474,23 +469,25 @@
             const maxWidth = 74;
             const maxHeight = 40;
             
+            // ✅ サムネイルサイズ再計算
+            const canvasWidth = this.layerSystem?.config?.canvas?.width || 800;
+            const canvasHeight = this.layerSystem?.config?.canvas?.height || 600;
+            const aspectRatio = canvasWidth / canvasHeight;
+            
+            let thumbWidth, thumbHeight;
+            if (aspectRatio >= maxWidth / maxHeight) {
+                thumbWidth = maxWidth;
+                thumbHeight = Math.round(maxWidth / aspectRatio);
+            } else {
+                thumbHeight = maxHeight;
+                thumbWidth = Math.round(maxHeight * aspectRatio);
+            }
+            
+            // ✅ コンテナサイズ更新
+            thumbnailContainer.style.width = thumbWidth + 'px';
+            thumbnailContainer.style.height = thumbHeight + 'px';
+            
             if (isBackground) {
-                // ✅ 背景レイヤー: 固定74x40px
-                thumbnailContainer.style.cssText = `
-                    width: ${maxWidth}px;
-                    height: ${maxHeight}px;
-                    min-width: ${maxWidth}px;
-                    min-height: ${maxHeight}px;
-                    max-width: ${maxWidth}px;
-                    max-height: ${maxHeight}px;
-                    box-sizing: border-box;
-                    border: 1px solid #cf9c97;
-                    border-radius: 2px;
-                    overflow: hidden;
-                    position: relative;
-                    flex-shrink: 0;
-                `;
-                
                 thumbnailContainer.innerHTML = '';
                 
                 const swatch = document.createElement('div');
@@ -507,7 +504,7 @@
                 
                 if (!isVisible) {
                     if (window.checkerUtils) {
-                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxWidth - 2, maxHeight - 2, 8);
+                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(thumbWidth - 2, thumbHeight - 2, 8);
                         swatch.style.backgroundImage = `url(${dataUrl})`;
                         swatch.style.backgroundSize = 'cover';
                         swatch.style.backgroundPosition = 'center';
@@ -524,29 +521,11 @@
                 return;
             }
 
-            // 通常レイヤー: アスペクト比保持で再描画
+            // 通常レイヤー: 再レンダリング
             if (window.ThumbnailSystem) {
                 try {
                     const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, maxWidth, maxHeight);
                     if (result && result.dataUrl) {
-                        thumbnailContainer.style.cssText = `
-                            width: ${result.width}px;
-                            height: ${result.height}px;
-                            min-width: ${result.width}px;
-                            min-height: ${result.height}px;
-                            box-sizing: border-box;
-                            max-width: ${maxWidth}px;
-                            max-height: ${maxHeight}px;
-                            border: 1px solid #cf9c97;
-                            border-radius: 2px;
-                            overflow: hidden;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            position: relative;
-                            flex-shrink: 0;
-                        `;
-                        
                         const img = document.createElement('img');
                         img.src = result.dataUrl;
                         img.style.cssText = `
