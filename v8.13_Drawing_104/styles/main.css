@@ -1,8 +1,4 @@
-/* Tegaki Tool - Main Stylesheet (v2.2: JavaScript管理への移行完了版) */
-/* ✅ レイヤーパネル: 動的要素はJavaScript管理に移行 */
-/* ✅ v2.0: layer-transform-panel スライダー色をmaroon系に統一 */
-/* ✅ v2.1: タブレットペン対応 - touch-action: none を追加 */
-/* ✅ v2.2: 二重実装削除、DRY/SOLID原則準拠 */
+/* Tegaki Tool - Main Stylesheet (Phase 1-2: サムネイル枠線修正版) */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -195,9 +191,7 @@ canvas {
     cursor: not-allowed; 
 }
 
-/* ===== レイヤーパネル（JavaScript管理に移行） ===== */
-/* 詳細なレイアウトはlayer-panel-renderer.jsで管理 */
-/* CSSは最小限のスタイル定義のみ */
+/* ===== レイヤーパネル ===== */
 
 .layer-panel-items { 
     display: flex; 
@@ -210,7 +204,6 @@ canvas {
     overflow-x: hidden;
 }
 
-/* Webkit系ブラウザ用スクロールバー */
 .layer-panel-items::-webkit-scrollbar {
     width: 10px;
 }
@@ -230,13 +223,11 @@ canvas {
     background: #aa5a56;
 }
 
-/* Firefox用スクロールバー */
 .layer-panel-items {
     scrollbar-width: thin;
     scrollbar-color: #800000 #e9c2ba;
 }
 
-/* ホバーエフェクト（CSS管理が適切） */
 .layer-item:hover {
     border-color: var(--futaba-medium) !important;
     background: var(--futaba-cream) !important;
@@ -246,6 +237,23 @@ canvas {
 
 .layer-item.active {
     border-color: #ff8c42 !important;
+}
+
+/* Phase 1-2: サムネイル枠線を確実に表示 */
+.layer-thumbnail {
+    box-sizing: border-box;
+    border: 2px solid #cf9c97;
+    border-style: solid !important;
+    border-radius: 2px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 背景レイヤーのサムネイル枠は濃い色 */
+.layer-item .layer-thumbnail[data-layer-index="0"] {
+    border-color: #aa5a56;
 }
 
 /* Sortable.jsドラッグエフェクト */
@@ -270,7 +278,6 @@ canvas {
     border-color: #ff8c42 !important;
 }
 
-/* 背景レイヤーの特殊処理 */
 .layer-item.background-layer {
     cursor: default !important;
 }
@@ -282,7 +289,6 @@ canvas {
     box-shadow: none !important;
 }
 
-/* レイヤー名編集用input */
 .layer-item input[type="text"] {
     border: 1px solid var(--futaba-maroon);
     border-radius: 2px;
@@ -297,7 +303,6 @@ canvas {
     box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.2);
 }
 
-/* ドラッグ中のプレースホルダー */
 .layer-item-placeholder {
     width: 170px;
     height: 56px;

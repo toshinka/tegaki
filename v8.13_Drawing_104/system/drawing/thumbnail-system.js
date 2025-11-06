@@ -1,4 +1,4 @@
-// system/drawing/thumbnail-system.js - Vキー即座反映・統一スロットル版
+// system/drawing/thumbnail-system.js - Phase 1-1: 背景レイヤーサムネイル修正版
 
 (function() {
     'use strict';
@@ -24,7 +24,6 @@
             this.renderTexturePool = [];
             this.poolMaxSize = 10;
             
-            // 統一スロットル管理（16ms = 60FPS）
             this.updateThrottle = 16;
             this.layerUpdateTimer = null;
             this.timelineUpdateTimer = null;
@@ -51,13 +50,11 @@
                 this.vKeyModeActive = false;
             });
             
-            // 🔥 Vキー変形中のリアルタイム更新（16msスロットル）
             this.eventBus.on('layer:updated', ({ layerId }) => {
                 if (!this.vKeyModeActive) return;
                 
                 this._invalidateLayerCacheByLayerId(layerId);
                 
-                // レイヤーパネル更新（16msスロットル）
                 if (this.layerUpdateTimer) {
                     clearTimeout(this.layerUpdateTimer);
                 }
@@ -79,7 +76,6 @@
                     this.layerUpdateTimer = null;
                 }, this.updateThrottle);
                 
-                // タイムライン更新（同じ16msスロットル）
                 if (this.timelineUpdateTimer) {
                     clearTimeout(this.timelineUpdateTimer);
                 }
@@ -107,7 +103,6 @@
                     }
                 }
                 
-                // タイムラインも即座更新
                 this.eventBus.emit('thumbnail:regenerate-all');
             });
             
@@ -141,7 +136,8 @@
         }
 
         /**
-         * レイヤーサムネイル生成（アスペクト比対応版）
+         * Phase 1-1: 背景レイヤー対応版
+         * 背景レイヤーはここでnullを返す（layer-panel-rendererで直接描画）
          */
         async generateLayerThumbnail(layer, layerIndex = 0, maxWidth = null, maxHeight = null) {
             if (!layer || !this.app?.renderer) {
@@ -155,12 +151,10 @@
                 return null;
             }
 
-            // Vキーモード中は常にキャッシュスキップ
             if (this.vKeyModeActive) {
                 return await this._renderLayerThumbnail(layer, actualMaxWidth, actualMaxHeight);
             }
 
-            // キャッシュキー生成
             const layerId = layer.layerData?.id || layer.label;
             const pos = layer.position;
             const rot = layer.rotation;
@@ -186,16 +180,12 @@
             return result;
         }
 
-        /**
-         * 内部: レイヤーサムネイルレンダリング（変形状態保持版）
-         */
         async _renderLayerThumbnail(layer, maxWidth, maxHeight) {
             try {
                 const canvasWidth = this.config?.canvas?.width || 800;
                 const canvasHeight = this.config?.canvas?.height || 600;
                 const aspectRatio = canvasWidth / canvasHeight;
 
-                // アスペクト比を保持してサムネイルサイズを計算
                 let thumbWidth, thumbHeight;
                 if (aspectRatio >= maxWidth / maxHeight) {
                     thumbWidth = maxWidth;
@@ -205,7 +195,6 @@
                     thumbWidth = Math.round(maxHeight * aspectRatio);
                 }
 
-                // 🔥 変形状態を保持したままレンダリング
                 const rt = this._acquireRenderTexture(canvasWidth, canvasHeight);
                 if (!rt) {
                     return null;
@@ -246,9 +235,6 @@
             }
         }
 
-        /**
-         * フレームサムネイル生成（アスペクト比対応版）
-         */
         async generateFrameThumbnail(frame, maxWidth = this.defaultFrameThumbSize, maxHeight = this.defaultFrameThumbSize) {
             if (!frame || !this.app?.renderer) {
                 return null;
