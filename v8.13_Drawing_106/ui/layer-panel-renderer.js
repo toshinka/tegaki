@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - 背景サムネイル色見本方式（backgroundColor反映版）
+// ui/layer-panel-renderer.js - 背景サムネイル色見本方式（backgroundColor反映版）+ 背景名前編集完全防止
 
 (function() {
     'use strict';
@@ -226,12 +226,15 @@
             const nameSpan = document.createElement('span');
             nameSpan.className = 'layer-name';
             nameSpan.textContent = layer.layerData?.name || `レイヤー${index}`;
-            nameSpan.style.cssText = `grid-column:1/3;grid-row:3;color:#800000;font-size:${isBackground?'9px':'10px'};font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding-left:0`;
+            nameSpan.style.cssText = `grid-column:1/3;grid-row:3;color:#800000;font-size:${isBackground?'9px':'10px'};font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:${isBackground ? 'default' : 'text'};padding-left:0`;
             
-            nameSpan.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                this._editLayerName(nameSpan, layer, index);
-            });
+            // ✅ 背景レイヤー以外のみダブルクリックイベント登録
+            if (!isBackground) {
+                nameSpan.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    this._editLayerName(nameSpan, layer, index);
+                });
+            }
             
             layerDiv.appendChild(nameSpan);
 
@@ -299,7 +302,15 @@
             return layerDiv;
         }
 
+        /**
+         * ✅ 背景レイヤー編集完全防止
+         */
         _editLayerName(nameSpan, layer, index) {
+            // ✅ 背景レイヤーの場合は即座にreturn
+            if (layer.layerData?.isBackground) {
+                return;
+            }
+
             const originalName = nameSpan.textContent;
             const input = document.createElement('input');
             input.type = 'text';
@@ -375,10 +386,13 @@
             const isBackground = layer.layerData?.isBackground || false;
 
             if (isBackground) {
-                // ✅ 色見本<div>を作成
+                // ✅ 色見本<div>を作成（インラインスタイル完全指定）
                 const swatch = document.createElement('div');
                 swatch.className = 'background-color-swatch';
-                swatch.style.cssText = 'width:100%;height:100%;';
+                swatch.style.width = '100%';
+                swatch.style.height = '100%';
+                swatch.style.display = 'block';
+                swatch.style.boxSizing = 'border-box';
                 
                 const isVisible = layer.layerData?.visible !== false;
                 
@@ -454,7 +468,10 @@
                 
                 const swatch = document.createElement('div');
                 swatch.className = 'background-color-swatch';
-                swatch.style.cssText = 'width:100%;height:100%;';
+                swatch.style.width = '100%';
+                swatch.style.height = '100%';
+                swatch.style.display = 'block';
+                swatch.style.boxSizing = 'border-box';
                 
                 if (!isVisible) {
                     if (window.checkerUtils) {
