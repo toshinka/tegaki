@@ -1,4 +1,4 @@
-// ui/layer-panel-renderer.js - グリッドレイアウト根本修正版
+// ui/layer-panel-renderer.js - サムネイル位置安定化・名前編集修正版
 
 (function() {
     'use strict';
@@ -10,6 +10,7 @@
             this.eventBus = eventBus;
             this.sortable = null;
             this._isInitialized = false;
+            this._editingLayerIndex = -1;
 
             this._setupEventListeners();
             
@@ -108,7 +109,6 @@
 
             const isBackground = layer.layerData?.isBackground || false;
             
-            // ✅ 修正: グリッド列を完全固定幅に変更
             layerDiv.style.cssText = `
                 width:170px;
                 min-height:48px;
@@ -232,15 +232,18 @@
             if (!isBackground) {
                 nameSpan.addEventListener('dblclick', (e) => {
                     e.stopPropagation();
-                    this._editLayerName(nameSpan, layer, index);
+                    e.preventDefault();
+                    if (this._editingLayerIndex < 0) {
+                        this._editLayerName(nameSpan, layer, index);
+                    }
                 });
             }
             
             layerDiv.appendChild(nameSpan);
 
-            // ✅ サムネイル（1-3行目）- 固定配置
+            // サムネイル（1-3行目）- 固定配置でFlexbox中央揃え
             const thumbnail = this.createThumbnail(layer, index);
-            thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;justify-self:center;align-self:center;';
+            thumbnail.style.cssText = 'grid-column:3;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
             layerDiv.appendChild(thumbnail);
 
             // 削除ボタン（右上）- 通常レイヤーのみ
@@ -286,7 +289,8 @@
                 if (e.target.closest('.layer-delete-button') ||
                     e.target.closest('.layer-opacity-control button') ||
                     e.target.closest('.layer-visibility') ||
-                    e.target.closest('.layer-background-color-button')) {
+                    e.target.closest('.layer-background-color-button') ||
+                    this._editingLayerIndex >= 0) {
                     return;
                 }
 
@@ -303,21 +307,29 @@
         }
 
         _editLayerName(nameSpan, layer, index) {
-            if (layer.layerData?.isBackground) {
+            if (layer.layerData?.isBackground || this._editingLayerIndex >= 0) {
                 return;
             }
+
+            this._editingLayerIndex = index;
 
             const originalName = nameSpan.textContent;
             const input = document.createElement('input');
             input.type = 'text';
             input.value = originalName;
-            input.style.cssText = `grid-column:${nameSpan.style.gridColumn};grid-row:${nameSpan.style.gridRow};color:#800000;font-size:${nameSpan.style.fontSize};font-weight:bold;background:#fff;border:1px solid #800000;border-radius:2px;padding:1px 2px;width:100%`;
+            input.style.cssText = `grid-column:${nameSpan.style.gridColumn};grid-row:${nameSpan.style.gridRow};color:#800000;font-size:${nameSpan.style.fontSize};font-weight:bold;background:#fff;border:1px solid #800000;border-radius:2px;padding:1px 2px;width:100%;box-sizing:border-box;`;
 
             nameSpan.replaceWith(input);
-            input.focus();
-            input.select();
+            
+            setTimeout(() => {
+                input.focus();
+                input.select();
+            }, 0);
 
             const finishEdit = () => {
+                if (this._editingLayerIndex < 0) return;
+                this._editingLayerIndex = -1;
+
                 const newName = input.value.trim();
                 if (newName && newName !== originalName) {
                     if (layer.layerData) {
@@ -336,7 +348,10 @@
                 nameSpan.textContent = newName || originalName;
             };
 
-            input.addEventListener('blur', finishEdit);
+            input.addEventListener('blur', () => {
+                setTimeout(finishEdit, 100);
+            });
+            
             input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
@@ -350,21 +365,14 @@
             });
         }
 
-        /**
-         * ✅ サムネイル生成（統一版）
-         * - 背景・通常レイヤー共通: アスペクト比保持（最大74x40px内）
-         * - 背景レイヤーは色見本、通常レイヤーはPixiJSレンダリング
-         */
         createThumbnail(layer, index) {
             const maxWidth = 74;
             const maxHeight = 40;
             
-            // ✅ キャンバスアスペクト比を取得
             const canvasWidth = this.layerSystem?.config?.canvas?.width || 800;
             const canvasHeight = this.layerSystem?.config?.canvas?.height || 600;
             const aspectRatio = canvasWidth / canvasHeight;
             
-            // ✅ サムネイルサイズを事前計算
             let thumbWidth, thumbHeight;
             if (aspectRatio >= maxWidth / maxHeight) {
                 thumbWidth = maxWidth;
@@ -378,7 +386,6 @@
             thumbnailContainer.className = 'layer-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
-            // ✅ 事前計算したサイズで固定
             thumbnailContainer.style.cssText = `
                 width: ${thumbWidth}px;
                 height: ${thumbHeight}px;
@@ -387,15 +394,12 @@
                 border-radius: 2px;
                 overflow: hidden;
                 position: relative;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+                flex-shrink: 0;
             `;
             
             const isBackground = layer.layerData?.isBackground || false;
 
             if (isBackground) {
-                // 背景レイヤー: 色見本
                 const swatch = document.createElement('div');
                 swatch.className = 'background-color-swatch';
                 swatch.style.cssText = `
@@ -427,7 +431,6 @@
                 return thumbnailContainer;
             }
 
-            // 通常レイヤー: ThumbnailSystemでレンダリング
             if (window.ThumbnailSystem && layer) {
                 window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxWidth, maxHeight)
                     .then(result => {
@@ -435,9 +438,10 @@
                             const img = document.createElement('img');
                             img.src = result.dataUrl;
                             img.style.cssText = `
-                                width: 100%;
-                                height: 100%;
+                                width: ${thumbWidth}px;
+                                height: ${thumbHeight}px;
                                 display: block;
+                                object-fit: contain;
                             `;
                             thumbnailContainer.innerHTML = '';
                             thumbnailContainer.appendChild(img);
@@ -449,9 +453,6 @@
             return thumbnailContainer;
         }
 
-        /**
-         * 単一サムネイル更新
-         */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -469,7 +470,6 @@
             const maxWidth = 74;
             const maxHeight = 40;
             
-            // ✅ サムネイルサイズ再計算
             const canvasWidth = this.layerSystem?.config?.canvas?.width || 800;
             const canvasHeight = this.layerSystem?.config?.canvas?.height || 600;
             const aspectRatio = canvasWidth / canvasHeight;
@@ -483,7 +483,6 @@
                 thumbWidth = Math.round(maxHeight * aspectRatio);
             }
             
-            // ✅ コンテナサイズ更新
             thumbnailContainer.style.width = thumbWidth + 'px';
             thumbnailContainer.style.height = thumbHeight + 'px';
             
@@ -521,7 +520,6 @@
                 return;
             }
 
-            // 通常レイヤー: 再レンダリング
             if (window.ThumbnailSystem) {
                 try {
                     const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, maxWidth, maxHeight);
@@ -529,9 +527,10 @@
                         const img = document.createElement('img');
                         img.src = result.dataUrl;
                         img.style.cssText = `
-                            width: 100%;
-                            height: 100%;
+                            width: ${thumbWidth}px;
+                            height: ${thumbHeight}px;
                             display: block;
+                            object-fit: contain;
                         `;
                         thumbnailContainer.innerHTML = '';
                         thumbnailContainer.appendChild(img);
@@ -636,6 +635,7 @@
             if (this._updateTimeout) {
                 clearTimeout(this._updateTimeout);
             }
+            this._editingLayerIndex = -1;
         }
     }
 
