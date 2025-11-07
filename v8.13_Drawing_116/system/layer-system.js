@@ -536,41 +536,50 @@
             }
         }
         
-        _handleLayerDrag(dx, dy, shiftKey) {
-            if (!this.transform) return;
-            const activeLayer = this.getActiveLayer();
-            if (!activeLayer?.layerData) return;
-            const worldScale = this.cameraSystem ? this.cameraSystem.worldContainer.scale.x : 1;
-            const adjustedDx = dx / worldScale;
-            const adjustedDy = dy / worldScale;
-            const layerId = activeLayer.layerData.id;
-            let transform = this.transform.getTransform(layerId);
-            if (!transform) {
-                transform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
-                this.transform.setTransform(layerId, transform);
-            }
-            const centerX = this.config.canvas.width / 2;
-            const centerY = this.config.canvas.height / 2;
-            if (shiftKey) {
-                if (Math.abs(dy) > Math.abs(dx)) {
-                    const scaleFactor = 1 + (dy * -0.01);
-                    const currentScale = Math.abs(transform.scaleX);
-                    const newScale = Math.max(this.config.layer.minScale, Math.min(this.config.layer.maxScale, currentScale * scaleFactor));
-                    transform.scaleX = transform.scaleX < 0 ? -newScale : newScale;
-                    transform.scaleY = transform.scaleY < 0 ? -newScale : newScale;
-                } else {
-                    transform.rotation += (dx * 0.02);
-                }
-            } else {
-                transform.x += adjustedDx;
-                transform.y += adjustedDy;
-            }
-            this.transform.applyTransform(activeLayer, transform, centerX, centerY);
-            this.transform.updateTransformPanelValues(activeLayer);
-            if (this.eventBus) {
-                this.eventBus.emit('layer:updated', { layerId, transform });
-            }
+_handleLayerDrag(dx, dy, shiftKey) {
+    if (!this.transform) return;
+    const activeLayer = this.getActiveLayer();
+    if (!activeLayer?.layerData) return;
+    const worldScale = this.cameraSystem ? this.cameraSystem.worldContainer.scale.x : 1;
+    const adjustedDx = dx / worldScale;
+    const adjustedDy = dy / worldScale;
+    const layerId = activeLayer.layerData.id;
+    let transform = this.transform.getTransform(layerId);
+    if (!transform) {
+        transform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+        this.transform.setTransform(layerId, transform);
+    }
+    const centerX = this.config.canvas.width / 2;
+    const centerY = this.config.canvas.height / 2;
+    if (shiftKey) {
+        if (Math.abs(dy) > Math.abs(dx)) {
+            const scaleFactor = 1 + (dy * -0.01);
+            const currentScale = Math.abs(transform.scaleX);
+            const newScale = Math.max(this.config.layer.minScale, Math.min(this.config.layer.maxScale, currentScale * scaleFactor));
+            transform.scaleX = transform.scaleX < 0 ? -newScale : newScale;
+            transform.scaleY = transform.scaleY < 0 ? -newScale : newScale;
+        } else {
+            transform.rotation += (dx * 0.02);
         }
+    } else {
+        transform.x += adjustedDx;
+        transform.y += adjustedDy;
+    }
+    this.transform.applyTransform(activeLayer, transform, centerX, centerY);
+    this.transform.updateTransformPanelValues(activeLayer);
+    
+    // ✅ 修正: サムネイル更新イベント追加
+    if (this.eventBus) {
+        this.eventBus.emit('layer:updated', { layerId, transform });
+        
+        // ✅ 追加: thumbnail:layer-updated イベントを発火
+        this.eventBus.emit('thumbnail:layer-updated', {
+            component: 'layer-system',
+            action: 'drag-transform',
+            data: { layerIndex: this.activeLayerIndex, layerId }
+        });
+    }
+}
 
         safeRebuildLayer(layer, newPaths) {
             try {
