@@ -1,4 +1,4 @@
-// core-initializer.js - イベントハンドラー修正版
+// core-initializer.js - UIController グローバル登録版
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -57,7 +57,6 @@ window.CoreInitializer = (function() {
         window.settingsManager = settingsManager;
         window.TegakiSettingsManager = settingsManager;
         
-        console.log('✅ SettingsManager initialized');
         return settingsManager;
     }
 
@@ -126,15 +125,11 @@ window.CoreInitializer = (function() {
             eventBus
         );
 
-        // LayerPanelRendererは内部で_setupEventListenersを呼び出し、
-        // requestUpdate()経由でレンダリングを行うため、ここでは重複登録しない
-
         const layers = layerSystem.getLayers();
         const activeIndex = layerSystem.getActiveLayerIndex();
         layerPanelRenderer.render(layers, activeIndex, null);
 
         window.layerPanelRenderer = layerPanelRenderer;
-        console.log('✅ LayerPanelRenderer initialized');
         
         return layerPanelRenderer;
     }
@@ -143,7 +138,6 @@ window.CoreInitializer = (function() {
         const config = window.TEGAKI_CONFIG;
         
         if (!config.webgpu?.enabled) {
-            console.log('[WebGPU] Disabled by config');
             return false;
         }
 
@@ -175,10 +169,6 @@ window.CoreInitializer = (function() {
 
             if (strokeRenderer && strokeRenderer.setWebGPULayer) {
                 await strokeRenderer.setWebGPULayer(webgpuLayer);
-                console.log('[WebGPU] Integration completed:', {
-                    features: capabilities.features,
-                    limits: capabilities.limits
-                });
             }
 
             window.webgpuLayer = webgpuLayer;
@@ -250,11 +240,13 @@ window.CoreInitializer = (function() {
             
             initializeSettingsManager();
             
+            // ✅ 修正: UIControllerをグローバルに登録
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
                 this.pixiApp
             );
+            window.uiController = this.uiController; // ←追加
 
             this.popupManager = initializePopupManager(this, this.coreEngine);
             
@@ -271,12 +263,6 @@ window.CoreInitializer = (function() {
                     this.pixiApp.canvas,
                     strokeRenderer
                 );
-                
-                if (this.webgpuEnabled) {
-                    console.log('✅ WebGPU enabled for SDF generation');
-                } else {
-                    console.log('⚠️ WebGPU not available, using legacy rendering');
-                }
             }
             
             this.initializeExportSystem();

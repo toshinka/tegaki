@@ -1,4 +1,4 @@
-// ui/ui-panels.js - レイヤー連番生成修正版
+// ui/ui-panels.js - 反転機能修復版
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -102,12 +102,7 @@ window.TegakiUI.UIController = class {
 
             const layerAddBtn = e.target.closest('#add-layer-btn');
             if (layerAddBtn) {
-                // ❌ 削除: const layerCount = this.layerManager?.layers?.length || 1;
-                // ❌ 削除: const result = window.CoreRuntime.api.layer.create(`レイヤー${layerCount}`);
-                
-                // ✅ 修正: createLayer()はlayer-system.js内で_generateNextLayerName()を呼び出す
                 const result = window.CoreRuntime.api.layer.create();
-                
                 if (result) {
                     window.CoreRuntime.api.layer.setActive(result.index);
                 }
@@ -218,22 +213,23 @@ window.TegakiUI.UIController = class {
         }
     }
 
+    // ✅ 修正: CoreRuntime API経由で反転を実行
     setupFlipButtons() {
         const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
         const flipVerticalBtn = document.getElementById('flip-vertical-btn');
         
         if (flipHorizontalBtn) {
             flipHorizontalBtn.addEventListener('click', () => {
-                if (this.layerManager?.flipActiveLayer) {
-                    this.layerManager.flipActiveLayer('horizontal');
+                if (window.CoreRuntime?.api?.layer?.flipActiveLayer) {
+                    window.CoreRuntime.api.layer.flipActiveLayer('horizontal');
                 }
             });
         }
         
         if (flipVerticalBtn) {
             flipVerticalBtn.addEventListener('click', () => {
-                if (this.layerManager?.flipActiveLayer) {
-                    this.layerManager.flipActiveLayer('vertical');
+                if (window.CoreRuntime?.api?.layer?.flipActiveLayer) {
+                    window.CoreRuntime.api.layer.flipActiveLayer('vertical');
                 }
             });
         }

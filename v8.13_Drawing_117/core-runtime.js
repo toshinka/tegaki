@@ -1,5 +1,4 @@
-// ===== core-runtime.js - Phase 1完全版: PointerEvent二重登録削除 =====
-// 修正: stage へのポインター登録を削除し、DrawingEngine に一本化
+// ===== core-runtime.js - 反転API追加版 =====
 
 (function() {
     'use strict';
@@ -50,35 +49,18 @@
             }
             
             this.setupLegacyCompatibility();
-            // ❌ setupPointerEvents() 削除 - DrawingEngine に一本化
             
             return this;
         },
         
-        // ========== Phase 1修正: ポインターイベント登録を削除 ==========
         setupPointerEvents() {
-            // ✅ DrawingEngine の PointerHandler に処理を完全委譲
-            // 二重登録を避けるため、このメソッドは何もしない
             console.log('[CoreRuntime] Pointer events delegated to DrawingEngine');
             this.internal.pointerEventsSetup = true;
         },
         
-        // ========== Phase 1修正: レガシーAPI互換（警告のみ） ==========
-        handlePointerDown(event) {
-            // DrawingEngine が処理するため、ここでは何もしない
-            // console.warn('[CoreRuntime] Legacy handlePointerDown - ignored (DrawingEngine handles this)');
-        },
-        
-        handlePointerMove(event) {
-            // DrawingEngine が処理するため、ここでは何もしない
-        },
-        
-        handlePointerUp(event) {
-            // DrawingEngine が処理するため、ここでは何もしない
-        },
-        
-        // ========== Phase 1修正: extractNativeEvent は不要 ==========
-        // DrawingEngine が直接 clientX/Y を使用するため削除
+        handlePointerDown(event) {},
+        handlePointerMove(event) {},
+        handlePointerUp(event) {},
         
         setupCoordinateSystem() {
             if (window.CoordinateSystem.setContainers) {
@@ -474,6 +456,14 @@
                     }
                     return false;
                 },
+                // ✅ 追加: 反転API
+                flipActiveLayer: (direction) => {
+                    if (CoreRuntime.internal.layerManager?.flipActiveLayer) {
+                        CoreRuntime.internal.layerManager.flipActiveLayer(direction);
+                        return true;
+                    }
+                    return false;
+                },
                 enterMoveMode: () => CoreRuntime.internal.layerManager?.enterLayerMoveMode() || false,
                 exitMoveMode: () => CoreRuntime.internal.layerManager?.exitLayerMoveMode() || true
             },
@@ -641,6 +631,4 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 1: PointerEvent二重登録削除版) loaded');
-console.log('   ✓ Stage pointer events removed');
-console.log('   ✓ All pointer handling delegated to DrawingEngine');
+console.log('✅ core-runtime.js (反転API追加版) loaded');

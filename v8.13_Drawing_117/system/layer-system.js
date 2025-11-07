@@ -1,4 +1,4 @@
-// ===== system/layer-system.js - v3 Vキー完全修正版 =====
+// ===== system/layer-system.js - 反転機能統合修復版 =====
 
 (function() {
     'use strict';
@@ -34,7 +34,6 @@
             this.currentFrameContainer = new PIXI.Container();
             this.currentFrameContainer.label = 'temporary_frame_container';
             
-            // 背景レイヤー作成
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_bg_' + Date.now(),
@@ -54,7 +53,6 @@
             bgLayer.layerData.backgroundColor = 0xf0e0d6;
             this.currentFrameContainer.addChild(bgLayer);
             
-            // レイヤー1作成
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_1_' + Date.now(),
@@ -190,7 +188,6 @@
             return this.activeLayerIndex;
         }
         
-        // ✅ v3修正: v112の動作する実装を復元
         _setupVKeyEvents() {
             if (!this.eventBus) return;
             this.eventBus.on('keyboard:vkey-pressed', function() {
@@ -198,7 +195,6 @@
                 if (!this.transform.app && this.app && this.cameraSystem) {
                     this.initTransform();
                 }
-                // ✅ v112と同じロジック: トグル動作
                 if (this.transform.isVKeyPressed) {
                     const activeLayer = this.getActiveLayer();
                     this.transform.exitMoveMode(activeLayer);
@@ -536,50 +532,47 @@
             }
         }
         
-_handleLayerDrag(dx, dy, shiftKey) {
-    if (!this.transform) return;
-    const activeLayer = this.getActiveLayer();
-    if (!activeLayer?.layerData) return;
-    const worldScale = this.cameraSystem ? this.cameraSystem.worldContainer.scale.x : 1;
-    const adjustedDx = dx / worldScale;
-    const adjustedDy = dy / worldScale;
-    const layerId = activeLayer.layerData.id;
-    let transform = this.transform.getTransform(layerId);
-    if (!transform) {
-        transform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
-        this.transform.setTransform(layerId, transform);
-    }
-    const centerX = this.config.canvas.width / 2;
-    const centerY = this.config.canvas.height / 2;
-    if (shiftKey) {
-        if (Math.abs(dy) > Math.abs(dx)) {
-            const scaleFactor = 1 + (dy * -0.01);
-            const currentScale = Math.abs(transform.scaleX);
-            const newScale = Math.max(this.config.layer.minScale, Math.min(this.config.layer.maxScale, currentScale * scaleFactor));
-            transform.scaleX = transform.scaleX < 0 ? -newScale : newScale;
-            transform.scaleY = transform.scaleY < 0 ? -newScale : newScale;
-        } else {
-            transform.rotation += (dx * 0.02);
+        _handleLayerDrag(dx, dy, shiftKey) {
+            if (!this.transform) return;
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer?.layerData) return;
+            const worldScale = this.cameraSystem ? this.cameraSystem.worldContainer.scale.x : 1;
+            const adjustedDx = dx / worldScale;
+            const adjustedDy = dy / worldScale;
+            const layerId = activeLayer.layerData.id;
+            let transform = this.transform.getTransform(layerId);
+            if (!transform) {
+                transform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+                this.transform.setTransform(layerId, transform);
+            }
+            const centerX = this.config.canvas.width / 2;
+            const centerY = this.config.canvas.height / 2;
+            if (shiftKey) {
+                if (Math.abs(dy) > Math.abs(dx)) {
+                    const scaleFactor = 1 + (dy * -0.01);
+                    const currentScale = Math.abs(transform.scaleX);
+                    const newScale = Math.max(this.config.layer.minScale, Math.min(this.config.layer.maxScale, currentScale * scaleFactor));
+                    transform.scaleX = transform.scaleX < 0 ? -newScale : newScale;
+                    transform.scaleY = transform.scaleY < 0 ? -newScale : newScale;
+                } else {
+                    transform.rotation += (dx * 0.02);
+                }
+            } else {
+                transform.x += adjustedDx;
+                transform.y += adjustedDy;
+            }
+            this.transform.applyTransform(activeLayer, transform, centerX, centerY);
+            this.transform.updateTransformPanelValues(activeLayer);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:updated', { layerId, transform });
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'drag-transform',
+                    data: { layerIndex: this.activeLayerIndex, layerId }
+                });
+            }
         }
-    } else {
-        transform.x += adjustedDx;
-        transform.y += adjustedDy;
-    }
-    this.transform.applyTransform(activeLayer, transform, centerX, centerY);
-    this.transform.updateTransformPanelValues(activeLayer);
-    
-    // ✅ 修正: サムネイル更新イベント追加
-    if (this.eventBus) {
-        this.eventBus.emit('layer:updated', { layerId, transform });
-        
-        // ✅ 追加: thumbnail:layer-updated イベントを発火
-        this.eventBus.emit('thumbnail:layer-updated', {
-            component: 'layer-system',
-            action: 'drag-transform',
-            data: { layerIndex: this.activeLayerIndex, layerId }
-        });
-    }
-}
 
         safeRebuildLayer(layer, newPaths) {
             try {
@@ -824,9 +817,8 @@ _handleLayerDrag(dx, dy, shiftKey) {
             }
         }
 
-        // ✅ v3修正: v112の動作する実装を復元（直接keydownリスナー）
+        // ✅ 修正: keyboard-handler.jsからのイベントとkeydownの両方に対応
         _setupLayerOperations() {
-            // keyboard-handler.jsからのEventBus経由イベントを受信
             if (this.eventBus) {
                 this.eventBus.on('layer:copy-request', () => {
                     if (window.drawingClipboard) {
@@ -839,9 +831,13 @@ _handleLayerDrag(dx, dy, shiftKey) {
                         window.drawingClipboard.pasteLayer();
                     }
                 });
+                
+                // ✅ 追加: keyboard-handler.jsからの反転イベントを受信
+                this.eventBus.on('layer:flip-by-key', ({ direction }) => {
+                    this.flipActiveLayer(direction);
+                });
             }
             
-            // ✅ v3修正: v112と同じ直接keydownリスナーを復元
             document.addEventListener('keydown', (e) => {
                 const activeElement = document.activeElement;
                 if (activeElement && (
@@ -855,13 +851,11 @@ _handleLayerDrag(dx, dy, shiftKey) {
                 const keymap = window.TEGAKI_KEYMAP;
                 if (!keymap) return;
                 
-                // ✅ 重要: this.vKeyPressedを使用してVキー状態を取得
                 const context = { vMode: this.vKeyPressed };
                 const action = keymap.getAction(e, context);
                 if (!action) return;
                 
                 switch(action) {
-                    // GIFフレーム操作
                     case 'GIF_PREV_FRAME':
                         if (this.animationSystem?.goToPreviousFrame) {
                             this.animationSystem.goToPreviousFrame();
@@ -882,7 +876,6 @@ _handleLayerDrag(dx, dy, shiftKey) {
                         e.preventDefault();
                         break;
                     
-                    // レイヤー階層操作
                     case 'LAYER_HIERARCHY_UP':
                         this.moveActiveLayerHierarchy('up');
                         e.preventDefault();
@@ -893,7 +886,6 @@ _handleLayerDrag(dx, dy, shiftKey) {
                         e.preventDefault();
                         break;
                     
-                    // レイヤー順序操作
                     case 'LAYER_ORDER_UP':
                         const layers1 = this.getLayers();
                         const currentIndex1 = this.activeLayerIndex;
@@ -921,7 +913,6 @@ _handleLayerDrag(dx, dy, shiftKey) {
                         e.preventDefault();
                         break;
                     
-                    // Vキーモード時のツール切り替えでモード終了
                     case 'TOOL_PEN':
                     case 'TOOL_ERASER':
                         if (this.isLayerMoveMode) {
@@ -930,7 +921,6 @@ _handleLayerDrag(dx, dy, shiftKey) {
                         e.preventDefault();
                         break;
                     
-                    // Vキーモード中のレイヤー移動
                     case 'LAYER_MOVE_UP':
                         this.moveActiveLayer('ArrowUp');
                         e.preventDefault();
@@ -951,7 +941,6 @@ _handleLayerDrag(dx, dy, shiftKey) {
                         e.preventDefault();
                         break;
                     
-                    // Vキーモード中のスケール
                     case 'LAYER_SCALE_UP':
                         this.transformActiveLayer('ArrowUp');
                         e.preventDefault();
@@ -962,7 +951,6 @@ _handleLayerDrag(dx, dy, shiftKey) {
                         e.preventDefault();
                         break;
                     
-                    // Vキーモード中の回転
                     case 'LAYER_ROTATE_LEFT':
                         this.transformActiveLayer('ArrowLeft');
                         e.preventDefault();
@@ -973,7 +961,6 @@ _handleLayerDrag(dx, dy, shiftKey) {
                         e.preventDefault();
                         break;
                     
-                    // Vキーモード中の反転
                     case 'LAYER_FLIP_HORIZONTAL':
                         this.flipActiveLayer('horizontal');
                         e.preventDefault();
@@ -986,7 +973,6 @@ _handleLayerDrag(dx, dy, shiftKey) {
                 }
             });
             
-            // ウィンドウフォーカス喪失時にVキーモードを終了
             window.addEventListener('blur', () => {
                 if (this.vKeyPressed) {
                     this.exitLayerMoveMode();
@@ -1359,5 +1345,3 @@ _handleLayerDrag(dx, dy, shiftKey) {
     window.TegakiLayerSystem = LayerSystem;
 
 })();
-
-console.log('✅ layer-system.js v3 (Vキー完全修正・v112ロジック復元) loaded');
