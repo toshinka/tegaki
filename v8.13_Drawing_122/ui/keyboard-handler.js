@@ -1,4 +1,4 @@
-// ui/keyboard-handler.js - Vキーモード完全修復版 (DRY/SOLID準拠)
+// ===== ui/keyboard-handler.js - 完全改修版 (DRY/SOLID準拠) =====
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -30,14 +30,14 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // Vキーの状態管理
+        // Vキーの状態管理（キーリピート無視）
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-            if (!vKeyPressed) {
+            if (!vKeyPressed && !e.repeat) {
                 vKeyPressed = true;
                 eventBus.emit('keyboard:vkey-pressed', { pressed: true });
-                e.preventDefault();
-                return;
             }
+            e.preventDefault();
+            return;
         }
         
         // アクション取得時にVキー状態を渡す
@@ -118,6 +118,11 @@ window.KeyboardHandler = (function() {
             
             case 'LAYER_PASTE':
                 eventBus.emit('layer:paste-request');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_RESET':
+                eventBus.emit('layer:reset-transform');
                 event.preventDefault();
                 break;
             
@@ -392,4 +397,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js (Vキーモード完全修復版) loaded');
+console.log('✅ keyboard-handler.js (完全改修版 - DRY/SOLID準拠) loaded');

@@ -1,7 +1,4 @@
-// ===== system/layer-transform.js - サムネイル更新統一版 =====
-// 修正内容:
-// 1. ドラッグ操作時のサムネイル更新イベント追加
-// 2. スライダー・ドラッグ経路を完全統一
+// ===== system/layer-transform.js - 完全改修版 (DRY/SOLID準拠) =====
 
 (function() {
     'use strict';
@@ -15,8 +12,10 @@
             this.transforms = new Map();
             this.isVKeyPressed = false;
             this.isDragging = false;
+            this.isPanelDragging = false;
             this.dragLastPoint = { x: 0, y: 0 };
             this.dragStartPoint = { x: 0, y: 0 };
+            this.panelDragOffset = { x: 0, y: 0 };
             
             this.transformPanel = null;
             
@@ -41,14 +40,36 @@
             this.cameraSystem = cameraSystem;
             this.coordinateSystem = window.CoordinateSystem;
             
-            if (!this.coordinateSystem) {
-                console.warn('[LayerTransform] window.CoordinateSystem not found');
-            }
-            
             this._setupTransformPanel();
             this._setupDragEvents();
             this._setupFlipKeyEvents();
             this._setupWheelEvents();
+            this._setupEventListeners();
+        }
+
+        _setupEventListeners() {
+            if (!this.eventBus) return;
+            
+            this.eventBus.on('keyboard:vkey-pressed', () => {
+                this.enterMoveMode();
+            });
+            
+            this.eventBus.on('keyboard:vkey-released', () => {
+                const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
+                this.exitMoveMode(activeLayer);
+            });
+            
+            this.eventBus.on('layer:flip-by-key', (data) => {
+                if (this.isVKeyPressed && this.onFlipRequest) {
+                    this.onFlipRequest(data.direction);
+                }
+            });
+            
+            this.eventBus.on('layer:reset-transform', () => {
+                if (this.isVKeyPressed) {
+                    this.resetTransform();
+                }
+            });
         }
 
         enterMoveMode() {
@@ -67,6 +88,7 @@
             
             this._updateCursor();
             this._updateFlipButtonsAvailability(true);
+            this._initializeTransformForActiveLayer();
         }
         
         exitMoveMode(activeLayer) {
@@ -88,12 +110,40 @@
             this._updateFlipButtonsAvailability(false);
         }
         
-        toggleMoveMode(activeLayer) {
-            if (this.isVKeyPressed) {
-                this.exitMoveMode(activeLayer);
-            } else {
-                this.enterMoveMode();
+        _initializeTransformForActiveLayer() {
+            if (!this.onGetActiveLayer) return;
+            const activeLayer = this.onGetActiveLayer();
+            if (!activeLayer?.layerData) return;
+            
+            const layerId = activeLayer.layerData.id;
+            if (!this.transforms.has(layerId)) {
+                this.transforms.set(layerId, {
+                    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                });
             }
+            
+            this.updateTransformPanelValues(activeLayer);
+            this.updateFlipButtons(activeLayer);
+        }
+
+        resetTransform() {
+            if (!this.onGetActiveLayer) return;
+            const activeLayer = this.onGetActiveLayer();
+            if (!activeLayer?.layerData) return;
+            
+            const layerId = activeLayer.layerData.id;
+            this.transforms.set(layerId, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+            
+            activeLayer.position.set(0, 0);
+            activeLayer.rotation = 0;
+            activeLayer.scale.set(1, 1);
+            activeLayer.pivot.set(0, 0);
+            
+            this.updateTransformPanelValues(activeLayer);
+            this.updateFlipButtons(activeLayer);
+            this._emitTransformUpdated(layerId, activeLayer);
         }
 
         updateTransform(layer, property, value) {
@@ -119,13 +169,23 @@
                     transform.y = Number(value) || 0;
                     break;
                 case 'rotation':
-                    transform.rotation = Number(value) || 0;
+                    if (this.config.layer.rotationLoop) {
+                        const maxRot = this.config.layer.maxRotation * Math.PI / 180;
+                        let rot = Number(value) || 0;
+                        while (rot > maxRot) rot -= (maxRot * 2);
+                        while (rot < -maxRot) rot += (maxRot * 2);
+                        transform.rotation = rot;
+                    } else {
+                        transform.rotation = Number(value) || 0;
+                    }
                     break;
                 case 'scale':
                     const hFlipped = transform.scaleX < 0;
                     const vFlipped = transform.scaleY < 0;
-                    transform.scaleX = hFlipped ? -Number(value) : Number(value);
-                    transform.scaleY = vFlipped ? -Number(value) : Number(value);
+                    const scaleVal = Math.max(this.config.layer.minScale, 
+                                             Math.min(this.config.layer.maxScale, Number(value)));
+                    transform.scaleX = hFlipped ? -scaleVal : scaleVal;
+                    transform.scaleY = vFlipped ? -scaleVal : scaleVal;
                     break;
             }
             
@@ -154,9 +214,6 @@
             
             if (!isFinite(x) || !isFinite(y) || !isFinite(rotation) || 
                 !isFinite(scaleX) || !isFinite(scaleY)) {
-                console.warn('[LayerTransform] Invalid transform values detected', {
-                    x, y, rotation, scaleX, scaleY
-                });
                 return;
             }
             
@@ -305,6 +362,12 @@
                 return;
             }
             
+            if (this.config.layer.rotationLoop) {
+                const maxRot = Math.PI;
+                while (transform.rotation > maxRot) transform.rotation -= (maxRot * 2);
+                while (transform.rotation < -maxRot) transform.rotation += (maxRot * 2);
+            }
+            
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateTransformPanelValues(layer);
             this._emitTransformUpdated(layerId, layer);
@@ -418,10 +481,7 @@
             
             canvas.addEventListener('pointerdown', (e) => {
                 if (this.isVKeyPressed && e.button === 0) {
-                    if (!this.coordinateSystem) {
-                        console.warn('[LayerTransform] coordinateSystem not available');
-                        return;
-                    }
+                    if (!this.coordinateSystem) return;
                     
                     const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
                     
@@ -447,16 +507,57 @@
             });
         }
 
+        _setupPanelDrag() {
+            if (!this.transformPanel) return;
+            
+            const header = this.transformPanel.querySelector('.panel-header');
+            if (!header) return;
+            
+            header.style.cursor = 'grab';
+            
+            header.addEventListener('pointerdown', (e) => {
+                if (e.target.closest('.slider-container') || e.target.closest('button')) {
+                    return;
+                }
+                
+                this.isPanelDragging = true;
+                header.style.cursor = 'grabbing';
+                
+                const rect = this.transformPanel.getBoundingClientRect();
+                this.panelDragOffset = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top
+                };
+                
+                e.preventDefault();
+            });
+            
+            document.addEventListener('pointermove', (e) => {
+                if (!this.isPanelDragging) return;
+                
+                const newLeft = e.clientX - this.panelDragOffset.x;
+                const newTop = e.clientY - this.panelDragOffset.y;
+                
+                this.transformPanel.style.left = `${newLeft}px`;
+                this.transformPanel.style.top = `${newTop}px`;
+                this.transformPanel.style.right = 'auto';
+                this.transformPanel.style.bottom = 'auto';
+            });
+            
+            document.addEventListener('pointerup', () => {
+                if (this.isPanelDragging) {
+                    this.isPanelDragging = false;
+                    header.style.cursor = 'grab';
+                }
+            });
+        }
+
         _handleDrag(e) {
-            if (!this.coordinateSystem) {
-                console.warn('[LayerTransform] coordinateSystem not available in _handleDrag');
-                return;
-            }
+            if (!this.coordinateSystem) return;
             
             const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
             
             if (!isFinite(world.worldX) || !isFinite(world.worldY)) {
-                console.warn('[LayerTransform] screenClientToWorld returned non-finite values', world);
                 return;
             }
             
@@ -471,31 +572,7 @@
         }
 
         _setupFlipKeyEvents() {
-            document.addEventListener('keydown', (e) => {
-                if (!this.isVKeyPressed) return;
-                
-                const activeElement = document.activeElement;
-                if (activeElement && (
-                    activeElement.tagName === 'INPUT' ||
-                    activeElement.tagName === 'TEXTAREA' ||
-                    activeElement.isContentEditable
-                )) {
-                    return;
-                }
-                
-                if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    if (e.shiftKey) {
-                        if (this.onFlipRequest) {
-                            this.onFlipRequest('vertical');
-                        }
-                    } else {
-                        if (this.onFlipRequest) {
-                            this.onFlipRequest('horizontal');
-                        }
-                    }
-                    e.preventDefault();
-                }
-            });
+            // keyboard-handler.jsに処理を委譲
         }
 
         _setupWheelEvents() {
@@ -524,6 +601,12 @@
                 if (e.shiftKey) {
                     const rotationDelta = e.deltaY > 0 ? 0.05 : -0.05;
                     transform.rotation += rotationDelta;
+                    
+                    if (this.config.layer.rotationLoop) {
+                        const maxRot = Math.PI;
+                        while (transform.rotation > maxRot) transform.rotation -= (maxRot * 2);
+                        while (transform.rotation < -maxRot) transform.rotation += (maxRot * 2);
+                    }
                 } else {
                     const scaleDelta = e.deltaY > 0 ? 0.95 : 1.05;
                     const currentScale = Math.abs(transform.scaleX);
@@ -550,7 +633,6 @@
             }, { passive: false });
         }
 
-        // ✅ 修正: イベント発火統一
         _emitTransformUpdated(layerId, layer) {
             if (this.eventBus) {
                 const layerMgr = window.CoreRuntime?.internal?.layerManager;
@@ -604,7 +686,6 @@
                 data: { layerIndex, layerId, transform: transformPayload }
             });
             
-            // ✅ 修正: サムネイル更新イベント必須発火
             this.eventBus.emit('thumbnail:layer-updated', {
                 component: 'drawing',
                 action: 'transform-applied',
@@ -646,25 +727,23 @@
         _setupTransformPanel() {
             this.transformPanel = document.getElementById('layer-transform-panel');
             
-            if (!this.transformPanel) {
-                return;
-            }
+            if (!this.transformPanel) return;
             
             this._setupSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
                 return Math.round(value) + 'px';
-            });
+            }, 'x');
             
             this._setupSlider('layer-y-slider', this.config.layer.minY, this.config.layer.maxY, 0, (value) => {
                 return Math.round(value) + 'px';
-            });
+            }, 'y');
             
             this._setupSlider('layer-rotation-slider', this.config.layer.minRotation, this.config.layer.maxRotation, 0, (value) => {
                 return Math.round(value) + '°';
-            });
+            }, 'rotation');
             
             this._setupSlider('layer-scale-slider', this.config.layer.minScale, this.config.layer.maxScale, 1.0, (value) => {
                 return value.toFixed(2) + 'x';
-            });
+            }, 'scale');
             
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
@@ -690,9 +769,11 @@
                 flipVerticalBtn.style.opacity = '0.4';
                 flipVerticalBtn.style.cursor = 'not-allowed';
             }
+            
+            this._setupPanelDrag();
         }
 
-        _setupSlider(sliderId, min, max, initial, formatCallback) {
+        _setupSlider(sliderId, min, max, initial, formatCallback, property) {
             const container = document.getElementById(sliderId);
             if (!container) return;
 
@@ -706,8 +787,15 @@
             let dragging = false;
 
             const update = (newValue) => {
-                value = Math.max(min, Math.min(max, newValue));
-                const percentage = ((value - min) / (max - min)) * 100;
+                if (property === 'rotation' && this.config.layer.rotationLoop) {
+                    while (newValue > max) newValue -= (max - min);
+                    while (newValue < min) newValue += (max - min);
+                } else {
+                    value = Math.max(min, Math.min(max, newValue));
+                }
+                value = newValue;
+                
+                let percentage = ((value - min) / (max - min)) * 100;
                 
                 track.style.width = percentage + '%';
                 handle.style.left = percentage + '%';
@@ -747,11 +835,98 @@
                 dragging = false;
             });
 
+            valueDisplay.addEventListener('dblclick', () => {
+                this._showValueInput(valueDisplay, property, min, max, value, formatCallback);
+            });
+
             container.updateValue = (newValue) => {
                 update(newValue);
             };
 
             update(initial);
+        }
+
+        _showValueInput(valueDisplay, property, min, max, currentValue, formatCallback) {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'value-input';
+            input.style.cssText = `
+                width: 60px;
+                padding: 2px 4px;
+                font-size: 12px;
+                border: 1px solid #666;
+                background: #2a2a2a;
+                color: #fff;
+                text-align: center;
+            `;
+            
+            const numValue = property === 'rotation' 
+                ? Math.round(currentValue) 
+                : property === 'scale' 
+                    ? currentValue.toFixed(2)
+                    : Math.round(currentValue);
+            
+            input.value = numValue;
+            
+            const parent = valueDisplay.parentNode;
+            parent.replaceChild(input, valueDisplay);
+            input.focus();
+            input.select();
+            
+            const restore = () => {
+                parent.replaceChild(valueDisplay, input);
+            };
+            
+            const commit = () => {
+                let newValue = parseFloat(input.value.replace(/[^\d.-]/g, ''));
+                
+                if (isNaN(newValue)) {
+                    restore();
+                    return;
+                }
+                
+                if (property === 'rotation') {
+                    newValue = (newValue * Math.PI) / 180;
+                } else if (property === 'scale') {
+                    newValue = Math.max(this.config.layer.minScale, newValue);
+                }
+                
+                if (property !== 'scale') {
+                    newValue = Math.max(min, Math.min(max, newValue));
+                }
+                
+                const sliderId = property === 'x' ? 'layer-x-slider'
+                    : property === 'y' ? 'layer-y-slider'
+                    : property === 'rotation' ? 'layer-rotation-slider'
+                    : 'layer-scale-slider';
+                
+                const slider = document.getElementById(sliderId);
+                if (slider?.updateValue) {
+                    const displayValue = property === 'rotation' 
+                        ? (newValue * 180 / Math.PI)
+                        : newValue;
+                    slider.updateValue(displayValue);
+                }
+                
+                if (this.onSliderChange) {
+                    this.onSliderChange(sliderId, newValue);
+                }
+                
+                restore();
+            };
+            
+            input.addEventListener('blur', commit);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    commit();
+                } else if (e.key === 'Escape') {
+                    restore();
+                }
+                
+                if (!/[\d.-]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'Escape'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
         }
 
         _getSafeCanvas() {
@@ -882,4 +1057,4 @@
 
 })();
 
-console.log('✅ layer-transform.js (サムネイル更新統一版)');
+console.log('✅ layer-transform.js (完全改修版 - DRY/SOLID準拠)');

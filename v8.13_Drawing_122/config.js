@@ -1,4 +1,4 @@
-// ===== config.js - Vキーモード対応キーマップ完全版 (DRY/SOLID準拠) =====
+// ===== config.js - レイヤートランスフォーム改修版 =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -58,9 +58,10 @@ window.TEGAKI_CONFIG = {
         minY: -1000,
         maxY: 1000,
         minScale: 0.1,
-        maxScale: 3.0,
+        maxScale: 30.0,
         minRotation: -180,
-        maxRotation: 180
+        maxRotation: 180,
+        rotationLoop: true
     },
     background: { 
         color: 0xf0e0d6 
@@ -97,10 +98,8 @@ window.TEGAKI_CONFIG = {
     debug: false
 };
 
-// ✅ 統一キーマップシステム (すべてのショートカットを一元管理)
 window.TEGAKI_KEYMAP = {
     actions: {
-        // === 基本操作 ===
         UNDO: {
             key: 'KeyZ',
             ctrl: true,
@@ -111,8 +110,6 @@ window.TEGAKI_KEYMAP = {
             { key: 'KeyY', ctrl: true, shift: false, description: 'やり直し' },
             { key: 'KeyZ', ctrl: true, shift: true, description: 'やり直し' }
         ],
-        
-        // === ツール切り替え ===
         TOOL_PEN: {
             key: 'KeyP',
             ctrl: false,
@@ -125,8 +122,6 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             description: '消しゴムツール'
         },
-        
-        // === レイヤー操作 ===
         LAYER_CREATE: {
             key: 'KeyL',
             ctrl: true,
@@ -155,8 +150,13 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             description: 'レイヤーペースト'
         },
-        
-        // === レイヤー移動モード (V押下時) ===
+        LAYER_RESET: {
+            key: 'Digit0',
+            ctrl: true,
+            shift: false,
+            vMode: true,
+            description: 'レイヤー位置・サイズリセット'
+        },
         LAYER_MOVE_UP: {
             key: 'ArrowUp',
             vMode: true,
@@ -229,8 +229,6 @@ window.TEGAKI_KEYMAP = {
             alt: false,
             description: 'レイヤー垂直反転'
         },
-        
-        // === レイヤー階層操作 (通常モード) ===
         LAYER_HIERARCHY_UP: {
             key: 'ArrowUp',
             ctrl: false,
@@ -259,8 +257,6 @@ window.TEGAKI_KEYMAP = {
             vMode: false,
             description: 'レイヤー順序を下げる'
         },
-        
-        // === カメラ操作 (通常モード) ===
         CAMERA_FLIP_HORIZONTAL: {
             key: 'KeyH',
             vMode: false,
@@ -281,10 +277,9 @@ window.TEGAKI_KEYMAP = {
             key: 'Digit0',
             ctrl: true,
             shift: false,
+            vMode: false,
             description: 'カメラリセット'
         },
-        
-        // === アニメーション操作 ===
         GIF_PREV_FRAME: {
             key: 'ArrowLeft',
             ctrl: true,
@@ -323,8 +318,6 @@ window.TEGAKI_KEYMAP = {
             shift: true,
             description: 'フレームコピー'
         },
-        
-        // === UI操作 ===
         SETTINGS_OPEN: {
             key: 'Comma',
             ctrl: true,
@@ -345,12 +338,6 @@ window.TEGAKI_KEYMAP = {
         }
     },
     
-    /**
-     * イベントからアクション名を取得
-     * @param {KeyboardEvent} event 
-     * @param {Object} context - { vMode: boolean }
-     * @returns {string|null} アクション名
-     */
     getAction(event, context = {}) {
         const { vMode = false } = context;
         const { code, ctrlKey, metaKey, shiftKey, altKey, repeat } = event;
@@ -374,9 +361,6 @@ window.TEGAKI_KEYMAP = {
         return null;
     },
     
-    /**
-     * キーコードの表示名を取得
-     */
     getKeyDisplayName(keyCode) {
         const displayNames = {
             'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H',
@@ -390,9 +374,6 @@ window.TEGAKI_KEYMAP = {
         return displayNames[keyCode] || keyCode;
     },
     
-    /**
-     * アクションの説明とキーバインドを取得
-     */
     getShortcutList() {
         const list = [];
         for (const [actionName, config] of Object.entries(this.actions)) {
@@ -416,7 +397,6 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
-// === レガシー互換性維持 (将来削除予定) ===
 window.TEGAKI_KEYCONFIG = {
     pen: 'KeyP',
     eraser: 'KeyE',
@@ -447,4 +427,4 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (Vキーモード対応完全版 - DRY/SOLID準拠) loaded');
+console.log('✅ config.js (レイヤートランスフォーム改修版) loaded');
