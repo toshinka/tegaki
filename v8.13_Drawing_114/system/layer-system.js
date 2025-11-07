@@ -1,4 +1,4 @@
-// system/layer-system.js - Phase 1-3: レイヤー連番名完全修正版
+// ===== system/layer-system.js - イベント統合完全版 =====
 
 (function() {
     'use strict';
@@ -54,7 +54,7 @@
             bgLayer.layerData.backgroundColor = 0xf0e0d6;
             this.currentFrameContainer.addChild(bgLayer);
             
-            // レイヤー1作成（連番を1に初期化）
+            // レイヤー1作成
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_1_' + Date.now(),
@@ -332,7 +332,6 @@
             const activeLayer = this.getActiveLayer();
             const layerIndex = this.activeLayerIndex;
             
-            // 背景レイヤーには描画させない
             if (activeLayer.layerData?.isBackground) return;
             
             if (activeLayer.layerData && activeLayer.layerData.paths) {
@@ -364,7 +363,6 @@
             if (layerIndex >= 0 && layerIndex < layers.length) {
                 const layer = layers[layerIndex];
                 
-                // 背景レイヤーには描画させない
                 if (layer.layerData?.isBackground) return;
                 
                 layer.layerData.paths.push(path);
@@ -816,92 +814,117 @@
         }
 
         _setupLayerOperations() {
-            document.addEventListener('keydown', (e) => {
-                const activeElement = document.activeElement;
-                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.isContentEditable)) {
-                    return;
-                }
-                const keymap = window.TEGAKI_KEYMAP;
-                if (!keymap) return;
-                const context = { vMode: this.vKeyPressed };
-                const action = keymap.getAction(e, context);
-                if (!action) return;
-                switch(action) {
-                    case 'GIF_PREV_FRAME':
-                        if (this.animationSystem?.goToPreviousFrame) {
-                            this.animationSystem.goToPreviousFrame();
-                        }
-                        if (this.eventBus) {
-                            this.eventBus.emit('gif:prev-frame-requested');
-                        }
-                        e.preventDefault();
-                        break;
-                    case 'GIF_NEXT_FRAME':
-                        if (this.animationSystem?.goToNextFrame) {
-                            this.animationSystem.goToNextFrame();
-                        }
-                        if (this.eventBus) {
-                            this.eventBus.emit('gif:next-frame-requested');
-                        }
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_HIERARCHY_UP':
-                        this.moveActiveLayerHierarchy('up');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_HIERARCHY_DOWN':
-                        this.moveActiveLayerHierarchy('down');
-                        e.preventDefault();
-                        break;
-                    case 'TOOL_PEN':
-                    case 'TOOL_ERASER':
-                        if (this.isLayerMoveMode) {
-                            this.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_MOVE_UP':
-                        this.moveActiveLayer('ArrowUp');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_MOVE_DOWN':
-                        this.moveActiveLayer('ArrowDown');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_MOVE_LEFT':
-                        this.moveActiveLayer('ArrowLeft');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_MOVE_RIGHT':
-                        this.moveActiveLayer('ArrowRight');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_SCALE_UP':
-                        this.transformActiveLayer('ArrowUp');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_SCALE_DOWN':
-                        this.transformActiveLayer('ArrowDown');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_ROTATE_LEFT':
-                        this.transformActiveLayer('ArrowLeft');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_ROTATE_RIGHT':
-                        this.transformActiveLayer('ArrowRight');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_FLIP_HORIZONTAL':
-                        this.flipActiveLayer('horizontal');
-                        e.preventDefault();
-                        break;
-                    case 'LAYER_FLIP_VERTICAL':
-                        this.flipActiveLayer('vertical');
-                        e.preventDefault();
-                        break;
+            if (!this.eventBus) return;
+            
+            // keyboard-handler.jsからのイベントを受信
+            this.eventBus.on('layer:toggle-move-mode', () => {
+                this.toggleLayerMoveMode();
+            });
+            
+            this.eventBus.on('layer:move-by-key', (data) => {
+                this.moveActiveLayer(data.direction);
+            });
+            
+            this.eventBus.on('layer:scale-by-key', (data) => {
+                this.transformActiveLayer(data.direction);
+            });
+            
+            this.eventBus.on('layer:rotate-by-key', (data) => {
+                this.transformActiveLayer(data.direction);
+            });
+            
+            this.eventBus.on('layer:flip-by-key', (data) => {
+                this.flipActiveLayer(data.direction);
+            });
+            
+            this.eventBus.on('layer:select-next', () => {
+                this.moveActiveLayerHierarchy('up');
+            });
+            
+            this.eventBus.on('layer:select-prev', () => {
+                this.moveActiveLayerHierarchy('down');
+            });
+            
+            this.eventBus.on('layer:order-up', () => {
+                const layers = this.getLayers();
+                const currentIndex = this.activeLayerIndex;
+                const activeLayer = layers[currentIndex];
+                
+                if (!activeLayer || activeLayer.layerData?.isBackground) return;
+                if (currentIndex >= layers.length - 1) return;
+                
+                this.reorderLayers(currentIndex, currentIndex + 1);
+            });
+            
+            this.eventBus.on('layer:order-down', () => {
+                const layers = this.getLayers();
+                const currentIndex = this.activeLayerIndex;
+                const activeLayer = layers[currentIndex];
+                
+                if (!activeLayer || activeLayer.layerData?.isBackground) return;
+                if (currentIndex <= 0) return;
+                
+                const targetLayer = layers[currentIndex - 1];
+                if (targetLayer?.layerData?.isBackground) return;
+                
+                this.reorderLayers(currentIndex, currentIndex - 1);
+            });
+            
+            this.eventBus.on('layer:copy-request', () => {
+                if (window.drawingClipboard) {
+                    window.drawingClipboard.copyActiveLayer();
                 }
             });
+            
+            this.eventBus.on('layer:paste-request', () => {
+                if (window.drawingClipboard) {
+                    window.drawingClipboard.pasteLayer();
+                }
+            });
+            
+            // アニメーションフレーム操作（直接キーリスナーで処理）
+            const keymap = window.TEGAKI_KEYMAP;
+            if (keymap) {
+                document.addEventListener('keydown', (e) => {
+                    const activeElement = document.activeElement;
+                    if (activeElement && (
+                        activeElement.tagName === 'INPUT' || 
+                        activeElement.tagName === 'TEXTAREA' || 
+                        activeElement.isContentEditable
+                    )) {
+                        return;
+                    }
+                    
+                    const context = { vMode: this.vKeyPressed };
+                    const action = keymap.getAction(e, context);
+                    
+                    if (!action) return;
+                    
+                    switch(action) {
+                        case 'GIF_PREV_FRAME':
+                            if (this.animationSystem?.goToPreviousFrame) {
+                                this.animationSystem.goToPreviousFrame();
+                            }
+                            if (this.eventBus) {
+                                this.eventBus.emit('gif:prev-frame-requested');
+                            }
+                            e.preventDefault();
+                            break;
+                        
+                        case 'GIF_NEXT_FRAME':
+                            if (this.animationSystem?.goToNextFrame) {
+                                this.animationSystem.goToNextFrame();
+                            }
+                            if (this.eventBus) {
+                                this.eventBus.emit('gif:next-frame-requested');
+                            }
+                            e.preventDefault();
+                            break;
+                    }
+                });
+            }
+            
+            // Vキーリリース時の処理
             window.addEventListener('blur', () => {
                 if (this.vKeyPressed) {
                     this.exitLayerMoveMode();
@@ -967,10 +990,6 @@
             }
         }
 
-        /**
-         * Phase 1-3: レイヤー連番名生成
-         * 既存レイヤー名から最大番号を取得し、次番号を生成
-         */
         _generateNextLayerName() {
             const layers = this.getLayers();
             const layerNames = layers
@@ -1278,3 +1297,5 @@
     window.TegakiLayerSystem = LayerSystem;
 
 })();
+
+console.log('✅ layer-system.js (イベント統合完全版) loaded');
