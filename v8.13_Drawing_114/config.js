@@ -1,4 +1,4 @@
-// ===== config.js - Phase 4-B-4完全版 (WebGPU/MSDF設定追加) =====
+// ===== config.js - 統合キーマップ完全版 (DRY/SOLID準拠) =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -23,7 +23,6 @@ window.TEGAKI_CONFIG = {
         minWidth: 1,
         maxWidth: 10
     },
-    // ✅ Phase 4-A/4-B: WebGPU/MSDF設定追加
     webgpu: {
         enabled: true,
         fallbackToWebGL: true,
@@ -98,108 +97,72 @@ window.TEGAKI_CONFIG = {
     debug: false
 };
 
-// ✅ キーマッピング管理システム
+// ✅ 統一キーマップシステム (すべてのショートカットを一元管理)
 window.TEGAKI_KEYMAP = {
     actions: {
+        // === 基本操作 ===
         UNDO: {
             key: 'KeyZ',
             ctrl: true,
             shift: false,
-            alt: false,
             description: '元に戻す'
         },
         REDO: [
-            { key: 'KeyY', ctrl: true, shift: false, alt: false, description: 'やり直し' },
-            { key: 'KeyZ', ctrl: true, shift: true, alt: false, description: 'やり直し' }
+            { key: 'KeyY', ctrl: true, shift: false, description: 'やり直し' },
+            { key: 'KeyZ', ctrl: true, shift: true, description: 'やり直し' }
         ],
+        
+        // === ツール切り替え ===
         TOOL_PEN: {
             key: 'KeyP',
             ctrl: false,
             shift: false,
-            alt: false,
             description: 'ペンツール'
         },
         TOOL_ERASER: {
             key: 'KeyE',
             ctrl: false,
             shift: false,
-            alt: false,
             description: '消しゴムツール'
         },
-        SETTINGS_OPEN: {
-            key: 'Comma',
-            ctrl: true,
-            shift: false,
-            alt: false,
-            description: '設定を開く'
-        },
+        
+        // === レイヤー操作 ===
         LAYER_CREATE: {
             key: 'KeyL',
             ctrl: true,
             shift: false,
-            alt: false,
             description: 'レイヤー追加'
         },
         LAYER_DELETE_DRAWINGS: [
-            { 
-                key: 'Delete', 
-                ctrl: false, 
-                shift: false, 
-                alt: false, 
-                description: 'アクティブレイヤーの絵を削除' 
-            },
-            { 
-                key: 'Backspace', 
-                ctrl: false, 
-                shift: false, 
-                alt: false, 
-                description: 'アクティブレイヤーの絵を削除' 
-            }
+            { key: 'Delete', ctrl: false, shift: false, description: 'レイヤーの絵を削除' },
+            { key: 'Backspace', ctrl: false, shift: false, description: 'レイヤーの絵を削除' }
         ],
         LAYER_CLEAR: {
             key: 'Delete',
             ctrl: true,
             shift: false,
-            alt: false,
-            description: 'レイヤークリア(Ctrl+Del)'
+            description: 'レイヤークリア'
         },
         LAYER_COPY: {
             key: 'KeyC',
             ctrl: true,
             shift: false,
-            alt: false,
             description: 'レイヤーコピー'
         },
         LAYER_PASTE: {
             key: 'KeyV',
             ctrl: true,
             shift: false,
-            alt: false,
             description: 'レイヤーペースト'
         },
+        
+        // === レイヤー移動モード (V押下時) ===
         LAYER_MOVE_MODE_TOGGLE: {
             key: 'KeyV',
             ctrl: false,
             shift: false,
-            alt: false,
             repeat: false,
             description: 'レイヤー移動モード切替'
-        },
-        LAYER_HIERARCHY_UP: {
-            key: 'ArrowUp',
-            ctrl: false,
-            shift: false,
-            alt: false,
-            vMode: false,
-            description: 'レイヤー階層を上へ'
-        },
-        LAYER_HIERARCHY_DOWN: {
-            key: 'ArrowDown',
-            ctrl: false,
-            shift: false,
-            alt: false,
-            vMode: false,
-            description: 'レイヤー階層を下へ'
         },
         LAYER_MOVE_UP: {
             key: 'ArrowUp',
@@ -249,12 +212,55 @@ window.TEGAKI_KEYMAP = {
             shift: true,
             description: 'レイヤー右回転'
         },
+        LAYER_FLIP_HORIZONTAL: {
+            key: 'KeyH',
+            vMode: true,
+            shift: false,
+            description: 'レイヤー水平反転'
+        },
+        LAYER_FLIP_VERTICAL: {
+            key: 'KeyH',
+            vMode: true,
+            shift: true,
+            description: 'レイヤー垂直反転'
+        },
+        
+        // === レイヤー階層操作 (通常モード) ===
+        LAYER_HIERARCHY_UP: {
+            key: 'ArrowUp',
+            ctrl: false,
+            shift: false,
+            vMode: false,
+            description: 'レイヤー選択を上へ'
+        },
+        LAYER_HIERARCHY_DOWN: {
+            key: 'ArrowDown',
+            ctrl: false,
+            shift: false,
+            vMode: false,
+            description: 'レイヤー選択を下へ'
+        },
+        LAYER_ORDER_UP: {
+            key: 'ArrowUp',
+            ctrl: true,
+            shift: false,
+            vMode: false,
+            description: 'レイヤー順序を上げる'
+        },
+        LAYER_ORDER_DOWN: {
+            key: 'ArrowDown',
+            ctrl: true,
+            shift: false,
+            vMode: false,
+            description: 'レイヤー順序を下げる'
+        },
+        
+        // === カメラ操作 ===
         CAMERA_FLIP_HORIZONTAL: {
             key: 'KeyH',
             vMode: false,
             shift: false,
             ctrl: false,
-            alt: false,
             description: 'キャンバス水平反転'
         },
         CAMERA_FLIP_VERTICAL: {
@@ -262,38 +268,27 @@ window.TEGAKI_KEYMAP = {
             vMode: false,
             shift: true,
             ctrl: false,
-            alt: false,
             description: 'キャンバス垂直反転'
         },
-        LAYER_FLIP_HORIZONTAL: {
-            key: 'KeyH',
-            vMode: true,
+        CAMERA_RESET: {
+            key: 'Digit0',
+            ctrl: true,
             shift: false,
-            ctrl: false,
-            alt: false,
-            description: 'レイヤー水平反転'
+            description: 'カメラリセット'
         },
-        LAYER_FLIP_VERTICAL: {
-            key: 'KeyH',
-            vMode: true,
-            shift: true,
-            ctrl: false,
-            alt: false,
-            description: 'レイヤー垂直反転'
-        },
+        
+        // === アニメーション操作 ===
         GIF_PREV_FRAME: {
             key: 'ArrowLeft',
-            ctrl: false,
+            ctrl: true,
             shift: false,
-            alt: false,
             vMode: false,
             description: '前のフレーム'
         },
         GIF_NEXT_FRAME: {
             key: 'ArrowRight',
-            ctrl: false,
+            ctrl: true,
             shift: false,
-            alt: false,
             vMode: false,
             description: '次のフレーム'
         },
@@ -301,32 +296,54 @@ window.TEGAKI_KEYMAP = {
             key: 'Space',
             ctrl: true,
             shift: false,
-            alt: false,
             description: '再生/停止'
         },
         GIF_TOGGLE_TIMELINE: {
             key: 'KeyA',
             ctrl: false,
             shift: true,
-            alt: false,
             description: 'タイムライン表示切替'
         },
         GIF_CREATE_FRAME: {
             key: 'KeyN',
             ctrl: false,
             shift: true,
-            alt: false,
             description: '新規フレーム作成'
         },
         GIF_COPY_FRAME: {
             key: 'KeyC',
             ctrl: false,
             shift: true,
-            alt: false,
-            description: 'フレームコピー&ペースト'
+            description: 'フレームコピー'
+        },
+        
+        // === UI操作 ===
+        SETTINGS_OPEN: {
+            key: 'Comma',
+            ctrl: true,
+            shift: false,
+            description: '設定を開く'
+        },
+        EXPORT_TOGGLE: {
+            key: 'KeyE',
+            ctrl: true,
+            shift: false,
+            description: 'エクスポート'
+        },
+        QUICK_ACCESS_TOGGLE: {
+            key: 'KeyQ',
+            ctrl: false,
+            shift: false,
+            description: 'クイックアクセス'
         }
     },
     
+    /**
+     * イベントからアクション名を取得
+     * @param {KeyboardEvent} event 
+     * @param {Object} context - { vMode: boolean }
+     * @returns {string|null} アクション名
+     */
     getAction(event, context = {}) {
         const { vMode = false } = context;
         const { code, ctrlKey, metaKey, shiftKey, altKey, repeat } = event;
@@ -350,67 +367,49 @@ window.TEGAKI_KEYMAP = {
         return null;
     },
     
+    /**
+     * キーコードの表示名を取得
+     */
     getKeyDisplayName(keyCode) {
         const displayNames = {
-            'KeyP': 'P',
-            'KeyE': 'E',
-            'KeyV': 'V',
-            'KeyH': 'H',
-            'KeyA': 'A',
-            'KeyN': 'N',
-            'KeyC': 'C',
-            'KeyL': 'L',
-            'KeyZ': 'Z',
-            'KeyY': 'Y',
-            'Comma': ',',
-            'Digit0': '0',
-            'Plus': '+',
-            'ArrowUp': '↑',
-            'ArrowDown': '↓',
-            'ArrowLeft': '←',
-            'ArrowRight': '→',
-            'Space': 'Space',
-            'Delete': 'Delete',
-            'Backspace': 'Backspace'
+            'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H',
+            'KeyA': 'A', 'KeyN': 'N', 'KeyC': 'C', 'KeyL': 'L',
+            'KeyZ': 'Z', 'KeyY': 'Y', 'KeyQ': 'Q', 'Comma': ',',
+            'Digit0': '0', 'Plus': '+',
+            'ArrowUp': '↑', 'ArrowDown': '↓',
+            'ArrowLeft': '←', 'ArrowRight': '→',
+            'Space': 'Space', 'Delete': 'Delete', 'Backspace': 'Backspace'
         };
-        
         return displayNames[keyCode] || keyCode;
+    },
+    
+    /**
+     * アクションの説明とキーバインドを取得
+     */
+    getShortcutList() {
+        const list = [];
+        for (const [actionName, config] of Object.entries(this.actions)) {
+            const configs = Array.isArray(config) ? config : [config];
+            const keys = configs.map(cfg => {
+                const parts = [];
+                if (cfg.ctrl) parts.push('Ctrl');
+                if (cfg.shift) parts.push('Shift');
+                if (cfg.alt) parts.push('Alt');
+                if (cfg.vMode) parts.push('V +');
+                parts.push(this.getKeyDisplayName(cfg.key));
+                return parts.join('+');
+            });
+            list.push({
+                action: actionName,
+                keys: keys,
+                description: configs[0].description
+            });
+        }
+        return list;
     }
 };
 
-// ✅ TEGAKI_KEYCONFIG_MANAGER (core-engine.js用)
-window.TEGAKI_KEYCONFIG_MANAGER = {
-    getActionForKey(keyCode, context = {}) {
-        const event = {
-            code: keyCode,
-            ctrlKey: context.ctrlPressed || false,
-            shiftKey: context.shiftPressed || false,
-            altKey: context.altPressed || false,
-            repeat: false
-        };
-        
-        const actionName = window.TEGAKI_KEYMAP.getAction(event, {
-            vMode: context.vPressed || false
-        });
-        
-        // アクション名を小文字キャメルケースに変換
-        if (!actionName) return null;
-        
-        const actionMap = {
-            'TOOL_PEN': 'pen',
-            'TOOL_ERASER': 'eraser',
-            'LAYER_MOVE_MODE_TOGGLE': 'layerMoveMode',
-            'GIF_TOGGLE_TIMELINE': 'gifToggleAnimation',
-            'GIF_CREATE_FRAME': 'gifAddCut',
-            'GIF_PLAY_PAUSE': 'gifPlayPause',
-            'LAYER_DELETE_DRAWINGS': 'delete'
-        };
-        
-        return actionMap[actionName] || actionName.toLowerCase().replace(/_/g, '');
-    }
-};
-
-// レガシー互換性維持
+// === レガシー互換性維持 (将来削除予定) ===
 window.TEGAKI_KEYCONFIG = {
     pen: 'KeyP',
     eraser: 'KeyE',
@@ -423,15 +422,7 @@ window.TEGAKI_KEYCONFIG = {
     gifNextFrame: 'ArrowRight',
     gifToggleAnimation: 'KeyA',
     gifAddCut: 'Plus',
-    gifPlayPause: 'Space',
-    layerMoveUp: 'ArrowUp',
-    layerMoveDown: 'ArrowDown',
-    layerMoveLeft: 'ArrowLeft',
-    layerMoveRight: 'ArrowRight',
-    layerScaleUp: 'ArrowUp',
-    layerScaleDown: 'ArrowDown',
-    layerRotateLeft: 'ArrowLeft',
-    layerRotateRight: 'ArrowRight'
+    gifPlayPause: 'Space'
 };
 
 window.TEGAKI_COLORS = {
@@ -449,4 +440,4 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (Phase 4完全版: TEGAKI_KEYCONFIG_MANAGER追加) loaded');
+console.log('✅ config.js (統合キーマップ完全版 - DRY/SOLID準拠) loaded');

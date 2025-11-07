@@ -1,4 +1,4 @@
-// ===== core-engine.js - エラー修正版 =====
+// ===== core-engine.js - 統合版 (DRY/SOLID準拠) =====
 
 (function() {
     'use strict';
@@ -20,7 +20,7 @@
             this.eventBus = eventBus || window.TegakiEventBus;
             this.animationSystem = animationSystem;
             this.timelineUI = null;
-            this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
+            this.keymap = window.TEGAKI_KEYMAP;
             this.keyHandlingActive = true;
             
             this.setupKeyHandling();
@@ -31,278 +31,75 @@
         }
         
         setupKeyHandling() {
+            // keyboard-handler.jsに処理を委譲（重複排除）
+            // Undo/Redoのみ、Historyとの連携のためここで処理
             document.addEventListener('keydown', (e) => {
                 if (!this.keyHandlingActive) return;
                 
                 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
                 const metaKey = isMac ? e.metaKey : e.ctrlKey;
-                if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) return;
                 
-                this.handleKeyDown(e);
+                // Undo/Redo処理
+                if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+                    if (e.code === 'KeyZ' && !e.shiftKey) {
+                        if (window.History?.canUndo()) {
+                            window.History.undo();
+                            e.preventDefault();
+                        }
+                    } else if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) {
+                        if (window.History?.canRedo()) {
+                            window.History.redo();
+                            e.preventDefault();
+                        }
+                    }
+                    return;
+                }
+                
+                // カメラリセット
+                if (metaKey && e.code === 'Digit0') {
+                    this.cameraSystem?.resetView();
+                    e.preventDefault();
+                    return;
+                }
             });
             
-            document.addEventListener('keyup', (e) => {
-                if (!this.keyHandlingActive) return;
-                this.handleKeyUp(e);
+            // ツール変更イベントリスナー
+            this.eventBus.on('tool:select', (data) => {
+                this.switchTool(data.tool);
             });
             
+            // カメラ操作イベントリスナー
+            this.eventBus.on('camera:flip-horizontal', () => {
+                if (this.cameraSystem?.flipHorizontal) {
+                    this.cameraSystem.flipHorizontal();
+                }
+            });
+            
+            this.eventBus.on('camera:flip-vertical', () => {
+                if (this.cameraSystem?.flipVertical) {
+                    this.cameraSystem.flipVertical();
+                }
+            });
+            
+            this.eventBus.on('camera:reset', () => {
+                if (this.cameraSystem?.resetView) {
+                    this.cameraSystem.resetView();
+                }
+            });
+            
+            // UI操作イベントリスナー
+            this.eventBus.on('ui:open-settings', () => {
+                if (window.TegakiUI?.uiController) {
+                    window.TegakiUI.uiController.closeAllPopups();
+                    if (window.TegakiUI.uiController.settingsPopup) {
+                        window.TegakiUI.uiController.settingsPopup.show();
+                    }
+                }
+            });
+            
+            // ウィンドウフォーカス喪失時のキー状態リセット
             window.addEventListener('blur', () => this.resetAllKeyStates());
             window.addEventListener('focus', () => this.resetAllKeyStates());
-        }
-        
-        handleKeyDown(e) {
-            if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || 
-                e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-                this.handleArrowKeys(e);
-                return;
-            }
-            
-            const action = this.keyConfig.getActionForKey(e.code, {
-                vPressed: this.layerSystem.vKeyPressed,
-                shiftPressed: e.shiftKey,
-                altPressed: e.altKey
-            });
-            
-            if (this.handleSpecialKeys(e)) return;
-            if (!action) return;
-            
-            switch(action) {
-                case 'pen':
-                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.switchTool('pen');
-                        if (this.layerSystem.isLayerMoveMode) {
-                            this.layerSystem.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-                    
-                case 'eraser':
-                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.switchTool('eraser');
-                        if (this.layerSystem.isLayerMoveMode) {
-                            this.layerSystem.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'layerMoveMode':
-                    if (e.code === 'KeyV' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.layerSystem.toggleLayerMoveMode();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifToggleAnimation':
-                    if (e.altKey && this.timelineUI) {
-                        this.timelineUI.toggle();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifAddCut':
-                    if (e.altKey && this.animationSystem) {
-                        this.animationSystem.createCutFromCurrentState();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifPlayPause':
-                    if (e.code === 'Space' && e.ctrlKey && this.timelineUI && this.timelineUI.isVisible) {
-                        this.timelineUI.togglePlayStop();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'delete':
-                case 'LAYER_DELETE_DRAWINGS':
-                    if ((e.code === 'Delete' || e.code === 'Backspace') && 
-                        !e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.deleteActiveLayerDrawings();
-                        e.preventDefault();
-                    }
-                    break;
-            }
-        }
-        
-        deleteActiveLayerDrawings() {
-            if (!this.layerSystem) return;
-            
-            const activeLayer = this.layerSystem.getActiveLayer();
-            if (!activeLayer || !activeLayer.layerData) return;
-            
-            if (activeLayer.layerData.isBackground) return;
-            
-            const layerIndex = this.layerSystem.activeLayerIndex;
-            
-            const childrenToRemove = [];
-            for (let child of activeLayer.children) {
-                if (child !== activeLayer.layerData.backgroundGraphics &&
-                    child !== activeLayer.layerData.maskSprite) {
-                    childrenToRemove.push(child);
-                }
-            }
-            
-            if (childrenToRemove.length === 0) return;
-            
-            if (window.History && !window.History._manager?.isApplying) {
-                const command = {
-                    name: 'clear-layer-drawings',
-                    do: () => {
-                        childrenToRemove.forEach(child => {
-                            activeLayer.removeChild(child);
-                            if (child.destroy) {
-                                child.destroy({ children: true });
-                            }
-                        });
-                        
-                        if (this.eventBus) {
-                            this.eventBus.emit('thumbnail:layer-updated', {
-                                component: 'unified-key-handler',
-                                action: 'clear-drawings',
-                                data: { layerIndex, layerId: activeLayer.layerData.id }
-                            });
-                            
-                            this.eventBus.emit('layer:cleared', { 
-                                layerIndex,
-                                objectCount: childrenToRemove.length 
-                            });
-                        }
-                    },
-                    undo: () => {
-                        childrenToRemove.forEach(child => {
-                            activeLayer.addChild(child);
-                        });
-                        
-                        if (this.eventBus) {
-                            this.eventBus.emit('thumbnail:layer-updated', {
-                                component: 'unified-key-handler',
-                                action: 'restore-drawings',
-                                data: { layerIndex, layerId: activeLayer.layerData.id }
-                            });
-                            
-                            this.eventBus.emit('layer:restored', { 
-                                layerIndex,
-                                objectCount: childrenToRemove.length 
-                            });
-                        }
-                    },
-                    meta: { 
-                        type: 'clear-layer-drawings',
-                        layerId: activeLayer.layerData.id,
-                        objectCount: childrenToRemove.length
-                    }
-                };
-                
-                window.History.push(command);
-            } else {
-                childrenToRemove.forEach(child => {
-                    activeLayer.removeChild(child);
-                    if (child.destroy) {
-                        child.destroy({ children: true });
-                    }
-                });
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('thumbnail:layer-updated', {
-                        component: 'unified-key-handler',
-                        action: 'clear-drawings',
-                        data: { layerIndex, layerId: activeLayer.layerData.id }
-                    });
-                    
-                    this.eventBus.emit('layer:cleared', { 
-                        layerIndex,
-                        objectCount: childrenToRemove.length 
-                    });
-                }
-            }
-        }
-        
-        handleArrowKeys(e) {
-            e.preventDefault();
-            
-            if (this.layerSystem?.vKeyPressed) return;
-            
-            const activeIndex = this.layerSystem.activeLayerIndex;
-            const layers = this.layerSystem.getLayers();
-            
-            if (e.ctrlKey) {
-                if (e.code === 'ArrowUp') {
-                    if (activeIndex < layers.length - 1) {
-                        const layer = layers[activeIndex];
-                        const targetLayer = layers[activeIndex + 1];
-                        
-                        if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            this.layerSystem.currentFrameContainer.removeChildAt(activeIndex);
-                            this.layerSystem.currentFrameContainer.addChildAt(layer, activeIndex + 1);
-                            this.layerSystem.activeLayerIndex = activeIndex + 1;
-                            this.layerSystem.updateLayerPanelUI();
-                            
-                            this.eventBus.emit('layer:order:changed', {
-                                oldIndex: activeIndex,
-                                newIndex: activeIndex + 1,
-                                direction: 'up'
-                            });
-                        }
-                    }
-                } else if (e.code === 'ArrowDown') {
-                    if (activeIndex > 0) {
-                        const layer = layers[activeIndex];
-                        const targetLayer = layers[activeIndex - 1];
-                        
-                        if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            this.layerSystem.currentFrameContainer.removeChildAt(activeIndex);
-                            this.layerSystem.currentFrameContainer.addChildAt(layer, activeIndex - 1);
-                            this.layerSystem.activeLayerIndex = activeIndex - 1;
-                            this.layerSystem.updateLayerPanelUI();
-                            
-                            this.eventBus.emit('layer:order:changed', {
-                                oldIndex: activeIndex,
-                                newIndex: activeIndex - 1,
-                                direction: 'down'
-                            });
-                        }
-                    }
-                }
-                else if (e.code === 'ArrowLeft' && this.timelineUI && this.timelineUI.isVisible) {
-                    this.timelineUI.goToPreviousCutSafe();
-                } else if (e.code === 'ArrowRight' && this.timelineUI && this.timelineUI.isVisible) {
-                    this.timelineUI.goToNextCutSafe();
-                }
-            } else {
-                if (e.code === 'ArrowUp') {
-                    if (activeIndex < layers.length - 1) {
-                        const oldIndex = activeIndex;
-                        this.layerSystem.activeLayerIndex = activeIndex + 1;
-                        this.layerSystem.updateLayerPanelUI();
-                        
-                        this.eventBus.emit('layer:selection:changed', {
-                            oldIndex,
-                            newIndex: activeIndex + 1
-                        });
-                    }
-                } else if (e.code === 'ArrowDown') {
-                    if (activeIndex > 0) {
-                        const oldIndex = activeIndex;
-                        this.layerSystem.activeLayerIndex = activeIndex - 1;
-                        this.layerSystem.updateLayerPanelUI();
-                        
-                        this.eventBus.emit('layer:selection:changed', {
-                            oldIndex,
-                            newIndex: activeIndex - 1
-                        });
-                    }
-                }
-            }
-        }
-        
-        handleKeyUp(e) {}
-        
-        handleSpecialKeys(e) {
-            if (e.ctrlKey && e.code === 'Digit0') return false;
-            if (e.code === 'Space') return false;
-            return false;
         }
         
         switchTool(tool) {
@@ -310,13 +107,15 @@
                 this.drawingEngine.setTool(tool);
             }
             
-            this.cameraSystem.updateCursor();
+            if (this.cameraSystem) {
+                this.cameraSystem.updateCursor();
+            }
             
             this.eventBus.emit('tool:changed', { newTool: tool });
         }
         
         resetAllKeyStates() {
-            if (this.cameraSystem._resetAllKeyStates) {
+            if (this.cameraSystem?._resetAllKeyStates) {
                 this.cameraSystem._resetAllKeyStates();
             }
         }
@@ -832,6 +631,6 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js loaded');
+    console.log('✅ core-engine.js (統合版 - DRY/SOLID準拠) loaded');
 
 })();

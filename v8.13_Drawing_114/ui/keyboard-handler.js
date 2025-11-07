@@ -1,4 +1,4 @@
-// ===== keyboard-handler.js - config.js完全整合版 =====
+// ===== keyboard-handler.js - 統合版 (DRY/SOLID準拠) =====
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -6,6 +6,9 @@ window.KeyboardHandler = (function() {
     let isInitialized = false;
     let vKeyPressed = false;
 
+    /**
+     * 入力フォーカス状態をチェック
+     */
     function isInputFocused() {
         const activeElement = document.activeElement;
         if (!activeElement) return false;
@@ -17,29 +20,24 @@ window.KeyboardHandler = (function() {
         );
     }
 
+    /**
+     * キーダウンイベントハンドラ
+     */
     function handleKeyDown(e) {
         const eventBus = window.TegakiEventBus;
         const keymap = window.TEGAKI_KEYMAP;
         
         if (!eventBus || !keymap) return;
-        
         if (isInputFocused()) return;
         
-        // クイックアクセス (Q)
-        if ((e.key === 'q' || e.key === 'Q') && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-            eventBus.emit('ui:toggle-quick-access');
+        // ファンクションキーはブラウザ機能を優先
+        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
+        if (e.key.startsWith('F') && e.key.length <= 3) {
             e.preventDefault();
             return;
         }
         
-        // エクスポート (Ctrl+E)
-        if ((e.key === 'e' || e.key === 'E') && e.ctrlKey && !e.shiftKey && !e.altKey) {
-            eventBus.emit('ui:toggle-export');
-            e.preventDefault();
-            return;
-        }
-        
-        // Vキー（レイヤー移動モード）
+        // Vキー押下状態の管理
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!vKeyPressed) {
                 vKeyPressed = true;
@@ -47,20 +45,17 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        // ファンクションキー
-        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
-        if (e.key.startsWith('F') && e.key.length <= 3) {
-            e.preventDefault();
-            return;
-        }
-        
+        // キーマップからアクション取得
         const action = keymap.getAction(e, { vMode: vKeyPressed });
-        
         if (!action) return;
         
+        // アクションを実行
         handleAction(action, e, eventBus);
     }
 
+    /**
+     * キーアップイベントハンドラ
+     */
     function handleKeyUp(e) {
         if (e.code === 'KeyV') {
             if (vKeyPressed) {
@@ -73,24 +68,27 @@ window.KeyboardHandler = (function() {
         }
     }
 
+    /**
+     * アクション実行
+     */
     function handleAction(action, event, eventBus) {
         switch(action) {
-            // ===== 基本操作 =====
+            // === 履歴操作 ===
             case 'UNDO':
-                if (window.History && window.History.canUndo()) {
+                if (window.History?.canUndo()) {
                     window.History.undo();
                 }
                 event.preventDefault();
                 break;
                 
             case 'REDO':
-                if (window.History && window.History.canRedo()) {
+                if (window.History?.canRedo()) {
                     window.History.redo();
                 }
                 event.preventDefault();
                 break;
             
-            // ===== ツール切り替え =====
+            // === ツール切り替え ===
             case 'TOOL_PEN':
                 eventBus.emit('tool:select', { tool: 'pen' });
                 eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
@@ -103,17 +101,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // ===== レイヤー操作 =====
-            case 'LAYER_DELETE_DRAWINGS':
-                deleteActiveLayerDrawings();
-                event.preventDefault();
-                break;
-            
-            case 'LAYER_CLEAR':
-                eventBus.emit('layer:clear-active');
-                event.preventDefault();
-                break;
-            
+            // === レイヤー操作 ===
             case 'LAYER_CREATE':
                 if (window.drawingApp?.layerManager) {
                     const layerSystem = window.drawingApp.layerManager;
@@ -124,123 +112,137 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            case 'LAYER_DELETE_DRAWINGS':
+                deleteActiveLayerDrawings();
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_CLEAR':
+                eventBus.emit('layer:clear-active');
+                event.preventDefault();
+                break;
+            
             case 'LAYER_COPY':
-                eventBus.emit('layer:copy');
+                eventBus.emit('layer:copy-request');
                 event.preventDefault();
                 break;
             
             case 'LAYER_PASTE':
-                eventBus.emit('layer:paste');
+                eventBus.emit('layer:paste-request');
                 event.preventDefault();
                 break;
             
-            case 'LAYER_HIERARCHY_UP':
-                if (window.drawingApp?.layerManager) {
-                    const layerSystem = window.drawingApp.layerManager;
-                    const currentIndex = layerSystem.activeLayerIndex;
-                    if (currentIndex < layerSystem.getLayers().length - 1) {
-                        layerSystem.setActiveLayer(currentIndex + 1);
-                    }
-                }
+            // === レイヤー移動モード ===
+            case 'LAYER_MOVE_MODE_TOGGLE':
+                eventBus.emit('layer:toggle-move-mode');
                 event.preventDefault();
                 break;
             
-            case 'LAYER_HIERARCHY_DOWN':
-                if (window.drawingApp?.layerManager) {
-                    const layerSystem = window.drawingApp.layerManager;
-                    const currentIndex = layerSystem.activeLayerIndex;
-                    if (currentIndex > 0) {
-                        layerSystem.setActiveLayer(currentIndex - 1);
-                    }
-                }
-                event.preventDefault();
-                break;
-            
-            // ===== レイヤー移動（Vモード） =====
             case 'LAYER_MOVE_UP':
-                eventBus.emit('layer:move', { direction: 'up' });
+                eventBus.emit('layer:move-by-key', { direction: 'ArrowUp' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_MOVE_DOWN':
-                eventBus.emit('layer:move', { direction: 'down' });
+                eventBus.emit('layer:move-by-key', { direction: 'ArrowDown' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_MOVE_LEFT':
-                eventBus.emit('layer:move', { direction: 'left' });
+                eventBus.emit('layer:move-by-key', { direction: 'ArrowLeft' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_MOVE_RIGHT':
-                eventBus.emit('layer:move', { direction: 'right' });
+                eventBus.emit('layer:move-by-key', { direction: 'ArrowRight' });
                 event.preventDefault();
                 break;
             
-            // ===== レイヤー拡大縮小（V+Shiftモード） =====
             case 'LAYER_SCALE_UP':
-                eventBus.emit('layer:scale', { direction: 'up' });
+                eventBus.emit('layer:scale-by-key', { direction: 'ArrowUp' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_SCALE_DOWN':
-                eventBus.emit('layer:scale', { direction: 'down' });
+                eventBus.emit('layer:scale-by-key', { direction: 'ArrowDown' });
                 event.preventDefault();
                 break;
             
-            // ===== レイヤー回転（V+Shiftモード） =====
             case 'LAYER_ROTATE_LEFT':
-                eventBus.emit('layer:rotate', { direction: 'left' });
+                eventBus.emit('layer:rotate-by-key', { direction: 'ArrowLeft' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_ROTATE_RIGHT':
-                eventBus.emit('layer:rotate', { direction: 'right' });
+                eventBus.emit('layer:rotate-by-key', { direction: 'ArrowRight' });
                 event.preventDefault();
                 break;
             
-            // ===== レイヤー反転（Vモード） =====
             case 'LAYER_FLIP_HORIZONTAL':
-                eventBus.emit('layer:flip', { axis: 'horizontal' });
+                eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_FLIP_VERTICAL':
-                eventBus.emit('layer:flip', { axis: 'vertical' });
+                eventBus.emit('layer:flip-by-key', { direction: 'vertical' });
                 event.preventDefault();
                 break;
             
-            // ===== カメラ反転 =====
+            // === レイヤー階層操作 ===
+            case 'LAYER_HIERARCHY_UP':
+                eventBus.emit('layer:select-next');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_HIERARCHY_DOWN':
+                eventBus.emit('layer:select-prev');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_ORDER_UP':
+                eventBus.emit('layer:order-up');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_ORDER_DOWN':
+                eventBus.emit('layer:order-down');
+                event.preventDefault();
+                break;
+            
+            // === カメラ操作 ===
             case 'CAMERA_FLIP_HORIZONTAL':
-                // camera-system.jsで既に実装済み
+                eventBus.emit('camera:flip-horizontal');
                 event.preventDefault();
                 break;
             
             case 'CAMERA_FLIP_VERTICAL':
-                // camera-system.jsで既に実装済み
+                eventBus.emit('camera:flip-vertical');
                 event.preventDefault();
                 break;
             
-            // ===== アニメーション操作 =====
+            case 'CAMERA_RESET':
+                eventBus.emit('camera:reset');
+                event.preventDefault();
+                break;
+            
+            // === アニメーション操作 ===
             case 'GIF_PREV_FRAME':
-                if (window.timelineUI && window.timelineUI.isVisible) {
-                    eventBus.emit('frame:navigate', { direction: 'prev' });
+                if (window.timelineUI?.isVisible) {
+                    window.timelineUI.goToPreviousCutSafe();
                 }
                 event.preventDefault();
                 break;
             
             case 'GIF_NEXT_FRAME':
-                if (window.timelineUI && window.timelineUI.isVisible) {
-                    eventBus.emit('frame:navigate', { direction: 'next' });
+                if (window.timelineUI?.isVisible) {
+                    window.timelineUI.goToNextCutSafe();
                 }
                 event.preventDefault();
                 break;
             
-            case 'GIF_CREATE_FRAME':
-                const animationSystem = window.animationSystem;
-                if (animationSystem) {
-                    animationSystem.createNewEmptyFrame();
-                    eventBus.emit('frame:created-by-shortcut');
+            case 'GIF_PLAY_PAUSE':
+                if (window.timelineUI?.isVisible) {
+                    window.timelineUI.togglePlayStop();
                 }
                 event.preventDefault();
                 break;
@@ -250,10 +252,10 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            case 'GIF_PLAY_PAUSE':
-                const timelineUI = window.timelineUI;
-                if (timelineUI && timelineUI.isVisible) {
-                    timelineUI.togglePlayStop();
+            case 'GIF_CREATE_FRAME':
+                if (window.animationSystem) {
+                    window.animationSystem.createNewEmptyFrame();
+                    eventBus.emit('frame:created-by-shortcut');
                 }
                 event.preventDefault();
                 break;
@@ -266,37 +268,39 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // ===== 設定 =====
+            // === UI操作 ===
             case 'SETTINGS_OPEN':
-                if (window.TegakiUI?.uiController) {
-                    window.TegakiUI.uiController.closeAllPopups();
-                    if (window.TegakiUI.uiController.settingsPopup) {
-                        window.TegakiUI.uiController.settingsPopup.show();
-                    }
-                } else if (window.TegakiUI?.SettingsPopup) {
-                    const settingsBtn = document.getElementById('settings-tool');
-                    if (settingsBtn) {
-                        settingsBtn.click();
-                    }
-                }
+                eventBus.emit('ui:open-settings');
+                event.preventDefault();
+                break;
+            
+            case 'EXPORT_TOGGLE':
+                eventBus.emit('ui:toggle-export');
+                event.preventDefault();
+                break;
+            
+            case 'QUICK_ACCESS_TOGGLE':
+                eventBus.emit('ui:toggle-quick-access');
                 event.preventDefault();
                 break;
         }
     }
 
+    /**
+     * アクティブレイヤーの絵を削除
+     */
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager;
         if (!layerSystem) return;
         
         const activeLayer = layerSystem.getActiveLayer();
-        if (!activeLayer || !activeLayer.layerData) return;
-        
+        if (!activeLayer?.layerData) return;
         if (activeLayer.layerData.isBackground) return;
         
         const paths = activeLayer.layerData.paths;
         if (!paths || paths.length === 0) return;
         
-        if (window.History && !window.History._manager.isApplying) {
+        if (window.History && !window.History._manager?.isApplying) {
             const pathsBackup = structuredClone(paths);
             const layerIndex = layerSystem.activeLayerIndex;
             
@@ -320,8 +324,11 @@ window.KeyboardHandler = (function() {
         }
     }
 
+    /**
+     * レイヤーの絵をクリア
+     */
     function clearLayerDrawings(layerSystem, layer) {
-        if (!layer || !layer.layerData) return;
+        if (!layer?.layerData) return;
         
         const childrenToRemove = [];
         for (let child of layer.children) {
@@ -337,11 +344,11 @@ window.KeyboardHandler = (function() {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
             } catch (error) {
+                // エラーは無視
             }
         });
         
         layer.layerData.paths = [];
-        
         layerSystem.requestThumbnailUpdate(layerSystem.activeLayerIndex);
         
         if (window.TegakiEventBus) {
@@ -352,16 +359,16 @@ window.KeyboardHandler = (function() {
         }
     }
 
+    /**
+     * レイヤーの絵を復元
+     */
     function restoreLayerDrawings(layerSystem, layer, pathsBackup, layerIndex) {
-        if (!layer || !layer.layerData || !pathsBackup) return;
+        if (!layer?.layerData || !pathsBackup) return;
         
         clearLayerDrawings(layerSystem, layer);
-        
         layer.layerData.paths = [];
         
-        for (let i = 0; i < pathsBackup.length; i++) {
-            const pathData = pathsBackup[i];
-            
+        for (let pathData of pathsBackup) {
             try {
                 const rebuildSuccess = layerSystem.rebuildPathGraphics(pathData);
                 
@@ -370,6 +377,7 @@ window.KeyboardHandler = (function() {
                     layer.addChild(pathData.graphics);
                 }
             } catch (error) {
+                // エラーは無視
             }
         }
         
@@ -384,10 +392,11 @@ window.KeyboardHandler = (function() {
         }
     }
 
+    /**
+     * 初期化
+     */
     function init() {
-        if (isInitialized) {
-            return;
-        }
+        if (isInitialized) return;
 
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
@@ -405,32 +414,11 @@ window.KeyboardHandler = (function() {
         isInitialized = true;
     }
 
+    /**
+     * ショートカットリストを取得
+     */
     function getShortcutList() {
-        const keymap = window.TEGAKI_KEYMAP;
-        if (!keymap || !keymap.actions) {
-            return [];
-        }
-
-        const shortcuts = [];
-        for (const [actionName, config] of Object.entries(keymap.actions)) {
-            const configs = Array.isArray(config) ? config : [config];
-            const keys = configs.map(cfg => {
-                let keyStr = keymap.getKeyDisplayName(cfg.key);
-                if (cfg.ctrl) keyStr = 'Ctrl+' + keyStr;
-                if (cfg.shift) keyStr = 'Shift+' + keyStr;
-                if (cfg.alt) keyStr = 'Alt+' + keyStr;
-                if (cfg.vMode) keyStr = 'V+' + keyStr;
-                return keyStr;
-            });
-            
-            shortcuts.push({
-                action: actionName,
-                keys: keys,
-                description: configs[0].description || actionName
-            });
-        }
-        
-        return shortcuts;
+        return window.TEGAKI_KEYMAP?.getShortcutList() || [];
     }
 
     return {
@@ -440,4 +428,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js (config.js完全整合版) loaded');
+console.log('✅ keyboard-handler.js (統合版 - DRY/SOLID準拠) loaded');
