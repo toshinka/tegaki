@@ -1,4 +1,4 @@
-// core-initializer.js - UIController グローバル登録版
+// core-initializer.js - UIController依存関係修正版
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -15,7 +15,8 @@ window.CoreInitializer = (function() {
             { name: 'UPNG', obj: window.UPNG },
             { name: 'GIF', obj: window.GIF },
             { name: 'DOMBuilder', obj: window.DOMBuilder },
-            { name: 'KeyboardHandler', obj: window.KeyboardHandler }
+            { name: 'KeyboardHandler', obj: window.KeyboardHandler },
+            { name: 'TegakiUI', obj: window.TegakiUI }
         ];
         
         const missing = dependencies.filter(dep => !dep.obj);
@@ -195,9 +196,13 @@ window.CoreInitializer = (function() {
         async initialize() {
             const CONFIG = window.TEGAKI_CONFIG;
             const CoreEngine = window.TegakiCore.CoreEngine;
-            const UIController = window.TegakiUI.UIController;
             
-            if (!UIController) throw new Error('UIController not found');
+            // UIControllerの存在確認
+            if (!window.TegakiUI || !window.TegakiUI.UIController) {
+                throw new Error('UIController not found - ui-panels.js may not be loaded');
+            }
+            
+            const UIController = window.TegakiUI.UIController;
             
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) throw new Error('Canvas container not found');
@@ -240,13 +245,13 @@ window.CoreInitializer = (function() {
             
             initializeSettingsManager();
             
-            // ✅ 修正: UIControllerをグローバルに登録
+            // UIController初期化
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
                 this.pixiApp
             );
-            window.uiController = this.uiController; // ←追加
+            window.uiController = this.uiController;
 
             this.popupManager = initializePopupManager(this, this.coreEngine);
             
@@ -268,7 +273,7 @@ window.CoreInitializer = (function() {
             this.initializeExportSystem();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
-                return window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
+                return window.CoreRuntime.api.camera.resize(newWidth, newHeight);
             };
             
             this.setupEventListeners();
@@ -419,5 +424,3 @@ window.CoreInitializer = (function() {
         initializeLayerPanel
     };
 })();
-
-console.log('✅ core-initializer.js loaded');

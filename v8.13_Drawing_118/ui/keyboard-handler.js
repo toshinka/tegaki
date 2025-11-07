@@ -1,8 +1,4 @@
-// ===== keyboard-handler.js - ショートカット統一修正版 (DRY/SOLID準拠) =====
-// 修正内容:
-// 1. P/Eキー: EventBus通知 + CoreRuntime.api.tool.set() 統合
-// 2. 二重実装排除: ツール切り替えロジックを一本化
-// 3. 過剰ログ削除
+// ui/keyboard-handler.js - Vキー状態管理修正版 (DRY/SOLID準拠)
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -34,6 +30,7 @@ window.KeyboardHandler = (function() {
             return;
         }
         
+        // Vキーの状態管理
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!vKeyPressed) {
                 vKeyPressed = true;
@@ -41,6 +38,7 @@ window.KeyboardHandler = (function() {
             }
         }
         
+        // アクション取得時にVキー状態を渡す
         const action = keymap.getAction(e, { vMode: vKeyPressed });
         if (!action) return;
         
@@ -77,7 +75,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // === ✅ 修正: ツール切り替え統一（API呼び出し + EventBus通知） ===
             case 'TOOL_PEN':
                 if (api?.tool.set('pen')) {
                     eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
@@ -385,12 +382,16 @@ window.KeyboardHandler = (function() {
     function getShortcutList() {
         return window.TEGAKI_KEYMAP?.getShortcutList() || [];
     }
+    
+    // Vキー状態を取得する公開メソッド
+    function isVKeyPressed() {
+        return vKeyPressed;
+    }
 
     return {
         init,
         isInputFocused,
-        getShortcutList
+        getShortcutList,
+        isVKeyPressed
     };
 })();
-
-console.log('✅ keyboard-handler.js (ショートカット統一修正版)');
