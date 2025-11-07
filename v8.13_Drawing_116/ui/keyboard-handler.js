@@ -1,4 +1,8 @@
-// ===== keyboard-handler.js - 統合版 v2 (DRY/SOLID準拠・二重実装排除) =====
+// ===== keyboard-handler.js - ショートカット統一修正版 (DRY/SOLID準拠) =====
+// 修正内容:
+// 1. P/Eキー: EventBus通知 + CoreRuntime.api.tool.set() 統合
+// 2. 二重実装排除: ツール切り替えロジックを一本化
+// 3. 過剰ログ削除
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -6,9 +10,6 @@ window.KeyboardHandler = (function() {
     let isInitialized = false;
     let vKeyPressed = false;
 
-    /**
-     * 入力フォーカス状態をチェック
-     */
     function isInputFocused() {
         const activeElement = document.activeElement;
         if (!activeElement) return false;
@@ -20,9 +21,6 @@ window.KeyboardHandler = (function() {
         );
     }
 
-    /**
-     * キーダウンイベントハンドラ
-     */
     function handleKeyDown(e) {
         const eventBus = window.TegakiEventBus;
         const keymap = window.TEGAKI_KEYMAP;
@@ -30,14 +28,12 @@ window.KeyboardHandler = (function() {
         if (!eventBus || !keymap) return;
         if (isInputFocused()) return;
         
-        // ファンクションキーはブラウザ機能を優先
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
         if (e.key.startsWith('F') && e.key.length <= 3) {
             e.preventDefault();
             return;
         }
         
-        // Vキー押下状態の管理
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!vKeyPressed) {
                 vKeyPressed = true;
@@ -45,22 +41,12 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        // キーマップからアクション取得
         const action = keymap.getAction(e, { vMode: vKeyPressed });
         if (!action) return;
         
-        // ✅ Undo/Redoはcore-engine.jsで処理（二重実装排除）
-        if (action === 'UNDO' || action === 'REDO') {
-            return; // core-engine.jsに委譲
-        }
-        
-        // アクションを実行
         handleAction(action, e, eventBus);
     }
 
-    /**
-     * キーアップイベントハンドラ
-     */
     function handleKeyUp(e) {
         if (e.code === 'KeyV') {
             if (vKeyPressed) {
@@ -73,31 +59,45 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    /**
-     * アクション実行
-     */
     function handleAction(action, event, eventBus) {
+        const api = window.CoreRuntime?.api;
+        
         switch(action) {
-            // === ツール切り替え ===
+            case 'UNDO':
+                if (window.History?.canUndo()) {
+                    window.History.undo();
+                }
+                event.preventDefault();
+                break;
+                
+            case 'REDO':
+                if (window.History?.canRedo()) {
+                    window.History.redo();
+                }
+                event.preventDefault();
+                break;
+            
+            // === ✅ 修正: ツール切り替え統一（API呼び出し + EventBus通知） ===
             case 'TOOL_PEN':
-                eventBus.emit('tool:select', { tool: 'pen' });
-                eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
+                if (api?.tool.set('pen')) {
+                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
+                }
                 event.preventDefault();
                 break;
             
             case 'TOOL_ERASER':
-                eventBus.emit('tool:select', { tool: 'eraser' });
-                eventBus.emit('ui:sidebar:sync-tool', { tool: 'eraser' });
+                if (api?.tool.set('eraser')) {
+                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'eraser' });
+                }
                 event.preventDefault();
                 break;
             
-            // === レイヤー操作 ===
             case 'LAYER_CREATE':
-                if (window.drawingApp?.layerManager) {
-                    const layerSystem = window.drawingApp.layerManager;
-                    const newLayerIndex = layerSystem.getLayers().length + 1;
-                    layerSystem.createLayer(`L${newLayerIndex}`, false);
-                    eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
+                if (api?.layer.create) {
+                    const result = api.layer.create();
+                    if (result) {
+                        api.layer.setActive(result.index);
+                    }
                 }
                 event.preventDefault();
                 break;
@@ -122,7 +122,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // === レイヤー移動モード ===
             case 'LAYER_MOVE_MODE_TOGGLE':
                 eventBus.emit('layer:toggle-move-mode');
                 event.preventDefault();
@@ -178,7 +177,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // === レイヤー階層操作 ===
             case 'LAYER_HIERARCHY_UP':
                 eventBus.emit('layer:select-next');
                 event.preventDefault();
@@ -199,7 +197,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // === カメラ操作 ===
             case 'CAMERA_FLIP_HORIZONTAL':
                 eventBus.emit('camera:flip-horizontal');
                 event.preventDefault();
@@ -215,7 +212,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // === アニメーション操作 ===
             case 'GIF_PREV_FRAME':
                 if (window.timelineUI?.isVisible) {
                     window.timelineUI.goToPreviousCutSafe();
@@ -245,7 +241,6 @@ window.KeyboardHandler = (function() {
             case 'GIF_CREATE_FRAME':
                 if (window.animationSystem) {
                     window.animationSystem.createNewEmptyFrame();
-                    eventBus.emit('frame:created-by-shortcut');
                 }
                 event.preventDefault();
                 break;
@@ -258,7 +253,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // === UI操作 ===
             case 'SETTINGS_OPEN':
                 eventBus.emit('ui:open-settings');
                 event.preventDefault();
@@ -276,9 +270,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    /**
-     * アクティブレイヤーの絵を削除
-     */
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager;
         if (!layerSystem) return;
@@ -314,9 +305,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    /**
-     * レイヤーの絵をクリア
-     */
     function clearLayerDrawings(layerSystem, layer) {
         if (!layer?.layerData) return;
         
@@ -333,9 +321,7 @@ window.KeyboardHandler = (function() {
                 if (child.destroy && typeof child.destroy === 'function') {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
-            } catch (error) {
-                // エラーは無視
-            }
+            } catch (error) {}
         });
         
         layer.layerData.paths = [];
@@ -349,9 +335,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    /**
-     * レイヤーの絵を復元
-     */
     function restoreLayerDrawings(layerSystem, layer, pathsBackup, layerIndex) {
         if (!layer?.layerData || !pathsBackup) return;
         
@@ -366,9 +349,7 @@ window.KeyboardHandler = (function() {
                     layer.layerData.paths.push(pathData);
                     layer.addChild(pathData.graphics);
                 }
-            } catch (error) {
-                // エラーは無視
-            }
+            } catch (error) {}
         }
         
         layerSystem.requestThumbnailUpdate(layerIndex);
@@ -382,9 +363,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    /**
-     * 初期化
-     */
     function init() {
         if (isInitialized) return;
 
@@ -404,9 +382,6 @@ window.KeyboardHandler = (function() {
         isInitialized = true;
     }
 
-    /**
-     * ショートカットリストを取得
-     */
     function getShortcutList() {
         return window.TEGAKI_KEYMAP?.getShortcutList() || [];
     }
@@ -418,4 +393,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js v2 (二重実装排除・DRY/SOLID準拠) loaded');
+console.log('✅ keyboard-handler.js (ショートカット統一修正版)');
