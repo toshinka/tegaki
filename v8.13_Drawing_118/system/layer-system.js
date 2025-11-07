@@ -1,4 +1,4 @@
-// ===== system/layer-system.js - 反転機能統合修復版 =====
+// system/layer-system.js - DRY原則準拠版 (keydown二重実装を削除)
 
 (function() {
     'use strict';
@@ -817,162 +817,84 @@
             }
         }
 
-        // ✅ 修正: keyboard-handler.jsからのイベントとkeydownの両方に対応
+        // ✅ DRY原則準拠: EventBusリスナーのみ、keydownリスナーは削除
         _setupLayerOperations() {
-            if (this.eventBus) {
-                this.eventBus.on('layer:copy-request', () => {
-                    if (window.drawingClipboard) {
-                        window.drawingClipboard.copyActiveLayer();
-                    }
-                });
-                
-                this.eventBus.on('layer:paste-request', () => {
-                    if (window.drawingClipboard) {
-                        window.drawingClipboard.pasteLayer();
-                    }
-                });
-                
-                // ✅ 追加: keyboard-handler.jsからの反転イベントを受信
-                this.eventBus.on('layer:flip-by-key', ({ direction }) => {
-                    this.flipActiveLayer(direction);
-                });
-            }
+            if (!this.eventBus) return;
             
-            document.addEventListener('keydown', (e) => {
-                const activeElement = document.activeElement;
-                if (activeElement && (
-                    activeElement.tagName === 'INPUT' || 
-                    activeElement.tagName === 'TEXTAREA' || 
-                    activeElement.isContentEditable
-                )) {
-                    return;
-                }
-                
-                const keymap = window.TEGAKI_KEYMAP;
-                if (!keymap) return;
-                
-                const context = { vMode: this.vKeyPressed };
-                const action = keymap.getAction(e, context);
-                if (!action) return;
-                
-                switch(action) {
-                    case 'GIF_PREV_FRAME':
-                        if (this.animationSystem?.goToPreviousFrame) {
-                            this.animationSystem.goToPreviousFrame();
-                        }
-                        if (this.eventBus) {
-                            this.eventBus.emit('gif:prev-frame-requested');
-                        }
-                        e.preventDefault();
-                        break;
-                    
-                    case 'GIF_NEXT_FRAME':
-                        if (this.animationSystem?.goToNextFrame) {
-                            this.animationSystem.goToNextFrame();
-                        }
-                        if (this.eventBus) {
-                            this.eventBus.emit('gif:next-frame-requested');
-                        }
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_HIERARCHY_UP':
-                        this.moveActiveLayerHierarchy('up');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_HIERARCHY_DOWN':
-                        this.moveActiveLayerHierarchy('down');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_ORDER_UP':
-                        const layers1 = this.getLayers();
-                        const currentIndex1 = this.activeLayerIndex;
-                        const activeLayer1 = layers1[currentIndex1];
-                        
-                        if (!activeLayer1 || activeLayer1.layerData?.isBackground) break;
-                        if (currentIndex1 >= layers1.length - 1) break;
-                        
-                        this.reorderLayers(currentIndex1, currentIndex1 + 1);
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_ORDER_DOWN':
-                        const layers2 = this.getLayers();
-                        const currentIndex2 = this.activeLayerIndex;
-                        const activeLayer2 = layers2[currentIndex2];
-                        
-                        if (!activeLayer2 || activeLayer2.layerData?.isBackground) break;
-                        if (currentIndex2 <= 0) break;
-                        
-                        const targetLayer = layers2[currentIndex2 - 1];
-                        if (targetLayer?.layerData?.isBackground) break;
-                        
-                        this.reorderLayers(currentIndex2, currentIndex2 - 1);
-                        e.preventDefault();
-                        break;
-                    
-                    case 'TOOL_PEN':
-                    case 'TOOL_ERASER':
-                        if (this.isLayerMoveMode) {
-                            this.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_MOVE_UP':
-                        this.moveActiveLayer('ArrowUp');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_MOVE_DOWN':
-                        this.moveActiveLayer('ArrowDown');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_MOVE_LEFT':
-                        this.moveActiveLayer('ArrowLeft');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_MOVE_RIGHT':
-                        this.moveActiveLayer('ArrowRight');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_SCALE_UP':
-                        this.transformActiveLayer('ArrowUp');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_SCALE_DOWN':
-                        this.transformActiveLayer('ArrowDown');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_ROTATE_LEFT':
-                        this.transformActiveLayer('ArrowLeft');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_ROTATE_RIGHT':
-                        this.transformActiveLayer('ArrowRight');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_FLIP_HORIZONTAL':
-                        this.flipActiveLayer('horizontal');
-                        e.preventDefault();
-                        break;
-                    
-                    case 'LAYER_FLIP_VERTICAL':
-                        this.flipActiveLayer('vertical');
-                        e.preventDefault();
-                        break;
+            // keyboard-handler.jsからのEventBus経由のイベントのみ処理
+            this.eventBus.on('layer:copy-request', () => {
+                if (window.drawingClipboard) {
+                    window.drawingClipboard.copyActiveLayer();
                 }
             });
             
+            this.eventBus.on('layer:paste-request', () => {
+                if (window.drawingClipboard) {
+                    window.drawingClipboard.pasteLayer();
+                }
+            });
+            
+            this.eventBus.on('layer:flip-by-key', ({ direction }) => {
+                this.flipActiveLayer(direction);
+            });
+            
+            this.eventBus.on('layer:move-by-key', ({ direction }) => {
+                this.moveActiveLayer(direction);
+            });
+            
+            this.eventBus.on('layer:scale-by-key', ({ direction }) => {
+                this.transformActiveLayer(direction);
+            });
+            
+            this.eventBus.on('layer:rotate-by-key', ({ direction }) => {
+                this.transformActiveLayer(direction);
+            });
+            
+            this.eventBus.on('layer:select-next', () => {
+                this.moveActiveLayerHierarchy('up');
+            });
+            
+            this.eventBus.on('layer:select-prev', () => {
+                this.moveActiveLayerHierarchy('down');
+            });
+            
+            this.eventBus.on('layer:order-up', () => {
+                const layers = this.getLayers();
+                const currentIndex = this.activeLayerIndex;
+                const activeLayer = layers[currentIndex];
+                
+                if (!activeLayer || activeLayer.layerData?.isBackground) return;
+                if (currentIndex >= layers.length - 1) return;
+                
+                this.reorderLayers(currentIndex, currentIndex + 1);
+            });
+            
+            this.eventBus.on('layer:order-down', () => {
+                const layers = this.getLayers();
+                const currentIndex = this.activeLayerIndex;
+                const activeLayer = layers[currentIndex];
+                
+                if (!activeLayer || activeLayer.layerData?.isBackground) return;
+                if (currentIndex <= 0) return;
+                
+                const targetLayer = layers[currentIndex - 1];
+                if (targetLayer?.layerData?.isBackground) return;
+                
+                this.reorderLayers(currentIndex, currentIndex - 1);
+            });
+            
+            this.eventBus.on('layer:toggle-move-mode', () => {
+                this.toggleLayerMoveMode();
+            });
+            
+            // Vキー押下時にツール切り替えがあった場合、移動モードを終了
+            this.eventBus.on('tool:select', () => {
+                if (this.isLayerMoveMode) {
+                    this.exitLayerMoveMode();
+                }
+            });
+            
+            // ウィンドウのblurでVキーモードを解除
             window.addEventListener('blur', () => {
                 if (this.vKeyPressed) {
                     this.exitLayerMoveMode();
@@ -1338,6 +1260,17 @@
                 return true;
             } catch (error) {
                 return false;
+            }
+        }
+        
+        requestThumbnailUpdate(layerIndex) {
+            if (this.eventBus) {
+                const layer = this.getLayers()[layerIndex];
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'manual-request',
+                    data: { layerIndex, layerId: layer?.layerData?.id }
+                });
             }
         }
     }
