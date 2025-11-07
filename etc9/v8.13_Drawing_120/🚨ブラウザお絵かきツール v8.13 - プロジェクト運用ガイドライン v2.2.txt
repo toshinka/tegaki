@@ -1,0 +1,913 @@
+## ブラウザお絵かきツール v8.13 - プロジェクト運用ガイドライン v2.2
+
+### ■ 実行環境・技術スタック
+
+- **実行環境：** Chrome 最新、ローカルで HTML 直開き可能（file://）を想定、またファイルをブックマークレット発火しCSPを回避する為のビルドによる一括化も予定。
+- **フレームワーク主体：** ベクターペン主体で、ラスターペンはプロジェクト完全終了後も実装予定なし。
+- **技術スタック：** 
+  - レンダリング: PixiJS v8.13（WebGLバックエンド、CDN読み込み）
+  - Compute処理: WebGPU（Distance Field生成専用、段階的導入）
+  - シェーダ言語: WGSL（WebGPU Shading Language）
+  - JavaScript: ES2023（モジュールは使用しない）
+  - API境界: fetch API、clear API boundaries
+- **禁止事項：** Canvas2D（全用途で禁止、理由後述）, TypeScript, Vite, ESM, bundler, Babel 不使用
+- **ライブラリ方針：** ライブラリを有効活用し車輪の再発明を無くす。但しPixiJSv8・WebGPUとの相性やAIからの見通し・改修し易さも考慮すること。
+
+---
+
+### ■ 座標系統合ガイドライン【v2.0で明確化、v2.2で精度要件強化】
+
+#### 座標変換の責務分離
+
+- **座標変換を coordinate-system.js に完全統合**
+  - DPI/DPR/CSSスケールを考慮した変換関数を一元化
+  - Screen → Canvas → World → Local の完全パイプライン実装
+
+- **drawing-engine.js の責務（v2.2: BrushCoreへ移行予定）**
+  - ❌ 「座標変換に依存せずワールド座標で動作」は誤り
+  - ✓ **ポインターイベントから Local座標に変換し、ストローク記録する**
+  - coordinate-system.worldToLocal() を使用して正確なLocal座標を取得
+  - strokeRecorder には **Local座標のみ** を渡す（二重変換防止）
+
+- **camera-system.js は表示変換のみ担当**
+  - worldContainer の位置・スケール・回転管理
+  - カメラ操作（ズーム・パン）のみ実装
+
+- **stroke-recorder.js の責務**
+  - ✓ **ローカル座標のポイントを直接記録**
+  - ❌ screenToLayer() や座標変換を呼ばない（二重変換防止）
+  - 入力パラメータ名に座標系を明示（localX, localY）
+
+#### 座標精度要件【v2.2で強化】
+
+**SDF/MSDFマスク方式では座標精度が品質に直結:**
+
+- サブピクセル精度（0.5px以下の誤差）が必須
+- Distance Field計算時に1pxズレると境界がぼける
+- worldToLocal() の数学的正確性が従来以上に重要
+
+**実装例（DPR補正の明確化）:**
+```javascript
+function screenClientToCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const canvasX = (clientX - rect.left) * dpr;
+    const canvasY = (clientY - rect.top) * dpr;
+    return { canvasX, canvasY };
+}
+```
+
+---
+
+### ■ 座標系統合の実装ルール【v2.0実装知見、v2.2で疑似コード追加】
+
+#### 1. 座標変換の正確性
+
+- すべてのpointerイベントは統一された変換パイプラインを通す
+  ```
+  PointerEvent.clientX/Y 
+    → screenClientToCanvas()  [DPI補正]
+    → canvasToWorld()  [worldContainer逆行列]
+    → worldToLocal()  [手動逆算・親チェーン遡査]
+    → Local座標確定
+  ```
+
+- **worldToLocal() は PIXI v8 toLocal() ではなく手動逆算のみ**
+  - 理由: toLocal() が親チェーン全体の worldTransform を使うため、worldContainer の offset が含まれる
+  - 実装: 親コンテナをスキャンして各 position/scale/rotation を逆順に適用
+
+**worldToLocal() の疑似コード【v2.2追加】:**
+```javascript
+function worldToLocal(worldX, worldY, targetContainer) {
+    let localX = worldX;
+    let localY = worldY;
+    let current = targetContainer;
+    
+    // 親チェーンを遡って逆変換を適用（TRS順序: Translate→Rotate→Scale）
+    while (current && current !== worldContainer) {
+        // 1. 親の position を引く
+        localX -= current.x;
+        localY -= current.y;
+        
+        // 2. 親の rotation を逆適用（行列回転）
+        const cos = Math.cos(-current.rotation);
+        const sin = Math.sin(-current.rotation);
+        const rotatedX = localX * cos - localY * sin;
+        const rotatedY = localX * sin + localY * cos;
+        
+        // 3. 親の scale で割る
+        localX = rotatedX / current.scale.x;
+        localY = rotatedY / current.scale.y;
+        
+        current = current.parent;
+    }
+    return { localX, localY };
+}
+```
+
+**Local座標の定義明確化【v2.2追加】:**
+```
+Local座標 = レイヤーContainer直下の座標系
+- レイヤーの position/scale/rotation が適用される前の座標
+- ストローク内の個別Graphicsではなく、レイヤー全体の座標系
+- SDF/MSDF計算の基準座標系として使用
+```
+
+#### 2. 命名と API の厳格性
+
+- **パラメータ名に座標系を明示**
+  ```javascript
+  ✓ startStroke(localX, localY, pressure)
+  ✗ startStroke(x, y, pressure)  // 座標系不明
+  ```
+
+- **メソッド名で座標系を区別可能に**
+  ```javascript
+  screenClientToCanvas()
+  canvasToWorld()
+  worldToLocal()
+  localToWorld()
+  // 各メソッド名から座標系が明確
+  ```
+
+- **二重変換を命名で防ぐ**
+  - addPoint(localX, localY) = screenToLayer() を呼ばない
+  - drawingEngine側で座標変換を完結させる
+  - strokeRecorder は受け取った座標をそのまま記録
+
+#### 3. グローバルオブジェクトの統一
+
+- **グローバルオブジェクトは明確に統一**
+  ```javascript
+  window.CoordinateSystem         // ✓ 統一
+  window.cameraSystem             // ✓ 統一（CameraSystem インスタンス）
+  window.layerManager             // ✓ 統一（LayerSystem インスタンス）
+  
+  window.TEGAKI_COORDINATE_SYSTEM // ❌ 削除候補（重複）
+  ```
+  - core-runtime.js で明示的に割り当て
+  - クラス定義の副作用的なグローバル汚染を避ける
+
+#### 4. 初期化の一元化
+
+- **CoordinateSystem.init() は1回限りに**
+  ```javascript
+  init() {
+      if (this.app) return;  // 2回目以降はスキップ
+      // 初期化処理
+  }
+  ```
+  - 初期化状態フラグ (isInitialized) を用意
+  - 重複初期化によるバグを防止
+
+#### 5. デバッグ手法の統一
+
+- **コンソールログは最小限、なるべく無しで。** 不具合はAIによる検索が可能なので冗長化でしか無い。
+  - 代わりに **デバッグコンソールツール（CoordDebug等）** をグローバルに提供
+  - 実行時に `CoordDebug.testPoint()` で座標検証
+  - 問題時は **具体的な座標値をコンソールに出力** （自動ログではなく意図的な出力）
+
+- **CoordDebugの座標系スコープ指定【v2.1追加】**
+  ```javascript
+  CoordDebug.log('screen', clientX, clientY);
+  CoordDebug.log('canvas', canvasX, canvasY);
+  CoordDebug.log('world', worldX, worldY);
+  CoordDebug.log('local', localX, localY);
+  ```
+  - 座標系を第一引数で明示
+  - デバッグ時の座標系混乱を防止
+
+---
+
+### ■ ファイル責務の明確化【v2.2で大幅改訂】
+
+#### 現行構造（v8.13_Drawing_54時点）
+
+| ファイル | 責務 | 依存 | v2.2での扱い |
+|---------|------|------|-------------|
+| **coordinate-system.js** | Screen↔Canvas↔World↔Local 変換の完全統合 | config, eventBus | ✅ 継続 |
+| **camera-system.js** | worldContainer transform管理、ズーム・パン | coordinate-system | ✅ 継続 |
+| **drawing-engine.js** | ポインターイベント → Local座標 変換、ストローク開始 | coordinate-system, layerManager, strokeRecorder | ⚠️ BrushCoreに改称予定 |
+| **stroke-recorder.js** | Local座標ポイント直接記録 | 座標変換なし | ✅ 継続 |
+| **stroke-renderer.js** | Local座標からビジュアル生成 | 座標変換なし | ⚠️ BrushRendererに統合 |
+| **eraser-mask-renderer.js** | 消しゴム専用マスク描画 | 独自ロジック | ❌ 廃止（BrushRendererに統合） |
+| **core-runtime.js** | 全システムの初期化・統合 | すべて | ✅ 継続（Phase 2.5追加） |
+
+#### 推奨構造（SDF/MSDF統合後）
+
+| ファイル | 責務 | 依存 | 導入時期 |
+|---------|------|------|---------|
+| **brush-core.js** | ペン/消しゴム共通ロジック（筆圧、補間、確定） | coordinate-system, pressure-handler, curve-interpolator | Phase 2 |
+| **brush-renderer.js** | PixiJS統合レンダラ（ペン/消しモード切替） | brush-core, layer-system | Phase 2 |
+| **brush-types/** | ペン/消しゴムの設定差分のみ | brush-core | Phase 2 |
+| ├─ pen-brush.js | addモード（通常描画） | - | Phase 2 |
+| ├─ eraser-brush.js | subtractモード（マスク適用） | - | Phase 2 |
+| **sdf-mask-generator.js** | Distance Field計算（Compute Shader統合） | coordinate-system, brush-core | Phase 3 |
+| **msdf-mask-generator.js** | Multi-channel SDF生成（3チャンネル距離場） | sdf-mask-generator | Phase 4 |
+| **compute-shader-manager.js** | WebGPU Compute統合管理 | なし | Phase 3 |
+| **shader-pipeline.js** | WGSL管理・コンパイル | compute-shader-manager | Phase 3 |
+| **material-mask-renderer.js** | マテリアル属性付きマスク（PBR用） | msdf-mask-generator | Phase 5（研究段階） |
+
+---
+
+### ■ 依存関係の方向性【v2.1追加、v2.2で拡張】
+
+```
+依存の流れ（呼び出す方向）- SDF/MSDF対応版:
+
+core-runtime.js
+    ├→ coordinate-system.js （最下層・他に依存しない）
+    ├→ camera-system.js ──→ coordinate-system.js
+    ├→ layer-system.js
+    │
+    ├→ compute-shader-manager.js （Phase 2.5: GPU Compute基盤）
+    │   └→ shader-pipeline.js
+    │
+    ├→ brush-core.js ──→ coordinate-system.js
+    │                ──→ pressure-handler.js
+    │                ──→ curve-interpolator.js
+    │                ──→ stroke-recorder.js
+    │
+    ├→ sdf-mask-generator.js ──→ brush-core.js
+    │                        ──→ compute-shader-manager.js
+    │
+    ├→ msdf-mask-generator.js ──→ sdf-mask-generator.js
+    │
+    ├→ brush-renderer.js ──→ brush-core.js
+    │                    ──→ layer-system.js
+    │                    ──→ sdf-mask-generator.js（Phase 3以降）
+    │
+    └→ material-mask-renderer.js ──→ msdf-mask-generator.js（Phase 5）
+
+逆方向依存の禁止:
+  ❌ coordinate-system.js → drawing-engine.js
+  ❌ stroke-recorder.js → coordinate-system.js
+  ❌ camera-system.js → layer-system.js
+  ❌ brush-core.js → brush-renderer.js
+  ❌ sdf-mask-generator.js → material-mask-renderer.js
+```
+
+依存解決原則:
+- 上位層が下位層を呼び出す（逆は禁止）
+- coordinate-system.js は最下層（他に依存しない）
+- brush-core は座標変換のみに依存（レンダリングに依存しない）
+- stroke-recorder/renderer は座標変換に依存しない
+- compute-shader-manager は独立した基盤層
+
+---
+
+### ■ 初期化順序の明確化【v2.1追加、v2.2でPhase 2.5追加】
+
+**core-runtime.js における初期化順序テンプレート:**
+
+```javascript
+async function init() {
+    // Phase 1: 基盤システム（他に依存しない）
+    await CoordinateSystem.init();
+    await EventBus.init();
+    await StateManager.init();
+    
+    // Phase 2: コア表示システム（coordinate-systemに依存）
+    await CameraSystem.init();
+    await LayerManager.init();
+    
+    // Phase 2.5: GPU Compute初期化【v2.2新規追加】
+    // ※ WebGPU非対応環境では自動的にスキップ
+    if (await WebGPUSupport.check()) {
+        await ComputeShaderManager.init();  // WebGPU準備
+        await SDFMaskGenerator.init();      // Compute Shader読み込み
+    }
+    
+    // Phase 3: 描画エンジン（Phase 2, 2.5に依存）
+    await BrushCore.init();             // 旧DrawingEngine統合
+    await BrushRenderer.init();
+    
+    // Phase 4: UI・拡張機能（すべてに依存可能）
+    await UIManager.init();
+    await ExportManager.init();
+    await HistoryManager.init();
+}
+```
+
+初期化失敗時の扱い:
+- Phase 1失敗 → 致命的、即座に throw（アプリケーション起動不可）
+- Phase 2失敗 → 致命的、即座に throw（描画不可）
+- **Phase 2.5失敗 → 警告ログ、機能制限モード（WebGLフォールバック）【v2.2追加】**
+- Phase 3失敗 → 致命的、即座に throw（基本機能不可）
+- Phase 4失敗 → 警告ログのみ、アプリ継続可能（機能制限モードで動作）
+
+Phase 2.5 フォールバック戦略【v2.2新規】:
+```javascript
+// WebGPU非対応時の動作
+if (!ComputeShaderManager.isInitialized) {
+    console.warn('WebGPU非対応: SDF/MSDFマスクは利用不可、従来マスク方式で動作');
+    SDFMaskGenerator.useFallback = true;  // WebGLベースの簡易マスク
+}
+```
+
+---
+
+### ■ EventBus 規約【v2.1追加】
+
+**イベント名フォーマット:**
+```
+component:action
+```
+
+例:
+- `tool:size-changed`
+- `layer:opacity-changed`
+- `camera:zoom-changed`
+- `drawing:stroke-started`
+- `brush:mode-switched` 【v2.2追加】
+- `sdf:generation-completed` 【v2.2追加】
+
+**Payload 構造テンプレート:**
+```javascript
+{
+    component: "tool",          // イベント発行元コンポーネント
+    action: "size-changed",     // 実行されたアクション
+    data: {                     // アクション固有データ
+        tool: "pen",
+        size: 10,
+        opacity: 0.8
+    },
+    timestamp: Date.now()       // オプション: イベント発行時刻
+}
+```
+
+統一ルール:
+- component名はファイル名に対応（tool, layer, camera, brush等）
+- actionはケバブケース（size-changed, stroke-started）
+- dataは必ず object 型（プリミティブ値の直接渡し禁止）
+- timestampはデバッグ用途で任意追加可
+
+---
+
+### ■ SDF/MSDF統合ロードマップ【v2.2新規】
+
+#### Phase 1: ハイブリッドマスク（現在: v8.13_Drawing_54）
+
+**現行実装:**
+- レイヤーマスク方式（WebGL）
+- stroke-renderer.js でペン描画（完成度90%）
+- eraser-mask-renderer.js で消しゴム（完成度40%、孤立構造）
+
+**問題点:**
+- ペンと消しゴムが別ストリーム（二重構造）
+- マスク境界がピクセル依存（拡大時にジャギー）
+- eraser-mask-renderer.js が layer-system と未接続
+
+**Phase 1完了条件:**
+- layerData.maskTexture の自動生成実装（LayerSystem.ensureMaskTexture()）
+- eraser-mask-renderer.js の基本動作確認
+
+#### Phase 2: BrushCore統合（次期改修）
+
+**目標:**
+- ペンと消しゴムを共通パイプラインに統合
+- eraser-mask-renderer.js を廃止
+
+**実装内容:**
+```javascript
+// brush-core.js: ペン/消しゴム共通処理
+class BrushCore {
+    startStroke(localX, localY, pressure, mode) {
+        // mode: 'pen' | 'eraser'
+        this.currentMode = mode;
+        // 筆圧・補間・記録は共通
+    }
+    
+    finalizeStroke() {
+        // stroke-recorder から取得した点群を
+        // brush-renderer に渡して描画
+    }
+}
+
+// brush-renderer.js: 描画実行（モード切替）
+class BrushRenderer {
+    render(strokeData, mode) {
+        if (mode === 'eraser') {
+            graphics.blendMode = PIXI.BLEND_MODES.ERASE;
+            // maskTexture に対して描画
+        } else {
+            graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
+            // 通常レイヤーに描画
+        }
+    }
+}
+```
+
+**Phase 2完了条件:**
+- brush-core.js, brush-renderer.js の実装完了
+- eraser-mask-renderer.js の完全削除
+- ペン/消しゴムのUndo/Redo動作確認
+- 座標系テスト6項目すべて合格
+
+#### Phase 3: SDF統合（将来）
+
+**目標:**
+- Distance Field による滑らかなマスク境界
+- スケール非依存の高品質エッジ
+
+**技術構成:**
+- WebGPU Compute Shader でSDF生成
+- ストロークの点群から距離場をリアルタイム計算
+- maskTexture を16bit float形式に変更
+
+**実装例:**
+```wgsl
+// sdf-compute.wgsl (擬似コード)
+@compute @workgroup_size(8, 8)
+fn computeSDF(@builtin(global_invocation_id) id: vec3<u32>) {
+    let pixelCoord = vec2<f32>(id.xy);
+    var minDist = 999999.0;
+    
+    // ストロークの全点との距離を計算
+    for (var i = 0u; i < strokePointCount; i++) {
+        let dist = distance(pixelCoord, strokePoints[i]);
+        minDist = min(minDist, dist);
+    }
+    
+    // smoothstep でフェード境界生成
+    let alpha = smoothstep(softRadius, hardRadius, minDist);
+    maskTexture[id.xy] = vec4<f32>(alpha, alpha, alpha, 1.0);
+}
+```
+
+**Phase 3完了条件:**
+- compute-shader-manager.js 実装
+- sdf-mask-generator.js 実装
+- WebGPU非対応環境でのフォールバック動作確認
+- 境界品質の視覚的検証（拡大時のジャギー消失確認）
+
+#### Phase 4: MSDF移行（遠い将来）
+
+**目標:**
+- Multi-channel Distance Field による完璧なエッジ再現
+- 角・交差部での距離場混濁を解消
+
+**技術構成:**
+- R/G/B 各チャンネルに異なるエッジからの距離を格納
+- フラグメントシェーダで median(r, g, b) による統合
+- msdfgen (WASM版) の統合
+
+**Phase 4完了条件:**
+- msdf-mask-generator.js 実装
+- 角・細線でのエッジ品質検証
+- パフォーマンスベンチマーク（Phase 3比での劣化許容範囲内）
+
+#### Phase 5: マテリアルブレンディング（研究段階）
+
+**目標:**
+- PBR的な多属性マスク
+- 「色だけ消す」「ツヤだけ消す」等の表現
+
+**技術構成:**
+```wgsl
+struct MaterialMask {
+    colorMask: f32,
+    roughMask: f32,
+    metalMask: f32,
+};
+```
+
+**Phase 5完了条件:**
+- material-mask-renderer.js 実装
+- UI上での属性選択機能
+- 物理ベースレンダリングとの統合検証
+
+---
+
+### ■ API の不一致・二重実装チェックリスト
+
+各改修時に確認すること：
+
+- [ ] **座標系の一貫性**
+  - パラメータ名に座標系が明示されているか
+  - 座標変換は coordinate-system.js 経由のみか
+  - 二重変換がないか（drawing-engine と stroke-recorder で別々に変換していないか）
+  - **サブピクセル精度が保証されているか（SDF/MSDF用）【v2.2追加】**
+
+- [ ] **グローバルオブジェクトの統一**
+  - window.layerSystem/layerManager が統一されているか
+  - window.CoordinateSystem が初期化されているか
+  - 重複定義（TEGAKI_* vs. TegakiXxx）がないか
+
+- [ ] **命名の規則性**
+  - メソッド名から座標系が判別できるか
+  - パラメータ名に座標系が含まれているか
+  - EventBus イベント名が統一フォーマットか（component:action）
+
+- [ ] **初期化処理の明確性**
+  - init() が複数回呼ばれても安全か
+  - 初期化順序に依存関係がないか（or 明示されているか）
+  - 依存するシステムが先に初期化されているか（Phase順守）
+  - **Phase 2.5（GPU Compute）の初期化がスキップ可能か【v2.2追加】**
+
+- [ ] **責務分離**
+  - coordinate-system.js が座標変換のみか（描画ロジックを含まないか）
+  - drawing-engine.js が描画ロジックと座標変換の責務が分離されているか
+  - stroke-recorder.js が記録のみか（描画やUI更新を含まないか）
+  - **brush-core.js がレンダリングに依存していないか【v2.2追加】**
+
+- [ ] **依存方向の正当性【v2.1追加】**
+  - 依存矢印が上位→下位の方向のみか
+  - 循環依存がないか
+  - coordinate-system.js が他システムに依存していないか
+  - **compute-shader-manager.js が描画ロジックに依存していないか【v2.2追加】**
+
+- [ ] **EventBus payload構造【v2.1追加】**
+  - component, action, data の3要素が揃っているか
+  - data は object 型か（プリミティブ直接渡しでないか）
+  - イベント名がケバブケースか
+
+- [ ] **ペン/消しゴム統合性【v2.2追加】**
+  - ペンと消しゴムが同一パイプライン（BrushCore）を使用しているか
+  - eraser-mask-renderer.js のような独立実装が存在しないか
+  - blendMode切替のみでペン/消しモードを実現できているか
+
+---
+
+### ■ ショートカット中心運用
+
+- **基本的にショートカット中心運用でアイコンは無駄に設けない**
+- UI要素は最小限（レイヤーパネル、タイムライン、簡易ステータスのみ）
+- ペン操作・カメラ操作はすべてキーボード/マウスで実装
+
+---
+
+### ■ 実装品質基準
+
+- **多数ある競合ツールとの差別化のためモダンな実装を心がけ、後方互換は気にしない。**
+  - PixiJS v8 の最新機能を積極的に活用
+  - **WebGPU Compute を段階的に導入（Phase 2.5以降）【v2.2追加】**
+  - ES2023 の新構文を使用（async/await, オプショナルチェーン等）
+
+- **DRY/SOLID原則に基づく明確なファイルの責務分担をしClaudeからの可視性を高める事。**
+  - 各ファイルは単一責任に特化
+  - コード重複を徹底的に排除
+  - インターフェースを明確に定義
+  - **ペン/消しゴムの共通処理は必ずBrushCoreに集約【v2.2追加】**
+
+- **APIの不一致・断片化・EventBus統合の不完全性・設定参照の混在・二重実装があるか等の整合性のチェック**
+  - 各機能追加時に整合性レビュー
+  - 新しいAPI導入時は既存APIとの競合を確認
+  - EventBus の イベント名・パラメータ形式を統一
+
+- **命名・形式・メソッド・初期化・イベント・管理の規則性のある統一ルール化/系統の一元化をして他Claudeからの可読性・保守性を高める。**
+  - メソッド命名: camelCase で座標系を含む
+  - イベント名: `component:action` フォーマット統一
+  - パラメータ: 座標系を名に含める
+
+- **Distance Field 生成は必ず GPU Compute で実装【v2.2追加】**
+  - CPU側での距離計算は禁止（パフォーマンス劣化）
+  - msdfgen（C++版）の直接使用は禁止（WASM版のみ許可）
+  - フォールバック実装は「品質劣化を許容」ではなく「機能制限モード」として明示
+
+---
+
+### ■ 禁止事項【v2.1で強化、v2.2でSDF関連追加】
+
+- 🚫 **Canvas2D の完全禁止【v2.2で理由強化】**
+  - サムネイル生成を含む全ての用途で Canvas2D 使用禁止
+  - **理由追加: Distance Field 計算には GPU Compute が必須**
+    - Canvas2D の getImageData() では距離情報が失われる
+    - SDF/MSDF生成にはピクセル単位の距離計算が必要
+  - サムネイル生成は PixiJS の RenderTexture + renderer.extract で実装
+  - 例外: デバッグ用の一時的なピクセルダンプのみ許可（本番コードでは禁止）
+
+- 🚫 **ラスターペンの実装禁止【v2.1で明確化】**
+  - プロジェクト完全終了後も実装予定なし
+  - ベクターペン（ストロークベース）のみサポート
+  - 「将来的に追加」等の曖昧な記述禁止
+
+- 🚫 **フォールバック処理・フェイルセーフ - 曖昧な動作・暗黙修復禁止。**
+  - 座標系の fallback は明示的に（or 例外 throw）
+  - 初期化失敗時は隠さず throw（Phase別の例外管理）
+  - 「何か動いてるっぽい」は許さない
+  - **WebGPU非対応時は「機能制限モード」として明示的に通知【v2.2追加】**
+
+- 🚫 **バージョン混在 - PixiJS v7/v8同時対応・二重管理禁止。**
+  - v8.13 専用実装
+  - v7対応コードは削除
+
+- 🚫 **二重実装による肥大化、過度なエラー演出も禁止。冗長化注意。**
+  - 座標変換を複数箇所で実装しない
+  - エラーメッセージは簡潔に（AI検索しやすく）
+  - ログ出力は最小限
+  - **ペンと消しゴムで別々のレンダラーを持たない【v2.2追加】**
+
+- 🚫 **二重変換の禁止【v2.0で明確化】**
+  - drawing-engine で Local座標に変換後、stroke-recorder で screenToLayer() を呼ばない
+  - メソッドの入力座標系を明示してから呼び出す
+
+- 🚫 **循環依存の禁止【v2.1追加】**
+  - 依存矢印は必ず上位→下位の一方向
+  - coordinate-system.js が他に依存してはならない
+  - 循環が必要な場合は EventBus 経由で疎結合化
+
+- 🚫 **CPU側での距離場計算の禁止【v2.2追加】**
+  - SDF/MSDF生成は必ず GPU Compute で実行
+  - JavaScript での距離計算ループは禁止（パフォーマンス劣化）
+  - 例外: デバッグ用の検証コードのみ許可
+
+- 🚫 **ペン/消しゴムの分離実装禁止【v2.2追加】**
+  - eraser-mask-renderer.js のような独立した消しゴム実装は廃止
+  - BrushCore + BrushRenderer の共通パイプラインを必ず使用
+  - blendMode 切替のみでペン/消しを実現すること
+
+---
+
+### ■ 座標系統合テストの必須項目【v2.2でSDF関連追加】
+
+改修完了後、以下すべてをテストする：
+
+#### 基本座標系テスト
+
+- [ ] **初期状態でペン位置と描画位置が一致** → [座標系の一貫性] 対応
+- [ ] **ズーム後も描画位置が正確** → [座標系の一貫性] 対応
+- [ ] **パン後も描画位置が正確** → [座標系の一貫性] 対応
+- [ ] **レイヤー移動後も描画位置が正確** → [座標系の一貫性] 対応
+- [ ] **Canvas resize 後も描画位置が正確** → [初期化処理の明確性] 対応
+- [ ] **Retina/DPI 環境で描画位置が正確** → [座標系の一貫性] 対応
+
+#### サブピクセル精度テスト【v2.2追加】
+
+- [ ] **0.5px 以下の誤差で座標変換が動作** → [SDF/MSDF品質保証] 対応
+- [ ] **筆圧変化時のフェード境界が連続** → [Distance Field品質] 対応
+- [ ] **拡大時のエッジにジャギーが発生しない（SDF有効時）** → [スケール非依存性] 対応
+
+#### ペン/消しゴム統合テスト【v2.2追加】
+
+- [ ] **ペンと消しゴムが同一パイプラインで動作** → [BrushCore統合] 対応
+- [ ] **消しゴム使用後のUndo/Redoが正常動作** → [履歴管理整合性] 対応
+- [ ] **ペン→消しゴム→ペンの連続切替が正常動作** → [モード切替安定性] 対応
+- [ ] **消しゴムのリアルタイムプレビューが実描画と一致** → [プレビュー精度] 対応
+
+#### GPU Compute テスト（Phase 3以降）【v2.2追加】
+
+- [ ] **WebGPU対応環境でSDF生成が動作** → [Compute Shader動作確認] 対応
+- [ ] **WebGPU非対応環境でフォールバックが動作** → [フォールバック機能] 対応
+- [ ] **SDF境界がスケール変更後も滑らか** → [Distance Field品質] 対応
+
+---
+
+### ■ 今後の改修時のチェックリスト
+
+**新しいコードを追加する際：**
+
+1. 座標系を扱うか確認
+2. YES → パラメータ名に座標系を明示
+3. メソッド名でも座標系を区別可能か確認
+4. 二重変換がないか確認
+5. coordinate-system.js 経由か確認
+6. グローバルオブジェクトの統一性を確認
+7. EventBus イベント名が統一フォーマットか確認
+8. 依存方向が上位→下位か確認【v2.1追加】
+9. 初期化順序が Phase に準拠しているか確認【v2.1追加】
+10. Canvas2D を使用していないか確認【v2.1追加】
+11. **ペン/消しゴムで共通処理を重複実装していないか確認【v2.2追加】**
+12. **Distance Field計算をCPUで行っていないか確認【v2.2追加】**
+13. **WebGPU非対応時のフォールバックが実装されているか確認【v2.2追加】**
+
+---
+
+### ■ v2.2 での主要変更点
+
+**新規追加項目:**
+- SDF/MSDF統合ロードマップ（Phase 1〜5）
+- Phase 2.5: GPU Compute初期化フェーズ
+- brush-core.js / brush-renderer.js の責務定義
+- eraser-mask-renderer.js 廃止方針の明記
+- WebGPU技術スタックの追加
+- compute-shader-manager.js / shader-pipeline.js の追加
+- サブピクセル精度要件の明確化
+- worldToLocal() の疑似コード
+- screenClientToCanvas() の実装例
+- Local座標の定義明確化
+- CoordDebug の座標系スコープ指定
+
+**強化項目:**
+- Canvas2D完全禁止の理由強化（SDF計算への影響を明記）
+- 座標精度要件の強化（0.5px以下）
+- 禁止事項に「CPU距離計算禁止」「ペン/消しゴム分離禁止」を追加
+- テスト項目にSDF関連・ペン/消しゴム統合テストを追加
+- 依存関係図にGPU Compute層を追加
+- 初期化順序にPhase 2.5を追加
+- チェックリストに3項目追加
+
+**削除項目:**
+- なし（v2.0, v2.1の内容はすべて継承）
+
+**改称予定:**
+- drawing-engine.js → brush-core.js（Phase 2で実施）
+- stroke-renderer.js → brush-renderer.js に統合（Phase 2で実施）
+
+---
+
+### ■ 現状コードベースの評価【v2.2新規】
+
+#### ペンツール（stroke-renderer.js + drawing-engine.js）
+
+**完成度: 90%**
+- ✅ Pixi.Graphics によるベクター描画
+- ✅ 筆圧対応（pressureHandler + calculateWidth()）
+- ✅ Undo/Redo完全対応
+- ✅ blendMode切替サポート済み
+- ✅ マスク適用サポート済み
+
+**残課題:**
+- BrushCoreへの抽象化（責務分離）
+- 座標系パラメータ名の明示化
+
+**判定: 再実装不要、リファクタリングで対応可能**
+
+#### 消しゴムツール（eraser-mask-renderer.js）
+
+**完成度: 40%**
+- ✅ PIXI.BLEND_MODES.ERASE による描画（手法は正しい）
+- ✅ captureMaskSnapshot() / restoreMaskSnapshot() 実装済み
+- ⚠️ layerData.maskTexture の生成処理が未実装
+- ⚠️ 筆圧補間・ストローク結合なし
+- ⚠️ リアルタイムプレビューが赤円のみ（実描画でない）
+- ❌ LayerSystemとの接続が不完全
+
+**残課題:**
+- LayerSystem.ensureMaskTexture() の実装
+- stroke-renderer.js との統合（二重構造解消）
+- リアルタイムプレビューの実装
+
+**判定: eraser-mask-renderer.js は廃止、stroke-renderer.js の eraseモードを正式採用**
+
+#### 座標系（coordinate-system.js）
+
+**完成度: 85%**
+- ✅ Screen→Canvas→World→Local の基本パイプライン
+- ✅ DPR対応
+- ⚠️ worldToLocal() の実装精度が不明（検証必要）
+- ⚠️ サブピクセル精度の保証が未検証
+
+**残課題:**
+- worldToLocal() の数学的検証
+- 0.5px精度テストの実施
+
+**判定: 基本構造は正しい、精度検証と疑似コード追加が必要**
+
+---
+
+### ■ Phase 2 移行の具体的手順【v2.2新規】
+
+#### Step 1: BrushCore抽出（1〜2日）
+
+```javascript
+// 既存コードから共通部分を抽出
+// drawing-engine.js の startDrawing/updateDrawing/stopDrawing を
+// brush-core.js の startStroke/updateStroke/finalizeStroke に移行
+
+// 移行対象:
+- pressure-handler.js の統合
+- curve-interpolator.js の統合
+- stroke-recorder.js の呼び出し制御
+```
+
+#### Step 2: BrushRenderer統合（2〜3日）
+
+```javascript
+// stroke-renderer.js を拡張
+class BrushRenderer {
+    render(strokeData, mode, targetTexture) {
+        if (mode === 'eraser') {
+            this.graphics.blendMode = PIXI.BLEND_MODES.ERASE;
+            this.graphics.renderTexture = targetTexture; // maskTexture
+        } else {
+            this.graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
+            this.graphics.renderTexture = layerTexture;
+        }
+        // 既存の renderFinalStroke() ロジックを流用
+    }
+}
+```
+
+#### Step 3: EraserMaskRenderer廃止（1日）
+
+```javascript
+// eraser-mask-renderer.js の機能を BrushRenderer に移行
+// - renderEraserToMask() → BrushRenderer.render(data, 'eraser', maskTex)
+// - updateEraserPreview() → BrushRenderer.renderPreview(data, 'eraser')
+// - Snapshot機能は HistoryManager に移行
+```
+
+#### Step 4: LayerSystem強化（1日）
+
+```javascript
+// layer-system.js に追加
+ensureMaskTexture(layerData) {
+    if (!layerData.maskTexture) {
+        layerData.maskTexture = PIXI.RenderTexture.create({
+            width: config.canvas.width,
+            height: config.canvas.height,
+            resolution: window.devicePixelRatio
+        });
+        // 初期値: 完全不透明（白）
+        this.renderer.render(whiteFillGraphics, layerData.maskTexture);
+    }
+    return layerData.maskTexture;
+}
+```
+
+#### Step 5: 座標系精度検証（1日）
+
+```javascript
+// coordinate-system.js に疑似コードを実装
+// テストケース作成:
+CoordDebug.testSubpixelAccuracy(); // 0.5px精度検証
+CoordDebug.testWorldToLocal();    // 行列逆変換検証
+```
+
+#### Step 6: 統合テスト（1〜2日）
+
+- 座標系テスト6項目 + サブピクセルテスト
+- ペン/消しゴム統合テスト4項目
+- Undo/Redo動作確認
+- パフォーマンス測定（Phase 1比での劣化許容範囲内）
+
+**Phase 2 完了予定: 7〜10日**
+
+---
+
+### ■ 参考資料
+
+- **座標系統合・完全修正 改修ロードマップ.txt** - 基本的な改修手順
+- **座標系統合・完全修正 改修ロードマップ v1.1** - 実装知見と落とし穴
+- **CoordDebug** - コンソール座標検証ツール
+- **GPT5 運用ガイドライン評価.txt** - v2.1改訂の根拠資料
+- **消しゴムとペン.txt** - SDF/MSDF技術解説・世代進化マップ【v2.2追加】
+- **ペン/消しゴム現状分析レポート** - 既存コード評価・Phase 2移行指針【v2.2追加】
+
+---
+
+### ■ よくある質問（FAQ）【v2.2新規】
+
+**Q1: Phase 2に移行せず、現状のまま使い続けることは可能か？**
+
+A1: 技術的には可能だが推奨しない。理由:
+- eraser-mask-renderer.js が孤立しており、将来の拡張が困難
+- ペン/消しゴムの二重構造がAI協調開発の障害になる
+- Phase 3（SDF統合）への移行が事実上不可能
+
+**Q2: WebGPU非対応環境ではどうなるのか？**
+
+A2: Phase 2まではWebGL のみで動作（WebGPU不要）。Phase 3以降は:
+- WebGPU対応: SDF/MSDFマスクで高品質
+- WebGPU非対応: 従来のレイヤーマスク方式（機能制限モード）
+- 自動判定・自動フォールバック
+
+**Q3: Phase 2への移行中、既存機能が壊れるリスクは？**
+
+A3: リスクは低い。理由:
+- stroke-renderer.js は90%完成しており、ロジック流用可能
+- coordinate-system.js は変更不要
+- 段階的移行（Step 1〜6）により、各Stepでテスト可能
+
+**Q4: SDF/MSDFは本当に必要なのか？従来マスクで十分では？**
+
+A4: 用途による:
+- 固定解像度での使用 → 従来マスクで十分
+- 拡大・縮小が頻繁 → SDF推奨
+- Procreate級の品質 → MSDF必須
+- 競合との差別化 → SDF/MSDF は必須技術
+
+**Q5: Canvas2D完全禁止は厳しすぎないか？**
+
+A5: SDF/MSDF方式では技術的に不可能。理由:
+- getImageData() は距離情報を保持しない
+- GPU Compute での距離計算が必須
+- デバッグ用途のみ例外として許可
+
+**Q6: なぜペンと消しゴムを統合する必要があるのか？**
+
+A6: AI協調開発の観点から必須。理由:
+- 別々に実装すると、改修時に二度手間
+- Claude/GPTが文脈を失い、整合性が崩れる
+- 共通パイプラインなら、一度の改修で両方に反映
+
+---
+
+### ■ 結語【v2.2新規】
+
+本ガイドライン v2.2 は、以下を達成するために策定されました:
+
+1. **座標系の数学的正確性の保証**（worldToLocal疑似コード追加）
+2. **SDF/MSDF統合への明確なロードマップ提示**（Phase 1〜5）
+3. **ペン/消しゴム統合による二重構造解消**（BrushCore導入）
+4. **WebGPU段階的導入の方針明確化**（Phase 2.5追加）
+5. **AIバイブコーディング適性の最大化**（依存関係・命名規則の厳格化）
+
+このガイドラインに従うことで:
+- Claude/GPTによる自動改修が容易になる
+- 座標系バグを事前に防止できる
+- モダンな描画技術（SDF/MSDF）への移行が円滑になる
+- 競合ツール（Procreate/Figma級）の品質に到達可能
+
+**次のアクション: Phase 2移行の開始を推奨（推定7〜10日）**
