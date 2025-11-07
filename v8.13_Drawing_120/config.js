@@ -1,4 +1,4 @@
-// ===== config.js - 統合キーマップ完全版 (DRY/SOLID準拠) =====
+// ===== config.js - Vキーモード対応キーマップ完全版 (DRY/SOLID準拠) =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -157,71 +157,76 @@ window.TEGAKI_KEYMAP = {
         },
         
         // === レイヤー移動モード (V押下時) ===
-        LAYER_MOVE_MODE_TOGGLE: {
-            key: 'KeyV',
-            ctrl: false,
-            shift: false,
-            repeat: false,
-            description: 'レイヤー移動モード切替'
-        },
         LAYER_MOVE_UP: {
             key: 'ArrowUp',
             vMode: true,
             shift: false,
+            ctrl: false,
             description: 'レイヤーを上に移動'
         },
         LAYER_MOVE_DOWN: {
             key: 'ArrowDown',
             vMode: true,
             shift: false,
+            ctrl: false,
             description: 'レイヤーを下に移動'
         },
         LAYER_MOVE_LEFT: {
             key: 'ArrowLeft',
             vMode: true,
             shift: false,
+            ctrl: false,
             description: 'レイヤーを左に移動'
         },
         LAYER_MOVE_RIGHT: {
             key: 'ArrowRight',
             vMode: true,
             shift: false,
+            ctrl: false,
             description: 'レイヤーを右に移動'
         },
         LAYER_SCALE_UP: {
             key: 'ArrowUp',
             vMode: true,
             shift: true,
+            ctrl: false,
             description: 'レイヤー拡大'
         },
         LAYER_SCALE_DOWN: {
             key: 'ArrowDown',
             vMode: true,
             shift: true,
+            ctrl: false,
             description: 'レイヤー縮小'
         },
         LAYER_ROTATE_LEFT: {
             key: 'ArrowLeft',
             vMode: true,
             shift: true,
+            ctrl: false,
             description: 'レイヤー左回転'
         },
         LAYER_ROTATE_RIGHT: {
             key: 'ArrowRight',
             vMode: true,
             shift: true,
+            ctrl: false,
             description: 'レイヤー右回転'
         },
         LAYER_FLIP_HORIZONTAL: {
             key: 'KeyH',
             vMode: true,
             shift: false,
+            ctrl: false,
+            alt: false,
             description: 'レイヤー水平反転'
         },
         LAYER_FLIP_VERTICAL: {
             key: 'KeyH',
             vMode: true,
             shift: true,
+            ctrl: false,
+            alt: false,
             description: 'レイヤー垂直反転'
         },
         
@@ -255,12 +260,13 @@ window.TEGAKI_KEYMAP = {
             description: 'レイヤー順序を下げる'
         },
         
-        // === カメラ操作 ===
+        // === カメラ操作 (通常モード) ===
         CAMERA_FLIP_HORIZONTAL: {
             key: 'KeyH',
             vMode: false,
             shift: false,
             ctrl: false,
+            alt: false,
             description: 'キャンバス水平反転'
         },
         CAMERA_FLIP_VERTICAL: {
@@ -268,6 +274,7 @@ window.TEGAKI_KEYMAP = {
             vMode: false,
             shift: true,
             ctrl: false,
+            alt: false,
             description: 'キャンバス垂直反転'
         },
         CAMERA_RESET: {
@@ -440,4 +447,4 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (統合キーマップ完全版 - DRY/SOLID準拠) loaded');
+console.log('✅ config.js (Vキーモード対応完全版 - DRY/SOLID準拠) loaded');
