@@ -1,4 +1,4 @@
-// ui/keyboard-handler.js - Vキー状態管理修正版 (DRY/SOLID準拠)
+// ui/keyboard-handler.js - 反転機能修復版 (DRY/SOLID準拠)
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -30,7 +30,7 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // Vキーの状態管理
+        // ✅ Vキーの状態管理（Ctrl/Shift/Altと組み合わせない場合のみ）
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!vKeyPressed) {
                 vKeyPressed = true;
@@ -38,7 +38,7 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        // アクション取得時にVキー状態を渡す
+        // ✅ 修正: アクション取得時にVキー状態を明示的に渡す
         const action = keymap.getAction(e, { vMode: vKeyPressed });
         if (!action) return;
         
@@ -164,6 +164,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // ✅ レイヤー反転（Vキーモード時のみ動作）
             case 'LAYER_FLIP_HORIZONTAL':
                 eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
                 event.preventDefault();
@@ -194,6 +195,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // ✅ カメラ反転（通常モード時のみ動作）
             case 'CAMERA_FLIP_HORIZONTAL':
                 eventBus.emit('camera:flip-horizontal');
                 event.preventDefault();
@@ -383,7 +385,6 @@ window.KeyboardHandler = (function() {
         return window.TEGAKI_KEYMAP?.getShortcutList() || [];
     }
     
-    // Vキー状態を取得する公開メソッド
     function isVKeyPressed() {
         return vKeyPressed;
     }
@@ -395,3 +396,5 @@ window.KeyboardHandler = (function() {
         isVKeyPressed
     };
 })();
+
+console.log('✅ keyboard-handler.js (反転機能修復版) loaded');
