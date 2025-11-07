@@ -1,0 +1,507 @@
+================================================================================
+ブラウザお絵かきツール v8.13_Drawing_103
+段階的改修計画書
+================================================================================
+
+【解析日】2025-11-05
+【対象バージョン】v8.13_Drawing_103
+【改修担当Claude向け】最小限必要情報のみ記載
+
+
+================================================================================
+■ 現状問題の特定
+================================================================================
+
+【問題1】背景レイヤーのサムネイル消失
+原因: thumbnail-system.js の updateLayerThumbnail() が children.length === 0 で早期リターン
+      背景レイヤーの backgroundColor プロパティを描画していない
+
+【問題2】レイヤーサムネイルの枠が不安定
+原因: CSS の .layer-thumbnail-container に border 定義が不完全
+      アクティブレイヤー変更時の DOM クラス更新ロジックに問題
+
+【問題3】新規レイヤー名が常に「レイヤー1」
+原因: layer-system.js の createLayer() 内の連番生成ロジックが機能不全
+      既存レイヤー名のパース処理が不正確
+
+
+================================================================================
+■ 二重実装の検出
+================================================================================
+
+【二重実装1】座標変換システムの分散
+- coordinate-system.js: CoordinateSystem クラス (グローバル window.CoordinateSystem)
+- layer-transform.js: 独立した変換関数群
+→ 統合必要
+
+【二重実装2】設定管理の多重化
+- settings-manager.js: SettingsManager
+- brush-settings.js: BrushSettings
+- config.js: CONFIG オブジェクト
+→ アクセスパス統一必要
+
+【二重実装3】サムネイル生成の重複
+- thumbnail-system.js: ThumbnailSystem.updateLayerThumbnail()
+- timeline-thumbnail-utils.js: TimelineThumbnailUtils.generateThumbnail()
+→ 共通化必要
+
+【二重実装4】WebGPU 初期化の断片化
+- webgpu-capabilities.js
+- webgpu-drawing-layer.js
+- webgpu-compute-sdf.js
+→ 初期化フロー一元化必要
+
+
+================================================================================
+■ Phase 1: 緊急バグ修正
+================================================================================
+
+【Phase 1-1】背景レイヤーサムネイル修正
+対象ファイル: system/drawing/thumbnail-system.js
+
+修正箇所:
+- updateLayerThumbnail() メソッド
+- 行番号: 約 45-60 (children.length チェック部分)
+
+修正内容:
+1. children.length === 0 の早期リターンを削除
+2. backgroundColor プロパティ存在チェック追加
+3. 背景色レンダリング処理追加:
+   ```
+   if (layer.backgroundColor) {
+       graphics.rect(0, 0, layer.width, layer.height);
+       graphics.fill({ color: layer.backgroundColor });
+   }
+   ```
+
+参考メソッド:
+- PIXI.Graphics API
+- layer-system.js の Layer モデル定義 (backgroundColor プロパティ)
+
+EventBus 発火:
+- 'thumbnail:updated' イベント発火維持
+
+
+【Phase 1-2】レイヤーサムネイル枠の修正
+対象ファイル: 
+- styles/main.css
+- ui/layer-panel-renderer.js
+
+main.css 修正:
+- .layer-thumbnail-container に border: 2px solid transparent; 追加
+- .layer-thumbnail-container.active に border-color: #d97706; 追加
+
+layer-panel-renderer.js 修正:
+- renderLayerItem() メソッド内 (約 80-120行)
+- thumbnail コンテナに 'active' クラス付与処理追加:
+  ```
+  if (layer.id === activeLayerId) {
+      thumbnailContainer.classList.add('active');
+  }
+  ```
+- updateActiveLayer() メソッドで全サムネイルの active クラス更新
+
+参考:
+- DOM クラス操作: classList.add/remove
+- EventBus 'layer:changed' イベント購読
+
+
+【Phase 1-3】レイヤー連番名の修正
+対象ファイル: system/layer-system.js
+
+修正箇所:
+- createLayer() メソッド内 (約 150-180行)
+- generateLayerName() メソッド (存在しない場合は新規作成)
+
+修正内容:
+1. 既存の全レイヤー名を取得: this.layers.map(l => l.name)
+2. 正規表現で「レイヤー(\d+)」をパース: /^レイヤー(\d+)$/
+3. 最大番号を取得: Math.max(...numbers, 0)
+4. 次番号を計算: maxNumber + 1
+5. 新レイヤー名を設定: `レイヤー${nextNumber}`
+
+実装例:
+```
+const layerNames = this.layers.map(l => l.name);
+const numbers = layerNames
+    .map(name => {
+        const match = name.match(/^レイヤー(\d+)$/);
+        return match ? parseInt(match[1], 10) : 0;
+    })
+    .filter(n => n > 0);
+const nextNumber = Math.max(...numbers, 0) + 1;
+const newName = `レイヤー${nextNumber}`;
+```
+
+参考:
+- Array.map(), Math.max(), parseInt()
+- String.match() 正規表現
+
+
+================================================================================
+■ Phase 2: 座標変換システム統合
+================================================================================
+
+【Phase 2-1】coordinate-system.js への統合
+対象ファイル:
+- coordinate-system.js (統合先)
+- system/layer-transform.js (統合元、削除予定)
+
+統合手順:
+1. layer-transform.js の全関数を CoordinateSystem クラスのメソッドに移植
+   - screenToLayer() → screenToLocal()
+   - layerToWorld() → localToWorld()
+   - その他の変換関数
+2. メソッド名を座標系命名規則に準拠:
+   - localX, localY / worldX, worldY / screenX, screenY パラメータ名
+3. worldToLocal() の手動逆算実装維持 (PIXI toLocal() 使用禁止)
+
+移植対象メソッド (layer-transform.js):
+- screenToLayer()
+- layerToWorld()
+- worldToLayer()
+- その他 5-8 個の変換関数
+
+参考:
+- ガイドライン「座標変換パイプライン」セクション
+- PIXI v8 Matrix API
+
+
+【Phase 2-2】呼び出し元の更新
+対象ファイル:
+- system/drawing/drawing-engine.js
+- system/drawing/stroke-recorder.js
+- その他 layer-transform.js を import しているファイル (約 3-5 個)
+
+修正内容:
+1. import 文削除: layer-transform.js
+2. window.CoordinateSystem 経由で呼び出し変更
+3. メソッド名を新命名規則に更新
+
+例:
+```
+// 変更前
+import { screenToLayer } from './system/layer-transform.js';
+const { x, y } = screenToLayer(screenX, screenY, layer);
+
+// 変更後
+const { localX, localY } = window.CoordinateSystem.screenToLocal(screenX, screenY, layer);
+```
+
+テスト項目:
+- 描画座標が正しいか
+- ズーム・パン後の座標変換が正常か
+
+
+【Phase 2-3】layer-transform.js の削除
+実行内容:
+1. 全参照が削除されていることを確認
+2. layer-transform.js ファイルを削除
+3. index.html から <script> タグ削除
+
+
+================================================================================
+■ Phase 3: 設定管理の統一
+================================================================================
+
+【Phase 3-1】設定アクセスパスの統一
+対象ファイル:
+- system/settings-manager.js (中央管理)
+- system/drawing/brush-settings.js (統合元)
+- config.js (読み取り専用定数のみ残す)
+
+統一方針:
+1. SettingsManager を唯一の設定 I/O インターフェースにする
+2. BrushSettings は SettingsManager のプロキシとして実装
+3. CONFIG は変更不可の定数定義のみ (DEFAULT 値など)
+
+BrushSettings 改修:
+- 内部で SettingsManager.get/set を呼び出すように変更
+- 独自のストレージアクセスを削除
+- getBrushSize(), setBrushSize() などを SettingsManager へ委譲
+
+例:
+```
+class BrushSettings {
+    getBrushSize() {
+        return window.settingsManager.get('brush.size', CONFIG.BRUSH.SIZE.DEFAULT);
+    }
+    setBrushSize(size) {
+        window.settingsManager.set('brush.size', size);
+    }
+}
+```
+
+参考:
+- Proxy パターン
+- SettingsManager の get/set API
+
+
+【Phase 3-2】呼び出し元の整理
+対象ファイル:
+- system/drawing/drawing-engine.js
+- system/drawing/brush-core.js
+- ui/settings-popup.js
+- その他設定を参照する全ファイル (約 10-15 個)
+
+修正内容:
+1. 直接 localStorage にアクセスしているコードを削除
+2. window.settingsManager 経由に統一
+3. 設定キー名を統一 (例: 'brushSize' → 'brush.size')
+
+設定キー命名規則:
+- 'brush.size', 'brush.color', 'brush.opacity'
+- 'canvas.width', 'canvas.height'
+- 'ui.theme', 'ui.language'
+
+EventBus イベント:
+- 'settings:changed' イベントで全設定変更を通知
+- パラメータ: { key, oldValue, newValue }
+
+
+================================================================================
+■ Phase 4: サムネイル生成の共通化
+================================================================================
+
+【Phase 4-1】サムネイル生成エンジンの統合
+対象ファイル:
+- system/drawing/thumbnail-system.js (統合先、共通エンジン化)
+- ui/timeline-thumbnail-utils.js (統合元)
+
+統合設計:
+1. ThumbnailSystem を共通エンジンとして拡張
+2. TimelineThumbnailUtils の generateThumbnail() を移植
+3. レイヤー用とタイムライン用の生成モード追加:
+   - generateLayerThumbnail(layer, size)
+   - generateTimelineThumbnail(frame, size)
+
+共通化するロジック:
+- PIXI.RenderTexture の生成
+- Canvas サイズ計算とアスペクト比維持
+- 背景色の描画
+- 子要素の再帰的レンダリング
+
+実装例:
+```
+class ThumbnailSystem {
+    generateThumbnail(source, width, height, options = {}) {
+        // 共通レンダリングロジック
+        const renderTexture = PIXI.RenderTexture.create({ width, height });
+        // ...
+        return renderTexture;
+    }
+    
+    generateLayerThumbnail(layer, size) {
+        return this.generateThumbnail(layer.container, size, size, {
+            backgroundColor: layer.backgroundColor
+        });
+    }
+    
+    generateTimelineThumbnail(frame, size) {
+        return this.generateThumbnail(frame.container, size, size);
+    }
+}
+```
+
+参考:
+- PIXI.RenderTexture API
+- PIXI.Renderer.render()
+
+
+【Phase 4-2】呼び出し元の更新
+対象ファイル:
+- ui/layer-panel-renderer.js (レイヤーサムネイル)
+- ui/timeline-ui.js (タイムラインサムネイル)
+
+修正内容:
+1. TimelineThumbnailUtils.generateThumbnail() 呼び出しを削除
+2. ThumbnailSystem.generateTimelineThumbnail() に変更
+3. EventBus 'thumbnail:generated' イベント購読で更新
+
+例:
+```
+// 変更前
+const thumbnail = TimelineThumbnailUtils.generateThumbnail(frame, 64);
+
+// 変更後
+const thumbnail = window.thumbnailSystem.generateTimelineThumbnail(frame, 64);
+```
+
+
+【Phase 4-3】timeline-thumbnail-utils.js の削除
+実行内容:
+1. 全参照が削除されていることを確認
+2. timeline-thumbnail-utils.js ファイル削除
+3. index.html から <script> タグ削除
+
+
+================================================================================
+■ Phase 5: WebGPU 初期化の一元化
+================================================================================
+
+【Phase 5-1】WebGPU マネージャーの新規作成
+新規ファイル: system/drawing/webgpu/webgpu-manager.js
+
+責務:
+1. WebGPU デバイス・アダプタの初期化
+2. コンピュートパイプライン管理
+3. テクスチャ・バッファ管理
+4. SDF/MSDF コンピュート呼び出しの統一インターフェース
+
+クラス設計:
+```
+class WebGPUManager {
+    constructor() {
+        this.device = null;
+        this.adapter = null;
+        this.capabilities = null;
+        this.computePipelines = new Map();
+    }
+    
+    async initialize() {
+        // webgpu-capabilities.js のロジックを統合
+        this.adapter = await navigator.gpu.requestAdapter();
+        this.device = await this.adapter.requestDevice();
+        this.capabilities = new WebGPUCapabilities(this.adapter);
+    }
+    
+    createComputePipeline(name, shaderCode, entryPoint) {
+        // パイプライン作成を一元化
+    }
+    
+    async computeSDF(inputData, options) {
+        // webgpu-compute-sdf.js を統合
+    }
+    
+    async computeMSDF(inputData, options) {
+        // webgpu-compute-msdf.js を統合
+    }
+}
+```
+
+統合対象:
+- webgpu-capabilities.js の初期化ロジック
+- webgpu-compute-sdf.js の computeSDF()
+- webgpu-compute-msdf.js の computeMSDF()
+
+参考:
+- WebGPU API: navigator.gpu
+- GPUDevice, GPUAdapter インターフェース
+
+
+【Phase 5-2】既存ファイルのリファクタリング
+対象ファイル:
+- system/drawing/webgpu/webgpu-drawing-layer.js
+- system/drawing/sdf-texture-generator.js
+- system/drawing/msdf/msdf-brush-shader.js
+
+修正内容:
+1. 独自の WebGPU 初期化コードを削除
+2. window.webgpuManager 経由でコンピュート実行
+3. テクスチャブリッジを WebGPUManager 経由で取得
+
+例:
+```
+// 変更前
+const device = await navigator.gpu.requestDevice();
+const sdfData = await computeSDFField(device, points);
+
+// 変更後
+const sdfData = await window.webgpuManager.computeSDF(points, {
+    resolution: 512,
+    maxDistance: 50
+});
+```
+
+
+【Phase 5-3】重複コードの削除
+削除対象:
+- webgpu-capabilities.js (WebGPUManager に統合済み)
+- webgpu-compute-sdf.js (WebGPUManager に統合済み)
+- webgpu-compute-msdf.js (WebGPUManager に統合済み)
+
+保持ファイル:
+- webgpu-drawing-layer.js (レイヤー管理、リファクタリング済み)
+- webgpu-texture-bridge.js (PIXI 連携、そのまま)
+- processing/sdf-compute.wgsl (シェーダーコード)
+- shaders/msdf-compute.wgsl (シェーダーコード)
+- shaders/sdf-compute.wgsl (シェーダーコード)
+
+index.html 更新:
+- 削除ファイルの <script> タグ削除
+- webgpu-manager.js の <script> タグ追加
+
+
+================================================================================
+■ Phase 6: 最終検証とクリーンアップ
+================================================================================
+
+【Phase 6-1】統合テスト
+テスト項目:
+1. 背景レイヤーのサムネイルが正しく表示されるか
+2. レイヤーサムネイルの枠が常に表示されるか
+3. 新規レイヤーが連番で作成されるか (レイヤー1, 2, 3...)
+4. 描画座標変換が正しく動作するか
+5. 設定の保存・読み込みが正常か
+6. サムネイル生成がレイヤー・タイムラインで動作するか
+7. WebGPU SDF/MSDF 描画が正常か
+
+検証方法:
+- Chrome DevTools Console でエラー確認
+- EventBus 'debug:log' イベントで座標変換ログ確認
+- localStorage を確認し設定の保存確認
+
+
+【Phase 6-2】不要コンソールログの削除
+対象:
+- 全ファイルの console.log() / console.debug()
+- 開発用デバッグコードの削除
+- 特に座標変換デバッグログ
+
+残すログ:
+- console.error() (エラーハンドリング)
+- console.warn() (重要な警告)
+
+
+【Phase 6-3】最終コードレビュー
+チェックリスト:
+- [ ] DRY 原則: 重複実装がないか
+- [ ] SOLID 原則: 単一責任、依存性逆転が守られているか
+- [ ] 命名規則: localX/worldX/screenX の統一
+- [ ] EventBus: イベント名が 'component:action' 形式か
+- [ ] 禁止事項: Canvas2D, PIXI toLocal(), localStorage 直接アクセスがないか
+- [ ] グローバル変数: window.CoordinateSystem, window.cameraSystem など統一
+
+
+================================================================================
+■ 改修時の注意事項 (Claude 担当者向け)
+================================================================================
+
+【座標変換】
+- worldToLocal() は必ず手動逆算で実装 (PIXI toLocal() 禁止)
+- パラメータ名に座標系を明示: localX, worldY など
+
+【EventBus】
+- イベント名: 'component:action' (例: 'layer:changed', 'thumbnail:updated')
+- すべての状態変更は EventBus 経由で通知
+
+【禁止事項の厳守】
+- Canvas2D 使用禁止
+- localStorage 直接アクセス禁止 (SettingsManager 経由)
+- CPU での距離場計算禁止 (必ず GPU)
+- フォールバック・フェイルセーフの暗黙修復禁止
+
+【ファイル削除時】
+- 必ず全参照を削除してから
+- index.html の <script> タグも削除
+- EventBus でファイル削除を通知する必要はない
+
+【テスト】
+- 各 Phase 完了後に動作確認
+- console.error がないことを確認
+- EventBus でイベントフローを確認
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================
