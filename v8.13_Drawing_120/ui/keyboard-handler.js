@@ -1,4 +1,4 @@
-// ui/keyboard-handler.js - 反転機能修復版 (DRY/SOLID準拠)
+// ui/keyboard-handler.js - Vキーモード完全修復版 (DRY/SOLID準拠)
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -30,15 +30,17 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // ✅ Vキーの状態管理（Ctrl/Shift/Altと組み合わせない場合のみ）
-        if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        // Vキーの状態管理
+        if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             if (!vKeyPressed) {
                 vKeyPressed = true;
                 eventBus.emit('keyboard:vkey-pressed', { pressed: true });
+                e.preventDefault();
+                return;
             }
         }
         
-        // ✅ 修正: アクション取得時にVキー状態を明示的に渡す
+        // アクション取得時にVキー状態を渡す
         const action = keymap.getAction(e, { vMode: vKeyPressed });
         if (!action) return;
         
@@ -119,11 +121,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            case 'LAYER_MOVE_MODE_TOGGLE':
-                eventBus.emit('layer:toggle-move-mode');
-                event.preventDefault();
-                break;
-            
             case 'LAYER_MOVE_UP':
                 eventBus.emit('layer:move-by-key', { direction: 'ArrowUp' });
                 event.preventDefault();
@@ -164,7 +161,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // ✅ レイヤー反転（Vキーモード時のみ動作）
             case 'LAYER_FLIP_HORIZONTAL':
                 eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
                 event.preventDefault();
@@ -195,7 +191,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // ✅ カメラ反転（通常モード時のみ動作）
             case 'CAMERA_FLIP_HORIZONTAL':
                 eventBus.emit('camera:flip-horizontal');
                 event.preventDefault();
@@ -397,4 +392,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js (反転機能修復版) loaded');
+console.log('✅ keyboard-handler.js (Vキーモード完全修復版) loaded');
