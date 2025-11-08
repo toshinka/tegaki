@@ -1,25 +1,22 @@
 /**
- * @file layer-panel-renderer.js - Phase 1完全修正版
- * @description レイヤーパネルUI描画（サムネイル統一実装）
+ * @file layer-panel-renderer.js - 安定版
+ * @description レイヤーパネルUI描画（シンプル・確実・統一）
  * 
- * 【親ファイル (このファイルが依存)】
- * - layer-system.js (レイヤーデータ取得)
- * - thumbnail-system.js (サムネイル生成)
- * - event-bus.js (イベント通信)
- * - checker-utils.js (チェッカーパターン生成)
+ * 【依存関係】
+ * ◆ 親ファイル (このファイルが依存):
+ *   - layer-system.js (レイヤーデータ取得)
+ *   - thumbnail-system.js (サムネイル生成)
+ *   - event-bus.js (イベント通信)
+ *   - config.js (設定値)
  * 
- * 【子ファイル (このファイルに依存)】
- * なし（UI層）
+ * ◆ 子ファイル (このファイルに依存):
+ *   なし (UI層・末端ファイル)
  * 
- * 【主要メソッド】
- * - createThumbnail(): 通常レイヤーサムネイル生成（動的アスペクト比）
- * - _createBackgroundThumbnail(): 背景レイヤーサムネイル生成（固定64x44）
- * - _updateSingleThumbnail(): サムネイル個別更新
- * 
- * 【Phase 1 修正内容】
- * 1. 全レイヤーで動的アスペクト比計算を適用（アクティブ/非アクティブ区別なし）
- * 2. 背景レイヤーサムネイルの完全修正（64x44固定、背景色のみ表示）
- * 3. サムネイル更新時のアスペクト比維持
+ * 【設計方針】
+ * - 背景レイヤーも通常レイヤーと同じサムネイル生成方式
+ * - 全レイヤーでキャンバスアスペクト比を維持
+ * - ThumbnailSystemに完全依存（独自生成なし）
+ * - 複雑なロジック排除・可読性最優先
  */
 
 (function() {
@@ -34,6 +31,7 @@
             this._isInitialized = false;
             this._editingLayerIndex = -1;
             this._editingInput = null;
+            this._updateTimeout = null;
 
             this._setupEventListeners();
             
@@ -132,7 +130,6 @@
 
             const isBackground = layer.layerData?.isBackground || false;
             
-            // 共通スタイル
             layerDiv.style.cssText = `
                 width:170px;
                 min-height:48px;
@@ -161,67 +158,37 @@
                 layerDiv.style.padding = '4px 6px';
             }
 
-            // === 背景レイヤーのレイアウト ===
+            // === 背景レイヤー: 簡素化レイアウト ===
             if (isBackground) {
-                // 1行目: 空白
                 const row1 = document.createElement('div');
                 row1.style.cssText = 'grid-column:1;grid-row:1;height:14px;';
                 layerDiv.appendChild(row1);
 
-                // 2行目: アイコン列（表示/非表示 + 空白 + バケツ）
                 const row2 = document.createElement('div');
                 row2.style.cssText = 'grid-column:1;grid-row:2;display:flex;align-items:center;gap:4px;height:16px;';
 
-                // 表示/非表示
                 const visibilityIcon = this._createVisibilityIcon(layer, index);
                 row2.appendChild(visibilityIcon);
 
-                // 空白
                 const spacer = document.createElement('div');
                 spacer.style.cssText = 'width:16px;height:16px;flex-shrink:0;';
                 row2.appendChild(spacer);
 
-                // バケツアイコン
-                const bucketIcon = document.createElement('div');
-                bucketIcon.className = 'layer-background-color-button';
-                bucketIcon.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
-                bucketIcon.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" 
-                         viewBox="0 0 24 24" fill="none" stroke="#800000" 
-                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/>
-                        <path d="m5 2 5 5"/>
-                        <path d="M2 13h15"/>
-                        <path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/>
-                    </svg>
-                `;
-                bucketIcon.title = '背景色を現在のペンカラーに変更';
-                bucketIcon.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (this.eventBus) {
-                        this.eventBus.emit('ui:background-color-change-requested', {
-                            layerIndex: index,
-                            layerId: layer.layerData?.id
-                        });
-                    }
-                });
+                const bucketIcon = this._createBucketIcon(index, layer);
                 row2.appendChild(bucketIcon);
-
                 layerDiv.appendChild(row2);
 
-                // 3行目: レイヤー名
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'layer-name';
                 nameSpan.textContent = '背景';
                 nameSpan.style.cssText = `grid-column:1;grid-row:3;color:#800000;font-size:10px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:default;padding:0;height:14px;display:flex;align-items:center;`;
                 layerDiv.appendChild(nameSpan);
 
-                // 🔧 Phase 1: 背景サムネイル（1-3行目スパン）- 固定サイズ64x44
-                const thumbnail = this._createBackgroundThumbnail(layer, index);
+                // 🔧 背景も通常サムネイル生成方式で統一
+                const thumbnail = this.createThumbnail(layer, index);
                 thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
                 layerDiv.appendChild(thumbnail);
 
-                // クリック無効化
                 layerDiv.addEventListener('click', (e) => {
                     e.stopPropagation();
                     e.preventDefault();
@@ -230,30 +197,24 @@
                 return layerDiv;
             }
 
-            // === 通常レイヤーのレイアウト ===
-            
-            // 1行目: 透明度コントロール
+            // === 通常レイヤー ===
             const row1 = document.createElement('div');
             row1.style.cssText = 'grid-column:1;grid-row:1;display:flex;align-items:center;gap:2px;justify-content:flex-start;height:14px;';
 
-            // フォルダ予定余白
             const folderPlaceholder = document.createElement('div');
             folderPlaceholder.style.cssText = 'width:14px;height:14px;flex-shrink:0;';
             row1.appendChild(folderPlaceholder);
 
-            // 透明度コントロール
             const opacityContainer = this._createOpacityControl(layer, index);
             row1.appendChild(opacityContainer);
             layerDiv.appendChild(row1);
 
-            // 2行目: アイコン列
             const row2 = document.createElement('div');
             row2.style.cssText = 'grid-column:1;grid-row:2;display:flex;align-items:center;gap:4px;height:16px;';
 
             const visibilityIcon = this._createVisibilityIcon(layer, index);
             row2.appendChild(visibilityIcon);
 
-            // 将来のアイコン用プレースホルダー
             for (let i = 0; i < 3; i++) {
                 const placeholder = document.createElement('div');
                 placeholder.style.cssText = 'width:16px;height:16px;flex-shrink:0;';
@@ -261,16 +222,13 @@
             }
             layerDiv.appendChild(row2);
 
-            // 3行目: レイヤー名
             const nameSpan = this._createLayerName(layer, index);
             layerDiv.appendChild(nameSpan);
 
-            // 🔧 Phase 1: サムネイル（1-3行目スパン）- 動的アスペクト比
             const thumbnail = this.createThumbnail(layer, index);
             thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
             layerDiv.appendChild(thumbnail);
 
-            // 削除ボタン
             const deleteBtn = this._createDeleteButton(index);
             layerDiv.appendChild(deleteBtn);
             
@@ -282,7 +240,6 @@
                 deleteBtn.style.opacity = '0';
             });
 
-            // クリックイベント
             layerDiv.addEventListener('click', (e) => {
                 if (e.target.closest('.layer-delete-button') ||
                     e.target.closest('.layer-opacity-control button') ||
@@ -327,6 +284,33 @@
             });
             
             return visibilityIcon;
+        }
+
+        _createBucketIcon(index, layer) {
+            const bucketIcon = document.createElement('div');
+            bucketIcon.className = 'layer-background-color-button';
+            bucketIcon.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+            bucketIcon.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" 
+                     viewBox="0 0 24 24" fill="none" stroke="#800000" 
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/>
+                    <path d="m5 2 5 5"/>
+                    <path d="M2 13h15"/>
+                    <path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/>
+                </svg>
+            `;
+            bucketIcon.title = '背景色を現在のペンカラーに変更';
+            bucketIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.eventBus) {
+                    this.eventBus.emit('ui:background-color-change-requested', {
+                        layerIndex: index,
+                        layerId: layer.layerData?.id
+                    });
+                }
+            });
+            return bucketIcon;
         }
 
         _createOpacityControl(layer, index) {
@@ -425,84 +409,20 @@
         }
 
         /**
-         * 🔧 Phase 1: 背景レイヤーサムネイル完全修正
-         * - 固定サイズ: 64x44px
-         * - 非表示時: チェッカーパターン
-         * - 表示時: backgroundColor のみ（backgroundGraphics は使わない）
-         */
-        _createBackgroundThumbnail(layer, index) {
-            const thumbnailContainer = document.createElement('div');
-            thumbnailContainer.className = 'layer-thumbnail background-thumbnail';
-            thumbnailContainer.dataset.layerIndex = index;
-            
-            // 固定サイズ 64x44 を明示的に設定
-            thumbnailContainer.style.width = '64px';
-            thumbnailContainer.style.height = '44px';
-            thumbnailContainer.style.boxSizing = 'border-box';
-            thumbnailContainer.style.border = '1px solid #cf9c97';
-            thumbnailContainer.style.borderRadius = '2px';
-            thumbnailContainer.style.overflow = 'hidden';
-            thumbnailContainer.style.position = 'relative';
-            thumbnailContainer.style.display = 'flex';
-            thumbnailContainer.style.alignItems = 'center';
-            thumbnailContainer.style.justifyContent = 'center';
-            thumbnailContainer.style.flexShrink = '0'; // 重要: サイズ固定
-            
-            const isVisible = layer.layerData?.visible !== false;
-            
-            if (!isVisible) {
-                // 非表示時はチェッカーパターン
-                if (window.checkerUtils) {
-                    const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(62, 42, 8);
-                    thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
-                    thumbnailContainer.style.backgroundSize = 'cover';
-                    thumbnailContainer.style.backgroundPosition = 'center';
-                } else {
-                    thumbnailContainer.style.backgroundColor = '#cccccc';
-                }
-            } else {
-                // 表示時は背景色のみ（backgroundGraphicsは使わない）
-                const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
-                const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
-                thumbnailContainer.style.backgroundColor = colorHex;
-            }
-            
-            return thumbnailContainer;
-        }
-
-        /**
-         * 🔧 Phase 1: 通常レイヤーサムネイル完全修正
-         * - 全レイヤーで動的アスペクト比計算を適用
-         * - アクティブ/非アクティブの区別をなくす
+         * 🔧 統一サムネイル生成: 背景も通常レイヤーも同じロジック
+         * ThumbnailSystemに完全依存
          */
         createThumbnail(layer, index) {
             const maxWidth = 64;
             const maxHeight = 44;
             
-            // キャンバスのアスペクト比を取得
-            const canvasWidth = this.layerSystem?.config?.canvas?.width || 800;
-            const canvasHeight = this.layerSystem?.config?.canvas?.height || 600;
-            const aspectRatio = canvasWidth / canvasHeight;
-            
-            // アスペクト比を維持したサムネイルサイズ計算
-            let thumbWidth, thumbHeight;
-            if (aspectRatio >= maxWidth / maxHeight) {
-                // 横長
-                thumbWidth = maxWidth;
-                thumbHeight = Math.round(maxWidth / aspectRatio);
-            } else {
-                // 縦長
-                thumbHeight = maxHeight;
-                thumbWidth = Math.round(maxHeight * aspectRatio);
-            }
-            
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
-            // サイズを明示的に設定
-            thumbnailContainer.style.width = thumbWidth + 'px';
-            thumbnailContainer.style.height = thumbHeight + 'px';
+            // 固定サイズ設定（コンテナ）
+            thumbnailContainer.style.width = maxWidth + 'px';
+            thumbnailContainer.style.height = maxHeight + 'px';
             thumbnailContainer.style.boxSizing = 'border-box';
             thumbnailContainer.style.border = '1px solid #cf9c97';
             thumbnailContainer.style.borderRadius = '2px';
@@ -511,7 +431,8 @@
             thumbnailContainer.style.display = 'flex';
             thumbnailContainer.style.alignItems = 'center';
             thumbnailContainer.style.justifyContent = 'center';
-            thumbnailContainer.style.flexShrink = '0'; // 重要: サイズ固定
+            thumbnailContainer.style.flexShrink = '0';
+            thumbnailContainer.style.backgroundColor = '#f5f5f5'; // ローディング背景
             
             if (window.ThumbnailSystem && layer) {
                 window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxWidth, maxHeight)
@@ -527,7 +448,9 @@
                             thumbnailContainer.appendChild(img);
                         }
                     })
-                    .catch(() => {});
+                    .catch(() => {
+                        // サムネイル生成失敗時は空のまま
+                    });
             }
 
             return thumbnailContainer;
@@ -602,9 +525,6 @@
             });
         }
 
-        /**
-         * 🔧 Phase 1: サムネイル個別更新でもアスペクト比維持
-         */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -617,57 +537,10 @@
             if (!thumbnailContainer) return;
 
             const layer = layers[layerIndex];
-            const isBackground = layer?.layerData?.isBackground || false;
             
-            if (isBackground) {
-                // 背景レイヤーの更新
-                thumbnailContainer.innerHTML = '';
-                
-                const isVisible = layer.layerData?.visible !== false;
-                
-                if (!isVisible) {
-                    // 非表示時はチェッカーパターン
-                    if (window.checkerUtils) {
-                        const dataUrl = window.checkerUtils.createThumbnailCheckerDataURL(62, 42, 8);
-                        thumbnailContainer.style.backgroundImage = `url(${dataUrl})`;
-                        thumbnailContainer.style.backgroundSize = 'cover';
-                        thumbnailContainer.style.backgroundPosition = 'center';
-                        thumbnailContainer.style.backgroundColor = '';
-                    } else {
-                        thumbnailContainer.style.backgroundColor = '#cccccc';
-                        thumbnailContainer.style.backgroundImage = '';
-                    }
-                } else {
-                    // 表示時は背景色のみ
-                    const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
-                    const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
-                    thumbnailContainer.style.backgroundColor = colorHex;
-                    thumbnailContainer.style.backgroundImage = '';
-                }
-                
-                return;
-            }
-
-            // 通常レイヤーの更新 - アスペクト比を再計算
+            // ThumbnailSystemで再生成
             const maxWidth = 64;
             const maxHeight = 44;
-            
-            const canvasWidth = this.layerSystem?.config?.canvas?.width || 800;
-            const canvasHeight = this.layerSystem?.config?.canvas?.height || 600;
-            const aspectRatio = canvasWidth / canvasHeight;
-            
-            let thumbWidth, thumbHeight;
-            if (aspectRatio >= maxWidth / maxHeight) {
-                thumbWidth = maxWidth;
-                thumbHeight = Math.round(maxWidth / aspectRatio);
-            } else {
-                thumbHeight = maxHeight;
-                thumbWidth = Math.round(maxHeight * aspectRatio);
-            }
-            
-            // サイズを再設定
-            thumbnailContainer.style.width = thumbWidth + 'px';
-            thumbnailContainer.style.height = thumbHeight + 'px';
 
             if (window.ThumbnailSystem) {
                 try {
@@ -683,7 +556,7 @@
                         thumbnailContainer.appendChild(img);
                     }
                 } catch (error) {
-                    // サムネイル生成エラーは無視
+                    // エラーは無視
                 }
             }
         }
@@ -794,4 +667,4 @@
     window.LayerPanelRenderer = LayerPanelRenderer;
 })();
 
-console.log('✅ layer-panel-renderer.js (Phase 1完全修正版 - アスペクト比統一・背景サムネイル完全修正) loaded');
+console.log('✅ layer-panel-renderer.js (安定版: シンプル・統一・確実) loaded');
