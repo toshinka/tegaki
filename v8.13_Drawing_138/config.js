@@ -2,8 +2,8 @@
 
 window.TEGAKI_CONFIG = {
     canvas: { 
-        width: 344, 
-        height: 135 
+        width: 400, 
+        height: 400 
     },
     pen: { 
         size: 10, 

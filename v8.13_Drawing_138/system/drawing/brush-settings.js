@@ -1,21 +1,47 @@
 /**
- * BrushSettings - Phase 1: シングルトン統一版
- * グローバルインスタンスで統一し、quick-access-popup → BrushSettings → drawing-engine の設定フローを確立
+ * @file system/drawing/brush-settings.js
+ * @description ブラシ設定管理（サイズ、色、不透明度）
+ * 
+ * 【Phase 6 改修内容 - DIP改善】
+ * - シングルトンパターンを維持しつつ依存性注入も可能に
+ * - constructor での明示的な依存性受け取り
+ * - グローバルアクセスは互換性のため残すが、推奨しない
+ * 
+ * 【依存関係】
+ * - config.js (TEGAKI_CONFIG)
+ * - event-bus.js (EventBus)
+ * 
+ * 【親ファイル (依存元)】
+ * - core-engine.js (依存性注入の中心)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - brush-core.js
+ * - stroke-renderer.js
+ * - core-runtime.js (API経由)
  */
 
 (function() {
     'use strict';
 
     class BrushSettings {
+        /**
+         * 🔧 Phase 6: constructor で依存性を明示的に受け取る
+         * @param {Object} config - 設定オブジェクト
+         * @param {Object} eventBus - イベントバス
+         */
         constructor(config, eventBus) {
-            // シングルトンチェック
-            if (window.brushSettings) {
-                console.warn('[BrushSettings] Instance already exists. Returning existing instance.');
+            // シングルトンチェック（互換性維持）
+            if (window.brushSettings && arguments.length === 0) {
+                console.warn('[BrushSettings] Returning existing singleton instance');
                 return window.brushSettings;
             }
 
             this.config = config || window.TEGAKI_CONFIG;
             this.eventBus = eventBus || window.TegakiEventBus;
+
+            if (!this.config) {
+                throw new Error('[BrushSettings] Config is required');
+            }
 
             // デフォルト値
             this.size = this.config.BRUSH_DEFAULTS?.size || 3;
@@ -24,12 +50,13 @@
             this.minWidth = this.config.BRUSH_DEFAULTS?.minWidth || 0.5;
             this.maxWidth = this.config.BRUSH_DEFAULTS?.maxWidth || 30;
 
-            console.log('[BrushSettings] Initialized (Phase 1):', {
+            console.log('[BrushSettings] Initialized (Phase 6 - DIP改善):', {
                 size: this.size,
                 color: `0x${this.color.toString(16)}`,
                 opacity: this.opacity,
                 minWidth: this.minWidth,
-                maxWidth: this.maxWidth
+                maxWidth: this.maxWidth,
+                hasEventBus: !!this.eventBus
             });
         }
 
@@ -40,16 +67,12 @@
             const oldSize = this.size;
             this.size = Math.max(this.minWidth, Math.min(this.maxWidth, size));
             
-            if (oldSize !== this.size) {
-                console.log(`[BrushSettings] Size changed: ${oldSize.toFixed(1)} → ${this.size.toFixed(1)}`);
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('brush:size-changed', { 
-                        component: 'brush',
-                        action: 'size-changed',
-                        data: { size: this.size, oldSize }
-                    });
-                }
+            if (oldSize !== this.size && this.eventBus) {
+                this.eventBus.emit('brush:size-changed', { 
+                    component: 'brush',
+                    action: 'size-changed',
+                    data: { size: this.size, oldSize }
+                });
             }
         }
 
@@ -64,16 +87,12 @@
             const oldColor = this.color;
             this.color = color;
             
-            if (oldColor !== this.color) {
-                console.log(`[BrushSettings] Color changed: 0x${oldColor.toString(16)} → 0x${this.color.toString(16)}`);
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('brush:color-changed', { 
-                        component: 'brush',
-                        action: 'color-changed',
-                        data: { color: this.color, oldColor }
-                    });
-                }
+            if (oldColor !== this.color && this.eventBus) {
+                this.eventBus.emit('brush:color-changed', { 
+                    component: 'brush',
+                    action: 'color-changed',
+                    data: { color: this.color, oldColor }
+                });
             }
         }
 
@@ -94,16 +113,12 @@
             
             this.opacity = Math.max(0, Math.min(1, opacity));
             
-            if (oldOpacity !== this.opacity) {
-                console.log(`[BrushSettings] Opacity changed: ${(oldOpacity * 100).toFixed(0)}% → ${(this.opacity * 100).toFixed(0)}%`);
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('brush:opacity-changed', { 
-                        component: 'brush',
-                        action: 'opacity-changed',
-                        data: { opacity: this.opacity, oldOpacity }
-                    });
-                }
+            if (oldOpacity !== this.opacity && this.eventBus) {
+                this.eventBus.emit('brush:opacity-changed', { 
+                    component: 'brush',
+                    action: 'opacity-changed',
+                    data: { opacity: this.opacity, oldOpacity }
+                });
             }
         }
 
@@ -155,26 +170,20 @@
                 changed = true;
             }
 
-            if (changed) {
-                console.log('[BrushSettings] Settings updated:', this.getSettings());
-            }
-
             return changed;
         }
     }
 
-    // ★Phase 1: グローバルシングルトンインスタンス作成
-    if (!window.brushSettings) {
-        window.brushSettings = new BrushSettings(window.TEGAKI_CONFIG, window.TegakiEventBus);
-        console.log('✅ Global window.brushSettings instance created');
-    }
-
-    // クラスもエクスポート（互換性維持）
+    /**
+     * 🔧 Phase 6: グローバルインスタンスは遅延生成
+     * CoreEngine が明示的にインスタンスを作成し注入する
+     * グローバルアクセスは互換性のため残すが、推奨しない
+     */
     window.BrushSettings = BrushSettings;
 
-    console.log('✅ brush-settings.js (Phase 1: シングルトン統一版) loaded');
-    console.log('   ✓ Singleton pattern implemented');
-    console.log('   ✓ Global instance: window.brushSettings');
-    console.log('   ✓ EventBus integration complete');
+    console.log('✅ brush-settings.js (Phase 6 - DIP改善) loaded');
+    console.log('   ✓ Constructor での依存性注入対応');
+    console.log('   ✓ シングルトンは CoreEngine で管理');
+    console.log('   ✓ グローバルアクセスは互換性維持のみ');
 
 })();

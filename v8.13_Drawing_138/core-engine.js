@@ -140,37 +140,47 @@
         }
     }
 
-    class CoreEngine {
-        constructor(app, config = {}) {
-            this.app = app;
-            this.isBookmarkletMode = config.isBookmarkletMode || false;
-            this.eventBus = window.TegakiEventBus;
-            if (!this.eventBus) throw new Error('window.TegakiEventBus required');
-            
-            this.cameraSystem = new window.TegakiCameraSystem();
-            this.layerSystem = new window.TegakiLayerSystem();
-            this.clipboardSystem = new window.TegakiDrawingClipboard();
-            
-            this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
-            
-            this.drawingEngine = new DrawingEngine(
-                this.app,
-                this.layerSystem,
-                this.cameraSystem,
-                window.History
-            );
-            
-            this.drawingEngine.setBrushSettings(this.brushSettings);
-            
-            this.animationSystem = null;
-            this.timelineUI = null;
-            this.keyHandler = null;
-            this.exportManager = null;
-            this.batchAPI = null;
-            
-            this.setupCrossReferences();
-            this.setupSystemEventIntegration();
-        }
+class CoreEngine {
+    constructor(app, config = {}) {
+        this.app = app;
+        this.isBookmarkletMode = config.isBookmarkletMode || false;
+        this.eventBus = window.TegakiEventBus;
+        if (!this.eventBus) throw new Error('window.TegakiEventBus required');
+        
+        this.cameraSystem = new window.TegakiCameraSystem();
+        this.layerSystem = new window.TegakiLayerSystem();
+        this.clipboardSystem = new window.TegakiDrawingClipboard();
+        
+        // 🔧 Phase 6: BrushSettings を CoreEngine で生成・管理
+        this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
+        
+        // グローバルアクセス設定（互換性維持）
+        window.brushSettings = this.brushSettings;
+        
+        this.drawingEngine = new DrawingEngine(
+            this.app,
+            this.layerSystem,
+            this.cameraSystem,
+            window.History
+        );
+        
+        this.drawingEngine.setBrushSettings(this.brushSettings);
+        
+        this.animationSystem = null;
+        this.timelineUI = null;
+        this.keyHandler = null;
+        this.exportManager = null;
+        this.batchAPI = null;
+        
+        // 🔧 Phase 6: StrokeRecorder/StrokeRenderer/BrushCore の初期化はここで行わない
+        // initialize() メソッド内で依存性注入を行う
+        
+        this.setupCrossReferences();
+        this.setupSystemEventIntegration();
+        
+        console.log('[CoreEngine] Constructor complete (Phase 6 - DIP改善)');
+        console.log('   ✓ BrushSettings created:', !!this.brushSettings);
+    }
         
         setupCrossReferences() {
             this.cameraSystem.setLayerManager(this.layerSystem);
