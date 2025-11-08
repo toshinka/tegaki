@@ -1,4 +1,26 @@
-// ui/layer-panel-renderer.js - 背景レイヤーサムネイル修正版
+/**
+ * @file layer-panel-renderer.js - Phase 1完全修正版
+ * @description レイヤーパネルUI描画（サムネイル統一実装）
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - layer-system.js (レイヤーデータ取得)
+ * - thumbnail-system.js (サムネイル生成)
+ * - event-bus.js (イベント通信)
+ * - checker-utils.js (チェッカーパターン生成)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * なし（UI層）
+ * 
+ * 【主要メソッド】
+ * - createThumbnail(): 通常レイヤーサムネイル生成（動的アスペクト比）
+ * - _createBackgroundThumbnail(): 背景レイヤーサムネイル生成（固定64x44）
+ * - _updateSingleThumbnail(): サムネイル個別更新
+ * 
+ * 【Phase 1 修正内容】
+ * 1. 全レイヤーで動的アスペクト比計算を適用（アクティブ/非アクティブ区別なし）
+ * 2. 背景レイヤーサムネイルの完全修正（64x44固定、背景色のみ表示）
+ * 3. サムネイル更新時のアスペクト比維持
+ */
 
 (function() {
     'use strict';
@@ -110,53 +132,28 @@
 
             const isBackground = layer.layerData?.isBackground || false;
             
-            // 背景レイヤー: 左情報 | 右サムネイル (固定サイズ)
-            // 通常レイヤー: 3行Gridレイアウト
-            if (isBackground) {
-                layerDiv.style.cssText = `
-                    width:170px;
-                    min-height:48px;
-                    background-color:#ffffee;
-                    opacity:0.9;
-                    border:1px solid #e9c2ba;
-                    border-radius:4px;
-                    padding:5px 7px;
-                    margin-bottom:4px;
-                    cursor:default;
-                    display:grid;
-                    grid-template-columns:90px 64px;
-                    grid-template-rows:14px 16px 14px;
-                    gap:1px 1px;
-                    align-items:center;
-                    position:relative;
-                    backdrop-filter:blur(8px);
-                    transition:all 0.2s ease;
-                    touch-action:none;
-                    user-select:none;
-                `;
-            } else {
-                layerDiv.style.cssText = `
-                    width:170px;
-                    min-height:48px;
-                    background-color:#ffffee;
-                    opacity:0.9;
-                    border:1px solid #e9c2ba;
-                    border-radius:4px;
-                    padding:5px 7px;
-                    margin-bottom:4px;
-                    cursor:grab;
-                    display:grid;
-                    grid-template-columns:90px 64px;
-                    grid-template-rows:14px 16px 14px;
-                    gap:1px 1px;
-                    align-items:center;
-                    position:relative;
-                    backdrop-filter:blur(8px);
-                    transition:all 0.2s ease;
-                    touch-action:none;
-                    user-select:none;
-                `;
-            }
+            // 共通スタイル
+            layerDiv.style.cssText = `
+                width:170px;
+                min-height:48px;
+                background-color:#ffffee;
+                opacity:0.9;
+                border:1px solid #e9c2ba;
+                border-radius:4px;
+                padding:5px 7px;
+                margin-bottom:4px;
+                cursor:${isBackground ? 'default' : 'grab'};
+                display:grid;
+                grid-template-columns:90px 64px;
+                grid-template-rows:14px 16px 14px;
+                gap:1px 1px;
+                align-items:center;
+                position:relative;
+                backdrop-filter:blur(8px);
+                transition:all 0.2s ease;
+                touch-action:none;
+                user-select:none;
+            `;
 
             if (isActive && !isBackground) {
                 layerDiv.style.borderColor = '#ff6600';
@@ -219,7 +216,7 @@
                 nameSpan.style.cssText = `grid-column:1;grid-row:3;color:#800000;font-size:10px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:default;padding:0;height:14px;display:flex;align-items:center;`;
                 layerDiv.appendChild(nameSpan);
 
-                // サムネイル（1-3行目スパン）- 固定サイズ
+                // 🔧 Phase 1: 背景サムネイル（1-3行目スパン）- 固定サイズ64x44
                 const thumbnail = this._createBackgroundThumbnail(layer, index);
                 thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
                 layerDiv.appendChild(thumbnail);
@@ -268,7 +265,7 @@
             const nameSpan = this._createLayerName(layer, index);
             layerDiv.appendChild(nameSpan);
 
-            // サムネイル（1-3行目スパン）
+            // 🔧 Phase 1: サムネイル（1-3行目スパン）- 動的アスペクト比
             const thumbnail = this.createThumbnail(layer, index);
             thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
             layerDiv.appendChild(thumbnail);
@@ -427,24 +424,29 @@
             return deleteBtn;
         }
 
+        /**
+         * 🔧 Phase 1: 背景レイヤーサムネイル完全修正
+         * - 固定サイズ: 64x44px
+         * - 非表示時: チェッカーパターン
+         * - 表示時: backgroundColor のみ（backgroundGraphics は使わない）
+         */
         _createBackgroundThumbnail(layer, index) {
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail background-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
-            // 固定サイズ 64x44
-            thumbnailContainer.style.cssText = `
-                width: 64px;
-                height: 44px;
-                box-sizing: border-box;
-                border: 1px solid #cf9c97;
-                border-radius: 2px;
-                overflow: hidden;
-                position: relative;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            `;
+            // 固定サイズ 64x44 を明示的に設定
+            thumbnailContainer.style.width = '64px';
+            thumbnailContainer.style.height = '44px';
+            thumbnailContainer.style.boxSizing = 'border-box';
+            thumbnailContainer.style.border = '1px solid #cf9c97';
+            thumbnailContainer.style.borderRadius = '2px';
+            thumbnailContainer.style.overflow = 'hidden';
+            thumbnailContainer.style.position = 'relative';
+            thumbnailContainer.style.display = 'flex';
+            thumbnailContainer.style.alignItems = 'center';
+            thumbnailContainer.style.justifyContent = 'center';
+            thumbnailContainer.style.flexShrink = '0'; // 重要: サイズ固定
             
             const isVisible = layer.layerData?.visible !== false;
             
@@ -468,19 +470,28 @@
             return thumbnailContainer;
         }
 
+        /**
+         * 🔧 Phase 1: 通常レイヤーサムネイル完全修正
+         * - 全レイヤーで動的アスペクト比計算を適用
+         * - アクティブ/非アクティブの区別をなくす
+         */
         createThumbnail(layer, index) {
             const maxWidth = 64;
             const maxHeight = 44;
             
+            // キャンバスのアスペクト比を取得
             const canvasWidth = this.layerSystem?.config?.canvas?.width || 800;
             const canvasHeight = this.layerSystem?.config?.canvas?.height || 600;
             const aspectRatio = canvasWidth / canvasHeight;
             
+            // アスペクト比を維持したサムネイルサイズ計算
             let thumbWidth, thumbHeight;
             if (aspectRatio >= maxWidth / maxHeight) {
+                // 横長
                 thumbWidth = maxWidth;
                 thumbHeight = Math.round(maxWidth / aspectRatio);
             } else {
+                // 縦長
                 thumbHeight = maxHeight;
                 thumbWidth = Math.round(maxHeight * aspectRatio);
             }
@@ -489,18 +500,18 @@
             thumbnailContainer.className = 'layer-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
-            thumbnailContainer.style.cssText = `
-                width: ${thumbWidth}px;
-                height: ${thumbHeight}px;
-                box-sizing: border-box;
-                border: 1px solid #cf9c97;
-                border-radius: 2px;
-                overflow: hidden;
-                position: relative;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            `;
+            // サイズを明示的に設定
+            thumbnailContainer.style.width = thumbWidth + 'px';
+            thumbnailContainer.style.height = thumbHeight + 'px';
+            thumbnailContainer.style.boxSizing = 'border-box';
+            thumbnailContainer.style.border = '1px solid #cf9c97';
+            thumbnailContainer.style.borderRadius = '2px';
+            thumbnailContainer.style.overflow = 'hidden';
+            thumbnailContainer.style.position = 'relative';
+            thumbnailContainer.style.display = 'flex';
+            thumbnailContainer.style.alignItems = 'center';
+            thumbnailContainer.style.justifyContent = 'center';
+            thumbnailContainer.style.flexShrink = '0'; // 重要: サイズ固定
             
             if (window.ThumbnailSystem && layer) {
                 window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxWidth, maxHeight)
@@ -508,12 +519,10 @@
                         if (result && result.dataUrl) {
                             const img = document.createElement('img');
                             img.src = result.dataUrl;
-                            img.style.cssText = `
-                                max-width: 100%;
-                                max-height: 100%;
-                                display: block;
-                                object-fit: contain;
-                            `;
+                            img.style.maxWidth = '100%';
+                            img.style.maxHeight = '100%';
+                            img.style.display = 'block';
+                            img.style.objectFit = 'contain';
                             thumbnailContainer.innerHTML = '';
                             thumbnailContainer.appendChild(img);
                         }
@@ -593,6 +602,9 @@
             });
         }
 
+        /**
+         * 🔧 Phase 1: サムネイル個別更新でもアスペクト比維持
+         */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -608,6 +620,7 @@
             const isBackground = layer?.layerData?.isBackground || false;
             
             if (isBackground) {
+                // 背景レイヤーの更新
                 thumbnailContainer.innerHTML = '';
                 
                 const isVisible = layer.layerData?.visible !== false;
@@ -625,7 +638,7 @@
                         thumbnailContainer.style.backgroundImage = '';
                     }
                 } else {
-                    // 表示時は背景色のみ（backgroundGraphicsは使わない）
+                    // 表示時は背景色のみ
                     const bgColor = layer.layerData.backgroundColor ?? 0xf0e0d6;
                     const colorHex = '#' + bgColor.toString(16).padStart(6, '0');
                     thumbnailContainer.style.backgroundColor = colorHex;
@@ -635,6 +648,7 @@
                 return;
             }
 
+            // 通常レイヤーの更新 - アスペクト比を再計算
             const maxWidth = 64;
             const maxHeight = 44;
             
@@ -651,6 +665,7 @@
                 thumbWidth = Math.round(maxHeight * aspectRatio);
             }
             
+            // サイズを再設定
             thumbnailContainer.style.width = thumbWidth + 'px';
             thumbnailContainer.style.height = thumbHeight + 'px';
 
@@ -660,16 +675,16 @@
                     if (result && result.dataUrl) {
                         const img = document.createElement('img');
                         img.src = result.dataUrl;
-                        img.style.cssText = `
-                            max-width: 100%;
-                            max-height: 100%;
-                            display: block;
-                            object-fit: contain;
-                        `;
+                        img.style.maxWidth = '100%';
+                        img.style.maxHeight = '100%';
+                        img.style.display = 'block';
+                        img.style.objectFit = 'contain';
                         thumbnailContainer.innerHTML = '';
                         thumbnailContainer.appendChild(img);
                     }
-                } catch (error) {}
+                } catch (error) {
+                    // サムネイル生成エラーは無視
+                }
             }
         }
 
@@ -758,7 +773,9 @@
                         }
                     }
                 });
-            } catch (error) {}
+            } catch (error) {
+                // Sortable初期化エラーは無視
+            }
         }
 
         destroy() {
@@ -777,4 +794,4 @@
     window.LayerPanelRenderer = LayerPanelRenderer;
 })();
 
-console.log('✅ layer-panel-renderer.js (背景レイヤーサムネイル修正版) loaded');
+console.log('✅ layer-panel-renderer.js (Phase 1完全修正版 - アスペクト比統一・背景サムネイル完全修正) loaded');
