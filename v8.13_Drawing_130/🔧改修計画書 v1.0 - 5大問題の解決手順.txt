@@ -1,0 +1,1321 @@
+================================================================================
+ブラウザお絵かきツール v8.13 - 改修計画書 v1.0
+================================================================================
+作成日: 2025-11-08
+対象バージョン: v8.13_Drawing_129
+基準資料: 📖メソッド・シンボル索引 v2.0
+
+【改修対象の5大問題】
+1. ❌ BS/DELキーでレイヤー内容消去が効かない
+2. ❌ サムネイルのアスペクト比が不安定
+3. ❌ レイヤー反転が全く動作しない
+4. ❌ 背景サムネイルが棒状
+5. ❌ Ctrl+Z/Yが効かない、History未カウント
+
+
+================================================================================
+【Phase 1】即座に修正可能な問題（所要時間: 30分）
+================================================================================
+優先度: 🔴 最高
+難易度: ★☆☆☆☆ (低)
+対象: 問題1、問題4
+リスク: 低（単一ファイル内の追加のみ）
+
+
+■ 1-1. keyboard-handler.js: LAYER_DELETE_DRAWINGS 実装
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: system/keyboard-handler.js
+メソッド: handleAction()
+
+【修正内容】
+handleAction() の switch 文に以下のcaseを追加:
+
+```javascript
+case 'LAYER_DELETE_DRAWINGS':
+  event.preventDefault();
+  this.deleteActiveLayerDrawings();
+  break;
+```
+
+追加位置: 既存の LAYER_CLEAR の近くに配置
+
+
+【新規メソッド追加】
+keyboard-handler.js の最後に以下の2つのメソッドを追加:
+
+```javascript
+/**
+ * アクティブレイヤーの描画内容を全て削除
+ */
+deleteActiveLayerDrawings() {
+  const layerSystem = window.layerManager;
+  if (!layerSystem) {
+    console.error('LayerSystem not found');
+    return;
+  }
+  
+  const activeLayer = layerSystem.getActiveLayer();
+  if (!activeLayer) {
+    console.warn('No active layer');
+    return;
+  }
+  
+  // 背景レイヤーは削除不可
+  if (activeLayer.isBackground) {
+    console.warn('Cannot delete background layer drawings');
+    return;
+  }
+  
+  if (!activeLayer.layerData || !activeLayer.layerData.paths) {
+    console.warn('No layerData or paths');
+    return;
+  }
+  
+  // パスが空の場合は何もしない
+  if (activeLayer.layerData.paths.length === 0) {
+    console.log('Layer already empty');
+    return;
+  }
+  
+  // パスのバックアップ（Undo用）
+  const pathsBackup = [...activeLayer.layerData.paths];
+  
+  // パスをクリア
+  activeLayer.layerData.paths = [];
+  
+  // グラフィックをクリア
+  this.clearLayerDrawings(activeLayer);
+  
+  // イベント発火
+  this.eventBus.emit('layer:drawings-deleted', {
+    layerIndex: layerSystem.getActiveLayerIndex(),
+    layerId: activeLayer.layerId
+  });
+  
+  // サムネイル更新
+  this.eventBus.emit('thumbnail:layer-updated', {
+    layerIndex: layerSystem.getActiveLayerIndex(),
+    layerId: activeLayer.layerId
+  });
+  
+  console.log('Layer drawings deleted');
+}
+
+/**
+ * レイヤーのグラフィックを全てクリア
+ */
+clearLayerDrawings(layer) {
+  if (!layer) return;
+  
+  // 全ての子要素を破棄
+  const children = [...layer.children]; // コピーを作成
+  children.forEach(child => {
+    if (child && child.destroy) {
+      child.destroy({
+        children: true,
+        texture: false,
+        baseTexture: false
+      });
+    }
+  });
+  
+  // 全ての子を削除
+  layer.removeChildren();
+}
+```
+
+
+【テスト方法】
+1. レイヤーに何か描画する
+2. Delete キーまたは Backspace キーを押す
+3. 描画が消えることを確認
+4. サムネイルが更新されることを確認
+5. コンソールに "Layer drawings deleted" が表示されることを確認
+
+
+■ 1-2. layer-panel-renderer.js: 背景サムネイル修正
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: ui/layer-panel-renderer.js
+メソッド: _createBackgroundThumbnail()
+
+【修正内容】
+_createBackgroundThumbnail() を以下のように完全書き換え:
+
+```javascript
+/**
+ * 背景レイヤー用のサムネイル生成
+ */
+_createBackgroundThumbnail(layer, index) {
+  // サムネイル最大サイズ
+  const maxW = this.config?.layer?.thumbnailSize?.width || 150;
+  const maxH = this.config?.layer?.thumbnailSize?.height || 100;
+  
+  // キャンバスサイズを取得
+  const canvasW = this.config?.canvas?.width || 1920;
+  const canvasH = this.config?.canvas?.height || 1080;
+  
+  // アスペクト比を維持してサムネイルサイズ計算
+  const scaleX = maxW / canvasW;
+  const scaleY = maxH / canvasH;
+  const scale = Math.min(scaleX, scaleY);
+  
+  const thumbW = Math.max(1, Math.floor(canvasW * scale));
+  const thumbH = Math.max(1, Math.floor(canvasH * scale));
+  
+  // Canvas要素を作成
+  const canvas = document.createElement('canvas');
+  canvas.width = thumbW;
+  canvas.height = thumbH;
+  
+  const ctx = canvas.getContext('2d');
+  
+  // 背景色を取得（16進数）
+  const bgColor = layer.backgroundColor || 0xFFFFFF;
+  
+  // RGB値に変換
+  const r = (bgColor >> 16) & 0xFF;
+  const g = (bgColor >> 8) & 0xFF;
+  const b = bgColor & 0xFF;
+  
+  // 塗りつぶし
+  ctx.fillStyle = `rgb(${r},${g},${b})`;
+  ctx.fillRect(0, 0, thumbW, thumbH);
+  
+  // DataURLに変換
+  const dataUrl = canvas.toDataURL();
+  
+  // img要素を作成
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.className = 'layer-thumbnail background-thumbnail';
+  img.width = thumbW;
+  img.height = thumbH;
+  img.alt = 'Background Layer';
+  
+  return img;
+}
+```
+
+
+【テスト方法】
+1. 背景レイヤーのサムネイルを確認
+2. 棒状ではなく、適切なアスペクト比で表示されることを確認
+3. キャンバスサイズを変更して再確認
+
+
+■ 1-3. config.js: キーマップ定義の確認
+────────────────────────────────────────────────────────
+
+【確認箇所】
+ファイル: config.js
+オブジェクト: TEGAKI_KEYMAP.actions
+
+【確認内容】
+以下の定義が存在することを確認。無ければ追加:
+
+```javascript
+LAYER_DELETE_DRAWINGS: {
+  keys: ['Delete', 'Backspace'],
+  requiresVKey: false,
+  description: 'Delete all drawings on active layer'
+},
+```
+
+
+【Phase 1 完了チェックリスト】
+────────────────────────────────────────────────────────
+□ keyboard-handler.js に case 'LAYER_DELETE_DRAWINGS': を追加
+□ deleteActiveLayerDrawings() メソッドを実装
+□ clearLayerDrawings() メソッドを実装
+□ _createBackgroundThumbnail() を修正
+□ Delete/Backspace キーでレイヤー内容が消えることをテスト
+□ 背景サムネイルが正常に表示されることをテスト
+
+
+================================================================================
+【Phase 2】レイヤー反転機能の完全復旧（所要時間: 60分）
+================================================================================
+優先度: 🔴 最高
+難易度: ★★★☆☆ (中)
+対象: 問題3
+リスク: 中（6ファイル横断、慎重な統合が必要）
+
+
+■ 2-1. keyboard-handler.js: 反転ショートカット実装
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: system/keyboard-handler.js
+メソッド: handleAction()
+
+【修正内容】
+handleAction() の switch 文に以下の2つのcaseを追加:
+
+```javascript
+case 'LAYER_FLIP_HORIZONTAL':
+  event.preventDefault();
+  console.log('Flip horizontal triggered (keyboard)');
+  this.eventBus.emit('layer:flip-by-key', {direction: 'horizontal'});
+  break;
+
+case 'LAYER_FLIP_VERTICAL':
+  event.preventDefault();
+  console.log('Flip vertical triggered (keyboard)');
+  this.eventBus.emit('layer:flip-by-key', {direction: 'vertical'});
+  break;
+```
+
+追加位置: LAYER_MOVE_* などの近くに配置
+
+
+【確認事項】
+config.js に以下の定義が存在することを確認:
+
+```javascript
+LAYER_FLIP_HORIZONTAL: {
+  keys: ['H'],
+  requiresVKey: true,
+  description: 'Flip active layer horizontally (V+H)'
+},
+
+LAYER_FLIP_VERTICAL: {
+  keys: ['Shift+H'],
+  requiresVKey: true,
+  description: 'Flip active layer vertically (V+Shift+H)'
+},
+```
+
+
+■ 2-2. layer-system.js: bypassVKeyCheck 対応
+────────────────────────────────────────────────────────
+
+【修正箇所1】
+ファイル: system/layer-system.js
+メソッド: flipActiveLayer()
+
+【修正内容】
+flipActiveLayer() メソッドのシグネチャと実装を変更:
+
+```javascript
+/**
+ * アクティブレイヤーを反転
+ * @param {string} direction - 'horizontal' または 'vertical'
+ * @param {boolean} bypassVKeyCheck - trueの場合Vキーチェックをスキップ
+ */
+flipActiveLayer(direction, bypassVKeyCheck = false) {
+  console.log(`flipActiveLayer called: direction=${direction}, bypassVKeyCheck=${bypassVKeyCheck}`);
+  
+  // Vキーチェック（bypassVKeyCheck が true ならスキップ）
+  if (!bypassVKeyCheck && !this.isLayerMoveMode) {
+    console.warn('Flip requires layer move mode (V key). Use bypassVKeyCheck=true to skip.');
+    return;
+  }
+  
+  const activeLayer = this.getActiveLayer();
+  if (!activeLayer) {
+    console.warn('No active layer to flip');
+    return;
+  }
+  
+  // 背景レイヤーは反転不可
+  if (activeLayer.isBackground) {
+    console.warn('Cannot flip background layer');
+    return;
+  }
+  
+  console.log(`Flipping layer ${this.activeLayerIndex} ${direction}`);
+  
+  // LayerTransform に反転を委譲
+  this.transform.flipLayer(activeLayer, direction);
+  
+  // イベント発火
+  this.eventBus.emit('layer:transform-updated', {
+    layerIndex: this.activeLayerIndex,
+    layerId: activeLayer.layerId,
+    transform: this.transform.getTransform(activeLayer.layerId)
+  });
+  
+  // サムネイル更新
+  this.eventBus.emit('thumbnail:layer-updated', {
+    layerIndex: this.activeLayerIndex,
+    layerId: activeLayer.layerId
+  });
+  
+  console.log('Flip completed');
+}
+```
+
+
+【修正箇所2】
+ファイル: system/layer-system.js
+メソッド: _setupEventListeners()
+
+【修正内容】
+_setupEventListeners() に以下のリスナーを追加:
+
+```javascript
+// レイヤー反転（キーボード経由）
+this.eventBus.on('layer:flip-by-key', (data) => {
+  console.log('layer:flip-by-key event received:', data);
+  // キーボード経由の場合、bypassVKeyCheck = false（Vキー必須）
+  this.flipActiveLayer(data.direction, false);
+});
+```
+
+追加位置: 既存の on('keyboard:vkey-pressed') の近く
+
+
+■ 2-3. layer-transform.js: Vキーチェック削除
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: system/layer-transform.js
+メソッド: flipLayer()
+
+【修正内容】
+flipLayer() メソッドから isVKeyPressed チェックを削除:
+
+```javascript
+/**
+ * レイヤーを反転
+ * @param {PIXI.Container} layer - 対象レイヤー
+ * @param {string} direction - 'horizontal' または 'vertical'
+ */
+flipLayer(layer, direction) {
+  console.log(`LayerTransform.flipLayer: direction=${direction}`);
+  
+  // ❌ 削除: Vキーチェック
+  // if (!this.isVKeyPressed) {
+  //   console.warn('Flip requires V key');
+  //   return;
+  // }
+  
+  if (!layer) {
+    console.error('No layer provided to flipLayer');
+    return;
+  }
+  
+  if (!layer.layerId) {
+    console.error('Layer has no layerId');
+    return;
+  }
+  
+  // 現在のトランスフォームを取得
+  const transform = this.getTransform(layer.layerId) || {
+    tx: 0, ty: 0,
+    sx: 1, sy: 1,
+    rotation: 0,
+    flipH: false,
+    flipV: false
+  };
+  
+  // 反転フラグを切り替え
+  if (direction === 'horizontal') {
+    transform.flipH = !transform.flipH;
+    console.log(`flipH toggled to: ${transform.flipH}`);
+  } else if (direction === 'vertical') {
+    transform.flipV = !transform.flipV;
+    console.log(`flipV toggled to: ${transform.flipV}`);
+  } else {
+    console.error('Invalid flip direction:', direction);
+    return;
+  }
+  
+  // トランスフォームを保存
+  this.setTransform(layer.layerId, transform);
+  
+  // レイヤーの中心を計算
+  const bounds = layer.getBounds();
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+  
+  // トランスフォームを適用
+  this.applyTransform(layer, transform, centerX, centerY);
+  
+  // UI更新
+  this.updateFlipButtons(layer);
+  
+  // コールバック呼び出し
+  if (this.onTransformUpdate) {
+    this.onTransformUpdate(layer, transform);
+  }
+  
+  console.log('Flip applied successfully');
+}
+```
+
+
+■ 2-4. core-runtime.js: API定義追加
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: core-runtime.js
+オブジェクト: api.layer
+
+【修正内容】
+api.layer オブジェクトに以下のメソッドを追加:
+
+```javascript
+/**
+ * アクティブレイヤーを反転
+ * @param {string} direction - 'horizontal' または 'vertical'
+ * @param {boolean} bypassVKeyCheck - trueならVキー不要
+ */
+flipActiveLayer: (direction, bypassVKeyCheck = false) => {
+  console.log(`API: flipActiveLayer(${direction}, ${bypassVKeyCheck})`);
+  if (this.coreEngine && this.coreEngine.layerManager) {
+    this.coreEngine.layerManager.flipActiveLayer(direction, bypassVKeyCheck);
+  } else {
+    console.error('LayerManager not available');
+  }
+},
+```
+
+追加位置: setOpacity などの既存メソッドの近く
+
+
+■ 2-5. ui-panels.js: 反転ボタンのイベント設定
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: ui/ui-panels.js
+メソッド: setupFlipButtons()
+
+【修正内容】
+setupFlipButtons() メソッドを追加または修正:
+
+```javascript
+/**
+ * 反転ボタンのイベントリスナーを設定
+ */
+setupFlipButtons() {
+  const flipHBtn = document.getElementById('flip-horizontal-btn');
+  const flipVBtn = document.getElementById('flip-vertical-btn');
+  
+  if (!flipHBtn) {
+    console.error('Flip horizontal button not found (#flip-horizontal-btn)');
+  }
+  if (!flipVBtn) {
+    console.error('Flip vertical button not found (#flip-vertical-btn)');
+  }
+  
+  if (!flipHBtn || !flipVBtn) {
+    console.warn('Flip buttons not found in DOM');
+    return;
+  }
+  
+  // CoreRuntimeの存在確認
+  if (!window.CoreRuntime || !window.CoreRuntime.api) {
+    console.error('CoreRuntime not available for flip buttons');
+    return;
+  }
+  
+  // 水平反転ボタン
+  flipHBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    console.log('Flip horizontal button clicked');
+    
+    // bypassVKeyCheck = true でVキー不要
+    window.CoreRuntime.api.layer.flipActiveLayer('horizontal', true);
+  });
+  
+  // 垂直反転ボタン
+  flipVBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    console.log('Flip vertical button clicked');
+    
+    // bypassVKeyCheck = true でVキー不要
+    window.CoreRuntime.api.layer.flipActiveLayer('vertical', true);
+  });
+  
+  console.log('Flip buttons initialized successfully');
+}
+```
+
+
+【init() メソッドでの呼び出し】
+ui-panels.js の init() または initialize() メソッドに追加:
+
+```javascript
+init() {
+  // ... 既存の初期化処理
+  
+  this.setupFlipButtons(); // 追加
+  
+  // ... 残りの初期化処理
+}
+```
+
+
+■ 2-6. index.html: ボタン要素の確認
+────────────────────────────────────────────────────────
+
+【確認箇所】
+ファイル: index.html
+セクション: TRANSFORMパネル
+
+【確認内容】
+以下のボタンが存在することを確認:
+
+```html
+<div id="transform-panel" class="tool-panel">
+  <!-- ... 他のコントロール ... -->
+  
+  <div class="transform-flip-buttons">
+    <button id="flip-horizontal-btn" class="transform-btn" 
+            title="Flip Horizontal (V+H or click)">
+      ⬌
+    </button>
+    <button id="flip-vertical-btn" class="transform-btn" 
+            title="Flip Vertical (V+Shift+H or click)">
+      ⬍
+    </button>
+  </div>
+</div>
+```
+
+【注意】
+- id属性が正確に一致していること
+- ボタンが display:none で隠れていないこと
+- disabled 属性がついていないこと（または動的に制御されていること）
+
+
+【Phase 2 完了チェックリスト】
+────────────────────────────────────────────────────────
+□ keyboard-handler.js に反転のcaseを2つ追加
+□ layer-system.js の flipActiveLayer() に bypassVKeyCheck 追加
+□ layer-system.js に on('layer:flip-by-key') リスナー追加
+□ layer-transform.js から isVKeyPressed チェック削除
+□ core-runtime.js に api.layer.flipActiveLayer() 追加
+□ ui-panels.js に setupFlipButtons() 実装
+□ ui-panels.js の init() で setupFlipButtons() 呼び出し
+□ index.html にボタン要素が存在することを確認
+
+【テスト方法】
+1. Vキーを押す → ガイドライン表示を確認
+2. V+H を押す → レイヤーが水平反転することを確認
+3. V+Shift+H を押す → レイヤーが垂直反転することを確認
+4. TRANSFORMパネルの⬌ボタンをクリック → Vキー無しで反転することを確認
+5. TRANSFORMパネルの⬍ボタンをクリック → Vキー無しで反転することを確認
+6. コンソールログで各段階が正しく動作していることを確認
+
+
+================================================================================
+【Phase 3】サムネイルのアスペクト比修正（所要時間: 45分）
+================================================================================
+優先度: 🟠 高
+難易度: ★★☆☆☆ (低〜中)
+対象: 問題2
+リスク: 低（単一ファイル内の追加と修正）
+
+
+■ 3-1. layer-panel-renderer.js: _calculateThumbnailSize() 実装
+────────────────────────────────────────────────────────
+
+【追加箇所】
+ファイル: ui/layer-panel-renderer.js
+メソッド: _calculateThumbnailSize() （新規追加）
+
+【追加内容】
+以下のメソッドを追加:
+
+```javascript
+/**
+ * レイヤーの実際のコンテンツサイズから適切なサムネイルサイズを計算
+ * @param {PIXI.Container} layer - 対象レイヤー
+ * @param {number} maxW - サムネイルの最大幅
+ * @param {number} maxH - サムネイルの最大高さ
+ * @returns {{width: number, height: number}} サムネイルサイズ
+ */
+_calculateThumbnailSize(layer, maxW, maxH) {
+  if (!layer) {
+    return {width: maxW, height: maxH};
+  }
+  
+  // レイヤーの境界を取得
+  let bounds;
+  try {
+    bounds = layer.getBounds();
+  } catch (error) {
+    console.warn('Failed to get layer bounds:', error);
+    bounds = {width: 0, height: 0};
+  }
+  
+  // 空のレイヤーまたは境界取得失敗の場合
+  if (!bounds || bounds.width === 0 || bounds.height === 0 || 
+      !isFinite(bounds.width) || !isFinite(bounds.height)) {
+    // キャンバスサイズを使用
+    const canvasW = this.config?.canvas?.width || 1920;
+    const canvasH = this.config?.canvas?.height || 1080;
+    
+    const scaleX = maxW / canvasW;
+    const scaleY = maxH / canvasH;
+    const scale = Math.min(scaleX, scaleY);
+    
+    return {
+      width: Math.max(1, Math.floor(canvasW * scale)),
+      height: Math.max(1, Math.floor(canvasH * scale))
+    };
+  }
+  
+  // コンテンツがある場合、アスペクト比を維持してスケール
+  const scaleX = maxW / bounds.width;
+  const scaleY = maxH / bounds.height;
+  const scale = Math.min(scaleX, scaleY);
+  
+  const width = Math.max(1, Math.floor(bounds.width * scale));
+  const height = Math.max(1, Math.floor(bounds.height * scale));
+  
+  // デバッグログ
+  console.log(`Thumbnail size calculated: ${width}x${height} (from ${Math.floor(bounds.width)}x${Math.floor(bounds.height)})`);
+  
+  return {width, height};
+}
+```
+
+
+■ 3-2. layer-panel-renderer.js: createThumbnail() 修正
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: ui/layer-panel-renderer.js
+メソッド: createThumbnail()
+
+【修正内容】
+createThumbnail() を以下のように修正:
+
+```javascript
+/**
+ * レイヤーのサムネイル画像を生成
+ * @param {PIXI.Container} layer - 対象レイヤー
+ * @param {number} index - レイヤーインデックス
+ * @returns {HTMLImageElement} サムネイル画像要素
+ */
+createThumbnail(layer, index) {
+  // 背景レイヤーは専用処理
+  if (layer.isBackground) {
+    return this._createBackgroundThumbnail(layer, index);
+  }
+  
+  // サムネイル最大サイズ
+  const maxW = this.config?.layer?.thumbnailSize?.width || 150;
+  const maxH = this.config?.layer?.thumbnailSize?.height || 100;
+  
+  // ✅ アスペクト比を考慮したサイズを計算
+  const {width, height} = this._calculateThumbnailSize(layer, maxW, maxH);
+  
+  // レンダーテクスチャを作成（計算されたサイズで）
+  const renderTexture = PIXI.RenderTexture.create({
+    width: width,
+    height: height
+  });
+  
+  // レイヤーをレンダリング
+  if (this.app && this.app.renderer) {
+    this.app.renderer.render(layer, {renderTexture});
+    
+    // Base64に変換
+    const dataUrl = this.app.renderer.extract.base64(renderTexture);
+    
+    // テクスチャを破棄
+    renderTexture.destroy(true);
+    
+    // img要素を作成
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.className = 'layer-thumbnail';
+    img.width = width;   // ✅ 計算されたサイズを設定
+    img.height = height; // ✅ 計算されたサイズを設定
+    img.alt = `Layer ${index + 1}`;
+    
+    return img;
+  } else {
+    console.error('App renderer not available');
+    
+    // フォールバック: プレースホルダー画像
+    const img = document.createElement('img');
+    img.className = 'layer-thumbnail placeholder';
+    img.width = width;
+    img.height = height;
+    img.alt = `Layer ${index + 1} (no preview)`;
+    
+    return img;
+  }
+}
+```
+
+
+■ 3-3. layer-panel-renderer.js: updateSingleLayerThumbnail() 公開
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: ui/layer-panel-renderer.js
+メソッド: _updateSingleLayerThumbnail() または updateSingleLayerThumbnail()
+
+【修正内容】
+メソッド名がアンダースコアで始まっている場合は削除して public にする:
+
+```javascript
+/**
+ * 指定レイヤーのサムネイルのみを更新
+ * @param {number} layerIndex - レイヤーインデックス
+ */
+updateSingleLayerThumbnail(layerIndex) {
+  console.log(`Updating thumbnail for layer ${layerIndex}`);
+  
+  const layers = this.layerSystem?.getLayers();
+  if (!layers || !layers[layerIndex]) {
+    console.warn(`Layer ${layerIndex} not found`);
+    return;
+  }
+  
+  const layer = layers[layerIndex];
+  
+  // DOM要素を検索
+  const thumbnailElement = document.querySelector(
+    `[data-layer-index="${layerIndex}"] .layer-thumbnail`
+  );
+  
+  if (!thumbnailElement) {
+    console.warn(`Thumbnail element not found for layer ${layerIndex}`);
+    return;
+  }
+  
+  // サムネイルを再生成
+  const newThumbnail = this.createThumbnail(layer, layerIndex);
+  
+  // 既存のサムネイルと置き換え
+  if (thumbnailElement.parentNode) {
+    thumbnailElement.parentNode.replaceChild(newThumbnail, thumbnailElement);
+    console.log(`Thumbnail updated for layer ${layerIndex}`);
+  }
+}
+```
+
+
+【Phase 3 完了チェックリスト】
+────────────────────────────────────────────────────────
+□ _calculateThumbnailSize() メソッドを実装
+□ createThumbnail() で _calculateThumbnailSize() を呼び出し
+□ renderTexture のサイズを計算値で作成
+□ img要素の width/height 属性を設定
+□ updateSingleLayerThumbnail() を public 化（アンダースコア削除）
+
+【テスト方法】
+1. 複数のレイヤーを作成
+2. 各レイヤーに異なるサイズの描画を行う
+3. 全てのサムネイルが適切なアスペクト比で表示されることを確認
+4. アクティブレイヤーを切り替えても正常に表示されることを確認
+5. 描画後にサムネイルが更新されることを確認
+
+
+================================================================================
+【Phase 4】History統合（所要時間: 90分）
+================================================================================
+優先度: 🔴 最高
+難易度: ★★★★☆ (高)
+対象: 問題5
+リスク: 高（全システム横断、慎重なテストが必要）
+
+
+■ 4-1. core-engine.js: undo/redo メソッド実装
+────────────────────────────────────────────────────────
+
+【追加箇所】
+ファイル: core-engine.js
+メソッド: undo(), redo(), getHistory() （新規追加）
+
+【追加内容】
+以下のメソッドを追加:
+
+```javascript
+/**
+ * 直前の操作を取り消す
+ * @returns {boolean} 成功したらtrue
+ */
+undo() {
+  if (!this.history) {
+    console.error('History not initialized');
+    return false;
+  }
+  
+  if (!this.history.canUndo()) {
+    console.log('Nothing to undo');
+    return false;
+  }
+  
+  console.log('Executing undo...');
+  const result = this.history.undo();
+  
+  if (result) {
+    console.log('Undo successful');
+  } else {
+    console.error('Undo failed');
+  }
+  
+  return result;
+}
+
+/**
+ * 取り消した操作をやり直す
+ * @returns {boolean} 成功したらtrue
+ */
+redo() {
+  if (!this.history) {
+    console.error('History not initialized');
+    return false;
+  }
+  
+  if (!this.history.canRedo()) {
+    console.log('Nothing to redo');
+    return false;
+  }
+  
+  console.log('Executing redo...');
+  const result = this.history.redo();
+  
+  if (result) {
+    console.log('Redo successful');
+  } else {
+    console.error('Redo failed');
+  }
+  
+  return result;
+}
+
+/**
+ * Historyインスタンスを取得
+ * @returns {History} Historyインスタンス
+ */
+getHistory() {
+  return this.history;
+}
+```
+
+
+【修正箇所】
+ファイル: core-engine.js
+メソッド: initialize()
+
+【修正内容】
+initialize() メソッドに History の相互参照設定を追加:
+
+```javascript
+initialize() {
+  // ... 既存の初期化処理
+  
+  // History作成
+  this.history = new History();
+  
+  // ✅ EventBus を渡す
+  if (this.history.init) {
+    this.history.init(this.eventBus);
+  }
+  
+  // LayerSystemへの参照設定
+  this.history.setLayerSystem(this.layerManager);
+  
+  // ✅ LayerSystemからHistoryへの参照設定（逆方向）
+  if (this.layerManager && this.layerManager.setHistory) {
+    this.layerManager.setHistory(this.history);
+    console.log('History integrated with LayerSystem');
+  }
+  
+  // ... 残りの初期化処理
+}
+```
+
+
+■ 4-2. layer-system.js: setHistory() 実装
+────────────────────────────────────────────────────────
+
+【追加箇所】
+ファイル: system/layer-system.js
+メソッド: setHistory() （新規追加）
+
+【追加内容】
+以下のメソッドを追加:
+
+```javascript
+/**
+ * Historyインスタンスを設定
+ * @param {History} history - Historyインスタンス
+ */
+setHistory(history) {
+  this.history = history;
+  console.log('History set in LayerSystem');
+}
+
+/**
+ * Historyインスタンスを取得
+ * @returns {History|null} Historyインスタンス
+ */
+getHistory() {
+  return this.history || null;
+}
+```
+
+
+■ 4-3. layer-system.js: addPathToActiveLayer() にHistory統合
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: system/layer-system.js
+メソッド: addPathToActiveLayer()
+
+【修正内容】
+addPathToActiveLayer() にHistory.push()を追加:
+
+```javascript
+/**
+ * アクティブレイヤーにパスを追加
+ * @param {Object} path - パスデータ
+ */
+addPathToActiveLayer(path) {
+  const activeLayer = this.getActiveLayer();
+  if (!activeLayer) {
+    console.warn('No active layer');
+    return;
+  }
+  
+  if (!activeLayer.layerData) {
+    activeLayer.layerData = {paths: []};
+  }
+  
+  // パスを追加
+  activeLayer.layerData.paths.push(path);
+  
+  // グラフィック再構築
+  const graphics = this.rebuildPathGraphics(path);
+  
+  // ✅ History記録
+  if (this.history) {
+    const layerIndex = this.activeLayerIndex;
+    const layerId = activeLayer.layerId;
+    
+    this.history.push({
+      name: 'Add Stroke',
+      undo: () => {
+        // パスを削除
+        const layer = this.layers[layerIndex];
+        if (layer && layer.layerData && layer.layerData.paths) {
+          const index = layer.layerData.paths.indexOf(path);
+          if (index > -1) {
+            layer.layerData.paths.splice(index, 1);
+          }
+        }
+        
+        // グラフィックを削除
+        if (graphics && graphics.parent) {
+          graphics.parent.removeChild(graphics);
+          if (graphics.destroy) {
+            graphics.destroy({children: true});
+          }
+        }
+        
+        // イベント発火
+        this.eventBus.emit('layer:updated', {layerIndex, layerId});
+        this.eventBus.emit('thumbnail:layer-updated', {layerIndex, layerId});
+      },
+      do: () => {
+        // パスを追加
+        const layer = this.layers[layerIndex];
+        if (layer && layer.layerData) {
+          if (!layer.layerData.paths.includes(path)) {
+            layer.layerData.paths.push(path);
+          }
+          this.rebuildPathGraphics(path);
+          
+          // イベント発火
+          this.eventBus.emit('layer:updated', {layerIndex, layerId});
+          this.eventBus.emit('thumbnail:layer-updated', {layerIndex, layerId});
+        }
+      },
+      meta: {
+        layerIndex,
+        layerId,
+        pathId: path.id || null
+      }
+    });
+    
+    console.log('Stroke added to history');
+  }
+  
+  // イベント発火
+  this.eventBus.emit('layer:stroke-added', {
+    layerIndex: this.activeLayerIndex,
+    layerId: activeLayer.layerId,
+    path: path
+  });
+}
+```
+
+
+■ 4-4. layer-system.js: flipActiveLayer() にHistory統合
+────────────────────────────────────────────────────────
+
+【修正箇所】
+ファイル: system/layer-system.js
+メソッド: flipActiveLayer()
+
+【修正内容】
+flipActiveLayer() の最後にHistory.push()を追加:
+
+```javascript
+flipActiveLayer(direction, bypassVKeyCheck = false) {
+  // ... 既存の処理（Phase 2で修正済み）
+  
+  // 反転実行
+  this.transform.flipLayer(activeLayer, direction);
+  
+  // イベント発火
+  this.eventBus.emit('layer:transform-updated', {
+    layerIndex: this.activeLayerIndex,
+    layerId: activeLayer.layerId,
+    transform: this.transform.getTransform(activeLayer.layerId)
+  });
+  
+  this.eventBus.emit('thumbnail:layer-updated', {
+    layerIndex: this.activeLayerIndex,
+    layerId: activeLayer.layerId
+  });
+  
+  // ✅ History記録（追加）
+  if (this.history) {
+    const layerIndex = this.activeLayerIndex;
+    const layerId = activeLayer.layerId;
+    
+    this.history.push({
+      name: `Flip ${direction}`,
+      undo: () => {
+        // もう一度反転して元に戻す
+        const layer = this.layers[layerIndex];
+        if (layer && this.transform) {
+          this.transform.flipLayer(layer, direction);
+          this.eventBus.emit('layer:transform-updated', {layerIndex, layerId});
+          this.eventBus.emit('thumbnail:layer-updated', {layerIndex, layerId});
+        }
+      },
+      do: () => {
+        // もう一度反転
+        const layer = this.layers[layerIndex];
+        if (layer && this.transform) {
+          this.transform.flipLayer(layer, direction);
+          this.eventBus.emit('layer:transform-updated', {layerIndex, layerId});
+          this.eventBus.emit('thumbnail:layer-updated', {layerIndex, layerId});
+        }
+      },
+      meta: {
+        layerIndex,
+        layerId,
+        direction
+      }
+    });
+    
+    console.log(`Flip ${direction} added to history`);
+  }
+}
+```
+
+
+■ 4-5. core-runtime.js: undo/redo API追加
+────────────────────────────────────────────────────────
+
+【追加箇所】
+ファイル: core-runtime.js
+オブジェクト: api
+
+【追加内容】
+api オブジェクトに以下を追加:
+
+```javascript
+/**
+ * 直前の操作を取り消す
+ * @returns {boolean} 成功したらtrue
+ */
+undo: () => {
+  console.log('API: undo()');
+  if (this.coreEngine) {
+    return this.coreEngine.undo();
+  }
+  console.error('CoreEngine not available');
+  return false;
+},
+
+/**
+ * 取り消した操作をやり直す
+ * @returns {boolean} 成功したらtrue
+ */
+redo: () => {
+  console.log('API: redo()');
+  if (this.coreEngine) {
+    return this.coreEngine.redo();
+  }
+  console.error('CoreEngine not available');
+  return false;
+},
+```
+
+追加位置: api.draw オブジェクトの中、または api直下に独立して配置
+
+
+■ 4-6. keyboard-handler.js: UNDO/REDO 実装確認
+────────────────────────────────────────────────────────
+
+【確認箇所】
+ファイル: system/keyboard-handler.js
+メソッド: handleAction()
+
+【確認内容】
+以下のcaseが適切に実装されていることを確認:
+
+```javascript
+case 'UNDO':
+  event.preventDefault();
+  if (window.CoreRuntime && window.CoreRuntime.api) {
+    window.CoreRuntime.api.undo();
+  } else {
+    console.error('CoreRuntime not available for undo');
+  }
+  break;
+
+case 'REDO':
+  event.preventDefault();
+  if (window.CoreRuntime && window.CoreRuntime.api) {
+    window.CoreRuntime.api.redo();
+  } else {
+    console.error('CoreRuntime not available for redo');
+  }
+  break;
+```
+
+【注意】
+もし異なる実装（eventBus.emit()を使用など）の場合は、
+そちらに合わせてcore-engine.jsでリスナーを登録する。
+
+
+■ 4-7. 他の操作へのHistory統合（オプション）
+────────────────────────────────────────────────────────
+
+【優先度の高い操作】
+以下の操作にもHistory.push()を追加することを推奨:
+
+1. createLayer() - レイヤー作成
+2. deleteLayer() - レイヤー削除
+3. setLayerOpacity() - 不透明度変更
+4. reorderLayers() - レイヤー順序変更
+
+【実装パターン例（createLayer）】
+```javascript
+createLayer(name, isBackground = false) {
+  // ... レイヤー作成処理
+  
+  // History記録
+  if (this.history && !isBackground) {
+    const layerIndex = this.layers.length - 1;
+    const layerId = layer.layerId;
+    
+    this.history.push({
+      name: 'Create Layer',
+      undo: () => {
+        this.deleteLayer(layerIndex);
+      },
+      do: () => {
+        // 再作成は複雑なので、undoの逆だけ
+      },
+      meta: {layerIndex, layerId, name}
+    });
+  }
+  
+  // ... イベント発火
+}
+```
+
+
+【Phase 4 完了チェックリスト】
+────────────────────────────────────────────────────────
+□ core-engine.js に undo()/redo() 実装
+□ core-engine.js の initialize() で相互参照設定
+□ layer-system.js に setHistory() 実装
+□ layer-system.js の addPathToActiveLayer() にHistory.push()追加
+□ layer-system.js の flipActiveLayer() にHistory.push()追加
+□ core-runtime.js に api.undo()/redo() 追加
+□ keyboard-handler.js の UNDO/REDO case確認
+
+【テスト方法】
+1. レイヤーに何か描画する
+2. Ctrl+Z を押す → 描画が消えることを確認
+3. Ctrl+Y を押す → 描画が復活することを確認
+4. レイヤーを反転する
+5. Ctrl+Z を押す → 反転が戻ることを確認
+6. 複数回 Undo/Redo を繰り返して動作を確認
+7. コンソールで History のスタック状態を確認
+
+
+================================================================================
+【全Phase統合テスト】
+================================================================================
+
+■ 統合テストシナリオ
+────────────────────────────────────────────────────────
+
+【シナリオ1: 基本操作の流れ】
+1. アプリケーションを起動
+2. レイヤーに描画する
+3. Delete キーで内容を消す → ✅ Phase 1
+4. Ctrl+Z で復元 → ✅ Phase 4
+5. Vキーを押す
+6. V+H でレイヤーを反転 → ✅ Phase 2
+7. Ctrl+Z で反転を戻す → ✅ Phase 4
+8. サムネイルが正しいアスペクト比で表示 → ✅ Phase 3
+
+【シナリオ2: UIボタン操作】
+1. レイヤーに描画する
+2. TRANSFORMパネルの⬌ボタンをクリック → ✅ Phase 2
+3. Ctrl+Z で戻す → ✅ Phase 4
+4. レイヤーパネルでサムネイルを確認 → ✅ Phase 3
+
+【シナリオ3: 複数レイヤー】
+1. 複数のレイヤーを作成
+2. 各レイヤーに異なるサイズの描画
+3. 全てのサムネイルが正しく表示 → ✅ Phase 3
+4. 各レイヤーで反転操作 → ✅ Phase 2
+5. 複数回の Undo/Redo → ✅ Phase 4
+
+
+■ パフォーマンステスト
+────────────────────────────────────────────────────────
+□ 大量のストローク（100本以上）でのUndo/Redo
+□ 10個以上のレイヤーでのサムネイル生成
+□ 連続した反転操作（10回以上）
+
+
+■ エッジケーステスト
+────────────────────────────────────────────────────────
+□ 空のレイヤーで Delete キー
+□ 背景レイヤーで Delete キー（無効化されるべき）
+□ 背景レイヤーで反転操作（無効化されるべき）
+□ Historyスタックが空の状態でUndo
+□ Historyスタックが空の状態でRedo
+□ サムネイル生成時のレイヤー境界が0x0の場合
+
+
+================================================================================
+【リリース前チェックリスト】
+================================================================================
+
+■ コード品質
+────────────────────────────────────────────────────────
+□ 全てのconsole.logが適切に配置されている
+□ エラーハンドリングが適切
+□ 不要なコメントアウトコードを削除
+□ 変数名・関数名が明確
+
+■ 動作確認
+────────────────────────────────────────────────────────
+□ Chrome最新版で動作確認
+□ Firefox最新版で動作確認（可能なら
