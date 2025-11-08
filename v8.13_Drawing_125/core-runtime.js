@@ -1,4 +1,25 @@
-// ===== core-runtime.js - 反転API追加版 =====
+/**
+ * @file core-runtime.js
+ * @description 外部APIレイヤー・レガシー互換性
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - core-engine.js (内部システム)
+ * - coordinate-system.js (座標変換)
+ * - config.js (設定値)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - ui-panels.js (UI制御)
+ * 
+ * 【主要API】
+ * - api.layer.flipActiveLayer(direction, bypassVKeyCheck): 反転処理
+ * - api.brush.*: ブラシ設定
+ * - api.camera.*: カメラ制御
+ * 
+ * 【Phase 2 改修内容】
+ * - flipActiveLayer APIにbypassVKeyCheckパラメータ追加
+ */
+
+// ===== core-runtime.js - Phase 2改修版（flipActiveLayer API更新） =====
 
 (function() {
     'use strict';
@@ -54,7 +75,6 @@
         },
         
         setupPointerEvents() {
-            console.log('[CoreRuntime] Pointer events delegated to DrawingEngine');
             this.internal.pointerEventsSetup = true;
         },
         
@@ -456,10 +476,14 @@
                     }
                     return false;
                 },
-                // ✅ 追加: 反転API
-                flipActiveLayer: (direction) => {
+                /**
+                 * 🔧 Phase 2 改修: bypassVKeyCheckパラメータ追加
+                 * @param {string} direction - 'horizontal' or 'vertical'
+                 * @param {boolean} bypassVKeyCheck - trueの場合Vキーチェックをスキップ
+                 */
+                flipActiveLayer: (direction, bypassVKeyCheck = false) => {
                     if (CoreRuntime.internal.layerManager?.flipActiveLayer) {
-                        CoreRuntime.internal.layerManager.flipActiveLayer(direction);
+                        CoreRuntime.internal.layerManager.flipActiveLayer(direction, bypassVKeyCheck);
                         return true;
                     }
                     return false;
@@ -631,4 +655,4 @@
     
 })();
 
-console.log('✅ core-runtime.js (反転API追加版) loaded');
+console.log('✅ core-runtime.js (Phase 2改修版 - flipActiveLayer API更新) loaded');
