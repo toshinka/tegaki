@@ -1,6 +1,13 @@
 /**
- * @file layer-transform.js - Phase 2完全修正版
- * @description レイヤートランスフォーム処理（反転ボタン：Vキー不要化）
+ * @file system/layer-transform.js
+ * @description レイヤートランスフォーム処理 - ペンタブレット対応版
+ * 
+ * 【改修履歴】
+ * v8.13.2 - スライダー操作のペンタブレット対応
+ *   ✅ mouse → pointer イベントに変更
+ *   ✅ ポインターキャプチャ設定でペンの追跡を確実に
+ *   ✅ passive: false でpreventDefaultを有効化
+ *   ✅ スライダーハンドルに touch-action: none 適用
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (イベント通信)
@@ -11,11 +18,6 @@
  * 【子ファイル (このファイルに依存)】
  * - layer-system.js (flipActiveLayer経由で呼ばれる)
  * - keyboard-handler.js (Vキー・反転ショートカット)
- * 
- * 【Phase 2 改修内容】
- * - 反転ボタンクリック時: bypassVKeyCheck=true で常に動作
- * - キーボードショートカット: Vキー必須（bypassVKeyCheck=false）
- * - ボタンのdisabled属性削除（常に有効化）
  */
 
 (function() {
@@ -34,6 +36,10 @@
             this.dragLastPoint = { x: 0, y: 0 };
             this.dragStartPoint = { x: 0, y: 0 };
             this.panelDragOffset = { x: 0, y: 0 };
+            
+            // 🔥 スライダードラッグ状態とポインターID管理
+            this.activeSliderPointerId = null;
+            this.activeSliderElement = null;
             
             this.transformPanel = null;
             this.app = null;
@@ -76,8 +82,6 @@
             });
             
             this.eventBus.on('layer:flip-by-key', (data) => {
-                // 🔧 Phase 2: キーボード経由はVキーチェック済みなのでrequestで通知
-                // onFlipRequestは内部でlayer-system.jsのflipActiveLayer(direction, false)を呼ぶ
                 if (this.isVKeyPressed && this.onFlipRequest) {
                     this.onFlipRequest(data.direction);
                 }
@@ -717,11 +721,6 @@
             this._lastEmitTime = performance.now();
         }
         
-        /**
-         * 🔧 Phase 2: TRANSFORMパネル初期化
-         * - 反転ボタンは常に有効（disabled削除）
-         * - ボタンクリック時は bypassVKeyCheck=true で動作
-         */
         _setupTransformPanel() {
             this.transformPanel = document.getElementById('layer-transform-panel');
             
@@ -750,35 +749,30 @@
                 return value.toFixed(2) + 'x';
             }, 'scale');
             
-            // 🔧 Phase 2: 反転ボタンは常に有効、Vキー不要でbypass=trueで動作
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
             if (flipHorizontalBtn) {
-                flipHorizontalBtn.addEventListener('click', (e) => {
+                flipHorizontalBtn.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    // ボタンクリック時はVキー不要なので、layer-system経由で直接呼ぶ
                     const layerSystem = window.drawingApp?.layerManager;
                     if (layerSystem?.flipActiveLayer) {
-                        layerSystem.flipActiveLayer('horizontal', true); // bypassVKeyCheck=true
+                        layerSystem.flipActiveLayer('horizontal', true);
                     }
                 });
-                // disabled属性を削除（常に有効化）
                 flipHorizontalBtn.removeAttribute('disabled');
             }
             
             if (flipVerticalBtn) {
-                flipVerticalBtn.addEventListener('click', (e) => {
+                flipVerticalBtn.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    // ボタンクリック時はVキー不要なので、layer-system経由で直接呼ぶ
                     const layerSystem = window.drawingApp?.layerManager;
                     if (layerSystem?.flipActiveLayer) {
-                        layerSystem.flipActiveLayer('vertical', true); // bypassVKeyCheck=true
+                        layerSystem.flipActiveLayer('vertical', true);
                     }
                 });
-                // disabled属性を削除（常に有効化）
                 flipVerticalBtn.removeAttribute('disabled');
             }
             
@@ -795,8 +789,10 @@
 
             if (!track || !handle || !valueDisplay) return;
 
+            // 🔥 touch-action: none を適用
+            handle.style.touchAction = 'none';
+
             let value = initial;
-            let dragging = false;
 
             const update = (newValue) => {
                 if (property === 'rotation' && this.config.layer.rotationLoop) {
@@ -820,8 +816,62 @@
                 return min + (percentage * (max - min));
             };
 
-            container.addEventListener('mousedown', (e) => {
-                dragging = true;
+            // 🔥 グローバルpointermoveハンドラー（passive: false）
+            const sliderMoveHandler = (e) => {
+                if (this.activeSliderElement !== handle) return;
+                if (this.activeSliderPointerId !== e.pointerId) return;
+                
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const newValue = getValue(e.clientX);
+                update(newValue);
+                
+                if (this.onSliderChange) {
+                    this.onSliderChange(sliderId, newValue);
+                }
+            };
+
+            const sliderUpHandler = (e) => {
+                if (this.activeSliderElement !== handle) return;
+                if (this.activeSliderPointerId !== e.pointerId) return;
+                
+                // ポインターキャプチャ解放
+                if (handle.releasePointerCapture) {
+                    try {
+                        handle.releasePointerCapture(e.pointerId);
+                    } catch (err) {}
+                }
+                
+                this.activeSliderElement = null;
+                this.activeSliderPointerId = null;
+            };
+
+            // 🔥 CRITICAL: passive: false で登録
+            document.addEventListener('pointermove', sliderMoveHandler, { passive: false, capture: true });
+            document.addEventListener('pointerup', sliderUpHandler, { capture: true });
+            document.addEventListener('pointercancel', sliderUpHandler, { capture: true });
+
+            // 🔥 ハンドル: pointerdownでキャプチャ開始
+            handle.addEventListener('pointerdown', (e) => {
+                this.activeSliderElement = handle;
+                this.activeSliderPointerId = e.pointerId;
+                
+                // ポインターキャプチャ設定
+                if (handle.setPointerCapture) {
+                    try {
+                        handle.setPointerCapture(e.pointerId);
+                    } catch (err) {}
+                }
+                
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            // スライダー直接クリック
+            container.addEventListener('pointerdown', (e) => {
+                if (e.target === handle) return;
+                
                 const newValue = getValue(e.clientX);
                 update(newValue);
                 
@@ -830,21 +880,6 @@
                 }
                 
                 e.preventDefault();
-            });
-
-            document.addEventListener('mousemove', (e) => {
-                if (dragging) {
-                    const newValue = getValue(e.clientX);
-                    update(newValue);
-                    
-                    if (this.onSliderChange) {
-                        this.onSliderChange(sliderId, newValue);
-                    }
-                }
-            });
-
-            document.addEventListener('mouseup', () => {
-                dragging = false;
             });
 
             valueDisplay.addEventListener('dblclick', () => {
@@ -1059,5 +1094,3 @@
     window.TegakiLayerTransform = LayerTransform;
 
 })();
-
-console.log('✅ layer-transform.js (Phase 2完全修正版 - 反転ボタン常時有効化) loaded');

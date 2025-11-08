@@ -1,6 +1,23 @@
-// ===== settings-popup.js - 即応性完全修正版 =====
-// 責務: 設定UI表示、ユーザー入力受付、EventBus通知
-// 🔥 修正: CSS transition完全除去 + DOM更新最適化
+/**
+ * @file ui/settings-popup.js
+ * @description 設定ポップアップ - ペンタブレット対応版
+ * 
+ * 【改修履歴】
+ * v8.13.2 - スライダー操作のペンタブレット対応
+ *   ✅ mouse → pointer イベントに変更
+ *   ✅ ポインターキャプチャ設定でペンの追跡を確実に
+ *   ✅ passive: false でpreventDefaultを有効化
+ *   ✅ touch-action: none をハンドル要素に適用
+ *   ✅ CSS transition完全除去
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - system/drawing/drawing-engine.js (DrawingEngine)
+ * - system/event-bus.js (EventBus)
+ * - system/settings-manager.js (SettingsManager)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - ui-panels.js (UIController経由で初期化)
+ */
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -17,10 +34,10 @@ window.TegakiUI.SettingsPopup = class {
         this.isDraggingPressure = false;
         this.isDraggingSmoothing = false;
         
-        this.elements = {};
+        // 🔥 ポインターID管理
+        this.activeSliderPointerId = null;
         
-        this.mouseMoveHandler = null;
-        this.mouseUpHandler = null;
+        this.elements = {};
         
         this.currentPressure = 1.0;
         this.currentSmoothing = 0.5;
@@ -175,7 +192,7 @@ window.TegakiUI.SettingsPopup = class {
             statusState: document.getElementById('status-panel-state')
         };
         
-        // 🔥 CSS transition完全除去 + 即応性向上
+        // 🔥 CSS transition完全除去 + touch-action: none
         if (this.elements.pressureSlider) {
             this.elements.pressureSlider.style.cssText = `
                 flex: 1;
@@ -208,6 +225,7 @@ window.TegakiUI.SettingsPopup = class {
                 transform: translate(-50%, -50%);
                 cursor: grab;
                 transition: none !important;
+                touch-action: none;
             `;
         }
         
@@ -243,6 +261,7 @@ window.TegakiUI.SettingsPopup = class {
                 transform: translate(-50%, -50%);
                 cursor: grab;
                 transition: none !important;
+                touch-action: none;
             `;
         }
     }
@@ -259,14 +278,22 @@ window.TegakiUI.SettingsPopup = class {
     }
     
     _setupSliders() {
-        this.mouseMoveHandler = (e) => {
-            if (this.isDraggingPressure) {
+        // 🔥 グローバルpointermoveハンドラー（passive: false）
+        const globalMoveHandler = (e) => {
+            if (!this.isDraggingPressure && !this.isDraggingSmoothing) return;
+            
+            // 🔥 preventDefault()を確実に実行
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (this.isDraggingPressure && this.activeSliderPointerId === e.pointerId) {
                 const rect = this.elements.pressureSlider.getBoundingClientRect();
                 const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
                 const value = this.MIN_PRESSURE + ((this.MAX_PRESSURE - this.MIN_PRESSURE) * percent / 100);
                 this._updatePressureSlider(value);
             }
-            if (this.isDraggingSmoothing) {
+            
+            if (this.isDraggingSmoothing && this.activeSliderPointerId === e.pointerId) {
                 const rect = this.elements.smoothingSlider.getBoundingClientRect();
                 const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
                 const value = this.MIN_SMOOTHING + ((this.MAX_SMOOTHING - this.MIN_SMOOTHING) * percent / 100);
@@ -274,41 +301,87 @@ window.TegakiUI.SettingsPopup = class {
             }
         };
         
-        this.mouseUpHandler = () => {
+        // 🔥 グローバルpointerup/cancelハンドラー
+        const globalUpHandler = (e) => {
+            if (this.activeSliderPointerId !== e.pointerId) return;
+            
+            // ポインターキャプチャ解放
             if (this.isDraggingPressure) {
-                this.isDraggingPressure = false;
+                if (this.elements.pressureHandle.releasePointerCapture) {
+                    try {
+                        this.elements.pressureHandle.releasePointerCapture(e.pointerId);
+                    } catch (err) {}
+                }
                 if (this.settingsManager) {
                     this.settingsManager.set('pressureCorrection', this.currentPressure);
                 } else {
                     this._saveFallback('pressureCorrection', this.currentPressure);
                 }
             }
+            
             if (this.isDraggingSmoothing) {
-                this.isDraggingSmoothing = false;
+                if (this.elements.smoothingHandle.releasePointerCapture) {
+                    try {
+                        this.elements.smoothingHandle.releasePointerCapture(e.pointerId);
+                    } catch (err) {}
+                }
                 if (this.settingsManager) {
                     this.settingsManager.set('smoothing', this.currentSmoothing);
                 } else {
                     this._saveFallback('smoothing', this.currentSmoothing);
                 }
             }
+            
+            this.isDraggingPressure = false;
+            this.isDraggingSmoothing = false;
+            this.activeSliderPointerId = null;
         };
         
-        document.addEventListener('mousemove', this.mouseMoveHandler);
-        document.addEventListener('mouseup', this.mouseUpHandler);
+        // 🔥 CRITICAL: passive: false で登録
+        document.addEventListener('pointermove', globalMoveHandler, { passive: false, capture: true });
+        document.addEventListener('pointerup', globalUpHandler, { capture: true });
+        document.addEventListener('pointercancel', globalUpHandler, { capture: true });
         
-        this.elements.pressureHandle.addEventListener('mousedown', (e) => {
+        // グローバルハンドラーへの参照を保持（destroy用）
+        this._globalMoveHandler = globalMoveHandler;
+        this._globalUpHandler = globalUpHandler;
+        
+        // 🔥 筆圧ハンドル: pointerdownでキャプチャ開始
+        this.elements.pressureHandle.addEventListener('pointerdown', (e) => {
             this.isDraggingPressure = true;
+            this.activeSliderPointerId = e.pointerId;
             this.elements.pressureHandle.style.cursor = 'grabbing';
+            
+            // ポインターキャプチャ設定
+            if (this.elements.pressureHandle.setPointerCapture) {
+                try {
+                    this.elements.pressureHandle.setPointerCapture(e.pointerId);
+                } catch (err) {}
+            }
+            
             e.preventDefault();
+            e.stopPropagation();
         });
         
-        this.elements.smoothingHandle.addEventListener('mousedown', (e) => {
+        // 🔥 スムージングハンドル: pointerdownでキャプチャ開始
+        this.elements.smoothingHandle.addEventListener('pointerdown', (e) => {
             this.isDraggingSmoothing = true;
+            this.activeSliderPointerId = e.pointerId;
             this.elements.smoothingHandle.style.cursor = 'grabbing';
+            
+            // ポインターキャプチャ設定
+            if (this.elements.smoothingHandle.setPointerCapture) {
+                try {
+                    this.elements.smoothingHandle.setPointerCapture(e.pointerId);
+                } catch (err) {}
+            }
+            
             e.preventDefault();
+            e.stopPropagation();
         });
         
-        this.elements.pressureSlider.addEventListener('click', (e) => {
+        // スライダー直接クリック（筆圧）
+        this.elements.pressureSlider.addEventListener('pointerdown', (e) => {
             if (e.target === this.elements.pressureHandle) return;
             const rect = this.elements.pressureSlider.getBoundingClientRect();
             const percent = ((e.clientX - rect.left) / rect.width) * 100;
@@ -321,7 +394,8 @@ window.TegakiUI.SettingsPopup = class {
             }
         });
         
-        this.elements.smoothingSlider.addEventListener('click', (e) => {
+        // スライダー直接クリック（スムージング）
+        this.elements.smoothingSlider.addEventListener('pointerdown', (e) => {
             if (e.target === this.elements.smoothingHandle) return;
             const rect = this.elements.smoothingSlider.getBoundingClientRect();
             const percent = ((e.clientX - rect.left) / rect.width) * 100;
@@ -339,7 +413,6 @@ window.TegakiUI.SettingsPopup = class {
         this.currentPressure = Math.max(this.MIN_PRESSURE, Math.min(this.MAX_PRESSURE, value));
         const percent = ((this.currentPressure - this.MIN_PRESSURE) / (this.MAX_PRESSURE - this.MIN_PRESSURE)) * 100;
         
-        // 🔥 DOM更新を同期的に即座実行
         this.elements.pressureTrack.style.width = percent + '%';
         this.elements.pressureHandle.style.left = percent + '%';
         this.elements.pressureValue.textContent = this.currentPressure.toFixed(2);
@@ -353,7 +426,6 @@ window.TegakiUI.SettingsPopup = class {
         this.currentSmoothing = Math.max(this.MIN_SMOOTHING, Math.min(this.MAX_SMOOTHING, value));
         const percent = ((this.currentSmoothing - this.MIN_SMOOTHING) / (this.MAX_SMOOTHING - this.MIN_SMOOTHING)) * 100;
         
-        // 🔥 DOM更新を同期的に即座実行
         this.elements.smoothingTrack.style.width = percent + '%';
         this.elements.smoothingHandle.style.left = percent + '%';
         this.elements.smoothingValue.textContent = this.currentSmoothing.toFixed(2);
@@ -365,7 +437,7 @@ window.TegakiUI.SettingsPopup = class {
     
     _setupButtons() {
         if (this.elements.statusToggle) {
-            this.elements.statusToggle.addEventListener('click', (e) => {
+            this.elements.statusToggle.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 this._toggleStatusPanel();
@@ -374,7 +446,7 @@ window.TegakiUI.SettingsPopup = class {
         
         const curveBtns = document.querySelectorAll('.pressure-curve-btn');
         curveBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -404,13 +476,13 @@ window.TegakiUI.SettingsPopup = class {
                 }
             });
             
-            btn.addEventListener('mouseenter', () => {
+            btn.addEventListener('pointerenter', () => {
                 if (!btn.classList.contains('active')) {
                     btn.style.borderColor = 'var(--futaba-maroon)';
                 }
             });
             
-            btn.addEventListener('mouseleave', () => {
+            btn.addEventListener('pointerleave', () => {
                 if (!btn.classList.contains('active')) {
                     btn.style.borderColor = 'var(--futaba-light-medium)';
                 }
@@ -510,9 +582,7 @@ window.TegakiUI.SettingsPopup = class {
             const settings = stored ? JSON.parse(stored) : {};
             settings[key] = value;
             localStorage.setItem('tegaki_settings', JSON.stringify(settings));
-        } catch (error) {
-            /* silent fallback */
-        }
+        } catch (error) {}
     }
     
     show() {
@@ -540,7 +610,6 @@ window.TegakiUI.SettingsPopup = class {
         this.popup.classList.remove('show');
         this.isVisible = false;
         
-        // カーソルをリセット
         if (this.elements.pressureHandle) {
             this.elements.pressureHandle.style.cursor = 'grab';
         }
@@ -562,25 +631,20 @@ window.TegakiUI.SettingsPopup = class {
     }
     
     destroy() {
-        if (this.mouseMoveHandler) {
-            document.removeEventListener('mousemove', this.mouseMoveHandler);
-            this.mouseMoveHandler = null;
-        }
-        if (this.mouseUpHandler) {
-            document.removeEventListener('mouseup', this.mouseUpHandler);
-            this.mouseUpHandler = null;
+        if (this._globalMoveHandler) {
+            document.removeEventListener('pointermove', this._globalMoveHandler);
+            document.removeEventListener('pointerup', this._globalUpHandler);
+            document.removeEventListener('pointercancel', this._globalUpHandler);
+            this._globalMoveHandler = null;
+            this._globalUpHandler = null;
         }
         
         this.elements = {};
         this.initialized = false;
         this.isDraggingPressure = false;
         this.isDraggingSmoothing = false;
+        this.activeSliderPointerId = null;
     }
 };
 
 window.SettingsPopup = window.TegakiUI.SettingsPopup;
-
-console.log('✅ settings-popup.js (即応性完全修正版) loaded');
-console.log('   - CSS transition完全除去（!important付き）');
-console.log('   - DOM更新を同期的に即座実行');
-console.log('   - quick-access/resize-popupと完全同等の動作');

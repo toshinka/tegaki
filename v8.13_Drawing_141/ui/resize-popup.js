@@ -1,5 +1,22 @@
-// ===== ui/resize-popup.js - Phase 4: ロジック削減完了版 =====
-// CameraSystem.resizeCanvas()に完全委譲、レイヤー個別調整削除
+/**
+ * @file ui/resize-popup.js
+ * @description キャンバスリサイズポップアップ - ペンタブレット対応版
+ * 
+ * 【改修履歴】
+ * v8.13.2 - スライダー操作のペンタブレット対応
+ *   ✅ mouse → pointer イベントに変更
+ *   ✅ ポインターキャプチャ設定でペンの追跡を確実に
+ *   ✅ passive: false でpreventDefaultを有効化
+ *   ✅ touch-action: none をハンドル要素に適用
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - system/camera-system.js (CameraSystem.resizeCanvas())
+ * - system/history.js (履歴管理)
+ * - core-engine.js (CoreEngine)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - ui-panels.js (UIController経由で初期化)
+ */
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -16,27 +33,10 @@ window.TegakiUI.ResizePopup = class {
         this.isDraggingWidth = false;
         this.isDraggingHeight = false;
         
+        // 🔥 ポインターID管理
+        this.activeSliderPointerId = null;
+        
         this.elements = {};
-        
-        this.mouseMoveHandler = (e) => {
-            if (this.isDraggingWidth) {
-                const rect = this.elements.widthSlider.getBoundingClientRect();
-                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
-                this._updateWidthSlider(Math.round(value));
-            }
-            if (this.isDraggingHeight) {
-                const rect = this.elements.heightSlider.getBoundingClientRect();
-                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
-                this._updateHeightSlider(Math.round(value));
-            }
-        };
-        
-        this.mouseUpHandler = () => {
-            this.isDraggingWidth = false;
-            this.isDraggingHeight = false;
-        };
         
         this.currentWidth = 0;
         this.currentHeight = 0;
@@ -203,29 +203,108 @@ window.TegakiUI.ResizePopup = class {
     }
     
     _cleanupEventListeners() {
-        if (this.mouseMoveHandler) {
-            document.removeEventListener('mousemove', this.mouseMoveHandler);
-        }
-        if (this.mouseUpHandler) {
-            document.removeEventListener('mouseup', this.mouseUpHandler);
+        if (this._globalMoveHandler) {
+            document.removeEventListener('pointermove', this._globalMoveHandler);
+            document.removeEventListener('pointerup', this._globalUpHandler);
+            document.removeEventListener('pointercancel', this._globalUpHandler);
+            this._globalMoveHandler = null;
+            this._globalUpHandler = null;
         }
     }
     
     _setupSliders() {
-        document.addEventListener('mousemove', this.mouseMoveHandler);
-        document.addEventListener('mouseup', this.mouseUpHandler);
+        // 🔥 touch-action: none をハンドル要素に適用
+        this.elements.widthHandle.style.touchAction = 'none';
+        this.elements.heightHandle.style.touchAction = 'none';
         
-        this.elements.widthHandle.addEventListener('mousedown', (e) => {
+        // 🔥 グローバルpointermoveハンドラー（passive: false）
+        const globalMoveHandler = (e) => {
+            if (!this.isDraggingWidth && !this.isDraggingHeight) return;
+            
+            // 🔥 preventDefault()を確実に実行
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (this.isDraggingWidth && this.activeSliderPointerId === e.pointerId) {
+                const rect = this.elements.widthSlider.getBoundingClientRect();
+                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
+                this._updateWidthSlider(Math.round(value));
+            }
+            
+            if (this.isDraggingHeight && this.activeSliderPointerId === e.pointerId) {
+                const rect = this.elements.heightSlider.getBoundingClientRect();
+                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
+                this._updateHeightSlider(Math.round(value));
+            }
+        };
+        
+        // 🔥 グローバルpointerup/cancelハンドラー
+        const globalUpHandler = (e) => {
+            if (this.activeSliderPointerId !== e.pointerId) return;
+            
+            // ポインターキャプチャ解放
+            if (this.isDraggingWidth && this.elements.widthHandle.releasePointerCapture) {
+                try {
+                    this.elements.widthHandle.releasePointerCapture(e.pointerId);
+                } catch (err) {}
+            }
+            
+            if (this.isDraggingHeight && this.elements.heightHandle.releasePointerCapture) {
+                try {
+                    this.elements.heightHandle.releasePointerCapture(e.pointerId);
+                } catch (err) {}
+            }
+            
+            this.isDraggingWidth = false;
+            this.isDraggingHeight = false;
+            this.activeSliderPointerId = null;
+        };
+        
+        // 🔥 CRITICAL: passive: false で登録
+        document.addEventListener('pointermove', globalMoveHandler, { passive: false, capture: true });
+        document.addEventListener('pointerup', globalUpHandler, { capture: true });
+        document.addEventListener('pointercancel', globalUpHandler, { capture: true });
+        
+        // グローバルハンドラーへの参照を保持（destroy用）
+        this._globalMoveHandler = globalMoveHandler;
+        this._globalUpHandler = globalUpHandler;
+        
+        // 🔥 幅ハンドル: pointerdownでキャプチャ開始
+        this.elements.widthHandle.addEventListener('pointerdown', (e) => {
             this.isDraggingWidth = true;
+            this.activeSliderPointerId = e.pointerId;
+            
+            // ポインターキャプチャ設定
+            if (this.elements.widthHandle.setPointerCapture) {
+                try {
+                    this.elements.widthHandle.setPointerCapture(e.pointerId);
+                } catch (err) {}
+            }
+            
             e.preventDefault();
+            e.stopPropagation();
         });
         
-        this.elements.heightHandle.addEventListener('mousedown', (e) => {
+        // 🔥 高さハンドル: pointerdownでキャプチャ開始
+        this.elements.heightHandle.addEventListener('pointerdown', (e) => {
             this.isDraggingHeight = true;
+            this.activeSliderPointerId = e.pointerId;
+            
+            // ポインターキャプチャ設定
+            if (this.elements.heightHandle.setPointerCapture) {
+                try {
+                    this.elements.heightHandle.setPointerCapture(e.pointerId);
+                } catch (err) {}
+            }
+            
             e.preventDefault();
+            e.stopPropagation();
         });
         
-        this.elements.widthSlider.addEventListener('click', (e) => {
+        // スライダー直接クリック（幅）
+        this.elements.widthSlider.addEventListener('pointerdown', (e) => {
             if (e.target === this.elements.widthHandle) return;
             const rect = this.elements.widthSlider.getBoundingClientRect();
             const percent = ((e.clientX - rect.left) / rect.width) * 100;
@@ -233,7 +312,8 @@ window.TegakiUI.ResizePopup = class {
             this._updateWidthSlider(Math.round(value));
         });
         
-        this.elements.heightSlider.addEventListener('click', (e) => {
+        // スライダー直接クリック（高さ）
+        this.elements.heightSlider.addEventListener('pointerdown', (e) => {
             if (e.target === this.elements.heightHandle) return;
             const rect = this.elements.heightSlider.getBoundingClientRect();
             const percent = ((e.clientX - rect.left) / rect.width) * 100;
@@ -241,19 +321,20 @@ window.TegakiUI.ResizePopup = class {
             this._updateHeightSlider(Math.round(value));
         });
         
-        this.elements.widthDecrease.addEventListener('click', () => {
+        // ステップボタン
+        this.elements.widthDecrease.addEventListener('pointerdown', () => {
             this._updateWidthSlider(this.currentWidth - 1);
         });
         
-        this.elements.widthIncrease.addEventListener('click', () => {
+        this.elements.widthIncrease.addEventListener('pointerdown', () => {
             this._updateWidthSlider(this.currentWidth + 1);
         });
         
-        this.elements.heightDecrease.addEventListener('click', () => {
+        this.elements.heightDecrease.addEventListener('pointerdown', () => {
             this._updateHeightSlider(this.currentHeight - 1);
         });
         
-        this.elements.heightIncrease.addEventListener('click', () => {
+        this.elements.heightIncrease.addEventListener('pointerdown', () => {
             this._updateHeightSlider(this.currentHeight + 1);
         });
     }
@@ -276,23 +357,23 @@ window.TegakiUI.ResizePopup = class {
     
     _setupAlignmentButtons() {
         if (this.elements.horizontalAlignLeft) {
-            this.elements.horizontalAlignLeft.addEventListener('click', () => this._setHorizontalAlign('left'));
+            this.elements.horizontalAlignLeft.addEventListener('pointerdown', () => this._setHorizontalAlign('left'));
         }
         if (this.elements.horizontalAlignCenter) {
-            this.elements.horizontalAlignCenter.addEventListener('click', () => this._setHorizontalAlign('center'));
+            this.elements.horizontalAlignCenter.addEventListener('pointerdown', () => this._setHorizontalAlign('center'));
         }
         if (this.elements.horizontalAlignRight) {
-            this.elements.horizontalAlignRight.addEventListener('click', () => this._setHorizontalAlign('right'));
+            this.elements.horizontalAlignRight.addEventListener('pointerdown', () => this._setHorizontalAlign('right'));
         }
         
         if (this.elements.verticalAlignTop) {
-            this.elements.verticalAlignTop.addEventListener('click', () => this._setVerticalAlign('top'));
+            this.elements.verticalAlignTop.addEventListener('pointerdown', () => this._setVerticalAlign('top'));
         }
         if (this.elements.verticalAlignCenter) {
-            this.elements.verticalAlignCenter.addEventListener('click', () => this._setVerticalAlign('center'));
+            this.elements.verticalAlignCenter.addEventListener('pointerdown', () => this._setVerticalAlign('center'));
         }
         if (this.elements.verticalAlignBottom) {
-            this.elements.verticalAlignBottom.addEventListener('click', () => this._setVerticalAlign('bottom'));
+            this.elements.verticalAlignBottom.addEventListener('pointerdown', () => this._setVerticalAlign('bottom'));
         }
     }
     
@@ -321,7 +402,7 @@ window.TegakiUI.ResizePopup = class {
     _setupPresetButtons() {
         const presetBtns = document.querySelectorAll('.resize-preset-btn');
         presetBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('pointerdown', () => {
                 const width = parseInt(btn.getAttribute('data-width'));
                 const height = parseInt(btn.getAttribute('data-height'));
                 
@@ -334,12 +415,11 @@ window.TegakiUI.ResizePopup = class {
     _setupApplyButton() {
         if (!this.elements.applyBtn) return;
         
-        this.elements.applyBtn.addEventListener('click', () => {
+        this.elements.applyBtn.addEventListener('pointerdown', () => {
             this._applyResize();
         });
     }
     
-    // Phase 4: CameraSystem.resizeCanvas()に完全委譲
     _applyResize() {
         if (!this.coreEngine || !this.history) return;
         if (this.currentWidth <= 0 || this.currentHeight <= 0) return;
@@ -358,10 +438,7 @@ window.TegakiUI.ResizePopup = class {
         const command = {
             name: 'resize-canvas',
             do: () => {
-                // Phase 4: CameraSystem.resizeCanvas()に完全委譲
                 this.coreEngine.getCameraSystem().resizeCanvas(newWidth, newHeight, alignOptions);
-                
-                // canvas:resizedイベントでサムネイル再生成が自動実行される
                 
                 const canvasInfoElement = document.getElementById('canvas-info');
                 if (canvasInfoElement) {
@@ -369,7 +446,6 @@ window.TegakiUI.ResizePopup = class {
                 }
             },
             undo: () => {
-                // Phase 4: CameraSystem.resizeCanvas()に完全委譲
                 this.coreEngine.getCameraSystem().resizeCanvas(oldWidth, oldHeight, alignOptions);
                 
                 const canvasInfoElement = document.getElementById('canvas-info');
@@ -444,9 +520,8 @@ window.TegakiUI.ResizePopup = class {
         this.initialized = false;
         this.isDraggingWidth = false;
         this.isDraggingHeight = false;
+        this.activeSliderPointerId = null;
     }
 };
 
 window.ResizePopup = window.TegakiUI.ResizePopup;
-
-console.log('✅ resize-popup.js (Phase 4完了: ロジック削減版) loaded');
