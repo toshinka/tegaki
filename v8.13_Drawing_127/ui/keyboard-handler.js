@@ -1,4 +1,10 @@
-// ui/keyboard-handler.js - 完全機能復旧版 (Vキートグル・アンドゥ復旧・全ショートカット対応)
+/**
+ * @file keyboard-handler.js - 完全修正版
+ * @description キーボードショートカット処理（BS/DEL機能外部公開修正）
+ * 
+ * 【Phase 1 修正内容】
+ * - deleteActiveLayerDrawings を window.KeyboardHandler に公開
+ */
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -33,7 +39,7 @@ window.KeyboardHandler = (function() {
         // Vキーのトグル処理（キーリピート無視）
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             if (!e.repeat) {
-                vKeyPressed = !vKeyPressed; // トグル
+                vKeyPressed = !vKeyPressed;
                 eventBus.emit('keyboard:vkey-pressed', { pressed: vKeyPressed });
             }
             e.preventDefault();
@@ -159,14 +165,14 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_FLIP_HORIZONTAL':
-                if (window.KeyboardHandler?.isVKeyPressed()) {
+                if (isVKeyPressed()) {
                     eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
                 }
                 event.preventDefault();
                 break;
             
             case 'LAYER_FLIP_VERTICAL':
-                if (window.KeyboardHandler?.isVKeyPressed()) {
+                if (isVKeyPressed()) {
                     eventBus.emit('layer:flip-by-key', { direction: 'vertical' });
                 }
                 event.preventDefault();
@@ -386,7 +392,6 @@ window.KeyboardHandler = (function() {
         return vKeyPressed;
     }
     
-    // Vキー状態を外部から制御（トグルパネルなどから）
     function setVKeyPressed(state) {
         if (vKeyPressed !== state) {
             vKeyPressed = state;
@@ -402,8 +407,9 @@ window.KeyboardHandler = (function() {
         isInputFocused,
         getShortcutList,
         isVKeyPressed,
-        setVKeyPressed
+        setVKeyPressed,
+        deleteActiveLayerDrawings  // 🔧 Phase 1: 外部公開
     };
 })();
 
-console.log('✅ keyboard-handler.js (完全機能復旧版 - Vキートグル・アンドゥ復旧) loaded');
+console.log('✅ keyboard-handler.js (Phase 1完全修正版 - deleteActiveLayerDrawings公開) loaded');
