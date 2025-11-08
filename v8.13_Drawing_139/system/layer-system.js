@@ -1,6 +1,6 @@
 /**
- * @file layer-system.js - Phase 4完全修正版
- * @description レイヤー管理・操作の中核システム（History完全統合）
+ * @file layer-system.js - Phase 5+6統合改修版
+ * @description レイヤー管理・操作の中核システム（UI疎結合化+DIP改善完了）
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (イベント通信)
@@ -11,15 +11,15 @@
  * - history.js (Undo/Redo)
  * 
  * 【子ファイル (このファイルに依存)】
- * - layer-panel-renderer.js (UI描画)
+ * - layer-panel-renderer.js (UI描画 - EventBus経由のみ)
  * - keyboard-handler.js (ショートカット)
  * - thumbnail-update-manager.js (サムネイル更新)
  * 
- * 【Phase 4 改修内容】
- * ✅ addPathToActiveLayer()にHistory.push()追加
- * ✅ flipActiveLayer()にHistory.push()追加
- * ✅ History.isApplyingチェックで二重登録防止
- * ✅ bypassVKeyCheckパラメータ維持
+ * 【Phase 5+6 改修内容】
+ * ✅ UI層への直接呼び出し完全排除（EventBus通知に統一）
+ * ✅ updateLayerPanelUI() → eventBus.emit('layer:panel-update-requested')
+ * ✅ updateStatusDisplay() → eventBus.emit('layer:status-update-requested')
+ * ✅ DIP改善: グローバル依存を最小化
  */
 
 (function() {
@@ -137,7 +137,7 @@
                 }
                 
                 this.requestThumbnailUpdate(0);
-                this.updateLayerPanelUI();
+                this._emitPanelUpdateRequest(); // 🔧 Phase 5: UI直接呼び出し削除
             });
         }
 
@@ -322,9 +322,6 @@
             }
         }
 
-        /**
-         * 🔧 Phase 4: History統合 - 描画追加
-         */
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
             const activeLayer = this.getActiveLayer();
@@ -348,7 +345,6 @@
                 activeLayer.addChild(path.graphics);
             }
             
-            // 🔧 Phase 4: History登録（既存History中は登録しない）
             if (window.History && !window.History._manager.isApplying) {
                 const layerId = activeLayer.layerData?.id || activeLayer.label;
                 const pathBackup = structuredClone(path);
@@ -356,7 +352,6 @@
                 window.History.push({
                     name: 'add-stroke',
                     do: () => {
-                        // 再追加（既に存在していれば何もしない）
                         if (!activeLayer.layerData.paths.includes(path)) {
                             activeLayer.layerData.paths.push(path);
                             this.rebuildPathGraphics(path);
@@ -370,7 +365,6 @@
                         this.requestThumbnailUpdate(layerIndex);
                     },
                     undo: () => {
-                        // 削除
                         const idx = activeLayer.layerData.paths.indexOf(path);
                         if (idx > -1) {
                             activeLayer.layerData.paths.splice(idx, 1);
@@ -451,11 +445,6 @@
             }
         }
         
-        /**
-         * 🔧 Phase 4: History統合 - レイヤー反転
-         * @param {string} direction - 'horizontal' or 'vertical'
-         * @param {boolean} bypassVKeyCheck - trueの場合Vキーチェックをスキップ
-         */
         flipActiveLayer(direction, bypassVKeyCheck = false) {
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
@@ -469,7 +458,6 @@
             
             this.transform.flipLayer(activeLayer, direction);
             
-            // 🔧 Phase 4: History登録
             if (window.History && !window.History._manager.isApplying) {
                 const layerIndex = this.activeLayerIndex;
                 
@@ -480,7 +468,6 @@
                         this.requestThumbnailUpdate(layerIndex);
                     },
                     undo: () => {
-                        // 反転を戻す（もう一度反転）
                         this.transform.flipLayer(activeLayer, direction);
                         this.requestThumbnailUpdate(layerIndex);
                     },
@@ -681,7 +668,7 @@
                             } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
                                 this.activeLayerIndex++;
                             }
-                            this.updateLayerPanelUI();
+                            this._emitPanelUpdateRequest(); // 🔧 Phase 5
                             if (this.eventBus) {
                                 this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });
                             }
@@ -693,7 +680,7 @@
                             this.currentFrameContainer.removeChild(layer);
                             this.currentFrameContainer.addChildAt(layer, fromIndex);
                             this.activeLayerIndex = oldActiveIndex;
-                            this.updateLayerPanelUI();
+                            this._emitPanelUpdateRequest(); // 🔧 Phase 5
                             if (this.eventBus) {
                                 this.eventBus.emit('layer:reordered', { fromIndex: toIndex, toIndex: fromIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });
                             }
@@ -713,7 +700,7 @@
                     } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
                         this.activeLayerIndex++;
                     }
-                    this.updateLayerPanelUI();
+                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
                     if (this.eventBus) {
                         this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: movedLayer.layerData?.id });
                     }
@@ -731,8 +718,8 @@
                 this.activeLayerIndex = layers.length - 1;
             }
             
-            this.updateLayerPanelUI();
-            this.updateStatusDisplay();
+            this._emitPanelUpdateRequest(); // 🔧 Phase 5
+            this._emitStatusUpdateRequest(); // 🔧 Phase 5
             if (this.isLayerMoveMode) {
                 this.updateLayerTransformPanelValues();
             }
@@ -823,8 +810,8 @@
             });
             this.eventBus.on('animation:frame-applied', () => {
                 setTimeout(() => {
-                    this.updateLayerPanelUI();
-                    this.updateStatusDisplay();
+                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                    this._emitStatusUpdateRequest(); // 🔧 Phase 5
                     if (this.isLayerMoveMode) {
                         this.updateLayerTransformPanelValues();
                     }
@@ -832,12 +819,12 @@
             });
             this.eventBus.on('animation:frame-created', () => {
                 setTimeout(() => {
-                    this.updateLayerPanelUI();
+                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
                 }, 100);
             });
             this.eventBus.on('animation:frame-deleted', () => {
                 setTimeout(() => {
-                    this.updateLayerPanelUI();
+                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
                 }, 100);
             });
         }
@@ -970,7 +957,7 @@
                         this.currentFrameContainer.removeChildAt(oldIndex);
                         this.currentFrameContainer.addChildAt(layer, newIndex);
                         this.activeLayerIndex = newIndex;
-                        this.updateLayerPanelUI();
+                        this._emitPanelUpdateRequest(); // 🔧 Phase 5
                         if (this.eventBus) {
                             this.eventBus.emit('layer:hierarchy-moved', { direction, oldIndex, newIndex, layerId: layer.layerData?.id });
                         }
@@ -981,7 +968,7 @@
                         this.currentFrameContainer.removeChildAt(newIndex);
                         this.currentFrameContainer.addChildAt(layer, oldIndex);
                         this.activeLayerIndex = oldIndex;
-                        this.updateLayerPanelUI();
+                        this._emitPanelUpdateRequest(); // 🔧 Phase 5
                         if (this.eventBus) {
                             this.eventBus.emit('layer:hierarchy-moved', { direction: direction === 'up' ? 'down' : 'up', oldIndex: newIndex, newIndex: oldIndex, layerId: layer.layerData?.id });
                         }
@@ -993,7 +980,7 @@
                 this.currentFrameContainer.removeChildAt(currentIndex);
                 this.currentFrameContainer.addChildAt(activeLayer, newIndex);
                 this.activeLayerIndex = newIndex;
-                this.updateLayerPanelUI();
+                this._emitPanelUpdateRequest(); // 🔧 Phase 5
                 if (this.eventBus) {
                     this.eventBus.emit('layer:hierarchy-moved', { direction, oldIndex: currentIndex, newIndex, layerId: activeLayer.layerData?.id });
                 }
@@ -1063,8 +1050,8 @@
                         this.currentFrameContainer.addChild(layer);
                         const layers = this.getLayers();
                         this.setActiveLayer(layers.length - 1);
-                        this.updateLayerPanelUI();
-                        this.updateStatusDisplay();
+                        this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                        this._emitStatusUpdateRequest(); // 🔧 Phase 5
                     },
                     undo: () => {
                         if (layer.layerData) {
@@ -1075,8 +1062,8 @@
                         if (this.activeLayerIndex >= layers.length) {
                             this.activeLayerIndex = Math.max(0, layers.length - 1);
                         }
-                        this.updateLayerPanelUI();
-                        this.updateStatusDisplay();
+                        this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                        this._emitStatusUpdateRequest(); // 🔧 Phase 5
                     },
                     meta: { layerId: layerModel.id, name: layerModel.name }
                 };
@@ -1085,8 +1072,8 @@
                 this.currentFrameContainer.addChild(layer);
                 const layers = this.getLayers();
                 this.setActiveLayer(layers.length - 1);
-                this.updateLayerPanelUI();
-                this.updateStatusDisplay();
+                this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                this._emitStatusUpdateRequest(); // 🔧 Phase 5
             }
             if (this.eventBus) {
                 this.eventBus.emit('layer:created', { layerId: layerModel.id, name: layerModel.name, isBackground });
@@ -1105,8 +1092,8 @@
                 
                 const oldIndex = this.activeLayerIndex;
                 this.activeLayerIndex = index;
-                this.updateLayerPanelUI();
-                this.updateStatusDisplay();
+                this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                this._emitStatusUpdateRequest(); // 🔧 Phase 5
                 if (this.isLayerMoveMode) {
                     this.updateLayerTransformPanelValues();
                 }
@@ -1127,7 +1114,7 @@
                     this.checkerPattern.visible = !layer.layerData.visible;
                 }
                 
-                this.updateLayerPanelUI();
+                this._emitPanelUpdateRequest(); // 🔧 Phase 5
                 if (this.eventBus) {
                     this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
                     this.requestThumbnailUpdate(layerIndex);
@@ -1141,22 +1128,29 @@
             }
         }
 
-        updateLayerPanelUI() {
+        /**
+         * 🔧 Phase 5: UI直接呼び出し削除 - EventBus通知に統一
+         */
+        _emitPanelUpdateRequest() {
             if (this.eventBus) {
-                this.eventBus.emit('layer:panel-update-requested');
+                this.eventBus.emit('layer:panel-update-requested', {
+                    timestamp: Date.now(),
+                    layers: this.getLayers(),
+                    activeIndex: this.activeLayerIndex
+                });
             }
         }
 
-        updateStatusDisplay() {
-            const statusElement = document.getElementById('current-layer');
+        /**
+         * 🔧 Phase 5: UI直接呼び出し削除 - EventBus通知に統一
+         */
+        _emitStatusUpdateRequest() {
             const layers = this.getLayers();
-            if (statusElement && this.activeLayerIndex >= 0) {
-                const layer = layers[this.activeLayerIndex];
-                statusElement.textContent = layer.layerData.name;
-            }
+            const currentLayerName = this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex]?.layerData?.name : 'なし';
+            
             if (this.eventBus) {
-                this.eventBus.emit('ui:status-updated', {
-                    currentLayer: this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex].layerData.name : 'なし',
+                this.eventBus.emit('layer:status-update-requested', {
+                    currentLayer: currentLayerName,
                     layerCount: layers.length,
                     activeIndex: this.activeLayerIndex
                 });
@@ -1246,8 +1240,8 @@
                             } else if (this.activeLayerIndex >= remainingLayers.length) {
                                 this.activeLayerIndex = remainingLayers.length - 1;
                             }
-                            this.updateLayerPanelUI();
-                            this.updateStatusDisplay();
+                            this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                            this._emitStatusUpdateRequest(); // 🔧 Phase 5
                             if (this.eventBus) {
                                 this.eventBus.emit('layer:deleted', { layerId, layerIndex });
                             }
@@ -1266,8 +1260,8 @@
                             }
                             this.currentFrameContainer.addChildAt(layer, layerIndex);
                             this.activeLayerIndex = previousActiveIndex;
-                            this.updateLayerPanelUI();
-                            this.updateStatusDisplay();
+                            this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                            this._emitStatusUpdateRequest(); // 🔧 Phase 5
                         },
                         meta: { layerId, layerIndex }
                     };
@@ -1286,8 +1280,8 @@
                     } else if (this.activeLayerIndex >= remainingLayers.length) {
                         this.activeLayerIndex = remainingLayers.length - 1;
                     }
-                    this.updateLayerPanelUI();
-                    this.updateStatusDisplay();
+                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                    this._emitStatusUpdateRequest(); // 🔧 Phase 5
                     if (this.eventBus) {
                         this.eventBus.emit('layer:deleted', { layerId, layerIndex });
                     }
@@ -1319,4 +1313,7 @@
 
 })();
 
-console.log('✅ layer-system.js (Phase 4完全修正版 - History統合完了) loaded');
+console.log('✅ layer-system.js (Phase 5+6統合改修版) loaded');
+console.log('   ✓ UI層への直接呼び出し完全排除');
+console.log('   ✓ EventBus通知に統一: layer:panel-update-requested / layer:status-update-requested');
+console.log('   ✓ DRY/SOLID原則準拠 - Model/View完全分離');

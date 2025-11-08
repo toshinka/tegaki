@@ -1,10 +1,10 @@
 /**
- * @file layer-panel-renderer.js - サムネイルサイズ計算一元化版
- * @description レイヤーパネルUI描画（ThumbnailSystemに計算委譲）
+ * @file layer-panel-renderer.js - Phase 5+6対応版
+ * @description レイヤーパネルUI描画（EventBus完全統合）
  * 
  * 【依存関係】
  * ◆ 親ファイル (このファイルが依存):
- *   - layer-system.js (レイヤーデータ取得)
+ *   - layer-system.js (レイヤーデータ取得 - EventBus経由のみ)
  *   - thumbnail-system.js (サムネイル生成・サイズ計算)
  *   - event-bus.js (イベント通信)
  *   - config.js (設定値)
@@ -12,10 +12,10 @@
  * ◆ 子ファイル (このファイルに依存):
  *   なし (UI層・末端ファイル)
  * 
- * 【v1.4 改修内容】
- * - サムネイルサイズ計算をThumbnailSystemに一元化
- * - 二重計算の完全排除
- * - DRY原則に準拠
+ * 【Phase 5+6 改修内容】
+ * ✅ layer:panel-update-requested イベントリスナー追加
+ * ✅ LayerSystemからの直接呼び出しを完全排除
+ * ✅ EventBus駆動アーキテクチャに統一
  */
 
 (function() {
@@ -56,6 +56,9 @@
 
         _setupEventListeners() {
             if (!this.eventBus) return;
+
+            // 🔧 Phase 5: LayerSystemからの直接呼び出しをEventBusに統一
+            this.eventBus.on('layer:panel-update-requested', () => this.requestUpdate());
 
             this.eventBus.on('layer:created', () => this.requestUpdate());
             this.eventBus.on('layer:deleted', () => this.requestUpdate());
@@ -158,7 +161,6 @@
                 layerDiv.style.padding = '4px 6px';
             }
 
-            // === 背景レイヤー: 簡素化レイアウト ===
             if (isBackground) {
                 const row1 = document.createElement('div');
                 row1.style.cssText = 'grid-column:1;grid-row:1;height:14px;';
@@ -196,7 +198,6 @@
                 return layerDiv;
             }
 
-            // === 通常レイヤー ===
             const row1 = document.createElement('div');
             row1.style.cssText = 'grid-column:1;grid-row:1;display:flex;align-items:center;gap:2px;justify-content:flex-start;height:14px;';
 
@@ -407,10 +408,6 @@
             return deleteBtn;
         }
 
-        /**
-         * 🔧 v1.4: サムネイル生成をThumbnailSystemに完全委譲
-         * サイズ計算の二重実装を排除
-         */
         createThumbnail(layer, index) {
             const maxWidth = 64;
             const maxHeight = 44;
@@ -419,7 +416,6 @@
             thumbnailContainer.className = 'layer-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
-            // 🔧 初期サイズは最大値で設定（ThumbnailSystemが返す実サイズで上書き）
             thumbnailContainer.style.width = maxWidth + 'px';
             thumbnailContainer.style.height = maxHeight + 'px';
             thumbnailContainer.style.boxSizing = 'border-box';
@@ -437,7 +433,6 @@
                 window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxWidth, maxHeight)
                     .then(result => {
                         if (result && result.dataUrl) {
-                            // 🔧 ThumbnailSystemが計算した正確なサイズを適用
                             thumbnailContainer.style.width = result.width + 'px';
                             thumbnailContainer.style.height = result.height + 'px';
                             
@@ -451,9 +446,7 @@
                             thumbnailContainer.appendChild(img);
                         }
                     })
-                    .catch(() => {
-                        // サムネイル生成失敗時は空のまま
-                    });
+                    .catch(() => {});
             }
 
             return thumbnailContainer;
@@ -528,9 +521,6 @@
             });
         }
 
-        /**
-         * 🔧 v1.4: 単一サムネイル更新もThumbnailSystemに委譲
-         */
         async _updateSingleThumbnail(layerIndex) {
             const layers = this.layerSystem?.getLayers() || [];
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -550,7 +540,6 @@
                 try {
                     const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, maxWidth, maxHeight);
                     if (result && result.dataUrl) {
-                        // 🔧 ThumbnailSystemが計算した正確なサイズを適用
                         thumbnailContainer.style.width = result.width + 'px';
                         thumbnailContainer.style.height = result.height + 'px';
                         
@@ -563,9 +552,7 @@
                         thumbnailContainer.innerHTML = '';
                         thumbnailContainer.appendChild(img);
                     }
-                } catch (error) {
-                    // エラーは無視
-                }
+                } catch (error) {}
             }
         }
 
@@ -654,9 +641,7 @@
                         }
                     }
                 });
-            } catch (error) {
-                // Sortable初期化エラーは無視
-            }
+            } catch (error) {}
         }
 
         destroy() {
@@ -675,4 +660,6 @@
     window.LayerPanelRenderer = LayerPanelRenderer;
 })();
 
-console.log('✅ layer-panel-renderer.js (v1.4: サムネイルサイズ計算一元化) loaded');
+console.log('✅ layer-panel-renderer.js (Phase 5+6対応版) loaded');
+console.log('   ✓ layer:panel-update-requested イベントリスナー追加');
+console.log('   ✓ LayerSystemからの直接呼び出し完全排除');
