@@ -3,11 +3,10 @@
  * @description レイヤートランスフォーム処理 - ペンタブレット対応版
  * 
  * 【改修履歴】
- * v8.13.2 - スライダー操作のペンタブレット対応
- *   ✅ mouse → pointer イベントに変更
- *   ✅ ポインターキャプチャ設定でペンの追跡を確実に
- *   ✅ passive: false でpreventDefaultを有効化
- *   ✅ スライダーハンドルに touch-action: none 適用
+ * v8.13.4 - パネルドラッグ+反転機能の完全修正
+ *   🔧 パネルドラッグ: passive:false + capture + 圧力判定削除
+ *   🔧 反転ボタン: History二重登録防止、即座確定機能
+ *   🔧 Console抑制: 不要なログを全削除
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (イベント通信)
@@ -33,11 +32,11 @@
             this.isVKeyPressed = false;
             this.isDragging = false;
             this.isPanelDragging = false;
+            this.panelDragPointerId = null;
             this.dragLastPoint = { x: 0, y: 0 };
             this.dragStartPoint = { x: 0, y: 0 };
             this.panelDragOffset = { x: 0, y: 0 };
             
-            // 🔥 スライダードラッグ状態とポインターID管理
             this.activeSliderPointerId = null;
             this.activeSliderElement = null;
             
@@ -263,7 +262,10 @@
             }
         }
 
-        flipLayer(layer, direction) {
+        /**
+         * 🔧 反転処理: History二重登録を防ぐためHistoryフラグ使用
+         */
+        flipLayer(layer, direction, skipHistory = false) {
             if (!layer?.layerData) return;
             
             const layerId = layer.layerData.id;
@@ -285,6 +287,10 @@
             }
             
             this.applyTransform(layer, transform, centerX, centerY);
+            
+            // 🔧 即座に実座標へ反映（非同期なし）
+            this.confirmTransform(layer, skipHistory);
+            
             this.updateFlipButtons(layer);
             this._emitTransformUpdated(layerId, layer);
             
@@ -405,7 +411,10 @@
             }
         }
 
-        confirmTransform(layer) {
+        /**
+         * 🔧 変形確定: skipHistoryでHistory二重登録を防止
+         */
+        confirmTransform(layer, skipHistory = false) {
             if (!layer?.layerData) return false;
             
             const layerId = layer.layerData.id;
@@ -433,7 +442,8 @@
                 this.onRebuildRequired(layer, layer.layerData.paths);
             }
             
-            if (this.onTransformComplete) {
+            // 🔧 skipHistory=trueの場合はHistory登録しない
+            if (!skipHistory && this.onTransformComplete) {
                 this.onTransformComplete(layer, pathsBackup);
             }
             
@@ -445,6 +455,74 @@
                     const layerIndex = layerMgr.getLayerIndex(layer);
                     
                     this.eventBus.emit('thumbnail:layer-updated', {
+                component: 'drawing',
+                action: 'transform-applied',
+                data: { layerIndex, layerId }
+            });
+            
+            this._lastEmitTime = performance.now();
+        }
+        
+        _setupTransformPanel() {
+            this.transformPanel = document.getElementById('layer-transform-panel');
+            
+            if (!this.transformPanel) return;
+            
+            if (!this.transformPanel.querySelector('.panel-header')) {
+                const header = document.createElement('div');
+                header.className = 'panel-header';
+                header.textContent = 'TRANSFORM';
+                this.transformPanel.insertBefore(header, this.transformPanel.firstChild);
+            }
+            
+            this._setupSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
+                return Math.round(value) + 'px';
+            }, 'x');
+            
+            this._setupSlider('layer-y-slider', this.config.layer.minY, this.config.layer.maxY, 0, (value) => {
+                return Math.round(value) + 'px';
+            }, 'y');
+            
+            this._setupSlider('layer-rotation-slider', this.config.layer.minRotation, this.config.layer.maxRotation, 0, (value) => {
+                return Math.round(value) + '°';
+            }, 'rotation');
+            
+            this._setupSlider('layer-scale-slider', this.config.layer.minScale, this.config.layer.maxScale, 1.0, (value) => {
+                return value.toFixed(2) + 'x';
+            }, 'scale');
+            
+            // 🔧 反転ボタン: layer-system経由で呼び出し
+            const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
+            const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+            
+            if (flipHorizontalBtn) {
+                flipHorizontalBtn.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const layerSystem = window.drawingApp?.layerManager;
+                    if (layerSystem?.flipActiveLayer) {
+                        layerSystem.flipActiveLayer('horizontal', true);
+                    }
+                });
+                flipHorizontalBtn.removeAttribute('disabled');
+            }
+            
+            if (flipVerticalBtn) {
+                flipVerticalBtn.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const layerSystem = window.drawingApp?.layerManager;
+                    if (layerSystem?.flipActiveLayer) {
+                        layerSystem.flipActiveLayer('vertical', true);
+                    }
+                });
+                flipVerticalBtn.removeAttribute('disabled');
+            }
+            
+            this._setupPanelDrag();
+        }
+
+        _setupSlider(sli
                         component: 'layer-transform',
                         action: 'transform-confirmed',
                         data: {
@@ -535,6 +613,9 @@
             });
         }
 
+        /**
+         * 🔧 パネルドラッグ完全修正版
+         */
         _setupPanelDrag() {
             if (!this.transformPanel) return;
             
@@ -542,15 +623,21 @@
             if (!header) return;
             
             header.style.cursor = 'grab';
+            header.style.touchAction = 'none';
             
+            // 🔧 pointerdownでのみドラッグ開始
             header.addEventListener('pointerdown', (e) => {
+                // スライダー・ボタン領域は除外
                 if (e.target.closest('.slider-container') || 
                     e.target.closest('.slider') ||
+                    e.target.closest('.slider-track') ||
+                    e.target.closest('.slider-handle') ||
                     e.target.closest('button')) {
                     return;
                 }
                 
                 this.isPanelDragging = true;
+                this.panelDragPointerId = e.pointerId;
                 header.style.cursor = 'grabbing';
                 
                 const rect = this.transformPanel.getBoundingClientRect();
@@ -559,12 +646,21 @@
                     y: e.clientY - rect.top
                 };
                 
+                // ポインターキャプチャ設定
+                if (header.setPointerCapture) {
+                    try {
+                        header.setPointerCapture(e.pointerId);
+                    } catch (err) {}
+                }
+                
                 e.preventDefault();
                 e.stopPropagation();
-            });
+            }, { passive: false });
             
+            // 🔧 CRITICAL: passive: false + capture で確実にpreventDefault
             document.addEventListener('pointermove', (e) => {
                 if (!this.isPanelDragging) return;
+                if (e.pointerId !== this.panelDragPointerId) return;
                 
                 const newLeft = e.clientX - this.panelDragOffset.x;
                 const newTop = e.clientY - this.panelDragOffset.y;
@@ -572,14 +668,37 @@
                 this.transformPanel.style.left = `${newLeft}px`;
                 this.transformPanel.style.top = `${newTop}px`;
                 this.transformPanel.style.transform = 'none';
-            });
+                
+                e.preventDefault();
+                e.stopPropagation();
+            }, { passive: false, capture: true });
             
-            document.addEventListener('pointerup', () => {
-                if (this.isPanelDragging) {
-                    this.isPanelDragging = false;
-                    header.style.cursor = 'grab';
+            document.addEventListener('pointerup', (e) => {
+                if (!this.isPanelDragging) return;
+                if (e.pointerId !== this.panelDragPointerId) return;
+                
+                this.isPanelDragging = false;
+                this.panelDragPointerId = null;
+                header.style.cursor = 'grab';
+                
+                // ポインターキャプチャ解放
+                if (header.releasePointerCapture) {
+                    try {
+                        header.releasePointerCapture(e.pointerId);
+                    } catch (err) {}
                 }
-            });
+                
+                e.stopPropagation();
+            }, { capture: true });
+            
+            document.addEventListener('pointercancel', (e) => {
+                if (!this.isPanelDragging) return;
+                if (e.pointerId !== this.panelDragPointerId) return;
+                
+                this.isPanelDragging = false;
+                this.panelDragPointerId = null;
+                header.style.cursor = 'grab';
+            }, { capture: true });
         }
 
         _handleDrag(e) {
@@ -713,384 +832,3 @@
             });
             
             this.eventBus.emit('thumbnail:layer-updated', {
-                component: 'drawing',
-                action: 'transform-applied',
-                data: { layerIndex, layerId }
-            });
-            
-            this._lastEmitTime = performance.now();
-        }
-        
-        _setupTransformPanel() {
-            this.transformPanel = document.getElementById('layer-transform-panel');
-            
-            if (!this.transformPanel) return;
-            
-            if (!this.transformPanel.querySelector('.panel-header')) {
-                const header = document.createElement('div');
-                header.className = 'panel-header';
-                header.textContent = 'TRANSFORM';
-                this.transformPanel.insertBefore(header, this.transformPanel.firstChild);
-            }
-            
-            this._setupSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
-                return Math.round(value) + 'px';
-            }, 'x');
-            
-            this._setupSlider('layer-y-slider', this.config.layer.minY, this.config.layer.maxY, 0, (value) => {
-                return Math.round(value) + 'px';
-            }, 'y');
-            
-            this._setupSlider('layer-rotation-slider', this.config.layer.minRotation, this.config.layer.maxRotation, 0, (value) => {
-                return Math.round(value) + '°';
-            }, 'rotation');
-            
-            this._setupSlider('layer-scale-slider', this.config.layer.minScale, this.config.layer.maxScale, 1.0, (value) => {
-                return value.toFixed(2) + 'x';
-            }, 'scale');
-            
-            const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
-            const flipVerticalBtn = document.getElementById('flip-vertical-btn');
-            
-            if (flipHorizontalBtn) {
-                flipHorizontalBtn.addEventListener('pointerdown', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const layerSystem = window.drawingApp?.layerManager;
-                    if (layerSystem?.flipActiveLayer) {
-                        layerSystem.flipActiveLayer('horizontal', true);
-                    }
-                });
-                flipHorizontalBtn.removeAttribute('disabled');
-            }
-            
-            if (flipVerticalBtn) {
-                flipVerticalBtn.addEventListener('pointerdown', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const layerSystem = window.drawingApp?.layerManager;
-                    if (layerSystem?.flipActiveLayer) {
-                        layerSystem.flipActiveLayer('vertical', true);
-                    }
-                });
-                flipVerticalBtn.removeAttribute('disabled');
-            }
-            
-            this._setupPanelDrag();
-        }
-
-        _setupSlider(sliderId, min, max, initial, formatCallback, property) {
-            const container = document.getElementById(sliderId);
-            if (!container) return;
-
-            const track = container.querySelector('.slider-track');
-            const handle = container.querySelector('.slider-handle');
-            const valueDisplay = container.parentNode.querySelector('.slider-value');
-
-            if (!track || !handle || !valueDisplay) return;
-
-            // 🔥 touch-action: none を適用
-            handle.style.touchAction = 'none';
-
-            let value = initial;
-
-            const update = (newValue) => {
-                if (property === 'rotation' && this.config.layer.rotationLoop) {
-                    while (newValue > max) newValue -= (max - min);
-                    while (newValue < min) newValue += (max - min);
-                } else {
-                    newValue = Math.max(min, Math.min(max, newValue));
-                }
-                value = newValue;
-                
-                let percentage = ((value - min) / (max - min)) * 100;
-                
-                track.style.width = percentage + '%';
-                handle.style.left = percentage + '%';
-                valueDisplay.textContent = formatCallback(value);
-            };
-
-            const getValue = (clientX) => {
-                const rect = container.getBoundingClientRect();
-                const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-                return min + (percentage * (max - min));
-            };
-
-            // 🔥 グローバルpointermoveハンドラー（passive: false）
-            const sliderMoveHandler = (e) => {
-                if (this.activeSliderElement !== handle) return;
-                if (this.activeSliderPointerId !== e.pointerId) return;
-                
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const newValue = getValue(e.clientX);
-                update(newValue);
-                
-                if (this.onSliderChange) {
-                    this.onSliderChange(sliderId, newValue);
-                }
-            };
-
-            const sliderUpHandler = (e) => {
-                if (this.activeSliderElement !== handle) return;
-                if (this.activeSliderPointerId !== e.pointerId) return;
-                
-                // ポインターキャプチャ解放
-                if (handle.releasePointerCapture) {
-                    try {
-                        handle.releasePointerCapture(e.pointerId);
-                    } catch (err) {}
-                }
-                
-                this.activeSliderElement = null;
-                this.activeSliderPointerId = null;
-            };
-
-            // 🔥 CRITICAL: passive: false で登録
-            document.addEventListener('pointermove', sliderMoveHandler, { passive: false, capture: true });
-            document.addEventListener('pointerup', sliderUpHandler, { capture: true });
-            document.addEventListener('pointercancel', sliderUpHandler, { capture: true });
-
-            // 🔥 ハンドル: pointerdownでキャプチャ開始
-            handle.addEventListener('pointerdown', (e) => {
-                this.activeSliderElement = handle;
-                this.activeSliderPointerId = e.pointerId;
-                
-                // ポインターキャプチャ設定
-                if (handle.setPointerCapture) {
-                    try {
-                        handle.setPointerCapture(e.pointerId);
-                    } catch (err) {}
-                }
-                
-                e.preventDefault();
-                e.stopPropagation();
-            });
-
-            // スライダー直接クリック
-            container.addEventListener('pointerdown', (e) => {
-                if (e.target === handle) return;
-                
-                const newValue = getValue(e.clientX);
-                update(newValue);
-                
-                if (this.onSliderChange) {
-                    this.onSliderChange(sliderId, newValue);
-                }
-                
-                e.preventDefault();
-            });
-
-            valueDisplay.addEventListener('dblclick', () => {
-                this._showValueInput(valueDisplay, property, min, max, value, formatCallback);
-            });
-
-            container.updateValue = (newValue) => {
-                update(newValue);
-            };
-
-            update(initial);
-        }
-
-        _showValueInput(valueDisplay, property, min, max, currentValue, formatCallback) {
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.className = 'value-input';
-            
-            const numValue = property === 'rotation' 
-                ? Math.round(currentValue) 
-                : property === 'scale' 
-                    ? currentValue.toFixed(2)
-                    : Math.round(currentValue);
-            
-            input.value = numValue;
-            
-            const parent = valueDisplay.parentNode;
-            parent.replaceChild(input, valueDisplay);
-            input.focus();
-            input.select();
-            
-            const restore = () => {
-                parent.replaceChild(valueDisplay, input);
-            };
-            
-            const commit = () => {
-                let newValue = parseFloat(input.value.replace(/[^\d.-]/g, ''));
-                
-                if (isNaN(newValue)) {
-                    restore();
-                    return;
-                }
-                
-                if (property === 'rotation') {
-                    newValue = (newValue * Math.PI) / 180;
-                } else if (property === 'scale') {
-                    newValue = Math.max(this.config.layer.minScale, newValue);
-                }
-                
-                if (property !== 'scale') {
-                    newValue = Math.max(min, Math.min(max, newValue));
-                }
-                
-                const sliderId = property === 'x' ? 'layer-x-slider'
-                    : property === 'y' ? 'layer-y-slider'
-                    : property === 'rotation' ? 'layer-rotation-slider'
-                    : 'layer-scale-slider';
-                
-                const slider = document.getElementById(sliderId);
-                if (slider?.updateValue) {
-                    const displayValue = property === 'rotation' 
-                        ? (newValue * 180 / Math.PI)
-                        : newValue;
-                    slider.updateValue(displayValue);
-                }
-                
-                if (this.onSliderChange) {
-                    this.onSliderChange(sliderId, newValue);
-                }
-                
-                restore();
-            };
-            
-            input.addEventListener('blur', commit);
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    commit();
-                } else if (e.key === 'Escape') {
-                    restore();
-                }
-                
-                if (!/[\d.-]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'Escape'].includes(e.key)) {
-                    e.preventDefault();
-                }
-            });
-        }
-
-        _getSafeCanvas() {
-            if (this.app?.canvas) return this.app.canvas;
-            if (this.app?.view) return this.app.view;
-            
-            const canvasElements = document.querySelectorAll('canvas');
-            if (canvasElements.length > 0) {
-                return canvasElements[0];
-            }
-            return null;
-        }
-
-        _createTransformMatrix(transform, centerX, centerY) {
-            const matrix = new PIXI.Matrix();
-            
-            matrix.translate(-centerX, -centerY);
-            matrix.scale(transform.scaleX, transform.scaleY);
-            matrix.rotate(transform.rotation);
-            matrix.translate(centerX + transform.x, centerY + transform.y);
-            
-            return matrix;
-        }
-
-        _transformPoints(points, matrix) {
-            const transformedPoints = [];
-            
-            for (let point of points) {
-                if (typeof point.x !== 'number' || typeof point.y !== 'number' ||
-                    !isFinite(point.x) || !isFinite(point.y)) {
-                    continue;
-                }
-                
-                try {
-                    const transformed = matrix.apply(point);
-                    
-                    if (typeof transformed.x === 'number' && typeof transformed.y === 'number' &&
-                        isFinite(transformed.x) && isFinite(transformed.y)) {
-                        
-                        const newPoint = {
-                            x: transformed.x,
-                            y: transformed.y
-                        };
-                        
-                        if (point.pressure !== undefined) {
-                            newPoint.pressure = point.pressure;
-                        }
-                        
-                        transformedPoints.push(newPoint);
-                    }
-                } catch (transformError) {
-                    continue;
-                }
-            }
-            
-            return transformedPoints;
-        }
-
-        _isTransformNonDefault(transform) {
-            if (!transform) return false;
-            return (transform.x !== 0 || transform.y !== 0 || 
-                    transform.rotation !== 0 || 
-                    Math.abs(transform.scaleX) !== 1 || 
-                    Math.abs(transform.scaleY) !== 1);
-        }
-
-        _updateCursor() {
-            const canvas = this._getSafeCanvas();
-            if (!canvas) return;
-
-            if (this.isVKeyPressed) {
-                canvas.style.cursor = 'grab';
-            } else {
-                canvas.style.cursor = 'default';
-            }
-        }
-
-        updateTransformPanelValues(layer) {
-            if (!layer?.layerData) return;
-            
-            const layerId = layer.layerData.id;
-            const transform = this.transforms.get(layerId) || {
-                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-            };
-            
-            ['x', 'y', 'rotation', 'scale'].forEach(prop => {
-                const slider = document.getElementById(`layer-${prop}-slider`);
-                if (slider?.updateValue) {
-                    let value = transform[prop];
-                    if (prop === 'rotation') value = value * 180 / Math.PI;
-                    if (prop === 'scale') value = Math.abs(transform.scaleX);
-                    slider.updateValue(value);
-                }
-            });
-            
-            this.updateFlipButtons(layer);
-        }
-        
-        updateFlipButtons(layer) {
-            if (!layer) return;
-            
-            const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
-            const flipVerticalBtn = document.getElementById('flip-vertical-btn');
-            
-            if (flipHorizontalBtn) {
-                flipHorizontalBtn.classList.toggle('active', layer.scale.x < 0);
-            }
-            
-            if (flipVerticalBtn) {
-                flipVerticalBtn.classList.toggle('active', layer.scale.y < 0);
-            }
-        }
-
-        getTransform(layerId) {
-            return this.transforms.get(layerId) || null;
-        }
-        
-        setTransform(layerId, transform) {
-            this.transforms.set(layerId, transform);
-        }
-        
-        deleteTransform(layerId) {
-            this.transforms.delete(layerId);
-        }
-    }
-
-    window.TegakiLayerTransform = LayerTransform;
-
-})();

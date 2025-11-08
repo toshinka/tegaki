@@ -445,47 +445,62 @@
             }
         }
         
-        flipActiveLayer(direction, bypassVKeyCheck = false) {
-            if (!this.transform) return;
-            const activeLayer = this.getActiveLayer();
-            if (!activeLayer?.layerData) return;
-            if (activeLayer.layerData.isBackground) return;
-            
-            if (!bypassVKeyCheck && !this.isLayerMoveMode) return;
-            
-            const layerId = activeLayer.layerData.id;
-            const transformBefore = structuredClone(this.transform.getTransform(layerId));
-            
-            this.transform.flipLayer(activeLayer, direction);
-            
-            if (window.History && !window.History._manager.isApplying) {
-                const layerIndex = this.activeLayerIndex;
-                
-                window.History.push({
-                    name: `layer-flip-${direction}`,
-                    do: () => {
-                        this.transform.flipLayer(activeLayer, direction);
-                        this.requestThumbnailUpdate(layerIndex);
-                    },
-                    undo: () => {
-                        this.transform.flipLayer(activeLayer, direction);
-                        this.requestThumbnailUpdate(layerIndex);
-                    },
-                    meta: {
-                        layerId,
-                        layerIndex,
-                        direction
-                    }
-                });
+flipActiveLayer(direction, bypassVKeyCheck = false) {
+    if (!this.transform) return;
+    const activeLayer = this.getActiveLayer();
+    if (!activeLayer?.layerData) return;
+    if (activeLayer.layerData.isBackground) return;
+    
+    if (!bypassVKeyCheck && !this.isLayerMoveMode) return;
+    
+    const layerId = activeLayer.layerData.id;
+    const layerIndex = this.activeLayerIndex;
+    
+    // 🔧 transform.flipLayer() は内部でconfirmTransform()を呼び、
+    // confirmTransform()内でHistory登録を行う。
+    // そのため、ここでHistory.push()を実行すると二重登録になる。
+    
+    if (window.History && !window.History._manager.isApplying) {
+        // pathsのバックアップを取る
+        const pathsBefore = structuredClone(activeLayer.layerData.paths);
+        
+        // 反転実行（内部でconfirmTransform(layer, skipHistory=true)を呼ぶ）
+        // skipHistory=trueにすることで、confirmTransform内でのHistory登録をスキップ
+        this.transform.flipLayer(activeLayer, direction, true);
+        
+        const pathsAfter = structuredClone(activeLayer.layerData.paths);
+        
+        // ここで一度だけHistory登録
+        window.History.push({
+            name: `layer-flip-${direction}`,
+            do: () => {
+                // 反転後の状態に復元
+                this.safeRebuildLayer(activeLayer, pathsAfter);
+                this.requestThumbnailUpdate(layerIndex);
+            },
+            undo: () => {
+                // 反転前の状態に復元
+                this.safeRebuildLayer(activeLayer, pathsBefore);
+                this.requestThumbnailUpdate(layerIndex);
+            },
+            meta: {
+                layerId,
+                layerIndex,
+                direction
             }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:transform-updated', { 
-                    layerId: activeLayer.layerData.id 
-                });
-                this.requestThumbnailUpdate(this.activeLayerIndex);
-            }
-        }
+        });
+    } else {
+        // History適用中の場合はskipHistory=falseで実行
+        this.transform.flipLayer(activeLayer, direction, false);
+    }
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:transform-updated', { 
+            layerId: activeLayer.layerData.id 
+        });
+        this.requestThumbnailUpdate(this.activeLayerIndex);
+    }
+}
         
         moveActiveLayer(keyCode) {
             if (!this.transform) return;
