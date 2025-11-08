@@ -1,6 +1,6 @@
 /**
- * @file layer-panel-renderer.js - 安定版
- * @description レイヤーパネルUI描画（シンプル・確実・統一）
+ * @file layer-panel-renderer.js - 動的サムネイルサイズ対応版
+ * @description レイヤーパネルUI描画（アスペクト比完全対応）
  * 
  * 【依存関係】
  * ◆ 親ファイル (このファイルが依存):
@@ -12,11 +12,10 @@
  * ◆ 子ファイル (このファイルに依存):
  *   なし (UI層・末端ファイル)
  * 
- * 【設計方針】
- * - 背景レイヤーも通常レイヤーと同じサムネイル生成方式
- * - 全レイヤーでキャンバスアスペクト比を維持
- * - ThumbnailSystemに完全依存（独自生成なし）
- * - 複雑なロジック排除・可読性最優先
+ * 【v1.2 改修内容】
+ * - サムネイルコンテナを動的サイズに変更
+ * - キャンバスアスペクト比に完全対応
+ * - 背景レイヤーの色変更に即座に反映
  */
 
 (function() {
@@ -66,6 +65,11 @@
             this.eventBus.on('layer:background-color-changed', () => this.requestUpdate());
             this.eventBus.on('layer:name-changed', () => this.requestUpdate());
             this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
+            
+            // 🔧 リサイズ時に全サムネイル更新
+            this.eventBus.on('camera:resized', () => {
+                this.updateAllThumbnails();
+            });
             
             this.eventBus.on('thumbnail:layer-updated', ({ data }) => {
                 if (data && typeof data.layerIndex === 'number') {
@@ -184,7 +188,6 @@
                 nameSpan.style.cssText = `grid-column:1;grid-row:3;color:#800000;font-size:10px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:default;padding:0;height:14px;display:flex;align-items:center;`;
                 layerDiv.appendChild(nameSpan);
 
-                // 🔧 背景も通常サムネイル生成方式で統一
                 const thumbnail = this.createThumbnail(layer, index);
                 thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
                 layerDiv.appendChild(thumbnail);
@@ -409,20 +412,45 @@
         }
 
         /**
-         * 🔧 統一サムネイル生成: 背景も通常レイヤーも同じロジック
-         * ThumbnailSystemに完全依存
+         * 🔧 v1.4: 完全動的サイズ対応サムネイル生成
+         * アスペクト比計算ロジック修正 + リサイズ対応
          */
         createThumbnail(layer, index) {
             const maxWidth = 64;
             const maxHeight = 44;
             
+            // キャンバスアスペクト比を取得
+            const canvasWidth = this.layerSystem?.config?.canvas?.width || 
+                               window.TEGAKI_CONFIG?.canvas?.width || 800;
+            const canvasHeight = this.layerSystem?.config?.canvas?.height || 
+                                window.TEGAKI_CONFIG?.canvas?.height || 600;
+            
+            // 🔧 修正: 正しいアスペクト比計算
+            let thumbWidth, thumbHeight;
+            const canvasAspect = canvasWidth / canvasHeight;
+            const thumbAspect = maxWidth / maxHeight;
+            
+            if (canvasAspect > thumbAspect) {
+                // 横長: 幅を最大にして高さを調整
+                thumbWidth = maxWidth;
+                thumbHeight = Math.round(maxWidth / canvasAspect);
+            } else {
+                // 縦長: 高さを最大にして幅を調整
+                thumbHeight = maxHeight;
+                thumbWidth = Math.round(maxHeight * canvasAspect);
+            }
+            
+            // 念のため最大値チェック
+            thumbWidth = Math.min(thumbWidth, maxWidth);
+            thumbHeight = Math.min(thumbHeight, maxHeight);
+            
             const thumbnailContainer = document.createElement('div');
             thumbnailContainer.className = 'layer-thumbnail';
             thumbnailContainer.dataset.layerIndex = index;
             
-            // 固定サイズ設定（コンテナ）
-            thumbnailContainer.style.width = maxWidth + 'px';
-            thumbnailContainer.style.height = maxHeight + 'px';
+            // 🔧 計算されたサイズを設定
+            thumbnailContainer.style.width = thumbWidth + 'px';
+            thumbnailContainer.style.height = thumbHeight + 'px';
             thumbnailContainer.style.boxSizing = 'border-box';
             thumbnailContainer.style.border = '1px solid #cf9c97';
             thumbnailContainer.style.borderRadius = '2px';
@@ -432,7 +460,7 @@
             thumbnailContainer.style.alignItems = 'center';
             thumbnailContainer.style.justifyContent = 'center';
             thumbnailContainer.style.flexShrink = '0';
-            thumbnailContainer.style.backgroundColor = '#f5f5f5'; // ローディング背景
+            thumbnailContainer.style.backgroundColor = '#f5f5f5';
             
             if (window.ThumbnailSystem && layer) {
                 window.ThumbnailSystem.generateLayerThumbnail(layer, index, maxWidth, maxHeight)
@@ -440,8 +468,8 @@
                         if (result && result.dataUrl) {
                             const img = document.createElement('img');
                             img.src = result.dataUrl;
-                            img.style.maxWidth = '100%';
-                            img.style.maxHeight = '100%';
+                            img.style.width = '100%';
+                            img.style.height = '100%';
                             img.style.display = 'block';
                             img.style.objectFit = 'contain';
                             thumbnailContainer.innerHTML = '';
@@ -538,9 +566,33 @@
 
             const layer = layers[layerIndex];
             
-            // ThumbnailSystemで再生成
             const maxWidth = 64;
             const maxHeight = 44;
+            
+            // 🔧 修正: 正しいアスペクト比計算
+            const canvasWidth = this.layerSystem?.config?.canvas?.width || 
+                               window.TEGAKI_CONFIG?.canvas?.width || 800;
+            const canvasHeight = this.layerSystem?.config?.canvas?.height || 
+                                window.TEGAKI_CONFIG?.canvas?.height || 600;
+            
+            let thumbWidth, thumbHeight;
+            const canvasAspect = canvasWidth / canvasHeight;
+            const thumbAspect = maxWidth / maxHeight;
+            
+            if (canvasAspect > thumbAspect) {
+                thumbWidth = maxWidth;
+                thumbHeight = Math.round(maxWidth / canvasAspect);
+            } else {
+                thumbHeight = maxHeight;
+                thumbWidth = Math.round(maxHeight * canvasAspect);
+            }
+            
+            thumbWidth = Math.min(thumbWidth, maxWidth);
+            thumbHeight = Math.min(thumbHeight, maxHeight);
+            
+            // 🔧 コンテナサイズを更新
+            thumbnailContainer.style.width = thumbWidth + 'px';
+            thumbnailContainer.style.height = thumbHeight + 'px';
 
             if (window.ThumbnailSystem) {
                 try {
@@ -548,8 +600,8 @@
                     if (result && result.dataUrl) {
                         const img = document.createElement('img');
                         img.src = result.dataUrl;
-                        img.style.maxWidth = '100%';
-                        img.style.maxHeight = '100%';
+                        img.style.width = '100%';
+                        img.style.height = '100%';
                         img.style.display = 'block';
                         img.style.objectFit = 'contain';
                         thumbnailContainer.innerHTML = '';
@@ -667,4 +719,4 @@
     window.LayerPanelRenderer = LayerPanelRenderer;
 })();
 
-console.log('✅ layer-panel-renderer.js (安定版: シンプル・統一・確実) loaded');
+console.log('✅ layer-panel-renderer.js (v1.3: コンテナ動的サイズ完全対応) loaded');
