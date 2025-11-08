@@ -2,10 +2,11 @@
  * @file ui/quick-access-popup.js
  * @description ペン設定クイックアクセスポップアップ
  * 
- * 【改修内容】
- * ✅ ペンタブレット対応: mousedown → pointerdown に変更
- * ✅ スライダーの滑らか性改善: リニアな動きに最適化
- * ✅ 透明度初期値修正: BrushSettings から正しく取得（100%）
+ * 【改修履歴】
+ * v8.13.1 - タブレットペンのドラッグ改善
+ *   ✅ パネルドラッグ: passive: false 追加でペンのpreventDefault有効化
+ *   ✅ ポインターキャプチャ: setPointerCapture()で確実な追跡
+ *   ✅ touch-action: none をパネル全体に適用
  * 
  * 【親ファイル (このファイルが依存)】
  * - system/drawing/brush-settings.js (BrushSettings)
@@ -37,35 +38,27 @@
             this.isVisible = false;
             this.initialized = false;
             
-            // スライダードラッグ状態フラグ
             this.isDraggingSize = false;
             this.isDraggingOpacity = false;
-            
-            // ✅ ポップアップドラッグ状態フラグ
             this.isDraggingPanel = false;
             this.dragStartX = 0;
             this.dragStartY = 0;
             this.panelStartX = 0;
             this.panelStartY = 0;
             
-            // DOM要素キャッシュ
             this.elements = {};
             
-            // ✅ ポインターイベントリスナー参照（ペンタブレット対応）
             this.sliderMoveHandler = null;
             this.sliderUpHandler = null;
             this.dragMoveHandler = null;
             this.dragUpHandler = null;
             
-            // ✅ アクティブなスライダー要素（ポインターキャプチャ用）
             this.activeSliderElement = null;
             this.activeDragPointerId = null;
             
-            // 現在値（BrushSettingsから取得）
             this.currentSize = 3;
-            this.currentOpacity = 100; // ✅ パーセント表記（内部では0.0-1.0）
+            this.currentOpacity = 100;
             
-            // 範囲定義
             this.MIN_SIZE = 0.5;
             this.MAX_SIZE = 30;
             this.MIN_OPACITY = 0;
@@ -85,10 +78,16 @@
                 this.panel.id = 'quick-access-popup';
                 this.panel.className = 'popup-panel resize-popup-compact';
                 
+                // 🔥 タッチアクション無効化（パネル全体）
+                this.panel.style.touchAction = 'none';
+                
                 const savedPos = this._loadPosition();
-                this.panel.style.cssText = `left: ${savedPos.x}px; top: ${savedPos.y}px;`;
+                this.panel.style.cssText += `left: ${savedPos.x}px; top: ${savedPos.y}px;`;
                 
                 canvasArea.appendChild(this.panel);
+            } else {
+                // 🔥 既存パネルにも適用
+                this.panel.style.touchAction = 'none';
             }
             
             if (this.panel && !this.panel.classList.contains('resize-popup-compact')) {
@@ -104,10 +103,8 @@
             if (!this.panel) return;
             
             this.panel.innerHTML = `
-                <!-- 閉じるボタン（右上） -->
                 <button class="quick-access-close-btn" id="quick-access-close-btn" title="閉じる">×</button>
 
-                <!-- カラーパレット -->
                 <div style="margin-bottom: 20px; padding: 0 8px;">
                     <div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 8px;">
                         色
@@ -136,7 +133,6 @@
                     </div>
                 </div>
 
-                <!-- ペンサイズスライダー -->
                 <div class="resize-compact-group">
                     <div class="resize-compact-label">ペンサイズ</div>
                     <div class="resize-slider-row">
@@ -152,7 +148,6 @@
                     </div>
                 </div>
 
-                <!-- 透明度スライダー -->
                 <div class="resize-compact-group">
                     <div class="resize-compact-label">透明度</div>
                     <div class="resize-slider-row">
@@ -173,24 +168,18 @@
         _cacheElements() {
             this.elements = {
                 closeBtn: document.getElementById('quick-access-close-btn'),
-                
-                // サイズスライダー
                 sizeSlider: document.getElementById('pen-size-slider'),
                 sizeTrack: document.getElementById('pen-size-track'),
                 sizeHandle: document.getElementById('pen-size-handle'),
                 sizeDisplay: document.getElementById('pen-size-display'),
                 sizeDecrease: document.getElementById('pen-size-decrease'),
                 sizeIncrease: document.getElementById('pen-size-increase'),
-                
-                // 透明度スライダー
                 opacitySlider: document.getElementById('pen-opacity-slider'),
                 opacityTrack: document.getElementById('pen-opacity-track'),
                 opacityHandle: document.getElementById('pen-opacity-handle'),
                 opacityDisplay: document.getElementById('pen-opacity-display'),
                 opacityDecrease: document.getElementById('pen-opacity-decrease'),
                 opacityIncrease: document.getElementById('pen-opacity-increase'),
-                
-                // カラーパレット
                 colorPalette: document.getElementById('pen-color-palette')
             };
         }
@@ -208,7 +197,7 @@
             this._setupColorButtons();
             this._setupSliders();
             this._setupPanelDragHandlers();
-            this._updateUI(); // ✅ BrushSettingsから初期値取得
+            this._updateUI();
             
             this.initialized = true;
         }
@@ -216,7 +205,6 @@
         _setupCloseButton() {
             if (!this.elements.closeBtn) return;
             
-            // ✅ ペンタブレット対応
             this.elements.closeBtn.addEventListener('pointerdown', (e) => {
                 e.stopPropagation();
                 this.hide();
@@ -226,7 +214,6 @@
         _setupColorButtons() {
             const colorButtons = this.panel.querySelectorAll('.color-button');
             colorButtons.forEach(btn => {
-                // ✅ ペンタブレット対応
                 btn.addEventListener('pointerdown', () => {
                     const color = parseInt(btn.getAttribute('data-color'));
                     this.brushSettings.setColor(color);
@@ -245,9 +232,7 @@
         }
 
         _setupSliders() {
-            // ✅ ポインターキャプチャ対応のグローバルハンドラー
             this.sliderMoveHandler = (e) => {
-                // 🔥 重要: すべての pointermove で preventDefault
                 if (this.isDraggingSize || this.isDraggingOpacity) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -271,7 +256,6 @@
             
             this.sliderUpHandler = (e) => {
                 if (this.isDraggingSize || this.isDraggingOpacity) {
-                    // ✅ ポインターキャプチャ解放
                     if (this.activeSliderElement && this.activeSliderElement.releasePointerCapture) {
                         try {
                             this.activeSliderElement.releasePointerCapture(e.pointerId);
@@ -283,12 +267,10 @@
                 this.activeSliderElement = null;
             };
             
-            // ✅ pointermove/pointerup/pointercancel に変更
             document.addEventListener('pointermove', this.sliderMoveHandler, { passive: false, capture: true });
             document.addEventListener('pointerup', this.sliderUpHandler, { capture: true });
             document.addEventListener('pointercancel', this.sliderUpHandler, { capture: true });
             
-            // 🔥 ペンタブレット特有の問題対策: pointerleave/pointerout を無視
             const ignoreLeave = (e) => {
                 if (this.isDraggingSize || this.isDraggingOpacity) {
                     e.preventDefault();
@@ -299,14 +281,12 @@
             document.addEventListener('pointerleave', ignoreLeave, { passive: false, capture: true });
             document.addEventListener('pointerout', ignoreLeave, { passive: false, capture: true });
             
-            // ✅ サイズハンドル（ポインターキャプチャ設定）
-            this.elements.sizeHandle.style.touchAction = 'none'; // 🔥 タッチアクション無効化
+            this.elements.sizeHandle.style.touchAction = 'none';
             this.elements.sizeHandle.addEventListener('pointerdown', (e) => {
                 this.isDraggingSize = true;
                 this.activeSliderElement = this.elements.sizeHandle;
                 this.activeSliderPointerId = e.pointerId;
                 
-                // ✅ ポインターキャプチャでペンイベントを確実に追跡
                 if (this.elements.sizeHandle.setPointerCapture) {
                     try {
                         this.elements.sizeHandle.setPointerCapture(e.pointerId);
@@ -317,14 +297,12 @@
                 e.stopPropagation();
             });
             
-            // ✅ 透明度ハンドル（ポインターキャプチャ設定）
-            this.elements.opacityHandle.style.touchAction = 'none'; // 🔥 タッチアクション無効化
+            this.elements.opacityHandle.style.touchAction = 'none';
             this.elements.opacityHandle.addEventListener('pointerdown', (e) => {
                 this.isDraggingOpacity = true;
                 this.activeSliderElement = this.elements.opacityHandle;
                 this.activeSliderPointerId = e.pointerId;
                 
-                // ✅ ポインターキャプチャでペンイベントを確実に追跡
                 if (this.elements.opacityHandle.setPointerCapture) {
                     try {
                         this.elements.opacityHandle.setPointerCapture(e.pointerId);
@@ -335,7 +313,6 @@
                 e.stopPropagation();
             });
             
-            // ✅ スライダー直接クリック（サイズ）
             this.elements.sizeSlider.addEventListener('pointerdown', (e) => {
                 if (e.target === this.elements.sizeHandle) return;
                 const rect = this.elements.sizeSlider.getBoundingClientRect();
@@ -345,7 +322,6 @@
                 this._updateSizeSlider(value);
             });
             
-            // ✅ スライダー直接クリック（透明度）
             this.elements.opacitySlider.addEventListener('pointerdown', (e) => {
                 if (e.target === this.elements.opacityHandle) return;
                 const rect = this.elements.opacitySlider.getBoundingClientRect();
@@ -355,7 +331,6 @@
                 this._updateOpacitySlider(value);
             });
             
-            // ✅ ステップボタン（ペンタブレット対応）
             this.elements.sizeDecrease.addEventListener('pointerdown', () => {
                 const current = this.brushSettings.getSize();
                 this._updateSizeSlider(Math.max(this.MIN_SIZE, current - 0.5));
@@ -368,20 +343,17 @@
             
             this.elements.opacityDecrease.addEventListener('pointerdown', () => {
                 const current = this.brushSettings.getOpacity();
-                // ✅ 0.0-1.0 を 0-100 に変換
                 const currentPercent = current * 100;
                 this._updateOpacitySlider(Math.max(this.MIN_OPACITY, currentPercent - 5));
             });
             
             this.elements.opacityIncrease.addEventListener('pointerdown', () => {
                 const current = this.brushSettings.getOpacity();
-                // ✅ 0.0-1.0 を 0-100 に変換
                 const currentPercent = current * 100;
                 this._updateOpacitySlider(Math.min(this.MAX_OPACITY, currentPercent + 5));
             });
         }
 
-        // ✅ ポインターキャプチャ対応のパネルドラッグ
         _setupPanelDragHandlers() {
             this.panel.addEventListener('pointerdown', (e) => {
                 const target = e.target;
@@ -409,7 +381,6 @@
                 
                 this.panel.style.cursor = 'grabbing';
                 
-                // ✅ ポインターキャプチャでペンイベントを確実に追跡
                 if (this.panel.setPointerCapture) {
                     try {
                         this.panel.setPointerCapture(e.pointerId);
@@ -419,11 +390,12 @@
                 e.preventDefault();
             });
             
-            // ✅ pointermove（ポインターキャプチャ対応）
+            // 🔥 CRITICAL: passive: false 追加でペンのpreventDefaultを有効化
             this.dragMoveHandler = (e) => {
                 if (!this.isDraggingPanel) return;
                 
-                e.preventDefault(); // ✅ ブラウザデフォルト動作抑制
+                e.preventDefault();
+                e.stopPropagation();
                 
                 const deltaX = e.clientX - this.dragStartX;
                 const deltaY = e.clientY - this.dragStartY;
@@ -445,7 +417,6 @@
             this.dragUpHandler = (e) => {
                 if (!this.isDraggingPanel) return;
                 
-                // ✅ ポインターキャプチャ解放
                 if (this.panel.releasePointerCapture && this.activeDragPointerId !== null) {
                     try {
                         this.panel.releasePointerCapture(this.activeDragPointerId);
@@ -460,17 +431,16 @@
                 this._savePosition(rect.left, rect.top);
             };
             
-            document.addEventListener('pointermove', this.dragMoveHandler, { passive: false });
-            document.addEventListener('pointerup', this.dragUpHandler);
-            document.addEventListener('pointercancel', this.dragUpHandler);
+            // 🔥 CRITICAL: passive: false を追加
+            document.addEventListener('pointermove', this.dragMoveHandler, { passive: false, capture: true });
+            document.addEventListener('pointerup', this.dragUpHandler, { capture: true });
+            document.addEventListener('pointercancel', this.dragUpHandler, { capture: true });
         }
 
         _savePosition(x, y) {
             try {
                 localStorage.setItem('quick-access-position', JSON.stringify({ x, y }));
-            } catch (error) {
-                // silent fail
-            }
+            } catch (error) {}
         }
 
         _loadPosition() {
@@ -479,9 +449,7 @@
                 if (saved) {
                     return JSON.parse(saved);
                 }
-            } catch (error) {
-                // silent fail
-            }
+            } catch (error) {}
             
             return { x: 70, y: 60 };
         }
@@ -502,7 +470,6 @@
         }
 
         _updateOpacitySlider(value) {
-            // ✅ パーセント値として保持
             this.currentOpacity = Math.max(this.MIN_OPACITY, Math.min(this.MAX_OPACITY, value));
             const percent = ((this.currentOpacity - this.MIN_OPACITY) / (this.MAX_OPACITY - this.MIN_OPACITY)) * 100;
             
@@ -510,7 +477,6 @@
             this.elements.opacityHandle.style.left = percent + '%';
             this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
             
-            // ✅ BrushSettings には 0.0-1.0 として渡す
             this.brushSettings.setOpacity(this.currentOpacity / 100);
             
             if (this.eventBus) {
@@ -521,24 +487,20 @@
         _updateUI() {
             if (!this.brushSettings) return;
             
-            // ✅ BrushSettings から正しく初期値取得
             this.currentSize = this.brushSettings.getSize();
-            const opacityRaw = this.brushSettings.getOpacity(); // 0.0-1.0
-            this.currentOpacity = opacityRaw * 100; // パーセントに変換
+            const opacityRaw = this.brushSettings.getOpacity();
+            this.currentOpacity = opacityRaw * 100;
             
-            // サイズスライダー更新
             const sizePercent = ((this.currentSize - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
             this.elements.sizeTrack.style.width = sizePercent + '%';
             this.elements.sizeHandle.style.left = sizePercent + '%';
             this.elements.sizeDisplay.textContent = this.currentSize.toFixed(1) + 'px';
             
-            // 透明度スライダー更新
             const opacityPercent = ((this.currentOpacity - this.MIN_OPACITY) / (this.MAX_OPACITY - this.MIN_OPACITY)) * 100;
             this.elements.opacityTrack.style.width = opacityPercent + '%';
             this.elements.opacityHandle.style.left = opacityPercent + '%';
             this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
             
-            // カラーボタン更新
             const currentColor = this.brushSettings.getColor();
             const colorButtons = this.panel.querySelectorAll('.color-button');
             colorButtons.forEach(btn => {
@@ -595,7 +557,6 @@
         }
 
         destroy() {
-            // スライダーイベントリスナーの削除
             if (this.sliderMoveHandler) {
                 document.removeEventListener('pointermove', this.sliderMoveHandler);
                 document.removeEventListener('pointerup', this.sliderUpHandler);
@@ -604,7 +565,6 @@
                 this.sliderUpHandler = null;
             }
             
-            // ドラッグイベントリスナーの削除
             if (this.dragMoveHandler) {
                 document.removeEventListener('pointermove', this.dragMoveHandler);
                 document.removeEventListener('pointerup', this.dragUpHandler);
@@ -633,9 +593,4 @@
         window.TegakiUI = {};
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
-
-    console.log('✅ quick-access-popup.js (改修版) loaded');
-    console.log('   ✓ ペンタブレット対応: pointerdown/pointermove/pointerup');
-    console.log('   ✓ スライダーの滑らか性改善');
-    console.log('   ✓ 透明度初期値修正: BrushSettings から100%正しく取得');
 })();
