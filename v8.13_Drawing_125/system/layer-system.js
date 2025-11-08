@@ -1,4 +1,31 @@
-// system/layer-system.js - Vキートグル対応版（背景レイヤーはアクティブ化不可）
+/**
+ * @file layer-system.js
+ * @description レイヤー管理・操作の中核システム
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - event-bus.js (イベント通信)
+ * - data-models.js (LayerModel定義)
+ * - layer-transform.js (変形処理委譲)
+ * - coordinate-system.js (座標変換)
+ * - config.js (設定値)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - layer-panel-renderer.js (UI描画)
+ * - ui-panels.js (ボタン操作)
+ * - keyboard-handler.js (ショートカット)
+ * - thumbnail-update-manager.js (サムネイル更新)
+ * 
+ * 【主要メソッド】
+ * - createLayer(): レイヤー作成
+ * - setActiveLayer(): アクティブ化
+ * - flipActiveLayer(direction, bypassVKeyCheck): 反転処理 (layer-transform経由)
+ * - addPathToActiveLayer(): 描画追加
+ * 
+ * 【Phase 1-2 改修内容】
+ * - flipActiveLayer()に bypassVKeyCheck パラメータ追加
+ * - Vキーチェックをbypassできるようにボタンクリック対応
+ * - requestThumbnailUpdate()をeventBus.emit()のみに簡略化
+ */
 
 (function() {
     'use strict';
@@ -114,12 +141,7 @@
                     bg.fill({ color: currentColor, alpha: 1.0 });
                 }
                 
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'canvas-resized',
-                    data: { layerIndex: 0, layerId: bgLayer?.layerData?.id }
-                });
-                
+                this.requestThumbnailUpdate(0);
                 this.updateLayerPanelUI();
             });
         }
@@ -148,11 +170,7 @@
                     layerId,
                     color
                 });
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'background-color-changed',
-                    data: { layerIndex, layerId }
-                });
+                this.requestThumbnailUpdate(layerIndex);
             }
         }
 
@@ -176,11 +194,7 @@
                     layerId: layer.layerData?.id,
                     opacity
                 });
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'opacity-changed',
-                    data: { layerIndex, layerId: layer.layerData?.id }
-                });
+                this.requestThumbnailUpdate(layerIndex);
             }
         }
 
@@ -191,7 +205,6 @@
         _setupVKeyEvents() {
             if (!this.eventBus) return;
             
-            // Vキートグル対応
             this.eventBus.on('keyboard:vkey-pressed', ({ pressed }) => {
                 if (!this.transform) return;
                 if (!this.transform.app && this.app && this.cameraSystem) {
@@ -216,11 +229,7 @@
             this.transform.init(this.app, this.cameraSystem);
             this.transform.onTransformComplete = (layer) => {
                 this.eventBus.emit('layer:transform-confirmed', {layerId: layer.layerData.id});
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'transform-confirmed',
-                    data: { layerIndex: this.getLayerIndex(layer), layerId: layer.layerData.id }
-                });
+                this.requestThumbnailUpdate(this.getLayerIndex(layer));
                 if (this.animationSystem?.generateFrameThumbnail) {
                     const frameIndex = this.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
@@ -229,11 +238,7 @@
                 }
             };
             this.transform.onTransformUpdate = (layer, transform) => {
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'transform-update',
-                    data: { layerIndex: this.getLayerIndex(layer), layerId: layer.layerData.id }
-                });
+                this.requestThumbnailUpdate(this.getLayerIndex(layer));
                 this.eventBus.emit('layer:updated', {layerId: layer.layerData.id, transform});
             };
             this.transform.onSliderChange = (sliderId, value) => {
@@ -244,15 +249,11 @@
                     value = value * Math.PI / 180;
                 }
                 this.transform.updateTransform(activeLayer, property, value);
-                
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'slider-update',
-                    data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id }
-                });
+                this.requestThumbnailUpdate(this.activeLayerIndex);
             };
             this.transform.onFlipRequest = (direction) => {
-                this.flipActiveLayer(direction);
+                // 🔧 Phase 2: keyboard経由の場合はVキーチェック済みなのでbypass=true
+                this.flipActiveLayer(direction, true);
             };
             this.transform.onDragRequest = (dx, dy, shiftKey) => {
                 this._handleLayerDrag(dx, dy, shiftKey);
@@ -350,11 +351,7 @@
             }
             if (this.eventBus) {
                 this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'stroke-added',
-                    data: { layerIndex, layerId: activeLayer.label }
-                });
+                this.requestThumbnailUpdate(layerIndex);
             }
         }
 
@@ -375,11 +372,7 @@
                 }
                 if (this.eventBus) {
                     this.eventBus.emit('layer:path-added', { layerIndex, pathId: path.id, layerId: layer.layerData.id });
-                    this.eventBus.emit('thumbnail:layer-updated', {
-                        component: 'layer-system',
-                        action: 'path-added',
-                        data: { layerIndex, layerId: layer.layerData.id }
-                    });
+                    this.requestThumbnailUpdate(layerIndex);
                 }
             }
         }
@@ -416,25 +409,26 @@
             }
         }
         
-        flipActiveLayer(direction) {
+        /**
+         * 🔧 Phase 2 改修: bypassVKeyCheck パラメータ追加
+         * @param {string} direction - 'horizontal' or 'vertical'
+         * @param {boolean} bypassVKeyCheck - trueの場合Vキーチェックをスキップ（ボタンクリック用）
+         */
+        flipActiveLayer(direction, bypassVKeyCheck = false) {
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
             if (!activeLayer?.layerData) return;
             if (activeLayer.layerData.isBackground) return;
             
-            // Vキーモードでない場合は何もしない
-            if (!this.isLayerMoveMode) return;
+            // 🔧 Phase 2: bypassVKeyCheckがtrueの場合はVキーチェックをスキップ
+            if (!bypassVKeyCheck && !this.isLayerMoveMode) return;
             
             this.transform.flipLayer(activeLayer, direction);
             if (this.eventBus) {
                 this.eventBus.emit('layer:transform-updated', { 
                     layerId: activeLayer.layerData.id 
                 });
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'flip',
-                    data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id, direction }
-                });
+                this.requestThumbnailUpdate(this.activeLayerIndex);
             }
         }
         
@@ -443,13 +437,7 @@
             const activeLayer = this.getActiveLayer();
             if (activeLayer) {
                 this.transform.moveLayer(activeLayer, keyCode);
-                if (this.eventBus) {
-                    this.eventBus.emit('thumbnail:layer-updated', {
-                        component: 'layer-system',
-                        action: 'move',
-                        data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id }
-                    });
-                }
+                this.requestThumbnailUpdate(this.activeLayerIndex);
             }
         }
         
@@ -462,13 +450,7 @@
             } else if (keyCode === 'ArrowLeft' || keyCode === 'ArrowRight') {
                 this.transform.rotateLayer(activeLayer, keyCode);
             }
-            if (this.eventBus) {
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'transform',
-                    data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id }
-                });
-            }
+            this.requestThumbnailUpdate(this.activeLayerIndex);
         }
         
         confirmLayerTransform() {
@@ -492,22 +474,14 @@
                             activeLayer.rotation = 0;
                             activeLayer.scale.set(1, 1);
                             activeLayer.pivot.set(0, 0);
-                            this.eventBus.emit('thumbnail:layer-updated', {
-                                component: 'layer-system',
-                                action: 'transform-confirmed',
-                                data: { layerIndex: this.activeLayerIndex, layerId }
-                            });
+                            this.requestThumbnailUpdate(this.activeLayerIndex);
                         },
                         undo: () => {
                             this.transform.setTransform(layerId, transformBefore);
                             const centerX = this.config.canvas.width / 2;
                             const centerY = this.config.canvas.height / 2;
                             this.transform.applyTransform(activeLayer, transformBefore, centerX, centerY);
-                            this.eventBus.emit('thumbnail:layer-updated', {
-                                component: 'layer-system',
-                                action: 'transform-undone',
-                                data: { layerIndex: this.activeLayerIndex, layerId }
-                            });
+                            this.requestThumbnailUpdate(this.activeLayerIndex);
                         },
                         meta: { layerId, type: 'transform' }
                     };
@@ -572,11 +546,7 @@
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'drag-transform',
-                    data: { layerIndex: this.activeLayerIndex, layerId }
-                });
+                this.requestThumbnailUpdate(this.activeLayerIndex);
             }
         }
 
@@ -839,7 +809,8 @@
             });
             
             this.eventBus.on('layer:flip-by-key', ({ direction }) => {
-                this.flipActiveLayer(direction);
+                // 🔧 Phase 2: keyboard経由はVキーチェック済みなのでbypass不要
+                this.flipActiveLayer(direction, false);
             });
             
             this.eventBus.on('layer:move-by-key', ({ direction }) => {
@@ -1060,7 +1031,6 @@
         setActiveLayer(index) {
             const layers = this.getLayers();
             if (index >= 0 && index < layers.length) {
-                // 背景レイヤーはアクティブ化できない
                 const layer = layers[index];
                 if (layer?.layerData?.isBackground) {
                     return;
@@ -1093,11 +1063,7 @@
                 this.updateLayerPanelUI();
                 if (this.eventBus) {
                     this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
-                    this.eventBus.emit('thumbnail:layer-updated', {
-                        component: 'layer-system',
-                        action: 'visibility-changed',
-                        data: { layerIndex, layerId: layer.layerData.id }
-                    });
+                    this.requestThumbnailUpdate(layerIndex);
                 }
             }
         }
@@ -1271,13 +1237,16 @@
             }
         }
         
+        /**
+         * 🔧 Phase 1 改修: thumbnail-update-manager.js経由に統一
+         * @param {number} layerIndex - レイヤーインデックス
+         */
         requestThumbnailUpdate(layerIndex) {
             if (this.eventBus) {
                 const layer = this.getLayers()[layerIndex];
                 this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'layer-system',
-                    action: 'manual-request',
-                    data: { layerIndex, layerId: layer?.layerData?.id }
+                    layerIndex,
+                    layerId: layer?.layerData?.id
                 });
             }
         }
@@ -1287,4 +1256,4 @@
 
 })();
 
-console.log('✅ layer-system.js (Vキートグル対応版・背景レイヤーアクティブ化不可) loaded');
+console.log('✅ layer-system.js (Phase 1-2統合改修版 - bypassVKeyCheck実装・サムネイル統一) loaded');
