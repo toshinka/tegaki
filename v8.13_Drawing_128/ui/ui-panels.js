@@ -1,4 +1,24 @@
-// ui/ui-panels.js - 反転機能修復版
+/**
+ * @file ui-panels.js - Phase 2完全修正版
+ * @description UIコントロールパネル統合管理
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - core-runtime.js (API統一インターフェース)
+ * - popup-manager.js (ポップアップ制御)
+ * - event-bus.js (イベント通信)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * なし（UI層の最上位）
+ * 
+ * 【主要メソッド】
+ * - setupFlipButtons(): 反転ボタンイベント設定
+ * - handleToolClick(): ツール選択処理
+ * - updateToolUI(): ツールUI同期
+ * 
+ * 【Phase 2 修正内容】
+ * - flipActiveLayer()呼び出し時にbypassVKeyCheck=trueを明示的に渡す
+ * - これによりVキー未押下時でもボタンクリックで反転が動作する
+ */
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -213,7 +233,20 @@ window.TegakiUI.UIController = class {
         }
     }
 
-    // ✅ 修正: CoreRuntime API経由で反転を実行
+    /**
+     * 🔧 Phase 2 完全修正: bypassVKeyCheck=true を明示的に渡す
+     * 
+     * ボタンクリック時は常にVキーチェックをバイパスすることで
+     * Vキー未押下時でも反転が動作するようになる
+     * 
+     * フロー:
+     * [ボタンクリック]
+     * → CoreRuntime.api.layer.flipActiveLayer(direction, bypassVKeyCheck=true)
+     * → layer-system.js: flipActiveLayer(direction, bypassVKeyCheck)
+     *    └→ bypassVKeyCheck=true なので isLayerMoveMode チェックをスキップ
+     * → layer-transform.js: flipLayer(layer, direction)
+     * → 反転実行
+     */
     setupFlipButtons() {
         const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
         const flipVerticalBtn = document.getElementById('flip-vertical-btn');
@@ -221,7 +254,8 @@ window.TegakiUI.UIController = class {
         if (flipHorizontalBtn) {
             flipHorizontalBtn.addEventListener('click', () => {
                 if (window.CoreRuntime?.api?.layer?.flipActiveLayer) {
-                    window.CoreRuntime.api.layer.flipActiveLayer('horizontal');
+                    // 🔧 Phase 2: bypassVKeyCheck=true を明示的に渡す
+                    window.CoreRuntime.api.layer.flipActiveLayer('horizontal', true);
                 }
             });
         }
@@ -229,7 +263,8 @@ window.TegakiUI.UIController = class {
         if (flipVerticalBtn) {
             flipVerticalBtn.addEventListener('click', () => {
                 if (window.CoreRuntime?.api?.layer?.flipActiveLayer) {
-                    window.CoreRuntime.api.layer.flipActiveLayer('vertical');
+                    // 🔧 Phase 2: bypassVKeyCheck=true を明示的に渡す
+                    window.CoreRuntime.api.layer.flipActiveLayer('vertical', true);
                 }
             });
         }
@@ -356,3 +391,5 @@ window.TegakiUI.setupPanelStyles = function() {
         document.head.appendChild(style);
     }
 };
+
+console.log('✅ ui-panels.js (Phase 2完全修正版 - bypassVKeyCheck=true実装) loaded');
