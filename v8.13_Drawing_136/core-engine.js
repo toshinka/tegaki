@@ -1,4 +1,20 @@
-// ===== core-engine.js - 統合版 (DRY/SOLID準拠) =====
+/**
+ * @file core-engine.js
+ * @description システム統合管理・コア機能実装
+ * 
+ * 【Phase 2 改修内容 - ExportManager初期化の一元化】
+ * - initializeExportManager() メソッド追加
+ * - ExportManager生成とエクスポーター登録を一元化
+ * - 真実の情報源として機能
+ * 
+ * 【依存関係】
+ * - system/camera-system.js (TegakiCameraSystem)
+ * - system/layer-system.js (TegakiLayerSystem)
+ * - system/drawing-clipboard.js (TegakiDrawingClipboard)
+ * - system/event-bus.js (TegakiEventBus)
+ * - system/export-manager.js (ExportManager)
+ * - system/exporters/*.js (各エクスポーター)
+ */
 
 (function() {
     'use strict';
@@ -31,15 +47,12 @@
         }
         
         setupKeyHandling() {
-            // keyboard-handler.jsに処理を委譲（重複排除）
-            // Undo/Redoのみ、Historyとの連携のためここで処理
             document.addEventListener('keydown', (e) => {
                 if (!this.keyHandlingActive) return;
                 
                 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
                 const metaKey = isMac ? e.metaKey : e.ctrlKey;
                 
-                // Undo/Redo処理
                 if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
                     if (e.code === 'KeyZ' && !e.shiftKey) {
                         if (window.History?.canUndo()) {
@@ -55,7 +68,6 @@
                     return;
                 }
                 
-                // カメラリセット
                 if (metaKey && e.code === 'Digit0') {
                     this.cameraSystem?.resetView();
                     e.preventDefault();
@@ -63,12 +75,10 @@
                 }
             });
             
-            // ツール変更イベントリスナー
             this.eventBus.on('tool:select', (data) => {
                 this.switchTool(data.tool);
             });
             
-            // カメラ操作イベントリスナー
             this.eventBus.on('camera:flip-horizontal', () => {
                 if (this.cameraSystem?.flipHorizontal) {
                     this.cameraSystem.flipHorizontal();
@@ -87,7 +97,6 @@
                 }
             });
             
-            // UI操作イベントリスナー
             this.eventBus.on('ui:open-settings', () => {
                 if (window.TegakiUI?.uiController) {
                     window.TegakiUI.uiController.closeAllPopups();
@@ -97,7 +106,6 @@
                 }
             });
             
-            // ウィンドウフォーカス喪失時のキー状態リセット
             window.addEventListener('blur', () => this.resetAllKeyStates());
             window.addEventListener('focus', () => this.resetAllKeyStates());
         }
@@ -233,6 +241,70 @@
             this.eventBus.on('drawing:completed', (data) => {
                 this.eventBus.emit('ui:drawing-completed', data);
             });
+        }
+        
+        /**
+         * 🔧 Phase 2: ExportManager初期化の一元化
+         * ExportManager生成と全エクスポーター登録を実行
+         * 
+         * @returns {boolean} 初期化成功時true
+         */
+        initializeExportManager() {
+            // 既に初期化済みの場合はスキップ
+            if (this.exportManager) {
+                return true;
+            }
+            
+            // 依存性チェック
+            if (!window.ExportManager) {
+                console.warn('[CoreEngine] ExportManager class not loaded');
+                return false;
+            }
+            
+            if (!this.animationSystem) {
+                console.warn('[CoreEngine] AnimationSystem not initialized yet');
+                return false;
+            }
+            
+            // ExportManager生成
+            this.exportManager = new window.ExportManager(
+                this.app,
+                this.layerSystem,
+                this.animationSystem,
+                this.cameraSystem
+            );
+            
+            // エクスポーター登録
+            if (window.PNGExporter) {
+                this.exportManager.registerExporter('png', new window.PNGExporter(this.exportManager));
+            }
+            
+            if (window.APNGExporter) {
+                this.exportManager.registerExporter('apng', new window.APNGExporter(this.exportManager));
+            }
+            
+            if (window.GIFExporter) {
+                this.exportManager.registerExporter('gif', new window.GIFExporter(this.exportManager));
+            }
+            
+            if (window.WebPExporter) {
+                this.exportManager.registerExporter('webp', new window.WebPExporter(this.exportManager));
+            }
+            
+            if (window.MP4Exporter) {
+                this.exportManager.registerExporter('mp4', new window.MP4Exporter(this.exportManager));
+            }
+            
+            // グローバル参照設定（レガシー互換性）
+            window.TEGAKI_EXPORT_MANAGER = this.exportManager;
+            
+            // イベント発行
+            this.eventBus.emit('export:manager-initialized', { 
+                timestamp: Date.now(),
+                exporters: Object.keys(this.exportManager.exporters)
+            });
+            
+            return true;
         }
         
         initializeAnimationSystem() {
@@ -562,6 +634,12 @@
             
             this.initializeAnimationSystem();
             
+            // 🔧 Phase 2: ExportManager初期化をここで実行
+            // AnimationSystem初期化後に実行することで依存性を満たす
+            setTimeout(() => {
+                this.initializeExportManager();
+            }, 100);
+            
             setTimeout(() => {
                 this._initializeLayerTransform();
             }, 200);
@@ -572,15 +650,6 @@
                     this.animationSystem
                 );
                 window.batchAPI = this.batchAPI;
-            }
-            
-            if (window.ExportManager && this.animationSystem) {
-                this.exportManager = new window.ExportManager(
-                    this.app,
-                    this.layerSystem,
-                    this.animationSystem,
-                    this.cameraSystem
-                );
             }
             
             this.keyHandler = new UnifiedKeyHandler(
@@ -631,6 +700,6 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (統合版 - DRY/SOLID準拠) loaded');
+    console.log('✅ core-engine.js (Phase 2改修版 - ExportManager初期化一元化) loaded');
 
 })();
