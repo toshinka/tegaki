@@ -1,4 +1,4 @@
-// ===== system/layer-transform.js - 完全改修版 (DRY/SOLID準拠) =====
+// system/layer-transform.js - Vキートグル・反転ボタン・スライダー改善版
 
 (function() {
     'use strict';
@@ -42,7 +42,6 @@
             
             this._setupTransformPanel();
             this._setupDragEvents();
-            this._setupFlipKeyEvents();
             this._setupWheelEvents();
             this._setupEventListeners();
         }
@@ -50,13 +49,14 @@
         _setupEventListeners() {
             if (!this.eventBus) return;
             
-            this.eventBus.on('keyboard:vkey-pressed', () => {
-                this.enterMoveMode();
-            });
-            
-            this.eventBus.on('keyboard:vkey-released', () => {
-                const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
-                this.exitMoveMode(activeLayer);
+            // Vキートグル対応
+            this.eventBus.on('keyboard:vkey-pressed', ({ pressed }) => {
+                if (pressed) {
+                    this.enterMoveMode();
+                } else {
+                    const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
+                    this.exitMoveMode(activeLayer);
+                }
             });
             
             this.eventBus.on('layer:flip-by-key', (data) => {
@@ -108,6 +108,14 @@
             
             this._updateCursor();
             this._updateFlipButtonsAvailability(false);
+        }
+        
+        toggleMoveMode(activeLayer) {
+            if (this.isVKeyPressed) {
+                this.exitMoveMode(activeLayer);
+            } else {
+                this.enterMoveMode();
+            }
         }
         
         _initializeTransformForActiveLayer() {
@@ -571,10 +579,6 @@
             }
         }
 
-        _setupFlipKeyEvents() {
-            // keyboard-handler.jsに処理を委譲
-        }
-
         _setupWheelEvents() {
             const canvas = this._getSafeCanvas();
             if (!canvas) return;
@@ -749,7 +753,12 @@
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
             if (flipHorizontalBtn) {
-                flipHorizontalBtn.addEventListener('click', () => {
+                // ボタンスタイルをふたばカラーに設定
+                flipHorizontalBtn.style.color = '#800000';
+                
+                flipHorizontalBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     if (this.isVKeyPressed && this.onFlipRequest) {
                         this.onFlipRequest('horizontal');
                     }
@@ -760,7 +769,12 @@
             }
             
             if (flipVerticalBtn) {
-                flipVerticalBtn.addEventListener('click', () => {
+                // ボタンスタイルをふたばカラーに設定
+                flipVerticalBtn.style.color = '#800000';
+                
+                flipVerticalBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     if (this.isVKeyPressed && this.onFlipRequest) {
                         this.onFlipRequest('vertical');
                     }
@@ -791,7 +805,7 @@
                     while (newValue > max) newValue -= (max - min);
                     while (newValue < min) newValue += (max - min);
                 } else {
-                    value = Math.max(min, Math.min(max, newValue));
+                    newValue = Math.max(min, Math.min(max, newValue));
                 }
                 value = newValue;
                 
@@ -835,6 +849,7 @@
                 dragging = false;
             });
 
+            // ダブルクリックで数値入力モード
             valueDisplay.addEventListener('dblclick', () => {
                 this._showValueInput(valueDisplay, property, min, max, value, formatCallback);
             });
@@ -854,9 +869,9 @@
                 width: 60px;
                 padding: 2px 4px;
                 font-size: 12px;
-                border: 1px solid #666;
-                background: #2a2a2a;
-                color: #fff;
+                border: 1px solid #aa5a56;
+                background: #ffffee;
+                color: #800000;
                 text-align: center;
             `;
             
@@ -923,6 +938,7 @@
                     restore();
                 }
                 
+                // 数値と記号のみ許可
                 if (!/[\d.-]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'Escape'].includes(e.key)) {
                     e.preventDefault();
                 }
@@ -1057,4 +1073,4 @@
 
 })();
 
-console.log('✅ layer-transform.js (完全改修版 - DRY/SOLID準拠)');
+console.log('✅ layer-transform.js (Vキートグル・反転ボタン・スライダー改善版) loaded');

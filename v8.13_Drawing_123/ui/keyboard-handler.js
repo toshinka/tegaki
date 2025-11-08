@@ -1,4 +1,4 @@
-// ===== ui/keyboard-handler.js - 完全改修版 (DRY/SOLID準拠) =====
+// ui/keyboard-handler.js - 完全機能復旧版 (Vキートグル・アンドゥ復旧・全ショートカット対応)
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -30,11 +30,11 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // Vキーの状態管理（キーリピート無視）
+        // Vキーのトグル処理（キーリピート無視）
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-            if (!vKeyPressed && !e.repeat) {
-                vKeyPressed = true;
-                eventBus.emit('keyboard:vkey-pressed', { pressed: true });
+            if (!e.repeat) {
+                vKeyPressed = !vKeyPressed; // トグル
+                eventBus.emit('keyboard:vkey-pressed', { pressed: vKeyPressed });
             }
             e.preventDefault();
             return;
@@ -48,15 +48,7 @@ window.KeyboardHandler = (function() {
     }
 
     function handleKeyUp(e) {
-        if (e.code === 'KeyV') {
-            if (vKeyPressed) {
-                vKeyPressed = false;
-                const eventBus = window.TegakiEventBus;
-                if (eventBus) {
-                    eventBus.emit('keyboard:vkey-released', { pressed: false });
-                }
-            }
-        }
+        // Vキーはトグル式なので、keyupでは何もしない
     }
 
     function handleAction(action, event, eventBus) {
@@ -167,12 +159,16 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_FLIP_HORIZONTAL':
-                eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
+                if (window.KeyboardHandler?.isVKeyPressed()) {
+                    eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
+                }
                 event.preventDefault();
                 break;
             
             case 'LAYER_FLIP_VERTICAL':
-                eventBus.emit('layer:flip-by-key', { direction: 'vertical' });
+                if (window.KeyboardHandler?.isVKeyPressed()) {
+                    eventBus.emit('layer:flip-by-key', { direction: 'vertical' });
+                }
                 event.preventDefault();
                 break;
             
@@ -309,7 +305,8 @@ window.KeyboardHandler = (function() {
         
         const childrenToRemove = [];
         for (let child of layer.children) {
-            if (child !== layer.layerData.backgroundGraphics) {
+            if (child !== layer.layerData.backgroundGraphics && 
+                child !== layer.layerData.maskSprite) {
                 childrenToRemove.push(child);
             }
         }
@@ -373,7 +370,7 @@ window.KeyboardHandler = (function() {
                 vKeyPressed = false;
                 const eventBus = window.TegakiEventBus;
                 if (eventBus) {
-                    eventBus.emit('keyboard:vkey-released', { pressed: false });
+                    eventBus.emit('keyboard:vkey-pressed', { pressed: false });
                 }
             }
         });
@@ -388,13 +385,25 @@ window.KeyboardHandler = (function() {
     function isVKeyPressed() {
         return vKeyPressed;
     }
+    
+    // Vキー状態を外部から制御（トグルパネルなどから）
+    function setVKeyPressed(state) {
+        if (vKeyPressed !== state) {
+            vKeyPressed = state;
+            const eventBus = window.TegakiEventBus;
+            if (eventBus) {
+                eventBus.emit('keyboard:vkey-pressed', { pressed: vKeyPressed });
+            }
+        }
+    }
 
     return {
         init,
         isInputFocused,
         getShortcutList,
-        isVKeyPressed
+        isVKeyPressed,
+        setVKeyPressed
     };
 })();
 
-console.log('✅ keyboard-handler.js (完全改修版 - DRY/SOLID準拠) loaded');
+console.log('✅ keyboard-handler.js (完全機能復旧版 - Vキートグル・アンドゥ復旧) loaded');

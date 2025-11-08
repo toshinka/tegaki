@@ -1,4 +1,4 @@
-// system/layer-system.js - DRY原則準拠版 (keydown二重実装を削除)
+// system/layer-system.js - Vキートグル対応版（背景レイヤーはアクティブ化不可）
 
 (function() {
     'use strict';
@@ -190,23 +190,25 @@
         
         _setupVKeyEvents() {
             if (!this.eventBus) return;
-            this.eventBus.on('keyboard:vkey-pressed', function() {
+            
+            // Vキートグル対応
+            this.eventBus.on('keyboard:vkey-pressed', ({ pressed }) => {
                 if (!this.transform) return;
                 if (!this.transform.app && this.app && this.cameraSystem) {
                     this.initTransform();
                 }
-                if (this.transform.isVKeyPressed) {
-                    const activeLayer = this.getActiveLayer();
-                    this.transform.exitMoveMode(activeLayer);
-                } else {
+                
+                if (pressed) {
                     this.transform.enterMoveMode();
                     const activeLayer = this.getActiveLayer();
                     if (activeLayer) {
                         this.transform.updateTransformPanelValues(activeLayer);
                     }
+                } else {
+                    const activeLayer = this.getActiveLayer();
+                    this.transform.exitMoveMode(activeLayer);
                 }
-            }.bind(this));
-            this.eventBus.on('keyboard:vkey-released', function() {}.bind(this));
+            });
         }
         
         initTransform() {
@@ -417,18 +419,22 @@
         flipActiveLayer(direction) {
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
-            if (activeLayer) {
-                this.transform.flipLayer(activeLayer, direction);
-                if (this.eventBus) {
-                    this.eventBus.emit('layer:transform-updated', { 
-                        layerId: activeLayer.layerData.id 
-                    });
-                    this.eventBus.emit('thumbnail:layer-updated', {
-                        component: 'layer-system',
-                        action: 'flip',
-                        data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id, direction }
-                    });
-                }
+            if (!activeLayer?.layerData) return;
+            if (activeLayer.layerData.isBackground) return;
+            
+            // Vキーモードでない場合は何もしない
+            if (!this.isLayerMoveMode) return;
+            
+            this.transform.flipLayer(activeLayer, direction);
+            if (this.eventBus) {
+                this.eventBus.emit('layer:transform-updated', { 
+                    layerId: activeLayer.layerData.id 
+                });
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'flip',
+                    data: { layerIndex: this.activeLayerIndex, layerId: activeLayer.layerData.id, direction }
+                });
             }
         }
         
@@ -817,11 +823,9 @@
             }
         }
 
-        // ✅ DRY原則準拠: EventBusリスナーのみ、keydownリスナーは削除
         _setupLayerOperations() {
             if (!this.eventBus) return;
             
-            // keyboard-handler.jsからのEventBus経由のイベントのみ処理
             this.eventBus.on('layer:copy-request', () => {
                 if (window.drawingClipboard) {
                     window.drawingClipboard.copyActiveLayer();
@@ -887,14 +891,12 @@
                 this.toggleLayerMoveMode();
             });
             
-            // Vキー押下時にツール切り替えがあった場合、移動モードを終了
             this.eventBus.on('tool:select', () => {
                 if (this.isLayerMoveMode) {
                     this.exitLayerMoveMode();
                 }
             });
             
-            // ウィンドウのblurでVキーモードを解除
             window.addEventListener('blur', () => {
                 if (this.vKeyPressed) {
                     this.exitLayerMoveMode();
@@ -1058,6 +1060,12 @@
         setActiveLayer(index) {
             const layers = this.getLayers();
             if (index >= 0 && index < layers.length) {
+                // 背景レイヤーはアクティブ化できない
+                const layer = layers[index];
+                if (layer?.layerData?.isBackground) {
+                    return;
+                }
+                
                 const oldIndex = this.activeLayerIndex;
                 this.activeLayerIndex = index;
                 this.updateLayerPanelUI();
@@ -1278,3 +1286,5 @@
     window.TegakiLayerSystem = LayerSystem;
 
 })();
+
+console.log('✅ layer-system.js (Vキートグル対応版・背景レイヤーアクティブ化不可) loaded');
