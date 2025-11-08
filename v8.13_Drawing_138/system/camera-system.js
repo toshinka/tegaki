@@ -1,4 +1,24 @@
-// ===== system/camera-system.js - Phase 2完全実装版（ショートカット完全復旧版） =====
+/**
+ * @file system/camera-system.js
+ * @description カメラ制御システム（ズーム、パン、回転）
+ * 
+ * 【Phase 4 改修内容 - 責務の整理】
+ * - switchTool() メソッドを削除（ツール管理は BrushCore の責務）
+ * - カメラ制御の責務のみに限定
+ * 
+ * 【依存関係】
+ * - config.js (TEGAKI_CONFIG)
+ * - system/event-bus.js (EventBus)
+ * - coordinate-system.js (CoordinateSystem)
+ * 
+ * 【親ファイル (依存元)】
+ * - core-engine.js
+ * - core-runtime.js
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - ui/keyboard-handler.js (キーボードイベント)
+ * - system/layer-system.js (レイヤー移動モード連携)
+ */
 
 (function() {
     'use strict';
@@ -37,7 +57,6 @@
             this.canvasMask = null;
             
             this.layerManager = null;
-            this.drawingEngine = null;
         }
 
         init(stage, eventBus, config) {
@@ -345,21 +364,18 @@
                 const centerX = this.config.canvas.width / 2;
                 const centerY = this.config.canvas.height / 2;
                 
-                // ✅ 復旧1: Space + ホイール = ズーム
                 if (this.spacePressed && !this.shiftPressed) {
                     this._handleWheelZoom(e, centerX, centerY);
                     this._emitTransformChanged();
                     return;
                 }
                 
-                // Space + Shift + ホイール = 回転
                 if (this.spacePressed && this.shiftPressed) {
                     this._handleWheelRotation(e, centerX, centerY);
                     this._emitTransformChanged();
                     return;
                 }
                 
-                // 通常ホイール = ズーム（Spaceなし）
                 if (!this.spacePressed && !this.shiftPressed) {
                     this._handleWheelZoom(e, centerX, centerY);
                     this._emitTransformChanged();
@@ -376,9 +392,7 @@
             const centerY = this.config.canvas.height / 2;
             const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
             
-            // ✅ 復旧2: 左右ドラッグ = 回転、上下ドラッグ = 拡大縮小
             if (Math.abs(dx) > Math.abs(dy)) {
-                // 左右ドラッグ → 回転
                 this.rotation += (dx * this.config.camera.dragRotationSpeed);
                 this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
                 
@@ -386,7 +400,6 @@
                 this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                 this.worldContainer.y += worldCenter.y - newWorldCenter.y;
             } else {
-                // 上下ドラッグ → 拡大縮小
                 const scaleFactor = 1 + (-dy * this.config.camera.dragScaleSpeed);
                 const newScale = this.worldContainer.scale.x * scaleFactor;
                 
@@ -605,6 +618,10 @@
             }
         }
 
+        /**
+         * 🔧 Phase 4改修: カーソル更新を BrushCore に依存しない形に変更
+         * ツール情報は CoreRuntime.api.tool.get() から取得
+         */
         _emitCursorUpdate() {
             if (!this.eventBus) return;
             
@@ -617,8 +634,8 @@
             } else if (this.isScaleRotateDragging || (this.spacePressed && this.shiftPressed)) {
                 cursor = 'grab';
             } else {
-                const tool = this.drawingEngine ? this.drawingEngine.currentTool : 'pen';
-                cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+                const currentTool = window.CoreRuntime?.api?.tool?.get();
+                cursor = currentTool === 'eraser' ? 'cell' : 'crosshair';
             }
             
             this.eventBus.emit('camera:cursor-changed', { cursor });
@@ -667,25 +684,18 @@
                    canvasPoint.y >= -margin && canvasPoint.y <= this.config.canvas.height + margin;
         }
 
+        /**
+         * 🔧 Phase 4改修: updateCursor() は内部メソッドを呼ぶのみ
+         */
         updateCursor() {
             this._emitCursorUpdate();
         }
 
-        switchTool(toolName) {
-            if (this.drawingEngine) {
-                this.drawingEngine.setTool(toolName);
-            }
-            
-            if (this.layerManager && this.layerManager.isLayerMoveMode) {
-                this.layerManager.exitLayerMoveMode();
-            }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('camera:tool-switched', { tool: toolName });
-            }
-
-            this._emitCursorUpdate();
-        }
+        /**
+         * 🔧 Phase 4削除: switchTool() メソッドを削除
+         * 理由: ツール切り替えは BrushCore の責務
+         * 呼び出し元は CoreRuntime.api.tool.set() を使用すべき
+         */
 
         updateTransformDisplay() {
             this._emitTransformChanged();
@@ -710,7 +720,11 @@
         setLayerManager(layerManager) {
             this.layerManager = layerManager;
         }
-        
+
+        /**
+         * 🔧 Phase 4保持: DrawingEngine参照の保持（互換性のため）
+         * 注意: ツール切り替えには使用しない
+         */
         setDrawingEngine(drawingEngine) {
             this.drawingEngine = drawingEngine;
         }
@@ -720,4 +734,6 @@
 
 })();
 
-console.log('✅ camera-system.js (ショートカット完全復旧版) loaded');
+console.log('✅ camera-system.js (Phase 4改修版 - 責務の整理) loaded');
+console.log('   ✓ switchTool() メソッド削除');
+console.log('   ✓ カメラ制御の責務のみに限定');
