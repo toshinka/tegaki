@@ -1,4 +1,4 @@
-// system/layer-transform.js - Vキートグル・反転ボタン・スライダー改善版
+// system/layer-transform.js - 完全改修版 (反転ボタン・ドラッグ・数値入力対応)
 
 (function() {
     'use strict';
@@ -18,7 +18,6 @@
             this.panelDragOffset = { x: 0, y: 0 };
             
             this.transformPanel = null;
-            
             this.app = null;
             this.cameraSystem = null;
             this.eventBus = window.TegakiEventBus;
@@ -49,7 +48,6 @@
         _setupEventListeners() {
             if (!this.eventBus) return;
             
-            // Vキートグル対応
             this.eventBus.on('keyboard:vkey-pressed', ({ pressed }) => {
                 if (pressed) {
                     this.enterMoveMode();
@@ -524,7 +522,9 @@
             header.style.cursor = 'grab';
             
             header.addEventListener('pointerdown', (e) => {
-                if (e.target.closest('.slider-container') || e.target.closest('button')) {
+                if (e.target.closest('.slider-container') || 
+                    e.target.closest('.slider') ||
+                    e.target.closest('button')) {
                     return;
                 }
                 
@@ -538,6 +538,7 @@
                 };
                 
                 e.preventDefault();
+                e.stopPropagation();
             });
             
             document.addEventListener('pointermove', (e) => {
@@ -548,8 +549,7 @@
                 
                 this.transformPanel.style.left = `${newLeft}px`;
                 this.transformPanel.style.top = `${newTop}px`;
-                this.transformPanel.style.right = 'auto';
-                this.transformPanel.style.bottom = 'auto';
+                this.transformPanel.style.transform = 'none';
             });
             
             document.addEventListener('pointerup', () => {
@@ -706,24 +706,16 @@
             if (flipHorizontalBtn) {
                 if (isVMode) {
                     flipHorizontalBtn.removeAttribute('disabled');
-                    flipHorizontalBtn.style.opacity = '1';
-                    flipHorizontalBtn.style.cursor = 'pointer';
                 } else {
                     flipHorizontalBtn.setAttribute('disabled', 'true');
-                    flipHorizontalBtn.style.opacity = '0.4';
-                    flipHorizontalBtn.style.cursor = 'not-allowed';
                 }
             }
             
             if (flipVerticalBtn) {
                 if (isVMode) {
                     flipVerticalBtn.removeAttribute('disabled');
-                    flipVerticalBtn.style.opacity = '1';
-                    flipVerticalBtn.style.cursor = 'pointer';
                 } else {
                     flipVerticalBtn.setAttribute('disabled', 'true');
-                    flipVerticalBtn.style.opacity = '0.4';
-                    flipVerticalBtn.style.cursor = 'not-allowed';
                 }
             }
         }
@@ -732,6 +724,14 @@
             this.transformPanel = document.getElementById('layer-transform-panel');
             
             if (!this.transformPanel) return;
+            
+            // ドラッグ用ヘッダーがなければ作成
+            if (!this.transformPanel.querySelector('.panel-header')) {
+                const header = document.createElement('div');
+                header.className = 'panel-header';
+                header.textContent = 'TRANSFORM';
+                this.transformPanel.insertBefore(header, this.transformPanel.firstChild);
+            }
             
             this._setupSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
                 return Math.round(value) + 'px';
@@ -753,9 +753,6 @@
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
             if (flipHorizontalBtn) {
-                // ボタンスタイルをふたばカラーに設定
-                flipHorizontalBtn.style.color = '#800000';
-                
                 flipHorizontalBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -764,14 +761,9 @@
                     }
                 });
                 flipHorizontalBtn.setAttribute('disabled', 'true');
-                flipHorizontalBtn.style.opacity = '0.4';
-                flipHorizontalBtn.style.cursor = 'not-allowed';
             }
             
             if (flipVerticalBtn) {
-                // ボタンスタイルをふたばカラーに設定
-                flipVerticalBtn.style.color = '#800000';
-                
                 flipVerticalBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -780,8 +772,6 @@
                     }
                 });
                 flipVerticalBtn.setAttribute('disabled', 'true');
-                flipVerticalBtn.style.opacity = '0.4';
-                flipVerticalBtn.style.cursor = 'not-allowed';
             }
             
             this._setupPanelDrag();
@@ -849,7 +839,6 @@
                 dragging = false;
             });
 
-            // ダブルクリックで数値入力モード
             valueDisplay.addEventListener('dblclick', () => {
                 this._showValueInput(valueDisplay, property, min, max, value, formatCallback);
             });
@@ -865,15 +854,6 @@
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'value-input';
-            input.style.cssText = `
-                width: 60px;
-                padding: 2px 4px;
-                font-size: 12px;
-                border: 1px solid #aa5a56;
-                background: #ffffee;
-                color: #800000;
-                text-align: center;
-            `;
             
             const numValue = property === 'rotation' 
                 ? Math.round(currentValue) 
@@ -938,7 +918,6 @@
                     restore();
                 }
                 
-                // 数値と記号のみ許可
                 if (!/[\d.-]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'Escape'].includes(e.key)) {
                     e.preventDefault();
                 }
@@ -1073,4 +1052,4 @@
 
 })();
 
-console.log('✅ layer-transform.js (Vキートグル・反転ボタン・スライダー改善版) loaded');
+console.log('✅ layer-transform.js loaded');
