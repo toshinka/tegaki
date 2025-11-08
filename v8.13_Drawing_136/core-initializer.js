@@ -1,4 +1,17 @@
-// core-initializer.js - UIController依存関係修正版
+/**
+ * @file core-initializer.js
+ * @description アプリケーション初期化シーケンス制御
+ * 
+ * 【Phase 2 改修内容 - ExportManager初期化の一元化】
+ * - ExportManager生成処理を削除
+ * - CoreEngine.exportManagerを使用
+ * - ExportPopup登録のみ実施
+ * 
+ * 【依存関係】
+ * - core-engine.js (CoreEngine・ExportManager生成元)
+ * - core-runtime.js (CoreRuntime)
+ * - ui-panels.js (UIController)
+ */
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -197,7 +210,6 @@ window.CoreInitializer = (function() {
             const CONFIG = window.TEGAKI_CONFIG;
             const CoreEngine = window.TegakiCore.CoreEngine;
             
-            // UIControllerの存在確認
             if (!window.TegakiUI || !window.TegakiUI.UIController) {
                 throw new Error('UIController not found - ui-panels.js may not be loaded');
             }
@@ -225,22 +237,25 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
+            // CoreEngine初期化
             this.coreEngine = new CoreEngine(this.pixiApp);
-            
             const drawingApp = this.coreEngine.initialize();
             
+            // グローバル参照設定
             window.coreEngine = this.coreEngine;
             
             const brushSettings = this.coreEngine.getBrushSettings();
             window.brushSettings = brushSettings;
             
+            // CoreRuntime初期化 + CoreEngine参照設定
             window.CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
                 canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
                 cameraSystem: this.coreEngine.getCameraSystem(),
                 layerManager: this.coreEngine.getLayerManager(),
-                drawingEngine: this.coreEngine.getDrawingEngine()
+                drawingEngine: this.coreEngine.getDrawingEngine(),
+                coreEngine: this.coreEngine
             });
             
             initializeSettingsManager();
@@ -270,7 +285,9 @@ window.CoreInitializer = (function() {
                 );
             }
             
-            this.initializeExportSystem();
+            // 🔧 Phase 2: ExportPopup登録のみ実施
+            // ExportManager生成はCoreEngine.initialize()で実行済み
+            this.initializeExportPopup();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
                 return window.CoreRuntime.api.camera.resize(newWidth, newHeight);
@@ -284,66 +301,58 @@ window.CoreInitializer = (function() {
             return true;
         }
         
-        initializeExportSystem() {
+        /**
+         * 🔧 Phase 2: ExportPopup登録専用メソッド
+         * ExportManager生成は不要（CoreEngineで実行済み）
+         */
+        initializeExportPopup() {
             let retryCount = 0;
             const maxRetries = 30;
             
-            const tryInit = () => {
+            const tryRegisterPopup = () => {
                 retryCount++;
                 
-                if (!window.animationSystem || !window.CoreRuntime) {
+                // CoreEngine.exportManagerの確認
+                const exportManager = this.coreEngine?.getExportManager();
+                
+                if (!exportManager) {
                     if (retryCount < maxRetries) {
-                        setTimeout(tryInit, 200);
+                        setTimeout(tryRegisterPopup, 200);
                     }
                     return;
                 }
                 
-                if (!window.ExportManager || !window.PNGExporter || 
-                    !window.APNGExporter || !window.GIFExporter) {
+                // ExportPopupの確認
+                if (!window.TegakiExportPopup) {
                     if (retryCount < maxRetries) {
-                        setTimeout(tryInit, 200);
+                        setTimeout(tryRegisterPopup, 200);
                     }
                     return;
                 }
                 
-                const success = window.CoreRuntime.initializeExportSystem(
-                    this.pixiApp,
-                    () => {
-                        if (!this.exportInitialized && 
-                            window.PopupManager && 
-                            window.TEGAKI_EXPORT_MANAGER &&
-                            window.TegakiExportPopup) {
-                            
-                            window.PopupManager.register('export', window.TegakiExportPopup, {
-                                exportManager: window.TEGAKI_EXPORT_MANAGER
-                            }, { 
-                                priority: 5,
-                                waitFor: []
-                            });
-                            
-                            setTimeout(() => {
-                                window.PopupManager.initialize('export');
-                                this.exportInitialized = true;
-                            }, 100);
-                        }
-                        
-                        if (window.TegakiEventBus) {
-                            window.TegakiEventBus.emit('export:manager:initialized');
-                        }
-                    }
-                );
-                
-                if (!success && retryCount < maxRetries) {
-                    setTimeout(tryInit, 200);
+                // PopupManager登録
+                if (!this.exportInitialized && window.PopupManager) {
+                    window.PopupManager.register('export', window.TegakiExportPopup, {
+                        exportManager: exportManager
+                    }, { 
+                        priority: 5,
+                        waitFor: []
+                    });
+                    
+                    setTimeout(() => {
+                        window.PopupManager.initialize('export');
+                        this.exportInitialized = true;
+                    }, 100);
                 }
             };
             
+            // イベントリスナー登録
             if (window.TegakiEventBus) {
-                window.TegakiEventBus.on('animation:system-ready', tryInit);
-                window.TegakiEventBus.on('animation:initialized', tryInit);
+                window.TegakiEventBus.on('export:manager-initialized', tryRegisterPopup);
             }
             
-            setTimeout(tryInit, 300);
+            // 初回試行
+            setTimeout(tryRegisterPopup, 300);
         }
         
         setupEventListeners() {
@@ -424,3 +433,5 @@ window.CoreInitializer = (function() {
         initializeLayerPanel
     };
 })();
+
+console.log('✅ core-initializer.js (Phase 2改修版 - ExportManager初期化一元化) loaded');
