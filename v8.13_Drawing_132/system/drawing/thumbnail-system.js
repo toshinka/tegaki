@@ -1,4 +1,25 @@
-// system/drawing/thumbnail-system.js - Phase 1-1: 背景レイヤーサムネイル修正版
+/**
+ * @file thumbnail-system.js - 統一アスペクト比対応版
+ * @description レイヤー・フレームのサムネイル生成システム
+ * 
+ * 【依存関係】
+ * ◆ 親ファイル (このファイルが依存):
+ *   - config.js (キャンバスサイズ取得)
+ *   - PIXI.js v8.13 (RenderTexture, Extract)
+ *   - event-bus.js (イベント通信)
+ *   - coordinate-system.js (座標系)
+ * 
+ * ◆ 子ファイル (このファイルに依存):
+ *   - layer-panel-renderer.js (サムネイル表示)
+ *   - timeline-ui.js (フレームサムネイル表示)
+ * 
+ * 【設計方針 - v1.1改修】
+ * - 全レイヤー(背景含む)でキャンバスアスペクト比を維持
+ * - サムネイル最大サイズ: 64x44 (どちらか一辺が最大値)
+ * - 背景レイヤーは単色塗りつぶしCanvas生成
+ * - 通常レイヤーはPIXI RenderTextureでレンダリング
+ * - キャッシュ機構で重複生成を抑制
+ */
 
 (function() {
     'use strict';
@@ -12,8 +33,8 @@
             this.layerThumbnailCache = new Map();
             this.frameThumbnailCache = new Map();
             
-            this.defaultLayerThumbWidth = 74;
-            this.defaultLayerThumbHeight = 40;
+            this.defaultLayerThumbWidth = 64;
+            this.defaultLayerThumbHeight = 44;
             this.defaultFrameThumbSize = 150;
             this.maxCacheSize = 200;
             
@@ -136,21 +157,54 @@
         }
 
         /**
-         * Phase 1-1: 背景レイヤー対応版
-         * 背景レイヤーはここでnullを返す（layer-panel-rendererで直接描画）
+         * キャンバスアスペクト比を維持したサムネイルサイズを計算
+         * @param {number} maxWidth - サムネイル最大幅
+         * @param {number} maxHeight - サムネイル最大高さ
+         * @returns {{width: number, height: number}} サムネイルサイズ
+         */
+        _calculateThumbnailSize(maxWidth, maxHeight) {
+            const canvasWidth = this.config?.canvas?.width || 800;
+            const canvasHeight = this.config?.canvas?.height || 600;
+            
+            // 🔧 修正: 正しいアスペクト比計算
+            let thumbWidth, thumbHeight;
+            const canvasAspect = canvasWidth / canvasHeight;
+            const thumbAspect = maxWidth / maxHeight;
+            
+            if (canvasAspect > thumbAspect) {
+                // 横長: 幅を最大にして高さを調整
+                thumbWidth = maxWidth;
+                thumbHeight = Math.round(maxWidth / canvasAspect);
+            } else {
+                // 縦長: 高さを最大にして幅を調整
+                thumbHeight = maxHeight;
+                thumbWidth = Math.round(maxHeight * canvasAspect);
+            }
+            
+            // 念のため最大値チェック
+            thumbWidth = Math.min(thumbWidth, maxWidth);
+            thumbHeight = Math.min(thumbHeight, maxHeight);
+
+            return { width: thumbWidth, height: thumbHeight };
+        }
+
+        /**
+         * レイヤーサムネイル生成 (背景・通常レイヤー統一対応)
          */
         async generateLayerThumbnail(layer, layerIndex = 0, maxWidth = null, maxHeight = null) {
-            if (!layer || !this.app?.renderer) {
+            if (!layer) {
                 return null;
             }
 
             const actualMaxWidth = (typeof maxWidth === 'number') ? maxWidth : this.defaultLayerThumbWidth;
             const actualMaxHeight = (typeof maxHeight === 'number') ? maxHeight : this.defaultLayerThumbHeight;
 
+            // 🔧 背景レイヤー: 単色塗りつぶしCanvas生成
             if (layer.layerData?.isBackground) {
-                return null;
+                return this._generateBackgroundThumbnail(layer, actualMaxWidth, actualMaxHeight);
             }
 
+            // 通常レイヤー: PIXIレンダリング
             if (this.vKeyModeActive) {
                 return await this._renderLayerThumbnail(layer, actualMaxWidth, actualMaxHeight);
             }
@@ -180,25 +234,54 @@
             return result;
         }
 
+        /**
+         * 背景レイヤー専用サムネイル生成
+         * キャンバスアスペクト比を維持した単色塗りつぶし
+         */
+        _generateBackgroundThumbnail(layer, maxWidth, maxHeight) {
+            const { width: thumbWidth, height: thumbHeight } = this._calculateThumbnailSize(maxWidth, maxHeight);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = thumbWidth;
+            canvas.height = thumbHeight;
+            
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return null;
+
+            // 🔧 layerData.backgroundColor から取得
+            const bgColor = layer.layerData?.backgroundColor || 0xf0e0d6;
+            const r = (bgColor >> 16) & 0xFF;
+            const g = (bgColor >> 8) & 0xFF;
+            const b = bgColor & 0xFF;
+            
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(0, 0, thumbWidth, thumbHeight);
+
+            const dataUrl = canvas.toDataURL('image/png');
+
+            return {
+                canvas: canvas,
+                dataUrl: dataUrl,
+                width: thumbWidth,
+                height: thumbHeight
+            };
+        }
+
+        /**
+         * 通常レイヤーのサムネイルレンダリング
+         * キャンバスアスペクト比を維持してスケーリング
+         */
         async _renderLayerThumbnail(layer, maxWidth, maxHeight) {
+            if (!this.app?.renderer) return null;
+
             try {
+                const { width: thumbWidth, height: thumbHeight } = this._calculateThumbnailSize(maxWidth, maxHeight);
+
                 const canvasWidth = this.config?.canvas?.width || 800;
                 const canvasHeight = this.config?.canvas?.height || 600;
-                const aspectRatio = canvasWidth / canvasHeight;
-
-                let thumbWidth, thumbHeight;
-                if (aspectRatio >= maxWidth / maxHeight) {
-                    thumbWidth = maxWidth;
-                    thumbHeight = Math.round(maxWidth / aspectRatio);
-                } else {
-                    thumbHeight = maxHeight;
-                    thumbWidth = Math.round(maxHeight * aspectRatio);
-                }
 
                 const rt = this._acquireRenderTexture(canvasWidth, canvasHeight);
-                if (!rt) {
-                    return null;
-                }
+                if (!rt) return null;
 
                 this.app.renderer.render({
                     container: layer,
@@ -235,6 +318,9 @@
             }
         }
 
+        /**
+         * フレームサムネイル生成 (アニメーション用)
+         */
         async generateFrameThumbnail(frame, maxWidth = this.defaultFrameThumbSize, maxHeight = this.defaultFrameThumbSize) {
             if (!frame || !this.app?.renderer) {
                 return null;
@@ -242,19 +328,10 @@
 
             const frameId = frame.id || frame.label;
             
+            const { width: thumbWidth, height: thumbHeight } = this._calculateThumbnailSize(maxWidth, maxHeight);
+
             const canvasWidth = this.config?.canvas?.width || 800;
             const canvasHeight = this.config?.canvas?.height || 600;
-
-            const aspectRatio = canvasWidth / canvasHeight;
-            let thumbWidth, thumbHeight;
-            
-            if (aspectRatio > 1) {
-                thumbWidth = maxWidth;
-                thumbHeight = Math.round(maxWidth / aspectRatio);
-            } else {
-                thumbHeight = maxHeight;
-                thumbWidth = Math.round(maxHeight * aspectRatio);
-            }
 
             const cacheKey = `frame_${frameId}_${canvasWidth}_${canvasHeight}_${thumbWidth}_${thumbHeight}`;
             
@@ -426,3 +503,5 @@
     );
 
 })();
+
+console.log('✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded');
