@@ -1,4 +1,23 @@
-// ===== system/drawing/drawing-engine.js - スペースキー描画不具合修正版 =====
+/**
+ * @file system/drawing/drawing-engine.js
+ * @description 座標変換・PointerEvent処理・ストローク制御
+ * 
+ * 【Phase 3 改修内容 - Drawing API簡素化】
+ * - setTool(), getTool(), currentTool プロパティを削除
+ * - 責務を座標変換とストローク制御のみに限定
+ * - ツール切り替えは BrushCore に完全委譲
+ * 
+ * 【依存関係】
+ * - system/drawing/brush-core.js (BrushCore - ツール状態管理)
+ * - system/drawing/pointer-handler.js (PointerHandler)
+ * - coordinate-system.js (CoordinateSystem)
+ * - system/camera-system.js (CameraSystem)
+ * - system/layer-system.js (LayerSystem)
+ * 
+ * 【親ファイル (依存元)】
+ * - core-engine.js
+ * - core-runtime.js
+ */
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
@@ -48,17 +67,14 @@ class DrawingEngine {
     }
 
     _handlePointerDown(info, e) {
-        // キャンバス移動モード（スペースキー）チェック
         if (this.cameraSystem?.isCanvasMoveMode()) {
             return;
         }
 
-        // レイヤー移動モード（Vキー）チェック
         if (this.layerSystem?.vKeyPressed) {
             return;
         }
 
-        // 右クリック無視
         if (info.button === 2) {
             return;
         }
@@ -129,6 +145,9 @@ class DrawingEngine {
         this.activePointers.delete(info.pointerId);
     }
 
+    /**
+     * 座標変換パイプライン: Screen → Canvas → World → Local
+     */
     _screenToLocal(clientX, clientY) {
         if (!this.coordSystem) {
             return null;
@@ -169,28 +188,28 @@ class DrawingEngine {
         };
     }
 
+    /**
+     * BrushSettings インスタンスの設定
+     */
     setBrushSettings(settings) {
         this.brushSettings = settings;
     }
 
-    setTool(tool) {
-        if (this.brushCore && this.brushCore.setMode) {
-            this.brushCore.setMode(tool);
-        }
-    }
+    /**
+     * 🔧 Phase 3削除: setTool(), getTool(), currentTool
+     * ツール管理は BrushCore.setMode() に完全委譲
+     */
 
-    getTool() {
-        return this.brushCore && this.brushCore.getMode ? this.brushCore.getMode() : 'pen';
-    }
-
-    get currentTool() {
-        return this.getTool();
-    }
-
+    /**
+     * 描画中かどうか
+     */
     get isDrawing() {
         return this.brushCore && this.brushCore.isActive ? this.brushCore.isActive() : false;
     }
 
+    /**
+     * クリーンアップ
+     */
     destroy() {
         if (this.pointerDetach) {
             this.pointerDetach();
@@ -202,4 +221,6 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js (スペースキー描画不具合修正版) loaded');
+console.log('✅ drawing-engine.js (Phase 3改修版 - Drawing API簡素化) loaded');
+console.log('   ✓ setTool/getTool/currentTool 削除');
+console.log('   ✓ 座標変換とストローク制御に責務を限定');

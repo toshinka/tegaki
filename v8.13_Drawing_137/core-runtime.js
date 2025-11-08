@@ -2,12 +2,14 @@
  * @file core-runtime.js
  * @description 外部APIレイヤー・レガシー互換性
  * 
- * 【Phase 2 改修内容 - ExportManager初期化の一元化】
- * - initializeExportSystem() メソッドを削除
- * - ExportManager生成はCoreEngine.initializeExportManager()に委譲
+ * 【Phase 3 改修内容 - Drawing API簡素化】
+ * - api.tool.* を BrushCore.setMode() に直接接続
+ * - DrawingEngine を経由しない直接呼び出しに変更
  * 
  * 【依存関係】
  * - core-engine.js (内部システム・リサイズ/エクスポートの真実の情報源)
+ * - system/drawing/brush-core.js (BrushCore)
+ * - system/drawing/brush-settings.js (BrushSettings)
  * - coordinate-system.js (座標変換)
  * - config.js (設定値)
  * 
@@ -181,7 +183,6 @@
         
         /**
          * 🔧 Phase 1 改修: Thin Wrapper に変更
-         * Canvas リサイズ処理を CoreEngine.resizeCanvas() に完全委譲
          */
         updateCanvasSize(w, h, options = {}) {
             const coreEngine = this.internal.coreEngine || window.coreEngine;
@@ -243,57 +244,80 @@
                     return false;
                 }
             },
+            
+            /**
+             * 🔧 Phase 3改修: BrushCore に直接接続
+             * DrawingEngine を経由せず BrushCore.setMode() を呼び出し
+             */
             tool: {
                 set: (toolName) => {
-                    const engine = CoreRuntime.internal.drawingEngine;
-                    if (!engine) return false;
+                    if (!window.BrushCore) {
+                        console.error('[CoreRuntime] BrushCore not available');
+                        return false;
+                    }
                     
-                    if (engine.setTool) engine.setTool(toolName);
-                    if (engine.strokeRenderer?.setTool) engine.strokeRenderer.setTool(toolName);
-                    if (CoreRuntime.internal.cameraSystem?.updateCursor) CoreRuntime.internal.cameraSystem.updateCursor();
-                    if (window.TegakiEventBus) window.TegakiEventBus.emit('tool:select', { tool: toolName });
+                    // BrushCore に直接ツールを設定
+                    window.BrushCore.setMode(toolName);
+                    
+                    // カメラカーソル更新
+                    if (CoreRuntime.internal.cameraSystem?.updateCursor) {
+                        CoreRuntime.internal.cameraSystem.updateCursor();
+                    }
+                    
+                    // イベント発行
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('tool:select', { tool: toolName });
+                    }
                     
                     return true;
                 },
-                get: () => CoreRuntime.internal.drawingEngine?.currentTool || null,
+                
+                get: () => {
+                    return window.BrushCore?.getMode() || null;
+                },
+                
                 setPen: () => CoreRuntime.api.tool.set('pen'),
                 setEraser: () => CoreRuntime.api.tool.set('eraser')
             },
+            
             brush: {
                 setSize: (size) => {
-                    if (window.TegakiEventBus) {
-                        window.TegakiEventBus.emit('brush:size-changed', { size });
+                    if (window.brushSettings) {
+                        window.brushSettings.setSize(size);
                         return true;
                     }
                     return false;
                 },
+                
                 getSize: () => {
-                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    return brushSettings?.getSize() || CONFIG.pen.size || 3;
+                    return window.brushSettings?.getSize() || CONFIG.pen.size || 3;
                 },
+                
                 setColor: (color) => {
-                    if (window.TegakiEventBus) {
-                        window.TegakiEventBus.emit('brush:color-changed', { color });
+                    if (window.brushSettings) {
+                        window.brushSettings.setColor(color);
                         return true;
                     }
                     return false;
                 },
+                
                 getColor: () => {
-                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    return brushSettings?.getColor() || CONFIG.pen.color || 0x800000;
+                    return window.brushSettings?.getColor() || CONFIG.pen.color || 0x800000;
                 },
+                
                 setOpacity: (opacity) => {
-                    if (window.TegakiEventBus) {
-                        window.TegakiEventBus.emit('brush:alpha-changed', { alpha: opacity });
+                    if (window.brushSettings) {
+                        window.brushSettings.setOpacity(opacity);
                         return true;
                     }
                     return false;
                 },
+                
                 getOpacity: () => {
-                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    return brushSettings?.getAlpha() || CONFIG.pen.opacity || 1.0;
+                    return window.brushSettings?.getOpacity() || CONFIG.pen.opacity || 1.0;
                 }
             },
+            
             camera: {
                 pan: (dx, dy) => {
                     if (CoreRuntime.internal.cameraSystem) {
@@ -404,8 +428,7 @@
             settings: {
                 get: (key) => {
                     if (!key) {
-                        const bs = CoreRuntime.internal.drawingEngine?.brushSettings;
-                        return bs?.getCurrentSettings() || {};
+                        return window.brushSettings?.getSettings() || {};
                     }
                     
                     if (key === 'pen.size') return CoreRuntime.api.brush.getSize();
@@ -426,9 +449,13 @@
                     return true;
                 },
                 reset: () => {
-                    const bs = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    if (bs?.resetToDefaults) bs.resetToDefaults();
-                    return true;
+                    if (window.brushSettings) {
+                        window.brushSettings.setSize(CONFIG.pen.size || 3);
+                        window.brushSettings.setColor(CONFIG.pen.color || 0x800000);
+                        window.brushSettings.setOpacity(CONFIG.pen.opacity || 1.0);
+                        return true;
+                    }
+                    return false;
                 },
                 getAll: () => CoreRuntime.api.settings.get()
             },
@@ -480,9 +507,6 @@
         isInitialized() { return this.internal.initialized; }
     };
     
-    // 🔧 Phase 2: initializeExportSystem() メソッド削除
-    // ExportManager初期化はCoreEngine.initializeExportManager()に一元化
-    
     window.CoreRuntime = CoreRuntime;
     
     window.startTegakiApp = async function(config = {}) {
@@ -520,8 +544,6 @@
         const layerSystem = coreEngine.getLayerManager();
         const animationSystem = coreEngine.getAnimationSystem();
         const cameraSystem = coreEngine.getCameraSystem();
-        
-        // 🔧 Phase 2: ExportManager取得（生成不要）
         const exportManager = coreEngine.getExportManager();
         
         return {
@@ -533,4 +555,6 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 2改修版 - ExportManager初期化一元化) loaded');
+console.log('✅ core-runtime.js (Phase 3改修版 - Drawing API簡素化) loaded');
+console.log('   ✓ api.tool.* → BrushCore直接接続');
+console.log('   ✓ DrawingEngine経由の間接レイヤー削除');

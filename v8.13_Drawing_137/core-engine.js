@@ -2,15 +2,15 @@
  * @file core-engine.js
  * @description システム統合管理・コア機能実装
  * 
- * 【Phase 2 改修内容 - ExportManager初期化の一元化】
- * - initializeExportManager() メソッド追加
- * - ExportManager生成とエクスポーター登録を一元化
- * - 真実の情報源として機能
+ * 【Phase 3 修正内容】
+ * - UnifiedKeyHandler.switchTool() を BrushCore 直接呼び出しに変更
+ * - DrawingEngine.setTool() 呼び出しを削除
  * 
  * 【依存関係】
  * - system/camera-system.js (TegakiCameraSystem)
  * - system/layer-system.js (TegakiLayerSystem)
  * - system/drawing-clipboard.js (TegakiDrawingClipboard)
+ * - system/drawing/brush-core.js (BrushCore)
  * - system/event-bus.js (TegakiEventBus)
  * - system/export-manager.js (ExportManager)
  * - system/exporters/*.js (各エクスポーター)
@@ -110,15 +110,21 @@
             window.addEventListener('focus', () => this.resetAllKeyStates());
         }
         
+        /**
+         * 🔧 Phase 3修正: BrushCore に直接ツール切り替えを実行
+         */
         switchTool(tool) {
-            if (this.drawingEngine) {
-                this.drawingEngine.setTool(tool);
+            // BrushCore に直接ツールを設定
+            if (window.BrushCore) {
+                window.BrushCore.setMode(tool);
             }
             
+            // カメラカーソル更新
             if (this.cameraSystem) {
                 this.cameraSystem.updateCursor();
             }
             
+            // イベント発行
             this.eventBus.emit('tool:changed', { newTool: tool });
         }
         
@@ -244,18 +250,13 @@
         }
         
         /**
-         * 🔧 Phase 2: ExportManager初期化の一元化
-         * ExportManager生成と全エクスポーター登録を実行
-         * 
-         * @returns {boolean} 初期化成功時true
+         * ExportManager初期化 (Phase 2で一元化済み)
          */
         initializeExportManager() {
-            // 既に初期化済みの場合はスキップ
             if (this.exportManager) {
                 return true;
             }
             
-            // 依存性チェック
             if (!window.ExportManager) {
                 console.warn('[CoreEngine] ExportManager class not loaded');
                 return false;
@@ -266,7 +267,6 @@
                 return false;
             }
             
-            // ExportManager生成
             this.exportManager = new window.ExportManager(
                 this.app,
                 this.layerSystem,
@@ -274,7 +274,6 @@
                 this.cameraSystem
             );
             
-            // エクスポーター登録
             if (window.PNGExporter) {
                 this.exportManager.registerExporter('png', new window.PNGExporter(this.exportManager));
             }
@@ -295,10 +294,8 @@
                 this.exportManager.registerExporter('mp4', new window.MP4Exporter(this.exportManager));
             }
             
-            // グローバル参照設定（レガシー互換性）
             window.TEGAKI_EXPORT_MANAGER = this.exportManager;
             
-            // イベント発行
             this.eventBus.emit('export:manager-initialized', { 
                 timestamp: Date.now(),
                 exporters: Object.keys(this.exportManager.exporters)
@@ -425,10 +422,17 @@
             }, true);
         }
         
+        /**
+         * 🔧 Phase 3修正: BrushCore に直接ツール切り替え
+         */
         switchTool(tool) {
             if (this.keyHandler) {
                 this.keyHandler.switchTool(tool);
             } else {
+                // KeyHandler未初期化時のフォールバック
+                if (window.BrushCore) {
+                    window.BrushCore.setMode(tool);
+                }
                 this.cameraSystem.updateCursor();
                 this.eventBus.emit('tool:changed', { newTool: tool });
             }
@@ -634,8 +638,6 @@
             
             this.initializeAnimationSystem();
             
-            // 🔧 Phase 2: ExportManager初期化をここで実行
-            // AnimationSystem初期化後に実行することで依存性を満たす
             setTimeout(() => {
                 this.initializeExportManager();
             }, 100);
@@ -700,6 +702,6 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase 2改修版 - ExportManager初期化一元化) loaded');
+    console.log('✅ core-engine.js (Phase 3修正版 - UnifiedKeyHandler修正) loaded');
 
 })();
