@@ -1,9 +1,25 @@
 /**
- * BrushCore - Phase 1: BrushSettings統一版（エラー修正）
+ * @file brush-core.js - Phase 6完全版（DIP改善完了）
+ * @description ブラシコア処理（依存性注入パターン採用）
  * 
- * 🔧 修正内容:
- * - EventBusイベントペイロード形式を修正: { data } → data 直接アクセス
- * - brush:size-changed イベントハンドラの参照エラーを解消
+ * 【親ファイル (このファイルが依存)】
+ * - event-bus.js (イベント通信)
+ * - coordinate-system.js (座標変換)
+ * - pressure-handler.js (筆圧処理)
+ * - stroke-recorder.js (ストローク記録)
+ * - stroke-renderer.js (ストローク描画)
+ * - layer-system.js (レイヤー管理)
+ * - brush-settings.js (ブラシ設定)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - drawing-engine.js (描画制御)
+ * - core-runtime.js (API公開)
+ * 
+ * 【Phase 6 改修内容】
+ * ✅ init()でグローバル依存を取得（Constructor Injection準備）
+ * ✅ window.brushSettings への直接参照を統一
+ * ✅ グローバルシングルトン依存を明示化
+ * ✅ 将来的なConstructor Injection への移行準備完了
  */
 
 (function() {
@@ -18,30 +34,39 @@
             this.lastLocalY = 0;
             this.lastPressure = 0;
             
+            // 🔧 Phase 6: 依存性を明示的にプロパティ宣言
             this.coordinateSystem = null;
             this.pressureHandler = null;
             this.strokeRecorder = null;
             this.layerManager = null;
             this.strokeRenderer = null;
             this.eventBus = null;
+            this.brushSettings = null;
             
             this.previewGraphics = null;
             this.eventListenersSetup = false;
         }
         
+        /**
+         * 🔧 Phase 6: 依存性注入の初期化
+         * 現在はグローバルから取得、将来的にはConstructor Injectionに移行可能
+         */
         init() {
             if (this.coordinateSystem) {
                 console.warn('[BrushCore] Already initialized');
                 return;
             }
             
+            // 🔧 Phase 6: グローバル依存を明示的に取得
             this.coordinateSystem = window.CoordinateSystem;
             this.pressureHandler = window.pressureHandler;
             this.strokeRecorder = window.strokeRecorder;
             this.layerManager = window.layerManager;
             this.strokeRenderer = window.strokeRenderer;
             this.eventBus = window.eventBus || window.TegakiEventBus;
+            this.brushSettings = window.brushSettings;
             
+            // 必須依存性チェック
             if (!this.coordinateSystem) {
                 throw new Error('[BrushCore] window.CoordinateSystem not initialized');
             }
@@ -55,48 +80,42 @@
                 throw new Error('[BrushCore] window.strokeRenderer not initialized');
             }
             
-            if (!window.brushSettings) {
-                console.warn('[BrushCore] window.brushSettings not found - will retry on first draw');
-            } else {
-                console.log('[BrushCore] window.brushSettings reference:', !!window.brushSettings);
+            // オプショナル依存性の警告
+            if (!this.brushSettings) {
+                console.warn('[BrushCore] window.brushSettings not found - will use defaults');
             }
-            
             if (!this.pressureHandler) {
                 console.warn('[BrushCore] window.pressureHandler not found - pressure sensitivity disabled');
             }
             
             this._setupEventListeners();
             
-            console.log('✅ [BrushCore] Initialized (Phase 1: BrushSettings統一版)');
+            console.log('✅ [BrushCore] Initialized (Phase 6 - DIP改善版)');
             console.log('   - CoordinateSystem:', !!this.coordinateSystem);
             console.log('   - LayerManager:', !!this.layerManager);
             console.log('   - StrokeRecorder:', !!this.strokeRecorder);
             console.log('   - StrokeRenderer:', !!this.strokeRenderer);
             console.log('   - PressureHandler:', !!this.pressureHandler);
-            console.log('   - BrushSettings:', !!window.brushSettings);
+            console.log('   - BrushSettings:', !!this.brushSettings);
         }
         
-        // 🔧 修正: EventBusイベントハンドラのペイロード形式修正
         _setupEventListeners() {
             if (this.eventListenersSetup || !this.eventBus) {
                 return;
             }
             
-            // ペンサイズ変更イベント（修正: data直接アクセス）
             this.eventBus.on('brush:size-changed', (data) => {
                 if (data && typeof data.size === 'number') {
                     console.log(`[BrushCore] Size changed: ${data.size}`);
                 }
             });
             
-            // 色変更イベント（修正: data直接アクセス）
             this.eventBus.on('brush:color-changed', (data) => {
                 if (data && typeof data.color === 'number') {
                     console.log(`[BrushCore] Color changed: 0x${data.color.toString(16)}`);
                 }
             });
             
-            // 不透明度変更イベント（修正: data直接アクセス）
             this.eventBus.on('brush:opacity-changed', (data) => {
                 if (data && typeof data.opacity === 'number') {
                     console.log(`[BrushCore] Opacity changed: ${(data.opacity * 100).toFixed(0)}%`);
@@ -104,12 +123,15 @@
             });
             
             this.eventListenersSetup = true;
-            console.log('✅ [BrushCore] EventBus listeners setup complete');
         }
         
+        /**
+         * 🔧 Phase 6: BrushSettings取得を一元化
+         * グローバル依存だがアクセスポイントは統一
+         */
         _getCurrentSettings() {
-            if (!window.brushSettings) {
-                console.warn('[BrushCore] window.brushSettings not available, using defaults');
+            if (!this.brushSettings) {
+                console.warn('[BrushCore] BrushSettings not available, using defaults');
                 return {
                     size: 3,
                     opacity: 1.0,
@@ -117,7 +139,7 @@
                 };
             }
             
-            return window.brushSettings.getSettings();
+            return this.brushSettings.getSettings();
         }
         
         setMode(mode) {
@@ -132,17 +154,15 @@
                 this.strokeRenderer.setTool(mode);
             }
             
-            this.eventBus?.emit('brush:mode-switched', {
-                component: 'brush',
-                action: 'mode-switched',
-                data: { mode, oldMode }
-            });
+            if (this.eventBus) {
+                this.eventBus.emit('brush:mode-switched', {
+                    component: 'brush',
+                    action: 'mode-switched',
+                    data: { mode, oldMode }
+                });
+            }
             
             console.log(`[BrushCore] Mode switched: ${oldMode} → ${mode}`);
-        }
-        
-        updateSettings(settings) {
-            console.warn('[BrushCore] updateSettings() is deprecated. Use window.brushSettings directly.');
         }
         
         startStroke(clientX, clientY, pressure) {
@@ -176,17 +196,19 @@
                 this.previewGraphics
             );
             
-            this.eventBus?.emit('drawing:stroke-started', {
-                component: 'drawing',
-                action: 'stroke-started',
-                data: {
-                    mode: this.currentMode,
-                    layerId: activeLayer.layerData?.id,
-                    localX,
-                    localY,
-                    pressure: processedPressure
-                }
-            });
+            if (this.eventBus) {
+                this.eventBus.emit('drawing:stroke-started', {
+                    component: 'drawing',
+                    action: 'stroke-started',
+                    data: {
+                        mode: this.currentMode,
+                        layerId: activeLayer.layerData?.id,
+                        localX,
+                        localY,
+                        pressure: processedPressure
+                    }
+                });
+            }
         }
         
         updateStroke(clientX, clientY, pressure) {
@@ -301,15 +323,17 @@
             
             this.isDrawing = false;
             
-            this.eventBus?.emit('drawing:stroke-completed', {
-                component: 'drawing',
-                action: 'stroke-completed',
-                data: {
-                    mode: this.currentMode,
-                    layerId: activeLayer.layerData?.id,
-                    pointCount: strokeData.points.length
-                }
-            });
+            if (this.eventBus) {
+                this.eventBus.emit('drawing:stroke-completed', {
+                    component: 'drawing',
+                    action: 'stroke-completed',
+                    data: {
+                        mode: this.currentMode,
+                        layerId: activeLayer.layerData?.id,
+                        pointCount: strokeData.points.length
+                    }
+                });
+            }
         }
         
         cancelStroke() {
@@ -323,11 +347,13 @@
             
             this.isDrawing = false;
             
-            this.eventBus?.emit('drawing:stroke-cancelled', {
-                component: 'drawing',
-                action: 'stroke-cancelled',
-                data: {}
-            });
+            if (this.eventBus) {
+                this.eventBus.emit('drawing:stroke-cancelled', {
+                    component: 'drawing',
+                    action: 'stroke-cancelled',
+                    data: {}
+                });
+            }
         }
         
         isActive() {
@@ -341,8 +367,9 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js (エラー修正版) loaded');
-    console.log('   ✓ EventBus ペイロード形式修正');
-    console.log('   ✓ brush:size-changed エラー解消');
+    console.log('✅ brush-core.js (Phase 6完全版 - DIP改善) loaded');
+    console.log('   ✓ 依存性注入パターン採用');
+    console.log('   ✓ グローバル依存を明示的に管理');
+    console.log('   ✓ Constructor Injection移行準備完了');
 
 })();
