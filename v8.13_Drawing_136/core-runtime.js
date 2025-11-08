@@ -2,24 +2,18 @@
  * @file core-runtime.js
  * @description 外部APIレイヤー・レガシー互換性
  * 
- * 【親ファイル (このファイルが依存)】
- * - core-engine.js (内部システム)
+ * 【Phase 2 改修内容 - ExportManager初期化の一元化】
+ * - initializeExportSystem() メソッドを削除
+ * - ExportManager生成はCoreEngine.initializeExportManager()に委譲
+ * 
+ * 【依存関係】
+ * - core-engine.js (内部システム・リサイズ/エクスポートの真実の情報源)
  * - coordinate-system.js (座標変換)
  * - config.js (設定値)
  * 
  * 【子ファイル (このファイルに依存)】
  * - ui-panels.js (UI制御)
- * 
- * 【主要API】
- * - api.layer.flipActiveLayer(direction, bypassVKeyCheck): 反転処理
- * - api.brush.*: ブラシ設定
- * - api.camera.*: カメラ制御
- * 
- * 【Phase 2 改修内容】
- * - flipActiveLayer APIにbypassVKeyCheckパラメータ追加
  */
-
-// ===== core-runtime.js - Phase 2改修版（flipActiveLayer API更新） =====
 
 (function() {
     'use strict';
@@ -49,6 +43,7 @@
             cameraSystem: null,
             layerManager: null,
             drawingEngine: null,
+            coreEngine: null,
             initialized: false,
             pointerEventsSetup: false
         },
@@ -184,100 +179,20 @@
             return canvas.toDataURL('image/png');
         },
         
-        updateBackgroundLayerSize(layer, width, height) {
-            if (!layer?.layerData?.isBackground) return false;
-            if (!layer.layerData.backgroundGraphics) return false;
+        /**
+         * 🔧 Phase 1 改修: Thin Wrapper に変更
+         * Canvas リサイズ処理を CoreEngine.resizeCanvas() に完全委譲
+         */
+        updateCanvasSize(w, h, options = {}) {
+            const coreEngine = this.internal.coreEngine || window.coreEngine;
             
-            const bg = layer.layerData.backgroundGraphics;
-            bg.clear();
-            
-            const color1 = 0xe9c2ba;
-            const color2 = 0xf0e0d6;
-            const squareSize = 16;
-            
-            for (let y = 0; y < height; y += squareSize) {
-                for (let x = 0; x < width; x += squareSize) {
-                    const isEvenX = (x / squareSize) % 2 === 0;
-                    const isEvenY = (y / squareSize) % 2 === 0;
-                    const color = (isEvenX === isEvenY) ? color1 : color2;
-                    bg.rect(x, y, squareSize, squareSize);
-                    bg.fill({ color: color });
-                }
+            if (!coreEngine || !coreEngine.resizeCanvas) {
+                console.error('[CoreRuntime] CoreEngine not available for canvas resize');
+                return false;
             }
             
-            return true;
-        },
-        
-        updateCanvasSize(w, h) {
+            coreEngine.resizeCanvas(w, h, options);
             this.project.canvasSize = { w, h };
-            
-            const animationSystem = window.animationSystem || window.TegakiAnimationSystem;
-            const currentCutIndex = animationSystem?.getCurrentCutIndex?.() ?? 0;
-            
-            this.project.cuts.forEach(cut => {
-                if (cut.renderTexture) {
-                    cut.renderTexture.destroy(true);
-                }
-                
-                cut.width = w;
-                cut.height = h;
-                cut.renderTexture = PIXI.RenderTexture.create({
-                    width: Math.round(w * this.project.DPR),
-                    height: Math.round(h * this.project.DPR)
-                });
-                cut.needsThumbnailUpdate = true;
-            });
-            
-            if (animationSystem?.animationData?.cuts) {
-                animationSystem.animationData.cuts.forEach((cut, cutIndex) => {
-                    if (cut.container && cut.container.children) {
-                        cut.container.children.forEach(layer => {
-                            if (layer.layerData?.isBackground) {
-                                this.updateBackgroundLayerSize(layer, w, h);
-                            }
-                        });
-                    }
-                    
-                    if (this.internal.layerManager?.renderCutToTexture) {
-                        this.internal.layerManager.renderCutToTexture(cut.id, cut.container);
-                    }
-                    
-                    if (cutIndex === currentCutIndex) {
-                        setTimeout(() => {
-                            if (animationSystem.generateCutThumbnail) {
-                                animationSystem.generateCutThumbnail(cutIndex);
-                            }
-                        }, 50);
-                    } else {
-                        setTimeout(() => {
-                            if (animationSystem.generateCutThumbnail) {
-                                animationSystem.generateCutThumbnail(cutIndex);
-                            }
-                        }, 100 + cutIndex * 50);
-                    }
-                });
-            }
-            
-            if (window.TegakiEventBus) {
-                window.TegakiEventBus.emit('camera:resized', { width: w, height: h });
-                
-                setTimeout(() => {
-                    window.TegakiEventBus.emit('animation:thumbnails-need-update');
-                }, 200);
-            }
-            
-            CONFIG.canvas.width = w;
-            CONFIG.canvas.height = h;
-            
-            if (this.internal.cameraSystem?.resizeCanvas) {
-                this.internal.cameraSystem.resizeCanvas(w, h);
-            }
-            
-            if (this.internal.layerManager?.updateLayerPanelUI) {
-                setTimeout(() => {
-                    this.internal.layerManager.updateLayerPanelUI();
-                }, 100);
-            }
             
             return true;
         },
@@ -476,11 +391,6 @@
                     }
                     return false;
                 },
-                /**
-                 * 🔧 Phase 2 改修: bypassVKeyCheckパラメータ追加
-                 * @param {string} direction - 'horizontal' or 'vertical'
-                 * @param {boolean} bypassVKeyCheck - trueの場合Vキーチェックをスキップ
-                 */
                 flipActiveLayer: (direction, bypassVKeyCheck = false) => {
                     if (CoreRuntime.internal.layerManager?.flipActiveLayer) {
                         CoreRuntime.internal.layerManager.flipActiveLayer(direction, bypassVKeyCheck);
@@ -570,36 +480,8 @@
         isInitialized() { return this.internal.initialized; }
     };
     
-    CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
-        if (window.TEGAKI_EXPORT_MANAGER) return true;
-        
-        if (!window.ExportManager || !window.PNGExporter || !window.APNGExporter || !window.GIFExporter) return false;
-        if (!pixiApp || !this.internal.layerManager || !this.internal.cameraSystem) return false;
-        if (!window.animationSystem) return false;
-        
-        window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
-            pixiApp,
-            this.internal.layerManager,
-            window.animationSystem,
-            this.internal.cameraSystem
-        );
-        
-        const mgr = window.TEGAKI_EXPORT_MANAGER;
-        
-        mgr.registerExporter('png', new window.PNGExporter(mgr));
-        mgr.registerExporter('apng', new window.APNGExporter(mgr));
-        mgr.registerExporter('gif', new window.GIFExporter(mgr));
-        
-        if (window.PDFExporter) mgr.registerExporter('pdf', new window.PDFExporter(mgr));
-        if (window.WebPExporter) mgr.registerExporter('webp', new window.WebPExporter(mgr));
-        
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
-        }
-        
-        if (onSuccess) onSuccess();
-        return true;
-    };
+    // 🔧 Phase 2: initializeExportSystem() メソッド削除
+    // ExportManager初期化はCoreEngine.initializeExportManager()に一元化
     
     window.CoreRuntime = CoreRuntime;
     
@@ -632,19 +514,15 @@
         const coreEngine = new window.TegakiCore.CoreEngine(app, config);
         coreEngine.initialize();
         
+        CoreRuntime.internal.coreEngine = coreEngine;
+        window.coreEngine = coreEngine;
+        
         const layerSystem = coreEngine.getLayerManager();
         const animationSystem = coreEngine.getAnimationSystem();
         const cameraSystem = coreEngine.getCameraSystem();
         
-        let exportManager = null;
-        if (window.ExportManager && animationSystem) {
-            exportManager = new window.ExportManager(app, layerSystem, animationSystem, cameraSystem);
-            
-            if (window.PNGExporter) exportManager.registerExporter('png', new window.PNGExporter(exportManager));
-            if (window.APNGExporter) exportManager.registerExporter('apng', new window.APNGExporter(exportManager));
-            if (window.GIFExporter) exportManager.registerExporter('gif', new window.GIFExporter(exportManager));
-            if (window.WebPExporter) exportManager.registerExporter('webp', new window.WebPExporter(exportManager));
-        }
+        // 🔧 Phase 2: ExportManager取得（生成不要）
+        const exportManager = coreEngine.getExportManager();
         
         return {
             app: app,
@@ -655,4 +533,4 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 2改修版 - flipActiveLayer API更新) loaded');
+console.log('✅ core-runtime.js (Phase 2改修版 - ExportManager初期化一元化) loaded');
