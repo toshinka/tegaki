@@ -1,10 +1,34 @@
 /**
- * StrokeRenderer - Phase 3: 消しゴム透明化対応版（PIXI定数エラー修正）
+ * ================================================================================
+ * system/drawing/stroke-renderer.js - Phase 3-E: mode統合版
+ * ================================================================================
  * 
- * 🔧 修正内容:
- * - PIXI.BLEND_MODES.NORMAL → 'normal' 文字列に統一
- * - PIXI.BLEND_MODES.ERASE → 'erase' 文字列に統一
- * - PixiJS v8では文字列blendModeが正式仕様
+ * 【Phase 3-E 改修内容 - settings.mode 対応】
+ * ✅ settings.mode を優先的に使用
+ * ✅ this.currentTool はフォールバックのみ
+ * ✅ 消しゴムの blendMode='erase' 確実適用
+ * ✅ デバッグログ追加（mode 判定過程を可視化）
+ * 
+ * 【依存関係 - Parents (このファイルが依存)】
+ *   - PixiJS v8.13 (Graphics, Sprite, Mesh)
+ *   - webgpu-drawing-layer.js (WebGPU統合)
+ *   - webgpu-compute-sdf.js (SDF生成)
+ *   - webgpu-compute-msdf.js (MSDF生成)
+ *   - webgpu-texture-bridge.js (テクスチャ変換)
+ *   - sdf-brush-shader.js (shader管理)
+ *   - msdf-brush-shader.js (MSDF shader)
+ *   - brush-settings.js (settings取得)
+ * 
+ * 【依存関係 - Children (このファイルに依存)】
+ *   - brush-core.js (ストローク描画)
+ *   - layer-system.js (レイヤー追加)
+ * 
+ * 【責務】
+ *   - ストロークの視覚化（プレビュー・最終描画）
+ *   - ペン/消しゴムモード判定と描画分岐
+ *   - WebGPU/Legacy描画パイプライン管理
+ *   - BlendMode制御（pen='normal', eraser='erase'）
+ * ================================================================================
  */
 
 (function() {
@@ -17,7 +41,7 @@
             this.cameraSystem = cameraSystem;
             this.resolution = window.devicePixelRatio || 1;
             this.minPhysicalWidth = 1 / this.resolution;
-            this.currentTool = 'pen';
+            this.currentTool = 'pen'; // フォールバック用
             
             this.webgpuLayer = null;
             this.webgpuComputeSDF = null;
@@ -43,8 +67,19 @@
             return {
                 size: 3,
                 opacity: 1.0,
-                color: 0x800000
+                color: 0x800000,
+                mode: 'pen' // デフォルト
             };
+        }
+
+        /**
+         * 🆕 Phase 3-E: mode判定を統一
+         * settings.mode を優先、フォールバックで this.currentTool
+         */
+        _getCurrentMode(settings) {
+            const mode = settings?.mode || this.currentTool || 'pen';
+            console.log(`[StrokeRenderer] Current mode: ${mode} (from settings: ${settings?.mode}, fallback: ${this.currentTool})`);
+            return mode;
         }
 
         async setWebGPULayer(webgpuLayer) {
@@ -74,6 +109,7 @@
         }
 
         setTool(tool) {
+            console.log(`[StrokeRenderer] setTool: ${this.currentTool} → ${tool}`);
             this.currentTool = tool;
         }
 
@@ -97,6 +133,7 @@
         renderPreview(points, providedSettings = null, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
             const settings = this._getSettings(providedSettings);
+            const mode = this._getCurrentMode(settings); // 🔧 統一判定
 
             if (points.length === 0) {
                 return graphics;
@@ -104,9 +141,10 @@
 
             this._ensureLayerBlendMode(graphics);
 
-            // 🔧 修正: 文字列でblendMode設定
-            if (this.currentTool === 'eraser') {
+            // 🔧 mode に基づいて blendMode 設定
+            if (mode === 'eraser') {
                 graphics.blendMode = 'erase';
+                console.log('[StrokeRenderer] Preview blendMode set to: erase');
             } else {
                 graphics.blendMode = 'normal';
             }
@@ -116,7 +154,7 @@
                 const width = this.calculateWidth(p.pressure, settings.size);
                 graphics.circle(p.x, p.y, width / 2);
                 
-                if (this.currentTool === 'eraser') {
+                if (mode === 'eraser') {
                     graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
                 } else {
                     graphics.fill({ color: settings.color, alpha: settings.opacity || settings.alpha || 1.0 });
@@ -135,7 +173,7 @@
                 graphics.moveTo(p1.x, p1.y);
                 graphics.lineTo(p2.x, p2.y);
                 
-                if (this.currentTool === 'eraser') {
+                if (mode === 'eraser') {
                     graphics.stroke({
                         width: avgWidth,
                         color: 0xFFFFFF,
@@ -182,6 +220,7 @@
 
         async _renderFinalStrokeMSDF(strokeData, settings, targetGraphics = null) {
             const points = strokeData.points;
+            const mode = this._getCurrentMode(settings); // 🔧 統一判定
             
             let minX = Infinity, minY = Infinity;
             let maxX = -Infinity, maxY = -Infinity;
@@ -239,12 +278,14 @@
             });
             sprite.shader = msdfShader;
 
-            // 🔧 修正: 文字列でblendMode設定
-            if (this.currentTool === 'eraser') {
+            // 🔧 mode に基づいて設定
+            if (mode === 'eraser') {
                 sprite.blendMode = 'erase';
+                console.log('[StrokeRenderer] MSDF blendMode set to: erase');
             } else {
                 sprite.tint = settings.color;
                 sprite.alpha = settings.opacity || settings.alpha || 1.0;
+                sprite.blendMode = 'normal';
             }
 
             return sprite;
@@ -252,6 +293,7 @@
 
         async _renderFinalStrokeWebGPU(strokeData, settings, targetGraphics = null) {
             const points = strokeData.points;
+            const mode = this._getCurrentMode(settings); // 🔧 統一判定
             
             let minX = Infinity, minY = Infinity;
             let maxX = -Infinity, maxY = -Infinity;
@@ -301,12 +343,14 @@
             const sprite = new PIXI.Sprite(sdfTexture);
             sprite.position.set(minX, minY);
 
-            // 🔧 修正: 文字列でblendMode設定
-            if (this.currentTool === 'eraser') {
+            // 🔧 mode に基づいて設定
+            if (mode === 'eraser') {
                 sprite.blendMode = 'erase';
+                console.log('[StrokeRenderer] SDF blendMode set to: erase');
             } else {
                 sprite.tint = settings.color;
                 sprite.alpha = settings.opacity || settings.alpha || 1.0;
+                sprite.blendMode = 'normal';
             }
 
             return sprite;
@@ -314,12 +358,14 @@
 
         _renderFinalStrokeLegacy(strokeData, settings, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
+            const mode = this._getCurrentMode(settings); // 🔧 統一判定
 
             this._ensureLayerBlendMode(graphics);
 
-            // 🔧 修正: 文字列でblendMode設定
-            if (this.currentTool === 'eraser') {
+            // 🔧 mode に基づいて blendMode 設定
+            if (mode === 'eraser') {
                 graphics.blendMode = 'erase';
+                console.log('[StrokeRenderer] Legacy blendMode set to: erase');
             } else {
                 graphics.blendMode = 'normal';
             }
@@ -344,7 +390,7 @@
                 graphics.moveTo(p1.x, p1.y);
                 graphics.lineTo(p2.x, p2.y);
                 
-                if (this.currentTool === 'eraser') {
+                if (mode === 'eraser') {
                     graphics.stroke({
                         width: avgWidth,
                         color: 0xFFFFFF,
@@ -369,20 +415,22 @@
         renderDot(point, providedSettings = null, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
             const settings = this._getSettings(providedSettings);
+            const mode = this._getCurrentMode(settings); // 🔧 統一判定
             const width = this.calculateWidth(point.pressure, settings.size);
 
             this._ensureLayerBlendMode(graphics);
 
-            // 🔧 修正: 文字列でblendMode設定
-            if (this.currentTool === 'eraser') {
+            // 🔧 mode に基づいて blendMode 設定
+            if (mode === 'eraser') {
                 graphics.blendMode = 'erase';
+                console.log('[StrokeRenderer] Dot blendMode set to: erase');
             } else {
                 graphics.blendMode = 'normal';
             }
 
             graphics.circle(point.x, point.y, width / 2);
             
-            if (this.currentTool === 'eraser') {
+            if (mode === 'eraser') {
                 graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
             } else {
                 graphics.fill({ color: settings.color, alpha: settings.opacity || settings.alpha || 1.0 });
@@ -393,6 +441,7 @@
 
         renderStroke(layer, strokeData, providedSettings = null) {
             const settings = this._getSettings(providedSettings);
+            const mode = this._getCurrentMode(settings); // 🔧 統一判定
             
             const graphics = this._renderFinalStrokeLegacy(strokeData, settings);
             
@@ -400,7 +449,7 @@
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 graphics: graphics,
                 points: strokeData.points,
-                tool: this.currentTool,
+                tool: mode, // 🔧 現在の mode を記録
                 settings: { ...settings }
             };
         }
@@ -413,8 +462,10 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js (PIXI定数エラー修正版) loaded');
-    console.log('   ✓ blendMode を文字列に統一: "normal" / "erase"');
-    console.log('   ✓ PIXI.BLEND_MODES 参照エラー解消');
+    console.log('✅ stroke-renderer.js (Phase 3-E - mode統合版) loaded');
+    console.log('   ✓ _getCurrentMode() で統一判定');
+    console.log('   ✓ settings.mode を優先使用');
+    console.log('   ✓ blendMode="erase" 確実適用');
+    console.log('   ✓ デバッグログ追加');
 
 })();

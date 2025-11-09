@@ -1,23 +1,29 @@
 /**
- * @file system/drawing/brush-settings.js
- * @description ブラシ設定管理（サイズ、色、不透明度）
+ * ================================================================================
+ * system/drawing/brush-settings.js - Phase 3-C: ツールモード管理追加版
+ * ================================================================================
  * 
- * 【Phase 6 改修内容 - DIP改善】
- * - シングルトンパターンを維持しつつ依存性注入も可能に
- * - constructor での明示的な依存性受け取り
- * - グローバルアクセスは互換性のため残すが、推奨しない
+ * 【Phase 3-C 改修内容 - 消しゴム対応】
+ * - mode プロパティ追加 ('pen' | 'eraser')
+ * - setMode() / getMode() メソッド追加
+ * - brush:mode-changed イベント発行
+ * - BrushCore との統合
  * 
- * 【依存関係】
- * - config.js (TEGAKI_CONFIG)
- * - event-bus.js (EventBus)
+ * 【依存関係 - Parents (このファイルが依存)】
+ *   - config.js (TEGAKI_CONFIG)
+ *   - event-bus.js (EventBus)
  * 
- * 【親ファイル (依存元)】
- * - core-engine.js (依存性注入の中心)
+ * 【依存関係 - Children (このファイルに依存)】
+ *   - brush-core.js (mode 同期)
+ *   - stroke-renderer.js (mode 参照)
+ *   - drawing-engine.js (settings 取得)
+ *   - core-runtime.js (API公開)
  * 
- * 【子ファイル (このファイルに依存)】
- * - brush-core.js
- * - stroke-renderer.js
- * - core-runtime.js (API経由)
+ * 【責務】
+ *   - ブラシ設定の集中管理（サイズ、色、不透明度、ツールモード）
+ *   - 設定変更イベントの発行
+ *   - デフォルト値の管理
+ * ================================================================================
  */
 
 (function() {
@@ -25,7 +31,6 @@
 
     class BrushSettings {
         /**
-         * 🔧 Phase 6: constructor で依存性を明示的に受け取る
          * @param {Object} config - 設定オブジェクト
          * @param {Object} eventBus - イベントバス
          */
@@ -49,15 +54,51 @@
             this.opacity = this.config.BRUSH_DEFAULTS?.opacity || 1.0;
             this.minWidth = this.config.BRUSH_DEFAULTS?.minWidth || 0.5;
             this.maxWidth = this.config.BRUSH_DEFAULTS?.maxWidth || 30;
+            
+            // 🆕 Phase 3-C: ツールモード追加
+            this.mode = 'pen'; // 'pen' | 'eraser'
 
-            console.log('[BrushSettings] Initialized (Phase 6 - DIP改善):', {
+            console.log('[BrushSettings] Initialized (Phase 3-C - ツールモード対応):', {
                 size: this.size,
                 color: `0x${this.color.toString(16)}`,
                 opacity: this.opacity,
+                mode: this.mode,
                 minWidth: this.minWidth,
                 maxWidth: this.maxWidth,
                 hasEventBus: !!this.eventBus
             });
+        }
+
+        /**
+         * 🆕 Phase 3-C: ツールモード設定
+         * @param {string} mode - 'pen' | 'eraser'
+         */
+        setMode(mode) {
+            if (mode !== 'pen' && mode !== 'eraser') {
+                console.error('[BrushSettings] Invalid mode:', mode);
+                return;
+            }
+
+            const oldMode = this.mode;
+            this.mode = mode;
+            
+            if (oldMode !== this.mode && this.eventBus) {
+                this.eventBus.emit('brush:mode-changed', { 
+                    component: 'brush',
+                    action: 'mode-changed',
+                    data: { mode: this.mode, oldMode }
+                });
+            }
+
+            console.log(`[BrushSettings] Mode changed: ${oldMode} → ${this.mode}`);
+        }
+
+        /**
+         * 🆕 Phase 3-C: ツールモード取得
+         * @returns {string} 'pen' | 'eraser'
+         */
+        getMode() {
+            return this.mode;
         }
 
         /**
@@ -137,6 +178,7 @@
 
         /**
          * 現在の設定を全て取得
+         * 🔧 Phase 3-C: mode を追加
          */
         getSettings() {
             return {
@@ -144,6 +186,7 @@
                 color: this.color,
                 opacity: this.opacity,
                 alpha: this.opacity,
+                mode: this.mode, // 🆕 追加
                 minWidth: this.minWidth,
                 maxWidth: this.maxWidth
             };
@@ -151,6 +194,7 @@
 
         /**
          * 設定を一括更新
+         * 🔧 Phase 3-C: mode 対応
          */
         updateSettings(settings) {
             let changed = false;
@@ -170,20 +214,22 @@
                 changed = true;
             }
 
+            // 🆕 Phase 3-C: mode 更新
+            if (settings.mode !== undefined && settings.mode !== this.mode) {
+                this.setMode(settings.mode);
+                changed = true;
+            }
+
             return changed;
         }
     }
 
-    /**
-     * 🔧 Phase 6: グローバルインスタンスは遅延生成
-     * CoreEngine が明示的にインスタンスを作成し注入する
-     * グローバルアクセスは互換性のため残すが、推奨しない
-     */
     window.BrushSettings = BrushSettings;
 
-    console.log('✅ brush-settings.js (Phase 6 - DIP改善) loaded');
-    console.log('   ✓ Constructor での依存性注入対応');
-    console.log('   ✓ シングルトンは CoreEngine で管理');
-    console.log('   ✓ グローバルアクセスは互換性維持のみ');
+    console.log('✅ brush-settings.js (Phase 3-C - ツールモード対応) loaded');
+    console.log('   ✓ mode プロパティ追加 (pen/eraser)');
+    console.log('   ✓ setMode() / getMode() メソッド追加');
+    console.log('   ✓ brush:mode-changed イベント発行');
+    console.log('   ✓ getSettings() に mode を含める');
 
 })();
