@@ -1,6 +1,23 @@
-// ===== system/drawing-clipboard.js - Phase4改修版 + ペースト確定イベント =====
-// CHG: CTRL+V挙動を「新規レイヤー作成」→「アクティブレイヤー上書き」に変更
-// 【新規追加】ペースト確定イベントによるサムネイル即時更新
+/**
+ * @file system/drawing-clipboard.js - Phase 3 切り取り機能追加版
+ * @description レイヤークリップボード管理
+ * 
+ * 【Phase 3 改修内容】
+ * 🆕 cutActiveLayer(): Ctrl+X レイヤー切り取り機能追加
+ * 🔧 layer:cut-request イベントリスナー追加
+ * 🔧 layer:delete-active イベントリスナー追加
+ * 🧹 過剰なコンソールログ削除
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - event-bus.js (TegakiEventBus)
+ * - layer-system.js (LayerSystem)
+ * - config.js (TEGAKI_CONFIG)
+ * - history.js (History)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - keyboard-handler.js (Ctrl+C/V/X処理)
+ * - ui-panels.js (クリップボードボタン)
+ */
 
 (function() {
     'use strict';
@@ -16,14 +33,10 @@
         }
 
         init(eventBus, config) {
-            console.log('DrawingClipboard: Initializing...');
-            
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
             
             this._setupEventBusListeners();
-            
-            console.log('✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)');
         }
 
         _setupEventBusListeners() {
@@ -35,6 +48,16 @@
             
             this.eventBus.on('clipboard:paste-request', () => {
                 this.pasteLayer();
+            });
+            
+            // 🔧 Phase 3: 切り取りリスナー追加
+            this.eventBus.on('layer:cut-request', () => {
+                this.cutActiveLayer();
+            });
+            
+            // 🔧 Phase 3: レイヤー削除リスナー追加
+            this.eventBus.on('layer:delete-active', () => {
+                this.deleteActiveLayer();
             });
             
             this.eventBus.on('clipboard:paste-to-active-request', () => {
@@ -60,12 +83,113 @@
                     this.pasteToActiveLayer();
                     e.preventDefault();
                 }
+                
+                // 🆕 Phase 3: Ctrl+X 切り取り
+                if (e.ctrlKey && e.code === 'KeyX' && !e.altKey && !e.metaKey) {
+                    this.cutActiveLayer();
+                    e.preventDefault();
+                }
             });
+        }
+
+        /**
+         * 🆕 Phase 3: レイヤー切り取り機能
+         * コピー → 削除の順で実行
+         */
+        cutActiveLayer() {
+            if (!this.layerManager) {
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:cut-failed', { error: 'LayerManager not available' });
+                }
+                return;
+            }
+
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (!activeLayer) {
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:cut-failed', { error: 'No active layer' });
+                }
+                return;
+            }
+
+            if (activeLayer.layerData?.isBackground) {
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:cut-failed', { error: 'Cannot cut background layer' });
+                }
+                return;
+            }
+
+            try {
+                // 先にコピー
+                this.copyActiveLayer();
+                
+                // コピーが成功したら削除
+                if (this.clipboardData) {
+                    const activeIndex = this.layerManager.activeLayerIndex;
+                    this.layerManager.deleteLayer(activeIndex);
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('clipboard:cut-success', {
+                            layerId: activeLayer.layerData.id,
+                            layerIndex: activeIndex
+                        });
+                    }
+                }
+            } catch (error) {
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:cut-failed', { error: error.message });
+                }
+            }
+        }
+
+        /**
+         * 🆕 Phase 3: アクティブレイヤー削除機能
+         * Ctrl+Delete で呼び出される
+         */
+        deleteActiveLayer() {
+            if (!this.layerManager) {
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:delete-failed', { error: 'LayerManager not available' });
+                }
+                return;
+            }
+
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (!activeLayer) {
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:delete-failed', { error: 'No active layer' });
+                }
+                return;
+            }
+
+            if (activeLayer.layerData?.isBackground) {
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:delete-failed', { error: 'Cannot delete background layer' });
+                }
+                return;
+            }
+
+            try {
+                const activeIndex = this.layerManager.activeLayerIndex;
+                const layerId = activeLayer.layerData.id;
+                
+                this.layerManager.deleteLayer(activeIndex);
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:delete-success', {
+                        layerId: layerId,
+                        layerIndex: activeIndex
+                    });
+                }
+            } catch (error) {
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:delete-failed', { error: error.message });
+                }
+            }
         }
 
         copyActiveLayer() {
             if (!this.layerManager) {
-                console.warn('LayerManager not available');
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:copy-failed', { error: 'LayerManager not available' });
                 }
@@ -74,7 +198,6 @@
 
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) {
-                console.warn('No active layer to copy');
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:copy-failed', { error: 'No active layer' });
                 }
@@ -83,11 +206,11 @@
 
             try {
                 const layerId = activeLayer.layerData.id;
-                const currentTransform = this.layerManager.layerTransforms.get(layerId);
+                const currentTransform = this.layerManager.transform?.getTransform?.(layerId);
                 
                 let pathsToStore;
                 
-                if (this.layerManager.isTransformNonDefault(currentTransform)) {
+                if (this.layerManager.transform?._isTransformNonDefault?.(currentTransform)) {
                     pathsToStore = this.getTransformedPaths(activeLayer, currentTransform);
                 } else {
                     pathsToStore = activeLayer.layerData.paths || [];
@@ -118,8 +241,8 @@
                         copiedAt: Date.now(),
                         pathCount: pathsToStore.length,
                         isNonDestructive: true,
-                        hasTransforms: this.layerManager.isTransformNonDefault(currentTransform),
-                        systemVersion: 'v8.13_Phase4改修版+確定イベント'
+                        hasTransforms: this.layerManager.transform?._isTransformNonDefault?.(currentTransform) || false,
+                        systemVersion: 'v8.13_Phase3+Cut'
                     },
                     timestamp: Date.now()
                 };
@@ -127,12 +250,11 @@
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:copy-success', {
                         pathCount: pathsToStore.length,
-                        hasTransforms: this.layerManager.isTransformNonDefault(currentTransform)
+                        hasTransforms: this.layerManager.transform?._isTransformNonDefault?.(currentTransform) || false
                     });
                 }
                 
             } catch (error) {
-                console.error('Failed to copy layer:', error);
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:copy-failed', { error: error.message });
                 }
@@ -141,7 +263,6 @@
 
         pasteToActiveLayer() {
             if (!this.layerManager) {
-                console.warn('LayerManager not available');
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:paste-failed', { error: 'LayerManager not available' });
                 }
@@ -149,7 +270,6 @@
             }
 
             if (!this.clipboardData) {
-                console.warn('No clipboard data to paste');
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:paste-failed', { error: 'No clipboard data' });
                 }
@@ -158,7 +278,6 @@
 
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) {
-                console.warn('No active layer to paste to');
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:paste-failed', { error: 'No active layer' });
                 }
@@ -180,11 +299,8 @@
                 this.clearActiveLayer(activeLayer);
                 this.applyClipboardToLayer(activeLayer, this.clipboardData);
                 
-                this.layerManager.updateLayerPanelUI();
-                this.layerManager.updateStatusDisplay();
                 this.layerManager.requestThumbnailUpdate(activeIndex);
                 
-                // 【新規追加】ペースト確定イベント発火
                 if (this.eventBus) {
                     this.eventBus.emit('paste:commit', { 
                         layerIndex: activeIndex, 
@@ -197,11 +313,10 @@
                     });
                 }
                 
-                // 【新規追加】AnimationSystem経由でサムネイル更新
-                if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
-                    const currentCutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
+                if (this.layerManager.animationSystem?.generateFrameThumbnail) {
+                    const frameIndex = this.layerManager.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
-                        this.layerManager.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                        this.layerManager.animationSystem.generateFrameThumbnail(frameIndex);
                     }, 100);
                 }
                 
@@ -215,7 +330,6 @@
                 }
                 
             } catch (error) {
-                console.error('Failed to paste to active layer:', error);
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:paste-failed', { error: error.message });
                 }
@@ -225,7 +339,7 @@
         createLayerSnapshot(layer) {
             const layerData = layer.layerData;
             const layerId = layerData.id;
-            const transform = this.layerManager.layerTransforms.get(layerId);
+            const transform = this.layerManager.transform?.getTransform?.(layerId);
             
             return {
                 id: layerId,
@@ -261,9 +375,11 @@
             layerData.paths = [];
             
             const layerId = layerData.id;
-            this.layerManager.layerTransforms.set(layerId, {
-                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-            });
+            if (this.layerManager.transform) {
+                this.layerManager.transform.setTransform(layerId, {
+                    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                });
+            }
         }
 
         applyClipboardToLayer(layer, clipboardData) {
@@ -306,9 +422,7 @@
                             restoredCount++;
                         }
                     }
-                } catch (pathError) {
-                    console.error(`Error applying path ${pathIndex}:`, pathError);
-                }
+                } catch (pathError) {}
             });
         }
 
@@ -333,26 +447,24 @@
         }
 
         restoreLayerFromSnapshot(layerId, snapshotData) {
-            const layer = this.layerManager.layers.find(l => l.layerData.id === layerId);
+            const layer = this.layerManager.getLayers().find(l => l.layerData.id === layerId);
             if (!layer) return;
             
             this.clearActiveLayer(layer);
             this.applySnapshotToLayer(layer, snapshotData);
             
-            const layerIndex = this.layerManager.layers.indexOf(layer);
-            this.layerManager.updateLayerPanelUI();
+            const layerIndex = this.layerManager.getLayerIndex(layer);
             this.layerManager.requestThumbnailUpdate(layerIndex);
         }
 
         restoreLayerFromClipboard(layerId, clipboardData) {
-            const layer = this.layerManager.layers.find(l => l.layerData.id === layerId);
+            const layer = this.layerManager.getLayers().find(l => l.layerData.id === layerId);
             if (!layer) return;
             
             this.clearActiveLayer(layer);
             this.applyClipboardToLayer(layer, clipboardData);
             
-            const layerIndex = this.layerManager.layers.indexOf(layer);
-            this.layerManager.updateLayerPanelUI();
+            const layerIndex = this.layerManager.getLayerIndex(layer);
             this.layerManager.requestThumbnailUpdate(layerIndex);
         }
 
@@ -365,7 +477,9 @@
             layer.visible = snapshotData.visible;
             layer.alpha = snapshotData.opacity;
             
-            this.layerManager.layerTransforms.set(layerData.id, {...snapshotData.transform});
+            if (this.layerManager.transform) {
+                this.layerManager.transform.setTransform(layerData.id, {...snapshotData.transform});
+            }
             
             if (snapshotData.backgroundData) {
                 const bg = new PIXI.Graphics();
@@ -396,9 +510,7 @@
                             layer.addChild(newPath.graphics);
                         }
                     }
-                } catch (pathError) {
-                    console.error('Error restoring path:', pathError);
-                }
+                } catch (pathError) {}
             });
         }
 
@@ -448,10 +560,17 @@
                 try {
                     return {
                         id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${index}`,
-                        points: (path.points || []).map(point => ({ 
-                            x: Number(point.x) || 0, 
-                            y: Number(point.y) || 0 
-                        })),
+                        points: (path.points || []).map(point => {
+                            // localX/localY 形式対応
+                            const x = point.localX !== undefined ? point.localX : (point.x || 0);
+                            const y = point.localY !== undefined ? point.localY : (point.y || 0);
+                            return { 
+                                localX: Number(x) || 0, 
+                                localY: Number(y) || 0,
+                                pressure: point.pressure || 0.5,
+                                timestamp: point.timestamp || 0
+                            };
+                        }),
                         color: path.color,
                         size: Number(path.size) || 16,
                         opacity: Number(path.opacity) || 1.0,
@@ -465,7 +584,6 @@
 
         pasteLayer() {
             if (!this.layerManager) {
-                console.warn('LayerManager not available');
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:paste-failed', { error: 'LayerManager not available' });
                 }
@@ -473,7 +591,6 @@
             }
 
             if (!this.clipboardData) {
-                console.warn('No clipboard data to paste');
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:paste-failed', { error: 'No clipboard data' });
                 }
@@ -482,16 +599,13 @@
 
             try {
                 const clipData = this.clipboardData;
-                const layerName = this.generateUniqueLayerName(clipData.layerData.name, this.layerManager);
+                const layerName = this.generateUniqueLayerName(clipData.layerData.name);
                 const { layer, index } = this.layerManager.createLayer(layerName, false);
 
                 this.applyClipboardToLayer(layer, clipData);
                 this.layerManager.setActiveLayer(index);
-                this.layerManager.updateLayerPanelUI();
-                this.layerManager.updateStatusDisplay();
                 this.layerManager.requestThumbnailUpdate(index);
                 
-                // 【新規追加】新規レイヤーペースト時も確定イベント発火
                 if (this.eventBus) {
                     this.eventBus.emit('paste:commit', { 
                         layerIndex: index, 
@@ -504,11 +618,10 @@
                     });
                 }
                 
-                // 【新規追加】AnimationSystem経由でサムネイル更新
-                if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
-                    const currentCutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
+                if (this.layerManager.animationSystem?.generateFrameThumbnail) {
+                    const frameIndex = this.layerManager.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
-                        this.layerManager.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                        this.layerManager.animationSystem.generateFrameThumbnail(frameIndex);
                     }, 100);
                 }
                 
@@ -521,18 +634,18 @@
                 }
                 
             } catch (error) {
-                console.error('Failed to paste layer:', error);
                 if (this.eventBus) {
                     this.eventBus.emit('clipboard:paste-failed', { error: error.message });
                 }
             }
         }
 
-        generateUniqueLayerName(baseName, layerManager) {
+        generateUniqueLayerName(baseName) {
             let name = baseName;
             let counter = 1;
             
-            while (layerManager.layers.some(layer => layer.layerData.name === name)) {
+            const layers = this.layerManager.getLayers();
+            while (layers.some(layer => layer.layerData.name === name)) {
                 name = `${baseName}_${counter}`;
                 counter++;
             }
@@ -581,12 +694,12 @@
                 summary: this.getClipboardSummary(),
                 eventBusAvailable: !!this.eventBus,
                 layerManagerAvailable: !!this.layerManager,
-                phase: 'Phase4-CTRL+V-Behavior-Changed+CommitEvents',
+                phase: 'Phase3-Cut-Delete-Function',
                 newFeatures: {
+                    cutLayer: 'available',
+                    deleteLayer: 'available',
                     pasteToActiveLayer: 'available',
-                    historyRecording: window.History ? 'available' : 'not-available',
-                    overwriteMode: 'implemented',
-                    commitEvents: 'implemented'
+                    historyRecording: window.History ? 'available' : 'not-available'
                 }
             };
         }
@@ -597,12 +710,13 @@
     window.DrawingClipboard = {
         get: () => window.drawingClipboard?.get() || null,
         pasteToActiveLayer: () => window.drawingClipboard?.pasteToActiveLayer() || false,
-        pasteAsNewLayer: () => window.drawingClipboard?.pasteLayer() || false
+        pasteAsNewLayer: () => window.drawingClipboard?.pasteLayer() || false,
+        cutActiveLayer: () => window.drawingClipboard?.cutActiveLayer() || false,
+        deleteActiveLayer: () => window.drawingClipboard?.deleteActiveLayer() || false
     };
 
-    console.log('✅ drawing-clipboard.js Phase4改修版+確定イベント loaded');
-    console.log('   - ✅ CTRL+V behavior: overwrite active layer');
-    console.log('   - ✅ Commit events: paste:commit, operation:commit');
-    console.log('   - ✅ Thumbnail auto-update on paste');
-
 })();
+
+console.log('✅ drawing-clipboard.js Phase 3 loaded');
+console.log('   🆕 cutActiveLayer(): Ctrl+X 切り取り機能');
+console.log('   🆕 deleteActiveLayer(): Ctrl+Delete 削除機能');

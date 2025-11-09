@@ -1,12 +1,13 @@
 /**
- * @file ui/keyboard-handler.js - Phase 1+2改修版
+ * @file ui/keyboard-handler.js - Phase 3+4 完全改修版
  * @description キーボードショートカット処理の中核システム
  * 
- * 【Phase 1+2 改修内容】
- * 🔧 BS/DEL機能: deleteActiveLayerDrawings() 確実動作
- * 🔧 Vキー状態管理: keyboard:vkey-state-changed イベント発火に変更
- * 🔧 Ctrl+, 設定画面: SETTINGS_OPEN 処理追加確認
- * 🔧 デバッグログ削除
+ * 【Phase 3+4 改修内容】
+ * 🔧 LAYER_DELETE: Ctrl+Delete → アクティブレイヤー削除
+ * 🔧 LAYER_CUT: Ctrl+X → レイヤー切り取り（drawing-clipboard経由）
+ * 🔧 FRAME_PREV/NEXT: ←→ 単体キー化（vMode=false時のみ動作）
+ * 🔧 vMode判定: ↑↓ レイヤー選択はvMode=false時のみ
+ * 🧹 過剰なデバッグログ削除
  * 
  * 【親ファイル (このファイルが依存)】
  * - config.js (window.TEGAKI_KEYMAP)
@@ -14,6 +15,7 @@
  * - history.js (window.History)
  * - core-runtime.js (window.CoreRuntime.api)
  * - layer-system.js (window.layerManager)
+ * - drawing-clipboard.js (window.drawingClipboard)
  * 
  * 【子ファイル (このファイルに依存)】
  * - core-initializer.js (初期化時にinit呼び出し)
@@ -49,7 +51,7 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // 🔧 Phase 2改修: Vキーのトグル処理（keyboard:vkey-state-changed イベント発火）
+        // Vキーのトグル処理
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             if (!e.repeat) {
                 vKeyPressed = !vKeyPressed;
@@ -111,13 +113,13 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // 🔧 Phase 1修正: BS/DELキーでの描画削除
+            // BS/DELキーでの描画削除
             case 'LAYER_DELETE_DRAWINGS':
                 deleteActiveLayerDrawings();
                 event.preventDefault();
                 break;
             
-            // 🔧 Phase 3追加: Ctrl+Delete → アクティブレイヤー削除
+            // 🔧 Phase 3: Ctrl+Delete → アクティブレイヤー削除
             case 'LAYER_DELETE':
                 eventBus.emit('layer:delete-active');
                 event.preventDefault();
@@ -133,7 +135,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // 🔧 Phase 3追加: Ctrl+X レイヤー切り取り
+            // 🔧 Phase 3: Ctrl+X レイヤー切り取り
             case 'LAYER_CUT':
                 eventBus.emit('layer:cut-request');
                 event.preventDefault();
@@ -198,7 +200,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // 🔧 Phase 3修正: ↑↓ レイヤー選択（vMode=false時のみ）
+            // 🔧 Phase 3: ↑↓ レイヤー選択（vMode=false時のみ）
             case 'LAYER_HIERARCHY_UP':
                 if (!vKeyPressed) {
                     eventBus.emit('layer:select-next');
@@ -223,7 +225,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // 🔧 Phase 2修正: カメラ反転（EventBus経由）
+            // カメラ反転（EventBus経由）
             case 'CAMERA_FLIP_HORIZONTAL':
                 if (!vKeyPressed) {
                     eventBus.emit('camera:flip-horizontal');
@@ -245,16 +247,16 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // 🔧 Phase 3修正: ←→ フレーム移動（Ctrl不要）
+            // 🔧 Phase 3: ←→ フレーム移動（vMode=false時のみ）
             case 'FRAME_PREV':
-                if (window.timelineUI?.isVisible) {
+                if (!vKeyPressed && window.timelineUI?.isVisible) {
                     window.timelineUI.goToPreviousCutSafe();
                 }
                 event.preventDefault();
                 break;
             
             case 'FRAME_NEXT':
-                if (window.timelineUI?.isVisible) {
+                if (!vKeyPressed && window.timelineUI?.isVisible) {
                     window.timelineUI.goToNextCutSafe();
                 }
                 event.preventDefault();
@@ -287,7 +289,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // 🔧 Phase 1確認: Ctrl+, で設定画面
             case 'SETTINGS_OPEN':
                 eventBus.emit('ui:open-settings');
                 event.preventDefault();
@@ -306,7 +307,7 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * 🔧 Phase 1修正: アクティブレイヤーの描画削除
+     * アクティブレイヤーの描画削除
      * BS/DELキーで確実に動作
      */
     function deleteActiveLayerDrawings() {
@@ -419,7 +420,7 @@ window.KeyboardHandler = (function() {
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
-        // 🔧 Phase 2改修: window blur時にVキー状態をリセット
+        // window blur時にVキー状態をリセット
         window.addEventListener('blur', () => {
             if (vKeyPressed) {
                 vKeyPressed = false;
@@ -460,3 +461,8 @@ window.KeyboardHandler = (function() {
         deleteActiveLayerDrawings
     };
 })();
+
+console.log('✅ keyboard-handler.js Phase 3+4 loaded');
+console.log('   🔧 LAYER_DELETE: Ctrl+Delete処理追加');
+console.log('   🔧 LAYER_CUT: Ctrl+X処理追加');
+console.log('   🔧 FRAME_PREV/NEXT: vMode判定追加');
