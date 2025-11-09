@@ -1,25 +1,32 @@
 /**
- * @file brush-core.js - Phase 6完全版（DIP改善完了）
- * @description ブラシコア処理（依存性注入パターン採用）
+ * ================================================================================
+ * system/drawing/brush-core.js - Phase 3-D: BrushSettings統合版
+ * ================================================================================
  * 
- * 【親ファイル (このファイルが依存)】
- * - event-bus.js (イベント通信)
- * - coordinate-system.js (座標変換)
- * - pressure-handler.js (筆圧処理)
- * - stroke-recorder.js (ストローク記録)
- * - stroke-renderer.js (ストローク描画)
- * - layer-system.js (レイヤー管理)
- * - brush-settings.js (ブラシ設定)
+ * 【Phase 3-D 改修内容 - mode 統合】
+ * ✅ setMode() で BrushSettings.setMode() を呼び出し
+ * ✅ 二重管理を排除（BrushSettings が唯一の情報源）
+ * ✅ currentMode は BrushSettings から取得
  * 
- * 【子ファイル (このファイルに依存)】
- * - drawing-engine.js (描画制御)
- * - core-runtime.js (API公開)
+ * 【依存関係 - Parents (このファイルが依存)】
+ *   - event-bus.js (イベント通信)
+ *   - coordinate-system.js (座標変換)
+ *   - pressure-handler.js (筆圧処理)
+ *   - stroke-recorder.js (ストローク記録)
+ *   - stroke-renderer.js (ストローク描画)
+ *   - layer-system.js (レイヤー管理)
+ *   - brush-settings.js (ブラシ設定 - mode 情報源)
  * 
- * 【Phase 6 改修内容】
- * ✅ init()でグローバル依存を取得（Constructor Injection準備）
- * ✅ window.brushSettings への直接参照を統一
- * ✅ グローバルシングルトン依存を明示化
- * ✅ 将来的なConstructor Injection への移行準備完了
+ * 【依存関係 - Children (このファイルに依存)】
+ *   - drawing-engine.js (描画制御)
+ *   - core-runtime.js (API公開)
+ * 
+ * 【責務】
+ *   - ストローク開始/更新/完了処理
+ *   - 座標変換パイプライン統合
+ *   - プレビュー表示管理
+ *   - ツールモード切り替えの BrushSettings への委譲
+ * ================================================================================
  */
 
 (function() {
@@ -28,13 +35,12 @@
     class BrushCore {
         constructor() {
             this.isDrawing = false;
-            this.currentMode = 'pen';
             this.currentStrokeId = null;
             this.lastLocalX = 0;
             this.lastLocalY = 0;
             this.lastPressure = 0;
             
-            // 🔧 Phase 6: 依存性を明示的にプロパティ宣言
+            // 依存性プロパティ
             this.coordinateSystem = null;
             this.pressureHandler = null;
             this.strokeRecorder = null;
@@ -48,8 +54,7 @@
         }
         
         /**
-         * 🔧 Phase 6: 依存性注入の初期化
-         * 現在はグローバルから取得、将来的にはConstructor Injectionに移行可能
+         * 依存性注入の初期化
          */
         init() {
             if (this.coordinateSystem) {
@@ -57,7 +62,7 @@
                 return;
             }
             
-            // 🔧 Phase 6: グローバル依存を明示的に取得
+            // グローバル依存を取得
             this.coordinateSystem = window.CoordinateSystem;
             this.pressureHandler = window.pressureHandler;
             this.strokeRecorder = window.strokeRecorder;
@@ -90,7 +95,7 @@
             
             this._setupEventListeners();
             
-            console.log('✅ [BrushCore] Initialized (Phase 6 - DIP改善版)');
+            console.log('✅ [BrushCore] Initialized (Phase 3-D - BrushSettings統合版)');
             console.log('   - CoordinateSystem:', !!this.coordinateSystem);
             console.log('   - LayerManager:', !!this.layerManager);
             console.log('   - StrokeRecorder:', !!this.strokeRecorder);
@@ -122,12 +127,23 @@
                 }
             });
             
+            // 🆕 Phase 3-D: mode 変更イベントをリッスン
+            this.eventBus.on('brush:mode-changed', (data) => {
+                if (data && data.mode) {
+                    console.log(`[BrushCore] Mode changed: ${data.oldMode} → ${data.mode}`);
+                    
+                    // StrokeRenderer に mode を通知
+                    if (this.strokeRenderer && this.strokeRenderer.setTool) {
+                        this.strokeRenderer.setTool(data.mode);
+                    }
+                }
+            });
+            
             this.eventListenersSetup = true;
         }
         
         /**
-         * 🔧 Phase 6: BrushSettings取得を一元化
-         * グローバル依存だがアクセスポイントは統一
+         * BrushSettings取得を一元化
          */
         _getCurrentSettings() {
             if (!this.brushSettings) {
@@ -135,34 +151,46 @@
                 return {
                     size: 3,
                     opacity: 1.0,
-                    color: 0x800000
+                    color: 0x800000,
+                    mode: 'pen'
                 };
             }
             
             return this.brushSettings.getSettings();
         }
         
+        /**
+         * 🔧 Phase 3-D: ツールモード設定を BrushSettings に委譲
+         * @param {string} mode - 'pen' | 'eraser'
+         */
         setMode(mode) {
             if (mode !== 'pen' && mode !== 'eraser') {
-                throw new Error(`Invalid brush mode: ${mode}`);
+                console.error(`[BrushCore] Invalid brush mode: ${mode}`);
+                return;
             }
             
-            const oldMode = this.currentMode;
-            this.currentMode = mode;
+            // 🔧 BrushSettings に委譲（唯一の情報源）
+            if (this.brushSettings) {
+                this.brushSettings.setMode(mode);
+            } else {
+                console.warn('[BrushCore] BrushSettings not available, cannot set mode');
+            }
             
-            if (this.strokeRenderer) {
+            // StrokeRenderer にも直接通知（イベント前の即時対応）
+            if (this.strokeRenderer && this.strokeRenderer.setTool) {
                 this.strokeRenderer.setTool(mode);
             }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('brush:mode-switched', {
-                    component: 'brush',
-                    action: 'mode-switched',
-                    data: { mode, oldMode }
-                });
+        }
+        
+        /**
+         * 🔧 Phase 3-D: 現在のモードを BrushSettings から取得
+         * @returns {string} 'pen' | 'eraser'
+         */
+        getMode() {
+            if (this.brushSettings) {
+                return this.brushSettings.getMode();
             }
-            
-            console.log(`[BrushCore] Mode switched: ${oldMode} → ${mode}`);
+            return 'pen'; // fallback
         }
         
         startStroke(clientX, clientY, pressure) {
@@ -201,7 +229,7 @@
                     component: 'drawing',
                     action: 'stroke-started',
                     data: {
-                        mode: this.currentMode,
+                        mode: this.getMode(), // 🔧 BrushSettings から取得
                         layerId: activeLayer.layerData?.id,
                         localX,
                         localY,
@@ -328,7 +356,7 @@
                     component: 'drawing',
                     action: 'stroke-completed',
                     data: {
-                        mode: this.currentMode,
+                        mode: this.getMode(), // 🔧 BrushSettings から取得
                         layerId: activeLayer.layerData?.id,
                         pointCount: strokeData.points.length
                     }
@@ -359,17 +387,14 @@
         isActive() {
             return this.isDrawing;
         }
-        
-        getMode() {
-            return this.currentMode;
-        }
     }
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js (Phase 6完全版 - DIP改善) loaded');
-    console.log('   ✓ 依存性注入パターン採用');
-    console.log('   ✓ グローバル依存を明示的に管理');
-    console.log('   ✓ Constructor Injection移行準備完了');
+    console.log('✅ brush-core.js (Phase 3-D - BrushSettings統合版) loaded');
+    console.log('   ✓ setMode() を BrushSettings に委譲');
+    console.log('   ✓ getMode() は BrushSettings から取得');
+    console.log('   ✓ 二重管理を排除');
+    console.log('   ✓ brush:mode-changed イベントをリッスン');
 
 })();
