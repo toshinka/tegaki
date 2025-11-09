@@ -1,0 +1,632 @@
+================================================================================
+ブラウザお絵かきツール v8.13 - ショートカット機能復旧・改修計画書
+================================================================================
+
+【計画概要】
+目的: 動作しないショートカット機能の復旧と新規機能追加
+期間: Phase 1-4 (合計4-6時間想定)
+優先度: 高 (ユーザー体験の根幹機能)
+
+【問題の根本原因分析】
+1. EventBusイベントが発火されているが受信リスナーが未実装
+2. 複数ファイルでの状態管理の不整合
+3. keyboard-handler.jsとcamera-system.js間での二重処理
+4. config.jsの定義とactual実装の乖離
+
+================================================================================
+Phase 1: 緊急復旧 - 基本機能の即時修正 (1-1.5時間)
+================================================================================
+
+【1-1】BS/DELキーでのレイヤー描画削除 復旧
+────────────────────────────────────
+◆ 問題: deleteActiveLayerDrawings()が実行されない
+
+修正ファイル:
+  📄 ui/keyboard-handler.js
+
+参照ファイル:
+  📁 config.js (TEGAKI_KEYMAP.actions.LAYER_DELETE_DRAWINGS)
+  📄 system/layer-system.js (getActiveLayer, layerData.paths)
+
+フロー位置: ユーザー入力 → keyboard-handler → layer-system
+
+実装箇所:
+  // keyboard-handler.js の handleAction() 内
+  case 'LAYER_DELETE_DRAWINGS':
+    this.deleteActiveLayerDrawings();
+    event.preventDefault();
+    break;
+
+確認項目:
+  - deleteActiveLayerDrawings()が正しく呼ばれているか
+  - layerSystem.getActiveLayer()が正常に取得できるか
+  - History.push()が実行されているか
+  - eventBus.emit('layer:drawings-deleted')が発火しているか
+
+デバッグ:
+  console.log('DEBUG: LAYER_DELETE_DRAWINGS triggered', {
+    activeLayer: window.layerManager?.getActiveLayer(),
+    pathCount: window.layerManager?.getActiveLayer()?.layerData?.paths?.length
+  });
+
+────────────────────────────────────
+【1-2】反転ボタンクリックで元に戻らない問題 修正
+────────────────────────────────────
+◆ 問題: History二重登録によるUndoの不整合
+
+修正ファイル:
+  📄 system/layer-transform.js
+
+参照ファイル:
+  📄 system/layer-system.js (flipActiveLayer)
+  📄 system/history.js (_manager.isApplying)
+
+フロー位置: UI反転ボタン → layer-system.flipActiveLayer → layer-transform.flipLayer
+
+実装箇所:
+  // layer-transform.js の flipLayer() 内
+  flipLayer(layer, direction, skipHistory = false) {
+    if (!skipHistory && !History._manager?.isApplying) {
+      // History登録は一度のみ
+      this.confirmTransform();
+    }
+  }
+
+確認項目:
+  - skipHistory=trueがキーボード経由時に渡されているか
+  - History.push()が一回のみ実行されるか
+  - ボタンクリック時のみHistory登録されるか
+
+────────────────────────────────────
+【1-3】Vキートランスフォームモードポップアップ 復旧
+────────────────────────────────────
+◆ 問題: vKeyPressed状態が複数箇所で管理され不整合
+
+修正ファイル:
+  📄 ui/keyboard-handler.js
+  📄 system/camera-system.js
+  📄 system/layer-transform.js
+
+参照ファイル:
+  📁 config.js (TEGAKI_KEYMAP.actions)
+  📄 system/event-bus.js
+
+フロー位置: V押下 → keyboard-handler → EventBus → layer-transform/camera-system
+
+実装方針: keyboard-handler.jsを唯一の真実の源(SSOT)とする
+
+keyboard-handler.js:
+  let vKeyPressed = false;
+  
+  handleKeyDown(e) {
+    if (e.code === 'KeyV' && !e.repeat) {
+      vKeyPressed = !vKeyPressed;
+      TegakiEventBus.emit('keyboard:vkey-state-changed', { pressed: vKeyPressed });
+    }
+  }
+
+camera-system.js:
+  // 既存のvKeyPressed変数を削除
+  // リスナー追加
+  TegakiEventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
+    this.vKeyPressed = pressed;
+    this._updateCursor();
+  });
+
+layer-transform.js:
+  // 既存のisVKeyPressed変数を削除
+  // リスナー追加
+  TegakiEventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
+    if (pressed) {
+      this.enterMoveMode();
+    } else {
+      this.exitMoveMode();
+    }
+  });
+
+確認項目:
+  - keyboard:vkey-state-changedが正しく発火するか
+  - トランスフォームパネルが表示/非表示切り替わるか
+  - Vキー離脱時に状態がリセットされるか
+
+────────────────────────────────────
+【1-4】Ctrl+, で設定が開かない問題 修正
+────────────────────────────────────
+◆ 問題: ui:open-settingsイベントのリスナー未実装の可能性
+
+修正ファイル:
+  📄 ui/keyboard-handler.js
+  📄 ui/settings-popup.js
+
+参照ファイル:
+  📁 config.js (TEGAKI_KEYMAP.actions.SETTINGS)
+
+フロー位置: Ctrl+, → keyboard-handler → EventBus → settings-popup
+
+確認箇所:
+  // keyboard-handler.js
+  case 'SETTINGS':
+    eventBus.emit('ui:open-settings');
+    event.preventDefault();
+    break;
+
+  // settings-popup.js (リスナー確認)
+  TegakiEventBus.on('ui:open-settings', () => {
+    this.show();
+  });
+
+デバッグ:
+  console.log('DEBUG: SETTINGS action triggered');
+  console.log('DEBUG: settingsPopup instance:', window.settingsPopup);
+
+================================================================================
+Phase 2: カメラ/レイヤー反転の統一化 (1.5-2時間)
+================================================================================
+
+【2-1】H/Shift+H カメラ反転 EventBus統一
+────────────────────────────────────
+◆ 問題: EventBus発火されているが受信されない、直接keydown処理が動作
+
+修正ファイル:
+  📄 system/camera-system.js
+
+参照ファイル:
+  📄 ui/keyboard-handler.js
+  📁 config.js (CAMERA_FLIP_HORIZONTAL/VERTICAL)
+
+フロー位置: H押下 → keyboard-handler → EventBus → camera-system
+
+実装:
+  // camera-system.js に追加
+  _setupFlipEvents() {
+    TegakiEventBus.on('camera:flip-horizontal', () => {
+      this.horizontalFlipped = !this.horizontalFlipped;
+      this.worldContainer.scale.x *= -1;
+      this._emitTransformChanged();
+    });
+    
+    TegakiEventBus.on('camera:flip-vertical', () => {
+      this.verticalFlipped = !this.verticalFlipped;
+      this.worldContainer.scale.y *= -1;
+      this._emitTransformChanged();
+    });
+  }
+
+削除箇所:
+  // camera-system.js の _handleCameraFlipKeys() 内
+  // Hキー処理部分を削除（EventBus経由に統一）
+
+確認項目:
+  - keyboard-handler.jsからのイベント発火確認
+  - camera-system.jsでのイベント受信確認
+  - 二重処理が発生していないか
+
+────────────────────────────────────
+【2-2】V+H/Shift+H レイヤー反転 修正
+────────────────────────────────────
+◆ 問題: vMode判定が正しく機能していない
+
+修正ファイル:
+  📄 ui/keyboard-handler.js
+  📄 system/layer-system.js
+
+参照ファイル:
+  📁 config.js (LAYER_FLIP_HORIZONTAL/VERTICAL)
+  📄 system/layer-transform.js
+
+フロー位置: V+H → keyboard-handler → layer:flip-by-key → layer-system
+
+実装確認:
+  // keyboard-handler.js
+  case 'LAYER_FLIP_HORIZONTAL':
+  case 'LAYER_FLIP_VERTICAL':
+    if (this.isVKeyPressed()) {
+      const direction = action === 'LAYER_FLIP_HORIZONTAL' ? 'horizontal' : 'vertical';
+      eventBus.emit('layer:flip-by-key', { direction });
+      event.preventDefault();
+    }
+    break;
+
+  // layer-system.js (_setupLayerOperations内)
+  eventBus.on('layer:flip-by-key', ({ direction }) => {
+    this.flipActiveLayer(direction, false);
+  });
+
+確認項目:
+  - vKeyPressed状態が正しく取得できるか
+  - layer:flip-by-keyが発火されるか
+  - flipActiveLayer(direction, false)が実行されるか
+
+────────────────────────────────────
+【2-3】Ctrl+Z/Y 反転のUndo/Redo 修正
+────────────────────────────────────
+◆ 問題: History二重登録による不整合
+
+修正ファイル:
+  📄 system/layer-system.js
+
+参照ファイル:
+  📄 system/history.js
+  📄 system/layer-transform.js
+
+フロー位置: flipActiveLayer → History.push → Undo/Redo
+
+実装確認:
+  // layer-system.js の flipActiveLayer()
+  flipActiveLayer(direction, bypassVKeyCheck = false) {
+    // skipHistory=true でHistory登録をスキップ
+    this.transform.flipLayer(activeLayer, direction, true);
+    
+    // History登録は一度のみ
+    if (!History._manager?.isApplying) {
+      History.push({
+        name: `layer-flip-${direction}`,
+        do: () => this.transform.flipLayer(activeLayer, direction, true),
+        undo: () => this.transform.flipLayer(activeLayer, direction, true)
+      });
+    }
+  }
+
+確認項目:
+  - History.push()が一度のみ実行されるか
+  - Undo時にHistory._manager.isApplyingがtrueになるか
+  - Redo時も正常に動作するか
+
+================================================================================
+Phase 3: レイヤー操作の整理と新規機能追加 (1.5-2時間)
+================================================================================
+
+【3-1】Ctrl+Delete → アクティブレイヤー削除に変更
+────────────────────────────────────
+◆ 変更: レイヤークリア → アクティブレイヤー削除
+
+修正ファイル:
+  📁 config.js
+  📄 ui/keyboard-handler.js
+  📄 system/layer-system.js
+
+実装:
+  // config.js (定義変更)
+  LAYER_DELETE: {  // LAYER_CLEARから改名
+    key: 'Delete',
+    ctrl: true,
+    description: 'アクティブレイヤー削除'
+  }
+
+  // keyboard-handler.js
+  case 'LAYER_DELETE':
+    eventBus.emit('layer:delete-active');
+    event.preventDefault();
+    break;
+
+  // layer-system.js に追加
+  eventBus.on('layer:delete-active', () => {
+    const activeIndex = this.activeLayerIndex;
+    if (activeIndex > 0) {  // 背景レイヤーは削除不可
+      this.deleteLayer(activeIndex);
+    }
+  });
+
+────────────────────────────────────
+【3-2】Ctrl+X レイヤー切り取り 新規追加
+────────────────────────────────────
+◆ 新規機能: レイヤーをクリップボードにコピーして削除
+
+修正ファイル:
+  📁 config.js
+  📄 ui/keyboard-handler.js
+  📄 system/drawing-clipboard.js
+
+実装:
+  // config.js に追加
+  LAYER_CUT: {
+    key: 'KeyX',
+    ctrl: true,
+    description: 'レイヤー切り取り'
+  }
+
+  // keyboard-handler.js
+  case 'LAYER_CUT':
+    eventBus.emit('layer:cut-request');
+    event.preventDefault();
+    break;
+
+  // drawing-clipboard.js に追加
+  eventBus.on('layer:cut-request', async () => {
+    await this.copyLayer();
+    eventBus.emit('layer:delete-active');
+  });
+
+────────────────────────────────────
+【3-3】↑↓ レイヤー選択 / Ctrl+↑↓ レイヤー順序変更 分離
+────────────────────────────────────
+◆ 修正: 現在混在している動作を分離
+
+修正ファイル:
+  📁 config.js
+  📄 ui/keyboard-handler.js
+
+実装確認:
+  // config.js (正しい定義確認)
+  LAYER_SELECT_PREV: {
+    key: 'ArrowUp',
+    description: 'レイヤー選択を上へ'
+  },
+  LAYER_SELECT_NEXT: {
+    key: 'ArrowDown',
+    description: 'レイヤー選択を下へ'
+  },
+  LAYER_ORDER_UP: {
+    key: 'ArrowUp',
+    ctrl: true,
+    description: 'レイヤー順序を上げる'
+  },
+  LAYER_ORDER_DOWN: {
+    key: 'ArrowDown',
+    ctrl: true,
+    description: 'レイヤー順序を下げる'
+  }
+
+  // keyboard-handler.js (vMode判定追加)
+  case 'LAYER_SELECT_PREV':
+  case 'LAYER_SELECT_NEXT':
+    if (!this.isVKeyPressed()) {
+      // レイヤー選択のみ
+    }
+    break;
+
+確認項目:
+  - vMode=false時のみレイヤー選択が動作するか
+  - Ctrl押下時は順序変更が動作するか
+
+────────────────────────────────────
+【3-4】←→ フレーム移動 / Ctrl+←→ 廃止
+────────────────────────────────────
+◆ 変更: Ctrl不要でフレーム移動
+
+修正ファイル:
+  📁 config.js
+  📄 ui/keyboard-handler.js
+
+実装:
+  // config.js (定義変更)
+  FRAME_PREV: {
+    key: 'ArrowLeft',  // ctrl: true を削除
+    description: '前のフレーム'
+  },
+  FRAME_NEXT: {
+    key: 'ArrowRight',  // ctrl: true を削除
+    description: '次のフレーム'
+  }
+
+  // 削除対象 (config.jsから削除)
+  // ANIMATION_PREV_CUT
+  // ANIMATION_NEXT_CUT
+
+確認項目:
+  - ←→単体でフレーム移動するか
+  - vMode時は動作しないか（レイヤー移動優先）
+  - Ctrl+←→が無効化されているか
+
+================================================================================
+Phase 4: 新規機能追加とクリーンアップ (1-1.5時間)
+================================================================================
+
+【4-1】Shift+ホイール カメラ回転 新規追加
+────────────────────────────────────
+◆ 新規機能: Shift押下中のホイールで回転
+
+修正ファイル:
+  📄 system/camera-system.js
+
+参照ファイル:
+  📁 config.js (camera.rotationSpeed)
+
+実装:
+  // camera-system.js に追加
+  _handleWheelRotation(e) {
+    if (e.shiftKey && !this.spacePressed) {
+      e.preventDefault();
+      const delta = e.deltaY;
+      const rotationSpeed = TEGAKI_CONFIG.camera.rotationSpeed || 0.01;
+      
+      this.worldContainer.rotation += delta * rotationSpeed;
+      this._emitTransformChanged();
+    }
+  }
+
+  // wheel イベントリスナーに追加
+  this.canvas.addEventListener('wheel', (e) => {
+    if (e.shiftKey) {
+      this._handleWheelRotation(e);
+    } else {
+      this._handleWheelZoom(e);
+    }
+  });
+
+────────────────────────────────────
+【4-2】未使用定義・イベントのクリーンアップ
+────────────────────────────────────
+◆ 削除対象の整理
+
+削除ファイル:
+  📁 config.js
+
+削除項目:
+  1. window.TEGAKI_KEYCONFIG (完全削除)
+  2. ANIMATION_PREV_CUT 定義
+  3. ANIMATION_NEXT_CUT 定義
+  4. layer:clear-active 関連（LAYER_CLEARから改名済み）
+
+確認項目:
+  - 削除後も既存機能が動作するか
+  - どこからも参照されていないか（全ファイル検索）
+
+────────────────────────────────────
+【4-3】多重実装の統一 - 座標変換メソッド
+────────────────────────────────────
+◆ 統一: camera-system.jsの座標変換をcoordinate-system.js経由に
+
+修正ファイル:
+  📄 system/camera-system.js
+
+参照ファイル:
+  📄 coordinate-system.js
+
+実装方針:
+  camera-system.js内の重複メソッドを削除し、
+  CoordinateSystem経由で呼び出す
+
+削除対象:
+  - screenClientToWorld() → CoordinateSystem使用
+  - worldToScreen() → CoordinateSystem使用
+  - screenToLayer() → CoordinateSystem.worldToLocal()
+  - screenToCanvas() → CoordinateSystem.screenClientToCanvas()
+
+実装例:
+  // 変更前
+  screenToLayer(screenX, screenY) {
+    // 独自実装
+  }
+
+  // 変更後
+  screenToLayer(screenX, screenY) {
+    const canvasPos = CoordinateSystem.screenClientToCanvas(screenX, screenY);
+    const worldPos = CoordinateSystem.canvasToWorld(canvasPos.x, canvasPos.y);
+    const layer = this.layerManager.getActiveLayer();
+    return CoordinateSystem.worldToLocal(worldPos.x, worldPos.y, layer);
+  }
+
+確認項目:
+  - 全ての座標変換が正常に動作するか
+  - 描画位置がずれていないか
+  - パフォーマンス低下がないか
+
+================================================================================
+Phase 5: テスト・検証 (1時間)
+================================================================================
+
+【5-1】機能別テストチェックリスト
+────────────────────────────────────
+
+□ Phase 1 復旧機能
+  □ Delete/Backspace でレイヤー描画削除
+  □ 反転ボタンクリックで反転 → Undo → Redo
+  □ Vキー押下でトランスフォームパネル表示
+  □ Vキー離脱でパネル非表示
+  □ Ctrl+, で設定画面表示
+
+□ Phase 2 反転機能
+  □ H でカメラ水平反転
+  □ Shift+H でカメラ垂直反転
+  □ V+H でレイヤー水平反転
+  □ V+Shift+H でレイヤー垂直反転
+  □ 各反転のUndo/Redo
+
+□ Phase 3 レイヤー操作
+  □ Ctrl+Delete でアクティブレイヤー削除
+  □ Ctrl+X でレイヤー切り取り
+  □ Ctrl+C → Ctrl+V でレイヤーコピー&ペースト
+  □ ↑↓ でレイヤー選択
+  □ Ctrl+↑↓ でレイヤー順序変更
+  □ ←→ でフレーム移動
+
+□ Phase 4 新規機能
+  □ Shift+ホイール でカメラ回転
+  □ 座標変換の正常動作
+
+【5-2】不具合チェックリスト
+────────────────────────────────────
+
+□ History二重登録がないか
+  - 反転操作後のUndoスタック確認
+  - console.log(History.canUndo(), History.canRedo())
+
+□ イベント二重処理がないか
+  - EventBus.emit()とdirect処理の併存確認
+  - 各操作時のconsole.logで回数確認
+
+□ vKeyPressed状態の不整合がないか
+  - Vキー押下/離脱時の各ファイルの状態確認
+  - ウィンドウフォーカス喪失時の挙動
+
+□ 座標変換の正確性
+  - 描画位置のずれがないか
+  - レイヤー移動・回転後の描画確認
+
+【5-3】デバッグコマンド集
+────────────────────────────────────
+
+// Vキー状態確認
+console.log('vKey状態:', {
+  keyboard: window.KeyboardHandler?.isVKeyPressed(),
+  camera: window.cameraSystem?.vKeyPressed,
+  transform: window.layerManager?.transform?.isVKeyPressed
+});
+
+// History状態確認
+console.log('History:', {
+  canUndo: window.History?.canUndo(),
+  canRedo: window.History?.canRedo(),
+  isApplying: window.History?._manager?.isApplying
+});
+
+// EventBus発火確認
+TegakiEventBus.on('*', (event, data) => {
+  console.log('EventBus:', event, data);
+});
+
+// レイヤー状態確認
+console.log('Layer:', {
+  active: window.layerManager?.activeLayerIndex,
+  total: window.layerManager?.getLayers()?.length,
+  paths: window.layerManager?.getActiveLayer()?.layerData?.paths?.length
+});
+
+================================================================================
+実装時の注意事項
+================================================================================
+
+【命名規則】
+- イベント名: component:action (例: layer:flip-by-key)
+- パラメータ名: 座標系を明示 (localX, worldX, screenX)
+- メソッド名: 処理内容を明確に (flipActiveLayer, deleteActiveLayerDrawings)
+
+【EventBus使用ルール】
+1. emit()する側とon()する側を明確に分離
+2. 一つのイベントに対して複数のリスナー登録は避ける
+3. イベント名の定数化（event-bus.js の EVENTS）
+
+【History登録ルール】
+1. History._manager.isApplyingをチェック
+2. skipHistoryパラメータで明示的に制御
+3. do/undoは対称的な処理にする
+
+【ファイル改修時の必須作業】
+1. ヘッダーに親子依存関係を記述
+2. 不要なconsole.logを削除
+3. DRY/SOLID原則の確認
+4. 二重実装のチェック
+
+【Phase完了時の確認】
+1. 全ショートカットの動作テスト
+2. History動作の確認
+3. EventBus整合性の確認
+4. console.logのクリーンアップ
+
+================================================================================
+改修後の期待される状態
+================================================================================
+
+✅ 全ショートカットが正常動作
+✅ Vキー状態管理の一元化完了
+✅ EventBus経由の処理統一
+✅ History二重登録の撲滅
+✅ 座標変換メソッドの統一
+✅ 未使用定義・イベントの削除
+✅ ファイル依存関係の明確化
+✅ 可読性・保守性の向上
+
+================================================================================
+End of Plan
+================================================================================

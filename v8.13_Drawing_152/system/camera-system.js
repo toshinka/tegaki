@@ -1,23 +1,20 @@
 /**
- * @file system/camera-system.js
+ * @file system/camera-system.js - Phase 2改修版
  * @description カメラ制御システム（ズーム、パン、回転）
  * 
- * 【Phase 4 改修内容 - 責務の整理】
- * - switchTool() メソッドを削除（ツール管理は BrushCore の責務）
- * - カメラ制御の責務のみに限定
- * 
- * 【依存関係】
- * - config.js (TEGAKI_CONFIG)
- * - system/event-bus.js (EventBus)
- * - coordinate-system.js (CoordinateSystem)
+ * 【Phase 2 改修内容】
+ * 🔧 EventBus統一: camera:flip-horizontal/vertical イベント受信実装
+ * 🔧 _handleCameraFlipKeys() のHキー処理を削除（EventBus経由に統一）
+ * 🔧 keyboard:vkey-state-changed イベントへの対応追加
  * 
  * 【親ファイル (依存元)】
- * - core-engine.js
- * - core-runtime.js
+ * - config.js (TEGAKI_CONFIG)
+ * - event-bus.js (TegakiEventBus)
+ * - coordinate-system.js (CoordinateSystem)
  * 
  * 【子ファイル (このファイルに依存)】
- * - ui/keyboard-handler.js (キーボードイベント)
- * - system/layer-system.js (レイヤー移動モード連携)
+ * - keyboard-handler.js (キーボードイベント発火)
+ * - layer-system.js (レイヤー移動モード連携)
  */
 
 (function() {
@@ -74,9 +71,60 @@
             
             this._createContainers();
             this._setupEvents();
+            this._setupEventBusListeners(); // 🔧 Phase 2追加
             this.initializeCamera();
             this._drawCameraFrame();
             this._setupCheckerPattern();
+        }
+
+        /**
+         * 🔧 Phase 2新規追加: EventBusリスナーの統合設定
+         */
+        _setupEventBusListeners() {
+            if (!this.eventBus) return;
+            
+            // Vキー状態の同期
+            this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
+                this.vKeyPressed = pressed;
+                this._emitCursorUpdate();
+            });
+            
+            // カメラ水平反転
+            this.eventBus.on('camera:flip-horizontal', () => {
+                const centerX = this.config.canvas.width / 2;
+                const centerY = this.config.canvas.height / 2;
+                const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                
+                this.horizontalFlipped = !this.horizontalFlipped;
+                this.worldContainer.scale.x *= -1;
+                
+                const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                this.worldContainer.x += worldCenter.x - newWorldCenter.x;
+                this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                
+                this._emitTransformChanged();
+            });
+            
+            // カメラ垂直反転
+            this.eventBus.on('camera:flip-vertical', () => {
+                const centerX = this.config.canvas.width / 2;
+                const centerY = this.config.canvas.height / 2;
+                const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                
+                this.verticalFlipped = !this.verticalFlipped;
+                this.worldContainer.scale.y *= -1;
+                
+                const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                this.worldContainer.x += worldCenter.x - newWorldCenter.x;
+                this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                
+                this._emitTransformChanged();
+            });
+            
+            // カメラリセット
+            this.eventBus.on('camera:reset', () => {
+                this.resetCanvas();
+            });
         }
 
         _setupCheckerPattern() {
@@ -364,6 +412,13 @@
                 const centerX = this.config.canvas.width / 2;
                 const centerY = this.config.canvas.height / 2;
                 
+                // 🔧 Phase 4追加: Shift+ホイールで回転
+                if (!this.spacePressed && this.shiftPressed) {
+                    this._handleWheelRotation(e, centerX, centerY);
+                    this._emitTransformChanged();
+                    return;
+                }
+                
                 if (this.spacePressed && !this.shiftPressed) {
                     this._handleWheelZoom(e, centerX, centerY);
                     this._emitTransformChanged();
@@ -448,7 +503,7 @@
             document.addEventListener('keydown', (e) => {
                 this._updateKeyStates(e);
                 
-                if (e.ctrlKey && e.code === 'Digit0') {
+                if (e.ctrlKey && e.code === 'Digit0' && !this.vKeyPressed) {
                     this.resetCanvas();
                     e.preventDefault();
                     return;
@@ -472,7 +527,7 @@
                 
                 this._handleCameraMoveKeys(e);
                 this._handleCameraTransformKeys(e);
-                this._handleCameraFlipKeys(e);
+                // 🔧 Phase 2削除: _handleCameraFlipKeys() 呼び出しを削除（EventBus経由に統一）
             });
             
             document.addEventListener('keyup', (e) => {
@@ -560,29 +615,6 @@
             }
         }
 
-        _handleCameraFlipKeys(e) {
-            if (!this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
-                const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                
-                if (e.shiftKey) {
-                    this.verticalFlipped = !this.verticalFlipped;
-                    this.worldContainer.scale.y *= -1;
-                } else {
-                    this.horizontalFlipped = !this.horizontalFlipped;
-                    this.worldContainer.scale.x *= -1;
-                }
-                
-                const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-                this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-                
-                this._emitTransformChanged();
-                e.preventDefault();
-            }
-        }
-
         _scaleCamera(scaleFactor, worldCenter, centerX, centerY) {
             const newScale = this.worldContainer.scale.x * scaleFactor;
             if (newScale >= this.config.camera.minScale && newScale <= this.config.camera.maxScale) {
@@ -618,10 +650,6 @@
             }
         }
 
-        /**
-         * 🔧 Phase 4改修: カーソル更新を BrushCore に依存しない形に変更
-         * ツール情報は CoreRuntime.api.tool.get() から取得
-         */
         _emitCursorUpdate() {
             if (!this.eventBus) return;
             
@@ -684,18 +712,9 @@
                    canvasPoint.y >= -margin && canvasPoint.y <= this.config.canvas.height + margin;
         }
 
-        /**
-         * 🔧 Phase 4改修: updateCursor() は内部メソッドを呼ぶのみ
-         */
         updateCursor() {
             this._emitCursorUpdate();
         }
-
-        /**
-         * 🔧 Phase 4削除: switchTool() メソッドを削除
-         * 理由: ツール切り替えは BrushCore の責務
-         * 呼び出し元は CoreRuntime.api.tool.set() を使用すべき
-         */
 
         updateTransformDisplay() {
             this._emitTransformChanged();
@@ -721,10 +740,6 @@
             this.layerManager = layerManager;
         }
 
-        /**
-         * 🔧 Phase 4保持: DrawingEngine参照の保持（互換性のため）
-         * 注意: ツール切り替えには使用しない
-         */
         setDrawingEngine(drawingEngine) {
             this.drawingEngine = drawingEngine;
         }
@@ -733,7 +748,3 @@
     window.TegakiCameraSystem = CameraSystem;
 
 })();
-
-console.log('✅ camera-system.js (Phase 4改修版 - 責務の整理) loaded');
-console.log('   ✓ switchTool() メソッド削除');
-console.log('   ✓ カメラ制御の責務のみに限定');
