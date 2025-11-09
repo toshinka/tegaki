@@ -1,17 +1,18 @@
 /**
  * @file system/layer-transform.js
- * @description レイヤートランスフォーム処理 - ペンタブレット対応版
+ * @description レイヤートランスフォーム処理 - ペンタブレット完全対応版
  * 
  * 【改修履歴】
- * v8.13.4 - パネルドラッグ+反転機能の完全修正
- *   🔧 パネルドラッグ: passive:false + capture + 圧力判定削除
- *   🔧 反転ボタン: History二重登録防止、即座確定機能
- *   🔧 Console抑制: 不要なログを全削除
+ * v8.13.5 - Vキー・ペンタブレット・反転ボタン完全修正
+ *   🔧 Vキー復旧: keyboard:vkey-pressed イベント確実受信
+ *   🔧 ペンドラッグ: passive:false + capture + pointer判定強化
+ *   🔧 反転ボタン: layer-system経由でHistory一元管理
+ *   🔧 Console削減: 不要なログ完全削除
  * 
  * 【親ファイル (このファイルが依存)】
- * - event-bus.js (イベント通信)
+ * - event-bus.js (イベント通信 - window.TegakiEventBus)
  * - coordinate-system.js (座標変換・トランスフォーム適用)
- * - config.js (設定値)
+ * - config.js (設定値 - window.TEGAKI_CONFIG)
  * - layer-system.js (レイヤー取得)
  * 
  * 【子ファイル (このファイルに依存)】
@@ -69,8 +70,18 @@
         }
 
         _setupEventListeners() {
-            if (!this.eventBus) return;
+            if (!this.eventBus) {
+                console.error('[LayerTransform] EventBus not found - retrying...');
+                setTimeout(() => {
+                    this.eventBus = window.TegakiEventBus;
+                    if (this.eventBus) {
+                        this._setupEventListeners();
+                    }
+                }, 100);
+                return;
+            }
             
+            // 🔧 Vキー押下イベント
             this.eventBus.on('keyboard:vkey-pressed', ({ pressed }) => {
                 if (pressed) {
                     this.enterMoveMode();
@@ -80,12 +91,14 @@
                 }
             });
             
+            // 反転ショートカット
             this.eventBus.on('layer:flip-by-key', (data) => {
                 if (this.isVKeyPressed && this.onFlipRequest) {
                     this.onFlipRequest(data.direction);
                 }
             });
             
+            // トランスフォームリセット
             this.eventBus.on('layer:reset-transform', () => {
                 if (this.isVKeyPressed) {
                     this.resetTransform();
@@ -263,7 +276,7 @@
         }
 
         /**
-         * 🔧 反転処理: History二重登録を防ぐためHistoryフラグ使用
+         * 🔧 反転処理: History二重登録を防ぐためskipHistoryフラグ使用
          */
         flipLayer(layer, direction, skipHistory = false) {
             if (!layer?.layerData) return;
@@ -288,7 +301,7 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             
-            // 🔧 即座に実座標へ反映（非同期なし）
+            // 🔧 即座に実座標へ反映
             this.confirmTransform(layer, skipHistory);
             
             this.updateFlipButtons(layer);
@@ -455,12 +468,106 @@
                     const layerIndex = layerMgr.getLayerIndex(layer);
                     
                     this.eventBus.emit('thumbnail:layer-updated', {
-                component: 'drawing',
-                action: 'transform-applied',
-                data: { layerIndex, layerId }
-            });
+                        component: 'drawing',
+                        action: 'transform-applied',
+                        data: { layerIndex, layerId }
+                    });
+                    
+                    this._lastEmitTime = performance.now();
+                }
+            }
             
-            this._lastEmitTime = performance.now();
+            return true;
+        }
+        
+        applyTransformToPaths(layer, transform) {
+            if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
+                return true;
+            }
+            
+            try {
+                const centerX = this.config.canvas.width / 2;
+                const centerY = this.config.canvas.height / 2;
+                
+                const matrix = this._createTransformMatrix(transform, centerX, centerY);
+                const transformedPaths = [];
+                
+                for (let path of layer.layerData.paths) {
+                    if (!path?.points || !Array.isArray(path.points) || path.points.length === 0) {
+                        continue;
+                    }
+                    
+                    const transformedPoints = this._transformPoints(path.points, matrix);
+                    
+                    if (transformedPoints.length === 0) {
+                        continue;
+                    }
+                    
+                    transformedPaths.push({
+                        id: path.id,
+                        points: transformedPoints,
+                        color: path.color,
+                        size: path.size,
+                        opacity: path.opacity,
+                        tool: path.tool,
+                        isComplete: path.isComplete || true,
+                        strokeOptions: path.strokeOptions,
+                        graphics: null
+                    });
+                }
+                
+                layer.layerData.paths = transformedPaths;
+                return true;
+                
+            } catch (error) {
+                console.error('[LayerTransform] Transform failed:', error);
+                return false;
+            }
+        }
+
+        _createTransformMatrix(transform, centerX, centerY) {
+            const x = Number(transform.x) || 0;
+            const y = Number(transform.y) || 0;
+            const rotation = Number(transform.rotation) || 0;
+            const scaleX = Number(transform.scaleX) || 1;
+            const scaleY = Number(transform.scaleY) || 1;
+            
+            const cos = Math.cos(rotation);
+            const sin = Math.sin(rotation);
+            
+            return {
+                a: scaleX * cos,
+                b: scaleX * sin,
+                c: -scaleY * sin,
+                d: scaleY * cos,
+                tx: x + centerX * (1 - scaleX * cos) + centerY * scaleY * sin,
+                ty: y + centerY * (1 - scaleY * cos) - centerX * scaleX * sin
+            };
+        }
+        
+        _transformPoints(points, matrix) {
+            return points.map(p => {
+                const localX = Number(p.localX) || 0;
+                const localY = Number(p.localY) || 0;
+                
+                return {
+                    localX: matrix.a * localX + matrix.c * localY + matrix.tx,
+                    localY: matrix.b * localX + matrix.d * localY + matrix.ty,
+                    pressure: p.pressure || 0.5,
+                    timestamp: p.timestamp || 0
+                };
+            });
+        }
+        
+        _isTransformNonDefault(transform) {
+            if (!transform) return false;
+            return (
+                Math.abs(transform.x) > 0.01 ||
+                Math.abs(transform.y) > 0.01 ||
+                Math.abs(transform.rotation) > 0.001 ||
+                Math.abs(Math.abs(transform.scaleX) - 1) > 0.01 ||
+                Math.abs(Math.abs(transform.scaleY) - 1) > 0.01
+            );
         }
         
         _setupTransformPanel() {
@@ -522,63 +629,72 @@
             this._setupPanelDrag();
         }
 
-        _setupSlider(sli
-                        component: 'layer-transform',
-                        action: 'transform-confirmed',
-                        data: {
-                            layerIndex: layerIndex,
-                            layerId: layer.layerData.id,
-                            immediate: true
-                        }
-                    });
-                }
-            }
+        _setupSlider(sliderId, min, max, defaultValue, formatValue, property) {
+            const sliderContainer = document.getElementById(sliderId);
+            if (!sliderContainer) return;
             
-            return true;
-        }
-        
-        applyTransformToPaths(layer, transform) {
-            if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
-                return true;
-            }
+            const handle = sliderContainer.querySelector('.slider-handle');
+            const track = sliderContainer.querySelector('.slider-track');
+            const label = sliderContainer.querySelector('.slider-label');
             
-            try {
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
+            if (!handle || !track || !label) return;
+            
+            const updateValue = (clientX) => {
+                const rect = track.getBoundingClientRect();
+                let ratio = (clientX - rect.left) / rect.width;
+                ratio = Math.max(0, Math.min(1, ratio));
                 
-                const matrix = this._createTransformMatrix(transform, centerX, centerY);
-                const transformedPaths = [];
+                let value = min + ratio * (max - min);
                 
-                for (let path of layer.layerData.paths) {
-                    if (!path?.points || !Array.isArray(path.points) || path.points.length === 0) {
-                        continue;
-                    }
-                    
-                    const transformedPoints = this._transformPoints(path.points, matrix);
-                    
-                    if (transformedPoints.length === 0) {
-                        continue;
-                    }
-                    
-                    transformedPaths.push({
-                        id: path.id,
-                        points: transformedPoints,
-                        color: path.color,
-                        size: path.size,
-                        opacity: path.opacity,
-                        tool: path.tool,
-                        isComplete: path.isComplete || true,
-                        strokeOptions: path.strokeOptions,
-                        graphics: null
-                    });
+                if (property === 'rotation') {
+                    value = value * Math.PI / 180;
                 }
                 
-                layer.layerData.paths = transformedPaths;
-                return true;
+                handle.style.left = `${ratio * 100}%`;
+                label.textContent = formatValue(property === 'rotation' ? (value * 180 / Math.PI) : value);
                 
-            } catch (error) {
-                return false;
-            }
+                if (this.onSliderChange) {
+                    this.onSliderChange(property, value);
+                }
+            };
+            
+            handle.addEventListener('pointerdown', (e) => {
+                if (this.activeSliderPointerId !== null) return;
+                
+                this.activeSliderPointerId = e.pointerId;
+                this.activeSliderElement = handle;
+                handle.style.cursor = 'grabbing';
+                
+                if (handle.setPointerCapture) {
+                    try {
+                        handle.setPointerCapture(e.pointerId);
+                    } catch (err) {}
+                }
+                
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            document.addEventListener('pointermove', (e) => {
+                if (this.activeSliderPointerId === e.pointerId && this.activeSliderElement === handle) {
+                    updateValue(e.clientX);
+                    e.preventDefault();
+                }
+            }, { passive: false, capture: true });
+            
+            document.addEventListener('pointerup', (e) => {
+                if (this.activeSliderPointerId === e.pointerId && this.activeSliderElement === handle) {
+                    this.activeSliderPointerId = null;
+                    this.activeSliderElement = null;
+                    handle.style.cursor = 'grab';
+                    
+                    if (handle.releasePointerCapture) {
+                        try {
+                            handle.releasePointerCapture(e.pointerId);
+                        } catch (err) {}
+                    }
+                }
+            }, { capture: true });
         }
 
         _setupDragEvents() {
@@ -614,7 +730,7 @@
         }
 
         /**
-         * 🔧 パネルドラッグ完全修正版
+         * 🔧 パネルドラッグ完全修正版 - ペンタブレット対応
          */
         _setupPanelDrag() {
             if (!this.transformPanel) return;
@@ -625,7 +741,7 @@
             header.style.cursor = 'grab';
             header.style.touchAction = 'none';
             
-            // 🔧 pointerdownでのみドラッグ開始
+            // 🔧 pointerdownでのみドラッグ開始（圧力判定なし）
             header.addEventListener('pointerdown', (e) => {
                 // スライダー・ボタン領域は除外
                 if (e.target.closest('.slider-container') || 
@@ -832,3 +948,132 @@
             });
             
             this.eventBus.emit('thumbnail:layer-updated', {
+                component: 'layer-transform',
+                action: 'transform-changed',
+                data: { layerIndex, layerId }
+            });
+            
+            this._lastEmitTime = performance.now();
+        }
+
+        updateTransformPanelValues(layer) {
+            if (!layer?.layerData || !this.transformPanel) return;
+            
+            const layerId = layer.layerData.id;
+            const transform = this.transforms.get(layerId);
+            
+            if (!transform) return;
+            
+            this._updateSliderValue('layer-x-slider', transform.x, (v) => Math.round(v) + 'px');
+            this._updateSliderValue('layer-y-slider', transform.y, (v) => Math.round(v) + 'px');
+            this._updateSliderValue('layer-rotation-slider', transform.rotation * 180 / Math.PI, (v) => Math.round(v) + '°');
+            this._updateSliderValue('layer-scale-slider', Math.abs(transform.scaleX), (v) => v.toFixed(2) + 'x');
+        }
+        
+        _updateSliderValue(sliderId, value, formatValue) {
+            const sliderContainer = document.getElementById(sliderId);
+            if (!sliderContainer) return;
+            
+            const handle = sliderContainer.querySelector('.slider-handle');
+            const label = sliderContainer.querySelector('.slider-label');
+            const track = sliderContainer.querySelector('.slider-track');
+            
+            if (!handle || !label || !track) return;
+            
+            let min, max;
+            if (sliderId === 'layer-x-slider') {
+                min = this.config.layer.minX;
+                max = this.config.layer.maxX;
+            } else if (sliderId === 'layer-y-slider') {
+                min = this.config.layer.minY;
+                max = this.config.layer.maxY;
+            } else if (sliderId === 'layer-rotation-slider') {
+                min = this.config.layer.minRotation;
+                max = this.config.layer.maxRotation;
+            } else if (sliderId === 'layer-scale-slider') {
+                min = this.config.layer.minScale;
+                max = this.config.layer.maxScale;
+            }
+            
+            const ratio = (value - min) / (max - min);
+            const clampedRatio = Math.max(0, Math.min(1, ratio));
+            
+            handle.style.left = `${clampedRatio * 100}%`;
+            label.textContent = formatValue(value);
+        }
+
+        updateFlipButtons(layer) {
+            if (!layer?.layerData || !this.transformPanel) return;
+            
+            const layerId = layer.layerData.id;
+            const transform = this.transforms.get(layerId);
+            
+            if (!transform) return;
+            
+            const flipHBtn = document.getElementById('flip-horizontal-btn');
+            const flipVBtn = document.getElementById('flip-vertical-btn');
+            
+            if (flipHBtn) {
+                if (transform.scaleX < 0) {
+                    flipHBtn.classList.add('active');
+                } else {
+                    flipHBtn.classList.remove('active');
+                }
+            }
+            
+            if (flipVBtn) {
+                if (transform.scaleY < 0) {
+                    flipVBtn.classList.add('active');
+                } else {
+                    flipVBtn.classList.remove('active');
+                }
+            }
+        }
+
+        _getSafeCanvas() {
+            return this.app?.canvas || document.querySelector('canvas');
+        }
+
+        _updateCursor() {
+            const canvas = this._getSafeCanvas();
+            if (!canvas) return;
+            
+            if (this.isVKeyPressed && !this.isDragging) {
+                canvas.style.cursor = 'move';
+            } else if (this.isDragging) {
+                canvas.style.cursor = 'grabbing';
+            } else {
+                canvas.style.cursor = 'crosshair';
+            }
+        }
+
+        getTransform(layerId) {
+            return this.transforms.get(layerId);
+        }
+
+        setTransform(layerId, transform) {
+            this.transforms.set(layerId, transform);
+        }
+
+        hasTransform(layerId) {
+            return this.transforms.has(layerId);
+        }
+
+        clearTransform(layerId) {
+            this.transforms.delete(layerId);
+        }
+
+        destroy() {
+            if (this._emitTimer) {
+                clearTimeout(this._emitTimer);
+            }
+            this.transforms.clear();
+        }
+    }
+
+    window.LayerTransform = LayerTransform;
+    window.TegakiLayerTransform = LayerTransform; // 🔧 後方互換性のため両方エクスポート
+
+})();
+
+console.log('✅ layer-transform.js (v8.13.5: Vキー・ペンタブレット・反転完全修正版) loaded');
