@@ -1,0 +1,720 @@
+ブラウザお絵かきツール v8.13 - フロー・メソッド・シンボル索引辞典
+生成日時: 2025-11-09
+対象バージョン: v8.13_Drawing_147
+
+================================================================================
+【凡例】
+⚠️ = 問題箇所・実装不完全
+🔧 = 改修必要
+✅ = 正常動作確認済み
+❌ = 未実装・機能不全
+🔍 = 要調査
+📁 = 親ファイル
+📄 = 子ファイル
+🔀 = イベントフロー関連
+================================================================================
+
+================================================================================
+■ 座標変換システム (Coordinate System)
+================================================================================
+
+📁 coordinate-system.js
+  ✅ class CoordinateSystem
+    - screenClientToCanvas(clientX, clientY) → {x, y}
+    - canvasToWorld(canvasX, canvasY) → {x, y}
+    - worldToCanvas(worldX, worldY) → {x, y}
+    - worldToLocal(worldX, worldY, targetContainer) → {x, y}
+  
+  グローバル登録:
+    ✅ window.CoordinateSystem (singleton)
+    
+  依存関係:
+    → window.cameraSystem (worldContainer参照)
+
+================================================================================
+■ カメラシステム (Camera System)
+================================================================================
+
+📁 system/camera-system.js
+  ✅ class CameraSystem
+    - zoom(delta, centerX, centerY)
+    - pan(dx, dy)
+    - resetView()
+    - getWorldContainer() → PIXI.Container
+    - getZoomLevel() → number
+    - centerOnPoint(worldX, worldY)
+    
+  ⚠️ 反転機能の問題箇所:
+    - flipHorizontal() - Vキー時動作不良報告あり
+    - flipVertical() - 同上
+    
+  グローバル登録:
+    ✅ window.cameraSystem
+    
+  🔀 イベント発行:
+    - 'camera:zoom'
+    - 'camera:pan'
+    - 'camera:reset'
+    ⚠️ 'camera:flip' - 動作不良
+
+================================================================================
+■ レイヤーシステム (Layer System)
+================================================================================
+
+📁 system/layer-system.js
+  ✅ class LayerManager
+    - createLayer(name, index)
+    - deleteLayer(layerId)
+    - setActiveLayer(layerId)
+    - getActiveLayer() → Layer
+    - duplicateLayer(layerId)
+    - mergeDown(layerId)
+    - reorderLayers(fromIndex, toIndex)
+    
+  🔧 レイヤー変換関連:
+    - transformLayer(layerId, transform) 
+    ⚠️ flipLayerHorizontal(layerId) - Vキー時実装不完全
+    ⚠️ flipLayerVertical(layerId) - Vキー時実装不完全
+    
+  グローバル登録:
+    ✅ window.layerManager
+    
+  🔀 イベント発行:
+    - 'layer:created'
+    - 'layer:deleted'
+    - 'layer:active-changed'
+    - 'layer:reordered'
+    ⚠️ 'layer:flipped' - 動作不良報告
+
+📄 system/layer-transform.js
+  ✅ class LayerTransform
+    - applyTransform(layer, matrix)
+    - flipHorizontal(layer, pivotX)
+    - flipVertical(layer, pivotY)
+    - rotate(layer, angle, pivotX, pivotY)
+    
+  🔍 要調査: カメラ中心基準での反転実装状況
+
+================================================================================
+■ 描画エンジン (Drawing Engine)
+================================================================================
+
+📁 system/drawing/drawing-engine.js
+  ✅ class DrawingEngine
+    - startStroke(pointerEvent)
+    - continueStroke(pointerEvent)
+    - endStroke()
+    - cancelStroke()
+    
+  座標変換フロー:
+    ✅ pointerEvent → screenClientToCanvas()
+    ✅ canvasToWorld()
+    ✅ worldToLocal() ※手動実装
+    ✅ strokeRecorder.addPoint(localX, localY, pressure)
+    
+  依存関係:
+    → CoordinateSystem (座標変換)
+    → StrokeRecorder (記録)
+    → StrokeRenderer (描画)
+    → BrushCore (ブラシ設定)
+    → PressureHandler (筆圧)
+
+📄 system/drawing/pointer-handler.js
+  ✅ class PointerHandler
+    - handlePointerDown(event)
+    - handlePointerMove(event)
+    - handlePointerUp(event)
+    - getPressure(event) → number
+    
+  🔍 タブレットペン入力の引っかかり問題:
+    ⚠️ スライダー入力時のイベント処理
+    → pointer-handler.js と ui/slider-utils.js の競合可能性
+
+📄 system/drawing/pressure-handler.js
+  ✅ class PressureHandler
+    - normalizePressure(rawPressure) → number
+    - applySmoothing(pressure) → number
+    - calibrate(samples)
+
+📄 system/drawing/curve-interpolator.js
+  ✅ class CurveInterpolator
+    - interpolate(points) → interpolatedPoints[]
+    - catmullRom(p0, p1, p2, p3, t) → {x, y}
+    - bezier(points, segments) → points[]
+
+📄 system/drawing/stroke-recorder.js
+  ✅ class StrokeRecorder
+    - startStroke(localX, localY, pressure)
+    - addPoint(localX, localY, pressure)
+    - endStroke() → strokeData
+    - getPoints() → points[]
+    
+  ✅ 座標変換なし - 受け取った座標をそのまま記録
+  ❌ screenToLayer() 呼び出しなし (DRY原則準拠)
+
+📄 system/drawing/stroke-renderer.js
+  ✅ class StrokeRenderer
+    - renderStroke(strokeData, layer)
+    - renderPreview(points)
+    - clearPreview()
+    - bakeToLayer(layer)
+    
+  依存関係:
+    → SDFMeshBuilder (メッシュ生成)
+    → WebGPUDrawingLayer (GPU描画)
+
+================================================================================
+■ SDF/MSDF ブラシシステム
+================================================================================
+
+📄 system/drawing/sdf-brush-shader.js
+  ✅ class SDFBrushShader (PIXI.Shader拡張)
+    - vertex shader定義
+    - fragment shader定義
+    - uniform変数管理
+    
+  Shader入力:
+    - aPosition (vertex)
+    - aUV (texture coordinate)
+    - aColor (vertex color)
+    - uSampler (SDF texture)
+    - uSoftness (edge softness)
+
+📄 system/drawing/msdf/msdf-brush-shader.js
+  ✅ class MSDFBrushShader
+    - MSDF専用シェーダー
+    - multi-channel distance field対応
+    
+  🔍 SDF/MSDF統合状況要確認
+
+📄 system/drawing/sdf-texture-generator.js
+  ❌ CPU側距離場計算 - ガイドライン違反
+  🔧 改修必要: GPU Compute実装への移行
+  
+  ⚠️ 問題メソッド:
+    - generateSDFTexture() - CPU実装
+    - calculateDistanceField() - CPU実装
+
+📄 system/drawing/sdf-mesh-builder.js
+  ✅ class SDFMeshBuilder
+    - buildMesh(points, brushSettings) → PIXI.Mesh
+    - generateVertices(points)
+    - generateUVs(points)
+    - generateIndices(vertexCount)
+    
+  依存関係:
+    → SDFBrushShader
+    → BrushSettings
+
+================================================================================
+■ WebGPU統合
+================================================================================
+
+📁 system/drawing/webgpu/webgpu-capabilities.js
+  ✅ class WebGPUCapabilities
+    - checkSupport() → boolean
+    - getDevice() → GPUDevice
+    - getAdapter() → GPUAdapter
+    - getFeatures() → Set<string>
+
+📁 system/drawing/webgpu/webgpu-drawing-layer.js
+  ✅ class WebGPUDrawingLayer
+    - initialize(device)
+    - render(commandEncoder)
+    - updateTexture(data)
+    - destroy()
+
+📁 system/drawing/webgpu/webgpu-compute-sdf.js
+  ✅ class WebGPUComputeSDF
+    - computeDistanceField(inputTexture) → outputTexture
+    - createPipeline()
+    - dispatch(workgroups)
+    
+  依存シェーダー:
+    → shaders/sdf-compute.wgsl
+
+📁 system/drawing/webgpu/webgpu-compute-msdf.js
+  ✅ class WebGPUComputeMSDF
+    - computeMSDF(inputTexture) → outputTexture
+    - createPipeline()
+    
+  依存シェーダー:
+    → shaders/msdf-compute.wgsl
+
+📁 system/drawing/webgpu/webgpu-texture-bridge.js
+  ✅ class WebGPUTextureBridge
+    - pixiToWebGPU(pixiTexture) → GPUTexture
+    - webGPUToPixi(gpuTexture) → PIXI.Texture
+    - copyTexture(src, dst)
+
+📄 system/drawing/webgpu/shaders/sdf-compute.wgsl
+  ✅ GPU Compute Shader (SDF生成)
+  - Jump Flooding Algorithm実装
+  - workgroup_size: 8x8
+
+📄 system/drawing/webgpu/shaders/msdf-compute.wgsl
+  ✅ GPU Compute Shader (MSDF生成)
+  - Multi-channel distance field
+  - RGB channel分離
+
+================================================================================
+■ ブラシ設定システム
+================================================================================
+
+📄 system/drawing/brush-settings.js
+  ✅ class BrushSettings
+    - size: number
+    - opacity: number
+    - hardness: number
+    - flow: number
+    - spacing: number
+    - color: {r, g, b, a}
+    - blendMode: string
+    
+  🔀 イベント発行:
+    - 'brush:size-changed'
+    - 'brush:opacity-changed'
+    - 'brush:color-changed'
+
+📄 system/drawing/brush-core.js
+  ✅ class BrushCore
+    - initialize()
+    - update(deltaTime)
+    - getCurrentSettings() → BrushSettings
+    - applyPreset(presetName)
+    
+  依存関係:
+    → BrushSettings
+    → EventBus
+
+================================================================================
+■ 変換・処理システム
+================================================================================
+
+📄 system/drawing/stroke-transformer.js
+  ✅ class StrokeTransformer
+    - transform(stroke, matrix)
+    - simplify(stroke, tolerance)
+    - smooth(stroke, iterations)
+    
+  🔍 レイヤー反転時の利用状況要確認
+
+📄 system/processing/vector-operations.js
+  ✅ 汎用ベクトル演算
+    - add(v1, v2) → vector
+    - subtract(v1, v2) → vector
+    - multiply(v, scalar) → vector
+    - normalize(v) → vector
+    - distance(v1, v2) → number
+    - dot(v1, v2) → number
+    - cross(v1, v2) → number
+
+================================================================================
+■ UIシステム
+================================================================================
+
+📄 ui/slider-utils.js
+  ⚠️ class SliderUtils
+    - createSlider(config)
+    - handleInput(event)
+    - updateValue(value)
+    
+  🔧 タブレットペン入力問題:
+    ⚠️ handleInput() - PointerEvent処理
+    ⚠️ 引っかかり問題の原因候補
+    → イベント伝播とpointer-handler.jsの競合
+
+📄 ui/keyboard-handler.js
+  ✅ class KeyboardHandler
+    - onKeyDown(event)
+    - onKeyUp(event)
+    - registerShortcut(key, callback)
+    
+  ⚠️ 反転ショートカット実装:
+    - 'H' → flipHorizontal() ✅ 通常時動作
+    - 'Shift+H' → flipVertical() ✅ 通常時動作
+    - 'V+H' → flipActiveLayerH() ⚠️ 動作不良
+    - 'V+Shift+H' → flipActiveLayerV() ⚠️ 動作不良
+    
+  🔍 Vキーモード管理:
+    - isVKeyPressed: boolean
+    - vKeyMode: 'camera' | 'layer'
+
+📄 ui/layer-panel-renderer.js
+  ✅ class LayerPanelRenderer
+    - render(layers)
+    - updateThumbnail(layerId)
+    - highlightActive(layerId)
+    
+  🔀 イベント監視:
+    - 'layer:created'
+    - 'layer:deleted'
+    - 'layer:active-changed'
+
+📄 ui/status-display-renderer.js
+  ✅ class StatusDisplayRenderer
+    - updateCursor(x, y)
+    - updateZoom(level)
+    - updateFPS(fps)
+    - updateMemory(usage)
+
+📄 ui/timeline-ui.js
+  ✅ class TimelineUI
+    - render(frames)
+    - selectFrame(index)
+    - addFrame()
+    - deleteFrame(index)
+    
+  依存関係:
+    → AnimationSystem
+    → ThumbnailSystem
+
+📄 ui/timeline-thumbnail-utils.js
+  ✅ class TimelineThumbnailUtils
+    - generateThumbnail(layer) → ImageData
+    - cacheThumbnail(layerId, thumbnail)
+    - invalidateCache(layerId)
+
+================================================================================
+■ ポップアップ/ダイアログ
+================================================================================
+
+📄 system/popup-manager.js
+  ✅ class PopupManager
+    - showPopup(id, config)
+    - hidePopup(id)
+    - togglePopup(id)
+    - isVisible(id) → boolean
+
+📄 ui/settings-popup.js
+  ✅ class SettingsPopup
+    - render()
+    - updateSettings(settings)
+    - applySettings()
+
+📄 ui/album-popup.js
+  ✅ class AlbumPopup
+    - render(album)
+    - loadAlbum(albumId)
+    - saveToAlbum(data)
+
+📄 ui/quick-access-popup.js
+  ✅ class QuickAccessPopup
+    - render(tools)
+    - selectTool(toolId)
+
+📄 ui/export-popup.js
+  ✅ class ExportPopup
+    - render(options)
+    - startExport(format)
+    - updateProgress(percent)
+
+📄 ui/resize-popup.js
+  ✅ class ResizePopup
+    - render(currentSize)
+    - applyResize(newSize)
+
+================================================================================
+■ エクスポートシステム
+================================================================================
+
+📁 system/export-manager.js
+  ✅ class ExportManager
+    - exportPNG(options)
+    - exportAPNG(options)
+    - exportGIF(options)
+    - exportWebP(options)
+    - exportMP4(options)
+    
+  依存関係:
+    → exporters/*.js
+
+📄 system/exporters/png-exporter.js
+  ✅ class PNGExporter
+    - export(layers, options) → Blob
+
+📄 system/exporters/apng-exporter.js
+  ✅ class APNGExporter
+    - export(frames, options) → Blob
+
+📄 system/exporters/gif-exporter.js
+  ✅ class GIFExporter
+    - export(frames, options) → Blob
+
+📄 system/exporters/webp-exporter.js
+  ✅ class WebPExporter
+    - export(frames, options) → Blob
+
+📄 system/exporters/mp4-exporter.js
+  ✅ class MP4Exporter
+    - export(frames, options) → Blob
+
+📄 system/quick-export-ui.js
+  ✅ class QuickExportUI
+    - render()
+    - quickExport(format)
+
+================================================================================
+■ 状態管理
+================================================================================
+
+📄 system/state-manager.js
+  ✅ class StateManager
+    - getState() → state
+    - setState(newState)
+    - subscribe(listener)
+    - unsubscribe(listener)
+    
+  State構造:
+    - currentTool: string
+    - activeLayer: string
+    - zoom: number
+    - pan: {x, y}
+    - vKeyMode: boolean ⚠️
+
+📄 system/settings-manager.js
+  ✅ class SettingsManager
+    - loadSettings() → settings
+    - saveSettings(settings)
+    - resetToDefaults()
+    - getSetting(key) → value
+
+📄 system/history.js
+  ✅ class HistoryManager
+    - push(action)
+    - undo() → action
+    - redo() → action
+    - clear()
+    - canUndo() → boolean
+    - canRedo() → boolean
+
+================================================================================
+■ アニメーション
+================================================================================
+
+📄 system/animation-system.js
+  ✅ class AnimationSystem
+    - play()
+    - pause()
+    - stop()
+    - seekToFrame(index)
+    - setFPS(fps)
+    - addFrame(layer)
+    - deleteFrame(index)
+    
+  🔀 イベント発行:
+    - 'animation:play'
+    - 'animation:pause'
+    - 'animation:frame-changed'
+
+📄 system/virtual-album.js
+  ✅ class VirtualAlbum
+    - createAlbum(name)
+    - saveFrame(albumId, frameData)
+    - loadAlbum(albumId) → frames[]
+    - deleteAlbum(albumId)
+
+================================================================================
+■ その他システム
+================================================================================
+
+📄 system/data-models.js
+  ✅ データモデル定義
+    - Layer
+    - Stroke
+    - Frame
+    - BrushPreset
+    - ExportOptions
+
+📄 system/batch-api.js
+  ✅ class BatchAPI
+    - executeBatch(operations)
+    - queueOperation(op)
+    - flush()
+
+📄 system/checker-utils.js
+  ✅ 汎用ユーティリティ
+    - isValidColor(color) → boolean
+    - clamp(value, min, max) → number
+    - lerp(a, b, t) → number
+    - generateId() → string
+
+📄 system/drawing/thumbnail-system.js
+  ✅ class ThumbnailSystem
+    - generate(layer) → thumbnail
+    - cache(layerId, thumbnail)
+    - invalidate(layerId)
+
+📄 system/drawing-clipboard.js
+  ✅ class DrawingClipboard
+    - copy(selection)
+    - cut(selection)
+    - paste() → data
+    - clear()
+
+================================================================================
+■ イベントバス
+================================================================================
+
+📄 system/event-bus.js
+  ✅ class EventBus (Singleton)
+    - on(event, callback)
+    - off(event, callback)
+    - emit(event, data)
+    - once(event, callback)
+    
+  グローバル登録:
+    ✅ window.eventBus
+
+📄 ui/dom-builder.js
+  ✅ DOM生成ユーティリティ
+    - createElement(tag, attrs, children)
+    - createButton(label, onClick)
+    - createSlider(config)
+
+================================================================================
+■ コア初期化
+================================================================================
+
+📁 config.js
+  ✅ グローバル設定定数
+    - CANVAS_SIZE
+    - MAX_LAYERS
+    - DEFAULT_BRUSH_SIZE
+    - FPS_TARGET
+    - WEBGPU_ENABLED
+
+📁 core-initializer.js
+  ✅ class CoreInitializer
+    - initialize()
+    - setupPixiApp()
+    - setupSystems()
+    - setupEventListeners()
+    
+  初期化順序:
+    1. Config読み込み
+    2. EventBus初期化
+    3. CoordinateSystem初期化
+    4. CameraSystem初期化
+    5. LayerManager初期化
+    6. DrawingEngine初期化
+    7. UI初期化
+
+📁 core-engine.js
+  ✅ class CoreEngine
+    - start()
+    - update(deltaTime)
+    - render()
+    - destroy()
+
+📁 core-runtime.js
+  ✅ メインループ管理
+    - requestAnimationFrame()
+    - update()
+    - render()
+
+================================================================================
+■ 外部ライブラリ
+================================================================================
+
+📄 libs/gsap.min.js
+  ✅ GSAP (GreenSock Animation Platform)
+    - アニメーション/トゥイーン
+    - UI遷移
+
+================================================================================
+■ 問題箇所まとめ
+================================================================================
+
+🔧 重大な問題:
+
+1. ⚠️ レイヤー反転機能 (Vキーモード時)
+   場所: system/camera-system.js, system/layer-system.js
+   症状: 反転ボタン押下で消失・位置ずれ
+   関連: keyboard-handler.js の Vキー管理
+   
+2. ⚠️ タブレットペン入力の引っかかり
+   場所: ui/slider-utils.js, system/drawing/pointer-handler.js
+   症状: スライダー操作時のイベント競合
+   
+3. ❌ CPU側SDF生成
+   場所: system/drawing/sdf-texture-generator.js
+   問題: ガイドライン違反 (GPU Compute必須)
+   改修: webgpu-compute-sdf.js への統合
+
+🔍 要調査:
+
+1. 反転ボタンの状態管理
+   - ボタン色変化するが反転されない
+   - StateManagerでのvKeyMode管理
+   
+2. カメラ中心基準反転の実装状況
+   - layer-transform.js の pivot計算
+   - camera-system.js との連携
+
+3. SDF/MSDF統合状況
+   - sdf-brush-shader.js と msdf-brush-shader.js の使い分け
+   - WebGPU統合の完全性
+
+================================================================================
+■ 多重実装の可能性
+================================================================================
+
+🔀 座標変換:
+  ✅ 一元化済み (coordinate-system.js)
+  ✅ drawing-engine.js で変換完結
+  ✅ stroke-recorder.js は座標変換なし
+  
+🔀 反転機能:
+  ⚠️ 多重実装の疑い
+    - camera-system.js: flipHorizontal/Vertical (カメラ反転)
+    - layer-system.js: flipLayerHorizontal/Vertical (レイヤー反転)
+    - layer-transform.js: flipHorizontal/Vertical (変換実装)
+    - keyboard-handler.js: Vキーモード分岐
+  🔧 統合必要: 単一の反転ロジックに統一
+
+🔀 ポインター処理:
+  ✅ pointer-handler.js で一元化
+  ⚠️ slider-utils.js との競合可能性
+
+🔀 サムネイル生成:
+  ✅ thumbnail-system.js
+  ✅ timeline-thumbnail-utils.js
+  🔍 役割分担の明確化必要
+
+================================================================================
+■ 未使用・削除候補
+================================================================================
+
+🗑️ 削除候補:
+
+1. sdf-texture-generator.js (CPU実装)
+   → webgpu-compute-sdf.js に統合済み
+
+2. 過剰なコンソールログ
+   → ファイル全体に散在
+   → デバッグ完了後削除推奨
+
+3. 重複グローバル定義
+   → window.TEGAKI_COORDINATE_SYSTEM (重複候補)
+
+================================================================================
+■ 改修優先度
+================================================================================
+
+優先度S (即時対応):
+1. Vキーモード時のレイヤー反転機能修正
+2. 反転ボタンの状態管理修正
+
+優先度A (重要):
+3. タブレットペンスライダー入力の改善
+4. sdf-texture-generator.js の削除
+
+優先度B (推奨):
+5. 反転ロジックの統合・一元化
+6. 過剰コンソールログの削除
+7. サムネイル系の役割明確化
+
+================================================================================
+生成完了
+================================================================================

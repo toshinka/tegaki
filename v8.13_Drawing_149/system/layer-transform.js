@@ -1,11 +1,11 @@
 /**
- * @file system/layer-transform.js - v8.13.9完全修正版
+ * @file system/layer-transform.js - v8.13.10完全修正版
  * @description レイヤートランスフォーム処理
  * 
- * 【v8.13.9 改修内容】
+ * 【v8.13.10 改修内容】
  * 🔧 反転ボタン: pointerdownイベント統一（トグル動作完全対応）
  * 🔧 反転処理: カメラフレーム中央基準、skipHistory機能完全動作
- * 🔧 スライダー: slider-utils.js v8.13.9使用（PointerEvent完全対応）
+ * 🔧 スライダー: slider-utils.js v8.13.10使用（PointerEvent完全対応）
  * 🔧 回転ループ: -180°/+180°での循環動作
  * 🔧 ドラッグ操作: Vキー+ドラッグのスライダー即時反映
  * 
@@ -13,7 +13,7 @@
  * - event-bus.js (window.TegakiEventBus)
  * - coordinate-system.js (window.CoordinateSystem)
  * - config.js (window.TEGAKI_CONFIG)
- * - slider-utils.js (window.TegakiUI.SliderUtils) 🔧 v8.13.9
+ * - slider-utils.js (window.TegakiUI.SliderUtils) 🔧 v8.13.10
  * - layer-system.js (レイヤー取得・再構築)
  * 
  * 【子ファイル (このファイルに依存)】
@@ -271,7 +271,7 @@
         }
 
         /**
-         * 🔧 v8.13.9: 反転処理完全修正版
+         * 🔧 v8.13.10: 反転処理完全修正版
          * skipHistory=true で History二重登録を防止
          */
         flipLayer(layer, direction, skipHistory = false) {
@@ -424,7 +424,7 @@
         }
 
         /**
-         * 🔧 v8.13.9: 変形確定処理
+         * 🔧 v8.13.10: 変形確定処理
          * skipHistory=true で History二重登録を防止
          */
         confirmTransform(layer, skipHistory = false) {
@@ -525,7 +525,7 @@
         }
 
         /**
-         * 🔧 v8.13.9: カメラフレーム中央基準の変換行列
+         * 🔧 v8.13.10: カメラフレーム中央基準の変換行列
          * 反転時もカメラフレーム中央を軸に正しく変換
          */
         _createTransformMatrix(transform, centerX, centerY) {
@@ -549,7 +549,7 @@
         }
         
         /**
-         * 🔧 v8.13.9: localX/localY 形式対応
+         * 🔧 v8.13.10: localX/localY 形式対応
          */
         _transformPoints(points, matrix) {
             return points.map(p => {
@@ -577,7 +577,7 @@
         }
         
         /**
-         * 🔧 v8.13.9: slider-utils.js v8.13.9使用
+         * 🔧 v8.13.10: slider-utils.js v8.13.10使用
          */
         _setupTransformPanel() {
             this.transformPanel = document.getElementById('layer-transform-panel');
@@ -612,7 +612,7 @@
                 this.config.layer.minScale, this.config.layer.maxScale, 1.0,
                 (value) => value.toFixed(2) + 'x');
             
-            // 🔧 v8.13.9: 反転ボタン - pointerdown統一
+            // 🔧 v8.13.10: 反転ボタン - pointerdown統一
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
@@ -646,7 +646,7 @@
         }
 
         /**
-         * 🔧 v8.13.9: slider-utils.js v8.13.9使用
+         * 🔧 v8.13.10: slider-utils.js v8.13.10使用
          */
         _setupSlider(sliderId, property, min, max, initial, formatCallback) {
             const container = document.getElementById(sliderId);
@@ -792,7 +792,7 @@
         }
 
         /**
-         * 🔧 v8.13.9: ドラッグ操作のスライダー即時反映
+         * 🔧 v8.13.10: ドラッグ操作のスライダー即時反映
          */
         _handleDrag(e) {
             if (!this.coordinateSystem) return;
@@ -934,7 +934,7 @@
         }
 
         /**
-         * 🔧 v8.13.9: スライダーUI更新
+         * 🔧 v8.13.10: スライダーUI更新
          */
         updateTransformPanelValues(layer) {
             if (!layer?.layerData || !this.transformPanel) return;
@@ -976,7 +976,7 @@
         }
 
         /**
-         * 🔧 v8.13.9: 反転ボタンUI更新
+         * 🔧 v8.13.10: 反転ボタンUI更新
          */
         updateFlipButtons(layer) {
             if (!layer?.layerData || !this.transformPanel) return;
@@ -1060,9 +1060,9 @@
 
 })();
 
-console.log('✅ layer-transform.js v8.13.9 loaded');
+console.log('✅ layer-transform.js v8.13.10 loaded');
 console.log('   🔧 反転ボタン: pointerdown統一（トグル動作完全対応）');
 console.log('   🔧 反転処理: カメラフレーム中央基準 + skipHistory機能');
-console.log('   🔧 スライダー: slider-utils.js v8.13.9使用（PointerEvent完全対応）');
+console.log('   🔧 スライダー: slider-utils.js v8.13.10使用（PointerEvent完全対応）');
 console.log('   🔧 回転ループ: -180°/+180°での循環動作');
 console.log('   🔧 ドラッグ操作: Vキー+ドラッグ→スライダー即時反映');
