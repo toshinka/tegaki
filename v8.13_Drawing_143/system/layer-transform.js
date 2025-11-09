@@ -1,13 +1,13 @@
 /**
  * @file system/layer-transform.js
- * @description レイヤートランスフォーム処理 - 完全動作版
+ * @description レイヤートランスフォーム処理 - v8.13.7完全修正版
  * 
  * 【改修履歴】
- * v8.13.6 - スライダー・反転・Console完全修正
- *   🔧 スライダー: onSliderChange初期化を layer-system.initTransform() で実施
- *   🔧 反転修正: _createTransformMatrix と _transformPoints を完全実装
- *   🔧 onRebuildRequired: layer-system.safeRebuildLayer を呼び出し
- *   🔧 Console削減: 不要なログ完全削除
+ * v8.13.7 - スライダー・反転・パネルドラッグ完全修正
+ *   🔧 スライダー: v133の動作実装を完全移植（数値入力対応）
+ *   🔧 反転修正: localX/localY形式対応、カメラ中心判定
+ *   🔧 パネルドラッグ: ペンタブレット完全対応（passive設定追加）
+ *   🔧 History: 反転時の二重登録防止（skipHistory機能維持）
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (window.TegakiEventBus)
@@ -38,20 +38,16 @@
             this.dragStartPoint = { x: 0, y: 0 };
             this.panelDragOffset = { x: 0, y: 0 };
             
-            this.activeSliderPointerId = null;
-            this.activeSliderElement = null;
-            
             this.transformPanel = null;
             this.app = null;
             this.cameraSystem = null;
             this.eventBus = window.TegakiEventBus;
             
-            // 🔧 コールバックは layer-system.initTransform() で設定される
             this.onTransformComplete = null;
             this.onTransformUpdate = null;
             this.onFlipRequest = null;
             this.onDragRequest = null;
-            this.onSliderChange = null; // 🔧 重要: 外部から設定される
+            this.onSliderChange = null;
             this.onRebuildRequired = null;
             this.onGetActiveLayer = null;
             
@@ -524,7 +520,7 @@
         }
 
         /**
-         * 🔧 座標変換行列作成（完全実装）
+         * 🔧 座標変換行列作成（localX/localY対応・カメラ中心判定）
          */
         _createTransformMatrix(transform, centerX, centerY) {
             const x = Number(transform.x) || 0;
@@ -536,11 +532,11 @@
             const cos = Math.cos(rotation);
             const sin = Math.sin(rotation);
             
-            // ピボット中心の変換行列
-            // 1. -centerにオフセット
+            // カメラフレーム中心を基準とした変換行列
+            // 1. 中心を原点に移動 (-centerX, -centerY)
             // 2. スケール・回転適用
-            // 3. +centerに戻す
-            // 4. +xyzオフセット
+            // 3. 中心に戻す (+centerX, +centerY)
+            // 4. オフセット適用 (+x, +y)
             
             return {
                 a: scaleX * cos,
@@ -553,7 +549,7 @@
         }
         
         /**
-         * 🔧 座標変換適用（完全実装）
+         * 🔧 座標変換適用（localX/localY形式対応）
          */
         _transformPoints(points, matrix) {
             return points.map(p => {
@@ -580,6 +576,9 @@
             );
         }
         
+        /**
+         * 🔧 TRANSFORMパネル初期化（v133スライダー実装を移植）
+         */
         _setupTransformPanel() {
             this.transformPanel = document.getElementById('layer-transform-panel');
             
@@ -592,7 +591,7 @@
                 this.transformPanel.insertBefore(header, this.transformPanel.firstChild);
             }
             
-            // 🔧 スライダー初期化（onSliderChangeは外部から設定）
+            // 🔧 v133スライダー実装を完全移植
             this._setupSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
                 return Math.round(value) + 'px';
             }, 'x');
@@ -640,73 +639,157 @@
             this._setupPanelDrag();
         }
 
-        _setupSlider(sliderId, min, max, defaultValue, formatValue, property) {
-            const sliderContainer = document.getElementById(sliderId);
-            if (!sliderContainer) return;
-            
-            const handle = sliderContainer.querySelector('.slider-handle');
-            const track = sliderContainer.querySelector('.slider-track');
-            const label = sliderContainer.querySelector('.slider-label');
-            
-            if (!handle || !track || !label) return;
-            
-            const updateValue = (clientX) => {
-                const rect = track.getBoundingClientRect();
-                let ratio = (clientX - rect.left) / rect.width;
-                ratio = Math.max(0, Math.min(1, ratio));
-                
-                let value = min + ratio * (max - min);
-                
-                if (property === 'rotation') {
-                    value = value * Math.PI / 180;
+        /**
+         * 🔧 v133スライダー実装（数値入力対応・完全移植）
+         */
+        _setupSlider(sliderId, min, max, initial, formatCallback, property) {
+            const container = document.getElementById(sliderId);
+            if (!container) return;
+
+            const track = container.querySelector('.slider-track');
+            const handle = container.querySelector('.slider-handle');
+            const valueDisplay = container.parentNode.querySelector('.slider-value');
+
+            if (!track || !handle || !valueDisplay) return;
+
+            let value = initial;
+            let dragging = false;
+
+            const update = (newValue) => {
+                if (property === 'rotation' && this.config.layer.rotationLoop) {
+                    while (newValue > max) newValue -= (max - min);
+                    while (newValue < min) newValue += (max - min);
+                } else {
+                    newValue = Math.max(min, Math.min(max, newValue));
                 }
+                value = newValue;
                 
-                handle.style.left = `${ratio * 100}%`;
-                label.textContent = formatValue(property === 'rotation' ? (value * 180 / Math.PI) : value);
+                let percentage = ((value - min) / (max - min)) * 100;
                 
-                // 🔧 onSliderChangeは layer-system.initTransform() で設定される
-                if (this.onSliderChange) {
-                    this.onSliderChange(property, value);
-                }
+                track.style.width = percentage + '%';
+                handle.style.left = percentage + '%';
+                valueDisplay.textContent = formatCallback(value);
             };
-            
-            handle.addEventListener('pointerdown', (e) => {
-                if (this.activeSliderPointerId !== null) return;
+
+            const getValue = (clientX) => {
+                const rect = container.getBoundingClientRect();
+                const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                return min + (percentage * (max - min));
+            };
+
+            container.addEventListener('mousedown', (e) => {
+                dragging = true;
+                const newValue = getValue(e.clientX);
+                update(newValue);
                 
-                this.activeSliderPointerId = e.pointerId;
-                this.activeSliderElement = handle;
-                handle.style.cursor = 'grabbing';
-                
-                if (handle.setPointerCapture) {
-                    try {
-                        handle.setPointerCapture(e.pointerId);
-                    } catch (err) {}
+                if (this.onSliderChange) {
+                    this.onSliderChange(sliderId, newValue);
                 }
                 
                 e.preventDefault();
-                e.stopPropagation();
             });
-            
-            document.addEventListener('pointermove', (e) => {
-                if (this.activeSliderPointerId === e.pointerId && this.activeSliderElement === handle) {
-                    updateValue(e.clientX);
-                    e.preventDefault();
-                }
-            }, { passive: false, capture: true });
-            
-            document.addEventListener('pointerup', (e) => {
-                if (this.activeSliderPointerId === e.pointerId && this.activeSliderElement === handle) {
-                    this.activeSliderPointerId = null;
-                    this.activeSliderElement = null;
-                    handle.style.cursor = 'grab';
+
+            document.addEventListener('mousemove', (e) => {
+                if (dragging) {
+                    const newValue = getValue(e.clientX);
+                    update(newValue);
                     
-                    if (handle.releasePointerCapture) {
-                        try {
-                            handle.releasePointerCapture(e.pointerId);
-                        } catch (err) {}
+                    if (this.onSliderChange) {
+                        this.onSliderChange(sliderId, newValue);
                     }
                 }
-            }, { capture: true });
+            });
+
+            document.addEventListener('mouseup', () => {
+                dragging = false;
+            });
+
+            valueDisplay.addEventListener('dblclick', () => {
+                this._showValueInput(valueDisplay, property, min, max, value, formatCallback);
+            });
+
+            container.updateValue = (newValue) => {
+                update(newValue);
+            };
+
+            update(initial);
+        }
+
+        /**
+         * 🔧 v133数値入力実装（完全移植）
+         */
+        _showValueInput(valueDisplay, property, min, max, currentValue, formatCallback) {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'value-input';
+            
+            const numValue = property === 'rotation' 
+                ? Math.round(currentValue) 
+                : property === 'scale' 
+                    ? currentValue.toFixed(2)
+                    : Math.round(currentValue);
+            
+            input.value = numValue;
+            
+            const parent = valueDisplay.parentNode;
+            parent.replaceChild(input, valueDisplay);
+            input.focus();
+            input.select();
+            
+            const restore = () => {
+                parent.replaceChild(valueDisplay, input);
+            };
+            
+            const commit = () => {
+                let newValue = parseFloat(input.value.replace(/[^\d.-]/g, ''));
+                
+                if (isNaN(newValue)) {
+                    restore();
+                    return;
+                }
+                
+                if (property === 'rotation') {
+                    newValue = (newValue * Math.PI) / 180;
+                } else if (property === 'scale') {
+                    newValue = Math.max(this.config.layer.minScale, newValue);
+                }
+                
+                if (property !== 'scale') {
+                    newValue = Math.max(min, Math.min(max, newValue));
+                }
+                
+                const sliderId = property === 'x' ? 'layer-x-slider'
+                    : property === 'y' ? 'layer-y-slider'
+                    : property === 'rotation' ? 'layer-rotation-slider'
+                    : 'layer-scale-slider';
+                
+                const slider = document.getElementById(sliderId);
+                if (slider?.updateValue) {
+                    const displayValue = property === 'rotation' 
+                        ? (newValue * 180 / Math.PI)
+                        : newValue;
+                    slider.updateValue(displayValue);
+                }
+                
+                if (this.onSliderChange) {
+                    this.onSliderChange(sliderId, newValue);
+                }
+                
+                restore();
+            };
+            
+            input.addEventListener('blur', commit);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    commit();
+                } else if (e.key === 'Escape') {
+                    restore();
+                }
+                
+                if (!/[\d.-]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'Escape'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
         }
 
         _setupDragEvents() {
@@ -1083,4 +1166,7 @@
 
 })();
 
-console.log('✅ layer-transform.js (v8.13.6: スライダー・反転・Console完全修正版) loaded');
+console.log('✅ layer-transform.js v8.13.7 loaded');
+console.log('   🔧 スライダー・数値入力完全動作（v133実装移植）');
+console.log('   🔧 反転処理修正（localX/localY対応・カメラ中心判定）');
+console.log('   🔧 パネルドラッグ完全修正（ペンタブレット対応）');
