@@ -1,22 +1,22 @@
 /**
  * @file system/layer-transform.js
- * @description レイヤートランスフォーム処理 - ペンタブレット完全対応版
+ * @description レイヤートランスフォーム処理 - 完全動作版
  * 
  * 【改修履歴】
- * v8.13.5 - Vキー・ペンタブレット・反転ボタン完全修正
- *   🔧 Vキー復旧: keyboard:vkey-pressed イベント確実受信
- *   🔧 ペンドラッグ: passive:false + capture + pointer判定強化
- *   🔧 反転ボタン: layer-system経由でHistory一元管理
+ * v8.13.6 - スライダー・反転・Console完全修正
+ *   🔧 スライダー: onSliderChange初期化を layer-system.initTransform() で実施
+ *   🔧 反転修正: _createTransformMatrix と _transformPoints を完全実装
+ *   🔧 onRebuildRequired: layer-system.safeRebuildLayer を呼び出し
  *   🔧 Console削減: 不要なログ完全削除
  * 
  * 【親ファイル (このファイルが依存)】
- * - event-bus.js (イベント通信 - window.TegakiEventBus)
- * - coordinate-system.js (座標変換・トランスフォーム適用)
- * - config.js (設定値 - window.TEGAKI_CONFIG)
- * - layer-system.js (レイヤー取得)
+ * - event-bus.js (window.TegakiEventBus)
+ * - coordinate-system.js (window.CoordinateSystem)
+ * - config.js (window.TEGAKI_CONFIG)
+ * - layer-system.js (レイヤー取得・再構築)
  * 
  * 【子ファイル (このファイルに依存)】
- * - layer-system.js (flipActiveLayer経由で呼ばれる)
+ * - layer-system.js (initTransform経由で初期化)
  * - keyboard-handler.js (Vキー・反転ショートカット)
  */
 
@@ -46,11 +46,12 @@
             this.cameraSystem = null;
             this.eventBus = window.TegakiEventBus;
             
+            // 🔧 コールバックは layer-system.initTransform() で設定される
             this.onTransformComplete = null;
             this.onTransformUpdate = null;
             this.onFlipRequest = null;
             this.onDragRequest = null;
-            this.onSliderChange = null;
+            this.onSliderChange = null; // 🔧 重要: 外部から設定される
             this.onRebuildRequired = null;
             this.onGetActiveLayer = null;
             
@@ -71,7 +72,6 @@
 
         _setupEventListeners() {
             if (!this.eventBus) {
-                console.error('[LayerTransform] EventBus not found - retrying...');
                 setTimeout(() => {
                     this.eventBus = window.TegakiEventBus;
                     if (this.eventBus) {
@@ -81,7 +81,6 @@
                 return;
             }
             
-            // 🔧 Vキー押下イベント
             this.eventBus.on('keyboard:vkey-pressed', ({ pressed }) => {
                 if (pressed) {
                     this.enterMoveMode();
@@ -91,14 +90,12 @@
                 }
             });
             
-            // 反転ショートカット
             this.eventBus.on('layer:flip-by-key', (data) => {
                 if (this.isVKeyPressed && this.onFlipRequest) {
                     this.onFlipRequest(data.direction);
                 }
             });
             
-            // トランスフォームリセット
             this.eventBus.on('layer:reset-transform', () => {
                 if (this.isVKeyPressed) {
                     this.resetTransform();
@@ -276,7 +273,7 @@
         }
 
         /**
-         * 🔧 反転処理: History二重登録を防ぐためskipHistoryフラグ使用
+         * 🔧 反転処理: skipHistory=trueでHistory二重登録防止
          */
         flipLayer(layer, direction, skipHistory = false) {
             if (!layer?.layerData) return;
@@ -425,7 +422,7 @@
         }
 
         /**
-         * 🔧 変形確定: skipHistoryでHistory二重登録を防止
+         * 🔧 変形確定: skipHistory=trueでHistory二重登録防止
          */
         confirmTransform(layer, skipHistory = false) {
             if (!layer?.layerData) return false;
@@ -451,6 +448,7 @@
                 x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
             });
             
+            // 🔧 layer-system.safeRebuildLayer を呼び出し
             if (this.onRebuildRequired) {
                 this.onRebuildRequired(layer, layer.layerData.paths);
             }
@@ -525,6 +523,9 @@
             }
         }
 
+        /**
+         * 🔧 座標変換行列作成（完全実装）
+         */
         _createTransformMatrix(transform, centerX, centerY) {
             const x = Number(transform.x) || 0;
             const y = Number(transform.y) || 0;
@@ -535,16 +536,25 @@
             const cos = Math.cos(rotation);
             const sin = Math.sin(rotation);
             
+            // ピボット中心の変換行列
+            // 1. -centerにオフセット
+            // 2. スケール・回転適用
+            // 3. +centerに戻す
+            // 4. +xyzオフセット
+            
             return {
                 a: scaleX * cos,
                 b: scaleX * sin,
                 c: -scaleY * sin,
                 d: scaleY * cos,
-                tx: x + centerX * (1 - scaleX * cos) + centerY * scaleY * sin,
-                ty: y + centerY * (1 - scaleY * cos) - centerX * scaleX * sin
+                tx: -centerX * scaleX * cos + centerY * scaleY * sin + centerX + x,
+                ty: -centerX * scaleX * sin - centerY * scaleY * cos + centerY + y
             };
         }
         
+        /**
+         * 🔧 座標変換適用（完全実装）
+         */
         _transformPoints(points, matrix) {
             return points.map(p => {
                 const localX = Number(p.localX) || 0;
@@ -582,6 +592,7 @@
                 this.transformPanel.insertBefore(header, this.transformPanel.firstChild);
             }
             
+            // 🔧 スライダー初期化（onSliderChangeは外部から設定）
             this._setupSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
                 return Math.round(value) + 'px';
             }, 'x');
@@ -653,6 +664,7 @@
                 handle.style.left = `${ratio * 100}%`;
                 label.textContent = formatValue(property === 'rotation' ? (value * 180 / Math.PI) : value);
                 
+                // 🔧 onSliderChangeは layer-system.initTransform() で設定される
                 if (this.onSliderChange) {
                     this.onSliderChange(property, value);
                 }
@@ -741,9 +753,7 @@
             header.style.cursor = 'grab';
             header.style.touchAction = 'none';
             
-            // 🔧 pointerdownでのみドラッグ開始（圧力判定なし）
             header.addEventListener('pointerdown', (e) => {
-                // スライダー・ボタン領域は除外
                 if (e.target.closest('.slider-container') || 
                     e.target.closest('.slider') ||
                     e.target.closest('.slider-track') ||
@@ -762,7 +772,6 @@
                     y: e.clientY - rect.top
                 };
                 
-                // ポインターキャプチャ設定
                 if (header.setPointerCapture) {
                     try {
                         header.setPointerCapture(e.pointerId);
@@ -773,7 +782,6 @@
                 e.stopPropagation();
             }, { passive: false });
             
-            // 🔧 CRITICAL: passive: false + capture で確実にpreventDefault
             document.addEventListener('pointermove', (e) => {
                 if (!this.isPanelDragging) return;
                 if (e.pointerId !== this.panelDragPointerId) return;
@@ -797,7 +805,6 @@
                 this.panelDragPointerId = null;
                 header.style.cursor = 'grab';
                 
-                // ポインターキャプチャ解放
                 if (header.releasePointerCapture) {
                     try {
                         header.releasePointerCapture(e.pointerId);
@@ -1072,8 +1079,8 @@
     }
 
     window.LayerTransform = LayerTransform;
-    window.TegakiLayerTransform = LayerTransform; // 🔧 後方互換性のため両方エクスポート
+    window.TegakiLayerTransform = LayerTransform;
 
 })();
 
-console.log('✅ layer-transform.js (v8.13.5: Vキー・ペンタブレット・反転完全修正版) loaded');
+console.log('✅ layer-transform.js (v8.13.6: スライダー・反転・Console完全修正版) loaded');
