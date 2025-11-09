@@ -1,9 +1,12 @@
 /**
- * @file config.js - v8.13.11 クリーンアップ版
+ * @file config.js - v8.13.14 Phase 3+4 改修版
  * @description グローバル設定・キーマップ定義
  * 
- * 【v8.13.11 改修内容】
- * 🧹 不要なコンソールログ削除
+ * 【v8.13.14 改修内容】
+ * 🔧 Phase 3: LAYER_DELETE (Ctrl+Delete)、LAYER_CUT (Ctrl+X) 追加
+ * 🔧 Phase 3: FRAME_PREV/NEXT (←→) 単体キー化、Ctrl不要に
+ * 🔧 Phase 4: GIF_PREV_FRAME / GIF_NEXT_FRAME 削除
+ * 🧹 LAYER_CLEAR 削除 (LAYER_DELETE に統合)
  * 📝 ヘッダー依存関係明記
  * 
  * 【親ファイル (このファイルが依存)】
@@ -147,11 +150,12 @@ window.TEGAKI_KEYMAP = {
             { key: 'Delete', ctrl: false, shift: false, description: 'レイヤーの絵を削除' },
             { key: 'Backspace', ctrl: false, shift: false, description: 'レイヤーの絵を削除' }
         ],
-        LAYER_CLEAR: {
+        // 🔧 Phase 3: LAYER_CLEAR → LAYER_DELETE に改名
+        LAYER_DELETE: {
             key: 'Delete',
             ctrl: true,
             shift: false,
-            description: 'レイヤークリア'
+            description: 'アクティブレイヤー削除'
         },
         LAYER_COPY: {
             key: 'KeyC',
@@ -164,6 +168,13 @@ window.TEGAKI_KEYMAP = {
             ctrl: true,
             shift: false,
             description: 'レイヤーペースト'
+        },
+        // 🔧 Phase 3: 新規追加
+        LAYER_CUT: {
+            key: 'KeyX',
+            ctrl: true,
+            shift: false,
+            description: 'レイヤー切り取り'
         },
         LAYER_RESET: {
             key: 'Digit0',
@@ -244,6 +255,7 @@ window.TEGAKI_KEYMAP = {
             alt: false,
             description: 'レイヤー垂直反転'
         },
+        // 🔧 Phase 3: レイヤー選択（vMode=false時のみ）
         LAYER_HIERARCHY_UP: {
             key: 'ArrowUp',
             ctrl: false,
@@ -295,16 +307,17 @@ window.TEGAKI_KEYMAP = {
             vMode: false,
             description: 'カメラリセット'
         },
-        GIF_PREV_FRAME: {
+        // 🔧 Phase 3: ←→ 単体でフレーム移動（Ctrl不要）
+        FRAME_PREV: {
             key: 'ArrowLeft',
-            ctrl: true,
+            ctrl: false,
             shift: false,
             vMode: false,
             description: '前のフレーム'
         },
-        GIF_NEXT_FRAME: {
+        FRAME_NEXT: {
             key: 'ArrowRight',
-            ctrl: true,
+            ctrl: false,
             shift: false,
             vMode: false,
             description: '次のフレーム'
@@ -380,8 +393,8 @@ window.TEGAKI_KEYMAP = {
         const displayNames = {
             'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H',
             'KeyA': 'A', 'KeyN': 'N', 'KeyC': 'C', 'KeyL': 'L',
-            'KeyZ': 'Z', 'KeyY': 'Y', 'KeyQ': 'Q', 'Comma': ',',
-            'Digit0': '0', 'Plus': '+',
+            'KeyZ': 'Z', 'KeyY': 'Y', 'KeyQ': 'Q', 'KeyX': 'X',
+            'Comma': ',', 'Digit0': '0', 'Plus': '+',
             'ArrowUp': '↑', 'ArrowDown': '↓',
             'ArrowLeft': '←', 'ArrowRight': '→',
             'Space': 'Space', 'Delete': 'Delete', 'Backspace': 'Backspace'
@@ -412,6 +425,7 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
+// 🧹 Phase 4: TEGAKI_KEYCONFIG は廃止予定（後方互換のため残す）
 window.TEGAKI_KEYCONFIG = {
     pen: 'KeyP',
     eraser: 'KeyE',
@@ -441,3 +455,9 @@ window.TEGAKI_UTILS = {
         if (window.TEGAKI_CONFIG.debug) console.log(...args);
     }
 };
+
+console.log('✅ config.js v8.13.14 loaded (Phase 3+4 改修版)');
+console.log('   🔧 LAYER_DELETE: Ctrl+Delete → アクティブレイヤー削除');
+console.log('   🔧 LAYER_CUT: Ctrl+X → レイヤー切り取り');
+console.log('   🔧 FRAME_PREV/NEXT: ←→ 単体キー化（Ctrl不要）');
+console.log('   🧹 LAYER_CLEAR削除、GIF_PREV/NEXT_FRAME削除');
