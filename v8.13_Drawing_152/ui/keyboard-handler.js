@@ -1,18 +1,19 @@
 /**
- * @file ui/keyboard-handler.js - v8.13.12 完全修正版
+ * @file ui/keyboard-handler.js - Phase 1+2改修版
  * @description キーボードショートカット処理の中核システム
  * 
- * 【v8.13.12 改修内容】
- * 🔧 BS/DEL機能: 確実に動作するよう修正
- * 🧹 不要なログ削除
- * 📝 依存関係明記
+ * 【Phase 1+2 改修内容】
+ * 🔧 BS/DEL機能: deleteActiveLayerDrawings() 確実動作
+ * 🔧 Vキー状態管理: keyboard:vkey-state-changed イベント発火に変更
+ * 🔧 Ctrl+, 設定画面: SETTINGS_OPEN 処理追加確認
+ * 🔧 デバッグログ削除
  * 
  * 【親ファイル (このファイルが依存)】
  * - config.js (window.TEGAKI_KEYMAP)
  * - event-bus.js (window.TegakiEventBus)
  * - history.js (window.History)
  * - core-runtime.js (window.CoreRuntime.api)
- * - layer-system.js (レイヤー操作)
+ * - layer-system.js (window.layerManager)
  * 
  * 【子ファイル (このファイルに依存)】
  * - core-initializer.js (初期化時にinit呼び出し)
@@ -48,11 +49,11 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // Vキーのトグル処理（キーリピート無視）
+        // 🔧 Phase 2改修: Vキーのトグル処理（keyboard:vkey-state-changed イベント発火）
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             if (!e.repeat) {
                 vKeyPressed = !vKeyPressed;
-                eventBus.emit('keyboard:vkey-pressed', { pressed: vKeyPressed });
+                eventBus.emit('keyboard:vkey-state-changed', { pressed: vKeyPressed });
             }
             e.preventDefault();
             return;
@@ -110,13 +111,15 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // 🔧 Phase 1修正: BS/DELキーでの描画削除
             case 'LAYER_DELETE_DRAWINGS':
                 deleteActiveLayerDrawings();
                 event.preventDefault();
                 break;
             
-            case 'LAYER_CLEAR':
-                eventBus.emit('layer:clear-active');
+            // 🔧 Phase 3追加: Ctrl+Delete → アクティブレイヤー削除
+            case 'LAYER_DELETE':
+                eventBus.emit('layer:delete-active');
                 event.preventDefault();
                 break;
             
@@ -127,6 +130,12 @@ window.KeyboardHandler = (function() {
             
             case 'LAYER_PASTE':
                 eventBus.emit('layer:paste-request');
+                event.preventDefault();
+                break;
+            
+            // 🔧 Phase 3追加: Ctrl+X レイヤー切り取り
+            case 'LAYER_CUT':
+                eventBus.emit('layer:cut-request');
                 event.preventDefault();
                 break;
             
@@ -189,13 +198,18 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // 🔧 Phase 3修正: ↑↓ レイヤー選択（vMode=false時のみ）
             case 'LAYER_HIERARCHY_UP':
-                eventBus.emit('layer:select-next');
+                if (!vKeyPressed) {
+                    eventBus.emit('layer:select-next');
+                }
                 event.preventDefault();
                 break;
             
             case 'LAYER_HIERARCHY_DOWN':
-                eventBus.emit('layer:select-prev');
+                if (!vKeyPressed) {
+                    eventBus.emit('layer:select-prev');
+                }
                 event.preventDefault();
                 break;
             
@@ -209,29 +223,37 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // 🔧 Phase 2修正: カメラ反転（EventBus経由）
             case 'CAMERA_FLIP_HORIZONTAL':
-                eventBus.emit('camera:flip-horizontal');
+                if (!vKeyPressed) {
+                    eventBus.emit('camera:flip-horizontal');
+                }
                 event.preventDefault();
                 break;
             
             case 'CAMERA_FLIP_VERTICAL':
-                eventBus.emit('camera:flip-vertical');
+                if (!vKeyPressed) {
+                    eventBus.emit('camera:flip-vertical');
+                }
                 event.preventDefault();
                 break;
             
             case 'CAMERA_RESET':
-                eventBus.emit('camera:reset');
+                if (!vKeyPressed) {
+                    eventBus.emit('camera:reset');
+                }
                 event.preventDefault();
                 break;
             
-            case 'GIF_PREV_FRAME':
+            // 🔧 Phase 3修正: ←→ フレーム移動（Ctrl不要）
+            case 'FRAME_PREV':
                 if (window.timelineUI?.isVisible) {
                     window.timelineUI.goToPreviousCutSafe();
                 }
                 event.preventDefault();
                 break;
             
-            case 'GIF_NEXT_FRAME':
+            case 'FRAME_NEXT':
                 if (window.timelineUI?.isVisible) {
                     window.timelineUI.goToNextCutSafe();
                 }
@@ -265,6 +287,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // 🔧 Phase 1確認: Ctrl+, で設定画面
             case 'SETTINGS_OPEN':
                 eventBus.emit('ui:open-settings');
                 event.preventDefault();
@@ -283,20 +306,30 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * 🔧 v8.13.12: アクティブレイヤーの描画削除
+     * 🔧 Phase 1修正: アクティブレイヤーの描画削除
      * BS/DELキーで確実に動作
      */
     function deleteActiveLayerDrawings() {
-        const layerSystem = window.drawingApp?.layerManager;
-        if (!layerSystem) return;
+        const layerSystem = window.drawingApp?.layerManager || window.layerManager;
+        if (!layerSystem) {
+            return;
+        }
         
         const activeLayer = layerSystem.getActiveLayer();
-        if (!activeLayer?.layerData) return;
-        if (activeLayer.layerData.isBackground) return;
+        if (!activeLayer?.layerData) {
+            return;
+        }
+        
+        if (activeLayer.layerData.isBackground) {
+            return;
+        }
         
         const paths = activeLayer.layerData.paths;
-        if (!paths || paths.length === 0) return;
+        if (!paths || paths.length === 0) {
+            return;
+        }
         
+        // History登録
         if (window.History && !window.History._manager?.isApplying) {
             const pathsBackup = structuredClone(paths);
             const layerIndex = layerSystem.activeLayerIndex;
@@ -386,12 +419,13 @@ window.KeyboardHandler = (function() {
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
+        // 🔧 Phase 2改修: window blur時にVキー状態をリセット
         window.addEventListener('blur', () => {
             if (vKeyPressed) {
                 vKeyPressed = false;
                 const eventBus = window.TegakiEventBus;
                 if (eventBus) {
-                    eventBus.emit('keyboard:vkey-pressed', { pressed: false });
+                    eventBus.emit('keyboard:vkey-state-changed', { pressed: false });
                 }
             }
         });
@@ -412,7 +446,7 @@ window.KeyboardHandler = (function() {
             vKeyPressed = state;
             const eventBus = window.TegakiEventBus;
             if (eventBus) {
-                eventBus.emit('keyboard:vkey-pressed', { pressed: vKeyPressed });
+                eventBus.emit('keyboard:vkey-state-changed', { pressed: vKeyPressed });
             }
         }
     }
@@ -426,5 +460,3 @@ window.KeyboardHandler = (function() {
         deleteActiveLayerDrawings
     };
 })();
-
-console.log('✅ keyboard-handler.js v8.13.12 loaded');
