@@ -1,0 +1,301 @@
+# ブラウザお絵かきツール v8.13 - 段階的改修計画書
+
+## 【改修方針】
+DRY/SOLID原則の徹底により、責務重複を排除し保守性を向上させる。
+各Phase完了後に動作確認を行い、問題があれば即座にロールバック可能とする。
+
+---
+
+## Phase 1: Canvas リサイズロジックの一元化【最優先】
+
+### 対象ファイル
+- **改修**: `core-runtime.js`
+- **改修**: `core-engine.js`
+- **参考**: `config.js`, `system/camera-system.js`
+
+### 問題点
+- `CoreEngine.resizeCanvas()` と `CoreRuntime.updateCanvasSize()` で63行のロジックが完全重複
+
+### 改修内容
+
+#### core-engine.js
+- **保持**: `resizeCanvas(newWidth, newHeight)` メソッド（真実の情報源）
+- **内容**: CONFIG更新、renderer.resize、cameraSystem.onCanvasResize、レイヤー中心位置調整、サムネイル更新、イベント発行
+
+#### core-runtime.js
+- **削除**: `updateCanvasSize()` の実装ロジック全体（L111-173）
+- **変更**: Thin Wrapperに置き換え
+```javascript
+updateCanvasSize(w, h) {
+    return coreEngine.resizeCanvas(w, h);
+}
+```
+
+### 検証項目
+- リサイズポップアップからのキャンバスサイズ変更
+- レイヤー中心位置の正確性
+- サムネイル自動更新
+
+---
+
+## Phase 2: ExportManager 初期化の一元化
+
+### 対象ファイル
+- **改修**: `core-initializer.js`
+- **改修**: `core-runtime.js`
+- **改修**: `core-engine.js`
+- **参考**: `system/export-manager.js`, `system/exporters/*.js`
+
+### 問題点
+- ExportManager生成とエクスポーター登録が `core-initializer.js` と `core-runtime.js` で重複
+
+### 改修内容
+
+#### core-engine.js
+- **追加**: `initializeExportManager()` メソッド
+- **責務**: ExportManagerインスタンス生成、全エクスポーター登録、`this.exportManager` への格納
+- **呼び出し元**: constructor内
+
+#### core-initializer.js
+- **削除**: ExportManager生成コード（L126-133）
+- **変更**: `coreEngine.exportManager` を取得して他モジュールに渡すのみ
+
+#### core-runtime.js
+- **削除**: ExportManager生成コード（L44-51）
+- **変更**: `api.export` は `coreEngine.exportManager` のメソッドをラップ
+
+### 検証項目
+- PNG/APNG/GIF/WebP/MP4 エクスポート機能
+- クイックエクスポートUI
+
+---
+
+## Phase 3: Drawing API の簡素化（間接レイヤー削除）
+
+### 対象ファイル
+- **改修**: `system/drawing/drawing-engine.js`
+- **改修**: `core-runtime.js`
+- **参考**: `system/drawing/brush-core.js`, `system/drawing/brush-settings.js`
+
+### 問題点
+- `CoreRuntime` → `DrawingEngine` → `BrushCore` の不要な間接レイヤー
+
+### 改修内容
+
+#### drawing-engine.js
+- **削除**: `setTool()`, `getTool()`, `setBrushSettings()` メソッド（L339-361）
+- **削除**: `currentTool` プロパティ
+- **保持**: 座標変換とストローク制御の責務のみ
+
+#### core-runtime.js
+- **変更**: `api.tool.switch()` を `BrushCore.setTool()` に直接接続
+- **変更**: `api.brush.setSettings()` を `window.brushSettings.updateSettings()` に直接接続
+```javascript
+api.tool = {
+    switch: (toolName) => window.BrushCore.setTool(toolName)
+};
+```
+
+### 検証項目
+- ペン/消しゴムツール切り替え
+- ブラシ設定変更（サイズ、色、不透明度）
+
+---
+
+## Phase 4: CameraSystem 責務の整理
+
+### 対象ファイル
+- **改修**: `system/camera-system.js`
+- **改修**: `ui/keyboard-handler.js`
+- **参考**: `core-runtime.js`
+
+### 問題点
+- CameraSystemに `switchTool()` メソッドが存在（責務の逸脱）
+
+### 改修内容
+
+#### camera-system.js
+- **削除**: `switchTool(toolName)` メソッド（L307-318）
+- **保持**: カメラ制御（ズーム、パン、回転）の責務のみ
+
+#### keyboard-handler.js（または呼び出し元）
+- **変更**: ツール切り替えショートカットを `CoreRuntime.api.tool.switch()` に変更
+- **削除**: `cameraSystem.switchTool()` の呼び出し
+
+### 検証項目
+- キーボードショートカットによるツール切り替え
+- カメラ操作（ズーム、パン、回転）
+
+---
+
+## Phase 5: UI/システム層の疎結合化（イベント駆動への移行）
+
+### 対象ファイル
+- **改修**: `system/layer-system.js`
+- **改修**: `system/layer-transform.js`
+- **改修**: `ui/layer-panel-renderer.js`
+- **参考**: `system/event-bus.js`
+
+### 問題点
+- LayerSystemとLayerTransformがUI更新メソッドを直接呼び出し（Model→View依存）
+
+### 改修内容
+
+#### layer-system.js
+- **削除**: `updateLayerPanelUI()`, `updateStatusDisplay()` の直接呼び出し
+- **追加**: EventBus通知への置き換え
+```javascript
+deleteLayer(layerId) {
+    // ... 削除処理 ...
+    this.eventBus.emit('layer:deleted', { layerId });
+    this.eventBus.emit('layer:list-changed', { layers: this.layers });
+}
+```
+
+#### layer-transform.js
+- **削除**: `updateTransformPanel()` 内のDOM直接操作
+- **追加**: EventBus通知
+```javascript
+setPosition(x, y) {
+    this.x = x;
+    this.y = y;
+    this.eventBus.emit('layer:transform-changed', { 
+        layerId: this.layerId, 
+        transform: { x, y, rotation: this.rotation, scale: this.scale } 
+    });
+}
+```
+
+#### layer-panel-renderer.js
+- **追加**: EventBusリスナーの登録
+```javascript
+init() {
+    this.eventBus.on('layer:deleted', this._onLayerDeleted.bind(this));
+    this.eventBus.on('layer:transform-changed', this._onTransformChanged.bind(this));
+}
+```
+
+### 検証項目
+- レイヤー追加/削除/並び替え
+- レイヤー変形パラメータ変更
+- UI自動更新
+
+---
+
+## Phase 6: グローバルシングルトン依存の削減（DIP改善）
+
+### 対象ファイル
+- **改修**: `system/drawing/brush-core.js`
+- **改修**: `system/drawing/stroke-renderer.js`
+- **改修**: `core-engine.js`
+- **参考**: `system/drawing/brush-settings.js`
+
+### 問題点
+- `window.brushSettings`, `window.BrushCore` へのグローバルアクセス
+
+### 改修内容
+
+#### brush-core.js
+- **削除**: `init()` メソッド内の `window.*` 依存
+- **変更**: constructor で依存性を受け取る
+```javascript
+constructor(strokeRecorder, strokeRenderer, brushSettings) {
+    this.strokeRecorder = strokeRecorder;
+    this.strokeRenderer = strokeRenderer;
+    this.brushSettings = brushSettings;
+}
+```
+
+#### stroke-renderer.js
+- **削除**: `window.brushSettings` への直接アクセス
+- **変更**: constructor で BrushSettings を受け取る
+
+#### core-engine.js
+- **変更**: 依存性を constructor で生成し、注入
+```javascript
+constructor() {
+    this.brushSettings = new BrushSettings();
+    this.strokeRecorder = new StrokeRecorder(/* ... */);
+    this.strokeRenderer = new StrokeRenderer(/* ... */, this.brushSettings);
+    this.brushCore = new BrushCore(this.strokeRecorder, this.strokeRenderer, this.brushSettings);
+}
+```
+
+### 検証項目
+- 全描画機能（ペン、消しゴム）
+- ブラシ設定の反映
+
+---
+
+## 改修後の責務分界（最終状態）
+
+### core-engine.js
+- システム統合管理
+- コア機能実装（リサイズ、エクスポート初期化）
+- 依存性注入の中心
+
+### core-runtime.js
+- 外部API（Thin Wrapper）
+- レガシー互換性
+- グローバルアクセスポイント
+
+### core-initializer.js
+- 初期化シーケンス制御
+- UIコンポーネント生成
+- CoreEngine/CoreRuntimeの起動
+
+### drawing-engine.js
+- 座標変換の一元化
+- PointerEvent処理
+- ストローク制御の開始/終了
+
+### camera-system.js
+- World座標系の制御のみ
+- ズーム、パン、回転
+
+### layer-system.js / layer-transform.js
+- データ管理とロジック
+- EventBus経由の通知のみ
+- UI層への直接依存なし
+
+---
+
+## 各Phase完了時の確認コマンド
+
+```javascript
+// Console確認用
+console.log('=== Phase X 完了確認 ===');
+console.log('CoreEngine:', window.coreEngine);
+console.log('ExportManager:', window.coreEngine.exportManager);
+console.log('BrushCore:', window.BrushCore);
+console.log('BrushSettings:', window.brushSettings);
+
+// 簡易動作テスト
+CoreRuntime.updateCanvasSize(800, 600);  // Phase 1
+CoreRuntime.api.export.exportPNG();       // Phase 2
+CoreRuntime.api.tool.switch('eraser');    // Phase 3
+```
+
+---
+
+## 改修順序の根拠
+
+1. **Phase 1**: 最大の重複（63行）、影響範囲が明確
+2. **Phase 2**: 初期化の重複、Phase 1完了後が安全
+3. **Phase 3**: API簡素化、Phase 1-2の基盤が必要
+4. **Phase 4**: 小規模な責務修正、独立性が高い
+5. **Phase 5**: UI/システム分離、大規模変更のためPhase 1-4完了後
+6. **Phase 6**: 最終的なアーキテクチャ改善、全Phase完了後
+
+---
+
+## 推定工数
+
+- Phase 1: 1-2時間
+- Phase 2: 1-2時間
+- Phase 3: 2-3時間
+- Phase 4: 1時間
+- Phase 5: 3-4時間
+- Phase 6: 3-4時間
+
+**合計**: 11-16時間（テスト含む）
