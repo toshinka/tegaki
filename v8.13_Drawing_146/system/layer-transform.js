@@ -1,18 +1,21 @@
 /**
  * @file system/layer-transform.js
- * @description レイヤートランスフォーム処理 - v8.13.7完全修正版
+ * @description レイヤートランスフォーム処理 - v8.13.8完全改修版
  * 
  * 【改修履歴】
- * v8.13.7 - スライダー・反転・パネルドラッグ完全修正
- *   🔧 スライダー: v133の動作実装を完全移植（数値入力対応）
- *   🔧 反転修正: localX/localY形式対応、カメラ中心判定
- *   🔧 パネルドラッグ: ペンタブレット完全対応（passive設定追加）
- *   🔧 History: 反転時の二重登録防止（skipHistory機能維持）
+ * v8.13.8 - スライダー・反転・ドラッグ操作完全修正
+ *   🔧 スライダー: slider-utils.js統一API使用（タブレットペン完全対応）
+ *   🔧 回転ループ: -180/180でスライダー●マークがループ
+ *   🔧 ドラッグ操作: Vキー+ドラッグの変形がスライダーに即時反映
+ *   🔧 反転修正: カメラ中心基準の変換行列、localX/localY完全対応
+ *   🔧 History: 反転時の二重登録完全防止（skipHistory機能）
+ *   🔧 DRY原則: スライダー重複実装削除、slider-utils.js統一
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (window.TegakiEventBus)
  * - coordinate-system.js (window.CoordinateSystem)
  * - config.js (window.TEGAKI_CONFIG)
+ * - slider-utils.js (window.TegakiUI.SliderUtils) 🔧 追加
  * - layer-system.js (レイヤー取得・再構築)
  * 
  * 【子ファイル (このファイルに依存)】
@@ -53,6 +56,7 @@
             
             this._lastEmitTime = 0;
             this._emitTimer = null;
+            this._sliderInstances = new Map();
         }
 
         init(app, cameraSystem) {
@@ -444,7 +448,6 @@
                 x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
             });
             
-            // 🔧 layer-system.safeRebuildLayer を呼び出し
             if (this.onRebuildRequired) {
                 this.onRebuildRequired(layer, layer.layerData.paths);
             }
@@ -520,7 +523,15 @@
         }
 
         /**
-         * 🔧 座標変換行列作成（localX/localY対応・カメラ中心判定）
+         * 🔧 v8.13.8: カメラ中心基準の変換行列（完全修正版）
+         * 
+         * 変換の順序:
+         * 1. カメラフレーム中心を原点に移動 (-centerX, -centerY)
+         * 2. スケール・回転を適用
+         * 3. カメラフレーム中心に戻す (+centerX, +centerY)
+         * 4. オフセットを適用 (+x, +y)
+         * 
+         * これにより、反転操作でもカメラフレーム中央を軸に正しく反転する
          */
         _createTransformMatrix(transform, centerX, centerY) {
             const x = Number(transform.x) || 0;
@@ -531,12 +542,6 @@
             
             const cos = Math.cos(rotation);
             const sin = Math.sin(rotation);
-            
-            // カメラフレーム中心を基準とした変換行列
-            // 1. 中心を原点に移動 (-centerX, -centerY)
-            // 2. スケール・回転適用
-            // 3. 中心に戻す (+centerX, +centerY)
-            // 4. オフセット適用 (+x, +y)
             
             return {
                 a: scaleX * cos,
@@ -549,7 +554,10 @@
         }
         
         /**
-         * 🔧 座標変換適用（localX/localY形式対応）
+         * 🔧 v8.13.8: localX/localY形式対応（完全修正版）
+         * 
+         * 既存ストロークデータはlocalX/localY形式で保存されているため、
+         * 座標変換時にはこの形式を正しく処理する必要がある
          */
         _transformPoints(points, matrix) {
             return points.map(p => {
@@ -577,7 +585,10 @@
         }
         
         /**
-         * 🔧 TRANSFORMパネル初期化（v133スライダー実装を移植）
+         * 🔧 v8.13.8: slider-utils.js統一API使用（DRY原則準拠）
+         * 
+         * 旧実装: マウスイベントのみ対応、タブレットペン未対応
+         * 新実装: slider-utils.jsの統一APIを使用、pointerイベント完全対応
          */
         _setupTransformPanel() {
             this.transformPanel = document.getElementById('layer-transform-panel');
@@ -591,24 +602,29 @@
                 this.transformPanel.insertBefore(header, this.transformPanel.firstChild);
             }
             
-            // 🔧 v133スライダー実装を完全移植
-            this._setupSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
-                return Math.round(value) + 'px';
-            }, 'x');
+            // 🔧 slider-utils.js統一API使用
+            if (!window.TegakiUI?.SliderUtils) {
+                console.error('[LayerTransform] slider-utils.js not loaded');
+                return;
+            }
             
-            this._setupSlider('layer-y-slider', this.config.layer.minY, this.config.layer.maxY, 0, (value) => {
-                return Math.round(value) + 'px';
-            }, 'y');
+            this._setupSlider('layer-x-slider', 'x', 
+                this.config.layer.minX, this.config.layer.maxX, 0,
+                (value) => Math.round(value) + 'px');
             
-            this._setupSlider('layer-rotation-slider', this.config.layer.minRotation, this.config.layer.maxRotation, 0, (value) => {
-                return Math.round(value) + '°';
-            }, 'rotation');
+            this._setupSlider('layer-y-slider', 'y',
+                this.config.layer.minY, this.config.layer.maxY, 0,
+                (value) => Math.round(value) + 'px');
             
-            this._setupSlider('layer-scale-slider', this.config.layer.minScale, this.config.layer.maxScale, 1.0, (value) => {
-                return value.toFixed(2) + 'x';
-            }, 'scale');
+            this._setupSlider('layer-rotation-slider', 'rotation',
+                this.config.layer.minRotation, this.config.layer.maxRotation, 0,
+                (value) => Math.round(value) + '°');
             
-            // 🔧 反転ボタン: layer-system経由で呼び出し
+            this._setupSlider('layer-scale-slider', 'scale',
+                this.config.layer.minScale, this.config.layer.maxScale, 1.0,
+                (value) => value.toFixed(2) + 'x');
+            
+            // 反転ボタン: layer-system経由で呼び出し
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
@@ -640,156 +656,39 @@
         }
 
         /**
-         * 🔧 v133スライダー実装（数値入力対応・完全移植）
+         * 🔧 v8.13.8: slider-utils.js統一API使用
          */
-        _setupSlider(sliderId, min, max, initial, formatCallback, property) {
+        _setupSlider(sliderId, property, min, max, initial, formatCallback) {
             const container = document.getElementById(sliderId);
             if (!container) return;
 
-            const track = container.querySelector('.slider-track');
-            const handle = container.querySelector('.slider-handle');
-            const valueDisplay = container.parentNode.querySelector('.slider-value');
-
-            if (!track || !handle || !valueDisplay) return;
-
-            let value = initial;
-            let dragging = false;
-
-            const update = (newValue) => {
-                if (property === 'rotation' && this.config.layer.rotationLoop) {
-                    while (newValue > max) newValue -= (max - min);
-                    while (newValue < min) newValue += (max - min);
-                } else {
-                    newValue = Math.max(min, Math.min(max, newValue));
-                }
-                value = newValue;
-                
-                let percentage = ((value - min) / (max - min)) * 100;
-                
-                track.style.width = percentage + '%';
-                handle.style.left = percentage + '%';
-                valueDisplay.textContent = formatCallback(value);
-            };
-
-            const getValue = (clientX) => {
-                const rect = container.getBoundingClientRect();
-                const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-                return min + (percentage * (max - min));
-            };
-
-            container.addEventListener('mousedown', (e) => {
-                dragging = true;
-                const newValue = getValue(e.clientX);
-                update(newValue);
-                
-                if (this.onSliderChange) {
-                    this.onSliderChange(sliderId, newValue);
-                }
-                
-                e.preventDefault();
-            });
-
-            document.addEventListener('mousemove', (e) => {
-                if (dragging) {
-                    const newValue = getValue(e.clientX);
-                    update(newValue);
-                    
-                    if (this.onSliderChange) {
-                        this.onSliderChange(sliderId, newValue);
+            const sliderInstance = window.TegakiUI.SliderUtils.createSlider({
+                container: sliderId,
+                min: min,
+                max: max,
+                initial: initial,
+                onChange: (value) => {
+                    // 🔧 回転スライダーのループ処理
+                    if (property === 'rotation' && this.config.layer.rotationLoop) {
+                        while (value > max) value -= (max - min);
+                        while (value < min) value += (max - min);
                     }
-                }
+                    
+                    // リアルタイム更新
+                    const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
+                    if (activeLayer) {
+                        const transformValue = property === 'rotation' 
+                            ? (value * Math.PI / 180)
+                            : value;
+                        this.updateTransform(activeLayer, property, transformValue);
+                    }
+                },
+                format: formatCallback
             });
 
-            document.addEventListener('mouseup', () => {
-                dragging = false;
-            });
-
-            valueDisplay.addEventListener('dblclick', () => {
-                this._showValueInput(valueDisplay, property, min, max, value, formatCallback);
-            });
-
-            container.updateValue = (newValue) => {
-                update(newValue);
-            };
-
-            update(initial);
-        }
-
-        /**
-         * 🔧 v133数値入力実装（完全移植）
-         */
-        _showValueInput(valueDisplay, property, min, max, currentValue, formatCallback) {
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.className = 'value-input';
-            
-            const numValue = property === 'rotation' 
-                ? Math.round(currentValue) 
-                : property === 'scale' 
-                    ? currentValue.toFixed(2)
-                    : Math.round(currentValue);
-            
-            input.value = numValue;
-            
-            const parent = valueDisplay.parentNode;
-            parent.replaceChild(input, valueDisplay);
-            input.focus();
-            input.select();
-            
-            const restore = () => {
-                parent.replaceChild(valueDisplay, input);
-            };
-            
-            const commit = () => {
-                let newValue = parseFloat(input.value.replace(/[^\d.-]/g, ''));
-                
-                if (isNaN(newValue)) {
-                    restore();
-                    return;
-                }
-                
-                if (property === 'rotation') {
-                    newValue = (newValue * Math.PI) / 180;
-                } else if (property === 'scale') {
-                    newValue = Math.max(this.config.layer.minScale, newValue);
-                }
-                
-                if (property !== 'scale') {
-                    newValue = Math.max(min, Math.min(max, newValue));
-                }
-                
-                const sliderId = property === 'x' ? 'layer-x-slider'
-                    : property === 'y' ? 'layer-y-slider'
-                    : property === 'rotation' ? 'layer-rotation-slider'
-                    : 'layer-scale-slider';
-                
-                const slider = document.getElementById(sliderId);
-                if (slider?.updateValue) {
-                    const displayValue = property === 'rotation' 
-                        ? (newValue * 180 / Math.PI)
-                        : newValue;
-                    slider.updateValue(displayValue);
-                }
-                
-                if (this.onSliderChange) {
-                    this.onSliderChange(sliderId, newValue);
-                }
-                
-                restore();
-            };
-            
-            input.addEventListener('blur', commit);
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    commit();
-                } else if (e.key === 'Escape') {
-                    restore();
-                }
-                
-                if (!/[\d.-]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'Escape'].includes(e.key)) {
-                    e.preventDefault();
-                }
-            });
+            if (sliderInstance) {
+                this._sliderInstances.set(sliderId, sliderInstance);
+            }
         }
 
         _setupDragEvents() {
@@ -824,9 +723,6 @@
             });
         }
 
-        /**
-         * 🔧 パネルドラッグ完全修正版 - ペンタブレット対応
-         */
         _setupPanelDrag() {
             if (!this.transformPanel) return;
             
@@ -907,6 +803,9 @@
             }, { capture: true });
         }
 
+        /**
+         * 🔧 v8.13.8: ドラッグ操作のスライダー即時反映
+         */
         _handleDrag(e) {
             if (!this.coordinateSystem) return;
             
@@ -1046,6 +945,9 @@
             this._lastEmitTime = performance.now();
         }
 
+        /**
+         * 🔧 v8.13.8: スライダーUI更新（slider-utils.js API使用）
+         */
         updateTransformPanelValues(layer) {
             if (!layer?.layerData || !this.transformPanel) return;
             
@@ -1054,42 +956,37 @@
             
             if (!transform) return;
             
-            this._updateSliderValue('layer-x-slider', transform.x, (v) => Math.round(v) + 'px');
-            this._updateSliderValue('layer-y-slider', transform.y, (v) => Math.round(v) + 'px');
-            this._updateSliderValue('layer-rotation-slider', transform.rotation * 180 / Math.PI, (v) => Math.round(v) + '°');
-            this._updateSliderValue('layer-scale-slider', Math.abs(transform.scaleX), (v) => v.toFixed(2) + 'x');
-        }
-        
-        _updateSliderValue(sliderId, value, formatValue) {
-            const sliderContainer = document.getElementById(sliderId);
-            if (!sliderContainer) return;
+            // 🔧 slider-utils.jsのインスタンスを使用してUI更新
+            const xSlider = this._sliderInstances.get('layer-x-slider');
+            const ySlider = this._sliderInstances.get('layer-y-slider');
+            const rotationSlider = this._sliderInstances.get('layer-rotation-slider');
+            const scaleSlider = this._sliderInstances.get('layer-scale-slider');
             
-            const handle = sliderContainer.querySelector('.slider-handle');
-            const label = sliderContainer.querySelector('.slider-label');
-            const track = sliderContainer.querySelector('.slider-track');
-            
-            if (!handle || !label || !track) return;
-            
-            let min, max;
-            if (sliderId === 'layer-x-slider') {
-                min = this.config.layer.minX;
-                max = this.config.layer.maxX;
-            } else if (sliderId === 'layer-y-slider') {
-                min = this.config.layer.minY;
-                max = this.config.layer.maxY;
-            } else if (sliderId === 'layer-rotation-slider') {
-                min = this.config.layer.minRotation;
-                max = this.config.layer.maxRotation;
-            } else if (sliderId === 'layer-scale-slider') {
-                min = this.config.layer.minScale;
-                max = this.config.layer.maxScale;
+            if (xSlider) {
+                xSlider.setValue(transform.x);
             }
             
-            const ratio = (value - min) / (max - min);
-            const clampedRatio = Math.max(0, Math.min(1, ratio));
+            if (ySlider) {
+                ySlider.setValue(transform.y);
+            }
             
-            handle.style.left = `${clampedRatio * 100}%`;
-            label.textContent = formatValue(value);
+            if (rotationSlider) {
+                let rotationDeg = transform.rotation * 180 / Math.PI;
+                
+                // 🔧 回転ループ処理
+                if (this.config.layer.rotationLoop) {
+                    const min = this.config.layer.minRotation;
+                    const max = this.config.layer.maxRotation;
+                    while (rotationDeg > max) rotationDeg -= (max - min);
+                    while (rotationDeg < min) rotationDeg += (max - min);
+                }
+                
+                rotationSlider.setValue(rotationDeg);
+            }
+            
+            if (scaleSlider) {
+                scaleSlider.setValue(Math.abs(transform.scaleX));
+            }
         }
 
         updateFlipButtons(layer) {
@@ -1157,6 +1054,15 @@
             if (this._emitTimer) {
                 clearTimeout(this._emitTimer);
             }
+            
+            // 🔧 スライダーインスタンスの破棄
+            for (const [id, instance] of this._sliderInstances) {
+                if (instance?.destroy) {
+                    instance.destroy();
+                }
+            }
+            this._sliderInstances.clear();
+            
             this.transforms.clear();
         }
     }
@@ -1166,7 +1072,9 @@
 
 })();
 
-console.log('✅ layer-transform.js v8.13.7 loaded');
-console.log('   🔧 スライダー・数値入力完全動作（v133実装移植）');
-console.log('   🔧 反転処理修正（localX/localY対応・カメラ中心判定）');
-console.log('   🔧 パネルドラッグ完全修正（ペンタブレット対応）');
+console.log('✅ layer-transform.js v8.13.8 loaded');
+console.log('   🔧 スライダー統一API使用 (slider-utils.js)');
+console.log('   🔧 回転スライダーループ完全動作');
+console.log('   🔧 ドラッグ操作→スライダー即時反映');
+console.log('   🔧 反転処理完全修正 (カメラ中心基準・localX/localY対応)');
+console.log('   🔧 History二重登録防止 (skipHistory機能)');

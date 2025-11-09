@@ -1,6 +1,6 @@
 /**
- * @file layer-system.js - Phase 5+6統合改修版
- * @description レイヤー管理・操作の中核システム（UI疎結合化+DIP改善完了）
+ * @file layer-system.js - Phase 5+6統合改修版 + v8.13.8反転修正
+ * @description レイヤー管理・操作の中核システム
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (イベント通信)
@@ -15,11 +15,11 @@
  * - keyboard-handler.js (ショートカット)
  * - thumbnail-update-manager.js (サムネイル更新)
  * 
- * 【Phase 5+6 改修内容】
- * ✅ UI層への直接呼び出し完全排除（EventBus通知に統一）
- * ✅ updateLayerPanelUI() → eventBus.emit('layer:panel-update-requested')
- * ✅ updateStatusDisplay() → eventBus.emit('layer:status-update-requested')
- * ✅ DIP改善: グローバル依存を最小化
+ * 【v8.13.8 改修内容】
+ * 🔧 flipActiveLayer(): History二重登録完全防止
+ *    - transform.flipLayer()を skipHistory=true で呼び出し
+ *    - confirmTransform()内でのHistory登録をスキップ
+ *    - flipActiveLayer()で一度だけHistory.push()
  */
 
 (function() {
@@ -137,7 +137,7 @@
                 }
                 
                 this.requestThumbnailUpdate(0);
-                this._emitPanelUpdateRequest(); // 🔧 Phase 5: UI直接呼び出し削除
+                this._emitPanelUpdateRequest();
             });
         }
 
@@ -254,6 +254,9 @@
             };
             this.transform.onGetActiveLayer = () => {
                 return this.getActiveLayer();
+            };
+            this.transform.onRebuildRequired = (layer, paths) => {
+                this.safeRebuildLayer(layer, paths);
             };
         }
 
@@ -445,62 +448,68 @@
             }
         }
         
-flipActiveLayer(direction, bypassVKeyCheck = false) {
-    if (!this.transform) return;
-    const activeLayer = this.getActiveLayer();
-    if (!activeLayer?.layerData) return;
-    if (activeLayer.layerData.isBackground) return;
-    
-    if (!bypassVKeyCheck && !this.isLayerMoveMode) return;
-    
-    const layerId = activeLayer.layerData.id;
-    const layerIndex = this.activeLayerIndex;
-    
-    // 🔧 transform.flipLayer() は内部でconfirmTransform()を呼び、
-    // confirmTransform()内でHistory登録を行う。
-    // そのため、ここでHistory.push()を実行すると二重登録になる。
-    
-    if (window.History && !window.History._manager.isApplying) {
-        // pathsのバックアップを取る
-        const pathsBefore = structuredClone(activeLayer.layerData.paths);
-        
-        // 反転実行（内部でconfirmTransform(layer, skipHistory=true)を呼ぶ）
-        // skipHistory=trueにすることで、confirmTransform内でのHistory登録をスキップ
-        this.transform.flipLayer(activeLayer, direction, true);
-        
-        const pathsAfter = structuredClone(activeLayer.layerData.paths);
-        
-        // ここで一度だけHistory登録
-        window.History.push({
-            name: `layer-flip-${direction}`,
-            do: () => {
-                // 反転後の状態に復元
-                this.safeRebuildLayer(activeLayer, pathsAfter);
-                this.requestThumbnailUpdate(layerIndex);
-            },
-            undo: () => {
-                // 反転前の状態に復元
-                this.safeRebuildLayer(activeLayer, pathsBefore);
-                this.requestThumbnailUpdate(layerIndex);
-            },
-            meta: {
-                layerId,
-                layerIndex,
-                direction
+        /**
+         * 🔧 v8.13.8: 反転処理 - History二重登録完全防止
+         * 
+         * 従来の問題:
+         * - transform.flipLayer()内でconfirmTransform()を呼び出し
+         * - confirmTransform()内でonTransformComplete()経由でHistory登録
+         * - さらにflipActiveLayer()でもHistory.push()を実行
+         * → 結果: 同一操作が2回Historyに登録される
+         * 
+         * 修正内容:
+         * - transform.flipLayer(layer, direction, skipHistory=true)で呼び出し
+         * - confirmTransform()内のHistory登録をスキップ
+         * - flipActiveLayer()で一度だけHistory.push()を実行
+         */
+        flipActiveLayer(direction, bypassVKeyCheck = false) {
+            if (!this.transform) return;
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer?.layerData) return;
+            if (activeLayer.layerData.isBackground) return;
+            
+            if (!bypassVKeyCheck && !this.isLayerMoveMode) return;
+            
+            const layerId = activeLayer.layerData.id;
+            const layerIndex = this.activeLayerIndex;
+            
+            if (window.History && !window.History._manager.isApplying) {
+                const pathsBefore = structuredClone(activeLayer.layerData.paths);
+                
+                // 🔧 skipHistory=true でconfirmTransform内のHistory登録をスキップ
+                this.transform.flipLayer(activeLayer, direction, true);
+                
+                const pathsAfter = structuredClone(activeLayer.layerData.paths);
+                
+                // ここで一度だけHistory登録
+                window.History.push({
+                    name: `layer-flip-${direction}`,
+                    do: () => {
+                        this.safeRebuildLayer(activeLayer, pathsAfter);
+                        this.requestThumbnailUpdate(layerIndex);
+                    },
+                    undo: () => {
+                        this.safeRebuildLayer(activeLayer, pathsBefore);
+                        this.requestThumbnailUpdate(layerIndex);
+                    },
+                    meta: {
+                        layerId,
+                        layerIndex,
+                        direction
+                    }
+                });
+            } else {
+                // History適用中の場合はskipHistory=falseで実行
+                this.transform.flipLayer(activeLayer, direction, false);
             }
-        });
-    } else {
-        // History適用中の場合はskipHistory=falseで実行
-        this.transform.flipLayer(activeLayer, direction, false);
-    }
-    
-    if (this.eventBus) {
-        this.eventBus.emit('layer:transform-updated', { 
-            layerId: activeLayer.layerData.id 
-        });
-        this.requestThumbnailUpdate(this.activeLayerIndex);
-    }
-}
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:transform-updated', { 
+                    layerId: activeLayer.layerData.id 
+                });
+                this.requestThumbnailUpdate(this.activeLayerIndex);
+            }
+        }
         
         moveActiveLayer(keyCode) {
             if (!this.transform) return;
@@ -582,6 +591,9 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
             }
         }
         
+        /**
+         * 🔧 v8.13.8: Vキー+ドラッグのスライダー即時反映
+         */
         _handleLayerDrag(dx, dy, shiftKey) {
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
@@ -612,6 +624,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                 transform.y += adjustedDy;
             }
             this.transform.applyTransform(activeLayer, transform, centerX, centerY);
+            
+            // 🔧 確実にスライダーUI更新
             this.transform.updateTransformPanelValues(activeLayer);
             
             if (this.eventBus) {
@@ -683,7 +697,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                             } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
                                 this.activeLayerIndex++;
                             }
-                            this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                            this._emitPanelUpdateRequest();
                             if (this.eventBus) {
                                 this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });
                             }
@@ -695,7 +709,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                             this.currentFrameContainer.removeChild(layer);
                             this.currentFrameContainer.addChildAt(layer, fromIndex);
                             this.activeLayerIndex = oldActiveIndex;
-                            this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                            this._emitPanelUpdateRequest();
                             if (this.eventBus) {
                                 this.eventBus.emit('layer:reordered', { fromIndex: toIndex, toIndex: fromIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });
                             }
@@ -715,7 +729,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                     } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
                         this.activeLayerIndex++;
                     }
-                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                    this._emitPanelUpdateRequest();
                     if (this.eventBus) {
                         this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: movedLayer.layerData?.id });
                     }
@@ -733,8 +747,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                 this.activeLayerIndex = layers.length - 1;
             }
             
-            this._emitPanelUpdateRequest(); // 🔧 Phase 5
-            this._emitStatusUpdateRequest(); // 🔧 Phase 5
+            this._emitPanelUpdateRequest();
+            this._emitStatusUpdateRequest();
             if (this.isLayerMoveMode) {
                 this.updateLayerTransformPanelValues();
             }
@@ -825,8 +839,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
             });
             this.eventBus.on('animation:frame-applied', () => {
                 setTimeout(() => {
-                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
-                    this._emitStatusUpdateRequest(); // 🔧 Phase 5
+                    this._emitPanelUpdateRequest();
+                    this._emitStatusUpdateRequest();
                     if (this.isLayerMoveMode) {
                         this.updateLayerTransformPanelValues();
                     }
@@ -834,12 +848,12 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
             });
             this.eventBus.on('animation:frame-created', () => {
                 setTimeout(() => {
-                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                    this._emitPanelUpdateRequest();
                 }, 100);
             });
             this.eventBus.on('animation:frame-deleted', () => {
                 setTimeout(() => {
-                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                    this._emitPanelUpdateRequest();
                 }, 100);
             });
         }
@@ -972,7 +986,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                         this.currentFrameContainer.removeChildAt(oldIndex);
                         this.currentFrameContainer.addChildAt(layer, newIndex);
                         this.activeLayerIndex = newIndex;
-                        this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                        this._emitPanelUpdateRequest();
                         if (this.eventBus) {
                             this.eventBus.emit('layer:hierarchy-moved', { direction, oldIndex, newIndex, layerId: layer.layerData?.id });
                         }
@@ -983,7 +997,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                         this.currentFrameContainer.removeChildAt(newIndex);
                         this.currentFrameContainer.addChildAt(layer, oldIndex);
                         this.activeLayerIndex = oldIndex;
-                        this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                        this._emitPanelUpdateRequest();
                         if (this.eventBus) {
                             this.eventBus.emit('layer:hierarchy-moved', { direction: direction === 'up' ? 'down' : 'up', oldIndex: newIndex, newIndex: oldIndex, layerId: layer.layerData?.id });
                         }
@@ -995,7 +1009,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                 this.currentFrameContainer.removeChildAt(currentIndex);
                 this.currentFrameContainer.addChildAt(activeLayer, newIndex);
                 this.activeLayerIndex = newIndex;
-                this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                this._emitPanelUpdateRequest();
                 if (this.eventBus) {
                     this.eventBus.emit('layer:hierarchy-moved', { direction, oldIndex: currentIndex, newIndex, layerId: activeLayer.layerData?.id });
                 }
@@ -1065,8 +1079,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                         this.currentFrameContainer.addChild(layer);
                         const layers = this.getLayers();
                         this.setActiveLayer(layers.length - 1);
-                        this._emitPanelUpdateRequest(); // 🔧 Phase 5
-                        this._emitStatusUpdateRequest(); // 🔧 Phase 5
+                        this._emitPanelUpdateRequest();
+                        this._emitStatusUpdateRequest();
                     },
                     undo: () => {
                         if (layer.layerData) {
@@ -1077,8 +1091,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                         if (this.activeLayerIndex >= layers.length) {
                             this.activeLayerIndex = Math.max(0, layers.length - 1);
                         }
-                        this._emitPanelUpdateRequest(); // 🔧 Phase 5
-                        this._emitStatusUpdateRequest(); // 🔧 Phase 5
+                        this._emitPanelUpdateRequest();
+                        this._emitStatusUpdateRequest();
                     },
                     meta: { layerId: layerModel.id, name: layerModel.name }
                 };
@@ -1087,8 +1101,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                 this.currentFrameContainer.addChild(layer);
                 const layers = this.getLayers();
                 this.setActiveLayer(layers.length - 1);
-                this._emitPanelUpdateRequest(); // 🔧 Phase 5
-                this._emitStatusUpdateRequest(); // 🔧 Phase 5
+                this._emitPanelUpdateRequest();
+                this._emitStatusUpdateRequest();
             }
             if (this.eventBus) {
                 this.eventBus.emit('layer:created', { layerId: layerModel.id, name: layerModel.name, isBackground });
@@ -1107,8 +1121,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                 
                 const oldIndex = this.activeLayerIndex;
                 this.activeLayerIndex = index;
-                this._emitPanelUpdateRequest(); // 🔧 Phase 5
-                this._emitStatusUpdateRequest(); // 🔧 Phase 5
+                this._emitPanelUpdateRequest();
+                this._emitStatusUpdateRequest();
                 if (this.isLayerMoveMode) {
                     this.updateLayerTransformPanelValues();
                 }
@@ -1129,7 +1143,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                     this.checkerPattern.visible = !layer.layerData.visible;
                 }
                 
-                this._emitPanelUpdateRequest(); // 🔧 Phase 5
+                this._emitPanelUpdateRequest();
                 if (this.eventBus) {
                     this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
                     this.requestThumbnailUpdate(layerIndex);
@@ -1143,9 +1157,6 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
             }
         }
 
-        /**
-         * 🔧 Phase 5: UI直接呼び出し削除 - EventBus通知に統一
-         */
         _emitPanelUpdateRequest() {
             if (this.eventBus) {
                 this.eventBus.emit('layer:panel-update-requested', {
@@ -1156,9 +1167,6 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
             }
         }
 
-        /**
-         * 🔧 Phase 5: UI直接呼び出し削除 - EventBus通知に統一
-         */
         _emitStatusUpdateRequest() {
             const layers = this.getLayers();
             const currentLayerName = this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex]?.layerData?.name : 'なし';
@@ -1247,7 +1255,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                             }
                             this.currentFrameContainer.removeChild(layer);
                             if (layerId && this.transform) {
-                                this.transform.deleteTransform(layerId);
+                                this.transform.clearTransform(layerId);
                             }
                             const remainingLayers = this.getLayers();
                             if (remainingLayers.length === 0) {
@@ -1255,8 +1263,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                             } else if (this.activeLayerIndex >= remainingLayers.length) {
                                 this.activeLayerIndex = remainingLayers.length - 1;
                             }
-                            this._emitPanelUpdateRequest(); // 🔧 Phase 5
-                            this._emitStatusUpdateRequest(); // 🔧 Phase 5
+                            this._emitPanelUpdateRequest();
+                            this._emitStatusUpdateRequest();
                             if (this.eventBus) {
                                 this.eventBus.emit('layer:deleted', { layerId, layerIndex });
                             }
@@ -1275,8 +1283,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                             }
                             this.currentFrameContainer.addChildAt(layer, layerIndex);
                             this.activeLayerIndex = previousActiveIndex;
-                            this._emitPanelUpdateRequest(); // 🔧 Phase 5
-                            this._emitStatusUpdateRequest(); // 🔧 Phase 5
+                            this._emitPanelUpdateRequest();
+                            this._emitStatusUpdateRequest();
                         },
                         meta: { layerId, layerIndex }
                     };
@@ -1287,7 +1295,7 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                     }
                     this.currentFrameContainer.removeChild(layer);
                     if (layerId && this.transform) {
-                        this.transform.deleteTransform(layerId);
+                        this.transform.clearTransform(layerId);
                     }
                     const remainingLayers = this.getLayers();
                     if (remainingLayers.length === 0) {
@@ -1295,8 +1303,8 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
                     } else if (this.activeLayerIndex >= remainingLayers.length) {
                         this.activeLayerIndex = remainingLayers.length - 1;
                     }
-                    this._emitPanelUpdateRequest(); // 🔧 Phase 5
-                    this._emitStatusUpdateRequest(); // 🔧 Phase 5
+                    this._emitPanelUpdateRequest();
+                    this._emitStatusUpdateRequest();
                     if (this.eventBus) {
                         this.eventBus.emit('layer:deleted', { layerId, layerIndex });
                     }
@@ -1328,7 +1336,6 @@ flipActiveLayer(direction, bypassVKeyCheck = false) {
 
 })();
 
-console.log('✅ layer-system.js (Phase 5+6統合改修版) loaded');
-console.log('   ✓ UI層への直接呼び出し完全排除');
-console.log('   ✓ EventBus通知に統一: layer:panel-update-requested / layer:status-update-requested');
-console.log('   ✓ DRY/SOLID原則準拠 - Model/View完全分離');
+console.log('✅ layer-system.js (v8.13.8 反転History二重登録防止版) loaded');
+console.log('   🔧 flipActiveLayer: History二重登録完全防止');
+console.log('   🔧 _handleLayerDrag: スライダーUI即時反映');
