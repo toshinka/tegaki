@@ -1,7 +1,30 @@
-// ===== coordinate-system.js - worldToLocal修正版 =====
 /**
- * 全座標変換の統一管理
- * 修正: worldToLocal() の pivot 計算順序を修正
+ * @file coordinate-system.js - v8.13.11 クリーンアップ版
+ * @description 座標変換システムの統一管理
+ * 
+ * 【v8.13.11 改修内容】
+ * 🧹 デバッグログをTegakiDebug.coord.*に集約
+ * 📝 ヘッダー依存関係明記
+ * ✅ worldToLocal pivot修正維持
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - config.js (window.TEGAKI_CONFIG)
+ * - event-bus.js (window.TegakiEventBus)
+ * - camera-system.js (worldContainer参照)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - drawing-engine.js (座標変換)
+ * - stroke-recorder.js (Local座標記録)
+ * - pointer-handler.js (PointerEvent変換)
+ * 
+ * 【座標変換パイプライン】
+ * Screen(clientX/Y) → Canvas → World → Local
+ * ↑ screenClientToCanvas() → canvasToWorld() → worldToLocal()
+ * 
+ * 【重要】
+ * - worldToLocal()はPIXI v8 toLocal()を使用禁止
+ * - 手動逆算で親チェーン遡査
+ * - pivot計算順序: position → rotation → scale → pivot
  */
 
 (function() {
@@ -15,7 +38,6 @@
             this.cameraSystem = null;
             this.worldContainer = null;
             this.canvasContainer = null;
-            
             this.transformCache = new Map();
             this.cacheVersion = 0;
             this.cacheEnabled = false;
@@ -97,12 +119,6 @@
             });
         }
         
-        // ========== Screen → Canvas変換 ==========
-        
-        /**
-         * Screen座標(clientX/Y) → Canvas座標 変換
-         * @returns {Object} {canvasX, canvasY}
-         */
         screenClientToCanvas(clientX, clientY) {
             const canvas = this._getCanvas();
             if (!canvas) {
@@ -125,10 +141,6 @@
             };
         }
         
-        /**
-         * Canvas座標 → World座標 変換
-         * @returns {Object} {worldX, worldY}
-         */
         canvasToWorld(canvasX, canvasY) {
             const worldContainer = this._getWorldContainer();
             
@@ -136,7 +148,6 @@
                 return { worldX: canvasX, worldY: canvasY };
             }
             
-            // PIXI v8: worldTransformを取得
             let worldTransform = null;
             
             if (worldContainer.worldTransform) {
@@ -151,11 +162,9 @@
                     const point = inv.apply({ x: canvasX, y: canvasY });
                     return { worldX: point.x, worldY: point.y };
                 } catch (error) {
-                    // フォールバックに続く
                 }
             }
             
-            // フォールバック: 手動逆変換
             const pos = worldContainer.position;
             const scale = worldContainer.scale;
             const pivot = worldContainer.pivot || { x: 0, y: 0 };
@@ -182,27 +191,16 @@
             return { worldX: x, worldY: y };
         }
         
-        /**
-         * Screen座標 → World座標 統合変換
-         * @returns {Object} {worldX, worldY}
-         */
         screenClientToWorld(clientX, clientY) {
             const canvas = this.screenClientToCanvas(clientX, clientY);
             return this.canvasToWorld(canvas.canvasX, canvas.canvasY);
         }
         
-        /**
-         * World座標 → Local座標 変換
-         * 修正: pivot の計算順序を正しく修正
-         * 
-         * @returns {Object} {localX, localY}
-         */
         worldToLocal(worldX, worldY, container) {
             if (!container) {
                 return { localX: worldX, localY: worldY };
             }
             
-            // 親チェーン全体をさかのぼって各transformを収集
             let transforms = [];
             let node = container;
             const worldContainer = this._getWorldContainer();
@@ -220,16 +218,12 @@
             let x = worldX;
             let y = worldY;
             
-            // 親から子へ順番に逆変換を適用
             for (let i = transforms.length - 1; i >= 0; i--) {
                 const t = transforms[i];
                 
-                // 修正: 正しい逆変換の順序
-                // 1. position を引く
                 x -= t.pos.x;
                 y -= t.pos.y;
                 
-                // 2. rotation を逆回転
                 if (Math.abs(t.rotation) > 1e-6) {
                     const cos = Math.cos(-t.rotation);
                     const sin = Math.sin(-t.rotation);
@@ -239,11 +233,9 @@
                     y = ry;
                 }
                 
-                // 3. scale で割る
                 if (Math.abs(t.scale.x) > 1e-6) x /= t.scale.x;
                 if (Math.abs(t.scale.y) > 1e-6) y /= t.scale.y;
                 
-                // 4. pivot を足す（回転・スケールの中心点からの相対位置に戻す）
                 x += t.pivot.x;
                 y += t.pivot.y;
             }
@@ -251,21 +243,11 @@
             return { localX: x, localY: y };
         }
         
-        /**
-         * Screen座標 → Local座標 統合変換
-         * @returns {Object} {localX, localY}
-         */
         screenClientToLocal(clientX, clientY, container) {
             const world = this.screenClientToWorld(clientX, clientY);
             return this.worldToLocal(world.worldX, world.worldY, container);
         }
         
-        // ========== 逆変換API ==========
-        
-        /**
-         * World座標 → Canvas座標 変換
-         * @returns {Object} {canvasX, canvasY}
-         */
         worldToCanvas(worldX, worldY) {
             const worldContainer = this._getWorldContainer();
             
@@ -285,7 +267,6 @@
                     const point = worldTransform.apply({ x: worldX, y: worldY });
                     return { canvasX: point.x, canvasY: point.y };
                 } catch (error) {
-                    // フォールバック後に継続
                 }
             }
             
@@ -315,10 +296,6 @@
             return { canvasX: x, canvasY: y };
         }
         
-        /**
-         * Canvas座標 → Screen座標 変換
-         * @returns {Object} {clientX, clientY}
-         */
         canvasToScreen(canvasX, canvasY) {
             const canvas = this._getCanvas();
             if (!canvas) {
@@ -338,19 +315,11 @@
             };
         }
         
-        /**
-         * World座標 → Screen座標 変換
-         * @returns {Object} {clientX, clientY}
-         */
         worldToScreen(worldX, worldY) {
             const canvas = this.worldToCanvas(worldX, worldY);
             return this.canvasToScreen(canvas.canvasX, canvas.canvasY);
         }
         
-        /**
-         * Local座標 → World座標 変換
-         * @returns {Object} {worldX, worldY}
-         */
         localToWorld(localX, localY, container) {
             if (!container) {
                 return { worldX: localX, worldY: localY };
@@ -361,7 +330,6 @@
                     const world = container.toGlobal(new PIXI.Point(localX, localY));
                     return { worldX: world.x, worldY: world.y };
                 } catch (error) {
-                    // フォールバックに続く
                 }
             }
             
@@ -391,16 +359,10 @@
             return { worldX: x, worldY: y };
         }
         
-        /**
-         * Local座標 → Screen座標 変換
-         * @returns {Object} {clientX, clientY}
-         */
         localToScreen(localX, localY, container) {
             const world = this.localToWorld(localX, localY, container);
             return this.worldToScreen(world.worldX, world.worldY);
         }
-        
-        // ========== ユーティリティ ==========
         
         getLayerBounds(layer, includeTransform = true) {
             if (!layer) {
@@ -432,8 +394,6 @@
             const dy = y2 - y1;
             return Math.sqrt(dx * dx + dy * dy);
         }
-        
-        // ========== 内部ヘルパー ==========
         
         _getCanvas() {
             if (this.app?.view) {
@@ -477,20 +437,13 @@
         }
     }
     
-    // グローバル公開
     const coordinateSystem = new CoordinateSystem();
     window.CoordinateSystem = coordinateSystem;
     
-    console.log('✅ coordinate-system.js (worldToLocal修正版) loaded');
-    console.log('   - 修正: worldToLocal() の pivot 計算順序を修正');
-    console.log('   - Vキーモード時の NaN 問題を解決');
-    
 })();
 
-// ========== デバッグコマンド ==========
 window.TegakiDebug = window.TegakiDebug || {};
 window.TegakiDebug.coord = {
-    // 座標変換フルテスト
     testFullPipeline(clientX, clientY) {
         console.log('=== 座標変換フルパイプライン ===');
         console.log('Input Screen:', { clientX, clientY });
@@ -506,7 +459,6 @@ window.TegakiDebug.coord = {
             const step3 = window.CoordinateSystem.worldToLocal(step2.worldX, step2.worldY, layer);
             console.log('Step 3 Local:', step3);
             
-            // NaN チェック
             if (isNaN(step3.localX) || isNaN(step3.localY)) {
                 console.error('❌ worldToLocal returned NaN');
                 console.log('Layer state:', {
@@ -518,7 +470,6 @@ window.TegakiDebug.coord = {
                 return;
             }
             
-            // 検証: Local → World → Canvas → Screen と逆変換
             const verify1 = window.CoordinateSystem.localToWorld(step3.localX, step3.localY, layer);
             console.log('Verify World:', verify1);
             
@@ -533,7 +484,6 @@ window.TegakiDebug.coord = {
             const verify3 = window.CoordinateSystem.canvasToScreen(verify2.canvasX, verify2.canvasY);
             console.log('Verify Screen:', verify3);
             
-            // 誤差確認
             const errorX = Math.abs(verify3.clientX - clientX);
             const errorY = Math.abs(verify3.clientY - clientY);
             console.log('Error:', { x: errorX.toFixed(4), y: errorY.toFixed(4) });
@@ -548,7 +498,6 @@ window.TegakiDebug.coord = {
         }
     },
     
-    // CoordinateSystem初期化確認
     inspectCoordSystem() {
         const cs = window.CoordinateSystem;
         console.log('=== CoordinateSystem Status ===');
@@ -559,5 +508,3 @@ window.TegakiDebug.coord = {
         console.log('_getWorldContainer():', !!cs._getWorldContainer());
     }
 };
-
-console.log('✅ Debug commands: TegakiDebug.coord.*');
