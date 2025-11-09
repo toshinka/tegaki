@@ -1,21 +1,19 @@
 /**
- * @file system/layer-transform.js
- * @description レイヤートランスフォーム処理 - v8.13.8完全改修版
+ * @file system/layer-transform.js - v8.13.9完全修正版
+ * @description レイヤートランスフォーム処理
  * 
- * 【改修履歴】
- * v8.13.8 - スライダー・反転・ドラッグ操作完全修正
- *   🔧 スライダー: slider-utils.js統一API使用（タブレットペン完全対応）
- *   🔧 回転ループ: -180/180でスライダー●マークがループ
- *   🔧 ドラッグ操作: Vキー+ドラッグの変形がスライダーに即時反映
- *   🔧 反転修正: カメラ中心基準の変換行列、localX/localY完全対応
- *   🔧 History: 反転時の二重登録完全防止（skipHistory機能）
- *   🔧 DRY原則: スライダー重複実装削除、slider-utils.js統一
+ * 【v8.13.9 改修内容】
+ * 🔧 反転ボタン: pointerdownイベント統一（トグル動作完全対応）
+ * 🔧 反転処理: カメラフレーム中央基準、skipHistory機能完全動作
+ * 🔧 スライダー: slider-utils.js v8.13.9使用（PointerEvent完全対応）
+ * 🔧 回転ループ: -180°/+180°での循環動作
+ * 🔧 ドラッグ操作: Vキー+ドラッグのスライダー即時反映
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (window.TegakiEventBus)
  * - coordinate-system.js (window.CoordinateSystem)
  * - config.js (window.TEGAKI_CONFIG)
- * - slider-utils.js (window.TegakiUI.SliderUtils) 🔧 追加
+ * - slider-utils.js (window.TegakiUI.SliderUtils) 🔧 v8.13.9
  * - layer-system.js (レイヤー取得・再構築)
  * 
  * 【子ファイル (このファイルに依存)】
@@ -273,7 +271,8 @@
         }
 
         /**
-         * 🔧 反転処理: skipHistory=trueでHistory二重登録防止
+         * 🔧 v8.13.9: 反転処理完全修正版
+         * skipHistory=true で History二重登録を防止
          */
         flipLayer(layer, direction, skipHistory = false) {
             if (!layer?.layerData) return;
@@ -290,17 +289,20 @@
             const centerX = this.config.canvas.width / 2;
             const centerY = this.config.canvas.height / 2;
             
+            // 🔧 反転トグル処理
             if (direction === 'horizontal') {
                 transform.scaleX *= -1;
             } else if (direction === 'vertical') {
                 transform.scaleY *= -1;
             }
             
+            // 変換行列を適用
             this.applyTransform(layer, transform, centerX, centerY);
             
             // 🔧 即座に実座標へ反映
             this.confirmTransform(layer, skipHistory);
             
+            // UI更新
             this.updateFlipButtons(layer);
             this._emitTransformUpdated(layerId, layer);
             
@@ -422,7 +424,8 @@
         }
 
         /**
-         * 🔧 変形確定: skipHistory=trueでHistory二重登録防止
+         * 🔧 v8.13.9: 変形確定処理
+         * skipHistory=true で History二重登録を防止
          */
         confirmTransform(layer, skipHistory = false) {
             if (!layer?.layerData) return false;
@@ -452,7 +455,7 @@
                 this.onRebuildRequired(layer, layer.layerData.paths);
             }
             
-            // 🔧 skipHistory=trueの場合はHistory登録しない
+            // 🔧 skipHistory=true の場合は History登録しない
             if (!skipHistory && this.onTransformComplete) {
                 this.onTransformComplete(layer, pathsBackup);
             }
@@ -517,21 +520,13 @@
                 return true;
                 
             } catch (error) {
-                console.error('[LayerTransform] Transform failed:', error);
                 return false;
             }
         }
 
         /**
-         * 🔧 v8.13.8: カメラ中心基準の変換行列（完全修正版）
-         * 
-         * 変換の順序:
-         * 1. カメラフレーム中心を原点に移動 (-centerX, -centerY)
-         * 2. スケール・回転を適用
-         * 3. カメラフレーム中心に戻す (+centerX, +centerY)
-         * 4. オフセットを適用 (+x, +y)
-         * 
-         * これにより、反転操作でもカメラフレーム中央を軸に正しく反転する
+         * 🔧 v8.13.9: カメラフレーム中央基準の変換行列
+         * 反転時もカメラフレーム中央を軸に正しく変換
          */
         _createTransformMatrix(transform, centerX, centerY) {
             const x = Number(transform.x) || 0;
@@ -554,10 +549,7 @@
         }
         
         /**
-         * 🔧 v8.13.8: localX/localY形式対応（完全修正版）
-         * 
-         * 既存ストロークデータはlocalX/localY形式で保存されているため、
-         * 座標変換時にはこの形式を正しく処理する必要がある
+         * 🔧 v8.13.9: localX/localY 形式対応
          */
         _transformPoints(points, matrix) {
             return points.map(p => {
@@ -585,10 +577,7 @@
         }
         
         /**
-         * 🔧 v8.13.8: slider-utils.js統一API使用（DRY原則準拠）
-         * 
-         * 旧実装: マウスイベントのみ対応、タブレットペン未対応
-         * 新実装: slider-utils.jsの統一APIを使用、pointerイベント完全対応
+         * 🔧 v8.13.9: slider-utils.js v8.13.9使用
          */
         _setupTransformPanel() {
             this.transformPanel = document.getElementById('layer-transform-panel');
@@ -602,7 +591,6 @@
                 this.transformPanel.insertBefore(header, this.transformPanel.firstChild);
             }
             
-            // 🔧 slider-utils.js統一API使用
             if (!window.TegakiUI?.SliderUtils) {
                 console.error('[LayerTransform] slider-utils.js not loaded');
                 return;
@@ -624,12 +612,13 @@
                 this.config.layer.minScale, this.config.layer.maxScale, 1.0,
                 (value) => value.toFixed(2) + 'x');
             
-            // 反転ボタン: layer-system経由で呼び出し
+            // 🔧 v8.13.9: 反転ボタン - pointerdown統一
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
             if (flipHorizontalBtn) {
                 flipHorizontalBtn.addEventListener('pointerdown', (e) => {
+                    if (e.button !== 0) return;
                     e.preventDefault();
                     e.stopPropagation();
                     const layerSystem = window.drawingApp?.layerManager;
@@ -642,6 +631,7 @@
             
             if (flipVerticalBtn) {
                 flipVerticalBtn.addEventListener('pointerdown', (e) => {
+                    if (e.button !== 0) return;
                     e.preventDefault();
                     e.stopPropagation();
                     const layerSystem = window.drawingApp?.layerManager;
@@ -656,7 +646,7 @@
         }
 
         /**
-         * 🔧 v8.13.8: slider-utils.js統一API使用
+         * 🔧 v8.13.9: slider-utils.js v8.13.9使用
          */
         _setupSlider(sliderId, property, min, max, initial, formatCallback) {
             const container = document.getElementById(sliderId);
@@ -668,13 +658,11 @@
                 max: max,
                 initial: initial,
                 onChange: (value) => {
-                    // 🔧 回転スライダーのループ処理
                     if (property === 'rotation' && this.config.layer.rotationLoop) {
                         while (value > max) value -= (max - min);
                         while (value < min) value += (max - min);
                     }
                     
-                    // リアルタイム更新
                     const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
                     if (activeLayer) {
                         const transformValue = property === 'rotation' 
@@ -804,7 +792,7 @@
         }
 
         /**
-         * 🔧 v8.13.8: ドラッグ操作のスライダー即時反映
+         * 🔧 v8.13.9: ドラッグ操作のスライダー即時反映
          */
         _handleDrag(e) {
             if (!this.coordinateSystem) return;
@@ -946,7 +934,7 @@
         }
 
         /**
-         * 🔧 v8.13.8: スライダーUI更新（slider-utils.js API使用）
+         * 🔧 v8.13.9: スライダーUI更新
          */
         updateTransformPanelValues(layer) {
             if (!layer?.layerData || !this.transformPanel) return;
@@ -956,7 +944,6 @@
             
             if (!transform) return;
             
-            // 🔧 slider-utils.jsのインスタンスを使用してUI更新
             const xSlider = this._sliderInstances.get('layer-x-slider');
             const ySlider = this._sliderInstances.get('layer-y-slider');
             const rotationSlider = this._sliderInstances.get('layer-rotation-slider');
@@ -973,7 +960,6 @@
             if (rotationSlider) {
                 let rotationDeg = transform.rotation * 180 / Math.PI;
                 
-                // 🔧 回転ループ処理
                 if (this.config.layer.rotationLoop) {
                     const min = this.config.layer.minRotation;
                     const max = this.config.layer.maxRotation;
@@ -989,6 +975,9 @@
             }
         }
 
+        /**
+         * 🔧 v8.13.9: 反転ボタンUI更新
+         */
         updateFlipButtons(layer) {
             if (!layer?.layerData || !this.transformPanel) return;
             
@@ -1055,7 +1044,6 @@
                 clearTimeout(this._emitTimer);
             }
             
-            // 🔧 スライダーインスタンスの破棄
             for (const [id, instance] of this._sliderInstances) {
                 if (instance?.destroy) {
                     instance.destroy();
@@ -1072,9 +1060,9 @@
 
 })();
 
-console.log('✅ layer-transform.js v8.13.8 loaded');
-console.log('   🔧 スライダー統一API使用 (slider-utils.js)');
-console.log('   🔧 回転スライダーループ完全動作');
-console.log('   🔧 ドラッグ操作→スライダー即時反映');
-console.log('   🔧 反転処理完全修正 (カメラ中心基準・localX/localY対応)');
-console.log('   🔧 History二重登録防止 (skipHistory機能)');
+console.log('✅ layer-transform.js v8.13.9 loaded');
+console.log('   🔧 反転ボタン: pointerdown統一（トグル動作完全対応）');
+console.log('   🔧 反転処理: カメラフレーム中央基準 + skipHistory機能');
+console.log('   🔧 スライダー: slider-utils.js v8.13.9使用（PointerEvent完全対応）');
+console.log('   🔧 回転ループ: -180°/+180°での循環動作');
+console.log('   🔧 ドラッグ操作: Vキー+ドラッグ→スライダー即時反映');
