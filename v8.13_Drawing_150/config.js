@@ -1,4 +1,19 @@
-// ===== config.js - レイヤートランスフォーム改修版 =====
+/**
+ * @file config.js - v8.13.11 クリーンアップ版
+ * @description グローバル設定・キーマップ定義
+ * 
+ * 【v8.13.11 改修内容】
+ * 🧹 不要なコンソールログ削除
+ * 📝 ヘッダー依存関係明記
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * なし（最上位設定ファイル）
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - 全システムファイル (window.TEGAKI_CONFIG参照)
+ * - keyboard-handler.js (window.TEGAKI_KEYMAP参照)
+ * - camera-system.js, layer-system.js等
+ */
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -426,5 +441,3 @@ window.TEGAKI_UTILS = {
         if (window.TEGAKI_CONFIG.debug) console.log(...args);
     }
 };
-
-console.log('✅ config.js (レイヤートランスフォーム改修版) loaded');
