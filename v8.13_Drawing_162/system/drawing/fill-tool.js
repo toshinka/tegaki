@@ -28,6 +28,7 @@
             this.eventBus = window.TegakiEventBus;
             this.isActive = false;
             this.initialized = false;
+            this.clickHandler = null;
         }
 
         initialize() {
@@ -42,16 +43,58 @@
 
             // ツール切り替えイベント
             this.eventBus.on('tool:select', ({ tool }) => {
+                const wasActive = this.isActive;
                 this.isActive = (tool === 'fill');
+
+                // ツールがアクティブになった時のみキャンバスイベントを登録
+                if (this.isActive && !wasActive) {
+                    this._registerCanvasEvents();
+                } else if (!this.isActive && wasActive) {
+                    this._unregisterCanvasEvents();
+                }
             });
 
-            // クリックイベント（塗りつぶし実行）
-            this.eventBus.on('canvas:pointerdown', (event) => {
+            // tool:changed イベントにも対応
+            this.eventBus.on('tool:changed', ({ tool }) => {
+                const wasActive = this.isActive;
+                this.isActive = (tool === 'fill');
+
+                if (this.isActive && !wasActive) {
+                    this._registerCanvasEvents();
+                } else if (!this.isActive && wasActive) {
+                    this._unregisterCanvasEvents();
+                }
+            });
+        }
+
+        /**
+         * キャンバスクリックイベントを登録
+         */
+        _registerCanvasEvents() {
+            if (this.clickHandler) return;
+
+            this.clickHandler = (event) => {
                 if (!this.isActive) return;
                 if (!event.localX || !event.localY) return;
-
                 this.fill(event.localX, event.localY);
-            });
+            };
+
+            if (this.eventBus) {
+                this.eventBus.on('canvas:pointerdown', this.clickHandler);
+            }
+        }
+
+        /**
+         * キャンバスクリックイベントを解除
+         */
+        _unregisterCanvasEvents() {
+            if (!this.clickHandler) return;
+
+            if (this.eventBus) {
+                this.eventBus.off('canvas:pointerdown', this.clickHandler);
+            }
+
+            this.clickHandler = null;
         }
 
         /**
@@ -263,6 +306,7 @@
          * 破棄処理
          */
         destroy() {
+            this._unregisterCanvasEvents();
             this.isActive = false;
             this.initialized = false;
         }
@@ -280,7 +324,6 @@
         window.FillTool.initialize();
     }
 
-    console.log('✅ fill-tool.js loaded');
-    console.log('   🎨 Gキー対応: 塗りつぶしツール');
-    console.log('   📁 配置: system/drawing/ (描画機能として適切)');
+    console.log('✅ fill-tool.js loaded (Event Fixed)');
+
 })();

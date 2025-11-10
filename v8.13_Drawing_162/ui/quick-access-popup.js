@@ -1,11 +1,11 @@
 /**
- * @file ui/quick-access-popup.js - v8.13.14 UI統一版
+ * @file ui/quick-access-popup.js - v8.13.16 SVG保持版
  * @description ペン設定クイックアクセスポップアップ
  * 
- * 【v8.13.14 改修内容】
- * 🎨 サイドバーと同じアイコンサイズ・色・選択状態に統一
- * 🔗 サイドバーとクイックアクセスのツール選択連動
- * 🎯 active-border (橙色 #ff8c42) 統一
+ * 【v8.13.16 改修内容】
+ * 🎯 SVGが消える問題を修正: style直接変更をやめてCSS class管理に変更
+ * 🎨 オレンジ枠(#ff8c42)のみで選択表示
+ * 🚫 背景色の反転を完全削除
  * 
  * 【親ファイル (このファイルが依存)】
  * - system/drawing/brush-settings.js (BrushSettings)
@@ -66,6 +66,43 @@
             this.MAX_OPACITY = 100;
             
             this._ensurePanelExists();
+            this._injectStyles();
+        }
+
+        _injectStyles() {
+            if (document.querySelector('style[data-qa-popup-styles]')) return;
+
+            const style = document.createElement('style');
+            style.setAttribute('data-qa-popup-styles', 'true');
+            style.textContent = `
+                .qa-tool-button {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 4px;
+                    border: 2px solid var(--futaba-light-medium);
+                    background: var(--futaba-background);
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0;
+                }
+
+                .qa-tool-button.active {
+                    border: 3px solid #ff8c42 !important;
+                    background: var(--futaba-background) !important;
+                }
+
+                .qa-tool-button svg {
+                    stroke: var(--futaba-maroon);
+                }
+
+                .qa-tool-button:hover:not(.active) {
+                    border-color: var(--futaba-medium);
+                }
+            `;
+            document.head.appendChild(style);
         }
 
         _ensurePanelExists() {
@@ -132,7 +169,7 @@
                     </div>
                 </div>
 
-                <!-- ツールアイコン (サイドバーと同サイズ) -->
+                <!-- ツールアイコン -->
                 <div style="margin-bottom: 20px; padding: 0 8px;">
                     <div style="display: flex; gap: 8px; align-items: center;">
                         <button class="qa-tool-button" id="qa-pen-tool" title="ベクターペン">
@@ -290,16 +327,8 @@
                 
                 if (toolName === this.currentTool) {
                     btn.classList.add('active');
-                    btn.style.border = '3px solid #ff8c42';
-                    btn.style.background = 'var(--futaba-maroon)';
-                    const svg = btn.querySelector('svg');
-                    if (svg) svg.setAttribute('stroke', '#ffffff');
                 } else {
                     btn.classList.remove('active');
-                    btn.style.border = '2px solid var(--futaba-light-medium)';
-                    btn.style.background = 'var(--futaba-background)';
-                    const svg = btn.querySelector('svg');
-                    if (svg) svg.setAttribute('stroke', 'var(--futaba-maroon)');
                 }
             });
         }
@@ -703,7 +732,6 @@
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
 
-    console.log('✅ quick-access-popup.js v8.13.14 loaded');
-    console.log('   🎨 サイドバー統一: アイコンサイズ36px, active-border橙色');
-    console.log('   🔗 ツール選択連動: sidebar ⇔ quick-access');
+    console.log('✅ quick-access-popup.js v8.13.16 loaded');
+
 })();

@@ -6,6 +6,7 @@
  * 【Phase 3-D 改修内容】
  * - mode プロパティを 'pen' | 'eraser' | 'fill' に拡張
  * - fill モードのバリデーション追加
+ * - 🧹 重複コンソールログの削除
  * 
  * 【Phase 3-C 改修内容 - 消しゴム対応】
  * - mode プロパティ追加 ('pen' | 'eraser')
@@ -61,16 +62,6 @@
             
             // 🆕 Phase 3-D: ツールモード拡張
             this.mode = 'pen'; // 'pen' | 'eraser' | 'fill'
-
-            console.log('[BrushSettings] Initialized (Phase 3-D - fill対応):', {
-                size: this.size,
-                color: `0x${this.color.toString(16)}`,
-                opacity: this.opacity,
-                mode: this.mode,
-                minWidth: this.minWidth,
-                maxWidth: this.maxWidth,
-                hasEventBus: !!this.eventBus
-            });
         }
 
         /**
@@ -93,8 +84,6 @@
                     data: { mode: this.mode, oldMode }
                 });
             }
-
-            console.log(`[BrushSettings] Mode changed: ${oldMode} → ${this.mode}`);
         }
 
         /**
@@ -230,8 +219,6 @@
 
     window.BrushSettings = BrushSettings;
 
-    console.log('✅ brush-settings.js (Phase 3-D - fill対応) loaded');
-    console.log('   ✓ mode: pen/eraser/fill 拡張');
-    console.log('   ✓ setMode() バリデーション改善');
+    console.log('✅ brush-settings.js (Phase 3-D Clean) loaded');
 
 })();
