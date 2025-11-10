@@ -1,13 +1,11 @@
 /**
- * @file ui/quick-access-popup.js
+ * @file ui/quick-access-popup.js - v8.13.14 UI統一版
  * @description ペン設定クイックアクセスポップアップ
  * 
- * 【改修履歴】
- * v8.13.3 - 構文エラー修正
- *   🐛 696行目の重複コード削除
- *   🐛 _updateOpacitySlider メソッドの重複定義を解消
- * v8.13.2 - ツールアイコン追加
- * v8.13.1 - タブレットペン対応
+ * 【v8.13.14 改修内容】
+ * 🎨 サイドバーと同じアイコンサイズ・色・選択状態に統一
+ * 🔗 サイドバーとクイックアクセスのツール選択連動
+ * 🎯 active-border (橙色 #ff8c42) 統一
  * 
  * 【親ファイル (このファイルが依存)】
  * - system/drawing/brush-settings.js (BrushSettings)
@@ -134,35 +132,23 @@
                     </div>
                 </div>
 
-                <!-- ツールアイコン -->
+                <!-- ツールアイコン (サイドバーと同サイズ) -->
                 <div style="margin-bottom: 20px; padding: 0 8px;">
                     <div style="display: flex; gap: 8px; align-items: center;">
-                        <button class="qa-tool-button" id="qa-pen-tool" title="ベクターペン" style="
-                            width: 48px; height: 48px; border-radius: 8px; border: 3px solid var(--futaba-maroon);
-                            background: var(--futaba-maroon); cursor: pointer; transition: all 0.2s ease;
-                            display: flex; align-items: center; justify-content: center;
-                        ">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-cream)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <button class="qa-tool-button" id="qa-pen-tool" title="ベクターペン">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
                             </svg>
                         </button>
-                        <button class="qa-tool-button" id="qa-eraser-tool" title="消しゴム" style="
-                            width: 48px; height: 48px; border-radius: 8px; border: 2px solid var(--futaba-light-medium);
-                            background: var(--futaba-cream); cursor: pointer; transition: all 0.2s ease;
-                            display: flex; align-items: center; justify-content: center;
-                        ">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <button class="qa-tool-button" id="qa-eraser-tool" title="消しゴム">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/>
                                 <path d="M22 21H7"/>
                                 <path d="m5 11 9 9"/>
                             </svg>
                         </button>
-                        <button class="qa-tool-button" id="qa-fill-tool" title="塗りつぶし" style="
-                            width: 48px; height: 48px; border-radius: 8px; border: 2px solid var(--futaba-light-medium);
-                            background: var(--futaba-cream); cursor: pointer; transition: all 0.2s ease;
-                            display: flex; align-items: center; justify-content: center;
-                        ">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-maroon)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <button class="qa-tool-button" id="qa-fill-tool" title="塗りつぶし">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-maroon)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/>
                                 <path d="m5 2 5 5"/>
                                 <path d="M2 13h15"/>
@@ -303,13 +289,15 @@
                 if (!btn) return;
                 
                 if (toolName === this.currentTool) {
-                    btn.style.border = '3px solid var(--futaba-maroon)';
+                    btn.classList.add('active');
+                    btn.style.border = '3px solid #ff8c42';
                     btn.style.background = 'var(--futaba-maroon)';
                     const svg = btn.querySelector('svg');
-                    if (svg) svg.setAttribute('stroke', 'var(--futaba-cream)');
+                    if (svg) svg.setAttribute('stroke', '#ffffff');
                 } else {
+                    btn.classList.remove('active');
                     btn.style.border = '2px solid var(--futaba-light-medium)';
-                    btn.style.background = 'var(--futaba-cream)';
+                    btn.style.background = 'var(--futaba-background)';
                     const svg = btn.querySelector('svg');
                     if (svg) svg.setAttribute('stroke', 'var(--futaba-maroon)');
                 }
@@ -549,6 +537,11 @@
                 this.currentTool = tool;
                 this._updateToolButtons();
             });
+
+            this.eventBus.on('tool:select', ({ tool }) => {
+                this.currentTool = tool;
+                this._updateToolButtons();
+            });
         }
 
         _savePosition(x, y) {
@@ -710,6 +703,7 @@
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
 
-    console.log('✅ quick-access-popup.js v8.13.3 loaded');
-    console.log('   🐛 構文エラー修正: 重複コード削除');
+    console.log('✅ quick-access-popup.js v8.13.14 loaded');
+    console.log('   🎨 サイドバー統一: アイコンサイズ36px, active-border橙色');
+    console.log('   🔗 ツール選択連動: sidebar ⇔ quick-access');
 })();

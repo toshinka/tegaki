@@ -1,16 +1,16 @@
 /**
- * @file ui/ui-panels.js - v8.13.13 塗りつぶしツール対応版
+ * @file ui/ui-panels.js - v8.13.14 サイドバー⇔クイックアクセス連動強化版
  * @description UIコントロールパネル統合管理
+ * 
+ * 【v8.13.14 改修内容】
+ * 🔗 サイドバーとクイックアクセスのツール選択完全連動
+ * 🎨 アクティブボーダー統一 (#ff8c42)
+ * 📡 tool:select イベント双方向同期
  * 
  * 【v8.13.13 改修内容】
  * 🎨 塗りつぶしツール追加
  * 🔧 fill-tool ボタン対応
  * ⌨️ Gキーショートカット対応
- * 
- * 【v8.13.12 改修内容】
- * 🔧 反転ボタン: bypassVKeyCheck=true を明示的に渡す
- * 🧹 不要なログ削除
- * 📝 依存関係明記
  * 
  * 【親ファイル (このファイルが依存)】
  * - core-runtime.js (API統一インターフェース)
@@ -109,7 +109,13 @@ window.TegakiUI.UIController = class {
             this.togglePopup('export');
         });
         
-        eventBus.on('ui:sidebar:sync-tool', ({ tool }) => {
+        // 🆕 v8.13.14: tool:select イベント購読（クイックアクセス→サイドバー同期）
+        eventBus.on('tool:select', ({ tool }) => {
+            this.updateToolUI(tool);
+        });
+        
+        // 既存: tool:changed イベント購読
+        eventBus.on('tool:changed', ({ tool }) => {
             this.updateToolUI(tool);
         });
     }
@@ -155,18 +161,21 @@ window.TegakiUI.UIController = class {
                 window.CoreRuntime.api.layer.exitMoveMode();
                 this.togglePopup('quickAccess');
                 this.updateToolUI('pen');
+                this.syncToolToQuickAccess('pen');
             },
             'eraser-tool': () => {
                 if (!window.CoreRuntime.api.tool.set('eraser')) return;
                 window.CoreRuntime.api.layer.exitMoveMode();
                 this.closeAllPopups();
                 this.updateToolUI('eraser');
+                this.syncToolToQuickAccess('eraser');
             },
             'fill-tool': () => {
                 if (!window.CoreRuntime.api.tool.set('fill')) return;
                 window.CoreRuntime.api.layer.exitMoveMode();
                 this.closeAllPopups();
                 this.updateToolUI('fill');
+                this.syncToolToQuickAccess('fill');
             },
             'resize-tool': () => {
                 this.togglePopup('resize');
@@ -193,10 +202,27 @@ window.TegakiUI.UIController = class {
         if (handler) handler();
     }
 
+    /**
+     * 🆕 v8.13.14: サイドバー→クイックアクセス同期
+     */
+    syncToolToQuickAccess(tool) {
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.emit('ui:sidebar:sync-tool', { tool });
+        }
+    }
+
+    /**
+     * サイドバーのツールUI更新（統一処理）
+     */
     updateToolUI(tool) {
-        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tool-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
         const toolBtn = document.getElementById(tool + '-tool');
-        if (toolBtn) toolBtn.classList.add('active');
+        if (toolBtn) {
+            toolBtn.classList.add('active');
+        }
 
         const toolNames = { 
             pen: 'ベクターペン', 
@@ -242,9 +268,6 @@ window.TegakiUI.UIController = class {
         }
     }
 
-    /**
-     * 🔧 v8.13.12: 反転ボタン処理 (唯一の実装箇所)
-     */
     setupFlipButtons() {
         const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
         const flipVerticalBtn = document.getElementById('flip-vertical-btn');
@@ -378,8 +401,8 @@ window.TegakiUI.setupPanelStyles = function() {
         }
         
         .tool-button.active {
-            background-color: var(--futaba-light-maroon) !important;
-            border-color: var(--futaba-maroon) !important;
+            background-color: var(--futaba-maroon) !important;
+            border: 3px solid #ff8c42 !important;
         }
         
         .tool-button:hover:not(.active) {
@@ -393,5 +416,6 @@ window.TegakiUI.setupPanelStyles = function() {
     }
 };
 
-console.log('✅ ui-panels.js v8.13.13 loaded');
-console.log('   ✓ 塗りつぶしツール対応 (fill-tool)');
+console.log('✅ ui-panels.js v8.13.14 loaded');
+console.log('   🔗 サイドバー⇔クイックアクセス完全連動');
+console.log('   🎨 active-border統一: #ff8c42');
