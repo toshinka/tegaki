@@ -1,11 +1,13 @@
 /**
- * @file system/drawing-clipboard.js - Phase 3 切り取り機能追加版
+ * @file system/drawing-clipboard.js - Phase 1: Ctrl+X切り取り機能修正版
  * @description レイヤークリップボード管理
  * 
- * 【Phase 3 改修内容】
- * 🆕 cutActiveLayer(): Ctrl+X レイヤー切り取り機能追加
- * 🔧 layer:cut-request イベントリスナー追加
- * 🔧 layer:delete-active イベントリスナー追加
+ * 【Phase 1 改修内容 - 最優先】
+ * 🔧 cutActiveLayer(): レイヤーごと削除 → 描画内容のみ削除に変更
+ *    - コピー後、deleteLayer()ではなくclearLayerDrawings()を呼び出し
+ *    - レイヤー構造は保持、paths配列のみクリア
+ * 🆕 clearLayerDrawings(): 描画内容のみをクリアする専用メソッド追加
+ * 🎨 ポップアップ表示追加（レイヤーコピー、切り取り）
  * 🧹 過剰なコンソールログ削除
  * 
  * 【親ファイル (このファイルが依存)】
@@ -13,6 +15,7 @@
  * - layer-system.js (LayerSystem)
  * - config.js (TEGAKI_CONFIG)
  * - history.js (History)
+ * - popup-manager.js (ポップアップ表示)
  * 
  * 【子ファイル (このファイルに依存)】
  * - keyboard-handler.js (Ctrl+C/V/X処理)
@@ -50,12 +53,12 @@
                 this.pasteLayer();
             });
             
-            // 🔧 Phase 3: 切り取りリスナー追加
+            // 🔧 Phase 1: 切り取りリスナー
             this.eventBus.on('layer:cut-request', () => {
                 this.cutActiveLayer();
             });
             
-            // 🔧 Phase 3: レイヤー削除リスナー追加
+            // レイヤー削除リスナー
             this.eventBus.on('layer:delete-active', () => {
                 this.deleteActiveLayer();
             });
@@ -84,7 +87,7 @@
                     e.preventDefault();
                 }
                 
-                // 🆕 Phase 3: Ctrl+X 切り取り
+                // 🔧 Phase 1: Ctrl+X 切り取り
                 if (e.ctrlKey && e.code === 'KeyX' && !e.altKey && !e.metaKey) {
                     this.cutActiveLayer();
                     e.preventDefault();
@@ -93,8 +96,8 @@
         }
 
         /**
-         * 🆕 Phase 3: レイヤー切り取り機能
-         * コピー → 削除の順で実行
+         * 🔧 Phase 1: レイヤー切り取り機能 - 描画内容のみ削除
+         * コピー → 描画クリアの順で実行（レイヤーは削除しない）
          */
         cutActiveLayer() {
             if (!this.layerManager) {
@@ -123,16 +126,20 @@
                 // 先にコピー
                 this.copyActiveLayer();
                 
-                // コピーが成功したら削除
+                // コピーが成功したら描画のみを削除（レイヤーは残す）
                 if (this.clipboardData) {
-                    const activeIndex = this.layerManager.activeLayerIndex;
-                    this.layerManager.deleteLayer(activeIndex);
+                    this.clearLayerDrawings(activeLayer);
                     
                     if (this.eventBus) {
                         this.eventBus.emit('clipboard:cut-success', {
                             layerId: activeLayer.layerData.id,
-                            layerIndex: activeIndex
+                            layerIndex: this.layerManager.activeLayerIndex
                         });
+                    }
+                    
+                    // 🎨 ポップアップ表示
+                    if (window.popupManager) {
+                        window.popupManager.show('レイヤー切り取り', 1500);
                     }
                 }
             } catch (error) {
@@ -143,7 +150,103 @@
         }
 
         /**
-         * 🆕 Phase 3: アクティブレイヤー削除機能
+         * 🆕 Phase 1: レイヤーの描画内容のみをクリア
+         * レイヤー構造は保持、paths配列と子要素のみ削除
+         */
+        clearLayerDrawings(layer) {
+            if (!layer?.layerData) return;
+            
+            const layerIndex = this.layerManager.getLayerIndex(layer);
+            const paths = layer.layerData.paths || [];
+            
+            if (paths.length === 0) return;
+            
+            // History登録
+            if (window.History && !window.History._manager?.isApplying) {
+                const pathsBackup = structuredClone(paths);
+                
+                const entry = {
+                    name: 'layer-clear-drawings',
+                    do: () => {
+                        this._clearDrawingsInternal(layer);
+                        this.layerManager.requestThumbnailUpdate(layerIndex);
+                    },
+                    undo: () => {
+                        this._restoreDrawingsInternal(layer, pathsBackup, layerIndex);
+                        this.layerManager.requestThumbnailUpdate(layerIndex);
+                    },
+                    meta: { 
+                        layerId: layer.layerData.id,
+                        pathCount: pathsBackup.length
+                    }
+                };
+                
+                window.History.push(entry);
+            } else {
+                this._clearDrawingsInternal(layer);
+                this.layerManager.requestThumbnailUpdate(layerIndex);
+            }
+        }
+
+        _clearDrawingsInternal(layer) {
+            if (!layer?.layerData) return;
+            
+            // 子要素削除（背景とマスク以外）
+            const childrenToRemove = [];
+            for (let child of layer.children) {
+                if (child !== layer.layerData.backgroundGraphics && 
+                    child !== layer.layerData.maskSprite) {
+                    childrenToRemove.push(child);
+                }
+            }
+            
+            childrenToRemove.forEach(child => {
+                try {
+                    layer.removeChild(child);
+                    if (child.destroy && typeof child.destroy === 'function') {
+                        child.destroy({ children: true, texture: false, baseTexture: false });
+                    }
+                } catch (error) {}
+            });
+            
+            // paths配列クリア
+            layer.layerData.paths = [];
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:drawings-cleared', {
+                    layerId: layer.layerData.id
+                });
+            }
+        }
+
+        _restoreDrawingsInternal(layer, pathsBackup, layerIndex) {
+            if (!layer?.layerData || !pathsBackup) return;
+            
+            this._clearDrawingsInternal(layer);
+            layer.layerData.paths = [];
+            
+            for (let pathData of pathsBackup) {
+                try {
+                    const rebuildSuccess = this.layerManager.rebuildPathGraphics(pathData);
+                    
+                    if (rebuildSuccess && pathData.graphics) {
+                        layer.layerData.paths.push(pathData);
+                        layer.addChild(pathData.graphics);
+                    }
+                } catch (error) {}
+            }
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:drawings-restored', {
+                    layerId: layer.layerData.id,
+                    layerIndex: layerIndex,
+                    pathCount: pathsBackup.length
+                });
+            }
+        }
+
+        /**
+         * アクティブレイヤー削除機能
          * Ctrl+Delete で呼び出される
          */
         deleteActiveLayer() {
@@ -242,7 +345,7 @@
                         pathCount: pathsToStore.length,
                         isNonDestructive: true,
                         hasTransforms: this.layerManager.transform?._isTransformNonDefault?.(currentTransform) || false,
-                        systemVersion: 'v8.13_Phase3+Cut'
+                        systemVersion: 'v8.13_Phase1_Cut_Fix'
                     },
                     timestamp: Date.now()
                 };
@@ -252,6 +355,11 @@
                         pathCount: pathsToStore.length,
                         hasTransforms: this.layerManager.transform?._isTransformNonDefault?.(currentTransform) || false
                     });
+                }
+                
+                // 🎨 ポップアップ表示
+                if (window.popupManager) {
+                    window.popupManager.show('レイヤーコピー', 1500);
                 }
                 
             } catch (error) {
@@ -401,7 +509,7 @@
             }
             
             let restoredCount = 0;
-            clipData.paths.forEach((pathData, pathIndex) => {
+            clipData.paths.forEach((pathData) => {
                 try {
                     if (pathData.points && pathData.points.length > 0) {
                         const newPath = {
@@ -561,7 +669,6 @@
                     return {
                         id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${index}`,
                         points: (path.points || []).map(point => {
-                            // localX/localY 形式対応
                             const x = point.localX !== undefined ? point.localX : (point.x || 0);
                             const y = point.localY !== undefined ? point.localY : (point.y || 0);
                             return { 
@@ -694,12 +801,12 @@
                 summary: this.getClipboardSummary(),
                 eventBusAvailable: !!this.eventBus,
                 layerManagerAvailable: !!this.layerManager,
-                phase: 'Phase3-Cut-Delete-Function',
-                newFeatures: {
-                    cutLayer: 'available',
+                phase: 'Phase1-Cut-Fix-Drawings-Only',
+                fixedFeatures: {
+                    cutLayer: 'drawings-only (layer preserved)',
                     deleteLayer: 'available',
-                    pasteToActiveLayer: 'available',
-                    historyRecording: window.History ? 'available' : 'not-available'
+                    copyPopup: 'available',
+                    cutPopup: 'available'
                 }
             };
         }
@@ -717,6 +824,6 @@
 
 })();
 
-console.log('✅ drawing-clipboard.js Phase 3 loaded');
-console.log('   🆕 cutActiveLayer(): Ctrl+X 切り取り機能');
-console.log('   🆕 deleteActiveLayer(): Ctrl+Delete 削除機能');
+console.log('✅ drawing-clipboard.js Phase 1 loaded');
+console.log('   🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）');
+console.log('   🎨 ポップアップ: レイヤーコピー、切り取り');

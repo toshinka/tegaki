@@ -1,4 +1,4 @@
-/* Tegaki Tool - Main Stylesheet (v8.13.14: サイドバー・クイックアクセス統一版) */
+/* Tegaki Tool - Main Stylesheet (v8.13.15: サイドバー軽量デザイン版) */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -61,18 +61,19 @@ body {
     stroke: var(--futaba-maroon); 
 }
 
-.tool-button:hover { 
-    background: var(--futaba-medium); 
+.tool-button:hover:not(.active) { 
+    background: var(--futaba-light-medium);
+    border-color: var(--futaba-medium);
     transform: scale(1.05); 
 }
 
 .tool-button.active { 
-    background: var(--futaba-maroon);
+    background: var(--futaba-background);
     border: 3px solid var(--active-border);
 }
 
 .tool-button.active svg { 
-    stroke: #ffffff; 
+    stroke: var(--futaba-maroon);
 }
 
 .tool-separator { 
@@ -512,18 +513,19 @@ canvas {
     transition: stroke 0.2s ease;
 }
 
-.qa-tool-button:hover {
-    background: var(--futaba-medium);
+.qa-tool-button:hover:not(.active) {
+    background: var(--futaba-light-medium);
+    border-color: var(--futaba-medium);
     transform: scale(1.05);
 }
 
 .qa-tool-button.active {
-    background: var(--futaba-maroon);
+    background: var(--futaba-background);
     border: 3px solid var(--active-border);
 }
 
 .qa-tool-button.active svg {
-    stroke: #ffffff;
+    stroke: var(--futaba-maroon);
 }
 
 .resize-compact-group {

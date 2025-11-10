@@ -1,6 +1,13 @@
 /**
- * @file layer-system.js - Phase 5+6統合改修版 + v8.13.8反転修正
+ * @file layer-system.js - Phase 2: ↑↓キー選択機能修正版
  * @description レイヤー管理・操作の中核システム
+ * 
+ * 【Phase 2 改修内容 - 高優先度】
+ * 🔧 moveActiveLayerHierarchy(): レイヤー順序変更 → アクティブ選択に変更
+ *    - 現在: レイヤーの順序を入れ替える（reorder）
+ *    - 修正後: アクティブレイヤーの選択を変更（順序は変えない）
+ * 🆕 selectNextLayer(), selectPrevLayer(): 新規追加
+ * 🧹 過剰なコンソールログ削除
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (イベント通信)
@@ -14,12 +21,6 @@
  * - layer-panel-renderer.js (UI描画 - EventBus経由のみ)
  * - keyboard-handler.js (ショートカット)
  * - thumbnail-update-manager.js (サムネイル更新)
- * 
- * 【v8.13.8 改修内容】
- * 🔧 flipActiveLayer(): History二重登録完全防止
- *    - transform.flipLayer()を skipHistory=true で呼び出し
- *    - confirmTransform()内でのHistory登録をスキップ
- *    - flipActiveLayer()で一度だけHistory.push()
  */
 
 (function() {
@@ -448,20 +449,6 @@
             }
         }
         
-        /**
-         * 🔧 v8.13.8: 反転処理 - History二重登録完全防止
-         * 
-         * 従来の問題:
-         * - transform.flipLayer()内でconfirmTransform()を呼び出し
-         * - confirmTransform()内でonTransformComplete()経由でHistory登録
-         * - さらにflipActiveLayer()でもHistory.push()を実行
-         * → 結果: 同一操作が2回Historyに登録される
-         * 
-         * 修正内容:
-         * - transform.flipLayer(layer, direction, skipHistory=true)で呼び出し
-         * - confirmTransform()内のHistory登録をスキップ
-         * - flipActiveLayer()で一度だけHistory.push()を実行
-         */
         flipActiveLayer(direction, bypassVKeyCheck = false) {
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
@@ -476,12 +463,10 @@
             if (window.History && !window.History._manager.isApplying) {
                 const pathsBefore = structuredClone(activeLayer.layerData.paths);
                 
-                // 🔧 skipHistory=true でconfirmTransform内のHistory登録をスキップ
                 this.transform.flipLayer(activeLayer, direction, true);
                 
                 const pathsAfter = structuredClone(activeLayer.layerData.paths);
                 
-                // ここで一度だけHistory登録
                 window.History.push({
                     name: `layer-flip-${direction}`,
                     do: () => {
@@ -499,7 +484,6 @@
                     }
                 });
             } else {
-                // History適用中の場合はskipHistory=falseで実行
                 this.transform.flipLayer(activeLayer, direction, false);
             }
             
@@ -591,9 +575,6 @@
             }
         }
         
-        /**
-         * 🔧 v8.13.8: Vキー+ドラッグのスライダー即時反映
-         */
         _handleLayerDrag(dx, dy, shiftKey) {
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
@@ -624,8 +605,6 @@
                 transform.y += adjustedDy;
             }
             this.transform.applyTransform(activeLayer, transform, centerX, centerY);
-            
-            // 🔧 確実にスライダーUI更新
             this.transform.updateTransformPanelValues(activeLayer);
             
             if (this.eventBus) {
@@ -908,12 +887,13 @@
                 this.transformActiveLayer(direction);
             });
             
+            // 🔧 Phase 2: ↑↓キーでレイヤー選択（順序変更ではない）
             this.eventBus.on('layer:select-next', () => {
-                this.moveActiveLayerHierarchy('up');
+                this.selectNextLayer();
             });
             
             this.eventBus.on('layer:select-prev', () => {
-                this.moveActiveLayerHierarchy('down');
+                this.selectPrevLayer();
             });
             
             this.eventBus.on('layer:order-up', () => {
@@ -958,6 +938,71 @@
             });
         }
 
+        /**
+         * 🔧 Phase 2: アクティブレイヤー選択（上へ）
+         * レイヤーの順序は変更せず、選択のみを変更
+         */
+        selectNextLayer() {
+            const layers = this.getLayers();
+            if (layers.length <= 1) return;
+            
+            const currentIndex = this.activeLayerIndex;
+            let newIndex = currentIndex + 1;
+            
+            // 範囲外チェック
+            if (newIndex >= layers.length) return;
+            
+            // 背景レイヤーはスキップ
+            const targetLayer = layers[newIndex];
+            if (targetLayer?.layerData?.isBackground) return;
+            
+            // アクティブレイヤーを変更
+            this.setActiveLayer(newIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:selection-changed', {
+                    oldIndex: currentIndex,
+                    newIndex: newIndex,
+                    layerId: targetLayer?.layerData?.id
+                });
+            }
+        }
+
+        /**
+         * 🔧 Phase 2: アクティブレイヤー選択（下へ）
+         * レイヤーの順序は変更せず、選択のみを変更
+         */
+        selectPrevLayer() {
+            const layers = this.getLayers();
+            if (layers.length <= 1) return;
+            
+            const currentIndex = this.activeLayerIndex;
+            let newIndex = currentIndex - 1;
+            
+            // 範囲外チェック
+            if (newIndex < 0) return;
+            
+            // 背景レイヤーはスキップ
+            const targetLayer = layers[newIndex];
+            if (targetLayer?.layerData?.isBackground) return;
+            
+            // アクティブレイヤーを変更
+            this.setActiveLayer(newIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:selection-changed', {
+                    oldIndex: currentIndex,
+                    newIndex: newIndex,
+                    layerId: targetLayer?.layerData?.id
+                });
+            }
+        }
+
+        /**
+         * 🔧 Phase 2で非推奨: レイヤー順序変更
+         * 今後は reorderLayers() を直接使用することを推奨
+         * この関数は互換性のために残す
+         */
         moveActiveLayerHierarchy(direction) {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -1336,6 +1381,6 @@
 
 })();
 
-console.log('✅ layer-system.js (v8.13.8 反転History二重登録防止版) loaded');
-console.log('   🔧 flipActiveLayer: History二重登録完全防止');
-console.log('   🔧 _handleLayerDrag: スライダーUI即時反映');
+console.log('✅ layer-system.js Phase 2 loaded');
+console.log('   🔧 selectNextLayer(), selectPrevLayer(): レイヤー選択機能追加');
+console.log('   🔧 ↑↓キー: レイヤー順序変更 → 選択変更に修正');
