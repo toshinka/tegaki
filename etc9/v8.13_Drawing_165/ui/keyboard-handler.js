@@ -1,0 +1,478 @@
+/**
+ * @file ui/keyboard-handler.js - Phase 3+4+塗りつぶし 完全改修版
+ * @description キーボードショートカット処理の中核システム
+ * 
+ * 【Phase 4 改修内容】
+ * 🎨 TOOL_FILL: Gキー → 塗りつぶしツール切り替え
+ * 
+ * 【Phase 3+4 改修内容】
+ * 🔧 LAYER_DELETE: Ctrl+Delete → アクティブレイヤー削除
+ * 🔧 LAYER_CUT: Ctrl+X → レイヤー切り取り（drawing-clipboard経由）
+ * 🔧 FRAME_PREV/NEXT: ←→ 単体キー化（vMode=false時のみ動作）
+ * 🔧 vMode判定: ↑↓ レイヤー選択はvMode=false時のみ
+ * 🧹 過剰なデバッグログ削除
+ * 
+ * 【親ファイル (このファイルが依存)】
+ * - config.js (window.TEGAKI_KEYMAP)
+ * - event-bus.js (window.TegakiEventBus)
+ * - history.js (window.History)
+ * - core-runtime.js (window.CoreRuntime.api)
+ * - layer-system.js (window.layerManager)
+ * - drawing-clipboard.js (window.drawingClipboard)
+ * - system/drawing/fill-tool.js (FillTool)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ * - core-initializer.js (初期化時にinit呼び出し)
+ */
+
+window.KeyboardHandler = (function() {
+    'use strict';
+
+    let isInitialized = false;
+    let vKeyPressed = false;
+
+    function isInputFocused() {
+        const activeElement = document.activeElement;
+        if (!activeElement) return false;
+        
+        return (
+            activeElement.tagName === 'INPUT' ||
+            activeElement.tagName === 'TEXTAREA' ||
+            activeElement.isContentEditable
+        );
+    }
+
+    function handleKeyDown(e) {
+        const eventBus = window.TegakiEventBus;
+        const keymap = window.TEGAKI_KEYMAP;
+        
+        if (!eventBus || !keymap) return;
+        if (isInputFocused()) return;
+        
+        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
+        if (e.key.startsWith('F') && e.key.length <= 3) {
+            e.preventDefault();
+            return;
+        }
+        
+        // Vキーのトグル処理
+        if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+            if (!e.repeat) {
+                vKeyPressed = !vKeyPressed;
+                eventBus.emit('keyboard:vkey-state-changed', { pressed: vKeyPressed });
+            }
+            e.preventDefault();
+            return;
+        }
+        
+        const action = keymap.getAction(e, { vMode: vKeyPressed });
+        if (!action) return;
+        
+        handleAction(action, e, eventBus);
+    }
+
+    function handleKeyUp(e) {
+        // Vキーはトグル式なので、keyupでは何もしない
+    }
+
+    function handleAction(action, event, eventBus) {
+        const api = window.CoreRuntime?.api;
+        
+        switch(action) {
+            case 'UNDO':
+                if (window.History?.canUndo()) {
+                    window.History.undo();
+                }
+                event.preventDefault();
+                break;
+                
+            case 'REDO':
+                if (window.History?.canRedo()) {
+                    window.History.redo();
+                }
+                event.preventDefault();
+                break;
+            
+            case 'TOOL_PEN':
+                if (api?.tool.set('pen')) {
+                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
+                }
+                event.preventDefault();
+                break;
+            
+            case 'TOOL_ERASER':
+                if (api?.tool.set('eraser')) {
+                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'eraser' });
+                }
+                event.preventDefault();
+                break;
+            
+            // 🎨 Phase 4: 塗りつぶしツール (Gキー)
+            case 'TOOL_FILL':
+                if (api?.tool.set('fill')) {
+                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'fill' });
+                }
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_CREATE':
+                if (api?.layer.create) {
+                    const result = api.layer.create();
+                    if (result) {
+                        api.layer.setActive(result.index);
+                    }
+                }
+                event.preventDefault();
+                break;
+            
+            // BS/DELキーでの描画削除
+            case 'LAYER_DELETE_DRAWINGS':
+                deleteActiveLayerDrawings();
+                event.preventDefault();
+                break;
+            
+            // 🔧 Phase 3: Ctrl+Delete → アクティブレイヤー削除
+            case 'LAYER_DELETE':
+                eventBus.emit('layer:delete-active');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_COPY':
+                eventBus.emit('layer:copy-request');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_PASTE':
+                eventBus.emit('layer:paste-request');
+                event.preventDefault();
+                break;
+            
+            // 🔧 Phase 3: Ctrl+X レイヤー切り取り
+            case 'LAYER_CUT':
+                eventBus.emit('layer:cut-request');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_RESET':
+                eventBus.emit('layer:reset-transform');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_MOVE_UP':
+                eventBus.emit('layer:move-by-key', { direction: 'ArrowUp' });
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_MOVE_DOWN':
+                eventBus.emit('layer:move-by-key', { direction: 'ArrowDown' });
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_MOVE_LEFT':
+                eventBus.emit('layer:move-by-key', { direction: 'ArrowLeft' });
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_MOVE_RIGHT':
+                eventBus.emit('layer:move-by-key', { direction: 'ArrowRight' });
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_SCALE_UP':
+                eventBus.emit('layer:scale-by-key', { direction: 'ArrowUp' });
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_SCALE_DOWN':
+                eventBus.emit('layer:scale-by-key', { direction: 'ArrowDown' });
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_ROTATE_LEFT':
+                eventBus.emit('layer:rotate-by-key', { direction: 'ArrowLeft' });
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_ROTATE_RIGHT':
+                eventBus.emit('layer:rotate-by-key', { direction: 'ArrowRight' });
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_FLIP_HORIZONTAL':
+                if (isVKeyPressed()) {
+                    eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
+                }
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_FLIP_VERTICAL':
+                if (isVKeyPressed()) {
+                    eventBus.emit('layer:flip-by-key', { direction: 'vertical' });
+                }
+                event.preventDefault();
+                break;
+            
+            // 🔧 Phase 3: ↑↓ レイヤー選択（vMode=false時のみ）
+            case 'LAYER_HIERARCHY_UP':
+                if (!vKeyPressed) {
+                    eventBus.emit('layer:select-next');
+                }
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_HIERARCHY_DOWN':
+                if (!vKeyPressed) {
+                    eventBus.emit('layer:select-prev');
+                }
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_ORDER_UP':
+                eventBus.emit('layer:order-up');
+                event.preventDefault();
+                break;
+            
+            case 'LAYER_ORDER_DOWN':
+                eventBus.emit('layer:order-down');
+                event.preventDefault();
+                break;
+            
+            // カメラ反転（EventBus経由）
+            case 'CAMERA_FLIP_HORIZONTAL':
+                if (!vKeyPressed) {
+                    eventBus.emit('camera:flip-horizontal');
+                }
+                event.preventDefault();
+                break;
+            
+            case 'CAMERA_FLIP_VERTICAL':
+                if (!vKeyPressed) {
+                    eventBus.emit('camera:flip-vertical');
+                }
+                event.preventDefault();
+                break;
+            
+            case 'CAMERA_RESET':
+                if (!vKeyPressed) {
+                    eventBus.emit('camera:reset');
+                }
+                event.preventDefault();
+                break;
+            
+            // 🔧 Phase 3: ←→ フレーム移動（vMode=false時のみ）
+            case 'FRAME_PREV':
+                if (!vKeyPressed && window.timelineUI?.isVisible) {
+                    window.timelineUI.goToPreviousCutSafe();
+                }
+                event.preventDefault();
+                break;
+            
+            case 'FRAME_NEXT':
+                if (!vKeyPressed && window.timelineUI?.isVisible) {
+                    window.timelineUI.goToNextCutSafe();
+                }
+                event.preventDefault();
+                break;
+            
+            case 'GIF_PLAY_PAUSE':
+                if (window.timelineUI?.isVisible) {
+                    window.timelineUI.togglePlayStop();
+                }
+                event.preventDefault();
+                break;
+            
+            case 'GIF_TOGGLE_TIMELINE':
+                eventBus.emit('ui:toggle-timeline');
+                event.preventDefault();
+                break;
+            
+            case 'GIF_CREATE_FRAME':
+                if (window.animationSystem) {
+                    window.animationSystem.createNewEmptyFrame();
+                }
+                event.preventDefault();
+                break;
+            
+            case 'GIF_COPY_FRAME':
+                eventBus.emit('frame:copy-current');
+                setTimeout(() => {
+                    eventBus.emit('frame:paste-right-adjacent');
+                }, 10);
+                event.preventDefault();
+                break;
+            
+            case 'SETTINGS_OPEN':
+                eventBus.emit('ui:open-settings');
+                event.preventDefault();
+                break;
+            
+            case 'EXPORT_TOGGLE':
+                eventBus.emit('ui:toggle-export');
+                event.preventDefault();
+                break;
+            
+            case 'QUICK_ACCESS_TOGGLE':
+                eventBus.emit('ui:toggle-quick-access');
+                event.preventDefault();
+                break;
+        }
+    }
+
+    /**
+     * アクティブレイヤーの描画削除
+     * BS/DELキーで確実に動作
+     */
+    function deleteActiveLayerDrawings() {
+        const layerSystem = window.drawingApp?.layerManager || window.layerManager;
+        if (!layerSystem) {
+            return;
+        }
+        
+        const activeLayer = layerSystem.getActiveLayer();
+        if (!activeLayer?.layerData) {
+            return;
+        }
+        
+        if (activeLayer.layerData.isBackground) {
+            return;
+        }
+        
+        const paths = activeLayer.layerData.paths;
+        if (!paths || paths.length === 0) {
+            return;
+        }
+        
+        // History登録
+        if (window.History && !window.History._manager?.isApplying) {
+            const pathsBackup = structuredClone(paths);
+            const layerIndex = layerSystem.activeLayerIndex;
+            
+            const entry = {
+                name: 'layer-delete-drawings',
+                do: () => {
+                    clearLayerDrawings(layerSystem, activeLayer);
+                },
+                undo: () => {
+                    restoreLayerDrawings(layerSystem, activeLayer, pathsBackup, layerIndex);
+                },
+                meta: { 
+                    layerId: activeLayer.layerData.id,
+                    pathCount: pathsBackup.length
+                }
+            };
+            
+            window.History.push(entry);
+        } else {
+            clearLayerDrawings(layerSystem, activeLayer);
+        }
+    }
+
+    function clearLayerDrawings(layerSystem, layer) {
+        if (!layer?.layerData) return;
+        
+        const childrenToRemove = [];
+        for (let child of layer.children) {
+            if (child !== layer.layerData.backgroundGraphics && 
+                child !== layer.layerData.maskSprite) {
+                childrenToRemove.push(child);
+            }
+        }
+        
+        childrenToRemove.forEach(child => {
+            try {
+                layer.removeChild(child);
+                if (child.destroy && typeof child.destroy === 'function') {
+                    child.destroy({ children: true, texture: false, baseTexture: false });
+                }
+            } catch (error) {}
+        });
+        
+        layer.layerData.paths = [];
+        layerSystem.requestThumbnailUpdate(layerSystem.activeLayerIndex);
+        
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.emit('layer:drawings-deleted', {
+                layerId: layer.layerData.id,
+                layerIndex: layerSystem.activeLayerIndex
+            });
+        }
+    }
+
+    function restoreLayerDrawings(layerSystem, layer, pathsBackup, layerIndex) {
+        if (!layer?.layerData || !pathsBackup) return;
+        
+        clearLayerDrawings(layerSystem, layer);
+        layer.layerData.paths = [];
+        
+        for (let pathData of pathsBackup) {
+            try {
+                const rebuildSuccess = layerSystem.rebuildPathGraphics(pathData);
+                
+                if (rebuildSuccess && pathData.graphics) {
+                    layer.layerData.paths.push(pathData);
+                    layer.addChild(pathData.graphics);
+                }
+            } catch (error) {}
+        }
+        
+        layerSystem.requestThumbnailUpdate(layerIndex);
+        
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.emit('layer:drawings-restored', {
+                layerId: layer.layerData.id,
+                layerIndex: layerIndex,
+                pathCount: pathsBackup.length
+            });
+        }
+    }
+
+    function init() {
+        if (isInitialized) return;
+
+        document.addEventListener('keydown', handleKeyDown, { capture: true });
+        document.addEventListener('keyup', handleKeyUp);
+        
+        // window blur時にVキー状態をリセット
+        window.addEventListener('blur', () => {
+            if (vKeyPressed) {
+                vKeyPressed = false;
+                const eventBus = window.TegakiEventBus;
+                if (eventBus) {
+                    eventBus.emit('keyboard:vkey-state-changed', { pressed: false });
+                }
+            }
+        });
+        
+        isInitialized = true;
+    }
+
+    function getShortcutList() {
+        return window.TEGAKI_KEYMAP?.getShortcutList() || [];
+    }
+    
+    function isVKeyPressed() {
+        return vKeyPressed;
+    }
+    
+    function setVKeyPressed(state) {
+        if (vKeyPressed !== state) {
+            vKeyPressed = state;
+            const eventBus = window.TegakiEventBus;
+            if (eventBus) {
+                eventBus.emit('keyboard:vkey-state-changed', { pressed: vKeyPressed });
+            }
+        }
+    }
+
+    return {
+        init,
+        isInputFocused,
+        getShortcutList,
+        isVKeyPressed,
+        setVKeyPressed,
+        deleteActiveLayerDrawings
+    };
+})();
+
+console.log('✅ keyboard-handler.js Phase 4 loaded');
+console.log('   🎨 TOOL_FILL: Gキー対応');
