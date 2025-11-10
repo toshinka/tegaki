@@ -1,0 +1,462 @@
+================================================================================
+ブラウザお絵かきツール v8.13 - DPR=1固定化 段階的改修計画書
+================================================================================
+改修日: 2025-11-11
+改修理由: 描画時DPR倍率と出力時解像度の不一致によるユーザー期待値との乖離を解消
+方針: DPR=1固定 + 出力時任意解像度スケーリング（Sketchbook方式）
+
+【重要】後続Claude担当者への注意事項
+================================================================================
+🚨 DPR（devicePixelRatio）を倍加する実装は厳禁
+   理由: 描画時の見た目と出力結果の乖離がユーザーの信頼を損なう
+   
+🚨 本ツールはGPU（WebGPU）ベースのPC優位設計
+   Retina対応は不要。解像度制御は出力時のみで行う。
+
+🚨 ファイル改修時は必ずヘッダーの依存関係コメントを確認・更新すること
+   多重実装・循環依存を防ぐため、関連ファイルを必ず読み込むこと。
+
+================================================================================
+
+
+================================================================================
+Phase 1: コア設定のDPR固定化（最優先・即座実行可能）
+================================================================================
+
+【目的】
+renderer.resolution を devicePixelRatio から 1 へ固定し、描画基準を明確化
+
+【改修対象ファイル】
+- config.js
+
+【処理フロー上の位置】
+初期化 → レンダラー生成 → 全描画処理の基盤
+
+【改修内容】
+1. RENDERER.resolution を 1 に固定
+2. コメントで DPR=1 方針を明記（後続Claude向け警告）
+
+【変更箇所】
+```javascript
+// config.js
+// 依存: なし（最上位設定ファイル）
+// 被依存: core-initializer.js, core-engine.js
+
+RENDERER: {
+    // 🚨 重要: DPR=1固定（devicePixelRatioは使用しない）
+    // 理由: 描画時解像度と出力時解像度の一致を保証
+    // 出力時の高解像度化は export-manager.js で制御
+    resolution: 1,  // 旧: window.devicePixelRatio || 1
+    backgroundColor: 0x000000,
+    // ...
+}
+```
+
+【検証方法】
+- ブラウザコンソールで `app.renderer.resolution` が 1 であることを確認
+- 描画時の canvas.width が CSS width と一致することを確認
+
+【影響範囲】
+- 全描画処理（軽量化される）
+- 画面表示（Retina画面で若干の粗さが出る可能性）
+
+================================================================================
+
+
+================================================================================
+Phase 2: エクスポート設定UI追加
+================================================================================
+
+【目的】
+ユーザーが出力解像度を選択可能にし、期待値を明示
+
+【改修対象ファイル】
+- ui/settings-popup.js
+- system/settings-manager.js
+
+【処理フロー上の位置】
+UI操作 → 設定保存 → エクスポート時参照
+
+【改修内容】
+1. settings-popup.js に「出力解像度」セクション追加
+2. settings-manager.js に exportResolution 保存処理追加
+
+【settings-popup.js 変更箇所】
+```javascript
+// ui/settings-popup.js
+// 依存: system/settings-manager.js, ui/dom-builder.js
+// 被依存: ui/ui-panels.js
+
+// 既存の設定項目群に追加
+{
+    type: 'section',
+    title: '出力設定',
+    items: [
+        {
+            type: 'select',
+            id: 'exportResolution',
+            label: '出力解像度倍率',
+            options: [
+                { value: '1', label: '等倍（1×）- 軽量・画面表示と同等' },
+                { value: '2', label: '2倍（2×）- 高精細・推奨' },
+                { value: '3', label: '3倍（3×）- 印刷用' },
+                { value: '4', label: '4倍（4×）- 超高解像度' },
+                { value: 'auto', label: '自動（デバイスDPR参照）' }
+            ],
+            default: '2',
+            description: '🚨 描画時は常に1倍。出力時のみ指定倍率で再生成'
+        }
+    ]
+}
+```
+
+【settings-manager.js 変更箇所】
+```javascript
+// system/settings-manager.js
+// 依存: config.js
+// 被依存: ui/settings-popup.js, system/export-manager.js
+
+// デフォルト設定に追加
+this.defaults = {
+    // ...既存設定
+    exportResolution: '2',  // 出力解像度倍率
+};
+
+// 取得メソッド追加
+getExportResolution() {
+    const value = this.get('exportResolution', '2');
+    if (value === 'auto') {
+        return window.devicePixelRatio || 1;
+    }
+    return parseFloat(value);
+}
+```
+
+【検証方法】
+- 設定ポップアップに「出力設定」セクションが表示される
+- 選択値がローカルストレージに保存される
+- console.log(settingsManager.getExportResolution()) で値確認
+
+【影響範囲】
+- UI表示のみ（エクスポート処理への影響はPhase 3で実装）
+
+================================================================================
+
+
+================================================================================
+Phase 3: エクスポートマネージャー改修（核心部分）
+================================================================================
+
+【目的】
+出力時に指定解像度でSDF/MSDFを再生成し、高精細ラスタライズを実現
+
+【改修対象ファイル】
+- system/export-manager.js
+
+【参照必須ファイル】
+- system/settings-manager.js（解像度設定取得）
+- system/layer-system.js（レイヤー構造取得）
+- system/camera-system.js（worldContainer参照）
+- config.js（キャンバスサイズ）
+
+【処理フロー上の位置】
+エクスポート要求 → 解像度計算 → 一時コンテナ作成 → 高解像度レンダリング → Canvas抽出
+
+【改修内容】
+renderToCanvas(settings) メソッドの完全書き換え
+
+【変更箇所】
+```javascript
+// system/export-manager.js
+// 依存: config.js, system/settings-manager.js, system/layer-system.js
+// 被依存: system/exporters/*.js（全エクスポーター）
+
+/**
+ * 🚨 重要: 出力専用レンダリングパス
+ * DPR=1固定の描画から、指定解像度で再レンダリング
+ * @param {Object} settings - { width, height, resolution }
+ * @returns {HTMLCanvasElement}
+ */
+renderToCanvas(settings = {}) {
+    const app = this.app;
+    const CONFIG = window.TEGAKI_CONFIG;
+    
+    // 1. 解像度計算
+    const resolution = settings.resolution || this.settingsManager.getExportResolution();
+    const baseWidth = settings.width || CONFIG.canvas.width;
+    const baseHeight = settings.height || CONFIG.canvas.height;
+    const targetWidth = Math.round(baseWidth * resolution);
+    const targetHeight = Math.round(baseHeight * resolution);
+    
+    console.log(`[Export] Rendering at ${targetWidth}x${targetHeight} (${resolution}x)`);
+    
+    // 2. 一時コンテナ作成（画面コンテナを直接触らない）
+    const tempContainer = new PIXI.Container();
+    const srcContainer = this.layerSystem.rootContainer;
+    
+    // 元の親子関係を保持
+    const originalParent = srcContainer.parent;
+    const originalTransform = {
+        x: srcContainer.x,
+        y: srcContainer.y,
+        scaleX: srcContainer.scale.x,
+        scaleY: srcContainer.scale.y
+    };
+    
+    // 一時的に親子付け替え
+    if (originalParent) originalParent.removeChild(srcContainer);
+    tempContainer.addChild(srcContainer);
+    
+    // 3. 出力解像度に合わせてスケーリング
+    const scale = resolution;
+    srcContainer.scale.set(scale, scale);
+    srcContainer.position.set(0, 0);
+    
+    // 4. RenderTexture作成（重要: resolution=1で十分、既にコンテンツをスケール済み）
+    const renderTexture = PIXI.RenderTexture.create({
+        width: targetWidth,
+        height: targetHeight,
+        resolution: 1,  // コンテンツ側で既にスケール済みのため1で良い
+        multisample: PIXI.MSAA_QUALITY.NONE
+    });
+    
+    // 5. レンダリング実行
+    app.renderer.render(tempContainer, { renderTexture });
+    
+    // 6. Canvas抽出
+    const canvas = app.renderer.extract.canvas(renderTexture);
+    
+    // 7. 後処理: 元に戻す
+    tempContainer.removeChild(srcContainer);
+    if (originalParent) originalParent.addChild(srcContainer);
+    srcContainer.position.set(originalTransform.x, originalTransform.y);
+    srcContainer.scale.set(originalTransform.scaleX, originalTransform.scaleY);
+    
+    // 8. クリーンアップ
+    renderTexture.destroy(true);
+    tempContainer.destroy({ children: false });
+    
+    console.log(`[Export] Canvas generated: ${canvas.width}x${canvas.height}`);
+    return canvas;
+}
+```
+
+【重要ポイント】
+- SDF/MSDFシェーダーは既に解像度非依存（距離場計算）
+- コンテナのスケーリングで自動的に高解像度化される
+- 追加のGPU Compute呼び出しは不要（現行実装で対応済み）
+
+【検証方法】
+- PNG出力して canvas.width が設定解像度×倍率であることを確認
+- 出力画像をピクセル等倍で開き、線のジャギーがないか確認
+- console.logで targetWidth/Height が正しいか確認
+
+【影響範囲】
+- 全エクスポーター（PNG, APNG, WebP, GIF, PSD）
+
+================================================================================
+
+
+================================================================================
+Phase 4: 個別エクスポーター調整
+================================================================================
+
+【目的】
+各エクスポーターがrenderToCanvas()を正しく使用するよう統一
+
+【改修対象ファイル】
+- system/exporters/png-exporter.js
+- system/exporters/apng-exporter.js
+- system/exporters/webp-exporter.js
+- system/exporters/gif-exporter.js
+- system/exporters/psd-exporter.js
+
+【処理フロー上の位置】
+エクスポート要求 → renderToCanvas()呼び出し → 形式エンコード → ダウンロード
+
+【改修内容】
+1. 独自のレンダリング処理を削除
+2. export-manager.renderToCanvas()に統一
+3. resolution指定の重複排除
+
+【png-exporter.js 変更例】
+```javascript
+// system/exporters/png-exporter.js
+// 依存: system/export-manager.js
+// 被依存: ui/export-popup.js
+
+async generateBlob(options = {}) {
+    const resolution = options.resolution || this.manager.settingsManager.getExportResolution();
+    
+    // 🚨 重要: renderToCanvas()を使用（独自実装禁止）
+    const canvas = this.manager.renderToCanvas({
+        width: options.width,
+        height: options.height,
+        resolution: resolution
+    });
+    
+    // 以降はcanvas.toBlob()でエンコード
+    return new Promise((resolve) => {
+        canvas.toBlob(resolve, 'image/png');
+    });
+}
+```
+
+【apng-exporter.js 変更例】
+```javascript
+// system/exporters/apng-exporter.js
+// 依存: system/export-manager.js, system/animation-system.js
+
+async _renderFrameToCanvas(settings) {
+    // 🚨 既存の独自RenderTexture作成コードを削除
+    // export-manager.renderToCanvas()に統一
+    
+    const resolution = settings.resolution || this.manager.settingsManager.getExportResolution();
+    
+    return this.manager.renderToCanvas({
+        width: settings.width,
+        height: settings.height,
+        resolution: resolution
+    });
+}
+```
+
+【検証方法】
+- 各形式でエクスポートし、ファイルサイズが倍率に応じて増加すること
+- APNG/GIFで全フレームが同一解像度であること
+- 過剰なコンソールログが出ていないこと
+
+【影響範囲】
+- エクスポート機能全般
+
+================================================================================
+
+
+================================================================================
+Phase 5: デバッグ・クリーンアップ
+================================================================================
+
+【目的】
+過剰なログ削除、ヘッダー依存関係記述、動作確認
+
+【改修対象ファイル】
+- 全改修ファイル（Phase 1-4で触れた全て）
+
+【作業内容】
+1. 各ファイルヘッダーに依存関係コメント追加
+2. 過剰な console.log 削除（console.debug に統一）
+3. エラーハンドリング確認
+4. 全エクスポート形式のテスト
+
+【ヘッダーテンプレート】
+```javascript
+/**
+ * ファイル名: export-manager.js
+ * 責務: エクスポート処理の統合管理、高解像度レンダリング
+ * 
+ * 依存ファイル:
+ *   - config.js: キャンバスサイズ取得
+ *   - system/settings-manager.js: 出力解像度設定取得
+ *   - system/layer-system.js: レイヤー構造取得
+ * 
+ * 被依存ファイル:
+ *   - system/exporters/*.js: 全エクスポーター
+ *   - ui/export-popup.js: UI連携
+ * 
+ * 重要事項:
+ *   🚨 renderToCanvas()は出力専用パス
+ *   🚨 DPR倍加は厳禁（resolution=1固定）
+ *   🚨 高解像度化は出力時のコンテナスケーリングで実現
+ */
+```
+
+【最終検証項目】
+- [ ] DPR=1でアプリが正常起動
+- [ ] 描画が正常動作（ペン・消しゴム）
+- [ ] PNG 1x/2x/4x 出力が正常
+- [ ] APNG 2x 出力が正常（フレーム間で解像度一致）
+- [ ] 設定の保存・復元が正常
+- [ ] コンソールエラーなし
+- [ ] 過剰ログなし
+
+【クリーンアップ対象】
+- 旧 devicePixelRatio 参照の残骸
+- 未使用の resolution 計算処理
+- デバッグ用の過剰な console.log
+
+================================================================================
+
+
+================================================================================
+補足: WebGPU SDF/MSDF との整合性
+================================================================================
+
+【現状確認】
+本ツールのSDF/MSDFシェーダーは既に解像度非依存設計のため、Phase 3の
+コンテナスケーリングで自動的に高解像度化される。
+
+【確認が必要な場合】
+以下のファイルで distance field の生成が適切にスケールされるか確認：
+- system/drawing/webgpu/webgpu-compute-sdf.js
+- system/drawing/webgpu/webgpu-compute-msdf.js
+- system/drawing/sdf-brush-shader.js
+- system/drawing/msdf/msdf-brush-shader.js
+
+【確認方法】
+出力画像を拡大表示し、線のエッジが滑らかか検証。
+もしジャギーが残る場合は、GPU Compute側でtargetWidth/Heightを
+引数として受け取る改修が必要（ただし現行実装では不要と想定）。
+
+================================================================================
+
+
+================================================================================
+改修完了後の動作フロー
+================================================================================
+
+1. ユーザーがアプリ起動
+   → config.js の resolution: 1 で初期化
+   → 描画は常に等倍（DPR=1）
+
+2. ユーザーが描画
+   → SDF/MSDFで滑らか（GPU処理）
+   → 画面表示は1倍密度
+
+3. ユーザーがエクスポート
+   → 設定の exportResolution (例: 2) を取得
+   → export-manager.renderToCanvas() が呼ばれる
+   → コンテナを2倍スケールして一時RenderTextureへレンダリング
+   → 2倍解像度のCanvasを取得
+   → 形式エンコード（PNG/APNG等）
+   → ダウンロード
+
+4. 結果
+   ✅ 出力画像は高解像度（設定倍率）
+   ✅ 描画時の見た目と出力品質が一致
+   ✅ ユーザーの期待を裏切らない
+
+================================================================================
+
+
+================================================================================
+後続Claude担当者への最終メッセージ
+================================================================================
+
+本改修の核心は「正直な道具」としての設計です。
+
+DPR倍加は「気持ちよさ」の演出ですが、出力との乖離を生みます。
+本ツールはGPU/WebGPU活用のPC優位設計であり、Retina対応は不要です。
+
+「描画時=出力時」の一致を保つことで、ユーザーの信頼を得られます。
+
+改修時の鉄則:
+1. 必ず関連ファイルのヘッダーを確認し、依存関係を理解してから着手
+2. devicePixelRatio を使いたくなったら、このドキュメントを再読
+3. 独自のレンダリングパスを作りたくなったら、export-manager.js を確認
+4. 多重実装・循環依存を疑ったら、ヘッダーコメントを更新
+
+DRY/SOLID原則を守り、明快な実装を維持してください。
+
+================================================================================
+改修計画書 END
+================================================================================
