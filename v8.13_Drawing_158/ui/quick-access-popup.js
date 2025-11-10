@@ -3,6 +3,10 @@
  * @description ペン設定クイックアクセスポップアップ
  * 
  * 【改修履歴】
+ * v8.13.2 - ツールアイコン追加（色とペンサイズの間に配置）
+ *   ✅ ペン・消しゴム・塗りつぶしアイコンを追加
+ *   ✅ サイドバーと機能・デザイン統一
+ *   ✅ 色変更・透明度の影響を受ける
  * v8.13.1 - タブレットペンのドラッグ改善
  *   ✅ パネルドラッグ: passive: false 追加でペンのpreventDefault有効化
  *   ✅ ポインターキャプチャ: setPointerCapture()で確実な追跡
@@ -11,6 +15,7 @@
  * 【親ファイル (このファイルが依存)】
  * - system/drawing/brush-settings.js (BrushSettings)
  * - system/event-bus.js (EventBus)
+ * - system/drawing/fill-tool.js (FillTool)
  * 
  * 【子ファイル (このファイルに依存)】
  * - ui-panels.js (UIController経由で初期化)
@@ -58,6 +63,7 @@
             
             this.currentSize = 3;
             this.currentOpacity = 100;
+            this.currentTool = 'pen';
             
             this.MIN_SIZE = 0.5;
             this.MAX_SIZE = 30;
@@ -78,7 +84,6 @@
                 this.panel.id = 'quick-access-popup';
                 this.panel.className = 'popup-panel resize-popup-compact';
                 
-                // 🔥 タッチアクション無効化（パネル全体）
                 this.panel.style.touchAction = 'none';
                 
                 const savedPos = this._loadPosition();
@@ -86,7 +91,6 @@
                 
                 canvasArea.appendChild(this.panel);
             } else {
-                // 🔥 既存パネルにも適用
                 this.panel.style.touchAction = 'none';
             }
             
@@ -105,6 +109,7 @@
             this.panel.innerHTML = `
                 <button class="quick-access-close-btn" id="quick-access-close-btn" title="閉じる">×</button>
 
+                <!-- 色パレット -->
                 <div style="margin-bottom: 20px; padding: 0 8px;">
                     <div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 8px;">
                         色
@@ -130,6 +135,44 @@
                             width: 36px; height: 36px; border-radius: 4px; border: 2px solid var(--futaba-light-medium);
                             background: #f0e0d6; cursor: pointer; transition: all 0.2s ease;
                         " title="cream"></button>
+                    </div>
+                </div>
+
+                <!-- ツールアイコン（色とペンサイズの間） -->
+                <div style="margin-bottom: 20px; padding: 0 8px;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="qa-tool-button" id="qa-pen-tool" title="ベクターペン" style="
+                            width: 48px; height: 48px; border-radius: 8px; border: 3px solid var(--futaba-maroon);
+                            background: var(--futaba-maroon); cursor: pointer; transition: all 0.2s ease;
+                            display: flex; align-items: center; justify-content: center;
+                        ">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-cream)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                            </svg>
+                        </button>
+                        <button class="qa-tool-button" id="qa-eraser-tool" title="消しゴム" style="
+                            width: 48px; height: 48px; border-radius: 8px; border: 2px solid var(--futaba-light-medium);
+                            background: var(--futaba-cream); cursor: pointer; transition: all 0.2s ease;
+                            display: flex; align-items: center; justify-content: center;
+                        ">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-maroon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/>
+                                <path d="M22 21H7"/>
+                                <path d="m5 11 9 9"/>
+                            </svg>
+                        </button>
+                        <button class="qa-tool-button" id="qa-fill-tool" title="塗りつぶし" style="
+                            width: 48px; height: 48px; border-radius: 8px; border: 2px solid var(--futaba-light-medium);
+                            background: var(--futaba-cream); cursor: pointer; transition: all 0.2s ease;
+                            display: flex; align-items: center; justify-content: center;
+                        ">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--futaba-maroon)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/>
+                                <path d="m5 2 5 5"/>
+                                <path d="M2 13h15"/>
+                                <path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/>
+                            </svg>
+                        </button>
                     </div>
                 </div>
 
@@ -168,6 +211,9 @@
         _cacheElements() {
             this.elements = {
                 closeBtn: document.getElementById('quick-access-close-btn'),
+                penToolBtn: document.getElementById('qa-pen-tool'),
+                eraserToolBtn: document.getElementById('qa-eraser-tool'),
+                fillToolBtn: document.getElementById('qa-fill-tool'),
                 sizeSlider: document.getElementById('pen-size-slider'),
                 sizeTrack: document.getElementById('pen-size-track'),
                 sizeHandle: document.getElementById('pen-size-handle'),
@@ -194,9 +240,11 @@
             
             this._cacheElements();
             this._setupCloseButton();
+            this._setupToolButtons();
             this._setupColorButtons();
             this._setupSliders();
             this._setupPanelDragHandlers();
+            this._setupEventListeners();
             this._updateUI();
             
             this.initialized = true;
@@ -208,6 +256,67 @@
             this.elements.closeBtn.addEventListener('pointerdown', (e) => {
                 e.stopPropagation();
                 this.hide();
+            });
+        }
+
+        _setupToolButtons() {
+            if (this.elements.penToolBtn) {
+                this.elements.penToolBtn.addEventListener('pointerdown', () => {
+                    this._switchTool('pen');
+                });
+            }
+
+            if (this.elements.eraserToolBtn) {
+                this.elements.eraserToolBtn.addEventListener('pointerdown', () => {
+                    this._switchTool('eraser');
+                });
+            }
+
+            if (this.elements.fillToolBtn) {
+                this.elements.fillToolBtn.addEventListener('pointerdown', () => {
+                    this._switchTool('fill');
+                });
+            }
+        }
+
+        _switchTool(tool) {
+            this.currentTool = tool;
+            this._updateToolButtons();
+
+            if (window.CoreRuntime?.api?.tool?.set) {
+                window.CoreRuntime.api.tool.set(tool);
+            }
+
+            if (this.eventBus) {
+                this.eventBus.emit('tool:changed', { 
+                    tool,
+                    component: 'quick-access',
+                    action: 'tool-changed'
+                });
+            }
+        }
+
+        _updateToolButtons() {
+            const buttons = {
+                pen: this.elements.penToolBtn,
+                eraser: this.elements.eraserToolBtn,
+                fill: this.elements.fillToolBtn
+            };
+
+            Object.entries(buttons).forEach(([toolName, btn]) => {
+                if (!btn) return;
+                
+                if (toolName === this.currentTool) {
+                    btn.style.border = '3px solid var(--futaba-maroon)';
+                    btn.style.background = 'var(--futaba-maroon)';
+                    const svg = btn.querySelector('svg');
+                    if (svg) svg.setAttribute('stroke', 'var(--futaba-cream)');
+                } else {
+                    btn.style.border = '2px solid var(--futaba-light-medium)';
+                    btn.style.background = 'var(--futaba-cream)';
+                    const svg = btn.querySelector('svg');
+                    if (svg) svg.setAttribute('stroke', 'var(--futaba-maroon)');
+                }
             });
         }
 
@@ -362,10 +471,12 @@
                     target.classList.contains('resize-arrow-btn') ||
                     target.classList.contains('resize-slider-handle') ||
                     target.classList.contains('quick-access-close-btn') ||
+                    target.classList.contains('qa-tool-button') ||
                     target.closest('.resize-slider') ||
                     target.closest('.color-button') ||
                     target.closest('.resize-arrow-btn') ||
-                    target.closest('.quick-access-close-btn');
+                    target.closest('.quick-access-close-btn') ||
+                    target.closest('.qa-tool-button');
                 
                 if (isInteractive) return;
                 
@@ -390,7 +501,6 @@
                 e.preventDefault();
             });
             
-            // 🔥 CRITICAL: passive: false 追加でペンのpreventDefaultを有効化
             this.dragMoveHandler = (e) => {
                 if (!this.isDraggingPanel) return;
                 
@@ -431,10 +541,18 @@
                 this._savePosition(rect.left, rect.top);
             };
             
-            // 🔥 CRITICAL: passive: false を追加
             document.addEventListener('pointermove', this.dragMoveHandler, { passive: false, capture: true });
             document.addEventListener('pointerup', this.dragUpHandler, { capture: true });
             document.addEventListener('pointercancel', this.dragUpHandler, { capture: true });
+        }
+
+        _setupEventListeners() {
+            if (!this.eventBus) return;
+
+            this.eventBus.on('ui:sidebar:sync-tool', ({ tool }) => {
+                this.currentTool = tool;
+                this._updateToolButtons();
+            });
         }
 
         _savePosition(x, y) {
@@ -477,30 +595,6 @@
             this.elements.opacityHandle.style.left = percent + '%';
             this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
             
-            this.brushSettings.setOpacity(this.currentOpacity / 100);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('brush:opacity-changed', { opacity: this.currentOpacity / 100 });
-            }
-        }
-
-        _updateUI() {
-            if (!this.brushSettings) return;
-            
-            this.currentSize = this.brushSettings.getSize();
-            const opacityRaw = this.brushSettings.getOpacity();
-            this.currentOpacity = opacityRaw * 100;
-            
-            const sizePercent = ((this.currentSize - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
-            this.elements.sizeTrack.style.width = sizePercent + '%';
-            this.elements.sizeHandle.style.left = sizePercent + '%';
-            this.elements.sizeDisplay.textContent = this.currentSize.toFixed(1) + 'px';
-            
-            const opacityPercent = ((this.currentOpacity - this.MIN_OPACITY) / (this.MAX_OPACITY - this.MIN_OPACITY)) * 100;
-            this.elements.opacityTrack.style.width = opacityPercent + '%';
-            this.elements.opacityHandle.style.left = opacityPercent + '%';
-            this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
-            
             const currentColor = this.brushSettings.getColor();
             const colorButtons = this.panel.querySelectorAll('.color-button');
             colorButtons.forEach(btn => {
@@ -509,6 +603,8 @@
                     ? '3px solid #ff8c42' 
                     : '2px solid var(--futaba-light-medium)';
             });
+
+            this._updateToolButtons();
         }
 
         show() {
@@ -593,4 +689,32 @@
         window.TegakiUI = {};
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
-})();
+
+    console.log('✅ quick-access-popup.js v8.13.2 loaded');
+    console.log('   ✓ ツールアイコン追加 (色とペンサイズの間に配置)');
+    console.log('   ✓ ペン/消しゴム/塗りつぶし対応');
+})();currentOpacity) + '%';
+            
+            this.brushSettings.setOpacity(this.currentOpacity / 100);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('brush:opacity-changed', { opacity: this.currentOpacity / 100 });
+            }
+        }
+
+        _updateUI() {
+            if (!this.brushSettings) return;
+            
+            this.currentSize = this.brushSettings.getSize();
+            const opacityRaw = this.brushSettings.getOpacity();
+            this.currentOpacity = opacityRaw * 100;
+            
+            const sizePercent = ((this.currentSize - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
+            this.elements.sizeTrack.style.width = sizePercent + '%';
+            this.elements.sizeHandle.style.left = sizePercent + '%';
+            this.elements.sizeDisplay.textContent = this.currentSize.toFixed(1) + 'px';
+            
+            const opacityPercent = ((this.currentOpacity - this.MIN_OPACITY) / (this.MAX_OPACITY - this.MIN_OPACITY)) * 100;
+            this.elements.opacityTrack.style.width = opacityPercent + '%';
+            this.elements.opacityHandle.style.left = opacityPercent + '%';
+            this.elements.opacityDisplay.textContent = Math.round(this.

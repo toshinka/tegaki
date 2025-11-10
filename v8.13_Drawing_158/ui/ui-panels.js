@@ -1,6 +1,11 @@
 /**
- * @file ui/ui-panels.js - v8.13.12 完全修正版
+ * @file ui/ui-panels.js - v8.13.13 塗りつぶしツール対応版
  * @description UIコントロールパネル統合管理
+ * 
+ * 【v8.13.13 改修内容】
+ * 🎨 塗りつぶしツール追加
+ * 🔧 fill-tool ボタン対応
+ * ⌨️ Gキーショートカット対応
  * 
  * 【v8.13.12 改修内容】
  * 🔧 反転ボタン: bypassVKeyCheck=true を明示的に渡す
@@ -11,6 +16,7 @@
  * - core-runtime.js (API統一インターフェース)
  * - popup-manager.js (ポップアップ制御)
  * - event-bus.js (イベント通信)
+ * - system/drawing/fill-tool.js (FillTool)
  * 
  * 【子ファイル (このファイルに依存)】
  * なし（UI層の最上位）
@@ -156,6 +162,12 @@ window.TegakiUI.UIController = class {
                 this.closeAllPopups();
                 this.updateToolUI('eraser');
             },
+            'fill-tool': () => {
+                if (!window.CoreRuntime.api.tool.set('fill')) return;
+                window.CoreRuntime.api.layer.exitMoveMode();
+                this.closeAllPopups();
+                this.updateToolUI('fill');
+            },
             'resize-tool': () => {
                 this.togglePopup('resize');
             },
@@ -188,7 +200,8 @@ window.TegakiUI.UIController = class {
 
         const toolNames = { 
             pen: 'ベクターペン', 
-            eraser: '消しゴム', 
+            eraser: '消しゴム',
+            fill: '塗りつぶし',
             'gif-animation': 'GIFアニメーション'
         };
         const toolElement = document.getElementById('current-tool');
@@ -231,18 +244,6 @@ window.TegakiUI.UIController = class {
 
     /**
      * 🔧 v8.13.12: 反転ボタン処理 (唯一の実装箇所)
-     * 
-     * bypassVKeyCheck=true を明示的に渡すことで、
-     * Vキー未押下時でもボタンクリックで反転が動作する
-     * 
-     * フロー:
-     * [ボタンクリック]
-     * → CoreRuntime.api.layer.flipActiveLayer(direction, bypassVKeyCheck=true)
-     * → layer-system.js: flipActiveLayer(direction, bypassVKeyCheck)
-     *    └→ bypassVKeyCheck=true なので isLayerMoveMode チェックをスキップ
-     * → layer-transform.js: flipLayer(layer, direction, skipHistory=true)
-     * → confirmTransform(layer, skipHistory=true)でHistory登録をスキップ
-     * → layer-system.jsでHistory.push()を一度だけ実行
      */
     setupFlipButtons() {
         const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
@@ -251,7 +252,6 @@ window.TegakiUI.UIController = class {
         if (flipHorizontalBtn) {
             flipHorizontalBtn.addEventListener('click', () => {
                 if (window.CoreRuntime?.api?.layer?.flipActiveLayer) {
-                    // 🔧 v8.13.12: bypassVKeyCheck=true を明示的に渡す
                     window.CoreRuntime.api.layer.flipActiveLayer('horizontal', true);
                 }
             });
@@ -260,7 +260,6 @@ window.TegakiUI.UIController = class {
         if (flipVerticalBtn) {
             flipVerticalBtn.addEventListener('click', () => {
                 if (window.CoreRuntime?.api?.layer?.flipActiveLayer) {
-                    // 🔧 v8.13.12: bypassVKeyCheck=true を明示的に渡す
                     window.CoreRuntime.api.layer.flipActiveLayer('vertical', true);
                 }
             });
@@ -394,4 +393,5 @@ window.TegakiUI.setupPanelStyles = function() {
     }
 };
 
-console.log('✅ ui-panels.js v8.13.12 loaded');
+console.log('✅ ui-panels.js v8.13.13 loaded');
+console.log('   ✓ 塗りつぶしツール対応 (fill-tool)');
