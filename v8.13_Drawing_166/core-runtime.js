@@ -2,11 +2,15 @@
  * @file core-runtime.js
  * @description 外部APIレイヤー・レガシー互換性
  * 
+ * 【Phase 4 改修内容 - Fill Tool 対応】
+ * ✅ api.tool.setFill() メソッド追加
+ * ✅ api.tool.set('fill') を正式サポート
+ * 
  * 【Phase 3 改修内容 - Drawing API簡素化】
  * - api.tool.* を BrushCore.setMode() に直接接続
  * - DrawingEngine を経由しない直接呼び出しに変更
  * 
- * 【依存関係】
+ * 【親ファイル (このファイルが依存)】
  * - core-engine.js (内部システム・リサイズ/エクスポートの真実の情報源)
  * - system/drawing/brush-core.js (BrushCore)
  * - system/drawing/brush-settings.js (BrushSettings)
@@ -15,6 +19,7 @@
  * 
  * 【子ファイル (このファイルに依存)】
  * - ui-panels.js (UI制御)
+ * - ui/keyboard-handler.js (api.tool.set 呼び出し元)
  */
 
 (function() {
@@ -181,9 +186,6 @@
             return canvas.toDataURL('image/png');
         },
         
-        /**
-         * 🔧 Phase 1 改修: Thin Wrapper に変更
-         */
         updateCanvasSize(w, h, options = {}) {
             const coreEngine = this.internal.coreEngine || window.coreEngine;
             
@@ -246,13 +248,21 @@
             },
             
             /**
-             * 🔧 Phase 3改修: BrushCore に直接接続
-             * DrawingEngine を経由せず BrushCore.setMode() を呼び出し
+             * 🔧 Phase 4改修: Fill Tool 対応
+             * - setFill() メソッド追加
+             * - set('fill') を正式サポート
              */
             tool: {
                 set: (toolName) => {
                     if (!window.BrushCore) {
                         console.error('[CoreRuntime] BrushCore not available');
+                        return false;
+                    }
+                    
+                    // fill を含む全ツールをサポート
+                    const validTools = ['pen', 'eraser', 'fill'];
+                    if (!validTools.includes(toolName)) {
+                        console.warn(`[CoreRuntime] Invalid tool: ${toolName}`);
                         return false;
                     }
                     
@@ -264,9 +274,10 @@
                         CoreRuntime.internal.cameraSystem.updateCursor();
                     }
                     
-                    // イベント発行
+                    // イベント発行（tool:select と tool:changed の両方）
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('tool:select', { tool: toolName });
+                        window.TegakiEventBus.emit('tool:changed', { tool: toolName });
                     }
                     
                     return true;
@@ -277,7 +288,8 @@
                 },
                 
                 setPen: () => CoreRuntime.api.tool.set('pen'),
-                setEraser: () => CoreRuntime.api.tool.set('eraser')
+                setEraser: () => CoreRuntime.api.tool.set('eraser'),
+                setFill: () => CoreRuntime.api.tool.set('fill') // 🎨 Phase 4: 追加
             },
             
             brush: {
@@ -555,6 +567,6 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 3改修版 - Drawing API簡素化) loaded');
-console.log('   ✓ api.tool.* → BrushCore直接接続');
-console.log('   ✓ DrawingEngine経由の間接レイヤー削除');
+console.log('✅ core-runtime.js (Phase 4 - Fill対応版) loaded');
+console.log('   ✓ api.tool.setFill() 追加');
+console.log('   ✓ api.tool.set("fill") サポート');
