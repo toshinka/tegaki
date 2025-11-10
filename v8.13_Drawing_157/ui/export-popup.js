@@ -1,4 +1,27 @@
-// ===== ui/export-popup.js - frameInfo修正版＋PDF有効化 =====
+/**
+ * ================================================================================
+ * ui/export-popup.js - 高DPI出力対応版【Phase 1完成】
+ * ================================================================================
+ * 
+ * 【依存関係 - Parents】
+ *   - system/export-manager.js (エクスポート実行)
+ *   - system/animation-system.js (フレーム情報)
+ * 
+ * 【依存関係 - Children】
+ *   なし
+ * 
+ * 【責務】
+ *   - エクスポート設定UI
+ *   - プレビュー表示
+ *   - 進捗表示
+ *   - 高DPI出力オプション管理
+ * 
+ * 【改修内容】
+ *   ✅ resolution='auto' をデフォルトで渡す
+ *   ✅ 高品質出力オプションUI追加
+ *   ✅ 画面DPIと出力DPIの整合性確保
+ * ================================================================================
+ */
 
 window.TegakiExportPopup = class ExportPopup {
     constructor(dependencies) {
@@ -8,6 +31,7 @@ window.TegakiExportPopup = class ExportPopup {
         this.currentPreviewUrl = null;
         this.currentBlob = null;
         this.popup = null;
+        this.useHighDPI = true; // デフォルトで高DPI有効
         
         this._ensurePopupElement();
         this.setupEventListeners();
@@ -79,6 +103,11 @@ window.TegakiExportPopup = class ExportPopup {
                 this.executePreview();
                 return;
             }
+            
+            if (e.target.closest('#high-dpi-toggle')) {
+                this.toggleHighDPI();
+                return;
+            }
         });
         
         if (window.TegakiEventBus) {
@@ -101,6 +130,11 @@ window.TegakiExportPopup = class ExportPopup {
                 });
             });
         }
+    }
+    
+    toggleHighDPI() {
+        this.useHighDPI = !this.useHighDPI;
+        this.updateOptionsUI(this.selectedFormat);
     }
     
     selectFormat(format) {
@@ -144,6 +178,10 @@ window.TegakiExportPopup = class ExportPopup {
             canvasHeight = window.TEGAKI_CONFIG.canvas.height;
         }
         
+        const dpr = window.devicePixelRatio || 1;
+        const outputWidth = this.useHighDPI ? Math.round(canvasWidth * dpr) : canvasWidth;
+        const outputHeight = this.useHighDPI ? Math.round(canvasHeight * dpr) : canvasHeight;
+        
         const frameCount = this.getFrameCount();
         let quality = 10;
         if (window.TEGAKI_CONFIG?.animation?.exportSettings) {
@@ -156,22 +194,36 @@ window.TegakiExportPopup = class ExportPopup {
             ? '全' + frameCount + 'フレームをAPNG（アニメーションPNG）として出力します。'
             : '現在のキャンバスをPNG画像として出力します。';
         
+        const highDPIToggle = '<div style="margin: 12px 0; padding: 8px; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 4px;">' +
+            '<label style="display: flex; align-items: center; cursor: pointer; user-select: none;">' +
+                '<input type="checkbox" id="high-dpi-toggle" ' + (this.useHighDPI ? 'checked' : '') + ' style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">' +
+                '<span style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon);">高DPI出力 (画面と同等の品質)</span>' +
+            '</label>' +
+            '<div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px; margin-left: 26px;">' +
+                '有効時: ' + outputWidth + '×' + outputHeight + 'px (DPI:' + dpr.toFixed(1) + 'x)<br>' +
+                '無効時: ' + canvasWidth + '×' + canvasHeight + 'px (標準)' +
+            '</div>' +
+        '</div>';
+        
         const optionsMap = {
             'png': '<div class="setting-label">PNG出力（Frame数でAPNG自動判定）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
                     pngDescription + '<br>' +
-                    'サイズ: ' + canvasWidth + '×' + canvasHeight + 'px' + frameInfo +
-                '</div>',
+                    'ベースサイズ: ' + canvasWidth + '×' + canvasHeight + 'px' + frameInfo +
+                '</div>' +
+                highDPIToggle,
             'gif': '<div class="setting-label">GIFアニメーション出力</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
                     '全' + frameCount + 'フレームをGIFアニメーションとして出力します。<br>' +
                     '品質: ' + quality + ' / フレーム数: ' + frameCount +
-                '</div>',
+                '</div>' +
+                highDPIToggle,
             'pdf': '<div class="setting-label">PDF出力（全フレームを複数ページ）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
                     '全' + frameCount + 'フレームをPDFの各ページとして出力します。<br>' +
-                    'サイズ: ' + canvasWidth + '×' + canvasHeight + 'px' + frameInfo +
-                '</div>'
+                    'ベースサイズ: ' + canvasWidth + '×' + canvasHeight + 'px' + frameInfo +
+                '</div>' +
+                highDPIToggle
         };
         
         optionsEl.innerHTML = optionsMap[format] || '';
@@ -236,6 +288,9 @@ window.TegakiExportPopup = class ExportPopup {
         }
     }
     
+    /**
+     * エクスポート実行 - 高DPI対応
+     */
     async executeExport() {
         if (this.manager.isExporting()) {
             return;
@@ -252,7 +307,12 @@ window.TegakiExportPopup = class ExportPopup {
         if (previewBtn) previewBtn.disabled = true;
         
         try {
-            await this.manager.export(this.selectedFormat, {});
+            // 🔧 高DPI対応: resolution を渡す
+            const options = {
+                resolution: this.useHighDPI ? 'auto' : 1
+            };
+            
+            await this.manager.export(this.selectedFormat, options);
         } catch (error) {
             this.showStatus('エクスポート失敗: ' + error.message, true);
             if (progressEl) progressEl.style.display = 'none';
@@ -262,6 +322,9 @@ window.TegakiExportPopup = class ExportPopup {
         }
     }
     
+    /**
+     * プレビュー生成 - 高DPI対応
+     */
     async executePreview() {
         if (this.manager.isExporting()) {
             return;
@@ -289,7 +352,12 @@ window.TegakiExportPopup = class ExportPopup {
         }
         
         try {
-            const result = await this.manager.generatePreview(this.selectedFormat, {});
+            // 🔧 高DPI対応: resolution を渡す
+            const options = {
+                resolution: this.useHighDPI ? 'auto' : 1
+            };
+            
+            const result = await this.manager.generatePreview(this.selectedFormat, options);
             
             if (progressEl) progressEl.style.display = 'none';
             
@@ -298,7 +366,8 @@ window.TegakiExportPopup = class ExportPopup {
                 formatName = 'APNG';
             }
             
-            this.showPreview(result.blob, formatName + 'プレビューを表示しました。右クリックでコピーできます');
+            const dpiInfo = this.useHighDPI ? ' (高DPI)' : '';
+            this.showPreview(result.blob, formatName + 'プレビュー' + dpiInfo + 'を表示しました。右クリックでコピーできます');
             
             if (previewBtn) {
                 previewBtn.textContent = 'プレビュー';
@@ -420,4 +489,6 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js (frameInfo修正版＋PDF有効化) loaded');
+console.log('✅ export-popup.js (高DPI対応版) loaded');
+console.log('   ✓ 高DPI出力オプション追加');
+console.log('   ✓ resolution="auto" をデフォルト適用');
