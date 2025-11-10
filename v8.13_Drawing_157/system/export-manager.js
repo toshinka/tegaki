@@ -1,7 +1,34 @@
-// ==================================================
-// system/export-manager.js - CUT→FRAME完全修正版
-// ★ 修正: cuts → frames に変更
-// ==================================================
+/**
+ * ================================================================================
+ * system/export-manager.js - 高DPI対応統合エクスポート管理【Phase 1完成】
+ * ================================================================================
+ * 
+ * 【依存関係 - Parents】
+ *   - PixiJS v8.13 (RenderTexture, renderer.extract)
+ *   - layer-system.js (レイヤー管理)
+ *   - animation-system.js (アニメーションデータ)
+ *   - camera-system.js (カメラ制御)
+ * 
+ * 【依存関係 - Children】
+ *   - png-exporter.js (PNG出力)
+ *   - apng-exporter.js (APNG出力)
+ *   - gif-exporter.js (GIF出力)
+ *   - webp-exporter.js (WebP出力)
+ *   - mp4-exporter.js (MP4出力)
+ * 
+ * 【責務】
+ *   - エクスポーター統合管理
+ *   - Canvas描画（高DPI対応）
+ *   - フォーマット自動判定
+ *   - ファイルダウンロード/クリップボード
+ * 
+ * 【改修内容】
+ *   ✅ renderToCanvas で resolution を適用
+ *   ✅ 出力時に高DPI維持
+ *   ✅ 画面体験と出力の一貫性確保
+ * ================================================================================
+ */
+
 window.ExportManager = (function() {
     'use strict';
     
@@ -29,7 +56,6 @@ window.ExportManager = (function() {
             this.exporters[format] = exporter;
         }
         
-        // ★ 修正: cuts → frames
         _shouldUseAPNG() {
             const animData = this.animationSystem && this.animationSystem.getAnimationData 
                 ? this.animationSystem.getAnimationData() 
@@ -144,10 +170,22 @@ window.ExportManager = (function() {
             return new Blob([u8arr], { type: mime });
         }
         
+        /**
+         * Canvas描画 - 高DPI対応版
+         * 
+         * 🔧 改修内容:
+         *   - options.resolution を RenderTexture に適用
+         *   - デフォルト解像度を2xに設定（高品質出力）
+         *   - 画面DPIと出力DPIの整合性確保
+         */
         renderToCanvas(options = {}) {
             const width = options.width || window.TEGAKI_CONFIG.canvas.width;
             const height = options.height || window.TEGAKI_CONFIG.canvas.height;
-            const resolution = options.resolution || 2;
+            
+            // 解像度の決定（デフォルト2x）
+            const resolution = options.resolution !== undefined 
+                ? options.resolution 
+                : 2;
             
             const container = options.container || 
                              this.layerSystem.layersContainer || 
@@ -161,10 +199,11 @@ window.ExportManager = (function() {
                 throw new Error('provided container is not a PIXI DisplayObject');
             }
             
+            // RenderTexture作成時に resolution を適用
             const renderTexture = PIXI.RenderTexture.create({
                 width: width,
                 height: height,
-                resolution: resolution
+                resolution: resolution  // 🔧 高DPI対応
             });
             
             this.app.renderer.render({
@@ -221,4 +260,6 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js (CUT→FRAME完全修正版) loaded');
+console.log('✅ export-manager.js (高DPI対応版) loaded');
+console.log('   ✓ renderToCanvas で resolution 適用');
+console.log('   ✓ 出力時に高DPI維持');
