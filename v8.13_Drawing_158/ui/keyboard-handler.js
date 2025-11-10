@@ -1,6 +1,9 @@
 /**
- * @file ui/keyboard-handler.js - Phase 3+4 完全改修版
+ * @file ui/keyboard-handler.js - Phase 3+4+塗りつぶし 完全改修版
  * @description キーボードショートカット処理の中核システム
+ * 
+ * 【Phase 4 改修内容】
+ * 🎨 TOOL_FILL: Gキー → 塗りつぶしツール切り替え
  * 
  * 【Phase 3+4 改修内容】
  * 🔧 LAYER_DELETE: Ctrl+Delete → アクティブレイヤー削除
@@ -16,6 +19,7 @@
  * - core-runtime.js (window.CoreRuntime.api)
  * - layer-system.js (window.layerManager)
  * - drawing-clipboard.js (window.drawingClipboard)
+ * - system/drawing/fill-tool.js (FillTool)
  * 
  * 【子ファイル (このファイルに依存)】
  * - core-initializer.js (初期化時にinit呼び出し)
@@ -99,6 +103,14 @@ window.KeyboardHandler = (function() {
             case 'TOOL_ERASER':
                 if (api?.tool.set('eraser')) {
                     eventBus.emit('ui:sidebar:sync-tool', { tool: 'eraser' });
+                }
+                event.preventDefault();
+                break;
+            
+            // 🎨 Phase 4: 塗りつぶしツール (Gキー)
+            case 'TOOL_FILL':
+                if (api?.tool.set('fill')) {
+                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'fill' });
                 }
                 event.preventDefault();
                 break;
@@ -462,7 +474,5 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js Phase 3+4 loaded');
-console.log('   🔧 LAYER_DELETE: Ctrl+Delete処理追加');
-console.log('   🔧 LAYER_CUT: Ctrl+X処理追加');
-console.log('   🔧 FRAME_PREV/NEXT: vMode判定追加');
+console.log('✅ keyboard-handler.js Phase 4 loaded');
+console.log('   🎨 TOOL_FILL: Gキー対応');

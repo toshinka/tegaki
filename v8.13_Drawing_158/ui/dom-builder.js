@@ -1,5 +1,6 @@
 // Tegaki Tool - DOM Builder Module
 // 🔥 修正: #pen-settings を #legacy-pen-settings に変更してID重複解消
+// 🆕 v8.13.3: 塗りつぶしアイコン追加
 // DO NOT use ESM, only global namespace
 
 window.DOMBuilder = (function() {
@@ -12,6 +13,7 @@ window.DOMBuilder = (function() {
         resize: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>',
         pen: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>',
         eraser: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>',
+        fill: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></svg>',
         animation: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/></svg>',
         settings: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>',
         plus: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>',
@@ -50,6 +52,7 @@ window.DOMBuilder = (function() {
             { separator: true },
             { id: 'pen-tool', icon: 'pen', title: 'ベクターペン (P)', active: true },
             { id: 'eraser-tool', icon: 'eraser', title: '消しゴム (E)' },
+            { id: 'fill-tool', icon: 'fill', title: '塗りつぶし (G)' },
             { separator: true },
             { id: 'gif-animation-tool', icon: 'animation', title: 'GIFアニメーション (Alt+A)' },
             { separator: true },
@@ -87,8 +90,8 @@ window.DOMBuilder = (function() {
     function buildPenSettingsPopup() {
         const popup = createElement('div', {
             className: 'popup-panel',
-            id: 'legacy-pen-settings',  // ✅ ID変更
-            style: { left: '60px', top: '100px', display: 'none' }  // ✅ 非表示化
+            id: 'legacy-pen-settings',
+            style: { left: '60px', top: '100px', display: 'none' }
         });
 
         const title = createElement('div', { className: 'popup-title', textContent: 'ベクターペンツール設定（レガシー）' });
@@ -99,7 +102,6 @@ window.DOMBuilder = (function() {
         sizeGroup.appendChild(createElement('div', { className: 'setting-label', textContent: 'サイズ' }));
         
         const sizeContainer = createElement('div', { className: 'slider-container' });
-        // ✅ IDを変更してquick-access-popupとの重複を解消
         const sizeSlider = createElement('div', { className: 'slider', id: 'legacy-pen-size-slider' });
         sizeSlider.appendChild(createElement('div', { className: 'slider-track', id: 'legacy-pen-size-track' }));
         sizeSlider.appendChild(createElement('div', { className: 'slider-handle', id: 'legacy-pen-size-handle' }));
@@ -113,7 +115,6 @@ window.DOMBuilder = (function() {
         opacityGroup.appendChild(createElement('div', { className: 'setting-label', textContent: '不透明度' }));
         
         const opacityContainer = createElement('div', { className: 'slider-container' });
-        // ✅ IDを変更してquick-access-popupとの重複を解消
         const opacitySlider = createElement('div', { className: 'slider', id: 'legacy-pen-opacity-slider' });
         opacitySlider.appendChild(createElement('div', { className: 'slider-track', id: 'legacy-pen-opacity-track' }));
         opacitySlider.appendChild(createElement('div', { className: 'slider-handle', id: 'legacy-pen-opacity-handle' }));
@@ -491,7 +492,5 @@ window.DOMBuilder = (function() {
     };
 })();
 
-console.log('✅ dom-builder.js (ID重複解消版) loaded');
-console.log('   - #pen-settings → #legacy-pen-settings に変更');
-console.log('   - pen-size-slider → legacy-pen-size-slider に変更');
-console.log('   - quick-access-popup.jsとのID競合を完全解消');
+console.log('✅ dom-builder.js v8.13.3 loaded');
+console.log('   ✓ 塗りつぶしアイコン追加 (消しゴムの下)');

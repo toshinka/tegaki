@@ -1,6 +1,9 @@
 /**
- * @file config.js - v8.13.14 Phase 3+4 改修版
+ * @file config.js - v8.13.15 塗りつぶしツール対応版
  * @description グローバル設定・キーマップ定義
+ * 
+ * 【v8.13.15 改修内容】
+ * 🎨 TOOL_FILL: Gキー → 塗りつぶしツール追加
  * 
  * 【v8.13.14 改修内容】
  * 🔧 Phase 3: LAYER_DELETE (Ctrl+Delete)、LAYER_CUT (Ctrl+X) 追加
@@ -140,6 +143,13 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             description: '消しゴムツール'
         },
+        // 🎨 v8.13.15: 塗りつぶしツール (Gキー)
+        TOOL_FILL: {
+            key: 'KeyG',
+            ctrl: false,
+            shift: false,
+            description: '塗りつぶしツール'
+        },
         LAYER_CREATE: {
             key: 'KeyL',
             ctrl: true,
@@ -150,7 +160,6 @@ window.TEGAKI_KEYMAP = {
             { key: 'Delete', ctrl: false, shift: false, description: 'レイヤーの絵を削除' },
             { key: 'Backspace', ctrl: false, shift: false, description: 'レイヤーの絵を削除' }
         ],
-        // 🔧 Phase 3: LAYER_CLEAR → LAYER_DELETE に改名
         LAYER_DELETE: {
             key: 'Delete',
             ctrl: true,
@@ -169,7 +178,6 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             description: 'レイヤーペースト'
         },
-        // 🔧 Phase 3: 新規追加
         LAYER_CUT: {
             key: 'KeyX',
             ctrl: true,
@@ -255,7 +263,6 @@ window.TEGAKI_KEYMAP = {
             alt: false,
             description: 'レイヤー垂直反転'
         },
-        // 🔧 Phase 3: レイヤー選択（vMode=false時のみ）
         LAYER_HIERARCHY_UP: {
             key: 'ArrowUp',
             ctrl: false,
@@ -307,7 +314,6 @@ window.TEGAKI_KEYMAP = {
             vMode: false,
             description: 'カメラリセット'
         },
-        // 🔧 Phase 3: ←→ 単体でフレーム移動（Ctrl不要）
         FRAME_PREV: {
             key: 'ArrowLeft',
             ctrl: false,
@@ -394,6 +400,7 @@ window.TEGAKI_KEYMAP = {
             'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H',
             'KeyA': 'A', 'KeyN': 'N', 'KeyC': 'C', 'KeyL': 'L',
             'KeyZ': 'Z', 'KeyY': 'Y', 'KeyQ': 'Q', 'KeyX': 'X',
+            'KeyG': 'G',
             'Comma': ',', 'Digit0': '0', 'Plus': '+',
             'ArrowUp': '↑', 'ArrowDown': '↓',
             'ArrowLeft': '←', 'ArrowRight': '→',
@@ -425,10 +432,10 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
-// 🧹 Phase 4: TEGAKI_KEYCONFIG は廃止予定（後方互換のため残す）
 window.TEGAKI_KEYCONFIG = {
     pen: 'KeyP',
     eraser: 'KeyE',
+    fill: 'KeyG',
     layerMode: 'KeyV',
     canvasReset: 'Digit0',
     horizontalFlip: 'KeyH',
@@ -456,8 +463,5 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js v8.13.14 loaded (Phase 3+4 改修版)');
-console.log('   🔧 LAYER_DELETE: Ctrl+Delete → アクティブレイヤー削除');
-console.log('   🔧 LAYER_CUT: Ctrl+X → レイヤー切り取り');
-console.log('   🔧 FRAME_PREV/NEXT: ←→ 単体キー化（Ctrl不要）');
-console.log('   🧹 LAYER_CLEAR削除、GIF_PREV/NEXT_FRAME削除');
+console.log('✅ config.js v8.13.15 loaded (塗りつぶしツール対応版)');
+console.log('   🎨 TOOL_FILL: Gキー → 塗りつぶしツール追加');
