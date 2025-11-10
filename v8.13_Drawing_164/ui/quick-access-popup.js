@@ -1,6 +1,10 @@
 /**
- * @file ui/quick-access-popup.js - v8.13.16 SVG保持版
+ * @file ui/quick-access-popup.js - v8.13.17 SVG可視性修正版
  * @description ペン設定クイックアクセスポップアップ
+ * 
+ * 【v8.13.17 改修内容】
+ * 🎯 アクティブ時のSVG色を修正: 常にvar(--futaba-maroon)を維持
+ * 🎨 背景色の反転を完全削除、オレンジ枠(#ff8c42)のみで選択表示
  * 
  * 【v8.13.16 改修内容】
  * 🎯 SVGが消える問題を修正: style直接変更をやめてCSS class管理に変更
@@ -95,11 +99,12 @@
                 }
 
                 .qa-tool-button svg {
-                    stroke: var(--futaba-maroon);
+                    stroke: var(--futaba-maroon) !important;
                 }
 
                 .qa-tool-button:hover:not(.active) {
                     border-color: var(--futaba-medium);
+                    background: var(--futaba-light-medium);
                 }
             `;
             document.head.appendChild(style);
@@ -732,6 +737,6 @@
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
 
-    console.log('✅ quick-access-popup.js v8.13.16 loaded');
+    console.log('✅ quick-access-popup.js v8.13.17 loaded');
 
 })();
