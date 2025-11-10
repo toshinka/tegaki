@@ -1,12 +1,12 @@
 /**
  * ================================================================================
- * system/drawing/brush-core.js - Phase 3-D: BrushSettings統合版
+ * system/drawing/brush-core.js - Phase 1-3: 消しゴム対応版
  * ================================================================================
  * 
- * 【Phase 3-D 改修内容 - mode 統合】
- * ✅ setMode() で BrushSettings.setMode() を呼び出し
- * ✅ 二重管理を排除（BrushSettings が唯一の情報源）
- * ✅ currentMode は BrushSettings から取得
+ * 【Phase 1-3 改修内容 - renderFinalStroke統合】
+ * ✅ finalizeStroke() で renderFinalStroke() を使用
+ * ✅ 消しゴムモード時の RenderTexture 処理を正しく実行
+ * ✅ renderStroke() は legacy 専用のため使用しない
  * 
  * 【依存関係 - Parents (このファイルが依存)】
  *   - event-bus.js (イベント通信)
@@ -17,15 +17,11 @@
  *   - layer-system.js (レイヤー管理)
  *   - brush-settings.js (ブラシ設定 - mode 情報源)
  * 
- * 【依存関係 - Children (このファイルに依存)】
- *   - drawing-engine.js (描画制御)
- *   - core-runtime.js (API公開)
- * 
  * 【責務】
  *   - ストローク開始/更新/完了処理
  *   - 座標変換パイプライン統合
  *   - プレビュー表示管理
- *   - ツールモード切り替えの BrushSettings への委譲
+ *   - ペン/消しゴムモードの正しい描画処理
  * ================================================================================
  */
 
@@ -40,7 +36,6 @@
             this.lastLocalY = 0;
             this.lastPressure = 0;
             
-            // 依存性プロパティ
             this.coordinateSystem = null;
             this.pressureHandler = null;
             this.strokeRecorder = null;
@@ -53,16 +48,12 @@
             this.eventListenersSetup = false;
         }
         
-        /**
-         * 依存性注入の初期化
-         */
         init() {
             if (this.coordinateSystem) {
                 console.warn('[BrushCore] Already initialized');
                 return;
             }
             
-            // グローバル依存を取得
             this.coordinateSystem = window.CoordinateSystem;
             this.pressureHandler = window.pressureHandler;
             this.strokeRecorder = window.strokeRecorder;
@@ -71,7 +62,6 @@
             this.eventBus = window.eventBus || window.TegakiEventBus;
             this.brushSettings = window.brushSettings;
             
-            // 必須依存性チェック
             if (!this.coordinateSystem) {
                 throw new Error('[BrushCore] window.CoordinateSystem not initialized');
             }
@@ -85,7 +75,6 @@
                 throw new Error('[BrushCore] window.strokeRenderer not initialized');
             }
             
-            // オプショナル依存性の警告
             if (!this.brushSettings) {
                 console.warn('[BrushCore] window.brushSettings not found - will use defaults');
             }
@@ -95,12 +84,11 @@
             
             this._setupEventListeners();
             
-            console.log('✅ [BrushCore] Initialized (Phase 3-D - BrushSettings統合版)');
+            console.log('✅ [BrushCore] Initialized (Phase 1-3 - 消しゴム対応版)');
             console.log('   - CoordinateSystem:', !!this.coordinateSystem);
             console.log('   - LayerManager:', !!this.layerManager);
             console.log('   - StrokeRecorder:', !!this.strokeRecorder);
             console.log('   - StrokeRenderer:', !!this.strokeRenderer);
-            console.log('   - PressureHandler:', !!this.pressureHandler);
             console.log('   - BrushSettings:', !!this.brushSettings);
         }
         
@@ -127,12 +115,10 @@
                 }
             });
             
-            // 🆕 Phase 3-D: mode 変更イベントをリッスン
             this.eventBus.on('brush:mode-changed', (data) => {
                 if (data && data.mode) {
                     console.log(`[BrushCore] Mode changed: ${data.oldMode} → ${data.mode}`);
                     
-                    // StrokeRenderer に mode を通知
                     if (this.strokeRenderer && this.strokeRenderer.setTool) {
                         this.strokeRenderer.setTool(data.mode);
                     }
@@ -142,9 +128,6 @@
             this.eventListenersSetup = true;
         }
         
-        /**
-         * BrushSettings取得を一元化
-         */
         _getCurrentSettings() {
             if (!this.brushSettings) {
                 console.warn('[BrushCore] BrushSettings not available, using defaults');
@@ -159,38 +142,28 @@
             return this.brushSettings.getSettings();
         }
         
-        /**
-         * 🔧 Phase 3-D: ツールモード設定を BrushSettings に委譲
-         * @param {string} mode - 'pen' | 'eraser'
-         */
         setMode(mode) {
             if (mode !== 'pen' && mode !== 'eraser') {
                 console.error(`[BrushCore] Invalid brush mode: ${mode}`);
                 return;
             }
             
-            // 🔧 BrushSettings に委譲（唯一の情報源）
             if (this.brushSettings) {
                 this.brushSettings.setMode(mode);
             } else {
                 console.warn('[BrushCore] BrushSettings not available, cannot set mode');
             }
             
-            // StrokeRenderer にも直接通知（イベント前の即時対応）
             if (this.strokeRenderer && this.strokeRenderer.setTool) {
                 this.strokeRenderer.setTool(mode);
             }
         }
         
-        /**
-         * 🔧 Phase 3-D: 現在のモードを BrushSettings から取得
-         * @returns {string} 'pen' | 'eraser'
-         */
         getMode() {
             if (this.brushSettings) {
                 return this.brushSettings.getMode();
             }
-            return 'pen'; // fallback
+            return 'pen';
         }
         
         startStroke(clientX, clientY, pressure) {
@@ -229,7 +202,7 @@
                     component: 'drawing',
                     action: 'stroke-started',
                     data: {
-                        mode: this.getMode(), // 🔧 BrushSettings から取得
+                        mode: this.getMode(),
                         layerId: activeLayer.layerData?.id,
                         localX,
                         localY,
@@ -284,7 +257,11 @@
             this.lastPressure = processedPressure;
         }
         
-        finalizeStroke() {
+        /**
+         * 🔧 Phase 1-3: renderFinalStroke() を使用
+         * renderStroke() は legacy 専用のため、消しゴムモードに対応していない
+         */
+        async finalizeStroke() {
             if (!this.isDrawing) return;
             
             const activeLayer = this.layerManager.getActiveLayer();
@@ -299,29 +276,48 @@
             }
             
             const settings = this._getCurrentSettings();
+            const mode = settings.mode || 'pen';
             
-            const pathData = this.strokeRenderer.renderStroke(
-                activeLayer,
+            console.log(`[BrushCore] Finalizing stroke in mode: ${mode}`);
+            
+            // 🔧 renderFinalStroke() を使用（消しゴム対応）
+            const graphics = await this.strokeRenderer.renderFinalStroke(
                 strokeData,
                 settings
             );
             
-            if (pathData && pathData.graphics) {
-                activeLayer.addChild(pathData.graphics);
-                
-                if (activeLayer.layerData) {
-                    if (!activeLayer.layerData.pathsData) {
-                        activeLayer.layerData.pathsData = [];
+            if (graphics) {
+                // 消しゴムの場合、既にレイヤーに適用済み（_applyEraserMask内で）
+                if (mode === 'eraser') {
+                    console.log('[BrushCore] Eraser stroke applied');
+                } else {
+                    // ペンの場合は追加
+                    activeLayer.addChild(graphics);
+                    
+                    // pathsData に記録
+                    if (activeLayer.layerData) {
+                        if (!activeLayer.layerData.pathsData) {
+                            activeLayer.layerData.pathsData = [];
+                        }
+                        
+                        const pathData = {
+                            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            graphics: graphics,
+                            points: strokeData.points,
+                            tool: mode,
+                            settings: { ...settings }
+                        };
+                        
+                        activeLayer.layerData.pathsData.push(pathData);
+                        
+                        if (window.historyManager) {
+                            window.historyManager.recordAction({
+                                type: 'stroke',
+                                layerId: activeLayer.layerData?.id,
+                                pathData: pathData
+                            });
+                        }
                     }
-                    activeLayer.layerData.pathsData.push(pathData);
-                }
-                
-                if (window.historyManager) {
-                    window.historyManager.recordAction({
-                        type: 'stroke',
-                        layerId: activeLayer.layerData?.id,
-                        pathData: pathData
-                    });
                 }
                 
                 const layerIndex = this.layerManager.getLayerIndex(activeLayer);
@@ -333,7 +329,7 @@
                         data: {
                             layerIndex: layerIndex,
                             layerId: activeLayer.layerData?.id,
-                            pathId: pathData.id
+                            mode: mode
                         }
                     });
                     
@@ -356,7 +352,7 @@
                     component: 'drawing',
                     action: 'stroke-completed',
                     data: {
-                        mode: this.getMode(), // 🔧 BrushSettings から取得
+                        mode: mode,
                         layerId: activeLayer.layerData?.id,
                         pointCount: strokeData.points.length
                     }
@@ -391,10 +387,9 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js (Phase 3-D - BrushSettings統合版) loaded');
-    console.log('   ✓ setMode() を BrushSettings に委譲');
-    console.log('   ✓ getMode() は BrushSettings から取得');
-    console.log('   ✓ 二重管理を排除');
-    console.log('   ✓ brush:mode-changed イベントをリッスン');
+    console.log('✅ brush-core.js (Phase 1-3 - 消しゴム対応版) loaded');
+    console.log('   ✓ renderFinalStroke() を使用');
+    console.log('   ✓ 消しゴムモードの RenderTexture 処理に対応');
+    console.log('   ✓ renderStroke() は使用しない');
 
 })();

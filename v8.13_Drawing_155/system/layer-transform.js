@@ -1,14 +1,12 @@
 /**
- * @file system/layer-transform.js - v8.13.12 完全修正版
+ * @file system/layer-transform.js - v8.13.12 構文エラー修正版
  * @description レイヤートランスフォーム処理
  * 
  * 【v8.13.12 改修内容】
+ * 🔧 構文エラー修正: _setupPanelDrag() の閉じカッコ不足を修正
  * 🔧 反転ボタン: ❌pointerdown削除 (ui-panels.jsで一元管理)
  * 🔧 反転処理: カメラフレーム中央基準、skipHistory機能完全動作
  * 🔧 スライダー: slider-utils.js v8.13.10使用（PointerEvent完全対応）
- * 🔧 回転ループ: -180°/+180°での循環動作
- * 🔧 ドラッグ操作: Vキー+ドラッグのスライダー即時反映
- * 🧹 多重実装削除: 反転ボタンイベントはui-panels.jsのみに統一
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (window.TegakiEventBus)
@@ -16,10 +14,6 @@
  * - config.js (window.TEGAKI_CONFIG)
  * - slider-utils.js (window.TegakiUI.SliderUtils)
  * - layer-system.js (レイヤー取得・再構築)
- * 
- * 【子ファイル (このファイルに依存)】
- * - layer-system.js (initTransform経由で初期化)
- * - keyboard-handler.js (Vキー・反転ショートカット)
  */
 
 (function() {
@@ -271,10 +265,6 @@
             }
         }
 
-        /**
-         * 🔧 v8.13.12: 反転処理完全修正版
-         * skipHistory=true で History二重登録を防止
-         */
         flipLayer(layer, direction, skipHistory = false) {
             if (!layer?.layerData) return;
             
@@ -290,20 +280,15 @@
             const centerX = this.config.canvas.width / 2;
             const centerY = this.config.canvas.height / 2;
             
-            // 🔧 反転トグル処理
             if (direction === 'horizontal') {
                 transform.scaleX *= -1;
             } else if (direction === 'vertical') {
                 transform.scaleY *= -1;
             }
             
-            // 変換行列を適用
             this.applyTransform(layer, transform, centerX, centerY);
-            
-            // 🔧 即座に実座標へ反映
             this.confirmTransform(layer, skipHistory);
             
-            // UI更新
             this.updateFlipButtons(layer);
             this._emitTransformUpdated(layerId, layer);
             
@@ -424,10 +409,6 @@
             }
         }
 
-        /**
-         * 🔧 v8.13.12: 変形確定処理
-         * skipHistory=true で History二重登録を防止
-         */
         confirmTransform(layer, skipHistory = false) {
             if (!layer?.layerData) return false;
             
@@ -456,7 +437,6 @@
                 this.onRebuildRequired(layer, layer.layerData.paths);
             }
             
-            // 🔧 skipHistory=true の場合は History登録しない
             if (!skipHistory && this.onTransformComplete) {
                 this.onTransformComplete(layer, pathsBackup);
             }
@@ -525,10 +505,6 @@
             }
         }
 
-        /**
-         * 🔧 v8.13.12: カメラフレーム中央基準の変換行列
-         * 反転時もカメラフレーム中央を軸に正しく変換
-         */
         _createTransformMatrix(transform, centerX, centerY) {
             const x = Number(transform.x) || 0;
             const y = Number(transform.y) || 0;
@@ -549,9 +525,6 @@
             };
         }
         
-        /**
-         * 🔧 v8.13.12: localX/localY 形式対応
-         */
         _transformPoints(points, matrix) {
             return points.map(p => {
                 const localX = Number(p.localX) || 0;
@@ -577,10 +550,6 @@
             );
         }
         
-        /**
-         * 🔧 v8.13.12: slider-utils.js v8.13.10使用
-         * ❌ 反転ボタンのpointerdownイベント削除 (ui-panels.jsで一元管理)
-         */
         _setupTransformPanel() {
             this.transformPanel = document.getElementById('layer-transform-panel');
             
@@ -614,8 +583,6 @@
                 this.config.layer.minScale, this.config.layer.maxScale, 1.0,
                 (value) => value.toFixed(2) + 'x');
             
-            // 🔧 v8.13.12: 反転ボタンのイベント設定を削除
-            // ui-panels.jsで一元管理するため、ここでは何も設定しない
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
@@ -630,9 +597,6 @@
             this._setupPanelDrag();
         }
 
-        /**
-         * 🔧 v8.13.12: slider-utils.js v8.13.10使用
-         */
         _setupSlider(sliderId, property, min, max, initial, formatCallback) {
             const container = document.getElementById(sliderId);
             if (!container) return;
@@ -714,15 +678,70 @@
                     return;
                 }
                 
+                this.isPanelDragging = true;
+                this.panelDragPointerId = e.pointerId;
+                header.style.cursor = 'grabbing';
+                
+                const rect = this.transformPanel.getBoundingClientRect();
+                this.panelDragOffset = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top
+                };
+                
+                if (header.setPointerCapture) {
+                    try {
+                        header.setPointerCapture(e.pointerId);
+                    } catch (err) {}
+                }
+                
+                e.preventDefault();
+                e.stopPropagation();
+            }, { passive: false });
+            
+            document.addEventListener('pointermove', (e) => {
+                if (!this.isPanelDragging) return;
+                if (e.pointerId !== this.panelDragPointerId) return;
+                
+                const newLeft = e.clientX - this.panelDragOffset.x;
+                const newTop = e.clientY - this.panelDragOffset.y;
+                
+                this.transformPanel.style.left = `${newLeft}px`;
+                this.transformPanel.style.top = `${newTop}px`;
+                this.transformPanel.style.transform = 'none';
+                
+                e.preventDefault();
+                e.stopPropagation();
+            }, { passive: false, capture: true });
+            
+            document.addEventListener('pointerup', (e) => {
+                if (!this.isPanelDragging) return;
+                if (e.pointerId !== this.panelDragPointerId) return;
+                
                 this.isPanelDragging = false;
                 this.panelDragPointerId = null;
                 header.style.cursor = 'grab';
+                
+                if (header.releasePointerCapture) {
+                    try {
+                        header.releasePointerCapture(e.pointerId);
+                    } catch (err) {}
+                }
+                
+                e.stopPropagation();
+            }, { capture: true });
+            
+            document.addEventListener('pointercancel', (e) => {
+                if (!this.isPanelDragging) return;
+                if (e.pointerId !== this.panelDragPointerId) return;
+                
+                this.isPanelDragging = false;
+                this.panelDragPointerId = null;
+                header.style.cursor = 'grab';
+                
+                e.stopPropagation();
             }, { capture: true });
         }
 
-        /**
-         * 🔧 v8.13.12: ドラッグ操作のスライダー即時反映
-         */
         _handleDrag(e) {
             if (!this.coordinateSystem) return;
             
@@ -862,9 +881,6 @@
             this._lastEmitTime = performance.now();
         }
 
-        /**
-         * 🔧 v8.13.12: スライダーUI更新
-         */
         updateTransformPanelValues(layer) {
             if (!layer?.layerData || !this.transformPanel) return;
             
@@ -904,9 +920,6 @@
             }
         }
 
-        /**
-         * 🔧 v8.13.12: 反転ボタンUI更新
-         */
         updateFlipButtons(layer) {
             if (!layer?.layerData || !this.transformPanel) return;
             
@@ -989,65 +1002,7 @@
 
 })();
 
-console.log('✅ layer-transform.js v8.13.12 loaded');
-console.log('   🔧 反転ボタン: 多重実装削除 (ui-panels.jsで一元管理)');
-console.log('   🔧 反転処理: カメラフレーム中央基準 + skipHistory機能');
-console.log('   🔧 スライダー: slider-utils.js v8.13.10使用');
-console.log('   🔧 回転ループ: -180°/+180°循環動作');
-console.log('   🔧 ドラッグ操作: スライダー即時反映');elDragging = true;
-                this.panelDragPointerId = e.pointerId;
-                header.style.cursor = 'grabbing';
-                
-                const rect = this.transformPanel.getBoundingClientRect();
-                this.panelDragOffset = {
-                    x: e.clientX - rect.left,
-                    y: e.clientY - rect.top
-                };
-                
-                if (header.setPointerCapture) {
-                    try {
-                        header.setPointerCapture(e.pointerId);
-                    } catch (err) {}
-                }
-                
-                e.preventDefault();
-                e.stopPropagation();
-            }, { passive: false });
-            
-            document.addEventListener('pointermove', (e) => {
-                if (!this.isPanelDragging) return;
-                if (e.pointerId !== this.panelDragPointerId) return;
-                
-                const newLeft = e.clientX - this.panelDragOffset.x;
-                const newTop = e.clientY - this.panelDragOffset.y;
-                
-                this.transformPanel.style.left = `${newLeft}px`;
-                this.transformPanel.style.top = `${newTop}px`;
-                this.transformPanel.style.transform = 'none';
-                
-                e.preventDefault();
-                e.stopPropagation();
-            }, { passive: false, capture: true });
-            
-            document.addEventListener('pointerup', (e) => {
-                if (!this.isPanelDragging) return;
-                if (e.pointerId !== this.panelDragPointerId) return;
-                
-                this.isPanelDragging = false;
-                this.panelDragPointerId = null;
-                header.style.cursor = 'grab';
-                
-                if (header.releasePointerCapture) {
-                    try {
-                        header.releasePointerCapture(e.pointerId);
-                    } catch (err) {}
-                }
-                
-                e.stopPropagation();
-            }, { capture: true });
-            
-            document.addEventListener('pointercancel', (e) => {
-                if (!this.isPanelDragging) return;
-                if (e.pointerId !== this.panelDragPointerId) return;
-                
-                this.isPan
+console.log('✅ layer-transform.js v8.13.12 (構文エラー修正版) loaded');
+console.log('   🔧 _setupPanelDrag() の閉じカッコ不足を修正');
+console.log('   🔧 反転ボタン: ui-panels.jsで一元管理');
+console.log('   🔧 反転処理: skipHistory機能完全動作');
