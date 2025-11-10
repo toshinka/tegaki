@@ -1,0 +1,403 @@
+================================================================================
+FloodFill バケツツール段階的改修計画書
+案2: SDF距離場ベース → 案3要素追加のハイブリッド方式
+================================================================================
+
+【アーキテクチャ方針】
+- Phase 1-2: 案2 (SDF距離場ベース) で基本FloodFill実装
+- Phase 3-4: 案3要素 (ポリゴン生成) を段階的に追加
+- 最終形: ハイブリッド方式（形状複雑度で自動切り替え）
+
+================================================================================
+Phase 1: SDF距離場FloodFill - 基本実装
+================================================================================
+
+【目標】
+クリック位置から境界検出し、閉領域をGPU Compute Passで塗りつぶす
+
+【改修ファイル】
+1. system/drawing/webgpu/webgpu-compute-sdf.js
+2. system/drawing/fill-tool.js
+3. system/drawing/webgpu/shaders/sdf-fill-compute.wgsl (新規作成)
+
+【参考ファイル】
+- system/drawing/webgpu/webgpu-compute-msdf.js (GPU Compute Passの実装例)
+- system/drawing/webgpu/shaders/sdf-compute.wgsl (既存SDF shader)
+- system/drawing/sdf-mesh-builder.js (SDF距離計算の参考)
+
+--------------------------------------------------------------------------------
+【Phase 1 処理フロー】
+--------------------------------------------------------------------------------
+
+1. fill-tool.js: fill(localX, localY)
+   ↓
+2. webgpu-compute-sdf.js: computeFloodFillMask(localX, localY, threshold)
+   ↓
+3. GPU Compute Pass: sdf-fill-compute.wgsl
+   - 既存SDF distance fieldを参照
+   - クリック位置のdistance値を取得 (seedDistance)
+   - 各ピクセル: abs(distance - seedDistance) < threshold なら塗る
+   ↓
+4. maskBufferをPixiJS Textureに変換 (webgpu-texture-bridge.js)
+   ↓
+5. レイヤーにGraphicsとして追加
+
+--------------------------------------------------------------------------------
+【Phase 1 実装詳細】
+--------------------------------------------------------------------------------
+
+■ webgpu-compute-sdf.js に追加するメソッド:
+
+async computeFloodFillMask(layerContainer, clickLocalX, clickLocalY, threshold = 2.0) {
+  // 1. 既存のSDF distance field取得
+  const sdfBuffer = await this.getOrCreateSDFBuffer(layerContainer);
+  
+  // 2. クリック位置のdistance値を取得
+  const seedDistance = await this.readDistanceAtPoint(sdfBuffer, clickLocalX, clickLocalY);
+  
+  // 3. GPU Compute Passでマスク生成
+  const maskBuffer = await this.runFloodFillShader(sdfBuffer, seedDistance, threshold);
+  
+  // 4. maskBufferをTextureに変換
+  return this.bufferToTexture(maskBuffer);
+}
+
+■ sdf-fill-compute.wgsl (新規シェーダー):
+
+@group(0) @binding(0) var<storage, read> sdfField: array<f32>;
+@group(0) @binding(1) var<storage, read_write> maskOutput: array<u32>;
+@group(0) @binding(2) var<uniform> params: FloodFillParams;
+
+struct FloodFillParams {
+  seedDistance: f32,
+  threshold: f32,
+  width: u32,
+  height: u32
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let idx = id.y * params.width + id.x;
+  let distance = sdfField[idx];
+  
+  // 種点のdistanceとの差が閾値以内なら塗る
+  if (abs(distance - params.seedDistance) < params.threshold) {
+    maskOutput[idx] = 1u;
+  } else {
+    maskOutput[idx] = 0u;
+  }
+}
+
+■ fill-tool.js の _fillLayer() を書き換え:
+
+async _fillLayer(layer, color, alpha) {
+  const sdfCompute = window.webgpuComputeSDF;
+  
+  // SDF distance fieldベースのマスク生成
+  const maskTexture = await sdfCompute.computeFloodFillMask(
+    layer,
+    this.lastClickLocalX,
+    this.lastClickLocalY,
+    2.0  // threshold
+  );
+  
+  // マスクを使ってGraphics生成
+  const fillGraphics = new PIXI.Graphics();
+  fillGraphics.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+  fillGraphics.fill({ color, alpha });
+  
+  // マスクテクスチャを適用
+  fillGraphics.mask = new PIXI.Sprite(maskTexture);
+  
+  layer.addChild(fillGraphics);
+}
+
+--------------------------------------------------------------------------------
+【Phase 1 依存関係】
+--------------------------------------------------------------------------------
+
+webgpu-compute-sdf.js が依存:
+  → webgpu-capabilities.js (GPU初期化)
+  → webgpu-texture-bridge.js (Buffer→Texture変換)
+  → config.js (canvas.width, canvas.height)
+
+fill-tool.js が依存:
+  → webgpu-compute-sdf.js (computeFloodFillMask)
+  → brush-settings.js (色取得)
+  → layer-system.js (レイヤー取得)
+
+
+================================================================================
+Phase 2: エッジぼかし・グラデーション対応
+================================================================================
+
+【目標】
+距離場の特性を活かした滑らかな塗り表現
+
+【改修ファイル】
+1. system/drawing/webgpu/shaders/sdf-fill-compute.wgsl
+2. system/drawing/fill-tool.js (設定UI追加)
+
+【参考ファイル】
+- system/drawing/sdf-brush-shader.js (distance fieldの使用例)
+
+--------------------------------------------------------------------------------
+【Phase 2 処理フロー】
+--------------------------------------------------------------------------------
+
+1. ユーザーが「ぼかし強度」を設定
+   ↓
+2. GPU Compute Pass内でdistance値に応じてアルファ値を変化
+   ↓
+3. グラデーション: seedDistanceからの距離に応じて色を補間
+
+--------------------------------------------------------------------------------
+【Phase 2 実装詳細】
+--------------------------------------------------------------------------------
+
+■ sdf-fill-compute.wgsl にグラデーション機能追加:
+
+struct FloodFillParams {
+  seedDistance: f32,
+  threshold: f32,
+  featherAmount: f32,  // ぼかし強度 (新規)
+  gradientStart: vec4<f32>,  // 開始色 (新規)
+  gradientEnd: vec4<f32>,     // 終了色 (新規)
+  width: u32,
+  height: u32
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let distance = sdfField[idx];
+  let distDiff = abs(distance - params.seedDistance);
+  
+  if (distDiff < params.threshold) {
+    // 境界からの距離でアルファ値を変化 (ぼかし)
+    let alpha = 1.0 - smoothstep(
+      params.threshold - params.featherAmount,
+      params.threshold,
+      distDiff
+    );
+    
+    // グラデーション (距離に応じて色を補間)
+    let t = distDiff / params.threshold;
+    let color = mix(params.gradientStart, params.gradientEnd, t);
+    
+    maskOutput[idx] = pack_rgba(color * alpha);
+  }
+}
+
+■ fill-tool.js に設定追加:
+
+fill(localX, localY, options = {}) {
+  const {
+    feather = 0.5,           // ぼかし強度
+    gradient = null,         // { start: color1, end: color2 }
+    threshold = 2.0
+  } = options;
+  
+  // GPU Compute Passに渡す
+}
+
+
+================================================================================
+Phase 3: ポリゴン生成 - シンプル形状のみ
+================================================================================
+
+【目標】
+円形・矩形など単純な形状をポリゴン化して完全ベクター化
+
+【新規作成ファイル】
+1. system/drawing/polygon-fill-generator.js (新規)
+2. system/drawing/marching-squares.js (新規)
+
+【改修ファイル】
+1. system/drawing/fill-tool.js (複雑度判定追加)
+
+【参考ファイル】
+- system/drawing/curve-interpolator.js (ベジェ曲線生成の参考)
+- system/processing/vector-operations.js (ベクトル演算)
+
+--------------------------------------------------------------------------------
+【Phase 3 処理フロー】
+--------------------------------------------------------------------------------
+
+1. fill-tool.js: 形状の複雑度を解析
+   ↓ (複雑度 < 閾値)
+2. polygon-fill-generator.js: ポリゴン輪郭抽出
+   ↓
+3. marching-squares.js: SDF fieldから等高線抽出
+   ↓
+4. ポリゴン最適化 (頂点数削減)
+   ↓
+5. PixiJS Mesh として描画
+
+--------------------------------------------------------------------------------
+【Phase 3 実装詳細】
+--------------------------------------------------------------------------------
+
+■ polygon-fill-generator.js (新規):
+
+class PolygonFillGenerator {
+  async generateFromSDF(sdfBuffer, seedDistance, threshold) {
+    // 1. Marching Squaresで輪郭抽出
+    const contours = this.marchingSquares.extract(
+      sdfBuffer,
+      seedDistance,
+      threshold
+    );
+    
+    // 2. ポリゴン最適化 (Douglas-Peucker)
+    const simplified = this.simplifyPolygon(contours, epsilon = 0.5);
+    
+    // 3. PixiJS Mesh生成
+    return this.createMeshFromPolygon(simplified);
+  }
+  
+  analyzeComplexity(contours) {
+    // 頂点数、穴の数、曲率などから複雑度を計算
+    const vertexCount = contours.reduce((sum, c) => sum + c.length, 0);
+    const holeCount = contours.length - 1;
+    
+    return vertexCount * 0.1 + holeCount * 10;
+  }
+}
+
+■ marching-squares.js (新規):
+
+class MarchingSquares {
+  extract(sdfField, isoValue, width, height) {
+    const contours = [];
+    
+    // Grid走査
+    for (let y = 0; y < height - 1; y++) {
+      for (let x = 0; x < width - 1; x++) {
+        const cell = this.getCell(sdfField, x, y, width);
+        const marchingCase = this.classifyCell(cell, isoValue);
+        
+        if (marchingCase !== 0 && marchingCase !== 15) {
+          const edges = this.getCellEdges(marchingCase);
+          contours.push(...edges);
+        }
+      }
+    }
+    
+    return this.linkContours(contours);
+  }
+}
+
+■ fill-tool.js にハイブリッド判定追加:
+
+async _fillLayer(layer, color, alpha) {
+  const complexity = await this._analyzeShapeComplexity(layer, localX, localY);
+  
+  if (complexity < SIMPLE_SHAPE_THRESHOLD) {
+    // シンプル形状 → ポリゴン生成 (完全ベクター)
+    return this._fillWithPolygon(layer, color, alpha);
+  } else {
+    // 複雑形状 → SDF距離場方式 (高速)
+    return this._fillWithSDF(layer, color, alpha);
+  }
+}
+
+
+================================================================================
+Phase 4: 高度な表現 (スプレー・水彩)
+================================================================================
+
+【目標】
+ポリゴンメッシュを活用した芸術的表現
+
+【改修ファイル】
+1. system/drawing/polygon-fill-generator.js
+2. system/drawing/fill-tool.js (ブラシ設定追加)
+3. system/drawing/brush-settings.js (fill専用パラメータ)
+
+--------------------------------------------------------------------------------
+【Phase 4 実装詳細】
+--------------------------------------------------------------------------------
+
+■ スプレーブラシ (ポリゴン頂点にランダムオフセット):
+
+class PolygonFillGenerator {
+  applySprayEffect(vertices, intensity) {
+    return vertices.map(v => ({
+      x: v.x + (Math.random() - 0.5) * intensity,
+      y: v.y + (Math.random() - 0.5) * intensity,
+      alpha: 0.3 + Math.random() * 0.4
+    }));
+  }
+}
+
+■ 水彩ブラシ (頂点カラー+エッジ透明度):
+
+createWatercolorMesh(vertices, color) {
+  const mesh = new PIXI.Mesh(...);
+  
+  vertices.forEach((v, i) => {
+    const distToCenter = computeDistanceToCenter(v);
+    mesh.vertices[i].alpha = 1.0 - (distToCenter / maxDist) * 0.7;
+  });
+  
+  return mesh;
+}
+
+
+================================================================================
+実装優先度とスケジュール
+================================================================================
+
+Phase 1: SDF FloodFill基本    [優先度: ★★★★★] 3-4日
+  → 最優先。これだけで実用レベル
+
+Phase 2: ぼかし・グラデーション [優先度: ★★★★☆] 1-2日
+  → Phase 1の自然な拡張
+
+Phase 3: ポリゴン生成          [優先度: ★★★☆☆] 5-7日
+  → 余裕があれば実装
+
+Phase 4: 芸術的表現            [優先度: ★★☆☆☆] 2-3日
+  → Phase 3実装後に検討
+
+
+================================================================================
+デバッグ・検証コマンド
+================================================================================
+
+// Phase 1検証
+console.log('SDF Buffer:', await window.webgpuComputeSDF.getSDFBuffer(layer));
+console.log('Seed Distance:', await window.webgpuComputeSDF.readDistanceAtPoint(x, y));
+
+// Phase 3検証
+const complexity = await window.FillTool._analyzeShapeComplexity(layer, x, y);
+console.log('Shape Complexity:', complexity, '(threshold: 100)');
+
+// パフォーマンス測定
+performance.mark('fill-start');
+await window.FillTool.fill(x, y);
+performance.mark('fill-end');
+console.log('Fill time:', performance.measure('fill', 'fill-start', 'fill-end'));
+
+
+================================================================================
+Phase間の互換性維持
+================================================================================
+
+各Phaseは独立して動作可能:
+  - Phase 1のみでも完全に機能
+  - Phase 2はPhase 1の拡張（上書きではない）
+  - Phase 3は並行実装（Phase 1/2と共存）
+  - Phase 4はPhase 3の装飾
+
+フラグでの機能切り替え:
+  window.TEGAKI_CONFIG.fillTool = {
+    usePolygonFill: false,  // Phase 3有効化
+    featherEnabled: true,   // Phase 2有効化
+    complexityThreshold: 100
+  };
+
+
+================================================================================
+EOF
+================================================================================
