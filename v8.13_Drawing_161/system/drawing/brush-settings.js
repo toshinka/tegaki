@@ -1,7 +1,11 @@
 /**
  * ================================================================================
- * system/drawing/brush-settings.js - Phase 3-C: ツールモード管理追加版
+ * system/drawing/brush-settings.js - Phase 3-D: 塗りつぶしツール対応版
  * ================================================================================
+ * 
+ * 【Phase 3-D 改修内容】
+ * - mode プロパティを 'pen' | 'eraser' | 'fill' に拡張
+ * - fill モードのバリデーション追加
  * 
  * 【Phase 3-C 改修内容 - 消しゴム対応】
  * - mode プロパティ追加 ('pen' | 'eraser')
@@ -55,10 +59,10 @@
             this.minWidth = this.config.BRUSH_DEFAULTS?.minWidth || 0.5;
             this.maxWidth = this.config.BRUSH_DEFAULTS?.maxWidth || 30;
             
-            // 🆕 Phase 3-C: ツールモード追加
-            this.mode = 'pen'; // 'pen' | 'eraser'
+            // 🆕 Phase 3-D: ツールモード拡張
+            this.mode = 'pen'; // 'pen' | 'eraser' | 'fill'
 
-            console.log('[BrushSettings] Initialized (Phase 3-C - ツールモード対応):', {
+            console.log('[BrushSettings] Initialized (Phase 3-D - fill対応):', {
                 size: this.size,
                 color: `0x${this.color.toString(16)}`,
                 opacity: this.opacity,
@@ -70,12 +74,12 @@
         }
 
         /**
-         * 🆕 Phase 3-C: ツールモード設定
-         * @param {string} mode - 'pen' | 'eraser'
+         * 🆕 Phase 3-D: ツールモード設定 (fill追加)
+         * @param {string} mode - 'pen' | 'eraser' | 'fill'
          */
         setMode(mode) {
-            if (mode !== 'pen' && mode !== 'eraser') {
-                console.error('[BrushSettings] Invalid mode:', mode);
+            if (mode !== 'pen' && mode !== 'eraser' && mode !== 'fill') {
+                console.warn('[BrushSettings] Invalid mode:', mode, '(allowed: pen, eraser, fill)');
                 return;
             }
 
@@ -95,7 +99,7 @@
 
         /**
          * 🆕 Phase 3-C: ツールモード取得
-         * @returns {string} 'pen' | 'eraser'
+         * @returns {string} 'pen' | 'eraser' | 'fill'
          */
         getMode() {
             return this.mode;
@@ -186,7 +190,7 @@
                 color: this.color,
                 opacity: this.opacity,
                 alpha: this.opacity,
-                mode: this.mode, // 🆕 追加
+                mode: this.mode,
                 minWidth: this.minWidth,
                 maxWidth: this.maxWidth
             };
@@ -226,10 +230,8 @@
 
     window.BrushSettings = BrushSettings;
 
-    console.log('✅ brush-settings.js (Phase 3-C - ツールモード対応) loaded');
-    console.log('   ✓ mode プロパティ追加 (pen/eraser)');
-    console.log('   ✓ setMode() / getMode() メソッド追加');
-    console.log('   ✓ brush:mode-changed イベント発行');
-    console.log('   ✓ getSettings() に mode を含める');
+    console.log('✅ brush-settings.js (Phase 3-D - fill対応) loaded');
+    console.log('   ✓ mode: pen/eraser/fill 拡張');
+    console.log('   ✓ setMode() バリデーション改善');
 
 })();

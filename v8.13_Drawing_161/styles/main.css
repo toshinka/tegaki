@@ -1,4 +1,4 @@
-/* Tegaki Tool - Main Stylesheet (完全改修版: 数値入力・パネルドラッグ対応) */
+/* Tegaki Tool - Main Stylesheet (v8.13.14: サイドバー・クイックアクセス統一版) */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -12,6 +12,7 @@
     --text-primary: #2c1810; 
     --text-secondary: #5d4037; 
     --text-inverse: #ffffff;
+    --active-border: #ff8c42;
 }
 
 body { 
@@ -28,6 +29,7 @@ body {
     width: 100vw; 
 }
 
+/* ===== サイドバー ===== */
 .sidebar { 
     background: var(--futaba-cream); 
     border-right: 2px solid var(--futaba-light-medium); 
@@ -65,7 +67,8 @@ body {
 }
 
 .tool-button.active { 
-    background: var(--futaba-maroon); 
+    background: var(--futaba-maroon);
+    border: 3px solid var(--active-border);
 }
 
 .tool-button.active svg { 
@@ -94,6 +97,7 @@ canvas {
     -ms-touch-action: none;
 }
 
+/* ===== レイヤーパネルコンテナ ===== */
 .layer-panel-container { 
     position: fixed; 
     right: 12px; 
@@ -192,7 +196,6 @@ canvas {
 }
 
 /* ===== レイヤーパネル ===== */
-
 .layer-panel-items { 
     display: flex; 
     flex-direction: column; 
@@ -236,7 +239,7 @@ canvas {
 }
 
 .layer-item.active {
-    border-color: #ff8c42 !important;
+    border-color: var(--active-border) !important;
 }
 
 .layer-thumbnail {
@@ -271,7 +274,7 @@ canvas {
     box-shadow: 0 8px 24px rgba(128, 0, 0, 0.4), 0 2px 8px rgba(128, 0, 0, 0.2) !important;
     cursor: grabbing !important;
     background: var(--futaba-cream) !important;
-    border: 2px solid #ff8c42 !important;
+    border: 2px solid var(--active-border) !important;
     z-index: 10000 !important;
     transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
                 box-shadow 0.15s ease-out,
@@ -280,7 +283,7 @@ canvas {
 
 .sortable-chosen {
     background-color: rgba(255, 140, 66, 0.15) !important;
-    border-color: #ff8c42 !important;
+    border-color: var(--active-border) !important;
     transform: scale(0.98) !important;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
@@ -333,7 +336,6 @@ canvas {
 }
 
 /* ===== ポップアップパネル ===== */
-
 .popup-panel { 
     position: fixed; 
     background: var(--futaba-cream); 
@@ -424,7 +426,7 @@ canvas {
     text-align: right; 
 }
 
-/* ✅ 数値入力フィールド用スタイル */
+/* ===== 数値入力フィールド ===== */
 .value-input {
     width: 60px;
     padding: 2px 4px;
@@ -449,29 +451,11 @@ canvas {
     color: var(--futaba-background);
 }
 
+/* ===== クイックアクセスポップアップ ===== */
 .resize-popup-compact {
     min-width: 280px !important;
     max-width: 300px;
     padding: 14px !important;
-}
-
-.quick-access-drag-handle {
-    width: 100%;
-    height: 24px;
-    background: var(--futaba-cream);
-    border-bottom: 1px solid var(--futaba-light-medium);
-    cursor: move;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    user-select: none;
-    border-radius: 16px 16px 0 0;
-    margin: -20px -20px 12px -20px;
-    padding: 0 20px;
-    font-size: 14px;
-    color: var(--futaba-medium);
-    font-weight: bold;
-    letter-spacing: 2px;
 }
 
 .quick-access-close-btn {
@@ -506,15 +490,40 @@ canvas {
     transform: scale(0.95);
 }
 
-.quick-access-drag-handle:hover {
-    background: var(--futaba-light-medium);
-    color: var(--futaba-maroon);
+/* ===== クイックアクセス - ツールボタン統一 ===== */
+.qa-tool-button {
+    width: 36px;
+    height: 36px;
+    border: 2px solid var(--futaba-light-medium);
+    background: var(--futaba-background);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
 }
 
-.quick-access-drag-handle:active {
-    cursor: grabbing;
+.qa-tool-button svg {
+    width: 20px;
+    height: 20px;
+    stroke: var(--futaba-maroon);
+    transition: stroke 0.2s ease;
+}
+
+.qa-tool-button:hover {
     background: var(--futaba-medium);
-    color: var(--futaba-background);
+    transform: scale(1.05);
+}
+
+.qa-tool-button.active {
+    background: var(--futaba-maroon);
+    border: 3px solid var(--active-border);
+}
+
+.qa-tool-button.active svg {
+    stroke: #ffffff;
 }
 
 .resize-compact-group {
@@ -729,8 +738,7 @@ canvas {
     color: var(--text-primary); 
 }
 
-/* ===== レイヤートランスフォームパネル (ドラッグ対応) ===== */
-
+/* ===== レイヤートランスフォームパネル ===== */
 .layer-transform-panel { 
     position: fixed; 
     background: rgba(240, 224, 214, 0.95); 
@@ -761,7 +769,6 @@ canvas {
     } 
 }
 
-/* ✅ パネルドラッグ用ヘッダー */
 .panel-header {
     width: 100%;
     padding: 8px 12px;
