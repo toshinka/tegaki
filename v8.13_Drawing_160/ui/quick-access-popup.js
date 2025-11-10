@@ -3,19 +3,16 @@
  * @description ペン設定クイックアクセスポップアップ
  * 
  * 【改修履歴】
- * v8.13.2 - ツールアイコン追加（色とペンサイズの間に配置）
- *   ✅ ペン・消しゴム・塗りつぶしアイコンを追加
- *   ✅ サイドバーと機能・デザイン統一
- *   ✅ 色変更・透明度の影響を受ける
- * v8.13.1 - タブレットペンのドラッグ改善
- *   ✅ パネルドラッグ: passive: false 追加でペンのpreventDefault有効化
- *   ✅ ポインターキャプチャ: setPointerCapture()で確実な追跡
- *   ✅ touch-action: none をパネル全体に適用
+ * v8.13.3 - 構文エラー修正
+ *   🐛 696行目の重複コード削除
+ *   🐛 _updateOpacitySlider メソッドの重複定義を解消
+ * v8.13.2 - ツールアイコン追加
+ * v8.13.1 - タブレットペン対応
  * 
  * 【親ファイル (このファイルが依存)】
  * - system/drawing/brush-settings.js (BrushSettings)
  * - system/event-bus.js (EventBus)
- * - system/drawing/fill-tool.js (FillTool)
+ * - core-runtime.js (CoreRuntime.api.tool)
  * 
  * 【子ファイル (このファイルに依存)】
  * - ui-panels.js (UIController経由で初期化)
@@ -83,7 +80,6 @@
                 this.panel = document.createElement('div');
                 this.panel.id = 'quick-access-popup';
                 this.panel.className = 'popup-panel resize-popup-compact';
-                
                 this.panel.style.touchAction = 'none';
                 
                 const savedPos = this._loadPosition();
@@ -138,7 +134,7 @@
                     </div>
                 </div>
 
-                <!-- ツールアイコン（色とペンサイズの間） -->
+                <!-- ツールアイコン -->
                 <div style="margin-bottom: 20px; padding: 0 8px;">
                     <div style="display: flex; gap: 8px; align-items: center;">
                         <button class="qa-tool-button" id="qa-pen-tool" title="ベクターペン" style="
@@ -595,6 +591,30 @@
             this.elements.opacityHandle.style.left = percent + '%';
             this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
             
+            this.brushSettings.setOpacity(this.currentOpacity / 100);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('brush:opacity-changed', { opacity: this.currentOpacity / 100 });
+            }
+        }
+
+        _updateUI() {
+            if (!this.brushSettings) return;
+            
+            this.currentSize = this.brushSettings.getSize();
+            const opacityRaw = this.brushSettings.getOpacity();
+            this.currentOpacity = opacityRaw * 100;
+            
+            const sizePercent = ((this.currentSize - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
+            this.elements.sizeTrack.style.width = sizePercent + '%';
+            this.elements.sizeHandle.style.left = sizePercent + '%';
+            this.elements.sizeDisplay.textContent = this.currentSize.toFixed(1) + 'px';
+            
+            const opacityPercent = ((this.currentOpacity - this.MIN_OPACITY) / (this.MAX_OPACITY - this.MIN_OPACITY)) * 100;
+            this.elements.opacityTrack.style.width = opacityPercent + '%';
+            this.elements.opacityHandle.style.left = opacityPercent + '%';
+            this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
+            
             const currentColor = this.brushSettings.getColor();
             const colorButtons = this.panel.querySelectorAll('.color-button');
             colorButtons.forEach(btn => {
@@ -690,31 +710,6 @@
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
 
-    console.log('✅ quick-access-popup.js v8.13.2 loaded');
-    console.log('   ✓ ツールアイコン追加 (色とペンサイズの間に配置)');
-    console.log('   ✓ ペン/消しゴム/塗りつぶし対応');
-})();currentOpacity) + '%';
-            
-            this.brushSettings.setOpacity(this.currentOpacity / 100);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('brush:opacity-changed', { opacity: this.currentOpacity / 100 });
-            }
-        }
-
-        _updateUI() {
-            if (!this.brushSettings) return;
-            
-            this.currentSize = this.brushSettings.getSize();
-            const opacityRaw = this.brushSettings.getOpacity();
-            this.currentOpacity = opacityRaw * 100;
-            
-            const sizePercent = ((this.currentSize - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
-            this.elements.sizeTrack.style.width = sizePercent + '%';
-            this.elements.sizeHandle.style.left = sizePercent + '%';
-            this.elements.sizeDisplay.textContent = this.currentSize.toFixed(1) + 'px';
-            
-            const opacityPercent = ((this.currentOpacity - this.MIN_OPACITY) / (this.MAX_OPACITY - this.MIN_OPACITY)) * 100;
-            this.elements.opacityTrack.style.width = opacityPercent + '%';
-            this.elements.opacityHandle.style.left = opacityPercent + '%';
-            this.elements.opacityDisplay.textContent = Math.round(this.
+    console.log('✅ quick-access-popup.js v8.13.3 loaded');
+    console.log('   🐛 構文エラー修正: 重複コード削除');
+})();
