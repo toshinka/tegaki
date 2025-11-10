@@ -1,6 +1,11 @@
 /**
- * @file ui/ui-panels.js - v8.13.14 サイドバー⇔クイックアクセス連動強化版
+ * @file ui/ui-panels.js - v8.13.15 サイドバー軽量デザイン版
  * @description UIコントロールパネル統合管理
+ * 
+ * 【v8.13.15 改修内容】
+ * 🎨 サイドバーアクティブ時の背景色反転を削除
+ * ✨ オレンジ枠(#ff8c42)のみで選択を表示する軽い雰囲気に変更
+ * 🎯 SVG色は常にvar(--futaba-maroon)を維持
  * 
  * 【v8.13.14 改修内容】
  * 🔗 サイドバーとクイックアクセスのツール選択完全連動
@@ -109,12 +114,10 @@ window.TegakiUI.UIController = class {
             this.togglePopup('export');
         });
         
-        // 🆕 v8.13.14: tool:select イベント購読（クイックアクセス→サイドバー同期）
         eventBus.on('tool:select', ({ tool }) => {
             this.updateToolUI(tool);
         });
         
-        // 既存: tool:changed イベント購読
         eventBus.on('tool:changed', ({ tool }) => {
             this.updateToolUI(tool);
         });
@@ -202,18 +205,12 @@ window.TegakiUI.UIController = class {
         if (handler) handler();
     }
 
-    /**
-     * 🆕 v8.13.14: サイドバー→クイックアクセス同期
-     */
     syncToolToQuickAccess(tool) {
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('ui:sidebar:sync-tool', { tool });
         }
     }
 
-    /**
-     * サイドバーのツールUI更新（統一処理）
-     */
     updateToolUI(tool) {
         document.querySelectorAll('.tool-button').forEach(btn => {
             btn.classList.remove('active');
@@ -401,8 +398,12 @@ window.TegakiUI.setupPanelStyles = function() {
         }
         
         .tool-button.active {
-            background-color: var(--futaba-maroon) !important;
+            background-color: var(--futaba-background) !important;
             border: 3px solid #ff8c42 !important;
+        }
+        
+        .tool-button.active svg {
+            stroke: var(--futaba-maroon) !important;
         }
         
         .tool-button:hover:not(.active) {
@@ -416,6 +417,6 @@ window.TegakiUI.setupPanelStyles = function() {
     }
 };
 
-console.log('✅ ui-panels.js v8.13.14 loaded');
-console.log('   🔗 サイドバー⇔クイックアクセス完全連動');
-console.log('   🎨 active-border統一: #ff8c42');
+console.log('✅ ui-panels.js v8.13.15 loaded');
+console.log('   🎨 サイドバー軽量デザイン: オレンジ枠のみ');
+console.log('   🎯 SVG色統一: 常にvar(--futaba-maroon)');
