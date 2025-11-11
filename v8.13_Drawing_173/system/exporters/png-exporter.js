@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/png-exporter.js - 高DPI対応PNG出力【Phase 1完成】
+ * system/exporters/png-exporter.js - DPR=1統一版【v8.14.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -12,14 +12,14 @@
  * 
  * 【責務】
  *   - PNG静止画エクスポート（単一フレーム）
- *   - 高DPI描画と出力の整合性確保
+ *   - 等倍出力の保証
  *   - Blob生成（プレビュー/ダウンロード兼用）
  * 
- * 【改修内容】
- *   ✅ devicePixelRatio を出力時に適用
- *   ✅ resolution='auto' で画面と同等の高精細出力
- *   ✅ 明示的resolution指定も可能
- *   ✅ 描画体験と出力の一貫性確保
+ * 【v8.14.0 改修内容 - DPR=1統一】
+ *   🚨 resolution パラメータを完全削除
+ *   🚨 常に等倍（1x）で出力
+ *   ✅ 描画時と出力時の一貫性確保
+ *   ✅ ユーザーの期待値と出力の完全一致
  * ================================================================================
  */
 
@@ -75,33 +75,26 @@ window.PNGExporter = (function() {
         }
         
         /**
-         * PNG Blob生成（プレビュー/ダウンロード兼用）
+         * PNG Blob生成 - DPR=1統一版
          * 
-         * 🔧 高DPI対応:
-         *   options.resolution = 'auto' → devicePixelRatio を使用
-         *   options.resolution = number → 明示的に指定
-         *   デフォルト: 2x（高品質出力）
+         * 🚨 v8.14.0 重要変更:
+         *   - resolution パラメータを完全無視
+         *   - 常に等倍（1x）で出力
+         *   - options.resolution は互換性のため受け入れるが使用しない
+         * 
+         * 設計思想:
+         *   - 画面表示 = 出力品質の一貫性
+         *   - 意図しない高解像度化の防止
+         *   - ベクターのジャギー対策は antialias で対応済み
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
             
-            // 解像度の決定
-            let resolution;
-            if (options.resolution === 'auto') {
-                // 画面と同等のDPIで出力
-                resolution = window.devicePixelRatio || 1;
-            } else if (typeof options.resolution === 'number') {
-                // 明示的指定
-                resolution = options.resolution;
-            } else {
-                // デフォルト: 高品質2x
-                resolution = 2;
-            }
-            
+            // 🚨 resolution は常に使用しない（互換性のため引数は受け入れる）
             const settings = {
                 width: options.width || CONFIG.canvas.width,
-                height: options.height || CONFIG.canvas.height,
-                resolution: resolution
+                height: options.height || CONFIG.canvas.height
+                // resolution は渡さない（export-manager側で1固定）
             };
             
             const canvas = this.manager.renderToCanvas(settings);
@@ -121,6 +114,6 @@ window.PNGExporter = (function() {
     return PNGExporter;
 })();
 
-console.log('✅ png-exporter.js (高DPI対応版) loaded');
-console.log('   ✓ resolution="auto" で画面DPI適用');
-console.log('   ✓ 描画体験と出力の整合性確保');
+console.log('✅ png-exporter.js v8.14.0 loaded (DPR=1統一)');
+console.log('   🚨 resolution パラメータ無視');
+console.log('   ✓ 常に等倍（1x）出力');

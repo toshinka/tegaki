@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/export-manager.js - 高DPI対応統合エクスポート管理【Phase 1完成】
+ * system/export-manager.js - DPR=1統一版【v8.14.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -18,14 +18,16 @@
  * 
  * 【責務】
  *   - エクスポーター統合管理
- *   - Canvas描画（高DPI対応）
+ *   - Canvas描画（DPR=1固定）
  *   - フォーマット自動判定
  *   - ファイルダウンロード/クリップボード
  * 
- * 【改修内容】
- *   ✅ renderToCanvas で resolution を適用
- *   ✅ 出力時に高DPI維持
- *   ✅ 画面体験と出力の一貫性確保
+ * 【v8.14.0 改修内容 - DPR=1統一】
+ *   🚨 renderToCanvas で resolution=1 固定
+ *   🚨 高DPI出力オプションを完全削除
+ *   ✅ 描画時と出力時の解像度を完全一致
+ *   ✅ ユーザーの期待値と出力結果の一致を保証
+ *   ✅ ベクターラスタライズは antialias で高品質化
  * ================================================================================
  */
 
@@ -171,21 +173,25 @@ window.ExportManager = (function() {
         }
         
         /**
-         * Canvas描画 - 高DPI対応版
+         * Canvas描画 - DPR=1統一版
          * 
-         * 🔧 改修内容:
-         *   - options.resolution を RenderTexture に適用
-         *   - デフォルト解像度を2xに設定（高品質出力）
-         *   - 画面DPIと出力DPIの整合性確保
+         * 🚨 v8.14.0 重要変更:
+         *   - resolution を常に 1 固定
+         *   - options.resolution パラメータを無視
+         *   - 描画時と出力時の解像度を完全一致
+         *   - ベクターのジャギー対策は antialias で対応
+         * 
+         * 設計思想:
+         *   - ユーザーが画面で見ている品質 = 出力品質
+         *   - 意図しない高解像度化による混乱を防止
+         *   - CLIP STUDIO PAINT等の標準的な動作に準拠
          */
         renderToCanvas(options = {}) {
             const width = options.width || window.TEGAKI_CONFIG.canvas.width;
             const height = options.height || window.TEGAKI_CONFIG.canvas.height;
             
-            // 解像度の決定（デフォルト2x）
-            const resolution = options.resolution !== undefined 
-                ? options.resolution 
-                : 2;
+            // 🚨 DPR=1固定（options.resolutionを無視）
+            const resolution = 1;
             
             const container = options.container || 
                              this.layerSystem.layersContainer || 
@@ -199,11 +205,11 @@ window.ExportManager = (function() {
                 throw new Error('provided container is not a PIXI DisplayObject');
             }
             
-            // RenderTexture作成時に resolution を適用
+            // RenderTexture作成（DPR=1固定）
             const renderTexture = PIXI.RenderTexture.create({
                 width: width,
                 height: height,
-                resolution: resolution  // 🔧 高DPI対応
+                resolution: resolution
             });
             
             this.app.renderer.render({
@@ -260,6 +266,6 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js (高DPI対応版) loaded');
-console.log('   ✓ renderToCanvas で resolution 適用');
-console.log('   ✓ 出力時に高DPI維持');
+console.log('✅ export-manager.js v8.14.0 loaded (DPR=1統一)');
+console.log('   🚨 renderToCanvas: resolution=1 固定');
+console.log('   ✓ 描画時と出力時の解像度を完全一致');
