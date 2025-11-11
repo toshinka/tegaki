@@ -1,7 +1,28 @@
-// ==================================================
-// system/exporters/apng-exporter.js
-// APNGアニメーションエクスポーター - CUT→FRAME完全修正版
-// ==================================================
+/**
+ * ================================================================================
+ * system/exporters/apng-exporter.js - DPR=1統一版【v8.14.0】
+ * ================================================================================
+ * 
+ * 【依存関係 - Parents】
+ *   - export-manager.js (APNGエクスポート実行)
+ *   - animation-system.js (フレーム管理)
+ *   - UPNG.js (APNG生成ライブラリ)
+ * 
+ * 【依存関係 - Children】
+ *   なし
+ * 
+ * 【責務】
+ *   - APNGアニメーション出力
+ *   - フレームレンダリング（DPR=1固定）
+ *   - Blob生成
+ * 
+ * 【v8.14.0 改修内容 - DPR=1統一】
+ *   🚨 resolution=1 固定を明示
+ *   ✅ 等倍出力の保証
+ *   ✅ 描画時と出力時の一貫性確保
+ * ================================================================================
+ */
+
 window.APNGExporter = (function() {
     'use strict';
     
@@ -137,9 +158,17 @@ window.APNGExporter = (function() {
             return new Blob([apngBuffer], { type: 'image/png' });
         }
         
+        /**
+         * フレームレンダリング - DPR=1統一版
+         * 
+         * 🚨 v8.14.0 重要変更:
+         *   - resolution を常に 1 固定
+         *   - 描画時と出力時の解像度を完全一致
+         */
         async _renderFrameToCanvas(settings) {
             const CONFIG = window.TEGAKI_CONFIG;
             
+            // 🚨 DPR=1固定
             const renderTexture = PIXI.RenderTexture.create({
                 width: settings.width,
                 height: settings.height,
@@ -233,4 +262,4 @@ window.APNGExporter = (function() {
     return APNGExporter;
 })();
 
-console.log('✅ apng-exporter.js (CUT→FRAME完全修正版) loaded');
+console.log('✅ apng-exporter.js v8.14.0 loaded (DPR=1統一)');
