@@ -1,11 +1,11 @@
 /**
  * ================================================================================
- * system/exporters/webp-exporter.js - 座標系保護・真のアニメーション対応【v8.20.0】
+ * system/exporters/webp-exporter.js - canvasContainer直接キャプチャ【v8.21.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
  *   - system/export-manager.js (エクスポート管理)
- *   - system/camera-system.js (worldContainer取得)
+ *   - system/camera-system.js (canvasContainer取得)
  *   - system/animation-system.js (フレーム情報)
  * 
  * 【依存関係 - Children】
@@ -15,11 +15,10 @@
  *   - WEBP静止画/動画エクスポート
  *   - 複数フレーム自動検出
  * 
- * 【v8.20.0 重要改修】
- *   🔧 renderer.resolutionを変更しない（座標系破壊の原因）
- *   🔧 RenderTextureのresolutionパラメータで倍率対応
- *   🔧 エクスポート後のカメラフレーム崩壊を完全防止
- *   🔧 canvasContainerのみキャプチャ（外枠除外）
+ * 【v8.21.0 重要改修】
+ *   🔧 canvasContainerを直接renderer.extract.canvas()でキャプチャ
+ *   🔧 RenderTexture経由を完全排除（座標系破壊を根本解決）
+ *   🔧 カメラフレーム崩壊の完全防止
  *   ⚠️ WEBP動画出力は技術的制約により暫定実装（横並び）
  *      将来的にWebCodecs APIまたはFFmpeg.wasmでの真のアニメーション化を検討
  * 
@@ -104,7 +103,7 @@ window.WebPExporter = (function() {
         }
         
         /**
-         * WEBP静止画生成【v8.20.0 座標系保護版】
+         * WEBP静止画生成【v8.21.0 完全修正版】
          */
         async _generateStaticWebP(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -120,51 +119,34 @@ window.WebPExporter = (function() {
                 throw new Error('canvasContainer not available');
             }
             
-            // 🔧 v8.20.0: 座標系を破壊しない
-            const renderTexture = PIXI.RenderTexture.create({
-                width: canvasWidth * resolution,
-                height: canvasHeight * resolution,
+            // 🔧 v8.21.0: RenderTextureを使わず直接キャプチャ
+            const extractedCanvas = this.manager.app.renderer.extract.canvas({
+                target: canvasContainer,
                 resolution: resolution,
                 antialias: true
             });
             
-            try {
-                this.manager.app.renderer.render({
-                    container: canvasContainer,
-                    target: renderTexture
-                });
-                
-                const extractedCanvas = this.manager.app.renderer.extract.canvas({
-                    target: renderTexture,
-                    resolution: 1,
-                    antialias: true
-                });
-                
-                const finalCanvas = document.createElement('canvas');
-                finalCanvas.width = canvasWidth * resolution;
-                finalCanvas.height = canvasHeight * resolution;
-                const ctx = finalCanvas.getContext('2d', { alpha: true });
-                
-                ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
-                ctx.drawImage(extractedCanvas, 0, 0);
-                
-                return new Promise((resolve, reject) => {
-                    finalCanvas.toBlob((blob) => {
-                        if (!blob) {
-                            reject(new Error('WEBP generation failed'));
-                            return;
-                        }
-                        resolve(blob);
-                    }, 'image/webp', quality);
-                });
-                
-            } finally {
-                renderTexture.destroy(true);
-            }
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = canvasWidth * resolution;
+            finalCanvas.height = canvasHeight * resolution;
+            const ctx = finalCanvas.getContext('2d', { alpha: true });
+            
+            ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
+            ctx.drawImage(extractedCanvas, 0, 0);
+            
+            return new Promise((resolve, reject) => {
+                finalCanvas.toBlob((blob) => {
+                    if (!blob) {
+                        reject(new Error('WEBP generation failed'));
+                        return;
+                    }
+                    resolve(blob);
+                }, 'image/webp', quality);
+            });
         }
         
         /**
-         * WEBP動画生成【v8.20.0】
+         * WEBP動画生成【v8.21.0】
          * 
          * ⚠️ 技術的制約による暫定実装:
          * ブラウザネイティブのCanvas.toBlob()はアニメーションWEBPを生成できない。
@@ -251,7 +233,7 @@ window.WebPExporter = (function() {
         }
         
         /**
-         * フレームのスクリーンショット取得【v8.20.0 座標系保護版】
+         * フレームのスクリーンショット取得【v8.21.0 完全修正版】
          */
         async _captureFrameScreenshot(resolution = 1) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -265,39 +247,22 @@ window.WebPExporter = (function() {
                 throw new Error('canvasContainer not found');
             }
             
-            // 🔧 v8.20.0: 座標系を破壊しない
-            const renderTexture = PIXI.RenderTexture.create({
-                width: canvasWidth * resolution,
-                height: canvasHeight * resolution,
+            // 🔧 v8.21.0: RenderTextureを使わず直接キャプチャ
+            const extractedCanvas = this.manager.app.renderer.extract.canvas({
+                target: canvasContainer,
                 resolution: resolution,
                 antialias: true
             });
             
-            try {
-                this.manager.app.renderer.render({
-                    container: canvasContainer,
-                    target: renderTexture
-                });
-                
-                const extractedCanvas = this.manager.app.renderer.extract.canvas({
-                    target: renderTexture,
-                    resolution: 1,
-                    antialias: true
-                });
-                
-                const finalCanvas = document.createElement('canvas');
-                finalCanvas.width = canvasWidth * resolution;
-                finalCanvas.height = canvasHeight * resolution;
-                const ctx = finalCanvas.getContext('2d', { alpha: true });
-                
-                ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
-                ctx.drawImage(extractedCanvas, 0, 0);
-                
-                return finalCanvas;
-                
-            } finally {
-                renderTexture.destroy(true);
-            }
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = canvasWidth * resolution;
+            finalCanvas.height = canvasHeight * resolution;
+            const ctx = finalCanvas.getContext('2d', { alpha: true });
+            
+            ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
+            ctx.drawImage(extractedCanvas, 0, 0);
+            
+            return finalCanvas;
         }
         
         _waitFrame() {
@@ -312,4 +277,4 @@ window.WebPExporter = (function() {
     return WebPExporter;
 })();
 
-console.log('✅ webp-exporter.js v8.20.0 loaded');
+console.log('✅ webp-exporter.js v8.21.0 loaded');
