@@ -1,11 +1,11 @@
 /**
  * ================================================================================
- * system/exporters/png-exporter.js - 座標系保護・外枠除外【v8.20.0】
+ * system/exporters/png-exporter.js - canvasContainer直接キャプチャ【v8.21.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
  *   - system/export-manager.js (エクスポート管理)
- *   - system/camera-system.js (worldContainer取得)
+ *   - system/camera-system.js (canvasContainer取得)
  *   - system/layer-system.js (レイヤー情報)
  * 
  * 【依存関係 - Children】
@@ -15,11 +15,11 @@
  *   - PNG静止画エクスポート
  *   - 複数フレーム時はAPNGへ委譲
  * 
- * 【v8.20.0 重要改修 - 座標系保護】
- *   🔧 renderer.resolutionを変更しない（座標系破壊の原因）
- *   🔧 RenderTextureのresolutionパラメータで倍率対応
- *   🔧 エクスポート後のカメラフレーム崩壊を完全防止
- *   🔧 canvasContainerのみキャプチャ（外枠除外）
+ * 【v8.21.0 重要改修】
+ *   🔧 canvasContainerを直接renderer.extract.canvas()でキャプチャ
+ *   🔧 RenderTexture経由を完全排除（座標系破壊を根本解決）
+ *   🔧 worldContainer配下のcanvasContainerのみを抽出
+ *   🔧 カメラフレーム崩壊の完全防止
  * 
  * ================================================================================
  */
@@ -86,12 +86,13 @@ window.PNGExporter = (function() {
         }
         
         /**
-         * PNG Blob生成【v8.20.0 座標系保護版】
+         * PNG Blob生成【v8.21.0 完全修正版】
          * 
-         * 重要な改修:
-         * 1. renderer.resolutionは絶対に変更しない
-         * 2. RenderTextureのresolutionパラメータで倍率を実現
-         * 3. カメラ座標系を一切破壊しない
+         * 🔧 根本的改善:
+         * 1. RenderTextureを使用しない
+         * 2. canvasContainerを直接extract.canvas()でキャプチャ
+         * 3. 座標系を一切破壊しない
+         * 4. カメラフレームは含まれない
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -99,7 +100,7 @@ window.PNGExporter = (function() {
             const canvasWidth = CONFIG.canvas.width;
             const canvasHeight = CONFIG.canvas.height;
             
-            // canvasContainerのみをキャプチャ（外枠除外）
+            // canvasContainerのみをキャプチャ
             const canvasContainer = this.manager.cameraSystem?.canvasContainer ||
                                   this.manager.layerSystem.worldContainer?.children?.find(c => c.label === 'canvasContainer');
             
@@ -107,60 +108,40 @@ window.PNGExporter = (function() {
                 throw new Error('canvasContainer not available');
             }
             
-            // 🔧 v8.20.0: 座標系を破壊しないためにrenderer.resolutionは触らない
-            // RenderTextureのresolutionパラメータで倍率を実現
-            const renderTexture = PIXI.RenderTexture.create({
-                width: canvasWidth * resolution,
-                height: canvasHeight * resolution,
-                resolution: resolution,  // ここで倍率を指定
+            // 🔧 v8.21.0: RenderTextureを使わず直接キャプチャ
+            // renderer.extract.canvas()は指定したcontainerのみをキャプチャする
+            const extractedCanvas = this.manager.app.renderer.extract.canvas({
+                target: canvasContainer,
+                resolution: resolution,
                 antialias: true
             });
             
-            try {
-                // 通常レンダリング（renderer.resolutionは変更しない）
-                this.manager.app.renderer.render({
-                    container: canvasContainer,
-                    target: renderTexture
-                });
-                
-                // Canvas抽出
-                const extractedCanvas = this.manager.app.renderer.extract.canvas({
-                    target: renderTexture,
-                    resolution: 1,
-                    antialias: true
-                });
-                
-                // 正確なサイズのCanvasにコピー
-                const finalCanvas = document.createElement('canvas');
-                finalCanvas.width = canvasWidth * resolution;
-                finalCanvas.height = canvasHeight * resolution;
-                const ctx = finalCanvas.getContext('2d', { alpha: true });
-                
-                // 背景をクリア（透明）
-                ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
-                
-                // 抽出したCanvasを描画
-                ctx.drawImage(extractedCanvas, 0, 0);
-                
-                // Blob生成
-                return new Promise((resolve, reject) => {
-                    finalCanvas.toBlob((blob) => {
-                        if (!blob) {
-                            reject(new Error('PNG generation failed'));
-                            return;
-                        }
-                        resolve(blob);
-                    }, 'image/png');
-                });
-                
-            } finally {
-                // リソースクリーンアップ
-                renderTexture.destroy(true);
-            }
+            // 正確なサイズのCanvasにコピー
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = canvasWidth * resolution;
+            finalCanvas.height = canvasHeight * resolution;
+            const ctx = finalCanvas.getContext('2d', { alpha: true });
+            
+            // 背景をクリア（透明）
+            ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
+            
+            // 抽出したCanvasを描画
+            ctx.drawImage(extractedCanvas, 0, 0);
+            
+            // Blob生成
+            return new Promise((resolve, reject) => {
+                finalCanvas.toBlob((blob) => {
+                    if (!blob) {
+                        reject(new Error('PNG generation failed'));
+                        return;
+                    }
+                    resolve(blob);
+                }, 'image/png');
+            });
         }
     }
     
     return PNGExporter;
 })();
 
-console.log('✅ png-exporter.js v8.20.0 loaded');
+console.log('✅ png-exporter.js v8.21.0 loaded');

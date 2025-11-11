@@ -1,11 +1,26 @@
 /**
  * ================================================================================
- * system/exporters/apng-exporter.js - カメラフレーム対応
+ * system/exporters/apng-exporter.js - canvasContainer直接キャプチャ【v8.21.0】
  * ================================================================================
  * 
- * 【v8.18.1 緊急修正】
- *   🔧 PNG/WEBP Exporterと同一のカメラフレーム対応
- *   🔧 倍密度レンダリング
+ * 【依存関係 - Parents】
+ *   - system/export-manager.js (エクスポート管理)
+ *   - system/camera-system.js (canvasContainer取得)
+ *   - system/animation-system.js (フレーム情報)
+ *   - UPNG.js (APNG生成ライブラリ)
+ * 
+ * 【依存関係 - Children】
+ *   なし
+ * 
+ * 【責務】
+ *   - APNGアニメーション出力
+ *   - 複数フレームの連続キャプチャ
+ * 
+ * 【v8.21.0 重要改修】
+ *   🔧 canvasContainerを直接renderer.extract.canvas()でキャプチャ
+ *   🔧 RenderTexture経由を完全排除（座標系破壊を根本解決）
+ *   🔧 renderer.resolutionを変更しない
+ *   🔧 カメラフレーム崩壊の完全防止
  * 
  * ================================================================================
  */
@@ -85,7 +100,7 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * APNG Blob生成 - カメラフレーム対応【v8.18.1】
+         * APNG Blob生成【v8.21.0 完全修正版】
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -148,56 +163,43 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * フレームのスクリーンショット取得【v8.18.1】
+         * フレームのスクリーンショット取得【v8.21.0 完全修正版】
+         * 
+         * 🔧 根本的改善:
+         * 1. RenderTextureを使用しない
+         * 2. renderer.resolutionを変更しない
+         * 3. canvasContainerを直接extract.canvas()でキャプチャ
+         * 4. 座標系を一切破壊しない
          */
         async _captureFrameScreenshot(resolution = 2) {
             const CONFIG = window.TEGAKI_CONFIG;
-            const width = CONFIG.canvas.width;
-            const height = CONFIG.canvas.height;
+            const canvasWidth = CONFIG.canvas.width;
+            const canvasHeight = CONFIG.canvas.height;
             
-            const worldContainer = this.manager.cameraSystem?.getWorldContainer?.() ||
-                                  this.manager.layerSystem.worldContainer;
+            const canvasContainer = this.manager.cameraSystem?.canvasContainer ||
+                                  this.manager.layerSystem.worldContainer?.children?.find(c => c.label === 'canvasContainer');
             
-            if (!worldContainer) {
-                throw new Error('worldContainer not found');
+            if (!canvasContainer) {
+                throw new Error('canvasContainer not found');
             }
             
-            this.manager.app.renderer.render({ container: worldContainer });
-            
-            const renderTexture = PIXI.RenderTexture.create({
-                width: width * resolution,
-                height: height * resolution,
+            // 🔧 v8.21.0: RenderTextureを使わず直接キャプチャ
+            // renderer.resolutionは変更しない
+            const extractedCanvas = this.manager.app.renderer.extract.canvas({
+                target: canvasContainer,
                 resolution: resolution,
                 antialias: true
             });
             
-            const originalResolution = this.manager.app.renderer.resolution;
-            this.manager.app.renderer.resolution = resolution;
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = canvasWidth * resolution;
+            finalCanvas.height = canvasHeight * resolution;
+            const ctx = finalCanvas.getContext('2d', { alpha: true });
             
-            try {
-                this.manager.app.renderer.render({
-                    container: worldContainer,
-                    target: renderTexture
-                });
-                
-                const canvas = this.manager.app.renderer.extract.canvas({
-                    target: renderTexture,
-                    resolution: 1,
-                    antialias: true
-                });
-                
-                const finalCanvas = document.createElement('canvas');
-                finalCanvas.width = width * resolution;
-                finalCanvas.height = height * resolution;
-                const ctx = finalCanvas.getContext('2d');
-                ctx.drawImage(canvas, 0, 0);
-                
-                return finalCanvas;
-                
-            } finally {
-                this.manager.app.renderer.resolution = originalResolution;
-                renderTexture.destroy(true);
-            }
+            ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
+            ctx.drawImage(extractedCanvas, 0, 0);
+            
+            return finalCanvas;
         }
         
         _waitFrame() {
@@ -212,4 +214,4 @@ window.APNGExporter = (function() {
     return APNGExporter;
 })();
 
-console.log('✅ apng-exporter.js v8.18.1 loaded (カメラフレーム対応)');
+console.log('✅ apng-exporter.js v8.21.0 loaded');

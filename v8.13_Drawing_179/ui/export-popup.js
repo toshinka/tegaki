@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - UI改善・プレビューサイズ制限【v8.20.0】
+ * ui/export-popup.js - 文字色統一・複数フレーム対応【v8.21.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -15,11 +15,10 @@
  *   - プレビュー表示
  *   - 進捗表示
  * 
- * 【v8.20.0 改修内容】
- *   🔧 倍率選択ボタンの即時反映とアクティブ状態の明確化
- *   🔧 プレビュー画像を200x200以内に制限（アスペクト比維持）
- *   🔧 選択状態の視覚的フィードバック強化
- *   🔧 コンソールログクリーンアップ
+ * 【v8.21.0 改修内容】
+ *   🔧 全ての黒文字を futaba-maroon に統一
+ *   🔧 複数フレーム時のプレビュー処理を改善
+ *   🔧 APNG/WEBP動画プレビュー対応
  * 
  * ================================================================================
  */
@@ -75,7 +74,7 @@ window.TegakiExportPopup = class ExportPopup {
                 '<div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">プレビュー</div>' +
                 '<img id="preview-image" style="max-width: 200px; max-height: 200px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />' +
             '</div>' +
-            '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--text-secondary); margin: 8px 0;"></div>' +
+            '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--futaba-maroon); margin: 8px 0;"></div>' +
             '<div class="export-actions">' +
                 '<button class="action-button" id="export-execute">ダウンロード</button>' +
                 '<button class="action-button secondary" id="export-preview">プレビュー</button>' +
@@ -147,17 +146,9 @@ window.TegakiExportPopup = class ExportPopup {
         this.hidePreview();
     }
     
-    /**
-     * 倍率選択【v8.20.0 改善】
-     * 
-     * 改善点:
-     * - 全ボタンを即座に更新
-     * - 視覚的フィードバックを明確化
-     */
     selectResolution(resolution) {
         this.selectedResolution = resolution;
         
-        // 全てのボタンを更新
         document.querySelectorAll('.resolution-btn').forEach(btn => {
             const btnResolution = parseInt(btn.dataset.resolution);
             const isSelected = btnResolution === resolution;
@@ -213,13 +204,6 @@ window.TegakiExportPopup = class ExportPopup {
         previewBtn.style.display = showPreview ? 'block' : 'none';
     }
     
-    /**
-     * オプションUI更新【v8.20.0】
-     * 
-     * 改善点:
-     * - ボタンにホバー/クリックのイベントリスナーを適切に設定
-     * - 初期選択状態を確実に反映
-     */
     updateOptionsUI(format) {
         const optionsEl = document.getElementById('export-options');
         if (!optionsEl) return;
@@ -241,16 +225,16 @@ window.TegakiExportPopup = class ExportPopup {
                     '<button class="resolution-btn" data-resolution="2" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">2x 推奨</button>' +
                     '<button class="resolution-btn" data-resolution="4" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">4x</button>' +
                 '</div>' +
-                '<div id="output-size-display" style="font-size: 12px; color: var(--text-primary);">' +
+                '<div id="output-size-display" style="font-size: 12px; color: var(--futaba-maroon);">' +
                     (canvasWidth * this.selectedResolution) + '×' + (canvasHeight * this.selectedResolution) + 'px（' + this.selectedResolution + '倍出力）' +
                 '</div>' +
-                '<div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">💡 拡大表示時のジャギーを防ぐため、2倍以上推奨</div>' +
+                '<div style="font-size: 11px; color: var(--futaba-maroon); margin-top: 4px;">💡 拡大表示時のジャギーを防ぐため、2倍以上推奨</div>' +
             '</div>' 
             : '';
         
         const optionsMap = {
             'png': '<div class="setting-label">PNG出力（APNG自動検出）</div>' +
-                '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
+                '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
                     (frameCount >= 2 
                         ? `全${frameCount}フレームをAPNGとして出力します。`
                         : '高品質な次世代画像フォーマットです。') +
@@ -258,7 +242,7 @@ window.TegakiExportPopup = class ExportPopup {
                 resolutionUI,
                 
             'webp': '<div class="setting-label">WEBP出力（動画自動検出）</div>' +
-                '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
+                '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
                     (frameCount >= 2 
                         ? `全${frameCount}フレームをWEBPアニメーションとして出力します。`
                         : '高圧縮・高品質な次世代画像フォーマットです。') +
@@ -266,7 +250,7 @@ window.TegakiExportPopup = class ExportPopup {
                 resolutionUI,
                 
             'psd': '<div class="setting-label">PSD出力（開発中）</div>' +
-                '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
+                '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
                     'レイヤー構造を保持したPhotoshop形式での出力です。<br>' +
                     '⚠️ 現在開発中です。' +
                 '</div>'
@@ -274,7 +258,6 @@ window.TegakiExportPopup = class ExportPopup {
         
         optionsEl.innerHTML = optionsMap[format] || '';
         
-        // ボタンの初期状態を設定
         setTimeout(() => {
             this.selectResolution(this.selectedResolution);
         }, 0);
@@ -328,7 +311,7 @@ window.TegakiExportPopup = class ExportPopup {
         
         statusEl.textContent = message;
         statusEl.style.display = 'block';
-        statusEl.style.color = isError ? 'var(--futaba-maroon)' : 'var(--text-secondary)';
+        statusEl.style.color = 'var(--futaba-maroon)';
     }
     
     hideStatus() {
@@ -386,8 +369,7 @@ window.TegakiExportPopup = class ExportPopup {
         if (executeBtn) executeBtn.disabled = true;
         
         const frameCount = this.getFrameCount();
-        const isAnimation = this.selectedFormat === 'webp' && frameCount >= 2 || 
-                          this.selectedFormat === 'png' && frameCount >= 2;
+        const isAnimation = frameCount >= 2;
         
         if (isAnimation && progressEl) {
             progressEl.style.display = 'block';
@@ -530,4 +512,4 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.20.0 loaded');
+console.log('✅ export-popup.js v8.21.0 loaded');
