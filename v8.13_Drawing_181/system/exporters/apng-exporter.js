@@ -1,11 +1,11 @@
 /**
  * ================================================================================
- * system/exporters/apng-exporter.js - カメラリセット対応【v8.22.0】
+ * system/exporters/apng-exporter.js - カメラtransform完全対応【v8.23.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
  *   - system/export-manager.js (エクスポート管理)
- *   - system/camera-system.js (canvasContainer取得)
+ *   - system/camera-system.js (worldContainer/canvasContainer取得)
  *   - system/animation-system.js (フレーム情報)
  *   - UPNG.js (APNG生成ライブラリ)
  * 
@@ -16,9 +16,11 @@
  *   - APNGアニメーション出力
  *   - 複数フレームの連続キャプチャ
  * 
- * 【v8.22.0 重要改修】
- *   🔧 キャプチャ前にカメラ位置を0,0にリセット（枠ズレ防止）
- *   🔧 キャプチャ後にカメラ位置を復元
+ * 【v8.23.0 重要改修】
+ *   🔧 カメラのscale/rotation/flipも含めた完全なtransform保存・復元
+ *   🔧 worldContainerの全transform状態をバックアップ・リセット・復元
+ *   🔧 PNG/WEBPと統一された実装パターン（DRY原則）
+ *   🔧 コンソールログをクリーンアップ
  * 
  * ================================================================================
  */
@@ -35,12 +37,18 @@ window.APNGExporter = (function() {
             this.isExporting = false;
         }
         
+        /**
+         * UPNG.js利用可能性チェック
+         */
         _checkUPNGAvailability() {
             if (typeof UPNG === 'undefined') {
                 throw new Error('UPNG.js not loaded. Include: https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js');
             }
         }
         
+        /**
+         * エクスポート実行
+         */
         async export(options = {}) {
             if (this.isExporting) {
                 throw new Error('Export already in progress');
@@ -98,7 +106,50 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * APNG Blob生成【v8.22.0 カメラリセット対応】
+         * 🔧 v8.23.0: カメラ状態の完全バックアップ
+         */
+        _backupCameraState() {
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return null;
+            
+            return {
+                position: { x: worldContainer.position.x, y: worldContainer.position.y },
+                scale: { x: worldContainer.scale.x, y: worldContainer.scale.y },
+                rotation: worldContainer.rotation,
+                pivot: { x: worldContainer.pivot.x, y: worldContainer.pivot.y }
+            };
+        }
+        
+        /**
+         * 🔧 v8.23.0: カメラ状態の完全復元
+         */
+        _restoreCameraState(state) {
+            if (!state) return;
+            
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return;
+            
+            worldContainer.position.set(state.position.x, state.position.y);
+            worldContainer.scale.set(state.scale.x, state.scale.y);
+            worldContainer.rotation = state.rotation;
+            worldContainer.pivot.set(state.pivot.x, state.pivot.y);
+        }
+        
+        /**
+         * 🔧 v8.23.0: カメラを完全リセット
+         */
+        _resetCameraForExport() {
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return;
+            
+            worldContainer.position.set(0, 0);
+            worldContainer.scale.set(1, 1);
+            worldContainer.rotation = 0;
+            worldContainer.pivot.set(0, 0);
+        }
+        
+        /**
+         * APNG Blob生成【v8.23.0 カメラtransform完全対応】
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -115,19 +166,13 @@ window.APNGExporter = (function() {
             const frames = [];
             const delays = [];
             
-            // 🔧 v8.22.0: カメラ位置をバックアップ
+            // 🔧 現在の状態をバックアップ
             const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            const originalPosition = worldContainer ? { 
-                x: worldContainer.x, 
-                y: worldContainer.y 
-            } : null;
+            const cameraState = this._backupCameraState();
             
             try {
-                // 🔧 カメラを0,0にリセット
-                if (worldContainer) {
-                    worldContainer.position.set(0, 0);
-                }
+                // 🔧 カメラを完全リセット
+                this._resetCameraForExport();
                 
                 for (let i = 0; i < animData.frames.length; i++) {
                     const frame = animData.frames[i];
@@ -157,11 +202,9 @@ window.APNGExporter = (function() {
                     }
                 }
             } finally {
-                // 🔧 状態を復元
+                // 🔧 状態を完全復元
                 this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
-                if (worldContainer && originalPosition) {
-                    worldContainer.position.set(originalPosition.x, originalPosition.y);
-                }
+                this._restoreCameraState(cameraState);
             }
             
             const apngBuffer = UPNG.encode(
@@ -176,7 +219,7 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * フレームのスクリーンショット取得【v8.22.0】
+         * フレームのスクリーンショット取得（カメラリセット済み前提）
          */
         async _captureFrameScreenshot(resolution = 2) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -190,7 +233,6 @@ window.APNGExporter = (function() {
                 throw new Error('canvasContainer not found');
             }
             
-            // カメラは既に0,0にリセット済み
             const extractedCanvas = this.manager.app.renderer.extract.canvas({
                 target: canvasContainer,
                 resolution: resolution,
@@ -208,6 +250,9 @@ window.APNGExporter = (function() {
             return finalCanvas;
         }
         
+        /**
+         * フレーム待機
+         */
         _waitFrame() {
             return new Promise(resolve => {
                 requestAnimationFrame(() => {
@@ -219,5 +264,3 @@ window.APNGExporter = (function() {
     
     return APNGExporter;
 })();
-
-console.log('✅ apng-exporter.js v8.22.0 loaded');

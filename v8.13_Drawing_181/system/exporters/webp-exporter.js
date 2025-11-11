@@ -1,11 +1,11 @@
 /**
  * ================================================================================
- * system/exporters/webp-exporter.js - WebCodecs API実装【v8.22.0】
+ * system/exporters/webp-exporter.js - Animated WEBP対応【v8.23.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
  *   - system/export-manager.js (エクスポート管理)
- *   - system/camera-system.js (canvasContainer取得)
+ *   - system/camera-system.js (worldContainer/canvasContainer取得)
  *   - system/animation-system.js (フレーム情報)
  * 
  * 【依存関係 - Children】
@@ -13,13 +13,21 @@
  * 
  * 【責務】
  *   - WEBP静止画/動画エクスポート
- *   - 複数フレーム自動検出
+ *   - カメラtransform完全考慮
+ *   - Animated WEBP生成（WebM代替推奨）
  * 
- * 【v8.22.0 重要改修】
- *   🔧 WebCodecs APIを使用した真のWEBPアニメーション生成
- *   🔧 カメラ位置を0,0にリセットしてからキャプチャ（枠ズレ防止）
- *   🔧 キャプチャ後に元のカメラ位置を復元
- *   🔧 フォールバック: WebCodecs非対応時はAPNGを推奨
+ * 【v8.23.0 重要改修】
+ *   🔧 カメラのscale/rotation/flipも含めた完全なtransform保存・復元
+ *   🔧 worldContainerの全transform状態をバックアップ・リセット・復元
+ *   🔧 Animated WEBPは技術的制約のためWebM推奨メッセージ追加
+ *   🔧 コンソールログをクリーンアップ
+ *   🔧 DRY原則に基づく_backupCameraState()/_restoreCameraState()統一
+ * 
+ * 【技術的制約】
+ *   ⚠️ ブラウザネイティブのCanvas APIはAnimated WEBP生成不可
+ *   ✓ 静止画WEBPは完全対応
+ *   ✓ 動画はWebM/MP4を推奨（別途実装予定）
+ *   ✓ Animated WEBP実装には外部ライブラリ必須（libwebp.js等）
  * 
  * ================================================================================
  */
@@ -36,11 +44,17 @@ window.WebPExporter = (function() {
             this.isExporting = false;
         }
         
+        /**
+         * フレーム数取得
+         */
         _getFrameCount() {
             const animData = this.manager.animationSystem?.getAnimationData?.();
             return animData?.frames?.length || 1;
         }
         
+        /**
+         * エクスポート実行
+         */
         async export(options = {}) {
             if (this.isExporting) {
                 throw new Error('Export already in progress');
@@ -91,19 +105,67 @@ window.WebPExporter = (function() {
             }
         }
         
+        /**
+         * Blob生成（静止画/動画自動判定）
+         */
         async generateBlob(options = {}) {
             const frameCount = this._getFrameCount();
             
             if (frameCount >= 2) {
-                // WEBP動画はスプライトシート方式で出力
-                return await this._generateAnimatedWebPWithWebCodecs(options);
+                console.warn('⚠️ Animated WEBP: ブラウザネイティブ未対応');
+                console.warn('   推奨: WebM/MP4形式を使用してください');
+                console.warn('   現在: 全フレームを横並びの静止画として出力します');
+                return await this._generateAnimatedWebPFallback(options);
             }
             
             return await this._generateStaticWebP(options);
         }
         
         /**
-         * 🔧 v8.22.0: カメラ位置をリセットしてキャプチャ
+         * 🔧 v8.23.0: カメラ状態の完全バックアップ
+         */
+        _backupCameraState() {
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return null;
+            
+            return {
+                position: { x: worldContainer.position.x, y: worldContainer.position.y },
+                scale: { x: worldContainer.scale.x, y: worldContainer.scale.y },
+                rotation: worldContainer.rotation,
+                pivot: { x: worldContainer.pivot.x, y: worldContainer.pivot.y }
+            };
+        }
+        
+        /**
+         * 🔧 v8.23.0: カメラ状態の完全復元
+         */
+        _restoreCameraState(state) {
+            if (!state) return;
+            
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return;
+            
+            worldContainer.position.set(state.position.x, state.position.y);
+            worldContainer.scale.set(state.scale.x, state.scale.y);
+            worldContainer.rotation = state.rotation;
+            worldContainer.pivot.set(state.pivot.x, state.pivot.y);
+        }
+        
+        /**
+         * 🔧 v8.23.0: カメラを完全リセット
+         */
+        _resetCameraForExport() {
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return;
+            
+            worldContainer.position.set(0, 0);
+            worldContainer.scale.set(1, 1);
+            worldContainer.rotation = 0;
+            worldContainer.pivot.set(0, 0);
+        }
+        
+        /**
+         * 静止画WEBP生成
          */
         async _generateStaticWebP(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -119,20 +181,12 @@ window.WebPExporter = (function() {
                 throw new Error('canvasContainer not available');
             }
             
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            
-            // 🔧 カメラ位置をバックアップ
-            const originalPosition = worldContainer ? { 
-                x: worldContainer.x, 
-                y: worldContainer.y 
-            } : null;
+            // 🔧 カメラ状態をバックアップ
+            const cameraState = this._backupCameraState();
             
             try {
-                // 🔧 カメラを0,0にリセット
-                if (worldContainer) {
-                    worldContainer.position.set(0, 0);
-                }
-                
+                // 🔧 カメラを完全リセット
+                this._resetCameraForExport();
                 await this._waitFrame();
                 
                 // キャプチャ
@@ -160,25 +214,25 @@ window.WebPExporter = (function() {
                     }, 'image/webp', quality);
                 });
             } finally {
-                // 🔧 カメラ位置を復元
-                if (worldContainer && originalPosition) {
-                    worldContainer.position.set(originalPosition.x, originalPosition.y);
-                }
+                // 🔧 カメラ状態を復元
+                this._restoreCameraState(cameraState);
             }
         }
         
         /**
-         * 🔧 v8.22.0: WEBP動画生成（Canvas API使用）
+         * 🔧 v8.23.0: Animated WEBPフォールバック（横並びスプライトシート）
          * 
-         * ⚠️ 注意: ブラウザネイティブのCanvas.toBlob()はWEBPアニメーションを
-         *          生成できないため、全フレームを縦または横に並べた静止画として出力。
-         *          
-         *          真のアニメーションWEBPには以下が必要:
-         *          1. libwebp.js等の外部ライブラリ
-         *          2. WebAssembly実装
-         *          3. Server側でのFFmpeg処理
+         * ⚠️ 技術的制約:
+         *    ブラウザネイティブのCanvas.toBlob()はWEBPアニメーション非対応
+         *    真のAnimated WEBPには以下が必要:
+         *      1. libwebp.js等の外部ライブラリ
+         *      2. WebAssembly実装
+         *      3. サーバー側FFmpeg処理
+         *    
+         *    現在は全フレームを横並びの静止画として出力
+         *    動画出力にはWebM/MP4を推奨
          */
-        async _generateAnimatedWebPWithWebCodecs(options = {}) {
+        async _generateAnimatedWebPFallback(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
             const animData = this.manager.animationSystem.getAnimationData();
             const frameCount = animData.frames.length;
@@ -188,7 +242,7 @@ window.WebPExporter = (function() {
             const frameWidth = CONFIG.canvas.width * resolution;
             const frameHeight = CONFIG.canvas.height * resolution;
             
-            // フレームを横並びに配置（スプライトシート方式）
+            // スプライトシート用キャンバス（横並び）
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = frameWidth * frameCount;
             finalCanvas.height = frameHeight;
@@ -198,17 +252,11 @@ window.WebPExporter = (function() {
             
             // 現在の状態をバックアップ
             const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            const originalPosition = worldContainer ? { 
-                x: worldContainer.x, 
-                y: worldContainer.y 
-            } : null;
+            const cameraState = this._backupCameraState();
             
             try {
-                // カメラを0,0にリセット
-                if (worldContainer) {
-                    worldContainer.position.set(0, 0);
-                }
+                // カメラを完全リセット
+                this._resetCameraForExport();
                 
                 for (let i = 0; i < frameCount; i++) {
                     // フレームを適用
@@ -236,11 +284,9 @@ window.WebPExporter = (function() {
                     }
                 }
             } finally {
-                // 状態を復元
+                // 状態を完全復元
                 this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
-                if (worldContainer && originalPosition) {
-                    worldContainer.position.set(originalPosition.x, originalPosition.y);
-                }
+                this._restoreCameraState(cameraState);
             }
             
             return new Promise((resolve, reject) => {
@@ -249,7 +295,7 @@ window.WebPExporter = (function() {
                         if (blob) {
                             resolve(blob);
                         } else {
-                            reject(new Error('Animated WEBP generation failed'));
+                            reject(new Error('Animated WEBP fallback generation failed'));
                         }
                     },
                     'image/webp',
@@ -259,7 +305,7 @@ window.WebPExporter = (function() {
         }
         
         /**
-         * 🔧 v8.22.0: カメラリセット対応のフレームキャプチャ
+         * フレームキャプチャ（カメラリセット済み前提）
          */
         async _captureFrameScreenshot(resolution = 1) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -273,7 +319,6 @@ window.WebPExporter = (function() {
                 throw new Error('canvasContainer not found');
             }
             
-            // カメラは既に0,0にリセット済み
             const extractedCanvas = this.manager.app.renderer.extract.canvas({
                 target: canvasContainer,
                 resolution: resolution,
@@ -291,6 +336,9 @@ window.WebPExporter = (function() {
             return finalCanvas;
         }
         
+        /**
+         * フレーム待機
+         */
         _waitFrame() {
             return new Promise(resolve => {
                 requestAnimationFrame(() => {
@@ -302,5 +350,3 @@ window.WebPExporter = (function() {
     
     return WebPExporter;
 })();
-
-console.log('✅ webp-exporter.js v8.22.0 loaded (WebCodecs API対応)');
