@@ -1,11 +1,10 @@
 /**
  * ================================================================================
- * system/exporters/png-exporter.js - カメラtransform完全対応【v8.23.0】
+ * system/exporters/png-exporter.js - 独立コンテナ方式【v8.26.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
  *   - system/export-manager.js (エクスポート管理)
- *   - system/camera-system.js (worldContainer/canvasContainer取得)
  *   - system/layer-system.js (レイヤー情報)
  * 
  * 【依存関係 - Children】
@@ -15,11 +14,16 @@
  *   - PNG静止画エクスポート
  *   - 複数フレーム時はAPNGへ委譲
  * 
- * 【v8.23.0 重要改修】
- *   🔧 カメラのscale/rotation/flipも含めた完全なtransform保存・復元
- *   🔧 worldContainerの全transform状態をバックアップ・リセット・復元
- *   🔧 WEBP/APNGと統一された実装パターン（DRY原則）
- *   🔧 コンソールログをクリーンアップ
+ * 【v8.26.0 重要改修】
+ *   🔧 カメラ操作を完全排除 - 独立したtempContainerを使用
+ *   🔧 worldContainerを一切触らない実装に変更
+ *   🔧 レイヤーをクローンして独立コンテナで描画
+ *   🔧 Drawing_169の安定性とDrawing_185の機能を統合
+ * 
+ * 【設計原則】
+ *   - カメラ(worldContainer)とは完全に独立
+ *   - tempContainerは使い捨て
+ *   - カメラ状態のバックアップ/復元は不要
  * 
  * ================================================================================
  */
@@ -93,50 +97,44 @@ window.PNGExporter = (function() {
         }
         
         /**
-         * 🔧 v8.23.0: カメラ状態の完全バックアップ
+         * フレーム待機
          */
-        _backupCameraState() {
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            if (!worldContainer) return null;
-            
-            return {
-                position: { x: worldContainer.position.x, y: worldContainer.position.y },
-                scale: { x: worldContainer.scale.x, y: worldContainer.scale.y },
-                rotation: worldContainer.rotation,
-                pivot: { x: worldContainer.pivot.x, y: worldContainer.pivot.y }
-            };
+        async _waitFrame() {
+            return new Promise(resolve => requestAnimationFrame(resolve));
         }
         
         /**
-         * 🔧 v8.23.0: カメラ状態の完全復元
+         * レイヤーをクローン（独立コンテナ用）
          */
-        _restoreCameraState(state) {
-            if (!state) return;
+        _cloneLayerForExport(layer) {
+            const container = new PIXI.Container();
+            container.alpha = layer.opacity / 100;
             
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            if (!worldContainer) return;
+            if (layer.children) {
+                for (const child of layer.children) {
+                    try {
+                        if (child instanceof PIXI.Graphics) {
+                            const clone = child.clone ? child.clone() : child;
+                            container.addChild(clone);
+                        } else if (child instanceof PIXI.Mesh) {
+                            const clone = child.clone ? child.clone() : child;
+                            container.addChild(clone);
+                        }
+                    } catch (error) {
+                        console.warn('Layer clone failed:', error);
+                    }
+                }
+            }
             
-            worldContainer.position.set(state.position.x, state.position.y);
-            worldContainer.scale.set(state.scale.x, state.scale.y);
-            worldContainer.rotation = state.rotation;
-            worldContainer.pivot.set(state.pivot.x, state.pivot.y);
+            return container;
         }
         
         /**
-         * 🔧 v8.23.0: カメラを完全リセット
-         */
-        _resetCameraForExport() {
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            if (!worldContainer) return;
-            
-            worldContainer.position.set(0, 0);
-            worldContainer.scale.set(1, 1);
-            worldContainer.rotation = 0;
-            worldContainer.pivot.set(0, 0);
-        }
-        
-        /**
-         * PNG Blob生成【v8.23.0 カメラtransform完全対応】
+         * PNG Blob生成【v8.26.0 独立コンテナ方式】
+         * 
+         * カメラ(worldContainer)を一切触らず、
+         * 独立したtempContainerで描画することで
+         * カメラ枠のズレを完全に防止
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -144,34 +142,40 @@ window.PNGExporter = (function() {
             const canvasWidth = CONFIG.canvas.width;
             const canvasHeight = CONFIG.canvas.height;
             
-            const canvasContainer = this.manager.cameraSystem?.canvasContainer ||
-                                  this.manager.layerSystem.worldContainer?.children?.find(c => c.label === 'canvasContainer');
-            
-            if (!canvasContainer) {
-                throw new Error('canvasContainer not available');
-            }
-            
-            // 🔧 カメラ状態をバックアップ
-            const cameraState = this._backupCameraState();
+            // 独立したコンテナを作成（カメラとは無関係）
+            const tempContainer = new PIXI.Container();
             
             try {
-                // 🔧 カメラを完全リセット
-                this._resetCameraForExport();
+                // 背景（透明でない場合）
+                if (!options.transparent) {
+                    const bg = new PIXI.Graphics();
+                    bg.rect(0, 0, canvasWidth, canvasHeight);
+                    bg.fill(0xFFFFFF);
+                    tempContainer.addChild(bg);
+                }
+                
+                // レイヤーをコピー
+                const layerManager = this.manager.layerSystem;
+                const visibleLayers = layerManager.getAllLayers()
+                    .filter(layer => layer.visible)
+                    .sort((a, b) => a.zIndex - b.zIndex);
+                
+                for (const layer of visibleLayers) {
+                    const layerCopy = this._cloneLayerForExport(layer);
+                    tempContainer.addChild(layerCopy);
+                }
                 
                 // フレーム待機
-                await new Promise(resolve => {
-                    requestAnimationFrame(() => {
-                        setTimeout(resolve, 16);
-                    });
-                });
+                await this._waitFrame();
                 
-                // キャプチャ
+                // extract（tempContainerは独立しているためカメラ影響なし）
                 const extractedCanvas = this.manager.app.renderer.extract.canvas({
-                    target: canvasContainer,
+                    target: tempContainer,
                     resolution: resolution,
                     antialias: true
                 });
                 
+                // 最終Canvas作成
                 const finalCanvas = document.createElement('canvas');
                 finalCanvas.width = canvasWidth * resolution;
                 finalCanvas.height = canvasHeight * resolution;
@@ -190,11 +194,16 @@ window.PNGExporter = (function() {
                     }, 'image/png');
                 });
             } finally {
-                // 🔧 カメラ状態を復元
-                this._restoreCameraState(cameraState);
+                // クリーンアップ
+                tempContainer.destroy({ children: true });
             }
         }
     }
     
     return PNGExporter;
 })();
+
+console.log('✅ png-exporter.js v8.26.0 loaded');
+console.log('   🔧 カメラ操作を完全排除（独立コンテナ方式）');
+console.log('   🔧 worldContainerとの干渉をゼロに');
+console.log('   🔧 カメラ枠ズレを根本解決');
