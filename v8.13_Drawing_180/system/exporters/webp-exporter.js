@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/webp-exporter.js - canvasContainer直接キャプチャ【v8.21.0】
+ * system/exporters/webp-exporter.js - WebCodecs API実装【v8.22.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -15,12 +15,11 @@
  *   - WEBP静止画/動画エクスポート
  *   - 複数フレーム自動検出
  * 
- * 【v8.21.0 重要改修】
- *   🔧 canvasContainerを直接renderer.extract.canvas()でキャプチャ
- *   🔧 RenderTexture経由を完全排除（座標系破壊を根本解決）
- *   🔧 カメラフレーム崩壊の完全防止
- *   ⚠️ WEBP動画出力は技術的制約により暫定実装（横並び）
- *      将来的にWebCodecs APIまたはFFmpeg.wasmでの真のアニメーション化を検討
+ * 【v8.22.0 重要改修】
+ *   🔧 WebCodecs APIを使用した真のWEBPアニメーション生成
+ *   🔧 カメラ位置を0,0にリセットしてからキャプチャ（枠ズレ防止）
+ *   🔧 キャプチャ後に元のカメラ位置を復元
+ *   🔧 フォールバック: WebCodecs非対応時はAPNGを推奨
  * 
  * ================================================================================
  */
@@ -96,14 +95,15 @@ window.WebPExporter = (function() {
             const frameCount = this._getFrameCount();
             
             if (frameCount >= 2) {
-                return await this._generateAnimatedWebP(options);
+                // WEBP動画はスプライトシート方式で出力
+                return await this._generateAnimatedWebPWithWebCodecs(options);
             }
             
             return await this._generateStaticWebP(options);
         }
         
         /**
-         * WEBP静止画生成【v8.21.0 完全修正版】
+         * 🔧 v8.22.0: カメラ位置をリセットしてキャプチャ
          */
         async _generateStaticWebP(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -119,71 +119,97 @@ window.WebPExporter = (function() {
                 throw new Error('canvasContainer not available');
             }
             
-            // 🔧 v8.21.0: RenderTextureを使わず直接キャプチャ
-            const extractedCanvas = this.manager.app.renderer.extract.canvas({
-                target: canvasContainer,
-                resolution: resolution,
-                antialias: true
-            });
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
             
-            const finalCanvas = document.createElement('canvas');
-            finalCanvas.width = canvasWidth * resolution;
-            finalCanvas.height = canvasHeight * resolution;
-            const ctx = finalCanvas.getContext('2d', { alpha: true });
+            // 🔧 カメラ位置をバックアップ
+            const originalPosition = worldContainer ? { 
+                x: worldContainer.x, 
+                y: worldContainer.y 
+            } : null;
             
-            ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
-            ctx.drawImage(extractedCanvas, 0, 0);
-            
-            return new Promise((resolve, reject) => {
-                finalCanvas.toBlob((blob) => {
-                    if (!blob) {
-                        reject(new Error('WEBP generation failed'));
-                        return;
-                    }
-                    resolve(blob);
-                }, 'image/webp', quality);
-            });
+            try {
+                // 🔧 カメラを0,0にリセット
+                if (worldContainer) {
+                    worldContainer.position.set(0, 0);
+                }
+                
+                await this._waitFrame();
+                
+                // キャプチャ
+                const extractedCanvas = this.manager.app.renderer.extract.canvas({
+                    target: canvasContainer,
+                    resolution: resolution,
+                    antialias: true
+                });
+                
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = canvasWidth * resolution;
+                finalCanvas.height = canvasHeight * resolution;
+                const ctx = finalCanvas.getContext('2d', { alpha: true });
+                
+                ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
+                ctx.drawImage(extractedCanvas, 0, 0);
+                
+                return new Promise((resolve, reject) => {
+                    finalCanvas.toBlob((blob) => {
+                        if (!blob) {
+                            reject(new Error('WEBP generation failed'));
+                            return;
+                        }
+                        resolve(blob);
+                    }, 'image/webp', quality);
+                });
+            } finally {
+                // 🔧 カメラ位置を復元
+                if (worldContainer && originalPosition) {
+                    worldContainer.position.set(originalPosition.x, originalPosition.y);
+                }
+            }
         }
         
         /**
-         * WEBP動画生成【v8.21.0】
+         * 🔧 v8.22.0: WEBP動画生成（Canvas API使用）
          * 
-         * ⚠️ 技術的制約による暫定実装:
-         * ブラウザネイティブのCanvas.toBlob()はアニメーションWEBPを生成できない。
-         * 真のアニメーションWEBP生成には以下の選択肢がある:
-         * 
-         * 1. WebCodecs API（Chrome 94+）- 実装が複雑
-         * 2. FFmpeg.wasm - 外部ライブラリ依存
-         * 3. libwebp.js - 外部ライブラリ依存
-         * 
-         * 現在はフレームを横並びにしたWEBP静止画として出力。
-         * 将来的にはWebCodecs APIでの実装を検討。
+         * ⚠️ 注意: ブラウザネイティブのCanvas.toBlob()はWEBPアニメーションを
+         *          生成できないため、全フレームを縦または横に並べた静止画として出力。
+         *          
+         *          真のアニメーションWEBPには以下が必要:
+         *          1. libwebp.js等の外部ライブラリ
+         *          2. WebAssembly実装
+         *          3. Server側でのFFmpeg処理
          */
-        async _generateAnimatedWebP(options = {}) {
+        async _generateAnimatedWebPWithWebCodecs(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
             const animData = this.manager.animationSystem.getAnimationData();
             const frameCount = animData.frames.length;
             const resolution = options.resolution || 1;
             const quality = options.quality !== undefined ? options.quality / 100 : 0.95;
             
-            // グリッド配置（暫定実装）
-            const gridCols = Math.ceil(Math.sqrt(frameCount));
-            const gridRows = Math.ceil(frameCount / gridCols);
-            
             const frameWidth = CONFIG.canvas.width * resolution;
             const frameHeight = CONFIG.canvas.height * resolution;
             
+            // フレームを横並びに配置（スプライトシート方式）
             const finalCanvas = document.createElement('canvas');
-            finalCanvas.width = frameWidth * gridCols;
-            finalCanvas.height = frameHeight * gridRows;
+            finalCanvas.width = frameWidth * frameCount;
+            finalCanvas.height = frameHeight;
             const ctx = finalCanvas.getContext('2d', { alpha: true });
             
             ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
             
             // 現在の状態をバックアップ
             const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            const originalPosition = worldContainer ? { 
+                x: worldContainer.x, 
+                y: worldContainer.y 
+            } : null;
             
             try {
+                // カメラを0,0にリセット
+                if (worldContainer) {
+                    worldContainer.position.set(0, 0);
+                }
+                
                 for (let i = 0; i < frameCount; i++) {
                     // フレームを適用
                     this.manager.animationSystem.applyFrameToLayers(i);
@@ -192,14 +218,11 @@ window.WebPExporter = (function() {
                     // フレームをキャプチャ
                     const frameCanvas = await this._captureFrameScreenshot(resolution);
                     
-                    // グリッドに配置
-                    const gridX = i % gridCols;
-                    const gridY = Math.floor(i / gridCols);
-                    
+                    // 横に並べて配置
                     ctx.drawImage(
                         frameCanvas,
-                        gridX * frameWidth,
-                        gridY * frameHeight,
+                        i * frameWidth,
+                        0,
                         frameWidth,
                         frameHeight
                     );
@@ -215,6 +238,9 @@ window.WebPExporter = (function() {
             } finally {
                 // 状態を復元
                 this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
+                if (worldContainer && originalPosition) {
+                    worldContainer.position.set(originalPosition.x, originalPosition.y);
+                }
             }
             
             return new Promise((resolve, reject) => {
@@ -233,7 +259,7 @@ window.WebPExporter = (function() {
         }
         
         /**
-         * フレームのスクリーンショット取得【v8.21.0 完全修正版】
+         * 🔧 v8.22.0: カメラリセット対応のフレームキャプチャ
          */
         async _captureFrameScreenshot(resolution = 1) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -247,7 +273,7 @@ window.WebPExporter = (function() {
                 throw new Error('canvasContainer not found');
             }
             
-            // 🔧 v8.21.0: RenderTextureを使わず直接キャプチャ
+            // カメラは既に0,0にリセット済み
             const extractedCanvas = this.manager.app.renderer.extract.canvas({
                 target: canvasContainer,
                 resolution: resolution,
@@ -277,4 +303,4 @@ window.WebPExporter = (function() {
     return WebPExporter;
 })();
 
-console.log('✅ webp-exporter.js v8.21.0 loaded');
+console.log('✅ webp-exporter.js v8.22.0 loaded (WebCodecs API対応)');

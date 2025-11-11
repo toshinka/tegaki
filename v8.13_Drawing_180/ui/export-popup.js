@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - 文字色統一・複数フレーム対応【v8.21.0】
+ * ui/export-popup.js - futaba-maroon統一版【v8.22.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -15,10 +15,9 @@
  *   - プレビュー表示
  *   - 進捗表示
  * 
- * 【v8.21.0 改修内容】
- *   🔧 全ての黒文字を futaba-maroon に統一
- *   🔧 複数フレーム時のプレビュー処理を改善
- *   🔧 APNG/WEBP動画プレビュー対応
+ * 【v8.22.0 改修内容】
+ *   🔧 PNG/WEBP/PSDボタンの文字色を futaba-maroon に統一
+ *   🔧 選択状態の背景色を futaba-maroon、文字色を futaba-cream に統一
  * 
  * ================================================================================
  */
@@ -83,7 +82,33 @@ window.TegakiExportPopup = class ExportPopup {
         container.appendChild(popup);
         this.popup = popup;
         
+        // 🔧 v8.22.0: フォーマットボタンのスタイル初期化
+        this._initializeFormatButtons();
         this.updateOptionsUI(this.selectedFormat);
+    }
+    
+    /**
+     * 🔧 v8.22.0: フォーマットボタンの色統一
+     */
+    _initializeFormatButtons() {
+        const formatBtns = document.querySelectorAll('.format-btn');
+        formatBtns.forEach(btn => {
+            btn.style.color = 'var(--futaba-maroon)';
+            btn.style.backgroundColor = 'var(--futaba-cream)';
+            btn.style.border = '2px solid var(--futaba-light-medium)';
+            btn.style.padding = '10px 20px';
+            btn.style.borderRadius = '6px';
+            btn.style.fontSize = '14px';
+            btn.style.fontWeight = '600';
+            btn.style.cursor = 'pointer';
+            btn.style.transition = 'all 0.15s';
+            
+            if (btn.classList.contains('selected')) {
+                btn.style.backgroundColor = 'var(--futaba-maroon)';
+                btn.style.color = 'var(--futaba-cream)';
+                btn.style.border = '2px solid var(--futaba-maroon)';
+            }
+        });
     }
     
     setupEventListeners() {
@@ -134,11 +159,25 @@ window.TegakiExportPopup = class ExportPopup {
         }
     }
     
+    /**
+     * 🔧 v8.22.0: フォーマット選択時の色更新を改善
+     */
     selectFormat(format) {
         this.selectedFormat = format;
         
         document.querySelectorAll('.format-btn').forEach(btn => {
-            btn.classList.toggle('selected', btn.dataset.format === format);
+            const isSelected = btn.dataset.format === format;
+            btn.classList.toggle('selected', isSelected);
+            
+            if (isSelected) {
+                btn.style.backgroundColor = 'var(--futaba-maroon)';
+                btn.style.color = 'var(--futaba-cream)';
+                btn.style.border = '2px solid var(--futaba-maroon)';
+            } else {
+                btn.style.backgroundColor = 'var(--futaba-cream)';
+                btn.style.color = 'var(--futaba-maroon)';
+                btn.style.border = '2px solid var(--futaba-light-medium)';
+            }
         });
         
         this.updateOptionsUI(format);
@@ -244,7 +283,8 @@ window.TegakiExportPopup = class ExportPopup {
             'webp': '<div class="setting-label">WEBP出力（動画自動検出）</div>' +
                 '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
                     (frameCount >= 2 
-                        ? `全${frameCount}フレームをWEBPアニメーションとして出力します。`
+                        ? `全${frameCount}フレームを横並びスプライトシートとして出力します。<br>` +
+                          '<span style="font-size: 11px;">💡 真のアニメーション出力にはAPNGをご利用ください。</span>'
                         : '高圧縮・高品質な次世代画像フォーマットです。') +
                 '</div>' +
                 resolutionUI,
@@ -512,4 +552,4 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.21.0 loaded');
+console.log('✅ export-popup.js v8.22.0 loaded');
