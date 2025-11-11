@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/gif-exporter.js - DPR=1統一版【v8.14.0】
+ * system/exporters/gif-exporter.js - アンチエイリアス改善版【v8.17.1】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -13,13 +13,13 @@
  * 
  * 【責務】
  *   - GIFアニメーション出力
- *   - フレームレンダリング（DPR=1固定）
+ *   - フレームレンダリング（高品質化）
  *   - Blob生成
  * 
- * 【v8.14.0 改修内容 - DPR=1統一】
- *   🚨 resolution=1 固定を明示
- *   ✅ 等倍出力の保証
- *   ✅ 描画時と出力時の一貫性確保
+ * 【v8.17.1 改修内容】
+ *   🎨 antialias:true で高品質レンダリング
+ *   ✅ CDNフォールバックで file:// 環境対応
+ *   ✅ ジャギー除去
  * ================================================================================
  */
 
@@ -158,21 +158,32 @@ window.GIFExporter = (function() {
             }
         }
         
+        /**
+         * Workerスクリプト取得 - CDNフォールバック対応
+         * 
+         * file:// 環境では:
+         *   1. ローカルファイル読み込み試行（失敗する）
+         *   2. CDNから取得（成功）
+         *   3. Blob URLとして返却
+         */
         async createWorkerBlobURL() {
             const localPath = 'vendor/gif.worker.js';
             const cdnPath = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js';
             
+            // ローカルファイル試行
             try {
                 const response = await fetch(localPath);
                 if (response.ok) {
                     const workerCode = await response.text();
                     const blob = new Blob([workerCode], { type: 'application/javascript' });
+                    console.log('✅ GIF Worker: ローカルファイルから読み込み');
                     return URL.createObjectURL(blob);
                 }
             } catch (e) {
-                // file://環境でのローカルフェッチ失敗は無視
+                // file:// 環境では失敗するので、CDNへフォールバック
             }
             
+            // CDNフォールバック
             try {
                 const response = await fetch(cdnPath);
                 if (!response.ok) {
@@ -180,6 +191,7 @@ window.GIFExporter = (function() {
                 }
                 const workerCode = await response.text();
                 const blob = new Blob([workerCode], { type: 'application/javascript' });
+                console.log('✅ GIF Worker: CDNから読み込み');
                 return URL.createObjectURL(blob);
             } catch (error) {
                 throw new Error('Worker script unavailable (local and CDN failed)');
@@ -232,18 +244,19 @@ window.GIFExporter = (function() {
         }
         
         /**
-         * フレームレンダリング - DPR=1統一版
+         * フレームレンダリング - アンチエイリアス改善版【v8.17.1】
          * 
-         * 🚨 v8.14.0 重要変更:
-         *   - resolution を常に 1 固定
-         *   - 描画時と出力時の解像度を完全一致
+         * 改善点:
+         *   - antialias:true でジャギー除去
+         *   - resolution=1 で等倍出力
          */
         async renderFrameToCanvas(settings) {
-            // 🚨 DPR=1固定
+            // 🎨 v8.17.1: antialias追加
             const renderTexture = PIXI.RenderTexture.create({
                 width: settings.width,
                 height: settings.height,
-                resolution: 1
+                resolution: 1,
+                antialias: true  // ジャギー除去
             });
             
             const tempContainer = new PIXI.Container();
@@ -326,4 +339,6 @@ window.GIFExporter = (function() {
     return GIFExporter;
 })();
 
-console.log('✅ gif-exporter.js v8.14.0 loaded (DPR=1統一)');
+console.log('✅ gif-exporter.js v8.17.1 loaded');
+console.log('   🎨 antialias:true でジャギー除去');
+console.log('   ✓ CDNフォールバックで file:// 対応');
