@@ -1,37 +1,33 @@
 /**
  * ================================================================================
- * system/export-manager.js - PixiJS v8最適化版【v8.17.0】
+ * system/export-manager.js - スクリーンショット方式統合【v8.18.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
- *   - PixiJS v8.13 (RenderTexture, renderer.extract)
+ *   - PixiJS v8.13 (renderer.extract API)
  *   - layer-system.js (レイヤー管理)
  *   - animation-system.js (アニメーションデータ)
  *   - camera-system.js (カメラ制御)
  * 
  * 【依存関係 - Children】
  *   - png-exporter.js (PNG出力)
+ *   - webp-exporter.js (WEBP出力)
+ *   - psd-exporter.js (PSD出力 - Phase 5: 基盤のみ)
  *   - apng-exporter.js (APNG出力)
- *   - gif-exporter.js (GIF出力)
- *   - webp-exporter.js (WebP出力)
  *   - mp4-exporter.js (MP4出力)
  * 
  * 【責務】
  *   - エクスポーター統合管理
- *   - Canvas描画（PixiJS v8 API準拠）
  *   - フォーマット自動判定
  *   - ファイルダウンロード/クリップボード
  * 
- * 【v8.17.1 改修内容】
- *   🎨 PixiJS v8の extract.canvas() を正しく使用
- *   ✅ antialias:true でアンチエイリアス強化
- *   ✅ PNG/GIF両方で高品質出力
- *   ✅ MSAA_QUALITY未定義エラー修正
+ * 【v8.18.0 重要改修 - スクリーンショット方式】
+ *   ✅ renderToCanvas() を廃止
+ *   ✅ 各エクスポータが直接 renderer.extract.canvas() を使用
+ *   ✅ RenderTexture経由を完全排除
+ *   ✅ WEBP/PSDエクスポータ追加
+ *   ❌ GIFエクスポータ削除
  * 
- * 【技術詳細】
- *   - RenderTexture: multisample=HIGH で高品質化
- *   - extract.canvas(): PixiJSの最適化された変換を利用
- *   - 上下反転: 自動処理（PixiJS内部で対応済み）
  * ================================================================================
  */
 
@@ -58,27 +54,42 @@ window.ExportManager = (function() {
             this.currentExport = null;
         }
         
+        /**
+         * エクスポータ登録
+         * 
+         * v8.18.0: WEBP/PSD追加、GIF削除
+         */
         registerExporter(format, exporter) {
             this.exporters[format] = exporter;
+            console.log(`✅ Exporter registered: ${format}`);
         }
         
+        /**
+         * APNG自動検出（PNG用）
+         */
         _shouldUseAPNG() {
-            const animData = this.animationSystem && this.animationSystem.getAnimationData 
-                ? this.animationSystem.getAnimationData() 
-                : null;
-            const frameCount = animData && animData.frames ? animData.frames.length : 0;
+            const animData = this.animationSystem?.getAnimationData?.();
+            const frameCount = animData?.frames?.length || 0;
             return frameCount >= 2;
         }
         
+        /**
+         * エクスポート実行
+         * 
+         * PNGの場合はフレーム数でAPNG自動切替
+         */
         async export(format, options = {}) {
             let targetFormat = format;
+            
+            // PNG → APNG自動切替
             if (format === 'png' && this._shouldUseAPNG()) {
                 targetFormat = 'apng';
+                console.log('🎬 Auto-switching: PNG → APNG (multiple frames detected)');
             }
             
             const exporter = this.exporters[targetFormat];
             if (!exporter) {
-                throw new Error('Unsupported format: ' + targetFormat);
+                throw new Error(`Unsupported format: ${targetFormat}`);
             }
             
             this.currentExport = { format: targetFormat, progress: 0 };
@@ -93,24 +104,35 @@ window.ExportManager = (function() {
             }
         }
         
+        /**
+         * プレビュー生成
+         */
         async generatePreview(format, options = {}) {
             let targetFormat = format;
+            
+            // PNG → APNG自動切替
             if (format === 'png' && this._shouldUseAPNG()) {
                 targetFormat = 'apng';
             }
             
             const exporter = this.exporters[targetFormat];
             if (!exporter || !exporter.generateBlob) {
-                throw new Error('Preview not supported for format: ' + targetFormat);
+                throw new Error(`Preview not supported for format: ${targetFormat}`);
             }
             
             const blob = await exporter.generateBlob(options);
-            return { blob: blob, format: targetFormat };
+            return { blob, format: targetFormat };
         }
         
+        /**
+         * 各フォーマット別Blob生成メソッド
+         * 
+         * ⚠️ これらは後方互換のため残すが、
+         *    実際は各エクスポータのgenerateBlob()を直接使用推奨
+         */
         async exportAsPNGBlob(options = {}) {
             const exporter = this.exporters['png'];
-            if (!exporter || !exporter.generateBlob) {
+            if (!exporter?.generateBlob) {
                 throw new Error('PNG exporter not available');
             }
             return await exporter.generateBlob(options);
@@ -118,24 +140,24 @@ window.ExportManager = (function() {
         
         async exportAsAPNGBlob(options = {}) {
             const exporter = this.exporters['apng'];
-            if (!exporter || !exporter.generateBlob) {
+            if (!exporter?.generateBlob) {
                 throw new Error('APNG exporter not available');
-            }
-            return await exporter.generateBlob(options);
-        }
-        
-        async exportAsGIFBlob(options = {}) {
-            const exporter = this.exporters['gif'];
-            if (!exporter || !exporter.generateBlob) {
-                throw new Error('GIF exporter not available');
             }
             return await exporter.generateBlob(options);
         }
         
         async exportAsWebPBlob(options = {}) {
             const exporter = this.exporters['webp'];
-            if (!exporter || !exporter.generateBlob) {
-                throw new Error('WebP exporter not available');
+            if (!exporter?.generateBlob) {
+                throw new Error('WEBP exporter not available');
+            }
+            return await exporter.generateBlob(options);
+        }
+        
+        async exportAsPSDBlob(options = {}) {
+            const exporter = this.exporters['psd'];
+            if (!exporter?.generateBlob) {
+                throw new Error('PSD exporter not available');
             }
             return await exporter.generateBlob(options);
         }
@@ -145,6 +167,9 @@ window.ExportManager = (function() {
             return await this.generatePreview(format, options).then(r => r.blob);
         }
         
+        /**
+         * ユーティリティメソッド
+         */
         arrayBufferToBase64(buffer) {
             const bytes = new Uint8Array(buffer);
             let binary = '';
@@ -161,7 +186,7 @@ window.ExportManager = (function() {
         async blobToDataURL(blob) {
             const arrayBuffer = await blob.arrayBuffer();
             const base64 = this.arrayBufferToBase64(arrayBuffer);
-            return 'data:' + blob.type + ';base64,' + base64;
+            return `data:${blob.type};base64,${base64}`;
         }
         
         dataURLToBlob(dataURL) {
@@ -177,64 +202,8 @@ window.ExportManager = (function() {
         }
         
         /**
-         * Canvas描画 - PixiJS v8最適化版【v8.17.1】
-         * 
-         * 🎨 アプローチ:
-         *   1. RenderTexture作成（antialiasで高品質化）
-         *   2. GPU上でレンダリング
-         *   3. extract.canvas() でCanvas取得（PixiJS最適化済み）
-         * 
-         * メリット:
-         *   - PixiJS v8の最適化されたパイプラインを活用
-         *   - アンチエイリアスで高品質化
-         *   - 上下反転・色空間変換を自動処理
-         * 
-         * @param {Object} options - 描画オプション
-         * @param {number} options.width - 出力幅
-         * @param {number} options.height - 出力高さ
-         * @param {PIXI.Container} options.container - レンダリング対象
-         * @returns {HTMLCanvasElement} 高品質キャンバス
+         * ファイルダウンロード
          */
-        renderToCanvas(options = {}) {
-            const width = options.width || window.TEGAKI_CONFIG.canvas.width;
-            const height = options.height || window.TEGAKI_CONFIG.canvas.height;
-            
-            const container = options.container || 
-                             this.layerSystem.layersContainer || 
-                             this.layerSystem.currentFrameContainer;
-            
-            if (!container) {
-                throw new Error('layers container is not available');
-            }
-            
-            if (typeof container.updateLocalTransform !== 'function') {
-                throw new Error('provided container is not a PIXI DisplayObject');
-            }
-            
-            // ステップ1: 高品質RenderTexture作成
-            // PixiJS v8では antialias オプションを使用
-            const renderTexture = PIXI.RenderTexture.create({
-                width: width,
-                height: height,
-                resolution: 1,
-                antialias: true  // v8.17.1: MSAA_QUALITY.HIGH の代わり
-            });
-            
-            // ステップ2: GPU上でレンダリング
-            this.app.renderer.render({
-                container: container,
-                target: renderTexture
-            });
-            
-            // ステップ3: PixiJS最適化済みCanvasに変換
-            const canvas = this.app.renderer.extract.canvas(renderTexture);
-            
-            // RenderTexture破棄
-            renderTexture.destroy(true);
-            
-            return canvas;
-        }
-        
         downloadFile(blob, filename) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -247,16 +216,23 @@ window.ExportManager = (function() {
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
         
+        /**
+         * クリップボードコピー
+         */
         async copyToClipboard(blob) {
             try {
                 const item = new ClipboardItem({ [blob.type]: blob });
                 await navigator.clipboard.write([item]);
                 return true;
             } catch (error) {
+                console.error('Clipboard copy failed:', error);
                 return false;
             }
         }
         
+        /**
+         * エクスポート状態確認
+         */
         isExporting() {
             return this.currentExport !== null;
         }
@@ -273,12 +249,45 @@ window.ExportManager = (function() {
                 }
             }
         }
+        
+        /**
+         * 🚨 廃止メソッド - renderToCanvas()
+         * 
+         * v8.18.0: スクリーンショット方式により不要
+         * 
+         * 各エクスポータは直接 renderer.extract.canvas() を使用するため、
+         * この中間レイヤーは削除。
+         * 
+         * もし既存コードで使われている場合のため、
+         * 警告を出して代替実装を提供。
+         */
+        renderToCanvas(options = {}) {
+            console.warn('⚠️ renderToCanvas() is deprecated in v8.18.0');
+            console.warn('   Use renderer.extract.canvas() directly in exporters');
+            
+            // 後方互換のための最小実装
+            const container = options.container || 
+                             this.layerSystem.layersContainer || 
+                             this.layerSystem.currentFrameContainer;
+            
+            if (!container) {
+                throw new Error('Container not available');
+            }
+            
+            // スクリーンショット方式で代替
+            return this.app.renderer.extract.canvas({
+                target: container,
+                resolution: 1,
+                alpha: true,
+                antialias: true
+            });
+        }
     }
     
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js v8.17.1 loaded (PixiJS v8最適化)');
-console.log('   🎨 antialias:true で高品質化');
-console.log('   ✓ extract.canvas() でシンプル化');
-console.log('   ✓ PNG/GIF両方で高品質出力');
+console.log('✅ export-manager.js v8.18.0 loaded (スクリーンショット方式統合)');
+console.log('   🎨 renderToCanvas() 廃止（後方互換あり）');
+console.log('   ✓ WEBP/PSDエクスポータ対応');
+console.log('   ❌ GIFエクスポータ削除');
