@@ -1,11 +1,11 @@
 /**
  * ================================================================================
- * system/exporters/png-exporter.js - カメラリセット対応【v8.22.0】
+ * system/exporters/png-exporter.js - カメラtransform完全対応【v8.23.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
  *   - system/export-manager.js (エクスポート管理)
- *   - system/camera-system.js (canvasContainer取得)
+ *   - system/camera-system.js (worldContainer/canvasContainer取得)
  *   - system/layer-system.js (レイヤー情報)
  * 
  * 【依存関係 - Children】
@@ -15,9 +15,11 @@
  *   - PNG静止画エクスポート
  *   - 複数フレーム時はAPNGへ委譲
  * 
- * 【v8.22.0 重要改修】
- *   🔧 キャプチャ前にカメラ位置を0,0にリセット（枠ズレ防止）
- *   🔧 キャプチャ後にカメラ位置を復元
+ * 【v8.23.0 重要改修】
+ *   🔧 カメラのscale/rotation/flipも含めた完全なtransform保存・復元
+ *   🔧 worldContainerの全transform状態をバックアップ・リセット・復元
+ *   🔧 WEBP/APNGと統一された実装パターン（DRY原則）
+ *   🔧 コンソールログをクリーンアップ
  * 
  * ================================================================================
  */
@@ -33,17 +35,24 @@ window.PNGExporter = (function() {
             this.manager = exportManager;
         }
         
+        /**
+         * APNG自動切替判定
+         */
         _shouldUseAPNG() {
             const animData = this.manager.animationSystem?.getAnimationData?.();
             const frameCount = animData?.frames?.length || 0;
             return frameCount >= 2;
         }
         
+        /**
+         * エクスポート実行
+         */
         async export(options = {}) {
             if (!this.manager?.layerSystem) {
                 throw new Error('LayerSystem not available');
             }
             
+            // 複数フレーム時はAPNG委譲
             if (this._shouldUseAPNG()) {
                 const apngExporter = this.manager.exporters['apng'];
                 if (apngExporter) {
@@ -84,7 +93,50 @@ window.PNGExporter = (function() {
         }
         
         /**
-         * PNG Blob生成【v8.22.0 カメラリセット対応】
+         * 🔧 v8.23.0: カメラ状態の完全バックアップ
+         */
+        _backupCameraState() {
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return null;
+            
+            return {
+                position: { x: worldContainer.position.x, y: worldContainer.position.y },
+                scale: { x: worldContainer.scale.x, y: worldContainer.scale.y },
+                rotation: worldContainer.rotation,
+                pivot: { x: worldContainer.pivot.x, y: worldContainer.pivot.y }
+            };
+        }
+        
+        /**
+         * 🔧 v8.23.0: カメラ状態の完全復元
+         */
+        _restoreCameraState(state) {
+            if (!state) return;
+            
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return;
+            
+            worldContainer.position.set(state.position.x, state.position.y);
+            worldContainer.scale.set(state.scale.x, state.scale.y);
+            worldContainer.rotation = state.rotation;
+            worldContainer.pivot.set(state.pivot.x, state.pivot.y);
+        }
+        
+        /**
+         * 🔧 v8.23.0: カメラを完全リセット
+         */
+        _resetCameraForExport() {
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            if (!worldContainer) return;
+            
+            worldContainer.position.set(0, 0);
+            worldContainer.scale.set(1, 1);
+            worldContainer.rotation = 0;
+            worldContainer.pivot.set(0, 0);
+        }
+        
+        /**
+         * PNG Blob生成【v8.23.0 カメラtransform完全対応】
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -99,19 +151,12 @@ window.PNGExporter = (function() {
                 throw new Error('canvasContainer not available');
             }
             
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            
-            // 🔧 v8.22.0: カメラ位置をバックアップ
-            const originalPosition = worldContainer ? { 
-                x: worldContainer.x, 
-                y: worldContainer.y 
-            } : null;
+            // 🔧 カメラ状態をバックアップ
+            const cameraState = this._backupCameraState();
             
             try {
-                // 🔧 カメラを0,0にリセット
-                if (worldContainer) {
-                    worldContainer.position.set(0, 0);
-                }
+                // 🔧 カメラを完全リセット
+                this._resetCameraForExport();
                 
                 // フレーム待機
                 await new Promise(resolve => {
@@ -145,15 +190,11 @@ window.PNGExporter = (function() {
                     }, 'image/png');
                 });
             } finally {
-                // 🔧 カメラ位置を復元
-                if (worldContainer && originalPosition) {
-                    worldContainer.position.set(originalPosition.x, originalPosition.y);
-                }
+                // 🔧 カメラ状態を復元
+                this._restoreCameraState(cameraState);
             }
         }
     }
     
     return PNGExporter;
 })();
-
-console.log('✅ png-exporter.js v8.22.0 loaded');
