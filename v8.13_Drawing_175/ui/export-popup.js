@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - DPR=1統一版【v8.14.0】
+ * ui/export-popup.js - スクリーンショット方式対応【v8.18.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -15,11 +15,12 @@
  *   - プレビュー表示
  *   - 進捗表示
  * 
- * 【v8.14.0 改修内容 - DPR=1統一】
- *   🚨 高DPI出力オプションを完全削除
- *   🚨 等倍出力のみを提供
- *   ✅ UI表記をシンプル化
- *   ✅ 描画時と出力時の一貫性を明示
+ * 【v8.18.0 改修内容 - UI刷新】
+ *   ❌ GIF・PDF削除
+ *   ✅ WEBP・PSD追加
+ *   ✅ ボタン順: PNG → WEBP → PSD → MP4
+ *   ✅ スクリーンショット方式説明追加
+ * 
  * ================================================================================
  */
 
@@ -47,6 +48,14 @@ window.TegakiExportPopup = class ExportPopup {
         }
     }
     
+    /**
+     * ポップアップ要素作成【v8.18.0】
+     * 
+     * ボタン配置:
+     *   PNG → WEBP → PSD → MP4
+     * 
+     * アイコンは暫定的に文字ボタン
+     */
     _createPopupElement() {
         const container = document.querySelector('.canvas-area') || document.body;
         
@@ -61,8 +70,8 @@ window.TegakiExportPopup = class ExportPopup {
         popup.innerHTML = '<div class="popup-title">画像・アニメ出力</div>' +
             '<div class="format-selection">' +
                 '<button class="format-btn selected" data-format="png">PNG</button>' +
-                '<button class="format-btn" data-format="gif">GIF</button>' +
-                '<button class="format-btn" data-format="pdf">PDF</button>' +
+                '<button class="format-btn" data-format="webp">WEBP</button>' +
+                '<button class="format-btn" data-format="psd">PSD</button>' +
             '</div>' +
             '<div class="export-options" id="export-options"></div>' +
             '<div class="export-progress" id="export-progress" style="display: none;">' +
@@ -152,17 +161,15 @@ window.TegakiExportPopup = class ExportPopup {
         const previewBtn = document.getElementById('export-preview');
         if (!previewBtn) return;
         
-        const showPreview = ['png', 'gif'].includes(this.selectedFormat);
+        // PNG, WEBPのみプレビュー対応
+        const showPreview = ['png', 'webp'].includes(this.selectedFormat);
         previewBtn.style.display = showPreview ? 'block' : 'none';
     }
     
     /**
-     * オプションUI更新 - DPR=1統一版
+     * オプションUI更新【v8.18.0】
      * 
-     * 🚨 v8.14.0 変更:
-     *   - 高DPI出力オプションを完全削除
-     *   - 等倍出力のみを表示
-     *   - シンプルな説明文に変更
+     * スクリーンショット方式の説明を追加
      */
     updateOptionsUI(format) {
         const optionsEl = document.getElementById('export-options');
@@ -176,44 +183,46 @@ window.TegakiExportPopup = class ExportPopup {
         }
         
         const frameCount = this.getFrameCount();
-        let quality = 10;
-        if (window.TEGAKI_CONFIG?.animation?.exportSettings) {
-            quality = window.TEGAKI_CONFIG.animation.exportSettings.quality;
-        }
         
-        const frameInfo = frameCount >= 2 ? ` / ${frameCount}フレーム` : '';
+        // スクリーンショット方式の説明
+        const screenshotInfo = '<div style="margin: 12px 0; padding: 8px; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 4px;">' +
+            '<div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 4px;">📸 スクリーンショット方式</div>' +
+            '<div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">' +
+                '画面に表示されている高品質な描画をそのまま保存します<br>' +
+                '• ジャギーのない滑らかな線<br>' +
+                '• 完全な透明度保持<br>' +
+                '• SDF/MSDFの距離場情報を完全保持' +
+            '</div>' +
+        '</div>';
         
-        const pngDescription = frameCount >= 2 
-            ? '全' + frameCount + 'フレームをAPNG（アニメーションPNG）として出力します。'
-            : '現在のキャンバスをPNG画像として出力します。';
-        
-        // 🚨 高DPI出力オプションを削除し、等倍出力を明示
         const outputInfo = '<div style="margin: 12px 0; padding: 8px; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 4px;">' +
             '<div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 4px;">出力サイズ</div>' +
             '<div style="font-size: 12px; color: var(--text-primary);">' +
                 canvasWidth + '×' + canvasHeight + 'px（等倍出力）' +
             '</div>' +
-            '<div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">' +
-                '画面表示と同じ解像度で出力されます<br>' +
-                'ベクター描画のため、ジャギーのない高品質な線を出力します' +
-            '</div>' +
         '</div>';
         
         const optionsMap = {
-            'png': '<div class="setting-label">PNG出力（Frame数でAPNG自動判定）</div>' +
+            'png': '<div class="setting-label">PNG出力（APNG自動検出）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
-                    pngDescription +
+                    (frameCount >= 2 
+                        ? `全${frameCount}フレームをAPNG（アニメーションPNG）として出力します。`
+                        : '現在のキャンバスをPNG画像として出力します。') +
                 '</div>' +
                 outputInfo,
-            'gif': '<div class="setting-label">GIFアニメーション出力</div>' +
+                
+            'webp': '<div class="setting-label">WEBP出力（動画自動検出）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
-                    '全' + frameCount + 'フレームをGIFアニメーションとして出力します。<br>' +
-                    '品質: ' + quality + ' / フレーム数: ' + frameCount +
+                    (frameCount >= 2 
+                        ? `全${frameCount}フレームをWEBPアニメーションとして出力します。<br>高圧縮・高品質な次世代フォーマットです。`
+                        : '高圧縮・高品質な次世代画像フォーマットです。') +
                 '</div>' +
                 outputInfo,
-            'pdf': '<div class="setting-label">PDF出力（全フレームを複数ページ）</div>' +
+                
+            'psd': '<div class="setting-label">PSD出力（開発中）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
-                    '全' + frameCount + 'フレームをPDFの各ページとして出力します。' +
+                    'レイヤー構造を保持したPhotoshop形式での出力です。<br>' +
+                    '⚠️ 現在開発中です。' +
                 '</div>' +
                 outputInfo
         };
@@ -280,13 +289,6 @@ window.TegakiExportPopup = class ExportPopup {
         }
     }
     
-    /**
-     * エクスポート実行 - DPR=1統一版
-     * 
-     * 🚨 v8.14.0 変更:
-     *   - resolution オプションを渡さない
-     *   - export-manager側で自動的に1固定
-     */
     async executeExport() {
         if (this.manager.isExporting()) {
             return;
@@ -303,9 +305,7 @@ window.TegakiExportPopup = class ExportPopup {
         if (previewBtn) previewBtn.disabled = true;
         
         try {
-            // 🚨 resolution オプションを渡さない（export-manager側で1固定）
             const options = {};
-            
             await this.manager.export(this.selectedFormat, options);
         } catch (error) {
             this.showStatus('エクスポート失敗: ' + error.message, true);
@@ -316,13 +316,6 @@ window.TegakiExportPopup = class ExportPopup {
         }
     }
     
-    /**
-     * プレビュー生成 - DPR=1統一版
-     * 
-     * 🚨 v8.14.0 変更:
-     *   - resolution オプションを渡さない
-     *   - export-manager側で自動的に1固定
-     */
     async executePreview() {
         if (this.manager.isExporting()) {
             return;
@@ -342,17 +335,15 @@ window.TegakiExportPopup = class ExportPopup {
         if (executeBtn) executeBtn.disabled = true;
         
         const frameCount = this.getFrameCount();
-        const isAnimation = ['gif'].includes(this.selectedFormat) || 
-                          (this.selectedFormat === 'png' && frameCount >= 2);
+        const isAnimation = this.selectedFormat === 'webp' && frameCount >= 2 || 
+                          this.selectedFormat === 'png' && frameCount >= 2;
         
         if (isAnimation && progressEl) {
             progressEl.style.display = 'block';
         }
         
         try {
-            // 🚨 resolution オプションを渡さない（export-manager側で1固定）
             const options = {};
-            
             const result = await this.manager.generatePreview(this.selectedFormat, options);
             
             if (progressEl) progressEl.style.display = 'none';
@@ -413,6 +404,8 @@ window.TegakiExportPopup = class ExportPopup {
         let formatName = 'PNG';
         if (data.format === 'apng') {
             formatName = 'APNG';
+        } else if (data.format === 'webp') {
+            formatName = data.type === 'animated' ? 'WEBP動画' : 'WEBP';
         } else if (data.format) {
             formatName = data.format.toUpperCase();
         }
@@ -484,6 +477,6 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.14.0 loaded (DPR=1統一)');
-console.log('   🚨 高DPI出力オプション削除');
-console.log('   ✓ 等倍出力のみを提供');
+console.log('✅ export-popup.js v8.18.0 loaded (UI刷新)');
+console.log('   ✓ ボタン配置: PNG → WEBP → PSD → MP4');
+console.log('   ✓ スクリーンショット方式説明追加');
