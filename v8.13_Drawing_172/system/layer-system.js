@@ -1,17 +1,24 @@
 /**
- * @file layer-system.js - getLayerByIndex追加版
+ * @file layer-system.js - Phase 5: Vキーイベント統一版
  * @description レイヤー管理・操作の中核システム
  * 
- * 【追加機能】
- * ✅ getLayerByIndex(index): インデックスでレイヤー取得（History互換性）
+ * 【Phase 5 改修内容】
+ * 🔧 Vキーイベント名統一: keyboard:vkey-state-changed に統一
+ * 🔧 selectNextLayer(), selectPrevLayer(): レイヤー選択機能（Phase 2完了）
+ * 🧹 過剰なコンソールログ削除
  * 
  * 【親ファイル (このファイルが依存)】
- * - event-bus.js, data-models.js, layer-transform.js
- * - coordinate-system.js, config.js, history.js
+ * - event-bus.js (イベント通信)
+ * - data-models.js (LayerModel定義)
+ * - layer-transform.js (変形処理委譲)
+ * - coordinate-system.js (座標変換)
+ * - config.js (設定値)
+ * - history.js (Undo/Redo)
  * 
  * 【子ファイル (このファイルに依存)】
- * - layer-panel-renderer.js, keyboard-handler.js
- * - fill-tool.js (getLayerByIndexを使用)
+ * - layer-panel-renderer.js (UI描画 - EventBus経由のみ)
+ * - keyboard-handler.js (ショートカット)
+ * - thumbnail-update-manager.js (サムネイル更新)
  */
 
 (function() {
@@ -188,22 +195,12 @@
         getActiveLayerIndex() {
             return this.activeLayerIndex;
         }
-
-        /**
-         * ✅ インデックスでレイヤー取得（History互換性）
-         */
-        getLayerByIndex(index) {
-            const layers = this.getLayers();
-            if (index >= 0 && index < layers.length) {
-                return layers[index];
-            }
-            return null;
-        }
         
+        // 🔧 Phase 5: Vキーイベント名統一
         _setupVKeyEvents() {
             if (!this.eventBus) return;
             
-            this.eventBus.on('keyboard:vkey-pressed', ({ pressed }) => {
+            this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
                 if (!this.transform) return;
                 if (!this.transform.app && this.app && this.cameraSystem) {
                     this.initTransform();
@@ -462,21 +459,46 @@
             const layerId = activeLayer.layerData.id;
             const layerIndex = this.activeLayerIndex;
             
+            // 🔧 Phase 6: 反転はビジュアルのみ更新、座標変換は行わない
+            // Historyには現在のtransform状態のみを記録
             if (window.History && !window.History._manager.isApplying) {
-                const pathsBefore = structuredClone(activeLayer.layerData.paths);
+                const transformBefore = structuredClone(this.transform.getTransform(layerId) || 
+                    { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
                 
-                this.transform.flipLayer(activeLayer, direction, true);
+                // 反転実行（ビジュアルのみ）
+                const transform = this.transform.getTransform(layerId) || 
+                    { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
                 
-                const pathsAfter = structuredClone(activeLayer.layerData.paths);
+                if (direction === 'horizontal') {
+                    transform.scaleX *= -1;
+                } else if (direction === 'vertical') {
+                    transform.scaleY *= -1;
+                }
+                
+                this.transform.setTransform(layerId, transform);
+                
+                const centerX = this.config.canvas.width / 2;
+                const centerY = this.config.canvas.height / 2;
+                this.transform.applyTransform(activeLayer, transform, centerX, centerY);
+                
+                const transformAfter = structuredClone(transform);
                 
                 window.History.push({
                     name: `layer-flip-${direction}`,
                     do: () => {
-                        this.safeRebuildLayer(activeLayer, pathsAfter);
+                        this.transform.setTransform(layerId, transformAfter);
+                        this.transform.applyTransform(activeLayer, transformAfter, centerX, centerY);
+                        if (this.transform.updateFlipButtons) {
+                            this.transform.updateFlipButtons(activeLayer);
+                        }
                         this.requestThumbnailUpdate(layerIndex);
                     },
                     undo: () => {
-                        this.safeRebuildLayer(activeLayer, pathsBefore);
+                        this.transform.setTransform(layerId, transformBefore);
+                        this.transform.applyTransform(activeLayer, transformBefore, centerX, centerY);
+                        if (this.transform.updateFlipButtons) {
+                            this.transform.updateFlipButtons(activeLayer);
+                        }
                         this.requestThumbnailUpdate(layerIndex);
                     },
                     meta: {
@@ -486,7 +508,8 @@
                     }
                 });
             } else {
-                this.transform.flipLayer(activeLayer, direction, false);
+                // History適用中またはHistory無効時
+                this.transform.flipLayer(activeLayer, direction, true);
             }
             
             if (this.eventBus) {
@@ -939,6 +962,10 @@
             });
         }
 
+        /**
+         * Phase 2: アクティブレイヤー選択（上へ）
+         * レイヤーの順序は変更せず、選択のみを変更
+         */
         selectNextLayer() {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -962,6 +989,10 @@
             }
         }
 
+        /**
+         * Phase 2: アクティブレイヤー選択（下へ）
+         * レイヤーの順序は変更せず、選択のみを変更
+         */
         selectPrevLayer() {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -985,6 +1016,10 @@
             }
         }
 
+        /**
+         * 互換性のために残す（非推奨）
+         * 今後は reorderLayers() を直接使用することを推奨
+         */
         moveActiveLayerHierarchy(direction) {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -1363,4 +1398,6 @@
 
 })();
 
-console.log('✅ layer-system.js (getLayerByIndex追加版) loaded');
+console.log('✅ layer-system.js Phase 5 loaded');
+console.log('   🔧 Vキーイベント統一: keyboard:vkey-state-changed');
+console.log('   🔧 selectNextLayer(), selectPrevLayer(): レイヤー選択機能完備')

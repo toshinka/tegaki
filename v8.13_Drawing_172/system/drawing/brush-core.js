@@ -1,16 +1,17 @@
 /**
  * ================================================================================
- * system/drawing/brush-core.js - Phase 4: 塗りつぶしツール対応版
+ * system/drawing/brush-core.js - Phase 1-FIX: 消しゴムレイヤー追加修正版
  * ================================================================================
+ * 
+ * 【Phase 1-FIX 改修内容】
+ * 🔧 finalizeStroke() で消しゴムもレイヤーに追加
+ * 🔧 消しゴムのpathsData記録を追加
+ * 🔧 mode判定の明確化
  * 
  * 【Phase 4 改修内容 - 塗りつぶしツール対応】
  * ✅ fill モードを追加（pen, eraser, fill の3モード）
  * ✅ fill モード時は FillTool に処理を委譲
  * ✅ setMode() で fill を許可
- * 
- * 【Phase 1-3 改修内容 - renderFinalStroke統合】
- * ✅ finalizeStroke() で renderFinalStroke() を使用
- * ✅ 消しゴムモード時の RenderTexture 処理を正しく実行
  * 
  * 【依存関係 - Parents (このファイルが依存)】
  *   - event-bus.js (イベント通信)
@@ -91,7 +92,7 @@
             
             this._setupEventListeners();
             
-            console.log('✅ [BrushCore] Initialized (Phase 4 - 塗りつぶし対応版)');
+            console.log('✅ [BrushCore] Initialized (Phase 1-FIX)');
         }
         
         _setupEventListeners() {
@@ -123,9 +124,6 @@
             return this.brushSettings.getSettings();
         }
         
-        /**
-         * 🔧 Phase 4: fill モードを許可
-         */
         setMode(mode) {
             const validModes = ['pen', 'eraser', 'fill'];
             
@@ -153,9 +151,6 @@
             return 'pen';
         }
         
-        /**
-         * 🔧 Phase 4: fill モード時は何もしない（FillToolがクリックイベントを処理）
-         */
         startStroke(clientX, clientY, pressure) {
             const currentMode = this.getMode();
             
@@ -254,6 +249,9 @@
             this.lastPressure = processedPressure;
         }
         
+        /**
+         * 🔧 Phase 1-FIX: 消しゴムも正しくレイヤーに追加
+         */
         async finalizeStroke() {
             if (!this.isDrawing) return;
             
@@ -277,33 +275,30 @@
             );
             
             if (graphics) {
-                if (mode === 'eraser') {
-                    // 消しゴムは既に適用済み
-                } else {
-                    activeLayer.addChild(graphics);
+                // 🔧 Phase 1-FIX: ペン/消しゴム両方ともレイヤーに追加
+                activeLayer.addChild(graphics);
+                
+                if (activeLayer.layerData) {
+                    if (!activeLayer.layerData.pathsData) {
+                        activeLayer.layerData.pathsData = [];
+                    }
                     
-                    if (activeLayer.layerData) {
-                        if (!activeLayer.layerData.pathsData) {
-                            activeLayer.layerData.pathsData = [];
-                        }
-                        
-                        const pathData = {
-                            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                            graphics: graphics,
-                            points: strokeData.points,
-                            tool: mode,
-                            settings: { ...settings }
-                        };
-                        
-                        activeLayer.layerData.pathsData.push(pathData);
-                        
-                        if (window.historyManager) {
-                            window.historyManager.recordAction({
-                                type: 'stroke',
-                                layerId: activeLayer.layerData?.id,
-                                pathData: pathData
-                            });
-                        }
+                    const pathData = {
+                        id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        graphics: graphics,
+                        points: strokeData.points,
+                        tool: mode,  // 🔧 これで 'eraser' が正しく記録される
+                        settings: { ...settings }
+                    };
+                    
+                    activeLayer.layerData.pathsData.push(pathData);
+                    
+                    if (window.historyManager) {
+                        window.historyManager.recordAction({
+                            type: 'stroke',
+                            layerId: activeLayer.layerData?.id,
+                            pathData: pathData
+                        });
                     }
                 }
                 
@@ -374,7 +369,8 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js (Phase 4 - 塗りつぶし対応版) loaded');
-    console.log('   ✓ fill モード追加 (pen, eraser, fill)');
+    console.log('✅ brush-core.js (Phase 1-FIX) loaded');
+    console.log('   🔧 消しゴムのレイヤー追加を修正');
+    console.log('   🔧 tool/mode 記録を統一');
 
 })();
