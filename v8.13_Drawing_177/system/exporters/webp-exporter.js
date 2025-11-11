@@ -1,11 +1,26 @@
 /**
  * ================================================================================
- * system/exporters/webp-exporter.js - カメラフレーム対応【v8.18.1】
+ * system/exporters/webp-exporter.js - 倍率対応・外枠除外【v8.19.0】
  * ================================================================================
  * 
- * 【v8.18.1 緊急修正】
- *   🔧 PNG Exporterと同一のカメラフレーム対応
- *   🔧 倍密度レンダリング
+ * 【依存関係 - Parents】
+ *   - system/export-manager.js (エクスポート管理)
+ *   - system/camera-system.js (worldContainer取得)
+ *   - system/animation-system.js (フレーム情報)
+ * 
+ * 【依存関係 - Children】
+ *   なし
+ * 
+ * 【責務】
+ *   - WEBP静止画/動画エクスポート
+ *   - 複数フレーム自動検出
+ * 
+ * 【v8.19.0 改修内容】
+ *   🔧 options.resolutionを正しく適用
+ *   🔧 canvasContainerのみキャプチャ（外枠除外）
+ *   🔧 固定2倍を削除し、ユーザー選択倍率を使用
+ *   🔧 正確な出力サイズ計算
+ *   🔧 動画出力の修正
  * 
  * ================================================================================
  */
@@ -89,28 +104,36 @@ window.WebPExporter = (function() {
         }
         
         /**
-         * WEBP静止画生成 - カメラフレーム対応【v8.18.1】
+         * WEBP静止画生成【v8.19.0】
+         * 
+         * 改修点:
+         * 1. options.resolutionを使用（デフォルト1倍）
+         * 2. canvasContainerのみをキャプチャ
          */
         async _generateStaticWebP(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
             const quality = options.quality !== undefined ? options.quality / 100 : 0.95;
-            const resolution = options.resolution || 2;
             
-            const width = CONFIG.canvas.width;
-            const height = CONFIG.canvas.height;
+            // 🔧 v8.19.0: ユーザー選択倍率を使用（デフォルト1倍）
+            const resolution = options.resolution || 1;
+            const canvasWidth = CONFIG.canvas.width;
+            const canvasHeight = CONFIG.canvas.height;
             
-            const worldContainer = this.manager.cameraSystem?.getWorldContainer?.() ||
-                                  this.manager.layerSystem.worldContainer;
+            console.log(`📸 WEBP Export: ${canvasWidth}x${canvasHeight} @ ${resolution}x = ${canvasWidth * resolution}x${canvasHeight * resolution}`);
             
-            if (!worldContainer) {
-                throw new Error('worldContainer not available');
+            // 🔧 v8.19.0: canvasContainerのみをキャプチャ
+            const canvasContainer = this.manager.cameraSystem?.canvasContainer ||
+                                  this.manager.layerSystem.worldContainer?.children?.find(c => c.label === 'canvasContainer');
+            
+            if (!canvasContainer) {
+                throw new Error('canvasContainer not available');
             }
             
-            this.manager.app.renderer.render({ container: worldContainer });
+            this.manager.app.renderer.render({ container: canvasContainer });
             
             const renderTexture = PIXI.RenderTexture.create({
-                width: width * resolution,
-                height: height * resolution,
+                width: canvasWidth * resolution,
+                height: canvasHeight * resolution,
                 resolution: resolution,
                 antialias: true
             });
@@ -120,7 +143,7 @@ window.WebPExporter = (function() {
             
             try {
                 this.manager.app.renderer.render({
-                    container: worldContainer,
+                    container: canvasContainer,
                     target: renderTexture
                 });
                 
@@ -131,8 +154,8 @@ window.WebPExporter = (function() {
                 });
                 
                 const finalCanvas = document.createElement('canvas');
-                finalCanvas.width = width * resolution;
-                finalCanvas.height = height * resolution;
+                finalCanvas.width = canvasWidth * resolution;
+                finalCanvas.height = canvasHeight * resolution;
                 const ctx = finalCanvas.getContext('2d');
                 ctx.drawImage(canvas, 0, 0);
                 
@@ -142,6 +165,7 @@ window.WebPExporter = (function() {
                             reject(new Error('WEBP generation failed'));
                             return;
                         }
+                        console.log(`✅ WEBP Generated: ${blob.size} bytes`);
                         resolve(blob);
                     }, 'image/webp', quality);
                 });
@@ -153,14 +177,19 @@ window.WebPExporter = (function() {
         }
         
         /**
-         * WEBP動画生成 - カメラフレーム対応【v8.18.1】
+         * WEBP動画生成【v8.19.0】
+         * 
+         * 改修点:
+         * 1. options.resolutionを使用
+         * 2. canvasContainerのみをキャプチャ
          */
         async _generateAnimatedWebP(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
             const animData = this.manager.animationSystem.getAnimationData();
             const frameCount = animData.frames.length;
-            const resolution = options.resolution || 2;
             
+            // 🔧 v8.19.0: ユーザー選択倍率を使用（デフォルト1倍）
+            const resolution = options.resolution || 1;
             const quality = options.quality !== undefined ? options.quality / 100 : 0.95;
             
             const gridCols = Math.ceil(Math.sqrt(frameCount));
@@ -168,6 +197,8 @@ window.WebPExporter = (function() {
             
             const frameWidth = CONFIG.canvas.width * resolution;
             const frameHeight = CONFIG.canvas.height * resolution;
+            
+            console.log(`🎬 WEBP Animation: ${frameCount} frames, ${frameWidth}x${frameHeight} each @ ${resolution}x`);
             
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = frameWidth * gridCols;
@@ -212,6 +243,7 @@ window.WebPExporter = (function() {
                 finalCanvas.toBlob(
                     (blob) => {
                         if (blob) {
+                            console.log(`✅ WEBP Animation Generated: ${blob.size} bytes`);
                             resolve(blob);
                         } else {
                             reject(new Error('Animated WEBP generation failed'));
@@ -224,25 +256,30 @@ window.WebPExporter = (function() {
         }
         
         /**
-         * フレームのスクリーンショット取得【v8.18.1】
+         * フレームのスクリーンショット取得【v8.19.0】
+         * 
+         * 改修点:
+         * 1. canvasContainerのみをキャプチャ
+         * 2. 正確な倍率適用
          */
-        async _captureFrameScreenshot(resolution = 2) {
+        async _captureFrameScreenshot(resolution = 1) {
             const CONFIG = window.TEGAKI_CONFIG;
-            const width = CONFIG.canvas.width;
-            const height = CONFIG.canvas.height;
+            const canvasWidth = CONFIG.canvas.width;
+            const canvasHeight = CONFIG.canvas.height;
             
-            const worldContainer = this.manager.cameraSystem?.getWorldContainer?.() ||
-                                  this.manager.layerSystem.worldContainer;
+            // 🔧 v8.19.0: canvasContainerのみをキャプチャ
+            const canvasContainer = this.manager.cameraSystem?.canvasContainer ||
+                                  this.manager.layerSystem.worldContainer?.children?.find(c => c.label === 'canvasContainer');
             
-            if (!worldContainer) {
-                throw new Error('worldContainer not found');
+            if (!canvasContainer) {
+                throw new Error('canvasContainer not found');
             }
             
-            this.manager.app.renderer.render({ container: worldContainer });
+            this.manager.app.renderer.render({ container: canvasContainer });
             
             const renderTexture = PIXI.RenderTexture.create({
-                width: width * resolution,
-                height: height * resolution,
+                width: canvasWidth * resolution,
+                height: canvasHeight * resolution,
                 resolution: resolution,
                 antialias: true
             });
@@ -252,7 +289,7 @@ window.WebPExporter = (function() {
             
             try {
                 this.manager.app.renderer.render({
-                    container: worldContainer,
+                    container: canvasContainer,
                     target: renderTexture
                 });
                 
@@ -263,8 +300,8 @@ window.WebPExporter = (function() {
                 });
                 
                 const finalCanvas = document.createElement('canvas');
-                finalCanvas.width = width * resolution;
-                finalCanvas.height = height * resolution;
+                finalCanvas.width = canvasWidth * resolution;
+                finalCanvas.height = canvasHeight * resolution;
                 const ctx = finalCanvas.getContext('2d');
                 ctx.drawImage(canvas, 0, 0);
                 
@@ -288,4 +325,7 @@ window.WebPExporter = (function() {
     return WebPExporter;
 })();
 
-console.log('✅ webp-exporter.js v8.18.1 loaded (カメラフレーム対応)');
+console.log('✅ webp-exporter.js v8.19.0 loaded');
+console.log('   🔧 倍率対応（options.resolution使用）');
+console.log('   🔧 canvasContainerのみキャプチャ（外枠除外）');
+console.log('   🔧 正確な動画出力サイズ計算');
