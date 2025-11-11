@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/png-exporter.js - canvasContainer直接キャプチャ【v8.21.0】
+ * system/exporters/png-exporter.js - カメラリセット対応【v8.22.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -15,11 +15,9 @@
  *   - PNG静止画エクスポート
  *   - 複数フレーム時はAPNGへ委譲
  * 
- * 【v8.21.0 重要改修】
- *   🔧 canvasContainerを直接renderer.extract.canvas()でキャプチャ
- *   🔧 RenderTexture経由を完全排除（座標系破壊を根本解決）
- *   🔧 worldContainer配下のcanvasContainerのみを抽出
- *   🔧 カメラフレーム崩壊の完全防止
+ * 【v8.22.0 重要改修】
+ *   🔧 キャプチャ前にカメラ位置を0,0にリセット（枠ズレ防止）
+ *   🔧 キャプチャ後にカメラ位置を復元
  * 
  * ================================================================================
  */
@@ -86,13 +84,7 @@ window.PNGExporter = (function() {
         }
         
         /**
-         * PNG Blob生成【v8.21.0 完全修正版】
-         * 
-         * 🔧 根本的改善:
-         * 1. RenderTextureを使用しない
-         * 2. canvasContainerを直接extract.canvas()でキャプチャ
-         * 3. 座標系を一切破壊しない
-         * 4. カメラフレームは含まれない
+         * PNG Blob生成【v8.22.0 カメラリセット対応】
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -100,7 +92,6 @@ window.PNGExporter = (function() {
             const canvasWidth = CONFIG.canvas.width;
             const canvasHeight = CONFIG.canvas.height;
             
-            // canvasContainerのみをキャプチャ
             const canvasContainer = this.manager.cameraSystem?.canvasContainer ||
                                   this.manager.layerSystem.worldContainer?.children?.find(c => c.label === 'canvasContainer');
             
@@ -108,40 +99,61 @@ window.PNGExporter = (function() {
                 throw new Error('canvasContainer not available');
             }
             
-            // 🔧 v8.21.0: RenderTextureを使わず直接キャプチャ
-            // renderer.extract.canvas()は指定したcontainerのみをキャプチャする
-            const extractedCanvas = this.manager.app.renderer.extract.canvas({
-                target: canvasContainer,
-                resolution: resolution,
-                antialias: true
-            });
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
             
-            // 正確なサイズのCanvasにコピー
-            const finalCanvas = document.createElement('canvas');
-            finalCanvas.width = canvasWidth * resolution;
-            finalCanvas.height = canvasHeight * resolution;
-            const ctx = finalCanvas.getContext('2d', { alpha: true });
+            // 🔧 v8.22.0: カメラ位置をバックアップ
+            const originalPosition = worldContainer ? { 
+                x: worldContainer.x, 
+                y: worldContainer.y 
+            } : null;
             
-            // 背景をクリア（透明）
-            ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
-            
-            // 抽出したCanvasを描画
-            ctx.drawImage(extractedCanvas, 0, 0);
-            
-            // Blob生成
-            return new Promise((resolve, reject) => {
-                finalCanvas.toBlob((blob) => {
-                    if (!blob) {
-                        reject(new Error('PNG generation failed'));
-                        return;
-                    }
-                    resolve(blob);
-                }, 'image/png');
-            });
+            try {
+                // 🔧 カメラを0,0にリセット
+                if (worldContainer) {
+                    worldContainer.position.set(0, 0);
+                }
+                
+                // フレーム待機
+                await new Promise(resolve => {
+                    requestAnimationFrame(() => {
+                        setTimeout(resolve, 16);
+                    });
+                });
+                
+                // キャプチャ
+                const extractedCanvas = this.manager.app.renderer.extract.canvas({
+                    target: canvasContainer,
+                    resolution: resolution,
+                    antialias: true
+                });
+                
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = canvasWidth * resolution;
+                finalCanvas.height = canvasHeight * resolution;
+                const ctx = finalCanvas.getContext('2d', { alpha: true });
+                
+                ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
+                ctx.drawImage(extractedCanvas, 0, 0);
+                
+                return new Promise((resolve, reject) => {
+                    finalCanvas.toBlob((blob) => {
+                        if (!blob) {
+                            reject(new Error('PNG generation failed'));
+                            return;
+                        }
+                        resolve(blob);
+                    }, 'image/png');
+                });
+            } finally {
+                // 🔧 カメラ位置を復元
+                if (worldContainer && originalPosition) {
+                    worldContainer.position.set(originalPosition.x, originalPosition.y);
+                }
+            }
         }
     }
     
     return PNGExporter;
 })();
 
-console.log('✅ png-exporter.js v8.21.0 loaded');
+console.log('✅ png-exporter.js v8.22.0 loaded');

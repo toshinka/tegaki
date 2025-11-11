@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/apng-exporter.js - canvasContainer直接キャプチャ【v8.21.0】
+ * system/exporters/apng-exporter.js - カメラリセット対応【v8.22.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -16,11 +16,9 @@
  *   - APNGアニメーション出力
  *   - 複数フレームの連続キャプチャ
  * 
- * 【v8.21.0 重要改修】
- *   🔧 canvasContainerを直接renderer.extract.canvas()でキャプチャ
- *   🔧 RenderTexture経由を完全排除（座標系破壊を根本解決）
- *   🔧 renderer.resolutionを変更しない
- *   🔧 カメラフレーム崩壊の完全防止
+ * 【v8.22.0 重要改修】
+ *   🔧 キャプチャ前にカメラ位置を0,0にリセット（枠ズレ防止）
+ *   🔧 キャプチャ後にカメラ位置を復元
  * 
  * ================================================================================
  */
@@ -100,7 +98,7 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * APNG Blob生成【v8.21.0 完全修正版】
+         * APNG Blob生成【v8.22.0 カメラリセット対応】
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -117,9 +115,20 @@ window.APNGExporter = (function() {
             const frames = [];
             const delays = [];
             
+            // 🔧 v8.22.0: カメラ位置をバックアップ
             const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
+            const worldContainer = this.manager.cameraSystem?.worldContainer;
+            const originalPosition = worldContainer ? { 
+                x: worldContainer.x, 
+                y: worldContainer.y 
+            } : null;
             
             try {
+                // 🔧 カメラを0,0にリセット
+                if (worldContainer) {
+                    worldContainer.position.set(0, 0);
+                }
+                
                 for (let i = 0; i < animData.frames.length; i++) {
                     const frame = animData.frames[i];
                     
@@ -148,7 +157,11 @@ window.APNGExporter = (function() {
                     }
                 }
             } finally {
+                // 🔧 状態を復元
                 this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
+                if (worldContainer && originalPosition) {
+                    worldContainer.position.set(originalPosition.x, originalPosition.y);
+                }
             }
             
             const apngBuffer = UPNG.encode(
@@ -163,13 +176,7 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * フレームのスクリーンショット取得【v8.21.0 完全修正版】
-         * 
-         * 🔧 根本的改善:
-         * 1. RenderTextureを使用しない
-         * 2. renderer.resolutionを変更しない
-         * 3. canvasContainerを直接extract.canvas()でキャプチャ
-         * 4. 座標系を一切破壊しない
+         * フレームのスクリーンショット取得【v8.22.0】
          */
         async _captureFrameScreenshot(resolution = 2) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -183,8 +190,7 @@ window.APNGExporter = (function() {
                 throw new Error('canvasContainer not found');
             }
             
-            // 🔧 v8.21.0: RenderTextureを使わず直接キャプチャ
-            // renderer.resolutionは変更しない
+            // カメラは既に0,0にリセット済み
             const extractedCanvas = this.manager.app.renderer.extract.canvas({
                 target: canvasContainer,
                 resolution: resolution,
@@ -214,4 +220,4 @@ window.APNGExporter = (function() {
     return APNGExporter;
 })();
 
-console.log('✅ apng-exporter.js v8.21.0 loaded');
+console.log('✅ apng-exporter.js v8.22.0 loaded');
