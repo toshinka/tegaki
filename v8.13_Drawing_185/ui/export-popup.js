@@ -1,11 +1,11 @@
 /**
  * ================================================================================
- * ui/export-popup.js - futaba-maroon統一版【v8.24.0】
+ * ui/export-popup.js - エクスポートUI【v8.25.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
- *   - system/export-manager.js (エクスポート実行)
- *   - system/animation-system.js (フレーム情報)
+ *   - system/export-manager.js
+ *   - system/animation-system.js
  * 
  * 【依存関係 - Children】
  *   なし
@@ -15,13 +15,10 @@
  *   - プレビュー表示（150x150px固定）
  *   - 進捗表示
  * 
- * 【v8.24.0 改修内容】
- *   🔧 プレビュー画像サイズを 150x150px に変更
- *   🔧 WEBP説明テキストを「Animated WEBP」対応に更新
- * 
- * 【v8.22.0 改修内容】
- *   🔧 PNG/WEBP/PSDボタンの文字色を futaba-maroon に統一
- *   🔧 選択状態の背景色を futaba-maroon、文字色を futaba-cream に統一
+ * 【v8.25.0 改修内容】
+ *   🔧 プレビュー画像の表示サイズを厳格に150x150pxに制限
+ *   🔧 object-fit: contain で縦横比維持
+ *   🔧 プレビューコンテナ背景色を調整
  * 
  * ================================================================================
  */
@@ -73,11 +70,13 @@ window.TegakiExportPopup = class ExportPopup {
                 '<div class="progress-bar"><div class="progress-fill"></div></div>' +
                 '<div class="progress-text">0%</div>' +
             '</div>' +
-            '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 8px;">' +
-                '<div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">プレビュー</div>' +
-                '<img id="preview-image" style="max-width: 150px; max-height: 150px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />' +
+            '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: #f5f5dc; border: 1px solid #d4b896; border-radius: 6px; padding: 12px;">' +
+                '<div id="preview-message" style="font-size: 12px; color: #800000; margin-bottom: 8px; font-weight: 500;">プレビュー</div>' +
+                '<div style="width: 150px; height: 150px; margin: 0 auto; background: #ffffff; border: 2px solid #d4b896; border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden;">' +
+                    '<img id="preview-image" style="max-width: 150px; max-height: 150px; width: auto; height: auto; object-fit: contain; display: block; cursor: context-menu;" />' +
+                '</div>' +
             '</div>' +
-            '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--futaba-maroon); margin: 8px 0;"></div>' +
+            '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: #800000; margin: 8px 0;"></div>' +
             '<div class="export-actions">' +
                 '<button class="action-button" id="export-execute">ダウンロード</button>' +
                 '<button class="action-button secondary" id="export-preview">プレビュー</button>' +
@@ -90,9 +89,6 @@ window.TegakiExportPopup = class ExportPopup {
         this.updateOptionsUI(this.selectedFormat);
     }
     
-    /**
-     * 🔧 v8.22.0: フォーマットボタンの色統一
-     */
     _initializeFormatButtons() {
         const formatBtns = document.querySelectorAll('.format-btn');
         formatBtns.forEach(btn => {
@@ -162,9 +158,6 @@ window.TegakiExportPopup = class ExportPopup {
         }
     }
     
-    /**
-     * 🔧 v8.22.0: フォーマット選択時の色更新を改善
-     */
     selectFormat(format) {
         this.selectedFormat = format;
         
@@ -279,7 +272,7 @@ window.TegakiExportPopup = class ExportPopup {
                 '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
                     (frameCount >= 2 
                         ? `全${frameCount}フレームをAPNGとして出力します。`
-                        : '高品質な次世代画像フォーマットです。') +
+                        : '高品質な画像フォーマットです。') +
                 '</div>' +
                 resolutionUI,
                 
@@ -559,4 +552,6 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.24.0 loaded');
+console.log('✅ export-popup.js v8.25.0 loaded');
+console.log('   🔧 プレビュー画像を150x150pxに厳格化');
+console.log('   🔧 画像コンテナをflex中央配置に改善');
