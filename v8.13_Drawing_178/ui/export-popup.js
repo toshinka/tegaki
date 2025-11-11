@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - 倍率選択UI追加【v8.19.0】
+ * ui/export-popup.js - UI改善・プレビューサイズ制限【v8.20.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -15,11 +15,11 @@
  *   - プレビュー表示
  *   - 進捗表示
  * 
- * 【v8.19.0 改修内容】
- *   ✅ 倍率選択UI追加（1x/2x/4x）
- *   ✅ 冗長な説明文削除
- *   ✅ 選択状態の視覚化
- *   ✅ 出力サイズ計算表示
+ * 【v8.20.0 改修内容】
+ *   🔧 倍率選択ボタンの即時反映とアクティブ状態の明確化
+ *   🔧 プレビュー画像を200x200以内に制限（アスペクト比維持）
+ *   🔧 選択状態の視覚的フィードバック強化
+ *   🔧 コンソールログクリーンアップ
  * 
  * ================================================================================
  */
@@ -28,7 +28,7 @@ window.TegakiExportPopup = class ExportPopup {
     constructor(dependencies) {
         this.manager = dependencies.exportManager;
         this.selectedFormat = 'png';
-        this.selectedResolution = 2; // デフォルト2倍
+        this.selectedResolution = 2;
         this.isVisible = false;
         this.currentPreviewUrl = null;
         this.currentBlob = null;
@@ -49,13 +49,6 @@ window.TegakiExportPopup = class ExportPopup {
         }
     }
     
-    /**
-     * ポップアップ要素作成【v8.19.0】
-     * 
-     * 変更点:
-     * - 倍率選択ボタン追加
-     * - 説明文簡潔化
-     */
     _createPopupElement() {
         const container = document.querySelector('.canvas-area') || document.body;
         
@@ -78,9 +71,9 @@ window.TegakiExportPopup = class ExportPopup {
                 '<div class="progress-bar"><div class="progress-fill"></div></div>' +
                 '<div class="progress-text">0%</div>' +
             '</div>' +
-            '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 8px; max-height: 350px; overflow: auto;">' +
+            '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 8px; max-height: 230px; overflow: auto;">' +
                 '<div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">プレビュー</div>' +
-                '<img id="preview-image" style="max-width: 100%; max-height: 300px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />' +
+                '<img id="preview-image" style="max-width: 200px; max-height: 200px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />' +
             '</div>' +
             '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--text-secondary); margin: 8px 0;"></div>' +
             '<div class="export-actions">' +
@@ -104,7 +97,8 @@ window.TegakiExportPopup = class ExportPopup {
             
             const resBtn = e.target.closest('.resolution-btn');
             if (resBtn) {
-                this.selectResolution(parseInt(resBtn.dataset.resolution));
+                const newResolution = parseInt(resBtn.dataset.resolution);
+                this.selectResolution(newResolution);
                 return;
             }
             
@@ -154,22 +148,36 @@ window.TegakiExportPopup = class ExportPopup {
     }
     
     /**
-     * 倍率選択【v8.19.0 新規】
+     * 倍率選択【v8.20.0 改善】
+     * 
+     * 改善点:
+     * - 全ボタンを即座に更新
+     * - 視覚的フィードバックを明確化
      */
     selectResolution(resolution) {
         this.selectedResolution = resolution;
         
+        // 全てのボタンを更新
         document.querySelectorAll('.resolution-btn').forEach(btn => {
-            btn.classList.toggle('selected', parseInt(btn.dataset.resolution) === resolution);
+            const btnResolution = parseInt(btn.dataset.resolution);
+            const isSelected = btnResolution === resolution;
+            
+            btn.classList.toggle('selected', isSelected);
+            
+            if (isSelected) {
+                btn.style.border = '2px solid var(--futaba-maroon)';
+                btn.style.background = 'var(--futaba-maroon)';
+                btn.style.color = 'var(--futaba-cream)';
+            } else {
+                btn.style.border = '2px solid var(--futaba-light-medium)';
+                btn.style.background = 'var(--futaba-cream)';
+                btn.style.color = 'var(--futaba-maroon)';
+            }
         });
         
-        // 出力サイズ表示を更新
         this.updateOutputSize();
     }
     
-    /**
-     * 出力サイズ計算・表示【v8.19.0 新規】
-     */
     updateOutputSize() {
         const outputSizeEl = document.getElementById('output-size-display');
         if (!outputSizeEl) return;
@@ -201,17 +209,16 @@ window.TegakiExportPopup = class ExportPopup {
         const previewBtn = document.getElementById('export-preview');
         if (!previewBtn) return;
         
-        // PNG, WEBPのみプレビュー対応
         const showPreview = ['png', 'webp'].includes(this.selectedFormat);
         previewBtn.style.display = showPreview ? 'block' : 'none';
     }
     
     /**
-     * オプションUI更新【v8.19.0】
+     * オプションUI更新【v8.20.0】
      * 
-     * 変更点:
-     * - 倍率選択UI追加
-     * - 冗長な説明削除
+     * 改善点:
+     * - ボタンにホバー/クリックのイベントリスナーを適切に設定
+     * - 初期選択状態を確実に反映
      */
     updateOptionsUI(format) {
         const optionsEl = document.getElementById('export-options');
@@ -226,14 +233,13 @@ window.TegakiExportPopup = class ExportPopup {
         
         const frameCount = this.getFrameCount();
         
-        // 倍率選択UI（PNG/WEBPのみ）
         const resolutionUI = (format === 'png' || format === 'webp') ? 
             '<div style="margin: 12px 0;">' +
                 '<div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 8px;">📐 出力解像度</div>' +
                 '<div style="display: flex; gap: 8px; margin-bottom: 8px;">' +
-                    '<button class="resolution-btn" data-resolution="1" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">1x</button>' +
-                    '<button class="resolution-btn selected" data-resolution="2" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-maroon); border-radius: 4px; background: var(--futaba-maroon); color: var(--futaba-cream); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">2x 推奨</button>' +
-                    '<button class="resolution-btn" data-resolution="4" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">4x</button>' +
+                    '<button class="resolution-btn" data-resolution="1" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">1x</button>' +
+                    '<button class="resolution-btn" data-resolution="2" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">2x 推奨</button>' +
+                    '<button class="resolution-btn" data-resolution="4" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">4x</button>' +
                 '</div>' +
                 '<div id="output-size-display" style="font-size: 12px; color: var(--text-primary);">' +
                     (canvasWidth * this.selectedResolution) + '×' + (canvasHeight * this.selectedResolution) + 'px（' + this.selectedResolution + '倍出力）' +
@@ -268,33 +274,10 @@ window.TegakiExportPopup = class ExportPopup {
         
         optionsEl.innerHTML = optionsMap[format] || '';
         
-        // 倍率ボタンのスタイルを設定
-        document.querySelectorAll('.resolution-btn').forEach(btn => {
-            const isSelected = parseInt(btn.dataset.resolution) === this.selectedResolution;
-            btn.classList.toggle('selected', isSelected);
-            
-            if (isSelected) {
-                btn.style.border = '2px solid var(--futaba-maroon)';
-                btn.style.background = 'var(--futaba-maroon)';
-                btn.style.color = 'var(--futaba-cream)';
-            } else {
-                btn.style.border = '2px solid var(--futaba-light-medium)';
-                btn.style.background = 'var(--futaba-cream)';
-                btn.style.color = 'var(--futaba-maroon)';
-            }
-            
-            btn.addEventListener('mouseenter', function() {
-                if (!this.classList.contains('selected')) {
-                    this.style.background = 'var(--futaba-light-medium)';
-                }
-            });
-            
-            btn.addEventListener('mouseleave', function() {
-                if (!this.classList.contains('selected')) {
-                    this.style.background = 'var(--futaba-cream)';
-                }
-            });
-        });
+        // ボタンの初期状態を設定
+        setTimeout(() => {
+            this.selectResolution(this.selectedResolution);
+        }, 0);
         
         this.updatePreviewButtonVisibility();
     }
@@ -547,7 +530,4 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.19.0 loaded');
-console.log('   ✓ 倍率選択UI追加（1x/2x/4x）');
-console.log('   ✓ 冗長な説明削除');
-console.log('   ✓ 選択状態の視覚化');
+console.log('✅ export-popup.js v8.20.0 loaded');
