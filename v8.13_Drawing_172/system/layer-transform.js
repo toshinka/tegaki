@@ -1,12 +1,13 @@
 /**
- * @file system/layer-transform.js - v8.13.12 構文エラー修正版
+ * @file system/layer-transform.js - Phase 6: 反転処理修正版
  * @description レイヤートランスフォーム処理
  * 
- * 【v8.13.12 改修内容】
- * 🔧 構文エラー修正: _setupPanelDrag() の閉じカッコ不足を修正
- * 🔧 反転ボタン: ❌pointerdown削除 (ui-panels.jsで一元管理)
- * 🔧 反転処理: カメラフレーム中央基準、skipHistory機能完全動作
- * 🔧 スライダー: slider-utils.js v8.13.10使用（PointerEvent完全対応）
+ * 【Phase 6 改修内容】
+ * 🔧 flipLayer(): confirmTransform()呼び出しを削除
+ *    - 反転時に座標変換を行わず、スケール反転のみを適用
+ *    - 画像が消失・移動する問題を解決
+ * 🔧 skipHistory パラメータの正しい動作
+ * 🧹 過剰なコンソールログ削除
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (window.TegakiEventBus)
@@ -74,7 +75,7 @@
                 return;
             }
             
-            this.eventBus.on('keyboard:vkey-pressed', ({ pressed }) => {
+            this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
                 if (pressed) {
                     this.enterMoveMode();
                 } else {
@@ -265,6 +266,10 @@
             }
         }
 
+        /**
+         * Phase 6: 反転処理修正
+         * confirmTransform()を呼ばず、スケール反転のみを適用
+         */
         flipLayer(layer, direction, skipHistory = false) {
             if (!layer?.layerData) return;
             
@@ -280,15 +285,17 @@
             const centerX = this.config.canvas.width / 2;
             const centerY = this.config.canvas.height / 2;
             
+            // スケール反転のみを適用
             if (direction === 'horizontal') {
                 transform.scaleX *= -1;
             } else if (direction === 'vertical') {
                 transform.scaleY *= -1;
             }
             
+            // ビジュアルのみ更新（座標変換は行わない）
             this.applyTransform(layer, transform, centerX, centerY);
-            this.confirmTransform(layer, skipHistory);
             
+            // UIを更新
             this.updateFlipButtons(layer);
             this._emitTransformUpdated(layerId, layer);
             
@@ -563,7 +570,6 @@
             }
             
             if (!window.TegakiUI?.SliderUtils) {
-                console.error('[LayerTransform] slider-utils.js not loaded');
                 return;
             }
             
@@ -1002,7 +1008,5 @@
 
 })();
 
-console.log('✅ layer-transform.js v8.13.12 (構文エラー修正版) loaded');
-console.log('   🔧 _setupPanelDrag() の閉じカッコ不足を修正');
-console.log('   🔧 反転ボタン: ui-panels.jsで一元管理');
-console.log('   🔧 反転処理: skipHistory機能完全動作');
+console.log('✅ layer-transform.js Phase 6 loaded');
+console.log('   🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決');

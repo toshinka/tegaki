@@ -1,7 +1,12 @@
 /**
  * ================================================================================
- * system/drawing/stroke-renderer.js - ベクター統合版【Phase 1完成】
+ * system/drawing/stroke-renderer.js - 消しゴムShader問題修正版
  * ================================================================================
+ * 
+ * 【Phase 1-FIX 改修内容】
+ * 🔧 消しゴム時はCustom Shaderを使用せず、通常Graphicsで描画
+ * 🔧 PixiJS v8のBlendMode仕様に対応
+ * 🔧 Shader使用時のBlendMode無視問題を解決
  * 
  * 【依存関係 - Parents】
  *   - PixiJS v8.13 (Graphics, Sprite, Mesh)
@@ -9,9 +14,10 @@
  *   - webgpu-compute-sdf.js (SDF生成)
  *   - webgpu-compute-msdf.js (MSDF生成)
  *   - webgpu-texture-bridge.js (テクスチャ変換)
- *   - sdf-brush-shader.js (統合shader)
- *   - msdf-brush-shader.js (MSDF shader)
+ *   - sdf-brush-shader.js (統合shader - PEN専用)
+ *   - msdf-brush-shader.js (MSDF shader - PEN専用)
  *   - brush-settings.js (settings取得)
+ *   - curve-interpolator.js (補間処理)
  * 
  * 【依存関係 - Children】
  *   - brush-core.js (ストローク描画)
@@ -19,15 +25,13 @@
  * 
  * 【責務】
  *   - ストロークの視覚化（プレビュー・最終描画）
- *   - ペン/消しゴムをベクターストロークとして統一処理
- *   - RenderTexture方式を廃止し完全ベクター化
+ *   - ペン: SDF/MSDF Shader使用
+ *   - 消しゴム: 通常Graphics + blendMode='erase'
  *   - WebGPU/Legacy描画パイプライン管理
  * 
- * 【改修内容】
- *   ✅ RenderTexture方式を完全廃止
- *   ✅ 消しゴムもSDFストロークとして描画
- *   ✅ blendMode='erase' で既存アルファから減算
- *   ✅ ベクター情報を完全保持（再レンダリング可能）
+ * 【修正理由】
+ *   PixiJS v8では、Custom Shader適用後にblendModeを設定しても
+ *   正しく機能しない。消しゴムは通常描画方式を使用する。
  * ================================================================================
  */
 
@@ -177,16 +181,23 @@
 
         /**
          * ========================================================================
-         * 最終描画（ストローク確定時）- ベクター統合版
+         * 最終描画（ストローク確定時）
+         * 🔧 Phase 1-FIX: 消しゴムは通常Graphics描画
          * ========================================================================
          */
         async renderFinalStroke(strokeData, providedSettings = null, targetGraphics = null) {
             const settings = this._getSettings(providedSettings);
             const mode = this._getCurrentMode(settings);
             
+            // 🔧 消しゴムは常にLegacy描画（BlendMode対応）
+            if (mode === 'eraser') {
+                return this._renderEraserStroke(strokeData, settings);
+            }
+            
+            // ペンは従来通りSDF/MSDF優先
             const minPoints = this.config.sdf?.minPointsForGPU || 5;
 
-            // MSDF優先（ペン/消しゴム共通）
+            // MSDF優先（ペン専用）
             if (this.msdfEnabled && this.webgpuComputeMSDF && strokeData.points.length > minPoints) {
                 try {
                     return await this._renderFinalStrokeMSDF(strokeData, settings, mode);
@@ -195,7 +206,7 @@
                 }
             }
 
-            // SDF描画（ペン/消しゴム共通）
+            // SDF描画（ペン専用）
             if (this.webgpuEnabled && this.webgpuComputeSDF && strokeData.points.length > minPoints) {
                 try {
                     return await this._renderFinalStrokeWebGPU(strokeData, settings, mode);
@@ -204,13 +215,61 @@
                 }
             }
 
-            // Legacy描画（ペン/消しゴム共通）
+            // Legacy描画（ペン専用）
             return this._renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics);
         }
 
         /**
          * ========================================================================
-         * MSDF描画（ペン/消しゴム統合）
+         * 🆕 Phase 1-FIX: 消しゴム専用描画（Shader不使用）
+         * ========================================================================
+         */
+        _renderEraserStroke(strokeData, settings) {
+            const graphics = new PIXI.Graphics();
+            
+            // 🔧 BlendModeを先に設定（Shader不使用なので機能する）
+            graphics.blendMode = 'erase';
+            
+            // 補間処理
+            let points = strokeData.points;
+            if (window.CurveInterpolator && points.length > 2) {
+                points = window.CurveInterpolator.catmullRom(points, 0.5, 10);
+            }
+            
+            if (strokeData.isSingleDot || points.length === 1) {
+                const p = points[0];
+                const width = this.calculateWidth(p.pressure, settings.size);
+                graphics.circle(p.x, p.y, width / 2);
+                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+                return graphics;
+            }
+
+            // ストローク描画
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                
+                const w1 = this.calculateWidth(p1.pressure, settings.size);
+                const w2 = this.calculateWidth(p2.pressure, settings.size);
+                const avgWidth = (w1 + w2) / 2;
+
+                graphics.moveTo(p1.x, p1.y);
+                graphics.lineTo(p2.x, p2.y);
+                graphics.stroke({
+                    width: avgWidth,
+                    color: 0xFFFFFF,
+                    alpha: 1.0,
+                    cap: 'round',
+                    join: 'round'
+                });
+            }
+
+            return graphics;
+        }
+
+        /**
+         * ========================================================================
+         * MSDF描画（ペン専用）
          * ========================================================================
          */
         async _renderFinalStrokeMSDF(strokeData, settings, mode) {
@@ -272,22 +331,16 @@
             });
             sprite.shader = msdfShader;
             
-            if (mode === 'eraser') {
-                sprite.blendMode = 'erase';
-                sprite.tint = 0xFFFFFF;
-                sprite.alpha = 1.0;
-            } else {
-                sprite.blendMode = 'normal';
-                sprite.tint = settings.color;
-                sprite.alpha = settings.opacity || 1.0;
-            }
+            sprite.blendMode = 'normal';
+            sprite.tint = settings.color;
+            sprite.alpha = settings.opacity || 1.0;
 
             return sprite;
         }
 
         /**
          * ========================================================================
-         * SDF描画（ペン/消しゴム統合）
+         * SDF描画（ペン専用）
          * ========================================================================
          */
         async _renderFinalStrokeWebGPU(strokeData, settings, mode) {
@@ -341,41 +394,33 @@
             const sprite = new PIXI.Sprite(sdfTexture);
             sprite.position.set(minX, minY);
             
-            // 統合Shader使用
+            // ペン用Shader適用
             const shader = window.SDFBrushShader.create({
                 radius: settings.size,
                 hardness: 0.8,
                 color: settings.color,
                 opacity: settings.opacity || 1.0,
-                isErase: mode === 'eraser'
+                isErase: false // ペン専用
             });
             
             if (shader) {
                 sprite.shader = shader;
             }
             
-            if (mode === 'eraser') {
-                sprite.blendMode = 'erase';
-            } else {
-                sprite.blendMode = 'normal';
-            }
+            sprite.blendMode = 'normal';
 
             return sprite;
         }
 
         /**
          * ========================================================================
-         * Legacy描画（ペン/消しゴム統合）
+         * Legacy描画（ペン専用）
          * ========================================================================
          */
         _renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
             
-            if (mode === 'eraser') {
-                graphics.blendMode = 'erase';
-            } else {
-                graphics.blendMode = 'normal';
-            }
+            graphics.blendMode = 'normal';
 
             if (strokeData.isSingleDot || strokeData.points.length === 1) {
                 return this.renderDot(strokeData.points[0], settings, mode, graphics);
@@ -396,24 +441,13 @@
 
                 graphics.moveTo(p1.x, p1.y);
                 graphics.lineTo(p2.x, p2.y);
-                
-                if (mode === 'eraser') {
-                    graphics.stroke({
-                        width: avgWidth,
-                        color: 0xFFFFFF,
-                        alpha: 1.0,
-                        cap: 'round',
-                        join: 'round'
-                    });
-                } else {
-                    graphics.stroke({
-                        width: avgWidth,
-                        color: settings.color,
-                        alpha: settings.opacity || 1.0,
-                        cap: 'round',
-                        join: 'round'
-                    });
-                }
+                graphics.stroke({
+                    width: avgWidth,
+                    color: settings.color,
+                    alpha: settings.opacity || 1.0,
+                    cap: 'round',
+                    join: 'round'
+                });
             }
 
             return graphics;
@@ -424,15 +458,9 @@
             const settings = this._getSettings(providedSettings);
             const width = this.calculateWidth(point.pressure, settings.size);
 
-            if (mode === 'eraser') {
-                graphics.blendMode = 'erase';
-                graphics.circle(point.x, point.y, width / 2);
-                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-            } else {
-                graphics.blendMode = 'normal';
-                graphics.circle(point.x, point.y, width / 2);
-                graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
-            }
+            graphics.blendMode = 'normal';
+            graphics.circle(point.x, point.y, width / 2);
+            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
 
             return graphics;
         }
@@ -441,7 +469,12 @@
             const settings = this._getSettings(providedSettings);
             const mode = this._getCurrentMode(settings);
             
-            const graphics = this._renderFinalStrokeLegacy(strokeData, settings, mode);
+            let graphics;
+            if (mode === 'eraser') {
+                graphics = this._renderEraserStroke(strokeData, settings);
+            } else {
+                graphics = this._renderFinalStrokeLegacy(strokeData, settings, mode);
+            }
             
             return {
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -460,9 +493,9 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js (ベクター統合版) loaded');
-    console.log('   ✓ RenderTexture方式を完全廃止');
-    console.log('   ✓ 消しゴムもSDFストロークとして描画');
-    console.log('   ✓ ベクター情報完全保持');
+    console.log('✅ stroke-renderer.js (Phase 1-FIX) loaded');
+    console.log('   🔧 消しゴム: Shader不使用 + blendMode=erase');
+    console.log('   ✅ ペン: SDF/MSDF Shader使用');
+    console.log('   ✅ PixiJS v8 BlendMode互換');
 
 })();

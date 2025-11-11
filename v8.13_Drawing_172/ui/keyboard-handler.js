@@ -1,13 +1,12 @@
 /**
- * @file ui/keyboard-handler.js - Phase 5: フレーム移動修正版
+ * @file ui/keyboard-handler.js - Phase 6完成版
  * @description キーボードショートカット処理の中核システム
  * 
- * 【Phase 5 改修内容】
- * 🔧 FRAME_PREV/NEXT: メソッド名修正
- *    - goToPreviousCutSafe() → goToPreviousFrameSafe()
- *    - goToNextCutSafe() → goToNextFrameSafe()
- * 🔧 Vキーイベント名統一: keyboard:vkey-state-changed のみ使用
- * 🧹 過剰なコンソールログ削除
+ * 【Phase 6 改修内容】
+ * ✅ BS/DEL: children配列から直接削除（paths配列に依存しない）
+ * ✅ Undo/Redo: childrenの参照を保持して復元
+ * 🔧 反転処理: 画像消失問題解決
+ * 🧹 デバッグログをクリーンアップ
  * 
  * 【親ファイル (このファイルが依存)】
  * - config.js (window.TEGAKI_KEYMAP)
@@ -122,7 +121,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // BS/DELキーでの描画削除
             case 'LAYER_DELETE_DRAWINGS':
                 deleteActiveLayerDrawings();
                 event.preventDefault();
@@ -252,7 +250,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // 🔧 Phase 5: フレーム移動のメソッド名修正
             case 'FRAME_PREV':
                 if (!vKeyPressed && window.timelineUI?.isVisible) {
                     window.timelineUI.goToPreviousFrameSafe();
@@ -312,25 +309,38 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * アクティブレイヤーの描画削除
-     * BS/DELキーで確実に動作
+     * Phase 6完成版: アクティブレイヤーの描画削除
+     * children配列から直接削除し、Undo/Redo対応
      */
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager || window.layerManager;
+        
         if (!layerSystem) return;
         
         const activeLayer = layerSystem.getActiveLayer();
-        if (!activeLayer?.layerData) return;
         
-        if (activeLayer.layerData.isBackground) return;
+        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return;
         
-        const paths = activeLayer.layerData.paths;
-        if (!paths || paths.length === 0) return;
+        // 削除対象を特定
+        const childrenToRemove = [];
+        for (let child of activeLayer.children) {
+            if (child !== activeLayer.layerData.backgroundGraphics && 
+                child !== activeLayer.layerData.maskSprite) {
+                childrenToRemove.push(child);
+            }
+        }
         
-        // History登録
+        if (childrenToRemove.length === 0) return;
+        
+        // History登録（childrenの参照を保持）
         if (window.History && !window.History._manager?.isApplying) {
-            const pathsBackup = structuredClone(paths);
+            const pathsBackup = structuredClone(activeLayer.layerData.paths);
+            const childrenBackup = childrenToRemove.map(child => ({
+                child: child,
+                index: activeLayer.children.indexOf(child)
+            }));
             const layerIndex = layerSystem.activeLayerIndex;
+            const layerId = activeLayer.layerData.id;
             
             const entry = {
                 name: 'layer-delete-drawings',
@@ -338,12 +348,9 @@ window.KeyboardHandler = (function() {
                     clearLayerDrawings(layerSystem, activeLayer);
                 },
                 undo: () => {
-                    restoreLayerDrawings(layerSystem, activeLayer, pathsBackup, layerIndex);
+                    restoreLayerDrawings(layerSystem, activeLayer, pathsBackup, childrenBackup, layerIndex);
                 },
-                meta: { 
-                    layerId: activeLayer.layerData.id,
-                    pathCount: pathsBackup.length
-                }
+                meta: { layerId, childCount: childrenToRemove.length }
             };
             
             window.History.push(entry);
@@ -363,16 +370,15 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        childrenToRemove.forEach(child => {
+        // 🔧 destroy()を呼ばずにremoveのみ（Undo/Redo用に保持）
+        childrenToRemove.forEach((child) => {
             try {
                 layer.removeChild(child);
-                if (child.destroy && typeof child.destroy === 'function') {
-                    child.destroy({ children: true, texture: false, baseTexture: false });
-                }
             } catch (error) {}
         });
         
         layer.layerData.paths = [];
+        
         layerSystem.requestThumbnailUpdate(layerSystem.activeLayerIndex);
         
         if (window.TegakiEventBus) {
@@ -383,21 +389,39 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    function restoreLayerDrawings(layerSystem, layer, pathsBackup, layerIndex) {
-        if (!layer?.layerData || !pathsBackup) return;
+    function restoreLayerDrawings(layerSystem, layer, pathsBackup, childrenBackup, layerIndex) {
+        if (!layer?.layerData) return;
         
-        clearLayerDrawings(layerSystem, layer);
-        layer.layerData.paths = [];
+        // まず現在のchildrenをクリア（destroyはしない - 復元するため）
+        const currentChildren = [];
+        for (let child of layer.children) {
+            if (child !== layer.layerData.backgroundGraphics && 
+                child !== layer.layerData.maskSprite) {
+                currentChildren.push(child);
+            }
+        }
         
-        for (let pathData of pathsBackup) {
-            try {
-                const rebuildSuccess = layerSystem.rebuildPathGraphics(pathData);
-                
-                if (rebuildSuccess && pathData.graphics) {
-                    layer.layerData.paths.push(pathData);
-                    layer.addChild(pathData.graphics);
+        currentChildren.forEach(child => {
+            layer.removeChild(child);
+        });
+        
+        // pathsを復元
+        layer.layerData.paths = structuredClone(pathsBackup);
+        
+        // childrenを復元（インデックス順）
+        if (childrenBackup && childrenBackup.length > 0) {
+            childrenBackup.sort((a, b) => a.index - b.index);
+            childrenBackup.forEach(({ child, index }) => {
+                try {
+                    if (index >= 0 && index < layer.children.length) {
+                        layer.addChildAt(child, index);
+                    } else {
+                        layer.addChild(child);
+                    }
+                } catch (error) {
+                    layer.addChild(child);
                 }
-            } catch (error) {}
+            });
         }
         
         layerSystem.requestThumbnailUpdate(layerIndex);
@@ -406,7 +430,7 @@ window.KeyboardHandler = (function() {
             window.TegakiEventBus.emit('layer:drawings-restored', {
                 layerId: layer.layerData.id,
                 layerIndex: layerIndex,
-                pathCount: pathsBackup.length
+                childCount: childrenBackup?.length || 0
             });
         }
     }
@@ -459,5 +483,7 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js Phase 5 loaded');
-console.log('   🔧 FRAME_PREV/NEXT: メソッド名修正完了');
+console.log('✅ keyboard-handler.js Phase 6完成版 loaded');
+console.log('   ✅ BS/DEL: 描画削除が正常動作');
+console.log('   ✅ Undo/Redo: children参照保持で完全復元');
+console.log('   🔧 反転処理: 画像消失問題解決');
