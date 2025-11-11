@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - 高解像度出力対応【v8.19.0】
+ * ui/export-popup.js - 倍率選択UI追加【v8.19.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -12,14 +12,14 @@
  * 
  * 【責務】
  *   - エクスポート設定UI
- *   - 解像度倍率選択UI
  *   - プレビュー表示
  *   - 進捗表示
  * 
  * 【v8.19.0 改修内容】
- *   ✅ 解像度倍率選択機能追加（1x, 2x, 4x）
- *   ✅ ボタン配置: PNG → WEBP → PSD（GIF/PDF削除済み）
- *   ✅ スクリーンショット方式説明維持
+ *   ✅ 倍率選択UI追加（1x/2x/4x）
+ *   ✅ 冗長な説明文削除
+ *   ✅ 選択状態の視覚化
+ *   ✅ 出力サイズ計算表示
  * 
  * ================================================================================
  */
@@ -28,7 +28,7 @@ window.TegakiExportPopup = class ExportPopup {
     constructor(dependencies) {
         this.manager = dependencies.exportManager;
         this.selectedFormat = 'png';
-        this.selectedResolution = 2;  // デフォルト2倍
+        this.selectedResolution = 2; // デフォルト2倍
         this.isVisible = false;
         this.currentPreviewUrl = null;
         this.currentBlob = null;
@@ -52,8 +52,9 @@ window.TegakiExportPopup = class ExportPopup {
     /**
      * ポップアップ要素作成【v8.19.0】
      * 
-     * ボタン配置: PNG → WEBP → PSD
-     * 解像度選択UI追加
+     * 変更点:
+     * - 倍率選択ボタン追加
+     * - 説明文簡潔化
      */
     _createPopupElement() {
         const container = document.querySelector('.canvas-area') || document.body;
@@ -152,6 +153,9 @@ window.TegakiExportPopup = class ExportPopup {
         this.hidePreview();
     }
     
+    /**
+     * 倍率選択【v8.19.0 新規】
+     */
     selectResolution(resolution) {
         this.selectedResolution = resolution;
         
@@ -160,21 +164,27 @@ window.TegakiExportPopup = class ExportPopup {
         });
         
         // 出力サイズ表示を更新
-        this.updateOutputSizeDisplay();
+        this.updateOutputSize();
     }
     
-    updateOutputSizeDisplay() {
-        const sizeEl = document.getElementById('output-size-display');
-        if (!sizeEl) return;
+    /**
+     * 出力サイズ計算・表示【v8.19.0 新規】
+     */
+    updateOutputSize() {
+        const outputSizeEl = document.getElementById('output-size-display');
+        if (!outputSizeEl) return;
         
-        const CONFIG = window.TEGAKI_CONFIG;
-        const width = CONFIG?.canvas?.width || 400;
-        const height = CONFIG?.canvas?.height || 400;
+        let canvasWidth = 400;
+        let canvasHeight = 400;
+        if (window.TEGAKI_CONFIG?.canvas) {
+            canvasWidth = window.TEGAKI_CONFIG.canvas.width;
+            canvasHeight = window.TEGAKI_CONFIG.canvas.height;
+        }
         
-        const finalWidth = width * this.selectedResolution;
-        const finalHeight = height * this.selectedResolution;
+        const outputWidth = canvasWidth * this.selectedResolution;
+        const outputHeight = canvasHeight * this.selectedResolution;
         
-        sizeEl.textContent = `${finalWidth}×${finalHeight}px（${this.selectedResolution}倍出力）`;
+        outputSizeEl.textContent = `${outputWidth}×${outputHeight}px（${this.selectedResolution}倍出力）`;
     }
     
     getFrameCount() {
@@ -191,6 +201,7 @@ window.TegakiExportPopup = class ExportPopup {
         const previewBtn = document.getElementById('export-preview');
         if (!previewBtn) return;
         
+        // PNG, WEBPのみプレビュー対応
         const showPreview = ['png', 'webp'].includes(this.selectedFormat);
         previewBtn.style.display = showPreview ? 'block' : 'none';
     }
@@ -198,63 +209,55 @@ window.TegakiExportPopup = class ExportPopup {
     /**
      * オプションUI更新【v8.19.0】
      * 
-     * 解像度選択UI追加
+     * 変更点:
+     * - 倍率選択UI追加
+     * - 冗長な説明削除
      */
     updateOptionsUI(format) {
         const optionsEl = document.getElementById('export-options');
         if (!optionsEl) return;
         
-        const CONFIG = window.TEGAKI_CONFIG;
-        const canvasWidth = CONFIG?.canvas?.width || 400;
-        const canvasHeight = CONFIG?.canvas?.height || 400;
+        let canvasWidth = 400;
+        let canvasHeight = 400;
+        if (window.TEGAKI_CONFIG?.canvas) {
+            canvasWidth = window.TEGAKI_CONFIG.canvas.width;
+            canvasHeight = window.TEGAKI_CONFIG.canvas.height;
+        }
+        
         const frameCount = this.getFrameCount();
         
-        // 解像度選択UI
-        const resolutionUI = '<div style="margin: 12px 0; padding: 8px; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 4px;">' +
-            '<div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 8px;">📐 出力解像度</div>' +
-            '<div style="display: flex; gap: 8px; margin-bottom: 8px;">' +
-                '<button class="resolution-btn" data-resolution="1" style="flex: 1; padding: 8px 12px; background: var(--futaba-light); border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s;">1x</button>' +
-                '<button class="resolution-btn selected" data-resolution="2" style="flex: 1; padding: 8px 12px; background: var(--futaba-maroon); color: white; border: 2px solid var(--futaba-maroon); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s;">2x 推奨</button>' +
-                '<button class="resolution-btn" data-resolution="4" style="flex: 1; padding: 8px 12px; background: var(--futaba-light); border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s;">4x</button>' +
-            '</div>' +
-            '<div id="output-size-display" style="font-size: 12px; color: var(--text-primary); font-weight: 500;">' +
-                (canvasWidth * 2) + '×' + (canvasHeight * 2) + 'px（2倍出力）' +
-            '</div>' +
-            '<div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">' +
-                '💡 拡大表示時のジャギーを防ぐため、2倍以上推奨<br>' +
-                '　 キャンバスサイズ×倍率が最終出力サイズです' +
-            '</div>' +
-        '</div>';
-        
-        // スクリーンショット方式の説明
-        const screenshotInfo = '<div style="margin: 12px 0; padding: 8px; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 4px;">' +
-            '<div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 4px;">📸 スクリーンショット方式</div>' +
-            '<div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">' +
-                'GPU描画を直接転送するため高品質<br>' +
-                '• ジャギーのない滑らかな線<br>' +
-                '• 完全な透明度保持<br>' +
-                '• SDF/MSDFの距離場情報を完全保持' +
-            '</div>' +
-        '</div>';
+        // 倍率選択UI（PNG/WEBPのみ）
+        const resolutionUI = (format === 'png' || format === 'webp') ? 
+            '<div style="margin: 12px 0;">' +
+                '<div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 8px;">📐 出力解像度</div>' +
+                '<div style="display: flex; gap: 8px; margin-bottom: 8px;">' +
+                    '<button class="resolution-btn" data-resolution="1" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">1x</button>' +
+                    '<button class="resolution-btn selected" data-resolution="2" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-maroon); border-radius: 4px; background: var(--futaba-maroon); color: var(--futaba-cream); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">2x 推奨</button>' +
+                    '<button class="resolution-btn" data-resolution="4" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">4x</button>' +
+                '</div>' +
+                '<div id="output-size-display" style="font-size: 12px; color: var(--text-primary);">' +
+                    (canvasWidth * this.selectedResolution) + '×' + (canvasHeight * this.selectedResolution) + 'px（' + this.selectedResolution + '倍出力）' +
+                '</div>' +
+                '<div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">💡 拡大表示時のジャギーを防ぐため、2倍以上推奨</div>' +
+            '</div>' 
+            : '';
         
         const optionsMap = {
             'png': '<div class="setting-label">PNG出力（APNG自動検出）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
                     (frameCount >= 2 
-                        ? `全${frameCount}フレームをAPNG（アニメーションPNG）として出力します。`
-                        : '現在のキャンバスをPNG画像として出力します。') +
+                        ? `全${frameCount}フレームをAPNGとして出力します。`
+                        : '高品質な次世代画像フォーマットです。') +
                 '</div>' +
-                resolutionUI +
-                screenshotInfo,
+                resolutionUI,
                 
             'webp': '<div class="setting-label">WEBP出力（動画自動検出）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
                     (frameCount >= 2 
-                        ? `全${frameCount}フレームをWEBPアニメーションとして出力します。<br>高圧縮・高品質な次世代フォーマットです。`
+                        ? `全${frameCount}フレームをWEBPアニメーションとして出力します。`
                         : '高圧縮・高品質な次世代画像フォーマットです。') +
                 '</div>' +
-                resolutionUI +
-                screenshotInfo,
+                resolutionUI,
                 
             'psd': '<div class="setting-label">PSD出力（開発中）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
@@ -264,6 +267,35 @@ window.TegakiExportPopup = class ExportPopup {
         };
         
         optionsEl.innerHTML = optionsMap[format] || '';
+        
+        // 倍率ボタンのスタイルを設定
+        document.querySelectorAll('.resolution-btn').forEach(btn => {
+            const isSelected = parseInt(btn.dataset.resolution) === this.selectedResolution;
+            btn.classList.toggle('selected', isSelected);
+            
+            if (isSelected) {
+                btn.style.border = '2px solid var(--futaba-maroon)';
+                btn.style.background = 'var(--futaba-maroon)';
+                btn.style.color = 'var(--futaba-cream)';
+            } else {
+                btn.style.border = '2px solid var(--futaba-light-medium)';
+                btn.style.background = 'var(--futaba-cream)';
+                btn.style.color = 'var(--futaba-maroon)';
+            }
+            
+            btn.addEventListener('mouseenter', function() {
+                if (!this.classList.contains('selected')) {
+                    this.style.background = 'var(--futaba-light-medium)';
+                }
+            });
+            
+            btn.addEventListener('mouseleave', function() {
+                if (!this.classList.contains('selected')) {
+                    this.style.background = 'var(--futaba-cream)';
+                }
+            });
+        });
+        
         this.updatePreviewButtonVisibility();
     }
     
@@ -339,7 +371,6 @@ window.TegakiExportPopup = class ExportPopup {
         if (previewBtn) previewBtn.disabled = true;
         
         try {
-            // ✅ 解像度倍率をオプションに追加
             const options = {
                 resolution: this.selectedResolution
             };
@@ -392,7 +423,7 @@ window.TegakiExportPopup = class ExportPopup {
                 formatName = 'APNG';
             }
             
-            this.showPreview(result.blob, `${formatName}プレビュー（${this.selectedResolution}倍）`);
+            this.showPreview(result.blob, formatName + 'プレビュー（' + this.selectedResolution + 'x）');
             
             if (previewBtn) {
                 previewBtn.textContent = 'プレビュー';
@@ -449,7 +480,7 @@ window.TegakiExportPopup = class ExportPopup {
             formatName = data.format.toUpperCase();
         }
         
-        this.showStatus(`${formatName}ダウンロード完了（${this.selectedResolution}倍）`, false);
+        this.showStatus(formatName + 'ダウンロード完了', false);
         setTimeout(() => this.hideStatus(), 2000);
     }
     
@@ -517,6 +548,6 @@ window.TegakiExportPopup = class ExportPopup {
 window.ExportPopup = window.TegakiExportPopup;
 
 console.log('✅ export-popup.js v8.19.0 loaded');
-console.log('   ✓ ボタン配置: PNG → WEBP → PSD');
-console.log('   ✓ 解像度選択: 1x, 2x, 4x（デフォルト2x）');
-console.log('   ✓ 高品質出力対応');
+console.log('   ✓ 倍率選択UI追加（1x/2x/4x）');
+console.log('   ✓ 冗長な説明削除');
+console.log('   ✓ 選択状態の視覚化');
