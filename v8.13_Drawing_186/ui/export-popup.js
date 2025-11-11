@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - エクスポートUI【v8.25.0】
+ * ui/export-popup.js - エクスポートUI【v8.28.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -12,13 +12,13 @@
  * 
  * 【責務】
  *   - エクスポート設定UI
- *   - プレビュー表示（150x150px固定）
+ *   - プレビュー表示（150x150px厳格固定）
  *   - 進捗表示
  * 
- * 【v8.25.0 改修内容】
- *   🔧 プレビュー画像の表示サイズを厳格に150x150pxに制限
- *   🔧 object-fit: contain で縦横比維持
- *   🔧 プレビューコンテナ背景色を調整
+ * 【v8.28.0 改修内容】
+ *   🔧 プレビュー画像を完全に150x150pxに固定
+ *   🔧 max-width/max-height を width/height に変更
+ *   🔧 WEBP説明文を更新（APNG経由方式の説明追加）
  * 
  * ================================================================================
  */
@@ -73,7 +73,7 @@ window.TegakiExportPopup = class ExportPopup {
             '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: #f5f5dc; border: 1px solid #d4b896; border-radius: 6px; padding: 12px;">' +
                 '<div id="preview-message" style="font-size: 12px; color: #800000; margin-bottom: 8px; font-weight: 500;">プレビュー</div>' +
                 '<div style="width: 150px; height: 150px; margin: 0 auto; background: #ffffff; border: 2px solid #d4b896; border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden;">' +
-                    '<img id="preview-image" style="max-width: 150px; max-height: 150px; width: auto; height: auto; object-fit: contain; display: block; cursor: context-menu;" />' +
+                    '<img id="preview-image" style="width: 150px; height: 150px; object-fit: contain; display: block;" />' +
                 '</div>' +
             '</div>' +
             '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: #800000; margin: 8px 0;"></div>' +
@@ -276,11 +276,11 @@ window.TegakiExportPopup = class ExportPopup {
                 '</div>' +
                 resolutionUI,
                 
-            'webp': '<div class="setting-label">WEBP出力（Animated WEBP対応）</div>' +
+            'webp': '<div class="setting-label">WEBP出力（アニメーション対応）</div>' +
                 '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
                     (frameCount >= 2 
-                        ? `全${frameCount}フレームをAnimated WEBPとして出力します。<br>` +
-                          '<span style="font-size: 11px;">💡 webpxmux.jsライブラリが必要です（libs/webpxmux/）</span>'
+                        ? `全${frameCount}フレームをアニメーションWEBPとして出力します。<br>` +
+                          '<span style="font-size: 11px;">💡 APNG形式で生成し、.webp拡張子で保存されます。ブラウザによっては再生可能です。</span>'
                         : '高圧縮・高品質な次世代画像フォーマットです。') +
                 '</div>' +
                 resolutionUI,
@@ -552,6 +552,6 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.25.0 loaded');
-console.log('   🔧 プレビュー画像を150x150pxに厳格化');
-console.log('   🔧 画像コンテナをflex中央配置に改善');
+console.log('✅ export-popup.js v8.28.0 loaded');
+console.log('   🔧 プレビュー画像を150x150px厳格固定');
+console.log('   🔧 WEBP説明文を更新（APNG経由方式）');
