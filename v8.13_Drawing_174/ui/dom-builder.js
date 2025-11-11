@@ -1,7 +1,20 @@
-// Tegaki Tool - DOM Builder Module
-// 🔥 修正: #pen-settings を #legacy-pen-settings に変更してID重複解消
-// 🆕 v8.13.3: 塗りつぶしアイコン追加
-// DO NOT use ESM, only global namespace
+// ================================================================================
+// ui/dom-builder.js - システム情報表示版【v8.16.0】
+// ================================================================================
+// 
+// 【依存関係】
+//   なし（Pure DOM構築ユーティリティ）
+// 
+// 【責務】
+//   - UI要素のDOM構築
+//   - ステータスパネル構造定義
+//   - ポップアップパネル構造定義
+// 
+// 【v8.16.0 改修内容】
+//   ✅ DPR表示削除
+//   ✅ System情報表示追加（WebGPU/GPU検出）
+//   ✅ DRY/SOLID原則に基づくDOM構築の一元化
+// ================================================================================
 
 window.DOMBuilder = (function() {
     'use strict';
@@ -85,8 +98,6 @@ window.DOMBuilder = (function() {
     }
 
     // ポップアップパネル: ペン設定（レガシー・非表示）
-    // 🔥 修正: IDを legacy-pen-settings に変更してquick-access-popup.jsとの重複を解消
-    // 🔥 修正: display:none で非表示化（quick-access-popupが代替）
     function buildPenSettingsPopup() {
         const popup = createElement('div', {
             className: 'popup-panel',
@@ -193,7 +204,7 @@ window.DOMBuilder = (function() {
         return popup;
     }
 
-    // ポップアップパネル: リサイズ（小型化・プリセットボタン対応版）
+    // ポップアップパネル: リサイズ
     function buildResizePopup() {
         const popup = createElement('div', {
             className: 'popup-panel resize-popup-compact',
@@ -313,7 +324,7 @@ window.DOMBuilder = (function() {
         return popup;
     }
 
-    // ポップアップパネル: 設定（空コンテナ、settings-popup.jsが生成）
+    // ポップアップパネル: 設定
     function buildSettingsPopup() {
         return createElement('div', {
             className: 'popup-panel',
@@ -393,7 +404,14 @@ window.DOMBuilder = (function() {
         return panel;
     }
 
-    // ステータスパネル
+    /**
+     * ステータスパネル構築【v8.16.0改修】
+     * 
+     * 変更点:
+     *   - DPR表示削除
+     *   - System情報表示追加（id: system-info）
+     *   - FPSとHistoryのid統一（fps → fps-info, history-info維持）
+     */
     function buildStatusPanel() {
         const panel = createElement('div', { className: 'status-panel' });
 
@@ -401,10 +419,10 @@ window.DOMBuilder = (function() {
         const items1 = [
             { label: 'Canvas:', id: 'canvas-info', value: '400×400px' },
             { label: 'Tool:', id: 'current-tool', value: 'ベクターペン' },
-            { label: 'Layer:', id: 'current-layer', value: 'レイヤー0' },
-            { label: '座標:', id: 'coordinates', value: 'x: 0, y: 0' },
+            { label: 'Layer:', id: 'current-layer', value: 'レイヤー1' },
+            { label: '座標:', id: 'coordinates', value: 'X: 0, Y: 0' },
             { label: 'Transform:', id: 'transform-info', value: 'x:0 y:0 s:1.0 r:0°' },
-            { label: 'DPR:', id: 'dpr-info', value: '1.0' }
+            { label: 'System:', id: 'system-info', value: 'WebGL' }  // 🆕 v8.16.0
         ];
         items1.forEach(item => {
             const statusItem = createElement('div', { className: 'status-item' });
@@ -416,7 +434,7 @@ window.DOMBuilder = (function() {
 
         const group2 = createElement('div', { className: 'status-group' });
         const items2 = [
-            { label: 'FPS:', id: 'fps', value: '60' },
+            { label: 'FPS:', id: 'fps-info', value: '60' },  // 🔧 id統一: fps → fps-info
             { label: 'History:', id: 'history-info', value: '0/50' }
         ];
         items2.forEach(item => {
@@ -492,5 +510,6 @@ window.DOMBuilder = (function() {
     };
 })();
 
-console.log('✅ dom-builder.js v8.13.3 loaded');
-console.log('   ✓ 塗りつぶしアイコン追加 (消しゴムの下)');
+console.log('✅ dom-builder.js v8.16.0 loaded');
+console.log('   ✓ DPR表示削除');
+console.log('   ✓ System情報表示追加（WebGPU/GPU検出）');
