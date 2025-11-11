@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - futaba-maroon統一版【v8.22.0】
+ * ui/export-popup.js - futaba-maroon統一版【v8.24.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -12,8 +12,12 @@
  * 
  * 【責務】
  *   - エクスポート設定UI
- *   - プレビュー表示
+ *   - プレビュー表示（150x150px固定）
  *   - 進捗表示
+ * 
+ * 【v8.24.0 改修内容】
+ *   🔧 プレビュー画像サイズを 150x150px に変更
+ *   🔧 WEBP説明テキストを「Animated WEBP」対応に更新
  * 
  * 【v8.22.0 改修内容】
  *   🔧 PNG/WEBP/PSDボタンの文字色を futaba-maroon に統一
@@ -69,9 +73,9 @@ window.TegakiExportPopup = class ExportPopup {
                 '<div class="progress-bar"><div class="progress-fill"></div></div>' +
                 '<div class="progress-text">0%</div>' +
             '</div>' +
-            '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 8px; max-height: 230px; overflow: auto;">' +
+            '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 8px;">' +
                 '<div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">プレビュー</div>' +
-                '<img id="preview-image" style="max-width: 200px; max-height: 200px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />' +
+                '<img id="preview-image" style="max-width: 150px; max-height: 150px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />' +
             '</div>' +
             '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--futaba-maroon); margin: 8px 0;"></div>' +
             '<div class="export-actions">' +
@@ -82,7 +86,6 @@ window.TegakiExportPopup = class ExportPopup {
         container.appendChild(popup);
         this.popup = popup;
         
-        // 🔧 v8.22.0: フォーマットボタンのスタイル初期化
         this._initializeFormatButtons();
         this.updateOptionsUI(this.selectedFormat);
     }
@@ -280,11 +283,11 @@ window.TegakiExportPopup = class ExportPopup {
                 '</div>' +
                 resolutionUI,
                 
-            'webp': '<div class="setting-label">WEBP出力（動画自動検出）</div>' +
+            'webp': '<div class="setting-label">WEBP出力（Animated WEBP対応）</div>' +
                 '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
                     (frameCount >= 2 
-                        ? `全${frameCount}フレームを横並びスプライトシートとして出力します。<br>` +
-                          '<span style="font-size: 11px;">💡 真のアニメーション出力にはAPNGをご利用ください。</span>'
+                        ? `全${frameCount}フレームをAnimated WEBPとして出力します。<br>` +
+                          '<span style="font-size: 11px;">💡 webpxmux.jsライブラリが必要です（libs/webpxmux/）</span>'
                         : '高圧縮・高品質な次世代画像フォーマットです。') +
                 '</div>' +
                 resolutionUI,
@@ -426,6 +429,8 @@ window.TegakiExportPopup = class ExportPopup {
             let formatName = this.selectedFormat.toUpperCase();
             if (result.format === 'apng') {
                 formatName = 'APNG';
+            } else if (result.format === 'animated-webp') {
+                formatName = 'Animated WEBP';
             }
             
             this.showPreview(result.blob, formatName + 'プレビュー（' + this.selectedResolution + 'x）');
@@ -479,8 +484,10 @@ window.TegakiExportPopup = class ExportPopup {
         let formatName = 'PNG';
         if (data.format === 'apng') {
             formatName = 'APNG';
+        } else if (data.format === 'animated-webp') {
+            formatName = 'Animated WEBP';
         } else if (data.format === 'webp') {
-            formatName = data.type === 'animated' ? 'WEBP動画' : 'WEBP';
+            formatName = 'WEBP';
         } else if (data.format) {
             formatName = data.format.toUpperCase();
         }
@@ -552,4 +559,4 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.22.0 loaded');
+console.log('✅ export-popup.js v8.24.0 loaded');

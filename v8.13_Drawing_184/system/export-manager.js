@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/export-manager.js - スクリーンショット方式統合【v8.18.0】
+ * system/export-manager.js - スクリーンショット方式統合【v8.24.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -11,15 +11,19 @@
  * 
  * 【依存関係 - Children】
  *   - png-exporter.js (PNG出力)
- *   - webp-exporter.js (WEBP出力)
+ *   - webp-exporter.js (WEBP/Animated WEBP出力)
  *   - psd-exporter.js (PSD出力 - Phase 5: 基盤のみ)
  *   - apng-exporter.js (APNG出力)
  *   - mp4-exporter.js (MP4出力)
  * 
  * 【責務】
  *   - エクスポーター統合管理
- *   - フォーマット自動判定
+ *   - フォーマット自動判定（PNG→APNG / WEBP→Animated WEBP）
  *   - ファイルダウンロード/クリップボード
+ * 
+ * 【v8.24.0 改修内容】
+ *   🔧 WEBP自動判定追加（フレーム数≧2でAnimated WEBP）
+ *   🔧 Animated WEBP対応のためwebp-exporter統合
  * 
  * 【v8.18.0 重要改修 - スクリーンショット方式】
  *   ✅ renderToCanvas() を廃止
@@ -58,6 +62,7 @@ window.ExportManager = (function() {
          * エクスポータ登録
          * 
          * v8.18.0: WEBP/PSD追加、GIF削除
+         * v8.24.0: WEBP自動判定追加
          */
         registerExporter(format, exporter) {
             this.exporters[format] = exporter;
@@ -74,17 +79,49 @@ window.ExportManager = (function() {
         }
         
         /**
+         * Animated WEBP自動検出（WEBP用）
+         * v8.24.0追加
+         */
+        _shouldUseAnimatedWebP() {
+            const animData = this.animationSystem?.getAnimationData?.();
+            const frameCount = animData?.frames?.length || 0;
+            return frameCount >= 2;
+        }
+        
+        /**
+         * キャンバスサイズ取得
+         */
+        getCanvasSize() {
+            const config = window.TEGAKI_CONFIG?.canvas;
+            return {
+                width: config?.width || 400,
+                height: config?.height || 400
+            };
+        }
+        
+        /**
          * エクスポート実行
          * 
-         * PNGの場合はフレーム数でAPNG自動切替
+         * PNG: フレーム数≧2で自動APNG
+         * WEBP: フレーム数≧2で自動Animated WEBP
          */
         async export(format, options = {}) {
             let targetFormat = format;
+            let actualFormat = format;
             
             // PNG → APNG自動切替
             if (format === 'png' && this._shouldUseAPNG()) {
                 targetFormat = 'apng';
+                actualFormat = 'apng';
                 console.log('🎬 Auto-switching: PNG → APNG (multiple frames detected)');
+            }
+            
+            // WEBP → Animated WEBP判定（統一エクスポータ使用）
+            if (format === 'webp' && this._shouldUseAnimatedWebP()) {
+                targetFormat = 'webp'; // エクスポータは同じ
+                actualFormat = 'animated-webp';
+                options.animated = true; // フラグで判定
+                console.log('🎬 Auto-switching: WEBP → Animated WEBP (multiple frames detected)');
             }
             
             const exporter = this.exporters[targetFormat];
@@ -92,36 +129,129 @@ window.ExportManager = (function() {
                 throw new Error(`Unsupported format: ${targetFormat}`);
             }
             
-            this.currentExport = { format: targetFormat, progress: 0 };
+            this.currentExport = { format: actualFormat, progress: 0 };
             
             try {
-                const result = await exporter.export(options);
+                let blob;
+                
+                // WEBPの場合はアニメーション判定
+                if (format === 'webp' && options.animated) {
+                    blob = await exporter.generateAnimatedWebP(options);
+                } else {
+                    blob = await exporter.generateStaticWebP 
+                        ? await exporter.generateStaticWebP(options) 
+                        : await exporter.export(options);
+                }
+                
+                // ダウンロード
+                const timestamp = this._getTimestamp();
+                const filename = this._generateFilename(actualFormat, timestamp);
+                this.downloadFile(blob, filename);
+                
+                // 完了通知
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:completed', {
+                        format: actualFormat,
+                        filename: filename
+                    });
+                }
+                
                 this.currentExport = null;
-                return result;
+                return { blob, format: actualFormat, filename };
+                
             } catch (error) {
                 this.currentExport = null;
+                
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:failed', {
+                        format: actualFormat,
+                        error: error.message
+                    });
+                }
+                
                 throw error;
             }
         }
         
         /**
          * プレビュー生成
+         * v8.24.0: Animated WEBP対応
          */
         async generatePreview(format, options = {}) {
             let targetFormat = format;
+            let actualFormat = format;
             
             // PNG → APNG自動切替
             if (format === 'png' && this._shouldUseAPNG()) {
                 targetFormat = 'apng';
+                actualFormat = 'apng';
+            }
+            
+            // WEBP → Animated WEBP判定
+            if (format === 'webp' && this._shouldUseAnimatedWebP()) {
+                targetFormat = 'webp';
+                actualFormat = 'animated-webp';
+                options.animated = true;
             }
             
             const exporter = this.exporters[targetFormat];
-            if (!exporter || !exporter.generateBlob) {
+            if (!exporter) {
                 throw new Error(`Preview not supported for format: ${targetFormat}`);
             }
             
-            const blob = await exporter.generateBlob(options);
-            return { blob, format: targetFormat };
+            let blob;
+            
+            // エクスポータがgeneratePreviewを持っていればそれを使用
+            if (exporter.generatePreview) {
+                blob = await exporter.generatePreview(options);
+            } else if (format === 'webp' && options.animated && exporter.generateAnimatedWebP) {
+                blob = await exporter.generateAnimatedWebP({
+                    ...options,
+                    resolution: 0.5, // プレビューは低解像度
+                    quality: 70
+                });
+            } else if (exporter.generateStaticWebP) {
+                blob = await exporter.generateStaticWebP({
+                    ...options,
+                    resolution: 0.5,
+                    quality: 70
+                });
+            } else if (exporter.generateBlob) {
+                blob = await exporter.generateBlob(options);
+            } else if (exporter.export) {
+                blob = await exporter.export(options);
+            } else {
+                throw new Error(`No suitable method for preview generation: ${targetFormat}`);
+            }
+            
+            return { blob, format: actualFormat };
+        }
+        
+        /**
+         * タイムスタンプ生成
+         */
+        _getTimestamp() {
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            
+            return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
+                   `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        }
+        
+        /**
+         * ファイル名生成
+         */
+        _generateFilename(format, timestamp) {
+            const ext = {
+                'png': '.png',
+                'apng': '.png',
+                'webp': '.webp',
+                'animated-webp': '.webp',
+                'psd': '.psd',
+                'mp4': '.mp4'
+            }[format] || '.png';
+            
+            return `tegaki_${timestamp}${ext}`;
         }
         
         /**
@@ -148,10 +278,16 @@ window.ExportManager = (function() {
         
         async exportAsWebPBlob(options = {}) {
             const exporter = this.exporters['webp'];
-            if (!exporter?.generateBlob) {
+            if (!exporter) {
                 throw new Error('WEBP exporter not available');
             }
-            return await exporter.generateBlob(options);
+            
+            // アニメーション判定
+            if (this._shouldUseAnimatedWebP()) {
+                return await exporter.generateAnimatedWebP(options);
+            } else {
+                return await exporter.generateStaticWebP(options);
+            }
         }
         
         async exportAsPSDBlob(options = {}) {
@@ -287,7 +423,7 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js v8.18.0 loaded (スクリーンショット方式統合)');
-console.log('   🎨 renderToCanvas() 廃止（後方互換あり）');
-console.log('   ✓ WEBP/PSDエクスポータ対応');
-console.log('   ❌ GIFエクスポータ削除');
+console.log('✅ export-manager.js v8.24.0 loaded (Animated WEBP対応)');
+console.log('   🎨 WEBP自動判定追加（フレーム数≧2）');
+console.log('   🎬 PNG→APNG / WEBP→Animated WEBP 自動切替');
+console.log('   ✓ webpxmux.js統合対応');
