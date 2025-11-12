@@ -1,0 +1,1134 @@
+config.js:519 ✅ config.js v8.14.1 Phase 1 loaded
+config.js:520    ✅ PerfectFreehand設定追加
+config.js:521    ✓ ポリゴン生成パラメータ定義
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js Phase 2 loaded
+    🔧 exportResolution 設定項目追加
+ ✅ layer-transform.js Phase 6 loaded
+    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 7完成版 loaded
+    🚨 addPathToActiveLayer(): History登録を削除
+    🚨 brush-core.js にHistory登録を統一
+    ✅ DRY原則に基づく責務分担の明確化
+ ✅ drawing-clipboard.js Phase 1 loaded
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
+ ✅ webgpu-compute-sdf.js (Phase 1閉領域検出修正版) loaded
+ ✅ webgpu-mask-layer.js (Phase 2 GPU完全版) loaded
+    ✓ GPU Compute Shaderでポリゴンラスタライズ
+    ✓ マスク加算/減算
+    ✓ CPU版フォールバック対応
+ ✅ system/drawing/msdf/msdf-brush-shader.js loaded
+ ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ stroke-recorder.js (Phase 1) loaded
+    ✓ PerfectFreehand統合
+    ✓ ポリゴン生成対応
+    ✓ 後方互換性維持
+ ✅ [PolygonGenerator] PerfectFreehand initialized
+ ✅ polygon-generator.js Phase 1完全修正版 loaded
+    ✓ PerfectFreehand正しい参照
+    ✓ リニア設定最適化
+    ✓ フォールバック削除
+ ✅ stroke-recorder.js (Phase 1) loaded
+    ✓ PerfectFreehand統合
+    ✓ ポリゴン生成対応
+    ✓ 後方互換性維持
+ ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
+    ✓ 消しゴムモード削除
+    ✓ ペン描画に特化
+ ✅ stroke-renderer.js (Phase 3 統合版) loaded
+    ✅ ペン/消しゴムマスク統合
+    ✅ blendMode完全排除
+    ❌ Legacy描画削除
+ ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+brush-core.js:383 ✅ brush-core.js Phase 7-FIX loaded
+brush-core.js:384    🚨 pathsData配列不使用、graphics参照のみで管理
+brush-core.js:385    🚨 undo時の複数削除問題を解決
+brush-core.js:386    ✅ 1ストローク = 1 History entry
+fill-tool.js:334 ✅ fill-tool.js (Phase 1完全修正版) loaded
+drawing-engine.js:244 ✅ drawing-engine.js (Phase 4 - Fill対応版) loaded
+drawing-engine.js:245    ✓ fill モード時に canvas:pointerdown イベント発行
+drawing-engine.js:246    ✓ localX/localY を含むイベントペイロード
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
+png-exporter.js:258    🔧 Blob生成の確実性向上
+webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
+dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
+slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
+slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
+slider-utils.js:237    🔧 requestAnimationFrame最適化
+keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
+keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
+keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+layer-panel-renderer.js:663 ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
+layer-panel-renderer.js:664    ✓ layer:panel-update-requested イベントリスナー追加
+layer-panel-renderer.js:665    ✓ LayerSystemからの直接呼び出し完全排除
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
+settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
+ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
+ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
+core-runtime.js:570 ✅ core-runtime.js (Phase 4 - Fill対応版) loaded
+core-runtime.js:571    ✓ api.tool.setFill() 追加
+core-runtime.js:572    ✓ api.tool.set("fill") サポート
+core-engine.js:706 ✅ core-engine.js v8.32.0 loaded
+core-initializer.js:437 ✅ core-initializer.js (Phase 2改修版 - ExportManager初期化一元化) loaded
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+index.html:117 ✅ Application initialized (Phase 4-B: MSDF完全統合版)
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+/**
+ * ================================================================================
+ * PerfectFreehand + WebGPUMask デバッグコマンド集 (完全修正版)
+ * ================================================================================
+ */
+
+// ========================================
+// Phase 1: PerfectFreehand統合状況確認
+// ========================================
+window.debugPhase1 = function() {
+    console.log('%c=== Phase 1: PerfectFreehand統合状況 ===', 'color: #00ff00; font-weight: bold; font-size: 14px;');
+    
+    // 1. PerfectFreehand本体
+    console.log('\n📦 1. PerfectFreehand本体');
+    console.log('  - PerfectFreehand:', typeof PerfectFreehand);
+    console.log('  - PerfectFreehand.default:', typeof PerfectFreehand?.default);
+    console.log('  - PerfectFreehand.getStroke:', typeof PerfectFreehand?.getStroke);
+    console.log('  - PerfectFreehand.default.getStroke:', typeof PerfectFreehand?.default?.getStroke);
+    
+    // 2. PolygonGenerator
+    console.log('\n🔷 2. PolygonGenerator');
+    console.log('  - window.PolygonGenerator:', typeof window.PolygonGenerator);
+    console.log('  - PolygonGenerator.perfectFreehand:', window.PolygonGenerator?.perfectFreehand ? '✅ 初期化済み' : '❌ 未初期化');
+    console.log('  - PolygonGenerator.generate:', typeof window.PolygonGenerator?.generate);
+    
+    // 3. StrokeRecorder
+    console.log('\n📝 3. StrokeRecorder');
+    console.log('  - window.strokeRecorder:', typeof window.strokeRecorder);
+    console.log('  - window.StrokeRecorder:', typeof window.StrokeRecorder);
+    
+    if (window.strokeRecorder) {
+        console.log('  - strokeRecorder.polygonGenerator:', window.strokeRecorder.polygonGenerator ? '✅ 接続済み' : '❌ 未接続');
+        console.log('  - strokeRecorder.isRecording:', window.strokeRecorder.isRecording);
+    }
+    
+    // 4. テスト実行
+    console.log('\n🧪 4. ポリゴン生成テスト');
+    if (window.PolygonGenerator) {
+        try {
+            const testPoints = [
+                {x: 10, y: 10, pressure: 0.5},
+                {x: 20, y: 15, pressure: 0.7},
+                {x: 30, y: 20, pressure: 0.6},
+                {x: 40, y: 25, pressure: 0.8}
+            ];
+            
+            const polygon = window.PolygonGenerator.generate(testPoints);
+            
+            if (polygon && polygon.length > 0) {
+                console.log(`  ✅ ポリゴン生成成功: ${polygon.length}点`);
+                console.log('  - 最初の3点:', polygon.slice(0, 3));
+            } else {
+                console.log('  ❌ ポリゴン生成失敗: 空配列');
+            }
+        } catch (error) {
+            console.log('  ❌ ポリゴン生成エラー:', error.message);
+        }
+    } else {
+        console.log('  ❌ PolygonGenerator not found');
+    }
+    
+    // 5. Config確認
+    console.log('\n⚙️ 5. PerfectFreehand設定');
+    const config = window.TEGAKI_CONFIG?.perfectFreehand;
+    if (config) {
+        console.log('  - enabled:', config.enabled);
+        console.log('  - size:', config.size);
+        console.log('  - thinning:', config.thinning);
+        console.log('  - smoothing:', config.smoothing);
+        console.log('  - streamline:', config.streamline);
+    } else {
+        console.log('  ❌ Config not found');
+    }
+};
+
+
+// ========================================
+// Phase 2: WebGPUMaskLayer状況確認
+// ========================================
+window.debugPhase2 = function() {
+    console.log('\n%c=== Phase 2: WebGPUMaskLayer統合状況 ===', 'color: #00ffff; font-weight: bold; font-size: 14px;');
+    
+    // 1. WebGPUMaskLayer本体
+    console.log('\n🎭 1. WebGPUMaskLayer本体');
+    console.log('  - window.WebGPUMaskLayer:', typeof window.WebGPUMaskLayer);
+    
+    // 2. StrokeRenderer統合
+    console.log('\n🖌️ 2. StrokeRenderer統合');
+    console.log('  - window.strokeRenderer:', typeof window.strokeRenderer);
+    
+    if (window.strokeRenderer) {
+        console.log('  - strokeRenderer.webgpuMaskLayer:', window.strokeRenderer.webgpuMaskLayer ? '✅ 初期化済み' : '❌ 未初期化');
+        console.log('  - strokeRenderer.webgpuEnabled:', window.strokeRenderer.webgpuEnabled);
+        console.log('  - strokeRenderer.currentTool:', window.strokeRenderer.currentTool);
+        
+        const maskLayer = window.strokeRenderer.webgpuMaskLayer;
+        if (maskLayer) {
+            console.log('  - maskLayer.isInitialized():', maskLayer.isInitialized ? maskLayer.isInitialized() : 'N/A');
+            console.log('  - maskLayer.width:', maskLayer.width);
+            console.log('  - maskLayer.height:', maskLayer.height);
+            console.log('  - maskLayer.maskBuffer:', maskLayer.maskBuffer ? `Float32Array(${maskLayer.maskBuffer.length})` : 'null');
+        }
+    }
+    
+    // 3. WebGPU基盤
+    console.log('\n⚡ 3. WebGPU基盤');
+    console.log('  - window.WebGPUDrawingLayer:', typeof window.WebGPUDrawingLayer);
+    
+    if (window.strokeRenderer?.webgpuLayer) {
+        const layer = window.strokeRenderer.webgpuLayer;
+        console.log('  - webgpuLayer.isInitialized():', layer.isInitialized ? layer.isInitialized() : 'N/A');
+        console.log('  - webgpuLayer.device:', layer.device ? '✅ GPUDevice取得済み' : '❌ 未取得');
+    }
+    
+    // 4. Config確認
+    console.log('\n⚙️ 4. WebGPU Mask設定');
+    const config = window.TEGAKI_CONFIG?.webgpu?.mask;
+    if (config) {
+        console.log('  - enabled:', config.enabled);
+        console.log('  - format:', config.format);
+        console.log('  - clearValue:', config.clearValue);
+    } else {
+        console.log('  ⚠️ Config not found (mask設定未追加)');
+    }
+};
+
+
+// ========================================
+// Phase 3: 描画モード確認
+// ========================================
+window.debugPhase3 = function() {
+    console.log('\n%c=== Phase 3: 描画モード確認 ===', 'color: #ff00ff; font-weight: bold; font-size: 14px;');
+    
+    // 1. BrushSettings
+    console.log('\n🎨 1. BrushSettings');
+    console.log('  - window.brushSettings:', typeof window.brushSettings);
+    
+    if (window.brushSettings) {
+        const settings = window.brushSettings.getSettings ? window.brushSettings.getSettings() : null;
+        if (settings) {
+            console.log('  - 現在のモード:', settings.mode);
+            console.log('  - ブラシサイズ:', settings.size);
+            console.log('  - 不透明度:', settings.opacity);
+            console.log('  - 色:', `0x${settings.color.toString(16).padStart(6, '0')}`);
+        }
+    }
+    
+    // 2. ツール状態
+    console.log('\n🛠️ 2. ツール状態');
+    console.log('  - strokeRenderer.currentTool:', window.strokeRenderer?.currentTool);
+    console.log('  - brushSettings.mode:', window.brushSettings?.getSettings?.()?.mode);
+    
+    // 3. レイヤー状態
+    console.log('\n📚 3. レイヤー状態');
+    if (window.layerManager) {
+        const activeLayer = window.layerManager.getActiveLayer ? window.layerManager.getActiveLayer() : null;
+        if (activeLayer) {
+            console.log('  - アクティブレイヤー:', activeLayer.layerData?.name);
+            console.log('  - レイヤーID:', activeLayer.layerData?.id);
+            console.log('  - pathsData数:', activeLayer.layerData?.pathsData?.length || 0);
+        } else {
+            console.log('  ❌ アクティブレイヤーなし');
+        }
+    }
+};
+
+
+// ========================================
+// 統合テスト: ストローク描画シミュレーション
+// ========================================
+window.debugIntegrationTest = function() {
+    console.log('\n%c=== 統合テスト: ストローク描画シミュレーション ===', 'color: #ffff00; font-weight: bold; font-size: 14px;');
+    
+    if (!window.strokeRecorder || !window.PolygonGenerator) {
+        console.log('❌ strokeRecorder または PolygonGenerator が未初期化');
+        return;
+    }
+    
+    console.log('\n🧪 ストローク記録テスト');
+    
+    try {
+        // 1. ストローク開始
+        window.strokeRecorder.startStroke(50, 50, 0.5);
+        console.log('  ✅ startStroke(50, 50, 0.5)');
+        
+        // 2. ポイント追加
+        window.strokeRecorder.addPoint(60, 55, 0.6);
+        window.strokeRecorder.addPoint(70, 60, 0.7);
+        window.strokeRecorder.addPoint(80, 65, 0.8);
+        console.log('  ✅ addPoint() x3');
+        
+        // 3. ストローク終了
+        const result = window.strokeRecorder.endStroke();
+        console.log('  ✅ endStroke()');
+        
+        // 4. 結果確認
+        console.log('\n📊 結果:');
+        console.log('  - points:', result.points?.length, '点');
+        console.log('  - polygon:', result.polygon?.length, '点');
+        console.log('  - isSingleDot:', result.isSingleDot);
+        
+        if (result.polygon && result.polygon.length > 0) {
+            console.log('  - polygon例:', result.polygon.slice(0, 3));
+            console.log('  ✅ ポリゴン生成成功');
+        } else {
+            console.log('  ❌ ポリゴン生成失敗');
+        }
+        
+        // 5. マスク更新テスト
+        if (window.strokeRenderer?.webgpuMaskLayer) {
+            const maskLayer = window.strokeRenderer.webgpuMaskLayer;
+            if (maskLayer.isInitialized && maskLayer.isInitialized()) {
+                console.log('\n🎭 マスク更新テスト');
+                
+                // ペンモード
+                maskLayer.addPolygonToMask(result.polygon, 'add');
+                console.log('  ✅ マスク加算 (ペン)');
+                
+                // マスク値確認
+                const maskValue = maskLayer.getMaskValue ? maskLayer.getMaskValue(65, 57) : 'N/A';
+                console.log('  - マスク値 (65, 57):', maskValue);
+                
+            } else {
+                console.log('\n⚠️ マスクレイヤー未初期化');
+            }
+        }
+        
+    } catch (error) {
+        console.log('❌ テストエラー:', error.message);
+        console.error(error);
+    }
+};
+
+
+// ========================================
+// マスクレイヤーデバッグビジュアライザー
+// ========================================
+window.debugMaskVisualizer = function() {
+    console.log('\n%c=== マスクレイヤーデバッグビジュアライザー ===', 'color: #ff8800; font-weight: bold; font-size: 14px;');
+    
+    const maskLayer = window.strokeRenderer?.webgpuMaskLayer;
+    
+    if (!maskLayer || !maskLayer.isInitialized || !maskLayer.isInitialized()) {
+        console.log('❌ マスクレイヤー未初期化');
+        return;
+    }
+    
+    if (!maskLayer.maskBuffer) {
+        console.log('❌ maskBuffer not available');
+        return;
+    }
+    
+    console.log('\n🔍 マスクバッファ統計:');
+    
+    const buffer = maskLayer.maskBuffer;
+    const width = maskLayer.width;
+    const height = maskLayer.height;
+    
+    // 統計計算
+    let min = Infinity;
+    let max = -Infinity;
+    let sum = 0;
+    let nonZeroCount = 0;
+    
+    for (let i = 0; i < buffer.length; i++) {
+        const value = buffer[i];
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+        sum += value;
+        if (value > 0) nonZeroCount++;
+    }
+    
+    const avg = sum / buffer.length;
+    const coverage = (nonZeroCount / buffer.length * 100).toFixed(2);
+    
+    console.log(`  - サイズ: ${width} x ${height}`);
+    console.log(`  - 最小値: ${min.toFixed(4)}`);
+    console.log(`  - 最大値: ${max.toFixed(4)}`);
+    console.log(`  - 平均値: ${avg.toFixed(4)}`);
+    console.log(`  - 非ゼロピクセル: ${nonZeroCount} / ${buffer.length}`);
+    console.log(`  - カバー率: ${coverage}%`);
+    
+    // サンプリング (中心付近)
+    console.log('\n📍 中心付近のマスク値サンプル:');
+    const cx = Math.floor(width / 2);
+    const cy = Math.floor(height / 2);
+    
+    for (let dy = -2; dy <= 2; dy++) {
+        const row = [];
+        for (let dx = -2; dx <= 2; dx++) {
+            const x = cx + dx;
+            const y = cy + dy;
+            const value = maskLayer.getMaskValue ? maskLayer.getMaskValue(x, y) : buffer[y * width + x];
+            row.push(value.toFixed(2));
+        }
+        console.log(`  y=${cy + dy}: [${row.join(', ')}]`);
+    }
+};
+
+
+// ========================================
+// 修正コマンド: StrokeRecorder初期化
+// ========================================
+window.fixStrokeRecorder = function() {
+    console.log('%c=== StrokeRecorder修正 ===', 'color: #00ff00; font-weight: bold;');
+    
+    if (!window.strokeRecorder) {
+        console.log('❌ strokeRecorder not found');
+        return;
+    }
+    
+    if (typeof window.strokeRecorder.initialize === 'function') {
+        window.strokeRecorder.initialize();
+        console.log('✅ strokeRecorder.initialize() 実行完了');
+        
+        // 確認
+        if (window.strokeRecorder.polygonGenerator) {
+            console.log('✅ PolygonGenerator接続確認');
+        } else {
+            console.log('❌ PolygonGenerator接続失敗');
+        }
+    } else {
+        console.log('❌ initialize()メソッドが存在しません');
+    }
+};
+
+
+// ========================================
+// 修正コマンド: WebGPUMaskLayer初期化
+// ========================================
+window.fixWebGPUMask = async function() {
+    console.log('%c=== WebGPUMaskLayer修正 ===', 'color: #00ffff; font-weight: bold;');
+    
+    if (!window.strokeRenderer) {
+        console.log('❌ strokeRenderer not found');
+        return;
+    }
+    
+    if (!window.WebGPUMaskLayer) {
+        console.log('❌ WebGPUMaskLayer not loaded');
+        console.log('→ index.htmlに以下を追加してください:');
+        console.log('   <script src="system/drawing/webgpu/webgpu-mask-layer.js"></script>');
+        return;
+    }
+    
+    // WebGPUレイヤー確認
+    if (!window.strokeRenderer.webgpuLayer) {
+        console.log('❌ WebGPUDrawingLayer未初期化');
+        return;
+    }
+    
+    // マスクレイヤー作成
+    try {
+        const config = window.TEGAKI_CONFIG?.canvas || {};
+        const width = config.width || 400;
+        const height = config.height || 400;
+        
+        console.log(`📐 マスクサイズ: ${width}x${height}`);
+        
+        const maskLayer = new window.WebGPUMaskLayer(window.strokeRenderer.webgpuLayer);
+        const success = await maskLayer.initialize(width, height);
+        
+        if (success) {
+            window.strokeRenderer.webgpuMaskLayer = maskLayer;
+            console.log('✅ WebGPUMaskLayer初期化成功');
+            console.log('✅ strokeRenderer.webgpuMaskLayerに設定完了');
+        } else {
+            console.log('❌ 初期化失敗');
+        }
+    } catch (error) {
+        console.log('❌ エラー:', error.message);
+        console.error(error);
+    }
+};
+
+
+// ========================================
+// 全自動修正
+// ========================================
+window.fixAll = async function() {
+    console.log('%c=== 全自動修正実行 ===', 'color: #ffff00; font-weight: bold; font-size: 16px;');
+    
+    // 1. StrokeRecorder初期化
+    console.log('\n1️⃣ StrokeRecorder初期化...');
+    window.fixStrokeRecorder();
+    
+    // 2. WebGPUMaskLayer初期化
+    console.log('\n2️⃣ WebGPUMaskLayer初期化...');
+    await window.fixWebGPUMask();
+    
+    // 3. 確認
+    console.log('\n3️⃣ 確認...');
+    window.debugPhase1();
+    window.debugPhase2();
+    
+    console.log('\n✅ 全自動修正完了');
+    console.log('動作確認: window.debugIntegrationTest()');
+};
+
+
+// ========================================
+// 初回実行
+// ========================================
+console.log('%c=== 自動診断実行 ===', 'color: #ffffff; font-weight: bold; font-size: 14px;');
+window.debugPhase1();
+window.debugPhase2();
+window.debugPhase3();
+window.debugIntegrationTest();
+window.debugMaskVisualizer();
+
+
+// ========================================
+// 利用可能なコマンド
+// ========================================
+console.log('\n%c=== 利用可能なコマンド ===', 'color: #ffffff; font-weight: bold; font-size: 14px;');
+console.log('\n📊 診断コマンド:');
+console.log('  window.debugPhase1()         - Phase 1確認');
+console.log('  window.debugPhase2()         - Phase 2確認');
+console.log('  window.debugPhase3()         - 描画モード確認');
+console.log('  window.debugIntegrationTest() - 統合テスト');
+console.log('  window.debugMaskVisualizer()  - マスク可視化');
+console.log('\n🔧 修正コマンド:');
+console.log('  window.fixStrokeRecorder()   - StrokeRecorder初期化');
+console.log('  window.fixWebGPUMask()       - WebGPUMaskLayer初期化');
+console.log('  window.fixAll()              - 全自動修正 ⚡');
+console.log('\n💡 推奨: まずは window.fixAll() を実行してください');
+VM443:404 === 自動診断実行 ===
+VM443:11 === Phase 1: PerfectFreehand統合状況 ===
+VM443:14 
+📦 1. PerfectFreehand本体
+VM443:15   - PerfectFreehand: function
+VM443:16   - PerfectFreehand.default: undefined
+VM443:17   - PerfectFreehand.getStroke: undefined
+VM443:18   - PerfectFreehand.default.getStroke: undefined
+VM443:21 
+🔷 2. PolygonGenerator
+VM443:22   - window.PolygonGenerator: object
+VM443:23   - PolygonGenerator.perfectFreehand: ✅ 初期化済み
+VM443:24   - PolygonGenerator.generate: function
+VM443:27 
+📝 3. StrokeRecorder
+VM443:28   - window.strokeRecorder: object
+VM443:29   - window.StrokeRecorder: function
+VM443:32   - strokeRecorder.polygonGenerator: ❌ 未接続
+VM443:33   - strokeRecorder.isRecording: false
+VM443:37 
+🧪 4. ポリゴン生成テスト
+VM443:50   ✅ ポリゴン生成成功: 48点
+VM443:51   - 最初の3点: (3) [Array(2), Array(2), Array(2)]
+VM443:63 
+⚙️ 5. PerfectFreehand設定
+VM443:66   - enabled: true
+VM443:67   - size: 16
+VM443:68   - thinning: 0.5
+VM443:69   - smoothing: 0.5
+VM443:70   - streamline: 0.5
+VM443:81 
+=== Phase 2: WebGPUMaskLayer統合状況 ===
+VM443:84 
+🎭 1. WebGPUMaskLayer本体
+VM443:85   - window.WebGPUMaskLayer: function
+VM443:88 
+🖌️ 2. StrokeRenderer統合
+VM443:89   - window.strokeRenderer: object
+VM443:92   - strokeRenderer.webgpuMaskLayer: ❌ 未初期化
+VM443:93   - strokeRenderer.webgpuEnabled: false
+VM443:94   - strokeRenderer.currentTool: pen
+VM443:106 
+⚡ 3. WebGPU基盤
+VM443:107   - window.WebGPUDrawingLayer: function
+VM443:116 
+⚙️ 4. WebGPU Mask設定
+VM443:123   ⚠️ Config not found (mask設定未追加)
+VM443:132 
+=== Phase 3: 描画モード確認 ===
+VM443:135 
+🎨 1. BrushSettings
+VM443:136   - window.brushSettings: object
+VM443:141   - 現在のモード: pen
+VM443:142   - ブラシサイズ: 10
+VM443:143   - 不透明度: 1
+VM443:144   - 色: 0x800000
+VM443:149 
+🛠️ 2. ツール状態
+VM443:150   - strokeRenderer.currentTool: pen
+VM443:151   - brushSettings.mode: pen
+VM443:154 
+📚 3. レイヤー状態
+VM443:158   - アクティブレイヤー: レイヤー1
+VM443:159   - レイヤーID: layer_1762986646770_djawf6pb8
+VM443:160   - pathsData数: 0
+VM443:172 
+=== 統合テスト: ストローク描画シミュレーション ===
+VM443:179 
+🧪 ストローク記録テスト
+VM443:184   ✅ startStroke(50, 50, 0.5)
+VM443:190   ✅ addPoint() x3
+VM443:194   ✅ endStroke()
+VM443:197 
+📊 結果:
+VM443:198   - points: 4 点
+VM443:199   - polygon: 0 点
+VM443:200   - isSingleDot: false
+VM443:206   ❌ ポリゴン生成失敗
+VM443:239 
+=== マスクレイヤーデバッグビジュアライザー ===
+VM443:244 ❌ マスクレイヤー未初期化
+VM443:415 
+=== 利用可能なコマンド ===
+VM443:416 
+📊 診断コマンド:
+VM443:417   window.debugPhase1()         - Phase 1確認
+VM443:418   window.debugPhase2()         - Phase 2確認
+VM443:419   window.debugPhase3()         - 描画モード確認
+VM443:420   window.debugIntegrationTest() - 統合テスト
+VM443:421   window.debugMaskVisualizer()  - マスク可視化
+VM443:422 
+🔧 修正コマンド:
+VM443:423   window.fixStrokeRecorder()   - StrokeRecorder初期化
+VM443:424   window.fixWebGPUMask()       - WebGPUMaskLayer初期化
+VM443:425   window.fixAll()              - 全自動修正 ⚡
+VM443:426 
+💡 推奨: まずは window.fixAll() を実行してください
+undefined
+// 全自動修正（推奨）
+window.fixAll();
+VM443:381 === 全自動修正実行 ===
+VM443:384 
+1️⃣ StrokeRecorder初期化...
+VM443:305 === StrokeRecorder修正 ===
+polygon-generator.js:43 ✅ [PolygonGenerator] PerfectFreehand initialized
+stroke-recorder.js:56 ✅ [StrokeRecorder] Initialized with PolygonGenerator
+VM443:314 ✅ strokeRecorder.initialize() 実行完了
+VM443:318 ✅ PolygonGenerator接続確認
+VM443:388 
+2️⃣ WebGPUMaskLayer初期化...
+VM443:332 === WebGPUMaskLayer修正 ===
+VM443:348 ❌ WebGPUDrawingLayer未初期化
+VM443:392 
+3️⃣ 確認...
+VM443:11 === Phase 1: PerfectFreehand統合状況 ===
+VM443:14 
+📦 1. PerfectFreehand本体
+VM443:15   - PerfectFreehand: function
+VM443:16   - PerfectFreehand.default: undefined
+VM443:17   - PerfectFreehand.getStroke: undefined
+VM443:18   - PerfectFreehand.default.getStroke: undefined
+VM443:21 
+🔷 2. PolygonGenerator
+VM443:22   - window.PolygonGenerator: object
+VM443:23   - PolygonGenerator.perfectFreehand: ✅ 初期化済み
+VM443:24   - PolygonGenerator.generate: function
+VM443:27 
+📝 3. StrokeRecorder
+VM443:28   - window.strokeRecorder: object
+VM443:29   - window.StrokeRecorder: function
+VM443:32   - strokeRecorder.polygonGenerator: ✅ 接続済み
+VM443:33   - strokeRecorder.isRecording: false
+VM443:37 
+🧪 4. ポリゴン生成テスト
+VM443:50   ✅ ポリゴン生成成功: 48点
+VM443:51   - 最初の3点: (3) [Array(2), Array(2), Array(2)]
+VM443:63 
+⚙️ 5. PerfectFreehand設定
+VM443:66   - enabled: true
+VM443:67   - size: 16
+VM443:68   - thinning: 0.5
+VM443:69   - smoothing: 0.5
+VM443:70   - streamline: 0.5
+VM443:81 
+=== Phase 2: WebGPUMaskLayer統合状況 ===
+VM443:84 
+🎭 1. WebGPUMaskLayer本体
+VM443:85   - window.WebGPUMaskLayer: function
+VM443:88 
+🖌️ 2. StrokeRenderer統合
+VM443:89   - window.strokeRenderer: object
+VM443:92   - strokeRenderer.webgpuMaskLayer: ❌ 未初期化
+VM443:93   - strokeRenderer.webgpuEnabled: false
+VM443:94   - strokeRenderer.currentTool: pen
+VM443:106 
+⚡ 3. WebGPU基盤
+VM443:107   - window.WebGPUDrawingLayer: function
+VM443:116 
+⚙️ 4. WebGPU Mask設定
+VM443:123   ⚠️ Config not found (mask設定未追加)
+VM443:396 
+✅ 全自動修正完了
+VM443:397 動作確認: window.debugIntegrationTest()
+Promise {<fulfilled>: undefined}
+// StrokeRecorderのみ修正
+window.fixStrokeRecorder();
+
+// WebGPUMaskLayerのみ修正
+window.fixWebGPUMask();
+
+// 再診断
+window.debugPhase1();
+window.debugPhase2();
+window.debugIntegrationTest();
+VM443:305 === StrokeRecorder修正 ===
+polygon-generator.js:43 ✅ [PolygonGenerator] PerfectFreehand initialized
+stroke-recorder.js:56 ✅ [StrokeRecorder] Initialized with PolygonGenerator
+VM443:314 ✅ strokeRecorder.initialize() 実行完了
+VM443:318 ✅ PolygonGenerator接続確認
+VM443:332 === WebGPUMaskLayer修正 ===
+VM443:348 ❌ WebGPUDrawingLayer未初期化
+VM443:11 === Phase 1: PerfectFreehand統合状況 ===
+VM443:14 
+📦 1. PerfectFreehand本体
+VM443:15   - PerfectFreehand: function
+VM443:16   - PerfectFreehand.default: undefined
+VM443:17   - PerfectFreehand.getStroke: undefined
+VM443:18   - PerfectFreehand.default.getStroke: undefined
+VM443:21 
+🔷 2. PolygonGenerator
+VM443:22   - window.PolygonGenerator: object
+VM443:23   - PolygonGenerator.perfectFreehand: ✅ 初期化済み
+VM443:24   - PolygonGenerator.generate: function
+VM443:27 
+📝 3. StrokeRecorder
+VM443:28   - window.strokeRecorder: object
+VM443:29   - window.StrokeRecorder: function
+VM443:32   - strokeRecorder.polygonGenerator: ✅ 接続済み
+VM443:33   - strokeRecorder.isRecording: false
+VM443:37 
+🧪 4. ポリゴン生成テスト
+VM443:50   ✅ ポリゴン生成成功: 48点
+VM443:51   - 最初の3点: (3) [Array(2), Array(2), Array(2)]
+VM443:63 
+⚙️ 5. PerfectFreehand設定
+VM443:66   - enabled: true
+VM443:67   - size: 16
+VM443:68   - thinning: 0.5
+VM443:69   - smoothing: 0.5
+VM443:70   - streamline: 0.5
+VM443:81 
+=== Phase 2: WebGPUMaskLayer統合状況 ===
+VM443:84 
+🎭 1. WebGPUMaskLayer本体
+VM443:85   - window.WebGPUMaskLayer: function
+VM443:88 
+🖌️ 2. StrokeRenderer統合
+VM443:89   - window.strokeRenderer: object
+VM443:92   - strokeRenderer.webgpuMaskLayer: ❌ 未初期化
+VM443:93   - strokeRenderer.webgpuEnabled: false
+VM443:94   - strokeRenderer.currentTool: pen
+VM443:106 
+⚡ 3. WebGPU基盤
+VM443:107   - window.WebGPUDrawingLayer: function
+VM443:116 
+⚙️ 4. WebGPU Mask設定
+VM443:123   ⚠️ Config not found (mask設定未追加)
+VM443:172 
+=== 統合テスト: ストローク描画シミュレーション ===
+VM443:179 
+🧪 ストローク記録テスト
+VM443:184   ✅ startStroke(50, 50, 0.5)
+VM443:190   ✅ addPoint() x3
+VM443:194   ✅ endStroke()
+VM443:197 
+📊 結果:
+VM443:198   - points: 4 点
+VM443:199   - polygon: 48 点
+VM443:200   - isSingleDot: false
+VM443:203   - polygon例: (3) [Array(2), Array(2), Array(2)]
+VM443:204   ✅ ポリゴン生成成功
+undefined
+/**
+ * ================================================================================
+ * WebGPU初期化デバッグコマンド
+ * ================================================================================
+ */
+
+// ========================================
+// WebGPU状態詳細確認
+// ========================================
+window.debugWebGPUStatus = function() {
+    console.log('%c=== WebGPU初期化状態 ===', 'color: #00ffff; font-weight: bold; font-size: 14px;');
+    
+    // 1. ブラウザWebGPUサポート
+    console.log('\n🌐 1. ブラウザWebGPUサポート');
+    console.log('  - navigator.gpu:', typeof navigator.gpu);
+    console.log('  - WebGPU対応:', navigator.gpu ? '✅ 対応' : '❌ 非対応');
+    
+    // 2. WebGPUDrawingLayer
+    console.log('\n⚡ 2. WebGPUDrawingLayer');
+    console.log('  - window.WebGPUDrawingLayer:', typeof window.WebGPUDrawingLayer);
+    
+    // 3. StrokeRendererのWebGPUレイヤー
+    console.log('\n🖌️ 3. StrokeRenderer WebGPUレイヤー');
+    if (window.strokeRenderer) {
+        console.log('  - strokeRenderer.webgpuLayer:', window.strokeRenderer.webgpuLayer || 'null');
+        
+        if (window.strokeRenderer.webgpuLayer) {
+            const layer = window.strokeRenderer.webgpuLayer;
+            console.log('  - webgpuLayer.device:', layer.device || 'null');
+            console.log('  - webgpuLayer.queue:', layer.queue || 'null');
+            
+            if (typeof layer.isInitialized === 'function') {
+                console.log('  - isInitialized():', layer.isInitialized());
+            }
+        }
+    }
+    
+    // 4. CoreEngine確認
+    console.log('\n🎮 4. CoreEngine');
+    console.log('  - window.coreEngine:', typeof window.coreEngine);
+    
+    if (window.coreEngine) {
+        console.log('  - coreEngine.webgpuLayer:', window.coreEngine.webgpuLayer || 'null');
+    }
+    
+    // 5. Config確認
+    console.log('\n⚙️ 5. WebGPU Config');
+    const config = window.TEGAKI_CONFIG?.webgpu;
+    if (config) {
+        console.log('  - enabled:', config.enabled);
+        console.log('  - sdf.enabled:', config.sdf?.enabled);
+        console.log('  - msdf.enabled:', config.msdf?.enabled);
+        console.log('  - mask.enabled:', config.mask?.enabled);
+    } else {
+        console.log('  ❌ Config not found');
+    }
+};
+
+
+// ========================================
+// WebGPU手動初期化
+// ========================================
+window.initWebGPU = async function() {
+    console.log('%c=== WebGPU手動初期化 ===', 'color: #00ff00; font-weight: bold;');
+    
+    // 1. WebGPU対応確認
+    if (!navigator.gpu) {
+        console.log('❌ このブラウザはWebGPUに対応していません');
+        console.log('→ Google Chrome Canary / Edge Canary を使用してください');
+        console.log('→ chrome://flags で "WebGPU" を有効化してください');
+        return false;
+    }
+    
+    console.log('✅ WebGPU対応ブラウザ');
+    
+    // 2. WebGPUDrawingLayer存在確認
+    if (!window.WebGPUDrawingLayer) {
+        console.log('❌ WebGPUDrawingLayer not loaded');
+        return false;
+    }
+    
+    // 3. StrokeRenderer確認
+    if (!window.strokeRenderer) {
+        console.log('❌ strokeRenderer not found');
+        return false;
+    }
+    
+    // 4. WebGPUDrawingLayer初期化
+    try {
+        console.log('\n📦 WebGPUDrawingLayer初期化中...');
+        
+        const webgpuLayer = new window.WebGPUDrawingLayer();
+        const success = await webgpuLayer.initialize();
+        
+        if (success) {
+            console.log('✅ WebGPUDrawingLayer初期化成功');
+            
+            // StrokeRendererに設定
+            await window.strokeRenderer.setWebGPULayer(webgpuLayer);
+            console.log('✅ StrokeRendererに設定完了');
+            
+            // 確認
+            console.log('\n🔍 初期化後の状態:');
+            console.log('  - webgpuLayer.device:', webgpuLayer.device ? '✅ 取得済み' : '❌ 未取得');
+            console.log('  - strokeRenderer.webgpuEnabled:', window.strokeRenderer.webgpuEnabled);
+            console.log('  - strokeRenderer.webgpuMaskLayer:', window.strokeRenderer.webgpuMaskLayer || 'null');
+            
+            return true;
+        } else {
+            console.log('❌ 初期化失敗');
+            return false;
+        }
+    } catch (error) {
+        console.log('❌ エラー:', error.message);
+        console.error(error);
+        return false;
+    }
+};
+
+
+// ========================================
+// 完全初期化（WebGPU + Mask統合）
+// ========================================
+window.initFullWebGPU = async function() {
+    console.log('%c=== 完全初期化: WebGPU + Mask ===', 'color: #ffff00; font-weight: bold; font-size: 16px;');
+    
+    // 1. StrokeRecorder初期化
+    console.log('\n1️⃣ StrokeRecorder初期化...');
+    window.fixStrokeRecorder();
+    
+    // 2. WebGPU初期化
+    console.log('\n2️⃣ WebGPU初期化...');
+    const webgpuSuccess = await window.initWebGPU();
+    
+    if (!webgpuSuccess) {
+        console.log('\n❌ WebGPU初期化失敗 - マスクレイヤーをスキップ');
+        return false;
+    }
+    
+    // 3. WebGPUMaskLayer初期化
+    console.log('\n3️⃣ WebGPUMaskLayer初期化...');
+    await window.fixWebGPUMask();
+    
+    // 4. 最終確認
+    console.log('\n4️⃣ 最終確認...');
+    window.debugPhase1();
+    window.debugPhase2();
+    window.debugIntegrationTest();
+    
+    console.log('\n✅ 完全初期化完了');
+    console.log('描画テスト: ペンで描画してみてください');
+    
+    return true;
+};
+
+
+// ========================================
+// CoreEngine経由でWebGPU取得（既存システム利用）
+// ========================================
+window.initWebGPUFromCore = async function() {
+    console.log('%c=== CoreEngine経由WebGPU初期化 ===', 'color: #ff00ff; font-weight: bold;');
+    
+    if (!window.coreEngine) {
+        console.log('❌ coreEngine not found');
+        return false;
+    }
+    
+    if (!window.coreEngine.webgpuLayer) {
+        console.log('❌ coreEngine.webgpuLayer not initialized');
+        console.log('→ アプリケーション起動時にWebGPUが初期化されていません');
+        return false;
+    }
+    
+    try {
+        // CoreEngineのWebGPUレイヤーを使用
+        const webgpuLayer = window.coreEngine.webgpuLayer;
+        
+        console.log('✅ CoreEngineからWebGPUレイヤー取得');
+        console.log('  - device:', webgpuLayer.device ? '✅' : '❌');
+        console.log('  - queue:', webgpuLayer.queue ? '✅' : '❌');
+        
+        // StrokeRendererに設定
+        await window.strokeRenderer.setWebGPULayer(webgpuLayer);
+        console.log('✅ StrokeRendererに設定完了');
+        
+        // WebGPUMaskLayer初期化
+        await window.fixWebGPUMask();
+        
+        console.log('\n✅ 初期化完了');
+        return true;
+        
+    } catch (error) {
+        console.log('❌ エラー:', error.message);
+        console.error(error);
+        return false;
+    }
+};
+
+
+// ========================================
+// 自動実行
+// ========================================
+console.log('%c=== WebGPU状態確認 ===', 'color: #ffffff; font-weight: bold;');
+window.debugWebGPUStatus();
+
+console.log('\n%c=== 利用可能なコマンド ===', 'color: #ffffff; font-weight: bold;');
+console.log('\n🔍 診断:');
+console.log('  window.debugWebGPUStatus()    - WebGPU状態確認');
+console.log('\n🔧 初期化:');
+console.log('  window.initWebGPU()           - WebGPU手動初期化');
+console.log('  window.initWebGPUFromCore()   - CoreEngine経由初期化 (推奨)');
+console.log('  window.initFullWebGPU()       - 完全初期化 (WebGPU + Mask)');
+console.log('\n💡 推奨手順:');
+console.log('  1. window.initWebGPUFromCore()  ← まずこれを試す');
+console.log('  2. 失敗した場合: window.initWebGPU()');
+VM454:203 === WebGPU状態確認 ===
+VM454:11 === WebGPU初期化状態 ===
+VM454:14 
+🌐 1. ブラウザWebGPUサポート
+VM454:15   - navigator.gpu: object
+VM454:16   - WebGPU対応: ✅ 対応
+VM454:19 
+⚡ 2. WebGPUDrawingLayer
+VM454:20   - window.WebGPUDrawingLayer: function
+VM454:23 
+🖌️ 3. StrokeRenderer WebGPUレイヤー
+VM454:25   - strokeRenderer.webgpuLayer: null
+VM454:39 
+🎮 4. CoreEngine
+VM454:40   - window.coreEngine: object
+VM454:43   - coreEngine.webgpuLayer: null
+VM454:47 
+⚙️ 5. WebGPU Config
+VM454:50   - enabled: true
+VM454:51   - sdf.enabled: true
+VM454:52   - msdf.enabled: true
+VM454:53   - mask.enabled: undefined
+VM454:206 
+=== 利用可能なコマンド ===
+VM454:207 
+🔍 診断:
+VM454:208   window.debugWebGPUStatus()    - WebGPU状態確認
+VM454:209 
+🔧 初期化:
+VM454:210   window.initWebGPU()           - WebGPU手動初期化
+VM454:211   window.initWebGPUFromCore()   - CoreEngine経由初期化 (推奨)
+VM454:212   window.initFullWebGPU()       - 完全初期化 (WebGPU + Mask)
+VM454:213 
+💡 推奨手順:
+VM454:214   1. window.initWebGPUFromCore()  ← まずこれを試す
+VM454:215   2. 失敗した場合: window.initWebGPU()
+undefined
+window.debugWebGPUStatus();
+VM454:11 === WebGPU初期化状態 ===
+VM454:14 
+🌐 1. ブラウザWebGPUサポート
+VM454:15   - navigator.gpu: object
+VM454:16   - WebGPU対応: ✅ 対応
+VM454:19 
+⚡ 2. WebGPUDrawingLayer
+VM454:20   - window.WebGPUDrawingLayer: function
+VM454:23 
+🖌️ 3. StrokeRenderer WebGPUレイヤー
+VM454:25   - strokeRenderer.webgpuLayer: null
+VM454:39 
+🎮 4. CoreEngine
+VM454:40   - window.coreEngine: object
+VM454:43   - coreEngine.webgpuLayer: null
+VM454:47 
+⚙️ 5. WebGPU Config
+VM454:50   - enabled: true
+VM454:51   - sdf.enabled: true
+VM454:52   - msdf.enabled: true
+VM454:53   - mask.enabled: undefined
+undefined
+window.initWebGPUFromCore();
+VM454:161 === CoreEngine経由WebGPU初期化 ===
+VM454:169 ❌ coreEngine.webgpuLayer not initialized
+VM454:170 → アプリケーション起動時にWebGPUが初期化されていません
+Promise {<fulfilled>: false}
+window.initWebGPU();
+VM454:64 === WebGPU手動初期化 ===
+VM454:74 ✅ WebGPU対応ブラウザ
+VM454:90 
+📦 WebGPUDrawingLayer初期化中...
+webgpu-drawing-layer.js:42 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+initialize @ webgpu-drawing-layer.js:42
+window.initWebGPU @ VM454:93
+（匿名） @ VM466:1
+Promise {<pending>}
+webgpu-drawing-layer.js:86 [WebGPU] Init failed: TypeError: this.device.createShaderModule is not a function
+    at WebGPUComputeMSDF.initialize (webgpu-compute-msdf.js:25:45)
+    at async WebGPUDrawingLayer.initialize (webgpu-drawing-layer.js:78:21)
+    at async window.initWebGPU (<anonymous>:93:25)
+initialize @ webgpu-drawing-layer.js:86
+await in initialize
+window.initWebGPU @ VM454:93
+（匿名） @ VM466:1
+VM454:110 ❌ 初期化失敗
+window.initFullWebGPU();
+VM454:125 === 完全初期化: WebGPU + Mask ===
+VM454:128 
+1️⃣ StrokeRecorder初期化...
+VM443:305 === StrokeRecorder修正 ===
+polygon-generator.js:43 ✅ [PolygonGenerator] PerfectFreehand initialized
+stroke-recorder.js:56 ✅ [StrokeRecorder] Initialized with PolygonGenerator
+VM443:314 ✅ strokeRecorder.initialize() 実行完了
+VM443:318 ✅ PolygonGenerator接続確認
+VM454:132 
+2️⃣ WebGPU初期化...
+VM454:64 === WebGPU手動初期化 ===
+VM454:74 ✅ WebGPU対応ブラウザ
+VM454:90 
+📦 WebGPUDrawingLayer初期化中...
+webgpu-drawing-layer.js:42 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+initialize @ webgpu-drawing-layer.js:42
+window.initWebGPU @ VM454:93
+window.initFullWebGPU @ VM454:133
+（匿名） @ VM470:1
+Promise {<pending>}
+webgpu-drawing-layer.js:86 [WebGPU] Init failed: TypeError: this.device.createShaderModule is not a function
+    at WebGPUComputeMSDF.initialize (webgpu-compute-msdf.js:25:45)
+    at async WebGPUDrawingLayer.initialize (webgpu-drawing-layer.js:78:21)
+    at async window.initWebGPU (<anonymous>:93:25)
+    at async window.initFullWebGPU (<anonymous>:133:27)
+initialize @ webgpu-drawing-layer.js:86
+await in initialize
+window.initWebGPU @ VM454:93
+window.initFullWebGPU @ VM454:133
+（匿名） @ VM470:1
+VM454:110 ❌ 初期化失敗
+VM454:136 
+❌ WebGPU初期化失敗 - マスクレイヤーをスキップ
+
+
+現在の状況まとめ
+項目状態対応PerfectFreehand✅ 完全動作完了
+PolygonGenerator✅ 48点生成完了
+StrokeRecorder✅ 接続済み完了
+WebGPUDrawingLayer❌ 未初期化initWebGPUFromCore()
+WebGPUMaskLayer❌ 待機中WebGPU初期化後に自動実行
