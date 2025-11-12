@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - エクスポートUI【v8.28.1】
+ * ui/export-popup.js - WEBP→WebM切替UI【v8.29.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -12,12 +12,14 @@
  * 
  * 【責務】
  *   - エクスポート設定UI
+ *   - PNG→APNG、WEBP→WebM自動切替の説明表示
  *   - プレビュー表示（150x150px厳格固定）
  *   - 進捗表示
  * 
- * 【v8.28.1 改修内容】
- *   🔧 プレビュー生成エラーハンドリング強化（最小限の修正）
- *   🔧 元ファイル（v8.28.0）を完全継承
+ * 【v8.29.0 改修内容】
+ *   🔧 PNG複数フレーム時→APNG説明表示（既存維持）
+ *   🔧 WEBP複数フレーム時→WebM説明表示（新規追加）
+ *   🔧 プレビュー機能は両フォーマット対応
  * 
  * ================================================================================
  */
@@ -58,7 +60,7 @@ window.TegakiExportPopup = class ExportPopup {
         popup.style.minWidth = '420px';
         popup.style.maxWidth = '600px';
         
-        popup.innerHTML = '<div class="popup-title">画像・アニメ出力</div>' +
+        popup.innerHTML = '<div class="popup-title">画像・動画出力</div>' +
             '<div class="format-selection">' +
                 '<button class="format-btn selected" data-format="png">PNG</button>' +
                 '<button class="format-btn" data-format="webp">WEBP</button>' +
@@ -275,11 +277,10 @@ window.TegakiExportPopup = class ExportPopup {
                 '</div>' +
                 resolutionUI,
                 
-            'webp': '<div class="setting-label">WEBP出力（アニメーション対応）</div>' +
+            'webp': '<div class="setting-label">WEBP出力（WebM動画自動検出）</div>' +
                 '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
                     (frameCount >= 2 
-                        ? `全${frameCount}フレームをアニメーションWEBPとして出力します。<br>` +
-                          '<span style="font-size: 11px;">💡 APNG形式で生成し、.webp拡張子で保存されます。ブラウザによっては再生可能です。</span>'
+                        ? `全${frameCount}フレームをWebM動画として出力します。`
                         : '高圧縮・高品質な次世代画像フォーマットです。') +
                 '</div>' +
                 resolutionUI,
@@ -422,8 +423,8 @@ window.TegakiExportPopup = class ExportPopup {
             let formatName = this.selectedFormat.toUpperCase();
             if (result.format === 'apng') {
                 formatName = 'APNG';
-            } else if (result.format === 'animated-webp') {
-                formatName = 'Animated WEBP';
+            } else if (result.format === 'webm') {
+                formatName = 'WebM動画';
             }
             
             this.showPreview(result.blob, formatName + 'プレビュー（' + this.selectedResolution + 'x）');
@@ -478,8 +479,8 @@ window.TegakiExportPopup = class ExportPopup {
         let formatName = 'PNG';
         if (data.format === 'apng') {
             formatName = 'APNG';
-        } else if (data.format === 'animated-webp') {
-            formatName = 'Animated WEBP';
+        } else if (data.format === 'webm') {
+            formatName = 'WebM動画';
         } else if (data.format === 'webp') {
             formatName = 'WEBP';
         } else if (data.format) {
@@ -553,5 +554,5 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.28.1 loaded (元ファイル継承・最小限修正)');
-console.log('   🔧 エラーハンドリング強化のみ');
+console.log('✅ export-popup.js v8.29.0 loaded');
+console.log('   🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応');
