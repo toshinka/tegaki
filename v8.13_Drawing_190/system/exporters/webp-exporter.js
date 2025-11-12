@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/webp-exporter.js - 静止画WEBP専用【v8.32.0】
+ * system/exporters/webp-exporter.js - 静止画WEBP専用【v8.33.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -13,12 +13,14 @@
  * 【責務】
  *   - 静止画WEBP生成のみ
  *   - 独立コンテナ方式によるカメラ干渉の完全排除
+ *   - 複数フレーム時はWebMへ自動誘導（export-manager.js側で処理）
  * 
- * 【v8.32.0 根本修正】
- *   🔧 静止画WEBP専用に簡素化（Animated WEBPは別ファイル化）
+ * 【v8.33.0 改修内容】
+ *   🔧 静止画WEBP専用に簡素化
  *   🔧 currentFrameContainerから取得（APNGと同じパターン）
  *   🔧 独立コンテナ方式でカメラ干渉なし
  *   🔧 resolution倍率対応
+ *   ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
  * 
  * 【設計原則】
  *   - Canvas.toBlob('image/webp') を直接使用
@@ -88,7 +90,7 @@ window.WEBPExporter = (function() {
         }
         
         /**
-         * 静止画WEBP Blob生成【v8.32.0 独立コンテナ方式】
+         * 静止画WEBP Blob生成【v8.33.0 独立コンテナ方式】
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -123,7 +125,7 @@ window.WEBPExporter = (function() {
         }
         
         /**
-         * Canvasへのレンダリング【v8.32.0 独立コンテナ方式 + resolution対応】
+         * Canvasへのレンダリング【v8.33.0 独立コンテナ方式 + resolution対応】
          */
         async _renderToCanvas(settings) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -244,4 +246,5 @@ window.WEBPExporter = (function() {
     return WEBPExporter;
 })();
 
-console.log('✅ webp-exporter.js v8.32.0 loaded (静止画WEBP専用)');
+console.log('✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)');
+console.log('   ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）');
