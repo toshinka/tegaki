@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.14 お絵かきツール - Phase 4-B MSDF完全統合</title>
+    <title>🎨 PixiJS v8.14 お絵かきツール</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -14,7 +14,6 @@
     <script src="https://cdn.jsdelivr.net/npm/simplify-js@1.2.4/simplify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
-    <script src="https://unpkg.com/upng-js@2.1.0/UPNG.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
@@ -23,12 +22,16 @@
 
     <!-- Core Config -->
     <script src="config.js"></script>
-    <script src="system/event-bus.js"></script>
     <script src="coordinate-system.js"></script>
+
+    <!-- Event System -->
+    <script src="system/event-bus.js"></script>
     
-    <!-- System -->
+    <!-- Data Models -->
     <script src="system/data-models.js"></script>
     <script src="system/batch-api.js"></script>
+
+    <!-- System -->
     <script src="system/popup-manager.js"></script>
     <script src="system/state-manager.js"></script>
     <script src="system/settings-manager.js"></script>
@@ -41,32 +44,37 @@
     <script src="system/virtual-album.js"></script>
     <script src="system/animation-system.js"></script>
 
-    <!-- Phase 4-A: WebGPU基盤 -->
+    <!-- WebGPU Base -->
     <script src="system/drawing/webgpu/webgpu-capabilities.js"></script>
     <script src="system/drawing/webgpu/webgpu-drawing-layer.js"></script>
     <script src="system/drawing/webgpu/webgpu-compute-sdf.js"></script>
     <script src="system/drawing/webgpu/webgpu-compute-msdf.js"></script>
     <script src="system/drawing/webgpu/webgpu-texture-bridge.js"></script>
     
-    <!-- Phase 4-B: MSDF統合 -->
+    <!-- WebGPU Mask Layer -->
+    <script src="system/drawing/webgpu/webgpu-mask-layer.js"></script>
+    
+    <!-- MSDF Integration -->
     <script src="system/drawing/msdf/msdf-brush-shader.js"></script>
 
-    <!-- Drawing System - 基盤処理 -->
+    <!-- Drawing System - Base -->
     <script src="system/drawing/pointer-handler.js"></script>
     <script src="system/drawing/pressure-handler.js"></script>
-    <script src="system/drawing/curve-interpolator.js"></script>
     <script src="system/drawing/stroke-recorder.js"></script>
 
-    <!-- Phase 3-A/3-B: SDF継続使用 -->
+    <!-- Polygon Generator -->
+    <script src="system/drawing/polygon-generator.js"></script>   
+    <script src="system/drawing/stroke-recorder.js"></script>
+    
+    <!-- SDF -->
     <script src="system/drawing/sdf-brush-shader.js"></script>
-    <script src="system/drawing/sdf-mesh-builder.js"></script>
 
     <!-- Drawing System - 統合 -->
     <script src="system/drawing/stroke-renderer.js"></script>
     <script src="system/drawing/thumbnail-system.js"></script>
+    <script src="system/drawing/brush-settings.js"></script>
     <script src="system/drawing/stroke-transformer.js"></script>
     <script src="system/drawing/processing/vector-operations.js"></script>
-    <script src="system/drawing/brush-settings.js"></script>
     <script src="system/drawing/brush-core.js"></script>
     <script src="system/drawing/fill-tool.js"></script>
     <script src="system/drawing/drawing-engine.js"></script>
