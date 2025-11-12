@@ -47,37 +47,51 @@ window.AnimatedWebPExporter = (function() {
             this.wasmReady = false;
         }
         
-        /**
-         * WASM初期化確認
+/**
+         * WASM初期化確認（非同期待機ロジックを追加）
          */
         async ensureWasmReady() {
             if (this.wasmReady) return true;
             
-            // libwebp-wasmが展開する関数を確認
-            // encodeFiles, decode, getSize が存在するはず
-            const hasEncodeFiles = typeof window.encodeFiles === 'function';
-            const hasDecode = typeof window.decode === 'function';
-            const hasGetSize = typeof window.getSize === 'function';
-            
-            console.log('[AnimatedWebPExporter] WASM Status:', {
-                encodeFiles: hasEncodeFiles,
-                decode: hasDecode,
-                getSize: hasGetSize,
-                windowKeys: Object.keys(window).filter(k => k.toLowerCase().includes('webp'))
-            });
-            
-            if (!hasEncodeFiles) {
-                throw new Error(
-                    'libwebp-wasm not loaded properly. ' +
-                    'Please ensure <script src="https://cdn.jsdelivr.net/npm/libwebp-wasm@0.1.6/dist/libwebp/index.min.js"></script> ' +
-                    'is included in index.html and loaded before this script. ' +
-                    'Expected global function: encodeFiles()'
-                );
+            const MAX_WAIT_MS = 5000; // 最大待機時間 5秒
+            const INTERVAL_MS = 50;  // チェック間隔 50ms
+            let startTime = Date.now();
+            let hasEncodeFiles = false;
+
+            // タイムアウトまでポーリングで待機
+            while (Date.now() - startTime < MAX_WAIT_MS) {
+                hasEncodeFiles = typeof window.encodeFiles === 'function';
+                
+                if (hasEncodeFiles) {
+                    this.wasmReady = true;
+                    console.log('✅ libwebp-wasm ready (after wait)');
+                    return true;
+                }
+                
+                // 待機
+                await new Promise(resolve => setTimeout(resolve, INTERVAL_MS));
+                
+                // 途中経過のログ
+                if (Date.now() - startTime > 1000 && Date.now() - startTime < 1050) {
+                    console.log('⏳ Waiting for libwebp-wasm initialization...');
+                }
             }
             
-            this.wasmReady = true;
-            console.log('✅ libwebp-wasm ready');
-            return true;
+            // 待機時間超過
+            console.log('[AnimatedWebPExporter] WASM Status:', {
+                encodeFiles: hasEncodeFiles,
+                decode: typeof window.decode === 'function',
+                getSize: typeof window.getSize === 'function',
+                windowKeys: Object.keys(window).filter(k => k.toLowerCase().includes('webp'))
+            });
+
+            // タイムアウトでエラーを投げる
+            throw new Error(
+                'libwebp-wasm not loaded properly within timeout (5000ms). ' +
+                'Please ensure <script src="https://cdn.jsdelivr.net/npm/libwebp-wasm@0.1.6/dist/libwebp/index.min.js"></script> ' +
+                'is included in index.html and loaded before this script. ' +
+                'Expected global function: encodeFiles()'
+            );
         }
         
         /**
