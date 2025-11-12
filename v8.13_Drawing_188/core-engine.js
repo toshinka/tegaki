@@ -1,10 +1,10 @@
 /**
- * @file core-engine.js
+ * @file core-engine.js v8.32.0
  * @description システム統合管理・コア機能実装
  * 
- * 【Phase 3 修正内容】
- * - UnifiedKeyHandler.switchTool() を BrushCore 直接呼び出しに変更
- * - DrawingEngine.setTool() 呼び出しを削除
+ * 【v8.32.0 改修内容】
+ * 🔧 WEBPExporter登録処理の修正（window.WEBPExporter対応）
+ * 🔧 AnimatedWebPExporter登録追加
  * 
  * 【依存関係】
  * - system/camera-system.js (TegakiCameraSystem)
@@ -110,21 +110,15 @@
             window.addEventListener('focus', () => this.resetAllKeyStates());
         }
         
-        /**
-         * 🔧 Phase 3修正: BrushCore に直接ツール切り替えを実行
-         */
         switchTool(tool) {
-            // BrushCore に直接ツールを設定
             if (window.BrushCore) {
                 window.BrushCore.setMode(tool);
             }
             
-            // カメラカーソル更新
             if (this.cameraSystem) {
                 this.cameraSystem.updateCursor();
             }
             
-            // イベント発行
             this.eventBus.emit('tool:changed', { newTool: tool });
         }
         
@@ -151,10 +145,7 @@ class CoreEngine {
         this.layerSystem = new window.TegakiLayerSystem();
         this.clipboardSystem = new window.TegakiDrawingClipboard();
         
-        // 🔧 Phase 6: BrushSettings を CoreEngine で生成・管理
         this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
-        
-        // グローバルアクセス設定（互換性維持）
         window.brushSettings = this.brushSettings;
         
         this.drawingEngine = new DrawingEngine(
@@ -172,14 +163,8 @@ class CoreEngine {
         this.exportManager = null;
         this.batchAPI = null;
         
-        // 🔧 Phase 6: StrokeRecorder/StrokeRenderer/BrushCore の初期化はここで行わない
-        // initialize() メソッド内で依存性注入を行う
-        
         this.setupCrossReferences();
         this.setupSystemEventIntegration();
-        
-        console.log('[CoreEngine] Constructor complete (Phase 6 - DIP改善)');
-        console.log('   ✓ BrushSettings created:', !!this.brushSettings);
     }
         
         setupCrossReferences() {
@@ -260,7 +245,7 @@ class CoreEngine {
         }
         
         /**
-         * ExportManager初期化 (Phase 2で一元化済み)
+         * 🔧 v8.32.0: WEBPExporter/AnimatedWebPExporter登録修正
          */
         initializeExportManager() {
             if (this.exportManager) {
@@ -284,22 +269,32 @@ class CoreEngine {
                 this.cameraSystem
             );
             
+            // PNG Exporter
             if (window.PNGExporter) {
                 this.exportManager.registerExporter('png', new window.PNGExporter(this.exportManager));
             }
             
+            // APNG Exporter
             if (window.APNGExporter) {
                 this.exportManager.registerExporter('apng', new window.APNGExporter(this.exportManager));
             }
             
+            // 🔧 v8.32.0: WEBP Exporter（window.WEBPExporterに修正）
+            if (window.WEBPExporter) {
+                this.exportManager.registerExporter('webp', new window.WEBPExporter(this.exportManager));
+            }
+            
+            // 🔧 v8.32.0: Animated WEBP Exporter（新規追加）
+            if (window.AnimatedWebPExporter) {
+                this.exportManager.registerExporter('animated-webp', new window.AnimatedWebPExporter(this.exportManager));
+            }
+            
+            // GIF Exporter
             if (window.GIFExporter) {
                 this.exportManager.registerExporter('gif', new window.GIFExporter(this.exportManager));
             }
             
-            if (window.WebPExporter) {
-                this.exportManager.registerExporter('webp', new window.WebPExporter(this.exportManager));
-            }
-            
+            // MP4 Exporter
             if (window.MP4Exporter) {
                 this.exportManager.registerExporter('mp4', new window.MP4Exporter(this.exportManager));
             }
@@ -432,14 +427,10 @@ class CoreEngine {
             }, true);
         }
         
-        /**
-         * 🔧 Phase 3修正: BrushCore に直接ツール切り替え
-         */
         switchTool(tool) {
             if (this.keyHandler) {
                 this.keyHandler.switchTool(tool);
             } else {
-                // KeyHandler未初期化時のフォールバック
                 if (window.BrushCore) {
                     window.BrushCore.setMode(tool);
                 }
@@ -712,6 +703,6 @@ class CoreEngine {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase 3修正版 - UnifiedKeyHandler修正) loaded');
+    console.log('✅ core-engine.js v8.32.0 loaded');
 
 })();

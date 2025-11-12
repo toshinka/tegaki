@@ -1,11 +1,10 @@
 /**
  * ================================================================================
- * system/exporters/apng-exporter.js - カメラtransform完全対応【v8.23.0】
+ * system/exporters/apng-exporter.js - 独立コンテナ方式【v8.31.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
  *   - system/export-manager.js (エクスポート管理)
- *   - system/camera-system.js (worldContainer/canvasContainer取得)
  *   - system/animation-system.js (フレーム情報)
  *   - UPNG.js (APNG生成ライブラリ)
  * 
@@ -16,11 +15,17 @@
  *   - APNGアニメーション出力
  *   - 複数フレームの連続キャプチャ
  * 
- * 【v8.23.0 重要改修】
- *   🔧 カメラのscale/rotation/flipも含めた完全なtransform保存・復元
- *   🔧 worldContainerの全transform状態をバックアップ・リセット・復元
- *   🔧 PNG/WEBPと統一された実装パターン（DRY原則）
- *   🔧 コンソールログをクリーンアップ
+ * 【v8.31.0 根本修正】
+ *   🔧 独立コンテナ方式に完全回帰（旧版169のロジック継承）
+ *   🔧 currentFrameContainerを一時的にtempContainerへ移動
+ *   🔧 worldContainer/cameraSystemへの干渉を完全排除
+ *   🔧 resolution倍率対応の統合（ジャギー解消）
+ *   🔧 カメラリセット/復元処理の完全削除（不要化）
+ * 
+ * 【設計原則】
+ *   - カメラ状態に一切干渉しない独立レンダリング
+ *   - currentFrameContainerの一時的な親変更のみで実装
+ *   - 元の親・座標・スケールを完全復元
  * 
  * ================================================================================
  */
@@ -106,50 +111,7 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * 🔧 v8.23.0: カメラ状態の完全バックアップ
-         */
-        _backupCameraState() {
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            if (!worldContainer) return null;
-            
-            return {
-                position: { x: worldContainer.position.x, y: worldContainer.position.y },
-                scale: { x: worldContainer.scale.x, y: worldContainer.scale.y },
-                rotation: worldContainer.rotation,
-                pivot: { x: worldContainer.pivot.x, y: worldContainer.pivot.y }
-            };
-        }
-        
-        /**
-         * 🔧 v8.23.0: カメラ状態の完全復元
-         */
-        _restoreCameraState(state) {
-            if (!state) return;
-            
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            if (!worldContainer) return;
-            
-            worldContainer.position.set(state.position.x, state.position.y);
-            worldContainer.scale.set(state.scale.x, state.scale.y);
-            worldContainer.rotation = state.rotation;
-            worldContainer.pivot.set(state.pivot.x, state.pivot.y);
-        }
-        
-        /**
-         * 🔧 v8.23.0: カメラを完全リセット
-         */
-        _resetCameraForExport() {
-            const worldContainer = this.manager.cameraSystem?.worldContainer;
-            if (!worldContainer) return;
-            
-            worldContainer.position.set(0, 0);
-            worldContainer.scale.set(1, 1);
-            worldContainer.rotation = 0;
-            worldContainer.pivot.set(0, 0);
-        }
-        
-        /**
-         * APNG Blob生成【v8.23.0 カメラtransform完全対応】
+         * APNG Blob生成【v8.31.0 独立コンテナ方式】
          */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -166,21 +128,19 @@ window.APNGExporter = (function() {
             const frames = [];
             const delays = [];
             
-            // 🔧 現在の状態をバックアップ
+            // レイヤー状態のバックアップ（カメラは触らない）
             const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
-            const cameraState = this._backupCameraState();
             
             try {
-                // 🔧 カメラを完全リセット
-                this._resetCameraForExport();
-                
                 for (let i = 0; i < animData.frames.length; i++) {
                     const frame = animData.frames[i];
                     
+                    // フレーム適用
                     this.manager.animationSystem.applyFrameToLayers(i);
                     await this._waitFrame();
                     
-                    const canvas = await this._captureFrameScreenshot(settings.resolution);
+                    // 独立コンテナ方式でレンダリング
+                    const canvas = await this._renderFrameToCanvas(settings);
                     
                     const ctx = canvas.getContext('2d', { willReadFrequently: true });
                     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -202,9 +162,8 @@ window.APNGExporter = (function() {
                     }
                 }
             } finally {
-                // 🔧 状態を完全復元
+                // レイヤー状態のみ復元（カメラは触っていないので不要）
                 this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
-                this._restoreCameraState(cameraState);
             }
             
             const apngBuffer = UPNG.encode(
@@ -219,35 +178,89 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * フレームのスクリーンショット取得（カメラリセット済み前提）
+         * フレームのレンダリング【v8.31.0 独立コンテナ方式 + resolution対応】
          */
-        async _captureFrameScreenshot(resolution = 2) {
+        async _renderFrameToCanvas(settings) {
             const CONFIG = window.TEGAKI_CONFIG;
-            const canvasWidth = CONFIG.canvas.width;
-            const canvasHeight = CONFIG.canvas.height;
             
-            const canvasContainer = this.manager.cameraSystem?.canvasContainer ||
-                                  this.manager.layerSystem.worldContainer?.children?.find(c => c.label === 'canvasContainer');
-            
-            if (!canvasContainer) {
-                throw new Error('canvasContainer not found');
-            }
-            
-            const extractedCanvas = this.manager.app.renderer.extract.canvas({
-                target: canvasContainer,
-                resolution: resolution,
-                antialias: true
+            // RenderTexture作成
+            const renderTexture = PIXI.RenderTexture.create({
+                width: settings.width,
+                height: settings.height,
+                resolution: 1
             });
             
-            const finalCanvas = document.createElement('canvas');
-            finalCanvas.width = canvasWidth * resolution;
-            finalCanvas.height = canvasHeight * resolution;
-            const ctx = finalCanvas.getContext('2d', { alpha: true });
+            // 独立した一時コンテナ
+            const tempContainer = new PIXI.Container();
             
-            ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
-            ctx.drawImage(extractedCanvas, 0, 0);
+            // currentFrameContainerを取得
+            const layersContainer = this.manager.animationSystem.layerSystem.currentFrameContainer;
+            if (!layersContainer) {
+                throw new Error('currentFrameContainer not found');
+            }
             
-            return finalCanvas;
+            // 元の親と座標・スケールを保存
+            const originalParent = layersContainer.parent;
+            const originalState = {
+                x: layersContainer.x,
+                y: layersContainer.y,
+                scaleX: layersContainer.scale.x,
+                scaleY: layersContainer.scale.y
+            };
+            
+            try {
+                // 親から一時的に切り離し
+                if (originalParent) {
+                    originalParent.removeChild(layersContainer);
+                }
+                
+                // 独立コンテナに追加
+                tempContainer.addChild(layersContainer);
+                layersContainer.position.set(0, 0);
+                
+                // resolution倍率対応（スケール調整）
+                if (settings.resolution !== 1) {
+                    layersContainer.scale.set(settings.resolution, settings.resolution);
+                }
+                
+                // レンダリング実行
+                this.manager.app.renderer.render({
+                    container: tempContainer,
+                    target: renderTexture
+                });
+                
+                // Canvas抽出
+                let canvas;
+                const result = this.manager.app.renderer.extract.canvas(renderTexture);
+                if (result instanceof Promise) {
+                    canvas = await result;
+                } else {
+                    canvas = result;
+                }
+                
+                if (!canvas) {
+                    throw new Error('Canvas extraction failed');
+                }
+                
+                return canvas;
+                
+            } finally {
+                // 完全復元: 独立コンテナから切り離し
+                tempContainer.removeChild(layersContainer);
+                
+                // 元の座標・スケールに戻す
+                layersContainer.position.set(originalState.x, originalState.y);
+                layersContainer.scale.set(originalState.scaleX, originalState.scaleY);
+                
+                // 元の親に戻す
+                if (originalParent) {
+                    originalParent.addChild(layersContainer);
+                }
+                
+                // クリーンアップ
+                renderTexture.destroy(true);
+                tempContainer.destroy({ children: true });
+            }
         }
         
         /**
@@ -264,3 +277,5 @@ window.APNGExporter = (function() {
     
     return APNGExporter;
 })();
+
+console.log('✅ apng-exporter.js v8.31.0 loaded');

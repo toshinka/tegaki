@@ -73,7 +73,7 @@ window.TEGAKI_CONFIG = {
     },
     BRUSH_DEFAULTS: {
         color: 0x800000,
-        size: 3,
+        size: 10,
         opacity: 1.0,
         minWidth: 1,
         maxWidth: 10
