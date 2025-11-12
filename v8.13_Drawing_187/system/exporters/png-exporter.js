@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/png-exporter.js - 独立コンテナ方式【v8.26.0】
+ * system/exporters/png-exporter.js - プレビュー生成強化【v8.29.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -13,12 +13,12 @@
  * 【責務】
  *   - PNG静止画エクスポート
  *   - 複数フレーム時はAPNGへ委譲
+ *   - プレビュー生成の確実性保証
  * 
- * 【v8.26.0 重要改修】
- *   🔧 カメラ操作を完全排除 - 独立したtempContainerを使用
- *   🔧 worldContainerを一切触らない実装に変更
- *   🔧 レイヤーをクローンして独立コンテナで描画
- *   🔧 Drawing_169の安定性とDrawing_185の機能を統合
+ * 【v8.29.0 改修内容】
+ *   🔧 generatePreview()メソッド追加
+ *   🔧 エラーハンドリング強化
+ *   🔧 Blob生成の確実性向上
  * 
  * 【設計原則】
  *   - カメラ(worldContainer)とは完全に独立
@@ -71,6 +71,10 @@ window.PNGExporter = (function() {
             try {
                 const blob = await this.generateBlob(options);
                 
+                if (!blob || blob.size === 0) {
+                    throw new Error('PNG生成に失敗しました（空のBlobが生成されました）');
+                }
+                
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
                 const filename = options.filename || `tegaki_${timestamp}.png`;
                 
@@ -97,6 +101,40 @@ window.PNGExporter = (function() {
         }
         
         /**
+         * プレビュー生成
+         * v8.29.0追加
+         */
+        async generatePreview(options = {}) {
+            // 複数フレーム時はAPNG委譲
+            if (this._shouldUseAPNG()) {
+                const apngExporter = this.manager.exporters['apng'];
+                if (apngExporter && apngExporter.generatePreview) {
+                    return await apngExporter.generatePreview(options);
+                }
+            }
+            
+            // プレビュー用の低解像度設定
+            const previewOptions = {
+                ...options,
+                resolution: options.resolution || 1,
+                transparent: options.transparent !== undefined ? options.transparent : true
+            };
+            
+            try {
+                const blob = await this.generateBlob(previewOptions);
+                
+                if (!blob || blob.size === 0) {
+                    throw new Error('プレビュー生成に失敗しました');
+                }
+                
+                return blob;
+            } catch (error) {
+                console.error('PNG Preview generation error:', error);
+                throw new Error(`PNGプレビュー生成エラー: ${error.message}`);
+            }
+        }
+        
+        /**
          * フレーム待機
          */
         async _waitFrame() {
@@ -108,7 +146,7 @@ window.PNGExporter = (function() {
          */
         _cloneLayerForExport(layer) {
             const container = new PIXI.Container();
-            container.alpha = layer.opacity / 100;
+            container.alpha = (layer.layerData?.opacity !== undefined) ? layer.layerData.opacity : (layer.alpha !== undefined ? layer.alpha : 1);
             
             if (layer.children) {
                 for (const child of layer.children) {
@@ -156,9 +194,9 @@ window.PNGExporter = (function() {
                 
                 // レイヤーをコピー
                 const layerManager = this.manager.layerSystem;
-                const visibleLayers = layerManager.getAllLayers()
-                    .filter(layer => layer.visible)
-                    .sort((a, b) => a.zIndex - b.zIndex);
+                const visibleLayers = layerManager.getLayers()
+                    .filter(layer => layer.layerData?.visible !== false)
+                    .sort((a, b) => (a.layerData?.zIndex || 0) - (b.layerData?.zIndex || 0));
                 
                 for (const layer of visibleLayers) {
                     const layerCopy = this._cloneLayerForExport(layer);
@@ -175,11 +213,19 @@ window.PNGExporter = (function() {
                     antialias: true
                 });
                 
+                if (!extractedCanvas) {
+                    throw new Error('Canvas抽出に失敗しました');
+                }
+                
                 // 最終Canvas作成
                 const finalCanvas = document.createElement('canvas');
                 finalCanvas.width = canvasWidth * resolution;
                 finalCanvas.height = canvasHeight * resolution;
                 const ctx = finalCanvas.getContext('2d', { alpha: true });
+                
+                if (!ctx) {
+                    throw new Error('Canvas 2Dコンテキスト取得に失敗しました');
+                }
                 
                 ctx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
                 ctx.drawImage(extractedCanvas, 0, 0);
@@ -187,12 +233,15 @@ window.PNGExporter = (function() {
                 return new Promise((resolve, reject) => {
                     finalCanvas.toBlob((blob) => {
                         if (!blob) {
-                            reject(new Error('PNG generation failed'));
+                            reject(new Error('PNG Blob生成に失敗しました'));
                             return;
                         }
                         resolve(blob);
                     }, 'image/png');
                 });
+            } catch (error) {
+                console.error('PNG generation error:', error);
+                throw error;
             } finally {
                 // クリーンアップ
                 tempContainer.destroy({ children: true });
@@ -203,7 +252,7 @@ window.PNGExporter = (function() {
     return PNGExporter;
 })();
 
-console.log('✅ png-exporter.js v8.26.0 loaded');
-console.log('   🔧 カメラ操作を完全排除（独立コンテナ方式）');
-console.log('   🔧 worldContainerとの干渉をゼロに');
-console.log('   🔧 カメラ枠ズレを根本解決');
+console.log('✅ png-exporter.js v8.29.0 loaded');
+console.log('   🔧 generatePreview()メソッド追加');
+console.log('   🔧 エラーハンドリング強化');
+console.log('   🔧 Blob生成の確実性向上');

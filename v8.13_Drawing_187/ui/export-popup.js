@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * ui/export-popup.js - エクスポートUI【v8.28.0】
+ * ui/export-popup.js - エクスポートUI【v8.28.1】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -15,10 +15,9 @@
  *   - プレビュー表示（150x150px厳格固定）
  *   - 進捗表示
  * 
- * 【v8.28.0 改修内容】
- *   🔧 プレビュー画像を完全に150x150pxに固定
- *   🔧 max-width/max-height を width/height に変更
- *   🔧 WEBP説明文を更新（APNG経由方式の説明追加）
+ * 【v8.28.1 改修内容】
+ *   🔧 プレビュー生成エラーハンドリング強化（最小限の修正）
+ *   🔧 元ファイル（v8.28.0）を完全継承
  * 
  * ================================================================================
  */
@@ -347,7 +346,7 @@ window.TegakiExportPopup = class ExportPopup {
         
         statusEl.textContent = message;
         statusEl.style.display = 'block';
-        statusEl.style.color = 'var(--futaba-maroon)';
+        statusEl.style.color = isError ? '#cc0000' : 'var(--futaba-maroon)';
     }
     
     hideStatus() {
@@ -378,6 +377,7 @@ window.TegakiExportPopup = class ExportPopup {
             };
             await this.manager.export(this.selectedFormat, options);
         } catch (error) {
+            console.error('Export error:', error);
             this.showStatus('エクスポート失敗: ' + error.message, true);
             if (progressEl) progressEl.style.display = 'none';
             if (executeBtn) executeBtn.disabled = false;
@@ -436,6 +436,7 @@ window.TegakiExportPopup = class ExportPopup {
             this.resetProgress();
             
         } catch (error) {
+            console.error('Preview generation error:', error);
             this.showStatus('プレビュー生成失敗: ' + error.message, true);
             if (previewBtn) {
                 previewBtn.textContent = 'プレビュー';
@@ -552,6 +553,5 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js v8.28.0 loaded');
-console.log('   🔧 プレビュー画像を150x150px厳格固定');
-console.log('   🔧 WEBP説明文を更新（APNG経由方式）');
+console.log('✅ export-popup.js v8.28.1 loaded (元ファイル継承・最小限修正)');
+console.log('   🔧 エラーハンドリング強化のみ');
