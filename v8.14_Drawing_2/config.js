@@ -1,36 +1,25 @@
 /**
- * @file config.js - v8.14.0 DPR=1固定化版
+ * @file config.js - v8.14.1 Phase 1: PerfectFreehand設定追加
  * @description グローバル設定・キーマップ定義
+ * 
+ * 【v8.14.1 Phase 1 改修内容】
+ * ✅ perfectFreehand 設定セクション追加
+ * ✅ ポリゴン生成パラメータ定義
  * 
  * 【v8.14.0 改修内容 - Phase 1: DPR=1固定化】
  * 🚨 重要: renderer.resolution を devicePixelRatio から 1 へ固定
  * 理由: 描画時解像度と出力時解像度の一致を保証
  * 方針: DPR=1固定 + 出力時任意解像度スケーリング（Sketchbook方式）
  * 
- * 🚨 後続Claude担当者への警告:
- * - devicePixelRatio を使用した DPR 倍加は厳禁
- * - 本ツールは GPU/WebGPU ベースの PC 優位設計（Retina対応不要）
- * - 解像度制御は出力時のみで行う（export-manager.js 参照）
- * 
- * 【v8.13.15 改修内容】
- * 🎨 TOOL_FILL: Gキー → 塗りつぶしツール追加
- * 
- * 【v8.13.14 改修内容】
- * 🔧 Phase 3: LAYER_DELETE (Ctrl+Delete)、LAYER_CUT (Ctrl+X) 追加
- * 🔧 Phase 3: FRAME_PREV/NEXT (←→) 単体キー化、Ctrl不要に
- * 🔧 Phase 4: GIF_PREV_FRAME / GIF_NEXT_FRAME 削除
- * 🧹 LAYER_CLEAR 削除 (LAYER_DELETE に統合)
- * 📝 ヘッダー依存関係明記
- * 
  * 【親ファイル (このファイルが依存)】
  * なし（最上位設定ファイル）
  * 
  * 【子ファイル (このファイルに依存)】
+ * - polygon-generator.js (perfectFreehand設定参照) ★Phase 1追加
  * - core-initializer.js (PIXI.Application初期化でresolution参照)
  * - core-engine.js (システム全体の設定参照)
  * - 全システムファイル (window.TEGAKI_CONFIG参照)
  * - keyboard-handler.js (window.TEGAKI_KEYMAP参照)
- * - camera-system.js, layer-system.js等
  */
 
 window.TEGAKI_CONFIG = {
@@ -42,19 +31,9 @@ window.TEGAKI_CONFIG = {
     /**
      * 🚨 Phase 1改修: renderer設定
      * resolution: 1 固定（devicePixelRatio 参照を削除）
-     * 
-     * 【設計思想】
-     * - 描画時は常に等倍（DPR=1）で処理
-     * - 出力時に任意解像度でスケーリング（export-manager.js で制御）
-     * - ユーザーの期待値と出力結果を一致させる
-     * 
-     * 【影響】
-     * - 全描画処理が軽量化
-     * - Retina画面で若干の粗さが出る可能性（許容範囲）
-     * - 出力品質は settings-manager.js の exportResolution で制御
      */
     renderer: {
-        resolution: 1,  // 旧: window.devicePixelRatio || 1
+        resolution: 1,
         backgroundColor: 0x000000,
         backgroundAlpha: 0,
         antialias: true
@@ -71,6 +50,7 @@ window.TEGAKI_CONFIG = {
             enableDevicePixelRatio: true
         }
     },
+    
     BRUSH_DEFAULTS: {
         color: 0x800000,
         size: 10,
@@ -78,6 +58,39 @@ window.TEGAKI_CONFIG = {
         minWidth: 1,
         maxWidth: 10
     },
+    
+    /**
+     * ✅ Phase 1 新規追加: PerfectFreehand設定
+     * 
+     * 【設計方針】
+     * - ポリゴン生成を PerfectFreehand に統一
+     * - size はブラシサイズと連動（デフォルト16）
+     * - thinning: 筆圧による太さ変化（0.5 = 中程度）
+     * - smoothing: 線の滑らかさ（0.5 = 中程度）
+     * - streamline: リアルタイム補正（0.5 = 中程度）
+     * - simulatePressure: false（外部 pressure-handler で処理）
+     * 
+     * 【参考】
+     * PerfectFreehand公式: https://github.com/steveruizok/perfect-freehand
+     */
+    perfectFreehand: {
+        enabled: true,
+        size: 16,                    // ブラシ幅（ピクセル）
+        thinning: 0.5,               // 筆圧による細さ (-1~1, 0.5推奨)
+        smoothing: 0.5,              // 線の滑らかさ (0~1, 0.5推奨)
+        streamline: 0.5,             // リアルタイム補正 (0~1, 0.5推奨)
+        easing: (t) => t,            // イージング関数（デフォルト線形）
+        simulatePressure: false,     // 筆圧シミュレート（false=外部処理）
+        start: {
+            taper: 0,                // 始点テーパー（0=なし）
+            cap: true                // 始点キャップ（丸み）
+        },
+        end: {
+            taper: 0,                // 終点テーパー（0=なし）
+            cap: true                // 終点キャップ（丸み）
+        }
+    },
+    
     webgpu: {
         enabled: true,
         fallbackToWebGL: true,
@@ -95,6 +108,7 @@ window.TEGAKI_CONFIG = {
             smoothness: 0.05
         }
     },
+    
     camera: {
         minScale: 0.1,
         maxScale: 5.0,
@@ -107,6 +121,7 @@ window.TEGAKI_CONFIG = {
         dragScaleSpeed: 0.01,
         dragRotationSpeed: 0.3
     },
+    
     layer: {
         minX: -1000,
         maxX: 1000,
@@ -118,18 +133,22 @@ window.TEGAKI_CONFIG = {
         maxRotation: 180,
         rotationLoop: true
     },
+    
     background: { 
         color: 0xf0e0d6 
     },
+    
     history: { 
         maxSize: 10, 
         autoSaveInterval: 500 
     },
+    
     thumbnail: {
         SIZE: 48,
         RENDER_SCALE: 3,
         QUALITY: 'high'
     },
+    
     animation: {
         defaultFPS: 12,
         maxCuts: 50,
@@ -150,6 +169,7 @@ window.TEGAKI_CONFIG = {
             previewQuality: 'medium'
         }
     },
+    
     debug: false
 };
 
@@ -177,7 +197,6 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             description: '消しゴムツール'
         },
-        // 🎨 v8.13.15: 塗りつぶしツール (Gキー)
         TOOL_FILL: {
             key: 'KeyG',
             ctrl: false,
@@ -497,5 +516,6 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js v8.14.0 loaded (Phase 1: DPR=1固定化)');
-console.log('   🚨 renderer.resolution = 1 (devicePixelRatio参照を削除)');
+console.log('✅ config.js v8.14.1 Phase 1 loaded');
+console.log('   ✅ PerfectFreehand設定追加');
+console.log('   ✓ ポリゴン生成パラメータ定義');
