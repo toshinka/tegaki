@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/webp-exporter.js - Base64エンコード方式【v8.27.0】
+ * system/exporters/webp-exporter.js - プレビュー生成強化【v8.29.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -13,14 +13,13 @@
  * 
  * 【責務】
  *   - 静止画WEBP生成（Canvas toBlob API）
- *   - Animated WEBP生成（Base64 Data URI方式）
+ *   - Animated WEBP生成（APNG経由方式）
  *   - 独立コンテナ方式によるカメラ干渉の完全排除
  * 
- * 【v8.27.0 重要改修】
- *   🔧 webpxmux.jsライブラリの完全排除
- *   🔧 Canvas toDataURL() + Base64方式に変更
- *   🔧 APNGを経由した変換フローに改善
- *   🔧 file:// プロトコルで完全動作
+ * 【v8.29.0 改修内容】
+ *   🔧 generatePreview()の確実性向上
+ *   🔧 エラーハンドリング強化
+ *   🔧 Blob生成検証追加
  * 
  * 【設計原則】
  *   - 静止画: Canvas.toBlob('image/webp') を直接使用
@@ -31,7 +30,7 @@
  *   WEBPアニメーションはWASMライブラリが必要ですが、
  *   file:// プロトコルでは制約があるため、
  *   当面はAPNG形式で連番保存→.webp拡張子として提供します。
- *   ブラウザによってはAPNGをWEBPとして扱える場合もあります。
+ *   真のAnimated WebPはffmpeg変換（連番PNG出力）をご利用ください。
  * 
  * ================================================================================
  */
@@ -67,9 +66,9 @@ class WEBPExporter {
 
             // レイヤーをコピー
             const layerManager = this.manager.layerSystem;
-            const visibleLayers = layerManager.getAllLayers()
-                .filter(layer => layer.visible)
-                .sort((a, b) => a.zIndex - b.zIndex);
+            const visibleLayers = layerManager.getLayers()
+                .filter(layer => layer.layerData?.visible !== false)
+                .sort((a, b) => (a.layerData?.zIndex || 0) - (b.layerData?.zIndex || 0));
 
             for (const layer of visibleLayers) {
                 const layerCopy = this._cloneLayerForExport(layer);
@@ -85,11 +84,19 @@ class WEBPExporter {
                 antialias: true
             });
 
+            if (!extractedCanvas) {
+                throw new Error('Canvas抽出に失敗しました');
+            }
+
             // 最終Canvas作成
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = canvasSize.width * resolution;
             finalCanvas.height = canvasSize.height * resolution;
             const ctx = finalCanvas.getContext('2d', { alpha: options.transparent });
+
+            if (!ctx) {
+                throw new Error('Canvas 2Dコンテキスト取得に失敗しました');
+            }
 
             if (!options.transparent) {
                 ctx.fillStyle = '#FFFFFF';
@@ -101,7 +108,13 @@ class WEBPExporter {
             // WEBP変換（ブラウザネイティブAPI）
             const blob = await new Promise((resolve, reject) => {
                 finalCanvas.toBlob(
-                    blob => blob ? resolve(blob) : reject(new Error('WEBP generation failed')),
+                    blob => {
+                        if (!blob || blob.size === 0) {
+                            reject(new Error('WEBP Blob生成に失敗しました'));
+                        } else {
+                            resolve(blob);
+                        }
+                    },
                     'image/webp',
                     quality
                 );
@@ -109,6 +122,9 @@ class WEBPExporter {
 
             return blob;
             
+        } catch (error) {
+            console.error('WEBP generation error:', error);
+            throw error;
         } finally {
             // クリーンアップ
             tempContainer.destroy({ children: true });
@@ -155,11 +171,14 @@ class WEBPExporter {
                 resolution: options.resolution || 1
             });
             
+            if (!apngBlob || apngBlob.size === 0) {
+                throw new Error('APNG Blob生成に失敗しました');
+            }
+            
             console.log('✅ Animated WEBP生成完了（APNG形式、.webp拡張子）');
-            console.log('   💡 ブラウザによってはアニメーション再生可能');
+            console.log('   💡 真のAnimated WebPはffmpeg変換（連番PNG出力）をご利用ください');
             
             // APNG BlobをWEBPとして返す
-            // （一部のブラウザはAPNGをWEBPとして処理可能）
             return new Blob([apngBlob], { type: 'image/webp' });
             
         } catch (error) {
@@ -188,9 +207,9 @@ class WEBPExporter {
 
             // レイヤーをコピー
             const layerManager = this.manager.layerSystem;
-            const visibleLayers = layerManager.getAllLayers()
-                .filter(layer => layer.visible)
-                .sort((a, b) => a.zIndex - b.zIndex);
+            const visibleLayers = layerManager.getLayers()
+                .filter(layer => layer.layerData?.visible !== false)
+                .sort((a, b) => (a.layerData?.zIndex || 0) - (b.layerData?.zIndex || 0));
 
             for (const layer of visibleLayers) {
                 const layerCopy = this._cloneLayerForExport(layer);
@@ -206,6 +225,10 @@ class WEBPExporter {
                 antialias: true
             });
 
+            if (!canvas) {
+                throw new Error('Canvas抽出に失敗しました');
+            }
+
             return canvas;
             
         } finally {
@@ -215,20 +238,34 @@ class WEBPExporter {
     }
 
     // ====================================================================
-    // プレビュー生成（軽量版）
+    // プレビュー生成（軽量版）【v8.29.0 強化版】
     // ====================================================================
     
     async generatePreview(options = {}) {
         const previewOptions = {
             ...options,
-            resolution: 0.5,
-            quality: 70
+            resolution: options.resolution || 1,
+            quality: 80
         };
 
-        if (options.animated && this.manager.animationSystem?.hasAnimation()) {
-            return this.generateAnimatedWebP(previewOptions);
-        } else {
-            return this.generateStaticWebP(previewOptions);
+        try {
+            let blob;
+            
+            if (options.animated && this.manager.animationSystem?.hasAnimation()) {
+                blob = await this.generateAnimatedWebP(previewOptions);
+            } else {
+                blob = await this.generateStaticWebP(previewOptions);
+            }
+            
+            if (!blob || blob.size === 0) {
+                throw new Error('プレビュー生成に失敗しました');
+            }
+            
+            return blob;
+            
+        } catch (error) {
+            console.error('WEBP Preview generation error:', error);
+            throw new Error(`WEBPプレビュー生成エラー: ${error.message}`);
         }
     }
 
@@ -236,15 +273,25 @@ class WEBPExporter {
      * 旧メソッド（後方互換）
      */
     async export(options = {}) {
-        return this.generateStaticWebP(options);
+        try {
+            const blob = await this.generateStaticWebP(options);
+            
+            if (!blob || blob.size === 0) {
+                throw new Error('WEBP生成に失敗しました');
+            }
+            
+            return blob;
+        } catch (error) {
+            console.error('WEBP export error:', error);
+            throw error;
+        }
     }
 }
 
 // グローバル登録
 window.WEBPExporter = WEBPExporter;
 
-console.log('✅ webp-exporter.js v8.27.0 loaded');
-console.log('   🔧 webpxmux.js依存を完全排除');
-console.log('   🔧 Animated WEBP → APNG経由方式に変更');
-console.log('   🔧 file:// プロトコルで完全動作');
-console.log('   💡 Animated WEBPはAPNG形式で保存され、一部ブラウザで再生可能');
+console.log('✅ webp-exporter.js v8.29.0 loaded');
+console.log('   🔧 generatePreview()の確実性向上');
+console.log('   🔧 エラーハンドリング強化');
+console.log('   🔧 Blob生成検証追加');

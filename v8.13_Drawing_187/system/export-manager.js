@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/export-manager.js - スクリーンショット方式統合【v8.24.0】
+ * system/export-manager.js - 連番PNG出力対応【v8.29.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -20,17 +20,13 @@
  *   - エクスポーター統合管理
  *   - フォーマット自動判定（PNG→APNG / WEBP→Animated WEBP）
  *   - ファイルダウンロード/クリップボード
+ *   - 連番PNG出力（ffmpeg変換用）
  * 
- * 【v8.24.0 改修内容】
- *   🔧 WEBP自動判定追加（フレーム数≧2でAnimated WEBP）
- *   🔧 Animated WEBP対応のためwebp-exporter統合
- * 
- * 【v8.18.0 重要改修 - スクリーンショット方式】
- *   ✅ renderToCanvas() を廃止
- *   ✅ 各エクスポータが直接 renderer.extract.canvas() を使用
- *   ✅ RenderTexture経由を完全排除
- *   ✅ WEBP/PSDエクスポータ追加
- *   ❌ GIFエクスポータ削除
+ * 【v8.29.0 改修内容】
+ *   🔧 連番PNG一括出力機能追加
+ *   🔧 プレビュー生成の確実性向上
+ *   🔧 エラーハンドリング強化
+ *   🔧 ffmpeg連携のための命名規則統一
  * 
  * ================================================================================
  */
@@ -60,9 +56,6 @@ window.ExportManager = (function() {
         
         /**
          * エクスポータ登録
-         * 
-         * v8.18.0: WEBP/PSD追加、GIF削除
-         * v8.24.0: WEBP自動判定追加
          */
         registerExporter(format, exporter) {
             this.exporters[format] = exporter;
@@ -80,7 +73,6 @@ window.ExportManager = (function() {
         
         /**
          * Animated WEBP自動検出（WEBP用）
-         * v8.24.0追加
          */
         _shouldUseAnimatedWebP() {
             const animData = this.animationSystem?.getAnimationData?.();
@@ -101,9 +93,6 @@ window.ExportManager = (function() {
         
         /**
          * エクスポート実行
-         * 
-         * PNG: フレーム数≧2で自動APNG
-         * WEBP: フレーム数≧2で自動Animated WEBP
          */
         async export(format, options = {}) {
             let targetFormat = format;
@@ -118,9 +107,9 @@ window.ExportManager = (function() {
             
             // WEBP → Animated WEBP判定（統一エクスポータ使用）
             if (format === 'webp' && this._shouldUseAnimatedWebP()) {
-                targetFormat = 'webp'; // エクスポータは同じ
+                targetFormat = 'webp';
                 actualFormat = 'animated-webp';
-                options.animated = true; // フラグで判定
+                options.animated = true;
                 console.log('🎬 Auto-switching: WEBP → Animated WEBP (multiple frames detected)');
             }
             
@@ -174,8 +163,140 @@ window.ExportManager = (function() {
         }
         
         /**
-         * プレビュー生成
-         * v8.24.0: Animated WEBP対応
+         * 連番PNG一括出力（ffmpeg変換用）
+         * v8.29.0追加
+         */
+        async exportSequencePNG(options = {}) {
+            const animData = this.animationSystem?.getAnimationData?.();
+            if (!animData?.frames || animData.frames.length < 2) {
+                throw new Error('アニメーションフレームが2枚以上必要です');
+            }
+            
+            const resolution = options.resolution || 1;
+            const frameCount = animData.frames.length;
+            const timestamp = this._getTimestamp();
+            const baseName = `tegaki_${timestamp}`;
+            
+            this.currentExport = { format: 'sequence-png', progress: 0 };
+            
+            if (window.TegakiEventBus) {
+                window.TegakiEventBus.emit('export:started', { 
+                    format: 'sequence-png',
+                    total: frameCount
+                });
+            }
+            
+            try {
+                const pngExporter = this.exporters['png'];
+                if (!pngExporter) {
+                    throw new Error('PNG Exporter not available');
+                }
+                
+                const currentFrame = this.animationSystem.getCurrentFrameIndex();
+                const blobs = [];
+                
+                // 各フレームを個別に出力
+                for (let i = 0; i < frameCount; i++) {
+                    // フレーム切り替え
+                    this.animationSystem.setCurrentFrame(i);
+                    await this._waitFrame();
+                    
+                    // PNG生成
+                    const blob = await pngExporter.generateBlob({
+                        resolution: resolution,
+                        transparent: options.transparent
+                    });
+                    
+                    // ゼロパディング (0001, 0002, ...)
+                    const frameNum = String(i + 1).padStart(4, '0');
+                    const filename = `${baseName}_${frameNum}.png`;
+                    
+                    this.downloadFile(blob, filename);
+                    blobs.push({ blob, filename, index: i });
+                    
+                    // 進捗通知
+                    const progress = Math.round(((i + 1) / frameCount) * 100);
+                    this.currentExport.progress = progress;
+                    
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('export:progress', {
+                            current: i + 1,
+                            total: frameCount,
+                            progress: progress
+                        });
+                    }
+                }
+                
+                // 元のフレームに戻す
+                this.animationSystem.setCurrentFrame(currentFrame);
+                
+                // 完了通知
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:completed', {
+                        format: 'sequence-png',
+                        count: frameCount,
+                        baseName: baseName
+                    });
+                }
+                
+                this.currentExport = null;
+                
+                return {
+                    blobs: blobs,
+                    baseName: baseName,
+                    frameCount: frameCount,
+                    ffmpegCommand: this._generateFFmpegCommand(baseName, animData)
+                };
+                
+            } catch (error) {
+                // エラー時も元のフレームに戻す
+                const currentFrame = this.animationSystem.getCurrentFrameIndex();
+                this.animationSystem.setCurrentFrame(currentFrame);
+                
+                this.currentExport = null;
+                
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:failed', {
+                        format: 'sequence-png',
+                        error: error.message
+                    });
+                }
+                
+                throw error;
+            }
+        }
+        
+        /**
+         * ffmpegコマンド生成
+         */
+        _generateFFmpegCommand(baseName, animData) {
+            const fps = animData.fps || 12;
+            
+            // Animated WebP用コマンド
+            const webpCmd = `ffmpeg -framerate ${fps} -i ${baseName}_%04d.png -c:v libwebp -lossless 0 -quality 90 -loop 0 ${baseName}.webp`;
+            
+            // MP4用コマンド
+            const mp4Cmd = `ffmpeg -framerate ${fps} -i ${baseName}_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 18 ${baseName}.mp4`;
+            
+            // GIF用コマンド
+            const gifCmd = `ffmpeg -framerate ${fps} -i ${baseName}_%04d.png -vf "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" ${baseName}.gif`;
+            
+            return {
+                webp: webpCmd,
+                mp4: mp4Cmd,
+                gif: gifCmd
+            };
+        }
+        
+        /**
+         * フレーム待機
+         */
+        async _waitFrame() {
+            return new Promise(resolve => requestAnimationFrame(resolve));
+        }
+        
+        /**
+         * プレビュー生成【v8.29.0 強化版】
          */
         async generatePreview(format, options = {}) {
             let targetFormat = format;
@@ -201,30 +322,39 @@ window.ExportManager = (function() {
             
             let blob;
             
-            // エクスポータがgeneratePreviewを持っていればそれを使用
-            if (exporter.generatePreview) {
-                blob = await exporter.generatePreview(options);
-            } else if (format === 'webp' && options.animated && exporter.generateAnimatedWebP) {
-                blob = await exporter.generateAnimatedWebP({
+            try {
+                // プレビュー用オプション（低解像度・低品質）
+                const previewOptions = {
                     ...options,
-                    resolution: 0.5, // プレビューは低解像度
-                    quality: 70
-                });
-            } else if (exporter.generateStaticWebP) {
-                blob = await exporter.generateStaticWebP({
-                    ...options,
-                    resolution: 0.5,
-                    quality: 70
-                });
-            } else if (exporter.generateBlob) {
-                blob = await exporter.generateBlob(options);
-            } else if (exporter.export) {
-                blob = await exporter.export(options);
-            } else {
-                throw new Error(`No suitable method for preview generation: ${targetFormat}`);
+                    resolution: options.resolution || 1,
+                    quality: 80
+                };
+                
+                // エクスポータがgeneratePreviewを持っていればそれを使用
+                if (exporter.generatePreview) {
+                    blob = await exporter.generatePreview(previewOptions);
+                } else if (format === 'webp' && options.animated && exporter.generateAnimatedWebP) {
+                    blob = await exporter.generateAnimatedWebP(previewOptions);
+                } else if (format === 'webp' && exporter.generateStaticWebP) {
+                    blob = await exporter.generateStaticWebP(previewOptions);
+                } else if (exporter.generateBlob) {
+                    blob = await exporter.generateBlob(previewOptions);
+                } else if (exporter.export) {
+                    blob = await exporter.export(previewOptions);
+                } else {
+                    throw new Error(`No suitable method for preview generation: ${targetFormat}`);
+                }
+                
+                if (!blob || blob.size === 0) {
+                    throw new Error('プレビュー生成に失敗しました（空のBlobが生成されました）');
+                }
+                
+                return { blob, format: actualFormat };
+                
+            } catch (error) {
+                console.error('Preview generation error:', error);
+                throw new Error(`プレビュー生成エラー: ${error.message}`);
             }
-            
-            return { blob, format: actualFormat };
         }
         
         /**
@@ -256,9 +386,6 @@ window.ExportManager = (function() {
         
         /**
          * 各フォーマット別Blob生成メソッド
-         * 
-         * ⚠️ これらは後方互換のため残すが、
-         *    実際は各エクスポータのgenerateBlob()を直接使用推奨
          */
         async exportAsPNGBlob(options = {}) {
             const exporter = this.exporters['png'];
@@ -282,7 +409,6 @@ window.ExportManager = (function() {
                 throw new Error('WEBP exporter not available');
             }
             
-            // アニメーション判定
             if (this._shouldUseAnimatedWebP()) {
                 return await exporter.generateAnimatedWebP(options);
             } else {
@@ -385,45 +511,12 @@ window.ExportManager = (function() {
                 }
             }
         }
-        
-        /**
-         * 🚨 廃止メソッド - renderToCanvas()
-         * 
-         * v8.18.0: スクリーンショット方式により不要
-         * 
-         * 各エクスポータは直接 renderer.extract.canvas() を使用するため、
-         * この中間レイヤーは削除。
-         * 
-         * もし既存コードで使われている場合のため、
-         * 警告を出して代替実装を提供。
-         */
-        renderToCanvas(options = {}) {
-            console.warn('⚠️ renderToCanvas() is deprecated in v8.18.0');
-            console.warn('   Use renderer.extract.canvas() directly in exporters');
-            
-            // 後方互換のための最小実装
-            const container = options.container || 
-                             this.layerSystem.layersContainer || 
-                             this.layerSystem.currentFrameContainer;
-            
-            if (!container) {
-                throw new Error('Container not available');
-            }
-            
-            // スクリーンショット方式で代替
-            return this.app.renderer.extract.canvas({
-                target: container,
-                resolution: 1,
-                alpha: true,
-                antialias: true
-            });
-        }
     }
     
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js v8.24.0 loaded (Animated WEBP対応)');
-console.log('   🎨 WEBP自動判定追加（フレーム数≧2）');
-console.log('   🎬 PNG→APNG / WEBP→Animated WEBP 自動切替');
-console.log('   ✓ webpxmux.js統合対応');
+console.log('✅ export-manager.js v8.29.0 loaded');
+console.log('   🔧 連番PNG一括出力機能追加');
+console.log('   🔧 プレビュー生成の確実性向上');
+console.log('   🔧 ffmpegコマンド自動生成');
