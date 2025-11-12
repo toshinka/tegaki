@@ -1,11 +1,10 @@
 /**
- * @file layer-system.js - Phase 5: Vキーイベント統一版
+ * @file layer-system.js - Phase 7: History登録重複削除版
  * @description レイヤー管理・操作の中核システム
  * 
- * 【Phase 5 改修内容】
- * 🔧 Vキーイベント名統一: keyboard:vkey-state-changed に統一
- * 🔧 selectNextLayer(), selectPrevLayer(): レイヤー選択機能（Phase 2完了）
- * 🧹 過剰なコンソールログ削除
+ * 【Phase 7 改修内容 - 🚨最優先】
+ * 🔧 addPathToActiveLayer(): History登録を削除（brush-core.js に統一）
+ * 🔧 DRY原則に基づく責務分担の明確化
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (イベント通信)
@@ -19,6 +18,7 @@
  * - layer-panel-renderer.js (UI描画 - EventBus経由のみ)
  * - keyboard-handler.js (ショートカット)
  * - thumbnail-update-manager.js (サムネイル更新)
+ * - brush-core.js (描画系History登録の責任者)
  */
 
 (function() {
@@ -196,7 +196,6 @@
             return this.activeLayerIndex;
         }
         
-        // 🔧 Phase 5: Vキーイベント名統一
         _setupVKeyEvents() {
             if (!this.eventBus) return;
             
@@ -325,6 +324,10 @@
             }
         }
 
+        /**
+         * 🚨 Phase 7: History登録を削除（brush-core.js に統一）
+         * この関数は現在使用されていないため、将来的に削除候補
+         */
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
             const activeLayer = this.getActiveLayer();
@@ -348,45 +351,8 @@
                 activeLayer.addChild(path.graphics);
             }
             
-            if (window.History && !window.History._manager.isApplying) {
-                const layerId = activeLayer.layerData?.id || activeLayer.label;
-                const pathBackup = structuredClone(path);
-                
-                window.History.push({
-                    name: 'add-stroke',
-                    do: () => {
-                        if (!activeLayer.layerData.paths.includes(path)) {
-                            activeLayer.layerData.paths.push(path);
-                            this.rebuildPathGraphics(path);
-                            if (path.graphics) {
-                                if (activeLayer.layerData?.maskSprite) {
-                                    path.graphics.mask = activeLayer.layerData.maskSprite;
-                                }
-                                activeLayer.addChild(path.graphics);
-                            }
-                        }
-                        this.requestThumbnailUpdate(layerIndex);
-                    },
-                    undo: () => {
-                        const idx = activeLayer.layerData.paths.indexOf(path);
-                        if (idx > -1) {
-                            activeLayer.layerData.paths.splice(idx, 1);
-                        }
-                        if (path.graphics && path.graphics.parent) {
-                            path.graphics.parent.removeChild(path.graphics);
-                            if (path.graphics.destroy) {
-                                path.graphics.destroy({ children: true, texture: false, baseTexture: false });
-                            }
-                        }
-                        this.requestThumbnailUpdate(layerIndex);
-                    },
-                    meta: {
-                        layerId,
-                        layerIndex,
-                        pathId: path.id
-                    }
-                });
-            }
+            // 🚨 Phase 7: History登録を削除（brush-core.js が責任を持つ）
+            // brush-core.js の finalizeStroke() で History.push() を実行
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
@@ -459,13 +425,10 @@
             const layerId = activeLayer.layerData.id;
             const layerIndex = this.activeLayerIndex;
             
-            // 🔧 Phase 6: 反転はビジュアルのみ更新、座標変換は行わない
-            // Historyには現在のtransform状態のみを記録
             if (window.History && !window.History._manager.isApplying) {
                 const transformBefore = structuredClone(this.transform.getTransform(layerId) || 
                     { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
                 
-                // 反転実行（ビジュアルのみ）
                 const transform = this.transform.getTransform(layerId) || 
                     { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
                 
@@ -508,7 +471,6 @@
                     }
                 });
             } else {
-                // History適用中またはHistory無効時
                 this.transform.flipLayer(activeLayer, direction, true);
             }
             
@@ -962,10 +924,6 @@
             });
         }
 
-        /**
-         * Phase 2: アクティブレイヤー選択（上へ）
-         * レイヤーの順序は変更せず、選択のみを変更
-         */
         selectNextLayer() {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -989,10 +947,6 @@
             }
         }
 
-        /**
-         * Phase 2: アクティブレイヤー選択（下へ）
-         * レイヤーの順序は変更せず、選択のみを変更
-         */
         selectPrevLayer() {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -1016,10 +970,6 @@
             }
         }
 
-        /**
-         * 互換性のために残す（非推奨）
-         * 今後は reorderLayers() を直接使用することを推奨
-         */
         moveActiveLayerHierarchy(direction) {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -1398,6 +1348,7 @@
 
 })();
 
-console.log('✅ layer-system.js Phase 5 loaded');
-console.log('   🔧 Vキーイベント統一: keyboard:vkey-state-changed');
-console.log('   🔧 selectNextLayer(), selectPrevLayer(): レイヤー選択機能完備')
+console.log('✅ layer-system.js Phase 7完成版 loaded');
+console.log('   🚨 addPathToActiveLayer(): History登録を削除');
+console.log('   🚨 brush-core.js にHistory登録を統一');
+console.log('   ✅ DRY原則に基づく責務分担の明確化')

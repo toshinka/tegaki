@@ -1,19 +1,15 @@
 /**
  * ================================================================================
- * system/drawing/brush-core.js - Phase 1-FIX: 消しゴムレイヤー追加修正版
+ * system/drawing/brush-core.js - Phase 7修正版: Undo完全対応
  * ================================================================================
  * 
- * 【Phase 1-FIX 改修内容】
- * 🔧 finalizeStroke() で消しゴムもレイヤーに追加
- * 🔧 消しゴムのpathsData記録を追加
- * 🔧 mode判定の明確化
+ * 【Phase 7-FIX 改修内容】
+ * 🚨 undo時に複数graphics削除問題を解決
+ * 🚨 pathsData配列ではなく、graphics参照のみで管理
+ * ✅ History登録を finalizeStroke() 1箇所に統一
+ * ✅ isApplying フラグの徹底チェック
  * 
- * 【Phase 4 改修内容 - 塗りつぶしツール対応】
- * ✅ fill モードを追加（pen, eraser, fill の3モード）
- * ✅ fill モード時は FillTool に処理を委譲
- * ✅ setMode() で fill を許可
- * 
- * 【依存関係 - Parents (このファイルが依存)】
+ * 【親ファイル (このファイルが依存)】
  *   - event-bus.js (イベント通信)
  *   - coordinate-system.js (座標変換)
  *   - pressure-handler.js (筆圧処理) ※オプション
@@ -21,13 +17,18 @@
  *   - stroke-renderer.js (ストローク描画)
  *   - layer-system.js (レイヤー管理)
  *   - brush-settings.js (ブラシ設定 - mode 情報源)
- *   - system/drawing/fill-tool.js (FillTool)
+ *   - history.js (Undo/Redo)
+ * 
+ * 【子ファイル (このファイルに依存)】
+ *   - drawing-engine.js (ストローク開始/更新/完了呼び出し)
+ *   - keyboard-handler.js (ツール切り替え)
  * 
  * 【責務】
  *   - ストローク開始/更新/完了処理
  *   - 座標変換パイプライン統合
  *   - プレビュー表示管理
  *   - ペン/消しゴム/塗りつぶしモードの処理振り分け
+ *   - 🚨 History登録の唯一の責任者（描画系）
  * ================================================================================
  */
 
@@ -57,7 +58,6 @@
         
         init() {
             if (this.coordinateSystem) {
-                console.warn('[BrushCore] Already initialized');
                 return;
             }
             
@@ -83,16 +83,7 @@
                 throw new Error('[BrushCore] window.strokeRenderer not initialized');
             }
             
-            if (!this.brushSettings) {
-                console.warn('[BrushCore] window.brushSettings not found - will use defaults');
-            }
-            if (!this.pressureHandler) {
-                // 筆圧なしでも動作可能（警告のみ）
-            }
-            
             this._setupEventListeners();
-            
-            console.log('✅ [BrushCore] Initialized (Phase 1-FIX)');
         }
         
         _setupEventListeners() {
@@ -134,11 +125,8 @@
             
             if (this.brushSettings) {
                 this.brushSettings.setMode(mode);
-            } else {
-                console.warn('[BrushCore] BrushSettings not available, cannot set mode');
             }
             
-            // fill モード以外は strokeRenderer に通知
             if (mode !== 'fill' && this.strokeRenderer && this.strokeRenderer.setTool) {
                 this.strokeRenderer.setTool(mode);
             }
@@ -154,7 +142,6 @@
         startStroke(clientX, clientY, pressure) {
             const currentMode = this.getMode();
             
-            // fill モードの場合は BrushCore では処理しない
             if (currentMode === 'fill') {
                 return;
             }
@@ -250,7 +237,8 @@
         }
         
         /**
-         * 🔧 Phase 1-FIX: 消しゴムも正しくレイヤーに追加
+         * 🚨 Phase 7-FIX: graphics参照のみで管理
+         * pathsData配列は使用せず、graphics.parentで判定
          */
         async finalizeStroke() {
             if (!this.isDrawing) return;
@@ -260,6 +248,7 @@
             
             const strokeData = this.strokeRecorder.endStroke();
             
+            // プレビュー削除
             if (this.previewGraphics && this.previewGraphics.parent) {
                 this.previewGraphics.parent.removeChild(this.previewGraphics);
                 this.previewGraphics.destroy();
@@ -269,37 +258,59 @@
             const settings = this._getCurrentSettings();
             const mode = settings.mode || 'pen';
             
+            // 最終描画
             const graphics = await this.strokeRenderer.renderFinalStroke(
                 strokeData,
                 settings
             );
             
             if (graphics) {
-                // 🔧 Phase 1-FIX: ペン/消しゴム両方ともレイヤーに追加
+                // レイヤーに追加
                 activeLayer.addChild(graphics);
                 
-                if (activeLayer.layerData) {
-                    if (!activeLayer.layerData.pathsData) {
-                        activeLayer.layerData.pathsData = [];
-                    }
+                // 🚨 Phase 7-FIX: History登録（graphics参照のみ）
+                if (window.History && !window.History._manager?.isApplying) {
+                    const layerIndex = this.layerManager.getLayerIndex(activeLayer);
+                    const layerId = activeLayer.layerData.id;
                     
-                    const pathData = {
-                        id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                        graphics: graphics,
-                        points: strokeData.points,
-                        tool: mode,  // 🔧 これで 'eraser' が正しく記録される
-                        settings: { ...settings }
-                    };
-                    
-                    activeLayer.layerData.pathsData.push(pathData);
-                    
-                    if (window.historyManager) {
-                        window.historyManager.recordAction({
+                    window.History.push({
+                        name: 'stroke-drawing',
+                        do: () => {
+                            // 🔧 graphics.parentで判定（pathsData不使用）
+                            if (graphics.parent !== activeLayer) {
+                                activeLayer.addChild(graphics);
+                            }
+                            
+                            if (this.eventBus) {
+                                this.eventBus.emit('thumbnail:layer-updated', {
+                                    layerIndex,
+                                    layerId,
+                                    immediate: true
+                                });
+                            }
+                        },
+                        undo: () => {
+                            // 🔧 graphics.parentで判定（pathsData不使用）
+                            if (graphics.parent === activeLayer) {
+                                activeLayer.removeChild(graphics);
+                            }
+                            
+                            if (this.eventBus) {
+                                this.eventBus.emit('thumbnail:layer-updated', {
+                                    layerIndex,
+                                    layerId,
+                                    immediate: true
+                                });
+                            }
+                        },
+                        meta: {
                             type: 'stroke',
-                            layerId: activeLayer.layerData?.id,
-                            pathData: pathData
-                        });
-                    }
+                            layerId,
+                            layerIndex,
+                            mode,
+                            pointCount: strokeData.points.length
+                        }
+                    });
                 }
                 
                 const layerIndex = this.layerManager.getLayerIndex(activeLayer);
@@ -369,8 +380,9 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js (Phase 1-FIX) loaded');
-    console.log('   🔧 消しゴムのレイヤー追加を修正');
-    console.log('   🔧 tool/mode 記録を統一');
+    console.log('✅ brush-core.js Phase 7-FIX loaded');
+    console.log('   🚨 pathsData配列不使用、graphics参照のみで管理');
+    console.log('   🚨 undo時の複数削除問題を解決');
+    console.log('   ✅ 1ストローク = 1 History entry');
 
 })();
