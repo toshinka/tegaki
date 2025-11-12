@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/export-manager.js - Animated WEBP対応【v8.32.0】
+ * system/export-manager.js - WEBP→WebM自動切替対応【v8.33.0】
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -12,21 +12,21 @@
  * 【依存関係 - Children】
  *   - png-exporter.js (PNG出力)
  *   - webp-exporter.js (静止画WEBP出力)
- *   - animated-webp-exporter.js (Animated WEBP出力 - WASM統合)
- *   - psd-exporter.js (PSD出力 - Phase 5: 基盤のみ)
- *   - apng-exporter.js (APNG出力)
+ *   - psd-exporter.js (PSD出力)
+ *   - apng-exporter.js (APNG出力 - PNG複数フレーム時)
+ *   - webm-exporter.js (WebM動画出力 - WEBP複数フレーム時)
  *   - mp4-exporter.js (MP4出力)
  * 
  * 【責務】
  *   - エクスポーター統合管理
- *   - フォーマット自動判定（PNG→APNG / WEBP→Animated WEBP）
+ *   - フォーマット自動判定（PNG→APNG / WEBP→WebM）
  *   - ファイルダウンロード/クリップボード
  *   - 連番PNG出力（ffmpeg変換用）
  * 
- * 【v8.32.0 改修内容】
- *   🔧 Animated WEBP呼び出しを最適化
- *   🔧 animated-webp-exporter.jsへの直接呼び出し
- *   🔧 静止画WEBP/Animated WEBPの完全分離
+ * 【v8.33.0 改修内容】
+ *   🔧 WEBP複数フレーム時は自動的にWebM出力
+ *   🔧 PNG→APNG機能は既存維持
+ *   🔧 WebM: 透過アルファ値維持・軽量性・file://対応
  * 
  * ================================================================================
  */
@@ -80,9 +80,9 @@ window.ExportManager = (function() {
         }
         
         /**
-         * Animated WEBP自動検出（WEBP用）
+         * WebM自動検出（WEBP用・複数フレーム時）
          */
-        _shouldUseAnimatedWebP() {
+        _shouldUseWebM() {
             return this._getFrameCount() >= 2;
         }
         
@@ -110,10 +110,10 @@ window.ExportManager = (function() {
                 actualFormat = 'apng';
             }
             
-            // WEBP → Animated WEBP判定（エクスポータ分離）
-            if (format === 'webp' && this._shouldUseAnimatedWebP()) {
-                targetFormat = 'animated-webp';
-                actualFormat = 'animated-webp';
+            // WEBP → WebM自動切替（複数フレーム時）
+            if (format === 'webp' && this._shouldUseWebM()) {
+                targetFormat = 'webm';
+                actualFormat = 'webm';
             }
             
             const exporter = this.exporters[targetFormat];
@@ -278,8 +278,8 @@ window.ExportManager = (function() {
         _generateFFmpegCommand(baseName, animData) {
             const fps = animData.fps || 12;
             
-            // Animated WebP用コマンド
-            const webpCmd = `ffmpeg -framerate ${fps} -i ${baseName}_%04d.png -c:v libwebp -lossless 0 -quality 90 -loop 0 ${baseName}.webp`;
+            // WebM用コマンド（VP9 + アルファチャンネル）
+            const webmCmd = `ffmpeg -framerate ${fps} -i ${baseName}_%04d.png -c:v libvpx-vp9 -pix_fmt yuva420p -auto-alt-ref 0 ${baseName}.webm`;
             
             // MP4用コマンド
             const mp4Cmd = `ffmpeg -framerate ${fps} -i ${baseName}_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 18 ${baseName}.mp4`;
@@ -288,7 +288,7 @@ window.ExportManager = (function() {
             const gifCmd = `ffmpeg -framerate ${fps} -i ${baseName}_%04d.png -vf "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" ${baseName}.gif`;
             
             return {
-                webp: webpCmd,
+                webm: webmCmd,
                 mp4: mp4Cmd,
                 gif: gifCmd
             };
@@ -302,7 +302,7 @@ window.ExportManager = (function() {
         }
         
         /**
-         * プレビュー生成【v8.32.0 Animated WEBP完全対応】
+         * プレビュー生成【v8.33.0 WebM対応】
          */
         async generatePreview(format, options = {}) {
             let targetFormat = format;
@@ -317,10 +317,10 @@ window.ExportManager = (function() {
                 actualFormat = 'apng';
             }
             
-            // WEBP → Animated WEBP自動切替
+            // WEBP → WebM自動切替（プレビュー生成も対応）
             if (format === 'webp' && frameCount >= 2) {
-                targetFormat = 'animated-webp';
-                actualFormat = 'animated-webp';
+                targetFormat = 'webm';
+                actualFormat = 'webm';
             }
             
             const exporter = this.exporters[targetFormat];
@@ -335,16 +335,20 @@ window.ExportManager = (function() {
                 const previewOptions = {
                     ...options,
                     resolution: options.resolution || 1,
-                    quality: 80
+                    quality: 80,
+                    skipDownload: true
                 };
                 
-                // generatePreview → generateBlob → export の順で試行
-                if (exporter.generatePreview) {
+                // WebMの場合はexport()を使用（generateBlobが存在しないため）
+                if (targetFormat === 'webm') {
+                    const result = await exporter.export(previewOptions);
+                    blob = result.blob || result;
+                } else if (exporter.generatePreview) {
                     blob = await exporter.generatePreview(previewOptions);
                 } else if (exporter.generateBlob) {
                     blob = await exporter.generateBlob(previewOptions);
                 } else if (exporter.export) {
-                    const result = await exporter.export({ ...previewOptions, skipDownload: true });
+                    const result = await exporter.export(previewOptions);
                     blob = result.blob || result;
                 } else {
                     throw new Error(`No suitable method for preview generation`);
@@ -357,7 +361,6 @@ window.ExportManager = (function() {
                 return { blob, format: actualFormat };
                 
             } catch (error) {
-                console.error('Preview generation error:', error);
                 throw new Error(`プレビュー生成エラー: ${error.message}`);
             }
         }
@@ -381,7 +384,7 @@ window.ExportManager = (function() {
                 'png': '.png',
                 'apng': '.png',
                 'webp': '.webp',
-                'animated-webp': '.webp',
+                'webm': '.webm',
                 'psd': '.psd',
                 'mp4': '.mp4'
             }[format] || '.png';
@@ -409,12 +412,13 @@ window.ExportManager = (function() {
         }
         
         async exportAsWebPBlob(options = {}) {
-            if (this._shouldUseAnimatedWebP()) {
-                const exporter = this.exporters['animated-webp'];
-                if (!exporter?.generateBlob) {
-                    throw new Error('Animated WEBP exporter not available');
+            if (this._shouldUseWebM()) {
+                const exporter = this.exporters['webm'];
+                if (!exporter?.export) {
+                    throw new Error('WebM exporter not available');
                 }
-                return await exporter.generateBlob(options);
+                const result = await exporter.export({ ...options, skipDownload: true });
+                return result.blob || result;
             } else {
                 const exporter = this.exporters['webp'];
                 if (!exporter?.generateBlob) {
@@ -524,5 +528,5 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js v8.32.0 loaded');
-console.log('   🔧 Animated WEBP完全対応（WASM統合）');
+console.log('✅ export-manager.js v8.33.0 loaded');
+console.log('   🔧 PNG→APNG維持 / WEBP→WebM自動切替対応');
