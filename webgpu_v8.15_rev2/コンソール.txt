@@ -1,0 +1,168 @@
+config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
+config.js:508    🔧 PerfectFreehand設定リニア化
+config.js:509    ✓ thinning: 0 (線の太り補正無効)
+config.js:510    ✓ smoothing: 0 (補間最小化)
+config.js:511    ✓ streamline: 0 (遅延補正なし)
+data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
+settings-manager.js:231 ✅ settings-manager.js Phase 2 loaded
+settings-manager.js:232    🔧 exportResolution 設定項目追加
+layer-transform.js:1011 ✅ layer-transform.js Phase 6 loaded
+layer-transform.js:1012    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
+layer-system.js:1351 ✅ layer-system.js Phase 7完成版 loaded
+layer-system.js:1352    🚨 addPathToActiveLayer(): History登録を削除
+layer-system.js:1353    🚨 brush-core.js にHistory登録を統一
+layer-system.js:1354    ✅ DRY原則に基づく責務分担の明確化
+drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
+drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
+history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
+webgpu-capabilities.js:126 ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
+earcut-triangulator.js:148 ✅ earcut-triangulator.js loaded
+webgpu-geometry-layer.js:394 ✅ webgpu-geometry-layer.js loaded
+ ✅ webgpu-texture-bridge.js (Phase 3: PixiJS v8 + bytesPerRow修正版) loaded
+    🔧 PixiJS v8 API対応（BaseTexture廃止）
+    🔧 bytesPerRow 256バイト境界要件対応
+ ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
+    📦 GPU Compute Shaderでポリゴンラスタライズ
+    📦 マスク加算/減算
+    📦 CPUフォールバック非対応（GPU専用）
+ ✅ system/drawing/msdf/msdf-brush-shader.js loaded
+ ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ [StrokeRecorder] PolygonGenerator connected
+ ✅ stroke-recorder.js (Phase 1完全版) loaded
+    ✅ PolygonGenerator自動接続
+    ✅ 初期化不要
+    ✅ デバッグログ強化
+ ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
+    ✓ 消しゴムモード削除
+    ✓ ペン描画に特化
+ ✅ stroke-renderer.js (Phase 3: Direct Rendering) loaded
+    ❌ SDF Compute削除
+    ✅ WebGPU Geometry Layer統合
+    ✅ ペン/消しゴム統一パイプライン
+ ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+ ✅ brush-settings.js (Phase 3-D Clean) loaded
+ ✅ brush-core.js Phase 7-FIX3 loaded
+    🔧 strokeData.polygon完全対応
+ ✅ fill-tool.js (WebGPU競合修正版) loaded
+    ❌ 独自WebGPU初期化を削除
+    ✅ 既存インスタンス参照のみ
+ ✅ drawing-engine.js (Phase 4 - Fill対応版) loaded
+    ✓ fill モード時に canvas:pointerdown イベント発行
+    ✓ localX/localY を含むイベントペイロード
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
+png-exporter.js:258    🔧 Blob生成の確実性向上
+webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
+dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
+slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
+slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
+slider-utils.js:237    🔧 requestAnimationFrame最適化
+keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
+keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
+keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+layer-panel-renderer.js:663 ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
+layer-panel-renderer.js:664    ✓ layer:panel-update-requested イベントリスナー追加
+layer-panel-renderer.js:665    ✓ LayerSystemからの直接呼び出し完全排除
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
+settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
+ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
+ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
+core-runtime.js:570 ✅ core-runtime.js (Phase 4 - Fill対応版) loaded
+core-runtime.js:571    ✓ api.tool.setFill() 追加
+core-runtime.js:572    ✓ api.tool.set("fill") サポート
+core-engine.js:706 ✅ core-engine.js v8.32.0 loaded
+core-initializer.js:474 ✅ core-initializer.js (Phase 3: Geometry Layer対応版) loaded
+core-initializer.js:475    🔧 WebGPU Geometry Layer初期化追加
+core-initializer.js:476    ✅ Direct Polygon Rendering対応
+core-initializer.js:283 ✅ [PixiJS] Renderer initialized
+core-initializer.js:284    📊 Type: 1
+stroke-recorder.js:85 ✅ [StrokeRecorder] PolygonGenerator connected
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+core-initializer.js:323 [App] Starting WebGPU Phase 3 initialization...
+core-initializer.js:331 [App] ✅ StrokeRenderer found, initializing WebGPU...
+core-initializer.js:160 [WebGPU] Phase 3 initialization starting...
+core-initializer.js:169 [WebGPU] Initializing Drawing Layer...
+webgpu-drawing-layer.js:47 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+initialize @ webgpu-drawing-layer.js:47
+initializeWebGPU @ core-initializer.js:170
+initialize @ core-initializer.js:332
+await in initialize
+initialize @ core-initializer.js:454
+（匿名） @ index.html:119
+webgpu-drawing-layer.js:75 ✅ [WebGPUDrawingLayer] Initialized
+webgpu-drawing-layer.js:76    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
+webgpu-drawing-layer.js:77    📊 Adapter: GPUAdapter {features: GPUSupportedFeatures, limits: GPUSupportedLimits, info: GPUAdapterInfo}
+core-initializer.js:175 ✅ [WebGPU] Drawing Layer initialized
+core-initializer.js:183 [WebGPU] Initializing Geometry Layer...
+webgpu-geometry-layer.js:257 ✅ [WebGPUGeometryLayer] Initialized
+webgpu-geometry-layer.js:258    📊 Pen Pipeline: GPURenderPipeline {label: 'Pen Pipeline'}
+webgpu-geometry-layer.js:259    📊 Eraser Pipeline: GPURenderPipeline {label: 'Eraser Pipeline'}
+core-initializer.js:187 ✅ [WebGPU] Geometry Layer initialized
+core-initializer.js:195 [WebGPU] Initializing Texture Bridge...
+webgpu-texture-bridge.js:45 ✅ [WebGPUTextureBridge] Initialized
+core-initializer.js:201 ✅ [WebGPU] Texture Bridge initialized
+core-initializer.js:205 [WebGPU] Initializing Compute SDF (optional)...
+webgpu-compute-sdf.js:42 ✅ [WebGPUComputeSDF] Initialized
+core-initializer.js:208 ✅ [WebGPU] Compute SDF initialized (for future MSDF)
+core-initializer.js:216 [WebGPU] Initializing StrokeRenderer...
+core-initializer.js:218 ✅ [WebGPU] StrokeRenderer initialized
+core-initializer.js:224 ✅ [WebGPU] Complete Phase 3 initialization
+core-initializer.js:225    📊 Drawing Layer: true
+core-initializer.js:226    📊 Geometry Layer: true
+core-initializer.js:227    📊 Texture Bridge: true
+core-initializer.js:228    📊 Stroke Renderer: true
+core-initializer.js:333 [App] WebGPU enabled: true
+index.html:120 ✅ Application initialized (Phase 4-B: MSDF完全統合版)
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+polygon-generator.js:50 ✅ [PolygonGenerator] PerfectFreehand initialized (UMD default export)
+earcut-triangulator.js:51 ✅ [EarcutTriangulator] Initialized
+stroke-recorder.js:180 [StrokeRecorder] endStroke {pointsCount: 41, polygonLength: 200, isSingleDot: false}
+stroke-recorder.js:180 [StrokeRecorder] endStroke {pointsCount: 39, polygonLength: 192, isSingleDot: false}
+popup-manager.js:192 👁️ Popup "quickAccess" shown
+stroke-recorder.js:180 [StrokeRecorder] endStroke {pointsCount: 161, polygonLength: 720, isSingleDot: false}
