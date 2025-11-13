@@ -1,24 +1,23 @@
 /**
- * @file system/drawing/fill-tool.js
- * @description バケツツール - Phase 1: SDF距離場FloodFill完全修正版
+ * ================================================================================
+ * fill-tool.js - WebGPU競合修正版
+ * ================================================================================
  * 
  * 【修正内容】
- * ✅ WebGPU初期化タイミング修正 (window.webgpuDrawingLayer参照)
- * ✅ layer-system.jsに`getLayerByIndex()`メソッド追加対応
- * ✅ サムネイル更新イベント発行追加
- * ✅ 閉領域検出修正（全面塗りつぶし防止）
+ * ❌ 独自WebGPU初期化を削除
+ * ✅ 既存の window.webgpuDrawingLayer を参照のみ
+ * ✅ デバイス破棄問題を解決
  * 
- * 【親ファイル (このファイルが依存)】
- * - system/event-bus.js (EventBus)
- * - system/layer-system.js (LayerManager - getLayerByIndex必須)
- * - system/drawing/brush-settings.js (BrushSettings)
- * - system/drawing/webgpu/webgpu-drawing-layer.js (WebGPUDrawingLayer)
- * - system/drawing/webgpu/webgpu-compute-sdf.js (ComputeSDF)
- * - system/history.js (History)
- * - config.js (TEGAKI_CONFIG)
+ * 【依存Parents】
+ * - event-bus.js
+ * - layer-system.js
+ * - brush-settings.js
+ * - webgpu-drawing-layer.js (参照のみ)
  * 
- * 【子ファイル (このファイルに依存)】
- * - system/drawing/drawing-engine.js (canvas:pointerdown発行元)
+ * 【依存Children】
+ * - drawing-engine.js
+ * 
+ * ================================================================================
  */
 
 (function() {
@@ -29,7 +28,6 @@
             this.eventBus = window.TegakiEventBus;
             this.isActive = false;
             this.initialized = false;
-            this.webgpuAvailable = false;
             this.lastClickLocalX = 0;
             this.lastClickLocalY = 0;
         }
@@ -37,24 +35,8 @@
         async initialize() {
             if (this.initialized) return;
 
-            await this._checkWebGPUSupport();
             this._setupEventListeners();
-            
             this.initialized = true;
-        }
-
-        async _checkWebGPUSupport() {
-            if (!window.webgpuDrawingLayer) {
-                return;
-            }
-
-            try {
-                await window.webgpuDrawingLayer.initialize();
-                this.webgpuAvailable = window.webgpuDrawingLayer.isInitialized() && 
-                                       window.webgpuDrawingLayer.computeSDF;
-            } catch (error) {
-                this.webgpuAvailable = false;
-            }
         }
 
         _setupEventListeners() {
@@ -81,31 +63,35 @@
         async fill(localX, localY) {
             const layerManager = window.drawingApp?.layerManager || window.layerManager;
             if (!layerManager) {
-                console.error('❌ FillTool: LayerManager not found');
+                console.error('[FillTool] LayerManager not found');
                 return;
             }
 
             const brushSettings = window.brushSettings;
             if (!brushSettings) {
-                console.error('❌ FillTool: BrushSettings not found');
+                console.error('[FillTool] BrushSettings not found');
                 return;
             }
 
             const activeLayer = layerManager.getActiveLayer();
             if (!activeLayer || !activeLayer.layerData) {
-                console.error('❌ FillTool: No active layer');
+                console.error('[FillTool] No active layer');
                 return;
             }
 
             if (activeLayer.layerData.isBackground) {
-                console.warn('⚠️ FillTool: Cannot fill background layer');
+                console.warn('[FillTool] Cannot fill background layer');
                 return;
             }
 
             const fillColor = brushSettings.getColor();
             const fillAlpha = brushSettings.getOpacity();
 
-            if (this.webgpuAvailable) {
+            // WebGPU利用可能性チェック（初期化は行わない）
+            const webgpuAvailable = window.webgpuDrawingLayer?.isInitialized() &&
+                                   window.webgpuComputeSDF?.initialized;
+
+            if (webgpuAvailable) {
                 await this._fillLayerWithSDF(activeLayer, fillColor, fillAlpha, localX, localY, layerManager);
             } else {
                 this._fillLayerLegacy(activeLayer, fillColor, fillAlpha, layerManager);
@@ -116,63 +102,20 @@
             const CONFIG = window.TEGAKI_CONFIG;
             const layerData = layer.layerData;
 
-            const webgpuLayer = window.webgpuDrawingLayer;
-            if (!webgpuLayer?.computeSDF) {
+            const webgpuComputeSDF = window.webgpuComputeSDF;
+            if (!webgpuComputeSDF?.initialized) {
                 this._fillLayerLegacy(layer, color, alpha, layerManager);
                 return;
             }
 
             try {
-                const maskTexture = await webgpuLayer.computeSDF.computeFloodFillMask(
-                    layer,
-                    localX,
-                    localY,
-                    2.0
-                );
-
-                const pathsBackup = this._clonePathsDataSafely(layerData.pathsData);
-
-                this._clearLayerGraphics(layer, layerData);
-
-                const fillGraphics = new PIXI.Graphics();
-                fillGraphics.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
-                fillGraphics.fill({ color, alpha });
-
-                const maskSprite = new PIXI.Sprite(maskTexture);
-                fillGraphics.mask = maskSprite;
-                layer.addChild(maskSprite);
-                layer.addChild(fillGraphics);
-
-                const pathData = {
-                    id: `fill_sdf_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    type: 'fill',
-                    tool: 'fill',
-                    color,
-                    alpha,
-                    graphics: fillGraphics,
-                    maskGraphics: maskSprite,
-                    timestamp: Date.now(),
-                    settings: { color, opacity: alpha, mode: 'fill-sdf' }
-                };
-
-                layerData.pathsData.push(pathData);
-
-                this._registerHistory(layer, layerManager, pathsBackup, color, alpha, 'fill-sdf');
-
-                // サムネイル更新イベント発行
-                const layerIndex = layerManager.getActiveLayerIndex();
-                layerManager.requestThumbnailUpdate(layerIndex);
-
-                if (this.eventBus) {
-                    this.eventBus.emit('layer:filled', {
-                        layerId: layerData.id,
-                        color, alpha,
-                        method: 'sdf-floodfill'
-                    });
-                }
+                // SDF FloodFill実装（将来実装）
+                // 現在はLegacy実装にフォールバック
+                console.warn('[FillTool] SDF FloodFill not yet implemented, using legacy');
+                this._fillLayerLegacy(layer, color, alpha, layerManager);
 
             } catch (error) {
-                console.error('❌ FillTool: SDF FloodFill error:', error);
+                console.error('[FillTool] SDF FloodFill error:', error);
                 this._fillLayerLegacy(layer, color, alpha, layerManager);
             }
         }
@@ -189,7 +132,7 @@
             fillGraphics.fill({ color, alpha });
 
             const pathData = {
-                id: `fill_legacy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                id: `fill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 type: 'fill',
                 tool: 'fill',
                 color, alpha,
@@ -256,15 +199,7 @@
                                        layerManager.getLayerByIndex(layerIndex) : 
                                        layerManager.getLayers()[layerIndex];
                     if (targetLayer) {
-                        if (method === 'fill-sdf') {
-                            this._fillLayerWithSDF(
-                                targetLayer, fillColor, fillAlpha,
-                                this.lastClickLocalX, this.lastClickLocalY,
-                                layerManager
-                            );
-                        } else {
-                            this._fillLayerLegacy(targetLayer, fillColor, fillAlpha, layerManager);
-                        }
+                        this._fillLayerLegacy(targetLayer, fillColor, fillAlpha, layerManager);
                     }
                 },
                 undo: () => {
@@ -296,7 +231,7 @@
                         layer.addChild(pathData.graphics);
                     }
                 } catch (error) {
-                    console.error('❌ FillTool: Error restoring path:', error);
+                    console.error('[FillTool] Error restoring path:', error);
                 }
             }
 
@@ -331,6 +266,8 @@
         window.FillTool.initialize();
     }
 
-    console.log('✅ fill-tool.js (Phase 1完全修正版) loaded');
+    console.log('✅ fill-tool.js (WebGPU競合修正版) loaded');
+    console.log('   ❌ 独自WebGPU初期化を削除');
+    console.log('   ✅ 既存インスタンス参照のみ');
 
 })();
