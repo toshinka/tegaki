@@ -1,26 +1,33 @@
 /**
  * ================================================================================
  * system/drawing/stroke-renderer.js
- * Phase 8: 完全動作版
+ * Phase 9: 完全動作・消しゴム実装版
  * ================================================================================
  * 
  * 【責務】
  * - Polygon → WebGPU Geometry Layer経由描画
  * - Preview/Final描画統合
  * - BlendMode管理（Pen/Eraser）
+ * - 座標変換（Local → NDC）
  * 
  * 【依存Parents】
- * - webgpu-geometry-layer.js
- * - earcut-triangulator.js
- * - webgpu-drawing-layer.js
- * - webgpu-texture-bridge.js
+ * - webgpu-drawing-layer.js (GPUDevice/Queue)
+ * - webgpu-geometry-layer.js (描画処理)
+ * - earcut-triangulator.js (Triangulation)
+ * - webgpu-texture-bridge.js (Texture → Sprite)
  * 
  * 【依存Children】
- * - brush-core.js
+ * - brush-core.js (呼び出し元)
  * 
- * 【Phase 8改修】
- * - 消しゴムcolor.a = 0設定で透明出力
- * - チラつき完全解消
+ * 【Phase 9改修】
+ * ✅ 消しゴム: color.a = 1.0 で完全不透明軌跡（Blend側で減算）
+ * ✅ チラつき解消: await onSubmittedWorkDone()
+ * ✅ 初期化待機: 最大5秒リトライ
+ * 
+ * 【GPT5アドバイス対応】
+ * ✅ SDF Compute経由削除
+ * ✅ Polygon → VertexBuffer 直接転送
+ * ✅ Transform Matrix でNDC変換
  * 
  * ================================================================================
  */
@@ -45,7 +52,9 @@
 
       this.initializationPromise = (async () => {
         let retries = 0;
-        while (retries < 50) {
+        const maxRetries = 50; // 5秒
+
+        while (retries < maxRetries) {
           this.webgpuDrawingLayer = window.WebGPUDrawingLayer;
           this.webgpuGeometryLayer = window.WebGPUGeometryLayer;
           this.textureBridge = window.WebGPUTextureBridge;
@@ -62,33 +71,21 @@
           retries++;
         }
 
-        if (!this.webgpuDrawingLayer) {
-          throw new Error('WebGPUDrawingLayer not found');
+        if (!this.webgpuDrawingLayer?.initialized) {
+          throw new Error('WebGPUDrawingLayer not initialized');
         }
-        if (!this.webgpuDrawingLayer.initialized) {
-          throw new Error('WebGPUDrawingLayer found but not initialized');
+        if (!this.webgpuGeometryLayer?.initialized) {
+          throw new Error('WebGPUGeometryLayer not initialized');
         }
-
-        if (!this.webgpuGeometryLayer) {
-          throw new Error('WebGPUGeometryLayer not found');
+        if (!this.textureBridge?.initialized) {
+          throw new Error('WebGPUTextureBridge not initialized');
         }
-        if (!this.webgpuGeometryLayer.initialized) {
-          throw new Error('WebGPUGeometryLayer found but not initialized');
-        }
-
-        if (!this.textureBridge) {
-          throw new Error('WebGPUTextureBridge not found');
-        }
-        if (!this.textureBridge.initialized) {
-          throw new Error('WebGPUTextureBridge found but not initialized');
-        }
-
         if (!this.triangulator) {
           throw new Error('EarcutTriangulator not found');
         }
 
         this.initialized = true;
-        console.log('✅ stroke-renderer.js Phase 8完全版');
+        console.log('✅ [StrokeRenderer] Phase 9完全版初期化完了');
       })();
 
       return this.initializationPromise;
@@ -125,9 +122,9 @@
         const normalizedPolygon = this._normalizePolygon(polygon, bounds);
         const transform = this._createTransformMatrix(width, height);
         
-        // 消しゴム時: alpha = 0 で透明出力
+        // 消しゴム: color.a = 1.0（完全不透明）でBlend側で減算
         const color = mode === 'eraser' 
-          ? new Float32Array([0, 0, 0, 0])
+          ? new Float32Array([1, 1, 1, 1.0])  // 白色・完全不透明
           : this._getColor(settings);
 
         this.webgpuGeometryLayer.updateUniforms(transform, color);
@@ -137,16 +134,23 @@
         const texture = device.createTexture({
           size: { width, height },
           format: 'rgba8unorm',
-          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.TEXTURE_BINDING
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | 
+                 GPUTextureUsage.COPY_SRC | 
+                 GPUTextureUsage.TEXTURE_BINDING
         });
 
         const encoder = device.createCommandEncoder({ label: 'Preview Render' });
         this.webgpuGeometryLayer.render(encoder, texture, width, height);
         device.queue.submit([encoder.finish()]);
 
+        // GPU完了待機（チラつき防止）
         await device.queue.onSubmittedWorkDone();
 
-        const sprite = await this.textureBridge.createSpriteFromGPUTexture(texture, width, height);
+        const sprite = await this.textureBridge.createSpriteFromGPUTexture(
+          texture, 
+          width, 
+          height
+        );
         
         if (sprite) {
           sprite.x = bounds.minX - 2;
@@ -202,6 +206,8 @@
     }
 
     _createTransformMatrix(width, height) {
+      // Local Canvas座標 → NDC座標系変換
+      // NDC: x,y ∈ [-1, 1], Y軸反転
       const scaleX = 2.0 / width;
       const scaleY = -2.0 / height;
       const translateX = -1.0;
@@ -215,13 +221,13 @@
     }
 
     _getColor(settings) {
-      const color = settings?.color || window.config?.defaultColor || '#800000';
+      const colorHex = settings?.color || window.config?.defaultColor || '#800000';
       
-      const hex = color.replace('#', '');
+      const hex = colorHex.replace('#', '');
       const r = parseInt(hex.substr(0, 2), 16) / 255;
       const g = parseInt(hex.substr(2, 2), 16) / 255;
       const b = parseInt(hex.substr(4, 2), 16) / 255;
-      const a = settings?.opacity || 1.0;
+      const a = settings?.opacity !== undefined ? settings.opacity : 1.0;
 
       return new Float32Array([r, g, b, a]);
     }

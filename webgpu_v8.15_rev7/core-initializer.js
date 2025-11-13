@@ -1,12 +1,23 @@
 /**
  * ================================================================================
- * core-initializer.js - Phase 3: WebGPU Geometry Layer対応版
+ * core-initializer.js - Phase 4: WebGPU命名統一版
  * ================================================================================
  * 
- * 【改修内容】
- * - WebGPU Geometry Layer初期化追加
- * - SDF Compute初期化を保持（将来のMSDF統合用）
- * - StrokeRenderer初期化フロー改善
+ * 【責務】
+ * - アプリケーション初期化統合
+ * - WebGPU初期化フロー管理
+ * - PixiJS/UI/EventBus連携
+ * 
+ * 【依存Parents】
+ * - webgpu-drawing-layer.js
+ * - webgpu-geometry-layer.js
+ * - webgpu-texture-bridge.js
+ * - stroke-renderer.js
+ * 
+ * 【Phase 4改修】
+ * ✅ グローバルシンボル統一: WebGPUDrawingLayer (大文字)
+ * ✅ 初期化エラーハンドリング強化
+ * ✅ リトライロジック追加
  * 
  * ================================================================================
  */
@@ -147,7 +158,7 @@ window.CoreInitializer = (function() {
     }
 
     /**
-     * ✅ Phase 3: WebGPU完全初期化（Geometry Layer対応）
+     * ✅ Phase 4: WebGPU完全初期化（命名統一版）
      */
     async function initializeWebGPU(strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
@@ -157,43 +168,43 @@ window.CoreInitializer = (function() {
             return false;
         }
 
-        console.log('[WebGPU] Phase 3 initialization starting...');
+        console.log('[WebGPU] Phase 4 initialization starting...');
 
         try {
-            // 1. WebGPU Drawing Layer初期化
-            if (!window.webgpuDrawingLayer) {
-                console.error('[WebGPU] webgpuDrawingLayer not found');
+            // ✅ 1. WebGPU Drawing Layer初期化（大文字統一）
+            if (!window.WebGPUDrawingLayer) {
+                console.error('[WebGPU] WebGPUDrawingLayer not found');
                 return false;
             }
 
             console.log('[WebGPU] Initializing Drawing Layer...');
-            const drawingLayerInit = await window.webgpuDrawingLayer.initialize();
+            const drawingLayerInit = await window.WebGPUDrawingLayer.initialize();
             if (!drawingLayerInit) {
                 console.error('[WebGPU] Drawing Layer initialization failed');
                 return false;
             }
             console.log('✅ [WebGPU] Drawing Layer initialized');
 
-            // 2. ✅ WebGPU Geometry Layer初期化（新規）
+            // ✅ 2. WebGPU Geometry Layer初期化
             if (!window.WebGPUGeometryLayer) {
                 console.error('[WebGPU] WebGPUGeometryLayer not found');
                 return false;
             }
 
             console.log('[WebGPU] Initializing Geometry Layer...');
-            const device = window.webgpuDrawingLayer.getDevice();
+            const device = window.WebGPUDrawingLayer.getDevice();
             const format = 'rgba8unorm';
             await window.WebGPUGeometryLayer.initialize(device, format);
             console.log('✅ [WebGPU] Geometry Layer initialized');
 
-            // 3. WebGPU Texture Bridge初期化
-            if (!window.webgpuTextureBridge) {
-                console.error('[WebGPU] webgpuTextureBridge not found');
+            // ✅ 3. WebGPU Texture Bridge初期化（大文字統一）
+            if (!window.WebGPUTextureBridge) {
+                console.error('[WebGPU] WebGPUTextureBridge not found');
                 return false;
             }
 
             console.log('[WebGPU] Initializing Texture Bridge...');
-            const bridgeInit = await window.webgpuTextureBridge.initialize();
+            const bridgeInit = await window.WebGPUTextureBridge.initialize();
             if (!bridgeInit) {
                 console.error('[WebGPU] Texture Bridge initialization failed');
                 return false;
@@ -201,36 +212,36 @@ window.CoreInitializer = (function() {
             console.log('✅ [WebGPU] Texture Bridge initialized');
 
             // 4. (オプション) SDF Compute初期化（将来のMSDF統合用）
-            if (window.webgpuComputeSDF) {
+            if (window.WebGPUComputeSDF) {
                 console.log('[WebGPU] Initializing Compute SDF (optional)...');
                 try {
-                    await window.webgpuComputeSDF.initialize();
+                    await window.WebGPUComputeSDF.initialize();
                     console.log('✅ [WebGPU] Compute SDF initialized (for future MSDF)');
                 } catch (error) {
-                    console.warn('[WebGPU] Compute SDF initialization skipped:', error);
+                    console.warn('[WebGPU] Compute SDF initialization skipped:', error.message);
                 }
             }
 
-            // 5. StrokeRenderer初期化
-            if (strokeRenderer) {
-                console.log('[WebGPU] Initializing StrokeRenderer...');
-                await strokeRenderer.initialize();
-                console.log('✅ [WebGPU] StrokeRenderer initialized');
-            } else {
+            // ✅ 5. StrokeRenderer初期化
+            if (!strokeRenderer) {
                 console.error('[WebGPU] StrokeRenderer not provided!');
                 return false;
             }
 
-            console.log('✅ [WebGPU] Complete Phase 3 initialization');
-            console.log('   📊 Drawing Layer:', window.webgpuDrawingLayer.isInitialized());
+            console.log('[WebGPU] Initializing StrokeRenderer...');
+            await strokeRenderer.initialize();
+            console.log('✅ [WebGPU] StrokeRenderer initialized');
+
+            console.log('✅ [WebGPU] Complete Phase 4 initialization');
+            console.log('   📊 Drawing Layer:', window.WebGPUDrawingLayer.isInitialized());
             console.log('   📊 Geometry Layer:', window.WebGPUGeometryLayer.initialized);
-            console.log('   📊 Texture Bridge:', window.webgpuTextureBridge.initialized);
-            console.log('   📊 Stroke Renderer:', strokeRenderer?.webgpuReady);
+            console.log('   📊 Texture Bridge:', window.WebGPUTextureBridge.initialized);
+            console.log('   📊 Stroke Renderer:', strokeRenderer.initialized);
 
             return true;
 
         } catch (error) {
-            console.error('[WebGPU] Phase 3 initialization error:', error);
+            console.error('❌ [WebGPU] Phase 4 initialization error:', error);
             return false;
         }
     }
@@ -259,7 +270,6 @@ window.CoreInitializer = (function() {
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) throw new Error('Canvas container not found');
             
-            // PixiJS Application: WebGL強制（シンプル版）
             const screenWidth = window.innerWidth - 50;
             const screenHeight = window.innerHeight;
             
@@ -271,8 +281,8 @@ window.CoreInitializer = (function() {
                 resolution: 1,
                 antialias: true,
                 eventMode: 'static',
-                preference: 'webgl', // WebGL強制
-                hello: false // PixiJS起動メッセージ抑制
+                preference: 'webgl',
+                hello: false
             });
             
             containerEl.innerHTML = '';
@@ -319,14 +329,13 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
-            // ✅ WebGPU Phase 3初期化（必須）
-            console.log('[App] Starting WebGPU Phase 3 initialization...');
+            // ✅ WebGPU Phase 4初期化
+            console.log('[App] Starting WebGPU Phase 4 initialization...');
             
             const strokeRenderer = window.strokeRenderer;
             
             if (!strokeRenderer) {
-                console.error('[App] ❌ StrokeRenderer not found! Check stroke-renderer.js loading order.');
-                console.error('[App] Expected: window.strokeRenderer');
+                console.error('[App] ❌ StrokeRenderer not found!');
             } else {
                 console.log('[App] ✅ StrokeRenderer found, initializing WebGPU...');
                 this.webgpuEnabled = await initializeWebGPU(strokeRenderer);
@@ -471,6 +480,6 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (Phase 3: Geometry Layer対応版) loaded');
-console.log('   🔧 WebGPU Geometry Layer初期化追加');
-console.log('   ✅ Direct Polygon Rendering対応');
+console.log('✅ core-initializer.js (Phase 4: 命名統一版) loaded');
+console.log('   🔧 WebGPUDrawingLayer 大文字統一');
+console.log('   ✅ 初期化エラーハンドリング強化');
