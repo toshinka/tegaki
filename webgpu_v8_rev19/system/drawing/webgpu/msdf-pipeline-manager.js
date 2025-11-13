@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js - Phase 2完全版（座標系統一修正版）
+ * msdf-pipeline-manager.js - Phase 2.1 MSDF Encode修正版
  * MSDF生成パイプライン統合管理
  * ================================================================================
  * 
@@ -8,7 +8,7 @@
  * - Compute Pipeline統合管理
  * - Seed初期化Pass実行
  * - JFA Pass実行
- * - MSDF Encode Pass実行
+ * - MSDF Encode Pass実行（channelId対応）
  * - 簡易Render Pass実行
  * - Texture Ping-Pong管理
  * 
@@ -19,11 +19,10 @@
  * 【依存Children】
  * - brush-core.js (呼び出し元)
  * 
- * 【重大修正】
- * ✅ 座標系統一: bounds offset適用で絶対座標→相対座標変換
- * ✅ Uniform Buffer追加でbounds情報をShaderに渡す
- * ✅ Seed Clear/Init/Encode全てで座標変換実装
- * ✅ デバッグログ追加で各Pass動作確認
+ * 【Phase 2.1修正】
+ * ✅ MSDF Encode: channelId対応でR/G/B個別書き込み
+ * ✅ median()計算で真のMSDF描画実現
+ * ✅ 矩形化問題の根本解決
  * 
  * ================================================================================
  */
@@ -71,7 +70,6 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let edge = edges[edgeIdx];
   let texSize = textureDimensions(seedTex);
   
-  // 絶対座標 → 相対座標変換
   let x0_rel = i32(edge.x0 - bounds.minX);
   let y0_rel = i32(edge.y0 - bounds.minY);
   let x1_rel = i32(edge.x1 - bounds.minX);
@@ -79,7 +77,6 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let xMid_rel = i32((edge.x0 + edge.x1) * 0.5 - bounds.minX);
   let yMid_rel = i32((edge.y0 + edge.y1) * 0.5 - bounds.minY);
   
-  // 端点・中点書き込み（相対座標）
   let p0 = vec2<i32>(x0_rel, y0_rel);
   let p1 = vec2<i32>(x1_rel, y1_rel);
   let pMid = vec2<i32>(xMid_rel, yMid_rel);
@@ -144,6 +141,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 }
 `;
 
+  // ✅ Phase 2.1修正: channelId対応MSDF Encode
   const MSDF_ENCODE_WGSL = `
 struct EdgeData {
   x0: f32, y0: f32, x1: f32, y1: f32,
@@ -186,31 +184,42 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   
   if (pos.x >= i32(texSize.x) || pos.y >= i32(texSize.y)) { return; }
 
-  let seed = textureLoad(seedTex, pos, 0);
-  let edgeIdx = u32(seed.z);
+  // 各チャンネル用の距離を計算
+  var distances = vec3<f32>(99999.0, 99999.0, 99999.0);
   
-  if (seed.z < 0.0 || edgeIdx >= arrayLength(&edges)) {
-    textureStore(msdfTex, pos, vec4<f32>(99999.0, 99999.0, 99999.0, 1.0));
-    return;
+  // 3つの最近接エッジを探索（R/G/B用）
+  for (var channelIdx = 0u; channelIdx < 3u; channelIdx++) {
+    var minDist = 99999.0;
+    
+    // 全エッジをスキャンしてchannelIdが一致するものを探す
+    for (var i = 0u; i < arrayLength(&edges); i++) {
+      let edge = edges[i];
+      
+      if (u32(edge.channelId) != channelIdx) { continue; }
+      
+      let px = f32(pos.x);
+      let py = f32(pos.y);
+      let x0_rel = edge.x0 - bounds.minX;
+      let y0_rel = edge.y0 - bounds.minY;
+      let x1_rel = edge.x1 - bounds.minX;
+      let y1_rel = edge.y1 - bounds.minY;
+      
+      var dist = pointToSegmentDistance(px, py, x0_rel, y0_rel, x1_rel, y1_rel);
+      dist *= edge.insideFlag;
+      
+      if (abs(dist) < abs(minDist)) {
+        minDist = dist;
+      }
+    }
+    
+    distances[channelIdx] = minDist;
   }
-  
-  let edge = edges[edgeIdx];
-  
-  // 相対座標に変換してから距離計算
-  let px = f32(pos.x);
-  let py = f32(pos.y);
-  let x0_rel = edge.x0 - bounds.minX;
-  let y0_rel = edge.y0 - bounds.minY;
-  let x1_rel = edge.x1 - bounds.minX;
-  let y1_rel = edge.y1 - bounds.minY;
-  
-  var dist = pointToSegmentDistance(px, py, x0_rel, y0_rel, x1_rel, y1_rel);
-  dist *= edge.insideFlag;
 
-  textureStore(msdfTex, pos, vec4<f32>(dist, dist, dist, 1.0));
+  textureStore(msdfTex, pos, vec4<f32>(distances.r, distances.g, distances.b, 1.0));
 }
 `;
 
+  // ✅ Phase 2.1修正: median()計算実装
   const MSDF_RENDER_WGSL = `
 @group(0) @binding(0) var msdfSampler: sampler;
 @group(0) @binding(1) var msdfTex: texture_2d<f32>;
@@ -237,9 +246,14 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
   return output;
 }
 
+fn median(r: f32, g: f32, b: f32) -> f32 {
+  return max(min(r, g), min(max(r, g), b));
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-  let d = textureSample(msdfTex, msdfSampler, input.uv).r;
+  let msdf = textureSample(msdfTex, msdfSampler, input.uv);
+  let d = median(msdf.r, msdf.g, msdf.b);
   let alpha = smoothstep(1.0, -1.0, d);
   return vec4<f32>(1.0, 0.0, 0.0, alpha);
 }
@@ -286,7 +300,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         this._createShaders();
         await this._createPipelines();
         this.initialized = true;
-        console.log('✅ [MSDFPipelineManager] Phase 2初期化完了（座標系統一版）');
+        console.log('✅ [MSDFPipelineManager] Phase 2.1初期化完了（MSDF Encode修正版）');
       } catch (error) {
         console.error('❌ [MSDFPipelineManager] 初期化失敗:', error);
         throw error;
@@ -321,7 +335,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     async _createPipelines() {
-      // Seed Clear Pipeline
       this.seedClearLayout = this.device.createBindGroupLayout({
         entries: [
           { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } }
@@ -333,7 +346,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         compute: { module: this.seedClearShader, entryPoint: 'main' }
       });
 
-      // Seed Init Pipeline (Uniform追加)
       this.seedInitLayout = this.device.createBindGroupLayout({
         entries: [
           { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
@@ -347,7 +359,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         compute: { module: this.seedInitShader, entryPoint: 'main' }
       });
 
-      // JFA Pipeline
       this.jfaLayout = this.device.createBindGroupLayout({
         entries: [
           { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
@@ -361,7 +372,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         compute: { module: this.jfaShader, entryPoint: 'main' }
       });
 
-      // Encode Pipeline (Uniform追加)
       this.encodeLayout = this.device.createBindGroupLayout({
         entries: [
           { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
@@ -376,7 +386,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         compute: { module: this.encodeShader, entryPoint: 'main' }
       });
 
-      // Render Pipeline
       this.renderLayout = this.device.createBindGroupLayout({
         entries: [
           { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -404,39 +413,23 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
       const width = Math.ceil(bounds.maxX - bounds.minX);
       const height = Math.ceil(bounds.maxY - bounds.minY);
 
-      console.log(`[MSDF] Generating: ${width}x${height}, bounds:`, bounds);
-
-      // Textures作成
       const seedTex1 = this._createTexture(width, height, 'rgba32float', 'Seed1');
       const seedTex2 = this._createTexture(width, height, 'rgba32float', 'Seed2');
       const msdfTex = this._createTexture(width, height, 'rgba16float', 'MSDF');
       const renderTex = this._createTexture(width, height, this.format, 'Render');
 
-      // Uniform Buffer作成
       const boundsUniform = this._createBoundsUniform(bounds);
 
-      // Phase 0: Seed初期化
       this._seedClearPass(seedTex1, width, height);
-
-      // Phase A: Seed書き込み
       this._seedInitPass(edgeBuffer, seedTex1, boundsUniform);
-
-      // Phase B: JFA
       const finalSeedTex = this._jfaMultiPass(seedTex1, seedTex2, width, height);
-
-      // Phase C: MSDF Encode
       this._encodePass(finalSeedTex, edgeBuffer, msdfTex, boundsUniform);
-
-      // Phase D: Render
       this._renderPass(msdfTex, renderTex, width, height);
 
-      // クリーンアップ
       seedTex1.destroy();
       seedTex2.destroy();
       msdfTex.destroy();
       boundsUniform.destroy();
-
-      console.log('[MSDF] Generation complete');
 
       return renderTex;
     }
@@ -508,7 +501,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
       pass.end();
       
       this.queue.submit([encoder.finish()]);
-      console.log(`[MSDF] Seed Init: ${edgeCount} edges`);
     }
 
     _jfaMultiPass(srcTex, dstTex, width, height) {
@@ -526,7 +518,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         [currentSrc, currentDst] = [currentDst, currentSrc];
       }
 
-      console.log(`[MSDF] JFA: ${steps.length} passes`);
       return currentSrc;
     }
 
@@ -579,7 +570,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
       pass.end();
 
       this.queue.submit([encoder.finish()]);
-      console.log(`[MSDF] Encode: ${width}x${height}`);
     }
 
     _renderPass(msdfTex, renderTex, width, height) {
@@ -619,6 +609,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
   window.MSDFPipelineManager = MSDFPipelineManager;
   window.msdfPipelineManager = null;
 
-  console.log('✅ msdf-pipeline-manager.js Phase 2完全版（座標系統一版） loaded');
+  console.log('✅ msdf-pipeline-manager.js Phase 2.1 - MSDF Encode修正版 loaded');
 
 })();
