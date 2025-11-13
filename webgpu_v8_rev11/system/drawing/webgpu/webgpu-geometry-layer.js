@@ -1,16 +1,29 @@
 /**
- * webgpu-geometry-layer.js
- * WebGPU Geometry Rendering Layer - PerfectFreehand → GPU Pipeline
+ * ================================================================================
+ * webgpu-geometry-layer.js - Phase 1 完全実装版
+ * ================================================================================
  * 
- * 親依存: webgpu-drawing-layer.js (device, queue, format)
- * 子依存: stroke-renderer.js, earcut-triangulator.js
+ * 【責務】
+ * - PerfectFreehandポリゴン → GPU VertexBuffer転送
+ * - Pen/Eraser用のRenderPipeline管理
+ * - Shader実行とBlendMode制御
  * 
- * 責務:
- * - Polygon → VertexBuffer/IndexBuffer転送
- * - Pen/Eraser用RenderPipeline管理
- * - BlendMode切り替え (Pen: alpha合成 / Eraser: alpha減算)
- * - Transform/Color Uniform管理
- * - GPUTexture描画実行
+ * 【親ファイル依存】
+ * - webgpu-drawing-layer.js: GPUDevice, Queue, Format供給
+ * - earcut-triangulator.js: ポリゴン三角形分割
+ * 
+ * 【子ファイル呼び出し】
+ * - stroke-renderer.js: レンダリング統合
+ * 
+ * 【グローバル公開】
+ * - window.WebGPUGeometryLayer (シングルトンインスタンス)
+ * 
+ * 【禁止事項】
+ * 🚫 Canvas2D API使用
+ * 🚫 PixiJS Graphics使用
+ * 🚫 CPU側ラスタライズ
+ * 
+ * ================================================================================
  */
 
 class WebGPUGeometryLayer {
@@ -22,113 +35,68 @@ class WebGPUGeometryLayer {
     this.penPipeline = null;
     this.eraserPipeline = null;
     this.currentPipeline = null;
-    this.currentMode = 'pen';
     
     this.vertexBuffer = null;
     this.indexBuffer = null;
     this.uniformBuffer = null;
-    this.bindGroup = null;
     
+    this.bindGroup = null;
     this.vertexCount = 0;
     this.indexCount = 0;
-    this.maxVertices = 65536;
-    this.maxIndices = 196608;
     
     this.initialized = false;
-    
-    this.shaderModule = null;
   }
 
+  /**
+   * 初期化
+   * @param {GPUDevice} device 
+   * @param {string} format - 'rgba8unorm'
+   */
   async initialize(device, format) {
     if (this.initialized) return;
-    
+
     this.device = device;
     this.format = format;
     this.queue = device.queue;
-    
-    await this._createShaderModule();
-    await this._createPipelines();
-    this._createBuffers();
-    
-    this.currentPipeline = this.penPipeline;
-    this.initialized = true;
-    
-    console.log('[WebGPU Geometry] Initialized - Pen/Eraser pipelines ready');
-  }
 
-  async _createShaderModule() {
-    const shaderCode = `
-      struct Uniforms {
-        transform: mat3x3<f32>,
-        color: vec4<f32>,
-      };
-
-      @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-
-      struct VertexInput {
-        @location(0) position: vec2<f32>,
-      };
-
-      struct VertexOutput {
-        @builtin(position) position: vec4<f32>,
-        @location(0) color: vec4<f32>,
-      };
-
-      @vertex
-      fn vs_main(input: VertexInput) -> VertexOutput {
-        var output: VertexOutput;
-        
-        let pos = vec3<f32>(input.position, 1.0);
-        let transformed = uniforms.transform * pos;
-        
-        output.position = vec4<f32>(transformed.xy, 0.0, 1.0);
-        output.color = uniforms.color;
-        
-        return output;
-      }
-
-      @fragment
-      fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-        return input.color;
-      }
-    `;
-
-    this.shaderModule = this.device.createShaderModule({
-      code: shaderCode,
-      label: 'Geometry Shader Module'
-    });
-  }
-
-  async _createPipelines() {
-    const pipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [this._createBindGroupLayout()],
-      label: 'Geometry Pipeline Layout'
+    // Shader Module作成
+    const shaderModule = device.createShaderModule({
+      label: 'Geometry Shader',
+      code: this._getShaderCode()
     });
 
-    const vertexBufferLayout = {
-      arrayStride: 8,
-      attributes: [{
-        format: 'float32x2',
-        offset: 0,
-        shaderLocation: 0
-      }]
-    };
+    // Pipeline Layout
+    const bindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: 'uniform' }
+        }
+      ]
+    });
 
-    const primitiveState = {
-      topology: 'triangle-list',
-      cullMode: 'none'
-    };
+    const pipelineLayout = device.createPipelineLayout({
+      bindGroupLayouts: [bindGroupLayout]
+    });
 
-    // Pen Pipeline (alpha blending)
-    this.penPipeline = this.device.createRenderPipeline({
+    // Pen Pipeline
+    this.penPipeline = device.createRenderPipeline({
+      label: 'Pen Pipeline',
       layout: pipelineLayout,
       vertex: {
-        module: this.shaderModule,
+        module: shaderModule,
         entryPoint: 'vs_main',
-        buffers: [vertexBufferLayout]
+        buffers: [{
+          arrayStride: 16, // vec2 position + vec2 uv
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x2' },
+            { shaderLocation: 1, offset: 8, format: 'float32x2' }
+          ]
+        }]
       },
       fragment: {
-        module: this.shaderModule,
+        module: shaderModule,
         entryPoint: 'fs_main',
         targets: [{
           format: this.format,
@@ -146,20 +114,32 @@ class WebGPUGeometryLayer {
           }
         }]
       },
-      primitive: primitiveState,
-      label: 'Pen Pipeline'
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      },
+      multisample: {
+        count: 1
+      }
     });
 
-    // Eraser Pipeline (alpha subtraction)
-    this.eraserPipeline = this.device.createRenderPipeline({
+    // Eraser Pipeline
+    this.eraserPipeline = device.createRenderPipeline({
+      label: 'Eraser Pipeline',
       layout: pipelineLayout,
       vertex: {
-        module: this.shaderModule,
+        module: shaderModule,
         entryPoint: 'vs_main',
-        buffers: [vertexBufferLayout]
+        buffers: [{
+          arrayStride: 16,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x2' },
+            { shaderLocation: 1, offset: 8, format: 'float32x2' }
+          ]
+        }]
       },
       fragment: {
-        module: this.shaderModule,
+        module: shaderModule,
         entryPoint: 'fs_main',
         targets: [{
           format: this.format,
@@ -177,99 +157,112 @@ class WebGPUGeometryLayer {
           }
         }]
       },
-      primitive: primitiveState,
-      label: 'Eraser Pipeline'
-    });
-  }
-
-  _createBindGroupLayout() {
-    return this.device.createBindGroupLayout({
-      entries: [{
-        binding: 0,
-        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        buffer: { type: 'uniform' }
-      }],
-      label: 'Geometry Bind Group Layout'
-    });
-  }
-
-  _createBuffers() {
-    this.vertexBuffer = this.device.createBuffer({
-      size: this.maxVertices * 8,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-      label: 'Vertex Buffer'
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      },
+      multisample: {
+        count: 1
+      }
     });
 
-    this.indexBuffer = this.device.createBuffer({
-      size: this.maxIndices * 4,
-      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-      label: 'Index Buffer'
+    this.currentPipeline = this.penPipeline;
+
+    // Uniform Buffer作成 (transform mat3x3 + color vec4 = 48 bytes)
+    this.uniformBuffer = device.createBuffer({
+      size: 64, // 16バイトアラインメント考慮
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
-    this.uniformBuffer = this.device.createBuffer({
-      size: 64,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      label: 'Uniform Buffer'
-    });
-
-    this.bindGroup = this.device.createBindGroup({
-      layout: this._createBindGroupLayout(),
+    // BindGroup作成
+    this.bindGroup = device.createBindGroup({
+      layout: bindGroupLayout,
       entries: [{
         binding: 0,
         resource: { buffer: this.uniformBuffer }
-      }],
-      label: 'Geometry Bind Group'
+      }]
     });
+
+    this.initialized = true;
+    console.log('✅ webgpu-geometry-layer.js Phase 1 完全実装版 loaded');
   }
 
+  /**
+   * ポリゴンアップロード
+   * @param {Float32Array} vertices - [x, y, u, v, ...]
+   * @param {Uint32Array} indices 
+   */
   uploadPolygon(vertices, indices) {
     if (!this.initialized) {
-      console.error('[WebGPU Geometry] Not initialized');
-      return;
+      throw new Error('[WebGPUGeometryLayer] Not initialized');
     }
 
-    if (!vertices || vertices.length === 0) {
-      console.warn('[WebGPU Geometry] Empty vertices');
-      return;
+    // VertexBuffer作成
+    if (this.vertexBuffer) {
+      this.vertexBuffer.destroy();
     }
+    this.vertexBuffer = this.device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+    });
+    this.device.queue.writeBuffer(this.vertexBuffer, 0, vertices);
 
-    this.vertexCount = vertices.length / 2;
-    this.indexCount = indices ? indices.length : 0;
-
-    this.queue.writeBuffer(this.vertexBuffer, 0, vertices);
-    
-    if (indices && indices.length > 0) {
-      this.queue.writeBuffer(this.indexBuffer, 0, indices);
+    // IndexBuffer作成
+    if (this.indexBuffer) {
+      this.indexBuffer.destroy();
     }
+    this.indexBuffer = this.device.createBuffer({
+      size: indices.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
+    });
+    this.device.queue.writeBuffer(this.indexBuffer, 0, indices);
+
+    this.vertexCount = vertices.length / 4; // vec2 + vec2
+    this.indexCount = indices.length;
   }
 
+  /**
+   * Uniform更新
+   * @param {Float32Array} transform - 3x3 matrix (9 floats)
+   * @param {Float32Array} color - RGBA (4 floats)
+   */
   updateUniforms(transform, color) {
     if (!this.initialized) return;
 
-    const uniformData = new Float32Array(16);
-    
-    // mat3x3 transform (9 floats + 3 padding)
-    uniformData.set(transform, 0);
-    
-    // vec4 color (4 floats)
-    uniformData.set(color, 12);
+    const uniformData = new Float32Array(16); // 64 bytes
+    uniformData.set(transform, 0); // 9 floats
+    uniformData.set(color, 12);    // 4 floats (48バイト目から)
 
-    this.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
   }
 
+  /**
+   * BlendMode設定
+   * @param {string} mode - 'pen' or 'eraser'
+   */
   setBlendMode(mode) {
-    if (!this.initialized) return;
-    
-    this.currentMode = mode;
-    this.currentPipeline = (mode === 'eraser') ? this.eraserPipeline : this.penPipeline;
+    if (mode === 'eraser') {
+      this.currentPipeline = this.eraserPipeline;
+    } else {
+      this.currentPipeline = this.penPipeline;
+    }
   }
 
-  render(encoder, texture, width, height) {
-    if (!this.initialized || this.indexCount === 0) return;
+  /**
+   * レンダリング実行
+   * @param {GPUCommandEncoder} encoder 
+   * @param {GPUTexture} targetTexture 
+   * @param {number} width 
+   * @param {number} height 
+   */
+  render(encoder, targetTexture, width, height) {
+    if (!this.initialized || !this.vertexBuffer || this.indexCount === 0) {
+      return;
+    }
 
     const renderPass = encoder.beginRenderPass({
       colorAttachments: [{
-        view: texture.createView(),
+        view: targetTexture.createView(),
         loadOp: 'load',
         storeOp: 'store'
       }]
@@ -279,21 +272,68 @@ class WebGPUGeometryLayer {
     renderPass.setBindGroup(0, this.bindGroup);
     renderPass.setVertexBuffer(0, this.vertexBuffer);
     renderPass.setIndexBuffer(this.indexBuffer, 'uint32');
-    renderPass.drawIndexed(this.indexCount, 1, 0, 0, 0);
+    renderPass.drawIndexed(this.indexCount);
     renderPass.end();
   }
 
+  /**
+   * Shader Code取得
+   */
+  _getShaderCode() {
+    return `
+struct Uniforms {
+  transform: mat3x3<f32>,
+  color: vec4<f32>
+}
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct VertexInput {
+  @location(0) position: vec2<f32>,
+  @location(1) uv: vec2<f32>
+}
+
+struct VertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) uv: vec2<f32>
+}
+
+@vertex
+fn vs_main(input: VertexInput) -> VertexOutput {
+  var output: VertexOutput;
+  
+  // Transform適用
+  let pos = uniforms.transform * vec3<f32>(input.position, 1.0);
+  output.position = vec4<f32>(pos.xy, 0.0, 1.0);
+  output.uv = input.uv;
+  
+  return output;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+  return uniforms.color;
+}
+`;
+  }
+
+  /**
+   * 破棄
+   */
   destroy() {
     if (this.vertexBuffer) this.vertexBuffer.destroy();
     if (this.indexBuffer) this.indexBuffer.destroy();
     if (this.uniformBuffer) this.uniformBuffer.destroy();
-    
     this.initialized = false;
   }
 }
 
-// Global registration
-if (typeof window !== 'undefined') {
+// ================================================================================
+// グローバル登録
+// ================================================================================
+
+if (!window.WebGPUGeometryLayer) {
   window.WebGPUGeometryLayer = new WebGPUGeometryLayer();
-  console.log('[WebGPU Geometry] Class registered globally');
+} else {
+  console.warn('⚠️ WebGPUGeometryLayer already initialized');
 }
