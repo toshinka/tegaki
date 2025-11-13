@@ -1,16 +1,14 @@
 /**
- * @file core-initializer.js
- * @description アプリケーション初期化シーケンス制御
+ * ================================================================================
+ * core-initializer.js - PixiJS v8対応版
+ * ================================================================================
  * 
- * 【Phase 2 改修内容 - ExportManager初期化の一元化】
- * - ExportManager生成処理を削除
- * - CoreEngine.exportManagerを使用
- * - ExportPopup登録のみ実施
+ * 【改修内容】
+ * - PixiJS v8のWebGLRenderer API対応
+ * - シンプルなpreference指定でWebGL強制
+ * - WebGPU初期化フローの確実な実行
  * 
- * 【依存関係】
- * - core-engine.js (CoreEngine・ExportManager生成元)
- * - core-runtime.js (CoreRuntime)
- * - ui-panels.js (UIController)
+ * ================================================================================
  */
 
 window.CoreInitializer = (function() {
@@ -148,44 +146,71 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
-    async function initializeWebGPU(canvas, strokeRenderer) {
+    /**
+     * WebGPU完全初期化 (Compute専用)
+     */
+    async function initializeWebGPU(strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
         
         if (!config.webgpu?.enabled) {
+            console.warn('[WebGPU] Disabled in config');
             return false;
         }
 
-        if (!window.WebGPUCapabilities) {
-            console.warn('[WebGPU] WebGPUCapabilities not loaded');
-            return false;
-        }
+        console.log('[WebGPU] Starting initialization...');
 
         try {
-            const capabilities = await window.WebGPUCapabilities.checkSupport();
-            
-            if (!capabilities.supported) {
-                console.warn('[WebGPU] Not supported:', capabilities.error);
+            // 1. WebGPUDrawingLayer初期化
+            if (!window.webgpuDrawingLayer) {
+                console.error('[WebGPU] webgpuDrawingLayer not found');
                 return false;
             }
 
-            if (!window.WebGPUDrawingLayer) {
-                console.warn('[WebGPU] WebGPUDrawingLayer not loaded');
+            console.log('[WebGPU] Initializing DrawingLayer...');
+            const drawingLayerInit = await window.webgpuDrawingLayer.initialize();
+            if (!drawingLayerInit) {
+                console.error('[WebGPU] DrawingLayer initialization failed');
                 return false;
             }
 
-            const webgpuLayer = new window.WebGPUDrawingLayer(canvas);
-            const initialized = await webgpuLayer.initialize();
-
-            if (!initialized) {
-                console.warn('[WebGPU] Initialization failed');
+            // 2. WebGPUComputeSDF初期化
+            if (!window.webgpuComputeSDF) {
+                console.error('[WebGPU] webgpuComputeSDF not found');
                 return false;
             }
 
-            if (strokeRenderer && strokeRenderer.setWebGPULayer) {
-                await strokeRenderer.setWebGPULayer(webgpuLayer);
+            console.log('[WebGPU] Initializing ComputeSDF...');
+            const sdfInit = await window.webgpuComputeSDF.initialize();
+            if (!sdfInit) {
+                console.error('[WebGPU] ComputeSDF initialization failed');
+                return false;
             }
 
-            window.webgpuLayer = webgpuLayer;
+            // 3. WebGPUTextureBridge初期化
+            if (!window.webgpuTextureBridge) {
+                console.error('[WebGPU] webgpuTextureBridge not found');
+                return false;
+            }
+
+            console.log('[WebGPU] Initializing TextureBridge...');
+            const bridgeInit = await window.webgpuTextureBridge.initialize();
+            if (!bridgeInit) {
+                console.error('[WebGPU] TextureBridge initialization failed');
+                return false;
+            }
+
+            // 4. StrokeRenderer へ接続
+            if (strokeRenderer) {
+                console.log('[WebGPU] Connecting StrokeRenderer...');
+                await strokeRenderer.initialize();
+                console.log('✅ [WebGPU] StrokeRenderer connected');
+            }
+
+            console.log('✅ [WebGPU] Complete initialization');
+            console.log('   📊 DrawingLayer:', window.webgpuDrawingLayer.isInitialized());
+            console.log('   📊 ComputeSDF:', window.webgpuComputeSDF.initialized);
+            console.log('   📊 TextureBridge:', window.webgpuTextureBridge.initialized);
+            console.log('   📊 StrokeRenderer:', strokeRenderer?.webgpuReady);
 
             return true;
 
@@ -211,7 +236,7 @@ window.CoreInitializer = (function() {
             const CoreEngine = window.TegakiCore.CoreEngine;
             
             if (!window.TegakiUI || !window.TegakiUI.UIController) {
-                throw new Error('UIController not found - ui-panels.js may not be loaded');
+                throw new Error('UIController not found');
             }
             
             const UIController = window.TegakiUI.UIController;
@@ -219,17 +244,20 @@ window.CoreInitializer = (function() {
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) throw new Error('Canvas container not found');
             
-            this.pixiApp = new PIXI.Application();
+            // PixiJS Application: WebGL強制（シンプル版）
             const screenWidth = window.innerWidth - 50;
             const screenHeight = window.innerHeight;
             
+            this.pixiApp = new PIXI.Application();
             await this.pixiApp.init({
                 width: screenWidth,
                 height: screenHeight,
-                backgroundAlpha: 0,
+                backgroundColor: 0xFFFFEE,
                 resolution: 1,
                 antialias: true,
-                eventMode: 'static'
+                eventMode: 'static',
+                preference: 'webgl', // WebGL強制
+                hello: false // PixiJS起動メッセージ抑制
             });
             
             containerEl.innerHTML = '';
@@ -237,17 +265,17 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
-            // CoreEngine初期化
+            console.log('✅ [PixiJS] Renderer initialized');
+            console.log('   📊 Type:', this.pixiApp.renderer.type);
+            
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
             
-            // グローバル参照設定
             window.coreEngine = this.coreEngine;
             
             const brushSettings = this.coreEngine.getBrushSettings();
             window.brushSettings = brushSettings;
             
-            // CoreRuntime初期化 + CoreEngine参照設定
             window.CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
@@ -260,7 +288,6 @@ window.CoreInitializer = (function() {
             
             initializeSettingsManager();
             
-            // UIController初期化
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
@@ -277,16 +304,18 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
+            // WebGPU完全初期化 (Compute専用) - 必ず実行
+            console.log('[App] Starting WebGPU initialization...');
             const strokeRenderer = this.coreEngine.getDrawingEngine()?.strokeRenderer;
-            if (strokeRenderer) {
-                this.webgpuEnabled = await initializeWebGPU(
-                    this.pixiApp.canvas,
-                    strokeRenderer
-                );
+            
+            if (!strokeRenderer) {
+                console.error('[App] StrokeRenderer not found!');
+            } else {
+                console.log('[App] StrokeRenderer found, initializing WebGPU...');
+                this.webgpuEnabled = await initializeWebGPU(strokeRenderer);
+                console.log('[App] WebGPU enabled:', this.webgpuEnabled);
             }
             
-            // 🔧 Phase 2: ExportPopup登録のみ実施
-            // ExportManager生成はCoreEngine.initialize()で実行済み
             this.initializeExportPopup();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
@@ -301,10 +330,6 @@ window.CoreInitializer = (function() {
             return true;
         }
         
-        /**
-         * 🔧 Phase 2: ExportPopup登録専用メソッド
-         * ExportManager生成は不要（CoreEngineで実行済み）
-         */
         initializeExportPopup() {
             let retryCount = 0;
             const maxRetries = 30;
@@ -312,7 +337,6 @@ window.CoreInitializer = (function() {
             const tryRegisterPopup = () => {
                 retryCount++;
                 
-                // CoreEngine.exportManagerの確認
                 const exportManager = this.coreEngine?.getExportManager();
                 
                 if (!exportManager) {
@@ -322,7 +346,6 @@ window.CoreInitializer = (function() {
                     return;
                 }
                 
-                // ExportPopupの確認
                 if (!window.TegakiExportPopup) {
                     if (retryCount < maxRetries) {
                         setTimeout(tryRegisterPopup, 200);
@@ -330,7 +353,6 @@ window.CoreInitializer = (function() {
                     return;
                 }
                 
-                // PopupManager登録
                 if (!this.exportInitialized && window.PopupManager) {
                     window.PopupManager.register('export', window.TegakiExportPopup, {
                         exportManager: exportManager
@@ -346,12 +368,10 @@ window.CoreInitializer = (function() {
                 }
             };
             
-            // イベントリスナー登録
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.on('export:manager-initialized', tryRegisterPopup);
             }
             
-            // 初回試行
             setTimeout(tryRegisterPopup, 300);
         }
         
@@ -434,4 +454,6 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (Phase 2改修版 - ExportManager初期化一元化) loaded');
+console.log('✅ core-initializer.js (PixiJS v8対応版) loaded');
+console.log('   🔧 preference: webgl 指定');
+console.log('   🔧 WebGPU初期化ログ追加');

@@ -1,24 +1,19 @@
 /**
  * ================================================================================
- * system/drawing/webgpu/webgpu-texture-bridge.js - Phase 1完全版
+ * webgpu-texture-bridge.js - Phase 2完全版 (自動初期化対応)
  * ================================================================================
  * 
- * 【Phase 1改修内容】
- * ✅ Canvas2D完全削除
- * ✅ GPUTexture → ImageBitmap → PixiJS Texture
- * ✅ 直接メモリ読み出しによる高速変換
+ * 【責務】
+ * - GPUTexture → PixiJS Texture変換（Canvas2D不使用）
+ * - SDF/MSDF データ → PixiJS Texture変換
+ * - 自動初期化・グローバル公開
  * 
  * 【依存Parents】
  * - webgpu-drawing-layer.js (device, queue)
  * 
  * 【依存Children】
  * - stroke-renderer.js (createPixiTextureFromGPU呼び出し)
- * - webgpu-compute-sdf.js (SDF生成結果変換)
  * 
- * 【責務】
- * - GPUTexture → PixiJS Texture変換（Canvas2D不使用）
- * - SDF/MSDF データ → PixiJS Texture変換
- * - テクスチャプール管理（メモリ最適化）
  * ================================================================================
  */
 
@@ -26,37 +21,55 @@
     'use strict';
 
     class WebGPUTextureBridge {
-        constructor(webgpuLayer) {
-            this.webgpuLayer = webgpuLayer;
-            this.device = webgpuLayer.device;
-            this.queue = webgpuLayer.device.queue;
-            
-            // テクスチャプール（再利用）
+        constructor() {
+            this.device = null;
+            this.queue = null;
+            this.initialized = false;
             this.texturePool = new Map();
             this.maxPoolSize = 50;
         }
 
         /**
-         * 🔧 Phase 1: GPUTexture → PixiJS Texture（Canvas2D不使用）
-         * 
-         * @param {GPUTexture} gpuTexture - WebGPU Texture
-         * @param {number} width - テクスチャ幅
-         * @param {number} height - テクスチャ高さ
-         * @returns {Promise<PIXI.Texture>}
+         * 初期化
+         */
+        async initialize() {
+            if (this.initialized) return true;
+
+            try {
+                if (!window.webgpuDrawingLayer?.isInitialized()) {
+                    throw new Error('WebGPUDrawingLayer not initialized');
+                }
+
+                this.device = window.webgpuDrawingLayer.getDevice();
+                this.queue = window.webgpuDrawingLayer.getQueue();
+
+                this.initialized = true;
+                console.log('✅ [WebGPUTextureBridge] Initialized');
+                return true;
+
+            } catch (error) {
+                console.error('[WebGPUTextureBridge] Initialization failed:', error);
+                return false;
+            }
+        }
+
+        /**
+         * GPUTexture → PixiJS Texture（Canvas2D不使用）
          */
         async createPixiTextureFromGPU(gpuTexture, width, height) {
+            if (!this.initialized) {
+                await this.initialize();
+            }
+
             try {
                 // 1. GPUTexture → GPUBuffer (読み出し)
                 const bufferSize = width * height * 4; // RGBA8
                 const stagingBuffer = this.device.createBuffer({
-                    label: 'Texture Staging Buffer',
                     size: bufferSize,
                     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
                 });
 
-                const commandEncoder = this.device.createCommandEncoder({
-                    label: 'Texture Copy Encoder'
-                });
+                const commandEncoder = this.device.createCommandEncoder();
 
                 commandEncoder.copyTextureToBuffer(
                     { 
@@ -100,19 +113,13 @@
                 return new PIXI.Texture(baseTexture);
 
             } catch (error) {
-                console.error('[TextureBridge] GPUTexture conversion failed:', error);
+                console.error('[TextureBridge] GPU conversion failed:', error);
                 throw error;
             }
         }
 
         /**
-         * SDF Float32Array → PixiJS Texture（GPU経由）
-         * 
-         * @param {Float32Array} sdfData - SDF距離場データ
-         * @param {number} width - テクスチャ幅
-         * @param {number} height - テクスチャ高さ
-         * @param {Object} colorSettings - {r, g, b, alpha}
-         * @returns {Promise<PIXI.Texture>}
+         * SDF Float32Array → PixiJS Texture
          */
         async sdfToPixiTexture(sdfData, width, height, colorSettings = null) {
             if (!sdfData || sdfData.length !== width * height) {
@@ -125,7 +132,6 @@
             const pixelData = new Uint8ClampedArray(width * height * 4);
             
             for (let i = 0; i < sdfData.length; i++) {
-                // SDFを0-1に正規化（距離が小さいほど不透明）
                 const distance = sdfData[i];
                 const alpha = distance < 1.0 ? 255 : Math.max(0, 255 - distance * 10);
                 
@@ -136,7 +142,6 @@
                 pixelData[idx + 3] = alpha;
             }
 
-            // ImageData → ImageBitmap → PixiJS Texture
             const imageData = new ImageData(pixelData, width, height);
             const bitmap = await createImageBitmap(imageData);
 
@@ -152,25 +157,18 @@
 
         /**
          * MSDF Float32Array → PixiJS Texture
-         * 
-         * @param {Float32Array} msdfData - RGBA距離場データ
-         * @param {number} width
-         * @param {number} height
-         * @returns {Promise<PIXI.Texture>}
          */
         async msdfToPixiTexture(msdfData, width, height) {
             if (!msdfData || msdfData.length !== width * height * 4) {
                 throw new Error('[TextureBridge] Invalid MSDF data');
             }
 
-            // Float32 → Uint8 変換
             const pixelData = new Uint8ClampedArray(width * height * 4);
             
             for (let i = 0; i < msdfData.length; i++) {
                 pixelData[i] = Math.floor(Math.max(0, Math.min(1, msdfData[i])) * 255);
             }
 
-            // ImageData → ImageBitmap → PixiJS Texture
             const imageData = new ImageData(pixelData, width, height);
             const bitmap = await createImageBitmap(imageData);
 
@@ -185,11 +183,14 @@
         }
 
         /**
-         * GPUTexture作成（将来の拡張用）
+         * GPUTexture作成
          */
         createGPUTexture(width, height, format = 'rgba8unorm') {
+            if (!this.initialized) {
+                throw new Error('[TextureBridge] Not initialized');
+            }
+
             return this.device.createTexture({
-                label: 'Drawing Texture',
                 size: { width, height, depthOrArrayLayers: 1 },
                 format: format,
                 usage: GPUTextureUsage.TEXTURE_BINDING |
@@ -229,9 +230,6 @@
             }
         }
 
-        /**
-         * プール破棄
-         */
         clearPool() {
             for (const [key, pool] of this.texturePool) {
                 for (const texture of pool) {
@@ -241,22 +239,21 @@
             this.texturePool.clear();
         }
 
-        /**
-         * 破棄
-         */
         destroy() {
             this.clearPool();
             this.device = null;
             this.queue = null;
-            this.webgpuLayer = null;
+            this.initialized = false;
         }
     }
 
-    window.WebGPUTextureBridge = WebGPUTextureBridge;
+    // グローバル公開
+    if (!window.webgpuTextureBridge) {
+        window.webgpuTextureBridge = new WebGPUTextureBridge();
+    }
 
-    console.log('✅ webgpu-texture-bridge.js (Phase 1完全版) loaded');
+    console.log('✅ webgpu-texture-bridge.js (Phase 2完全版) loaded');
     console.log('   🔧 Canvas2D完全削除');
-    console.log('   🔧 GPUTexture → ImageBitmap → PixiJS');
-    console.log('   🔧 テクスチャプール実装');
+    console.log('   🔧 自動インスタンス化');
 
 })();
