@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/webgpu/webgpu-geometry-layer.js
- * Phase 6: MSAA + Eraser BlendMode 完全実装版
+ * Phase 7: 消しゴムBlendMode修正版
  * ================================================================================
  * 
  * 【責務】
@@ -18,6 +18,10 @@
  * 【依存Children】
  * - stroke-renderer.js (呼び出し元)
  * 
+ * 【Phase 7改修】
+ * - 消しゴムBlendMode修正（alpha: subtract → one, zero）
+ * - MSAA Texture loadOp修正（load → clear）
+ * 
  * ================================================================================
  */
 
@@ -30,22 +34,18 @@
       this.queue = null;
       this.format = null;
       
-      // Pipelines
       this.penPipeline = null;
       this.eraserPipeline = null;
       this.currentPipeline = null;
       
-      // Buffers
       this.vertexBuffer = null;
       this.indexBuffer = null;
       this.uniformBuffer = null;
       this.bindGroup = null;
       
-      // MSAA Texture
       this.msaaTexture = null;
       this.msaaSampleCount = 4;
       
-      // State
       this.initialized = false;
       this.currentVertexCount = 0;
       this.currentIndexCount = 0;
@@ -56,7 +56,6 @@
      */
     async initialize(device, format) {
       if (this.initialized) {
-        console.warn('[WebGPUGeometryLayer] Already initialized');
         return;
       }
 
@@ -65,21 +64,16 @@
       this.format = format;
 
       try {
-        // Shader Module作成
         const shaderModule = this._createShaderModule();
         
-        // Pipeline作成
         this.penPipeline = this._createPipeline(shaderModule, 'pen');
         this.eraserPipeline = this._createPipeline(shaderModule, 'eraser');
         this.currentPipeline = this.penPipeline;
         
-        // Buffer作成（初期サイズ）
-        this._createBuffers(10000); // 初期10000頂点
+        this._createBuffers(10000);
         
         this.initialized = true;
-        console.log('✅ [WebGPUGeometryLayer] Initialized (4x MSAA)');
-        console.log('   📊 Pen Pipeline:', this.penPipeline);
-        console.log('   📊 Eraser Pipeline:', this.eraserPipeline);
+        console.log('✅ [WebGPUGeometryLayer] Phase 7 (4x MSAA + Eraser修正)');
         
       } catch (error) {
         console.error('❌ [WebGPUGeometryLayer] Initialization failed:', error);
@@ -110,11 +104,8 @@
         @vertex
         fn vs_main(input: VertexInput) -> VertexOutput {
           var output: VertexOutput;
-          
-          // Local → NDC変換
           let pos = uniforms.transform * vec3<f32>(input.position, 1.0);
           output.position = vec4<f32>(pos.xy, 0.0, 1.0);
-          
           return output;
         }
         
@@ -134,6 +125,7 @@
      * Pipeline作成
      */
     _createPipeline(shaderModule, mode) {
+      // 消しゴム: alpha値を0にして既存ピクセルを透明化
       const blendState = mode === 'eraser' ? {
         color: {
           operation: 'add',
@@ -141,7 +133,7 @@
           dstFactor: 'one'
         },
         alpha: {
-          operation: 'reverse-subtract',
+          operation: 'add',
           srcFactor: 'one',
           dstFactor: 'zero'
         }
@@ -165,7 +157,7 @@
           module: shaderModule,
           entryPoint: 'vs_main',
           buffers: [{
-            arrayStride: 8, // vec2<f32> = 8 bytes
+            arrayStride: 8,
             attributes: [{
               shaderLocation: 0,
               offset: 0,
@@ -195,28 +187,24 @@
      * Buffer作成
      */
     _createBuffers(maxVertices) {
-      // Vertex Buffer
       this.vertexBuffer = this.device.createBuffer({
         label: 'Geometry Vertex Buffer',
-        size: maxVertices * 8, // vec2<f32>
+        size: maxVertices * 8,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
       });
 
-      // Index Buffer
       this.indexBuffer = this.device.createBuffer({
         label: 'Geometry Index Buffer',
-        size: maxVertices * 6 * 4, // 概算: 頂点数 * 2三角形 * 4bytes
+        size: maxVertices * 6 * 4,
         usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
       });
 
-      // Uniform Buffer (transform 3x3 + color vec4 = 13 floats → 64 bytes aligned)
       this.uniformBuffer = this.device.createBuffer({
         label: 'Geometry Uniform Buffer',
         size: 64,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
       });
 
-      // BindGroup作成
       this.bindGroup = this.device.createBindGroup({
         label: 'Geometry Bind Group',
         layout: this.currentPipeline.getBindGroupLayout(0),
@@ -236,7 +224,6 @@
         return;
       }
 
-      // Buffer拡張チェック
       const requiredVertexSize = vertices.byteLength;
       const requiredIndexSize = indices.byteLength;
 
@@ -258,7 +245,6 @@
         });
       }
 
-      // Upload
       this.device.queue.writeBuffer(this.vertexBuffer, 0, vertices);
       this.device.queue.writeBuffer(this.indexBuffer, 0, indices);
 
@@ -272,13 +258,11 @@
     updateUniforms(transform, color) {
       if (!this.initialized) return;
 
-      // Uniform Data (mat3x3 + vec4 = 13 floats)
-      const uniformData = new Float32Array(16); // 64 bytes aligned
+      const uniformData = new Float32Array(16);
       
-      // Transform (row-major)
-      uniformData.set(transform, 0); // 9 floats
+      uniformData.set(transform, 0);
       
-      // Color
+      // 消しゴム: color.a = 0 で透明化
       uniformData[12] = color[0];
       uniformData[13] = color[1];
       uniformData[14] = color[2];
@@ -297,7 +281,6 @@
         this.currentPipeline = this.penPipeline;
       }
 
-      // BindGroup再作成（Pipeline変更時に必要）
       this.bindGroup = this.device.createBindGroup({
         label: 'Geometry Bind Group',
         layout: this.currentPipeline.getBindGroupLayout(0),
@@ -335,17 +318,16 @@
         return;
       }
 
-      // MSAA Texture作成
       const msaaView = this._createMSAATexture(width, height);
       const targetView = targetTexture.createView();
 
-      // Render Pass
       const passDescriptor = {
         label: 'Geometry Render Pass',
         colorAttachments: [{
           view: msaaView,
           resolveTarget: targetView,
-          loadOp: 'load',
+          loadOp: 'clear',
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
           storeOp: 'store'
         }]
       };
@@ -359,9 +341,6 @@
       pass.end();
     }
 
-    /**
-     * クリーンアップ
-     */
     destroy() {
       if (this.vertexBuffer) this.vertexBuffer.destroy();
       if (this.indexBuffer) this.indexBuffer.destroy();
@@ -372,7 +351,6 @@
     }
   }
 
-  // Global登録
   window.WebGPUGeometryLayer = new WebGPUGeometryLayer();
 
 })();

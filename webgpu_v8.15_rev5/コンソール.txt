@@ -3,55 +3,55 @@ config.js:508    🔧 PerfectFreehand設定リニア化
 config.js:509    ✓ thinning: 0 (線の太り補正無効)
 config.js:510    ✓ smoothing: 0 (補間最小化)
 config.js:511    ✓ streamline: 0 (遅延補正なし)
- ✅ data-models.js (backgroundColor追加版) loaded
- ✅ batch-api.js (Phase 6: History統合版) loaded
- ✅ popup-manager.js (quick-access除外対応版) loaded
- ✅ state-manager.js (Phase 8完全実装版) loaded
- ✅ settings-manager.js Phase 2 loaded
-    🔧 exportResolution 設定項目追加
- ✅ layer-transform.js Phase 6 loaded
-    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
- ✅ system/checker-utils.js 統一実装版 loaded
- ✅ layer-system.js Phase 7完成版 loaded
-    🚨 addPathToActiveLayer(): History登録を削除
-    🚨 brush-core.js にHistory登録を統一
-    ✅ DRY原則に基づく責務分担の明確化
- ✅ drawing-clipboard.js Phase 1 loaded
-    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
-    🎨 ポップアップ: レイヤーコピー、切り取り
- ✅ history.js (Phase 3: Redo null参照修正版) loaded
- ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
- ✅ earcut-triangulator.js loaded
- ✅ webgpu-texture-bridge.js (Phase 3: PixiJS v8 + bytesPerRow修正版) loaded
-    🔧 PixiJS v8 API対応（BaseTexture廃止）
-    🔧 bytesPerRow 256バイト境界要件対応
- ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
-    📦 GPU Compute Shaderでポリゴンラスタライズ
-    📦 マスク加算/減算
-    📦 CPUフォールバック非対応（GPU専用）
- ✅ system/drawing/msdf/msdf-brush-shader.js loaded
- ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
-    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
- ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
-    ✓ 距離ベースフィルタ対応
-    ✓ window.PressureHandler として公開
- ✅ [StrokeRecorder] PolygonGenerator connected
- ✅ stroke-recorder.js (Phase 1完全版) loaded
-    ✅ PolygonGenerator自動接続
-    ✅ 初期化不要
-    ✅ デバッグログ強化
- ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
-    ✓ 消しゴムモード削除
-    ✓ ペン描画に特化
- ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
- ✅ brush-settings.js (Phase 3-D Clean) loaded
- ✅ fill-tool.js (WebGPU競合修正版) loaded
-    ❌ 独自WebGPU初期化を削除
-    ✅ 既存インスタンス参照のみ
- ✅ drawing-engine.js (Phase 4 - Fill対応版) loaded
-    ✓ fill モード時に canvas:pointerdown イベント発行
-    ✓ localX/localY を含むイベントペイロード
- ✅ quick-export-ui.js (無効化版) loaded
+data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
+settings-manager.js:231 ✅ settings-manager.js Phase 2 loaded
+settings-manager.js:232    🔧 exportResolution 設定項目追加
+layer-transform.js:1011 ✅ layer-transform.js Phase 6 loaded
+layer-transform.js:1012    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
+layer-system.js:1351 ✅ layer-system.js Phase 7完成版 loaded
+layer-system.js:1352    🚨 addPathToActiveLayer(): History登録を削除
+layer-system.js:1353    🚨 brush-core.js にHistory登録を統一
+layer-system.js:1354    ✅ DRY原則に基づく責務分担の明確化
+drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
+drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
+history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
+webgpu-capabilities.js:126 ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
+earcut-triangulator.js:148 ✅ earcut-triangulator.js loaded
+webgpu-texture-bridge.js:239 ✅ webgpu-texture-bridge.js (Phase 3: PixiJS v8 + bytesPerRow修正版) loaded
+webgpu-texture-bridge.js:240    🔧 PixiJS v8 API対応（BaseTexture廃止）
+webgpu-texture-bridge.js:241    🔧 bytesPerRow 256バイト境界要件対応
+webgpu-mask-layer.js:360 ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
+webgpu-mask-layer.js:361    📦 GPU Compute Shaderでポリゴンラスタライズ
+webgpu-mask-layer.js:362    📦 マスク加算/減算
+webgpu-mask-layer.js:363    📦 CPUフォールバック非対応（GPU専用）
+msdf-brush-shader.js:143 ✅ system/drawing/msdf/msdf-brush-shader.js loaded
+pointer-handler.js:180 ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+pressure-handler.js:190 ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+pressure-handler.js:191    ✓ 距離ベースフィルタ対応
+pressure-handler.js:192    ✓ window.PressureHandler として公開
+stroke-recorder.js:85 ✅ [StrokeRecorder] PolygonGenerator connected
+stroke-recorder.js:244 ✅ stroke-recorder.js (Phase 1完全版) loaded
+stroke-recorder.js:245    ✅ PolygonGenerator自動接続
+stroke-recorder.js:246    ✅ 初期化不要
+stroke-recorder.js:247    ✅ デバッグログ強化
+sdf-brush-shader.js:142 ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
+sdf-brush-shader.js:143    ✓ 消しゴムモード削除
+sdf-brush-shader.js:144    ✓ ペン描画に特化
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
+fill-tool.js:270    ❌ 独自WebGPU初期化を削除
+fill-tool.js:271    ✅ 既存インスタンス参照のみ
+drawing-engine.js:244 ✅ drawing-engine.js (Phase 4 - Fill対応版) loaded
+drawing-engine.js:245    ✓ fill モード時に canvas:pointerdown イベント発行
+drawing-engine.js:246    ✓ localX/localY を含むイベントペイロード
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
 export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
 export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
 png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
@@ -105,14 +105,6 @@ core-initializer.js:476    ✅ Direct Polygon Rendering対応
 core-initializer.js:283 ✅ [PixiJS] Renderer initialized
 core-initializer.js:284    📊 Type: 1
 stroke-recorder.js:85 ✅ [StrokeRecorder] PolygonGenerator connected
-brush-core.js:87 ❌ [BrushCore] historyManager not found
-initialize @ brush-core.js:87
-init @ brush-core.js:55
-initialize @ core-engine.js:634
-initialize @ core-initializer.js:287
-await in initialize
-initialize @ core-initializer.js:454
-（匿名） @ index.html:119
 popup-manager.js:16 ✅ PopupManager initialized
 popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
 popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
@@ -140,9 +132,7 @@ webgpu-drawing-layer.js:76    📊 Device: GPUDevice {features: GPUSupportedFea
 webgpu-drawing-layer.js:77    📊 Adapter: GPUAdapter {features: GPUSupportedFeatures, limits: GPUSupportedLimits, info: GPUAdapterInfo}
 core-initializer.js:175 ✅ [WebGPU] Drawing Layer initialized
 core-initializer.js:183 [WebGPU] Initializing Geometry Layer...
-webgpu-geometry-layer.js:80 ✅ [WebGPUGeometryLayer] Initialized (4x MSAA)
-webgpu-geometry-layer.js:81    📊 Pen Pipeline: GPURenderPipeline {label: 'Pen Pipeline'}
-webgpu-geometry-layer.js:82    📊 Eraser Pipeline: GPURenderPipeline {label: 'Eraser Pipeline'}
+webgpu-geometry-layer.js:76 ✅ [WebGPUGeometryLayer] Phase 7 (4x MSAA + Eraser修正)
 core-initializer.js:187 ✅ [WebGPU] Geometry Layer initialized
 core-initializer.js:195 [WebGPU] Initializing Texture Bridge...
 webgpu-texture-bridge.js:45 ✅ [WebGPUTextureBridge] Initialized
@@ -151,29 +141,39 @@ core-initializer.js:205 [WebGPU] Initializing Compute SDF (optional)...
 webgpu-compute-sdf.js:42 ✅ [WebGPUComputeSDF] Initialized
 core-initializer.js:208 ✅ [WebGPU] Compute SDF initialized (for future MSDF)
 core-initializer.js:216 [WebGPU] Initializing StrokeRenderer...
-stroke-renderer.js:52 ❌ [StrokeRenderer] WebGPUDrawingLayer not initialized
-initialize @ stroke-renderer.js:52
-initializeWebGPU @ core-initializer.js:217
+brush-core.js:120 [BrushCore] Not initialized - initialization in progress
+startStroke @ brush-core.js:120
+_handlePointerDown @ drawing-engine.js:118
+onPointerDown @ pointer-handler.js:86
+brush-core.js:120 [BrushCore] Not initialized - initialization in progress
+startStroke @ brush-core.js:120
+_handlePointerDown @ drawing-engine.js:118
+onPointerDown @ pointer-handler.js:86
+core-initializer.js:233 [WebGPU] Phase 3 initialization error: Error: WebGPUDrawingLayer not initialized after timeout
+    at stroke-renderer.js:76:17
+initializeWebGPU @ core-initializer.js:233
 await in initializeWebGPU
 initialize @ core-initializer.js:332
 await in initialize
 initialize @ core-initializer.js:454
 （匿名） @ index.html:119
-core-initializer.js:218 ✅ [WebGPU] StrokeRenderer initialized
-core-initializer.js:224 ✅ [WebGPU] Complete Phase 3 initialization
-core-initializer.js:225    📊 Drawing Layer: true
-core-initializer.js:226    📊 Geometry Layer: true
-core-initializer.js:227    📊 Texture Bridge: true
-core-initializer.js:228    📊 Stroke Renderer: undefined
-core-initializer.js:333 [App] WebGPU enabled: true
+core-initializer.js:333 [App] WebGPU enabled: false
 index.html:120 ✅ Application initialized (Phase 4-B: MSDF完全統合版)
+brush-core.js:57 Uncaught (in promise) Error: WebGPUDrawingLayer not initialized after timeout
+（匿名） @ stroke-renderer.js:76
+await in （匿名）
+initialize @ stroke-renderer.js:95
+（匿名） @ brush-core.js:89
+initialize @ brush-core.js:110
+init @ brush-core.js:57
+initialize @ core-engine.js:634
+initialize @ core-initializer.js:287
+await in initialize
+initialize @ core-initializer.js:454
+（匿名） @ index.html:119
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-brush-core.js:107 ❌ [BrushCore] Not initialized
-startStroke @ brush-core.js:107
-_handlePointerDown @ drawing-engine.js:118
-onPointerDown @ pointer-handler.js:86
-brush-core.js:107 ❌ [BrushCore] Not initialized
-startStroke @ brush-core.js:107
+brush-core.js:120 [BrushCore] Not initialized - initialization in progress
+startStroke @ brush-core.js:120
 _handlePointerDown @ drawing-engine.js:118
 onPointerDown @ pointer-handler.js:86
