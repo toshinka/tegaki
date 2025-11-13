@@ -1,18 +1,24 @@
 /**
  * ================================================================================
- * webgpu-texture-bridge.js - Phase 3: PixiJS v8 + bytesPerRow修正版
+ * system/drawing/webgpu/webgpu-texture-bridge.js
+ * Phase 4: 命名統一・Sprite生成統合版
  * ================================================================================
  * 
  * 【責務】
- * - GPUTexture → PixiJS Texture変換（Canvas2D不使用）
- * - PixiJS v8 API対応（BaseTexture廃止対応）
+ * - GPUTexture → PixiJS Sprite変換（Canvas2D不使用）
+ * - PixiJS v8 API対応（BaseTexture廃止）
  * - bytesPerRow 256バイト境界要件対応
  * 
  * 【依存Parents】
  * - webgpu-drawing-layer.js (device, queue)
  * 
  * 【依存Children】
- * - stroke-renderer.js (createPixiTextureFromGPU呼び出し)
+ * - stroke-renderer.js (createSpriteFromGPUTexture呼び出し)
+ * 
+ * 【Phase 4改修】
+ * ✅ グローバルシンボル統一: WebGPUTextureBridge (大文字)
+ * ✅ Sprite生成統合: createSpriteFromGPUTexture()
+ * ✅ bytesPerRow パディング処理完全対応
  * 
  * ================================================================================
  */
@@ -27,32 +33,29 @@
             this.initialized = false;
         }
 
-        /**
-         * 初期化
-         */
         async initialize() {
             if (this.initialized) return true;
 
             try {
-                if (!window.webgpuDrawingLayer?.isInitialized()) {
+                if (!window.WebGPUDrawingLayer?.isInitialized()) {
                     throw new Error('WebGPUDrawingLayer not initialized');
                 }
 
-                this.device = window.webgpuDrawingLayer.getDevice();
-                this.queue = window.webgpuDrawingLayer.getQueue();
+                this.device = window.WebGPUDrawingLayer.getDevice();
+                this.queue = window.WebGPUDrawingLayer.getQueue();
 
                 this.initialized = true;
-                console.log('✅ [WebGPUTextureBridge] Initialized');
+                console.log('✅ [WebGPUTextureBridge] Phase 4完全版');
                 return true;
 
             } catch (error) {
-                console.error('[WebGPUTextureBridge] Initialization failed:', error);
+                console.error('❌ [WebGPUTextureBridge] Initialization failed:', error);
                 return false;
             }
         }
 
         /**
-         * ✅ bytesPerRowを256バイト境界にアライメント
+         * bytesPerRowを256バイト境界にアライメント
          */
         _calculateBytesPerRow(width) {
             const bytesPerPixel = 4; // RGBA8
@@ -62,15 +65,14 @@
         }
 
         /**
-         * ✅ GPUTexture → PixiJS Texture（PixiJS v8対応 + bytesPerRow修正）
+         * ✅ GPUTexture → PixiJS Sprite（完全統合版）
          */
-        async createPixiTextureFromGPU(gpuTexture, width, height) {
+        async createSpriteFromGPUTexture(gpuTexture, width, height) {
             if (!this.initialized) {
                 await this.initialize();
             }
 
             try {
-                // 1. ✅ bytesPerRowを256バイト境界に
                 const bytesPerRow = this._calculateBytesPerRow(width);
                 const bufferSize = bytesPerRow * height;
 
@@ -89,7 +91,7 @@
                     },
                     { 
                         buffer: stagingBuffer,
-                        bytesPerRow: bytesPerRow, // ✅ アライメント済み
+                        bytesPerRow: bytesPerRow,
                         rowsPerImage: height
                     },
                     { 
@@ -101,11 +103,11 @@
 
                 this.queue.submit([commandEncoder.finish()]);
 
-                // 2. GPUBuffer → ArrayBuffer
+                // GPUBuffer → ArrayBuffer
                 await stagingBuffer.mapAsync(GPUMapMode.READ);
                 const arrayBuffer = stagingBuffer.getMappedRange();
                 
-                // 3. ✅ パディングを除去して実際のピクセルデータを抽出
+                // パディング除去
                 const pixels = new Uint8ClampedArray(width * height * 4);
                 const mappedData = new Uint8ClampedArray(arrayBuffer);
                 
@@ -122,11 +124,10 @@
                 stagingBuffer.unmap();
                 stagingBuffer.destroy();
 
-                // 4. ✅ PixiJS v8 API: Texture.from() を使用
+                // ImageData → ImageBitmap → PixiJS Texture
                 const imageData = new ImageData(pixels, width, height);
                 const bitmap = await createImageBitmap(imageData);
                 
-                // PixiJS v8: BaseTexture廃止、Texture.from()使用
                 const texture = PIXI.Texture.from(bitmap, {
                     scaleMode: 'linear',
                     mipmap: 'off',
@@ -134,12 +135,25 @@
                     height: height
                 });
 
-                return texture;
+                // Sprite生成
+                const sprite = new PIXI.Sprite(texture);
+                sprite.width = width;
+                sprite.height = height;
+
+                return sprite;
 
             } catch (error) {
-                console.error('[TextureBridge] GPU conversion failed:', error);
+                console.error('❌ [TextureBridge] Sprite creation failed:', error);
                 throw error;
             }
+        }
+
+        /**
+         * GPUTexture → PixiJS Texture（下位互換用）
+         */
+        async createPixiTextureFromGPU(gpuTexture, width, height) {
+            const sprite = await this.createSpriteFromGPUTexture(gpuTexture, width, height);
+            return sprite.texture;
         }
 
         /**
@@ -152,7 +166,6 @@
 
             const color = colorSettings || { r: 128, g: 0, b: 0, alpha: 255 };
 
-            // Float32 → Uint8 変換（RGBA）
             const pixelData = new Uint8ClampedArray(width * height * 4);
             
             for (let i = 0; i < sdfData.length; i++) {
@@ -231,13 +244,7 @@
         }
     }
 
-    // グローバル公開
-    if (!window.webgpuTextureBridge) {
-        window.webgpuTextureBridge = new WebGPUTextureBridge();
-    }
-
-    console.log('✅ webgpu-texture-bridge.js (Phase 3: PixiJS v8 + bytesPerRow修正版) loaded');
-    console.log('   🔧 PixiJS v8 API対応（BaseTexture廃止）');
-    console.log('   🔧 bytesPerRow 256バイト境界要件対応');
+    // グローバル公開（大文字統一）
+    window.WebGPUTextureBridge = new WebGPUTextureBridge();
 
 })();
