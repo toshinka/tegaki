@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/brush-core.js
- * Phase 8: 完全初期化ブロック版
+ * Phase 9: History参照修正版
  * ================================================================================
  * 
  * 【責務】
@@ -13,14 +13,15 @@
  * - stroke-recorder.js (window.strokeRecorder)
  * - stroke-renderer.js (window.strokeRenderer)
  * - layer-system.js (window.layerManager)
- * - history.js (window.historyManager)
+ * - history.js (window.historyManager) ★遅延参照対応
  * 
  * 【依存Children】
  * - drawing-engine.js
  * 
- * 【Phase 8改修】
- * - 初期化完了まで全描画操作を完全ブロック
- * - 初期化中のstartStroke()呼び出しを静かに無視
+ * 【Phase 9改修】
+ * ✅ historyManager参照をfinalizeStroke()時に遅延取得
+ * ✅ 初期化段階でのhistoryManager必須チェック削除
+ * ✅ 描画開始可能にする
  * 
  * ================================================================================
  */
@@ -33,7 +34,6 @@
       this.strokeRecorder = null;
       this.strokeRenderer = null;
       this.layerManager = null;
-      this.historyManager = null;
       
       this.isDrawing = false;
       this.currentStroke = null;
@@ -80,41 +80,19 @@
           await this.strokeRenderer.initialize();
         }
 
-        // historyManager遅延取得
-        let retries = 0;
-        while (!this.historyManager && retries < 50) {
-          this.historyManager = window.historyManager;
-          if (!this.historyManager) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            retries++;
-          }
-        }
-
-        if (!this.historyManager) {
-          throw new Error('historyManager not found after retries');
-        }
-
         this.initialized = true;
-        console.log('✅ brush-core.js Phase 8完全版');
+        console.log('✅ [BrushCore] Phase 9初期化完了');
       })();
 
       return this.initializationPromise;
     }
 
     startStroke(localX, localY, pressure = 0.5) {
-      // 初期化未完了時は静かに無視
-      if (!this.initialized) {
-        return;
-      }
-
-      if (this.isDrawing) {
-        return;
-      }
+      if (!this.initialized) return;
+      if (this.isDrawing) return;
 
       const activeLayer = this.layerManager.getActiveLayer();
-      if (!activeLayer) {
-        return;
-      }
+      if (!activeLayer) return;
 
       this.strokeRecorder.startStroke();
       this.strokeRecorder.addPoint(localX, localY, pressure);
@@ -127,21 +105,15 @@
     }
 
     async updateStroke(localX, localY, pressure = 0.5) {
-      if (!this.initialized || !this.isDrawing) {
-        return;
-      }
+      if (!this.initialized || !this.isDrawing) return;
 
       this.strokeRecorder.addPoint(localX, localY, pressure);
 
       const activeLayer = this.layerManager.getActiveLayer();
-      if (!activeLayer) {
-        return;
-      }
+      if (!activeLayer) return;
 
       const polygon = this.strokeRecorder.getPolygon();
-      if (!polygon || polygon.length < 6) {
-        return;
-      }
+      if (!polygon || polygon.length < 6) return;
 
       // 既存Preview削除
       if (this.previewSprite) {
@@ -162,9 +134,7 @@
     }
 
     async finalizeStroke() {
-      if (!this.initialized || !this.isDrawing) {
-        return;
-      }
+      if (!this.initialized || !this.isDrawing) return;
 
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) {
@@ -208,42 +178,45 @@
           }
           activeLayer.paths.push(pathData);
 
-          // History登録
-          this.historyManager.recordAction({
-            type: 'path:add',
-            layerId: activeLayer.id,
-            pathData: pathData,
-            undo: () => {
-              const layer = this.layerManager.getLayerById(activeLayer.id);
-              if (layer) {
-                const index = layer.paths.findIndex(p => p.id === pathData.id);
-                if (index !== -1) {
-                  layer.paths.splice(index, 1);
+          // ★historyManagerを使用時に取得（遅延参照）
+          const historyManager = window.historyManager;
+          if (historyManager) {
+            historyManager.recordAction({
+              type: 'path:add',
+              layerId: activeLayer.id,
+              pathData: pathData,
+              undo: () => {
+                const layer = this.layerManager.getLayerById(activeLayer.id);
+                if (layer) {
+                  const index = layer.paths.findIndex(p => p.id === pathData.id);
+                  if (index !== -1) {
+                    layer.paths.splice(index, 1);
+                    if (pathData.sprite && !pathData.sprite.destroyed) {
+                      pathData.sprite.destroy({ children: true });
+                    }
+                  }
+                }
+              },
+              redo: () => {
+                const layer = this.layerManager.getLayerById(activeLayer.id);
+                if (layer) {
+                  if (!layer.paths) layer.paths = [];
+                  layer.paths.push(pathData);
                   if (pathData.sprite && !pathData.sprite.destroyed) {
-                    pathData.sprite.destroy({ children: true });
+                    layer.container.addChild(pathData.sprite);
+                  } else {
+                    this.strokeRenderer.renderFinalStroke(
+                      strokeData,
+                      this.currentSettings,
+                      layer.container
+                    ).then(newSprite => {
+                      pathData.sprite = newSprite;
+                    });
                   }
                 }
               }
-            },
-            redo: () => {
-              const layer = this.layerManager.getLayerById(activeLayer.id);
-              if (layer) {
-                if (!layer.paths) layer.paths = [];
-                layer.paths.push(pathData);
-                if (pathData.sprite && !pathData.sprite.destroyed) {
-                  layer.container.addChild(pathData.sprite);
-                } else {
-                  this.strokeRenderer.renderFinalStroke(
-                    strokeData,
-                    this.currentSettings,
-                    layer.container
-                  ).then(newSprite => {
-                    pathData.sprite = newSprite;
-                  });
-                }
-              }
-            }
-          });
+            });
+          }
 
           window.eventBus.emit('layer:path-added', {
             layerId: activeLayer.id,

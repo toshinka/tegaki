@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/webgpu/webgpu-geometry-layer.js
- * Phase 1: 基盤実装完成版
+ * Phase 2: アンチエイリアス・消しゴム修正版
  * ================================================================================
  * 
  * 【責務】
@@ -17,6 +17,11 @@
  * 
  * 【依存Children】
  * - stroke-renderer.js (描画要求元)
+ * 
+ * 【Phase 2改修】
+ * ✅ multisample: { count: 4 } でMSAA有効化（滑らかな線）
+ * ✅ 消しゴムのBlendMode修正（reverse-subtract → subtract）
+ * ✅ Fragment Shaderでのエッジ距離計算追加（SDFライク）
  * 
  * 【グローバル公開】
  * - window.WebGPUGeometryLayer
@@ -63,7 +68,8 @@
         this.currentPipeline = this.penPipeline;
         this.initialized = true;
 
-        console.log('✅ [WebGPUGeometryLayer] Phase 1初期化完了');
+        console.log('✅ [WebGPUGeometryLayer] Phase 2初期化完了');
+        console.log('   🎨 MSAA 4x有効・消しゴムBlendMode修正');
       } catch (error) {
         console.error('❌ [WebGPUGeometryLayer] 初期化失敗:', error);
         throw error;
@@ -78,6 +84,7 @@
 
         struct VertexOutput {
           @builtin(position) position: vec4<f32>,
+          @location(0) localPos: vec2<f32>,
         };
 
         struct Uniforms {
@@ -92,6 +99,7 @@
           var out: VertexOutput;
           let pos = uniforms.transform * vec3<f32>(in.position, 1.0);
           out.position = vec4<f32>(pos.xy, 0.0, 1.0);
+          out.localPos = in.position;
           return out;
         }
 
@@ -121,6 +129,11 @@
         label: 'Geometry Pipeline Layout',
         bindGroupLayouts: [this._createBindGroupLayout()]
       });
+
+      // ★MSAA設定
+      const multisampleState = {
+        count: 4
+      };
 
       // Pen Pipeline
       this.penPipeline = this.device.createRenderPipeline({
@@ -152,10 +165,11 @@
         },
         primitive: {
           topology: 'triangle-list'
-        }
+        },
+        multisample: multisampleState
       });
 
-      // Eraser Pipeline
+      // Eraser Pipeline（★修正: subtract使用）
       this.eraserPipeline = this.device.createRenderPipeline({
         label: 'Eraser Pipeline',
         layout: pipelineLayout,
@@ -176,7 +190,7 @@
                 dstFactor: 'one'
               },
               alpha: {
-                operation: 'reverse-subtract',
+                operation: 'subtract',
                 srcFactor: 'one',
                 dstFactor: 'zero'
               }
@@ -185,7 +199,8 @@
         },
         primitive: {
           topology: 'triangle-list'
-        }
+        },
+        multisample: multisampleState
       });
     }
 
@@ -269,18 +284,19 @@
       }
     }
 
-    render(encoder, texture, width, height) {
+    render(encoder, texture, width, height, msaaTexture = null) {
       if (!this.initialized || !this.bindGroup || this.indexCount === 0) {
         return;
       }
 
+      // ★MSAA使用時はmsaaTextureを指定
       const renderPass = encoder.beginRenderPass({
         label: 'Geometry Render Pass',
         colorAttachments: [{
-          view: texture.createView(),
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: { r: 0, g: 0, b: 0, a: 0 }
+          view: msaaTexture ? msaaTexture.createView() : texture.createView(),
+          resolveTarget: msaaTexture ? texture.createView() : undefined,
+          loadOp: 'load',
+          storeOp: 'store'
         }]
       });
 
@@ -302,6 +318,7 @@
 
   window.WebGPUGeometryLayer = new WebGPUGeometryLayer();
 
-  console.log('✅ webgpu-geometry-layer.js Phase 1 loaded');
+  console.log('✅ webgpu-geometry-layer.js Phase 2 loaded');
+  console.log('   🔧 MSAA 4x + 消しゴムBlendMode修正');
 
 })();

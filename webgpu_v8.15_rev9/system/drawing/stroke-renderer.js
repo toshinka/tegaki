@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/stroke-renderer.js
- * Phase 1: 依存関係明確化・ログクリーンアップ版
+ * Phase 2: MSAA対応・同期強化版
  * ================================================================================
  * 
  * 【責務】
@@ -12,17 +12,17 @@
  * 
  * 【依存Parents】
  * - webgpu-drawing-layer.js (GPUDevice/Queue)
- * - webgpu-geometry-layer.js (描画処理) ★Phase 1追加
+ * - webgpu-geometry-layer.js (描画処理)
  * - earcut-triangulator.js (Triangulation)
  * - webgpu-texture-bridge.js (Texture → Sprite)
  * 
  * 【依存Children】
  * - brush-core.js (呼び出し元)
  * 
- * 【Phase 1改修】
- * ✅ 親子依存関係ヘッダー追記
- * ✅ 過剰なコンソールログ削除
- * ✅ 初期化完了ログのみ残す
+ * 【Phase 2改修】
+ * ✅ MSAA Texture作成・使用
+ * ✅ 描画前にclearパス挿入（チラツキ解消）
+ * ✅ onSubmittedWorkDone()確実化
  * 
  * ================================================================================
  */
@@ -80,7 +80,7 @@
         }
 
         this.initialized = true;
-        console.log('✅ [StrokeRenderer] Phase 1初期化完了');
+        console.log('✅ [StrokeRenderer] Phase 2初期化完了');
       })();
 
       return this.initializationPromise;
@@ -114,6 +114,8 @@
         this.webgpuGeometryLayer.uploadPolygon(normalizedPolygon, indices);
 
         const device = this.webgpuDrawingLayer.device;
+        
+        // ★メインTexture
         const texture = device.createTexture({
           size: { width, height },
           format: 'rgba8unorm',
@@ -122,10 +124,33 @@
                  GPUTextureUsage.TEXTURE_BINDING
         });
 
+        // ★MSAA Texture
+        const msaaTexture = device.createTexture({
+          size: { width, height },
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          sampleCount: 4
+        });
+
         const encoder = device.createCommandEncoder({ label: 'Preview Render' });
-        this.webgpuGeometryLayer.render(encoder, texture, width, height);
+
+        // ★Clear Pass（チラツキ解消）
+        const clearPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: texture.createView(),
+            loadOp: 'clear',
+            storeOp: 'store',
+            clearValue: { r: 0, g: 0, b: 0, a: 0 }
+          }]
+        });
+        clearPass.end();
+
+        // ★描画Pass（MSAA使用）
+        this.webgpuGeometryLayer.render(encoder, texture, width, height, msaaTexture);
+        
         device.queue.submit([encoder.finish()]);
 
+        // ★GPU同期確実化
         await device.queue.onSubmittedWorkDone();
 
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
@@ -141,6 +166,7 @@
         }
 
         texture.destroy();
+        msaaTexture.destroy();
 
         return sprite;
 
@@ -220,6 +246,6 @@
   window.StrokeRenderer = StrokeRenderer;
   window.strokeRenderer = new StrokeRenderer();
 
-  console.log('✅ stroke-renderer.js (Phase 1改修版) loaded');
+  console.log('✅ stroke-renderer.js (Phase 2: MSAA対応版) loaded');
 
 })();

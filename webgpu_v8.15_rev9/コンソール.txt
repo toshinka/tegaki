@@ -22,7 +22,8 @@ drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切
 history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
 webgpu-capabilities.js:126 ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
 earcut-triangulator.js:148 ✅ earcut-triangulator.js loaded
-webgpu-geometry-layer.js:305 ✅ webgpu-geometry-layer.js Phase 1 loaded
+webgpu-geometry-layer.js:321 ✅ webgpu-geometry-layer.js Phase 2 loaded
+webgpu-geometry-layer.js:322    🔧 MSAA 4x + 消しゴムBlendMode修正
 webgpu-mask-layer.js:360 ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
 webgpu-mask-layer.js:361    📦 GPU Compute Shaderでポリゴンラスタライズ
 webgpu-mask-layer.js:362    📦 マスク加算/減算
@@ -41,7 +42,7 @@ stroke-recorder.js:247    ✅ デバッグログ強化
 sdf-brush-shader.js:142 ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
 sdf-brush-shader.js:143    ✓ 消しゴムモード削除
 sdf-brush-shader.js:144    ✓ ペン描画に特化
-stroke-renderer.js:223 ✅ stroke-renderer.js (Phase 1改修版) loaded
+stroke-renderer.js:249 ✅ stroke-renderer.js (Phase 2: MSAA対応版) loaded
 thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
 brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
 fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
@@ -121,18 +122,25 @@ core-initializer.js:171 [WebGPU] Phase 4 initialization starting...
 core-initializer.js:180 [WebGPU] Initializing Drawing Layer...
 webgpu-drawing-layer.js:52 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
 initialize @ webgpu-drawing-layer.js:52
+initializeWebGPU @ core-initializer.js:181
+initialize @ core-initializer.js:341
+await in initialize
+initialize @ core-initializer.js:463
+（匿名） @ index.html:119
 webgpu-drawing-layer.js:78 ✅ [WebGPUDrawingLayer] Phase 3 Initialized
-webgpu-drawing-layer.js:79    📊 Device: GPUDevice
+webgpu-drawing-layer.js:79    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
 webgpu-drawing-layer.js:80    📊 Format: rgba8unorm
 core-initializer.js:186 ✅ [WebGPU] Drawing Layer initialized
 core-initializer.js:194 [WebGPU] Initializing Geometry Layer...
-webgpu-geometry-layer.js:66 ✅ [WebGPUGeometryLayer] Phase 1初期化完了
+webgpu-geometry-layer.js:71 ✅ [WebGPUGeometryLayer] Phase 2初期化完了
+webgpu-geometry-layer.js:72    🎨 MSAA 4x有効・消しゴムBlendMode修正
 core-initializer.js:198 ✅ [WebGPU] Geometry Layer initialized
 core-initializer.js:206 [WebGPU] Initializing Texture Bridge...
 webgpu-texture-bridge.js:48 ✅ [WebGPUTextureBridge] Phase 4完全版
 core-initializer.js:212 ✅ [WebGPU] Texture Bridge initialized
 core-initializer.js:231 [WebGPU] Initializing StrokeRenderer...
-stroke-renderer.js:83 ✅ [StrokeRenderer] Phase 1初期化完了
+stroke-renderer.js:83 ✅ [StrokeRenderer] Phase 2初期化完了
+brush-core.js:84 ✅ [BrushCore] Phase 9初期化完了
 core-initializer.js:233 ✅ [WebGPU] StrokeRenderer initialized
 core-initializer.js:235 ✅ [WebGPU] Complete Phase 4 initialization
 core-initializer.js:236    📊 Drawing Layer: true
@@ -143,10 +151,5 @@ core-initializer.js:342 [App] WebGPU enabled: true
 index.html:120 ✅ Application initialized (Phase 4-B: MSDF完全統合版)
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-brush-core.js:94 Uncaught (in promise) Error: historyManager not found after retries
-（匿名） @ brush-core.js:94
-console.log(window.WebGPUGeometryLayer.initialized); // true
-console.log(window.strokeRenderer.initialized); // true
-VM163:1 true
-VM163:2 true
-undefined
+popup-manager.js:192 👁️ Popup "quickAccess" shown
+popup-manager.js:212 🙈 Popup "quickAccess" hidden
