@@ -1,28 +1,32 @@
 /**
  * ================================================================================
  * system/drawing/stroke-renderer.js
- * Phase 2: MSAA対応・同期強化版
+ * Phase 1: Legacy/MSDF併存版
  * ================================================================================
  * 
  * 【責務】
- * - Polygon → WebGPU Geometry Layer経由描画
+ * - Polygon → 描画（Legacy/MSDF自動切替）
  * - Preview/Final描画統合
  * - BlendMode管理（Pen/Eraser）
- * - 座標変換（Local → NDC）
  * 
  * 【依存Parents】
  * - webgpu-drawing-layer.js (GPUDevice/Queue)
- * - webgpu-geometry-layer.js (描画処理)
- * - earcut-triangulator.js (Triangulation)
- * - webgpu-texture-bridge.js (Texture → Sprite)
+ * - [Legacy] webgpu-geometry-layer.js (オプショナル)
+ * - [Legacy] earcut-triangulator.js (オプショナル)
+ * - [MSDF] msdf-pipeline-manager.js (Phase 2以降)
+ * - webgpu-texture-bridge.js (共通)
  * 
  * 【依存Children】
  * - brush-core.js (呼び出し元)
  * 
- * 【Phase 2改修】
- * ✅ MSAA Texture作成・使用
- * ✅ 描画前にclearパス挿入（チラツキ解消）
- * ✅ onSubmittedWorkDone()確実化
+ * 【Phase 1改修】
+ * ✅ Legacy依存をオプショナル化
+ * ✅ WebGPUGeometryLayer未初期化でもエラー回避
+ * ✅ MSDF Pipeline対応準備（Phase 2で実装）
+ * 
+ * 【変更履歴】
+ * - v2.1: Legacy/MSDF併存対応（初期化エラー修正）
+ * - v2.0: MSAA対応・同期強化版
  * 
  * ================================================================================
  */
@@ -33,12 +37,21 @@
   class StrokeRenderer {
     constructor() {
       this.webgpuDrawingLayer = null;
+      
+      // Legacy Components (オプショナル)
       this.webgpuGeometryLayer = null;
-      this.textureBridge = null;
       this.triangulator = null;
+      
+      // MSDF Components (Phase 2以降)
+      this.msdfPipelineManager = null;
+      
+      // 共通
+      this.textureBridge = null;
       
       this.initialized = false;
       this.initializationPromise = null;
+      this.legacyMode = false;
+      this.msdfMode = false;
     }
 
     async initialize() {
@@ -51,14 +64,18 @@
 
         while (retries < maxRetries) {
           this.webgpuDrawingLayer = window.WebGPUDrawingLayer;
-          this.webgpuGeometryLayer = window.WebGPUGeometryLayer;
           this.textureBridge = window.WebGPUTextureBridge;
+
+          // Legacy Components (オプショナル)
+          this.webgpuGeometryLayer = window.WebGPUGeometryLayer;
           this.triangulator = window.EarcutTriangulator;
 
+          // MSDF Components (Phase 2以降)
+          this.msdfPipelineManager = window.msdfPipelineManager;
+
+          // 最低限の依存チェック
           if (this.webgpuDrawingLayer?.initialized &&
-              this.webgpuGeometryLayer?.initialized &&
-              this.textureBridge?.initialized &&
-              this.triangulator) {
+              this.textureBridge?.initialized) {
             break;
           }
 
@@ -66,21 +83,28 @@
           retries++;
         }
 
+        // 必須コンポーネント確認
         if (!this.webgpuDrawingLayer?.initialized) {
           throw new Error('WebGPUDrawingLayer not initialized');
-        }
-        if (!this.webgpuGeometryLayer?.initialized) {
-          throw new Error('WebGPUGeometryLayer not initialized');
         }
         if (!this.textureBridge?.initialized) {
           throw new Error('WebGPUTextureBridge not initialized');
         }
-        if (!this.triangulator) {
-          throw new Error('EarcutTriangulator not found');
-        }
+
+        // モード判定
+        this.legacyMode = this.webgpuGeometryLayer?.initialized && this.triangulator;
+        this.msdfMode = this.msdfPipelineManager?.initialized;
 
         this.initialized = true;
-        console.log('✅ [StrokeRenderer] Phase 2初期化完了');
+
+        console.log('✅ [StrokeRenderer] Phase 1初期化完了');
+        console.log(`   📊 Legacy Mode: ${this.legacyMode}`);
+        console.log(`   📊 MSDF Mode: ${this.msdfMode}`);
+
+        if (!this.legacyMode && !this.msdfMode) {
+          console.warn('⚠️ [StrokeRenderer] 描画エンジン未初期化 - Phase 2実装待ち');
+        }
+
       })();
 
       return this.initializationPromise;
@@ -90,6 +114,25 @@
       if (!this.initialized) return null;
       if (!polygon || polygon.length < 6) return null;
 
+      // Legacy Mode使用可能ならLegacy優先
+      if (this.legacyMode) {
+        return await this._renderPreviewLegacy(polygon, settings, container);
+      }
+
+      // MSDF Mode（Phase 2以降実装）
+      if (this.msdfMode) {
+        console.warn('[StrokeRenderer] MSDF Preview未実装 - Phase 2予定');
+        return null;
+      }
+
+      console.warn('[StrokeRenderer] 描画エンジン利用不可');
+      return null;
+    }
+
+    /**
+     * ✅ Legacy描画フロー（Phase 1維持）
+     */
+    async _renderPreviewLegacy(polygon, settings, container) {
       try {
         const mode = settings?.mode || 'pen';
         this.webgpuGeometryLayer.setBlendMode(mode);
@@ -115,7 +158,6 @@
 
         const device = this.webgpuDrawingLayer.device;
         
-        // ★メインTexture
         const texture = device.createTexture({
           size: { width, height },
           format: 'rgba8unorm',
@@ -124,7 +166,6 @@
                  GPUTextureUsage.TEXTURE_BINDING
         });
 
-        // ★MSAA Texture
         const msaaTexture = device.createTexture({
           size: { width, height },
           format: 'rgba8unorm',
@@ -134,7 +175,6 @@
 
         const encoder = device.createCommandEncoder({ label: 'Preview Render' });
 
-        // ★Clear Pass（チラツキ解消）
         const clearPass = encoder.beginRenderPass({
           colorAttachments: [{
             view: texture.createView(),
@@ -145,12 +185,9 @@
         });
         clearPass.end();
 
-        // ★描画Pass（MSAA使用）
         this.webgpuGeometryLayer.render(encoder, texture, width, height, msaaTexture);
         
         device.queue.submit([encoder.finish()]);
-
-        // ★GPU同期確実化
         await device.queue.onSubmittedWorkDone();
 
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
@@ -171,7 +208,7 @@
         return sprite;
 
       } catch (error) {
-        console.error('❌ [StrokeRenderer] Preview render failed:', error);
+        console.error('❌ [StrokeRenderer] Legacy render failed:', error);
         return null;
       }
     }
@@ -246,6 +283,8 @@
   window.StrokeRenderer = StrokeRenderer;
   window.strokeRenderer = new StrokeRenderer();
 
-  console.log('✅ stroke-renderer.js (Phase 2: MSAA対応版) loaded');
+  console.log('✅ stroke-renderer.js (Phase 1: Legacy/MSDF併存版) loaded');
+  console.log('   🔧 WebGPUGeometryLayer依存をオプショナル化');
+  console.log('   ✅ 初期化エラー回避');
 
 })();
