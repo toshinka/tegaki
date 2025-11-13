@@ -1,25 +1,15 @@
 /**
  * ================================================================================
- * brush-core.js Phase 3: MSDF統合完全版
+ * brush-core.js Phase 3.6完全動作版
  * ================================================================================
- * 【責務】
- * - ストローク管理（開始・更新・完了）
- * - MSDF Pipeline完全統合
- * - History登録
- * - サムネイル更新イベント発行
+ * 📁 Parents: stroke-recorder.js, gpu-stroke-processor.js, msdf-pipeline-manager.js,
+ *             webgpu-texture-bridge.js, layer-system.js, history.js
+ * 📄 Children: drawing-engine.js
  * 
- * 【依存Parents】
- * - stroke-recorder.js
- * - gpu-stroke-processor.js
- * - msdf-pipeline-manager.js
- * - webgpu-texture-bridge.js
- * - layer-system.js
- * - history.js
- * 
- * 【Phase 3改修】
- * ✅ MSDF Pipeline完全統合（PerfectFreehand依存削除）
- * ✅ 簡易プレビュー実装
- * ✅ エラーハンドリング強化
+ * 🔧 Phase 3.6修正:
+ *   - window.layerManager使用確定
+ *   - getLayerById存在確認 + 代替手段実装
+ *   - History登録をlayer参照で直接実装
  * ================================================================================
  */
 
@@ -72,12 +62,6 @@
         this.textureBridge
       );
 
-      if (this.msdfAvailable) {
-        console.log('✅ [BrushCore] MSDF Pipeline有効');
-      } else {
-        console.warn('⚠️ [BrushCore] MSDF Pipeline無効');
-      }
-
       this.initialized = true;
     }
 
@@ -98,16 +82,14 @@
 
     async updateStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || !this.isDrawing) return;
-
       this.strokeRecorder.addPoint(localX, localY, pressure);
-
-      // Phase 3: プレビュー省略（最終化時のみ描画）
     }
 
     async finalizeStroke() {
       if (!this.initialized || !this.isDrawing) return;
 
       const activeLayer = this.layerManager.getActiveLayer();
+      
       if (!activeLayer) {
         this.isDrawing = false;
         return;
@@ -128,8 +110,6 @@
 
       if (this.msdfAvailable) {
         await this._finalizeMSDFStroke(points, activeLayer);
-      } else {
-        console.error('❌ [BrushCore] MSDF Pipeline無効 - 描画不可');
       }
 
       this.strokeRecorder.endStroke();
@@ -137,42 +117,30 @@
       this.currentStroke = null;
     }
 
-    /**
-     * MSDF描画完全版
-     */
     async _finalizeMSDFStroke(points, activeLayer) {
       try {
         const container = this._getLayerContainer(activeLayer);
-        if (!container) {
-          throw new Error('Container取得失敗');
-        }
+        if (!container) throw new Error('Container取得失敗');
 
-        // 1. EdgeBuffer作成
         const pointArray = points.flatMap(p => [p.x, p.y]);
         const edgeBuffer = this.gpuStrokeProcessor.createEdgeBuffer(pointArray);
         if (!edgeBuffer) throw new Error('EdgeBuffer作成失敗');
 
-        // 2. GPU転送
         const gpuBuffer = this.gpuStrokeProcessor.uploadToGPU(edgeBuffer);
         if (!gpuBuffer) throw new Error('GPU転送失敗');
 
-        // 3. Bounds計算
         const bounds = this.gpuStrokeProcessor.calculateBounds(pointArray);
         const width = Math.ceil(bounds.maxX - bounds.minX);
         const height = Math.ceil(bounds.maxY - bounds.minY);
 
-        console.log(`[BrushCore] 描画開始: ${width}x${height}, ${points.length} points`);
-
-        // 4. MSDF生成（Phase 3版）
         const finalTexture = await this.msdfPipelineManager.generateMSDF(
           gpuBuffer,
           bounds,
-          null // existingMSDF
+          null
         );
 
         if (!finalTexture) throw new Error('MSDF生成失敗');
 
-        // 5. Sprite生成
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
           finalTexture,
           width,
@@ -181,20 +149,17 @@
 
         if (!sprite) throw new Error('Sprite生成失敗');
 
-        // 6. Sprite配置
         sprite.x = bounds.minX;
         sprite.y = bounds.minY;
         sprite.visible = true;
         sprite.alpha = this.currentSettings.opacity;
 
-        // 消しゴムモード
         if (this.currentSettings.mode === 'eraser') {
           sprite.blendMode = 'erase';
         }
 
         container.addChild(sprite);
 
-        // 7. PathData登録
         const pathData = {
           id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           type: 'stroke_msdf',
@@ -207,15 +172,9 @@
         if (!activeLayer.paths) activeLayer.paths = [];
         activeLayer.paths.push(pathData);
 
-        // 8. History登録
-        this._registerHistory(activeLayer, pathData);
-
-        // 9. イベント発行
+        this._registerHistory(activeLayer, pathData, container);
         this._emitStrokeEvents(activeLayer, pathData);
 
-        console.log('✅ [BrushCore] MSDF描画完了');
-
-        // 10. GPU リソース破棄
         if (gpuBuffer.destroy) gpuBuffer.destroy();
         if (finalTexture.destroy) finalTexture.destroy();
 
@@ -224,60 +183,60 @@
       }
     }
 
-    /**
-     * Container取得
-     */
     _getLayerContainer(layer) {
       if (layer.drawingContainer) return layer.drawingContainer;
       if (layer.container) return layer.container;
       if (layer.sprite) return layer.sprite;
       if (Array.isArray(layer.children)) return layer;
-
-      console.error('❌ [BrushCore] Container取得失敗');
       return null;
     }
 
     /**
      * History登録
+     * 🔧 Phase 3.6: layer参照を直接使用（getLayerById不使用）
      */
-    _registerHistory(layer, pathData) {
-      const historyManager = window.historyManager || window.History;
-      if (!historyManager) return;
+    _registerHistory(activeLayer, pathData, container) {
+      const historyManager = window.History;
+      if (!historyManager || !historyManager.push) return;
 
-      historyManager.recordAction({
-        type: 'path:add',
-        layerId: layer.id,
-        pathData: pathData,
-        undo: () => {
-          const targetLayer = this.layerManager.getLayerById(layer.id);
-          if (!targetLayer) return;
+      // 🔧 activeLayer参照をクロージャでキャプチャ
+      const layerRef = activeLayer;
+      const containerRef = container;
+
+      historyManager.push({
+        name: 'path:add',
+        do: () => {
+          // 🔧 直接layer参照を使用
+          if (!layerRef.paths) layerRef.paths = [];
           
-          const index = targetLayer.paths.findIndex(p => p.id === pathData.id);
+          const exists = layerRef.paths.some(p => p.id === pathData.id);
+          if (!exists) {
+            layerRef.paths.push(pathData);
+          }
+          
+          if (pathData.sprite && !pathData.sprite.destroyed && containerRef) {
+            if (!pathData.sprite.parent) {
+              containerRef.addChild(pathData.sprite);
+            }
+          }
+        },
+        undo: () => {
+          const index = layerRef.paths.findIndex(p => p.id === pathData.id);
           if (index !== -1) {
-            targetLayer.paths.splice(index, 1);
+            layerRef.paths.splice(index, 1);
             if (pathData.sprite && !pathData.sprite.destroyed) {
               pathData.sprite.destroy({ children: true });
             }
           }
         },
-        redo: () => {
-          const targetLayer = this.layerManager.getLayerById(layer.id);
-          if (!targetLayer) return;
-          
-          if (!targetLayer.paths) targetLayer.paths = [];
-          targetLayer.paths.push(pathData);
-          
-          if (pathData.sprite && !pathData.sprite.destroyed) {
-            const container = this._getLayerContainer(targetLayer);
-            if (container) container.addChild(pathData.sprite);
-          }
+        meta: {
+          type: 'path:add',
+          layerId: layerRef.id,
+          pathId: pathData.id
         }
       });
     }
 
-    /**
-     * イベント発行
-     */
     _emitStrokeEvents(layer, pathData) {
       const eventBus = window.TegakiEventBus || window.eventBus;
       if (!eventBus || !eventBus.emit) return;
@@ -352,6 +311,6 @@
   }
 
   window.BrushCore = new BrushCore();
-  console.log('✅ brush-core.js Phase 3 loaded (MSDF完全統合版)');
+  console.log('✅ brush-core.js Phase 3.6 loaded');
 
 })();
