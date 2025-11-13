@@ -43,19 +43,19 @@ stroke-recorder.js:247    ✅ デバッグログ強化
 sdf-brush-shader.js:142 ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
 sdf-brush-shader.js:143    ✓ 消しゴムモード削除
 sdf-brush-shader.js:144    ✓ ペン描画に特化
-thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
-brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
-fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
-fill-tool.js:270    ❌ 独自WebGPU初期化を削除
-fill-tool.js:271    ✅ 既存インスタンス参照のみ
-drawing-engine.js:244 ✅ drawing-engine.js (Phase 4 - Fill対応版) loaded
-drawing-engine.js:245    ✓ fill モード時に canvas:pointerdown イベント発行
-drawing-engine.js:246    ✓ localX/localY を含むイベントペイロード
-quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
-export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
-export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
-png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
-png-exporter.js:256    🔧 generatePreview()メソッド追加
+ ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+ ✅ brush-settings.js (Phase 3-D Clean) loaded
+ ✅ fill-tool.js (WebGPU競合修正版) loaded
+    ❌ 独自WebGPU初期化を削除
+    ✅ 既存インスタンス参照のみ
+ ✅ drawing-engine.js (Phase 4 - Fill対応版) loaded
+    ✓ fill モード時に canvas:pointerdown イベント発行
+    ✓ localX/localY を含むイベントペイロード
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js v8.33.0 loaded
+    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+ ✅ png-exporter.js v8.29.0 loaded
+    🔧 generatePreview()メソッド追加
 png-exporter.js:257    🔧 エラーハンドリング強化
 png-exporter.js:258    🔧 Blob生成の確実性向上
 webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
@@ -132,7 +132,7 @@ webgpu-drawing-layer.js:76    📊 Device: GPUDevice {features: GPUSupportedFea
 webgpu-drawing-layer.js:77    📊 Adapter: GPUAdapter {features: GPUSupportedFeatures, limits: GPUSupportedLimits, info: GPUAdapterInfo}
 core-initializer.js:175 ✅ [WebGPU] Drawing Layer initialized
 core-initializer.js:183 [WebGPU] Initializing Geometry Layer...
-webgpu-geometry-layer.js:76 ✅ [WebGPUGeometryLayer] Phase 7 (4x MSAA + Eraser修正)
+webgpu-geometry-layer.js:71 ✅ [WebGPUGeometryLayer] Phase 8完全版
 core-initializer.js:187 ✅ [WebGPU] Geometry Layer initialized
 core-initializer.js:195 [WebGPU] Initializing Texture Bridge...
 webgpu-texture-bridge.js:45 ✅ [WebGPUTextureBridge] Initialized
@@ -141,16 +141,8 @@ core-initializer.js:205 [WebGPU] Initializing Compute SDF (optional)...
 webgpu-compute-sdf.js:42 ✅ [WebGPUComputeSDF] Initialized
 core-initializer.js:208 ✅ [WebGPU] Compute SDF initialized (for future MSDF)
 core-initializer.js:216 [WebGPU] Initializing StrokeRenderer...
-brush-core.js:120 [BrushCore] Not initialized - initialization in progress
-startStroke @ brush-core.js:120
-_handlePointerDown @ drawing-engine.js:118
-onPointerDown @ pointer-handler.js:86
-brush-core.js:120 [BrushCore] Not initialized - initialization in progress
-startStroke @ brush-core.js:120
-_handlePointerDown @ drawing-engine.js:118
-onPointerDown @ pointer-handler.js:86
-core-initializer.js:233 [WebGPU] Phase 3 initialization error: Error: WebGPUDrawingLayer not initialized after timeout
-    at stroke-renderer.js:76:17
+core-initializer.js:233 [WebGPU] Phase 3 initialization error: Error: WebGPUDrawingLayer not found
+    at stroke-renderer.js:66:17
 initializeWebGPU @ core-initializer.js:233
 await in initializeWebGPU
 initialize @ core-initializer.js:332
@@ -159,13 +151,13 @@ initialize @ core-initializer.js:454
 （匿名） @ index.html:119
 core-initializer.js:333 [App] WebGPU enabled: false
 index.html:120 ✅ Application initialized (Phase 4-B: MSDF完全統合版)
-brush-core.js:57 Uncaught (in promise) Error: WebGPUDrawingLayer not initialized after timeout
-（匿名） @ stroke-renderer.js:76
+brush-core.js:54 Uncaught (in promise) Error: WebGPUDrawingLayer not found
+（匿名） @ stroke-renderer.js:66
 await in （匿名）
-initialize @ stroke-renderer.js:95
-（匿名） @ brush-core.js:89
-initialize @ brush-core.js:110
-init @ brush-core.js:57
+initialize @ stroke-renderer.js:92
+（匿名） @ brush-core.js:80
+initialize @ brush-core.js:99
+init @ brush-core.js:54
 initialize @ core-engine.js:634
 initialize @ core-initializer.js:287
 await in initialize
@@ -173,7 +165,3 @@ initialize @ core-initializer.js:454
 （匿名） @ index.html:119
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-brush-core.js:120 [BrushCore] Not initialized - initialization in progress
-startStroke @ brush-core.js:120
-_handlePointerDown @ drawing-engine.js:118
-onPointerDown @ pointer-handler.js:86
