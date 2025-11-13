@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/brush-core.js
- * Phase 7-FIX5: init()エイリアス完全対応版
+ * Phase 8: 初期化タイミング修正版
  * ================================================================================
  * 
  * 【責務】
@@ -18,6 +18,10 @@
  * 【依存Children】
  * - drawing-engine.js
  * 
+ * 【Phase 8改修】
+ * - historyManager遅延取得対応
+ * - 初期化完了まで描画ブロック
+ * 
  * ================================================================================
  */
 
@@ -26,18 +30,15 @@
 
   class BrushCore {
     constructor() {
-      // Core Components
       this.strokeRecorder = null;
       this.strokeRenderer = null;
       this.layerManager = null;
       this.historyManager = null;
       
-      // State
       this.isDrawing = false;
       this.currentStroke = null;
       this.previewSprite = null;
       
-      // Settings
       this.currentSettings = {
         mode: 'pen',
         color: '#800000',
@@ -46,10 +47,11 @@
       };
       
       this.initialized = false;
+      this.initializationPromise = null;
     }
 
     /**
-     * 初期化（init/initializeエイリアス両対応）
+     * 初期化（init/initializeエイリアス対応）
      */
     async init() {
       return await this.initialize();
@@ -57,46 +59,57 @@
 
     async initialize() {
       if (this.initialized) {
-        console.warn('[BrushCore] Already initialized');
         return;
       }
 
-      // 依存コンポーネント取得
-      this.strokeRecorder = window.strokeRecorder;
-      this.strokeRenderer = window.strokeRenderer;
-      this.layerManager = window.layerManager;
-      this.historyManager = window.historyManager;
-
-      // 必須コンポーネントチェック
-      if (!this.strokeRecorder) {
-        console.error('❌ [BrushCore] strokeRecorder not found');
-        return;
+      if (this.initializationPromise) {
+        return this.initializationPromise;
       }
 
-      if (!this.strokeRenderer) {
-        console.error('❌ [BrushCore] strokeRenderer not found');
-        return;
-      }
+      this.initializationPromise = (async () => {
+        // 必須コンポーネント取得
+        this.strokeRecorder = window.strokeRecorder;
+        this.strokeRenderer = window.strokeRenderer;
+        this.layerManager = window.layerManager;
 
-      if (!this.layerManager) {
-        console.error('❌ [BrushCore] layerManager not found');
-        return;
-      }
+        if (!this.strokeRecorder) {
+          throw new Error('strokeRecorder not found');
+        }
 
-      if (!this.historyManager) {
-        console.error('❌ [BrushCore] historyManager not found');
-        return;
-      }
+        if (!this.strokeRenderer) {
+          throw new Error('strokeRenderer not found');
+        }
 
-      // StrokeRenderer初期化
-      if (this.strokeRenderer.initialize) {
-        await this.strokeRenderer.initialize();
-      }
+        if (!this.layerManager) {
+          throw new Error('layerManager not found');
+        }
 
-      this.initialized = true;
-      console.log('✅ brush-core.js Phase 7-FIX5 loaded');
-      console.log('   🔧 init()エイリアス完全対応');
-      console.log('   🔧 getMode()/setMode()実装');
+        // StrokeRenderer初期化待機
+        if (this.strokeRenderer.initialize) {
+          await this.strokeRenderer.initialize();
+        }
+
+        // historyManager遅延取得（初期化完了待ち）
+        let retries = 0;
+        while (!this.historyManager && retries < 50) {
+          this.historyManager = window.historyManager;
+          if (!this.historyManager) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            retries++;
+          }
+        }
+
+        if (!this.historyManager) {
+          throw new Error('historyManager not found after retries');
+        }
+
+        this.initialized = true;
+        console.log('✅ brush-core.js Phase 8 loaded');
+        console.log('   🔧 初期化タイミング修正');
+        console.log('   🔧 historyManager遅延取得対応');
+      })();
+
+      return this.initializationPromise;
     }
 
     /**
@@ -104,23 +117,19 @@
      */
     startStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized) {
-        console.error('❌ [BrushCore] Not initialized');
+        console.warn('[BrushCore] Not initialized - initialization in progress');
         return;
       }
 
       if (this.isDrawing) {
-        console.warn('[BrushCore] Already drawing');
         return;
       }
 
-      // アクティブレイヤー取得
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) {
-        console.warn('[BrushCore] No active layer');
         return;
       }
 
-      // ストローク開始
       this.strokeRecorder.startStroke();
       this.strokeRecorder.addPoint(localX, localY, pressure);
       
@@ -139,10 +148,8 @@
         return;
       }
 
-      // ポイント追加
       this.strokeRecorder.addPoint(localX, localY, pressure);
 
-      // Preview描画
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) {
         return;
@@ -181,7 +188,6 @@
 
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) {
-        console.warn('[BrushCore] No active layer');
         this.isDrawing = false;
         return;
       }
@@ -192,7 +198,6 @@
         this.previewSprite = null;
       }
 
-      // StrokeData取得
       const strokeData = this.strokeRecorder.endStroke();
       
       if (!strokeData || !strokeData.polygon || strokeData.polygon.length < 6) {
@@ -209,7 +214,6 @@
         );
 
         if (sprite) {
-          // Path登録
           const pathData = {
             id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             type: 'stroke',
@@ -219,7 +223,6 @@
             bounds: this._calculateBounds(strokeData.polygon)
           };
 
-          // レイヤーに追加
           if (!activeLayer.paths) {
             activeLayer.paths = [];
           }
@@ -236,7 +239,7 @@
                 const index = layer.paths.findIndex(p => p.id === pathData.id);
                 if (index !== -1) {
                   layer.paths.splice(index, 1);
-                  if (pathData.sprite) {
+                  if (pathData.sprite && !pathData.sprite.destroyed) {
                     pathData.sprite.destroy({ children: true });
                   }
                 }
@@ -245,6 +248,7 @@
             redo: () => {
               const layer = this.layerManager.getLayerById(activeLayer.id);
               if (layer) {
+                if (!layer.paths) layer.paths = [];
                 layer.paths.push(pathData);
                 if (pathData.sprite && !pathData.sprite.destroyed) {
                   layer.container.addChild(pathData.sprite);
@@ -261,7 +265,6 @@
             }
           });
 
-          // イベント発行
           window.eventBus.emit('layer:path-added', {
             layerId: activeLayer.id,
             pathId: pathData.id
@@ -280,9 +283,6 @@
       this.currentStroke = null;
     }
 
-    /**
-     * 設定更新
-     */
     updateSettings(settings) {
       if (settings.mode !== undefined) {
         this.currentSettings.mode = settings.mode;
@@ -298,39 +298,24 @@
       }
     }
 
-    /**
-     * 設定取得
-     */
     getSettings() {
       return { ...this.currentSettings };
     }
 
-    /**
-     * モード取得（core-runtime.js互換）
-     */
     getMode() {
       return this.currentSettings.mode;
     }
 
-    /**
-     * モード設定（core-engine.js互換）
-     */
     setMode(mode) {
       if (mode === 'pen' || mode === 'eraser') {
         this.currentSettings.mode = mode;
       }
     }
 
-    /**
-     * 描画中か確認
-     */
     getIsDrawing() {
       return this.isDrawing;
     }
 
-    /**
-     * Bounds計算
-     */
     _calculateBounds(polygon) {
       let minX = Infinity, minY = Infinity;
       let maxX = -Infinity, maxY = -Infinity;
@@ -347,9 +332,6 @@
       return { minX, minY, maxX, maxY };
     }
 
-    /**
-     * クリーンアップ
-     */
     destroy() {
       if (this.previewSprite) {
         this.previewSprite.destroy({ children: true });
@@ -358,7 +340,6 @@
     }
   }
 
-  // Global登録
   window.BrushCore = new BrushCore();
 
 })();

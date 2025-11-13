@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/stroke-renderer.js
- * Phase 6: Geometry Layer + MSAA統合版
+ * Phase 7: 完全初期化版
  * ================================================================================
  * 
  * 【責務】
@@ -18,6 +18,11 @@
  * 【依存Children】
  * - brush-core.js
  * 
+ * 【Phase 7改修】
+ * - WebGPU初期化完了確認強化
+ * - チラつき解消（Clear pass削除）
+ * - エラーハンドリング強化
+ * 
  * ================================================================================
  */
 
@@ -32,6 +37,7 @@
       this.triangulator = null;
       
       this.initialized = false;
+      this.initializationPromise = null;
     }
 
     /**
@@ -42,31 +48,65 @@
         return;
       }
 
-      // WebGPU Components取得
-      this.webgpuDrawingLayer = window.WebGPUDrawingLayer;
-      this.webgpuGeometryLayer = window.WebGPUGeometryLayer;
-      this.textureBridge = window.WebGPUTextureBridge;
-      this.triangulator = window.EarcutTriangulator;
-
-      if (!this.webgpuDrawingLayer?.initialized) {
-        console.error('❌ [StrokeRenderer] WebGPUDrawingLayer not initialized');
-        return;
+      if (this.initializationPromise) {
+        return this.initializationPromise;
       }
 
-      if (!this.webgpuGeometryLayer?.initialized) {
-        console.error('❌ [StrokeRenderer] WebGPUGeometryLayer not initialized');
-        return;
-      }
+      this.initializationPromise = (async () => {
+        // WebGPU Components待機取得
+        let retries = 0;
+        while (retries < 50) {
+          this.webgpuDrawingLayer = window.WebGPUDrawingLayer;
+          this.webgpuGeometryLayer = window.WebGPUGeometryLayer;
+          this.textureBridge = window.WebGPUTextureBridge;
+          this.triangulator = window.EarcutTriangulator;
 
-      this.initialized = true;
-      console.log('✅ stroke-renderer.js (Phase 6 + MSAA) loaded');
+          if (this.webgpuDrawingLayer?.initialized &&
+              this.webgpuGeometryLayer?.initialized &&
+              this.textureBridge?.initialized &&
+              this.triangulator) {
+            break;
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 100));
+          retries++;
+        }
+
+        if (!this.webgpuDrawingLayer?.initialized) {
+          throw new Error('WebGPUDrawingLayer not initialized after timeout');
+        }
+
+        if (!this.webgpuGeometryLayer?.initialized) {
+          throw new Error('WebGPUGeometryLayer not initialized after timeout');
+        }
+
+        if (!this.textureBridge?.initialized) {
+          throw new Error('WebGPUTextureBridge not initialized after timeout');
+        }
+
+        if (!this.triangulator) {
+          throw new Error('EarcutTriangulator not found after timeout');
+        }
+
+        this.initialized = true;
+        console.log('✅ stroke-renderer.js Phase 7 loaded');
+        console.log('   🔧 完全初期化確認');
+        console.log('   🔧 チラつき解消');
+      })();
+
+      return this.initializationPromise;
     }
 
     /**
      * Preview描画
      */
     async renderPreview(polygon, settings, container) {
-      if (!this.initialized || !polygon || polygon.length < 6) {
+      if (!this.initialized) {
+        console.warn('[StrokeRenderer] Not initialized');
+        return null;
+      }
+
+      if (!polygon || polygon.length < 6) {
         return null;
       }
 
@@ -86,6 +126,10 @@
         const bounds = this._calculateBounds(polygon);
         const width = Math.ceil(bounds.maxX - bounds.minX) + 4;
         const height = Math.ceil(bounds.maxY - bounds.minY) + 4;
+
+        if (width <= 0 || height <= 0) {
+          return null;
+        }
 
         // Local座標正規化
         const normalizedPolygon = this._normalizePolygon(polygon, bounds);
@@ -110,24 +154,13 @@
           usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.TEXTURE_BINDING
         });
 
-        // 描画実行
+        // 描画実行（Clear pass不要 - MSAA側でload）
         const encoder = device.createCommandEncoder({ label: 'Preview Render' });
-        
-        // Clear pass
-        const clearPass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: texture.createView(),
-            loadOp: 'clear',
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
-            storeOp: 'store'
-          }]
-        });
-        clearPass.end();
-
-        // Geometry描画
         this.webgpuGeometryLayer.render(encoder, texture, width, height);
-
         device.queue.submit([encoder.finish()]);
+
+        // GPU完了待機
+        await device.queue.onSubmittedWorkDone();
 
         // Pixi Sprite作成
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(texture, width, height);
@@ -137,6 +170,9 @@
           sprite.y = bounds.minY - 2;
           container.addChild(sprite);
         }
+
+        // Texture破棄
+        texture.destroy();
 
         return sprite;
 
@@ -196,9 +232,8 @@
      * Transform Matrix生成
      */
     _createTransformMatrix(width, height) {
-      // Local → NDC変換
       const scaleX = 2.0 / width;
-      const scaleY = -2.0 / height; // Y軸反転
+      const scaleY = -2.0 / height;
       const translateX = -1.0;
       const translateY = 1.0;
 
@@ -215,7 +250,6 @@
     _getColor(settings) {
       const color = settings?.color || window.config?.defaultColor || '#800000';
       
-      // Hex → RGBA
       const hex = color.replace('#', '');
       const r = parseInt(hex.substr(0, 2), 16) / 255;
       const g = parseInt(hex.substr(2, 2), 16) / 255;
@@ -225,15 +259,11 @@
       return new Float32Array([r, g, b, a]);
     }
 
-    /**
-     * クリーンアップ
-     */
     destroy() {
       this.initialized = false;
     }
   }
 
-  // Global登録（クラスとインスタンス両方）
   window.StrokeRenderer = StrokeRenderer;
   window.strokeRenderer = new StrokeRenderer();
 
