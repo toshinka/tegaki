@@ -22,8 +22,7 @@ drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切
 history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
 webgpu-capabilities.js:126 ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
 earcut-triangulator.js:148 ✅ earcut-triangulator.js loaded
-webgpu-geometry-layer.js:321 ✅ webgpu-geometry-layer.js Phase 2 loaded
-webgpu-geometry-layer.js:322    🔧 MSAA 4x + 消しゴムBlendMode修正
+webgpu-geometry-layer.js:298 [WebGPU Geometry] Class registered globally
 webgpu-mask-layer.js:360 ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
 webgpu-mask-layer.js:361    📦 GPU Compute Shaderでポリゴンラスタライズ
 webgpu-mask-layer.js:362    📦 マスク加算/減算
@@ -34,14 +33,10 @@ pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-co
 pressure-handler.js:190 ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
 pressure-handler.js:191    ✓ 距離ベースフィルタ対応
 pressure-handler.js:192    ✓ window.PressureHandler として公開
-stroke-recorder.js:85 ✅ [StrokeRecorder] PolygonGenerator connected
-stroke-recorder.js:244 ✅ stroke-recorder.js (Phase 1完全版) loaded
-stroke-recorder.js:245    ✅ PolygonGenerator自動接続
-stroke-recorder.js:246    ✅ 初期化不要
-stroke-recorder.js:247    ✅ デバッグログ強化
-sdf-brush-shader.js:142 ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
-sdf-brush-shader.js:143    ✓ 消しゴムモード削除
-sdf-brush-shader.js:144    ✓ ペン描画に特化
+stroke-recorder.js:1 Uncaught SyntaxError: Identifier 'WebGPUGeometryLayer' has already been declared
+ ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
+    ✓ 消しゴムモード削除
+    ✓ ペン描画に特化
 stroke-renderer.js:249 ✅ stroke-renderer.js (Phase 2: MSAA対応版) loaded
 thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
 brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
@@ -98,58 +93,17 @@ ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
 core-runtime.js:570 ✅ core-runtime.js (Phase 4 - Fill対応版) loaded
 core-runtime.js:571    ✓ api.tool.setFill() 追加
 core-runtime.js:572    ✓ api.tool.set("fill") サポート
-core-engine.js:706 ✅ core-engine.js v8.32.0 loaded
+core-engine.js:717 ✅ core-engine.js v8.33.0 loaded
+core-engine.js:718    🔧 StrokeRecorder二重初期化修正
+core-engine.js:719    ✅ 既存インスタンス使用方式に変更
 core-initializer.js:483 ✅ core-initializer.js (Phase 4: 命名統一版) loaded
 core-initializer.js:484    🔧 WebGPUDrawingLayer 大文字統一
 core-initializer.js:485    ✅ 初期化エラーハンドリング強化
 core-initializer.js:293 ✅ [PixiJS] Renderer initialized
 core-initializer.js:294    📊 Type: 1
-stroke-recorder.js:85 ✅ [StrokeRecorder] PolygonGenerator connected
-popup-manager.js:16 ✅ PopupManager initialized
-popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
-popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
-popup-manager.js:42 📋 Popup "album" registered (priority: 3)
-popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
-popup-manager.js:102 🔧 Initializing all popups...
-popup-manager.js:87 ✅ Popup "settings" initialized successfully
-popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
-popup-manager.js:87 ✅ Popup "album" initialized successfully
-popup-manager.js:87 ✅ Popup "resize" initialized successfully
-popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
-core-initializer.js:333 [App] Starting WebGPU Phase 4 initialization...
-core-initializer.js:340 [App] ✅ StrokeRenderer found, initializing WebGPU...
-core-initializer.js:171 [WebGPU] Phase 4 initialization starting...
-core-initializer.js:180 [WebGPU] Initializing Drawing Layer...
-webgpu-drawing-layer.js:52 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
-initialize @ webgpu-drawing-layer.js:52
-initializeWebGPU @ core-initializer.js:181
-initialize @ core-initializer.js:341
-await in initialize
-initialize @ core-initializer.js:463
-（匿名） @ index.html:119
-webgpu-drawing-layer.js:78 ✅ [WebGPUDrawingLayer] Phase 3 Initialized
-webgpu-drawing-layer.js:79    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
-webgpu-drawing-layer.js:80    📊 Format: rgba8unorm
-core-initializer.js:186 ✅ [WebGPU] Drawing Layer initialized
-core-initializer.js:194 [WebGPU] Initializing Geometry Layer...
-webgpu-geometry-layer.js:71 ✅ [WebGPUGeometryLayer] Phase 2初期化完了
-webgpu-geometry-layer.js:72    🎨 MSAA 4x有効・消しゴムBlendMode修正
-core-initializer.js:198 ✅ [WebGPU] Geometry Layer initialized
-core-initializer.js:206 [WebGPU] Initializing Texture Bridge...
-webgpu-texture-bridge.js:48 ✅ [WebGPUTextureBridge] Phase 4完全版
-core-initializer.js:212 ✅ [WebGPU] Texture Bridge initialized
-core-initializer.js:231 [WebGPU] Initializing StrokeRenderer...
-stroke-renderer.js:83 ✅ [StrokeRenderer] Phase 2初期化完了
-brush-core.js:84 ✅ [BrushCore] Phase 9初期化完了
-core-initializer.js:233 ✅ [WebGPU] StrokeRenderer initialized
-core-initializer.js:235 ✅ [WebGPU] Complete Phase 4 initialization
-core-initializer.js:236    📊 Drawing Layer: true
-core-initializer.js:237    📊 Geometry Layer: true
-core-initializer.js:238    📊 Texture Bridge: true
-core-initializer.js:239    📊 Stroke Renderer: true
-core-initializer.js:342 [App] WebGPU enabled: true
-index.html:120 ✅ Application initialized (Phase 4-B: MSDF完全統合版)
-popup-manager.js:42 📋 Popup "export" registered (priority: 5)
-popup-manager.js:87 ✅ Popup "export" initialized successfully
-popup-manager.js:192 👁️ Popup "quickAccess" shown
-popup-manager.js:212 🙈 Popup "quickAccess" hidden
+index.html:122 ❌ Application initialization failed: Error: [CoreEngine] StrokeRecorder class not loaded
+    at CoreEngine.initialize (core-engine.js:608:27)
+    at DrawingApp.initialize (core-initializer.js:297:48)
+    at async Object.initialize (core-initializer.js:463:9)
+    at async index.html:119:17
+（匿名） @ index.html:122

@@ -1,16 +1,18 @@
 /**
- * @file core-engine.js v8.32.0
+ * @file core-engine.js v8.33.0
  * @description システム統合管理・コア機能実装
  * 
- * 【v8.32.0 改修内容】
- * 🔧 WEBPExporter登録処理の修正（window.WEBPExporter対応）
- * 🔧 AnimatedWebPExporter登録追加
+ * 【v8.33.0 改修内容】
+ * 🔧 StrokeRecorder二重初期化の修正（既存インスタンス使用）
+ * 🔧 StrokeRenderer初期化チェックの強化
  * 
  * 【依存関係】
  * - system/camera-system.js (TegakiCameraSystem)
  * - system/layer-system.js (TegakiLayerSystem)
  * - system/drawing-clipboard.js (TegakiDrawingClipboard)
  * - system/drawing/brush-core.js (BrushCore)
+ * - system/drawing/stroke-recorder.js (StrokeRecorder - グローバルインスタンス使用)
+ * - system/drawing/stroke-renderer.js (StrokeRenderer - グローバルインスタンス使用)
  * - system/event-bus.js (TegakiEventBus)
  * - system/export-manager.js (ExportManager)
  * - system/exporters/*.js (各エクスポーター)
@@ -244,9 +246,6 @@ class CoreEngine {
             });
         }
         
-        /**
-         * 🔧 v8.32.0: WEBPExporter/AnimatedWebPExporter登録修正
-         */
         initializeExportManager() {
             if (this.exportManager) {
                 return true;
@@ -269,32 +268,26 @@ class CoreEngine {
                 this.cameraSystem
             );
             
-            // PNG Exporter
             if (window.PNGExporter) {
                 this.exportManager.registerExporter('png', new window.PNGExporter(this.exportManager));
             }
             
-            // APNG Exporter
             if (window.APNGExporter) {
                 this.exportManager.registerExporter('apng', new window.APNGExporter(this.exportManager));
             }
             
-            // 🔧 v8.32.0: WEBP Exporter（window.WEBPExporterに修正）
             if (window.WEBPExporter) {
                 this.exportManager.registerExporter('webp', new window.WEBPExporter(this.exportManager));
             }
             
-            // 🔧 v8.32.0: Animated WEBP Exporter（新規追加）
             if (window.AnimatedWebPExporter) {
                 this.exportManager.registerExporter('animated-webp', new window.AnimatedWebPExporter(this.exportManager));
             }
             
-            // GIF Exporter
             if (window.GIFExporter) {
                 this.exportManager.registerExporter('gif', new window.GIFExporter(this.exportManager));
             }
             
-            // MP4 Exporter
             if (window.MP4Exporter) {
                 this.exportManager.registerExporter('mp4', new window.MP4Exporter(this.exportManager));
             }
@@ -587,6 +580,10 @@ class CoreEngine {
             }
         }
         
+        /**
+         * 🔧 v8.33.0: StrokeRecorder/StrokeRenderer 初期化修正
+         * 既存のグローバルインスタンスを使用（二重初期化防止）
+         */
         initialize() {
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.worldContainer, this.eventBus, CONFIG);
@@ -604,24 +601,38 @@ class CoreEngine {
             window.layerManager = this.layerSystem;
             window.cameraSystem = this.cameraSystem;
             
-            if (!window.StrokeRecorder) {
-                throw new Error('[CoreEngine] StrokeRecorder class not loaded');
+            // ✅ StrokeRecorder: 既存インスタンスチェック
+            if (!window.strokeRecorder) {
+                // stroke-recorder.js が読み込まれていない場合のみエラー
+                if (!window.StrokeRecorder) {
+                    throw new Error('[CoreEngine] StrokeRecorder class not loaded');
+                }
+                // クラスは存在するがインスタンスがない場合は作成
+                console.warn('[CoreEngine] Creating StrokeRecorder instance (should be pre-created)');
+                window.strokeRecorder = new window.StrokeRecorder(
+                    window.pressureHandler,
+                    this.cameraSystem
+                );
+            } else {
+                console.log('✅ [CoreEngine] Using existing strokeRecorder instance');
             }
             
-            window.strokeRecorder = new window.StrokeRecorder(
-                window.pressureHandler,
-                this.cameraSystem
-            );
-            
-            if (!window.StrokeRenderer) {
-                throw new Error('[CoreEngine] StrokeRenderer class not loaded');
+            // ✅ StrokeRenderer: 既存インスタンスチェック
+            if (!window.strokeRenderer) {
+                // stroke-renderer.js が読み込まれていない場合のみエラー
+                if (!window.StrokeRenderer) {
+                    throw new Error('[CoreEngine] StrokeRenderer class not loaded');
+                }
+                // クラスは存在するがインスタンスがない場合は作成
+                console.warn('[CoreEngine] Creating StrokeRenderer instance (should be pre-created)');
+                window.strokeRenderer = new window.StrokeRenderer(
+                    this.app,
+                    this.layerSystem,
+                    this.cameraSystem
+                );
+            } else {
+                console.log('✅ [CoreEngine] Using existing strokeRenderer instance');
             }
-            
-            window.strokeRenderer = new window.StrokeRenderer(
-                this.app,
-                this.layerSystem,
-                this.cameraSystem
-            );
             
             if (!window.BrushCore) {
                 throw new Error('[CoreEngine] window.BrushCore not found');
@@ -703,6 +714,8 @@ class CoreEngine {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js v8.32.0 loaded');
+    console.log('✅ core-engine.js v8.33.0 loaded');
+    console.log('   🔧 StrokeRecorder二重初期化修正');
+    console.log('   ✅ 既存インスタンス使用方式に変更');
 
 })();
