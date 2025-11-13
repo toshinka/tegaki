@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/brush-core.js
- * Phase 2.1: Container取得修正 - Sprite可視化確実化
+ * Phase 2.5: MSDF統合 + サムネイル連携完全版
  * ================================================================================
  * 
  * 【責務】
@@ -9,6 +9,7 @@
  * - StrokeRecorder/StrokeRenderer連携
  * - History登録（統一窓口）
  * - MSDF Pipeline呼び出し
+ * - サムネイル更新イベント発行
  * 
  * 【依存Parents】
  * - stroke-recorder.js (window.strokeRecorder)
@@ -22,9 +23,11 @@
  * 【依存Children】
  * - drawing-engine.js
  * 
- * 【Phase 2.1改修】
+ * 【Phase 2.5改修】
+ * ✅ 元ファイルの全機能保持
+ * ✅ MSDF Pipeline完全統合
+ * ✅ サムネイル更新イベント発行追加
  * ✅ Container取得ロジック簡潔化
- * ✅ Sprite追加確実化
  * ✅ エラーハンドリング強化
  * 
  * ================================================================================
@@ -90,8 +93,8 @@
         this.textureBridge = window.WebGPUTextureBridge;
 
         this.msdfAvailable = !!(
-          this.gpuStrokeProcessor?.initialized &&
-          this.msdfPipelineManager?.initialized
+          this.gpuStrokeProcessor &&
+          this.msdfPipelineManager
         );
 
         if (this.msdfAvailable) {
@@ -201,51 +204,90 @@
     }
 
     /**
-     * ✅ MSDF Phase 2.1: Container取得修正版
+     * ✅ MSDF Phase 2.5: サムネイル更新追加版
      */
     async _finalizeMSDFStroke(points, activeLayer) {
       try {
-        // 1. Container取得（簡潔化）
+        // 1. Container取得
         const container = this._getLayerContainer(activeLayer);
         if (!container) {
           throw new Error('Cannot find valid container for layer');
         }
 
-        // 2. EdgeBuffer作成
-        const edgeBuffer = this.gpuStrokeProcessor.createEdgeBuffer(points);
+        // 2. EdgeBuffer作成（座標配列変換）
+        const pointArray = points.flatMap(p => [p.x, p.y]);
+        const edgeBuffer = this.gpuStrokeProcessor.createEdgeBuffer(pointArray);
+        if (!edgeBuffer) {
+          throw new Error('EdgeBuffer creation failed');
+        }
 
         // 3. GPU転送
         const gpuBuffer = this.gpuStrokeProcessor.uploadToGPU(edgeBuffer);
+        if (!gpuBuffer) {
+          throw new Error('GPU upload failed');
+        }
 
         // 4. Bounds計算
-        const bounds = this._calculatePointsBounds(points);
+        const bounds = gpuBuffer.bounds || this._calculatePointsBounds(points);
         const width = Math.ceil(bounds.maxX - bounds.minX);
         const height = Math.ceil(bounds.maxY - bounds.minY);
 
-        // 5. MSDF生成
-        const renderTexture = this.msdfPipelineManager.generateMSDF(
+        // 5. ブラシ設定準備（モード含む）
+        const brushSettings = this._prepareBrushSettings();
+        brushSettings.mode = this.currentSettings.mode; // ✅ pen/eraser追加
+
+        // 6. 色をMSDF Pipelineに反映
+        if (this.msdfPipelineManager && brushSettings.color) {
+          this.msdfPipelineManager.updateBrushColor(
+            brushSettings.color.r,
+            brushSettings.color.g,
+            brushSettings.color.b,
+            brushSettings.opacity
+          );
+        }
+
+        // 7. MSDF生成
+        const msdfTexture = await this.msdfPipelineManager.generateMSDF(
           gpuBuffer,
           bounds,
-          null
+          brushSettings
         );
 
-        // 6. Sprite生成
+        // 8. Render Pass
+        const renderTexture = await this.msdfPipelineManager.renderToTexture(
+          msdfTexture,
+          width,
+          height,
+          brushSettings
+        );
+
+        // 9. Sprite生成
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
           renderTexture,
           width,
           height
         );
 
-        // 7. Sprite配置
+        if (!sprite) {
+          throw new Error('Sprite creation failed');
+        }
+
+        // 10. Sprite配置
         sprite.x = bounds.minX;
         sprite.y = bounds.minY;
         sprite.visible = true;
         sprite.alpha = this.currentSettings.opacity;
 
-        // 8. Container追加
+        // ✅ 消しゴムモードの場合はBlendMode設定（PixiJS v8対応）
+        if (this.currentSettings.mode === 'eraser') {
+          // PixiJS v8では文字列指定
+          sprite.blendMode = 'erase';
+        }
+
+        // 11. Container追加
         container.addChild(sprite);
 
-        // 9. PathData登録
+        // 12. PathData登録
         const pathData = {
           id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           type: 'stroke_msdf',
@@ -260,14 +302,15 @@
         }
         activeLayer.paths.push(pathData);
 
-        // 10. History登録
+        // 13. History登録
         this._registerHistory(activeLayer, pathData);
 
-        // 11. イベント発行
+        // 14. イベント発行（サムネイル更新追加）
         this._emitStrokeEvents(activeLayer, pathData);
 
-        // 12. GPU リソース破棄
-        gpuBuffer.destroy();
+        // 15. GPU リソース破棄
+        gpuBuffer.gpuBuffer.destroy();
+        msdfTexture.destroy();
         renderTexture.destroy();
 
       } catch (error) {
@@ -277,10 +320,45 @@
     }
 
     /**
-     * ✅ Container取得ヘルパー（簡潔化）
+     * ブラシ設定準備
+     */
+    _prepareBrushSettings() {
+      // settings-manager.jsまたはcurrentSettingsから取得
+      const settingsManager = window.settingsManager;
+      
+      let color = { r: 128, g: 0, b: 0 };
+      if (this.currentSettings.color) {
+        if (typeof this.currentSettings.color === 'string') {
+          // Hex色を解析
+          const hex = this.currentSettings.color.replace('#', '');
+          color = {
+            r: parseInt(hex.substr(0, 2), 16),
+            g: parseInt(hex.substr(2, 2), 16),
+            b: parseInt(hex.substr(4, 2), 16)
+          };
+        } else {
+          color = this.currentSettings.color;
+        }
+      }
+
+      return {
+        size: this.currentSettings.size * 2,
+        color: color,
+        opacity: this.currentSettings.opacity || 1.0,
+        threshold: 0.5,
+        range: 0.02 // シャープなエッジ
+      };
+    }
+
+    /**
+     * ✅ Container取得ヘルパー
      */
     _getLayerContainer(layer) {
-      // 優先順: container → children存在 → sprite
+      // 優先順: drawingContainer → container → children存在 → sprite
+      if (layer.drawingContainer) {
+        return layer.drawingContainer;
+      }
+      
       if (layer.container) {
         return layer.container;
       }
@@ -294,6 +372,7 @@
       }
 
       console.error('❌ [BrushCore] No valid container found:', {
+        hasDrawingContainer: !!layer.drawingContainer,
         hasContainer: !!layer.container,
         hasChildren: layer.children !== undefined,
         hasSprite: !!layer.sprite,
@@ -313,14 +392,18 @@
           throw new Error('Cannot find valid container for layer');
         }
 
-        // PerfectFreehand変換
-        const pfPoints = points.map(p => [p.x, p.y, p.pressure]);
-        
-        if (!window.getStroke) {
-          throw new Error('PerfectFreehand (getStroke) not available');
+        // PerfectFreehand確認
+        if (!window.getStroke && !window.perfectFreehand?.getStroke) {
+          console.error('❌ [BrushCore] PerfectFreehand not loaded');
+          return;
         }
 
-        const polygon = window.getStroke(pfPoints, {
+        const getStroke = window.getStroke || window.perfectFreehand.getStroke;
+
+        // PerfectFreehand変換
+        const pfPoints = points.map(p => [p.x, p.y, p.pressure]);
+
+        const polygon = getStroke(pfPoints, {
           size: this.currentSettings.size * 2,
           thinning: 0,
           smoothing: 0,
@@ -409,20 +492,34 @@
     }
 
     /**
-     * イベント発行ヘルパー
+     * ✅ イベント発行ヘルパー（サムネイル更新追加）
      */
     _emitStrokeEvents(layer, pathData) {
-      const eventBus = window.eventBus || window.EventBus?.getInstance?.();
+      const eventBus = window.TegakiEventBus || window.eventBus || window.EventBus?.getInstance?.();
       if (!eventBus) return;
 
       const emit = eventBus.emit || eventBus.dispatchEvent;
       if (!emit) return;
 
+      // パス追加イベント
       emit.call(eventBus, 'layer:path-added', {
         layerId: layer.id,
-        pathId: pathData.id
+        pathId: pathData.id,
+        sprite: pathData.sprite
       });
 
+      // 変形更新イベント（サムネイル更新用）
+      emit.call(eventBus, 'layer:transform-updated', {
+        layerId: layer.id,
+        immediate: true
+      });
+
+      // パネル更新リクエスト
+      emit.call(eventBus, 'layer:panel-update-requested', {
+        layerId: layer.id
+      });
+
+      // レガシーサムネイル更新イベント
       emit.call(eventBus, 'thumbnail:layer-updated', {
         layerId: layer.id
       });
@@ -439,7 +536,14 @@
         maxY = Math.max(maxY, point.y);
       }
 
-      return { minX, minY, maxX, maxY };
+      // パディング追加
+      const padding = 20;
+      return {
+        minX: minX - padding,
+        minY: minY - padding,
+        maxX: maxX + padding,
+        maxY: maxY + padding
+      };
     }
 
     _calculateBounds(polygon) {
@@ -464,6 +568,16 @@
       }
       if (settings.color !== undefined) {
         this.currentSettings.color = settings.color;
+        
+        // ✅ MSDF Pipelineに色を反映
+        if (this.msdfPipelineManager) {
+          const color = this._parseColor(settings.color);
+          if (color) {
+            this.msdfPipelineManager.updateBrushColor(
+              color.r, color.g, color.b, this.currentSettings.opacity || 1.0
+            );
+          }
+        }
       }
       if (settings.size !== undefined) {
         this.currentSettings.size = settings.size;
@@ -471,6 +585,23 @@
       if (settings.opacity !== undefined) {
         this.currentSettings.opacity = settings.opacity;
       }
+    }
+
+    /**
+     * ✅ 色パース補助
+     */
+    _parseColor(color) {
+      if (typeof color === 'string') {
+        const hex = color.replace('#', '');
+        return {
+          r: parseInt(hex.substr(0, 2), 16),
+          g: parseInt(hex.substr(2, 2), 16),
+          b: parseInt(hex.substr(4, 2), 16)
+        };
+      } else if (color.r !== undefined) {
+        return color;
+      }
+      return null;
     }
 
     getSettings() {
@@ -484,6 +615,12 @@
     setMode(mode) {
       if (mode === 'pen' || mode === 'eraser' || mode === 'fill') {
         this.currentSettings.mode = mode;
+        
+        // ✅ EventBus通知
+        const eventBus = window.TegakiEventBus;
+        if (eventBus && eventBus.emit) {
+          eventBus.emit('brush:mode-changed', { mode });
+        }
       }
     }
 
@@ -514,8 +651,9 @@
     }
   }
 
+  // シングルトンインスタンスとして登録
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase 2.1 loaded - Container取得修正版');
+  console.log('✅ brush-core.js Phase 2.5 loaded (完全版 - MSDF統合 + サムネイル連携)');
 
 })();
