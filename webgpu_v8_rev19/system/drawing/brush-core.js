@@ -1,31 +1,31 @@
 /**
  * ================================================================================
  * system/drawing/brush-core.js
- * Phase 2完全版: MSDF完全描画実装
+ * Phase 2.1: Container取得修正 - Sprite可視化確実化
  * ================================================================================
  * 
  * 【責務】
  * - ストローク管理（開始・更新・完了）
  * - StrokeRecorder/StrokeRenderer連携
  * - History登録（統一窓口）
- * - MSDF Pipeline呼び出し（Phase 1: デフォルト有効化）
+ * - MSDF Pipeline呼び出し
  * 
  * 【依存Parents】
  * - stroke-recorder.js (window.strokeRecorder)
- * - stroke-renderer.js (window.strokeRenderer) [Legacy]
- * - gpu-stroke-processor.js (window.gpuStrokeProcessor) [新規]
- * - msdf-pipeline-manager.js (window.msdfPipelineManager) [新規]
- * - webgpu-texture-bridge.js (window.WebGPUTextureBridge) [新規]
+ * - stroke-renderer.js (window.strokeRenderer)
+ * - gpu-stroke-processor.js (window.gpuStrokeProcessor)
+ * - msdf-pipeline-manager.js (window.msdfPipelineManager)
+ * - webgpu-texture-bridge.js (window.WebGPUTextureBridge)
  * - layer-system.js (window.layerManager)
  * - history.js (window.historyManager)
  * 
  * 【依存Children】
  * - drawing-engine.js
  * 
- * 【Phase 2改修】
- * ✅ MSDF完全描画実装
- * ✅ Sprite生成・レイヤー追加
- * ✅ History統合
+ * 【Phase 2.1改修】
+ * ✅ Container取得ロジック簡潔化
+ * ✅ Sprite追加確実化
+ * ✅ エラーハンドリング強化
  * 
  * ================================================================================
  */
@@ -81,17 +81,14 @@
           throw new Error('layerManager not found');
         }
 
-        // StrokeRenderer初期化完了まで待機
         if (this.strokeRenderer.initialize) {
           await this.strokeRenderer.initialize();
         }
 
-        // MSDF Pipeline参照（初期化完了後に取得）
         this.gpuStrokeProcessor = window.gpuStrokeProcessor;
         this.msdfPipelineManager = window.msdfPipelineManager;
         this.textureBridge = window.WebGPUTextureBridge;
 
-        // MSDF利用可能性チェック
         this.msdfAvailable = !!(
           this.gpuStrokeProcessor?.initialized &&
           this.msdfPipelineManager?.initialized
@@ -99,12 +96,9 @@
 
         if (this.msdfAvailable) {
           console.log('✅ [BrushCore] MSDF Pipeline有効');
-        } else {
-          console.log('🔧 [BrushCore] Legacy Mode有効');
         }
 
         this.initialized = true;
-        console.log('✅ [BrushCore] Phase 1初期化完了');
       })();
 
       return this.initializationPromise;
@@ -117,8 +111,7 @@
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
 
-      this.strokeRecorder.startStroke();
-      this.strokeRecorder.addPoint(localX, localY, pressure);
+      this.strokeRecorder.startStroke(localX, localY, pressure);
       
       this.isDrawing = true;
       this.currentStroke = {
@@ -135,8 +128,26 @@
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
 
-      // Preview更新（Legacy使用）
-      const polygon = this.strokeRecorder.getPolygon();
+      const points = this.strokeRecorder.getRawPoints();
+      if (points.length < 2) return;
+
+      // PerfectFreehand互換形式取得
+      const pfPoints = this.strokeRecorder.getPointsForPerfectFreehand();
+      
+      // perfect-freehandライブラリの確認
+      if (!window.getStroke) {
+        return;
+      }
+
+      const polygon = window.getStroke(pfPoints, {
+        size: this.currentSettings.size * 2,
+        thinning: 0,
+        smoothing: 0,
+        streamline: 0,
+        simulatePressure: false,
+        last: false
+      });
+
       if (!polygon || polygon.length < 6) return;
 
       if (this.previewSprite) {
@@ -145,8 +156,9 @@
       }
 
       try {
+        const flatPolygon = polygon.flat();
         this.previewSprite = await this.strokeRenderer.renderPreview(
-          polygon,
+          flatPolygon,
           this.currentSettings,
           activeLayer.container
         );
@@ -169,77 +181,71 @@
         this.previewSprite = null;
       }
 
-      const strokeData = this.strokeRecorder.endStroke();
+      const points = this.strokeRecorder.getRawPoints();
       
-      if (!strokeData || !strokeData.polygon || strokeData.polygon.length < 6) {
+      if (!points || points.length < 2) {
+        this.strokeRecorder.endStroke();
         this.isDrawing = false;
         return;
       }
 
-      // MSDF Pipelineが利用可能ならMSDF、それ以外はLegacy
       if (this.msdfAvailable) {
-        await this._finalizeMSDFStroke(strokeData, activeLayer);
+        await this._finalizeMSDFStroke(points, activeLayer);
       } else {
-        await this._finalizeLegacyStroke(strokeData, activeLayer);
+        await this._finalizeLegacyStroke(points, activeLayer);
       }
 
+      this.strokeRecorder.endStroke();
       this.isDrawing = false;
       this.currentStroke = null;
     }
 
     /**
-     * ✅ MSDF新フロー（Phase 2: 完全描画実装）
+     * ✅ MSDF Phase 2.1: Container取得修正版
      */
-    async _finalizeMSDFStroke(strokeData, activeLayer) {
+    async _finalizeMSDFStroke(points, activeLayer) {
       try {
-        const points = strokeData.points;
+        // 1. Container取得（簡潔化）
+        const container = this._getLayerContainer(activeLayer);
+        if (!container) {
+          throw new Error('Cannot find valid container for layer');
+        }
 
-        // 1. EdgeBuffer作成
+        // 2. EdgeBuffer作成
         const edgeBuffer = this.gpuStrokeProcessor.createEdgeBuffer(points);
 
-        // 2. GPU転送
+        // 3. GPU転送
         const gpuBuffer = this.gpuStrokeProcessor.uploadToGPU(edgeBuffer);
 
-        // 3. Bounds計算
+        // 4. Bounds計算
         const bounds = this._calculatePointsBounds(points);
+        const width = Math.ceil(bounds.maxX - bounds.minX);
+        const height = Math.ceil(bounds.maxY - bounds.minY);
 
-        // 4. MSDF生成（Phase 2: 完全描画）
+        // 5. MSDF生成
         const renderTexture = this.msdfPipelineManager.generateMSDF(
           gpuBuffer,
           bounds,
           null
         );
 
-        // 5. Sprite生成
-        const width = Math.ceil(bounds.maxX - bounds.minX);
-        const height = Math.ceil(bounds.maxY - bounds.minY);
-        
+        // 6. Sprite生成
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
           renderTexture,
           width,
           height
         );
 
-        // 6. Sprite位置調整
+        // 7. Sprite配置
         sprite.x = bounds.minX;
         sprite.y = bounds.minY;
+        sprite.visible = true;
+        sprite.alpha = this.currentSettings.opacity;
 
-        // 7. レイヤーに追加（container確認）
-        let container = activeLayer.container;
-        if (!container) {
-          // Fallback: layer自体をcontainerとして使用
-          if (activeLayer.children !== undefined) {
-            container = activeLayer;
-          } else if (activeLayer.sprite) {
-            container = activeLayer.sprite;
-          } else {
-            throw new Error('Cannot find valid container for layer');
-          }
-        }
-        
+        // 8. Container追加
         container.addChild(sprite);
 
-        // 8. PathData登録
+        // 9. PathData登録
         const pathData = {
           id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           type: 'stroke_msdf',
@@ -254,145 +260,172 @@
         }
         activeLayer.paths.push(pathData);
 
-        // 9. History登録
-        const historyManager = window.historyManager;
-        if (historyManager) {
-          historyManager.recordAction({
-            type: 'path:add',
-            layerId: activeLayer.id,
-            pathData: pathData,
-            undo: () => {
-              const layer = this.layerManager.getLayerById(activeLayer.id);
-              if (layer) {
-                const index = layer.paths.findIndex(p => p.id === pathData.id);
-                if (index !== -1) {
-                  layer.paths.splice(index, 1);
-                  if (pathData.sprite && !pathData.sprite.destroyed) {
-                    pathData.sprite.destroy({ children: true });
-                  }
-                }
-              }
-            },
-            redo: () => {
-              const layer = this.layerManager.getLayerById(activeLayer.id);
-              if (layer) {
-                if (!layer.paths) layer.paths = [];
-                layer.paths.push(pathData);
-                if (pathData.sprite && !pathData.sprite.destroyed) {
-                  const layerContainer = layer.container || layer;
-                  layerContainer.addChild(pathData.sprite);
-                }
-              }
-            }
-          });
-        }
+        // 10. History登録
+        this._registerHistory(activeLayer, pathData);
 
-        // 10. イベント発行
-        const eventBus = window.eventBus || window.EventBus?.getInstance?.();
-        if (eventBus) {
-          const emit = eventBus.emit || eventBus.dispatchEvent;
-          if (emit) {
-            emit.call(eventBus, 'layer:path-added', {
-              layerId: activeLayer.id,
-              pathId: pathData.id
-            });
+        // 11. イベント発行
+        this._emitStrokeEvents(activeLayer, pathData);
 
-            emit.call(eventBus, 'thumbnail:layer-updated', {
-              layerId: activeLayer.id
-            });
-          }
-        }
-
-        // GPU リソース破棄
+        // 12. GPU リソース破棄
         gpuBuffer.destroy();
         renderTexture.destroy();
 
-        console.log('✅ [BrushCore] MSDF Phase 2完了: 完全描画');
-
       } catch (error) {
-        console.error('❌ [BrushCore] MSDF新フロー失敗:', error);
-        await this._finalizeLegacyStroke(strokeData, activeLayer);
+        console.error('❌ [BrushCore] MSDF描画失敗:', error);
+        await this._finalizeLegacyStroke(points, activeLayer);
       }
     }
 
     /**
-     * ✅ Legacy旧フロー
+     * ✅ Container取得ヘルパー（簡潔化）
      */
-    async _finalizeLegacyStroke(strokeData, activeLayer) {
+    _getLayerContainer(layer) {
+      // 優先順: container → children存在 → sprite
+      if (layer.container) {
+        return layer.container;
+      }
+      
+      if (layer.children !== undefined && Array.isArray(layer.children)) {
+        return layer;
+      }
+      
+      if (layer.sprite) {
+        return layer.sprite;
+      }
+
+      console.error('❌ [BrushCore] No valid container found:', {
+        hasContainer: !!layer.container,
+        hasChildren: layer.children !== undefined,
+        hasSprite: !!layer.sprite,
+        layerKeys: Object.keys(layer)
+      });
+
+      return null;
+    }
+
+    /**
+     * ✅ Legacy描画フロー
+     */
+    async _finalizeLegacyStroke(points, activeLayer) {
       try {
+        const container = this._getLayerContainer(activeLayer);
+        if (!container) {
+          throw new Error('Cannot find valid container for layer');
+        }
+
+        // PerfectFreehand変換
+        const pfPoints = points.map(p => [p.x, p.y, p.pressure]);
+        
+        if (!window.getStroke) {
+          throw new Error('PerfectFreehand (getStroke) not available');
+        }
+
+        const polygon = window.getStroke(pfPoints, {
+          size: this.currentSettings.size * 2,
+          thinning: 0,
+          smoothing: 0,
+          streamline: 0,
+          simulatePressure: false,
+          last: true
+        });
+
+        if (!polygon || polygon.length < 6) {
+          return;
+        }
+
+        const flatPolygon = polygon.flat();
+        
         const sprite = await this.strokeRenderer.renderFinalStroke(
-          strokeData,
+          { polygon: flatPolygon, points: points },
           this.currentSettings,
-          activeLayer.container
+          container
         );
 
-        if (sprite) {
-          const pathData = {
-            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            type: 'stroke',
-            polygon: strokeData.polygon,
-            settings: { ...this.currentSettings },
-            sprite: sprite,
-            bounds: this._calculateBounds(strokeData.polygon)
-          };
-
-          if (!activeLayer.paths) {
-            activeLayer.paths = [];
-          }
-          activeLayer.paths.push(pathData);
-
-          // History登録
-          const historyManager = window.historyManager;
-          if (historyManager) {
-            historyManager.recordAction({
-              type: 'path:add',
-              layerId: activeLayer.id,
-              pathData: pathData,
-              undo: () => {
-                const layer = this.layerManager.getLayerById(activeLayer.id);
-                if (layer) {
-                  const index = layer.paths.findIndex(p => p.id === pathData.id);
-                  if (index !== -1) {
-                    layer.paths.splice(index, 1);
-                    if (pathData.sprite && !pathData.sprite.destroyed) {
-                      pathData.sprite.destroy({ children: true });
-                    }
-                  }
-                }
-              },
-              redo: () => {
-                const layer = this.layerManager.getLayerById(activeLayer.id);
-                if (layer) {
-                  if (!layer.paths) layer.paths = [];
-                  layer.paths.push(pathData);
-                  if (pathData.sprite && !pathData.sprite.destroyed) {
-                    layer.container.addChild(pathData.sprite);
-                  } else {
-                    this.strokeRenderer.renderFinalStroke(
-                      strokeData,
-                      this.currentSettings,
-                      layer.container
-                    ).then(newSprite => {
-                      pathData.sprite = newSprite;
-                    });
-                  }
-                }
-              }
-            });
-          }
-
-          window.eventBus.emit('layer:path-added', {
-            layerId: activeLayer.id,
-            pathId: pathData.id
-          });
-
-          window.eventBus.emit('thumbnail:layer-updated', {
-            layerId: activeLayer.id
-          });
+        if (!sprite) {
+          throw new Error('Failed to create sprite');
         }
+
+        const pathData = {
+          id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'stroke',
+          polygon: flatPolygon,
+          points: points,
+          settings: { ...this.currentSettings },
+          sprite: sprite,
+          bounds: this._calculateBounds(flatPolygon)
+        };
+
+        if (!activeLayer.paths) {
+          activeLayer.paths = [];
+        }
+        activeLayer.paths.push(pathData);
+
+        this._registerHistory(activeLayer, pathData);
+        this._emitStrokeEvents(activeLayer, pathData);
+
       } catch (error) {
-        console.error('❌ [BrushCore] Legacy final stroke render failed:', error);
+        console.error('❌ [BrushCore] Legacy描画失敗:', error);
       }
+    }
+
+    /**
+     * History登録ヘルパー
+     */
+    _registerHistory(layer, pathData) {
+      const historyManager = window.historyManager;
+      if (!historyManager) return;
+
+      historyManager.recordAction({
+        type: 'path:add',
+        layerId: layer.id,
+        pathData: pathData,
+        undo: () => {
+          const targetLayer = this.layerManager.getLayerById(layer.id);
+          if (!targetLayer) return;
+          
+          const index = targetLayer.paths.findIndex(p => p.id === pathData.id);
+          if (index !== -1) {
+            targetLayer.paths.splice(index, 1);
+            if (pathData.sprite && !pathData.sprite.destroyed) {
+              pathData.sprite.destroy({ children: true });
+            }
+          }
+        },
+        redo: () => {
+          const targetLayer = this.layerManager.getLayerById(layer.id);
+          if (!targetLayer) return;
+          
+          if (!targetLayer.paths) targetLayer.paths = [];
+          targetLayer.paths.push(pathData);
+          
+          if (pathData.sprite && !pathData.sprite.destroyed) {
+            const container = this._getLayerContainer(targetLayer);
+            if (container) {
+              container.addChild(pathData.sprite);
+            }
+          }
+        }
+      });
+    }
+
+    /**
+     * イベント発行ヘルパー
+     */
+    _emitStrokeEvents(layer, pathData) {
+      const eventBus = window.eventBus || window.EventBus?.getInstance?.();
+      if (!eventBus) return;
+
+      const emit = eventBus.emit || eventBus.dispatchEvent;
+      if (!emit) return;
+
+      emit.call(eventBus, 'layer:path-added', {
+        layerId: layer.id,
+        pathId: pathData.id
+      });
+
+      emit.call(eventBus, 'thumbnail:layer-updated', {
+        layerId: layer.id
+      });
     }
 
     _calculatePointsBounds(points) {
@@ -449,13 +482,28 @@
     }
 
     setMode(mode) {
-      if (mode === 'pen' || mode === 'eraser') {
+      if (mode === 'pen' || mode === 'eraser' || mode === 'fill') {
         this.currentSettings.mode = mode;
       }
     }
 
+    isActive() {
+      return this.isDrawing;
+    }
+
     getIsDrawing() {
       return this.isDrawing;
+    }
+
+    cancelStroke() {
+      if (this.previewSprite) {
+        this.previewSprite.destroy({ children: true });
+        this.previewSprite = null;
+      }
+      
+      this.strokeRecorder.reset();
+      this.isDrawing = false;
+      this.currentStroke = null;
     }
 
     destroy() {
@@ -468,7 +516,6 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase 2完全版 loaded');
-  console.log('   ✅ MSDF完全描画実装');
+  console.log('✅ brush-core.js Phase 2.1 loaded - Container取得修正版');
 
 })();
