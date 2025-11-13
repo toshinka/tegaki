@@ -22,7 +22,6 @@ drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切
 history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
 webgpu-capabilities.js:126 ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
 earcut-triangulator.js:148 ✅ earcut-triangulator.js loaded
-webgpu-geometry-layer.js:298 [WebGPU Geometry] Class registered globally
 webgpu-mask-layer.js:360 ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
 webgpu-mask-layer.js:361    📦 GPU Compute Shaderでポリゴンラスタライズ
 webgpu-mask-layer.js:362    📦 マスク加算/減算
@@ -34,9 +33,9 @@ pressure-handler.js:190 ✅ pressure-handler.js (Phase 4: グローバル公開�
 pressure-handler.js:191    ✓ 距離ベースフィルタ対応
 pressure-handler.js:192    ✓ window.PressureHandler として公開
 stroke-recorder.js:1 Uncaught SyntaxError: Identifier 'WebGPUGeometryLayer' has already been declared
- ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
-    ✓ 消しゴムモード削除
-    ✓ ペン描画に特化
+sdf-brush-shader.js:142 ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
+sdf-brush-shader.js:143    ✓ 消しゴムモード削除
+sdf-brush-shader.js:144    ✓ ペン描画に特化
 stroke-renderer.js:249 ✅ stroke-renderer.js (Phase 2: MSAA対応版) loaded
 thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
 brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
@@ -101,9 +100,9 @@ core-initializer.js:484    🔧 WebGPUDrawingLayer 大文字統一
 core-initializer.js:485    ✅ 初期化エラーハンドリング強化
 core-initializer.js:293 ✅ [PixiJS] Renderer initialized
 core-initializer.js:294    📊 Type: 1
-index.html:122 ❌ Application initialization failed: Error: [CoreEngine] StrokeRecorder class not loaded
+index.html:127 ❌ Application initialization failed: Error: [CoreEngine] StrokeRecorder class not loaded
     at CoreEngine.initialize (core-engine.js:608:27)
     at DrawingApp.initialize (core-initializer.js:297:48)
     at async Object.initialize (core-initializer.js:463:9)
-    at async index.html:119:17
-（匿名） @ index.html:122
+    at async index.html:124:17
+（匿名） @ index.html:127
