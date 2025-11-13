@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/webgpu/webgpu-drawing-layer.js
- * Phase 3: 命名統一・エラーハンドリング強化版
+ * Phase 3.1: getFormat追加版
  * ================================================================================
  * 
  * 【責務】
@@ -18,11 +18,10 @@
  * - webgpu-mask-layer.js (マスク管理)
  * - webgpu-texture-bridge.js (テクスチャ変換)
  * - stroke-renderer.js (描画処理)
+ * - msdf-pipeline-manager.js (MSDF Pipeline)
  * 
- * 【Phase 3改修】
- * ✅ グローバルシンボル統一: window.WebGPUDrawingLayer (大文字)
- * ✅ エラーハンドリング強化
- * ✅ 初期化状態の明示
+ * 【Phase 3.1改修】
+ * ✅ getFormat() メソッド追加
  * 
  * ================================================================================
  */
@@ -75,7 +74,7 @@
 
         this.initialized = true;
 
-        console.log('✅ [WebGPUDrawingLayer] Phase 3 Initialized');
+        console.log('✅ [WebGPUDrawingLayer] Phase 3.1 Initialized');
         console.log('   📊 Device:', this.device);
         console.log('   📊 Format:', this.format);
 
@@ -100,6 +99,10 @@
         throw new Error('[WebGPUDrawingLayer] Queue not initialized');
       }
       return this.queue;
+    }
+
+    getFormat() {
+      return this.format;
     }
 
     isInitialized() {
