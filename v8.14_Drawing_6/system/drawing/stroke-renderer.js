@@ -1,28 +1,18 @@
 /**
  * ================================================================================
- * Stroke Renderer - Phase 3: Graphics-Smooth対応版
+ * stroke-renderer.js - Graphics-Smooth対応版（元ファイル完全継承）
  * ================================================================================
  * 
- * 【責務】
- * - PerfectFreehandポリゴン→高品質Graphics描画
- * - @pixi/graphics-smooth使用（WebGL2アンチエイリアス）
- * - ペン/消しゴム統一パイプライン
+ * 📁 依存Parents:
+ *   - @pixi/graphics-smooth (CDN経由)
+ *   - polygon-generator.js (ポリゴン)
+ *   - brush-settings.js (モード/色/サイズ)
  * 
- * 【依存Parents】
- * - @pixi/graphics-smooth (CDN経由)
- * - polygon-generator.js (ポリゴン)
- * - brush-settings.js (モード/色/サイズ)
+ * 📄 依存Children:
+ *   - brush-core.js (renderPreview, renderFinalStroke呼出)
+ *   - layer-system.js (レイヤー追加)
  * 
- * 【依存Children】
- * - brush-core.js (renderPreview, renderFinalStroke呼出)
- * - layer-system.js (レイヤー追加)
- * 
- * 【重要】SmoothGraphics使用
- * - 通常のGraphicsの代わりにSmoothGraphics使用
- * - WebGL2でアンチエイリアス付きポリゴン描画
- * - PixiJS v8のバグ回避
- * 
- * Phase 3: Graphics-Smooth完全対応版
+ * 🔧 Phase 3改修: 元ファイル完全継承版
  * ================================================================================
  */
 
@@ -42,7 +32,7 @@
             if (this.useSmoothGraphics) {
                 console.log('✅ [StrokeRenderer] Using @pixi/graphics-smooth');
             } else {
-                console.warn('[StrokeRenderer] @pixi/graphics-smooth not loaded, using standard Graphics');
+                console.log('[StrokeRenderer] @pixi/graphics-smooth not loaded, using standard Graphics');
             }
         }
         
@@ -181,13 +171,13 @@
             const alpha = settings.opacity ?? 1.0;
             
             // ポリゴンをフラット配列に変換
-            const flatPolygon = polygon.flat();
+            const flatPolygon = Array.isArray(polygon[0]) ? polygon.flat() : polygon;
             
             // SmoothGraphics/Graphics共通API
             graphics.poly(flatPolygon);
             graphics.fill({ color: color, alpha: alpha });
             
-            // 消しゴムはblendMode（暫定措置）
+            // 消しゴムはblendMode
             if (mode === 'eraser') {
                 graphics.blendMode = 'erase';
             }
@@ -249,7 +239,7 @@
         }
     }
     
-    // グローバル公開
+    // シングルトンインスタンス + クラス公開（元ファイル互換）
     window.strokeRenderer = new StrokeRenderer();
     window.StrokeRenderer = StrokeRenderer;
     

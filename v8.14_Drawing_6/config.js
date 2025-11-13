@@ -1,25 +1,18 @@
 /**
- * @file config.js - v8.14.1 Phase 1: PerfectFreehand設定追加
+ * @file config.js - v8.14.2 Phase 1改修版: PerfectFreehandリニア設定
  * @description グローバル設定・キーマップ定義
  * 
- * 【v8.14.1 Phase 1 改修内容】
- * ✅ perfectFreehand 設定セクション追加
- * ✅ ポリゴン生成パラメータ定義
+ * 📁 依存Parents: なし（最上位設定ファイル）
+ * 📄 依存Children:
+ *   - polygon-generator.js (perfectFreehand設定参照)
+ *   - core-initializer.js (PIXI.Application初期化でresolution参照)
+ *   - 全システムファイル (window.TEGAKI_CONFIG参照)
  * 
- * 【v8.14.0 改修内容 - Phase 1: DPR=1固定化】
- * 🚨 重要: renderer.resolution を devicePixelRatio から 1 へ固定
- * 理由: 描画時解像度と出力時解像度の一致を保証
- * 方針: DPR=1固定 + 出力時任意解像度スケーリング（Sketchbook方式）
- * 
- * 【親ファイル (このファイルが依存)】
- * なし（最上位設定ファイル）
- * 
- * 【子ファイル (このファイルに依存)】
- * - polygon-generator.js (perfectFreehand設定参照) ★Phase 1追加
- * - core-initializer.js (PIXI.Application初期化でresolution参照)
- * - core-engine.js (システム全体の設定参照)
- * - 全システムファイル (window.TEGAKI_CONFIG参照)
- * - keyboard-handler.js (window.TEGAKI_KEYMAP参照)
+ * 🔧 v8.14.2 Phase 1改修内容:
+ *   - perfectFreehand設定リニア化
+ *   - thinning: 0 (線の太り補正無効)
+ *   - smoothing: 0 (補間最小化)
+ *   - streamline: 0 (遅延補正なし)
  */
 
 window.TEGAKI_CONFIG = {
@@ -28,10 +21,6 @@ window.TEGAKI_CONFIG = {
         height: 400 
     },
     
-    /**
-     * 🚨 Phase 1改修: renderer設定
-     * resolution: 1 固定（devicePixelRatio 参照を削除）
-     */
     renderer: {
         resolution: 1,
         backgroundColor: 0x000000,
@@ -60,34 +49,33 @@ window.TEGAKI_CONFIG = {
     },
     
     /**
-     * ✅ Phase 1 新規追加: PerfectFreehand設定
+     * 🔧 Phase 1改修: PerfectFreehandリニア設定
      * 
-     * 【設計方針】
-     * - ポリゴン生成を PerfectFreehand に統一
-     * - size はブラシサイズと連動（デフォルト16）
-     * - thinning: 筆圧による太さ変化（0.5 = 中程度）
-     * - smoothing: 線の滑らかさ（0.5 = 中程度）
-     * - streamline: リアルタイム補正（0.5 = 中程度）
-     * - simulatePressure: false（外部 pressure-handler で処理）
+     * 【改修理由】
+     * - 描画後に線が太る問題を解決
+     * - リニア描画実現（筆圧そのまま反映）
      * 
-     * 【参考】
-     * PerfectFreehand公式: https://github.com/steveruizok/perfect-freehand
+     * 【設定値】
+     * - thinning: 0 → 速度による太さ変化なし
+     * - smoothing: 0 → 入力ポイントをそのまま使用
+     * - streamline: 0 → 遅延補正なし（即座に反映）
+     * - size: ブラシサイズから動的取得
      */
     perfectFreehand: {
         enabled: true,
-        size: 16,                    // ブラシ幅（ピクセル）
-        thinning: 0.5,               // 筆圧による細さ (-1~1, 0.5推奨)
-        smoothing: 0.5,              // 線の滑らかさ (0~1, 0.5推奨)
-        streamline: 0.5,             // リアルタイム補正 (0~1, 0.5推奨)
-        easing: (t) => t,            // イージング関数（デフォルト線形）
-        simulatePressure: false,     // 筆圧シミュレート（false=外部処理）
+        size: 16,
+        thinning: 0,             // 🔧 0に変更（元: 0.5）
+        smoothing: 0,            // 🔧 0に変更（元: 0.5）
+        streamline: 0,           // 🔧 0に変更（元: 0.5）
+        easing: (t) => t,
+        simulatePressure: false,
         start: {
-            taper: 0,                // 始点テーパー（0=なし）
-            cap: true                // 始点キャップ（丸み）
+            taper: 0,
+            cap: true
         },
         end: {
-            taper: 0,                // 終点テーパー（0=なし）
-            cap: true                // 終点キャップ（丸み）
+            taper: 0,
+            cap: true
         }
     },
     
@@ -516,6 +504,8 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js v8.14.1 Phase 1 loaded');
-console.log('   ✅ PerfectFreehand設定追加');
-console.log('   ✓ ポリゴン生成パラメータ定義');
+console.log('✅ config.js v8.14.2 Phase 1改修版 loaded');
+console.log('   🔧 PerfectFreehand設定リニア化');
+console.log('   ✓ thinning: 0 (線の太り補正無効)');
+console.log('   ✓ smoothing: 0 (補間最小化)');
+console.log('   ✓ streamline: 0 (遅延補正なし)');
