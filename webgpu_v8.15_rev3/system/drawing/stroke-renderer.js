@@ -1,13 +1,11 @@
 /**
  * ================================================================================
- * system/drawing/stroke-renderer.js - Phase 3: WebGPU Direct Rendering
+ * system/drawing/stroke-renderer.js - MSAA対応版
  * ================================================================================
  * 
- * 【Phase 3改修内容】
- * ❌ SDF Compute削除
- * ✅ WebGPU Geometry Layer統合
- * ✅ Direct Polygon Rendering
- * ✅ ペン/消しゴム統一パイプライン
+ * 【Phase 3 + MSAA改修】
+ * ✅ 4x MSAA対応（チラツキ解消）
+ * ✅ mode設定の確実な伝達
  * 
  * 【依存Parents】
  * - webgpu-geometry-layer.js (直接描画)
@@ -31,30 +29,24 @@
             this.geometryLayer = null;
             this.textureBridge = null;
             this.triangulator = null;
+            this.sampleCount = 4; // 4x MSAA
         }
 
-        /**
-         * WebGPU初期化確認
-         */
         async initialize() {
             if (this.webgpuReady) return;
 
-            // WebGPU基盤確認
             if (!window.webgpuDrawingLayer?.isInitialized()) {
                 throw new Error('[StrokeRenderer] WebGPU not initialized');
             }
 
-            // Geometry Layer確認
             if (!window.WebGPUGeometryLayer) {
                 throw new Error('[StrokeRenderer] WebGPU Geometry Layer not available');
             }
 
-            // Texture Bridge確認
             if (!window.webgpuTextureBridge) {
                 throw new Error('[StrokeRenderer] WebGPU Texture Bridge not available');
             }
 
-            // Triangulator確認
             if (!window.EarcutTriangulator) {
                 throw new Error('[StrokeRenderer] Earcut Triangulator not available');
             }
@@ -63,7 +55,6 @@
             this.textureBridge = window.webgpuTextureBridge;
             this.triangulator = window.EarcutTriangulator;
 
-            // Geometry Layer初期化
             if (!this.geometryLayer.initialized) {
                 const device = window.webgpuDrawingLayer.getDevice();
                 const format = 'rgba8unorm';
@@ -73,13 +64,9 @@
             this.webgpuReady = true;
         }
 
-        /**
-         * プレビューレンダリング（描画中）
-         */
         async renderPreview(polygon, settings, container) {
             if (!polygon || polygon.length < 6) return null;
 
-            // 既存プレビュー削除
             this.clearPreview();
 
             try {
@@ -98,9 +85,6 @@
             }
         }
 
-        /**
-         * プレビュー削除
-         */
         clearPreview() {
             if (this.activePreview) {
                 this.activePreview.destroy({ 
@@ -112,20 +96,14 @@
             }
         }
 
-        /**
-         * 最終ストローク描画
-         */
         async renderFinalStroke(strokeData, settings, layerContainer) {
-            // プレビュー削除
             this.clearPreview();
 
-            // strokeData検証
             if (!strokeData) {
                 console.warn('[StrokeRenderer] No strokeData provided');
                 return null;
             }
 
-            // polygon取得
             let polygon = strokeData.polygon;
             if (!polygon && strokeData.points && strokeData.points.length > 0) {
                 polygon = window.PolygonGenerator.generate(strokeData.points);
@@ -151,18 +129,13 @@
             }
         }
 
-        /**
-         * ✅ WebGPU Direct Rendering（SDF不使用）
-         */
         async _renderWithWebGPU(polygon, settings) {
-            // 初期化確認
             if (!this.webgpuReady) {
                 await this.initialize();
             }
 
             const device = window.webgpuDrawingLayer.getDevice();
 
-            // バウンディングボックス計算
             const bounds = this._calculateBounds(polygon);
             const padding = Math.ceil((settings.size || 16) / 2);
             
@@ -174,14 +147,12 @@
                 return null;
             }
 
-            // ローカル座標変換
             const localPolygon = new Float32Array(polygon.length);
             for (let i = 0; i < polygon.length; i += 2) {
                 localPolygon[i] = polygon[i] - bounds.minX + padding;
                 localPolygon[i + 1] = polygon[i + 1] - bounds.minY + padding;
             }
 
-            // ✅ Triangulation
             const indices = this.triangulator.triangulate(localPolygon);
 
             if (!indices || indices.length === 0) {
@@ -189,24 +160,27 @@
                 return null;
             }
 
-            // ✅ Geometry Layer にアップロード
             this.geometryLayer.uploadPolygon(localPolygon, indices);
 
-            // ✅ Transform Matrix生成（Local → NDC）
             const transformMatrix = this._createTransformMatrix(width, height);
-
-            // ✅ Color設定
             const color = this._parseColor(settings.color, settings.opacity);
 
-            // ✅ BlendMode設定
-            this.geometryLayer.setBlendMode(settings.mode || 'pen');
-
-            // ✅ Uniform更新
+            // 🔧 mode を確実に設定
+            const mode = settings.mode || 'pen';
+            this.geometryLayer.setBlendMode(mode);
             this.geometryLayer.updateTransform(transformMatrix, color);
 
-            // ✅ Render Texture作成
-            const texture = device.createTexture({
-                label: 'Stroke Render Target',
+            // MSAA用テクスチャ作成
+            const msaaTexture = device.createTexture({
+                label: 'MSAA Render Target',
+                size: [width, height, 1],
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.RENDER_ATTACHMENT,
+                sampleCount: this.sampleCount
+            });
+
+            const resolveTexture = device.createTexture({
+                label: 'Resolve Target',
                 size: [width, height, 1],
                 format: 'rgba8unorm',
                 usage: GPUTextureUsage.RENDER_ATTACHMENT | 
@@ -214,36 +188,33 @@
                        GPUTextureUsage.TEXTURE_BINDING
             });
 
-            // ✅ Render Pass
             const encoder = device.createCommandEncoder({ label: 'Stroke Encoder' });
 
             const pass = encoder.beginRenderPass({
-                label: 'Stroke Render Pass',
+                label: 'Stroke Render Pass (MSAA)',
                 colorAttachments: [{
-                    view: texture.createView(),
+                    view: msaaTexture.createView(),
+                    resolveTarget: resolveTexture.createView(),
                     loadOp: 'clear',
                     clearValue: { r: 0, g: 0, b: 0, a: 0 },
-                    storeOp: 'store'
+                    storeOp: 'discard'
                 }]
             });
 
-            // ✅ 描画実行
             this.geometryLayer.render(pass);
 
             pass.end();
             device.queue.submit([encoder.finish()]);
 
-            // ✅ GPUTexture → PixiJS Texture
             const pixiTexture = await this.textureBridge.createPixiTextureFromGPU(
-                texture,
+                resolveTexture,
                 width,
                 height
             );
 
-            // GPUTexture破棄
-            texture.destroy();
+            msaaTexture.destroy();
+            resolveTexture.destroy();
 
-            // Sprite生成
             const sprite = new PIXI.Sprite(pixiTexture);
             sprite.x = bounds.minX - padding;
             sprite.y = bounds.minY - padding;
@@ -251,13 +222,9 @@
             return sprite;
         }
 
-        /**
-         * Transform Matrix生成（Local → NDC）
-         */
         _createTransformMatrix(width, height) {
-            // NDC: x,y ∈ [-1, 1]
             const scaleX = 2.0 / width;
-            const scaleY = -2.0 / height; // Y軸反転
+            const scaleY = -2.0 / height;
             const translateX = -1.0;
             const translateY = 1.0;
 
@@ -268,9 +235,6 @@
             ]);
         }
 
-        /**
-         * Color解析
-         */
         _parseColor(color, opacity = 1.0) {
             if (typeof color === 'number') {
                 const r = ((color >> 16) & 0xFF) / 255.0;
@@ -279,13 +243,9 @@
                 return [r, g, b, opacity];
             }
             
-            // デフォルト: 黒
             return [0.0, 0.0, 0.0, opacity];
         }
 
-        /**
-         * バウンディングボックス計算
-         */
         _calculateBounds(polygon) {
             let minX = Infinity, minY = Infinity;
             let maxX = -Infinity, maxY = -Infinity;
@@ -301,13 +261,11 @@
         }
     }
 
-    // クラスとインスタンス両方を公開
     window.StrokeRenderer = StrokeRenderer;
     window.strokeRenderer = new StrokeRenderer();
 
-    console.log('✅ stroke-renderer.js (Phase 3: Direct Rendering) loaded');
-    console.log('   ❌ SDF Compute削除');
-    console.log('   ✅ WebGPU Geometry Layer統合');
-    console.log('   ✅ ペン/消しゴム統一パイプライン');
+    console.log('✅ stroke-renderer.js (Phase 3 + MSAA) loaded');
+    console.log('   🔧 4x マルチサンプリング対応');
+    console.log('   🔧 mode設定の確実な伝達');
 
 })();
