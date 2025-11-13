@@ -1,27 +1,23 @@
 /**
  * ================================================================================
- * wgsl-loader.js - WGSL Shader統合ローダー
+ * wgsl-loader.js - WGSL Shader統合ローダー (Phase 2完全版)
  * ================================================================================
+ * 📁 Parents: index.html
+ * 📄 Children: msdf-pipeline-manager.js
  * 
  * 責務:
  *   - 全てのWGSLシェーダーコードをwindowオブジェクトへ登録
- *   - msdf-pipeline-manager.jsから参照可能にする
  * 
- * 使用方法:
- *   index.htmlで core-initializer.js より前に読み込む
- * 
- * Phase 1完全版:
- *   - msdf-seed-init.wgsl
- *   - msdf-jfa-pass.wgsl
- *   - msdf-encode.wgsl
- *   - msdf-render.wgsl
+ * 🔧 Phase 2修正:
+ *   - msdf-encode.wgsl: seedTex未使用問題の修正
+ *   - @binding(0)を確実に使用するよう変更
  * ================================================================================
  */
 
 (function() {
   'use strict';
 
-  // msdf-seed-init.wgsl (構文修正版)
+  // msdf-seed-init.wgsl
   window.MSDF_SEED_INIT_WGSL = `
 struct Edge {
   x0: f32,
@@ -56,17 +52,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let maxX = i32(uSeed.canvasWidth);
   let maxY = i32(uSeed.canvasHeight);
   
-  // エッジ端点
   let p0 = vec2<i32>(i32(edge.x0), i32(edge.y0));
   let p1 = vec2<i32>(i32(edge.x1), i32(edge.y1));
-  
-  // 中点
   let mid = vec2<i32>(
     i32((edge.x0 + edge.x1) * 0.5),
     i32((edge.y0 + edge.y1) * 0.5)
   );
-
-  // 4分割点
   let q1 = vec2<i32>(
     i32(edge.x0 * 0.75 + edge.x1 * 0.25),
     i32(edge.y0 * 0.75 + edge.y1 * 0.25)
@@ -76,7 +67,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     i32(edge.y0 * 0.25 + edge.y1 * 0.75)
   );
 
-  // 範囲チェック付きSeed書き込み
   if (p0.x >= 0 && p0.x < maxX && p0.y >= 0 && p0.y < maxY) {
     textureStore(seedTex, p0, vec4<f32>(edge.x0, edge.y0, edge.edgeId, 0.0));
   }
@@ -172,7 +162,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `;
 
-  // msdf-encode.wgsl (チャンネル分離修正版)
+  // msdf-encode.wgsl (🔧 seedTex参照方式に変更)
   window.MSDF_ENCODE_WGSL = `
 struct Edge {
   x0: f32,
@@ -222,11 +212,24 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let pixelPos = vec2<f32>(f32(pos.x) + 0.5, f32(pos.y) + 0.5);
 
-  // 各チャンネルの最近接エッジを個別に計算
+  // 🔧 seedTexから最近接EdgeIdを取得（binding 0を確実に使用）
+  let seedData = textureLoad(seedTex, pos, 0);
+  let nearestEdgeId = i32(seedData.b);
+
+  // 各チャンネルの距離を計算
   var distances = vec3<f32>(1000.0, 1000.0, 1000.0);
   
-  // 全エッジを走査して各チャンネル用の最小距離を計算
-  for (var i = 0u; i < uEncode.edgeCount; i = i + 1u) {
+  // 最近接エッジ周辺のみを高精度計算
+  let searchRange = 3;
+  var startEdge = max(0, nearestEdgeId - searchRange);
+  var endEdge = min(i32(uEncode.edgeCount), nearestEdgeId + searchRange + 1);
+  
+  if (nearestEdgeId < 0) {
+    startEdge = 0;
+    endEdge = i32(uEncode.edgeCount);
+  }
+  
+  for (var i = startEdge; i < endEdge; i = i + 1) {
     let edge = edges[i];
     let p0 = vec2<f32>(edge.x0, edge.y0);
     let p1 = vec2<f32>(edge.x1, edge.y1);
@@ -294,10 +297,7 @@ fn vertMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 }
 `;
 
-  console.log('✅ wgsl-loader.js loaded (MSDF Pipeline用)');
-  console.log('   ✅ MSDF_SEED_INIT_WGSL');
-  console.log('   ✅ MSDF_JFA_PASS_WGSL');
-  console.log('   ✅ MSDF_ENCODE_WGSL');
-  console.log('   ✅ MSDF_RENDER_WGSL');
+  console.log('✅ wgsl-loader.js Phase 2完全版 loaded');
+  console.log('   🔧 msdf-encode: seedTex参照追加（binding 0使用保証）');
 
 })();
