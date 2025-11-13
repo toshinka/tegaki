@@ -21,11 +21,13 @@ drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイ�
 drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
 history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
 webgpu-capabilities.js:126 ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
-gpu-stroke-processor.js:219 ✅ gpu-stroke-processor.js Phase 1.5完全版 loaded
-gpu-stroke-processor.js:220    ✅ createEdgeBuffer() 実装完了
-gpu-stroke-processor.js:221    ✅ uploadToGPU() 実装完了
-gpu-stroke-processor.js:222    ✅ calculateWinding() 実装完了（Winding Number法）
-msdf-pipeline-manager.js:612 ✅ msdf-pipeline-manager.js Phase 2.1 - MSDF Encode修正版 loaded
+VM657 wgsl-loader.js:297 ✅ wgsl-loader.js loaded (MSDF Pipeline用)
+VM657 wgsl-loader.js:298    ✅ MSDF_SEED_INIT_WGSL
+VM657 wgsl-loader.js:299    ✅ MSDF_JFA_PASS_WGSL
+VM657 wgsl-loader.js:300    ✅ MSDF_ENCODE_WGSL
+VM657 wgsl-loader.js:301    ✅ MSDF_RENDER_WGSL
+gpu-stroke-processor.js:198 ✅ gpu-stroke-processor.js Phase 1.6 loaded (解像度対応版)
+msdf-pipeline-manager.js:473 ✅ msdf-pipeline-manager.js Phase 2.3 loaded (バインディング完全修正版)
 earcut-triangulator.js:148 ✅ earcut-triangulator.js loaded
 webgpu-mask-layer.js:360 ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
 webgpu-mask-layer.js:361    📦 GPU Compute Shaderでポリゴンラスタライズ
@@ -49,7 +51,7 @@ stroke-renderer.js:287    🔧 WebGPUGeometryLayer依存をオプショナル化
 stroke-renderer.js:288    ✅ 初期化エラー回避
 thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
 brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
-brush-core.js:519 ✅ brush-core.js Phase 2.1 loaded - Container取得修正版
+brush-core.js:657 ✅ brush-core.js Phase 2.5 loaded (完全版 - MSDF統合 + サムネイル連携)
 fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
 fill-tool.js:270    ❌ 独自WebGPU初期化を削除
 fill-tool.js:271    ✅ 既存インスタンス参照のみ
@@ -100,6 +102,11 @@ export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
 ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
 ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
 ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
+wgsl-loader.js:297 ✅ wgsl-loader.js loaded (MSDF Pipeline用)
+wgsl-loader.js:298    ✅ MSDF_SEED_INIT_WGSL
+wgsl-loader.js:299    ✅ MSDF_JFA_PASS_WGSL
+wgsl-loader.js:300    ✅ MSDF_ENCODE_WGSL
+wgsl-loader.js:301    ✅ MSDF_RENDER_WGSL
 core-runtime.js:570 ✅ core-runtime.js (Phase 4 - Fill対応版) loaded
 core-runtime.js:571    ✓ api.tool.setFill() 追加
 core-runtime.js:572    ✓ api.tool.set("fill") サポート
@@ -135,16 +142,16 @@ initializeWebGPU @ core-initializer.js:182
 initialize @ core-initializer.js:348
 await in initialize
 initialize @ core-initializer.js:470
-（匿名） @ index.html:124
+（匿名） @ index.html:128
 webgpu-drawing-layer.js:77 ✅ [WebGPUDrawingLayer] Phase 3.1 Initialized
 webgpu-drawing-layer.js:78    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
 webgpu-drawing-layer.js:79    📊 Format: rgba8unorm
 core-initializer.js:187 ✅ [WebGPU] Drawing Layer initialized
 core-initializer.js:198 [WebGPU] Initializing GPU Stroke Processor...
-gpu-stroke-processor.js:57 ✅ [GPUStrokeProcessor] Phase 1.5初期化完了
+gpu-stroke-processor.js:43 ✅ [GPUStrokeProcessor] Phase 1.6初期化完了（解像度対応版）
 core-initializer.js:202 ✅ [WebGPU] GPU Stroke Processor initialized
 core-initializer.js:210 [WebGPU] Initializing MSDF Pipeline Manager...
-msdf-pipeline-manager.js:303 ✅ [MSDFPipelineManager] Phase 2.1初期化完了（MSDF Encode修正版）
+msdf-pipeline-manager.js:93 ✅ [MSDFPipelineManager] Phase 2.3初期化完了（バインディング修正版）
 core-initializer.js:214 ✅ [WebGPU] MSDF Pipeline Manager initialized
 core-initializer.js:222 [WebGPU] Initializing Texture Bridge...
 webgpu-texture-bridge.js:48 ✅ [WebGPUTextureBridge] Phase 4完全版
@@ -152,8 +159,20 @@ core-initializer.js:228 ✅ [WebGPU] Texture Bridge initialized
 core-initializer.js:236 [WebGPU] Initializing StrokeRenderer...
 stroke-renderer.js:100 ✅ [StrokeRenderer] Phase 1初期化完了
 stroke-renderer.js:101    📊 Legacy Mode: false
-stroke-renderer.js:102    📊 MSDF Mode: true
-brush-core.js:98 ✅ [BrushCore] MSDF Pipeline有効
+stroke-renderer.js:102    📊 MSDF Mode: undefined
+stroke-renderer.js:105 ⚠️ [StrokeRenderer] 描画エンジン未初期化 - Phase 2実装待ち
+（匿名） @ stroke-renderer.js:105
+await in （匿名）
+initialize @ stroke-renderer.js:108
+（匿名） @ brush-core.js:88
+initialize @ brush-core.js:105
+init @ brush-core.js:65
+initialize @ core-engine.js:645
+initialize @ core-initializer.js:304
+await in initialize
+initialize @ core-initializer.js:470
+（匿名） @ index.html:128
+brush-core.js:101 ✅ [BrushCore] MSDF Pipeline有効
 core-initializer.js:238 ✅ [WebGPU] StrokeRenderer initialized
 core-initializer.js:240 ✅ [WebGPU] Phase 1 MSDF初期化完了
 core-initializer.js:241    📊 Drawing Layer: true
@@ -163,9 +182,97 @@ core-initializer.js:244    📊 Texture Bridge: true
 core-initializer.js:245    📊 Stroke Renderer: true
 core-initializer.js:246    ❌ Legacy Geometry Layer: 削除済み
 core-initializer.js:349 [App] WebGPU MSDF enabled: true
-index.html:125 ✅ Application initialized (WebGPU MSDF Pipeline版)
+index.html:129 ✅ Application initialized (WebGPU MSDF Pipeline版)
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-gpu-stroke-processor.js:111 ✅ [GPUStrokeProcessor] EdgeBuffer作成: 114エッジ (Winding: true)
-gpu-stroke-processor.js:111 ✅ [GPUStrokeProcessor] EdgeBuffer作成: 102エッジ (Winding: true)
-gpu-stroke-processor.js:111 ✅ [GPUStrokeProcessor] EdgeBuffer作成: 196エッジ (Winding: true)
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: 'In entries[0], binding index 0 not present in the …[Device].CreateBindGroup([BindGroupDescriptor]).\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+In entries[0], binding index 0 not present in the bind group layout.
+Expected layout: [{ binding: 1, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::ReadOnlyStorage, minBindingSize: 32, hasDynamicOffset: 0} }, { binding: 2, visibility: ShaderStage::Compute, storageTexture: {format: TextureFormat::RGBA16Float, viewDimension: TextureViewDimension::e2D, access: StorageTextureAccess::WriteOnly} }, { binding: 3, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::Uniform, minBindingSize: 16, hasDynamicOffset: 0} }]
+ - While validating [BindGroupDescriptor] against [BindGroupLayout (unlabeled)]
+ - While calling [Device].CreateBindGroup([BindGroupDescriptor]).
+
+In entries[0], binding index 0 not present in the bind group layout.
+Expected layout: [{ binding: 1, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::ReadOnlyStorage, minBindingSize: 32, hasDynamicOffset: 0} }, { binding: 2, visibility: ShaderStage::Compute, storageTexture: {format: TextureFormat::RGBA16Float, viewDimension: TextureViewDimension::e2D, access: StorageTextureAccess::WriteOnly} }, { binding: 3, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::Uniform, minBindingSize: 16, hasDynamicOffset: 0} }]
+ - While validating [BindGroupDescriptor] against [BindGroupLayout (unlabeled)]
+ - While calling [Device].CreateBindGroup([BindGroupDescriptor]).
+
+In entries[0], binding index 0 not present in the bind group layout.
+Expected layout: [{ binding: 1, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::ReadOnlyStorage, minBindingSize: 32, hasDynamicOffset: 0} }, { binding: 2, visibility: ShaderStage::Compute, storageTexture: {format: TextureFormat::RGBA16Float, viewDimension: TextureViewDimension::e2D, access: StorageTextureAccess::WriteOnly} }, { binding: 3, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::Uniform, minBindingSize: 16, hasDynamicOffset: 0} }]
+ - While validating [BindGroupDescriptor] against [BindGroupLayout (unlabeled)]
+ - While calling [Device].CreateBindGroup([BindGroupDescriptor]).
+
+In entries[0], binding index 0 not present in the bind group layout.
+Expected layout: [{ binding: 1, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::ReadOnlyStorage, minBindingSize: 32, hasDynamicOffset: 0} }, { binding: 2, visibility: ShaderStage::Compute, storageTexture: {format: TextureFormat::RGBA16Float, viewDimension: TextureViewDimension::e2D, access: StorageTextureAccess::WriteOnly} }, { binding: 3, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::Uniform, minBindingSize: 16, hasDynamicOffset: 0} }]
+ - While validating [BindGroupDescriptor] against [BindGroupLayout (unlabeled)]
+ - While calling [Device].CreateBindGroup([BindGroupDescriptor]).
+
+In entries[0], binding index 0 not present in the bind group layout.
+Expected layout: [{ binding: 1, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::ReadOnlyStorage, minBindingSize: 32, hasDynamicOffset: 0} }, { binding: 2, visibility: ShaderStage::Compute, storageTexture: {format: TextureFormat::RGBA16Float, viewDimension: TextureViewDimension::e2D, access: StorageTextureAccess::WriteOnly} }, { binding: 3, visibility: ShaderStage::Compute, buffer: {type: BufferBindingType::Uniform, minBindingSize: 16, hasDynamicOffset: 0} }]
+ - While validating [BindGroupDescriptor] against [BindGroupLayout (unlabeled)]
+ - While calling [Device].CreateBindGroup([BindGroupDescriptor]).
+
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid BindGroup (unlabeled)] is invalid.\n - Whi… - While finishing [CommandEncoder (unlabeled)].\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+[Invalid BindGroup (unlabeled)] is invalid.
+ - While encoding [ComputePassEncoder (unlabeled)].SetBindGroup(0, [Invalid BindGroup (unlabeled)], 0, ...).
+ - While finishing [CommandEncoder (unlabeled)].
+
+[Invalid BindGroup (unlabeled)] is invalid.
+ - While encoding [ComputePassEncoder (unlabeled)].SetBindGroup(0, [Invalid BindGroup (unlabeled)], 0, ...).
+ - While finishing [CommandEncoder (unlabeled)].
+
+[Invalid BindGroup (unlabeled)] is invalid.
+ - While encoding [ComputePassEncoder (unlabeled)].SetBindGroup(0, [Invalid BindGroup (unlabeled)], 0, ...).
+ - While finishing [CommandEncoder (unlabeled)].
+
+[Invalid BindGroup (unlabeled)] is invalid.
+ - While encoding [ComputePassEncoder (unlabeled)].SetBindGroup(0, [Invalid BindGroup (unlabeled)], 0, ...).
+ - While finishing [CommandEncoder (unlabeled)].
+
+[Invalid BindGroup (unlabeled)] is invalid.
+ - While encoding [ComputePassEncoder (unlabeled)].SetBindGroup(0, [Invalid BindGroup (unlabeled)], 0, ...).
+ - While finishing [CommandEncoder (unlabeled)].
+
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: 'In entries[0], binding index 0 not present in the …[Device].CreateBindGroup([BindGroupDescriptor]).\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid BindGroup (unlabeled)] is invalid.\n - Whi… - While finishing [CommandEncoder (unlabeled)].\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: 'In entries[0], binding index 0 not present in the …[Device].CreateBindGroup([BindGroupDescriptor]).\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid BindGroup (unlabeled)] is invalid.\n - Whi… - While finishing [CommandEncoder (unlabeled)].\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: 'In entries[0], binding index 0 not present in the …[Device].CreateBindGroup([BindGroupDescriptor]).\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid BindGroup (unlabeled)] is invalid.\n - Whi… - While finishing [CommandEncoder (unlabeled)].\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+popup-manager.js:192 👁️ Popup "quickAccess" shown
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: 'In entries[0], binding index 0 not present in the …[Device].CreateBindGroup([BindGroupDescriptor]).\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid BindGroup (unlabeled)] is invalid.\n - Whi… - While finishing [CommandEncoder (unlabeled)].\n'}
+（匿名） @ webgpu-drawing-layer.js:72
+webgpu-drawing-layer.js:72 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
+（匿名） @ webgpu-drawing-layer.js:72
