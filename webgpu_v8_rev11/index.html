@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.14 お絵かきツール</title>
+    <title>🎨 PixiJS v8.14 お絵かきツール - WebGPU MSDF版</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -15,7 +15,6 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
     <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
     <!-- node_modules Libraries -->
@@ -49,8 +48,14 @@
     <!-- WebGPU Base -->
     <script src="system/drawing/webgpu/webgpu-capabilities.js"></script>
     <script src="system/drawing/webgpu/webgpu-drawing-layer.js"></script>
-    <script src="./system/drawing/webgpu/earcut-triangulator.js"></script>
-    <script src="./system/drawing/webgpu/webgpu-geometry-layer.js"></script>
+    
+    <!-- WebGPU MSDF Pipeline - 新規追加 -->
+    <script src="system/drawing/webgpu/gpu-stroke-processor.js"></script>
+    <script src="system/drawing/webgpu/msdf-pipeline-manager.js"></script>
+    
+    <!-- WebGPU Legacy (段階的削除予定) -->
+    <script src="system/drawing/webgpu/earcut-triangulator.js"></script>
+    <script src="system/drawing/webgpu/webgpu-geometry-layer.js"></script>
     <script src="system/drawing/webgpu/webgpu-compute-sdf.js"></script>
     <script src="system/drawing/webgpu/webgpu-compute-msdf.js"></script>
     <script src="system/drawing/webgpu/webgpu-texture-bridge.js"></script>
@@ -65,7 +70,7 @@
     <script src="system/drawing/pointer-handler.js"></script>
     <script src="system/drawing/pressure-handler.js"></script>
 
-    <!-- Polygon Generator -->
+    <!-- Polygon Generator (段階的削除予定) -->
     <script src="system/drawing/polygon-generator.js"></script>   
     <script src="system/drawing/stroke-recorder.js"></script>
     
@@ -112,12 +117,12 @@
     <script src="core-engine.js"></script>
     <script src="core-initializer.js"></script>
 
-    <!-- Entry Point: Phase 4-B MSDF完全統合初期化 -->
+    <!-- Entry Point: WebGPU MSDF Pipeline統合版 -->
     <script>
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 await window.CoreInitializer.initialize();
-                console.log('✅ Application initialized (Phase 4-B: MSDF完全統合版)');
+                console.log('✅ Application initialized (WebGPU MSDF Pipeline版)');
             } catch (error) {
                 console.error('❌ Application initialization failed:', error);
             }
