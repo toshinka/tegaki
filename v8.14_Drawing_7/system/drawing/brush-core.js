@@ -1,34 +1,23 @@
 /**
  * ================================================================================
- * system/drawing/brush-core.js - Phase 7修正版: Undo完全対応
+ * system/drawing/brush-core.js - Phase 7-FIX3: strokeData完全対応
  * ================================================================================
  * 
- * 【Phase 7-FIX 改修内容】
- * 🚨 undo時に複数graphics削除問題を解決
- * 🚨 pathsData配列ではなく、graphics参照のみで管理
- * ✅ History登録を finalizeStroke() 1箇所に統一
- * ✅ isApplying フラグの徹底チェック
+ * 【Phase 7-FIX3 改修内容】
+ * 🔧 strokeData.polygon を正しく渡す
+ * 🔧 プレビュー更新でPolygonGeneratorを正しく使用
  * 
- * 【親ファイル (このファイルが依存)】
- *   - event-bus.js (イベント通信)
+ * 【依存Parents】
  *   - coordinate-system.js (座標変換)
- *   - pressure-handler.js (筆圧処理) ※オプション
  *   - stroke-recorder.js (ストローク記録)
- *   - stroke-renderer.js (ストローク描画)
+ *   - stroke-renderer.js (ストローク描画・プレビュー管理)
  *   - layer-system.js (レイヤー管理)
- *   - brush-settings.js (ブラシ設定 - mode 情報源)
+ *   - brush-settings.js (ブラシ設定)
  *   - history.js (Undo/Redo)
+ *   - polygon-generator.js (ポリゴン生成)
  * 
- * 【子ファイル (このファイルに依存)】
+ * 【依存Children】
  *   - drawing-engine.js (ストローク開始/更新/完了呼び出し)
- *   - keyboard-handler.js (ツール切り替え)
- * 
- * 【責務】
- *   - ストローク開始/更新/完了処理
- *   - 座標変換パイプライン統合
- *   - プレビュー表示管理
- *   - ペン/消しゴム/塗りつぶしモードの処理振り分け
- *   - 🚨 History登録の唯一の責任者（描画系）
  * ================================================================================
  */
 
@@ -52,7 +41,6 @@
             this.brushSettings = null;
             this.fillTool = null;
             
-            this.previewGraphics = null;
             this.eventListenersSetup = false;
         }
         
@@ -164,17 +152,15 @@
             this.lastLocalY = localY;
             this.lastPressure = processedPressure;
             
-            this.previewGraphics = new PIXI.Graphics();
-            this.previewGraphics.label = 'strokePreview';
-            activeLayer.addChild(this.previewGraphics);
-            
             const settings = this._getCurrentSettings();
             
-            this.strokeRenderer.renderPreview(
-                [{ x: localX, y: localY, pressure: processedPressure }],
-                settings,
-                this.previewGraphics
-            );
+            // 🔧 初期ポイントのポリゴン生成
+            const initialPoints = [{x: localX, y: localY, pressure: processedPressure}];
+            const initialPolygon = window.PolygonGenerator ? 
+                window.PolygonGenerator.generate(initialPoints) : 
+                new Float32Array([localX, localY, localX + 0.1, localY + 0.1, localX, localY + 0.1]);
+            
+            this.strokeRenderer.renderPreview(initialPolygon, settings, activeLayer);
             
             if (this.eventBus) {
                 this.eventBus.emit('drawing:stroke-started', {
@@ -219,16 +205,14 @@
             
             this.strokeRecorder.addPoint(localX, localY, processedPressure);
             
-            if (this.previewGraphics) {
-                const currentPoints = this.strokeRecorder.getCurrentPoints();
-                const settings = this._getCurrentSettings();
-                
-                this.previewGraphics.clear();
-                this.strokeRenderer.renderPreview(
-                    currentPoints,
-                    settings,
-                    this.previewGraphics
-                );
+            // 🔧 プレビュー更新
+            const currentPoints = this.strokeRecorder.getCurrentPoints();
+            if (currentPoints.length > 0 && window.PolygonGenerator) {
+                const polygon = window.PolygonGenerator.generate(currentPoints);
+                if (polygon && polygon.length >= 6) {
+                    const settings = this._getCurrentSettings();
+                    this.strokeRenderer.renderPreview(polygon, settings, activeLayer);
+                }
             }
             
             this.lastLocalX = localX;
@@ -237,8 +221,7 @@
         }
         
         /**
-         * 🚨 Phase 7-FIX: graphics参照のみで管理
-         * pathsData配列は使用せず、graphics.parentで判定
+         * 🔧 Phase 7-FIX3: strokeDataを正しく渡す
          */
         async finalizeStroke() {
             if (!this.isDrawing) return;
@@ -246,29 +229,21 @@
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) return;
             
+            // 🔧 strokeRecorderから完全なstrokeDataを取得
             const strokeData = this.strokeRecorder.endStroke();
-            
-            // プレビュー削除
-            if (this.previewGraphics && this.previewGraphics.parent) {
-                this.previewGraphics.parent.removeChild(this.previewGraphics);
-                this.previewGraphics.destroy();
-                this.previewGraphics = null;
-            }
             
             const settings = this._getCurrentSettings();
             const mode = settings.mode || 'pen';
             
-            // 最終描画
+            // 🔧 strokeDataを直接渡す（polygon含む）
             const graphics = await this.strokeRenderer.renderFinalStroke(
                 strokeData,
-                settings
+                settings,
+                activeLayer
             );
             
             if (graphics) {
-                // レイヤーに追加
-                activeLayer.addChild(graphics);
-                
-                // 🚨 Phase 7-FIX: History登録（graphics参照のみ）
+                // History登録
                 if (window.History && !window.History._manager?.isApplying) {
                     const layerIndex = this.layerManager.getLayerIndex(activeLayer);
                     const layerId = activeLayer.layerData.id;
@@ -276,7 +251,6 @@
                     window.History.push({
                         name: 'stroke-drawing',
                         do: () => {
-                            // 🔧 graphics.parentで判定（pathsData不使用）
                             if (graphics.parent !== activeLayer) {
                                 activeLayer.addChild(graphics);
                             }
@@ -290,7 +264,6 @@
                             }
                         },
                         undo: () => {
-                            // 🔧 graphics.parentで判定（pathsData不使用）
                             if (graphics.parent === activeLayer) {
                                 activeLayer.removeChild(graphics);
                             }
@@ -356,10 +329,9 @@
         cancelStroke() {
             if (!this.isDrawing) return;
             
-            if (this.previewGraphics && this.previewGraphics.parent) {
-                this.previewGraphics.parent.removeChild(this.previewGraphics);
-                this.previewGraphics.destroy();
-                this.previewGraphics = null;
+            // プレビュー削除をstroke-rendererに委譲
+            if (this.strokeRenderer) {
+                this.strokeRenderer.clearPreview();
             }
             
             this.isDrawing = false;
@@ -380,9 +352,7 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js Phase 7-FIX loaded');
-    console.log('   🚨 pathsData配列不使用、graphics参照のみで管理');
-    console.log('   🚨 undo時の複数削除問題を解決');
-    console.log('   ✅ 1ストローク = 1 History entry');
+    console.log('✅ brush-core.js Phase 7-FIX3 loaded');
+    console.log('   🔧 strokeData.polygon完全対応');
 
 })();
