@@ -1,18 +1,20 @@
 /**
- * @file system/drawing/webgpu/webgpu-compute-sdf.js
- * @description WebGPU Compute SDF Generator - Phase 1閉領域検出修正版
+ * ================================================================================
+ * system/drawing/webgpu/webgpu-compute-sdf.js - Phase 1拡張版
+ * ================================================================================
  * 
- * 【修正内容】
- * ✅ 閉領域検出アルゴリズム改善（全面塗りつぶし防止）
- * ✅ 距離場の正規化調整
- * ✅ FloodFill閾値の動的調整
+ * 【Phase 1拡張内容】
+ * ✅ generateSDFTexture() 追加（GPUTexture直接出力）
+ * ✅ Float32Array出力とGPUTexture出力の両対応
  * 
- * 【親ファイル (このファイルが依存)】
- * - system/drawing/webgpu/webgpu-drawing-layer.js (WebGPUDrawingLayer)
+ * 【依存Parents】
+ * - webgpu-drawing-layer.js (device, queue)
  * - config.js (TEGAKI_CONFIG)
  * 
- * 【子ファイル (このファイルに依存)】
- * - system/drawing/fill-tool.js (computeFloodFillMask呼び出し)
+ * 【依存Children】
+ * - stroke-renderer.js (generateSDFTexture呼び出し)
+ * - fill-tool.js (computeFloodFillMask呼び出し)
+ * ================================================================================
  */
 
 (function() {
@@ -155,10 +157,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let idx = id.y * params.width + id.x;
     let distance = sdfField[idx];
     
-    // 種点距離との差を計算
     let distDiff = abs(distance - params.seedDistance);
     
-    // 閾値判定: 種点と同じ領域内のみ塗る
     if (distDiff < params.threshold && distance < 999998.0) {
         maskOutput[idx] = 1u;
     } else {
@@ -168,6 +168,61 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             `;
         }
 
+        /**
+         * 🔧 Phase 1新規: SDF生成 → GPUTexture出力
+         */
+        async generateSDFTexture(polygon, width, height, radius = 16) {
+            if (!this.initialized) {
+                await this.initialize();
+            }
+
+            // ポリゴン → ポイント配列変換
+            const points = [];
+            for (let i = 0; i < polygon.length; i += 2) {
+                points.push({ x: polygon[i], y: polygon[i + 1] });
+            }
+
+            // SDF生成（Float32Array）
+            const sdfData = await this.generateSDF(points, width, height, radius * 2);
+
+            // GPUTexture作成
+            const texture = this.device.createTexture({
+                label: 'SDF Texture',
+                size: { width, height, depthOrArrayLayers: 1 },
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING |
+                       GPUTextureUsage.COPY_DST |
+                       GPUTextureUsage.COPY_SRC |
+                       GPUTextureUsage.RENDER_ATTACHMENT
+            });
+
+            // Float32Array → RGBA変換
+            const pixelData = new Uint8Array(width * height * 4);
+            for (let i = 0; i < sdfData.length; i++) {
+                const distance = sdfData[i];
+                const alpha = distance < 1.0 ? 255 : Math.max(0, 255 - distance * 10);
+                
+                const idx = i * 4;
+                pixelData[idx] = 128;     // R
+                pixelData[idx + 1] = 0;   // G
+                pixelData[idx + 2] = 0;   // B
+                pixelData[idx + 3] = alpha; // A
+            }
+
+            // データをGPUTextureに書き込み
+            this.device.queue.writeTexture(
+                { texture },
+                pixelData,
+                { bytesPerRow: width * 4, rowsPerImage: height },
+                { width, height, depthOrArrayLayers: 1 }
+            );
+
+            return texture;
+        }
+
+        /**
+         * 既存: Float32Array出力（互換性維持）
+         */
         async generateSDF(points, width, height, maxDistance = 256.0) {
             if (!this.initialized) {
                 throw new Error('WebGPUComputeSDF not initialized');
@@ -206,6 +261,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             return result;
         }
 
+        // 以下、既存メソッド（変更なし）
+
         async computeFloodFillMask(layer, clickLocalX, clickLocalY, threshold = 5.0) {
             if (!this.initialized) {
                 throw new Error('WebGPUComputeSDF not initialized');
@@ -216,14 +273,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const height = CONFIG.canvas.height;
 
             const sdfBuffer = await this.getOrCreateSDFBuffer(layer, width, height);
-
             const seedDistance = await this.readDistanceAtPoint(sdfBuffer, clickLocalX, clickLocalY, width, height);
-
-            // 自動閾値調整: 種点距離が大きい場合は閾値を大きく
             const adjustedThreshold = Math.max(threshold, seedDistance * 0.1);
-
             const maskBuffer = await this.runFloodFillShader(sdfBuffer, seedDistance, adjustedThreshold, width, height);
-
             const maskTexture = await this.bufferToTexture(maskBuffer, width, height);
 
             return maskTexture;
@@ -464,6 +516,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     window.WebGPUComputeSDF = WebGPUComputeSDF;
 
-    console.log('✅ webgpu-compute-sdf.js (Phase 1閉領域検出修正版) loaded');
+    console.log('✅ webgpu-compute-sdf.js (Phase 1拡張版) loaded');
+    console.log('   🔧 generateSDFTexture() 追加');
+    console.log('   🔧 GPUTexture直接出力対応');
 
 })();
