@@ -1,0 +1,294 @@
+config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
+config.js:508    🔧 PerfectFreehand設定リニア化
+config.js:509    ✓ thinning: 0 (線の太り補正無効)
+config.js:510    ✓ smoothing: 0 (補間最小化)
+config.js:511    ✓ streamline: 0 (遅延補正なし)
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js Phase 2 loaded
+    🔧 exportResolution 設定項目追加
+ ✅ layer-transform.js Phase 6 loaded
+    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 7完成版 loaded
+    🚨 addPathToActiveLayer(): History登録を削除
+    🚨 brush-core.js にHistory登録を統一
+    ✅ DRY原則に基づく責務分担の明確化
+ ✅ drawing-clipboard.js Phase 1 loaded
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
+ ✅ webgpu-compute-sdf.js (Phase 1閉領域検出修正版) loaded
+ ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
+    📦 GPU Compute Shaderでポリゴンラスタライズ
+    📦 マスク加算/減算
+    📦 CPUフォールバック非対応（GPU専用）
+ ✅ system/drawing/msdf/msdf-brush-shader.js loaded
+ ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ [PolygonGenerator] PerfectFreehand initialized (UMD default export)
+ ✅ polygon-generator.js Phase 1完全版 loaded
+    ✓ UMD形式対応
+    ✓ 遅延初期化対応
+ ✅ [StrokeRecorder] PolygonGenerator connected
+ ✅ stroke-recorder.js (Phase 1完全版) loaded
+    ✅ PolygonGenerator自動接続
+    ✅ 初期化不要
+    ✅ デバッグログ強化
+ ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
+    ✓ 消しゴムモード削除
+    ✓ ペン描画に特化
+ [StrokeRenderer] @pixi/graphics-smooth not loaded, using standard Graphics
+ ✅ stroke-renderer.js (Graphics-Smooth対応版) loaded
+    ✅ @pixi/graphics-smooth統合
+    ✅ WebGL2アンチエイリアス
+    ✅ PixiJS v8バグ回避
+ ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+ ✅ brush-settings.js (Phase 3-D Clean) loaded
+brush-core.js:383 ✅ brush-core.js Phase 7-FIX loaded
+brush-core.js:384    🚨 pathsData配列不使用、graphics参照のみで管理
+brush-core.js:385    🚨 undo時の複数削除問題を解決
+brush-core.js:386    ✅ 1ストローク = 1 History entry
+fill-tool.js:334 ✅ fill-tool.js (Phase 1完全修正版) loaded
+drawing-engine.js:244 ✅ drawing-engine.js (Phase 4 - Fill対応版) loaded
+drawing-engine.js:245    ✓ fill モード時に canvas:pointerdown イベント発行
+drawing-engine.js:246    ✓ localX/localY を含むイベントペイロード
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
+png-exporter.js:258    🔧 Blob生成の確実性向上
+webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
+dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
+slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
+slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
+slider-utils.js:237    🔧 requestAnimationFrame最適化
+keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
+keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
+keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+layer-panel-renderer.js:663 ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
+layer-panel-renderer.js:664    ✓ layer:panel-update-requested イベントリスナー追加
+layer-panel-renderer.js:665    ✓ LayerSystemからの直接呼び出し完全排除
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
+settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
+ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
+ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
+core-runtime.js:570 ✅ core-runtime.js (Phase 4 - Fill対応版) loaded
+core-runtime.js:571    ✓ api.tool.setFill() 追加
+core-runtime.js:572    ✓ api.tool.set("fill") サポート
+core-engine.js:706 ✅ core-engine.js v8.32.0 loaded
+core-initializer.js:437 ✅ core-initializer.js (Phase 2改修版 - ExportManager初期化一元化) loaded
+stroke-recorder.js:85 ✅ [StrokeRecorder] PolygonGenerator connected
+stroke-renderer.js:35 [StrokeRenderer] @pixi/graphics-smooth not loaded, using standard Graphics
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+index.html:119 ✅ Application initialized (Phase 4-B: MSDF完全統合版)
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+polygon-generator.js:137 ⚠️ [PolygonGenerator] Invalid polygon, using fallback
+generate @ polygon-generator.js:137
+_generatePolygon @ stroke-recorder.js:207
+endStroke @ stroke-recorder.js:160
+finalizeStroke @ brush-core.js:249
+_handlePointerUp @ drawing-engine.js:153
+onPointerUp @ pointer-handler.js:122
+stroke-recorder.js:180 [StrokeRecorder] endStroke {pointsCount: 59, polygonLength: 32, isSingleDot: false}
+stroke-renderer.js:143 [StrokeRenderer] Rendered polygon {points: 32, type: 'or', bounds: ot}
+/**
+ * デバッグコマンド集 - PerfectFreehand統合確認用
+ * 
+ * ブラウザコンソールで以下のコマンドを実行してください
+ */
+
+// ===== 1. PerfectFreehand読み込み確認 =====
+console.log('=== PerfectFreehand読み込み確認 ===');
+console.log('globalThis.PerfectFreehand:', typeof globalThis.PerfectFreehand);
+console.log('window.PerfectFreehand:', typeof window.PerfectFreehand);
+
+if (globalThis.PerfectFreehand) {
+    console.log('✅ PerfectFreehand loaded');
+    console.log('getStroke:', typeof globalThis.PerfectFreehand.getStroke);
+} else {
+    console.error('❌ PerfectFreehand NOT loaded');
+}
+
+// ===== 2. PolygonGenerator状態確認 =====
+console.log('\n=== PolygonGenerator状態確認 ===');
+if (window.PolygonGenerator) {
+    console.log('✅ PolygonGenerator exists');
+    console.log('initialized:', window.PolygonGenerator.initialized);
+    console.log('enabled:', window.PolygonGenerator.enabled);
+    console.log('getStroke:', typeof window.PolygonGenerator.getStroke);
+    
+    // 手動初期化テスト
+    if (!window.PolygonGenerator.initialized) {
+        console.log('\n🔧 手動初期化を試みます...');
+        try {
+            window.PolygonGenerator._doInitialize();
+            console.log('✅ 手動初期化成功');
+        } catch (error) {
+            console.error('❌ 手動初期化失敗:', error);
+        }
+    }
+} else {
+    console.error('❌ PolygonGenerator NOT found');
+}
+
+// ===== 3. テストポリゴン生成 =====
+console.log('\n=== テストポリゴン生成 ===');
+if (window.PolygonGenerator && window.PolygonGenerator.generate) {
+    const testPoints = [
+        {x: 0, y: 0, pressure: 0.5},
+        {x: 10, y: 10, pressure: 0.5},
+        {x: 20, y: 0, pressure: 0.5}
+    ];
+    
+    try {
+        const polygon = window.PolygonGenerator.generate(testPoints);
+        console.log('✅ ポリゴン生成成功');
+        console.log('ポリゴン長さ:', polygon.length);
+        console.log('最初の6点:', polygon.slice(0, 6));
+        
+        if (polygon.length === 32) {
+            console.warn('⚠️ フォールバックポリゴン（円形）が生成されました');
+            console.warn('   → PerfectFreehandが動作していません');
+        } else {
+            console.log('✅ PerfectFreehand正常動作');
+        }
+    } catch (error) {
+        console.error('❌ ポリゴン生成失敗:', error);
+    }
+}
+
+// ===== 4. 設定確認 =====
+console.log('\n=== 設定確認 ===');
+if (window.TEGAKI_CONFIG?.perfectFreehand) {
+    const config = window.TEGAKI_CONFIG.perfectFreehand;
+    console.log('perfectFreehand設定:', config);
+    console.log('  thinning:', config.thinning);
+    console.log('  smoothing:', config.smoothing);
+    console.log('  streamline:', config.streamline);
+} else {
+    console.error('❌ TEGAKI_CONFIG.perfectFreehand NOT found');
+}
+
+// ===== 5. StrokeRecorder確認 =====
+console.log('\n=== StrokeRecorder確認 ===');
+if (window.strokeRecorder) {
+    console.log('✅ strokeRecorder exists');
+    console.log('polygonGenerator:', window.strokeRecorder.polygonGenerator ? '✅ 接続済み' : '❌ 未接続');
+} else {
+    console.error('❌ strokeRecorder NOT found');
+}
+
+// ===== 6. StrokeRenderer確認 =====
+console.log('\n=== StrokeRenderer確認 ===');
+if (window.strokeRenderer) {
+    console.log('✅ strokeRenderer exists');
+    console.log('renderPreview:', typeof window.strokeRenderer.renderPreview);
+    console.log('renderFinalStroke:', typeof window.strokeRenderer.renderFinalStroke);
+} else {
+    console.error('❌ strokeRenderer NOT found');
+}
+
+console.log('\n========================================');
+console.log('デバッグ完了');
+console.log('========================================');
+VM989:8 === PerfectFreehand読み込み確認 ===
+VM989:9 globalThis.PerfectFreehand: function
+VM989:10 window.PerfectFreehand: function
+VM989:13 ✅ PerfectFreehand loaded
+VM989:14 getStroke: undefined
+VM989:20 
+=== PolygonGenerator状態確認 ===
+VM989:22 ✅ PolygonGenerator exists
+VM989:23 initialized: true
+VM989:24 enabled: true
+VM989:25 getStroke: function
+VM989:42 
+=== テストポリゴン生成 ===
+polygon-generator.js:137 ⚠️ [PolygonGenerator] Invalid polygon, using fallback
+generate @ polygon-generator.js:137
+（匿名） @ VM989:51
+VM989:52 ✅ ポリゴン生成成功
+VM989:53 ポリゴン長さ: 32
+VM989:54 最初の6点: (6) [8, 0, 7.391036260090294, 3.0614674589207183, 5.656854249492381, 5.65685424949238]
+VM989:57 ⚠️ フォールバックポリゴン（円形）が生成されました
+（匿名） @ VM989:57
+VM989:58    → PerfectFreehandが動作していません
+（匿名） @ VM989:58
+VM989:68 
+=== 設定確認 ===
+VM989:71 perfectFreehand設定: {enabled: true, size: 16, thinning: 0, smoothing: 0, streamline: 0, …}
+VM989:72   thinning: 0
+VM989:73   smoothing: 0
+VM989:74   streamline: 0
+VM989:80 
+=== StrokeRecorder確認 ===
+VM989:82 ✅ strokeRecorder exists
+VM989:83 polygonGenerator: ✅ 接続済み
+VM989:89 
+=== StrokeRenderer確認 ===
+VM989:91 ✅ strokeRenderer exists
+VM989:92 renderPreview: function
+VM989:93 renderFinalStroke: function
+VM989:98 
+========================================
+VM989:99 デバッグ完了
+VM989:100 ========================================
+undefined
+console.log(globalThis.PerfectFreehand);
+console.log(Object.keys(globalThis.PerfectFreehand));
+VM993:1 ƒ (g,v={}){return function(l,f={}){let{size:g=16,smoothing:v=.5,thinning:m=.5,simulatePressure:M=!0,easing:y=e=>e,start:x={},end:L={},last:b=!1}=f,{cap:P=!0,easing:z=e=>e*(2-e)}=x,{cap:A=!0,easing:T=e=…
+VM993:2 []
+undefined
+// PerfectFreehandの構造確認
+console.log('PerfectFreehand:', globalThis.PerfectFreehand);
+console.log('Type:', typeof globalThis.PerfectFreehand);
+
+// 直接呼び出してみる
+const testResult = globalThis.PerfectFreehand([[0,0,0.5], [10,10,0.5]], {size: 16});
+console.log('Direct call result:', testResult);
+VM997:2 PerfectFreehand: ƒ (g,v={}){return function(l,f={}){let{size:g=16,smoothing:v=.5,thinning:m=.5,simulatePressure:M=!0,easing:y=e=>e,start:x={},end:L={},last:b=!1}=f,{cap:P=!0,easing:z=e=>e*(2-e)}=x,{cap:A=!0,easing:T=e=…
+VM997:3 Type: function
+VM997:7 Direct call result: (46) [Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2), Array(2)]
+undefined
