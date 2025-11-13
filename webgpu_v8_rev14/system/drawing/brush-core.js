@@ -1,27 +1,31 @@
 /**
  * ================================================================================
  * system/drawing/brush-core.js
- * Phase 9: History参照修正版
+ * Phase 1: MSDF新旧フロー併存版
  * ================================================================================
  * 
  * 【責務】
  * - ストローク管理（開始・更新・完了）
  * - StrokeRecorder/StrokeRenderer連携
  * - History登録（統一窓口）
+ * - MSDF Pipeline呼び出し (Phase 1: デバッグモード)
  * 
  * 【依存Parents】
  * - stroke-recorder.js (window.strokeRecorder)
- * - stroke-renderer.js (window.strokeRenderer)
+ * - stroke-renderer.js (window.strokeRenderer) [Legacy]
+ * - gpu-stroke-processor.js (window.gpuStrokeProcessor) [新規]
+ * - msdf-pipeline-manager.js (window.msdfPipelineManager) [新規]
+ * - webgpu-texture-bridge.js (window.WebGPUTextureBridge) [新規]
  * - layer-system.js (window.layerManager)
- * - history.js (window.historyManager) ★遅延参照対応
+ * - history.js (window.historyManager)
  * 
  * 【依存Children】
  * - drawing-engine.js
  * 
- * 【Phase 9改修】
- * ✅ historyManager参照をfinalizeStroke()時に遅延取得
- * ✅ 初期化段階でのhistoryManager必須チェック削除
- * ✅ 描画開始可能にする
+ * 【Phase 1改修】
+ * ✅ MSDF新フロー追加（デバッグモード）
+ * ✅ Legacy旧フロー併存維持
+ * ✅ window.useMSDFPipeline フラグで切り替え
  * 
  * ================================================================================
  */
@@ -33,6 +37,9 @@
     constructor() {
       this.strokeRecorder = null;
       this.strokeRenderer = null;
+      this.gpuStrokeProcessor = null;
+      this.msdfPipelineManager = null;
+      this.textureBridge = null;
       this.layerManager = null;
       
       this.isDrawing = false;
@@ -48,6 +55,9 @@
       
       this.initialized = false;
       this.initializationPromise = null;
+
+      // Phase 1: デバッグフラグ
+      this.useMSDFPipeline = false; // グローバルフラグで切り替え可能
     }
 
     async init() {
@@ -63,6 +73,11 @@
         this.strokeRenderer = window.strokeRenderer;
         this.layerManager = window.layerManager;
 
+        // MSDF Pipeline参照（Phase 1）
+        this.gpuStrokeProcessor = window.gpuStrokeProcessor;
+        this.msdfPipelineManager = window.msdfPipelineManager;
+        this.textureBridge = window.WebGPUTextureBridge;
+
         if (!this.strokeRecorder) {
           throw new Error('strokeRecorder not found');
         }
@@ -75,13 +90,21 @@
           throw new Error('layerManager not found');
         }
 
+        // MSDF Pipeline状態確認
+        if (this.gpuStrokeProcessor && this.msdfPipelineManager) {
+          console.log('✅ [BrushCore] MSDF Pipeline利用可能');
+          console.log('   🔧 window.useMSDFPipeline = true で新フロー有効化');
+        } else {
+          console.warn('⚠️ [BrushCore] MSDF Pipeline未初期化 - Legacy使用');
+        }
+
         // StrokeRenderer初期化完了まで待機
         if (this.strokeRenderer.initialize) {
           await this.strokeRenderer.initialize();
         }
 
         this.initialized = true;
-        console.log('✅ [BrushCore] Phase 9初期化完了');
+        console.log('✅ [BrushCore] Phase 1初期化完了（新旧併存）');
       })();
 
       return this.initializationPromise;
@@ -112,6 +135,7 @@
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
 
+      // Preview更新（Legacy使用 - Phase 4でMSDF対応）
       const polygon = this.strokeRecorder.getPolygon();
       if (!polygon || polygon.length < 6) return;
 
@@ -121,7 +145,7 @@
         this.previewSprite = null;
       }
 
-      // 新規Preview描画
+      // 新規Preview描画（Legacy）
       try {
         this.previewSprite = await this.strokeRenderer.renderPreview(
           polygon,
@@ -155,6 +179,75 @@
         return;
       }
 
+      // ✅ Phase 1: フラグによる新旧フロー切り替え
+      const useMSDF = this.useMSDFPipeline || window.useMSDFPipeline;
+
+      if (useMSDF && this._canUseMSDFPipeline()) {
+        console.log('🚀 [BrushCore] MSDF新フロー実行');
+        await this._finalizeMSDFStroke(strokeData, activeLayer);
+      } else {
+        console.log('🔧 [BrushCore] Legacy旧フロー実行');
+        await this._finalizeLegacyStroke(strokeData, activeLayer);
+      }
+
+      this.isDrawing = false;
+      this.currentStroke = null;
+    }
+
+    /**
+     * ✅ MSDF Pipeline利用可能性チェック
+     */
+    _canUseMSDFPipeline() {
+      return this.gpuStrokeProcessor && 
+             this.msdfPipelineManager && 
+             this.textureBridge;
+    }
+
+    /**
+     * ✅ MSDF新フロー（Phase 1: Seed初期化のみ）
+     */
+    async _finalizeMSDFStroke(strokeData, activeLayer) {
+      try {
+        const points = strokeData.points; // [{x, y, pressure}, ...]
+
+        // 1. EdgeBuffer作成
+        const edgeBuffer = this.gpuStrokeProcessor.createEdgeBuffer(points);
+        console.log('   ✓ EdgeBuffer作成完了');
+
+        // 2. GPU転送
+        const gpuBuffer = this.gpuStrokeProcessor.uploadToGPU(edgeBuffer);
+        console.log('   ✓ GPU転送完了');
+
+        // 3. Bounds計算
+        const bounds = this._calculatePointsBounds(points);
+        console.log('   ✓ Bounds:', bounds);
+
+        // 4. MSDF生成（Phase 1: Seed初期化のみ）
+        const seedTexture = this.msdfPipelineManager.generateMSDF(
+          gpuBuffer,
+          bounds,
+          null
+        );
+        console.log('   ✓ Seed Texture生成完了');
+
+        // Phase 1ではここまで（可視化用）
+        console.log('✅ [BrushCore] MSDF Phase 1完了: Seed初期化のみ');
+        console.log('   ⏳ Phase 2: JFA/Encode実装後に描画実行');
+
+        // GPU Buffer破棄
+        gpuBuffer.destroy();
+
+      } catch (error) {
+        console.error('❌ [BrushCore] MSDF新フロー失敗:', error);
+        console.log('   🔄 Legacyフローへフォールバック');
+        await this._finalizeLegacyStroke(strokeData, activeLayer);
+      }
+    }
+
+    /**
+     * ✅ Legacy旧フロー（既存実装維持）
+     */
+    async _finalizeLegacyStroke(strokeData, activeLayer) {
       try {
         // Final描画
         const sprite = await this.strokeRenderer.renderFinalStroke(
@@ -178,7 +271,7 @@
           }
           activeLayer.paths.push(pathData);
 
-          // ★historyManagerを使用時に取得（遅延参照）
+          // History登録
           const historyManager = window.historyManager;
           if (historyManager) {
             historyManager.recordAction({
@@ -229,11 +322,44 @@
         }
 
       } catch (error) {
-        console.error('❌ [BrushCore] Final stroke render failed:', error);
+        console.error('❌ [BrushCore] Legacy final stroke render failed:', error);
+      }
+    }
+
+    /**
+     * Points配列からBounds計算
+     */
+    _calculatePointsBounds(points) {
+      let minX = Infinity, minY = Infinity;
+      let maxX = -Infinity, maxY = -Infinity;
+
+      for (const point of points) {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
       }
 
-      this.isDrawing = false;
-      this.currentStroke = null;
+      return { minX, minY, maxX, maxY };
+    }
+
+    /**
+     * Polygon配列からBounds計算（Legacy用）
+     */
+    _calculateBounds(polygon) {
+      let minX = Infinity, minY = Infinity;
+      let maxX = -Infinity, maxY = -Infinity;
+
+      for (let i = 0; i < polygon.length; i += 2) {
+        const x = polygon[i];
+        const y = polygon[i + 1];
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+
+      return { minX, minY, maxX, maxY };
     }
 
     updateSettings(settings) {
@@ -269,22 +395,6 @@
       return this.isDrawing;
     }
 
-    _calculateBounds(polygon) {
-      let minX = Infinity, minY = Infinity;
-      let maxX = -Infinity, maxY = -Infinity;
-
-      for (let i = 0; i < polygon.length; i += 2) {
-        const x = polygon[i];
-        const y = polygon[i + 1];
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
-      }
-
-      return { minX, minY, maxX, maxY };
-    }
-
     destroy() {
       if (this.previewSprite) {
         this.previewSprite.destroy({ children: true });
@@ -294,5 +404,10 @@
   }
 
   window.BrushCore = new BrushCore();
+
+  console.log('✅ brush-core.js Phase 1: 新旧フロー併存版 loaded');
+  console.log('   ✓ Legacy旧フロー維持');
+  console.log('   ✓ MSDF新フロー追加（デバッグモード）');
+  console.log('   🔧 window.useMSDFPipeline = true で新フロー有効化');
 
 })();
