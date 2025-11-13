@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/brush-core.js
- * Phase 8: 初期化タイミング修正版
+ * Phase 8: 完全初期化ブロック版
  * ================================================================================
  * 
  * 【責務】
@@ -10,7 +10,7 @@
  * - History登録（統一窓口）
  * 
  * 【依存Parents】
- * - stroke-recorder.js (window.StrokeRecorder)
+ * - stroke-recorder.js (window.strokeRecorder)
  * - stroke-renderer.js (window.strokeRenderer)
  * - layer-system.js (window.layerManager)
  * - history.js (window.historyManager)
@@ -19,8 +19,8 @@
  * - drawing-engine.js
  * 
  * 【Phase 8改修】
- * - historyManager遅延取得対応
- * - 初期化完了まで描画ブロック
+ * - 初期化完了まで全描画操作を完全ブロック
+ * - 初期化中のstartStroke()呼び出しを静かに無視
  * 
  * ================================================================================
  */
@@ -50,24 +50,15 @@
       this.initializationPromise = null;
     }
 
-    /**
-     * 初期化（init/initializeエイリアス対応）
-     */
     async init() {
       return await this.initialize();
     }
 
     async initialize() {
-      if (this.initialized) {
-        return;
-      }
-
-      if (this.initializationPromise) {
-        return this.initializationPromise;
-      }
+      if (this.initialized) return;
+      if (this.initializationPromise) return this.initializationPromise;
 
       this.initializationPromise = (async () => {
-        // 必須コンポーネント取得
         this.strokeRecorder = window.strokeRecorder;
         this.strokeRenderer = window.strokeRenderer;
         this.layerManager = window.layerManager;
@@ -84,12 +75,12 @@
           throw new Error('layerManager not found');
         }
 
-        // StrokeRenderer初期化待機
+        // StrokeRenderer初期化完了まで待機
         if (this.strokeRenderer.initialize) {
           await this.strokeRenderer.initialize();
         }
 
-        // historyManager遅延取得（初期化完了待ち）
+        // historyManager遅延取得
         let retries = 0;
         while (!this.historyManager && retries < 50) {
           this.historyManager = window.historyManager;
@@ -104,20 +95,15 @@
         }
 
         this.initialized = true;
-        console.log('✅ brush-core.js Phase 8 loaded');
-        console.log('   🔧 初期化タイミング修正');
-        console.log('   🔧 historyManager遅延取得対応');
+        console.log('✅ brush-core.js Phase 8完全版');
       })();
 
       return this.initializationPromise;
     }
 
-    /**
-     * ストローク開始
-     */
     startStroke(localX, localY, pressure = 0.5) {
+      // 初期化未完了時は静かに無視
       if (!this.initialized) {
-        console.warn('[BrushCore] Not initialized - initialization in progress');
         return;
       }
 
@@ -140,11 +126,8 @@
       };
     }
 
-    /**
-     * ストローク更新
-     */
     async updateStroke(localX, localY, pressure = 0.5) {
-      if (!this.isDrawing) {
+      if (!this.initialized || !this.isDrawing) {
         return;
       }
 
@@ -178,11 +161,8 @@
       }
     }
 
-    /**
-     * ストローク完了
-     */
     async finalizeStroke() {
-      if (!this.isDrawing) {
+      if (!this.initialized || !this.isDrawing) {
         return;
       }
 

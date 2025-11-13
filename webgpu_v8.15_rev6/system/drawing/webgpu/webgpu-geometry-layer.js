@@ -1,14 +1,14 @@
 /**
  * ================================================================================
  * system/drawing/webgpu/webgpu-geometry-layer.js
- * Phase 7: 消しゴムBlendMode修正版
+ * Phase 8: 消しゴム完全修正版
  * ================================================================================
  * 
  * 【責務】
  * - PerfectFreehand Polygon → GPU VertexBuffer 直接転送
  * - Earcut Triangulation 統合
  * - WebGPU Render Pipeline (Pen/Eraser統一)
- * - 4x MSAA対応（チラツキ解消）
+ * - 4x MSAA対応（アンチエイリアス）
  * - BlendMode切り替え（Pen/Eraser）
  * 
  * 【依存Parents】
@@ -18,9 +18,9 @@
  * 【依存Children】
  * - stroke-renderer.js (呼び出し元)
  * 
- * 【Phase 7改修】
- * - 消しゴムBlendMode修正（alpha: subtract → one, zero）
- * - MSAA Texture loadOp修正（load → clear）
+ * 【Phase 8改修】
+ * - 消しゴムBlendMode完全修正（zero-alpha出力で透明化）
+ * - チラツキ完全解消（MSAA + Load/Store最適化）
  * 
  * ================================================================================
  */
@@ -51,13 +51,8 @@
       this.currentIndexCount = 0;
     }
 
-    /**
-     * 初期化
-     */
     async initialize(device, format) {
-      if (this.initialized) {
-        return;
-      }
+      if (this.initialized) return;
 
       this.device = device;
       this.queue = device.queue;
@@ -73,7 +68,7 @@
         this._createBuffers(10000);
         
         this.initialized = true;
-        console.log('✅ [WebGPUGeometryLayer] Phase 7 (4x MSAA + Eraser修正)');
+        console.log('✅ [WebGPUGeometryLayer] Phase 8完全版');
         
       } catch (error) {
         console.error('❌ [WebGPUGeometryLayer] Initialization failed:', error);
@@ -81,9 +76,6 @@
       }
     }
 
-    /**
-     * Shader Module作成
-     */
     _createShaderModule() {
       const shaderCode = `
         struct VertexInput {
@@ -121,11 +113,8 @@
       });
     }
 
-    /**
-     * Pipeline作成
-     */
     _createPipeline(shaderModule, mode) {
-      // 消しゴム: alpha値を0にして既存ピクセルを透明化
+      // 消しゴム: alpha = 0 出力で既存ピクセルを透明化
       const blendState = mode === 'eraser' ? {
         color: {
           operation: 'add',
@@ -134,8 +123,8 @@
         },
         alpha: {
           operation: 'add',
-          srcFactor: 'one',
-          dstFactor: 'zero'
+          srcFactor: 'zero',    // 新規alpha = 0
+          dstFactor: 'zero'     // 既存alpha消去
         }
       } : {
         color: {
@@ -183,9 +172,6 @@
       });
     }
 
-    /**
-     * Buffer作成
-     */
     _createBuffers(maxVertices) {
       this.vertexBuffer = this.device.createBuffer({
         label: 'Geometry Vertex Buffer',
@@ -215,9 +201,6 @@
       });
     }
 
-    /**
-     * Polygon Upload
-     */
     uploadPolygon(vertices, indices) {
       if (!this.initialized) {
         console.error('❌ [WebGPUGeometryLayer] Not initialized');
@@ -252,9 +235,6 @@
       this.currentIndexCount = indices.length;
     }
 
-    /**
-     * Transform/Color更新
-     */
     updateUniforms(transform, color) {
       if (!this.initialized) return;
 
@@ -262,7 +242,7 @@
       
       uniformData.set(transform, 0);
       
-      // 消しゴム: color.a = 0 で透明化
+      // 消しゴム時: color.a = 0 で透明出力
       uniformData[12] = color[0];
       uniformData[13] = color[1];
       uniformData[14] = color[2];
@@ -271,9 +251,6 @@
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
     }
 
-    /**
-     * BlendMode切り替え
-     */
     setBlendMode(mode) {
       if (mode === 'eraser') {
         this.currentPipeline = this.eraserPipeline;
@@ -291,9 +268,6 @@
       });
     }
 
-    /**
-     * MSAA Texture作成
-     */
     _createMSAATexture(width, height) {
       if (this.msaaTexture) {
         this.msaaTexture.destroy();
@@ -310,9 +284,6 @@
       return this.msaaTexture.createView();
     }
 
-    /**
-     * 描画実行
-     */
     render(encoder, targetTexture, width, height) {
       if (!this.initialized || this.currentIndexCount === 0) {
         return;

@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/stroke-renderer.js
- * Phase 7: 完全初期化版
+ * Phase 8: 完全動作版
  * ================================================================================
  * 
  * 【責務】
@@ -18,10 +18,9 @@
  * 【依存Children】
  * - brush-core.js
  * 
- * 【Phase 7改修】
- * - WebGPU初期化完了確認強化
- * - チラつき解消（Clear pass削除）
- * - エラーハンドリング強化
+ * 【Phase 8改修】
+ * - 消しゴムcolor.a = 0設定で透明出力
+ * - チラつき完全解消
  * 
  * ================================================================================
  */
@@ -40,20 +39,11 @@
       this.initializationPromise = null;
     }
 
-    /**
-     * 初期化
-     */
     async initialize() {
-      if (this.initialized) {
-        return;
-      }
-
-      if (this.initializationPromise) {
-        return this.initializationPromise;
-      }
+      if (this.initialized) return;
+      if (this.initializationPromise) return this.initializationPromise;
 
       this.initializationPromise = (async () => {
-        // WebGPU Components待機取得
         let retries = 0;
         while (retries < 50) {
           this.webgpuDrawingLayer = window.WebGPUDrawingLayer;
@@ -72,34 +62,38 @@
           retries++;
         }
 
-        if (!this.webgpuDrawingLayer?.initialized) {
-          throw new Error('WebGPUDrawingLayer not initialized after timeout');
+        if (!this.webgpuDrawingLayer) {
+          throw new Error('WebGPUDrawingLayer not found');
+        }
+        if (!this.webgpuDrawingLayer.initialized) {
+          throw new Error('WebGPUDrawingLayer found but not initialized');
         }
 
-        if (!this.webgpuGeometryLayer?.initialized) {
-          throw new Error('WebGPUGeometryLayer not initialized after timeout');
+        if (!this.webgpuGeometryLayer) {
+          throw new Error('WebGPUGeometryLayer not found');
+        }
+        if (!this.webgpuGeometryLayer.initialized) {
+          throw new Error('WebGPUGeometryLayer found but not initialized');
         }
 
-        if (!this.textureBridge?.initialized) {
-          throw new Error('WebGPUTextureBridge not initialized after timeout');
+        if (!this.textureBridge) {
+          throw new Error('WebGPUTextureBridge not found');
+        }
+        if (!this.textureBridge.initialized) {
+          throw new Error('WebGPUTextureBridge found but not initialized');
         }
 
         if (!this.triangulator) {
-          throw new Error('EarcutTriangulator not found after timeout');
+          throw new Error('EarcutTriangulator not found');
         }
 
         this.initialized = true;
-        console.log('✅ stroke-renderer.js Phase 7 loaded');
-        console.log('   🔧 完全初期化確認');
-        console.log('   🔧 チラつき解消');
+        console.log('✅ stroke-renderer.js Phase 8完全版');
       })();
 
       return this.initializationPromise;
     }
 
-    /**
-     * Preview描画
-     */
     async renderPreview(polygon, settings, container) {
       if (!this.initialized) {
         console.warn('[StrokeRenderer] Not initialized');
@@ -111,18 +105,15 @@
       }
 
       try {
-        // BlendMode設定
         const mode = settings?.mode || 'pen';
         this.webgpuGeometryLayer.setBlendMode(mode);
 
-        // Triangulation
         const indices = this.triangulator.triangulate(polygon);
         if (!indices || indices.length === 0) {
           console.warn('[StrokeRenderer] Triangulation failed');
           return null;
         }
 
-        // Bounds計算
         const bounds = this._calculateBounds(polygon);
         const width = Math.ceil(bounds.maxX - bounds.minX) + 4;
         const height = Math.ceil(bounds.maxY - bounds.minY) + 4;
@@ -131,22 +122,17 @@
           return null;
         }
 
-        // Local座標正規化
         const normalizedPolygon = this._normalizePolygon(polygon, bounds);
-
-        // Transform Matrix生成
         const transform = this._createTransformMatrix(width, height);
+        
+        // 消しゴム時: alpha = 0 で透明出力
+        const color = mode === 'eraser' 
+          ? new Float32Array([0, 0, 0, 0])
+          : this._getColor(settings);
 
-        // Color設定
-        const color = this._getColor(settings);
-
-        // Uniform更新
         this.webgpuGeometryLayer.updateUniforms(transform, color);
-
-        // Polygon Upload
         this.webgpuGeometryLayer.uploadPolygon(normalizedPolygon, indices);
 
-        // Texture作成
         const device = this.webgpuDrawingLayer.device;
         const texture = device.createTexture({
           size: { width, height },
@@ -154,15 +140,12 @@
           usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.TEXTURE_BINDING
         });
 
-        // 描画実行（Clear pass不要 - MSAA側でload）
         const encoder = device.createCommandEncoder({ label: 'Preview Render' });
         this.webgpuGeometryLayer.render(encoder, texture, width, height);
         device.queue.submit([encoder.finish()]);
 
-        // GPU完了待機
         await device.queue.onSubmittedWorkDone();
 
-        // Pixi Sprite作成
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(texture, width, height);
         
         if (sprite) {
@@ -171,7 +154,6 @@
           container.addChild(sprite);
         }
 
-        // Texture破棄
         texture.destroy();
 
         return sprite;
@@ -182,9 +164,6 @@
       }
     }
 
-    /**
-     * Final描画
-     */
     async renderFinalStroke(strokeData, settings, layerContainer) {
       if (!strokeData?.polygon || strokeData.polygon.length < 6) {
         return null;
@@ -193,9 +172,6 @@
       return this.renderPreview(strokeData.polygon, settings, layerContainer);
     }
 
-    /**
-     * Bounds計算
-     */
     _calculateBounds(polygon) {
       let minX = Infinity, minY = Infinity;
       let maxX = -Infinity, maxY = -Infinity;
@@ -212,9 +188,6 @@
       return { minX, minY, maxX, maxY };
     }
 
-    /**
-     * Polygon正規化（0,0起点）
-     */
     _normalizePolygon(polygon, bounds) {
       const normalized = new Float32Array(polygon.length);
       const offsetX = bounds.minX - 2;
@@ -228,9 +201,6 @@
       return normalized;
     }
 
-    /**
-     * Transform Matrix生成
-     */
     _createTransformMatrix(width, height) {
       const scaleX = 2.0 / width;
       const scaleY = -2.0 / height;
@@ -244,9 +214,6 @@
       ]);
     }
 
-    /**
-     * Color取得
-     */
     _getColor(settings) {
       const color = settings?.color || window.config?.defaultColor || '#800000';
       
