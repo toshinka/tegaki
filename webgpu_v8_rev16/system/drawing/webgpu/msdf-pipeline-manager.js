@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js - Phase 1: Seed初期化版
+ * msdf-pipeline-manager.js - Phase 1完全版 (CORS修正)
  * MSDF生成パイプライン統合管理
  * ================================================================================
  * 
@@ -16,20 +16,86 @@
  * 
  * 【依存Children】
  * - brush-core.js (呼び出し元)
- * - msdf-seed-init.wgsl (Compute Shader)
  * 
  * 【Phase 1実装範囲】
- * ✅ Seed初期化Pass
+ * ✅ Seed初期化Pass (WGSLインライン化でCORS解決)
  * ⏳ JFA Pass (Phase 2)
  * ⏳ MSDF Encode Pass (Phase 3)
  * ⏳ Compose Pass (Phase 4)
  * ⏳ Render Pass (Phase 4)
+ * 
+ * 【変更履歴】
+ * - v1.1: WGSLコードをインライン化してfile://対応
+ * - v1.0: Phase 1初期実装
  * 
  * ================================================================================
  */
 
 (function() {
   'use strict';
+
+  // ============================================================================
+  // WGSL Shader Code (インライン定義)
+  // ============================================================================
+
+  const MSDF_SEED_INIT_WGSL = `
+// ============================================================================
+// msdf-seed-init.wgsl (インライン版)
+// WebGPU MSDF - Seed初期化 Compute Shader
+// ============================================================================
+
+struct EdgeData {
+  x0: f32,
+  y0: f32,
+  x1: f32,
+  y1: f32,
+  edgeId: f32,
+  channelId: f32,
+  insideFlag: f32,
+  padding: f32,
+}
+
+@group(0) @binding(0) var<storage, read> edges: array<EdgeData>;
+@group(0) @binding(1) var seedTex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(2) var<uniform> uCanvasSize: vec2<f32>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
+  let edgeIdx = globalId.x;
+  let edgeCount = arrayLength(&edges);
+  
+  if (edgeIdx >= edgeCount) {
+    return;
+  }
+
+  let edge = edges[edgeIdx];
+  let texSize = textureDimensions(seedTex);
+  
+  // 端点0
+  let p0 = vec2<i32>(i32(edge.x0), i32(edge.y0));
+  if (p0.x >= 0 && p0.x < i32(texSize.x) && p0.y >= 0 && p0.y < i32(texSize.y)) {
+    textureStore(seedTex, p0, vec4<f32>(edge.x0, edge.y0, edge.edgeId, 0.0));
+  }
+  
+  // 端点1
+  let p1 = vec2<i32>(i32(edge.x1), i32(edge.y1));
+  if (p1.x >= 0 && p1.x < i32(texSize.x) && p1.y >= 0 && p1.y < i32(texSize.y)) {
+    textureStore(seedTex, p1, vec4<f32>(edge.x1, edge.y1, edge.edgeId, 0.0));
+  }
+  
+  // 中点
+  let midX = (edge.x0 + edge.x1) * 0.5;
+  let midY = (edge.y0 + edge.y1) * 0.5;
+  let pMid = vec2<i32>(i32(midX), i32(midY));
+  if (pMid.x >= 0 && pMid.x < i32(texSize.x) && pMid.y >= 0 && pMid.y < i32(texSize.y)) {
+    textureStore(seedTex, pMid, vec4<f32>(midX, midY, edge.edgeId, 0.0));
+  }
+}
+`;
+
+  // ============================================================================
+  // MSDF Pipeline Manager Class
+  // ============================================================================
 
   class MSDFPipelineManager {
     constructor() {
@@ -62,18 +128,15 @@
       this.queue = device.queue;
       this.format = format;
 
-      console.log('[MSDFPipelineManager] Phase 1初期化開始...');
-
       try {
-        // Seed初期化Shader読み込み
-        await this._loadSeedInitShader();
+        // Shader Module作成 (インライン版)
+        this._createSeedInitShader();
 
         // Pipeline作成
         await this._createSeedInitPipeline();
 
         this.initialized = true;
-        console.log('✅ [MSDFPipelineManager] Phase 1初期化完了');
-        console.log('   ✓ Seed初期化Pipeline生成');
+        console.log('✅ [MSDFPipelineManager] Phase 1初期化完了 (CORS修正版)');
       } catch (error) {
         console.error('❌ [MSDFPipelineManager] 初期化失敗:', error);
         throw error;
@@ -81,28 +144,13 @@
     }
 
     /**
-     * Seed初期化Shader読み込み
+     * Seed初期化Shader作成 (インライン版)
      */
-    async _loadSeedInitShader() {
-      const shaderPath = 'system/drawing/msdf/msdf-seed-init.wgsl';
-      
-      try {
-        const response = await fetch(shaderPath);
-        if (!response.ok) {
-          throw new Error(`Shader読み込み失敗: ${shaderPath}`);
-        }
-
-        const code = await response.text();
-        this.seedInitShader = this.device.createShaderModule({
-          label: 'msdf-seed-init',
-          code: code
-        });
-
-        console.log('   ✓ msdf-seed-init.wgsl 読み込み完了');
-      } catch (error) {
-        console.error('❌ Seed初期化Shader読み込み失敗:', error);
-        throw error;
-      }
+    _createSeedInitShader() {
+      this.seedInitShader = this.device.createShaderModule({
+        label: 'msdf-seed-init',
+        code: MSDF_SEED_INIT_WGSL
+      });
     }
 
     /**
@@ -152,8 +200,6 @@
           entryPoint: 'main'
         }
       });
-
-      console.log('   ✓ Seed初期化Pipeline作成完了');
     }
 
     /**
@@ -210,8 +256,6 @@
       // Submit
       this.queue.submit([commandEncoder.finish()]);
 
-      console.log(`✅ [MSDFPipelineManager] Seed初期化Pass実行: ${edgeCount}エッジ`);
-
       // Uniform Buffer破棄
       uniformBuffer.destroy();
     }
@@ -231,8 +275,6 @@
       const width = Math.ceil(bounds.maxX - bounds.minX);
       const height = Math.ceil(bounds.maxY - bounds.minY);
 
-      console.log(`[MSDFPipelineManager] MSDF生成開始: ${width}x${height}`);
-
       // Seed Texture作成 (rgba32float)
       const seedTexture = this.device.createTexture({
         size: [width, height],
@@ -243,9 +285,6 @@
 
       // Seed初期化Pass実行
       this._seedInitPass(edgeBuffer, seedTexture, width, height);
-
-      console.log('✅ [MSDFPipelineManager] Phase 1完了: Seed初期化のみ');
-      console.log('   ⏳ Phase 2: JFA Pass 未実装');
 
       return seedTexture;
     }
@@ -260,15 +299,14 @@
       this.device = null;
       this.queue = null;
       this.initialized = false;
-      console.log('🗑️ [MSDFPipelineManager] 破棄完了');
     }
   }
 
   // グローバル公開
   window.MSDFPipelineManager = MSDFPipelineManager;
 
-  console.log('✅ msdf-pipeline-manager.js Phase 1 Seed初期化版 loaded');
-  console.log('   ✓ _seedInitPass() 実装完了');
-  console.log('   ⏳ JFA/Encode/Compose/Render Phase 2-4実装予定');
+  console.log('✅ msdf-pipeline-manager.js Phase 1完全版 (CORS修正) loaded');
+  console.log('   🔧 WGSLインライン化でfile://対応');
+  console.log('   ⏳ Phase 2: JFA Pass 実装予定');
 
 })();
