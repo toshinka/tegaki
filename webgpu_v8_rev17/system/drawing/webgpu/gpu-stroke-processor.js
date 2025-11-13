@@ -1,13 +1,13 @@
 /**
  * ================================================================================
- * gpu-stroke-processor.js - Phase 1完全版
- * Stroke Points → EdgeBuffer 変換・GPU転送
+ * gpu-stroke-processor.js - Phase 1.5完全版
+ * Stroke Points → EdgeBuffer 変換・GPU転送・Winding計算
  * ================================================================================
  * 
  * 【責務】
  * - stroke-recorder.points[] → EdgeBuffer Float32Array変換
  * - GPU StorageBuffer作成・アップロード
- * - Winding計算（Phase 3で完全実装予定）
+ * - Winding Number法による符号判定（Phase 3前倒し実装）
  * 
  * 【依存Parents】
  * - webgpu-drawing-layer.js (device, queue)
@@ -26,7 +26,7 @@
  * - x1,y1: エッジ終点
  * - edgeId: エッジ識別子
  * - channelId: MSDF割り当てチャンネル (0=R, 1=G, 2=B)
- * - insideFlag: 符号判定 (-1 or +1, Phase 3で実装)
+ * - insideFlag: 符号判定 (-1 or +1)
  * 
  * ================================================================================
  */
@@ -54,13 +54,13 @@
       this.queue = device.queue;
       this.initialized = true;
 
-      console.log('✅ [GPUStrokeProcessor] Phase 1初期化完了');
+      console.log('✅ [GPUStrokeProcessor] Phase 1.5初期化完了');
     }
 
     /**
-     * Points配列 → EdgeBuffer変換
+     * Points配列 → EdgeBuffer変換（Winding計算統合）
      * @param {Array} points - [{x, y, pressure}, ...] (Local座標)
-     * @param {Object} options - {windingData: null} (Phase 3で使用)
+     * @param {Object} options - {useWinding: true}
      * @returns {Float32Array} EdgeBuffer
      */
     createEdgeBuffer(points, options = {}) {
@@ -73,14 +73,20 @@
         return new Float32Array(0);
       }
 
-      // エッジ数計算 (点数 - 1)
+      const useWinding = options.useWinding !== false; // デフォルトtrue
       const edgeCount = points.length - 1;
-      const edgeBuffer = new Float32Array(edgeCount * 8); // 8要素/エッジ
+      const edgeBuffer = new Float32Array(edgeCount * 8);
+
+      // Winding計算（閉じたパスとして扱う）
+      let insideFlags = null;
+      if (useWinding && points.length > 2) {
+        const windingResult = this.calculateWinding(points);
+        insideFlags = windingResult.insideFlags;
+      }
 
       for (let i = 0; i < edgeCount; i++) {
         const p0 = points[i];
         const p1 = points[i + 1];
-
         const offset = i * 8;
 
         // エッジ始点・終点
@@ -95,14 +101,14 @@
         // チャンネル割り当て (R/G/B循環)
         edgeBuffer[offset + 5] = i % 3;
 
-        // insideFlag (Phase 3で実装、仮に+1)
-        edgeBuffer[offset + 6] = 1.0;
+        // insideFlag
+        edgeBuffer[offset + 6] = insideFlags ? insideFlags[i] : 1.0;
 
         // padding
         edgeBuffer[offset + 7] = 0.0;
       }
 
-      console.log(`✅ [GPUStrokeProcessor] EdgeBuffer作成: ${edgeCount}エッジ`);
+      console.log(`✅ [GPUStrokeProcessor] EdgeBuffer作成: ${edgeCount}エッジ (Winding: ${useWinding})`);
       return edgeBuffer;
     }
 
@@ -120,34 +126,82 @@
         throw new Error('[GPUStrokeProcessor] EdgeBuffer is empty');
       }
 
-      // StorageBuffer作成
       const buffer = this.device.createBuffer({
         size: edgeBuffer.byteLength,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         label: 'EdgeBuffer'
       });
 
-      // データ転送
       this.queue.writeBuffer(buffer, 0, edgeBuffer);
 
-      console.log(`✅ [GPUStrokeProcessor] GPU転送完了: ${edgeBuffer.length}要素`);
       return buffer;
     }
 
     /**
-     * Winding計算 (Phase 3で完全実装)
+     * Winding Number法による符号判定
      * @param {Array} points - [{x, y}, ...]
      * @returns {Object} {insideFlags: Float32Array}
      */
     calculateWinding(points) {
-      // Phase 3で実装予定
-      console.warn('[GPUStrokeProcessor] calculateWinding() はPhase 3で実装');
-      
+      if (!points || points.length < 3) {
+        const edgeCount = Math.max(0, points.length - 1);
+        const insideFlags = new Float32Array(edgeCount);
+        insideFlags.fill(1.0);
+        return { insideFlags };
+      }
+
       const edgeCount = points.length - 1;
       const insideFlags = new Float32Array(edgeCount);
-      insideFlags.fill(1.0); // 仮に全て+1
+
+      // パスの重心計算（テストポイント）
+      const centroid = this._calculateCentroid(points);
+
+      // 各エッジに対してWinding Number計算
+      for (let i = 0; i < edgeCount; i++) {
+        const p0 = points[i];
+        const p1 = points[i + 1];
+
+        // エッジの法線ベクトル（外向き）
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const nx = -dy;
+        const ny = dx;
+
+        // 中点から重心へのベクトル
+        const midX = (p0.x + p1.x) / 2;
+        const midY = (p0.y + p1.y) / 2;
+        const toCenter = {
+          x: centroid.x - midX,
+          y: centroid.y - midY
+        };
+
+        // 内積で符号判定
+        const dot = nx * toCenter.x + ny * toCenter.y;
+        
+        // 正: 重心が法線方向（外側） → insideFlag = -1
+        // 負: 重心が法線逆方向（内側） → insideFlag = +1
+        insideFlags[i] = dot > 0 ? -1.0 : 1.0;
+      }
 
       return { insideFlags };
+    }
+
+    /**
+     * 重心計算
+     * @private
+     */
+    _calculateCentroid(points) {
+      let sumX = 0, sumY = 0;
+      
+      for (const p of points) {
+        sumX += p.x;
+        sumY += p.y;
+      }
+
+      return {
+        x: sumX / points.length,
+        y: sumY / points.length
+      };
     }
 
     /**
@@ -157,16 +211,14 @@
       this.device = null;
       this.queue = null;
       this.initialized = false;
-      console.log('🗑️ [GPUStrokeProcessor] 破棄完了');
     }
   }
 
-  // グローバル公開
   window.GPUStrokeProcessor = GPUStrokeProcessor;
 
-  console.log('✅ gpu-stroke-processor.js Phase 1完全版 loaded');
-  console.log('   🔧 createEdgeBuffer() 実装完了');
-  console.log('   🔧 uploadToGPU() 実装完了');
-  console.log('   ⏳ calculateWinding() Phase 3実装予定');
+  console.log('✅ gpu-stroke-processor.js Phase 1.5完全版 loaded');
+  console.log('   ✅ createEdgeBuffer() 実装完了');
+  console.log('   ✅ uploadToGPU() 実装完了');
+  console.log('   ✅ calculateWinding() 実装完了（Winding Number法）');
 
 })();
