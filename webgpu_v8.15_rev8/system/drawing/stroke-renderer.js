@@ -1,7 +1,7 @@
 /**
  * ================================================================================
  * system/drawing/stroke-renderer.js
- * Phase 9: 完全動作・消しゴム実装版
+ * Phase 1: 依存関係明確化・ログクリーンアップ版
  * ================================================================================
  * 
  * 【責務】
@@ -12,22 +12,17 @@
  * 
  * 【依存Parents】
  * - webgpu-drawing-layer.js (GPUDevice/Queue)
- * - webgpu-geometry-layer.js (描画処理)
+ * - webgpu-geometry-layer.js (描画処理) ★Phase 1追加
  * - earcut-triangulator.js (Triangulation)
  * - webgpu-texture-bridge.js (Texture → Sprite)
  * 
  * 【依存Children】
  * - brush-core.js (呼び出し元)
  * 
- * 【Phase 9改修】
- * ✅ 消しゴム: color.a = 1.0 で完全不透明軌跡（Blend側で減算）
- * ✅ チラつき解消: await onSubmittedWorkDone()
- * ✅ 初期化待機: 最大5秒リトライ
- * 
- * 【GPT5アドバイス対応】
- * ✅ SDF Compute経由削除
- * ✅ Polygon → VertexBuffer 直接転送
- * ✅ Transform Matrix でNDC変換
+ * 【Phase 1改修】
+ * ✅ 親子依存関係ヘッダー追記
+ * ✅ 過剰なコンソールログ削除
+ * ✅ 初期化完了ログのみ残す
  * 
  * ================================================================================
  */
@@ -52,7 +47,7 @@
 
       this.initializationPromise = (async () => {
         let retries = 0;
-        const maxRetries = 50; // 5秒
+        const maxRetries = 50;
 
         while (retries < maxRetries) {
           this.webgpuDrawingLayer = window.WebGPUDrawingLayer;
@@ -85,46 +80,34 @@
         }
 
         this.initialized = true;
-        console.log('✅ [StrokeRenderer] Phase 9完全版初期化完了');
+        console.log('✅ [StrokeRenderer] Phase 1初期化完了');
       })();
 
       return this.initializationPromise;
     }
 
     async renderPreview(polygon, settings, container) {
-      if (!this.initialized) {
-        console.warn('[StrokeRenderer] Not initialized');
-        return null;
-      }
-
-      if (!polygon || polygon.length < 6) {
-        return null;
-      }
+      if (!this.initialized) return null;
+      if (!polygon || polygon.length < 6) return null;
 
       try {
         const mode = settings?.mode || 'pen';
         this.webgpuGeometryLayer.setBlendMode(mode);
 
         const indices = this.triangulator.triangulate(polygon);
-        if (!indices || indices.length === 0) {
-          console.warn('[StrokeRenderer] Triangulation failed');
-          return null;
-        }
+        if (!indices || indices.length === 0) return null;
 
         const bounds = this._calculateBounds(polygon);
         const width = Math.ceil(bounds.maxX - bounds.minX) + 4;
         const height = Math.ceil(bounds.maxY - bounds.minY) + 4;
 
-        if (width <= 0 || height <= 0) {
-          return null;
-        }
+        if (width <= 0 || height <= 0) return null;
 
         const normalizedPolygon = this._normalizePolygon(polygon, bounds);
         const transform = this._createTransformMatrix(width, height);
         
-        // 消しゴム: color.a = 1.0（完全不透明）でBlend側で減算
         const color = mode === 'eraser' 
-          ? new Float32Array([1, 1, 1, 1.0])  // 白色・完全不透明
+          ? new Float32Array([1, 1, 1, 1.0])
           : this._getColor(settings);
 
         this.webgpuGeometryLayer.updateUniforms(transform, color);
@@ -143,7 +126,6 @@
         this.webgpuGeometryLayer.render(encoder, texture, width, height);
         device.queue.submit([encoder.finish()]);
 
-        // GPU完了待機（チラつき防止）
         await device.queue.onSubmittedWorkDone();
 
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
@@ -206,8 +188,6 @@
     }
 
     _createTransformMatrix(width, height) {
-      // Local Canvas座標 → NDC座標系変換
-      // NDC: x,y ∈ [-1, 1], Y軸反転
       const scaleX = 2.0 / width;
       const scaleY = -2.0 / height;
       const translateX = -1.0;
@@ -239,5 +219,7 @@
 
   window.StrokeRenderer = StrokeRenderer;
   window.strokeRenderer = new StrokeRenderer();
+
+  console.log('✅ stroke-renderer.js (Phase 1改修版) loaded');
 
 })();
