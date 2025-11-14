@@ -2,16 +2,12 @@
  * @file core-runtime.js
  * @description 外部APIレイヤー・レガシー互換性
  * 
- * 【Phase 4 改修内容 - Fill Tool 対応】
- * ✅ api.tool.setFill() メソッド追加
- * ✅ api.tool.set('fill') を正式サポート
- * 
- * 【Phase 3 改修内容 - Drawing API簡素化】
- * - api.tool.* を BrushCore.setMode() に直接接続
- * - DrawingEngine を経由しない直接呼び出しに変更
+ * 【Phase 5 改修内容 - UI例外修正】
+ * ✅ updateLayerPanelUI 呼び出しを try/catch で保護
+ * ✅ layer:panel-update-requested イベント駆動に移行
  * 
  * 【親ファイル (このファイルが依存)】
- * - core-engine.js (内部システム・リサイズ/エクスポートの真実の情報源)
+ * - core-engine.js (内部システム)
  * - system/drawing/brush-core.js (BrushCore)
  * - system/drawing/brush-settings.js (BrushSettings)
  * - coordinate-system.js (座標変換)
@@ -222,6 +218,27 @@
             }
         },
         
+        /**
+         * 🔧 Phase 5: レイヤーパネルUI更新（イベント駆動）
+         * try/catch で保護し、エラーが発生しても後続処理を継続
+         */
+        _updateLayerPanelUI() {
+            try {
+                if (this.internal.layerManager && 
+                    typeof this.internal.layerManager.updateLayerPanelUI === 'function') {
+                    this.internal.layerManager.updateLayerPanelUI();
+                } else {
+                    // イベント駆動に移行
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('layer:panel-update-requested');
+                    }
+                }
+            } catch (e) {
+                // 非致命的エラーとして処理
+                console.warn('[CoreRuntime] LayerPanel update failed (non-fatal):', e.message);
+            }
+        },
+        
         api: {
             draw: {
                 clear: () => {
@@ -247,11 +264,6 @@
                 }
             },
             
-            /**
-             * 🔧 Phase 4改修: Fill Tool 対応
-             * - setFill() メソッド追加
-             * - set('fill') を正式サポート
-             */
             tool: {
                 set: (toolName) => {
                     if (!window.BrushCore) {
@@ -259,22 +271,18 @@
                         return false;
                     }
                     
-                    // fill を含む全ツールをサポート
                     const validTools = ['pen', 'eraser', 'fill'];
                     if (!validTools.includes(toolName)) {
                         console.warn(`[CoreRuntime] Invalid tool: ${toolName}`);
                         return false;
                     }
                     
-                    // BrushCore に直接ツールを設定
                     window.BrushCore.setMode(toolName);
                     
-                    // カメラカーソル更新
                     if (CoreRuntime.internal.cameraSystem?.updateCursor) {
                         CoreRuntime.internal.cameraSystem.updateCursor();
                     }
                     
-                    // イベント発行（tool:select と tool:changed の両方）
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('tool:select', { tool: toolName });
                         window.TegakiEventBus.emit('tool:changed', { tool: toolName });
@@ -289,7 +297,7 @@
                 
                 setPen: () => CoreRuntime.api.tool.set('pen'),
                 setEraser: () => CoreRuntime.api.tool.set('eraser'),
-                setFill: () => CoreRuntime.api.tool.set('fill') // 🎨 Phase 4: 追加
+                setFill: () => CoreRuntime.api.tool.set('fill')
             },
             
             brush: {
@@ -394,7 +402,7 @@
                     if (CoreRuntime.internal.layerManager) {
                         const result = CoreRuntime.internal.layerManager.createLayer(name, isBackground);
                         if (result) {
-                            CoreRuntime.internal.layerManager.updateLayerPanelUI();
+                            CoreRuntime._updateLayerPanelUI();
                             CoreRuntime.internal.layerManager.updateStatusDisplay();
                         }
                         return result;
@@ -413,7 +421,7 @@
                     const layers = CoreRuntime.internal.layerManager?.getLayers();
                     if (layers && layers[index]) {
                         layers[index].visible = visible;
-                        CoreRuntime.internal.layerManager.updateLayerPanelUI();
+                        CoreRuntime._updateLayerPanelUI();
                         return true;
                     }
                     return false;
@@ -422,7 +430,7 @@
                     const layers = CoreRuntime.internal.layerManager?.getLayers();
                     if (layers && layers[index]) {
                         layers[index].alpha = Math.max(0, Math.min(1, opacity));
-                        CoreRuntime.internal.layerManager.updateLayerPanelUI();
+                        CoreRuntime._updateLayerPanelUI();
                         return true;
                     }
                     return false;
@@ -567,6 +575,4 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 4 - Fill対応版) loaded');
-console.log('   ✓ api.tool.setFill() 追加');
-console.log('   ✓ api.tool.set("fill") サポート');
+console.log('✅ core-runtime.js (Phase 5 - UI例外修正版) loaded');

@@ -1,10 +1,10 @@
-config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
-config.js:508    🔧 PerfectFreehand設定リニア化
-config.js:509    ✓ thinning: 0 (線の太り補正無効)
-config.js:510    ✓ smoothing: 0 (補間最小化)
-config.js:511    ✓ streamline: 0 (遅延補正なし)
-data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
-batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ config.js v8.14.2 Phase 1改修版 loaded
+    🔧 PerfectFreehand設定リニア化
+    ✓ thinning: 0 (線の太り補正無効)
+    ✓ smoothing: 0 (補間最小化)
+    ✓ streamline: 0 (遅延補正なし)
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
  ✅ popup-manager.js (quick-access除外対応版) loaded
  ✅ state-manager.js (Phase 8完全実装版) loaded
  ✅ settings-manager.js Phase 2 loaded
@@ -45,9 +45,7 @@ batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
  ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
     ✓ 消しゴムモード削除
     ✓ ペン描画に特化
- ✅ stroke-renderer.js (Phase 1: Legacy/MSDF併存版) loaded
-    🔧 WebGPUGeometryLayer依存をオプショナル化
-    ✅ 初期化エラー回避
+ ✅ stroke-renderer.js (Phase 2完成版) loaded
  ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
  ✅ brush-settings.js (Phase 3-D Clean) loaded
  ✅ brush-core.js Phase 3.8 loaded
@@ -64,14 +62,14 @@ batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
     🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
  ✅ png-exporter.js v8.29.0 loaded
     🔧 generatePreview()メソッド追加
-png-exporter.js:257    🔧 エラーハンドリング強化
-png-exporter.js:258    🔧 Blob生成の確実性向上
-webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
-webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
-psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
-psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
-psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
-apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+    🔧 エラーハンドリング強化
+    🔧 Blob生成の確実性向上
+ ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+ ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+    ⚠️ 実装は将来フェーズで追加予定
+    ✓ エラーメッセージで開発中を通知
+ ✅ apng-exporter.js v8.31.0 loaded
 mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
 dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
 dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
@@ -103,18 +101,12 @@ export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
 ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
 ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
 ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
-core-runtime.js:570 ✅ core-runtime.js (Phase 4 - Fill対応版) loaded
-core-runtime.js:571    ✓ api.tool.setFill() 追加
-core-runtime.js:572    ✓ api.tool.set("fill") サポート
+core-runtime.js:578 ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
 core-engine.js:717 ✅ core-engine.js v8.33.0 loaded
 core-engine.js:718    🔧 StrokeRecorder二重初期化修正
 core-engine.js:719    ✅ 既存インスタンス使用方式に変更
-core-initializer.js:485 ✅ core-initializer.js Phase 1完全修正版 loaded
-core-initializer.js:486    ✅ GPU Stroke Processor初期化対応
-core-initializer.js:487    ✅ MSDF Pipeline Manager BindGroup修正版統合
-core-initializer.js:488    ✅ DOM構築順序維持（元実装継承）
-core-initializer.js:295 ✅ [PixiJS] Renderer initialized
-core-initializer.js:296    📊 Type: 1
+core-initializer.js:481 ✅ core-initializer.js (Phase 2完成版) loaded
+core-initializer.js:296 ✅ [PixiJS] Renderer initialized
 core-engine.js:617 ✅ [CoreEngine] Using existing strokeRecorder instance
 core-engine.js:634 ✅ [CoreEngine] Using existing strokeRenderer instance
 brush-core.js:94 ✅ [BrushCore] Phase 3.8初期化完了 (MSDF統合版)
@@ -129,53 +121,19 @@ popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
 popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
-core-initializer.js:335 [App] Starting WebGPU Phase 1 MSDF initialization (BindGroup Fix)...
-core-initializer.js:342 [App] ✅ StrokeRenderer found, initializing WebGPU MSDF...
-core-initializer.js:172 [WebGPU] Phase 1 MSDF初期化開始（BindGroup修正版）...
-core-initializer.js:181 [WebGPU] Initializing Drawing Layer...
 webgpu-drawing-layer.js:51 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
 initialize @ webgpu-drawing-layer.js:51
-initializeWebGPU @ core-initializer.js:182
-initialize @ core-initializer.js:343
-await in initialize
-initialize @ core-initializer.js:465
-（匿名） @ index.html:124
 webgpu-drawing-layer.js:77 ✅ [WebGPUDrawingLayer] Phase 3.1 Initialized
-webgpu-drawing-layer.js:78    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
+webgpu-drawing-layer.js:78    📊 Device: GPUDevice
 webgpu-drawing-layer.js:79    📊 Format: rgba8unorm
-core-initializer.js:187 ✅ [WebGPU] Drawing Layer initialized
-core-initializer.js:198 [WebGPU] Initializing GPU Stroke Processor...
 gpu-stroke-processor.js:44 ✅ [GPUStrokeProcessor] Phase 1.1初期化完了
-core-initializer.js:200 ✅ [WebGPU] GPU Stroke Processor initialized
-core-initializer.js:208 [WebGPU] Initializing MSDF Pipeline Manager...
 msdf-pipeline-manager.js:55 ✅ [MSDFPipelineManager] Phase 3.5初期化完了 (Render統合版)
-core-initializer.js:210 ✅ [WebGPU] MSDF Pipeline Manager initialized
-core-initializer.js:218 [WebGPU] Initializing Texture Bridge...
 webgpu-texture-bridge.js:48 ✅ [WebGPUTextureBridge] Phase 4完全版
-core-initializer.js:224 ✅ [WebGPU] Texture Bridge initialized
-core-initializer.js:232 [WebGPU] Initializing StrokeRenderer...
-stroke-renderer.js:100 ✅ [StrokeRenderer] Phase 1初期化完了
-stroke-renderer.js:101    📊 Legacy Mode: false
-stroke-renderer.js:102    📊 MSDF Mode: undefined
-stroke-renderer.js:105 ⚠️ [StrokeRenderer] 描画エンジン未初期化 - Phase 2実装待ち
-（匿名） @ stroke-renderer.js:105
-initialize @ stroke-renderer.js:108
-initializeWebGPU @ core-initializer.js:233
-await in initializeWebGPU
-initialize @ core-initializer.js:343
-await in initialize
-initialize @ core-initializer.js:465
-（匿名） @ index.html:124
-core-initializer.js:234 ✅ [WebGPU] StrokeRenderer initialized
-core-initializer.js:236 ✅ [WebGPU] Phase 1 MSDF初期化完了（BindGroup修正版）
-core-initializer.js:237    📊 Drawing Layer: OK
-core-initializer.js:238    📊 GPU Stroke Processor: OK
-core-initializer.js:239    📊 MSDF Pipeline Manager: OK (binding: 0,1,2)
-core-initializer.js:240    📊 Texture Bridge: OK
-core-initializer.js:241    📊 Stroke Renderer: OK
-core-initializer.js:344 [App] WebGPU MSDF enabled: true
+stroke-renderer.js:87 ✅ [StrokeRenderer] MSDF Mode enabled
+core-initializer.js:237 ✅ [WebGPU] StrokeRenderer MSDF Mode enabled
+core-initializer.js:242 ✅ [WebGPU] Phase 2 MSDF初期化完了
 index.html:125 ✅ Application initialized (WebGPU MSDF Pipeline版)
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
 gpu-stroke-processor.js:122 ✅ [GPUStrokeProcessor] EdgeBuffer uploaded (24 edges, 768 bytes)
-gpu-stroke-processor.js:122 ✅ [GPUStrokeProcessor] EdgeBuffer uploaded (41 edges, 1312 bytes)
+gpu-stroke-processor.js:122 ✅ [GPUStrokeProcessor] EdgeBuffer uploaded (15 edges, 480 bytes)

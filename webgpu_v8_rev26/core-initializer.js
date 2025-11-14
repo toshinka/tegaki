@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-initializer.js - Phase 1: MSDF完全修正版
+ * core-initializer.js - Phase 2完成版: MSDF Mode明示化
  * ================================================================================
  * 
  * 【責務】
@@ -8,12 +8,12 @@
  * - WebGPU MSDF Pipeline初期化フロー管理
  * - PixiJS/UI/EventBus連携
  * 
- * 【Phase 1改修】
- * ✅ MSDF Pipeline BindGroup修正版統合
- * ✅ gpu-stroke-processor.js / msdf-pipeline-manager.js 初期化
- * ✅ DOM構築順序維持（元の実装継承）
+ * 【Phase 2改修】
+ * ✅ StrokeRenderer.initMSDFMode() 呼び出し追加
+ * ✅ MSDF Pipeline完全初期化保証
+ * ✅ デバッグログクリーン化
  * 
- * 【依存Parents】
+ * 【親ファイル依存】
  * - webgpu-drawing-layer.js
  * - gpu-stroke-processor.js
  * - msdf-pipeline-manager.js
@@ -159,7 +159,7 @@ window.CoreInitializer = (function() {
     }
 
     /**
-     * ✅ Phase 1: MSDF Pipeline完全修正版初期化
+     * ✅ Phase 2完成版: MSDF Mode明示化
      */
     async function initializeWebGPU(strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
@@ -169,8 +169,6 @@ window.CoreInitializer = (function() {
             return false;
         }
 
-        console.log('[WebGPU] Phase 1 MSDF初期化開始（BindGroup修正版）...');
-
         try {
             // 1. WebGPU Drawing Layer初期化
             if (!window.WebGPUDrawingLayer) {
@@ -178,36 +176,36 @@ window.CoreInitializer = (function() {
                 return false;
             }
 
-            console.log('[WebGPU] Initializing Drawing Layer...');
             const drawingLayerInit = await window.WebGPUDrawingLayer.initialize();
             if (!drawingLayerInit) {
                 console.error('[WebGPU] Drawing Layer initialization failed');
                 return false;
             }
-            console.log('✅ [WebGPU] Drawing Layer initialized');
 
             const device = window.WebGPUDrawingLayer.getDevice();
             const format = 'rgba8unorm';
 
-            // ✅ 2. GPU Stroke Processor初期化（修正版）
+            // 2. GPU Stroke Processor初期化
             if (!window.GPUStrokeProcessor) {
                 console.error('[WebGPU] GPUStrokeProcessor not found');
                 return false;
             }
 
-            console.log('[WebGPU] Initializing GPU Stroke Processor...');
             await window.GPUStrokeProcessor.initialize(device);
-            console.log('✅ [WebGPU] GPU Stroke Processor initialized');
 
-            // ✅ 3. MSDF Pipeline Manager初期化（BindGroup修正版）
+            // 3. MSDF Pipeline Manager初期化
             if (!window.MSDFPipelineManager) {
                 console.error('[WebGPU] MSDFPipelineManager not found');
                 return false;
             }
 
-            console.log('[WebGPU] Initializing MSDF Pipeline Manager...');
             await window.MSDFPipelineManager.initialize(device, format);
-            console.log('✅ [WebGPU] MSDF Pipeline Manager initialized');
+            
+            // ✅ Phase 2: Pipeline準備完了を確認
+            if (!window.MSDFPipelineManager.renderPipeline) {
+                console.error('[WebGPU] MSDF Render Pipeline not created');
+                return false;
+            }
 
             // 4. WebGPU Texture Bridge初期化
             if (!window.WebGPUTextureBridge) {
@@ -215,35 +213,38 @@ window.CoreInitializer = (function() {
                 return false;
             }
 
-            console.log('[WebGPU] Initializing Texture Bridge...');
             const bridgeInit = await window.WebGPUTextureBridge.initialize();
             if (!bridgeInit) {
                 console.error('[WebGPU] Texture Bridge initialization failed');
                 return false;
             }
-            console.log('✅ [WebGPU] Texture Bridge initialized');
 
-            // 5. StrokeRenderer初期化
+            // 5. StrokeRenderer Phase 1初期化
             if (!strokeRenderer) {
-                console.error('[WebGPU] StrokeRenderer not provided!');
+                console.error('[WebGPU] StrokeRenderer not provided');
                 return false;
             }
 
-            console.log('[WebGPU] Initializing StrokeRenderer...');
             await strokeRenderer.initialize();
-            console.log('✅ [WebGPU] StrokeRenderer initialized');
 
-            console.log('✅ [WebGPU] Phase 1 MSDF初期化完了（BindGroup修正版）');
-            console.log('   📊 Drawing Layer: OK');
-            console.log('   📊 GPU Stroke Processor: OK');
-            console.log('   📊 MSDF Pipeline Manager: OK (binding: 0,1,2)');
-            console.log('   📊 Texture Bridge: OK');
-            console.log('   📊 Stroke Renderer: OK');
+            // ✅ Phase 2: StrokeRenderer MSDF Mode明示化
+            if (typeof strokeRenderer.initMSDFMode === 'function') {
+                strokeRenderer.initMSDFMode(
+                    window.MSDFPipelineManager.renderPipeline,
+                    device,
+                    format
+                );
+                console.log('✅ [WebGPU] StrokeRenderer MSDF Mode enabled');
+            } else {
+                console.warn('[WebGPU] strokeRenderer.initMSDFMode not found');
+            }
+
+            console.log('✅ [WebGPU] Phase 2 MSDF初期化完了');
 
             return true;
 
         } catch (error) {
-            console.error('❌ [WebGPU] Phase 1初期化エラー:', error);
+            console.error('❌ [WebGPU] Phase 2初期化エラー:', error);
             return false;
         }
     }
@@ -293,7 +294,6 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
             console.log('✅ [PixiJS] Renderer initialized');
-            console.log('   📊 Type:', this.pixiApp.renderer.type);
             
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
@@ -331,17 +331,13 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
-            // ✅ WebGPU Phase 1 MSDF初期化（BindGroup修正版）
-            console.log('[App] Starting WebGPU Phase 1 MSDF initialization (BindGroup Fix)...');
-            
+            // ✅ WebGPU Phase 2完成版初期化
             const strokeRenderer = window.strokeRenderer;
             
             if (!strokeRenderer) {
-                console.error('[App] ❌ StrokeRenderer not found!');
+                console.error('[App] ❌ StrokeRenderer not found');
             } else {
-                console.log('[App] ✅ StrokeRenderer found, initializing WebGPU MSDF...');
                 this.webgpuEnabled = await initializeWebGPU(strokeRenderer);
-                console.log('[App] WebGPU MSDF enabled:', this.webgpuEnabled);
             }
             
             this.initializeExportPopup();
@@ -482,7 +478,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase 1完全修正版 loaded');
-console.log('   ✅ GPU Stroke Processor初期化対応');
-console.log('   ✅ MSDF Pipeline Manager BindGroup修正版統合');
-console.log('   ✅ DOM構築順序維持（元実装継承）');
+console.log('✅ core-initializer.js (Phase 2完成版) loaded');
