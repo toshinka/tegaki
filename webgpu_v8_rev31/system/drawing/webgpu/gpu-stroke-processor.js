@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * gpu-stroke-processor.js Phase 1-FIX完全版 - edgeCount明示化対応
+ * gpu-stroke-processor.js Phase 6最終版 - 6頂点展開（triangle-list完全対応）
  * ================================================================================
  * 
  * 【依存Parents】
@@ -11,10 +11,16 @@
  * - msdf-pipeline-manager.js (VertexBuffer + edgeCount受け渡し)
  * - brush-core.js (呼び出し元)
  * 
- * 【Phase 1-FIX改修】
- * ✅ uploadToGPU(): {gpuBuffer, elementCount} 返却対応
- * ✅ gpuBuffer.size依存を完全排除
- * ✅ createEdgeBuffer(): EdgeCountメタデータ明示
+ * 【Phase 6最終版】
+ * ✅ createPolygonVertexBuffer(): 各セグメントに6頂点生成（2三角形）
+ * ✅ vertexCount = (numPoints - 1) * 6
+ * ✅ Triangle-list描画完全対応（index buffer不要）
+ * 
+ * 頂点展開パターン（各セグメント）:
+ *   Triangle 1: [0, 1, 2] → 左下、右下、左上
+ *   Triangle 2: [1, 3, 2] → 右下、右上、左上
+ * 
+ * つまり6頂点: [0, 1, 2, 1, 3, 2]
  * 
  * ================================================================================
  */
@@ -37,7 +43,7 @@
     }
 
     /**
-     * Polygon頂点バッファ作成
+     * Polygon頂点バッファ作成（Phase 6: 6頂点展開）
      * @param {Array} points - [{x, y, pressure}, ...] または [x, y, ...]
      * @returns {{buffer: Float32Array, vertexCount: number}}
      */
@@ -60,58 +66,45 @@
         return null;
       }
 
-      const vertexCount = numPoints * 2;
+      const numSegments = numPoints - 1;
+      const vertexCount = numSegments * 6;
       const buffer = new Float32Array(vertexCount * 7);
 
-      for (let i = 0; i < numPoints; i++) {
-        const currIdx = i * 2;
-        const currX = coords[currIdx];
-        const currY = coords[currIdx + 1];
+      for (let i = 0; i < numSegments; i++) {
+        const prevIdx = Math.max(0, i - 1);
+        const currIdx = i;
+        const nextIdx = i + 1;
+        const next2Idx = Math.min(numPoints - 1, i + 2);
 
-        let prevX, prevY;
-        if (i === 0) {
-          prevX = currX;
-          prevY = currY;
-        } else {
-          const prevIdx = (i - 1) * 2;
-          prevX = coords[prevIdx];
-          prevY = coords[prevIdx + 1];
-        }
+        const prevX = coords[prevIdx * 2];
+        const prevY = coords[prevIdx * 2 + 1];
+        const currX = coords[currIdx * 2];
+        const currY = coords[currIdx * 2 + 1];
+        const nextX = coords[nextIdx * 2];
+        const nextY = coords[nextIdx * 2 + 1];
+        const next2X = coords[next2Idx * 2];
+        const next2Y = coords[next2Idx * 2 + 1];
 
-        let nextX, nextY;
-        if (i === numPoints - 1) {
-          nextX = currX;
-          nextY = currY;
-        } else {
-          const nextIdx = (i + 1) * 2;
-          nextX = coords[nextIdx];
-          nextY = coords[nextIdx + 1];
-        }
+        const baseIdx = i * 6 * 7;
 
-        const leftIdx = (i * 2) * 7;
-        buffer[leftIdx + 0] = prevX;
-        buffer[leftIdx + 1] = prevY;
-        buffer[leftIdx + 2] = currX;
-        buffer[leftIdx + 3] = currY;
-        buffer[leftIdx + 4] = nextX;
-        buffer[leftIdx + 5] = nextY;
-        buffer[leftIdx + 6] = -1.0;
+        const v0 = [prevX, prevY, currX, currY, nextX, nextY, -1.0];
+        const v1 = [prevX, prevY, currX, currY, nextX, nextY, 1.0];
+        const v2 = [currX, currY, nextX, nextY, next2X, next2Y, -1.0];
+        const v3 = [currX, currY, nextX, nextY, next2X, next2Y, 1.0];
 
-        const rightIdx = (i * 2 + 1) * 7;
-        buffer[rightIdx + 0] = prevX;
-        buffer[rightIdx + 1] = prevY;
-        buffer[rightIdx + 2] = currX;
-        buffer[rightIdx + 3] = currY;
-        buffer[rightIdx + 4] = nextX;
-        buffer[rightIdx + 5] = nextY;
-        buffer[rightIdx + 6] = 1.0;
+        for (let j = 0; j < 7; j++) buffer[baseIdx + j] = v0[j];
+        for (let j = 0; j < 7; j++) buffer[baseIdx + 7 + j] = v1[j];
+        for (let j = 0; j < 7; j++) buffer[baseIdx + 14 + j] = v2[j];
+        for (let j = 0; j < 7; j++) buffer[baseIdx + 21 + j] = v1[j];
+        for (let j = 0; j < 7; j++) buffer[baseIdx + 28 + j] = v3[j];
+        for (let j = 0; j < 7; j++) buffer[baseIdx + 35 + j] = v2[j];
       }
 
       return { buffer, vertexCount };
     }
 
     /**
-     * EdgeBuffer作成（Phase 1-FIX: edgeCount明示）
+     * EdgeBuffer作成
      * @returns {{buffer: Float32Array, edgeCount: number}}
      */
     createEdgeBuffer(points) {
@@ -151,7 +144,7 @@
     }
 
     /**
-     * GPU BufferへUpload（Phase 1-FIX: elementCount返却）
+     * GPU BufferへUpload
      * @param {Float32Array} data
      * @param {string} usage - 'vertex' | 'storage'
      * @param {number} elementStrideBytes - 1要素あたりのバイト数
@@ -187,7 +180,7 @@
     }
 
     /**
-     * Bounds計算（margin拡大: 50px）
+     * Bounds計算
      */
     calculateBounds(points) {
       let coords;
@@ -232,5 +225,9 @@
   }
 
   window.GPUStrokeProcessor = new GPUStrokeProcessor();
+
+  console.log('✅ gpu-stroke-processor.js Phase 6最終版 loaded');
+  console.log('   🔧 6頂点展開: (numPoints-1) × 6頂点（2三角形）');
+  console.log('   🔧 Triangle-list完全対応（index buffer不要）');
 
 })();
