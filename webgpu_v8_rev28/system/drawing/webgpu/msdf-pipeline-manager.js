@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 3 完全統合版 - Polygon Pipeline実装
+ * msdf-pipeline-manager.js Phase 3完全修正版 - BindGroup統合対応
  * ================================================================================
  * 
  * 【依存Parents】
@@ -14,9 +14,9 @@
  * 
  * 【Phase 3改修完了】
  * ✅ Polygon Render Pipeline実装
- * ✅ Quad展開Vertex Shader統合
- * ✅ VertexBuffer対応
- * ✅ EdgeBuffer互換維持
+ * ✅ 2つのBindGroup対応（@group(0), @group(1)）
+ * ✅ Vertex/Fragment Shader統合
+ * ✅ Duplicate binding エラー解消
  * 
  * ================================================================================
  */
@@ -34,7 +34,7 @@
       this.jfaPipeline = null;
       this.encodePipeline = null;
       this.renderPipeline = null;
-      this.polygonRenderPipeline = null; // Phase 3追加
+      this.polygonRenderPipeline = null;
       
       this.shaders = {};
       this.initialized = false;
@@ -58,21 +58,19 @@
       this.shaders.jfaPass = window.MSDF_JFA_PASS_WGSL;
       this.shaders.encode = window.MSDF_ENCODE_WGSL;
       this.shaders.render = window.MSDF_RENDER_WGSL;
-      this.shaders.quadExpansion = window.MSDF_QUAD_EXPANSION_WGSL; // Phase 3追加
+      this.shaders.quadExpansion = window.MSDF_QUAD_EXPANSION_WGSL;
 
       if (!this.shaders.seedInit) throw new Error('MSDF_SEED_INIT_WGSL not found');
       if (!this.shaders.jfaPass) throw new Error('MSDF_JFA_PASS_WGSL not found');
       if (!this.shaders.encode) throw new Error('MSDF_ENCODE_WGSL not found');
       if (!this.shaders.render) throw new Error('MSDF_RENDER_WGSL not found');
       
-      // Phase 3: Quad Expansion Shader存在確認（Fallback対応）
       if (!this.shaders.quadExpansion) {
         console.warn('[MSDFPipelineManager] MSDF_QUAD_EXPANSION_WGSL not found - using EdgeBuffer mode');
       }
     }
 
     async _createPipelines() {
-      // Compute Pipelines
       const seedInitModule = this.device.createShaderModule({
         code: this.shaders.seedInit,
         label: 'MSDF Seed Init'
@@ -106,7 +104,6 @@
         label: 'MSDF Encode Pipeline'
       });
 
-      // Render Pipeline (フルスクリーンQuad用)
       const renderModule = this.device.createShaderModule({
         code: this.shaders.render,
         label: 'MSDF Render'
@@ -144,7 +141,6 @@
         label: 'MSDF Render Pipeline'
       });
 
-      // Phase 3: Polygon Render Pipeline（Vertex Buffer対応）
       if (this.shaders.quadExpansion) {
         const quadModule = this.device.createShaderModule({
           code: this.shaders.quadExpansion,
@@ -157,12 +153,12 @@
             module: quadModule,
             entryPoint: 'main',
             buffers: [{
-              arrayStride: 7 * 4, // 7 floats * 4 bytes
+              arrayStride: 7 * 4,
               attributes: [
-                { shaderLocation: 0, offset: 0, format: 'float32x2' },  // prev
-                { shaderLocation: 1, offset: 8, format: 'float32x2' },  // curr
-                { shaderLocation: 2, offset: 16, format: 'float32x2' }, // next
-                { shaderLocation: 3, offset: 24, format: 'float32' }    // side
+                { shaderLocation: 0, offset: 0, format: 'float32x2' },
+                { shaderLocation: 1, offset: 8, format: 'float32x2' },
+                { shaderLocation: 2, offset: 16, format: 'float32x2' },
+                { shaderLocation: 3, offset: 24, format: 'float32' }
               ]
             }]
           },
@@ -190,6 +186,8 @@
           },
           label: 'MSDF Polygon Render Pipeline'
         });
+
+        console.log('✅ [MSDFPipelineManager] Polygon Render Pipeline created');
       }
     }
 
@@ -333,10 +331,6 @@
       }
     }
 
-    /**
-     * MSDF Render（フルスクリーンQuad）
-     * @private
-     */
     _renderMSDF(msdfTexture, width, height, settings = {}) {
       try {
         const outputTexture = this.device.createTexture({
@@ -353,10 +347,7 @@
         });
 
         const renderUniformsData = new Float32Array([
-          0.5,  // threshold
-          0.05, // range
-          settings.opacity !== undefined ? settings.opacity : 1.0,
-          0.0
+          0.5, 0.05, settings.opacity !== undefined ? settings.opacity : 1.0, 0.0
         ]);
         const renderUniformsBuffer = this.device.createBuffer({
           size: renderUniformsData.byteLength,
@@ -417,12 +408,11 @@
     }
 
     /**
-     * Phase 3: Polygon Render（VertexBuffer対応）
-     * @private
+     * Phase 3: Polygon Render（2つのBindGroup対応）
      */
     _renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings = {}) {
       if (!this.polygonRenderPipeline) {
-        console.warn('[MSDFPipelineManager] Polygon Pipeline not available - falling back to fullscreen');
+        console.warn('[MSDFPipelineManager] Polygon Pipeline not available - fallback');
         return this._renderMSDF(msdfTexture, width, height, settings);
       }
 
@@ -440,11 +430,11 @@
           minFilter: 'linear'
         });
 
-        // Quad Uniforms (線幅制御)
+        // @group(0) - Vertex Shader用
         const quadUniformsData = new Float32Array([
           width,
           height,
-          settings.size ? settings.size / 2.0 : 1.5, // halfWidth
+          settings.size ? settings.size / 2.0 : 1.5,
           0.0
         ]);
         const quadUniformsBuffer = this.device.createBuffer({
@@ -453,7 +443,14 @@
         });
         this.queue.writeBuffer(quadUniformsBuffer, 0, quadUniformsData);
 
-        // Render Uniforms
+        const bindGroup0 = this.device.createBindGroup({
+          layout: this.polygonRenderPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: { buffer: quadUniformsBuffer } }
+          ]
+        });
+
+        // @group(1) - Fragment Shader用
         const renderUniformsData = new Float32Array([
           0.5, 0.05, settings.opacity !== undefined ? settings.opacity : 1.0, 0.0
         ]);
@@ -463,7 +460,6 @@
         });
         this.queue.writeBuffer(renderUniformsBuffer, 0, renderUniformsData);
 
-        // Color
         let colorData;
         if (settings.mode === 'eraser') {
           colorData = new Float32Array([1.0, 1.0, 1.0, 1.0]);
@@ -477,11 +473,13 @@
         });
         this.queue.writeBuffer(colorBuffer, 0, colorData);
 
-        // BindGroup作成（仮: group(0)にQuad Uniforms想定）
-        const bindGroup = this.device.createBindGroup({
-          layout: this.polygonRenderPipeline.getBindGroupLayout(0),
+        const bindGroup1 = this.device.createBindGroup({
+          layout: this.polygonRenderPipeline.getBindGroupLayout(1),
           entries: [
-            { binding: 0, resource: { buffer: quadUniformsBuffer } }
+            { binding: 0, resource: sampler },
+            { binding: 1, resource: msdfTexture.createView() },
+            { binding: 2, resource: { buffer: renderUniformsBuffer } },
+            { binding: 3, resource: { buffer: colorBuffer } }
           ]
         });
 
@@ -497,7 +495,8 @@
 
         renderPass.setPipeline(this.polygonRenderPipeline);
         renderPass.setVertexBuffer(0, vertexBuffer);
-        renderPass.setBindGroup(0, bindGroup);
+        renderPass.setBindGroup(0, bindGroup0);
+        renderPass.setBindGroup(1, bindGroup1);
         renderPass.draw(vertexCount, 1, 0, 0);
         renderPass.end();
 
@@ -524,15 +523,6 @@
       };
     }
 
-    /**
-     * MSDF生成エントリーポイント（Phase 3統合版）
-     * @param {GPUBuffer} gpuBuffer - EdgeBuffer または VertexBuffer
-     * @param {Object} bounds - {minX, minY, maxX, maxY}
-     * @param {GPUTexture} existingMSDF - 既存MSDF（未使用）
-     * @param {Object} settings - ブラシ設定
-     * @param {GPUBuffer} vertexBuffer - VertexBuffer（Phase 3追加）
-     * @param {number} vertexCount - 頂点数（Phase 3追加）
-     */
     async generateMSDF(gpuBuffer, bounds, existingMSDF = null, settings = {}, vertexBuffer = null, vertexCount = 0) {
       if (!this.initialized) {
         throw new Error('[MSDFPipelineManager] Not initialized');
@@ -548,7 +538,6 @@
         return null;
       }
 
-      // 1. Seed初期化
       const seedTexture = this.device.createTexture({
         size: [width, height],
         format: 'rgba32float',
@@ -557,10 +546,8 @@
 
       this._seedInitPass(gpuBuffer, seedTexture, width, height, edgeCount);
       
-      // 2. JFA実行
       const jfaResult = this._executeJFA(seedTexture, width, height);
 
-      // 3. MSDF Encode
       const msdfTexture = this.device.createTexture({
         size: [width, height],
         format: 'rgba16float',
@@ -569,7 +556,6 @@
 
       this._encodePass(jfaResult.resultTexture, gpuBuffer, msdfTexture, width, height, edgeCount);
       
-      // 4. Render（Phase 3: VertexBuffer優先）
       let finalTexture;
       if (vertexBuffer && vertexCount > 0) {
         finalTexture = this._renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings);
@@ -577,7 +563,6 @@
         finalTexture = this._renderMSDF(msdfTexture, width, height, settings);
       }
 
-      // 5. リソース解放
       jfaResult.tempTexture.destroy();
       if (jfaResult.resultTexture !== seedTexture) {
         seedTexture.destroy();
@@ -593,5 +578,6 @@
   }
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
+  console.log('✅ msdf-pipeline-manager.js Phase 3完全修正版 loaded');
 
 })();

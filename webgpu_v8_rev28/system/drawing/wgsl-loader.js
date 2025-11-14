@@ -1,23 +1,25 @@
 /**
  * ================================================================================
- * wgsl-loader.js - WGSL Shader統合ローダー (Phase 2完全版)
+ * wgsl-loader.js Phase 2+3完全版 - Bresenham + Quad Expansion統合
  * ================================================================================
  * 📁 Parents: index.html
  * 📄 Children: msdf-pipeline-manager.js
  * 
- * 責務:
- *   - 全てのWGSLシェーダーコードをwindowオブジェクトへ登録
+ * 責務: 全WGSLシェーダーコードをwindowオブジェクトへ登録
  * 
- * 🔧 Phase 2修正:
- *   - msdf-encode.wgsl: seedTex未使用問題の修正
- *   - @binding(0)を確実に使用するよう変更
+ * 🔧 Phase 2改修:
+ *   - msdf-seed-init.wgsl: Bresenham Line Algorithm実装
+ *   - 5点書き込み削除 → 線分ラスタライズに変更
+ * 
+ * 🔧 Phase 3追加:
+ *   - msdf-quad-expansion.wgsl: Polygon Vertex Shader登録
  * ================================================================================
  */
 
 (function() {
   'use strict';
 
-  // msdf-seed-init.wgsl
+  // msdf-seed-init.wgsl (Phase 2: Bresenham実装)
   window.MSDF_SEED_INIT_WGSL = `
 struct Edge {
   x0: f32,
@@ -41,6 +43,48 @@ struct SeedUniforms {
 @group(0) @binding(1) var seedTex: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(2) var<uniform> uSeed: SeedUniforms;
 
+fn writeSeed(pos: vec2<i32>, seedPos: vec2<f32>, edgeId: f32, maxPos: vec2<i32>) {
+  if (pos.x >= 0 && pos.x < maxPos.x && pos.y >= 0 && pos.y < maxPos.y) {
+    textureStore(seedTex, pos, vec4<f32>(seedPos.x, seedPos.y, edgeId, 0.0));
+  }
+}
+
+fn rasterizeLine(p0: vec2<i32>, p1: vec2<i32>, edgeId: f32, maxPos: vec2<i32>) {
+  var x0 = p0.x;
+  var y0 = p0.y;
+  let x1 = p1.x;
+  let y1 = p1.y;
+
+  let dx = abs(x1 - x0);
+  let dy = abs(y1 - y0);
+  
+  let sx = select(-1, 1, x0 < x1);
+  let sy = select(-1, 1, y0 < y1);
+  
+  var err = dx - dy;
+
+  loop {
+    let seedPos = vec2<f32>(f32(x0), f32(y0));
+    writeSeed(vec2<i32>(x0, y0), seedPos, edgeId, maxPos);
+
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+
+    let e2 = 2 * err;
+    
+    if (e2 > -dy) {
+      err = err - dy;
+      x0 = x0 + sx;
+    }
+    
+    if (e2 < dx) {
+      err = err + dx;
+      y0 = y0 + sy;
+    }
+  }
+}
+
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let edgeIdx = gid.x;
@@ -49,43 +93,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
 
   let edge = edges[edgeIdx];
-  let maxX = i32(uSeed.canvasWidth);
-  let maxY = i32(uSeed.canvasHeight);
+  let maxPos = vec2<i32>(i32(uSeed.canvasWidth), i32(uSeed.canvasHeight));
   
   let p0 = vec2<i32>(i32(edge.x0), i32(edge.y0));
   let p1 = vec2<i32>(i32(edge.x1), i32(edge.y1));
-  let mid = vec2<i32>(
-    i32((edge.x0 + edge.x1) * 0.5),
-    i32((edge.y0 + edge.y1) * 0.5)
-  );
-  let q1 = vec2<i32>(
-    i32(edge.x0 * 0.75 + edge.x1 * 0.25),
-    i32(edge.y0 * 0.75 + edge.y1 * 0.25)
-  );
-  let q3 = vec2<i32>(
-    i32(edge.x0 * 0.25 + edge.x1 * 0.75),
-    i32(edge.y0 * 0.25 + edge.y1 * 0.75)
-  );
 
-  if (p0.x >= 0 && p0.x < maxX && p0.y >= 0 && p0.y < maxY) {
-    textureStore(seedTex, p0, vec4<f32>(edge.x0, edge.y0, edge.edgeId, 0.0));
-  }
-  
-  if (p1.x >= 0 && p1.x < maxX && p1.y >= 0 && p1.y < maxY) {
-    textureStore(seedTex, p1, vec4<f32>(edge.x1, edge.y1, edge.edgeId, 0.0));
-  }
-  
-  if (mid.x >= 0 && mid.x < maxX && mid.y >= 0 && mid.y < maxY) {
-    textureStore(seedTex, mid, vec4<f32>(f32(mid.x), f32(mid.y), edge.edgeId, 0.0));
-  }
-  
-  if (q1.x >= 0 && q1.x < maxX && q1.y >= 0 && q1.y < maxY) {
-    textureStore(seedTex, q1, vec4<f32>(f32(q1.x), f32(q1.y), edge.edgeId, 0.0));
-  }
-  
-  if (q3.x >= 0 && q3.x < maxX && q3.y >= 0 && q3.y < maxY) {
-    textureStore(seedTex, q3, vec4<f32>(f32(q3.x), f32(q3.y), edge.edgeId, 0.0));
-  }
+  rasterizeLine(p0, p1, edge.edgeId, maxPos);
 }
 `;
 
@@ -162,7 +175,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `;
 
-  // msdf-encode.wgsl (🔧 seedTex参照方式に変更)
+  // msdf-encode.wgsl
   window.MSDF_ENCODE_WGSL = `
 struct Edge {
   x0: f32,
@@ -212,14 +225,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let pixelPos = vec2<f32>(f32(pos.x) + 0.5, f32(pos.y) + 0.5);
 
-  // 🔧 seedTexから最近接EdgeIdを取得（binding 0を確実に使用）
   let seedData = textureLoad(seedTex, pos, 0);
   let nearestEdgeId = i32(seedData.b);
 
-  // 各チャンネルの距離を計算
   var distances = vec3<f32>(1000.0, 1000.0, 1000.0);
   
-  // 最近接エッジ周辺のみを高精度計算
   let searchRange = 3;
   var startEdge = max(0, nearestEdgeId - searchRange);
   var endEdge = min(i32(uEncode.edgeCount), nearestEdgeId + searchRange + 1);
@@ -252,6 +262,53 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `;
 
+  // msdf-quad-expansion.wgsl (Phase 3追加)
+  window.MSDF_QUAD_EXPANSION_WGSL = `
+struct VertexInput {
+  @location(0) prev: vec2<f32>,
+  @location(1) curr: vec2<f32>,
+  @location(2) next: vec2<f32>,
+  @location(3) side: f32
+}
+
+struct VertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) uv: vec2<f32>
+}
+
+struct QuadUniforms {
+  canvasWidth: f32,
+  canvasHeight: f32,
+  halfWidth: f32,
+  padding: f32
+}
+
+@group(0) @binding(0) var<uniform> uQuad: QuadUniforms;
+
+@vertex
+fn main(in: VertexInput) -> VertexOutput {
+  var out: VertexOutput;
+
+  let tangent0 = normalize(in.curr - in.prev);
+  let tangent1 = normalize(in.next - in.curr);
+  let tangent = normalize(tangent0 + tangent1);
+
+  let normal = vec2<f32>(-tangent.y, tangent.x);
+
+  let offset = normal * in.side * uQuad.halfWidth;
+
+  let worldPos = in.curr + offset;
+
+  let ndcX = (worldPos.x / uQuad.canvasWidth) * 2.0 - 1.0;
+  let ndcY = 1.0 - (worldPos.y / uQuad.canvasHeight) * 2.0;
+
+  out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
+  out.uv = vec2<f32>((in.side + 1.0) * 0.5, 0.5);
+
+  return out;
+}
+`;
+
   // msdf-render.wgsl
   window.MSDF_RENDER_WGSL = `
 struct RenderUniforms {
@@ -266,10 +323,10 @@ struct VertexOutput {
   @location(0) uv: vec2<f32>
 }
 
-@group(0) @binding(0) var msdfSampler: sampler;
-@group(0) @binding(1) var msdfTex: texture_2d<f32>;
-@group(0) @binding(2) var<uniform> uRender: RenderUniforms;
-@group(0) @binding(3) var<uniform> uColor: vec4<f32>;
+@group(1) @binding(0) var msdfSampler: sampler;
+@group(1) @binding(1) var msdfTex: texture_2d<f32>;
+@group(1) @binding(2) var<uniform> uRender: RenderUniforms;
+@group(1) @binding(3) var<uniform> uColor: vec4<f32>;
 
 fn median(r: f32, g: f32, b: f32) -> f32 {
   return max(min(r, g), min(max(r, g), b));
@@ -297,7 +354,8 @@ fn vertMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 }
 `;
 
-  console.log('✅ wgsl-loader.js Phase 2完全版 loaded');
-  console.log('   🔧 msdf-encode: seedTex参照追加（binding 0使用保証）');
+  console.log('✅ wgsl-loader.js Phase 2+3完全版 loaded');
+  console.log('   🔧 Phase 2: Bresenham Line Algorithm実装');
+  console.log('   🔧 Phase 3: msdf-quad-expansion.wgsl登録');
 
 })();
