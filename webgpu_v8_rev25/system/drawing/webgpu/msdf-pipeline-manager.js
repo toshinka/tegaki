@@ -1,13 +1,22 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 3.4完全版
+ * msdf-pipeline-manager.js Phase 3.5 - Render統合版
  * ================================================================================
- * 📁 Parents: webgpu-drawing-layer.js, gpu-stroke-processor.js, wgsl-loader.js
- * 📄 Children: brush-core.js, webgpu-texture-bridge.js
  * 
- * 🔧 Phase 3.4修正:
- *   - Texture破棄タイミング修正（使用完了後に破棄）
- *   - リソース管理の適正化
+ * 【依存Parents】
+ * - webgpu-drawing-layer.js (device/queue/format)
+ * - gpu-stroke-processor.js (EdgeBuffer)
+ * - wgsl-loader.js (Shader読み込み)
+ * 
+ * 【依存Children】
+ * - brush-core.js (呼び出し元)
+ * - webgpu-texture-bridge.js (Texture→Sprite変換)
+ * 
+ * 【Phase 3.5改修】
+ * ✅ msdf-render.wgsl統合（Fragment Shader描画）
+ * ✅ RenderPipeline実装
+ * ✅ 実際の描画処理追加
+ * 
  * ================================================================================
  */
 
@@ -23,6 +32,7 @@
       this.seedInitPipeline = null;
       this.jfaPipeline = null;
       this.encodePipeline = null;
+      this.renderPipeline = null;
       
       this.shaders = {};
       this.initialized = false;
@@ -42,20 +52,23 @@
       await this._createPipelines();
 
       this.initialized = true;
-      console.log('✅ [MSDFPipelineManager] Phase 3.4初期化完了');
+      console.log('✅ [MSDFPipelineManager] Phase 3.5初期化完了 (Render統合版)');
     }
 
     _loadShaders() {
       this.shaders.seedInit = window.MSDF_SEED_INIT_WGSL;
       this.shaders.jfaPass = window.MSDF_JFA_PASS_WGSL;
       this.shaders.encode = window.MSDF_ENCODE_WGSL;
+      this.shaders.render = window.MSDF_RENDER_WGSL;
 
       if (!this.shaders.seedInit) throw new Error('MSDF_SEED_INIT_WGSL not found');
       if (!this.shaders.jfaPass) throw new Error('MSDF_JFA_PASS_WGSL not found');
       if (!this.shaders.encode) throw new Error('MSDF_ENCODE_WGSL not found');
+      if (!this.shaders.render) throw new Error('MSDF_RENDER_WGSL not found');
     }
 
     async _createPipelines() {
+      // Compute Pipelines
       const seedInitModule = this.device.createShaderModule({
         code: this.shaders.seedInit,
         label: 'MSDF Seed Init'
@@ -88,16 +101,52 @@
         compute: { module: encodeModule, entryPoint: 'main' },
         label: 'MSDF Encode Pipeline'
       });
+
+      // Render Pipeline
+      const renderModule = this.device.createShaderModule({
+        code: this.shaders.render,
+        label: 'MSDF Render'
+      });
+
+      this.renderPipeline = this.device.createRenderPipeline({
+        layout: 'auto',
+        vertex: {
+          module: renderModule,
+          entryPoint: 'vertMain'
+        },
+        fragment: {
+          module: renderModule,
+          entryPoint: 'main',
+          targets: [{
+            format: 'rgba8unorm',
+            blend: {
+              color: {
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add'
+              },
+              alpha: {
+                srcFactor: 'one',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add'
+              }
+            }
+          }]
+        },
+        primitive: {
+          topology: 'triangle-strip',
+          stripIndexFormat: undefined
+        },
+        label: 'MSDF Render Pipeline'
+      });
     }
 
     _toU32(value) {
       return Math.max(1, Math.floor(value)) >>> 0;
     }
 
-    _seedInitPass(edgeBuffer, seedTexture, width, height) {
+    _seedInitPass(gpuBuffer, seedTexture, width, height, edgeCount) {
       try {
-        const edgeCount = Math.ceil(edgeBuffer.byteLength / 32);
-        
         const configData = new Float32Array([width, height, edgeCount, 0]);
         const configBuffer = this.device.createBuffer({
           size: configData.byteLength,
@@ -109,7 +158,7 @@
         const bindGroup = this.device.createBindGroup({
           layout: this.seedInitPipeline.getBindGroupLayout(0),
           entries: [
-            { binding: 0, resource: { buffer: edgeBuffer } },
+            { binding: 0, resource: { buffer: gpuBuffer } },
             { binding: 1, resource: seedTexture.createView() },
             { binding: 2, resource: { buffer: configBuffer } }
           ],
@@ -192,17 +241,13 @@
         [src, dst] = [dst, src];
       }
 
-      // 🔧 修正: 使用されなかったテクスチャを破棄（最終結果はsrcに入っている）
       const unusedTexture = (src === seedTexture) ? texB : seedTexture;
       
-      // 戻り値はJFA結果と、破棄すべきテクスチャ
       return { resultTexture: src, tempTexture: unusedTexture };
     }
 
-    _encodePass(seedTexture, edgeBuffer, msdfTexture, width, height) {
+    _encodePass(seedTexture, gpuBuffer, msdfTexture, width, height, edgeCount) {
       try {
-        const edgeCount = Math.ceil(edgeBuffer.byteLength / 32);
-        
         const configData = new Float32Array([width, height, edgeCount, 0.1]);
         const configBuffer = this.device.createBuffer({
           size: configData.byteLength,
@@ -215,7 +260,7 @@
           layout: this.encodePipeline.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: seedTexture.createView() },
-            { binding: 1, resource: { buffer: edgeBuffer } },
+            { binding: 1, resource: { buffer: gpuBuffer } },
             { binding: 2, resource: msdfTexture.createView() },
             { binding: 3, resource: { buffer: configBuffer } }
           ],
@@ -241,34 +286,129 @@
       }
     }
 
-    _simpleRender(msdfTexture, width, height) {
-      const outputTexture = this.device.createTexture({
-        size: [width, height],
-        format: 'rgba8unorm',
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | 
-               GPUTextureUsage.COPY_SRC |
-               GPUTextureUsage.TEXTURE_BINDING,
-        label: 'MSDF Output'
-      });
+    /**
+     * MSDF Textureを最終レンダリング
+     * @param {GPUTexture} msdfTexture - MSDFテクスチャ
+     * @param {number} width - 幅
+     * @param {number} height - 高さ
+     * @param {Object} settings - ブラシ設定
+     * @returns {GPUTexture} 最終出力テクスチャ
+     */
+    _renderMSDF(msdfTexture, width, height, settings = {}) {
+      try {
+        // 出力テクスチャ作成
+        const outputTexture = this.device.createTexture({
+          size: [width, height],
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | 
+                 GPUTextureUsage.COPY_SRC |
+                 GPUTextureUsage.TEXTURE_BINDING,
+          label: 'MSDF Output'
+        });
 
-      const encoder = this.device.createCommandEncoder({ label: 'Render Encoder' });
-      const renderPass = encoder.beginRenderPass({
-        label: 'Simple Render Pass',
-        colorAttachments: [{
-          view: outputTexture.createView(),
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: { r: 0, g: 0, b: 0, a: 0 }
-        }]
-      });
-      renderPass.end();
+        // Sampler作成
+        const sampler = this.device.createSampler({
+          magFilter: 'linear',
+          minFilter: 'linear',
+          addressModeU: 'clamp-to-edge',
+          addressModeV: 'clamp-to-edge'
+        });
 
-      this.queue.submit([encoder.finish()]);
+        // Uniform Buffers作成
+        const renderUniformsData = new Float32Array([
+          0.5,  // threshold
+          0.05, // range（より細く）
+          settings.opacity !== undefined ? settings.opacity : 1.0,
+          0.0   // padding
+        ]);
+        const renderUniformsBuffer = this.device.createBuffer({
+          size: renderUniformsData.byteLength,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          label: 'Render Uniforms'
+        });
+        this.queue.writeBuffer(renderUniformsBuffer, 0, renderUniformsData);
 
-      return outputTexture;
+        // カラー設定（消しゴムは白）
+        let colorData;
+        if (settings.mode === 'eraser') {
+          colorData = new Float32Array([1.0, 1.0, 1.0, 1.0]); // 白
+        } else {
+          // ブラシカラーをRGBAに変換
+          const color = this._parseColor(settings.color || '#800000');
+          colorData = new Float32Array([color.r, color.g, color.b, 1.0]);
+        }
+        
+        const colorBuffer = this.device.createBuffer({
+          size: colorData.byteLength,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          label: 'Color Uniform'
+        });
+        this.queue.writeBuffer(colorBuffer, 0, colorData);
+
+        // BindGroup作成
+        const bindGroup = this.device.createBindGroup({
+          layout: this.renderPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: sampler },
+            { binding: 1, resource: msdfTexture.createView() },
+            { binding: 2, resource: { buffer: renderUniformsBuffer } },
+            { binding: 3, resource: { buffer: colorBuffer } }
+          ],
+          label: 'Render BindGroup'
+        });
+
+        // レンダーパス実行
+        const encoder = this.device.createCommandEncoder({ label: 'Render Encoder' });
+        const renderPass = encoder.beginRenderPass({
+          label: 'MSDF Render Pass',
+          colorAttachments: [{
+            view: outputTexture.createView(),
+            loadOp: 'clear',
+            storeOp: 'store',
+            clearValue: { r: 0, g: 0, b: 0, a: 0 }
+          }]
+        });
+
+        renderPass.setPipeline(this.renderPipeline);
+        renderPass.setBindGroup(0, bindGroup);
+        renderPass.draw(4, 1, 0, 0); // フルスクリーンクワッド（4頂点）
+        renderPass.end();
+
+        this.queue.submit([encoder.finish()]);
+
+        // Buffer解放
+        renderUniformsBuffer.destroy();
+        colorBuffer.destroy();
+
+        return outputTexture;
+
+      } catch (error) {
+        console.error('[MSDFPipelineManager] Render failed:', error);
+        throw error;
+      }
     }
 
-    async generateMSDF(edgeBuffer, bounds, existingMSDF = null) {
+    /**
+     * カラー文字列をRGBA値に変換
+     * @private
+     */
+    _parseColor(colorString) {
+      const hex = colorString.replace('#', '');
+      return {
+        r: parseInt(hex.substr(0, 2), 16) / 255,
+        g: parseInt(hex.substr(2, 2), 16) / 255,
+        b: parseInt(hex.substr(4, 2), 16) / 255
+      };
+    }
+
+    /**
+     * MSDF生成メインエントリーポイント
+     * @param {GPUBuffer} gpuBuffer - GPU EdgeBuffer
+     * @param {Object} bounds - {minX, minY, maxX, maxY}
+     * @param {GPUTexture} existingMSDF - 既存MSDF（未実装）
+     * @param {Object} settings - ブラシ設定
+     */
+    async generateMSDF(gpuBuffer, bounds, existingMSDF = null, settings = {}) {
       if (!this.initialized) {
         throw new Error('[MSDFPipelineManager] Not initialized');
       }
@@ -276,6 +416,15 @@
       const width = this._toU32(Math.ceil(bounds.maxX - bounds.minX));
       const height = this._toU32(Math.ceil(bounds.maxY - bounds.minY));
 
+      // edgeCount計算（GPUBuffer.size から）
+      const edgeCount = Math.floor(gpuBuffer.size / (8 * 4)); // 8 floats * 4 bytes = 32 bytes per edge
+
+      if (edgeCount === 0) {
+        console.warn('[MSDFPipelineManager] edgeCount is 0');
+        return null;
+      }
+
+      // 1. Seed初期化
       const seedTexture = this.device.createTexture({
         size: [width, height],
         format: 'rgba32float',
@@ -283,11 +432,12 @@
         label: 'Seed Texture'
       });
 
-      this._seedInitPass(edgeBuffer, seedTexture, width, height);
+      this._seedInitPass(gpuBuffer, seedTexture, width, height, edgeCount);
       
-      // 🔧 修正: JFA結果と一時テクスチャを分離
+      // 2. JFA実行
       const jfaResult = this._executeJFA(seedTexture, width, height);
 
+      // 3. MSDF Encode
       const msdfTexture = this.device.createTexture({
         size: [width, height],
         format: 'rgba16float',
@@ -295,14 +445,13 @@
         label: 'MSDF Texture'
       });
 
-      this._encodePass(jfaResult.resultTexture, edgeBuffer, msdfTexture, width, height);
+      this._encodePass(jfaResult.resultTexture, gpuBuffer, msdfTexture, width, height, edgeCount);
       
-      // 🔧 修正: Encode完了後に一時テクスチャを破棄
-      jfaResult.tempTexture.destroy();
-      
-      const finalTexture = this._simpleRender(msdfTexture, width, height);
+      // 4. 最終レンダリング（settings渡す）
+      const finalTexture = this._renderMSDF(msdfTexture, width, height, settings);
 
-      // 使用済みテクスチャを破棄
+      // 5. リソース解放
+      jfaResult.tempTexture.destroy();
       if (jfaResult.resultTexture !== seedTexture) {
         seedTexture.destroy();
       }
@@ -318,7 +467,7 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
   
-  console.log('✅ msdf-pipeline-manager.js Phase 3.4完全版 loaded');
-  console.log('   🔧 Texture破棄タイミング修正');
+  console.log('✅ msdf-pipeline-manager.js Phase 3.5 loaded');
+  console.log('   📊 Render Pipeline統合完了');
 
 })();
