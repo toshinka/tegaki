@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 4最終版 - 6頂点描画対応
+ * msdf-pipeline-manager.js Phase 5-FIX - BindGroup修正+デバッグログ強化
  * ================================================================================
  * 
  * 【依存Parents】
@@ -12,11 +12,10 @@
  * - brush-core.js (呼び出し元)
  * - webgpu-texture-bridge.js (Texture→Sprite変換)
  * 
- * 【Phase 4最終版】
- * ✅ Polygon Pipeline: triangle-list
- * ✅ draw(vertexCount): 6頂点展開された頂点を直接描画
- * ✅ 消しゴムモード対応
- * ✅ 旧 _renderMSDF() 削除
+ * 【Phase 5-FIX】
+ * ✅ generateMSDF: 分岐デバッグログ追加
+ * ✅ _renderMSDFPolygon: BindGroup構造確認ログ追加
+ * ✅ vertexBuffer型チェック強化
  * 
  * ================================================================================
  */
@@ -281,6 +280,9 @@
         throw new Error('[MSDFPipelineManager] Polygon pipeline not initialized');
       }
 
+      console.log('[MSDF Polygon] vertexBuffer:', vertexBuffer?.constructor?.name, 'size:', vertexBuffer?.size);
+      console.log('[MSDF Polygon] vertexCount:', vertexCount);
+
       const outputTexture = this.device.createTexture({
         size: [width, height],
         format: 'rgba8unorm',
@@ -386,13 +388,19 @@
         throw new Error('[MSDFPipelineManager] Not initialized');
       }
 
+      console.log('[MSDF] generateMSDF called:');
+      console.log('  vertexBuffer:', vertexBuffer?.constructor?.name);
+      console.log('  vertexCount:', vertexCount);
+      console.log('  edgeCount:', edgeCount);
+      console.log('  condition:', !!(vertexBuffer && vertexCount > 0));
+
       if (edgeCount === 0) {
         console.warn('[MSDFPipelineManager] edgeCount is 0');
         return null;
       }
 
       if (!vertexBuffer || vertexCount === 0) {
-        console.warn('[MSDFPipelineManager] vertexBuffer or vertexCount is invalid');
+        console.warn('[MSDFPipelineManager] ❌ vertexBuffer or vertexCount is invalid');
         return null;
       }
 
@@ -423,6 +431,7 @@
 
       await this._encodePass(jfaResult.resultTexture, gpuBuffer, msdfTexture, width, height, edgeCount);
       
+      console.log('[MSDF] ✅ Using Polygon Render Path');
       const finalTexture = await this._renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings);
 
       jfaResult.tempTexture.destroy();
@@ -441,8 +450,6 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase 4最終版 loaded');
-  console.log('   🔧 draw(vertexCount): 6頂点展開データを直接描画');
-  console.log('   🔧 消しゴムモード対応');
+  console.log('✅ msdf-pipeline-manager.js Phase 5-FIX loaded');
 
 })();
