@@ -1,11 +1,11 @@
 /**
  * ================================================================================
- * brush-core.js Phase 3 完全統合版 - VertexBuffer対応
+ * brush-core.js Phase 2完全統合版 - edgeCount明示対応
  * ================================================================================
  * 
  * 【依存Parents】
  * - stroke-recorder.js (座標記録)
- * - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer生成)
+ * - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer + edgeCount)
  * - msdf-pipeline-manager.js (MSDF生成)
  * - webgpu-texture-bridge.js (Sprite変換)
  * - layer-system.js (レイヤー管理)
@@ -14,11 +14,11 @@
  * 【依存Children】
  * - drawing-engine.js (startStroke/updateStroke呼び出し元)
  * 
- * 【Phase 3改修完了】
- * ✅ VertexBuffer生成対応
- * ✅ EdgeBuffer Fallback維持
+ * 【Phase 2改修完了】
+ * ✅ createEdgeBuffer(): {buffer, edgeCount} 受け取り対応
+ * ✅ generateMSDF(): edgeCount引数渡し
+ * ✅ 消しゴムblendMode削除（GPU側でマスク処理）
  * ✅ 過剰ログ削除
- * ✅ DRY原則遵守
  * 
  * ================================================================================
  */
@@ -137,8 +137,7 @@
     }
 
     /**
-     * MSDF描画（Phase 3: VertexBuffer優先）
-     * @private
+     * MSDF描画（Phase 2: edgeCount明示対応）
      */
     async _finalizeMSDFStroke(points, activeLayer) {
       try {
@@ -147,7 +146,6 @@
           throw new Error('Container取得失敗');
         }
 
-        // Phase 3: VertexBuffer生成試行
         let vertexBuffer = null;
         let vertexCount = 0;
         let gpuVertexBuffer = null;
@@ -157,22 +155,23 @@
           vertexBuffer = vertexResult.buffer;
           vertexCount = vertexResult.vertexCount;
           
-          // GPU転送（VERTEX usage）
-          gpuVertexBuffer = this.gpuStrokeProcessor.uploadToGPU(vertexBuffer, 'vertex');
+          const uploadResult = this.gpuStrokeProcessor.uploadToGPU(vertexBuffer, 'vertex', 7 * 4);
+          gpuVertexBuffer = uploadResult.gpuBuffer;
         }
 
-        // EdgeBuffer生成（Seed初期化用）
-        const edgeBuffer = this.gpuStrokeProcessor.createEdgeBuffer(points);
-        if (!edgeBuffer) {
+        const edgeResult = this.gpuStrokeProcessor.createEdgeBuffer(points);
+        if (!edgeResult || !edgeResult.buffer) {
           throw new Error('EdgeBuffer作成失敗');
         }
 
-        const gpuEdgeBuffer = this.gpuStrokeProcessor.uploadToGPU(edgeBuffer, 'storage');
-        if (!gpuEdgeBuffer) {
-          throw new Error('GPU転送失敗');
+        const uploadResult = this.gpuStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
+        const gpuEdgeBuffer = uploadResult.gpuBuffer;
+        const edgeCount = edgeResult.edgeCount;
+
+        if (!gpuEdgeBuffer || edgeCount === 0) {
+          throw new Error('GPU転送失敗 or edgeCount=0');
         }
 
-        // Bounds計算
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
         const width = Math.ceil(bounds.maxX - bounds.minX);
         const height = Math.ceil(bounds.maxY - bounds.minY);
@@ -181,7 +180,6 @@
           return;
         }
 
-        // ブラシ設定
         const brushSettings = {
           mode: this.currentSettings.mode,
           color: this.currentSettings.color,
@@ -189,21 +187,20 @@
           size: this.currentSettings.size
         };
 
-        // MSDF生成（Phase 3: VertexBuffer渡す）
         const finalTexture = await this.msdfPipelineManager.generateMSDF(
           gpuEdgeBuffer,
           bounds,
           null,
           brushSettings,
           gpuVertexBuffer,
-          vertexCount
+          vertexCount,
+          edgeCount
         );
 
         if (!finalTexture) {
           throw new Error('MSDF生成失敗');
         }
 
-        // Sprite生成
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
           finalTexture,
           width,
@@ -219,13 +216,8 @@
         sprite.visible = true;
         sprite.alpha = this.currentSettings.opacity;
 
-        if (this.currentSettings.mode === 'eraser') {
-          sprite.blendMode = 'erase';
-        }
-
         container.addChild(sprite);
 
-        // PathData作成
         const pathData = {
           id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           type: 'stroke_msdf',
@@ -238,13 +230,9 @@
         if (!activeLayer.paths) activeLayer.paths = [];
         activeLayer.paths.push(pathData);
 
-        // History登録
         this._registerHistory(activeLayer, pathData, container);
-
-        // イベント発行
         this._emitStrokeEvents(activeLayer, pathData);
 
-        // GPUリソース解放
         if (gpuEdgeBuffer && gpuEdgeBuffer.destroy) gpuEdgeBuffer.destroy();
         if (gpuVertexBuffer && gpuVertexBuffer.destroy) gpuVertexBuffer.destroy();
         if (finalTexture && finalTexture.destroy) finalTexture.destroy();

@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * gpu-stroke-processor.js Phase 1 完全版 - Polygon頂点バッファ生成
+ * gpu-stroke-processor.js Phase 1-FIX完全版 - edgeCount明示化対応
  * ================================================================================
  * 
  * 【依存Parents】
@@ -8,19 +8,13 @@
  * - webgpu-drawing-layer.js (device/queue)
  * 
  * 【依存Children】
- * - msdf-pipeline-manager.js (VertexBuffer渡し)
+ * - msdf-pipeline-manager.js (VertexBuffer + edgeCount受け渡し)
  * - brush-core.js (呼び出し元)
  * 
- * 【Phase 1改修完了】
- * ✅ createPolygonVertexBuffer() 実装
- * ✅ Quad Strip構築: prev/curr/next/side 属性
- * ✅ EdgeBuffer互換維持（後方互換）
- * ✅ GPU VERTEX usage対応
- * 
- * 【VertexBuffer構造】
- * Float32Array: [prev.x, prev.y, curr.x, curr.y, next.x, next.y, side] * N
- * stride: 7 floats = 28 bytes
- * vertexCount: points.length * 2 (左右ペア)
+ * 【Phase 1-FIX改修】
+ * ✅ uploadToGPU(): {gpuBuffer, elementCount} 返却対応
+ * ✅ gpuBuffer.size依存を完全排除
+ * ✅ createEdgeBuffer(): EdgeCountメタデータ明示
  * 
  * ================================================================================
  */
@@ -37,23 +31,20 @@
 
     async initialize(device) {
       if (this.initialized) return;
-
       this.device = device;
       this.queue = device.queue;
       this.initialized = true;
     }
 
     /**
-     * Polygon頂点バッファ作成 [Phase 1実装]
-     * @param {Array} points - [{x, y, pressure}, ...] 形式 または [x, y, ...]
+     * Polygon頂点バッファ作成
+     * @param {Array} points - [{x, y, pressure}, ...] または [x, y, ...]
      * @returns {{buffer: Float32Array, vertexCount: number}}
      */
     createPolygonVertexBuffer(points) {
-      // 入力形式正規化
       let coords;
       if (Array.isArray(points) && points.length > 0) {
         if (typeof points[0] === 'object' && points[0].x !== undefined) {
-          // [{x, y, pressure}, ...] → [x, y, x, y, ...]
           coords = points.flatMap(p => [p.x, p.y]);
         } else {
           coords = points;
@@ -69,16 +60,14 @@
         return null;
       }
 
-      // Quad Strip: 各点に対し左右ペア生成
       const vertexCount = numPoints * 2;
-      const buffer = new Float32Array(vertexCount * 7); // 7 floats per vertex
+      const buffer = new Float32Array(vertexCount * 7);
 
       for (let i = 0; i < numPoints; i++) {
         const currIdx = i * 2;
         const currX = coords[currIdx];
         const currY = coords[currIdx + 1];
 
-        // prev計算（最初の点は自身を使用）
         let prevX, prevY;
         if (i === 0) {
           prevX = currX;
@@ -89,7 +78,6 @@
           prevY = coords[prevIdx + 1];
         }
 
-        // next計算（最後の点は自身を使用）
         let nextX, nextY;
         if (i === numPoints - 1) {
           nextX = currX;
@@ -100,7 +88,6 @@
           nextY = coords[nextIdx + 1];
         }
 
-        // 左側頂点 (side = -1)
         const leftIdx = (i * 2) * 7;
         buffer[leftIdx + 0] = prevX;
         buffer[leftIdx + 1] = prevY;
@@ -108,9 +95,8 @@
         buffer[leftIdx + 3] = currY;
         buffer[leftIdx + 4] = nextX;
         buffer[leftIdx + 5] = nextY;
-        buffer[leftIdx + 6] = -1.0; // side
+        buffer[leftIdx + 6] = -1.0;
 
-        // 右側頂点 (side = +1)
         const rightIdx = (i * 2 + 1) * 7;
         buffer[rightIdx + 0] = prevX;
         buffer[rightIdx + 1] = prevY;
@@ -118,14 +104,15 @@
         buffer[rightIdx + 3] = currY;
         buffer[rightIdx + 4] = nextX;
         buffer[rightIdx + 5] = nextY;
-        buffer[rightIdx + 6] = 1.0; // side
+        buffer[rightIdx + 6] = 1.0;
       }
 
       return { buffer, vertexCount };
     }
 
     /**
-     * EdgeBuffer作成（後方互換維持）
+     * EdgeBuffer作成（Phase 1-FIX: edgeCount明示）
+     * @returns {{buffer: Float32Array, edgeCount: number}}
      */
     createEdgeBuffer(points) {
       let coords;
@@ -142,10 +129,10 @@
       if (coords.length < 4) return null;
 
       const numPoints = Math.floor(coords.length / 2);
-      const numEdges = numPoints - 1;
-      const buffer = new Float32Array(numEdges * 8);
+      const edgeCount = numPoints - 1;
+      const buffer = new Float32Array(edgeCount * 8);
 
-      for (let i = 0; i < numEdges; i++) {
+      for (let i = 0; i < edgeCount; i++) {
         const idx0 = i * 2;
         const idx1 = (i + 1) * 2;
         const bufferIdx = i * 8;
@@ -160,15 +147,17 @@
         buffer[bufferIdx + 7] = 0.0;
       }
 
-      return buffer;
+      return { buffer, edgeCount };
     }
 
     /**
-     * GPU BufferへUpload
-     * @param {Float32Array} data - VertexBuffer または EdgeBuffer
+     * GPU BufferへUpload（Phase 1-FIX: elementCount返却）
+     * @param {Float32Array} data
      * @param {string} usage - 'vertex' | 'storage'
+     * @param {number} elementStrideBytes - 1要素あたりのバイト数
+     * @returns {{gpuBuffer: GPUBuffer, elementCount: number}}
      */
-    uploadToGPU(data, usage = 'storage') {
+    uploadToGPU(data, usage = 'storage', elementStrideBytes = 8 * 4) {
       if (!this.initialized) {
         throw new Error('[GPUStrokeProcessor] Not initialized');
       }
@@ -192,11 +181,13 @@
 
       this.queue.writeBuffer(gpuBuffer, 0, data);
 
-      return gpuBuffer;
+      const elementCount = Math.floor(data.byteLength / elementStrideBytes);
+
+      return { gpuBuffer, elementCount };
     }
 
     /**
-     * Bounds計算
+     * Bounds計算（margin拡大: 50px）
      */
     calculateBounds(points) {
       let coords;
@@ -226,7 +217,7 @@
         maxY = Math.max(maxY, y);
       }
 
-      const margin = 50; // Phase 1: margin拡大（20→50）
+      const margin = 50;
       return {
         minX: minX - margin,
         minY: minY - margin,
