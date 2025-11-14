@@ -1,24 +1,25 @@
 /**
  * ================================================================================
- * brush-core.js Phase 2完全統合版 - edgeCount明示対応
+ * brush-core.js Phase 3 リアルタイムプレビュー対応版
  * ================================================================================
  * 
  * 【依存Parents】
  * - stroke-recorder.js (座標記録)
- * - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer + edgeCount)
+ * - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
  * - msdf-pipeline-manager.js (MSDF生成)
  * - webgpu-texture-bridge.js (Sprite変換)
  * - layer-system.js (レイヤー管理)
  * - history.js (履歴管理)
+ * - coordinate-system.js (座標変換)
  * 
  * 【依存Children】
  * - drawing-engine.js (startStroke/updateStroke呼び出し元)
  * 
- * 【Phase 2改修完了】
- * ✅ createEdgeBuffer(): {buffer, edgeCount} 受け取り対応
- * ✅ generateMSDF(): edgeCount引数渡し
- * ✅ 消しゴムblendMode削除（GPU側でマスク処理）
- * ✅ 過剰ログ削除
+ * 【Phase 3改修】
+ * 🔧 リアルタイムプレビュー実装（updateStroke時に仮描画）
+ * 🔧 座標変換正規化（Bounds原点オフセット適用）
+ * 🔧 消しゴム可視化（赤色半透明プレビュー）
+ * 🗑️ 過剰ログ削除
  * 
  * ================================================================================
  */
@@ -33,10 +34,12 @@
       this.msdfPipelineManager = null;
       this.textureBridge = null;
       this.layerManager = null;
+      this.coordinateSystem = null;
       
       this.isDrawing = false;
       this.currentStroke = null;
       this.previewSprite = null;
+      this.previewContainer = null;
       
       this.currentSettings = {
         mode: 'pen',
@@ -47,6 +50,8 @@
       
       this.initialized = false;
       this.msdfAvailable = false;
+      this.lastPreviewTime = 0;
+      this.previewThrottle = 50;
     }
 
     async init() {
@@ -58,6 +63,7 @@
 
       this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
       this.layerManager = window.layerManager || window.layerSystem;
+      this.coordinateSystem = window.CoordinateSystem;
 
       if (!this.strokeRecorder) {
         throw new Error('[BrushCore] strokeRecorder not found');
@@ -97,11 +103,90 @@
         layerId: activeLayer.id,
         startTime: Date.now()
       };
+
+      this._ensurePreviewContainer(activeLayer);
     }
 
     async updateStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || !this.isDrawing) return;
+      
       this.strokeRecorder.addPoint(localX, localY, pressure);
+
+      const now = Date.now();
+      if (now - this.lastPreviewTime < this.previewThrottle) return;
+      this.lastPreviewTime = now;
+
+      const points = this.strokeRecorder.getRawPoints();
+      if (!points || points.length < 2) return;
+
+      await this._updatePreview(points);
+    }
+
+    async _updatePreview(points) {
+      if (!this.previewContainer) return;
+
+      if (this.previewSprite) {
+        this.previewSprite.destroy({ children: true });
+        this.previewSprite = null;
+      }
+
+      try {
+        const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(points);
+        if (!vertexResult || !vertexResult.buffer) return;
+
+        const edgeResult = this.gpuStrokeProcessor.createEdgeBuffer(points);
+        if (!edgeResult || !edgeResult.buffer) return;
+
+        const uploadVertex = this.gpuStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
+        const uploadEdge = this.gpuStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
+
+        const bounds = this.gpuStrokeProcessor.calculateBounds(points);
+        const width = Math.ceil(bounds.maxX - bounds.minX);
+        const height = Math.ceil(bounds.maxY - bounds.minY);
+
+        if (width <= 0 || height <= 0) return;
+
+        const previewSettings = {
+          mode: this.currentSettings.mode,
+          color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
+          opacity: this.currentSettings.mode === 'eraser' ? 0.3 : this.currentSettings.opacity * 0.5,
+          size: this.currentSettings.size
+        };
+
+        const finalTexture = await this.msdfPipelineManager.generateMSDF(
+          uploadEdge.gpuBuffer,
+          bounds,
+          null,
+          previewSettings,
+          uploadVertex.gpuBuffer,
+          vertexResult.vertexCount,
+          edgeResult.edgeCount
+        );
+
+        if (!finalTexture) return;
+
+        const sprite = await this.textureBridge.createSpriteFromGPUTexture(
+          finalTexture,
+          width,
+          height
+        );
+
+        if (!sprite) return;
+
+        sprite.x = bounds.minX;
+        sprite.y = bounds.minY;
+        sprite.alpha = previewSettings.opacity;
+
+        this.previewContainer.addChild(sprite);
+        this.previewSprite = sprite;
+
+        if (uploadEdge.gpuBuffer?.destroy) uploadEdge.gpuBuffer.destroy();
+        if (uploadVertex.gpuBuffer?.destroy) uploadVertex.gpuBuffer.destroy();
+        if (finalTexture?.destroy) finalTexture.destroy();
+
+      } catch (error) {
+        console.error('[BrushCore] Preview failed:', error);
+      }
     }
 
     async finalizeStroke() {
@@ -110,14 +195,12 @@
       const activeLayer = this.layerManager.getActiveLayer();
       
       if (!activeLayer) {
+        this._cleanupPreview();
         this.isDrawing = false;
         return;
       }
 
-      if (this.previewSprite) {
-        this.previewSprite.destroy({ children: true });
-        this.previewSprite = null;
-      }
+      this._cleanupPreview();
 
       const points = this.strokeRecorder.getRawPoints();
       
@@ -136,9 +219,6 @@
       this.currentStroke = null;
     }
 
-    /**
-     * MSDF描画（Phase 2: edgeCount明示対応）
-     */
     async _finalizeMSDFStroke(points, activeLayer) {
       try {
         const container = this._getLayerContainer(activeLayer);
@@ -239,6 +319,29 @@
 
       } catch (error) {
         console.error('[BrushCore] MSDF描画失敗:', error);
+      }
+    }
+
+    _ensurePreviewContainer(activeLayer) {
+      const container = this._getLayerContainer(activeLayer);
+      if (!container) return;
+
+      if (!this.previewContainer) {
+        this.previewContainer = new PIXI.Container();
+        this.previewContainer.name = 'preview_container';
+        container.addChild(this.previewContainer);
+      }
+    }
+
+    _cleanupPreview() {
+      if (this.previewSprite) {
+        this.previewSprite.destroy({ children: true });
+        this.previewSprite = null;
+      }
+
+      if (this.previewContainer) {
+        this.previewContainer.destroy({ children: true });
+        this.previewContainer = null;
       }
     }
 
@@ -345,20 +448,14 @@
     }
 
     cancelStroke() {
-      if (this.previewSprite) {
-        this.previewSprite.destroy({ children: true });
-        this.previewSprite = null;
-      }
-      
+      this._cleanupPreview();
       this.strokeRecorder.reset();
       this.isDrawing = false;
       this.currentStroke = null;
     }
 
     destroy() {
-      if (this.previewSprite) {
-        this.previewSprite.destroy({ children: true });
-      }
+      this._cleanupPreview();
       this.initialized = false;
     }
   }

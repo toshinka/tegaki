@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * gpu-stroke-processor.js Phase 6最終版 - 6頂点展開（triangle-list完全対応）
+ * gpu-stroke-processor.js Phase 7 座標正規化対応版
  * ================================================================================
  * 
  * 【依存Parents】
@@ -11,16 +11,11 @@
  * - msdf-pipeline-manager.js (VertexBuffer + edgeCount受け渡し)
  * - brush-core.js (呼び出し元)
  * 
- * 【Phase 6最終版】
- * ✅ createPolygonVertexBuffer(): 各セグメントに6頂点生成（2三角形）
- * ✅ vertexCount = (numPoints - 1) * 6
- * ✅ Triangle-list描画完全対応（index buffer不要）
- * 
- * 頂点展開パターン（各セグメント）:
- *   Triangle 1: [0, 1, 2] → 左下、右下、左上
- *   Triangle 2: [1, 3, 2] → 右下、右上、左上
- * 
- * つまり6頂点: [0, 1, 2, 1, 3, 2]
+ * 【Phase 7改修】
+ * 🔧 Bounds原点オフセット正規化（Local座標 → Canvas座標）
+ * 🔧 createPolygonVertexBuffer: 座標をBounds原点基準に変換
+ * 🔧 createEdgeBuffer: 同様に座標正規化
+ * 🔧 NDC変換が正しく動作するよう座標系統一
  * 
  * ================================================================================
  */
@@ -43,9 +38,9 @@
     }
 
     /**
-     * Polygon頂点バッファ作成（Phase 6: 6頂点展開）
+     * Polygon頂点バッファ作成（Phase 7: 座標正規化対応）
      * @param {Array} points - [{x, y, pressure}, ...] または [x, y, ...]
-     * @returns {{buffer: Float32Array, vertexCount: number}}
+     * @returns {{buffer: Float32Array, vertexCount: number, bounds: Object}}
      */
     createPolygonVertexBuffer(points) {
       let coords;
@@ -66,6 +61,16 @@
         return null;
       }
 
+      const bounds = this._calculateBoundsFromCoords(coords);
+      const offsetX = bounds.minX;
+      const offsetY = bounds.minY;
+
+      const normalizedCoords = new Float32Array(coords.length);
+      for (let i = 0; i < coords.length; i += 2) {
+        normalizedCoords[i] = coords[i] - offsetX;
+        normalizedCoords[i + 1] = coords[i + 1] - offsetY;
+      }
+
       const numSegments = numPoints - 1;
       const vertexCount = numSegments * 6;
       const buffer = new Float32Array(vertexCount * 7);
@@ -76,14 +81,14 @@
         const nextIdx = i + 1;
         const next2Idx = Math.min(numPoints - 1, i + 2);
 
-        const prevX = coords[prevIdx * 2];
-        const prevY = coords[prevIdx * 2 + 1];
-        const currX = coords[currIdx * 2];
-        const currY = coords[currIdx * 2 + 1];
-        const nextX = coords[nextIdx * 2];
-        const nextY = coords[nextIdx * 2 + 1];
-        const next2X = coords[next2Idx * 2];
-        const next2Y = coords[next2Idx * 2 + 1];
+        const prevX = normalizedCoords[prevIdx * 2];
+        const prevY = normalizedCoords[prevIdx * 2 + 1];
+        const currX = normalizedCoords[currIdx * 2];
+        const currY = normalizedCoords[currIdx * 2 + 1];
+        const nextX = normalizedCoords[nextIdx * 2];
+        const nextY = normalizedCoords[nextIdx * 2 + 1];
+        const next2X = normalizedCoords[next2Idx * 2];
+        const next2Y = normalizedCoords[next2Idx * 2 + 1];
 
         const baseIdx = i * 6 * 7;
 
@@ -100,12 +105,12 @@
         for (let j = 0; j < 7; j++) buffer[baseIdx + 35 + j] = v2[j];
       }
 
-      return { buffer, vertexCount };
+      return { buffer, vertexCount, bounds };
     }
 
     /**
-     * EdgeBuffer作成
-     * @returns {{buffer: Float32Array, edgeCount: number}}
+     * EdgeBuffer作成（Phase 7: 座標正規化対応）
+     * @returns {{buffer: Float32Array, edgeCount: number, bounds: Object}}
      */
     createEdgeBuffer(points) {
       let coords;
@@ -121,6 +126,10 @@
 
       if (coords.length < 4) return null;
 
+      const bounds = this._calculateBoundsFromCoords(coords);
+      const offsetX = bounds.minX;
+      const offsetY = bounds.minY;
+
       const numPoints = Math.floor(coords.length / 2);
       const edgeCount = numPoints - 1;
       const buffer = new Float32Array(edgeCount * 8);
@@ -130,17 +139,17 @@
         const idx1 = (i + 1) * 2;
         const bufferIdx = i * 8;
 
-        buffer[bufferIdx + 0] = coords[idx0];
-        buffer[bufferIdx + 1] = coords[idx0 + 1];
-        buffer[bufferIdx + 2] = coords[idx1];
-        buffer[bufferIdx + 3] = coords[idx1 + 1];
+        buffer[bufferIdx + 0] = coords[idx0] - offsetX;
+        buffer[bufferIdx + 1] = coords[idx0 + 1] - offsetY;
+        buffer[bufferIdx + 2] = coords[idx1] - offsetX;
+        buffer[bufferIdx + 3] = coords[idx1 + 1] - offsetY;
         buffer[bufferIdx + 4] = i;
         buffer[bufferIdx + 5] = i % 3;
         buffer[bufferIdx + 6] = 1.0;
         buffer[bufferIdx + 7] = 0.0;
       }
 
-      return { buffer, edgeCount };
+      return { buffer, edgeCount, bounds };
     }
 
     /**
@@ -180,7 +189,7 @@
     }
 
     /**
-     * Bounds計算
+     * Bounds計算（外部公開用）
      */
     calculateBounds(points) {
       let coords;
@@ -194,6 +203,13 @@
         return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
       }
 
+      return this._calculateBoundsFromCoords(coords);
+    }
+
+    /**
+     * Bounds計算（内部用）
+     */
+    _calculateBoundsFromCoords(coords) {
       if (coords.length < 2) {
         return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
       }
@@ -226,8 +242,6 @@
 
   window.GPUStrokeProcessor = new GPUStrokeProcessor();
 
-  console.log('✅ gpu-stroke-processor.js Phase 6最終版 loaded');
-  console.log('   🔧 6頂点展開: (numPoints-1) × 6頂点（2三角形）');
-  console.log('   🔧 Triangle-list完全対応（index buffer不要）');
+  console.log('✅ gpu-stroke-processor.js Phase 7 loaded');
 
 })();

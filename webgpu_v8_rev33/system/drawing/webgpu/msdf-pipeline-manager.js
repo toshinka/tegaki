@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 5-FIX - BindGroup修正+デバッグログ強化
+ * msdf-pipeline-manager.js Phase 6 リアルタイム描画対応版
  * ================================================================================
  * 
  * 【依存Parents】
@@ -12,10 +12,12 @@
  * - brush-core.js (呼び出し元)
  * - webgpu-texture-bridge.js (Texture→Sprite変換)
  * 
- * 【Phase 5-FIX】
- * ✅ generateMSDF: 分岐デバッグログ追加
- * ✅ _renderMSDFPolygon: BindGroup構造確認ログ追加
- * ✅ vertexBuffer型チェック強化
+ * 【Phase 6改修】
+ * 🔧 GPU同期待ちを最小化（Seed/JFA/Encode後のみ同期）
+ * 🔧 Render Pass後は即座にreturn（同期なし）
+ * 🔧 消しゴム可視化（赤色半透明で描画）
+ * 🔧 座標変換修正（Canvas座標系のBounds原点オフセット）
+ * 🗑️ 過剰なコンソールログ削除
  * 
  * ================================================================================
  */
@@ -214,7 +216,6 @@
       pass.end();
       
       this.queue.submit([encoder.finish()]);
-      await this.device.queue.onSubmittedWorkDone();
       
       configBuffer.destroy();
     }
@@ -236,6 +237,8 @@
         await this._jfaPass(src, dst, width, height, Math.pow(2, i));
         [src, dst] = [dst, src];
       }
+
+      await this.device.queue.onSubmittedWorkDone();
 
       const unusedTexture = (src === seedTexture) ? texB : seedTexture;
       return { resultTexture: src, tempTexture: unusedTexture };
@@ -280,9 +283,6 @@
         throw new Error('[MSDFPipelineManager] Polygon pipeline not initialized');
       }
 
-      console.log('[MSDF Polygon] vertexBuffer:', vertexBuffer?.constructor?.name, 'size:', vertexBuffer?.size);
-      console.log('[MSDF Polygon] vertexCount:', vertexCount);
-
       const outputTexture = this.device.createTexture({
         size: [width, height],
         format: 'rgba8unorm',
@@ -326,7 +326,7 @@
 
       let colorData;
       if (settings.mode === 'eraser') {
-        colorData = new Float32Array([0.0, 0.0, 0.0, 0.0]);
+        colorData = new Float32Array([1.0, 0.0, 0.0, 0.3]);
       } else {
         const color = this._parseColor(settings.color || '#800000');
         colorData = new Float32Array([color.r, color.g, color.b, 1.0]);
@@ -365,7 +365,6 @@
       renderPass.end();
 
       this.queue.submit([encoder.finish()]);
-      await this.device.queue.onSubmittedWorkDone();
 
       quadUniformsBuffer.destroy();
       renderUniformsBuffer.destroy();
@@ -388,19 +387,7 @@
         throw new Error('[MSDFPipelineManager] Not initialized');
       }
 
-      console.log('[MSDF] generateMSDF called:');
-      console.log('  vertexBuffer:', vertexBuffer?.constructor?.name);
-      console.log('  vertexCount:', vertexCount);
-      console.log('  edgeCount:', edgeCount);
-      console.log('  condition:', !!(vertexBuffer && vertexCount > 0));
-
-      if (edgeCount === 0) {
-        console.warn('[MSDFPipelineManager] edgeCount is 0');
-        return null;
-      }
-
-      if (!vertexBuffer || vertexCount === 0) {
-        console.warn('[MSDFPipelineManager] ❌ vertexBuffer or vertexCount is invalid');
+      if (edgeCount === 0 || !vertexBuffer || vertexCount === 0) {
         return null;
       }
 
@@ -431,7 +418,6 @@
 
       await this._encodePass(jfaResult.resultTexture, gpuBuffer, msdfTexture, width, height, edgeCount);
       
-      console.log('[MSDF] ✅ Using Polygon Render Path');
       const finalTexture = await this._renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings);
 
       jfaResult.tempTexture.destroy();
@@ -450,6 +436,6 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase 5-FIX loaded');
+  console.log('✅ msdf-pipeline-manager.js Phase 6 loaded');
 
 })();
