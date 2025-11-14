@@ -1,17 +1,15 @@
 /**
  * ================================================================================
- * core-initializer.js - Phase 2完成版: MSDF Mode明示化
+ * core-initializer.js Phase 3-FIX: Pipeline参照修正
  * ================================================================================
  * 
  * 【責務】
  * - アプリケーション初期化統合
  * - WebGPU MSDF Pipeline初期化フロー管理
- * - PixiJS/UI/EventBus連携
  * 
- * 【Phase 2改修】
- * ✅ StrokeRenderer.initMSDFMode() 呼び出し追加
- * ✅ MSDF Pipeline完全初期化保証
- * ✅ デバッグログクリーン化
+ * 【Phase 3-FIX改修】
+ * ✅ renderPipeline → polygonRenderPipeline 修正
+ * ✅ 初期化確認ロジック修正
  * 
  * 【親ファイル依存】
  * - webgpu-drawing-layer.js
@@ -159,7 +157,7 @@ window.CoreInitializer = (function() {
     }
 
     /**
-     * ✅ Phase 2完成版: MSDF Mode明示化
+     * ✅ Phase 3-FIX: Pipeline参照修正
      */
     async function initializeWebGPU(strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
@@ -170,7 +168,6 @@ window.CoreInitializer = (function() {
         }
 
         try {
-            // 1. WebGPU Drawing Layer初期化
             if (!window.WebGPUDrawingLayer) {
                 console.error('[WebGPU] WebGPUDrawingLayer not found');
                 return false;
@@ -185,7 +182,6 @@ window.CoreInitializer = (function() {
             const device = window.WebGPUDrawingLayer.getDevice();
             const format = 'rgba8unorm';
 
-            // 2. GPU Stroke Processor初期化
             if (!window.GPUStrokeProcessor) {
                 console.error('[WebGPU] GPUStrokeProcessor not found');
                 return false;
@@ -193,7 +189,6 @@ window.CoreInitializer = (function() {
 
             await window.GPUStrokeProcessor.initialize(device);
 
-            // 3. MSDF Pipeline Manager初期化
             if (!window.MSDFPipelineManager) {
                 console.error('[WebGPU] MSDFPipelineManager not found');
                 return false;
@@ -201,13 +196,14 @@ window.CoreInitializer = (function() {
 
             await window.MSDFPipelineManager.initialize(device, format);
             
-            // ✅ Phase 2: Pipeline準備完了を確認
-            if (!window.MSDFPipelineManager.renderPipeline) {
-                console.error('[WebGPU] MSDF Render Pipeline not created');
+            // ✅ Phase 3-FIX: 正しいプロパティ名に修正
+            if (!window.MSDFPipelineManager.polygonRenderPipeline) {
+                console.error('[WebGPU] ❌ Polygon Render Pipeline not created');
                 return false;
             }
 
-            // 4. WebGPU Texture Bridge初期化
+            console.log('✅ [WebGPU] Polygon Render Pipeline created');
+
             if (!window.WebGPUTextureBridge) {
                 console.error('[WebGPU] WebGPUTextureBridge not found');
                 return false;
@@ -219,7 +215,6 @@ window.CoreInitializer = (function() {
                 return false;
             }
 
-            // 5. StrokeRenderer Phase 1初期化
             if (!strokeRenderer) {
                 console.error('[WebGPU] StrokeRenderer not provided');
                 return false;
@@ -227,24 +222,21 @@ window.CoreInitializer = (function() {
 
             await strokeRenderer.initialize();
 
-            // ✅ Phase 2: StrokeRenderer MSDF Mode明示化
             if (typeof strokeRenderer.initMSDFMode === 'function') {
                 strokeRenderer.initMSDFMode(
-                    window.MSDFPipelineManager.renderPipeline,
+                    window.MSDFPipelineManager.polygonRenderPipeline,
                     device,
                     format
                 );
                 console.log('✅ [WebGPU] StrokeRenderer MSDF Mode enabled');
-            } else {
-                console.warn('[WebGPU] strokeRenderer.initMSDFMode not found');
             }
 
-            console.log('✅ [WebGPU] Phase 2 MSDF初期化完了');
+            console.log('✅ [WebGPU] MSDF Pipeline完全初期化完了');
 
             return true;
 
         } catch (error) {
-            console.error('❌ [WebGPU] Phase 2初期化エラー:', error);
+            console.error('❌ [WebGPU] 初期化エラー:', error);
             return false;
         }
     }
@@ -331,7 +323,6 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
-            // ✅ WebGPU Phase 2完成版初期化
             const strokeRenderer = window.strokeRenderer;
             
             if (!strokeRenderer) {
@@ -478,4 +469,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (Phase 2完成版) loaded');
+console.log('✅ core-initializer.js (Phase 3-FIX) loaded');
