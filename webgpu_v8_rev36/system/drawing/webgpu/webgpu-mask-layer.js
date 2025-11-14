@@ -1,27 +1,20 @@
 /**
  * ================================================================================
- * WebGPU Mask Layer - Phase 2完全実装版
+ * webgpu-mask-layer.js Phase 3修正版
  * ================================================================================
  * 
- * 【責務】
- * - ペン/消しゴム/塗り統合マスクテクスチャ生成
- * - ポリゴン→マスク変換（GPU Compute）
- * - マスク加算/減算パイプライン
+ * 📁 親ファイル依存:
+ *   - webgpu-drawing-layer.js (GPUDevice/Queue)
+ *   - core-initializer.js (初期化)
  * 
- * 【依存Parents】
- * - webgpu-drawing-layer.js (GPUDevice/Queue)
- * - polygon-generator.js (ポリゴン入力)
+ * 📄 子ファイル依存:
+ *   - brush-core.js (消しゴムマスク処理)
  * 
- * 【依存Children】
- * - stroke-renderer.js (マスク参照描画)
- * - fill-tool.js (領域判定)
+ * 【Phase 3改修】
+ * 🔧 WGSLシェーダー修正: runtime-sized array問題解決
+ * 🔧 isInsidePolygon: storage buffer経由に変更
+ * 🔧 Compute Shader簡略化
  * 
- * 【禁止事項】
- * 🚫 CPU側ポリゴンラスタライズ
- * 🚫 Canvas2D使用
- * 🚫 blendMode依存
- * 
- * v1.0 - Phase 2完全実装
  * ================================================================================
  */
 
@@ -35,32 +28,23 @@ class WebGPUMaskLayer {
         this.device = null;
         this.queue = null;
         
-        // マスクテクスチャ
         this.width = 0;
         this.height = 0;
         this.maskTexture = null;
-        this.maskBuffer = null; // CPU側バックアップ（デバッグ用）
+        this.maskBuffer = null;
         
-        // GPU Pipeline
         this.polygonPipeline = null;
         this.compositePipeline = null;
         
-        // 初期化フラグ
         this._initialized = false;
-        
-        console.log('✅ [WebGPUMaskLayer] Instance created');
     }
     
-    /**
-     * 初期化
-     */
     async initialize(width, height) {
         if (this._initialized) {
             console.warn('[WebGPUMaskLayer] Already initialized');
             return true;
         }
         
-        // WebGPU基盤確認
         if (!this.webgpuLayer.isInitialized || !this.webgpuLayer.isInitialized()) {
             console.error('[WebGPUMaskLayer] WebGPUDrawingLayer not initialized');
             return false;
@@ -78,18 +62,14 @@ class WebGPUMaskLayer {
         this.height = height;
         
         try {
-            // マスクテクスチャ作成
             await this._createMaskTexture();
-            
-            // Pipeline作成
             await this._createPolygonPipeline();
             await this._createCompositePipeline();
             
-            // CPU側バッファ作成（デバッグ用）
             this.maskBuffer = new Float32Array(width * height);
             
             this._initialized = true;
-            console.log(`✅ [WebGPUMaskLayer] Initialized ${width}x${height}`);
+            console.log(`[WebGPUMaskLayer] Initialized ${width}x${height}`);
             return true;
             
         } catch (error) {
@@ -98,9 +78,6 @@ class WebGPUMaskLayer {
         }
     }
     
-    /**
-     * マスクテクスチャ作成
-     */
     async _createMaskTexture() {
         const config = window.TEGAKI_CONFIG?.webgpu?.mask || {};
         const format = config.format || 'r32float';
@@ -113,70 +90,64 @@ class WebGPUMaskLayer {
                    GPUTextureUsage.COPY_SRC |
                    GPUTextureUsage.COPY_DST
         });
-        
-        console.log(`📦 [WebGPUMaskLayer] Texture created: ${format}`);
     }
     
     /**
-     * ポリゴン→マスク変換Pipeline作成
+     * Phase 3: ポリゴン→マスク変換Pipeline（WGSL修正版）
      */
     async _createPolygonPipeline() {
-        // Compute Shader（簡易版：Ray Casting）
         const shaderCode = `
-            struct Polygon {
-                points: array<vec2f>,
-            };
+            struct PolygonData {
+                pointCount: u32,
+                mode: f32,
+                padding1: f32,
+                padding2: f32,
+                points: array<vec2<f32>>
+            }
             
             @group(0) @binding(0) var maskTexture: texture_storage_2d<r32float, write>;
-            @group(0) @binding(1) var<storage, read> polygon: Polygon;
-            @group(0) @binding(2) var<uniform> config: vec4f; // mode, reserved...
+            @group(0) @binding(1) var<storage, read> polygon: PolygonData;
             
             @compute @workgroup_size(8, 8)
-            fn main(@builtin(global_invocation_id) gid: vec3u) {
+            fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 let texSize = textureDimensions(maskTexture);
                 if (gid.x >= texSize.x || gid.y >= texSize.y) {
                     return;
                 }
                 
-                let pos = vec2f(f32(gid.x), f32(gid.y));
-                let inside = isInsidePolygon(pos, polygon.points);
+                let pos = vec2<f32>(f32(gid.x), f32(gid.y));
                 
-                let mode = config.x;
-                var maskValue = 0.0;
-                
-                if (mode == 1.0) { // add
-                    maskValue = select(0.0, 1.0, inside);
-                } else if (mode == -1.0) { // subtract
-                    maskValue = select(0.0, 1.0, inside);
-                }
-                
-                textureStore(maskTexture, gid.xy, vec4f(maskValue, 0.0, 0.0, 0.0));
-            }
-            
-            fn isInsidePolygon(point: vec2f, points: array<vec2f>) -> bool {
-                // Ray Casting簡易実装
+                // Ray Casting判定
                 var inside = false;
-                let n = arrayLength(&points);
+                let n = polygon.pointCount;
                 
                 for (var i = 0u; i < n; i = i + 1u) {
                     let j = (i + 1u) % n;
-                    let pi = points[i];
-                    let pj = points[j];
+                    let pi = polygon.points[i];
+                    let pj = polygon.points[j];
                     
-                    if ((pi.y > point.y) != (pj.y > point.y)) {
-                        let x = (pj.x - pi.x) * (point.y - pi.y) / (pj.y - pi.y) + pi.x;
-                        if (point.x < x) {
+                    if ((pi.y > pos.y) != (pj.y > pos.y)) {
+                        let x = (pj.x - pi.x) * (pos.y - pi.y) / (pj.y - pi.y) + pi.x;
+                        if (pos.x < x) {
                             inside = !inside;
                         }
                     }
                 }
                 
-                return inside;
+                var maskValue = 0.0;
+                if (polygon.mode == 1.0 && inside) {
+                    maskValue = 1.0;
+                } else if (polygon.mode == -1.0 && inside) {
+                    maskValue = 1.0;
+                }
+                
+                textureStore(maskTexture, gid.xy, vec4<f32>(maskValue, 0.0, 0.0, 0.0));
             }
         `;
         
         const shaderModule = this.device.createShaderModule({
-            code: shaderCode
+            code: shaderCode,
+            label: 'Mask Polygon Shader'
         });
         
         this.polygonPipeline = this.device.createComputePipeline({
@@ -184,24 +155,20 @@ class WebGPUMaskLayer {
             compute: {
                 module: shaderModule,
                 entryPoint: 'main'
-            }
+            },
+            label: 'Mask Polygon Pipeline'
         });
-        
-        console.log('📦 [WebGPUMaskLayer] Polygon pipeline created');
     }
     
-    /**
-     * マスク合成Pipeline作成
-     */
     async _createCompositePipeline() {
         const shaderCode = `
             @group(0) @binding(0) var maskA: texture_2d<f32>;
             @group(0) @binding(1) var maskB: texture_2d<f32>;
             @group(0) @binding(2) var output: texture_storage_2d<r32float, write>;
-            @group(0) @binding(3) var<uniform> mode: f32; // 1.0=add, -1.0=subtract
+            @group(0) @binding(3) var<uniform> mode: f32;
             
             @compute @workgroup_size(8, 8)
-            fn main(@builtin(global_invocation_id) gid: vec3u) {
+            fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 let texSize = textureDimensions(output);
                 if (gid.x >= texSize.x || gid.y >= texSize.y) {
                     return;
@@ -212,17 +179,18 @@ class WebGPUMaskLayer {
                 
                 var result = 0.0;
                 if (mode > 0.0) {
-                    result = clamp(a + b, 0.0, 1.0); // add
+                    result = clamp(a + b, 0.0, 1.0);
                 } else {
-                    result = clamp(a - b, 0.0, 1.0); // subtract
+                    result = clamp(a - b, 0.0, 1.0);
                 }
                 
-                textureStore(output, gid.xy, vec4f(result, 0.0, 0.0, 0.0));
+                textureStore(output, gid.xy, vec4<f32>(result, 0.0, 0.0, 0.0));
             }
         `;
         
         const shaderModule = this.device.createShaderModule({
-            code: shaderCode
+            code: shaderCode,
+            label: 'Mask Composite Shader'
         });
         
         this.compositePipeline = this.device.createComputePipeline({
@@ -230,16 +198,13 @@ class WebGPUMaskLayer {
             compute: {
                 module: shaderModule,
                 entryPoint: 'main'
-            }
+            },
+            label: 'Mask Composite Pipeline'
         });
-        
-        console.log('📦 [WebGPUMaskLayer] Composite pipeline created');
     }
     
     /**
-     * ポリゴンをマスクに追加
-     * @param {Array<Array<number>>} polygon - [[x,y], [x,y], ...]
-     * @param {'add'|'subtract'} mode - 加算/減算
+     * Phase 3: ポリゴンをマスクに追加（修正版）
      */
     async addPolygonToMask(polygon, mode = 'add') {
         if (!this._initialized) {
@@ -253,34 +218,40 @@ class WebGPUMaskLayer {
         }
         
         try {
-            // ポリゴンデータをGPUバッファに転送
-            const polygonData = new Float32Array(polygon.flat());
+            const pointCount = polygon.length;
+            const modeValue = mode === 'add' ? 1.0 : -1.0;
+            
+            // PolygonData構造: [pointCount, mode, padding1, padding2, ...points]
+            const headerSize = 4; // u32 + 3 * f32 = 16 bytes
+            const totalFloats = headerSize + pointCount * 2;
+            const polygonData = new Float32Array(totalFloats);
+            
+            polygonData[0] = pointCount;
+            polygonData[1] = modeValue;
+            polygonData[2] = 0.0;
+            polygonData[3] = 0.0;
+            
+            for (let i = 0; i < pointCount; i++) {
+                polygonData[headerSize + i * 2] = polygon[i][0];
+                polygonData[headerSize + i * 2 + 1] = polygon[i][1];
+            }
+            
             const polygonBuffer = this.device.createBuffer({
                 size: polygonData.byteLength,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                label: 'Polygon Buffer'
             });
             this.queue.writeBuffer(polygonBuffer, 0, polygonData);
             
-            // モード設定
-            const modeValue = mode === 'add' ? 1.0 : -1.0;
-            const configData = new Float32Array([modeValue, 0, 0, 0]);
-            const configBuffer = this.device.createBuffer({
-                size: 16,
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-            });
-            this.queue.writeBuffer(configBuffer, 0, configData);
-            
-            // Bind Group作成
             const bindGroup = this.device.createBindGroup({
                 layout: this.polygonPipeline.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: this.maskTexture.createView() },
-                    { binding: 1, resource: { buffer: polygonBuffer } },
-                    { binding: 2, resource: { buffer: configBuffer } }
-                ]
+                    { binding: 1, resource: { buffer: polygonBuffer } }
+                ],
+                label: 'Polygon Mask BindGroup'
             });
             
-            // Compute実行
             const commandEncoder = this.device.createCommandEncoder();
             const passEncoder = commandEncoder.beginComputePass();
             passEncoder.setPipeline(this.polygonPipeline);
@@ -292,11 +263,11 @@ class WebGPUMaskLayer {
             passEncoder.end();
             
             this.queue.submit([commandEncoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
             
-            // CPU側バッファ更新（デバッグ用）
-            await this._updateCPUBuffer();
+            polygonBuffer.destroy();
             
-            console.log(`✅ [WebGPUMaskLayer] Polygon ${mode}: ${polygon.length} points`);
+            console.log(`[WebGPUMaskLayer] Polygon ${mode}: ${pointCount} points`);
             return true;
             
         } catch (error) {
@@ -305,17 +276,6 @@ class WebGPUMaskLayer {
         }
     }
     
-    /**
-     * CPU側バッファ更新（デバッグ用）
-     */
-    async _updateCPUBuffer() {
-        // GPU→CPU転送（簡易実装）
-        // 実装省略: 本番ではGPU側のみで完結
-    }
-    
-    /**
-     * マスククリア
-     */
     clear() {
         if (!this._initialized) return;
         
@@ -326,38 +286,23 @@ class WebGPUMaskLayer {
         if (this.maskBuffer) {
             this.maskBuffer.fill(0);
         }
-        
-        console.log('🧹 [WebGPUMaskLayer] Cleared');
     }
     
-    /**
-     * マスクテクスチャ取得
-     */
     getMaskTexture() {
         return this.maskTexture;
     }
     
-    /**
-     * マスク値取得（デバッグ用）
-     */
     getMaskValue(x, y) {
         if (!this.maskBuffer) return 0;
         const idx = Math.floor(y) * this.width + Math.floor(x);
         return this.maskBuffer[idx] || 0;
     }
     
-    /**
-     * 初期化状態確認
-     */
     isInitialized() {
         return this._initialized;
     }
 }
 
-// グローバル公開
 window.WebGPUMaskLayer = WebGPUMaskLayer;
 
-console.log('✅ webgpu-mask-layer.js (Phase 2完全版) loaded');
-console.log('   📦 GPU Compute Shaderでポリゴンラスタライズ');
-console.log('   📦 マスク加算/減算');
-console.log('   📦 CPUフォールバック非対応（GPU専用）');
+console.log('✅ webgpu-mask-layer.js Phase 3修正版 loaded');

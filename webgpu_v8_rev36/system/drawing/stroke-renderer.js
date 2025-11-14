@@ -1,21 +1,23 @@
 /**
  * ================================================================================
  * system/drawing/stroke-renderer.js
- * Phase 2完成版: MSDF Pipeline統合
+ * Phase 3クリーンアップ版: 未使用コード削除
  * ================================================================================
  * 
- * 【責務】
- * - Polygon/EdgeBuffer → 描画（MSDF専用）
- * - Preview/Final描画統合
- * - BlendMode管理（Pen/Eraser）
+ * 📁 親ファイル依存:
+ *   - webgpu-drawing-layer.js (GPUDevice/Queue/Format)
+ *   - msdf-pipeline-manager.js (MSDF生成)
+ *   - webgpu-texture-bridge.js (Texture→Sprite変換)
  * 
- * 【親ファイル依存】
- * - webgpu-drawing-layer.js (GPUDevice/Queue/Format)
- * - msdf-pipeline-manager.js (MSDF生成)
- * - webgpu-texture-bridge.js (Texture→Sprite変換)
+ * 📄 子ファイル依存:
+ *   - brush-core.js (呼び出し元・renderMSDFPreview使用)
  * 
- * 【子ファイル依存】
- * - brush-core.js (呼び出し元)
+ * 【Phase 3改修】
+ * 🗑️ renderPreview() 削除（deprecated）
+ * 🗑️ renderFinalStroke() 削除（deprecated）
+ * 🗑️ _calculateBounds() 削除（未使用）
+ * ✅ renderMSDFPreview()のみ保持
+ * ✅ DRY原則準拠
  * 
  * ================================================================================
  */
@@ -72,7 +74,7 @@
     }
 
     /**
-     * 🔧 Phase 2: MSDF Mode 初期化
+     * MSDF Mode 初期化
      * @param {GPURenderPipeline} pipeline - Render Pipeline
      * @param {GPUDevice} device - GPU Device
      * @param {string} format - Texture Format
@@ -88,11 +90,12 @@
     }
 
     /**
-     * 🔧 Phase 2: MSDF Preview描画
+     * MSDF Preview描画
      * @param {GPUTexture} msdfTexture - MSDF Texture
      * @param {Object} bounds - {minX, minY, maxX, maxY}
      * @param {Object} settings - {mode, color, opacity}
      * @param {PIXI.Container} container - Layer Container
+     * @returns {PIXI.Sprite|null}
      */
     async renderMSDFPreview(msdfTexture, bounds, settings, container) {
       if (!this.msdfMode || !msdfTexture) {
@@ -126,32 +129,6 @@
       }
     }
 
-    async renderPreview(polygon, settings, container) {
-      console.warn('[StrokeRenderer] renderPreview deprecated - use renderMSDFPreview');
-      return null;
-    }
-
-    async renderFinalStroke(strokeData, settings, layerContainer) {
-      console.warn('[StrokeRenderer] renderFinalStroke deprecated - use renderMSDFPreview');
-      return null;
-    }
-
-    _calculateBounds(polygon) {
-      let minX = Infinity, minY = Infinity;
-      let maxX = -Infinity, maxY = -Infinity;
-
-      for (let i = 0; i < polygon.length; i += 2) {
-        const x = polygon[i];
-        const y = polygon[i + 1];
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
-      }
-
-      return { minX, minY, maxX, maxY };
-    }
-
     destroy() {
       this.initialized = false;
       this.msdfMode = false;
@@ -162,6 +139,6 @@
   window.StrokeRenderer = StrokeRenderer;
   window.strokeRenderer = new StrokeRenderer();
 
-  console.log('✅ stroke-renderer.js (Phase 2完成版) loaded');
+  console.log('✅ stroke-renderer.js (Phase 3クリーンアップ版) loaded');
 
 })();
