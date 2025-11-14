@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 PixiJS v8.14 お絵かきツール - WebGPU MSDF版</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div id="app"></div>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.14.0/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/simplify-js@1.2.4/simplify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
+    <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
+    <!-- node_modules Libraries -->
+    <script src="libs/gsap.min.js"></script>
+
+    <!-- Core Config -->
+    <script src="config.js"></script>
+    <script src="coordinate-system.js"></script>
+
+    <!-- Event System -->
+    <script src="system/event-bus.js"></script>
+    
+    <!-- Data Models -->
+    <script src="system/data-models.js"></script>
+    <script src="system/batch-api.js"></script>
+
+    <!-- System -->
+    <script src="system/popup-manager.js"></script>
+    <script src="system/state-manager.js"></script>
+    <script src="system/settings-manager.js"></script>
+    <script src="system/camera-system.js"></script>
+    <script src="system/layer-transform.js"></script>
+    <script src="system/checker-utils.js"></script>
+    <script src="system/layer-system.js"></script>
+    <script src="system/drawing-clipboard.js"></script>
+    <script src="system/history.js"></script>
+    <script src="system/virtual-album.js"></script>
+    <script src="system/animation-system.js"></script>
+
+    <!-- WebGPU Base -->
+    <script src="system/drawing/webgpu/webgpu-capabilities.js"></script>
+    <script src="system/drawing/webgpu/webgpu-drawing-layer.js"></script>
+    
+    <!-- WebGPU MSDF Pipeline - 新規追加 -->
+    <script src="system/drawing/wgsl-loader.js"></script> 
+    <script src="system/drawing/webgpu/gpu-stroke-processor.js"></script>
+    <script src="system/drawing/webgpu/msdf-pipeline-manager.js"></script>
+    
+    <!-- WebGPU Legacy  -->
+    <script src="system/drawing/webgpu/earcut-triangulator.js"></script>
+    <script src="system/drawing/webgpu/webgpu-texture-bridge.js"></script>
+    
+    <!-- WebGPU Mask Layer -->
+    <script src="system/drawing/webgpu/webgpu-mask-layer.js"></script>
+    
+    <!-- MSDF Integration -->
+    <script src="system/drawing/msdf/msdf-brush-shader.js"></script>
+
+    <!-- Drawing System - Base -->
+    <script src="system/drawing/pointer-handler.js"></script>
+    <script src="system/drawing/pressure-handler.js"></script>
+
+    <!-- Polygon Generator -->  
+    <script src="system/drawing/stroke-recorder.js"></script>
+    
+    <!-- SDF -->
+    <script src="system/drawing/sdf-brush-shader.js"></script>
+
+    <!-- Drawing System - 統合 -->
+    <script src="system/drawing/stroke-renderer.js"></script>
+    <script src="system/drawing/thumbnail-system.js"></script>
+    <script src="system/drawing/brush-settings.js"></script>
+    <script src="system/drawing/stroke-transformer.js"></script>
+    <script src="system/drawing/processing/vector-operations.js"></script>
+    <script src="system/drawing/brush-core.js"></script>
+    <script src="system/drawing/fill-tool.js"></script>
+    <script src="system/drawing/drawing-engine.js"></script>
+
+    <!-- Export System -->
+    <script src="system/quick-export-ui.js"></script>
+    <script src="system/export-manager.js"></script>
+    <script src="system/exporters/png-exporter.js"></script>
+    <script src="system/exporters/webp-exporter.js"></script>
+    <script src="system/exporters/psd-exporter.js"></script>
+    <script src="system/exporters/apng-exporter.js"></script>
+    <script src="system/exporters/webm-exporter.js"></script>
+    <script src="system/exporters/mp4-exporter.js"></script>
+
+    <!-- UI -->
+    <script src="ui/dom-builder.js"></script>
+    <script src="ui/slider-utils.js"></script>
+    <script src="ui/keyboard-handler.js"></script>
+    <script src="ui/resize-popup.js"></script>
+    <script src="ui/layer-panel-renderer.js"></script>
+    <script src="ui/status-display-renderer.js"></script>
+    <script src="ui/timeline-thumbnail-utils.js"></script>
+    <script src="ui/timeline-ui.js"></script>
+    <script src="ui/album-popup.js"></script>
+    <script src="ui/settings-popup.js"></script>
+    <script src="ui/quick-access-popup.js"></script>
+    <script src="ui/export-popup.js"></script>
+    <script src="ui/ui-panels.js"></script>
+
+    <!-- Core -->
+    <script src="core-runtime.js"></script>
+    <script src="core-engine.js"></script>
+    <script src="core-initializer.js"></script>
+
+    <!-- Entry Point: WebGPU MSDF Pipeline統合版 -->
+    <script>
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await window.CoreInitializer.initialize();
+                console.log('✅ Application initialized (WebGPU MSDF Pipeline版)');
+            } catch (error) {
+                console.error('❌ Application initialization failed:', error);
+            }
+        });
+    </script>
+</body>
+</html>

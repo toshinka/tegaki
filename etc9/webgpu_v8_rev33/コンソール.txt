@@ -1,0 +1,282 @@
+config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
+config.js:508    🔧 PerfectFreehand設定リニア化
+config.js:509    ✓ thinning: 0 (線の太り補正無効)
+config.js:510    ✓ smoothing: 0 (補間最小化)
+config.js:511    ✓ streamline: 0 (遅延補正なし)
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js Phase 2 loaded
+    🔧 exportResolution 設定項目追加
+ ✅ layer-transform.js Phase 6 loaded
+    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 7完成版 loaded
+    🚨 addPathToActiveLayer(): History登録を削除
+    🚨 brush-core.js にHistory登録を統一
+    ✅ DRY原則に基づく責務分担の明確化
+ ✅ drawing-clipboard.js Phase 1 loaded
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
+ ✅ wgsl-loader.js Phase 2+3完全版 loaded
+    🔧 Phase 2: Bresenham Line Algorithm実装
+    🔧 Phase 3: msdf-quad-expansion.wgsl登録
+ ✅ gpu-stroke-processor.js Phase 7 loaded
+ ✅ msdf-pipeline-manager.js Phase 9 loaded
+ ✅ earcut-triangulator.js loaded
+ ✅ webgpu-mask-layer.js (Phase 2完全版) loaded
+    📦 GPU Compute Shaderでポリゴンラスタライズ
+    📦 マスク加算/減算
+    📦 CPUフォールバック非対応（GPU専用）
+ ✅ system/drawing/msdf/msdf-brush-shader.js loaded
+ ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ stroke-recorder.js Phase 0 loaded
+    ✓ 自動初期化完了（initialize()不要）
+    ✓ Local座標記録専用（座標変換なし）
+stroke-recorder.js:337    ✓ PerfectFreehand互換形式対応
+sdf-brush-shader.js:142 ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
+sdf-brush-shader.js:143    ✓ 消しゴムモード削除
+sdf-brush-shader.js:144    ✓ ペン描画に特化
+stroke-renderer.js:165 ✅ stroke-renderer.js (Phase 2完成版) loaded
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
+fill-tool.js:270    ❌ 独自WebGPU初期化を削除
+fill-tool.js:271    ✅ 既存インスタンス参照のみ
+drawing-engine.js:286 ✅ drawing-engine.js (Phase 5 - 座標系統一修正版) loaded
+drawing-engine.js:287    ✅ BrushCore に Local座標を渡すように修正
+drawing-engine.js:288    ✅ startStroke/updateStroke で localX/localY を使用
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
+png-exporter.js:258    🔧 Blob生成の確実性向上
+webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
+dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
+slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
+slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
+slider-utils.js:237    🔧 requestAnimationFrame最適化
+keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
+keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
+keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+layer-panel-renderer.js:663 ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
+layer-panel-renderer.js:664    ✓ layer:panel-update-requested イベントリスナー追加
+layer-panel-renderer.js:665    ✓ LayerSystemからの直接呼び出し完全排除
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
+settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
+ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
+ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
+core-runtime.js:578 ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
+core-engine.js:717 ✅ core-engine.js v8.33.0 loaded
+core-engine.js:718    🔧 StrokeRecorder二重初期化修正
+core-engine.js:719    ✅ 既存インスタンス使用方式に変更
+core-initializer.js:472 ✅ core-initializer.js (Phase 3-FIX) loaded
+core-initializer.js:288 ✅ [PixiJS] Renderer initialized
+core-engine.js:617 ✅ [CoreEngine] Using existing strokeRecorder instance
+core-engine.js:634 ✅ [CoreEngine] Using existing strokeRenderer instance
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+webgpu-drawing-layer.js:51 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+initialize @ webgpu-drawing-layer.js:51
+initializeWebGPU @ core-initializer.js:176
+initialize @ core-initializer.js:331
+await in initialize
+initialize @ core-initializer.js:452
+（匿名） @ index.html:124
+webgpu-drawing-layer.js:77 ✅ [WebGPUDrawingLayer] Phase 3.1 Initialized
+webgpu-drawing-layer.js:78    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
+webgpu-drawing-layer.js:79    📊 Format: rgba8unorm
+msdf-pipeline-manager.js:60 [MSDF] Pipelines initialized: {seed: true, jfa: true, encode: true, polygon: true}
+core-initializer.js:205 ✅ [WebGPU] Polygon Render Pipeline created
+webgpu-texture-bridge.js:48 ✅ [WebGPUTextureBridge] Phase 4完全版
+stroke-renderer.js:87 ✅ [StrokeRenderer] MSDF Mode enabled
+core-initializer.js:231 ✅ [WebGPU] StrokeRenderer MSDF Mode enabled
+core-initializer.js:234 ✅ [WebGPU] MSDF Pipeline完全初期化完了
+index.html:125 ✅ Application initialized (WebGPU MSDF Pipeline版)
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 6, bufferSize: 42, gpuBuffer: GPUBuffer, edgeCount: 1}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 6, edgeCount: 1, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 100, rawHeight: 100.5, finalWidth: 200, finalHeight: 201, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 168, vertexCount: 6, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 200, canvasHeight: 201, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 6, instanceCount: 1, expectedTriangles: 2}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 12, bufferSize: 84, gpuBuffer: GPUBuffer, edgeCount: 2}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 12, edgeCount: 2, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 105.5, rawHeight: 118, finalWidth: 211, finalHeight: 236, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 336, vertexCount: 12, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 211, canvasHeight: 236, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 12, instanceCount: 1, expectedTriangles: 4}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 48, bufferSize: 336, gpuBuffer: GPUBuffer, edgeCount: 8}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 48, edgeCount: 8, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 114.5, rawHeight: 141.5, finalWidth: 229, finalHeight: 283, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 1344, vertexCount: 48, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 229, canvasHeight: 283, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 48, instanceCount: 1, expectedTriangles: 16}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 84, bufferSize: 588, gpuBuffer: GPUBuffer, edgeCount: 14}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 84, edgeCount: 14, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 120.5, rawHeight: 165.5, finalWidth: 241, finalHeight: 331, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 2352, vertexCount: 84, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 241, canvasHeight: 331, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 84, instanceCount: 1, expectedTriangles: 28}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 126, bufferSize: 882, gpuBuffer: GPUBuffer, edgeCount: 21}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 126, edgeCount: 21, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 126, rawHeight: 187, finalWidth: 252, finalHeight: 374, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 3528, vertexCount: 126, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 252, canvasHeight: 374, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 126, instanceCount: 1, expectedTriangles: 42}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 156, bufferSize: 1092, gpuBuffer: GPUBuffer, edgeCount: 26}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 156, edgeCount: 26, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 129, rawHeight: 205.5, finalWidth: 258, finalHeight: 411, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 4368, vertexCount: 156, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 258, canvasHeight: 411, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 156, instanceCount: 1, expectedTriangles: 52}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 192, bufferSize: 1344, gpuBuffer: GPUBuffer, edgeCount: 32}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 192, edgeCount: 32, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 129.5, rawHeight: 218, finalWidth: 259, finalHeight: 436, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 5376, vertexCount: 192, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 259, canvasHeight: 436, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 192, instanceCount: 1, expectedTriangles: 64}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 210, bufferSize: 1470, gpuBuffer: GPUBuffer, edgeCount: 35}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 210, edgeCount: 35, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 129.5, rawHeight: 222.5, finalWidth: 259, finalHeight: 445, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 5880, vertexCount: 210, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 259, canvasHeight: 445, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 210, instanceCount: 1, expectedTriangles: 70}
+brush-core.js:273 [BrushCore Finalize] VertexBuffer: {vertexCount: 216, bufferSize: 1512, gpuBuffer: GPUBuffer, edgeCount: 36, mode: 'pen'}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 216, edgeCount: 36, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 129.5, rawHeight: 223, finalWidth: 259, finalHeight: 446, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 6048, vertexCount: 216, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 259, canvasHeight: 446, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 216, instanceCount: 1, expectedTriangles: 72}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 6, bufferSize: 42, gpuBuffer: GPUBuffer, edgeCount: 1}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 6, edgeCount: 1, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 100.5, rawHeight: 100, finalWidth: 201, finalHeight: 200, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 168, vertexCount: 6, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 201, canvasHeight: 200, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:370 [MSDF Render] Eraser mode: alpha=0.0
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 6, instanceCount: 1, expectedTriangles: 2}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 36, bufferSize: 252, gpuBuffer: GPUBuffer, edgeCount: 6}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 36, edgeCount: 6, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 103, rawHeight: 100.5, finalWidth: 206, finalHeight: 201, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 1008, vertexCount: 36, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 206, canvasHeight: 201, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:370 [MSDF Render] Eraser mode: alpha=0.0
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 36, instanceCount: 1, expectedTriangles: 12}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 72, bufferSize: 504, gpuBuffer: GPUBuffer, edgeCount: 12}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 72, edgeCount: 12, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 109.5, rawHeight: 107, finalWidth: 219, finalHeight: 214, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 2016, vertexCount: 72, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 219, canvasHeight: 214, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:370 [MSDF Render] Eraser mode: alpha=0.0
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 72, instanceCount: 1, expectedTriangles: 24}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 108, bufferSize: 756, gpuBuffer: GPUBuffer, edgeCount: 18}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 108, edgeCount: 18, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 122.5, rawHeight: 122, finalWidth: 245, finalHeight: 244, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 3024, vertexCount: 108, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 245, canvasHeight: 244, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:370 [MSDF Render] Eraser mode: alpha=0.0
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 108, instanceCount: 1, expectedTriangles: 36}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 144, bufferSize: 1008, gpuBuffer: GPUBuffer, edgeCount: 24}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 144, edgeCount: 24, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 135.5, rawHeight: 139, finalWidth: 271, finalHeight: 278, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 4032, vertexCount: 144, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 271, canvasHeight: 278, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:370 [MSDF Render] Eraser mode: alpha=0.0
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 144, instanceCount: 1, expectedTriangles: 48}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 180, bufferSize: 1260, gpuBuffer: GPUBuffer, edgeCount: 30}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 180, edgeCount: 30, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 144.5, rawHeight: 154, finalWidth: 289, finalHeight: 308, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 5040, vertexCount: 180, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 289, canvasHeight: 308, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:370 [MSDF Render] Eraser mode: alpha=0.0
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 180, instanceCount: 1, expectedTriangles: 60}
+brush-core.js:164 [BrushCore Preview] VertexBuffer: {vertexCount: 216, bufferSize: 1512, gpuBuffer: GPUBuffer, edgeCount: 36}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 216, edgeCount: 36, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 148.5, rawHeight: 163.5, finalWidth: 297, finalHeight: 327, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 6048, vertexCount: 216, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 297, canvasHeight: 327, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:370 [MSDF Render] Eraser mode: alpha=0.0
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 216, instanceCount: 1, expectedTriangles: 72}
+brush-core.js:273 [BrushCore Finalize] VertexBuffer: {vertexCount: 216, bufferSize: 1512, gpuBuffer: GPUBuffer, edgeCount: 36, mode: 'eraser'}
+msdf-pipeline-manager.js:443 [MSDF] Render path decision: {vertexBuffer: GPUBuffer, vertexCount: 216, edgeCount: 36, condition: true}
+msdf-pipeline-manager.js:455 [MSDF] Using Polygon path
+msdf-pipeline-manager.js:466 [MSDF] Texture dimensions: {rawWidth: 148.5, rawHeight: 163.5, finalWidth: 297, finalHeight: 327, oversample: 2}
+msdf-pipeline-manager.js:304 [MSDF Render] VertexBuffer check: {type: 'GPUBuffer', size: 6048, vertexCount: 216, usage: 40}
+msdf-pipeline-manager.js:332 [MSDF Render] QuadUniforms: {canvasWidth: 297, canvasHeight: 327, halfWidth: 1.5, padding: 0}
+msdf-pipeline-manager.js:353 [MSDF Render] BindGroup0 created: {entries: GPUBindGroup, bufferSize: 16}
+msdf-pipeline-manager.js:370 [MSDF Render] Eraser mode: alpha=0.0
+msdf-pipeline-manager.js:407 [MSDF Render] Draw command: {vertexCount: 216, instanceCount: 1, expectedTriangles: 72}
+brush-core.js:313 [BrushCore] Eraser mode: blendMode set to "erase"
