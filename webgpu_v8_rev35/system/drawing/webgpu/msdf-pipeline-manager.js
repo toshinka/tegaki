@@ -1,29 +1,19 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 10 旧メソッド削除完全版
+ * msdf-pipeline-manager.js Phase 1-FIX（計画書Phase 1-3完遂版）
  * ================================================================================
  * 
- * 【依存Parents】
- * - webgpu-drawing-layer.js (device/queue/format)
- * - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer + edgeCount)
- * - wgsl-loader.js (Shader読み込み)
+ * 【計画書Phase 1対応】
+ * 🔧 BindGroup構造とWGSL整合性確認
+ * 🔧 _renderMSDFPolygon()のbindGroup0修正
+ * 🔧 vertexBuffer型検証追加
  * 
- * 【依存Children】
- * - brush-core.js (呼び出し元)
- * - webgpu-texture-bridge.js (Texture→Sprite変換)
+ * 【計画書Phase 2対応】
+ * 🔧 generateMSDF()分岐デバッグログ追加
+ * 🔧 条件判定の明確化
  * 
- * 【Phase 10改修】🗑️計画書Phase 5-6完遂
- * 🗑️ _renderMSDF() 削除（フルスクリーンQuad・未使用）
- * 🗑️ generateMSDF()のelse分岐削除（Polygon経路のみ）
- * 🔧 デバッグログ保持（Phase 9）
- * ✅ DRY原則完全準拠
- * 
- * 【計画書Phase 1-6完了状態】
- * ✅ Phase 1: BindGroup修正 + デバッグログ
- * ✅ Phase 2: 分岐統一（Polygon経路のみ）
- * ✅ Phase 3: 消しゴム対応（blendMode）
- * ⏸️ Phase 4: マスク統合（Pixi対応済み）
- * ✅ Phase 5-6: 旧コード削除
+ * 【計画書Phase 3対応】
+ * 🔧 消しゴムモード分岐実装（alpha=0.0設定）
  * 
  * ================================================================================
  */
@@ -54,6 +44,7 @@
       this._loadShaders();
       await this._createPipelines();
       
+      // Phase 1: Pipeline初期化確認
       console.log('[MSDF] Pipelines initialized:', {
         seed: !!this.seedInitPipeline,
         jfa: !!this.jfaPipeline,
@@ -292,17 +283,18 @@
       configBuffer.destroy();
     }
 
+    /**
+     * Phase 1-FIX: BindGroup整合性修正 + Phase 3消しゴム対応
+     */
     async _renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings = {}) {
       if (!this.polygonRenderPipeline) {
         throw new Error('[MSDFPipelineManager] Polygon pipeline not initialized');
       }
 
-      console.log('[MSDF Render] VertexBuffer check:', {
-        type: vertexBuffer.constructor.name,
-        size: vertexBuffer.size,
-        vertexCount: vertexCount,
-        usage: vertexBuffer.usage
-      });
+      // Phase 1: VertexBuffer型検証
+      if (!vertexBuffer || vertexBuffer.constructor.name !== 'GPUBuffer') {
+        throw new Error('[MSDF Render] Invalid vertexBuffer type');
+      }
 
       const outputTexture = this.device.createTexture({
         size: [width, height],
@@ -317,19 +309,13 @@
         minFilter: 'linear'
       });
 
+      // Phase 1: QuadUniforms構造確認
       const quadUniformsData = new Float32Array([
-        width,
-        height,
-        settings.size ? settings.size / 2.0 : 1.5,
-        0.0
+        width,          // canvasWidth
+        height,         // canvasHeight
+        settings.size ? settings.size / 2.0 : 1.5, // halfWidth
+        0.0             // padding
       ]);
-      
-      console.log('[MSDF Render] QuadUniforms:', {
-        canvasWidth: quadUniformsData[0],
-        canvasHeight: quadUniformsData[1],
-        halfWidth: quadUniformsData[2],
-        padding: quadUniformsData[3]
-      });
       
       const quadUniformsBuffer = this.device.createBuffer({
         size: quadUniformsData.byteLength,
@@ -337,6 +323,7 @@
       });
       this.queue.writeBuffer(quadUniformsBuffer, 0, quadUniformsData);
 
+      // Phase 1: BindGroup0作成（WGSL @group(0)と一致）
       const bindGroup0 = this.device.createBindGroup({
         layout: this.polygonRenderPipeline.getBindGroupLayout(0),
         entries: [
@@ -344,13 +331,12 @@
         ]
       });
 
-      console.log('[MSDF Render] BindGroup0 created:', {
-        entries: bindGroup0,
-        bufferSize: quadUniformsBuffer.size
-      });
-
+      // RenderUniforms
       const renderUniformsData = new Float32Array([
-        0.5, 0.05, settings.opacity !== undefined ? settings.opacity : 1.0, 0.0
+        0.5,  // pxRange
+        0.05, // threshold
+        settings.opacity !== undefined ? settings.opacity : 1.0,
+        0.0
       ]);
       const renderUniformsBuffer = this.device.createBuffer({
         size: renderUniformsData.byteLength,
@@ -358,10 +344,10 @@
       });
       this.queue.writeBuffer(renderUniformsBuffer, 0, renderUniformsData);
 
+      // Phase 3: 消しゴムモード対応
       let colorData;
       if (settings.mode === 'eraser') {
-        colorData = new Float32Array([0.0, 0.0, 0.0, 0.0]);
-        console.log('[MSDF Render] Eraser mode: alpha=0.0');
+        colorData = new Float32Array([0.0, 0.0, 0.0, 0.0]); // alpha=0.0
       } else {
         const color = this._parseColor(settings.color || '#800000');
         colorData = new Float32Array([color.r, color.g, color.b, 1.0]);
@@ -396,13 +382,6 @@
       renderPass.setVertexBuffer(0, vertexBuffer);
       renderPass.setBindGroup(0, bindGroup0);
       renderPass.setBindGroup(1, bindGroup1);
-      
-      console.log('[MSDF Render] Draw command:', {
-        vertexCount: vertexCount,
-        instanceCount: 1,
-        expectedTriangles: vertexCount / 3
-      });
-      
       renderPass.draw(vertexCount, 1, 0, 0);
       renderPass.end();
 
@@ -425,16 +404,21 @@
       };
     }
 
+    /**
+     * Phase 2: 分岐デバッグログ追加
+     */
     async generateMSDF(gpuBuffer, bounds, existingMSDF = null, settings = {}, vertexBuffer = null, vertexCount = 0, edgeCount = 0) {
       if (!this.initialized) {
         throw new Error('[MSDFPipelineManager] Not initialized');
       }
 
-      console.log('[MSDF] Render path decision:', {
-        vertexBuffer: vertexBuffer,
+      // Phase 2: 分岐条件デバッグ
+      console.log('[MSDF] generateMSDF called:', {
+        hasVertexBuffer: !!vertexBuffer,
+        vertexBufferType: vertexBuffer?.constructor?.name,
         vertexCount: vertexCount,
         edgeCount: edgeCount,
-        condition: !!(vertexBuffer && vertexCount > 0)
+        willRenderPolygon: !!(vertexBuffer && vertexCount > 0)
       });
 
       if (edgeCount === 0 || !vertexBuffer || vertexCount === 0) {
@@ -442,7 +426,7 @@
         return null;
       }
 
-      console.log('[MSDF] Using Polygon path');
+      console.log('[MSDF] Using Polygon render path');
 
       const DPR = 1.0;
       const oversample = 2;
@@ -452,14 +436,6 @@
       
       const width = this._toU32(Math.ceil(rawWidth * DPR * oversample));
       const height = this._toU32(Math.ceil(rawHeight * DPR * oversample));
-
-      console.log('[MSDF] Texture dimensions:', {
-        rawWidth: rawWidth,
-        rawHeight: rawHeight,
-        finalWidth: width,
-        finalHeight: height,
-        oversample: oversample
-      });
 
       const seedTexture = this.device.createTexture({
         size: [width, height],
@@ -497,6 +473,6 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase 10 loaded');
+  console.log('✅ msdf-pipeline-manager.js Phase 1-FIX loaded');
 
 })();
