@@ -1,19 +1,27 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 1-FIX（計画書Phase 1-3完遂版）
+ * msdf-pipeline-manager.js Phase 5完全修正版
  * ================================================================================
  * 
- * 【計画書Phase 1対応】
- * 🔧 BindGroup構造とWGSL整合性確認
- * 🔧 _renderMSDFPolygon()のbindGroup0修正
- * 🔧 vertexBuffer型検証追加
+ * 📁 親ファイル依存:
+ *   - webgpu-drawing-layer.js (device/queue/format)
+ *   - brush-core.js (generateMSDF呼び出し元)
  * 
- * 【計画書Phase 2対応】
- * 🔧 generateMSDF()分岐デバッグログ追加
- * 🔧 条件判定の明確化
+ * 📄 子ファイル依存:
+ *   - wgsl-loader.js (WGSL Shader定義)
+ *   - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer受け渡し)
+ *   - msdf-quad-expansion.wgsl (Vertex Shader)
+ *   - msdf-render.wgsl (Fragment Shader)
+ *   - msdf-seed-init.wgsl (Compute: Seed初期化)
+ *   - msdf-jfa-pass.wgsl (Compute: JFA距離場)
+ *   - msdf-encode.wgsl (Compute: MSDF符号化)
  * 
- * 【計画書Phase 3対応】
- * 🔧 消しゴムモード分岐実装（alpha=0.0設定）
+ * 【Phase 5改修】
+ * 🔧 QuadUniformsをBounds幅/高さに変更
+ * 🔧 msdf-quad-expansion.wgslとの整合性確保
+ * 🔧 座標系統一: Bounds原点基準 → NDC変換
+ * 🔧 消しゴムモード対応（alpha=0.0）
+ * 🔧 過剰なコンソールログ削除
  * 
  * ================================================================================
  */
@@ -44,7 +52,6 @@
       this._loadShaders();
       await this._createPipelines();
       
-      // Phase 1: Pipeline初期化確認
       console.log('[MSDF] Pipelines initialized:', {
         seed: !!this.seedInitPipeline,
         jfa: !!this.jfaPipeline,
@@ -284,14 +291,13 @@
     }
 
     /**
-     * Phase 1-FIX: BindGroup整合性修正 + Phase 3消しゴム対応
+     * Phase 5: Bounds幅/高さでQuadUniforms作成
      */
     async _renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings = {}) {
       if (!this.polygonRenderPipeline) {
         throw new Error('[MSDFPipelineManager] Polygon pipeline not initialized');
       }
 
-      // Phase 1: VertexBuffer型検証
       if (!vertexBuffer || vertexBuffer.constructor.name !== 'GPUBuffer') {
         throw new Error('[MSDF Render] Invalid vertexBuffer type');
       }
@@ -309,10 +315,10 @@
         minFilter: 'linear'
       });
 
-      // Phase 1: QuadUniforms構造確認
+      // Phase 5: QuadUniforms = Bounds幅/高さ
       const quadUniformsData = new Float32Array([
-        width,          // canvasWidth
-        height,         // canvasHeight
+        width,          // boundsWidth（テクスチャ幅と同じ）
+        height,         // boundsHeight（テクスチャ高さと同じ）
         settings.size ? settings.size / 2.0 : 1.5, // halfWidth
         0.0             // padding
       ]);
@@ -323,7 +329,6 @@
       });
       this.queue.writeBuffer(quadUniformsBuffer, 0, quadUniformsData);
 
-      // Phase 1: BindGroup0作成（WGSL @group(0)と一致）
       const bindGroup0 = this.device.createBindGroup({
         layout: this.polygonRenderPipeline.getBindGroupLayout(0),
         entries: [
@@ -331,7 +336,6 @@
         ]
       });
 
-      // RenderUniforms
       const renderUniformsData = new Float32Array([
         0.5,  // pxRange
         0.05, // threshold
@@ -344,10 +348,9 @@
       });
       this.queue.writeBuffer(renderUniformsBuffer, 0, renderUniformsData);
 
-      // Phase 3: 消しゴムモード対応
       let colorData;
       if (settings.mode === 'eraser') {
-        colorData = new Float32Array([0.0, 0.0, 0.0, 0.0]); // alpha=0.0
+        colorData = new Float32Array([0.0, 0.0, 0.0, 0.0]);
       } else {
         const color = this._parseColor(settings.color || '#800000');
         colorData = new Float32Array([color.r, color.g, color.b, 1.0]);
@@ -404,29 +407,15 @@
       };
     }
 
-    /**
-     * Phase 2: 分岐デバッグログ追加
-     */
     async generateMSDF(gpuBuffer, bounds, existingMSDF = null, settings = {}, vertexBuffer = null, vertexCount = 0, edgeCount = 0) {
       if (!this.initialized) {
         throw new Error('[MSDFPipelineManager] Not initialized');
       }
 
-      // Phase 2: 分岐条件デバッグ
-      console.log('[MSDF] generateMSDF called:', {
-        hasVertexBuffer: !!vertexBuffer,
-        vertexBufferType: vertexBuffer?.constructor?.name,
-        vertexCount: vertexCount,
-        edgeCount: edgeCount,
-        willRenderPolygon: !!(vertexBuffer && vertexCount > 0)
-      });
-
       if (edgeCount === 0 || !vertexBuffer || vertexCount === 0) {
         console.warn('[MSDF] Skipping render: invalid parameters');
         return null;
       }
-
-      console.log('[MSDF] Using Polygon render path');
 
       const DPR = 1.0;
       const oversample = 2;
@@ -473,6 +462,6 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase 1-FIX loaded');
+  console.log('✅ msdf-pipeline-manager.js Phase 5完全修正版 loaded');
 
 })();

@@ -1,25 +1,26 @@
 /**
  * ================================================================================
- * wgsl-loader.js Phase 2+3完全版 - Bresenham + Quad Expansion統合
+ * wgsl-loader.js Phase 4統合版
  * ================================================================================
- * 📁 Parents: index.html
- * 📄 Children: msdf-pipeline-manager.js
  * 
- * 責務: 全WGSLシェーダーコードをwindowオブジェクトへ登録
+ * 📁 親ファイル依存: index.html
+ * 📄 子ファイル依存: msdf-pipeline-manager.js
  * 
- * 🔧 Phase 2改修:
- *   - msdf-seed-init.wgsl: Bresenham Line Algorithm実装
- *   - 5点書き込み削除 → 線分ラスタライズに変更
+ * 【責務】
+ * - 全WGSLシェーダーコードをwindowオブジェクトへ登録
  * 
- * 🔧 Phase 3追加:
- *   - msdf-quad-expansion.wgsl: Polygon Vertex Shader登録
+ * 【Phase 4改修】
+ * 🔧 msdf-quad-expansion.wgsl: boundsWidth/Height に統一
+ * 🔧 過剰なコンソールログ削除
+ * 🔧 ヘッダーに親子依存関係記述
+ * 
  * ================================================================================
  */
 
 (function() {
   'use strict';
 
-  // msdf-seed-init.wgsl (Phase 2: Bresenham実装)
+  // msdf-seed-init.wgsl (Bresenham Line Algorithm)
   window.MSDF_SEED_INIT_WGSL = `
 struct Edge {
   x0: f32,
@@ -262,7 +263,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `;
 
-  // msdf-quad-expansion.wgsl (Phase 3追加)
+  // msdf-quad-expansion.wgsl (Phase 4: boundsWidth/Height統一)
   window.MSDF_QUAD_EXPANSION_WGSL = `
 struct VertexInput {
   @location(0) prev: vec2<f32>,
@@ -277,8 +278,8 @@ struct VertexOutput {
 }
 
 struct QuadUniforms {
-  canvasWidth: f32,
-  canvasHeight: f32,
+  boundsWidth: f32,
+  boundsHeight: f32,
   halfWidth: f32,
   padding: f32
 }
@@ -289,18 +290,28 @@ struct QuadUniforms {
 fn main(in: VertexInput) -> VertexOutput {
   var out: VertexOutput;
 
-  let tangent0 = normalize(in.curr - in.prev);
-  let tangent1 = normalize(in.next - in.curr);
-  let tangent = normalize(tangent0 + tangent1);
+  let dir = in.next - in.curr;
+  let len = length(dir);
+  var tangent = vec2<f32>(0.0, 0.0);
+  
+  if (len > 0.01) {
+    tangent = dir / len;
+  } else {
+    let fallbackDir = in.curr - in.prev;
+    let fallbackLen = length(fallbackDir);
+    if (fallbackLen > 0.01) {
+      tangent = fallbackDir / fallbackLen;
+    } else {
+      tangent = vec2<f32>(1.0, 0.0);
+    }
+  }
 
   let normal = vec2<f32>(-tangent.y, tangent.x);
-
   let offset = normal * in.side * uQuad.halfWidth;
-
   let worldPos = in.curr + offset;
 
-  let ndcX = (worldPos.x / uQuad.canvasWidth) * 2.0 - 1.0;
-  let ndcY = 1.0 - (worldPos.y / uQuad.canvasHeight) * 2.0;
+  let ndcX = (worldPos.x / uQuad.boundsWidth) * 2.0 - 1.0;
+  let ndcY = 1.0 - (worldPos.y / uQuad.boundsHeight) * 2.0;
 
   out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
   out.uv = vec2<f32>((in.side + 1.0) * 0.5, 0.5);
@@ -354,8 +365,6 @@ fn vertMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 }
 `;
 
-  console.log('✅ wgsl-loader.js Phase 2+3完全版 loaded');
-  console.log('   🔧 Phase 2: Bresenham Line Algorithm実装');
-  console.log('   🔧 Phase 3: msdf-quad-expansion.wgsl登録');
+  console.log('✅ wgsl-loader.js Phase 4統合版 loaded');
 
 })();
