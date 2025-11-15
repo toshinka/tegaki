@@ -1,24 +1,34 @@
-// ===== system/drawing/pointer-handler.js =====
-// PointerEvent統一ハンドラ（マウス・タッチ・ペン対応）
-// Phase 2: pointerType='mouse'のペン誤認を補正
+/**
+ * ================================================================================
+ * pointer-handler.js Phase 5完全版
+ * ================================================================================
+ * 
+ * 📁 親ファイル依存: なし（独立モジュール）
+ * 
+ * 📄 子ファイル使用先:
+ *   - system/drawing/drawing-engine.js
+ * 
+ * 【責務】
+ * - PointerEvent統一ハンドラ（マウス・タッチ・ペン対応）
+ * - pointerType自動補正（mouse+pressure→pen判定）
+ * - ポインターキャプチャ管理
+ * 
+ * 【Phase 5改修内容】
+ * ✅ pressure正規化修正（マウスは常に0、ペンのみe.pressure使用）
+ * ✅ 過剰ログ削除
+ * 
+ * ================================================================================
+ */
 
 (function() {
     'use strict';
 
-    /**
-     * PointerEvent統一ハンドラ
-     * マウス・タッチ・タブレットペンを単一インターフェースで扱う
-     */
     class PointerHandler {
         /**
          * 要素にPointerEventハンドラをアタッチ
          * @param {HTMLElement} element - 対象要素
-         * @param {Object} handlers - イベントハンドラ群
-         * @param {Function} handlers.down - pointerdown時
-         * @param {Function} handlers.move - pointermove時
-         * @param {Function} handlers.up - pointerup時
-         * @param {Function} handlers.cancel - pointercancel時
-         * @param {Object} options - オプション
+         * @param {Object} handlers - {down, move, up, cancel}
+         * @param {Object} options - {preventDefault, capture}
          * @returns {Function} デタッチ関数
          */
         static attach(element, handlers, options = {}) {
@@ -32,17 +42,15 @@
                 capture = false
             } = options;
 
-            // ポインター状態管理
             const activePointers = new Map();
 
             /**
-             * Phase 2修正: pointerType補正ヒューリスティック
-             * Windows等で pen が mouse として報告される問題に対応
+             * Phase 5: pointerType補正 + pressure正規化
              */
             function normalizeEvent(e) {
                 let pType = e.pointerType;
                 
-                // ヒューリスティック: mouseでも筆圧・傾きがあればペン扱い
+                // ヒューリスティック: mouseでも筆圧・傾きがあればペン
                 if (pType === 'mouse') {
                     const hasPressure = typeof e.pressure === 'number' && e.pressure > 0.01;
                     const hasTilt = typeof e.tiltX === 'number' && 
@@ -53,12 +61,19 @@
                     }
                 }
                 
+                // ✅ Phase 5: pressure正規化修正
+                // マウス: 常に0
+                // ペン: e.pressure ?? 0.5
+                const pressure = (pType === 'pen') 
+                    ? (e.pressure ?? 0.5) 
+                    : 0;
+                
                 return {
                     pointerId: e.pointerId,
-                    pointerType: pType, // 補正後のpointerType
+                    pointerType: pType,
                     clientX: e.clientX,
                     clientY: e.clientY,
-                    pressure: e.pressure ?? 0.5,
+                    pressure: pressure,
                     tiltX: e.tiltX ?? 0,
                     tiltY: e.tiltY ?? 0,
                     twist: e.twist ?? 0,
@@ -69,13 +84,11 @@
             }
 
             function onPointerDown(e) {
-                // 右クリックは無視
                 if (e.button === 2) return;
 
                 const info = normalizeEvent(e);
                 activePointers.set(e.pointerId, info);
 
-                // ポインターキャプチャ
                 try {
                     e.target.setPointerCapture(e.pointerId);
                 } catch (err) {
@@ -94,7 +107,6 @@
             function onPointerMove(e) {
                 const info = normalizeEvent(e);
                 
-                // アクティブなポインターのみ処理
                 if (activePointers.has(e.pointerId)) {
                     activePointers.set(e.pointerId, info);
                     
@@ -111,7 +123,6 @@
             function onPointerUp(e) {
                 const info = normalizeEvent(e);
 
-                // ポインターキャプチャ解放
                 try {
                     e.target.releasePointerCapture(e.pointerId);
                 } catch (err) {
@@ -147,13 +158,11 @@
                 }
             }
 
-            // イベント登録
             element.addEventListener('pointerdown', onPointerDown, { capture, passive: false });
             element.addEventListener('pointermove', onPointerMove, { capture, passive: false });
             element.addEventListener('pointerup', onPointerUp, { capture, passive: false });
             element.addEventListener('pointercancel', onPointerCancel, { capture, passive: false });
 
-            // デタッチ関数を返す
             return () => {
                 element.removeEventListener('pointerdown', onPointerDown, { capture });
                 element.removeEventListener('pointermove', onPointerMove, { capture });
@@ -163,9 +172,6 @@
             };
         }
 
-        /**
-         * グローバルポインターハンドラ（document全体で捕捉）
-         */
         static attachGlobal(handlers, options = {}) {
             return PointerHandler.attach(document, handlers, {
                 ...options,
@@ -174,10 +180,8 @@
         }
     }
 
-    // グローバル公開
     window.PointerHandler = PointerHandler;
 
-    console.log('✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded');
-    console.log('   ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"');
-
 })();
+
+console.log('✅ pointer-handler.js Phase 5 loaded');

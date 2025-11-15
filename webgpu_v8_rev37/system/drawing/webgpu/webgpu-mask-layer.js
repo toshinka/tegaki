@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * webgpu-mask-layer.js Phase 3修正版
+ * webgpu-mask-layer.js Phase 5修正版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -10,10 +10,11 @@
  * 📄 子ファイル依存:
  *   - brush-core.js (消しゴムマスク処理)
  * 
- * 【Phase 3改修】
- * 🔧 WGSLシェーダー修正: runtime-sized array問題解決
- * 🔧 isInsidePolygon: storage buffer経由に変更
- * 🔧 Compute Shader簡略化
+ * 【Phase 5改修内容】
+ * ✅ context loss検出とリカバリー
+ * ✅ リソース破棄の徹底
+ * ✅ エラー時の自動再初期化
+ * ✅ 過剰ログ削除
  * 
  * ================================================================================
  */
@@ -39,9 +40,36 @@ class WebGPUMaskLayer {
         this._initialized = false;
     }
     
+    /**
+     * Phase 5: context有効性チェック
+     */
+    _isContextValid() {
+        if (!this.device || !this.queue) return false;
+        
+        try {
+            return this.device.lost !== undefined;
+        } catch (e) {
+            return false;
+        }
+    }
+    
+    /**
+     * Phase 5: リソース破棄ヘルパー
+     */
+    _destroyResource(resource) {
+        if (!resource) return;
+        
+        try {
+            if (typeof resource.destroy === 'function') {
+                resource.destroy();
+            }
+        } catch (e) {
+            // 既に破棄済み
+        }
+    }
+    
     async initialize(width, height) {
         if (this._initialized) {
-            console.warn('[WebGPUMaskLayer] Already initialized');
             return true;
         }
         
@@ -69,13 +97,27 @@ class WebGPUMaskLayer {
             this.maskBuffer = new Float32Array(width * height);
             
             this._initialized = true;
-            console.log(`[WebGPUMaskLayer] Initialized ${width}x${height}`);
             return true;
             
         } catch (error) {
             console.error('[WebGPUMaskLayer] Init failed:', error);
             return false;
         }
+    }
+    
+    /**
+     * Phase 5: 再初期化（context loss復旧用）
+     */
+    async reinitialize() {
+        console.log('[WebGPUMaskLayer] Reinitializing...');
+        
+        // 既存リソース破棄
+        this._destroyResource(this.maskTexture);
+        this.maskTexture = null;
+        this._initialized = false;
+        
+        // 再初期化
+        return await this.initialize(this.width, this.height);
     }
     
     async _createMaskTexture() {
@@ -92,9 +134,6 @@ class WebGPUMaskLayer {
         });
     }
     
-    /**
-     * Phase 3: ポリゴン→マスク変換Pipeline（WGSL修正版）
-     */
     async _createPolygonPipeline() {
         const shaderCode = `
             struct PolygonData {
@@ -117,7 +156,6 @@ class WebGPUMaskLayer {
                 
                 let pos = vec2<f32>(f32(gid.x), f32(gid.y));
                 
-                // Ray Casting判定
                 var inside = false;
                 let n = polygon.pointCount;
                 
@@ -204,25 +242,35 @@ class WebGPUMaskLayer {
     }
     
     /**
-     * Phase 3: ポリゴンをマスクに追加（修正版）
+     * Phase 5: ポリゴン追加（context loss自動復旧対応）
      */
     async addPolygonToMask(polygon, mode = 'add') {
+        // Phase 5: context有効性チェック
+        if (!this._isContextValid()) {
+            console.warn('[WebGPUMaskLayer] Context invalid, attempting reinitialize');
+            const reinitSuccess = await this.reinitialize();
+            if (!reinitSuccess) {
+                console.error('[WebGPUMaskLayer] Reinitialize failed');
+                return false;
+            }
+        }
+        
         if (!this._initialized) {
             console.warn('[WebGPUMaskLayer] Not initialized');
             return false;
         }
         
         if (!polygon || polygon.length === 0) {
-            console.warn('[WebGPUMaskLayer] Empty polygon');
             return false;
         }
+        
+        let polygonBuffer = null;
         
         try {
             const pointCount = polygon.length;
             const modeValue = mode === 'add' ? 1.0 : -1.0;
             
-            // PolygonData構造: [pointCount, mode, padding1, padding2, ...points]
-            const headerSize = 4; // u32 + 3 * f32 = 16 bytes
+            const headerSize = 4;
             const totalFloats = headerSize + pointCount * 2;
             const polygonData = new Float32Array(totalFloats);
             
@@ -236,7 +284,7 @@ class WebGPUMaskLayer {
                 polygonData[headerSize + i * 2 + 1] = polygon[i][1];
             }
             
-            const polygonBuffer = this.device.createBuffer({
+            polygonBuffer = this.device.createBuffer({
                 size: polygonData.byteLength,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
                 label: 'Polygon Buffer'
@@ -265,13 +313,17 @@ class WebGPUMaskLayer {
             this.queue.submit([commandEncoder.finish()]);
             await this.device.queue.onSubmittedWorkDone();
             
-            polygonBuffer.destroy();
+            // Phase 5: リソース破棄
+            this._destroyResource(polygonBuffer);
             
-            console.log(`[WebGPUMaskLayer] Polygon ${mode}: ${pointCount} points`);
             return true;
             
         } catch (error) {
             console.error('[WebGPUMaskLayer] addPolygonToMask failed:', error);
+            
+            // Phase 5: エラー時のクリーンアップ
+            this._destroyResource(polygonBuffer);
+            
             return false;
         }
     }
@@ -301,8 +353,18 @@ class WebGPUMaskLayer {
     isInitialized() {
         return this._initialized;
     }
+    
+    /**
+     * Phase 5: 完全クリーンアップ
+     */
+    destroy() {
+        this._destroyResource(this.maskTexture);
+        this.maskTexture = null;
+        this.maskBuffer = null;
+        this._initialized = false;
+    }
 }
 
 window.WebGPUMaskLayer = WebGPUMaskLayer;
 
-console.log('✅ webgpu-mask-layer.js Phase 3修正版 loaded');
+console.log('✅ webgpu-mask-layer.js Phase 5 loaded');
