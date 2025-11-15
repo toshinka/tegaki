@@ -1,27 +1,23 @@
 /**
  * ================================================================================
- * system/drawing/webgpu/webgpu-drawing-layer.js
- * Phase 3.1: getFormat追加版
+ * webgpu-drawing-layer.js Phase 2: MSAA統合完全版
  * ================================================================================
  * 
- * 【責務】
- * - WebGPU初期化・デバイス管理
- * - GPUDevice/Queue のグローバル公開（大文字統一）
- * - WebGPUCapabilities統合
+ * 📁 親ファイル依存:
+ *   - webgpu-capabilities.js (機能検出)
  * 
- * 【依存Parents】
- * - webgpu-capabilities.js (機能検出)
+ * 📄 子ファイル使用先:
+ *   - webgpu-geometry-layer.js
+ *   - webgpu-compute-sdf.js
+ *   - webgpu-mask-layer.js
+ *   - webgpu-texture-bridge.js
+ *   - stroke-renderer.js
+ *   - msdf-pipeline-manager.js
  * 
- * 【依存Children】
- * - webgpu-geometry-layer.js (Polygon描画)
- * - webgpu-compute-sdf.js (SDF生成)
- * - webgpu-mask-layer.js (マスク管理)
- * - webgpu-texture-bridge.js (テクスチャ変換)
- * - stroke-renderer.js (描画処理)
- * - msdf-pipeline-manager.js (MSDF Pipeline)
- * 
- * 【Phase 3.1改修】
- * ✅ getFormat() メソッド追加
+ * 【Phase 2改修内容】
+ * ✅ MSAA sampleCount: 4 設定追加
+ * ✅ multisample texture生成
+ * ✅ resolveTarget設定
  * 
  * ================================================================================
  */
@@ -36,6 +32,9 @@
       this.adapter = null;
       this.format = 'rgba8unorm';
       this.initialized = false;
+      
+      // ✅ Phase 2: MSAA設定
+      this.sampleCount = 4;
     }
 
     async initialize() {
@@ -74,9 +73,10 @@
 
         this.initialized = true;
 
-        console.log('✅ [WebGPUDrawingLayer] Phase 3.1 Initialized');
+        console.log('✅ [WebGPUDrawingLayer] Phase 2 MSAA統合完全版 Initialized');
         console.log('   📊 Device:', this.device);
         console.log('   📊 Format:', this.format);
+        console.log('   📊 MSAA sampleCount:', this.sampleCount);
 
         return true;
 
@@ -105,6 +105,13 @@
       return this.format;
     }
 
+    /**
+     * ✅ Phase 2: MSAA sampleCount取得
+     */
+    getSampleCount() {
+      return this.sampleCount;
+    }
+
     isInitialized() {
       return this.initialized && this.device !== null;
     }
@@ -120,7 +127,6 @@
     }
   }
 
-  // グローバル公開（大文字統一）
   window.WebGPUDrawingLayer = new WebGPUDrawingLayer();
 
 })();

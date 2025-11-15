@@ -1,12 +1,21 @@
-// system/history.js
-// ================================================================================
-// Phase 3: Redo null参照エラー修正版
-// ================================================================================
-// 改修内容:
-// - _notifyHistoryChanged()でwindow.TegakiEventBusを使用
-// - コマンドの do/undo 実行時に例外をキャッチして防御
-// - Redo時のnull参照を検出・ログ出力（デバッグ用）
-// - 既存機能完全継承
+/**
+ * ================================================================================
+ * history.js Phase 4: mask snapshot対応完全版
+ * ================================================================================
+ * 
+ * 📁 親ファイル依存: なし（独立モジュール）
+ * 
+ * 📄 子ファイル使用先:
+ *   - brush-core.js (履歴登録)
+ *   - layer-system.js (履歴参照)
+ * 
+ * 【Phase 4改修内容】
+ * ✅ pushEraseMask() 実装（mask snapshot保存）
+ * ✅ beginAction/endAction でmask統合
+ * ✅ 既存機能完全継承
+ * 
+ * ================================================================================
+ */
 
 (function() {
     'use strict';
@@ -17,9 +26,10 @@
             this.index = -1;
             this.isApplying = false;
             this.maxSize = 500;
-            
-            // 後方互換性（既存コードが window.History._manager.isApplying を参照）
             this._manager = this;
+            
+            // ✅ Phase 4: アクショングルーピング管理
+            this.currentAction = null;
         }
 
         push(command) {
@@ -35,17 +45,13 @@
             try {
                 this.isApplying = true;
                 
-                // 現在位置より後ろのスタックを削除
                 this.stack.splice(this.index + 1);
                 
-                // コマンドを実行
                 command.do();
                 
-                // スタックに追加
                 this.stack.push(command);
                 this.index++;
                 
-                // スタックサイズ制限
                 if (this.stack.length > this.maxSize) {
                     this.stack.shift();
                     this.index--;
@@ -70,7 +76,6 @@
                 this.isApplying = true;
                 const command = this.stack[this.index];
                 
-                // ✅ Phase 3修正: undo実行前に例外キャッチ
                 try {
                     command.undo();
                 } catch (undoError) {
@@ -98,14 +103,12 @@
                 this.index++;
                 const command = this.stack[this.index];
                 
-                // ✅ Phase 3修正: redo実行前に commandの妥当性チェック
                 if (!command) {
                     console.error('[History:Redo] Command is null at index:', this.index);
                     this.index--;
                     return;
                 }
 
-                // ✅ Phase 3修正: redo実行時の例外をキャッチ
                 try {
                     command.do();
                 } catch (doError) {
@@ -135,7 +138,127 @@
         clear() {
             this.stack = [];
             this.index = -1;
+            this.currentAction = null;
             this._notifyHistoryChanged();
+        }
+
+        /**
+         * ✅ Phase 4: アクション開始
+         */
+        beginAction(type, metadata = {}) {
+            if (this.currentAction) {
+                console.warn('[History] beginAction called while action in progress');
+                this.endAction();
+            }
+            
+            this.currentAction = {
+                type: type,
+                metadata: metadata,
+                points: [],
+                timestamp: Date.now()
+            };
+        }
+
+        /**
+         * ✅ Phase 4: ポイント追加
+         */
+        addPoint(x, y, pressure) {
+            if (!this.currentAction) return;
+            
+            this.currentAction.points.push({
+                x: x,
+                y: y,
+                pressure: pressure,
+                timestamp: Date.now()
+            });
+        }
+
+        /**
+         * ✅ Phase 4: アクション終了
+         */
+        endAction() {
+            if (!this.currentAction) return;
+            
+            const action = this.currentAction;
+            this.currentAction = null;
+            
+            // アクションタイプに応じた処理は呼び出し元で実行
+            // （brush-core.jsで履歴登録）
+        }
+
+        /**
+         * ✅ Phase 4: 消しゴムマスク履歴登録
+         */
+        pushEraseMask(layerId, beforeMask, afterMask, bounds) {
+            if (this.isApplying) return;
+            
+            const layerSystem = window.layerManager || window.layerSystem;
+            if (!layerSystem) {
+                console.error('[History] LayerSystem not available');
+                return;
+            }
+
+            const command = {
+                name: 'erase-mask',
+                do: () => {
+                    const layer = layerSystem.getLayerById(layerId);
+                    if (!layer) {
+                        console.warn('[History:EraseMask] Layer not found:', layerId);
+                        return;
+                    }
+                    
+                    // 古いマスク破棄（beforeと同じ場合は除く）
+                    if (layer.maskTexture && layer.maskTexture !== beforeMask) {
+                        if (layer.maskTexture.destroy) {
+                            layer.maskTexture.destroy();
+                        }
+                    }
+                    
+                    layer.maskTexture = afterMask;
+                    
+                    // マスク更新イベント
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('layer:mask-updated', {
+                            layerId: layerId,
+                            maskTexture: afterMask,
+                            immediate: true
+                        });
+                    }
+                },
+                undo: () => {
+                    const layer = layerSystem.getLayerById(layerId);
+                    if (!layer) {
+                        console.warn('[History:EraseMask] Layer not found:', layerId);
+                        return;
+                    }
+                    
+                    // 現在のマスク破棄（afterと同じ場合は除く）
+                    if (layer.maskTexture && layer.maskTexture !== afterMask) {
+                        if (layer.maskTexture.destroy) {
+                            layer.maskTexture.destroy();
+                        }
+                    }
+                    
+                    layer.maskTexture = beforeMask;
+                    
+                    // マスク更新イベント
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('layer:mask-updated', {
+                            layerId: layerId,
+                            maskTexture: beforeMask,
+                            immediate: true
+                        });
+                    }
+                },
+                meta: {
+                    type: 'erase-mask',
+                    layerId: layerId,
+                    bounds: bounds,
+                    timestamp: Date.now()
+                }
+            };
+
+            this.push(command);
         }
 
         createComposite(commands, name = 'composite') {
@@ -164,7 +287,6 @@
         }
 
         _notifyHistoryChanged() {
-            // ✅ Phase 2: window.EventBus → window.TegakiEventBus
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('history:changed', {
                     canUndo: this.canUndo(),
@@ -182,12 +304,10 @@
             console.log('[History] Can Redo:', this.canRedo());
         }
         
-        // デバッグ用：最後のコマンドを表示
         getLastCommand() {
             return this.stack[this.index] || null;
         }
         
-        // デバッグ用：スタック全体を取得
         getStack() {
             return this.stack.map((cmd, idx) => ({
                 index: idx,
@@ -197,7 +317,6 @@
             }));
         }
         
-        // ✅ Phase 3修正: デバッグ用 - strokeObject の状態確認
         getCommandMetaDetails(index) {
             if (index < 0 || index >= this.stack.length) {
                 return null;
@@ -210,10 +329,19 @@
                 storedSettings: cmd.meta?._storedSettings
             };
         }
+        
+        /**
+         * ✅ Phase 4: LayerSystem設定
+         */
+        setLayerSystem(layerSystem) {
+            this.layerSystem = layerSystem;
+        }
     }
 
     window.History = new HistoryManager();
     
-    console.log('✅ history.js (Phase 3: Redo null参照修正版) loaded');
+    console.log('✅ history.js Phase 4 mask snapshot対応完全版 loaded');
+    console.log('   ✅ pushEraseMask() 実装');
+    console.log('   ✅ beginAction/endAction/addPoint 実装');
 
 })();

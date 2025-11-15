@@ -166,101 +166,106 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
-    async function initializeWebGPU(strokeRenderer) {
-        const config = window.TEGAKI_CONFIG;
-        
-        if (!config.webgpu?.enabled) {
-            console.warn('[WebGPU] Disabled in config');
+
+async function initializeWebGPU(strokeRenderer) {
+    const config = window.TEGAKI_CONFIG;
+    
+    if (!config.webgpu?.enabled) {
+        console.warn('[WebGPU] Disabled in config');
+        return false;
+    }
+
+    try {
+        if (!window.WebGPUDrawingLayer) {
+            console.error('[WebGPU] WebGPUDrawingLayer not found');
             return false;
         }
 
-        try {
-            if (!window.WebGPUDrawingLayer) {
-                console.error('[WebGPU] WebGPUDrawingLayer not found');
-                return false;
-            }
+        const drawingLayerInit = await window.WebGPUDrawingLayer.initialize();
+        if (!drawingLayerInit) {
+            console.error('[WebGPU] Drawing Layer initialization failed');
+            return false;
+        }
 
-            const drawingLayerInit = await window.WebGPUDrawingLayer.initialize();
-            if (!drawingLayerInit) {
-                console.error('[WebGPU] Drawing Layer initialization failed');
-                return false;
-            }
+        // ✅ Phase 3修正: sampleCount取得追加
+        const device = window.WebGPUDrawingLayer.getDevice();
+        const format = window.WebGPUDrawingLayer.getFormat();
+        const sampleCount = window.WebGPUDrawingLayer.getSampleCount();
 
-            const device = window.WebGPUDrawingLayer.getDevice();
-            const format = 'rgba8unorm';
+        if (!window.GPUStrokeProcessor) {
+            console.error('[WebGPU] GPUStrokeProcessor not found');
+            return false;
+        }
 
-            if (!window.GPUStrokeProcessor) {
-                console.error('[WebGPU] GPUStrokeProcessor not found');
-                return false;
-            }
+        await window.GPUStrokeProcessor.initialize(device);
 
-            await window.GPUStrokeProcessor.initialize(device);
+        if (!window.MSDFPipelineManager) {
+            console.error('[WebGPU] MSDFPipelineManager not found');
+            return false;
+        }
 
-            if (!window.MSDFPipelineManager) {
-                console.error('[WebGPU] MSDFPipelineManager not found');
-                return false;
-            }
+        // ✅ Phase 3修正: sampleCount引き継ぎ
+        await window.MSDFPipelineManager.initialize(device, format, sampleCount);
+        
+        if (!window.MSDFPipelineManager.polygonRenderPipeline) {
+            console.error('[WebGPU] Polygon Render Pipeline not created');
+            return false;
+        }
 
-            await window.MSDFPipelineManager.initialize(device, format);
+        if (!window.WebGPUTextureBridge) {
+            console.error('[WebGPU] WebGPUTextureBridge not found');
+            return false;
+        }
+
+        const bridgeInit = await window.WebGPUTextureBridge.initialize();
+        if (!bridgeInit) {
+            console.error('[WebGPU] Texture Bridge initialization failed');
+            return false;
+        }
+
+        if (window.WebGPUMaskLayer) {
+            const canvasWidth = config.canvas?.width || 1920;
+            const canvasHeight = config.canvas?.height || 1080;
             
-            if (!window.MSDFPipelineManager.polygonRenderPipeline) {
-                console.error('[WebGPU] Polygon Render Pipeline not created');
-                return false;
-            }
-
-            if (!window.WebGPUTextureBridge) {
-                console.error('[WebGPU] WebGPUTextureBridge not found');
-                return false;
-            }
-
-            const bridgeInit = await window.WebGPUTextureBridge.initialize();
-            if (!bridgeInit) {
-                console.error('[WebGPU] Texture Bridge initialization failed');
-                return false;
-            }
-
-            if (window.WebGPUMaskLayer) {
-                const canvasWidth = config.canvas?.width || 1920;
-                const canvasHeight = config.canvas?.height || 1080;
+            const maskLayer = new window.WebGPUMaskLayer(window.WebGPUDrawingLayer);
+            const maskInit = await maskLayer.initialize(canvasWidth, canvasHeight);
+            
+            if (maskInit) {
+                window.webgpuMaskLayer = maskLayer;
                 
-                const maskLayer = new window.WebGPUMaskLayer(window.WebGPUDrawingLayer);
-                const maskInit = await maskLayer.initialize(canvasWidth, canvasHeight);
-                
-                if (maskInit) {
-                    window.webgpuMaskLayer = maskLayer;
-                    
-                    if (window.BrushCore) {
-                        window.BrushCore.webgpuMaskLayer = maskLayer;
-                    }
-                } else {
-                    console.warn('[WebGPU] MaskLayer initialization failed');
+                if (window.BrushCore) {
+                    window.BrushCore.webgpuMaskLayer = maskLayer;
                 }
             } else {
-                console.warn('[WebGPU] WebGPUMaskLayer not found');
+                console.warn('[WebGPU] MaskLayer initialization failed');
             }
+        } else {
+            console.warn('[WebGPU] WebGPUMaskLayer not found');
+        }
 
-            if (!strokeRenderer) {
-                console.error('[WebGPU] StrokeRenderer not provided');
-                return false;
-            }
-
-            await strokeRenderer.initialize();
-
-            if (typeof strokeRenderer.initMSDFMode === 'function') {
-                strokeRenderer.initMSDFMode(
-                    window.MSDFPipelineManager.polygonRenderPipeline,
-                    device,
-                    format
-                );
-            }
-
-            return true;
-
-        } catch (error) {
-            console.error('[WebGPU] Initialization error:', error);
+        if (!strokeRenderer) {
+            console.error('[WebGPU] StrokeRenderer not provided');
             return false;
         }
+
+        await strokeRenderer.initialize();
+
+        if (typeof strokeRenderer.initMSDFMode === 'function') {
+            strokeRenderer.initMSDFMode(
+                window.MSDFPipelineManager.polygonRenderPipeline,
+                device,
+                format
+            );
+        }
+
+        return true;
+
+    } catch (error) {
+        console.error('[WebGPU] Initialization error:', error);
+        return false;
     }
+}
+
 
     class DrawingApp {
         constructor() {
