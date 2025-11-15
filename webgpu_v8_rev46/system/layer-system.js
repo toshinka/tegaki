@@ -1,10 +1,11 @@
 /**
- * @file layer-system.js - Phase 7: History登録重複削除版
+ * @file layer-system.js - Phase 8: getLayerById実装版
  * @description レイヤー管理・操作の中核システム
  * 
- * 【Phase 7 改修内容 - 🚨最優先】
- * 🔧 addPathToActiveLayer(): History登録を削除（brush-core.js に統一）
- * 🔧 DRY原則に基づく責務分担の明確化
+ * 【Phase 8 改修内容】
+ * ✅ getLayerById() メソッド追加（history.js対応）
+ * ✅ LayerModel.id の確実な取得保証
+ * ✅ 既存機能完全継承
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (イベント通信)
@@ -63,6 +64,7 @@
             });
             bgLayer.label = bgLayerModel.id;
             bgLayer.layerData = bgLayerModel;
+            bgLayer.id = bgLayerModel.id; // ✅ Phase 8: id直接設定
             
             const bg = this._createSolidBackground(
                 this.config.canvas.width, 
@@ -81,6 +83,8 @@
             });
             layer1.label = layer1Model.id;
             layer1.layerData = layer1Model;
+            layer1.id = layer1Model.id; // ✅ Phase 8: id直接設定
+            
             if (this.transform) {
                 this.transform.setTransform(layer1Model.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
@@ -93,6 +97,20 @@
             this._setupResizeEvents();
             
             this.isInitialized = true;
+        }
+
+        /**
+         * ✅ Phase 8: レイヤーID検索メソッド追加
+         */
+        getLayerById(layerId) {
+            if (!layerId) return null;
+            
+            const layers = this.getLayers();
+            return layers.find(layer => {
+                return layer.id === layerId || 
+                       layer.label === layerId || 
+                       layer.layerData?.id === layerId;
+            }) || null;
         }
 
         _createSolidBackground(width, height, color = 0xf0e0d6) {
@@ -324,10 +342,6 @@
             }
         }
 
-        /**
-         * 🚨 Phase 7: History登録を削除（brush-core.js に統一）
-         * この関数は現在使用されていないため、将来的に削除候補
-         */
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
             const activeLayer = this.getActiveLayer();
@@ -350,9 +364,6 @@
                 }
                 activeLayer.addChild(path.graphics);
             }
-            
-            // 🚨 Phase 7: History登録を削除（brush-core.js が責任を持つ）
-            // brush-core.js の finalizeStroke() で History.push() を実行
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
@@ -1057,6 +1068,7 @@
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
             layer.layerData = layerModel;
+            layer.id = layerModel.id; // ✅ Phase 8: id直接設定
             
             if (this.app && this.app.renderer) {
                 const success = layerModel.initializeMask(
@@ -1345,10 +1357,17 @@
     }
 
     window.TegakiLayerSystem = LayerSystem;
+    
+    // ✅ Phase 8: グローバル登録統一
+    if (!window.layerSystem && !window.layerManager) {
+        const instance = new LayerSystem();
+        window.layerSystem = instance;
+        window.layerManager = instance; // 互換性維持
+    }
 
 })();
 
-console.log('✅ layer-system.js Phase 7完成版 loaded');
-console.log('   🚨 addPathToActiveLayer(): History登録を削除');
-console.log('   🚨 brush-core.js にHistory登録を統一');
-console.log('   ✅ DRY原則に基づく責務分担の明確化')
+console.log('✅ layer-system.js Phase 8完成版 loaded');
+console.log('   ✅ getLayerById() メソッド追加');
+console.log('   ✅ LayerModel.id 確実取得保証');
+console.log('   ✅ history.js との統合対応完了');

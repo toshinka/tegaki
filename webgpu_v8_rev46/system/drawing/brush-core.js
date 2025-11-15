@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js Phase 1統合完全版
+ * brush-core.js Phase 7完全版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,15 +11,16 @@
  *   - system/drawing/webgpu/webgpu-mask-layer.js
  *   - system/layer-system.js
  *   - system/event-bus.js
+ *   - system/history.js
  * 
  * 📄 子ファイル使用先:
  *   - core-engine.js (renderPreview呼び出し元)
  *   - system/drawing/drawing-engine.js
  * 
- * 【Phase 1改修内容】
- * ✅ updateStroke内でappendPointToStream呼び出し
- * ✅ リアルタイムプレビュー要求フラグ追加
- * ✅ 履歴グルーピング完全実装
+ * 【Phase 7改修内容】
+ * ✅ activeLayer.id 取得修正（layerData.id優先）
+ * ✅ 消しゴム履歴登録の完全統合
+ * ✅ GPU Device Lost対策（エラーハンドリング強化）
  * ✅ 既存機能完全継承
  * 
  * ================================================================================
@@ -57,6 +58,14 @@
       this.msdfAvailable = false;
     }
 
+    /**
+     * ✅ Phase 7: LayerID取得ヘルパー（安全な取得）
+     */
+    _getLayerId(layer) {
+      if (!layer) return null;
+      return layer.layerData?.id || layer.id || layer.label || null;
+    }
+
     async init() {
       return await this.initialize();
     }
@@ -87,8 +96,7 @@
       );
 
       if (!this.msdfAvailable) {
-        console.error('[BrushCore] MSDF Pipeline not available');
-        return;
+        console.warn('[BrushCore] MSDF Pipeline not fully available - some features may be limited');
       }
 
       this._setupEventListeners();
@@ -133,12 +141,18 @@
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
 
-      // ✅ Phase 1: 履歴グルーピング開始
+      const layerId = this._getLayerId(activeLayer);
+      if (!layerId) {
+        console.error('[BrushCore] Active layer has no valid ID');
+        return;
+      }
+
+      // ✅ Phase 7: 履歴グルーピング開始
       const historyManager = window.History;
       if (historyManager?.beginAction) {
         const actionType = this.currentSettings.mode === 'eraser' ? 'erase' : 'stroke';
         historyManager.beginAction(actionType, {
-          layerId: activeLayer.id,
+          layerId: layerId,
           brushSize: this.currentSettings.size,
           color: this.currentSettings.color
         });
@@ -146,7 +160,7 @@
 
       this.strokeRecorder.startStroke(localX, localY, pressure);
       
-      // ✅ Phase 1: GPU streaming初期化
+      // GPU streaming初期化
       if (this.gpuStrokeProcessor?.resetStream) {
         this.gpuStrokeProcessor.resetStream();
       }
@@ -157,29 +171,26 @@
       
       this.isDrawing = true;
       this.currentStroke = {
-        layerId: activeLayer.id,
+        layerId: layerId,
         startTime: Date.now()
       };
       
       this._ensurePreviewContainer(activeLayer);
     }
 
-    /**
-     * ✅ Phase 1改修: GPU streaming（プレビューフラグ削除）
-     */
     async updateStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || !this.isDrawing) return;
       
       this.strokeRecorder.addPoint(localX, localY, pressure);
       
-      // ✅ Phase 1: 履歴にポイント追加
+      // 履歴にポイント追加
       const historyManager = window.History;
       if (historyManager?.addPoint) {
         historyManager.addPoint(localX, localY, pressure);
       }
 
       if (this.currentSettings.mode === 'pen') {
-        // ✅ Phase 1: GPU streaming即時転送
+        // GPU streaming即時転送
         if (this.gpuStrokeProcessor?.appendPointToStream) {
           this.gpuStrokeProcessor.appendPointToStream(
             localX,
@@ -197,9 +208,6 @@
       }
     }
 
-    /**
-     * ✅ Phase 1修正: フラグ削除・直接判定
-     */
     async renderPreview() {
       if (!this.initialized || !this.isDrawing) return;
       if (this.isPreviewUpdating) return;
@@ -314,7 +322,13 @@
         finalTexture?.destroy();
 
       } catch (error) {
-        console.error('[BrushCore] Preview failed:', error);
+        // ✅ Phase 7: Device Lost対策
+        if (error.message && error.message.includes('Device') && error.message.includes('lost')) {
+          console.error('[BrushCore] GPU Device Lost - please reload the page');
+          this.cancelStroke();
+        } else {
+          console.error('[BrushCore] Preview failed:', error);
+        }
       } finally {
         this.isPreviewUpdating = false;
       }
@@ -329,7 +343,6 @@
         this._cleanupPreview();
         this.isDrawing = false;
         
-        // ✅ Phase 1: 履歴グルーピング終了
         const historyManager = window.History;
         if (historyManager?.endAction) {
           historyManager.endAction();
@@ -352,7 +365,7 @@
         return;
       }
 
-      // ✅ Phase 1: GPU streaming最終flush
+      // GPU streaming最終flush
       if (this.currentSettings.mode === 'pen' && this.gpuStrokeProcessor?.finalizeStroke) {
         this.gpuStrokeProcessor.finalizeStroke();
       }
@@ -369,7 +382,7 @@
       this.isDrawing = false;
       this.currentStroke = null;
 
-      // ✅ Phase 1: 履歴グルーピング終了
+      // 履歴グルーピング終了
       const historyManager = window.History;
       if (historyManager?.endAction) {
         historyManager.endAction();
@@ -430,7 +443,16 @@
         }
 
         if (this.currentSettings.mode === 'eraser') {
-          // ✅ Phase 6: mask-based消しゴム + 履歴登録
+          // ✅ Phase 7: mask-based消しゴム + 履歴登録（ID修正）
+          const layerId = this._getLayerId(activeLayer);
+          if (!layerId) {
+            console.error('[BrushCore] Cannot register erase history - layer has no ID');
+            uploadEdge.gpuBuffer?.destroy();
+            uploadVertex.gpuBuffer?.destroy();
+            finalTexture?.destroy();
+            return;
+          }
+
           const beforeMask = activeLayer.maskTexture || null;
           
           await this._applyEraserMask(activeLayer, bounds);
@@ -441,7 +463,7 @@
           const historyManager = window.History;
           if (historyManager?.pushEraseMask) {
             historyManager.pushEraseMask(
-              activeLayer.id,
+              layerId,
               beforeMask,
               afterMask,
               bounds
@@ -493,13 +515,16 @@
         finalTexture?.destroy();
 
       } catch (error) {
-        console.error('[BrushCore] MSDF描画失敗:', error);
+        // ✅ Phase 7: Device Lost対策
+        if (error.message && error.message.includes('Device') && error.message.includes('lost')) {
+          console.error('[BrushCore] GPU Device Lost during finalize - please reload the page');
+          this.cancelStroke();
+        } else {
+          console.error('[BrushCore] MSDF描画失敗:', error);
+        }
       }
     }
 
-    /**
-     * ✅ Phase 6: mask-based消しゴム実装
-     */
     async _applyEraserMask(activeLayer, bounds) {
       if (!this.webgpuMaskLayer || !this.webgpuMaskLayer.isInitialized()) {
         console.warn('[BrushCore] WebGPUMaskLayer not available');
@@ -548,16 +573,22 @@
         }
 
         // 3. マスク適用イベント発行
-        if (this.eventBus?.emit) {
+        const layerId = this._getLayerId(activeLayer);
+        if (this.eventBus?.emit && layerId) {
           this.eventBus.emit('layer:mask-updated', {
-            layerId: activeLayer.id,
+            layerId: layerId,
             maskTexture: activeLayer.maskTexture,
             immediate: true
           });
         }
 
       } catch (error) {
-        console.error('[BrushCore] Erase mask application failed:', error);
+        // ✅ Phase 7: Device Lost対策
+        if (error.message && error.message.includes('Device') && error.message.includes('lost')) {
+          console.error('[BrushCore] GPU Device Lost during erase - please reload the page');
+        } else {
+          console.error('[BrushCore] Erase mask application failed:', error);
+        }
       }
     }
 
@@ -600,6 +631,12 @@
       const historyManager = window.History;
       if (!historyManager?.push) return;
 
+      const layerId = this._getLayerId(activeLayer);
+      if (!layerId) {
+        console.warn('[BrushCore] Cannot register history - layer has no ID');
+        return;
+      }
+
       const layerRef = activeLayer;
       const containerRef = container;
 
@@ -630,7 +667,7 @@
         },
         meta: {
           type: 'path:add',
-          layerId: layerRef.id,
+          layerId: layerId,
           pathId: pathData.id
         }
       });
@@ -639,21 +676,24 @@
     _emitStrokeEvents(layer, pathData) {
       if (!this.eventBus?.emit) return;
 
+      const layerId = this._getLayerId(layer);
+      if (!layerId) return;
+
       if (pathData) {
         this.eventBus.emit('layer:path-added', {
-          layerId: layer.id,
+          layerId: layerId,
           pathId: pathData.id,
           sprite: pathData.sprite
         });
       }
 
       this.eventBus.emit('layer:transform-updated', {
-        layerId: layer.id,
+        layerId: layerId,
         immediate: true
       });
 
       this.eventBus.emit('layer:panel-update-requested', {
-        layerId: layer.id
+        layerId: layerId
       });
     }
 
@@ -710,10 +750,9 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase 6 mask-based消しゴム完全版 loaded');
-  console.log('   ✅ リアルタイムプレビュー修正');
-  console.log('   ✅ GPU streaming統合');
-  console.log('   ✅ 履歴グルーピング実装');
-  console.log('   ✅ mask-based消しゴム実装');
+  console.log('✅ brush-core.js Phase 7完全版 loaded');
+  console.log('   ✅ activeLayer.id 取得修正');
+  console.log('   ✅ 消しゴム履歴登録完全統合');
+  console.log('   ✅ GPU Device Lost対策実装');
 
 })();
