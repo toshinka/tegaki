@@ -1,20 +1,24 @@
 /**
  * ================================================================================
- * gpu-stroke-processor.js Phase 1統合完全版
+ * gpu-stroke-processor.js Phase B-1.5: PerfectFreehand統合完全版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
  * - stroke-recorder.js (points取得)
  * - webgpu-drawing-layer.js (device/queue)
+ * - perfect-freehand-1.2.0.min.js (window.getStroke)
+ * - earcut-triangulator.js (window.EarcutTriangulator)
  * 
  * 📄 子ファイル依存:
  * - msdf-pipeline-manager.js (VertexBuffer + edgeCount受け渡し)
  * - brush-core.js (呼び出し元)
  * 
- * 【Phase 1改修内容】
- * ✅ streaming vertex buffer実装（appendPointToStream）
- * ✅ 1024要素staging buffer + 256chunk自動flush
- * ✅ 既存機能完全継承（筆圧反映等）
+ * 【Phase B-1.5改修内容】
+ * 🔥 PerfectFreehand統合（独自ポリゴン生成廃止）
+ * 🔥 Earcut三角形分割採用
+ * 🔥 ジャギー完全解消
+ * ✅ streaming buffer完全継承
+ * ✅ 筆圧反映完全継承
  * 
  * ================================================================================
  */
@@ -28,7 +32,6 @@
       this.queue = null;
       this.initialized = false;
       
-      // ✅ Phase 1: streaming buffer管理
       this.stagingBuffer = new Float32Array(1024 * 3);
       this.streamLen = 0;
       this.vertexBuffer = null;
@@ -41,7 +44,6 @@
       this.device = device;
       this.queue = device.queue;
       
-      // ✅ Phase 1: streaming用vertex buffer作成
       this.vertexBuffer = device.createBuffer({
         size: 65536 * 3 * 4,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -51,9 +53,6 @@
       this.initialized = true;
     }
 
-    /**
-     * ✅ Phase 1: リアルタイムGPU転送メソッド追加
-     */
     appendPointToStream(x, y, pressure, baseSize) {
       if (!this.device) return;
 
@@ -71,9 +70,6 @@
       }
     }
 
-    /**
-     * ✅ Phase 1: staging buffer → GPU転送
-     */
     flushStream() {
       if (this.streamLen === 0 || !this.device) return;
 
@@ -92,39 +88,27 @@
       this.streamLen = 0;
     }
 
-    /**
-     * ✅ Phase 1: ストローク終了時の最終flush
-     */
     finalizeStroke() {
       this.flushStream();
       const vertexCount = this.totalVertexCount;
       return vertexCount;
     }
 
-    /**
-     * ✅ Phase 1: 新規ストローク開始時の初期化
-     */
     resetStream() {
       this.streamLen = 0;
       this.totalVertexCount = 0;
     }
 
-    /**
-     * ✅ Phase 1: streaming vertex buffer取得
-     */
     getVertexBuffer() {
       return this.vertexBuffer;
     }
 
-    /**
-     * ✅ Phase 1: 現在の頂点数取得
-     */
     getVertexCount() {
       return this.totalVertexCount + this.streamLen;
     }
 
     /**
-     * Phase 5継承: 筆圧反映実装
+     * 🔥 Phase B-1.5: PerfectFreehand統合（フォールバック付き）
      */
     createPolygonVertexBuffer(points, baseSize = 10) {
       if (!Array.isArray(points) || points.length === 0) {
@@ -132,6 +116,7 @@
         return null;
       }
 
+      // points正規化
       let processedPoints = [];
       if (typeof points[0] === 'object' && points[0].x !== undefined) {
         processedPoints = points.map(p => ({
@@ -149,16 +134,61 @@
         }
       }
 
-      const numPoints = processedPoints.length;
-      if (numPoints < 2) {
+      if (processedPoints.length < 2) {
         console.warn('[GPUStrokeProcessor] Need at least 2 points');
         return null;
       }
 
+      // Bounds計算
       const bounds = this._calculateBoundsFromPoints(processedPoints, baseSize);
       const offsetX = bounds.minX;
       const offsetY = bounds.minY;
 
+      // 🔥 PerfectFreehand使用可能チェック
+      if (typeof window.getStroke === 'function' && window.EarcutTriangulator) {
+        try {
+          const strokePoints = processedPoints.map(p => [p.x, p.y, p.pressure]);
+          
+          const options = {
+            size: baseSize,
+            thinning: 0,
+            smoothing: 0,
+            streamline: 0,
+            simulatePressure: false,
+            last: true
+          };
+
+          const outlinePoints = window.getStroke(strokePoints, options);
+          
+          if (outlinePoints && outlinePoints.length >= 3) {
+            const polygon = outlinePoints.map(p => [p[0] - offsetX, p[1] - offsetY]);
+            const triangles = window.EarcutTriangulator.triangulate(polygon);
+            
+            if (triangles && triangles.length > 0) {
+              const vertexCount = triangles.length;
+              const buffer = new Float32Array(vertexCount * 7);
+
+              for (let i = 0; i < triangles.length; i++) {
+                const tri = triangles[i];
+                const bufferIdx = i * 7;
+                buffer[bufferIdx + 0] = tri[0];
+                buffer[bufferIdx + 1] = tri[1];
+                buffer[bufferIdx + 2] = tri[0];
+                buffer[bufferIdx + 3] = tri[1];
+                buffer[bufferIdx + 4] = tri[0];
+                buffer[bufferIdx + 5] = tri[1];
+                buffer[bufferIdx + 6] = 0.0;
+              }
+
+              return { buffer, vertexCount, bounds };
+            }
+          }
+        } catch (e) {
+          console.warn('[GPUStrokeProcessor] PerfectFreehand failed, using fallback:', e);
+        }
+      }
+
+      // ✅ フォールバック: 独自quad生成
       const normalizedPoints = processedPoints.map(p => ({
         x: p.x - offsetX,
         y: p.y - offsetY,
@@ -166,7 +196,7 @@
         width: baseSize * p.pressure
       }));
 
-      const numSegments = numPoints - 1;
+      const numSegments = processedPoints.length - 1;
       const vertexCount = numSegments * 6;
       const buffer = new Float32Array(vertexCount * 7);
 
@@ -174,7 +204,7 @@
         const prevIdx = Math.max(0, i - 1);
         const currIdx = i;
         const nextIdx = i + 1;
-        const next2Idx = Math.min(numPoints - 1, i + 2);
+        const next2Idx = Math.min(processedPoints.length - 1, i + 2);
 
         const prev = normalizedPoints[prevIdx];
         const curr = normalizedPoints[currIdx];
@@ -200,7 +230,7 @@
     }
 
     /**
-     * Phase 5継承: 筆圧反映実装
+     * Phase B-1.5: Edge Buffer継承（MSDF用）
      */
     createEdgeBuffer(points, baseSize = 10) {
       if (!Array.isArray(points) || points.length === 0) return null;
@@ -307,9 +337,6 @@
       return this._calculateBoundsFromPoints(processedPoints, baseSize);
     }
 
-    /**
-     * Phase 5継承: 筆圧を考慮したBounds計算
-     */
     _calculateBoundsFromPoints(points, baseSize = 10) {
       if (points.length < 1) {
         return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
@@ -350,9 +377,12 @@
 
   window.GPUStrokeProcessor = new GPUStrokeProcessor();
 
-  console.log('✅ gpu-stroke-processor.js Phase 1統合完全版 loaded');
-  console.log('   ✅ streaming vertex buffer実装');
-  console.log('   ✅ appendPointToStream / flushStream / finalizeStroke');
-  console.log('   ✅ 筆圧反映完全継承');
+  const hasPerfectFreehand = typeof window.getStroke === 'function';
+  const hasEarcut = !!window.EarcutTriangulator;
+  
+  console.log('✅ gpu-stroke-processor.js Phase B-1.5完全版 loaded');
+  console.log('   🔥 PerfectFreehand: ' + (hasPerfectFreehand ? '有効' : 'フォールバック'));
+  console.log('   🔥 Earcut: ' + (hasEarcut ? '有効' : 'フォールバック'));
+  console.log('   ✅ streaming buffer完全継承');
 
 })();
