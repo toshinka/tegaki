@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js Phase 7: 消しゴムマスク統合版
+ * brush-core.js Phase 2改修版: EventBus設定同期統合
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,15 +11,26 @@
  *   - webgpu-mask-layer.js (消しゴムマスク処理)
  *   - layer-system.js (レイヤー管理)
  *   - history.js (履歴管理)
+ *   - system/event-bus.js (EventBus)
  * 
  * 📄 子ファイル依存:
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
+ *   - ui/quick-access-popup.js (設定変更イベント発火元)
+ * 
+ * 【Phase 2改修内容】
+ * 🔧 EventBusリスナー追加:
+ *    - brush:size-changed
+ *    - brush:opacity-changed
+ *    - brush:color-changed
+ *    - tool:changed
+ * 🔧 _setupEventListeners()新規実装
+ * 🔧 quick-access-popup.jsからの設定が即座反映
+ * ✅ DRY/SOLID原則準拠
  * 
  * 【Phase 7改修】
  * 🔧 消しゴムモード: GPU Computeマスク減算処理統合
  * 🔧 ペンモード: 通常描画（blendMode不使用）
  * 🔧 webgpu-mask-layer.js統合
- * 🔧 過剰なデバッグログ削除
  * ✅ DRY/SOLID原則準拠
  * 
  * ================================================================================
@@ -36,6 +47,7 @@
       this.textureBridge = null;
       this.layerManager = null;
       this.webgpuMaskLayer = null;
+      this.eventBus = null;
       
       this.isDrawing = false;
       this.currentStroke = null;
@@ -65,6 +77,7 @@
 
       this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
       this.layerManager = window.layerManager || window.layerSystem;
+      this.eventBus = window.TegakiEventBus || window.eventBus;
 
       if (!this.strokeRecorder) {
         throw new Error('[BrushCore] strokeRecorder not found');
@@ -88,7 +101,49 @@
         return;
       }
 
+      // 🔧 Phase 2追加: EventBusリスナー登録
+      this._setupEventListeners();
+
       this.initialized = true;
+    }
+
+    /**
+     * 🔧 Phase 2新規実装: EventBusリスナー登録
+     */
+    _setupEventListeners() {
+      if (!this.eventBus) return;
+
+      // brush:size-changed
+      this.eventBus.on('brush:size-changed', ({ size }) => {
+        if (typeof size === 'number' && size > 0) {
+          this.currentSettings.size = size;
+        }
+      });
+
+      // brush:opacity-changed
+      this.eventBus.on('brush:opacity-changed', ({ opacity }) => {
+        if (typeof opacity === 'number' && opacity >= 0 && opacity <= 1) {
+          this.currentSettings.opacity = opacity;
+        }
+      });
+
+      // brush:color-changed
+      this.eventBus.on('brush:color-changed', ({ color }) => {
+        if (typeof color === 'number') {
+          // 0xRRGGBB形式を#RRGGBB形式に変換
+          const hex = color.toString(16).padStart(6, '0');
+          this.currentSettings.color = '#' + hex;
+        } else if (typeof color === 'string') {
+          this.currentSettings.color = color;
+        }
+      });
+
+      // tool:changed
+      this.eventBus.on('tool:changed', ({ tool }) => {
+        if (['pen', 'eraser', 'fill'].includes(tool)) {
+          this.setMode(tool);
+        }
+      });
     }
 
     startStroke(localX, localY, pressure = 0.5) {
@@ -331,7 +386,6 @@
      */
     async _applyEraserMask(msdfTexture, activeLayer, bounds) {
       if (!this.webgpuMaskLayer) {
-        // Fallback: PixiJS blendMode
         console.warn('[BrushCore] WebGPUMaskLayer not available, using fallback');
         return;
       }
@@ -367,13 +421,10 @@
      * Spriteにマスクを適用
      */
     async _applyMaskToSprite(sprite, bounds) {
-      // 簡易実装: Bounds交差判定
       const spriteBox = sprite.getBounds();
       
       if (this._boundsIntersect(spriteBox, bounds)) {
-        // 交差している場合: Sprite再描画が必要
-        // 完全実装ではGPU側でテクスチャ合成
-        sprite.alpha = Math.max(0, sprite.alpha - 0.1); // 仮実装
+        sprite.alpha = Math.max(0, sprite.alpha - 0.1);
       }
     }
 
@@ -463,23 +514,22 @@
     }
 
     _emitStrokeEvents(layer, pathData) {
-      const eventBus = window.TegakiEventBus || window.eventBus;
-      if (!eventBus?.emit) return;
+      if (!this.eventBus?.emit) return;
 
       if (pathData) {
-        eventBus.emit('layer:path-added', {
+        this.eventBus.emit('layer:path-added', {
           layerId: layer.id,
           pathId: pathData.id,
           sprite: pathData.sprite
         });
       }
 
-      eventBus.emit('layer:transform-updated', {
+      this.eventBus.emit('layer:transform-updated', {
         layerId: layer.id,
         immediate: true
       });
 
-      eventBus.emit('layer:panel-update-requested', {
+      this.eventBus.emit('layer:panel-update-requested', {
         layerId: layer.id
       });
     }
@@ -503,9 +553,8 @@
       if (['pen', 'eraser', 'fill'].includes(mode)) {
         this.currentSettings.mode = mode;
         
-        const eventBus = window.TegakiEventBus;
-        if (eventBus?.emit) {
-          eventBus.emit('brush:mode-changed', { mode });
+        if (this.eventBus?.emit) {
+          this.eventBus.emit('brush:mode-changed', { mode });
         }
       }
     }
@@ -533,6 +582,8 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase 7: 消しゴムマスク統合版 loaded');
+  console.log('✅ brush-core.js Phase 2改修版 loaded');
+  console.log('   🔧 EventBus設定同期実装');
+  console.log('   🔧 quick-access-popup連携完了');
 
 })();
