@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 2完全版
+ * msdf-pipeline-manager.js Phase 8 GPU負荷削減版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,12 +11,12 @@
  *   - wgsl-loader.js (WGSL Shader定義)
  *   - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
  * 
- * 【Phase 2改修内容】
- * ✅ テクスチャ解像度512px固定
- * ✅ JFA反復回数自動計算（log2）
- * ✅ linear sampler明示設定
- * ✅ MSAA統合（multisample texture + resolveTarget）
- * ✅ smoothstep range値調整（0.05 → 0.025）
+ * 【Phase 8改修内容 - GPU Device Lost対策】
+ * ✅ テクスチャ解像度256px（512px→256px）緊急削減
+ * ✅ JFA反復回数制限（最大6回）
+ * ✅ プレビュー時さらに128pxに削減
+ * ✅ await削減（onSubmittedWorkDone削除）
+ * ✅ GPU同期処理最小化
  * 
  * ================================================================================
  */
@@ -39,10 +39,9 @@
       this.shaders = {};
       this.initialized = false;
       
-      this.texturePool = [];
-      this.maxPoolSize = 10;
-      
-      this.baseTextureSize = 512;
+      // ✅ Phase 8: テクスチャサイズ削減
+      this.baseTextureSize = 256;      // 512 → 256
+      this.previewTextureSize = 128;   // プレビュー用さらに削減
     }
 
     async initialize(device, format, sampleCount = 1) {
@@ -55,7 +54,10 @@
       await this._createPipelines();
       
       this.initialized = true;
-      console.log('✅ [MSDFPipeline] MSAA sampleCount:', this.sampleCount);
+      console.log('✅ [MSDFPipeline] Phase 8 GPU負荷削減版 Initialized');
+      console.log('   📊 Base texture: 256px (512px→256px削減)');
+      console.log('   📊 Preview texture: 128px');
+      console.log('   📊 MSAA sampleCount:', this.sampleCount);
     }
 
     _isContextValid() {
@@ -125,7 +127,6 @@
         label: 'MSDF Render'
       });
 
-      // ✅ Phase 2: MSAA統合
       const pipelineDescriptor = {
         layout: 'auto',
         vertex: {
@@ -168,7 +169,6 @@
         label: 'MSDF Polygon Render Pipeline'
       };
 
-      // ✅ Phase 2: MSAA設定追加
       if (this.sampleCount > 1) {
         pipelineDescriptor.multisample = {
           count: this.sampleCount
@@ -192,11 +192,18 @@
       return Math.max(1, Math.floor(value)) >>> 0;
     }
 
+    /**
+     * ✅ Phase 8: JFA反復回数制限（最大6回）
+     */
     _calculateJFAIterations(width, height) {
       const maxDim = Math.max(width, height);
-      return Math.max(1, Math.ceil(Math.log2(maxDim)));
+      const calculated = Math.ceil(Math.log2(maxDim));
+      return Math.min(calculated, 6); // 最大6回に制限
     }
 
+    /**
+     * ✅ Phase 8: onSubmittedWorkDone削除
+     */
     async _seedInitPass(gpuBuffer, seedTexture, width, height, edgeCount) {
       const configData = new Float32Array([width, height, edgeCount, 0]);
       const configBuffer = this.device.createBuffer({
@@ -226,8 +233,8 @@
       pass.end();
       
       this.queue.submit([encoder.finish()]);
-      await this.device.queue.onSubmittedWorkDone();
       
+      // ✅ Phase 8: await削除
       this._destroyResource(configBuffer);
     }
 
@@ -280,12 +287,16 @@
         [src, dst] = [dst, src];
       }
 
+      // ✅ Phase 8: 最後だけawait
       await this.device.queue.onSubmittedWorkDone();
 
       const unusedTexture = (src === seedTexture) ? texB : seedTexture;
       return { resultTexture: src, tempTexture: unusedTexture };
     }
 
+    /**
+     * ✅ Phase 8: onSubmittedWorkDone削除
+     */
     async _encodePass(seedTexture, gpuBuffer, msdfTexture, width, height, edgeCount) {
       const configData = new Float32Array([width, height, edgeCount, 0.1]);
       const configBuffer = this.device.createBuffer({
@@ -315,13 +326,13 @@
       pass.end();
       
       this.queue.submit([encoder.finish()]);
-      await this.device.queue.onSubmittedWorkDone();
       
+      // ✅ Phase 8: await削除
       this._destroyResource(configBuffer);
     }
 
     /**
-     * ✅ Phase 2: MSAA統合 + range調整
+     * ✅ Phase 8: onSubmittedWorkDone削除
      */
     async _renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings = {}) {
       if (!this.polygonRenderPipeline) {
@@ -332,7 +343,6 @@
         throw new Error('[MSDF Render] Invalid vertexBuffer type');
       }
 
-      // ✅ Phase 2: MSAA texture生成
       let msaaTexture = null;
       if (this.sampleCount > 1) {
         msaaTexture = this.device.createTexture({
@@ -379,10 +389,9 @@
         ]
       });
 
-      // ✅ Phase 2: smoothstep range調整（0.05 → 0.025）
       const renderUniformsData = new Float32Array([
         0.5,      // threshold
-        0.025,    // range（シャープ化）
+        0.025,    // range
         settings.opacity !== undefined ? settings.opacity : 1.0,
         0.0
       ]);
@@ -417,7 +426,6 @@
 
       const encoder = this.device.createCommandEncoder();
       
-      // ✅ Phase 2: MSAA render pass設定
       const colorAttachment = {
         view: msaaTexture ? msaaTexture.createView() : outputTexture.createView(),
         loadOp: 'clear',
@@ -441,6 +449,8 @@
       renderPass.end();
 
       this.queue.submit([encoder.finish()]);
+      
+      // ✅ Phase 8: await削除（最後だけ）
       await this.device.queue.onSubmittedWorkDone();
 
       this._destroyResource(quadUniformsBuffer);
@@ -460,6 +470,9 @@
       };
     }
 
+    /**
+     * ✅ Phase 8: プレビュー検出＋サイズ最適化
+     */
     async generateMSDF(gpuBuffer, bounds, existingMSDF = null, settings = {}, vertexBuffer = null, vertexCount = 0, edgeCount = 0) {
       if (!this._isContextValid()) {
         console.error('[MSDF] WebGPU context invalid');
@@ -478,8 +491,12 @@
       const rawWidth = bounds.maxX - bounds.minX;
       const rawHeight = bounds.maxY - bounds.minY;
       
+      // ✅ Phase 8: プレビュー判定（opacityが0.7以下ならプレビュー）
+      const isPreview = settings.opacity !== undefined && settings.opacity < 1.0;
+      const targetSize = isPreview ? this.previewTextureSize : this.baseTextureSize;
+      
       const maxDim = Math.max(rawWidth, rawHeight);
-      const scale = this.baseTextureSize / maxDim;
+      const scale = targetSize / maxDim;
       
       const width = this._toU32(Math.ceil(rawWidth * scale));
       const height = this._toU32(Math.ceil(rawHeight * scale));
@@ -529,17 +546,16 @@
     }
 
     destroy() {
-      this.texturePool.forEach(tex => this._destroyResource(tex));
-      this.texturePool = [];
       this.initialized = false;
     }
   }
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase 2完全版 loaded');
-  console.log('   ✅ MSAA統合（multisample + resolveTarget）');
-  console.log('   ✅ smoothstep range: 0.025（シャープ化）');
-  console.log('   ✅ テクスチャ512px + JFA自動計算 + linear sampler');
+  console.log('✅ msdf-pipeline-manager.js Phase 8 GPU負荷削減版 loaded');
+  console.log('   ✅ テクスチャ256px（512px→256px削減）');
+  console.log('   ✅ プレビュー128px');
+  console.log('   ✅ JFA反復最大6回制限');
+  console.log('   ✅ GPU同期処理最小化');
 
 })();
