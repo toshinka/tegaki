@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.14 お絵かきツール - WebGPU MSDF版</title>
+    <title>🎨 PixiJS v8.14 お絵かきツール - WebGPU MSDF版 Phase 2</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -46,11 +46,18 @@
 
     <!-- WebGPU Base -->
     <script src="system/drawing/webgpu/webgpu-capabilities.js"></script>
+    
+    <!-- 🆕 Phase 2: Render Coordinator (WebGPU/Pixi統合管理) -->
+    <script src="system/drawing/webgpu/webgpu-render-coordinator.js"></script>
+    
     <script src="system/drawing/webgpu/webgpu-drawing-layer.js"></script>
     
-    <!-- WebGPU MSDF Pipeline - 新規追加 -->
+    <!-- WebGPU MSDF Pipeline -->
     <script src="system/drawing/wgsl-loader.js"></script> 
+    
+    <!-- 🔧 Phase 2: GPU Stroke Processor (改修版 - 筆圧対応・フリッカー解消) -->
     <script src="system/drawing/webgpu/gpu-stroke-processor.js"></script>
+    
     <script src="system/drawing/webgpu/msdf-pipeline-manager.js"></script>
     
     <!-- WebGPU Legacy  -->
@@ -78,7 +85,6 @@
     <script src="system/drawing/thumbnail-system.js"></script>
     <script src="system/drawing/brush-settings.js"></script>
     <script src="system/drawing/stroke-transformer.js"></script>
-    <script src="system/drawing/processing/vector-operations.js"></script>
     <script src="system/drawing/brush-core.js"></script>
     <script src="system/drawing/fill-tool.js"></script>
     <script src="system/drawing/drawing-engine.js"></script>
@@ -113,14 +119,19 @@
     <script src="core-engine.js"></script>
     <script src="core-initializer.js"></script>
 
-    <!-- Entry Point: WebGPU MSDF Pipeline統合版 -->
+    <!-- Entry Point: WebGPU MSDF Pipeline統合版 Phase 2 -->
     <script>
         window.addEventListener('DOMContentLoaded', async () => {
             try {
+                console.log('🚀 Phase 2: WebGPU Render Coordinator統合版 起動中...');
                 await window.CoreInitializer.initialize();
-                console.log('✅ Application initialized (WebGPU MSDF Pipeline版)');
+                console.log('✅ Application initialized (Phase 2 - GPU競合解決・筆圧対応)');
             } catch (error) {
                 console.error('❌ Application initialization failed:', error);
+                // エラー詳細を表示
+                if (error.message?.includes('WebGPU')) {
+                    console.error('WebGPU初期化失敗。Chrome最新版・GPUサポート確認要。');
+                }
             }
         });
     </script>
