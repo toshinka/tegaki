@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 9: テクスチャサイズ固定版
+ * msdf-pipeline-manager.js - Phase B-1改訂版: JFA軽量化 + 256px統一
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,11 +11,11 @@
  *   - wgsl-loader.js (WGSL Shader定義)
  *   - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
  * 
- * 【Phase 9改修内容 - CopyTextureToBuffer問題完全解決】
- * 🔥 テクスチャサイズ完全固定化（256x256 / 128x128）
- * 🔥 動的サイズ計算を廃止
- * 🔥 bounds内に描画領域を制限
- * ✅ Device Lost対策強化
+ * 【Phase B-1改訂版】
+ * 🔥 JFA反復: 6回 → 3回固定（50%軽量化）
+ * 🔥 テクスチャ: 256px完全統一（preview判定廃止）
+ * 🔥 Device Hung根本対策
+ * ✅ Phase 9機能完全継承
  * 
  * ================================================================================
  */
@@ -38,9 +38,8 @@
       this.shaders = {};
       this.initialized = false;
       
-      // 🔥 Phase 9: テクスチャサイズ完全固定
-      this.baseTextureSize = 256;      // 通常描画: 256x256固定
-      this.previewTextureSize = 128;   // プレビュー: 128x128固定
+      // 🔥 Phase B-1改訂版: 256px統一
+      this.textureSize = 256;
     }
 
     async initialize(device, format, sampleCount = 1) {
@@ -53,9 +52,9 @@
       await this._createPipelines();
       
       this.initialized = true;
-      console.log('✅ [MSDFPipeline] Phase 9 テクスチャ固定版 Initialized');
-      console.log('   📊 Base texture: 256x256 (完全固定)');
-      console.log('   📊 Preview texture: 128x128 (完全固定)');
+      console.log('✅ [MSDFPipeline] Phase B-1改訂版 Initialized');
+      console.log('   🔥 Texture: 256x256統一（preview判定廃止）');
+      console.log('   🔥 JFA反復: 3回固定（50%軽量化）');
       console.log('   📊 MSAA sampleCount:', this.sampleCount);
     }
 
@@ -191,10 +190,11 @@
       return Math.max(1, Math.floor(value)) >>> 0;
     }
 
+    /**
+     * 🔥 Phase B-1改訂版: JFA反復3回固定
+     */
     _calculateJFAIterations(width, height) {
-      const maxDim = Math.max(width, height);
-      const calculated = Math.ceil(Math.log2(maxDim));
-      return Math.min(calculated, 6);
+      return 3;  // 固定3回（50%軽量化）
     }
 
     async _seedInitPass(gpuBuffer, seedTexture, width, height, edgeCount) {
@@ -454,7 +454,7 @@
     }
 
     /**
-     * 🔥 Phase 9: テクスチャサイズ完全固定版
+     * 🔥 Phase B-1改訂版: 256px統一
      */
     async generateMSDF(gpuBuffer, bounds, existingMSDF = null, settings = {}, vertexBuffer = null, vertexCount = 0, edgeCount = 0) {
       if (!this._isContextValid()) {
@@ -471,13 +471,9 @@
         return null;
       }
 
-      // 🔥 プレビュー判定
-      const isPreview = settings.opacity !== undefined && settings.opacity < 1.0;
-      const textureSize = isPreview ? this.previewTextureSize : this.baseTextureSize;
-      
-      // 🔥 完全固定サイズ（正方形）
-      const width = textureSize;
-      const height = textureSize;
+      // 🔥 Phase B-1改訂版: 256px完全統一
+      const width = this.textureSize;
+      const height = this.textureSize;
 
       let seedTexture, jfaResult, msdfTexture, finalTexture;
       
@@ -508,10 +504,6 @@
         }
         this._destroyResource(msdfTexture);
 
-        // 🔥 重要: GPUTextureに実サイズを記録
-        finalTexture.actualWidth = width;
-        finalTexture.actualHeight = height;
-
         return finalTexture;
         
       } catch (error) {
@@ -534,9 +526,8 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase 9 テクスチャ固定版 loaded');
-  console.log('   🔥 テクスチャ256x256 / 128x128 完全固定');
-  console.log('   🔥 動的サイズ計算廃止');
-  console.log('   🔥 CopyTextureToBuffer問題解決');
+  console.log('✅ msdf-pipeline-manager.js Phase B-1改訂版 loaded');
+  console.log('   🔥 Texture: 256px統一');
+  console.log('   🔥 JFA反復: 3回固定（50%軽量化）');
 
 })();
