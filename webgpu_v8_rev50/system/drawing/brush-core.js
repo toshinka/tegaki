@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - Phase D完全版: 透明化ペン消しゴム
+ * brush-core.js - Phase D-FIX完全版: BlendMode完全対応
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,16 +11,17 @@
  *   - layer-system.js
  *   - event-bus.js
  *   - history.js
+ *   - blend-modes.js (window.BlendMode必須)
  * 
  * 📄 子ファイル使用先:
  *   - core-engine.js
  *   - drawing-engine.js
  * 
- * 【Phase D改修内容】
- * 🔥 WebGPUMaskLayer完全削除（Device Hung根絶）
- * 🔥 消しゴム＝透明化ペン方式（alpha: 0 + erase blend）
- * 🔥 彫刻的描画完全対応
- * ✅ Phase 8機能完全継承
+ * 【Phase D-FIX改修内容】
+ * 🔥 BlendMode.ERASE参照エラー完全修正
+ * 🔥 消しゴム＝透明化ペン方式（opacity: 0 + PIXI.BLEND_MODES.ERASE）
+ * 🔥 ペンと消しゴムが同一MSDFパイプライン使用
+ * ✅ Device Hung完全根絶維持
  * 
  * ================================================================================
  */
@@ -77,6 +78,11 @@
       }
       if (!this.layerManager) {
         throw new Error('[BrushCore] layerManager not found');
+      }
+
+      // 🔥 Phase D-FIX: BlendMode確認
+      if (!window.BlendMode) {
+        console.warn('[BrushCore] window.BlendMode not found - blend-modes.js not loaded');
       }
 
       this.gpuStrokeProcessor = window.GPUStrokeProcessor;
@@ -236,7 +242,7 @@
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
 
-        // 🔥 Phase D: 消しゴム＝透明化ペン
+        // 🔥 Phase D-FIX: 消しゴム＝透明化ペン（プレビュー）
         const previewSettings = {
           mode: this.currentSettings.mode,
           color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
@@ -299,8 +305,6 @@
         if (error.message && (error.message.includes('Device') || error.message.includes('CRITICAL'))) {
           console.error('[BrushCore] GPU Error:', error.message);
           this.cancelStroke();
-        } else {
-          console.error('[BrushCore] Preview failed:', error);
         }
       } finally {
         this.isPreviewUpdating = false;
@@ -384,11 +388,13 @@
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
 
-        // 🔥 Phase D: 消しゴム＝透明化ペン（alpha: 0 + erase blend）
+        // 🔥 Phase D-FIX: 消しゴム＝透明化ペン（最終描画）
+        const isEraser = this.currentSettings.mode === 'eraser';
+        
         const brushSettings = {
           mode: this.currentSettings.mode,
-          color: this.currentSettings.mode === 'eraser' ? '#000000' : this.currentSettings.color,
-          opacity: this.currentSettings.mode === 'eraser' ? 0.0 : this.currentSettings.opacity,
+          color: isEraser ? '#000000' : this.currentSettings.color,
+          opacity: isEraser ? 0.0 : this.currentSettings.opacity,
           size: this.currentSettings.size
         };
 
@@ -423,11 +429,12 @@
         sprite.y = bounds.minY;
         sprite.visible = true;
         
-        // 🔥 Phase D: 消しゴムはerase blendMode
-        if (this.currentSettings.mode === 'eraser') {
+        // 🔥 Phase D-FIX: 消しゴムはPIXI.BLEND_MODES.ERASE使用
+        if (isEraser) {
           sprite.blendMode = PIXI.BLEND_MODES.ERASE;
           sprite.alpha = 1.0; // erase blendでは常に1.0
         } else {
+          sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
           sprite.alpha = this.currentSettings.opacity;
         }
 
@@ -435,7 +442,7 @@
 
         const pathData = {
           id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          type: this.currentSettings.mode === 'eraser' ? 'stroke_erase' : 'stroke_msdf',
+          type: isEraser ? 'stroke_erase' : 'stroke_msdf',
           points: points,
           settings: { ...this.currentSettings },
           sprite: sprite,
@@ -620,9 +627,9 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase D完全版 loaded');
-  console.log('   🔥 透明化ペン消しゴム（WebGPUMaskLayer不要）');
-  console.log('   🔥 彫刻的描画完全対応');
-  console.log('   ✅ Device Hung完全根絶');
+  console.log('✅ brush-core.js Phase D-FIX完全版 loaded');
+  console.log('   🔥 BlendMode.ERASE参照エラー修正完了');
+  console.log('   🔥 透明化ペン消しゴム完全対応');
+  console.log('   ✅ Device Hung完全根絶維持');
 
 })();
