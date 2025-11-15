@@ -1,26 +1,29 @@
 /**
- * stroke-recorder.js - ポイント補間追加完全版
- * Stroke Point Recording System
+ * ================================================================================
+ * stroke-recorder.js Phase 3: 補間強化完全版
+ * ================================================================================
  * 
- * 📁 親依存:
+ * 📁 親ファイル依存:
  *   - drawing-engine.js (Local座標取得元)
  *   - pressure-handler.js (筆圧データ) [オプション]
  *   - config.js (BRUSH_SETTINGS)
  * 
- * 📄 子依存:
+ * 📄 子ファイル使用先:
  *   - brush-core.js (startStroke/updateStroke/endStroke呼び出し)
  *   - gpu-stroke-processor.js
  * 
- * 【ポイント補間追加】
- * ✅ addPoint()で前回ポイントとの距離チェック
- * ✅ 閾値(5px)超過時に線形補間ポイント自動挿入
- * ✅ 曲線の滑らかさ向上
+ * 【Phase 3改修内容】
+ * ✅ 補間閾値 5px → 2px（より滑らか）
+ * ✅ Catmull-Rom spline補間追加（オプション）
+ * ✅ 既存機能完全継承
  * 
  * 責務:
  *   - Local座標ポイントの記録（座標変換は一切行わない）
- *   - ポイント間補間による滑らか化
+ *   - 高精度ポイント補間による滑らか化
  *   - pressure/tilt/twist データ保持
  *   - PerfectFreehand互換形式提供
+ * 
+ * ================================================================================
  */
 
 (function() {
@@ -50,9 +53,10 @@
             this.totalPoints = 0;
             this.totalStrokes = 0;
 
-            // ✅ 補間設定
-            this.interpolationThreshold = 5.0; // px
+            // ✅ Phase 3: 補間強化
+            this.interpolationThreshold = 2.0; // 5px → 2px
             this.maxInterpolationPoints = 10;
+            this.useSplineInterpolation = false; // Catmull-Rom
 
             this.initialized = true;
         }
@@ -90,7 +94,7 @@
         }
 
         /**
-         * ✅ ポイント補間追加版
+         * ✅ Phase 3: 高精度補間
          */
         addPoint(localX, localY, pressure = 0.5, tiltX = 0, tiltY = 0) {
             if (!this.isRecording) {
@@ -99,40 +103,101 @@
 
             const now = performance.now();
 
-            // ✅ 補間処理
             if (this.points.length > 0) {
                 const lastPoint = this.points[this.points.length - 1];
                 const dx = localX - lastPoint.x;
                 const dy = localY - lastPoint.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
-                // 距離が閾値を超える場合、補間ポイントを挿入
                 if (distance > this.interpolationThreshold) {
-                    const numInterpolations = Math.min(
-                        Math.floor(distance / this.interpolationThreshold),
-                        this.maxInterpolationPoints
-                    );
-
-                    for (let i = 1; i <= numInterpolations; i++) {
-                        const t = i / (numInterpolations + 1);
-                        const interpX = lastPoint.x + dx * t;
-                        const interpY = lastPoint.y + dy * t;
-                        const interpPressure = lastPoint.pressure + (pressure - lastPoint.pressure) * t;
-                        const interpTiltX = lastPoint.tiltX + (tiltX - lastPoint.tiltX) * t;
-                        const interpTiltY = lastPoint.tiltY + (tiltY - lastPoint.tiltY) * t;
-
-                        this._addPointDirect(interpX, interpY, interpPressure, interpTiltX, interpTiltY, now);
+                    if (this.useSplineInterpolation && this.points.length >= 2) {
+                        this._addSplineInterpolation(lastPoint, localX, localY, pressure, tiltX, tiltY, now, distance);
+                    } else {
+                        this._addLinearInterpolation(lastPoint, localX, localY, pressure, tiltX, tiltY, now, distance);
                     }
                 }
             }
 
-            // 実際のポイント追加
             this._addPointDirect(localX, localY, pressure, tiltX, tiltY, now);
         }
 
         /**
-         * ✅ 内部ポイント追加（補間処理なし）
+         * ✅ Phase 3: 線形補間
          */
+        _addLinearInterpolation(lastPoint, x, y, pressure, tiltX, tiltY, timestamp, distance) {
+            const numInterpolations = Math.min(
+                Math.floor(distance / this.interpolationThreshold),
+                this.maxInterpolationPoints
+            );
+
+            const dx = x - lastPoint.x;
+            const dy = y - lastPoint.y;
+            const dPressure = pressure - lastPoint.pressure;
+            const dTiltX = tiltX - lastPoint.tiltX;
+            const dTiltY = tiltY - lastPoint.tiltY;
+
+            for (let i = 1; i <= numInterpolations; i++) {
+                const t = i / (numInterpolations + 1);
+                const interpX = lastPoint.x + dx * t;
+                const interpY = lastPoint.y + dy * t;
+                const interpPressure = lastPoint.pressure + dPressure * t;
+                const interpTiltX = lastPoint.tiltX + dTiltX * t;
+                const interpTiltY = lastPoint.tiltY + dTiltY * t;
+
+                this._addPointDirect(interpX, interpY, interpPressure, interpTiltX, interpTiltY, timestamp);
+            }
+        }
+
+        /**
+         * ✅ Phase 3: Catmull-Rom spline補間（オプション）
+         */
+        _addSplineInterpolation(lastPoint, x, y, pressure, tiltX, tiltY, timestamp, distance) {
+            const p0 = this.points[this.points.length - 2];
+            const p1 = lastPoint;
+            const p2 = { x, y, pressure, tiltX, tiltY };
+            
+            // 次のポイント推定（現在の方向を延長）
+            const p3 = {
+                x: p2.x + (p2.x - p1.x),
+                y: p2.y + (p2.y - p1.y),
+                pressure: p2.pressure,
+                tiltX: p2.tiltX,
+                tiltY: p2.tiltY
+            };
+
+            const numInterpolations = Math.min(
+                Math.floor(distance / this.interpolationThreshold),
+                this.maxInterpolationPoints
+            );
+
+            for (let i = 1; i <= numInterpolations; i++) {
+                const t = i / (numInterpolations + 1);
+                
+                const interpX = this._catmullRom(t, p0.x, p1.x, p2.x, p3.x);
+                const interpY = this._catmullRom(t, p0.y, p1.y, p2.y, p3.y);
+                const interpPressure = this._catmullRom(t, p0.pressure, p1.pressure, p2.pressure, p3.pressure);
+                const interpTiltX = this._catmullRom(t, p0.tiltX, p1.tiltX, p2.tiltX, p3.tiltX);
+                const interpTiltY = this._catmullRom(t, p0.tiltY, p1.tiltY, p2.tiltY, p3.tiltY);
+
+                this._addPointDirect(interpX, interpY, interpPressure, interpTiltX, interpTiltY, timestamp);
+            }
+        }
+
+        /**
+         * ✅ Phase 3: Catmull-Rom補間式
+         */
+        _catmullRom(t, p0, p1, p2, p3) {
+            const t2 = t * t;
+            const t3 = t2 * t;
+            
+            return 0.5 * (
+                (2 * p1) +
+                (-p0 + p2) * t +
+                (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+                (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+            );
+        }
+
         _addPointDirect(localX, localY, pressure, tiltX, tiltY, timestamp) {
             const timeDelta = timestamp - this.lastPointTime;
 
@@ -269,8 +334,8 @@
         window.strokeRecorder = new StrokeRecorder();
     }
 
-    console.log('✅ stroke-recorder.js ポイント補間追加完全版 loaded');
-    console.log('   ✅ 5px閾値で自動補間');
-    console.log('   ✅ 曲線の滑らかさ向上');
+    console.log('✅ stroke-recorder.js Phase 3完全版 loaded');
+    console.log('   ✅ 補間閾値: 2px（5px→2px）');
+    console.log('   ✅ Catmull-Rom spline対応');
 
 })();

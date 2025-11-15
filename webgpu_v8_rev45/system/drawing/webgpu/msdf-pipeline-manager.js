@@ -1,10 +1,10 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js Phase 2統合完全版
+ * msdf-pipeline-manager.js Phase 2完全版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
- *   - webgpu-drawing-layer.js (device/queue/format)
+ *   - webgpu-drawing-layer.js (device/queue/format/sampleCount)
  *   - brush-core.js (generateMSDF呼び出し元)
  * 
  * 📄 子ファイル依存:
@@ -12,10 +12,11 @@
  *   - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
  * 
  * 【Phase 2改修内容】
- * ✅ テクスチャ解像度512px固定（Phase 5の2倍oversample維持）
+ * ✅ テクスチャ解像度512px固定
  * ✅ JFA反復回数自動計算（log2）
  * ✅ linear sampler明示設定
- * ✅ 既存機能完全継承
+ * ✅ MSAA統合（multisample texture + resolveTarget）
+ * ✅ smoothstep range値調整（0.05 → 0.025）
  * 
  * ================================================================================
  */
@@ -28,6 +29,7 @@
       this.device = null;
       this.queue = null;
       this.format = null;
+      this.sampleCount = 1;
       
       this.seedInitPipeline = null;
       this.jfaPipeline = null;
@@ -40,19 +42,20 @@
       this.texturePool = [];
       this.maxPoolSize = 10;
       
-      // ✅ Phase 2: 基本解像度512px設定
       this.baseTextureSize = 512;
     }
 
-    async initialize(device, format) {
+    async initialize(device, format, sampleCount = 1) {
       if (this.initialized) return;
       this.device = device;
       this.format = format;
+      this.sampleCount = sampleCount;
       this.queue = device.queue;
       this._loadShaders();
       await this._createPipelines();
       
       this.initialized = true;
+      console.log('✅ [MSDFPipeline] MSAA sampleCount:', this.sampleCount);
     }
 
     _isContextValid() {
@@ -122,7 +125,8 @@
         label: 'MSDF Render'
       });
 
-      this.polygonRenderPipeline = this.device.createRenderPipeline({
+      // ✅ Phase 2: MSAA統合
+      const pipelineDescriptor = {
         layout: 'auto',
         vertex: {
           module: quadModule,
@@ -162,7 +166,16 @@
           cullMode: 'none'
         },
         label: 'MSDF Polygon Render Pipeline'
-      });
+      };
+
+      // ✅ Phase 2: MSAA設定追加
+      if (this.sampleCount > 1) {
+        pipelineDescriptor.multisample = {
+          count: this.sampleCount
+        };
+      }
+
+      this.polygonRenderPipeline = this.device.createRenderPipeline(pipelineDescriptor);
     }
 
     _destroyResource(resource) {
@@ -179,9 +192,6 @@
       return Math.max(1, Math.floor(value)) >>> 0;
     }
 
-    /**
-     * ✅ Phase 2: JFA反復回数自動計算
-     */
     _calculateJFAIterations(width, height) {
       const maxDim = Math.max(width, height);
       return Math.max(1, Math.ceil(Math.log2(maxDim)));
@@ -253,9 +263,6 @@
       this._destroyResource(configBuffer);
     }
 
-    /**
-     * ✅ Phase 2: JFA反復回数を自動計算に変更
-     */
     async _executeJFA(seedTexture, width, height) {
       const texB = this.device.createTexture({
         size: [width, height],
@@ -263,7 +270,6 @@
         usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
       });
 
-      // ✅ Phase 2: 自動計算に変更
       const iterations = this._calculateJFAIterations(width, height);
       
       let src = seedTexture;
@@ -315,7 +321,7 @@
     }
 
     /**
-     * ✅ Phase 2: linear sampler明示設定
+     * ✅ Phase 2: MSAA統合 + range調整
      */
     async _renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings = {}) {
       if (!this.polygonRenderPipeline) {
@@ -326,6 +332,17 @@
         throw new Error('[MSDF Render] Invalid vertexBuffer type');
       }
 
+      // ✅ Phase 2: MSAA texture生成
+      let msaaTexture = null;
+      if (this.sampleCount > 1) {
+        msaaTexture = this.device.createTexture({
+          size: [width, height],
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          sampleCount: this.sampleCount
+        });
+      }
+
       const outputTexture = this.device.createTexture({
         size: [width, height],
         format: 'rgba8unorm',
@@ -334,7 +351,6 @@
                GPUTextureUsage.TEXTURE_BINDING
       });
 
-      // ✅ Phase 2: linear sampler明示設定
       const sampler = this.device.createSampler({
         magFilter: 'linear',
         minFilter: 'linear',
@@ -363,9 +379,10 @@
         ]
       });
 
+      // ✅ Phase 2: smoothstep range調整（0.05 → 0.025）
       const renderUniformsData = new Float32Array([
-        0.5,
-        0.05,
+        0.5,      // threshold
+        0.025,    // range（シャープ化）
         settings.opacity !== undefined ? settings.opacity : 1.0,
         0.0
       ]);
@@ -399,13 +416,21 @@
       });
 
       const encoder = this.device.createCommandEncoder();
+      
+      // ✅ Phase 2: MSAA render pass設定
+      const colorAttachment = {
+        view: msaaTexture ? msaaTexture.createView() : outputTexture.createView(),
+        loadOp: 'clear',
+        storeOp: 'store',
+        clearValue: { r: 0, g: 0, b: 0, a: 0 }
+      };
+
+      if (msaaTexture) {
+        colorAttachment.resolveTarget = outputTexture.createView();
+      }
+
       const renderPass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: outputTexture.createView(),
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: { r: 0, g: 0, b: 0, a: 0 }
-        }]
+        colorAttachments: [colorAttachment]
       });
 
       renderPass.setPipeline(this.polygonRenderPipeline);
@@ -421,6 +446,7 @@
       this._destroyResource(quadUniformsBuffer);
       this._destroyResource(renderUniformsBuffer);
       this._destroyResource(colorBuffer);
+      this._destroyResource(msaaTexture);
 
       return outputTexture;
     }
@@ -434,9 +460,6 @@
       };
     }
 
-    /**
-     * ✅ Phase 2: テクスチャ解像度512px基準に変更
-     */
     async generateMSDF(gpuBuffer, bounds, existingMSDF = null, settings = {}, vertexBuffer = null, vertexCount = 0, edgeCount = 0) {
       if (!this._isContextValid()) {
         console.error('[MSDF] WebGPU context invalid');
@@ -452,7 +475,6 @@
         return null;
       }
 
-      // ✅ Phase 2: 512px基準にスケール計算
       const rawWidth = bounds.maxX - bounds.minX;
       const rawHeight = bounds.maxY - bounds.minY;
       
@@ -515,9 +537,9 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase 2統合完全版 loaded');
-  console.log('   ✅ テクスチャ解像度512px基準');
-  console.log('   ✅ JFA反復回数自動計算（log2）');
-  console.log('   ✅ linear sampler明示設定');
+  console.log('✅ msdf-pipeline-manager.js Phase 2完全版 loaded');
+  console.log('   ✅ MSAA統合（multisample + resolveTarget）');
+  console.log('   ✅ smoothstep range: 0.025（シャープ化）');
+  console.log('   ✅ テクスチャ512px + JFA自動計算 + linear sampler');
 
 })();
