@@ -1,3 +1,4 @@
+index.html:80  GET file:///D:/GitHub/tegaki/webgpu_v8_rev39/system/processing/vector-operations.js net::ERR_FILE_NOT_FOUND
  ✅ config.js v8.14.2 Phase 1改修版 loaded
     🔧 PerfectFreehand設定リニア化
     ✓ thinning: 0 (線の太り補正無効)
@@ -41,7 +42,9 @@
  ✅ stroke-renderer.js (Phase 3クリーンアップ版) loaded
  ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
  ✅ brush-settings.js (Phase 3-D Clean) loaded
- ✅ brush-core.js Phase 7: 消しゴムマスク統合版 loaded
+ ✅ brush-core.js Phase 2改修版 loaded
+    🔧 EventBus設定同期実装
+    🔧 quick-access-popup連携完了
  ✅ fill-tool.js (WebGPU競合修正版) loaded
     ❌ 独自WebGPU初期化を削除
     ✅ 既存インスタンス参照のみ
@@ -49,15 +52,15 @@
     🔧 pendingPoints バッチ処理実装
     🔧 _scheduleRender() rAF制御
     🔧 即座レンダリング解消
- ✅ quick-export-ui.js (無効化版) loaded
- ✅ export-manager.js v8.33.0 loaded
-    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
- ✅ png-exporter.js v8.29.0 loaded
-    🔧 generatePreview()メソッド追加
-    🔧 エラーハンドリング強化
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
 png-exporter.js:258    🔧 Blob生成の確実性向上
 webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
-webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+webp-exporter.js:250   ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
 psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
 psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
 psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
@@ -100,6 +103,7 @@ core-engine.js:719    ✅ 既存インスタンス使用方式に変更
 core-initializer.js:519 ✅ core-initializer.js Phase 1 loaded
 core-initializer.js:520    🔧 app.ticker.stop() 追加
 core-initializer.js:521    🔧 app.stage.eventMode = static 追加
+index.html:118 🚀 Phase 1完全版: GPU競合解決・筆圧対応 起動中...
 core-engine.js:617 ✅ [CoreEngine] Using existing strokeRecorder instance
 core-engine.js:634 ✅ [CoreEngine] Using existing strokeRenderer instance
 popup-manager.js:16 ✅ PopupManager initialized
@@ -115,25 +119,16 @@ popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 webgpu-drawing-layer.js:51 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
 initialize @ webgpu-drawing-layer.js:51
+initializeWebGPU @ core-initializer.js:182
+initialize @ core-initializer.js:360
+await in initialize
+initialize @ core-initializer.js:499
+（匿名） @ index.html:119
 webgpu-drawing-layer.js:77 ✅ [WebGPUDrawingLayer] Phase 3.1 Initialized
-webgpu-drawing-layer.js:78    📊 Device: GPUDevice
+webgpu-drawing-layer.js:78    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
 webgpu-drawing-layer.js:79    📊 Format: rgba8unorm
 webgpu-texture-bridge.js:48 ✅ [WebGPUTextureBridge] Phase 4完全版
 stroke-renderer.js:89 ✅ [StrokeRenderer] MSDF Mode enabled
-index.html:121 ✅ Application initialized (WebGPU MSDF Pipeline版)
+index.html:120 ✅ Phase 1完了: フリッカー解消・筆圧反映
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-index.html:1 WebGL: CONTEXT_LOST_WEBGL: loseContext: context lost
-index.html:1 WebGL: CONTEXT_LOST_WEBGL: loseContext: context lost
-index.html:1 A valid external Instance reference no longer exists.
-webgpu-mask-layer.js:322 [WebGPUMaskLayer] addPolygonToMask failed: OperationError: A valid external Instance reference no longer exists.
-addPolygonToMask @ webgpu-mask-layer.js:322
-await in addPolygonToMask
-_applyEraserMask @ brush-core.js:349
-_finalizeMSDFStroke @ brush-core.js:276
-await in _finalizeMSDFStroke
-finalizeStroke @ brush-core.js:219
-_processPointerUp @ drawing-engine.js:221
-_flushPendingPoints @ drawing-engine.js:97
-_handlePointerUp @ drawing-engine.js:145
-onPointerUp @ pointer-handler.js:134
