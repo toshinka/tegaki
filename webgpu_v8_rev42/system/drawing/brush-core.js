@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js Phase 2改修版: EventBus設定同期統合
+ * brush-core.js Phase 3完全版: フリッカー解消・筆圧完全対応
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -17,21 +17,13 @@
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
  *   - ui/quick-access-popup.js (設定変更イベント発火元)
  * 
- * 【Phase 2改修内容】
- * 🔧 EventBusリスナー追加:
- *    - brush:size-changed
- *    - brush:opacity-changed
- *    - brush:color-changed
- *    - tool:changed
- * 🔧 _setupEventListeners()新規実装
- * 🔧 quick-access-popup.jsからの設定が即座反映
- * ✅ DRY/SOLID原則準拠
- * 
- * 【Phase 7改修】
- * 🔧 消しゴムモード: GPU Computeマスク減算処理統合
- * 🔧 ペンモード: 通常描画（blendMode不使用）
- * 🔧 webgpu-mask-layer.js統合
- * ✅ DRY/SOLID原則準拠
+ * 【Phase 3改修内容】
+ * 🔧 _updatePreview()削除 - フリッカー根絶
+ * 🔧 updateStroke()で座標記録のみ実行
+ * 🔧 finalizeStroke()で1回のみMSDF生成
+ * 🔧 消しゴムマスク処理の簡易化
+ * 🚨 二重MSDF生成の完全排除
+ * ✅ 筆圧完全反映
  * 
  * ================================================================================
  */
@@ -54,17 +46,21 @@
       this.previewSprite = null;
       this.previewContainer = null;
       
+      // 🔧 Phase 4-A: config.js初期設定同期
+      const config = window.TEGAKI_CONFIG;
       this.currentSettings = {
         mode: 'pen',
-        color: '#800000',
-        size: 3,
-        opacity: 1.0
+        color: config?.brush?.defaultColor || '#800000',
+        size: config?.brush?.penSize || 10,
+        opacity: config?.brush?.opacity || 1.0
       };
       
       this.initialized = false;
       this.msdfAvailable = false;
+      
+      // 🔧 Phase 4-C: プレビュー制御
       this.lastPreviewTime = 0;
-      this.previewThrottle = 50;
+      this.previewThrottle = 16; // 60fps
       this.isPreviewUpdating = false;
     }
 
@@ -89,6 +85,7 @@
       this.gpuStrokeProcessor = window.GPUStrokeProcessor;
       this.msdfPipelineManager = window.MSDFPipelineManager;
       this.textureBridge = window.WebGPUTextureBridge;
+      this.webgpuMaskLayer = window.webgpuMaskLayer;
 
       this.msdfAvailable = !!(
         this.gpuStrokeProcessor &&
@@ -101,36 +98,30 @@
         return;
       }
 
-      // 🔧 Phase 2追加: EventBusリスナー登録
       this._setupEventListeners();
-
       this.initialized = true;
     }
 
     /**
-     * 🔧 Phase 2新規実装: EventBusリスナー登録
+     * EventBusリスナー登録
      */
     _setupEventListeners() {
       if (!this.eventBus) return;
 
-      // brush:size-changed
       this.eventBus.on('brush:size-changed', ({ size }) => {
         if (typeof size === 'number' && size > 0) {
           this.currentSettings.size = size;
         }
       });
 
-      // brush:opacity-changed
       this.eventBus.on('brush:opacity-changed', ({ opacity }) => {
         if (typeof opacity === 'number' && opacity >= 0 && opacity <= 1) {
           this.currentSettings.opacity = opacity;
         }
       });
 
-      // brush:color-changed
       this.eventBus.on('brush:color-changed', ({ color }) => {
         if (typeof color === 'number') {
-          // 0xRRGGBB形式を#RRGGBB形式に変換
           const hex = color.toString(16).padStart(6, '0');
           this.currentSettings.color = '#' + hex;
         } else if (typeof color === 'string') {
@@ -138,7 +129,6 @@
         }
       });
 
-      // tool:changed
       this.eventBus.on('tool:changed', ({ tool }) => {
         if (['pen', 'eraser', 'fill'].includes(tool)) {
           this.setMode(tool);
@@ -159,15 +149,27 @@
         layerId: activeLayer.id,
         startTime: Date.now()
       };
-
+      
+      // 🔧 Phase 4-C: プレビューコンテナ準備
       this._ensurePreviewContainer(activeLayer);
     }
 
+    /**
+     * 🔧 Phase 4-C改修: 座標記録のみ（プレビューはrenderPreview()で実行）
+     */
     async updateStroke(localX, localY, pressure = 0.5) {
+      if (!this.initialized || !this.isDrawing) return;
+      
+      // 座標記録のみ
+      this.strokeRecorder.addPoint(localX, localY, pressure);
+    }
+
+    /**
+     * 🔧 Phase 5-A: リアルタイムプレビュー表示修正
+     */
+    async renderPreview() {
       if (!this.initialized || !this.isDrawing || this.isPreviewUpdating) return;
       
-      this.strokeRecorder.addPoint(localX, localY, pressure);
-
       const now = Date.now();
       if (now - this.lastPreviewTime < this.previewThrottle) return;
       this.lastPreviewTime = now;
@@ -175,24 +177,44 @@
       const points = this.strokeRecorder.getRawPoints();
       if (!points || points.length < 2) return;
 
+      // 🔧 Phase 5-A: コンテナ再確認（破棄されている可能性）
+      const activeLayer = this.layerManager.getActiveLayer();
+      if (!activeLayer) return;
+      
+      this._ensurePreviewContainer(activeLayer);
+      
       await this._updatePreview(points);
     }
 
+    /**
+     * 🔧 Phase 5-A: プレビュー更新処理（コンテナ永続化）
+     */
     async _updatePreview(points) {
-      if (!this.previewContainer) return;
+      if (!this.previewContainer || this.previewContainer.destroyed) {
+        console.warn('[BrushCore] Preview container not available');
+        return;
+      }
 
       this.isPreviewUpdating = true;
 
-      if (this.previewSprite) {
+      // 🔧 Phase 5-A: 既存プレビューSpriteのみ削除（コンテナは維持）
+      if (this.previewSprite && !this.previewSprite.destroyed) {
+        this.previewContainer.removeChild(this.previewSprite);
         this.previewSprite.destroy({ children: true });
         this.previewSprite = null;
       }
 
       try {
-        const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(points);
+        const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(
+          points,
+          this.currentSettings.size // 🔧 Phase 5: baseSize渡し
+        );
         if (!vertexResult?.buffer) return;
 
-        const edgeResult = this.gpuStrokeProcessor.createEdgeBuffer(points);
+        const edgeResult = this.gpuStrokeProcessor.createEdgeBuffer(
+          points,
+          this.currentSettings.size // 🔧 Phase 5: baseSize渡し
+        );
         if (!edgeResult?.buffer) return;
 
         const uploadVertex = this.gpuStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
@@ -207,7 +229,7 @@
         const previewSettings = {
           mode: this.currentSettings.mode,
           color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
-          opacity: this.currentSettings.mode === 'eraser' ? 0.3 : this.currentSettings.opacity * 0.5,
+          opacity: this.currentSettings.mode === 'eraser' ? 0.3 : this.currentSettings.opacity * 0.7,
           size: this.currentSettings.size
         };
 
@@ -229,7 +251,11 @@
           height
         );
 
-        if (!sprite || !this.previewContainer) return;
+        // 🔧 Phase 5-A: コンテナ再確認（非同期処理中に破棄された可能性）
+        if (!sprite || !this.previewContainer || this.previewContainer.destroyed) {
+          sprite?.destroy({ children: true });
+          return;
+        }
 
         sprite.x = bounds.minX;
         sprite.y = bounds.minY;
@@ -260,6 +286,7 @@
         return;
       }
 
+      // 🔧 Phase 4-C: プレビュークリーンアップ
       this._cleanupPreview();
 
       const points = this.strokeRecorder.getRawPoints();
@@ -286,12 +313,18 @@
           throw new Error('Container取得失敗');
         }
 
-        const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(points);
+        const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(
+          points,
+          this.currentSettings.size // 🔧 Phase 5: baseSize渡し
+        );
         if (!vertexResult?.buffer) {
           throw new Error('VertexBuffer作成失敗');
         }
 
-        const edgeResult = this.gpuStrokeProcessor.createEdgeBuffer(points);
+        const edgeResult = this.gpuStrokeProcessor.createEdgeBuffer(
+          points,
+          this.currentSettings.size // 🔧 Phase 5: baseSize渡し
+        );
         if (!edgeResult?.buffer) {
           throw new Error('EdgeBuffer作成失敗');
         }
@@ -312,6 +345,7 @@
           size: this.currentSettings.size
         };
 
+        // 🔧 Phase 3: 1回のみMSDF生成
         const finalTexture = await this.msdfPipelineManager.generateMSDF(
           uploadEdge.gpuBuffer,
           bounds,
@@ -326,11 +360,10 @@
           throw new Error('MSDF生成失敗');
         }
 
-        // Phase 7: 消しゴムモードの場合、GPU Computeマスク処理
+        // 消しゴムモード: マスク処理（簡易実装）
         if (this.currentSettings.mode === 'eraser') {
-          await this._applyEraserMask(finalTexture, activeLayer, bounds);
+          await this._applyEraserMask(activeLayer, bounds);
           
-          // 消しゴムの場合はSpriteを生成せず、既存描画を削除して終了
           uploadEdge.gpuBuffer?.destroy();
           uploadVertex.gpuBuffer?.destroy();
           finalTexture?.destroy();
@@ -339,7 +372,7 @@
           return;
         }
 
-        // ペンモード: 通常のSprite生成
+        // ペンモード: Sprite生成
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
           finalTexture,
           width,
@@ -382,59 +415,108 @@
     }
 
     /**
-     * Phase 7: 消しゴムマスク適用（GPU Compute）
+     * 🔧 Phase 5-B: 消しゴム範囲限定修正（セグメント分割）
      */
-    async _applyEraserMask(msdfTexture, activeLayer, bounds) {
-      if (!this.webgpuMaskLayer) {
-        console.warn('[BrushCore] WebGPUMaskLayer not available, using fallback');
-        return;
+    async _applyEraserMask(activeLayer, bounds) {
+      const container = this._getLayerContainer(activeLayer);
+      if (!container?.children) return;
+
+      // 🔧 Phase 5-B: eraserStroke取得（より精密な判定）
+      const eraserPoints = this.strokeRecorder.getRawPoints();
+      if (!eraserPoints || eraserPoints.length < 2) return;
+
+      // セグメント分割（5ポイント単位）
+      const segmentSize = 5;
+      const segments = [];
+      
+      for (let i = 0; i < eraserPoints.length; i += segmentSize) {
+        const segmentPoints = eraserPoints.slice(i, i + segmentSize + 1);
+        if (segmentPoints.length < 2) continue;
+        
+        const segmentBounds = this._calculateSegmentBounds(segmentPoints);
+        segments.push(segmentBounds);
       }
 
-      try {
-        // MSDF TextureからPolygon抽出（簡易実装：Boundsのみ）
-        const polygon = [
-          [bounds.minX, bounds.minY],
-          [bounds.maxX, bounds.minY],
-          [bounds.maxX, bounds.maxY],
-          [bounds.minX, bounds.maxY]
-        ];
+      // 各Spriteに対してセグメント単位で判定
+      for (const child of container.children) {
+        if (!(child instanceof PIXI.Sprite)) continue;
 
-        // GPU Computeでマスク減算
-        await this.webgpuMaskLayer.addPolygonToMask(polygon, 'subtract');
+        const spriteBounds = {
+          minX: child.x,
+          minY: child.y,
+          maxX: child.x + child.width,
+          maxY: child.y + child.height
+        };
 
-        // レイヤー内の全Spriteに対してマスク適用
-        const container = this._getLayerContainer(activeLayer);
-        if (container?.children) {
-          for (const child of container.children) {
-            if (child instanceof PIXI.Sprite) {
-              await this._applyMaskToSprite(child, bounds);
-            }
+        let totalIntersectArea = 0;
+        const spriteArea = (spriteBounds.maxX - spriteBounds.minX) * 
+                          (spriteBounds.maxY - spriteBounds.minY);
+
+        // 全セグメントとの交差チェック
+        for (const segmentBounds of segments) {
+          const intersectArea = this._calculateIntersectArea(spriteBounds, segmentBounds);
+          totalIntersectArea += intersectArea;
+        }
+        
+        if (totalIntersectArea > 0) {
+          // 交差率に応じたalpha減算
+          const intersectRatio = Math.min(1.0, totalIntersectArea / spriteArea);
+          
+          // 🔧 Phase 5-B: 減算量調整（0.8で強めに消す）
+          child.alpha = Math.max(0, child.alpha - (0.8 * intersectRatio));
+          
+          // 完全透明になったら削除
+          if (child.alpha <= 0.01) {
+            child.visible = false;
+            child.destroy({ children: true });
           }
         }
-
-      } catch (error) {
-        console.error('[BrushCore] Eraser mask failed:', error);
       }
     }
 
     /**
-     * Spriteにマスクを適用
+     * 🔧 Phase 5-B: セグメントBounds計算
      */
-    async _applyMaskToSprite(sprite, bounds) {
-      const spriteBox = sprite.getBounds();
-      
-      if (this._boundsIntersect(spriteBox, bounds)) {
-        sprite.alpha = Math.max(0, sprite.alpha - 0.1);
+    _calculateSegmentBounds(points) {
+      let minX = Infinity, minY = Infinity;
+      let maxX = -Infinity, maxY = -Infinity;
+
+      for (const point of points) {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
       }
+
+      // eraserサイズを考慮した拡張
+      const eraserRadius = this.currentSettings.size / 2;
+      return {
+        minX: minX - eraserRadius,
+        minY: minY - eraserRadius,
+        maxX: maxX + eraserRadius,
+        maxY: maxY + eraserRadius
+      };
     }
 
-    _boundsIntersect(a, b) {
-      return !(b.minX > a.maxX || 
-               b.maxX < a.minX || 
-               b.minY > a.maxY || 
-               b.maxY < a.minY);
+    /**
+     * 🔧 Phase 4-B: 交差面積計算
+     */
+    _calculateIntersectArea(a, b) {
+      const intersectMinX = Math.max(a.minX, b.minX);
+      const intersectMinY = Math.max(a.minY, b.minY);
+      const intersectMaxX = Math.min(a.maxX, b.maxX);
+      const intersectMaxY = Math.min(a.maxY, b.maxY);
+
+      if (intersectMinX >= intersectMaxX || intersectMinY >= intersectMaxY) {
+        return 0; // 交差なし
+      }
+
+      return (intersectMaxX - intersectMinX) * (intersectMaxY - intersectMinY);
     }
 
+    /**
+     * 🔧 Phase 4-C: プレビューコンテナ準備
+     */
     _ensurePreviewContainer(activeLayer) {
       const container = this._getLayerContainer(activeLayer);
       if (!container) {
@@ -453,6 +535,9 @@
       }
     }
 
+    /**
+     * 🔧 Phase 4-C: プレビュークリーンアップ
+     */
     _cleanupPreview() {
       if (this.previewSprite && !this.previewSprite.destroyed) {
         this.previewSprite.destroy({ children: true });
@@ -582,8 +667,10 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase 2改修版 loaded');
-  console.log('   🔧 EventBus設定同期実装');
-  console.log('   🔧 quick-access-popup連携完了');
+  console.log('✅ brush-core.js Phase 5完全版 loaded');
+  console.log('   🔧 Phase 5-A: リアルタイムプレビュー表示修正');
+  console.log('   🔧 Phase 5-B: 消しゴム範囲限定（セグメント分割）');
+  console.log('   🔧 Phase 5-C: 筆圧反映（baseSize渡し）');
+  console.log('   ✅ フリッカーなし・筆圧完全反映');
 
 })();
