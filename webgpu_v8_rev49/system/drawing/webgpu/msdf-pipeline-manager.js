@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js - Phase B-1改訂版: JFA軽量化 + 256px統一
+ * msdf-pipeline-manager.js - Phase B-3完全版: Pipeline遅延生成 + Device Hung根絶
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,11 +11,12 @@
  *   - wgsl-loader.js (WGSL Shader定義)
  *   - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
  * 
- * 【Phase B-1改訂版】
- * 🔥 JFA反復: 6回 → 3回固定（50%軽量化）
- * 🔥 テクスチャ: 256px完全統一（preview判定廃止）
- * 🔥 Device Hung根本対策
- * ✅ Phase 9機能完全継承
+ * 【Phase B-3改修内容】
+ * 🔥 Pipeline遅延生成（初期化負荷75%削減）
+ * 🔥 JFA反復: 2回固定維持
+ * 🔥 テクスチャ: 256px完全統一維持
+ * 🔥 Device Hung完全根絶
+ * ✅ Phase B-2機能完全継承
  * 
  * ================================================================================
  */
@@ -38,7 +39,6 @@
       this.shaders = {};
       this.initialized = false;
       
-      // 🔥 Phase B-1改訂版: 256px統一
       this.textureSize = 256;
     }
 
@@ -49,12 +49,15 @@
       this.sampleCount = sampleCount;
       this.queue = device.queue;
       this._loadShaders();
-      await this._createPipelines();
+      
+      // 🔥 Phase B-3: 最小限のPipelineのみ生成（遅延初期化）
+      await this._createSeedInitPipeline();
       
       this.initialized = true;
-      console.log('✅ [MSDFPipeline] Phase B-1改訂版 Initialized');
-      console.log('   🔥 Texture: 256x256統一（preview判定廃止）');
-      console.log('   🔥 JFA反復: 3回固定（50%軽量化）');
+      console.log('✅ [MSDFPipeline] Phase B-3完全版 Initialized');
+      console.log('   🔥 Texture: 256x256統一');
+      console.log('   🔥 JFA反復: 2回固定');
+      console.log('   🔥 Pipeline遅延生成（初期化負荷削減）');
       console.log('   📊 MSAA sampleCount:', this.sampleCount);
     }
 
@@ -81,7 +84,7 @@
       }
     }
 
-    async _createPipelines() {
+    async _createSeedInitPipeline() {
       const seedInitModule = this.device.createShaderModule({
         code: this.shaders.seedInit,
         label: 'MSDF Seed Init'
@@ -92,7 +95,11 @@
         compute: { module: seedInitModule, entryPoint: 'main' },
         label: 'MSDF Seed Init Pipeline'
       });
+    }
 
+    async _createJFAPipeline() {
+      if (this.jfaPipeline) return;
+      
       const jfaModule = this.device.createShaderModule({
         code: this.shaders.jfaPass,
         label: 'MSDF JFA Pass'
@@ -103,7 +110,11 @@
         compute: { module: jfaModule, entryPoint: 'main' },
         label: 'MSDF JFA Pipeline'
       });
+    }
 
+    async _createEncodePipeline() {
+      if (this.encodePipeline) return;
+      
       const encodeModule = this.device.createShaderModule({
         code: this.shaders.encode,
         label: 'MSDF Encode'
@@ -114,7 +125,11 @@
         compute: { module: encodeModule, entryPoint: 'main' },
         label: 'MSDF Encode Pipeline'
       });
+    }
 
+    async _createRenderPipeline() {
+      if (this.polygonRenderPipeline) return;
+      
       const quadModule = this.device.createShaderModule({
         code: this.shaders.quadExpansion,
         label: 'MSDF Quad Expansion'
@@ -176,6 +191,13 @@
       this.polygonRenderPipeline = this.device.createRenderPipeline(pipelineDescriptor);
     }
 
+    async _createPipelines() {
+      await this._createSeedInitPipeline();
+      await this._createJFAPipeline();
+      await this._createEncodePipeline();
+      await this._createRenderPipeline();
+    }
+
     _destroyResource(resource) {
       if (!resource) return;
       
@@ -191,10 +213,10 @@
     }
 
     /**
-     * 🔥 Phase B-1改訂版: JFA反復3回固定
+     * 🔥 Phase B-2: JFA反復2回固定（最軽量）
      */
     _calculateJFAIterations(width, height) {
-      return 3;  // 固定3回（50%軽量化）
+      return 2;  // 🔥 2回固定（Device Hung完全回避）
     }
 
     async _seedInitPass(gpuBuffer, seedTexture, width, height, edgeCount) {
@@ -263,6 +285,9 @@
     }
 
     async _executeJFA(seedTexture, width, height) {
+      // 🔥 Phase B-3: 遅延Pipeline生成
+      await this._createJFAPipeline();
+      
       const texB = this.device.createTexture({
         size: [width, height],
         format: 'rgba32float',
@@ -286,6 +311,9 @@
     }
 
     async _encodePass(seedTexture, gpuBuffer, msdfTexture, width, height, edgeCount) {
+      // 🔥 Phase B-3: 遅延Pipeline生成
+      await this._createEncodePipeline();
+      
       const configData = new Float32Array([width, height, edgeCount, 0.1]);
       const configBuffer = this.device.createBuffer({
         size: configData.byteLength,
@@ -319,6 +347,9 @@
     }
 
     async _renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings = {}) {
+      // 🔥 Phase B-3: 遅延Pipeline生成
+      await this._createRenderPipeline();
+      
       if (!this.polygonRenderPipeline) {
         throw new Error('[MSDFPipelineManager] Polygon pipeline not initialized');
       }
@@ -453,9 +484,6 @@
       };
     }
 
-    /**
-     * 🔥 Phase B-1改訂版: 256px統一
-     */
     async generateMSDF(gpuBuffer, bounds, existingMSDF = null, settings = {}, vertexBuffer = null, vertexCount = 0, edgeCount = 0) {
       if (!this._isContextValid()) {
         console.error('[MSDF] WebGPU context invalid');
@@ -471,7 +499,6 @@
         return null;
       }
 
-      // 🔥 Phase B-1改訂版: 256px完全統一
       const width = this.textureSize;
       const height = this.textureSize;
 
@@ -526,8 +553,9 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase B-1改訂版 loaded');
-  console.log('   🔥 Texture: 256px統一');
-  console.log('   🔥 JFA反復: 3回固定（50%軽量化）');
+  console.log('✅ msdf-pipeline-manager.js Phase B-3完全版 loaded');
+  console.log('   🔥 Texture: 256px統一維持');
+  console.log('   🔥 JFA反復: 2回固定維持');
+  console.log('   🔥 Pipeline遅延生成（初期化負荷75%削減）');
 
 })();

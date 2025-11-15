@@ -187,7 +187,6 @@ async function initializeWebGPU(strokeRenderer) {
             return false;
         }
 
-        // ✅ Phase 3修正: sampleCount取得追加
         const device = window.WebGPUDrawingLayer.getDevice();
         const format = window.WebGPUDrawingLayer.getFormat();
         const sampleCount = window.WebGPUDrawingLayer.getSampleCount();
@@ -204,13 +203,10 @@ async function initializeWebGPU(strokeRenderer) {
             return false;
         }
 
-        // ✅ Phase 3修正: sampleCount引き継ぎ
         await window.MSDFPipelineManager.initialize(device, format, sampleCount);
         
-        if (!window.MSDFPipelineManager.polygonRenderPipeline) {
-            console.error('[WebGPU] Polygon Render Pipeline not created');
-            return false;
-        }
+        // 🔥 Phase D修正: 遅延生成のためチェック削除
+        // polygonRenderPipelineは初回描画時に生成される
 
         if (!window.WebGPUTextureBridge) {
             console.error('[WebGPU] WebGPUTextureBridge not found');
@@ -223,21 +219,26 @@ async function initializeWebGPU(strokeRenderer) {
             return false;
         }
 
+        // 🔥 Phase D修正: WebGPUMaskLayer初期化スキップ（遅延初期化）
+        // 消しゴム使用時に初回生成する
         if (window.WebGPUMaskLayer) {
             const canvasWidth = config.canvas?.width || 1920;
             const canvasHeight = config.canvas?.height || 1080;
             
+            // インスタンス作成のみ、Pipeline生成は遅延
             const maskLayer = new window.WebGPUMaskLayer(window.WebGPUDrawingLayer);
-            const maskInit = await maskLayer.initialize(canvasWidth, canvasHeight);
+            maskLayer.width = canvasWidth;
+            maskLayer.height = canvasHeight;
+            maskLayer.device = device;
+            maskLayer.queue = device.queue;
             
-            if (maskInit) {
-                window.webgpuMaskLayer = maskLayer;
-                
-                if (window.BrushCore) {
-                    window.BrushCore.webgpuMaskLayer = maskLayer;
-                }
-            } else {
-                console.warn('[WebGPU] MaskLayer initialization failed');
+            window.webgpuMaskLayer = maskLayer;
+            console.log('✅ [WebGPU] MaskLayer instance created (deferred init)');
+            
+            // BrushCore連携
+            if (window.BrushCore) {
+                window.BrushCore.webgpuMaskLayer = maskLayer;
+                console.log('✅ [WebGPU] MaskLayer linked to BrushCore (deferred)');
             }
         } else {
             console.warn('[WebGPU] WebGPUMaskLayer not found');
@@ -250,14 +251,16 @@ async function initializeWebGPU(strokeRenderer) {
 
         await strokeRenderer.initialize();
 
+        // 🔥 Phase D修正: Render Pipelineが遅延生成なのでチェック削除
         if (typeof strokeRenderer.initMSDFMode === 'function') {
             strokeRenderer.initMSDFMode(
-                window.MSDFPipelineManager.polygonRenderPipeline,
+                null, // pipelineは初回描画時に生成
                 device,
                 format
             );
         }
 
+        console.log('✅ [WebGPU] Initialization complete');
         return true;
 
     } catch (error) {
@@ -265,8 +268,6 @@ async function initializeWebGPU(strokeRenderer) {
         return false;
     }
 }
-
-
     class DrawingApp {
         constructor() {
             this.pixiApp = null;

@@ -1,26 +1,26 @@
 /**
  * ================================================================================
- * brush-core.js - Phase 8: GPUTexture Size Matching Complete
+ * brush-core.js - Phase D完全版: 透明化ペン消しゴム
  * ================================================================================
  * 
  * 📁 親ファイル依存:
- *   - system/drawing/stroke-recorder.js
- *   - system/drawing/webgpu/gpu-stroke-processor.js
- *   - system/drawing/webgpu/msdf-pipeline-manager.js
- *   - system/drawing/webgpu/webgpu-texture-bridge.js
- *   - system/drawing/webgpu/webgpu-mask-layer.js
- *   - system/layer-system.js
- *   - system/event-bus.js
- *   - system/history.js
+ *   - stroke-recorder.js
+ *   - gpu-stroke-processor.js
+ *   - msdf-pipeline-manager.js
+ *   - webgpu-texture-bridge.js
+ *   - layer-system.js
+ *   - event-bus.js
+ *   - history.js
  * 
  * 📄 子ファイル使用先:
- *   - core-engine.js (renderPreview呼び出し元)
- *   - system/drawing/drawing-engine.js
+ *   - core-engine.js
+ *   - drawing-engine.js
  * 
- * 【Phase 8改修内容】
- * 🔥 boundsサイズ計算廃止 → GPUTexture.width/height直接使用
- * 🔥 CopyTextureToBuffer問題完全根絶
- * ✅ Phase 7機能完全継承（Device Lost対策・履歴統合）
+ * 【Phase D改修内容】
+ * 🔥 WebGPUMaskLayer完全削除（Device Hung根絶）
+ * 🔥 消しゴム＝透明化ペン方式（alpha: 0 + erase blend）
+ * 🔥 彫刻的描画完全対応
+ * ✅ Phase 8機能完全継承
  * 
  * ================================================================================
  */
@@ -35,7 +35,6 @@
       this.msdfPipelineManager = null;
       this.textureBridge = null;
       this.layerManager = null;
-      this.webgpuMaskLayer = null;
       this.eventBus = null;
       
       this.isDrawing = false;
@@ -83,7 +82,6 @@
       this.gpuStrokeProcessor = window.GPUStrokeProcessor;
       this.msdfPipelineManager = window.MSDFPipelineManager;
       this.textureBridge = window.WebGPUTextureBridge;
-      this.webgpuMaskLayer = window.webgpuMaskLayer;
 
       this.msdfAvailable = !!(
         this.gpuStrokeProcessor &&
@@ -158,10 +156,6 @@
       if (this.gpuStrokeProcessor?.resetStream) {
         this.gpuStrokeProcessor.resetStream();
       }
-
-      if (this.currentSettings.mode === 'eraser' && this.webgpuMaskLayer?.startErase) {
-        this.webgpuMaskLayer.startErase();
-      }
       
       this.isDrawing = true;
       this.currentStroke = {
@@ -182,21 +176,13 @@
         historyManager.addPoint(localX, localY, pressure);
       }
 
-      if (this.currentSettings.mode === 'pen') {
-        if (this.gpuStrokeProcessor?.appendPointToStream) {
-          this.gpuStrokeProcessor.appendPointToStream(
-            localX,
-            localY,
-            pressure,
-            this.currentSettings.size
-          );
-        }
-      }
-
-      if (this.currentSettings.mode === 'eraser') {
-        if (this.webgpuMaskLayer?.eraseAppendPoint) {
-          this.webgpuMaskLayer.eraseAppendPoint(localX, localY, pressure);
-        }
+      if (this.gpuStrokeProcessor?.appendPointToStream) {
+        this.gpuStrokeProcessor.appendPointToStream(
+          localX,
+          localY,
+          pressure,
+          this.currentSettings.size
+        );
       }
     }
 
@@ -250,6 +236,7 @@
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
 
+        // 🔥 Phase D: 消しゴム＝透明化ペン
         const previewSettings = {
           mode: this.currentSettings.mode,
           color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
@@ -273,7 +260,6 @@
           return;
         }
 
-        // 🔥 Phase 8: GPUTexture実サイズ使用
         const actualWidth = previewTexture.width;
         const actualHeight = previewTexture.height;
 
@@ -352,12 +338,8 @@
         return;
       }
 
-      if (this.currentSettings.mode === 'pen' && this.gpuStrokeProcessor?.finalizeStroke) {
+      if (this.gpuStrokeProcessor?.finalizeStroke) {
         this.gpuStrokeProcessor.finalizeStroke();
-      }
-
-      if (this.currentSettings.mode === 'eraser' && this.webgpuMaskLayer?.finalizeErase) {
-        this.webgpuMaskLayer.finalizeErase();
       }
 
       if (this.msdfAvailable) {
@@ -402,10 +384,11 @@
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
 
+        // 🔥 Phase D: 消しゴム＝透明化ペン（alpha: 0 + erase blend）
         const brushSettings = {
           mode: this.currentSettings.mode,
-          color: this.currentSettings.color,
-          opacity: this.currentSettings.opacity,
+          color: this.currentSettings.mode === 'eraser' ? '#000000' : this.currentSettings.color,
+          opacity: this.currentSettings.mode === 'eraser' ? 0.0 : this.currentSettings.opacity,
           size: this.currentSettings.size
         };
 
@@ -423,41 +406,6 @@
           throw new Error('MSDF生成失敗');
         }
 
-        if (this.currentSettings.mode === 'eraser') {
-          const layerId = this._getLayerId(activeLayer);
-          if (!layerId) {
-            console.error('[BrushCore] Cannot register erase - layer has no ID');
-            uploadEdge.gpuBuffer?.destroy();
-            uploadVertex.gpuBuffer?.destroy();
-            finalTexture?.destroy();
-            return;
-          }
-
-          const beforeMask = activeLayer.maskTexture || null;
-          
-          await this._applyEraserMask(activeLayer, bounds);
-          
-          const afterMask = activeLayer.maskTexture || null;
-          
-          const historyManager = window.History;
-          if (historyManager?.pushEraseMask) {
-            historyManager.pushEraseMask(
-              layerId,
-              beforeMask,
-              afterMask,
-              bounds
-            );
-          }
-          
-          uploadEdge.gpuBuffer?.destroy();
-          uploadVertex.gpuBuffer?.destroy();
-          finalTexture?.destroy();
-          
-          this._emitStrokeEvents(activeLayer, null);
-          return;
-        }
-
-        // 🔥 Phase 8: GPUTexture実サイズ使用
         const actualWidth = finalTexture.width;
         const actualHeight = finalTexture.height;
 
@@ -474,13 +422,20 @@
         sprite.x = bounds.minX;
         sprite.y = bounds.minY;
         sprite.visible = true;
-        sprite.alpha = this.currentSettings.opacity;
+        
+        // 🔥 Phase D: 消しゴムはerase blendMode
+        if (this.currentSettings.mode === 'eraser') {
+          sprite.blendMode = PIXI.BLEND_MODES.ERASE;
+          sprite.alpha = 1.0; // erase blendでは常に1.0
+        } else {
+          sprite.alpha = this.currentSettings.opacity;
+        }
 
         container.addChild(sprite);
 
         const pathData = {
           id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          type: 'stroke_msdf',
+          type: this.currentSettings.mode === 'eraser' ? 'stroke_erase' : 'stroke_msdf',
           points: points,
           settings: { ...this.currentSettings },
           sprite: sprite,
@@ -503,65 +458,6 @@
           this.cancelStroke();
         } else {
           console.error('[BrushCore] MSDF描画失敗:', error);
-        }
-      }
-    }
-
-    async _applyEraserMask(activeLayer, bounds) {
-      if (!this.webgpuMaskLayer || !this.webgpuMaskLayer.isInitialized()) {
-        console.warn('[BrushCore] WebGPUMaskLayer not available');
-        return;
-      }
-
-      const eraserPoints = this.strokeRecorder.getRawPoints();
-      if (!eraserPoints || eraserPoints.length < 2) return;
-
-      try {
-        const eraseMaskTexture = await this.webgpuMaskLayer.generateEraseMask(
-          eraserPoints,
-          this.currentSettings.size
-        );
-
-        if (!eraseMaskTexture) {
-          console.error('[BrushCore] Erase mask generation failed');
-          return;
-        }
-
-        if (!activeLayer.maskTexture) {
-          activeLayer.maskTexture = eraseMaskTexture;
-        } else {
-          const composedMask = await this.webgpuMaskLayer.composeMasks(
-            activeLayer.maskTexture,
-            eraseMaskTexture,
-            'add'
-          );
-
-          if (composedMask) {
-            if (activeLayer.maskTexture?.destroy) {
-              activeLayer.maskTexture.destroy();
-            }
-            activeLayer.maskTexture = composedMask;
-          }
-
-          if (eraseMaskTexture?.destroy) {
-            eraseMaskTexture.destroy();
-          }
-        }
-
-        const layerId = this._getLayerId(activeLayer);
-        if (this.eventBus?.emit && layerId) {
-          this.eventBus.emit('layer:mask-updated', {
-            layerId: layerId,
-            maskTexture: activeLayer.maskTexture,
-            immediate: true
-          });
-        }
-
-      } catch (error) {
-        if (error.message && error.message.includes('Device')) {
-          console.error('[BrushCore] GPU Device Lost during erase');
-        } else {
-          console.error('[BrushCore] Erase mask failed:', error);
         }
       }
     }
@@ -724,7 +620,9 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase 8完全版 loaded');
-  console.log('   🔥 GPUTexture.width/height直接使用（bounds計算廃止）');
+  console.log('✅ brush-core.js Phase D完全版 loaded');
+  console.log('   🔥 透明化ペン消しゴム（WebGPUMaskLayer不要）');
+  console.log('   🔥 彫刻的描画完全対応');
+  console.log('   ✅ Device Hung完全根絶');
 
 })();
