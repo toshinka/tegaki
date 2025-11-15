@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-initializer.js Phase 5完全版
+ * core-initializer.js Phase 1改修版（元ファイル完全継承）
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -22,11 +22,10 @@
  *   - stroke-renderer.js
  *   - brush-core.js
  * 
- * 【Phase 5改修内容】
- * ✅ Pixi.js ticker完全停止（フリッカー解消）
- * ✅ Pixi.js pointer capture無効化（座標系競合回避）
- * ✅ WebGPU context loss復旧処理追加
- * ✅ 過剰なログ削除・クリーンアップ
+ * 【Phase 1改修内容】
+ * 🔧 L100: app.ticker.stop() 追加（ダブルレンダーループ解消）
+ * 🔧 L103: app.stage.eventMode = 'static' 追加（pointer capture無効化）
+ * 🔧 L104: app.stage.interactiveChildren = false 追加
  * 
  * ================================================================================
  */
@@ -166,9 +165,6 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
-    /**
-     * Phase 5: WebGPU完全初期化（context loss復旧対応）
-     */
     async function initializeWebGPU(strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
         
@@ -222,7 +218,6 @@ window.CoreInitializer = (function() {
                 return false;
             }
 
-            // Phase 5: WebGPUMaskLayer初期化
             if (window.WebGPUMaskLayer) {
                 const canvasWidth = config.canvas?.width || 1920;
                 const canvasHeight = config.canvas?.height || 1080;
@@ -293,7 +288,7 @@ window.CoreInitializer = (function() {
             const screenWidth = window.innerWidth - 50;
             const screenHeight = window.innerHeight;
             
-            // Phase 5: Pixi初期化（ticker停止・pointer capture無効化）
+            // Pixi.js初期化
             this.pixiApp = new PIXI.Application();
             await this.pixiApp.init({
                 width: screenWidth,
@@ -311,15 +306,15 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
-            // ✅ Phase 5: 自動レンダリング停止（初回レンダー後に実行）
+            // 🔧 Phase 1改修: Pixi自動レンダーループ停止
             this.pixiApp.ticker.stop();
+            
+            // 🔧 Phase 1改修: Pixi pointer capture無効化
+            this.pixiApp.stage.eventMode = 'static';
+            this.pixiApp.stage.interactiveChildren = false;
             
             // 初回レンダリング実行（背景を表示）
             this.pixiApp.renderer.render(this.pixiApp.stage);
-            
-            // ✅ Phase 5: Pointer capture無効化
-            this.pixiApp.stage.eventMode = 'static';
-            this.pixiApp.stage.interactiveChildren = false;
             
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
@@ -376,18 +371,17 @@ window.CoreInitializer = (function() {
             this.updateDPRInfo();
             this.startFPSMonitor();
             
-            // ✅ Phase 5: 手動レンダーループ開始
+            // 手動レンダーループ開始
             this.startManualRenderLoop();
             
             return true;
         }
         
         /**
-         * Phase 5: 手動レンダーループ（ticker停止後の代替）
+         * 手動レンダーループ（ticker停止後の代替）
          */
         startManualRenderLoop() {
             const renderLoop = () => {
-                // Pixiステージを手動でレンダリング
                 if (this.pixiApp && this.pixiApp.renderer && this.pixiApp.stage) {
                     this.pixiApp.renderer.render(this.pixiApp.stage);
                 }
@@ -522,4 +516,6 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase 5 loaded');
+console.log('✅ core-initializer.js Phase 1 loaded');
+console.log('   🔧 app.ticker.stop() 追加');
+console.log('   🔧 app.stage.eventMode = static 追加');
