@@ -1,4 +1,4 @@
-index.html:80  GET file:///D:/GitHub/tegaki/webgpu_v8_rev45/system/processing/vector-operations.js net::ERR_FILE_NOT_FOUND
+vector-operations.js:1  Failed to load resource: net::ERR_FILE_NOT_FOUND
  ✅ config.js v8.14.2 Phase 1改修版 loaded
     🔧 PerfectFreehand設定リニア化
     ✓ thinning: 0 (線の太り補正無効)
@@ -24,16 +24,19 @@ index.html:80  GET file:///D:/GitHub/tegaki/webgpu_v8_rev45/system/processing/ve
     ✅ pushEraseMask() 実装
     ✅ beginAction/endAction/addPoint 実装
  ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
+ ✅ webgpu-drawing-layer.js Phase 3 Device Lost監視版 loaded
+    🔥 device.lost Promise監視
+    🔥 自動再初期化機能
+    🔥 Graceful degradation
  ✅ wgsl-loader.js Phase 4統合版 loaded
  ✅ gpu-stroke-processor.js Phase 1統合完全版 loaded
     ✅ streaming vertex buffer実装
     ✅ appendPointToStream / flushStream / finalizeStroke
     ✅ 筆圧反映完全継承
- ✅ msdf-pipeline-manager.js Phase 8 GPU負荷削減版 loaded
-    ✅ テクスチャ256px（512px→256px削減）
-    ✅ プレビュー128px
-    ✅ JFA反復最大6回制限
-    ✅ GPU同期処理最小化
+ ✅ msdf-pipeline-manager.js Phase 9 テクスチャ固定版 loaded
+    🔥 テクスチャ256x256 / 128x128 完全固定
+    🔥 動的サイズ計算廃止
+    🔥 CopyTextureToBuffer問題解決
  ✅ earcut-triangulator.js loaded
  ✅ webgpu-mask-layer.js Phase 6 消しゴムmask-based完全版 loaded
     ✅ generateEraseMask() 実装
@@ -68,97 +71,93 @@ index.html:80  GET file:///D:/GitHub/tegaki/webgpu_v8_rev45/system/processing/ve
  ✅ export-manager.js v8.33.0 loaded
     🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
  ✅ png-exporter.js v8.29.0 loaded
-png-exporter.js:256    🔧 generatePreview()メソッド追加
-png-exporter.js:257    🔧 エラーハンドリング強化
-png-exporter.js:258    🔧 Blob生成の確実性向上
-webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
-webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
-psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
-psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
-psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
-apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
-mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
-dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
-dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
-dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
-slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
-slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
-slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
-slider-utils.js:237    🔧 requestAnimationFrame最適化
-keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
-keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
-keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
-keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
-layer-panel-renderer.js:663 ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
-layer-panel-renderer.js:664    ✓ layer:panel-update-requested イベントリスナー追加
-layer-panel-renderer.js:665    ✓ LayerSystemからの直接呼び出し完全排除
-status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
-timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
-timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
-timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
-timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
-timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
-timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
-album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
-settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
-settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
-quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
-export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
-export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
-ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
-ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
-ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
-core-runtime.js:578 ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
-core-engine.js:767 ✅ core-engine.js Phase 4-C完全版 loaded
-core-engine.js:768    🔧 リアルタイムプレビュー統合完了
-core-engine.js:769    🔧 Master Loop: pointer → preview → render
-core-initializer.js:538 ✅ core-initializer.js Phase 2完全版 loaded
-core-initializer.js:539    🔧 Canvas物理分離実装: webgpu-canvas / pixi-ui-canvas
-core-initializer.js:540    🔧 Pixi完全制御: ticker停止・pointer無効化
-core-initializer.js:541    🔧 Master Loop統合準備完了
-index.html:118 🚀 Phase 2完全版: Canvas分離・Master Loop統合 起動中...
-core-initializer.js:317 ✅ [Phase 2] Pixi ticker stopped
-core-initializer.js:322 ✅ [Phase 2] Pixi pointer capture disabled
-popup-manager.js:16 ✅ PopupManager initialized
-popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
-popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
-popup-manager.js:42 📋 Popup "album" registered (priority: 3)
-popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
-popup-manager.js:102 🔧 Initializing all popups...
-popup-manager.js:87 ✅ Popup "settings" initialized successfully
-popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
-popup-manager.js:87 ✅ Popup "album" initialized successfully
-popup-manager.js:87 ✅ Popup "resize" initialized successfully
-popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
-webgpu-drawing-layer.js:50 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
-initialize @ webgpu-drawing-layer.js:50
-initializeWebGPU @ core-initializer.js:184
-initialize @ core-initializer.js:368
-await in initialize
-initialize @ core-initializer.js:518
-（匿名） @ index.html:119
-webgpu-drawing-layer.js:76 ✅ [WebGPUDrawingLayer] Phase 2 MSAA統合完全版 Initialized
-webgpu-drawing-layer.js:77    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
-webgpu-drawing-layer.js:78    📊 Format: rgba8unorm
-webgpu-drawing-layer.js:79    📊 MSAA sampleCount: 4
-msdf-pipeline-manager.js:57 ✅ [MSDFPipeline] Phase 8 GPU負荷削減版 Initialized
-msdf-pipeline-manager.js:58    📊 Base texture: 256px (512px→256px削減)
-msdf-pipeline-manager.js:59    📊 Preview texture: 128px
-msdf-pipeline-manager.js:60    📊 MSAA sampleCount: 4
-webgpu-texture-bridge.js:48 ✅ [WebGPUTextureBridge] Phase 4完全版
-stroke-renderer.js:89 ✅ [StrokeRenderer] MSDF Mode enabled
-core-initializer.js:385 ✅ [Phase 2] Master Loop started in core-engine.js
-index.html:120 ✅ Phase 2完了: GPU/Pixi責務完全分離
-popup-manager.js:42 📋 Popup "export" registered (priority: 5)
-popup-manager.js:87 ✅ Popup "export" initialized successfully
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:128, height:131, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 126x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:126, height:128, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 126x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:128, height:131, depthOrArrayLayers:1]).
+    🔧 generatePreview()メソッド追加
+    🔧 エラーハンドリング強化
+    🔧 Blob生成の確実性向上
+ ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+ ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+    ⚠️ 実装は将来フェーズで追加予定
+    ✓ エラーメッセージで開発中を通知
+ ✅ apng-exporter.js v8.31.0 loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+ ✅ dom-builder.js v8.19.0 loaded
+    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+    ✓ System情報表示（WebGPU/GPU検出）
+ ✅ slider-utils.js v8.13.10 loaded
+    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+    🔧 慣性スクロール実装（velocity計算）
+    🔧 requestAnimationFrame最適化
+ ✅ keyboard-handler.js Phase 6完成版 loaded
+    ✅ BS/DEL: 描画削除が正常動作
+    ✅ Undo/Redo: children参照保持で完全復元
+    🔧 反転処理: 画像消失問題解決
+ ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
+    ✓ layer:panel-update-requested イベントリスナー追加
+    ✓ LayerSystemからの直接呼び出し完全排除
+ ✅ ui/status-display-renderer.js 完全改修版 loaded
+ ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+    ✓ Phase 1: layer:transform-updated 購読追加
+    ✓ Phase 3: throttle最適化（100ms）
+    ✓ Phase 3: immediate フラグ対応
+    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+ ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+ ✅ album-popup.js (FRAME改修版) loaded
+ ✅ settings-popup.js Phase 1 loaded
+    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+ ✅ quick-access-popup.js v8.13.17 loaded
+ ✅ export-popup.js v8.29.0 loaded
+    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ ✅ ui-panels.js v8.13.15 loaded
+    🎨 サイドバー軽量デザイン: オレンジ枠のみ
+    🎯 SVG色統一: 常にvar(--futaba-maroon)
+ ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
+ ✅ core-engine.js Phase 4-C完全版 loaded
+    🔧 リアルタイムプレビュー統合完了
+    🔧 Master Loop: pointer → preview → render
+ ✅ core-initializer.js Phase 2完全版 loaded
+    🔧 Canvas物理分離実装: webgpu-canvas / pixi-ui-canvas
+    🔧 Pixi完全制御: ticker停止・pointer無効化
+    🔧 Master Loop統合準備完了
+ 🚀 Phase 2完全版: Canvas分離・Master Loop統合 起動中...
+ ✅ [Phase 2] Pixi ticker stopped
+ ✅ [Phase 2] Pixi pointer capture disabled
+ ✅ PopupManager initialized
+ 📋 Popup "settings" registered (priority: 1)
+ 📋 Popup "quickAccess" registered (priority: 2)
+ 📋 Popup "album" registered (priority: 3)
+ 📋 Popup "resize" registered (priority: 4)
+ 🔧 Initializing all popups...
+ ✅ Popup "settings" initialized successfully
+ ✅ Popup "quickAccess" initialized successfully
+ ✅ Popup "album" initialized successfully
+ ✅ Popup "resize" initialized successfully
+ 📊 Popup initialization: 4 ready, 0 deferred
+ The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+initialize @ webgpu-drawing-layer.js:53
+ ✅ [WebGPUDrawingLayer] Phase 3 Device Lost監視版 Initialized
+    📊 Device: GPUDevice
+    📊 Format: rgba8unorm
+    📊 MSAA sampleCount: 4
+    🔥 Device Lost監視: 有効
+ ✅ [MSDFPipeline] Phase 9 テクスチャ固定版 Initialized
+    📊 Base texture: 256x256 (完全固定)
+    📊 Preview texture: 128x128 (完全固定)
+    📊 MSAA sampleCount: 4
+ ✅ [WebGPUTextureBridge] Phase 4完全版
+ ✅ [StrokeRenderer] MSDF Mode enabled
+ ✅ [Phase 2] Master Loop started in core-engine.js
+ ✅ Phase 2完了: GPU/Pixi責務完全分離
+ 📋 Popup "export" registered (priority: 5)
+ ✅ Popup "export" initialized successfully
+ [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:132, height:128, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:132, height:128, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
+ [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
 [Invalid CommandBuffer] is invalid.
  - While calling [Queue].Submit([[Invalid CommandBuffer]])
 
@@ -186,74 +185,254 @@ webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {messa
 [Invalid CommandBuffer] is invalid.
  - While calling [Queue].Submit([[Invalid CommandBuffer]])
 
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:132, height:134, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:127, height:128, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:132, height:134, depthOrArrayLayers:1]).
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+[Invalid CommandBuffer] is invalid.
+ - While calling [Queue].Submit([[Invalid CommandBuffer]])
+
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:135, height:132, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:135, height:132, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:132, height:134, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:127, height:128, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:132, height:134, depthOrArrayLayers:1]).
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:138, height:135, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:138, height:135, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:132, height:134, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:127, height:128, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:132, height:134, depthOrArrayLayers:1]).
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:139, height:136, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:139, height:136, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:132, height:134, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:127, height:128, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:132, height:134, depthOrArrayLayers:1]).
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:140, height:137, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:140, height:137, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:132, height:134, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:127, height:128, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 127x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:132, height:134, depthOrArrayLayers:1]).
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:140, height:137, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:140, height:137, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:130, height:86, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x85 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:85, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x85 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:130, height:86, depthOrArrayLayers:1]).
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:140, height:137, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:140, height:137, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:131, height:86, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x84 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:84, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x84 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:131, height:86, depthOrArrayLayers:1]).
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:140, height:137, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:140, height:137, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: 'Texture copy range (origin: [Origin3D x:0, y:0, z:… - While finishing [CommandEncoder (unlabeled)].\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:138, height:87, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x81 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:81, depthOrArrayLayers:1]).
- - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x81 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:138, height:87, depthOrArrayLayers:1]).
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:140, height:137, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:140, height:137, depthOrArrayLayers:1]).
  - While finishing [CommandEncoder (unlabeled)].
 
-webgpu-drawing-layer.js:71 [WebGPU] Uncaptured error: GPUValidationError {message: '[Invalid CommandBuffer] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n'}
-（匿名） @ webgpu-drawing-layer.js:71
-index.html:1 ID3D12Device::GetDeviceRemovedReason failed with DXGI_ERROR_DEVICE_HUNG (0x887A0006)
- - While handling unexpected error type Internal when allowed errors are (Validation|DeviceLost).
-    at CheckHRESULTImpl (..\..\third_party\dawn\src\dawn\native\d3d\D3DError.cpp:121)
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:116, height:129, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:116, height:129, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
 
-Backend messages:
- * Device removed reason: DXGI_ERROR_DEVICE_HUNG (0x887A0006)
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:116, height:136, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:116, height:136, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
 
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:116, height:142, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:116, height:142, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:132, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:132, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:158, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:158, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:188, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:188, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:201, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:201, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+index.html:1 Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:222, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:222, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:225, height:144, depthOrArrayLayers:1]) touches outside of [Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).
+ - While encoding [CommandEncoder (unlabeled)].CopyTextureToBuffer([Texture (unlabeled 128x128 px, TextureFormat::RGBA8Unorm)], [Buffer (unlabeled)], [Extent3D width:225, height:144, depthOrArrayLayers:1]).
+ - While finishing [CommandEncoder (unlabeled)].
+
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75
+webgpu-drawing-layer.js:75 [WebGPU] Uncaptured error: GPUValidationError
+（匿名） @ webgpu-drawing-layer.js:75

@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * webgpu-drawing-layer.js Phase 3: Device Lost監視版
+ * webgpu-drawing-layer.js - Phase B-0: MSAA無効化（Device Hung対策）
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -14,11 +14,10 @@
  *   - stroke-renderer.js
  *   - msdf-pipeline-manager.js
  * 
- * 【Phase 3改修内容】
- * ✅ MSAA sampleCount: 4 設定追加
- * 🔥 device.lost 監視追加
- * 🔥 自動再初期化機能
- * 🔥 Device Lost時のgraceful degradation
+ * 【Phase B-0改修内容】
+ * 🔥 sampleCount: 4 → 1 (MSAA完全無効化)
+ * 🔥 DXGI_ERROR_DEVICE_HUNG 根本対策
+ * ✅ Phase 3機能完全継承（Device Lost監視）
  * 
  * ================================================================================
  */
@@ -37,7 +36,8 @@
       this.reinitAttempts = 0;
       this.maxReinitAttempts = 3;
       
-      this.sampleCount = 4;
+      // 🔥 Phase B-0: MSAA完全無効化（Device Hung対策）
+      this.sampleCount = 1;
     }
 
     async initialize() {
@@ -70,11 +70,9 @@
 
         this.queue = this.device.queue;
 
-        // 🔥 Phase 3: uncapturederror監視
         this.device.addEventListener('uncapturederror', (event) => {
           console.error('[WebGPU] Uncaptured error:', event.error);
           
-          // Device Lostに関連するエラーを検出
           if (event.error.message && 
               (event.error.message.includes('Device') || 
                event.error.message.includes('lost') ||
@@ -83,7 +81,6 @@
           }
         });
 
-        // 🔥 Phase 3: device.lost Promise監視
         this.device.lost.then((info) => {
           console.error('[WebGPU] Device Lost:', info);
           this._handleDeviceLost(info.reason || 'Unknown reason');
@@ -93,10 +90,10 @@
         this.isDeviceLost = false;
         this.reinitAttempts = 0;
 
-        console.log('✅ [WebGPUDrawingLayer] Phase 3 Device Lost監視版 Initialized');
+        console.log('✅ [WebGPUDrawingLayer] Phase B-0: MSAA無効化版 Initialized');
         console.log('   📊 Device:', this.device);
         console.log('   📊 Format:', this.format);
-        console.log('   📊 MSAA sampleCount:', this.sampleCount);
+        console.log('   🔥 MSAA sampleCount: 1 (無効化 - Device Hung対策)');
         console.log('   🔥 Device Lost監視: 有効');
 
         return true;
@@ -109,16 +106,12 @@
       }
     }
 
-    /**
-     * 🔥 Phase 3新規実装: Device Lost処理
-     */
     _handleDeviceLost(reason) {
       console.error(`[WebGPU] Device Lost detected: ${reason}`);
       
       this.initialized = false;
       this.isDeviceLost = true;
       
-      // イベントバス通知
       if (window.TegakiEventBus) {
         window.TegakiEventBus.emit('webgpu:device-lost', {
           reason: reason,
@@ -126,30 +119,24 @@
         });
       }
       
-      // ユーザー通知
       this._notifyUser(reason);
       
-      // 自動再初期化試行
       if (this.reinitAttempts < this.maxReinitAttempts) {
         this.reinitAttempts++;
         console.log(`[WebGPU] Auto-reinitialization attempt ${this.reinitAttempts}/${this.maxReinitAttempts}`);
         
         setTimeout(() => {
           this._attemptReinitialize();
-        }, 2000 * this.reinitAttempts); // 遅延を徐々に増加
+        }, 2000 * this.reinitAttempts);
       } else {
         console.error('[WebGPU] Max reinit attempts reached. Manual page reload required.');
         this._showFatalError();
       }
     }
 
-    /**
-     * 🔥 Phase 3新規実装: 再初期化試行
-     */
     async _attemptReinitialize() {
       console.log('[WebGPU] Attempting reinitialization...');
       
-      // 既存リソースのクリーンアップ
       if (this.device) {
         try {
           this.device.destroy();
@@ -162,13 +149,11 @@
       this.queue = null;
       this.adapter = null;
       
-      // 再初期化
       const success = await this.initialize();
       
       if (success) {
         console.log('✅ [WebGPU] Reinitialization successful');
         
-        // 依存モジュールの再初期化
         this._reinitializeDependencies();
         
         if (window.TegakiEventBus) {
@@ -181,11 +166,7 @@
       }
     }
 
-    /**
-     * 🔥 Phase 3新規実装: 依存モジュール再初期化
-     */
     _reinitializeDependencies() {
-      // MSDFPipelineManager再初期化
       if (window.MSDFPipelineManager) {
         window.MSDFPipelineManager.initialized = false;
         window.MSDFPipelineManager.initialize(
@@ -195,19 +176,16 @@
         );
       }
       
-      // WebGPUTextureBridge再初期化
       if (window.WebGPUTextureBridge) {
         window.WebGPUTextureBridge.initialized = false;
         window.WebGPUTextureBridge.initialize();
       }
       
-      // GPUStrokeProcessor再初期化
       if (window.GPUStrokeProcessor) {
         window.GPUStrokeProcessor.initialized = false;
         window.GPUStrokeProcessor.initialize(this.device);
       }
       
-      // WebGPUMaskLayer再初期化
       if (window.webgpuMaskLayer) {
         const config = window.TEGAKI_CONFIG;
         const width = config?.canvas?.width || 800;
@@ -217,13 +195,9 @@
       }
     }
 
-    /**
-     * 🔥 Phase 3新規実装: ユーザー通知
-     */
     _notifyUser(reason) {
       const message = `GPU rendering has been interrupted. Attempting to recover...`;
       
-      // イベントバス経由で通知
       if (window.TegakiEventBus) {
         window.TegakiEventBus.emit('ui:show-notification', {
           message: message,
@@ -232,13 +206,9 @@
         });
       }
       
-      // コンソール警告
       console.warn(`[WebGPU] User notification: ${message}`);
     }
 
-    /**
-     * 🔥 Phase 3新規実装: 致命的エラー表示
-     */
     _showFatalError() {
       const message = 
         'GPU rendering has failed and cannot be recovered automatically.\n' +
@@ -252,10 +222,8 @@
         });
       }
       
-      // コンソールエラー
       console.error('[WebGPU] Fatal error - manual intervention required');
       
-      // 自動リロード確認（開発時のみ）
       if (confirm(message)) {
         window.location.reload();
       }
@@ -287,16 +255,12 @@
       return this.initialized && this.device !== null && !this.isDeviceLost;
     }
 
-    /**
-     * 🔥 Phase 3新規実装: Device状態確認
-     */
     isDeviceHealthy() {
       if (!this.device || !this.initialized || this.isDeviceLost) {
         return false;
       }
       
       try {
-        // device.lostがpendingでないか確認
         return this.device.lost !== undefined;
       } catch (e) {
         return false;
@@ -321,9 +285,8 @@
 
   window.WebGPUDrawingLayer = new WebGPUDrawingLayer();
 
-  console.log('✅ webgpu-drawing-layer.js Phase 3 Device Lost監視版 loaded');
-  console.log('   🔥 device.lost Promise監視');
-  console.log('   🔥 自動再初期化機能');
-  console.log('   🔥 Graceful degradation');
+  console.log('✅ webgpu-drawing-layer.js Phase B-0: MSAA無効化版 loaded');
+  console.log('   🔥 sampleCount: 1 (MSAA無効化)');
+  console.log('   🔥 DXGI_ERROR_DEVICE_HUNG 対策完了');
 
 })();

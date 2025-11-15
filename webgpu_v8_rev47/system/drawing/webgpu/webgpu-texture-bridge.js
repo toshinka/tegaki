@@ -1,25 +1,22 @@
 /**
  * ================================================================================
- * system/drawing/webgpu/webgpu-texture-bridge.js
- * Phase 4: 命名統一・Sprite生成統合版
+ * webgpu-texture-bridge.js - Phase 5: Size Validation Complete
  * ================================================================================
  * 
  * 【責務】
- * - GPUTexture → PixiJS Sprite変換（Canvas2D不使用）
- * - PixiJS v8 API対応（BaseTexture廃止）
- * - bytesPerRow 256バイト境界要件対応
+ * - GPUTexture → PIXI.Sprite 変換（CopyTextureToBuffer経由）
+ * - サイズ不一致の厳格な検証とエラー通知
  * 
- * 【依存Parents】
- * - webgpu-drawing-layer.js (device, queue)
+ * 【親依存】
+ * - webgpu-drawing-layer.js: device/queue取得
+ * - msdf-pipeline-manager.js: GPUTexture生成元
  * 
- * 【依存Children】
- * - stroke-renderer.js (createSpriteFromGPUTexture呼び出し)
+ * 【子依存】
+ * - なし（ピュア変換処理）
  * 
- * 【Phase 4改修】
- * ✅ グローバルシンボル統一: WebGPUTextureBridge (大文字)
- * ✅ Sprite生成統合: createSpriteFromGPUTexture()
- * ✅ bytesPerRow パディング処理完全対応
- * 
+ * 【改修履歴】
+ * - Phase 1-4: 基本実装・bytesPerRow対応
+ * - Phase 5: GPUTexture実サイズとcopySize一致検証追加（CopyTextureToBuffer問題根絶）
  * ================================================================================
  */
 
@@ -45,7 +42,7 @@
                 this.queue = window.WebGPUDrawingLayer.getQueue();
 
                 this.initialized = true;
-                console.log('✅ [WebGPUTextureBridge] Phase 4完全版');
+                console.log('✅ [WebGPUTextureBridge] Phase 5: Size Validation完全版');
                 return true;
 
             } catch (error) {
@@ -54,25 +51,52 @@
             }
         }
 
-        /**
-         * bytesPerRowを256バイト境界にアライメント
-         */
         _calculateBytesPerRow(width) {
-            const bytesPerPixel = 4; // RGBA8
+            const bytesPerPixel = 4;
             const unalignedBytesPerRow = width * bytesPerPixel;
             const alignment = 256;
             return Math.ceil(unalignedBytesPerRow / alignment) * alignment;
         }
 
         /**
-         * ✅ GPUTexture → PixiJS Sprite（完全統合版）
+         * 🔥 Phase 5: GPUTexture実サイズ検証追加
          */
-        async createSpriteFromGPUTexture(gpuTexture, width, height) {
+        async createSpriteFromGPUTexture(gpuTexture, requestedWidth, requestedHeight) {
             if (!this.initialized) {
                 await this.initialize();
             }
 
+            if (!gpuTexture || gpuTexture.width === undefined) {
+                throw new Error('[TextureBridge] Invalid GPUTexture provided');
+            }
+
+            // 🔥 Phase 5: サイズ厳格検証
+            const actualWidth = gpuTexture.width;
+            const actualHeight = gpuTexture.height;
+            
+            if (actualWidth !== requestedWidth || actualHeight !== requestedHeight) {
+                console.error('[TextureBridge] Size mismatch detected:', {
+                    gpuTexture: `${actualWidth}x${actualHeight}`,
+                    requested: `${requestedWidth}x${requestedHeight}`,
+                    difference: {
+                        width: requestedWidth - actualWidth,
+                        height: requestedHeight - actualHeight
+                    }
+                });
+                
+                throw new Error(
+                    `[TextureBridge] CRITICAL: CopyTextureToBuffer size mismatch - ` +
+                    `GPUTexture=${actualWidth}x${actualHeight}, ` +
+                    `Requested=${requestedWidth}x${requestedHeight}. ` +
+                    `This would cause "touches outside of texture" error.`
+                );
+            }
+
             try {
+                // 🔥 実サイズ使用（厳密一致保証）
+                const width = actualWidth;
+                const height = actualHeight;
+
                 const bytesPerRow = this._calculateBytesPerRow(width);
                 const bufferSize = bytesPerRow * height;
 
@@ -103,11 +127,9 @@
 
                 this.queue.submit([commandEncoder.finish()]);
 
-                // GPUBuffer → ArrayBuffer
                 await stagingBuffer.mapAsync(GPUMapMode.READ);
                 const arrayBuffer = stagingBuffer.getMappedRange();
                 
-                // パディング除去
                 const pixels = new Uint8ClampedArray(width * height * 4);
                 const mappedData = new Uint8ClampedArray(arrayBuffer);
                 
@@ -124,7 +146,6 @@
                 stagingBuffer.unmap();
                 stagingBuffer.destroy();
 
-                // ImageData → ImageBitmap → PixiJS Texture
                 const imageData = new ImageData(pixels, width, height);
                 const bitmap = await createImageBitmap(imageData);
                 
@@ -135,7 +156,6 @@
                     height: height
                 });
 
-                // Sprite生成
                 const sprite = new PIXI.Sprite(texture);
                 sprite.width = width;
                 sprite.height = height;
@@ -148,17 +168,11 @@
             }
         }
 
-        /**
-         * GPUTexture → PixiJS Texture（下位互換用）
-         */
         async createPixiTextureFromGPU(gpuTexture, width, height) {
             const sprite = await this.createSpriteFromGPUTexture(gpuTexture, width, height);
             return sprite.texture;
         }
 
-        /**
-         * SDF Float32Array → PixiJS Texture
-         */
         async sdfToPixiTexture(sdfData, width, height, colorSettings = null) {
             if (!sdfData || sdfData.length !== width * height) {
                 throw new Error('[TextureBridge] Invalid SDF data');
@@ -192,9 +206,6 @@
             return texture;
         }
 
-        /**
-         * MSDF Float32Array → PixiJS Texture
-         */
         async msdfToPixiTexture(msdfData, width, height) {
             if (!msdfData || msdfData.length !== width * height * 4) {
                 throw new Error('[TextureBridge] Invalid MSDF data');
@@ -219,9 +230,6 @@
             return texture;
         }
 
-        /**
-         * GPUTexture作成
-         */
         createGPUTexture(width, height, format = 'rgba8unorm') {
             if (!this.initialized) {
                 throw new Error('[TextureBridge] Not initialized');
@@ -244,7 +252,7 @@
         }
     }
 
-    // グローバル公開（大文字統一）
+    // 🔥 シングルトンインスタンス生成（Phase 5）
     window.WebGPUTextureBridge = new WebGPUTextureBridge();
 
 })();

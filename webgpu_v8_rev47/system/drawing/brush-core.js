@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js Phase 7完全版
+ * brush-core.js - Phase 8: GPUTexture Size Matching Complete
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -17,11 +17,10 @@
  *   - core-engine.js (renderPreview呼び出し元)
  *   - system/drawing/drawing-engine.js
  * 
- * 【Phase 7改修内容】
- * ✅ activeLayer.id 取得修正（layerData.id優先）
- * ✅ 消しゴム履歴登録の完全統合
- * ✅ GPU Device Lost対策（エラーハンドリング強化）
- * ✅ 既存機能完全継承
+ * 【Phase 8改修内容】
+ * 🔥 boundsサイズ計算廃止 → GPUTexture.width/height直接使用
+ * 🔥 CopyTextureToBuffer問題完全根絶
+ * ✅ Phase 7機能完全継承（Device Lost対策・履歴統合）
  * 
  * ================================================================================
  */
@@ -58,9 +57,6 @@
       this.msdfAvailable = false;
     }
 
-    /**
-     * ✅ Phase 7: LayerID取得ヘルパー（安全な取得）
-     */
     _getLayerId(layer) {
       if (!layer) return null;
       return layer.layerData?.id || layer.id || layer.label || null;
@@ -96,7 +92,7 @@
       );
 
       if (!this.msdfAvailable) {
-        console.warn('[BrushCore] MSDF Pipeline not fully available - some features may be limited');
+        console.warn('[BrushCore] MSDF Pipeline not fully available');
       }
 
       this._setupEventListeners();
@@ -147,7 +143,6 @@
         return;
       }
 
-      // ✅ Phase 7: 履歴グルーピング開始
       const historyManager = window.History;
       if (historyManager?.beginAction) {
         const actionType = this.currentSettings.mode === 'eraser' ? 'erase' : 'stroke';
@@ -160,7 +155,6 @@
 
       this.strokeRecorder.startStroke(localX, localY, pressure);
       
-      // GPU streaming初期化
       if (this.gpuStrokeProcessor?.resetStream) {
         this.gpuStrokeProcessor.resetStream();
       }
@@ -183,14 +177,12 @@
       
       this.strokeRecorder.addPoint(localX, localY, pressure);
       
-      // 履歴にポイント追加
       const historyManager = window.History;
       if (historyManager?.addPoint) {
         historyManager.addPoint(localX, localY, pressure);
       }
 
       if (this.currentSettings.mode === 'pen') {
-        // GPU streaming即時転送
         if (this.gpuStrokeProcessor?.appendPointToStream) {
           this.gpuStrokeProcessor.appendPointToStream(
             localX,
@@ -257,14 +249,6 @@
         const uploadEdge = this.gpuStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
-        const width = Math.ceil(bounds.maxX - bounds.minX);
-        const height = Math.ceil(bounds.maxY - bounds.minY);
-
-        if (width <= 0 || height <= 0) {
-          uploadEdge.gpuBuffer?.destroy();
-          uploadVertex.gpuBuffer?.destroy();
-          return;
-        }
 
         const previewSettings = {
           mode: this.currentSettings.mode,
@@ -273,7 +257,7 @@
           size: this.currentSettings.size
         };
 
-        const finalTexture = await this.msdfPipelineManager.generateMSDF(
+        const previewTexture = await this.msdfPipelineManager.generateMSDF(
           uploadEdge.gpuBuffer,
           bounds,
           null,
@@ -283,22 +267,26 @@
           edgeResult.edgeCount
         );
 
-        if (!finalTexture) {
+        if (!previewTexture) {
           uploadEdge.gpuBuffer?.destroy();
           uploadVertex.gpuBuffer?.destroy();
           return;
         }
 
+        // 🔥 Phase 8: GPUTexture実サイズ使用
+        const actualWidth = previewTexture.width;
+        const actualHeight = previewTexture.height;
+
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
-          finalTexture,
-          width,
-          height
+          previewTexture,
+          actualWidth,
+          actualHeight
         );
 
         if (!sprite) {
           uploadEdge.gpuBuffer?.destroy();
           uploadVertex.gpuBuffer?.destroy();
-          finalTexture?.destroy();
+          previewTexture?.destroy();
           return;
         }
 
@@ -306,7 +294,7 @@
           sprite.destroy({ children: true });
           uploadEdge.gpuBuffer?.destroy();
           uploadVertex.gpuBuffer?.destroy();
-          finalTexture?.destroy();
+          previewTexture?.destroy();
           return;
         }
 
@@ -319,12 +307,11 @@
 
         uploadEdge.gpuBuffer?.destroy();
         uploadVertex.gpuBuffer?.destroy();
-        finalTexture?.destroy();
+        previewTexture?.destroy();
 
       } catch (error) {
-        // ✅ Phase 7: Device Lost対策
-        if (error.message && error.message.includes('Device') && error.message.includes('lost')) {
-          console.error('[BrushCore] GPU Device Lost - please reload the page');
+        if (error.message && (error.message.includes('Device') || error.message.includes('CRITICAL'))) {
+          console.error('[BrushCore] GPU Error:', error.message);
           this.cancelStroke();
         } else {
           console.error('[BrushCore] Preview failed:', error);
@@ -365,7 +352,6 @@
         return;
       }
 
-      // GPU streaming最終flush
       if (this.currentSettings.mode === 'pen' && this.gpuStrokeProcessor?.finalizeStroke) {
         this.gpuStrokeProcessor.finalizeStroke();
       }
@@ -382,7 +368,6 @@
       this.isDrawing = false;
       this.currentStroke = null;
 
-      // 履歴グルーピング終了
       const historyManager = window.History;
       if (historyManager?.endAction) {
         historyManager.endAction();
@@ -416,10 +401,6 @@
         const uploadEdge = this.gpuStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
-        const width = Math.ceil(bounds.maxX - bounds.minX);
-        const height = Math.ceil(bounds.maxY - bounds.minY);
-
-        if (width <= 0 || height <= 0) return;
 
         const brushSettings = {
           mode: this.currentSettings.mode,
@@ -443,10 +424,9 @@
         }
 
         if (this.currentSettings.mode === 'eraser') {
-          // ✅ Phase 7: mask-based消しゴム + 履歴登録（ID修正）
           const layerId = this._getLayerId(activeLayer);
           if (!layerId) {
-            console.error('[BrushCore] Cannot register erase history - layer has no ID');
+            console.error('[BrushCore] Cannot register erase - layer has no ID');
             uploadEdge.gpuBuffer?.destroy();
             uploadVertex.gpuBuffer?.destroy();
             finalTexture?.destroy();
@@ -459,7 +439,6 @@
           
           const afterMask = activeLayer.maskTexture || null;
           
-          // 履歴登録
           const historyManager = window.History;
           if (historyManager?.pushEraseMask) {
             historyManager.pushEraseMask(
@@ -478,10 +457,14 @@
           return;
         }
 
+        // 🔥 Phase 8: GPUTexture実サイズ使用
+        const actualWidth = finalTexture.width;
+        const actualHeight = finalTexture.height;
+
         const sprite = await this.textureBridge.createSpriteFromGPUTexture(
           finalTexture,
-          width,
-          height
+          actualWidth,
+          actualHeight
         );
 
         if (!sprite) {
@@ -515,9 +498,8 @@
         finalTexture?.destroy();
 
       } catch (error) {
-        // ✅ Phase 7: Device Lost対策
-        if (error.message && error.message.includes('Device') && error.message.includes('lost')) {
-          console.error('[BrushCore] GPU Device Lost during finalize - please reload the page');
+        if (error.message && (error.message.includes('Device') || error.message.includes('CRITICAL'))) {
+          console.error('[BrushCore] GPU Error:', error.message);
           this.cancelStroke();
         } else {
           console.error('[BrushCore] MSDF描画失敗:', error);
@@ -535,7 +517,6 @@
       if (!eraserPoints || eraserPoints.length < 2) return;
 
       try {
-        // 1. 消しゴムマスク生成
         const eraseMaskTexture = await this.webgpuMaskLayer.generateEraseMask(
           eraserPoints,
           this.currentSettings.size
@@ -546,12 +527,9 @@
           return;
         }
 
-        // 2. レイヤーマスク統合
         if (!activeLayer.maskTexture) {
-          // 初回消しゴム: 新規マスク設定
           activeLayer.maskTexture = eraseMaskTexture;
         } else {
-          // 既存マスクと合成
           const composedMask = await this.webgpuMaskLayer.composeMasks(
             activeLayer.maskTexture,
             eraseMaskTexture,
@@ -559,20 +537,17 @@
           );
 
           if (composedMask) {
-            // 古いマスク破棄
             if (activeLayer.maskTexture?.destroy) {
               activeLayer.maskTexture.destroy();
             }
             activeLayer.maskTexture = composedMask;
           }
 
-          // 一時マスク破棄
           if (eraseMaskTexture?.destroy) {
             eraseMaskTexture.destroy();
           }
         }
 
-        // 3. マスク適用イベント発行
         const layerId = this._getLayerId(activeLayer);
         if (this.eventBus?.emit && layerId) {
           this.eventBus.emit('layer:mask-updated', {
@@ -583,11 +558,10 @@
         }
 
       } catch (error) {
-        // ✅ Phase 7: Device Lost対策
-        if (error.message && error.message.includes('Device') && error.message.includes('lost')) {
-          console.error('[BrushCore] GPU Device Lost during erase - please reload the page');
+        if (error.message && error.message.includes('Device')) {
+          console.error('[BrushCore] GPU Device Lost during erase');
         } else {
-          console.error('[BrushCore] Erase mask application failed:', error);
+          console.error('[BrushCore] Erase mask failed:', error);
         }
       }
     }
@@ -633,7 +607,7 @@
 
       const layerId = this._getLayerId(activeLayer);
       if (!layerId) {
-        console.warn('[BrushCore] Cannot register history - layer has no ID');
+        console.warn('[BrushCore] Cannot register history - no ID');
         return;
       }
 
@@ -750,9 +724,7 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase 7完全版 loaded');
-  console.log('   ✅ activeLayer.id 取得修正');
-  console.log('   ✅ 消しゴム履歴登録完全統合');
-  console.log('   ✅ GPU Device Lost対策実装');
+  console.log('✅ brush-core.js Phase 8完全版 loaded');
+  console.log('   🔥 GPUTexture.width/height直接使用（bounds計算廃止）');
 
 })();
