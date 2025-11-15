@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * drawing-engine.js Phase 1改修版（元ファイル完全継承）
+ * drawing-engine.js Phase 2完全版（元ファイル完全継承）
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -20,6 +20,9 @@
  * - 座標変換パイプライン（Screen→Canvas→World→Local）
  * - PointerEvent処理
  * - ストローク制御（開始・更新・終了）
+ * 
+ * 【Phase 2改修内容】
+ * 🔧 flushPendingPoints()公開メソッド化（core-engine連携）
  * 
  * 【Phase 1改修内容】
  * 🔧 pendingPoints配列追加（バッチ処理）
@@ -83,7 +86,7 @@ class DrawingEngine {
     }
 
     /**
-     * 🔧 Phase 1追加: ポインタバッチをフラッシュ
+     * 🔧 Phase 1追加: ポインタバッチをフラッシュ（内部処理）
      */
     _flushPendingPoints() {
         if (pendingPoints.length === 0) return;
@@ -99,6 +102,13 @@ class DrawingEngine {
         }
 
         pendingPoints = [];
+    }
+
+    /**
+     * 🔧 Phase 2追加: 公開メソッド（core-engine連携用）
+     */
+    flushPendingPoints() {
+        this._flushPendingPoints();
     }
 
     /**
@@ -287,7 +297,6 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js Phase 1 loaded');
-console.log('   🔧 pendingPoints バッチ処理実装');
-console.log('   🔧 _scheduleRender() rAF制御');
-console.log('   🔧 即座レンダリング解消');
+console.log('✅ drawing-engine.js Phase 2完全版 loaded');
+console.log('   🔧 flushPendingPoints()公開メソッド化');
+console.log('   🔧 core-engine Master Loop連携完了');

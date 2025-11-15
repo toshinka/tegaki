@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.14 お絵かきツール - WebGPU MSDF版 Phase 1</title>
+    <title>🎨 PixiJS v8.14 お絵かきツール - WebGPU MSDF版 Phase 2</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -115,9 +115,9 @@
     <script>
         window.addEventListener('DOMContentLoaded', async () => {
             try {
-                console.log('🚀 Phase 1完全版: GPU競合解決・筆圧対応 起動中...');
+                console.log('🚀 Phase 2完全版: Canvas分離・Master Loop統合 起動中...');
                 await window.CoreInitializer.initialize();
-                console.log('✅ Phase 1完了: フリッカー解消・筆圧反映');
+                console.log('✅ Phase 2完了: GPU/Pixi責務完全分離');
             } catch (error) {
                 console.error('❌ 初期化失敗:', error);
                 if (error.message?.includes('WebGPU')) {

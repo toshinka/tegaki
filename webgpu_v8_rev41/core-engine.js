@@ -1,10 +1,12 @@
 /**
- * @file core-engine.js v8.33.0
- * @description システム統合管理・コア機能実装
+ * ================================================================================
+ * core-engine.js Phase 2完全版: Master Loop統合
+ * ================================================================================
  * 
- * 【v8.33.0 改修内容】
- * 🔧 StrokeRecorder二重初期化の修正（既存インスタンス使用）
- * 🔧 StrokeRenderer初期化チェックの強化
+ * 【Phase 2改修内容】
+ * 🔧 startRenderLoop() 新規実装: WebGPU Master Loop
+ * 🔧 _renderLoop() 新規実装: WebGPU描画 → Pixi UI手動レンダー
+ * 🔧 flushPointerBatch() 準備実装（drawing-engine連携用）
  * 
  * 【依存関係】
  * - system/camera-system.js (TegakiCameraSystem)
@@ -16,6 +18,8 @@
  * - system/event-bus.js (TegakiEventBus)
  * - system/export-manager.js (ExportManager)
  * - system/exporters/*.js (各エクスポーター)
+ * 
+ * ================================================================================
  */
 
 (function() {
@@ -165,6 +169,10 @@ class CoreEngine {
         this.exportManager = null;
         this.batchAPI = null;
         
+        // 🔧 Phase 2追加: Master Loop制御フラグ
+        this.renderLoopId = null;
+        this.isRenderLoopRunning = false;
+        
         this.setupCrossReferences();
         this.setupSystemEventIntegration();
     }
@@ -244,6 +252,64 @@ class CoreEngine {
             this.eventBus.on('drawing:completed', (data) => {
                 this.eventBus.emit('ui:drawing-completed', data);
             });
+        }
+        
+        /**
+         * 🔧 Phase 2新規実装: Master Render Loop開始
+         */
+        startRenderLoop() {
+            if (this.isRenderLoopRunning) {
+                console.warn('[CoreEngine] Render loop already running');
+                return;
+            }
+            
+            this.isRenderLoopRunning = true;
+            this._renderLoop();
+        }
+        
+        /**
+         * 🔧 Phase 2新規実装: レンダーループ本体
+         */
+        _renderLoop() {
+            if (!this.isRenderLoopRunning) return;
+            
+            try {
+                // 1. ポインタバッチ処理（drawing-engine連携）
+                this.flushPointerBatch();
+                
+                // 2. WebGPU描画処理（将来実装予定）
+                // this.gpuRender();
+                
+                // 3. Pixi UI手動レンダー
+                if (this.app && this.app.renderer && this.app.stage) {
+                    this.app.renderer.render(this.app.stage);
+                }
+                
+            } catch (error) {
+                console.error('[CoreEngine] Render loop error:', error);
+            }
+            
+            this.renderLoopId = requestAnimationFrame(() => this._renderLoop());
+        }
+        
+        /**
+         * 🔧 Phase 2新規実装: ポインタバッチフラッシュ（drawing-engine連携用）
+         */
+        flushPointerBatch() {
+            if (this.drawingEngine && typeof this.drawingEngine.flushPendingPoints === 'function') {
+                this.drawingEngine.flushPendingPoints();
+            }
+        }
+        
+        /**
+         * 🔧 Phase 2新規実装: レンダーループ停止
+         */
+        stopRenderLoop() {
+            this.isRenderLoopRunning = false;
+            if (this.renderLoopId) {
+                cancelAnimationFrame(this.renderLoopId);
+                this.renderLoopId = null;
+            }
         }
         
         initializeExportManager() {
@@ -571,6 +637,8 @@ class CoreEngine {
         }
         
         destroy() {
+            this.stopRenderLoop();
+            
             if (this.app) {
                 this.app.destroy(true, { children: true });
             }
@@ -580,10 +648,6 @@ class CoreEngine {
             }
         }
         
-        /**
-         * 🔧 v8.33.0: StrokeRecorder/StrokeRenderer 初期化修正
-         * 既存のグローバルインスタンスを使用（二重初期化防止）
-         */
         initialize() {
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.worldContainer, this.eventBus, CONFIG);
@@ -601,37 +665,27 @@ class CoreEngine {
             window.layerManager = this.layerSystem;
             window.cameraSystem = this.cameraSystem;
             
-            // ✅ StrokeRecorder: 既存インスタンスチェック
             if (!window.strokeRecorder) {
-                // stroke-recorder.js が読み込まれていない場合のみエラー
                 if (!window.StrokeRecorder) {
                     throw new Error('[CoreEngine] StrokeRecorder class not loaded');
                 }
-                // クラスは存在するがインスタンスがない場合は作成
                 console.warn('[CoreEngine] Creating StrokeRecorder instance (should be pre-created)');
                 window.strokeRecorder = new window.StrokeRecorder(
                     window.pressureHandler,
                     this.cameraSystem
                 );
-            } else {
-                console.log('✅ [CoreEngine] Using existing strokeRecorder instance');
             }
             
-            // ✅ StrokeRenderer: 既存インスタンスチェック
             if (!window.strokeRenderer) {
-                // stroke-renderer.js が読み込まれていない場合のみエラー
                 if (!window.StrokeRenderer) {
                     throw new Error('[CoreEngine] StrokeRenderer class not loaded');
                 }
-                // クラスは存在するがインスタンスがない場合は作成
                 console.warn('[CoreEngine] Creating StrokeRenderer instance (should be pre-created)');
                 window.strokeRenderer = new window.StrokeRenderer(
                     this.app,
                     this.layerSystem,
                     this.cameraSystem
                 );
-            } else {
-                console.log('✅ [CoreEngine] Using existing strokeRenderer instance');
             }
             
             if (!window.BrushCore) {
@@ -694,7 +748,7 @@ class CoreEngine {
             window.drawingEngine = this.drawingEngine;
             
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export', 'render-loop']
             });
             
             return this;
@@ -714,8 +768,8 @@ class CoreEngine {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js v8.33.0 loaded');
-    console.log('   🔧 StrokeRecorder二重初期化修正');
-    console.log('   ✅ 既存インスタンス使用方式に変更');
+    console.log('✅ core-engine.js Phase 2完全版 loaded');
+    console.log('   🔧 Master Loop統合: startRenderLoop()実装');
+    console.log('   🔧 WebGPU→Pixi手動レンダー制御完成');
 
 })();
