@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * drawing-engine.js Phase 5完全版
+ * drawing-engine.js Phase 1改修版（元ファイル完全継承）
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -21,16 +21,16 @@
  * - PointerEvent処理
  * - ストローク制御（開始・更新・終了）
  * 
- * 【Phase 5改修内容】
- * ✅ pointermoveバッチ処理実装（フリッカー解消）
- * ✅ requestAnimationFrame統合
- * ✅ pendingPointsキュー管理
- * ✅ 過剰ログ削除
+ * 【Phase 1改修内容】
+ * 🔧 pendingPoints配列追加（バッチ処理）
+ * 🔧 _scheduleRender()追加（rAF制御）
+ * 🔧 _flushPendingPoints()追加（一括処理）
+ * 🔧 pointermove即座レンダリング解消
  * 
  * ================================================================================
  */
 
-// Phase 5: ポインタバッチ処理用グローバル変数（モジュールスコープ）
+// 🔧 Phase 1追加: ポインタバッチ処理用グローバル変数（モジュールスコープ）
 let pendingPoints = [];
 let isRenderScheduled = false;
 
@@ -83,12 +83,11 @@ class DrawingEngine {
     }
 
     /**
-     * Phase 5: ポインタバッチをフラッシュ
+     * 🔧 Phase 1追加: ポインタバッチをフラッシュ
      */
     _flushPendingPoints() {
         if (pendingPoints.length === 0) return;
 
-        // バッチ処理
         for (const point of pendingPoints) {
             if (point.type === 'begin') {
                 this._processPointerDown(point.info);
@@ -103,7 +102,7 @@ class DrawingEngine {
     }
 
     /**
-     * Phase 5: レンダリングスケジュール
+     * 🔧 Phase 1追加: レンダリングスケジュール
      */
     _scheduleRender() {
         if (isRenderScheduled) return;
@@ -116,7 +115,7 @@ class DrawingEngine {
     }
 
     /**
-     * PointerDown: キューに追加
+     * 🔧 Phase 1改修: ポインタダウン → キューに追加
      */
     _handlePointerDown(info, e) {
         if (this.cameraSystem?.isCanvasMoveMode()) return;
@@ -128,7 +127,7 @@ class DrawingEngine {
     }
 
     /**
-     * PointerMove: キューに追加
+     * 🔧 Phase 1改修: ポインタムーブ → キューに追加（即座レンダリング解消）
      */
     _handlePointerMove(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
@@ -139,11 +138,10 @@ class DrawingEngine {
     }
 
     /**
-     * PointerUp: 即座にフラッシュ
+     * 🔧 Phase 1改修: ポインタアップ → 即座にフラッシュ
      */
     _handlePointerUp(info, e) {
         pendingPoints.push({ type: 'end', info });
-        // 即座にフラッシュ（ストローク終了は遅延不可）
         this._flushPendingPoints();
         this.activePointers.delete(info.pointerId);
     }
@@ -156,7 +154,7 @@ class DrawingEngine {
     }
 
     /**
-     * Phase 5: 実際のPointerDown処理
+     * 実際のPointerDown処理
      */
     _processPointerDown(info) {
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
@@ -194,7 +192,7 @@ class DrawingEngine {
     }
 
     /**
-     * Phase 5: 実際のPointerMove処理
+     * 実際のPointerMove処理
      */
     _processPointerMove(info) {
         if (!this.brushCore || !this.brushCore.isActive || !this.brushCore.isActive()) {
@@ -215,7 +213,7 @@ class DrawingEngine {
     }
 
     /**
-     * Phase 5: 実際のPointerUp処理
+     * 実際のPointerUp処理
      */
     _processPointerUp(info) {
         if (this.brushCore && this.brushCore.isActive && this.brushCore.isActive()) {
@@ -289,4 +287,7 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js Phase 5 loaded');
+console.log('✅ drawing-engine.js Phase 1 loaded');
+console.log('   🔧 pendingPoints バッチ処理実装');
+console.log('   🔧 _scheduleRender() rAF制御');
+console.log('   🔧 即座レンダリング解消');
