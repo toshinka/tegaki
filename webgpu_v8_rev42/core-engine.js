@@ -1,23 +1,22 @@
 /**
  * ================================================================================
- * core-engine.js Phase 2完全版: Master Loop統合
+ * core-engine.js Phase 4-C完全版: リアルタイムプレビュー統合
  * ================================================================================
  * 
- * 【Phase 2改修内容】
- * 🔧 startRenderLoop() 新規実装: WebGPU Master Loop
- * 🔧 _renderLoop() 新規実装: WebGPU描画 → Pixi UI手動レンダー
- * 🔧 flushPointerBatch() 準備実装（drawing-engine連携用）
+ * 【Phase 4-C改修内容】
+ * 🔧 _renderLoop()にプレビュー更新追加
+ * 🔧 BrushCore.renderPreview()呼び出し統合
+ * 🔧 Master Loop完全統合維持
  * 
  * 【依存関係】
  * - system/camera-system.js (TegakiCameraSystem)
  * - system/layer-system.js (TegakiLayerSystem)
  * - system/drawing-clipboard.js (TegakiDrawingClipboard)
  * - system/drawing/brush-core.js (BrushCore)
- * - system/drawing/stroke-recorder.js (StrokeRecorder - グローバルインスタンス使用)
- * - system/drawing/stroke-renderer.js (StrokeRenderer - グローバルインスタンス使用)
+ * - system/drawing/stroke-recorder.js (StrokeRecorder)
+ * - system/drawing/stroke-renderer.js (StrokeRenderer)
  * - system/event-bus.js (TegakiEventBus)
  * - system/export-manager.js (ExportManager)
- * - system/exporters/*.js (各エクスポーター)
  * 
  * ================================================================================
  */
@@ -169,7 +168,6 @@ class CoreEngine {
         this.exportManager = null;
         this.batchAPI = null;
         
-        // 🔧 Phase 2追加: Master Loop制御フラグ
         this.renderLoopId = null;
         this.isRenderLoopRunning = false;
         
@@ -254,9 +252,6 @@ class CoreEngine {
             });
         }
         
-        /**
-         * 🔧 Phase 2新規実装: Master Render Loop開始
-         */
         startRenderLoop() {
             if (this.isRenderLoopRunning) {
                 console.warn('[CoreEngine] Render loop already running');
@@ -268,14 +263,21 @@ class CoreEngine {
         }
         
         /**
-         * 🔧 Phase 2新規実装: レンダーループ本体
+         * 🔧 Phase 4-C改修: リアルタイムプレビュー統合
          */
         _renderLoop() {
             if (!this.isRenderLoopRunning) return;
             
             try {
-                // 1. ポインタバッチ処理（drawing-engine連携）
+                // 1. ポインタバッチ処理
                 this.flushPointerBatch();
+                
+                // 🔧 Phase 4-C追加: リアルタイムプレビュー更新
+                if (window.BrushCore && 
+                    typeof window.BrushCore.renderPreview === 'function' &&
+                    window.BrushCore.isDrawing) {
+                    window.BrushCore.renderPreview();
+                }
                 
                 // 2. WebGPU描画処理（将来実装予定）
                 // this.gpuRender();
@@ -292,18 +294,12 @@ class CoreEngine {
             this.renderLoopId = requestAnimationFrame(() => this._renderLoop());
         }
         
-        /**
-         * 🔧 Phase 2新規実装: ポインタバッチフラッシュ（drawing-engine連携用）
-         */
         flushPointerBatch() {
             if (this.drawingEngine && typeof this.drawingEngine.flushPendingPoints === 'function') {
                 this.drawingEngine.flushPendingPoints();
             }
         }
         
-        /**
-         * 🔧 Phase 2新規実装: レンダーループ停止
-         */
         stopRenderLoop() {
             this.isRenderLoopRunning = false;
             if (this.renderLoopId) {
@@ -748,7 +744,7 @@ class CoreEngine {
             window.drawingEngine = this.drawingEngine;
             
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export', 'render-loop']
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export', 'render-loop', 'preview']
             });
             
             return this;
@@ -768,8 +764,8 @@ class CoreEngine {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js Phase 2完全版 loaded');
-    console.log('   🔧 Master Loop統合: startRenderLoop()実装');
-    console.log('   🔧 WebGPU→Pixi手動レンダー制御完成');
+    console.log('✅ core-engine.js Phase 4-C完全版 loaded');
+    console.log('   🔧 リアルタイムプレビュー統合完了');
+    console.log('   🔧 Master Loop: pointer → preview → render');
 
 })();

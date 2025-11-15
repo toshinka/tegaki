@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * drawing-engine.js Phase 2完全版（元ファイル完全継承）
+ * drawing-engine.js Phase 3完全版（フリッカー完全解消）
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -12,30 +12,24 @@
  *   - system/event-bus.js (EventBus)
  * 
  * 📄 子ファイル使用先:
- *   - core-engine.js
- *   - core-runtime.js
- *   - system/drawing/fill-tool.js
+ *   - core-engine.js (flushPendingPoints()呼び出し)
  * 
  * 【責務】
  * - 座標変換パイプライン（Screen→Canvas→World→Local）
- * - PointerEvent処理
- * - ストローク制御（開始・更新・終了）
+ * - PointerEventのキューイング
+ * - Master Loop連携（rAF発行禁止）
  * 
- * 【Phase 2改修内容】
- * 🔧 flushPendingPoints()公開メソッド化（core-engine連携）
- * 
- * 【Phase 1改修内容】
- * 🔧 pendingPoints配列追加（バッチ処理）
- * 🔧 _scheduleRender()追加（rAF制御）
- * 🔧 _flushPendingPoints()追加（一括処理）
- * 🔧 pointermove即座レンダリング解消
+ * 【Phase 3改修内容】
+ * 🔧 _scheduleRender()削除 - requestAnimationFrame発行禁止
+ * 🔧 pendingPointsをキューに溜めるのみ
+ * 🔧 core-engineのMaster Loopに完全依存
+ * 🚨 二重レンダーループの完全排除
  * 
  * ================================================================================
  */
 
-// 🔧 Phase 1追加: ポインタバッチ処理用グローバル変数（モジュールスコープ）
+// ポインタバッチ処理用グローバル変数（モジュールスコープ）
 let pendingPoints = [];
-let isRenderScheduled = false;
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
@@ -86,9 +80,10 @@ class DrawingEngine {
     }
 
     /**
-     * 🔧 Phase 1追加: ポインタバッチをフラッシュ（内部処理）
+     * 🔧 Phase 3: 公開メソッド（core-engine Master Loop専用）
+     * ⚠️ この関数のみがpendingPointsを処理する
      */
-    _flushPendingPoints() {
+    flushPendingPoints() {
         if (pendingPoints.length === 0) return;
 
         for (const point of pendingPoints) {
@@ -105,27 +100,8 @@ class DrawingEngine {
     }
 
     /**
-     * 🔧 Phase 2追加: 公開メソッド（core-engine連携用）
-     */
-    flushPendingPoints() {
-        this._flushPendingPoints();
-    }
-
-    /**
-     * 🔧 Phase 1追加: レンダリングスケジュール
-     */
-    _scheduleRender() {
-        if (isRenderScheduled) return;
-        
-        isRenderScheduled = true;
-        requestAnimationFrame(() => {
-            isRenderScheduled = false;
-            this._flushPendingPoints();
-        });
-    }
-
-    /**
-     * 🔧 Phase 1改修: ポインタダウン → キューに追加
+     * 🔧 Phase 3改修: ポインタダウン → キューに追加のみ
+     * ❌ requestAnimationFrame発行禁止
      */
     _handlePointerDown(info, e) {
         if (this.cameraSystem?.isCanvasMoveMode()) return;
@@ -133,27 +109,29 @@ class DrawingEngine {
         if (info.button === 2) return;
 
         pendingPoints.push({ type: 'begin', info });
-        this._scheduleRender();
+        // ❌ _scheduleRender()呼び出し削除 - Master Loop依存
     }
 
     /**
-     * 🔧 Phase 1改修: ポインタムーブ → キューに追加（即座レンダリング解消）
+     * 🔧 Phase 3改修: ポインタムーブ → キューに追加のみ
+     * ❌ requestAnimationFrame発行禁止
      */
     _handlePointerMove(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo || !pointerInfo.isDrawing) return;
 
         pendingPoints.push({ type: 'move', info });
-        this._scheduleRender();
+        // ❌ _scheduleRender()呼び出し削除 - Master Loop依存
     }
 
     /**
-     * 🔧 Phase 1改修: ポインタアップ → 即座にフラッシュ
+     * 🔧 Phase 3改修: ポインタアップ → キューに追加のみ
+     * ⚠️ 即座フラッシュも削除（Master Loop一本化）
      */
     _handlePointerUp(info, e) {
         pendingPoints.push({ type: 'end', info });
-        this._flushPendingPoints();
         this.activePointers.delete(info.pointerId);
+        // ❌ 即座フラッシュ削除 - Master Loop依存
     }
 
     _handlePointerCancel(info, e) {
@@ -297,6 +275,7 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js Phase 2完全版 loaded');
-console.log('   🔧 flushPendingPoints()公開メソッド化');
-console.log('   🔧 core-engine Master Loop連携完了');
+console.log('✅ drawing-engine.js Phase 3完全版 loaded');
+console.log('   🔧 requestAnimationFrame発行禁止');
+console.log('   🔧 Master Loop完全統合');
+console.log('   🚨 二重レンダーループ排除完了');
