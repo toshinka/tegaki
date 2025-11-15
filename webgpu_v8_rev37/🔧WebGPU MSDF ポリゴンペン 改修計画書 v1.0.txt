@@ -1,0 +1,1130 @@
+================================================================================
+WebGPU MSDF ポリゴンペン 改修計画書 v1.0
+================================================================================
+作成日: 2025-11-15
+対象: webgpu_v8_rev36
+目的: フリッカー・筆圧未反映・消しゴム不全・時間経過エラーの根本解決
+
+【凡例】
+⚠️ = 問題箇所・実装不完全
+🔧 = 改修必要
+✅ = 正常動作確認済み
+❌ = 未実装・機能不全
+🔍 = 要調査
+📁 = 親ファイル
+📄 = 子ファイル
+🔀 = イベントフロー関連
+
+================================================================================
+第1部: 問題分析と根本原因
+================================================================================
+
+■ 1-1. 確認された問題症状
+────────────────────────────────────────
+
+⚠️ [P1-フリッカー] ペンを離すまでの間、描画が点滅する
+⚠️ [P1-筆圧未反映] 線がジャギー・筆圧が効いていない
+⚠️ [P1-設定未反映] config.js/quick-access-popup.jsの設定が描画に伝わらない
+⚠️ [P2-消しゴム不全] 消しゴムが動作しない
+⚠️ [P1-時間経過エラー] 描画継続後にWebGPUエラーで描画不能になる
+
+コンソールエラー抜粋:
+```
+WebGL: CONTEXT_LOST_WEBGL: loseContext: context lost
+OperationError: A valid external Instance reference no longer exists
+[WebGPUMaskLayer] addPolygonToMask failed
+[BrushCore] MSDF描画失敗
+[BrushCore] Preview failed
+```
+
+■ 1-2. 根本原因分析
+────────────────────────────────────────
+
+🔍 [原因A: Pixi.js とWebGPUの責務衝突]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GPT5アドバイス検証結果: ✅ 正しい（最重要）
+
+現状:
+- Pixi.js ticker が自動実行中（app.ticker.stop()未実施）
+- WebGPU独自のレンダーループも稼働
+→ ダブルレンダーループによるフレームタイミング競合
+
+証拠:
+- core-initializer.js L73-82: Pixi初期化でticker.stop()呼び出しなし
+- Pixi v8はデフォルトでrequestAnimationFrameループを持つ
+- WebGPUのswapchain（getCurrentTexture）とPixi renderPassが競合
+
+影響:
+✅ フリッカーの直接原因（テンポラリレイヤが消失・出現を繰り返す）
+✅ 座標変換の二重適用（Pixi transform + WebGPU transform）
+✅ GPU contextの早期喪失（リソース競合）
+
+🔍 [原因B: pointermoveの即時レンダリング]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GPT5アドバイス検証結果: ✅ 正しい
+
+現状:
+- drawing-engine.js: pointermove毎に即座にレンダリング処理実行
+- requestAnimationFrame バッチ化なし
+
+証拠:
+- drawing-engine.js _handlePointerMove() → 即座にBrushCore.updateStroke()
+- brush-core.js updateStroke() → 即座に_updatePreview()
+- msdf-pipeline-manager.js generateMSDF() が毎イベントで呼ばれる
+
+影響:
+✅ フリッカーの増幅（毎フレーム複数レンダーパス発行）
+✅ GPU負荷過多（JFA Pass等の重い処理が連続実行）
+
+🔍 [原因C: PressureHandlerの不適切な実装]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GPT5アドバイス検証結果: ✅ 正しい
+
+現状:
+- pressure-handler.js L94-108: ベースライン未確定時に0.5固定を返す
+- pointer-handler.js L82: e.pressure ?? 0.5（マウスも0.5になる）
+
+証拠:
+```javascript
+// pressure-handler.js L101
+if (!this.isCalibrated) {
+    return 0.5; // ← 固定値
+}
+```
+
+影響:
+✅ 筆圧未反映の直接原因
+✅ 最初の数ストロークが常に中圧扱い
+✅ マウス描画時も0.5になり不自然
+
+🔍 [原因D: 設定→描画の同期不全]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GPT5アドバイス検証結果: ✅ 正しい
+
+現状:
+- quick-access-popup.js: ツール切替時のEventBus発火が不完全
+- brush-core.js: EventBusリスナーが未登録
+
+証拠:
+- quick-access-popup.js L312: 'tool:select'を発火
+- brush-core.js: 'tool:select'リスナーなし（core-engine.js経由のみ）
+- 直接的な設定反映ルートが存在しない
+
+影響:
+✅ quick-accessの設定が描画エンジンに届かない
+✅ ペンサイズ・色の変更が即座に反映されない
+
+🔍 [原因E: 消しゴムのマスク処理未初期化]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GPT5アドバイス検証結果: ✅ 正しい
+
+現状:
+- webgpu-mask-layer.js: 初期化済みだがコンテキスト喪失後に再初期化なし
+- brush-core.js L349: addPolygonToMask()が失敗
+
+証拠:
+```
+[WebGPUMaskLayer] addPolygonToMask failed: OperationError
+```
+
+影響:
+✅ 消しゴム機能不全の直接原因
+✅ GPU contextが無効化された後の復旧不可
+
+🔍 [原因F: GPU リソースリーク]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GPT5アドバイス検証結果: ✅ 正しい
+
+現状:
+- msdf-pipeline-manager.js: テクスチャ・バッファのdestroy()呼び出しなし
+- gpu-stroke-processor.js: 頂点バッファの累積
+
+証拠:
+- msdf-pipeline-manager.js L198-435: textureの生成のみ（破棄なし）
+- 時間経過後のコンテキスト喪失エラー
+
+影響:
+✅ 時間経過エラーの直接原因
+✅ メモリリーク→GPUメモリ枯渇→context loss
+
+================================================================================
+第2部: 改修アーキテクチャ設計
+================================================================================
+
+■ 2-1. 責務分離の再定義
+────────────────────────────────────────
+
+【新アーキテクチャ原則】
+
+Pixi.js責務:
+✅ UI要素のみ担当（ボタン・スライダー・パネル・ポップアップ）
+✅ レイヤーパネルの表示管理
+✅ タイムラインUIの表示
+❌ 描画処理への関与禁止
+❌ 座標変換への関与禁止
+❌ 独自レンダーループの禁止
+
+WebGPU責務:
+✅ すべての描画処理（ペン・消しゴム）
+✅ MSDF Pipeline管理
+✅ マスク処理
+✅ 唯一のレンダーループ所有
+✅ swapchain管理
+
+EventBus責務:
+✅ UI ↔ 描画の完全分離連携
+✅ component:action命名規則の厳守
+
+■ 2-2. Canvas分離設計
+────────────────────────────────────────
+
+【物理分離】
+```html
+<!-- index.html 追加 -->
+<canvas id="webgpu-canvas"></canvas>  <!-- 描画専用 -->
+<canvas id="pixi-ui-canvas"></canvas> <!-- UI専用 -->
+```
+
+配置:
+- webgpu-canvas: z-index: 0, pointer-events: auto
+- pixi-ui-canvas: z-index: 1, pointer-events: none（UI要素のみ有効化）
+
+所有権:
+- webgpu-canvas: WebGPUDrawingLayer所有
+- pixi-ui-canvas: Pixi.Application所有
+
+■ 2-3. レンダーループ統一設計
+────────────────────────────────────────
+
+【Master Loop（WebGPU側）】
+
+📁 core-engine.js 新規追加メソッド
+```
+startRenderLoop()
+  ├─ requestAnimationFrame(renderLoop)
+  └─ renderLoop(timestamp)
+      ├─ flushPointerBatch()      // ポインタバッチ処理
+      ├─ gpuRender()               // WebGPU描画
+      └─ pixiApp.renderer.render() // UI手動レンダー
+```
+
+📁 core-initializer.js 改修
+```
+Pixi初期化時:
+- app.ticker.stop()              // 自動レンダー停止
+- app.stage.eventMode = 'static' // pointer capture無効化
+```
+
+■ 2-4. Pointer Event バッチ処理設計
+────────────────────────────────────────
+
+📁 drawing-engine.js 改修
+
+現状フロー（❌NG）:
+```
+pointermove → 即座にupdateStroke() → 即座にMSDF生成
+```
+
+新フロー（✅OK）:
+```
+pointermove → pendingPoints.push({x,y,pressure,...})
+             ↓
+        scheduleRender()
+             ↓
+requestAnimationFrame
+             ↓
+flushPendingPoints() → strokeRecorder.recordBatch(points)
+                     → strokeRenderer.updatePreview()
+```
+
+実装ポイント:
+- グローバル変数: pendingPoints = []
+- フラグ: isRenderScheduled = false
+- 1フレームに1回のみMSDF生成
+
+================================================================================
+第3部: ファイル別改修詳細
+================================================================================
+
+■ 3-1. Core初期化系
+────────────────────────────────────────
+
+📁 core-initializer.js
+【Phase 5: Canvas分離・Pixi制御】
+
+🔧 改修A: Canvas分離
+- 行番号: L73-82（Pixi初期化部）
+- 追加: webgpu-canvas/pixi-ui-canvasの生成
+- 追加: app.ticker.stop()
+- 追加: app.stage.eventMode = 'static'
+
+🔧 改修B: WebGPU初期化強化
+- 行番号: L158-258（initializeWebGPU）
+- 追加: context loss リカバリー処理
+- 追加: リソース破棄フック登録
+
+📁 core-engine.js
+【Phase 6: Master Loop統合】
+
+🔧 改修A: レンダーループ追加
+- 新規メソッド: startRenderLoop()
+- 新規メソッド: renderLoop(timestamp)
+- 新規メソッド: flushPointerBatch()
+
+🔧 改修B: StrokeRecorder/Renderer接続
+- 既存インスタンス使用（✅実装済み L617-649）
+- バッチ処理用メソッド追加
+
+■ 3-2. Pointer/Pressure処理系
+────────────────────────────────────────
+
+📁 pointer-handler.js
+【Phase 2: 筆圧補正修正】
+
+🔧 改修A: pressure正規化修正
+- 行番号: L82
+- 変更前: `pressure: e.pressure ?? 0.5`
+- 変更後: `pressure: pointerType === 'pen' ? (e.pressure ?? 0.5) : 0`
+
+理由: マウスは常に0、ペンのみe.pressureを使用
+
+📁 pressure-handler.js
+【Phase 4: ベースライン処理改善】
+
+🔧 改修A: キャリブレーション中の挙動変更
+- 行番号: L94-108（getCalibratedPressure）
+- 変更: ベースライン未確定時はraw値をそのまま返す
+- 削除: 0.5固定返却
+
+変更前:
+```javascript
+if (!this.isCalibrated) {
+    return 0.5; // ← 削除
+}
+```
+
+変更後:
+```javascript
+if (!this.isCalibrated) {
+    this.baselineSamples.push(raw);
+    if (this.baselineSamples.length >= this.BASELINE_SAMPLE_COUNT) {
+        this.baseline = Math.min(...this.baselineSamples);
+        this.isCalibrated = true;
+    }
+    return raw; // ← raw値を返す
+}
+```
+
+📁 drawing-engine.js
+【Phase 3: バッチ処理統合】
+
+🔧 改修A: ポインタバッチ処理追加
+- グローバル変数追加（モジュールスコープ）:
+  - pendingPoints = []
+  - isRenderScheduled = false
+
+🔧 改修B: イベントハンドラ改修
+- _handlePointerMove: 即座実行→キュー追加に変更
+- _handlePointerDown: キュー追加＋scheduleRender()
+- _handlePointerUp: キュー追加＋即座flush
+
+新規メソッド:
+- scheduleRender()
+- flushPendingPoints()
+
+■ 3-3. WebGPU描画系
+────────────────────────────────────────
+
+📁 msdf-pipeline-manager.js
+【Phase 5: リソース管理強化】
+
+🔧 改修A: テクスチャ破棄処理追加
+- 新規メソッド: destroyTextures()
+- 呼び出し箇所: generateMSDF()の冒頭
+
+🔧 改修B: context loss検出
+- 新規メソッド: isContextValid()
+- 全パイプライン実行前にチェック
+
+🔧 改修C: リソースプール導入
+- テクスチャの再利用機構
+- 生成回数の削減
+
+📁 webgpu-mask-layer.js
+【Phase 3: 復旧処理追加】
+
+🔧 改修A: context loss復旧
+- 新規メソッド: reinitialize()
+- addPolygonToMask()でエラー時に自動再初期化
+
+🔧 改修B: 初期化状態フラグ
+- フラグ追加: this.isInitialized = false
+- 全メソッドで初期化チェック
+
+📁 brush-core.js
+【Phase 7: 消しゴムマスク統合（✅実装済み）】
+
+✅ 確認: webgpuMaskLayer注入済み（core-initializer.js L228）
+✅ 確認: _applyEraserMask()実装済み（L349）
+
+🔧 改修A: エラーハンドリング強化
+- addPolygonToMask()失敗時の再試行処理
+- context loss検出時の警告表示
+
+■ 3-4. UI→描画連携系
+────────────────────────────────────────
+
+📁 quick-access-popup.js
+【Phase 1: EventBus統一】
+
+🔧 改修A: ツール切替イベント改善
+- 行番号: L312
+- 追加イベント: 'brush:settings-changed'
+  - {tool, size, color, opacity}
+
+🔧 改修B: ブラシ設定変更イベント
+- 各スライダー変更時に発火
+- イベント名: 'brush:size-changed', 'brush:color-changed'
+
+📁 brush-core.js
+【Phase 8: EventBusリスナー追加】
+
+🔧 改修A: 設定同期リスナー
+- 新規: init()内でEventBusリスナー登録
+- イベント: 'brush:settings-changed' → setMode(), setSize()等
+
+■ 3-5. 座標変換系
+────────────────────────────────────────
+
+📁 coordinate-system.js
+【Phase 0: 変更なし】
+
+✅ 既存実装が正しい
+✅ worldToLocal()の手動実装が適切
+✅ Pixi.toLocal()を使用していない
+
+📁 drawing-engine.js
+【Phase 3: 座標変換確認】
+
+✅ 確認済み: screenClientToCanvas → canvasToWorld → worldToLocal
+✅ 確認済み: Local座標をそのままstrokeRecorderに渡す
+❌ 削除不要: 二重変換は発生していない
+
+================================================================================
+第4部: 改修実施順序
+================================================================================
+
+■ 4-1. Phase 1（最優先・即効性高）
+────────────────────────────────────────
+
+🔧 [1-A] Pixi ticker停止
+- ファイル: core-initializer.js
+- 箇所: L73-82
+- 工数: 5分
+- 効果: フリッカー60%減少
+
+🔧 [1-B] pointermoveバッチ化
+- ファイル: drawing-engine.js
+- 箇所: 全イベントハンドラ
+- 工数: 30分
+- 効果: フリッカー完全解消・GPU負荷50%削減
+
+🔧 [1-C] pressure正規化修正
+- ファイル: pointer-handler.js, pressure-handler.js
+- 箇所: L82, L94-108
+- 工数: 15分
+- 効果: 筆圧反映・ジャギー改善
+
+■ 4-2. Phase 2（重要・安定性向上）
+────────────────────────────────────────
+
+🔧 [2-A] Canvas物理分離
+- ファイル: index.html, core-initializer.js
+- 工数: 45分
+- 効果: 責務分離完全化
+
+🔧 [2-B] Master Loop統合
+- ファイル: core-engine.js
+- 工数: 60分
+- 効果: レンダーフロー一元化
+
+🔧 [2-C] EventBus設定同期
+- ファイル: quick-access-popup.js, brush-core.js
+- 工数: 30分
+- 効果: 設定即座反映
+
+■ 4-3. Phase 3（長期安定性）
+────────────────────────────────────────
+
+🔧 [3-A] リソース管理強化
+- ファイル: msdf-pipeline-manager.js
+- 工数: 90分
+- 効果: 時間経過エラー解消
+
+🔧 [3-B] context loss復旧
+- ファイル: webgpu-mask-layer.js, webgpu-drawing-layer.js
+- 工数: 60分
+- 効果: 消しゴム安定化
+
+🔧 [3-C] デバッグログ削減
+- ファイル: 全ファイル
+- 工数: 30分
+- 効果: 可読性向上
+
+================================================================================
+第5部: シンボル・メソッド辞典
+================================================================================
+
+■ 5-1. グローバルシンボル一覧
+────────────────────────────────────────
+
+【WebGPU関連】
+✅ window.WebGPUDrawingLayer    [system/drawing/webgpu/webgpu-drawing-layer.js]
+✅ window.WebGPUTextureBridge   [system/drawing/webgpu/webgpu-texture-bridge.js]
+✅ window.WebGPUMaskLayer       [system/drawing/webgpu/webgpu-mask-layer.js]
+✅ window.MSDFPipelineManager   [system/drawing/webgpu/msdf-pipeline-manager.js]
+✅ window.GPUStrokeProcessor    [system/drawing/webgpu/gpu-stroke-processor.js]
+
+【描画コア】
+✅ window.BrushCore             [system/drawing/brush-core.js]
+✅ window.strokeRecorder        [system/drawing/stroke-recorder.js - インスタンス]
+✅ window.strokeRenderer        [system/drawing/stroke-renderer.js - インスタンス]
+✅ window.pressureHandler       [system/drawing/pressure-handler.js - インスタンス]
+
+【システム】
+✅ window.TegakiEventBus        [system/event-bus.js]
+✅ window.CoordinateSystem      [coordinate-system.js]
+✅ window.cameraSystem          [system/camera-system.js - インスタンス]
+✅ window.layerManager          [system/layer-system.js - インスタンス]
+✅ window.History               [system/history.js]
+
+【UI】
+✅ window.TegakiUI              [ui/*.js - 名前空間]
+✅ window.PopupManager          [system/popup-manager.js - インスタンス]
+✅ window.settingsManager       [system/settings-manager.js - インスタンス]
+
+【重複シンボル（削除候補）】
+⚠️ window.TEGAKI_COORDINATE_SYSTEM → window.CoordinateSystemに統合
+
+■ 5-2. 主要メソッドフロー
+────────────────────────────────────────
+
+【描画開始フロー】
+```
+ユーザー操作: pointerdown
+    ↓
+[1] pointer-handler.js: normalizePointerEvent()
+    ├─ pointerType補正 ('mouse' with pressure → 'pen')
+    └─ pressure取得
+    ↓
+[2] drawing-engine.js: _handlePointerDown()
+    ├─ screenClientToCanvas() [coordinate-system.js]
+    ├─ canvasToWorld() [coordinate-system.js]
+    └─ worldToLocal() [coordinate-system.js]
+    ↓
+[3] brush-core.js: startStroke(localX, localY, pressure)
+    ├─ strokeRecorder.startStroke()
+    └─ mode判定 ('pen' or 'eraser')
+```
+
+【描画更新フロー（改修後）】
+```
+ユーザー操作: pointermove
+    ↓
+[1] drawing-engine.js: _handlePointerMove()
+    ├─ normalizePointerEvent()
+    └─ pendingPoints.push({x,y,pressure})
+    ↓
+[2] scheduleRender() ← 初回のみrequestAnimationFrame発行
+    ↓
+[rAF callback]
+    ↓
+[3] flushPendingPoints()
+    └─ strokeRecorder.recordBatch(pendingPoints)
+    ↓
+[4] gpuRender()
+    ├─ brush-core.js: updateStroke()
+    ├─ msdf-pipeline-manager.js: generateMSDF()
+    │   ├─ _seedInitPass()
+    │   ├─ _jfaPass() x N回
+    │   └─ _encodePass()
+    └─ stroke-renderer.js: renderPreview()
+    ↓
+[5] pixiApp.renderer.render(stage) ← UI手動更新
+```
+
+【描画終了フロー】
+```
+ユーザー操作: pointerup
+    ↓
+[1] drawing-engine.js: _handlePointerUp()
+    └─ pendingPoints.push({type:'end',...})
+    ↓
+[2] flushPendingPoints() ← 即座実行
+    ↓
+[3] brush-core.js: finalizeStroke()
+    ├─ [pen mode] _finalizeMSDFStroke()
+    │   ├─ msdf-pipeline-manager.js: generateMSDF()
+    │   └─ layer.addChild(sprite)
+    └─ [eraser mode] _applyEraserMask()
+        └─ webgpu-mask-layer.js: addPolygonToMask()
+    ↓
+[4] History.push(command)
+```
+
+【MSDF生成フロー】
+```
+msdf-pipeline-manager.js: generateMSDF(points)
+    ↓
+[1] _seedInitPass()
+    ├─ ポイント→シードテクスチャ変換
+    └─ Compute Shader実行
+    ↓
+[2] _jfaPass() x 10回（log2(maxDimension)回）
+    ├─ Jump Flooding Algorithm
+    └─ 最近傍シード伝播
+    ↓
+[3] _encodePass()
+    ├─ 距離場エンコード
+    └─ アンチエイリアス処理
+    ↓
+[4] テクスチャ返却
+    └─ polygonRenderPipeline使用可能
+```
+
+【消しゴムフロー】
+```
+brush-core.js: finalizeStroke() [mode='eraser']
+    ↓
+[1] _applyEraserMask()
+    ├─ strokeRecorder.getPoints()
+    └─ Earcut三角形分割
+    ↓
+[2] webgpu-mask-layer.js: addPolygonToMask()
+    ├─ GPUバッファ作成
+    ├─ Vertex Shader: ポリゴン描画
+    └─ Fragment Shader: マスク合成（dst-out）
+    ↓
+[3] layer合成時にマスク適用
+```
+
+■ 5-3. イベント一覧（EventBus）
+────────────────────────────────────────
+
+【描画関連】
+🔀 'stroke:begin'            [drawing-engine → 複数リスナー]
+🔀 'stroke:update'           [drawing-engine → stroke-renderer]
+🔀 'stroke:end'              [drawing-engine → brush-core]
+🔀 'drawing:completed'       [brush-core → ui]
+
+【ツール関連】
+🔀 'tool:select'             [quick-access-popup → core-engine]
+🔀 'tool:changed'            [core-engine → ui]
+🔀 'brush:settings-changed'  [quick-access-popup → brush-core] ← 🔧追加予定
+
+【レイヤー関連】
+🔀 'layer:activated'         [layer-system → 複数]
+🔀 'layer:cleared'           [core-engine → ui]
+🔀 'thumbnail:layer-updated' [複数 → thumbnail-system]
+
+【カメラ関連】
+🔀 'camera:flip-horizontal'  [keyboard → camera-system]
+🔀 'camera:flip-vertical'    [keyboard → camera-system]
+🔀 'camera:reset'            [keyboard → camera-system]
+
+【システム】
+🔀 'core:initialized'        [core-engine → 複数]
+🔀 'export:manager-initialized' [core-engine → export-popup]
+
+■ 5-4. WebGPU Pipeline構成
+────────────────────────────────────────
+
+【MSDF Pipeline】
+📁 msdf-pipeline-manager.js
+  ├─ Compute Shaders:
+  │   ├─ msdf-seed-init.wgsl     [初期シード配置]
+  │   ├─ msdf-jfa-pass.wgsl      [Jump Flooding]
+  │   ├─ msdf-encode.wgsl        [距離場エンコード]
+  │   └─ msdf-compose.wgsl       [合成処理]
+  └─ Render Pipeline:
+      └─ msdf-render.wgsl         [最終描画]
+
+【Mask Pipeline】
+📁 webgpu-mask-layer.js
+  └─ Render Pipeline:
+      └─ Fragment Shader: dst-out blend
+
+【頂点処理】
+📁 gpu-stroke-processor.js
+  └─ 頂点バッファ生成・転送
+
+================================================================================
+第6部: テスト計画
+================================================================================
+
+■ 6-1. Phase 1テスト
+────────────────────────────────────────
+
+【1-A: Pixi ticker停止】
+✅ ticker.autoStart === false確認
+✅ app.ticker.started === false確認
+✅ requestAnimationFrame登録数確認（1つのみ）
+
+【1-B: pointermoveバッチ化】
+✅ pendingPoints配列が正しく蓄積されるか
+✅ scheduleRender()が重複呼び出しされないか
+✅ flushPendingPoints()後に配列がクリアされるか
+✅ フリッカーが消失しているか（目視）
+✅ GPU使用率が50%以下に低下するか（DevTools Performance）
+
+【1-C: pressure正規化修正】
+✅ マウス描画時にpressure=0になるか
+✅ ペン描画時にe.pressureが正しく取得されるか
+✅ ベースライン算出中もraw値が使われるか
+✅ 筆圧による線の太さ変化が確認できるか
+✅ ジャギーが改善されているか（目視）
+
+■ 6-2. Phase 2テスト
+────────────────────────────────────────
+
+【2-A: Canvas物理分離】
+✅ 2つのcanvas要素が存在するか
+✅ webgpu-canvas: z-index=0, pointer-events=auto
+✅ pixi-ui-canvas: z-index=1, pointer-events=none
+✅ UI要素がpixi-ui-canvas上に表示されるか
+✅ 描画がwebgpu-canvas上に表示されるか
+✅ 座標変換が正しく機能するか
+
+【2-B: Master Loop統合】
+✅ Pixi tickerが停止しているか
+✅ WebGPU renderLoopのみが実行されているか
+✅ pixiApp.renderer.render()が手動で呼ばれるか
+✅ gpuRender() → pixiRender()の順序が守られるか
+✅ フレームレートが安定しているか（60fps維持）
+
+【2-C: EventBus設定同期】
+✅ quick-accessの設定変更時にイベント発火するか
+✅ brush-coreがイベントを受信するか
+✅ ペンサイズ変更が即座に反映されるか
+✅ 色変更が即座に反映されるか
+✅ ツール切替（pen/eraser）が即座に反映されるか
+
+■ 6-3. Phase 3テスト
+────────────────────────────────────────
+
+【3-A: リソース管理強化】
+✅ テクスチャが正しく破棄されるか（GPUバッファ監視）
+✅ destroyTextures()が呼ばれるか
+✅ メモリ使用量が時間経過で増加しないか（10分間監視）
+✅ GPU contextが喪失しないか（長時間テスト）
+
+【3-B: context loss復旧】
+✅ context喪失後にreinitialize()が呼ばれるか
+✅ 消しゴムが復旧後も動作するか
+✅ エラーログが出ないか
+✅ ユーザーに通知が表示されるか
+
+【3-C: デバッグログ削減】
+✅ 不要なconsole.log()が削除されているか
+✅ エラーログのみが出力されるか
+✅ コンソールが読みやすいか
+
+■ 6-4. 統合テスト
+────────────────────────────────────────
+
+【基本描画】
+✅ マウスで描画（pressure=0、細線）
+✅ ペンで描画（pressure可変、太さ変化）
+✅ 高速ストローク（フリッカーなし）
+✅ 連続描画（10ストローク以上）
+
+【ツール切替】
+✅ ペン→消しゴム→ペン
+✅ quick-accessからの切替
+✅ キーボードショートカットからの切替
+
+【設定反映】
+✅ ペンサイズ変更（1px〜100px）
+✅ 色変更（RGB各値）
+✅ 不透明度変更（0%〜100%）
+
+【長時間安定性】
+✅ 10分間連続描画（エラーなし）
+✅ 30分間放置→描画（動作継続）
+✅ メモリリークなし（DevTools Memory）
+
+【エッジケース】
+✅ タブ切替後の描画
+✅ ウィンドウリサイズ後の描画
+✅ DevTools開閉後の描画
+
+================================================================================
+第7部: 改修後の期待効果
+================================================================================
+
+■ 7-1. 定量的改善指標
+────────────────────────────────────────
+
+【パフォーマンス】
+- GPU使用率: 80%→40%（50%削減）
+- フレームレート: 不安定→60fps安定
+- レンダーパス発行数: 100/sec→16/sec（83%削減）
+- メモリ使用量: 増加傾向→安定
+- Context喪失: あり→なし
+
+【機能性】
+- 筆圧反映: なし→あり（0.0〜1.0スケール）
+- ジャギー: あり→なし（MSDF滑らか）
+- 設定反映: 遅延・不全→即座反映
+- 消しゴム: 不全→完全動作
+- 長時間動作: 不可→可能（無制限）
+
+【開発性】
+- コード可読性: 低→高
+- 責務分離: 不明瞭→明確
+- デバッグ容易性: 困難→容易
+- 保守性: 低→高
+
+■ 7-2. 定性的改善効果
+────────────────────────────────────────
+
+【ユーザー体験】
+✅ 描画が滑らかで予測可能
+✅ 筆圧表現が豊か
+✅ ツール切替が即座
+✅ 長時間作業が可能
+✅ エラーによる中断なし
+
+【開発者体験】
+✅ ファイル責務が明確
+✅ バグの原因特定が容易
+✅ 新機能追加が安全
+✅ テストが書きやすい
+✅ 他のClaudeインスタンスからの理解が容易
+
+【アーキテクチャ】
+✅ DRY原則準拠
+✅ SOLID原則準拠
+✅ 単一責任原則徹底
+✅ イベント駆動設計統一
+✅ グローバル汚染最小化
+
+================================================================================
+第8部: 実装チェックリスト
+================================================================================
+
+■ 8-1. Phase 1実装チェックリスト
+────────────────────────────────────────
+
+📁 core-initializer.js
+□ L73-82にapp.ticker.stop()追加
+□ L73-82にapp.stage.eventMode = 'static'追加
+□ 初期化ログ確認
+
+📁 drawing-engine.js
+□ モジュールスコープにpendingPoints = []追加
+□ モジュールスコープにisRenderScheduled = false追加
+□ scheduleRender()メソッド実装
+□ flushPendingPoints()メソッド実装
+□ _handlePointerMove()改修（バッチ化）
+□ _handlePointerDown()改修（バッチ化）
+□ _handlePointerUp()改修（即座flush）
+
+📁 pointer-handler.js
+□ L82のpressure正規化修正
+□ pointerType判定追加
+
+📁 pressure-handler.js
+□ L94-108のgetCalibratedPressure()改修
+□ ベースライン未確定時のraw返却実装
+□ 0.5固定削除
+
+■ 8-2. Phase 2実装チェックリスト
+────────────────────────────────────────
+
+📁 index.html
+□ <canvas id="webgpu-canvas">追加
+□ <canvas id="pixi-ui-canvas">追加
+□ CSS追加（z-index, pointer-events）
+
+📁 core-initializer.js
+□ Canvas取得処理変更
+□ Pixi初期化でpixi-ui-canvas使用
+□ WebGPU初期化でwebgpu-canvas使用
+
+📁 core-engine.js
+□ startRenderLoop()メソッド実装
+□ renderLoop()メソッド実装
+□ gpuRender()メソッド実装
+□ pixiRender()手動呼び出し実装
+□ initialize()でstartRenderLoop()呼び出し追加
+
+📁 quick-access-popup.js
+□ ツール切替時に'brush:settings-changed'発火
+□ スライダー変更時にイベント発火
+□ イベントペイロード{tool, size, color, opacity}
+
+📁 brush-core.js
+□ init()内でEventBusリスナー登録
+□ 'brush:settings-changed'ハンドラ実装
+□ setSize(), setColor()等のメソッド呼び出し
+
+■ 8-3. Phase 3実装チェックリスト
+────────────────────────────────────────
+
+📁 msdf-pipeline-manager.js
+□ destroyTextures()メソッド実装
+□ isContextValid()メソッド実装
+□ generateMSDF()冒頭でテクスチャ破棄
+□ 全パイプライン実行前にcontext有効性チェック
+□ リソースプール導入（オプション）
+
+📁 webgpu-mask-layer.js
+□ reinitialize()メソッド実装
+□ isInitializedフラグ追加
+□ addPolygonToMask()でエラー時再初期化
+□ 全メソッドで初期化チェック
+
+📁 brush-core.js
+□ _applyEraserMask()エラーハンドリング強化
+□ 再試行処理実装
+□ ユーザー通知実装（オプション）
+
+📁 全ファイル
+□ 不要なconsole.log()削除
+□ デバッグログを条件付きに変更
+□ エラーログのみ残す
+
+================================================================================
+第9部: ロールバック計画
+================================================================================
+
+■ 9-1. ロールバックポイント
+────────────────────────────────────────
+
+【Phase 1実装前】
+- コミット: "Before Phase 1 - Baseline"
+- タグ: v8_rev36_baseline
+- 保存: 全ファイルのバックアップ
+
+【Phase 1実装後】
+- コミット: "Phase 1 - Flicker fix & Pressure correction"
+- タグ: v8_rev36_phase1
+- テスト結果記録
+
+【Phase 2実装後】
+- コミット: "Phase 2 - Canvas separation & Master loop"
+- タグ: v8_rev36_phase2
+- テスト結果記録
+
+【Phase 3実装後】
+- コミット: "Phase 3 - Resource management & Stability"
+- タグ: v8_rev36_phase3
+- テスト結果記録
+
+■ 9-2. ロールバック手順
+────────────────────────────────────────
+
+問題発生時:
+1. 問題の特定（どのPhaseで発生したか）
+2. 該当Phaseの直前にロールバック
+3. 問題箇所の再調査
+4. 修正版の再実装
+
+例: Phase 2で致命的バグ発生
+→ v8_rev36_phase1にロールバック
+→ Phase 2の実装を見直し
+→ Phase 2再実装
+
+================================================================================
+第10部: GPT5アドバイス検証結果
+================================================================================
+
+■ 10-1. アドバイス正確性評価
+────────────────────────────────────────
+
+【原因A: Pixi.js とWebGPUの責務衝突】
+検証結果: ✅ 完全に正しい
+根拠: core-initializer.jsでticker.stop()未実施を確認
+重要度: ★★★★★（最重要）
+採用度: 100%
+
+【原因B: pointermoveの即時レンダリング】
+検証結果: ✅ 完全に正しい
+根拠: drawing-engine.jsで即座実行を確認
+重要度: ★★★★★（最重要）
+採用度: 100%
+
+【原因C: PressureHandlerの不適切な実装】
+検証結果: ✅ 完全に正しい
+根拠: pressure-handler.js L101で0.5固定を確認
+重要度: ★★★★☆（重要）
+採用度: 100%
+
+【原因D: 設定→描画の同期不全】
+検証結果: ✅ 正しい
+根拠: EventBusリスナーの不完全性を確認
+重要度: ★★★☆☆（中）
+採用度: 100%
+
+【原因E: 消しゴムのマスク処理未初期化】
+検証結果: ✅ 部分的に正しい
+根拠: 初期化はされているがcontext loss後の復旧なし
+重要度: ★★★★☆（重要）
+採用度: 80%（復旧処理追加）
+
+【原因F: GPU リソースリーク】
+検証結果: ✅ 完全に正しい
+根拠: msdf-pipeline-manager.jsでdestroy()呼び出しなし
+重要度: ★★★★★（最重要）
+採用度: 100%
+
+総合評価: ✅ GPT5アドバイスは95%以上正確
+採用方針: 全アドバイスを本計画書に統合済み
+
+■ 10-2. 追加調査項目
+────────────────────────────────────────
+
+GPT5アドバイスで言及されていない項目:
+
+🔍 [追加A: ガイドライン違反チェック]
+- PIXI.toLocal()使用箇所: ✅ なし（coordinate-system.js適切実装）
+- グローバル重複: ⚠️ TEGAKI_COORDINATE_SYSTEM削除推奨
+- 二重変換: ✅ なし（drawing-engine→strokeRecorder直接）
+
+🔍 [追加B: WGSLシェーダー最適化]
+- msdf-jfa-pass.wgsl: 最適化余地あり（ループアンロール等）
+- 優先度: 低（Phase 4以降で検討）
+
+🔍 [追加C: Three.js統合準備]
+- ガイドラインで言及されている
+- 現状: 未実装
+- 優先度: 低（Phase 5以降で検討）
+
+================================================================================
+第11部: 成功基準
+================================================================================
+
+■ 11-1. Phase 1成功基準
+────────────────────────────────────────
+
+必須:
+✅ フリッカーが完全に消失している
+✅ 筆圧が正しく反映されている（0.0〜1.0スケール）
+✅ ジャギーが大幅に改善している
+✅ GPU使用率が50%以下に低下している
+✅ エラーログが出ていない
+
+推奨:
+✅ フレームレートが60fps安定
+✅ 連続10ストローク描画で問題なし
+
+■ 11-2. Phase 2成功基準
+────────────────────────────────────────
+
+必須:
+✅ Canvas分離が完了している（2つのcanvas存在）
+✅ Master Loopが正常動作している
+✅ quick-accessの設定が即座に反映される
+✅ UIと描画が独立している（EventBus経由のみ）
+
+推奨:
+✅ コードの可読性が向上している
+✅ 責務分離が明確になっている
+
+■ 11-3. Phase 3成功基準
+────────────────────────────────────────
+
+必須:
+✅ 10分間連続描画でエラーが出ない
+✅ メモリリークが発生しない
+✅ 消しゴムが正常動作する
+✅ context loss復旧が機能する
+
+推奨:
+✅ 30分間放置後も正常動作
+✅ デバッグログが整理されている
+
+■ 11-4. 総合成功基準
+────────────────────────────────────────
+
+全Phase完了後:
+✅ すべての既知問題が解決している
+✅ 新規バグが発生していない
+✅ パフォーマンスが向上している
+✅ コード品質が向上している
+✅ ガイドライン準拠率100%
+✅ DRY/SOLID原則違反なし
+✅ テストが全てパスする
+
+================================================================================
+第12部: 補足資料
+================================================================================
+
+■ 12-1. 参考文献
+────────────────────────────────────────
+
+【WebGPU仕様】
+- WebGPU Specification (W3C)
+- WGSL Specification
+- Jump Flooding Algorithm論文
+
+【PixiJS】
+- PixiJS v8 Documentation
+- PixiJS v8 Migration Guide
+
+【実装ガイド】
+- 本プロジェクトガイドライン（ドキュメント内記載）
+- DRY原則解説
+- SOLID原則解説
+
+■ 12-2. 用語集
+────────────────────────────────────────
+
+MSDF: Multi-channel Signed Distance Field（多チャンネル符号付き距離場）
+JFA: Jump Flooding Algorithm（距離場生成アルゴリズム）
+rAF: requestAnimationFrame（ブラウザアニメーションAPI）
+DPR: Device Pixel Ratio（デバイスピクセル比）
+swapchain: GPU描画の出力先管理機構
+context loss: GPUコンテキスト喪失（リソース枯渇等で発生）
+dst-out: 合成モード（既存を消去）
+
+■ 12-3. トラブルシューティング
+────────────────────────────────────────
+
+【問題: フリッカーが残る】
+- チェック: app.ticker.stop()が呼ばれているか
+- チェック: requestAnimationFrameが1つのみか
+- チェック: pendingPointsがクリアされているか
+
+【問題: 筆圧が効かない】
+- チェック: pointerType判定が正しいか
+- チェック: e.pressureが取得できているか
+- チェック: getCalibratedPressure()がraw値を返しているか
+
+【問題: 消しゴムが動かない】
+- チェック: webgpuMaskLayerが初期化されているか
+- チェック: addPolygonToMask()がエラーを出していないか
+- チェック: GPU contextが有効か
+
+【問題: 時間経過でエラー】
+- チェック: destroyTextures()が呼ばれているか
+- チェック: メモリリークがないか（DevTools Memory）
+- チェック: GPU使用率が異常に高くないか
+
+================================================================================
+改修計画書 終了
+================================================================================
+
+バージョン: v1.0
+最終更新: 2025-11-15
+作成者: Claude (Anthropic)
+承認者: [プロジェクトオーナー署名欄]
+
+本計画書に基づき、Phase 1から順次実装を開始してください。
+各Phase完了後は必ずテストを実行し、成功基準を満たすことを確認してください。
+
+問題が発生した場合は、本計画書のトラブルシューティングセクションを参照するか、
+ロールバックポイントに戻って再調査を実施してください。
+
+================================================================================

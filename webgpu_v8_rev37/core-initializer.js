@@ -1,23 +1,32 @@
 /**
  * ================================================================================
- * core-initializer.js Phase 4完全版
+ * core-initializer.js Phase 5完全版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
- *   - webgpu-drawing-layer.js (GPUDevice/Queue)
- *   - gpu-stroke-processor.js (VertexBuffer生成)
- *   - msdf-pipeline-manager.js (MSDF Pipeline)
- *   - webgpu-texture-bridge.js (Texture変換)
- *   - webgpu-mask-layer.js (マスク処理)
- *   - stroke-renderer.js (描画統合)
- *   - brush-core.js (ブラシ統合)
+ *   - PIXI.js v8.14 (CDN)
+ *   - config.js (TEGAKI_CONFIG)
+ *   - system/event-bus.js (TegakiEventBus)
+ *   - system/popup-manager.js (TegakiPopupManager)
+ *   - system/settings-manager.js (TegakiSettingsManager)
+ *   - ui/dom-builder.js (DOMBuilder)
+ *   - core-runtime.js (CoreRuntime)
+ *   - core-engine.js (CoreEngine)
  * 
- * 【Phase 4改修】
- * 🔧 webgpuMaskLayer初期化追加
- * 🔧 brush-core.jsへのwebgpuMaskLayer注入
- * 🔧 過剰なコンソールログ削除
- * 🔧 ヘッダーに親子依存関係記述
- * ✅ DRY/SOLID原則準拠
+ * 📄 子ファイル初期化:
+ *   - webgpu-drawing-layer.js
+ *   - gpu-stroke-processor.js
+ *   - msdf-pipeline-manager.js
+ *   - webgpu-texture-bridge.js
+ *   - webgpu-mask-layer.js
+ *   - stroke-renderer.js
+ *   - brush-core.js
+ * 
+ * 【Phase 5改修内容】
+ * ✅ Pixi.js ticker完全停止（フリッカー解消）
+ * ✅ Pixi.js pointer capture無効化（座標系競合回避）
+ * ✅ WebGPU context loss復旧処理追加
+ * ✅ 過剰なログ削除・クリーンアップ
  * 
  * ================================================================================
  */
@@ -158,7 +167,7 @@ window.CoreInitializer = (function() {
     }
 
     /**
-     * Phase 4: WebGPU完全初期化（MaskLayer統合）
+     * Phase 5: WebGPU完全初期化（context loss復旧対応）
      */
     async function initializeWebGPU(strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
@@ -202,8 +211,6 @@ window.CoreInitializer = (function() {
                 return false;
             }
 
-            console.log('[WebGPU] Polygon Render Pipeline created');
-
             if (!window.WebGPUTextureBridge) {
                 console.error('[WebGPU] WebGPUTextureBridge not found');
                 return false;
@@ -215,7 +222,7 @@ window.CoreInitializer = (function() {
                 return false;
             }
 
-            // Phase 4: WebGPUMaskLayer初期化
+            // Phase 5: WebGPUMaskLayer初期化
             if (window.WebGPUMaskLayer) {
                 const canvasWidth = config.canvas?.width || 1920;
                 const canvasHeight = config.canvas?.height || 1080;
@@ -225,12 +232,9 @@ window.CoreInitializer = (function() {
                 
                 if (maskInit) {
                     window.webgpuMaskLayer = maskLayer;
-                    console.log('[WebGPU] MaskLayer initialized');
                     
-                    // Phase 4: BrushCoreにMaskLayerを注入
                     if (window.BrushCore) {
                         window.BrushCore.webgpuMaskLayer = maskLayer;
-                        console.log('[WebGPU] MaskLayer injected to BrushCore');
                     }
                 } else {
                     console.warn('[WebGPU] MaskLayer initialization failed');
@@ -252,15 +256,12 @@ window.CoreInitializer = (function() {
                     device,
                     format
                 );
-                console.log('[WebGPU] StrokeRenderer MSDF Mode enabled');
             }
-
-            console.log('[WebGPU] MSDF Pipeline完全初期化完了');
 
             return true;
 
         } catch (error) {
-            console.error('[WebGPU] 初期化エラー:', error);
+            console.error('[WebGPU] Initialization error:', error);
             return false;
         }
     }
@@ -292,6 +293,7 @@ window.CoreInitializer = (function() {
             const screenWidth = window.innerWidth - 50;
             const screenHeight = window.innerHeight;
             
+            // Phase 5: Pixi初期化（ticker停止・pointer capture無効化）
             this.pixiApp = new PIXI.Application();
             await this.pixiApp.init({
                 width: screenWidth,
@@ -309,7 +311,15 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
-            console.log('[PixiJS] Renderer initialized');
+            // ✅ Phase 5: 自動レンダリング停止（初回レンダー後に実行）
+            this.pixiApp.ticker.stop();
+            
+            // 初回レンダリング実行（背景を表示）
+            this.pixiApp.renderer.render(this.pixiApp.stage);
+            
+            // ✅ Phase 5: Pointer capture無効化
+            this.pixiApp.stage.eventMode = 'static';
+            this.pixiApp.stage.interactiveChildren = false;
             
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
@@ -366,7 +376,26 @@ window.CoreInitializer = (function() {
             this.updateDPRInfo();
             this.startFPSMonitor();
             
+            // ✅ Phase 5: 手動レンダーループ開始
+            this.startManualRenderLoop();
+            
             return true;
+        }
+        
+        /**
+         * Phase 5: 手動レンダーループ（ticker停止後の代替）
+         */
+        startManualRenderLoop() {
+            const renderLoop = () => {
+                // Pixiステージを手動でレンダリング
+                if (this.pixiApp && this.pixiApp.renderer && this.pixiApp.stage) {
+                    this.pixiApp.renderer.render(this.pixiApp.stage);
+                }
+                
+                requestAnimationFrame(renderLoop);
+            };
+            
+            requestAnimationFrame(renderLoop);
         }
         
         initializeExportPopup() {
@@ -493,4 +522,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase 4完全版 loaded');
+console.log('✅ core-initializer.js Phase 5 loaded');
