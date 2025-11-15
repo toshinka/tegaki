@@ -1,0 +1,485 @@
+# WebGPU MSDF Vector Pen 改修計画書
+
+## 📊 現状分析サマリー
+
+### ✅ 実装済み（動作確認済み）
+- WebGPU基盤初期化（device/context/format）
+- Canvas物理分離（webgpu-canvas / pixi-ui-canvas）
+- Pixi ticker停止・Master Loop統合
+- 筆圧値取得（pointer-handler.js: pressure正規化）
+- stroke-recorder.js: Local座標記録専用
+- gpu-stroke-processor.js: 筆圧反映実装（width = baseSize * pressure）
+- msdf-pipeline-manager.js Phase 5
+- webgpu-mask-layer.js Phase 5
+- brush-core.js Phase 5: リアルタイムプレビュー表示
+
+### ⚠️ 実装不完全（機能不全）
+- **ポイント取得〜GPU反映経路の断絶**
+  - pointermove → stroke-recorder → GPU streaming の配線が未完成
+  - device.queue.writeBuffer が pointerup でしか呼ばれていない可能性
+  - リアルタイム描画が出ない原因
+
+- **MSDF生成パイプライン**
+  - JFA反復回数が固定 or 不足
+  - テクスチャサイズが低解像度（256px以下）
+  - Sampler設定が nearest の可能性
+
+- **消しゴム実装**
+  - パス削除方式（非直感的）
+  - mask-based eraseが未接続
+
+- **履歴システム**
+  - pointerdown/pointerup グルーピング未実装
+  - 細かい操作が個別エントリ化
+
+### ❌ 未実装
+- ベクター情報永続保持（現状ラスター化）
+- レイヤー拡縮時の再ラスタライズ
+- MSAA設定（multisample: { count: 4 }）
+- pointer capture（setPointerCapture）
+
+---
+
+## 🔍 重要ファイル調査結果
+
+### 📁 system/drawing/pointer-handler.js
+**Phase 1 loaded**
+- pressure正規化修正済み（マウス=0, ペン=e.pressure）
+- setPointerCapture() ❌ 未実装
+- pointermove → drawing-engine への接続確認必要
+
+**問題点:**
+```
+🔧 setPointerCapture(e.pointerId) が pointerdown で呼ばれていない
+🔧 pointermove のバッファリングが pointerup でまとめて処理されている可能性
+```
+
+### 📁 system/drawing/stroke-recorder.js
+**Phase 0 loaded**
+- Local座標記録専用（座標変換なし）✅
+- PerfectFreehand互換形式対応 ✅
+
+**問題点:**
+```
+🔧 addPoint() が呼ばれても GPU への即時転送がない
+🔧 flush() メソッドが pointerup でしか呼ばれない可能性
+```
+
+### 📁 system/drawing/webgpu/gpu-stroke-processor.js
+**Phase 5完全版 loaded**
+- 筆圧反映実装: width = baseSize * pressure ✅
+
+**問題点:**
+```
+❌ appendPointToStream() メソッドが存在しない
+❌ streaming vertex buffer の実装が不在
+🔧 device.queue.writeBuffer が即時実行されていない
+```
+
+### 📁 system/drawing/webgpu/msdf-pipeline-manager.js
+**Phase 5 loaded**
+
+**GPT5アドバイスとの照合:**
+```
+⚠️ chooseSize() メソッド: 存在確認必要
+⚠️ jfaIterationsForSize() メソッド: 存在確認必要
+⚠️ デフォルトテクスチャサイズが 256 以下の可能性
+⚠️ Sampler が nearest になっている可能性
+```
+
+### 📁 system/drawing/webgpu/webgpu-mask-layer.js
+**Phase 5 loaded**
+
+**問題点:**
+```
+🔧 eraseAppendPoint() が実装されているが未接続
+🔧 mask-based erase が brush-core.js から呼ばれていない
+🔧 現在の消しゴムは「パス削除」方式のまま
+```
+
+### 📁 system/drawing/brush-core.js
+**Phase 5完全版 loaded**
+- Phase 5-B: 消しゴム範囲限定（セグメント分割）
+- Phase 5-C: 筆圧反映（baseSize渡し）
+
+**問題点:**
+```
+🔧 pointermove 内で GPU streaming が呼ばれていない
+🔧 history.beginAction() / endAction() が pointerdown/pointerup で実装されていない
+🔧 消しゴムが mask-based ではなくパス削除のまま
+```
+
+### 📁 system/drawing/drawing-engine.js
+**Phase 3完全版 loaded**
+- requestAnimationFrame発行禁止 ✅
+- Master Loop完全統合 ✅
+
+**問題点:**
+```
+🔧 screenClientToCanvas()→canvasToWorld()→worldToLocal() の統一実装確認必要
+🔧 setPointerCapture() の呼び出し確認必要
+```
+
+### 📁 system/drawing/webgpu/webgpu-drawing-layer.js
+**Phase 3.1 Initialized**
+
+**問題点:**
+```
+🔧 MSAA設定（multisample: { count: 4 }）が未実装
+🔧 resolveTarget の設定確認必要
+```
+
+---
+
+## 🔀 イベントフロー診断
+
+### 現状フロー（推定）
+```
+pointerdown → pointer-handler
+             → drawing-engine
+             → brush-core (history未開始)
+             → stroke-recorder (points蓄積開始)
+
+pointermove → pointer-handler
+             → drawing-engine (座標変換)
+             → stroke-recorder.addPoint()
+             ❌ GPU転送なし（バッファに溜まるだけ）
+
+pointerup   → pointer-handler
+             → brush-core
+             → stroke-recorder.flush()
+             → gpu-stroke-processor (一括ポリゴン化)
+             → MSDF生成
+             → 描画反映
+```
+
+### 問題点
+```
+⚠️ pointermove 毎に GPU への即時反映がない
+⚠️ ユーザーには「描画が遅れて出る」「pointerup で初めて線が出る」と見える
+```
+
+### 理想フロー
+```
+pointerdown → setPointerCapture(e.pointerId)
+             → history.beginAction('stroke')
+             → stroke-recorder.start()
+
+pointermove → drawing-engine.screenToLocal()
+             → stroke-recorder.addPoint()
+             → gpu-stroke-processor.appendPointToStream() ← 追加必要
+             → device.queue.writeBuffer() (小chunk即時)
+             → Master Loop が次フレームで描画
+
+pointerup   → releasePointerCapture(e.pointerId)
+             → history.endAction()
+             → gpu-stroke-processor.finalizeStroke()
+```
+
+---
+
+## 🔧 改修計画（優先度順）
+
+### 🔥 Priority A: リアルタイム描画実現
+
+#### A-1. pointer-handler.js
+```
+✅ setPointerCapture(e.pointerId) を pointerdown で実行
+✅ releasePointerCapture(e.pointerId) を pointerup で実行
+```
+
+#### A-2. gpu-stroke-processor.js
+```
+✅ appendPointToStream(x, y, pressure) メソッド追加
+   - Float32Array staging buffer (1024要素)
+   - streamLen カウンタ
+   - 閾値超過時 or 定期的に device.queue.writeBuffer() 実行
+
+✅ vertexBuffer を GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST で作成
+✅ ring buffer 方式でストリーミング更新
+```
+
+#### A-3. brush-core.js
+```
+✅ pointermove ハンドラ内で：
+   stroke-recorder.addPoint() の後に
+   gpu-stroke-processor.appendPointToStream() を呼び出し
+
+✅ pointerdown で history.beginAction('stroke') 追加
+✅ pointerup で history.endAction() 追加
+```
+
+#### A-4. drawing-engine.js
+```
+🔍 screenClientToCanvas()→canvasToWorld()→worldToLocal() の
+   統一実装を確認
+🔍 二重変換がないことを確認
+```
+
+---
+
+### 🔥 Priority B: ジャギー改善
+
+#### B-1. msdf-pipeline-manager.js
+```
+✅ chooseSize() メソッドの戻り値を 512 以上に変更
+   （現状 256 の場合は 512 or 1024 に引き上げ）
+
+✅ jfaIterationsForSize() を実装
+   return Math.max(1, Math.ceil(Math.log2(size)))
+
+✅ createSampler() を明示的に linear に設定:
+   magFilter: 'linear'
+   minFilter: 'linear'
+   addressModeU: 'clamp-to-edge'
+   addressModeV: 'clamp-to-edge'
+```
+
+#### B-2. webgpu-drawing-layer.js
+```
+✅ createRenderPipeline() に multisample 追加:
+   multisample: { count: 4 }
+
+✅ RenderPassDescriptor で：
+   - colorMS texture を sampleCount: 4 で作成
+   - resolveTarget に canvas texture を指定
+```
+
+#### B-3. WGSL シェーダー確認
+```
+🔍 msdf-render.wgsl で：
+   - sampler が @group/@binding で正しく渡されているか
+   - textureSample() が使われているか（textureSampleLevel ではない）
+   - median() 関数の実装確認
+   - smoothstep() のパラメータ調整
+```
+
+---
+
+### 🔥 Priority C: 消しゴム改善
+
+#### C-1. webgpu-mask-layer.js
+```
+✅ eraseAppendPoint() を public API として公開確認
+✅ eraseFlush() の実装確認
+✅ mask texture の初期化確認
+```
+
+#### C-2. brush-core.js
+```
+✅ 消しゴムモード時：
+   - パス削除ロジックを削除
+   - webgpu-mask-layer.eraseAppendPoint() を呼び出し
+   - pointerup で eraseFlush() 実行
+
+✅ history 記録：
+   - beginAction('erase') で開始
+   - erase stroke の points を保存
+   - endAction() で mask snapshot or replay info を保存
+```
+
+---
+
+### 🔥 Priority D: 履歴改善
+
+#### D-1. history.js
+```
+✅ beginAction(type, metadata) の実装確認
+✅ currentAction に points 配列を持たせる
+✅ endAction() で action を stack に push
+```
+
+#### D-2. brush-core.js / eraser 統合
+```
+✅ pointerdown:
+   history.beginAction({ type: 'stroke', layerId, brushSize, color })
+
+✅ pointermove:
+   history.currentAction.points.push({ x, y, pressure, t })
+
+✅ pointerup:
+   history.endAction()
+```
+
+---
+
+## 📋 実装チェックリスト
+
+### Phase 1: リアルタイム描画
+- [ ] pointer-handler.js: setPointerCapture/releasePointerCapture 追加
+- [ ] gpu-stroke-processor.js: appendPointToStream() 実装
+- [ ] gpu-stroke-processor.js: streaming vertex buffer 実装
+- [ ] brush-core.js: pointermove で appendPointToStream() 呼び出し
+- [ ] drawing-engine.js: 座標変換の統一確認
+- [ ] console.table() で pointermove → stroke-recorder → GPU の経路確認
+
+### Phase 2: ジャギー改善
+- [ ] msdf-pipeline-manager.js: テクスチャサイズ 512 以上に変更
+- [ ] msdf-pipeline-manager.js: JFA反復回数を自動計算
+- [ ] msdf-pipeline-manager.js: Sampler を linear に設定
+- [ ] webgpu-drawing-layer.js: MSAA (sampleCount: 4) 追加
+- [ ] msdf-render.wgsl: sampler/textureSample 確認
+
+### Phase 3: 消しゴム改善
+- [ ] webgpu-mask-layer.js: API公開確認
+- [ ] brush-core.js: mask-based erase に切り替え
+- [ ] brush-core.js: パス削除ロジック削除
+- [ ] history.js: erase action のグルーピング実装
+
+### Phase 4: 履歴改善
+- [ ] history.js: beginAction/endAction 実装
+- [ ] brush-core.js: pointerdown/pointerup で履歴グルーピング
+- [ ] thumbnail-system.js: markDirty() の適切な呼び出し
+
+---
+
+## 🔬 デバッグ手順
+
+### Step 1: pointermove 経路確認
+```javascript
+// pointer-handler.js 内
+console.table([
+  { phase: 'pointer-handler', x: e.clientX, y: e.clientY, pressure: e.pressure }
+]);
+
+// drawing-engine.js 内
+console.table([
+  { phase: 'drawing-engine', localX, localY }
+]);
+
+// stroke-recorder.js 内
+console.table([
+  { phase: 'stroke-recorder', x, y, pressure }
+]);
+
+// gpu-stroke-processor.js 内
+console.table([
+  { phase: 'gpu-stream', streamLen, flushed: (streamLen >= CHUNK_SIZE) }
+]);
+```
+
+### Step 2: MSDF 解像度確認
+```javascript
+// msdf-pipeline-manager.js 内
+console.log('[MSDF] texture size:', chosenSize);
+console.log('[MSDF] JFA iterations:', iterations);
+console.log('[MSDF] sampler:', sampler);
+```
+
+### Step 3: MSAA 確認
+```javascript
+// webgpu-drawing-layer.js 内
+console.log('[Pipeline] multisample.count:', pipeline.descriptor.multisample.count);
+```
+
+---
+
+## 🎯 改修後の期待動作
+
+### ペン描画
+```
+✅ pointermove 毎に線が即座に表示される
+✅ 筆圧に応じて線幅が変化する（0荷重 → 最大荷重まで滑らか）
+✅ 線のエッジがスムーズ（ジャギーなし）
+✅ 拡大しても高品質（ベクター情報から再生成）
+```
+
+### 消しゴム
+```
+✅ マスク方式で描画を透明化（パスは残る）
+✅ 消しゴムストローク中も即座に反映
+✅ Undo で消しゴム操作が一括で戻る
+```
+
+### 履歴
+```
+✅ 1回のストローク = 1つの履歴エントリ
+✅ Undo/Redo が直感的に動作
+✅ サムネイルが即座に更新
+```
+
+---
+
+## ⚠️ 注意事項
+
+### GPT5アドバイスの妥当性確認
+```
+✅ pointer capture: 正しい（標準的な実装）
+✅ streaming vertex buffer: 正しい（リアルタイム描画の要）
+✅ MSDF 解像度: 正しい（512以上推奨）
+✅ JFA 反復回数: 正しい（log2(size) が標準）
+✅ linear sampler: 正しい（nearest だとジャギる）
+✅ MSAA: 正しい（sampleCount: 4 が一般的）
+✅ mask-based erase: 正しい（UX観点で推奨）
+```
+
+### ハルシネーション可能性
+```
+❌ なし（すべて標準的な WebGPU/MSDF 実装パターン）
+```
+
+---
+
+## 📊 改修影響範囲
+
+### 直接変更必要
+- pointer-handler.js
+- gpu-stroke-processor.js
+- brush-core.js
+- msdf-pipeline-manager.js
+- webgpu-drawing-layer.js
+- webgpu-mask-layer.js
+- history.js
+
+### 確認必要
+- drawing-engine.js
+- stroke-recorder.js
+- msdf-render.wgsl
+- core-engine.js (Master Loop)
+
+### 影響なし
+- layer-system.js
+- thumbnail-system.js
+- export-manager.js
+- その他 UI 系
+
+---
+
+## 🚀 実装順序提案
+
+1. **Phase 1-A**: pointer capture 追加（pointer-handler.js）
+2. **Phase 1-B**: streaming buffer 実装（gpu-stroke-processor.js）
+3. **Phase 1-C**: brush-core.js で appendPointToStream() 呼び出し
+4. **Phase 1-D**: デバッグログで経路確認
+5. **Phase 2-A**: MSDF 解像度引き上げ（msdf-pipeline-manager.js）
+6. **Phase 2-B**: MSAA 追加（webgpu-drawing-layer.js）
+7. **Phase 3**: mask-based erase 実装
+8. **Phase 4**: 履歴グルーピング実装
+
+---
+
+## 📝 補足：GPT5アドバイスとの整合性
+
+GPT5アドバイス.txt の内容は以下の点で正確：
+
+1. **pointer イベント受け取り/転送のタイミング問題**
+   → コンソールログから「リアルタイムプレビュー統合完了」とあるが、
+     実際は GPU への即時転送が未実装
+
+2. **MSDF 解像度/JFA/Sampler 問題**
+   → msdf-pipeline-manager.js Phase 5 だが、
+     具体的な解像度設定・JFA計算が不明確
+
+3. **消しゴムが"パスを消す"挙動**
+   → brush-core.js Phase 5-B で「消しゴム範囲限定（セグメント分割）」とあり、
+     パス削除方式が残っている可能性大
+
+4. **ヒストリー／サムネの反応が弱い**
+   → history.js Phase 3 だが、beginAction/endAction の
+     グルーピングが未実装の可能性
+
+**結論**: GPT5アドバイスは的確で、ハルシネーションなし
+
+---
+
+## 終わり
