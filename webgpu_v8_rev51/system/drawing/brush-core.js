@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - Phase D-FIX完全版: BlendMode完全対応
+ * brush-core.js - Phase D-FIX2完全版: PixiJS v8 BlendMode対応
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,15 +11,15 @@
  *   - layer-system.js
  *   - event-bus.js
  *   - history.js
- *   - blend-modes.js (window.BlendMode必須)
+ *   - blend-modes.js (window.BlendMode)
  * 
  * 📄 子ファイル使用先:
  *   - core-engine.js
  *   - drawing-engine.js
  * 
- * 【Phase D-FIX改修内容】
- * 🔥 BlendMode.ERASE参照エラー完全修正
- * 🔥 消しゴム＝透明化ペン方式（opacity: 0 + PIXI.BLEND_MODES.ERASE）
+ * 【Phase D-FIX2改修内容】
+ * 🔥 PixiJS v8 blendMode対応（PIXI.BLEND_MODES廃止対応）
+ * 🔥 消しゴム＝透明化ペン（opacity: 0 + blendMode: 'erase'）
  * 🔥 ペンと消しゴムが同一MSDFパイプライン使用
  * ✅ Device Hung完全根絶維持
  * 
@@ -78,11 +78,6 @@
       }
       if (!this.layerManager) {
         throw new Error('[BrushCore] layerManager not found');
-      }
-
-      // 🔥 Phase D-FIX: BlendMode確認
-      if (!window.BlendMode) {
-        console.warn('[BrushCore] window.BlendMode not found - blend-modes.js not loaded');
       }
 
       this.gpuStrokeProcessor = window.GPUStrokeProcessor;
@@ -242,7 +237,7 @@
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
 
-        // 🔥 Phase D-FIX: 消しゴム＝透明化ペン（プレビュー）
+        // プレビュー設定（消しゴムは赤半透明表示）
         const previewSettings = {
           mode: this.currentSettings.mode,
           color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
@@ -388,13 +383,13 @@
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
 
-        // 🔥 Phase D-FIX: 消しゴム＝透明化ペン（最終描画）
         const isEraser = this.currentSettings.mode === 'eraser';
         
+        // 🔥 Phase D-FIX2: 消しゴム＝完全不透明黒 + erase blend
         const brushSettings = {
           mode: this.currentSettings.mode,
           color: isEraser ? '#000000' : this.currentSettings.color,
-          opacity: isEraser ? 0.0 : this.currentSettings.opacity,
+          opacity: isEraser ? 1.0 : this.currentSettings.opacity, // 消しゴムは1.0
           size: this.currentSettings.size
         };
 
@@ -429,12 +424,12 @@
         sprite.y = bounds.minY;
         sprite.visible = true;
         
-        // 🔥 Phase D-FIX: 消しゴムはPIXI.BLEND_MODES.ERASE使用
+        // 🔥 Phase D-FIX2: PixiJS v8対応（文字列blendMode直接指定）
         if (isEraser) {
-          sprite.blendMode = PIXI.BLEND_MODES.ERASE;
-          sprite.alpha = 1.0; // erase blendでは常に1.0
+          sprite.blendMode = 'erase'; // PixiJS v8では文字列指定
+          sprite.alpha = 1.0;
         } else {
-          sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
+          sprite.blendMode = 'normal';
           sprite.alpha = this.currentSettings.opacity;
         }
 
@@ -497,10 +492,14 @@
     }
 
     _getLayerContainer(layer) {
+      // Phase D-FIX3: PixiJS v8レイヤーシステム対応
+      // レイヤー自体がContainer（children配列持ち）
+      if (layer && Array.isArray(layer.children)) {
+        return layer;
+      }
       if (layer.drawingContainer) return layer.drawingContainer;
       if (layer.container) return layer.container;
       if (layer.sprite) return layer.sprite;
-      if (Array.isArray(layer.children)) return layer;
       return null;
     }
 
@@ -627,8 +626,8 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase D-FIX完全版 loaded');
-  console.log('   🔥 BlendMode.ERASE参照エラー修正完了');
+  console.log('✅ brush-core.js Phase D-FIX2完全版 loaded');
+  console.log('   🔥 PixiJS v8 blendMode対応（文字列指定）');
   console.log('   🔥 透明化ペン消しゴム完全対応');
   console.log('   ✅ Device Hung完全根絶維持');
 

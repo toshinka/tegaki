@@ -1,20 +1,20 @@
 /**
  * ================================================================================
- * gpu-stroke-processor.js Phase B-1.5: PerfectFreehand統合完全版
+ * gpu-stroke-processor.js Phase B-1.5-FIX: PerfectFreehand完全対応
  * ================================================================================
  * 
  * 📁 親ファイル依存:
  * - stroke-recorder.js (points取得)
  * - webgpu-drawing-layer.js (device/queue)
- * - perfect-freehand-1.2.0.min.js (window.getStroke)
+ * - perfect-freehand-1.2.0.min.js (window.PerfectFreehand)
  * - earcut-triangulator.js (window.EarcutTriangulator)
  * 
  * 📄 子ファイル依存:
  * - msdf-pipeline-manager.js (VertexBuffer + edgeCount受け渡し)
  * - brush-core.js (呼び出し元)
  * 
- * 【Phase B-1.5改修内容】
- * 🔥 PerfectFreehand統合（独自ポリゴン生成廃止）
+ * 【Phase B-1.5-FIX改修内容】
+ * 🔥 window.PerfectFreehand正式対応（window.getStroke廃止）
  * 🔥 Earcut三角形分割採用
  * 🔥 ジャギー完全解消
  * ✅ streaming buffer完全継承
@@ -108,7 +108,7 @@
     }
 
     /**
-     * 🔥 Phase B-1.5: PerfectFreehand統合（フォールバック付き）
+     * 🔥 Phase B-1.5-FIX: PerfectFreehand完全対応
      */
     createPolygonVertexBuffer(points, baseSize = 10) {
       if (!Array.isArray(points) || points.length === 0) {
@@ -144,8 +144,8 @@
       const offsetX = bounds.minX;
       const offsetY = bounds.minY;
 
-      // 🔥 PerfectFreehand使用可能チェック
-      if (typeof window.getStroke === 'function' && window.EarcutTriangulator) {
+      // 🔥 PerfectFreehand使用可能チェック（window.PerfectFreehand）
+      if (typeof window.PerfectFreehand === 'function' && window.EarcutTriangulator) {
         try {
           const strokePoints = processedPoints.map(p => [p.x, p.y, p.pressure]);
           
@@ -158,7 +158,8 @@
             last: true
           };
 
-          const outlinePoints = window.getStroke(strokePoints, options);
+          // 🔥 window.PerfectFreehand使用
+          const outlinePoints = window.PerfectFreehand(strokePoints, options);
           
           if (outlinePoints && outlinePoints.length >= 3) {
             const polygon = outlinePoints.map(p => [p[0] - offsetX, p[1] - offsetY]);
@@ -377,10 +378,10 @@
 
   window.GPUStrokeProcessor = new GPUStrokeProcessor();
 
-  const hasPerfectFreehand = typeof window.getStroke === 'function';
+  const hasPerfectFreehand = typeof window.PerfectFreehand === 'function';
   const hasEarcut = !!window.EarcutTriangulator;
   
-  console.log('✅ gpu-stroke-processor.js Phase B-1.5完全版 loaded');
+  console.log('✅ gpu-stroke-processor.js Phase B-1.5-FIX完全版 loaded');
   console.log('   🔥 PerfectFreehand: ' + (hasPerfectFreehand ? '有効' : 'フォールバック'));
   console.log('   🔥 Earcut: ' + (hasEarcut ? '有効' : 'フォールバック'));
   console.log('   ✅ streaming buffer完全継承');

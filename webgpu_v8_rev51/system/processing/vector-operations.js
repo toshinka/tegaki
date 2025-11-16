@@ -32,8 +32,8 @@
     initialize() {
       if (this.initialized) return;
 
-      if (typeof window.getStroke !== 'function') {
-        throw new Error('[VectorOperations] PerfectFreehand (window.getStroke) not loaded. Check libs/perfect-freehand-1.2.0.min.js');
+      if (typeof window.PerfectFreehand !== 'function') {
+        throw new Error('[VectorOperations] PerfectFreehand not loaded. Check libs/perfect-freehand-1.2.0.min.js');
       }
 
       const tegakiConfig = window.TEGAKI_CONFIG;
@@ -89,7 +89,7 @@
 
       try {
         // 🔥 PerfectFreehand実行 → 輪郭ポリゴン取得
-        const outlinePoints = window.getStroke(inputPoints, options);
+        const outlinePoints = window.PerfectFreehand(inputPoints, options);
         
         if (!outlinePoints || outlinePoints.length < 3) {
           console.warn('[VectorOperations] PerfectFreehand returned insufficient outline points');
