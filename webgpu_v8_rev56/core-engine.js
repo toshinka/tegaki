@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-engine.js Phase C-0: renderPreview非同期修正
+ * core-engine.js Phase E: プレビュー並列実行制御強化
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -10,10 +10,10 @@
  *   - system/drawing/brush-core.js (BrushCore)
  *   - system/event-bus.js (TegakiEventBus)
  * 
- * 【Phase C-0改修内容】
- * 🔥 renderPreview()の非同期呼び出し修正（await削除）
- * 🔥 プレビュー処理の並列実行防止
- * ✅ Master Loop統合維持
+ * 【Phase E改修内容】
+ * 🔧 renderPreview呼び出しの安全化
+ * 🔧 isPreviewUpdating状態チェックの追加
+ * 🔧 エラー時のフラグリセット保証
  * 
  * ================================================================================
  */
@@ -259,7 +259,7 @@ class CoreEngine {
         }
         
         /**
-         * 🔥 Phase C-0: renderPreview非同期修正
+         * 🔧 Phase E: プレビュー並列実行制御強化
          */
         _renderLoop() {
             if (!this.isRenderLoopRunning) return;
@@ -267,10 +267,17 @@ class CoreEngine {
             try {
                 this.flushPointerBatch();
                 
-                // 🔥 Phase C-0: 非同期呼び出し（await削除）
-                if (window.BrushCore?.isDrawing && 
-                    typeof window.BrushCore.renderPreview === 'function') {
-                    window.BrushCore.renderPreview().catch(err => {
+                // 🔧 Phase E: BrushCore状態チェック強化
+                const brushCore = window.BrushCore;
+                if (brushCore?.isDrawing && 
+                    !brushCore.isPreviewUpdating &&
+                    typeof brushCore.renderPreview === 'function') {
+                    
+                    brushCore.renderPreview().catch(err => {
+                        // エラー時もフラグリセット保証
+                        if (brushCore) {
+                            brushCore.isPreviewUpdating = false;
+                        }
                         console.error('[CoreEngine] Preview error:', err);
                     });
                 }
@@ -756,6 +763,6 @@ class CoreEngine {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js Phase C-0 loaded');
+    console.log('✅ core-engine.js Phase E loaded');
 
 })();

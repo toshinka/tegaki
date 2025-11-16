@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - Phase D-3: GPU初期化確認強化
+ * brush-core.js - Phase D-3完全修正版: GPU初期化確認強化
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -16,10 +16,10 @@
  *   - core-engine.js (renderLoop内でrenderPreview呼び出し)
  *   - system/drawing/drawing-engine.js (startStroke/updateStroke/finalizeStroke)
  * 
- * 【Phase D-3改修内容】
- * 🔧 GPU初期化確認の強化（initialized フラグチェック追加）
- * 🔧 初期化失敗時の再試行ロジック
+ * 【Phase D-3完全修正内容】
+ * 🔧 initialized フラグの再確認（プロパティ存在チェック追加）
  * 🔧 msdfAvailable判定の厳密化
+ * 🔧 初期化失敗時の詳細ログ出力
  * 
  * 【責務】
  * - ストローク管理（開始/更新/確定）
@@ -71,7 +71,12 @@
     }
 
     async initialize() {
-      if (this.initialized) return;
+      if (this.initialized) {
+        console.log('[BrushCore] Already initialized');
+        return;
+      }
+
+      console.log('[BrushCore] Starting initialization...');
 
       this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
       this.layerManager = window.layerManager || window.layerSystem;
@@ -84,17 +89,32 @@
         throw new Error('[BrushCore] layerManager not found');
       }
 
+      console.log('[BrushCore] Basic dependencies OK');
+
+      // 🔧 GPU依存の確認（プロパティ存在チェック追加）
       this.gpuStrokeProcessor = window.GPUStrokeProcessor;
       this.msdfPipelineManager = window.MSDFPipelineManager;
       this.textureBridge = window.WebGPUTextureBridge;
 
-      const gpuInitialized = !!(
-        this.gpuStrokeProcessor?.initialized &&
-        this.msdfPipelineManager?.initialized &&
-        this.textureBridge?.initialized
+      console.log('[BrushCore] GPU Components:', {
+        gpuStrokeProcessor: !!this.gpuStrokeProcessor,
+        msdfPipelineManager: !!this.msdfPipelineManager,
+        textureBridge: !!this.textureBridge
+      });
+
+      // 🔧 initialized プロパティの存在確認
+      const hasInitializedProps = !!(
+        this.gpuStrokeProcessor &&
+        typeof this.gpuStrokeProcessor.initialized !== 'undefined' &&
+        this.msdfPipelineManager &&
+        typeof this.msdfPipelineManager.initialized !== 'undefined' &&
+        this.textureBridge &&
+        typeof this.textureBridge.initialized !== 'undefined'
       );
 
-      if (!gpuInitialized) {
+      if (!hasInitializedProps) {
+        console.warn('[BrushCore] GPU components missing initialized property, retrying...');
+        
         await new Promise(resolve => setTimeout(resolve, 100));
         
         this.gpuStrokeProcessor = window.GPUStrokeProcessor;
@@ -102,19 +122,46 @@
         this.textureBridge = window.WebGPUTextureBridge;
       }
 
+      // 🔧 msdfAvailable判定の厳密化
       this.msdfAvailable = !!(
-        this.gpuStrokeProcessor?.initialized &&
-        this.msdfPipelineManager?.initialized &&
-        this.textureBridge?.initialized
+        this.gpuStrokeProcessor?.initialized === true &&
+        this.msdfPipelineManager?.initialized === true &&
+        this.textureBridge?.initialized === true
       );
+
+      console.log('[BrushCore] GPU Initialization Status:', {
+        gpuStrokeProcessor: this.gpuStrokeProcessor?.initialized,
+        msdfPipelineManager: this.msdfPipelineManager?.initialized,
+        textureBridge: this.textureBridge?.initialized,
+        msdfAvailable: this.msdfAvailable
+      });
 
       if (!this.msdfAvailable) {
         console.error('[BrushCore] MSDF Pipeline not available after initialization');
+        console.error('[BrushCore] Detailed status:', {
+          gpuProcessor: {
+            exists: !!this.gpuStrokeProcessor,
+            initialized: this.gpuStrokeProcessor?.initialized,
+            type: typeof this.gpuStrokeProcessor
+          },
+          msdfManager: {
+            exists: !!this.msdfPipelineManager,
+            initialized: this.msdfPipelineManager?.initialized,
+            type: typeof this.msdfPipelineManager
+          },
+          textureBridge: {
+            exists: !!this.textureBridge,
+            initialized: this.textureBridge?.initialized,
+            type: typeof this.textureBridge
+          }
+        });
       }
 
       this._setupEventListeners();
       this.initialized = true;
       this.isPreviewUpdating = false;
+      
+      console.log('✅ [BrushCore] Initialized, MSDF Available:', this.msdfAvailable);
     }
 
     _setupEventListeners() {
@@ -151,8 +198,13 @@
     startStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || this.isDrawing) return;
 
+      console.log('[BrushCore] startStroke called:', { localX, localY, pressure, msdfAvailable: this.msdfAvailable });
+
       const activeLayer = this.layerManager.getActiveLayer();
-      if (!activeLayer) return;
+      if (!activeLayer) {
+        console.error('[BrushCore] No active layer');
+        return;
+      }
 
       const layerId = this._getLayerId(activeLayer);
       if (!layerId) {
@@ -179,6 +231,8 @@
       };
       
       this._ensurePreviewContainer(activeLayer);
+      
+      console.log('[BrushCore] Stroke started');
     }
 
     async updateStroke(localX, localY, pressure = 0.5) {
@@ -221,11 +275,17 @@
       }
 
       try {
+        if (!this.msdfAvailable) {
+          console.warn('[BrushCore] MSDF not available, skipping preview');
+          return;
+        }
+
         const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(
           points,
           this.currentSettings.size
         );
         if (!vertexResult?.buffer) {
+          console.warn('[BrushCore] VertexBuffer creation failed');
           return;
         }
 
@@ -234,6 +294,7 @@
           this.currentSettings.size
         );
         if (!edgeResult?.buffer) {
+          console.warn('[BrushCore] EdgeBuffer creation failed');
           return;
         }
 
@@ -261,6 +322,7 @@
         );
 
         if (!previewTexture) {
+          console.warn('[BrushCore] MSDF generation failed');
           uploadEdge.gpuBuffer?.destroy();
           uploadVertex.gpuBuffer?.destroy();
           return;
@@ -302,8 +364,8 @@
         previewTexture?.destroy();
 
       } catch (error) {
+        console.error('[BrushCore] Preview error:', error);
         if (error.message && (error.message.includes('Device') || error.message.includes('CRITICAL'))) {
-          console.error('[BrushCore] GPU Error:', error.message);
           this.cancelStroke();
         }
       } finally {
@@ -314,9 +376,12 @@
     async finalizeStroke() {
       if (!this.initialized || !this.isDrawing) return;
 
+      console.log('[BrushCore] finalizeStroke called');
+
       const activeLayer = this.layerManager.getActiveLayer();
       
       if (!activeLayer) {
+        console.error('[BrushCore] No active layer at finalize');
         this._cleanupPreview();
         this.isDrawing = false;
         
@@ -331,7 +396,10 @@
 
       const points = this.strokeRecorder.getRawPoints();
       
+      console.log('[BrushCore] Points count:', points?.length);
+      
       if (!points || points.length < 2) {
+        console.warn('[BrushCore] Stroke too short, aborting');
         this.strokeRecorder.endStroke();
         this.isDrawing = false;
         
@@ -343,7 +411,10 @@
       }
 
       if (this.msdfAvailable) {
+        console.log('[BrushCore] Finalizing with MSDF');
         await this._finalizeMSDFStroke(points, activeLayer);
+      } else {
+        console.error('[BrushCore] MSDF not available, cannot finalize stroke');
       }
 
       this.strokeRecorder.endStroke();
@@ -453,9 +524,11 @@
         uploadVertex.gpuBuffer?.destroy();
         finalTexture?.destroy();
 
+        console.log('[BrushCore] Stroke finalized successfully');
+
       } catch (error) {
+        console.error('[BrushCore] Finalize error:', error);
         if (error.message && (error.message.includes('Device') || error.message.includes('CRITICAL'))) {
-          console.error('[BrushCore] GPU Error:', error.message);
           this.cancelStroke();
         }
       }
@@ -620,6 +693,6 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase D-3 loaded');
+  console.log('✅ brush-core.js Phase D-3完全修正版 loaded');
 
 })();

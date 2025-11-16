@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js - Phase D-1: Render Pipeline遅延生成
+ * msdf-pipeline-manager.js - Phase F: Seed Init修正版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -12,12 +12,9 @@
  *   - system/drawing/webgpu/gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
  *   - system/drawing/webgpu/webgpu-texture-bridge.js (テクスチャメタ登録)
  * 
- * 【Phase D-1改修内容】
- * 🔧 Render Pipeline遅延生成実装
- *    - initialize()でのRender Pipeline事前生成を削除
- *    - generateMSDF()内で初回描画時に生成
- * 🔧 JFA Pipeline/Encode Pipeline遅延生成実装
- * 🔧 Pipeline生成順序の最適化
+ * 【Phase F修正内容】
+ * 🔧 Seed Init前にテクスチャを-1.0でクリア
+ * 🔧 未初期化ピクセルとEdgeID=0の区別を可能に
  * 
  * 【責務】
  * - MSDF生成パイプライン管理
@@ -209,7 +206,63 @@
       return 2;
     }
 
+    /**
+     * 🔧 Phase F: Seed Textureを-1.0でクリア
+     */
+    async _clearSeedTexture(seedTexture, width, height) {
+      const clearShader = `
+        @group(0) @binding(0) var seedTex: texture_storage_2d<rgba32float, write>;
+        
+        @compute @workgroup_size(8, 8)
+        fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+          let pos = vec2<i32>(i32(gid.x), i32(gid.y));
+          let maxPos = vec2<i32>(${width}, ${height});
+          
+          if (pos.x >= maxPos.x || pos.y >= maxPos.y) {
+            return;
+          }
+          
+          // -1.0で初期化（未書き込みピクセルとして扱う）
+          textureStore(seedTex, pos, vec4<f32>(-1.0, -1.0, -1.0, -1.0));
+        }
+      `;
+      
+      const clearModule = this.device.createShaderModule({
+        code: clearShader,
+        label: 'Seed Clear'
+      });
+      
+      const clearPipeline = this.device.createComputePipeline({
+        layout: 'auto',
+        compute: { module: clearModule, entryPoint: 'main' },
+        label: 'Seed Clear Pipeline'
+      });
+      
+      const bindGroup = this.device.createBindGroup({
+        layout: clearPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: seedTexture.createView() }
+        ]
+      });
+      
+      const encoder = this.device.createCommandEncoder();
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(clearPipeline);
+      pass.setBindGroup(0, bindGroup);
+      
+      const workgroupsX = this._toU32(Math.ceil(width / 8));
+      const workgroupsY = this._toU32(Math.ceil(height / 8));
+      pass.dispatchWorkgroups(workgroupsX, workgroupsY);
+      pass.end();
+      
+      this.queue.submit([encoder.finish()]);
+      await this.device.queue.onSubmittedWorkDone();
+    }
+
     async _seedInitPass(gpuBuffer, seedTexture, width, height, edgeCount) {
+      // 🔧 Phase F: Seed Textureを先にクリア
+      await this._clearSeedTexture(seedTexture, width, height);
+      
       const configData = new Float32Array([width, height, edgeCount, 0]);
       const configBuffer = this.device.createBuffer({
         size: configData.byteLength,
@@ -238,6 +291,7 @@
       pass.end();
       
       this.queue.submit([encoder.finish()]);
+      await this.device.queue.onSubmittedWorkDone();
       
       this._destroyResource(configBuffer);
     }
@@ -548,6 +602,6 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase D-1 loaded');
+  console.log('✅ msdf-pipeline-manager.js Phase F完全修正版 loaded');
 
 })();

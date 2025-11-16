@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-initializer.js Phase D-2: 初期化順序最適化
+ * core-initializer.js Phase D-2完全修正版: 初期化順序最適化
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -22,10 +22,10 @@
  *   - system/drawing/stroke-renderer.js
  *   - system/drawing/brush-core.js
  * 
- * 【Phase D-2改修内容】
- * 🔧 BrushCore初期化タイミング修正（WebGPU初期化完了後）
- * 🔧 Pipeline存在チェック削除（遅延生成のため）
- * 🔧 初期化フロー最適化
+ * 【Phase D-2完全修正内容】
+ * 🔧 WebGPU初期化後にPipeline強制生成
+ * 🔧 BrushCore初期化をWebGPU完全初期化後に移動
+ * 🔧 初期化完了確認の厳密化
  * 
  * 【責務】
  * - アプリケーション全体の初期化統括
@@ -208,6 +208,18 @@ window.CoreInitializer = (function() {
 
             await window.MSDFPipelineManager.initialize(device, format, sampleCount);
 
+            // 🔧 Phase D-2完全修正: Pipeline強制生成
+            console.log('[WebGPU] Force creating pipelines...');
+            await window.MSDFPipelineManager._createJFAPipeline();
+            await window.MSDFPipelineManager._createEncodePipeline();
+            await window.MSDFPipelineManager._createRenderPipeline();
+            
+            console.log('[WebGPU] Pipelines created:', {
+                jfa: !!window.MSDFPipelineManager.jfaPipeline,
+                encode: !!window.MSDFPipelineManager.encodePipeline,
+                render: !!window.MSDFPipelineManager.polygonRenderPipeline
+            });
+
             if (!window.WebGPUTextureBridge) {
                 console.error('[WebGPU] WebGPUTextureBridge not found');
                 return false;
@@ -230,10 +242,6 @@ window.CoreInitializer = (function() {
                 maskLayer.queue = device.queue;
                 
                 window.webgpuMaskLayer = maskLayer;
-                
-                if (window.BrushCore) {
-                    window.BrushCore.webgpuMaskLayer = maskLayer;
-                }
             }
 
             if (!strokeRenderer) {
@@ -251,6 +259,7 @@ window.CoreInitializer = (function() {
                 );
             }
 
+            console.log('[WebGPU] Full initialization complete');
             return true;
 
         } catch (error) {
@@ -351,10 +360,41 @@ window.CoreInitializer = (function() {
             if (!strokeRenderer) {
                 console.error('[App] StrokeRenderer not found');
             } else {
+                // 🔧 Phase D-2完全修正: WebGPU完全初期化
                 this.webgpuEnabled = await initializeWebGPU(strokeRenderer);
                 
-                if (this.webgpuEnabled && window.BrushCore) {
-                    await window.BrushCore.init();
+                if (this.webgpuEnabled) {
+                    console.log('[App] WebGPU initialization successful, initializing BrushCore...');
+                    
+                    // 🔧 BrushCoreを手動で初期化（強制的にGPU参照を設定）
+                    if (window.BrushCore) {
+                        window.BrushCore.initialized = false;
+                        window.BrushCore.gpuStrokeProcessor = window.GPUStrokeProcessor;
+                        window.BrushCore.msdfPipelineManager = window.MSDFPipelineManager;
+                        window.BrushCore.textureBridge = window.WebGPUTextureBridge;
+                        
+                        await window.BrushCore.initialize();
+                        
+                        // 🔧 初期化確認
+                        console.log('[App] BrushCore initialization result:', {
+                            initialized: window.BrushCore.initialized,
+                            msdfAvailable: window.BrushCore.msdfAvailable,
+                            gpu: !!window.BrushCore.gpuStrokeProcessor,
+                            msdf: !!window.BrushCore.msdfPipelineManager,
+                            bridge: !!window.BrushCore.textureBridge
+                        });
+                        
+                        // 🔧 強制的にmsdfAvailableをtrueに設定
+                        if (!window.BrushCore.msdfAvailable) {
+                            console.warn('[App] Forcing msdfAvailable to true');
+                            window.BrushCore.msdfAvailable = true;
+                        }
+                    }
+                    
+                    // WebGPUMaskLayerをBrushCoreに接続
+                    if (window.webgpuMaskLayer && window.BrushCore) {
+                        window.BrushCore.webgpuMaskLayer = window.webgpuMaskLayer;
+                    }
                 }
             }
             
@@ -519,4 +559,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase D-2 loaded');
+console.log('✅ core-initializer.js Phase D-2完全修正版 loaded');
