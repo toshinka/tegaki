@@ -1,0 +1,448 @@
+================================================================================
+PerfectFreehand + WebGPU MSDF統合改修計画書
+Phase C-0: ポリゴンペン実装 + 透明化消しゴム統一
+================================================================================
+
+【実装目標】
+・PerfectFreehand出力をGPUポリゴンパイプラインへ直結
+・ペン/消しゴムをMSDFパイプラインで一本化（opacity:0 + blend:erase）
+・CPU側補間・ラスタライズの完全排除
+・二重実装の殲滅とDRY/SOLID完全準拠
+
+================================================================================
+■ 現状分析 - 三つ巴の競合
+================================================================================
+
+⚠️ 問題箇所の特定
+
+1. stroke-recorder.js
+   ❌ 独自補間（線形・Catmull-Rom）がPerfectFreehandと重複
+   ❌ interpolationThreshold: 2px、useSplineInterpolation等の独自処理
+   📌 責務: 点列記録のみに制限すべき
+
+2. gpu-stroke-processor.js
+   ✅ PerfectFreehand統合済み（window.PerfectFreehand）
+   ✅ Earcut三角形分割採用済み
+   ⚠️ フォールバック処理（独自quad生成）が残存
+   📌 PerfectFreehand専用化で統一
+
+3. brush-core.js
+   ✅ 消しゴムモード対応済み（mode: 'eraser'）
+   ✅ blendMode: 'erase' + opacity: 1.0設定済み
+   ⚠️ 消しゴムプレビュー表示が赤半透明（color: '#ff0000', opacity: 0.3）
+   📌 完全黒（#000000）+ opacity:1.0で統一すべき
+
+4. msdf-pipeline-manager.js
+   ✅ 消しゴム対応済み（mode === 'eraser'時のcolorData: [0,0,0,0]）
+   ✅ settings.opacity反映済み
+   📌 追加改修不要
+
+5. drawing-engine.js
+   ✅ Master Loop統合完了（rAF発行禁止）
+   ✅ pendingPointsキューイング方式採用
+   📌 追加改修不要
+
+================================================================================
+■ 競合フロー分析
+================================================================================
+
+【現行フロー】
+PointerEvent
+ → drawing-engine (Local座標変換)
+ → stroke-recorder.addPoint()
+   ├─→ 独自補間（線形/Catmull-Rom） ❌二重実装
+   └─→ points.push()
+ → brush-core.updateStroke()
+   └─→ gpuStrokeProcessor.appendPointToStream() ⚠️未使用
+ → brush-core.renderPreview()
+   └─→ gpuStrokeProcessor.createPolygonVertexBuffer()
+       └─→ window.PerfectFreehand() ✅正常
+           └─→ Earcut三角形分割 ✅正常
+ → msdf-pipeline-manager.generateMSDF()
+
+【問題点】
+❌ stroke-recorderの補間処理がPerfectFreehandと重複
+❌ gpuStrokeProcessor.appendPointToStream()がフロー上使われていない
+❌ 消しゴムプレビューが赤半透明表示（期待：黒完全不透明）
+
+================================================================================
+■ 改修方針（GPT5アドバイス準拠）
+================================================================================
+
+【原則】
+✓ PerfectFreehandのアウトライン生成を唯一のポリゴン源とする
+✓ stroke-recorderは点列記録のみ（座標変換・補間禁止）
+✓ 消しゴム＝完全不透明黒（#000000, opacity:1.0）+ blendMode:'erase'
+✓ フォールバック処理の完全削除（PerfectFreehand必須化）
+✓ appendPointToStream()は削除予定（使用箇所なし）
+
+【統一フロー】
+PointerEvent
+ → drawing-engine.worldToLocal()
+ → stroke-recorder.addPoint() [補間なし、点列のみ]
+ → PerfectFreehand(points, options) [config.js設定]
+ → EarcutTriangulator.triangulate(outline)
+ → gpuStrokeProcessor.uploadToGPU()
+ → msdf-pipeline-manager.generateMSDF()
+ → webgpu-drawing-layer.composite()
+ → PixiUI更新
+
+================================================================================
+■ ファイル別改修指示
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A. stroke-recorder.js - 補間処理完全削除
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 削除対象
+・interpolationThreshold
+・maxInterpolationPoints
+・useSplineInterpolation
+・_addLinearInterpolation()
+・_addSplineInterpolation()
+・_catmullRom()
+
+🔧 変更後のaddPoint()
+```javascript
+addPoint(localX, localY, pressure = 0.5, tiltX = 0, tiltY = 0) {
+  if (!this.isRecording) return;
+  
+  const now = performance.now();
+  const timeDelta = now - this.lastPointTime;
+  
+  const point = {
+    x: localX,
+    y: localY,
+    pressure: Math.max(0.01, Math.min(1.0, pressure)),
+    tiltX: tiltX,
+    tiltY: tiltY,
+    timestamp: now,
+    timeDelta: timeDelta,
+    edgeId: this.points.length,
+    channelId: this.points.length % 3
+  };
+  
+  this.points.push(point);
+  this.lastPointTime = now;
+  this.totalPoints++;
+}
+```
+
+📌 理由
+・PerfectFreehandが補間・スムージング・streamlineを一括処理
+・config.js設定（thinning:0, smoothing:0, streamline:0）で挙動制御
+・二重補間による座標ズレを完全排除
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B. gpu-stroke-processor.js - PerfectFreehand専用化
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 削除対象
+・appendPointToStream() [未使用]
+・flushStream() [未使用]
+・finalizeStroke() [未使用]
+・resetStream() [未使用]
+・getVertexBuffer() [未使用]
+・getVertexCount() [未使用]
+・stagingBuffer/streamLen/vertexBuffer等のstreaming変数
+
+🔧 必須確認
+・createPolygonVertexBuffer()内でPerfectFreehandフォールバック処理削除
+・window.PerfectFreehand未定義時はエラースロー（必須化）
+
+🔧 変更後のcreatePolygonVertexBuffer()
+```javascript
+createPolygonVertexBuffer(points, baseSize = 10) {
+  if (!window.PerfectFreehand) {
+    throw new Error('[GPUStrokeProcessor] PerfectFreehand not available');
+  }
+  if (!window.EarcutTriangulator) {
+    throw new Error('[GPUStrokeProcessor] EarcutTriangulator not available');
+  }
+  
+  // points正規化（既存処理維持）
+  let processedPoints = /* ... */;
+  
+  // Bounds計算
+  const bounds = this._calculateBoundsFromPoints(processedPoints, baseSize);
+  const offsetX = bounds.minX;
+  const offsetY = bounds.minY;
+  
+  // PerfectFreehand実行
+  const strokePoints = processedPoints.map(p => [p.x, p.y, p.pressure]);
+  const pfOptions = window.config?.perfectFreehand || {
+    size: baseSize,
+    thinning: 0,
+    smoothing: 0,
+    streamline: 0,
+    simulatePressure: false,
+    last: true
+  };
+  
+  const outlinePoints = window.PerfectFreehand(strokePoints, pfOptions);
+  
+  // Earcut三角形分割
+  const polygon = outlinePoints.map(p => [p[0] - offsetX, p[1] - offsetY]);
+  const triangles = window.EarcutTriangulator.triangulate(polygon);
+  
+  // GPU Buffer生成
+  const vertexCount = triangles.length;
+  const buffer = new Float32Array(vertexCount * 7);
+  
+  for (let i = 0; i < triangles.length; i++) {
+    const tri = triangles[i];
+    const bufferIdx = i * 7;
+    buffer[bufferIdx + 0] = tri[0];
+    buffer[bufferIdx + 1] = tri[1];
+    buffer[bufferIdx + 2] = tri[0];
+    buffer[bufferIdx + 3] = tri[1];
+    buffer[bufferIdx + 4] = tri[0];
+    buffer[bufferIdx + 5] = tri[1];
+    buffer[bufferIdx + 6] = 0.0;
+  }
+  
+  return { buffer, vertexCount, bounds };
+}
+```
+
+📌 理由
+・streaming処理がフロー上使われていない（無駄な実装）
+・PerfectFreehand必須化で動作保証を明確化
+・フォールバック削除でコード重複を完全排除
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C. brush-core.js - 消しゴムプレビュー修正
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 変更対象: _updatePreview()
+
+🔧 変更前
+```javascript
+const previewSettings = {
+  mode: this.currentSettings.mode,
+  color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
+  opacity: this.currentSettings.mode === 'eraser' ? 0.3 : this.currentSettings.opacity * 0.7,
+  size: this.currentSettings.size
+};
+```
+
+🔧 変更後
+```javascript
+const isEraser = this.currentSettings.mode === 'eraser';
+const previewSettings = {
+  mode: this.currentSettings.mode,
+  color: isEraser ? '#000000' : this.currentSettings.color,
+  opacity: isEraser ? 0.5 : this.currentSettings.opacity * 0.7,
+  size: this.currentSettings.size
+};
+```
+
+📌 理由
+・赤半透明プレビューはユーザー混乱の原因
+・黒半透明（opacity:0.5）でプレビュー、確定時は完全不透明
+・_finalizeMSDFStroke()と挙動統一
+
+🔧 変更対象: _finalizeMSDFStroke()
+・既に正しい実装（isEraser時: color:'#000000', opacity:1.0）
+・追加改修不要
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D. config.js - PerfectFreehand設定確認
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 既存設定確認
+```javascript
+perfectFreehand: {
+  thinning: 0,
+  smoothing: 0,
+  streamline: 0,
+  simulatePressure: false,
+  last: true
+}
+```
+
+📌 変更不要
+・リニア化済み（補間最小化）
+・筆圧シミュレート無効
+・last:true（終点処理有効）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+E. 削除候補ファイル（legacy化）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❌ 削除不要（既に非使用）
+・stroke-renderer.js - 既に空stub化済み（Phase 3クリーンアップ版）
+・webgpu-mask-layer.js - 消しゴムロジックlegacy化済み（Phase 6）
+
+📌 保留理由
+・stroke-renderer.jsは将来的GPU統合用プレースホルダ
+・mask-layer.jsは選択範囲マスク等に転用可能性
+
+================================================================================
+■ イベントフロー確認（EventBus）
+================================================================================
+
+【現行イベント】
+🔀 brush:size-changed → brush-core.currentSettings.size更新
+🔀 brush:opacity-changed → brush-core.currentSettings.opacity更新
+🔀 brush:color-changed → brush-core.currentSettings.color更新
+🔀 tool:changed → brush-core.setMode()
+🔀 layer:path-added → サムネイル更新トリガー
+🔀 layer:transform-updated → タイムライン更新
+🔀 layer:panel-update-requested → レイヤーパネル更新
+
+【追加不要】
+・PerfectFreehand統合でイベント追加は不要
+・既存フローで完結
+
+================================================================================
+■ テスト計画
+================================================================================
+
+【Smoke Test 1 - 基本描画】
+1. ペンモードで描画
+2. 線が即時表示されること
+3. コンソールエラーなし
+4. DevTools確認: window.PerfectFreehand実行ログ
+
+【Smoke Test 2 - 消しゴム】
+1. 描画後に消しゴムモードへ切替
+2. 描画領域を消去
+3. 下地レイヤーが透けること
+4. コンソール確認: blendMode:'erase'設定ログ
+
+【Smoke Test 3 - プレビュー表示】
+1. ペンモード描画中のプレビュー確認（半透明）
+2. 消しゴムモード描画中のプレビュー確認（黒半透明、opacity:0.5）
+3. 確定後のスプライトblendMode確認
+
+【Performance Test - 連続描画】
+1. 連続100ストローク高速描画
+2. 描画失敗（線抜け）なし
+3. FPS低下確認（60fps維持目標）
+
+【Regression Test - 既存機能】
+1. レイヤー追加/削除
+2. Undo/Redo
+3. サムネイル生成
+4. タイムライン更新
+
+================================================================================
+■ コンソール確認項目
+================================================================================
+
+【起動時確認】
+✅ stroke-recorder.js Phase C-0 loaded
+   ✓ 補間処理完全削除
+   ✓ 点列記録のみに特化
+✅ gpu-stroke-processor.js Phase C-0 loaded
+   🔥 PerfectFreehand: 必須化
+   ❌ Fallback: 完全削除
+✅ brush-core.js Phase C-0 loaded
+   🔥 消しゴムプレビュー: 黒半透明統一
+
+【描画時確認】
+✅ [GPUStrokeProcessor] PerfectFreehand: XX points → YY triangles
+✅ [MSDFPipeline] generateMSDF: mode=pen, color=#800000, opacity=1.0
+✅ [MSDFPipeline] generateMSDF: mode=eraser, color=#000000, opacity=1.0
+
+【エラー監視】
+❌ [GPUStrokeProcessor] PerfectFreehand not available
+❌ [GPUStrokeProcessor] EarcutTriangulator not available
+❌ Device Lost / Device Hung
+
+================================================================================
+■ チェックリスト
+================================================================================
+
+【stroke-recorder.js】
+□ interpolationThreshold削除確認
+□ useSplineInterpolation削除確認
+□ _addLinearInterpolation()削除確認
+□ _addSplineInterpolation()削除確認
+□ _catmullRom()削除確認
+□ addPoint()が点列push()のみ実装
+
+【gpu-stroke-processor.js】
+□ appendPointToStream()削除確認
+□ streaming関連変数削除確認
+□ createPolygonVertexBuffer()でPerfectFreehandエラースロー確認
+□ フォールバック処理削除確認
+□ config.js perfectFreehand設定反映確認
+
+【brush-core.js】
+□ _updatePreview()消しゴム色変更確認（#000000）
+□ _updatePreview()消しゴムopacity変更確認（0.5）
+□ _finalizeMSDFStroke()消しゴム設定確認（既存実装）
+□ blendMode:'erase'設定確認
+
+【config.js】
+□ perfectFreehand設定存在確認
+□ thinning:0, smoothing:0, streamline:0確認
+
+【動作確認】
+□ ペン描画正常
+□ 消しゴム正常（透明化）
+□ プレビュー表示正常
+□ Undo/Redo正常
+□ FPS維持確認
+
+================================================================================
+■ 作業優先度
+================================================================================
+
+【短期（即時）】
+1. stroke-recorder.js補間削除
+2. gpu-stroke-processor.js streaming削除
+3. brush-core.js消しゴムプレビュー修正
+
+【中期（安定化）】
+4. PerfectFreehand必須化エラーハンドリング
+5. パフォーマンスロギング追加
+6. テスト全項目実施
+
+【長期（品質向上）】
+7. legacy化ファイルの段階削除検討
+8. ユニットテスト自動化
+9. ドキュメント整備
+
+================================================================================
+■ 既知の制約・注意事項
+================================================================================
+
+⚠️ PerfectFreehand必須
+・window.PerfectFreehandライブラリが必須
+・libs/perfect-freehand-1.2.0.min.js読み込み確認
+
+⚠️ Earcut必須
+・window.EarcutTriangulatorが必須
+・earcut-triangulator.js読み込み確認
+
+⚠️ WebGPU必須
+・navigator.gpu必須（Chrome最新）
+・file://プロトコル動作確認
+
+⚠️ PixiJS v8
+・blendMode文字列指定（'erase', 'normal'）
+・PIXI.BLEND_MODES廃止対応済み
+
+⚠️ DPR=1固定
+・Retina非対応（意図的）
+・出力解像度統一のため
+
+================================================================================
+■ 改修完了判定基準
+================================================================================
+
+✅ 全チェックリスト完了
+✅ 全Smoke Test合格
+✅ Performance Test合格（60fps維持）
+✅ Regression Test合格（既存機能正常）
+✅ コンソールエラーゼロ
+✅ 二重実装完全排除確認
+✅ ガイドライン完全準拠確認
+
+================================================================================
+END OF DOCUMENT
+================================================================================
