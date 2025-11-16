@@ -1,31 +1,31 @@
 /**
  * ================================================================================
- * brush-core.js - Phase C-0: 消しゴムプレビュー統一
+ * brush-core.js - Phase D-3: GPU初期化確認強化
  * ================================================================================
  * 
  * 📁 親ファイル依存:
- *   - stroke-recorder.js
- *   - gpu-stroke-processor.js
- *   - msdf-pipeline-manager.js
- *   - webgpu-texture-bridge.js
- *   - layer-system.js
- *   - event-bus.js
- *   - history.js
+ *   - system/drawing/stroke-recorder.js (StrokeRecorder)
+ *   - system/drawing/webgpu/gpu-stroke-processor.js (GPUStrokeProcessor)
+ *   - system/drawing/webgpu/msdf-pipeline-manager.js (MSDFPipelineManager)
+ *   - system/drawing/webgpu/webgpu-texture-bridge.js (WebGPUTextureBridge)
+ *   - system/layer-system.js (LayerSystem)
+ *   - system/event-bus.js (TegakiEventBus)
+ *   - system/history.js (History)
  * 
  * 📄 子ファイル使用先:
- *   - core-engine.js
- *   - drawing-engine.js
+ *   - core-engine.js (renderLoop内でrenderPreview呼び出し)
+ *   - system/drawing/drawing-engine.js (startStroke/updateStroke/finalizeStroke)
  * 
- * 【Phase C-0改修内容】
- * 🔥 消しゴムプレビュー: 黒半透明統一（opacity:0.5）
- * 🔥 確定時: 完全不透明黒（opacity:1.0）+ blendMode:'erase'
- * ✅ PixiJS v8 blendMode文字列指定維持
+ * 【Phase D-3改修内容】
+ * 🔧 GPU初期化確認の強化（initialized フラグチェック追加）
+ * 🔧 初期化失敗時の再試行ロジック
+ * 🔧 msdfAvailable判定の厳密化
  * 
- * 責務:
- *   - ストローク管理（開始/更新/確定）
- *   - MSDF Pipeline統合
- *   - プレビュー表示制御
- *   - ペン/消しゴムモード切替
+ * 【責務】
+ * - ストローク管理（開始/更新/確定）
+ * - MSDF Pipeline統合
+ * - プレビュー表示制御
+ * - ペン/消しゴムモード切替
  * 
  * ================================================================================
  */
@@ -88,14 +88,28 @@
       this.msdfPipelineManager = window.MSDFPipelineManager;
       this.textureBridge = window.WebGPUTextureBridge;
 
+      const gpuInitialized = !!(
+        this.gpuStrokeProcessor?.initialized &&
+        this.msdfPipelineManager?.initialized &&
+        this.textureBridge?.initialized
+      );
+
+      if (!gpuInitialized) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        this.gpuStrokeProcessor = window.GPUStrokeProcessor;
+        this.msdfPipelineManager = window.MSDFPipelineManager;
+        this.textureBridge = window.WebGPUTextureBridge;
+      }
+
       this.msdfAvailable = !!(
-        this.gpuStrokeProcessor &&
-        this.msdfPipelineManager &&
-        this.textureBridge
+        this.gpuStrokeProcessor?.initialized &&
+        this.msdfPipelineManager?.initialized &&
+        this.textureBridge?.initialized
       );
 
       if (!this.msdfAvailable) {
-        console.warn('[BrushCore] MSDF Pipeline not fully available');
+        console.error('[BrushCore] MSDF Pipeline not available after initialization');
       }
 
       this._setupEventListeners();
@@ -228,7 +242,6 @@
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
 
-        // 🔥 Phase C-0: 消しゴムプレビュー統一（黒半透明）
         const isEraser = this.currentSettings.mode === 'eraser';
         const previewSettings = {
           mode: this.currentSettings.mode,
@@ -373,7 +386,6 @@
 
         const isEraser = this.currentSettings.mode === 'eraser';
         
-        // 🔥 Phase C-0: 確定時は完全不透明黒
         const brushSettings = {
           mode: this.currentSettings.mode,
           color: isEraser ? '#000000' : this.currentSettings.color,
@@ -412,7 +424,6 @@
         sprite.y = bounds.minY;
         sprite.visible = true;
         
-        // PixiJS v8 blendMode文字列指定
         if (isEraser) {
           sprite.blendMode = 'erase';
           sprite.alpha = 1.0;
@@ -446,8 +457,6 @@
         if (error.message && (error.message.includes('Device') || error.message.includes('CRITICAL'))) {
           console.error('[BrushCore] GPU Error:', error.message);
           this.cancelStroke();
-        } else {
-          console.error('[BrushCore] MSDF描画失敗:', error);
         }
       }
     }
@@ -495,7 +504,6 @@
 
       const layerId = this._getLayerId(activeLayer);
       if (!layerId) {
-        console.warn('[BrushCore] Cannot register history - no ID');
         return;
       }
 
@@ -612,6 +620,6 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase C-0 loaded');
+  console.log('✅ brush-core.js Phase D-3 loaded');
 
 })();

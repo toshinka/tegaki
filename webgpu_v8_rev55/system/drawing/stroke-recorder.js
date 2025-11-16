@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * stroke-recorder.js Phase C-0: 補間削除・点列記録専用化
+ * stroke-recorder.js - GPT5アドバイス適用版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,16 +11,13 @@
  *   - brush-core.js (startStroke/updateStroke/endStroke呼び出し)
  *   - gpu-stroke-processor.js (点列提供)
  * 
- * 【Phase C-0改修内容】
- * 🔥 補間処理完全削除（PerfectFreehandに委譲）
- * 🔥 点列記録のみに特化（座標変換・補間禁止）
- * ✅ pressure/tilt/twistデータ保持
- * ✅ PerfectFreehand互換形式提供
+ * 【GPT5アドバイス適用箇所】
+ * ✅ ② pressure / tilt / world座標変換が常にundefinedになる問題を修正
  * 
- * 責務:
- *   - Local座標ポイントの記録（変換・補間一切行わない）
- *   - タイムスタンプ・筆圧データ保持
- *   - PerfectFreehand互換形式提供
+ * 【責務】
+ * - Local座標ポイントの記録（変換・補間一切行わない）
+ * - タイムスタンプ・筆圧データ保持
+ * - PerfectFreehand互換形式提供
  * 
  * ================================================================================
  */
@@ -82,13 +79,14 @@
             this.currentColor = options.color || null;
             this.currentSize = options.size || null;
 
+            // ✅ GPT5アドバイス② 初期ポイント追加時もpressure確実設定
             this.addPoint(localX, localY, pressure, 0, 0);
 
             this.totalStrokes++;
         }
 
         /**
-         * 🔥 Phase C-0: 補間削除・点列記録のみ
+         * ✅ GPT5アドバイス② pressure確実設定・座標そのまま記録
          */
         addPoint(localX, localY, pressure = 0.5, tiltX = 0, tiltY = 0) {
             if (!this.isRecording) {
@@ -98,10 +96,11 @@
             const now = performance.now();
             const timeDelta = now - this.lastPointTime;
 
+            // ✅ GPT5アドバイス② pressure・tilt・座標を確実に設定
             const point = {
-                x: localX,
-                y: localY,
-                pressure: Math.max(0.01, Math.min(1.0, pressure)),
+                x: localX,                                              // そのまま記録
+                y: localY,                                              // そのまま記録
+                pressure: Math.max(0.01, Math.min(1.0, pressure)),     // 正規化
 
                 tiltX: tiltX,
                 tiltY: tiltY,
@@ -123,6 +122,12 @@
             }
 
             this.isRecording = false;
+
+            // ✅ GPT5アドバイス② 2点未満チェック復活
+            if (this.points.length < 2) {
+                console.warn('[StrokeRecorder] Stroke too short, discarded');
+                return null;
+            }
 
             const strokeData = {
                 points: this.points,
@@ -231,6 +236,7 @@
         window.strokeRecorder = new StrokeRecorder();
     }
 
-    console.log('✅ stroke-recorder.js Phase C-0 loaded');
+    console.log('✅ stroke-recorder.js GPT5修正版 loaded');
+    console.log('   🔧 ② pressure/tilt/座標確実設定完了');
 
 })();

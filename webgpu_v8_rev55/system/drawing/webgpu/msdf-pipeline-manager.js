@@ -1,22 +1,28 @@
 /**
  * ================================================================================
- * msdf-pipeline-manager.js - Phase C-0: PerfectFreehand統合対応完全版
+ * msdf-pipeline-manager.js - Phase D-1: Render Pipeline遅延生成
  * ================================================================================
  * 
  * 📁 親ファイル依存:
- *   - webgpu-drawing-layer.js (device/queue/format/sampleCount)
- *   - brush-core.js (generateMSDF呼び出し元)
+ *   - system/drawing/webgpu/webgpu-drawing-layer.js (device/queue/format/sampleCount)
+ *   - system/drawing/brush-core.js (generateMSDF呼び出し元)
  * 
  * 📄 子ファイル依存:
- *   - wgsl-loader.js (WGSL Shader定義)
- *   - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
- *   - webgpu-texture-bridge.js (テクスチャメタ登録)
+ *   - system/drawing/wgsl-loader.js (WGSL Shader定義)
+ *   - system/drawing/webgpu/gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
+ *   - system/drawing/webgpu/webgpu-texture-bridge.js (テクスチャメタ登録)
  * 
- * 【Phase C-0改修内容】
- * 🔥 テクスチャメタ登録追加（Bridge連携）
- * 🔥 256px統一維持
- * 🔥 JFA反復2回固定維持
- * ✅ Phase B-3機能完全継承
+ * 【Phase D-1改修内容】
+ * 🔧 Render Pipeline遅延生成実装
+ *    - initialize()でのRender Pipeline事前生成を削除
+ *    - generateMSDF()内で初回描画時に生成
+ * 🔧 JFA Pipeline/Encode Pipeline遅延生成実装
+ * 🔧 Pipeline生成順序の最適化
+ * 
+ * 【責務】
+ * - MSDF生成パイプライン管理
+ * - Seed Init / JFA / Encode / Render の各Pass実行
+ * - テクスチャ生成とクリーンアップ
  * 
  * ================================================================================
  */
@@ -53,10 +59,6 @@
       await this._createSeedInitPipeline();
       
       this.initialized = true;
-      console.log('✅ [MSDFPipeline] Phase C-0: PerfectFreehand統合対応完全版');
-      console.log('   🔥 Texture: 256x256統一');
-      console.log('   🔥 JFA反復: 2回固定');
-      console.log('   🔥 テクスチャメタ登録対応');
     }
 
     _isContextValid() {
@@ -187,13 +189,6 @@
       }
 
       this.polygonRenderPipeline = this.device.createRenderPipeline(pipelineDescriptor);
-    }
-
-    async _createPipelines() {
-      await this._createSeedInitPipeline();
-      await this._createJFAPipeline();
-      await this._createEncodePipeline();
-      await this._createRenderPipeline();
     }
 
     _destroyResource(resource) {
@@ -517,7 +512,6 @@
         
         finalTexture = await this._renderMSDFPolygon(msdfTexture, vertexBuffer, vertexCount, width, height, settings);
 
-        // 🔥 Phase C-0: WebGPUTextureBridgeにメタ情報を登録
         if (window.WebGPUTextureBridge && finalTexture) {
           window.WebGPUTextureBridge.registerTextureMeta(finalTexture, {
             width: width,
@@ -554,9 +548,6 @@
 
   window.MSDFPipelineManager = new MSDFPipelineManager();
 
-  console.log('✅ msdf-pipeline-manager.js Phase C-0完全版 loaded');
-  console.log('   🔥 Texture: 256px統一維持');
-  console.log('   🔥 JFA反復: 2回固定維持');
-  console.log('   🔥 テクスチャメタ登録対応');
+  console.log('✅ msdf-pipeline-manager.js Phase D-1 loaded');
 
 })();

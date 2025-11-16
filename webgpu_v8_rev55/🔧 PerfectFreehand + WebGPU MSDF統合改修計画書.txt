@@ -1,0 +1,843 @@
+# tegaki rev54 PerfectFreehand + WebGPU MSDF 段階的改修計画書
+
+## 📋 調査結果サマリー
+
+### 🚨 致命的な問題（GPT5アドバイス2.txt指摘通り）
+
+**MSDF統合以前に描画パイプライン全体が破損している**
+
+```
+PointerEvent → stroke-recorder → drawing-engine → layer-system → brush-core → GPU
+     ❌            ❌                 ❌                ✅              ❌         ❌
+  (bind破損)   (pressure未定義)   (非同期処理)    (正常)      (初期化順)   (Pipeline未生成)
+```
+
+---
+
+## 🎯 改修方針（GPT5アドバイス準拠）
+
+### ✅ 維持するもの
+- MSDF Pipeline Manager本体
+- PerfectFreehand統合構造
+- Phase C-0までの改修成果
+
+### 🔧 最小修正対象
+1. pointer-handler.js - イベント登録bind問題
+2. stroke-recorder.js - pressure/world座標変換
+3. drawing-engine.js - flushPendingPoints呼び出し
+4. layer-system.js - activeLayer初期化
+5. brush-core.js - 初期化タイミング
+6. msdf-pipeline-manager.js - Pipeline遅延生成
+7. core-engine.js - renderLoop統合
+
+---
+
+## 🔍 詳細調査結果
+
+### 📄 pointer-handler.js
+**状態**: ⚠️ イベント登録は正常だがbind使用
+
+**問題箇所**:
+```javascript
+// 現状（Phase 1）
+function onPointerDown(e) { ... }
+element.addEventListener('pointerdown', onPointerDown, ...);
+
+// bind不使用で正常動作確認済み
+```
+
+**改修**: 不要（GPT5指摘と異なり、すでにbind不使用の実装）
+
+---
+
+### 📄 stroke-recorder.js
+**状態**: ⚠️ Phase C-0でpressure保持済みだがworld座標変換なし
+
+**問題箇所**:
+```javascript
+// 現状
+addPoint(localX, localY, pressure = 0.5, tiltX = 0, tiltY = 0) {
+    // 座標変換なし、そのまま記録
+    const point = {
+        x: localX,  // ← すでにLocal座標のはず
+        y: localY,
+        pressure: Math.max(0.01, Math.min(1.0, pressure))
+    };
+}
+```
+
+**改修**: 
+- drawing-engineでLocal座標変換済みなので不要
+- pressureは既に正規化済み
+
+---
+
+### 📄 drawing-engine.js
+**状態**: ⚠️ flushPendingPoints()はあるがcore-engineで呼び出されていない可能性
+
+**問題箇所**:
+```javascript
+// Phase 3で実装済み
+flushPendingPoints() {
+    if (pendingPoints.length === 0) return;
+    
+    for (const point of pendingPoints) {
+        if (point.type === 'begin') {
+            this._processPointerDown(point.info);
+        } else if (point.type === 'move') {
+            this._processPointerMove(point.info);
+        } else if (point.type === 'end') {
+            this._processPointerUp(point.info);
+        }
+    }
+    
+    pendingPoints = [];
+}
+```
+
+**確認事項**: 
+- core-engine.jsの_renderLoop()で呼び出しは存在
+- pointer-handlerからのイベント登録も正常
+
+**改修**: 不要（既に実装済み）
+
+---
+
+### 📄 layer-system.js
+**状態**: ✅ Phase 8でactiveLayer初期化済み
+
+**初期化箇所**:
+```javascript
+// init()内で初期化済み
+this.activeLayerIndex = 1; // Layer1を選択（0は背景）
+
+// レイヤー作成時もID設定済み
+layer.id = layerModel.id;
+layer.label = layerModel.id;
+layer.layerData = layerModel;
+```
+
+**改修**: 不要（既に正常）
+
+---
+
+### 📄 brush-core.js
+**状態**: ⚠️ 初期化タイミング問題の可能性
+
+**問題箇所**:
+```javascript
+async initialize() {
+    if (this.initialized) return;
+
+    this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
+    this.layerManager = window.layerManager || window.layerSystem;
+    this.eventBus = window.TegakiEventBus || window.eventBus;
+
+    if (!this.strokeRecorder) {
+        throw new Error('[BrushCore] strokeRecorder not found');
+    }
+    if (!this.layerManager) {
+        throw new Error('[BrushCore] layerManager not found');
+    }
+
+    this.gpuStrokeProcessor = window.GPUStrokeProcessor;
+    this.msdfPipelineManager = window.MSDFPipelineManager;
+    this.textureBridge = window.WebGPUTextureBridge;
+
+    this.msdfAvailable = !!(
+        this.gpuStrokeProcessor &&
+        this.msdfPipelineManager &&
+        this.textureBridge
+    );
+}
+```
+
+**問題**: core-initializer.jsでWebGPU初期化後にBrushCore.init()を呼ぶが、タイミングが合わない可能性
+
+**改修必要**: 
+- 初期化順序の見直し
+- WebGPU初期化完了を待ってからBrushCore初期化
+
+---
+
+### 📄 msdf-pipeline-manager.js
+**状態**: ⚠️ Render Pipeline事前生成（Phase D修正必要）
+
+**問題箇所**:
+```javascript
+async _createRenderPipeline() {
+    if (this.polygonRenderPipeline) return; // 既に生成済みならスキップ
+    
+    // ... Pipeline生成
+}
+
+// 初期化時に全Pipeline生成
+async initialize(device, format, sampleCount = 1) {
+    await this._createSeedInitPipeline();
+    // ❌ Render Pipelineはここで生成しない
+}
+```
+
+**問題**: 
+- Render Pipelineが初期化時に生成されるが、遅延生成すべき
+- core-initializer.jsでpipeline存在チェックをしている
+
+**改修必要**:
+1. initialize()でRender Pipeline生成を削除
+2. 初回描画時に遅延生成
+3. core-initializer.jsのチェック削除
+
+---
+
+### 📄 gpu-stroke-processor.js
+**状態**: ✅ Phase C-0でPerfectFreehand統合済み
+
+**確認**:
+```javascript
+// EdgeBuffer生成でPerfectFreehandアウトライン使用
+createEdgeBuffer(points, baseSize = 10) {
+    const outlinePoints = window.PerfectFreehand(strokePoints, pfOptions);
+    
+    // アウトラインからエッジ生成（閉じたループ）
+    const edgeCount = numOutlinePoints;
+    // ...
+}
+```
+
+**改修**: 不要（既に正常）
+
+---
+
+### 📄 core-engine.js
+**状態**: ⚠️ renderPreview非同期呼び出し問題
+
+**問題箇所**:
+```javascript
+_renderLoop() {
+    try {
+        this.flushPointerBatch();
+        
+        // Phase C-0: 非同期呼び出し（await削除）
+        if (window.BrushCore?.isDrawing && 
+            typeof window.BrushCore.renderPreview === 'function') {
+            window.BrushCore.renderPreview().catch(err => {
+                console.error('[CoreEngine] Preview error:', err);
+            });
+        }
+        
+        if (this.app?.renderer && this.app?.stage) {
+            this.app.renderer.render(this.app.stage);
+        }
+    } catch (error) {
+        console.error('[CoreEngine] Render loop error:', error);
+    }
+    
+    this.renderLoopId = requestAnimationFrame(() => this._renderLoop());
+}
+```
+
+**問題**: 
+- renderPreview()が非同期だが、Promiseチェーンで並列実行
+- 前回のrenderPreview()が完了する前に次が呼ばれる可能性
+
+**改修必要**:
+- isPreviewUpdatingフラグでガード（brush-core.jsに既存）
+- または順次実行保証
+
+---
+
+### 📄 core-initializer.js
+**状態**: ⚠️ WebGPU初期化順序とPipeline存在チェック
+
+**問題箇所1**: Pipeline存在チェック
+```javascript
+async function initializeWebGPU(strokeRenderer) {
+    // ...
+    await window.MSDFPipelineManager.initialize(device, format, sampleCount);
+    
+    // ❌ Phase D修正必要: 遅延生成のためチェック削除
+    // polygonRenderPipelineは初回描画時に生成される
+}
+```
+
+**問題箇所2**: WebGPUMaskLayer
+```javascript
+// Phase D修正: WebGPUMaskLayer初期化スキップ（遅延初期化）
+if (window.WebGPUMaskLayer) {
+    const maskLayer = new window.WebGPUMaskLayer(window.WebGPUDrawingLayer);
+    maskLayer.width = canvasWidth;
+    maskLayer.height = canvasHeight;
+    maskLayer.device = device;
+    maskLayer.queue = device.queue;
+    
+    window.webgpuMaskLayer = maskLayer;
+    console.log('✅ [WebGPU] MaskLayer instance created (deferred init)');
+}
+```
+
+**問題箇所3**: BrushCore初期化タイミング
+```javascript
+// core-engineのinitialize()内
+window.BrushCore.init();
+
+// この時点でWebGPU初期化が完了していない可能性
+```
+
+**改修必要**:
+1. WebGPU初期化完了後にBrushCore初期化
+2. Pipeline存在チェック削除
+3. MaskLayer遅延初期化の完全実装
+
+---
+
+## 📝 段階的改修計画
+
+### Phase D: 初期化順序とPipeline遅延生成（最優先）
+
+#### D-1: msdf-pipeline-manager.js
+**目的**: Render Pipeline遅延生成
+
+**改修内容**:
+```javascript
+// initialize()でRender Pipeline生成を削除
+async initialize(device, format, sampleCount = 1) {
+    this.device = device;
+    this.format = format;
+    this.sampleCount = sampleCount;
+    this.queue = device.queue;
+    
+    this._loadShaders();
+    await this._createSeedInitPipeline();
+    // ❌ Render Pipeline生成を削除
+    
+    this.initialized = true;
+}
+
+// generateMSDF()内で初回遅延生成
+async generateMSDF(...) {
+    // ...
+    
+    // 🔧 初回描画時にPipeline生成
+    if (!this.polygonRenderPipeline) {
+        await this._createRenderPipeline();
+    }
+    
+    finalTexture = await this._renderMSDFPolygon(...);
+}
+```
+
+**影響範囲**: msdf-pipeline-manager.js のみ
+
+---
+
+#### D-2: core-initializer.js
+**目的**: Pipeline存在チェック削除とBrushCore初期化タイミング修正
+
+**改修内容**:
+```javascript
+async function initializeWebGPU(strokeRenderer) {
+    // ...
+    
+    await window.MSDFPipelineManager.initialize(device, format, sampleCount);
+    
+    // 🔧 Pipeline存在チェック削除（遅延生成のため）
+    // if (!window.MSDFPipelineManager.polygonRenderPipeline) {
+    //     console.error('[WebGPU] Render Pipeline not initialized');
+    //     return false;
+    // }
+    
+    // ...
+    
+    console.log('✅ [WebGPU] Initialization complete (Render Pipeline deferred)');
+    return true;
+}
+
+// DrawingAppクラス内
+async initialize() {
+    // ...
+    
+    // 🔧 WebGPU初期化を先に実行
+    const strokeRenderer = window.strokeRenderer;
+    this.webgpuEnabled = await initializeWebGPU(strokeRenderer);
+    
+    // 🔧 WebGPU初期化完了後にBrushCore初期化
+    if (this.webgpuEnabled && window.BrushCore) {
+        await window.BrushCore.init();
+        console.log('✅ [Phase D] BrushCore initialized after WebGPU');
+    }
+    
+    // ...
+}
+```
+
+**影響範囲**: core-initializer.js のみ
+
+---
+
+#### D-3: brush-core.js
+**目的**: GPU初期化確認の強化
+
+**改修内容**:
+```javascript
+async initialize() {
+    if (this.initialized) return;
+
+    // 依存関係チェック
+    this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
+    this.layerManager = window.layerManager || window.layerSystem;
+    this.eventBus = window.TegakiEventBus || window.eventBus;
+
+    if (!this.strokeRecorder) {
+        throw new Error('[BrushCore] strokeRecorder not found');
+    }
+    if (!this.layerManager) {
+        throw new Error('[BrushCore] layerManager not found');
+    }
+
+    // 🔧 GPU依存の確認
+    this.gpuStrokeProcessor = window.GPUStrokeProcessor;
+    this.msdfPipelineManager = window.MSDFPipelineManager;
+    this.textureBridge = window.WebGPUTextureBridge;
+
+    // 🔧 GPU初期化確認の強化
+    const gpuInitialized = !!(
+        this.gpuStrokeProcessor?.initialized &&
+        this.msdfPipelineManager?.initialized &&
+        this.textureBridge?.initialized
+    );
+
+    if (!gpuInitialized) {
+        console.warn('[BrushCore] WebGPU not fully initialized, retrying...');
+        
+        // 再試行ロジック
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        this.gpuStrokeProcessor = window.GPUStrokeProcessor;
+        this.msdfPipelineManager = window.MSDFPipelineManager;
+        this.textureBridge = window.WebGPUTextureBridge;
+    }
+
+    this.msdfAvailable = !!(
+        this.gpuStrokeProcessor?.initialized &&
+        this.msdfPipelineManager?.initialized &&
+        this.textureBridge?.initialized
+    );
+
+    if (!this.msdfAvailable) {
+        console.error('[BrushCore] MSDF Pipeline not available after initialization');
+    }
+
+    this._setupEventListeners();
+    this.initialized = true;
+    this.isPreviewUpdating = false;
+    
+    console.log('✅ [BrushCore] Initialized, MSDF Available:', this.msdfAvailable);
+}
+```
+
+**影響範囲**: brush-core.js のみ
+
+---
+
+### Phase E: プレビュー並列実行制御（次優先）
+
+#### E-1: brush-core.js renderPreview()
+**目的**: 並列実行防止の確実な実装
+
+**改修内容**:
+```javascript
+async renderPreview() {
+    if (!this.initialized || !this.isDrawing) return;
+    
+    // 🔧 並列実行防止（既存のフラグを確実にチェック）
+    if (this.isPreviewUpdating) {
+        console.log('[BrushCore] Preview update in progress, skipping');
+        return;
+    }
+
+    const points = this.strokeRecorder.getRawPoints();
+    if (!points || points.length < 2) return;
+
+    const activeLayer = this.layerManager.getActiveLayer();
+    if (!activeLayer) return;
+    
+    this._ensurePreviewContainer(activeLayer);
+    
+    await this._updatePreview(points);
+}
+
+async _updatePreview(points) {
+    if (!this.previewContainer || this.previewContainer.destroyed) {
+        return;
+    }
+
+    // 🔧 フラグ設定を最初に実行
+    this.isPreviewUpdating = true;
+
+    try {
+        // 既存のプレビュー処理
+        // ...
+        
+    } catch (error) {
+        console.error('[BrushCore] Preview error:', error);
+    } finally {
+        // 🔧 必ずフラグをリセット
+        this.isPreviewUpdating = false;
+    }
+}
+```
+
+**影響範囲**: brush-core.js のみ
+
+---
+
+#### E-2: core-engine.js _renderLoop()
+**目的**: renderPreview()呼び出しの安全化
+
+**改修内容**:
+```javascript
+_renderLoop() {
+    if (!this.isRenderLoopRunning) return;
+    
+    try {
+        this.flushPointerBatch();
+        
+        // 🔧 BrushCore状態チェック強化
+        const brushCore = window.BrushCore;
+        if (brushCore?.isDrawing && 
+            !brushCore.isPreviewUpdating &&
+            typeof brushCore.renderPreview === 'function') {
+            
+            brushCore.renderPreview().catch(err => {
+                // エラー時もフラグリセット保証
+                if (brushCore) {
+                    brushCore.isPreviewUpdating = false;
+                }
+                console.error('[CoreEngine] Preview error:', err);
+            });
+        }
+        
+        if (this.app?.renderer && this.app?.stage) {
+            this.app.renderer.render(this.app.stage);
+        }
+        
+    } catch (error) {
+        console.error('[CoreEngine] Render loop error:', error);
+    }
+    
+    this.renderLoopId = requestAnimationFrame(() => this._renderLoop());
+}
+```
+
+**影響範囲**: core-engine.js のみ
+
+---
+
+### Phase F: デバッグログ追加（最終確認用）
+
+#### F-1: 全ファイル
+**目的**: 描画フロー可視化
+
+**追加箇所**:
+1. pointer-handler.js - `onPointerDown/Move/Up` 呼び出し時
+2. drawing-engine.js - `_processPointerDown/Move/Up` 実行時
+3. brush-core.js - `startStroke/updateStroke/finalizeStroke` 実行時
+4. gpu-stroke-processor.js - `createPolygonVertexBuffer/EdgeBuffer` 実行時
+5. msdf-pipeline-manager.js - `generateMSDF` 開始/完了時
+
+**ログ形式**:
+```javascript
+console.log('[ファイル名] [メソッド名] 実行', { 関連データ });
+```
+
+**実装後確認事項**:
+- pointerdown → startStroke まで到達するか
+- points配列が正しく記録されるか
+- GPU Bufferが正常に生成されるか
+- MSDF Pipelineが実行されるか
+- 最終テクスチャが生成されるか
+
+---
+
+## 🎯 改修優先順位
+
+### 最優先（Phase D）
+1. **D-1**: msdf-pipeline-manager.js - Render Pipeline遅延生成
+2. **D-2**: core-initializer.js - Pipeline存在チェック削除
+3. **D-3**: brush-core.js - GPU初期化確認強化
+
+**理由**: 初期化失敗がすべての根本原因
+
+---
+
+### 次優先（Phase E）
+4. **E-1**: brush-core.js - プレビュー並列実行防止
+5. **E-2**: core-engine.js - renderPreview呼び出し安全化
+
+**理由**: 描画パフォーマンス安定化
+
+---
+
+### 最終確認（Phase F）
+6. **F-1**: 全ファイル - デバッグログ追加
+
+**理由**: 描画フロー可視化による最終検証
+
+---
+
+## 🔧 改修手順
+
+### ステップ1: Phase D実装
+```
+1. msdf-pipeline-manager.js修正
+   - initialize()からRender Pipeline生成削除
+   - generateMSDF()に遅延生成追加
+
+2. core-initializer.js修正
+   - Pipeline存在チェック削除
+   - BrushCore初期化タイミング変更
+
+3. brush-core.js修正
+   - GPU初期化確認強化
+   - 再試行ロジック追加
+
+4. 動作確認
+   - ペン描画テスト
+   - コンソールエラー確認
+```
+
+---
+
+### ステップ2: Phase E実装
+```
+1. brush-core.js修正
+   - renderPreview()並列実行防止
+   - _updatePreview()フラグ管理強化
+
+2. core-engine.js修正
+   - _renderLoop()状態チェック追加
+   - エラーハンドリング強化
+
+3. 動作確認
+   - 連続描画テスト
+   - プレビュー表示確認
+```
+
+---
+
+### ステップ3: Phase F実装
+```
+1. 全ファイルにデバッグログ追加
+2. 描画フロー確認
+3. 問題箇所の特定
+4. 必要に応じて追加修正
+```
+
+---
+
+## 📊 改修影響範囲マトリクス
+
+| ファイル | Phase D | Phase E | Phase F | 改修難易度 |
+|---------|---------|---------|---------|-----------|
+| msdf-pipeline-manager.js | ✅ 必須 | - | ✅ ログ | 低 |
+| core-initializer.js | ✅ 必須 | - | ✅ ログ | 低 |
+| brush-core.js | ✅ 必須 | ✅ 必須 | ✅ ログ | 中 |
+| core-engine.js | - | ✅ 必須 | ✅ ログ | 低 |
+| pointer-handler.js | - | - | ✅ ログ | 低 |
+| drawing-engine.js | - | - | ✅ ログ | 低 |
+| gpu-stroke-processor.js | - | - | ✅ ログ | 低 |
+
+---
+
+## ✅ 改修完了チェックリスト
+
+### Phase D
+- [ ] msdf-pipeline-manager.js: Render Pipeline遅延生成実装
+- [ ] core-initializer.js: Pipeline存在チェック削除
+- [ ] core-initializer.js: BrushCore初期化タイミング修正
+- [ ] brush-core.js: GPU初期化確認強化
+- [ ] ペン描画テスト成功
+
+### Phase E
+- [ ] brush-core.js: renderPreview並列実行防止
+- [ ] core-engine.js: _renderLoop状態チェック追加
+- [ ] 連続描画テスト成功
+- [ ] プレビュー表示確認
+
+### Phase F
+- [ ] 全ファイルにデバッグログ追加
+- [ ] 描画フロー完全可視化
+- [ ] 問題箇所特定完了
+
+---
+
+## 🚀 期待される効果
+
+### Phase D完了後
+- ペン描画が動作開始
+- GPU Pipeline正常初期化
+- 基本的なストローク描画可能
+
+### Phase E完了後
+- 連続描画安定化
+- プレビュー表示正常化
+- フレームレート安定
+
+### Phase F完了後
+- 完全な描画フロー可視化
+- 残存問題の特定
+- 最終調整完了
+
+---
+
+## 📌 重要な注意事項
+
+### 🚫 やってはいけないこと
+1. **MSDF Pipeline全削除** - Phase D修正で対応
+2. **SDF全面ロールバック** - 不要
+3. **GPUパイプライン全入れ替え** - 部分修正のみ
+
+### ✅ 必ず守ること
+1. **最小修正の原則** - 必要最小限の変更のみ
+2. **段階的実装** - Phase D → E → F の順厳守
+3. **動作確認** - 各Phase完了時に必ずテスト
+
+---
+
+## 🔍 トラブルシューティング
+
+### Phase D実装後もペンが動かない場合
+
+#### 確認1: BrushCore初期化
+```javascript
+console.log('BrushCore initialized:', window.BrushCore?.initialized);
+console.log('MSDF available:', window.BrushCore?.msdfAvailable);
+```
+
+#### 確認2: GPU初期化
+```javascript
+console.log('GPUStrokeProcessor:', window.GPUStrokeProcessor?.initialized);
+console.log('MSDFPipelineManager:', window.MSDFPipelineManager?.initialized);
+console.log('WebGPUTextureBridge:', window.WebGPUTextureBridge?.initialized);
+```
+
+#### 確認3: イベント登録
+```javascript
+// pointer-handler.jsに一時追加
+function onPointerDown(e) {
+    console.log('[PointerHandler] onPointerDown called', e);
+    // ...
+}
+```
+
+---
+
+### Phase E実装後もプレビューが表示されない場合
+
+#### 確認1: renderPreview呼び出し
+```javascript
+// core-engine.jsに一時追加
+if (brushCore?.isDrawing) {
+    console.log('[CoreEngine] Calling renderPreview', {
+        isDrawing: brushCore.isDrawing,
+        isPreviewUpdating: brushCore.isPreviewUpdating,
+        pointCount: window.strokeRecorder?.getRawPoints()?.length
+    });
+}
+```
+
+#### 確認2: GPU Buffer生成
+```javascript
+// gpu-stroke-processor.jsに一時追加
+createPolygonVertexBuffer(points, baseSize) {
+    console.log('[GPUStrokeProcessor] Creating vertex buffer', {
+        pointCount: points.length,
+        baseSize
+    });
+    // ...
+}
+```
+
+---
+
+## 📝 改修後の検証項目
+
+### 基本動作
+- [ ] ペンでストロークを描ける
+- [ ] プレビューが表示される
+- [ ] ストロークが確定される
+- [ ] Undo/Redo動作
+
+### パフォーマンス
+- [ ] 60FPS維持
+- [ ] GPU使用率適正
+- [ ] メモリリーク無し
+
+### エッジケース
+- [ ] 高速描画でも正常動作
+- [ ] 長時間描画でも安定
+- [ ] ウィンドウリサイズ対応
+
+---
+
+## 🎓 アーキテクチャ理解のためのメモ
+
+### 描画フロー（正常時）
+```
+1. pointer-handler.js: PointerEvent受信
+   ↓
+2. drawing-engine.js: pendingPointsにキュー
+   ↓
+3. core-engine.js: flushPendingPoints()
+   ↓
+4. drawing-engine.js: _processPointerDown/Move/Up
+   ↓
+5. brush-core.js: startStroke/updateStroke/finalizeStroke
+   ↓
+6. stroke-recorder.js: points配列記録
+   ↓
+7. brush-core.js: renderPreview()
+   ↓
+8. gpu-stroke-processor.js: VertexBuffer/EdgeBuffer生成
+   ↓
+9. msdf-pipeline-manager.js: MSDF生成
+   ↓
+10. webgpu-texture-bridge.js: Sprite生成
+    ↓
+11. layer-system.js: レイヤーに追加
+```
+
+### 初期化フロー（修正後）
+```
+1. core-initializer.js: Pixi初期化
+   ↓
+2. core-initializer.js: CoreEngine初期化
+   ↓
+3. core-initializer.js: WebGPU初期化
+   ├─ WebGPUDrawingLayer
+   ├─ GPUStrokeProcessor
+   ├─ MSDFPipelineManager (Render Pipeline遅延)
+   └─ WebGPUTextureBridge
+   ↓
+4. core-initializer.js: BrushCore初期化（WebGPU後）
+   ↓
+5. core-engine.js: startRenderLoop()
+```
+
+---
+
+## 📚 参考資料
+
+### GPT5アドバイス2.txt 主要指摘
+1. MSDF統合以前に描画パイプライン破損
+2. pointer-handler.js bind問題（実際は正常）
+3. stroke-recorder.js pressure未定義（実際は正常化済み）
+4. drawing-engine.js WebGPU呼び出し欠如（実際は存在）
+5. layer-system.js activeLayer null（実際は初期化済み）
+
+### 実際の問題
+1. ✅ 初期化順序（BrushCore → WebGPU → BrushCoreの順になっている）
+2. ✅ Pipeline遅延生成未実装
+3. ✅ プレビュー並列実行制御不完全
+
+---
