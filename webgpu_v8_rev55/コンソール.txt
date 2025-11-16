@@ -1,8 +1,8 @@
- ✅ config.js v8.14.2 Phase 1改修版 loaded
-    🔧 PerfectFreehand設定リニア化
-    ✓ thinning: 0 (線の太り補正無効)
-    ✓ smoothing: 0 (補間最小化)
-    ✓ streamline: 0 (遅延補正なし)
+config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
+config.js:508    🔧 PerfectFreehand設定リニア化
+config.js:509    ✓ thinning: 0 (線の太り補正無効)
+config.js:510    ✓ smoothing: 0 (補間最小化)
+config.js:511    ✓ streamline: 0 (遅延補正なし)
  ✅ data-models.js (backgroundColor追加版) loaded
  ✅ batch-api.js (Phase 6: History統合版) loaded
  ✅ popup-manager.js (quick-access除外対応版) loaded
@@ -29,10 +29,7 @@
  ✅ wgsl-loader.js Phase 4統合版 loaded
  ✅ gpu-stroke-processor.js Phase C-0修正版 loaded
     🔥 EdgeBuffer: PerfectFreehandアウトライン使用
- ✅ msdf-pipeline-manager.js Phase C-0完全版 loaded
-    🔥 Texture: 256px統一維持
-    🔥 JFA反復: 2回固定維持
-    🔥 テクスチャメタ登録対応
+ ✅ msdf-pipeline-manager.js Phase D-1 loaded
  ✅ earcut-triangulator.js loaded
  ✅ webgpu-mask-layer.js Phase 6 消しゴムmask-based完全版 loaded
     ✅ generateEraseMask() 実装
@@ -43,7 +40,8 @@
     🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
  ✅ pressure-handler.js Phase 1 loaded
     🔧 ベースライン未確定時にraw値返却（0.5固定削除）
- ✅ stroke-recorder.js Phase C-0 loaded
+ ✅ stroke-recorder.js GPT5修正版 loaded
+    🔧 ② pressure/tilt/座標確実設定完了
  ✅ sdf-brush-shader.js (Phase 1-FIX: ペン専用) loaded
     ✓ 消しゴムモード削除
     ✓ ペン描画に特化
@@ -55,7 +53,7 @@
     ✓ window.VectorOperations.generateStrokePolygon(points, size)
     ✓ config.js perfectFreehand設定自動適用
     🔥 PerfectFreehand統合基盤完成
- ✅ brush-core.js Phase C-0 loaded
+ ✅ brush-core.js Phase D-3 loaded
  ✅ fill-tool.js (WebGPU競合修正版) loaded
     ❌ 独自WebGPU初期化を削除
     ✅ 既存インスタンス参照のみ
@@ -70,20 +68,20 @@
     🔧 generatePreview()メソッド追加
     🔧 エラーハンドリング強化
     🔧 Blob生成の確実性向上
- ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
-    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
- ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
-    ⚠️ 実装は将来フェーズで追加予定
-    ✓ エラーメッセージで開発中を通知
- ✅ apng-exporter.js v8.31.0 loaded
- ✅ mp4-exporter.js (Phase 8完成版) loaded
- ✅ dom-builder.js v8.19.0 loaded
-    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
-    ✓ System情報表示（WebGPU/GPU検出）
- ✅ slider-utils.js v8.13.10 loaded
-    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
-    🔧 慣性スクロール実装（velocity計算）
-    🔧 requestAnimationFrame最適化
+webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
+dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
+slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
+slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
+slider-utils.js:237    🔧 requestAnimationFrame最適化
 keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
 keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
 keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
@@ -109,13 +107,8 @@ ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠の�
 ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
 core-runtime.js:578 ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
 core-engine.js:759 ✅ core-engine.js Phase C-0 loaded
-core-initializer.js:539 ✅ core-initializer.js Phase 2完全版 loaded
-core-initializer.js:540    🔧 Canvas物理分離実装: webgpu-canvas / pixi-ui-canvas
-core-initializer.js:541    🔧 Pixi完全制御: ticker停止・pointer無効化
-core-initializer.js:542    🔧 Master Loop統合準備完了
+core-initializer.js:522 ✅ core-initializer.js Phase D-2 loaded
 index.html:120 🚀 Phase 2完全版: Canvas分離・Master Loop統合 起動中...
-core-initializer.js:318 ✅ [Phase 2] Pixi ticker stopped
-core-initializer.js:323 ✅ [Phase 2] Pixi pointer capture disabled
 popup-manager.js:16 ✅ PopupManager initialized
 popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
 popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
@@ -129,112 +122,21 @@ popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 webgpu-drawing-layer.js:53 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
 initialize @ webgpu-drawing-layer.js:53
+initializeWebGPU @ core-initializer.js:187
+initialize @ core-initializer.js:354
+await in initialize
+initialize @ core-initializer.js:502
+（匿名） @ index.html:121
 webgpu-drawing-layer.js:93 ✅ [WebGPUDrawingLayer] Phase B-0: MSAA無効化版 Initialized
-webgpu-drawing-layer.js:94    📊 Device: GPUDevice
+webgpu-drawing-layer.js:94    📊 Device: GPUDevice {features: GPUSupportedFeatures, limits: GPUSupportedLimits, adapterInfo: GPUAdapterInfo, lost: Promise, queue: GPUQueue, …}
 webgpu-drawing-layer.js:95    📊 Format: rgba8unorm
 webgpu-drawing-layer.js:96    🔥 MSAA sampleCount: 1 (無効化 - Device Hung対策)
 webgpu-drawing-layer.js:97    🔥 Device Lost監視: 有効
-msdf-pipeline-manager.js:56 ✅ [MSDFPipeline] Phase C-0: PerfectFreehand統合対応完全版
-msdf-pipeline-manager.js:57    🔥 Texture: 256x256統一
-msdf-pipeline-manager.js:58    🔥 JFA反復: 2回固定
-msdf-pipeline-manager.js:59    🔥 テクスチャメタ登録対応
 webgpu-texture-bridge.js:53 ✅ [WebGPUTextureBridge] Phase C-0: PerfectFreehand統合対応完全版
 webgpu-texture-bridge.js:54    🔥 WeakMapメタ管理実装
 webgpu-texture-bridge.js:55    🔥 堅牢なサイズ回収ロジック
-core-initializer.js:236 ✅ [WebGPU] MaskLayer instance created (deferred init)
-core-initializer.js:241 ✅ [WebGPU] MaskLayer linked to BrushCore (deferred)
 stroke-renderer.js:89 ✅ [StrokeRenderer] MSDF Mode enabled
-core-initializer.js:263 ✅ [WebGPU] Initialization complete
-core-initializer.js:386 ✅ [Phase 2] Master Loop started in core-engine.js
 index.html:122 ✅ Phase 2完了: GPU/Pixi責務完全分離
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-// 最終確認：MSDF生成後のテクスチャ内容
-(async () => {
-  const testPoints = [{x: 150, y: 150, pressure: 0.5}, {x: 250, y: 250, pressure: 0.7}];
-  
-  const vr = window.GPUStrokeProcessor.createPolygonVertexBuffer(testPoints, 30);
-  const er = window.GPUStrokeProcessor.createEdgeBuffer(testPoints, 30);
-  
-  console.log('📊 EdgeBuffer確認:', er.edgeCount, '個のエッジ');
-  
-  const vUpload = window.GPUStrokeProcessor.uploadToGPU(vr.buffer, 'vertex', 28);
-  const eUpload = window.GPUStrokeProcessor.uploadToGPU(er.buffer, 'storage', 32);
-  
-  const msdfTex = await window.MSDFPipelineManager.generateMSDF(
-    eUpload.gpuBuffer, vr.bounds, null,
-    {mode: 'pen', color: '#ff0000', opacity: 1.0, size: 30},
-    vUpload.gpuBuffer, vr.vertexCount, er.edgeCount
-  );
-  
-  // テクスチャ内容読み取り
-  const device = window.MSDFPipelineManager.device;
-  const bytesPerRow = Math.ceil((256 * 4) / 256) * 256;
-  const bufferSize = bytesPerRow * 256;
-  
-  const readBuffer = device.createBuffer({
-    size: bufferSize,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-  });
-  
-  const encoder = device.createCommandEncoder();
-  encoder.copyTextureToBuffer(
-    { texture: msdfTex },
-    { buffer: readBuffer, bytesPerRow: bytesPerRow },
-    [256, 256]
-  );
-  device.queue.submit([encoder.finish()]);
-  
-  await readBuffer.mapAsync(GPUMapMode.READ);
-  const data = new Uint8Array(readBuffer.getMappedRange());
-  
-  let nonZeroPixels = 0;
-  let maxR = 0, maxG = 0, maxB = 0, maxA = 0;
-  
-  for (let y = 0; y < 256; y++) {
-    for (let x = 0; x < 256; x++) {
-      const offset = y * bytesPerRow + x * 4;
-      const r = data[offset];
-      const g = data[offset + 1];
-      const b = data[offset + 2];
-      const a = data[offset + 3];
-      
-      if (r > 0 || g > 0 || b > 0 || a > 0) {
-        nonZeroPixels++;
-        maxR = Math.max(maxR, r);
-        maxG = Math.max(maxG, g);
-        maxB = Math.max(maxB, b);
-        maxA = Math.max(maxA, a);
-      }
-    }
-  }
-  
-  console.log('🔍 MSDF結果解析:');
-  console.log('  - 非ゼロピクセル数:', nonZeroPixels, '/', 256*256);
-  console.log('  - 最大値 R:', maxR, 'G:', maxG, 'B:', maxB, 'A:', maxA);
-  
-  readBuffer.unmap();
-  readBuffer.destroy();
-  
-  if (nonZeroPixels > 0) {
-    console.log('✅ MSDFテクスチャ生成成功！');
-    console.log('→ 問題はPixi表示側にある');
-  } else {
-    console.error('❌ MSDFテクスチャが空');
-    console.error('→ レンダリングパスの問題');
-  }
-})();
 earcut-triangulator.js:51 ✅ [EarcutTriangulator] Initialized
-VM86:8 📊 EdgeBuffer確認: 52 個のエッジ
-Promise {<pending>}
-VM86:61 🔍 MSDF結果解析:
-VM86:62   - 非ゼロピクセル数: 0 / 65536
-VM86:63   - 最大値 R: 0 G: 0 B: 0 A: 0
-VM86:72 ❌ MSDFテクスチャが空
-（匿名） @ VM86:72
-await in （匿名）
-（匿名） @ VM86:75
-VM86:73 → レンダリングパスの問題
-（匿名） @ VM86:73
-await in （匿名）
-（匿名） @ VM86:75
