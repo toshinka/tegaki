@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - Phase D-FIX2完全版: PixiJS v8 BlendMode対応
+ * brush-core.js - Phase C-0: 消しゴムプレビュー統一
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,17 +11,21 @@
  *   - layer-system.js
  *   - event-bus.js
  *   - history.js
- *   - blend-modes.js (window.BlendMode)
  * 
  * 📄 子ファイル使用先:
  *   - core-engine.js
  *   - drawing-engine.js
  * 
- * 【Phase D-FIX2改修内容】
- * 🔥 PixiJS v8 blendMode対応（PIXI.BLEND_MODES廃止対応）
- * 🔥 消しゴム＝透明化ペン（opacity: 0 + blendMode: 'erase'）
- * 🔥 ペンと消しゴムが同一MSDFパイプライン使用
- * ✅ Device Hung完全根絶維持
+ * 【Phase C-0改修内容】
+ * 🔥 消しゴムプレビュー: 黒半透明統一（opacity:0.5）
+ * 🔥 確定時: 完全不透明黒（opacity:1.0）+ blendMode:'erase'
+ * ✅ PixiJS v8 blendMode文字列指定維持
+ * 
+ * 責務:
+ *   - ストローク管理（開始/更新/確定）
+ *   - MSDF Pipeline統合
+ *   - プレビュー表示制御
+ *   - ペン/消しゴムモード切替
  * 
  * ================================================================================
  */
@@ -154,10 +158,6 @@
 
       this.strokeRecorder.startStroke(localX, localY, pressure);
       
-      if (this.gpuStrokeProcessor?.resetStream) {
-        this.gpuStrokeProcessor.resetStream();
-      }
-      
       this.isDrawing = true;
       this.currentStroke = {
         layerId: layerId,
@@ -175,15 +175,6 @@
       const historyManager = window.History;
       if (historyManager?.addPoint) {
         historyManager.addPoint(localX, localY, pressure);
-      }
-
-      if (this.gpuStrokeProcessor?.appendPointToStream) {
-        this.gpuStrokeProcessor.appendPointToStream(
-          localX,
-          localY,
-          pressure,
-          this.currentSettings.size
-        );
       }
     }
 
@@ -237,11 +228,12 @@
 
         const bounds = this.gpuStrokeProcessor.calculateBounds(points);
 
-        // プレビュー設定（消しゴムは赤半透明表示）
+        // 🔥 Phase C-0: 消しゴムプレビュー統一（黒半透明）
+        const isEraser = this.currentSettings.mode === 'eraser';
         const previewSettings = {
           mode: this.currentSettings.mode,
-          color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
-          opacity: this.currentSettings.mode === 'eraser' ? 0.3 : this.currentSettings.opacity * 0.7,
+          color: isEraser ? '#000000' : this.currentSettings.color,
+          opacity: isEraser ? 0.5 : this.currentSettings.opacity * 0.7,
           size: this.currentSettings.size
         };
 
@@ -337,10 +329,6 @@
         return;
       }
 
-      if (this.gpuStrokeProcessor?.finalizeStroke) {
-        this.gpuStrokeProcessor.finalizeStroke();
-      }
-
       if (this.msdfAvailable) {
         await this._finalizeMSDFStroke(points, activeLayer);
       }
@@ -385,11 +373,11 @@
 
         const isEraser = this.currentSettings.mode === 'eraser';
         
-        // 🔥 Phase D-FIX2: 消しゴム＝完全不透明黒 + erase blend
+        // 🔥 Phase C-0: 確定時は完全不透明黒
         const brushSettings = {
           mode: this.currentSettings.mode,
           color: isEraser ? '#000000' : this.currentSettings.color,
-          opacity: isEraser ? 1.0 : this.currentSettings.opacity, // 消しゴムは1.0
+          opacity: isEraser ? 1.0 : this.currentSettings.opacity,
           size: this.currentSettings.size
         };
 
@@ -424,9 +412,9 @@
         sprite.y = bounds.minY;
         sprite.visible = true;
         
-        // 🔥 Phase D-FIX2: PixiJS v8対応（文字列blendMode直接指定）
+        // PixiJS v8 blendMode文字列指定
         if (isEraser) {
-          sprite.blendMode = 'erase'; // PixiJS v8では文字列指定
+          sprite.blendMode = 'erase';
           sprite.alpha = 1.0;
         } else {
           sprite.blendMode = 'normal';
@@ -492,8 +480,6 @@
     }
 
     _getLayerContainer(layer) {
-      // Phase D-FIX3: PixiJS v8レイヤーシステム対応
-      // レイヤー自体がContainer（children配列持ち）
       if (layer && Array.isArray(layer.children)) {
         return layer;
       }
@@ -626,9 +612,6 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase D-FIX2完全版 loaded');
-  console.log('   🔥 PixiJS v8 blendMode対応（文字列指定）');
-  console.log('   🔥 透明化ペン消しゴム完全対応');
-  console.log('   ✅ Device Hung完全根絶維持');
+  console.log('✅ brush-core.js Phase C-0 loaded');
 
 })();

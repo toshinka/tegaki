@@ -1,22 +1,19 @@
 /**
  * ================================================================================
- * core-engine.js Phase 4-C完全版: リアルタイムプレビュー統合
+ * core-engine.js Phase C-0: renderPreview非同期修正
  * ================================================================================
  * 
- * 【Phase 4-C改修内容】
- * 🔧 _renderLoop()にプレビュー更新追加
- * 🔧 BrushCore.renderPreview()呼び出し統合
- * 🔧 Master Loop完全統合維持
+ * 📁 親ファイル依存:
+ *   - system/camera-system.js (TegakiCameraSystem)
+ *   - system/layer-system.js (TegakiLayerSystem)
+ *   - system/drawing-clipboard.js (TegakiDrawingClipboard)
+ *   - system/drawing/brush-core.js (BrushCore)
+ *   - system/event-bus.js (TegakiEventBus)
  * 
- * 【依存関係】
- * - system/camera-system.js (TegakiCameraSystem)
- * - system/layer-system.js (TegakiLayerSystem)
- * - system/drawing-clipboard.js (TegakiDrawingClipboard)
- * - system/drawing/brush-core.js (BrushCore)
- * - system/drawing/stroke-recorder.js (StrokeRecorder)
- * - system/drawing/stroke-renderer.js (StrokeRenderer)
- * - system/event-bus.js (TegakiEventBus)
- * - system/export-manager.js (ExportManager)
+ * 【Phase C-0改修内容】
+ * 🔥 renderPreview()の非同期呼び出し修正（await削除）
+ * 🔥 プレビュー処理の並列実行防止
+ * ✅ Master Loop統合維持
  * 
  * ================================================================================
  */
@@ -254,7 +251,6 @@ class CoreEngine {
         
         startRenderLoop() {
             if (this.isRenderLoopRunning) {
-                console.warn('[CoreEngine] Render loop already running');
                 return;
             }
             
@@ -263,27 +259,23 @@ class CoreEngine {
         }
         
         /**
-         * 🔧 Phase 4-C改修: リアルタイムプレビュー統合
+         * 🔥 Phase C-0: renderPreview非同期修正
          */
         _renderLoop() {
             if (!this.isRenderLoopRunning) return;
             
             try {
-                // 1. ポインタバッチ処理
                 this.flushPointerBatch();
                 
-                // 🔧 Phase 4-C追加: リアルタイムプレビュー更新
-                if (window.BrushCore && 
-                    typeof window.BrushCore.renderPreview === 'function' &&
-                    window.BrushCore.isDrawing) {
-                    window.BrushCore.renderPreview();
+                // 🔥 Phase C-0: 非同期呼び出し（await削除）
+                if (window.BrushCore?.isDrawing && 
+                    typeof window.BrushCore.renderPreview === 'function') {
+                    window.BrushCore.renderPreview().catch(err => {
+                        console.error('[CoreEngine] Preview error:', err);
+                    });
                 }
                 
-                // 2. WebGPU描画処理（将来実装予定）
-                // this.gpuRender();
-                
-                // 3. Pixi UI手動レンダー
-                if (this.app && this.app.renderer && this.app.stage) {
+                if (this.app?.renderer && this.app?.stage) {
                     this.app.renderer.render(this.app.stage);
                 }
                 
@@ -764,8 +756,6 @@ class CoreEngine {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js Phase 4-C完全版 loaded');
-    console.log('   🔧 リアルタイムプレビュー統合完了');
-    console.log('   🔧 Master Loop: pointer → preview → render');
+    console.log('✅ core-engine.js Phase C-0 loaded');
 
 })();
