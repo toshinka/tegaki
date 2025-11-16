@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * gpu-stroke-processor.js Phase C-0: PerfectFreehand専用化
+ * gpu-stroke-processor.js Phase C-0修正版: EdgeBuffer PerfectFreehand統合
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -14,15 +14,16 @@
  *   - msdf-pipeline-manager.js (VertexBuffer + edgeCount受け渡し)
  *   - brush-core.js (呼び出し元)
  * 
- * 【Phase C-0改修内容】
- * 🔥 streaming処理完全削除（未使用機能排除）
- * 🔥 PerfectFreehand必須化（フォールバック削除）
- * 🔥 Earcut三角形分割専用化
+ * 【Phase C-0修正内容】
+ * 🔥 createEdgeBuffer: PerfectFreehandアウトライン使用に修正
+ * 🔥 アウトラインの閉じたループからエッジ生成
+ * 🔥 streaming処理完全削除
  * ✅ config.js perfectFreehand設定反映
  * 
  * 責務:
  *   - PerfectFreehandアウトライン生成
  *   - Earcut三角形分割
+ *   - アウトラインからEdge生成（MSDF用）
  *   - GPU Buffer生成・アップロード
  *   - Bounds計算
  * 
@@ -143,11 +144,12 @@
     }
 
     /**
-     * Edge Buffer生成（MSDF用）
+     * 🔥 Phase C-0修正: PerfectFreehandアウトラインからEdge生成
      */
     createEdgeBuffer(points, baseSize = 10) {
       if (!Array.isArray(points) || points.length === 0) return null;
 
+      // points正規化
       let processedPoints = [];
       if (typeof points[0] === 'object' && points[0].x !== undefined) {
         processedPoints = points.map(p => ({
@@ -167,30 +169,57 @@
 
       if (processedPoints.length < 2) return null;
 
+      // Bounds計算
       const bounds = this._calculateBoundsFromPoints(processedPoints, baseSize);
       const offsetX = bounds.minX;
       const offsetY = bounds.minY;
 
-      const numPoints = processedPoints.length;
-      const edgeCount = numPoints - 1;
+      // 🔥 PerfectFreehand実行（アウトライン取得）
+      const strokePoints = processedPoints.map(p => [p.x, p.y, p.pressure]);
+      
+      const pfOptions = window.config?.perfectFreehand || {
+        size: baseSize,
+        thinning: 0,
+        smoothing: 0,
+        streamline: 0,
+        simulatePressure: false,
+        last: true
+      };
+
+      const outlinePoints = window.PerfectFreehand(strokePoints, pfOptions);
+      
+      if (!outlinePoints || outlinePoints.length < 3) {
+        console.warn('[GPUStrokeProcessor] PerfectFreehand returned insufficient outline points');
+        return null;
+      }
+
+      // 🔥 アウトライン点からエッジ生成（閉じたループ）
+      const numOutlinePoints = outlinePoints.length;
+      const edgeCount = numOutlinePoints; // 最後の点→最初の点も含める
       const buffer = new Float32Array(edgeCount * 8);
 
-      for (let i = 0; i < edgeCount; i++) {
-        const p0 = processedPoints[i];
-        const p1 = processedPoints[i + 1];
+      for (let i = 0; i < numOutlinePoints; i++) {
+        const p0 = outlinePoints[i];
+        const p1 = outlinePoints[(i + 1) % numOutlinePoints]; // ループ
         const bufferIdx = i * 8;
 
-        const avgPressure = (p0.pressure + p1.pressure) / 2;
-        const edgeWidth = baseSize * avgPressure;
+        // Edge座標（offset適用）
+        buffer[bufferIdx + 0] = p0[0] - offsetX;
+        buffer[bufferIdx + 1] = p0[1] - offsetY;
+        buffer[bufferIdx + 2] = p1[0] - offsetX;
+        buffer[bufferIdx + 3] = p1[1] - offsetY;
 
-        buffer[bufferIdx + 0] = p0.x - offsetX;
-        buffer[bufferIdx + 1] = p0.y - offsetY;
-        buffer[bufferIdx + 2] = p1.x - offsetX;
-        buffer[bufferIdx + 3] = p1.y - offsetY;
-        buffer[bufferIdx + 4] = i;
-        buffer[bufferIdx + 5] = i % 3;
-        buffer[bufferIdx + 6] = edgeWidth;
-        buffer[bufferIdx + 7] = 0.0;
+        // Normal計算
+        const dx = p1[0] - p0[0];
+        const dy = p1[1] - p0[1];
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const nx = len > 0 ? -dy / len : 0;
+        const ny = len > 0 ? dx / len : 0;
+
+        buffer[bufferIdx + 4] = nx;
+        buffer[bufferIdx + 5] = ny;
+        buffer[bufferIdx + 6] = i % 3; // channelId
+        buffer[bufferIdx + 7] = i; // edgeId
       }
 
       return { buffer, edgeCount, bounds };
@@ -286,6 +315,7 @@
 
   window.GPUStrokeProcessor = new GPUStrokeProcessor();
 
-  console.log('✅ gpu-stroke-processor.js Phase C-0 loaded');
+  console.log('✅ gpu-stroke-processor.js Phase C-0修正版 loaded');
+  console.log('   🔥 EdgeBuffer: PerfectFreehandアウトライン使用');
 
 })();
