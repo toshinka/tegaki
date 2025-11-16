@@ -152,4 +152,172 @@ core-initializer.js:386 ✅ [Phase 2] Master Loop started in core-engine.js
 index.html:122 ✅ Phase 2完了: GPU/Pixi責務完全分離
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
+const frame = window.animationSystem?.getCurrentFrame();
+if (frame && window.layerSystem) {
+  window.layerSystem.currentFrameContainer = frame.container;
+  
+  const layers = frame.getLayers();
+  const drawingLayerIndex = layers.findIndex(l => !l.layerData?.isBackground);
+  if (drawingLayerIndex >= 0) {
+    window.layerSystem.activeLayerIndex = drawingLayerIndex;
+  }
+  
+  const worldContainer = window.cameraSystem.worldContainer;
+  if (frame.container.parent !== worldContainer) {
+    if (frame.container.parent) {
+      frame.container.parent.removeChild(frame.container);
+    }
+    worldContainer.addChild(frame.container);
+  }
+  
+  console.log('✅ 修正完了');
+  console.log('activeLayer:', window.layerSystem.getActiveLayer());
+}
+VM842:19 ✅ 修正完了
+VM842:20 activeLayer: Z {_events: i, _eventsCount: 0, uid: 17, _updateFlags: 0, renderGroup: Ri, …}
+undefined
 earcut-triangulator.js:51 ✅ [EarcutTriangulator] Initialized
+// MSDFテクスチャの内容を確認
+console.log('=== MSDFテクスチャ内容確認 ===');
+
+const testPoints = [{x: 100, y: 100, pressure: 0.5}, {x: 200, y: 200, pressure: 0.7}];
+
+(async () => {
+  const vertexResult = window.GPUStrokeProcessor.createPolygonVertexBuffer(testPoints, 30);
+  const edgeResult = window.GPUStrokeProcessor.createEdgeBuffer(testPoints, 30);
+  
+  console.log('vertexCount:', vertexResult.vertexCount);
+  console.log('edgeCount:', edgeResult.edgeCount);
+  
+  const uploadVertex = window.GPUStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
+  const uploadEdge = window.GPUStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
+  
+  // MSDFパイプライン各ステップの確認
+  const device = window.WebGPUContext?.device || window.MSDFPipelineManager.device;
+  
+  // 1. Seed Init確認
+  console.log('\n🔧 Seed Init実行中...');
+  const seedTexture = device.createTexture({
+    size: [256, 256],
+    format: 'rgba32float',
+    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC
+  });
+  
+  await window.MSDFPipelineManager._seedInitPass(
+    uploadEdge.gpuBuffer,
+    seedTexture,
+    256, 256,
+    edgeResult.edgeCount
+  );
+  
+  // テクスチャ内容を読み取り
+  const readBuffer = device.createBuffer({
+    size: 256 * 256 * 16,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+  });
+  
+  const encoder = device.createCommandEncoder();
+  encoder.copyTextureToBuffer(
+    { texture: seedTexture },
+    { buffer: readBuffer, bytesPerRow: 256 * 16 },
+    [256, 256]
+  );
+  device.queue.submit([encoder.finish()]);
+  
+  await readBuffer.mapAsync(GPUMapMode.READ);
+  const data = new Float32Array(readBuffer.getMappedRange());
+  
+  // 非ゼロピクセルをカウント
+  let nonZeroCount = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] !== 0 || data[i+1] !== 0 || data[i+2] !== 0 || data[i+3] !== 0) {
+      nonZeroCount++;
+    }
+  }
+  
+  console.log('✅ Seed Initテクスチャ確認:');
+  console.log('  - 非ゼロピクセル数:', nonZeroCount, '/', 256*256);
+  console.log('  - サンプル値:', [data[0], data[1], data[2], data[3]]);
+  
+  if (nonZeroCount === 0) {
+    console.error('❌ テクスチャが完全に空です！');
+    console.error('原因候補:');
+    console.error('  1. edgeBufferのデータが正しくない');
+    console.error('  2. Seed Initシェーダーが動作していない');
+    console.error('  3. バインディングが正しくない');
+  } else {
+    console.log('✅ テクスチャに内容があります - MSDF生成は正常');
+  }
+  
+  readBuffer.unmap();
+})();
+VM849:2 === MSDFテクスチャ内容確認 ===
+VM849:10 vertexCount: 72
+VM849:11 edgeCount: 1
+VM849:20 
+🔧 Seed Init実行中...
+Promise {<pending>}
+VM849:59 ✅ Seed Initテクスチャ確認:
+VM849:60   - 非ゼロピクセル数: 101 / 65536
+VM849:61   - サンプル値: (4) [0, 0, 0, 0]
+VM849:70 ✅ テクスチャに内容があります - MSDF生成は正常
+// 完全なMSDF→Pixi表示テスト
+(async () => {
+  console.log('=== 完全MSDF→Pixi表示テスト ===');
+  
+  const testPoints = [{x: 150, y: 150, pressure: 0.5}, {x: 250, y: 250, pressure: 0.7}];
+  
+  const vertexResult = window.GPUStrokeProcessor.createPolygonVertexBuffer(testPoints, 30);
+  const edgeResult = window.GPUStrokeProcessor.createEdgeBuffer(testPoints, 30);
+  
+  const uploadVertex = window.GPUStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
+  const uploadEdge = window.GPUStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
+  
+  console.log('🔧 MSDF生成中...');
+  const msdfTexture = await window.MSDFPipelineManager.generateMSDF(
+    uploadEdge.gpuBuffer,
+    vertexResult.bounds,
+    null,
+    {mode: 'pen', color: '#ff0000', opacity: 1.0, size: 30},
+    uploadVertex.gpuBuffer,
+    vertexResult.vertexCount,
+    edgeResult.edgeCount
+  );
+  
+  console.log('✅ MSDF生成完了:', msdfTexture);
+  
+  console.log('🔧 Pixi Sprite作成中...');
+  const sprite = await window.WebGPUTextureBridge.createSpriteFromGPUTexture(msdfTexture, 256, 256);
+  
+  console.log('✅ Sprite作成完了');
+  console.log('  - visible:', sprite.visible);
+  console.log('  - alpha:', sprite.alpha);
+  console.log('  - texture:', sprite.texture);
+  console.log('  - texture.source:', sprite.texture.source);
+  console.log('  - texture.source.resource:', sprite.texture.source.resource);
+  
+  // レイヤーに追加
+  sprite.x = 300;
+  sprite.y = 100;
+  const layer = window.layerSystem.getActiveLayer();
+  layer.addChild(sprite);
+  
+  console.log('✅ レイヤーに追加完了 - 赤い線が表示されるはず');
+  
+  // 手動レンダリング
+  window.coreEngine.app.renderer.render(window.coreEngine.app.stage);
+  console.log('✅ 手動レンダリング完了');
+})();
+VM856:3 === 完全MSDF→Pixi表示テスト ===
+VM856:13 🔧 MSDF生成中...
+Promise {<pending>}
+VM856:24 ✅ MSDF生成完了: GPUTexture {width: 256, height: 256, depthOrArrayLayers: 1, mipLevelCount: 1, sampleCount: 1, …}
+VM856:26 🔧 Pixi Sprite作成中...
+VM856:29 ✅ Sprite作成完了
+VM856:30   - visible: true
+VM856:31   - alpha: 1
+VM856:32   - texture: w {_events: i, _eventsCount: 1, uid: 42, uvs: {…}, frame: z, …}
+VM856:33   - texture.source: ae {_events: i, _eventsCount: 1, options: {…}, uid: 42, _resourceType: 'textureSource', …}
+VM856:34   - texture.source.resource: ImageBitmap {width: 256, height: 256}
+VM856:42 ✅ レイヤーに追加完了 - 赤い線が表示されるはず
+VM856:46 ✅ 手動レンダリング完了
