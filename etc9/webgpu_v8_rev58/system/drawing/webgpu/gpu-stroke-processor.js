@@ -1,21 +1,31 @@
 /**
  * ================================================================================
- * gpu-stroke-processor.js Phase 5完全版: 筆圧反映実装
+ * gpu-stroke-processor.js Phase C-0修正版: EdgeBuffer PerfectFreehand統合
  * ================================================================================
  * 
  * 📁 親ファイル依存:
- * - stroke-recorder.js (points取得)
- * - webgpu-drawing-layer.js (device/queue)
+ *   - stroke-recorder.js (points取得)
+ *   - webgpu-drawing-layer.js (device/queue)
+ *   - libs/perfect-freehand-1.2.0.min.js (window.PerfectFreehand)
+ *   - earcut-triangulator.js (window.EarcutTriangulator)
+ *   - config.js (perfectFreehand設定)
  * 
- * 📄 子ファイル依存:
- * - msdf-pipeline-manager.js (VertexBuffer + edgeCount受け渡し)
- * - brush-core.js (呼び出し元)
+ * 📄 子ファイル使用先:
+ *   - msdf-pipeline-manager.js (VertexBuffer + edgeCount受け渡し)
+ *   - brush-core.js (呼び出し元)
  * 
- * 【Phase 5改修】
- * 🔧 createPolygonVertexBuffer: 筆圧値を幅に反映
- * 🔧 createEdgeBuffer: 筆圧値をedge dataに含める
- * 🔧 各ポイントのwidth = baseSize * pressure
- * ✅ 筆圧完全反映
+ * 【Phase C-0修正内容】
+ * 🔥 createEdgeBuffer: PerfectFreehandアウトライン使用に修正
+ * 🔥 アウトラインの閉じたループからエッジ生成
+ * 🔥 streaming処理完全削除
+ * ✅ config.js perfectFreehand設定反映
+ * 
+ * 責務:
+ *   - PerfectFreehandアウトライン生成
+ *   - Earcut三角形分割
+ *   - アウトラインからEdge生成（MSDF用）
+ *   - GPU Buffer生成・アップロード
+ *   - Bounds計算
  * 
  * ================================================================================
  */
@@ -32,23 +42,33 @@
 
     async initialize(device) {
       if (this.initialized) return;
+      
+      if (!window.PerfectFreehand) {
+        throw new Error('[GPUStrokeProcessor] PerfectFreehand library not found');
+      }
+      if (!window.EarcutTriangulator) {
+        throw new Error('[GPUStrokeProcessor] EarcutTriangulator not found');
+      }
+      
       this.device = device;
       this.queue = device.queue;
       this.initialized = true;
     }
 
     /**
-     * 🔧 Phase 5改修: 筆圧反映実装
-     * @param {Array} points - [{x, y, pressure}, ...]
-     * @param {number} baseSize - ベースとなるペンサイズ
+     * 🔥 Phase C-0: PerfectFreehand専用化
      */
     createPolygonVertexBuffer(points, baseSize = 10) {
+      if (!this.initialized) {
+        throw new Error('[GPUStrokeProcessor] Not initialized');
+      }
+      
       if (!Array.isArray(points) || points.length === 0) {
         console.warn('[GPUStrokeProcessor] Invalid points');
         return null;
       }
 
-      // 🔧 Phase 5: オブジェクト形式とフラット配列の両対応
+      // points正規化
       let processedPoints = [];
       if (typeof points[0] === 'object' && points[0].x !== undefined) {
         processedPoints = points.map(p => ({
@@ -57,7 +77,6 @@
           pressure: p.pressure !== undefined ? p.pressure : 0.5
         }));
       } else {
-        // フラット配列の場合はpressure=0.5で補完
         for (let i = 0; i < points.length; i += 2) {
           processedPoints.push({
             x: points[i],
@@ -67,8 +86,7 @@
         }
       }
 
-      const numPoints = processedPoints.length;
-      if (numPoints < 2) {
+      if (processedPoints.length < 2) {
         console.warn('[GPUStrokeProcessor] Need at least 2 points');
         return null;
       }
@@ -78,55 +96,60 @@
       const offsetX = bounds.minX;
       const offsetY = bounds.minY;
 
-      // 座標正規化
-      const normalizedPoints = processedPoints.map(p => ({
-        x: p.x - offsetX,
-        y: p.y - offsetY,
-        pressure: p.pressure,
-        width: baseSize * p.pressure // 🔧 Phase 5: 筆圧を幅に変換
-      }));
+      // PerfectFreehand実行
+      const strokePoints = processedPoints.map(p => [p.x, p.y, p.pressure]);
+      
+      const pfOptions = window.config?.perfectFreehand || {
+        size: baseSize,
+        thinning: 0,
+        smoothing: 0,
+        streamline: 0,
+        simulatePressure: false,
+        last: true
+      };
 
-      const numSegments = numPoints - 1;
-      const vertexCount = numSegments * 6;
+      const outlinePoints = window.PerfectFreehand(strokePoints, pfOptions);
+      
+      if (!outlinePoints || outlinePoints.length < 3) {
+        console.warn('[GPUStrokeProcessor] PerfectFreehand returned insufficient points');
+        return null;
+      }
+
+      // Earcut三角形分割
+      const polygon = outlinePoints.map(p => [p[0] - offsetX, p[1] - offsetY]);
+      const triangles = window.EarcutTriangulator.triangulate(polygon);
+      
+      if (!triangles || triangles.length === 0) {
+        console.warn('[GPUStrokeProcessor] Triangulation failed');
+        return null;
+      }
+
+      // GPU Buffer生成
+      const vertexCount = triangles.length;
       const buffer = new Float32Array(vertexCount * 7);
 
-      for (let i = 0; i < numSegments; i++) {
-        const prevIdx = Math.max(0, i - 1);
-        const currIdx = i;
-        const nextIdx = i + 1;
-        const next2Idx = Math.min(numPoints - 1, i + 2);
-
-        const prev = normalizedPoints[prevIdx];
-        const curr = normalizedPoints[currIdx];
-        const next = normalizedPoints[nextIdx];
-        const next2 = normalizedPoints[next2Idx];
-
-        const baseIdx = i * 6 * 7;
-
-        // 頂点データ（筆圧幅は現在未使用だが、将来のシェーダー拡張用に保持）
-        const v0 = [prev.x, prev.y, curr.x, curr.y, next.x, next.y, -1.0];
-        const v1 = [prev.x, prev.y, curr.x, curr.y, next.x, next.y, 1.0];
-        const v2 = [curr.x, curr.y, next.x, next.y, next2.x, next2.y, -1.0];
-        const v3 = [curr.x, curr.y, next.x, next.y, next2.x, next2.y, 1.0];
-
-        for (let j = 0; j < 7; j++) buffer[baseIdx + j] = v0[j];
-        for (let j = 0; j < 7; j++) buffer[baseIdx + 7 + j] = v1[j];
-        for (let j = 0; j < 7; j++) buffer[baseIdx + 14 + j] = v2[j];
-        for (let j = 0; j < 7; j++) buffer[baseIdx + 21 + j] = v1[j];
-        for (let j = 0; j < 7; j++) buffer[baseIdx + 28 + j] = v3[j];
-        for (let j = 0; j < 7; j++) buffer[baseIdx + 35 + j] = v2[j];
+      for (let i = 0; i < triangles.length; i++) {
+        const tri = triangles[i];
+        const bufferIdx = i * 7;
+        buffer[bufferIdx + 0] = tri[0];
+        buffer[bufferIdx + 1] = tri[1];
+        buffer[bufferIdx + 2] = tri[0];
+        buffer[bufferIdx + 3] = tri[1];
+        buffer[bufferIdx + 4] = tri[0];
+        buffer[bufferIdx + 5] = tri[1];
+        buffer[bufferIdx + 6] = 0.0;
       }
 
       return { buffer, vertexCount, bounds };
     }
 
     /**
-     * 🔧 Phase 5改修: 筆圧反映
+     * 🔥 Phase C-0修正: PerfectFreehandアウトラインからEdge生成
      */
     createEdgeBuffer(points, baseSize = 10) {
       if (!Array.isArray(points) || points.length === 0) return null;
 
-      // 🔧 Phase 5: オブジェクト形式とフラット配列の両対応
+      // points正規化
       let processedPoints = [];
       if (typeof points[0] === 'object' && points[0].x !== undefined) {
         processedPoints = points.map(p => ({
@@ -146,31 +169,57 @@
 
       if (processedPoints.length < 2) return null;
 
+      // Bounds計算
       const bounds = this._calculateBoundsFromPoints(processedPoints, baseSize);
       const offsetX = bounds.minX;
       const offsetY = bounds.minY;
 
-      const numPoints = processedPoints.length;
-      const edgeCount = numPoints - 1;
+      // 🔥 PerfectFreehand実行（アウトライン取得）
+      const strokePoints = processedPoints.map(p => [p.x, p.y, p.pressure]);
+      
+      const pfOptions = window.config?.perfectFreehand || {
+        size: baseSize,
+        thinning: 0,
+        smoothing: 0,
+        streamline: 0,
+        simulatePressure: false,
+        last: true
+      };
+
+      const outlinePoints = window.PerfectFreehand(strokePoints, pfOptions);
+      
+      if (!outlinePoints || outlinePoints.length < 3) {
+        console.warn('[GPUStrokeProcessor] PerfectFreehand returned insufficient outline points');
+        return null;
+      }
+
+      // 🔥 アウトライン点からエッジ生成（閉じたループ）
+      const numOutlinePoints = outlinePoints.length;
+      const edgeCount = numOutlinePoints; // 最後の点→最初の点も含める
       const buffer = new Float32Array(edgeCount * 8);
 
-      for (let i = 0; i < edgeCount; i++) {
-        const p0 = processedPoints[i];
-        const p1 = processedPoints[i + 1];
+      for (let i = 0; i < numOutlinePoints; i++) {
+        const p0 = outlinePoints[i];
+        const p1 = outlinePoints[(i + 1) % numOutlinePoints]; // ループ
         const bufferIdx = i * 8;
 
-        // 🔧 Phase 5: 筆圧値をedge dataに含める
-        const avgPressure = (p0.pressure + p1.pressure) / 2;
-        const edgeWidth = baseSize * avgPressure;
+        // Edge座標（offset適用）
+        buffer[bufferIdx + 0] = p0[0] - offsetX;
+        buffer[bufferIdx + 1] = p0[1] - offsetY;
+        buffer[bufferIdx + 2] = p1[0] - offsetX;
+        buffer[bufferIdx + 3] = p1[1] - offsetY;
 
-        buffer[bufferIdx + 0] = p0.x - offsetX;
-        buffer[bufferIdx + 1] = p0.y - offsetY;
-        buffer[bufferIdx + 2] = p1.x - offsetX;
-        buffer[bufferIdx + 3] = p1.y - offsetY;
-        buffer[bufferIdx + 4] = i; // edgeIndex
-        buffer[bufferIdx + 5] = i % 3; // colorChannel
-        buffer[bufferIdx + 6] = edgeWidth; // 🔧 Phase 5: 筆圧幅
-        buffer[bufferIdx + 7] = 0.0; // padding
+        // Normal計算
+        const dx = p1[0] - p0[0];
+        const dy = p1[1] - p0[1];
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const nx = len > 0 ? -dy / len : 0;
+        const ny = len > 0 ? dx / len : 0;
+
+        buffer[bufferIdx + 4] = nx;
+        buffer[bufferIdx + 5] = ny;
+        buffer[bufferIdx + 6] = i % 3; // channelId
+        buffer[bufferIdx + 7] = i; // edgeId
       }
 
       return { buffer, edgeCount, bounds };
@@ -230,9 +279,6 @@
       return this._calculateBoundsFromPoints(processedPoints, baseSize);
     }
 
-    /**
-     * 🔧 Phase 5: 筆圧を考慮したBounds計算
-     */
     _calculateBoundsFromPoints(points, baseSize = 10) {
       if (points.length < 1) {
         return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
@@ -252,7 +298,6 @@
         maxY = Math.max(maxY, p.y);
       }
 
-      // マージンは最大幅の半分+余裕
       const margin = maxWidth / 2 + 20;
       
       return {
@@ -270,7 +315,7 @@
 
   window.GPUStrokeProcessor = new GPUStrokeProcessor();
 
-  console.log('✅ gpu-stroke-processor.js Phase 5完全版 loaded');
-  console.log('   🔧 筆圧反映実装: width = baseSize * pressure');
+  console.log('✅ gpu-stroke-processor.js Phase C-0修正版 loaded');
+  console.log('   🔥 EdgeBuffer: PerfectFreehandアウトライン使用');
 
 })();

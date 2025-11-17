@@ -1,20 +1,20 @@
 /**
  * ================================================================================
- * webgpu-mask-layer.js Phase 5修正版
+ * webgpu-mask-layer.js Phase 6: 消しゴムmask-based完全版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
  *   - webgpu-drawing-layer.js (GPUDevice/Queue)
  *   - core-initializer.js (初期化)
  * 
- * 📄 子ファイル依存:
+ * 📄 子ファイル使用先:
  *   - brush-core.js (消しゴムマスク処理)
  * 
- * 【Phase 5改修内容】
- * ✅ context loss検出とリカバリー
- * ✅ リソース破棄の徹底
- * ✅ エラー時の自動再初期化
- * ✅ 過剰ログ削除
+ * 【Phase 6改修内容】
+ * ✅ 消しゴムストローク管理（startErase/eraseAppendPoint/finalizeErase）
+ * ✅ generateEraseMask() 実装（円形ブラシ軌跡→mask texture）
+ * ✅ composeMasks() 実装（複数ストローク統合）
+ * ✅ 既存機能完全継承
  * 
  * ================================================================================
  */
@@ -36,13 +36,15 @@ class WebGPUMaskLayer {
         
         this.polygonPipeline = null;
         this.compositePipeline = null;
+        this.eraseBrushPipeline = null;
         
         this._initialized = false;
+        
+        // ✅ Phase 6: 消しゴムストローク管理
+        this.currentErasePoints = [];
+        this.isErasing = false;
     }
     
-    /**
-     * Phase 5: context有効性チェック
-     */
     _isContextValid() {
         if (!this.device || !this.queue) return false;
         
@@ -53,9 +55,6 @@ class WebGPUMaskLayer {
         }
     }
     
-    /**
-     * Phase 5: リソース破棄ヘルパー
-     */
     _destroyResource(resource) {
         if (!resource) return;
         
@@ -63,9 +62,7 @@ class WebGPUMaskLayer {
             if (typeof resource.destroy === 'function') {
                 resource.destroy();
             }
-        } catch (e) {
-            // 既に破棄済み
-        }
+        } catch (e) {}
     }
     
     async initialize(width, height) {
@@ -93,6 +90,7 @@ class WebGPUMaskLayer {
             await this._createMaskTexture();
             await this._createPolygonPipeline();
             await this._createCompositePipeline();
+            await this._createEraseBrushPipeline();
             
             this.maskBuffer = new Float32Array(width * height);
             
@@ -105,18 +103,11 @@ class WebGPUMaskLayer {
         }
     }
     
-    /**
-     * Phase 5: 再初期化（context loss復旧用）
-     */
     async reinitialize() {
-        console.log('[WebGPUMaskLayer] Reinitializing...');
-        
-        // 既存リソース破棄
         this._destroyResource(this.maskTexture);
         this.maskTexture = null;
         this._initialized = false;
         
-        // 再初期化
         return await this.initialize(this.width, this.height);
     }
     
@@ -242,25 +233,75 @@ class WebGPUMaskLayer {
     }
     
     /**
-     * Phase 5: ポリゴン追加（context loss自動復旧対応）
+     * ✅ Phase 6: 消しゴムブラシシェーダー
      */
+    async _createEraseBrushPipeline() {
+        const shaderCode = `
+            struct EraseStroke {
+                pointCount: u32,
+                brushSize: f32,
+                padding1: f32,
+                padding2: f32,
+                points: array<vec4<f32>>  // x, y, pressure, unused
+            }
+            
+            @group(0) @binding(0) var maskTexture: texture_storage_2d<r32float, write>;
+            @group(0) @binding(1) var<storage, read> stroke: EraseStroke;
+            
+            @compute @workgroup_size(8, 8)
+            fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+                let texSize = textureDimensions(maskTexture);
+                if (gid.x >= texSize.x || gid.y >= texSize.y) {
+                    return;
+                }
+                
+                let pos = vec2<f32>(f32(gid.x), f32(gid.y));
+                var maxMask = 0.0;
+                
+                // 各ポイントからの円形ブラシ
+                for (var i = 0u; i < stroke.pointCount; i = i + 1u) {
+                    let point = stroke.points[i];
+                    let center = point.xy;
+                    let pressure = point.z;
+                    
+                    let dist = distance(pos, center);
+                    let radius = stroke.brushSize * 0.5 * max(0.1, pressure);
+                    
+                    // ソフトブラシ（フェザーエッジ）
+                    let feather = radius * 0.2;
+                    let maskValue = 1.0 - smoothstep(radius - feather, radius, dist);
+                    
+                    maxMask = max(maxMask, maskValue);
+                }
+                
+                textureStore(maskTexture, gid.xy, vec4<f32>(maxMask, 0.0, 0.0, 0.0));
+            }
+        `;
+        
+        const shaderModule = this.device.createShaderModule({
+            code: shaderCode,
+            label: 'Erase Brush Shader'
+        });
+        
+        this.eraseBrushPipeline = this.device.createComputePipeline({
+            layout: 'auto',
+            compute: {
+                module: shaderModule,
+                entryPoint: 'main'
+            },
+            label: 'Erase Brush Pipeline'
+        });
+    }
+    
     async addPolygonToMask(polygon, mode = 'add') {
-        // Phase 5: context有効性チェック
         if (!this._isContextValid()) {
-            console.warn('[WebGPUMaskLayer] Context invalid, attempting reinitialize');
             const reinitSuccess = await this.reinitialize();
             if (!reinitSuccess) {
-                console.error('[WebGPUMaskLayer] Reinitialize failed');
                 return false;
             }
         }
         
-        if (!this._initialized) {
-            console.warn('[WebGPUMaskLayer] Not initialized');
-            return false;
-        }
-        
-        if (!polygon || polygon.length === 0) {
+        if (!this._initialized || !polygon || polygon.length === 0) {
             return false;
         }
         
@@ -313,18 +354,202 @@ class WebGPUMaskLayer {
             this.queue.submit([commandEncoder.finish()]);
             await this.device.queue.onSubmittedWorkDone();
             
-            // Phase 5: リソース破棄
             this._destroyResource(polygonBuffer);
             
             return true;
             
         } catch (error) {
             console.error('[WebGPUMaskLayer] addPolygonToMask failed:', error);
-            
-            // Phase 5: エラー時のクリーンアップ
             this._destroyResource(polygonBuffer);
-            
             return false;
+        }
+    }
+    
+    /**
+     * ✅ Phase 6: 消しゴムストローク開始
+     */
+    startErase() {
+        this.currentErasePoints = [];
+        this.isErasing = true;
+    }
+    
+    /**
+     * ✅ Phase 6: 消しゴムポイント追加
+     */
+    eraseAppendPoint(x, y, pressure = 1.0) {
+        if (!this.isErasing) return;
+        
+        this.currentErasePoints.push({
+            x: x,
+            y: y,
+            pressure: pressure
+        });
+    }
+    
+    /**
+     * ✅ Phase 6: 消しゴムストローク終了
+     */
+    finalizeErase() {
+        this.isErasing = false;
+        const points = [...this.currentErasePoints];
+        this.currentErasePoints = [];
+        return points;
+    }
+    
+    /**
+     * ✅ Phase 6: 消しゴムマスク生成（円形ブラシ軌跡）
+     */
+    async generateEraseMask(points, brushSize) {
+        if (!this._isContextValid()) {
+            const reinitSuccess = await this.reinitialize();
+            if (!reinitSuccess) {
+                return null;
+            }
+        }
+        
+        if (!this._initialized || !points || points.length === 0) {
+            return null;
+        }
+        
+        let strokeBuffer = null;
+        let tempTexture = null;
+        
+        try {
+            // ストロークデータ構築
+            const headerSize = 4;
+            const totalFloats = headerSize + points.length * 4;
+            const strokeData = new Float32Array(totalFloats);
+            
+            strokeData[0] = points.length;
+            strokeData[1] = brushSize;
+            strokeData[2] = 0.0;
+            strokeData[3] = 0.0;
+            
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                const offset = headerSize + i * 4;
+                strokeData[offset] = p.x;
+                strokeData[offset + 1] = p.y;
+                strokeData[offset + 2] = p.pressure !== undefined ? p.pressure : 1.0;
+                strokeData[offset + 3] = 0.0;
+            }
+            
+            strokeBuffer = this.device.createBuffer({
+                size: strokeData.byteLength,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                label: 'Erase Stroke Buffer'
+            });
+            this.queue.writeBuffer(strokeBuffer, 0, strokeData);
+            
+            // 一時テクスチャ生成
+            tempTexture = this.device.createTexture({
+                size: [this.width, this.height, 1],
+                format: 'r32float',
+                usage: GPUTextureUsage.STORAGE_BINDING | 
+                       GPUTextureUsage.TEXTURE_BINDING |
+                       GPUTextureUsage.COPY_SRC
+            });
+            
+            const bindGroup = this.device.createBindGroup({
+                layout: this.eraseBrushPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: tempTexture.createView() },
+                    { binding: 1, resource: { buffer: strokeBuffer } }
+                ],
+                label: 'Erase Brush BindGroup'
+            });
+            
+            const commandEncoder = this.device.createCommandEncoder();
+            const passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setPipeline(this.eraseBrushPipeline);
+            passEncoder.setBindGroup(0, bindGroup);
+            
+            const workgroupsX = Math.ceil(this.width / 8);
+            const workgroupsY = Math.ceil(this.height / 8);
+            passEncoder.dispatchWorkgroups(workgroupsX, workgroupsY, 1);
+            passEncoder.end();
+            
+            this.queue.submit([commandEncoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
+            
+            this._destroyResource(strokeBuffer);
+            
+            return tempTexture;
+            
+        } catch (error) {
+            console.error('[WebGPUMaskLayer] generateEraseMask failed:', error);
+            this._destroyResource(strokeBuffer);
+            this._destroyResource(tempTexture);
+            return null;
+        }
+    }
+    
+    /**
+     * ✅ Phase 6: マスク合成（複数ストローク統合）
+     */
+    async composeMasks(baseTexture, newTexture, mode = 'add') {
+        if (!this._isContextValid()) {
+            return null;
+        }
+        
+        if (!this._initialized || !baseTexture || !newTexture) {
+            return null;
+        }
+        
+        let modeBuffer = null;
+        let outputTexture = null;
+        
+        try {
+            const modeValue = mode === 'add' ? 1.0 : -1.0;
+            const modeData = new Float32Array([modeValue]);
+            
+            modeBuffer = this.device.createBuffer({
+                size: modeData.byteLength,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            });
+            this.queue.writeBuffer(modeBuffer, 0, modeData);
+            
+            outputTexture = this.device.createTexture({
+                size: [this.width, this.height, 1],
+                format: 'r32float',
+                usage: GPUTextureUsage.STORAGE_BINDING | 
+                       GPUTextureUsage.TEXTURE_BINDING |
+                       GPUTextureUsage.COPY_SRC
+            });
+            
+            const bindGroup = this.device.createBindGroup({
+                layout: this.compositePipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: baseTexture.createView() },
+                    { binding: 1, resource: newTexture.createView() },
+                    { binding: 2, resource: outputTexture.createView() },
+                    { binding: 3, resource: { buffer: modeBuffer } }
+                ],
+                label: 'Composite BindGroup'
+            });
+            
+            const commandEncoder = this.device.createCommandEncoder();
+            const passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setPipeline(this.compositePipeline);
+            passEncoder.setBindGroup(0, bindGroup);
+            
+            const workgroupsX = Math.ceil(this.width / 8);
+            const workgroupsY = Math.ceil(this.height / 8);
+            passEncoder.dispatchWorkgroups(workgroupsX, workgroupsY, 1);
+            passEncoder.end();
+            
+            this.queue.submit([commandEncoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
+            
+            this._destroyResource(modeBuffer);
+            
+            return outputTexture;
+            
+        } catch (error) {
+            console.error('[WebGPUMaskLayer] composeMasks failed:', error);
+            this._destroyResource(modeBuffer);
+            this._destroyResource(outputTexture);
+            return null;
         }
     }
     
@@ -354,9 +579,6 @@ class WebGPUMaskLayer {
         return this._initialized;
     }
     
-    /**
-     * Phase 5: 完全クリーンアップ
-     */
     destroy() {
         this._destroyResource(this.maskTexture);
         this.maskTexture = null;
@@ -367,4 +589,7 @@ class WebGPUMaskLayer {
 
 window.WebGPUMaskLayer = WebGPUMaskLayer;
 
-console.log('✅ webgpu-mask-layer.js Phase 5 loaded');
+console.log('✅ webgpu-mask-layer.js Phase 6 消しゴムmask-based完全版 loaded');
+console.log('   ✅ generateEraseMask() 実装');
+console.log('   ✅ composeMasks() 実装');
+console.log('   ✅ 円形ブラシ軌跡マスク生成');
