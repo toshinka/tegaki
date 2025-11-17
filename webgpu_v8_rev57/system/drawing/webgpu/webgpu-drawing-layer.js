@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * webgpu-drawing-layer.js - Phase B-0: MSAA無効化（Device Hung対策）
+ * webgpu-drawing-layer.js - Phase B-1: アダプタ取得問題修正版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -14,10 +14,10 @@
  *   - stroke-renderer.js
  *   - msdf-pipeline-manager.js
  * 
- * 【Phase B-0改修内容】
- * 🔥 sampleCount: 4 → 1 (MSAA完全無効化)
- * 🔥 DXGI_ERROR_DEVICE_HUNG 根本対策
- * ✅ Phase 3機能完全継承（Device Lost監視）
+ * 【Phase B-1改修内容】
+ * 🔧 requestAdapter()をオプションなしで試行
+ * 🔧 フォールバック処理の追加
+ * 🔥 sampleCount: 1 (MSAA無効化維持)
  * 
  * ================================================================================
  */
@@ -36,7 +36,6 @@
       this.reinitAttempts = 0;
       this.maxReinitAttempts = 3;
       
-      // 🔥 Phase B-0: MSAA完全無効化（Device Hung対策）
       this.sampleCount = 1;
     }
 
@@ -50,22 +49,35 @@
           throw new Error('WebGPU not supported');
         }
 
-        this.adapter = await navigator.gpu.requestAdapter({
-          powerPreference: 'high-performance'
-        });
+        // 🔧 Phase B-1: まずオプションなしで試行
+        this.adapter = await navigator.gpu.requestAdapter();
+
+        // フォールバック: high-performanceを試行
+        if (!this.adapter) {
+          console.log('[WebGPU] Retrying with high-performance...');
+          this.adapter = await navigator.gpu.requestAdapter({
+            powerPreference: 'high-performance'
+          });
+        }
+
+        // フォールバック: low-powerを試行
+        if (!this.adapter) {
+          console.log('[WebGPU] Retrying with low-power...');
+          this.adapter = await navigator.gpu.requestAdapter({
+            powerPreference: 'low-power'
+          });
+        }
 
         if (!this.adapter) {
-          throw new Error('Failed to get WebGPU adapter');
+          throw new Error('Failed to get WebGPU adapter after all attempts');
         }
+
+        console.log('[WebGPU] Adapter obtained:', this.adapter);
+        console.log('[WebGPU] Adapter limits:', this.adapter.limits);
 
         this.device = await this.adapter.requestDevice({
           requiredFeatures: [],
-          requiredLimits: {
-            maxStorageBufferBindingSize: this.adapter.limits.maxStorageBufferBindingSize,
-            maxBufferSize: this.adapter.limits.maxBufferSize,
-            maxComputeWorkgroupSizeX: 256,
-            maxComputeWorkgroupSizeY: 256
-          }
+          requiredLimits: {}
         });
 
         this.queue = this.device.queue;
@@ -90,11 +102,10 @@
         this.isDeviceLost = false;
         this.reinitAttempts = 0;
 
-        console.log('✅ [WebGPUDrawingLayer] Phase B-0: MSAA無効化版 Initialized');
+        console.log('✅ [WebGPUDrawingLayer] Phase B-1 Initialized');
         console.log('   📊 Device:', this.device);
         console.log('   📊 Format:', this.format);
-        console.log('   🔥 MSAA sampleCount: 1 (無効化 - Device Hung対策)');
-        console.log('   🔥 Device Lost監視: 有効');
+        console.log('   🔥 MSAA sampleCount: 1 (無効化)');
 
         return true;
 
@@ -205,8 +216,6 @@
           duration: 5000
         });
       }
-      
-      console.warn(`[WebGPU] User notification: ${message}`);
     }
 
     _showFatalError() {
@@ -222,8 +231,6 @@
         });
       }
       
-      console.error('[WebGPU] Fatal error - manual intervention required');
-      
       if (confirm(message)) {
         window.location.reload();
       }
@@ -231,14 +238,14 @@
 
     getDevice() {
       if (!this.initialized || !this.device || this.isDeviceLost) {
-        throw new Error('[WebGPUDrawingLayer] Device not available (lost or not initialized)');
+        throw new Error('[WebGPUDrawingLayer] Device not available');
       }
       return this.device;
     }
 
     getQueue() {
       if (!this.initialized || !this.queue || this.isDeviceLost) {
-        throw new Error('[WebGPUDrawingLayer] Queue not available (lost or not initialized)');
+        throw new Error('[WebGPUDrawingLayer] Queue not available');
       }
       return this.queue;
     }
@@ -285,8 +292,7 @@
 
   window.WebGPUDrawingLayer = new WebGPUDrawingLayer();
 
-  console.log('✅ webgpu-drawing-layer.js Phase B-0: MSAA無効化版 loaded');
-  console.log('   🔥 sampleCount: 1 (MSAA無効化)');
-  console.log('   🔥 DXGI_ERROR_DEVICE_HUNG 対策完了');
+  console.log('✅ webgpu-drawing-layer.js Phase B-1 loaded');
+  console.log('   🔧 アダプタ取得問題修正');
 
 })();

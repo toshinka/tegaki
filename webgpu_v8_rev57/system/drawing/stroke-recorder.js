@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * stroke-recorder.js - GPT5アドバイス適用版
+ * stroke-recorder.js - Phase 3-1: addPoint デバッグ強化版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,8 +11,10 @@
  *   - brush-core.js (startStroke/updateStroke/endStroke呼び出し)
  *   - gpu-stroke-processor.js (点列提供)
  * 
- * 【GPT5アドバイス適用箇所】
- * ✅ ② pressure / tilt / world座標変換が常にundefinedになる問題を修正
+ * 【Phase 3-1改修内容】
+ * 🔧 addPoint実行確認のデバッグログ追加
+ * 🔧 isRecordingフラグ状態の可視化
+ * 🔧 points配列への追加確認
  * 
  * 【責務】
  * - Local座標ポイントの記録（変換・補間一切行わない）
@@ -69,6 +71,10 @@
         }
 
         startStroke(localX, localY, pressure = 0.5, options = {}) {
+            console.log('[StrokeRecorder] startStroke called:', {
+                localX, localY, pressure
+            });
+
             this.points = [];
             this.isRecording = true;
             this.strokeStartTime = performance.now();
@@ -79,34 +85,36 @@
             this.currentColor = options.color || null;
             this.currentSize = options.size || null;
 
-            // ✅ GPT5アドバイス② 初期ポイント追加時もpressure確実設定
             this.addPoint(localX, localY, pressure, 0, 0);
 
             this.totalStrokes++;
+            
+            console.log('[StrokeRecorder] isRecording set to:', this.isRecording);
         }
 
-        /**
-         * ✅ GPT5アドバイス② pressure確実設定・座標そのまま記録
-         */
         addPoint(localX, localY, pressure = 0.5, tiltX = 0, tiltY = 0) {
+            console.log('[StrokeRecorder] addPoint called:', {
+                isRecording: this.isRecording,
+                pointsCount: this.points.length,
+                localX, localY, pressure
+            });
+
             if (!this.isRecording) {
+                console.warn('[StrokeRecorder] Not recording, point discarded');
                 return;
             }
 
             const now = performance.now();
             const timeDelta = now - this.lastPointTime;
 
-            // ✅ GPT5アドバイス② pressure・tilt・座標を確実に設定
             const point = {
-                x: localX,                                              // そのまま記録
-                y: localY,                                              // そのまま記録
-                pressure: Math.max(0.01, Math.min(1.0, pressure)),     // 正規化
-
+                x: localX,
+                y: localY,
+                pressure: Math.max(0.01, Math.min(1.0, pressure)),
                 tiltX: tiltX,
                 tiltY: tiltY,
                 timestamp: now,
                 timeDelta: timeDelta,
-
                 edgeId: this.points.length,
                 channelId: this.points.length % 3
             };
@@ -114,6 +122,8 @@
             this.points.push(point);
             this.lastPointTime = now;
             this.totalPoints++;
+            
+            console.log('[StrokeRecorder] Point added successfully, total:', this.points.length);
         }
 
         endStroke() {
@@ -123,7 +133,8 @@
 
             this.isRecording = false;
 
-            // ✅ GPT5アドバイス② 2点未満チェック復活
+            console.log('[StrokeRecorder] endStroke called, points count:', this.points.length);
+
             if (this.points.length < 2) {
                 console.warn('[StrokeRecorder] Stroke too short, discarded');
                 return null;
@@ -236,7 +247,7 @@
         window.strokeRecorder = new StrokeRecorder();
     }
 
-    console.log('✅ stroke-recorder.js GPT5修正版 loaded');
-    console.log('   🔧 ② pressure/tilt/座標確実設定完了');
+    console.log('✅ stroke-recorder.js Phase 3-1 loaded');
+    console.log('   🔧 addPoint デバッグ強化');
 
 })();

@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * drawing-engine.js Phase 3完全版（フリッカー完全解消）
+ * drawing-engine.js Phase 1-2: PointerEvent配信デバッグ強化版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -19,16 +19,19 @@
  * - PointerEventのキューイング
  * - Master Loop連携（rAF発行禁止）
  * 
- * 【Phase 3改修内容】
- * 🔧 _scheduleRender()削除 - requestAnimationFrame発行禁止
- * 🔧 pendingPointsをキューに溜めるのみ
- * 🔧 core-engineのMaster Loopに完全依存
- * 🚨 二重レンダーループの完全排除
+ * 【Phase 1-2改修内容】
+ * 🔧 WebGPU Canvas専用接続の明示化
+ * 🔧 PointerEvent配信フローのデバッグログ追加
+ * 🔧 activePointers管理の厳密化
+ * 
+ * 【PixiJS使用制限】
+ * - PixiJS は UI ホスト専用
+ * - pointer イベントの一次取得は WebGPU Canvas が担当
+ * - 描画処理は WebGPU が担当
  * 
  * ================================================================================
  */
 
-// ポインタバッチ処理用グローバル変数（モジュールスコープ）
 let pendingPoints = [];
 
 class DrawingEngine {
@@ -56,10 +59,16 @@ class DrawingEngine {
     }
 
     _initializeCanvas() {
-        const canvas = this.app.canvas || this.app.view;
+        // 🔧 WebGPU Canvas専用接続を明示
+        const canvas = document.getElementById('webgpu-canvas') || this.app.canvas || this.app.view;
+        
         if (!canvas) {
             console.error('[DrawingEngine] Canvas not found');
             return;
+        }
+
+        if (canvas.id !== 'webgpu-canvas') {
+            console.warn('[DrawingEngine] Canvas is not webgpu-canvas:', canvas.id);
         }
 
         canvas.style.touchAction = 'none';
@@ -77,12 +86,10 @@ class DrawingEngine {
         }, {
             preventDefault: true
         });
+
+        console.log('[DrawingEngine] Pointer events attached to:', canvas.id);
     }
 
-    /**
-     * 🔧 Phase 3: 公開メソッド（core-engine Master Loop専用）
-     * ⚠️ この関数のみがpendingPointsを処理する
-     */
     flushPendingPoints() {
         if (pendingPoints.length === 0) return;
 
@@ -99,54 +106,67 @@ class DrawingEngine {
         pendingPoints = [];
     }
 
-    /**
-     * 🔧 Phase 3改修: ポインタダウン → キューに追加のみ
-     * ❌ requestAnimationFrame発行禁止
-     */
     _handlePointerDown(info, e) {
         if (this.cameraSystem?.isCanvasMoveMode()) return;
         if (this.layerSystem?.vKeyPressed) return;
         if (info.button === 2) return;
 
+        console.log('[DrawingEngine] _handlePointerDown:', {
+            pointerId: info.pointerId,
+            clientX: info.clientX,
+            clientY: info.clientY,
+            pressure: info.pressure
+        });
+
         pendingPoints.push({ type: 'begin', info });
-        // ❌ _scheduleRender()呼び出し削除 - Master Loop依存
     }
 
-    /**
-     * 🔧 Phase 3改修: ポインタムーブ → キューに追加のみ
-     * ❌ requestAnimationFrame発行禁止
-     */
     _handlePointerMove(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
-        if (!pointerInfo || !pointerInfo.isDrawing) return;
+        
+        console.log('[DrawingEngine] _handlePointerMove:', {
+            pointerId: info.pointerId,
+            hasPointerInfo: !!pointerInfo,
+            isDrawing: pointerInfo?.isDrawing,
+            clientX: info.clientX,
+            clientY: info.clientY
+        });
+        
+        if (!pointerInfo || !pointerInfo.isDrawing) {
+            console.warn('[DrawingEngine] PointerMove blocked - not drawing');
+            return;
+        }
 
+        console.log('[DrawingEngine] Queuing move point');
         pendingPoints.push({ type: 'move', info });
-        // ❌ _scheduleRender()呼び出し削除 - Master Loop依存
     }
 
-    /**
-     * 🔧 Phase 3改修: ポインタアップ → キューに追加のみ
-     * ⚠️ 即座フラッシュも削除（Master Loop一本化）
-     */
     _handlePointerUp(info, e) {
+        console.log('[DrawingEngine] _handlePointerUp:', {
+            pointerId: info.pointerId,
+            clientX: info.clientX,
+            clientY: info.clientY
+        });
+
         pendingPoints.push({ type: 'end', info });
         this.activePointers.delete(info.pointerId);
-        // ❌ 即座フラッシュ削除 - Master Loop依存
     }
 
     _handlePointerCancel(info, e) {
+        console.log('[DrawingEngine] _handlePointerCancel:', info.pointerId);
+        
         if (this.brushCore && this.brushCore.cancelStroke) {
             this.brushCore.cancelStroke();
         }
         this.activePointers.delete(info.pointerId);
     }
 
-    /**
-     * 実際のPointerDown処理
-     */
     _processPointerDown(info) {
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
-        if (!localCoords) return;
+        if (!localCoords) {
+            console.error('[DrawingEngine] _processPointerDown: localCoords is null');
+            return;
+        }
 
         const currentMode = this.brushCore.getMode();
         
@@ -164,8 +184,14 @@ class DrawingEngine {
             return;
         }
 
+        // 🔧 isDrawing: trueを確実に設定
         this.activePointers.set(info.pointerId, {
             type: info.pointerType || 'unknown',
+            isDrawing: true
+        });
+
+        console.log('[DrawingEngine] activePointers.set:', {
+            pointerId: info.pointerId,
             isDrawing: true
         });
 
@@ -179,16 +205,28 @@ class DrawingEngine {
         }
     }
 
-    /**
-     * 実際のPointerMove処理
-     */
     _processPointerMove(info) {
+        console.log('[DrawingEngine] _processPointerMove:', {
+            hasBrushCore: !!this.brushCore,
+            isActive: this.brushCore?.isActive?.()
+        });
+
         if (!this.brushCore || !this.brushCore.isActive || !this.brushCore.isActive()) {
+            console.warn('[DrawingEngine] BrushCore not active');
             return;
         }
 
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
-        if (!localCoords) return;
+        if (!localCoords) {
+            console.warn('[DrawingEngine] Local coords conversion failed');
+            return;
+        }
+
+        console.log('[DrawingEngine] Calling updateStroke:', {
+            localX: localCoords.localX,
+            localY: localCoords.localY,
+            pressure: info.pressure
+        });
 
         if (this.brushCore.updateStroke) {
             this.brushCore.updateStroke(
@@ -200,9 +238,6 @@ class DrawingEngine {
         }
     }
 
-    /**
-     * 実際のPointerUp処理
-     */
     _processPointerUp(info) {
         if (this.brushCore && this.brushCore.isActive && this.brushCore.isActive()) {
             if (this.brushCore.finalizeStroke) {
@@ -211,9 +246,6 @@ class DrawingEngine {
         }
     }
 
-    /**
-     * 座標変換: Screen → Canvas → World → Local
-     */
     _screenToLocal(clientX, clientY) {
         if (!this.coordSystem) {
             console.error('[DrawingEngine] CoordinateSystem not available');
@@ -275,7 +307,6 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js Phase 3完全版 loaded');
-console.log('   🔧 requestAnimationFrame発行禁止');
-console.log('   🔧 Master Loop完全統合');
-console.log('   🚨 二重レンダーループ排除完了');
+console.log('✅ drawing-engine.js Phase 1-2 loaded');
+console.log('   🔧 WebGPU Canvas専用接続');
+console.log('   🔧 PointerEvent配信デバッグ強化');
