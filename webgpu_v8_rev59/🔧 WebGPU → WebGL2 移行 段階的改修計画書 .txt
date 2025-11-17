@@ -4,7 +4,7 @@ PerfectFreehand + MSDF ポリゴンペン実装
 ================================================================================
 
 【目的】
-WebGPU実装（webgpu_v8_rev58）をWebGL2バックエンドに最小変更で移行
+WebGPU実装（webgpu_v8）をWebGL2バックエンドに最小変更で移行
 PerfectFreehand + MSDF（JFA）機能を維持し、Pixi/UI衝突を回避
 既存ファイルを極力流用、GPU層とシェーダーのみ置換
 

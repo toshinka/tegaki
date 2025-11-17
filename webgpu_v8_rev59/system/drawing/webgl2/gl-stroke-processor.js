@@ -1,294 +1,240 @@
 /**
  * ================================================================================
- * gl-stroke-processor.js - WebGL2 Stroke Processor
+ * WebGL2 Drawing Layer - Phase 1
  * ================================================================================
- * 
- * 📁 親ファイル依存:
- *   - stroke-recorder.js (points取得)
- *   - webgl2-drawing-layer.js (gl context)
- *   - libs/perfect-freehand-1.2.0.min.js (window.PerfectFreehand)
- *   - earcut-triangulator.js (window.EarcutTriangulator)
- *   - config.js (perfectFreehand設定)
- * 
- * 📄 子ファイル使用先:
- *   - gl-msdf-pipeline.js (VertexBuffer + edgeCount受け渡し)
- *   - brush-core.js (呼び出し元)
  * 
  * 【責務】
- * - PerfectFreehandアウトライン生成
- * - Earcut三角形分割
- * - アウトラインからEdge生成（MSDF用）
- * - VBO生成・アップロード
- * - Bounds計算
+ * - WebGL2 context初期化・管理
+ * - FBO（FrameBuffer Object）生成・削除
+ * - Extension確認・取得
  * 
- * 【WebGPU→WebGL2移行対応】
- * - GPUStrokeProcessorインターフェース互換維持
- * - uploadToGPU()はWebGL2のVBO生成に変更
+ * 【親子依存関係】
+ * 親: core-initializer.js (initializeWebGL2から呼び出し)
+ * 子: なし（最下層GPU抽象化レイヤー）
  * 
- * ================================================================================
+ * 【WebGPU互換API】
+ * - getCanvas() : WebGPUDrawingLayer.getCanvas()互換
+ * - getGL() : WebGPUDrawingLayer.getDevice()互換
+ * - isInitialized() : 初期化状態確認
+ * 
+ * 【グローバル登録】
+ * window.WebGL2DrawingLayer (Singleton)
  */
 
 (function() {
   'use strict';
 
-  class GLStrokeProcessor {
+  class WebGL2DrawingLayer {
     constructor() {
+      this.canvas = null;
       this.gl = null;
       this.initialized = false;
+      this.extensions = {};
+      this.maxTextureSize = 0;
     }
 
-    async initialize(gl) {
-      if (this.initialized) return;
-      
-      if (!window.PerfectFreehand) {
-        throw new Error('[GLStrokeProcessor] PerfectFreehand library not found');
+    /**
+     * WebGL2コンテキスト初期化
+     * @returns {Promise<boolean>} 成功時true
+     */
+    async initialize() {
+      if (this.initialized) {
+        console.warn('[WebGL2DrawingLayer] Already initialized');
+        return true;
       }
-      if (!window.EarcutTriangulator) {
-        throw new Error('[GLStrokeProcessor] EarcutTriangulator not found');
-      }
+
+      // Canvas取得（webgl2-canvas優先、なければwebgpu-canvas流用）
+      this.canvas = document.getElementById('webgl2-canvas') || 
+                    document.getElementById('webgpu-canvas');
       
-      this.gl = gl || window.WebGL2DrawingLayer?.getGL();
+      if (!this.canvas) {
+        console.error('[WebGL2DrawingLayer] Canvas not found');
+        return false;
+      }
+
+      // WebGL2コンテキスト取得
+      const contextOptions = {
+        alpha: true,
+        antialias: false,
+        depth: false,
+        stencil: false,
+        premultipliedAlpha: true,
+        preserveDrawingBuffer: false,
+        powerPreference: 'high-performance'
+      };
+
+      this.gl = this.canvas.getContext('webgl2', contextOptions);
+      
       if (!this.gl) {
-        throw new Error('[GLStrokeProcessor] GL context not available');
-      }
-      
-      this.initialized = true;
-    }
-
-    createPolygonVertexBuffer(points, baseSize = 10) {
-      if (!this.initialized) {
-        throw new Error('[GLStrokeProcessor] Not initialized');
-      }
-      
-      if (!Array.isArray(points) || points.length === 0) {
-        return null;
+        console.error('[WebGL2DrawingLayer] WebGL2 not supported');
+        return false;
       }
 
-      let processedPoints = [];
-      if (typeof points[0] === 'object' && points[0].x !== undefined) {
-        processedPoints = points.map(p => ({
-          x: p.x,
-          y: p.y,
-          pressure: p.pressure !== undefined ? p.pressure : 0.5
-        }));
-      } else {
-        for (let i = 0; i < points.length; i += 2) {
-          processedPoints.push({
-            x: points[i],
-            y: points[i + 1],
-            pressure: 0.5
-          });
-        }
-      }
+      // Extension確認
+      this._checkExtensions();
 
-      if (processedPoints.length < 2) {
-        return null;
-      }
-
-      const bounds = this._calculateBoundsFromPoints(processedPoints, baseSize);
-      const offsetX = bounds.minX;
-      const offsetY = bounds.minY;
-
-      const strokePoints = processedPoints.map(p => [p.x, p.y, p.pressure]);
-      
-      const pfOptions = window.config?.perfectFreehand || {
-        size: baseSize,
-        thinning: 0,
-        smoothing: 0,
-        streamline: 0,
-        simulatePressure: false,
-        last: true
-      };
-
-      const outlinePoints = window.PerfectFreehand(strokePoints, pfOptions);
-      
-      if (!outlinePoints || outlinePoints.length < 3) {
-        return null;
-      }
-
-      const polygon = outlinePoints.map(p => [p[0] - offsetX, p[1] - offsetY]);
-      const triangles = window.EarcutTriangulator.triangulate(polygon);
-      
-      if (!triangles || triangles.length === 0) {
-        return null;
-      }
-
-      const vertexCount = triangles.length;
-      const buffer = new Float32Array(vertexCount * 7);
-
-      for (let i = 0; i < triangles.length; i++) {
-        const tri = triangles[i];
-        const bufferIdx = i * 7;
-        buffer[bufferIdx + 0] = tri[0];
-        buffer[bufferIdx + 1] = tri[1];
-        buffer[bufferIdx + 2] = tri[0];
-        buffer[bufferIdx + 3] = tri[1];
-        buffer[bufferIdx + 4] = tri[0];
-        buffer[bufferIdx + 5] = tri[1];
-        buffer[bufferIdx + 6] = 0.0;
-      }
-
-      return { buffer, vertexCount, bounds };
-    }
-
-    createEdgeBuffer(points, baseSize = 10) {
-      if (!Array.isArray(points) || points.length === 0) return null;
-
-      let processedPoints = [];
-      if (typeof points[0] === 'object' && points[0].x !== undefined) {
-        processedPoints = points.map(p => ({
-          x: p.x,
-          y: p.y,
-          pressure: p.pressure !== undefined ? p.pressure : 0.5
-        }));
-      } else {
-        for (let i = 0; i < points.length; i += 2) {
-          processedPoints.push({
-            x: points[i],
-            y: points[i + 1],
-            pressure: 0.5
-          });
-        }
-      }
-
-      if (processedPoints.length < 2) return null;
-
-      const bounds = this._calculateBoundsFromPoints(processedPoints, baseSize);
-      const offsetX = bounds.minX;
-      const offsetY = bounds.minY;
-
-      const strokePoints = processedPoints.map(p => [p.x, p.y, p.pressure]);
-      
-      const pfOptions = window.config?.perfectFreehand || {
-        size: baseSize,
-        thinning: 0,
-        smoothing: 0,
-        streamline: 0,
-        simulatePressure: false,
-        last: true
-      };
-
-      const outlinePoints = window.PerfectFreehand(strokePoints, pfOptions);
-      
-      if (!outlinePoints || outlinePoints.length < 3) {
-        return null;
-      }
-
-      const numOutlinePoints = outlinePoints.length;
-      const edgeCount = numOutlinePoints;
-      const buffer = new Float32Array(edgeCount * 8);
-
-      for (let i = 0; i < numOutlinePoints; i++) {
-        const p0 = outlinePoints[i];
-        const p1 = outlinePoints[(i + 1) % numOutlinePoints];
-        const bufferIdx = i * 8;
-
-        buffer[bufferIdx + 0] = p0[0] - offsetX;
-        buffer[bufferIdx + 1] = p0[1] - offsetY;
-        buffer[bufferIdx + 2] = p1[0] - offsetX;
-        buffer[bufferIdx + 3] = p1[1] - offsetY;
-
-        const dx = p1[0] - p0[0];
-        const dy = p1[1] - p0[1];
-        const len = Math.sqrt(dx * dx + dy * dy);
-        const nx = len > 0 ? -dy / len : 0;
-        const ny = len > 0 ? dx / len : 0;
-
-        buffer[bufferIdx + 4] = nx;
-        buffer[bufferIdx + 5] = ny;
-        buffer[bufferIdx + 6] = i % 3;
-        buffer[bufferIdx + 7] = i;
-      }
-
-      return { buffer, edgeCount, bounds };
-    }
-
-    uploadToGPU(data, usage = 'storage', elementStrideBytes = 8 * 4) {
-      if (!this.initialized) {
-        throw new Error('[GLStrokeProcessor] Not initialized');
-      }
-
-      if (!data || data.length === 0) {
-        throw new Error('[GLStrokeProcessor] Empty buffer');
-      }
-
+      // 基本設定
       const gl = this.gl;
-      const glBuffer = gl.createBuffer();
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+      // 最大テクスチャサイズ取得
+      this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+
+      this.initialized = true;
+      console.log('[WebGL2DrawingLayer] ✅ Initialized', {
+        maxTextureSize: this.maxTextureSize,
+        extensions: Object.keys(this.extensions)
+      });
+
+      return true;
+    }
+
+    /**
+     * Extension確認・取得
+     * @private
+     */
+    _checkExtensions() {
+      const gl = this.gl;
       
-      if (usage === 'vertex') {
-        gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      } else {
-        gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      // Float texture support (MSDF用)
+      this.extensions.colorBufferFloat = gl.getExtension('EXT_color_buffer_float');
+      if (!this.extensions.colorBufferFloat) {
+        console.warn('[WebGL2DrawingLayer] EXT_color_buffer_float not available');
       }
 
-      gl.bindBuffer(gl.ARRAY_BUFFER, null);
-
-      const elementCount = Math.floor(data.byteLength / elementStrideBytes);
-
-      return { glBuffer, elementCount };
-    }
-
-    calculateBounds(points, baseSize = 10) {
-      if (!Array.isArray(points) || points.length === 0) {
-        return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
-      }
-
-      let processedPoints = [];
-      if (typeof points[0] === 'object' && points[0].x !== undefined) {
-        processedPoints = points.map(p => ({
-          x: p.x,
-          y: p.y,
-          pressure: p.pressure !== undefined ? p.pressure : 0.5
-        }));
-      } else {
-        for (let i = 0; i < points.length; i += 2) {
-          processedPoints.push({
-            x: points[i],
-            y: points[i + 1],
-            pressure: 0.5
-          });
-        }
-      }
-
-      return this._calculateBoundsFromPoints(processedPoints, baseSize);
-    }
-
-    _calculateBoundsFromPoints(points, baseSize = 10) {
-      if (points.length < 1) {
-        return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
-      }
-
-      let minX = Infinity, minY = Infinity;
-      let maxX = -Infinity, maxY = -Infinity;
-      let maxWidth = 0;
-
-      for (const p of points) {
-        const width = baseSize * (p.pressure !== undefined ? p.pressure : 0.5);
-        maxWidth = Math.max(maxWidth, width);
-        
-        minX = Math.min(minX, p.x);
-        minY = Math.min(minY, p.y);
-        maxX = Math.max(maxX, p.x);
-        maxY = Math.max(maxY, p.y);
-      }
-
-      const margin = maxWidth / 2 + 20;
+      // Float texture linear filtering
+      this.extensions.textureFloatLinear = gl.getExtension('OES_texture_float_linear');
       
-      return {
-        minX: minX - margin,
-        minY: minY - margin,
-        maxX: maxX + margin,
-        maxY: maxY + margin
-      };
+      // Half float support
+      this.extensions.colorBufferHalfFloat = gl.getExtension('EXT_color_buffer_half_float');
     }
 
-    destroy() {
-      this.initialized = false;
+    /**
+     * FBO生成
+     * @param {number} width - 幅
+     * @param {number} height - 高さ
+     * @param {Object} options - オプション
+     * @param {boolean} options.float - Float textureを使用
+     * @param {boolean} options.halfFloat - Half float textureを使用
+     * @returns {Object} {fbo, texture, width, height}
+     */
+    createFBO(width, height, options = {}) {
+      const gl = this.gl;
+      
+      // Texture生成
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      
+      // Format決定
+      let internalFormat, format, type;
+      
+      if (options.float && this.extensions.colorBufferFloat) {
+        internalFormat = gl.RGBA32F;
+        format = gl.RGBA;
+        type = gl.FLOAT;
+      } else if (options.halfFloat && this.extensions.colorBufferHalfFloat) {
+        internalFormat = gl.RGBA16F;
+        format = gl.RGBA;
+        type = gl.HALF_FLOAT;
+      } else {
+        internalFormat = gl.RGBA8;
+        format = gl.RGBA;
+        type = gl.UNSIGNED_BYTE;
+      }
+      
+      gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      
+      // FBO生成
+      const fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      
+      // Status確認
+      const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      if (status !== gl.FRAMEBUFFER_COMPLETE) {
+        console.error('[WebGL2DrawingLayer] FBO incomplete:', status);
+        this.deleteFBO({ fbo, texture });
+        return null;
+      }
+      
+      // Unbind
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      
+      return { fbo, texture, width, height };
+    }
+
+    /**
+     * FBO削除
+     * @param {Object} fboObj - createFBOの戻り値
+     */
+    deleteFBO(fboObj) {
+      if (!fboObj) return;
+      
+      const gl = this.gl;
+      if (fboObj.fbo) gl.deleteFramebuffer(fboObj.fbo);
+      if (fboObj.texture) gl.deleteTexture(fboObj.texture);
+    }
+
+    /**
+     * Texture生成（FBO不要の場合）
+     * @param {number} width - 幅
+     * @param {number} height - 高さ
+     * @param {Object} options - オプション
+     * @returns {WebGLTexture}
+     */
+    createTexture(width, height, options = {}) {
+      const gl = this.gl;
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      
+      let internalFormat = options.float ? gl.RGBA32F : gl.RGBA8;
+      let format = gl.RGBA;
+      let type = options.float ? gl.FLOAT : gl.UNSIGNED_BYTE;
+      
+      gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      return texture;
+    }
+
+    // ========== WebGPU互換API ==========
+
+    getCanvas() {
+      return this.canvas;
+    }
+
+    getGL() {
+      return this.gl;
+    }
+
+    getFormat() {
+      return 'rgba8'; // WebGPU互換用
+    }
+
+    isInitialized() {
+      return this.initialized;
+    }
+
+    getMaxTextureSize() {
+      return this.maxTextureSize;
     }
   }
 
-  window.GLStrokeProcessor = new GLStrokeProcessor();
+  // Singleton登録
+  window.WebGL2DrawingLayer = new WebGL2DrawingLayer();
+
+  console.log('✅ webgl2-drawing-layer.js Phase 1 loaded');
 
 })();
