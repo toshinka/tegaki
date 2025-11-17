@@ -1,0 +1,447 @@
+================================================================================
+WebGPU MSDF ペン描画 段階的改修計画書
+================================================================================
+
+【現状問題分析】
+
+⚠️ 根本問題: WebGPU Canvas が正しく初期化・接続されていない
+    └─ WebGPUDrawingLayer が Canvas要素を一切取得していない
+    └─ context.configure() が呼ばれていない
+    └─ drawing-engine との接続が不完全
+
+❌ 主要エラー:
+    1. "No available adapters" → Canvas未接続によるadapter取得失敗
+    2. "Canvas is not webgpu-canvas" → drawing-engineへのCanvas引き渡し不全
+    3. "MSDF not available, cannot finalize stroke" → Pipeline初期化未完了
+
+✅ 正常動作箇所:
+    - PointerEvent取得・配信フロー (pointer-handler → drawing-engine)
+    - ストローク記録 (stroke-recorder)
+    - 座標変換パイプライン (Screen→Canvas→World→Local)
+
+
+================================================================================
+【ファイル依存関係マップ】
+
+📁 core-initializer.js (初期化オーケストレーター)
+    ├─ 📄 webgpu-drawing-layer.js [⚠️修正必須]
+    │   └─ Canvas生成・WebGPU adapter/device取得
+    │   └─ context.configure()実行 [❌未実装]
+    │
+    ├─ 📄 drawing-engine.js [🔧修正必要]
+    │   ├─ webgpu-canvas要素取得
+    │   └─ PointerEvent → brush-core連携
+    │
+    ├─ 📄 brush-core.js [🔍要調整]
+    │   ├─ 📄 stroke-recorder.js (ポイント記録)
+    │   ├─ 📄 gpu-stroke-processor.js (ポリゴン生成)
+    │   ├─ 📄 msdf-pipeline-manager.js [⚠️初期化順序]
+    │   └─ 📄 webgpu-texture-bridge.js
+    │
+    └─ 📄 msdf-pipeline-manager.js [🔍要検証]
+        ├─ Seed Init Pass
+        ├─ JFA Pass (複数回)
+        ├─ Encode Pass
+        ├─ Compose Pass
+        └─ Render Pass
+
+🔀 イベントフロー:
+    PointerDown → drawing-engine._handlePointerDown
+                → activePointers.set(isDrawing: true)
+                → brush-core.startStroke
+                → stroke-recorder.startStroke
+    
+    PointerMove → drawing-engine._handlePointerMove
+                → pendingPoints.push
+                → brush-core.updateStroke
+                → stroke-recorder.addPoint
+    
+    PointerUp   → brush-core.finalizeStroke
+                → [❌ここで停止: MSDF not available]
+
+
+================================================================================
+【段階的改修計画】
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 1: WebGPU Canvas 生成・接続 [最優先]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 修正対象: webgpu-drawing-layer.js
+
+【修正内容】
+  1. Canvas要素の明示的取得
+     - this.canvas = document.getElementById('webgpu-canvas')
+     - 存在確認・待機ロジック実装
+  
+  2. WebGPU Context設定
+     - this.context = canvas.getContext('webgpu')
+     - context.configure({ device, format, width, height })
+  
+  3. DPR対応サイズ計算
+     - rect.width/height × devicePixelRatio
+     - 最小値1px保証
+
+【期待結果】
+  ✅ adapter取得成功
+  ✅ device生成成功
+  ✅ context.configure()完了
+  ✅ canvas.id === 'webgpu-canvas' 確認
+
+【検証方法】
+  console.log('[WebGPU] Canvas:', canvas.id)
+  console.log('[WebGPU] Context:', context)
+  console.log('[WebGPU] Configured size:', width, height)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 2: DrawingEngine との Canvas 接続
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 修正対象: drawing-engine.js
+
+【修正内容】
+  1. WebGPUDrawingLayer からの Canvas取得
+     - const canvas = window.WebGPUDrawingLayer.getCanvas()
+     - フォールバック: document.getElementById('webgpu-canvas')
+  
+  2. Canvas ID検証の厳密化
+     - if (canvas.id !== 'webgpu-canvas') throw Error
+  
+  3. PointerEvent登録確認
+     - setPointerCapture の正常動作保証
+
+【期待結果】
+  ✅ WebGPU Canvas への PointerEvent 接続
+  ✅ console警告 "Canvas is not webgpu-canvas" 消失
+  ✅ activePointers.set({ isDrawing: true }) 正常動作
+
+【検証方法】
+  console.log('[DrawingEngine] Canvas received:', canvas.id)
+  PointerDown時に activePointers.size === 1 確認
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 3: MSDF Pipeline 初期化完全化
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 修正対象: core-initializer.js, msdf-pipeline-manager.js
+
+【修正内容】
+  1. Pipeline生成順序の保証
+     - await msdfPipelineManager.initialize()
+     - await msdfPipelineManager._createJFAPipeline()
+     - await msdfPipelineManager._createEncodePipeline()
+     - await msdfPipelineManager._createRenderPipeline()
+  
+  2. 初期化完了フラグの確実化
+     - msdfPipelineManager.initialized = true
+     - 各Pipeline存在確認
+  
+  3. BrushCore への通知
+     - BrushCore.msdfAvailable = true 強制設定
+     - 参照の再設定: gpuStrokeProcessor, msdfPipelineManager, textureBridge
+
+【期待結果】
+  ✅ msdfPipelineManager.initialized === true
+  ✅ jfaPipeline, encodePipeline, renderPipeline すべて存在
+  ✅ BrushCore.msdfAvailable === true
+
+【検証方法】
+  console.log('[MSDF] Pipelines:', {
+    jfa: !!msdfPipelineManager.jfaPipeline,
+    encode: !!msdfPipelineManager.encodePipeline,
+    render: !!msdfPipelineManager.polygonRenderPipeline
+  })
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 4: BrushCore 再初期化・強制接続
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 修正対象: brush-core.js, core-initializer.js
+
+【修正内容】
+  1. WebGPU完全初期化後の BrushCore.initialize() 呼び出し
+     - initializeWebGPU() 完了後に実行
+     - 強制的に参照を再設定
+  
+  2. msdfAvailable フラグの確実化
+     - 初期化失敗でも強制的に true 設定 (Phase 3完了時)
+  
+  3. finalizeStroke の MSDF 分岐改善
+     - msdfAvailable === false 時の明確なエラーメッセージ
+
+【期待結果】
+  ✅ BrushCore.initialized === true
+  ✅ BrushCore.msdfAvailable === true
+  ✅ finalizeStroke で MSDF処理が実行される
+
+【検証方法】
+  console.log('[BrushCore] Init result:', {
+    initialized: BrushCore.initialized,
+    msdfAvailable: BrushCore.msdfAvailable,
+    gpu: !!BrushCore.gpuStrokeProcessor
+  })
+  
+  ストローク描画後に sprite が Layer に追加されることを確認
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 5: MSDF Seed Clear 実装確認
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 修正対象: msdf-pipeline-manager.js
+
+【修正内容】
+  1. generateMSDF() の最初で clearSeedTexture() 実行
+     - seedTexture を -1.0 で初期化
+     - Compute Pass として実装
+  
+  2. Seed Init Pass の確実な実行
+     - Edge Buffer から seedTexture 生成
+  
+  3. JFA Pass の複数回実行
+     - 最低2回、理想的には log2(maxDimension) 回
+
+【期待結果】
+  ✅ seedTexture が正しく初期化される
+  ✅ MSDF 計算が正常に完了する
+  ✅ finalTexture に描画結果が反映される
+
+【検証方法】
+  console.log('[MSDF] Seed cleared')
+  console.log('[MSDF] Seed Init complete')
+  console.log('[MSDF] JFA passes:', passCount)
+  console.log('[MSDF] Final texture:', finalTexture.width, finalTexture.height)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 6: DOM 構造確認・HTML修正
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 修正対象: index.html
+
+【修正内容】
+  1. webgpu-canvas 要素の存在確認
+     - <canvas id="webgpu-canvas"></canvas> が明示的に存在するか
+  
+  2. Canvas配置の適切性
+     - drawing-canvas コンテナ内に配置
+     - Pixi canvas とは別要素として存在
+  
+  3. CSS スタイル設定
+     - position: absolute
+     - pointer-events: auto
+     - touch-action: none
+
+【期待結果】
+  ✅ webgpu-canvas が DOM に存在
+  ✅ Pixi canvas と分離されている
+  ✅ PointerEvent が正しく取得できる
+
+【検証方法】
+  document.getElementById('webgpu-canvas') !== null
+  Canvas要素の視覚的確認 (DevToolsで確認)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 7: 統合テスト・デバッグログ削減
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 修正対象: 全体
+
+【修正内容】
+  1. エンドツーエンドテスト
+     - PointerDown → PointerMove → PointerUp
+     - stroke-recorder への点記録確認
+     - MSDF生成確認
+     - Layer への sprite追加確認
+  
+  2. 過剰なデバッグログの削除
+     - _handlePointerMove の毎フレームログを削除
+     - 初期化完了メッセージのみ残す
+  
+  3. エラーハンドリングの最適化
+     - try-catch の適切な配置
+     - ユーザーへの明確なエラーメッセージ
+
+【期待結果】
+  ✅ 完全な描画フロー動作
+  ✅ コンソールがクリーン
+  ✅ エラー時の明確なフィードバック
+
+【検証方法】
+  実際にペンで描画
+  Layer に sprite が追加されることを確認
+  History で Undo/Redo が動作することを確認
+
+
+================================================================================
+【改修優先順位】
+
+Priority 1 (必須): Phase 1, 2 - Canvas接続
+Priority 2 (必須): Phase 3, 4 - Pipeline初期化
+Priority 3 (推奨): Phase 5 - MSDF計算確実化
+Priority 4 (推奨): Phase 6 - DOM構造確認
+Priority 5 (任意): Phase 7 - クリーンアップ
+
+
+================================================================================
+【改修後の期待フロー】
+
+1. WebGPU初期化
+   core-initializer.js
+   └─ webgpu-drawing-layer.initialize()
+      ├─ Canvas取得: document.getElementById('webgpu-canvas')
+      ├─ adapter取得: navigator.gpu.requestAdapter()
+      ├─ device取得: adapter.requestDevice()
+      └─ context.configure({ device, format, width, height })
+
+2. MSDF Pipeline初期化
+   └─ msdf-pipeline-manager.initialize(device, format, sampleCount)
+      ├─ _createJFAPipeline()
+      ├─ _createEncodePipeline()
+      └─ _createRenderPipeline()
+
+3. BrushCore初期化
+   └─ BrushCore.initialize()
+      ├─ gpuStrokeProcessor 参照設定
+      ├─ msdfPipelineManager 参照設定
+      └─ msdfAvailable = true
+
+4. DrawingEngine接続
+   └─ drawing-engine._initializeCanvas()
+      ├─ Canvas取得: WebGPUDrawingLayer.getCanvas()
+      └─ PointerEvent登録
+
+5. 描画実行
+   PointerDown → startStroke → stroke-recorder.startStroke
+   PointerMove → updateStroke → stroke-recorder.addPoint
+   PointerUp   → finalizeStroke
+               ├─ gpuStrokeProcessor.createPolygonVertexBuffer()
+               ├─ gpuStrokeProcessor.createEdgeBuffer()
+               ├─ msdfPipelineManager.generateMSDF()
+               │   ├─ clearSeedTexture()
+               │   ├─ seedInitPass()
+               │   ├─ jfaPass() (複数回)
+               │   ├─ encodePass()
+               │   └─ renderPass()
+               ├─ textureBridge.createSpriteFromGPUTexture()
+               └─ container.addChild(sprite)
+
+
+================================================================================
+【検証チェックリスト】
+
+Phase 1完了確認:
+  □ adapter !== null
+  □ device !== null
+  □ context !== null
+  □ canvas.id === 'webgpu-canvas'
+
+Phase 2完了確認:
+  □ drawing-engine が webgpu-canvas を取得
+  □ PointerEvent が登録されている
+  □ activePointers.set({ isDrawing: true }) が動作
+
+Phase 3完了確認:
+  □ msdfPipelineManager.initialized === true
+  □ jfaPipeline, encodePipeline, renderPipeline 存在
+  □ コンソールに Pipeline生成ログ
+
+Phase 4完了確認:
+  □ BrushCore.initialized === true
+  □ BrushCore.msdfAvailable === true
+  □ finalizeStroke で MSDF処理が実行される
+
+Phase 5完了確認:
+  □ clearSeedTexture() が実行される
+  □ seedTexture が -1.0 で初期化される
+  □ MSDF計算が完了する
+
+Phase 6完了確認:
+  □ <canvas id="webgpu-canvas"> が DOM に存在
+  □ Pixi canvas と分離されている
+  □ CSS設定が適切
+
+Phase 7完了確認:
+  □ 実際に描画できる
+  □ Layer に sprite が追加される
+  □ Undo/Redo が動作する
+
+
+================================================================================
+【注意事項】
+
+⚠️ file:// プロトコルは問題ではない
+   Chrome 142 は file:// でも WebGPU を完全サポート
+   adapter取得失敗は Canvas接続の問題
+
+⚠️ PixiJS との分離を厳守
+   PixiJS は UI ホストのみ
+   描画処理は WebGPU が担当
+   Canvas要素は完全分離
+
+⚠️ 初期化順序が最重要
+   1. WebGPU Canvas生成
+   2. adapter/device取得
+   3. context.configure()
+   4. MSDF Pipeline初期化
+   5. BrushCore初期化
+   6. DrawingEngine接続
+
+⚠️ msdfAvailable フラグの確実性
+   初期化完了後は必ず true
+   false のまま描画実行は禁止
+
+⚠️ デバッグログの適切な管理
+   初期化時: 詳細ログ
+   描画時: 最小限のログ
+   エラー時: 明確なメッセージ
+
+
+================================================================================
+【改修完了後の確認項目】
+
+最終確認:
+  1. ペンでストロークを描画
+  2. Layer に sprite が追加される
+  3. sprite が可視化される
+  4. Undo で sprite が削除される
+  5. Redo で sprite が復元される
+  6. 複数ストロークの描画
+  7. 消しゴムモードの動作
+  8. エクスポート機能の動作
+
+パフォーマンス確認:
+  1. 60fps以上を維持
+  2. メモリリークなし
+  3. GPU使用率が適切
+  4. ストローク遅延なし
+
+
+================================================================================
+【参考: GPT5アドバイスとの対応】
+
+GPT5指摘 → 本計画での対応
+
+"Canvas を WebGPU モードで初期化する箇所のみ修正"
+  → Phase 1: webgpu-drawing-layer.js で Canvas取得・configure実装
+
+"WebGPU Canvas が DrawingEngine に渡らない"
+  → Phase 2: drawing-engine.js で WebGPUDrawingLayer.getCanvas() 使用
+
+"msdfPipelineManager.isReady() を true にする"
+  → Phase 3, 4: Pipeline初期化・BrushCore接続の確実化
+
+"file:// は問題ではない"
+  → 同意。Canvas接続の問題として扱う
+
+"最初に修正するべきファイル: webgpu-drawing-layer.js"
+  → Phase 1で最優先修正
+
+
+================================================================================
+End of Plan
+================================================================================
