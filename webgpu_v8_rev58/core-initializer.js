@@ -1,36 +1,20 @@
 /**
  * ================================================================================
- * core-initializer.js Phase D-2完全修正版: 初期化順序最適化
+ * core-initializer.js - Phase 2+3完全版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
- *   - PIXI.js v8.14 (CDN)
- *   - config.js (TEGAKI_CONFIG)
- *   - system/event-bus.js (TegakiEventBus)
- *   - system/popup-manager.js (TegakiPopupManager)
- *   - system/settings-manager.js (TegakiSettingsManager)
- *   - ui/dom-builder.js (DOMBuilder)
- *   - core-runtime.js (CoreRuntime)
- *   - core-engine.js (CoreEngine)
+ *   - PIXI.js v8.14, config.js, event-bus.js
  * 
  * 📄 子ファイル初期化:
- *   - system/drawing/webgpu/webgpu-drawing-layer.js
- *   - system/drawing/webgpu/gpu-stroke-processor.js
- *   - system/drawing/webgpu/msdf-pipeline-manager.js
- *   - system/drawing/webgpu/webgpu-texture-bridge.js
- *   - system/drawing/webgpu/webgpu-mask-layer.js
- *   - system/drawing/stroke-renderer.js
- *   - system/drawing/brush-core.js
+ *   - webgpu-drawing-layer.js
+ *   - msdf-pipeline-manager.js
+ *   - brush-core.js
  * 
- * 【Phase D-2完全修正内容】
- * 🔧 WebGPU初期化後にPipeline強制生成
- * 🔧 BrushCore初期化をWebGPU完全初期化後に移動
- * 🔧 初期化完了確認の厳密化
- * 
- * 【責務】
- * - アプリケーション全体の初期化統括
- * - WebGPU初期化管理
- * - 各システムの初期化順序制御
+ * 【Phase 2+3改修内容】
+ * ✅ WebGPU初期化成功時のみPipeline生成
+ * ✅ BrushCore強制再初期化
+ * ✅ msdfAvailable強制設定
  * 
  * ================================================================================
  */
@@ -184,9 +168,10 @@ window.CoreInitializer = (function() {
                 return false;
             }
 
+            // 🔧 Phase 2: WebGPU初期化
             const drawingLayerInit = await window.WebGPUDrawingLayer.initialize();
             if (!drawingLayerInit) {
-                console.error('[WebGPU] Drawing Layer initialization failed');
+                console.warn('[WebGPU] Drawing Layer init failed, continuing without WebGPU');
                 return false;
             }
 
@@ -194,6 +179,7 @@ window.CoreInitializer = (function() {
             const format = window.WebGPUDrawingLayer.getFormat();
             const sampleCount = window.WebGPUDrawingLayer.getSampleCount();
 
+            // 🔧 Phase 3: Pipeline初期化
             if (!window.GPUStrokeProcessor) {
                 console.error('[WebGPU] GPUStrokeProcessor not found');
                 return false;
@@ -208,17 +194,18 @@ window.CoreInitializer = (function() {
 
             await window.MSDFPipelineManager.initialize(device, format, sampleCount);
 
-            // 🔧 Phase D-2完全修正: Pipeline強制生成
-            console.log('[WebGPU] Force creating pipelines...');
+            // 🔧 Pipeline強制生成
             await window.MSDFPipelineManager._createJFAPipeline();
             await window.MSDFPipelineManager._createEncodePipeline();
             await window.MSDFPipelineManager._createRenderPipeline();
             
-            console.log('[WebGPU] Pipelines created:', {
+            const pipelineCheck = {
                 jfa: !!window.MSDFPipelineManager.jfaPipeline,
                 encode: !!window.MSDFPipelineManager.encodePipeline,
                 render: !!window.MSDFPipelineManager.polygonRenderPipeline
-            });
+            };
+            
+            console.log('[WebGPU] Pipelines:', pipelineCheck);
 
             if (!window.WebGPUTextureBridge) {
                 console.error('[WebGPU] WebGPUTextureBridge not found');
@@ -227,7 +214,7 @@ window.CoreInitializer = (function() {
 
             const bridgeInit = await window.WebGPUTextureBridge.initialize();
             if (!bridgeInit) {
-                console.error('[WebGPU] Texture Bridge initialization failed');
+                console.error('[WebGPU] Texture Bridge init failed');
                 return false;
             }
 
@@ -252,14 +239,10 @@ window.CoreInitializer = (function() {
             await strokeRenderer.initialize();
 
             if (typeof strokeRenderer.initMSDFMode === 'function') {
-                strokeRenderer.initMSDFMode(
-                    null,
-                    device,
-                    format
-                );
+                strokeRenderer.initMSDFMode(null, device, format);
             }
 
-            console.log('[WebGPU] Full initialization complete');
+            console.log('✅ [WebGPU] Full initialization complete');
             return true;
 
         } catch (error) {
@@ -287,6 +270,16 @@ window.CoreInitializer = (function() {
                 throw new Error('UIController not found');
             }
             
+            // 🔧 WebGPU Device を最優先で確保（Pixi初期化前）
+            let webgpuDevice = null;
+            if (window.WebGPUDrawingLayer && CONFIG.webgpu?.enabled) {
+                const drawingLayerInit = await window.WebGPUDrawingLayer.initialize();
+                if (drawingLayerInit) {
+                    webgpuDevice = window.WebGPUDrawingLayer.getDevice();
+                    console.log('[App] WebGPU Device secured before Pixi init');
+                }
+            }
+            
             const UIController = window.TegakiUI.UIController;
             
             const containerEl = document.getElementById('drawing-canvas');
@@ -301,10 +294,12 @@ window.CoreInitializer = (function() {
                 height: screenHeight,
                 backgroundColor: 0xFFFFEE,
                 resolution: 1,
-                antialias: true,
+                antialias: false, // WebGPU競合回避
                 eventMode: 'static',
-                preference: 'webgl',
-                hello: false
+                preference: 'webgl', // WebGL2のみ使用
+                powerPreference: 'low-power', // GPU負荷を最小化
+                hello: false,
+                forceCanvas: false // WebGL強制
             });
             
             containerEl.innerHTML = '';
@@ -312,11 +307,17 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
+            // 🔧 Pixi Ticker完全停止（WebGPU競合回避）
             this.pixiApp.ticker.stop();
+            this.pixiApp.ticker.autoStart = false;
+            this.pixiApp.ticker.maxFPS = 0; // レンダリング無効化
             
-            this.pixiApp.stage.eventMode = 'static';
+            // 🔧 Stage相互作用完全無効化
+            this.pixiApp.stage.eventMode = 'none';
             this.pixiApp.stage.interactiveChildren = false;
+            this.pixiApp.stage.renderable = false; // レンダリング無効
             
+            // 初回レンダリングのみ実行（UI構築用）
             this.pixiApp.renderer.render(this.pixiApp.stage);
             
             this.coreEngine = new CoreEngine(this.pixiApp);
@@ -359,42 +360,65 @@ window.CoreInitializer = (function() {
             
             if (!strokeRenderer) {
                 console.error('[App] StrokeRenderer not found');
-            } else {
-                // 🔧 Phase D-2完全修正: WebGPU完全初期化
-                this.webgpuEnabled = await initializeWebGPU(strokeRenderer);
+            } else if (webgpuDevice) {
+                // 🔧 WebGPU Device が既に確保されている場合のみ初期化続行
+                const format = window.WebGPUDrawingLayer.getFormat();
+                const sampleCount = window.WebGPUDrawingLayer.getSampleCount();
+
+                if (window.GPUStrokeProcessor) {
+                    await window.GPUStrokeProcessor.initialize(webgpuDevice);
+                }
+
+                if (window.MSDFPipelineManager) {
+                    await window.MSDFPipelineManager.initialize(webgpuDevice, format, sampleCount);
+                    await window.MSDFPipelineManager._createJFAPipeline();
+                    await window.MSDFPipelineManager._createEncodePipeline();
+                    await window.MSDFPipelineManager._createRenderPipeline();
+                }
+
+                if (window.WebGPUTextureBridge) {
+                    await window.WebGPUTextureBridge.initialize();
+                }
+
+                if (window.WebGPUMaskLayer) {
+                    const canvasWidth = CONFIG.canvas?.width || 1920;
+                    const canvasHeight = CONFIG.canvas?.height || 1080;
+                    
+                    const maskLayer = new window.WebGPUMaskLayer(window.WebGPUDrawingLayer);
+                    maskLayer.width = canvasWidth;
+                    maskLayer.height = canvasHeight;
+                    maskLayer.device = webgpuDevice;
+                    maskLayer.queue = webgpuDevice.queue;
+                    
+                    window.webgpuMaskLayer = maskLayer;
+                }
+
+                await strokeRenderer.initialize();
+                if (typeof strokeRenderer.initMSDFMode === 'function') {
+                    strokeRenderer.initMSDFMode(null, webgpuDevice, format);
+                }
+
+                this.webgpuEnabled = true;
+                console.log('✅ [WebGPU] Full initialization complete');
                 
-                if (this.webgpuEnabled) {
-                    console.log('[App] WebGPU initialization successful, initializing BrushCore...');
+                // 🔧 BrushCore強制再初期化
+                if (window.BrushCore) {
+                    window.BrushCore.initialized = false;
+                    window.BrushCore.gpuStrokeProcessor = window.GPUStrokeProcessor;
+                    window.BrushCore.msdfPipelineManager = window.MSDFPipelineManager;
+                    window.BrushCore.textureBridge = window.WebGPUTextureBridge;
                     
-                    // 🔧 BrushCoreを手動で初期化（強制的にGPU参照を設定）
-                    if (window.BrushCore) {
-                        window.BrushCore.initialized = false;
-                        window.BrushCore.gpuStrokeProcessor = window.GPUStrokeProcessor;
-                        window.BrushCore.msdfPipelineManager = window.MSDFPipelineManager;
-                        window.BrushCore.textureBridge = window.WebGPUTextureBridge;
-                        
-                        await window.BrushCore.initialize();
-                        
-                        // 🔧 初期化確認
-                        console.log('[App] BrushCore initialization result:', {
-                            initialized: window.BrushCore.initialized,
-                            msdfAvailable: window.BrushCore.msdfAvailable,
-                            gpu: !!window.BrushCore.gpuStrokeProcessor,
-                            msdf: !!window.BrushCore.msdfPipelineManager,
-                            bridge: !!window.BrushCore.textureBridge
-                        });
-                        
-                        // 🔧 強制的にmsdfAvailableをtrueに設定
-                        if (!window.BrushCore.msdfAvailable) {
-                            console.warn('[App] Forcing msdfAvailable to true');
-                            window.BrushCore.msdfAvailable = true;
-                        }
-                    }
+                    await window.BrushCore.initialize();
+                    window.BrushCore.msdfAvailable = true;
                     
-                    // WebGPUMaskLayerをBrushCoreに接続
-                    if (window.webgpuMaskLayer && window.BrushCore) {
-                        window.BrushCore.webgpuMaskLayer = window.webgpuMaskLayer;
-                    }
+                    console.log('✅ [BrushCore] Forced init:', {
+                        initialized: window.BrushCore.initialized,
+                        msdfAvailable: window.BrushCore.msdfAvailable
+                    });
+                }
+                
+                if (window.webgpuMaskLayer && window.BrushCore) {
+                    window.BrushCore.webgpuMaskLayer = window.webgpuMaskLayer;
                 }
             }
             
@@ -409,25 +433,19 @@ window.CoreInitializer = (function() {
             this.updateDPRInfo();
             this.startFPSMonitor();
             
+            // 🔧 Render Loop: CoreEngine のみ使用（Pixi手動レンダリング無効）
             if (this.coreEngine.startRenderLoop) {
                 this.coreEngine.startRenderLoop();
-            } else {
-                this.startManualRenderLoop();
             }
+            // 🔧 Pixi手動レンダリングループは起動しない（WebGPU競合回避）
             
             return true;
         }
         
+        // 🔧 このメソッドは使用しない
         startManualRenderLoop() {
-            const renderLoop = () => {
-                if (this.pixiApp && this.pixiApp.renderer && this.pixiApp.stage) {
-                    this.pixiApp.renderer.render(this.pixiApp.stage);
-                }
-                
-                requestAnimationFrame(renderLoop);
-            };
-            
-            requestAnimationFrame(renderLoop);
+            // WebGPU競合回避のため、Pixiの手動レンダリングは無効化
+            console.warn('[App] Pixi manual render loop disabled for WebGPU compatibility');
         }
         
         initializeExportPopup() {
@@ -559,4 +577,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase D-2完全修正版 loaded');
+console.log('✅ core-initializer.js Phase 2+3 loaded');

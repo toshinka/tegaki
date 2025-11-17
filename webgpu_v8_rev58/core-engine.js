@@ -263,45 +263,37 @@ class CoreEngine {
             this._renderLoop();
         }
         
-        _renderLoop() {
-            if (!this.isRenderLoopRunning) return;
+// core-engine.js の _renderLoop() メソッドを以下に置き換え
+
+_renderLoop() {
+    if (!this.isRenderLoopRunning) return;
+    
+    try {
+        this.flushPointerBatch();
+        
+        const brushCore = window.BrushCore;
+        if (brushCore?.isDrawing && 
+            !brushCore.isPreviewUpdating &&
+            typeof brushCore.renderPreview === 'function') {
             
-            try {
-                // 🔧 flushPointerBatch呼び出しにデバッグログ追加
-                this.flushPointerBatch();
-                
-                const brushCore = window.BrushCore;
-                if (brushCore?.isDrawing && 
-                    !brushCore.isPreviewUpdating &&
-                    typeof brushCore.renderPreview === 'function') {
-                    
-                    brushCore.renderPreview().catch(err => {
-                        if (brushCore) {
-                            brushCore.isPreviewUpdating = false;
-                        }
-                        console.error('[CoreEngine] Preview error:', err);
-                    });
+            brushCore.renderPreview().catch(err => {
+                if (brushCore) {
+                    brushCore.isPreviewUpdating = false;
                 }
-                
-                if (this.app?.renderer && this.app?.stage) {
-                    this.app.renderer.render(this.app.stage);
-                }
-                
-            } catch (error) {
-                console.error('[CoreEngine] Render loop error:', error);
-            }
-            
-            this.renderLoopId = requestAnimationFrame(() => this._renderLoop());
+                console.error('[CoreEngine] Preview error:', err);
+            });
         }
         
-        flushPointerBatch() {
-            if (this.drawingEngine && typeof this.drawingEngine.flushPendingPoints === 'function') {
-                // 🔧 デバッグログ追加（pendingPoints参照は drawing-engine 内部のため間接的に確認）
-                const pendingCount = this.drawingEngine.constructor.name === 'DrawingEngine' ? 'checking...' : 0;
-                
-                this.drawingEngine.flushPendingPoints();
-            }
-        }
+        // 🔧 Pixi renderer.render()呼び出しを削除（WebGPU競合回避）
+        // Pixiは初回UI構築時のみレンダリング済み
+        // 描画処理はWebGPUが担当
+        
+    } catch (error) {
+        console.error('[CoreEngine] Render loop error:', error);
+    }
+    
+    this.renderLoopId = requestAnimationFrame(() => this._renderLoop());
+}
         
         stopRenderLoop() {
             this.isRenderLoopRunning = false;
