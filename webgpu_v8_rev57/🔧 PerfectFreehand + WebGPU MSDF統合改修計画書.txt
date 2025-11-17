@@ -1,0 +1,650 @@
+================================================================================
+WebGPU MSDF描画システム段階的改修計画書
+PerfectFreehand + MSDF Pipeline 完全統合
+================================================================================
+
+## 🚨 根本原因の特定
+
+### コンソールログ解析結果
+
+```
+brush-core.js:201 startStroke called: {localX: 350.5, localY: 88.5, pressure: 0.5}
+brush-core.js:379 finalizeStroke called
+brush-core.js:399 Points count: 1
+brush-core.js:402 Stroke too short, aborting
+stroke-recorder.js:128 [StrokeRecorder] Stroke too short, discarded
+```
+
+❌ 問題点：
+- startStroke は呼ばれている
+- finalizeStroke も呼ばれている
+- **recordPoint が1回も呼ばれていない**
+- 1点しか記録されないため PerfectFreehand→ポリゴン生成が破棄
+- MSDF Pipeline に渡るデータが存在しない
+
+🎯 結論：**PointerMove イベントが drawing-engine → brush-core → stroke-recorder に流れていない**
+
+================================================================================
+
+## Phase 1: PointerEvent配信経路の完全修復
+
+### 1-1. イベント横取りの排除
+
+#### 🔧 slider-utils.js (v8.13.10) - 慣性スクロール実装の問題
+
+**現状問題：**
+```javascript
+// L158-167: document全体のpointermoveをcaptureしている
+document.addEventListener('pointermove', handlePointerMove, { 
+    passive: false, 
+    capture: true  // ← これが描画用pointermoveを横取り
+});
+```
+
+**症状：**
+- スライダー操作時にpointermoveイベントがcapture phaseで横取りされる
+- WebGPU canvas への pointermove 配信が阻害される
+- drawing-engine.js の _handlePointerMove が実行されない
+
+**修正方針：**
+```javascript
+// スライダー内でのみpointermoveを処理
+containerEl.addEventListener('pointermove', handlePointerMove, { 
+    passive: false 
+});
+
+// document全体へのlistenerは削除
+// または dragging フラグで厳密に制御
+```
+
+**具体的改修：**
+1. `document.addEventListener('pointermove', ...)` を削除
+2. `containerEl.setPointerCapture(e.pointerId)` を使用
+3. PointerUp/Cancel 時に `releasePointerCapture` を確実に実行
+4. stopPropagation() は containerEl 内でのみ使用
+
+---
+
+### 1-2. pointer-handler.js の接続先確認
+
+#### 🔍 WebGPU Canvas への正しい接続
+
+**現状確認：**
+```javascript
+// pointer-handler.js L123-126
+canvas.addEventListener('pointerdown', onPointerDown, { capture, passive: false });
+canvas.addEventListener('pointermove', onPointerMove, { capture, passive: false });
+canvas.addEventListener('pointerup', onPointerUp, { capture, passive: false });
+canvas.addEventListener('pointercancel', onPointerCancel, { capture, passive: false });
+```
+
+**確認項目：**
+- ✅ `canvas` が `#webgpu-canvas` を正しく参照しているか
+- ✅ Pixi Canvas (`#pixi-ui-canvas`) に誤接続していないか
+- ✅ `setPointerCapture(e.pointerId)` が pointerdown 時に確実に実行されているか
+
+**修正方針：**
+1. drawing-engine.js の `_initializeCanvas()` で接続先を明示
+2. WebGPU canvas 専用の pointer 登録を保証
+3. Pixi canvas は UI イベント専用に限定
+
+---
+
+### 1-3. drawing-engine.js のバッチ処理確認
+
+#### 🔧 pendingPoints のフロー検証
+
+**現状コード：**
+```javascript
+// L69-73: _handlePointerMove
+_handlePointerMove(info, e) {
+    const pointerInfo = this.activePointers.get(info.pointerId);
+    if (!pointerInfo || !pointerInfo.isDrawing) return;
+
+    pendingPoints.push({ type: 'move', info });
+}
+```
+
+**問題の可能性：**
+- `activePointers.get(info.pointerId)` が null を返している
+- `pointerInfo.isDrawing` が false のまま
+- `pendingPoints` に 'move' が追加されない
+
+**修正方針：**
+1. pointerdown 時に `isDrawing: true` を確実に設定
+2. pointermove 時のフラグチェックを緩和（debug用）
+3. pendingPoints への追加を console.log で確認
+
+**デバッグコード追加：**
+```javascript
+_handlePointerMove(info, e) {
+    console.log('[DrawingEngine] _handlePointerMove called:', {
+        pointerId: info.pointerId,
+        hasPointerInfo: this.activePointers.has(info.pointerId),
+        isDrawing: this.activePointers.get(info.pointerId)?.isDrawing
+    });
+    
+    const pointerInfo = this.activePointers.get(info.pointerId);
+    if (!pointerInfo || !pointerInfo.isDrawing) return;
+
+    console.log('[DrawingEngine] Queuing move point:', info.clientX, info.clientY);
+    pendingPoints.push({ type: 'move', info });
+}
+```
+
+---
+
+### 1-4. core-engine.js の flushPointerBatch 確認
+
+#### ✅ Master Loop 統合の動作確認
+
+**現状コード：**
+```javascript
+// L248-265: _renderLoop
+_renderLoop() {
+    if (!this.isRenderLoopRunning) return;
+    
+    try {
+        this.flushPointerBatch();  // ← これが実行されているか
+        
+        const brushCore = window.BrushCore;
+        if (brushCore?.isDrawing && 
+            !brushCore.isPreviewUpdating &&
+            typeof brushCore.renderPreview === 'function') {
+            
+            brushCore.renderPreview().catch(err => {
+                if (brushCore) {
+                    brushCore.isPreviewUpdating = false;
+                }
+                console.error('[CoreEngine] Preview error:', err);
+            });
+        }
+        
+        if (this.app?.renderer && this.app?.stage) {
+            this.app.renderer.render(this.app.stage);
+        }
+    } catch (error) {
+        console.error('[CoreEngine] Render loop error:', error);
+    }
+    
+    this.renderLoopId = requestAnimationFrame(() => this._renderLoop());
+}
+```
+
+**確認項目：**
+- ✅ `flushPointerBatch()` が毎フレーム確実に実行されているか
+- ✅ `pendingPoints` が空のまま flush されていないか
+
+**デバッグコード追加：**
+```javascript
+flushPointerBatch() {
+    if (this.drawingEngine && typeof this.drawingEngine.flushPendingPoints === 'function') {
+        console.log('[CoreEngine] Flushing pendingPoints, count:', pendingPoints?.length);
+        this.drawingEngine.flushPendingPoints();
+    }
+}
+```
+
+================================================================================
+
+## Phase 2: brush-core.js の描画フロー確認
+
+### 2-1. updateStroke の呼び出し確認
+
+#### 🔧 recordPoint 呼び出し経路の検証
+
+**現状コード：**
+```javascript
+// brush-core.js L234-241
+async updateStroke(localX, localY, pressure = 0.5) {
+    if (!this.initialized || !this.isDrawing) return;
+    
+    this.strokeRecorder.addPoint(localX, localY, pressure);
+    
+    const historyManager = window.History;
+    if (historyManager?.addPoint) {
+        historyManager.addPoint(localX, localY, pressure);
+    }
+}
+```
+
+**問題の可能性：**
+- `this.isDrawing` が false のまま
+- `updateStroke` 自体が呼ばれていない
+
+**デバッグコード追加：**
+```javascript
+async updateStroke(localX, localY, pressure = 0.5) {
+    console.log('[BrushCore] updateStroke called:', { 
+        initialized: this.initialized, 
+        isDrawing: this.isDrawing, 
+        localX, localY, pressure 
+    });
+    
+    if (!this.initialized || !this.isDrawing) {
+        console.warn('[BrushCore] updateStroke blocked:', {
+            initialized: this.initialized,
+            isDrawing: this.isDrawing
+        });
+        return;
+    }
+    
+    this.strokeRecorder.addPoint(localX, localY, pressure);
+    
+    const historyManager = window.History;
+    if (historyManager?.addPoint) {
+        historyManager.addPoint(localX, localY, pressure);
+    }
+}
+```
+
+---
+
+### 2-2. drawing-engine の _processPointerMove 確認
+
+#### 🔧 座標変換と BrushCore 呼び出しの検証
+
+**現状コード：**
+```javascript
+// drawing-engine.js L164-181
+_processPointerMove(info) {
+    if (!this.brushCore || !this.brushCore.isActive || !this.brushCore.isActive()) {
+        return;
+    }
+
+    const localCoords = this._screenToLocal(info.clientX, info.clientY);
+    if (!localCoords) return;
+
+    if (this.brushCore.updateStroke) {
+        this.brushCore.updateStroke(
+            localCoords.localX,
+            localCoords.localY,
+            info.pressure,
+            info.pointerType
+        );
+    }
+}
+```
+
+**問題の可能性：**
+- `this.brushCore.isActive()` が false を返している
+- `_screenToLocal()` が null を返している
+
+**デバッグコード追加：**
+```javascript
+_processPointerMove(info) {
+    console.log('[DrawingEngine] _processPointerMove:', {
+        hasBrushCore: !!this.brushCore,
+        isActive: this.brushCore?.isActive?.(),
+        clientX: info.clientX,
+        clientY: info.clientY
+    });
+    
+    if (!this.brushCore || !this.brushCore.isActive || !this.brushCore.isActive()) {
+        console.warn('[DrawingEngine] BrushCore not active');
+        return;
+    }
+
+    const localCoords = this._screenToLocal(info.clientX, info.clientY);
+    
+    if (!localCoords) {
+        console.warn('[DrawingEngine] Local coords conversion failed');
+        return;
+    }
+    
+    console.log('[DrawingEngine] Calling updateStroke:', localCoords);
+
+    if (this.brushCore.updateStroke) {
+        this.brushCore.updateStroke(
+            localCoords.localX,
+            localCoords.localY,
+            info.pressure,
+            info.pointerType
+        );
+    }
+}
+```
+
+================================================================================
+
+## Phase 3: stroke-recorder.js の記録確認
+
+### 3-1. addPoint の実行確認
+
+#### ✅ GPT5アドバイス適用済みコードの検証
+
+**現状コード：**
+```javascript
+// stroke-recorder.js L54-74
+addPoint(localX, localY, pressure = 0.5, tiltX = 0, tiltY = 0) {
+    if (!this.isRecording) {
+        return;
+    }
+
+    const now = performance.now();
+    const timeDelta = now - this.lastPointTime;
+
+    const point = {
+        x: localX,
+        y: localY,
+        pressure: Math.max(0.01, Math.min(1.0, pressure)),
+        tiltX: tiltX,
+        tiltY: tiltY,
+        timestamp: now,
+        timeDelta: timeDelta,
+        edgeId: this.points.length,
+        channelId: this.points.length % 3
+    };
+
+    this.points.push(point);
+    this.lastPointTime = now;
+    this.totalPoints++;
+}
+```
+
+**確認項目：**
+- ✅ `this.isRecording` が true になっているか
+- ✅ `this.points.push(point)` が実行されているか
+
+**デバッグコード追加：**
+```javascript
+addPoint(localX, localY, pressure = 0.5, tiltX = 0, tiltY = 0) {
+    console.log('[StrokeRecorder] addPoint called:', {
+        isRecording: this.isRecording,
+        pointsCount: this.points.length,
+        localX, localY, pressure
+    });
+    
+    if (!this.isRecording) {
+        console.warn('[StrokeRecorder] Not recording, point discarded');
+        return;
+    }
+
+    const now = performance.now();
+    const timeDelta = now - this.lastPointTime;
+
+    const point = {
+        x: localX,
+        y: localY,
+        pressure: Math.max(0.01, Math.min(1.0, pressure)),
+        tiltX: tiltX,
+        tiltY: tiltY,
+        timestamp: now,
+        timeDelta: timeDelta,
+        edgeId: this.points.length,
+        channelId: this.points.length % 3
+    };
+
+    this.points.push(point);
+    this.lastPointTime = now;
+    this.totalPoints++;
+    
+    console.log('[StrokeRecorder] Point added successfully, total:', this.points.length);
+}
+```
+
+================================================================================
+
+## Phase 4: PixiJS責務の完全分離
+
+### 4-1. index.html の Canvas 分離状態確認
+
+#### 🔧 WebGPU Canvas と Pixi Canvas の独立性検証
+
+**必須構成：**
+```html
+<canvas id="webgpu-canvas" width="800" height="600"></canvas>
+<canvas id="pixi-ui-canvas" width="800" height="600"></canvas>
+```
+
+**確認項目：**
+- ✅ WebGPU canvas が描画専用
+- ✅ Pixi canvas が UI ホスト専用
+- ✅ Z-index による重ね順が正しい
+- ❌ Pixi が pointer イベントを横取りしていない
+
+---
+
+### 4-2. core-initializer.js の初期化フロー確認
+
+#### 📁 PixiJS Application の ticker 停止確認
+
+**必須設定：**
+```javascript
+// Pixi の自動レンダリングを停止
+app.ticker.stop();
+
+// WebGPU Master Loop のみを使用
+```
+
+**確認項目：**
+- ✅ `app.ticker.stop()` が確実に実行されているか
+- ✅ Pixi renderer が手動呼び出しのみになっているか
+- ❌ Pixi が独自の render loop を持っていないか
+
+---
+
+### 4-3. ヘッドライン記述の統一
+
+#### 📄 全ファイルに PixiJS 責務制限を明記
+
+**追加すべきヘッドライン：**
+```javascript
+/**
+ * 【PixiJS使用制限】
+ * - PixiJS は UI ホスト（ボタン、スライダー、レイヤーパネル）専用
+ * - 描画処理（ポリゴン生成、合成、swapchain管理）は WebGPU が担当
+ * - Pixi.Graphics による CPU ラスタライズは厳禁
+ * - pointer イベントの一次取得は WebGPU Canvas が担当
+ */
+```
+
+**対象ファイル：**
+- drawing-engine.js
+- brush-core.js
+- stroke-renderer.js
+- webgpu-drawing-layer.js
+- core-engine.js
+- core-initializer.js
+
+================================================================================
+
+## Phase 5: MSDF Pipeline の動作確認
+
+### 5-1. msdf-pipeline-manager.js の初期化状態確認
+
+#### ✅ Pipeline 生成の成功確認
+
+**コンソールログより：**
+```
+[WebGPU] Pipelines created: {jfa: true, encode: true, render: true}
+[BrushCore] MSDF Available: true
+```
+
+**確認済み：**
+- ✅ JFA Pipeline 生成成功
+- ✅ Encode Pipeline 生成成功
+- ✅ Render Pipeline 生成成功
+- ✅ `msdfAvailable === true`
+
+**結論：**
+MSDF Pipeline は正常動作している。
+描画できない原因は **ポイントが1点しか記録されないため**。
+
+================================================================================
+
+## 改修優先度と実行順序
+
+### ⚠️ Critical (即座に修正)
+
+1. **slider-utils.js の pointermove capture 削除**
+   - document.addEventListener('pointermove', ..., {capture: true}) を削除
+   - containerEl.setPointerCapture を使用
+
+2. **drawing-engine.js にデバッグログ追加**
+   - _handlePointerMove が呼ばれているか確認
+   - pendingPoints への追加を確認
+
+3. **brush-core.js にデバッグログ追加**
+   - updateStroke が呼ばれているか確認
+   - isDrawing フラグの状態を確認
+
+### 🔧 High Priority (次に修正)
+
+4. **pointer-handler.js の接続先確認**
+   - WebGPU canvas への正しい接続を保証
+   - setPointerCapture の確実な実行
+
+5. **stroke-recorder.js にデバッグログ追加**
+   - addPoint が呼ばれているか確認
+   - points 配列への追加を確認
+
+### 📝 Medium Priority (改修後に実施)
+
+6. **PixiJS 責務の完全分離**
+   - 全ファイルのヘッドラインに制限事項を明記
+   - Pixi ticker の停止を確認
+
+7. **座標変換パイプラインの検証**
+   - _screenToLocal の返り値を確認
+   - 座標変換エラーの有無を確認
+
+================================================================================
+
+## 修正後の動作確認方法
+
+### ✅ 必ず確認すべきログ
+
+**正常動作時のログ：**
+```
+[PointerHandler] pointerdown: {pointerId: 1, clientX: 350, clientY: 88}
+[DrawingEngine] _handlePointerDown called
+[BrushCore] startStroke called: {localX: 350.5, localY: 88.5, pressure: 0.5}
+
+[PointerHandler] pointermove: {pointerId: 1, clientX: 351, clientY: 89}
+[DrawingEngine] _handlePointerMove called
+[DrawingEngine] Queuing move point: 351, 89
+[CoreEngine] Flushing pendingPoints, count: 1
+[DrawingEngine] _processPointerMove: calling updateStroke
+[BrushCore] updateStroke called: {localX: 351.5, localY: 89.5, pressure: 0.51}
+[StrokeRecorder] addPoint called: point added successfully, total: 2
+
+[PointerHandler] pointermove: {pointerId: 1, clientX: 352, clientY: 90}
+[DrawingEngine] _handlePointerMove called
+[DrawingEngine] Queuing move point: 352, 90
+[CoreEngine] Flushing pendingPoints, count: 1
+[DrawingEngine] _processPointerMove: calling updateStroke
+[BrushCore] updateStroke called: {localX: 352.5, localY: 90.5, pressure: 0.52}
+[StrokeRecorder] addPoint called: point added successfully, total: 3
+
+... (以降、pointermove ごとに繰り返し)
+
+[PointerHandler] pointerup: {pointerId: 1, clientX: 380, clientY: 110}
+[DrawingEngine] _handlePointerUp called
+[BrushCore] finalizeStroke called
+[BrushCore] Points count: 15
+[BrushCore] Finalizing with MSDF
+[BrushCore] Stroke finalized successfully
+```
+
+### ❌ 問題が残っている場合のログ
+
+```
+[PointerHandler] pointerdown: {pointerId: 1, clientX: 350, clientY: 88}
+[DrawingEngine] _handlePointerDown called
+[BrushCore] startStroke called: {localX: 350.5, localY: 88.5, pressure: 0.5}
+
+❌ ここで pointermove が来ない
+
+[PointerHandler] pointerup: {pointerId: 1, clientX: 350, clientY: 88}
+[DrawingEngine] _handlePointerUp called
+[BrushCore] finalizeStroke called
+[BrushCore] Points count: 1
+[BrushCore] Stroke too short, aborting
+```
+
+================================================================================
+
+## 改修完了チェックリスト
+
+### Phase 1: PointerEvent配信
+- [ ] slider-utils.js の pointermove capture 削除完了
+- [ ] pointer-handler.js が WebGPU canvas に正しく接続
+- [ ] drawing-engine.js で pointermove が確実にキューイング
+- [ ] core-engine.js で pendingPoints が確実にフラッシュ
+
+### Phase 2: BrushCore フロー
+- [ ] drawing-engine から updateStroke が確実に呼び出される
+- [ ] brush-core.js で isDrawing フラグが正しく管理される
+- [ ] 座標変換パイプラインが正常動作
+
+### Phase 3: StrokeRecorder
+- [ ] addPoint が pointermove ごとに呼び出される
+- [ ] points 配列に 2点以上 確実に記録される
+- [ ] endStroke で strokeData が正常生成
+
+### Phase 4: PixiJS分離
+- [ ] 全ファイルのヘッドラインに責務制限を明記
+- [ ] Pixi ticker が停止している
+- [ ] WebGPU Master Loop のみが動作
+
+### Phase 5: MSDF Pipeline
+- [ ] 2点以上のポイントが MSDF に渡される
+- [ ] generateMSDF が正常実行
+- [ ] 描画結果が canvas に表示される
+
+================================================================================
+
+## 最終確認コマンド
+
+### デバッグ用コンソールコマンド
+
+```javascript
+// ① PointerEvent 配信状態確認
+window.debugPointerFlow = true;
+
+// ② BrushCore 状態確認
+console.log('BrushCore:', {
+    initialized: window.BrushCore?.initialized,
+    msdfAvailable: window.BrushCore?.msdfAvailable,
+    isDrawing: window.BrushCore?.isDrawing
+});
+
+// ③ StrokeRecorder 状態確認
+console.log('StrokeRecorder:', {
+    isRecording: window.strokeRecorder?.isRecording,
+    pointsCount: window.strokeRecorder?.points.length,
+    stats: window.strokeRecorder?.getStats()
+});
+
+// ④ MSDF Pipeline 状態確認
+console.log('MSDF Pipeline:', {
+    gpuProcessor: window.GPUStrokeProcessor?.initialized,
+    msdfManager: window.MSDFPipelineManager?.initialized,
+    textureBridge: window.WebGPUTextureBridge?.initialized
+});
+```
+
+================================================================================
+
+## まとめ
+
+### 根本原因
+**PointerMove イベントが drawing-engine に届いていない**
+
+### 主要原因
+1. slider-utils.js が document全体の pointermove を capture している
+2. activePointers の isDrawing フラグが正しく管理されていない可能性
+3. pendingPoints のキューイングが機能していない可能性
+
+### 修正方針
+1. slider-utils.js の pointermove capture を削除
+2. drawing-engine / brush-core / stroke-recorder に詳細ログを追加
+3. PointerEvent の配信経路を完全に可視化
+4. 問題箇所を特定して段階的に修正
+
+### MSDF Pipeline について
+✅ **MSDF Pipeline は正常動作している**
+問題は「ポイントが1点しか記録されない」ことであり、MSDF 以前の問題。
+
+================================================================================

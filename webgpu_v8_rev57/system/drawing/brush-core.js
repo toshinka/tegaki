@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - Phase D-3完全修正版: GPU初期化確認強化
+ * brush-core.js - Phase 2-1: updateStroke フロー デバッグ強化版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -16,16 +16,20 @@
  *   - core-engine.js (renderLoop内でrenderPreview呼び出し)
  *   - system/drawing/drawing-engine.js (startStroke/updateStroke/finalizeStroke)
  * 
- * 【Phase D-3完全修正内容】
- * 🔧 initialized フラグの再確認（プロパティ存在チェック追加）
- * 🔧 msdfAvailable判定の厳密化
- * 🔧 初期化失敗時の詳細ログ出力
+ * 【Phase 2-1改修内容】
+ * 🔧 updateStroke呼び出しフローのデバッグログ追加
+ * 🔧 isDrawingフラグ管理の厳密化
+ * 🔧 stroke-recorderへの確実な連携確認
  * 
  * 【責務】
  * - ストローク管理（開始/更新/確定）
  * - MSDF Pipeline統合
  * - プレビュー表示制御
  * - ペン/消しゴムモード切替
+ * 
+ * 【PixiJS使用制限】
+ * - PixiJS は UI ホストとプレビュー表示のみ
+ * - 描画処理（ポリゴン生成、合成）は WebGPU が担当
  * 
  * ================================================================================
  */
@@ -72,11 +76,8 @@
 
     async initialize() {
       if (this.initialized) {
-        console.log('[BrushCore] Already initialized');
         return;
       }
-
-      console.log('[BrushCore] Starting initialization...');
 
       this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
       this.layerManager = window.layerManager || window.layerSystem;
@@ -89,20 +90,10 @@
         throw new Error('[BrushCore] layerManager not found');
       }
 
-      console.log('[BrushCore] Basic dependencies OK');
-
-      // 🔧 GPU依存の確認（プロパティ存在チェック追加）
       this.gpuStrokeProcessor = window.GPUStrokeProcessor;
       this.msdfPipelineManager = window.MSDFPipelineManager;
       this.textureBridge = window.WebGPUTextureBridge;
 
-      console.log('[BrushCore] GPU Components:', {
-        gpuStrokeProcessor: !!this.gpuStrokeProcessor,
-        msdfPipelineManager: !!this.msdfPipelineManager,
-        textureBridge: !!this.textureBridge
-      });
-
-      // 🔧 initialized プロパティの存在確認
       const hasInitializedProps = !!(
         this.gpuStrokeProcessor &&
         typeof this.gpuStrokeProcessor.initialized !== 'undefined' &&
@@ -113,8 +104,6 @@
       );
 
       if (!hasInitializedProps) {
-        console.warn('[BrushCore] GPU components missing initialized property, retrying...');
-        
         await new Promise(resolve => setTimeout(resolve, 100));
         
         this.gpuStrokeProcessor = window.GPUStrokeProcessor;
@@ -122,39 +111,14 @@
         this.textureBridge = window.WebGPUTextureBridge;
       }
 
-      // 🔧 msdfAvailable判定の厳密化
       this.msdfAvailable = !!(
         this.gpuStrokeProcessor?.initialized === true &&
         this.msdfPipelineManager?.initialized === true &&
         this.textureBridge?.initialized === true
       );
 
-      console.log('[BrushCore] GPU Initialization Status:', {
-        gpuStrokeProcessor: this.gpuStrokeProcessor?.initialized,
-        msdfPipelineManager: this.msdfPipelineManager?.initialized,
-        textureBridge: this.textureBridge?.initialized,
-        msdfAvailable: this.msdfAvailable
-      });
-
       if (!this.msdfAvailable) {
-        console.error('[BrushCore] MSDF Pipeline not available after initialization');
-        console.error('[BrushCore] Detailed status:', {
-          gpuProcessor: {
-            exists: !!this.gpuStrokeProcessor,
-            initialized: this.gpuStrokeProcessor?.initialized,
-            type: typeof this.gpuStrokeProcessor
-          },
-          msdfManager: {
-            exists: !!this.msdfPipelineManager,
-            initialized: this.msdfPipelineManager?.initialized,
-            type: typeof this.msdfPipelineManager
-          },
-          textureBridge: {
-            exists: !!this.textureBridge,
-            initialized: this.textureBridge?.initialized,
-            type: typeof this.textureBridge
-          }
-        });
+        console.error('[BrushCore] MSDF Pipeline not available');
       }
 
       this._setupEventListeners();
@@ -198,7 +162,10 @@
     startStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || this.isDrawing) return;
 
-      console.log('[BrushCore] startStroke called:', { localX, localY, pressure, msdfAvailable: this.msdfAvailable });
+      console.log('[BrushCore] startStroke:', { 
+        localX, localY, pressure, 
+        msdfAvailable: this.msdfAvailable 
+      });
 
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) {
@@ -224,20 +191,34 @@
 
       this.strokeRecorder.startStroke(localX, localY, pressure);
       
+      // 🔧 isDrawingフラグを確実にtrueに設定
       this.isDrawing = true;
       this.currentStroke = {
         layerId: layerId,
         startTime: Date.now()
       };
       
-      this._ensurePreviewContainer(activeLayer);
+      console.log('[BrushCore] isDrawing set to:', this.isDrawing);
       
-      console.log('[BrushCore] Stroke started');
+      this._ensurePreviewContainer(activeLayer);
     }
 
     async updateStroke(localX, localY, pressure = 0.5) {
-      if (!this.initialized || !this.isDrawing) return;
+      console.log('[BrushCore] updateStroke called:', { 
+        initialized: this.initialized, 
+        isDrawing: this.isDrawing, 
+        localX, localY, pressure 
+      });
+
+      if (!this.initialized || !this.isDrawing) {
+        console.warn('[BrushCore] updateStroke blocked:', {
+          initialized: this.initialized,
+          isDrawing: this.isDrawing
+        });
+        return;
+      }
       
+      console.log('[BrushCore] Calling strokeRecorder.addPoint');
       this.strokeRecorder.addPoint(localX, localY, pressure);
       
       const historyManager = window.History;
@@ -276,7 +257,6 @@
 
       try {
         if (!this.msdfAvailable) {
-          console.warn('[BrushCore] MSDF not available, skipping preview');
           return;
         }
 
@@ -285,7 +265,6 @@
           this.currentSettings.size
         );
         if (!vertexResult?.buffer) {
-          console.warn('[BrushCore] VertexBuffer creation failed');
           return;
         }
 
@@ -294,7 +273,6 @@
           this.currentSettings.size
         );
         if (!edgeResult?.buffer) {
-          console.warn('[BrushCore] EdgeBuffer creation failed');
           return;
         }
 
@@ -322,7 +300,6 @@
         );
 
         if (!previewTexture) {
-          console.warn('[BrushCore] MSDF generation failed');
           uploadEdge.gpuBuffer?.destroy();
           uploadVertex.gpuBuffer?.destroy();
           return;
@@ -411,7 +388,6 @@
       }
 
       if (this.msdfAvailable) {
-        console.log('[BrushCore] Finalizing with MSDF');
         await this._finalizeMSDFStroke(points, activeLayer);
       } else {
         console.error('[BrushCore] MSDF not available, cannot finalize stroke');
@@ -693,6 +669,7 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase D-3完全修正版 loaded');
+  console.log('✅ brush-core.js Phase 2-1 loaded');
+  console.log('   🔧 updateStroke デバッグ強化');
 
 })();

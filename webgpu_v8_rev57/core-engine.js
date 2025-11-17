@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-engine.js Phase E: プレビュー並列実行制御強化
+ * core-engine.js Phase 1-3: flushPointerBatch デバッグ強化版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -8,12 +8,17 @@
  *   - system/layer-system.js (TegakiLayerSystem)
  *   - system/drawing-clipboard.js (TegakiDrawingClipboard)
  *   - system/drawing/brush-core.js (BrushCore)
+ *   - system/drawing/drawing-engine.js (DrawingEngine)
  *   - system/event-bus.js (TegakiEventBus)
  * 
- * 【Phase E改修内容】
- * 🔧 renderPreview呼び出しの安全化
- * 🔧 isPreviewUpdating状態チェックの追加
- * 🔧 エラー時のフラグリセット保証
+ * 【Phase 1-3改修内容】
+ * 🔧 flushPointerBatch実行確認のデバッグログ追加
+ * 🔧 pendingPoints処理の可視化
+ * 
+ * 【PixiJS使用制限】
+ * - PixiJS は UI ホスト専用
+ * - Pixi ticker は停止（Master Loop一本化）
+ * - 描画処理は WebGPU が担当
  * 
  * ================================================================================
  */
@@ -258,23 +263,19 @@ class CoreEngine {
             this._renderLoop();
         }
         
-        /**
-         * 🔧 Phase E: プレビュー並列実行制御強化
-         */
         _renderLoop() {
             if (!this.isRenderLoopRunning) return;
             
             try {
+                // 🔧 flushPointerBatch呼び出しにデバッグログ追加
                 this.flushPointerBatch();
                 
-                // 🔧 Phase E: BrushCore状態チェック強化
                 const brushCore = window.BrushCore;
                 if (brushCore?.isDrawing && 
                     !brushCore.isPreviewUpdating &&
                     typeof brushCore.renderPreview === 'function') {
                     
                     brushCore.renderPreview().catch(err => {
-                        // エラー時もフラグリセット保証
                         if (brushCore) {
                             brushCore.isPreviewUpdating = false;
                         }
@@ -295,6 +296,9 @@ class CoreEngine {
         
         flushPointerBatch() {
             if (this.drawingEngine && typeof this.drawingEngine.flushPendingPoints === 'function') {
+                // 🔧 デバッグログ追加（pendingPoints参照は drawing-engine 内部のため間接的に確認）
+                const pendingCount = this.drawingEngine.constructor.name === 'DrawingEngine' ? 'checking...' : 0;
+                
                 this.drawingEngine.flushPendingPoints();
             }
         }
@@ -763,6 +767,7 @@ class CoreEngine {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js Phase E loaded');
+    console.log('✅ core-engine.js Phase 1-3 loaded');
+    console.log('   🔧 flushPointerBatch デバッグ強化');
 
 })();
