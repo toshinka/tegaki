@@ -3,10 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.14 お絵かきツール - WebGPU MSDF版 Phase 2</title>
+    <title>🎨 PixiJS v8.14 お絵かきツール - WebGL2 MSDF版</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
+    <!-- WebGL2 Canvas (webgpu-canvas IDを流用) -->
+    <canvas id="webgpu-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;pointer-events:auto;touch-action:none;z-index:10;display:block;"></canvas>
+    
     <div id="app"></div>
 
     <!-- External Libraries -->
@@ -18,6 +21,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
     <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
     <script src="libs/gsap.min.js"></script>
+    <script src="libs/perfect-freehand-1.2.0.min.js"></script>
 
     <!-- Core Config -->
     <script src="config.js"></script>
@@ -43,24 +47,12 @@
     <script src="system/virtual-album.js"></script>
     <script src="system/animation-system.js"></script>
 
-    <!-- WebGPU Base -->
-    <script src="system/drawing/webgpu/webgpu-capabilities.js"></script>
-    <script src="system/drawing/webgpu/webgpu-drawing-layer.js"></script>
+    <!-- WebGL2 Base -->
+    <script src="system/drawing/webgl2/webgl2-drawing-layer.js"></script>
+    <script src="system/drawing/webgl2/gl-stroke-processor.js"></script>
     
-    <!-- WebGPU MSDF Pipeline -->
-    <script src="system/drawing/wgsl-loader.js"></script> 
-    <script src="system/drawing/webgpu/gpu-stroke-processor.js"></script>
-    <script src="system/drawing/webgpu/msdf-pipeline-manager.js"></script>
-    
-    <!-- WebGPU Legacy  -->
-    <script src="system/drawing/webgpu/earcut-triangulator.js"></script>
-    <script src="system/drawing/webgpu/webgpu-texture-bridge.js"></script>
-    
-    <!-- WebGPU Mask Layer -->
-    <script src="system/drawing/webgpu/webgpu-mask-layer.js"></script>
-    
-    <!-- MSDF Integration -->
-    <script src="system/drawing/msdf/msdf-brush-shader.js"></script>
+    <!-- Earcut Triangulator (共通) -->
+    <script src="system/drawing/earcut-triangulator.js"></script>
 
     <!-- Drawing System - Base -->
     <script src="system/drawing/pointer-handler.js"></script>
@@ -68,15 +60,13 @@
 
     <!-- Polygon Generator -->  
     <script src="system/drawing/stroke-recorder.js"></script>
-    
-    <!-- SDF -->
-    <script src="system/drawing/sdf-brush-shader.js"></script>
 
     <!-- Drawing System - 統合 -->
     <script src="system/drawing/stroke-renderer.js"></script>
     <script src="system/drawing/thumbnail-system.js"></script>
     <script src="system/drawing/brush-settings.js"></script>
     <script src="system/drawing/stroke-transformer.js"></script>
+    <script src="system/drawing/blend-modes.js"></script>
     <script src="system/processing/vector-operations.js"></script>
     <script src="system/drawing/brush-core.js"></script>
     <script src="system/drawing/fill-tool.js"></script>
@@ -115,14 +105,11 @@
     <script>
         window.addEventListener('DOMContentLoaded', async () => {
             try {
-                console.log('🚀 Phase 2完全版: Canvas分離・Master Loop統合 起動中...');
+                console.log('🚀 WebGL2 MSDF版 起動中...');
                 await window.CoreInitializer.initialize();
-                console.log('✅ Phase 2完了: GPU/Pixi責務完全分離');
+                console.log('✅ WebGL2初期化完了');
             } catch (error) {
                 console.error('❌ 初期化失敗:', error);
-                if (error.message?.includes('WebGPU')) {
-                    console.error('WebGPU初期化失敗。Chrome最新版・GPUサポート要確認。');
-                }
             }
         });
     </script>

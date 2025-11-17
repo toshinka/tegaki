@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-initializer.js Phase 2完全版（元ファイル完全継承）
+ * core-initializer.js - WebGL2対応版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -14,19 +14,15 @@
  *   - core-engine.js (CoreEngine)
  * 
  * 📄 子ファイル初期化:
- *   - webgpu-drawing-layer.js
- *   - gpu-stroke-processor.js
- *   - msdf-pipeline-manager.js
- *   - webgpu-texture-bridge.js
- *   - webgpu-mask-layer.js
- *   - stroke-renderer.js
- *   - brush-core.js
+ *   - system/drawing/webgl2/webgl2-drawing-layer.js
+ *   - system/drawing/webgl2/gl-stroke-processor.js
+ *   - system/drawing/stroke-renderer.js
+ *   - system/drawing/brush-core.js
  * 
- * 【Phase 2改修内容】
- * 🔧 Canvas物理分離: webgpu-canvas / pixi-ui-canvas の2キャンバス体制
- * 🔧 Pixi完全制御: ticker.stop(), eventMode='static', interactiveChildren=false
- * 🔧 WebGPU責務明確化: 描画処理を完全にWebGPU側へ移譲
- * 🔧 Master Loop参照: core-engine.jsのstartRenderLoop()呼び出し
+ * 【WebGL2移行対応】
+ * - initializeWebGPU() → initializeWebGL2()
+ * - WebGPUDrawingLayer → WebGL2DrawingLayer
+ * - device → gl
  * 
  * ================================================================================
  */
@@ -141,13 +137,11 @@ window.CoreInitializer = (function() {
 
     function initializeLayerPanel(layerSystem, eventBus) {
         if (!window.LayerPanelRenderer) {
-            console.warn('[CoreInit] LayerPanelRenderer not loaded');
             return null;
         }
 
         const container = document.getElementById('layer-list');
         if (!container) {
-            console.warn('[CoreInit] #layer-list container not found');
             return null;
         }
 
@@ -166,98 +160,42 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
-    async function initializeWebGPU(strokeRenderer) {
+    async function initializeWebGL2(strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
-        
-        if (!config.webgpu?.enabled) {
-            console.warn('[WebGPU] Disabled in config');
-            return false;
-        }
 
         try {
-            if (!window.WebGPUDrawingLayer) {
-                console.error('[WebGPU] WebGPUDrawingLayer not found');
+            if (!window.WebGL2DrawingLayer) {
+                console.error('[WebGL2] WebGL2DrawingLayer not found');
                 return false;
             }
 
-            const drawingLayerInit = await window.WebGPUDrawingLayer.initialize();
+            const drawingLayerInit = await window.WebGL2DrawingLayer.initialize();
             if (!drawingLayerInit) {
-                console.error('[WebGPU] Drawing Layer initialization failed');
+                console.error('[WebGL2] Drawing Layer initialization failed');
                 return false;
             }
 
-            const device = window.WebGPUDrawingLayer.getDevice();
-            const format = 'rgba8unorm';
+            const gl = window.WebGL2DrawingLayer.getGL();
 
-            if (!window.GPUStrokeProcessor) {
-                console.error('[WebGPU] GPUStrokeProcessor not found');
+            if (!window.GLStrokeProcessor) {
+                console.error('[WebGL2] GLStrokeProcessor not found');
                 return false;
             }
 
-            await window.GPUStrokeProcessor.initialize(device);
-
-            if (!window.MSDFPipelineManager) {
-                console.error('[WebGPU] MSDFPipelineManager not found');
-                return false;
-            }
-
-            await window.MSDFPipelineManager.initialize(device, format);
-            
-            if (!window.MSDFPipelineManager.polygonRenderPipeline) {
-                console.error('[WebGPU] Polygon Render Pipeline not created');
-                return false;
-            }
-
-            if (!window.WebGPUTextureBridge) {
-                console.error('[WebGPU] WebGPUTextureBridge not found');
-                return false;
-            }
-
-            const bridgeInit = await window.WebGPUTextureBridge.initialize();
-            if (!bridgeInit) {
-                console.error('[WebGPU] Texture Bridge initialization failed');
-                return false;
-            }
-
-            if (window.WebGPUMaskLayer) {
-                const canvasWidth = config.canvas?.width || 1920;
-                const canvasHeight = config.canvas?.height || 1080;
-                
-                const maskLayer = new window.WebGPUMaskLayer(window.WebGPUDrawingLayer);
-                const maskInit = await maskLayer.initialize(canvasWidth, canvasHeight);
-                
-                if (maskInit) {
-                    window.webgpuMaskLayer = maskLayer;
-                    
-                    if (window.BrushCore) {
-                        window.BrushCore.webgpuMaskLayer = maskLayer;
-                    }
-                } else {
-                    console.warn('[WebGPU] MaskLayer initialization failed');
-                }
-            } else {
-                console.warn('[WebGPU] WebGPUMaskLayer not found');
-            }
+            await window.GLStrokeProcessor.initialize(gl);
 
             if (!strokeRenderer) {
-                console.error('[WebGPU] StrokeRenderer not provided');
+                console.error('[WebGL2] StrokeRenderer not provided');
                 return false;
             }
 
             await strokeRenderer.initialize();
 
-            if (typeof strokeRenderer.initMSDFMode === 'function') {
-                strokeRenderer.initMSDFMode(
-                    window.MSDFPipelineManager.polygonRenderPipeline,
-                    device,
-                    format
-                );
-            }
-
+            console.log('[WebGL2] Initialization complete');
             return true;
 
         } catch (error) {
-            console.error('[WebGPU] Initialization error:', error);
+            console.error('[WebGL2] Initialization error:', error);
             return false;
         }
     }
@@ -270,7 +208,7 @@ window.CoreInitializer = (function() {
             this.popupManager = null;
             this.layerPanelRenderer = null;
             this.exportInitialized = false;
-            this.webgpuEnabled = false;
+            this.webgl2Enabled = false;
         }
         
         async initialize() {
@@ -289,7 +227,6 @@ window.CoreInitializer = (function() {
             const screenWidth = window.innerWidth - 50;
             const screenHeight = window.innerHeight;
             
-            // Pixi.js初期化（既存のcontainerEl内に配置）
             this.pixiApp = new PIXI.Application();
             await this.pixiApp.init({
                 width: screenWidth,
@@ -307,16 +244,11 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
-            // 🔧 Phase 2改修: Pixi自動レンダーループ停止（GPU競合解消）
             this.pixiApp.ticker.stop();
-            console.log('✅ [Phase 2] Pixi ticker stopped');
             
-            // 🔧 Phase 2改修: Pixi pointer capture無効化
             this.pixiApp.stage.eventMode = 'static';
             this.pixiApp.stage.interactiveChildren = false;
-            console.log('✅ [Phase 2] Pixi pointer capture disabled');
             
-            // 初回レンダリング実行（背景を表示）
             this.pixiApp.renderer.render(this.pixiApp.stage);
             
             this.coreEngine = new CoreEngine(this.pixiApp);
@@ -360,7 +292,16 @@ window.CoreInitializer = (function() {
             if (!strokeRenderer) {
                 console.error('[App] StrokeRenderer not found');
             } else {
-                this.webgpuEnabled = await initializeWebGPU(strokeRenderer);
+                this.webgl2Enabled = await initializeWebGL2(strokeRenderer);
+                
+                if (this.webgl2Enabled) {
+                    if (window.BrushCore) {
+                        window.BrushCore.initialized = false;
+                        window.BrushCore.glStrokeProcessor = window.GLStrokeProcessor;
+                        
+                        await window.BrushCore.initialize();
+                    }
+                }
             }
             
             this.initializeExportPopup();
@@ -374,21 +315,15 @@ window.CoreInitializer = (function() {
             this.updateDPRInfo();
             this.startFPSMonitor();
             
-            // 🔧 Phase 2追加: Master Loopをcore-engine側で開始
             if (this.coreEngine.startRenderLoop) {
                 this.coreEngine.startRenderLoop();
-                console.log('✅ [Phase 2] Master Loop started in core-engine.js');
             } else {
-                console.warn('⚠️ [Phase 2] Master Loop not available in core-engine.js, using fallback');
                 this.startManualRenderLoop();
             }
             
             return true;
         }
         
-        /**
-         * Fallback: 手動レンダーループ（Master Loop未実装時用）
-         */
         startManualRenderLoop() {
             const renderLoop = () => {
                 if (this.pixiApp && this.pixiApp.renderer && this.pixiApp.stage) {
@@ -525,12 +460,7 @@ window.CoreInitializer = (function() {
         initialize,
         checkDependencies,
         DrawingApp,
-        initializeWebGPU,
+        initializeWebGL2,
         initializeLayerPanel
     };
 })();
-
-console.log('✅ core-initializer.js Phase 2完全版 loaded');
-console.log('   🔧 Canvas物理分離実装: webgpu-canvas / pixi-ui-canvas');
-console.log('   🔧 Pixi完全制御: ticker停止・pointer無効化');
-console.log('   🔧 Master Loop統合準備完了');

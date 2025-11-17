@@ -1,12 +1,30 @@
 /**
- * @file ui/slider-utils.js
- * @version v8.13.10 - 慣性スクロール実装 + タブレットペン対応
+ * ================================================================================
+ * slider-utils.js v8.14.0 - PointerEvent配信問題修正版
+ * ================================================================================
  * 
- * 【v8.13.10 改修内容】
- * 🔧 PointerEvent完全対応（タブレットペン入力の引っかかり解消）
- * 🔧 慣性スクロール実装（velocity計算による滑らか動作）
- * 🔧 requestAnimationFrame最適化
- * 🔧 イベント伝播制御の最適化
+ * 📁 親ファイル依存: なし（独立モジュール）
+ * 
+ * 📄 子ファイル使用先:
+ *   - ui/dom-builder.js (スライダー生成)
+ *   - ui/settings-popup.js (設定UI)
+ *   - ui/quick-access-popup.js (クイックアクセスUI)
+ * 
+ * 【責務】
+ * - スライダーUI生成・管理
+ * - 慣性スクロール実装
+ * - タブレットペン対応
+ * 
+ * 【Phase 1-1改修内容】
+ * 🔧 document全体のpointermove capture削除
+ * 🔧 setPointerCaptureによる厳密な制御
+ * 🔧 描画用pointermoveの横取り防止
+ * 
+ * 【PixiJS使用制限】
+ * - 本ファイルはPixiJS非依存
+ * - WebGPU描画処理への干渉を完全に排除
+ * 
+ * ================================================================================
  */
 
 window.TegakiUI = window.TegakiUI || {};
@@ -34,8 +52,8 @@ window.TegakiUI.SliderUtils = {
         let dragging = false;
         let rafId = null;
         let pendingUpdate = null;
+        let activePointerId = null;
         
-        // 🔧 慣性スクロール用
         let velocity = 0;
         let lastMoveTime = 0;
         let lastMoveValue = initial;
@@ -70,7 +88,6 @@ window.TegakiUI.SliderUtils = {
             });
         };
         
-        // 🔧 慣性スクロール適用
         const applyMomentum = () => {
             if (!dragging && Math.abs(velocity) > 0.5) {
                 currentValue += velocity;
@@ -80,7 +97,7 @@ window.TegakiUI.SliderUtils = {
                 pendingUpdate = currentValue;
                 scheduleOnChange();
                 
-                velocity *= 0.92; // 減衰係数
+                velocity *= 0.92;
                 momentumRafId = requestAnimationFrame(applyMomentum);
             } else {
                 velocity = 0;
@@ -101,6 +118,7 @@ window.TegakiUI.SliderUtils = {
             if (e.button !== 0) return;
             
             dragging = true;
+            activePointerId = e.pointerId;
             velocity = 0;
             if (momentumRafId) {
                 cancelAnimationFrame(momentumRafId);
@@ -115,8 +133,11 @@ window.TegakiUI.SliderUtils = {
             pendingUpdate = currentValue;
             scheduleOnChange();
             
-            if (containerEl.setPointerCapture) {
-                try { containerEl.setPointerCapture(e.pointerId); } catch (err) {}
+            // 🔧 setPointerCaptureで厳密に制御
+            try {
+                containerEl.setPointerCapture(e.pointerId);
+            } catch (err) {
+                console.warn('[SliderUtils] setPointerCapture failed:', err);
             }
             
             e.preventDefault();
@@ -124,7 +145,8 @@ window.TegakiUI.SliderUtils = {
         };
         
         const handlePointerMove = (e) => {
-            if (!dragging) return;
+            // 🔧 activePointerIdで厳密にチェック
+            if (!dragging || e.pointerId !== activePointerId) return;
             
             const now = performance.now();
             const dt = Math.max(1, now - lastMoveTime);
@@ -132,8 +154,7 @@ window.TegakiUI.SliderUtils = {
             const newValue = getValue(e.clientX);
             updateUI(newValue);
             
-            // 🔧 速度計算（慣性スクロール用）
-            velocity = (newValue - lastMoveValue) / dt * 16; // 60fps基準
+            velocity = (newValue - lastMoveValue) / dt * 16;
             
             lastMoveValue = newValue;
             lastMoveTime = now;
@@ -146,16 +167,16 @@ window.TegakiUI.SliderUtils = {
         };
         
         const handlePointerUp = (e) => {
-            if (!dragging) return;
+            if (!dragging || e.pointerId !== activePointerId) return;
             
             dragging = false;
+            activePointerId = null;
             
             if (rafId !== null) {
                 cancelAnimationFrame(rafId);
                 rafId = null;
             }
             
-            // 🔧 慣性スクロール開始
             if (Math.abs(velocity) > 0.5) {
                 applyMomentum();
             }
@@ -164,17 +185,22 @@ window.TegakiUI.SliderUtils = {
                 setTimeout(() => onCommit(currentValue), 50);
             }
             
-            if (containerEl.releasePointerCapture) {
-                try { containerEl.releasePointerCapture(e.pointerId); } catch (err) {}
+            try {
+                containerEl.releasePointerCapture(e.pointerId);
+            } catch (err) {
+                console.warn('[SliderUtils] releasePointerCapture failed:', err);
             }
             
             e.stopPropagation();
         };
         
         const handlePointerCancel = (e) => {
-            if (!dragging) return;
+            if (!dragging || e.pointerId !== activePointerId) return;
+            
             dragging = false;
+            activePointerId = null;
             velocity = 0;
+            
             if (rafId !== null) {
                 cancelAnimationFrame(rafId);
                 rafId = null;
@@ -183,12 +209,17 @@ window.TegakiUI.SliderUtils = {
                 cancelAnimationFrame(momentumRafId);
                 momentumRafId = null;
             }
+            
+            try {
+                containerEl.releasePointerCapture(e.pointerId);
+            } catch (err) {}
         };
         
+        // 🔧 containerElのみにイベント登録（document全体への登録を削除）
         containerEl.addEventListener('pointerdown', handlePointerDown, { passive: false });
-        document.addEventListener('pointermove', handlePointerMove, { passive: false, capture: true });
-        document.addEventListener('pointerup', handlePointerUp, { capture: true });
-        document.addEventListener('pointercancel', handlePointerCancel, { capture: true });
+        containerEl.addEventListener('pointermove', handlePointerMove, { passive: false });
+        containerEl.addEventListener('pointerup', handlePointerUp);
+        containerEl.addEventListener('pointercancel', handlePointerCancel);
         
         updateUI(initial);
         containerEl._sliderListenerSetup = true;
@@ -203,9 +234,9 @@ window.TegakiUI.SliderUtils = {
                 if (rafId !== null) cancelAnimationFrame(rafId);
                 if (momentumRafId) cancelAnimationFrame(momentumRafId);
                 containerEl.removeEventListener('pointerdown', handlePointerDown);
-                document.removeEventListener('pointermove', handlePointerMove);
-                document.removeEventListener('pointerup', handlePointerUp);
-                document.removeEventListener('pointercancel', handlePointerCancel);
+                containerEl.removeEventListener('pointermove', handlePointerMove);
+                containerEl.removeEventListener('pointerup', handlePointerUp);
+                containerEl.removeEventListener('pointercancel', handlePointerCancel);
                 containerEl._sliderListenerSetup = false;
                 containerEl._sliderInstance = null;
             }
@@ -231,7 +262,5 @@ window.TegakiUI.SliderUtils = {
     }
 };
 
-console.log('✅ slider-utils.js v8.13.10 loaded');
-console.log('   🔧 PointerEvent完全対応（タブレットペン引っかかり解消）');
-console.log('   🔧 慣性スクロール実装（velocity計算）');
-console.log('   🔧 requestAnimationFrame最適化');
+console.log('✅ slider-utils.js v8.14.0 loaded');
+console.log('   🔧 PointerEvent配信問題修正完了');
