@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-initializer.js - WebGL2対応版
+ * core-initializer.js - WebGL2対応完全版 (Phase 5)
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -16,13 +16,14 @@
  * 📄 子ファイル初期化:
  *   - system/drawing/webgl2/webgl2-drawing-layer.js
  *   - system/drawing/webgl2/gl-stroke-processor.js
+ *   - system/drawing/webgl2/gl-msdf-pipeline.js [Phase 3-4]
+ *   - system/drawing/webgl2/gl-texture-bridge.js [Phase 5]
  *   - system/drawing/stroke-renderer.js
  *   - system/drawing/brush-core.js
  * 
- * 【WebGL2移行対応】
- * - initializeWebGPU() → initializeWebGL2()
- * - WebGPUDrawingLayer → WebGL2DrawingLayer
- * - device → gl
+ * 【Phase 5更新内容】
+ * ✅ initializeWebGL2(): GLMSDFPipeline + GLTextureBridge初期化追加
+ * ✅ BrushCore再初期化ロジック改善
  * 
  * ================================================================================
  */
@@ -160,10 +161,19 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
+    /**
+     * WebGL2初期化（Phase 5完全版）
+     * ✅ Phase 1: WebGL2DrawingLayer
+     * ✅ Phase 2: GLStrokeProcessor
+     * ✅ Phase 3-4: GLMSDFPipeline
+     * ✅ Phase 5: GLTextureBridge
+     * ✅ StrokeRenderer
+     */
     async function initializeWebGL2(strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
 
         try {
+            // 1. WebGL2DrawingLayer初期化
             if (!window.WebGL2DrawingLayer) {
                 console.error('[WebGL2] WebGL2DrawingLayer not found');
                 return false;
@@ -176,22 +186,43 @@ window.CoreInitializer = (function() {
             }
 
             const gl = window.WebGL2DrawingLayer.getGL();
+            console.log('[WebGL2] Drawing Layer initialized');
 
+            // 2. GLStrokeProcessor初期化
             if (!window.GLStrokeProcessor) {
                 console.error('[WebGL2] GLStrokeProcessor not found');
                 return false;
             }
 
             await window.GLStrokeProcessor.initialize(gl);
+            console.log('[WebGL2] GLStrokeProcessor initialized');
 
+            // 3. GLMSDFPipeline初期化（Phase 3-4）
+            if (window.GLMSDFPipeline) {
+                await window.GLMSDFPipeline.initialize(gl);
+                console.log('[WebGL2] GLMSDFPipeline initialized');
+            } else {
+                console.warn('[WebGL2] GLMSDFPipeline not found (MSDF features disabled)');
+            }
+
+            // 4. GLTextureBridge初期化（Phase 5）
+            if (window.GLTextureBridge) {
+                await window.GLTextureBridge.initialize();
+                console.log('[WebGL2] GLTextureBridge initialized');
+            } else {
+                console.warn('[WebGL2] GLTextureBridge not found (texture conversion disabled)');
+            }
+
+            // 5. StrokeRenderer初期化
             if (!strokeRenderer) {
                 console.error('[WebGL2] StrokeRenderer not provided');
                 return false;
             }
 
             await strokeRenderer.initialize();
+            console.log('[WebGL2] StrokeRenderer initialized');
 
-            console.log('[WebGL2] Initialization complete');
+            console.log('[WebGL2] ✅ Full initialization complete');
             return true;
 
         } catch (error) {
@@ -292,14 +323,23 @@ window.CoreInitializer = (function() {
             if (!strokeRenderer) {
                 console.error('[App] StrokeRenderer not found');
             } else {
+                // WebGL2初期化（Phase 5完全版）
                 this.webgl2Enabled = await initializeWebGL2(strokeRenderer);
                 
                 if (this.webgl2Enabled) {
+                    // BrushCore再初期化（Phase 5対応）
                     if (window.BrushCore) {
+                        console.log('[App] Re-initializing BrushCore with WebGL2 components');
+                        
                         window.BrushCore.initialized = false;
+                        
+                        // WebGL2コンポーネント設定
                         window.BrushCore.glStrokeProcessor = window.GLStrokeProcessor;
+                        window.BrushCore.glMSDFPipeline = window.GLMSDFPipeline;
+                        window.BrushCore.glTextureBridge = window.GLTextureBridge;
                         
                         await window.BrushCore.initialize();
+                        console.log('[App] BrushCore re-initialized with WebGL2');
                     }
                 }
             }
