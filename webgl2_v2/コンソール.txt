@@ -1,44 +1,44 @@
-config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
-config.js:508    🔧 PerfectFreehand設定リニア化
-config.js:509    ✓ thinning: 0 (線の太り補正無効)
-config.js:510    ✓ smoothing: 0 (補間最小化)
-config.js:511    ✓ streamline: 0 (遅延補正なし)
-data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
-batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
-popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
-state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
-settings-manager.js:231 ✅ settings-manager.js Phase 2 loaded
-settings-manager.js:232    🔧 exportResolution 設定項目追加
-layer-transform.js:1011 ✅ layer-transform.js Phase 6 loaded
-layer-transform.js:1012    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
-checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
-layer-system.js:1370 ✅ layer-system.js Phase 8完成版 loaded
-layer-system.js:1371    ✅ getLayerById() メソッド追加
-layer-system.js:1372    ✅ LayerModel.id 確実取得保証
-layer-system.js:1373    ✅ history.js との統合対応完了
-drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
-drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
-drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
-history.js:343 ✅ history.js Phase 4 mask snapshot対応完全版 loaded
-history.js:344    ✅ pushEraseMask() 実装
-history.js:345    ✅ beginAction/endAction/addPoint 実装
-webgl2-drawing-layer.js:238 ✅ webgl2-drawing-layer.js Phase 1 loaded
-gl-stroke-processor.js:238 ✅ webgl2-drawing-layer.js Phase 1 loaded
-pointer-handler.js:188 ✅ pointer-handler.js Phase 1 loaded
-pointer-handler.js:189    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
-pressure-handler.js:144 ✅ pressure-handler.js Phase 1 loaded
-pressure-handler.js:145    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
-stroke-recorder.js:334 ✅ stroke-recorder.js Phase 0 loaded
-stroke-recorder.js:335    ✓ 自動初期化完了（initialize()不要）
-stroke-recorder.js:336    ✓ Local座標記録専用（座標変換なし）
-stroke-recorder.js:337    ✓ PerfectFreehand互換形式対応
-stroke-renderer.js:142 ✅ stroke-renderer.js (Phase 3クリーンアップ版) loaded
-thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
-brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
-blend-modes.js:24 ✅ BlendMode definitions loaded
-vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
-vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
-vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
+ ✅ config.js v8.14.2 Phase 1改修版 loaded
+    🔧 PerfectFreehand設定リニア化
+    ✓ thinning: 0 (線の太り補正無効)
+    ✓ smoothing: 0 (補間最小化)
+    ✓ streamline: 0 (遅延補正なし)
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js Phase 2 loaded
+    🔧 exportResolution 設定項目追加
+ ✅ layer-transform.js Phase 6 loaded
+    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 8完成版 loaded
+    ✅ getLayerById() メソッド追加
+    ✅ LayerModel.id 確実取得保証
+    ✅ history.js との統合対応完了
+ ✅ drawing-clipboard.js Phase 1 loaded
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js Phase 4 mask snapshot対応完全版 loaded
+    ✅ pushEraseMask() 実装
+    ✅ beginAction/endAction/addPoint 実装
+ ✅ webgl2-drawing-layer.js Phase 1 loaded
+ ✅ webgl2-drawing-layer.js Phase 1 loaded
+ ✅ pointer-handler.js Phase 1 loaded
+    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
+ ✅ pressure-handler.js Phase 1 loaded
+    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
+ ✅ stroke-recorder.js Phase 0 loaded
+    ✓ 自動初期化完了（initialize()不要）
+    ✓ Local座標記録専用（座標変換なし）
+    ✓ PerfectFreehand互換形式対応
+ ✅ stroke-renderer.js (Phase 3クリーンアップ版) loaded
+ ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+ ✅ brush-settings.js (Phase 3-D Clean) loaded
+ ✅ BlendMode definitions loaded
+ ✅ vector-operations.js Phase 1完全版 loaded
+    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+    ✓ config.js perfectFreehand設定自動適用
 vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
 brush-core.js:670 ✅ brush-core.js Phase 5完全版 loaded
 brush-core.js:671    🔧 Phase 5-A: リアルタイムプレビュー表示修正
@@ -48,7 +48,10 @@ brush-core.js:674    ✅ フリッカーなし・筆圧完全反映
 fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
 fill-tool.js:270    ❌ 独自WebGPU初期化を削除
 fill-tool.js:271    ✅ 既存インスタンス参照のみ
-drawing-engine.js:65 Uncaught SyntaxError: Unexpected end of input
+drawing-engine.js:298 ✅ drawing-engine.js WebGL2移行版 loaded
+drawing-engine.js:299    🔧 WebGL2DrawingLayer参照対応
+drawing-engine.js:300    ✅ 座標変換パイプライン完全保持
+drawing-engine.js:301    ✅ pendingPoints機構維持
 quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
 export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
 export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
@@ -92,10 +95,16 @@ ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
 ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
 ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
 core-runtime.js:578 ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
-core-engine.js:759 Uncaught ReferenceError: DrawingEngine is not defined
+core-engine.js:767 ✅ core-engine.js Phase 4-C完全版 loaded
+core-engine.js:768    🔧 リアルタイムプレビュー統合完了
+core-engine.js:769    🔧 Master Loop: pointer → preview → render
 index.html:108 🚀 WebGL2 MSDF版 起動中...
-index.html:112 ❌ 初期化失敗: Error: CoreRuntime or CoreEngine not loaded
-    at checkDependencies (core-initializer.js:59:19)
-    at Object.initialize (core-initializer.js:439:9)
-    at index.html:109:46
+drawing-engine.js:69 [DrawingEngine] Canvas initialized: webgpu-canvas
+index.html:112 ❌ 初期化失敗: TypeError: this.pointerHandler.on is not a function
+    at DrawingEngine._initializePointerHandler (drawing-engine.js:84:27)
+    at new DrawingEngine (drawing-engine.js:46:12)
+    at new CoreEngine (core-engine.js:156:30)
+    at DrawingApp.initialize (core-initializer.js:254:31)
+    at async Object.initialize (core-initializer.js:448:9)
+    at async index.html:109:17
 （匿名） @ index.html:112
