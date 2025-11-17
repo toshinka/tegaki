@@ -1,32 +1,34 @@
 /**
  * ================================================================================
- * drawing-engine.js Phase 1-2: PointerEvent配信デバッグ強化版
+ * drawing-engine.js Phase 2完全版: WebGPU Canvas接続確立
  * ================================================================================
  * 
  * 📁 親ファイル依存:
  *   - system/drawing/brush-core.js (BrushCore)
  *   - system/drawing/pointer-handler.js (PointerHandler)
+ *   - system/drawing/webgpu/webgpu-drawing-layer.js (WebGPUDrawingLayer)
  *   - coordinate-system.js (CoordinateSystem)
  *   - system/camera-system.js (CameraSystem)
  *   - system/layer-system.js (LayerSystem)
  *   - system/event-bus.js (EventBus)
  * 
  * 📄 子ファイル使用先:
- *   - core-engine.js (flushPendingPoints()呼び出し)
+ *   - core-engine.js (flushPendingPoints呼び出し)
  * 
  * 【責務】
+ * - WebGPU Canvas接続管理
  * - 座標変換パイプライン（Screen→Canvas→World→Local）
  * - PointerEventのキューイング
- * - Master Loop連携（rAF発行禁止）
+ * - Master Loop連携
  * 
- * 【Phase 1-2改修内容】
- * 🔧 WebGPU Canvas専用接続の明示化
- * 🔧 PointerEvent配信フローのデバッグログ追加
- * 🔧 activePointers管理の厳密化
+ * 【Phase 2完全改修内容】
+ * ✅ WebGPUDrawingLayer.getCanvas()からCanvas取得
+ * ✅ Canvas ID厳密検証
+ * ✅ activePointers管理の確実化
  * 
  * 【PixiJS使用制限】
  * - PixiJS は UI ホスト専用
- * - pointer イベントの一次取得は WebGPU Canvas が担当
+ * - pointer イベントは WebGPU Canvas が担当
  * - 描画処理は WebGPU が担当
  * 
  * ================================================================================
@@ -43,9 +45,7 @@ class DrawingEngine {
         this.config = window.TEGAKI_CONFIG;
 
         this.brushCore = window.BrushCore;
-        
         if (!this.brushCore) {
-            console.error('[DrawingEngine] window.BrushCore not initialized');
             throw new Error('[DrawingEngine] window.BrushCore not initialized');
         }
 
@@ -59,23 +59,35 @@ class DrawingEngine {
     }
 
     _initializeCanvas() {
-        // 🔧 WebGPU Canvas専用接続を明示
-        const canvas = document.getElementById('webgpu-canvas') || this.app.canvas || this.app.view;
+        // WebGPUDrawingLayer から Canvas取得
+        let canvas = null;
+        
+        if (window.WebGPUDrawingLayer && window.WebGPUDrawingLayer.isInitialized()) {
+            try {
+                canvas = window.WebGPUDrawingLayer.getCanvas();
+            } catch (e) {
+                console.warn('[DrawingEngine] Failed to get canvas from WebGPUDrawingLayer:', e);
+            }
+        }
+        
+        // フォールバック: DOM直接取得
+        if (!canvas) {
+            canvas = document.getElementById('webgpu-canvas');
+        }
         
         if (!canvas) {
-            console.error('[DrawingEngine] Canvas not found');
-            return;
+            throw new Error('[DrawingEngine] Canvas not found');
         }
 
+        // Canvas ID検証
         if (canvas.id !== 'webgpu-canvas') {
-            console.warn('[DrawingEngine] Canvas is not webgpu-canvas:', canvas.id);
+            throw new Error(`[DrawingEngine] Invalid canvas: ${canvas.id}. Expected: webgpu-canvas`);
         }
 
         canvas.style.touchAction = 'none';
 
         if (!window.PointerHandler) {
-            console.error('[DrawingEngine] window.PointerHandler not available');
-            return;
+            throw new Error('[DrawingEngine] window.PointerHandler not available');
         }
 
         this.pointerDetach = window.PointerHandler.attach(canvas, {
@@ -87,7 +99,7 @@ class DrawingEngine {
             preventDefault: true
         });
 
-        console.log('[DrawingEngine] Pointer events attached to:', canvas.id);
+        console.log('[DrawingEngine] PointerEvents attached to:', canvas.id);
     }
 
     flushPendingPoints() {
@@ -111,50 +123,22 @@ class DrawingEngine {
         if (this.layerSystem?.vKeyPressed) return;
         if (info.button === 2) return;
 
-        console.log('[DrawingEngine] _handlePointerDown:', {
-            pointerId: info.pointerId,
-            clientX: info.clientX,
-            clientY: info.clientY,
-            pressure: info.pressure
-        });
-
         pendingPoints.push({ type: 'begin', info });
     }
 
     _handlePointerMove(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
-        
-        console.log('[DrawingEngine] _handlePointerMove:', {
-            pointerId: info.pointerId,
-            hasPointerInfo: !!pointerInfo,
-            isDrawing: pointerInfo?.isDrawing,
-            clientX: info.clientX,
-            clientY: info.clientY
-        });
-        
-        if (!pointerInfo || !pointerInfo.isDrawing) {
-            console.warn('[DrawingEngine] PointerMove blocked - not drawing');
-            return;
-        }
+        if (!pointerInfo || !pointerInfo.isDrawing) return;
 
-        console.log('[DrawingEngine] Queuing move point');
         pendingPoints.push({ type: 'move', info });
     }
 
     _handlePointerUp(info, e) {
-        console.log('[DrawingEngine] _handlePointerUp:', {
-            pointerId: info.pointerId,
-            clientX: info.clientX,
-            clientY: info.clientY
-        });
-
         pendingPoints.push({ type: 'end', info });
         this.activePointers.delete(info.pointerId);
     }
 
     _handlePointerCancel(info, e) {
-        console.log('[DrawingEngine] _handlePointerCancel:', info.pointerId);
-        
         if (this.brushCore && this.brushCore.cancelStroke) {
             this.brushCore.cancelStroke();
         }
@@ -164,7 +148,7 @@ class DrawingEngine {
     _processPointerDown(info) {
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
         if (!localCoords) {
-            console.error('[DrawingEngine] _processPointerDown: localCoords is null');
+            console.error('[DrawingEngine] Local coords conversion failed');
             return;
         }
 
@@ -184,14 +168,9 @@ class DrawingEngine {
             return;
         }
 
-        // 🔧 isDrawing: trueを確実に設定
+        // activePointers登録
         this.activePointers.set(info.pointerId, {
             type: info.pointerType || 'unknown',
-            isDrawing: true
-        });
-
-        console.log('[DrawingEngine] activePointers.set:', {
-            pointerId: info.pointerId,
             isDrawing: true
         });
 
@@ -206,27 +185,12 @@ class DrawingEngine {
     }
 
     _processPointerMove(info) {
-        console.log('[DrawingEngine] _processPointerMove:', {
-            hasBrushCore: !!this.brushCore,
-            isActive: this.brushCore?.isActive?.()
-        });
-
         if (!this.brushCore || !this.brushCore.isActive || !this.brushCore.isActive()) {
-            console.warn('[DrawingEngine] BrushCore not active');
             return;
         }
 
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
-        if (!localCoords) {
-            console.warn('[DrawingEngine] Local coords conversion failed');
-            return;
-        }
-
-        console.log('[DrawingEngine] Calling updateStroke:', {
-            localX: localCoords.localX,
-            localY: localCoords.localY,
-            pressure: info.pressure
-        });
+        if (!localCoords) return;
 
         if (this.brushCore.updateStroke) {
             this.brushCore.updateStroke(
@@ -253,19 +217,13 @@ class DrawingEngine {
         }
 
         const activeLayer = this.layerSystem.getActiveLayer();
-        if (!activeLayer) {
-            return null;
-        }
+        if (!activeLayer) return null;
 
         const canvasCoords = this.coordSystem.screenClientToCanvas(clientX, clientY);
-        if (!canvasCoords || canvasCoords.canvasX === undefined) {
-            return null;
-        }
+        if (!canvasCoords || canvasCoords.canvasX === undefined) return null;
 
         const worldCoords = this.coordSystem.canvasToWorld(canvasCoords.canvasX, canvasCoords.canvasY);
-        if (!worldCoords || worldCoords.worldX === undefined) {
-            return null;
-        }
+        if (!worldCoords || worldCoords.worldX === undefined) return null;
 
         const localCoords = this.coordSystem.worldToLocal(
             worldCoords.worldX,
@@ -307,6 +265,4 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js Phase 1-2 loaded');
-console.log('   🔧 WebGPU Canvas専用接続');
-console.log('   🔧 PointerEvent配信デバッグ強化');
+console.log('✅ drawing-engine.js Phase 2 loaded');
