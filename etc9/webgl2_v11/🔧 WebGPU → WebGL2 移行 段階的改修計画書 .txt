@@ -1,0 +1,776 @@
+================================================================================
+WebGPU → WebGL2 移行 段階的改修計画書 rev.1
+PerfectFreehand + MSDF ポリゴンペン実装
+================================================================================
+
+【目的】
+WebGPU実装（webgpu_v8）をWebGL2バックエンドに最小変更で移行
+PerfectFreehand + MSDF（JFA）機能を維持し、Pixi/UI衝突を回避
+既存ファイルを極力流用、GPU層とシェーダーのみ置換
+
+【移行方針】
+✅ 保持: coordinate-system, pointer-handler, drawing-engine, brush-core, 
+        stroke-recorder, layer-system, UI層 等のロジック層
+🔧 置換: WebGPU固有GPU層、WGSL→GLSLシェーダー群
+📦 新規: WebGL2ラッパー層（既存呼び出しインターフェース維持）
+
+================================================================================
+■ 第1部: 現状アーキテクチャ分析
+================================================================================
+
+【親子メソッドマップ - 主要フロー】
+
+🔀 描画開始フロー
+core-initializer.initialize()
+  → WebGPUDrawingLayer.initialize()        [❌ 置換対象]
+  → DrawingEngine.initializeCanvas()       [✅ 保持]
+  → PointerHandler.attach()                [✅ 保持]
+
+🔀 ポインター入力フロー
+PointerEvent (webgpu-canvas)               [🔧 canvas ID変更検討]
+  → drawing-engine._handlePointerDown()    [✅ 保持]
+  → brush-core.startStroke()               [✅ 保持]
+  → stroke-recorder.startStroke()          [✅ 保持]
+  → stroke-recorder.addPoint()             [✅ 保持]
+
+🔀 ストローク生成フロー
+brush-core.finalizeStroke()                [✅ 保持、GPU呼び出し部変更]
+  → stroke-recorder.getRawPoints()         [✅ 保持]
+  → gpu-stroke-processor.createPolygonVertexBuffer()  [❌ 置換]
+  → gpu-stroke-processor.createEdgeBuffer()          [❌ 置換]
+  → msdf-pipeline-manager.generateMSDF()             [❌ 置換]
+      → _clearSeedTexture()                [❌ 置換: FBO clear]
+      → _seedInitPass()                    [❌ 置換: Fragment shader]
+      → _executeJFA()                      [❌ 置換: Ping-pong FBO]
+      → _encodePass()                      [❌ 置換: Fragment shader]
+      → _renderMSDFPolygon()               [❌ 置換: VBO描画]
+  → webgpu-texture-bridge.createSpriteFromGPUTexture() [❌ 置換]
+
+🔀 座標変換パイプライン（完全保持）
+PointerEvent.clientX/Y
+  → coordinate-system.screenClientToCanvas()         [✅ 保持]
+  → coordinate-system.canvasToWorld()                [✅ 保持]
+  → coordinate-system.worldToLocal()                 [✅ 保持]
+  → stroke-recorder.addPoint(localX, localY)         [✅ 保持]
+
+【シンボル辞典 - 置換対象の特定】
+
+📁 WebGPU固有（完全置換）
+webgpu-drawing-layer.js
+  ↳ window.WebGPUDrawingLayer (Singleton)
+  ↳ .initialize() : adapter/device/context取得
+  ↳ .getDevice() : GPU operations用
+  ↳ .getCanvas() : #webgpu-canvas返却
+  → WebGL2: gl = canvas.getContext('webgl2')
+
+gpu-stroke-processor.js
+  ↳ window.GPUStrokeProcessor (Singleton)
+  ↳ .createPolygonVertexBuffer(points, size) : PF→Earcut→Float32Array
+  ↳ .createEdgeBuffer(points, size) : PFアウトライン→Edge配列
+  ↳ .uploadToGPU(data, usage) : GPUBuffer生成
+  → WebGL2: gl.createBuffer() + gl.bufferData()
+
+msdf-pipeline-manager.js
+  ↳ window.MSDFPipelineManager (Singleton)
+  ↳ .generateMSDF(gpuBuffer, bounds, ...) : Full pipeline
+  ↳ ._clearSeedTexture() : WGSL compute
+  ↳ ._seedInitPass() : WGSL compute
+  ↳ ._executeJFA() : Ping-pong passes
+  ↳ ._encodePass() : Distance encoding
+  ↳ ._renderMSDFPolygon() : Render pipeline
+  → WebGL2: FBO + GLSL fragment shaders
+
+webgpu-texture-bridge.js
+  ↳ window.WebGPUTextureBridge (Singleton)
+  ↳ .createSpriteFromGPUTexture(gpuTex, w, h) : GPUTexture→PIXI.Sprite
+  → WebGL2: WebGLTexture→PIXI.Sprite (gl.bindTexture処理)
+
+webgpu-mask-layer.js
+  ↳ window.WebGPUMaskLayer (Instance)
+  ↳ 消しゴムマスク処理
+  → WebGL2: Separate FBO for mask operations
+
+📄 WGSL群（GLSL変換）
+system/drawing/msdf/*.wgsl
+  - msdf-seed-init.wgsl     → seed-init.frag.glsl
+  - msdf-jfa-pass.wgsl      → jfa-pass.frag.glsl
+  - msdf-encode.wgsl        → encode.frag.glsl
+  - msdf-compose.wgsl       → compose.frag.glsl [未使用なら削除]
+  - msdf-render.wgsl        → render.frag.glsl
+  - msdf-quad-expansion.wgsl→ quad-expansion.vert.glsl
+
+📁 保持・微修正
+drawing-engine.js
+  🔍 _initializeCanvas() : WebGPUDrawingLayer→WebGL2DrawingLayer呼び出し変更
+  ✅ 座標変換ロジック完全保持
+  ✅ pendingPoints機構保持
+
+brush-core.js
+  🔍 initialize() : GPU参照をWebGL2に差し替え
+  🔍 _finalizeMSDFStroke() : GPU呼び出し部のみAPI変更
+  ✅ updateStroke/startStroke/finalizeStroke構造保持
+
+core-initializer.js
+  🔍 initializeWebGPU() → initializeWebGL2()
+  🔍 WebGPUDrawingLayer.initialize() → WebGL2DrawingLayer.initialize()
+  ✅ 初期化順序ロジック保持
+
+coordinate-system.js, stroke-recorder.js, pointer-handler.js
+  ✅ 完全保持（GPU非依存）
+
+================================================================================
+■ 第2部: 段階的移行手順（Phase分割）
+================================================================================
+
+【Phase 0: 準備・環境構築⏱️ 1h
+
+□ 0-1. ブランチ作成
+  - git checkout -b webgl2-migration
+  
+□ 0-2. index.html修正
+  - <canvas id="webgl2-canvas"> 追加（並列検証用）
+  - WebGPU関連 script を条件分岐可能に
+  
+□ 0-3. テスト用サンプルHTML作成
+  - index-webgl2-demo.html（最小構成）
+  - PF→VBO描画の動作確認用
+
+✅ 成果物: 並列検証環境、最小デモHTML
+
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+【Phase 1: WebGL2 Drawing Layer実装】⏱️ 3h
+
+📁 新規ファイル: system/drawing/webgl2/webgl2-drawing-layer.js
+
+□ 1-1. 基本構造実装
+  class WebGL2DrawingLayer {
+    constructor() {
+      this.canvas = null;
+      this.gl = null;
+      this.initialized = false;
+    }
+    
+    async initialize() {
+      // #webgl2-canvas OR #webgpu-canvas取得
+      // getContext('webgl2', {antialias:false, ...})
+      // viewport設定
+      // extension確認（float texture等）
+      return true;
+    }
+    
+    getCanvas() { return this.canvas; }
+    getGL() { return this.gl; }
+    getFormat() { return 'rgba8'; } // 互換用
+    isInitialized() { return this.initialized; }
+  }
+  
+□ 1-2. FBO Manager実装
+  createFBO(width, height, options = {})
+    - gl.createFramebuffer()
+    - gl.createTexture() (float or RGBA8)
+    - gl.framebufferTexture2D()
+    - Status確認
+    return { fbo, texture, width, height }
+  
+  deleteFBO(fboObj)
+    - gl.deleteFramebuffer()
+    - gl.deleteTexture()
+
+□ 1-3. core-initializer.js接続
+  initializeWebGL2(strokeRenderer) {
+    if (!window.WebGL2DrawingLayer) return false;
+    await window.WebGL2DrawingLayer.initialize();
+    // device → gl, format → 'rgba8'
+    return true;
+  }
+
+□ 1-4. drawing-engine.js Canvas取得修正
+  _initializeCanvas() {
+    canvas = window.WebGL2DrawingLayer?.getCanvas();
+    // Fallback: document.getElementById('webgl2-canvas')
+  }
+
+✅ 成果物: WebGL2DrawingLayer動作、Canvas取得確認
+
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+【Phase 2: Stroke Upload（VBO）実装】⏱️ 2h
+
+📁 新規ファイル: system/drawing/webgl2/gl-stroke-processor.js
+
+□ 2-1. PerfectFreehand→VBO実装
+  class GLStrokeProcessor {
+    createPolygonVertexBuffer(points, size) {
+      // 既存gpu-stroke-processor.jsロジック流用
+      // PF実行→Earcut→Float32Array生成（完全同一）
+      return { buffer: Float32Array, vertexCount, bounds };
+    }
+    
+    createEdgeBuffer(points, size) {
+      // 既存ロジック流用（PFアウトライン→Edge配列）
+      return { buffer: Float32Array, edgeCount, bounds };
+    }
+    
+    uploadToGPU(data, usage = 'storage') {
+      const vbo = gl.createBuffer();
+      gl.bindBuffer(GL_ARRAY_BUFFER or UNIFORM_BUFFER, vbo);
+      gl.bufferData(..., data, GL_STATIC_DRAW);
+      return { glBuffer: vbo, elementCount };
+    }
+  }
+
+□ 2-2. brush-core.js接続修正
+  this.gpuStrokeProcessor = window.GLStrokeProcessor; // 差し替え
+  
+  _finalizeMSDFStroke() {
+    const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(...);
+    const uploadVertex = this.gpuStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex');
+    // uploadVertex.glBuffer を次Phaseで使用
+  }
+
+✅ 成果物: PF→VBO生成・Upload動作確認
+
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+【Phase 3: MSDF Pipeline骨子（Seed→JFA）】⏱️ 5h
+
+📁 新規ファイル: system/drawing/webgl2/gl-msdf-pipeline.js
+
+□ 3-1. テクスチャ管理実装
+  createTexture(width, height, internalFormat = gl.RGBA32F) {
+    const tex = gl.createTexture();
+    gl.bindTexture(GL_TEXTURE_2D, tex);
+    gl.texImage2D(..., internalFormat, ...);
+    gl.texParameteri(..., GL_CLAMP_TO_EDGE, GL_LINEAR);
+    return tex;
+  }
+  
+  createPingPongFBO(width, height) {
+    return {
+      a: createFBO(width, height, { float: true }),
+      b: createFBO(width, height, { float: true })
+    };
+  }
+
+□ 3-2. Clear Seed Texture実装
+  clearSeedTexture(fbo, width, height) {
+    gl.bindFramebuffer(GL_FRAMEBUFFER, fbo.fbo);
+    gl.clearColor(-1.0, -1.0, -1.0, -1.0);
+    gl.clear(GL_COLOR_BUFFER_BIT);
+  }
+
+□ 3-3. Seed Init Pass（GLSL Fragment）
+  📄 新規: system/drawing/webgl2/shaders/seed-init.frag.glsl
+  
+  // WebGPU→WebGL2変換ポイント
+  // WGSL: @group/@binding → GLSL: uniform
+  // WGSL: textureStore → GLSL: gl_FragColor = ...
+  // WGSL: storage buffer → GLSL: texture or uniform buffer
+  
+  uniform sampler2D uEdgeData;  // EdgeBufferをTexture化
+  uniform vec2 uTexSize;
+  uniform float uEdgeCount;
+  
+  void main() {
+    // ポリゴンラスタライズでSeedを書き込み
+    // gl_FragCoord使用
+    // 最近接EdgeのIDと座標をエンコード
+    gl_FragColor = vec4(seedX, seedY, edgeId, 0.0);
+  }
+  
+  seedInitPass(edgeBuffer, seedFBO, width, height, edgeCount) {
+    // edgeBuffer→Texture変換 or Uniform経由
+    // Full-screen quad描画でseed生成
+    gl.bindFramebuffer(GL_FRAMEBUFFER, seedFBO.fbo);
+    gl.useProgram(seedInitProgram);
+    // Polygon vertices bind→Draw
+  }
+
+□ 3-4. JFA Pass実装（Fragment Ping-Pong）
+  📄 新規: system/drawing/webgl2/shaders/jfa-pass.frag.glsl
+  
+  uniform sampler2D uSrcTex;
+  uniform float uStep;
+  uniform vec2 uTexSize;
+  
+  void main() {
+    vec2 uv = gl_FragCoord.xy / uTexSize;
+    vec4 bestSeed = texture(uSrcTex, uv);
+    float bestDistSq = 1e10;
+    
+    // 8方向サンプリング（WGSL完全同等）
+    for (int i = 0; i < 8; i++) {
+      vec2 offset = offsets[i] * uStep / uTexSize;
+      vec4 neighbor = texture(uSrcTex, uv + offset);
+      // 距離比較・更新
+    }
+    gl_FragColor = bestSeed;
+  }
+  
+  executeJFA(seedTex, width, height) {
+    const pingPong = createPingPongFBO(width, height);
+    let src = seedTex;
+    let dst = pingPong.a;
+    
+    const iterations = Math.ceil(Math.log2(Math.max(width, height)));
+    for (let i = iterations - 1; i >= 0; i--) {
+      const step = Math.pow(2, i);
+      jfaPass(src, dst, step);
+      [src, dst] = [dst, src]; // Swap
+    }
+    return src; // Result
+  }
+
+✅ 成果物: Seed Init + JFA動作、距離場生成確認（デバッグ可視化）
+
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+【Phase 4: Encode/Compose/Render実装】⏱️ 4h
+
+□ 4-1. Encode Pass実装
+  📄 新規: system/drawing/webgl2/shaders/encode.frag.glsl
+  
+  uniform sampler2D uJFAResult;
+  uniform sampler2D uEdgeData;
+  uniform vec2 uTexSize;
+  
+  void main() {
+    vec2 uv = gl_FragCoord.xy / uTexSize;
+    vec4 seed = texture(uJFAResult, uv);
+    // 距離計算・符号判定・MSDF生成
+    float dist = ...; // Signed distance
+    gl_FragColor = vec4(dist, dist, dist, 1.0);
+  }
+
+□ 4-2. Render Pass実装（最終合成）
+  📄 新規: system/drawing/webgl2/shaders/render.vert.glsl
+  📄 新規: system/drawing/webgl2/shaders/render.frag.glsl
+  
+  // Vertex shader: Polygon vertices → Screen space
+  attribute vec2 aPosition;
+  attribute vec2 aTexCoord;
+  
+  void main() {
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+    vTexCoord = aTexCoord;
+  }
+  
+  // Fragment shader: MSDF sampling + 色適用
+  uniform sampler2D uMSDFTex;
+  uniform vec4 uBrushColor;
+  uniform float uOpacity;
+  
+  void main() {
+    float dist = texture(uMSDFTex, vTexCoord).r;
+    float alpha = smoothstep(0.4, 0.6, dist); // AA
+    gl_FragColor = vec4(uBrushColor.rgb, alpha * uOpacity);
+  }
+
+□ 4-3. generateMSDF統合
+  class GLMSDFPipeline {
+    async generateMSDF(glBuffer, bounds, settings, vertexBuffer, vertexCount, edgeCount) {
+      // 1. Clear seed
+      // 2. Seed init
+      // 3. JFA iterations
+      // 4. Encode
+      // 5. Render to final FBO
+      return finalTexture; // WebGLTexture
+    }
+  }
+
+✅ 成果物: Full pipeline動作、MSDF出力確認
+
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+【Phase 5: Texture Bridge & Pixi統合】⏱️ 2h
+
+📁 新規ファイル: system/drawing/webgl2/gl-texture-bridge.js
+
+□ 5-1. WebGLTexture → PIXI.Sprite変換
+  class GLTextureBridge {
+    createSpriteFromGLTexture(glTex, width, height) {
+      // gl.bindTexture(GL_TEXTURE_2D, glTex);
+      // PIXI.BaseTexture.from() or manual creation
+      // PIXI.Texture wrapper
+      // PIXI.Sprite generation
+      return sprite;
+    }
+  }
+
+□ 5-2. brush-core.js接続
+  this.textureBridge = window.GLTextureBridge;
+  
+  const sprite = await this.textureBridge.createSpriteFromGLTexture(
+    finalTexture, actualWidth, actualHeight
+  );
+
+✅ 成果物: Sprite生成・Layer配置確認
+
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+【Phase 6: Mask Layer実装】⏱️ 2h
+
+📁 新規ファイル: system/drawing/webgl2/gl-mask-layer.js
+
+□ 6-1. 消しゴムマスク処理
+  class GLMaskLayer {
+    initialize(width, height) {
+      this.maskFBO = createFBO(width, height);
+    }
+    
+    renderCircleMask(x, y, radius) {
+      // Fragment shader: circle rendering
+      // Additive blend to maskFBO
+    }
+    
+    getMaskTexture() {
+      return this.maskFBO.texture;
+    }
+  }
+
+□ 6-2. Compose Pass統合
+  // Render時にmaskTexture参照
+  // Fragment shader: mask alpha適用
+
+✅ 成果物: 消しゴム動作確認
+
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+【Phase 7: 統合テスト・デバッグ】⏱️ 3h
+
+□ 7-1. 描画フローEnd-to-End確認
+  - PointerDown → 座標変換 → StrokeRecorder
+  - PointerMove → addPoint
+  - PointerUp → finalizeStroke → MSDF生成 → Sprite配置
+
+□ 7-2. パフォーマンス測定
+  - JFA iteration時間
+  - Render pass時間
+  - Total stroke finalize時間
+  - Target: <50ms for 256x256 texture
+
+□ 7-3. エッジケース検証
+  - 2点ストローク
+  - 高速ストローク
+  - 圧力変動
+  - Canvas resize
+
+□ 7-4. 既存機能回帰テスト
+  - レイヤー切替
+  - Undo/Redo
+  - Export
+  - Animation
+
+✅ 成果物: 安定動作、パフォーマンス指標
+
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+【Phase 8: クリーンアップ・最適化】⏱️ 2h
+
+□ 8-1. 不要ファイル削除
+  - system/drawing/webgpu/* (backup推奨)
+  - system/drawing/msdf/*.wgsl
+  - system/drawing/wgsl-loader.js
+
+□ 8-2. index.html整理
+  - WebGPU関連script削除
+  - WebGL2関連script追加
+  - canvas id統一検討
+
+□ 8-3. ドキュメント更新
+  - README.mdにWebGL2移行記載
+  - 親子依存関係ヘッダー更新
+
+✅ 成果物: Production-ready codebase
+
+================================================================================
+■ 第3部: 実装詳細ガイド
+================================================================================
+
+【WGSL→GLSL変換パターン】
+
+┌─────────────────────────────────────────────────────────────┐
+│ WGSL                      → GLSL                             │
+├─────────────────────────────────────────────────────────────┤
+│ @group(0) @binding(0)     → uniform sampler2D u...          │
+│ @compute @workgroup_size  → (Fragment shaderで代替)         │
+│ textureLoad(tex, pos, 0)  → texelFetch(tex, ivec2(pos), 0)  │
+│ textureStore(tex, pos, v) → gl_FragColor = v                │
+│ vec2<f32>                 → vec2                             │
+│ u32                       → uint (or int)                    │
+│ storage buffer            → texture or UBO                   │
+│ workgroup dispatch        → Fullscreen quad draw             │
+└─────────────────────────────────────────────────────────────┘
+
+【FBO Ping-Pong パターン】
+
+// JFA反復
+let pingPong = { a: createFBO(...), b: createFBO(...) };
+let src = seedTexture;
+let dst = pingPong.a;
+
+for (let i = iterations - 1; i >= 0; i--) {
+  gl.bindFramebuffer(GL_FRAMEBUFFER, dst.fbo);
+  gl.useProgram(jfaProgram);
+  gl.activeTexture(GL_TEXTURE0);
+  gl.bindTexture(GL_TEXTURE_2D, src);
+  gl.uniform1i(uSrcTexLoc, 0);
+  gl.uniform1f(uStepLoc, Math.pow(2, i));
+  
+  // Fullscreen quad描画
+  drawFullscreenQuad();
+  
+  // Swap
+  [src, dst] = [dst, src];
+}
+
+return src; // Result texture
+
+【WebGL2 Extension確認】
+
+const gl = canvas.getContext('webgl2');
+
+// Float texture support
+const extColorBufferFloat = gl.getExtension('EXT_color_buffer_float');
+if (!extColorBufferFloat) {
+  console.warn('Float FBO not supported, fallback to RGBA16F');
+}
+
+// Linear filtering for float
+const extTextureFilterLinear = gl.getExtension('OES_texture_float_linear');
+
+【Uniform Buffer Object利用】
+
+// Edge data等の大量データ転送
+const ubo = gl.createBuffer();
+gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
+gl.bufferData(gl.UNIFORM_BUFFER, edgeData, gl.STATIC_DRAW);
+gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, ubo);
+
+// Shader: uniform block
+layout(std140) uniform EdgeBlock {
+  vec4 edges[MAX_EDGES];
+};
+
+【デバッグ可視化Tip】
+
+// Seed texture確認
+function debugVisualizeSeedTexture(tex, width, height) {
+  const pixels = new Float32Array(width * height * 4);
+  gl.bindFramebuffer(GL_FRAMEBUFFER, seedFBO);
+  gl.readPixels(0, 0, width, height, GL_RGBA, GL_FLOAT, pixels);
+  
+  // Canvas2D描画で可視化
+  const debugCanvas = document.createElement('canvas');
+  debugCanvas.width = width;
+  debugCanvas.height = height;
+  const ctx = debugCanvas.getContext('2d');
+  const imageData = ctx.createImageData(width, height);
+  
+  for (let i = 0; i < width * height; i++) {
+    imageData.data[i*4+0] = pixels[i*4+0] * 255; // R
+    imageData.data[i*4+1] = pixels[i*4+1] * 255; // G
+    imageData.data[i*4+2] = 0; // B
+    imageData.data[i*4+3] = 255; // A
+  }
+  ctx.putImageData(imageData, 0, 0);
+  document.body.appendChild(debugCanvas);
+}
+
+================================================================================
+■ 第4部: テストチェックリスト
+================================================================================
+
+【Phase毎の検証項目】
+
+Phase 1: WebGL2 Drawing Layer
+  □ gl context取得成功（chrome://gpu確認）
+  □ canvas.width/height設定正常
+  □ gl.getParameter(MAX_TEXTURE_SIZE) ≥ 2048
+  □ FBO生成・削除動作
+  □ Console error無し
+
+Phase 2: Stroke Upload
+  □ PerfectFreehand実行成功（outline points > 0）
+  □ Earcut三角形分割成功（indices > 0）
+  □ VBO upload成功（gl.getError() === 0）
+  □ vertexCount計算正確
+
+Phase 3: MSDF Pipeline骨子
+  □ Seed texture -1.0初期化確認
+  □ Seed init描画成功（非-1ピクセル存在）
+  □ JFA 1パス後、seed拡散確認
+  □ JFA全パス後、全ピクセルseed保持
+
+Phase 4: Encode/Render
+  □ Distance field生成（可視化で確認）
+  □ Signed distance正負判定正常
+  □ Render pass描画成功
+  □ 最終texture RGB値妥当（0.0-1.0）
+
+Phase 5: Texture Bridge
+  □ WebGLTexture→BaseTexture変換成功
+  □ PIXI.Sprite生成・配置確認
+  □ Sprite.alpha反映
+  □ Layer container追加確認
+
+Phase 6: Mask Layer
+  □ Mask FBO生成成功
+  □ Circle mask描画確認
+  □ Compose時mask適用確認
+  □ 消しゴムストローク透明化確認
+
+Phase 7: 統合テスト
+  □ 最小2点ストローク描画成功
+  □ 10点以上ストローク描画成功
+  □ 連続ストローク（5本）動作
+  □ Undo/Redo正常
+  □ Export PNG成功
+  □ Layer切替正常
+  □ ブラウザリロード後も描画内容保持
+
+【パフォーマンス目標】
+
+256x256 MSDF生成: <50ms
+512x512 MSDF生成: <100ms
+JFA 1 iteration: <5ms
+Seed init: <10ms
+Encode: <10ms
+Render: <10ms
+
+60FPS維持（updateStroke中）
+120FPS対応可能な余地確保
+
+================================================================================
+■ 第5部: トラブルシューティング
+================================================================================
+
+【想定される問題と対策】
+
+⚠️ 問題: Float texture FBO生成失敗
+🔧 対策: EXT_color_buffer_float確認、RGBA16F fallback実装
+
+⚠️ 問題: JFA結果が正しく伝播しない
+🔧 対策: Ping-pong swap順序確認、gl.finish()追加、デバッグ可視化
+
+⚠️ 問題: Seed init時にポリゴンが描画されない
+🔧 対策: Viewport設定確認、VBO binding確認、Shader compile log確認
+
+⚠️ 問題: WebGLTexture→PIXI.Sprite変換で表示されない
+🔧 対策: gl.pixelStorei設定、PIXI.BaseTexture.update()呼び出し
+
+⚠️ 問題: 描画後にGLエラー（1282等）
+🔧 対策: gl.getError()でエラー箇所特定、FBO完全性チェック
+
+⚠️ 問題: Edge dataがShaderに届かない
+🔧 対策: Texture化 or UBO利用、MAX_EDGES制限確認
+
+⚠️ 問題: パフォーマンス低下（>100ms）
+🔧 対策: Texture size削減（256→128）、JFA iteration削減、gl.finish()削除
+
+【デバッグコマンド】
+
+// Console
+TegakiDebug.coord.testFullPipeline(x, y); // 座標変換検証
+TegakiDebug.webgl2 = {
+  dumpFBO: (fbo) => { /* readPixels実装 */ },
+  logShaderCompile: (shader) => { /* compile log */ },
+  measurePass: (name, fn) => { /* performance.now() */ }
+};
+
+================================================================================
+■ 第6部: 完了判定基準
+================================================================================
+
+【Minimum Viable Product (MVP)】
+✅ WebGL2 context取得・初期化成功
+✅ PerfectFreehand→VBO→描画動作
+✅ MSDF生成（Seed/JFA/Encode/Render）動作
+✅ Sprite配置・表示確認
+✅ ペン/消しゴム両対応
+✅ 既存UI（レイヤーパネル等）正常動作
+✅ Console error無し
+
+【Production Ready】
+✅ 全Phase検証項目クリア
+✅ パフォーマンス目標達成
+✅ 回帰テスト全項目合格
+✅ WebGPUファイル削除完了
+✅ ドキュメント更新完了
+✅ 3ブラウザ動作確認（Chrome/Edge/Firefox）
+
+【追加改善（Optional）】
+□ JFA反復回数動的調整
+□ Texture size adaptive（64-512）
+□ Multi-channel MSDF実装
+□ Compute shader fallback（WebGL2.0 Compute）
+□ WASM版JFA検討
+
+================================================================================
+■ 補足: 移行後の保守指針
+================================================================================
+
+【ファイル構成（移行後）】
+
+webgpu_v8_rev58/                          [変更なし]
+├─ index.html                             [🔧 script修正]
+├─ config.js, coordinate-system.js        [✅ 保持]
+├─ system/
+│  ├─ drawing/
+│  │  ├─ webgl2/                          [📦 新規]
+│  │  │  ├─ webgl2-drawing-layer.js
+│  │  │  ├─ gl-stroke-processor.js
+│  │  │  ├─ gl-msdf-pipeline.js
+│  │  │  ├─ gl-texture-bridge.js
+│  │  │  ├─ gl-mask-layer.js
+│  │  │  └─ shaders/                      [📦 新規]
+│  │  │     ├─ seed-init.frag.glsl
+│  │  │     ├─ jfa-pass.frag.glsl
+│  │  │     ├─ encode.frag.glsl
+│  │  │     ├─ render.vert.glsl
+│  │  │     └─ render.frag.glsl
+│  │  ├─ drawing-engine.js                [🔍 微修正]
+│  │  ├─ brush-core.js                    [🔍 微修正]
+│  │  ├─ stroke-recorder.js               [✅ 保持]
+│  │  └─ pointer-handler.js               [✅ 保持]
+│  └─ (他システムファイル)                 [✅ 保持]
+├─ ui/                                     [✅ 保持]
+└─ core-initializer.js                     [🔍 微修正]
+
+【命名規則統一（WebGL2）】
+
+Prefix: gl または GL (WebGPU: gpu, GPU)
+  - glContext (not gl2Context)
+  - GLStrokeProcessor (not WebGL2StrokeProcessor)
+  - gl-msdf-pipeline.js (not webgl2-msdf-*.js)
+
+Exception: ファイル名のみ webgl2- prefix許容
+  - webgl2-drawing-layer.js
+  - 理由: webgpu-drawing-layer.jsとの対比明確化
+
+【コメント規約】
+
+// ❌ WebGPU固有実装（削除済み）
+// const gpuBuffer = device.createBuffer(...);
+
+// ✅ WebGL2実装
+const glBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer);
+
+// 🔧 WebGPU互換API（interface保持）
+class GLStrokeProcessor {
+  uploadToGPU(data, usage) {
+    // GPU→GL命名だが内部はWebGL2
+    return this.uploadToGL(data, usage);
+  }
+}
+
+================================================================================
+【改修計画書 END】
+作成日時: 2025-11-17
+対象バージョン: webgpu_v8_rev58 → webgl2_v1
+推定総工数: 24h（3営業日）
+優先度: 🔥 High（描画機能回復のため）
+リスク評価: 🟡 Medium（既存アーキテクチャ保持により軽減）
+================================================================================
