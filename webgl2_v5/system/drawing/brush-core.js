@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - WebGL2完全対応版
+ * brush-core.js - WebGL2完全対応版 (Phase 6)
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -8,6 +8,7 @@
  *   - gl-stroke-processor.js (VertexBuffer/EdgeBuffer)
  *   - gl-msdf-pipeline.js (MSDF生成)
  *   - gl-texture-bridge.js (Sprite変換)
+ *   - gl-mask-layer.js (消しゴムマスク処理) ✅ Phase 6追加
  *   - layer-system.js (レイヤー管理)
  *   - history.js (履歴管理)
  *   - system/event-bus.js (EventBus)
@@ -16,17 +17,16 @@
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
  *   - ui/quick-access-popup.js (設定変更イベント発火元)
  * 
- * 【WebGL2移行完了】
- * ✅ GPUStrokeProcessor → GLStrokeProcessor
- * ✅ MSDFPipelineManager → GLMSDFPipeline
- * ✅ WebGPUTextureBridge → GLTextureBridge
- * ✅ WebGPU固有参照を完全削除
+ * 【Phase 6更新内容】
+ * ✅ glMaskLayer参照追加
+ * ✅ _applyEraserMask()をGLMaskLayer使用に完全改修
+ * ✅ GPU処理による高速・高精度な消しゴム実装
  * 
  * 【機能】
  * ✅ PerfectFreehand + MSDF ポリゴンペン
  * ✅ リアルタイムプレビュー（フリッカーなし）
  * ✅ 筆圧完全反映
- * ✅ 消しゴムマスク処理
+ * ✅ GPU消しゴムマスク処理（Phase 6）
  * 
  * ================================================================================
  */
@@ -40,6 +40,7 @@
       this.glStrokeProcessor = null;
       this.glMSDFPipeline = null;
       this.textureBridge = null;
+      this.glMaskLayer = null; // Phase 6追加
       this.layerManager = null;
       this.eventBus = null;
       
@@ -58,6 +59,7 @@
       
       this.initialized = false;
       this.msdfAvailable = false;
+      this.maskAvailable = false; // Phase 6追加
       
       this.lastPreviewTime = 0;
       this.previewThrottle = 16;
@@ -86,12 +88,15 @@
       this.glStrokeProcessor = window.GLStrokeProcessor;
       this.glMSDFPipeline = window.GLMSDFPipeline;
       this.textureBridge = window.GLTextureBridge || window.WebGPUTextureBridge;
+      this.glMaskLayer = window.GLMaskLayer; // Phase 6追加
 
       this.msdfAvailable = !!(
         this.glStrokeProcessor &&
         this.glMSDFPipeline &&
         this.textureBridge
       );
+
+      this.maskAvailable = !!(this.glMaskLayer && this.glMaskLayer.initialized); // Phase 6追加
 
       if (!this.msdfAvailable) {
         console.warn('[BrushCore] WebGL2 MSDF Pipeline not fully available');
@@ -101,10 +106,15 @@
         return;
       }
 
+      if (!this.maskAvailable) {
+        console.warn('[BrushCore] GLMaskLayer not available (Eraser limited)');
+      }
+
       this._setupEventListeners();
       this.initialized = true;
 
-      console.log('[BrushCore] ✅ Initialized with WebGL2 Pipeline');
+      console.log('[BrushCore] ✅ Initialized with WebGL2 Pipeline (Phase 6)');
+      console.log('   ✅ Mask Layer:', this.maskAvailable ? 'Available' : 'Unavailable');
     }
 
     /**
@@ -264,9 +274,6 @@
         this.previewContainer.addChild(sprite);
         this.previewSprite = sprite;
 
-        // WebGL2ではGPUBufferは自動管理（gl.deleteBuffer不要）
-        // Textureはgl-msdf-pipeline内でクリーンアップ済み
-
       } catch (error) {
         console.error('[BrushCore] Preview failed:', error);
       } finally {
@@ -357,18 +364,18 @@
           throw new Error('MSDF生成失敗');
         }
 
-        // 消しゴムモード: マスク処理
+        // 消しゴムモード: GPU マスク処理（Phase 6）
         if (this.currentSettings.mode === 'eraser') {
-          await this._applyEraserMask(activeLayer, bounds);
+          await this._applyEraserMask(activeLayer, points, bounds);
           this._emitStrokeEvents(activeLayer, null);
           return;
         }
 
         // ペンモード: Sprite生成
         const sprite = await this.textureBridge.createSpriteFromGLTexture(
-          finalTexture,
-          width,
-          height
+          finalTexture.texture,
+          finalTexture.width,
+          finalTexture.height
         );
 
         if (!sprite) {
@@ -403,29 +410,147 @@
     }
 
     /**
-     * 消しゴムマスク処理（セグメント分割）
+     * 消しゴムマスク処理（Phase 6 - GPU実装）
      * @private
      */
-    async _applyEraserMask(activeLayer, bounds) {
+    async _applyEraserMask(activeLayer, points, bounds) {
       const container = this._getLayerContainer(activeLayer);
       if (!container?.children) return;
 
-      const eraserPoints = this.strokeRecorder.getRawPoints();
-      if (!eraserPoints || eraserPoints.length < 2) return;
-
-      // セグメント分割
-      const segmentSize = 5;
-      const segments = [];
-      
-      for (let i = 0; i < eraserPoints.length; i += segmentSize) {
-        const segmentPoints = eraserPoints.slice(i, i + segmentSize + 1);
-        if (segmentPoints.length < 2) continue;
-        
-        const segmentBounds = this._calculateSegmentBounds(segmentPoints);
-        segments.push(segmentBounds);
+      // GLMaskLayer使用可能チェック
+      if (!this.maskAvailable || !this.glMaskLayer) {
+        console.warn('[BrushCore] GLMaskLayer not available, using fallback eraser');
+        await this._applyEraserMaskFallback(activeLayer, bounds);
+        return;
       }
 
-      // 各Spriteに対してセグメント単位で判定
+      try {
+        // マスククリア
+        this.glMaskLayer.clearMask();
+
+        // ストロークマスク生成
+        this.glMaskLayer.renderStrokeMask(points, this.currentSettings.size);
+
+        // 各Spriteに対してマスク適用判定
+        for (const child of container.children) {
+          if (!(child instanceof PIXI.Sprite)) continue;
+          if (!child.texture?.baseTexture?.resource?.source) continue;
+
+          const spriteBounds = {
+            minX: child.x,
+            minY: child.y,
+            maxX: child.x + child.width,
+            maxY: child.y + child.height
+          };
+
+          // Bounds交差判定
+          const intersects = this._boundsIntersect(spriteBounds, bounds);
+          if (!intersects) continue;
+
+          // Sprite texture取得
+          const gl = window.WebGL2DrawingLayer.getGL();
+          if (!gl) continue;
+
+          // Canvas→WebGLTexture変換
+          const sourceCanvas = child.texture.baseTexture.resource.source;
+          const sourceTexture = this._canvasToGLTexture(sourceCanvas, gl);
+          if (!sourceTexture) continue;
+
+          // Mask適用
+          const outputFBO = window.WebGL2DrawingLayer.createFBO(
+            sourceCanvas.width,
+            sourceCanvas.height,
+            { float: false }
+          );
+
+          if (!outputFBO) {
+            gl.deleteTexture(sourceTexture);
+            continue;
+          }
+
+          const applySuccess = this.glMaskLayer.applyMask(sourceTexture, outputFBO);
+
+          if (applySuccess) {
+            // 新しいSprite生成
+            const newSprite = await this.textureBridge.createSpriteFromGLTexture(
+              outputFBO.texture,
+              outputFBO.width,
+              outputFBO.height
+            );
+
+            if (newSprite) {
+              newSprite.x = child.x;
+              newSprite.y = child.y;
+              newSprite.alpha = child.alpha;
+              newSprite.visible = child.visible;
+
+              // 既存Sprite置換
+              const childIndex = container.getChildIndex(child);
+              container.removeChild(child);
+              container.addChildAt(newSprite, childIndex);
+              child.destroy({ children: true });
+
+              // pathData更新
+              if (activeLayer.paths) {
+                const pathData = activeLayer.paths.find(p => p.sprite === child);
+                if (pathData) {
+                  pathData.sprite = newSprite;
+                }
+              }
+            }
+          }
+
+          // Cleanup
+          gl.deleteTexture(sourceTexture);
+          window.WebGL2DrawingLayer.deleteFBO(outputFBO);
+        }
+
+      } catch (error) {
+        console.error('[BrushCore] GPU eraser mask failed:', error);
+        await this._applyEraserMaskFallback(activeLayer, bounds);
+      }
+    }
+
+    /**
+     * Canvas→WebGLTexture変換ヘルパー
+     * @private
+     */
+    _canvasToGLTexture(canvas, gl) {
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      return texture;
+    }
+
+    /**
+     * Bounds交差判定
+     * @private
+     */
+    _boundsIntersect(a, b) {
+      return !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
+    }
+
+    /**
+     * Fallback消しゴム処理（GLMaskLayer不使用時）
+     * @private
+     */
+    async _applyEraserMaskFallback(activeLayer, bounds) {
+      const container = this._getLayerContainer(activeLayer);
+      if (!container?.children) return;
+
+      const eraserRadius = this.currentSettings.size / 2;
+      const expandedBounds = {
+        minX: bounds.minX - eraserRadius,
+        minY: bounds.minY - eraserRadius,
+        maxX: bounds.maxX + eraserRadius,
+        maxY: bounds.maxY + eraserRadius
+      };
+
       for (const child of container.children) {
         if (!(child instanceof PIXI.Sprite)) continue;
 
@@ -436,18 +561,13 @@
           maxY: child.y + child.height
         };
 
-        let totalIntersectArea = 0;
-        const spriteArea = (spriteBounds.maxX - spriteBounds.minX) * 
-                          (spriteBounds.maxY - spriteBounds.minY);
-
-        for (const segmentBounds of segments) {
-          const intersectArea = this._calculateIntersectArea(spriteBounds, segmentBounds);
-          totalIntersectArea += intersectArea;
-        }
+        const intersectArea = this._calculateIntersectArea(spriteBounds, expandedBounds);
         
-        if (totalIntersectArea > 0) {
-          const intersectRatio = Math.min(1.0, totalIntersectArea / spriteArea);
-          child.alpha = Math.max(0, child.alpha - (0.8 * intersectRatio));
+        if (intersectArea > 0) {
+          const spriteArea = (spriteBounds.maxX - spriteBounds.minX) * 
+                            (spriteBounds.maxY - spriteBounds.minY);
+          const intersectRatio = Math.min(1.0, intersectArea / spriteArea);
+          child.alpha = Math.max(0, child.alpha - (0.7 * intersectRatio));
           
           if (child.alpha <= 0.01) {
             child.visible = false;
@@ -455,30 +575,6 @@
           }
         }
       }
-    }
-
-    /**
-     * セグメントBounds計算
-     * @private
-     */
-    _calculateSegmentBounds(points) {
-      let minX = Infinity, minY = Infinity;
-      let maxX = -Infinity, maxY = -Infinity;
-
-      for (const point of points) {
-        minX = Math.min(minX, point.x);
-        minY = Math.min(minY, point.y);
-        maxX = Math.max(maxX, point.x);
-        maxY = Math.max(maxY, point.y);
-      }
-
-      const eraserRadius = this.currentSettings.size / 2;
-      return {
-        minX: minX - eraserRadius,
-        minY: minY - eraserRadius,
-        maxX: maxX + eraserRadius,
-        maxY: maxY + eraserRadius
-      };
     }
 
     /**
@@ -653,8 +749,8 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js WebGL2完全対応版 loaded');
+  console.log('✅ brush-core.js WebGL2完全対応版 (Phase 6) loaded');
   console.log('   ✅ WebGL2 Pipeline統合完了');
-  console.log('   ✅ GLStrokeProcessor / GLMSDFPipeline / GLTextureBridge対応');
+  console.log('   ✅ GLStrokeProcessor / GLMSDFPipeline / GLTextureBridge / GLMaskLayer対応');
 
 })();

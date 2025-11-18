@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-initializer.js - WebGL2対応完全版 (Phase 5)
+ * core-initializer.js - WebGL2対応完全版 (Phase 6)
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -17,13 +17,14 @@
  *   - system/drawing/webgl2/webgl2-drawing-layer.js
  *   - system/drawing/webgl2/gl-stroke-processor.js
  *   - system/drawing/webgl2/gl-msdf-pipeline.js
- *   - system/drawing/webgl2/gl-texture-bridge.js ✅ Phase 5追加
+ *   - system/drawing/webgl2/gl-texture-bridge.js
+ *   - system/drawing/webgl2/gl-mask-layer.js ✅ Phase 6追加
  *   - system/drawing/stroke-renderer.js
  *   - system/drawing/brush-core.js
  * 
- * 【Phase 5更新内容】
- * ✅ initializeWebGL2(): GLTextureBridge.initialize(gl, pixiApp)追加
- * ✅ BrushCore再初期化でglTextureBridge明示設定
+ * 【Phase 6更新内容】
+ * ✅ initializeWebGL2(): GLMaskLayer.initialize()追加
+ * ✅ BrushCore再初期化でglMaskLayer明示設定
  * 
  * ================================================================================
  */
@@ -162,9 +163,9 @@ window.CoreInitializer = (function() {
     }
 
     /**
-     * WebGL2初期化（Phase 5完全版）
+     * WebGL2初期化（Phase 6完全版）
      * @param {Object} strokeRenderer - StrokeRenderer instance
-     * @param {PIXI.Application} pixiApp - PixiJS Application (Phase 5でGLTextureBridgeに必要)
+     * @param {PIXI.Application} pixiApp - PixiJS Application
      */
     async function initializeWebGL2(strokeRenderer, pixiApp) {
         const config = window.TEGAKI_CONFIG;
@@ -202,7 +203,7 @@ window.CoreInitializer = (function() {
                 console.warn('[WebGL2] GLMSDFPipeline not found (MSDF disabled)');
             }
 
-            // 4. GLTextureBridge初期化（Phase 5 - pixiApp追加）
+            // 4. GLTextureBridge初期化
             if (window.GLTextureBridge) {
                 await window.GLTextureBridge.initialize(gl, pixiApp);
                 console.log('[WebGL2] GLTextureBridge initialized');
@@ -210,7 +211,22 @@ window.CoreInitializer = (function() {
                 console.warn('[WebGL2] GLTextureBridge not found (Sprite conversion disabled)');
             }
 
-            // 5. StrokeRenderer初期化
+            // 5. GLMaskLayer初期化（Phase 6追加）
+            if (window.GLMaskLayer) {
+                const maskWidth = config.canvas?.width || 1920;
+                const maskHeight = config.canvas?.height || 1080;
+                const maskLayerInit = await window.GLMaskLayer.initialize(maskWidth, maskHeight);
+                
+                if (maskLayerInit) {
+                    console.log('[WebGL2] GLMaskLayer initialized');
+                } else {
+                    console.warn('[WebGL2] GLMaskLayer initialization failed');
+                }
+            } else {
+                console.warn('[WebGL2] GLMaskLayer not found (Eraser mask disabled)');
+            }
+
+            // 6. StrokeRenderer初期化
             if (!strokeRenderer) {
                 console.error('[WebGL2] StrokeRenderer not provided');
                 return false;
@@ -219,7 +235,7 @@ window.CoreInitializer = (function() {
             await strokeRenderer.initialize();
             console.log('[WebGL2] StrokeRenderer initialized');
 
-            console.log('[WebGL2] ✅ Phase 5 initialization complete');
+            console.log('[WebGL2] ✅ Phase 6 initialization complete');
             return true;
 
         } catch (error) {
@@ -320,11 +336,11 @@ window.CoreInitializer = (function() {
             if (!strokeRenderer) {
                 console.error('[App] StrokeRenderer not found');
             } else {
-                // WebGL2初期化（Phase 5 - pixiApp渡し）
+                // WebGL2初期化（Phase 6 - GLMaskLayer追加）
                 this.webgl2Enabled = await initializeWebGL2(strokeRenderer, this.pixiApp);
                 
                 if (this.webgl2Enabled) {
-                    // BrushCore再初期化（Phase 5完全版）
+                    // BrushCore再初期化（Phase 6完全版）
                     if (window.BrushCore) {
                         console.log('[App] Re-initializing BrushCore with WebGL2 components');
                         
@@ -334,9 +350,10 @@ window.CoreInitializer = (function() {
                         window.BrushCore.glStrokeProcessor = window.GLStrokeProcessor;
                         window.BrushCore.glMSDFPipeline = window.GLMSDFPipeline;
                         window.BrushCore.textureBridge = window.GLTextureBridge || window.WebGPUTextureBridge;
+                        window.BrushCore.glMaskLayer = window.GLMaskLayer; // Phase 6追加
                         
                         await window.BrushCore.initialize();
-                        console.log('[App] ✅ BrushCore re-initialized with WebGL2 (Phase 5)');
+                        console.log('[App] ✅ BrushCore re-initialized with WebGL2 (Phase 6)');
                     }
                 }
             }
