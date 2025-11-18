@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - WebGL2完全対応版 (Phase 6 - ストローク記録修正版)
+ * brush-core.js - WebGL2完全対応版 (Phase 6 - 統合修正版)
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -17,15 +17,9 @@
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
  *   - ui/quick-access-popup.js (設定変更イベント発火元)
  * 
- * 【Phase 6更新内容】
- * ✅ startStroke(): options引数をstrokeRecorderに渡すよう修正
- * ✅ 不要なコンソールログ削除
- * 
- * 【機能】
- * ✅ PerfectFreehand + MSDF ポリゴンペン
- * ✅ リアルタイムプレビュー（フリッカーなし）
- * ✅ 筆圧完全反映
- * ✅ GPU消しゴムマスク処理
+ * 【Phase 6修正内容】
+ * ✅ MSDF Pipeline戻り値 { texture, width, height } に対応
+ * ✅ Texture Bridge createSpriteFromGLTexture(texture, width, height) 呼び出し統一
  * 
  * ================================================================================
  */
@@ -136,17 +130,12 @@
       });
     }
 
-    /**
-     * ストローク開始
-     * 🔧 Phase 6修正: options引数をstrokeRecorderに正しく渡す
-     */
     startStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || this.isDrawing) return;
 
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
 
-      // 🔧 修正: options引数を追加
       this.strokeRecorder.startStroke(localX, localY, pressure, {
         mode: this.currentSettings.mode,
         color: this.currentSettings.color,
@@ -226,6 +215,7 @@
           size: this.currentSettings.size
         };
 
+        // Phase 6修正: generateMSDFは { texture, width, height } を返す
         const msdfResult = await this.glMSDFPipeline.generateMSDF(
           uploadEdge.glBuffer,
           bounds,
@@ -238,6 +228,7 @@
 
         if (!msdfResult || !msdfResult.texture) return;
 
+        // Phase 6修正: createSpriteFromGLTexture(texture, width, height)
         const sprite = await this.textureBridge.createSpriteFromGLTexture(
           msdfResult.texture,
           msdfResult.width,
@@ -332,6 +323,7 @@
           size: this.currentSettings.size
         };
 
+        // Phase 6修正: generateMSDFは { texture, width, height } を返す
         const finalTexture = await this.glMSDFPipeline.generateMSDF(
           uploadEdge.glBuffer,
           bounds,
@@ -352,6 +344,7 @@
           return;
         }
 
+        // Phase 6修正: createSpriteFromGLTexture(texture, width, height)
         const sprite = await this.textureBridge.createSpriteFromGLTexture(
           finalTexture.texture,
           finalTexture.width,
@@ -685,5 +678,8 @@
   }
 
   window.BrushCore = new BrushCore();
+  console.log('✅ brush-core.js Phase 6統合修正版 loaded');
+  console.log('   ✅ MSDF戻り値 { texture, width, height } 対応');
+  console.log('   ✅ createSpriteFromGLTexture 呼び出し統一');
 
 })();
