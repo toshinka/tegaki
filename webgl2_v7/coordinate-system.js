@@ -1,11 +1,11 @@
 /**
- * @file coordinate-system.js - v8.13.11 クリーンアップ版
+ * @file coordinate-system.js - v8.14.0 WebGL2移行対応版
  * @description 座標変換システムの統一管理
  * 
- * 【v8.13.11 改修内容】
- * 🧹 デバッグログをTegakiDebug.coord.*に集約
- * 📝 ヘッダー依存関係明記
- * ✅ worldToLocal pivot修正維持
+ * 【v8.14.0 改修内容】
+ * 🔧 canvasToWorld(): PixiJS v8 applyInverse()修正
+ * 🔧 worldTransform取得ロジック改善
+ * ✅ worldToLocal pivot計算維持
  * 
  * 【親ファイル (このファイルが依存)】
  * - config.js (window.TEGAKI_CONFIG)
@@ -148,25 +148,22 @@
                 return { worldX: canvasX, worldY: canvasY };
             }
             
-            let worldTransform = null;
+            // PixiJS v8: worldTransform を直接取得
+            const worldTransform = worldContainer.worldTransform;
             
-            if (worldContainer.worldTransform) {
-                worldTransform = worldContainer.worldTransform;
-            } else if (worldContainer.transform?.worldTransform) {
-                worldTransform = worldContainer.transform.worldTransform;
-            }
-            
-            if (worldTransform && worldTransform.a !== undefined) {
+            if (worldTransform && typeof worldTransform.applyInverse === 'function') {
                 try {
-                    const inv = worldTransform.clone().invert();
-                    const point = inv.apply({ x: canvasX, y: canvasY });
+                    // PixiJS v8: applyInverse() を使用（clone().invert()は非推奨）
+                    const point = worldTransform.applyInverse({ x: canvasX, y: canvasY });
                     return { worldX: point.x, worldY: point.y };
                 } catch (error) {
+                    console.error('[CoordinateSystem] worldTransform.applyInverse() error:', error);
                 }
             }
             
-            const pos = worldContainer.position;
-            const scale = worldContainer.scale;
+            // Fallback: 手動逆変換
+            const pos = worldContainer.position || { x: 0, y: 0 };
+            const scale = worldContainer.scale || { x: 1, y: 1 };
             const pivot = worldContainer.pivot || { x: 0, y: 0 };
             const rotation = worldContainer.rotation || 0;
             
@@ -255,23 +252,21 @@
                 return { canvasX: worldX, canvasY: worldY };
             }
             
-            let worldTransform = null;
-            if (worldContainer.worldTransform) {
-                worldTransform = worldContainer.worldTransform;
-            } else if (worldContainer.transform?.worldTransform) {
-                worldTransform = worldContainer.transform.worldTransform;
-            }
+            // PixiJS v8: worldTransform を直接取得
+            const worldTransform = worldContainer.worldTransform;
             
-            if (worldTransform && worldTransform.a !== undefined) {
+            if (worldTransform && typeof worldTransform.apply === 'function') {
                 try {
                     const point = worldTransform.apply({ x: worldX, y: worldY });
                     return { canvasX: point.x, canvasY: point.y };
                 } catch (error) {
+                    console.error('[CoordinateSystem] worldTransform.apply() error:', error);
                 }
             }
             
-            const pos = worldContainer.position;
-            const scale = worldContainer.scale;
+            // Fallback: 手動変換
+            const pos = worldContainer.position || { x: 0, y: 0 };
+            const scale = worldContainer.scale || { x: 1, y: 1 };
             const pivot = worldContainer.pivot || { x: 0, y: 0 };
             const rotation = worldContainer.rotation || 0;
             
@@ -440,8 +435,12 @@
     const coordinateSystem = new CoordinateSystem();
     window.CoordinateSystem = coordinateSystem;
     
+    console.log('✅ coordinate-system.js v8.14.0 (WebGL2 Phase 1) loaded');
+    console.log('   🔧 PixiJS v8 applyInverse() 対応');
+    
 })();
 
+// デバッグユーティリティ（本番では削除可能）
 window.TegakiDebug = window.TegakiDebug || {};
 window.TegakiDebug.coord = {
     testFullPipeline(clientX, clientY) {
@@ -505,6 +504,12 @@ window.TegakiDebug.coord = {
         console.log('config:', !!cs.config);
         console.log('worldContainer:', !!cs.worldContainer);
         console.log('cameraSystem:', !!cs.cameraSystem);
-        console.log('_getWorldContainer():', !!cs._getWorldContainer());
+        const wc = cs._getWorldContainer();
+        console.log('_getWorldContainer():', !!wc);
+        if (wc) {
+            console.log('worldTransform:', wc.worldTransform);
+            console.log('position:', wc.position);
+            console.log('scale:', wc.scale);
+        }
     }
 };
