@@ -1,6 +1,7 @@
 /**
  * ================================================================================
  * gl-texture-bridge.js - Phase 5完全版: WebGLTexture → PIXI.Sprite変換
+ * PixiJS v8完全対応版（定数問題解決）
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,9 +12,9 @@
  *   - brush-core.js (createSpriteFromGLTexture呼び出し元)
  * 
  * 【Phase 5実装内容】
- * ✅ WebGLTexture → PIXI.BaseTexture変換
- * ✅ PIXI.Texture wrapper生成
- * ✅ PIXI.Sprite生成・配置対応
+ * ✅ WebGLTexture → Canvas → PIXI.Sprite変換
+ * ✅ PixiJS v8対応（BaseTexture廃止、定数変更対応）
+ * ✅ PIXI.Texture.from()直接使用（オプション最小化）
  * ✅ Alpha channel完全保持
  * 
  * 【WebGPU互換API】
@@ -47,7 +48,7 @@
       this.pixiApp = pixiApp;
       this.initialized = true;
 
-      console.log('[GLTextureBridge] ✅ Initialized');
+      console.log('[GLTextureBridge] ✅ Initialized (PixiJS v8)');
     }
 
     /**
@@ -75,23 +76,16 @@
       }
 
       try {
-        // WebGLTexture → Canvas → PIXI.Sprite
+        // WebGLTexture → Canvas変換
         const canvas = await this._glTextureToCanvas(glTexture, width, height);
         if (!canvas) {
           console.error('[GLTextureBridge] Failed to convert texture to canvas');
           return null;
         }
 
-        // PIXI.BaseTexture生成
-        const baseTexture = PIXI.BaseTexture.from(canvas, {
-          scaleMode: PIXI.SCALE_MODES.LINEAR,
-          mipmap: PIXI.MIPMAP_MODES.OFF,
-          wrapMode: PIXI.WRAP_MODES.CLAMP,
-          alphaMode: PIXI.ALPHA_MODES.PREMULTIPLIED_ALPHA
-        });
-
-        // PIXI.Texture生成
-        const texture = new PIXI.Texture(baseTexture);
+        // PixiJS v8: Texture.from()で直接生成
+        // オプションなし（デフォルト設定を使用）
+        const texture = PIXI.Texture.from(canvas);
 
         // PIXI.Sprite生成
         const sprite = new PIXI.Sprite(texture);
@@ -175,7 +169,7 @@
 
     /**
      * WebGPU互換API: createSpriteFromGPUTexture
-     * 内部でcreateS priteFromGLTextureに委譲
+     * 内部でcreateSpriteFromGLTextureに委譲
      * 
      * @param {WebGLTexture} texture - WebGL2テクスチャ（引数名はGPU互換）
      * @param {number} width - テクスチャ幅
@@ -204,8 +198,9 @@
   // WebGPU互換用エイリアス
   window.WebGPUTextureBridge = instance;
 
-  console.log('✅ gl-texture-bridge.js Phase 5完全版 loaded');
+  console.log('✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded');
   console.log('   ✅ WebGLTexture → PIXI.Sprite変換実装完了');
+  console.log('   ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）');
   console.log('   ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応');
 
 })();
