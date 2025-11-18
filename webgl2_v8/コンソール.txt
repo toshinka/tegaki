@@ -8,66 +8,59 @@ coordinate-system.js:439    🔧 PixiJS v8 applyInverse() 対応
 data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
 batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
 popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
- ✅ state-manager.js (Phase 8完全実装版) loaded
- ✅ settings-manager.js Phase 2 loaded
-    🔧 exportResolution 設定項目追加
- ✅ layer-transform.js Phase 6 loaded
-    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
- ✅ system/checker-utils.js 統一実装版 loaded
- ✅ layer-system.js Phase 8完成版 loaded
-    ✅ getLayerById() メソッド追加
-    ✅ LayerModel.id 確実取得保証
-    ✅ history.js との統合対応完了
- ✅ drawing-clipboard.js Phase 1 loaded
-    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
-    🎨 ポップアップ: レイヤーコピー、切り取り
- ✅ history.js Phase 4 mask snapshot対応完全版 loaded
-    ✅ pushEraseMask() 実装
-    ✅ beginAction/endAction/addPoint 実装
- ✅ webgl2-drawing-layer.js Phase 1 loaded
- ✅ gl-stroke-processor.js Phase 2完全版 loaded
-    ✅ PerfectFreehand→VBO生成実装完了
-    ✅ WebGPU版ロジック完全継承
- ✅ gl-msdf-pipeline.js Phase 5修正版 loaded
-    ✅ generateMSDF戻り値: { texture, width, height }
- ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
-    ✅ WebGLTexture → PIXI.Sprite変換実装完了
-    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
-    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
- ✅ gl-mask-layer.js Phase 6完全版 loaded
-    ✅ Circle mask rendering実装
-    ✅ Additive blend対応
-    ✅ Compose Pass統合準備完了
- ✅ pointer-handler.js Phase 1 loaded
-    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
-    🔧 EventEmitter風API実装（.on / .off）
- ✅ pressure-handler.js Phase 1 loaded
-    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
- ✅ stroke-recorder.js Phase 0 loaded
-    ✓ 自動初期化完了（initialize()不要）
-    ✓ Local座標記録専用（座標変換なし）
-    ✓ PerfectFreehand互換形式対応
- ✅ stroke-renderer.js (WebGL2移行版) loaded
-    🔧 WebGPU → WebGL2 参照変更完了
- ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
- ✅ brush-settings.js (Phase 3-D Clean) loaded
- ✅ BlendMode definitions loaded
- ✅ vector-operations.js Phase 1完全版 loaded
-    ✓ window.VectorOperations.generateStrokePolygon(points, size)
-    ✓ config.js perfectFreehand設定自動適用
-    🔥 PerfectFreehand統合基盤完成
- ✅ brush-core.js WebGL2完全対応版 (Phase 6) loaded
-    ✅ WebGL2 Pipeline統合完了
-    ✅ GLStrokeProcessor / GLMSDFPipeline / GLTextureBridge / GLMaskLayer対応
- ✅ fill-tool.js (WebGPU競合修正版) loaded
-    ❌ 独自WebGPU初期化を削除
-    ✅ 既存インスタンス参照のみ
- ✅ drawing-engine.js v8.14.0 (Phase 1修正版) loaded
-    🔧 座標プロパティ名修正: canvasX, worldX, localX
-    ✅ 座標変換パイプライン完全保持
-    ✅ pendingPoints機構維持
- ✅ quick-export-ui.js (無効化版) loaded
- ✅ export-manager.js v8.33.0 loaded
+state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
+settings-manager.js:231 ✅ settings-manager.js Phase 2 loaded
+settings-manager.js:232    🔧 exportResolution 設定項目追加
+layer-transform.js:1011 ✅ layer-transform.js Phase 6 loaded
+layer-transform.js:1012    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
+layer-system.js:1370 ✅ layer-system.js Phase 8完成版 loaded
+layer-system.js:1371    ✅ getLayerById() メソッド追加
+layer-system.js:1372    ✅ LayerModel.id 確実取得保証
+layer-system.js:1373    ✅ history.js との統合対応完了
+drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
+drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
+history.js:343 ✅ history.js Phase 4 mask snapshot対応完全版 loaded
+history.js:344    ✅ pushEraseMask() 実装
+history.js:345    ✅ beginAction/endAction/addPoint 実装
+webgl2-drawing-layer.js:238 ✅ webgl2-drawing-layer.js Phase 1 loaded
+gl-stroke-processor.js:363 ✅ gl-stroke-processor.js Phase 2完全版 loaded
+gl-stroke-processor.js:364    ✅ PerfectFreehand→VBO生成実装完了
+gl-stroke-processor.js:365    ✅ WebGPU版ロジック完全継承
+gl-msdf-pipeline.js:503 ✅ gl-msdf-pipeline.js Phase 5修正版 loaded
+gl-msdf-pipeline.js:504    ✅ generateMSDF戻り値: { texture, width, height }
+gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
+gl-mask-layer.js:474    ✅ Circle mask rendering実装
+gl-mask-layer.js:475    ✅ Additive blend対応
+gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
+pointer-handler.js:252 ✅ pointer-handler.js Phase 1 loaded
+pointer-handler.js:253    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
+pointer-handler.js:254    🔧 EventEmitter風API実装（.on / .off）
+pressure-handler.js:144 ✅ pressure-handler.js Phase 1 loaded
+pressure-handler.js:145    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
+stroke-recorder.js:334 ✅ stroke-recorder.js Phase 0 loaded
+stroke-recorder.js:335    ✓ 自動初期化完了（initialize()不要）
+stroke-recorder.js:336    ✓ Local座標記録専用（座標変換なし）
+stroke-recorder.js:337    ✓ PerfectFreehand互換形式対応
+stroke-renderer.js:199 ✅ stroke-renderer.js (WebGL2移行版) loaded
+stroke-renderer.js:200    🔧 WebGPU → WebGL2 参照変更完了
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+blend-modes.js:24 ✅ BlendMode definitions loaded
+vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
+vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
+vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
+fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
+fill-tool.js:270    ❌ 独自WebGPU初期化を削除
+fill-tool.js:271    ✅ 既存インスタンス参照のみ
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
 export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
 png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
 png-exporter.js:256    🔧 generatePreview()メソッド追加
@@ -113,18 +106,6 @@ core-engine.js:767 ✅ core-engine.js Phase 4-C完全版 loaded
 core-engine.js:768    🔧 リアルタイムプレビュー統合完了
 core-engine.js:769    🔧 Master Loop: pointer → preview → render
 index.html:111 🚀 WebGL2 MSDF版 起動中...
-drawing-engine.js:75 [DrawingEngine] Canvas initialized: webgpu-canvas
-drawing-engine.js:104 [DrawingEngine] PointerHandler initialized
-brush-core.js:110 [BrushCore] GLMaskLayer not available (Eraser limited)
-initialize @ brush-core.js:110
-init @ brush-core.js:70
-initialize @ core-engine.js:695
-initialize @ core-initializer.js:299
-await in initialize
-initialize @ core-initializer.js:502
-（匿名） @ index.html:112
-brush-core.js:116 [BrushCore] ✅ Initialized with WebGL2 Pipeline (Phase 6)
-brush-core.js:117    ✅ Mask Layer: Unavailable
 popup-manager.js:16 ✅ PopupManager initialized
 popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
 popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
@@ -136,7 +117,7 @@ popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
 popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
-webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized {maxTextureSize: 16384, extensions: Array(3)}
+webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized Object
 core-initializer.js:187 [WebGL2] Drawing Layer initialized
 gl-stroke-processor.js:62 [GLStrokeProcessor] ✅ Initialized
 core-initializer.js:196 [WebGL2] GLStrokeProcessor initialized
@@ -144,39 +125,17 @@ gl-msdf-pipeline.js:53 [GLMSDFPipeline] ✅ Initialized (Phase 5: サイズ情�
 core-initializer.js:201 [WebGL2] GLMSDFPipeline initialized
 gl-texture-bridge.js:51 [GLTextureBridge] ✅ Initialized (PixiJS v8)
 core-initializer.js:209 [WebGL2] GLTextureBridge initialized
-gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
+gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized Object
 core-initializer.js:221 [WebGL2] GLMaskLayer initialized
 stroke-renderer.js:76 [StrokeRenderer] ✅ Initialized (WebGL2 mode)
 core-initializer.js:236 [WebGL2] StrokeRenderer initialized
 core-initializer.js:238 [WebGL2] ✅ Phase 6 initialization complete
 core-initializer.js:345 [App] Re-initializing BrushCore with WebGL2 components
-brush-core.js:116 [BrushCore] ✅ Initialized with WebGL2 Pipeline (Phase 6)
-brush-core.js:117    ✅ Mask Layer: Available
 core-initializer.js:356 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6)
 index.html:113 ✅ WebGL2初期化完了
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
 const points = window.strokeRecorder.getRawPoints();
-console.log('Points count:', points.length);
-console.log('First point:', points[0]);
-VM521:2 Points count: 0
-VM521:3 First point: undefined
+console.log('Points:', points.length, points[0]);
+VM222:2 Points: 2 {x: 497.5, y: 404.5, pressure: 0.5, tiltX: 0, tiltY: 0, …}
 undefined
-popup-manager.js:192 👁️ Popup "quickAccess" shown
-gl-stroke-processor.js:135 [GLStrokeProcessor] Triangulation failed
-createPolygonVertexBuffer @ gl-stroke-processor.js:135
-_updatePreview @ brush-core.js:219
-renderPreview @ brush-core.js:196
-_renderLoop @ core-engine.js:279
-（匿名） @ core-engine.js:294
-requestAnimationFrame
-_renderLoop @ core-engine.js:294
-（匿名） @ core-engine.js:294
-requestAnimationFrame
-_renderLoop @ core-engine.js:294
-（匿名） @ core-engine.js:294
-requestAnimationFrame
-_renderLoop @ core-engine.js:294
-（匿名） @ core-engine.js:294
-requestAnimationFrame
-

@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - WebGL2完全対応版 (Phase 6)
+ * brush-core.js - WebGL2完全対応版 (Phase 6 - ストローク記録修正版)
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -8,7 +8,7 @@
  *   - gl-stroke-processor.js (VertexBuffer/EdgeBuffer)
  *   - gl-msdf-pipeline.js (MSDF生成)
  *   - gl-texture-bridge.js (Sprite変換)
- *   - gl-mask-layer.js (消しゴムマスク処理) ✅ Phase 6追加
+ *   - gl-mask-layer.js (消しゴムマスク処理)
  *   - layer-system.js (レイヤー管理)
  *   - history.js (履歴管理)
  *   - system/event-bus.js (EventBus)
@@ -18,15 +18,14 @@
  *   - ui/quick-access-popup.js (設定変更イベント発火元)
  * 
  * 【Phase 6更新内容】
- * ✅ glMaskLayer参照追加
- * ✅ _applyEraserMask()をGLMaskLayer使用に完全改修
- * ✅ GPU処理による高速・高精度な消しゴム実装
+ * ✅ startStroke(): options引数をstrokeRecorderに渡すよう修正
+ * ✅ 不要なコンソールログ削除
  * 
  * 【機能】
  * ✅ PerfectFreehand + MSDF ポリゴンペン
  * ✅ リアルタイムプレビュー（フリッカーなし）
  * ✅ 筆圧完全反映
- * ✅ GPU消しゴムマスク処理（Phase 6）
+ * ✅ GPU消しゴムマスク処理
  * 
  * ================================================================================
  */
@@ -40,7 +39,7 @@
       this.glStrokeProcessor = null;
       this.glMSDFPipeline = null;
       this.textureBridge = null;
-      this.glMaskLayer = null; // Phase 6追加
+      this.glMaskLayer = null;
       this.layerManager = null;
       this.eventBus = null;
       
@@ -59,7 +58,7 @@
       
       this.initialized = false;
       this.msdfAvailable = false;
-      this.maskAvailable = false; // Phase 6追加
+      this.maskAvailable = false;
       
       this.lastPreviewTime = 0;
       this.previewThrottle = 16;
@@ -84,11 +83,10 @@
         throw new Error('[BrushCore] layerManager not found');
       }
 
-      // WebGL2参照取得
       this.glStrokeProcessor = window.GLStrokeProcessor;
       this.glMSDFPipeline = window.GLMSDFPipeline;
       this.textureBridge = window.GLTextureBridge || window.WebGPUTextureBridge;
-      this.glMaskLayer = window.GLMaskLayer; // Phase 6追加
+      this.glMaskLayer = window.GLMaskLayer;
 
       this.msdfAvailable = !!(
         this.glStrokeProcessor &&
@@ -96,30 +94,17 @@
         this.textureBridge
       );
 
-      this.maskAvailable = !!(this.glMaskLayer && this.glMaskLayer.initialized); // Phase 6追加
+      this.maskAvailable = !!(this.glMaskLayer && this.glMaskLayer.initialized);
 
       if (!this.msdfAvailable) {
-        console.warn('[BrushCore] WebGL2 MSDF Pipeline not fully available');
-        console.warn('   GLStrokeProcessor:', !!this.glStrokeProcessor);
-        console.warn('   GLMSDFPipeline:', !!this.glMSDFPipeline);
-        console.warn('   GLTextureBridge:', !!this.textureBridge);
+        console.error('[BrushCore] WebGL2 MSDF Pipeline not available');
         return;
-      }
-
-      if (!this.maskAvailable) {
-        console.warn('[BrushCore] GLMaskLayer not available (Eraser limited)');
       }
 
       this._setupEventListeners();
       this.initialized = true;
-
-      console.log('[BrushCore] ✅ Initialized with WebGL2 Pipeline (Phase 6)');
-      console.log('   ✅ Mask Layer:', this.maskAvailable ? 'Available' : 'Unavailable');
     }
 
-    /**
-     * EventBusリスナー登録
-     */
     _setupEventListeners() {
       if (!this.eventBus) return;
 
@@ -151,13 +136,22 @@
       });
     }
 
+    /**
+     * ストローク開始
+     * 🔧 Phase 6修正: options引数をstrokeRecorderに正しく渡す
+     */
     startStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || this.isDrawing) return;
 
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
 
-      this.strokeRecorder.startStroke(localX, localY, pressure);
+      // 🔧 修正: options引数を追加
+      this.strokeRecorder.startStroke(localX, localY, pressure, {
+        mode: this.currentSettings.mode,
+        color: this.currentSettings.color,
+        size: this.currentSettings.size
+      });
       
       this.isDrawing = true;
       this.currentStroke = {
@@ -168,17 +162,11 @@
       this._ensurePreviewContainer(activeLayer);
     }
 
-    /**
-     * 座標記録のみ（プレビューはrenderPreview()で実行）
-     */
     async updateStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || !this.isDrawing) return;
       this.strokeRecorder.addPoint(localX, localY, pressure);
     }
 
-    /**
-     * リアルタイムプレビュー表示
-     */
     async renderPreview() {
       if (!this.initialized || !this.isDrawing || this.isPreviewUpdating) return;
       
@@ -196,19 +184,13 @@
       await this._updatePreview(points);
     }
 
-    /**
-     * プレビュー更新処理
-     * @private
-     */
     async _updatePreview(points) {
       if (!this.previewContainer || this.previewContainer.destroyed) {
-        console.warn('[BrushCore] Preview container not available');
         return;
       }
 
       this.isPreviewUpdating = true;
 
-      // 既存プレビューSprite削除
       if (this.previewSprite && !this.previewSprite.destroyed) {
         this.previewContainer.removeChild(this.previewSprite);
         this.previewSprite.destroy({ children: true });
@@ -364,14 +346,12 @@
           throw new Error('MSDF生成失敗');
         }
 
-        // 消しゴムモード: GPU マスク処理（Phase 6）
         if (this.currentSettings.mode === 'eraser') {
           await this._applyEraserMask(activeLayer, points, bounds);
           this._emitStrokeEvents(activeLayer, null);
           return;
         }
 
-        // ペンモード: Sprite生成
         const sprite = await this.textureBridge.createSpriteFromGLTexture(
           finalTexture.texture,
           finalTexture.width,
@@ -409,29 +389,19 @@
       }
     }
 
-    /**
-     * 消しゴムマスク処理（Phase 6 - GPU実装）
-     * @private
-     */
     async _applyEraserMask(activeLayer, points, bounds) {
       const container = this._getLayerContainer(activeLayer);
       if (!container?.children) return;
 
-      // GLMaskLayer使用可能チェック
       if (!this.maskAvailable || !this.glMaskLayer) {
-        console.warn('[BrushCore] GLMaskLayer not available, using fallback eraser');
         await this._applyEraserMaskFallback(activeLayer, bounds);
         return;
       }
 
       try {
-        // マスククリア
         this.glMaskLayer.clearMask();
-
-        // ストロークマスク生成
         this.glMaskLayer.renderStrokeMask(points, this.currentSettings.size);
 
-        // 各Spriteに対してマスク適用判定
         for (const child of container.children) {
           if (!(child instanceof PIXI.Sprite)) continue;
           if (!child.texture?.baseTexture?.resource?.source) continue;
@@ -443,20 +413,16 @@
             maxY: child.y + child.height
           };
 
-          // Bounds交差判定
           const intersects = this._boundsIntersect(spriteBounds, bounds);
           if (!intersects) continue;
 
-          // Sprite texture取得
           const gl = window.WebGL2DrawingLayer.getGL();
           if (!gl) continue;
 
-          // Canvas→WebGLTexture変換
           const sourceCanvas = child.texture.baseTexture.resource.source;
           const sourceTexture = this._canvasToGLTexture(sourceCanvas, gl);
           if (!sourceTexture) continue;
 
-          // Mask適用
           const outputFBO = window.WebGL2DrawingLayer.createFBO(
             sourceCanvas.width,
             sourceCanvas.height,
@@ -471,7 +437,6 @@
           const applySuccess = this.glMaskLayer.applyMask(sourceTexture, outputFBO);
 
           if (applySuccess) {
-            // 新しいSprite生成
             const newSprite = await this.textureBridge.createSpriteFromGLTexture(
               outputFBO.texture,
               outputFBO.width,
@@ -484,13 +449,11 @@
               newSprite.alpha = child.alpha;
               newSprite.visible = child.visible;
 
-              // 既存Sprite置換
               const childIndex = container.getChildIndex(child);
               container.removeChild(child);
               container.addChildAt(newSprite, childIndex);
               child.destroy({ children: true });
 
-              // pathData更新
               if (activeLayer.paths) {
                 const pathData = activeLayer.paths.find(p => p.sprite === child);
                 if (pathData) {
@@ -500,7 +463,6 @@
             }
           }
 
-          // Cleanup
           gl.deleteTexture(sourceTexture);
           window.WebGL2DrawingLayer.deleteFBO(outputFBO);
         }
@@ -511,10 +473,6 @@
       }
     }
 
-    /**
-     * Canvas→WebGLTexture変換ヘルパー
-     * @private
-     */
     _canvasToGLTexture(canvas, gl) {
       const texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -527,18 +485,10 @@
       return texture;
     }
 
-    /**
-     * Bounds交差判定
-     * @private
-     */
     _boundsIntersect(a, b) {
       return !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
     }
 
-    /**
-     * Fallback消しゴム処理（GLMaskLayer不使用時）
-     * @private
-     */
     async _applyEraserMaskFallback(activeLayer, bounds) {
       const container = this._getLayerContainer(activeLayer);
       if (!container?.children) return;
@@ -577,10 +527,6 @@
       }
     }
 
-    /**
-     * 交差面積計算
-     * @private
-     */
     _calculateIntersectArea(a, b) {
       const intersectMinX = Math.max(a.minX, b.minX);
       const intersectMinY = Math.max(a.minY, b.minY);
@@ -594,14 +540,9 @@
       return (intersectMaxX - intersectMinX) * (intersectMaxY - intersectMinY);
     }
 
-    /**
-     * プレビューコンテナ準備
-     * @private
-     */
     _ensurePreviewContainer(activeLayer) {
       const container = this._getLayerContainer(activeLayer);
       if (!container) {
-        console.warn('[BrushCore] Cannot create preview container');
         return;
       }
 
@@ -616,10 +557,6 @@
       }
     }
 
-    /**
-     * プレビュークリーンアップ
-     * @private
-     */
     _cleanupPreview() {
       if (this.previewSprite && !this.previewSprite.destroyed) {
         this.previewSprite.destroy({ children: true });
@@ -748,9 +685,5 @@
   }
 
   window.BrushCore = new BrushCore();
-
-  console.log('✅ brush-core.js WebGL2完全対応版 (Phase 6) loaded');
-  console.log('   ✅ WebGL2 Pipeline統合完了');
-  console.log('   ✅ GLStrokeProcessor / GLMSDFPipeline / GLTextureBridge / GLMaskLayer対応');
 
 })();
