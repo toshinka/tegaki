@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * gl-msdf-pipeline.js - Phase 1座標修正版
+ * gl-msdf-pipeline.js - Phase 1.6完全修正版
  * ================================================================================
  * 
  * 📁 親依存:
@@ -11,11 +11,12 @@
  *   - brush-core.js (generateMSDF呼び出し元)
  *   - gl-texture-bridge.js (生成されたTextureを受け取る)
  * 
- * 🔧 Phase 1改修内容:
- *   ✅ Vertex ShaderからuOffset uniform削除 - Local座標を直接NDC変換
- *   ✅ _drawStroke()からオフセット処理削除
- *   ✅ 座標変換を一元化（gl-stroke-processor側で完結）
- *   ✅ 不要なコンソールログ削除
+ * 🔧 Phase 1.6改修内容:
+ *   ✅ Vertex Shaderを完全修正
+ *     - aPositionは既にboundsローカル座標 [0, bounds.width/height]
+ *     - uResolutionで正規化してNDC変換
+ *     - uBoundsMin/uBoundsSizeは不要（削除）
+ *   ✅ 座標変換を完全に統一
  * 
  * 責務:
  *   - MSDF距離場生成（JFA: Jump Flooding Algorithm）
@@ -59,7 +60,7 @@
       await this._createRenderProgram();
       
       this.initialized = true;
-      console.log('[GLMSDFPipeline] ✅ Initialized');
+      console.log('[GLMSDFPipeline] ✅ Initialized (Phase 1.6)');
     }
 
     /**
@@ -69,7 +70,6 @@
     _createFullscreenQuad() {
       const gl = this.gl;
       
-      // レイアウト: [posX, posY, texU, texV] = 4 floats/vertex
       const vertices = new Float32Array([
         -1.0, -1.0,  0.0, 0.0,
          1.0, -1.0,  1.0, 0.0,
@@ -254,7 +254,7 @@
 
     /**
      * レンダリングプログラム生成
-     * ✅ Phase 1修正: uOffset uniform削除、Local座標を直接NDC変換
+     * ✅ Phase 1.6修正: aPositionは既にboundsローカル座標
      * @private
      */
     async _createRenderProgram() {
@@ -262,22 +262,23 @@
         precision highp float;
         
         // gl-stroke-processor.js の 7 floats/vertex レイアウト
-        layout(location = 0) in vec2 aPosition;    // [0-1] Local座標
+        layout(location = 0) in vec2 aPosition;    // [0-1] boundsローカル座標 [0, width/height]
         layout(location = 1) in vec2 aTexCoord;    // [2-3]
         layout(location = 2) in vec3 aReserved;    // [4-6]
         
-        uniform vec2 uResolution;
-        // ✅ Phase 1削除: uniform vec2 uOffset;
+        uniform vec2 uResolution;    // テクスチャ解像度（512x512）
         
         out vec2 vTexCoord;
         
         void main() {
-          // ✅ Phase 1修正: Local座標を直接NDC変換（オフセットなし）
-          vec2 clipSpace = (aPosition / uResolution) * 2.0 - 1.0;
-          clipSpace.y = -clipSpace.y;
+          // ✅ Phase 1.6修正: boundsローカル座標を直接正規化してNDC変換
+          // aPosition は既に [0, bounds.width] x [0, bounds.height] の範囲
+          vec2 normalized = aPosition / uResolution;  // [0, 1] に正規化
+          vec2 clipSpace = normalized * 2.0 - 1.0;    // NDC [-1, 1] に変換
+          clipSpace.y = -clipSpace.y;                 // Y軸反転
           
           gl_Position = vec4(clipSpace, 0.0, 1.0);
-          vTexCoord = aTexCoord;
+          vTexCoord = normalized;  // テクスチャ座標として使用
         }
       `;
       
@@ -359,7 +360,7 @@
 
     /**
      * ストローク描画（7 floats/vertex）
-     * ✅ Phase 1修正: uOffset設定削除
+     * ✅ Phase 1.6修正: uBoundsMin/uBoundsSize削除
      * @private
      */
     _drawStroke(program, vbo, vertexCount, bounds, resolution) {
@@ -387,15 +388,11 @@
         gl.vertexAttribPointer(aReserved, 3, gl.FLOAT, false, stride, 16);
       }
       
-      // Uniform設定
+      // ✅ Phase 1.6修正: uResolutionのみ設定
       const uResolution = gl.getUniformLocation(program, 'uResolution');
       if (uResolution) {
         gl.uniform2f(uResolution, resolution.width, resolution.height);
       }
-      
-      // ✅ Phase 1削除: uOffset設定
-      // const uOffset = gl.getUniformLocation(program, 'uOffset');
-      // gl.uniform2f(uOffset, bounds.minX, bounds.minY);
       
       gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
       
@@ -498,7 +495,7 @@
 
     /**
      * レンダリングパス
-     * ✅ Phase 1修正: オフセット処理なし
+     * ✅ Phase 1.6修正: 座標変換完全修正
      */
     renderPass(msdfTexture, outputFBO, width, height, settings = {}, vertexBuffer = null, vertexCount = 0, bounds = null) {
       const gl = this.gl;
@@ -554,7 +551,7 @@
 
     /**
      * MSDF生成（メイン処理）
-     * ✅ Phase 1修正: 座標オフセット処理なし
+     * ✅ Phase 1.6修正: 座標変換完全修正
      * 
      * @returns {Object|null} { texture: WebGLTexture, width: number, height: number }
      */
@@ -635,6 +632,8 @@
   }
 
   window.GLMSDFPipeline = new GLMSDFPipeline();
-  console.log('[GLMSDFPipeline] ✅ Singleton instance created');
+  console.log('[GLMSDFPipeline] ✅ Phase 1.6完全修正版 loaded');
+  console.log('   ✅ boundsローカル座標 [0, width/height] → NDC変換');
+  console.log('   ✅ uBoundsMin/uBoundsSize削除（不要）');
 
 })();

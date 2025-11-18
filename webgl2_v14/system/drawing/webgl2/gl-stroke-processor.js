@@ -1,6 +1,6 @@
 /*
  * ================================================================================
- * gl-stroke-processor.js - Phase 1座標修正版
+ * gl-stroke-processor.js - Phase 1.6完全修正版
  * ================================================================================
  * 
  * 📁 親依存:
@@ -13,11 +13,11 @@
  *   - brush-core.js (createPolygonVertexBuffer/createEdgeBuffer呼び出し元)
  *   - gl-msdf-pipeline.js (生成されたバッファを受け取る)
  * 
- * 🔧 Phase 1改修内容:
- *   ✅ offsetX/Y計算を削除 - Local座標をそのまま使用
- *   ✅ 座標変換を一元化（drawing-engineで完結）
- *   ✅ bounds計算を最適化
- *   ✅ 不要なコンソールログ削除
+ * 🔧 Phase 1.6改修内容:
+ *   ✅ 頂点座標をboundsに対する相対座標に変換
+ *     - Local座標からbounds.minX/minYを引いて正規化
+ *     - テクスチャ空間 [0, bounds.width] x [0, bounds.height] に変換
+ *   ✅ 座標変換を完全に統一
  * 
  * 責務:
  *   - PerfectFreehand出力 → GPU頂点バッファ生成
@@ -45,13 +45,13 @@ class GLStrokeProcessor {
     
     this.gl = gl;
     this.initialized = true;
-    console.log('[GLStrokeProcessor] ✅ Initialized');
+    console.log('[GLStrokeProcessor] ✅ Initialized (Phase 1.6)');
     return true;
   }
 
   /**
    * ポリゴン頂点バッファ生成
-   * ✅ Phase 1修正: offsetX/Y削除、Local座標をそのまま使用
+   * ✅ Phase 1.6修正: 頂点座標をboundsに対する相対座標に変換
    * 
    * @param {Array} points - ストロークポイント配列
    * @param {number} baseSize - ブラシサイズ
@@ -83,12 +83,12 @@ class GLStrokeProcessor {
       return null;
     }
 
-    // ✅ Phase 1修正: offsetを使わず、Local座標をそのまま使用
+    // ✅ Phase 1.6修正: 頂点座標をboundsに対する相対座標に変換
     const flat = [];
     for (let i = 0; i < outlinePoints.length; i++) {
       flat.push(
-        outlinePoints[i][0],  // Local X座標（オフセット減算なし）
-        outlinePoints[i][1]   // Local Y座標（オフセット減算なし）
+        outlinePoints[i][0] - bounds.minX,  // boundsローカル座標に変換
+        outlinePoints[i][1] - bounds.minY
       );
     }
 
@@ -108,12 +108,12 @@ class GLStrokeProcessor {
 
     for (let vi = 0; vi < indices.length; vi++) {
       const idx = indices[vi];
-      const x = flat[idx * 2];
-      const y = flat[idx * 2 + 1];
+      const x = flat[idx * 2];      // boundsローカル座標 [0, bounds.width]
+      const y = flat[idx * 2 + 1];  // boundsローカル座標 [0, bounds.height]
       
       const base = vi * floatsPerVertex;
-      buffer[base + 0] = x;    // Position X (Local座標)
-      buffer[base + 1] = y;    // Position Y (Local座標)
+      buffer[base + 0] = x;    // Position X (boundsローカル座標)
+      buffer[base + 1] = y;    // Position Y (boundsローカル座標)
       buffer[base + 2] = 0.0;  // TexCoord U (将来実装用)
       buffer[base + 3] = 0.0;  // TexCoord V (将来実装用)
       buffer[base + 4] = 0.0;  // Reserved
@@ -126,7 +126,7 @@ class GLStrokeProcessor {
 
   /**
    * エッジバッファ生成（MSDF用）
-   * ✅ Phase 1修正: offsetX/Y削除
+   * ✅ Phase 1.6修正: エッジ座標もboundsに対する相対座標に変換
    * 
    * @param {Array} points - ストロークポイント配列
    * @param {number} baseSize - ブラシサイズ
@@ -158,18 +158,23 @@ class GLStrokeProcessor {
       const p0 = outlinePoints[i];
       const p1 = outlinePoints[(i + 1) % edgeCount];
       
-      // ✅ Phase 1修正: Local座標をそのまま使用
-      const dx = p1[0] - p0[0];
-      const dy = p1[1] - p0[1];
+      // ✅ Phase 1.6修正: boundsローカル座標に変換
+      const p0x = p0[0] - bounds.minX;
+      const p0y = p0[1] - bounds.minY;
+      const p1x = p1[0] - bounds.minX;
+      const p1y = p1[1] - bounds.minY;
+      
+      const dx = p1x - p0x;
+      const dy = p1y - p0y;
       const len = Math.sqrt(dx * dx + dy * dy) || 1.0;
       const nx = -dy / len;  // 法線X
       const ny = dx / len;   // 法線Y
 
       const base = i * floatsPerEdge;
-      buffer[base + 0] = p0[0];  // P0 X (Local座標)
-      buffer[base + 1] = p0[1];  // P0 Y (Local座標)
-      buffer[base + 2] = p1[0];  // P1 X (Local座標)
-      buffer[base + 3] = p1[1];  // P1 Y (Local座標)
+      buffer[base + 0] = p0x;    // P0 X (boundsローカル座標)
+      buffer[base + 1] = p0y;    // P0 Y (boundsローカル座標)
+      buffer[base + 2] = p1x;    // P1 X (boundsローカル座標)
+      buffer[base + 3] = p1y;    // P1 Y (boundsローカル座標)
       buffer[base + 4] = nx;     // Normal X
       buffer[base + 5] = ny;     // Normal Y
       buffer[base + 6] = i;      // Edge ID
