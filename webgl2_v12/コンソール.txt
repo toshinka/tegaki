@@ -1,13 +1,13 @@
-config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
-config.js:508    🔧 PerfectFreehand設定リニア化
-config.js:509    ✓ thinning: 0 (線の太り補正無効)
-config.js:510    ✓ smoothing: 0 (補間最小化)
-config.js:511    ✓ streamline: 0 (遅延補正なし)
-coordinate-system.js:438 ✅ coordinate-system.js v8.14.0 (WebGL2 Phase 1) loaded
-coordinate-system.js:439    🔧 PixiJS v8 applyInverse() 対応
-data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
-batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
-popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ config.js v8.14.2 Phase 1改修版 loaded
+    🔧 PerfectFreehand設定リニア化
+    ✓ thinning: 0 (線の太り補正無効)
+    ✓ smoothing: 0 (補間最小化)
+    ✓ streamline: 0 (遅延補正なし)
+ ✅ coordinate-system.js v8.14.0 (WebGL2 Phase 1) loaded
+    🔧 PixiJS v8 applyInverse() 対応
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
  ✅ state-manager.js (Phase 8完全実装版) loaded
  ✅ settings-manager.js Phase 2 loaded
     🔧 exportResolution 設定項目追加
@@ -25,9 +25,8 @@ popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
     ✅ pushEraseMask() 実装
     ✅ beginAction/endAction/addPoint 実装
  ✅ webgl2-drawing-layer.js Phase 1 loaded
- ✅ gl-msdf-pipeline.js Phase 6完全修正版 loaded
-    ✅ Render shader: 7 floats/vertex 対応
-    ✅ gl-stroke-processor.js と完全一致
+ [GLStrokeProcessor] ✅ Singleton instance created
+ [GLMSDFPipeline] ✅ Singleton instance created
  ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
     ✅ WebGLTexture → PIXI.Sprite変換実装完了
     ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
@@ -68,9 +67,9 @@ popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
     🔧 エラーハンドリング強化
     🔧 Blob生成の確実性向上
  ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
-webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
-psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
-psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+ ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+    ⚠️ 実装は将来フェーズで追加予定
 psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
 apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
 mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
@@ -118,15 +117,15 @@ popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
 popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
-webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized {maxTextureSize: 16384, extensions: Array(3)}
+webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized Object
 core-initializer.js:187 [WebGL2] Drawing Layer initialized
-gl-stroke-processor.js:26 [GLStrokeProcessor] ✅ Initialized
+gl-stroke-processor.js:48 [GLStrokeProcessor] ✅ Initialized
 core-initializer.js:196 [WebGL2] GLStrokeProcessor initialized
-gl-msdf-pipeline.js:53 [GLMSDFPipeline] ✅ Initialized (Phase 6: 7 floats/vertex対応)
+gl-msdf-pipeline.js:62 [GLMSDFPipeline] ✅ Initialized
 core-initializer.js:201 [WebGL2] GLMSDFPipeline initialized
 gl-texture-bridge.js:51 [GLTextureBridge] ✅ Initialized (PixiJS v8)
 core-initializer.js:209 [WebGL2] GLTextureBridge initialized
-gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
+gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized Object
 core-initializer.js:221 [WebGL2] GLMaskLayer initialized
 stroke-renderer.js:76 [StrokeRenderer] ✅ Initialized (WebGL2 mode)
 core-initializer.js:236 [WebGL2] StrokeRenderer initialized
@@ -136,4 +135,3 @@ core-initializer.js:356 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6)
 index.html:113 ✅ WebGL2初期化完了
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-popup-manager.js:192 👁️ Popup "quickAccess" shown
