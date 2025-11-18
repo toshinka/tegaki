@@ -1,20 +1,26 @@
 /**
  * ================================================================================
- * gl-msdf-pipeline.js - Phase 6完全修正版
+ * gl-msdf-pipeline.js - Phase 1座標修正版
  * ================================================================================
  * 
- * 📁 親ファイル依存:
- *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl)
+ * 📁 親依存:
+ *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl, createFBO, deleteFBO)
  *   - gl-stroke-processor.js (EdgeBuffer/VertexBuffer: 7 floats/vertex)
+ * 
+ * 📄 子依存:
  *   - brush-core.js (generateMSDF呼び出し元)
+ *   - gl-texture-bridge.js (生成されたTextureを受け取る)
  * 
- * 📄 子ファイル依存:
- *   - gl-texture-bridge.js (Texture→Sprite変換)
+ * 🔧 Phase 1改修内容:
+ *   ✅ Vertex ShaderからuOffset uniform削除 - Local座標を直接NDC変換
+ *   ✅ _drawStroke()からオフセット処理削除
+ *   ✅ 座標変換を一元化（gl-stroke-processor側で完結）
+ *   ✅ 不要なコンソールログ削除
  * 
- * 【Phase 6修正内容】
- * ✅ Render shader attribute レイアウトを 7 floats/vertex に統一
- * ✅ gl-stroke-processor.js の頂点データと完全一致
- * ✅ 過剰なコンソールログ削除
+ * 責務:
+ *   - MSDF距離場生成（JFA: Jump Flooding Algorithm）
+ *   - Seed初期化 → JFA実行 → エンコード → レンダリング
+ *   - WebGLTexture出力（512x512固定、Phase 3で動的化予定）
  * 
  * ================================================================================
  */
@@ -33,10 +39,13 @@
       this.renderProgram = null;
       
       this.quadVBO = null;
-      this.strokeVBO = null;
-      this.textureSize = 512;
+      this.textureSize = 512;  // Phase 3で動的化予定
     }
 
+    /**
+     * 初期化
+     * @param {WebGL2RenderingContext} gl - WebGL2コンテキスト
+     */
     async initialize(gl) {
       if (this.initialized) return;
       
@@ -50,13 +59,17 @@
       await this._createRenderProgram();
       
       this.initialized = true;
-      console.log('[GLMSDFPipeline] ✅ Initialized (Phase 6: 7 floats/vertex対応)');
+      console.log('[GLMSDFPipeline] ✅ Initialized');
     }
 
+    /**
+     * フルスクリーンクアッド生成
+     * @private
+     */
     _createFullscreenQuad() {
       const gl = this.gl;
       
-      // Fullscreen quad（4 floats/vertex: position + texCoord）
+      // レイアウト: [posX, posY, texU, texV] = 4 floats/vertex
       const vertices = new Float32Array([
         -1.0, -1.0,  0.0, 0.0,
          1.0, -1.0,  1.0, 0.0,
@@ -70,6 +83,10 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
 
+    /**
+     * シェーダープログラム生成
+     * @private
+     */
     _createShaderProgram(vertexSource, fragmentSource, label = 'Shader') {
       const gl = this.gl;
       
@@ -107,6 +124,10 @@
       return program;
     }
 
+    /**
+     * Seed初期化プログラム生成
+     * @private
+     */
     async _createSeedInitProgram() {
       const vertexShader = `#version 300 es
         precision highp float;
@@ -131,6 +152,10 @@
       this.seedInitProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Seed Init');
     }
 
+    /**
+     * JFAプログラム生成
+     * @private
+     */
     async _createJFAProgram() {
       const vertexShader = `#version 300 es
         precision highp float;
@@ -183,6 +208,10 @@
       this.jfaProgram = this._createShaderProgram(vertexShader, fragmentShader, 'JFA Pass');
     }
 
+    /**
+     * エンコードプログラム生成
+     * @private
+     */
     async _createEncodeProgram() {
       const vertexShader = `#version 300 es
         precision highp float;
@@ -223,25 +252,28 @@
       this.encodeProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Encode Pass');
     }
 
+    /**
+     * レンダリングプログラム生成
+     * ✅ Phase 1修正: uOffset uniform削除、Local座標を直接NDC変換
+     * @private
+     */
     async _createRenderProgram() {
-      // ✅ Phase 6修正: 7 floats/vertex に対応
       const vertexShader = `#version 300 es
         precision highp float;
         
         // gl-stroke-processor.js の 7 floats/vertex レイアウト
-        layout(location = 0) in vec2 aPosition;    // [0-1]
+        layout(location = 0) in vec2 aPosition;    // [0-1] Local座標
         layout(location = 1) in vec2 aTexCoord;    // [2-3]
         layout(location = 2) in vec3 aReserved;    // [4-6]
         
         uniform vec2 uResolution;
-        uniform vec2 uOffset;
+        // ✅ Phase 1削除: uniform vec2 uOffset;
         
         out vec2 vTexCoord;
         
         void main() {
-          // Local座標 → NDC変換
-          vec2 position = aPosition + uOffset;
-          vec2 clipSpace = (position / uResolution) * 2.0 - 1.0;
+          // ✅ Phase 1修正: Local座標を直接NDC変換（オフセットなし）
+          vec2 clipSpace = (aPosition / uResolution) * 2.0 - 1.0;
           clipSpace.y = -clipSpace.y;
           
           gl_Position = vec4(clipSpace, 0.0, 1.0);
@@ -260,7 +292,6 @@
         out vec4 fragColor;
         
         void main() {
-          // MSDF距離場参照（Phase 1: 単色塗りつぶし）
           float dist = texture(uMSDFTex, vTexCoord).r;
           float alpha = smoothstep(0.4, 0.6, dist);
           
@@ -271,6 +302,9 @@
       this.renderProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Render Pass');
     }
 
+    /**
+     * PingPong FBO生成
+     */
     createPingPongFBO(width, height) {
       if (!window.WebGL2DrawingLayer) {
         console.error('[GLMSDFPipeline] WebGL2DrawingLayer not available');
@@ -283,6 +317,9 @@
       };
     }
 
+    /**
+     * Seedテクスチャクリア
+     */
     clearSeedTexture(fbo, width, height) {
       const gl = this.gl;
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
@@ -292,6 +329,10 @@
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
+    /**
+     * フルスクリーンクアッド描画
+     * @private
+     */
     _drawFullscreenQuad(program) {
       const gl = this.gl;
       gl.bindBuffer(gl.ARRAY_BUFFER, this.quadVBO);
@@ -317,16 +358,16 @@
     }
 
     /**
-     * ✅ Phase 6修正: 7 floats/vertex で描画
+     * ストローク描画（7 floats/vertex）
+     * ✅ Phase 1修正: uOffset設定削除
+     * @private
      */
     _drawStroke(program, vbo, vertexCount, bounds, resolution) {
       const gl = this.gl;
       
-      // VBO設定
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       
-      // 頂点属性レイアウト（7 floats/vertex = 28 bytes stride）
-      const stride = 7 * 4;
+      const stride = 7 * 4;  // 7 floats = 28 bytes
       
       const aPosition = gl.getAttribLocation(program, 'aPosition');
       if (aPosition >= 0) {
@@ -348,26 +389,25 @@
       
       // Uniform設定
       const uResolution = gl.getUniformLocation(program, 'uResolution');
-      const uOffset = gl.getUniformLocation(program, 'uOffset');
-      
       if (uResolution) {
         gl.uniform2f(uResolution, resolution.width, resolution.height);
       }
       
-      if (uOffset) {
-        gl.uniform2f(uOffset, bounds.minX, bounds.minY);
-      }
+      // ✅ Phase 1削除: uOffset設定
+      // const uOffset = gl.getUniformLocation(program, 'uOffset');
+      // gl.uniform2f(uOffset, bounds.minX, bounds.minY);
       
-      // 描画
       gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
       
-      // クリーンアップ
       if (aPosition >= 0) gl.disableVertexAttribArray(aPosition);
       if (aTexCoord >= 0) gl.disableVertexAttribArray(aTexCoord);
       if (aReserved >= 0) gl.disableVertexAttribArray(aReserved);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
 
+    /**
+     * Seed初期化パス
+     */
     seedInitPass(edgeBuffer, seedFBO, width, height, edgeCount) {
       const gl = this.gl;
       if (!this.seedInitProgram) return false;
@@ -380,6 +420,9 @@
       return true;
     }
 
+    /**
+     * JFAパス（1回）
+     */
     jfaPass(srcTexture, dstFBO, width, height, step) {
       const gl = this.gl;
       if (!this.jfaProgram) return false;
@@ -405,6 +448,9 @@
       return true;
     }
 
+    /**
+     * JFA実行（複数パス）
+     */
     executeJFA(seedTexture, width, height) {
       const pingPong = this.createPingPongFBO(width, height);
       if (!pingPong) return null;
@@ -424,6 +470,9 @@
       return { resultTexture: src, tempFBO: pingPong };
     }
 
+    /**
+     * エンコードパス
+     */
     encodePass(jfaTexture, msdfFBO, width, height) {
       const gl = this.gl;
       if (!this.encodeProgram) return false;
@@ -448,7 +497,8 @@
     }
 
     /**
-     * ✅ Phase 6修正: 7 floats/vertex で描画
+     * レンダリングパス
+     * ✅ Phase 1修正: オフセット処理なし
      */
     renderPass(msdfTexture, outputFBO, width, height, settings = {}, vertexBuffer = null, vertexCount = 0, bounds = null) {
       const gl = this.gl;
@@ -464,7 +514,6 @@
       
       gl.useProgram(this.renderProgram);
       
-      // Uniform設定
       const uMSDFTexLoc = gl.getUniformLocation(this.renderProgram, 'uMSDFTex');
       const uBrushColorLoc = gl.getUniformLocation(this.renderProgram, 'uBrushColor');
       const uOpacityLoc = gl.getUniformLocation(this.renderProgram, 'uOpacity');
@@ -479,7 +528,6 @@
       const opacity = settings.opacity !== undefined ? settings.opacity : 1.0;
       gl.uniform1f(uOpacityLoc, opacity);
       
-      // ✅ Phase 6修正: vertexBufferが提供されていれば使用
       if (vertexBuffer && vertexCount > 0 && bounds) {
         this._drawStroke(this.renderProgram, vertexBuffer, vertexCount, bounds, { width, height });
       } else {
@@ -491,6 +539,10 @@
       return true;
     }
 
+    /**
+     * カラー文字列パース
+     * @private
+     */
     _parseColor(colorString) {
       const hex = colorString.replace('#', '');
       return {
@@ -501,7 +553,8 @@
     }
 
     /**
-     * MSDF生成（Phase 6完全修正版）
+     * MSDF生成（メイン処理）
+     * ✅ Phase 1修正: 座標オフセット処理なし
      * 
      * @returns {Object|null} { texture: WebGLTexture, width: number, height: number }
      */
@@ -539,7 +592,6 @@
         const outputFBO = window.WebGL2DrawingLayer.createFBO(width, height, { float: false });
         if (!outputFBO) return null;
         
-        // ✅ Phase 6修正: vertexBufferDataを渡す
         this.renderPass(msdfFBO.texture, outputFBO, width, height, settings, vertexBufferData, vertexCount, bounds);
         
         // Cleanup
@@ -562,17 +614,15 @@
       }
     }
 
+    /**
+     * 破棄
+     */
     destroy() {
       const gl = this.gl;
       
       if (this.quadVBO) {
         gl.deleteBuffer(this.quadVBO);
         this.quadVBO = null;
-      }
-      
-      if (this.strokeVBO) {
-        gl.deleteBuffer(this.strokeVBO);
-        this.strokeVBO = null;
       }
       
       if (this.seedInitProgram) gl.deleteProgram(this.seedInitProgram);
@@ -585,9 +635,6 @@
   }
 
   window.GLMSDFPipeline = new GLMSDFPipeline();
-
-  console.log('✅ gl-msdf-pipeline.js Phase 6完全修正版 loaded');
-  console.log('   ✅ Render shader: 7 floats/vertex 対応');
-  console.log('   ✅ gl-stroke-processor.js と完全一致');
+  console.log('[GLMSDFPipeline] ✅ Singleton instance created');
 
 })();

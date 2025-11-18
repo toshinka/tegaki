@@ -1,0 +1,608 @@
+# PerfectFreehand + WebGL2 MSDF ベクターペン 完全分析・改修計画
+
+## 📐 理想的なフロー（ペン入力 → 最終描画）
+
+### **Phase 1: ポインタ入力取得**
+```
+ユーザーPointerEvent
+  ↓
+pointer-handler.js
+  - 正規化された pressure (0.0-1.0)
+  - tiltX, tiltY 取得
+  - EventEmitter経由で配信
+```
+
+### **Phase 2: 座標変換パイプライン**
+```
+drawing-engine.js
+  ↓ screenClientToCanvas()
+  ↓ canvasToWorld()
+  ↓ worldToLocal() ← ★座標不一致の原因箇所
+  ↓
+Local座標確定 (localX, localY)
+```
+
+### **Phase 3: ストローク記録**
+```
+stroke-recorder.js
+  - Local座標ポイントを配列に追加
+  - 座標変換は一切行わない（二重変換防止）
+  - { x, y, pressure, tiltX, tiltY } 保存
+```
+
+### **Phase 4: ポリゴン生成（PerfectFreehand）**
+```
+vector-operations.js
+  ↓ generateStrokePolygon(points, size)
+  ↓ PerfectFreehand実行
+  ↓ 輪郭ポリゴン取得
+```
+
+### **Phase 5: GPU頂点バッファ生成**
+```
+gl-stroke-processor.js
+  ↓ createPolygonVertexBuffer()
+    - PerfectFreehand輪郭 → Earcut三角形分割
+    - 7 floats/vertex 形式で VBO 作成
+  ↓ createEdgeBuffer()
+    - エッジ情報（始点・終点・法線）
+    - 8 floats/edge 形式で SSBO 作成
+  ↓ calculateBounds()
+    - ストロークのバウンディングボックス計算
+```
+
+### **Phase 6: MSDF生成（距離場計算）**
+```
+gl-msdf-pipeline.js
+  ↓ seedInitPass() - 初期化
+  ↓ executeJFA() - Jump Flooding Algorithm で最近接ピクセル計算
+  ↓ encodePass() - 距離場エンコード
+  ↓ renderPass() - 最終レンダリング（アンチエイリアス適用）
+  ↓ 
+WebGLTexture生成（512x512 固定 ← ★ジャギーの原因）
+```
+
+### **Phase 7: Sprite変換・配置**
+```
+gl-texture-bridge.js
+  ↓ createSpriteFromGLTexture(texture, width, height)
+  ↓ WebGLTexture → Canvas → PIXI.Texture → PIXI.Sprite
+  ↓
+sprite.x = bounds.minX ← ★座標ズレの原因箇所
+sprite.y = bounds.minY
+```
+
+### **Phase 8: レイヤーに配置**
+```
+brush-core.js
+  ↓ _finalizeMSDFStroke()
+  ↓ container.addChild(sprite)
+  ↓ activeLayer.paths.push(pathData)
+```
+
+---
+
+## 🗂️ アーキテクチャ辞典
+
+### **座標変換システム**
+| ファイル | クラス/インスタンス | 主要メソッド | 責務 |
+|---------|------------------|-------------|------|
+| coordinate-system.js | CoordinateSystem | screenClientToCanvas()<br>canvasToWorld()<br>worldToLocal() | 座標変換の一元管理<br>worldContainer逆行列計算 |
+
+### **描画エンジン**
+| ファイル | クラス/インスタンス | 主要メソッド | 責務 |
+|---------|------------------|-------------|------|
+| drawing-engine.js | DrawingEngine | _handlePointerDown/Move/Up()<br>_transformPointerToLocal()<br>flushPendingPoints() | PointerEvent受信<br>座標変換実行<br>BrushCoreへ委譲 |
+| brush-core.js | BrushCore | startStroke()<br>updateStroke()<br>finalizeStroke()<br>renderPreview() | 描画統合管理<br>リアルタイムプレビュー<br>最終描画実行 |
+
+### **ストローク処理**
+| ファイル | クラス/インスタンス | 主要メソッド | 責務 |
+|---------|------------------|-------------|------|
+| stroke-recorder.js | StrokeRecorder | startStroke()<br>addPoint()<br>endStroke()<br>getRawPoints() | Local座標ポイント記録<br>PerfectFreehand互換形式提供 |
+| vector-operations.js | VectorOperations | generateStrokePolygon(points, size) | PerfectFreehand実行<br>輪郭ポリゴン生成 |
+
+### **WebGL2パイプライン**
+| ファイル | クラス/インスタンス | 主要メソッド | 責務 |
+|---------|------------------|-------------|------|
+| webgl2-drawing-layer.js | WebGL2DrawingLayer | getGL()<br>createFBO()<br>deleteFBO() | WebGL2コンテキスト管理<br>FBO生成・破棄 |
+| gl-stroke-processor.js | GLStrokeProcessor | createPolygonVertexBuffer()<br>createEdgeBuffer()<br>calculateBounds()<br>uploadToGPU() | PerfectFreehand→GPU変換<br>Earcut三角形分割<br>VBO/SSBO生成 |
+| gl-msdf-pipeline.js | GLMSDFPipeline | generateMSDF()<br>seedInitPass()<br>executeJFA()<br>encodePass()<br>renderPass() | MSDF距離場生成<br>Jump Flooding実行<br>アンチエイリアス適用 |
+| gl-texture-bridge.js | GLTextureBridge | createSpriteFromGLTexture() | WebGLTexture→Sprite変換<br>Y軸反転処理 |
+| gl-mask-layer.js | GLMaskLayer | renderStrokeMask()<br>applyMask() | 消しゴムマスク生成<br>合成処理 |
+
+### **レンダリングループ**
+| ファイル | クラス/インスタンス | 主要メソッド | 責務 |
+|---------|------------------|-------------|------|
+| core-engine.js | CoreEngine | _renderLoop()<br>flushPointerBatch() | マスターレンダリングループ<br>preview→render統合 |
+
+---
+
+## 🐛 現状の問題分析
+
+### **問題1: 座標不一致（右下にズレる）**
+
+#### 根本原因
+1. **bounds計算のオフセット問題**
+   ```javascript
+   // gl-stroke-processor.js - createPolygonVertexBuffer()
+   const bounds = this._calculateBoundsFromPoints(processedPoints, baseSize);
+   const offsetX = bounds.minX;  // ← ここでオフセット
+   const offsetY = bounds.minY;
+   
+   // ポリゴン頂点をオフセット分減算
+   flat.push(
+     outlinePoints[i][0] - offsetX,  // ← Local座標からさらに減算
+     outlinePoints[i][1] - offsetY
+   );
+   ```
+
+2. **renderPassでのUniform設定**
+   ```javascript
+   // gl-msdf-pipeline.js - _drawStroke()
+   gl.uniform2f(uOffset, bounds.minX, bounds.minY);  // ← オフセット加算
+   
+   // Vertex Shader内
+   vec2 position = aPosition + uOffset;  // ← 再度加算
+   ```
+
+3. **Sprite配置時の座標**
+   ```javascript
+   // brush-core.js - _finalizeMSDFStroke()
+   sprite.x = bounds.minX;  // ← 3重のオフセット適用？
+   sprite.y = bounds.minY;
+   ```
+
+#### 修正方針
+- **オフセット適用を1箇所に統一**
+- gl-stroke-processor内でLocal座標をそのまま保持
+- renderPass内でオフセット計算を削除
+- Sprite配置時にbounds.minXを正しく適用
+
+---
+
+### **問題2: フリッカー（チラつき）**
+
+#### 根本原因
+```javascript
+// core-engine.js - _renderLoop()
+_renderLoop() {
+  // 毎フレーム（60fps）でrenderPreviewが呼ばれる
+  if (window.BrushCore.isDrawing) {
+    window.BrushCore.renderPreview();  // ← 60fps呼び出し
+  }
+  requestAnimationFrame(() => this._renderLoop());
+}
+
+// brush-core.js - renderPreview()
+async _updatePreview(points) {
+  // 既存スプライト削除
+  if (this.previewSprite) {
+    this.previewContainer.removeChild(this.previewSprite);
+    this.previewSprite.destroy({ children: true });  // ← 毎回破棄
+  }
+  
+  // 新しいスプライト生成（非同期処理）
+  const sprite = await this.textureBridge.createSpriteFromGLTexture(...);
+  this.previewContainer.addChild(sprite);  // ← 毎回追加
+}
+```
+
+#### 問題点
+1. **スプライトの生成・破棄が高頻度** → GPU/CPUリソース浪費
+2. **非同期処理の完了タイミングが不定** → 描画タイミングずれ
+3. **throttle（16ms）では不十分** → ポイント追加は数ms間隔
+
+#### 修正方針
+- **プレビュー更新頻度を削減**（100ms程度に延長）
+- **テクスチャ再利用** - 既存FBOに上書き
+- **同期的レンダリング** - WebGL描画をPromise不要に
+
+---
+
+### **問題3: ジャギー（アンチエイリアス不足）**
+
+#### 根本原因
+```javascript
+// gl-msdf-pipeline.js
+constructor() {
+  this.textureSize = 512;  // ← 固定サイズ
+}
+
+generateMSDF() {
+  const width = this.textureSize;   // 512px固定
+  const height = this.textureSize;  // 512px固定
+  
+  // 実際のストロークサイズに関わらず512x512で生成
+  const msdfFBO = createFBO(width, height, { float: false });
+}
+```
+
+#### 問題点
+- ストロークが1000x1000pxでも512x512に圧縮
+- 拡大時にピクセル化が顕著
+- MSDF距離場の解像度不足
+
+#### 修正方針
+1. **動的テクスチャサイズ** - ストロークboundsに応じて2のべき乗で生成
+2. **最小512px、最大2048px** - GPU制限を考慮
+3. **適切なpadding** - エッジのアンチエイリアス確保
+
+---
+
+### **問題4: 消しゴム未動作**
+
+#### 根本原因
+```javascript
+// brush-core.js - _applyEraserMask()
+if (!this.maskAvailable || !this.glMaskLayer) {
+  // Fallbackに移行（アルファ値減算のみ）
+  await this._applyEraserMaskFallback(activeLayer, bounds);
+  return;
+}
+
+// gl-mask-layer.jsの初期化確認
+this.maskAvailable = !!(this.glMaskLayer && this.glMaskLayer.initialized);
+```
+
+#### 問題点
+1. **GLMaskLayerの初期化タイミング** - BrushCore初期化時に未完了
+2. **マスク適用ロジックの複雑さ** - 複数スプライトへの反復処理
+3. **Fallbackの不完全性** - 単純なアルファ減算では不十分
+
+#### 修正方針
+- gl-mask-layer.jsの初期化を確実に
+- マスク適用をシンプル化（全レイヤー一括処理）
+- リアルタイムマスクプレビュー追加
+
+---
+
+## 🔧 段階的改修計画
+
+### **Phase 1: 座標不一致の修正（最優先）**
+
+#### Step 1.1: bounds計算の正規化
+```javascript
+// gl-stroke-processor.js - 修正
+createPolygonVertexBuffer(points, baseSize = 10) {
+  const bounds = this._calculateBoundsFromPoints(processedPoints, baseSize);
+  
+  // ❌ 削除: オフセット計算
+  // const offsetX = bounds.minX;
+  // const offsetY = bounds.minY;
+  
+  // ✅ 修正: Local座標をそのまま使用
+  const flat = [];
+  for (let i = 0; i < outlinePoints.length; i++) {
+    flat.push(
+      outlinePoints[i][0],  // オフセット減算なし
+      outlinePoints[i][1]
+    );
+  }
+  
+  return { buffer, vertexCount, bounds };
+}
+```
+
+#### Step 1.2: renderPassのUniform削除
+```javascript
+// gl-msdf-pipeline.js - 修正
+_drawStroke(program, vbo, vertexCount, bounds, resolution) {
+  // ❌ 削除: uOffset uniform
+  // const uOffset = gl.getUniformLocation(program, 'uOffset');
+  // gl.uniform2f(uOffset, bounds.minX, bounds.minY);
+  
+  // Vertex Shaderも修正（uOffsetパラメータ削除）
+}
+
+// Vertex Shader修正
+const vertexShader = `#version 300 es
+precision highp float;
+
+layout(location = 0) in vec2 aPosition;    // Local座標そのまま
+layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec3 aReserved;
+
+uniform vec2 uResolution;
+// ❌ 削除: uniform vec2 uOffset;
+
+out vec2 vTexCoord;
+
+void main() {
+  // ✅ 修正: オフセットなしでNDC変換
+  vec2 clipSpace = (aPosition / uResolution) * 2.0 - 1.0;
+  clipSpace.y = -clipSpace.y;
+  
+  gl_Position = vec4(clipSpace, 0.0, 1.0);
+  vTexCoord = aTexCoord;
+}
+`;
+```
+
+#### Step 1.3: Sprite配置の確認
+```javascript
+// brush-core.js - 確認
+const sprite = await this.textureBridge.createSpriteFromGLTexture(...);
+
+// ✅ 確認: bounds.minX/minYは正しいLocal座標か？
+sprite.x = bounds.minX;
+sprite.y = bounds.minY;
+
+// デバッグログ追加
+console.log('[Stroke] bounds:', bounds);
+console.log('[Stroke] sprite pos:', sprite.x, sprite.y);
+```
+
+---
+
+### **Phase 2: フリッカー解消**
+
+#### Step 2.1: プレビュー更新頻度の最適化
+```javascript
+// brush-core.js - 修正
+constructor() {
+  this.previewThrottle = 100;  // 16ms → 100ms（10fps相当）
+}
+
+async renderPreview() {
+  const now = Date.now();
+  if (now - this.lastPreviewTime < this.previewThrottle) {
+    return;  // スキップ
+  }
+  this.lastPreviewTime = now;
+  
+  // ポイント数チェック追加
+  const points = this.strokeRecorder.getRawPoints();
+  if (points.length < 3) return;  // 最低3点必要
+  
+  await this._updatePreview(points);
+}
+```
+
+#### Step 2.2: テクスチャ再利用（FBO pooling）
+```javascript
+// brush-core.js - 新規追加
+constructor() {
+  this.previewFBO = null;  // 再利用FBO
+  this.previewTexture = null;
+}
+
+async _updatePreview(points) {
+  // ✅ 既存FBOを再利用
+  if (!this.previewFBO) {
+    this.previewFBO = window.WebGL2DrawingLayer.createFBO(512, 512);
+  }
+  
+  // ❌ 削除: 毎回スプライト破棄
+  // if (this.previewSprite) {
+  //   this.previewSprite.destroy({ children: true });
+  // }
+  
+  // ✅ 修正: 既存スプライトのテクスチャ更新
+  if (!this.previewSprite) {
+    this.previewSprite = new PIXI.Sprite();
+    this.previewContainer.addChild(this.previewSprite);
+  }
+  
+  // FBOにレンダリング
+  const msdfResult = await this.glMSDFPipeline.generateMSDFToFBO(
+    this.previewFBO,
+    edgeBuffer,
+    bounds,
+    settings
+  );
+  
+  // テクスチャ更新（スプライトは破棄しない）
+  const newTexture = PIXI.Texture.from(this.previewFBO.canvas);
+  this.previewSprite.texture = newTexture;
+  this.previewSprite.x = bounds.minX;
+  this.previewSprite.y = bounds.minY;
+}
+```
+
+---
+
+### **Phase 3: ジャギー解消（動的解像度）**
+
+#### Step 3.1: 動的テクスチャサイズ計算
+```javascript
+// gl-msdf-pipeline.js - 修正
+_calculateOptimalTextureSize(bounds) {
+  const width = Math.ceil(bounds.width);
+  const height = Math.ceil(bounds.height);
+  
+  // 最小512、最大2048、2のべき乗に切り上げ
+  const minSize = 512;
+  const maxSize = 2048;
+  
+  const size = Math.max(width, height);
+  let textureSize = minSize;
+  
+  while (textureSize < size && textureSize < maxSize) {
+    textureSize *= 2;
+  }
+  
+  return Math.min(textureSize, maxSize);
+}
+
+async generateMSDF(...args) {
+  // ❌ 削除: 固定サイズ
+  // const width = this.textureSize;  // 512固定
+  // const height = this.textureSize;
+  
+  // ✅ 修正: 動的サイズ
+  const textureSize = this._calculateOptimalTextureSize(bounds);
+  const width = textureSize;
+  const height = textureSize;
+  
+  // 以下同様
+}
+```
+
+#### Step 3.2: Padding調整
+```javascript
+// gl-stroke-processor.js - 修正
+_calculateBoundsFromPoints(points, margin = 20) {
+  // ❌ 固定margin: 20
+  // ✅ サイズに応じた動的margin
+  const avgSize = points.reduce((sum, p) => sum + (p.pressure || 0.5), 0) / points.length;
+  const dynamicMargin = Math.max(20, avgSize * 2);
+  
+  return {
+    minX: minX - dynamicMargin,
+    minY: minY - dynamicMargin,
+    maxX: maxX + dynamicMargin,
+    maxY: maxY + dynamicMargin,
+    width: (maxX - minX) + dynamicMargin * 2,
+    height: (maxY - minY) + dynamicMargin * 2
+  };
+}
+```
+
+---
+
+### **Phase 4: 消しゴム機能修正**
+
+#### Step 4.1: GLMaskLayer初期化確認
+```javascript
+// core-initializer.js（または初期化コード）- 追加
+async initWebGL2Systems() {
+  // ... 他の初期化
+  
+  // GLMaskLayer初期化を明示的に追加
+  if (window.GLMaskLayer) {
+    const gl = window.WebGL2DrawingLayer.getGL();
+    await window.GLMaskLayer.initialize(gl);
+    console.log('[Init] GLMaskLayer initialized');
+  }
+  
+  // BrushCore初期化（GLMaskLayer後）
+  await window.BrushCore.initialize();
+}
+```
+
+#### Step 4.2: マスク適用のシンプル化
+```javascript
+// brush-core.js - 修正
+async _applyEraserMask(activeLayer, points, bounds) {
+  if (!this.maskAvailable) {
+    console.warn('[BrushCore] Mask layer unavailable');
+    return;
+  }
+  
+  try {
+    // 1. マスクテクスチャ生成
+    this.glMaskLayer.clearMask();
+    const maskTexture = this.glMaskLayer.renderStrokeMask(points, this.currentSettings.size);
+    
+    // 2. レイヤー全体のスナップショット取得
+    const layerSnapshot = this._captureLayerSnapshot(activeLayer);
+    
+    // 3. GPU合成（1回のdraw callで完了）
+    const maskedTexture = this.glMaskLayer.applyMaskBatch(
+      layerSnapshot,
+      maskTexture,
+      bounds
+    );
+    
+    // 4. 結果をレイヤーに反映
+    this._updateLayerFromTexture(activeLayer, maskedTexture);
+    
+  } catch (error) {
+    console.error('[BrushCore] Eraser mask failed:', error);
+  }
+}
+```
+
+---
+
+## 🎯 優先順位付け
+
+### **緊急（1週間以内）**
+1. ✅ **Phase 1: 座標不一致修正** - ユーザビリティに直結
+2. ✅ **Phase 2: フリッカー解消** - UX改善
+
+### **重要（2週間以内）**
+3. ✅ **Phase 3: ジャギー解消** - 品質向上
+
+### **通常（1ヶ月以内）**
+4. ✅ **Phase 4: 消しゴム機能** - 機能完成度
+
+---
+
+## 🧪 テスト項目
+
+### **座標精度テスト**
+```javascript
+// コンソールで実行
+window.TegakiDebug.coord.testFullPipeline(100, 100);
+// ✅ Error < 0.1px なら合格
+```
+
+### **フリッカーテスト**
+- 長いストローク描画時の視認確認
+- DevTools Performance → FPS drops確認
+
+### **解像度テスト**
+```javascript
+// 小さいストローク（100x100）
+// 大きいストローク（1000x1000）
+// → どちらも滑らかなエッジか確認
+```
+
+### **消しゴムテスト**
+- ペン → 消しゴム → ペン の切り替えフロー
+- 部分消去の精度確認
+
+---
+
+## 📝 実装チェックリスト
+
+### Phase 1
+- [ ] gl-stroke-processor.js - offsetX/Y削除
+- [ ] gl-msdf-pipeline.js - uOffset uniform削除
+- [ ] Vertex Shader修正
+- [ ] 座標デバッグログ追加
+- [ ] テスト実行・検証
+
+### Phase 2
+- [ ] previewThrottle 100ms延長
+- [ ] FBO pooling実装
+- [ ] テクスチャ再利用ロジック
+- [ ] 不要なdestroy()削除
+- [ ] パフォーマンス計測
+
+### Phase 3
+- [ ] _calculateOptimalTextureSize()実装
+- [ ] 動的margin計算
+- [ ] textureSize固定値削除
+- [ ] 解像度別テスト
+
+### Phase 4
+- [ ] GLMaskLayer初期化順序修正
+- [ ] _captureLayerSnapshot()実装
+- [ ] applyMaskBatch()実装
+- [ ] 消しゴム動作確認
+
+---
+
+## 🚀 期待される改善効果
+
+| 問題 | 改善前 | 改善後 |
+|-----|--------|--------|
+| 座標精度 | ±50px ズレ | ±0.1px 以内 |
+| フリッカー | 60fps破棄・再生成 | 10fps更新（再利用） |
+| 解像度 | 512px固定 | 512-2048px動的 |
+| 消しゴム | 動作せず | 完全動作 |
+
+---
+
+## 📚 参考リソース
+
+- [PerfectFreehand仕様](https://github.com/steveruizok/perfect-freehand)
+- [Jump Flooding Algorithm論文](https://www.comp.nus.edu.sg/~tants/jfa.html)
+- [PixiJS v8移行ガイド](https://pixijs.com/8.x/guides/migrations/v8)
+- [WebGL2ベストプラクティス](https://webgl2fundamentals.org/)
+
+---
+
+**次のステップ**: Phase 1の実装から開始することをお勧めします。座標不一致が解消されれば、他の問題の切り分けが容易になります。
