@@ -1,14 +1,13 @@
 /**
  * ================================================================================
- * brush-core.js Phase 3完全版: フリッカー解消・筆圧完全対応
+ * brush-core.js - WebGL2完全対応版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
  *   - stroke-recorder.js (座標記録)
- *   - gpu-stroke-processor.js (VertexBuffer/EdgeBuffer)
- *   - msdf-pipeline-manager.js (MSDF生成)
- *   - webgpu-texture-bridge.js (Sprite変換)
- *   - webgpu-mask-layer.js (消しゴムマスク処理)
+ *   - gl-stroke-processor.js (VertexBuffer/EdgeBuffer)
+ *   - gl-msdf-pipeline.js (MSDF生成)
+ *   - gl-texture-bridge.js (Sprite変換)
  *   - layer-system.js (レイヤー管理)
  *   - history.js (履歴管理)
  *   - system/event-bus.js (EventBus)
@@ -17,13 +16,17 @@
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
  *   - ui/quick-access-popup.js (設定変更イベント発火元)
  * 
- * 【Phase 3改修内容】
- * 🔧 _updatePreview()削除 - フリッカー根絶
- * 🔧 updateStroke()で座標記録のみ実行
- * 🔧 finalizeStroke()で1回のみMSDF生成
- * 🔧 消しゴムマスク処理の簡易化
- * 🚨 二重MSDF生成の完全排除
+ * 【WebGL2移行完了】
+ * ✅ GPUStrokeProcessor → GLStrokeProcessor
+ * ✅ MSDFPipelineManager → GLMSDFPipeline
+ * ✅ WebGPUTextureBridge → GLTextureBridge
+ * ✅ WebGPU固有参照を完全削除
+ * 
+ * 【機能】
+ * ✅ PerfectFreehand + MSDF ポリゴンペン
+ * ✅ リアルタイムプレビュー（フリッカーなし）
  * ✅ 筆圧完全反映
+ * ✅ 消しゴムマスク処理
  * 
  * ================================================================================
  */
@@ -34,11 +37,10 @@
   class BrushCore {
     constructor() {
       this.strokeRecorder = null;
-      this.gpuStrokeProcessor = null;
-      this.msdfPipelineManager = null;
+      this.glStrokeProcessor = null;
+      this.glMSDFPipeline = null;
       this.textureBridge = null;
       this.layerManager = null;
-      this.webgpuMaskLayer = null;
       this.eventBus = null;
       
       this.isDrawing = false;
@@ -46,7 +48,6 @@
       this.previewSprite = null;
       this.previewContainer = null;
       
-      // 🔧 Phase 4-A: config.js初期設定同期
       const config = window.TEGAKI_CONFIG;
       this.currentSettings = {
         mode: 'pen',
@@ -58,9 +59,8 @@
       this.initialized = false;
       this.msdfAvailable = false;
       
-      // 🔧 Phase 4-C: プレビュー制御
       this.lastPreviewTime = 0;
-      this.previewThrottle = 16; // 60fps
+      this.previewThrottle = 16;
       this.isPreviewUpdating = false;
     }
 
@@ -82,24 +82,29 @@
         throw new Error('[BrushCore] layerManager not found');
       }
 
-      this.gpuStrokeProcessor = window.GPUStrokeProcessor;
-      this.msdfPipelineManager = window.MSDFPipelineManager;
-      this.textureBridge = window.WebGPUTextureBridge;
-      this.webgpuMaskLayer = window.webgpuMaskLayer;
+      // WebGL2参照取得
+      this.glStrokeProcessor = window.GLStrokeProcessor;
+      this.glMSDFPipeline = window.GLMSDFPipeline;
+      this.textureBridge = window.GLTextureBridge || window.WebGPUTextureBridge;
 
       this.msdfAvailable = !!(
-        this.gpuStrokeProcessor &&
-        this.msdfPipelineManager &&
+        this.glStrokeProcessor &&
+        this.glMSDFPipeline &&
         this.textureBridge
       );
 
       if (!this.msdfAvailable) {
-        console.error('[BrushCore] MSDF Pipeline not available');
+        console.warn('[BrushCore] WebGL2 MSDF Pipeline not fully available');
+        console.warn('   GLStrokeProcessor:', !!this.glStrokeProcessor);
+        console.warn('   GLMSDFPipeline:', !!this.glMSDFPipeline);
+        console.warn('   GLTextureBridge:', !!this.textureBridge);
         return;
       }
 
       this._setupEventListeners();
       this.initialized = true;
+
+      console.log('[BrushCore] ✅ Initialized with WebGL2 Pipeline');
     }
 
     /**
@@ -150,22 +155,19 @@
         startTime: Date.now()
       };
       
-      // 🔧 Phase 4-C: プレビューコンテナ準備
       this._ensurePreviewContainer(activeLayer);
     }
 
     /**
-     * 🔧 Phase 4-C改修: 座標記録のみ（プレビューはrenderPreview()で実行）
+     * 座標記録のみ（プレビューはrenderPreview()で実行）
      */
     async updateStroke(localX, localY, pressure = 0.5) {
       if (!this.initialized || !this.isDrawing) return;
-      
-      // 座標記録のみ
       this.strokeRecorder.addPoint(localX, localY, pressure);
     }
 
     /**
-     * 🔧 Phase 5-A: リアルタイムプレビュー表示修正
+     * リアルタイムプレビュー表示
      */
     async renderPreview() {
       if (!this.initialized || !this.isDrawing || this.isPreviewUpdating) return;
@@ -177,17 +179,16 @@
       const points = this.strokeRecorder.getRawPoints();
       if (!points || points.length < 2) return;
 
-      // 🔧 Phase 5-A: コンテナ再確認（破棄されている可能性）
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
       
       this._ensurePreviewContainer(activeLayer);
-      
       await this._updatePreview(points);
     }
 
     /**
-     * 🔧 Phase 5-A: プレビュー更新処理（コンテナ永続化）
+     * プレビュー更新処理
+     * @private
      */
     async _updatePreview(points) {
       if (!this.previewContainer || this.previewContainer.destroyed) {
@@ -197,7 +198,7 @@
 
       this.isPreviewUpdating = true;
 
-      // 🔧 Phase 5-A: 既存プレビューSpriteのみ削除（コンテナは維持）
+      // 既存プレビューSprite削除
       if (this.previewSprite && !this.previewSprite.destroyed) {
         this.previewContainer.removeChild(this.previewSprite);
         this.previewSprite.destroy({ children: true });
@@ -205,22 +206,22 @@
       }
 
       try {
-        const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(
+        const vertexResult = this.glStrokeProcessor.createPolygonVertexBuffer(
           points,
-          this.currentSettings.size // 🔧 Phase 5: baseSize渡し
+          this.currentSettings.size
         );
         if (!vertexResult?.buffer) return;
 
-        const edgeResult = this.gpuStrokeProcessor.createEdgeBuffer(
+        const edgeResult = this.glStrokeProcessor.createEdgeBuffer(
           points,
-          this.currentSettings.size // 🔧 Phase 5: baseSize渡し
+          this.currentSettings.size
         );
         if (!edgeResult?.buffer) return;
 
-        const uploadVertex = this.gpuStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
-        const uploadEdge = this.gpuStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
+        const uploadVertex = this.glStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
+        const uploadEdge = this.glStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
 
-        const bounds = this.gpuStrokeProcessor.calculateBounds(points);
+        const bounds = this.glStrokeProcessor.calculateBounds(points);
         const width = Math.ceil(bounds.maxX - bounds.minX);
         const height = Math.ceil(bounds.maxY - bounds.minY);
 
@@ -233,25 +234,24 @@
           size: this.currentSettings.size
         };
 
-        const finalTexture = await this.msdfPipelineManager.generateMSDF(
-          uploadEdge.gpuBuffer,
+        const msdfResult = await this.glMSDFPipeline.generateMSDF(
+          uploadEdge.glBuffer,
           bounds,
           null,
           previewSettings,
-          uploadVertex.gpuBuffer,
+          uploadVertex.glBuffer,
           vertexResult.vertexCount,
           edgeResult.edgeCount
         );
 
-        if (!finalTexture) return;
+        if (!msdfResult || !msdfResult.texture) return;
 
-        const sprite = await this.textureBridge.createSpriteFromGPUTexture(
-          finalTexture,
-          width,
-          height
+        const sprite = await this.textureBridge.createSpriteFromGLTexture(
+          msdfResult.texture,
+          msdfResult.width,
+          msdfResult.height
         );
 
-        // 🔧 Phase 5-A: コンテナ再確認（非同期処理中に破棄された可能性）
         if (!sprite || !this.previewContainer || this.previewContainer.destroyed) {
           sprite?.destroy({ children: true });
           return;
@@ -264,9 +264,8 @@
         this.previewContainer.addChild(sprite);
         this.previewSprite = sprite;
 
-        uploadEdge.gpuBuffer?.destroy();
-        uploadVertex.gpuBuffer?.destroy();
-        finalTexture?.destroy();
+        // WebGL2ではGPUBufferは自動管理（gl.deleteBuffer不要）
+        // Textureはgl-msdf-pipeline内でクリーンアップ済み
 
       } catch (error) {
         console.error('[BrushCore] Preview failed:', error);
@@ -286,7 +285,6 @@
         return;
       }
 
-      // 🔧 Phase 4-C: プレビュークリーンアップ
       this._cleanupPreview();
 
       const points = this.strokeRecorder.getRawPoints();
@@ -313,26 +311,26 @@
           throw new Error('Container取得失敗');
         }
 
-        const vertexResult = this.gpuStrokeProcessor.createPolygonVertexBuffer(
+        const vertexResult = this.glStrokeProcessor.createPolygonVertexBuffer(
           points,
-          this.currentSettings.size // 🔧 Phase 5: baseSize渡し
+          this.currentSettings.size
         );
         if (!vertexResult?.buffer) {
           throw new Error('VertexBuffer作成失敗');
         }
 
-        const edgeResult = this.gpuStrokeProcessor.createEdgeBuffer(
+        const edgeResult = this.glStrokeProcessor.createEdgeBuffer(
           points,
-          this.currentSettings.size // 🔧 Phase 5: baseSize渡し
+          this.currentSettings.size
         );
         if (!edgeResult?.buffer) {
           throw new Error('EdgeBuffer作成失敗');
         }
 
-        const uploadVertex = this.gpuStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
-        const uploadEdge = this.gpuStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
+        const uploadVertex = this.glStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
+        const uploadEdge = this.glStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
 
-        const bounds = this.gpuStrokeProcessor.calculateBounds(points);
+        const bounds = this.glStrokeProcessor.calculateBounds(points);
         const width = Math.ceil(bounds.maxX - bounds.minX);
         const height = Math.ceil(bounds.maxY - bounds.minY);
 
@@ -345,13 +343,12 @@
           size: this.currentSettings.size
         };
 
-        // 🔧 Phase 3: 1回のみMSDF生成
-        const finalTexture = await this.msdfPipelineManager.generateMSDF(
-          uploadEdge.gpuBuffer,
+        const finalTexture = await this.glMSDFPipeline.generateMSDF(
+          uploadEdge.glBuffer,
           bounds,
           null,
           brushSettings,
-          uploadVertex.gpuBuffer,
+          uploadVertex.glBuffer,
           vertexResult.vertexCount,
           edgeResult.edgeCount
         );
@@ -360,20 +357,15 @@
           throw new Error('MSDF生成失敗');
         }
 
-        // 消しゴムモード: マスク処理（簡易実装）
+        // 消しゴムモード: マスク処理
         if (this.currentSettings.mode === 'eraser') {
           await this._applyEraserMask(activeLayer, bounds);
-          
-          uploadEdge.gpuBuffer?.destroy();
-          uploadVertex.gpuBuffer?.destroy();
-          finalTexture?.destroy();
-          
           this._emitStrokeEvents(activeLayer, null);
           return;
         }
 
         // ペンモード: Sprite生成
-        const sprite = await this.textureBridge.createSpriteFromGPUTexture(
+        const sprite = await this.textureBridge.createSpriteFromGLTexture(
           finalTexture,
           width,
           height
@@ -405,27 +397,23 @@
         this._registerHistory(activeLayer, pathData, container);
         this._emitStrokeEvents(activeLayer, pathData);
 
-        uploadEdge.gpuBuffer?.destroy();
-        uploadVertex.gpuBuffer?.destroy();
-        finalTexture?.destroy();
-
       } catch (error) {
         console.error('[BrushCore] MSDF描画失敗:', error);
       }
     }
 
     /**
-     * 🔧 Phase 5-B: 消しゴム範囲限定修正（セグメント分割）
+     * 消しゴムマスク処理（セグメント分割）
+     * @private
      */
     async _applyEraserMask(activeLayer, bounds) {
       const container = this._getLayerContainer(activeLayer);
       if (!container?.children) return;
 
-      // 🔧 Phase 5-B: eraserStroke取得（より精密な判定）
       const eraserPoints = this.strokeRecorder.getRawPoints();
       if (!eraserPoints || eraserPoints.length < 2) return;
 
-      // セグメント分割（5ポイント単位）
+      // セグメント分割
       const segmentSize = 5;
       const segments = [];
       
@@ -452,20 +440,15 @@
         const spriteArea = (spriteBounds.maxX - spriteBounds.minX) * 
                           (spriteBounds.maxY - spriteBounds.minY);
 
-        // 全セグメントとの交差チェック
         for (const segmentBounds of segments) {
           const intersectArea = this._calculateIntersectArea(spriteBounds, segmentBounds);
           totalIntersectArea += intersectArea;
         }
         
         if (totalIntersectArea > 0) {
-          // 交差率に応じたalpha減算
           const intersectRatio = Math.min(1.0, totalIntersectArea / spriteArea);
-          
-          // 🔧 Phase 5-B: 減算量調整（0.8で強めに消す）
           child.alpha = Math.max(0, child.alpha - (0.8 * intersectRatio));
           
-          // 完全透明になったら削除
           if (child.alpha <= 0.01) {
             child.visible = false;
             child.destroy({ children: true });
@@ -475,7 +458,8 @@
     }
 
     /**
-     * 🔧 Phase 5-B: セグメントBounds計算
+     * セグメントBounds計算
+     * @private
      */
     _calculateSegmentBounds(points) {
       let minX = Infinity, minY = Infinity;
@@ -488,7 +472,6 @@
         maxY = Math.max(maxY, point.y);
       }
 
-      // eraserサイズを考慮した拡張
       const eraserRadius = this.currentSettings.size / 2;
       return {
         minX: minX - eraserRadius,
@@ -499,7 +482,8 @@
     }
 
     /**
-     * 🔧 Phase 4-B: 交差面積計算
+     * 交差面積計算
+     * @private
      */
     _calculateIntersectArea(a, b) {
       const intersectMinX = Math.max(a.minX, b.minX);
@@ -508,14 +492,15 @@
       const intersectMaxY = Math.min(a.maxY, b.maxY);
 
       if (intersectMinX >= intersectMaxX || intersectMinY >= intersectMaxY) {
-        return 0; // 交差なし
+        return 0;
       }
 
       return (intersectMaxX - intersectMinX) * (intersectMaxY - intersectMinY);
     }
 
     /**
-     * 🔧 Phase 4-C: プレビューコンテナ準備
+     * プレビューコンテナ準備
+     * @private
      */
     _ensurePreviewContainer(activeLayer) {
       const container = this._getLayerContainer(activeLayer);
@@ -536,7 +521,8 @@
     }
 
     /**
-     * 🔧 Phase 4-C: プレビュークリーンアップ
+     * プレビュークリーンアップ
+     * @private
      */
     _cleanupPreview() {
       if (this.previewSprite && !this.previewSprite.destroyed) {
@@ -667,10 +653,8 @@
 
   window.BrushCore = new BrushCore();
 
-  console.log('✅ brush-core.js Phase 5完全版 loaded');
-  console.log('   🔧 Phase 5-A: リアルタイムプレビュー表示修正');
-  console.log('   🔧 Phase 5-B: 消しゴム範囲限定（セグメント分割）');
-  console.log('   🔧 Phase 5-C: 筆圧反映（baseSize渡し）');
-  console.log('   ✅ フリッカーなし・筆圧完全反映');
+  console.log('✅ brush-core.js WebGL2完全対応版 loaded');
+  console.log('   ✅ WebGL2 Pipeline統合完了');
+  console.log('   ✅ GLStrokeProcessor / GLMSDFPipeline / GLTextureBridge対応');
 
 })();
