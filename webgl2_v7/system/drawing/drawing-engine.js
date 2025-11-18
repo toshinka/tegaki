@@ -1,5 +1,5 @@
 // ================================================================================
-// drawing-engine.js - WebGL2移行版
+// drawing-engine.js - v8.14.0 WebGL2移行版（座標プロパティ名修正）
 // ================================================================================
 // 【親依存】
 // - coordinate-system.js（座標変換）
@@ -15,6 +15,12 @@
 // - PointerEvent受信・座標変換パイプライン実行
 // - BrushCoreへの描画命令委譲
 // - pendingPoints機構によるバッチ処理
+// ================================================================================
+// 【v8.14.0 修正内容】
+// 🔧 _transformPointerToLocal(): プロパティ名修正
+//    canvasCoords.x → canvasCoords.canvasX
+//    worldCoords.x → worldCoords.worldX
+//    localCoords.x → localCoords.localX
 // ================================================================================
 
 (function() {
@@ -188,7 +194,7 @@
 
     /**
      * 座標変換パイプライン
-     * ✅ 完全保持（GPU非依存）
+     * 🔧 v8.14.0: プロパティ名修正（canvasX, worldX, localX）
      * 
      * PointerEvent.clientX/Y
      * → screenClientToCanvas() [DPI補正]
@@ -205,7 +211,7 @@
       if (!canvasCoords) return null;
 
       // 2. Canvas → World
-      const worldCoords = coordSys.canvasToWorld(canvasCoords.x, canvasCoords.y);
+      const worldCoords = coordSys.canvasToWorld(canvasCoords.canvasX, canvasCoords.canvasY);
       if (!worldCoords) return null;
 
       // 3. World → Local
@@ -216,20 +222,20 @@
       }
 
       const localCoords = coordSys.worldToLocal(
-        worldCoords.x,
-        worldCoords.y,
+        worldCoords.worldX,
+        worldCoords.worldY,
         activeLayer
       );
 
       if (!localCoords) return null;
 
       return {
-        localX: localCoords.x,
-        localY: localCoords.y,
-        worldX: worldCoords.x,
-        worldY: worldCoords.y,
-        canvasX: canvasCoords.x,
-        canvasY: canvasCoords.y
+        localX: localCoords.localX,
+        localY: localCoords.localY,
+        worldX: worldCoords.worldX,
+        worldY: worldCoords.worldY,
+        canvasX: canvasCoords.canvasX,
+        canvasY: canvasCoords.canvasY
       };
     }
 
@@ -295,8 +301,8 @@
   // グローバル登録
   window.DrawingEngine = DrawingEngine;
 
-  console.log('✅ drawing-engine.js WebGL2移行版 loaded');
-  console.log('   🔧 WebGL2DrawingLayer参照対応');
+  console.log('✅ drawing-engine.js v8.14.0 (Phase 1修正版) loaded');
+  console.log('   🔧 座標プロパティ名修正: canvasX, worldX, localX');
   console.log('   ✅ 座標変換パイプライン完全保持');
   console.log('   ✅ pendingPoints機構維持');
 
