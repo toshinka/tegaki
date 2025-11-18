@@ -25,9 +25,6 @@ history.js:343 ✅ history.js Phase 4 mask snapshot対応完全版 loaded
 history.js:344    ✅ pushEraseMask() 実装
 history.js:345    ✅ beginAction/endAction/addPoint 実装
 webgl2-drawing-layer.js:238 ✅ webgl2-drawing-layer.js Phase 1 loaded
-gl-stroke-processor.js:363 ✅ gl-stroke-processor.js Phase 2完全版 loaded
-gl-stroke-processor.js:364    ✅ PerfectFreehand→VBO生成実装完了
-gl-stroke-processor.js:365    ✅ WebGPU版ロジック完全継承
 gl-msdf-pipeline.js:503 ✅ gl-msdf-pipeline.js Phase 5修正版 loaded
 gl-msdf-pipeline.js:504    ✅ generateMSDF戻り値: { texture, width, height }
 gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
@@ -56,6 +53,9 @@ vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
 vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
 vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
 vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
+brush-core.js:681 ✅ brush-core.js Phase 6統合修正版 loaded
+brush-core.js:682    ✅ MSDF戻り値 { texture, width, height } 対応
+brush-core.js:683    ✅ createSpriteFromGLTexture 呼び出し統一
 fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
 fill-tool.js:270    ❌ 独自WebGPU初期化を削除
 fill-tool.js:271    ✅ 既存インスタンス参照のみ
@@ -117,15 +117,15 @@ popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
 popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
-webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized Object
+webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized {maxTextureSize: 16384, extensions: Array(3)}
 core-initializer.js:187 [WebGL2] Drawing Layer initialized
-gl-stroke-processor.js:62 [GLStrokeProcessor] ✅ Initialized
+gl-stroke-processor.js:26 [GLStrokeProcessor] ✅ Initialized
 core-initializer.js:196 [WebGL2] GLStrokeProcessor initialized
 gl-msdf-pipeline.js:53 [GLMSDFPipeline] ✅ Initialized (Phase 5: サイズ情報返却対応)
 core-initializer.js:201 [WebGL2] GLMSDFPipeline initialized
 gl-texture-bridge.js:51 [GLTextureBridge] ✅ Initialized (PixiJS v8)
 core-initializer.js:209 [WebGL2] GLTextureBridge initialized
-gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized Object
+gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
 core-initializer.js:221 [WebGL2] GLMaskLayer initialized
 stroke-renderer.js:76 [StrokeRenderer] ✅ Initialized (WebGL2 mode)
 core-initializer.js:236 [WebGL2] StrokeRenderer initialized
@@ -135,7 +135,31 @@ core-initializer.js:356 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6)
 index.html:113 ✅ WebGL2初期化完了
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
+// ストロークを描いた後、コンソールで確認
 const points = window.strokeRecorder.getRawPoints();
-console.log('Points:', points.length, points[0]);
-VM222:2 Points: 2 {x: 497.5, y: 404.5, pressure: 0.5, tiltX: 0, tiltY: 0, …}
+console.log('Points:', points.length);
+
+const bounds = window.GLStrokeProcessor.calculateBounds(points);
+console.log('Bounds:', bounds);
+
+const result = window.GLStrokeProcessor.createPolygonVertexBuffer(points, 10);
+console.log('VBO:', result);
+VM318:3 Points: 0
+VM318:6 Bounds: {minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, …}
+gl-stroke-processor.js:33 [GLStrokeProcessor] Invalid points
+createPolygonVertexBuffer @ gl-stroke-processor.js:33
+（匿名） @ VM318:8
+VM318:9 VBO: null
+undefined
+// デバッグ用：BrushCoreの状態確認
+console.log('BrushCore initialized:', window.BrushCore.initialized);
+console.log('BrushCore isDrawing:', window.BrushCore.isDrawing);
+
+// strokeRecorderの状態確認
+console.log('strokeRecorder:', window.strokeRecorder);
+console.log('strokeRecorder points:', window.strokeRecorder.points.length);
+VM349:2 BrushCore initialized: true
+VM349:3 BrushCore isDrawing: false
+VM349:6 strokeRecorder: StrokeRecorder {pressureHandler: null, cameraSystem: null, points: Array(55), isRecording: false, strokeStartTime: 6960.399999976158, …}
+VM349:7 strokeRecorder points: 55
 undefined
