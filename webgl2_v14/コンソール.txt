@@ -1,75 +1,77 @@
- ✅ config.js v8.14.2 Phase 1改修版 loaded
-    🔧 PerfectFreehand設定リニア化
-    ✓ thinning: 0 (線の太り補正無効)
-    ✓ smoothing: 0 (補間最小化)
-    ✓ streamline: 0 (遅延補正なし)
- ✅ coordinate-system.js v8.14.0 (WebGL2 Phase 1) loaded
-    🔧 PixiJS v8 applyInverse() 対応
- ✅ data-models.js (backgroundColor追加版) loaded
- ✅ batch-api.js (Phase 6: History統合版) loaded
- ✅ popup-manager.js (quick-access除外対応版) loaded
- ✅ state-manager.js (Phase 8完全実装版) loaded
- ✅ settings-manager.js Phase 2 loaded
-    🔧 exportResolution 設定項目追加
- ✅ layer-transform.js Phase 6 loaded
-    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
- ✅ system/checker-utils.js 統一実装版 loaded
- ✅ layer-system.js Phase 8完成版 loaded
-    ✅ getLayerById() メソッド追加
-    ✅ LayerModel.id 確実取得保証
-    ✅ history.js との統合対応完了
- ✅ drawing-clipboard.js Phase 1 loaded
-    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
-    🎨 ポップアップ: レイヤーコピー、切り取り
- ✅ history.js Phase 4 mask snapshot対応完全版 loaded
-    ✅ pushEraseMask() 実装
-    ✅ beginAction/endAction/addPoint 実装
- ✅ webgl2-drawing-layer.js Phase 1 loaded
- [GLStrokeProcessor] ✅ Singleton instance created
- [GLMSDFPipeline] ✅ Singleton instance created
- ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
-    ✅ WebGLTexture → PIXI.Sprite変換実装完了
-    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
-    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
- ✅ gl-mask-layer.js Phase 6完全版 loaded
-    ✅ Circle mask rendering実装
-    ✅ Additive blend対応
-    ✅ Compose Pass統合準備完了
- ✅ pointer-handler.js Phase 1 loaded
-    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
-    🔧 EventEmitter風API実装（.on / .off）
- ✅ pressure-handler.js Phase 1 loaded
-    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
- ✅ stroke-recorder.js Phase 0 loaded
-    ✓ 自動初期化完了（initialize()不要）
-    ✓ Local座標記録専用（座標変換なし）
-    ✓ PerfectFreehand互換形式対応
- ✅ stroke-renderer.js (WebGL2移行版) loaded
-    🔧 WebGPU → WebGL2 参照変更完了
- ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
- ✅ brush-settings.js (Phase 3-D Clean) loaded
- ✅ BlendMode definitions loaded
- ✅ vector-operations.js Phase 1完全版 loaded
-    ✓ window.VectorOperations.generateStrokePolygon(points, size)
-    ✓ config.js perfectFreehand設定自動適用
-    🔥 PerfectFreehand統合基盤完成
- ✅ brush-core.js Phase 6統合修正版 loaded
-    ✅ MSDF戻り値 { texture, width, height } 対応
-    ✅ createSpriteFromGLTexture 呼び出し統一
- ✅ fill-tool.js (WebGPU競合修正版) loaded
-    ❌ 独自WebGPU初期化を削除
-    ✅ 既存インスタンス参照のみ
- ✅ quick-export-ui.js (無効化版) loaded
- ✅ export-manager.js v8.33.0 loaded
-    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
- ✅ png-exporter.js v8.29.0 loaded
-    🔧 generatePreview()メソッド追加
-    🔧 エラーハンドリング強化
-    🔧 Blob生成の確実性向上
- ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
-    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
- ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
-    ⚠️ 実装は将来フェーズで追加予定
+config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
+config.js:508    🔧 PerfectFreehand設定リニア化
+config.js:509    ✓ thinning: 0 (線の太り補正無効)
+config.js:510    ✓ smoothing: 0 (補間最小化)
+config.js:511    ✓ streamline: 0 (遅延補正なし)
+coordinate-system.js:438 ✅ coordinate-system.js v8.14.0 (WebGL2 Phase 1) loaded
+coordinate-system.js:439    🔧 PixiJS v8 applyInverse() 対応
+data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
+settings-manager.js:231 ✅ settings-manager.js Phase 2 loaded
+settings-manager.js:232    🔧 exportResolution 設定項目追加
+layer-transform.js:1011 ✅ layer-transform.js Phase 6 loaded
+layer-transform.js:1012    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
+layer-system.js:1370 ✅ layer-system.js Phase 8完成版 loaded
+layer-system.js:1371    ✅ getLayerById() メソッド追加
+layer-system.js:1372    ✅ LayerModel.id 確実取得保証
+layer-system.js:1373    ✅ history.js との統合対応完了
+drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
+drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
+history.js:343 ✅ history.js Phase 4 mask snapshot対応完全版 loaded
+history.js:344    ✅ pushEraseMask() 実装
+history.js:345    ✅ beginAction/endAction/addPoint 実装
+webgl2-drawing-layer.js:238 ✅ webgl2-drawing-layer.js Phase 1 loaded
+gl-stroke-processor.js:343 [GLStrokeProcessor] ✅ Singleton instance created
+gl-msdf-pipeline.js:635 [GLMSDFPipeline] ✅ Phase 1.6完全修正版 loaded
+gl-msdf-pipeline.js:636    ✅ boundsローカル座標 [0, width/height] → NDC変換
+gl-msdf-pipeline.js:637    ✅ uBoundsMin/uBoundsSize削除（不要）
+gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
+gl-mask-layer.js:474    ✅ Circle mask rendering実装
+gl-mask-layer.js:475    ✅ Additive blend対応
+gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
+pointer-handler.js:252 ✅ pointer-handler.js Phase 1 loaded
+pointer-handler.js:253    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
+pointer-handler.js:254    🔧 EventEmitter風API実装（.on / .off）
+pressure-handler.js:144 ✅ pressure-handler.js Phase 1 loaded
+pressure-handler.js:145    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
+stroke-recorder.js:334 ✅ stroke-recorder.js Phase 0 loaded
+stroke-recorder.js:335    ✓ 自動初期化完了（initialize()不要）
+stroke-recorder.js:336    ✓ Local座標記録専用（座標変換なし）
+stroke-recorder.js:337    ✓ PerfectFreehand互換形式対応
+stroke-renderer.js:199 ✅ stroke-renderer.js (WebGL2移行版) loaded
+stroke-renderer.js:200    🔧 WebGPU → WebGL2 参照変更完了
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+blend-modes.js:24 ✅ BlendMode definitions loaded
+vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
+vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
+vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
+brush-core.js:695 ✅ brush-core.js Phase 2フリッカー解消版 loaded
+brush-core.js:696    ✅ プレビュー更新: 100ms間隔（10fps相当）
+brush-core.js:697    ✅ 最小ポイント数: 3ポイント
+fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
+fill-tool.js:270    ❌ 独自WebGPU初期化を削除
+fill-tool.js:271    ✅ 既存インスタンス参照のみ
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
+png-exporter.js:258    🔧 Blob生成の確実性向上
+webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
 psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
 apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
 mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
@@ -117,15 +119,15 @@ popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
 popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
-webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized Object
+webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized {maxTextureSize: 16384, extensions: Array(3)}
 core-initializer.js:187 [WebGL2] Drawing Layer initialized
-gl-stroke-processor.js:48 [GLStrokeProcessor] ✅ Initialized
+gl-stroke-processor.js:48 [GLStrokeProcessor] ✅ Initialized (Phase 1.6)
 core-initializer.js:196 [WebGL2] GLStrokeProcessor initialized
-gl-msdf-pipeline.js:62 [GLMSDFPipeline] ✅ Initialized
+gl-msdf-pipeline.js:63 [GLMSDFPipeline] ✅ Initialized (Phase 1.6)
 core-initializer.js:201 [WebGL2] GLMSDFPipeline initialized
 gl-texture-bridge.js:51 [GLTextureBridge] ✅ Initialized (PixiJS v8)
 core-initializer.js:209 [WebGL2] GLTextureBridge initialized
-gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized Object
+gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
 core-initializer.js:221 [WebGL2] GLMaskLayer initialized
 stroke-renderer.js:76 [StrokeRenderer] ✅ Initialized (WebGL2 mode)
 core-initializer.js:236 [WebGL2] StrokeRenderer initialized
@@ -135,3 +137,267 @@ core-initializer.js:356 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6)
 index.html:113 ✅ WebGL2初期化完了
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
+/**
+ * 座標デバッグツール
+ * ブラウザコンソールで実行してください
+ */
+
+// グローバルにデバッグツールを登録
+window.CoordinateDebug = {
+  
+  /**
+   * 次回のストローク描画をデバッグモードで実行
+   */
+  enableStrokeDebug() {
+    console.log('🔍 次回のストローク描画をデバッグモードで実行します');
+    
+    // BrushCoreの_finalizeMSDFStrokeをフック
+    const originalFinalize = window.BrushCore._finalizeMSDFStroke.bind(window.BrushCore);
+    
+    window.BrushCore._finalizeMSDFStroke = async function(points, activeLayer) {
+      console.group('📊 ストローク座標デバッグ');
+      
+      // 1. ポイント情報
+      console.log('1️⃣ ストロークポイント数:', points.length);
+      console.log('   最初のポイント:', points[0]);
+      console.log('   最後のポイント:', points[points.length - 1]);
+      
+      // 2. Bounds計算
+      const bounds = window.GLStrokeProcessor.calculateBounds(points);
+      console.log('2️⃣ 計算されたBounds:');
+      console.log('   minX:', bounds.minX, 'minY:', bounds.minY);
+      console.log('   maxX:', bounds.maxX, 'maxY:', bounds.maxY);
+      console.log('   width:', bounds.width, 'height:', bounds.height);
+      
+      // 3. VertexBuffer生成
+      const vertexResult = window.GLStrokeProcessor.createPolygonVertexBuffer(
+        points,
+        this.currentSettings.size
+      );
+      
+      if (vertexResult) {
+        console.log('3️⃣ VertexBuffer情報:');
+        console.log('   頂点数:', vertexResult.vertexCount);
+        console.log('   バッファサイズ:', vertexResult.buffer.length);
+        
+        // 最初の頂点を表示
+        const first = {
+          x: vertexResult.buffer[0],
+          y: vertexResult.buffer[1]
+        };
+        console.log('   最初の頂点座標:', first);
+        
+        // boundsとの比較
+        console.log('   最初の頂点 vs bounds.minX:', first.x - bounds.minX);
+        console.log('   最初の頂点 vs bounds.minY:', first.y - bounds.minY);
+      }
+      
+      // 4. Sprite配置位置
+      const result = await originalFinalize.call(this, points, activeLayer);
+      
+      // Sprite情報を取得
+      const container = this._getLayerContainer(activeLayer);
+      if (container && container.children.length > 0) {
+        const lastChild = container.children[container.children.length - 1];
+        if (lastChild instanceof PIXI.Sprite) {
+          console.log('4️⃣ Sprite配置情報:');
+          console.log('   sprite.x:', lastChild.x);
+          console.log('   sprite.y:', lastChild.y);
+          console.log('   sprite.width:', lastChild.width);
+          console.log('   sprite.height:', lastChild.height);
+          
+          console.log('5️⃣ 座標のズレ検証:');
+          console.log('   sprite.x == bounds.minX:', lastChild.x === bounds.minX);
+          console.log('   sprite.y == bounds.minY:', lastChild.y === bounds.minY);
+          console.log('   差分X:', lastChild.x - bounds.minX);
+          console.log('   差分Y:', lastChild.y - bounds.minY);
+        }
+      }
+      
+      console.groupEnd();
+      
+      // 元の関数に戻す
+      window.BrushCore._finalizeMSDFStroke = originalFinalize;
+      
+      return result;
+    };
+  },
+  
+  /**
+   * 座標変換パイプライン全体をテスト
+   */
+  testCoordinateTransform(screenX, screenY) {
+    console.group('🔄 座標変換パイプラインテスト');
+    console.log('入力: Screen座標', { screenX, screenY });
+    
+    const coord = window.CoordinateSystem;
+    const camera = window.cameraSystem;
+    
+    // Step 1: Screen → Canvas
+    const canvas = coord.screenClientToCanvas(screenX, screenY);
+    console.log('1️⃣ Canvas座標:', canvas);
+    
+    // Step 2: Canvas → World
+    const world = coord.canvasToWorld(canvas.x, canvas.y);
+    console.log('2️⃣ World座標:', world);
+    
+    // Step 3: World → Local (Active Layer)
+    const activeLayer = window.layerManager.getActiveLayer();
+    if (activeLayer) {
+      const container = window.BrushCore._getLayerContainer(activeLayer);
+      if (container) {
+        const local = coord.worldToLocal(world.x, world.y, container);
+        console.log('3️⃣ Local座標:', local);
+        
+        console.log('📊 変換サマリー:');
+        console.log('   Screen → Canvas:', 
+          `(${screenX}, ${screenY}) → (${canvas.x.toFixed(2)}, ${canvas.y.toFixed(2)})`);
+        console.log('   Canvas → World:', 
+          `(${canvas.x.toFixed(2)}, ${canvas.y.toFixed(2)}) → (${world.x.toFixed(2)}, ${world.y.toFixed(2)})`);
+        console.log('   World → Local:', 
+          `(${world.x.toFixed(2)}, ${world.y.toFixed(2)}) → (${local.x.toFixed(2)}, ${local.y.toFixed(2)})`);
+      }
+    }
+    
+    console.groupEnd();
+  },
+  
+  /**
+   * 現在の座標系設定を表示
+   */
+  showCoordinateState() {
+    console.group('⚙️ 座標系現在状態');
+    
+    const camera = window.cameraSystem;
+    const worldContainer = window.worldContainer;
+    
+    console.log('Camera状態:');
+    console.log('   zoom:', camera.zoom);
+    console.log('   panX:', camera.panX);
+    console.log('   panY:', camera.panY);
+    
+    if (worldContainer) {
+      console.log('WorldContainer Transform:');
+      console.log('   position:', worldContainer.position.x, worldContainer.position.y);
+      console.log('   scale:', worldContainer.scale.x, worldContainer.scale.y);
+      console.log('   rotation:', worldContainer.rotation);
+    }
+    
+    const activeLayer = window.layerManager?.getActiveLayer();
+    if (activeLayer) {
+      const container = window.BrushCore._getLayerContainer(activeLayer);
+      console.log('Active Layer Container:');
+      console.log('   position:', container?.position?.x, container?.position?.y);
+      console.log('   scale:', container?.scale?.x, container?.scale?.y);
+      console.log('   rotation:', container?.rotation);
+    }
+    
+    console.groupEnd();
+  },
+  
+  /**
+   * GLMSDFPipelineのUniform値を確認
+   */
+  inspectMSDFUniforms() {
+    console.group('🔍 MSDF Uniform検証');
+    console.log('次回のストローク描画時にUniform値をログ出力します');
+    
+    const pipeline = window.GLMSDFPipeline;
+    const originalDrawStroke = pipeline._drawStroke.bind(pipeline);
+    
+    pipeline._drawStroke = function(program, vbo, vertexCount, bounds, resolution) {
+      console.log('📐 _drawStroke() 呼び出し:');
+      console.log('   vertexCount:', vertexCount);
+      console.log('   bounds:', bounds);
+      console.log('   resolution:', resolution);
+      
+      // Uniform値を取得して表示
+      const gl = this.gl;
+      gl.useProgram(program);
+      
+      const uResolution = gl.getUniformLocation(program, 'uResolution');
+      const uBoundsMin = gl.getUniformLocation(program, 'uBoundsMin');
+      const uBoundsSize = gl.getUniformLocation(program, 'uBoundsSize');
+      
+      console.log('   Uniform Locations:');
+      console.log('     uResolution:', uResolution);
+      console.log('     uBoundsMin:', uBoundsMin);
+      console.log('     uBoundsSize:', uBoundsSize);
+      
+      // 元の関数実行
+      const result = originalDrawStroke.call(this, program, vbo, vertexCount, bounds, resolution);
+      
+      // 元に戻す
+      pipeline._drawStroke = originalDrawStroke;
+      console.groupEnd();
+      
+      return result;
+    };
+    
+    console.groupEnd();
+  }
+};
+
+console.log('✅ 座標デバッグツール読み込み完了');
+console.log('📖 使い方:');
+console.log('  1. CoordinateDebug.enableStrokeDebug()  - 次回ストローク描画をデバッグ');
+console.log('  2. CoordinateDebug.testCoordinateTransform(x, y)  - 座標変換テスト');
+console.log('  3. CoordinateDebug.showCoordinateState()  - 現在の座標系状態表示');
+console.log('  4. CoordinateDebug.inspectMSDFUniforms()  - MSDF Uniform検証');
+VM172:202 ✅ 座標デバッグツール読み込み完了
+VM172:203 📖 使い方:
+VM172:204   1. CoordinateDebug.enableStrokeDebug()  - 次回ストローク描画をデバッグ
+VM172:205   2. CoordinateDebug.testCoordinateTransform(x, y)  - 座標変換テスト
+VM172:206   3. CoordinateDebug.showCoordinateState()  - 現在の座標系状態表示
+VM172:207   4. CoordinateDebug.inspectMSDFUniforms()  - MSDF Uniform検証
+undefined
+CoordinateDebug.showCoordinateState()
+VM172:130 ⚙️ 座標系現在状態
+VM172:135 Camera状態:
+VM172:136    zoom: undefined
+VM172:137    panX: undefined
+VM172:138    panY: undefined
+VM172:150 Active Layer Container:
+VM172:151    position: 0 0
+VM172:152    scale: 1 1
+VM172:153    rotation: 0
+undefined
+CoordinateDebug.enableStrokeDebug()
+VM172:13 🔍 次回のストローク描画をデバッグモードで実行します
+undefined
+VM172:19 📊 ストローク座標デバッグ
+VM172:22 1️⃣ ストロークポイント数: 18
+VM172:23    最初のポイント: {x: 148.5, y: 324, pressure: 0.5, tiltX: 0, tiltY: 0, …}
+VM172:24    最後のポイント: {x: 193, y: 326.5, pressure: 0.5, tiltX: 0, tiltY: 0, …}
+VM172:28 2️⃣ 計算されたBounds:
+VM172:29    minX: 128.5 minY: 304
+VM172:30    maxX: 213 maxY: 346.5
+VM172:31    width: 84.5 height: 42.5
+VM172:40 3️⃣ VertexBuffer情報:
+VM172:41    頂点数: 183
+VM172:42    バッファサイズ: 1281
+VM172:49    最初の頂点座標: {x: 10.000499725341797, y: 5}
+VM172:52    最初の頂点 vs bounds.minX: -118.4995002746582
+VM172:53    最初の頂点 vs bounds.minY: -299
+VM172:64 4️⃣ Sprite配置情報:
+VM172:65    sprite.x: 128.5
+VM172:66    sprite.y: 304
+VM172:67    sprite.width: 512
+VM172:68    sprite.height: 512
+VM172:70 5️⃣ 座標のズレ検証:
+VM172:71    sprite.x == bounds.minX: true
+VM172:72    sprite.y == bounds.minY: true
+VM172:73    差分X: 0
+VM172:74    差分Y: 0
+CoordinateDebug.inspectMSDFUniforms()
+VM172:163 🔍 MSDF Uniform検証
+VM172:164 次回のストローク描画時にUniform値をログ出力します
+undefined
+VM172:170 📐 _drawStroke() 呼び出し:
+VM172:171    vertexCount: 126
+VM172:172    bounds: {minX: 121.85763888888889, minY: 272.8576388888889, maxX: 167.64236111111111, maxY: 314.6423611111111, width: 45.78472222222222, …}
+VM172:173    resolution: {width: 512, height: 512}
+VM172:183    Uniform Locations:
+VM172:184      uResolution: WebGLUniformLocation {}
+VM172:185      uBoundsMin: null
+VM172:186      uBoundsSize: null

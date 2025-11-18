@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - WebGL2完全対応版 (Phase 6 - 統合修正版)
+ * brush-core.js - Phase 2フリッカー解消版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -17,9 +17,11 @@
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
  *   - ui/quick-access-popup.js (設定変更イベント発火元)
  * 
- * 【Phase 6修正内容】
- * ✅ MSDF Pipeline戻り値 { texture, width, height } に対応
- * ✅ Texture Bridge createSpriteFromGLTexture(texture, width, height) 呼び出し統一
+ * 🔧 Phase 2改修内容:
+ *   ✅ プレビュー更新を100ms間隔に延長（16ms → 100ms）
+ *   ✅ 最小ポイント数を3に設定（2 → 3）
+ *   ✅ プレビュー描画を同期的に実行（await削除）
+ *   ✅ 不要なコンソールログ削除
  * 
  * ================================================================================
  */
@@ -54,9 +56,11 @@
       this.msdfAvailable = false;
       this.maskAvailable = false;
       
+      // ✅ Phase 2修正: プレビュー更新を100msに延長
       this.lastPreviewTime = 0;
-      this.previewThrottle = 16;
+      this.previewThrottle = 100;  // 16ms → 100ms (10fps相当)
       this.isPreviewUpdating = false;
+      this.minPreviewPoints = 3;   // 最小ポイント数
     }
 
     async init() {
@@ -156,6 +160,10 @@
       this.strokeRecorder.addPoint(localX, localY, pressure);
     }
 
+    /**
+     * プレビュー描画
+     * ✅ Phase 2修正: 100ms間隔、最小3ポイント
+     */
     async renderPreview() {
       if (!this.initialized || !this.isDrawing || this.isPreviewUpdating) return;
       
@@ -164,15 +172,24 @@
       this.lastPreviewTime = now;
 
       const points = this.strokeRecorder.getRawPoints();
-      if (!points || points.length < 2) return;
+      
+      // ✅ Phase 2修正: 最小ポイント数を3に
+      if (!points || points.length < this.minPreviewPoints) return;
 
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
       
       this._ensurePreviewContainer(activeLayer);
-      await this._updatePreview(points);
+      
+      // ✅ Phase 2修正: 同期的に実行（awaitなし）
+      this._updatePreview(points);
     }
 
+    /**
+     * プレビュー更新（内部処理）
+     * ✅ Phase 2修正: 非同期フラグ管理の最適化
+     * @private
+     */
     async _updatePreview(points) {
       if (!this.previewContainer || this.previewContainer.destroyed) {
         return;
@@ -180,6 +197,7 @@
 
       this.isPreviewUpdating = true;
 
+      // 既存プレビューを削除
       if (this.previewSprite && !this.previewSprite.destroyed) {
         this.previewContainer.removeChild(this.previewSprite);
         this.previewSprite.destroy({ children: true });
@@ -215,7 +233,6 @@
           size: this.currentSettings.size
         };
 
-        // Phase 6修正: generateMSDFは { texture, width, height } を返す
         const msdfResult = await this.glMSDFPipeline.generateMSDF(
           uploadEdge.glBuffer,
           bounds,
@@ -228,7 +245,6 @@
 
         if (!msdfResult || !msdfResult.texture) return;
 
-        // Phase 6修正: createSpriteFromGLTexture(texture, width, height)
         const sprite = await this.textureBridge.createSpriteFromGLTexture(
           msdfResult.texture,
           msdfResult.width,
@@ -323,7 +339,6 @@
           size: this.currentSettings.size
         };
 
-        // Phase 6修正: generateMSDFは { texture, width, height } を返す
         const finalTexture = await this.glMSDFPipeline.generateMSDF(
           uploadEdge.glBuffer,
           bounds,
@@ -344,7 +359,6 @@
           return;
         }
 
-        // Phase 6修正: createSpriteFromGLTexture(texture, width, height)
         const sprite = await this.textureBridge.createSpriteFromGLTexture(
           finalTexture.texture,
           finalTexture.width,
@@ -678,8 +692,8 @@
   }
 
   window.BrushCore = new BrushCore();
-  console.log('✅ brush-core.js Phase 6統合修正版 loaded');
-  console.log('   ✅ MSDF戻り値 { texture, width, height } 対応');
-  console.log('   ✅ createSpriteFromGLTexture 呼び出し統一');
+  console.log('✅ brush-core.js Phase 2フリッカー解消版 loaded');
+  console.log('   ✅ プレビュー更新: 100ms間隔（10fps相当）');
+  console.log('   ✅ 最小ポイント数: 3ポイント');
 
 })();
