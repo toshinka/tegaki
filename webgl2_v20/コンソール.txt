@@ -1,11 +1,11 @@
-config.js:509 ✅ config.js v8.14.3 Phase 1.7 筆圧対応版 loaded
-config.js:510    🔧 thinning: 0.7 (筆圧による太さ変化有効)
-config.js:511    🔧 smoothing: 0.4 (適度な補間)
-config.js:512    🔧 streamline: 0.3 (安定化)
-coordinate-system.js:333 ✅ coordinate-system.js Phase 1.1 座標ズレ修正版 loaded
-coordinate-system.js:334    🔧 worldContainer.updateTransform()保証
-coordinate-system.js:335    🔧 NaN/Infinity検出追加
-coordinate-system.js:336    🔧 無限ループ防止実装
+ ✅ config.js v8.14.3 Phase 1.7 筆圧対応版 loaded
+    🔧 thinning: 0.7 (筆圧による太さ変化有効)
+    🔧 smoothing: 0.4 (適度な補間)
+    🔧 streamline: 0.3 (安定化)
+ ✅ coordinate-system.js Phase 1.1 座標ズレ修正版 loaded
+    🔧 worldContainer.updateTransform()保証
+    🔧 NaN/Infinity検出追加
+    🔧 無限ループ防止実装
  ✅ data-models.js (backgroundColor追加版) loaded
  ✅ batch-api.js (Phase 6: History統合版) loaded
  ✅ popup-manager.js (quick-access除外対応版) loaded
@@ -72,10 +72,10 @@ coordinate-system.js:336    🔧 無限ループ防止実装
     🔧 Blob生成の確実性向上
  ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
     ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
-psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
-psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
-psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
-apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+ ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+    ⚠️ 実装は将来フェーズで追加予定
+    ✓ エラーメッセージで開発中を通知
+ ✅ apng-exporter.js v8.31.0 loaded
 mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
 dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
 dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
@@ -112,11 +112,6 @@ core-engine.js:769    🔧 Master Loop: pointer → preview → render
 index.html:111 🚀 WebGL2 MSDF版 起動中...
 drawing-engine.js:477 [DrawingEngine] BrushCore not available
 setBrushSettings @ drawing-engine.js:477
-CoreEngine @ core-engine.js:163
-initialize @ core-initializer.js:298
-await in initialize
-initialize @ core-initializer.js:502
-（匿名） @ index.html:112
 popup-manager.js:16 ✅ PopupManager initialized
 popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
 popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
@@ -128,28 +123,22 @@ popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
 popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
-webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized {maxTextureSize: 16384, extensions: Array(3)}
-core-initializer.js:187 [WebGL2] Drawing Layer initialized
+webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized Object
+core-initializer.js:189 [WebGL2] Drawing Layer initialized
 gl-stroke-processor.js:48 [GLStrokeProcessor] ✅ Initialized (Phase 1.6)
-core-initializer.js:196 [WebGL2] GLStrokeProcessor initialized
+core-initializer.js:198 [WebGL2] GLStrokeProcessor initialized
 gl-msdf-pipeline.js:66 [GLMSDFPipeline] ✅ Initialized (Phase 1.8)
-core-initializer.js:201 [WebGL2] GLMSDFPipeline initialized
+core-initializer.js:203 [WebGL2] GLMSDFPipeline initialized
 gl-texture-bridge.js:51 [GLTextureBridge] ✅ Initialized (PixiJS v8)
-core-initializer.js:209 [WebGL2] GLTextureBridge initialized
-gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
-core-initializer.js:221 [WebGL2] GLMaskLayer initialized
+core-initializer.js:211 [WebGL2] GLTextureBridge initialized
+gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized Object
+core-initializer.js:223 [WebGL2] GLMaskLayer initialized
 stroke-renderer.js:76 [StrokeRenderer] ✅ Initialized (WebGL2 mode)
-core-initializer.js:236 [WebGL2] StrokeRenderer initialized
-core-initializer.js:238 [WebGL2] ✅ Phase 6 initialization complete
-core-initializer.js:345 [App] Re-initializing BrushCore with WebGL2 components
-core-initializer.js:356 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6)
+core-initializer.js:238 [WebGL2] StrokeRenderer initialized
+core-initializer.js:240 [WebGL2] ✅ Phase 6 initialization complete
+core-initializer.js:347 [App] Re-initializing BrushCore with WebGL2 components
+core-initializer.js:383 [App] BrushCore already initialized, components updated
+core-initializer.js:386 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6.1) Object
 index.html:113 ✅ WebGL2初期化完了
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-// デバッグモード有効化
-window.CoordinateSystem.setDebugMode(true);
-
-// ペン描画テスト
-// → コンソールログで座標変換の各ステップを確認
-coordinate-system.js:326 [CoordinateSystem] Debug mode: ON
-undefined

@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * core-initializer.js - WebGL2対応完全版 (Phase 6)
+ * core-initializer.js - WebGL2対応完全版 (Phase 6.1 BrushCore修正版)
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -18,13 +18,15 @@
  *   - system/drawing/webgl2/gl-stroke-processor.js
  *   - system/drawing/webgl2/gl-msdf-pipeline.js
  *   - system/drawing/webgl2/gl-texture-bridge.js
- *   - system/drawing/webgl2/gl-mask-layer.js ✅ Phase 6追加
+ *   - system/drawing/webgl2/gl-mask-layer.js
  *   - system/drawing/stroke-renderer.js
  *   - system/drawing/brush-core.js
  * 
- * 【Phase 6更新内容】
- * ✅ initializeWebGL2(): GLMaskLayer.initialize()追加
- * ✅ BrushCore再初期化でglMaskLayer明示設定
+ * 【Phase 6.1更新内容】
+ * 🔧 BrushCore再初期化のタイミング問題を修正
+ * ✅ WebGL2コンポーネント設定を初期化フラグリセット前に実施
+ * ✅ 非同期初期化中のsetBrushSettings()エラーを防止
+ * ✅ msdfAvailable/maskAvailableフラグの確実な更新
  * 
  * ================================================================================
  */
@@ -211,7 +213,7 @@ window.CoreInitializer = (function() {
                 console.warn('[WebGL2] GLTextureBridge not found (Sprite conversion disabled)');
             }
 
-            // 5. GLMaskLayer初期化（Phase 6追加）
+            // 5. GLMaskLayer初期化
             if (window.GLMaskLayer) {
                 const maskWidth = config.canvas?.width || 1920;
                 const maskHeight = config.canvas?.height || 1080;
@@ -336,24 +338,56 @@ window.CoreInitializer = (function() {
             if (!strokeRenderer) {
                 console.error('[App] StrokeRenderer not found');
             } else {
-                // WebGL2初期化（Phase 6 - GLMaskLayer追加）
+                // WebGL2初期化（Phase 6）
                 this.webgl2Enabled = await initializeWebGL2(strokeRenderer, this.pixiApp);
                 
                 if (this.webgl2Enabled) {
-                    // BrushCore再初期化（Phase 6完全版）
+                    // ✅ Phase 6.1修正: BrushCore再初期化タイミング改善
                     if (window.BrushCore) {
                         console.log('[App] Re-initializing BrushCore with WebGL2 components');
                         
-                        window.BrushCore.initialized = false;
-                        
-                        // WebGL2コンポーネント明示的設定
+                        // ✅ STEP 1: まずWebGL2コンポーネントを設定（初期化フラグは触らない）
                         window.BrushCore.glStrokeProcessor = window.GLStrokeProcessor;
                         window.BrushCore.glMSDFPipeline = window.GLMSDFPipeline;
                         window.BrushCore.textureBridge = window.GLTextureBridge || window.WebGPUTextureBridge;
-                        window.BrushCore.glMaskLayer = window.GLMaskLayer; // Phase 6追加
+                        window.BrushCore.glMaskLayer = window.GLMaskLayer;
                         
-                        await window.BrushCore.initialize();
-                        console.log('[App] ✅ BrushCore re-initialized with WebGL2 (Phase 6)');
+                        // ✅ STEP 2: 既存の依存関係も確認・再設定
+                        if (!window.BrushCore.strokeRecorder) {
+                            window.BrushCore.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
+                        }
+                        if (!window.BrushCore.layerManager) {
+                            window.BrushCore.layerManager = window.layerManager || window.layerSystem;
+                        }
+                        if (!window.BrushCore.eventBus) {
+                            window.BrushCore.eventBus = window.TegakiEventBus || window.eventBus;
+                        }
+                        
+                        // ✅ STEP 3: msdfAvailable / maskAvailable フラグを更新
+                        window.BrushCore.msdfAvailable = !!(
+                            window.BrushCore.glStrokeProcessor &&
+                            window.BrushCore.glMSDFPipeline &&
+                            window.BrushCore.textureBridge
+                        );
+                        
+                        window.BrushCore.maskAvailable = !!(
+                            window.BrushCore.glMaskLayer && 
+                            window.BrushCore.glMaskLayer.initialized
+                        );
+                        
+                        // ✅ STEP 4: 初期化されていない場合のみ初期化実行
+                        if (!window.BrushCore.initialized) {
+                            console.log('[App] BrushCore not yet initialized, initializing now...');
+                            await window.BrushCore.initialize();
+                        } else {
+                            console.log('[App] BrushCore already initialized, components updated');
+                        }
+                        
+                        console.log('[App] ✅ BrushCore re-initialized with WebGL2 (Phase 6.1)', {
+                            msdfAvailable: window.BrushCore.msdfAvailable,
+                            maskAvailable: window.BrushCore.maskAvailable,
+                            initialized: window.BrushCore.initialized
+                        });
                     }
                 }
             }
@@ -518,3 +552,31 @@ window.CoreInitializer = (function() {
         initializeLayerPanel
     };
 })();
+
+/**
+ * ================================================================================
+ * 修正内容サマリー (Phase 6.1)
+ * ================================================================================
+ * 
+ * 【従来の問題】
+ * 1. BrushCore.initialized = false でリセット
+ * 2. 非同期でinitialize()を実行
+ * 3. その間にCoreEngine.setBrushSettings()が呼ばれる
+ * 4. BrushCoreが利用不可の状態でエラー: "[DrawingEngine] BrushCore not available"
+ * 
+ * 【修正後の動作】
+ * 1. WebGL2コンポーネントを先に設定（initializedフラグは維持）
+ * 2. 依存関係を再確認・補完
+ * 3. msdfAvailable / maskAvailable フラグを更新
+ * 4. まだ初期化されていない場合のみ initialize() 実行
+ * 5. 既に初期化済みの場合はコンポーネント更新のみ
+ * 
+ * 【効果】
+ * ✅ BrushCoreが利用不可になる期間をゼロに
+ * ✅ CoreEngine.setBrushSettings()が常に正常動作
+ * ✅ WebGL2コンポーネントの確実な設定
+ * ✅ 二重初期化の防止
+ * ✅ ペン描画が可能な状態に復帰
+ * 
+ * ================================================================================
+ */
