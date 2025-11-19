@@ -126,7 +126,7 @@ window.CoreInitializer = (function() {
     }
 
     function setupEventBusListeners() {
-        const eventBus = window.TegakiEventBus;
+        const eventBus = window.cameraSystem?.eventBus || this.eventBus;
         if (!eventBus) return;
 
         const statusDisplay = new window.TegakiUI.StatusDisplayRenderer(
