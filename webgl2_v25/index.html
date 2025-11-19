@@ -8,7 +8,7 @@
 </head>
 <body>
     <!-- WebGL2 Canvas (webgpu-canvas IDを流用) -->
-    <canvas id="webgpu-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;pointer-events:auto;touch-action:none;z-index:10;display:block;"></canvas>
+    <canvas id="webgl2-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;pointer-events:auto;touch-action:none;z-index:10;display:block;"></canvas>
     
     <div id="app"></div>
 
@@ -48,10 +48,10 @@
     <script src="system/animation-system.js"></script>
 
     <!-- WebGL2 Base -->
-    <script src="system/drawing/webgl2/webgl2-drawing-layer.js"></script>
-    <script src="system/drawing/webgl2/gl-stroke-processor.js"></script>
-    <script src="system/drawing/webgl2/gl-msdf-pipeline.js"></script>
     <script src="system/drawing/webgl2/gl-texture-bridge.js"></script>
+    <script src="system/drawing/webgl2/gl-msdf-pipeline.js"></script>
+    <script src="system/drawing/webgl2/gl-stroke-processor.js"></script>
+    <script src="system/drawing/webgl2/webgl2-drawing-layer.js"></script>
     <script src="system/drawing/webgl2/gl-mask-layer.js"></script>
     
     <!-- Earcut Triangulator (共通) -->
