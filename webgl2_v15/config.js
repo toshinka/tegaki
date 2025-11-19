@@ -1,18 +1,18 @@
 /**
- * @file config.js - v8.14.2 Phase 1改修版: PerfectFreehandリニア設定
+ * @file config.js - v8.14.3 Phase 1.7: 筆圧完全対応版
  * @description グローバル設定・キーマップ定義
  * 
  * 📁 依存Parents: なし（最上位設定ファイル）
  * 📄 依存Children:
- *   - polygon-generator.js (perfectFreehand設定参照)
+ *   - vector-operations.js (perfectFreehand設定参照)
  *   - core-initializer.js (PIXI.Application初期化でresolution参照)
  *   - 全システムファイル (window.TEGAKI_CONFIG参照)
  * 
- * 🔧 v8.14.2 Phase 1改修内容:
- *   - perfectFreehand設定リニア化
- *   - thinning: 0 (線の太り補正無効)
- *   - smoothing: 0 (補間最小化)
- *   - streamline: 0 (遅延補正なし)
+ * 🔧 v8.14.3 Phase 1.7改修内容:
+ *   - 筆圧完全対応: thinning: 0.7 (筆圧による太さ変化有効)
+ *   - smoothing: 0.4 (適度な補間で滑らか)
+ *   - streamline: 0.3 (軽い遅延補正)
+ *   - simulatePressure: false (実筆圧使用)
  */
 
 window.TEGAKI_CONFIG = {
@@ -49,26 +49,28 @@ window.TEGAKI_CONFIG = {
     },
     
     /**
-     * 🔧 Phase 1改修: PerfectFreehandリニア設定
+     * 🔧 Phase 1.7改修: 筆圧完全対応設定
      * 
      * 【改修理由】
-     * - 描画後に線が太る問題を解決
-     * - リニア描画実現（筆圧そのまま反映）
+     * - thinning: 0 では筆圧が反映されない
+     * - 筆圧による自然な太さ変化を実現
      * 
      * 【設定値】
-     * - thinning: 0 → 速度による太さ変化なし
-     * - smoothing: 0 → 入力ポイントをそのまま使用
-     * - streamline: 0 → 遅延補正なし（即座に反映）
-     * - size: ブラシサイズから動的取得
+     * - thinning: 0.7 → 筆圧で0.3x～1.0xの太さ変化
+     * - smoothing: 0.4 → 適度な補間で滑らかに
+     * - streamline: 0.3 → 軽い遅延補正（描画安定化）
+     * - simulatePressure: false → 実筆圧データ使用
+     * - last: true → 最後のポイントで自然に終端
      */
     perfectFreehand: {
         enabled: true,
         size: 16,
-        thinning: 0,             // 🔧 0に変更（元: 0.5）
-        smoothing: 0,            // 🔧 0に変更（元: 0.5）
-        streamline: 0,           // 🔧 0に変更（元: 0.5）
+        thinning: 0.7,           // 🔧 0.7に変更（筆圧有効化）
+        smoothing: 0.4,          // 🔧 0.4に変更（滑らか化）
+        streamline: 0.3,         // 🔧 0.3に変更（安定化）
         easing: (t) => t,
-        simulatePressure: false,
+        simulatePressure: false, // 実筆圧使用
+        last: true,              // 終端処理有効
         start: {
             taper: 0,
             cap: true
@@ -504,8 +506,7 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js v8.14.2 Phase 1改修版 loaded');
-console.log('   🔧 PerfectFreehand設定リニア化');
-console.log('   ✓ thinning: 0 (線の太り補正無効)');
-console.log('   ✓ smoothing: 0 (補間最小化)');
-console.log('   ✓ streamline: 0 (遅延補正なし)');
+console.log('✅ config.js v8.14.3 Phase 1.7 筆圧対応版 loaded');
+console.log('   🔧 thinning: 0.7 (筆圧による太さ変化有効)');
+console.log('   🔧 smoothing: 0.4 (適度な補間)');
+console.log('   🔧 streamline: 0.3 (安定化)');

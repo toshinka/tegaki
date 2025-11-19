@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - Phase 2フリッカー解消版
+ * brush-core.js - Phase 2.2 座標ズレ完全修正版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -11,17 +11,16 @@
  *   - gl-mask-layer.js (消しゴムマスク処理)
  *   - layer-system.js (レイヤー管理)
  *   - history.js (履歴管理)
- *   - system/event-bus.js (EventBus)
+ *   - event-bus.js (EventBus)
  * 
  * 📄 子ファイル依存:
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
- *   - ui/quick-access-popup.js (設定変更イベント発火元)
+ *   - core-engine.js (_renderLoop内でrenderPreview呼び出し)
  * 
- * 🔧 Phase 2改修内容:
- *   ✅ プレビュー更新を100ms間隔に延長（16ms → 100ms）
- *   ✅ 最小ポイント数を3に設定（2 → 3）
- *   ✅ プレビュー描画を同期的に実行（await削除）
- *   ✅ 不要なコンソールログ削除
+ * 🔧 Phase 2.2改修内容:
+ *   ✅ Spriteスケール完全修正 - 512x512固定を実際のboundsサイズに
+ *   ✅ プレビュー透明度を実際の値に（0.7倍を廃止）
+ *   ✅ テクスチャ再利用維持
  * 
  * ================================================================================
  */
@@ -44,6 +43,9 @@
       this.previewSprite = null;
       this.previewContainer = null;
       
+      this.previewTexture = null;
+      this.previewFBO = null;
+      
       const config = window.TEGAKI_CONFIG;
       this.currentSettings = {
         mode: 'pen',
@@ -56,11 +58,11 @@
       this.msdfAvailable = false;
       this.maskAvailable = false;
       
-      // ✅ Phase 2修正: プレビュー更新を100msに延長
       this.lastPreviewTime = 0;
-      this.previewThrottle = 100;  // 16ms → 100ms (10fps相当)
+      this.previewThrottle = 100;
       this.isPreviewUpdating = false;
-      this.minPreviewPoints = 3;   // 最小ポイント数
+      this.minPreviewPoints = 3;
+      this.lastPreviewPointCount = 0;
     }
 
     async init() {
@@ -152,6 +154,7 @@
         startTime: Date.now()
       };
       
+      this.lastPreviewPointCount = 0;
       this._ensurePreviewContainer(activeLayer);
     }
 
@@ -162,32 +165,33 @@
 
     /**
      * プレビュー描画
-     * ✅ Phase 2修正: 100ms間隔、最小3ポイント
      */
     async renderPreview() {
       if (!this.initialized || !this.isDrawing || this.isPreviewUpdating) return;
       
       const now = Date.now();
       if (now - this.lastPreviewTime < this.previewThrottle) return;
-      this.lastPreviewTime = now;
-
+      
       const points = this.strokeRecorder.getRawPoints();
       
-      // ✅ Phase 2修正: 最小ポイント数を3に
       if (!points || points.length < this.minPreviewPoints) return;
+      
+      if (points.length === this.lastPreviewPointCount) return;
+      
+      this.lastPreviewTime = now;
+      this.lastPreviewPointCount = points.length;
 
       const activeLayer = this.layerManager.getActiveLayer();
       if (!activeLayer) return;
       
       this._ensurePreviewContainer(activeLayer);
       
-      // ✅ Phase 2修正: 同期的に実行（awaitなし）
       this._updatePreview(points);
     }
 
     /**
      * プレビュー更新（内部処理）
-     * ✅ Phase 2修正: 非同期フラグ管理の最適化
+     * ✅ Phase 2.2修正: Spriteスケール修正
      * @private
      */
     async _updatePreview(points) {
@@ -197,25 +201,24 @@
 
       this.isPreviewUpdating = true;
 
-      // 既存プレビューを削除
-      if (this.previewSprite && !this.previewSprite.destroyed) {
-        this.previewContainer.removeChild(this.previewSprite);
-        this.previewSprite.destroy({ children: true });
-        this.previewSprite = null;
-      }
-
       try {
         const vertexResult = this.glStrokeProcessor.createPolygonVertexBuffer(
           points,
           this.currentSettings.size
         );
-        if (!vertexResult?.buffer) return;
+        if (!vertexResult?.buffer) {
+          this.isPreviewUpdating = false;
+          return;
+        }
 
         const edgeResult = this.glStrokeProcessor.createEdgeBuffer(
           points,
           this.currentSettings.size
         );
-        if (!edgeResult?.buffer) return;
+        if (!edgeResult?.buffer) {
+          this.isPreviewUpdating = false;
+          return;
+        }
 
         const uploadVertex = this.glStrokeProcessor.uploadToGPU(vertexResult.buffer, 'vertex', 7 * 4);
         const uploadEdge = this.glStrokeProcessor.uploadToGPU(edgeResult.buffer, 'storage', 8 * 4);
@@ -224,12 +227,16 @@
         const width = Math.ceil(bounds.maxX - bounds.minX);
         const height = Math.ceil(bounds.maxY - bounds.minY);
 
-        if (width <= 0 || height <= 0) return;
+        if (width <= 0 || height <= 0) {
+          this.isPreviewUpdating = false;
+          return;
+        }
 
         const previewSettings = {
           mode: this.currentSettings.mode,
           color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
-          opacity: this.currentSettings.mode === 'eraser' ? 0.3 : this.currentSettings.opacity * 0.7,
+          // ✅ Phase 2.2修正: プレビュー透明度を実際の値に
+          opacity: this.currentSettings.mode === 'eraser' ? 0.3 : this.currentSettings.opacity,
           size: this.currentSettings.size
         };
 
@@ -243,25 +250,47 @@
           edgeResult.edgeCount
         );
 
-        if (!msdfResult || !msdfResult.texture) return;
-
-        const sprite = await this.textureBridge.createSpriteFromGLTexture(
-          msdfResult.texture,
-          msdfResult.width,
-          msdfResult.height
-        );
-
-        if (!sprite || !this.previewContainer || this.previewContainer.destroyed) {
-          sprite?.destroy({ children: true });
+        if (!msdfResult || !msdfResult.texture) {
+          this.isPreviewUpdating = false;
           return;
         }
 
-        sprite.x = bounds.minX;
-        sprite.y = bounds.minY;
-        sprite.alpha = previewSettings.opacity;
+        if (!this.previewSprite || this.previewSprite.destroyed) {
+          const sprite = await this.textureBridge.createSpriteFromGLTexture(
+            msdfResult.texture,
+            msdfResult.width,
+            msdfResult.height
+          );
 
-        this.previewContainer.addChild(sprite);
-        this.previewSprite = sprite;
+          if (!sprite || !this.previewContainer || this.previewContainer.destroyed) {
+            sprite?.destroy({ children: true });
+            this.isPreviewUpdating = false;
+            return;
+          }
+
+          this.previewSprite = sprite;
+          this.previewContainer.addChild(sprite);
+        } else {
+          const newTexture = await this.textureBridge.createSpriteFromGLTexture(
+            msdfResult.texture,
+            msdfResult.width,
+            msdfResult.height
+          );
+
+          if (newTexture && newTexture.texture) {
+            if (this.previewSprite.texture) {
+              this.previewSprite.texture.destroy(true);
+            }
+            this.previewSprite.texture = newTexture.texture;
+          }
+        }
+
+        // ✅ Phase 2.2重要修正: Spriteスケールを実際のboundsサイズに
+        this.previewSprite.x = bounds.minX;
+        this.previewSprite.y = bounds.minY;
+        this.previewSprite.width = bounds.width;   // ← 512固定から変更
+        this.previewSprite.height = bounds.height; // ← 512固定から変更
+        this.previewSprite.alpha = previewSettings.opacity;
 
       } catch (error) {
         console.error('[BrushCore] Preview failed:', error);
@@ -298,8 +327,12 @@
       this.strokeRecorder.endStroke();
       this.isDrawing = false;
       this.currentStroke = null;
+      this.lastPreviewPointCount = 0;
     }
 
+    /**
+     * ✅ Phase 2.2修正: 最終描画もスケール修正
+     */
     async _finalizeMSDFStroke(points, activeLayer) {
       try {
         const container = this._getLayerContainer(activeLayer);
@@ -369,8 +402,11 @@
           throw new Error('Sprite生成失敗');
         }
 
+        // ✅ Phase 2.2重要修正: 最終描画もスケール修正
         sprite.x = bounds.minX;
         sprite.y = bounds.minY;
+        sprite.width = bounds.width;   // ← 512固定から変更
+        sprite.height = bounds.height; // ← 512固定から変更
         sprite.visible = true;
         sprite.alpha = this.currentSettings.opacity;
 
@@ -574,6 +610,13 @@
         this.previewContainer.destroy({ children: true });
         this.previewContainer = null;
       }
+      
+      if (this.previewTexture) {
+        this.previewTexture = null;
+      }
+      if (this.previewFBO) {
+        this.previewFBO = null;
+      }
     }
 
     _getLayerContainer(layer) {
@@ -683,6 +726,7 @@
       this.strokeRecorder.reset();
       this.isDrawing = false;
       this.currentStroke = null;
+      this.lastPreviewPointCount = 0;
     }
 
     destroy() {
@@ -692,8 +736,9 @@
   }
 
   window.BrushCore = new BrushCore();
-  console.log('✅ brush-core.js Phase 2フリッカー解消版 loaded');
-  console.log('   ✅ プレビュー更新: 100ms間隔（10fps相当）');
-  console.log('   ✅ 最小ポイント数: 3ポイント');
+  console.log('✅ brush-core.js Phase 2.2 座標ズレ完全修正版 loaded');
+  console.log('   ✅ Spriteスケール修正: 512固定 → bounds.width/height');
+  console.log('   ✅ プレビュー透明度: 実際の値に修正');
+  console.log('   ✅ テクスチャ再利用維持');
 
 })();
