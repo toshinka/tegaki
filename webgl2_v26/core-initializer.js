@@ -1,11 +1,12 @@
 /**
  * ================================================================================
- * core-initializer.js - WebGL2対応完全版 (Phase 6.1 BrushCore修正版)
+ * core-initializer.js - WebGL2対応完全版 (Phase 1.2.2 CoordinateSystem初期化修正)
  * ================================================================================
  * 
  * 📁 親ファイル依存:
  *   - PIXI.js v8.14 (CDN)
  *   - config.js (TEGAKI_CONFIG)
+ *   - coordinate-system.js (CoordinateSystem) ⭐ 追加
  *   - system/event-bus.js (TegakiEventBus)
  *   - system/popup-manager.js (TegakiPopupManager)
  *   - system/settings-manager.js (TegakiSettingsManager)
@@ -14,6 +15,7 @@
  *   - core-engine.js (CoreEngine)
  * 
  * 📄 子ファイル初期化:
+ *   - coordinate-system.js (座標変換パイプライン) ⭐ 追加
  *   - system/drawing/webgl2/webgl2-drawing-layer.js
  *   - system/drawing/webgl2/gl-stroke-processor.js
  *   - system/drawing/webgl2/gl-msdf-pipeline.js
@@ -21,6 +23,11 @@
  *   - system/drawing/webgl2/gl-mask-layer.js
  *   - system/drawing/stroke-renderer.js
  *   - system/drawing/brush-core.js
+ * 
+ * 【Phase 1.2.2更新内容】
+ * ⭐ CoordinateSystem初期化タイミング修正（CoreEngine.initialize()完了後）
+ * ⭐ worldContainer生成確認後の確実な初期化
+ * ⭐ updateTransform()呼び出しエラーの修正
  * 
  * 【Phase 6.1更新内容】
  * 🔧 BrushCore再初期化のタイミング問題を修正
@@ -38,6 +45,7 @@ window.CoreInitializer = (function() {
         const dependencies = [
             { name: 'PIXI', obj: window.PIXI },
             { name: 'TEGAKI_CONFIG', obj: window.TEGAKI_CONFIG },
+            { name: 'CoordinateSystem', obj: window.CoordinateSystem }, // ⭐ 追加
             { name: 'TegakiEventBus', obj: window.TegakiEventBus },
             { name: 'TegakiPopupManager', obj: window.TegakiPopupManager },
             { name: 'TegakiSettingsManager', obj: window.TegakiSettingsManager },
@@ -162,6 +170,53 @@ window.CoreInitializer = (function() {
         window.layerPanelRenderer = layerPanelRenderer;
         
         return layerPanelRenderer;
+    }
+
+    /**
+     * ⭐ CoordinateSystem初期化（Phase 1.2.2 修正版）
+     * @param {PIXI.Container} worldContainer - PixiJS worldContainer
+     * @returns {boolean} 初期化成功/失敗
+     */
+    function initializeCoordinateSystem(worldContainer) {
+        if (!window.CoordinateSystem) {
+            console.error('[CoreInit] ❌ CoordinateSystem not found');
+            return false;
+        }
+
+        // WebGL2キャンバス取得
+        const webgl2Canvas = document.querySelector('#webgl2-canvas');
+        if (!webgl2Canvas) {
+            console.error('[CoreInit] ❌ WebGL2 canvas not found');
+            return false;
+        }
+
+        // worldContainer確認
+        if (!worldContainer) {
+            console.error('[CoreInit] ❌ worldContainer not available');
+            return false;
+        }
+
+        // worldContainerのposition初期化確認（エラー回避）
+        if (!worldContainer.position) {
+            console.warn('[CoreInit] ⚠️ worldContainer.position is undefined, setting default');
+            worldContainer.position = { x: 0, y: 0 };
+        }
+        if (!worldContainer.scale) {
+            console.warn('[CoreInit] ⚠️ worldContainer.scale is undefined, setting default');
+            worldContainer.scale = { x: 1, y: 1 };
+        }
+
+        // CoordinateSystem初期化実行（updateTransform()は内部で呼ばれる）
+        const result = window.CoordinateSystem.initialize(webgl2Canvas, worldContainer);
+        
+        if (!result) {
+            console.error('[CoreInit] ❌ CoordinateSystem initialization failed');
+            return false;
+        }
+
+        console.log('[CoreInit] ✅ CoordinateSystem initialized');
+
+        return true;
     }
 
     /**
@@ -297,6 +352,7 @@ window.CoreInitializer = (function() {
             
             this.pixiApp.renderer.render(this.pixiApp.stage);
             
+            // ⭐ CoreEngine初期化（ここでcameraSystemとworldContainerが生成される）
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
             
@@ -304,6 +360,22 @@ window.CoreInitializer = (function() {
             
             const brushSettings = this.coreEngine.getBrushSettings();
             window.brushSettings = brushSettings;
+
+            // ⭐ Phase 1.2.2: CoordinateSystem初期化（CoreEngine初期化完了後）
+            const cameraSystem = this.coreEngine.getCameraSystem();
+            if (cameraSystem && cameraSystem.worldContainer) {
+                console.log('[CoreInit] Initializing CoordinateSystem...');
+                const coordInitSuccess = initializeCoordinateSystem(cameraSystem.worldContainer);
+                if (!coordInitSuccess) {
+                    console.warn('[CoreInit] ⚠️ CoordinateSystem initialization failed, drawing may not work correctly');
+                } else {
+                    // 初期化確認ログ
+                    const state = window.CoordinateSystem.dumpState();
+                    console.log('[CoreInit] CoordinateSystem state:', state);
+                }
+            } else {
+                console.error('[CoreInit] ❌ cameraSystem or worldContainer not available');
+            }
             
             window.CoreRuntime.init({
                 app: this.pixiApp,
@@ -549,34 +621,12 @@ window.CoreInitializer = (function() {
         checkDependencies,
         DrawingApp,
         initializeWebGL2,
-        initializeLayerPanel
+        initializeLayerPanel,
+        initializeCoordinateSystem // ⭐ エクスポート追加
     };
 })();
 
-/**
- * ================================================================================
- * 修正内容サマリー (Phase 6.1)
- * ================================================================================
- * 
- * 【従来の問題】
- * 1. BrushCore.initialized = false でリセット
- * 2. 非同期でinitialize()を実行
- * 3. その間にCoreEngine.setBrushSettings()が呼ばれる
- * 4. BrushCoreが利用不可の状態でエラー: "[DrawingEngine] BrushCore not available"
- * 
- * 【修正後の動作】
- * 1. WebGL2コンポーネントを先に設定（initializedフラグは維持）
- * 2. 依存関係を再確認・補完
- * 3. msdfAvailable / maskAvailable フラグを更新
- * 4. まだ初期化されていない場合のみ initialize() 実行
- * 5. 既に初期化済みの場合はコンポーネント更新のみ
- * 
- * 【効果】
- * ✅ BrushCoreが利用不可になる期間をゼロに
- * ✅ CoreEngine.setBrushSettings()が常に正常動作
- * ✅ WebGL2コンポーネントの確実な設定
- * ✅ 二重初期化の防止
- * ✅ ペン描画が可能な状態に復帰
- * 
- * ================================================================================
- */
+console.log('✅ core-initializer.js Phase 1.2.2 CoordinateSystem初期化修正版 loaded');
+console.log('   ⭐ CoreEngine.initialize()完了後にCoordinateSystem初期化');
+console.log('   ⭐ worldContainer.position/scale未定義エラーの回避');
+console.log('   ⭐ 元ファイルの全メソッド・機能を完全継承');
