@@ -1,22 +1,25 @@
 /**
  * ================================================================================
- * gl-msdf-pipeline.js - Phase 1.6完全修正版
+ * gl-msdf-pipeline.js - Phase 1.8 Rollback修正版
  * ================================================================================
  * 
  * 📁 親依存:
  *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl, createFBO, deleteFBO)
  *   - gl-stroke-processor.js (EdgeBuffer/VertexBuffer: 7 floats/vertex)
+ *     ※gl-stroke-processorは既にbounds減算済み → [0, width/height]座標
  * 
  * 📄 子依存:
  *   - brush-core.js (generateMSDF呼び出し元)
  *   - gl-texture-bridge.js (生成されたTextureを受け取る)
  * 
- * 🔧 Phase 1.6改修内容:
- *   ✅ Vertex Shaderを完全修正
- *     - aPositionは既にboundsローカル座標 [0, bounds.width/height]
- *     - uResolutionで正規化してNDC変換
- *     - uBoundsMin/uBoundsSizeは不要（削除）
- *   ✅ 座標変換を完全に統一
+ * 🔧 Phase 1.8改修内容:
+ *   ✅ Phase 1.7を取り消し、Phase 1.6の正しい実装に戻す
+ *   ✅ aPositionは既に[0, bounds.width/height]なのでuResolutionで正規化
+ *   ✅ uBoundsSizeは不要（削除）
+ * 
+ * ⚠️ 重要: gl-stroke-processor.jsが既にbounds.minを減算済み
+ *    → aPositionは[0, bounds.width/height]の範囲
+ *    → textureSize(512x512)で正規化すれば正しくスケールされる
  * 
  * 責務:
  *   - MSDF距離場生成（JFA: Jump Flooding Algorithm）
@@ -60,7 +63,7 @@
       await this._createRenderProgram();
       
       this.initialized = true;
-      console.log('[GLMSDFPipeline] ✅ Initialized (Phase 1.6)');
+      console.log('[GLMSDFPipeline] ✅ Initialized (Phase 1.8)');
     }
 
     /**
@@ -254,7 +257,7 @@
 
     /**
      * レンダリングプログラム生成
-     * ✅ Phase 1.6修正: aPositionは既にboundsローカル座標
+     * ✅ Phase 1.8: Phase 1.6の正しい実装に戻す
      * @private
      */
     async _createRenderProgram() {
@@ -262,23 +265,23 @@
         precision highp float;
         
         // gl-stroke-processor.js の 7 floats/vertex レイアウト
-        layout(location = 0) in vec2 aPosition;    // [0-1] boundsローカル座標 [0, width/height]
-        layout(location = 1) in vec2 aTexCoord;    // [2-3]
-        layout(location = 2) in vec3 aReserved;    // [4-6]
+        layout(location = 0) in vec2 aPosition;    // ✅ 既に[0, bounds.width/height]座標
+        layout(location = 1) in vec2 aTexCoord;
+        layout(location = 2) in vec3 aReserved;
         
         uniform vec2 uResolution;    // テクスチャ解像度（512x512）
         
         out vec2 vTexCoord;
         
         void main() {
-          // ✅ Phase 1.6修正: boundsローカル座標を直接正規化してNDC変換
-          // aPosition は既に [0, bounds.width] x [0, bounds.height] の範囲
-          vec2 normalized = aPosition / uResolution;  // [0, 1] に正規化
-          vec2 clipSpace = normalized * 2.0 - 1.0;    // NDC [-1, 1] に変換
-          clipSpace.y = -clipSpace.y;                 // Y軸反転
+          // ✅ Phase 1.8修正: aPositionは既に[0, bounds.width/height]
+          // テクスチャ空間に収めるためuResolution(512x512)で正規化
+          vec2 normalized = aPosition / uResolution;
+          vec2 clipSpace = normalized * 2.0 - 1.0;
+          clipSpace.y = -clipSpace.y;
           
           gl_Position = vec4(clipSpace, 0.0, 1.0);
-          vTexCoord = normalized;  // テクスチャ座標として使用
+          vTexCoord = normalized;
         }
       `;
       
@@ -360,7 +363,7 @@
 
     /**
      * ストローク描画（7 floats/vertex）
-     * ✅ Phase 1.6修正: uBoundsMin/uBoundsSize削除
+     * ✅ Phase 1.8: uBoundsSize削除（不要）
      * @private
      */
     _drawStroke(program, vbo, vertexCount, bounds, resolution) {
@@ -388,7 +391,7 @@
         gl.vertexAttribPointer(aReserved, 3, gl.FLOAT, false, stride, 16);
       }
       
-      // ✅ Phase 1.6修正: uResolutionのみ設定
+      // ✅ Phase 1.8: uResolutionのみ設定（uBoundsSizeは不要）
       const uResolution = gl.getUniformLocation(program, 'uResolution');
       if (uResolution) {
         gl.uniform2f(uResolution, resolution.width, resolution.height);
@@ -495,7 +498,6 @@
 
     /**
      * レンダリングパス
-     * ✅ Phase 1.6修正: 座標変換完全修正
      */
     renderPass(msdfTexture, outputFBO, width, height, settings = {}, vertexBuffer = null, vertexCount = 0, bounds = null) {
       const gl = this.gl;
@@ -551,7 +553,6 @@
 
     /**
      * MSDF生成（メイン処理）
-     * ✅ Phase 1.6修正: 座標変換完全修正
      * 
      * @returns {Object|null} { texture: WebGLTexture, width: number, height: number }
      */
@@ -632,8 +633,8 @@
   }
 
   window.GLMSDFPipeline = new GLMSDFPipeline();
-  console.log('[GLMSDFPipeline] ✅ Phase 1.6完全修正版 loaded');
-  console.log('   ✅ boundsローカル座標 [0, width/height] → NDC変換');
-  console.log('   ✅ uBoundsMin/uBoundsSize削除（不要）');
+  console.log('[GLMSDFPipeline] ✅ Phase 1.8 Rollback修正版 loaded');
+  console.log('   ⚠️ Phase 1.7の過剰修正を取り消し');
+  console.log('   ✅ aPosition: [0, bounds.width/height] → uResolutionで正規化');
 
 })();
