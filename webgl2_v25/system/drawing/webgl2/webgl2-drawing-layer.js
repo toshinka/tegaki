@@ -1,24 +1,29 @@
 /**
  * ================================================================================
- * WebGL2 Drawing Layer - Phase 1
+ * WebGL2 Drawing Layer - Phase 1 完全修正版
  * ================================================================================
  * 
  * 【責務】
  * - WebGL2 context初期化・管理
+ * - Shader/Program作成・管理
  * - FBO（FrameBuffer Object）生成・削除
  * - Extension確認・取得
  * 
  * 【親子依存関係】
- * 親: core-initializer.js (initializeWebGL2から呼び出し)
- * 子: なし（最下層GPU抽象化レイヤー）
- * 
- * 【WebGPU互換API】
- * - getCanvas() : WebGPUDrawingLayer.getCanvas()互換
- * - getGL() : WebGPUDrawingLayer.getDevice()互換
- * - isInitialized() : 初期化状態確認
+ * 📁 親: core-initializer.js (initializeWebGL2から呼び出し)
+ * 📄 子: gl-stroke-processor.js, gl-msdf-pipeline.js, gl-texture-bridge.js, gl-mask-layer.js
  * 
  * 【グローバル登録】
- * window.WebGL2DrawingLayer (Singleton)
+ * ✅ window.WebGLContext (Singleton) - 他ファイルとの互換性確保
+ * ✅ window.WebGL2DrawingLayer (エイリアス) - 既存コードとの互換性
+ * 
+ * 【修正内容】
+ * 🔧 グローバル登録名を WebGLContext に統一
+ * 🔧 createProgram() メソッド追加
+ * 🔧 createShader() メソッド追加
+ * 🔧 エラーハンドリング強化
+ * 
+ * v1.1.0 - 2025-01-XX
  */
 
 (function() {
@@ -31,6 +36,8 @@
       this.initialized = false;
       this.extensions = {};
       this.maxTextureSize = 0;
+      this.programs = {}; // シェーダープログラムキャッシュ
+      this.shaders = {};  // シェーダーキャッシュ
     }
 
     /**
@@ -48,7 +55,7 @@
                     document.getElementById('webgpu-canvas');
       
       if (!this.canvas) {
-        console.error('[WebGL2DrawingLayer] Canvas not found');
+        console.error('[WebGL2DrawingLayer] ❌ Canvas not found');
         return false;
       }
 
@@ -66,7 +73,7 @@
       this.gl = this.canvas.getContext('webgl2', contextOptions);
       
       if (!this.gl) {
-        console.error('[WebGL2DrawingLayer] WebGL2 not supported');
+        console.error('[WebGL2DrawingLayer] ❌ WebGL2 not supported');
         return false;
       }
 
@@ -85,6 +92,7 @@
 
       this.initialized = true;
       console.log('[WebGL2DrawingLayer] ✅ Initialized', {
+        canvasSize: `${this.canvas.width}x${this.canvas.height}`,
         maxTextureSize: this.maxTextureSize,
         extensions: Object.keys(this.extensions)
       });
@@ -102,7 +110,7 @@
       // Float texture support (MSDF用)
       this.extensions.colorBufferFloat = gl.getExtension('EXT_color_buffer_float');
       if (!this.extensions.colorBufferFloat) {
-        console.warn('[WebGL2DrawingLayer] EXT_color_buffer_float not available');
+        console.warn('[WebGL2DrawingLayer] ⚠️ EXT_color_buffer_float not available');
       }
 
       // Float texture linear filtering
@@ -113,13 +121,88 @@
     }
 
     /**
+     * Shader作成
+     * @param {number} type - gl.VERTEX_SHADER または gl.FRAGMENT_SHADER
+     * @param {string} source - GLSLソースコード
+     * @returns {WebGLShader|null}
+     */
+    createShader(type, source) {
+      const gl = this.gl;
+      const shader = gl.createShader(type);
+      
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const info = gl.getShaderInfoLog(shader);
+        const typeName = type === gl.VERTEX_SHADER ? 'VERTEX' : 'FRAGMENT';
+        console.error(`[WebGL2DrawingLayer] ❌ ${typeName} Shader compile error:`, info);
+        console.error('Shader source:', source);
+        gl.deleteShader(shader);
+        return null;
+      }
+      
+      return shader;
+    }
+
+    /**
+     * Programリンク
+     * @param {string} vertexSource - Vertex Shader GLSL
+     * @param {string} fragmentSource - Fragment Shader GLSL
+     * @param {string} [name] - デバッグ用名前
+     * @returns {WebGLProgram|null}
+     */
+    createProgram(vertexSource, fragmentSource, name = 'unnamed') {
+      const gl = this.gl;
+      
+      // Shader作成
+      const vertexShader = this.createShader(gl.VERTEX_SHADER, vertexSource);
+      const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, fragmentSource);
+      
+      if (!vertexShader || !fragmentShader) {
+        console.error(`[WebGL2DrawingLayer] ❌ Program "${name}" shader creation failed`);
+        if (vertexShader) gl.deleteShader(vertexShader);
+        if (fragmentShader) gl.deleteShader(fragmentShader);
+        return null;
+      }
+      
+      // Program作成
+      const program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const info = gl.getProgramInfoLog(program);
+        console.error(`[WebGL2DrawingLayer] ❌ Program "${name}" link error:`, info);
+        gl.deleteProgram(program);
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
+        return null;
+      }
+      
+      // Shader削除（Programにリンク済み）
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      
+      console.log(`[WebGL2DrawingLayer] ✅ Program "${name}" created`);
+      
+      // キャッシュ
+      if (name !== 'unnamed') {
+        this.programs[name] = program;
+      }
+      
+      return program;
+    }
+
+    /**
      * FBO生成
      * @param {number} width - 幅
      * @param {number} height - 高さ
      * @param {Object} options - オプション
      * @param {boolean} options.float - Float textureを使用
      * @param {boolean} options.halfFloat - Half float textureを使用
-     * @returns {Object} {fbo, texture, width, height}
+     * @returns {Object|null} {fbo, texture, width, height}
      */
     createFBO(width, height, options = {}) {
       const gl = this.gl;
@@ -159,8 +242,10 @@
       // Status確認
       const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
       if (status !== gl.FRAMEBUFFER_COMPLETE) {
-        console.error('[WebGL2DrawingLayer] FBO incomplete:', status);
+        console.error('[WebGL2DrawingLayer] ❌ FBO incomplete:', status);
         this.deleteFBO({ fbo, texture });
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
         return null;
       }
       
@@ -209,7 +294,33 @@
       return texture;
     }
 
-    // ========== WebGPU互換API ==========
+    /**
+     * Program削除
+     * @param {string} name - プログラム名
+     */
+    deleteProgram(name) {
+      if (this.programs[name]) {
+        this.gl.deleteProgram(this.programs[name]);
+        delete this.programs[name];
+      }
+    }
+
+    /**
+     * 全リソース削除
+     */
+    cleanup() {
+      const gl = this.gl;
+      
+      // Programs削除
+      Object.keys(this.programs).forEach(name => {
+        gl.deleteProgram(this.programs[name]);
+      });
+      this.programs = {};
+      
+      console.log('[WebGL2DrawingLayer] 🧹 Cleanup completed');
+    }
+
+    // ========== API: 他ファイルとの互換性 ==========
 
     getCanvas() {
       return this.canvas;
@@ -230,11 +341,24 @@
     getMaxTextureSize() {
       return this.maxTextureSize;
     }
+
+    getProgram(name) {
+      return this.programs[name];
+    }
   }
 
-  // Singleton登録
-  window.WebGL2DrawingLayer = new WebGL2DrawingLayer();
+  // ========== Singleton登録（二重登録で互換性確保） ==========
+  
+  const instance = new WebGL2DrawingLayer();
+  
+  // 主要グローバル名（他ファイルが期待）
+  window.WebGLContext = instance;
+  
+  // 既存コード互換用エイリアス
+  window.WebGL2DrawingLayer = instance;
 
-  console.log('✅ webgl2-drawing-layer.js Phase 1 loaded');
+  console.log('✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded');
+  console.log('   📌 window.WebGLContext (主要)');
+  console.log('   📌 window.WebGL2DrawingLayer (互換)');
 
 })();
