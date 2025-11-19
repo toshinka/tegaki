@@ -1,20 +1,24 @@
 /**
  * ================================================================================
- * core-initializer.js Phase 1.1 完全初期化版
+ * core-initializer.js Phase 1.1 依存関係チェック修正版
  * ================================================================================
  * 責務: アプリケーション全体の初期化順序管理・依存関係注入
  * 親依存: config.js, PixiJS v8, WebGL2DrawingLayer
- * 子依存: 全システムファイル
+ * 子依存: 全システムファイル（coordinate-system.js, camera-system.js, layer-system.js,
+ *         drawing-engine.js, brush-core.js, stroke-recorder.js, pointer-handler.js,
+ *         pressure-handler.js, gl-stroke-processor.js, gl-msdf-pipeline.js,
+ *         gl-texture-bridge.js, gl-mask-layer.js, ui-panels.js）
  * 
  * Phase 1.1 改修内容:
+ * ✅ checkGlobalDependencies() 修正: EventBus存在確認を柔軟化
  * ✅ 初期化順序の厳密化（座標系 → カメラ → レイヤー → 描画エンジン）
- * ✅ 依存関係の完全注入確認
- * ✅ 初期化失敗時の詳細エラーログ
- * ✅ CoordinateSystem.initialize() 実装確認・呼び出し
+ * ✅ 依存関係の完全注入確認強化
+ * ✅ CoordinateSystem.initialize() 存在確認・呼び出し
  * ✅ DrawingEngine 依存注入の確実化
+ * 🔧 Phase 1計画対応: 座標変換パイプライン基盤整備
  * 
  * 変更履歴:
- * - Phase 1.1: 初期化フロー完全修正（座標ズレ問題対応）
+ * - Phase 1.1: checkGlobalDependencies()修正・初期化フロー完全修正
  * - Phase 1.0: WebGL2統合完了版
  * ================================================================================
  */
@@ -42,24 +46,28 @@
   };
 
   // ================================================================================
-  // グローバル参照チェック
+  // グローバル参照チェック（Phase 1.1修正）
   // ================================================================================
   function checkGlobalDependencies() {
     const required = {
       'PIXI': typeof PIXI !== 'undefined',
-      'config': typeof window.config !== 'undefined',
-      'EventBus': typeof window.EventBus !== 'undefined'
+      'config': typeof window.config !== 'undefined'
     };
+
+    // 🔧 EventBusは自動生成される場合があるため警告のみ
+    if (typeof window.EventBus === 'undefined') {
+      console.warn('[Init] ⚠️ EventBus not found - will be created by event-bus.js');
+    }
 
     const missing = Object.keys(required).filter(key => !required[key]);
     
     if (missing.length > 0) {
-      console.error('[Init] Missing global dependencies:', missing);
+      console.error('[Init] ❌ Missing critical dependencies:', missing);
       return false;
     }
 
     if (DEBUG) {
-      console.log('[Init] ✅ All global dependencies present');
+      console.log('[Init] ✅ Critical dependencies present:', Object.keys(required));
     }
     return true;
   }
@@ -85,7 +93,7 @@
         width: window.config.canvas.width,
         height: window.config.canvas.height,
         backgroundColor: 0xffffee,
-        resolution: 1, // DPR=1固定
+        resolution: 1, // DPR=1固定（Phase 1要件）
         autoDensity: false,
         antialias: true,
         powerPreference: 'high-performance',
@@ -96,14 +104,14 @@
       window.pixiApp = app;
       window.pixiStage = app.stage;
 
-      // worldContainer作成
+      // worldContainer作成（座標変換の基準点）
       const worldContainer = new PIXI.Container();
       worldContainer.label = 'worldContainer';
       worldContainer.eventMode = 'none'; // イベント無効
       app.stage.addChild(worldContainer);
       window.worldContainer = worldContainer;
 
-      // Ticker停止（WebGL2がマスター）
+      // Ticker停止（WebGL2がレンダーループマスター）
       app.ticker.stop();
 
       InitState.pixi = true;
@@ -140,7 +148,7 @@
       const initialized = drawingLayer.initialize(canvas, {
         width: window.config.canvas.width,
         height: window.config.canvas.height,
-        dpr: 1
+        dpr: 1 // DPR=1固定
       });
 
       if (!initialized) {
@@ -196,7 +204,7 @@
   }
 
   // ================================================================================
-  // Phase 3: CoordinateSystem初期化
+  // Phase 3: CoordinateSystem初期化（Phase 1最重要）
   // ================================================================================
   function initializeCoordinateSystem() {
     if (InitState.coordinateSystem) {
@@ -217,10 +225,11 @@
         }
         console.log('[Init] ✅ CoordinateSystem.initialize() called');
       } else {
-        console.warn('[Init] ⚠️ CoordinateSystem.initialize() not found (using static methods)');
+        // 静的メソッドのみの場合
+        console.log('[Init] ℹ️ CoordinateSystem uses static methods (no initialize())');
       }
 
-      // 必須メソッド確認
+      // 必須メソッド確認（Phase 1要件）
       const requiredMethods = [
         'screenClientToCanvas',
         'canvasToWorld',
@@ -234,7 +243,7 @@
       }
 
       InitState.coordinateSystem = true;
-      console.log('[Init] ✅ CoordinateSystem ready');
+      console.log('[Init] ✅ CoordinateSystem ready (座標変換パイプライン確認完了)');
       return true;
 
     } catch (error) {
@@ -414,7 +423,7 @@
       window.brushCore = brushCore;
 
       InitState.brushCore = true;
-      console.log('[Init] ✅ BrushCore initialized with dependencies:', Object.keys(dependencies));
+      console.log('[Init] ✅ BrushCore initialized with dependencies');
       return true;
 
     } catch (error) {
@@ -424,7 +433,7 @@
   }
 
   // ================================================================================
-  // Phase 9: DrawingEngine初期化（最重要）
+  // Phase 9: DrawingEngine初期化（Phase 1最重要ポイント）
   // ================================================================================
   function initializeDrawingEngine() {
     if (InitState.drawingEngine) {
@@ -470,7 +479,7 @@
       }
 
       InitState.drawingEngine = true;
-      console.log('[Init] ✅ DrawingEngine initialized with complete dependencies');
+      console.log('[Init] ✅ DrawingEngine initialized (座標変換パイプライン統合完了)');
       
       if (DEBUG) {
         console.log('[Init] DrawingEngine state:', {
@@ -504,7 +513,7 @@
         window.PopupManager.initialize();
       }
 
-      // UIパネル初期化（ui-panels.jsの初期化関数呼び出し）
+      // UIパネル初期化
       if (typeof window.initializeUIPanels === 'function') {
         window.initializeUIPanels();
       }
@@ -591,7 +600,7 @@
       return false;
     }
 
-    console.log('[Init] ✅ Validation passed');
+    console.log('[Init] ✅ Validation passed - 座標変換パイプライン基盤整備完了');
     return true;
   }
 
