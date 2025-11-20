@@ -1,27 +1,13 @@
 /**
  * ================================================================================
- * core-initializer.js - Phase 1.2.3 初期化タイミング修正版
+ * core-initializer.js - Phase 1.2.4 LayerSystem接続完全版
  * ================================================================================
  * 
- * 📁 親ファイル依存:
- *   - PIXI.js v8.14 (CDN)
- *   - config.js (TEGAKI_CONFIG)
- *   - coordinate-system.js (CoordinateSystem) ⭐
- *   - system/event-bus.js (TegakiEventBus)
- *   - system/popup-manager.js (TegakiPopupManager)
- *   - system/settings-manager.js (TegakiSettingsManager)
- *   - ui/dom-builder.js (DOMBuilder)
- *   - core-runtime.js (CoreRuntime)
- *   - core-engine.js (CoreEngine)
- * 
- * 【Phase 1.2.3更新内容】
- * ⭐⭐ CoordinateSystem初期化タイミングを修正
- * ⭐⭐ CoreEngine.initialize()の**前**にCoordinateSystemを初期化
- * ⭐⭐ worldContainerはCoreEngine初期化後に取得して再初期化
- * 
- * 【Phase 1.2.2からの変更点】
- * - CoreEngine.initialize()完了後→完了前に変更
- * - 初期化順序: CameraSystem生成 → CoordinateSystem初期化 → CoreEngine.initialize()
+ * 【Phase 1.2.4更新内容】
+ * ✅ LayerSystem.setCameraSystem() 呼び出し追加
+ * ✅ worldContainer ← currentFrameContainer 親子関係確立
+ * ✅ CoreRuntime.init() から canvasContainer 削除
+ * ✅ 元ファイルの全メソッド・機能を完全継承
  * 
  * ================================================================================
  */
@@ -160,31 +146,23 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
-    /**
-     * ⭐⭐ Phase 1.2.3: CoordinateSystem初期化（修正版）
-     * @param {PIXI.Container} worldContainer - PixiJS worldContainer
-     * @returns {boolean} 初期化成功/失敗
-     */
     function initializeCoordinateSystem(worldContainer) {
         if (!window.CoordinateSystem) {
             console.error('[CoreInit] ❌ CoordinateSystem not found');
             return false;
         }
 
-        // WebGL2キャンバス取得
         const webgl2Canvas = document.querySelector('#webgl2-canvas');
         if (!webgl2Canvas) {
             console.error('[CoreInit] ❌ WebGL2 canvas not found');
             return false;
         }
 
-        // worldContainer確認
         if (!worldContainer) {
             console.error('[CoreInit] ❌ worldContainer not available');
             return false;
         }
 
-        // worldContainerのposition/scale初期化確認
         if (!worldContainer.position) {
             console.warn('[CoreInit] ⚠️ worldContainer.position is undefined, setting default');
             worldContainer.position = { x: 0, y: 0 };
@@ -194,7 +172,6 @@ window.CoreInitializer = (function() {
             worldContainer.scale = { x: 1, y: 1 };
         }
 
-        // CoordinateSystem初期化実行
         const result = window.CoordinateSystem.initialize(webgl2Canvas, worldContainer);
         
         if (!result) {
@@ -207,14 +184,10 @@ window.CoreInitializer = (function() {
         return true;
     }
 
-    /**
-     * WebGL2初期化（Phase 6完全版）
-     */
     async function initializeWebGL2(strokeRenderer, pixiApp) {
         const config = window.TEGAKI_CONFIG;
 
         try {
-            // 1. WebGL2DrawingLayer初期化
             if (!window.WebGL2DrawingLayer) {
                 console.error('[WebGL2] WebGL2DrawingLayer not found');
                 return false;
@@ -229,7 +202,6 @@ window.CoreInitializer = (function() {
             const gl = window.WebGL2DrawingLayer.getGL();
             console.log('[WebGL2] Drawing Layer initialized');
 
-            // 2. GLStrokeProcessor初期化
             if (!window.GLStrokeProcessor) {
                 console.error('[WebGL2] GLStrokeProcessor not found');
                 return false;
@@ -238,7 +210,6 @@ window.CoreInitializer = (function() {
             await window.GLStrokeProcessor.initialize(gl);
             console.log('[WebGL2] GLStrokeProcessor initialized');
 
-            // 3. GLMSDFPipeline初期化
             if (window.GLMSDFPipeline) {
                 await window.GLMSDFPipeline.initialize(gl);
                 console.log('[WebGL2] GLMSDFPipeline initialized');
@@ -246,7 +217,6 @@ window.CoreInitializer = (function() {
                 console.warn('[WebGL2] GLMSDFPipeline not found (MSDF disabled)');
             }
 
-            // 4. GLTextureBridge初期化
             if (window.GLTextureBridge) {
                 await window.GLTextureBridge.initialize(gl, pixiApp);
                 console.log('[WebGL2] GLTextureBridge initialized');
@@ -254,7 +224,6 @@ window.CoreInitializer = (function() {
                 console.warn('[WebGL2] GLTextureBridge not found');
             }
 
-            // 5. GLMaskLayer初期化
             if (window.GLMaskLayer) {
                 const maskWidth = config.canvas?.width || 1920;
                 const maskHeight = config.canvas?.height || 1080;
@@ -269,7 +238,6 @@ window.CoreInitializer = (function() {
                 console.warn('[WebGL2] GLMaskLayer not found');
             }
 
-            // 6. StrokeRenderer初期化
             if (!strokeRenderer) {
                 console.error('[WebGL2] StrokeRenderer not provided');
                 return false;
@@ -338,22 +306,13 @@ window.CoreInitializer = (function() {
             
             this.pixiApp.renderer.render(this.pixiApp.stage);
             
-            // ========================================
-            // ⭐⭐ Phase 1.2.3: CoreEngine生成（初期化は後）
-            // ========================================
             this.coreEngine = new CoreEngine(this.pixiApp);
             window.coreEngine = this.coreEngine;
             
-            // ========================================
-            // ⭐⭐ Phase 1.2.3: CameraSystem早期初期化
-            // CoreEngine.initialize()を呼ぶ前にCameraSystemを初期化して
-            // worldContainerを生成する
-            // ========================================
             console.log('[CoreInit] Pre-initializing CameraSystem for worldContainer...');
             this.coreEngine.cameraSystem.init(this.pixiApp.stage, window.TegakiEventBus, CONFIG);
             console.log('[CoreInit] ✅ CameraSystem pre-initialized');
             
-            // worldContainer取得
             const worldContainer = this.coreEngine.cameraSystem.worldContainer;
             if (!worldContainer) {
                 throw new Error('worldContainer not created by CameraSystem');
@@ -364,35 +323,87 @@ window.CoreInitializer = (function() {
                 scale: worldContainer.scale?.x
             });
             
-            // ========================================
-            // ⭐⭐ Phase 1.2.3: CoordinateSystem初期化
-            // CoreEngine.initialize()の**前**に実行
-            // ========================================
             console.log('[CoreInit] Initializing CoordinateSystem (before CoreEngine)...');
             const coordInitSuccess = initializeCoordinateSystem(worldContainer);
             if (!coordInitSuccess) {
                 throw new Error('CoordinateSystem initialization failed');
             }
             
-            // 初期化確認ログ
             const state = window.CoordinateSystem.dumpState();
             console.log('[CoreInit] CoordinateSystem state:', state);
             
-            // ========================================
-            // ⭐⭐ CoreEngine.initialize()実行
-            // この時点でCoordinateSystemは既に初期化済み
-            // ========================================
             console.log('[CoreInit] Calling CoreEngine.initialize()...');
             const drawingApp = this.coreEngine.initialize();
             console.log('[CoreInit] ✅ CoreEngine.initialize() complete');
             
+            // ========================================
+            // 🔧 Phase 1.2.4: LayerSystemとCameraSystemを接続
+            // ========================================
+            console.log('[CoreInit] Connecting LayerSystem and CameraSystem...');
+            const layerManager = this.coreEngine.getLayerManager();
+            const cameraSystem = this.coreEngine.getCameraSystem();
+            
+            if (layerManager && cameraSystem) {
+                layerManager.setCameraSystem(cameraSystem);
+                
+                const currentFrameContainer = layerManager.currentFrameContainer;
+                const worldContainer = cameraSystem.worldContainer;
+                
+                if (currentFrameContainer && worldContainer) {
+                    const isChild = currentFrameContainer.parent === worldContainer;
+                    console.log('[CoreInit] Parent-child verification:', {
+                        currentFrameContainer: !!currentFrameContainer,
+                        worldContainer: !!worldContainer,
+                        isChild: isChild,
+                        childIndex: isChild ? worldContainer.children.indexOf(currentFrameContainer) : -1,
+                        worldContainerChildren: worldContainer.children.length
+                    });
+                    
+                    if (!isChild) {
+                        console.error('[CoreInit] ❌ Failed to establish parent-child relationship!');
+                        console.error('  currentFrameContainer parent:', currentFrameContainer.parent?.label || 'none');
+                        console.error('  Expected parent:', worldContainer.label);
+                        
+                        console.log('[CoreInit] Forcing parent-child relationship...');
+                        if (currentFrameContainer.parent) {
+                            currentFrameContainer.parent.removeChild(currentFrameContainer);
+                        }
+                        worldContainer.addChildAt(currentFrameContainer, 0);
+                        
+                        const finalCheck = currentFrameContainer.parent === worldContainer;
+                        console.log('[CoreInit] Force established:', finalCheck ? '✅ Success' : '❌ Failed');
+                    } else {
+                        console.log('[CoreInit] ✅ LayerSystem and CameraSystem connected successfully');
+                    }
+                } else {
+                    console.error('[CoreInit] ❌ Missing containers:', {
+                        currentFrameContainer: !!currentFrameContainer,
+                        worldContainer: !!worldContainer
+                    });
+                }
+            } else {
+                console.error('[CoreInit] ❌ Cannot connect LayerSystem and CameraSystem:', {
+                    layerManager: !!layerManager,
+                    cameraSystem: !!cameraSystem
+                });
+            }
+            
+            console.log('[CoreInit] Verifying CoordinateSystem...');
+            if (window.CoordinateSystem && typeof window.CoordinateSystem.dumpState === 'function') {
+                const coordState = window.CoordinateSystem.dumpState();
+                console.log('[CoreInit] CoordinateSystem final state:', coordState);
+            }
+            // ========================================
+            // Phase 1.2.4 接続処理ここまで
+            // ========================================
+            
             const brushSettings = this.coreEngine.getBrushSettings();
             window.brushSettings = brushSettings;
             
+            // 🔧 Phase 1.2.4: canvasContainer削除
             window.CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
-                canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
                 cameraSystem: this.coreEngine.getCameraSystem(),
                 layerManager: this.coreEngine.getLayerManager(),
                 drawingEngine: this.coreEngine.getDrawingEngine(),
@@ -422,11 +433,9 @@ window.CoreInitializer = (function() {
             if (!strokeRenderer) {
                 console.error('[App] StrokeRenderer not found');
             } else {
-                // WebGL2初期化（Phase 6）
                 this.webgl2Enabled = await initializeWebGL2(strokeRenderer, this.pixiApp);
                 
                 if (this.webgl2Enabled) {
-                    // BrushCore再初期化
                     if (window.BrushCore) {
                         console.log('[App] Re-initializing BrushCore with WebGL2 components');
                         
@@ -634,7 +643,8 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase 1.2.3 初期化タイミング修正版 loaded');
-console.log('   ⭐⭐ CameraSystem早期初期化でworldContainer生成');
-console.log('   ⭐⭐ CoordinateSystem初期化をCoreEngine.initialize()の前に実行');
-console.log('   ⭐⭐ 元ファイルの全メソッド・機能を完全継承');
+console.log('✅ core-initializer.js Phase 1.2.4 LayerSystem接続完全版 loaded');
+console.log('   ✅ LayerSystem.setCameraSystem() 呼び出し追加');
+console.log('   ✅ worldContainer ← currentFrameContainer 親子関係確立');
+console.log('   ✅ CoreRuntime.init() から canvasContainer 削除');
+console.log('   ✅ 元ファイルの全メソッド・機能を完全継承');

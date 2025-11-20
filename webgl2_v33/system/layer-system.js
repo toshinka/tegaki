@@ -1204,59 +1204,56 @@
             }
         }
 
-        setCameraSystem(cameraSystem) {
-            this.cameraSystem = cameraSystem;
+setCameraSystem(cameraSystem) {
+    this.cameraSystem = cameraSystem;
+    
+    console.log('[LayerSystem] setCameraSystem() called', {
+        hasCameraSystem: !!cameraSystem,
+        hasWorldContainer: !!cameraSystem?.worldContainer,
+        hasCurrentFrameContainer: !!this.currentFrameContainer
+    });
+    
+    // 🔧 Phase 9: currentFrameContainerをworldContainerの子として追加
+    if (cameraSystem?.worldContainer && this.currentFrameContainer) {
+        // 現在の親をチェック
+        const currentParent = this.currentFrameContainer.parent;
+        
+        if (!currentParent) {
+            // 親がいない場合: worldContainerの最背面に追加
+            cameraSystem.worldContainer.addChildAt(this.currentFrameContainer, 0);
+            console.log('[LayerSystem] ✅ currentFrameContainer added to worldContainer (index: 0)');
+        } else if (currentParent !== cameraSystem.worldContainer) {
+            // 別の親がいる場合: 親を変更
+            console.warn('[LayerSystem] currentFrameContainer has different parent:', currentParent.label || 'unknown');
+            console.log('[LayerSystem] Reparenting to worldContainer...');
             
-            if (cameraSystem?.canvasContainer && window.checkerUtils) {
-                this.checkerPattern = window.checkerUtils.createCanvasChecker(
-                    this.config.canvas.width,
-                    this.config.canvas.height
-                );
-                
-                const bgLayer = this.getLayers()[0];
-                const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
-                this.checkerPattern.visible = !isBackgroundVisible;
-                
-                cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
-            }
-            
-            if (this.transform && this.app && !this.transform.app) {
-                this.initTransform();
-            }
+            currentParent.removeChild(this.currentFrameContainer);
+            cameraSystem.worldContainer.addChildAt(this.currentFrameContainer, 0);
+            console.log('[LayerSystem] ✅ currentFrameContainer reparented to worldContainer (index: 0)');
+        } else {
+            // 既に正しい親がいる場合
+            console.log('[LayerSystem] currentFrameContainer already child of worldContainer');
         }
-
-        setApp(app) {
-            this.app = app;
-            if (this.transform && !this.transform.app) {
-                if (this.cameraSystem) {
-                    this.initTransform();
-                }
-            }
-            
-            if (app && app.renderer) {
-                const layers = this.getLayers();
-                for (const layer of layers) {
-                    if (layer.layerData && !layer.layerData.hasMask()) {
-                        const success = layer.layerData.initializeMask(
-                            this.config.canvas.width,
-                            this.config.canvas.height,
-                            app.renderer
-                        );
-                        if (success && layer.layerData.maskSprite) {
-                            layer.addChildAt(layer.layerData.maskSprite, 0);
-                            this._applyMaskToLayerGraphics(layer);
-                        }
-                    }
-                }
-            }
+        
+        // 親子関係検証
+        const isChild = this.currentFrameContainer.parent === cameraSystem.worldContainer;
+        const childIndex = isChild ? cameraSystem.worldContainer.children.indexOf(this.currentFrameContainer) : -1;
+        
+        console.log('[LayerSystem] Parent-child relationship verified:', {
+            isChild: isChild,
+            childIndex: childIndex,
+            totalChildren: cameraSystem.worldContainer.children.length
+        });
+        
+        if (!isChild) {
+            console.error('[LayerSystem] ❌ Failed to establish parent-child relationship');
         }
-
-        setAnimationSystem(animationSystem) {
-            this.animationSystem = animationSystem;
-            if (animationSystem && animationSystem.layerSystem !== this) {
-                animationSystem.layerSystem = this;
-            }
-        }
+    } else {
+        console.warn('[LayerSystem] Cannot establish parent-child relationship', {
+            worldContainer: !!cameraSystem?.worldContainer,
+            currentFrameContainer: !!this.currentFrameContainer
+        });
+    }
 
         deleteLayer(layerIndex) {
             const layers = this.getLayers();
