@@ -900,6 +900,22 @@
             }
             console.log('[CoreEngine] ✅ BrushCore initialized');
             
+
+console.log('[CoreEngine] [Phase 5.1] Initializing CoordinateSystem...');
+const glCanvas = document.querySelector('#webgl2-canvas');
+if (!glCanvas) throw new Error('WebGL2 canvas not found');
+if (!window.CoordinateSystem) throw new Error('CoordinateSystem not found');
+
+const coordInitSuccess = window.CoordinateSystem.initialize(glCanvas, this.cameraSystem.worldContainer);
+if (!coordInitSuccess) throw new Error('CoordinateSystem initialization failed');
+console.log('[CoreEngine] ✅ CoordinateSystem initialized');
+// =====================================
+
+console.log('[CoreEngine] ========================================');
+console.log('[CoreEngine] [Phase 5] Initializing DrawingEngine...');
+
+
+
             // ========================================
             // 🔧 Phase 5追加: DrawingEngine初期化
             // ========================================

@@ -7,135 +7,132 @@ coordinate-system.js:323    ❌ updateTransform()呼び出しを完全削除
 coordinate-system.js:324    ✅ 純粋な数学計算のみで座標変換実行（PixiJS v8安全）
 coordinate-system.js:325    ✅ 元ファイルの全メソッド・機能を完全継承
 data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
- ✅ batch-api.js (Phase 6: History統合版) loaded
- ✅ debug-utils.js loaded
-    Type: TegakiDebug.help() for available commands
-    Quick check: TegakiDebug.fullDiagnostic()
- ✅ popup-manager.js (quick-access除外対応版) loaded
- ✅ state-manager.js (Phase 8完全実装版) loaded
- ✅ settings-manager.js Phase 2 loaded
-    🔧 exportResolution 設定項目追加
- ✅ layer-transform.js Phase 6 loaded
-    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
- ✅ system/checker-utils.js 統一実装版 loaded
- ✅ layer-system.js Phase 8完成版 loaded
-    ✅ getLayerById() メソッド追加
-    ✅ LayerModel.id 確実取得保証
-    ✅ history.js との統合対応完了
- ✅ drawing-clipboard.js Phase 1 loaded
-    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
-    🎨 ポップアップ: レイヤーコピー、切り取り
- ✅ history.js Phase 4 mask snapshot対応完全版 loaded
-    ✅ pushEraseMask() 実装
-    ✅ beginAction/endAction/addPoint 実装
- ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
-    ✅ WebGLTexture → PIXI.Sprite変換実装完了
-    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
-    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
- [GLMSDFPipeline] ✅ Phase 1.8 Rollback修正版 loaded
-    ⚠️ Phase 1.7の過剰修正を取り消し
-    ✅ aPosition: [0, bounds.width/height] → uResolutionで正規化
- [GLStrokeProcessor] ✅ Singleton instance created
- ✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded
-    📌 window.WebGLContext (主要)
-    📌 window.WebGL2DrawingLayer (互換)
- ✅ gl-mask-layer.js Phase 6完全版 loaded
-    ✅ Circle mask rendering実装
-    ✅ Additive blend対応
-    ✅ Compose Pass統合準備完了
- ✅ pointer-handler.js Phase 1 loaded
-    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
-    🔧 EventEmitter風API実装（.on / .off）
- ✅ pressure-handler.js Phase 1 loaded
-    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
- ✅ stroke-recorder.js Phase 0 loaded
-    ✓ 自動初期化完了（initialize()不要）
-    ✓ Local座標記録専用（座標変換なし）
-    ✓ PerfectFreehand互換形式対応
- ✅ stroke-renderer.js (WebGL2移行版) loaded
-    🔧 WebGPU → WebGL2 参照変更完了
- ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
- ✅ brush-settings.js (Phase 3-D Clean) loaded
- ✅ BlendMode definitions loaded
- ✅ vector-operations.js Phase 1完全版 loaded
-    ✓ window.VectorOperations.generateStrokePolygon(points, size)
-    ✓ config.js perfectFreehand設定自動適用
-    🔥 PerfectFreehand統合基盤完成
- ✅ brush-core.js Phase 2.3 初期化統合改善版 loaded
-    ✅ 初期化の一本化（重複呼び出し対応）
-    ✅ WebGL2コンポーネント更新の分離
-    ✅ Phase 2.2: Spriteスケール修正継承
-    ✅ Phase 2.2: プレビュー透明度修正継承
- ✅ fill-tool.js (WebGPU競合修正版) loaded
-    ❌ 独自WebGPU初期化を削除
-    ✅ 既存インスタンス参照のみ
- ✅ drawing-engine.js v8.14.3 Phase 1.2 座標変換修正版 loaded
-    ✅ CoordinateSystem純粋数学計算版対応
-    ✅ 元ファイルの全メソッド・機能を完全継承
-    🔧 デバッグコマンド: window.TegakiDebug.drawing.*
- ✅ quick-export-ui.js (無効化版) loaded
- ✅ export-manager.js v8.33.0 loaded
-    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
- ✅ png-exporter.js v8.29.0 loaded
-    🔧 generatePreview()メソッド追加
-    🔧 エラーハンドリング強化
-    🔧 Blob生成の確実性向上
- ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
-    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
- ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
-    ⚠️ 実装は将来フェーズで追加予定
-    ✓ エラーメッセージで開発中を通知
- ✅ apng-exporter.js v8.31.0 loaded
- ✅ mp4-exporter.js (Phase 8完成版) loaded
- ✅ dom-builder.js v8.19.0 loaded
-    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
-    ✓ System情報表示（WebGPU/GPU検出）
- ✅ slider-utils.js v8.14.0 loaded
-    🔧 PointerEvent配信問題修正完了
- ✅ keyboard-handler.js Phase 6完成版 loaded
-    ✅ BS/DEL: 描画削除が正常動作
-    ✅ Undo/Redo: children参照保持で完全復元
-    🔧 反転処理: 画像消失問題解決
- ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
-    ✓ layer:panel-update-requested イベントリスナー追加
-    ✓ LayerSystemからの直接呼び出し完全排除
- ✅ ui/status-display-renderer.js 完全改修版 loaded
- ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
-    ✓ Phase 1: layer:transform-updated 購読追加
-    ✓ Phase 3: throttle最適化（100ms）
-    ✓ Phase 3: immediate フラグ対応
-    ✓ タイムラインサムネイルがレイヤー変形に即座追従
- ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
- ✅ album-popup.js (FRAME改修版) loaded
- ✅ settings-popup.js Phase 1 loaded
-    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
- ✅ quick-access-popup.js v8.13.17 loaded
- ✅ export-popup.js v8.29.0 loaded
-    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
- ✅ ui-panels.js v8.13.15 loaded
-    🎨 サイドバー軽量デザイン: オレンジ枠のみ
-    🎯 SVG色統一: 常にvar(--futaba-maroon)
- ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
- ✅ core-engine.js Phase 5 DrawingEngine初期化統合版 loaded
-    🔧 DrawingEngine.initialize()呼び出し追加
-    🔧 PointerHandlerインスタンス作成と接続
-    🔧 WebGL2キャンバス参照の確実な受け渡し
-    🔧 初期化フロー完全統合
-    🔧 Phase 4-C: リアルタイムプレビュー統合維持
- ✅ core-initializer.js Phase 1.2.3 初期化タイミング修正版 loaded
-    ⭐⭐ CameraSystem早期初期化でworldContainer生成
-    ⭐⭐ CoordinateSystem初期化をCoreEngine.initialize()の前に実行
-    ⭐⭐ 元ファイルの全メソッド・機能を完全継承
- 🚀 WebGL2 MSDF版 起動中...
- [CoreInit] Pre-initializing CameraSystem for worldContainer...
- [CoreInit] ✅ CameraSystem pre-initialized
- [CoreInit] ✅ worldContainer ready: {x: 200, y: 100, scale: 1}
- [CoreInit] Initializing CoordinateSystem (before CoreEngine)...
- [CoordinateSystem] initialize() called {canvas: true, worldContainer: true, canvasSize: '1920x1080'}
- [CoordinateSystem] ✅ Initialized successfully (Phase 1.6 Pure Math Mode)
- [CoreInit] ✅ CoordinateSystem initialized
-core-initializer.js:379 [CoreInit] CoordinateSystem state: {initialized: true, canvas: '1920x1080', worldContainer: {…}}
-core-initializer.js:385 [CoreInit] Calling CoreEngine.initialize()...
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+debug-utils.js:553 ✅ debug-utils.js loaded
+debug-utils.js:554    Type: TegakiDebug.help() for available commands
+debug-utils.js:555    Quick check: TegakiDebug.fullDiagnostic()
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
+settings-manager.js:231 ✅ settings-manager.js Phase 2 loaded
+settings-manager.js:232    🔧 exportResolution 設定項目追加
+camera-system.js:728 ✅ camera-system.js Phase 3.1カメラ枠修正版 loaded
+camera-system.js:729    🔧 cameraFrame初期表示を無効化
+camera-system.js:730    🔧 デバッグ用: window.cameraSystem.showCameraFrame()
+camera-system.js:731    ✅ Phase 3完全継承
+layer-transform.js:1011 ✅ layer-transform.js Phase 6 loaded
+layer-transform.js:1012    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
+layer-system.js:1424 ✅ layer-system.js Phase 9完成版 loaded
+layer-system.js:1425    ✅ setCameraSystem() 親子関係確立実装
+layer-system.js:1426    ✅ currentFrameContainer → worldContainer 確立
+layer-system.js:1427    ✅ verifyParentChain() デバッグメソッド追加
+layer-system.js:1428    ✅ Phase 8完全継承（getLayerById実装）
+drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
+drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
+history.js:343 ✅ history.js Phase 4 mask snapshot対応完全版 loaded
+history.js:344    ✅ pushEraseMask() 実装
+history.js:345    ✅ beginAction/endAction/addPoint 実装
+gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+gl-msdf-pipeline.js:636 [GLMSDFPipeline] ✅ Phase 1.8 Rollback修正版 loaded
+gl-msdf-pipeline.js:637   ⚠️ Phase 1.7の過剰修正を取り消し
+gl-msdf-pipeline.js:638    ✅ aPosition: [0, bounds.width/height] → uResolutionで正規化
+gl-stroke-processor.js:343 [GLStrokeProcessor] ✅ Singleton instance created
+webgl2-drawing-layer.js:360 ✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded
+webgl2-drawing-layer.js:361    📌 window.WebGLContext (主要)
+webgl2-drawing-layer.js:362    📌 window.WebGL2DrawingLayer (互換)
+gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
+gl-mask-layer.js:474    ✅ Circle mask rendering実装
+gl-mask-layer.js:475    ✅ Additive blend対応
+gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
+pointer-handler.js:252 ✅ pointer-handler.js Phase 1 loaded
+pointer-handler.js:253    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
+pointer-handler.js:254    🔧 EventEmitter風API実装（.on / .off）
+pressure-handler.js:144 ✅ pressure-handler.js Phase 1 loaded
+pressure-handler.js:145    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
+stroke-recorder.js:334 ✅ stroke-recorder.js Phase 0 loaded
+stroke-recorder.js:335    ✓ 自動初期化完了（initialize()不要）
+stroke-recorder.js:336    ✓ Local座標記録専用（座標変換なし）
+stroke-recorder.js:337    ✓ PerfectFreehand互換形式対応
+stroke-renderer.js:199 ✅ stroke-renderer.js (WebGL2移行版) loaded
+stroke-renderer.js:200    🔧 WebGPU → WebGL2 参照変更完了
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+blend-modes.js:24 ✅ BlendMode definitions loaded
+vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
+vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
+vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
+brush-core.js:802 ✅ brush-core.js Phase 2.3 初期化統合改善版 loaded
+brush-core.js:803    ✅ 初期化の一本化（重複呼び出し対応）
+brush-core.js:804    ✅ WebGL2コンポーネント更新の分離
+brush-core.js:805    ✅ Phase 2.2: Spriteスケール修正継承
+brush-core.js:806    ✅ Phase 2.2: プレビュー透明度修正継承
+fill-tool.js:269 ✅ fill-tool.js (WebGPU競合修正版) loaded
+fill-tool.js:270    ❌ 独自WebGPU初期化を削除
+fill-tool.js:271    ✅ 既存インスタンス参照のみ
+drawing-engine.js:603 ✅ drawing-engine.js v8.14.3 Phase 1.2 座標変換修正版 loaded
+drawing-engine.js:604    ✅ CoordinateSystem純粋数学計算版対応
+drawing-engine.js:605    ✅ 元ファイルの全メソッド・機能を完全継承
+drawing-engine.js:606    🔧 デバッグコマンド: window.TegakiDebug.drawing.*
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
+png-exporter.js:258    🔧 Blob生成の確実性向上
+webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
+dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
+slider-utils.js:265 ✅ slider-utils.js v8.14.0 loaded
+slider-utils.js:266    🔧 PointerEvent配信問題修正完了
+keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
+keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
+keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+layer-panel-renderer.js:663 ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
+layer-panel-renderer.js:664    ✓ layer:panel-update-requested イベントリスナー追加
+layer-panel-renderer.js:665    ✓ LayerSystemからの直接呼び出し完全排除
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
+settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
+ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
+ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
+core-runtime.js:578 ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
+core-engine.js:1041 ✅ core-engine.js Phase 5 DrawingEngine初期化統合版 loaded
+core-engine.js:1042    🔧 DrawingEngine.initialize()呼び出し追加
+core-engine.js:1043    🔧 PointerHandlerインスタンス作成と接続
+core-engine.js:1044    🔧 WebGL2キャンバス参照の確実な受け渡し
+core-engine.js:1045    🔧 初期化フロー完全統合
+core-engine.js:1046    🔧 Phase 4-C: リアルタイムプレビュー統合維持
+core-initializer.js:700 ✅ core-initializer.js Phase 1.2.6 CameraSystem二重初期化修正版 loaded
+core-initializer.js:701    ✅ Pre-initialization削除（CoreEngine内で一括初期化）
+core-initializer.js:702    ✅ CoordinateSystem再初期化追加
+core-initializer.js:703    ✅ Phase 1.2.5完全継承
+index.html:114 🚀 WebGL2 MSDF版 起動中...
+core-initializer.js:362 [CoreInit] Calling CoreEngine.initialize()...
 core-engine.js:815 [CoreEngine] ========================================
 core-engine.js:816 [CoreEngine] Starting initialization sequence...
 core-engine.js:817 [CoreEngine] ========================================
@@ -160,24 +157,36 @@ brush-core.js:136 [BrushCore] Updating WebGL2 components...
 brush-core.js:151 [BrushCore] WebGL2 components updated: {glStrokeProcessor: true, glMSDFPipeline: true, textureBridge: true, glMaskLayer: true, msdfAvailable: true, …}
 brush-core.js:125 [BrushCore] ✅ Initialization complete: {initialized: true, msdfAvailable: true, maskAvailable: false}
 core-engine.js:901 [CoreEngine] ✅ BrushCore initialized
-core-engine.js:906 [CoreEngine] ========================================
-core-engine.js:907 [CoreEngine] [Phase 5] Initializing DrawingEngine...
-core-engine.js:908 [CoreEngine] ========================================
+core-engine.js:904 [CoreEngine] [Phase 5.1] Initializing CoordinateSystem...
+coordinate-system.js:45 [CoordinateSystem] initialize() called {canvas: true, worldContainer: true, canvasSize: '1920x1080'}
+coordinate-system.js:65 [CoordinateSystem] ✅ Initialized successfully (Phase 1.6 Pure Math Mode)
+core-engine.js:911 [CoreEngine] ✅ CoordinateSystem initialized
+core-engine.js:914 [CoreEngine] ========================================
+core-engine.js:915 [CoreEngine] [Phase 5] Initializing DrawingEngine...
+core-engine.js:922 [CoreEngine] ========================================
+core-engine.js:923 [CoreEngine] [Phase 5] Initializing DrawingEngine...
+core-engine.js:924 [CoreEngine] ========================================
 core-engine.js:733 [CoreEngine] Initializing DrawingEngine...
 core-engine.js:744 [CoreEngine] ✅ WebGL2 canvas found: {width: 1920, height: 1080, id: 'webgl2-canvas'}
 core-engine.js:775 [CoreEngine] ✅ PointerHandler created
 drawing-engine.js:118 [DrawingEngine] ✅ Initialized v8.14.3 Phase 1.2 {coordSystemReady: true, glCanvasSize: {…}, brushCoreReady: true}
 core-engine.js:793 [CoreEngine] ✅ DrawingEngine initialized successfully
-core-engine.js:912 [CoreEngine] ✅ DrawingEngine initialization complete
-core-engine.js:922 [CoreEngine] Initializing AnimationSystem...
-core-engine.js:939 [CoreEngine] Initializing BatchAPI...
-core-engine.js:945 [CoreEngine] ✅ BatchAPI initialized
-core-engine.js:949 [CoreEngine] Initializing UnifiedKeyHandler...
-core-engine.js:961 [CoreEngine] ✅ UnifiedKeyHandler initialized
-core-engine.js:1001 [CoreEngine] ========================================
-core-engine.js:1002 [CoreEngine] ✅ Initialization complete!
-core-engine.js:1003 [CoreEngine] ========================================
-core-initializer.js:387 [CoreInit] ✅ CoreEngine.initialize() complete
+core-engine.js:928 [CoreEngine] ✅ DrawingEngine initialization complete
+core-engine.js:938 [CoreEngine] Initializing AnimationSystem...
+core-engine.js:955 [CoreEngine] Initializing BatchAPI...
+core-engine.js:961 [CoreEngine] ✅ BatchAPI initialized
+core-engine.js:965 [CoreEngine] Initializing UnifiedKeyHandler...
+core-engine.js:977 [CoreEngine] ✅ UnifiedKeyHandler initialized
+core-engine.js:1017 [CoreEngine] ========================================
+core-engine.js:1018 [CoreEngine] ✅ Initialization complete!
+core-engine.js:1019 [CoreEngine] ========================================
+core-initializer.js:364 [CoreInit] ✅ CoreEngine.initialize() complete
+core-initializer.js:371 [CoreInit] ✅ worldContainer ready: {x: 200, y: 100, scale: 1}
+core-initializer.js:380 [CoreInit] Connecting LayerSystem and CameraSystem...
+core-initializer.js:392 [CoreInit] Parent-child verification: {currentFrameContainer: true, worldContainer: true, isChild: true, childIndex: 0, worldContainerChildren: 4}
+core-initializer.js:414 [CoreInit] ✅ LayerSystem and CameraSystem connected successfully
+core-initializer.js:429 [CoreInit] Verifying CoordinateSystem...
+core-initializer.js:432 [CoreInit] CoordinateSystem final state: {initialized: true, canvas: '1920x1080', worldContainer: {…}}
 popup-manager.js:16 ✅ PopupManager initialized
 popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
 popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
@@ -190,68 +199,65 @@ popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 webgl2-drawing-layer.js:94 [WebGL2DrawingLayer] ✅ Initialized {canvasSize: '1920x1080', maxTextureSize: 16384, extensions: Array(3)}
-core-initializer.js:230 [WebGL2] Drawing Layer initialized
+core-initializer.js:202 [WebGL2] Drawing Layer initialized
 gl-stroke-processor.js:48 [GLStrokeProcessor] ✅ Initialized (Phase 1.6)
-core-initializer.js:239 [WebGL2] GLStrokeProcessor initialized
+core-initializer.js:210 [WebGL2] GLStrokeProcessor initialized
 gl-msdf-pipeline.js:66 [GLMSDFPipeline] ✅ Initialized (Phase 1.8)
-core-initializer.js:244 [WebGL2] GLMSDFPipeline initialized
+core-initializer.js:214 [WebGL2] GLMSDFPipeline initialized
 gl-texture-bridge.js:51 [GLTextureBridge] ✅ Initialized (PixiJS v8)
-core-initializer.js:252 [WebGL2] GLTextureBridge initialized
+core-initializer.js:221 [WebGL2] GLTextureBridge initialized
 gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
-core-initializer.js:264 [WebGL2] GLMaskLayer initialized
+core-initializer.js:232 [WebGL2] GLMaskLayer initialized
 stroke-renderer.js:76 [StrokeRenderer] ✅ Initialized (WebGL2 mode)
-core-initializer.js:279 [WebGL2] StrokeRenderer initialized
-core-initializer.js:281 [WebGL2] ✅ Phase 6 initialization complete
-core-initializer.js:431 [App] Re-initializing BrushCore with WebGL2 components
-core-initializer.js:463 [App] BrushCore already initialized, components updated
-core-initializer.js:466 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6.1) {msdfAvailable: true, maskAvailable: true, initialized: true}
+core-initializer.js:246 [WebGL2] StrokeRenderer initialized
+core-initializer.js:248 [WebGL2] ✅ Phase 6 initialization complete
+core-initializer.js:493 [App] Re-initializing BrushCore with WebGL2 components
+core-initializer.js:525 [App] BrushCore already initialized, components updated
+core-initializer.js:528 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6.1) {msdfAvailable: true, maskAvailable: true, initialized: true}
 index.html:116 ✅ WebGL2初期化完了
-core-engine.js:927 [CoreEngine] Initializing ExportManager...
+core-engine.js:943 [CoreEngine] Initializing ExportManager...
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
-core-engine.js:933 [CoreEngine] Initializing LayerTransform...
+core-engine.js:949 [CoreEngine] Initializing LayerTransform...
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-// 1. 初期化確認
-window.CoordinateSystem.dumpState()
+// ブラウザコンソールで実行
+const activeLayer = window.layerManager.getActiveLayer();
+console.log('Active Layer:', {
+    label: activeLayer.label,
+    position: {x: activeLayer.x, y: activeLayer.y},
+    pivot: {x: activeLayer.pivot.x, y: activeLayer.pivot.y},
+    scale: {x: activeLayer.scale.x, y: activeLayer.scale.y},
+    rotation: activeLayer.rotation
+});
 
-// 2. 座標変換テスト
-TegakiDebug.drawing.testTransform(960, 540)
+const currentFrame = window.layerManager.currentFrameContainer;
+console.log('CurrentFrame:', {
+    label: currentFrame.label,
+    position: {x: currentFrame.x, y: currentFrame.y},
+    pivot: {x: currentFrame.pivot?.x || 0, y: currentFrame.pivot?.y || 0},
+    scale: {x: currentFrame.scale.x, y: currentFrame.scale.y},
+    rotation: currentFrame.rotation
+});
 
-// 3. 実際に描画（WebGL2キャンバス上でクリック）
+const worldContainer = window.cameraSystem.worldContainer;
+console.log('WorldContainer:', {
+    label: worldContainer.label,
+    position: {x: worldContainer.x, y: worldContainer.y},
+    scale: {x: worldContainer.scale.x, y: worldContainer.scale.y},
+    rotation: worldContainer.rotation
+});
+
+// 座標変換テスト
+window.TegakiDebug.drawing.testTransform(960, 540);
+VM509:3 Active Layer: {label: 'temp_layer_1_1763681260527', position: {…}, pivot: {…}, scale: {…}, rotation: 0}
+VM509:12 CurrentFrame: {label: 'temporary_frame_container', position: {…}, pivot: {…}, scale: {…}, rotation: 0}
+VM509:21 WorldContainer: {label: 'worldContainer', position: {…}, scale: {…}, rotation: 0}
 drawing-engine.js:513 [DrawingEngine] Coordinate Transform Test
-coordinate-system.js:240 [CoordinateSystem] ❌ worldToLocal: container not child of worldContainer {containerLabel: 'layer_1763671591612_c974yx273', chainLength: 5}
-worldToLocal @ coordinate-system.js:240
-_transformPointerToLocal @ drawing-engine.js:375
-testCoordinateTransform @ drawing-engine.js:516
-testTransform @ drawing-engine.js:600
-（匿名） @ VM471:5
-drawing-engine.js:382 [DrawingEngine] worldToLocal failed
-_transformPointerToLocal @ drawing-engine.js:382
-testCoordinateTransform @ drawing-engine.js:516
-testTransform @ drawing-engine.js:600
-（匿名） @ VM471:5
-drawing-engine.js:521 ❌ Transform failed
-testCoordinateTransform @ drawing-engine.js:521
-testTransform @ drawing-engine.js:600
-（匿名） @ VM471:5
-null
-coordinate-system.js:240 [CoordinateSystem] ❌ worldToLocal: container not child of worldContainer {containerLabel: 'layer_1763671591612_c974yx273', chainLength: 5}
-worldToLocal @ coordinate-system.js:240
-_transformPointerToLocal @ drawing-engine.js:375
-_handlePointerDown @ drawing-engine.js:196
-（匿名） @ drawing-engine.js:141
-（匿名） @ pointer-handler.js:79
-_emit @ pointer-handler.js:77
-onPointerDown @ pointer-handler.js:146
-drawing-engine.js:382 [DrawingEngine] worldToLocal failed
-_transformPointerToLocal @ drawing-engine.js:382
-_handlePointerDown @ drawing-engine.js:196
-（匿名） @ drawing-engine.js:141
-（匿名） @ pointer-handler.js:79
-_emit @ pointer-handler.js:77
-onPointerDown @ pointer-handler.js:146
-drawing-engine.js:198 [DrawingEngine] Failed to transform pointer coords on pointerdown
-_handlePointerDown @ drawing-engine.js:198
-（匿名） @ drawing-engine.js:141
-（匿名） @ pointer-handler.js:79
-_emit @ pointer-handler.js:77
-onPointerDown @ pointer-handler.js:146
+drawing-engine.js:519 ✅ Transform successful: {localX: 760, localY: 440, worldX: 760, worldY: 440, canvasX: 960, …}
+{localX: 760, localY: 440, worldX: 760, worldY: 440, canvasX: 960, …}
+console.log('WorldContainer children:', 
+    window.cameraSystem.worldContainer.children.map((c, i) => 
+        `[${i}] ${c.label}`
+    )
+);
+VM513:1 WorldContainer children: (4) ['[0] temporary_frame_container', '[1] checkerPattern', '[2] cameraFrame', '[3] guideLines']
+undefined

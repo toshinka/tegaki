@@ -1,16 +1,13 @@
 /**
- * @file system/camera-system.js - Phase 3完全版
+ * @file system/camera-system.js - Phase 3.1カメラ枠修正版
  * @description カメラ制御システム（canvasContainer→worldContainer統合版）
  * 
- * 【Phase 3 改修内容】
- * 🔧 canvasContainerをworldContainerに統合（二重構造解消）
- * 🔧 currentFrameContainerがworldContainerの直接の子になる構造に変更
- * 🔧 座標変換パイプラインとの整合性確保
- * ✅ 元ファイルのすべてのメソッド・機能を完全継承
+ * 【Phase 3.1 改修内容】
+ * 🔧 cameraFrame初期表示を無効化（デバッグ用のみ表示）
+ * ✅ Phase 3完全継承
  * 
- * 【構造変更】
- * Before: worldContainer → canvasContainer → currentFrameContainer
- * After:  worldContainer → currentFrameContainer (直接)
+ * 【構造】
+ * worldContainer → currentFrameContainer (直接)
  */
 
 (function() {
@@ -44,7 +41,6 @@
             this.canvasMoveMode = false;
             
             this.worldContainer = null;
-            // 🔧 Phase 3: canvasContainerは削除（worldContainerに統合）
             this.cameraFrame = null;
             this.guideLines = null;
             this.canvasMask = null;
@@ -69,8 +65,7 @@
             this._setupEvents();
             this._setupEventBusListeners();
             this.initializeCamera();
-            this._drawCameraFrame();
-            // 🔧 Phase 3: _setupCheckerPattern()は削除（LayerSystemが直接追加）
+            // 🔧 Phase 3.1: cameraFrame描画は行わない（必要時のみ表示）
         }
 
         _setupEventBusListeners() {
@@ -117,28 +112,20 @@
         }
 
         _createContainers() {
-            // worldContainer作成
             this.worldContainer = new PIXI.Container();
             this.worldContainer.label = 'worldContainer';
             this.app.stage.addChild(this.worldContainer);
             
-            // 🔧 Phase 3: canvasContainerは作成しない
-            // currentFrameContainerはLayerSystem.setCameraSystem()で後から追加される
-            
-            // cameraFrame作成（キャンバス枠表示用）
+            // 🔧 Phase 3.1: cameraFrameは作成するが非表示
             this.cameraFrame = new PIXI.Graphics();
             this.cameraFrame.label = 'cameraFrame';
+            this.cameraFrame.visible = false;  // 🔧 デフォルト非表示
             this.worldContainer.addChild(this.cameraFrame);
             
-            // guideLines作成（中心線表示用）
             this.guideLines = new PIXI.Container();
             this.guideLines.label = 'guideLines';
             this.worldContainer.addChild(this.guideLines);
             this.createGuideLines();
-            
-            // 🔧 Phase 3: canvasMaskは削除（不要）
-            
-            console.log('[CameraSystem] ✅ Containers created (Phase 3: canvasContainer removed)');
         }
 
         createGuideLines() {
@@ -162,7 +149,7 @@
 
         updateGuideLinesForCanvasResize() {
             this.createGuideLines();
-            this._drawCameraFrame();
+            // 🔧 Phase 3.1: cameraFrame更新は行わない
         }
 
         showGuideLines() {
@@ -173,12 +160,26 @@
             this.guideLines.visible = false;
         }
 
+        /**
+         * 🔧 Phase 3.1: カメラ枠表示切り替え（デバッグ用）
+         */
+        showCameraFrame() {
+            if (this.cameraFrame) {
+                this._drawCameraFrame();
+                this.cameraFrame.visible = true;
+            }
+        }
+
+        hideCameraFrame() {
+            if (this.cameraFrame) {
+                this.cameraFrame.visible = false;
+            }
+        }
+
         initializeCamera() {
             const screen = this.app.stage?.parent?.screen || { width: 800, height: 600 };
             const centerX = screen.width / 2;
             const centerY = screen.height / 2;
-            
-            // 🔧 Phase 3: canvasContainer.position設定は不要
             
             const initialX = centerX - this.config.canvas.width / 2;
             const initialY = centerY - this.config.canvas.height / 2;
@@ -648,7 +649,6 @@
             }
         }
 
-        // 🔧 Phase 3: worldContainerを直接参照に変更
         screenToLayer(screenX, screenY) {
             return this.worldContainer.toLocal({ x: screenX, y: screenY });
         }
@@ -676,7 +676,6 @@
             this._emitCursorUpdate();
         }
 
-        // 🔧 Phase 3: worldContainerを直接参照に変更
         toScreenCoords(worldX, worldY) {
             const canvasPoint = { x: worldX, y: worldY };
             return this.worldContainer.toGlobal(canvasPoint);
@@ -695,7 +694,11 @@
             this._emitTransformChanged();
         }
 
+        /**
+         * 🔧 Phase 3.1: カメラ枠描画（プライベートメソッド）
+         */
         _drawCameraFrame() {
+            if (!this.cameraFrame) return;
             this.cameraFrame.clear();
             this.cameraFrame.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
             this.cameraFrame.stroke({ width: 2, color: 0xff0000, alpha: 0.5 });
@@ -722,9 +725,9 @@
 
     window.TegakiCameraSystem = CameraSystem;
     
-    console.log('✅ camera-system.js Phase 3完全版 loaded');
-    console.log('   🔧 canvasContainer削除 - worldContainer直下構造に変更');
-    console.log('   🔧 座標変換パイプライン整合性確保');
-    console.log('   ✅ 元ファイルの全メソッド・機能を完全継承');
+    console.log('✅ camera-system.js Phase 3.1カメラ枠修正版 loaded');
+    console.log('   🔧 cameraFrame初期表示を無効化');
+    console.log('   🔧 デバッグ用: window.cameraSystem.showCameraFrame()');
+    console.log('   ✅ Phase 3完全継承');
 
 })();

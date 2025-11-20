@@ -1,25 +1,28 @@
 /**
- * @file layer-system.js - Phase 8: getLayerById実装版
+ * @file layer-system.js - Phase 9: setCameraSystem親子関係確立版
  * @description レイヤー管理・操作の中核システム
  * 
- * 【Phase 8 改修内容】
- * ✅ getLayerById() メソッド追加（history.js対応）
- * ✅ LayerModel.id の確実な取得保証
- * ✅ 既存機能完全継承
+ * 【Phase 9 改修内容】
+ * ✅ setCameraSystem() メソッド改修（座標変換エラー解消）
+ * ✅ currentFrameContainer → worldContainer 親子関係確立
+ * ✅ verifyParentChain() デバッグメソッド追加
+ * ✅ Phase 8完全継承（getLayerById実装継承）
  * 
- * 【親ファイル (このファイルが依存)】
+ * 【親ファイル依存】
  * - event-bus.js (イベント通信)
  * - data-models.js (LayerModel定義)
  * - layer-transform.js (変形処理委譲)
  * - coordinate-system.js (座標変換)
+ * - camera-system.js (worldContainer提供)
  * - config.js (設定値)
  * - history.js (Undo/Redo)
  * 
- * 【子ファイル (このファイルに依存)】
+ * 【子ファイル依存このファイルに】
  * - layer-panel-renderer.js (UI描画 - EventBus経由のみ)
  * - keyboard-handler.js (ショートカット)
  * - thumbnail-update-manager.js (サムネイル更新)
  * - brush-core.js (描画系History登録の責任者)
+ * - drawing-engine.js (activeLayer取得・座標変換)
  */
 
 (function() {
@@ -64,7 +67,7 @@
             });
             bgLayer.label = bgLayerModel.id;
             bgLayer.layerData = bgLayerModel;
-            bgLayer.id = bgLayerModel.id; // ✅ Phase 8: id直接設定
+            bgLayer.id = bgLayerModel.id;
             
             const bg = this._createSolidBackground(
                 this.config.canvas.width, 
@@ -83,7 +86,7 @@
             });
             layer1.label = layer1Model.id;
             layer1.layerData = layer1Model;
-            layer1.id = layer1Model.id; // ✅ Phase 8: id直接設定
+            layer1.id = layer1Model.id;
             
             if (this.transform) {
                 this.transform.setTransform(layer1Model.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
@@ -100,7 +103,7 @@
         }
 
         /**
-         * ✅ Phase 8: レイヤーID検索メソッド追加
+         * ✅ Phase 8: レイヤーID検索メソッド（継承）
          */
         getLayerById(layerId) {
             if (!layerId) return null;
@@ -134,8 +137,8 @@
                         data.height
                     );
                     
-                    if (this.cameraSystem?.canvasContainer && !this.checkerPattern.parent) {
-                        this.cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
+                    if (this.cameraSystem?.worldContainer && !this.checkerPattern.parent) {
+                        this.cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
                     }
                     
                     const bgLayer = this.getLayers()[0];
@@ -1068,7 +1071,7 @@
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
             layer.layerData = layerModel;
-            layer.id = layerModel.id; // ✅ Phase 8: id直接設定
+            layer.id = layerModel.id;
             
             if (this.app && this.app.renderer) {
                 const success = layerModel.initializeMask(
@@ -1204,56 +1207,111 @@
             }
         }
 
-setCameraSystem(cameraSystem) {
-    this.cameraSystem = cameraSystem;
-    
-    console.log('[LayerSystem] setCameraSystem() called', {
-        hasCameraSystem: !!cameraSystem,
-        hasWorldContainer: !!cameraSystem?.worldContainer,
-        hasCurrentFrameContainer: !!this.currentFrameContainer
-    });
-    
-    // 🔧 Phase 9: currentFrameContainerをworldContainerの子として追加
-    if (cameraSystem?.worldContainer && this.currentFrameContainer) {
-        // 現在の親をチェック
-        const currentParent = this.currentFrameContainer.parent;
-        
-        if (!currentParent) {
-            // 親がいない場合: worldContainerの最背面に追加
-            cameraSystem.worldContainer.addChildAt(this.currentFrameContainer, 0);
-            console.log('[LayerSystem] ✅ currentFrameContainer added to worldContainer (index: 0)');
-        } else if (currentParent !== cameraSystem.worldContainer) {
-            // 別の親がいる場合: 親を変更
-            console.warn('[LayerSystem] currentFrameContainer has different parent:', currentParent.label || 'unknown');
-            console.log('[LayerSystem] Reparenting to worldContainer...');
+        /**
+         * ================================================================================
+         * 🔧 Phase 9: setApp() メソッド追加（core-engine連携用）
+         * ================================================================================
+         */
+        setApp(app) {
+            this.app = app;
             
-            currentParent.removeChild(this.currentFrameContainer);
-            cameraSystem.worldContainer.addChildAt(this.currentFrameContainer, 0);
-            console.log('[LayerSystem] ✅ currentFrameContainer reparented to worldContainer (index: 0)');
-        } else {
-            // 既に正しい親がいる場合
-            console.log('[LayerSystem] currentFrameContainer already child of worldContainer');
+            // appがセットされたら、まだ初期化されていないLayerTransformを初期化
+            if (this.transform && !this.transform.app && this.cameraSystem) {
+                this.initTransform();
+            }
         }
-        
-        // 親子関係検証
-        const isChild = this.currentFrameContainer.parent === cameraSystem.worldContainer;
-        const childIndex = isChild ? cameraSystem.worldContainer.children.indexOf(this.currentFrameContainer) : -1;
-        
-        console.log('[LayerSystem] Parent-child relationship verified:', {
-            isChild: isChild,
-            childIndex: childIndex,
-            totalChildren: cameraSystem.worldContainer.children.length
-        });
-        
-        if (!isChild) {
-            console.error('[LayerSystem] ❌ Failed to establish parent-child relationship');
+
+        /**
+         * ================================================================================
+         * 🔧 Phase 9: setCameraSystem() 親子関係確立版
+         * ================================================================================
+         */
+        setCameraSystem(cameraSystem) {
+            this.cameraSystem = cameraSystem;
+            
+            // 🔧 Phase 9: currentFrameContainerをworldContainerの子として追加
+            if (cameraSystem?.worldContainer && this.currentFrameContainer) {
+                const currentParent = this.currentFrameContainer.parent;
+                
+                if (!currentParent) {
+                    cameraSystem.worldContainer.addChildAt(this.currentFrameContainer, 0);
+                } else if (currentParent !== cameraSystem.worldContainer) {
+                    currentParent.removeChild(this.currentFrameContainer);
+                    cameraSystem.worldContainer.addChildAt(this.currentFrameContainer, 0);
+                }
+                
+                const isChild = this.currentFrameContainer.parent === cameraSystem.worldContainer;
+                if (!isChild) {
+                    console.error('[LayerSystem] ❌ Failed to establish parent-child relationship');
+                }
+            }
+            
+            // 🔧 Phase 9: checkerPattern配置をworldContainer直下に修正
+            if (cameraSystem?.worldContainer && window.checkerUtils) {
+                this.checkerPattern = window.checkerUtils.createCanvasChecker(
+                    this.config.canvas.width,
+                    this.config.canvas.height
+                );
+                
+                const bgLayer = this.getLayers()[0];
+                const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
+                this.checkerPattern.visible = !isBackgroundVisible;
+                
+                cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
+                cameraSystem.worldContainer.setChildIndex(this.currentFrameContainer, 0);
+            }
+            
+            if (this.transform && this.app && !this.transform.app) {
+                this.initTransform();
+            }
         }
-    } else {
-        console.warn('[LayerSystem] Cannot establish parent-child relationship', {
-            worldContainer: !!cameraSystem?.worldContainer,
-            currentFrameContainer: !!this.currentFrameContainer
-        });
-    }
+
+        /**
+         * ================================================================================
+         * 🔧 Phase 9: verifyParentChain() デバッグメソッド追加
+         * ================================================================================
+         */
+        verifyParentChain() {
+            if (!this.currentFrameContainer) {
+                console.error('[LayerSystem] currentFrameContainer not found');
+                return false;
+            }
+            
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) {
+                console.error('[LayerSystem] No active layer');
+                return false;
+            }
+            
+            console.log('[LayerSystem] Parent Chain Verification:');
+            
+            let current = activeLayer;
+            let depth = 0;
+            let foundWorldContainer = false;
+            
+            while (current && depth < 10) {
+                const label = current.label || current.constructor.name;
+                console.log(`  [${depth}] ${label}`);
+                
+                if (current === this.cameraSystem?.worldContainer) {
+                    foundWorldContainer = true;
+                    console.log('  ✅ worldContainer found in chain at depth', depth);
+                    break;
+                }
+                
+                current = current.parent;
+                depth++;
+            }
+            
+            if (!foundWorldContainer) {
+                console.error('  ❌ worldContainer NOT found in chain');
+                console.error('  Chain ended at:', current ? (current.label || current.constructor.name) : 'null');
+                return false;
+            }
+            
+            console.log('[LayerSystem] ✅ Parent chain is valid');
+            return true;
+        }
 
         deleteLayer(layerIndex) {
             const layers = this.getLayers();
@@ -1355,16 +1413,16 @@ setCameraSystem(cameraSystem) {
 
     window.TegakiLayerSystem = LayerSystem;
     
-    // ✅ Phase 8: グローバル登録統一
     if (!window.layerSystem && !window.layerManager) {
         const instance = new LayerSystem();
         window.layerSystem = instance;
-        window.layerManager = instance; // 互換性維持
+        window.layerManager = instance;
     }
 
 })();
 
-console.log('✅ layer-system.js Phase 8完成版 loaded');
-console.log('   ✅ getLayerById() メソッド追加');
-console.log('   ✅ LayerModel.id 確実取得保証');
-console.log('   ✅ history.js との統合対応完了');
+console.log('✅ layer-system.js Phase 9完成版 loaded');
+console.log('   ✅ setCameraSystem() 親子関係確立実装');
+console.log('   ✅ currentFrameContainer → worldContainer 確立');
+console.log('   ✅ verifyParentChain() デバッグメソッド追加');
+console.log('   ✅ Phase 8完全継承（getLayerById実装）');
