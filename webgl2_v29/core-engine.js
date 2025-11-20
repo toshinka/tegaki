@@ -1,31 +1,21 @@
 /**
  * ================================================================================
- * core-engine.js Phase 5修正版: DrawingEngine初期化統合
+ * core-engine.js Phase 5 DrawingEngine初期化統合版（完全版）
  * ================================================================================
  * 
- * 【Phase 5改修内容】
- * 🔧 DrawingEngine.initialize()呼び出し追加
- * 🔧 PointerHandlerインスタンス作成と接続
- * 🔧 WebGL2キャンバス参照の確実な受け渡し
- * 🔧 初期化順序の最適化
+ * 【Phase 5改修箇所】
+ * 1. _initializeDrawingEngine()メソッド新設（行840付近）
+ * 2. initialize()内でDrawingEngine初期化呼び出し追加（行775付近）
  * 
- * 【Phase 4-C改修内容】
- * 🔧 _renderLoop()にプレビュー更新追加
- * 🔧 BrushCore.renderPreview()呼び出し統合
- * 🔧 Master Loop完全統合維持
- * 
- * 【依存関係】
- * - system/camera-system.js (TegakiCameraSystem)
- * - system/layer-system.js (TegakiLayerSystem)
- * - system/drawing-clipboard.js (TegakiDrawingClipboard)
- * - system/drawing/brush-core.js (BrushCore)
- * - system/drawing/stroke-recorder.js (StrokeRecorder)
- * - system/drawing/stroke-renderer.js (StrokeRenderer)
- * - system/drawing/drawing-engine.js (DrawingEngine)
- * - system/drawing/pointer-handler.js (PointerHandler)
- * - system/event-bus.js (TegakiEventBus)
- * - system/export-manager.js (ExportManager)
- * - coordinate-system.js (CoordinateSystem)
+ * 【継承された全機能】
+ * - UnifiedKeyHandler完全実装
+ * - CoreEngineクラス全メソッド
+ * - レンダーループ（Phase 4-C統合維持）
+ * - システム間相互参照
+ * - イベント統合
+ * - エクスポート・アニメーション機能
+ * - キャンバスリサイズ機能
+ * - ブックマークレット対応
  * 
  * ================================================================================
  */
@@ -33,6 +23,7 @@
 (function() {
     'use strict';
     
+    // 依存関係チェック
     if (!window.TegakiCameraSystem) throw new Error('system/camera-system.js required');
     if (!window.TegakiLayerSystem) throw new Error('system/layer-system.js required');
     if (!window.TegakiDrawingClipboard) throw new Error('system/drawing-clipboard.js required');
@@ -42,6 +33,9 @@
     if (!CONFIG) throw new Error('config.js required');
     if (!CONFIG.animation) throw new Error('Animation configuration required');
 
+    /**
+     * UnifiedKeyHandler - キーボード入力統合ハンドラ
+     */
     class UnifiedKeyHandler {
         constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
             this.cameraSystem = cameraSystem;
@@ -67,6 +61,7 @@
                 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
                 const metaKey = isMac ? e.metaKey : e.ctrlKey;
                 
+                // Undo/Redo
                 if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
                     if (e.code === 'KeyZ' && !e.shiftKey) {
                         if (window.History?.canUndo()) {
@@ -82,6 +77,7 @@
                     return;
                 }
                 
+                // Camera Reset (Ctrl/Cmd + 0)
                 if (metaKey && e.code === 'Digit0') {
                     this.cameraSystem?.resetView();
                     e.preventDefault();
@@ -89,6 +85,7 @@
                 }
             });
             
+            // イベントバス統合
             this.eventBus.on('tool:select', (data) => {
                 this.switchTool(data.tool);
             });
@@ -148,36 +145,46 @@
         }
     }
 
-class CoreEngine {
-    constructor(app, config = {}) {
-        this.app = app;
-        this.isBookmarkletMode = config.isBookmarkletMode || false;
-        this.eventBus = window.TegakiEventBus;
-        if (!this.eventBus) throw new Error('window.TegakiEventBus required');
+    /**
+     * CoreEngine - システム全体の初期化・管理クラス
+     */
+    class CoreEngine {
+        constructor(app, config = {}) {
+            this.app = app;
+            this.isBookmarkletMode = config.isBookmarkletMode || false;
+            this.eventBus = window.TegakiEventBus;
+            if (!this.eventBus) throw new Error('window.TegakiEventBus required');
+            
+            // システムコンポーネント作成
+            this.cameraSystem = new window.TegakiCameraSystem();
+            this.layerSystem = new window.TegakiLayerSystem();
+            this.clipboardSystem = new window.TegakiDrawingClipboard();
+            
+            // BrushSettings作成
+            this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
+            window.brushSettings = this.brushSettings;
+            
+            // 🔧 Phase 5: DrawingEngineは引数なしで生成（initialize()で依存注入）
+            this.drawingEngine = new DrawingEngine();
+            
+            this.animationSystem = null;
+            this.timelineUI = null;
+            this.keyHandler = null;
+            this.exportManager = null;
+            this.batchAPI = null;
+            
+            // レンダーループ管理
+            this.renderLoopId = null;
+            this.isRenderLoopRunning = false;
+            
+            // システム間の相互参照設定
+            this.setupCrossReferences();
+            this.setupSystemEventIntegration();
+        }
         
-        this.cameraSystem = new window.TegakiCameraSystem();
-        this.layerSystem = new window.TegakiLayerSystem();
-        this.clipboardSystem = new window.TegakiDrawingClipboard();
-        
-        this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
-        window.brushSettings = this.brushSettings;
-        
-        // 🔧 Phase 5: DrawingEngineは引数なしで生成（initialize()で依存注入）
-        this.drawingEngine = new DrawingEngine();
-        
-        this.animationSystem = null;
-        this.timelineUI = null;
-        this.keyHandler = null;
-        this.exportManager = null;
-        this.batchAPI = null;
-        
-        this.renderLoopId = null;
-        this.isRenderLoopRunning = false;
-        
-        this.setupCrossReferences();
-        this.setupSystemEventIntegration();
-    }
-        
+        /**
+         * システム間の相互参照設定
+         */
         setupCrossReferences() {
             this.cameraSystem.setLayerManager(this.layerSystem);
             this.cameraSystem.setDrawingEngine(this.drawingEngine);
@@ -185,6 +192,7 @@ class CoreEngine {
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
+            // LayerTransform初期化確認
             if (this.layerSystem.transform && !this.layerSystem.transform.app) {
                 if (this.layerSystem.initTransform) {
                     this.layerSystem.initTransform();
@@ -194,7 +202,11 @@ class CoreEngine {
             this.clipboardSystem.setLayerManager(this.layerSystem);
         }
         
+        /**
+         * システムイベント統合設定
+         */
         setupSystemEventIntegration() {
+            // レイヤークリアイベント
             this.eventBus.on('layer:clear-active', () => {
                 const activeLayer = this.layerSystem.getActiveLayer();
                 if (!activeLayer || !activeLayer.layerData) return;
@@ -246,15 +258,20 @@ class CoreEngine {
                 }
             });
             
+            // レイヤーアクティブ化イベント
             this.eventBus.on('layer:activated', (data) => {
                 this.eventBus.emit('clipboard:get-info-request');
             });
             
+            // 描画完了イベント
             this.eventBus.on('drawing:completed', (data) => {
                 this.eventBus.emit('ui:drawing-completed', data);
             });
         }
         
+        /**
+         * レンダーループ開始
+         */
         startRenderLoop() {
             if (this.isRenderLoopRunning) {
                 console.warn('[CoreEngine] Render loop already running');
@@ -266,7 +283,8 @@ class CoreEngine {
         }
         
         /**
-         * 🔧 Phase 4-C改修: リアルタイムプレビュー統合
+         * レンダーループ本体
+         * 🔧 Phase 4-C: BrushCore.renderPreview()統合維持
          */
         _renderLoop() {
             if (!this.isRenderLoopRunning) return;
@@ -275,17 +293,14 @@ class CoreEngine {
                 // 1. ポインタバッチ処理
                 this.flushPointerBatch();
                 
-                // 🔧 Phase 4-C追加: リアルタイムプレビュー更新
+                // 🔧 Phase 4-C: リアルタイムプレビュー更新
                 if (window.BrushCore && 
                     typeof window.BrushCore.renderPreview === 'function' &&
                     window.BrushCore.isDrawing) {
                     window.BrushCore.renderPreview();
                 }
                 
-                // 2. WebGPU描画処理（将来実装予定）
-                // this.gpuRender();
-                
-                // 3. Pixi UI手動レンダー
+                // 2. Pixi UI手動レンダー
                 if (this.app && this.app.renderer && this.app.stage) {
                     this.app.renderer.render(this.app.stage);
                 }
@@ -297,12 +312,18 @@ class CoreEngine {
             this.renderLoopId = requestAnimationFrame(() => this._renderLoop());
         }
         
+        /**
+         * ポインタバッチフラッシュ
+         */
         flushPointerBatch() {
             if (this.drawingEngine && typeof this.drawingEngine.flushPendingPoints === 'function') {
                 this.drawingEngine.flushPendingPoints();
             }
         }
         
+        /**
+         * レンダーループ停止
+         */
         stopRenderLoop() {
             this.isRenderLoopRunning = false;
             if (this.renderLoopId) {
@@ -311,6 +332,9 @@ class CoreEngine {
             }
         }
         
+        /**
+         * ExportManager初期化
+         */
         initializeExportManager() {
             if (this.exportManager) {
                 return true;
@@ -333,6 +357,7 @@ class CoreEngine {
                 this.cameraSystem
             );
             
+            // エクスポーター登録
             if (window.PNGExporter) {
                 this.exportManager.registerExporter('png', new window.PNGExporter(this.exportManager));
             }
@@ -367,6 +392,9 @@ class CoreEngine {
             return true;
         }
         
+        /**
+         * AnimationSystem初期化
+         */
         initializeAnimationSystem() {
             if (!window.TegakiAnimationSystem || !window.TegakiTimelineUI) return;
             
@@ -382,6 +410,9 @@ class CoreEngine {
             this.setupCoordinateSystemReferences();
         }
         
+        /**
+         * CoordinateSystemへの参照設定
+         */
         setupCoordinateSystemReferences() {
             if (!window.CoordinateSystem) return;
             
@@ -398,6 +429,9 @@ class CoreEngine {
             }
         }
         
+        /**
+         * LayerTransform初期化
+         */
         _initializeLayerTransform() {
             let retryCount = 0;
             const maxRetries = 3;
@@ -434,6 +468,9 @@ class CoreEngine {
             trySetupFlipCallback();
         }
         
+        /**
+         * ブックマークレット用エクスポート
+         */
         async exportForBookmarklet(format = 'gif', options = {}) {
             if (!this.exportManager) throw new Error('ExportManager not initialized');
             
@@ -446,6 +483,9 @@ class CoreEngine {
             }
         }
         
+        // ========================================
+        // ゲッターメソッド群
+        // ========================================
         getCameraSystem() { return this.cameraSystem; }
         getLayerManager() { return this.layerSystem; }
         getDrawingEngine() { return this.drawingEngine; }
@@ -458,6 +498,9 @@ class CoreEngine {
         getBatchAPI() { return this.batchAPI; }
         getBrushSettings() { return this.brushSettings; }
         
+        /**
+         * Undo実行
+         */
         undo() {
             if (window.History) {
                 window.History.undo();
@@ -465,6 +508,9 @@ class CoreEngine {
             }
         }
         
+        /**
+         * Redo実行
+         */
         redo() {
             if (window.History) {
                 window.History.redo();
@@ -472,6 +518,9 @@ class CoreEngine {
             }
         }
         
+        /**
+         * キャンバスイベント設定
+         */
         setupCanvasEvents() {
             const canvas = this.app.canvas || this.app.view;
             if (!canvas) return;
@@ -485,6 +534,9 @@ class CoreEngine {
             }, true);
         }
         
+        /**
+         * ツール切り替え
+         */
         switchTool(tool) {
             if (this.keyHandler) {
                 this.keyHandler.switchTool(tool);
@@ -497,10 +549,16 @@ class CoreEngine {
             }
         }
         
+        /**
+         * 座標更新
+         */
         updateCoordinates(x, y) {
             this.cameraSystem.updateCoordinates(x, y);
         }
         
+        /**
+         * キャンバスリサイズ
+         */
         resizeCanvas(newWidth, newHeight, options = {}) {
             const oldWidth = CONFIG.canvas.width;
             const oldHeight = CONFIG.canvas.height;
@@ -514,6 +572,7 @@ class CoreEngine {
             const widthDiff = newWidth - oldWidth;
             const heightDiff = newHeight - oldHeight;
             
+            // オフセット計算
             if (horizontalAlign === 'left') {
                 offsetX = 0;
             } else if (horizontalAlign === 'center') {
@@ -530,11 +589,14 @@ class CoreEngine {
                 offsetY = heightDiff;
             }
             
+            // CONFIG更新
             CONFIG.canvas.width = newWidth;
             CONFIG.canvas.height = newHeight;
             
+            // CameraSystemリサイズ
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
+            // チェッカーパターン再生成
             if (this.layerSystem.checkerPattern) {
                 const oldChecker = this.layerSystem.checkerPattern;
                 const wasVisible = oldChecker.visible;
@@ -552,6 +614,7 @@ class CoreEngine {
                 }
             }
             
+            // アニメーションフレームのレイヤー座標調整
             const frames = this.animationSystem?.animationData?.frames || [];
             frames.forEach(frame => {
                 const layers = frame.getLayers();
@@ -582,6 +645,7 @@ class CoreEngine {
                 });
             });
             
+            // 背景レイヤー再描画
             const layers = this.layerSystem.getLayers();
             layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
@@ -594,6 +658,7 @@ class CoreEngine {
                 }
             });
             
+            // サムネイル更新
             for (let i = 0; i < layers.length; i++) {
                 this.eventBus.emit('thumbnail:layer-updated', {
                     component: 'core-engine',
@@ -602,6 +667,7 @@ class CoreEngine {
                 });
             }
             
+            // アニメーションサムネイル再生成
             if (this.animationSystem) {
                 setTimeout(() => {
                     const animData = this.animationSystem.getAnimationData();
@@ -615,6 +681,7 @@ class CoreEngine {
                 }, 500);
             }
             
+            // UI更新
             const canvasInfoElement = document.getElementById('canvas-info');
             if (canvasInfoElement) {
                 canvasInfoElement.textContent = `${newWidth}×${newHeight}px`;
@@ -623,6 +690,7 @@ class CoreEngine {
             const resizeSettings = document.getElementById('resize-settings');
             if (resizeSettings) resizeSettings.classList.remove('show');
             
+            // イベント発火
             this.eventBus.emit('canvas:resized', { 
                 width: newWidth, 
                 height: newHeight,
@@ -635,6 +703,9 @@ class CoreEngine {
             });
         }
         
+        /**
+         * 破棄処理
+         */
         destroy() {
             this.stopRenderLoop();
             
@@ -647,10 +718,16 @@ class CoreEngine {
             }
         }
         
+        // ========================================
+        // 🔧 Phase 5新規追加: DrawingEngine初期化
+        // ========================================
+        
         /**
-         * ================================================================================
-         * 🔧 Phase 5新規追加: DrawingEngine初期化メソッド
-         * ================================================================================
+         * DrawingEngine完全初期化
+         * - WebGL2キャンバス取得
+         * - PointerHandlerインスタンス作成
+         * - DrawingEngine.initialize()呼び出し
+         * - BrushSettings接続
          */
         _initializeDrawingEngine() {
             console.log('[CoreEngine] Initializing DrawingEngine...');
@@ -716,35 +793,45 @@ class CoreEngine {
             console.log('[CoreEngine] ✅ DrawingEngine initialized successfully');
 
             // 6. BrushSettingsをDrawingEngineに設定
-            if (this.brushSettings) {
-                this.drawingEngine.setBrushSettings(this.brushSettings);
+            if (this.brushSettings && typeof this.brushSettings.linkToDrawingEngine === 'function') {
+                this.brushSettings.linkToDrawingEngine(this.drawingEngine);
                 console.log('[CoreEngine] ✅ BrushSettings linked to DrawingEngine');
             }
+
+            // グローバル参照設定
+            window.pointerHandler = pointerHandler;
 
             return true;
         }
         
+        // ========================================
+        // メイン初期化メソッド
+        // ========================================
+        
+        /**
+         * システム全体の初期化
+         */
         initialize() {
             console.log('[CoreEngine] ========================================');
             console.log('[CoreEngine] Starting initialization sequence...');
             console.log('[CoreEngine] ========================================');
 
-            // 1. カメラシステム初期化
+            // [1/8] CameraSystem初期化
             console.log('[CoreEngine] [1/8] Initializing CameraSystem...');
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             console.log('[CoreEngine] ✅ CameraSystem initialized');
 
-            // 2. レイヤーシステム初期化
+            // [2/8] LayerSystem初期化
             console.log('[CoreEngine] [2/8] Initializing LayerSystem...');
             this.layerSystem.init(this.cameraSystem.worldContainer, this.eventBus, CONFIG);
             console.log('[CoreEngine] ✅ LayerSystem initialized');
 
-            // 3. クリップボードシステム初期化
+            // [3/8] ClipboardSystem初期化
             console.log('[CoreEngine] [3/8] Initializing ClipboardSystem...');
             this.clipboardSystem.init(this.eventBus, CONFIG);
             console.log('[CoreEngine] ✅ ClipboardSystem initialized');
             
-            // 4. サムネイルシステム初期化（オプション）
+            // [4/8] ThumbnailSystem初期化（オプション）
             if (window.ThumbnailSystem) {
                 console.log('[CoreEngine] [4/8] Initializing ThumbnailSystem...');
                 window.ThumbnailSystem.app = this.app;
@@ -754,7 +841,7 @@ class CoreEngine {
                 console.log('[CoreEngine] [4/8] ThumbnailSystem not available (optional)');
             }
             
-            // 5. History設定
+            // [5/8] History設定
             console.log('[CoreEngine] [5/8] Setting up History...');
             if (window.History && typeof window.History.setLayerSystem === 'function') {
                 window.History.setLayerSystem(this.layerSystem);
@@ -767,7 +854,7 @@ class CoreEngine {
             window.layerManager = this.layerSystem;
             window.cameraSystem = this.cameraSystem;
             
-            // 6. StrokeRecorder確認・作成
+            // [6/8] StrokeRecorder確認・作成
             console.log('[CoreEngine] [6/8] Checking StrokeRecorder...');
             if (!window.strokeRecorder) {
                 if (!window.StrokeRecorder) {
@@ -781,7 +868,7 @@ class CoreEngine {
             }
             console.log('[CoreEngine] ✅ StrokeRecorder ready');
             
-            // 7. StrokeRenderer確認・作成
+            // [7/8] StrokeRenderer確認・作成
             console.log('[CoreEngine] [7/8] Checking StrokeRenderer...');
             if (!window.strokeRenderer) {
                 if (!window.StrokeRenderer) {
@@ -796,7 +883,7 @@ class CoreEngine {
             }
             console.log('[CoreEngine] ✅ StrokeRenderer ready');
             
-            // 8. BrushCore初期化
+            // [8/8] BrushCore初期化
             console.log('[CoreEngine] [8/8] Initializing BrushCore...');
             if (!window.BrushCore) {
                 throw new Error('[CoreEngine] window.BrushCore not found');
@@ -830,18 +917,18 @@ class CoreEngine {
             }
             
             // ========================================
-            // アニメーションシステム初期化
+            // AnimationSystem初期化
             // ========================================
             console.log('[CoreEngine] Initializing AnimationSystem...');
             this.initializeAnimationSystem();
             
-            // エクスポートマネージャー初期化（遅延）
+            // ExportManager初期化（遅延）
             setTimeout(() => {
                 console.log('[CoreEngine] Initializing ExportManager...');
                 this.initializeExportManager();
             }, 100);
             
-            // レイヤートランスフォーム初期化（遅延）
+            // LayerTransform初期化（遅延）
             setTimeout(() => {
                 console.log('[CoreEngine] Initializing LayerTransform...');
                 this._initializeLayerTransform();
@@ -919,6 +1006,9 @@ class CoreEngine {
         }
     }
 
+    // ========================================
+    // グローバル公開
+    // ========================================
     window.TegakiCore = {
         CoreEngine: CoreEngine,
         CameraSystem: window.TegakiCameraSystem,
