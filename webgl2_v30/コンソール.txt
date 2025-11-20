@@ -2,16 +2,16 @@ config.js:509 ✅ config.js v8.14.3 Phase 1.7 筆圧対応版 loaded
 config.js:510    🔧 thinning: 0.7 (筆圧による太さ変化有効)
 config.js:511    🔧 smoothing: 0.4 (適度な補間)
 config.js:512    🔧 streamline: 0.3 (安定化)
-coordinate-system.js:322 ✅ coordinate-system.js Phase 1.3 初期化失敗診断強化版 loaded
-coordinate-system.js:323    🔧 worldContainer遅延取得対応
-coordinate-system.js:324    🔧 初期化失敗時の詳細診断ログ追加
-coordinate-system.js:325    🔧 dumpState()デバッグメソッド追加
+coordinate-system.js:359 ✅ coordinate-system.js Phase 1.4 worldTransform初期化保証版 loaded
+coordinate-system.js:360    🔧 _ensureTransformInitialized() 新規追加
+coordinate-system.js:361    🔧 親チェーン全体のTransform初期化を保証
+coordinate-system.js:362    🔧 worldTransform未初期化エラーを根本解決
 data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
 batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
- ✅ debug-utils.js loaded
-    Type: TegakiDebug.help() for available commands
-    Quick check: TegakiDebug.fullDiagnostic()
- ✅ popup-manager.js (quick-access除外対応版) loaded
+debug-utils.js:553 ✅ debug-utils.js loaded
+debug-utils.js:554    Type: TegakiDebug.help() for available commands
+debug-utils.js:555    Quick check: TegakiDebug.fullDiagnostic()
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
  ✅ state-manager.js (Phase 8完全実装版) loaded
  ✅ settings-manager.js Phase 2 loaded
     🔧 exportResolution 設定項目追加
@@ -130,7 +130,7 @@ batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
  🚀 WebGL2 MSDF版 起動中...
  [CoreEngine] ========================================
  [CoreEngine] Starting initialization sequence...
-core-engine.js:817 [CoreEngine] ========================================
+ [CoreEngine] ========================================
 core-engine.js:820 [CoreEngine] [1/8] Initializing CameraSystem...
 core-engine.js:822 [CoreEngine] ✅ CameraSystem initialized
 core-engine.js:825 [CoreEngine] [2/8] Initializing LayerSystem...
@@ -175,7 +175,7 @@ await in initialize
 initialize @ core-initializer.js:608
 （匿名） @ index.html:115
 coordinate-system.js:43 [CoordinateSystem] initialize() called {canvas: true, worldContainer: true, canvasSize: '1920x1080'}
-coordinate-system.js:64 [CoordinateSystem] ✅ Initialized successfully
+coordinate-system.js:63 [CoordinateSystem] ✅ Initialized successfully
 drawing-engine.js:161 [DrawingEngine] ✅ CoordinateSystem auto-initialized successfully
 drawing-engine.js:117 [DrawingEngine] ✅ Initialized v8.14.2 Phase 1.1 {coordSystemReady: true, glCanvasSize: {…}, brushCoreReady: true}
 core-engine.js:793 [CoreEngine] ✅ DrawingEngine initialized successfully
@@ -190,7 +190,7 @@ core-engine.js:1002 [CoreEngine] ✅ Initialization complete!
 core-engine.js:1003 [CoreEngine] ========================================
 core-initializer.js:367 [CoreInit] Initializing CoordinateSystem...
 coordinate-system.js:43 [CoordinateSystem] initialize() called {canvas: true, worldContainer: true, canvasSize: '1920x1080'}
-coordinate-system.js:64 [CoordinateSystem] ✅ Initialized successfully
+coordinate-system.js:63 [CoordinateSystem] ✅ Initialized successfully
 core-initializer.js:217 [CoreInit] ✅ CoordinateSystem initialized
 core-initializer.js:374 [CoreInit] CoordinateSystem state: {initialized: true, canvas: '1920x1080', worldContainer: {…}}
 popup-manager.js:16 ✅ PopupManager initialized
@@ -225,65 +225,62 @@ core-engine.js:927 [CoreEngine] Initializing ExportManager...
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 core-engine.js:933 [CoreEngine] Initializing LayerTransform...
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-// 1. ブラウザリロード後
+// ブラウザリロード後、コンソールで実行
 TegakiDebug.checkInitialization()
-
-// 2. DrawingEngine確認
-console.log('DrawingEngine initialized:', window.drawingEngine?.initialized)
-console.log('PointerHandler attached:', window.pointerHandler?.attached)
-
-// 3. 描画テスト
 TegakiDebug.testDrawingFlow()
+
+// 座標変換テスト
+window.CoordinateSystem.dumpState()
+
+// 実際に描画テスト（WebGL2キャンバス上でクリック）
 debug-utils.js:47 🔍 Tegaki Initialization Check
 debug-utils.js:123 ✅ CoordinateSystem: OK {exists: true, initialized: true, canvas: true, worldContainer: true}
 debug-utils.js:123 ✅ CameraSystem: OK {exists: true, worldContainer: true, canvasContainer: true}
 debug-utils.js:123 ✅ LayerManager: OK {exists: true, layers: 2, activeLayer: true}
 debug-utils.js:118 ❌ DrawingEngine: isDrawing
 checkInitialization @ debug-utils.js:118
-（匿名） @ VM160:2
+（匿名） @ VM162:2
 debug-utils.js:119    Details: {exists: true, initialized: true, coordSystem: true, pointerHandler: true, brushCore: true, …}
 debug-utils.js:118 ❌ PointerHandler: activePointers
 checkInitialization @ debug-utils.js:118
-（匿名） @ VM160:2
+（匿名） @ VM162:2
 debug-utils.js:119    Details: {exists: true, attached: true, activePointers: 0}
 debug-utils.js:118 ❌ BrushCore: isDrawing
 checkInitialization @ debug-utils.js:118
-（匿名） @ VM160:2
+（匿名） @ VM162:2
 debug-utils.js:119    Details: {exists: true, initialized: true, strokeRecorder: true, layerManager: true, msdfAvailable: true, …}
 debug-utils.js:118 ❌ StrokeRecorder: isRecording, points
 checkInitialization @ debug-utils.js:118
-（匿名） @ VM160:2
+（匿名） @ VM162:2
 debug-utils.js:119    Details: {exists: true, initialized: true, isRecording: false, points: 0}
 debug-utils.js:123 ✅ WebGL2: OK {canvas: true, DrawingLayer: true, StrokeProcessor: true, MSDFPipeline: true, TextureBridge: true, …}
 debug-utils.js:118 ❌ EventBus: listenerCount
 checkInitialization @ debug-utils.js:118
-（匿名） @ VM160:2
+（匿名） @ VM162:2
 debug-utils.js:119    Details: {exists: true, listenerCount: 0}
 debug-utils.js:132 ⚠️ Some systems have issues: (5) [{…}, {…}, {…}, {…}, {…}]
 checkInitialization @ debug-utils.js:132
-（匿名） @ VM160:2
-VM160:5 DrawingEngine initialized: true
-VM160:6 PointerHandler attached: true
+（匿名） @ VM162:2
 debug-utils.js:181 🎨 Drawing Flow Test
 debug-utils.js:196 ✅ Step 1: DrawingEngine OK
 debug-utils.js:205 ✅ Step 2: PointerHandler OK
 drawing-engine.js:587 [DrawingEngine] Coordinate Transform Test
 Container.ts:1734 Uncaught TypeError: Cannot read properties of undefined (reading 'x')
     at Z.updateTransform (Container.ts:1734:25)
-    at CoordinateSystem.canvasToWorld (coordinate-system.js:162:22)
+    at CoordinateSystem.canvasToWorld (coordinate-system.js:210:22)
     at DrawingEngine._transformPointerToLocal (drawing-engine.js:398:34)
     at DrawingEngine.testCoordinateTransform (drawing-engine.js:590:25)
     at Object.testDrawingFlow (debug-utils.js:208:49)
-    at <anonymous>:9:13
+    at <anonymous>:3:13
 updateTransform @ Container.ts:1734
-canvasToWorld @ coordinate-system.js:162
+canvasToWorld @ coordinate-system.js:210
 _transformPointerToLocal @ drawing-engine.js:398
 testCoordinateTransform @ drawing-engine.js:590
 testDrawingFlow @ debug-utils.js:208
-（匿名） @ VM160:9
+（匿名） @ VM162:3
 pointer-handler.js:81 [PointerHandler] Event handler error (pointerdown): TypeError: Cannot read properties of undefined (reading 'x')
     at Z.updateTransform (Container.ts:1734:25)
-    at CoordinateSystem.canvasToWorld (coordinate-system.js:162:22)
+    at CoordinateSystem.canvasToWorld (coordinate-system.js:210:22)
     at DrawingEngine._transformPointerToLocal (drawing-engine.js:398:34)
     at DrawingEngine._handlePointerDown (drawing-engine.js:239:25)
     at drawing-engine.js:184:12
@@ -294,9 +291,51 @@ pointer-handler.js:81 [PointerHandler] Event handler error (pointerdown): TypeEr
 （匿名） @ pointer-handler.js:81
 _emit @ pointer-handler.js:77
 onPointerDown @ pointer-handler.js:146
+// Phase 1.4 が適用されているか確認
+console.log('CoordinateSystem methods:', 
+  Object.getOwnPropertyNames(window.CoordinateSystem.__proto__)
+);
+
+// _ensureTransformInitialized メソッドが存在するか確認
+console.log('Has _ensureTransformInitialized:', 
+  typeof window.CoordinateSystem._ensureTransformInitialized === 'function'
+);
+
+// Transform 状態確認
+window.CoordinateSystem.dumpState()
+VM170:2 CoordinateSystem methods: (9) ['constructor', 'initialize', '_getWorldContainer', '_ensureTransformInitialized', 'dumpState', 'screenClientToCanvas', 'canvasToWorld', 'worldToLocal', 'transformScreenToLocal']
+VM170:7 Has _ensureTransformInitialized: true
+{initialized: true, canvas: '1920x1080', worldContainer: {…}}
+// 1. ファイル適用確認
+typeof window.CoordinateSystem._ensureTransformInitialized === 'function'
+
+// 2. 初期化状態確認
+window.CoordinateSystem.dumpState()
+
+// 3. 座標変換テスト
+TegakiDebug.testDrawingFlow()
+
+// 4. 実際に描画テスト（キャンバス上でクリック）
+debug-utils.js:181 🎨 Drawing Flow Test
+debug-utils.js:196 ✅ Step 1: DrawingEngine OK
+debug-utils.js:205 ✅ Step 2: PointerHandler OK
+drawing-engine.js:587 [DrawingEngine] Coordinate Transform Test
+Container.ts:1734 Uncaught TypeError: Cannot read properties of undefined (reading 'x')
+    at Z.updateTransform (Container.ts:1734:25)
+    at CoordinateSystem.canvasToWorld (coordinate-system.js:210:22)
+    at DrawingEngine._transformPointerToLocal (drawing-engine.js:398:34)
+    at DrawingEngine.testCoordinateTransform (drawing-engine.js:590:25)
+    at Object.testDrawingFlow (debug-utils.js:208:49)
+    at <anonymous>:8:13
+updateTransform @ Container.ts:1734
+canvasToWorld @ coordinate-system.js:210
+_transformPointerToLocal @ drawing-engine.js:398
+testCoordinateTransform @ drawing-engine.js:590
+testDrawingFlow @ debug-utils.js:208
+（匿名） @ VM174:8
 pointer-handler.js:81 [PointerHandler] Event handler error (pointerdown): TypeError: Cannot read properties of undefined (reading 'x')
     at Z.updateTransform (Container.ts:1734:25)
-    at CoordinateSystem.canvasToWorld (coordinate-system.js:162:22)
+    at CoordinateSystem.canvasToWorld (coordinate-system.js:210:22)
     at DrawingEngine._transformPointerToLocal (drawing-engine.js:398:34)
     at DrawingEngine._handlePointerDown (drawing-engine.js:239:25)
     at drawing-engine.js:184:12
@@ -307,3 +346,11 @@ pointer-handler.js:81 [PointerHandler] Event handler error (pointerdown): TypeEr
 （匿名） @ pointer-handler.js:81
 _emit @ pointer-handler.js:77
 onPointerDown @ pointer-handler.js:146
+console.log({
+  worldContainer: window.cameraSystem?.worldContainer,
+  parent: window.cameraSystem?.worldContainer?.parent,
+  parentWorldTransform: window.cameraSystem?.worldContainer?.parent?.worldTransform,
+  stage: window.pixiApp?.stage
+});
+VM181:1 {worldContainer: Z, parent: Z, parentWorldTransform: M, stage: undefined}
+undefined

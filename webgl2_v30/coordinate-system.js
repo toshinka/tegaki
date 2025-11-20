@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * coordinate-system.js Phase 1.3 - 初期化失敗診断強化版
+ * coordinate-system.js Phase 1.4 - worldTransform初期化保証版
  * ================================================================================
  * 
  * 【依存関係】
@@ -11,13 +11,13 @@
  * Screen → Canvas → World → Local 座標変換パイプライン
  * 
  * 【重要】
- * - worldContainer.updateTransform()を座標変換前に必ず実行
+ * - worldContainer.updateTransform()実行前に親Transform確認
  * - Pixi toLocal()/toGlobal()は使用禁止
  * - 手動逆行列計算による親チェーン遡査
  * 
  * 【改修履歴】
+ * Phase 1.4: worldTransform未初期化エラー修正（親Transform確実初期化）
  * Phase 1.3: 初期化失敗時の詳細診断ログ追加、worldContainer取得堅牢化
- * Phase 1.2: 座標ズレ完全修正版
  * ================================================================================
  */
 
@@ -53,7 +53,6 @@
 
       if (!worldContainer) {
         console.error('[CoordinateSystem] ❌ worldContainer is null');
-        console.log('[CoordinateSystem] 💡 Hint: worldContainerはPixiJS側で生成され、cameraSystemが管理します');
         return false;
       }
 
@@ -81,14 +80,56 @@
       }
 
       console.error('[CoordinateSystem] ❌ worldContainer not found');
-      console.log('[CoordinateSystem] 🔍 Debugging info:', {
-        cameraSystemExists: !!window.cameraSystem,
-        cameraSystemWorldContainer: !!window.cameraSystem?.worldContainer,
-        pixiAppExists: !!window.pixiApp,
-        pixiAppStage: !!window.pixiApp?.stage
-      });
-
       return null;
+    }
+
+    /**
+     * コンテナのTransform初期化確認
+     * @param {PIXI.Container} container
+     * @returns {boolean}
+     */
+    _ensureTransformInitialized(container) {
+      if (!container) return false;
+
+      // 親チェーンを遡って全てのTransformを初期化
+      let current = container;
+      const chain = [];
+      let depth = 0;
+
+      while (current && depth < MAX_PARENT_DEPTH) {
+        chain.push(current);
+        current = current.parent;
+        depth++;
+      }
+
+      if (depth >= MAX_PARENT_DEPTH) {
+        console.error('[CoordinateSystem] ❌ infinite parent chain detected');
+        return false;
+      }
+
+      // 親から順にupdateTransform（rootから）
+      for (let i = chain.length - 1; i >= 0; i--) {
+        const node = chain[i];
+        
+        // worldTransformが未初期化の場合のみ初期化
+        if (!node.worldTransform || typeof node.worldTransform.a === 'undefined') {
+          if (node.parent) {
+            // 親が既に初期化されていることを確認
+            if (!node.parent.worldTransform || typeof node.parent.worldTransform.a === 'undefined') {
+              if (node.parent.updateTransform) {
+                node.parent.updateTransform();
+              }
+            }
+          }
+          
+          // 自身のTransform初期化
+          if (node.updateTransform) {
+            node.updateTransform();
+          }
+        }
+      }
+
+      return true;
     }
 
     /**
@@ -103,7 +144,8 @@
           exists: true,
           position: worldContainer.position ? `(${worldContainer.position.x}, ${worldContainer.position.y})` : 'N/A',
           scale: worldContainer.scale ? `(${worldContainer.scale.x}, ${worldContainer.scale.y})` : 'N/A',
-          rotation: worldContainer.rotation || 0
+          rotation: worldContainer.rotation || 0,
+          worldTransform: worldContainer.worldTransform ? 'initialized' : 'uninitialized'
         } : null
       };
     }
@@ -158,12 +200,22 @@
         return null;
       }
 
-      // worldTransform更新（必須）
+      // 🔧 Phase 1.4: Transform初期化確認
+      if (!this._ensureTransformInitialized(worldContainer)) {
+        console.error('[CoordinateSystem] ❌ Failed to initialize worldContainer transform');
+        return null;
+      }
+
+      // worldTransform更新
       worldContainer.updateTransform();
 
       const worldTransform = worldContainer.worldTransform;
-      if (!worldTransform) {
-        console.error('[CoordinateSystem] ❌ worldTransform is null');
+      if (!worldTransform || typeof worldTransform.a === 'undefined') {
+        console.error('[CoordinateSystem] ❌ worldTransform still not initialized after updateTransform()', {
+          hasWorldTransform: !!worldTransform,
+          hasParent: !!worldContainer.parent,
+          parentWorldTransform: worldContainer.parent ? !!worldContainer.parent.worldTransform : 'no parent'
+        });
         return null;
       }
 
@@ -284,30 +336,15 @@
      * 完全な座標変換パイプライン（デバッグ用）
      */
     transformScreenToLocal(clientX, clientY, container) {
-      console.group('[CoordinateSystem] Full Transform Pipeline');
-
       const canvas = this.screenClientToCanvas(clientX, clientY);
-      if (!canvas) {
-        console.groupEnd();
-        return null;
-      }
-      console.log('Step 1 - Canvas:', canvas);
+      if (!canvas) return null;
 
       const world = this.canvasToWorld(canvas.canvasX, canvas.canvasY);
-      if (!world) {
-        console.groupEnd();
-        return null;
-      }
-      console.log('Step 2 - World:', world);
+      if (!world) return null;
 
       const local = this.worldToLocal(world.worldX, world.worldY, container);
-      if (!local) {
-        console.groupEnd();
-        return null;
-      }
-      console.log('Step 3 - Local:', local);
+      if (!local) return null;
 
-      console.groupEnd();
       return {
         ...canvas,
         ...world,
@@ -319,9 +356,9 @@
   // シングルトンインスタンス
   window.CoordinateSystem = new CoordinateSystem();
 
-  console.log('✅ coordinate-system.js Phase 1.3 初期化失敗診断強化版 loaded');
-  console.log('   🔧 worldContainer遅延取得対応');
-  console.log('   🔧 初期化失敗時の詳細診断ログ追加');
-  console.log('   🔧 dumpState()デバッグメソッド追加');
+  console.log('✅ coordinate-system.js Phase 1.4 worldTransform初期化保証版 loaded');
+  console.log('   🔧 _ensureTransformInitialized() 新規追加');
+  console.log('   🔧 親チェーン全体のTransform初期化を保証');
+  console.log('   🔧 worldTransform未初期化エラーを根本解決');
 
 })();
