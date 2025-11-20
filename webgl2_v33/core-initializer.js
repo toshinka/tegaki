@@ -1,13 +1,12 @@
 /**
  * ================================================================================
- * core-initializer.js - Phase 1.2.4 LayerSystem接続完全版
+ * core-initializer.js - Phase 1.2.5 AnimationSystem後再接続版
  * ================================================================================
  * 
- * 【Phase 1.2.4更新内容】
- * ✅ LayerSystem.setCameraSystem() 呼び出し追加
- * ✅ worldContainer ← currentFrameContainer 親子関係確立
- * ✅ CoreRuntime.init() から canvasContainer 削除
- * ✅ 元ファイルの全メソッド・機能を完全継承
+ * 【Phase 1.2.5更新内容】
+ * ✅ AnimationSystem初期化後に親子関係を再確立
+ * ✅ createInitialFrameIfNeeded()後の親子関係修復処理追加
+ * ✅ Phase 1.2.4完全継承
  * 
  * ================================================================================
  */
@@ -255,6 +254,57 @@ window.CoreInitializer = (function() {
         }
     }
 
+    /**
+     * 🔧 Phase 1.2.5: 親子関係強制確立関数
+     */
+    function ensureParentChildRelationship(layerManager, cameraSystem) {
+        if (!layerManager || !cameraSystem) {
+            console.error('[CoreInit] ❌ Cannot establish relationship: missing systems');
+            return false;
+        }
+
+        const currentFrameContainer = layerManager.currentFrameContainer;
+        const worldContainer = cameraSystem.worldContainer;
+
+        if (!currentFrameContainer || !worldContainer) {
+            console.error('[CoreInit] ❌ Missing containers:', {
+                currentFrameContainer: !!currentFrameContainer,
+                worldContainer: !!worldContainer
+            });
+            return false;
+        }
+
+        // 現在の親をチェック
+        const currentParent = currentFrameContainer.parent;
+
+        if (currentParent !== worldContainer) {
+            console.log('[CoreInit] 🔧 Re-establishing parent-child relationship...');
+
+            // 既存の親から削除
+            if (currentParent) {
+                currentParent.removeChild(currentFrameContainer);
+            }
+
+            // worldContainerの子として追加
+            worldContainer.addChildAt(currentFrameContainer, 0);
+
+            // 検証
+            const isChild = currentFrameContainer.parent === worldContainer;
+            const childIndex = isChild ? worldContainer.children.indexOf(currentFrameContainer) : -1;
+
+            console.log('[CoreInit] Parent-child re-establishment:', {
+                success: isChild,
+                childIndex: childIndex,
+                worldContainerChildren: worldContainer.children.length
+            });
+
+            return isChild;
+        }
+
+        console.log('[CoreInit] ✅ Parent-child relationship already valid');
+        return true;
+    }
+
     class DrawingApp {
         constructor() {
             this.pixiApp = null;
@@ -309,10 +359,11 @@ window.CoreInitializer = (function() {
             this.coreEngine = new CoreEngine(this.pixiApp);
             window.coreEngine = this.coreEngine;
             
-            console.log('[CoreInit] Pre-initializing CameraSystem for worldContainer...');
-            this.coreEngine.cameraSystem.init(this.pixiApp.stage, window.TegakiEventBus, CONFIG);
-            console.log('[CoreInit] ✅ CameraSystem pre-initialized');
+            console.log('[CoreInit] Calling CoreEngine.initialize()...');
+            const drawingApp = this.coreEngine.initialize();
+            console.log('[CoreInit] ✅ CoreEngine.initialize() complete');
             
+            // worldContainerが確定
             const worldContainer = this.coreEngine.cameraSystem.worldContainer;
             if (!worldContainer) {
                 throw new Error('worldContainer not created by CameraSystem');
@@ -322,19 +373,6 @@ window.CoreInitializer = (function() {
                 y: worldContainer.y,
                 scale: worldContainer.scale?.x
             });
-            
-            console.log('[CoreInit] Initializing CoordinateSystem (before CoreEngine)...');
-            const coordInitSuccess = initializeCoordinateSystem(worldContainer);
-            if (!coordInitSuccess) {
-                throw new Error('CoordinateSystem initialization failed');
-            }
-            
-            const state = window.CoordinateSystem.dumpState();
-            console.log('[CoreInit] CoordinateSystem state:', state);
-            
-            console.log('[CoreInit] Calling CoreEngine.initialize()...');
-            const drawingApp = this.coreEngine.initialize();
-            console.log('[CoreInit] ✅ CoreEngine.initialize() complete');
             
             // ========================================
             // 🔧 Phase 1.2.4: LayerSystemとCameraSystemを接続
@@ -393,14 +431,29 @@ window.CoreInitializer = (function() {
                 const coordState = window.CoordinateSystem.dumpState();
                 console.log('[CoreInit] CoordinateSystem final state:', coordState);
             }
+            
             // ========================================
-            // Phase 1.2.4 接続処理ここまで
+            // 🔧 Phase 1.2.5: AnimationSystem初期化後の親子関係再確立
             // ========================================
+            
+            // AnimationSystem初期化完了イベントをリッスン
+            window.TegakiEventBus.on('animation:system-ready', () => {
+                console.log('[CoreInit] 🔧 Phase 1.2.5: Re-establishing parent-child after AnimationSystem...');
+                
+                // 少し遅延させてAnimationSystemの処理が完了するのを待つ
+                setTimeout(() => {
+                    ensureParentChildRelationship(layerManager, cameraSystem);
+                    
+                    // デバッグ用: 親子関係検証
+                    if (layerManager.verifyParentChain) {
+                        layerManager.verifyParentChain();
+                    }
+                }, 500);
+            });
             
             const brushSettings = this.coreEngine.getBrushSettings();
             window.brushSettings = brushSettings;
             
-            // 🔧 Phase 1.2.4: canvasContainer削除
             window.CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
@@ -639,12 +692,12 @@ window.CoreInitializer = (function() {
         DrawingApp,
         initializeWebGL2,
         initializeLayerPanel,
-        initializeCoordinateSystem
+        initializeCoordinateSystem,
+        ensureParentChildRelationship  // 🔧 Phase 1.2.5: エクスポート追加
     };
 })();
 
-console.log('✅ core-initializer.js Phase 1.2.4 LayerSystem接続完全版 loaded');
-console.log('   ✅ LayerSystem.setCameraSystem() 呼び出し追加');
-console.log('   ✅ worldContainer ← currentFrameContainer 親子関係確立');
-console.log('   ✅ CoreRuntime.init() から canvasContainer 削除');
-console.log('   ✅ 元ファイルの全メソッド・機能を完全継承');
+console.log('✅ core-initializer.js Phase 1.2.6 CameraSystem二重初期化修正版 loaded');
+console.log('   ✅ Pre-initialization削除（CoreEngine内で一括初期化）');
+console.log('   ✅ CoordinateSystem再初期化追加');
+console.log('   ✅ Phase 1.2.5完全継承');

@@ -1,0 +1,635 @@
+================================================================================
+WebGL2ポリゴンペン描画回復 - 診断・改修辞典
+Version: 2025-01-21
+Target: webgl2_v32
+================================================================================
+
+## 目次
+1. 現状エラー診断
+2. ファイル責務マトリックス
+3. 座標変換フローチェーン
+4. 問題箇所特定
+5. 段階的改修プラン
+6. 完全動作確認チェックリスト
+
+================================================================================
+
+## 1. 現状エラー診断
+
+### エラー内容
+```
+[CoordinateSystem] ❌ worldToLocal: container not child of worldContainer
+{containerLabel: 'layer_1763671591612_c974yx273', chainLength: 5}
+[DrawingEngine] worldToLocal failed
+[DrawingEngine] Failed to transform pointer coords on pointerdown
+```
+
+### 🔴 根本原因
+LayerSystemが返す`activeLayer`が`worldContainer`の子ではなく、別の親コンテナ構造に属している。
+座標変換パイプラインは`worldContainer`直下のレイヤーを前提に設計されているが、実際のレイヤー構造が異なる。
+
+### ⚠️ 構造的問題
+1. `currentFrameContainer` ≠ `worldContainer`
+2. LayerSystemのレイヤーは`currentFrameContainer`に属する
+3. CoordinateSystemは`worldContainer`直下を想定
+4. 親子関係のミスマッチが座標変換失敗を引き起こす
+
+================================================================================
+
+## 2. ファイル責務マトリックス
+
+### 座標変換パイプライン (最重要)
+
+📁 **coordinate-system.js** (純粋数学計算層)
+- 責務: Screen→Canvas→World→Local の変換計算のみ
+- 依存: canvas (HTMLElement), worldContainer (PIXI.Container)
+- 禁止: PIXI内部関数、updateTransform()、toLocal/toGlobal()
+- グローバル: `window.CoordinateSystem`
+- Phase: 1.6 (純粋数学計算版)
+- 状態: ✅ 計算ロジックは正常 / ⚠️ worldContainer前提が問題
+
+📁 **drawing-engine.js** (ポインターイベント処理層)
+- 責務: PointerEvent受信→座標変換呼び出し→BrushCore委譲
+- 依存: CoordinateSystem, LayerSystem, BrushCore, PointerHandler
+- 座標変換: `_transformPointerToLocal()` でCoordinateSystem呼び出し
+- グローバル: `window.DrawingEngine` (クラス定義), `window.drawingEngine` (インスタンス)
+- Phase: 1.2 (座標変換修正版)
+- 状態: ⚠️ activeLayer取得は正常 / ❌ worldContainer前提の変換失敗
+
+### レイヤー管理システム
+
+📁 **layer-system.js** (レイヤー構造管理)
+- 責務: レイヤー作成・削除・選択・変形・階層管理
+- レイヤー保持: `currentFrameContainer.children`
+- activeLayer取得: `getActiveLayer()` → `currentFrameContainer.children[activeLayerIndex]`
+- 依存: AnimationSystem, LayerTransform, EventBus
+- グローバル: `window.layerSystem`, `window.layerManager` (互換性)
+- Phase: 8 (getLayerById実装版)
+- 状態: ✅ レイヤー管理正常 / ⚠️ currentFrameContainer ≠ worldContainer
+
+📁 **camera-system.js** (カメラ・ズーム・パン)
+- 責務: worldContainerのtransform操作
+- worldContainer作成: 初期化時にPIXI.Containerを生成
+- 座標影響: worldContainer.x/y/scale/rotation
+- グローバル: `window.cameraSystem`
+- 状態: 🔍 worldContainerとcurrentFrameContainerの関係要確認
+
+### 描画実行システム
+
+📁 **brush-core.js** (描画統合)
+- 責務: ストローク開始/更新/終了の統合処理
+- 依存: StrokeRecorder, WebGL2コンポーネント、LayerSystem
+- メソッド: startStroke, updateStroke, finalizeStroke
+- グローバル: `window.BrushCore` (クラス), `window.brushCore` (インスタンス)
+- 状態: 🔍 初期化状態要確認
+
+📁 **stroke-recorder.js** (ポリゴンジェネレーター)
+- 責務: Local座標ポイント記録→PerfectFreehand変換
+- 入力: {x, y, pressure} (Local座標前提)
+- 禁止: 座標変換の実行 (受け取った値をそのまま記録)
+- グローバル: `window.StrokeRecorder`
+- Phase: 0 (基礎実装)
+- 状態: ✅ 記録ロジックは正常 / ⚠️ 入力座標待ち
+
+### WebGL2レンダリング
+
+📁 **webgl2-drawing-layer.js** (WebGL2統合)
+- 責務: WebGLコンテキスト管理・シェーダー・レンダリングループ
+- グローバル: `window.WebGLContext`, `window.WebGL2DrawingLayer`
+- 状態: ✅ 初期化完了
+
+📁 **gl-stroke-processor.js** (ストローク処理)
+- 責務: PerfectFreehand出力→頂点バッファ→GPU転送
+- 依存: WebGL2DrawingLayer
+- 状態: ✅ Singleton作成済み
+
+📁 **gl-msdf-pipeline.js** (MSDFレンダリング)
+- 責務: SDF/MSDF生成・合成
+- Phase: 1.8 (Rollback修正版)
+- 状態: ✅ 初期化完了
+
+### イベント駆動
+
+📁 **pointer-handler.js** (ポインター入力)
+- 責務: PointerEvent正規化・イベント配信
+- EventEmitter: .on('pointerdown/move/up', callback)
+- グローバル: インスタンスのみ (DrawingEngineが保持)
+- 状態: ✅ イベント配信正常
+
+📁 **event-bus.js** (システム間通信)
+- 責務: コンポーネント間イベント通信
+- グローバル: `window.EventBus`
+- 状態: ✅ 通信経路正常
+
+================================================================================
+
+## 3. 座標変換フローチェーン
+
+### 理想的なフロー (ガイドライン準拠)
+
+```
+[1] PointerEvent (Browser)
+    ↓ clientX, clientY, pressure
+[2] DrawingEngine._handlePointerDown(e)
+    ↓ 
+[3] DrawingEngine._transformPointerToLocal(e)
+    ↓
+[4] CoordinateSystem.screenClientToCanvas(clientX, clientY)
+    ↓ DPI補正
+[5] canvasCoords {canvasX, canvasY}
+    ↓
+[6] CoordinateSystem.canvasToWorld(canvasX, canvasY)
+    ↓ worldContainer逆変換 (純粋数学)
+[7] worldCoords {worldX, worldY}
+    ↓
+[8] LayerSystem.getActiveLayer()
+    ↓ activeLayer取得
+[9] CoordinateSystem.worldToLocal(worldX, worldY, activeLayer)
+    ↓ 親チェーン遡査・逆変換 (純粋数学)
+[10] localCoords {localX, localY}
+    ↓
+[11] BrushCore.startStroke(localX, localY, pressure)
+    ↓
+[12] StrokeRecorder.startStroke({x: localX, y: localY, pressure})
+    ↓ 座標変換なし・直接記録
+[13] PerfectFreehand変換
+    ↓
+[14] WebGL2レンダリング
+```
+
+### 🔴 現在のフロー (エラー発生)
+
+```
+[1]~[8] 正常動作 ✅
+[9] CoordinateSystem.worldToLocal(worldX, worldY, activeLayer)
+    ❌ 親チェーン遡査でworldContainer到達失敗
+    理由: activeLayerの親がcurrentFrameContainer
+          currentFrameContainerの親 ≠ worldContainer
+[10]~[14] 実行されず ❌
+```
+
+================================================================================
+
+## 4. 問題箇所特定
+
+### 問題1: レイヤー構造の親子関係ミスマッチ
+
+#### 期待される構造 (ガイドライン)
+```
+worldContainer (camera-system管理)
+  └─ レイヤー群
+      ├─ 背景レイヤー
+      ├─ レイヤー1
+      └─ レイヤー2
+```
+
+#### 実際の構造 (推定)
+```
+canvasContainer (?)
+  └─ worldContainer (camera-system管理)
+      └─ ??? (不明)
+          
+別階層:
+currentFrameContainer (layer-system管理)
+  └─ レイヤー群
+      ├─ 背景レイヤー
+      ├─ レイヤー1
+      └─ レイヤー2
+```
+
+⚠️ `currentFrameContainer` は `worldContainer` の子ではない
+⚠️ CoordinateSystem.worldToLocal() は親チェーンで`worldContainer`を探すが見つからない
+
+### 問題2: CameraSystemとLayerSystemの統合不足
+
+📄 **camera-system.js** (要確認)
+- `worldContainer` を作成・管理
+- 🔍 `currentFrameContainer` を子として追加しているか？
+- 🔍 初期化順序は適切か？
+
+📄 **layer-system.js**
+- `currentFrameContainer` を独立管理
+- ❌ `worldContainer` との親子関係を確立していない
+- メソッド: `setCameraSystem(cameraSystem)` 存在
+- 🔧 このメソッド内で親子関係を確立すべき
+
+### 問題3: 初期化順序の不確定性
+
+📄 **core-initializer.js** (要確認)
+- CameraSystem初期化: worldContainer生成
+- LayerSystem初期化: currentFrameContainer生成
+- CoordinateSystem初期化: worldContainer参照設定
+- 🔧 CameraSystemがcurrentFrameContainerをworldContainerに追加する処理が必要
+
+================================================================================
+
+## 5. 段階的改修プラン
+
+### Phase 1: 構造確認 (エラー回復の前準備)
+
+#### Step 1.1: 現在の親子関係調査
+**実行場所**: ブラウザコンソール
+```javascript
+// worldContainer確認
+console.log('worldContainer:', window.cameraSystem?.worldContainer);
+console.log('worldContainer parent:', window.cameraSystem?.worldContainer?.parent);
+console.log('worldContainer children:', window.cameraSystem?.worldContainer?.children);
+
+// currentFrameContainer確認
+console.log('currentFrameContainer:', window.layerManager?.currentFrameContainer);
+console.log('currentFrameContainer parent:', window.layerManager?.currentFrameContainer?.parent);
+console.log('currentFrameContainer children:', window.layerManager?.currentFrameContainer?.children);
+
+// activeLayer確認
+const activeLayer = window.layerManager?.getActiveLayer();
+console.log('activeLayer:', activeLayer);
+console.log('activeLayer parent:', activeLayer?.parent);
+console.log('activeLayer label:', activeLayer?.label);
+
+// 親チェーン遡査
+let current = activeLayer;
+let depth = 0;
+while (current && depth < 10) {
+  console.log(`Parent[${depth}]:`, current.label || current.constructor.name, current);
+  current = current.parent;
+  depth++;
+}
+```
+
+#### Step 1.2: camera-system.jsの構造確認
+🔍 確認ポイント:
+- `worldContainer`作成箇所
+- `canvasContainer`との関係
+- `currentFrameContainer`を子として追加しているか？
+
+#### Step 1.3: core-initializer.jsの初期化順確認
+🔍 確認ポイント:
+- CameraSystem初期化タイミング
+- LayerSystem初期化タイミング
+- `layerManager.setCameraSystem(cameraSystem)` 呼び出し有無
+- `worldContainer.addChild(currentFrameContainer)` 実行有無
+
+### Phase 2: 親子関係確立 (最重要)
+
+#### 修正対象: layer-system.js
+
+**修正箇所1**: `setCameraSystem(cameraSystem)` メソッド
+
+**現状**:
+```javascript
+setCameraSystem(cameraSystem) {
+    this.cameraSystem = cameraSystem;
+    
+    // checkerPattern追加のみ
+    if (cameraSystem?.canvasContainer && window.checkerUtils) {
+        this.checkerPattern = window.checkerUtils.createCanvasChecker(...);
+        cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
+    }
+    
+    // transform初期化
+    if (this.transform && this.app && !this.transform.app) {
+        this.initTransform();
+    }
+}
+```
+
+**必要な追加**:
+```javascript
+setCameraSystem(cameraSystem) {
+    this.cameraSystem = cameraSystem;
+    
+    // 🔧 重要: currentFrameContainerをworldContainerの子として追加
+    if (cameraSystem?.worldContainer && this.currentFrameContainer) {
+        if (!this.currentFrameContainer.parent) {
+            cameraSystem.worldContainer.addChild(this.currentFrameContainer);
+            console.log('[LayerSystem] currentFrameContainer added to worldContainer');
+        } else if (this.currentFrameContainer.parent !== cameraSystem.worldContainer) {
+            console.warn('[LayerSystem] currentFrameContainer already has different parent');
+            // 親を変更
+            this.currentFrameContainer.parent.removeChild(this.currentFrameContainer);
+            cameraSystem.worldContainer.addChild(this.currentFrameContainer);
+            console.log('[LayerSystem] currentFrameContainer reparented to worldContainer');
+        }
+    }
+    
+    // checkerPattern追加
+    if (cameraSystem?.canvasContainer && window.checkerUtils) {
+        this.checkerPattern = window.checkerUtils.createCanvasChecker(...);
+        cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
+    }
+    
+    // transform初期化
+    if (this.transform && this.app && !this.transform.app) {
+        this.initTransform();
+    }
+}
+```
+
+#### 修正対象: core-initializer.js (要確認後)
+
+**確認ポイント**:
+- `layerManager.setCameraSystem(cameraSystem)` が確実に呼ばれているか
+- 呼び出しタイミングは適切か (CameraSystem初期化後)
+
+**必要な追加** (もし呼ばれていない場合):
+```javascript
+// CameraSystem初期化後
+if (window.cameraSystem) {
+    window.cameraSystem.initialize(worldContainer);
+}
+
+// LayerSystem初期化
+if (window.layerManager) {
+    await window.layerManager.initialize();
+}
+
+// 🔧 重要: CameraSystemとLayerSystemを接続
+if (window.layerManager && window.cameraSystem) {
+    window.layerManager.setCameraSystem(window.cameraSystem);
+}
+```
+
+### Phase 3: CoordinateSystem修正 (予防的)
+
+#### 修正対象: coordinate-system.js
+
+**修正箇所**: `worldToLocal()` メソッドのエラーハンドリング
+
+**現状**:
+```javascript
+if (current !== worldContainer) {
+    console.error('[CoordinateSystem] ❌ worldToLocal: container not child of worldContainer', {
+        containerLabel: container.label || 'unknown',
+        chainLength: parentChain.length
+    });
+    return null;
+}
+```
+
+**改善案** (Phase 2完了後は不要だが、デバッグ情報強化):
+```javascript
+if (current !== worldContainer) {
+    console.error('[CoordinateSystem] ❌ worldToLocal: container not child of worldContainer');
+    console.error('  Container:', container.label || 'unknown');
+    console.error('  Parent chain length:', parentChain.length);
+    console.error('  Final parent:', current ? (current.label || current.constructor.name) : 'null');
+    console.error('  Expected parent:', worldContainer ? (worldContainer.label || 'worldContainer') : 'null');
+    console.error('  Parent chain:');
+    for (let i = 0; i < parentChain.length; i++) {
+        console.error(`    [${i}]:`, parentChain[i].label || parentChain[i].constructor.name);
+    }
+    return null;
+}
+```
+
+### Phase 4: WebGPU残存コード削除
+
+#### 確認対象ファイル
+🔍 以下のファイルでWebGPU参照を検索:
+- drawing-engine.js
+- brush-core.js
+- webgl2-drawing-layer.js
+- gl-stroke-processor.js
+- fill-tool.js (既に修正済み)
+
+#### 削除対象
+- `window.WebGPUContext` 参照
+- `gpuDevice`, `gpuCanvas` 等の変数
+- WebGPU初期化コード
+- WebGPU用のシェーダーコード (WGSL)
+
+#### 確認方法
+```javascript
+// ブラウザコンソールで実行
+console.log('WebGPU references:', {
+    WebGPUContext: typeof window.WebGPUContext,
+    gpuDevice: typeof window.gpuDevice,
+    gpuCanvas: document.querySelector('canvas[id*="gpu"]')
+});
+```
+
+### Phase 5: 描画テスト・検証
+
+#### Test 1: 座標変換テスト
+```javascript
+// ブラウザコンソール
+window.TegakiDebug.drawing.testTransform(960, 540);
+```
+**期待結果**: エラーなし、localX/localY が数値で返る
+
+#### Test 2: 親子関係確認
+```javascript
+const activeLayer = window.layerManager.getActiveLayer();
+console.log('Parent chain valid:', activeLayer?.parent === window.layerManager.currentFrameContainer);
+console.log('currentFrame in world:', window.layerManager.currentFrameContainer?.parent === window.cameraSystem.worldContainer);
+```
+**期待結果**: 両方 `true`
+
+#### Test 3: 実際の描画テスト
+1. WebGL2キャンバス上でマウスクリック
+2. ドラッグして線を引く
+3. マウスアップ
+
+**期待結果**: 
+- コンソールエラーなし
+- StrokeRecorderにポイント記録
+- WebGL2キャンバスに線が表示
+
+### Phase 6: Perfect-Freehand確認
+
+#### 確認ポイント
+📄 **stroke-recorder.js**
+- PerfectFreehand呼び出し箇所
+- config.jsのperfectFreehand設定適用
+
+📄 **config.js**
+- thinning, smoothing, streamline 設定値
+- 筆圧対応パラメータ
+
+#### 検証方法
+```javascript
+// stroke-recorder.jsの記録確認
+window.StrokeRecorder.getPoints(); // 描画後に実行
+```
+**期待結果**: ポイント配列が取得できる
+
+================================================================================
+
+## 6. 完全動作確認チェックリスト
+
+### ✅ 初期化フェーズ
+- [ ] CameraSystem初期化完了 (`worldContainer` 生成)
+- [ ] LayerSystem初期化完了 (`currentFrameContainer` 生成)
+- [ ] `layerManager.setCameraSystem()` 実行
+- [ ] `currentFrameContainer` が `worldContainer` の子
+- [ ] CoordinateSystem初期化 (canvas, worldContainer設定)
+- [ ] DrawingEngine初期化 (依存関係すべて揃っている)
+- [ ] BrushCore初期化
+- [ ] WebGL2システム初期化
+
+### ✅ 座標変換フェーズ
+- [ ] PointerEvent受信
+- [ ] screenClientToCanvas() 成功
+- [ ] canvasToWorld() 成功
+- [ ] activeLayer取得成功
+- [ ] activeLayerの親チェーンにworldContainerが存在
+- [ ] worldToLocal() 成功 (エラーなし)
+- [ ] localX, localY が有限数値
+
+### ✅ 描画実行フェーズ
+- [ ] BrushCore.startStroke() 実行
+- [ ] StrokeRecorder.startStroke() 実行
+- [ ] ポイント記録 (座標変換なし)
+- [ ] PerfectFreehand変換実行
+- [ ] WebGL2頂点バッファ転送
+- [ ] WebGL2レンダリング実行
+- [ ] キャンバスに線が表示される
+
+### ✅ WebGPU削除確認
+- [ ] `window.WebGPUContext` が undefined
+- [ ] gpuCanvas要素が存在しない
+- [ ] WebGPU関連コンソールエラーなし
+
+================================================================================
+
+## 付録A: デバッグコマンド集
+
+### システム状態確認
+```javascript
+// CoordinateSystem状態
+window.CoordinateSystem.dumpState();
+
+// DrawingEngine状態
+window.TegakiDebug.drawing.inspect();
+
+// レイヤー構造確認
+window.layerManager.getLayers();
+window.layerManager.getActiveLayer();
+
+// 親子関係確認
+const activeLayer = window.layerManager.getActiveLayer();
+let parent = activeLayer;
+while (parent) {
+  console.log(parent.label || parent.constructor.name);
+  parent = parent.parent;
+}
+```
+
+### 座標変換テスト
+```javascript
+// マウス座標からLocal座標への変換テスト
+window.TegakiDebug.drawing.testTransform(960, 540);
+
+// デバッグモード有効化
+window.TegakiDebug.drawing.enableDebug();
+// → その後クリックで詳細ログ出力
+
+// デバッグモード無効化
+window.TegakiDebug.drawing.disableDebug();
+```
+
+### WebGL2状態確認
+```javascript
+// WebGL2コンテキスト
+console.log('WebGL2:', window.WebGLContext);
+console.log('GL Canvas:', document.getElementById('webgl2-canvas'));
+
+// レンダリングパイプライン
+console.log('GLStrokeProcessor:', window.GLStrokeProcessor);
+console.log('GLMSDFPipeline:', window.GLMSDFPipeline);
+```
+
+================================================================================
+
+## 付録B: エラーパターン別対処
+
+### エラー1: "container not child of worldContainer"
+**原因**: currentFrameContainerがworldContainerの子ではない
+**対処**: Phase 2 実施
+
+### エラー2: "CoordinateSystem not initialized"
+**原因**: 初期化順序の問題
+**対処**: core-initializer.jsで初期化順序確認
+
+### エラー3: "No active layer"
+**原因**: LayerSystemの初期化不完全
+**対処**: LayerSystem.init()が正常に実行されているか確認
+
+### エラー4: "BrushCore not available"
+**原因**: BrushCoreの初期化失敗
+**対処**: brush-core.js初期化ログ確認、依存関係チェック
+
+### エラー5: NaN/Infinity in coordinates
+**原因**: 座標計算のどこかで不正な値が混入
+**対処**: 各変換ステップでisFinite()チェック実施、ログ追跡
+
+================================================================================
+
+## 付録C: ファイル改修優先順位
+
+### 優先度: 最高 🔴
+1. **layer-system.js** - setCameraSystem()修正
+2. **core-initializer.js** - 初期化順序・親子関係確立
+3. **coordinate-system.js** - エラーログ強化 (予防的)
+
+### 優先度: 高 🟠
+4. **camera-system.js** - 構造確認・必要に応じて修正
+5. **drawing-engine.js** - WebGPU残存コード削除
+6. **brush-core.js** - WebGPU残存コード削除
+
+### 優先度: 中 🟡
+7. **stroke-recorder.js** - PerfectFreehand統合確認
+8. **webgl2-drawing-layer.js** - WebGPU参照削除
+9. **config.js** - PerfectFreehand設定確認
+
+### 優先度: 低 🟢
+10. その他WebGL2シェーダー系ファイル (動作確認済み)
+
+================================================================================
+
+## 改修後の期待動作
+
+### 座標変換フロー (完全版)
+1. ✅ PointerEvent取得
+2. ✅ Screen → Canvas (DPI補正)
+3. ✅ Canvas → World (worldContainer逆変換)
+4. ✅ World → Local (親チェーン遡査・逆変換)
+5. ✅ Local座標記録 (StrokeRecorder)
+6. ✅ PerfectFreehand変換 (ポリゴン生成)
+7. ✅ WebGL2レンダリング (メッシュ描画)
+
+### レイヤー構造 (完全版)
+```
+canvasContainer (PixiJS Stage)
+  └─ checkerPattern (背景チェッカー)
+  └─ worldContainer (CameraSystem管理)
+      └─ currentFrameContainer (LayerSystem管理)
+          ├─ 背景レイヤー (PIXI.Container)
+          ├─ レイヤー1 (PIXI.Container)
+          │   ├─ maskSprite
+          │   └─ path.graphics (WebGL2 Mesh) ← ここに描画
+          └─ レイヤー2 (PIXI.Container)
+```
+
+### 座標系の整合性
+- worldContainer: カメラ変換の基準点
+- currentFrameContainer: レイヤー群のルート (worldContainerの子)
+- activeLayer: 描画対象 (currentFrameContainerの子)
+- 親チェーン: activeLayer → currentFrameContainer → worldContainer ✅
+
+================================================================================
+
+## 最後に
+
+本改修辞典は**AIが読みやすい形式**で記述されています。
+各Phaseは独立して実行可能で、段階的な改修を支援します。
+
+改修実施時は以下の順序を推奨:
+1. Phase 1 (構造確認) → 現状把握
+2. Phase 2 (親子関係確立) → エラー解消
+3. Phase 3~4 (予防的修正) → 安定化
+4. Phase 5~6 (描画テスト) → 機能確認
+
+各Phaseの完了後、チェックリストで検証を行ってください。
+
+================================================================================
