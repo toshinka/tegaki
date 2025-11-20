@@ -1,0 +1,575 @@
+# Tegaki WebGL2 段階的改修計画書
+
+## 🎯 問題の根本原因
+
+**描画ができない理由**:
+1. ❌ DrawingEngine.initialize() が呼ばれていない
+2. ❌ PointerHandler のインスタンスが作成されていない
+3. ❌ WebGL2キャンバスへのPointerEventリスナーが設定されていない
+
+→ **結果**: PointerEventが取得できず、描画開始できない
+
+---
+
+## 📋 改修フェーズ
+
+### Phase 1: 緊急修正（描画機能復旧） ⚡
+**目標**: 最小限の修正で描画を動作させる
+
+#### Step 1-1: DrawingEngine初期化の追加
+**ファイル**: `core-engine.js`
+**箇所**: `initialize()` メソッド内
+
+**修正内容**:
+```javascript
+// 現在（❌動作しない）
+this.drawingEngine = new DrawingEngine(
+    this.app,
+    this.layerSystem,
+    this.cameraSystem,
+    window.History
+);
+
+// 修正後（✅動作する）
+this.drawingEngine = new DrawingEngine(
+    this.app,
+    this.layerSystem,
+    this.cameraSystem,
+    window.History
+);
+
+// ⭐ 追加: WebGL2キャンバス取得
+const glCanvas = document.querySelector('#webgl2-canvas');
+if (!glCanvas) {
+    console.error('[CoreEngine] WebGL2 canvas not found');
+    throw new Error('WebGL2 canvas required');
+}
+
+// ⭐ 追加: PointerHandler作成
+const pointerHandler = new window.PointerHandler(glCanvas, {
+    preventDefault: true,
+    capture: false
+});
+
+// ⭐ 追加: DrawingEngine初期化
+const engineInitSuccess = this.drawingEngine.initialize({
+    coordSystem: window.CoordinateSystem,
+    cameraSystem: this.cameraSystem,
+    layerManager: this.layerSystem,
+    brushCore: window.BrushCore,
+    pointerHandler: pointerHandler,
+    eventBus: this.eventBus,
+    glCanvas: glCanvas
+});
+
+if (!engineInitSuccess) {
+    console.error('[CoreEngine] DrawingEngine initialization failed');
+    throw new Error('DrawingEngine initialization required');
+}
+
+console.log('[CoreEngine] ✅ DrawingEngine initialized successfully');
+```
+
+**挿入位置**: `window.BrushCore.init()` の直後
+
+---
+
+#### Step 1-2: DrawingEngineコンストラクタの簡略化
+**ファイル**: `drawing-engine.js`
+
+**問題**: 現在のコンストラクタが引数を取っているが、core-engine.jsから渡されていない
+
+**修正内容**:
+```javascript
+// 現在
+constructor() {
+    this.initialized = false;
+    // ...
+}
+
+// そのまま維持（変更なし）
+// 代わりに core-engine.js 側で initialize() を呼ぶ
+```
+
+**理由**: コンストラクタは変更せず、initialize()で依存注入する設計を維持
+
+---
+
+#### Step 1-3: 初期化順序の確認
+**ファイル**: `core-initializer.js`
+
+**確認事項**:
+- CoordinateSystem.initialize() が CoreEngine.initialize() の後に呼ばれているか
+- worldContainer が確実に存在しているか
+
+**現状**: ✅ Phase 1.2.2で既に修正済み
+
+**追加検証**:
+```javascript
+// core-initializer.js の DrawingApp.initialize() 内
+// CoordinateSystem初期化後に追加
+if (!coordInitSuccess) {
+    console.warn('[CoreInit] ⚠️ CoordinateSystem initialization failed');
+    // ⭐ 追加: 失敗時の詳細診断
+    console.log('[CoreInit] Diagnostic:', {
+        glCanvas: !!document.querySelector('#webgl2-canvas'),
+        cameraSystem: !!cameraSystem,
+        worldContainer: !!cameraSystem?.worldContainer,
+        CoordinateSystem: !!window.CoordinateSystem
+    });
+}
+```
+
+---
+
+### Phase 2: 安定性向上 🛡️
+**目標**: 初期化の堅牢性を高め、エラーハンドリングを改善
+
+#### Step 2-1: BrushCore初期化の一本化
+**問題**: BrushCore.init() が複数箇所で呼ばれている
+- core-engine.js: `window.BrushCore.init()`
+- core-initializer.js: `window.BrushCore.initialize()` (WebGL2コンポーネント設定後)
+
+**修正方針**:
+1. core-engine.js での init() を維持（基本初期化）
+2. core-initializer.js での WebGL2 コンポーネント設定を統合
+3. BrushCore に初期化済みフラグチェックを追加
+
+**ファイル**: `brush-core.js`
+
+**修正内容**:
+```javascript
+async initialize() {
+    if (this.initialized) {
+        console.warn('[BrushCore] Already initialized, skipping base init');
+        // ⭐ 変更: 既に初期化済みの場合はWebGL2コンポーネント更新のみ
+        this._updateWebGL2Components();
+        return;
+    }
+
+    // 基本初期化
+    this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
+    this.layerManager = window.layerManager || window.layerSystem;
+    this.eventBus = window.TegakiEventBus || window.eventBus;
+
+    if (!this.strokeRecorder) {
+        throw new Error('[BrushCore] strokeRecorder not found');
+    }
+    if (!this.layerManager) {
+        throw new Error('[BrushCore] layerManager not found');
+    }
+
+    // WebGL2コンポーネント更新
+    this._updateWebGL2Components();
+
+    this._setupEventListeners();
+    this.initialized = true;
+}
+
+// ⭐ 新規追加
+_updateWebGL2Components() {
+    this.glStrokeProcessor = window.GLStrokeProcessor;
+    this.glMSDFPipeline = window.GLMSDFPipeline;
+    this.textureBridge = window.GLTextureBridge || window.WebGPUTextureBridge;
+    this.glMaskLayer = window.GLMaskLayer;
+
+    this.msdfAvailable = !!(
+        this.glStrokeProcessor &&
+        this.glMSDFPipeline &&
+        this.textureBridge
+    );
+
+    this.maskAvailable = !!(this.glMaskLayer && this.glMaskLayer.initialized);
+
+    console.log('[BrushCore] WebGL2 components updated:', {
+        msdfAvailable: this.msdfAvailable,
+        maskAvailable: this.maskAvailable
+    });
+}
+```
+
+---
+
+#### Step 2-2: 初期化失敗時のフォールバック
+**ファイル**: `drawing-engine.js`
+
+**修正内容**:
+```javascript
+initialize(dependencies) {
+    if (this.initialized) {
+        console.warn('[DrawingEngine] Already initialized');
+        return true;
+    }
+
+    this._initAttempts++;
+
+    const {
+        coordSystem,
+        cameraSystem,
+        layerManager,
+        brushCore,
+        pointerHandler,
+        eventBus,
+        glCanvas
+    } = dependencies;
+
+    // 必須依存関係チェック
+    const missing = [];
+    if (!coordSystem) missing.push('coordSystem');
+    if (!cameraSystem) missing.push('cameraSystem');
+    if (!layerManager) missing.push('layerManager');
+    if (!brushCore) missing.push('brushCore');
+    if (!pointerHandler) missing.push('pointerHandler');
+    if (!eventBus) missing.push('eventBus');
+    if (!glCanvas) missing.push('glCanvas');
+
+    if (missing.length > 0) {
+        console.error('[DrawingEngine] Missing dependencies:', missing);
+        console.log(`[DrawingEngine] Init attempt ${this._initAttempts}/${this._maxInitAttempts}`);
+        
+        // ⭐ 追加: 再試行ロジック
+        if (this._initAttempts < this._maxInitAttempts) {
+            console.log('[DrawingEngine] Scheduling retry in 500ms...');
+            setTimeout(() => {
+                console.log('[DrawingEngine] Retrying initialization...');
+                // 呼び出し元に再試行を促す
+                this.eventBus?.emit('drawing-engine:init-retry-needed', {
+                    attempt: this._initAttempts,
+                    missing: missing
+                });
+            }, 500);
+        }
+        
+        return false;
+    }
+
+    // ... 以降の初期化処理
+}
+```
+
+---
+
+### Phase 3: 保守性向上 📚
+**目標**: コードの可読性を高め、将来の改修を容易にする
+
+#### Step 3-1: 初期化フロー文書化
+**ファイル**: `docs/initialization-flow.md` (新規作成)
+
+**内容**:
+```markdown
+# Tegaki WebGL2 初期化フロー
+
+## 1. エントリーポイント
+- index.html
+  └─ DOMContentLoaded
+      └─ CoreInitializer.initialize()
+
+## 2. 依存関係読み込み順序
+1. config.js
+2. coordinate-system.js
+3. event-bus.js
+4. ... (全ファイルリスト)
+
+## 3. 初期化シーケンス
+（詳細なフローチャート）
+
+## 4. トラブルシューティング
+（よくある問題と解決方法）
+```
+
+---
+
+#### Step 3-2: デバッグユーティリティの追加
+**ファイル**: `system/debug-utils.js` (新規作成)
+
+**内容**:
+```javascript
+/**
+ * debug-utils.js - 開発用デバッグユーティリティ
+ */
+
+(function() {
+    'use strict';
+
+    const TegakiDebug = {
+        /**
+         * 初期化状態の包括的チェック
+         */
+        checkInitialization() {
+            console.group('🔍 Tegaki Initialization Check');
+
+            const checks = {
+                'CoordinateSystem': {
+                    exists: !!window.CoordinateSystem,
+                    initialized: window.CoordinateSystem?.initialized,
+                    canvas: !!window.CoordinateSystem?.canvas,
+                    worldContainer: !!window.CoordinateSystem?.worldContainer
+                },
+                'CameraSystem': {
+                    exists: !!window.cameraSystem,
+                    worldContainer: !!window.cameraSystem?.worldContainer
+                },
+                'LayerManager': {
+                    exists: !!window.layerManager,
+                    layers: window.layerManager?.getLayers()?.length
+                },
+                'DrawingEngine': {
+                    exists: !!window.drawingEngine,
+                    initialized: window.drawingEngine?.initialized,
+                    coordSystem: !!window.drawingEngine?.coordSystem,
+                    pointerHandler: !!window.drawingEngine?.pointerHandler,
+                    brushCore: !!window.drawingEngine?.brushCore
+                },
+                'BrushCore': {
+                    exists: !!window.BrushCore,
+                    initialized: window.BrushCore?.initialized,
+                    strokeRecorder: !!window.BrushCore?.strokeRecorder,
+                    msdfAvailable: window.BrushCore?.msdfAvailable,
+                    maskAvailable: window.BrushCore?.maskAvailable
+                },
+                'WebGL2': {
+                    canvas: !!document.querySelector('#webgl2-canvas'),
+                    DrawingLayer: !!window.WebGL2DrawingLayer,
+                    StrokeProcessor: !!window.GLStrokeProcessor,
+                    MSDFPipeline: !!window.GLMSDFPipeline
+                }
+            };
+
+            let allGood = true;
+            for (const [name, status] of Object.entries(checks)) {
+                const issues = Object.entries(status)
+                    .filter(([k, v]) => !v)
+                    .map(([k]) => k);
+                
+                if (issues.length > 0) {
+                    console.error(`❌ ${name}:`, issues);
+                    allGood = false;
+                } else {
+                    console.log(`✅ ${name}: OK`);
+                }
+            }
+
+            console.groupEnd();
+            return allGood;
+        },
+
+        /**
+         * 描画フロー診断
+         */
+        testDrawingFlow(x = 100, y = 100) {
+            console.group('🎨 Drawing Flow Test');
+
+            if (!window.drawingEngine) {
+                console.error('❌ DrawingEngine not found');
+                console.groupEnd();
+                return;
+            }
+
+            if (!window.drawingEngine.initialized) {
+                console.error('❌ DrawingEngine not initialized');
+                console.groupEnd();
+                return;
+            }
+
+            const result = window.drawingEngine.testCoordinateTransform(x, y);
+            
+            if (result) {
+                console.log('✅ Coordinate transform successful');
+                console.log('Result:', result);
+            } else {
+                console.error('❌ Coordinate transform failed');
+            }
+
+            console.groupEnd();
+            return result;
+        },
+
+        /**
+         * イベントリスナー確認
+         */
+        checkEventListeners() {
+            const glCanvas = document.querySelector('#webgl2-canvas');
+            if (!glCanvas) {
+                console.error('❌ WebGL2 canvas not found');
+                return;
+            }
+
+            // getEventListeners() は Chrome DevTools でのみ利用可能
+            console.log('Canvas element:', glCanvas);
+            console.log('Try: getEventListeners($0) in DevTools Console');
+        }
+    };
+
+    window.TegakiDebug = TegakiDebug;
+
+    console.log('✅ debug-utils.js loaded');
+    console.log('   Run: TegakiDebug.checkInitialization()');
+    console.log('   Run: TegakiDebug.testDrawingFlow()');
+
+})();
+```
+
+---
+
+## 📝 改修実施手順
+
+### 手順1: Phase 1実施（最優先）
+1. `core-engine.js` をバックアップ
+2. Step 1-1 の修正を適用
+3. ブラウザで動作確認
+4. コンソールで初期化ログ確認
+5. 実際に描画テスト
+
+**確認コマンド**:
+```javascript
+// コンソールで実行
+window.drawingEngine?.inspect()
+window.TegakiDebug?.checkInitialization()  // Phase 3実装後
+```
+
+---
+
+### 手順2: Phase 2実施（安定性向上）
+1. `brush-core.js` をバックアップ
+2. Step 2-1 の修正を適用
+3. `drawing-engine.js` をバックアップ
+4. Step 2-2 の修正を適用
+5. 動作確認
+
+---
+
+### 手順3: Phase 3実施（保守性向上）
+1. `system/debug-utils.js` を新規作成
+2. `index.html` に読み込み追加
+3. ドキュメント作成
+4. 動作確認
+
+---
+
+## 🔍 動作確認チェックリスト
+
+### 初期化確認
+- [ ] ページ読み込みでエラーが出ていない
+- [ ] `window.drawingEngine` が存在する
+- [ ] `window.drawingEngine.initialized === true`
+- [ ] `window.BrushCore.initialized === true`
+- [ ] `window.CoordinateSystem.initialized === true`
+
+### 描画確認
+- [ ] WebGL2キャンバス上でマウスを押下できる
+- [ ] `pointerdown` イベントが発火する
+- [ ] 座標変換が成功する
+- [ ] `BrushCore.startStroke()` が呼ばれる
+- [ ] ストロークが記録される
+- [ ] プレビューが表示される
+- [ ] ストロークが確定される
+
+### デバッグ確認
+- [ ] `window.drawingEngine.inspect()` が動作する
+- [ ] `window.CoordinateSystem.dumpState()` が動作する
+- [ ] エラーログが適切に出力される
+
+---
+
+## 🚨 予想される問題と対処法
+
+### 問題1: WebGL2キャンバスが見つからない
+**症状**: `WebGL2 canvas not found` エラー
+**原因**: DOMの読み込みタイミング
+**対処**: 
+```javascript
+// core-engine.js
+const glCanvas = document.querySelector('#webgl2-canvas');
+if (!glCanvas) {
+    console.error('[CoreEngine] WebGL2 canvas not found, retrying...');
+    // 少し待ってリトライ
+    setTimeout(() => {
+        const retryCanvas = document.querySelector('#webgl2-canvas');
+        if (retryCanvas) {
+            console.log('[CoreEngine] WebGL2 canvas found on retry');
+            // 再初期化処理
+        }
+    }, 100);
+}
+```
+
+---
+
+### 問題2: CoordinateSystem初期化失敗
+**症状**: `CoordinateSystem initialization failed`
+**原因**: worldContainerがまだ未生成
+**対処**: 既に Phase 1.2.2 で対処済み、エラーログで状態確認
+
+---
+
+### 問題3: PointerEvent が取得できない
+**症状**: クリックしても何も起こらない
+**原因**: PointerHandlerの初期化失敗
+**対処**:
+```javascript
+// コンソールで確認
+console.log('PointerHandler:', window.drawingEngine?.pointerHandler);
+console.log('GLCanvas:', document.querySelector('#webgl2-canvas'));
+
+// 手動再設定テスト
+const glCanvas = document.querySelector('#webgl2-canvas');
+const testHandler = new window.PointerHandler(glCanvas);
+testHandler.on('pointerdown', (e) => console.log('Test pointerdown:', e));
+```
+
+---
+
+## 📊 改修後の期待される動作
+
+### 正常な描画フロー
+```
+1. ユーザーがWebGL2キャンバス上でマウスダウン
+   ↓
+2. PointerHandler._normalizeEvent() → normalized info
+   ↓
+3. PointerHandler._emit('pointerdown', info)
+   ↓
+4. DrawingEngine._handlePointerDown(info)
+   ↓
+5. DrawingEngine._transformPointerToLocal(info)
+   ├─ screenClientToCanvas()
+   ├─ canvasToWorld()
+   └─ worldToLocal()
+   ↓
+6. BrushCore.startStroke(localX, localY, pressure)
+   ↓
+7. StrokeRecorder.addPoint()
+   ↓
+8. CoreEngine._renderLoop()
+   └─ BrushCore.renderPreview()  ← リアルタイムプレビュー表示
+   ↓
+9. ユーザーがマウスアップ
+   ↓
+10. BrushCore.finalizeStroke()
+    └─ GLMSDFPipeline.generateMSDF()
+    └─ Sprite生成・配置
+```
+
+---
+
+## 🎯 まとめ
+
+### 最小限の修正で描画を復旧させる（Phase 1）
+- core-engine.js に約20行のコード追加
+- DrawingEngine.initialize() の呼び出し
+- PointerHandler の作成と接続
+
+### 安定性を高める（Phase 2）
+- BrushCore初期化の一本化
+- エラーハンドリング強化
+
+### 保守性を高める（Phase 3）
+- デバッグユーティリティ追加
+- ドキュメント整備
+
+**推定作業時間**:
+- Phase 1: 30分
+- Phase 2: 1時間
+- Phase 3: 2時間
+
+**合計**: 約3.5時間で完全復旧可能
