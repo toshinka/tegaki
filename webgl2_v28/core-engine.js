@@ -1,7 +1,13 @@
 /**
  * ================================================================================
- * core-engine.js Phase 4-C完全版: リアルタイムプレビュー統合
+ * core-engine.js Phase 5修正版: DrawingEngine初期化統合
  * ================================================================================
+ * 
+ * 【Phase 5改修内容】
+ * 🔧 DrawingEngine.initialize()呼び出し追加
+ * 🔧 PointerHandlerインスタンス作成と接続
+ * 🔧 WebGL2キャンバス参照の確実な受け渡し
+ * 🔧 初期化順序の最適化
  * 
  * 【Phase 4-C改修内容】
  * 🔧 _renderLoop()にプレビュー更新追加
@@ -15,8 +21,11 @@
  * - system/drawing/brush-core.js (BrushCore)
  * - system/drawing/stroke-recorder.js (StrokeRecorder)
  * - system/drawing/stroke-renderer.js (StrokeRenderer)
+ * - system/drawing/drawing-engine.js (DrawingEngine)
+ * - system/drawing/pointer-handler.js (PointerHandler)
  * - system/event-bus.js (TegakiEventBus)
  * - system/export-manager.js (ExportManager)
+ * - coordinate-system.js (CoordinateSystem)
  * 
  * ================================================================================
  */
@@ -153,14 +162,8 @@ class CoreEngine {
         this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
         window.brushSettings = this.brushSettings;
         
-        this.drawingEngine = new DrawingEngine(
-            this.app,
-            this.layerSystem,
-            this.cameraSystem,
-            window.History
-        );
-        
-        this.drawingEngine.setBrushSettings(this.brushSettings);
+        // 🔧 Phase 5: DrawingEngineは引数なしで生成（initialize()で依存注入）
+        this.drawingEngine = new DrawingEngine();
         
         this.animationSystem = null;
         this.timelineUI = null;
@@ -644,23 +647,128 @@ class CoreEngine {
             }
         }
         
+        /**
+         * ================================================================================
+         * 🔧 Phase 5新規追加: DrawingEngine初期化メソッド
+         * ================================================================================
+         */
+        _initializeDrawingEngine() {
+            console.log('[CoreEngine] Initializing DrawingEngine...');
+
+            // 1. WebGL2キャンバス取得
+            const glCanvas = document.querySelector('#webgl2-canvas');
+            if (!glCanvas) {
+                console.error('[CoreEngine] ❌ WebGL2 canvas not found');
+                console.log('[CoreEngine] 🔍 Available canvases:', 
+                    Array.from(document.querySelectorAll('canvas')).map(c => c.id || c.className)
+                );
+                throw new Error('WebGL2 canvas (#webgl2-canvas) required for drawing');
+            }
+            console.log('[CoreEngine] ✅ WebGL2 canvas found:', {
+                width: glCanvas.width,
+                height: glCanvas.height,
+                id: glCanvas.id
+            });
+
+            // 2. CoordinateSystem確認
+            if (!window.CoordinateSystem) {
+                console.error('[CoreEngine] ❌ CoordinateSystem not found');
+                throw new Error('CoordinateSystem required');
+            }
+            if (!window.CoordinateSystem.initialized) {
+                console.warn('[CoreEngine]⚠️ CoordinateSystem not initialized yet');
+            }
+
+            // 3. BrushCore確認
+            if (!window.BrushCore) {
+                console.error('[CoreEngine] ❌ BrushCore not found');
+                throw new Error('BrushCore required');
+            }
+
+            // 4. PointerHandlerインスタンス作成
+            if (!window.PointerHandler) {
+                console.error('[CoreEngine] ❌ PointerHandler class not found');
+                throw new Error('PointerHandler class required');
+            }
+
+            const pointerHandler = new window.PointerHandler(glCanvas, {
+                preventDefault: true,
+                capture: false
+            });
+            console.log('[CoreEngine] ✅ PointerHandler created');
+
+            // 5. DrawingEngine初期化
+            const engineInitSuccess = this.drawingEngine.initialize({
+                coordSystem: window.CoordinateSystem,
+                cameraSystem: this.cameraSystem,
+                layerManager: this.layerSystem,
+                brushCore: window.BrushCore,
+                pointerHandler: pointerHandler,
+                eventBus: this.eventBus,
+                glCanvas: glCanvas
+            });
+
+            if (!engineInitSuccess) {
+                console.error('[CoreEngine] ❌ DrawingEngine initialization failed');
+                throw new Error('DrawingEngine initialization failed');
+            }
+
+            console.log('[CoreEngine] ✅ DrawingEngine initialized successfully');
+
+            // 6. BrushSettingsをDrawingEngineに設定
+            if (this.brushSettings) {
+                this.drawingEngine.setBrushSettings(this.brushSettings);
+                console.log('[CoreEngine] ✅ BrushSettings linked to DrawingEngine');
+            }
+
+            return true;
+        }
+        
         initialize() {
+            console.log('[CoreEngine] ========================================');
+            console.log('[CoreEngine] Starting initialization sequence...');
+            console.log('[CoreEngine] ========================================');
+
+            // 1. カメラシステム初期化
+            console.log('[CoreEngine] [1/8] Initializing CameraSystem...');
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
+            console.log('[CoreEngine] ✅ CameraSystem initialized');
+
+            // 2. レイヤーシステム初期化
+            console.log('[CoreEngine] [2/8] Initializing LayerSystem...');
             this.layerSystem.init(this.cameraSystem.worldContainer, this.eventBus, CONFIG);
+            console.log('[CoreEngine] ✅ LayerSystem initialized');
+
+            // 3. クリップボードシステム初期化
+            console.log('[CoreEngine] [3/8] Initializing ClipboardSystem...');
             this.clipboardSystem.init(this.eventBus, CONFIG);
+            console.log('[CoreEngine] ✅ ClipboardSystem initialized');
             
+            // 4. サムネイルシステム初期化（オプション）
             if (window.ThumbnailSystem) {
+                console.log('[CoreEngine] [4/8] Initializing ThumbnailSystem...');
                 window.ThumbnailSystem.app = this.app;
                 window.ThumbnailSystem.init(this.eventBus);
+                console.log('[CoreEngine] ✅ ThumbnailSystem initialized');
+            } else {
+                console.log('[CoreEngine] [4/8] ThumbnailSystem not available (optional)');
             }
             
+            // 5. History設定
+            console.log('[CoreEngine] [5/8] Setting up History...');
             if (window.History && typeof window.History.setLayerSystem === 'function') {
                 window.History.setLayerSystem(this.layerSystem);
+                console.log('[CoreEngine] ✅ History linked to LayerSystem');
+            } else {
+                console.log('[CoreEngine] ⚠️ History not available');
             }
             
+            // グローバル参照設定
             window.layerManager = this.layerSystem;
             window.cameraSystem = this.cameraSystem;
             
+            // 6. StrokeRecorder確認・作成
+            console.log('[CoreEngine] [6/8] Checking StrokeRecorder...');
             if (!window.strokeRecorder) {
                 if (!window.StrokeRecorder) {
                     throw new Error('[CoreEngine] StrokeRecorder class not loaded');
@@ -671,7 +779,10 @@ class CoreEngine {
                     this.cameraSystem
                 );
             }
+            console.log('[CoreEngine] ✅ StrokeRecorder ready');
             
+            // 7. StrokeRenderer確認・作成
+            console.log('[CoreEngine] [7/8] Checking StrokeRenderer...');
             if (!window.strokeRenderer) {
                 if (!window.StrokeRenderer) {
                     throw new Error('[CoreEngine] StrokeRenderer class not loaded');
@@ -683,7 +794,10 @@ class CoreEngine {
                     this.cameraSystem
                 );
             }
+            console.log('[CoreEngine] ✅ StrokeRenderer ready');
             
+            // 8. BrushCore初期化
+            console.log('[CoreEngine] [8/8] Initializing BrushCore...');
             if (!window.BrushCore) {
                 throw new Error('[CoreEngine] window.BrushCore not found');
             }
@@ -697,25 +811,55 @@ class CoreEngine {
             if (!window.BrushCore.strokeRecorder || !window.BrushCore.layerManager) {
                 throw new Error('[CoreEngine] BrushCore.init() failed - dependencies not set');
             }
+            console.log('[CoreEngine] ✅ BrushCore initialized');
             
+            // ========================================
+            // 🔧 Phase 5追加: DrawingEngine初期化
+            // ========================================
+            console.log('[CoreEngine] ========================================');
+            console.log('[CoreEngine] [Phase 5] Initializing DrawingEngine...');
+            console.log('[CoreEngine] ========================================');
+            
+            try {
+                this._initializeDrawingEngine();
+                console.log('[CoreEngine] ✅ DrawingEngine initialization complete');
+            } catch (error) {
+                console.error('[CoreEngine] ❌ DrawingEngine initialization failed:', error);
+                // 致命的エラーとして扱う
+                throw error;
+            }
+            
+            // ========================================
+            // アニメーションシステム初期化
+            // ========================================
+            console.log('[CoreEngine] Initializing AnimationSystem...');
             this.initializeAnimationSystem();
             
+            // エクスポートマネージャー初期化（遅延）
             setTimeout(() => {
+                console.log('[CoreEngine] Initializing ExportManager...');
                 this.initializeExportManager();
             }, 100);
             
+            // レイヤートランスフォーム初期化（遅延）
             setTimeout(() => {
+                console.log('[CoreEngine] Initializing LayerTransform...');
                 this._initializeLayerTransform();
             }, 200);
             
+            // BatchAPI初期化
             if (window.TegakiBatchAPI && this.animationSystem) {
+                console.log('[CoreEngine] Initializing BatchAPI...');
                 this.batchAPI = new window.TegakiBatchAPI(
                     this.layerSystem,
                     this.animationSystem
                 );
                 window.batchAPI = this.batchAPI;
+                console.log('[CoreEngine] ✅ BatchAPI initialized');
             }
             
+            // UnifiedKeyHandler初期化
+            console.log('[CoreEngine] Initializing UnifiedKeyHandler...');
             this.keyHandler = new UnifiedKeyHandler(
                 this.cameraSystem,
                 this.layerSystem,
@@ -727,25 +871,49 @@ class CoreEngine {
             if (this.timelineUI) {
                 this.keyHandler.setTimelineUI(this.timelineUI);
             }
+            console.log('[CoreEngine] ✅ UnifiedKeyHandler initialized');
             
+            // イベントリスナー設定
             this.eventBus.on('animation:initial-cut-created', () => {
                 this.layerSystem.updateLayerPanelUI();
                 this.layerSystem.updateStatusDisplay();
             });
             
+            // Sortable初期化（遅延）
             if (window.TegakiUI && window.TegakiUI.initializeSortable) {
                 setTimeout(() => {
                     window.TegakiUI.initializeSortable(this.layerSystem);
                 }, 100);
             }
             
+            // キャンバスイベント設定
             this.setupCanvasEvents();
             
+            // グローバル参照
             window.drawingEngine = this.drawingEngine;
             
+            // 初期化完了イベント発火
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export', 'render-loop', 'preview']
+                systems: [
+                    'camera', 
+                    'layer', 
+                    'clipboard', 
+                    'drawing', 
+                    'drawing-engine',  // 🔧 Phase 5追加
+                    'pointer-handler', // 🔧 Phase 5追加
+                    'keyhandler', 
+                    'animation', 
+                    'history', 
+                    'batchapi', 
+                    'export', 
+                    'render-loop', 
+                    'preview'
+                ]
             });
+            
+            console.log('[CoreEngine] ========================================');
+            console.log('[CoreEngine] ✅ Initialization complete!');
+            console.log('[CoreEngine] ========================================');
             
             return this;
         }
@@ -764,8 +932,11 @@ class CoreEngine {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js Phase 4-C完全版 loaded');
-    console.log('   🔧 リアルタイムプレビュー統合完了');
-    console.log('   🔧 Master Loop: pointer → preview → render');
+    console.log('✅ core-engine.js Phase 5 DrawingEngine初期化統合版 loaded');
+    console.log('   🔧 DrawingEngine.initialize()呼び出し追加');
+    console.log('   🔧 PointerHandlerインスタンス作成と接続');
+    console.log('   🔧 WebGL2キャンバス参照の確実な受け渡し');
+    console.log('   🔧 初期化フロー完全統合');
+    console.log('   🔧 Phase 4-C: リアルタイムプレビュー統合維持');
 
 })();

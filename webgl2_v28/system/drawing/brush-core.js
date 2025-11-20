@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - Phase 2.2 座標ズレ完全修正版
+ * brush-core.js - Phase 2.3 初期化統合改善版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -16,6 +16,12 @@
  * 📄 子ファイル依存:
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
  *   - core-engine.js (_renderLoop内でrenderPreview呼び出し)
+ * 
+ * 🔧 Phase 2.3改修内容:
+ *   ✅ 初期化の一本化（重複呼び出し対応）
+ *   ✅ WebGL2コンポーネント更新の分離
+ *   ✅ 初期化フラグの確実な管理
+ *   ✅ Phase 2.2の座標修正を完全継承
  * 
  * 🔧 Phase 2.2改修内容:
  *   ✅ Spriteスケール完全修正 - 512x512固定を実際のboundsサイズに
@@ -65,13 +71,31 @@
       this.lastPreviewPointCount = 0;
     }
 
+    /**
+     * 🔧 Phase 2.3: 初期化メソッド（init/initializeどちらでも対応）
+     */
     async init() {
       return await this.initialize();
     }
 
+    /**
+     * 🔧 Phase 2.3: 統合初期化メソッド
+     */
     async initialize() {
-      if (this.initialized) return;
+      console.log('[BrushCore] initialize() called, current state:', {
+        initialized: this.initialized,
+        strokeRecorder: !!this.strokeRecorder,
+        layerManager: !!this.layerManager
+      });
 
+      // 🔧 Phase 2.3: 既に初期化済みの場合はWebGL2コンポーネント更新のみ
+      if (this.initialized) {
+        console.log('[BrushCore] Already initialized, updating WebGL2 components only');
+        this._updateWebGL2Components();
+        return;
+      }
+
+      // 基本依存関係の設定
       this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
       this.layerManager = window.layerManager || window.layerSystem;
       this.eventBus = window.TegakiEventBus || window.eventBus;
@@ -82,6 +106,34 @@
       if (!this.layerManager) {
         throw new Error('[BrushCore] layerManager not found');
       }
+
+      console.log('[BrushCore] Basic dependencies set:', {
+        strokeRecorder: !!this.strokeRecorder,
+        layerManager: !!this.layerManager,
+        eventBus: !!this.eventBus
+      });
+
+      // WebGL2コンポーネント更新
+      this._updateWebGL2Components();
+
+      // イベントリスナー設定
+      this._setupEventListeners();
+      
+      // 初期化完了
+      this.initialized = true;
+      
+      console.log('[BrushCore] ✅ Initialization complete:', {
+        initialized: this.initialized,
+        msdfAvailable: this.msdfAvailable,
+        maskAvailable: this.maskAvailable
+      });
+    }
+
+    /**
+     * 🔧 Phase 2.3新規追加: WebGL2コンポーネント更新
+     */
+    _updateWebGL2Components() {
+      console.log('[BrushCore] Updating WebGL2 components...');
 
       this.glStrokeProcessor = window.GLStrokeProcessor;
       this.glMSDFPipeline = window.GLMSDFPipeline;
@@ -96,13 +148,23 @@
 
       this.maskAvailable = !!(this.glMaskLayer && this.glMaskLayer.initialized);
 
-      if (!this.msdfAvailable) {
-        console.error('[BrushCore] WebGL2 MSDF Pipeline not available');
-        return;
-      }
+      console.log('[BrushCore] WebGL2 components updated:', {
+        glStrokeProcessor: !!this.glStrokeProcessor,
+        glMSDFPipeline: !!this.glMSDFPipeline,
+        textureBridge: !!this.textureBridge,
+        glMaskLayer: !!this.glMaskLayer,
+        msdfAvailable: this.msdfAvailable,
+        maskAvailable: this.maskAvailable
+      });
 
-      this._setupEventListeners();
-      this.initialized = true;
+      if (!this.msdfAvailable) {
+        console.warn('[BrushCore] ⚠️ WebGL2 MSDF Pipeline not fully available');
+        console.log('[BrushCore] Missing components:', {
+          GLStrokeProcessor: !this.glStrokeProcessor,
+          GLMSDFPipeline: !this.glMSDFPipeline,
+          TextureBridge: !this.textureBridge
+        });
+      }
     }
 
     _setupEventListeners() {
@@ -165,6 +227,7 @@
 
     /**
      * プレビュー描画
+     * 🔧 Phase 2.2: スケール修正適用済み
      */
     async renderPreview() {
       if (!this.initialized || !this.isDrawing || this.isPreviewUpdating) return;
@@ -191,7 +254,7 @@
 
     /**
      * プレビュー更新（内部処理）
-     * ✅ Phase 2.2修正: Spriteスケール修正
+     * ✅ Phase 2.2修正: Spriteスケール修正適用済み
      * @private
      */
     async _updatePreview(points) {
@@ -331,7 +394,7 @@
     }
 
     /**
-     * ✅ Phase 2.2修正: 最終描画もスケール修正
+     * ✅ Phase 2.2修正: 最終描画もスケール修正適用済み
      */
     async _finalizeMSDFStroke(points, activeLayer) {
       try {
@@ -736,9 +799,10 @@
   }
 
   window.BrushCore = new BrushCore();
-  console.log('✅ brush-core.js Phase 2.2 座標ズレ完全修正版 loaded');
-  console.log('   ✅ Spriteスケール修正: 512固定 → bounds.width/height');
-  console.log('   ✅ プレビュー透明度: 実際の値に修正');
-  console.log('   ✅ テクスチャ再利用維持');
+  console.log('✅ brush-core.js Phase 2.3 初期化統合改善版 loaded');
+  console.log('   ✅ 初期化の一本化（重複呼び出し対応）');
+  console.log('   ✅ WebGL2コンポーネント更新の分離');
+  console.log('   ✅ Phase 2.2: Spriteスケール修正継承');
+  console.log('   ✅ Phase 2.2: プレビュー透明度修正継承');
 
 })();
