@@ -2,12 +2,12 @@ config.js:509 ✅ config.js v8.14.3 Phase 1.7 筆圧対応版 loaded
 config.js:510    🔧 thinning: 0.7 (筆圧による太さ変化有効)
 config.js:511    🔧 smoothing: 0.4 (適度な補間)
 config.js:512    🔧 streamline: 0.3 (安定化)
-coordinate-system.js:422 ✅ coordinate-system.js Phase 1.5 Transform初期化完全修正版 loaded
-coordinate-system.js:423    🔧 updateTransform()実行BEFORE親Transform初期化を完全実装
-coordinate-system.js:424    🔧 _ensureTransformInitialized()エラーハンドリング強化
-coordinate-system.js:425    🔧 worldToLocal()でもTransform初期化確認追加
+coordinate-system.js:322 ✅ coordinate-system.js Phase 1.6 純粋数学計算版 loaded
+coordinate-system.js:323    ❌ updateTransform()呼び出しを完全削除
+coordinate-system.js:324    ✅ 純粋な数学計算のみで座標変換実行（PixiJS v8安全）
+coordinate-system.js:325    ✅ 元ファイルの全メソッド・機能を完全継承
 data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
-batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
  ✅ debug-utils.js loaded
     Type: TegakiDebug.help() for available commands
     Quick check: TegakiDebug.fullDiagnostic()
@@ -69,10 +69,9 @@ batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
  ✅ fill-tool.js (WebGPU競合修正版) loaded
     ❌ 独自WebGPU初期化を削除
     ✅ 既存インスタンス参照のみ
- ✅ drawing-engine.js v8.14.2 Phase 1.1 座標ズレ完全修正版 loaded
-    🔧 CoordinateSystem初期化自動修復機能追加
-    🔧 NaN/Infinity検出強化（全ステップ）
-    🔧 エラーハンドリング完全化
+ ✅ drawing-engine.js v8.14.3 Phase 1.2 座標変換修正版 loaded
+    ✅ CoordinateSystem純粋数学計算版対応
+    ✅ 元ファイルの全メソッド・機能を完全継承
     🔧 デバッグコマンド: window.TegakiDebug.drawing.*
  ✅ quick-export-ui.js (無効化版) loaded
  ✅ export-manager.js v8.33.0 loaded
@@ -123,11 +122,20 @@ batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
     🔧 WebGL2キャンバス参照の確実な受け渡し
     🔧 初期化フロー完全統合
     🔧 Phase 4-C: リアルタイムプレビュー統合維持
- ✅ core-initializer.js Phase 1.2.2 CoordinateSystem初期化修正版 loaded
-    ⭐ CoreEngine.initialize()完了後にCoordinateSystem初期化
-    ⭐ worldContainer.position/scale未定義エラーの回避
-    ⭐ 元ファイルの全メソッド・機能を完全継承
-index.html:114 🚀 WebGL2 MSDF版 起動中...
+ ✅ core-initializer.js Phase 1.2.3 初期化タイミング修正版 loaded
+    ⭐⭐ CameraSystem早期初期化でworldContainer生成
+    ⭐⭐ CoordinateSystem初期化をCoreEngine.initialize()の前に実行
+    ⭐⭐ 元ファイルの全メソッド・機能を完全継承
+ 🚀 WebGL2 MSDF版 起動中...
+ [CoreInit] Pre-initializing CameraSystem for worldContainer...
+ [CoreInit] ✅ CameraSystem pre-initialized
+ [CoreInit] ✅ worldContainer ready: {x: 200, y: 100, scale: 1}
+ [CoreInit] Initializing CoordinateSystem (before CoreEngine)...
+ [CoordinateSystem] initialize() called {canvas: true, worldContainer: true, canvasSize: '1920x1080'}
+ [CoordinateSystem] ✅ Initialized successfully (Phase 1.6 Pure Math Mode)
+ [CoreInit] ✅ CoordinateSystem initialized
+core-initializer.js:379 [CoreInit] CoordinateSystem state: {initialized: true, canvas: '1920x1080', worldContainer: {…}}
+core-initializer.js:385 [CoreInit] Calling CoreEngine.initialize()...
 core-engine.js:815 [CoreEngine] ========================================
 core-engine.js:816 [CoreEngine] Starting initialization sequence...
 core-engine.js:817 [CoreEngine] ========================================
@@ -157,27 +165,8 @@ core-engine.js:907 [CoreEngine] [Phase 5] Initializing DrawingEngine...
 core-engine.js:908 [CoreEngine] ========================================
 core-engine.js:733 [CoreEngine] Initializing DrawingEngine...
 core-engine.js:744 [CoreEngine] ✅ WebGL2 canvas found: {width: 1920, height: 1080, id: 'webgl2-canvas'}
-core-engine.js:756 [CoreEngine]⚠️ CoordinateSystem not initialized yet
-_initializeDrawingEngine @ core-engine.js:756
-initialize @ core-engine.js:911
-initialize @ core-initializer.js:357
-await in initialize
-initialize @ core-initializer.js:608
-（匿名） @ index.html:115
 core-engine.js:775 [CoreEngine] ✅ PointerHandler created
-drawing-engine.js:137 [DrawingEngine] CoordinateSystem not initialized, attempting auto-fix...
-_ensureCoordinateSystemReady @ drawing-engine.js:137
-initialize @ drawing-engine.js:107
-_initializeDrawingEngine @ core-engine.js:778
-initialize @ core-engine.js:911
-initialize @ core-initializer.js:357
-await in initialize
-initialize @ core-initializer.js:608
-（匿名） @ index.html:115
-coordinate-system.js:44 [CoordinateSystem] initialize() called {canvas: true, worldContainer: true, canvasSize: '1920x1080'}
-coordinate-system.js:64 [CoordinateSystem] ✅ Initialized successfully
-drawing-engine.js:161 [DrawingEngine] ✅ CoordinateSystem auto-initialized successfully
-drawing-engine.js:117 [DrawingEngine] ✅ Initialized v8.14.2 Phase 1.1 {coordSystemReady: true, glCanvasSize: {…}, brushCoreReady: true}
+drawing-engine.js:118 [DrawingEngine] ✅ Initialized v8.14.3 Phase 1.2 {coordSystemReady: true, glCanvasSize: {…}, brushCoreReady: true}
 core-engine.js:793 [CoreEngine] ✅ DrawingEngine initialized successfully
 core-engine.js:912 [CoreEngine] ✅ DrawingEngine initialization complete
 core-engine.js:922 [CoreEngine] Initializing AnimationSystem...
@@ -188,11 +177,7 @@ core-engine.js:961 [CoreEngine] ✅ UnifiedKeyHandler initialized
 core-engine.js:1001 [CoreEngine] ========================================
 core-engine.js:1002 [CoreEngine] ✅ Initialization complete!
 core-engine.js:1003 [CoreEngine] ========================================
-core-initializer.js:367 [CoreInit] Initializing CoordinateSystem...
-coordinate-system.js:44 [CoordinateSystem] initialize() called {canvas: true, worldContainer: true, canvasSize: '1920x1080'}
-coordinate-system.js:64 [CoordinateSystem] ✅ Initialized successfully
-core-initializer.js:217 [CoreInit] ✅ CoordinateSystem initialized
-core-initializer.js:374 [CoreInit] CoordinateSystem state: {initialized: true, canvas: '1920x1080', worldContainer: {…}}
+core-initializer.js:387 [CoreInit] ✅ CoreEngine.initialize() complete
 popup-manager.js:16 ✅ PopupManager initialized
 popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
 popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
@@ -205,89 +190,68 @@ popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 webgl2-drawing-layer.js:94 [WebGL2DrawingLayer] ✅ Initialized {canvasSize: '1920x1080', maxTextureSize: 16384, extensions: Array(3)}
-core-initializer.js:244 [WebGL2] Drawing Layer initialized
+core-initializer.js:230 [WebGL2] Drawing Layer initialized
 gl-stroke-processor.js:48 [GLStrokeProcessor] ✅ Initialized (Phase 1.6)
-core-initializer.js:253 [WebGL2] GLStrokeProcessor initialized
+core-initializer.js:239 [WebGL2] GLStrokeProcessor initialized
 gl-msdf-pipeline.js:66 [GLMSDFPipeline] ✅ Initialized (Phase 1.8)
-core-initializer.js:258 [WebGL2] GLMSDFPipeline initialized
+core-initializer.js:244 [WebGL2] GLMSDFPipeline initialized
 gl-texture-bridge.js:51 [GLTextureBridge] ✅ Initialized (PixiJS v8)
-core-initializer.js:266 [WebGL2] GLTextureBridge initialized
+core-initializer.js:252 [WebGL2] GLTextureBridge initialized
 gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
-core-initializer.js:278 [WebGL2] GLMaskLayer initialized
+core-initializer.js:264 [WebGL2] GLMaskLayer initialized
 stroke-renderer.js:76 [StrokeRenderer] ✅ Initialized (WebGL2 mode)
-core-initializer.js:293 [WebGL2] StrokeRenderer initialized
-core-initializer.js:295 [WebGL2] ✅ Phase 6 initialization complete
-core-initializer.js:419 [App] Re-initializing BrushCore with WebGL2 components
-core-initializer.js:455 [App] BrushCore already initialized, components updated
-core-initializer.js:458 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6.1) {msdfAvailable: true, maskAvailable: true, initialized: true}
+core-initializer.js:279 [WebGL2] StrokeRenderer initialized
+core-initializer.js:281 [WebGL2] ✅ Phase 6 initialization complete
+core-initializer.js:431 [App] Re-initializing BrushCore with WebGL2 components
+core-initializer.js:463 [App] BrushCore already initialized, components updated
+core-initializer.js:466 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6.1) {msdfAvailable: true, maskAvailable: true, initialized: true}
 index.html:116 ✅ WebGL2初期化完了
 core-engine.js:927 [CoreEngine] Initializing ExportManager...
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 core-engine.js:933 [CoreEngine] Initializing LayerTransform...
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-// 1. 初期化状態確認
+// 1. 初期化確認
 window.CoordinateSystem.dumpState()
 
-// 2. 描画フローテスト
-TegakiDebug.testDrawingFlow()
+// 2. 座標変換テスト
+TegakiDebug.drawing.testTransform(960, 540)
 
 // 3. 実際に描画（WebGL2キャンバス上でクリック）
-debug-utils.js:181 🎨 Drawing Flow Test
-debug-utils.js:196 ✅ Step 1: DrawingEngine OK
-debug-utils.js:205 ✅ Step 2: PointerHandler OK
-drawing-engine.js:587 [DrawingEngine] Coordinate Transform Test
-coordinate-system.js:259 [CoordinateSystem] ❌ updateTransform failed: TypeError: Cannot read properties of undefined (reading 'x')
-    at Z.updateTransform (Container.ts:1734:25)
-    at CoordinateSystem.canvasToWorld (coordinate-system.js:257:24)
-    at DrawingEngine._transformPointerToLocal (drawing-engine.js:398:34)
-    at DrawingEngine.testCoordinateTransform (drawing-engine.js:590:25)
-    at Object.testDrawingFlow (debug-utils.js:208:49)
-    at <anonymous>:5:13
-canvasToWorld @ coordinate-system.js:259
-_transformPointerToLocal @ drawing-engine.js:398
-testCoordinateTransform @ drawing-engine.js:590
-testDrawingFlow @ debug-utils.js:208
-（匿名） @ VM209:5
-drawing-engine.js:400 [DrawingEngine] canvasToWorld failed
-_transformPointerToLocal @ drawing-engine.js:400
-testCoordinateTransform @ drawing-engine.js:590
-testDrawingFlow @ debug-utils.js:208
-（匿名） @ VM209:5
-drawing-engine.js:595 ❌ Transform failed
-testCoordinateTransform @ drawing-engine.js:595
-testDrawingFlow @ debug-utils.js:208
-（匿名） @ VM209:5
-debug-utils.js:214 ❌ Step 3: Coordinate transform failed
-testDrawingFlow @ debug-utils.js:214
-（匿名） @ VM209:5
-{success: false, step: 'Coordinate transform failed'}
-coordinate-system.js:259 [CoordinateSystem] ❌ updateTransform failed: TypeError: Cannot read properties of undefined (reading 'x')
-    at Z.updateTransform (Container.ts:1734:25)
-    at CoordinateSystem.canvasToWorld (coordinate-system.js:257:24)
-    at DrawingEngine._transformPointerToLocal (drawing-engine.js:398:34)
-    at DrawingEngine._handlePointerDown (drawing-engine.js:239:25)
-    at drawing-engine.js:184:12
-    at pointer-handler.js:79:21
-    at Set.forEach (<anonymous>)
-    at PointerHandler._emit (pointer-handler.js:77:47)
-    at HTMLCanvasElement.onPointerDown (pointer-handler.js:146:22)
-canvasToWorld @ coordinate-system.js:259
-_transformPointerToLocal @ drawing-engine.js:398
-_handlePointerDown @ drawing-engine.js:239
-（匿名） @ drawing-engine.js:184
+drawing-engine.js:513 [DrawingEngine] Coordinate Transform Test
+coordinate-system.js:240 [CoordinateSystem] ❌ worldToLocal: container not child of worldContainer {containerLabel: 'layer_1763671591612_c974yx273', chainLength: 5}
+worldToLocal @ coordinate-system.js:240
+_transformPointerToLocal @ drawing-engine.js:375
+testCoordinateTransform @ drawing-engine.js:516
+testTransform @ drawing-engine.js:600
+（匿名） @ VM471:5
+drawing-engine.js:382 [DrawingEngine] worldToLocal failed
+_transformPointerToLocal @ drawing-engine.js:382
+testCoordinateTransform @ drawing-engine.js:516
+testTransform @ drawing-engine.js:600
+（匿名） @ VM471:5
+drawing-engine.js:521 ❌ Transform failed
+testCoordinateTransform @ drawing-engine.js:521
+testTransform @ drawing-engine.js:600
+（匿名） @ VM471:5
+null
+coordinate-system.js:240 [CoordinateSystem] ❌ worldToLocal: container not child of worldContainer {containerLabel: 'layer_1763671591612_c974yx273', chainLength: 5}
+worldToLocal @ coordinate-system.js:240
+_transformPointerToLocal @ drawing-engine.js:375
+_handlePointerDown @ drawing-engine.js:196
+（匿名） @ drawing-engine.js:141
 （匿名） @ pointer-handler.js:79
 _emit @ pointer-handler.js:77
 onPointerDown @ pointer-handler.js:146
-drawing-engine.js:400 [DrawingEngine] canvasToWorld failed
-_transformPointerToLocal @ drawing-engine.js:400
-_handlePointerDown @ drawing-engine.js:239
-（匿名） @ drawing-engine.js:184
+drawing-engine.js:382 [DrawingEngine] worldToLocal failed
+_transformPointerToLocal @ drawing-engine.js:382
+_handlePointerDown @ drawing-engine.js:196
+（匿名） @ drawing-engine.js:141
 （匿名） @ pointer-handler.js:79
 _emit @ pointer-handler.js:77
 onPointerDown @ pointer-handler.js:146
-drawing-engine.js:241 [DrawingEngine] Failed to transform pointer coords on pointerdown
-_handlePointerDown @ drawing-engine.js:241
-（匿名） @ drawing-engine.js:184
+drawing-engine.js:198 [DrawingEngine] Failed to transform pointer coords on pointerdown
+_handlePointerDown @ drawing-engine.js:198
+（匿名） @ drawing-engine.js:141
 （匿名） @ pointer-handler.js:79
 _emit @ pointer-handler.js:77
 onPointerDown @ pointer-handler.js:146

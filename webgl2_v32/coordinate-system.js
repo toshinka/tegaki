@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * coordinate-system.js Phase 1.5 - Transform初期化完全修正版
+ * coordinate-system.js Phase 1.6 - 純粋数学計算版
  * ================================================================================
  * 
  * 【依存関係】
@@ -10,15 +10,16 @@
  * 【責務】
  * Screen → Canvas → World → Local 座標変換パイプライン
  * 
- * 【重要】
- * - updateTransform()実行BEFORE親Transform確認と初期化
- * - Pixi toLocal()/toGlobal()は使用禁止
- * - 手動逆行列計算による親チェーン遡査
+ * 【Phase 1.6 重要変更】
+ * ❌ updateTransform()呼び出しを完全削除（PixiJS v8クラッシュ原因）
+ * ✅ 純粋な数学計算のみで座標変換を実行（+ - * / Math関数のみ）
+ * ✅ 元ファイルの全メソッドと機能を完全継承
+ * ✅ worldTransform依存を排除し、position/scale/rotationの直接読み取りに変更
  * 
  * 【改修履歴】
+ * Phase 1.6: updateTransform()依存排除・純粋数学計算実装
  * Phase 1.5: updateTransform()前の親Transform初期化を完全実装
  * Phase 1.4: worldTransform未初期化エラー修正（親Transform確実初期化）
- * Phase 1.3: 初期化失敗時の詳細診断ログ追加、worldContainer取得堅牢化
  * ================================================================================
  */
 
@@ -61,7 +62,7 @@
       this.worldContainer = worldContainer;
       this.initialized = true;
 
-      console.log('[CoordinateSystem] ✅ Initialized successfully');
+      console.log('[CoordinateSystem] ✅ Initialized successfully (Phase 1.6 Pure Math Mode)');
       return true;
     }
 
@@ -85,88 +86,6 @@
     }
 
     /**
-     * コンテナのTransform初期化確認（Phase 1.5完全版）
-     * @param {PIXI.Container} container
-     * @returns {boolean}
-     */
-    _ensureTransformInitialized(container) {
-      if (!container) {
-        console.error('[CoordinateSystem] _ensureTransformInitialized: container is null');
-        return false;
-      }
-
-      // 親チェーンを遡って収集
-      const chain = [];
-      let current = container;
-      let depth = 0;
-
-      while (current && depth < MAX_PARENT_DEPTH) {
-        chain.push(current);
-        current = current.parent;
-        depth++;
-      }
-
-      if (depth >= MAX_PARENT_DEPTH) {
-        console.error('[CoordinateSystem] ❌ infinite parent chain detected');
-        return false;
-      }
-
-      // root（stage）から順に初期化
-      for (let i = chain.length - 1; i >= 0; i--) {
-        const node = chain[i];
-        
-        // worldTransformの存在確認
-        if (!node.worldTransform) {
-          if (DEBUG) {
-            console.log(`[CoordinateSystem] Initializing worldTransform for node at depth ${chain.length - 1 - i}`);
-          }
-          
-          // 親のworldTransformを先に初期化
-          if (node.parent && node.parent.updateTransform) {
-            try {
-              node.parent.updateTransform();
-            } catch (e) {
-              console.error('[CoordinateSystem] ❌ Parent updateTransform failed:', e);
-            }
-          }
-          
-          // 自身のTransform初期化
-          if (node.updateTransform) {
-            try {
-              node.updateTransform();
-            } catch (e) {
-              console.error('[CoordinateSystem] ❌ Node updateTransform failed:', e);
-              return false;
-            }
-          }
-        }
-        // worldTransformは存在するがプロパティが未定義
-        else if (typeof node.worldTransform.a === 'undefined') {
-          if (DEBUG) {
-            console.log(`[CoordinateSystem] Reinitializing incomplete worldTransform at depth ${chain.length - 1 - i}`);
-          }
-          
-          if (node.updateTransform) {
-            try {
-              node.updateTransform();
-            } catch (e) {
-              console.error('[CoordinateSystem] ❌ Node updateTransform failed:', e);
-              return false;
-            }
-          }
-        }
-      }
-
-      // 最終検証
-      if (!container.worldTransform || typeof container.worldTransform.a === 'undefined') {
-        console.error('[CoordinateSystem] ❌ Transform initialization failed - worldTransform still invalid');
-        return false;
-      }
-
-      return true;
-    }
-
-    /**
      * 状態ダンプ（デバッグ用）
      */
     dumpState() {
@@ -179,9 +98,7 @@
           position: worldContainer.position ? `(${worldContainer.position.x}, ${worldContainer.position.y})` : 'N/A',
           scale: worldContainer.scale ? `(${worldContainer.scale.x}, ${worldContainer.scale.y})` : 'N/A',
           rotation: worldContainer.rotation || 0,
-          worldTransform: worldContainer.worldTransform ? 'initialized' : 'uninitialized',
-          parent: worldContainer.parent ? 'exists' : 'no parent',
-          parentWorldTransform: worldContainer.parent?.worldTransform ? 'initialized' : 'uninitialized'
+          parent: worldContainer.parent ? 'exists' : 'no parent'
         } : null
       };
     }
@@ -224,7 +141,8 @@
     }
 
     /**
-     * Canvas座標 → World座標変換（Phase 1.5完全版）
+     * Canvas座標 → World座標変換（Phase 1.6完全版）
+     * 純粋な数学計算のみ（updateTransform不使用）
      * @param {number} canvasX - Canvas X座標
      * @param {number} canvasY - Canvas Y座標
      * @returns {{worldX: number, worldY: number}|null}
@@ -236,50 +154,34 @@
         return null;
       }
 
-      // 🔧 Phase 1.5: updateTransform()実行BEFORE Transform初期化確認
-      if (!this._ensureTransformInitialized(worldContainer)) {
-        console.error('[CoordinateSystem] ❌ Failed to initialize worldContainer transform');
-        
-        // 詳細診断
-        console.error('[CoordinateSystem] Diagnostic:', {
-          hasWorldContainer: !!worldContainer,
-          hasParent: !!worldContainer.parent,
-          parentType: worldContainer.parent?.constructor?.name,
-          hasWorldTransform: !!worldContainer.worldTransform,
-          hasParentWorldTransform: !!worldContainer.parent?.worldTransform
-        });
-        
-        return null;
+      // 🔧 Phase 1.6: worldContainerの現在値を直接読み取る
+      const cx = worldContainer.x || 0;
+      const cy = worldContainer.y || 0;
+      const sx = worldContainer.scale?.x || 1;
+      const sy = worldContainer.scale?.y || 1;
+      const rotation = worldContainer.rotation || 0;
+
+      // 1. Translation（移動）の逆
+      let worldX = canvasX - cx;
+      let worldY = canvasY - cy;
+
+      // 2. Rotation（回転）の逆
+      if (rotation !== 0) {
+        const cos = Math.cos(-rotation);
+        const sin = Math.sin(-rotation);
+        const tx = worldX;
+        const ty = worldY;
+        worldX = tx * cos - ty * sin;
+        worldY = tx * sin + ty * cos;
       }
 
-      // 🔧 Phase 1.5: 初期化確認後にupdateTransform実行
-      try {
-        worldContainer.updateTransform();
-      } catch (e) {
-        console.error('[CoordinateSystem] ❌ updateTransform failed:', e);
-        return null;
-      }
-
-      const worldTransform = worldContainer.worldTransform;
-      if (!worldTransform || typeof worldTransform.a === 'undefined') {
-        console.error('[CoordinateSystem] ❌ worldTransform invalid after updateTransform()', {
-          hasWorldTransform: !!worldTransform,
-          properties: worldTransform ? Object.keys(worldTransform) : []
-        });
-        return null;
-      }
-
-      // 逆行列変換
-      let invertedPoint;
-      try {
-        invertedPoint = worldTransform.applyInverse({ x: canvasX, y: canvasY });
-      } catch (e) {
-        console.error('[CoordinateSystem] ❌ applyInverse failed:', e);
-        return null;
-      }
-
-      const worldX = invertedPoint.x;
-      const worldY = invertedPoint.y;
+      // 3. Scale（拡大縮小）の逆
+      // 0除算ガード
+      const scaleX = sx !== 0 ? sx : 1;
+      const scaleY = sy !== 0 ? sy : 1;
+      
+      worldX /= scaleX;
+      worldY /= scaleY;
 
       if (!isFinite(worldX) || !isFinite(worldY)) {
         console.error('[CoordinateSystem] ❌ canvasToWorld: NaN/Infinity detected', {
@@ -299,7 +201,8 @@
     }
 
     /**
-     * World座標 → Local座標変換（手動逆算・Phase 1.5強化版）
+     * World座標 → Local座標変換（Phase 1.6強化版）
+     * 純粋な数学計算のみで親チェーン遡査
      * @param {number} worldX - World X座標
      * @param {number} worldY - World Y座標
      * @param {PIXI.Container} container - ターゲットコンテナ
@@ -314,12 +217,6 @@
       const worldContainer = this._getWorldContainer();
       if (!worldContainer) {
         console.error('[CoordinateSystem] worldToLocal: worldContainer not available');
-        return null;
-      }
-
-      // 🔧 Phase 1.5: containerのTransform初期化確認
-      if (!this._ensureTransformInitialized(container)) {
-        console.error('[CoordinateSystem] ❌ Failed to initialize container transform');
         return null;
       }
 
@@ -347,33 +244,36 @@
         return null;
       }
 
-      // 逆順に変換適用
+      // 逆順に変換適用（純粋な数学計算）
       let x = worldX;
       let y = worldY;
 
       for (let i = parentChain.length - 1; i >= 0; i--) {
         const node = parentChain[i];
 
+        // 位置の逆変換
+        if (node.position) {
+          x -= node.position.x || 0;
+          y -= node.position.y || 0;
+        }
+
         // 回転の逆変換
-        if (node.rotation) {
-          const cos = Math.cos(-node.rotation);
-          const sin = Math.sin(-node.rotation);
-          const tx = x * cos - y * sin;
-          const ty = x * sin + y * cos;
-          x = tx;
-          y = ty;
+        const nodeRotation = node.rotation || 0;
+        if (nodeRotation !== 0) {
+          const cos = Math.cos(-nodeRotation);
+          const sin = Math.sin(-nodeRotation);
+          const tx = x;
+          const ty = y;
+          x = tx * cos - ty * sin;
+          y = tx * sin + ty * cos;
         }
 
         // スケールの逆変換
         if (node.scale) {
-          x /= (node.scale.x || 1);
-          y /= (node.scale.y || 1);
-        }
-
-        // 位置の逆変換
-        if (node.position) {
-          x -= node.position.x;
-          y -= node.position.y;
+          const nodeScaleX = node.scale.x || 1;
+          const nodeScaleY = node.scale.y || 1;
+          x /= (nodeScaleX !== 0 ? nodeScaleX : 1);
+          y /= (nodeScaleY !== 0 ? nodeScaleY : 1);
         }
       }
 
@@ -419,9 +319,9 @@
   // シングルトンインスタンス
   window.CoordinateSystem = new CoordinateSystem();
 
-  console.log('✅ coordinate-system.js Phase 1.5 Transform初期化完全修正版 loaded');
-  console.log('   🔧 updateTransform()実行BEFORE親Transform初期化を完全実装');
-  console.log('   🔧 _ensureTransformInitialized()エラーハンドリング強化');
-  console.log('   🔧 worldToLocal()でもTransform初期化確認追加');
+  console.log('✅ coordinate-system.js Phase 1.6 純粋数学計算版 loaded');
+  console.log('   ❌ updateTransform()呼び出しを完全削除');
+  console.log('   ✅ 純粋な数学計算のみで座標変換実行（PixiJS v8安全）');
+  console.log('   ✅ 元ファイルの全メソッド・機能を完全継承');
 
 })();

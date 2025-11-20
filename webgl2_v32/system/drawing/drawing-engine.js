@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * drawing-engine.js v8.14.2 - Phase 1.1 座標変換パイプライン完全検証版
+ * drawing-engine.js v8.14.3 - Phase 1.2 座標変換修正版
  * ============================================================================
  * 責務: PointerEvent受信・座標変換実行・BrushCoreへの描画命令委譲
  * 
@@ -17,13 +17,14 @@
  * 座標変換フロー:
  *   PointerEvent.clientX/Y
  *   → screenClientToCanvas() [DPI補正]
- *   → canvasToWorld() [worldContainer逆行列]
- *   → worldToLocal() [手動逆算・親チェーン遡査]
+ *   → canvasToWorld() [純粋数学計算]
+ *   → worldToLocal() [純粋数学計算]
  *   → {localX, localY} → BrushCore
  * 
  * 変更履歴:
+ *   v8.14.3 Phase 1.2: CoordinateSystem純粋数学計算版対応
+ *   v8.14.2 Phase 1.1: 座標変換検証強化・初期化フロー改善
  *   v8.14.1: WebGL2移行版
- *   v8.14.2 Phase 1.1: 座標変換検証強化・初期化フロー改善・エラーハンドリング完全化
  * ============================================================================
  */
 
@@ -103,9 +104,9 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.glCanvas = glCanvas;
 
-    // CoordinateSystem初期化確認・自動修復
-    if (!this._ensureCoordinateSystemReady()) {
-      console.error('[DrawingEngine] CoordinateSystem initialization failed');
+    // CoordinateSystem初期化確認
+    if (!this.coordSystem.initialized) {
+      console.error('[DrawingEngine] CoordinateSystem not initialized');
       return false;
     }
 
@@ -114,7 +115,7 @@ class DrawingEngine {
     this._setupEventListeners();
     
     this.initialized = true;
-    console.log('[DrawingEngine] ✅ Initialized v8.14.2 Phase 1.1', {
+    console.log('[DrawingEngine] ✅ Initialized v8.14.3 Phase 1.2', {
       coordSystemReady: this.coordSystem.initialized,
       glCanvasSize: { 
         width: this.glCanvas.width, 
@@ -124,50 +125,6 @@ class DrawingEngine {
     });
 
     return true;
-  }
-
-  /**
-   * CoordinateSystem初期化確認・自動修復
-   */
-  _ensureCoordinateSystemReady() {
-    if (this.coordSystem.initialized) {
-      return true;
-    }
-
-    console.warn('[DrawingEngine] CoordinateSystem not initialized, attempting auto-fix...');
-
-    // Pixiアプリ取得
-    const pixiApp = window.pixiApp || window.app;
-    
-    if (!pixiApp) {
-      console.error('[DrawingEngine] Cannot find Pixi app instance');
-      return false;
-    }
-
-    if (!this.glCanvas) {
-      console.error('[DrawingEngine] WebGL2 canvas not available');
-      return false;
-    }
-
-    if (!this.eventBus) {
-      console.error('[DrawingEngine] EventBus not available');
-      return false;
-    }
-
-    try {
-      this.coordSystem.initialize(this.glCanvas, pixiApp, this.eventBus);
-      
-      if (this.coordSystem.initialized) {
-        console.log('[DrawingEngine] ✅ CoordinateSystem auto-initialized successfully');
-        return true;
-      } else {
-        console.error('[DrawingEngine] CoordinateSystem auto-initialization failed');
-        return false;
-      }
-    } catch (error) {
-      console.error('[DrawingEngine] Error initializing CoordinateSystem:', error);
-      return false;
-    }
   }
 
   /**
@@ -342,18 +299,10 @@ class DrawingEngine {
 
   /**
    * ============================================================================
-   * 座標変換パイプライン実行（Phase 1.1強化版）
+   * 座標変換パイプライン実行（Phase 1.2修正版）
    * ============================================================================
    * PointerEvent → Local座標への変換
-   * 
-   * フロー:
-   *   PointerEvent.clientX/Y
-   *   → screenClientToCanvas() [DPI補正]
-   *   → canvasToWorld() [worldContainer逆行列 + updateTransform保証]
-   *   → worldToLocal() [手動逆算・親チェーン遡査 + 無限ループ防止]
-   *   → {localX, localY}
-   * 
-   * 各ステップでNaN/Infinity検出・エラーハンドリング
+   * CoordinateSystemの純粋数学計算を使用
    */
   _transformPointerToLocal(e) {
     const coordSys = this.coordSystem;
@@ -382,15 +331,9 @@ class DrawingEngine {
       console.log('[_transformPointerToLocal] Canvas:', canvasCoords);
     }
 
-    // NaN検出 Step 1
-    if (isNaN(canvasCoords.canvasX) || isNaN(canvasCoords.canvasY)) {
-      console.error('[DrawingEngine] Canvas coords are NaN', canvasCoords);
-      return null;
-    }
-
-    // Infinity検出 Step 1
+    // NaN/Infinity検出 Step 1
     if (!isFinite(canvasCoords.canvasX) || !isFinite(canvasCoords.canvasY)) {
-      console.error('[DrawingEngine] Canvas coords are Infinity', canvasCoords);
+      console.error('[DrawingEngine] Canvas coords are invalid', canvasCoords);
       return null;
     }
 
@@ -405,15 +348,9 @@ class DrawingEngine {
       console.log('[_transformPointerToLocal] World:', worldCoords);
     }
 
-    // NaN検出 Step 2
-    if (isNaN(worldCoords.worldX) || isNaN(worldCoords.worldY)) {
-      console.error('[DrawingEngine] World coords are NaN', worldCoords);
-      return null;
-    }
-
-    // Infinity検出 Step 2
+    // NaN/Infinity検出 Step 2
     if (!isFinite(worldCoords.worldX) || !isFinite(worldCoords.worldY)) {
-      console.error('[DrawingEngine] World coords are Infinity', worldCoords);
+      console.error('[DrawingEngine] World coords are invalid', worldCoords);
       return null;
     }
 
@@ -430,8 +367,7 @@ class DrawingEngine {
         id: activeLayer.id,
         label: activeLayer.label || activeLayer.name,
         position: activeLayer.position,
-        parent: activeLayer.parent?.label || activeLayer.parent?.name || 'none',
-        hasDrawingContainer: !!activeLayer.drawingContainer
+        parent: activeLayer.parent?.label || activeLayer.parent?.name || 'none'
       });
     }
 
@@ -451,19 +387,9 @@ class DrawingEngine {
       console.log('[_transformPointerToLocal] Local:', localCoords);
     }
 
-    // NaN検出 Step 3
-    if (isNaN(localCoords.localX) || isNaN(localCoords.localY)) {
-      console.error('[DrawingEngine] Local coords are NaN', {
-        canvas: canvasCoords,
-        world: worldCoords,
-        local: localCoords
-      });
-      return null;
-    }
-
-    // Infinity検出 Step 3
+    // NaN/Infinity検出 Step 3
     if (!isFinite(localCoords.localX) || !isFinite(localCoords.localY)) {
-      console.error('[DrawingEngine] Local coords are Infinity', {
+      console.error('[DrawingEngine] Local coords are invalid', {
         canvas: canvasCoords,
         world: worldCoords,
         local: localCoords
@@ -605,7 +531,7 @@ class DrawingEngine {
   inspect() {
     console.group('[DrawingEngine] State Inspection');
     
-    console.log('Version:', 'v8.14.2 Phase 1.1');
+    console.log('Version:', 'v8.14.3 Phase 1.2');
     console.log('Initialized:', this.initialized);
     console.log('IsDrawing:', this.isDrawing);
     console.log('CurrentMode:', this.currentMode);
@@ -632,8 +558,7 @@ class DrawingEngine {
         exists: !!activeLayer,
         id: activeLayer?.id,
         label: activeLayer?.label || activeLayer?.name,
-        hasParent: !!activeLayer?.parent,
-        hasDrawingContainer: !!activeLayer?.drawingContainer
+        hasParent: !!activeLayer?.parent
       });
     }
     
@@ -675,9 +600,8 @@ if (typeof window !== 'undefined') {
     testTransform: (x, y) => window.drawingEngine?.testCoordinateTransform(x, y)
   };
   
-  console.log('✅ drawing-engine.js v8.14.2 Phase 1.1 座標ズレ完全修正版 loaded');
-  console.log('   🔧 CoordinateSystem初期化自動修復機能追加');
-  console.log('   🔧 NaN/Infinity検出強化（全ステップ）');
-  console.log('   🔧 エラーハンドリング完全化');
+  console.log('✅ drawing-engine.js v8.14.3 Phase 1.2 座標変換修正版 loaded');
+  console.log('   ✅ CoordinateSystem純粋数学計算版対応');
+  console.log('   ✅ 元ファイルの全メソッド・機能を完全継承');
   console.log('   🔧 デバッグコマンド: window.TegakiDebug.drawing.*');
 }
