@@ -1,12 +1,18 @@
 /**
  * ================================================================================
- * core-initializer.js - Phase 1.2.5 AnimationSystem後再接続版
+ * core-initializer.js - Phase 1.2.7 WebGL2キャンバスサイズ修正版
  * ================================================================================
  * 
- * 【Phase 1.2.5更新内容】
- * ✅ AnimationSystem初期化後に親子関係を再確立
- * ✅ createInitialFrameIfNeeded()後の親子関係修復処理追加
- * ✅ Phase 1.2.4完全継承
+ * 【Phase 1.2.7更新内容】
+ * 🔧 WebGL2キャンバスサイズを論理キャンバス（config.canvas）に合わせる
+ * 🔧 cameraFrameBoundsが正しいサイズで初期化されるように修正
+ * 🔧 ユーザー可変キャンバスサイズに対応
+ * ✅ Phase 1.2.6完全継承
+ * 
+ * 【修正理由】
+ * - index.htmlでWebGL2キャンバスが1920x1080にハードコード
+ * - 論理キャンバス（400x400）と不一致
+ * - 座標変換・クリッピングが正常に機能しない原因
  * 
  * ================================================================================
  */
@@ -224,8 +230,9 @@ window.CoreInitializer = (function() {
             }
 
             if (window.GLMaskLayer) {
-                const maskWidth = config.canvas?.width || 1920;
-                const maskHeight = config.canvas?.height || 1080;
+                // 🔧 Phase 1.2.7: 論理キャンバスサイズを使用
+                const maskWidth = config.canvas?.width || 400;
+                const maskHeight = config.canvas?.height || 400;
                 const maskLayerInit = await window.GLMaskLayer.initialize(maskWidth, maskHeight);
                 
                 if (maskLayerInit) {
@@ -318,6 +325,26 @@ window.CoreInitializer = (function() {
         
         async initialize() {
             const CONFIG = window.TEGAKI_CONFIG;
+            
+            // ========================================
+            // 🔧 Phase 1.2.7: WebGL2キャンバスサイズ設定
+            // ========================================
+            const webgl2Canvas = document.getElementById('webgl2-canvas');
+            if (webgl2Canvas) {
+                // 論理キャンバスサイズに設定
+                webgl2Canvas.width = CONFIG.canvas.width;
+                webgl2Canvas.height = CONFIG.canvas.height;
+                
+                console.log('[CoreInit] 🔧 WebGL2 canvas resized to logical canvas size:', {
+                    width: CONFIG.canvas.width,
+                    height: CONFIG.canvas.height
+                });
+                
+                // 表示サイズはCSSで制御されるため、ここでは変更しない
+            } else {
+                console.error('[CoreInit] ❌ WebGL2 canvas not found');
+            }
+            
             const CoreEngine = window.TegakiCore.CoreEngine;
             
             if (!window.TegakiUI || !window.TegakiUI.UIController) {
@@ -693,11 +720,11 @@ window.CoreInitializer = (function() {
         initializeWebGL2,
         initializeLayerPanel,
         initializeCoordinateSystem,
-        ensureParentChildRelationship  // 🔧 Phase 1.2.5: エクスポート追加
+        ensureParentChildRelationship
     };
 })();
 
-console.log('✅ core-initializer.js Phase 1.2.6 CameraSystem二重初期化修正版 loaded');
-console.log('   ✅ Pre-initialization削除（CoreEngine内で一括初期化）');
-console.log('   ✅ CoordinateSystem再初期化追加');
-console.log('   ✅ Phase 1.2.5完全継承');
+console.log('✅ core-initializer.js Phase 1.2.7 WebGL2キャンバスサイズ修正版 loaded');
+console.log('   🔧 WebGL2キャンバスを論理キャンバスサイズに自動設定');
+console.log('   🔧 ユーザー可変キャンバスサイズに完全対応');
+console.log('   ✅ Phase 1.2.6完全継承');

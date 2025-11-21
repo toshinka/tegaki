@@ -1,6 +1,6 @@
 /*
  * ================================================================================
- * gl-stroke-processor.js - Phase 3.1カメラフレームクリッピング対応版
+ * gl-stroke-processor.js - Phase 3.2 cameraFrameBounds参照版
  * ================================================================================
  * 
  * 📁 親依存:
@@ -8,16 +8,16 @@
  *   - system/earcut-triangulator.js (window.EarcutTriangulator)
  *   - config.js (window.config.perfectFreehand)
  *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl)
- *   - camera-system.js (window.cameraSystem.cameraFrame) ← Phase 3.1追加
+ *   - camera-system.js (window.cameraSystem.cameraFrameBounds) ← Phase 3.2修正
  * 
  * 📄 子依存:
  *   - brush-core.js (createPolygonVertexBuffer/createEdgeBuffer呼び出し元)
  *   - gl-msdf-pipeline.js (生成されたバッファを受け取る)
  * 
- * 🔧 Phase 3.1改修内容:
- *   🔧 カメラフレーム外クリッピング実装
- *   🔧 キャンバス外描画を防止
- *   ✅ Phase 1.7の全機能を完全継承
+ * 🔧 Phase 3.2改修内容:
+ *   🔧 cameraFrame → cameraFrameBounds に参照先変更
+ *   🔧 Graphics オブジェクトではなく bounds オブジェクトを参照
+ *   ✅ Phase 3.1の全機能を完全継承
  * 
  * 責務:
  *   - PerfectFreehand出力 → GPU頂点バッファ生成
@@ -277,7 +277,7 @@ class GLStrokeProcessor {
 
   /**
    * Bounds計算（内部メソッド）
-   * 🔧 Phase 3.1追加: カメラフレームクリッピング
+   * 🔧 Phase 3.2修正: cameraFrameBounds参照に変更
    * @private
    */
   _calculateBoundsFromPoints(points, margin = 20) {
@@ -304,7 +304,7 @@ class GLStrokeProcessor {
       height: (maxY - minY) + dynamicMargin * 2
     };
 
-    // 🔧 Phase 3.1追加: カメラフレームでクリッピング
+    // 🔧 Phase 3.2修正: カメラフレームでクリッピング
     bounds = this._clipBoundsToCamera(bounds);
 
     return bounds;
@@ -312,14 +312,29 @@ class GLStrokeProcessor {
 
   /**
    * カメラフレームでboundsをクリッピング
-   * 🔧 Phase 3.1新規メソッド
+   * 🔧 Phase 3.2修正: cameraFrame → cameraFrameBounds に変更
    * @private
    */
   _clipBoundsToCamera(bounds) {
     const cameraSystem = window.cameraSystem;
-    if (!cameraSystem?.cameraFrame) return bounds;
+    
+    // 🔧 Phase 3.2: cameraFrameBounds を参照
+    if (!cameraSystem?.cameraFrameBounds) {
+      console.warn('[GLStrokeProcessor] cameraFrameBounds not available');
+      return bounds;
+    }
 
-    const cf = cameraSystem.cameraFrame;
+    const cf = cameraSystem.cameraFrameBounds;
+    
+    // 型チェック: boundsオブジェクトであることを確認
+    if (typeof cf !== 'object' || 
+        typeof cf.x !== 'number' || 
+        typeof cf.y !== 'number' || 
+        typeof cf.width !== 'number' || 
+        typeof cf.height !== 'number') {
+      console.warn('[GLStrokeProcessor] Invalid cameraFrameBounds format', cf);
+      return bounds;
+    }
     
     // カメラフレーム範囲内に制限
     const clippedMinX = Math.max(bounds.minX, cf.x);
@@ -333,6 +348,7 @@ class GLStrokeProcessor {
 
     // 完全にフレーム外の場合は元のboundsを返す（空描画防止）
     if (clippedWidth <= 0 || clippedHeight <= 0) {
+      console.warn('[GLStrokeProcessor] Stroke completely outside camera frame');
       return bounds;
     }
 
@@ -364,7 +380,8 @@ class GLStrokeProcessor {
 
 if (!window.GLStrokeProcessor) {
   window.GLStrokeProcessor = new GLStrokeProcessor();
-  console.log('✅ gl-stroke-processor.js Phase 3.1 カメラフレームクリッピング対応版 loaded');
-  console.log('   🔧 カメラフレーム外クリッピング実装');
-  console.log('   🔧 キャンバス外描画を防止');
+  console.log('✅ gl-stroke-processor.js Phase 3.2 cameraFrameBounds参照版 loaded');
+  console.log('   🔧 cameraFrame → cameraFrameBounds に参照先変更');
+  console.log('   🔧 Graphics オブジェクトではなく bounds オブジェクトを参照');
+  console.log('   ✅ Phase 3.1の全機能を完全継承');
 }
