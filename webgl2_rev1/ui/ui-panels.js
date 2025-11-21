@@ -1,27 +1,16 @@
 /**
- * @file ui/ui-panels.js - v8.13.15 サイドバー軽量デザイン版
+ * @file ui/ui-panels.js - v8.13.16 フォルダボタン対応版
  * @description UIコントロールパネル統合管理
  * 
- * 【v8.13.15 改修内容】
- * 🎨 サイドバーアクティブ時の背景色反転を削除
- * ✨ オレンジ枠(#ff8c42)のみで選択を表示する軽い雰囲気に変更
- * 🎯 SVG色は常にvar(--futaba-maroon)を維持
- * 
- * 【v8.13.14 改修内容】
- * 🔗 サイドバーとクイックアクセスのツール選択完全連動
- * 🎨 アクティブボーダー統一 (#ff8c42)
- * 📡 tool:select イベント双方向同期
- * 
- * 【v8.13.13 改修内容】
- * 🎨 塗りつぶしツール追加
- * 🔧 fill-tool ボタン対応
- * ⌨️ Gキーショートカット対応
+ * 【v8.13.16 改修内容】
+ * ✅ フォルダ+ボタン接続（createFolder() 呼び出し）
+ * ✅ 「準備中」alert削除
  * 
  * 【親ファイル (このファイルが依存)】
  * - core-runtime.js (API統一インターフェース)
  * - popup-manager.js (ポップアップ制御)
  * - event-bus.js (イベント通信)
- * - system/drawing/fill-tool.js (FillTool)
+ * - system/layer-system.js (LayerSystem)
  * 
  * 【子ファイル (このファイルに依存)】
  * なし（UI層の最上位）
@@ -140,9 +129,18 @@ window.TegakiUI.UIController = class {
                 return;
             }
             
+            // 🆕 v8.13.16: フォルダ+ボタン接続
             const folderAddBtn = e.target.closest('#add-folder-btn');
             if (folderAddBtn) {
-                alert('フォルダ機能は準備中です');
+                const layerSystem = window.layerSystem || window.layerManager;
+                if (layerSystem && layerSystem.createFolder) {
+                    const result = layerSystem.createFolder();
+                    if (result) {
+                        layerSystem.setActiveLayer(result.index);
+                    }
+                } else {
+                    console.error('[UIController] LayerSystem.createFolder() not available');
+                }
                 return;
             }
 
@@ -417,6 +415,6 @@ window.TegakiUI.setupPanelStyles = function() {
     }
 };
 
-console.log('✅ ui-panels.js v8.13.15 loaded');
-console.log('   🎨 サイドバー軽量デザイン: オレンジ枠のみ');
-console.log('   🎯 SVG色統一: 常にvar(--futaba-maroon)');
+console.log('✅ ui-panels.js v8.13.16 loaded');
+console.log('   ✅ フォルダ+ボタン接続完了');
+console.log('   ✅ createFolder() 正常呼び出し');
