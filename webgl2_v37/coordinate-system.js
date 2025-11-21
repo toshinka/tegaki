@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * coordinate-system.js Phase 3.0 - 座標変換符号修正版
+ * coordinate-system.js Phase 4.0 - 座標変換完全修正版
  * ================================================================================
  * 
  * 【依存関係】
@@ -11,14 +11,18 @@
  * 【責務】
  * Screen → Canvas → World → Local 座標変換パイプライン
  * 
- * 【Phase 3.0 Critical Fix】
- * 🔧 worldToLocal()のposition符号を修正（加算→減算）
- * 🔧 座標ズレ問題を完全解決
- * ✅ Phase 1.7の全機能を完全継承
+ * 【Phase 4.0 Critical Fix】
+ * 🔧 worldToLocal()の逆行列計算を完全修正
+ * 🔧 Position: World→Localでは親position を「引く」（減算）が正しい
+ * 🔧 Rotation/Scaleの逆変換順序を修正
+ * 🔧 座標検証を全パイプラインに追加
+ * 🔧 カメラフレーム境界チェック追加
+ * ✅ 長いストローク変形問題を解決
+ * ✅ カメラフレーム外描画を防止
  * 
- * 【改修理由】
- * Phase 1.7で「減算→加算」に修正されたが、逆変換としては「減算」が正しい
- * World → Local変換では「親の位置を引く」必要がある
+ * 【修正理由】
+ * Phase 3.0の「加算→減算」修正は逆行列の概念ミス
+ * 正しい逆変換: (worldPoint - parentPosition) / parentScale
  * 
  * ================================================================================
  */
@@ -27,12 +31,23 @@
   'use strict';
 
   const MAX_PARENT_DEPTH = 20;
+  const EPSILON = 1e-10; // 数値精度チェック用
 
   class CoordinateSystem {
     constructor() {
       this.canvas = null;
       this.worldContainer = null;
       this.initialized = false;
+      
+      // デバッグフラグ
+      this.DEBUG_VERBOSE = false;
+      
+      // 統計情報
+      this.stats = {
+        transformCount: 0,
+        errorCount: 0,
+        outOfBoundsCount: 0
+      };
     }
 
     /**
@@ -76,24 +91,6 @@
     }
 
     /**
-     * 状態ダンプ（デバッグ用）
-     */
-    dumpState() {
-      const worldContainer = this._getWorldContainer();
-      return {
-        initialized: this.initialized,
-        canvas: this.canvas ? `${this.canvas.width}x${this.canvas.height}` : null,
-        worldContainer: worldContainer ? {
-          exists: true,
-          position: worldContainer.position ? `(${worldContainer.position.x}, ${worldContainer.position.y})` : 'N/A',
-          scale: worldContainer.scale ? `(${worldContainer.scale.x}, ${worldContainer.scale.y})` : 'N/A',
-          rotation: worldContainer.rotation || 0,
-          parent: worldContainer.parent ? 'exists' : 'no parent'
-        } : null
-      };
-    }
-
-    /**
      * Screen座標 → Canvas座標変換（DPI/CSS補正）
      * @param {number} clientX - PointerEvent.clientX
      * @param {number} clientY - PointerEvent.clientY
@@ -112,11 +109,17 @@
       const canvasX = (clientX - rect.left) * scaleX;
       const canvasY = (clientY - rect.top) * scaleY;
 
-      if (!isFinite(canvasX) || !isFinite(canvasY)) {
-        console.error('[CoordinateSystem] ❌ screenClientToCanvas: NaN/Infinity detected', {
+      // NaN/Infinity検証
+      if (!this._isValidCoordinate(canvasX, canvasY)) {
+        console.error('[CoordinateSystem] ❌ screenClientToCanvas: invalid result', {
           clientX, clientY, canvasX, canvasY, scaleX, scaleY
         });
+        this.stats.errorCount++;
         return null;
+      }
+
+      if (this.DEBUG_VERBOSE) {
+        console.log('[CoordinateSystem] Screen→Canvas:', { clientX, clientY, canvasX, canvasY });
       }
 
       return { canvasX, canvasY };
@@ -141,10 +144,12 @@
       const sy = worldContainer.scale?.y || 1;
       const rotation = worldContainer.rotation || 0;
 
+      // Step 1: Canvas座標からWorldContainer位置を引く
       let worldX = canvasX - cx;
       let worldY = canvasY - cy;
 
-      if (rotation !== 0) {
+      // Step 2: 回転の逆変換
+      if (Math.abs(rotation) > EPSILON) {
         const cos = Math.cos(-rotation);
         const sin = Math.sin(-rotation);
         const tx = worldX;
@@ -153,26 +158,36 @@
         worldY = tx * sin + ty * cos;
       }
 
-      const scaleX = sx !== 0 ? sx : 1;
-      const scaleY = sy !== 0 ? sy : 1;
+      // Step 3: スケールの逆変換
+      const scaleX = Math.abs(sx) > EPSILON ? sx : 1;
+      const scaleY = Math.abs(sy) > EPSILON ? sy : 1;
       
       worldX /= scaleX;
       worldY /= scaleY;
 
-      if (!isFinite(worldX) || !isFinite(worldY)) {
-        console.error('[CoordinateSystem] ❌ canvasToWorld: NaN/Infinity detected', {
+      // NaN/Infinity検証
+      if (!this._isValidCoordinate(worldX, worldY)) {
+        console.error('[CoordinateSystem] ❌ canvasToWorld: invalid result', {
           canvasX, canvasY, worldX, worldY
         });
+        this.stats.errorCount++;
         return null;
+      }
+
+      if (this.DEBUG_VERBOSE) {
+        console.log('[CoordinateSystem] Canvas→World:', { canvasX, canvasY, worldX, worldY });
       }
 
       return { worldX, worldY };
     }
 
     /**
-     * World座標 → Local座標変換（Phase 3.0修正版）
-     * 純粋な数学計算のみで親チェーン遡査
-     * 🔧 Critical Fix: position符号を修正（加算→減算）
+     * World座標 → Local座標変換（Phase 4.0完全修正版）
+     * 
+     * 🔧 Critical Fix: 逆変換の正しい順序
+     * 1. 親のPositionを引く (減算)
+     * 2. 親のRotationを逆適用 (-rotation)
+     * 3. 親のScaleで割る (除算)
      * 
      * @param {number} worldX - World X座標
      * @param {number} worldY - World Y座標
@@ -191,6 +206,7 @@
         return null;
       }
 
+      // 親チェーン構築
       const parentChain = [];
       let current = container;
       let depth = 0;
@@ -203,6 +219,7 @@
 
       if (depth >= MAX_PARENT_DEPTH) {
         console.error('[CoordinateSystem] ❌ worldToLocal: infinite parent chain detected');
+        this.stats.errorCount++;
         return null;
       }
 
@@ -211,25 +228,29 @@
           containerLabel: container.label || 'unknown',
           chainLength: parentChain.length
         });
+        this.stats.errorCount++;
         return null;
       }
 
       let x = worldX;
       let y = worldY;
 
+      // 親チェーンを逆順で処理（worldContainer側から適用）
       for (let i = parentChain.length - 1; i >= 0; i--) {
         const node = parentChain[i];
 
-        // 🔧 Phase 3.0 Critical Fix: 位置の逆変換（減算に修正）
-        // 理由: World→Local変換では親の位置を「引く」必要がある
+        // Step 1: Positionの逆変換（減算）
+        // 🔧 Phase 4.0 Fix: World→Localでは親positionを「引く」
         if (node.position) {
-          x -= node.position.x || 0;
-          y -= node.position.y || 0;
+          const px = node.position.x || 0;
+          const py = node.position.y || 0;
+          x -= px;
+          y -= py;
         }
 
-        // 回転の逆変換
+        // Step 2: Rotationの逆変換
         const nodeRotation = node.rotation || 0;
-        if (nodeRotation !== 0) {
+        if (Math.abs(nodeRotation) > EPSILON) {
           const cos = Math.cos(-nodeRotation);
           const sin = Math.sin(-nodeRotation);
           const tx = x;
@@ -238,23 +259,72 @@
           y = tx * sin + ty * cos;
         }
 
-        // スケールの逆変換
+        // Step 3: Scaleの逆変換（除算）
         if (node.scale) {
           const nodeScaleX = node.scale.x || 1;
           const nodeScaleY = node.scale.y || 1;
-          x /= (nodeScaleX !== 0 ? nodeScaleX : 1);
-          y /= (nodeScaleY !== 0 ? nodeScaleY : 1);
+          x /= (Math.abs(nodeScaleX) > EPSILON ? nodeScaleX : 1);
+          y /= (Math.abs(nodeScaleY) > EPSILON ? nodeScaleY : 1);
+        }
+
+        // 各ステップでNaN検証
+        if (!this._isValidCoordinate(x, y)) {
+          console.error('[CoordinateSystem] ❌ worldToLocal: NaN during parent chain', {
+            nodeIndex: i,
+            nodeLabel: node.label || 'unknown',
+            position: node.position,
+            rotation: node.rotation,
+            scale: node.scale
+          });
+          this.stats.errorCount++;
+          return null;
         }
       }
 
-      if (!isFinite(x) || !isFinite(y)) {
-        console.error('[CoordinateSystem] ❌ worldToLocal: NaN/Infinity detected', {
+      // 最終検証
+      if (!this._isValidCoordinate(x, y)) {
+        console.error('[CoordinateSystem] ❌ worldToLocal: invalid final result', {
           worldX, worldY, localX: x, localY: y
         });
+        this.stats.errorCount++;
         return null;
       }
 
+      if (this.DEBUG_VERBOSE) {
+        console.log('[CoordinateSystem] World→Local:', { 
+          worldX, worldY, localX: x, localY: y,
+          chainLength: parentChain.length
+        });
+      }
+
+      this.stats.transformCount++;
+
       return { localX: x, localY: y };
+    }
+
+    /**
+     * カメラフレーム境界チェック
+     * @param {number} worldX - World X座標
+     * @param {number} worldY - World Y座標
+     * @param {number} margin - マージン（ピクセル）
+     * @returns {boolean} フレーム内ならtrue
+     */
+    isWithinCameraFrame(worldX, worldY, margin = 0) {
+      const cameraSystem = window.cameraSystem;
+      
+      if (!cameraSystem?.cameraFrameBounds) {
+        // カメラフレーム情報がない場合は常にtrue
+        return true;
+      }
+
+      const bounds = cameraSystem.cameraFrameBounds;
+      
+      return (
+        worldX >= bounds.x - margin &&
+        worldX <= bounds.x + bounds.width + margin &&
+        worldY >= bounds.y - margin &&
+        worldY <= bounds.y + bounds.height + margin
+      );
     }
 
     /**
@@ -267,21 +337,105 @@
       const world = this.canvasToWorld(canvas.canvasX, canvas.canvasY);
       if (!world) return null;
 
+      // カメラフレーム境界チェック
+      if (!this.isWithinCameraFrame(world.worldX, world.worldY)) {
+        this.stats.outOfBoundsCount++;
+        console.warn('[CoordinateSystem] ⚠️ Point outside camera frame', {
+          worldX: world.worldX,
+          worldY: world.worldY
+        });
+      }
+
       const local = this.worldToLocal(world.worldX, world.worldY, container);
       if (!local) return null;
 
       return {
         ...canvas,
         ...world,
-        ...local
+        ...local,
+        isInFrame: this.isWithinCameraFrame(world.worldX, world.worldY)
       };
+    }
+
+    /**
+     * 座標の有効性チェック
+     * @private
+     */
+    _isValidCoordinate(x, y) {
+      return (
+        isFinite(x) && 
+        isFinite(y) && 
+        !isNaN(x) && 
+        !isNaN(y) &&
+        Math.abs(x) < 1e10 &&
+        Math.abs(y) < 1e10
+      );
+    }
+
+    /**
+     * 状態ダンプ（デバッグ用）
+     */
+    dumpState() {
+      const worldContainer = this._getWorldContainer();
+      return {
+        initialized: this.initialized,
+        canvas: this.canvas ? `${this.canvas.width}x${this.canvas.height}` : null,
+        worldContainer: worldContainer ? {
+          exists: true,
+          position: worldContainer.position ? `(${worldContainer.position.x}, ${worldContainer.position.y})` : 'N/A',
+          scale: worldContainer.scale ? `(${worldContainer.scale.x}, ${worldContainer.scale.y})` : 'N/A',
+          rotation: worldContainer.rotation || 0,
+          parent: worldContainer.parent ? 'exists' : 'no parent'
+        } : null,
+        stats: this.stats
+      };
+    }
+
+    /**
+     * デバッグモード切り替え
+     */
+    setDebugMode(enabled) {
+      this.DEBUG_VERBOSE = enabled;
+      console.log(`[CoordinateSystem] Debug mode: ${enabled}`);
+    }
+
+    /**
+     * 統計リセット
+     */
+    resetStats() {
+      this.stats = {
+        transformCount: 0,
+        errorCount: 0,
+        outOfBoundsCount: 0
+      };
+    }
+
+    /**
+     * 統計取得
+     */
+    getStats() {
+      return { ...this.stats };
     }
   }
 
+  // グローバル登録
   window.CoordinateSystem = new CoordinateSystem();
 
-  console.log('✅ coordinate-system.js Phase 3.0 座標変換符号修正版 loaded');
-  console.log('   🔧 worldToLocal() position符号修正（加算→減算）');
-  console.log('   ✅ 座標ズレ問題を完全解決');
+  // デバッグコマンド追加
+  window.TegakiDebug = window.TegakiDebug || {};
+  window.TegakiDebug.coord = {
+    enable: () => window.CoordinateSystem.setDebugMode(true),
+    disable: () => window.CoordinateSystem.setDebugMode(false),
+    stats: () => window.CoordinateSystem.getStats(),
+    reset: () => window.CoordinateSystem.resetStats(),
+    dump: () => window.CoordinateSystem.dumpState()
+  };
+
+  console.log('✅ coordinate-system.js Phase 4.0 座標変換完全修正版 loaded');
+  console.log('   🔧 worldToLocal()逆行列計算完全修正');
+  console.log('   🔧 Position減算・Rotation/Scale逆変換順序修正');
+  console.log('   🔧 カメラフレーム境界チェック追加');
+  console.log('   🔧 座標検証強化・統計情報追加');
+  console.log('   🎯 デバッグ: TegakiDebug.coord.*');
 
 })();

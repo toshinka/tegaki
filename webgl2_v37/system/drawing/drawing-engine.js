@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * drawing-engine.js v8.14.3 - Phase 1.2 座標変換修正版
+ * drawing-engine.js v8.15.0 - Phase 4.0 座標検証強化版
  * ============================================================================
  * 責務: PointerEvent受信・座標変換実行・BrushCoreへの描画命令委譲
  * 
@@ -19,9 +19,11 @@
  *   → screenClientToCanvas() [DPI補正]
  *   → canvasToWorld() [純粋数学計算]
  *   → worldToLocal() [純粋数学計算]
+ *   → isWithinCameraFrame() [境界チェック]
  *   → {localX, localY} → BrushCore
  * 
  * 変更履歴:
+ *   v8.15.0 Phase 4.0: カメラフレーム境界チェック強化・座標検証強化
  *   v8.14.3 Phase 1.2: CoordinateSystem純粋数学計算版対応
  *   v8.14.2 Phase 1.1: 座標変換検証強化・初期化フロー改善
  *   v8.14.1: WebGL2移行版
@@ -57,6 +59,13 @@ class DrawingEngine {
     // 初期化試行カウンター
     this._initAttempts = 0;
     this._maxInitAttempts = 3;
+    
+    // 🔧 Phase 4.0: 統計情報
+    this.stats = {
+      totalPoints: 0,
+      rejectedPoints: 0,
+      outOfBoundsPoints: 0
+    };
   }
 
   /**
@@ -115,7 +124,7 @@ class DrawingEngine {
     this._setupEventListeners();
     
     this.initialized = true;
-    console.log('[DrawingEngine] ✅ Initialized v8.14.3 Phase 1.2', {
+    console.log('[DrawingEngine] ✅ Initialized v8.15.0 Phase 4.0', {
       coordSystemReady: this.coordSystem.initialized,
       glCanvasSize: { 
         width: this.glCanvas.width, 
@@ -181,6 +190,7 @@ class DrawingEngine {
 
   /**
    * PointerDown処理
+   * 🔧 Phase 4.0: カメラフレーム境界チェック追加
    */
   _handlePointerDown(e) {
     if (!this.initialized) {
@@ -199,6 +209,13 @@ class DrawingEngine {
       return;
     }
 
+    // 🔧 Phase 4.0: フレーム外チェック
+    if (!coords.isInFrame) {
+      console.warn('[DrawingEngine] PointerDown outside camera frame - ignoring');
+      this.stats.outOfBoundsPoints++;
+      return;
+    }
+
     const pressure = e.pressure || 0.5;
 
     try {
@@ -210,7 +227,9 @@ class DrawingEngine {
       if (this.DEBUG_TRANSFORM) {
         console.log('[DrawingEngine] Stroke started', {
           local: { x: coords.localX, y: coords.localY },
-          pressure
+          world: { x: coords.worldX, y: coords.worldY },
+          pressure,
+          isInFrame: coords.isInFrame
         });
       }
     } catch (error) {
@@ -221,6 +240,7 @@ class DrawingEngine {
 
   /**
    * PointerMove処理
+   * 🔧 Phase 4.0: フレーム外ポイントのスキップ
    */
   _handlePointerMove(e) {
     if (!this.isDrawing || !this.initialized) return;
@@ -230,6 +250,16 @@ class DrawingEngine {
       if (this.DEBUG_TRANSFORM) {
         console.warn('[DrawingEngine] Failed to transform pointer coords on pointermove, skipping point');
       }
+      this.stats.rejectedPoints++;
+      return;
+    }
+
+    // 🔧 Phase 4.0: フレーム外ポイントをスキップ
+    if (!coords.isInFrame) {
+      if (this.DEBUG_TRANSFORM) {
+        console.log('[DrawingEngine] PointerMove outside camera frame - skipping');
+      }
+      this.stats.outOfBoundsPoints++;
       return;
     }
 
@@ -242,6 +272,8 @@ class DrawingEngine {
       pressure: pressure,
       timestamp: performance.now()
     });
+
+    this.stats.totalPoints++;
 
     // バッファサイズまたは時間間隔でフラッシュ
     const now = performance.now();
@@ -268,7 +300,11 @@ class DrawingEngine {
       }
 
       if (this.DEBUG_TRANSFORM) {
-        console.log('[DrawingEngine] Stroke finalized');
+        console.log('[DrawingEngine] Stroke finalized', {
+          totalPoints: this.stats.totalPoints,
+          rejectedPoints: this.stats.rejectedPoints,
+          outOfBoundsPoints: this.stats.outOfBoundsPoints
+        });
       }
     } catch (error) {
       console.error('[DrawingEngine] Error finalizing stroke:', error);
@@ -299,10 +335,11 @@ class DrawingEngine {
 
   /**
    * ============================================================================
-   * 座標変換パイプライン実行（Phase 1.2修正版）
+   * 座標変換パイプライン実行（Phase 4.0修正版）
    * ============================================================================
    * PointerEvent → Local座標への変換
    * CoordinateSystemの純粋数学計算を使用
+   * 🔧 Phase 4.0: カメラフレーム境界チェック追加
    */
   _transformPointerToLocal(e) {
     const coordSys = this.coordSystem;
@@ -331,12 +368,6 @@ class DrawingEngine {
       console.log('[_transformPointerToLocal] Canvas:', canvasCoords);
     }
 
-    // NaN/Infinity検出 Step 1
-    if (!isFinite(canvasCoords.canvasX) || !isFinite(canvasCoords.canvasY)) {
-      console.error('[DrawingEngine] Canvas coords are invalid', canvasCoords);
-      return null;
-    }
-
     // Step 2: Canvas → World
     const worldCoords = coordSys.canvasToWorld(canvasCoords.canvasX, canvasCoords.canvasY);
     if (!worldCoords) {
@@ -348,10 +379,18 @@ class DrawingEngine {
       console.log('[_transformPointerToLocal] World:', worldCoords);
     }
 
-    // NaN/Infinity検出 Step 2
-    if (!isFinite(worldCoords.worldX) || !isFinite(worldCoords.worldY)) {
-      console.error('[DrawingEngine] World coords are invalid', worldCoords);
-      return null;
+    // 🔧 Phase 4.0: カメラフレーム境界チェック
+    const isInFrame = coordSys.isWithinCameraFrame(
+      worldCoords.worldX, 
+      worldCoords.worldY,
+      10 // 10ピクセルのマージン
+    );
+
+    if (!isInFrame && this.DEBUG_TRANSFORM) {
+      console.warn('[_transformPointerToLocal] Point outside camera frame', {
+        worldX: worldCoords.worldX,
+        worldY: worldCoords.worldY
+      });
     }
 
     // Step 3: activeLayer取得
@@ -387,23 +426,14 @@ class DrawingEngine {
       console.log('[_transformPointerToLocal] Local:', localCoords);
     }
 
-    // NaN/Infinity検出 Step 3
-    if (!isFinite(localCoords.localX) || !isFinite(localCoords.localY)) {
-      console.error('[DrawingEngine] Local coords are invalid', {
-        canvas: canvasCoords,
-        world: worldCoords,
-        local: localCoords
-      });
-      return null;
-    }
-
     return {
       localX: localCoords.localX,
       localY: localCoords.localY,
       worldX: worldCoords.worldX,
       worldY: worldCoords.worldY,
       canvasX: canvasCoords.canvasX,
-      canvasY: canvasCoords.canvasY
+      canvasY: canvasCoords.canvasY,
+      isInFrame: isInFrame // 🔧 Phase 4.0: フレーム内フラグ
     };
   }
 
@@ -418,7 +448,6 @@ class DrawingEngine {
    */
   setBrushSettings(settings) {
     if (!this.brushCore) {
-      // 初期化中の場合は警告を出さない
       if (this.initialized) {
         console.warn('[DrawingEngine] BrushCore not available');
       }
@@ -426,7 +455,6 @@ class DrawingEngine {
     }
 
     try {
-      // BrushCoreに設定を委譲
       if (typeof this.brushCore.updateSettings === 'function') {
         this.brushCore.updateSettings(settings);
       } else if (typeof this.brushCore.setBrushSettings === 'function') {
@@ -494,7 +522,7 @@ class DrawingEngine {
 
   /**
    * ============================================================================
-   * デバッグ・検証ユーティリティ
+   * デバッグ・検証ユーティリティ（Phase 4.0強化）
    * ============================================================================
    */
 
@@ -526,12 +554,36 @@ class DrawingEngine {
   }
 
   /**
+   * 統計取得
+   */
+  getStats() {
+    return {
+      ...this.stats,
+      coordStats: this.coordSystem ? this.coordSystem.getStats() : null
+    };
+  }
+
+  /**
+   * 統計リセット
+   */
+  resetStats() {
+    this.stats = {
+      totalPoints: 0,
+      rejectedPoints: 0,
+      outOfBoundsPoints: 0
+    };
+    if (this.coordSystem && typeof this.coordSystem.resetStats === 'function') {
+      this.coordSystem.resetStats();
+    }
+  }
+
+  /**
    * 状態検査
    */
   inspect() {
     console.group('[DrawingEngine] State Inspection');
     
-    console.log('Version:', 'v8.14.3 Phase 1.2');
+    console.log('Version:', 'v8.15.0 Phase 4.0');
     console.log('Initialized:', this.initialized);
     console.log('IsDrawing:', this.isDrawing);
     console.log('CurrentMode:', this.currentMode);
@@ -562,6 +614,8 @@ class DrawingEngine {
       });
     }
     
+    console.log('Stats:', this.getStats());
+    
     console.groupEnd();
   }
 
@@ -571,8 +625,6 @@ class DrawingEngine {
   destroy() {
     this.isDrawing = false;
     this.pendingPoints = [];
-    
-    // イベントリスナー解除は各ハンドラー側で実施済み
     
     this.initialized = false;
     this.coordSystem = null;
@@ -597,11 +649,15 @@ if (typeof window !== 'undefined') {
     inspect: () => window.drawingEngine?.inspect(),
     enableDebug: () => window.drawingEngine?.setDebugMode(true),
     disableDebug: () => window.drawingEngine?.setDebugMode(false),
-    testTransform: (x, y) => window.drawingEngine?.testCoordinateTransform(x, y)
+    testTransform: (x, y) => window.drawingEngine?.testCoordinateTransform(x, y),
+    stats: () => window.drawingEngine?.getStats(),
+    resetStats: () => window.drawingEngine?.resetStats()
   };
   
-  console.log('✅ drawing-engine.js v8.14.3 Phase 1.2 座標変換修正版 loaded');
-  console.log('   ✅ CoordinateSystem純粋数学計算版対応');
-  console.log('   ✅ 元ファイルの全メソッド・機能を完全継承');
-  console.log('   🔧 デバッグコマンド: window.TegakiDebug.drawing.*');
+  console.log('✅ drawing-engine.js v8.15.0 Phase 4.0 座標検証強化版 loaded');
+  console.log('   🔧 カメラフレーム境界チェック追加');
+  console.log('   🔧 フレーム外ポイントの自動スキップ');
+  console.log('   🔧 統計情報追加');
+  console.log('   ✅ v8.14.3の全メソッド・機能を完全継承');
+  console.log('   🎯 デバッグコマンド: TegakiDebug.drawing.*');
 }

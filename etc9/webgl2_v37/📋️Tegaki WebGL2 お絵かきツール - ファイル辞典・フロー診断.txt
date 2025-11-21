@@ -1,0 +1,562 @@
+# Tegaki WebGL2 お絵かきツール - ファイル辞典・フロー診断
+
+## 凡例
+- ⚠️ = 問題箇所・実装不完全
+- 🔧 = 改修必要
+- ✅ = 正常動作確認済み
+- ❌ = 未実装・機能不全
+- 🔍 = 要調査
+- 📁 = 親ファイル（このファイルが依存）
+- 📄 = 子ファイル（このファイルに依存）
+- 🔀 = イベントフロー関連
+
+---
+
+## ■ コア初期化システム
+
+### 📁 core-initializer.js (Phase 1.2.2)
+**責務**: アプリケーション全体の初期化統括
+
+**親依存**:
+- PIXI.js v8.14 (CDN)
+- config.js (TEGAKI_CONFIG)
+- coordinate-system.js (CoordinateSystem) ⭐
+- system/event-bus.js (TegakiEventBus)
+- system/popup-manager.js (TegakiPopupManager)
+- system/settings-manager.js (TegakiSettingsManager)
+- ui/dom-builder.js (DOMBuilder)
+- core-runtime.js (CoreRuntime)
+- core-engine.js (CoreEngine)
+
+**子初期化対象**:
+- coordinate-system.js (座標変換パイプライン)
+- system/drawing/webgl2/webgl2-drawing-layer.js
+- system/drawing/webgl2/gl-stroke-processor.js
+- system/drawing/webgl2/gl-msdf-pipeline.js
+- system/drawing/webgl2/gl-texture-bridge.js
+- system/drawing/webgl2/gl-mask-layer.js
+- system/drawing/stroke-renderer.js
+- system/drawing/brush-core.js
+
+**主要メソッド**:
+```
+checkDependencies() -> boolean
+buildDOM() -> void
+initializeSettingsManager() -> TegakiSettingsManager
+initializePopupManager(app, coreEngine) -> PopupManager
+setupEventBusListeners() -> void
+initializeLayerPanel(layerSystem, eventBus) -> LayerPanelRenderer
+🔧 initializeCoordinateSystem(worldContainer) -> boolean
+async initializeWebGL2(strokeRenderer, pixiApp) -> boolean
+DrawingApp.initialize() -> boolean
+```
+
+**初期化フロー**:
+```
+1. checkDependencies()
+2. buildDOM()
+3. KeyboardHandler.init()
+4. DrawingApp.initialize()
+   ├─ PIXI.Application.init()
+   ├─ CoreEngine.initialize() ⭐worldContainer生成
+   ├─ CoordinateSystem.initialize(canvas, worldContainer) ⭐Phase 1.2.2修正
+   ├─ CoreRuntime.init()
+   ├─ initializeSettingsManager()
+   ├─ UIController初期化
+   ├─ initializePopupManager()
+   ├─ setupEventBusListeners()
+   ├─ initializeLayerPanel()
+   ├─ initializeWebGL2()
+   └─ startRenderLoop()
+```
+
+**問題点**:
+⚠️ CoordinateSystem初期化タイミングがCoreEngine.initialize()完了後に移動されたが、DrawingEngineとの接続が未確認
+⚠️ WebGL2初期化とBrushCore再初期化のタイミングが複雑
+
+---
+
+### 📁 core-engine.js (Phase 4-C)
+**責務**: システム全体の初期化・レンダーループ管理
+
+**親依存**:
+- system/camera-system.js (TegakiCameraSystem)
+- system/layer-system.js (TegakiLayerSystem)
+- system/drawing-clipboard.js (TegakiDrawingClipboard)
+- system/drawing/brush-core.js (BrushCore)
+- system/drawing/stroke-recorder.js (StrokeRecorder)
+- system/drawing/stroke-renderer.js (StrokeRenderer)
+- system/event-bus.js (TegakiEventBus)
+- system/export-manager.js (ExportManager)
+
+**子使用先**:
+- core-initializer.js (初期化呼び出し元)
+- drawing-engine.js (renderPreview呼び出し)
+
+**主要プロパティ**:
+```javascript
+app: PIXI.Application
+cameraSystem: TegakiCameraSystem
+layerSystem: TegakiLayerSystem
+clipboardSystem: TegakiDrawingClipboard
+brushSettings: BrushSettings
+drawingEngine: DrawingEngine ⚠️定義されているが初期化不明
+animationSystem: TegakiAnimationSystem
+eventBus: TegakiEventBus
+renderLoopId: number
+isRenderLoopRunning: boolean
+```
+
+**主要メソッド**:
+```javascript
+constructor(app, config)
+initialize() -> CoreEngine
+startRenderLoop() -> void
+_renderLoop() -> void  // ⭐Phase 4-C: BrushCore.renderPreview()統合
+stopRenderLoop() -> void
+flushPointerBatch() -> void
+```
+
+**問題点**:
+❌ DrawingEngineのコンストラクタはあるが、初期化処理が不明瞭
+❌ DrawingEngineとPointerHandlerの接続が見当たらない
+🔍 this.drawingEngine = new DrawingEngine() だけで、initialize()が呼ばれていない
+
+---
+
+## ■ 座標変換システム
+
+### 📁 coordinate-system.js (Phase 1.3)
+**責務**: Screen → Canvas → World → Local 座標変換パイプライン
+
+**親使用元**:
+- drawing-engine.js
+- brush-core.js
+
+**子依存**:
+- camera-system.js (worldContainer管理)
+
+**主要プロパティ**:
+```javascript
+canvas: HTMLCanvasElement
+worldContainer: PIXI.Container
+initialized: boolean
+```
+
+**座標変換メソッド**:
+```javascript
+initialize(canvas, worldContainer) -> boolean
+screenClientToCanvas(clientX, clientY) -> {canvasX, canvasY} | null
+canvasToWorld(canvasX, canvasY) -> {worldX, worldY} | null
+worldToLocal(worldX, worldY, container) -> {localX, localY} | null
+transformScreenToLocal(clientX, clientY, container) -> Object | null
+dumpState() -> Object
+```
+
+**座標変換フロー**:
+```
+PointerEvent.clientX/Y
+→ screenClientToCanvas() [DPI補正]
+→ canvasToWorld() [worldContainer逆行列]
+→ worldToLocal() [手動逆算・親チェーン遡査]
+→ {localX, localY}
+```
+
+**問題点**:
+✅ Phase 1.3で遅延初期化対応済み (_getWorldContainer())
+⚠️ initialize()は一度だけ呼ばれる前提だが、タイミング検証必要
+
+---
+
+## ■ 描画エンジン
+
+### 📁 drawing-engine.js (Phase 1.1 v8.14.2)
+**責務**: PointerEvent受信・座標変換実行・BrushCoreへの描画命令委譲
+
+**親依存**:
+- coordinate-system.js (CoordinateSystem)
+- system/camera-system.js (cameraSystem)
+- system/layer-system.js (layerManager)
+- system/drawing/brush-core.js (BrushCore)
+- system/drawing/pointer-handler.js (PointerHandler)
+
+**子使用先**:
+- core-engine.js (初期化呼び出し元、renderPreview呼び出し元)
+
+**主要プロパティ**:
+```javascript
+initialized: boolean
+isDrawing: boolean
+currentMode: 'pen' | 'eraser' | 'fill'
+coordSystem: CoordinateSystem
+cameraSystem: TegakiCameraSystem
+layerManager: TegakiLayerSystem
+brushCore: BrushCore
+pointerHandler: PointerHandler
+eventBus: TegakiEventBus
+glCanvas: HTMLCanvasElement
+pendingPoints: Array
+DEBUG_TRANSFORM: boolean
+```
+
+**主要メソッド**:
+```javascript
+initialize(dependencies) -> boolean
+_ensureCoordinateSystemReady() -> boolean
+_setupPointerHandlers() -> void
+_setupEventListeners() -> void
+_handlePointerDown(e) -> void
+_handlePointerMove(e) -> void
+_handlePointerUp(e) -> void
+flushPendingPoints() -> void
+🔧 _transformPointerToLocal(e) -> {localX, localY, ...} | null
+setBrushSettings(settings) -> void
+setColor(color) -> void
+setSize(size) -> void
+setOpacity(opacity) -> void
+setTool(tool) -> void
+renderPreview() -> void
+getIsDrawing() -> boolean
+```
+
+**座標変換フロー** (_transformPointerToLocal):
+```
+PointerEvent e
+→ coordSystem.screenClientToCanvas(e.clientX, e.clientY)
+→ coordSystem.canvasToWorld(canvasX, canvasY)
+→ layerManager.getActiveLayer()
+→ coordSystem.worldToLocal(worldX, worldY, activeLayer)
+→ {localX, localY}
+```
+
+**問題点**:
+❌❌ initialize()メソッドは定義されているが、core-engine.jsから呼ばれていない
+❌❌ PointerHandlerの初期化と接続が不完全
+🔍 dependenciesオブジェクトを受け取るが、誰が渡すのか不明
+🔍 this.glCanvasが渡されるはずだが、実際には未設定の可能性
+
+---
+
+### 📁 pointer-handler.js (Phase 1)
+**責務**: PointerEvent統一ハンドラ（マウス・タッチ・ペン対応）
+
+**親依存**: なし（独立モジュール）
+
+**子使用先**:
+- system/drawing/drawing-engine.js
+
+**主要プロパティ**:
+```javascript
+element: HTMLElement
+options: {preventDefault, capture}
+activePointers: Map<pointerId, info>
+eventHandlers: Map<eventName, Set<callback>>
+attached: boolean
+```
+
+**主要メソッド**:
+```javascript
+constructor(element, options)
+on(eventName, callback) -> void  // EventEmitter風API
+off(eventName, callback) -> void
+_emit(eventName, ...args) -> void
+_normalizeEvent(e) -> Object
+_attach() -> void
+detach() -> void
+getActivePointers() -> Array
+getPointer(pointerId) -> Object | null
+```
+
+**問題点**:
+❌ DrawingEngineからnew PointerHandler()が呼ばれていない
+❌ PointerHandlerインスタンスの作成と接続が欠落
+
+---
+
+## ■ ブラシシステム
+
+### 📁 brush-core.js (Phase 2.2)
+**責務**: ストローク処理統合・WebGL2描画統合
+
+**親依存**:
+- stroke-recorder.js (座標記録)
+- gl-stroke-processor.js (VertexBuffer/EdgeBuffer)
+- gl-msdf-pipeline.js (MSDF生成)
+- gl-texture-bridge.js (Sprite変換)
+- gl-mask-layer.js (消しゴムマスク処理)
+- layer-system.js (レイヤー管理)
+- history.js (履歴管理)
+- event-bus.js (EventBus)
+
+**子使用先**:
+- drawing-engine.js (startStroke/updateStroke呼び出し元)
+- core-engine.js (_renderLoop内でrenderPreview呼び出し)
+
+**主要プロパティ**:
+```javascript
+strokeRecorder: StrokeRecorder
+glStrokeProcessor: GLStrokeProcessor
+glMSDFPipeline: GLMSDFPipeline
+textureBridge: GLTextureBridge
+glMaskLayer: GLMaskLayer
+layerManager: TegakiLayerSystem
+eventBus: TegakiEventBus
+isDrawing: boolean
+currentStroke: Object
+previewSprite: PIXI.Sprite
+previewContainer: PIXI.Container
+currentSettings: {mode, color, size, opacity}
+initialized: boolean
+msdfAvailable: boolean
+maskAvailable: boolean
+```
+
+**主要メソッド**:
+```javascript
+async initialize() -> void
+startStroke(localX, localY, pressure) -> void
+async updateStroke(localX, localY, pressure) -> void
+async renderPreview() -> void  // ⭐Phase 4-C統合
+async finalizeStroke() -> void
+async _finalizeMSDFStroke(points, activeLayer) -> void
+updateSettings(settings) -> void
+setMode(mode) -> void
+```
+
+**問題点**:
+✅ Phase 2.2でSpriteスケール修正済み
+⚠️ 初期化タイミングがcore-initializer.jsとcore-engine.jsで二重に呼ばれている
+🔍 window.BrushCoreへの依存関係設定がPhase 6.1で複雑化
+
+---
+
+### 📁 stroke-recorder.js (Phase 0完成版)
+**責務**: Local座標ポイントの記録（座標変換は一切行わない）
+
+**親依存**:
+- drawing-engine.js (Local座標取得元)
+- pressure-handler.js (筆圧データ) [オプション]
+- config.js (BRUSH_SETTINGS)
+
+**子使用先**:
+- brush-core.js (startStroke/updateStroke/endStroke呼び出し)
+
+**主要プロパティ**:
+```javascript
+points: Array<{x, y, pressure, tiltX, tiltY, timestamp, ...}>
+isRecording: boolean
+strokeStartTime: number
+currentMode: 'pen' | 'eraser'
+currentColor: string
+currentSize: number
+initialized: boolean
+totalPoints: number
+totalStrokes: number
+```
+
+**主要メソッド**:
+```javascript
+constructor(pressureHandler, cameraSystem)
+initialize() -> void  // コンストラクタで自動初期化済み
+startStroke(localX, localY, pressure, options) -> void
+addPoint(localX, localY, pressure, tiltX, tiltY) -> void
+endStroke() -> Object
+getRawPoints() -> Array
+reset() -> void
+```
+
+**問題点**:
+✅ Phase 0で自動初期化完了
+✅ 座標変換を行わない設計で正しい
+
+---
+
+## ■ WebGL2描画システム
+
+### 📁 webgl2-drawing-layer.js
+**責務**: WebGL2コンテキスト管理・FBO管理
+
+**情報**: 未読み込み（要確認）
+
+**予想される主要メソッド**:
+```javascript
+initialize() -> boolean
+getGL() -> WebGL2RenderingContext
+createFBO(width, height, options) -> FBO
+deleteFBO(fbo) -> void
+```
+
+**問題点**:
+🔍 初期化状態要確認
+🔍 glCanvas取得方法要確認
+
+---
+
+### 📁 gl-stroke-processor.js
+**責務**: PerfectFreehand → ポリゴン頂点生成・GPU転送
+
+**情報**: 未読み込み（要確認）
+
+**予想される主要メソッド**:
+```javascript
+initialize(gl) -> void
+createPolygonVertexBuffer(points, size) -> {buffer, vertexCount}
+createEdgeBuffer(points, size) -> {buffer, edgeCount}
+uploadToGPU(buffer, type, stride) -> {glBuffer}
+calculateBounds(points) -> {minX, minY, maxX, maxY, width, height}
+```
+
+**問題点**:
+🔍 初期化状態要確認
+
+---
+
+## ■ 重大な問題点まとめ
+
+### ❌❌❌ DrawingEngineの初期化欠落
+**問題**: 
+- DrawingEngine.initialize()メソッドは定義されているが、呼び出し元が存在しない
+- core-engine.jsで `this.drawingEngine = new DrawingEngine()` だけで終わっている
+- initialize()に必要な dependencies が渡されていない
+
+**影響**:
+- coordSystem, cameraSystem, layerManager, brushCore, pointerHandler, eventBus, glCanvas が未設定
+- _setupPointerHandlers() が呼ばれず、PointerEventが取得できない
+- 描画ができない根本原因
+
+**修正必要箇所**: core-engine.js の initialize() メソッド
+
+---
+
+### ❌❌ PointerHandlerの初期化欠落
+**問題**:
+- PointerHandlerのインスタンスが作成されていない
+- DrawingEngineに渡されていない
+- WebGL2キャンバスへのイベントリスナーが設定されていない
+
+**影響**:
+- PointerEventが取得できない
+- 描画開始ができない
+
+**修正必要箇所**: core-engine.js または drawing-engine.js
+
+---
+
+### ⚠️ CoordinateSystemの初期化タイミング
+**問題**:
+- Phase 1.2.2で改善されたが、DrawingEngineとの接続検証必要
+- _ensureCoordinateSystemReady()で自動修復を試みているが根本解決ではない
+
+**確認必要事項**:
+- worldContainerが確実に生成された後に初期化されているか
+- DrawingEngineが正しくCoordinateSystemを参照できるか
+
+---
+
+### 🔧 初期化の循環依存問題
+**問題**:
+- core-initializer.js → core-engine.js → drawing-engine.js の初期化フロー
+- BrushCoreの初期化が複数箇所で呼ばれる（core-engine.js と core-initializer.js）
+- 初期化順序の保証が不完全
+
+**改善方向**:
+- 初期化を1箇所に集約
+- 依存関係を明確化
+- 初期化完了フラグで重複初期化を防止
+
+---
+
+## ■ 描画フロー全体（理想状態）
+
+```
+【初期化フェーズ】
+1. core-initializer.js: checkDependencies()
+2. core-initializer.js: buildDOM()
+3. core-initializer.js: DrawingApp.initialize()
+   ├─ PIXI.Application.init()
+   ├─ CoreEngine.initialize()
+   │  ├─ CameraSystem.init() → worldContainer生成
+   │  ├─ LayerSystem.init()
+   │  ├─ StrokeRecorder作成（既に存在確認）
+   │  └─ BrushCore.init()
+   ├─ CoordinateSystem.initialize(canvas, worldContainer)
+   ├─ ❌ DrawingEngine.initialize(dependencies) ← 呼ばれていない！
+   ├─ initializeWebGL2()
+   └─ startRenderLoop()
+
+【描画フェーズ（理想）】
+1. WebGL2キャンバスで PointerEvent発生
+2. PointerHandler._normalizeEvent() → info
+3. PointerHandler._emit('pointerdown', info)
+4. DrawingEngine._handlePointerDown(info)
+5. DrawingEngine._transformPointerToLocal(info)
+   ├─ CoordinateSystem.screenClientToCanvas()
+   ├─ CoordinateSystem.canvasToWorld()
+   └─ CoordinateSystem.worldToLocal()
+6. BrushCore.startStroke(localX, localY, pressure)
+7. StrokeRecorder.addPoint(localX, localY, pressure)
+8. CoreEngine._renderLoop()
+   └─ BrushCore.renderPreview() ← Phase 4-C統合
+9. PointerUp時: BrushCore.finalizeStroke()
+   └─ GLMSDFPipeline.generateMSDF()
+
+【実際の状態】
+❌ ステップ2-4が機能していない（PointerHandler未初期化）
+❌ ステップ5が機能していない（DrawingEngine未初期化）
+→ 描画開始不可
+```
+
+---
+
+## ■ 改修優先度
+
+### 🔥 最優先（描画不能の原因）
+1. **DrawingEngine.initialize()の呼び出し追加**
+2. **PointerHandlerのインスタンス作成と接続**
+3. **WebGL2キャンバス参照の確実な受け渡し**
+
+### 🔧 高優先（安定性向上）
+4. BrushCore初期化の一本化
+5. CoordinateSystem初期化タイミングの検証
+6. 依存関係注入の明確化
+
+### 📝 中優先（保守性向上）
+7. 初期化フローの文書化
+8. デバッグコマンドの整備
+9. エラーハンドリングの強化
+
+---
+
+## ■ デバッグコマンド
+
+```javascript
+// CoordinateSystem状態確認
+window.CoordinateSystem.dumpState()
+
+// DrawingEngine状態確認
+window.drawingEngine?.inspect()
+
+// 座標変換テスト
+window.drawingEngine?.testCoordinateTransform(100, 100)
+
+// BrushCore状態確認
+console.log({
+  initialized: window.BrushCore?.initialized,
+  isDrawing: window.BrushCore?.isDrawing,
+  msdfAvailable: window.BrushCore?.msdfAvailable,
+  maskAvailable: window.BrushCore?.maskAvailable
+})
+
+// PointerHandler確認
+console.log('PointerHandler:', window.pointerHandler || 'NOT FOUND')
+
+// グローバルオブジェクト確認
+console.log({
+  CoordinateSystem: !!window.CoordinateSystem,
+  cameraSystem: !!window.cameraSystem,
+  layerManager: !!window.layerManager,
+  drawingEngine: !!window.drawingEngine,
+  BrushCore: !!window.BrushCore,
+  strokeRecorder: !!window.strokeRecorder
+})
+```
