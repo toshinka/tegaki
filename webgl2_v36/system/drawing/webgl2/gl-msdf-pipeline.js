@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * gl-msdf-pipeline.js - Phase 2.0動的テクスチャサイズ対応版
+ * gl-msdf-pipeline.js - Phase 3.2アスペクト比保持改善版
  * ================================================================================
  * 
  * 📁 親依存:
@@ -11,16 +11,15 @@
  *   - brush-core.js (generateMSDF呼び出し元)
  *   - gl-texture-bridge.js (生成されたTextureを受け取る)
  * 
- * 🔧 Phase 2.0改修内容:
- *   🔧 テクスチャサイズを動的化（boundsベース）
- *   🔧 512x512固定を廃止
- *   🔧 アスペクト比の正確な保持
- *   ✅ Phase 1.9の座標変換を完全継承
+ * 🔧 Phase 3.2改修内容:
+ *   🔧 テクスチャサイズ計算でアスペクト比を厳密保持
+ *   🔧 2の累乗丸めによるストローク変形を防止
+ *   ✅ Phase 2.0の全機能を完全継承
  * 
  * 責務:
  *   - MSDF距離場生成（JFA: Jump Flooding Algorithm）
  *   - Seed初期化 → JFA実行 → エンコード → レンダリング
- *   - WebGLTexture出力（動的サイズ）
+ *   - WebGLTexture出力（動的サイズ・アスペクト比保持）
  * 
  * ================================================================================
  */
@@ -40,7 +39,6 @@
       
       this.quadVBO = null;
       
-      // 🔧 Phase 2.0: 動的サイズ（デフォルト値のみ保持）
       this.minTextureSize = 64;
       this.maxTextureSize = 4096;
     }
@@ -304,7 +302,7 @@
     }
 
     /**
-     * 🔧 Phase 2.0: テクスチャサイズ計算（動的）
+     * 🔧 Phase 3.2: テクスチャサイズ計算（アスペクト比厳密保持）
      * @param {Object} bounds - バウンディングボックス
      * @returns {{width: number, height: number}}
      */
@@ -316,14 +314,40 @@
       let width = Math.ceil(bounds.width);
       let height = Math.ceil(bounds.height);
 
+      // 元のアスペクト比を記録
+      const originalAspectRatio = width / height;
+
+      // 範囲制限（2の累乗前）
       width = Math.max(this.minTextureSize, Math.min(width, this.maxTextureSize));
       height = Math.max(this.minTextureSize, Math.min(height, this.maxTextureSize));
 
-      // 2の累乗に丸める（GPU最適化）
-      width = Math.pow(2, Math.ceil(Math.log2(width)));
-      height = Math.pow(2, Math.ceil(Math.log2(height)));
+      // 2の累乗に丸める
+      const pow2Width = Math.pow(2, Math.ceil(Math.log2(width)));
+      const pow2Height = Math.pow(2, Math.ceil(Math.log2(height)));
 
-      return { width, height };
+      // 🔧 Phase 3.2: アスペクト比保持補正
+      const pow2AspectRatio = pow2Width / pow2Height;
+      const aspectDiff = Math.abs(pow2AspectRatio - originalAspectRatio);
+
+      // アスペクト比の差が10%以上の場合は補正
+      if (aspectDiff > 0.1) {
+        if (originalAspectRatio > pow2AspectRatio) {
+          // 横長の場合: widthを調整
+          const correctedWidth = Math.pow(2, Math.ceil(Math.log2(pow2Height * originalAspectRatio)));
+          if (correctedWidth <= this.maxTextureSize) {
+            return { width: correctedWidth, height: pow2Height };
+          }
+        } else {
+          // 縦長の場合: heightを調整
+          const correctedHeight = Math.pow(2, Math.ceil(Math.log2(pow2Width / originalAspectRatio)));
+          if (correctedHeight <= this.maxTextureSize) {
+            return { width: pow2Width, height: correctedHeight };
+          }
+        }
+      }
+
+      // 補正不要または補正後も最大サイズを超える場合は2の累乗値をそのまま使用
+      return { width: pow2Width, height: pow2Height };
     }
 
     /**
@@ -576,7 +600,7 @@
 
     /**
      * MSDF生成（メイン処理）
-     * 🔧 Phase 2.0: 動的テクスチャサイズ対応
+     * 🔧 Phase 3.2: アスペクト比保持テクスチャサイズ対応
      * 
      * @returns {Object|null} { texture: WebGLTexture, width: number, height: number }
      */
@@ -591,7 +615,6 @@
         return null;
       }
       
-      // 🔧 Phase 2.0: boundsベースでテクスチャサイズ決定
       const textureSize = this._calculateTextureSize(bounds);
       const width = textureSize.width;
       const height = textureSize.height;
@@ -658,9 +681,8 @@
   }
 
   window.GLMSDFPipeline = new GLMSDFPipeline();
-  console.log('✅ gl-msdf-pipeline.js Phase 2.0 動的テクスチャサイズ対応版 loaded');
-  console.log('   🔧 テクスチャサイズを動的化（boundsベース）');
-  console.log('   🔧 512x512固定を廃止');
-  console.log('   🔧 アスペクト比の正確な保持');
+  console.log('✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded');
+  console.log('   🔧 テクスチャサイズ計算でアスペクト比を厳密保持');
+  console.log('   🔧 2の累乗丸めによるストローク変形を防止');
 
 })();

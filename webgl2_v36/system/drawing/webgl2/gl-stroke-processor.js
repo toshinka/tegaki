@@ -1,6 +1,6 @@
 /*
  * ================================================================================
- * gl-stroke-processor.js - Phase 1.7座標変換修正版
+ * gl-stroke-processor.js - Phase 3.1カメラフレームクリッピング対応版
  * ================================================================================
  * 
  * 📁 親依存:
@@ -8,21 +8,22 @@
  *   - system/earcut-triangulator.js (window.EarcutTriangulator)
  *   - config.js (window.config.perfectFreehand)
  *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl)
+ *   - camera-system.js (window.cameraSystem.cameraFrame) ← Phase 3.1追加
  * 
  * 📄 子依存:
  *   - brush-core.js (createPolygonVertexBuffer/createEdgeBuffer呼び出し元)
  *   - gl-msdf-pipeline.js (生成されたバッファを受け取る)
  * 
- * 🔧 Phase 1.7改修内容:
- *   🔧 頂点座標をLocal座標のまま維持（bounds相対座標への変換を削除）
- *   🔧 二重座標変換を防止
- *   ✅ Phase 1.6の全機能を継承
+ * 🔧 Phase 3.1改修内容:
+ *   🔧 カメラフレーム外クリッピング実装
+ *   🔧 キャンバス外描画を防止
+ *   ✅ Phase 1.7の全機能を完全継承
  * 
  * 責務:
  *   - PerfectFreehand出力 → GPU頂点バッファ生成
  *   - Earcut三角形分割実行
  *   - EdgeBuffer生成（MSDF用）
- *   - Bounds計算（padding自動調整）
+ *   - Bounds計算（padding自動調整・カメラフレームクリッピング）
  * 
  * ================================================================================
  */
@@ -77,12 +78,11 @@ class GLStrokeProcessor {
       return null;
     }
 
-    // 🔧 Phase 1.7修正: Local座標のまま維持（bounds変換なし）
     const flat = [];
     for (let i = 0; i < outlinePoints.length; i++) {
       flat.push(
-        outlinePoints[i][0],  // Local X座標
-        outlinePoints[i][1]   // Local Y座標
+        outlinePoints[i][0],
+        outlinePoints[i][1]
       );
     }
 
@@ -99,8 +99,8 @@ class GLStrokeProcessor {
 
     for (let vi = 0; vi < indices.length; vi++) {
       const idx = indices[vi];
-      const x = flat[idx * 2];      // Local X座標
-      const y = flat[idx * 2 + 1];  // Local Y座標
+      const x = flat[idx * 2];
+      const y = flat[idx * 2 + 1];
       
       const base = vi * floatsPerVertex;
       buffer[base + 0] = x;
@@ -147,11 +147,10 @@ class GLStrokeProcessor {
       const p0 = outlinePoints[i];
       const p1 = outlinePoints[(i + 1) % edgeCount];
       
-      // 🔧 Phase 1.7修正: Local座標のまま維持
-      const p0x = p0[0];  // Local X座標
-      const p0y = p0[1];  // Local Y座標
-      const p1x = p1[0];  // Local X座標
-      const p1y = p1[1];  // Local Y座標
+      const p0x = p0[0];
+      const p0y = p0[1];
+      const p1x = p1[0];
+      const p1y = p1[1];
       
       const dx = p1x - p0x;
       const dy = p1y - p0y;
@@ -175,6 +174,7 @@ class GLStrokeProcessor {
 
   /**
    * バウンディングボックス計算（公開API）
+   * 🔧 Phase 3.1追加: カメラフレームクリッピング
    * 
    * @param {Array} points - ポイント配列
    * @param {number} margin - マージン（省略時は自動計算）
@@ -277,6 +277,7 @@ class GLStrokeProcessor {
 
   /**
    * Bounds計算（内部メソッド）
+   * 🔧 Phase 3.1追加: カメラフレームクリッピング
    * @private
    */
   _calculateBoundsFromPoints(points, margin = 20) {
@@ -294,13 +295,54 @@ class GLStrokeProcessor {
     const strokeHeight = maxY - minY;
     const dynamicMargin = Math.max(margin, Math.max(strokeWidth, strokeHeight) * 0.1);
 
-    return {
+    let bounds = {
       minX: minX - dynamicMargin,
       minY: minY - dynamicMargin,
       maxX: maxX + dynamicMargin,
       maxY: maxY + dynamicMargin,
       width: (maxX - minX) + dynamicMargin * 2,
       height: (maxY - minY) + dynamicMargin * 2
+    };
+
+    // 🔧 Phase 3.1追加: カメラフレームでクリッピング
+    bounds = this._clipBoundsToCamera(bounds);
+
+    return bounds;
+  }
+
+  /**
+   * カメラフレームでboundsをクリッピング
+   * 🔧 Phase 3.1新規メソッド
+   * @private
+   */
+  _clipBoundsToCamera(bounds) {
+    const cameraSystem = window.cameraSystem;
+    if (!cameraSystem?.cameraFrame) return bounds;
+
+    const cf = cameraSystem.cameraFrame;
+    
+    // カメラフレーム範囲内に制限
+    const clippedMinX = Math.max(bounds.minX, cf.x);
+    const clippedMinY = Math.max(bounds.minY, cf.y);
+    const clippedMaxX = Math.min(bounds.maxX, cf.x + cf.width);
+    const clippedMaxY = Math.min(bounds.maxY, cf.y + cf.height);
+
+    // クリッピング後のサイズ計算
+    const clippedWidth = Math.max(0, clippedMaxX - clippedMinX);
+    const clippedHeight = Math.max(0, clippedMaxY - clippedMinY);
+
+    // 完全にフレーム外の場合は元のboundsを返す（空描画防止）
+    if (clippedWidth <= 0 || clippedHeight <= 0) {
+      return bounds;
+    }
+
+    return {
+      minX: clippedMinX,
+      minY: clippedMinY,
+      maxX: clippedMaxX,
+      maxY: clippedMaxY,
+      width: clippedWidth,
+      height: clippedHeight
     };
   }
 
@@ -322,7 +364,7 @@ class GLStrokeProcessor {
 
 if (!window.GLStrokeProcessor) {
   window.GLStrokeProcessor = new GLStrokeProcessor();
-  console.log('✅ gl-stroke-processor.js Phase 1.7 座標変換修正版 loaded');
-  console.log('   🔧 頂点座標をLocal座標のまま維持');
-  console.log('   🔧 二重座標変換を防止');
+  console.log('✅ gl-stroke-processor.js Phase 3.1 カメラフレームクリッピング対応版 loaded');
+  console.log('   🔧 カメラフレーム外クリッピング実装');
+  console.log('   🔧 キャンバス外描画を防止');
 }
