@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * brush-core.js - Phase 2.3 初期化統合改善版
+ * brush-core.js - Phase 2.4 Sprite配置修正版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
@@ -17,16 +17,10 @@
  *   - drawing-engine.js (startStroke/updateStroke呼び出し元)
  *   - core-engine.js (_renderLoop内でrenderPreview呼び出し)
  * 
- * 🔧 Phase 2.3改修内容:
- *   ✅ 初期化の一本化（重複呼び出し対応）
- *   ✅ WebGL2コンポーネント更新の分離
- *   ✅ 初期化フラグの確実な管理
- *   ✅ Phase 2.2の座標修正を完全継承
- * 
- * 🔧 Phase 2.2改修内容:
- *   ✅ Spriteスケール完全修正 - 512x512固定を実際のboundsサイズに
- *   ✅ プレビュー透明度を実際の値に（0.7倍を廃止）
- *   ✅ テクスチャ再利用維持
+ * 🔧 Phase 2.4改修内容:
+ *   🔧 sprite.width/height強制変更を削除
+ *   🔧 テクスチャ本来のサイズを使用（変形防止）
+ *   ✅ Phase 2.3の全機能を継承
  * 
  * ================================================================================
  */
@@ -72,30 +66,21 @@
     }
 
     /**
-     * 🔧 Phase 2.3: 初期化メソッド（init/initializeどちらでも対応）
+     * 初期化メソッド
      */
     async init() {
       return await this.initialize();
     }
 
     /**
-     * 🔧 Phase 2.3: 統合初期化メソッド
+     * 統合初期化メソッド
      */
     async initialize() {
-      console.log('[BrushCore] initialize() called, current state:', {
-        initialized: this.initialized,
-        strokeRecorder: !!this.strokeRecorder,
-        layerManager: !!this.layerManager
-      });
-
-      // 🔧 Phase 2.3: 既に初期化済みの場合はWebGL2コンポーネント更新のみ
       if (this.initialized) {
-        console.log('[BrushCore] Already initialized, updating WebGL2 components only');
         this._updateWebGL2Components();
         return;
       }
 
-      // 基本依存関係の設定
       this.strokeRecorder = window.strokeRecorder || window.StrokeRecorder;
       this.layerManager = window.layerManager || window.layerSystem;
       this.eventBus = window.TegakiEventBus || window.eventBus;
@@ -107,34 +92,16 @@
         throw new Error('[BrushCore] layerManager not found');
       }
 
-      console.log('[BrushCore] Basic dependencies set:', {
-        strokeRecorder: !!this.strokeRecorder,
-        layerManager: !!this.layerManager,
-        eventBus: !!this.eventBus
-      });
-
-      // WebGL2コンポーネント更新
       this._updateWebGL2Components();
-
-      // イベントリスナー設定
       this._setupEventListeners();
       
-      // 初期化完了
       this.initialized = true;
-      
-      console.log('[BrushCore] ✅ Initialization complete:', {
-        initialized: this.initialized,
-        msdfAvailable: this.msdfAvailable,
-        maskAvailable: this.maskAvailable
-      });
     }
 
     /**
-     * 🔧 Phase 2.3新規追加: WebGL2コンポーネント更新
+     * WebGL2コンポーネント更新
      */
     _updateWebGL2Components() {
-      console.log('[BrushCore] Updating WebGL2 components...');
-
       this.glStrokeProcessor = window.GLStrokeProcessor;
       this.glMSDFPipeline = window.GLMSDFPipeline;
       this.textureBridge = window.GLTextureBridge || window.WebGPUTextureBridge;
@@ -147,24 +114,6 @@
       );
 
       this.maskAvailable = !!(this.glMaskLayer && this.glMaskLayer.initialized);
-
-      console.log('[BrushCore] WebGL2 components updated:', {
-        glStrokeProcessor: !!this.glStrokeProcessor,
-        glMSDFPipeline: !!this.glMSDFPipeline,
-        textureBridge: !!this.textureBridge,
-        glMaskLayer: !!this.glMaskLayer,
-        msdfAvailable: this.msdfAvailable,
-        maskAvailable: this.maskAvailable
-      });
-
-      if (!this.msdfAvailable) {
-        console.warn('[BrushCore] ⚠️ WebGL2 MSDF Pipeline not fully available');
-        console.log('[BrushCore] Missing components:', {
-          GLStrokeProcessor: !this.glStrokeProcessor,
-          GLMSDFPipeline: !this.glMSDFPipeline,
-          TextureBridge: !this.textureBridge
-        });
-      }
     }
 
     _setupEventListeners() {
@@ -227,7 +176,7 @@
 
     /**
      * プレビュー描画
-     * 🔧 Phase 2.2: スケール修正適用済み
+     * 🔧 Phase 2.4修正: sprite配置のみ、サイズ変更なし
      */
     async renderPreview() {
       if (!this.initialized || !this.isDrawing || this.isPreviewUpdating) return;
@@ -254,7 +203,7 @@
 
     /**
      * プレビュー更新（内部処理）
-     * ✅ Phase 2.2修正: Spriteスケール修正適用済み
+     * 🔧 Phase 2.4修正: sprite.width/height変更を削除
      * @private
      */
     async _updatePreview(points) {
@@ -298,7 +247,6 @@
         const previewSettings = {
           mode: this.currentSettings.mode,
           color: this.currentSettings.mode === 'eraser' ? '#ff0000' : this.currentSettings.color,
-          // ✅ Phase 2.2修正: プレビュー透明度を実際の値に
           opacity: this.currentSettings.mode === 'eraser' ? 0.3 : this.currentSettings.opacity,
           size: this.currentSettings.size
         };
@@ -348,11 +296,9 @@
           }
         }
 
-        // ✅ Phase 2.2重要修正: Spriteスケールを実際のboundsサイズに
+        // 🔧 Phase 2.4修正: 配置のみ、サイズ変更なし
         this.previewSprite.x = bounds.minX;
         this.previewSprite.y = bounds.minY;
-        this.previewSprite.width = bounds.width;   // ← 512固定から変更
-        this.previewSprite.height = bounds.height; // ← 512固定から変更
         this.previewSprite.alpha = previewSettings.opacity;
 
       } catch (error) {
@@ -394,7 +340,8 @@
     }
 
     /**
-     * ✅ Phase 2.2修正: 最終描画もスケール修正適用済み
+     * 最終描画
+     * 🔧 Phase 2.4修正: sprite.width/height変更を削除
      */
     async _finalizeMSDFStroke(points, activeLayer) {
       try {
@@ -465,11 +412,9 @@
           throw new Error('Sprite生成失敗');
         }
 
-        // ✅ Phase 2.2重要修正: 最終描画もスケール修正
+        // 🔧 Phase 2.4修正: 配置のみ、サイズ変更なし
         sprite.x = bounds.minX;
         sprite.y = bounds.minY;
-        sprite.width = bounds.width;   // ← 512固定から変更
-        sprite.height = bounds.height; // ← 512固定から変更
         sprite.visible = true;
         sprite.alpha = this.currentSettings.opacity;
 
@@ -799,10 +744,8 @@
   }
 
   window.BrushCore = new BrushCore();
-  console.log('✅ brush-core.js Phase 2.3 初期化統合改善版 loaded');
-  console.log('   ✅ 初期化の一本化（重複呼び出し対応）');
-  console.log('   ✅ WebGL2コンポーネント更新の分離');
-  console.log('   ✅ Phase 2.2: Spriteスケール修正継承');
-  console.log('   ✅ Phase 2.2: プレビュー透明度修正継承');
+  console.log('✅ brush-core.js Phase 2.4 Sprite配置修正版 loaded');
+  console.log('   🔧 sprite.width/height強制変更を削除');
+  console.log('   🔧 テクスチャ本来のサイズを使用');
 
 })();

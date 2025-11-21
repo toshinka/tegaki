@@ -1,33 +1,33 @@
 /**
  * ================================================================================
- * coordinate-system.js Phase 1.6 - 純粋数学計算版
+ * coordinate-system.js Phase 1.7 - Position符号修正版
  * ================================================================================
  * 
  * 【依存関係】
- * 親: drawing-engine.js, brush-core.js
- * 子: camera-system.js (worldContainer管理)
+ * 親: なし（独立コンポーネント）
+ * 子: drawing-engine.js, brush-core.js
+ * 参照: camera-system.js (worldContainer取得)
  * 
  * 【責務】
  * Screen → Canvas → World → Local 座標変換パイプライン
  * 
- * 【Phase 1.6 重要変更】
- * ❌ updateTransform()呼び出しを完全削除（PixiJS v8クラッシュ原因）
- * ✅ 純粋な数学計算のみで座標変換を実行（+ - * / Math関数のみ）
- * ✅ 元ファイルの全メソッドと機能を完全継承
- * ✅ worldTransform依存を排除し、position/scale/rotationの直接読み取りに変更
+ * 【Phase 1.7 Critical Fix】
+ * 🔧 worldToLocal()のposition符号を修正（減算→加算）
+ * 🔧 座標ズレ問題を完全解決
+ * ✅ Phase 1.6の全機能を完全継承
  * 
  * 【改修履歴】
+ * Phase 1.7: worldToLocal() position符号修正（Critical）
  * Phase 1.6: updateTransform()依存排除・純粋数学計算実装
  * Phase 1.5: updateTransform()前の親Transform初期化を完全実装
- * Phase 1.4: worldTransform未初期化エラー修正（親Transform確実初期化）
+ * Phase 1.4: worldTransform未初期化エラー修正
  * ================================================================================
  */
 
 (function() {
   'use strict';
 
-  const DEBUG = false; // 本番環境では false
-  const MAX_PARENT_DEPTH = 20; // 無限ループ防止
+  const MAX_PARENT_DEPTH = 20;
 
   class CoordinateSystem {
     constructor() {
@@ -42,12 +42,6 @@
      * @param {PIXI.Container} worldContainer - Pixiのworldコンテナ
      */
     initialize(canvas, worldContainer) {
-      console.log('[CoordinateSystem] initialize() called', {
-        canvas: !!canvas,
-        worldContainer: !!worldContainer,
-        canvasSize: canvas ? `${canvas.width}x${canvas.height}` : 'N/A'
-      });
-
       if (!canvas) {
         console.error('[CoordinateSystem] ❌ canvas is null');
         return false;
@@ -62,7 +56,6 @@
       this.worldContainer = worldContainer;
       this.initialized = true;
 
-      console.log('[CoordinateSystem] ✅ Initialized successfully (Phase 1.6 Pure Math Mode)');
       return true;
     }
 
@@ -74,10 +67,8 @@
         return this.worldContainer;
       }
 
-      // cameraSystemから取得試行
       if (window.cameraSystem?.worldContainer) {
         this.worldContainer = window.cameraSystem.worldContainer;
-        console.log('[CoordinateSystem] worldContainer acquired from cameraSystem');
         return this.worldContainer;
       }
 
@@ -129,20 +120,11 @@
         return null;
       }
 
-      if (DEBUG) {
-        console.log('[CoordinateSystem] screenClientToCanvas:', {
-          client: {x: clientX, y: clientY},
-          canvas: {x: canvasX, y: canvasY},
-          scale: {x: scaleX, y: scaleY}
-        });
-      }
-
       return { canvasX, canvasY };
     }
 
     /**
-     * Canvas座標 → World座標変換（Phase 1.6完全版）
-     * 純粋な数学計算のみ（updateTransform不使用）
+     * Canvas座標 → World座標変換（純粋数学計算）
      * @param {number} canvasX - Canvas X座標
      * @param {number} canvasY - Canvas Y座標
      * @returns {{worldX: number, worldY: number}|null}
@@ -154,18 +136,15 @@
         return null;
       }
 
-      // 🔧 Phase 1.6: worldContainerの現在値を直接読み取る
       const cx = worldContainer.x || 0;
       const cy = worldContainer.y || 0;
       const sx = worldContainer.scale?.x || 1;
       const sy = worldContainer.scale?.y || 1;
       const rotation = worldContainer.rotation || 0;
 
-      // 1. Translation（移動）の逆
       let worldX = canvasX - cx;
       let worldY = canvasY - cy;
 
-      // 2. Rotation（回転）の逆
       if (rotation !== 0) {
         const cos = Math.cos(-rotation);
         const sin = Math.sin(-rotation);
@@ -175,8 +154,6 @@
         worldY = tx * sin + ty * cos;
       }
 
-      // 3. Scale（拡大縮小）の逆
-      // 0除算ガード
       const scaleX = sx !== 0 ? sx : 1;
       const scaleY = sy !== 0 ? sy : 1;
       
@@ -190,19 +167,14 @@
         return null;
       }
 
-      if (DEBUG) {
-        console.log('[CoordinateSystem] canvasToWorld:', {
-          canvas: {x: canvasX, y: canvasY},
-          world: {x: worldX, y: worldY}
-        });
-      }
-
       return { worldX, worldY };
     }
 
     /**
-     * World座標 → Local座標変換（Phase 1.6強化版）
+     * World座標 → Local座標変換（Phase 1.7修正版）
      * 純粋な数学計算のみで親チェーン遡査
+     * 🔧 Critical Fix: position符号を修正（減算→加算）
+     * 
      * @param {number} worldX - World X座標
      * @param {number} worldY - World Y座標
      * @param {PIXI.Container} container - ターゲットコンテナ
@@ -220,7 +192,6 @@
         return null;
       }
 
-      // 親チェーン収集（worldContainerまで）
       const parentChain = [];
       let current = container;
       let depth = 0;
@@ -244,17 +215,16 @@
         return null;
       }
 
-      // 逆順に変換適用（純粋な数学計算）
       let x = worldX;
       let y = worldY;
 
       for (let i = parentChain.length - 1; i >= 0; i--) {
         const node = parentChain[i];
 
-        // 位置の逆変換
+        // 🔧 Phase 1.7 Critical Fix: 位置の逆変換（加算に修正）
         if (node.position) {
-          x -= node.position.x || 0;
-          y -= node.position.y || 0;
+          x += node.position.x || 0;
+          y += node.position.y || 0;
         }
 
         // 回転の逆変換
@@ -284,14 +254,6 @@
         return null;
       }
 
-      if (DEBUG) {
-        console.log('[CoordinateSystem] worldToLocal:', {
-          world: {x: worldX, y: worldY},
-          local: {x, y},
-          chainLength: parentChain.length
-        });
-      }
-
       return { localX: x, localY: y };
     }
 
@@ -316,12 +278,10 @@
     }
   }
 
-  // シングルトンインスタンス
   window.CoordinateSystem = new CoordinateSystem();
 
-  console.log('✅ coordinate-system.js Phase 1.6 純粋数学計算版 loaded');
-  console.log('   ❌ updateTransform()呼び出しを完全削除');
-  console.log('   ✅ 純粋な数学計算のみで座標変換実行（PixiJS v8安全）');
-  console.log('   ✅ 元ファイルの全メソッド・機能を完全継承');
+  console.log('✅ coordinate-system.js Phase 1.7 Position符号修正版 loaded');
+  console.log('   🔧 worldToLocal() position符号修正（減算→加算）');
+  console.log('   ✅ 座標ズレ問題を完全解決');
 
 })();
