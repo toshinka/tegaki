@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * coordinate-system.js Phase 1.7 - Position符号修正版
+ * coordinate-system.js Phase 3.0 - 座標変換符号修正版
  * ================================================================================
  * 
  * 【依存関係】
@@ -11,16 +11,15 @@
  * 【責務】
  * Screen → Canvas → World → Local 座標変換パイプライン
  * 
- * 【Phase 1.7 Critical Fix】
- * 🔧 worldToLocal()のposition符号を修正（減算→加算）
+ * 【Phase 3.0 Critical Fix】
+ * 🔧 worldToLocal()のposition符号を修正（加算→減算）
  * 🔧 座標ズレ問題を完全解決
- * ✅ Phase 1.6の全機能を完全継承
+ * ✅ Phase 1.7の全機能を完全継承
  * 
- * 【改修履歴】
- * Phase 1.7: worldToLocal() position符号修正（Critical）
- * Phase 1.6: updateTransform()依存排除・純粋数学計算実装
- * Phase 1.5: updateTransform()前の親Transform初期化を完全実装
- * Phase 1.4: worldTransform未初期化エラー修正
+ * 【改修理由】
+ * Phase 1.7で「減算→加算」に修正されたが、逆変換としては「減算」が正しい
+ * World → Local変換では「親の位置を引く」必要がある
+ * 
  * ================================================================================
  */
 
@@ -171,9 +170,9 @@
     }
 
     /**
-     * World座標 → Local座標変換（Phase 1.7修正版）
+     * World座標 → Local座標変換（Phase 3.0修正版）
      * 純粋な数学計算のみで親チェーン遡査
-     * 🔧 Critical Fix: position符号を修正（減算→加算）
+     * 🔧 Critical Fix: position符号を修正（加算→減算）
      * 
      * @param {number} worldX - World X座標
      * @param {number} worldY - World Y座標
@@ -221,10 +220,11 @@
       for (let i = parentChain.length - 1; i >= 0; i--) {
         const node = parentChain[i];
 
-        // 🔧 Phase 1.7 Critical Fix: 位置の逆変換（加算に修正）
+        // 🔧 Phase 3.0 Critical Fix: 位置の逆変換（減算に修正）
+        // 理由: World→Local変換では親の位置を「引く」必要がある
         if (node.position) {
-          x += node.position.x || 0;
-          y += node.position.y || 0;
+          x -= node.position.x || 0;
+          y -= node.position.y || 0;
         }
 
         // 回転の逆変換
@@ -280,8 +280,8 @@
 
   window.CoordinateSystem = new CoordinateSystem();
 
-  console.log('✅ coordinate-system.js Phase 1.7 Position符号修正版 loaded');
-  console.log('   🔧 worldToLocal() position符号修正（減算→加算）');
+  console.log('✅ coordinate-system.js Phase 3.0 座標変換符号修正版 loaded');
+  console.log('   🔧 worldToLocal() position符号修正（加算→減算）');
   console.log('   ✅ 座標ズレ問題を完全解決');
 
 })();
