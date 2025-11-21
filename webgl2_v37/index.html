@@ -7,8 +7,9 @@
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
-    <!-- WebGL2 Canvas (webgpu-canvas IDを流用) -->
-    <canvas id="webgl2-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;pointer-events:auto;touch-action:none;z-index:10;display:block;"></canvas>
+    <!-- WebGL2 Canvas: サイズはJavaScriptで動的設定 -->
+    <!-- 🔧 Phase 1.2.7: width/height属性を削除し、core-initializer.jsで設定 -->
+    <canvas id="webgl2-canvas" style="position:absolute;top:0;left:0;pointer-events:auto;touch-action:none;z-index:10;display:block;"></canvas>
     
     <div id="app"></div>
 

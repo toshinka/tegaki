@@ -1,10 +1,11 @@
 /**
- * @file system/camera-system.js - Phase 3.1カメラ枠修正版
+ * @file system/camera-system.js - Phase 3.2 cameraFrameBounds実装版
  * @description カメラ制御システム（canvasContainer→worldContainer統合版）
  * 
- * 【Phase 3.1 改修内容】
- * 🔧 cameraFrame初期表示を無効化（デバッグ用のみ表示）
- * ✅ Phase 3完全継承
+ * 【Phase 3.2 Critical Fix】
+ * 🔧 cameraFrameBounds プロパティ追加（座標クリッピング用）
+ * 🔧 gl-stroke-processor.js が参照する bounds 情報を提供
+ * ✅ Phase 3.1完全継承
  * 
  * 【構造】
  * worldContainer → currentFrameContainer (直接)
@@ -41,7 +42,8 @@
             this.canvasMoveMode = false;
             
             this.worldContainer = null;
-            this.cameraFrame = null;
+            this.cameraFrame = null;  // デバッグ用Graphics
+            this.cameraFrameBounds = null;  // 🔧 Phase 3.2: 座標クリッピング用bounds
             this.guideLines = null;
             this.canvasMask = null;
             
@@ -65,7 +67,6 @@
             this._setupEvents();
             this._setupEventBusListeners();
             this.initializeCamera();
-            // 🔧 Phase 3.1: cameraFrame描画は行わない（必要時のみ表示）
         }
 
         _setupEventBusListeners() {
@@ -116,10 +117,18 @@
             this.worldContainer.label = 'worldContainer';
             this.app.stage.addChild(this.worldContainer);
             
-            // 🔧 Phase 3.1: cameraFrameは作成するが非表示
+            // 🔧 Phase 3.2: cameraFrameBounds初期化
+            this.cameraFrameBounds = {
+                x: 0,
+                y: 0,
+                width: this.config.canvas.width,
+                height: this.config.canvas.height
+            };
+            
+            // デバッグ用Graphics（Phase 3.1）
             this.cameraFrame = new PIXI.Graphics();
             this.cameraFrame.label = 'cameraFrame';
-            this.cameraFrame.visible = false;  // 🔧 デフォルト非表示
+            this.cameraFrame.visible = false;
             this.worldContainer.addChild(this.cameraFrame);
             
             this.guideLines = new PIXI.Container();
@@ -149,7 +158,6 @@
 
         updateGuideLinesForCanvasResize() {
             this.createGuideLines();
-            // 🔧 Phase 3.1: cameraFrame更新は行わない
         }
 
         showGuideLines() {
@@ -160,9 +168,6 @@
             this.guideLines.visible = false;
         }
 
-        /**
-         * 🔧 Phase 3.1: カメラ枠表示切り替え（デバッグ用）
-         */
         showCameraFrame() {
             if (this.cameraFrame) {
                 this._drawCameraFrame();
@@ -232,6 +237,14 @@
             
             this.config.canvas.width = newWidth;
             this.config.canvas.height = newHeight;
+            
+            // 🔧 Phase 3.2: cameraFrameBounds更新
+            this.cameraFrameBounds = {
+                x: 0,
+                y: 0,
+                width: newWidth,
+                height: newHeight
+            };
             
             if (this.app.stage?.parent?.resize) {
                 this.app.stage.parent.resize(newWidth, newHeight);
@@ -694,9 +707,6 @@
             this._emitTransformChanged();
         }
 
-        /**
-         * 🔧 Phase 3.1: カメラ枠描画（プライベートメソッド）
-         */
         _drawCameraFrame() {
             if (!this.cameraFrame) return;
             this.cameraFrame.clear();
@@ -725,9 +735,9 @@
 
     window.TegakiCameraSystem = CameraSystem;
     
-    console.log('✅ camera-system.js Phase 3.1カメラ枠修正版 loaded');
-    console.log('   🔧 cameraFrame初期表示を無効化');
-    console.log('   🔧 デバッグ用: window.cameraSystem.showCameraFrame()');
-    console.log('   ✅ Phase 3完全継承');
+    console.log('✅ camera-system.js Phase 3.2 cameraFrameBounds実装版 loaded');
+    console.log('   🔧 cameraFrameBounds プロパティ追加（座標クリッピング用）');
+    console.log('   🔧 gl-stroke-processor.js が参照する bounds 情報を提供');
+    console.log('   ✅ Phase 3.1完全継承');
 
 })();
