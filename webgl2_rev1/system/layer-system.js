@@ -1,24 +1,30 @@
 /**
- * @file layer-system.js - Phase 5: Vキーイベント統一版
- * @description レイヤー管理・操作の中核システム
+ * @file layer-system.js - Phase 2: フォルダ機能追加版
+ * @description レイヤー管理・操作の中核システム + フォルダ管理
  * 
- * 【Phase 5 改修内容】
- * 🔧 Vキーイベント名統一: keyboard:vkey-state-changed に統一
- * 🔧 selectNextLayer(), selectPrevLayer(): レイヤー選択機能（Phase 2完了）
- * 🧹 過剰なコンソールログ削除
+ * 【Phase 2 改修内容】
+ * ✅ createFolder() - フォルダ作成
+ * ✅ addLayerToFolder() - レイヤーをフォルダに追加
+ * ✅ removeLayerFromFolder() - フォルダから取り出し
+ * ✅ toggleFolderExpand() - 開閉切替
+ * ✅ getVisibleLayers() - 表示されるレイヤーのみ取得
+ * ✅ getFolderChildren() - フォルダ内レイヤー取得
  * 
- * 【親ファイル (このファイルが依存)】
+ * 【親ファイル依存】
  * - event-bus.js (イベント通信)
  * - data-models.js (LayerModel定義)
  * - layer-transform.js (変形処理委譲)
  * - coordinate-system.js (座標変換)
+ * - camera-system.js (worldContainer提供)
  * - config.js (設定値)
  * - history.js (Undo/Redo)
  * 
- * 【子ファイル (このファイルに依存)】
+ * 【子ファイル依存このファイルに】
  * - layer-panel-renderer.js (UI描画 - EventBus経由のみ)
  * - keyboard-handler.js (ショートカット)
- * - thumbnail-update-manager.js (サムネイル更新)
+ * - thumbnail-system.js (サムネイル更新)
+ * - brush-core.js (描画系History登録の責任者)
+ * - drawing-engine.js (activeLayer取得・座標変換)
  */
 
 (function() {
@@ -63,6 +69,7 @@
             });
             bgLayer.label = bgLayerModel.id;
             bgLayer.layerData = bgLayerModel;
+            bgLayer.id = bgLayerModel.id;
             
             const bg = this._createSolidBackground(
                 this.config.canvas.width, 
@@ -81,6 +88,8 @@
             });
             layer1.label = layer1Model.id;
             layer1.layerData = layer1Model;
+            layer1.id = layer1Model.id;
+            
             if (this.transform) {
                 this.transform.setTransform(layer1Model.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
@@ -93,6 +102,228 @@
             this._setupResizeEvents();
             
             this.isInitialized = true;
+        }
+
+        // ================================================================================
+        // 🆕 Phase 2: フォルダ管理機能
+        // ================================================================================
+
+        /**
+         * フォルダ作成
+         * @param {string} name - フォルダ名
+         * @returns {{layer: PIXI.Container, index: number}} 作成されたフォルダと配列インデックス
+         */
+        createFolder(name) {
+            if (!this.currentFrameContainer) return null;
+            
+            const folderName = name || this._generateNextFolderName();
+            const folderModel = new window.TegakiDataModels.LayerModel({
+                name: folderName,
+                isFolder: true,
+                folderExpanded: true
+            });
+            
+            const folder = new PIXI.Container();
+            folder.label = folderModel.id;
+            folder.layerData = folderModel;
+            folder.id = folderModel.id;
+            
+            if (this.transform) {
+                this.transform.setTransform(folderModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+            }
+            
+            if (window.History && !window.History._manager.isApplying) {
+                const entry = {
+                    name: 'folder-create',
+                    do: () => {
+                        this.currentFrameContainer.addChild(folder);
+                        const layers = this.getLayers();
+                        this.setActiveLayer(layers.length - 1);
+                        this._emitPanelUpdateRequest();
+                    },
+                    undo: () => {
+                        this.currentFrameContainer.removeChild(folder);
+                        const layers = this.getLayers();
+                        if (this.activeLayerIndex >= layers.length) {
+                            this.activeLayerIndex = Math.max(0, layers.length - 1);
+                        }
+                        this._emitPanelUpdateRequest();
+                    },
+                    meta: { folderId: folderModel.id, name: folderName }
+                };
+                window.History.push(entry);
+            } else {
+                this.currentFrameContainer.addChild(folder);
+                const layers = this.getLayers();
+                this.setActiveLayer(layers.length - 1);
+                this._emitPanelUpdateRequest();
+            }
+            
+            if (this.eventBus) {
+                this.eventBus.emit('folder:created', { 
+                    folderId: folderModel.id, 
+                    name: folderName 
+                });
+            }
+            
+            const layers = this.getLayers();
+            return { layer: folder, index: layers.length - 1 };
+        }
+
+        /**
+         * レイヤーをフォルダに追加
+         * @param {string} layerId - 追加するレイヤーID
+         * @param {string} folderId - 追加先フォルダID
+         * @returns {boolean} 成功/失敗
+         */
+        addLayerToFolder(layerId, folderId) {
+            const layers = this.getLayers();
+            const layer = layers.find(l => l.layerData?.id === layerId);
+            const folder = layers.find(l => l.layerData?.id === folderId);
+            
+            if (!layer || !folder || !folder.layerData?.isFolder) return false;
+            if (layer.layerData?.isBackground) return false;
+            
+            if (!folder.layerData.addChild(layerId)) return false;
+            
+            layer.layerData.parentId = folderId;
+            
+            this._emitPanelUpdateRequest();
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:added-to-folder', { 
+                    layerId, 
+                    folderId 
+                });
+            }
+            
+            return true;
+        }
+
+        /**
+         * レイヤーをフォルダから取り出す
+         * @param {string} layerId - 取り出すレイヤーID
+         * @returns {boolean} 成功/失敗
+         */
+        removeLayerFromFolder(layerId) {
+            const layers = this.getLayers();
+            const layer = layers.find(l => l.layerData?.id === layerId);
+            
+            if (!layer || !layer.layerData?.parentId) return false;
+            
+            const folder = layers.find(l => l.layerData?.id === layer.layerData.parentId);
+            if (!folder || !folder.layerData?.isFolder) return false;
+            
+            if (!folder.layerData.removeChild(layerId)) return false;
+            
+            layer.layerData.parentId = null;
+            
+            this._emitPanelUpdateRequest();
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:removed-from-folder', { 
+                    layerId, 
+                    folderId: folder.layerData.id 
+                });
+            }
+            
+            return true;
+        }
+
+        /**
+         * フォルダの開閉状態を切り替え
+         * @param {string} folderId - フォルダID
+         * @returns {boolean} 成功/失敗
+         */
+        toggleFolderExpand(folderId) {
+            const layers = this.getLayers();
+            const folder = layers.find(l => l.layerData?.id === folderId);
+            
+            if (!folder || !folder.layerData?.isFolder) return false;
+            
+            folder.layerData.toggleExpanded();
+            
+            this._emitPanelUpdateRequest();
+            
+            if (this.eventBus) {
+                this.eventBus.emit('folder:toggled', { 
+                    folderId, 
+                    expanded: folder.layerData.folderExpanded 
+                });
+            }
+            
+            return true;
+        }
+
+        /**
+         * 表示されるレイヤーのみ取得（閉じたフォルダ内を除外）
+         * @returns {Array} 表示レイヤー配列
+         */
+        getVisibleLayers() {
+            const layers = this.getLayers();
+            const visibleLayers = [];
+            
+            for (const layer of layers) {
+                // 親フォルダが閉じている場合はスキップ
+                if (layer.layerData?.parentId) {
+                    const parentFolder = layers.find(l => l.layerData?.id === layer.layerData.parentId);
+                    if (parentFolder && parentFolder.layerData?.isFolder && !parentFolder.layerData.folderExpanded) {
+                        continue;
+                    }
+                }
+                visibleLayers.push(layer);
+            }
+            
+            return visibleLayers;
+        }
+
+        /**
+         * フォルダ内のレイヤーを取得
+         * @param {string} folderId - フォルダID
+         * @returns {Array} 子レイヤー配列
+         */
+        getFolderChildren(folderId) {
+            const layers = this.getLayers();
+            const folder = layers.find(l => l.layerData?.id === folderId);
+            
+            if (!folder || !folder.layerData?.isFolder) return [];
+            
+            return layers.filter(l => l.layerData?.parentId === folderId);
+        }
+
+        /**
+         * 次のフォルダ名生成
+         */
+        _generateNextFolderName() {
+            const layers = this.getLayers();
+            const folderNames = layers
+                .filter(l => l.layerData?.isFolder)
+                .map(l => l.layerData.name);
+            
+            const numbers = folderNames
+                .map(name => {
+                    const match = name.match(/^フォルダ(\d+)$/);
+                    return match ? parseInt(match[1], 10) : 0;
+                })
+                .filter(n => n > 0);
+            
+            const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
+            return `フォルダ${maxNumber + 1}`;
+        }
+
+        // ================================================================================
+        // 既存メソッド（継承）
+        // ================================================================================
+
+        getLayerById(layerId) {
+            if (!layerId) return null;
+            
+            const layers = this.getLayers();
+            return layers.find(layer => {
+                return layer.id === layerId || 
+                       layer.label === layerId || 
+                       layer.layerData?.id === layerId;
+            }) || null;
         }
 
         _createSolidBackground(width, height, color = 0xf0e0d6) {
@@ -116,8 +347,8 @@
                         data.height
                     );
                     
-                    if (this.cameraSystem?.canvasContainer && !this.checkerPattern.parent) {
-                        this.cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
+                    if (this.cameraSystem?.worldContainer && !this.checkerPattern.parent) {
+                        this.cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
                     }
                     
                     const bgLayer = this.getLayers()[0];
@@ -196,7 +427,6 @@
             return this.activeLayerIndex;
         }
         
-        // 🔧 Phase 5: Vキーイベント名統一
         _setupVKeyEvents() {
             if (!this.eventBus) return;
             
@@ -330,7 +560,7 @@
             const activeLayer = this.getActiveLayer();
             const layerIndex = this.activeLayerIndex;
             
-            if (activeLayer.layerData?.isBackground) return;
+            if (activeLayer.layerData?.isBackground || activeLayer.layerData?.isFolder) return;
             
             if (activeLayer.layerData && activeLayer.layerData.paths) {
                 activeLayer.layerData.paths.push(path);
@@ -348,46 +578,6 @@
                 activeLayer.addChild(path.graphics);
             }
             
-            if (window.History && !window.History._manager.isApplying) {
-                const layerId = activeLayer.layerData?.id || activeLayer.label;
-                const pathBackup = structuredClone(path);
-                
-                window.History.push({
-                    name: 'add-stroke',
-                    do: () => {
-                        if (!activeLayer.layerData.paths.includes(path)) {
-                            activeLayer.layerData.paths.push(path);
-                            this.rebuildPathGraphics(path);
-                            if (path.graphics) {
-                                if (activeLayer.layerData?.maskSprite) {
-                                    path.graphics.mask = activeLayer.layerData.maskSprite;
-                                }
-                                activeLayer.addChild(path.graphics);
-                            }
-                        }
-                        this.requestThumbnailUpdate(layerIndex);
-                    },
-                    undo: () => {
-                        const idx = activeLayer.layerData.paths.indexOf(path);
-                        if (idx > -1) {
-                            activeLayer.layerData.paths.splice(idx, 1);
-                        }
-                        if (path.graphics && path.graphics.parent) {
-                            path.graphics.parent.removeChild(path.graphics);
-                            if (path.graphics.destroy) {
-                                path.graphics.destroy({ children: true, texture: false, baseTexture: false });
-                            }
-                        }
-                        this.requestThumbnailUpdate(layerIndex);
-                    },
-                    meta: {
-                        layerId,
-                        layerIndex,
-                        pathId: path.id
-                    }
-                });
-            }
-            
             if (this.eventBus) {
                 this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
                 this.requestThumbnailUpdate(layerIndex);
@@ -399,7 +589,7 @@
             if (layerIndex >= 0 && layerIndex < layers.length) {
                 const layer = layers[layerIndex];
                 
-                if (layer.layerData?.isBackground) return;
+                if (layer.layerData?.isBackground || layer.layerData?.isFolder) return;
                 
                 layer.layerData.paths.push(path);
                 layer.addChild(path.graphics);
@@ -452,20 +642,17 @@
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
             if (!activeLayer?.layerData) return;
-            if (activeLayer.layerData.isBackground) return;
+            if (activeLayer.layerData.isBackground || activeLayer.layerData.isFolder) return;
             
             if (!bypassVKeyCheck && !this.isLayerMoveMode) return;
             
             const layerId = activeLayer.layerData.id;
             const layerIndex = this.activeLayerIndex;
             
-            // 🔧 Phase 6: 反転はビジュアルのみ更新、座標変換は行わない
-            // Historyには現在のtransform状態のみを記録
             if (window.History && !window.History._manager.isApplying) {
                 const transformBefore = structuredClone(this.transform.getTransform(layerId) || 
                     { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
                 
-                // 反転実行（ビジュアルのみ）
                 const transform = this.transform.getTransform(layerId) || 
                     { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
                 
@@ -508,7 +695,6 @@
                     }
                 });
             } else {
-                // History適用中またはHistory無効時
                 this.transform.flipLayer(activeLayer, direction, true);
             }
             
@@ -962,10 +1148,6 @@
             });
         }
 
-        /**
-         * Phase 2: アクティブレイヤー選択（上へ）
-         * レイヤーの順序は変更せず、選択のみを変更
-         */
         selectNextLayer() {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -989,10 +1171,6 @@
             }
         }
 
-        /**
-         * Phase 2: アクティブレイヤー選択（下へ）
-         * レイヤーの順序は変更せず、選択のみを変更
-         */
         selectPrevLayer() {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -1016,10 +1194,6 @@
             }
         }
 
-        /**
-         * 互換性のために残す（非推奨）
-         * 今後は reorderLayers() を直接使用することを推奨
-         */
         moveActiveLayerHierarchy(direction) {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
@@ -1081,7 +1255,7 @@
         _generateNextLayerName() {
             const layers = this.getLayers();
             const layerNames = layers
-                .filter(l => l.layerData && !l.layerData.isBackground)
+                .filter(l => l.layerData && !l.layerData.isBackground && !l.layerData.isFolder)
                 .map(l => l.layerData.name);
             
             const numbers = layerNames
@@ -1107,8 +1281,9 @@
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
             layer.layerData = layerModel;
+            layer.id = layerModel.id;
             
-            if (this.app && this.app.renderer) {
+            if (this.app && this.app.renderer && !isBackground) {
                 const success = layerModel.initializeMask(
                     this.config.canvas.width,
                     this.config.canvas.height,
@@ -1196,20 +1371,20 @@
 
         toggleLayerVisibility(layerIndex) {
             const layers = this.getLayers();
-            if (layerIndex >= 0 && layerIndex < layers.length) {
-                const layer = layers[layerIndex];
-                layer.layerData.visible = !layer.layerData.visible;
-                layer.visible = layer.layerData.visible;
-                
-                if (layer.layerData?.isBackground && this.checkerPattern) {
-                    this.checkerPattern.visible = !layer.layerData.visible;
-                }
-                
-                this._emitPanelUpdateRequest();
-                if (this.eventBus) {
-                    this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
-                    this.requestThumbnailUpdate(layerIndex);
-                }
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
+            const layer = layers[layerIndex];
+            layer.layerData.visible = !layer.layerData.visible;
+            layer.visible = layer.layerData.visible;
+            
+            if (layer.layerData?.isBackground && this.checkerPattern) {
+                this.checkerPattern.visible = !layer.layerData.visible;
+            }
+            
+            this._emitPanelUpdateRequest();
+            if (this.eventBus) {
+                this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
+                this.requestThumbnailUpdate(layerIndex);
             }
         }
 
@@ -1242,10 +1417,34 @@
             }
         }
 
+        setApp(app) {
+            this.app = app;
+            
+            if (this.transform && !this.transform.app && this.cameraSystem) {
+                this.initTransform();
+            }
+        }
+
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
             
-            if (cameraSystem?.canvasContainer && window.checkerUtils) {
+            if (cameraSystem?.worldContainer && this.currentFrameContainer) {
+                const currentParent = this.currentFrameContainer.parent;
+                
+                if (!currentParent) {
+                    cameraSystem.worldContainer.addChildAt(this.currentFrameContainer, 0);
+                } else if (currentParent !== cameraSystem.worldContainer) {
+                    currentParent.removeChild(this.currentFrameContainer);
+                    cameraSystem.worldContainer.addChildAt(this.currentFrameContainer, 0);
+                }
+                
+                const isChild = this.currentFrameContainer.parent === cameraSystem.worldContainer;
+                if (!isChild) {
+                    console.error('[LayerSystem] ❌ Failed to establish parent-child relationship');
+                }
+            }
+            
+            if (cameraSystem?.worldContainer && window.checkerUtils) {
                 this.checkerPattern = window.checkerUtils.createCanvasChecker(
                     this.config.canvas.width,
                     this.config.canvas.height
@@ -1255,7 +1454,8 @@
                 const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
                 this.checkerPattern.visible = !isBackgroundVisible;
                 
-                cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
+                cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
+                cameraSystem.worldContainer.setChildIndex(this.currentFrameContainer, 0);
             }
             
             if (this.transform && this.app && !this.transform.app) {
@@ -1263,37 +1463,46 @@
             }
         }
 
-        setApp(app) {
-            this.app = app;
-            if (this.transform && !this.transform.app) {
-                if (this.cameraSystem) {
-                    this.initTransform();
-                }
+        verifyParentChain() {
+            if (!this.currentFrameContainer) {
+                console.error('[LayerSystem] currentFrameContainer not found');
+                return false;
             }
             
-            if (app && app.renderer) {
-                const layers = this.getLayers();
-                for (const layer of layers) {
-                    if (layer.layerData && !layer.layerData.hasMask()) {
-                        const success = layer.layerData.initializeMask(
-                            this.config.canvas.width,
-                            this.config.canvas.height,
-                            app.renderer
-                        );
-                        if (success && layer.layerData.maskSprite) {
-                            layer.addChildAt(layer.layerData.maskSprite, 0);
-                            this._applyMaskToLayerGraphics(layer);
-                        }
-                    }
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) {
+                console.error('[LayerSystem] No active layer');
+                return false;
+            }
+            
+            console.log('[LayerSystem] Parent Chain Verification:');
+            
+            let current = activeLayer;
+            let depth = 0;
+            let foundWorldContainer = false;
+            
+            while (current && depth < 10) {
+                const label = current.label || current.constructor.name;
+                console.log(`  [${depth}] ${label}`);
+                
+                if (current === this.cameraSystem?.worldContainer) {
+                    foundWorldContainer = true;
+                    console.log('  ✅ worldContainer found in chain at depth', depth);
+                    break;
                 }
+                
+                current = current.parent;
+                depth++;
             }
-        }
-
-        setAnimationSystem(animationSystem) {
-            this.animationSystem = animationSystem;
-            if (animationSystem && animationSystem.layerSystem !== this) {
-                animationSystem.layerSystem = this;
+            
+            if (!foundWorldContainer) {
+                console.error('  ❌ worldContainer NOT found in chain');
+                console.error('  Chain ended at:', current ? (current.label || current.constructor.name) : 'null');
+                return false;
             }
+            
+            console.log('[LayerSystem] ✅ Parent chain is valid');
+            return true;
         }
 
         deleteLayer(layerIndex) {
@@ -1306,6 +1515,18 @@
             if (layer.layerData?.isBackground) {
                 return false;
             }
+            
+            // 🆕 フォルダの場合、子レイヤーも削除
+            if (layer.layerData?.isFolder) {
+                const children = this.getFolderChildren(layerId);
+                children.forEach(child => {
+                    const childIndex = this.getLayerIndex(child);
+                    if (childIndex >= 0) {
+                        this.deleteLayer(childIndex);
+                    }
+                });
+            }
+            
             try {
                 const previousActiveIndex = this.activeLayerIndex;
                 if (window.History && !window.History._manager.isApplying) {
@@ -1332,7 +1553,7 @@
                             }
                         },
                         undo: () => {
-                            if (layer.layerData && this.app && this.app.renderer) {
+                            if (layer.layerData && this.app && this.app.renderer && !layer.layerData.isFolder) {
                                 layer.layerData.initializeMask(
                                     this.config.canvas.width,
                                     this.config.canvas.height,
@@ -1395,9 +1616,20 @@
     }
 
     window.TegakiLayerSystem = LayerSystem;
+    
+    if (!window.layerSystem && !window.layerManager) {
+        const instance = new LayerSystem();
+        window.layerSystem = instance;
+        window.layerManager = instance;
+    }
 
 })();
 
-console.log('✅ layer-system.js Phase 5 loaded');
-console.log('   🔧 Vキーイベント統一: keyboard:vkey-state-changed');
-console.log('   🔧 selectNextLayer(), selectPrevLayer(): レイヤー選択機能完備')
+console.log('✅ layer-system.js Phase 2: フォルダ機能追加版 loaded');
+console.log('   ✅ createFolder() - フォルダ作成');
+console.log('   ✅ addLayerToFolder() - レイヤーをフォルダに追加');
+console.log('   ✅ removeLayerFromFolder() - フォルダから取り出し');
+console.log('   ✅ toggleFolderExpand() - 開閉切替');
+console.log('   ✅ getVisibleLayers() - 表示レイヤーのみ取得');
+console.log('   ✅ getFolderChildren() - フォルダ内レイヤー取得');
+console.log('   ✅ Phase 9完全継承（親子関係・座標変換）');
