@@ -1,30 +1,25 @@
 /**
  * ================================================================================
- * gl-msdf-pipeline.js - Phase 1.8 Rollback修正版
+ * gl-msdf-pipeline.js - Phase 3.2アスペクト比保持改善版
  * ================================================================================
  * 
  * 📁 親依存:
  *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl, createFBO, deleteFBO)
  *   - gl-stroke-processor.js (EdgeBuffer/VertexBuffer: 7 floats/vertex)
- *     ※gl-stroke-processorは既にbounds減算済み → [0, width/height]座標
  * 
  * 📄 子依存:
  *   - brush-core.js (generateMSDF呼び出し元)
  *   - gl-texture-bridge.js (生成されたTextureを受け取る)
  * 
- * 🔧 Phase 1.8改修内容:
- *   ✅ Phase 1.7を取り消し、Phase 1.6の正しい実装に戻す
- *   ✅ aPositionは既に[0, bounds.width/height]なのでuResolutionで正規化
- *   ✅ uBoundsSizeは不要（削除）
- * 
- * ⚠️ 重要: gl-stroke-processor.jsが既にbounds.minを減算済み
- *    → aPositionは[0, bounds.width/height]の範囲
- *    → textureSize(512x512)で正規化すれば正しくスケールされる
+ * 🔧 Phase 3.2改修内容:
+ *   🔧 テクスチャサイズ計算でアスペクト比を厳密保持
+ *   🔧 2の累乗丸めによるストローク変形を防止
+ *   ✅ Phase 2.0の全機能を完全継承
  * 
  * 責務:
  *   - MSDF距離場生成（JFA: Jump Flooding Algorithm）
  *   - Seed初期化 → JFA実行 → エンコード → レンダリング
- *   - WebGLTexture出力（512x512固定、Phase 3で動的化予定）
+ *   - WebGLTexture出力（動的サイズ・アスペクト比保持）
  * 
  * ================================================================================
  */
@@ -43,7 +38,9 @@
       this.renderProgram = null;
       
       this.quadVBO = null;
-      this.textureSize = 512;  // Phase 3で動的化予定
+      
+      this.minTextureSize = 64;
+      this.maxTextureSize = 4096;
     }
 
     /**
@@ -63,7 +60,6 @@
       await this._createRenderProgram();
       
       this.initialized = true;
-      console.log('[GLMSDFPipeline] ✅ Initialized (Phase 1.8)');
     }
 
     /**
@@ -257,26 +253,25 @@
 
     /**
      * レンダリングプログラム生成
-     * ✅ Phase 1.8: Phase 1.6の正しい実装に戻す
+     * Phase 1.9の座標変換を継承
      * @private
      */
     async _createRenderProgram() {
       const vertexShader = `#version 300 es
         precision highp float;
         
-        // gl-stroke-processor.js の 7 floats/vertex レイアウト
-        layout(location = 0) in vec2 aPosition;    // ✅ 既に[0, bounds.width/height]座標
+        layout(location = 0) in vec2 aPosition;
         layout(location = 1) in vec2 aTexCoord;
         layout(location = 2) in vec3 aReserved;
         
-        uniform vec2 uResolution;    // テクスチャ解像度（512x512）
+        uniform vec2 uBoundsMin;
+        uniform vec2 uBoundsSize;
         
         out vec2 vTexCoord;
         
         void main() {
-          // ✅ Phase 1.8修正: aPositionは既に[0, bounds.width/height]
-          // テクスチャ空間に収めるためuResolution(512x512)で正規化
-          vec2 normalized = aPosition / uResolution;
+          vec2 boundsRelative = aPosition - uBoundsMin;
+          vec2 normalized = boundsRelative / uBoundsSize;
           vec2 clipSpace = normalized * 2.0 - 1.0;
           clipSpace.y = -clipSpace.y;
           
@@ -304,6 +299,55 @@
       `;
       
       this.renderProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Render Pass');
+    }
+
+    /**
+     * 🔧 Phase 3.2: テクスチャサイズ計算（アスペクト比厳密保持）
+     * @param {Object} bounds - バウンディングボックス
+     * @returns {{width: number, height: number}}
+     */
+    _calculateTextureSize(bounds) {
+      if (!bounds || !bounds.width || !bounds.height) {
+        return { width: this.minTextureSize, height: this.minTextureSize };
+      }
+
+      let width = Math.ceil(bounds.width);
+      let height = Math.ceil(bounds.height);
+
+      // 元のアスペクト比を記録
+      const originalAspectRatio = width / height;
+
+      // 範囲制限（2の累乗前）
+      width = Math.max(this.minTextureSize, Math.min(width, this.maxTextureSize));
+      height = Math.max(this.minTextureSize, Math.min(height, this.maxTextureSize));
+
+      // 2の累乗に丸める
+      const pow2Width = Math.pow(2, Math.ceil(Math.log2(width)));
+      const pow2Height = Math.pow(2, Math.ceil(Math.log2(height)));
+
+      // 🔧 Phase 3.2: アスペクト比保持補正
+      const pow2AspectRatio = pow2Width / pow2Height;
+      const aspectDiff = Math.abs(pow2AspectRatio - originalAspectRatio);
+
+      // アスペクト比の差が10%以上の場合は補正
+      if (aspectDiff > 0.1) {
+        if (originalAspectRatio > pow2AspectRatio) {
+          // 横長の場合: widthを調整
+          const correctedWidth = Math.pow(2, Math.ceil(Math.log2(pow2Height * originalAspectRatio)));
+          if (correctedWidth <= this.maxTextureSize) {
+            return { width: correctedWidth, height: pow2Height };
+          }
+        } else {
+          // 縦長の場合: heightを調整
+          const correctedHeight = Math.pow(2, Math.ceil(Math.log2(pow2Width / originalAspectRatio)));
+          if (correctedHeight <= this.maxTextureSize) {
+            return { width: pow2Width, height: correctedHeight };
+          }
+        }
+      }
+
+      // 補正不要または補正後も最大サイズを超える場合は2の累乗値をそのまま使用
+      return { width: pow2Width, height: pow2Height };
     }
 
     /**
@@ -363,15 +407,14 @@
 
     /**
      * ストローク描画（7 floats/vertex）
-     * ✅ Phase 1.8: uBoundsSize削除（不要）
      * @private
      */
-    _drawStroke(program, vbo, vertexCount, bounds, resolution) {
+    _drawStroke(program, vbo, vertexCount, bounds) {
       const gl = this.gl;
       
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       
-      const stride = 7 * 4;  // 7 floats = 28 bytes
+      const stride = 7 * 4;
       
       const aPosition = gl.getAttribLocation(program, 'aPosition');
       if (aPosition >= 0) {
@@ -391,10 +434,14 @@
         gl.vertexAttribPointer(aReserved, 3, gl.FLOAT, false, stride, 16);
       }
       
-      // ✅ Phase 1.8: uResolutionのみ設定（uBoundsSizeは不要）
-      const uResolution = gl.getUniformLocation(program, 'uResolution');
-      if (uResolution) {
-        gl.uniform2f(uResolution, resolution.width, resolution.height);
+      const uBoundsMin = gl.getUniformLocation(program, 'uBoundsMin');
+      if (uBoundsMin && bounds) {
+        gl.uniform2f(uBoundsMin, bounds.minX, bounds.minY);
+      }
+      
+      const uBoundsSize = gl.getUniformLocation(program, 'uBoundsSize');
+      if (uBoundsSize && bounds) {
+        gl.uniform2f(uBoundsSize, bounds.width, bounds.height);
       }
       
       gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
@@ -528,7 +575,7 @@
       gl.uniform1f(uOpacityLoc, opacity);
       
       if (vertexBuffer && vertexCount > 0 && bounds) {
-        this._drawStroke(this.renderProgram, vertexBuffer, vertexCount, bounds, { width, height });
+        this._drawStroke(this.renderProgram, vertexBuffer, vertexCount, bounds);
       } else {
         this._drawFullscreenQuad(this.renderProgram);
       }
@@ -553,6 +600,7 @@
 
     /**
      * MSDF生成（メイン処理）
+     * 🔧 Phase 3.2: アスペクト比保持テクスチャサイズ対応
      * 
      * @returns {Object|null} { texture: WebGLTexture, width: number, height: number }
      */
@@ -567,8 +615,9 @@
         return null;
       }
       
-      const width = this.textureSize;
-      const height = this.textureSize;
+      const textureSize = this._calculateTextureSize(bounds);
+      const width = textureSize.width;
+      const height = textureSize.height;
       
       try {
         const seedFBO = window.WebGL2DrawingLayer.createFBO(width, height, { float: true });
@@ -592,7 +641,6 @@
         
         this.renderPass(msdfFBO.texture, outputFBO, width, height, settings, vertexBufferData, vertexCount, bounds);
         
-        // Cleanup
         window.WebGL2DrawingLayer.deleteFBO(seedFBO);
         if (jfaResult.tempFBO) {
           window.WebGL2DrawingLayer.deleteFBO(jfaResult.tempFBO.a);
@@ -633,8 +681,8 @@
   }
 
   window.GLMSDFPipeline = new GLMSDFPipeline();
-  console.log('[GLMSDFPipeline] ✅ Phase 1.8 Rollback修正版 loaded');
-  console.log('   ⚠️ Phase 1.7の過剰修正を取り消し');
-  console.log('   ✅ aPosition: [0, bounds.width/height] → uResolutionで正規化');
+  console.log('✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded');
+  console.log('   🔧 テクスチャサイズ計算でアスペクト比を厳密保持');
+  console.log('   🔧 2の累乗丸めによるストローク変形を防止');
 
 })();
