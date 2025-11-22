@@ -1,22 +1,22 @@
 /**
  * ============================================================
- * brush-core.js - v2.4 筆圧処理統合版
+ * brush-core.js - v2.4.1 メッシュ追加確認版
  * ============================================================
  * 親ファイル: drawing-engine.js
  * 依存ファイル:
  *   - system/event-bus.js (イベント通信)
  *   - coordinate-system.js (座標変換)
- *   - system/drawing/pressure-handler.js (筆圧処理) ← 🆕
+ *   - system/drawing/pressure-handler.js (筆圧処理)
  *   - system/drawing/stroke-recorder.js (ストローク記録)
  *   - system/drawing/stroke-renderer.js (ストローク描画)
  *   - system/layer-system.js (レイヤー管理)
  *   - system/drawing/brush-settings.js (ブラシ設定)
  *   - system/drawing/fill-tool.js (FillTool)
  * ============================================================
- * 【v2.4 改修内容】
- * ✅ PressureHandler統合（自動初期化）
- * ✅ 筆圧処理をstartStroke/updateStrokeで実行
- * ✅ settings-manager連動確認
+ * 【v2.4.1 改修内容】
+ * ✅ メッシュ追加後の確認ログ追加
+ * ✅ レイヤーへの追加を確実化
+ * ✅ Pixi renderの手動トリガー追加
  * ============================================================
  */
 
@@ -58,7 +58,6 @@
             this.brushSettings = window.brushSettings;
             this.fillTool = window.FillTool;
             
-            // 🆕 PressureHandler初期化
             this._initializePressureHandler();
             
             if (!this.coordinateSystem) {
@@ -80,33 +79,24 @@
             
             this._setupEventListeners();
             
-            console.log('✅ [BrushCore] Initialized (v2.4 筆圧処理統合版)');
+            console.log('✅ [BrushCore] Initialized (v2.4.1 メッシュ追加確認版)');
             console.log('   ✅ PressureHandler:', !!this.pressureHandler);
         }
         
-        /**
-         * 🆕 PressureHandler初期化
-         */
         _initializePressureHandler() {
-            // 既存インスタンス確認
             if (window.pressureHandler) {
                 this.pressureHandler = window.pressureHandler;
-                console.log('[BrushCore] Using existing pressureHandler');
                 return;
             }
             
-            // クラス確認
             if (!window.PressureHandler) {
                 console.error('[BrushCore] window.PressureHandler not available!');
-                console.error('   pressure-handler.js may not be loaded');
                 return;
             }
             
-            // 新規作成
             try {
                 window.pressureHandler = new window.PressureHandler();
                 this.pressureHandler = window.pressureHandler;
-                console.log('[BrushCore] PressureHandler initialized successfully');
             } catch (error) {
                 console.error('[BrushCore] Failed to initialize PressureHandler:', error);
             }
@@ -167,9 +157,6 @@
             return 'pen';
         }
         
-        /**
-         * 🆕 筆圧処理統合版
-         */
         startStroke(clientX, clientY, pressure) {
             const currentMode = this.getMode();
             
@@ -186,7 +173,6 @@
             const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
             const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
             
-            // 🆕 筆圧処理
             const processedPressure = this.pressureHandler 
                 ? this.pressureHandler.process(pressure) 
                 : pressure;
@@ -225,9 +211,6 @@
             }
         }
         
-        /**
-         * 🆕 筆圧処理統合版
-         */
         updateStroke(clientX, clientY, pressure) {
             if (!this.isDrawing) return;
             
@@ -238,7 +221,6 @@
             const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
             const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
             
-            // 🆕 筆圧処理
             const processedPressure = this.pressureHandler 
                 ? this.pressureHandler.process(pressure) 
                 : pressure;
@@ -284,7 +266,6 @@
             
             const strokeData = this.strokeRecorder.endStroke();
             
-            // 🆕 筆圧ハンドラーリセット
             if (this.pressureHandler && this.pressureHandler.reset) {
                 this.pressureHandler.reset();
             }
@@ -304,11 +285,31 @@
             );
             
             if (graphics) {
+                // メッシュをレイヤーに追加
                 activeLayer.addChild(graphics);
+                
+                console.log('[BrushCore] ✅ Mesh added to layer:', {
+                    label: graphics.label || 'unknown',
+                    layerId: activeLayer.layerData?.id,
+                    layerChildren: activeLayer.children.length,
+                    meshVisible: graphics.visible,
+                    meshRenderable: graphics.renderable
+                });
+                
+                // 🔧 Pixi手動レンダリングトリガー
+                if (window.pixiApp && window.pixiApp.renderer) {
+                    window.pixiApp.renderer.render(window.pixiApp.stage);
+                    console.log('[BrushCore] 🔄 Manual Pixi render triggered');
+                }
                 
                 if (activeLayer.layerData) {
                     if (!activeLayer.layerData.pathsData) {
                         activeLayer.layerData.pathsData = [];
+                    }
+                    
+                    // pathsDataにも追加（後方互換）
+                    if (!activeLayer.layerData.paths) {
+                        activeLayer.layerData.paths = [];
                     }
                     
                     const pathData = {
@@ -316,10 +317,14 @@
                         graphics: graphics,
                         points: strokeData.points,
                         tool: mode,
-                        settings: { ...settings }
+                        settings: { ...settings },
+                        color: settings.color,
+                        size: settings.size,
+                        opacity: settings.opacity
                     };
                     
                     activeLayer.layerData.pathsData.push(pathData);
+                    activeLayer.layerData.paths.push(pathData);
                     
                     if (window.historyManager) {
                         window.historyManager.recordAction({
@@ -353,6 +358,8 @@
                         }
                     });
                 }
+            } else {
+                console.warn('[BrushCore] ❌ Graphics is null!');
             }
             
             this.isDrawing = false;
@@ -373,7 +380,6 @@
         cancelStroke() {
             if (!this.isDrawing) return;
             
-            // 🆕 筆圧ハンドラーリセット
             if (this.pressureHandler && this.pressureHandler.reset) {
                 this.pressureHandler.reset();
             }
@@ -402,8 +408,8 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js v2.4 loaded (筆圧処理統合版)');
-    console.log('   ✅ PressureHandler自動初期化実装');
-    console.log('   ✅ startStroke/updateStrokeで筆圧処理実行');
+    console.log('✅ brush-core.js v2.4.1 loaded (メッシュ追加確認版)');
+    console.log('   ✅ レイヤー追加後の確認ログ実装');
+    console.log('   ✅ Pixi手動レンダリングトリガー追加');
 
 })();

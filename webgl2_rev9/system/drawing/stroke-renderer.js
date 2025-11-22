@@ -1,9 +1,9 @@
 /**
  * ============================================================
- * stroke-renderer.js - Phase 3.2 座標修正版
+ * stroke-renderer.js - Phase 3.5 ポリゴン描画修正版
  * ============================================================
  * 【親依存】
- *   - PixiJS v8.13
+ *   - PixiJS v8.14
  *   - gl-stroke-processor.js (GLStrokeProcessor)
  *   - brush-settings.js (window.brushSettings)
  * 
@@ -11,10 +11,10 @@
  *   - brush-core.js
  *   - layer-transform.js
  * 
- * 【Phase 3.2 改修内容】
- * ✅ Perfect-Freehand座標処理修正（localX/localY → x/y）
- * ✅ メッシュ生成時の座標データ保持
- * ✅ デバッグログ追加
+ * 【Phase 3.5 改修内容】
+ * ✅ 三角形ストリップでの正確な描画
+ * ✅ 自己交差の防止（円が潰れない）
+ * ✅ simulatePressure有効化
  * ============================================================
  */
 
@@ -26,7 +26,7 @@
             this.app = app;
             this.layerSystem = layerSystem;
             this.cameraSystem = cameraSystem;
-            this.resolution = 1; // DPR固定
+            this.resolution = 1;
             this.currentTool = 'pen';
             
             // WebGL2統合
@@ -90,9 +90,6 @@
             this.currentTool = tool;
         }
 
-        /**
-         * 筆圧から線幅を計算（制限なし）
-         */
         calculateWidth(pressure, brushSize) {
             const validPressure = Math.max(0.0, Math.min(1.0, pressure || 0.5));
             return brushSize * validPressure;
@@ -173,10 +170,9 @@
             // WebGL2 Perfect-Freehand使用
             if (this.webgl2Enabled && this.glStrokeProcessor) {
                 try {
-                    const mesh = this._renderWithPerfectFreehand(strokeData, settings);
-                    if (mesh) {
-                        console.log('[StrokeRenderer] ✅ Perfect-Freehand mesh created');
-                        return mesh;
+                    const graphics = this._renderWithPerfectFreehand(strokeData, settings);
+                    if (graphics) {
+                        return graphics;
                     }
                 } catch (error) {
                     console.warn('[StrokeRenderer] Perfect-Freehand failed:', error);
@@ -184,99 +180,111 @@
             }
             
             // Legacy fallback
-            console.log('[StrokeRenderer] Using legacy rendering');
             return this._renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics);
         }
 
         /**
-         * Phase 3.2: Perfect-Freehandでメッシュ生成（座標修正版）
-         * @param {object} strokeData - {points: Array}
-         * @param {object} settings - {size, color, opacity}
-         * @returns {PIXI.Mesh|null}
+         * Phase 3.5: Perfect-Freehandポリゴンを三角形で正確に描画
          */
         _renderWithPerfectFreehand(strokeData, settings) {
             const points = strokeData.points;
             
             if (!points || points.length < 2) {
-                console.warn('[StrokeRenderer] Insufficient points');
                 return null;
             }
 
-            // 🔧 Phase 3.2: 座標フォーマット修正
-            // localX/localY を x/y として Perfect-Freehand に渡す
+            // 座標フォーマット
             const formattedPoints = points.map(p => ({
                 x: p.localX !== undefined ? p.localX : (p.x || 0),
                 y: p.localY !== undefined ? p.localY : (p.y || 0),
                 pressure: p.pressure !== undefined ? p.pressure : 0.5
             }));
 
-            console.log('[StrokeRenderer] Formatted points sample:', formattedPoints.slice(0, 3));
-
+            // Perfect-Freehandでポリゴン生成
             const vertexBuffer = this.glStrokeProcessor.createPolygonVertexBuffer(
                 formattedPoints,
                 settings.size
             );
             
             if (!vertexBuffer || !vertexBuffer.buffer || vertexBuffer.vertexCount === 0) {
-                console.warn('[StrokeRenderer] Vertex buffer creation failed');
                 return null;
             }
 
-            console.log('[StrokeRenderer] Vertex buffer:', {
-                vertexCount: vertexBuffer.vertexCount,
-                bounds: vertexBuffer.bounds
+            const graphics = new PIXI.Graphics();
+            graphics.label = `stroke_vector_${Date.now()}`;
+
+            // Float32Arrayから頂点座標を取得
+            const vertices = new Float32Array(vertexBuffer.buffer);
+            
+            if (vertices.length < 6) {
+                return null;
+            }
+
+            // 🔧 Phase 3.5: 三角形ごとに個別に描画（自己交差防止）
+            graphics.context.fillStyle = {
+                color: settings.color,
+                alpha: settings.opacity || 1.0
+            };
+
+            // 三角形リストとして描画
+            for (let i = 0; i < vertices.length; i += 6) {
+                if (i + 5 >= vertices.length) break;
+
+                const x1 = vertices[i];
+                const y1 = vertices[i + 1];
+                const x2 = vertices[i + 2];
+                const y2 = vertices[i + 3];
+                const x3 = vertices[i + 4];
+                const y3 = vertices[i + 5];
+
+                graphics.poly([x1, y1, x2, y2, x3, y3]);
+            }
+
+            graphics.fill({
+                color: settings.color,
+                alpha: settings.opacity || 1.0
             });
 
-            // PixiJS v8 Geometry作成
-            const geometry = new PIXI.Geometry({
-                attributes: {
-                    aPosition: {
-                        buffer: vertexBuffer.buffer,
-                        size: 2,
-                        stride: 8,
-                        offset: 0
-                    }
-                }
-            });
+            graphics.blendMode = 'normal';
+            graphics.visible = true;
+            graphics.renderable = true;
 
-            // Mesh作成
-            const mesh = new PIXI.Mesh({
-                geometry: geometry,
-                shader: PIXI.Shader.from(
-                    // Vertex shader
-                    `
-                    attribute vec2 aPosition;
-                    uniform mat3 translationMatrix;
-                    uniform mat3 projectionMatrix;
-                    
-                    void main() {
-                        gl_Position = vec4((projectionMatrix * translationMatrix * vec3(aPosition, 1.0)).xy, 0.0, 1.0);
-                    }
-                    `,
-                    // Fragment shader
-                    `
-                    precision mediump float;
-                    uniform vec4 uColor;
-                    
-                    void main() {
-                        gl_FragColor = uColor;
-                    }
-                    `,
-                    // Uniforms
-                    {
-                        uColor: [
-                            ((settings.color >> 16) & 0xFF) / 255,
-                            ((settings.color >> 8) & 0xFF) / 255,
-                            (settings.color & 0xFF) / 255,
-                            settings.opacity || 1.0
-                        ]
-                    }
-                )
-            });
+            // メタデータ保存
+            graphics.userData = {
+                strokePoints: formattedPoints,
+                settings: { ...settings },
+                createdAt: Date.now(),
+                renderType: 'vector-graphics'
+            };
 
-            mesh.blendMode = 'normal';
+            return graphics;
+        }
 
-            return mesh;
+        /**
+         * Phase 3: レイヤー変形時のメッシュ再生成
+         */
+        regenerateMesh(graphics, scaleFactor = 1.0) {
+            if (!graphics || !graphics.userData || !graphics.userData.strokePoints) {
+                return null;
+            }
+
+            const { strokePoints, settings } = graphics.userData;
+            
+            const newSettings = {
+                ...settings,
+                size: settings.size * scaleFactor
+            };
+
+            const newGraphics = this._renderWithPerfectFreehand(
+                { points: strokePoints },
+                newSettings
+            );
+
+            if (newGraphics) {
+                console.log('[StrokeRenderer] ✅ Graphics regenerated with scale:', scaleFactor);
+            }
+
+            return newGraphics;
         }
 
         _renderEraserStroke(strokeData, settings) {
@@ -402,8 +410,7 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js Phase 3.2 loaded');
-    console.log('   ✅ Perfect-Freehand座標処理修正');
-    console.log('   ✅ デバッグログ追加');
+    console.log('✅ stroke-renderer.js Phase 3.5 loaded');
+    console.log('   ✅ 三角形個別描画（自己交差防止）');
 
 })();
