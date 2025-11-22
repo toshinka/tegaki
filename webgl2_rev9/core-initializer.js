@@ -1,12 +1,11 @@
 /**
- * @file core-initializer.js - Phase 3 WebGL2統合完全版
+ * @file core-initializer.js - Phase 3.1 レンダーループ修正版
  * @description アプリケーション初期化シーケンス制御
  * 
- * 【Phase 3 改修内容】
- * ✅ WebGL2初期化ロジック完全修正
- * ✅ WebGLContext Singleton統合
- * ✅ GLStrokeProcessor自動初期化対応
- * ✅ StrokeRenderer統合修正
+ * 【Phase 3.1 改修内容】
+ * ✅ window.pixiAppグローバル参照追加
+ * ✅ Pixi Tickerの明示的な開始
+ * ✅ レンダーループの確実な動作保証
  * 
  * 【親依存】
  * - core-engine.js (CoreEngine)
@@ -154,19 +153,17 @@ window.CoreInitializer = (function() {
     }
 
     /**
-     * Phase 3: WebGL2初期化完全版
+     * Phase 3.1: WebGL2初期化完全版
      */
     async function initializeWebGL2(canvas, strokeRenderer) {
         console.log('[WebGL2] Starting initialization...');
 
         try {
-            // WebGLContext Singleton確認
             if (!window.WebGLContext) {
                 console.error('[WebGL2] WebGLContext not found');
                 return false;
             }
 
-            // Canvas確認
             if (!canvas) {
                 console.error('[WebGL2] Canvas not provided');
                 return false;
@@ -174,7 +171,6 @@ window.CoreInitializer = (function() {
 
             console.log('[WebGL2] Canvas found:', canvas.width, 'x', canvas.height);
 
-            // WebGLContext初期化（canvasを渡す）
             const success = await window.WebGLContext.initialize(canvas);
             
             if (!success) {
@@ -184,7 +180,6 @@ window.CoreInitializer = (function() {
 
             console.log('[WebGL2] ✅ Context initialized');
 
-            // GLStrokeProcessor確認
             if (!window.WebGLContext.glStrokeProcessor) {
                 console.warn('[WebGL2] ⚠️ GLStrokeProcessor not available');
                 return false;
@@ -192,14 +187,12 @@ window.CoreInitializer = (function() {
 
             console.log('[WebGL2] ✅ GLStrokeProcessor ready');
 
-            // StrokeRendererに統合
             if (strokeRenderer) {
                 strokeRenderer.glStrokeProcessor = window.WebGLContext.glStrokeProcessor;
                 strokeRenderer.webgl2Enabled = true;
                 console.log('[WebGL2] ✅ GLStrokeProcessor connected to StrokeRenderer');
             }
 
-            // デバッグ用グローバル参照
             if (window.TegakiDebug) {
                 window.TegakiDebug.glContext = window.WebGLContext;
                 window.TegakiDebug.glStroke = window.WebGLContext.glStrokeProcessor;
@@ -255,11 +248,19 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
+            // 🔧 Phase 3.1: グローバル参照を早期設定
+            window.pixiApp = this.pixiApp;
+            
+            // 🔧 Phase 3.1: Tickerを明示的に開始
+            if (!this.pixiApp.ticker.started) {
+                this.pixiApp.ticker.start();
+                console.log('[DrawingApp] ✅ Pixi Ticker started');
+            }
+            
             // CoreEngine初期化
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
             
-            // グローバル参照設定
             window.coreEngine = this.coreEngine;
             
             const brushSettings = this.coreEngine.getBrushSettings();
@@ -278,7 +279,6 @@ window.CoreInitializer = (function() {
             
             initializeSettingsManager();
             
-            // UIController初期化
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
@@ -295,7 +295,7 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
-            // Phase 3: WebGL2初期化
+            // Phase 3.1: WebGL2初期化
             console.log('[DrawingApp] Initializing WebGL2...');
             const drawingEngine = this.coreEngine.getDrawingEngine();
             const strokeRenderer = drawingEngine?.strokeRenderer;
@@ -310,7 +310,6 @@ window.CoreInitializer = (function() {
                 console.error('[DrawingApp] StrokeRenderer or Canvas not found');
             }
             
-            // ExportPopup登録
             this.initializeExportPopup();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
@@ -449,6 +448,6 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log(' ✅ core-initializer.js (Phase 3 WebGL2統合完全版) loaded');
-console.log('    ✅ WebGLContext Singleton統合');
-console.log('    ✅ GLStrokeProcessor自動初期化');
+console.log(' ✅ core-initializer.js (Phase 3.1 レンダーループ修正版) loaded');
+console.log('    ✅ window.pixiAppグローバル参照追加');
+console.log('    ✅ Pixi Ticker明示的開始');

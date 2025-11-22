@@ -21,20 +21,13 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
     <script src="libs/gsap.min.js"></script>
 
-    <!-- 🆕 Phase 2.0: Perfect-Freehand & Earcut 
-         ⚠️ HTML直開き制限のため、npmビルド版をlibs/に配置
-         ⚠️ Perfect-Freehandはwindow.PerfectFreehandとしてロードされる
-         ⚠️ 後続スクリプトでwindow.getStrokeにエイリアス展開が必要
-    -->
+    <!-- Perfect-Freehand & Earcut -->
     <script src="libs/perfect-freehand-1.2.0.min.js"></script>
     <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
 
     <!-- Perfect-Freehand グローバル展開 -->
     <script>
-        // Perfect-Freehandのグローバル展開
-        // libs版はwindow.PerfectFreehandオブジェクトとしてロードされる
         if (typeof window.PerfectFreehand !== 'undefined') {
-            // PerfectFreehand自体がgetStroke関数
             window.getStroke = window.PerfectFreehand;
             console.log('✅ Perfect-Freehand loaded:', typeof window.getStroke);
         } else {
@@ -69,7 +62,7 @@
     <script src="system/virtual-album.js"></script>
     <script src="system/animation-system.js"></script>
 
-    <!-- 🆕 Phase 2.0: Earcut Triangulator (Perfect-Freehand/Earcut の後に配置) -->
+    <!-- Earcut Triangulator -->
     <script src="system/earcut-triangulator.js"></script>
 
     <!-- WebGL2 Base -->
@@ -133,6 +126,24 @@
                 console.log('🚀 WebGL2 MSDF版 起動中...');
                 await window.CoreInitializer.initialize();
                 console.log('✅ WebGL2初期化完了');
+
+                // Ticker状態確認
+                if (window.pixiApp && window.pixiApp.ticker) {
+                    console.log('🎬 Pixi Ticker Status:', {
+                        started: window.pixiApp.ticker.started,
+                        speed: window.pixiApp.ticker.speed,
+                        maxFPS: window.pixiApp.ticker.maxFPS,
+                        FPS: window.pixiApp.ticker.FPS
+                    });
+
+                    if (!window.pixiApp.ticker.started) {
+                        console.error('❌ Pixi Ticker is STOPPED - forcing start');
+                        window.pixiApp.ticker.start();
+                    }
+                } else {
+                    console.error('❌ window.pixiApp or ticker not found');
+                }
+
             } catch (error) {
                 console.error('❌ 初期化失敗:', error);
             }
