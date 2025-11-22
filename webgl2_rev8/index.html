@@ -21,9 +21,26 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
     <script src="libs/gsap.min.js"></script>
 
-    <!-- 🆕 Phase 2.0: Perfect-Freehand & Earcut 追加 -->
+    <!-- 🆕 Phase 2.0: Perfect-Freehand & Earcut 
+         ⚠️ HTML直開き制限のため、npmビルド版をlibs/に配置
+         ⚠️ Perfect-Freehandはwindow.PerfectFreehandとしてロードされる
+         ⚠️ 後続スクリプトでwindow.getStrokeにエイリアス展開が必要
+    -->
     <script src="libs/perfect-freehand-1.2.0.min.js"></script>
     <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
+
+    <!-- Perfect-Freehand グローバル展開 -->
+    <script>
+        // Perfect-Freehandのグローバル展開
+        // libs版はwindow.PerfectFreehandオブジェクトとしてロードされる
+        if (typeof window.PerfectFreehand !== 'undefined') {
+            // PerfectFreehand自体がgetStroke関数
+            window.getStroke = window.PerfectFreehand;
+            console.log('✅ Perfect-Freehand loaded:', typeof window.getStroke);
+        } else {
+            console.error('❌ Perfect-Freehand not found');
+        }
+    </script>
 
     <!-- Core Config -->
     <script src="config.js"></script>

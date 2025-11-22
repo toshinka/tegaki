@@ -1,5 +1,5 @@
 /**
- * GL Stroke Processor - Phase 3 完全版
+ * GL Stroke Processor - Phase 3.1 Perfect-Freehand参照修正版
  * 
  * 【責務】
  * - Perfect-Freehandポリゴン生成
@@ -8,7 +8,7 @@
  * - 統計カウント管理
  * 
  * 【親依存】
- * - Perfect-Freehand (window.getStroke)
+ * - Perfect-Freehand (window.PerfectFreehand.getStroke)
  * - Earcut (window.earcut)
  * - config.js (perfectFreehand設定)
  * 
@@ -16,10 +16,10 @@
  * - stroke-renderer.js
  * - webgl2-drawing-layer.js
  * 
- * 【Phase 3 改修内容】
- * ✅ 統計カウント修正
- * ✅ config.js設定参照改善
- * ✅ エラーハンドリング強化
+ * 【Phase 3.1 改修内容】
+ * ✅ Perfect-Freehand参照方法修正（UMDビルド対応）
+ * ✅ window.getStroke エイリアス自動作成
+ * ✅ 統計カウント修正継承
  */
 
 (function() {
@@ -43,9 +43,25 @@
          */
         initialize() {
             try {
-                // Perfect-Freehand確認
-                if (typeof window.getStroke === 'undefined') {
+                // Perfect-Freehand確認（UMDビルド対応）
+                let getStrokeFunc = null;
+                
+                if (typeof window.getStroke !== 'undefined') {
+                    getStrokeFunc = window.getStroke;
+                } else if (typeof window.PerfectFreehand !== 'undefined' && 
+                           typeof window.PerfectFreehand.getStroke !== 'undefined') {
+                    getStrokeFunc = window.PerfectFreehand.getStroke;
+                    // エイリアス作成（互換性のため）
+                    window.getStroke = getStrokeFunc;
+                } else if (typeof window.PerfectFreehand === 'function') {
+                    // デフォルトエクスポート
+                    getStrokeFunc = window.PerfectFreehand;
+                    window.getStroke = getStrokeFunc;
+                }
+
+                if (!getStrokeFunc) {
                     console.error('[GLStrokeProcessor] Perfect-Freehand not loaded');
+                    console.error('  Available:', Object.keys(window).filter(k => k.toLowerCase().includes('perfect')));
                     return false;
                 }
 
@@ -56,6 +72,10 @@
                 }
 
                 this.initialized = true;
+                console.log('[GLStrokeProcessor] ✅ Initialized successfully');
+                console.log('  getStroke:', typeof window.getStroke);
+                console.log('  earcut:', typeof window.earcut);
+                
                 return true;
 
             } catch (error) {
@@ -217,9 +237,8 @@
     // グローバル登録
     window.GLStrokeProcessor = GLStrokeProcessor;
 
-    console.log(' ✅ gl-stroke-processor.js Phase 3 完全版 loaded');
-    console.log('    ✅ Perfect-Freehand統合');
-    console.log('    ✅ Earcut三角形分割');
-    console.log('    ✅ 統計カウント修正');
+    console.log('✅ gl-stroke-processor.js Phase 3.1 loaded');
+    console.log('   ✅ Perfect-Freehand UMDビルド対応');
+    console.log('   ✅ window.getStroke エイリアス自動作成');
 
 })();
