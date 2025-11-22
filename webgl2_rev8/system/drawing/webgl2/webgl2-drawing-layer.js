@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * WebGL2 Drawing Layer - Phase 3 完全版
+ * WebGL2 Drawing Layer - Phase 3.1 Perfect-Freehand参照修正版
  * ================================================================================
  * 
  * 【責務】
@@ -23,10 +23,9 @@
  * ✅ window.WebGLContext (Singleton)
  * ✅ window.WebGL2DrawingLayer (エイリアス)
  * 
- * 【Phase 3 改修内容】
- * ✅ Canvas取得ロジック改善（複数Canvas対応）
- * ✅ GLStrokeProcessor自動初期化
- * ✅ initialize()をPromise対応に統一
+ * 【Phase 3.1 改修内容】
+ * ✅ Perfect-Freehand参照方法修正（UMDビルド対応）
+ * ✅ 初期化チェック改善
  * ✅ 全メソッド継承確認
  */
 
@@ -42,7 +41,7 @@
       this.maxTextureSize = 0;
       this.programs = {};
       this.shaders = {};
-      this.glStrokeProcessor = null; // Phase 3追加
+      this.glStrokeProcessor = null;
     }
 
     /**
@@ -57,7 +56,7 @@
       }
 
       try {
-        // Canvas取得ロジック改善
+        // Canvas取得ロジック
         if (canvas) {
           this.canvas = canvas;
         } else {
@@ -111,7 +110,7 @@
           extensions: Object.keys(this.extensions)
         });
 
-        // Phase 3: GLStrokeProcessor初期化
+        // GLStrokeProcessor初期化
         this._initializeGLStrokeProcessor();
 
         return true;
@@ -123,7 +122,7 @@
     }
 
     /**
-     * Phase 3: GLStrokeProcessor初期化
+     * GLStrokeProcessor初期化
      * @private
      */
     _initializeGLStrokeProcessor() {
@@ -133,8 +132,15 @@
           return;
         }
 
-        if (typeof window.getStroke === 'undefined') {
+        // Perfect-Freehand確認（UMDビルド対応）
+        const hasPerfectFreehand = 
+          typeof window.getStroke !== 'undefined' ||
+          typeof window.PerfectFreehand !== 'undefined';
+
+        if (!hasPerfectFreehand) {
           console.error('[WebGL2DrawingLayer] Perfect-Freehand not loaded');
+          console.error('  window.PerfectFreehand:', typeof window.PerfectFreehand);
+          console.error('  window.getStroke:', typeof window.getStroke);
           return;
         }
 
@@ -148,6 +154,7 @@
         if (this.glStrokeProcessor.initialize()) {
           console.log('[WebGL2DrawingLayer] ✅ GLStrokeProcessor initialized');
           
+          // デバッグAPI登録
           if (window.TegakiDebug) {
             window.TegakiDebug.glStroke = this.glStrokeProcessor;
           }
@@ -408,9 +415,8 @@
   window.WebGLContext = instance;
   window.WebGL2DrawingLayer = instance;
 
-  console.log(' ✅ webgl2-drawing-layer.js Phase 3 完全版 loaded');
-  console.log('    📌 window.WebGLContext (主要)');
-  console.log('    📌 window.WebGL2DrawingLayer (互換)');
-  console.log('    ✅ GLStrokeProcessor自動初期化対応');
+  console.log('✅ webgl2-drawing-layer.js Phase 3.1 loaded');
+  console.log('   ✅ Perfect-Freehand UMDビルド対応');
+  console.log('   ✅ GLStrokeProcessor自動初期化');
 
 })();
