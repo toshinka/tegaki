@@ -1,17 +1,19 @@
 /**
  * ============================================================
- * stroke-renderer.js - v2.4 筆圧制限解除版
+ * stroke-renderer.js - Phase 3 メッシュ再生成対応版
  * ============================================================
- * 親ファイル: brush-core.js
- * 依存ファイル:
+ * 【親依存】
  *   - PixiJS v8.13
- *   - system/drawing/webgl2/gl-stroke-processor.js
- *   - system/drawing/brush-settings.js
- * ============================================================
- * 【v2.4 改修内容】
- * ✅ calculateWidth()から30%最小制限を削除
- * ✅ pressure-handler.jsの値をそのまま使用
- * ✅ 0.01(1%)〜1.0(100%)の全範囲対応
+ *   - gl-stroke-processor.js (GLStrokeProcessor)
+ *   - brush-settings.js (window.brushSettings)
+ * 
+ * 【子依存】
+ *   - brush-core.js
+ *   - layer-transform.js
+ * 
+ * 【Phase 3 新機能】
+ * ✅ _renderWithPerfectFreehand()をpublicメソッド化
+ * ✅ レイヤー変形時のメッシュ再生成対応
  * ============================================================
  */
 
@@ -36,15 +38,15 @@
         }
 
         async setWebGLLayer(webgl2Layer) {
-            this.glStrokeProcessor = window.GLStrokeProcessor;
+            this.glStrokeProcessor = window.WebGLContext?.glStrokeProcessor;
             
             if (!this.glStrokeProcessor) {
-                console.error('[StrokeRenderer] GLStrokeProcessor not available');
+                console.warn('[StrokeRenderer] GLStrokeProcessor not available');
                 return false;
             }
             
-            if (!this.glStrokeProcessor.isInitialized()) {
-                console.error('[StrokeRenderer] GLStrokeProcessor not initialized');
+            if (!this.glStrokeProcessor.initialized) {
+                console.warn('[StrokeRenderer] GLStrokeProcessor not initialized');
                 return false;
             }
             
@@ -57,7 +59,7 @@
             }
             
             this.webgl2Enabled = true;
-            console.log('✅ [StrokeRenderer] WebGL2 pipeline connected');
+            console.log('[StrokeRenderer] ✅ WebGL2 pipeline connected');
             
             return true;
         }
@@ -88,14 +90,9 @@
         }
 
         /**
-         * ✅ 筆圧から線幅を計算（制限なし）
-         * @param {number} pressure - 筆圧値（0.0〜1.0、pressure-handler.js処理済み）
-         * @param {number} brushSize - ブラシサイズ（px）
-         * @returns {number} 線幅（px）
+         * 筆圧から線幅を計算（制限なし）
          */
         calculateWidth(pressure, brushSize) {
-            // pressure-handler.jsで既に処理済みなのでそのまま使用
-            // 0.01(1%) 〜 1.0(100%) の範囲
             const validPressure = Math.max(0.0, Math.min(1.0, pressure || 0.5));
             return brushSize * validPressure;
         }
@@ -165,64 +162,99 @@
                 return this._renderEraserStroke(strokeData, settings);
             }
             
+            // WebGL2 Perfect-Freehand使用
             if (this.webgl2Enabled && this.glStrokeProcessor) {
                 try {
-                    const mesh = await this._renderWithPerfectFreehand(strokeData, settings);
+                    const mesh = this._renderWithPerfectFreehand(strokeData, settings);
                     if (mesh) {
                         return mesh;
                     }
                 } catch (error) {
-                    console.warn('[StrokeRenderer] Perfect-Freehand failed, fallback:', error);
+                    console.warn('[StrokeRenderer] Perfect-Freehand failed:', error);
                 }
             }
             
+            // Legacy fallback
             return this._renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics);
         }
 
-        async _renderWithPerfectFreehand(strokeData, settings) {
+        /**
+         * Phase 3: Perfect-Freehandでメッシュ生成（publicメソッド）
+         * @param {object} strokeData - {points: Array}
+         * @param {object} settings - {size, color, opacity}
+         * @returns {PIXI.Mesh|null}
+         */
+        _renderWithPerfectFreehand(strokeData, settings) {
             const points = strokeData.points;
             
             if (!points || points.length < 2) {
                 return null;
             }
 
+            // ポイントフォーマット変換
+            const formattedPoints = points.map(p => ({
+                x: p.localX !== undefined ? p.localX : p.x,
+                y: p.localY !== undefined ? p.localY : p.y,
+                pressure: p.pressure !== undefined ? p.pressure : 0.5
+            }));
+
             const vertexBuffer = this.glStrokeProcessor.createPolygonVertexBuffer(
-                points,
+                formattedPoints,
                 settings.size
             );
             
-            if (!vertexBuffer || !vertexBuffer.buffer) {
+            if (!vertexBuffer || !vertexBuffer.buffer || vertexBuffer.vertexCount === 0) {
                 return null;
             }
 
+            // PixiJS v8 Geometry作成
             const geometry = new PIXI.Geometry({
                 attributes: {
                     aPosition: {
                         buffer: vertexBuffer.buffer,
-                        size: 3,
-                        stride: 28,
-                        offset: 0
-                    },
-                    aUV: {
-                        buffer: vertexBuffer.buffer,
                         size: 2,
-                        stride: 28,
-                        offset: 12
+                        stride: 8,
+                        offset: 0
                     }
                 }
             });
 
+            // Mesh作成
             const mesh = new PIXI.Mesh({
-                geometry: geometry
+                geometry: geometry,
+                shader: PIXI.Shader.from(
+                    // Vertex shader
+                    `
+                    attribute vec2 aPosition;
+                    uniform mat3 translationMatrix;
+                    uniform mat3 projectionMatrix;
+                    
+                    void main() {
+                        gl_Position = vec4((projectionMatrix * translationMatrix * vec3(aPosition, 1.0)).xy, 0.0, 1.0);
+                    }
+                    `,
+                    // Fragment shader
+                    `
+                    precision mediump float;
+                    uniform vec4 uColor;
+                    
+                    void main() {
+                        gl_FragColor = uColor;
+                    }
+                    `,
+                    // Uniforms
+                    {
+                        uColor: [
+                            ((settings.color >> 16) & 0xFF) / 255,
+                            ((settings.color >> 8) & 0xFF) / 255,
+                            (settings.color & 0xFF) / 255,
+                            settings.opacity || 1.0
+                        ]
+                    }
+                )
             });
 
-            mesh.tint = settings.color;
-            mesh.alpha = settings.opacity || 1.0;
             mesh.blendMode = 'normal';
-
-            if (vertexBuffer.bounds) {
-                mesh.position.set(0, 0);
-            }
 
             return mesh;
         }
@@ -336,8 +368,8 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js v2.4 loaded (筆圧制限解除版)');
-    console.log('   ✅ calculateWidth()から30%最小制限削除');
-    console.log('   ✅ 1%〜100%全範囲対応');
+    console.log(' ✅ stroke-renderer.js Phase 3 loaded');
+    console.log('    ✅ メッシュ再生成対応');
+    console.log('    ✅ _renderWithPerfectFreehand() public化');
 
 })();
