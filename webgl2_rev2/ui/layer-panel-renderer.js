@@ -113,6 +113,11 @@
             if (!layers || layers.length === 0) return;
 
             this.container.innerHTML = '';
+            
+            // 🔧 Phase 3.1: パネル高さ固定化（レイヤー数に関わらず一定）
+            this.container.style.maxHeight = '600px';
+            this.container.style.overflowY = 'auto';
+            this.container.style.overflowX = 'hidden';
 
             const reversedLayers = [...layers].reverse();
             const reversedActiveIndex = layers.length - 1 - activeIndex;

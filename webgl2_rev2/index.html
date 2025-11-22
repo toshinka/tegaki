@@ -21,6 +21,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
     <script src="libs/gsap.min.js"></script>
 
+    <!-- 🆕 Phase 2.0: Perfect-Freehand & Earcut 追加 -->
+    <script src="libs/perfect-freehand-1.2.0.min.js"></script>
+    <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
+
     <!-- Core Config -->
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
@@ -48,15 +52,15 @@
     <script src="system/virtual-album.js"></script>
     <script src="system/animation-system.js"></script>
 
+    <!-- 🆕 Phase 2.0: Earcut Triangulator (Perfect-Freehand/Earcut の後に配置) -->
+    <script src="system/earcut-triangulator.js"></script>
+
     <!-- WebGL2 Base -->
     <script src="system/drawing/webgl2/gl-texture-bridge.js"></script>
     <script src="system/drawing/webgl2/gl-msdf-pipeline.js"></script>
     <script src="system/drawing/webgl2/gl-stroke-processor.js"></script>
     <script src="system/drawing/webgl2/webgl2-drawing-layer.js"></script>
     <script src="system/drawing/webgl2/gl-mask-layer.js"></script>
-    
-    <!-- Earcut Triangulator (共通) -->
-    <script src="system/drawing/earcut-triangulator.js"></script>
 
     <!-- Drawing System - Base -->
     <script src="system/drawing/pointer-handler.js"></script>
