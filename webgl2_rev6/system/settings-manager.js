@@ -1,22 +1,21 @@
 /**
- * @file system/settings-manager.js - Phase 2: 出力解像度設定追加版
- * @description 設定値の永続化・デフォルト管理・EventBus統合
- * 
- * 【Phase 2 改修内容】
- * 🔧 exportResolution 設定項目追加
- * 🔧 getExportResolution() メソッド追加
- * 
- * 【親ファイル (このファイルが依存)】
- * - config.js (デフォルト設定参照)
- * - system/event-bus.js (EventBus)
- * 
- * 【子ファイル (このファイルに依存)】
- * - ui/settings-popup.js (設定UI)
- * - system/export-manager.js (出力解像度取得)
- * - system/exporters/*.js (各エクスポーター)
- * 
- * 【SOLID原則】
- * 単一責任: 設定の保存と読み込みのみ
+ * ============================================================
+ * settings-manager.js - v2.4 筆圧設定対応版
+ * ============================================================
+ * 親ファイル: config.js
+ * 依存ファイル:
+ *   - system/event-bus.js (EventBus)
+ * 子ファイル:
+ *   - ui/settings-popup.js (設定UI)
+ *   - system/drawing/pressure-handler.js (筆圧処理)
+ *   - system/export-manager.js (出力解像度取得)
+ * ============================================================
+ * 【v2.4 改修内容】
+ * - minPressureSize追加（0.0-1.0）
+ * - pressureSensitivity追加（0.1-3.0）
+ * - pressureCorrection/pressureCurve廃止
+ * - exportResolution継承
+ * ============================================================
  */
 
 (function() {
@@ -44,18 +43,14 @@
             return this.getDefaults();
         }
         
-        /**
-         * 🔧 Phase 2: デフォルト設定に exportResolution 追加
-         */
         getDefaults() {
             return {
-                pressureCorrection: this.config?.userSettings?.pressureCorrection || 1.0,
+                minPressureSize: 0.0,
+                pressureSensitivity: 1.0,
                 smoothing: this.config?.userSettings?.smoothing || 0.5,
-                pressureCurve: this.config?.userSettings?.pressureCurve || 'linear',
                 statusPanelVisible: this.config?.ui?.statusPanelVisible !== undefined 
                     ? this.config.ui.statusPanelVisible 
                     : true,
-                // 🔧 Phase 2: 出力解像度設定（デフォルトは2倍）
                 exportResolution: '2'
             };
         }
@@ -100,12 +95,13 @@
             return hasChanges;
         }
         
-        /**
-         * 🔧 Phase 2: exportResolution バリデーション追加
-         */
         validateValue(key, value) {
             const validators = {
-                pressureCorrection: (v) => {
+                minPressureSize: (v) => {
+                    const num = parseFloat(v);
+                    return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+                },
+                pressureSensitivity: (v) => {
                     const num = parseFloat(v);
                     return isNaN(num) ? undefined : Math.max(0.1, Math.min(3.0, num));
                 },
@@ -113,13 +109,9 @@
                     const num = parseFloat(v);
                     return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
                 },
-                pressureCurve: (v) => {
-                    return ['linear', 'ease-in', 'ease-out'].includes(v) ? v : undefined;
-                },
                 statusPanelVisible: (v) => {
                     return typeof v === 'boolean' ? v : undefined;
                 },
-                // 🔧 Phase 2: exportResolution バリデーター
                 exportResolution: (v) => {
                     const valid = ['1', '2', '3', '4', 'auto'];
                     return valid.includes(String(v)) ? String(v) : undefined;
@@ -130,19 +122,13 @@
             return validator ? validator(value) : value;
         }
         
-        /**
-         * 🔧 Phase 2: 出力解像度取得メソッド
-         * @returns {number} 解像度倍率（1, 2, 3, 4 または devicePixelRatio）
-         */
         getExportResolution() {
             const value = this.get('exportResolution');
             
-            // 'auto' の場合は devicePixelRatio を使用（互換性のため残す）
             if (value === 'auto') {
                 return window.devicePixelRatio || 1;
             }
             
-            // 数値文字列をパース
             const num = parseFloat(value);
             return isNaN(num) ? 2 : num;
         }
@@ -174,18 +160,15 @@
             }
         }
         
-        /**
-         * 🔧 Phase 2: exportResolution イベント購読追加
-         */
         subscribeToSettingChanges() {
             if (!this.eventBus) return;
             
             const settingKeys = [
-                'pressureCorrection',
+                'minPressureSize',
+                'pressureSensitivity',
                 'smoothing',
-                'pressureCurve',
                 'statusPanelVisible',
-                'exportResolution'  // 🔧 Phase 2: 追加
+                'exportResolution'
             ];
             
             settingKeys.forEach(key => {
@@ -207,7 +190,7 @@
                 defaults: this.getDefaults(),
                 storageKey: this.storageKey,
                 storageSize: localStorage.getItem(this.storageKey)?.length || 0,
-                exportResolution: this.getExportResolution()  // 🔧 Phase 2: デバッグ情報追加
+                exportResolution: this.getExportResolution()
             };
         }
         
@@ -228,7 +211,8 @@
     
     window.TegakiSettingsManager = SettingsManager;
     
-    console.log('✅ settings-manager.js Phase 2 loaded');
-    console.log('   🔧 exportResolution 設定項目追加');
+    console.log('✅ settings-manager.js v2.4 loaded (筆圧設定対応版)');
+    console.log('   ✅ minPressureSize/pressureSensitivity 追加');
+    console.log('   ❌ pressureCorrection/pressureCurve 廃止');
     
 })();

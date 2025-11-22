@@ -1,34 +1,23 @@
 /**
- * ================================================================================
- * system/drawing/brush-core.js - Phase 1-FIX: 消しゴムレイヤー追加修正版
- * ================================================================================
- * 
- * 【Phase 1-FIX 改修内容】
- * 🔧 finalizeStroke() で消しゴムもレイヤーに追加
- * 🔧 消しゴムのpathsData記録を追加
- * 🔧 mode判定の明確化
- * 
- * 【Phase 4 改修内容 - 塗りつぶしツール対応】
- * ✅ fill モードを追加（pen, eraser, fill の3モード）
- * ✅ fill モード時は FillTool に処理を委譲
- * ✅ setMode() で fill を許可
- * 
- * 【依存関係 - Parents (このファイルが依存)】
- *   - event-bus.js (イベント通信)
+ * ============================================================
+ * brush-core.js - v2.4 筆圧処理統合版
+ * ============================================================
+ * 親ファイル: drawing-engine.js
+ * 依存ファイル:
+ *   - system/event-bus.js (イベント通信)
  *   - coordinate-system.js (座標変換)
- *   - pressure-handler.js (筆圧処理) ※オプション
- *   - stroke-recorder.js (ストローク記録)
- *   - stroke-renderer.js (ストローク描画)
- *   - layer-system.js (レイヤー管理)
- *   - brush-settings.js (ブラシ設定 - mode 情報源)
+ *   - system/drawing/pressure-handler.js (筆圧処理) ← 🆕
+ *   - system/drawing/stroke-recorder.js (ストローク記録)
+ *   - system/drawing/stroke-renderer.js (ストローク描画)
+ *   - system/layer-system.js (レイヤー管理)
+ *   - system/drawing/brush-settings.js (ブラシ設定)
  *   - system/drawing/fill-tool.js (FillTool)
- * 
- * 【責務】
- *   - ストローク開始/更新/完了処理
- *   - 座標変換パイプライン統合
- *   - プレビュー表示管理
- *   - ペン/消しゴム/塗りつぶしモードの処理振り分け
- * ================================================================================
+ * ============================================================
+ * 【v2.4 改修内容】
+ * ✅ PressureHandler統合（自動初期化）
+ * ✅ 筆圧処理をstartStroke/updateStrokeで実行
+ * ✅ settings-manager連動確認
+ * ============================================================
  */
 
 (function() {
@@ -62,13 +51,15 @@
             }
             
             this.coordinateSystem = window.CoordinateSystem;
-            this.pressureHandler = window.pressureHandler;
             this.strokeRecorder = window.strokeRecorder;
             this.layerManager = window.layerManager;
             this.strokeRenderer = window.strokeRenderer;
             this.eventBus = window.eventBus || window.TegakiEventBus;
             this.brushSettings = window.brushSettings;
             this.fillTool = window.FillTool;
+            
+            // 🆕 PressureHandler初期化
+            this._initializePressureHandler();
             
             if (!this.coordinateSystem) {
                 throw new Error('[BrushCore] window.CoordinateSystem not initialized');
@@ -86,13 +77,39 @@
             if (!this.brushSettings) {
                 console.warn('[BrushCore] window.brushSettings not found - will use defaults');
             }
-            if (!this.pressureHandler) {
-                // 筆圧なしでも動作可能（警告のみ）
-            }
             
             this._setupEventListeners();
             
-            console.log('✅ [BrushCore] Initialized (Phase 1-FIX)');
+            console.log('✅ [BrushCore] Initialized (v2.4 筆圧処理統合版)');
+            console.log('   ✅ PressureHandler:', !!this.pressureHandler);
+        }
+        
+        /**
+         * 🆕 PressureHandler初期化
+         */
+        _initializePressureHandler() {
+            // 既存インスタンス確認
+            if (window.pressureHandler) {
+                this.pressureHandler = window.pressureHandler;
+                console.log('[BrushCore] Using existing pressureHandler');
+                return;
+            }
+            
+            // クラス確認
+            if (!window.PressureHandler) {
+                console.error('[BrushCore] window.PressureHandler not available!');
+                console.error('   pressure-handler.js may not be loaded');
+                return;
+            }
+            
+            // 新規作成
+            try {
+                window.pressureHandler = new window.PressureHandler();
+                this.pressureHandler = window.pressureHandler;
+                console.log('[BrushCore] PressureHandler initialized successfully');
+            } catch (error) {
+                console.error('[BrushCore] Failed to initialize PressureHandler:', error);
+            }
         }
         
         _setupEventListeners() {
@@ -138,7 +155,6 @@
                 console.warn('[BrushCore] BrushSettings not available, cannot set mode');
             }
             
-            // fill モード以外は strokeRenderer に通知
             if (mode !== 'fill' && this.strokeRenderer && this.strokeRenderer.setTool) {
                 this.strokeRenderer.setTool(mode);
             }
@@ -151,10 +167,12 @@
             return 'pen';
         }
         
+        /**
+         * 🆕 筆圧処理統合版
+         */
         startStroke(clientX, clientY, pressure) {
             const currentMode = this.getMode();
             
-            // fill モードの場合は BrushCore では処理しない
             if (currentMode === 'fill') {
                 return;
             }
@@ -168,7 +186,10 @@
             const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
             const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
             
-            const processedPressure = pressure;
+            // 🆕 筆圧処理
+            const processedPressure = this.pressureHandler 
+                ? this.pressureHandler.process(pressure) 
+                : pressure;
             
             this.strokeRecorder.startStroke(localX, localY, processedPressure);
             
@@ -204,6 +225,9 @@
             }
         }
         
+        /**
+         * 🆕 筆圧処理統合版
+         */
         updateStroke(clientX, clientY, pressure) {
             if (!this.isDrawing) return;
             
@@ -214,7 +238,10 @@
             const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
             const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
             
-            const processedPressure = pressure;
+            // 🆕 筆圧処理
+            const processedPressure = this.pressureHandler 
+                ? this.pressureHandler.process(pressure) 
+                : pressure;
             
             const dx = localX - this.lastLocalX;
             const dy = localY - this.lastLocalY;
@@ -249,9 +276,6 @@
             this.lastPressure = processedPressure;
         }
         
-        /**
-         * 🔧 Phase 1-FIX: 消しゴムも正しくレイヤーに追加
-         */
         async finalizeStroke() {
             if (!this.isDrawing) return;
             
@@ -259,6 +283,11 @@
             if (!activeLayer) return;
             
             const strokeData = this.strokeRecorder.endStroke();
+            
+            // 🆕 筆圧ハンドラーリセット
+            if (this.pressureHandler && this.pressureHandler.reset) {
+                this.pressureHandler.reset();
+            }
             
             if (this.previewGraphics && this.previewGraphics.parent) {
                 this.previewGraphics.parent.removeChild(this.previewGraphics);
@@ -275,7 +304,6 @@
             );
             
             if (graphics) {
-                // 🔧 Phase 1-FIX: ペン/消しゴム両方ともレイヤーに追加
                 activeLayer.addChild(graphics);
                 
                 if (activeLayer.layerData) {
@@ -287,7 +315,7 @@
                         id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         graphics: graphics,
                         points: strokeData.points,
-                        tool: mode,  // 🔧 これで 'eraser' が正しく記録される
+                        tool: mode,
                         settings: { ...settings }
                     };
                     
@@ -345,6 +373,11 @@
         cancelStroke() {
             if (!this.isDrawing) return;
             
+            // 🆕 筆圧ハンドラーリセット
+            if (this.pressureHandler && this.pressureHandler.reset) {
+                this.pressureHandler.reset();
+            }
+            
             if (this.previewGraphics && this.previewGraphics.parent) {
                 this.previewGraphics.parent.removeChild(this.previewGraphics);
                 this.previewGraphics.destroy();
@@ -369,8 +402,8 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js (Phase 1-FIX) loaded');
-    console.log('   🔧 消しゴムのレイヤー追加を修正');
-    console.log('   🔧 tool/mode 記録を統一');
+    console.log('✅ brush-core.js v2.4 loaded (筆圧処理統合版)');
+    console.log('   ✅ PressureHandler自動初期化実装');
+    console.log('   ✅ startStroke/updateStrokeで筆圧処理実行');
 
 })();
