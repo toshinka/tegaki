@@ -63,35 +63,47 @@
 
         /**
          * WebGL2初期化
-         * @param {WebGL2DrawingLayer} webgl2Layer - WebGL2レイヤー
+         * @param {WebGL2DrawingLayer} webgl2Layer - WebGL2レイヤー（nullでも可）
          */
         async setWebGLLayer(webgl2Layer) {
+            console.log('[StrokeRenderer] Connecting to WebGL2 pipeline...');
+            
             // GLStrokeProcessor取得（Singleton）
             this.glStrokeProcessor = window.GLStrokeProcessor;
             
             if (!this.glStrokeProcessor) {
-                console.warn('[StrokeRenderer] GLStrokeProcessor not available');
-                return;
+                console.error('[StrokeRenderer] GLStrokeProcessor not available');
+                return false;
             }
             
             // 初期化確認
             if (!this.glStrokeProcessor.isInitialized()) {
-                console.warn('[StrokeRenderer] GLStrokeProcessor not initialized');
-                return;
+                console.error('[StrokeRenderer] GLStrokeProcessor not initialized');
+                console.log('   - Try running: window.GLStrokeProcessor.initialize(gl)');
+                return false;
             }
+            
+            console.log('[StrokeRenderer] GLStrokeProcessor connected:', {
+                initialized: this.glStrokeProcessor.isInitialized(),
+                hasGL: !!this.glStrokeProcessor.gl
+            });
             
             // MSDF Pipeline（オプション）
             if (window.GLMSDFPipeline && this.config.msdf?.enabled !== false) {
                 this.glMSDFPipeline = window.GLMSDFPipeline;
+                console.log('[StrokeRenderer] MSDF Pipeline available');
             }
             
             // Texture Bridge（オプション）
             if (window.GLTextureBridge) {
                 this.textureBridge = window.GLTextureBridge;
+                console.log('[StrokeRenderer] Texture Bridge available');
             }
             
             this.webgl2Enabled = true;
-            console.log('✅ [StrokeRenderer] WebGL2 pipeline connected');
+            console.log('✅ [StrokeRenderer] WebGL2 pipeline connected successfully');
+            
+            return true;
         }
 
         _getSettings(providedSettings = null) {
@@ -243,84 +255,55 @@
             }
 
             // 2. Pixi.Geometry 生成
-            const geometry = new PIXI.Geometry();
-            
-            // Float32Array → Pixi.Buffer
-            const buffer = new PIXI.Buffer({
-                data: vertexBuffer.buffer,
-                static: true
+            const geometry = new PIXI.Geometry({
+                attributes: {
+                    aPosition: {
+                        buffer: vertexBuffer.buffer,
+                        size: 3,
+                        stride: 28,
+                        offset: 0
+                    },
+                    aUV: {
+                        buffer: vertexBuffer.buffer,
+                        size: 2,
+                        stride: 28,
+                        offset: 12
+                    }
+                }
             });
 
-            // 頂点属性設定
-            geometry.addAttribute('aPosition', buffer, 3, false, PIXI.TYPES.FLOAT, 28, 0);
-            geometry.addAttribute('aUV', buffer, 2, false, PIXI.TYPES.FLOAT, 28, 12);
-            geometry.addAttribute('aNormal', buffer, 2, false, PIXI.TYPES.FLOAT, 28, 20);
+            // 3. Pixi.Mesh 生成（Shader不使用・tintで着色）
+            const mesh = new PIXI.Mesh({
+                geometry: geometry
+            });
 
-            // 3. Pixi.Mesh 生成
-            const shader = this._createPenShader(settings);
-            const mesh = new PIXI.Mesh({ geometry, shader });
+            // 4. 色・透明度設定
+            mesh.tint = settings.color;
+            mesh.alpha = settings.opacity || 1.0;
+            mesh.blendMode = 'normal';
 
-            // 4. 位置・ブレンド設定
+            // 5. 位置設定
             if (vertexBuffer.bounds) {
                 mesh.position.set(0, 0); // boundsは既にLocal座標
             }
-            
-            mesh.blendMode = 'normal';
-            mesh.alpha = settings.opacity || 1.0;
 
             console.log('[StrokeRenderer] Perfect-Freehand mesh created:', {
                 vertexCount: vertexBuffer.vertexCount,
-                bounds: vertexBuffer.bounds
+                bounds: vertexBuffer.bounds,
+                color: settings.color.toString(16),
+                alpha: mesh.alpha
             });
 
             return mesh;
         }
 
         /**
-         * ペン用Shader生成
+         * ペン用Shader生成（使用しない・後方互換用に残す）
          * @private
+         * @deprecated Mesh.tint を使用するため不要
          */
         _createPenShader(settings) {
-            // シンプルなカラーシェーダー
-            const vertexSrc = `
-                precision highp float;
-                
-                attribute vec3 aPosition;
-                attribute vec2 aUV;
-                attribute vec2 aNormal;
-                
-                uniform mat3 translationMatrix;
-                uniform mat3 projectionMatrix;
-                
-                varying vec2 vUV;
-                
-                void main() {
-                    vec3 position = translationMatrix * vec3(aPosition.xy, 1.0);
-                    gl_Position = vec4((projectionMatrix * position).xy, 0.0, 1.0);
-                    vUV = aUV;
-                }
-            `;
-
-            const fragmentSrc = `
-                precision highp float;
-                
-                uniform vec4 uColor;
-                varying vec2 vUV;
-                
-                void main() {
-                    gl_FragColor = uColor;
-                }
-            `;
-
-            // カラー変換 (0x800000 → vec4)
-            const r = ((settings.color >> 16) & 0xFF) / 255.0;
-            const g = ((settings.color >> 8) & 0xFF) / 255.0;
-            const b = (settings.color & 0xFF) / 255.0;
-            const a = settings.opacity || 1.0;
-
-            return PIXI.Shader.from(vertexSrc, fragmentSrc, {
-                uColor: [r, g, b, a]
-            });
+            return null;
         }
 
         /**
