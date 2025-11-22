@@ -1,20 +1,23 @@
 /**
- * @file system/layer-transform.js - Phase 6: 反転処理修正版
+ * @file system/layer-transform.js - Phase 3: ベクター再計算対応版
  * @description レイヤートランスフォーム処理
  * 
- * 【Phase 6 改修内容】
- * 🔧 flipLayer(): confirmTransform()呼び出しを削除
- *    - 反転時に座標変換を行わず、スケール反転のみを適用
- *    - 画像が消失・移動する問題を解決
- * 🔧 skipHistory パラメータの正しい動作
- * 🧹 過剰なコンソールログ削除
+ * 【Phase 3 新機能】
+ * ✅ confirmTransform()でベクターメッシュ再生成
+ * ✅ 拡大時のジャギー解消
+ * ✅ Perfect-Freehandポリゴン再計算
  * 
- * 【親ファイル (このファイルが依存)】
+ * 【親依存】
  * - event-bus.js (window.TegakiEventBus)
  * - coordinate-system.js (window.CoordinateSystem)
  * - config.js (window.TEGAKI_CONFIG)
  * - slider-utils.js (window.TegakiUI.SliderUtils)
  * - layer-system.js (レイヤー取得・再構築)
+ * - stroke-renderer.js (メッシュ再生成)
+ * 
+ * 【子依存】
+ * - core-runtime.js
+ * - keyboard-handler.js
  */
 
 (function() {
@@ -266,10 +269,6 @@
             }
         }
 
-        /**
-         * Phase 6: 反転処理修正
-         * confirmTransform()を呼ばず、スケール反転のみを適用
-         */
         flipLayer(layer, direction, skipHistory = false) {
             if (!layer?.layerData) return;
             
@@ -285,17 +284,13 @@
             const centerX = this.config.canvas.width / 2;
             const centerY = this.config.canvas.height / 2;
             
-            // スケール反転のみを適用
             if (direction === 'horizontal') {
                 transform.scaleX *= -1;
             } else if (direction === 'vertical') {
                 transform.scaleY *= -1;
             }
             
-            // ビジュアルのみ更新（座標変換は行わない）
             this.applyTransform(layer, transform, centerX, centerY);
-            
-            // UIを更新
             this.updateFlipButtons(layer);
             this._emitTransformUpdated(layerId, layer);
             
@@ -416,6 +411,9 @@
             }
         }
 
+        /**
+         * Phase 3: 変形確定時のベクター再計算
+         */
         confirmTransform(layer, skipHistory = false) {
             if (!layer?.layerData) return false;
             
@@ -430,6 +428,9 @@
             const success = this.applyTransformToPaths(layer, transform);
             
             if (!success) return false;
+            
+            // Phase 3: メッシュ再生成
+            this._regenerateMeshes(layer);
             
             layer.position.set(0, 0);
             layer.rotation = 0;
@@ -451,6 +452,11 @@
             this.updateFlipButtons(layer);
             
             if (this.eventBus) {
+                this.eventBus.emit('layer:transform-confirmed', {
+                    layerId: layer.layerData.id,
+                    meshCount: layer.children?.length || 0
+                });
+                
                 const layerMgr = window.CoreRuntime?.internal?.layerManager;
                 if (layerMgr) {
                     const layerIndex = layerMgr.getLayerIndex(layer);
@@ -466,6 +472,61 @@
             }
             
             return true;
+        }
+
+        /**
+         * Phase 3: メッシュ再生成
+         * @private
+         */
+        _regenerateMeshes(layer) {
+            if (!layer.children || !layer.layerData?.paths) return;
+            
+            const strokeRenderer = window.strokeRenderer;
+            if (!strokeRenderer) {
+                console.warn('[LayerTransform] StrokeRenderer not available');
+                return;
+            }
+            
+            let regeneratedCount = 0;
+            
+            // 全ての子メッシュを処理
+            for (let i = layer.children.length - 1; i >= 0; i--) {
+                const child = layer.children[i];
+                
+                // Pixi.Meshの判定
+                if (child.constructor.name === 'fr' && child.geometry) {
+                    // 対応するパスデータを検索
+                    const pathData = layer.layerData.paths.find(p => p.graphics === child);
+                    
+                    if (pathData && pathData.points && pathData.points.length > 0) {
+                        try {
+                            // 新しいメッシュを生成
+                            const newMesh = strokeRenderer._renderWithPerfectFreehand({
+                                points: pathData.points
+                            }, {
+                                color: pathData.color,
+                                size: pathData.size,
+                                opacity: pathData.opacity
+                            });
+                            
+                            if (newMesh) {
+                                // 古いメッシュと置き換え
+                                const index = layer.getChildIndex(child);
+                                layer.addChildAt(newMesh, index);
+                                layer.removeChild(child);
+                                pathData.graphics = newMesh;
+                                regeneratedCount++;
+                            }
+                        } catch (error) {
+                            console.warn('[LayerTransform] Mesh regeneration failed:', error);
+                        }
+                    }
+                }
+            }
+            
+            if (regeneratedCount > 0) {
+                console.log(`[LayerTransform] Regenerated ${regeneratedCount} meshes`);
+            }
         }
         
         applyTransformToPaths(layer, transform) {
@@ -1006,7 +1067,8 @@
     window.LayerTransform = LayerTransform;
     window.TegakiLayerTransform = LayerTransform;
 
-})();
+    console.log(' ✅ layer-transform.js Phase 3 loaded');
+    console.log('    ✅ confirmTransform()でベクターメッシュ再生成');
+    console.log('    ✅ 拡大時のジャギー解消');
 
-console.log('✅ layer-transform.js Phase 6 loaded');
-console.log('   🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決');
+})();

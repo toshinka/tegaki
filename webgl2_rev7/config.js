@@ -1,43 +1,17 @@
 /**
- * @file config.js - v8.14.0 DPR=1固定化版 + Phase 5.0 リニア描画最適化
+ * @file config.js - Phase 3: Perfect-Freehand設定追加版
  * @description グローバル設定・キーマップ定義
  * 
- * 【Phase 5.0 改修内容 - リニア描画最適化】
- * 🎯 Perfect-Freehand設定を追加してリニア感を向上
- * 🎯 streamline/smoothingを最小化して遅延を削減
- * 🎯 thinningを調整して太りを抑制
- * 🎯 全ての既存設定を完全継承
+ * 【Phase 3 改修内容】
+ * ✅ Perfect-Freehand設定追加（WebGL2ベクターペン用）
+ * ✅ brush設定基盤準備（Phase 4で拡張）
+ * ✅ 全既存設定完全継承
  * 
- * 【v8.14.0 改修内容 - Phase 1: DPR=1固定化】
- * 🚨 重要: renderer.resolution を devicePixelRatio から 1 へ固定
- * 理由: 描画時解像度と出力時解像度の一致を保証
- * 方針: DPR=1固定 + 出力時任意解像度スケーリング（Sketchbook方式）
+ * 【Phase 1: DPR=1固定化】
+ * 🚨 renderer.resolution = 1 固定
  * 
- * 🚨 後続Claude担当者への警告:
- * - devicePixelRatio を使用した DPR 倍加は厳禁
- * - 本ツールは GPU/WebGPU ベースの PC 優位設計（Retina対応不要）
- * - 解像度制御は出力時のみで行う（export-manager.js 参照）
- * 
- * 【v8.13.15 改修内容】
- * 🎨 TOOL_FILL: Gキー → 塗りつぶしツール追加
- * 
- * 【v8.13.14 改修内容】
- * 🔧 Phase 3: LAYER_DELETE (Ctrl+Delete)、LAYER_CUT (Ctrl+X) 追加
- * 🔧 Phase 3: FRAME_PREV/NEXT (←→) 単体キー化、Ctrl不要に
- * 🔧 Phase 4: GIF_PREV_FRAME / GIF_NEXT_FRAME 削除
- * 🧹 LAYER_CLEAR 削除 (LAYER_DELETE に統合)
- * 📝 ヘッダー依存関係明記
- * 
- * 【親ファイル (このファイルが依存)】
- * なし（最上位設定ファイル）
- * 
- * 【子ファイル (このファイルに依存)】
- * - core-initializer.js (PIXI.Application初期化でresolution参照)
- * - core-engine.js (システム全体の設定参照)
- * - 全システムファイル (window.TEGAKI_CONFIG参照)
- * - keyboard-handler.js (window.TEGAKI_KEYMAP参照)
- * - camera-system.js, layer-system.js等
- * - gl-stroke-processor.js (perfectFreehand設定参照) 【Phase 5.0追加】
+ * 【親依存】なし（最上位設定ファイル）
+ * 【子依存】全システムファイル
  */
 
 window.TEGAKI_CONFIG = {
@@ -46,22 +20,8 @@ window.TEGAKI_CONFIG = {
         height: 400 
     },
     
-    /**
-     * 🚨 Phase 1改修: renderer設定
-     * resolution: 1 固定（devicePixelRatio 参照を削除）
-     * 
-     * 【設計思想】
-     * - 描画時は常に等倍（DPR=1）で処理
-     * - 出力時に任意解像度でスケーリング（export-manager.js で制御）
-     * - ユーザーの期待値と出力結果を一致させる
-     * 
-     * 【影響】
-     * - 全描画処理が軽量化
-     * - Retina画面で若干の粗さが出る可能性（許容範囲）
-     * - 出力品質は settings-manager.js の exportResolution で制御
-     */
     renderer: {
-        resolution: 1,  // 旧: window.devicePixelRatio || 1
+        resolution: 1,
         backgroundColor: 0x000000,
         backgroundAlpha: 0,
         antialias: true
@@ -78,6 +38,7 @@ window.TEGAKI_CONFIG = {
             enableDevicePixelRatio: true
         }
     },
+    
     BRUSH_DEFAULTS: {
         color: 0x800000,
         size: 10,
@@ -87,36 +48,45 @@ window.TEGAKI_CONFIG = {
     },
     
     /**
-     * 🎯 Phase 5.0追加: Perfect-Freehand設定
-     * リニア描画最適化のためのパラメータ
-     * 
-     * 【改修意図】
-     * - smoothing/streamlineを最小化して補正遅延を削減
-     * - thinningを削減して線の太りを抑制
-     * - リアルタイム入力に対するレスポンスを向上
-     * 
-     * 【パラメータ説明】
-     * - size: ブラシサイズ（動的に上書きされる）
-     * - thinning: プレッシャーによる細り (0-1、低いほど均一)
-     * - smoothing: ポイント間の補間スムージング (0-1、低いほど生に近い)
-     * - streamline: リアルタイム補正の強さ (0-1、低いほど遅延が少ない)
-     * - simulatePressure: プレッシャーシミュレーション（無効）
-     * - last: 終端処理の有効化
+     * Phase 3追加: Perfect-Freehand設定
      */
     perfectFreehand: {
-        size: 10,           // ブラシサイズ（動的設定される）
-        thinning: 0.3,      // 🎯 Phase 5.0: 0.7 → 0.3 (太り抑制)
-        smoothing: 0.05,    // 🎯 Phase 5.0: 0.4 → 0.05 (リニア感向上)
-        streamline: 0.05,   // 🎯 Phase 5.0: 0.3 → 0.05 (遅延削減)
+        size: 10,
+        thinning: 0.5,
+        smoothing: 0.05,
+        streamline: 0.05,
         simulatePressure: false,
         last: true,
         start: {
-            taper: true,
+            taper: 0,
             cap: true
         },
         end: {
-            taper: true,
+            taper: 0,
             cap: true
+        }
+    },
+    
+    /**
+     * Phase 3追加: ブラシ設定基盤（Phase 4で拡張）
+     */
+    brush: {
+        pressure: {
+            enabled: true,
+            sensitivity: 1.0,
+            minSize: 0.3,
+            maxSize: 1.0
+        },
+        smoothing: {
+            enabled: true,
+            strength: 0.4,
+            thinning: 0.5
+        },
+        flow: {
+            enabled: false,
+            opacity: 1.0,
+            sensitivity: 1.0,
+            accumulation: false
         }
     },
     
@@ -136,10 +106,10 @@ window.TEGAKI_CONFIG = {
             threshold: 0.5,
             smoothness: 0.05
         },
-        // 🎯 Phase 5.0追加: ダイナミックマージン設定（太り抑制）
-        dynamicMarginFactor: 0.05,  // ストローク幅に対する余白の比率
-        minMargin: 10                // 最小余白（ピクセル）
+        dynamicMarginFactor: 0.05,
+        minMargin: 10
     },
+    
     camera: {
         minScale: 0.1,
         maxScale: 5.0,
@@ -152,6 +122,7 @@ window.TEGAKI_CONFIG = {
         dragScaleSpeed: 0.01,
         dragRotationSpeed: 0.3
     },
+    
     layer: {
         minX: -1000,
         maxX: 1000,
@@ -163,18 +134,22 @@ window.TEGAKI_CONFIG = {
         maxRotation: 180,
         rotationLoop: true
     },
+    
     background: { 
         color: 0xf0e0d6 
     },
+    
     history: { 
         maxSize: 10, 
         autoSaveInterval: 500 
     },
+    
     thumbnail: {
         SIZE: 48,
         RENDER_SCALE: 3,
         QUALITY: 'high'
     },
+    
     animation: {
         defaultFPS: 12,
         maxCuts: 50,
@@ -195,17 +170,18 @@ window.TEGAKI_CONFIG = {
             previewQuality: 'medium'
         }
     },
-    debug: false
-};
-
-/**
- * 🎯 Phase 5.0追加: Perfect-Freehand設定ヘルパー関数
- */
-window.TEGAKI_CONFIG.getPerfectFreehandOptions = function(brushSize = 10) {
-    return {
-        ...this.perfectFreehand,
-        size: brushSize
-    };
+    
+    debug: false,
+    
+    /**
+     * Phase 3追加: Perfect-Freehand設定ヘルパー
+     */
+    getPerfectFreehandOptions: function(brushSize = 10) {
+        return {
+            ...this.perfectFreehand,
+            size: brushSize
+        };
+    }
 };
 
 window.TEGAKI_KEYMAP = {
@@ -232,7 +208,6 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             description: '消しゴムツール'
         },
-        // 🎨 v8.13.15: 塗りつぶしツール (Gキー)
         TOOL_FILL: {
             key: 'KeyG',
             ctrl: false,
@@ -552,7 +527,6 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js v8.14.0 loaded (Phase 1: DPR=1固定化)');
-console.log('   🚨 renderer.resolution = 1 (devicePixelRatio参照を削除)');
-console.log('   🎯 Phase 5.0: Perfect-Freehand設定追加（リニア描画最適化）');
-console.log('   🎯 smoothing: 0.05, streamline: 0.05, thinning: 0.3');
+console.log(' ✅ config.js Phase 3 loaded');
+console.log('    ✅ Perfect-Freehand設定追加');
+console.log('    ✅ ブラシ設定基盤準備');
