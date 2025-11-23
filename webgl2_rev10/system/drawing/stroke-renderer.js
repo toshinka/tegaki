@@ -1,20 +1,22 @@
 /**
  * ============================================================
- * stroke-renderer.js - Phase 3.5 ポリゴン描画修正版
+ * stroke-renderer.js - Perfect-Freehand形状補正ゼロ対応版
  * ============================================================
  * 【親依存】
  *   - PixiJS v8.14
  *   - gl-stroke-processor.js (GLStrokeProcessor)
  *   - brush-settings.js (window.brushSettings)
+ *   - config.js (perfectFreehand設定)
  * 
  * 【子依存】
  *   - brush-core.js
  *   - layer-transform.js
  * 
- * 【Phase 3.5 改修内容】
- * ✅ 三角形ストリップでの正確な描画
- * ✅ 自己交差の防止（円が潰れない）
- * ✅ simulatePressure有効化
+ * 【改修内容】
+ * ✅ Perfect-Freehandを"ポリゴン化専用"として使用
+ * ✅ 形状補正（smoothing/streamline/thinning）を完全無効化
+ * ✅ 三角形描画でメッシュ生成
+ * ✅ Phase 3: レイヤー変形時の再生成対応
  * ============================================================
  */
 
@@ -167,7 +169,7 @@
                 return this._renderEraserStroke(strokeData, settings);
             }
             
-            // WebGL2 Perfect-Freehand使用
+            // WebGL2 Perfect-Freehand使用（形状補正ゼロ）
             if (this.webgl2Enabled && this.glStrokeProcessor) {
                 try {
                     const graphics = this._renderWithPerfectFreehand(strokeData, settings);
@@ -184,7 +186,12 @@
         }
 
         /**
-         * Phase 3.5: Perfect-Freehandポリゴンを三角形で正確に描画
+         * Perfect-Freehand: ポリゴン化専用・形状補正ゼロ
+         * 
+         * 🎯 目的:
+         * - ユーザーが描いた線をそのままベクター化
+         * - 形状変形を一切行わない
+         * - メッシュ生成の入口としてのみ機能
          */
         _renderWithPerfectFreehand(strokeData, settings) {
             const points = strokeData.points;
@@ -200,7 +207,7 @@
                 pressure: p.pressure !== undefined ? p.pressure : 0.5
             }));
 
-            // Perfect-Freehandでポリゴン生成
+            // Perfect-Freehandでポリゴン生成（形状補正なし）
             const vertexBuffer = this.glStrokeProcessor.createPolygonVertexBuffer(
                 formattedPoints,
                 settings.size
@@ -220,7 +227,7 @@
                 return null;
             }
 
-            // 🔧 Phase 3.5: 三角形ごとに個別に描画（自己交差防止）
+            // 三角形ごとに個別に描画（自己交差防止）
             graphics.context.fillStyle = {
                 color: settings.color,
                 alpha: settings.opacity || 1.0
@@ -249,7 +256,7 @@
             graphics.visible = true;
             graphics.renderable = true;
 
-            // メタデータ保存
+            // メタデータ保存（Phase 3で使用）
             graphics.userData = {
                 strokePoints: formattedPoints,
                 settings: { ...settings },
@@ -262,19 +269,25 @@
 
         /**
          * Phase 3: レイヤー変形時のメッシュ再生成
+         * @param {PIXI.Graphics} graphics - 再生成対象のグラフィックス
+         * @param {number} scaleFactor - スケール係数（デフォルト: 1.0）
+         * @returns {PIXI.Graphics|null}
          */
         regenerateMesh(graphics, scaleFactor = 1.0) {
             if (!graphics || !graphics.userData || !graphics.userData.strokePoints) {
+                console.warn('[StrokeRenderer] Cannot regenerate: missing userData');
                 return null;
             }
 
             const { strokePoints, settings } = graphics.userData;
             
+            // スケール係数を反映した新設定
             const newSettings = {
                 ...settings,
                 size: settings.size * scaleFactor
             };
 
+            // 新しいメッシュを生成
             const newGraphics = this._renderWithPerfectFreehand(
                 { points: strokePoints },
                 newSettings
@@ -410,7 +423,9 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js Phase 3.5 loaded');
-    console.log('   ✅ 三角形個別描画（自己交差防止）');
+    console.log('✅ stroke-renderer.js - Perfect-Freehand形状補正ゼロ対応版 loaded');
+    console.log('   ✅ smoothing/streamline/thinning完全無効化');
+    console.log('   ✅ ユーザーが描いた線をそのまま保持');
+    console.log('   ✅ Phase 3: レイヤー変形時の再生成対応');
 
 })();
