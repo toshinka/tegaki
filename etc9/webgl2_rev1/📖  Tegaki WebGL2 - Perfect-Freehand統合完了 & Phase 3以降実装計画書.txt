@@ -1,0 +1,522 @@
+================================================================================
+Tegaki WebGL2 - Perfect-Freehand統合完了 & Phase 3以降実装計画書
+================================================================================
+
+■ Phase 2.0 完了状況
+
+【達成項目】
+✅ Perfect-Freehand統合: ストロークのポリゴン化成功
+✅ Earcut三角形分割: メッシュ化完了
+✅ WebGL2パイプライン: GLStrokeProcessor → Pixi.Mesh 接続完了
+✅ ベクターペン基盤: 解像度非依存のデータ保存
+
+【確認された問題点】
+
+1. 拡大時のジャギー（多角形的な見た目）
+   原因:
+   - Vキー編集モードで拡大確定時に頂点データが再計算されていない
+   - ポリゴンデータはそのままで、transform のみが変更されている
+   
+   必要な対応:
+   - 拡大確定時にベクターデータを再計算
+   - または高解像度でリラスタライズ
+
+2. Perfect-Freehand設定が未定義
+   window.config?.perfectFreehand  // → undefined
+   原因: config.js に設定が存在しない
+
+3. 統計がゼロのまま
+   TegakiDebug.glStroke.stats()  // → {processedStrokes: 0, ...}
+   原因: 統計カウントが更新されていない可能性
+
+================================================================================
+■ Phase 3: レイヤー変形時のベクター再計算
+================================================================================
+
+【目的】
+Vキー編集確定時にポリゴンを再生成し、ジャギーを防ぐ
+
+【実装ファイルと責務】
+
+ファイル: layer-transform.js
+  責務: 変形確定処理
+  親依存: なし
+  子依存: stroke-renderer.js
+  
+ファイル: stroke-renderer.js
+  責務: メッシュ再生成
+  親依存: gl-stroke-processor.js
+  子依存: layer-transform.js
+  
+ファイル: gl-stroke-processor.js
+  責務: ポリゴン再計算
+  親依存: Perfect-Freehand, Earcut
+  子依存: stroke-renderer.js
+
+【実装内容】
+
+1. layer-transform.js 改修
+   - confirmTransform() メソッドに追加
+   
+   confirmTransform(layer) {
+       // 既存の transform 適用処理...
+       
+       // メッシュの再生成
+       if (layer.children) {
+           layer.children.forEach(child => {
+               if (child.constructor.name === 'fr' && child.geometry) {
+                   this._regenerateMesh(child, layer);
+               }
+           });
+       }
+   }
+   
+   _regenerateMesh(mesh, layer) {
+       // 元のポイントデータを取得
+       const pathData = layer.layerData?.pathsData?.find(p => p.graphics === mesh);
+       if (!pathData || !pathData.points) return;
+       
+       // 新しいスケールでポリゴン再生成
+       const newMesh = window.strokeRenderer._renderWithPerfectFreehand({
+           points: pathData.points
+       }, pathData.settings);
+       
+       // 古いメッシュを置き換え
+       if (newMesh) {
+           layer.addChildAt(newMesh, layer.getChildIndex(mesh));
+           layer.removeChild(mesh);
+           pathData.graphics = newMesh;
+       }
+   }
+
+2. イベント統合
+   
+   // layer-transform.js
+   this.eventBus.emit('layer:transform-confirmed', {
+       layerId: layer.layerData.id,
+       meshCount: regeneratedCount
+   });
+
+================================================================================
+■ Phase 4: 筆圧・補正・流量(フロー)設定の統合
+================================================================================
+
+【目的】
+UI設定に筆圧感度・補正・流量を追加
+
+【実装ファイルと責務】
+
+ファイル: config.js
+  責務: 設定デフォルト値
+  親依存: なし
+  子依存: すべて
+
+ファイル: brush-settings.js
+  責務: 設定管理
+  親依存: config.js
+  子依存: UI, stroke-renderer
+
+ファイル: settings-popup.js
+  責務: UI表示
+  親依存: brush-settings.js
+  子依存: なし
+
+ファイル: pressure-handler.js
+  責務: 筆圧処理
+  親依存: config.js
+  子依存: brush-core.js
+
+ファイル: stroke-renderer.js
+  責務: 流量反映
+  親依存: brush-settings.js
+  子依存: レイヤー
+
+【設定項目】
+
+config.js に追加:
+
+window.TEGAKI_CONFIG = {
+    // ...既存設定
+    
+    brush: {
+        // 筆圧設定
+        pressure: {
+            enabled: true,
+            sensitivity: 1.0,  // 0.1 ～ 2.0
+            minSize: 0.3,      // 最小サイズ比率
+            maxSize: 1.0       // 最大サイズ比率
+        },
+        
+        // 補正設定
+        smoothing: {
+            enabled: true,
+            strength: 0.4,     // 0.0 ～ 1.0
+            thinning: 0.7      // Perfect-Freehand用
+        },
+        
+        // 流量（フロー）設定
+        flow: {
+            enabled: true,
+            opacity: 1.0,      // 0.0 ～ 1.0
+            sensitivity: 1.0,  // 0.1 ～ 2.0
+            accumulation: true // 蓄積モード
+        }
+    },
+    
+    // Perfect-Freehand設定
+    perfectFreehand: {
+        size: 10,
+        thinning: 0.7,
+        smoothing: 0.4,
+        streamline: 0.3,
+        simulatePressure: false,
+        last: true
+    }
+};
+
+【UI実装】
+
+settings-popup.js に追加:
+
+_buildBrushPanel() {
+    return `
+        <div class="settings-section">
+            <h3>ブラシ設定</h3>
+            
+            <!-- 筆圧 -->
+            <div class="setting-group">
+                <label>筆圧感度</label>
+                <input type="range" id="pressure-sensitivity" 
+                       min="0.1" max="2.0" step="0.1" value="1.0">
+                <span class="value">1.0</span>
+            </div>
+            
+            <!-- 補正 -->
+            <div class="setting-group">
+                <label>補正強度</label>
+                <input type="range" id="smoothing-strength" 
+                       min="0" max="1" step="0.1" value="0.4">
+                <span class="value">0.4</span>
+            </div>
+            
+            <!-- 流量 -->
+            <div class="setting-group">
+                <label>流量（フロー）</label>
+                <input type="range" id="flow-opacity" 
+                       min="0" max="1" step="0.05" value="1.0">
+                <span class="value">1.0</span>
+            </div>
+            
+            <div class="setting-group">
+                <label>流量感度</label>
+                <input type="range" id="flow-sensitivity" 
+                       min="0.1" max="2.0" step="0.1" value="1.0">
+                <span class="value">1.0</span>
+            </div>
+            
+            <label>
+                <input type="checkbox" id="flow-accumulation" checked>
+                蓄積モード（重ね塗りで濃くなる）
+            </label>
+        </div>
+    `;
+}
+
+【流量の実装ロジック】
+
+stroke-renderer.js:
+
+_renderWithPerfectFreehand(strokeData, settings) {
+    // ...既存処理
+    
+    // 流量を反映
+    const flowSettings = window.config?.brush?.flow || {};
+    const baseOpacity = settings.opacity || 1.0;
+    const flowOpacity = flowSettings.opacity || 1.0;
+    const flowSensitivity = flowSettings.sensitivity || 1.0;
+    
+    // 筆圧に応じた透明度計算
+    const avgPressure = this._calculateAveragePressure(strokeData.points);
+    const pressureAdjusted = Math.pow(avgPressure, 1.0 / flowSensitivity);
+    
+    mesh.alpha = baseOpacity * flowOpacity * pressureAdjusted;
+    
+    // 蓄積モード（additive blend）
+    if (flowSettings.accumulation) {
+        mesh.blendMode = 'add';  // または 'screen'
+    }
+    
+    return mesh;
+}
+
+_calculateAveragePressure(points) {
+    if (!points || points.length === 0) return 0.5;
+    const sum = points.reduce((acc, p) => acc + (p.pressure || 0.5), 0);
+    return sum / points.length;
+}
+
+================================================================================
+■ Phase 5: エアブラシ・水彩ペンの基盤整備（実装保留）
+================================================================================
+
+【目的】
+将来の実装に向けた基盤のみ作成
+
+【実装ファイルと責務】
+
+ファイル: brush-settings.js
+  責務: モード追加
+  親依存: なし
+  子依存: UI
+
+ファイル: config.js
+  責務: 設定追加
+  親依存: なし
+  子依存: なし
+
+【基盤コード】
+
+config.js:
+
+brush: {
+    modes: {
+        pen: { enabled: true },
+        eraser: { enabled: true },
+        airbrush: { enabled: false },  // 将来実装
+        watercolor: { enabled: false } // 将来実装
+    },
+    
+    // エアブラシ設定（未使用）
+    airbrush: {
+        radius: 20,
+        density: 0.5,
+        scatter: 1.0
+    },
+    
+    // 水彩設定（未使用）
+    watercolor: {
+        wetness: 0.8,
+        bleeding: 0.3,
+        dryTime: 2.0
+    }
+}
+
+================================================================================
+■ Phase 6: SDF/MSDF Shader統合（高品質レンダリング）
+================================================================================
+
+【目的】
+GLSLシェーダーを統合し、アンチエイリアス付き高品質描画を実現
+
+【実装ファイルと責務】
+
+ファイル: shader-inline.js (新規作成)
+  責務: GLSLインライン化
+  親依存: なし
+  子依存: gl-msdf-pipeline.js
+
+ファイル: gl-msdf-pipeline.js
+  責務: MSDF生成
+  親依存: shader-inline.js
+  子依存: stroke-renderer.js
+
+ファイル: stroke-renderer.js
+  責務: MSDF呼び出し
+  親依存: gl-msdf-pipeline.js
+  子依存: レイヤー
+
+【実装手順】
+
+ステップ1: GLSLシェーダーのインライン化
+
+system/drawing/webgl2/shader-inline.js (新規作成):
+
+window.GLSLShaders = {
+    seedInit: `
+        #version 300 es
+        precision highp float;
+        
+        // seed-init.frag.glsl の内容をコピー
+        // ...
+    `,
+    
+    jfaPass: `
+        #version 300 es
+        precision highp float;
+        
+        // jfa-pass.frag.glsl の内容をコピー
+        // ...
+    `,
+    
+    encode: `
+        #version 300 es
+        precision highp float;
+        
+        // encode.frag.glsl の内容をコピー
+        // ...
+    `,
+    
+    renderVert: `
+        #version 300 es
+        precision highp float;
+        
+        // render.vert.glsl の内容をコピー
+        // ...
+    `,
+    
+    renderFrag: `
+        #version 300 es
+        precision highp float;
+        
+        // render.frag.glsl の内容をコピー
+        // ...
+    `
+};
+
+ステップ2: gl-msdf-pipeline.js の改修
+
+initialize(gl) {
+    this.gl = gl;
+    
+    // インライン化されたシェーダーを使用
+    this.seedInitProgram = this._createProgram(
+        window.GLSLShaders.renderVert,
+        window.GLSLShaders.seedInit
+    );
+    
+    this.jfaProgram = this._createProgram(
+        window.GLSLShaders.renderVert,
+        window.GLSLShaders.jfaPass
+    );
+    
+    // ...
+}
+
+ステップ3: stroke-renderer.js での有効化
+
+async renderFinalStroke(strokeData, providedSettings, targetGraphics) {
+    const settings = this._getSettings(providedSettings);
+    const mode = this._getCurrentMode(settings);
+    
+    if (mode === 'eraser') {
+        return this._renderEraserStroke(strokeData, settings);
+    }
+    
+    // MSDF優先（高品質）
+    if (this.glMSDFPipeline && this.glMSDFPipeline.initialized) {
+        try {
+            const mesh = await this._renderWithMSDF(strokeData, settings);
+            if (mesh) return mesh;
+        } catch (error) {
+            console.warn('[StrokeRenderer] MSDF failed:', error);
+        }
+    }
+    
+    // Perfect-Freehand（標準品質）
+    if (this.webgl2Enabled && this.glStrokeProcessor) {
+        try {
+            const mesh = await this._renderWithPerfectFreehand(strokeData, settings);
+            if (mesh) return mesh;
+        } catch (error) {
+            console.warn('[StrokeRenderer] Perfect-Freehand failed:', error);
+        }
+    }
+    
+    // Legacy（低品質・フォールバック）
+    return this._renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics);
+}
+
+================================================================================
+■ 実装優先順位
+================================================================================
+
+Phase 3: レイヤー変形時のベクター再計算
+  優先度: 高
+  工数見積: 2-3日
+  依存関係: なし（即座に実装可能）
+
+Phase 4: 筆圧・補正・流量設定の統合
+  優先度: 高
+  工数見積: 3-4日
+  依存関係: なし（Phase 3と並行可能）
+
+Phase 5: エアブラシ・水彩ペンの基盤整備
+  優先度: 中
+  工数見積: 1日
+  依存関係: Phase 4完了後
+
+Phase 6: SDF/MSDF Shader統合
+  優先度: 低
+  工数見積: 5-7日
+  依存関係: Phase 3, 4完了後
+
+================================================================================
+■ 残存する問題の修正
+================================================================================
+
+1. config.js に Perfect-Freehand設定追加
+
+window.TEGAKI_CONFIG に追加:
+
+perfectFreehand: {
+    size: 10,
+    thinning: 0.7,
+    smoothing: 0.4,
+    streamline: 0.3,
+    simulatePressure: false,
+    last: true
+}
+
+2. 統計カウントの修正
+
+gl-stroke-processor.js:
+
+createPolygonVertexBuffer(points, baseSize) {
+    // ...既存処理
+    
+    this.stats.processedStrokes++;  // この行を追加確認
+    
+    return { buffer, vertexCount, bounds };
+}
+
+================================================================================
+■ 完成後の機能一覧
+================================================================================
+
+機能                    Phase2  Phase3  Phase4  Phase5  Phase6
+----------------------------------------------------------------
+ベクターペン            ✅      ✅      ✅      ✅      ✅
+ポリゴンメッシュ        ✅      ✅      ✅      ✅      ✅
+拡大時リラスタライズ    ❌      ✅      ✅      ✅      ✅
+筆圧感度                基本    基本    ✅      ✅      ✅
+補正強度                基本    基本    ✅      ✅      ✅
+流量（フロー）          ❌      ❌      ✅      ✅      ✅
+蓄積モード              ❌      ❌      ✅      ✅      ✅
+エアブラシ基盤          ❌      ❌      ❌      ✅      ✅
+水彩基盤                ❌      ❌      ❌      ✅      ✅
+SDF/MSDF                ❌      ❌      ❌      ❌      ✅
+高品質AA                ❌      ❌      ❌      ❌      ✅
+
+================================================================================
+■ 次のステップ
+================================================================================
+
+推奨実装順序:
+
+1. Phase 3 - レイヤー変形時の再計算（ジャギー解消）
+   最優先で実装
+
+2. Phase 4 - 筆圧・補正・流量UI追加
+   Phase 3と並行して実装可能
+
+3. Phase 5 - エアブラシ・水彩基盤（実装保留）
+   設定追加のみ、実装は後回し
+
+4. Phase 6 - SDF/MSDF統合（後回し可能）
+   時間があれば実装
+
+Phase 3 と Phase 4 を優先的に実装することで、実用的なベクターペンが完成します。
+
+================================================================================
+EOF
+================================================================================
