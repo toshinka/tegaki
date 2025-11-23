@@ -21,19 +21,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
     <script src="libs/gsap.min.js"></script>
 
-    <!-- Perfect-Freehand & Earcut -->
-    <script src="libs/perfect-freehand-1.2.0.min.js"></script>
+
     <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
 
-    <!-- Perfect-Freehand グローバル展開 -->
-    <script>
-        if (typeof window.PerfectFreehand !== 'undefined') {
-            window.getStroke = window.PerfectFreehand;
-            console.log('✅ Perfect-Freehand loaded:', typeof window.getStroke);
-        } else {
-            console.error('❌ Perfect-Freehand not found');
-        }
-    </script>
 
     <!-- Core Config -->
     <script src="config.js"></script>
