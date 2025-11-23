@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tegaki デバッグコマンド集</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .section {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #4ec9b0;
+            margin-top: 0;
+            border-bottom: 1px solid #3e3e42;
+            padding-bottom: 10px;
+        }
+        .command {
+            background: #1e1e1e;
+            border: 1px solid #4ec9b0;
+            border-radius: 3px;
+            padding: 10px;
+            margin: 10px 0;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .command:hover {
+            background: #2d2d30;
+            border-color: #6ec9b0;
+        }
+        .command-title {
+            color: #dcdcaa;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .command-code {
+            color: #ce9178;
+            font-size: 12px;
+        }
+        .output {
+            background: #1e1e1e;
+            border: 1px solid #007acc;
+            border-radius: 3px;
+            padding: 10px;
+            margin-top: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 11px;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 12px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        .warning {
+            color: #ff6b6b;
+            font-weight: bold;
+        }
+        .success {
+            color: #51cf66;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Tegaki デバッグコマンド集</h1>
+    
+    <div class="section">
+        <h2>📊 全体状況の診断</h2>
+        <button onclick="runFullDiagnostics()">🚀 完全診断を実行</button>
+        <div id="full-output" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>📜 History（アンドゥ/リドゥ）</h2>
+        <div class="command" onclick="runCommand('debugHistory')">
+            <div class="command-title">1. History状態確認</div>
+            <div class="command-code">debugHistory()</div>
+        </div>
+        <div class="command" onclick="runCommand('checkHistoryStack')">
+            <div class="command-title">2. Historyスタック詳細</div>
+            <div class="command-code">window.History.getStack()</div>
+        </div>
+        <div class="command" onclick="runCommand('testUndo')">
+            <div class="command-title">3. アンドゥテスト（直接実行）</div>
+            <div class="command-code">window.History.undo()</div>
+        </div>
+        <div id="history-output" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>🖼️ サムネイル</h2>
+        <div class="command" onclick="runCommand('debugThumbnails')">
+            <div class="command-title">1. サムネイル更新状態</div>
+            <div class="command-code">debugThumbnails()</div>
+        </div>
+        <div class="command" onclick="runCommand('checkThumbnailSizes')">
+            <div class="command-title">2. サムネイルサイズ確認</div>
+            <div class="command-code">全レイヤーのサムネイルサイズを測定</div>
+        </div>
+        <div class="command" onclick="runCommand('checkBackgroundThumbnail')">
+            <div class="command-title">3. 背景サムネイル詳細</div>
+            <div class="command-code">背景サムネイルのスタイルを解析</div>
+        </div>
+        <div id="thumbnail-output" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>📐 レイヤー</h2>
+        <div class="command" onclick="runCommand('checkLayers')">
+            <div class="command-title">1. レイヤー一覧</div>
+            <div class="command-code">全レイヤーの状態を確認</div>
+        </div>
+        <div class="command" onclick="runCommand('checkActiveLayer')">
+            <div class="command-title">2. アクティブレイヤー詳細</div>
+            <div class="command-code">アクティブレイヤーのパス数・変形状態</div>
+        </div>
+        <div id="layer-output" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>🎯 EventBus</h2>
+        <div class="command" onclick="runCommand('checkEventBus')">
+            <div class="command-title">1. 登録イベント一覧</div>
+            <div class="command-code">window.TegakiEventBus.getRegisteredEvents()</div>
+        </div>
+        <div class="command" onclick="runCommand('checkEventListeners')">
+            <div class="command-title">2. リスナー数確認</div>
+            <div class="command-code">各イベントのリスナー数</div>
+        </div>
+        <div id="eventbus-output" class="output" style="display:none;"></div>
+    </div>
+
+    <script>
+        function log(elementId, message, isError = false) {
+            const output = document.getElementById(elementId);
+            output.style.display = 'block';
+            const className = isError ? 'warning' : 'success';
+            output.innerHTML += `<span class="${className}">[${new Date().toLocaleTimeString()}]</span> ${message}\n`;
+        }
+
+        function clearLog(elementId) {
+            const output = document.getElementById(elementId);
+            output.innerHTML = '';
+        }
+
+        function runCommand(command) {
+            const outputMap = {
+                'debugHistory': 'history-output',
+                'checkHistoryStack': 'history-output',
+                'testUndo': 'history-output',
+                'debugThumbnails': 'thumbnail-output',
+                'checkThumbnailSizes': 'thumbnail-output',
+                'checkBackgroundThumbnail': 'thumbnail-output',
+                'checkLayers': 'layer-output',
+                'checkActiveLayer': 'layer-output',
+                'checkEventBus': 'eventbus-output',
+                'checkEventListeners': 'eventbus-output'
+            };
+
+            const outputId = outputMap[command];
+            clearLog(outputId);
+
+            try {
+                switch(command) {
+                    case 'debugHistory':
+                        if (window.History) {
+                            window.History.debug();
+                            log(outputId, 'History情報をコンソールに出力しました');
+                        } else {
+                            log(outputId, 'window.History が存在しません', true);
+                        }
+                        break;
+
+                    case 'checkHistoryStack':
+                        if (window.History) {
+                            const stack = window.History.getStack();
+                            log(outputId, `スタックサイズ: ${stack.length}`);
+                            log(outputId, `現在のインデックス: ${window.History.index}`);
+                            log(outputId, `Undo可能: ${window.History.canUndo()}`);
+                            log(outputId, `Redo可能: ${window.History.canRedo()}`);
+                            log(outputId, '\nスタック内容:');
+                            stack.forEach(cmd => {
+                                const marker = cmd.isCurrent ? '👉 ' : '   ';
+                                log(outputId, `${marker}[${cmd.index}] ${cmd.name}`);
+                            });
+                        } else {
+                            log(outputId, 'window.History が存在しません', true);
+                        }
+                        break;
+
+                    case 'testUndo':
+                        if (window.History) {
+                            log(outputId, 'アンドゥを実行します...');
+                            if (window.History.canUndo()) {
+                                window.History.undo();
+                                log(outputId, 'アンドゥ実行完了');
+                            } else {
+                                log(outputId, 'アンドゥできません（スタックが空）', true);
+                            }
+                        } else {
+                            log(outputId, 'window.History が存在しません', true);
+                        }
+                        break;
+
+                    case 'debugThumbnails':
+                        if (window.debugThumbnails) {
+                            window.debugThumbnails();
+                            log(outputId, 'サムネイル情報をコンソールに出力しました');
+                        } else {
+                            log(outputId, 'debugThumbnails() が存在しません', true);
+                        }
+                        break;
+
+                    case 'checkThumbnailSizes':
+                        const thumbnails = document.querySelectorAll('.layer-thumbnail');
+                        log(outputId, `サムネイル総数: ${thumbnails.length}\n`);
+                        thumbnails.forEach((thumb, i) => {
+                            const rect = thumb.getBoundingClientRect();
+                            const computed = window.getComputedStyle(thumb);
+                            const isBackground = thumb.classList.contains('background-thumbnail');
+                            log(outputId, `[${i}] ${isBackground ? '背景' : '通常'} サムネイル:`);
+                            log(outputId, `  - 実サイズ: ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}px`);
+                            log(outputId, `  - CSS width: ${computed.width}`);
+                            log(outputId, `  - CSS height: ${computed.height}`);
+                            log(outputId, `  - flex-shrink: ${computed.flexShrink}`);
+                            log(outputId, '');
+                        });
+                        break;
+
+                    case 'checkBackgroundThumbnail':
+                        const bgThumbs = document.querySelectorAll('.background-thumbnail');
+                        if (bgThumbs.length === 0) {
+                            log(outputId, '背景サムネイルが見つかりません', true);
+                        } else {
+                            bgThumbs.forEach((thumb, i) => {
+                                const rect = thumb.getBoundingClientRect();
+                                const computed = window.getComputedStyle(thumb);
+                                log(outputId, `背景サムネイル [${i}]:`);
+                                log(outputId, `  - 実サイズ: ${rect.width}x${rect.height}px`);
+                                log(outputId, `  - CSS width: ${computed.width}`);
+                                log(outputId, `  - CSS height: ${computed.height}`);
+                                log(outputId, `  - display: ${computed.display}`);
+                                log(outputId, `  - background-color: ${computed.backgroundColor}`);
+                                log(outputId, `  - background-image: ${computed.backgroundImage}`);
+                                log(outputId, `  - grid-column: ${computed.gridColumn}`);
+                                log(outputId, `  - grid-row: ${computed.gridRow}`);
+                                log(outputId, '');
+                            });
+                        }
+                        break;
+
+                    case 'checkLayers':
+                        const layerManager = window.drawingApp?.layerManager || window.layerManager;
+                        if (layerManager) {
+                            const layers = layerManager.getLayers();
+                            log(outputId, `レイヤー総数: ${layers.length}`);
+                            log(outputId, `アクティブインデックス: ${layerManager.getActiveLayerIndex()}\n`);
+                            layers.forEach((layer, i) => {
+                                const data = layer.layerData;
+                                const isActive = i === layerManager.getActiveLayerIndex();
+                                const marker = isActive ? '👉 ' : '   ';
+                                log(outputId, `${marker}[${i}] ${data?.name || '名無し'}`);
+                                log(outputId, `    - ID: ${data?.id}`);
+                                log(outputId, `    - 背景: ${data?.isBackground ? 'はい' : 'いいえ'}`);
+                                log(outputId, `    - パス数: ${data?.paths?.length || 0}`);
+                                log(outputId, `    - 可視: ${data?.visible !== false ? 'はい' : 'いいえ'}`);
+                                log(outputId, '');
+                            });
+                        } else {
+                            log(outputId, 'layerManager が見つかりません', true);
+                        }
+                        break;
+
+                    case 'checkActiveLayer':
+                        const lm = window.drawingApp?.layerManager || window.layerManager;
+                        if (lm) {
+                            const active = lm.getActiveLayer();
+                            if (active) {
+                                log(outputId, `アクティブレイヤー: ${active.layerData?.name}`);
+                                log(outputId, `パス数: ${active.layerData?.paths?.length || 0}`);
+                                log(outputId, `子要素数: ${active.children.length}`);
+                                log(outputId, `位置: (${active.position.x}, ${active.position.y})`);
+                                log(outputId, `スケール: (${active.scale.x}, ${active.scale.y})`);
+                                log(outputId, `回転: ${active.rotation}`);
+                            } else {
+                                log(outputId, 'アクティブレイヤーがありません', true);
+                            }
+                        } else {
+                            log(outputId, 'layerManager が見つかりません', true);
+                        }
+                        break;
+
+                    case 'checkEventBus':
+                        if (window.TegakiEventBus) {
+                            const events = window.TegakiEventBus.getRegisteredEvents();
+                            log(outputId, `登録イベント数: ${events.length}\n`);
+                            events.sort().forEach(event => {
+                                log(outputId, event);
+                            });
+                        } else {
+                            log(outputId, 'window.TegakiEventBus が存在しません', true);
+                        }
+                        break;
+
+                    case 'checkEventListeners':
+                        if (window.TegakiEventBus) {
+                            const events = window.TegakiEventBus.getRegisteredEvents();
+                            log(outputId, 'イベント別リスナー数:\n');
+                            events.sort().forEach(event => {
+                                const count = window.TegakiEventBus.getListenerCount(event);
+                                log(outputId, `${event}: ${count}個`);
+                            });
+                        } else {
+                            log(outputId, 'window.TegakiEventBus が存在しません', true);
+                        }
+                        break;
+                }
+            } catch (error) {
+                log(outputId, `エラー: ${error.message}`, true);
+                console.error(error);
+            }
+        }
+
+        function runFullDiagnostics() {
+            const output = document.getElementById('full-output');
+            output.style.display = 'block';
+            output.innerHTML = '<span class="success">🚀 完全診断を開始...</span>\n\n';
+
+            const diagnostics = [
+                {
+                    name: '1. History状態',
+                    check: () => {
+                        if (!window.History) return '❌ window.History が存在しません';
+                        return `✅ スタック: ${window.History.stack.length}個, インデックス: ${window.History.index}, Undo: ${window.History.canUndo()}, Redo: ${window.History.canRedo()}`;
+                    }
+                },
+                {
+                    name: '2. ThumbnailUpdateManager',
+                    check: () => {
+                        if (!window.thumbnailUpdateManager) return '❌ thumbnailUpdateManager が存在しません';
+                        const info = window.thumbnailUpdateManager.getDebugInfo();
+                        return `✅ 有効: ${info.isEnabled}, デバウンス: ${info.debounceTime}ms, 待機中: ${info.activeTimers}個`;
+                    }
+                },
+                {
+                    name: '3. EventBus',
+                    check: () => {
+                        if (!window.TegakiEventBus) return '❌ TegakiEventBus が存在しません';
+                        const events = window.TegakiEventBus.getRegisteredEvents();
+                        return `✅ 登録イベント: ${events.length}個`;
+                    }
+                },
+                {
+                    name: '4. LayerManager',
+                    check: () => {
+                        const lm = window.drawingApp?.layerManager || window.layerManager;
+                        if (!lm) return '❌ layerManager が見つかりません';
+                        const layers = lm.getLayers();
+                        const active = lm.getActiveLayerIndex();
+                        return `✅ レイヤー: ${layers.length}個, アクティブ: ${active}`;
+                    }
+                },
+                {
+                    name: '5. サムネイル要素',
+                    check: () => {
+                        const thumbs = document.querySelectorAll('.layer-thumbnail');
+                        const bg = document.querySelectorAll('.background-thumbnail');
+                        return `✅ 通常: ${thumbs.length}個, 背景: ${bg.length}個`;
+                    }
+                },
+                {
+                    name: '6. KeyboardHandler',
+                    check: () => {
+                        if (!window.KeyboardHandler) return '❌ KeyboardHandler が存在しません';
+                        return `✅ Vキー状態: ${window.KeyboardHandler.isVKeyPressed()}`;
+                    }
+                },
+                {
+                    name: '7. CoreRuntime API',
+                    check: () => {
+                        if (!window.CoreRuntime?.api) return '❌ CoreRuntime.api が存在しません';
+                        return `✅ API利用可能`;
+                    }
+                }
+            ];
+
+            diagnostics.forEach(diag => {
+                try {
+                    const result = diag.check();
+                    output.innerHTML += `${diag.name}\n  ${result}\n\n`;
+                } catch (error) {
+                    output.innerHTML += `${diag.name}\n  ❌ エラー: ${error.message}\n\n`;
+                }
+            });
+
+            output.innerHTML += '<span class="success">✅ 診断完了</span>\n';
+        }
+    </script>
+</body>
+</html>
