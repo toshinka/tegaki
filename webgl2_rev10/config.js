@@ -1,11 +1,13 @@
 /**
- * @file config.js - Phase 3.5: Perfect-Freehand最適化版
+ * @file config.js - Perfect-Freehand形状補正ゼロ版
  * @description グローバル設定・キーマップ定義
  * 
- * 【Phase 3.5 改修内容】
- * ✅ simulatePressure: true（マウス対応）
+ * 【改修内容】
+ * ✅ smoothing: 0（形状変形なし）
+ * ✅ streamline: 0（ストローク終了後の変形なし）
  * ✅ thinning: 0（線が太らない）
- * ✅ smoothing/streamline最適化
+ * ✅ easing: t => t（補間停止）
+ * ✅ simulatePressure: false（筆圧データをそのまま使用）
  * 
  * 【親依存】なし（最上位設定ファイル）
  * 【子依存】全システムファイル
@@ -45,20 +47,28 @@ window.TEGAKI_CONFIG = {
     },
     
     /**
-     * Phase 3.5: Perfect-Freehand最適化設定
+     * Perfect-Freehand: 形状補正ゼロ・ポリゴン化専用設定
      * 
-     * 🔧 主な変更:
-     * - simulatePressure: true（マウスでも自然な線）
-     * - thinning: 0（線が太らない・ユーザー意図通り）
-     * - smoothing: 0.2（適度な滑らかさ）
-     * - streamline: 0.3（描画遅延を最小化）
+     * 🎯 目的:
+     * - ユーザーが描いた線をそのまま保持
+     * - ストローク終了後に形が変わらない
+     * - ベクター化・メッシュ生成の入口としてのみ機能
      */
     perfectFreehand: {
         size: 10,              // ブラシサイズ（動的に上書き）
-        thinning: 0,           // 🔧 0 = 線が太らない
-        smoothing: 0.2,        // 🔧 適度な滑らかさ
-        streamline: 0.3,       // 🔧 描画の応答性
-        simulatePressure: true, // 🔧 マウス対応
+        
+        // 🔧 形状補正を完全停止
+        smoothing: 0,          // 平滑化なし（描いた点列そのまま）
+        streamline: 0,         // 線の慣性・遅れ補正なし
+        thinning: 0,           // 筆圧による線幅増減を内部補正しない
+        
+        // 🔧 補間停止（1:1）
+        easing: (t) => t,      // 点の位置がずれない
+        
+        // 🔧 筆圧推定ロジック停止
+        simulatePressure: false, // 外部筆圧データをそのまま使用
+        
+        // キャップ設定
         last: true,
         start: {
             taper: 0,
@@ -174,7 +184,7 @@ window.TEGAKI_CONFIG = {
     debug: false,
     
     /**
-     * Phase 3.5: Perfect-Freehand設定ヘルパー
+     * Perfect-Freehand設定ヘルパー
      */
     getPerfectFreehandOptions: function(brushSize = 10) {
         return {
@@ -184,7 +194,7 @@ window.TEGAKI_CONFIG = {
     }
 };
 
-// キーマップ定義（変更なし）
+// キーマップ定義
 window.TEGAKI_KEYMAP = {
     actions: {
         UNDO: {
@@ -418,6 +428,8 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
-console.log(' ✅ config.js Phase 3.5 loaded');
-console.log('    ✅ simulatePressure: true (マウス対応)');
-console.log('    ✅ thinning: 0 (線が太らない)');
+console.log('✅ config.js - Perfect-Freehand形状補正ゼロ版 loaded');
+console.log('   ✅ smoothing: 0（形状変形なし）');
+console.log('   ✅ streamline: 0（終了後変形なし）');
+console.log('   ✅ thinning: 0（線が太らない）');
+console.log('   ✅ easing: t=>t（補間停止）');

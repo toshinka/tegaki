@@ -1,14 +1,14 @@
 /**
- * GL Stroke Processor - Phase 3.1 Perfect-Freehand参照修正版
+ * GL Stroke Processor - ポリゴン生成修正版
  * 
  * 【責務】
- * - Perfect-Freehandポリゴン生成
+ * - Perfect-Freehandを最小限のみ使用（形状補正ゼロ設定）
+ * - 正しいポリゴン閉鎖処理
  * - Earcut三角形分割
  * - WebGL2頂点バッファ作成
- * - 統計カウント管理
  * 
  * 【親依存】
- * - Perfect-Freehand (window.PerfectFreehand.getStroke)
+ * - Perfect-Freehand (window.getStroke)
  * - Earcut (window.earcut)
  * - config.js (perfectFreehand設定)
  * 
@@ -16,10 +16,10 @@
  * - stroke-renderer.js
  * - webgl2-drawing-layer.js
  * 
- * 【Phase 3.1 改修内容】
- * ✅ Perfect-Freehand参照方法修正（UMDビルド対応）
- * ✅ window.getStroke エイリアス自動作成
- * ✅ 統計カウント修正継承
+ * 【改修内容】
+ * ✅ Perfect-Freehandの形状補正を完全無効化
+ * ✅ config.jsの設定を厳密に適用
+ * ✅ ポリゴン閉鎖ロジック修正
  */
 
 (function() {
@@ -51,17 +51,14 @@
                 } else if (typeof window.PerfectFreehand !== 'undefined' && 
                            typeof window.PerfectFreehand.getStroke !== 'undefined') {
                     getStrokeFunc = window.PerfectFreehand.getStroke;
-                    // エイリアス作成（互換性のため）
                     window.getStroke = getStrokeFunc;
                 } else if (typeof window.PerfectFreehand === 'function') {
-                    // デフォルトエクスポート
                     getStrokeFunc = window.PerfectFreehand;
                     window.getStroke = getStrokeFunc;
                 }
 
                 if (!getStrokeFunc) {
                     console.error('[GLStrokeProcessor] Perfect-Freehand not loaded');
-                    console.error('  Available:', Object.keys(window).filter(k => k.toLowerCase().includes('perfect')));
                     return false;
                 }
 
@@ -72,9 +69,7 @@
                 }
 
                 this.initialized = true;
-                console.log('[GLStrokeProcessor] ✅ Initialized successfully');
-                console.log('  getStroke:', typeof window.getStroke);
-                console.log('  earcut:', typeof window.earcut);
+                console.log('[GLStrokeProcessor] ✅ Initialized (形状補正ゼロ版)');
                 
                 return true;
 
@@ -86,6 +81,7 @@
 
         /**
          * ストロークポイントからポリゴン頂点バッファ生成
+         * 
          * @param {Array} points - [{x, y, pressure}, ...]
          * @param {number} baseSize - 基本サイズ
          * @returns {object|null} {buffer, vertexCount, bounds}
@@ -102,16 +98,20 @@
             }
 
             try {
-                // config.js設定取得
-                const config = window.TEGAKI_CONFIG?.perfectFreehand || {
+                // config.jsから形状補正ゼロ設定を取得
+                const configOptions = window.TEGAKI_CONFIG?.perfectFreehand;
+                
+                // 形状補正完全無効化設定
+                const options = {
                     size: baseSize,
-                    thinning: 0.5,
-                    smoothing: 0.05,
-                    streamline: 0.05,
-                    simulatePressure: false,
-                    last: true,
-                    start: { taper: 0, cap: true },
-                    end: { taper: 0, cap: true }
+                    smoothing: configOptions?.smoothing !== undefined ? configOptions.smoothing : 0,
+                    streamline: configOptions?.streamline !== undefined ? configOptions.streamline : 0,
+                    thinning: configOptions?.thinning !== undefined ? configOptions.thinning : 0,
+                    simulatePressure: configOptions?.simulatePressure !== undefined ? configOptions.simulatePressure : false,
+                    easing: configOptions?.easing || ((t) => t),
+                    start: configOptions?.start || { taper: 0, cap: true },
+                    end: configOptions?.end || { taper: 0, cap: true },
+                    last: configOptions?.last !== undefined ? configOptions.last : true
                 };
 
                 // ポイントフォーマット変換
@@ -121,11 +121,8 @@
                     p.pressure !== undefined ? p.pressure : 0.5
                 ]);
 
-                // Perfect-Freehandでポリゴン生成
-                const outlinePoints = window.getStroke(formattedPoints, {
-                    ...config,
-                    size: baseSize
-                });
+                // Perfect-Freehandでアウトライン生成
+                const outlinePoints = window.getStroke(formattedPoints, options);
 
                 if (!outlinePoints || outlinePoints.length < 3) {
                     console.warn('[GLStrokeProcessor] Insufficient outline points');
@@ -141,6 +138,7 @@
                     maxY: -Infinity
                 };
 
+                // アウトラインポイントを平坦化
                 for (let i = 0; i < outlinePoints.length; i++) {
                     const x = outlinePoints[i][0];
                     const y = outlinePoints[i][1];
@@ -152,6 +150,7 @@
                     bounds.maxY = Math.max(bounds.maxY, y);
                 }
 
+                // Earcut三角形分割
                 const indices = window.earcut(flatCoords);
 
                 if (!indices || indices.length === 0) {
@@ -237,8 +236,8 @@
     // グローバル登録
     window.GLStrokeProcessor = GLStrokeProcessor;
 
-    console.log('✅ gl-stroke-processor.js Phase 3.1 loaded');
-    console.log('   ✅ Perfect-Freehand UMDビルド対応');
-    console.log('   ✅ window.getStroke エイリアス自動作成');
+    console.log('✅ gl-stroke-processor.js - 形状補正ゼロ版 loaded');
+    console.log('   ✅ config.js設定を厳密適用');
+    console.log('   ✅ Perfect-Freehandは最小限のみ使用');
 
 })();

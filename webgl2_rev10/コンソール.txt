@@ -1,7 +1,7 @@
- ✅ Perfect-Freehand loaded: function
-  ✅ config.js Phase 3 loaded
-config.js:531     ✅ Perfect-Freehand設定追加
-config.js:532     ✅ ブラシ設定基盤準備
+index.html:32 ✅ Perfect-Freehand loaded: function
+config.js:421  ✅ config.js Phase 3.5 loaded
+config.js:422     ✅ simulatePressure: true (マウス対応)
+config.js:423     ✅ thinning: 0 (線が太らない)
 data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
 batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
 debug-utils.js:553 ✅ debug-utils.js loaded
@@ -54,9 +54,8 @@ pressure-handler.js:182    ✅ 平滑化アルゴリズム修正
 stroke-recorder.js:87 ✅ stroke-recorder.js (警告ログ削減版) loaded
 stroke-recorder.js:88    ✓ 不要な警告ログを削除
 stroke-recorder.js:89    ✓ DRY原則準拠
-stroke-renderer.js:405 ✅ stroke-renderer.js Phase 3.2 loaded
-stroke-renderer.js:406    ✅ Perfect-Freehand座標処理修正
-stroke-renderer.js:407    ✅ デバッグログ追加
+stroke-renderer.js:413 ✅ stroke-renderer.js Phase 3.5 loaded
+stroke-renderer.js:414    ✅ 三角形個別描画（自己交差防止）
 thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
 brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
 blend-modes.js:24 ✅ BlendMode definitions loaded
@@ -64,9 +63,9 @@ vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
 vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
 vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
 vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
-brush-core.js:405 ✅ brush-core.js v2.4 loaded (筆圧処理統合版)
-brush-core.js:406    ✅ PressureHandler自動初期化実装
-brush-core.js:407    ✅ startStroke/updateStrokeで筆圧処理実行
+ ✅ brush-core.js v2.4.1 loaded (メッシュ追加確認版)
+    ✅ レイヤー追加後の確認ログ実装
+    ✅ Pixi手動レンダリングトリガー追加
  ✅ fill-tool.js (Phase 1完全修正版) loaded
  ✅ drawing-engine.js (Phase 4.1 StrokeRenderer参照追加版) loaded
     ✅ strokeRenderer プロパティ追加
@@ -126,14 +125,13 @@ core-runtime.js:559    ✅ 存在しないメソッド呼び出し削除
 core-engine.js:717 ✅ core-engine.js v8.33.0 loaded
 core-engine.js:718    🆕 DrawingEngine に StrokeRenderer 参照追加
 core-engine.js:719    ✅ WebGL2初期化準備完了
-core-initializer.js:452  ✅ core-initializer.js (Phase 3 WebGL2統合完全版) loaded
-core-initializer.js:453     ✅ WebGLContext Singleton統合
-core-initializer.js:454     ✅ GLStrokeProcessor自動初期化
-index.html:133 🚀 WebGL2 MSDF版 起動中...
+core-initializer.js:451  ✅ core-initializer.js (Phase 3.1 レンダーループ修正版) loaded
+core-initializer.js:452     ✅ window.pixiAppグローバル参照追加
+core-initializer.js:453     ✅ Pixi Ticker明示的開始
+index.html:126 🚀 WebGL2 MSDF版 起動中...
 core-engine.js:634 ✅ [CoreEngine] StrokeRenderer set to DrawingEngine
-brush-core.js:109 [BrushCore] PressureHandler initialized successfully
-brush-core.js:83 ✅ [BrushCore] Initialized (v2.4 筆圧処理統合版)
-brush-core.js:84    ✅ PressureHandler: true
+brush-core.js:82 ✅ [BrushCore] Initialized (v2.4.1 メッシュ追加確認版)
+brush-core.js:83    ✅ PressureHandler: true
 popup-manager.js:16 ✅ PopupManager initialized
 popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
 popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
@@ -146,23 +144,22 @@ popup-manager.js:87 ✅ Popup "album" initialized successfully
 popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 core-initializer.js:299 [DrawingApp] Initializing WebGL2...
-core-initializer.js:160 [WebGL2] Starting initialization...
-core-initializer.js:175 [WebGL2] Canvas found: 725 x 597
-webgl2-drawing-layer.js:107 [WebGL2DrawingLayer] ✅ Initialized {canvasSize: '725x597', maxTextureSize: 16384, extensions: Array(3)}
+core-initializer.js:159 [WebGL2] Starting initialization...
+core-initializer.js:172 [WebGL2] Canvas found: 752 x 597
+webgl2-drawing-layer.js:107 [WebGL2DrawingLayer] ✅ Initialized {canvasSize: '752x597', maxTextureSize: 16384, extensions: Array(3)}
 gl-stroke-processor.js:75 [GLStrokeProcessor] ✅ Initialized successfully
 gl-stroke-processor.js:76   getStroke: function
 gl-stroke-processor.js:77   earcut: function
 webgl2-drawing-layer.js:155 [WebGL2DrawingLayer] ✅ GLStrokeProcessor initialized
-core-initializer.js:185 [WebGL2] ✅ Context initialized
-core-initializer.js:193 [WebGL2] ✅ GLStrokeProcessor ready
-core-initializer.js:199 [WebGL2] ✅ GLStrokeProcessor connected to StrokeRenderer
+core-initializer.js:181 [WebGL2] ✅ Context initialized
+core-initializer.js:188 [WebGL2] ✅ GLStrokeProcessor ready
+core-initializer.js:193 [WebGL2] ✅ GLStrokeProcessor connected to StrokeRenderer
 core-initializer.js:308 [DrawingApp] WebGL2 result: true
-index.html:135 ✅ WebGL2初期化完了
+index.html:128 ✅ WebGL2初期化完了
+index.html:132 🎬 Pixi Ticker Status: {started: true, speed: 1, maxFPS: 0, FPS: 59.99999999999999}
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-stroke-renderer.js:213 [StrokeRenderer] Formatted points sample: (3) [{…}, {…}, {…}]
-stroke-renderer.js:225 [StrokeRenderer] Vertex buffer: {vertexCount: 2469, bounds: {…}}
-stroke-renderer.js:178 [StrokeRenderer] ✅ Perfect-Freehand mesh created
-stroke-renderer.js:213 [StrokeRenderer] Formatted points sample: (3) [{…}, {…}, {…}]
-stroke-renderer.js:225 [StrokeRenderer] Vertex buffer: {vertexCount: 543, bounds: {…}}
-stroke-renderer.js:178 [StrokeRenderer] ✅ Perfect-Freehand mesh created
+brush-core.js:291 [BrushCore] ✅ Mesh added to layer: {label: 'stroke_vector_1763850323918', layerId: 'layer_1763850322972_6hft3nwgc', layerChildren: 1, meshVisible: true, meshRenderable: true}
+brush-core.js:302 [BrushCore] 🔄 Manual Pixi render triggered
+brush-core.js:291 [BrushCore] ✅ Mesh added to layer: {label: 'stroke_vector_1763850324789', layerId: 'layer_1763850322972_6hft3nwgc', layerChildren: 2, meshVisible: true, meshRenderable: true}
+brush-core.js:302 [BrushCore] 🔄 Manual Pixi render triggered
