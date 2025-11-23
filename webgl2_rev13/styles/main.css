@@ -1053,3 +1053,82 @@ canvas {
     margin-bottom: 0;
     padding-bottom: 0;
 }
+
+/* ===== 設定ポップアップ用スクロールバー統一 ===== */
+
+/* 設定ポップアップのスクロールバー（futabaカラー統一） */
+#settings-popup::-webkit-scrollbar {
+    width: 10px;
+}
+
+#settings-popup::-webkit-scrollbar-track {
+    background: #e9c2ba;
+    border-radius: 5px;
+}
+
+#settings-popup::-webkit-scrollbar-thumb {
+    background: #800000;
+    border-radius: 5px;
+    border: 2px solid #e9c2ba;
+}
+
+#settings-popup::-webkit-scrollbar-thumb:hover {
+    background: #aa5a56;
+}
+
+#settings-popup {
+    scrollbar-width: thin;
+    scrollbar-color: #800000 #e9c2ba;
+}
+
+/* 設定ポップアップのレイアウト調整 */
+#settings-popup {
+    min-width: 340px;
+    max-width: 360px;
+}
+
+#settings-popup .setting-group {
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--futaba-light-medium);
+}
+
+#settings-popup .setting-group:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+#settings-popup .setting-label {
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+#settings-popup .slider-container {
+    margin-bottom: 8px;
+}
+
+/* レイヤーパネルのスクロールバー（既存） */
+.layer-panel-items::-webkit-scrollbar {
+    width: 10px;
+}
+
+.layer-panel-items::-webkit-scrollbar-track {
+    background: #e9c2ba;
+    border-radius: 5px;
+}
+
+.layer-panel-items::-webkit-scrollbar-thumb {
+    background: #800000;
+    border-radius: 5px;
+    border: 2px solid #e9c2ba;
+}
+
+.layer-panel-items::-webkit-scrollbar-thumb:hover {
+    background: #aa5a56;
+}
+
+.layer-panel-items {
+    scrollbar-width: thin;
+    scrollbar-color: #800000 #e9c2ba;
+}

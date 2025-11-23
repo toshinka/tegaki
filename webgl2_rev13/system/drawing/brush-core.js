@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * brush-core.js - v2.4.1 メッシュ追加確認版
+ * brush-core.js - v2.5 クリーン版（Phase 3.6対応）
  * ============================================================
  * 親ファイル: drawing-engine.js
  * 依存ファイル:
@@ -13,10 +13,10 @@
  *   - system/drawing/brush-settings.js (ブラシ設定)
  *   - system/drawing/fill-tool.js (FillTool)
  * ============================================================
- * 【v2.4.1 改修内容】
- * ✅ メッシュ追加後の確認ログ追加
- * ✅ レイヤーへの追加を確実化
- * ✅ Pixi renderの手動トリガー追加
+ * 【v2.5 改修内容】
+ * ✅ 過剰なデバッグログ削減
+ * ✅ 正常動作確認済みログの削除
+ * ✅ Phase 3.6完了状態への対応
  * ============================================================
  */
 
@@ -78,9 +78,6 @@
             }
             
             this._setupEventListeners();
-            
-            console.log('✅ [BrushCore] Initialized (v2.4.1 メッシュ追加確認版)');
-            console.log('   ✅ PressureHandler:', !!this.pressureHandler);
         }
         
         _initializePressureHandler() {
@@ -285,21 +282,11 @@
             );
             
             if (graphics) {
-                // メッシュをレイヤーに追加
                 activeLayer.addChild(graphics);
                 
-                console.log('[BrushCore] ✅ Mesh added to layer:', {
-                    label: graphics.label || 'unknown',
-                    layerId: activeLayer.layerData?.id,
-                    layerChildren: activeLayer.children.length,
-                    meshVisible: graphics.visible,
-                    meshRenderable: graphics.renderable
-                });
-                
-                // 🔧 Pixi手動レンダリングトリガー
+                // Pixi手動レンダリングトリガー
                 if (window.pixiApp && window.pixiApp.renderer) {
                     window.pixiApp.renderer.render(window.pixiApp.stage);
-                    console.log('[BrushCore] 🔄 Manual Pixi render triggered');
                 }
                 
                 if (activeLayer.layerData) {
@@ -307,7 +294,6 @@
                         activeLayer.layerData.pathsData = [];
                     }
                     
-                    // pathsDataにも追加（後方互換）
                     if (!activeLayer.layerData.paths) {
                         activeLayer.layerData.paths = [];
                     }
@@ -359,7 +345,7 @@
                     });
                 }
             } else {
-                console.warn('[BrushCore] ❌ Graphics is null!');
+                console.warn('[BrushCore] Graphics rendering failed');
             }
             
             this.isDrawing = false;
@@ -408,8 +394,6 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js v2.4.1 loaded (メッシュ追加確認版)');
-    console.log('   ✅ レイヤー追加後の確認ログ実装');
-    console.log('   ✅ Pixi手動レンダリングトリガー追加');
+    console.log('✅ brush-core.js v2.5 loaded (Phase 3.6対応)');
 
 })();

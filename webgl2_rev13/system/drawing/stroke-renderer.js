@@ -1,22 +1,23 @@
 /**
  * ============================================================
- * stroke-renderer.js - Perfect-Freehand形状補正ゼロ対応版
+ * stroke-renderer.js - Phase 4: 流量統合版
  * ============================================================
  * 【親依存】
  *   - PixiJS v8.14
  *   - gl-stroke-processor.js (GLStrokeProcessor)
  *   - brush-settings.js (window.brushSettings)
- *   - config.js (perfectFreehand設定)
+ *   - settings-manager.js (flow設定取得)
+ *   - config.js
  * 
  * 【子依存】
  *   - brush-core.js
  *   - layer-transform.js
  * 
- * 【改修内容】
- * ✅ Perfect-Freehandを"ポリゴン化専用"として使用
- * ✅ 形状補正（smoothing/streamline/thinning）を完全無効化
- * ✅ 三角形描画でメッシュ生成
- * ✅ Phase 3: レイヤー変形時の再生成対応
+ * 【Phase 4改修内容】
+ * ✅ 流量（フロー）反映実装
+ * ✅ 流量感度による筆圧連動透明度
+ * ✅ 蓄積モード（加算合成）対応
+ * ✅ Phase 3機能完全継承
  * ============================================================
  */
 
@@ -38,6 +39,7 @@
             this.webgl2Enabled = false;
             
             this.config = window.TEGAKI_CONFIG?.webgpu || {};
+            this.settingsManager = window.TegakiSettingsManager;
         }
 
         async setWebGLLayer(webgl2Layer) {
@@ -88,6 +90,84 @@
             return settings?.mode || this.currentTool || 'pen';
         }
 
+        /**
+         * Phase 4: 流量設定取得
+         * @returns {Object} {opacity, sensitivity, accumulation}
+         */
+        _getFlowSettings() {
+            let flowOpacity = 1.0;
+            let flowSensitivity = 1.0;
+            let flowAccumulation = false;
+            
+            // SettingsManagerから取得
+            if (this.settingsManager && typeof this.settingsManager.get === 'function') {
+                const settings = this.settingsManager.get();
+                flowOpacity = settings.flowOpacity !== undefined ? settings.flowOpacity : 1.0;
+                flowSensitivity = settings.flowSensitivity !== undefined ? settings.flowSensitivity : 1.0;
+                flowAccumulation = settings.flowAccumulation !== undefined ? settings.flowAccumulation : false;
+            }
+            // configから取得（フォールバック）
+            else if (window.TEGAKI_CONFIG?.brush?.flow) {
+                const flow = window.TEGAKI_CONFIG.brush.flow;
+                flowOpacity = flow.opacity !== undefined ? flow.opacity : 1.0;
+                flowSensitivity = flow.sensitivity !== undefined ? flow.sensitivity : 1.0;
+                flowAccumulation = flow.accumulation !== undefined ? flow.accumulation : false;
+            }
+            
+            return {
+                opacity: flowOpacity,
+                sensitivity: flowSensitivity,
+                accumulation: flowAccumulation
+            };
+        }
+
+        /**
+         * Phase 4: 平均筆圧計算
+         * @param {Array} points - ストロークポイント配列
+         * @returns {number} 平均筆圧（0.0～1.0）
+         */
+        _calculateAveragePressure(points) {
+            if (!points || points.length === 0) return 0.5;
+            
+            let sum = 0;
+            let count = 0;
+            
+            for (const p of points) {
+                const pressure = p.pressure !== undefined ? p.pressure : 0.5;
+                sum += pressure;
+                count++;
+            }
+            
+            return count > 0 ? sum / count : 0.5;
+        }
+
+        /**
+         * Phase 4: 流量による最終透明度計算
+         * @param {number} baseOpacity - ブラシ基本透明度
+         * @param {Array} points - ストロークポイント配列
+         * @returns {number} 最終透明度（0.0～1.0）
+         */
+        _calculateFlowOpacity(baseOpacity, points) {
+            const flow = this._getFlowSettings();
+            
+            // 流量透明度
+            const flowOpacity = flow.opacity;
+            
+            // 平均筆圧
+            const avgPressure = this._calculateAveragePressure(points);
+            
+            // 流量感度による筆圧調整
+            // sensitivity = 1.0: 標準（筆圧そのまま）
+            // sensitivity > 1.0: 軽い筆圧で濃くなる
+            // sensitivity < 1.0: 強い筆圧が必要
+            const pressureAdjusted = Math.pow(avgPressure, 1.0 / flow.sensitivity);
+            
+            // 最終透明度 = 基本透明度 × 流量透明度 × 筆圧調整値
+            const finalOpacity = baseOpacity * flowOpacity * pressureAdjusted;
+            
+            return Math.max(0.0, Math.min(1.0, finalOpacity));
+        }
+
         setTool(tool) {
             this.currentTool = tool;
         }
@@ -118,7 +198,9 @@
                 if (mode === 'eraser') {
                     graphics.fill({ color: 0xFFFFFF, alpha: 0.5 });
                 } else {
-                    graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+                    // Phase 4: プレビューも流量反映
+                    const flowOpacity = this._calculateFlowOpacity(settings.opacity || 1.0, points);
+                    graphics.fill({ color: settings.color, alpha: flowOpacity });
                 }
                 return graphics;
             }
@@ -148,10 +230,12 @@
                         join: 'round'
                     });
                 } else {
+                    // Phase 4: プレビューも流量反映
+                    const flowOpacity = this._calculateFlowOpacity(settings.opacity || 1.0, points);
                     graphics.stroke({
                         width: avgWidth,
                         color: settings.color,
-                        alpha: settings.opacity || 1.0,
+                        alpha: flowOpacity,
                         cap: 'round',
                         join: 'round'
                     });
@@ -169,15 +253,15 @@
                 return this._renderEraserStroke(strokeData, settings);
             }
             
-            // WebGL2 Perfect-Freehand使用（形状補正ゼロ）
+            // WebGL2 独自リボン生成使用
             if (this.webgl2Enabled && this.glStrokeProcessor) {
                 try {
-                    const graphics = this._renderWithPerfectFreehand(strokeData, settings);
+                    const graphics = this._renderWithPolygon(strokeData, settings);
                     if (graphics) {
                         return graphics;
                     }
                 } catch (error) {
-                    console.warn('[StrokeRenderer] Perfect-Freehand failed:', error);
+                    console.warn('[StrokeRenderer] Polygon rendering failed:', error);
                 }
             }
             
@@ -186,14 +270,14 @@
         }
 
         /**
-         * Perfect-Freehand: ポリゴン化専用・形状補正ゼロ
+         * Phase 4: 独自ポリゴン生成 + 流量反映版
          * 
          * 🎯 目的:
          * - ユーザーが描いた線をそのままベクター化
-         * - 形状変形を一切行わない
-         * - メッシュ生成の入口としてのみ機能
+         * - 流量による透明度調整
+         * - 蓄積モード対応
          */
-        _renderWithPerfectFreehand(strokeData, settings) {
+        _renderWithPolygon(strokeData, settings) {
             const points = strokeData.points;
             
             if (!points || points.length < 2) {
@@ -207,7 +291,7 @@
                 pressure: p.pressure !== undefined ? p.pressure : 0.5
             }));
 
-            // Perfect-Freehandでポリゴン生成（形状補正なし）
+            // 独自リボン生成でポリゴン生成
             const vertexBuffer = this.glStrokeProcessor.createPolygonVertexBuffer(
                 formattedPoints,
                 settings.size
@@ -227,13 +311,16 @@
                 return null;
             }
 
-            // 三角形ごとに個別に描画（自己交差防止）
+            // Phase 4: 流量による最終透明度計算
+            const baseOpacity = settings.opacity || 1.0;
+            const finalOpacity = this._calculateFlowOpacity(baseOpacity, formattedPoints);
+
+            // 三角形ごとに個別に描画
             graphics.context.fillStyle = {
                 color: settings.color,
-                alpha: settings.opacity || 1.0
+                alpha: finalOpacity
             };
 
-            // 三角形リストとして描画
             for (let i = 0; i < vertices.length; i += 6) {
                 if (i + 5 >= vertices.length) break;
 
@@ -249,10 +336,17 @@
 
             graphics.fill({
                 color: settings.color,
-                alpha: settings.opacity || 1.0
+                alpha: finalOpacity
             });
 
-            graphics.blendMode = 'normal';
+            // Phase 4: 蓄積モード（加算合成）
+            const flow = this._getFlowSettings();
+            if (flow.accumulation) {
+                graphics.blendMode = 'add';
+            } else {
+                graphics.blendMode = 'normal';
+            }
+
             graphics.visible = true;
             graphics.renderable = true;
 
@@ -260,6 +354,7 @@
             graphics.userData = {
                 strokePoints: formattedPoints,
                 settings: { ...settings },
+                flowSettings: { ...flow },
                 createdAt: Date.now(),
                 renderType: 'vector-graphics'
             };
@@ -288,7 +383,7 @@
             };
 
             // 新しいメッシュを生成
-            const newGraphics = this._renderWithPerfectFreehand(
+            const newGraphics = this._renderWithPolygon(
                 { points: strokePoints },
                 newSettings
             );
@@ -355,6 +450,9 @@
                 return graphics;
             }
 
+            // Phase 4: Legacy描画も流量反映
+            const flowOpacity = this._calculateFlowOpacity(settings.opacity || 1.0, points);
+
             for (let i = 0; i < points.length - 1; i++) {
                 const p1 = points[i];
                 const p2 = points[i + 1];
@@ -373,7 +471,7 @@
                 graphics.stroke({
                     width: avgWidth,
                     color: settings.color,
-                    alpha: settings.opacity || 1.0,
+                    alpha: flowOpacity,
                     cap: 'round',
                     join: 'round'
                 });
@@ -389,9 +487,12 @@
             const y = point.localY !== undefined ? point.localY : point.y;
             const width = this.calculateWidth(point.pressure, settings.size);
 
+            // Phase 4: ドット描画も流量反映
+            const flowOpacity = this._calculateFlowOpacity(settings.opacity || 1.0, [point]);
+
             graphics.blendMode = 'normal';
             graphics.circle(x, y, width / 2);
-            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+            graphics.fill({ color: settings.color, alpha: flowOpacity });
 
             return graphics;
         }
@@ -423,9 +524,6 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js - Perfect-Freehand形状補正ゼロ対応版 loaded');
-    console.log('   ✅ smoothing/streamline/thinning完全無効化');
-    console.log('   ✅ ユーザーが描いた線をそのまま保持');
-    console.log('   ✅ Phase 3: レイヤー変形時の再生成対応');
+    console.log('✅ stroke-renderer.js Phase 4 loaded (流量統合版)');
 
 })();

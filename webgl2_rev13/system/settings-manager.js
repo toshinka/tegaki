@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * settings-manager.js - v2.4 筆圧設定対応版
+ * settings-manager.js - v3.0 Phase 4: 流量設定統合版
  * ============================================================
  * 親ファイル: config.js
  * 依存ファイル:
@@ -8,13 +8,14 @@
  * 子ファイル:
  *   - ui/settings-popup.js (設定UI)
  *   - system/drawing/pressure-handler.js (筆圧処理)
+ *   - system/drawing/stroke-renderer.js (流量処理)
  *   - system/export-manager.js (出力解像度取得)
  * ============================================================
- * 【v2.4 改修内容】
- * - minPressureSize追加（0.0-1.0）
- * - pressureSensitivity追加（0.1-3.0）
- * - pressureCorrection/pressureCurve廃止
- * - exportResolution継承
+ * 【v3.0 Phase 4改修内容】
+ * ✅ flowOpacity追加（0.0-1.0）
+ * ✅ flowSensitivity追加（0.1-2.0）
+ * ✅ flowAccumulation追加（boolean）
+ * ✅ 全設定の完全統合
  * ============================================================
  */
 
@@ -45,12 +46,24 @@
         
         getDefaults() {
             return {
+                // 筆圧設定
                 minPressureSize: 0.0,
                 pressureSensitivity: 1.0,
-                smoothing: this.config?.userSettings?.smoothing || 0.5,
+                
+                // 補正設定
+                smoothing: this.config?.brush?.smoothing?.strength || 0.45,
+                
+                // 流量設定
+                flowOpacity: 1.0,
+                flowSensitivity: 1.0,
+                flowAccumulation: false,
+                
+                // UI設定
                 statusPanelVisible: this.config?.ui?.statusPanelVisible !== undefined 
                     ? this.config.ui.statusPanelVisible 
                     : true,
+                
+                // エクスポート設定
                 exportResolution: '2'
             };
         }
@@ -97,6 +110,7 @@
         
         validateValue(key, value) {
             const validators = {
+                // 筆圧
                 minPressureSize: (v) => {
                     const num = parseFloat(v);
                     return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
@@ -105,13 +119,32 @@
                     const num = parseFloat(v);
                     return isNaN(num) ? undefined : Math.max(0.1, Math.min(3.0, num));
                 },
+                
+                // 補正
                 smoothing: (v) => {
                     const num = parseFloat(v);
                     return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
                 },
+                
+                // 流量
+                flowOpacity: (v) => {
+                    const num = parseFloat(v);
+                    return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+                },
+                flowSensitivity: (v) => {
+                    const num = parseFloat(v);
+                    return isNaN(num) ? undefined : Math.max(0.1, Math.min(2.0, num));
+                },
+                flowAccumulation: (v) => {
+                    return typeof v === 'boolean' ? v : undefined;
+                },
+                
+                // UI
                 statusPanelVisible: (v) => {
                     return typeof v === 'boolean' ? v : undefined;
                 },
+                
+                // エクスポート
                 exportResolution: (v) => {
                     const valid = ['1', '2', '3', '4', 'auto'];
                     return valid.includes(String(v)) ? String(v) : undefined;
@@ -167,6 +200,9 @@
                 'minPressureSize',
                 'pressureSensitivity',
                 'smoothing',
+                'flowOpacity',
+                'flowSensitivity',
+                'flowAccumulation',
                 'statusPanelVisible',
                 'exportResolution'
             ];
@@ -211,8 +247,6 @@
     
     window.TegakiSettingsManager = SettingsManager;
     
-    console.log('✅ settings-manager.js v2.4 loaded (筆圧設定対応版)');
-    console.log('   ✅ minPressureSize/pressureSensitivity 追加');
-    console.log('   ❌ pressureCorrection/pressureCurve 廃止');
+    console.log('✅ settings-manager.js v3.0 loaded (Phase 4: 流量設定統合版)');
     
 })();
