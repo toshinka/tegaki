@@ -1,11 +1,12 @@
 /**
- * @file ui/keyboard-handler.js - Phase 6.5完全修正版
+ * @file ui/keyboard-handler.js - Phase 7.5: デバッグログ追加版
  * @description キーボードショートカット処理の中核システム
  * 
- * 【Phase 6.5 改修内容】
- * ✅ keymap.getAction is not a function エラー修正
- * ✅ config.js依存の明確化（getAction/getShortcutListメソッド必須）
- * ✅ Phase 6全機能継承
+ * 【Phase 7.5 改修内容】
+ * ✅ DEL/BSキー動作確認ログ追加
+ * ✅ Spaceキー動作確認ログ追加
+ * ✅ PopupManager直接呼び出し追加
+ * ✅ Phase 6.5全機能継承
  * 
  * 【親ファイル (このファイルが依存)】
  * - config.js (window.TEGAKI_KEYMAP - getAction()メソッド必須)
@@ -16,6 +17,7 @@
  * - drawing-clipboard.js (window.drawingClipboard)
  * - system/drawing/fill-tool.js (FillTool)
  * - timeline-ui.js (window.timelineUI)
+ * - popup-manager.js (window.PopupManager)
  * 
  * 【子ファイル (このファイルに依存)】
  * - core-initializer.js (初期化時にinit呼び出し)
@@ -47,7 +49,6 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // 🔧 Phase 6.5: getActionメソッド存在確認
         if (typeof keymap.getAction !== 'function') {
             console.error('[KeyboardHandler] TEGAKI_KEYMAP.getAction() is not a function');
             console.error('  config.js Phase 6.5以降が必要です');
@@ -132,6 +133,8 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_DELETE_DRAWINGS':
+                // Phase 7.5: デバッグログ追加
+                console.log('[KeyboardHandler] 🗑️ DEL/BS pressed - deleting layer drawings');
                 deleteActiveLayerDrawings();
                 event.preventDefault();
                 break;
@@ -301,18 +304,32 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            case 'SETTINGS_OPEN':
+            case 'POPUP_SETTINGS':
                 eventBus.emit('ui:open-settings');
                 event.preventDefault();
                 break;
             
-            case 'EXPORT_TOGGLE':
+            case 'POPUP_EXPORT':
                 eventBus.emit('ui:toggle-export');
                 event.preventDefault();
                 break;
             
-            case 'QUICK_ACCESS_TOGGLE':
-                eventBus.emit('ui:toggle-quick-access');
+            case 'POPUP_QUICK_ACCESS':
+                // Phase 7.5: デバッグログ + PopupManager直接呼び出し
+                console.log('[KeyboardHandler] ⌨️ Space pressed - toggling quick access');
+                
+                if (window.PopupManager) {
+                    console.log('[KeyboardHandler] PopupManager found - calling toggle()');
+                    window.PopupManager.toggle('quickAccess');
+                } else {
+                    console.warn('[KeyboardHandler] PopupManager not found - using EventBus');
+                    eventBus.emit('ui:toggle-quick-access');
+                }
+                event.preventDefault();
+                break;
+            
+            case 'POPUP_ALBUM':
+                eventBus.emit('ui:toggle-album');
                 event.preventDefault();
                 break;
         }
@@ -320,16 +337,21 @@ window.KeyboardHandler = (function() {
 
     /**
      * Phase 6完成版: アクティブレイヤーの描画削除
-     * children配列から直接削除し、Undo/Redo対応
      */
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager || window.layerManager;
         
-        if (!layerSystem) return;
+        if (!layerSystem) {
+            console.warn('[KeyboardHandler] layerSystem not found');
+            return;
+        }
         
         const activeLayer = layerSystem.getActiveLayer();
         
-        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return;
+        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) {
+            console.warn('[KeyboardHandler] No valid active layer or background layer');
+            return;
+        }
         
         // 削除対象を特定
         const childrenToRemove = [];
@@ -340,9 +362,14 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        if (childrenToRemove.length === 0) return;
+        if (childrenToRemove.length === 0) {
+            console.log('[KeyboardHandler] No drawings to delete');
+            return;
+        }
         
-        // History登録（childrenの参照を保持）
+        console.log(`[KeyboardHandler] Deleting ${childrenToRemove.length} drawing(s)`);
+        
+        // History登録
         if (window.History && !window.History._manager?.isApplying) {
             const pathsBackup = structuredClone(activeLayer.layerData.paths);
             const childrenBackup = childrenToRemove.map(child => ({
@@ -364,8 +391,10 @@ window.KeyboardHandler = (function() {
             };
             
             window.History.push(entry);
+            console.log('[KeyboardHandler] ✅ Drawings deleted (Undo available)');
         } else {
             clearLayerDrawings(layerSystem, activeLayer);
+            console.log('[KeyboardHandler] ✅ Drawings deleted (No Undo)');
         }
     }
 
@@ -380,7 +409,6 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        // 🔧 destroy()を呼ばずにremoveのみ（Undo/Redo用に保持）
         childrenToRemove.forEach((child) => {
             try {
                 layer.removeChild(child);
@@ -402,7 +430,6 @@ window.KeyboardHandler = (function() {
     function restoreLayerDrawings(layerSystem, layer, pathsBackup, childrenBackup, layerIndex) {
         if (!layer?.layerData) return;
         
-        // まず現在のchildrenをクリア（destroyはしない - 復元するため）
         const currentChildren = [];
         for (let child of layer.children) {
             if (child !== layer.layerData.backgroundGraphics && 
@@ -415,10 +442,8 @@ window.KeyboardHandler = (function() {
             layer.removeChild(child);
         });
         
-        // pathsを復元
         layer.layerData.paths = structuredClone(pathsBackup);
         
-        // childrenを復元（インデックス順）
         if (childrenBackup && childrenBackup.length > 0) {
             childrenBackup.sort((a, b) => a.index - b.index);
             childrenBackup.forEach(({ child, index }) => {
@@ -448,7 +473,6 @@ window.KeyboardHandler = (function() {
     function init() {
         if (isInitialized) return;
 
-        // 🔧 Phase 6.5: 初期化時にconfig.jsの存在確認
         if (!window.TEGAKI_KEYMAP) {
             console.error('[KeyboardHandler] TEGAKI_KEYMAP not found - config.js未読み込み');
             return;
@@ -463,7 +487,6 @@ window.KeyboardHandler = (function() {
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
-        // window blur時にVキー状態をリセット
         window.addEventListener('blur', () => {
             if (vKeyPressed) {
                 vKeyPressed = false;
@@ -478,7 +501,6 @@ window.KeyboardHandler = (function() {
     }
 
     function getShortcutList() {
-        // 🔧 Phase 6.5: メソッド存在確認
         if (!window.TEGAKI_KEYMAP || typeof window.TEGAKI_KEYMAP.getShortcutList !== 'function') {
             console.warn('[KeyboardHandler] TEGAKI_KEYMAP.getShortcutList() not available');
             return [];
@@ -511,7 +533,8 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js Phase 6.5完全修正版 loaded');
-console.log('   ✅ keymap.getAction エラー修正');
-console.log('   ✅ config.js Phase 6.5依存明確化');
-console.log('   ✅ Phase 6全機能継承');
+console.log('✅ keyboard-handler.js Phase 7.5 loaded');
+console.log('   ✅ DEL/BS動作確認ログ追加');
+console.log('   ✅ Space動作確認ログ追加');
+console.log('   ✅ PopupManager直接呼び出し追加');
+console.log('   ✅ Phase 6.5全機能継承');

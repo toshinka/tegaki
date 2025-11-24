@@ -1,10 +1,12 @@
 /**
- * @file config.js - Phase 6.5: ポイント補間設定追加版
+ * @file config.js - Phase 7.5: 流量高速補償実装版
  * @description グローバル設定・キーマップ定義
  * 
- * 【Phase 6.5改修内容】
- * ✅ drawing.interpolation設定追加（カエルの卵防止）
- * ✅ Phase 5全機能継承
+ * 【Phase 7.5改修内容】
+ * ✅ 流量高速補償設定追加（竹の節問題対策）
+ * ✅ 最低不透明度保証設定追加
+ * ✅ 速度閾値設定追加
+ * ✅ Phase 7全機能継承
  * 
  * 【親依存】なし（最上位設定ファイル）
  * 【子依存】全システムファイル
@@ -44,21 +46,23 @@ window.TEGAKI_CONFIG = {
     },
     
     /**
-     * Phase 6.5: 描画処理設定
+     * Phase 7: 描画処理設定（最適化版）
      */
     drawing: {
         /**
-         * ポイント補間設定（カエルの卵防止）
+         * ポイント補間設定（カエルの卵完全対策）
+         * Phase 7: 閾値を2.5pxに引き下げ
          */
         interpolation: {
             enabled: true,           // 補間有効化
-            threshold: 5.0,          // 補間閾値（ピクセル）
-            maxSteps: 10             // 最大分割数
+            threshold: 2.5,          // 補間閾値（ピクセル）※Phase 7: 5.0→2.5に強化
+            maxSteps: 15,            // 最大分割数 ※Phase 7: 10→15に増加
+            adaptiveSpeed: true      // 速度適応補間 ※Phase 7: 新規追加
         }
     },
     
     /**
-     * Phase 4-5: ブラシ設定統合
+     * Phase 4-7.5: ブラシ設定統合
      */
     brush: {
         /**
@@ -109,7 +113,11 @@ window.TEGAKI_CONFIG = {
             enabled: true,
             opacity: 1.0,
             sensitivity: 1.0,
-            accumulation: false
+            accumulation: false,
+            // Phase 7.5: 高速ストローク補償（竹の節問題対策）
+            highSpeedCompensation: true,   // 高速時の透明度補償
+            minOpacityGuarantee: 0.9,      // 最低不透明度保証（0.0～1.0）
+            speedThreshold: 2.0             // 高速判定閾値（px/ms）
         },
         
         /**
@@ -458,7 +466,7 @@ window.TEGAKI_KEYMAP = {
     },
     
     /**
-     * Phase 6: キーマップヘルパーメソッド追加
+     * Phase 6: キーマップヘルパーメソッド
      */
     getAction(event, options = {}) {
         const { vMode = false } = options;
@@ -526,7 +534,8 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
-console.log('✅ config.js Phase 6.5 loaded (ポイント補間設定追加版)');
-console.log('   ✅ drawing.interpolation設定追加');
-console.log('   ✅ カエルの卵防止機能実装');
-console.log('   ⚙️ 補間閾値: 5.0px (デフォルト)');
+console.log('✅ config.js Phase 7.5 loaded (流量高速補償実装版)');
+console.log('   ✅ 高速ストローク補償設定追加');
+console.log('   ⚙️ 最低不透明度保証: 90%');
+console.log('   ⚙️ 速度閾値: 2.0px/ms');
+console.log('   ✅ Phase 7全機能継承');

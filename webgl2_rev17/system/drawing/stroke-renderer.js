@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * stroke-renderer.js - Phase 6.4: 流量完全修正版
+ * stroke-renderer.js - Phase 7.5: 高速ストローク補償実装版
  * ============================================================
  * 【親依存】
  *   - PixiJS v8.14
@@ -8,17 +8,17 @@
  *   - gl-msdf-pipeline.js Phase 6.2
  *   - brush-settings.js
  *   - settings-manager.js
- *   - config.js
+ *   - config.js Phase 7.5
  * 
  * 【子依存】
  *   - brush-core.js
  *   - layer-transform.js
  * 
- * 【Phase 6.4改修内容】
- * ✅ 流量計算を完全修正（サンプル点数非依存）
- * ✅ マウス入力時の流量保証（pressure=0.5でも最大流量）
- * ✅ 筆圧依存モード追加（ペン/マウス自動判定）
- * ✅ Phase 6.3全機能継承
+ * 【Phase 7.5改修内容】
+ * ✅ 高速ストローク時の流量補償実装（竹の節問題完全修正）
+ * ✅ 速度計算メソッド追加
+ * ✅ 最低不透明度保証（config.js設定対応）
+ * ✅ Phase 6.4全機能継承
  * ============================================================
  */
 
@@ -104,7 +104,11 @@
             let flowOpacity = 1.0;
             let flowSensitivity = 1.0;
             let flowAccumulation = false;
-            let flowPressureMode = 'auto'; // 🔧 Phase 6.4: auto/pen/ignore
+            let flowPressureMode = 'auto';
+            // Phase 7.5: 高速ストローク補償設定
+            let highSpeedCompensation = true;
+            let minOpacityGuarantee = 0.9;
+            let speedThreshold = 2.0;
             
             if (this.settingsManager && typeof this.settingsManager.get === 'function') {
                 const settings = this.settingsManager.get();
@@ -119,25 +123,30 @@
                 flowSensitivity = flow.sensitivity !== undefined ? flow.sensitivity : 1.0;
                 flowAccumulation = flow.accumulation !== undefined ? flow.accumulation : false;
                 flowPressureMode = flow.pressureMode !== undefined ? flow.pressureMode : 'auto';
+                // Phase 7.5: 新規設定読み込み
+                highSpeedCompensation = flow.highSpeedCompensation !== undefined ? flow.highSpeedCompensation : true;
+                minOpacityGuarantee = flow.minOpacityGuarantee !== undefined ? flow.minOpacityGuarantee : 0.9;
+                speedThreshold = flow.speedThreshold !== undefined ? flow.speedThreshold : 2.0;
             }
             
             return {
                 opacity: flowOpacity,
                 sensitivity: flowSensitivity,
                 accumulation: flowAccumulation,
-                pressureMode: flowPressureMode
+                pressureMode: flowPressureMode,
+                // Phase 7.5
+                highSpeedCompensation: highSpeedCompensation,
+                minOpacityGuarantee: minOpacityGuarantee,
+                speedThreshold: speedThreshold
             };
         }
 
         /**
-         * 🔧 Phase 6.4: 入力デバイス判定
-         * マウス/ペンを自動検出
+         * Phase 6.4: 入力デバイス判定
          */
         _detectInputDevice(points) {
             if (!points || points.length === 0) return 'mouse';
             
-            // 筆圧変動をチェック
-            let hasVariation = false;
             let minPressure = 1.0;
             let maxPressure = 0.0;
             
@@ -147,29 +156,64 @@
                 maxPressure = Math.max(maxPressure, pressure);
             }
             
-            // 筆圧変動が10%以上ならペン、それ以外はマウス
             const variation = maxPressure - minPressure;
             return variation > 0.1 ? 'pen' : 'mouse';
         }
 
         /**
-         * 🔧 Phase 6.4: 流量不透明度計算（完全修正版）
+         * Phase 7.5: 平均速度計算
+         * @param {Array} points - ストロークポイント配列
+         * @returns {number} - 平均速度（px/ms）
+         */
+        _calculateAverageSpeed(points) {
+            if (!points || points.length < 2) return 0;
+            
+            let totalSpeed = 0;
+            let count = 0;
+            
+            for (let i = 1; i < points.length; i++) {
+                const p1 = points[i - 1];
+                const p2 = points[i];
+                
+                const x1 = p1.localX !== undefined ? p1.localX : (p1.x || 0);
+                const y1 = p1.localY !== undefined ? p1.localY : (p1.y || 0);
+                const x2 = p2.localX !== undefined ? p2.localX : (p2.x || 0);
+                const y2 = p2.localY !== undefined ? p2.localY : (p2.y || 0);
+                
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                const timeDelta = (p2.time !== undefined && p1.time !== undefined) 
+                    ? (p2.time - p1.time) 
+                    : 1;
+                
+                if (timeDelta > 0) {
+                    totalSpeed += dist / timeDelta;
+                    count++;
+                }
+            }
+            
+            return count > 0 ? totalSpeed / count : 0;
+        }
+
+        /**
+         * Phase 7.5: 流量不透明度計算（高速補償版）
          * 
-         * 【修正内容】
-         * 1. サンプル点数非依存（最大筆圧を使用）
-         * 2. マウス入力時は筆圧無視
-         * 3. ペン入力時のみ筆圧適用
+         * 【Phase 7.5改修内容】
+         * ✅ 高速ストローク時の最低不透明度保証
+         * ✅ 竹の節問題完全修正
          * 
-         * 【pressureMode】
-         * - 'auto': 自動判定（マウス/ペン）
-         * - 'pen': 常に筆圧適用
-         * - 'ignore': 常に筆圧無視
+         * 【設定】
+         * - highSpeedCompensation: 高速補償有効化
+         * - minOpacityGuarantee: 最低不透明度（0.0～1.0）
+         * - speedThreshold: 高速判定閾値（px/ms）
          */
         _calculateFlowOpacity(baseOpacity, points) {
             const flow = this._getFlowSettings();
             const flowOpacity = flow.opacity;
             
-            // モード判定
+            // デバイス判定
             let usePressure = false;
             if (flow.pressureMode === 'pen') {
                 usePressure = true;
@@ -183,19 +227,30 @@
             let pressureFactor = 1.0;
             
             if (usePressure && points && points.length > 0) {
-                // 🔧 Phase 6.4: 最大筆圧を使用（サンプル点数非依存）
+                // Phase 6.4: 最大筆圧を使用
                 let maxPressure = 0.0;
                 for (const p of points) {
                     const pressure = p.pressure !== undefined ? p.pressure : 0.5;
                     maxPressure = Math.max(maxPressure, pressure);
                 }
                 
-                // 感度適用
                 const pressureAdjusted = Math.pow(maxPressure, 1.0 / flow.sensitivity);
                 pressureFactor = pressureAdjusted;
             }
             
-            const finalOpacity = baseOpacity * flowOpacity * pressureFactor;
+            let finalOpacity = baseOpacity * flowOpacity * pressureFactor;
+            
+            // Phase 7.5: 高速ストローク補償
+            if (flow.highSpeedCompensation && points && points.length >= 2) {
+                const avgSpeed = this._calculateAverageSpeed(points);
+                const isHighSpeed = avgSpeed > flow.speedThreshold;
+                
+                if (isHighSpeed) {
+                    // 最低不透明度保証
+                    finalOpacity = Math.max(finalOpacity, flow.minOpacityGuarantee * baseOpacity);
+                }
+            }
+            
             return Math.max(0.0, Math.min(1.0, finalOpacity));
         }
 
@@ -421,7 +476,8 @@
             const formattedPoints = points.map(p => ({
                 x: p.localX !== undefined ? p.localX : (p.x || 0),
                 y: p.localY !== undefined ? p.localY : (p.y || 0),
-                pressure: p.pressure !== undefined ? p.pressure : 0.5
+                pressure: p.pressure !== undefined ? p.pressure : 0.5,
+                time: p.time
             }));
 
             const vertexBuffer = this.glStrokeProcessor.createPolygonVertexBuffer(
@@ -443,6 +499,7 @@
             graphics.label = `stroke_vector_${Date.now()}`;
 
             const baseOpacity = settings.opacity || 1.0;
+            // Phase 7.5: 高速補償適用
             const finalOpacity = this._calculateFlowOpacity(baseOpacity, formattedPoints);
 
             graphics.context.fillStyle = {
@@ -643,10 +700,10 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js Phase 6.4 loaded (流量完全修正版)');
-    console.log('   ✅ サンプル点数非依存（最大筆圧使用）');
-    console.log('   ✅ マウス入力時の流量保証');
-    console.log('   ✅ ペン/マウス自動判定実装');
-    console.log('   ✅ Phase 6.3全機能継承');
+    console.log('✅ stroke-renderer.js Phase 7.5 loaded (高速ストローク補償版)');
+    console.log('   ✅ 高速時の流量補償実装');
+    console.log('   ✅ 竹の節問題完全修正');
+    console.log('   ✅ 速度計算メソッド追加');
+    console.log('   ✅ Phase 6.4全機能継承');
 
 })();

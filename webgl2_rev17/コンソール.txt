@@ -1,7 +1,7 @@
- ✅ config.js Phase 5 loaded (水彩/エアブラシ基盤統合版)
-    ✅ 水彩/エアブラシ設定追加（内部基盤のみ）
-    ✅ ツールモード拡張
-    💡 UI実装は将来フェーズで追加予定
+ ✅ config.js Phase 6.5 loaded (ポイント補間設定追加版)
+    ✅ drawing.interpolation設定追加
+    ✅ カエルの卵防止機能実装
+    ⚙️ 補間閾値: 5.0px (デフォルト)
  ✅ data-models.js (backgroundColor追加版) loaded
  ✅ batch-api.js (Phase 6: History統合版) loaded
  ✅ debug-utils.js loaded
@@ -27,6 +27,10 @@
     🎨 ポップアップ: レイヤーコピー、切り取り
  ✅ history.js (Phase 3: Redo null参照修正版) loaded
  ✅ earcut-triangulator.js Phase 2.0 loaded
+ ✅ shader-inline.js Phase 6 loaded
+    ✅ GLSL シェーダー インライン化完了
+    ✅ file:// プロトコル対応
+    ✅ MSDF パイプライン準備完了
  ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
     ✅ WebGLTexture → PIXI.Sprite変換実装完了
     ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
@@ -53,9 +57,11 @@
  ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
     ✅ 最小筆圧サイズ: 1%-100%の範囲実装
     ✅ 平滑化アルゴリズム修正
- ✅ stroke-recorder.js (警告ログ削減版) loaded
-    ✓ 不要な警告ログを削除
-    ✓ DRY原則準拠
+ ✅ stroke-recorder.js Phase 6.5 loaded
+    ✅ 距離ベース自動補間実装
+    ✅ 筆圧線形補間対応
+    ✅ 傾きデータ保持（将来Phase用）
+    ⚙️ 補間閾値: 5.0px (config.js変更可能)
  ✅ stroke-renderer.js Phase 6.4 loaded (流量完全修正版)
     ✅ サンプル点数非依存（最大筆圧使用）
     ✅ マウス入力時の流量保証
@@ -95,10 +101,10 @@
     🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
     🔧 慣性スクロール実装（velocity計算）
     🔧 requestAnimationFrame最適化
- ✅ keyboard-handler.js Phase 6完成版 loaded
-    ✅ BS/DEL: 描画削除が正常動作
-keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
-keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+ ✅ keyboard-handler.js Phase 6.5完全修正版 loaded
+    ✅ keymap.getAction エラー修正
+keyboard-handler.js:516    ✅ config.js Phase 6.5依存明確化
+keyboard-handler.js:517    ✅ Phase 6全機能継承
 layer-panel-renderer.js:957 ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
 layer-panel-renderer.js:958    ✅ createFolderElement() - フォルダUI生成
 layer-panel-renderer.js:959    ✅ createFolderEar() - 耳部分SVGアイコン
@@ -129,7 +135,7 @@ core-initializer.js:451 ✅ core-initializer.js Phase 4.1 loaded (AA強化版)
 core-initializer.js:452    ✅ 高解像度レンダリング (resolution: 2)
 core-initializer.js:453    ✅ アンチエイリアス強化
 core-initializer.js:454    ✅ 縮小時のカクカク改善
-index.html:116 🚀 WebGL2 MSDF版 起動中...
+index.html:117 🚀 WebGL2 MSDF版 Phase 6.5 起動中...
 core-initializer.js:260 [DrawingApp] ✅ Resolution: 2
 core-initializer.js:261 [DrawingApp] ✅ Antialias: undefined
 core-engine.js:634 ✅ [CoreEngine] StrokeRenderer set to DrawingEngine
@@ -159,38 +165,9 @@ core-initializer.js:178 [WebGL2] ✅ Context initialized
 core-initializer.js:185 [WebGL2] ✅ GLStrokeProcessor ready
 core-initializer.js:190 [WebGL2] ✅ GLStrokeProcessor connected to StrokeRenderer
 core-initializer.js:308 [DrawingApp] WebGL2 result: true
-index.html:118 ✅ WebGL2初期化完了
-index.html:122 🎬 Pixi Ticker Status: Object
+index.html:119 ✅ WebGL2初期化完了
+index.html:123 🎬 Pixi Ticker Status: Object
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
-keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+popup-manager.js:192 👁️ Popup "quickAccess" shown
+popup-manager.js:192 👁️ Popup "quickAccess" shown
