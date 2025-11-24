@@ -1,7 +1,14 @@
 /**
  * ============================================================
- * brush-core.js - v2.6 Phase 4.0C対応版
+ * brush-core.js - Phase 7.6 History登録修正版
  * ============================================================
+ * 【Phase 7.6 改修内容】
+ * ✅ ストローク描画のHistory登録実装
+ * ✅ window.historyManager → window.History に修正
+ * ✅ recordAction() → push() に変更
+ * ✅ do/undo 形式でストローク追加/削除を実装
+ * ✅ Phase 4.0C 全機能継承
+ * 
  * 親ファイル: drawing-engine.js
  * 依存ファイル:
  *   - system/event-bus.js (イベント通信)
@@ -12,12 +19,7 @@
  *   - system/layer-system.js (レイヤー管理)
  *   - system/drawing/brush-settings.js (ブラシ設定)
  *   - system/drawing/fill-tool.js (FillTool)
- * ============================================================
- * 【v2.6 改修内容】
- * ✅ Phase 4.0C インクリメンタルレンダリング対応
- * ✅ ストローク開始時に StrokeRenderer に通知
- * ✅ プレビューとして currentStroke を使用
- * ✅ ストロークキャンセル時のクリーンアップ
+ *   - system/history.js (History管理) ← Phase 7.6: 追加
  * ============================================================
  */
 
@@ -279,7 +281,7 @@
         }
         
         /**
-         * Phase 4.0C: ストローク終了
+         * Phase 7.6: ストローク終了 - History登録修正版
          */
         async finalizeStroke() {
             if (!this.isDrawing) return;
@@ -345,12 +347,68 @@
                     activeLayer.layerData.pathsData.push(pathData);
                     activeLayer.layerData.paths.push(pathData);
                     
-                    if (window.historyManager) {
-                        window.historyManager.recordAction({
-                            type: 'stroke',
-                            layerId: activeLayer.layerData?.id,
-                            pathData: pathData
-                        });
+                    // Phase 7.6: 正しいHistory登録実装
+                    if (window.History && !window.History._manager?.isApplying) {
+                        const layerIndex = this.layerManager.getLayerIndex(activeLayer);
+                        const layerId = activeLayer.layerData.id;
+                        
+                        // pathData と graphics の参照を保持
+                        const pathDataRef = pathData;
+                        const graphicsRef = graphics;
+                        const pathsArrayRef = activeLayer.layerData.paths;
+                        const pathsDataArrayRef = activeLayer.layerData.pathsData;
+                        
+                        const entry = {
+                            name: 'stroke-draw',
+                            do: () => {
+                                // ストローク追加（初回は既に追加済みなので何もしない）
+                                if (!activeLayer.children.includes(graphicsRef)) {
+                                    activeLayer.addChild(graphicsRef);
+                                }
+                                if (!pathsArrayRef.includes(pathDataRef)) {
+                                    pathsArrayRef.push(pathDataRef);
+                                }
+                                if (!pathsDataArrayRef.includes(pathDataRef)) {
+                                    pathsDataArrayRef.push(pathDataRef);
+                                }
+                                
+                                // サムネイル更新
+                                if (this.layerManager.requestThumbnailUpdate) {
+                                    this.layerManager.requestThumbnailUpdate(layerIndex);
+                                }
+                            },
+                            undo: () => {
+                                // ストローク削除
+                                if (activeLayer.children.includes(graphicsRef)) {
+                                    activeLayer.removeChild(graphicsRef);
+                                }
+                                
+                                const pathIndex = pathsArrayRef.indexOf(pathDataRef);
+                                if (pathIndex !== -1) {
+                                    pathsArrayRef.splice(pathIndex, 1);
+                                }
+                                
+                                const pathDataIndex = pathsDataArrayRef.indexOf(pathDataRef);
+                                if (pathDataIndex !== -1) {
+                                    pathsDataArrayRef.splice(pathDataIndex, 1);
+                                }
+                                
+                                // サムネイル更新
+                                if (this.layerManager.requestThumbnailUpdate) {
+                                    this.layerManager.requestThumbnailUpdate(layerIndex);
+                                }
+                            },
+                            meta: {
+                                type: 'stroke',
+                                layerId: layerId,
+                                layerIndex: layerIndex,
+                                mode: mode,
+                                pointCount: strokeData.points.length
+                            }
+                        };
+                        
+                        window.History.push(entry);
+                        console.log('[BrushCore] ✅ Stroke registered to History');
                     }
                 }
                 
@@ -435,6 +493,10 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js v2.6 loaded (Phase 4.0C対応)');
+    console.log('✅ brush-core.js Phase 7.6 loaded (History登録修正版)');
+    console.log('   ✅ ストローク描画のHistory登録実装');
+    console.log('   ✅ window.History.push() で正しく登録');
+    console.log('   ✅ Undo/Redo 完全対応');
+    console.log('   ✅ Phase 4.0C 全機能継承');
 
 })();

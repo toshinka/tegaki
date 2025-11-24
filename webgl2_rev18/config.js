@@ -1,12 +1,11 @@
 /**
- * @file config.js - Phase 7.5: 流量高速補償実装版
+ * @file config.js - Phase 7.5.1: Qキー対応版
  * @description グローバル設定・キーマップ定義
  * 
- * 【Phase 7.5改修内容】
- * ✅ 流量高速補償設定追加（竹の節問題対策）
- * ✅ 最低不透明度保証設定追加
- * ✅ 速度閾値設定追加
- * ✅ Phase 7全機能継承
+ * 【Phase 7.5.1改修内容】
+ * ✅ POPUP_QUICK_ACCESS を Space → KeyQ に変更
+ * ✅ Spaceキーを将来のパン移動用に予約
+ * ✅ Phase 7.5全機能継承（流量高速補償）
  * 
  * 【親依存】なし（最上位設定ファイル）
  * 【子依存】全システムファイル
@@ -439,12 +438,20 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             description: '設定を開く'
         },
+        // Phase 7.5.1: Space → KeyQ に変更（QuickのQ）
         POPUP_QUICK_ACCESS: {
-            key: 'Space',
+            key: 'KeyQ',
             ctrl: false,
             shift: false,
             description: 'クイックアクセスメニュー'
         },
+        // Phase 7.5.1: Spaceキーは将来のパン移動用に予約
+        // CAMERA_PAN_MODE: {
+        //     key: 'Space',
+        //     ctrl: false,
+        //     shift: false,
+        //     description: 'パン移動モード'
+        // },
         POPUP_ALBUM: {
             key: 'KeyA',
             ctrl: true,
@@ -534,8 +541,7 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
-console.log('✅ config.js Phase 7.5 loaded (流量高速補償実装版)');
-console.log('   ✅ 高速ストローク補償設定追加');
-console.log('   ⚙️ 最低不透明度保証: 90%');
-console.log('   ⚙️ 速度閾値: 2.0px/ms');
-console.log('   ✅ Phase 7全機能継承');
+console.log('✅ config.js Phase 7.5.1 loaded (Qキー対応版)');
+console.log('   ✅ POPUP_QUICK_ACCESS: Space → KeyQ に変更');
+console.log('   ⚙️ Spaceキーは将来のパン移動用に予約');
+console.log('   ✅ Phase 7.5全機能継承（流量高速補償）');
