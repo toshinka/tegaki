@@ -1,15 +1,16 @@
 /**
- * @file ui/quick-access-popup.js - v8.13.17 SVG可視性修正版
+ * @file ui/quick-access-popup.js - Phase 7.5.1 黒枠完全削除版
  * @description ペン設定クイックアクセスポップアップ
  * 
- * 【v8.13.17 改修内容】
- * 🎯 アクティブ時のSVG色を修正: 常にvar(--futaba-maroon)を維持
- * 🎨 背景色の反転を完全削除、オレンジ枠(#ff8c42)のみで選択表示
+ * 【Phase 7.5.1 改修内容】
+ * 🎯 フォーカス黒枠完全削除
+ * 🔧 pointerdown時の自動blur処理追加
+ * 🚫 キーボード操作時の黒枠表示防止
  * 
- * 【v8.13.16 改修内容】
- * 🎯 SVGが消える問題を修正: style直接変更をやめてCSS class管理に変更
- * 🎨 オレンジ枠(#ff8c42)のみで選択表示
- * 🚫 背景色の反転を完全削除
+ * 【Phase 7.5継承】
+ * ✅ アクティブ時のSVG色維持
+ * ✅ オレンジ枠(#ff8c42)選択表示
+ * ✅ v8.13.17全機能継承
  * 
  * 【親ファイル (このファイルが依存)】
  * - system/drawing/brush-settings.js (BrushSettings)
@@ -105,6 +106,19 @@
                 .qa-tool-button:hover:not(.active) {
                     border-color: var(--futaba-medium);
                     background: var(--futaba-light-medium);
+                }
+
+                /* Phase 7.5.1: フォーカス黒枠完全削除 */
+                .color-button:focus,
+                .color-button:focus-visible,
+                .qa-tool-button:focus,
+                .qa-tool-button:focus-visible,
+                .resize-arrow-btn:focus,
+                .resize-arrow-btn:focus-visible,
+                .quick-access-close-btn:focus,
+                .quick-access-close-btn:focus-visible {
+                    outline: none !important;
+                    box-shadow: none !important;
                 }
             `;
             document.head.appendChild(style);
@@ -279,25 +293,29 @@
             
             this.elements.closeBtn.addEventListener('pointerdown', (e) => {
                 e.stopPropagation();
+                e.target.blur(); // Phase 7.5.1: フォーカス解除
                 this.hide();
             });
         }
 
         _setupToolButtons() {
             if (this.elements.penToolBtn) {
-                this.elements.penToolBtn.addEventListener('pointerdown', () => {
+                this.elements.penToolBtn.addEventListener('pointerdown', (e) => {
+                    e.target.blur(); // Phase 7.5.1: フォーカス解除
                     this._switchTool('pen');
                 });
             }
 
             if (this.elements.eraserToolBtn) {
-                this.elements.eraserToolBtn.addEventListener('pointerdown', () => {
+                this.elements.eraserToolBtn.addEventListener('pointerdown', (e) => {
+                    e.target.blur(); // Phase 7.5.1: フォーカス解除
                     this._switchTool('eraser');
                 });
             }
 
             if (this.elements.fillToolBtn) {
-                this.elements.fillToolBtn.addEventListener('pointerdown', () => {
+                this.elements.fillToolBtn.addEventListener('pointerdown', (e) => {
+                    e.target.blur(); // Phase 7.5.1: フォーカス解除
                     this._switchTool('fill');
                 });
             }
@@ -341,7 +359,9 @@
         _setupColorButtons() {
             const colorButtons = this.panel.querySelectorAll('.color-button');
             colorButtons.forEach(btn => {
-                btn.addEventListener('pointerdown', () => {
+                btn.addEventListener('pointerdown', (e) => {
+                    e.target.blur(); // Phase 7.5.1: フォーカス解除
+                    
                     const color = parseInt(btn.getAttribute('data-color'));
                     this.brushSettings.setColor(color);
                     
@@ -458,23 +478,28 @@
                 this._updateOpacitySlider(value);
             });
             
-            this.elements.sizeDecrease.addEventListener('pointerdown', () => {
+            // Phase 7.5.1: 矢印ボタンにもblur追加
+            this.elements.sizeDecrease.addEventListener('pointerdown', (e) => {
+                e.target.blur();
                 const current = this.brushSettings.getSize();
                 this._updateSizeSlider(Math.max(this.MIN_SIZE, current - 0.5));
             });
             
-            this.elements.sizeIncrease.addEventListener('pointerdown', () => {
+            this.elements.sizeIncrease.addEventListener('pointerdown', (e) => {
+                e.target.blur();
                 const current = this.brushSettings.getSize();
                 this._updateSizeSlider(Math.min(this.MAX_SIZE, current + 0.5));
             });
             
-            this.elements.opacityDecrease.addEventListener('pointerdown', () => {
+            this.elements.opacityDecrease.addEventListener('pointerdown', (e) => {
+                e.target.blur();
                 const current = this.brushSettings.getOpacity();
                 const currentPercent = current * 100;
                 this._updateOpacitySlider(Math.max(this.MIN_OPACITY, currentPercent - 5));
             });
             
-            this.elements.opacityIncrease.addEventListener('pointerdown', () => {
+            this.elements.opacityIncrease.addEventListener('pointerdown', (e) => {
+                e.target.blur();
                 const current = this.brushSettings.getOpacity();
                 const currentPercent = current * 100;
                 this._updateOpacitySlider(Math.min(this.MAX_OPACITY, currentPercent + 5));
@@ -737,6 +762,9 @@
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
 
-    console.log('✅ quick-access-popup.js v8.13.17 loaded');
+    console.log('✅ quick-access-popup.js Phase 7.5.1 loaded');
+    console.log('   🎯 フォーカス黒枠完全削除');
+    console.log('   🔧 pointerdown時の自動blur処理追加');
+    console.log('   ✅ v8.13.17全機能継承');
 
 })();
