@@ -19,10 +19,8 @@
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js"></script>
-    <script src="libs/gsap.min.js"></script>
-
-
     <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
+    <script src="libs/gsap.min.js"></script>
 
 
     <!-- Core Config -->
@@ -54,6 +52,9 @@
 
     <!-- Earcut Triangulator -->
     <script src="system/earcut-triangulator.js"></script>
+
+    <!-- 🔧 Phase 6.5: GLSL Shader Inline (file://対応) -->
+    <script src="system/drawing/shader-inline.js"></script>
 
     <!-- WebGL2 Base -->
     <script src="system/drawing/webgl2/gl-texture-bridge.js"></script>
@@ -113,7 +114,7 @@
     <script>
         window.addEventListener('DOMContentLoaded', async () => {
             try {
-                console.log('🚀 WebGL2 MSDF版 起動中...');
+                console.log('🚀 WebGL2 MSDF版 Phase 6.5 起動中...');
                 await window.CoreInitializer.initialize();
                 console.log('✅ WebGL2初期化完了');
 

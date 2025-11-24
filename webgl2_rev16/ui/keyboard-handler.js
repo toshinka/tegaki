@@ -1,15 +1,14 @@
 /**
- * @file ui/keyboard-handler.js - Phase 6完成版
+ * @file ui/keyboard-handler.js - Phase 6.5完全修正版
  * @description キーボードショートカット処理の中核システム
  * 
- * 【Phase 6 改修内容】
- * ✅ BS/DEL: children配列から直接削除（paths配列に依存しない）
- * ✅ Undo/Redo: childrenの参照を保持して復元
- * 🔧 反転処理: 画像消失問題解決
- * 🧹 デバッグログをクリーンアップ
+ * 【Phase 6.5 改修内容】
+ * ✅ keymap.getAction is not a function エラー修正
+ * ✅ config.js依存の明確化（getAction/getShortcutListメソッド必須）
+ * ✅ Phase 6全機能継承
  * 
  * 【親ファイル (このファイルが依存)】
- * - config.js (window.TEGAKI_KEYMAP)
+ * - config.js (window.TEGAKI_KEYMAP - getAction()メソッド必須)
  * - event-bus.js (window.TegakiEventBus)
  * - history.js (window.History)
  * - core-runtime.js (window.CoreRuntime.api)
@@ -43,7 +42,18 @@ window.KeyboardHandler = (function() {
         const eventBus = window.TegakiEventBus;
         const keymap = window.TEGAKI_KEYMAP;
         
-        if (!eventBus || !keymap) return;
+        if (!eventBus || !keymap) {
+            console.warn('[KeyboardHandler] EventBus or KEYMAP not available');
+            return;
+        }
+        
+        // 🔧 Phase 6.5: getActionメソッド存在確認
+        if (typeof keymap.getAction !== 'function') {
+            console.error('[KeyboardHandler] TEGAKI_KEYMAP.getAction() is not a function');
+            console.error('  config.js Phase 6.5以降が必要です');
+            return;
+        }
+        
         if (isInputFocused()) return;
         
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
@@ -438,6 +448,18 @@ window.KeyboardHandler = (function() {
     function init() {
         if (isInitialized) return;
 
+        // 🔧 Phase 6.5: 初期化時にconfig.jsの存在確認
+        if (!window.TEGAKI_KEYMAP) {
+            console.error('[KeyboardHandler] TEGAKI_KEYMAP not found - config.js未読み込み');
+            return;
+        }
+        
+        if (typeof window.TEGAKI_KEYMAP.getAction !== 'function') {
+            console.error('[KeyboardHandler] TEGAKI_KEYMAP.getAction() not found');
+            console.error('  config.js Phase 6.5以降が必要です');
+            return;
+        }
+
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
@@ -456,7 +478,13 @@ window.KeyboardHandler = (function() {
     }
 
     function getShortcutList() {
-        return window.TEGAKI_KEYMAP?.getShortcutList() || [];
+        // 🔧 Phase 6.5: メソッド存在確認
+        if (!window.TEGAKI_KEYMAP || typeof window.TEGAKI_KEYMAP.getShortcutList !== 'function') {
+            console.warn('[KeyboardHandler] TEGAKI_KEYMAP.getShortcutList() not available');
+            return [];
+        }
+        
+        return window.TEGAKI_KEYMAP.getShortcutList();
     }
     
     function isVKeyPressed() {
@@ -483,7 +511,7 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js Phase 6完成版 loaded');
-console.log('   ✅ BS/DEL: 描画削除が正常動作');
-console.log('   ✅ Undo/Redo: children参照保持で完全復元');
-console.log('   🔧 反転処理: 画像消失問題解決');
+console.log('✅ keyboard-handler.js Phase 6.5完全修正版 loaded');
+console.log('   ✅ keymap.getAction エラー修正');
+console.log('   ✅ config.js Phase 6.5依存明確化');
+console.log('   ✅ Phase 6全機能継承');

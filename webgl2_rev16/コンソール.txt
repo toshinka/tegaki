@@ -1,64 +1,66 @@
-config.js:448 ✅ config.js Phase 5 loaded (水彩/エアブラシ基盤統合版)
-config.js:449    ✅ 水彩/エアブラシ設定追加（内部基盤のみ）
-config.js:450    ✅ ツールモード拡張
-config.js:451    💡 UI実装は将来フェーズで追加予定
-data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
-batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
-debug-utils.js:553 ✅ debug-utils.js loaded
-debug-utils.js:554    Type: TegakiDebug.help() for available commands
-debug-utils.js:555    Quick check: TegakiDebug.fullDiagnostic()
-popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
-state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
-settings-manager.js:250 ✅ settings-manager.js v3.0 loaded (Phase 4: 流量設定統合版)
-layer-transform.js:1070  ✅ layer-transform.js Phase 3 loaded
-layer-transform.js:1071     ✅ confirmTransform()でベクターメッシュ再生成
-layer-transform.js:1072     ✅ 拡大時のジャギー解消
-checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
-layer-system.js:1628 ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
-layer-system.js:1629    ✅ createFolder() - フォルダ作成
-layer-system.js:1630    ✅ addLayerToFolder() - レイヤーをフォルダに追加
-layer-system.js:1631    ✅ removeLayerFromFolder() - フォルダから取り出し
-layer-system.js:1632    ✅ toggleFolderExpand() - 開閉切替
-layer-system.js:1633    ✅ getVisibleLayers() - 表示レイヤーのみ取得
-layer-system.js:1634    ✅ getFolderChildren() - フォルダ内レイヤー取得
-layer-system.js:1635    ✅ Phase 9完全継承（親子関係・座標変換）
-drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
-drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
-drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
-history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
-earcut-triangulator.js:149 ✅ earcut-triangulator.js Phase 2.0 loaded
-gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
-gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
-gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
-gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
-gl-msdf-pipeline.js:684 ✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded
-gl-msdf-pipeline.js:685    🔧 テクスチャサイズ計算でアスペクト比を厳密保持
-gl-msdf-pipeline.js:686    🔧 2の累乗丸めによるストローク変形を防止
-gl-stroke-processor.js:642 ✅ gl-stroke-processor.js Phase 4.0D loaded
-gl-stroke-processor.js:643    🔥 Perfect-Freehand完全不使用
-gl-stroke-processor.js:644    🎨 独自リボン生成（鋭角完全対応）
-gl-stroke-processor.js:645    🔧 筆圧カーブ改善
-gl-stroke-processor.js:646    ✨ カエルの卵最小化
-gl-stroke-processor.js:647    ⚠️ 技術的限界: ペンツールでは濃淡グラデーション不可
-gl-stroke-processor.js:648    💡 水彩/エアブラシは Phase 5.0 で別実装が必要
-webgl2-drawing-layer.js:403 ✅ webgl2-drawing-layer.js Phase 3.6 loaded
-webgl2-drawing-layer.js:404    ✅ 独自リボン生成実装（Perfect-Freehand完全不使用）
-gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
-gl-mask-layer.js:474    ✅ Circle mask rendering実装
-gl-mask-layer.js:475    ✅ Additive blend対応
-gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
-pointer-handler.js:180 ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
-pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+ ✅ config.js Phase 5 loaded (水彩/エアブラシ基盤統合版)
+    ✅ 水彩/エアブラシ設定追加（内部基盤のみ）
+    ✅ ツールモード拡張
+    💡 UI実装は将来フェーズで追加予定
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ debug-utils.js loaded
+    Type: TegakiDebug.help() for available commands
+    Quick check: TegakiDebug.fullDiagnostic()
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js v3.0 loaded (Phase 4: 流量設定統合版)
+  ✅ layer-transform.js Phase 3 loaded
+     ✅ confirmTransform()でベクターメッシュ再生成
+     ✅ 拡大時のジャギー解消
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
+    ✅ createFolder() - フォルダ作成
+    ✅ addLayerToFolder() - レイヤーをフォルダに追加
+    ✅ removeLayerFromFolder() - フォルダから取り出し
+    ✅ toggleFolderExpand() - 開閉切替
+    ✅ getVisibleLayers() - 表示レイヤーのみ取得
+    ✅ getFolderChildren() - フォルダ内レイヤー取得
+    ✅ Phase 9完全継承（親子関係・座標変換）
+ ✅ drawing-clipboard.js Phase 1 loaded
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ earcut-triangulator.js Phase 2.0 loaded
+ ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+ ✅ gl-msdf-pipeline.js Phase 6.2 loaded (shader-inline.js統合版)
+    ✅ GLSLシェーダー インライン化対応
+    ✅ file:// プロトコル完全対応
+    ✅ Phase 3.2 アスペクト比保持機能継承
+ ✅ gl-stroke-processor.js Phase 4.0D loaded
+    🔥 Perfect-Freehand完全不使用
+    🎨 独自リボン生成（鋭角完全対応）
+    🔧 筆圧カーブ改善
+    ✨ カエルの卵最小化
+    ⚠️ 技術的限界: ペンツールでは濃淡グラデーション不可
+    💡 水彩/エアブラシは Phase 5.0 で別実装が必要
+ ✅ webgl2-drawing-layer.js Phase 3.6 loaded
+    ✅ 独自リボン生成実装（Perfect-Freehand完全不使用）
+ ✅ gl-mask-layer.js Phase 6完全版 loaded
+    ✅ Circle mask rendering実装
+    ✅ Additive blend対応
+    ✅ Compose Pass統合準備完了
+ ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
  ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
     ✅ 最小筆圧サイズ: 1%-100%の範囲実装
     ✅ 平滑化アルゴリズム修正
  ✅ stroke-recorder.js (警告ログ削減版) loaded
     ✓ 不要な警告ログを削除
     ✓ DRY原則準拠
- ✅ stroke-renderer.js Phase 4.0C loaded
-    ✅ インクリメンタルレンダリング実装
-    ✅ ストローク後の変形排除
-    ✅ 筆圧グラデーション保持
+ ✅ stroke-renderer.js Phase 6.4 loaded (流量完全修正版)
+    ✅ サンプル点数非依存（最大筆圧使用）
+    ✅ マウス入力時の流量保証
+    ✅ ペン/マウス自動判定実装
+    ✅ Phase 6.3全機能継承
  ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
  ✅ brush-settings.js (Phase 3-D Clean) loaded
  ✅ BlendMode definitions loaded
@@ -89,12 +91,12 @@ pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-co
  ✅ dom-builder.js v8.19.0 loaded
     🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
     ✓ System情報表示（WebGPU/GPU検出）
-slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
-slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
-slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
-slider-utils.js:237    🔧 requestAnimationFrame最適化
-keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
-keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+ ✅ slider-utils.js v8.13.10 loaded
+    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+    🔧 慣性スクロール実装（velocity計算）
+    🔧 requestAnimationFrame最適化
+ ✅ keyboard-handler.js Phase 6完成版 loaded
+    ✅ BS/DEL: 描画削除が正常動作
 keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
 keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
 layer-panel-renderer.js:957 ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
@@ -144,8 +146,8 @@ popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 core-initializer.js:299 [DrawingApp] Initializing WebGL2...
 core-initializer.js:156 [WebGL2] Starting initialization...
-core-initializer.js:169 [WebGL2] Canvas found: 1814 x 1248
-webgl2-drawing-layer.js:107 [WebGL2] ✅ Initialized {canvasSize: '1814x1248', maxTextureSize: 16384}
+core-initializer.js:169 [WebGL2] Canvas found: 1636 x 1196
+webgl2-drawing-layer.js:107 [WebGL2] ✅ Initialized Object
 gl-stroke-processor.js:85 [GLStrokeProcessor] ✅ Phase 4.0D Initialized
 gl-stroke-processor.js:86    🔥 Perfect-Freehand完全不使用
 gl-stroke-processor.js:87    🎨 独自リボン生成（鋭角完全対応）
@@ -158,7 +160,37 @@ core-initializer.js:185 [WebGL2] ✅ GLStrokeProcessor ready
 core-initializer.js:190 [WebGL2] ✅ GLStrokeProcessor connected to StrokeRenderer
 core-initializer.js:308 [DrawingApp] WebGL2 result: true
 index.html:118 ✅ WebGL2初期化完了
-index.html:122 🎬 Pixi Ticker Status: {started: true, speed: 1, maxFPS: 0, FPS: 59.99999999999999}
+index.html:122 🎬 Pixi Ticker Status: Object
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-popup-manager.js:192 👁️ Popup "settings" shown
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
+keyboard-handler.js:65 Uncaught TypeError: keymap.getAction is not a function
