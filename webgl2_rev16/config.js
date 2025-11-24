@@ -1,11 +1,10 @@
 /**
- * @file config.js - Phase 5: 水彩/エアブラシ基盤追加版
+ * @file config.js - Phase 6.5: ポイント補間設定追加版
  * @description グローバル設定・キーマップ定義
  * 
- * 【Phase 5改修内容】
- * ✅ 水彩/エアブラシ基盤設定追加（内部のみ、UI変更なし）
- * ✅ ツールモード拡張
- * ✅ Phase 4完全継承
+ * 【Phase 6.5改修内容】
+ * ✅ drawing.interpolation設定追加（カエルの卵防止）
+ * ✅ Phase 5全機能継承
  * 
  * 【親依存】なし（最上位設定ファイル）
  * 【子依存】全システムファイル
@@ -42,6 +41,20 @@ window.TEGAKI_CONFIG = {
         opacity: 1.0,
         minWidth: 1,
         maxWidth: 10
+    },
+    
+    /**
+     * Phase 6.5: 描画処理設定
+     */
+    drawing: {
+        /**
+         * ポイント補間設定（カエルの卵防止）
+         */
+        interpolation: {
+            enabled: true,           // 補間有効化
+            threshold: 5.0,          // 補間閾値（ピクセル）
+            maxSteps: 10             // 最大分割数
+        }
     },
     
     /**
@@ -442,10 +455,78 @@ window.TEGAKI_KEYMAP = {
         CTRL: 'Control',
         SHIFT: 'Shift',
         ALT: 'Alt'
+    },
+    
+    /**
+     * Phase 6: キーマップヘルパーメソッド追加
+     */
+    getAction(event, options = {}) {
+        const { vMode = false } = options;
+        
+        for (const [actionName, binding] of Object.entries(this.actions)) {
+            const bindings = Array.isArray(binding) ? binding : [binding];
+            
+            for (const b of bindings) {
+                if (b.key !== event.code) continue;
+                
+                const ctrlMatch = (b.ctrl || false) === (event.ctrlKey || event.metaKey || false);
+                const shiftMatch = (b.shift || false) === (event.shiftKey || false);
+                const altMatch = (b.alt || false) === (event.altKey || false);
+                const vModeMatch = (b.vMode === undefined) || (b.vMode === vMode);
+                
+                if (ctrlMatch && shiftMatch && altMatch && vModeMatch) {
+                    return actionName;
+                }
+            }
+        }
+        
+        return null;
+    },
+    
+    getShortcutList() {
+        const list = [];
+        for (const [actionName, binding] of Object.entries(this.actions)) {
+            const bindings = Array.isArray(binding) ? binding : [binding];
+            bindings.forEach(b => {
+                list.push({
+                    action: actionName,
+                    description: b.description || actionName,
+                    shortcut: this._formatShortcut(b)
+                });
+            });
+        }
+        return list;
+    },
+    
+    _formatShortcut(binding) {
+        const parts = [];
+        if (binding.ctrl) parts.push('Ctrl');
+        if (binding.shift) parts.push('Shift');
+        if (binding.alt) parts.push('Alt');
+        if (binding.vMode) parts.push('V+');
+        parts.push(this._formatKey(binding.key));
+        return parts.join('+');
+    },
+    
+    _formatKey(key) {
+        const keyMap = {
+            'KeyA': 'A', 'KeyB': 'B', 'KeyC': 'C', 'KeyD': 'D',
+            'KeyE': 'E', 'KeyF': 'F', 'KeyG': 'G', 'KeyH': 'H',
+            'KeyI': 'I', 'KeyJ': 'J', 'KeyK': 'K', 'KeyL': 'L',
+            'KeyM': 'M', 'KeyN': 'N', 'KeyO': 'O', 'KeyP': 'P',
+            'KeyQ': 'Q', 'KeyR': 'R', 'KeyS': 'S', 'KeyT': 'T',
+            'KeyU': 'U', 'KeyV': 'V', 'KeyW': 'W', 'KeyX': 'X',
+            'KeyY': 'Y', 'KeyZ': 'Z',
+            'Digit0': '0', 'Digit1': '1', 'Digit2': '2',
+            'ArrowUp': '↑', 'ArrowDown': '↓',
+            'ArrowLeft': '←', 'ArrowRight': '→',
+            'Space': 'Space', 'Delete': 'Del', 'Backspace': 'BS'
+        };
+        return keyMap[key] || key;
     }
 };
 
-console.log('✅ config.js Phase 5 loaded (水彩/エアブラシ基盤統合版)');
-console.log('   ✅ 水彩/エアブラシ設定追加（内部基盤のみ）');
-console.log('   ✅ ツールモード拡張');
-console.log('   💡 UI実装は将来フェーズで追加予定');
+console.log('✅ config.js Phase 6.5 loaded (ポイント補間設定追加版)');
+console.log('   ✅ drawing.interpolation設定追加');
+console.log('   ✅ カエルの卵防止機能実装');
+console.log('   ⚙️ 補間閾値: 5.0px (デフォルト)');
