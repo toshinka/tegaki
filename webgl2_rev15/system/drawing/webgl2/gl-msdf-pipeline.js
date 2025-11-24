@@ -1,20 +1,22 @@
 /**
  * ================================================================================
- * gl-msdf-pipeline.js - Phase 3.2アスペクト比保持改善版
+ * gl-msdf-pipeline.js - Phase 6.2: shader-inline.js統合版
  * ================================================================================
  * 
  * 📁 親依存:
  *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl, createFBO, deleteFBO)
  *   - gl-stroke-processor.js (EdgeBuffer/VertexBuffer: 7 floats/vertex)
+ *   - shader-inline.js (GLSLShaders) ★Phase 6.2追加
  * 
  * 📄 子依存:
  *   - brush-core.js (generateMSDF呼び出し元)
  *   - gl-texture-bridge.js (生成されたTextureを受け取る)
+ *   - stroke-renderer.js (MSDF統合準備)
  * 
- * 🔧 Phase 3.2改修内容:
- *   🔧 テクスチャサイズ計算でアスペクト比を厳密保持
- *   🔧 2の累乗丸めによるストローク変形を防止
- *   ✅ Phase 2.0の全機能を完全継承
+ * 🔧 Phase 6.2改修内容:
+ *   ✅ shader-inline.jsからGLSLシェーダー読み込み
+ *   ✅ 外部ファイル依存完全削除（file://対応）
+ *   ✅ Phase 3.2の全機能を完全継承
  * 
  * 責務:
  *   - MSDF距離場生成（JFA: Jump Flooding Algorithm）
@@ -50,6 +52,12 @@
     async initialize(gl) {
       if (this.initialized) return;
       
+      // shader-inline.js 依存チェック
+      if (!window.GLSLShaders) {
+        console.error('[GLMSDFPipeline] shader-inline.js not loaded');
+        return;
+      }
+      
       this.gl = gl;
       
       this._createFullscreenQuad();
@@ -60,6 +68,7 @@
       await this._createRenderProgram();
       
       this.initialized = true;
+      console.log('[GLMSDFPipeline] ✅ Phase 6.2 initialized with inline shaders');
     }
 
     /**
@@ -124,136 +133,40 @@
     }
 
     /**
-     * Seed初期化プログラム生成
+     * 🔧 Phase 6.2: Seed初期化プログラム生成（shader-inline.js使用）
      * @private
      */
     async _createSeedInitProgram() {
-      const vertexShader = `#version 300 es
-        precision highp float;
-        in vec2 aPosition;
-        in vec2 aTexCoord;
-        out vec2 vTexCoord;
-        void main() {
-          gl_Position = vec4(aPosition, 0.0, 1.0);
-          vTexCoord = aTexCoord;
-        }
-      `;
-      
-      const fragmentShader = `#version 300 es
-        precision highp float;
-        in vec2 vTexCoord;
-        out vec4 fragColor;
-        void main() {
-          fragColor = vec4(-1.0, -1.0, -1.0, -1.0);
-        }
-      `;
+      const vertexShader = window.GLSLShaders.renderVert;
+      const fragmentShader = window.GLSLShaders.seedInit;
       
       this.seedInitProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Seed Init');
     }
 
     /**
-     * JFAプログラム生成
+     * 🔧 Phase 6.2: JFAプログラム生成（shader-inline.js使用）
      * @private
      */
     async _createJFAProgram() {
-      const vertexShader = `#version 300 es
-        precision highp float;
-        in vec2 aPosition;
-        in vec2 aTexCoord;
-        out vec2 vTexCoord;
-        void main() {
-          gl_Position = vec4(aPosition, 0.0, 1.0);
-          vTexCoord = aTexCoord;
-        }
-      `;
-      
-      const fragmentShader = `#version 300 es
-        precision highp float;
-        uniform sampler2D uSrcTex;
-        uniform float uStep;
-        uniform vec2 uTexSize;
-        in vec2 vTexCoord;
-        out vec4 fragColor;
-        
-        void main() {
-          vec4 bestSeed = texture(uSrcTex, vTexCoord);
-          float bestDistSq = 1e10;
-          
-          vec2 offsets[8] = vec2[](
-            vec2(-1, -1), vec2(0, -1), vec2(1, -1),
-            vec2(-1,  0),              vec2(1,  0),
-            vec2(-1,  1), vec2(0,  1), vec2(1,  1)
-          );
-          
-          for (int i = 0; i < 8; i++) {
-            vec2 offset = offsets[i] * uStep / uTexSize;
-            vec4 neighbor = texture(uSrcTex, vTexCoord + offset);
-            
-            if (neighbor.x >= 0.0) {
-              vec2 diff = neighbor.xy - vTexCoord * uTexSize;
-              float distSq = dot(diff, diff);
-              
-              if (distSq < bestDistSq) {
-                bestDistSq = distSq;
-                bestSeed = neighbor;
-              }
-            }
-          }
-          
-          fragColor = bestSeed;
-        }
-      `;
+      const vertexShader = window.GLSLShaders.renderVert;
+      const fragmentShader = window.GLSLShaders.jfaPass;
       
       this.jfaProgram = this._createShaderProgram(vertexShader, fragmentShader, 'JFA Pass');
     }
 
     /**
-     * エンコードプログラム生成
+     * 🔧 Phase 6.2: エンコードプログラム生成（shader-inline.js使用）
      * @private
      */
     async _createEncodeProgram() {
-      const vertexShader = `#version 300 es
-        precision highp float;
-        in vec2 aPosition;
-        in vec2 aTexCoord;
-        out vec2 vTexCoord;
-        void main() {
-          gl_Position = vec4(aPosition, 0.0, 1.0);
-          vTexCoord = aTexCoord;
-        }
-      `;
-      
-      const fragmentShader = `#version 300 es
-        precision highp float;
-        uniform sampler2D uJFAResult;
-        uniform vec2 uTexSize;
-        in vec2 vTexCoord;
-        out vec4 fragColor;
-        
-        void main() {
-          vec4 seed = texture(uJFAResult, vTexCoord);
-          
-          if (seed.x < 0.0) {
-            fragColor = vec4(1.0, 1.0, 1.0, 1.0);
-            return;
-          }
-          
-          vec2 pixelPos = vTexCoord * uTexSize;
-          vec2 seedPos = seed.xy;
-          float dist = length(pixelPos - seedPos);
-          float normalizedDist = dist / (max(uTexSize.x, uTexSize.y) * 0.5);
-          normalizedDist = clamp(normalizedDist, 0.0, 1.0);
-          
-          fragColor = vec4(normalizedDist, normalizedDist, normalizedDist, 1.0);
-        }
-      `;
+      const vertexShader = window.GLSLShaders.renderVert;
+      const fragmentShader = window.GLSLShaders.encode;
       
       this.encodeProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Encode Pass');
     }
 
     /**
-     * レンダリングプログラム生成
-     * Phase 1.9の座標変換を継承
+     * 🔧 Phase 6.2: レンダリングプログラム生成（shader-inline.js使用）
      * @private
      */
     async _createRenderProgram() {
@@ -280,23 +193,7 @@
         }
       `;
       
-      const fragmentShader = `#version 300 es
-        precision highp float;
-        
-        uniform sampler2D uMSDFTex;
-        uniform vec4 uBrushColor;
-        uniform float uOpacity;
-        
-        in vec2 vTexCoord;
-        out vec4 fragColor;
-        
-        void main() {
-          float dist = texture(uMSDFTex, vTexCoord).r;
-          float alpha = smoothstep(0.4, 0.6, dist);
-          
-          fragColor = vec4(uBrushColor.rgb, alpha * uOpacity);
-        }
-      `;
+      const fragmentShader = window.GLSLShaders.renderFrag;
       
       this.renderProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Render Pass');
     }
@@ -314,31 +211,24 @@
       let width = Math.ceil(bounds.width);
       let height = Math.ceil(bounds.height);
 
-      // 元のアスペクト比を記録
       const originalAspectRatio = width / height;
 
-      // 範囲制限（2の累乗前）
       width = Math.max(this.minTextureSize, Math.min(width, this.maxTextureSize));
       height = Math.max(this.minTextureSize, Math.min(height, this.maxTextureSize));
 
-      // 2の累乗に丸める
       const pow2Width = Math.pow(2, Math.ceil(Math.log2(width)));
       const pow2Height = Math.pow(2, Math.ceil(Math.log2(height)));
 
-      // 🔧 Phase 3.2: アスペクト比保持補正
       const pow2AspectRatio = pow2Width / pow2Height;
       const aspectDiff = Math.abs(pow2AspectRatio - originalAspectRatio);
 
-      // アスペクト比の差が10%以上の場合は補正
       if (aspectDiff > 0.1) {
         if (originalAspectRatio > pow2AspectRatio) {
-          // 横長の場合: widthを調整
           const correctedWidth = Math.pow(2, Math.ceil(Math.log2(pow2Height * originalAspectRatio)));
           if (correctedWidth <= this.maxTextureSize) {
             return { width: correctedWidth, height: pow2Height };
           }
         } else {
-          // 縦長の場合: heightを調整
           const correctedHeight = Math.pow(2, Math.ceil(Math.log2(pow2Width / originalAspectRatio)));
           if (correctedHeight <= this.maxTextureSize) {
             return { width: pow2Width, height: correctedHeight };
@@ -346,7 +236,6 @@
         }
       }
 
-      // 補正不要または補正後も最大サイズを超える場合は2の累乗値をそのまま使用
       return { width: pow2Width, height: pow2Height };
     }
 
@@ -478,9 +367,9 @@
       gl.viewport(0, 0, width, height);
       gl.useProgram(this.jfaProgram);
       
-      const uSrcTexLoc = gl.getUniformLocation(this.jfaProgram, 'uSrcTex');
-      const uStepLoc = gl.getUniformLocation(this.jfaProgram, 'uStep');
-      const uTexSizeLoc = gl.getUniformLocation(this.jfaProgram, 'uTexSize');
+      const uSrcTexLoc = gl.getUniformLocation(this.jfaProgram, 'uDistanceField');
+      const uStepLoc = gl.getUniformLocation(this.jfaProgram, 'uStepSize');
+      const uTexSizeLoc = gl.getUniformLocation(this.jfaProgram, 'uResolution');
       
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, srcTexture);
@@ -528,13 +417,15 @@
       gl.viewport(0, 0, width, height);
       gl.useProgram(this.encodeProgram);
       
-      const uJFAResultLoc = gl.getUniformLocation(this.encodeProgram, 'uJFAResult');
-      const uTexSizeLoc = gl.getUniformLocation(this.encodeProgram, 'uTexSize');
+      const uJFAResultLoc = gl.getUniformLocation(this.encodeProgram, 'uDistanceField');
+      const uTexSizeLoc = gl.getUniformLocation(this.encodeProgram, 'uResolution');
+      const uRangeLoc = gl.getUniformLocation(this.encodeProgram, 'uRange');
       
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, jfaTexture);
       gl.uniform1i(uJFAResultLoc, 0);
       gl.uniform2f(uTexSizeLoc, width, height);
+      gl.uniform1f(uRangeLoc, Math.max(width, height) * 0.5);
       
       this._drawFullscreenQuad(this.encodeProgram);
       
@@ -560,19 +451,23 @@
       
       gl.useProgram(this.renderProgram);
       
-      const uMSDFTexLoc = gl.getUniformLocation(this.renderProgram, 'uMSDFTex');
-      const uBrushColorLoc = gl.getUniformLocation(this.renderProgram, 'uBrushColor');
+      const uMSDFTexLoc = gl.getUniformLocation(this.renderProgram, 'uMSDF');
+      const uColorLoc = gl.getUniformLocation(this.renderProgram, 'uColor');
       const uOpacityLoc = gl.getUniformLocation(this.renderProgram, 'uOpacity');
+      const uThresholdLoc = gl.getUniformLocation(this.renderProgram, 'uThreshold');
+      const uSmoothnessLoc = gl.getUniformLocation(this.renderProgram, 'uSmoothness');
       
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, msdfTexture);
       gl.uniform1i(uMSDFTexLoc, 0);
       
       const color = this._parseColor(settings.color || '#800000');
-      gl.uniform4f(uBrushColorLoc, color.r, color.g, color.b, 1.0);
+      gl.uniform3f(uColorLoc, color.r, color.g, color.b);
       
       const opacity = settings.opacity !== undefined ? settings.opacity : 1.0;
       gl.uniform1f(uOpacityLoc, opacity);
+      gl.uniform1f(uThresholdLoc, 0.5);
+      gl.uniform1f(uSmoothnessLoc, 0.05);
       
       if (vertexBuffer && vertexCount > 0 && bounds) {
         this._drawStroke(this.renderProgram, vertexBuffer, vertexCount, bounds);
@@ -681,8 +576,9 @@
   }
 
   window.GLMSDFPipeline = new GLMSDFPipeline();
-  console.log('✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded');
-  console.log('   🔧 テクスチャサイズ計算でアスペクト比を厳密保持');
-  console.log('   🔧 2の累乗丸めによるストローク変形を防止');
+  console.log('✅ gl-msdf-pipeline.js Phase 6.2 loaded (shader-inline.js統合版)');
+  console.log('   ✅ GLSLシェーダー インライン化対応');
+  console.log('   ✅ file:// プロトコル完全対応');
+  console.log('   ✅ Phase 3.2 アスペクト比保持機能継承');
 
 })();

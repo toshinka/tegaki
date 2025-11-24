@@ -1,24 +1,24 @@
 /**
  * ============================================================
- * stroke-renderer.js - Phase 4.0C: インクリメンタルレンダリング版
+ * stroke-renderer.js - Phase 6.4: 流量完全修正版
  * ============================================================
  * 【親依存】
  *   - PixiJS v8.14
- *   - gl-stroke-processor.js Phase 4.0B Optimized
- *   - brush-settings.js (window.brushSettings)
- *   - settings-manager.js (flow設定取得)
+ *   - gl-stroke-processor.js Phase 4.0D
+ *   - gl-msdf-pipeline.js Phase 6.2
+ *   - brush-settings.js
+ *   - settings-manager.js
  *   - config.js
  * 
  * 【子依存】
  *   - brush-core.js
  *   - layer-transform.js
  * 
- * 【Phase 4.0C改修内容】
- * ✅ リアルタイムポリゴン追加（変形なし）
- * ✅ インクリメンタルレンダリング実装
- * ✅ ストローク終了時の変形排除
- * ✅ 筆圧グラデーション保持
- * ✅ 重なり部分の欠け防止
+ * 【Phase 6.4改修内容】
+ * ✅ 流量計算を完全修正（サンプル点数非依存）
+ * ✅ マウス入力時の流量保証（pressure=0.5でも最大流量）
+ * ✅ 筆圧依存モード追加（ペン/マウス自動判定）
+ * ✅ Phase 6.3全機能継承
  * ============================================================
  */
 
@@ -33,7 +33,6 @@
             this.resolution = 1;
             this.currentTool = 'pen';
             
-            // WebGL2統合
             this.glStrokeProcessor = null;
             this.glMSDFPipeline = null;
             this.textureBridge = null;
@@ -42,10 +41,9 @@
             this.config = window.TEGAKI_CONFIG?.webgpu || {};
             this.settingsManager = window.TegakiSettingsManager;
             
-            // Phase 4.0C: インクリメンタルレンダリング用
             this.currentStroke = null;
             this.lastProcessedIndex = 0;
-            this.incrementalThreshold = 5; // 5ポイントごとに更新
+            this.incrementalThreshold = 5;
         }
 
         async setWebGLLayer(webgl2Layer) {
@@ -63,6 +61,13 @@
             
             if (window.GLMSDFPipeline && this.config.msdf?.enabled !== false) {
                 this.glMSDFPipeline = window.GLMSDFPipeline;
+                
+                if (!this.glMSDFPipeline.initialized) {
+                    const gl = window.WebGL2DrawingLayer?.gl;
+                    if (gl) {
+                        await this.glMSDFPipeline.initialize(gl);
+                    }
+                }
             }
             
             if (window.GLTextureBridge) {
@@ -70,7 +75,6 @@
             }
             
             this.webgl2Enabled = true;
-            console.log('[StrokeRenderer] ✅ WebGL2 pipeline connected (Phase 4.0C)');
             
             return true;
         }
@@ -100,48 +104,98 @@
             let flowOpacity = 1.0;
             let flowSensitivity = 1.0;
             let flowAccumulation = false;
+            let flowPressureMode = 'auto'; // 🔧 Phase 6.4: auto/pen/ignore
             
             if (this.settingsManager && typeof this.settingsManager.get === 'function') {
                 const settings = this.settingsManager.get();
                 flowOpacity = settings.flowOpacity !== undefined ? settings.flowOpacity : 1.0;
                 flowSensitivity = settings.flowSensitivity !== undefined ? settings.flowSensitivity : 1.0;
                 flowAccumulation = settings.flowAccumulation !== undefined ? settings.flowAccumulation : false;
+                flowPressureMode = settings.flowPressureMode !== undefined ? settings.flowPressureMode : 'auto';
             }
             else if (window.TEGAKI_CONFIG?.brush?.flow) {
                 const flow = window.TEGAKI_CONFIG.brush.flow;
                 flowOpacity = flow.opacity !== undefined ? flow.opacity : 1.0;
                 flowSensitivity = flow.sensitivity !== undefined ? flow.sensitivity : 1.0;
                 flowAccumulation = flow.accumulation !== undefined ? flow.accumulation : false;
+                flowPressureMode = flow.pressureMode !== undefined ? flow.pressureMode : 'auto';
             }
             
             return {
                 opacity: flowOpacity,
                 sensitivity: flowSensitivity,
-                accumulation: flowAccumulation
+                accumulation: flowAccumulation,
+                pressureMode: flowPressureMode
             };
         }
 
-        _calculateAveragePressure(points) {
-            if (!points || points.length === 0) return 0.5;
+        /**
+         * 🔧 Phase 6.4: 入力デバイス判定
+         * マウス/ペンを自動検出
+         */
+        _detectInputDevice(points) {
+            if (!points || points.length === 0) return 'mouse';
             
-            let sum = 0;
-            let count = 0;
+            // 筆圧変動をチェック
+            let hasVariation = false;
+            let minPressure = 1.0;
+            let maxPressure = 0.0;
             
             for (const p of points) {
                 const pressure = p.pressure !== undefined ? p.pressure : 0.5;
-                sum += pressure;
-                count++;
+                minPressure = Math.min(minPressure, pressure);
+                maxPressure = Math.max(maxPressure, pressure);
             }
             
-            return count > 0 ? sum / count : 0.5;
+            // 筆圧変動が10%以上ならペン、それ以外はマウス
+            const variation = maxPressure - minPressure;
+            return variation > 0.1 ? 'pen' : 'mouse';
         }
 
+        /**
+         * 🔧 Phase 6.4: 流量不透明度計算（完全修正版）
+         * 
+         * 【修正内容】
+         * 1. サンプル点数非依存（最大筆圧を使用）
+         * 2. マウス入力時は筆圧無視
+         * 3. ペン入力時のみ筆圧適用
+         * 
+         * 【pressureMode】
+         * - 'auto': 自動判定（マウス/ペン）
+         * - 'pen': 常に筆圧適用
+         * - 'ignore': 常に筆圧無視
+         */
         _calculateFlowOpacity(baseOpacity, points) {
             const flow = this._getFlowSettings();
             const flowOpacity = flow.opacity;
-            const avgPressure = this._calculateAveragePressure(points);
-            const pressureAdjusted = Math.pow(avgPressure, 1.0 / flow.sensitivity);
-            const finalOpacity = baseOpacity * flowOpacity * pressureAdjusted;
+            
+            // モード判定
+            let usePressure = false;
+            if (flow.pressureMode === 'pen') {
+                usePressure = true;
+            } else if (flow.pressureMode === 'ignore') {
+                usePressure = false;
+            } else { // 'auto'
+                const device = this._detectInputDevice(points);
+                usePressure = (device === 'pen');
+            }
+            
+            let pressureFactor = 1.0;
+            
+            if (usePressure && points && points.length > 0) {
+                // 🔧 Phase 6.4: 最大筆圧を使用（サンプル点数非依存）
+                let maxPressure = 0.0;
+                for (const p of points) {
+                    const pressure = p.pressure !== undefined ? p.pressure : 0.5;
+                    maxPressure = Math.max(maxPressure, pressure);
+                }
+                
+                // 感度適用
+                const pressureAdjusted = Math.pow(maxPressure, 1.0 / flow.sensitivity);
+                pressureFactor = pressureAdjusted;
+            }
+            
+            const finalOpacity = baseOpacity * flowOpacity * pressureFactor;
             return Math.max(0.0, Math.min(1.0, finalOpacity));
         }
 
@@ -154,10 +208,6 @@
             return brushSize * validPressure;
         }
 
-        /**
-         * Phase 4.0C: インクリメンタルプレビュー
-         * ストローク中にリアルタイムでポリゴン追加
-         */
         renderPreview(points, providedSettings = null, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
             const settings = this._getSettings(providedSettings);
@@ -167,11 +217,9 @@
                 return graphics;
             }
 
-            // Phase 4.0C: WebGL2有効時はインクリメンタルレンダリング
             if (this.webgl2Enabled && this.glStrokeProcessor && mode !== 'eraser') {
                 const newPointsCount = points.length - this.lastProcessedIndex;
                 
-                // 閾値に達したら追加レンダリング
                 if (newPointsCount >= this.incrementalThreshold) {
                     this._renderIncrementalSegment(points, settings, graphics);
                     this.lastProcessedIndex = points.length;
@@ -179,7 +227,6 @@
                 }
             }
 
-            // Legacy描画（消しゴム・WebGL2無効時）
             graphics.clear();
             graphics.blendMode = 'normal';
 
@@ -238,12 +285,7 @@
             return graphics;
         }
 
-        /**
-         * Phase 4.0C: インクリメンタルセグメント描画
-         * 新しいポイントのみをポリゴン化して追加
-         */
         _renderIncrementalSegment(points, settings, graphics) {
-            // 最後のN個のポイントのみ処理
             const segmentStart = Math.max(0, this.lastProcessedIndex - 2);
             const segmentPoints = points.slice(segmentStart);
 
@@ -298,19 +340,13 @@
             }
         }
 
-        /**
-         * Phase 4.0C: 最終ストローク描画
-         * ストローク終了時は変形しない（既にレンダリング済み）
-         */
         async renderFinalStroke(strokeData, providedSettings = null, targetGraphics = null) {
             const settings = this._getSettings(providedSettings);
             const mode = this._getCurrentMode(settings);
             
-            // Phase 4.0C: インクリメンタルレンダリング済みの場合
             if (this.currentStroke && this.webgl2Enabled && mode !== 'eraser') {
                 const graphics = this.currentStroke;
                 
-                // 蓄積モード設定
                 const flow = this._getFlowSettings();
                 if (flow.accumulation) {
                     graphics.blendMode = 'add';
@@ -321,7 +357,6 @@
                 graphics.visible = true;
                 graphics.renderable = true;
 
-                // メタデータ保存
                 const formattedPoints = strokeData.points.map(p => ({
                     x: p.localX !== undefined ? p.localX : (p.x || 0),
                     y: p.localY !== undefined ? p.localY : (p.y || 0),
@@ -336,19 +371,16 @@
                     renderType: 'incremental-vector'
                 };
 
-                // リセット
                 this.currentStroke = null;
                 this.lastProcessedIndex = 0;
 
                 return graphics;
             }
             
-            // 消しゴム
             if (mode === 'eraser') {
                 return this._renderEraserStroke(strokeData, settings);
             }
             
-            // フォールバック: 一括レンダリング
             if (this.webgl2Enabled && this.glStrokeProcessor) {
                 try {
                     const graphics = this._renderWithPolygon(strokeData, settings);
@@ -363,9 +395,6 @@
             return this._renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics);
         }
 
-        /**
-         * Phase 4.0C: ストローク開始
-         */
         startStroke(settings) {
             if (this.webgl2Enabled) {
                 this.currentStroke = new PIXI.Graphics();
@@ -374,9 +403,6 @@
             }
         }
 
-        /**
-         * Phase 4.0C: ストロークキャンセル
-         */
         cancelStroke() {
             if (this.currentStroke) {
                 this.currentStroke.destroy();
@@ -617,9 +643,10 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js Phase 4.0C loaded');
-    console.log('   ✅ インクリメンタルレンダリング実装');
-    console.log('   ✅ ストローク後の変形排除');
-    console.log('   ✅ 筆圧グラデーション保持');
+    console.log('✅ stroke-renderer.js Phase 6.4 loaded (流量完全修正版)');
+    console.log('   ✅ サンプル点数非依存（最大筆圧使用）');
+    console.log('   ✅ マウス入力時の流量保証');
+    console.log('   ✅ ペン/マウス自動判定実装');
+    console.log('   ✅ Phase 6.3全機能継承');
 
 })();
