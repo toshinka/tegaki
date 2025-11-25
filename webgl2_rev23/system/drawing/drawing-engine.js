@@ -1,29 +1,29 @@
 /**
- * @file system/drawing/drawing-engine.js - Phase 4.1
- * @description 座標変換・PointerEvent処理・ストローク制御
+ * ============================================================
+ * drawing-engine.js - Phase B-2: ペン傾き伝達実装版
+ * ============================================================
  * 
- * 【Phase 4.1 改修内容】
- * ✅ strokeRenderer プロパティ追加
- * ✅ WebGL2初期化用の参照を提供
- * 
- * 【Phase 4 改修内容 - Fill Tool 対応】
- * ✅ fill モード時にクリックイベントを発行
- * ✅ canvas:pointerdown イベントに localX/localY を含める
- * 
- * 【依存関係 - Parents (このファイルが依存)】
- * - system/drawing/brush-core.js (BrushCore - ツール状態管理)
+ * 【親依存】
+ * - system/drawing/brush-core.js (BrushCore)
  * - system/drawing/pointer-handler.js (PointerHandler)
  * - coordinate-system.js (CoordinateSystem)
  * - system/camera-system.js (CameraSystem)
  * - system/layer-system.js (LayerSystem)
  * - system/event-bus.js (EventBus)
- * - system/drawing/stroke-renderer.js (StrokeRenderer) ← 🆕 Phase 4.1
+ * - system/drawing/stroke-renderer.js (StrokeRenderer)
  * 
- * 【子ファイル (このファイルに依存)】
+ * 【子依存】
  * - core-engine.js (初期化元)
  * - core-runtime.js (API経由)
  * - system/drawing/fill-tool.js (canvas:pointerdown イベント購読)
- * - core-initializer.js (strokeRenderer参照) ← 🆕 Phase 4.1
+ * - core-initializer.js (strokeRenderer参照)
+ * 
+ * 【Phase B-2改修内容】
+ * ✅ _handlePointerDown() 傾き伝達（tiltX/tiltY/twist追加）
+ * ✅ _handlePointerMove() 傾き伝達
+ * ✅ brush-core.startStroke() / updateStroke() に傾きパラメータ追加
+ * ✅ Phase 4.1全機能継承
+ * ============================================================
  */
 
 class DrawingEngine {
@@ -42,8 +42,6 @@ class DrawingEngine {
         }
 
         this.brushSettings = null;
-        
-        // 🆕 Phase 4.1: StrokeRenderer参照を追加
         this.strokeRenderer = window.strokeRenderer || null;
         
         this.pointerDetach = null;
@@ -78,6 +76,10 @@ class DrawingEngine {
         });
     }
 
+    /**
+     * Phase B-2: 傾き伝達実装
+     * tiltX/tiltY/twist をBrushCoreに渡す
+     */
     _handlePointerDown(info, e) {
         if (this.cameraSystem?.isCanvasMoveMode()) {
             return;
@@ -117,15 +119,22 @@ class DrawingEngine {
             isDrawing: true
         });
 
+        // Phase B-2: 傾きパラメータ追加
         if (this.brushCore && this.brushCore.startStroke) {
             this.brushCore.startStroke(
                 info.clientX,
                 info.clientY,
-                info.pressure
+                info.pressure,
+                info.tiltX !== undefined ? info.tiltX : 0,
+                info.tiltY !== undefined ? info.tiltY : 0,
+                info.twist !== undefined ? info.twist : 0
             );
         }
     }
 
+    /**
+     * Phase B-2: 傾き伝達実装
+     */
     _handlePointerMove(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo || !pointerInfo.isDrawing) {
@@ -136,11 +145,15 @@ class DrawingEngine {
             return;
         }
 
+        // Phase B-2: 傾きパラメータ追加
         if (this.brushCore.updateStroke) {
             this.brushCore.updateStroke(
                 info.clientX,
                 info.clientY,
-                info.pressure
+                info.pressure,
+                info.tiltX !== undefined ? info.tiltX : 0,
+                info.tiltY !== undefined ? info.tiltY : 0,
+                info.twist !== undefined ? info.twist : 0
             );
         }
     }
@@ -216,31 +229,18 @@ class DrawingEngine {
         };
     }
 
-    /**
-     * BrushSettings インスタンスの設定
-     */
     setBrushSettings(settings) {
         this.brushSettings = settings;
     }
 
-    /**
-     * 🆕 Phase 4.1: StrokeRenderer 参照を更新
-     * （CoreEngine初期化後に呼ばれる）
-     */
     setStrokeRenderer(renderer) {
         this.strokeRenderer = renderer;
     }
 
-    /**
-     * 描画中かどうか
-     */
     get isDrawing() {
         return this.brushCore && this.brushCore.isActive ? this.brushCore.isActive() : false;
     }
 
-    /**
-     * クリーンアップ
-     */
     destroy() {
         if (this.pointerDetach) {
             this.pointerDetach();
@@ -252,7 +252,7 @@ class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js (Phase 4.1 StrokeRenderer参照追加版) loaded');
-console.log('   ✅ strokeRenderer プロパティ追加');
-console.log('   ✅ setStrokeRenderer() メソッド追加');
-console.log('   ✓ Phase 4 全機能継承');
+console.log('✅ drawing-engine.js Phase B-2 loaded (ペン傾き伝達版)');
+console.log('   ✅ startStroke() に tiltX/tiltY/twist 追加');
+console.log('   ✅ updateStroke() に tiltX/tiltY/twist 追加');
+console.log('   ✅ Phase 4.1全機能継承');
