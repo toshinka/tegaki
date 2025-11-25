@@ -1,0 +1,187 @@
+ ✅ config.js Phase 7.5.1 loaded (Qキー対応版)
+    ✅ POPUP_QUICK_ACCESS: Space → KeyQ に変更
+    ⚙️ Spaceキーは将来のパン移動用に予約
+    ✅ Phase 7.5全機能継承（流量高速補償）
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ debug-utils.js loaded
+    Type: TegakiDebug.help() for available commands
+    Quick check: TegakiDebug.fullDiagnostic()
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js v3.0 loaded (Phase 4: 流量設定統合版)
+  ✅ layer-transform.js Phase 3 loaded
+     ✅ confirmTransform()でベクターメッシュ再生成
+     ✅ 拡大時のジャギー解消
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
+    ✅ createFolder() - フォルダ作成
+    ✅ addLayerToFolder() - レイヤーをフォルダに追加
+    ✅ removeLayerFromFolder() - フォルダから取り出し
+    ✅ toggleFolderExpand() - 開閉切替
+    ✅ getVisibleLayers() - 表示レイヤーのみ取得
+    ✅ getFolderChildren() - フォルダ内レイヤー取得
+    ✅ Phase 9完全継承（親子関係・座標変換）
+ ✅ drawing-clipboard.js Phase 1 loaded
+drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
+history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
+earcut-triangulator.js:149 ✅ earcut-triangulator.js Phase 2.0 loaded
+shader-inline.js:254 ✅ shader-inline.js Phase A-3 loaded
+shader-inline.js:255    ✅ render.frag.glsl アンチエイリアス改善
+shader-inline.js:256    ✅ fwidth() ピクセル適応AA実装
+shader-inline.js:257    ✅ median() 関数追加（MSDF対応）
+shader-inline.js:258    ✅ Phase 7全機能継承
+shader-inline.js:259    📊 シェーダー数: 5
+gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+gl-msdf-pipeline.js:563 ✅ gl-msdf-pipeline.js Phase A-3 loaded
+gl-msdf-pipeline.js:564    ✅ エラーハンドリング強化（パラメータ検証）
+gl-msdf-pipeline.js:565    ✅ FBO削除漏れ完全防止（try-finally）
+gl-msdf-pipeline.js:566    ✅ 返り値テクスチャ所有権明確化
+gl-msdf-pipeline.js:567    ✅ uRange uniform対応（AA改善）
+gl-msdf-pipeline.js:568    ✅ Phase 6.2全機能継承
+gl-stroke-processor.js:642 ✅ gl-stroke-processor.js Phase 4.0D loaded
+gl-stroke-processor.js:643    🔥 Perfect-Freehand完全不使用
+gl-stroke-processor.js:644    🎨 独自リボン生成（鋭角完全対応）
+gl-stroke-processor.js:645    🔧 筆圧カーブ改善
+gl-stroke-processor.js:646    ✨ カエルの卵最小化
+gl-stroke-processor.js:647    ⚠️ 技術的限界: ペンツールでは濃淡グラデーション不可
+gl-stroke-processor.js:648    💡 水彩/エアブラシは Phase 5.0 で別実装が必要
+webgl2-drawing-layer.js:403 ✅ webgl2-drawing-layer.js Phase 3.6 loaded
+webgl2-drawing-layer.js:404    ✅ 独自リボン生成実装（Perfect-Freehand完全不使用）
+gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
+gl-mask-layer.js:474    ✅ Circle mask rendering実装
+gl-mask-layer.js:475    ✅ Additive blend対応
+gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
+pointer-handler.js:180 ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+pressure-handler.js:180 ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
+pressure-handler.js:181    ✅ 最小筆圧サイズ: 1%-100%の範囲実装
+pressure-handler.js:182    ✅ 平滑化アルゴリズム修正
+stroke-recorder.js:272 ✅ stroke-recorder.js Phase 7 loaded
+stroke-recorder.js:273    ✅ 速度適応補間実装（高速ストローク対応）
+stroke-recorder.js:274    ✅ 補間閾値: 2.5px（Phase 6.5: 5.0px → 最適化）
+stroke-recorder.js:275    ✅ 最大分割数: 15（Phase 6.5: 10 → 増加）
+stroke-recorder.js:276    ✅ ペン入力カエルの卵完全対策
+stroke-recorder.js:277    ⚙️ 速度履歴記録・適応処理実装
+stroke-renderer.js:765 ✅ stroke-renderer.js Phase A-1 loaded (MSDF統合版)
+stroke-renderer.js:766    ✅ MSDF生成パイプライン実装
+stroke-renderer.js:767    ✅ WebGL2 Texture → Pixi.Sprite 変換
+stroke-renderer.js:768    ✅ GPU描画のみ（CPUラスタライズ廃止）
+stroke-renderer.js:769    ✅ エラー時のGraphicsFallback実装
+stroke-renderer.js:770    ✅ Phase 7.5全機能継承（高速補償）
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+blend-modes.js:24 ✅ BlendMode definitions loaded
+vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
+vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
+vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
+brush-core.js:496 ✅ brush-core.js Phase 7.6 loaded (History登録修正版)
+brush-core.js:497    ✅ ストローク描画のHistory登録実装
+brush-core.js:498    ✅ window.History.push() で正しく登録
+brush-core.js:499    ✅ Undo/Redo 完全対応
+brush-core.js:500    ✅ Phase 4.0C 全機能継承
+ ✅ fill-tool.js (Phase 1完全修正版) loaded
+ ✅ drawing-engine.js (Phase 4.1 StrokeRenderer参照追加版) loaded
+    ✅ strokeRenderer プロパティ追加
+    ✅ setStrokeRenderer() メソッド追加
+    ✓ Phase 4 全機能継承
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js v8.33.0 loaded
+    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+ ✅ png-exporter.js v8.29.0 loaded
+    🔧 generatePreview()メソッド追加
+    🔧 エラーハンドリング強化
+    🔧 Blob生成の確実性向上
+ ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+ ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+    ⚠️ 実装は将来フェーズで追加予定
+    ✓ エラーメッセージで開発中を通知
+ ✅ apng-exporter.js v8.31.0 loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+ ✅ dom-builder.js v8.19.0 loaded
+    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+    ✓ System情報表示（WebGPU/GPU検出）
+ ✅ slider-utils.js v8.13.10 loaded
+    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+    🔧 慣性スクロール実装（velocity計算）
+    🔧 requestAnimationFrame最適化
+ ✅ keyboard-handler.js Phase 7.5.2 loaded (DEL/BS修正版)
+    ✅ structuredClone エラー修正
+    ✅ paths を直接参照方式に変更
+    ✅ Undo/Redo 正常動作
+    ✅ Phase 7.5.1全機能継承
+ ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
+    ✅ createFolderElement() - フォルダUI生成
+    ✅ createFolderEar() - 耳部分SVGアイコン
+layer-panel-renderer.js:960    ✅ 階層表示（左オフセット + 縦線）
+layer-panel-renderer.js:961    ✅ フォルダ開閉アニメーション
+layer-panel-renderer.js:962    ✅ フォルダサムネイル合成対応
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:630 ✅ thumbnail-system.js Phase 4: フォルダサムネイル合成版 loaded
+timeline-thumbnail-utils.js:631    ✅ generateFolderThumbnail() - フォルダ合成サムネイル生成
+timeline-thumbnail-utils.js:632    ✅ _compositeLayers() - 複数レイヤー合成処理
+timeline-thumbnail-utils.js:633    ✅ フォルダサムネイルキャッシュ対応
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:680 ✅ settings-popup.js v3.0 loaded (Phase 4: 流量UI統合版)
+quick-access-popup.js:765 ✅ quick-access-popup.js Phase 7.5.1 loaded
+quick-access-popup.js:766    🎯 フォーカス黒枠完全削除
+quick-access-popup.js:767    🔧 pointerdown時の自動blur処理追加
+quick-access-popup.js:768    ✅ v8.13.17全機能継承
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:418 ✅ ui-panels.js v8.13.16 loaded
+ui-panels.js:419    ✅ フォルダ+ボタン接続完了
+ui-panels.js:420    ✅ createFolder() 正常呼び出し
+core-runtime.js:557 ✅ core-runtime.js (Phase 6 - updateLayerPanelUI完全削除版) loaded
+core-runtime.js:558    ✅ EventBus駆動に完全統一
+core-runtime.js:559    ✅ 存在しないメソッド呼び出し削除
+core-engine.js:717 ✅ core-engine.js v8.33.0 loaded
+core-engine.js:718    🆕 DrawingEngine に StrokeRenderer 参照追加
+core-engine.js:719    ✅ WebGL2初期化準備完了
+core-initializer.js:451 ✅ core-initializer.js Phase 4.1 loaded (AA強化版)
+core-initializer.js:452    ✅ 高解像度レンダリング (resolution: 2)
+core-initializer.js:453    ✅ アンチエイリアス強化
+core-initializer.js:454    ✅ 縮小時のカクカク改善
+index.html:117 🚀 WebGL2 MSDF版 Phase 6.5 起動中...
+core-initializer.js:260 [DrawingApp] ✅ Resolution: 2
+core-initializer.js:261 [DrawingApp] ✅ Antialias: undefined
+core-engine.js:634 ✅ [CoreEngine] StrokeRenderer set to DrawingEngine
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+core-initializer.js:299 [DrawingApp] Initializing WebGL2...
+core-initializer.js:156 [WebGL2] Starting initialization...
+core-initializer.js:169 [WebGL2] Canvas found: 1158 x 1126
+webgl2-drawing-layer.js:107 [WebGL2] ✅ Initialized {canvasSize: '1158x1126', maxTextureSize: 16384}
+gl-stroke-processor.js:85 [GLStrokeProcessor] ✅ Phase 4.0D Initialized
+gl-stroke-processor.js:86    🔥 Perfect-Freehand完全不使用
+gl-stroke-processor.js:87    🎨 独自リボン生成（鋭角完全対応）
+gl-stroke-processor.js:88    🔧 筆圧カーブ改善
+gl-stroke-processor.js:89    ✨ カエルの卵最小化
+gl-stroke-processor.js:90    ⚠️ 技術的限界: ペンツールでは濃淡グラデーション不可
+webgl2-drawing-layer.js:144 [WebGL2] ✅ GLStrokeProcessor ready (独自リボン生成)
+core-initializer.js:178 [WebGL2] ✅ Context initialized
+core-initializer.js:185 [WebGL2] ✅ GLStrokeProcessor ready
+core-initializer.js:190 [WebGL2] ✅ GLStrokeProcessor connected to StrokeRenderer
+core-initializer.js:308 [DrawingApp] WebGL2 result: true
+index.html:119 ✅ WebGL2初期化完了
+index.html:123 🎬 Pixi Ticker Status: {started: true, speed: 1, maxFPS: 0, FPS: 59.99999999999999}
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+brush-core.js:411 [BrushCore] ✅ Stroke registered to History
+brush-core.js:411 [BrushCore] ✅ Stroke registered to History
