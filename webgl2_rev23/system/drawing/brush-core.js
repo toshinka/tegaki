@@ -1,25 +1,25 @@
 /**
  * ============================================================
- * brush-core.js - Phase 7.6 History登録修正版
+ * brush-core.js - Phase B-3: ペン傾き処理実装版
  * ============================================================
- * 【Phase 7.6 改修内容】
- * ✅ ストローク描画のHistory登録実装
- * ✅ window.historyManager → window.History に修正
- * ✅ recordAction() → push() に変更
- * ✅ do/undo 形式でストローク追加/削除を実装
- * ✅ Phase 4.0C 全機能継承
+ * 【親依存】
+ * - drawing-engine.js (呼び出し元)
+ * - system/event-bus.js
+ * - coordinate-system.js
+ * - system/drawing/pressure-handler.js
+ * - system/drawing/stroke-recorder.js
+ * - system/drawing/stroke-renderer.js
+ * - system/layer-system.js
+ * - system/drawing/brush-settings.js
+ * - system/drawing/fill-tool.js
+ * - system/history.js
  * 
- * 親ファイル: drawing-engine.js
- * 依存ファイル:
- *   - system/event-bus.js (イベント通信)
- *   - coordinate-system.js (座標変換)
- *   - system/drawing/pressure-handler.js (筆圧処理)
- *   - system/drawing/stroke-recorder.js (ストローク記録)
- *   - system/drawing/stroke-renderer.js Phase 4.0C (ストローク描画)
- *   - system/layer-system.js (レイヤー管理)
- *   - system/drawing/brush-settings.js (ブラシ設定)
- *   - system/drawing/fill-tool.js (FillTool)
- *   - system/history.js (History管理) ← Phase 7.6: 追加
+ * 【Phase B-3改修内容】
+ * ✅ startStroke() に tiltX/tiltY/twist パラメータ追加
+ * ✅ updateStroke() に tiltX/tiltY/twist パラメータ追加
+ * ✅ stroke-recorder.startStroke() / addPoint() に傾き渡し
+ * ✅ 傾き情報の記録・保持
+ * ✅ Phase 7.6全機能継承
  * ============================================================
  */
 
@@ -33,6 +33,11 @@
             this.lastLocalX = 0;
             this.lastLocalY = 0;
             this.lastPressure = 0;
+            
+            // Phase B-3: 傾き情報保持
+            this.lastTiltX = 0;
+            this.lastTiltY = 0;
+            this.lastTwist = 0;
             
             this.coordinateSystem = null;
             this.pressureHandler = null;
@@ -158,9 +163,9 @@
         }
         
         /**
-         * Phase 4.0C: ストローク開始
+         * Phase B-3: ストローク開始 - 傾き対応
          */
-        startStroke(clientX, clientY, pressure) {
+        startStroke(clientX, clientY, pressure, tiltX = 0, tiltY = 0, twist = 0) {
             const currentMode = this.getMode();
             
             if (currentMode === 'fill') {
@@ -180,32 +185,40 @@
                 ? this.pressureHandler.process(pressure) 
                 : pressure;
             
-            this.strokeRecorder.startStroke(localX, localY, processedPressure);
+            // Phase B-3: 傾き情報を stroke-recorder に渡す
+            this.strokeRecorder.startStroke(localX, localY, processedPressure, tiltX, tiltY, twist);
             
             this.isDrawing = true;
             this.lastLocalX = localX;
             this.lastLocalY = localY;
             this.lastPressure = processedPressure;
+            this.lastTiltX = tiltX;
+            this.lastTiltY = tiltY;
+            this.lastTwist = twist;
             
-            // Phase 4.0C: StrokeRenderer にストローク開始を通知
             const settings = this._getCurrentSettings();
             if (this.strokeRenderer.startStroke) {
                 this.strokeRenderer.startStroke(settings);
             }
             
-            // Phase 4.0C: currentStroke をプレビューとして使用
             if (this.strokeRenderer.currentStroke) {
                 this.previewGraphics = this.strokeRenderer.currentStroke;
                 activeLayer.addChild(this.previewGraphics);
             } else {
-                // フォールバック: 通常のプレビュー
                 this.previewGraphics = new PIXI.Graphics();
                 this.previewGraphics.label = 'strokePreview';
                 activeLayer.addChild(this.previewGraphics);
             }
             
             this.strokeRenderer.renderPreview(
-                [{ x: localX, y: localY, pressure: processedPressure }],
+                [{
+                    x: localX,
+                    y: localY,
+                    pressure: processedPressure,
+                    tiltX: tiltX,
+                    tiltY: tiltY,
+                    twist: twist
+                }],
                 settings,
                 this.previewGraphics
             );
@@ -219,16 +232,19 @@
                         layerId: activeLayer.layerData?.id,
                         localX,
                         localY,
-                        pressure: processedPressure
+                        pressure: processedPressure,
+                        tiltX,
+                        tiltY,
+                        twist
                     }
                 });
             }
         }
         
         /**
-         * Phase 4.0C: ストローク更新
+         * Phase B-3: ストローク更新 - 傾き対応
          */
-        updateStroke(clientX, clientY, pressure) {
+        updateStroke(clientX, clientY, pressure, tiltX = 0, tiltY = 0, twist = 0) {
             if (!this.isDrawing) return;
             
             const activeLayer = this.layerManager.getActiveLayer();
@@ -247,23 +263,26 @@
             const distance = Math.sqrt(dx * dx + dy * dy);
             const steps = Math.max(1, Math.floor(distance / 5));
             
+            // Phase B-3: 補間時に傾きも補間
             for (let i = 1; i <= steps; i++) {
                 const t = i / (steps + 1);
                 const interpX = this.lastLocalX + dx * t;
                 const interpY = this.lastLocalY + dy * t;
                 const interpPressure = this.lastPressure + (processedPressure - this.lastPressure) * t;
+                const interpTiltX = this.lastTiltX + (tiltX - this.lastTiltX) * t;
+                const interpTiltY = this.lastTiltY + (tiltY - this.lastTiltY) * t;
+                const interpTwist = this.lastTwist + (twist - this.lastTwist) * t;
                 
-                this.strokeRecorder.addPoint(interpX, interpY, interpPressure);
+                this.strokeRecorder.addPoint(interpX, interpY, interpPressure, interpTiltX, interpTiltY, interpTwist);
             }
             
-            this.strokeRecorder.addPoint(localX, localY, processedPressure);
+            // Phase B-3: 傾き情報を addPoint に渡す
+            this.strokeRecorder.addPoint(localX, localY, processedPressure, tiltX, tiltY, twist);
             
-            // Phase 4.0C: インクリメンタルレンダリング
             if (this.previewGraphics) {
                 const currentPoints = this.strokeRecorder.getCurrentPoints();
                 const settings = this._getCurrentSettings();
                 
-                // Phase 4.0C: currentStroke の場合は clear 不要
                 if (!this.strokeRenderer.currentStroke) {
                     this.previewGraphics.clear();
                 }
@@ -278,11 +297,11 @@
             this.lastLocalX = localX;
             this.lastLocalY = localY;
             this.lastPressure = processedPressure;
+            this.lastTiltX = tiltX;
+            this.lastTiltY = tiltY;
+            this.lastTwist = twist;
         }
         
-        /**
-         * Phase 7.6: ストローク終了 - History登録修正版
-         */
         async finalizeStroke() {
             if (!this.isDrawing) return;
             
@@ -295,7 +314,6 @@
                 this.pressureHandler.reset();
             }
             
-            // Phase 4.0C: プレビュー削除（currentStroke の場合は保持）
             const isIncrementalStroke = this.strokeRenderer.currentStroke === this.previewGraphics;
             
             if (this.previewGraphics && this.previewGraphics.parent && !isIncrementalStroke) {
@@ -314,12 +332,10 @@
             );
             
             if (graphics) {
-                // Phase 4.0C: インクリメンタルストロークの場合は既に追加済み
                 if (!isIncrementalStroke) {
                     activeLayer.addChild(graphics);
                 }
                 
-                // Pixi手動レンダリングトリガー
                 if (window.pixiApp && window.pixiApp.renderer) {
                     window.pixiApp.renderer.render(window.pixiApp.stage);
                 }
@@ -347,12 +363,10 @@
                     activeLayer.layerData.pathsData.push(pathData);
                     activeLayer.layerData.paths.push(pathData);
                     
-                    // Phase 7.6: 正しいHistory登録実装
                     if (window.History && !window.History._manager?.isApplying) {
                         const layerIndex = this.layerManager.getLayerIndex(activeLayer);
                         const layerId = activeLayer.layerData.id;
                         
-                        // pathData と graphics の参照を保持
                         const pathDataRef = pathData;
                         const graphicsRef = graphics;
                         const pathsArrayRef = activeLayer.layerData.paths;
@@ -361,7 +375,6 @@
                         const entry = {
                             name: 'stroke-draw',
                             do: () => {
-                                // ストローク追加（初回は既に追加済みなので何もしない）
                                 if (!activeLayer.children.includes(graphicsRef)) {
                                     activeLayer.addChild(graphicsRef);
                                 }
@@ -372,13 +385,11 @@
                                     pathsDataArrayRef.push(pathDataRef);
                                 }
                                 
-                                // サムネイル更新
                                 if (this.layerManager.requestThumbnailUpdate) {
                                     this.layerManager.requestThumbnailUpdate(layerIndex);
                                 }
                             },
                             undo: () => {
-                                // ストローク削除
                                 if (activeLayer.children.includes(graphicsRef)) {
                                     activeLayer.removeChild(graphicsRef);
                                 }
@@ -393,7 +404,6 @@
                                     pathsDataArrayRef.splice(pathDataIndex, 1);
                                 }
                                 
-                                // サムネイル更新
                                 if (this.layerManager.requestThumbnailUpdate) {
                                     this.layerManager.requestThumbnailUpdate(layerIndex);
                                 }
@@ -408,7 +418,6 @@
                         };
                         
                         window.History.push(entry);
-                        console.log('[BrushCore] ✅ Stroke registered to History');
                     }
                 }
                 
@@ -441,6 +450,11 @@
             
             this.isDrawing = false;
             
+            // Phase B-3: 傾き情報リセット
+            this.lastTiltX = 0;
+            this.lastTiltY = 0;
+            this.lastTwist = 0;
+            
             if (this.eventBus) {
                 this.eventBus.emit('drawing:stroke-completed', {
                     component: 'drawing',
@@ -454,9 +468,6 @@
             }
         }
         
-        /**
-         * Phase 4.0C: ストロークキャンセル
-         */
         cancelStroke() {
             if (!this.isDrawing) return;
             
@@ -464,7 +475,6 @@
                 this.pressureHandler.reset();
             }
             
-            // Phase 4.0C: StrokeRenderer にキャンセル通知
             if (this.strokeRenderer && this.strokeRenderer.cancelStroke) {
                 this.strokeRenderer.cancelStroke();
             }
@@ -476,6 +486,11 @@
             }
             
             this.isDrawing = false;
+            
+            // Phase B-3: 傾き情報リセット
+            this.lastTiltX = 0;
+            this.lastTiltY = 0;
+            this.lastTwist = 0;
             
             if (this.eventBus) {
                 this.eventBus.emit('drawing:stroke-cancelled', {
@@ -493,10 +508,11 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js Phase 7.6 loaded (History登録修正版)');
-    console.log('   ✅ ストローク描画のHistory登録実装');
-    console.log('   ✅ window.History.push() で正しく登録');
-    console.log('   ✅ Undo/Redo 完全対応');
-    console.log('   ✅ Phase 4.0C 全機能継承');
+    console.log('✅ brush-core.js Phase B-3 loaded (ペン傾き処理版)');
+    console.log('   ✅ startStroke() に tiltX/tiltY/twist 追加');
+    console.log('   ✅ updateStroke() に tiltX/tiltY/twist 追加');
+    console.log('   ✅ stroke-recorder 傾き連携');
+    console.log('   ✅ 補間時の傾き処理実装');
+    console.log('   ✅ Phase 7.6全機能継承');
 
 })();

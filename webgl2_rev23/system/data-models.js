@@ -1,4 +1,24 @@
-// ===== system/data-models.js - backgroundColor追加版 =====
+/**
+ * ============================================================
+ * data-models.js - Phase B-1: ペン傾き対応版
+ * ============================================================
+ * 【親依存】
+ *   - なし（最上位データモデル定義）
+ * 
+ * 【子依存】
+ *   - layer-system.js
+ *   - history.js
+ *   - brush-core.js
+ *   - stroke-recorder.js
+ *   - timeline-ui.js
+ * 
+ * 【Phase B-1改修内容】
+ * ✅ StrokeData.points に tiltX/tiltY/twist 追加
+ * ✅ STROKE_SCHEMA拡張（傾き情報定義）
+ * ✅ toJSON() 傾きシリアライズ対応
+ * ✅ 後方互換性維持（傾き未定義時は0）
+ * ============================================================
+ */
 
 (function() {
     'use strict';
@@ -163,8 +183,25 @@
         }
     }
 
+    /**
+     * Phase B-1: STROKE_SCHEMA拡張
+     * ペン傾き情報を追加
+     */
     const STROKE_SCHEMA = {
-        points: { type: 'array', required: true, editable: false },
+        points: {
+            type: 'array',
+            required: true,
+            editable: false,
+            itemSchema: {
+                x: 'number',
+                y: 'number',
+                pressure: 'number',
+                time: 'number',
+                tiltX: 'number',  // -1 〜 1
+                tiltY: 'number',  // -1 〜 1
+                twist: 'number'   // 0 〜 2π
+            }
+        },
         isSingleDot: { type: 'boolean', default: false, editable: false },
         color: { type: 'number', required: true, editable: false },
         size: { type: 'number', min: 0.1, max: 500, required: true, editable: false },
@@ -173,6 +210,10 @@
         tool: { type: 'string', default: 'pen', editable: false }
     };
 
+    /**
+     * Phase B-1: StrokeData拡張
+     * ペン傾き情報の完全対応
+     */
     class StrokeData {
         constructor(data = {}) {
             this.points = data.points || [];
@@ -189,13 +230,20 @@
             return STROKE_SCHEMA;
         }
 
+        /**
+         * Phase B-1: toJSON() 傾きシリアライズ対応
+         * 後方互換性維持（傾き未定義時は0）
+         */
         toJSON() {
             return {
                 points: this.points.map(p => ({
                     x: p.x,
                     y: p.y,
                     pressure: p.pressure,
-                    time: p.time
+                    time: p.time,
+                    tiltX: p.tiltX !== undefined ? p.tiltX : 0,
+                    tiltY: p.tiltY !== undefined ? p.tiltY : 0,
+                    twist: p.twist !== undefined ? p.twist : 0
                 })),
                 isSingleDot: this.isSingleDot,
                 color: this.color,
@@ -224,6 +272,20 @@
             if (!this.layerId) {
                 errors.push('layerId is required');
             }
+            
+            // Phase B-1: 傾き値の範囲チェック
+            for (const p of this.points) {
+                if (p.tiltX !== undefined && (p.tiltX < -1 || p.tiltX > 1)) {
+                    errors.push('tiltX must be -1 to 1');
+                }
+                if (p.tiltY !== undefined && (p.tiltY < -1 || p.tiltY > 1)) {
+                    errors.push('tiltY must be -1 to 1');
+                }
+                if (p.twist !== undefined && (p.twist < 0 || p.twist > Math.PI * 2)) {
+                    errors.push('twist must be 0 to 2π');
+                }
+            }
+            
             return { valid: errors.length === 0, errors };
         }
 
@@ -260,6 +322,52 @@
                 height: maxY - minY
             };
         }
+        
+        /**
+         * Phase B-1: 傾き情報の有無を判定
+         */
+        hasTiltData() {
+            if (this.points.length === 0) return false;
+            
+            return this.points.some(p => 
+                p.tiltX !== undefined || 
+                p.tiltY !== undefined || 
+                p.twist !== undefined
+            );
+        }
+        
+        /**
+         * Phase B-1: 平均傾き値を取得
+         */
+        getAverageTilt() {
+            if (this.points.length === 0) {
+                return { tiltX: 0, tiltY: 0, twist: 0 };
+            }
+            
+            let sumTiltX = 0;
+            let sumTiltY = 0;
+            let sumTwist = 0;
+            let count = 0;
+            
+            for (const p of this.points) {
+                if (p.tiltX !== undefined) {
+                    sumTiltX += p.tiltX;
+                    sumTiltY += p.tiltY || 0;
+                    sumTwist += p.twist || 0;
+                    count++;
+                }
+            }
+            
+            if (count === 0) {
+                return { tiltX: 0, tiltY: 0, twist: 0 };
+            }
+            
+            return {
+                tiltX: sumTiltX / count,
+                tiltY: sumTiltY / count,
+                twist: sumTwist / count
+            };
+        }
     }
 
     window.TegakiDataModels = {
@@ -271,6 +379,10 @@
         STROKE_SCHEMA
     };
 
-})();
+    console.log('✅ data-models.js Phase B-1 loaded (ペン傾き対応版)');
+    console.log('   ✅ StrokeData.points に tiltX/tiltY/twist 追加');
+    console.log('   ✅ STROKE_SCHEMA拡張');
+    console.log('   ✅ toJSON() 傾きシリアライズ対応');
+    console.log('   ✅ 後方互換性維持');
 
-console.log('✅ data-models.js (backgroundColor追加版) loaded');
+})();
