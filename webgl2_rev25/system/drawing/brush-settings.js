@@ -1,33 +1,33 @@
 /**
  * ================================================================================
- * system/drawing/brush-settings.js - Phase 3-D: 塗りつぶしツール対応版
+ * system/drawing/brush-settings.js - Phase B-6: ペン傾き設定対応版
  * ================================================================================
  * 
- * 【Phase 3-D 改修内容】
- * - mode プロパティを 'pen' | 'eraser' | 'fill' に拡張
- * - fill モードのバリデーション追加
- * - 🧹 重複コンソールログの削除
+ * 【親依存】
+ * - config.js (TEGAKI_CONFIG)
+ * - system/event-bus.js (EventBus)
  * 
- * 【Phase 3-C 改修内容 - 消しゴム対応】
- * - mode プロパティ追加 ('pen' | 'eraser')
- * - setMode() / getMode() メソッド追加
- * - brush:mode-changed イベント発行
- * - BrushCore との統合
+ * 【子依存】
+ * - brush-core.js (settings取得)
+ * - stroke-renderer.js (傾き設定参照)
+ * - drawing-engine.js (settings取得)
+ * - ui/settings-popup.js (UI連携)
  * 
- * 【依存関係 - Parents (このファイルが依存)】
- *   - config.js (TEGAKI_CONFIG)
- *   - event-bus.js (EventBus)
- * 
- * 【依存関係 - Children (このファイルに依存)】
- *   - brush-core.js (mode 同期)
- *   - stroke-renderer.js (mode 参照)
- *   - drawing-engine.js (settings 取得)
- *   - core-runtime.js (API公開)
+ * 【Phase B-6改修内容】
+ * ✅ tilt オブジェクト追加
+ *    - sensitivity: 傾き感度 (0.0 〜 1.0)
+ *    - affectsWidth: 幅変調ON/OFF
+ *    - affectsRotation: 回転ON/OFF (Phase C実装予定)
+ *    - widthMin: 最小幅比率
+ *    - widthMax: 最大幅比率
+ * ✅ setTiltSettings() / getTiltSettings() メソッド追加
+ * ✅ イベント発行 'brush:tilt-changed'
+ * ✅ Phase 3-D全機能継承
  * 
  * 【責務】
- *   - ブラシ設定の集中管理（サイズ、色、不透明度、ツールモード）
- *   - 設定変更イベントの発行
- *   - デフォルト値の管理
+ * - ブラシ設定の集中管理（サイズ、色、不透明度、ツールモード、傾き設定）
+ * - 設定変更イベントの発行
+ * - デフォルト値の管理
  * ================================================================================
  */
 
@@ -60,12 +60,21 @@
             this.minWidth = this.config.BRUSH_DEFAULTS?.minWidth || 0.5;
             this.maxWidth = this.config.BRUSH_DEFAULTS?.maxWidth || 30;
             
-            // 🆕 Phase 3-D: ツールモード拡張
+            // ツールモード
             this.mode = 'pen'; // 'pen' | 'eraser' | 'fill'
+            
+            // 🆕 Phase B-6: ペン傾き設定
+            this.tilt = {
+                sensitivity: 0.5,           // 傾き感度 (0.0 〜 1.0)
+                affectsWidth: true,         // 幅変調ON/OFF
+                affectsRotation: false,     // 回転ON/OFF (Phase C実装予定)
+                widthMin: 0.5,             // 最小幅比率
+                widthMax: 1.5              // 最大幅比率
+            };
         }
 
         /**
-         * 🆕 Phase 3-D: ツールモード設定 (fill追加)
+         * ツールモード設定
          * @param {string} mode - 'pen' | 'eraser' | 'fill'
          */
         setMode(mode) {
@@ -87,7 +96,7 @@
         }
 
         /**
-         * 🆕 Phase 3-C: ツールモード取得
+         * ツールモード取得
          * @returns {string} 'pen' | 'eraser' | 'fill'
          */
         getMode() {
@@ -170,8 +179,84 @@
         }
 
         /**
+         * 🆕 Phase B-6: ペン傾き設定を更新
+         * @param {Object} tiltSettings - 傾き設定オブジェクト
+         * @param {number} [tiltSettings.sensitivity] - 傾き感度 (0.0 〜 1.0)
+         * @param {boolean} [tiltSettings.affectsWidth] - 幅変調ON/OFF
+         * @param {boolean} [tiltSettings.affectsRotation] - 回転ON/OFF
+         * @param {number} [tiltSettings.widthMin] - 最小幅比率
+         * @param {number} [tiltSettings.widthMax] - 最大幅比率
+         */
+        setTiltSettings(tiltSettings) {
+            if (!tiltSettings || typeof tiltSettings !== 'object') {
+                console.warn('[BrushSettings] Invalid tilt settings');
+                return;
+            }
+
+            const oldSettings = { ...this.tilt };
+            let changed = false;
+
+            if (tiltSettings.sensitivity !== undefined) {
+                const newSensitivity = Math.max(0, Math.min(1, tiltSettings.sensitivity));
+                if (this.tilt.sensitivity !== newSensitivity) {
+                    this.tilt.sensitivity = newSensitivity;
+                    changed = true;
+                }
+            }
+
+            if (tiltSettings.affectsWidth !== undefined && typeof tiltSettings.affectsWidth === 'boolean') {
+                if (this.tilt.affectsWidth !== tiltSettings.affectsWidth) {
+                    this.tilt.affectsWidth = tiltSettings.affectsWidth;
+                    changed = true;
+                }
+            }
+
+            if (tiltSettings.affectsRotation !== undefined && typeof tiltSettings.affectsRotation === 'boolean') {
+                if (this.tilt.affectsRotation !== tiltSettings.affectsRotation) {
+                    this.tilt.affectsRotation = tiltSettings.affectsRotation;
+                    changed = true;
+                }
+            }
+
+            if (tiltSettings.widthMin !== undefined) {
+                const newWidthMin = Math.max(0.1, Math.min(1.0, tiltSettings.widthMin));
+                if (this.tilt.widthMin !== newWidthMin) {
+                    this.tilt.widthMin = newWidthMin;
+                    changed = true;
+                }
+            }
+
+            if (tiltSettings.widthMax !== undefined) {
+                const newWidthMax = Math.max(1.0, Math.min(3.0, tiltSettings.widthMax));
+                if (this.tilt.widthMax !== newWidthMax) {
+                    this.tilt.widthMax = newWidthMax;
+                    changed = true;
+                }
+            }
+
+            if (changed && this.eventBus) {
+                this.eventBus.emit('brush:tilt-changed', {
+                    component: 'brush',
+                    action: 'tilt-changed',
+                    data: {
+                        tilt: { ...this.tilt },
+                        oldSettings: oldSettings
+                    }
+                });
+            }
+        }
+
+        /**
+         * 🆕 Phase B-6: ペン傾き設定を取得
+         * @returns {Object} 傾き設定オブジェクト
+         */
+        getTiltSettings() {
+            return { ...this.tilt };
+        }
+
+        /**
          * 現在の設定を全て取得
-         * 🔧 Phase 3-C: mode を追加
+         * 🔧 Phase B-6: tilt を追加
          */
         getSettings() {
             return {
@@ -181,13 +266,14 @@
                 alpha: this.opacity,
                 mode: this.mode,
                 minWidth: this.minWidth,
-                maxWidth: this.maxWidth
+                maxWidth: this.maxWidth,
+                tilt: { ...this.tilt }  // 🆕 Phase B-6
             };
         }
 
         /**
          * 設定を一括更新
-         * 🔧 Phase 3-C: mode 対応
+         * 🔧 Phase B-6: tilt 対応
          */
         updateSettings(settings) {
             let changed = false;
@@ -207,9 +293,14 @@
                 changed = true;
             }
 
-            // 🆕 Phase 3-C: mode 更新
             if (settings.mode !== undefined && settings.mode !== this.mode) {
                 this.setMode(settings.mode);
+                changed = true;
+            }
+
+            // 🆕 Phase B-6: tilt 更新
+            if (settings.tilt !== undefined) {
+                this.setTiltSettings(settings.tilt);
                 changed = true;
             }
 
@@ -219,6 +310,9 @@
 
     window.BrushSettings = BrushSettings;
 
-    console.log('✅ brush-settings.js (Phase 3-D Clean) loaded');
+    console.log('✅ brush-settings.js Phase B-6 loaded (ペン傾き設定対応版)');
+    console.log('   ✅ tilt.sensitivity / affectsWidth / affectsRotation 追加');
+    console.log('   ✅ setTiltSettings() / getTiltSettings() 実装');
+    console.log('   ✅ Phase 3-D全機能継承');
 
 })();

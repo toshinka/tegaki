@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * shader-inline.js - Phase A-3: アンチエイリアス改善版
+ * shader-inline.js - Phase B-7: ペン傾き対応版
  * ============================================================
  * 【責務】
  * - file://プロトコルでGLSLファイル読み込みが不可のため、
@@ -13,14 +13,16 @@
  * 【子依存】
  * - gl-msdf-pipeline.js
  * - gl-mask-layer.js
- * - sdf-brush-shader.js（将来Phase用）
+ * - gl-stroke-processor.js (stride=5)
  * 
- * 【Phase A-3改修内容】
- * ✅ render.frag.glsl アンチエイリアス改善
- * ✅ fwidth() を使用したピクセル適応AA
- * ✅ median() 関数追加（MSDF対応）
- * ✅ uRange uniform 追加
- * ✅ Phase 7全機能継承
+ * 【Phase B-7改修内容】
+ * ✅ render.vert.glsl 傾き属性追加
+ *    - aReserved (vec3) = [pressure, tiltX, tiltY]
+ *    - vPressure, vTilt 出力
+ * ✅ render.frag.glsl 傾きベース描画
+ *    - 傾き大きさによる閾値調整
+ *    - 筆圧反映
+ * ✅ Phase A-3全機能継承
  * ============================================================
  */
 
@@ -138,33 +140,47 @@ void main() {
 }`,
 
         /**
-         * Render Vertex Shader
-         * フルスクリーンクアッド描画用
+         * Phase B-7: Render Vertex Shader - ペン傾き対応版
+         * 
+         * 【改修内容】
+         * ✅ aReserved (vec3) 追加 = [pressure, tiltX, tiltY]
+         * ✅ vPressure, vTilt 出力
          */
         renderVert: `#version 300 es
-in vec2 a_position;
-in vec2 a_texCoord;
+precision highp float;
 
-out vec2 v_texCoord;
+layout(location = 0) in vec2 aPosition;
+layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec3 aReserved;  // [pressure, tiltX, tiltY]
+
+out vec2 vTexCoord;
+out float vPressure;
+out vec2 vTilt;
 
 void main() {
-    v_texCoord = a_texCoord;
-    gl_Position = vec4(a_position, 0.0, 1.0);
+    vTexCoord = aTexCoord;
+    vPressure = aReserved.x;
+    vTilt = aReserved.yz;
+    
+    gl_Position = vec4(aPosition, 0.0, 1.0);
 }`,
 
         /**
-         * Phase A-3: Render Fragment Shader - アンチエイリアス改善版
+         * Phase B-7: Render Fragment Shader - ペン傾き対応版
          * 
-         * 【改善内容】
-         * ✅ fwidth() によるピクセル適応アンチエイリアス
-         * ✅ median() 関数追加（MSDF対応）
-         * ✅ uRange uniform 追加
-         * ✅ 筆圧ベース閾値調整（Phase B後に実装予定）
+         * 【改修内容】
+         * ✅ vTilt, vPressure 入力
+         * ✅ 傾き大きさによる閾値調整
+         * ✅ 筆圧反映
+         * ✅ Phase A-3 アンチエイリアス継承
          */
         renderFrag: `#version 300 es
 precision highp float;
 
-in vec2 v_texCoord;
+in vec2 vTexCoord;
+in float vPressure;
+in vec2 vTilt;
+
 out vec4 outColor;
 
 uniform sampler2D uMSDF;
@@ -182,19 +198,26 @@ float median(vec3 v) {
 
 void main() {
     // MSDFサンプリング
-    vec4 msdf = texture(uMSDF, v_texCoord);
+    vec4 msdf = texture(uMSDF, vTexCoord);
     float dist = median(msdf.rgb);
     
     // Phase A-3: fwidth()によるピクセル適応アンチエイリアス
-    // スクリーン空間での微分を計算し、適切なぼかし幅を決定
-    float pixelDist = fwidth(v_texCoord.x) * uRange;
+    float pixelDist = fwidth(vTexCoord.x) * uRange;
+    
+    // Phase B-7: 傾きベース閾値調整
+    // 傾きが大きいほど線が細くなる効果
+    float tiltMagnitude = length(vTilt);
+    float threshold = 0.5 - (tiltMagnitude * 0.1);
     
     // アンチエイリアス適用
-    float alpha = smoothstep(0.5 - pixelDist, 0.5 + pixelDist, dist);
+    float alpha = smoothstep(
+        threshold - pixelDist,
+        threshold + pixelDist,
+        dist
+    );
     
-    // Phase B: 筆圧ベース閾値調整（将来実装）
-    // float threshold = 0.5 - (v_pressure - 0.5) * 0.1;
-    // float alpha = smoothstep(threshold - pixelDist, threshold + pixelDist, dist);
+    // Phase B-7: 筆圧反映
+    alpha *= vPressure;
     
     // 最終カラー出力
     outColor = vec4(uColor, alpha * uOpacity);
@@ -229,21 +252,22 @@ void main() {
          */
         getInfo() {
             return {
-                version: 'Phase A-3',
+                version: 'Phase B-7',
                 protocol: 'file:// compatible',
                 shaderCount: 5,
                 shaders: [
                     'seedInit',
                     'jfaPass',
                     'encode',
-                    'renderVert',
-                    'renderFrag (AA improved)'
+                    'renderVert (tilt support)',
+                    'renderFrag (tilt + AA)'
                 ],
                 features: [
                     'fwidth() pixel-adaptive AA',
                     'MSDF median() function',
                     'uRange uniform support',
-                    'Phase B ready (tilt support)'
+                    'Pen tilt width modulation',
+                    'Pressure reflection'
                 ]
             };
         }
@@ -251,14 +275,13 @@ void main() {
 
     // 妥当性チェック
     if (window.GLSLShaders.validate()) {
-        console.log('✅ shader-inline.js Phase A-3 loaded');
-        console.log('   ✅ render.frag.glsl アンチエイリアス改善');
-        console.log('   ✅ fwidth() ピクセル適応AA実装');
-        console.log('   ✅ median() 関数追加（MSDF対応）');
-        console.log('   ✅ Phase 7全機能継承');
-        console.log('   📊 シェーダー数:', window.GLSLShaders.getInfo().shaderCount);
+        console.log('✅ shader-inline.js Phase B-7 loaded (ペン傾き対応版)');
+        console.log('   ✅ renderVert: aReserved [pressure, tiltX, tiltY] 追加');
+        console.log('   ✅ renderFrag: 傾きベース閾値調整実装');
+        console.log('   ✅ renderFrag: 筆圧反映実装');
+        console.log('   ✅ Phase A-3全機能継承');
     } else {
-        console.error('❌ shader-inline.js Phase A-3: Validation failed');
+        console.error('❌ shader-inline.js Phase B-7: Validation failed');
     }
 
 })();
