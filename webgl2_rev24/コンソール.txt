@@ -2,7 +2,11 @@
     ✅ POPUP_QUICK_ACCESS: Space → KeyQ に変更
     ⚙️ Spaceキーは将来のパン移動用に予約
     ✅ Phase 7.5全機能継承（流量高速補償）
- ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ data-models.js Phase B-1 loaded (ペン傾き対応版)
+    ✅ StrokeData.points に tiltX/tiltY/twist 追加
+    ✅ STROKE_SCHEMA拡張
+    ✅ toJSON() 傾きシリアライズ対応
+    ✅ 後方互換性維持
  ✅ batch-api.js (Phase 6: History統合版) loaded
  ✅ debug-utils.js loaded
     Type: TegakiDebug.help() for available commands
@@ -23,73 +27,67 @@
     ✅ getFolderChildren() - フォルダ内レイヤー取得
     ✅ Phase 9完全継承（親子関係・座標変換）
  ✅ drawing-clipboard.js Phase 1 loaded
-drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
-drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
-history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
-earcut-triangulator.js:149 ✅ earcut-triangulator.js Phase 2.0 loaded
-shader-inline.js:254 ✅ shader-inline.js Phase A-3 loaded
-shader-inline.js:255    ✅ render.frag.glsl アンチエイリアス改善
-shader-inline.js:256    ✅ fwidth() ピクセル適応AA実装
-shader-inline.js:257    ✅ median() 関数追加（MSDF対応）
-shader-inline.js:258    ✅ Phase 7全機能継承
-shader-inline.js:259    📊 シェーダー数: 5
-gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
-gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
-gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
-gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
-gl-msdf-pipeline.js:563 ✅ gl-msdf-pipeline.js Phase A-3 loaded
-gl-msdf-pipeline.js:564    ✅ エラーハンドリング強化（パラメータ検証）
-gl-msdf-pipeline.js:565    ✅ FBO削除漏れ完全防止（try-finally）
-gl-msdf-pipeline.js:566    ✅ 返り値テクスチャ所有権明確化
-gl-msdf-pipeline.js:567    ✅ uRange uniform対応（AA改善）
-gl-msdf-pipeline.js:568    ✅ Phase 6.2全機能継承
-gl-stroke-processor.js:642 ✅ gl-stroke-processor.js Phase 4.0D loaded
-gl-stroke-processor.js:643    🔥 Perfect-Freehand完全不使用
-gl-stroke-processor.js:644    🎨 独自リボン生成（鋭角完全対応）
-gl-stroke-processor.js:645    🔧 筆圧カーブ改善
-gl-stroke-processor.js:646    ✨ カエルの卵最小化
-gl-stroke-processor.js:647    ⚠️ 技術的限界: ペンツールでは濃淡グラデーション不可
-gl-stroke-processor.js:648    💡 水彩/エアブラシは Phase 5.0 で別実装が必要
-webgl2-drawing-layer.js:403 ✅ webgl2-drawing-layer.js Phase 3.6 loaded
-webgl2-drawing-layer.js:404    ✅ 独自リボン生成実装（Perfect-Freehand完全不使用）
-gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
-gl-mask-layer.js:474    ✅ Circle mask rendering実装
-gl-mask-layer.js:475    ✅ Additive blend対応
-gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
-pointer-handler.js:180 ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
-pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
-pressure-handler.js:180 ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
-pressure-handler.js:181    ✅ 最小筆圧サイズ: 1%-100%の範囲実装
-pressure-handler.js:182    ✅ 平滑化アルゴリズム修正
-stroke-recorder.js:272 ✅ stroke-recorder.js Phase 7 loaded
-stroke-recorder.js:273    ✅ 速度適応補間実装（高速ストローク対応）
-stroke-recorder.js:274    ✅ 補間閾値: 2.5px（Phase 6.5: 5.0px → 最適化）
-stroke-recorder.js:275    ✅ 最大分割数: 15（Phase 6.5: 10 → 増加）
-stroke-recorder.js:276    ✅ ペン入力カエルの卵完全対策
-stroke-recorder.js:277    ⚙️ 速度履歴記録・適応処理実装
-stroke-renderer.js:765 ✅ stroke-renderer.js Phase A-1 loaded (MSDF統合版)
-stroke-renderer.js:766    ✅ MSDF生成パイプライン実装
-stroke-renderer.js:767    ✅ WebGL2 Texture → Pixi.Sprite 変換
-stroke-renderer.js:768    ✅ GPU描画のみ（CPUラスタライズ廃止）
-stroke-renderer.js:769    ✅ エラー時のGraphicsFallback実装
-stroke-renderer.js:770    ✅ Phase 7.5全機能継承（高速補償）
-thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
-brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
-blend-modes.js:24 ✅ BlendMode definitions loaded
-vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
-vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
-vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
-vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
-brush-core.js:496 ✅ brush-core.js Phase 7.6 loaded (History登録修正版)
-brush-core.js:497    ✅ ストローク描画のHistory登録実装
-brush-core.js:498    ✅ window.History.push() で正しく登録
-brush-core.js:499    ✅ Undo/Redo 完全対応
-brush-core.js:500    ✅ Phase 4.0C 全機能継承
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ earcut-triangulator.js Phase 2.0 loaded
+ ✅ shader-inline.js Phase A-3 loaded
+    ✅ render.frag.glsl アンチエイリアス改善
+    ✅ fwidth() ピクセル適応AA実装
+    ✅ median() 関数追加（MSDF対応）
+    ✅ Phase 7全機能継承
+    📊 シェーダー数: 5
+ ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+ ✅ gl-msdf-pipeline.js Phase B-4.5 loaded
+    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
+    ✅ Phase A-3全機能継承
+ ✅ gl-stroke-processor.js Phase B-4 loaded
+    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
+    ✅ ペン傾き情報保持・伝達
+    ✅ 補間時の傾き処理実装
+    ✅ Phase 4.0D全機能継承
+ ✅ webgl2-drawing-layer.js Phase 3.6 loaded
+    ✅ 独自リボン生成実装（Perfect-Freehand完全不使用）
+ ✅ gl-mask-layer.js Phase 6完全版 loaded
+    ✅ Circle mask rendering実装
+    ✅ Additive blend対応
+    ✅ Compose Pass統合準備完了
+ ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+ ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
+    ✅ 最小筆圧サイズ: 1%-100%の範囲実装
+    ✅ 平滑化アルゴリズム修正
+ ✅ stroke-recorder.js Phase 7 loaded
+    ✅ 速度適応補間実装（高速ストローク対応）
+    ✅ 補間閾値: 2.5px（Phase 6.5: 5.0px → 最適化）
+    ✅ 最大分割数: 15（Phase 6.5: 10 → 増加）
+    ✅ ペン入力カエルの卵完全対策
+    ⚙️ 速度履歴記録・適応処理実装
+ ✅ stroke-renderer.js Phase B-5 loaded (傾きベース幅変調版)
+    ✅ _calculateTiltWidth() メソッド追加
+    ✅ 傾きベース幅変調実装
+    ✅ Phase A-1.1全機能継承
+ ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+ ✅ brush-settings.js (Phase 3-D Clean) loaded
+ ✅ BlendMode definitions loaded
+ ✅ vector-operations.js Phase 1完全版 loaded
+    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+    ✓ config.js perfectFreehand設定自動適用
+    🔥 PerfectFreehand統合基盤完成
+ ✅ brush-core.js Phase B-3 loaded (ペン傾き処理版)
+    ✅ startStroke() に tiltX/tiltY/twist 追加
+    ✅ updateStroke() に tiltX/tiltY/twist 追加
+    ✅ stroke-recorder 傾き連携
+    ✅ 補間時の傾き処理実装
+    ✅ Phase 7.6全機能継承
  ✅ fill-tool.js (Phase 1完全修正版) loaded
- ✅ drawing-engine.js (Phase 4.1 StrokeRenderer参照追加版) loaded
-    ✅ strokeRenderer プロパティ追加
-    ✅ setStrokeRenderer() メソッド追加
-    ✓ Phase 4 全機能継承
+ ✅ drawing-engine.js Phase B-2 loaded (ペン傾き伝達版)
+    ✅ startStroke() に tiltX/tiltY/twist 追加
+    ✅ updateStroke() に tiltX/tiltY/twist 追加
+    ✅ Phase 4.1全機能継承
  ✅ quick-export-ui.js (無効化版) loaded
  ✅ export-manager.js v8.33.0 loaded
     🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
@@ -166,22 +164,35 @@ popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 core-initializer.js:299 [DrawingApp] Initializing WebGL2...
 core-initializer.js:156 [WebGL2] Starting initialization...
-core-initializer.js:169 [WebGL2] Canvas found: 1158 x 1126
-webgl2-drawing-layer.js:107 [WebGL2] ✅ Initialized {canvasSize: '1158x1126', maxTextureSize: 16384}
-gl-stroke-processor.js:85 [GLStrokeProcessor] ✅ Phase 4.0D Initialized
-gl-stroke-processor.js:86    🔥 Perfect-Freehand完全不使用
-gl-stroke-processor.js:87    🎨 独自リボン生成（鋭角完全対応）
-gl-stroke-processor.js:88    🔧 筆圧カーブ改善
-gl-stroke-processor.js:89    ✨ カエルの卵最小化
-gl-stroke-processor.js:90    ⚠️ 技術的限界: ペンツールでは濃淡グラデーション不可
+core-initializer.js:169 [WebGL2] Canvas found: 1660 x 1126
+webgl2-drawing-layer.js:107 [WebGL2] ✅ Initialized Object
+gl-stroke-processor.js:81 [GLStrokeProcessor] ✅ Phase B-4 Initialized
+gl-stroke-processor.js:82    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
+gl-stroke-processor.js:83    ✅ ペン傾き情報保持・伝達
+gl-stroke-processor.js:84    ✅ Phase 4.0D全機能継承
 webgl2-drawing-layer.js:144 [WebGL2] ✅ GLStrokeProcessor ready (独自リボン生成)
 core-initializer.js:178 [WebGL2] ✅ Context initialized
 core-initializer.js:185 [WebGL2] ✅ GLStrokeProcessor ready
 core-initializer.js:190 [WebGL2] ✅ GLStrokeProcessor connected to StrokeRenderer
 core-initializer.js:308 [DrawingApp] WebGL2 result: true
 index.html:119 ✅ WebGL2初期化完了
-index.html:123 🎬 Pixi Ticker Status: {started: true, speed: 1, maxFPS: 0, FPS: 59.99999999999999}
+index.html:123 🎬 Pixi Ticker Status: Object
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-brush-core.js:411 [BrushCore] ✅ Stroke registered to History
-brush-core.js:411 [BrushCore] ✅ Stroke registered to History
+// brush-core.js の startStroke シグネチャ確認
+console.log('BrushCore.startStroke:', window.BrushCore.prototype.startStroke.toString().slice(0, 200));
+VM91:2 Uncaught TypeError: Cannot read properties of undefined (reading 'startStroke')
+    at <anonymous>:2:66
+（匿名） @ VM91:2
+// BrushCoreインスタンス確認
+console.log('BrushCore instance:', window.BrushCore);
+console.log('DrawingEngine.brushCore:', window.DrawingEngine?.brushCore);
+
+// startStrokeメソッド確認
+const brushCore = window.DrawingEngine?.brushCore;
+if (brushCore && brushCore.startStroke) {
+    console.log('startStroke method:', brushCore.startStroke.toString().slice(0, 300));
+}
+VM95:2 BrushCore instance: BrushCore {isDrawing: false, currentStrokeId: null, lastLocalX: 210, lastLocalY: 369, lastPressure: 0.36027456867655666, …}
+VM95:3 DrawingEngine.brushCore: undefined
+undefined

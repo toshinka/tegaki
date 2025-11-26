@@ -1,11 +1,12 @@
 /**
  * ============================================================
- * stroke-renderer.js - Phase 7.5: 高速ストローク補償実装版
+ * stroke-renderer.js - Phase A-1.1: bounds保存修正版
  * ============================================================
  * 【親依存】
  *   - PixiJS v8.14
- *   - gl-stroke-processor.js Phase 4.0D
- *   - gl-msdf-pipeline.js Phase 6.2
+ *   - gl-stroke-processor.js Phase B-4
+ *   - gl-msdf-pipeline.js Phase B-4.5
+ *   - webgl2-drawing-layer.js Phase 3.6
  *   - brush-settings.js
  *   - settings-manager.js
  *   - config.js Phase 7.5
@@ -14,11 +15,11 @@
  *   - brush-core.js
  *   - layer-transform.js
  * 
- * 【Phase 7.5改修内容】
- * ✅ 高速ストローク時の流量補償実装（竹の節問題完全修正）
- * ✅ 速度計算メソッド追加
- * ✅ 最低不透明度保証（config.js設定対応）
- * ✅ Phase 6.4全機能継承
+ * 【Phase A-1.1改修内容】
+ * ✅ bounds保存修正（左上フリッカー解消）
+ * ✅ _renderWithPolygon() → Sprite/Graphics に bounds 保存
+ * ✅ renderStroke() → 返り値に bounds 追加
+ * ✅ Phase A-1全機能継承
  * ============================================================
  */
 
@@ -105,7 +106,6 @@
             let flowSensitivity = 1.0;
             let flowAccumulation = false;
             let flowPressureMode = 'auto';
-            // Phase 7.5: 高速ストローク補償設定
             let highSpeedCompensation = true;
             let minOpacityGuarantee = 0.9;
             let speedThreshold = 2.0;
@@ -123,7 +123,6 @@
                 flowSensitivity = flow.sensitivity !== undefined ? flow.sensitivity : 1.0;
                 flowAccumulation = flow.accumulation !== undefined ? flow.accumulation : false;
                 flowPressureMode = flow.pressureMode !== undefined ? flow.pressureMode : 'auto';
-                // Phase 7.5: 新規設定読み込み
                 highSpeedCompensation = flow.highSpeedCompensation !== undefined ? flow.highSpeedCompensation : true;
                 minOpacityGuarantee = flow.minOpacityGuarantee !== undefined ? flow.minOpacityGuarantee : 0.9;
                 speedThreshold = flow.speedThreshold !== undefined ? flow.speedThreshold : 2.0;
@@ -134,16 +133,12 @@
                 sensitivity: flowSensitivity,
                 accumulation: flowAccumulation,
                 pressureMode: flowPressureMode,
-                // Phase 7.5
                 highSpeedCompensation: highSpeedCompensation,
                 minOpacityGuarantee: minOpacityGuarantee,
                 speedThreshold: speedThreshold
             };
         }
 
-        /**
-         * Phase 6.4: 入力デバイス判定
-         */
         _detectInputDevice(points) {
             if (!points || points.length === 0) return 'mouse';
             
@@ -160,11 +155,6 @@
             return variation > 0.1 ? 'pen' : 'mouse';
         }
 
-        /**
-         * Phase 7.5: 平均速度計算
-         * @param {Array} points - ストロークポイント配列
-         * @returns {number} - 平均速度（px/ms）
-         */
         _calculateAverageSpeed(points) {
             if (!points || points.length < 2) return 0;
             
@@ -197,29 +187,16 @@
             return count > 0 ? totalSpeed / count : 0;
         }
 
-        /**
-         * Phase 7.5: 流量不透明度計算（高速補償版）
-         * 
-         * 【Phase 7.5改修内容】
-         * ✅ 高速ストローク時の最低不透明度保証
-         * ✅ 竹の節問題完全修正
-         * 
-         * 【設定】
-         * - highSpeedCompensation: 高速補償有効化
-         * - minOpacityGuarantee: 最低不透明度（0.0～1.0）
-         * - speedThreshold: 高速判定閾値（px/ms）
-         */
         _calculateFlowOpacity(baseOpacity, points) {
             const flow = this._getFlowSettings();
             const flowOpacity = flow.opacity;
             
-            // デバイス判定
             let usePressure = false;
             if (flow.pressureMode === 'pen') {
                 usePressure = true;
             } else if (flow.pressureMode === 'ignore') {
                 usePressure = false;
-            } else { // 'auto'
+            } else {
                 const device = this._detectInputDevice(points);
                 usePressure = (device === 'pen');
             }
@@ -227,7 +204,6 @@
             let pressureFactor = 1.0;
             
             if (usePressure && points && points.length > 0) {
-                // Phase 6.4: 最大筆圧を使用
                 let maxPressure = 0.0;
                 for (const p of points) {
                     const pressure = p.pressure !== undefined ? p.pressure : 0.5;
@@ -240,13 +216,11 @@
             
             let finalOpacity = baseOpacity * flowOpacity * pressureFactor;
             
-            // Phase 7.5: 高速ストローク補償
             if (flow.highSpeedCompensation && points && points.length >= 2) {
                 const avgSpeed = this._calculateAverageSpeed(points);
                 const isHighSpeed = avgSpeed > flow.speedThreshold;
                 
                 if (isHighSpeed) {
-                    // 最低不透明度保証
                     finalOpacity = Math.max(finalOpacity, flow.minOpacityGuarantee * baseOpacity);
                 }
             }
@@ -363,7 +337,7 @@
                 }
 
                 const vertices = new Float32Array(vertexBuffer.buffer);
-                const stride = vertexBuffer.hasPressure ? 3 : 2;
+                const stride = vertexBuffer.stride || 3;
                 const baseOpacity = settings.opacity || 1.0;
                 const finalOpacity = this._calculateFlowOpacity(baseOpacity, formattedPoints);
 
@@ -438,9 +412,9 @@
             
             if (this.webgl2Enabled && this.glStrokeProcessor) {
                 try {
-                    const graphics = this._renderWithPolygon(strokeData, settings);
-                    if (graphics) {
-                        return graphics;
+                    const result = await this._renderWithPolygon(strokeData, settings);
+                    if (result) {
+                        return result;
                     }
                 } catch (error) {
                     console.warn('[StrokeRenderer] Polygon rendering failed:', error);
@@ -466,7 +440,10 @@
             this.lastProcessedIndex = 0;
         }
 
-        _renderWithPolygon(strokeData, settings) {
+        /**
+         * Phase B-5: 傾き対応版
+         */
+        async _renderWithPolygon(strokeData, settings) {
             const points = strokeData.points;
             
             if (!points || points.length < 2) {
@@ -477,18 +454,100 @@
                 x: p.localX !== undefined ? p.localX : (p.x || 0),
                 y: p.localY !== undefined ? p.localY : (p.y || 0),
                 pressure: p.pressure !== undefined ? p.pressure : 0.5,
+                tiltX: p.tiltX !== undefined ? p.tiltX : 0,
+                tiltY: p.tiltY !== undefined ? p.tiltY : 0,
+                twist: p.twist !== undefined ? p.twist : 0,
                 time: p.time
             }));
 
+            // Phase B-5: 傾きベース幅調整（オプション）
+            let adjustedSize = settings.size;
+            if (settings.tilt && settings.tilt.affectsWidth && formattedPoints.length > 0) {
+                // 最初のポイントの傾きで代表サイズを計算
+                adjustedSize = this._calculateTiltWidth(formattedPoints[0], settings.size, settings);
+            }
+
             const vertexBuffer = this.glStrokeProcessor.createPolygonVertexBuffer(
                 formattedPoints,
-                settings.size
+                adjustedSize
             );
             
             if (!vertexBuffer || !vertexBuffer.buffer || vertexBuffer.vertexCount === 0) {
                 return null;
             }
 
+            // Phase A-1.1: bounds保存
+            const bounds = vertexBuffer.bounds;
+
+            const baseOpacity = settings.opacity || 1.0;
+            const finalOpacity = this._calculateFlowOpacity(baseOpacity, formattedPoints);
+
+            const msdfEnabled = this.config.msdf?.enabled !== false;
+            
+            if (msdfEnabled && this.glMSDFPipeline && this.glMSDFPipeline.initialized) {
+                try {
+                    const msdfResult = await this.glMSDFPipeline.generateMSDF(
+                        null,
+                        bounds,
+                        null,
+                        {
+                            color: this._colorToHex(settings.color),
+                            opacity: finalOpacity
+                        },
+                        vertexBuffer.buffer,
+                        vertexBuffer.vertexCount,
+                        0
+                    );
+
+                    if (msdfResult && msdfResult.texture) {
+                        const gl = window.WebGL2DrawingLayer?.gl;
+                        if (!gl) {
+                            console.warn('[StrokeRenderer] WebGL2 context not available');
+                            return this._renderWithGraphicsFallback(vertexBuffer, settings, formattedPoints, finalOpacity, bounds);
+                        }
+
+                        const baseTexture = PIXI.BaseTexture.from(msdfResult.texture);
+                        const texture = new PIXI.Texture(baseTexture);
+                        const sprite = new PIXI.Sprite(texture);
+
+                        sprite.position.set(bounds.minX, bounds.minY);
+                        sprite.width = bounds.maxX - bounds.minX;
+                        sprite.height = bounds.maxY - bounds.minY;
+
+                        const flow = this._getFlowSettings();
+                        if (flow.accumulation) {
+                            sprite.blendMode = 'add';
+                        } else {
+                            sprite.blendMode = 'normal';
+                        }
+
+                        sprite.visible = true;
+                        sprite.renderable = true;
+                        sprite.label = `stroke_msdf_${Date.now()}`;
+
+                        sprite.userData = {
+                            strokePoints: formattedPoints,
+                            settings: { ...settings },
+                            flowSettings: { ...flow },
+                            bounds: { ...bounds },
+                            createdAt: Date.now(),
+                            renderType: 'msdf-sprite'
+                        };
+
+                        return { graphics: sprite, bounds: bounds };
+                    }
+                } catch (error) {
+                    console.warn('[StrokeRenderer] MSDF generation failed, fallback to Graphics:', error);
+                }
+            }
+
+            return this._renderWithGraphicsFallback(vertexBuffer, settings, formattedPoints, finalOpacity, bounds);
+        }
+
+        /**
+         * Phase A-1.1: bounds保存対応
+         */
+        _renderWithGraphicsFallback(vertexBuffer, settings, formattedPoints, finalOpacity, bounds) {
             const vertices = new Float32Array(vertexBuffer.buffer);
             
             if (vertices.length < 9) {
@@ -498,16 +557,12 @@
             const graphics = new PIXI.Graphics();
             graphics.label = `stroke_vector_${Date.now()}`;
 
-            const baseOpacity = settings.opacity || 1.0;
-            // Phase 7.5: 高速補償適用
-            const finalOpacity = this._calculateFlowOpacity(baseOpacity, formattedPoints);
-
             graphics.context.fillStyle = {
                 color: settings.color,
                 alpha: finalOpacity
             };
 
-            const stride = vertexBuffer.hasPressure ? 3 : 2;
+            const stride = vertexBuffer.stride || 3;
 
             for (let i = 0; i < vertices.length; i += stride * 3) {
                 if (i + stride * 2 + (stride - 1) >= vertices.length) break;
@@ -541,11 +596,56 @@
                 strokePoints: formattedPoints,
                 settings: { ...settings },
                 flowSettings: { ...flow },
+                bounds: { ...bounds },
                 createdAt: Date.now(),
                 renderType: 'vector-graphics'
             };
 
-            return graphics;
+            return { graphics: graphics, bounds: bounds };
+        }
+
+        /**
+         * Phase B-5: 傾きベース幅変調
+         * @param {Object} point - {tiltX, tiltY, pressure}
+         * @param {number} baseWidth - 基本幅
+         * @param {Object} settings - {tiltSensitivity, tiltAffectsWidth}
+         * @returns {number} 調整後の幅
+         */
+        _calculateTiltWidth(point, baseWidth, settings) {
+            // 傾き設定がない場合はそのまま返す
+            const tiltSettings = settings.tilt || {};
+            
+            if (!tiltSettings.affectsWidth) {
+                return baseWidth;
+            }
+            
+            const tiltX = point.tiltX !== undefined ? point.tiltX : 0;
+            const tiltY = point.tiltY !== undefined ? point.tiltY : 0;
+            
+            // 傾き角度を計算（0〜1の範囲）
+            const tiltMagnitude = Math.sqrt(tiltX * tiltX + tiltY * tiltY);
+            
+            // 感度適用（デフォルト: 0.5）
+            const sensitivity = tiltSettings.sensitivity !== undefined ? tiltSettings.sensitivity : 0.5;
+            
+            // 幅変調範囲（デフォルト: 0.5〜1.5）
+            const widthMin = tiltSettings.widthMin !== undefined ? tiltSettings.widthMin : 0.5;
+            const widthMax = tiltSettings.widthMax !== undefined ? tiltSettings.widthMax : 1.5;
+            
+            // 傾きに基づく幅の倍率を計算
+            const widthModulation = 1.0 + (tiltMagnitude * sensitivity * (widthMax - 1.0));
+            const finalModulation = Math.max(widthMin, Math.min(widthMax, widthModulation));
+            
+            return baseWidth * finalModulation;
+        }
+
+        _colorToHex(color) {
+            if (typeof color === 'string' && color.startsWith('#')) {
+                return color;
+            }
+            
+            const hex = color.toString(16).padStart(6, '0');
+            return `#${hex}`;
         }
 
         regenerateMesh(graphics, scaleFactor = 1.0) {
@@ -561,16 +661,17 @@
                 size: settings.size * scaleFactor
             };
 
-            const newGraphics = this._renderWithPolygon(
+            const result = this._renderWithPolygon(
                 { points: strokePoints },
                 newSettings
             );
 
-            if (newGraphics) {
+            if (result && result.graphics) {
                 console.log('[StrokeRenderer] ✅ Graphics regenerated with scale:', scaleFactor);
+                return result.graphics;
             }
 
-            return newGraphics;
+            return null;
         }
 
         _renderEraserStroke(strokeData, settings) {
@@ -584,7 +685,17 @@
                 const width = this.calculateWidth(p.pressure, settings.size);
                 graphics.circle(x, y, width / 2);
                 graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-                return graphics;
+                
+                const bounds = {
+                    minX: x - width / 2,
+                    minY: y - width / 2,
+                    maxX: x + width / 2,
+                    maxY: y + width / 2,
+                    width: width,
+                    height: width
+                };
+                
+                return { graphics: graphics, bounds: bounds };
             }
 
             const points = strokeData.points;
@@ -612,7 +723,9 @@
                 });
             }
 
-            return graphics;
+            const calculatedBounds = this.glStrokeProcessor?.calculateBounds(points);
+            
+            return { graphics: graphics, bounds: calculatedBounds || null };
         }
 
         _renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics = null) {
@@ -620,12 +733,13 @@
             graphics.blendMode = 'normal';
 
             if (strokeData.isSingleDot || strokeData.points.length === 1) {
-                return this.renderDot(strokeData.points[0], settings, mode, graphics);
+                const result = this.renderDot(strokeData.points[0], settings, mode, graphics);
+                return result;
             }
 
             const points = strokeData.points;
             if (points.length === 0) {
-                return graphics;
+                return { graphics: graphics, bounds: null };
             }
 
             const flowOpacity = this._calculateFlowOpacity(settings.opacity || 1.0, points);
@@ -654,7 +768,9 @@
                 });
             }
 
-            return graphics;
+            const calculatedBounds = this.glStrokeProcessor?.calculateBounds(points);
+
+            return { graphics: graphics, bounds: calculatedBounds || null };
         }
 
         renderDot(point, providedSettings = null, mode = 'pen', targetGraphics = null) {
@@ -670,26 +786,36 @@
             graphics.circle(x, y, width / 2);
             graphics.fill({ color: settings.color, alpha: flowOpacity });
 
-            return graphics;
+            const bounds = {
+                minX: x - width / 2,
+                minY: y - width / 2,
+                maxX: x + width / 2,
+                maxY: y + width / 2,
+                width: width,
+                height: width
+            };
+
+            return { graphics: graphics, bounds: bounds };
         }
 
         renderStroke(layer, strokeData, providedSettings = null) {
             const settings = this._getSettings(providedSettings);
             const mode = this._getCurrentMode(settings);
             
-            let graphics;
+            let result;
             if (mode === 'eraser') {
-                graphics = this._renderEraserStroke(strokeData, settings);
+                result = this._renderEraserStroke(strokeData, settings);
             } else {
-                graphics = this._renderFinalStrokeLegacy(strokeData, settings, mode);
+                result = this._renderFinalStrokeLegacy(strokeData, settings, mode);
             }
             
             return {
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                graphics: graphics,
+                graphics: result.graphics,
                 points: strokeData.points,
                 tool: mode,
-                settings: { ...settings }
+                settings: { ...settings },
+                bounds: result.bounds
             };
         }
 
@@ -700,10 +826,9 @@
 
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ stroke-renderer.js Phase 7.5 loaded (高速ストローク補償版)');
-    console.log('   ✅ 高速時の流量補償実装');
-    console.log('   ✅ 竹の節問題完全修正');
-    console.log('   ✅ 速度計算メソッド追加');
-    console.log('   ✅ Phase 6.4全機能継承');
+    console.log('✅ stroke-renderer.js Phase B-5 loaded (傾きベース幅変調版)');
+    console.log('   ✅ _calculateTiltWidth() メソッド追加');
+    console.log('   ✅ 傾きベース幅変調実装');
+    console.log('   ✅ Phase A-1.1全機能継承');
 
 })();

@@ -1,27 +1,27 @@
 /**
  * ================================================================================
- * gl-msdf-pipeline.js - Phase 6.2: shader-inline.js統合版
+ * gl-msdf-pipeline.js - Phase B-4.5: stride=5対応版
  * ================================================================================
  * 
- * 📁 親依存:
- *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl, createFBO, deleteFBO)
- *   - gl-stroke-processor.js (EdgeBuffer/VertexBuffer: 7 floats/vertex)
- *   - shader-inline.js (GLSLShaders) ★Phase 6.2追加
+ * 【親依存】
+ * - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl, createFBO, deleteFBO)
+ * - gl-stroke-processor.js Phase B-4 (stride=5)
+ * - shader-inline.js (GLSLShaders)
  * 
- * 📄 子依存:
- *   - brush-core.js (generateMSDF呼び出し元)
- *   - gl-texture-bridge.js (生成されたTextureを受け取る)
- *   - stroke-renderer.js (MSDF統合準備)
+ * 【子依存】
+ * - stroke-renderer.js (generateMSDF呼び出し元)
+ * - gl-texture-bridge.js (生成されたTextureを受け取る)
  * 
- * 🔧 Phase 6.2改修内容:
- *   ✅ shader-inline.jsからGLSLシェーダー読み込み
- *   ✅ 外部ファイル依存完全削除（file://対応）
- *   ✅ Phase 3.2の全機能を完全継承
+ * 【Phase B-4.5改修内容】
+ * ✅ _drawStroke() stride修正: 3 → 5
+ *    [x, y, flowPressure, tiltX, tiltY]
+ * ✅ 頂点属性読み取り修正
+ * ✅ Phase A-3全機能継承（エラーハンドリング・uRange対応）
  * 
- * 責務:
- *   - MSDF距離場生成（JFA: Jump Flooding Algorithm）
- *   - Seed初期化 → JFA実行 → エンコード → レンダリング
- *   - WebGLTexture出力（動的サイズ・アスペクト比保持）
+ * 【責務】
+ * - MSDF距離場生成（JFA: Jump Flooding Algorithm）
+ * - Seed初期化 → JFA実行 → エンコード → レンダリング
+ * - WebGLTexture出力（動的サイズ・アスペクト比保持）
  * 
  * ================================================================================
  */
@@ -45,14 +45,9 @@
       this.maxTextureSize = 4096;
     }
 
-    /**
-     * 初期化
-     * @param {WebGL2RenderingContext} gl - WebGL2コンテキスト
-     */
     async initialize(gl) {
       if (this.initialized) return;
       
-      // shader-inline.js 依存チェック
       if (!window.GLSLShaders) {
         console.error('[GLMSDFPipeline] shader-inline.js not loaded');
         return;
@@ -68,13 +63,9 @@
       await this._createRenderProgram();
       
       this.initialized = true;
-      console.log('[GLMSDFPipeline] ✅ Phase 6.2 initialized with inline shaders');
+      console.log('[GLMSDFPipeline] ✅ Phase B-4.5 initialized');
     }
 
-    /**
-     * フルスクリーンクアッド生成
-     * @private
-     */
     _createFullscreenQuad() {
       const gl = this.gl;
       
@@ -91,10 +82,6 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
 
-    /**
-     * シェーダープログラム生成
-     * @private
-     */
     _createShaderProgram(vertexSource, fragmentSource, label = 'Shader') {
       const gl = this.gl;
       
@@ -132,10 +119,6 @@
       return program;
     }
 
-    /**
-     * 🔧 Phase 6.2: Seed初期化プログラム生成（shader-inline.js使用）
-     * @private
-     */
     async _createSeedInitProgram() {
       const vertexShader = window.GLSLShaders.renderVert;
       const fragmentShader = window.GLSLShaders.seedInit;
@@ -143,10 +126,6 @@
       this.seedInitProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Seed Init');
     }
 
-    /**
-     * 🔧 Phase 6.2: JFAプログラム生成（shader-inline.js使用）
-     * @private
-     */
     async _createJFAProgram() {
       const vertexShader = window.GLSLShaders.renderVert;
       const fragmentShader = window.GLSLShaders.jfaPass;
@@ -154,10 +133,6 @@
       this.jfaProgram = this._createShaderProgram(vertexShader, fragmentShader, 'JFA Pass');
     }
 
-    /**
-     * 🔧 Phase 6.2: エンコードプログラム生成（shader-inline.js使用）
-     * @private
-     */
     async _createEncodeProgram() {
       const vertexShader = window.GLSLShaders.renderVert;
       const fragmentShader = window.GLSLShaders.encode;
@@ -165,10 +140,6 @@
       this.encodeProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Encode Pass');
     }
 
-    /**
-     * 🔧 Phase 6.2: レンダリングプログラム生成（shader-inline.js使用）
-     * @private
-     */
     async _createRenderProgram() {
       const vertexShader = `#version 300 es
         precision highp float;
@@ -198,11 +169,6 @@
       this.renderProgram = this._createShaderProgram(vertexShader, fragmentShader, 'Render Pass');
     }
 
-    /**
-     * 🔧 Phase 3.2: テクスチャサイズ計算（アスペクト比厳密保持）
-     * @param {Object} bounds - バウンディングボックス
-     * @returns {{width: number, height: number}}
-     */
     _calculateTextureSize(bounds) {
       if (!bounds || !bounds.width || !bounds.height) {
         return { width: this.minTextureSize, height: this.minTextureSize };
@@ -239,9 +205,6 @@
       return { width: pow2Width, height: pow2Height };
     }
 
-    /**
-     * PingPong FBO生成
-     */
     createPingPongFBO(width, height) {
       if (!window.WebGL2DrawingLayer) {
         console.error('[GLMSDFPipeline] WebGL2DrawingLayer not available');
@@ -254,9 +217,6 @@
       };
     }
 
-    /**
-     * Seedテクスチャクリア
-     */
     clearSeedTexture(fbo, width, height) {
       const gl = this.gl;
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
@@ -266,10 +226,6 @@
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
-    /**
-     * フルスクリーンクアッド描画
-     * @private
-     */
     _drawFullscreenQuad(program) {
       const gl = this.gl;
       gl.bindBuffer(gl.ARRAY_BUFFER, this.quadVBO);
@@ -295,15 +251,16 @@
     }
 
     /**
-     * ストローク描画（7 floats/vertex）
-     * @private
+     * Phase B-4.5: stride=5対応
+     * [x, y, flowPressure, tiltX, tiltY]
      */
     _drawStroke(program, vbo, vertexCount, bounds) {
       const gl = this.gl;
       
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       
-      const stride = 7 * 4;
+      // Phase B-4.5: stride=5
+      const stride = 5 * 4;
       
       const aPosition = gl.getAttribLocation(program, 'aPosition');
       if (aPosition >= 0) {
@@ -314,13 +271,15 @@
       const aTexCoord = gl.getAttribLocation(program, 'aTexCoord');
       if (aTexCoord >= 0) {
         gl.enableVertexAttribArray(aTexCoord);
-        gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, stride, 8);
+        gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, stride, 0);
       }
       
+      // Phase B-4.5: aReserved = [flowPressure, tiltX, tiltY]
+      // offset: 8 (x, y の後)
       const aReserved = gl.getAttribLocation(program, 'aReserved');
       if (aReserved >= 0) {
         gl.enableVertexAttribArray(aReserved);
-        gl.vertexAttribPointer(aReserved, 3, gl.FLOAT, false, stride, 16);
+        gl.vertexAttribPointer(aReserved, 3, gl.FLOAT, false, stride, 8);
       }
       
       const uBoundsMin = gl.getUniformLocation(program, 'uBoundsMin');
@@ -341,9 +300,6 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
 
-    /**
-     * Seed初期化パス
-     */
     seedInitPass(edgeBuffer, seedFBO, width, height, edgeCount) {
       const gl = this.gl;
       if (!this.seedInitProgram) return false;
@@ -356,9 +312,6 @@
       return true;
     }
 
-    /**
-     * JFAパス（1回）
-     */
     jfaPass(srcTexture, dstFBO, width, height, step) {
       const gl = this.gl;
       if (!this.jfaProgram) return false;
@@ -384,9 +337,6 @@
       return true;
     }
 
-    /**
-     * JFA実行（複数パス）
-     */
     executeJFA(seedTexture, width, height) {
       const pingPong = this.createPingPongFBO(width, height);
       if (!pingPong) return null;
@@ -406,9 +356,6 @@
       return { resultTexture: src, tempFBO: pingPong };
     }
 
-    /**
-     * エンコードパス
-     */
     encodePass(jfaTexture, msdfFBO, width, height) {
       const gl = this.gl;
       if (!this.encodeProgram) return false;
@@ -434,9 +381,6 @@
       return true;
     }
 
-    /**
-     * レンダリングパス
-     */
     renderPass(msdfTexture, outputFBO, width, height, settings = {}, vertexBuffer = null, vertexCount = 0, bounds = null) {
       const gl = this.gl;
       if (!this.renderProgram) return false;
@@ -454,8 +398,7 @@
       const uMSDFTexLoc = gl.getUniformLocation(this.renderProgram, 'uMSDF');
       const uColorLoc = gl.getUniformLocation(this.renderProgram, 'uColor');
       const uOpacityLoc = gl.getUniformLocation(this.renderProgram, 'uOpacity');
-      const uThresholdLoc = gl.getUniformLocation(this.renderProgram, 'uThreshold');
-      const uSmoothnessLoc = gl.getUniformLocation(this.renderProgram, 'uSmoothness');
+      const uRangeLoc = gl.getUniformLocation(this.renderProgram, 'uRange');
       
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, msdfTexture);
@@ -466,8 +409,10 @@
       
       const opacity = settings.opacity !== undefined ? settings.opacity : 1.0;
       gl.uniform1f(uOpacityLoc, opacity);
-      gl.uniform1f(uThresholdLoc, 0.5);
-      gl.uniform1f(uSmoothnessLoc, 0.05);
+      
+      const msdfConfig = window.TEGAKI_CONFIG?.webgpu?.msdf || {};
+      const range = msdfConfig.range !== undefined ? msdfConfig.range : 4.0;
+      gl.uniform1f(uRangeLoc, range);
       
       if (vertexBuffer && vertexCount > 0 && bounds) {
         this._drawStroke(this.renderProgram, vertexBuffer, vertexCount, bounds);
@@ -480,10 +425,6 @@
       return true;
     }
 
-    /**
-     * カラー文字列パース
-     * @private
-     */
     _parseColor(colorString) {
       const hex = colorString.replace('#', '');
       return {
@@ -493,71 +434,95 @@
       };
     }
 
-    /**
-     * MSDF生成（メイン処理）
-     * 🔧 Phase 3.2: アスペクト比保持テクスチャサイズ対応
-     * 
-     * @returns {Object|null} { texture: WebGLTexture, width: number, height: number }
-     */
     async generateMSDF(edgeBufferData, bounds, existingMSDF = null, settings = {}, vertexBufferData = null, vertexCount = 0, edgeCount = 0) {
       if (!this.initialized) {
         console.error('[GLMSDFPipeline] Not initialized');
         return null;
       }
       
-      if (edgeCount === 0 || !vertexBufferData || vertexCount === 0) {
-        console.warn('[GLMSDFPipeline] Invalid parameters');
+      if (!vertexBufferData || vertexCount === 0) {
+        console.warn('[GLMSDFPipeline] Invalid vertex data');
+        return null;
+      }
+
+      if (!bounds || !bounds.width || !bounds.height) {
+        console.warn('[GLMSDFPipeline] Invalid bounds');
+        return null;
+      }
+
+      if (bounds.width <= 0 || bounds.height <= 0) {
+        console.warn('[GLMSDFPipeline] Invalid bounds size');
         return null;
       }
       
       const textureSize = this._calculateTextureSize(bounds);
       const width = textureSize.width;
       const height = textureSize.height;
+
+      let seedFBO = null;
+      let jfaResult = null;
+      let msdfFBO = null;
+      let outputFBO = null;
       
       try {
-        const seedFBO = window.WebGL2DrawingLayer.createFBO(width, height, { float: true });
-        if (!seedFBO) return null;
+        seedFBO = window.WebGL2DrawingLayer.createFBO(width, height, { float: true });
+        if (!seedFBO) {
+          throw new Error('Seed FBO creation failed');
+        }
         
         this.clearSeedTexture(seedFBO, width, height);
         this.seedInitPass(edgeBufferData, seedFBO, width, height, edgeCount);
         
-        const jfaResult = this.executeJFA(seedFBO.texture, width, height);
+        jfaResult = this.executeJFA(seedFBO.texture, width, height);
         if (!jfaResult) {
-          window.WebGL2DrawingLayer.deleteFBO(seedFBO);
-          return null;
+          throw new Error('JFA execution failed');
         }
         
-        const msdfFBO = window.WebGL2DrawingLayer.createFBO(width, height, { float: false });
-        if (!msdfFBO) return null;
+        msdfFBO = window.WebGL2DrawingLayer.createFBO(width, height, { float: false });
+        if (!msdfFBO) {
+          throw new Error('MSDF FBO creation failed');
+        }
         this.encodePass(jfaResult.resultTexture, msdfFBO, width, height);
         
-        const outputFBO = window.WebGL2DrawingLayer.createFBO(width, height, { float: false });
-        if (!outputFBO) return null;
+        outputFBO = window.WebGL2DrawingLayer.createFBO(width, height, { float: false });
+        if (!outputFBO) {
+          throw new Error('Output FBO creation failed');
+        }
         
         this.renderPass(msdfFBO.texture, outputFBO, width, height, settings, vertexBufferData, vertexCount, bounds);
         
-        window.WebGL2DrawingLayer.deleteFBO(seedFBO);
-        if (jfaResult.tempFBO) {
-          window.WebGL2DrawingLayer.deleteFBO(jfaResult.tempFBO.a);
-          window.WebGL2DrawingLayer.deleteFBO(jfaResult.tempFBO.b);
-        }
-        window.WebGL2DrawingLayer.deleteFBO(msdfFBO);
-        
-        return {
+        const result = {
           texture: outputFBO.texture,
           width: width,
           height: height
         };
         
+        return result;
+        
       } catch (error) {
-        console.error('[GLMSDFPipeline] Error:', error);
+        console.error('[GLMSDFPipeline] Generation error:', error);
         return null;
+        
+      } finally {
+        if (seedFBO) {
+          window.WebGL2DrawingLayer.deleteFBO(seedFBO);
+        }
+        
+        if (jfaResult && jfaResult.tempFBO) {
+          window.WebGL2DrawingLayer.deleteFBO(jfaResult.tempFBO.a);
+          window.WebGL2DrawingLayer.deleteFBO(jfaResult.tempFBO.b);
+        }
+        
+        if (msdfFBO) {
+          window.WebGL2DrawingLayer.deleteFBO(msdfFBO);
+        }
+        
+        if (outputFBO && !outputFBO.texture) {
+          window.WebGL2DrawingLayer.deleteFBO(outputFBO);
+        }
       }
     }
 
-    /**
-     * 破棄
-     */
     destroy() {
       const gl = this.gl;
       
@@ -576,9 +541,8 @@
   }
 
   window.GLMSDFPipeline = new GLMSDFPipeline();
-  console.log('✅ gl-msdf-pipeline.js Phase 6.2 loaded (shader-inline.js統合版)');
-  console.log('   ✅ GLSLシェーダー インライン化対応');
-  console.log('   ✅ file:// プロトコル完全対応');
-  console.log('   ✅ Phase 3.2 アスペクト比保持機能継承');
+  console.log('✅ gl-msdf-pipeline.js Phase B-4.5 loaded');
+  console.log('   ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]');
+  console.log('   ✅ Phase A-3全機能継承');
 
 })();
