@@ -1,23 +1,29 @@
 /**
- * ============================================================
+ * ================================================================================
  * gl-msdf-pipeline.js - Phase B-4.5: stride=5対応版
- * ============================================================
+ * ================================================================================
+ * 
  * 【親依存】
- *   - webgl2-drawing-layer.js
- *   - gl-stroke-processor.js Phase B-4 (stride=5)
- *   - shader-inline.js
+ * - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl, createFBO, deleteFBO)
+ * - gl-stroke-processor.js Phase B-4 (stride=5)
+ * - shader-inline.js (GLSLShaders)
  * 
  * 【子依存】
- *   - brush-core.js
- *   - gl-texture-bridge.js
- *   - stroke-renderer.js
+ * - stroke-renderer.js (generateMSDF呼び出し元)
+ * - gl-texture-bridge.js (生成されたTextureを受け取る)
  * 
  * 【Phase B-4.5改修内容】
- * ✅ _drawStroke() stride修正: 7 → 5
+ * ✅ _drawStroke() stride修正: 3 → 5
  *    [x, y, flowPressure, tiltX, tiltY]
- * ✅ aReserved属性読み取り修正（3要素 → 現在は未使用だが将来対応）
- * ✅ Phase A-3全機能継承
- * ============================================================
+ * ✅ 頂点属性読み取り修正
+ * ✅ Phase A-3全機能継承（エラーハンドリング・uRange対応）
+ * 
+ * 【責務】
+ * - MSDF距離場生成（JFA: Jump Flooding Algorithm）
+ * - Seed初期化 → JFA実行 → エンコード → レンダリング
+ * - WebGLTexture出力（動的サイズ・アスペクト比保持）
+ * 
+ * ================================================================================
  */
 
 (function() {
@@ -253,8 +259,8 @@
       
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       
-      // Phase B-4.5: stride修正 (7 → 5)
-      const stride = 5 * 4;  // 5 floats per vertex
+      // Phase B-4.5: stride=5
+      const stride = 5 * 4;
       
       const aPosition = gl.getAttribLocation(program, 'aPosition');
       if (aPosition >= 0) {
@@ -265,12 +271,11 @@
       const aTexCoord = gl.getAttribLocation(program, 'aTexCoord');
       if (aTexCoord >= 0) {
         gl.enableVertexAttribArray(aTexCoord);
-        gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, stride, 8);
+        gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, stride, 0);
       }
       
-      // Phase B-4.5: aReserved は [flowPressure, tiltX, tiltY] の3要素
-      // オフセット: 8 (x,y) 
-      // 現在のシェーダーでは使用していないが、将来対応のため定義
+      // Phase B-4.5: aReserved = [flowPressure, tiltX, tiltY]
+      // offset: 8 (x, y の後)
       const aReserved = gl.getAttribLocation(program, 'aReserved');
       if (aReserved >= 0) {
         gl.enableVertexAttribArray(aReserved);
@@ -436,20 +441,17 @@
       }
       
       if (!vertexBufferData || vertexCount === 0) {
-        console.warn('[GLMSDFPipeline] Invalid vertex data:', {
-          hasBuffer: !!vertexBufferData,
-          vertexCount: vertexCount
-        });
+        console.warn('[GLMSDFPipeline] Invalid vertex data');
         return null;
       }
 
       if (!bounds || !bounds.width || !bounds.height) {
-        console.warn('[GLMSDFPipeline] Invalid bounds:', bounds);
+        console.warn('[GLMSDFPipeline] Invalid bounds');
         return null;
       }
 
       if (bounds.width <= 0 || bounds.height <= 0) {
-        console.warn('[GLMSDFPipeline] Invalid bounds size:', bounds);
+        console.warn('[GLMSDFPipeline] Invalid bounds size');
         return null;
       }
       
@@ -540,8 +542,7 @@
 
   window.GLMSDFPipeline = new GLMSDFPipeline();
   console.log('✅ gl-msdf-pipeline.js Phase B-4.5 loaded');
-  console.log('   ✅ stride=5対応 (x,y,flowPressure,tiltX,tiltY)');
-  console.log('   ✅ _drawStroke() 修正完了');
+  console.log('   ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]');
   console.log('   ✅ Phase A-3全機能継承');
 
 })();
