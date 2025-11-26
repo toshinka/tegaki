@@ -6,57 +6,69 @@
     ✅ StrokeData.points に tiltX/tiltY/twist 追加
     ✅ STROKE_SCHEMA拡張
     ✅ toJSON() 傾きシリアライズ対応
-    ✅ 後方互換性維持
- ✅ batch-api.js (Phase 6: History統合版) loaded
- ✅ debug-utils.js loaded
-    Type: TegakiDebug.help() for available commands
-    Quick check: TegakiDebug.fullDiagnostic()
- ✅ popup-manager.js (quick-access除外対応版) loaded
- ✅ state-manager.js (Phase 8完全実装版) loaded
- ✅ settings-manager.js v3.0 loaded (Phase 4: 流量設定統合版)
-  ✅ layer-transform.js Phase 3 loaded
-     ✅ confirmTransform()でベクターメッシュ再生成
-     ✅ 拡大時のジャギー解消
- ✅ system/checker-utils.js 統一実装版 loaded
- ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
-    ✅ createFolder() - フォルダ作成
-    ✅ addLayerToFolder() - レイヤーをフォルダに追加
-    ✅ removeLayerFromFolder() - フォルダから取り出し
-    ✅ toggleFolderExpand() - 開閉切替
-    ✅ getVisibleLayers() - 表示レイヤーのみ取得
-    ✅ getFolderChildren() - フォルダ内レイヤー取得
-    ✅ Phase 9完全継承（親子関係・座標変換）
- ✅ drawing-clipboard.js Phase 1 loaded
-    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
-    🎨 ポップアップ: レイヤーコピー、切り取り
- ✅ history.js (Phase 3: Redo null参照修正版) loaded
- ✅ earcut-triangulator.js Phase 2.0 loaded
- ✅ shader-inline.js Phase B-7 loaded (ペン傾き対応版)
-    ✅ renderVert: aReserved [pressure, tiltX, tiltY] 追加
-    ✅ renderFrag: 傾きベース閾値調整実装
-    ✅ renderFrag: 筆圧反映実装
-    ✅ Phase A-3全機能継承
- ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
-    ✅ WebGLTexture → PIXI.Sprite変換実装完了
-    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
-    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
- ✅ gl-msdf-pipeline.js Phase B-4.5 loaded (完全修正版)
-    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
-    ✅ 頂点属性バインディング修正（フリッカー解消）
-    ✅ Phase A-3全機能継承
- ✅ gl-stroke-processor.js Phase B-4 loaded
-    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
-    ✅ ペン傾き情報保持・伝達
-    ✅ 補間時の傾き処理実装
-    ✅ Phase 4.0D全機能継承
- ✅ webgl2-drawing-layer.js Phase 3.6 loaded
-    ✅ 独自リボン生成実装（Perfect-Freehand完全不使用）
- ✅ gl-mask-layer.js Phase 6完全版 loaded
-    ✅ Circle mask rendering実装
-    ✅ Additive blend対応
-    ✅ Compose Pass統合準備完了
- ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
-    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+data-models.js:386    ✅ 後方互換性維持
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+debug-utils.js:553 ✅ debug-utils.js loaded
+debug-utils.js:554    Type: TegakiDebug.help() for available commands
+debug-utils.js:555    Quick check: TegakiDebug.fullDiagnostic()
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
+settings-manager.js:250 ✅ settings-manager.js v3.0 loaded (Phase 4: 流量設定統合版)
+layer-transform.js:1070  ✅ layer-transform.js Phase 3 loaded
+layer-transform.js:1071     ✅ confirmTransform()でベクターメッシュ再生成
+layer-transform.js:1072     ✅ 拡大時のジャギー解消
+checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
+layer-system.js:1628 ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
+layer-system.js:1629    ✅ createFolder() - フォルダ作成
+layer-system.js:1630    ✅ addLayerToFolder() - レイヤーをフォルダに追加
+layer-system.js:1631    ✅ removeLayerFromFolder() - フォルダから取り出し
+layer-system.js:1632    ✅ toggleFolderExpand() - 開閉切替
+layer-system.js:1633    ✅ getVisibleLayers() - 表示レイヤーのみ取得
+layer-system.js:1634    ✅ getFolderChildren() - フォルダ内レイヤー取得
+layer-system.js:1635    ✅ Phase 9完全継承（親子関係・座標変換）
+drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
+drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
+history.js:709 ✅ history.js Phase C-2 loaded (Penpot参考改善版 + デバッグ強化)
+history.js:710    ✅ トランザクション機構追加
+history.js:711    ✅ コマンド検証強化
+history.js:712    ✅ エラー回復機構統一
+history.js:713    ✅ スタック整合性保証
+history.js:714    ✅ アンドゥ/リドゥ安定化
+history.js:715    🔍 デバッグログ強化版
+history.js:716 
+📊 Console Test Commands:
+history.js:717    History.debug() - スタック状態表示
+history.js:718    History.testUndo(2) - 連続Undo実行テスト
+history.js:719    History.testIntegrity() - 整合性チェック
+history.js:720    History.getStack() - スタック全体取得
+earcut-triangulator.js:149 ✅ earcut-triangulator.js Phase 2.0 loaded
+shader-inline.js:278 ✅ shader-inline.js Phase B-7 loaded (ペン傾き対応版)
+shader-inline.js:279    ✅ renderVert: aReserved [pressure, tiltX, tiltY] 追加
+shader-inline.js:280    ✅ renderFrag: 傾きベース閾値調整実装
+shader-inline.js:281    ✅ renderFrag: 筆圧反映実装
+shader-inline.js:282    ✅ Phase A-3全機能継承
+gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+gl-msdf-pipeline.js:548 ✅ gl-msdf-pipeline.js Phase B-4.5 loaded (完全修正版)
+gl-msdf-pipeline.js:549    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
+gl-msdf-pipeline.js:550    ✅ 頂点属性バインディング修正（フリッカー解消）
+gl-msdf-pipeline.js:551    ✅ Phase A-3全機能継承
+gl-stroke-processor.js:712 ✅ gl-stroke-processor.js Phase B-4 loaded
+gl-stroke-processor.js:713    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
+gl-stroke-processor.js:714    ✅ ペン傾き情報保持・伝達
+gl-stroke-processor.js:715    ✅ 補間時の傾き処理実装
+gl-stroke-processor.js:716    ✅ Phase 4.0D全機能継承
+webgl2-drawing-layer.js:403 ✅ webgl2-drawing-layer.js Phase 3.6 loaded
+webgl2-drawing-layer.js:404    ✅ 独自リボン生成実装（Perfect-Freehand完全不使用）
+gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
+gl-mask-layer.js:474    ✅ Circle mask rendering実装
+gl-mask-layer.js:475    ✅ Additive blend対応
+gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
+pointer-handler.js:180 ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
  ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
     ✅ 最小筆圧サイズ: 1%-100%の範囲実装
     ✅ 平滑化アルゴリズム修正
@@ -112,14 +124,14 @@
     🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
     🔧 慣性スクロール実装（velocity計算）
     🔧 requestAnimationFrame最適化
- ✅ keyboard-handler.js Phase 7.5.2 loaded (DEL/BS修正版)
-    ✅ structuredClone エラー修正
-    ✅ paths を直接参照方式に変更
-    ✅ Undo/Redo 正常動作
-    ✅ Phase 7.5.1全機能継承
+ ✅ keyboard-handler.js Phase C-2.1 loaded (Undo完全修正版)
+    ✅ アンドゥ2回分消える問題を完全修正
+    ✅ paths/children の状態を完全スナップショット化
+    ✅ StrokeData.toJSON/fromJSON 活用
+    ✅ JSON.stringify 循環参照エラー解消
  ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
-    ✅ createFolderElement() - フォルダUI生成
-    ✅ createFolderEar() - 耳部分SVGアイコン
+layer-panel-renderer.js:958    ✅ createFolderElement() - フォルダUI生成
+layer-panel-renderer.js:959    ✅ createFolderEar() - 耳部分SVGアイコン
 layer-panel-renderer.js:960    ✅ 階層表示（左オフセット + 縦線）
 layer-panel-renderer.js:961    ✅ フォルダ開閉アニメーション
 layer-panel-renderer.js:962    ✅ フォルダサムネイル合成対応
@@ -167,8 +179,8 @@ popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 core-initializer.js:299 [DrawingApp] Initializing WebGL2...
 core-initializer.js:156 [WebGL2] Starting initialization...
-core-initializer.js:169 [WebGL2] Canvas found: 1660 x 1128
-webgl2-drawing-layer.js:107 [WebGL2] ✅ Initialized Object
+core-initializer.js:169 [WebGL2] Canvas found: 1158 x 1128
+webgl2-drawing-layer.js:107 [WebGL2] ✅ Initialized {canvasSize: '1158x1128', maxTextureSize: 16384}
 gl-stroke-processor.js:81 [GLStrokeProcessor] ✅ Phase B-4 Initialized
 gl-stroke-processor.js:82    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
 gl-stroke-processor.js:83    ✅ ペン傾き情報保持・伝達
@@ -179,6 +191,42 @@ core-initializer.js:185 [WebGL2] ✅ GLStrokeProcessor ready
 core-initializer.js:190 [WebGL2] ✅ GLStrokeProcessor connected to StrokeRenderer
 core-initializer.js:308 [DrawingApp] WebGL2 result: true
 index.html:119 ✅ WebGL2初期化完了
-index.html:123 🎬 Pixi Ticker Status: Object
+index.html:123 🎬 Pixi Ticker Status: {started: true, speed: 1, maxFPS: 0, FPS: 59.99999999999999}
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
+history.js:235 [History:Push] Before: index=-1, stack=0, cmd="stroke-draw"
+history.js:261 [History:Push] After: index=0, stack=1
+history.js:235 [History:Push] Before: index=0, stack=1, cmd="stroke-draw"
+history.js:261 [History:Push] After: index=1, stack=2
+history.js:235 [History:Push] Before: index=1, stack=2, cmd="stroke-draw"
+history.js:261 [History:Push] After: index=2, stack=3
+history.js:235 [History:Push] Before: index=2, stack=3, cmd="layer-delete-drawings"
+keyboard-handler.js:473 [KeyboardHandler] Layer not found: layer_1764168128808_jj585oahj
+getLayerByIdSafe @ keyboard-handler.js:473
+do @ keyboard-handler.js:425
+_executeCommand @ history.js:133
+_pushInternal @ history.js:247
+push @ history.js:303
+deleteActiveLayerDrawings @ keyboard-handler.js:444
+handleAction @ keyboard-handler.js:133
+handleKeyDown @ keyboard-handler.js:76
+history.js:261 [History:Push] After: index=3, stack=4
+history.js:319 [History:Undo] Before: index=3, stack=4, cmd="layer-delete-drawings"
+keyboard-handler.js:473 [KeyboardHandler] Layer not found: layer_1764168128808_jj585oahj
+getLayerByIdSafe @ keyboard-handler.js:473
+undo @ keyboard-handler.js:431
+_executeCommand @ history.js:133
+undo @ history.js:327
+handleAction @ keyboard-handler.js:89
+handleKeyDown @ keyboard-handler.js:76
+history.js:339 [History:Undo] After: index=2, stack=4
+history.js:340 [History:Undo] Next undo will be: stroke-draw
+history.js:319 [History:Undo] Before: index=2, stack=4, cmd="stroke-draw"
+history.js:339 [History:Undo] After: index=1, stack=4
+history.js:340 [History:Undo] Next undo will be: stroke-draw
+history.js:319 [History:Undo] Before: index=1, stack=4, cmd="stroke-draw"
+history.js:339 [History:Undo] After: index=0, stack=4
+history.js:340 [History:Undo] Next undo will be: stroke-draw
+history.js:319 [History:Undo] Before: index=0, stack=4, cmd="stroke-draw"
+history.js:339 [History:Undo] After: index=-1, stack=4
+history.js:340 [History:Undo] Next undo will be: none
