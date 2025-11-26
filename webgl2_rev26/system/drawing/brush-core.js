@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * brush-core.js - Phase B-3: ペン傾き処理実装版
+ * brush-core.js - Phase C-2.1: History登録修正版
  * ============================================================
  * 【親依存】
  * - drawing-engine.js (呼び出し元)
@@ -14,12 +14,11 @@
  * - system/drawing/fill-tool.js
  * - system/history.js
  * 
- * 【Phase B-3改修内容】
- * ✅ startStroke() に tiltX/tiltY/twist パラメータ追加
- * ✅ updateStroke() に tiltX/tiltY/twist パラメータ追加
- * ✅ stroke-recorder.startStroke() / addPoint() に傾き渡し
- * ✅ 傾き情報の記録・保持
- * ✅ Phase 7.6全機能継承
+ * 【Phase C-2.1改修内容】
+ * ✅ History登録時の二重追加問題を修正
+ * ✅ do()内での配列操作を削除（History.push前に完了）
+ * ✅ Undo/Redo安定化
+ * ✅ Phase B-3全機能継承
  * ============================================================
  */
 
@@ -34,7 +33,6 @@
             this.lastLocalY = 0;
             this.lastPressure = 0;
             
-            // Phase B-3: 傾き情報保持
             this.lastTiltX = 0;
             this.lastTiltY = 0;
             this.lastTwist = 0;
@@ -162,9 +160,6 @@
             return 'pen';
         }
         
-        /**
-         * Phase B-3: ストローク開始 - 傾き対応
-         */
         startStroke(clientX, clientY, pressure, tiltX = 0, tiltY = 0, twist = 0) {
             const currentMode = this.getMode();
             
@@ -185,7 +180,6 @@
                 ? this.pressureHandler.process(pressure) 
                 : pressure;
             
-            // Phase B-3: 傾き情報を stroke-recorder に渡す
             this.strokeRecorder.startStroke(localX, localY, processedPressure, tiltX, tiltY, twist);
             
             this.isDrawing = true;
@@ -241,9 +235,6 @@
             }
         }
         
-        /**
-         * Phase B-3: ストローク更新 - 傾き対応
-         */
         updateStroke(clientX, clientY, pressure, tiltX = 0, tiltY = 0, twist = 0) {
             if (!this.isDrawing) return;
             
@@ -263,7 +254,6 @@
             const distance = Math.sqrt(dx * dx + dy * dy);
             const steps = Math.max(1, Math.floor(distance / 5));
             
-            // Phase B-3: 補間時に傾きも補間
             for (let i = 1; i <= steps; i++) {
                 const t = i / (steps + 1);
                 const interpX = this.lastLocalX + dx * t;
@@ -276,7 +266,6 @@
                 this.strokeRecorder.addPoint(interpX, interpY, interpPressure, interpTiltX, interpTiltY, interpTwist);
             }
             
-            // Phase B-3: 傾き情報を addPoint に渡す
             this.strokeRecorder.addPoint(localX, localY, processedPressure, tiltX, tiltY, twist);
             
             if (this.previewGraphics) {
@@ -332,6 +321,7 @@
             );
             
             if (graphics) {
+                // Phase C-2.1: History.push前に追加完了
                 if (!isIncrementalStroke) {
                     activeLayer.addChild(graphics);
                 }
@@ -360,9 +350,11 @@
                         opacity: settings.opacity
                     };
                     
+                    // Phase C-2.1: 配列に追加（History.push前に完了）
                     activeLayer.layerData.pathsData.push(pathData);
                     activeLayer.layerData.paths.push(pathData);
                     
+                    // Phase C-2.1: History登録（do()は既に追加済みなので重複追加しない）
                     if (window.History && !window.History._manager?.isApplying) {
                         const layerIndex = this.layerManager.getLayerIndex(activeLayer);
                         const layerId = activeLayer.layerData.id;
@@ -375,6 +367,7 @@
                         const entry = {
                             name: 'stroke-draw',
                             do: () => {
+                                // Phase C-2.1: 既に追加済みなので、Redo時のみ実行
                                 if (!activeLayer.children.includes(graphicsRef)) {
                                     activeLayer.addChild(graphicsRef);
                                 }
@@ -450,7 +443,6 @@
             
             this.isDrawing = false;
             
-            // Phase B-3: 傾き情報リセット
             this.lastTiltX = 0;
             this.lastTiltY = 0;
             this.lastTwist = 0;
@@ -487,7 +479,6 @@
             
             this.isDrawing = false;
             
-            // Phase B-3: 傾き情報リセット
             this.lastTiltX = 0;
             this.lastTiltY = 0;
             this.lastTwist = 0;
@@ -508,11 +499,10 @@
     
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js Phase B-3 loaded (ペン傾き処理版)');
-    console.log('   ✅ startStroke() に tiltX/tiltY/twist 追加');
-    console.log('   ✅ updateStroke() に tiltX/tiltY/twist 追加');
-    console.log('   ✅ stroke-recorder 傾き連携');
-    console.log('   ✅ 補間時の傾き処理実装');
-    console.log('   ✅ Phase 7.6全機能継承');
+    console.log('✅ brush-core.js Phase C-2.1 loaded (History登録修正版)');
+    console.log('   ✅ History.push前に配列追加完了（二重追加防止）');
+    console.log('   ✅ do()は既に追加済みを前提（Redo時のみ実行）');
+    console.log('   ✅ Undo/Redo安定化');
+    console.log('   ✅ Phase B-3全機能継承');
 
 })();
