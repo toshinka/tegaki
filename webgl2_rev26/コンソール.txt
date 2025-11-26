@@ -31,18 +31,18 @@
     🎨 ポップアップ: レイヤーコピー、切り取り
  ✅ history.js (Phase 3: Redo null参照修正版) loaded
  ✅ earcut-triangulator.js Phase 2.0 loaded
- ✅ shader-inline.js Phase A-3 loaded
-    ✅ render.frag.glsl アンチエイリアス改善
-    ✅ fwidth() ピクセル適応AA実装
-    ✅ median() 関数追加（MSDF対応）
-    ✅ Phase 7全機能継承
-    📊 シェーダー数: 5
+ ✅ shader-inline.js Phase B-7 loaded (ペン傾き対応版)
+    ✅ renderVert: aReserved [pressure, tiltX, tiltY] 追加
+    ✅ renderFrag: 傾きベース閾値調整実装
+    ✅ renderFrag: 筆圧反映実装
+    ✅ Phase A-3全機能継承
  ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
     ✅ WebGLTexture → PIXI.Sprite変換実装完了
     ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
     ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
- ✅ gl-msdf-pipeline.js Phase B-4.5 loaded
+ ✅ gl-msdf-pipeline.js Phase B-4.5 loaded (完全修正版)
     ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
+    ✅ 頂点属性バインディング修正（フリッカー解消）
     ✅ Phase A-3全機能継承
  ✅ gl-stroke-processor.js Phase B-4 loaded
     ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
@@ -71,7 +71,10 @@
     ✅ 傾きベース幅変調実装
     ✅ Phase A-1.1全機能継承
  ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
- ✅ brush-settings.js (Phase 3-D Clean) loaded
+ ✅ brush-settings.js Phase B-6 loaded (ペン傾き設定対応版)
+    ✅ tilt.sensitivity / affectsWidth / affectsRotation 追加
+    ✅ setTiltSettings() / getTiltSettings() 実装
+    ✅ Phase 3-D全機能継承
  ✅ BlendMode definitions loaded
  ✅ vector-operations.js Phase 1完全版 loaded
     ✓ window.VectorOperations.generateStrokePolygon(points, size)
@@ -164,7 +167,7 @@ popup-manager.js:87 ✅ Popup "resize" initialized successfully
 popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
 core-initializer.js:299 [DrawingApp] Initializing WebGL2...
 core-initializer.js:156 [WebGL2] Starting initialization...
-core-initializer.js:169 [WebGL2] Canvas found: 1660 x 1126
+core-initializer.js:169 [WebGL2] Canvas found: 1660 x 1128
 webgl2-drawing-layer.js:107 [WebGL2] ✅ Initialized Object
 gl-stroke-processor.js:81 [GLStrokeProcessor] ✅ Phase B-4 Initialized
 gl-stroke-processor.js:82    ✅ stride=5対応 [x, y, flowPressure, tiltX, tiltY]
@@ -179,20 +182,3 @@ index.html:119 ✅ WebGL2初期化完了
 index.html:123 🎬 Pixi Ticker Status: Object
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-// brush-core.js の startStroke シグネチャ確認
-console.log('BrushCore.startStroke:', window.BrushCore.prototype.startStroke.toString().slice(0, 200));
-VM91:2 Uncaught TypeError: Cannot read properties of undefined (reading 'startStroke')
-    at <anonymous>:2:66
-（匿名） @ VM91:2
-// BrushCoreインスタンス確認
-console.log('BrushCore instance:', window.BrushCore);
-console.log('DrawingEngine.brushCore:', window.DrawingEngine?.brushCore);
-
-// startStrokeメソッド確認
-const brushCore = window.DrawingEngine?.brushCore;
-if (brushCore && brushCore.startStroke) {
-    console.log('startStroke method:', brushCore.startStroke.toString().slice(0, 300));
-}
-VM95:2 BrushCore instance: BrushCore {isDrawing: false, currentStrokeId: null, lastLocalX: 210, lastLocalY: 369, lastPressure: 0.36027456867655666, …}
-VM95:3 DrawingEngine.brushCore: undefined
-undefined
