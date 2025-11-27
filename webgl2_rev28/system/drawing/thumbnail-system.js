@@ -1,6 +1,11 @@
 /**
- * @file thumbnail-system.js - 統一アスペクト比対応版
- * @description レイヤー・フレームのサムネイル生成システム
+ * @file thumbnail-system.js - Phase F-4: フォルダサムネイル対応版
+ * @description レイヤー・フレーム・フォルダのサムネイル生成システム
+ * 
+ * 【Phase F-4改修内容】
+ * ✅ generateFolderThumbnail() - フォルダ内レイヤー合成サムネイル生成
+ * ✅ _renderFolderComposite() - フォルダ内全レイヤーの合成レンダリング
+ * ✅ 既存のレイヤー・フレームサムネイル機能を完全継承
  * 
  * 【依存関係】
  * ◆ 親ファイル (このファイルが依存):
@@ -8,17 +13,11 @@
  *   - PIXI.js v8.13 (RenderTexture, Extract)
  *   - event-bus.js (イベント通信)
  *   - coordinate-system.js (座標系)
+ *   - layer-system.js (レイヤーデータ取得)
  * 
  * ◆ 子ファイル (このファイルに依存):
  *   - layer-panel-renderer.js (サムネイル表示)
  *   - timeline-ui.js (フレームサムネイル表示)
- * 
- * 【設計方針 - v1.1改修】
- * - 全レイヤー(背景含む)でキャンバスアスペクト比を維持
- * - サムネイル最大サイズ: 64x44 (どちらか一辺が最大値)
- * - 背景レイヤーは単色塗りつぶしCanvas生成
- * - 通常レイヤーはPIXI RenderTextureでレンダリング
- * - キャッシュ機構で重複生成を抑制
  */
 
 (function() {
@@ -32,6 +31,7 @@
             
             this.layerThumbnailCache = new Map();
             this.frameThumbnailCache = new Map();
+            this.folderThumbnailCache = new Map(); // 🆕 Phase F-4
             
             this.defaultLayerThumbWidth = 64;
             this.defaultLayerThumbHeight = 44;
@@ -143,6 +143,19 @@
                 this._invalidateLayerCacheByLayerId(layerId);
             });
             
+            // 🆕 Phase F-4: フォルダ関連イベント
+            this.eventBus.on('folder:toggled', ({ folderId }) => {
+                this._invalidateFolderCache(folderId);
+            });
+            
+            this.eventBus.on('layer:added-to-folder', ({ folderId }) => {
+                this._invalidateFolderCache(folderId);
+            });
+            
+            this.eventBus.on('layer:removed-from-folder', ({ folderId }) => {
+                this._invalidateFolderCache(folderId);
+            });
+            
             this.eventBus.on('animation:frame-updated', ({ frameIndex }) => {
                 this.invalidateFrameCache(frameIndex);
             });
@@ -158,30 +171,23 @@
 
         /**
          * キャンバスアスペクト比を維持したサムネイルサイズを計算
-         * @param {number} maxWidth - サムネイル最大幅
-         * @param {number} maxHeight - サムネイル最大高さ
-         * @returns {{width: number, height: number}} サムネイルサイズ
          */
         _calculateThumbnailSize(maxWidth, maxHeight) {
             const canvasWidth = this.config?.canvas?.width || 800;
             const canvasHeight = this.config?.canvas?.height || 600;
             
-            // 🔧 修正: 正しいアスペクト比計算
             let thumbWidth, thumbHeight;
             const canvasAspect = canvasWidth / canvasHeight;
             const thumbAspect = maxWidth / maxHeight;
             
             if (canvasAspect > thumbAspect) {
-                // 横長: 幅を最大にして高さを調整
                 thumbWidth = maxWidth;
                 thumbHeight = Math.round(maxWidth / canvasAspect);
             } else {
-                // 縦長: 高さを最大にして幅を調整
                 thumbHeight = maxHeight;
                 thumbWidth = Math.round(maxHeight * canvasAspect);
             }
             
-            // 念のため最大値チェック
             thumbWidth = Math.min(thumbWidth, maxWidth);
             thumbHeight = Math.min(thumbHeight, maxHeight);
 
@@ -199,12 +205,10 @@
             const actualMaxWidth = (typeof maxWidth === 'number') ? maxWidth : this.defaultLayerThumbWidth;
             const actualMaxHeight = (typeof maxHeight === 'number') ? maxHeight : this.defaultLayerThumbHeight;
 
-            // 🔧 背景レイヤー: 単色塗りつぶしCanvas生成
             if (layer.layerData?.isBackground) {
                 return this._generateBackgroundThumbnail(layer, actualMaxWidth, actualMaxHeight);
             }
 
-            // 通常レイヤー: PIXIレンダリング
             if (this.vKeyModeActive) {
                 return await this._renderLayerThumbnail(layer, actualMaxWidth, actualMaxHeight);
             }
@@ -236,7 +240,6 @@
 
         /**
          * 背景レイヤー専用サムネイル生成
-         * キャンバスアスペクト比を維持した単色塗りつぶし
          */
         _generateBackgroundThumbnail(layer, maxWidth, maxHeight) {
             const { width: thumbWidth, height: thumbHeight } = this._calculateThumbnailSize(maxWidth, maxHeight);
@@ -248,7 +251,6 @@
             const ctx = canvas.getContext('2d');
             if (!ctx) return null;
 
-            // 🔧 layerData.backgroundColor から取得
             const bgColor = layer.layerData?.backgroundColor || 0xf0e0d6;
             const r = (bgColor >> 16) & 0xFF;
             const g = (bgColor >> 8) & 0xFF;
@@ -269,7 +271,6 @@
 
         /**
          * 通常レイヤーのサムネイルレンダリング
-         * キャンバスアスペクト比を維持してスケーリング
          */
         async _renderLayerThumbnail(layer, maxWidth, maxHeight) {
             if (!this.app?.renderer) return null;
@@ -318,9 +319,216 @@
             }
         }
 
+        // ================================================================================
+        // 🆕 Phase F-4: フォルダサムネイル合成
+        // ================================================================================
+
         /**
-         * フレームサムネイル生成 (アニメーション用)
+         * フォルダサムネイル生成（子レイヤー全ての合成）
+         * @param {Array} childLayers - フォルダ内レイヤー配列
+         * @param {number} maxWidth - 最大幅
+         * @param {number} maxHeight - 最大高さ
+         * @returns {Promise<{dataUrl: string, width: number, height: number}>}
          */
+        async generateFolderThumbnail(childLayers, maxWidth, maxHeight) {
+            if (!childLayers || childLayers.length === 0) {
+                return this._generateEmptyFolderThumbnail(maxWidth, maxHeight);
+            }
+
+            // 可視レイヤーのみフィルタリング
+            const visibleLayers = childLayers.filter(layer => 
+                layer.layerData?.visible !== false
+            );
+
+            if (visibleLayers.length === 0) {
+                return this._generateEmptyFolderThumbnail(maxWidth, maxHeight);
+            }
+
+            // キャッシュキー生成（子レイヤーIDの配列から）
+            const layerIds = visibleLayers.map(l => l.layerData?.id).join('_');
+            const cacheKey = `folder_${layerIds}_${maxWidth}_${maxHeight}`;
+
+            if (this.folderThumbnailCache.has(cacheKey)) {
+                return this.folderThumbnailCache.get(cacheKey);
+            }
+
+            // フォルダ合成レンダリング
+            const result = await this._renderFolderComposite(visibleLayers, maxWidth, maxHeight);
+
+            if (result) {
+                this.folderThumbnailCache.set(cacheKey, result);
+
+                if (this.folderThumbnailCache.size > this.maxCacheSize) {
+                    const firstKey = this.folderThumbnailCache.keys().next().value;
+                    this.folderThumbnailCache.delete(firstKey);
+                }
+            }
+
+            return result;
+        }
+
+        /**
+         * フォルダ内全レイヤーの合成レンダリング
+         */
+        async _renderFolderComposite(layers, maxWidth, maxHeight) {
+            if (!this.app?.renderer) return null;
+
+            try {
+                const { width: thumbWidth, height: thumbHeight } = this._calculateThumbnailSize(maxWidth, maxHeight);
+
+                const canvasWidth = this.config?.canvas?.width || 800;
+                const canvasHeight = this.config?.canvas?.height || 600;
+
+                // 合成用コンテナを作成
+                const compositeContainer = new PIXI.Container();
+                compositeContainer.width = canvasWidth;
+                compositeContainer.height = canvasHeight;
+
+                // レイヤーを順番に追加（背景から順に）
+                for (const layer of layers) {
+                    if (layer.layerData?.visible !== false) {
+                        // レイヤーのクローンを追加（元のレイヤーには影響しない）
+                        const layerClone = this._cloneLayerForThumbnail(layer);
+                        if (layerClone) {
+                            compositeContainer.addChild(layerClone);
+                        }
+                    }
+                }
+
+                // RenderTextureにレンダリング
+                const rt = this._acquireRenderTexture(canvasWidth, canvasHeight);
+                if (!rt) return null;
+
+                this.app.renderer.render({
+                    container: compositeContainer,
+                    target: rt,
+                    clear: true
+                });
+
+                const fullCanvas = this.app.renderer.extract.canvas(rt);
+
+                // サムネイルサイズにリサイズ
+                const thumbCanvas = document.createElement('canvas');
+                thumbCanvas.width = thumbWidth;
+                thumbCanvas.height = thumbHeight;
+                const ctx = thumbCanvas.getContext('2d');
+
+                if (ctx) {
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(fullCanvas, 0, 0, thumbWidth, thumbHeight);
+                }
+
+                // クリーンアップ
+                compositeContainer.destroy({ children: true });
+                this._releaseRenderTexture(rt);
+
+                const dataUrl = thumbCanvas.toDataURL('image/png');
+
+                return {
+                    canvas: thumbCanvas,
+                    dataUrl: dataUrl,
+                    width: thumbWidth,
+                    height: thumbHeight
+                };
+
+            } catch (error) {
+                return null;
+            }
+        }
+
+        /**
+         * レイヤーをサムネイル用にクローン（軽量版）
+         */
+        _cloneLayerForThumbnail(layer) {
+            try {
+                // 背景レイヤーの場合
+                if (layer.layerData?.isBackground) {
+                    const bgClone = new PIXI.Container();
+                    const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
+                    
+                    const bg = new PIXI.Graphics();
+                    bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                    bg.fill({ color: bgColor, alpha: 1.0 });
+                    bgClone.addChild(bg);
+                    
+                    return bgClone;
+                }
+
+                // 通常レイヤーの場合：Graphics要素のみをクローン
+                const layerClone = new PIXI.Container();
+                layerClone.position.copyFrom(layer.position);
+                layerClone.rotation = layer.rotation;
+                layerClone.scale.copyFrom(layer.scale);
+                layerClone.alpha = layer.alpha;
+
+                // Graphics要素のみコピー（マスクやその他は除外）
+                for (const child of layer.children) {
+                    if (child instanceof PIXI.Graphics) {
+                        layerClone.addChild(child);
+                    }
+                }
+
+                return layerClone;
+
+            } catch (error) {
+                return null;
+            }
+        }
+
+        /**
+         * 空フォルダのサムネイル生成
+         */
+        _generateEmptyFolderThumbnail(maxWidth, maxHeight) {
+            const { width: thumbWidth, height: thumbHeight } = this._calculateThumbnailSize(maxWidth, maxHeight);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = thumbWidth;
+            canvas.height = thumbHeight;
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return null;
+
+            // 透明な背景
+            ctx.clearRect(0, 0, thumbWidth, thumbHeight);
+
+            // 「空」を示すプレースホルダー
+            ctx.fillStyle = '#cf9c97';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('空', thumbWidth / 2, thumbHeight / 2);
+
+            const dataUrl = canvas.toDataURL('image/png');
+
+            return {
+                canvas: canvas,
+                dataUrl: dataUrl,
+                width: thumbWidth,
+                height: thumbHeight
+            };
+        }
+
+        /**
+         * フォルダキャッシュの無効化
+         */
+        _invalidateFolderCache(folderId) {
+            const keysToDelete = [];
+            for (const key of this.folderThumbnailCache.keys()) {
+                if (key.includes(folderId)) {
+                    keysToDelete.push(key);
+                }
+            }
+
+            keysToDelete.forEach(key => {
+                this.folderThumbnailCache.delete(key);
+            });
+        }
+
+        // ================================================================================
+        // フレームサムネイル生成（既存機能を継承）
+        // ================================================================================
+
         async generateFrameThumbnail(frame, maxWidth = this.defaultFrameThumbSize, maxHeight = this.defaultFrameThumbSize) {
             if (!frame || !this.app?.renderer) {
                 return null;
@@ -387,6 +595,10 @@
             }
         }
 
+        // ================================================================================
+        // キャッシュ管理（既存機能を継承）
+        // ================================================================================
+
         invalidateLayerCache(layerIndex) {
             if (layerIndex < 0) return;
             
@@ -433,7 +645,12 @@
         clearAllCache() {
             this.layerThumbnailCache.clear();
             this.frameThumbnailCache.clear();
+            this.folderThumbnailCache.clear(); // 🆕 Phase F-4
         }
+
+        // ================================================================================
+        // RenderTextureプール管理（既存機能を継承）
+        // ================================================================================
 
         _acquireRenderTexture(width, height) {
             try {
@@ -475,6 +692,7 @@
             return {
                 layerCacheSize: this.layerThumbnailCache.size,
                 frameCacheSize: this.frameThumbnailCache.size,
+                folderCacheSize: this.folderThumbnailCache.size, // 🆕 Phase F-4
                 poolSize: this.renderTexturePool.length,
                 isInitialized: this.isInitialized,
                 vKeyModeActive: this.vKeyModeActive,
@@ -504,4 +722,8 @@
 
 })();
 
-console.log('✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded');
+console.log('✅ thumbnail-system.js Phase F-4 loaded (フォルダサムネイル対応版)');
+console.log('   ✅ generateFolderThumbnail() - フォルダ合成サムネイル生成');
+console.log('   ✅ _renderFolderComposite() - 子レイヤー全ての合成レンダリング');
+console.log('   ✅ フォルダイベント連携（folder:toggled等）');
+console.log('   ✅ 既存のレイヤー・フレームサムネイル機能を完全継承');

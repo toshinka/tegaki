@@ -1,28 +1,34 @@
 /**
  * ============================================================
- * data-models.js - Phase B-1: ペン傾き対応版
+ * data-models.js - Phase F-1: フォルダ対応版
  * ============================================================
  * 【親依存】
  *   - なし（最上位データモデル定義）
  * 
  * 【子依存】
  *   - layer-system.js
+ *   - layer-panel-renderer.js
  *   - history.js
  *   - brush-core.js
  *   - stroke-recorder.js
  *   - timeline-ui.js
  * 
- * 【Phase B-1改修内容】
- * ✅ StrokeData.points に tiltX/tiltY/twist 追加
- * ✅ STROKE_SCHEMA拡張（傾き情報定義）
- * ✅ toJSON() 傾きシリアライズ対応
- * ✅ 後方互換性維持（傾き未定義時は0）
+ * 【Phase F-1改修内容】
+ * ✅ LayerModel にフォルダ属性追加
+ * ✅ LAYER_SCHEMA拡張（フォルダ情報定義）
+ * ✅ toJSON() フォルダシリアライズ対応
+ * ✅ 既存のペン傾き対応を完全継承
+ * ✅ DRY原則: レイヤーとフォルダを統一モデルで管理
  * ============================================================
  */
 
 (function() {
     'use strict';
 
+    /**
+     * Phase F-1: LAYER_SCHEMA拡張
+     * フォルダ管理属性を追加
+     */
     const LAYER_SCHEMA = {
         id: { type: 'string', required: true, editable: false },
         name: { type: 'string', required: true, editable: true },
@@ -32,11 +38,22 @@
         backgroundColor: { type: 'number', default: 0xf0e0d6, editable: true },
         clipping: { type: 'boolean', default: false, editable: true },
         blendMode: { type: 'string', default: 'normal', editable: true },
-        locked: { type: 'boolean', default: false, editable: true }
+        locked: { type: 'boolean', default: false, editable: true },
+        
+        // Phase F-1: フォルダ管理属性
+        isFolder: { type: 'boolean', default: false, editable: false },
+        folderExpanded: { type: 'boolean', default: true, editable: true },
+        parentId: { type: 'string', default: null, editable: true },
+        childIds: { type: 'array', default: [], editable: true }
     };
 
+    /**
+     * Phase F-1: LayerModel拡張
+     * フォルダ機能を追加（既存機能は完全継承）
+     */
     class LayerModel {
         constructor(data = {}) {
+            // 既存プロパティ（完全継承）
             this.id = data.id || `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             this.name = data.name || 'レイヤー';
             this.visible = data.visible !== undefined ? data.visible : true;
@@ -48,6 +65,13 @@
             this.locked = data.locked || false;
             this.paths = data.paths || [];
             
+            // Phase F-1: フォルダ管理プロパティ
+            this.isFolder = data.isFolder || false;
+            this.folderExpanded = data.folderExpanded !== undefined ? data.folderExpanded : true;
+            this.parentId = data.parentId || null;
+            this.childIds = data.childIds || [];
+            
+            // 既存のマスク管理（完全継承）
             this.maskTexture = null;
             this.maskSprite = null;
             this._maskInitialized = false;
@@ -57,6 +81,72 @@
             return LAYER_SCHEMA;
         }
 
+        // ========================================
+        // Phase F-1: フォルダ判定メソッド
+        // ========================================
+        
+        /**
+         * フォルダかどうかを判定
+         */
+        isFolderLayer() {
+            return this.isFolder === true;
+        }
+        
+        /**
+         * フォルダが開いているかを判定
+         */
+        isFolderOpen() {
+            return this.isFolder && this.folderExpanded;
+        }
+        
+        /**
+         * 親フォルダを持つかを判定
+         */
+        hasParent() {
+            return this.parentId !== null && this.parentId !== undefined;
+        }
+        
+        /**
+         * 子レイヤーを持つかを判定
+         */
+        hasChildren() {
+            return this.childIds && this.childIds.length > 0;
+        }
+        
+        /**
+         * 子レイヤーを追加
+         */
+        addChild(layerId) {
+            if (!this.isFolder) return false;
+            if (!layerId || this.childIds.includes(layerId)) return false;
+            this.childIds.push(layerId);
+            return true;
+        }
+        
+        /**
+         * 子レイヤーを削除
+         */
+        removeChild(layerId) {
+            if (!this.isFolder) return false;
+            const index = this.childIds.indexOf(layerId);
+            if (index === -1) return false;
+            this.childIds.splice(index, 1);
+            return true;
+        }
+        
+        /**
+         * フォルダの開閉を切り替え
+         */
+        toggleExpanded() {
+            if (!this.isFolder) return false;
+            this.folderExpanded = !this.folderExpanded;
+            return true;
+        }
+
+        // ========================================
+        // 既存のマスク管理メソッド（完全継承）
+        // ========================================
+        
         hasMask() {
             return this._maskInitialized && 
                    this.maskTexture !== null && 
@@ -118,6 +208,10 @@
             this._maskInitialized = false;
         }
 
+        /**
+         * Phase F-1: toJSON() フォルダ対応
+         * フォルダ属性を含めてシリアライズ
+         */
         toJSON() {
             return {
                 id: this.id,
@@ -128,7 +222,13 @@
                 backgroundColor: this.backgroundColor,
                 clipping: this.clipping,
                 blendMode: this.blendMode,
-                locked: this.locked
+                locked: this.locked,
+                
+                // Phase F-1: フォルダ情報
+                isFolder: this.isFolder,
+                folderExpanded: this.folderExpanded,
+                parentId: this.parentId,
+                childIds: this.childIds
             };
         }
 
@@ -137,10 +237,23 @@
             if (!this.id) errors.push('id is required');
             if (!this.name) errors.push('name is required');
             if (this.opacity < 0 || this.opacity > 1) errors.push('opacity must be 0-1');
+            
+            // Phase F-1: フォルダバリデーション
+            if (this.isFolder && this.isBackground) {
+                errors.push('folder cannot be background layer');
+            }
+            if (this.parentId && this.parentId === this.id) {
+                errors.push('layer cannot be its own parent');
+            }
+            
             return { valid: errors.length === 0, errors };
         }
     }
 
+    // ========================================
+    // CutModel（既存のまま完全継承）
+    // ========================================
+    
     const CUT_SCHEMA = {
         id: { type: 'string', required: true, editable: false },
         name: { type: 'string', required: true, editable: true },
@@ -183,10 +296,10 @@
         }
     }
 
-    /**
-     * Phase B-1: STROKE_SCHEMA拡張
-     * ペン傾き情報を追加
-     */
+    // ========================================
+    // StrokeData（Phase B-1の傾き対応を完全継承）
+    // ========================================
+    
     const STROKE_SCHEMA = {
         points: {
             type: 'array',
@@ -197,9 +310,9 @@
                 y: 'number',
                 pressure: 'number',
                 time: 'number',
-                tiltX: 'number',  // -1 〜 1
-                tiltY: 'number',  // -1 〜 1
-                twist: 'number'   // 0 〜 2π
+                tiltX: 'number',
+                tiltY: 'number',
+                twist: 'number'
             }
         },
         isSingleDot: { type: 'boolean', default: false, editable: false },
@@ -210,10 +323,6 @@
         tool: { type: 'string', default: 'pen', editable: false }
     };
 
-    /**
-     * Phase B-1: StrokeData拡張
-     * ペン傾き情報の完全対応
-     */
     class StrokeData {
         constructor(data = {}) {
             this.points = data.points || [];
@@ -230,10 +339,6 @@
             return STROKE_SCHEMA;
         }
 
-        /**
-         * Phase B-1: toJSON() 傾きシリアライズ対応
-         * 後方互換性維持（傾き未定義時は0）
-         */
         toJSON() {
             return {
                 points: this.points.map(p => ({
@@ -273,7 +378,6 @@
                 errors.push('layerId is required');
             }
             
-            // Phase B-1: 傾き値の範囲チェック
             for (const p of this.points) {
                 if (p.tiltX !== undefined && (p.tiltX < -1 || p.tiltX > 1)) {
                     errors.push('tiltX must be -1 to 1');
@@ -323,9 +427,6 @@
             };
         }
         
-        /**
-         * Phase B-1: 傾き情報の有無を判定
-         */
         hasTiltData() {
             if (this.points.length === 0) return false;
             
@@ -336,9 +437,6 @@
             );
         }
         
-        /**
-         * Phase B-1: 平均傾き値を取得
-         */
         getAverageTilt() {
             if (this.points.length === 0) {
                 return { tiltX: 0, tiltY: 0, twist: 0 };
@@ -370,6 +468,10 @@
         }
     }
 
+    // ========================================
+    // グローバル登録
+    // ========================================
+    
     window.TegakiDataModels = {
         LayerModel,
         CutModel,
@@ -379,10 +481,10 @@
         STROKE_SCHEMA
     };
 
-    console.log('✅ data-models.js Phase B-1 loaded (ペン傾き対応版)');
-    console.log('   ✅ StrokeData.points に tiltX/tiltY/twist 追加');
-    console.log('   ✅ STROKE_SCHEMA拡張');
-    console.log('   ✅ toJSON() 傾きシリアライズ対応');
-    console.log('   ✅ 後方互換性維持');
+    console.log('✅ data-models.js Phase F-1 loaded (フォルダ対応版)');
+    console.log('   ✅ LayerModel にフォルダ属性追加');
+    console.log('   ✅ isFolder / folderExpanded / parentId / childIds');
+    console.log('   ✅ 既存の傾き対応を完全継承');
+    console.log('   ✅ DRY原則: レイヤーとフォルダを統一モデルで管理');
 
 })();
