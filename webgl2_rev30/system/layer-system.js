@@ -47,7 +47,11 @@
             this.checkerPattern = null;
         }
 
+
         init(canvasContainer, eventBus, config) {
+            console.log('[LayerSystem] 🔍 init() called');
+            console.log('[LayerSystem]   canvasContainer:', canvasContainer);
+            
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
             if (!this.eventBus) throw new Error('EventBus required for LayerSystem');
@@ -58,9 +62,17 @@
                 this.transform = null;
             }
             
-            this.currentFrameContainer = new PIXI.Container();
-            this.currentFrameContainer.label = 'temporary_frame_container';
+            // 🆕 Phase 1: currentFrameContainerの初期化を改善
+            // 既存のcurrentFrameContainerがあれば再利用、なければ新規作成
+            if (!this.currentFrameContainer) {
+                this.currentFrameContainer = new PIXI.Container();
+                this.currentFrameContainer.label = 'frame_container_init';
+                console.log('[LayerSystem]   ✅ New currentFrameContainer created');
+            } else {
+                console.log('[LayerSystem]   ✅ Reusing existing currentFrameContainer');
+            }
             
+            // 背景レイヤー作成
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_bg_' + Date.now(),
@@ -80,7 +92,9 @@
             bgLayer.layerData.backgroundGraphics = bg;
             bgLayer.layerData.backgroundColor = 0xf0e0d6;
             this.currentFrameContainer.addChild(bgLayer);
+            console.log('[LayerSystem]   ✅ Background layer added');
             
+            // レイヤー1作成
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
                 id: 'temp_layer_1_' + Date.now(),
@@ -95,6 +109,7 @@
             }
             this.currentFrameContainer.addChild(layer1);
             this.activeLayerIndex = 1;
+            console.log('[LayerSystem]   ✅ Layer 1 added, activeLayerIndex set to 1');
             
             this._setupLayerOperations();
             this._setupAnimationSystemIntegration();
@@ -102,6 +117,16 @@
             this._setupResizeEvents();
             
             this.isInitialized = true;
+            console.log('[LayerSystem]   ✅ init() completed successfully');
+            console.log('[LayerSystem]   currentFrameContainer.children.length:', this.currentFrameContainer.children.length);
+            
+            // 🆕 Phase 1: イベント発火でUI側に初期化完了を通知
+            if (this.eventBus) {
+                this.eventBus.emit('layer:system-initialized', {
+                    layerCount: this.currentFrameContainer.children.length,
+                    activeIndex: this.activeLayerIndex
+                });
+            }
         }
 
         // ================================================================================
@@ -114,59 +139,126 @@
          * @returns {{layer: PIXI.Container, index: number}} 作成されたフォルダと配列インデックス
          */
         createFolder(name) {
-            if (!this.currentFrameContainer) return null;
+            // 🆕 Phase 1: デバッグログ追加
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('[LayerSystem] 🔍 createFolder() called');
+            console.log('[LayerSystem]   name:', name);
+            console.log('[LayerSystem]   currentFrameContainer:', this.currentFrameContainer);
+            console.log('[LayerSystem]   currentFrameContainer.children.length:', this.currentFrameContainer?.children.length);
+            
+            if (!this.currentFrameContainer) {
+                console.error('[LayerSystem] ❌ currentFrameContainer is null/undefined');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                return null;
+            }
+            
+            console.log('[LayerSystem]   History manager state:', {
+                exists: !!window.History,
+                isApplying: window.History?._manager?.isApplying
+            });
             
             const folderName = name || this._generateNextFolderName();
+            console.log('[LayerSystem]   Generated folder name:', folderName);
+            
+            // モデル作成
+            console.log('[LayerSystem]   Creating LayerModel...');
             const folderModel = new window.TegakiDataModels.LayerModel({
                 name: folderName,
                 isFolder: true,
                 folderExpanded: true
             });
+            console.log('[LayerSystem]   LayerModel created:', {
+                id: folderModel.id,
+                name: folderModel.name,
+                isFolder: folderModel.isFolder
+            });
             
+            // PIXI.Container作成
+            console.log('[LayerSystem]   Creating PIXI.Container...');
             const folder = new PIXI.Container();
             folder.label = folderModel.id;
             folder.layerData = folderModel;
             folder.id = folderModel.id;
+            console.log('[LayerSystem]   PIXI.Container created:', folder.label);
             
+            // Transform初期化
             if (this.transform) {
+                console.log('[LayerSystem]   Setting transform...');
                 this.transform.setTransform(folderModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+                console.log('[LayerSystem]   Transform set');
+            } else {
+                console.warn('[LayerSystem]   ⚠️ this.transform is not available');
             }
             
+            // History登録またはフォルダ追加
             if (window.History && !window.History._manager.isApplying) {
-                const entry = {
-                    name: 'folder-create',
-                    do: () => {
-                        this.currentFrameContainer.addChild(folder);
-                        const layers = this.getLayers();
-                        this.setActiveLayer(layers.length - 1);
-                        this._emitPanelUpdateRequest();
-                    },
-                    undo: () => {
-                        this.currentFrameContainer.removeChild(folder);
-                        const layers = this.getLayers();
-                        if (this.activeLayerIndex >= layers.length) {
-                            this.activeLayerIndex = Math.max(0, layers.length - 1);
-                        }
-                        this._emitPanelUpdateRequest();
-                    },
-                    meta: { folderId: folderModel.id, name: folderName }
-                };
-                window.History.push(entry);
+                console.log('[LayerSystem]   📝 Registering History entry...');
+                
+                try {
+                    const entry = {
+                        name: 'folder-create',
+                        do: () => {
+                            console.log('[LayerSystem]   History DO: Adding folder to container');
+                            this.currentFrameContainer.addChild(folder);
+                            const layers = this.getLayers();
+                            this.setActiveLayer(layers.length - 1);
+                            this._emitPanelUpdateRequest();
+                            console.log('[LayerSystem]   History DO: Complete');
+                        },
+                        undo: () => {
+                            console.log('[LayerSystem]   History UNDO: Removing folder from container');
+                            this.currentFrameContainer.removeChild(folder);
+                            const layers = this.getLayers();
+                            if (this.activeLayerIndex >= layers.length) {
+                                this.activeLayerIndex = Math.max(0, layers.length - 1);
+                            }
+                            this._emitPanelUpdateRequest();
+                            console.log('[LayerSystem]   History UNDO: Complete');
+                        },
+                        meta: { folderId: folderModel.id, name: folderName }
+                    };
+                    
+                    console.log('[LayerSystem]   Pushing to History...');
+                    window.History.push(entry);
+                    console.log('[LayerSystem]   ✅ History entry pushed successfully');
+                    
+                } catch (error) {
+                    console.error('[LayerSystem]   ❌ History registration failed:', error);
+                    console.error('[LayerSystem]   Error stack:', error.stack);
+                    
+                    // エラー時はフォールバック
+                    console.log('[LayerSystem]   Fallback: Adding folder directly without History');
+                    this.currentFrameContainer.addChild(folder);
+                    const layers = this.getLayers();
+                    this.setActiveLayer(layers.length - 1);
+                    this._emitPanelUpdateRequest();
+                }
             } else {
+                console.log('[LayerSystem]   Adding folder directly (History bypassed)');
                 this.currentFrameContainer.addChild(folder);
                 const layers = this.getLayers();
                 this.setActiveLayer(layers.length - 1);
                 this._emitPanelUpdateRequest();
+                console.log('[LayerSystem]   Folder added directly');
             }
             
+            // イベント発火
             if (this.eventBus) {
+                console.log('[LayerSystem]   📡 Emitting folder:created event...');
                 this.eventBus.emit('folder:created', { 
                     folderId: folderModel.id, 
                     name: folderName 
                 });
+                console.log('[LayerSystem]   ✅ Event emitted');
+            } else {
+                console.warn('[LayerSystem]   ⚠️ eventBus is not available');
             }
             
             const layers = this.getLayers();
+            console.log('[LayerSystem]   Final layer count:', layers.length);
+            console.log('[LayerSystem]   ✅ createFolder() completed successfully');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
             return { layer: folder, index: layers.length - 1 };
         }
 
