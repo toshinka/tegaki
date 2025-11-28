@@ -1,24 +1,20 @@
 /**
- * @file ui/keyboard-handler.js - Phase C-2.1: Undo完全修正版
+ * @file ui/keyboard-handler.js - Phase C-2.2: 二重登録完全修正版
  * @description キーボードショートカット処理の中核システム
  * 
- * 【Phase C-2.1 改修内容】
+ * 【Phase C-2.2 改修内容】
  * ✅ アンドゥ2回分消える問題を完全修正
- * ✅ paths/children の状態を完全スナップショット化
- * ✅ History連携の参照問題を解消
- * ✅ PixiJSオブジェクトは参照保持、データはディープコピー
+ * ✅ History.push()の二重実行を解消
+ * ✅ window.historyManager.register()を使用（do実行なし）
  * 
  * 【親ファイル (このファイルが依存)】
  * - config.js (window.TEGAKI_KEYMAP)
  * - event-bus.js (window.TegakiEventBus)
- * - history.js (window.History)
+ * - history.js (window.historyManager)
  * - core-runtime.js (window.CoreRuntime.api)
  * - layer-system.js (window.layerManager)
  * - drawing-clipboard.js (window.drawingClipboard)
- * - fill-tool.js (FillTool)
- * - timeline-ui.js (window.timelineUI)
- * - popup-manager.js (window.PopupManager)
- * - data-models.js (StrokeData.toJSON)
+ * - data-models.js (StrokeData.toJSON/fromJSON)
  * 
  * 【子ファイル (このファイルに依存)】
  * - core-initializer.js (初期化時にinit呼び出し)
@@ -85,15 +81,15 @@ window.KeyboardHandler = (function() {
         
         switch(action) {
             case 'UNDO':
-                if (window.History?.canUndo()) {
-                    window.History.undo();
+                if (window.historyManager?.canUndo()) {
+                    window.historyManager.undo();
                 }
                 event.preventDefault();
                 break;
                 
             case 'REDO':
-                if (window.History?.canRedo()) {
-                    window.History.redo();
+                if (window.historyManager?.canRedo()) {
+                    window.historyManager.redo();
                 }
                 event.preventDefault();
                 break;
@@ -326,7 +322,7 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * Phase C-2.1: 状態のディープコピー（PixiJS除く）
+     * Phase C-2.2: 状態のディープコピー（PixiJS除く）
      */
     function createLayerStateSnapshot(layer) {
         if (!layer?.layerData) return null;
@@ -341,10 +337,8 @@ window.KeyboardHandler = (function() {
         if (layer.layerData.paths && Array.isArray(layer.layerData.paths)) {
             snapshot.paths = layer.layerData.paths.map(strokeData => {
                 if (strokeData && typeof strokeData.toJSON === 'function') {
-                    // toJSON()のみ使用（JSON.stringify回避）
                     return strokeData.toJSON();
                 }
-                // フォールバック: 手動でプロパティをコピー
                 return {
                     id: strokeData.id,
                     points: strokeData.points ? [...strokeData.points] : [],
@@ -359,13 +353,13 @@ window.KeyboardHandler = (function() {
             snapshot.paths = [];
         }
 
-        // children の参照とインデックスを保存（PixiJSオブジェクトは参照のみ）
+        // children の参照とインデックスを保存
         for (let i = 0; i < layer.children.length; i++) {
             const child = layer.children[i];
             if (child !== layer.layerData.backgroundGraphics && 
                 child !== layer.layerData.maskSprite) {
                 snapshot.children.push({
-                    child: child,  // PixiJSオブジェクトは参照保持
+                    child: child,
                     index: i
                 });
             }
@@ -375,7 +369,8 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * Phase C-2.1: アクティブレイヤーの描画削除（完全修正版）
+     * 🚨 Phase C-2.2: 二重登録完全修正版
+     * アクティブレイヤーの描画削除
      */
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager || window.layerManager;
@@ -392,7 +387,6 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // 削除対象を特定
         const childrenToRemove = [];
         for (let child of activeLayer.children) {
             if (child !== activeLayer.layerData.backgroundGraphics && 
@@ -402,14 +396,13 @@ window.KeyboardHandler = (function() {
         }
         
         if (childrenToRemove.length === 0) {
-            console.log('[KeyboardHandler] No drawings to delete');
             return;
         }
         
         const layerIndex = layerSystem.activeLayerIndex;
         const layerId = activeLayer.layerData.id;
         
-        // Phase C-2.1: 状態の完全スナップショット作成（削除前）
+        // 削除前の状態をスナップショット
         const beforeState = createLayerStateSnapshot(activeLayer);
         
         if (!beforeState) {
@@ -417,17 +410,14 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // History登録（do()は実行しない、手動で削除してからpush）
-        if (window.History && !window.History._manager?.isApplying) {
-            // 先に削除を実行
-            clearLayerDrawings(layerSystem, activeLayer, layerIndex);
-            
-            // 削除後の状態でHistory登録（do()は何もしない）
+        // 🚨 Phase C-2.2修正: window.historyManager?.isApplying チェック
+        const historyManager = window.historyManager || window.History;
+        
+        if (historyManager && !historyManager.isApplying) {
+            // History登録（do実行なし）
             const entry = {
                 name: 'layer-delete-drawings',
                 do: () => {
-                    // 既に削除済みなので何もしない
-                    // Redo時のために現在の状態を保存
                     const layer = layerSystem.getActiveLayer();
                     if (layer && layer.layerData.id === layerId) {
                         clearLayerDrawings(layerSystem, layer, layerIndex);
@@ -437,8 +427,6 @@ window.KeyboardHandler = (function() {
                     const layer = layerSystem.getActiveLayer();
                     if (layer && layer.layerData.id === layerId && beforeState) {
                         restoreLayerState(layerSystem, layer, beforeState, layerIndex);
-                    } else {
-                        console.warn('[KeyboardHandler] Cannot restore: layer changed or not found');
                     }
                 },
                 meta: { 
@@ -449,23 +437,25 @@ window.KeyboardHandler = (function() {
                 }
             };
             
-            // History.push()は内部でdo()を呼ぶが、既に削除済みなので問題なし
-            window.History.push(entry);
+            // 🚨 Phase C-2.2修正: register() でdo()を実行せずに登録
+            if (typeof historyManager.register === 'function') {
+                historyManager.register(entry);
+                // register後に手動でdo()を実行
+                entry.do();
+            } else {
+                // フォールバック: 従来の push() を使用
+                // 先に削除を実行してから push
+                clearLayerDrawings(layerSystem, activeLayer, layerIndex);
+                historyManager.push(entry);
+            }
         } else {
+            // History無効時は直接削除
             clearLayerDrawings(layerSystem, activeLayer, layerIndex);
         }
     }
 
     /**
-     * Phase C-2.1: レイヤーを安全に取得（削除版）
-     */
-    function getLayerByIdSafe(layerSystem, layerId, fallbackIndex) {
-        // この関数は使用しないが、互換性のため残す
-        return null;
-    }
-
-    /**
-     * Phase C-2.1: レイヤー描画削除実行
+     * Phase C-2.2: レイヤー描画削除実行
      */
     function clearLayerDrawings(layerSystem, layer, layerIndex) {
         if (!layer?.layerData) return;
@@ -486,7 +476,6 @@ window.KeyboardHandler = (function() {
             }
         });
         
-        // paths を空配列に設定
         layer.layerData.paths = [];
         
         layerSystem.requestThumbnailUpdate(layerIndex);
@@ -500,7 +489,7 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * Phase C-2.1: レイヤー状態復元（完全版）
+     * Phase C-2.2: レイヤー状態復元
      */
     function restoreLayerState(layerSystem, layer, snapshot, layerIndex) {
         if (!layer?.layerData || !snapshot) {
@@ -525,44 +514,38 @@ window.KeyboardHandler = (function() {
             }
         });
         
-        // paths を復元（StrokeDataインスタンス再構築）
+        // paths を復元
         if (snapshot.paths && Array.isArray(snapshot.paths)) {
             const StrokeDataClass = window.StrokeData;
             
             if (StrokeDataClass && typeof StrokeDataClass.fromJSON === 'function') {
-                // fromJSON を使用（推奨）
                 layer.layerData.paths = snapshot.paths.map(pathData => {
                     try {
                         return StrokeDataClass.fromJSON(pathData);
                     } catch (error) {
-                        console.error('[KeyboardHandler] Failed to restore stroke with fromJSON:', error);
-                        // フォールバック: 新規インスタンス作成
                         const stroke = new StrokeDataClass();
                         Object.assign(stroke, pathData);
                         return stroke;
                     }
                 });
             } else if (StrokeDataClass) {
-                // fromJSON がない場合: 新規インスタンス作成
                 layer.layerData.paths = snapshot.paths.map(pathData => {
                     try {
                         const stroke = new StrokeDataClass();
                         Object.assign(stroke, pathData);
                         return stroke;
                     } catch (error) {
-                        console.error('[KeyboardHandler] Failed to create StrokeData:', error);
-                        return pathData;  // 最終フォールバック
+                        return pathData;
                     }
                 });
             } else {
-                // StrokeDataが無い場合: プレーンオブジェクトとして復元
                 layer.layerData.paths = snapshot.paths.map(pathData => ({ ...pathData }));
             }
         } else {
             layer.layerData.paths = [];
         }
         
-        // children を復元（PixiJSオブジェクト参照を使用）
+        // children を復元
         if (snapshot.children && snapshot.children.length > 0) {
             snapshot.children.sort((a, b) => a.index - b.index);
             snapshot.children.forEach(({ child, index }) => {
@@ -573,7 +556,6 @@ window.KeyboardHandler = (function() {
                         layer.addChild(child);
                     }
                 } catch (error) {
-                    console.warn('[KeyboardHandler] Failed to restore child:', error);
                     try {
                         layer.addChild(child);
                     } catch (e) {
@@ -657,8 +639,5 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js Phase C-2.1 loaded (Undo完全修正版)');
-console.log('   ✅ DEL/BS実行タイミング修正（History.push前に削除）');
-console.log('   ✅ レイヤーID参照問題解消');
-console.log('   ✅ 2回分消える問題を完全修正');
-console.log('   ✅ JSON.stringify 循環参照エラー解消');
+console.log('✅ keyboard-handler.js Phase C-2.2 loaded');
+console.log('   🔧 二重登録完全修正: historyManager.register() 使用');
