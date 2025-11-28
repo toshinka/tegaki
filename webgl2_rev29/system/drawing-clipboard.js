@@ -1,14 +1,11 @@
 /**
- * @file system/drawing-clipboard.js - Phase 1: Ctrl+X切り取り機能修正版
+ * @file system/drawing-clipboard.js - Phase C-2.2修正版
  * @description レイヤークリップボード管理
  * 
- * 【Phase 1 改修内容 - 最優先】
- * 🔧 cutActiveLayer(): レイヤーごと削除 → 描画内容のみ削除に変更
- *    - コピー後、deleteLayer()ではなくclearLayerDrawings()を呼び出し
- *    - レイヤー構造は保持、paths配列のみクリア
- * 🆕 clearLayerDrawings(): 描画内容のみをクリアする専用メソッド追加
- * 🎨 ポップアップ表示追加（レイヤーコピー、切り取り）
- * 🧹 過剰なコンソールログ削除
+ * 【Phase C-2.2 改修内容】
+ * 🔧 clearLayerDrawings(): skipHistory パラメータ追加
+ *    - skipHistory=true の場合、History登録をスキップ
+ *    - 外部（keyboard-handler.js）からHistory登録する際に二重登録を防止
  * 
  * 【親ファイル (このファイルが依存)】
  * - event-bus.js (TegakiEventBus)
@@ -53,12 +50,10 @@
                 this.pasteLayer();
             });
             
-            // 🔧 Phase 1: 切り取りリスナー
             this.eventBus.on('layer:cut-request', () => {
                 this.cutActiveLayer();
             });
             
-            // レイヤー削除リスナー
             this.eventBus.on('layer:delete-active', () => {
                 this.deleteActiveLayer();
             });
@@ -87,7 +82,6 @@
                     e.preventDefault();
                 }
                 
-                // 🔧 Phase 1: Ctrl+X 切り取り
                 if (e.ctrlKey && e.code === 'KeyX' && !e.altKey && !e.metaKey) {
                     this.cutActiveLayer();
                     e.preventDefault();
@@ -96,7 +90,7 @@
         }
 
         /**
-         * 🔧 Phase 1: レイヤー切り取り機能 - 描画内容のみ削除
+         * レイヤー切り取り機能 - 描画内容のみ削除
          * コピー → 描画クリアの順で実行（レイヤーは削除しない）
          */
         cutActiveLayer() {
@@ -123,10 +117,8 @@
             }
 
             try {
-                // 先にコピー
                 this.copyActiveLayer();
                 
-                // コピーが成功したら描画のみを削除（レイヤーは残す）
                 if (this.clipboardData) {
                     this.clearLayerDrawings(activeLayer);
                     
@@ -137,7 +129,6 @@
                         });
                     }
                     
-                    // 🎨 ポップアップ表示
                     if (window.popupManager) {
                         window.popupManager.show('レイヤー切り取り', 1500);
                     }
@@ -150,10 +141,12 @@
         }
 
         /**
-         * 🆕 Phase 1: レイヤーの描画内容のみをクリア
-         * レイヤー構造は保持、paths配列と子要素のみ削除
+         * 🚨 Phase C-2.2修正: skipHistory パラメータ追加
+         * レイヤーの描画内容のみをクリア
+         * @param {Object} layer - 対象レイヤー
+         * @param {boolean} skipHistory - History登録をスキップ（デフォルト: false）
          */
-        clearLayerDrawings(layer) {
+        clearLayerDrawings(layer, skipHistory = false) {
             if (!layer?.layerData) return;
             
             const layerIndex = this.layerManager.getLayerIndex(layer);
@@ -161,8 +154,9 @@
             
             if (paths.length === 0) return;
             
-            // History登録
-            if (window.History && !window.History._manager?.isApplying) {
+            // 🚨 Phase C-2.2: skipHistory=true の場合、History登録をスキップ
+            // 外部（keyboard-handler.js）で登録する場合に使用
+            if (!skipHistory && window.History && !window.History._manager?.isApplying) {
                 const pathsBackup = structuredClone(paths);
                 
                 const entry = {
@@ -191,7 +185,6 @@
         _clearDrawingsInternal(layer) {
             if (!layer?.layerData) return;
             
-            // 子要素削除（背景とマスク以外）
             const childrenToRemove = [];
             for (let child of layer.children) {
                 if (child !== layer.layerData.backgroundGraphics && 
@@ -209,7 +202,6 @@
                 } catch (error) {}
             });
             
-            // paths配列クリア
             layer.layerData.paths = [];
             
             if (this.eventBus) {
@@ -245,10 +237,6 @@
             }
         }
 
-        /**
-         * アクティブレイヤー削除機能
-         * Ctrl+Delete で呼び出される
-         */
         deleteActiveLayer() {
             if (!this.layerManager) {
                 if (this.eventBus) {
@@ -345,7 +333,7 @@
                         pathCount: pathsToStore.length,
                         isNonDestructive: true,
                         hasTransforms: this.layerManager.transform?._isTransformNonDefault?.(currentTransform) || false,
-                        systemVersion: 'v8.13_Phase1_Cut_Fix'
+                        systemVersion: 'v8.13_PhaseC2.2_History_Fix'
                     },
                     timestamp: Date.now()
                 };
@@ -357,7 +345,6 @@
                     });
                 }
                 
-                // 🎨 ポップアップ表示
                 if (window.popupManager) {
                     window.popupManager.show('レイヤーコピー', 1500);
                 }
@@ -508,7 +495,6 @@
                 layerData.isBackground = true;
             }
             
-            let restoredCount = 0;
             clipData.paths.forEach((pathData) => {
                 try {
                     if (pathData.points && pathData.points.length > 0) {
@@ -527,7 +513,6 @@
                         if (rebuildSuccess && newPath.graphics) {
                             layerData.paths.push(newPath);
                             layer.addChild(newPath.graphics);
-                            restoredCount++;
                         }
                     }
                 } catch (pathError) {}
@@ -801,12 +786,11 @@
                 summary: this.getClipboardSummary(),
                 eventBusAvailable: !!this.eventBus,
                 layerManagerAvailable: !!this.layerManager,
-                phase: 'Phase1-Cut-Fix-Drawings-Only',
+                phase: 'PhaseC2.2-History-Double-Registration-Fix',
                 fixedFeatures: {
+                    clearLayerDrawings: 'skipHistory parameter added',
                     cutLayer: 'drawings-only (layer preserved)',
-                    deleteLayer: 'available',
-                    copyPopup: 'available',
-                    cutPopup: 'available'
+                    deleteLayer: 'available'
                 }
             };
         }
@@ -824,6 +808,5 @@
 
 })();
 
-console.log('✅ drawing-clipboard.js Phase 1 loaded');
-console.log('   🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）');
-console.log('   🎨 ポップアップ: レイヤーコピー、切り取り');
+console.log('✅ drawing-clipboard.js Phase C-2.2 loaded');
+console.log('   🔧 clearLayerDrawings(): skipHistory parameter added');

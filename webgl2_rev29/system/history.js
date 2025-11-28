@@ -1,24 +1,20 @@
 /**
  * ============================================================
- * system/history.js - Phase C-2: Penpot参考改善版
+ * system/history.js - Phase C-2.3: register()メソッド追加版
  * ============================================================
  * 【親依存】
  * - system/event-bus.js (TegakiEventBus)
  * 
  * 【子依存】
  * - system/drawing/brush-core.js (History.push呼び出し)
- * - ui/keyboard-handler.js (undo/redo呼び出し)
+ * - ui/keyboard-handler.js (undo/redo/register呼び出し)
  * - system/batch-api.js (batch操作のHistory記録)
  * 
- * 【Phase C-2改修内容】
- * ✅ トランザクション機構追加
- * ✅ コマンド検証強化
- * ✅ エラー回復機構統一
- * ✅ メタデータ管理拡張
- * ✅ スタック整合性保証
- * ✅ グループ化コマンド改善
- * ✅ デバッグ機能拡張
- * ✅ アンドゥ/リドゥの参照安定化
+ * 【Phase C-2.3改修内容】
+ * 🆕 register()メソッド追加
+ *    - do()を実行せずにスタックに登録
+ *    - keyboard-handler.jsの二重登録問題を解決
+ * ✅ Phase C-2全機能継承
  * 
  * Penpot参考実装:
  * - 構造化コマンドパターン
@@ -30,36 +26,26 @@
 (function() {
     'use strict';
 
-    /**
-     * コマンド実行結果の型定義
-     */
     const CommandResult = {
         SUCCESS: 'success',
         FAILURE: 'failure',
         ROLLBACK: 'rollback'
     };
 
-    /**
-     * HistoryManager - Penpot参考改善版
-     */
     class HistoryManager {
         constructor() {
-            // コアスタック
             this.stack = [];
             this.index = -1;
             this.isApplying = false;
             this.maxSize = 500;
             
-            // トランザクション管理
             this.transactionDepth = 0;
             this.transactionCommands = [];
             this.transactionName = null;
             
-            // エラー追跡
             this.lastError = null;
             this.errorCount = 0;
             
-            // 統計情報
             this.stats = {
                 totalCommands: 0,
                 undoCount: 0,
@@ -68,17 +54,11 @@
                 errorCount: 0
             };
             
-            // 後方互換性（既存コードが window.History._manager.isApplying を参照）
             this._manager = this;
-            
-            // EventBus参照
             this.eventBus = null;
             this._initEventBus();
         }
 
-        /**
-         * EventBus初期化（遅延ロード対応）
-         */
         _initEventBus() {
             if (window.TegakiEventBus) {
                 this.eventBus = window.TegakiEventBus;
@@ -89,9 +69,6 @@
             }
         }
 
-        /**
-         * コマンド検証（厳格化）
-         */
         _validateCommand(command) {
             if (!command) {
                 console.error('[History] Command is null or undefined');
@@ -113,7 +90,6 @@
                 return false;
             }
 
-            // メタデータ検証（警告のみ）
             if (!command.meta || typeof command.meta !== 'object') {
                 console.warn('[History] Command missing meta object:', command.name);
             }
@@ -121,9 +97,6 @@
             return true;
         }
 
-        /**
-         * コマンド実行ラッパー（エラーハンドリング統一）
-         */
         _executeCommand(command, operation, operationName) {
             try {
                 if (!command || typeof command[operation] !== 'function') {
@@ -153,9 +126,6 @@
             }
         }
 
-        /**
-         * トランザクション開始
-         */
         beginTransaction(name = 'transaction') {
             this.transactionDepth++;
             
@@ -165,9 +135,6 @@
             }
         }
 
-        /**
-         * トランザクション終了（コミット）
-         */
         endTransaction() {
             if (this.transactionDepth === 0) {
                 console.warn('[History] endTransaction called without beginTransaction');
@@ -177,7 +144,6 @@
             this.transactionDepth--;
 
             if (this.transactionDepth === 0 && this.transactionCommands.length > 0) {
-                // トランザクション内の全コマンドをグループ化
                 const composite = this.createComposite(
                     this.transactionCommands,
                     this.transactionName || 'transaction'
@@ -190,16 +156,12 @@
             }
         }
 
-        /**
-         * トランザクションロールバック
-         */
         rollbackTransaction() {
             if (this.transactionDepth === 0) {
                 console.warn('[History] rollbackTransaction called without active transaction');
                 return;
             }
 
-            // トランザクション内の全コマンドを逆順で undo
             const commands = [...this.transactionCommands].reverse();
             
             for (const cmd of commands) {
@@ -216,9 +178,6 @@
             this.stats.rollbackCount++;
         }
 
-        /**
-         * コマンド追加（内部実装）- デバッグ強化版
-         */
         _pushInternal(command) {
             if (this.isApplying) {
                 console.warn('[History] Cannot push command while applying');
@@ -234,39 +193,30 @@
 
                 console.log(`[History:Push] Before: index=${this.index}, stack=${this.stack.length}, cmd="${command.name}"`);
 
-                // 現在位置より後ろのスタックを削除（Redo破棄）
                 const discarded = this.stack.splice(this.index + 1);
                 if (discarded.length > 0) {
                     console.log(`[History:Push] Discarded ${discarded.length} redo commands`);
                 }
                 
-                //⚠️ 重要: コマンド実行前のインデックス保存
-                const prevIndex = this.index;
-                
-                // コマンド実行
                 const result = this._executeCommand(command, 'do', 'Push');
                 
                 if (result !== CommandResult.SUCCESS) {
-                    // 失敗時は破棄したスタックを復元
                     this.stack.push(...discarded);
                     console.error('[History:Push] Command execution failed, stack restored');
                     return false;
                 }
 
-                // スタックに追加
                 this.stack.push(command);
                 this.index++;
                 this.stats.totalCommands++;
 
                 console.log(`[History:Push] After: index=${this.index}, stack=${this.stack.length}`);
 
-                // スタックサイズ制限
                 if (this.stack.length > this.maxSize) {
                     const removed = this.stack.shift();
                     this.index--;
                     console.log(`[History:Push] Stack size limit reached, removed oldest command`);
                     
-                    // 削除されたコマンドのクリーンアップ
                     if (removed.cleanup && typeof removed.cleanup === 'function') {
                         try {
                             removed.cleanup();
@@ -288,11 +238,7 @@
             }
         }
 
-        /**
-         * コマンド追加（公開API）
-         */
         push(command) {
-            // トランザクション中はバッファに追加
             if (this.transactionDepth > 0) {
                 if (this._validateCommand(command)) {
                     this.transactionCommands.push(command);
@@ -304,8 +250,66 @@
         }
 
         /**
-         * Undo実行（改善版 + デバッグ強化）
+         * 🆕 Phase C-2.3: register()メソッド追加
+         * do()を実行せずにスタックに登録
+         * @param {Object} command - 登録するコマンド
+         * @returns {boolean} 成功/失敗
          */
+        register(command) {
+            if (this.isApplying) {
+                console.warn('[History:Register] Cannot register command while applying');
+                return false;
+            }
+
+            if (!this._validateCommand(command)) {
+                return false;
+            }
+
+            try {
+                this.isApplying = true;
+
+                console.log(`[History:Register] Before: index=${this.index}, stack=${this.stack.length}, cmd="${command.name}"`);
+
+                // 現在位置より後ろのスタックを削除（Redo破棄）
+                const discarded = this.stack.splice(this.index + 1);
+                if (discarded.length > 0) {
+                    console.log(`[History:Register] Discarded ${discarded.length} redo commands`);
+                }
+
+                // 🚨 重要: do()を実行せずにスタックに追加
+                this.stack.push(command);
+                this.index++;
+                this.stats.totalCommands++;
+
+                console.log(`[History:Register] After: index=${this.index}, stack=${this.stack.length} (do not executed)`);
+
+                // スタックサイズ制限
+                if (this.stack.length > this.maxSize) {
+                    const removed = this.stack.shift();
+                    this.index--;
+                    console.log(`[History:Register] Stack size limit reached, removed oldest command`);
+                    
+                    if (removed.cleanup && typeof removed.cleanup === 'function') {
+                        try {
+                            removed.cleanup();
+                        } catch (e) {
+                            console.warn('[History] Cleanup failed:', e);
+                        }
+                    }
+                }
+
+                this._notifyHistoryChanged();
+                return true;
+
+            } catch (error) {
+                console.error('[History:Register] Command registration failed:', error);
+                return false;
+
+            } finally {
+                this.isApplying = false;
+            }
+        }
+
         undo() {
             if (!this.canUndo() || this.isApplying) {
                 console.log('[History:Undo] Cannot undo:', { canUndo: this.canUndo(), isApplying: this.isApplying });
@@ -323,16 +327,13 @@
                     return false;
                 }
 
-                // Undo実行
                 const result = this._executeCommand(command, 'undo', 'Undo');
 
                 if (result !== CommandResult.SUCCESS) {
-                    // 失敗時はインデックスを戻さない
                     console.error('[History:Undo] Failed to undo command:', command.name);
                     return false;
                 }
 
-                // 成功時のみインデックス更新
                 this.index--;
                 this.stats.undoCount++;
                 
@@ -352,9 +353,6 @@
             }
         }
 
-        /**
-         * Redo実行（改善版）
-         */
         redo() {
             if (!this.canRedo() || this.isApplying) {
                 return false;
@@ -363,7 +361,6 @@
             try {
                 this.isApplying = true;
                 
-                // 次のコマンドを取得
                 const nextIndex = this.index + 1;
                 const command = this.stack[nextIndex];
 
@@ -372,7 +369,6 @@
                     return false;
                 }
 
-                // Redo実行
                 const result = this._executeCommand(command, 'do', 'Redo');
 
                 if (result !== CommandResult.SUCCESS) {
@@ -380,7 +376,6 @@
                     return false;
                 }
 
-                // 成功時のみインデックス更新
                 this.index = nextIndex;
                 this.stats.redoCount++;
                 this._notifyHistoryChanged();
@@ -396,25 +391,15 @@
             }
         }
 
-        /**
-         * Undo可能判定
-         */
         canUndo() {
             return this.index >= 0 && this.stack.length > 0;
         }
 
-        /**
-         * Redo可能判定
-         */
         canRedo() {
             return this.index < this.stack.length - 1;
         }
 
-        /**
-         * スタッククリア
-         */
         clear() {
-            // クリーンアップ実行
             for (const cmd of this.stack) {
                 if (cmd.cleanup && typeof cmd.cleanup === 'function') {
                     try {
@@ -434,16 +419,12 @@
             this._notifyHistoryChanged();
         }
 
-        /**
-         * コンポジットコマンド作成（改善版）
-         */
         createComposite(commands, name = 'composite') {
             if (!Array.isArray(commands) || commands.length === 0) {
                 console.error('[History] Invalid commands for composite:', commands);
                 return null;
             }
 
-            // 全コマンド検証
             for (const cmd of commands) {
                 if (!this._validateCommand(cmd)) {
                     console.error('[History] Invalid command in composite:', cmd);
@@ -462,7 +443,6 @@
                     }
                 },
                 undo: () => {
-                    // 逆順で undo
                     const reversed = [...commands].reverse();
                     for (const cmd of reversed) {
                         const result = this._executeCommand(cmd, 'undo', 'Composite-Undo');
@@ -493,9 +473,6 @@
             };
         }
 
-        /**
-         * EventBus通知
-         */
         _notifyHistoryChanged() {
             if (this.eventBus) {
                 this.eventBus.emit('history:changed', {
@@ -508,9 +485,6 @@
             }
         }
 
-        /**
-         * デバッグ情報出力（詳細版）
-         */
         debug() {
             console.group('[History] Debug Info');
             console.log('Stack Size:', this.stack.length);
@@ -534,9 +508,6 @@
             console.groupEnd();
         }
 
-        /**
-         * コンソールテスト: 連続Undo実行
-         */
         testUndo(count = 2) {
             console.group(`[History:Test] Running ${count} consecutive undos`);
             
@@ -556,15 +527,11 @@
             console.groupEnd();
         }
 
-        /**
-         * コンソールテスト: スタック整合性チェック
-         */
         testIntegrity() {
             console.group('[History:Test] Integrity Check');
             
             const issues = [];
             
-            // インデックス範囲
             if (this.index < -1) {
                 issues.push(`Index too low: ${this.index}`);
             }
@@ -572,7 +539,6 @@
                 issues.push(`Index out of bounds: ${this.index} >= ${this.stack.length}`);
             }
             
-            // コマンド検証
             this.stack.forEach((cmd, idx) => {
                 if (!cmd) {
                     issues.push(`Null command at [${idx}]`);
@@ -581,7 +547,6 @@
                 }
             });
             
-            // トランザクション状態
             if (this.transactionDepth < 0) {
                 issues.push(`Negative transaction depth: ${this.transactionDepth}`);
             }
@@ -596,18 +561,13 @@
             return issues.length === 0;
         }
 
-        /**
-         * スタック検証
-         */
         validate() {
             const issues = [];
 
-            // インデックス範囲チェック
             if (this.index < -1 || this.index >= this.stack.length) {
                 issues.push(`Invalid index: ${this.index} (stack size: ${this.stack.length})`);
             }
 
-            // 各コマンド検証
             this.stack.forEach((cmd, idx) => {
                 if (!this._validateCommand(cmd)) {
                     issues.push(`Invalid command at index ${idx}: ${cmd?.name || 'unknown'}`);
@@ -622,9 +582,6 @@
             return true;
         }
 
-        /**
-         * 統計情報取得
-         */
         getStats() {
             return {
                 ...this.stats,
@@ -638,16 +595,10 @@
             };
         }
 
-        /**
-         * 最後のコマンド取得
-         */
         getLastCommand() {
             return this.stack[this.index] || null;
         }
 
-        /**
-         * スタック全体取得（デバッグ用）
-         */
         getStack() {
             return this.stack.map((cmd, idx) => ({
                 index: idx,
@@ -657,9 +608,6 @@
             }));
         }
 
-        /**
-         * コマンドメタ詳細取得
-         */
         getCommandMetaDetails(index) {
             if (index < 0 || index >= this.stack.length) {
                 return null;
@@ -673,9 +621,6 @@
             };
         }
 
-        /**
-         * スタック容量設定
-         */
         setMaxSize(size) {
             if (typeof size !== 'number' || size < 1) {
                 console.error('[History] Invalid max size:', size);
@@ -684,7 +629,6 @@
 
             this.maxSize = size;
 
-            // 既存スタックがサイズ超過している場合は切り詰め
             while (this.stack.length > this.maxSize) {
                 const removed = this.stack.shift();
                 this.index--;
@@ -700,23 +644,11 @@
         }
     }
 
-    // グローバルインスタンス作成
     window.History = new HistoryManager();
-    
-    // 後方互換性（一部コードが window.historyManager を参照）
     window.historyManager = window.History;
 
-    console.log('✅ history.js Phase C-2 loaded (Penpot参考改善版 + デバッグ強化)');
-    console.log('   ✅ トランザクション機構追加');
-    console.log('   ✅ コマンド検証強化');
-    console.log('   ✅ エラー回復機構統一');
-    console.log('   ✅ スタック整合性保証');
-    console.log('   ✅ アンドゥ/リドゥ安定化');
-    console.log('   🔍 デバッグログ強化版');
-    console.log('\n📊 Console Test Commands:');
-    console.log('   History.debug() - スタック状態表示');
-    console.log('   History.testUndo(2) - 連続Undo実行テスト');
-    console.log('   History.testIntegrity() - 整合性チェック');
-    console.log('   History.getStack() - スタック全体取得');
+    console.log('✅ history.js Phase C-2.3 loaded');
+    console.log('   🆕 register()メソッド追加（do実行なし）');
+    console.log('   ✅ Phase C-2全機能継承');
 
 })();
