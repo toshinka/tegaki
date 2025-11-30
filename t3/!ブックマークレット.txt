@@ -1,21 +1,20 @@
-https://toshinka.github.io/tegaki/Phase3B/ToshinkaTegakiTool.html
-https://toshinka.github.io/tegaki/Phase4A1/ToshinkaTegakiTool.html
-
-
-https://toshinka.github.io/tegaki/log/v1-5/ToshinkaTegakiTool-v1-5rev10.html
 
 
 https://toshinka.github.io/tegaki/
 https://github.com/toshinka/tegaki/blob/main/
 @toshinka/tegaki/files/
 
-javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3start/t3start.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
+javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3/t3start.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
 
 
 javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3/mebuki-loader.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
 
 
-javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3start.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
+javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3/t3st.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
+
+
+javascript:(function(){if(!window.tegakiStart){var _0xabc=document['createElement']('script');_0xabc['charset']='UTF-8';_0xabc['src']=atob('aHR0cHM6Ly90b3NoaW5rYS5naXRodWIuaW8vdGVzdC90ZWdha2lfdGVzdF9wdWJsaWNfdXNlL3RlZ2FraS1sb2FkZXJfYW5pbWUuanM=');document['body']['appendChild'](_0xabc)}else window['tegakiStart']();})();
+
 
 
 はっちゃん
