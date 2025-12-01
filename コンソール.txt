@@ -1,0 +1,67 @@
+animation-controller.js:1  Failed to load resource: net::ERR_FILE_NOT_FOUND
+layer-panel.js:1  Failed to load resource: net::ERR_FILE_NOT_FOUND
+timeline-panel.js:1  Failed to load resource: net::ERR_FILE_NOT_FOUND
+ui-components.js:419 ✅ UIComponents initialized
+config.js:544 ✅ config.js Phase 7.5.1 loaded (Qキー対応版)
+config.js:545    ✅ POPUP_QUICK_ACCESS: Space → KeyQ に変更
+config.js:546    ⚙️ Spaceキーは将来のパン移動用に予約
+config.js:547    ✅ Phase 7.5全機能継承（流量高速補償）
+state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
+settings-manager.js:250 ✅ settings-manager.js v3.0 loaded (Phase 4: 流量設定統合版)
+history.js:650 ✅ history.js Phase C-2.3 loaded
+history.js:651    🆕 register()メソッド追加（do実行なし）
+history.js:652    ✅ Phase C-2全機能継承
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+konva-layer-manager.js:422 ✅ KonvaLayerManager loaded
+layer-folder-system.js:1 Uncaught SyntaxError: Invalid or unexpected token
+thumbnail-generator.js:1 Uncaught SyntaxError: Invalid or unexpected token
+raster-brush-engine.js:1 Uncaught SyntaxError: Invalid or unexpected token
+pressure-handler.js:180 ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
+pressure-handler.js:181    ✅ 最小筆圧サイズ: 1%-100%の範囲実装
+pressure-handler.js:182    ✅ 平滑化アルゴリズム修正
+pointer-handler.js:180 ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+brush-settings.js:313 ✅ brush-settings.js Phase B-6 loaded (ペン傾き設定対応版)
+brush-settings.js:314    ✅ tilt.sensitivity / affectsWidth / affectsRotation 追加
+brush-settings.js:315    ✅ setTiltSettings() / getTiltSettings() 実装
+brush-settings.js:316    ✅ Phase 3-D全機能継承
+fill-tool.js:334 ✅ fill-tool.js (Phase 1完全修正版) loaded
+frame-system.js:1 Uncaught SyntaxError: Invalid or unexpected token
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+clipboard-exporter.js:1 Uncaught SyntaxError: Invalid or unexpected token
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
+png-exporter.js:258    🔧 Blob生成の確実性向上
+settings-popup.js:680 ✅ settings-popup.js v3.0 loaded (Phase 4: 流量UI統合版)
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+keyboard-handler.js:642 ✅ keyboard-handler.js Phase C-2.2 loaded
+keyboard-handler.js:643    🔧 二重登録完全修正: historyManager.register() 使用
+core-runtime.js:378 ✅ CoreRuntime loaded
+core-engine.js:32 Uncaught Error: system/layer-system.js required
+index.html:99 🚀 Tegaki Anime v2.0 起動中...
+index.html:100 📦 Dependencies: Object
+core-runtime.js:68 🎬 [CoreRuntime] 初期化開始...
+core-runtime.js:108   📄 DOM構築中...
+core-runtime.js:140   ✅ DOM構築完了
+core-runtime.js:147   🎨 Konva.Stage初期化中...
+core-runtime.js:98 ❌ [CoreRuntime] 初期化失敗: Error: Konva error: You may only add layers to the stage.
+    at Object.throw (konva.min.js:12:10932)
+    at Tt._validateAdd (konva.min.js:12:57869)
+    at Tt.add (konva.min.js:12:51608)
+    at Tt.add (konva.min.js:12:60365)
+    at initializeKonvaStage (core-runtime.js:187:16)
+    at Object.initialize (core-runtime.js:74:13)
+    at async index.html:120:21
+initialize @ core-runtime.js:98
+index.html:127 ❌ 初期化失敗: Error: Konva error: You may only add layers to the stage.
+    at Object.throw (konva.min.js:12:10932)
+    at Tt._validateAdd (konva.min.js:12:57869)
+    at Tt.add (konva.min.js:12:51608)
+    at Tt.add (konva.min.js:12:60365)
+    at initializeKonvaStage (core-runtime.js:187:16)
+    at Object.initialize (core-runtime.js:74:13)
+    at async index.html:120:21
+（匿名） @ index.html:127
