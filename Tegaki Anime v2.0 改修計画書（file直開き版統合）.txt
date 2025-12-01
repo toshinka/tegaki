@@ -1,0 +1,1543 @@
+Tegaki Anime v2.0 改修計画書（file://直開き版統合）
+📋 改修概要
+目的
+
+ベクターペンからWebGL2ラスターペンへの移行
+Konva.js導入によるレイヤー管理のスリム化
+ファイルサイズの適正化（1ファイル1000行目安）
+file://直開き版のみ対応（Vite版廃止）
+共通UIコンポーネントの統一化
+
+バージョン情報
+
+旧: webgl2_rev30 (ベクター実装)
+新: v2.0 (ラスター実装 + Konva統合)
+
+対応掲示板
+
+nijiurachan.net (虹裏ちゃん)
+レス欄クリップボード転写対応
+ブックマークレット起動 → Z-index上層表示 → プレビュー生成 → クリップボードコピー
+
+
+🎯 アーキテクチャ変更
+変更前
+PixiJS v8 (UI + 描画) + 自作レイヤーシステム + PerfectFreehand
+変更後
+Konva.js (レイヤー管理 + UI) + PixiJS v8 (WebGL2描画のみ) + file://直開き
+
+📦 依存ライブラリ
+開発中: CDN経由読み込み
+<!-- Konva.js -->
+<script src="https://cdn.jsdelivr.net/npm/konva@9/konva.min.js"></script>
+
+<!-- PixiJS v8 -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+
+<!-- UPNG (APNG/PNG圧縮) -->
+<script src="https://cdn.jsdelivr.net/npm/upng-js@2/UPNG.js"></script>
+
+<!-- GSAP (アニメーション) -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+```
+
+### 最終ビルド: libs/フォルダに格納
+```
+libs/
+├── konva.min.js          # npm install konva@9 → node_modules/konva/konva.min.js
+├── pixi.min.js           # npm install pixi.js@8 → node_modules/pixi.js/dist/pixi.min.js
+├── upng.min.js           # npm install upng-js@2 → node_modules/upng-js/UPNG.js
+└── gsap.min.js           # npm install gsap@3 → node_modules/gsap/dist/gsap.min.js
+
+ビルド手順
+# 1. npmで依存取得
+npm install konva@9 pixi.js@8 upng-js@2 gsap@3
+
+# 2. libs/にコピー
+cp node_modules/konva/konva.min.js libs/
+cp node_modules/pixi.js/dist/pixi.min.js libs/
+cp node_modules/upng-js/UPNG.js libs/upng.min.js
+cp node_modules/gsap/dist/gsap.min.js libs/
+
+# 3. 全JSファイルを結合
+cat libs/*.js src/**/*.js > dist/tegaki_anime_all.js
+
+# 4. index.htmlに統合
+# <script src="dist/tegaki_anime_all.js"></script>
+```
+
+### 削除
+- `perfect-freehand` - ベクター実装不要
+- `vite` - ビルドシステム不要
+- `terser` - 手動圧縮または不使用
+- 自作座標変換システム(coordinate-system.js等) - Konva内蔵機能で代替
+
+---
+
+## 📁 ファイル構成（file://直開き版統一）
+```
+tegaki_anime_v2/
+├── index.html                      # エントリーポイント
+├── styles/
+│   └── main.css                    # 全スタイル統合
+│
+├── libs/                           # 外部ライブラリ（最終ビルド時）
+│   ├── konva.min.js
+│   ├── pixi.min.js
+│   ├── upng.min.js
+│   └── gsap.min.js
+│
+├── assets/
+│   └── ui-components.js            # 【新規】共通UIコンポーネント・SVG統合
+│       # スライダー・ボタン・スイッチ・SVGアイコン・色定数
+│
+├── config.js                       # 300行 設定統合（既存流用）
+│
+├── system/
+│   ├── event-bus.js                # 150行（既存流用）
+│   ├── state-manager.js            # 200行（既存流用）
+│   ├── settings-manager.js         # 250行（既存流用）
+│   ├── history.js                  # 400行（既存流用）
+│   ├── camera-system.js            # 300行【改修】Konva統合
+│   └── popup-manager.js            # 200行（既存流用）
+│
+├── layers/
+│   ├── konva-layer-manager.js      # 800行【新規】Konvaレイヤー統合
+│   ├── layer-folder-system.js      # 600行【新規】フォルダ階層管理
+│   └── thumbnail-generator.js      # 400行【新規】Konvaベースサムネイル
+│
+├── drawing/
+│   ├── raster-brush-engine.js      # 900行【新規】WebGL2ラスター
+│   │   # 分割可能: part1-core.js(500行), part2-shader.js(400行)
+│   ├── pressure-handler.js         # 200行（既存流用）
+│   ├── pointer-handler.js          # 300行（既存流用）
+│   ├── brush-settings.js           # 400行（既存流用）
+│   └── fill-tool.js                # 300行（既存流用）
+│
+├── timeline/
+│   ├── frame-system.js             # 700行【改修】Konva統合
+│   ├── animation-controller.js     # 500行（既存流用）
+│   └── virtual-album.js            # 400行（既存流用）
+│
+├── export/
+│   ├── export-manager.js           # 300行（既存流用）
+│   ├── clipboard-exporter.js       # 200行【新規】
+│   ├── apng-exporter.js            # 600行（既存流用）
+│   └── png-exporter.js             # 200行（既存流用）
+│
+├── ui/
+│   ├── layer-panel.js              # 600行【改修】Konva連携
+│   ├── timeline-panel.js           # 800行【改修】Konva統合
+│   ├── settings-popup.js           # 500行（既存流用・色継承）
+│   ├── album-popup.js              # 400行（既存流用・色継承）
+│   └── keyboard-handler.js         # 300行（既存流用）
+│
+├── core-runtime.js                 # 200行 初期化処理
+└── core-engine.js                  # 300行 メインループ
+
+
+🎨 共通UIコンポーネント統合（新規提案）
+assets/ui-components.js の責務
+
+/**
+ * ============================================================================
+ * ファイル名: ui-components.js
+ * 責務: 共通UIコンポーネント・SVGアイコン・色定数の統一管理
+ * 依存: なし（完全独立）
+ * 公開API:
+ *   - UI_COLORS: 色定数オブジェクト
+ *   - SVG_ICONS: 全SVGアイコンマップ
+ *   - createSlider(options): スライダーHTML生成
+ *   - createButton(options): ボタンHTML生成
+ *   - createSwitch(options): スイッチHTML生成
+ *   - createDeleteButton(options): 削除ボタン生成
+ * グローバル登録: window.UIComponents
+ * ============================================================================
+ */
+
+'use strict';
+
+window.UIComponents = (() => {
+  // ========================================
+  // 色定数（futabaカラー統一）
+  // ========================================
+  const UI_COLORS = {
+    maroon: '#800000',           // アクティブペンカラー
+    lightMaroon: '#aa5a56',      // ホバー状態
+    medium: '#cf9c97',           // ボーダー・非アクティブ
+    lightMedium: '#e9c2ba',      // パネル背景
+    cream: '#f0e0d6',            // キャンバス背景
+    background: '#ffffee',       // ページ背景
+    activeSlider: '#800000',     // スライダーアクティブ
+    inactiveSlider: '#cf9c97',   // スライダー非アクティブ
+    dangerRed: '#d32f2f'         // 削除ボタン
+  };
+
+  // ========================================
+  // SVGアイコン（lucide-static互換）
+  // ========================================
+  const SVG_ICONS = {
+    sprout: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M7 20h10"/>
+      <path d="M10 20c5.5-2.5.8-6.4 3-10"/>
+      <path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/>
+      <path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>
+    </svg>`,
+    
+    layers: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+      <polyline points="2 17 12 22 22 17"/>
+      <polyline points="2 12 12 17 22 12"/>
+    </svg>`,
+    
+    folder: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+    </svg>`,
+    
+    folderOpen: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
+    </svg>`,
+    
+    trash: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 6h18"/>
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+    </svg>`,
+    
+    eye: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>`,
+    
+    eyeOff: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+      <line x1="2" x2="22" y1="2" y2="22"/>
+    </svg>`,
+    
+    lock: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </svg>`,
+    
+    unlock: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+      <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+    </svg>`,
+    
+    play: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polygon points="5 3 19 12 5 21 5 3"/>
+    </svg>`,
+    
+    pause: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect width="4" height="16" x="6" y="4"/>
+      <rect width="4" height="16" x="14" y="4"/>
+    </svg>`,
+    
+    settings: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M12 1v6m0 6v6"/>
+      <path d="m15.14 2.75 2.12 3.68M4.74 14.57l2.12 3.68M6.86 2.75 4.74 6.43m14.52 8.14-2.12 3.68M23 12h-6M7 12H1"/>
+    </svg>`,
+    
+    download: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" x2="12" y1="15" y2="3"/>
+    </svg>`,
+    
+    plus: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="12" x2="12" y1="5" y2="19"/>
+      <line x1="5" x2="19" y1="12" y2="12"/>
+    </svg>`,
+    
+    minus: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="5" x2="19" y1="12" y2="12"/>
+    </svg>`,
+    
+    x: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="18" x2="6" y1="6" y2="18"/>
+      <line x1="6" x2="18" y1="6" y2="18"/>
+    </svg>`
+  };
+
+  // ========================================
+  // スライダー生成
+  // ========================================
+  function createSlider(options = {}) {
+    const {
+      min = 0,
+      max = 100,
+      value = 50,
+      step = 1,
+      label = '',
+      onChange = () => {},
+      id = `slider-${Date.now()}`
+    } = options;
+
+    return `
+      <div class="ui-slider-container">
+        ${label ? `<label for="${id}" style="color: ${UI_COLORS.maroon};">${label}</label>` : ''}
+        <input 
+          type="range" 
+          id="${id}"
+          class="ui-slider"
+          min="${min}" 
+          max="${max}" 
+          value="${value}" 
+          step="${step}"
+          style="
+            --slider-active: ${UI_COLORS.activeSlider};
+            --slider-inactive: ${UI_COLORS.inactiveSlider};
+          "
+        />
+        <span class="ui-slider-value" style="color: ${UI_COLORS.maroon};">${value}</span>
+      </div>
+    `;
+  }
+
+  // ========================================
+  // ボタン生成
+  // ========================================
+  function createButton(options = {}) {
+    const {
+      text = 'Button',
+      icon = null,
+      onClick = () => {},
+      variant = 'primary', // primary, secondary, danger
+      id = `btn-${Date.now()}`
+    } = options;
+
+    const colors = {
+      primary: UI_COLORS.maroon,
+      secondary: UI_COLORS.medium,
+      danger: UI_COLORS.dangerRed
+    };
+
+    return `
+      <button 
+        id="${id}"
+        class="ui-button ui-button-${variant}"
+        style="
+          background-color: ${colors[variant]};
+          border-color: ${colors[variant]};
+          color: #fff;
+        "
+      >
+        ${icon ? SVG_ICONS[icon] || '' : ''}
+        <span>${text}</span>
+      </button>
+    `;
+  }
+
+  // ========================================
+  // スイッチ生成
+  // ========================================
+  function createSwitch(options = {}) {
+    const {
+      label = '',
+      checked = false,
+      onChange = () => {},
+      id = `switch-${Date.now()}`
+    } = options;
+
+    return `
+      <div class="ui-switch-container">
+        ${label ? `<label for="${id}" style="color: ${UI_COLORS.maroon};">${label}</label>` : ''}
+        <label class="ui-switch">
+          <input type="checkbox" id="${id}" ${checked ? 'checked' : ''} />
+          <span class="ui-switch-slider" style="
+            --switch-active: ${UI_COLORS.activeSlider};
+            --switch-inactive: ${UI_COLORS.inactiveSlider};
+          "></span>
+        </label>
+      </div>
+    `;
+  }
+
+  // ========================================
+  // 削除ボタン生成
+  // ========================================
+  function createDeleteButton(options = {}) {
+    const {
+      onClick = () => {},
+      id = `del-btn-${Date.now()}`
+    } = options;
+
+    return `
+      <button 
+        id="${id}"
+        class="ui-delete-button"
+        style="
+          background-color: ${UI_COLORS.dangerRed};
+          color: #fff;
+        "
+        title="削除"
+      >
+        ${SVG_ICONS.trash}
+      </button>
+    `;
+  }
+
+  // 公開API
+  return {
+    UI_COLORS,
+    SVG_ICONS,
+    createSlider,
+    createButton,
+    createSwitch,
+    createDeleteButton
+  };
+})();
+
+
+CSS統合（main.css）
+
+/* ========================================
+   共通UIコンポーネントスタイル
+   ======================================== */
+
+.ui-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.ui-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--slider-inactive);
+  outline: none;
+}
+
+.ui-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--slider-active);
+  cursor: pointer;
+}
+
+.ui-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--slider-active);
+  cursor: pointer;
+  border: none;
+}
+
+.ui-slider-value {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+}
+
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 2px solid;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: opacity 0.2s;
+}
+
+.ui-button:hover {
+  opacity: 0.8;
+}
+
+.ui-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ui-switch-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.ui-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.ui-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ui-switch-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--switch-inactive);
+  border-radius: 24px;
+  transition: 0.3s;
+}
+
+.ui-switch-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.ui-switch input:checked + .ui-switch-slider {
+  background-color: var(--switch-active);
+}
+
+.ui-switch input:checked + .ui-switch-slider:before {
+  transform: translateX(20px);
+}
+
+.ui-delete-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.ui-delete-button:hover {
+  opacity: 0.8;
+}
+
+.ui-delete-button svg {
+  width: 16px;
+  height: 16px;
+}
+```
+
+---
+
+## 🔄 ファイル別 改修方針
+
+### 【既存流用】変更なし（11ファイル）
+```
+✅ system/event-bus.js           - イベントバス
+✅ system/state-manager.js       - 状態管理
+✅ system/settings-manager.js    - 設定管理
+✅ system/history.js             - Undo/Redo
+✅ system/popup-manager.js       - ポップアップ制御
+✅ drawing/pressure-handler.js   - 筆圧処理
+✅ drawing/pointer-handler.js    - ポインター処理
+✅ drawing/brush-settings.js     - ブラシ設定
+✅ drawing/fill-tool.js          - 塗りつぶし
+✅ timeline/animation-controller.js - アニメーション制御
+✅ timeline/virtual-album.js     - バーチャルアルバム
+```
+
+### 【既存流用】色・UI継承（3ファイル）
+```
+🎨 config.js                     - 色定数・設定値継承
+🎨 ui/settings-popup.js          - 設定UI・デザイン継承
+🎨 ui/album-popup.js             - アルバムUI・デザイン継承
+```
+
+### 【改修】Konva統合改修（4ファイル）
+```
+🔧 system/camera-system.js       - Konva.Stage座標系に統合
+🔧 timeline/frame-system.js      - Konvaレイヤーとフレーム連携
+🔧 ui/layer-panel.js             - Konvaレイヤー表示・UIComponents使用
+🔧 ui/timeline-panel.js          - Konvaサムネイル統合・UIComponents使用
+```
+
+### 【新規作成】（5ファイル）
+```
+🆕 assets/ui-components.js          - 共通UIコンポーネント・SVG・色定数
+🆕 layers/konva-layer-manager.js    - Konvaレイヤー管理コア
+🆕 layers/layer-folder-system.js    - フォルダ階層実装
+🆕 layers/thumbnail-generator.js    - Konvaベースサムネイル
+🆕 drawing/raster-brush-engine.js   - WebGL2ラスター描画
+```
+
+### 【削除】不要ファイル（20+ファイル）
+```
+❌ coordinate-system.js              - Konvaで代替
+❌ system/layer-system.js            - Konva統合により削除
+❌ system/layer-transform.js         - Konva統合により削除
+❌ system/drawing/stroke-recorder.js - ベクター不要
+❌ system/drawing/stroke-renderer.js - ベクター不要
+❌ system/drawing/brush-core.js      - 新エンジンで統合
+❌ system/drawing/webgl2/* (全シェーダー) - ベクター用SDF不要
+❌ system/drawing/sdf-brush-shader.js - ベクター不要
+❌ system/drawing/stroke-transformer.js - ベクター不要
+❌ ui/layer-panel-renderer.js        - Konva統合により削除
+❌ ui/timeline-thumbnail-utils.js    - Konva統合により削除
+❌ ui/dom-builder.js                 - UIComponents統合により削除
+❌ ui/slider-utils.js                - UIComponents統合により削除
+
+
+📐 ファイル分割ルール
+大型ファイルの分割方法
+
+// ========================================
+// Part 1: Core Logic (500行)
+// ========================================
+class RasterBrushEngine {
+  constructor() { /* ... */ }
+  initWebGL() { /* ... */ }
+}
+
+// ========================================
+// Part 2: Shader Code (400行)
+// このコメントの下に Part 2 をコピペしてください
+// ========================================
+const VERTEX_SHADER = `#version 300 es
+  // シェーダーコード
+`;
+const FRAGMENT_SHADER = `#version 300 es
+  // シェーダーコード
+`;
+
+// ========================================
+// Part 2 ここまで
+// ========================================
+
+
+分割ファイルの結合規則
+
+
+1. 各Partは独立してコピペ可能
+2. コメント区切りで視覚的に分離
+3. 依存関係はPart 1 → Part 2の順で明記
+4. 各Part終了時に「========== Part N ここまで ==========」を記載
+5. 1000行を超える場合は必ず分割指示を出す
+
+
+📝 ファイルヘッダー規約
+必須ヘッダーフォーマット
+
+/**
+ * ============================================================================
+ * ファイル名: konva-layer-manager.js
+ * 責務: Konva.jsベースのレイヤー階層管理
+ * 依存: 
+ *   - konva (外部ライブラリ - libs/konva.min.js)
+ *   - event-bus.js (EventBus)
+ *   - state-manager.js (StateManager)
+ *   - ui-components.js (UIComponents - 色定数・SVG)
+ * 親依存:
+ *   - frame-system.js → このファイルを参照
+ *   - layer-panel.js → このファイルを参照
+ * 子依存:
+ *   - このファイルは event-bus.js に依存
+ *   - このファイルは state-manager.js に依存
+ * 公開API:
+ *   - KonvaLayerManager.createLayer(name, options)
+ *   - KonvaLayerManager.deleteLayer(layerId)
+ *   - KonvaLayerManager.moveLayer(layerId, newIndex)
+ *   - KonvaLayerManager.createFolder(name)
+ * イベント発火:
+ *   - 'layer:created' { layerId, name }
+ *   - 'layer:deleted' { layerId }
+ *   - 'layer:moved' { layerId, oldIndex, newIndex }
+ * イベント受信:
+ *   - 'drawing:stroke-complete' → サムネイル更新
+ *   - 'frame:changed' → レイヤー可視性更新
+ * グローバル登録: window.konvaLayerManager
+ * 実装状態: 🆕新規 / 🔧改修 / ✅完了
+ * ============================================================================
+ */
+
+'use strict';
+
+// グローバル依存確認
+if (!window.Konva) {
+  throw new Error('Konva.js が読み込まれていません');
+}
+if (!window.EventBus) {
+  throw new Error('EventBus が初期化されていません');
+}
+if (!window.StateManager) {
+  throw new Error('StateManager が初期化されていません');
+}
+if (!window.UIComponents) {
+  throw new Error('UIComponents が読み込まれていません');
+}
+
+// クラス定義開始...
+```
+
+### ヘッダー記載必須項目
+```
+1. ファイル名
+2. 責務（単一責務原則）
+3. 依存ファイル/ライブラリ（外部・内部明記）
+4. 親依存（このファイルを参照する上位ファイル）
+5. 子依存（このファイルが参照する下位ファイル）
+6. 公開API一覧
+7. 発火するイベント
+8. 受信するイベント
+9. グローバル登録名（ある場合）
+10. 実装状態（🆕新規 / 🔧改修 / ✅完了）
+```
+
+---
+
+## 🛠️ ガイドライン（file://直開き版対応）
+
+### 座標変換パイプライン
+```
+PointerEvent.clientX/Y
+ → Konva.Stage.getPointerPosition() [DPI補正込み]
+ → World座標確定
+ → レイヤーローカル座標: layer.getRelativePointerPosition()
+ → PixiJS WebGL2描画
+```
+
+### レイヤー管理
+```
+Konva.Stage (ルート)
+ ├─ BackgroundLayer (checker背景)
+ ├─ DrawingGroup (Konva.Group = フォルダ機能)
+ │   ├─ Layer1 (Konva.Layer)
+ │   │   └─ Image (Pixi RenderTexture転送)
+ │   └─ Folder1 (Konva.Group)
+ │       ├─ Layer2
+ │       └─ Layer3
+ └─ UILayer (選択枠・カーソル等)
+```
+
+### 描画フロー
+```
+1. PointerEvent取得（WebGL2 canvas）
+2. Konva座標変換（stage.getPointerPosition()）
+3. PixiJS WebGL2でラスター描画
+4. Pixi.RenderTextureをKonva.Imageに転送
+5. Konva.Layer.batchDraw()で描画更新
+```
+
+### タイムラインとフレームの関係
+```
+Frame (上位概念 - 継承)
+ ├─ duration: 100ms
+ ├─ layers: [
+ │   { konvaLayerId: 'layer-1', visible: true },
+ │   { konvaLayerId: 'layer-2', visible: false }
+ │ ]
+ └─ thumbnail: DataURL (Konvaベース生成)
+
+Konva.Layer (下位実装)
+ ├─ id: 'layer-1'
+ ├─ name: 'レイヤー1'
+ ├─ visible: true/false (フレームで制御)
+ └─ children: [Konva.Image(Pixi RenderTexture)]
+```
+
+### 命名規則
+```
+- レイヤー関連: konvaLayer, konvaStage, konvaGroup
+- Pixi関連: pixiApp, pixiRenderer, pixiTexture
+- イベント: component:action形式
+  例: layer:created, drawing:complete, frame:changed
+- メソッド: createLayer, deleteLayer, updateLayer, getLayer
+  （動詞始まり・CRUD統一）
+- UI要素: ui-slider, ui-button, ui-switch
+  （ui-プレフィックス統一）
+```
+
+### 禁止事項
+```
+❌ 二重座標変換（Konva/Pixi両方で変換）
+❌ グローバル変数の乱立（window.XXX統一管理）
+❌ Canvas2D使用（デバッグ以外）
+❌ 1ファイル1000行超え（必ず分割）
+❌ ヘッダーコメント省略
+❌ 親子依存関係の未記載
+❌ UIコンポーネントの個別実装（UIComponents使用必須）
+❌ 色定数のハードコード（UIComponents.UI_COLORS使用）
+❌ SVGの直接埋め込み（UIComponents.SVG_ICONS使用）
+❌ import/export構文（file://非対応）
+❌ ES Modules（全てグローバルスコープで実装）
+```
+
+### エラー処理
+```
+✅ try-catchで明示的にキャッチ
+✅ EventBus経由でエラー通知（'error:occurred'）
+✅ コンソールエラー表示（開発用）
+✅ ユーザー通知（本番用・ポップアップ）
+❌ フォールバック実装（二重実装の温床）
+❌ エラー握りつぶし
+```
+
+### DRY/SOLID原則
+```
+✅ 単一責務: 1ファイル1責務
+✅ DRY: 共通処理はUIComponentsに統合
+✅ 疎結合: EventBus経由で通信
+✅ 依存性注入: グローバルオブジェクト参照
+❌ 二重実装: 同じ機能を複数ファイルに書かない
+❌ 循環依存: A→B→A の参照禁止
+```
+
+### コンソールログ管理
+```
+✅ 開発時のみ使用
+✅ 重要なイベント発火時のみ記録
+❌ pointermove等の高頻度イベントでのログ
+❌ 実装完了後の冗長ログ
+❌ デバッグ用途以外のconsole.log
+
+推奨: デバッグコマンド経由
+window.debugLayer = (layerId) => {
+  console.log(window.konvaLayerManager.getLayer(layerId));
+}
+
+
+
+🔧 Konva統合仕様
+レイヤー構造（詳細）
+
+
+// Konva.Stage初期化
+const stage = new Konva.Stage({
+  container: 'canvas-container',
+  width: 1920,
+  height: 1080
+});
+
+// 背景レイヤー（checker pattern）
+const bgLayer = new Konva.Layer({ id: 'bg-layer' });
+const checker = new Konva.Rect({
+  width: stage.width(),
+  height: stage.height(),
+  fillPatternImage: checkerImage,
+  fillPatternRepeat: 'repeat'
+});
+bgLayer.add(checker);
+stage.add(bgLayer);
+
+// 描画グループ（フォルダ機能）
+const drawingGroup = new Konva.Group({
+  id: 'drawing-group',
+  draggable: false
+});
+stage.add(drawingGroup);
+
+// レイヤー作成
+const layer1 = new Konva.Layer({
+  id: 'layer-1',
+  name: 'レイヤー1'
+});
+drawingGroup.add(layer1);
+
+// Pixi RenderTexture転送
+const pixiImage = new Konva.Image({
+  image: pixiRenderTexture.baseTexture.resource.source,
+  x: 0,
+  y: 0
+});
+layer1.add(pixiImage);
+
+// UIレイヤー（選択枠等）
+const uiLayer = new Konva.Layer({ id: 'ui-layer' });
+stage.add(uiLayer);
+
+
+サムネイル生成
+
+// Konva.Layer.toDataURL()を使用
+const thumbnail = layer.toDataURL({
+  mimeType: 'image/png',
+  quality: 0.8,
+  pixelRatio: 0.25, // 1/4サイズ
+  x: 0,
+  y: 0,
+  width: layer.width(),
+  height: layer.height()
+});
+
+// タイムラインに登録
+window.frameSystem.updateThumbnail(frameId, layerId, thumbnail);
+
+
+
+フォルダ実装
+
+// Konva.Groupでフォルダを表現
+const folder = new Konva.Group({
+  id: 'folder-001',
+  name: 'キャラクター',
+  draggable: false,
+  // カスタムプロパティ
+  _isFolder: true,
+  _expanded: true
+});
+
+// レイヤーを追加
+folder.add(layer1);
+folder.add(layer2);
+
+// フォルダを親グループに追加
+drawingGroup.add(folder);
+
+// フォルダ展開/折りたたみ
+folder._expanded = !folder._expanded;
+window.EventBus.emit('folder:toggled', { folderId: folder.id(), expanded: folder._expanded });
+
+
+レイヤー可視性制御
+
+
+// フレーム切り替え時
+function setFrame(frameId) {
+  const frame = window.frameSystem.getFrame(frameId);
+  
+  frame.layers.forEach(layerState => {
+    const konvaLayer = window.konvaLayerManager.getLayer(layerState.konvaLayerId);
+    if (konvaLayer) {
+      konvaLayer.visible(layerState.visible);
+    }
+  });
+  
+  window.konvaLayerManager.stage.batchDraw();
+}
+```
+
+---
+
+## 🎨 WebGL2ラスターペン仕様
+
+### 描画フロー（詳細）
+```
+1. PointerEvent → Konva.Stage.getPointerPosition()
+   座標: { x: 500, y: 300 } (Stage座標)
+
+2. レイヤーローカル座標取得
+   const localPos = layer.getRelativePointerPosition();
+   座標: { x: 450, y: 250 } (Layer座標)
+
+3. PixiJS WebGL2描画
+   const graphics = new PIXI.Graphics();
+   graphics.beginFill(color, opacity);
+   graphics.drawCircle(localPos.x, localPos.y, brushSize);
+   graphics.endFill();
+   pixiRenderer.render(graphics, { renderTexture });
+
+4. RenderTexture → Konva.Image転送
+   konvaImage.image(renderTexture.baseTexture.resource.source);
+
+5. Konva.Layer更新
+   layer.batchDraw();
+
+
+ブラシパラメータ
+
+
+const brushSettings = {
+  size: 10,              // サイズ（px）
+  opacity: 1.0,          // 不透明度 0.0-1.0
+  flow: 0.5,             // 流量（連続描画時の濃さ）
+  hardness: 0.8,         // 硬さ（0=エアブラシ, 1=ハードエッジ）
+  spacing: 0.1,          // スタンプ間隔（サイズの10%）
+  pressureCurve: 'linear', // 筆圧カーブ（linear, ease-in, ease-out）
+  color: '#800000',      // 色（UIComponents.UI_COLORS.maroon）
+  blendMode: 'normal'    // ブレンドモード（normal, multiply, screen等）
+};
+```
+
+### シェーダー不要の理由
+```
+理由: Pixi.Graphics のビルトイン機能で十分
+
+利用機能:
+- beginFill(color, alpha) で色・透明度指定
+- drawCircle(x, y, radius) で円描画
+- endFill() で自動三角形化
+- blendMode = PIXI.BLEND_MODES.MULTIPLY でブレンド
+
+ラスターペンに必要な機能:
+✅ 円形スタンプ描画 → drawCircle()
+✅ 不透明度制御 → alpha パラメータ
+✅ ブレンドモード → blendMode プロパティ
+✅ アンチエイリアス → WebGL2標準機能
+
+不要な機能:
+❌ SDF（Signed Distance Field）
+❌ MSDF（Multi-channel SDF）
+❌ カスタムシェーダー
+❌ GPU Compute
+
+
+📊 タイムライン継承仕様
+フレーム構造（継承）
+
+
+/**
+ * フレーム = タイムライン上の1コマ
+ * レイヤーの可視性・順序を保持
+ */
+class Frame {
+  constructor(id, duration = 100) {
+    this.id = id;                    // 'frame-001'
+    this.duration = duration;        // ms
+    this.layers = [];                // レイヤー状態配列
+    this.thumbnail = null;           // DataURL (Konvaベース生成)
+  }
+
+  addLayer(konvaLayerId, visible = true) {
+    this.layers.push({
+      konvaLayerId,
+      visible,
+      opacity: 1.0,
+      blendMode: 'normal'
+    });
+  }
+
+  removeLayer(konvaLayerId) {
+    this.layers = this.layers.filter(l => l.konvaLayerId !== konvaLayerId);
+  }
+
+  setLayerVisible(konvaLayerId, visible) {
+    const layer = this.layers.find(l => l.konvaLayerId === konvaLayerId);
+    if (layer) {
+      layer.visible = visible;
+    }
+  }
+}
+
+Konva統合改修点
+
+// frame-system.js 改修例
+
+class FrameSystem {
+  constructor() {
+    this.frames = new Map();         // frameId → Frame
+    this.currentFrameId = null;
+    this.eventBus = window.EventBus;
+    this.konvaLayerManager = window.konvaLayerManager;
+  }
+
+  /**
+   * フレーム切り替え
+   * Konvaレイヤーの可視性を更新
+   */
+  setFrame(frameId) {
+    const frame = this.frames.get(frameId);
+    if (!frame) {
+      throw new Error(`Frame not found: ${frameId}`);
+    }
+
+    // 全レイヤーを非表示化
+    this.konvaLayerManager.getAllLayers().forEach(layer => {
+      layer.visible(false);
+    });
+
+    // フレーム内レイヤーを表示
+    frame.layers.forEach(layerState => {
+      const konvaLayer = this.konvaLayerManager.getLayer(layerState.konvaLayerId);
+      if (konvaLayer) {
+        konvaLayer.visible(layerState.visible);
+        konvaLayer.opacity(layerState.opacity);
+        // blendMode設定（Konva v9対応）
+        konvaLayer.blendMode(layerState.blendMode);
+      }
+    });
+
+    this.currentFrameId = frameId;
+    this.konvaLayerManager.stage.batchDraw();
+    
+    this.eventBus.emit('frame:changed', { frameId });
+  }
+
+  /**
+   * サムネイル生成（Konvaベース）
+   */
+  generateThumbnail(frameId) {
+    const frame = this.frames.get(frameId);
+    if (!frame) return null;
+
+    // 一時レイヤーでフレーム状態を再現
+    const tempLayer = new Konva.Layer();
+    frame.layers.forEach(layerState => {
+      if (!layerState.visible) return;
+      
+      const srcLayer = this.konvaLayerManager.getLayer(layerState.konvaLayerId);
+      if (srcLayer) {
+        const cloned = srcLayer.clone();
+        tempLayer.add(cloned);
+      }
+    });
+
+    // サムネイル生成
+    const thumbnail = tempLayer.toDataURL({
+      mimeType: 'image/png',
+      quality: 0.8,
+      pixelRatio: 0.25
+    });
+
+    tempLayer.destroy();
+    frame.thumbnail = thumbnail;
+    
+    return thumbnail;
+  }
+}
+
+// グローバル登録
+window.frameSystem = new FrameSystem();
+
+
+🎨 UI色継承
+既存カラーパレット（UIComponents統合）
+
+🚨デザインを見て配色を変える可能性が有るため、容易に変更できる作りとしておく事。
+// assets/ui-components.js 内で定義
+const UI_COLORS = {
+  maroon: '#800000',           // アクティブペンカラー（デフォルト）
+  lightMaroon: '#aa5a56',      // ホバー状態
+  medium: '#cf9c97',           // ボーダー・非アクティブ
+  lightMedium: '#e9c2ba',      // パネル背景
+  cream: '#f0e0d6',            // キャンバス背景（レイヤー0デフォルト）
+  background: '#ffffee',       // ページ背景
+  activeSlider: '#800000',     // スライダーアクティブ
+  inactiveSlider: '#cf9c97',   // スライダー非アクティブ
+  dangerRed: '#d32f2f'         // 削除ボタン
+};
+
+使用例
+
+// layer-panel.js での使用
+const deleteButton = window.UIComponents.createDeleteButton({
+  onClick: () => deleteLayer(layerId)
+});
+
+// 手動でHTML生成する場合
+const customButton = `
+  <button style="background-color: ${window.UIComponents.UI_COLORS.maroon};">
+    カスタムボタン
+  </button>
+`;
+
+// SVGアイコン使用
+const layerIcon = window.UIComponents.SVG_ICONS.layers;
+
+
+🚀 ビルドフロー
+
+
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Tegaki Anime v2.0</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- CDN読み込み（開発時） -->
+  <script src="https://cdn.jsdelivr.net/npm/konva@9/konva.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/upng-js@2/UPNG.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+
+  <!-- アプリケーションコード -->
+  <script src="assets/ui-components.js"></script>
+  <script src="config.js"></script>
+  <script src="system/event-bus.js"></script>
+  <script src="system/state-manager.js"></script>
+  <!-- ... 他のファイル ... -->
+  <script src="core-runtime.js"></script>
+</body>
+</html>
+
+
+本番ビルド（libs統合）
+
+
+# 1. npmで依存取得
+npm install konva@9 pixi.js@8 upng-js@2 gsap@3
+
+# 2. libs/にコピー
+mkdir -p libs
+cp node_modules/konva/konva.min.js libs/
+cp node_modules/pixi.js/dist/pixi.min.js libs/
+cp node_modules/upng-js/UPNG.js libs/upng.min.js
+cp node_modules/gsap/dist/gsap.min.js libs/
+
+# 3. 全JSファイルを結合（手動 or スクリプト）
+# 結合順序:
+# libs/*.js → assets/*.js → config.js → system/*.js → layers/*.js
+# → drawing/*.js → timeline/*.js → export/*.js → ui/*.js → core-*.js
+
+cat \
+  libs/konva.min.js \
+  libs/pixi.min.js \
+  libs/upng.min.js \
+  libs/gsap.min.js \
+  assets/ui-components.js \
+  config.js \
+  system/event-bus.js \
+  system/state-manager.js \
+  system/settings-manager.js \
+  system/history.js \
+  system/camera-system.js \
+  system/popup-manager.js \
+  layers/konva-layer-manager.js \
+  layers/layer-folder-system.js \
+  layers/thumbnail-generator.js \
+  drawing/raster-brush-engine.js \
+  drawing/pressure-handler.js \
+  drawing/pointer-handler.js \
+  drawing/brush-settings.js \
+  drawing/fill-tool.js \
+  timeline/frame-system.js \
+  timeline/animation-controller.js \
+  timeline/virtual-album.js \
+  export/export-manager.js \
+  export/clipboard-exporter.js \
+  export/apng-exporter.js \
+  export/png-exporter.js \
+  ui/layer-panel.js \
+  ui/timeline-panel.js \
+  ui/settings-popup.js \
+  ui/album-popup.js \
+  ui/keyboard-handler.js \
+  core-runtime.js \
+  core-engine.js \
+  > dist/tegaki_anime_all.js
+
+# 4. HTMLを単一ファイル化
+# index.htmlのCSS・JSを全てインライン化
+
+
+最終出力（All in One）
+
+
+<!-- dist/tegaki_anime_standalone.html -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Tegaki Anime v2.0</title>
+  <style>
+    /* styles/main.css の内容をインライン */
+    :root {
+      --futaba-maroon: #800000;
+      --futaba-light-maroon: #aa5a56;
+      /* ... */
+    }
+    /* ... 全CSS ... */
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // dist/tegaki_anime_all.js の内容をインライン
+    // libs + assets + 全アプリケーションコード
+  </script>
+</body>
+</html>
+```
+
+---
+
+## 📋 改修チェックリスト
+
+### Phase 1: 環境構築・共通基盤
+- [ ] ディレクトリ構造作成
+- [ ] assets/ui-components.js 作成（SVG・色・コンポーネント）
+- [ ] styles/main.css 統合（UIコンポーネントCSS追加）
+- [ ] config.js コピー（既存流用）
+- [ ] 既存ファイルコピー（流用11ファイル）
+
+### Phase 2: Konva統合
+- [ ] layers/konva-layer-manager.js 新規作成
+- [ ] layers/layer-folder-system.js 新規作成
+- [ ] layers/thumbnail-generator.js 新規作成
+- [ ] system/camera-system.js 改修（Konva統合）
+- [ ] Konva.Stage初期化テスト
+
+### Phase 3: ラスター描画
+- [ ] drawing/raster-brush-engine.js 新規作成（Part 1: Core）
+- [ ] drawing/raster-brush-engine.js 新規作成（Part 2: Shader）
+- [ ] Pixi.RenderTexture統合テスト
+- [ ] ブレンドモード実装確認
+- [ ] 筆圧対応確認
+
+### Phase 4: タイムライン統合
+- [ ] timeline/frame-system.js 改修（Konva連携）
+- [ ] フレーム切り替えテスト
+- [ ] サムネイル生成テスト（Konvaベース）
+
+### Phase 5: UI統合
+- [ ] ui/layer-panel.js 改修（UIComponents使用）
+- [ ] ui/timeline-panel.js 改修（UIComponents使用）
+- [ ] ui/settings-popup.js 色継承確認
+- [ ] ui/album-popup.js 色継承確認
+
+### Phase 6: エクスポート
+- [ ] export/clipboard-exporter.js 新規作成
+- [ ] APNG/GIFエクスポート確認
+
+### Phase 7: ビルド・テスト
+- [ ] npm install 依存取得
+- [ ] libs/コピー確認
+- [ ] 全JSファイル結合
+- [ ] HTMLインライン化
+- [ ] file://動作確認
+- [ ] 全機能テスト（描画/レイヤー/フレーム/エクスポート）
+
+---
+
+## 🐛 AIミス防止策
+
+### 1. ファイルヘッダーで依存明記
+```
+✅ 依存ファイルを必ず記載 → 参照ミス防止
+✅ 親依存・子依存を明記 → 循環依存防止
+✅ グローバル依存確認コード追加 → 初期化エラー防止
+```
+
+### 2. メソッド命名統一
+```
+create/delete/update/get の4動詞のみ使用
+例: createLayer, deleteLayer, updateLayer, getLayer
+```
+
+### 3. イベント名統一
+```
+component:action 形式厳守
+例: layer:created, drawing:complete, frame:changed
+
+
+4. グローバル変数の統一管理
+
+// core-runtime.js で一括登録
+window.UIComponents = /* assets/ui-components.js */;
+window.EventBus = /* system/event-bus.js */;
+window.StateManager = /* system/state-manager.js */;
+window.konvaLayerManager = /* layers/konva-layer-manager.js */;
+window.rasterBrush = /* drawing/raster-brush-engine.js */;
+window.frameSystem = /* timeline/frame-system.js */;
+
+5. 型定義コメント
+
+/**
+ * レイヤー作成
+ * @param {string} layerId - レイヤーID
+ * @param {Object} options - オプション
+ * @param {string} options.name - レイヤー名
+ * @param {number} options.opacity - 不透明度 0.0-1.0
+ * @param {boolean} options.visible - 可視性
+ * @returns {Konva.Layer} 作成されたレイヤー
+ * @throws {Error} layerId重複時
+ */
+createLayer(layerId, options = {}) {
+  // 実装
+}
+
+
+
+
+6. 分割ファイルの明示
+
+
+// ========================================
+// Part 1: Core Logic (500行)
+// ========================================
+class RasterBrushEngine {
+  // コア処理
+}
+
+// ========================================
+// Part 2: Shader Code (400行)
+// このコメントの下に Part 2 をコピペしてください
+// ========================================
+const VERTEX_SHADER = `#version 300 es
+  // シェーダーコード
+`;
+
+// ========================================
+// Part 2 ここまで
+// ========================================
+
+
+
+7. UIComponents使用の徹底
+
+// ❌ 禁止: 個別実装
+const slider = `<input type="range" ...>`;
+
+// ✅ 推奨: UIComponents使用
+const slider = window.UIComponents.createSlider({
+  min: 0,
+  max: 100,
+  value: 50,
+  label: 'ブラシサイズ'
+});
+
+
+8. 色定数の統一
+
+// ❌ 禁止: ハードコード
+const buttonColor = '#800000';
+
+// ✅ 推奨: UIComponents.UI_COLORS使用
+const buttonColor = window.UIComponents.UI_COLORS.maroon;
+
+9. 二重実装チェック
+
+実装前チェック:
+1. 同じ機能が既存ファイルにないか？
+2. UIComponentsに統合すべきか？
+3. EventBus経由で既存機能を呼べないか？
+
+
+### 10. コンソールログの削減
+```javascript
+// ✅ 開発時のみ・重要イベントのみ
+if (window.DEBUG_MODE) {
+  console.log('[LayerManager] Layer created:', layerId);
+}
+
+// ❌ 高頻度イベントでのログ
+// pointermove, frame update 等では使用禁止
+```
+
+---
+
+## 📞 質問テンプレート
+
+改修中に不明点がある場合:
+
+【質問】konva-layer-manager.jsの実装について
+【状況】
+
+フォルダ階層の実装方法が不明
+Konva.Group.add()の使い方を確認したい
+
+【依存ファイル】
+
+event-bus.js （ヘッダーのみ添付）
+state-manager.js （ヘッダーのみ添付）
+ui-components.js （ヘッダーのみ添付）
+
+【期待する動作】
+
+レイヤーをフォルダにドラッグ&ドロップで移動
+フォルダは折りたたみ可能
+UIComponents.SVG_ICONSでフォルダアイコン表示
+
+【参考にする既存コード】
+（該当箇所のみ抜粋）
+【補足】
+
+1000行超える場合は分割指示をお願いします
+
+---
+
+## ✅ 完了条件
+
+- [ ] すべてのファイルにヘッダーが記載されている
+- [ ] 親子依存関係が全ファイルで明記されている
+- [ ] 1ファイル1000行以下（分割コメント付き）
+- [ ] UIComponents統合完了（スライダー・ボタン・スイッチ・SVG）
+- [ ] UI_COLORSで色統一（ハードコード0件）
+- [ ] SVG_ICONSでアイコン統一（直接埋め込み0件）
+- [ ] file://で動作可能（import/export 0件）
+- [ ] libs/にCDNライブラリ格納
+- [ ] 全JSファイル結合可能
+- [ ] HTMLインライン化対応
+- [ ] Konva.Stage初期化成功
+- [ ] レイヤー作成/削除/移動が動作
+- [ ] フォルダ作成/展開/折りたたみが動作
+- [ ] ラスター描画が動作
+- [ ] タイムライン・フレームが動作
+- [ ] サムネイル生成（Konvaベース）が動作
+- [ ] APNG/PNG/GIFエクスポートが動作
+- [ ] クリップボードコピーが動作
+- [ ] コンソールエラー0件
+- [ ] 二重実装0件（DRY原則遵守）
+- [ ] 循環依存0件
+
+---
+
+## 📝 備考
+
+### Konva vs PixiJS 役割分担
+
+Konva.js:
+✅ レイヤー階層管理
+✅ フォルダ機能
+✅ サムネイル生成
+✅ UI表示（選択枠・カーソル等）
+✅ 座標変換（Stage座標系）
+PixiJS v8:
+✅ WebGL2描画のみ
+✅ RenderTexture生成
+✅ ブレンドモード
+❌ レイヤー管理（Konvaに一任）
+❌ 座標変換（Konvaに一任）
+
+
+### タイムラインの上位概念
+
+Frame (最上位)
+├─ duration
+├─ layers[] (Konvaレイヤー参照)
+└─ thumbnail (Konva生成)
+Konva.Layer (中位)
+├─ id, name, visible
+├─ children[] (Konva.Image等)
+└─ parent: Konva.Group (フォルダ)
+Pixi.RenderTexture (最下位)
+└─ WebGL2描画結果
+
+
+
+### file://直開きの利点
+
+✅ HTTPサーバー不要
+✅ nijiurachan.net直接貼り付け可能
+✅ ブックマークレット対応
+✅ セキュリティ制約少ない
+✅ 配布が容易（1ファイル）
+
+### 今後の拡張予定
+
+v2.1: モーフィング機能（Live2D風）
+v2.2: リギング機能（Spine風）
+v2.3: ベクターレイヤー復活（ポリゴンベース）
+v2.4: WebGPU対応
+
+---
+
+以上で改修計画書は完了です。
+各フェーズごとにClaudeに提出し、段階的に実装を進めてください。
+
+
+
+
