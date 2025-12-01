@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 Tegaki Anime v2.0 - Konva.js + WebGL2 Raster</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+
+<body>
+    <div id="app"></div>
+
+    <!-- ========================================
+         External Libraries (CDN - 開発中)
+         本番: libs/フォルダに格納
+         ======================================== -->
+    
+    <!-- Konva.js -->
+    <script src="https://cdn.jsdelivr.net/npm/konva@9/konva.min.js"></script>
+    
+    <!-- PixiJS v8 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+    
+    <!-- UPNG (APNG/PNG圧縮) -->
+    <script src="https://cdn.jsdelivr.net/npm/upng-js@2/UPNG.js"></script>
+    
+    <!-- GSAP (アニメーション) -->
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+
+    <!-- ========================================
+         Assets - 共通UIコンポーネント
+         ======================================== -->
+    <script src="assets/ui-components.js"></script>
+
+    <!-- ========================================
+         Config
+         ======================================== -->
+    <script src="config.js"></script>
+
+    <!-- ========================================
+         System - 基盤システム
+         ======================================== -->
+    <script src="system/event-bus.js"></script>
+    <script src="system/state-manager.js"></script>
+    <script src="system/settings-manager.js"></script>
+    <script src="system/history.js"></script>
+    <script src="system/camera-system.js"></script>
+    <script src="system/popup-manager.js"></script>
+
+    <!-- ========================================
+         Layers - Konvaレイヤー管理
+         ======================================== -->
+    <script src="layers/konva-layer-manager.js"></script>
+    <script src="layers/layer-folder-system.js"></script>
+    <script src="layers/thumbnail-generator.js"></script>
+
+    <!-- ========================================
+         Drawing - WebGL2ラスター描画
+         ======================================== -->
+    <script src="drawing/raster-brush-engine.js"></script>
+    <script src="drawing/pressure-handler.js"></script>
+    <script src="drawing/pointer-handler.js"></script>
+    <script src="drawing/brush-settings.js"></script>
+    <script src="drawing/fill-tool.js"></script>
+
+    <!-- ========================================
+         Timeline - フレーム・アニメーション
+         ======================================== -->
+    <script src="timeline/frame-system.js"></script>
+    <script src="timeline/animation-controller.js"></script>
+    <script src="timeline/virtual-album.js"></script>
+
+    <!-- ========================================
+         Export - エクスポート
+         ======================================== -->
+    <script src="export/export-manager.js"></script>
+    <script src="export/clipboard-exporter.js"></script>
+    <script src="export/apng-exporter.js"></script>
+    <script src="export/png-exporter.js"></script>
+
+    <!-- ========================================
+         UI - ユーザーインターフェース
+         ======================================== -->
+    <script src="ui/layer-panel.js"></script>
+    <script src="ui/timeline-panel.js"></script>
+    <script src="ui/settings-popup.js"></script>
+    <script src="ui/album-popup.js"></script>
+    <script src="ui/keyboard-handler.js"></script>
+
+    <!-- ========================================
+         Core - 初期化・メインループ
+         ======================================== -->
+    <script src="core-runtime.js"></script>
+    <script src="core-engine.js"></script>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                console.log('🚀 Tegaki Anime v2.0 起動中...');
+                console.log('📦 Dependencies:', {
+                    Konva: !!window.Konva,
+                    PIXI: !!window.PIXI,
+                    UPNG: !!window.UPNG,
+                    gsap: !!window.gsap,
+                    UIComponents: !!window.UIComponents
+                });
+
+                if (!window.Konva) {
+                    throw new Error('Konva.js が読み込まれていません');
+                }
+                if (!window.PIXI) {
+                    throw new Error('PixiJS が読み込まれていません');
+                }
+                if (!window.UIComponents) {
+                    throw new Error('UIComponents が読み込まれていません');
+                }
+
+                // Core Runtime初期化
+                if (window.CoreRuntime && window.CoreRuntime.initialize) {
+                    await window.CoreRuntime.initialize();
+                    console.log('✅ Tegaki Anime v2.0 初期化完了');
+                } else {
+                    console.error('❌ CoreRuntime.initialize が見つかりません');
+                }
+
+            } catch (error) {
+                console.error('❌ 初期化失敗:', error);
+                alert('初期化に失敗しました。コンソールを確認してください。');
+            }
+        });
+    </script>
+</body>
+</html>

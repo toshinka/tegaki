@@ -1114,15 +1114,16 @@ window.frameSystem = new FrameSystem();
 // assets/ui-components.js 内で定義
 const UI_COLORS = {
   maroon: '#800000',           // アクティブペンカラー（デフォルト）
-  lightMaroon: '#aa5a56',      // ホバー状態
-  medium: '#cf9c97',           // ボーダー・非アクティブ
-  lightMedium: '#e9c2ba',      // パネル背景
+  lightMaroon: '#9c3836',      // ホバー状態
+  medium: '#b8706b',           // ボーダー・非アクティブ
+  lightMedium: '#d4a8a1a',      // パネル背景
   cream: '#f0e0d6',            // キャンバス背景（レイヤー0デフォルト）
   background: '#ffffee',       // ページ背景
   activeSlider: '#800000',     // スライダーアクティブ
   inactiveSlider: '#cf9c97',   // スライダー非アクティブ
   dangerRed: '#d32f2f'         // 削除ボタン
 };
+
 
 使用例
 
