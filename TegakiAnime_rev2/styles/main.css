@@ -1,0 +1,601 @@
+/* ============================================================================
+ * Tegaki Anime v2.0 - Main Stylesheet
+ * ToonSquid風シームレスデザイン + futabaカラー統一
+ * ========================================================================== */
+
+* { 
+  margin: 0; 
+  padding: 0; 
+  box-sizing: border-box; 
+}
+
+:root {
+  /* futabaカラーパレット */
+  --futaba-maroon: #800000;
+  --futaba-light-maroon: #9c3836;
+  --futaba-medium: #b8706b;
+  --futaba-light-medium: #d4a8a1;
+  --futaba-cream: #f0e0d6;
+  --futaba-background: #ffffee;
+  
+  /* テキスト */
+  --text-primary: #2c1810;
+  --text-secondary: #5d4037;
+  --text-inverse: #ffffff;
+  
+  /* アクセント */
+  --active-border: #ff8c42;
+  --danger-red: #d32f2f;
+  
+  /* スライダー */
+  --slider-active: var(--futaba-maroon);
+  --slider-inactive: var(--futaba-medium);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+  background: var(--futaba-background);
+  height: 100vh;
+  overflow: hidden;
+  color: var(--text-primary);
+}
+
+/* ========================================
+   レイアウト - ToonSquid風
+   ======================================== */
+.main-layout {
+  display: grid;
+  grid-template-columns: 50px 1fr;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ========================================
+   サイドバー - 淡い色でコントラスト抑制
+   ======================================== */
+.sidebar {
+  background: var(--futaba-light-medium);
+  border-right: none;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 6px;
+  gap: 4px;
+  overflow-y: auto;
+  z-index: 100;
+  transition: opacity 0.3s;
+}
+
+.sidebar.semi-transparent {
+  opacity: 0.7;
+}
+
+.tool-button {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: var(--futaba-background);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.tool-button svg {
+  width: 20px;
+  height: 20px;
+  stroke: var(--futaba-maroon);
+}
+
+.tool-button:hover:not(.active) {
+  background: var(--futaba-cream);
+  transform: scale(1.05);
+}
+
+.tool-button.active {
+  background: var(--futaba-maroon);
+}
+
+.tool-button.active svg {
+  stroke: var(--futaba-background);
+}
+
+.tool-separator {
+  height: 1px;
+  background: var(--futaba-medium);
+  margin: 4px 2px;
+}
+
+/* ========================================
+   キャンバスエリア
+   ======================================== */
+.canvas-area {
+  background: var(--futaba-background);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#drawing-canvas,
+canvas {
+  cursor: crosshair;
+  touch-action: none;
+  -ms-touch-action: none;
+}
+
+/* ========================================
+   UIコンポーネント - スライダー
+   ======================================== */
+.ui-slider-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.ui-slider-label {
+  font-size: 12px;
+  color: var(--futaba-maroon);
+  font-weight: 500;
+}
+
+.ui-slider-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ui-slider {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--slider-inactive);
+  position: relative;
+  cursor: pointer;
+}
+
+.ui-slider-track {
+  height: 100%;
+  background: var(--slider-active);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.ui-slider-handle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--slider-active);
+  border: 2px solid var(--futaba-background);
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  pointer-events: all;
+}
+
+.ui-slider-handle:active {
+  cursor: grabbing;
+}
+
+.ui-slider-value {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+/* ========================================
+   UIコンポーネント - ボタン
+   ======================================== */
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.ui-button-primary {
+  background: var(--futaba-maroon);
+  color: var(--text-inverse);
+}
+
+.ui-button-primary:hover {
+  background: var(--futaba-light-maroon);
+  transform: translateY(-1px);
+}
+
+.ui-button-secondary {
+  background: var(--futaba-medium);
+  color: var(--text-primary);
+}
+
+.ui-button-secondary:hover {
+  background: var(--futaba-light-maroon);
+  transform: translateY(-1px);
+}
+
+.ui-button-danger {
+  background: var(--danger-red);
+  color: var(--text-inverse);
+}
+
+.ui-button-danger:hover {
+  background: #b71c1c;
+  transform: translateY(-1px);
+}
+
+.ui-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ========================================
+   UIコンポーネント - スイッチ
+   ======================================== */
+.ui-switch-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.ui-switch-label {
+  font-size: 12px;
+  color: var(--futaba-maroon);
+  font-weight: 500;
+}
+
+.ui-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.ui-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ui-switch-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--slider-inactive);
+  border-radius: 24px;
+  transition: 0.3s;
+}
+
+.ui-switch-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.ui-switch input:checked + .ui-switch-slider {
+  background-color: var(--slider-active);
+}
+
+.ui-switch input:checked + .ui-switch-slider:before {
+  transform: translateX(20px);
+}
+
+/* ========================================
+   UIコンポーネント - 削除ボタン
+   ======================================== */
+.ui-delete-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--danger-red);
+  color: var(--text-inverse);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ui-delete-button:hover {
+  background-color: #b71c1c;
+  transform: scale(1.1);
+}
+
+.ui-delete-button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+/* ========================================
+   UIコンポーネント - ポップアップパネル
+   ======================================== */
+.ui-popup {
+  position: fixed;
+  background: var(--futaba-cream);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+  z-index: 2000;
+  display: none;
+  overflow: hidden;
+}
+
+.ui-popup.show {
+  display: block;
+  animation: popupFadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes popupFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.ui-popup-header {
+  padding: 8px 12px;
+  background: var(--futaba-light-medium);
+  cursor: grab;
+  text-align: center;
+  font-size: 11px;
+  color: var(--futaba-medium);
+  font-weight: 600;
+  letter-spacing: 1px;
+  user-select: none;
+}
+
+.ui-popup-header:hover {
+  background: var(--futaba-medium);
+  color: var(--futaba-maroon);
+}
+
+.ui-popup-header:active {
+  cursor: grabbing;
+}
+
+.ui-popup-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  background: var(--futaba-medium);
+  border: none;
+  border-radius: 50%;
+  color: var(--futaba-background);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.ui-popup-close:hover {
+  background: var(--futaba-maroon);
+  transform: scale(1.1);
+}
+
+.ui-popup-close svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}
+
+.ui-popup-content {
+  padding: 20px;
+}
+
+/* ========================================
+   レイヤーパネル - ToonSquid風
+   ======================================== */
+.layer-panel-container {
+  position: fixed;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.layer-panel-container.semi-transparent {
+  opacity: 0.7;
+}
+
+.frame-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(240, 224, 214, 0.95);
+  border: none;
+  border-radius: 12px;
+  padding: 6px 12px;
+  pointer-events: all;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: bold;
+  backdrop-filter: blur(12px);
+}
+
+.frame-nav-btn {
+  width: 28px;
+  height: 28px;
+  background: var(--futaba-background);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--futaba-maroon);
+  font-weight: bold;
+  transition: all 0.15s;
+}
+
+.frame-nav-btn:hover {
+  background: var(--futaba-medium);
+  transform: scale(1.08);
+}
+
+.frame-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.frame-display {
+  color: var(--futaba-maroon);
+  font-weight: bold;
+  min-width: 52px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.layer-controls-row {
+  display: flex;
+  gap: 4px;
+  pointer-events: all;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.layer-add-button {
+  width: 32px;
+  height: 32px;
+  background: var(--futaba-cream);
+  border: none;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.layer-add-button:hover {
+  background: var(--futaba-medium);
+  transform: scale(1.08);
+}
+
+.layer-add-button svg {
+  width: 16px;
+  height: 16px;
+  stroke: var(--futaba-maroon);
+}
+
+.layer-panel-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  pointer-events: all;
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: rgba(240, 224, 214, 0.5);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+}
+
+/* スクロールバー統一 */
+.layer-panel-items::-webkit-scrollbar {
+  width: 8px;
+}
+
+.layer-panel-items::-webkit-scrollbar-track {
+  background: var(--futaba-light-medium);
+  border-radius: 4px;
+}
+
+.layer-panel-items::-webkit-scrollbar-thumb {
+  background: var(--futaba-maroon);
+  border-radius: 4px;
+}
+
+.layer-panel-items::-webkit-scrollbar-thumb:hover {
+  background: var(--futaba-light-maroon);
+}
+
+.layer-panel-items {
+  scrollbar-width: thin;
+  scrollbar-color: var(--futaba-maroon) var(--futaba-light-medium);
+}
+
+/* ========================================
+   タイムラインパネル
+   ======================================== */
+.timeline-panel {
+  position: fixed;
+  bottom: 12px;
+  left: 70px;
+  right: 12px;
+  background: rgba(240, 224, 214, 0.95);
+  border-radius: 12px;
+  padding: 12px;
+  z-index: 1000;
+  backdrop-filter: blur(12px);
+  transition: opacity 0.3s;
+}
+
+.timeline-panel.semi-transparent {
+  opacity: 0.7;
+}
+
+/* ========================================
+   スクロールバー統一（全般）
+   ======================================== */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--futaba-light-medium);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--futaba-maroon);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--futaba-light-maroon);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--futaba-maroon) var(--futaba-light-medium);
+}
