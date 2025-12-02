@@ -48,7 +48,7 @@ window.DrawingController = (() => {
   const brushEngine = window.RasterBrushEngine;
   
   let enabled = false;
-  let drawingLayer = null;
+  let konvaStage = null;
   
   // ========================================
   // Konva座標 → Canvas座標変換
@@ -83,8 +83,27 @@ window.DrawingController = (() => {
   function handlePointerDown(evt) {
     if (!enabled) return;
     
+    // イベント重複防止: touchstart後のpointerdownを無視
+    if (evt.type === 'pointerdown' && evt.evt.pointerType === 'touch') {
+      return;
+    }
+    
+    // すでに描画中なら無視
+    if (brushEngine.isDrawing) {
+      return;
+    }
+    
     const stage = window.konvaStage;
     if (!stage) return;
+    
+    // デバッグ: イベント情報
+    console.log('[DrawingController] PointerDown event:', {
+      type: evt.type,
+      pointerType: evt.evt.pointerType,
+      isPrimary: evt.evt.isPrimary,
+      button: evt.evt.button,
+      buttons: evt.evt.buttons
+    });
     
     const coords = getCanvasCoordinates(stage);
     if (!coords) return;
@@ -130,28 +149,21 @@ window.DrawingController = (() => {
   function enable() {
     if (enabled) return;
     
-    const stage = window.konvaStage;
-    if (!stage) {
+    konvaStage = window.konvaStage;
+    if (!konvaStage) {
       console.warn('[DrawingController] Konva Stage not found');
       return;
     }
     
-    // drawing-layerを取得
-    drawingLayer = stage.findOne('#drawing-layer');
-    if (!drawingLayer) {
-      console.warn('[DrawingController] Drawing layer not found');
-      return;
-    }
-    
-    // イベントリスナー登録
-    drawingLayer.on('pointerdown', handlePointerDown);
-    drawingLayer.on('pointermove', handlePointerMove);
-    drawingLayer.on('pointerup', handlePointerUp);
-    drawingLayer.on('pointerleave', handlePointerUp);
+    // Stageレベルでイベント登録（タブレットペン対応）
+    konvaStage.on('pointerdown touchstart', handlePointerDown);
+    konvaStage.on('pointermove touchmove', handlePointerMove);
+    konvaStage.on('pointerup touchend', handlePointerUp);
+    konvaStage.on('pointerleave touchcancel', handlePointerUp);
     
     enabled = true;
     
-    console.log('[DrawingController] Enabled');
+    console.log('[DrawingController] Enabled on Stage (with tablet support)');
   }
   
   // ========================================
@@ -160,11 +172,11 @@ window.DrawingController = (() => {
   function disable() {
     if (!enabled) return;
     
-    if (drawingLayer) {
-      drawingLayer.off('pointerdown', handlePointerDown);
-      drawingLayer.off('pointermove', handlePointerMove);
-      drawingLayer.off('pointerup', handlePointerUp);
-      drawingLayer.off('pointerleave', handlePointerUp);
+    if (konvaStage) {
+      konvaStage.off('pointerdown touchstart', handlePointerDown);
+      konvaStage.off('pointermove touchmove', handlePointerMove);
+      konvaStage.off('pointerup touchend', handlePointerUp);
+      konvaStage.off('pointerleave touchcancel', handlePointerUp);
     }
     
     enabled = false;
