@@ -62,7 +62,6 @@ window.RasterBrushEngine = (() => {
   let isDrawing = false;
   let currentLayerId = null;
   let currentRenderTexture = null;
-  let currentGraphics = null;
   let strokePoints = [];
   
   // レイヤーごとのRenderTexture管理
@@ -177,17 +176,17 @@ window.RasterBrushEngine = (() => {
     const ctx = canvas.getContext('2d');
     
     try {
-      // RenderTextureからピクセルデータ取得
-      const pixels = window.pixiApp.renderer.extract.pixels(renderTexture);
+      // PixiJS v8: extract.canvas() を使用
+      const tempCanvas = window.pixiApp.renderer.extract.canvas(renderTexture);
       
-      console.log('[RasterBrushEngine] Extracted pixels:', pixels.length, 'bytes');
-      
-      // ImageDataに変換
-      const imageData = ctx.createImageData(canvas.width, canvas.height);
-      imageData.data.set(pixels);
+      console.log('[RasterBrushEngine] Extracted canvas:', {
+        width: tempCanvas.width,
+        height: tempCanvas.height
+      });
       
       // Canvasに描画
-      ctx.putImageData(imageData, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(tempCanvas, 0, 0);
       
       console.log('[RasterBrushEngine] Canvas updated');
       
@@ -249,9 +248,6 @@ window.RasterBrushEngine = (() => {
     const textureData = createRenderTextureForLayer(currentLayerId);
     currentRenderTexture = textureData.renderTexture;
     
-    // Graphics初期化
-    currentGraphics = new PIXI.Graphics();
-    
     // ストロークポイント初期化
     strokePoints = [{
       x: x,
@@ -310,13 +306,10 @@ window.RasterBrushEngine = (() => {
     const color = hexToPixiColor(settings.color);
     const alpha = settings.opacity;
     
-    console.log('[RasterBrushEngine] Drawing point:', {
-      x, y, pressure, size, color: color.toString(16), alpha
-    });
-    
-    // 円形スタンプ描画
-    currentGraphics.circle(x, y, size / 2);
-    currentGraphics.fill({
+    // 新しいGraphicsを毎回作成（累積描画のため）
+    const pointGraphics = new PIXI.Graphics();
+    pointGraphics.circle(x, y, size / 2);
+    pointGraphics.fill({
       color: color,
       alpha: alpha
     });
@@ -327,13 +320,14 @@ window.RasterBrushEngine = (() => {
       return;
     }
     
-    // RenderTextureに描画
-    window.pixiApp.renderer.render(currentGraphics, {
+    // RenderTextureに描画（clear: false で累積）
+    window.pixiApp.renderer.render(pointGraphics, {
       renderTexture: currentRenderTexture,
       clear: false
     });
     
-    console.log('[RasterBrushEngine] Rendered to RenderTexture');
+    // 使い終わったGraphicsを破棄
+    pointGraphics.destroy();
     
     // Konva.Imageに転送
     transferRenderTextureToCanvas(currentLayerId);
@@ -347,12 +341,6 @@ window.RasterBrushEngine = (() => {
    */
   function endStroke() {
     if (!isDrawing) return;
-    
-    // Graphics破棄
-    if (currentGraphics) {
-      currentGraphics.destroy();
-      currentGraphics = null;
-    }
     
     // 最終転送
     transferRenderTextureToCanvas(currentLayerId);
@@ -380,11 +368,6 @@ window.RasterBrushEngine = (() => {
   // ========================================
   function cancelStroke() {
     if (!isDrawing) return;
-    
-    if (currentGraphics) {
-      currentGraphics.destroy();
-      currentGraphics = null;
-    }
     
     isDrawing = false;
     currentLayerId = null;

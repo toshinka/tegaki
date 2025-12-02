@@ -192,12 +192,14 @@ window.CoreRuntime = (() => {
     // Layer 2: 描画レイヤーグループ（レイヤー管理用）
     // ========================================
     const drawingLayer = new Konva.Layer({ 
-      id: 'drawing-layer'
+      id: 'drawing-layer',
+      listening: true  // ポインターイベント受信
     });
     
     // この中にGroup(フォルダ)やImage(ラスター描画結果)を追加
     const drawingGroup = new Konva.Group({
-      id: 'drawing-group'
+      id: 'drawing-group',
+      listening: true  // ポインターイベント受信
     });
     
     drawingLayer.add(drawingGroup);
