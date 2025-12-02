@@ -10,8 +10,11 @@
  *   - event-bus.js (TegakiEventBus)
  * 親依存:
  *   - index.html → このファイルを参照
+ *   - core-engine.js → このファイルの初期化後に実行
  * 子依存:
- *   - このファイルは全システムファイルを初期化
+ *   - konva.min.js
+ *   - pixi.min.js
+ *   - ui-components.js
  * 公開API:
  *   - CoreRuntime.initialize(): アプリケーション初期化
  *   - CoreRuntime.shutdown(): クリーンアップ
@@ -19,13 +22,15 @@
  *   - 'runtime:initialized' - 初期化完了
  *   - 'runtime:error' - 初期化エラー
  * グローバル登録: window.CoreRuntime
- * 実装状態: 🆕新規
+ * 実装状態: 🆕新規 Phase 1 - 最小動作版
  * ============================================================================
  */
 
 'use strict';
 
+// ========================================
 // グローバル依存確認
+// ========================================
 if (!window.Konva) {
   throw new Error('Konva.js が読み込まれていません');
 }
@@ -76,13 +81,10 @@ window.CoreRuntime = (() => {
       // ステップ3: PixiJS初期化（WebGL2ラスター描画用）
       await initializePixiApp();
 
-      // ステップ4: システム初期化
+      // ステップ4: システム初期化（Phase 1では最小限）
       await initializeSystems();
 
-      // ステップ5: UI初期化
-      await initializeUI();
-
-      // ステップ6: イベントハンドラー登録
+      // ステップ5: イベントハンドラー登録
       registerEventHandlers();
 
       initialized = true;
@@ -115,9 +117,10 @@ window.CoreRuntime = (() => {
     // ToonSquid風レイアウト
     app.innerHTML = `
       <div class="main-layout">
-        <!-- サイドバー -->
+        <!-- サイドバー: ツールアイコン用固定領域 -->
         <div class="sidebar" id="sidebar">
-          <!-- ツールボタンはui-panels.jsで生成 -->
+          <!-- Phase 2: ツールSVGアイコンをここに配置 -->
+          <!-- 固定サイズ・固定位置で表示 -->
         </div>
 
         <!-- キャンバスエリア -->
@@ -128,12 +131,12 @@ window.CoreRuntime = (() => {
 
       <!-- レイヤーパネル（右側） -->
       <div class="layer-panel-container" id="layer-panel-container">
-        <!-- layer-panel.jsで生成 -->
+        <!-- Phase 2: レイヤーリスト表示 -->
       </div>
 
       <!-- タイムラインパネル（下部） -->
       <div class="timeline-panel" id="timeline-panel">
-        <!-- timeline-panel.jsで生成 -->
+        <!-- Phase 2: フレームサムネイル表示 -->
       </div>
     `;
 
@@ -155,6 +158,9 @@ window.CoreRuntime = (() => {
     const width = canvasArea.clientWidth;
     const height = canvasArea.clientHeight;
 
+    // ========================================
+    // Konva.Stage作成
+    // ========================================
     konvaStage = new Konva.Stage({
       container: 'konva-container',
       width: width,
@@ -162,38 +168,59 @@ window.CoreRuntime = (() => {
       draggable: false
     });
 
-    // 背景レイヤー作成（checker pattern）
-    const bgLayer = new Konva.Layer({ id: 'bg-layer' });
+    // ========================================
+    // Layer 1: 背景レイヤー（ページ背景色）
+    // ========================================
+    const bgLayer = new Konva.Layer({ 
+      id: 'bg-layer',
+      listening: false  // イベント不要
+    });
     
-    // チェッカーパターン生成
-    const checkerSize = 20;
-    const checker = new Konva.Rect({
+    // ページ背景色で塗りつぶし（チェッカーパターンは使わない）
+    const bgRect = new Konva.Rect({
       x: 0,
       y: 0,
       width: width,
       height: height,
-      fillPatternImage: createCheckerPattern(checkerSize),
-      fillPatternRepeat: 'repeat'
+      fill: window.UIComponents.UI_COLORS.background  // #ffffee
     });
     
-    bgLayer.add(checker);
+    bgLayer.add(bgRect);
     konvaStage.add(bgLayer);
 
-    // 描画グループ（レイヤー管理用）
-    const drawingGroup = new Konva.Group({
-      id: 'drawing-group',
-      draggable: false
+    // ========================================
+    // Layer 2: 描画レイヤーグループ（レイヤー管理用）
+    // ========================================
+    const drawingLayer = new Konva.Layer({ 
+      id: 'drawing-layer'
     });
-    konvaStage.add(drawingGroup);
+    
+    // この中にGroup(フォルダ)やImage(ラスター描画結果)を追加
+    const drawingGroup = new Konva.Group({
+      id: 'drawing-group'
+    });
+    
+    drawingLayer.add(drawingGroup);
+    konvaStage.add(drawingLayer);
 
-    // UIレイヤー（選択枠等）
-    const uiLayer = new Konva.Layer({ id: 'ui-layer' });
+    // ========================================
+    // Layer 3: UIレイヤー（選択枠等）
+    // ========================================
+    const uiLayer = new Konva.Layer({ 
+      id: 'ui-layer',
+      listening: false
+    });
     konvaStage.add(uiLayer);
 
+    // ========================================
     // グローバル登録
+    // ========================================
     window.konvaStage = konvaStage;
+    window.konvaDrawingGroup = drawingGroup;  // レイヤーマネージャーで使用
 
+    // ========================================
     // リサイズ対応
+    // ========================================
     window.addEventListener('resize', () => {
       const newWidth = canvasArea.clientWidth;
       const newHeight = canvasArea.clientHeight;
@@ -201,8 +228,8 @@ window.CoreRuntime = (() => {
       konvaStage.height(newHeight);
       
       // 背景も更新
-      checker.width(newWidth);
-      checker.height(newHeight);
+      bgRect.width(newWidth);
+      bgRect.height(newHeight);
       
       bgLayer.batchDraw();
     });
@@ -212,27 +239,6 @@ window.CoreRuntime = (() => {
       height,
       layers: konvaStage.getLayers().length
     });
-  }
-
-  // ========================================
-  // チェッカーパターン生成
-  // ========================================
-  function createCheckerPattern(size) {
-    const canvas = document.createElement('canvas');
-    canvas.width = size * 2;
-    canvas.height = size * 2;
-    const ctx = canvas.getContext('2d');
-
-    // 明るい色
-    ctx.fillStyle = window.UIComponents.UI_COLORS.cream;
-    ctx.fillRect(0, 0, size * 2, size * 2);
-
-    // 暗い色
-    ctx.fillStyle = window.UIComponents.UI_COLORS.lightMedium;
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillRect(size, size, size, size);
-
-    return canvas;
   }
 
   // ========================================
@@ -266,51 +272,28 @@ window.CoreRuntime = (() => {
   }
 
   // ========================================
-  // システム初期化
+  // システム初期化（Phase 1: 最小限）
   // ========================================
   async function initializeSystems() {
     console.log('  ⚙️ システム初期化中...');
 
-    // 各システムの初期化は各ファイルで自動実行される想定
-    // ここでは依存チェックのみ
-
+    // Phase 1では依存チェックのみ
     const requiredSystems = [
       'StateManager',
       'SettingsManager',
       'History',
-      'CameraSystem',
       'PopupManager'
     ];
 
     for (const system of requiredSystems) {
-      if (!window[system]) {
-        console.warn(`  ⚠️ ${system} が見つかりません（未実装の可能性）`);
+      if (window[system]) {
+        console.log(`    ✅ ${system} loaded`);
+      } else {
+        console.warn(`    ⚠️ ${system} が見つかりません（未実装の可能性）`);
       }
     }
 
     console.log('  ✅ システム初期化完了');
-  }
-
-  // ========================================
-  // UI初期化
-  // ========================================
-  async function initializeUI() {
-    console.log('  🎨 UI初期化中...');
-
-    // UI初期化は各UIファイルで自動実行される想定
-    const requiredUI = [
-      'LayerPanel',
-      'TimelinePanel',
-      'KeyboardHandler'
-    ];
-
-    for (const ui of requiredUI) {
-      if (!window[ui]) {
-        console.warn(`  ⚠️ ${ui} が見つかりません（未実装の可能性）`);
-      }
-    }
-
-    console.log('  ✅ UI初期化完了');
   }
 
   // ========================================
@@ -355,7 +338,9 @@ window.CoreRuntime = (() => {
       pixiApp = null;
     }
 
-    window.TegakiEventBus.clear();
+    if (window.TegakiEventBus && window.TegakiEventBus.clear) {
+      window.TegakiEventBus.clear();
+    }
 
     initialized = false;
 
@@ -375,4 +360,4 @@ window.CoreRuntime = (() => {
 
 })();
 
-console.log('✅ CoreRuntime loaded');
+console.log('✅ CoreRuntime Phase 1 loaded (最小動作版)');

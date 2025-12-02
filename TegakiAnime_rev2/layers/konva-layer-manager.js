@@ -5,38 +5,33 @@
  * 依存:
  *   - konva (外部ライブラリ - libs/konva.min.js)
  *   - event-bus.js (TegakiEventBus)
+ *   - state-manager.js (StateManager - optional)
  *   - ui-components.js (UIComponents - 色定数)
  * 親依存:
- *   - frame-system.js → このファイルを参照
- *   - layer-panel.js → このファイルを参照
- *   - core-runtime.js → このファイルを初期化
+ *   - core-runtime.js → window.konvaDrawingGroup を使用
+ *   - layer-panel.js → このファイルを参照(Phase 2)
+ *   - frame-system.js → このファイルを参照(Phase 2)
  * 子依存:
  *   - このファイルは event-bus.js に依存
- *   - このファイルは konva に依存
  * 公開API:
- *   - KonvaLayerManager.createLayer(name, options)
- *   - KonvaLayerManager.deleteLayer(layerId)
- *   - KonvaLayerManager.moveLayer(layerId, newIndex)
- *   - KonvaLayerManager.getLayer(layerId)
- *   - KonvaLayerManager.getAllLayers()
- *   - KonvaLayerManager.setActiveLayer(layerId)
+ *   - KonvaLayerManager.createLayer(name, options): レイヤー作成
+ *   - KonvaLayerManager.deleteLayer(layerId): レイヤー削除
+ *   - KonvaLayerManager.getLayer(layerId): レイヤー取得
+ *   - KonvaLayerManager.getAllLayers(): 全レイヤー取得
  * イベント発火:
  *   - 'layer:created' { layerId, name }
  *   - 'layer:deleted' { layerId }
- *   - 'layer:moved' { layerId, oldIndex, newIndex }
- *   - 'layer:activated' { layerId }
- *   - 'layer:updated' { layerId }
- * イベント受信:
- *   - 'drawing:stroke-complete' → サムネイル更新トリガー
- *   - 'frame:changed' → レイヤー可視性更新
+ * イベント受信: なし(Phase 1)
  * グローバル登録: window.KonvaLayerManager
- * 実装状態: 🆕新規
+ * 実装状態: 🆕新規 Phase 1 - 最小実装版
  * ============================================================================
  */
 
 'use strict';
 
+// ========================================
 // グローバル依存確認
+// ========================================
 if (!window.Konva) {
   throw new Error('Konva.js が読み込まれていません');
 }
@@ -50,107 +45,92 @@ if (!window.UIComponents) {
 window.KonvaLayerManager = (() => {
   
   // ========================================
-  // 内部状態
+  // プライベート変数
   // ========================================
-  let stage = null;
-  let drawingLayer = null; // Konva.Layer（Groupではない）
-  let layers = new Map(); // layerId → { konvaGroup, metadata }
-  let activeLayerId = null;
+  const layers = new Map();  // layerId → Konva.Group
+  const eventBus = window.TegakiEventBus;
   let layerCounter = 0;
-
-  // ========================================
-  // 初期化
-  // ========================================
-  /**
-   * Konva.Stageと連携して初期化
-   * @param {Konva.Stage} konvaStage - Konvaステージ
-   */
-  function initialize(konvaStage) {
-    if (!konvaStage) {
-      throw new Error('[KonvaLayerManager] konvaStage が指定されていません');
-    }
-
-    stage = konvaStage;
-    drawingLayer = stage.findOne('#drawing-layer');
-
-    if (!drawingLayer) {
-      throw new Error('[KonvaLayerManager] #drawing-layer が見つかりません');
-    }
-
-    console.log('✅ [KonvaLayerManager] initialized');
-
-    // デフォルトレイヤー作成
-    createLayer('レイヤー 1', {
-      isDefault: true,
-      backgroundColor: window.UIComponents.UI_COLORS.cream
-    });
-  }
 
   // ========================================
   // レイヤー作成
   // ========================================
   /**
-   * 新規レイヤー作成
+   * レイヤー作成
    * @param {string} name - レイヤー名
    * @param {Object} options - オプション
-   * @param {boolean} options.isDefault - デフォルトレイヤーか
-   * @param {string} options.backgroundColor - 背景色（背景レイヤーのみ）
-   * @returns {string} layerId
+   * @param {number} options.opacity - 不透明度 0.0-1.0
+   * @param {boolean} options.visible - 可視性
+   * @param {string} options.blendMode - ブレンドモード
+   * @returns {Object} { layerId, konvaGroup }
    */
-  function createLayer(name = '', options = {}) {
+  function createLayer(name, options = {}) {
     const {
-      isDefault = false,
-      backgroundColor = null
+      opacity = 1.0,
+      visible = true,
+      blendMode = 'normal'
     } = options;
 
-    const layerId = `layer-${++layerCounter}`;
-    
-    // Konva.Groupでレイヤーを表現（描画内容をグループ化）
-    const konvaGroup = new Konva.Group({
+    // ========================================
+    // レイヤーID生成
+    // ========================================
+    layerCounter++;
+    const layerId = `layer-${layerCounter}`;
+
+    // ========================================
+    // Konva.Group作成（レイヤー本体）
+    // ========================================
+    const layerGroup = new Konva.Group({
       id: layerId,
       name: name || `レイヤー ${layerCounter}`,
-      visible: true,
-      opacity: 1.0
+      opacity: opacity,
+      visible: visible
+      // blendModeは後でKonva.Imageに設定
     });
 
-    // メタデータ
-    const metadata = {
-      layerId,
-      name: konvaGroup.name(),
-      isDefault,
-      backgroundColor,
+    // ========================================
+    // 描画グループに追加
+    // ========================================
+    const drawingGroup = window.konvaDrawingGroup;
+    if (!drawingGroup) {
+      throw new Error('konvaDrawingGroup が初期化されていません');
+    }
+
+    drawingGroup.add(layerGroup);
+
+    // ========================================
+    // レイヤーデータ保存
+    // ========================================
+    layers.set(layerId, {
+      id: layerId,
+      name: layerGroup.name(),
+      konvaGroup: layerGroup,
+      opacity: opacity,
+      visible: visible,
+      blendMode: blendMode,
       createdAt: Date.now()
+    });
+
+    // ========================================
+    // イベント発火
+    // ========================================
+    eventBus.emit('layer:created', {
+      layerId,
+      name: layerGroup.name(),
+      opacity,
+      visible,
+      blendMode
+    });
+
+    console.log(`[KonvaLayerManager] Layer created: ${layerId}`, {
+      name: layerGroup.name(),
+      opacity,
+      visible
+    });
+
+    return {
+      layerId,
+      konvaGroup: layerGroup
     };
-
-    // 背景レイヤーの場合は背景色を設定
-    if (backgroundColor) {
-      const bg = new Konva.Rect({
-        x: 0,
-        y: 0,
-        width: stage.width(),
-        height: stage.height(),
-        fill: backgroundColor,
-        listening: false
-      });
-      konvaGroup.add(bg);
-    }
-
-    // drawingLayerに追加
-    drawingLayer.add(konvaGroup);
-    layers.set(layerId, { konvaGroup, metadata });
-
-    // アクティブレイヤー設定
-    if (!activeLayerId || isDefault) {
-      setActiveLayer(layerId);
-    }
-
-    stage.batchDraw();
-
-    window.TegakiEventBus.emit('layer:created', { layerId, name: metadata.name });
-
-    console.log(`[KonvaLayerManager] Layer created: ${layerId}`);
-
-    return layerId;
   }
 
   // ========================================
@@ -159,264 +139,203 @@ window.KonvaLayerManager = (() => {
   /**
    * レイヤー削除
    * @param {string} layerId - レイヤーID
+   * @returns {boolean} 削除成功
    */
   function deleteLayer(layerId) {
     const layerData = layers.get(layerId);
     if (!layerData) {
       console.warn(`[KonvaLayerManager] Layer not found: ${layerId}`);
-      return;
+      return false;
     }
 
-    // デフォルトレイヤーは削除不可
-    if (layerData.metadata.isDefault) {
-      console.warn('[KonvaLayerManager] Cannot delete default layer');
-      return;
-    }
-
-    // Konva Groupを削除
+    // Konva.Groupを削除
     layerData.konvaGroup.destroy();
+
+    // Map から削除
     layers.delete(layerId);
 
-    // アクティブレイヤーが削除された場合
-    if (activeLayerId === layerId) {
-      const remainingLayers = Array.from(layers.keys());
-      if (remainingLayers.length > 0) {
-        setActiveLayer(remainingLayers[0]);
-      } else {
-        activeLayerId = null;
-      }
-    }
-
-    stage.batchDraw();
-
-    window.TegakiEventBus.emit('layer:deleted', { layerId });
+    // イベント発火
+    eventBus.emit('layer:deleted', {
+      layerId
+    });
 
     console.log(`[KonvaLayerManager] Layer deleted: ${layerId}`);
-  }
 
-  // ========================================
-  // レイヤー移動（順序変更）
-  // ========================================
-  /**
-   * レイヤーの順序を変更
-   * @param {string} layerId - レイヤーID
-   * @param {number} newIndex - 新しいインデックス（0が最背面）
-   */
-  function moveLayer(layerId, newIndex) {
-    const layerData = layers.get(layerId);
-    if (!layerData) {
-      console.warn(`[KonvaLayerManager] Layer not found: ${layerId}`);
-      return;
-    }
-
-    const konvaGroup = layerData.konvaGroup;
-    const oldIndex = konvaGroup.getZIndex();
-
-    konvaGroup.moveToTop();
-    const totalChildren = drawingLayer.children.length;
-    konvaGroup.moveDown(totalChildren - 1 - newIndex);
-
-    stage.batchDraw();
-
-    window.TegakiEventBus.emit('layer:moved', { layerId, oldIndex, newIndex });
-
-    console.log(`[KonvaLayerManager] Layer moved: ${layerId} (${oldIndex} → ${newIndex})`);
+    return true;
   }
 
   // ========================================
   // レイヤー取得
   // ========================================
   /**
-   * レイヤーを取得
+   * レイヤー取得
    * @param {string} layerId - レイヤーID
-   * @returns {Konva.Group|null}
+   * @returns {Object|null} レイヤーデータ
    */
   function getLayer(layerId) {
-    const layerData = layers.get(layerId);
-    return layerData ? layerData.konvaGroup : null;
+    return layers.get(layerId) || null;
   }
 
+  // ========================================
+  // 全レイヤー取得
+  // ========================================
   /**
-   * すべてのレイヤーを取得
-   * @returns {Array<Konva.Group>}
+   * 全レイヤー取得
+   * @returns {Array<Object>} レイヤーデータ配列
    */
   function getAllLayers() {
-    return Array.from(layers.values()).map(data => data.konvaGroup);
-  }
-
-  /**
-   * レイヤーメタデータを取得
-   * @param {string} layerId - レイヤーID
-   * @returns {Object|null}
-   */
-  function getLayerMetadata(layerId) {
-    const layerData = layers.get(layerId);
-    return layerData ? layerData.metadata : null;
+    return Array.from(layers.values());
   }
 
   // ========================================
-  // アクティブレイヤー
+  // レイヤー数取得
   // ========================================
   /**
-   * アクティブレイヤーを設定
-   * @param {string} layerId - レイヤーID
+   * レイヤー数取得
+   * @returns {number} レイヤー数
    */
-  function setActiveLayer(layerId) {
-    const layerData = layers.get(layerId);
-    if (!layerData) {
-      console.warn(`[KonvaLayerManager] Layer not found: ${layerId}`);
-      return;
-    }
-
-    activeLayerId = layerId;
-
-    window.TegakiEventBus.emit('layer:activated', { layerId });
-
-    console.log(`[KonvaLayerManager] Active layer: ${layerId}`);
-  }
-
-  /**
-   * アクティブレイヤーを取得
-   * @returns {string|null}
-   */
-  function getActiveLayerId() {
-    return activeLayerId;
-  }
-
-  /**
-   * アクティブレイヤーのKonva.Groupを取得
-   * @returns {Konva.Group|null}
-   */
-  function getActiveLayer() {
-    return activeLayerId ? getLayer(activeLayerId) : null;
+  function getLayerCount() {
+    return layers.size;
   }
 
   // ========================================
-  // レイヤー更新
+  // レイヤー可視性設定
   // ========================================
   /**
-   * レイヤー名を変更
-   * @param {string} layerId - レイヤーID
-   * @param {string} newName - 新しい名前
-   */
-  function renameLayer(layerId, newName) {
-    const layerData = layers.get(layerId);
-    if (!layerData) {
-      console.warn(`[KonvaLayerManager] Layer not found: ${layerId}`);
-      return;
-    }
-
-    layerData.konvaGroup.name(newName);
-    layerData.metadata.name = newName;
-
-    window.TegakiEventBus.emit('layer:updated', { layerId, name: newName });
-  }
-
-  /**
-   * レイヤーの可視性を設定
+   * レイヤー可視性設定
    * @param {string} layerId - レイヤーID
    * @param {boolean} visible - 可視性
    */
   function setLayerVisible(layerId, visible) {
-    const konvaGroup = getLayer(layerId);
-    if (!konvaGroup) {
-      console.warn(`[KonvaLayerManager] Layer not found: ${layerId}`);
-      return;
-    }
-
-    konvaGroup.visible(visible);
-    stage.batchDraw();
-
-    window.TegakiEventBus.emit('layer:updated', { layerId, visible });
-  }
-
-  /**
-   * レイヤーの不透明度を設定
-   * @param {string} layerId - レイヤーID
-   * @param {number} opacity - 不透明度（0.0～1.0）
-   */
-  function setLayerOpacity(layerId, opacity) {
-    const konvaGroup = getLayer(layerId);
-    if (!konvaGroup) {
-      console.warn(`[KonvaLayerManager] Layer not found: ${layerId}`);
-      return;
-    }
-
-    konvaGroup.opacity(opacity);
-    stage.batchDraw();
-
-    window.TegakiEventBus.emit('layer:updated', { layerId, opacity });
-  }
-
-  // ========================================
-  // レイヤークリア
-  // ========================================
-  /**
-   * レイヤーの描画内容をクリア（背景以外）
-   * @param {string} layerId - レイヤーID
-   */
-  function clearLayer(layerId) {
     const layerData = layers.get(layerId);
     if (!layerData) {
       console.warn(`[KonvaLayerManager] Layer not found: ${layerId}`);
       return;
     }
 
-    const konvaGroup = layerData.konvaGroup;
+    layerData.konvaGroup.visible(visible);
+    layerData.visible = visible;
 
-    // 背景レイヤーの場合は背景色を残す
-    if (layerData.metadata.backgroundColor) {
-      const children = konvaGroup.getChildren();
-      children.forEach((child, index) => {
-        if (index > 0) { // 最初の要素（背景）以外を削除
-          child.destroy();
-        }
-      });
-    } else {
-      konvaGroup.destroyChildren();
-    }
+    // 再描画
+    layerData.konvaGroup.getLayer()?.batchDraw();
 
-    stage.batchDraw();
-
-    window.TegakiEventBus.emit('layer:updated', { layerId, action: 'cleared' });
-
-    console.log(`[KonvaLayerManager] Layer cleared: ${layerId}`);
-  }
-
-  // ========================================
-  // イベントリスナー
-  // ========================================
-  // 初期化後に自動登録
-  if (window.TegakiEventBus) {
-    window.TegakiEventBus.on('runtime:initialized', (data) => {
-      if (data.konvaStage) {
-        initialize(data.konvaStage);
-      }
+    eventBus.emit('layer:visibility-changed', {
+      layerId,
+      visible
     });
   }
+
+  // ========================================
+  // レイヤー不透明度設定
+  // ========================================
+  /**
+   * レイヤー不透明度設定
+   * @param {string} layerId - レイヤーID
+   * @param {number} opacity - 不透明度 0.0-1.0
+   */
+  function setLayerOpacity(layerId, opacity) {
+    const layerData = layers.get(layerId);
+    if (!layerData) {
+      console.warn(`[KonvaLayerManager] Layer not found: ${layerId}`);
+      return;
+    }
+
+    layerData.konvaGroup.opacity(opacity);
+    layerData.opacity = opacity;
+
+    // 再描画
+    layerData.konvaGroup.getLayer()?.batchDraw();
+
+    eventBus.emit('layer:opacity-changed', {
+      layerId,
+      opacity
+    });
+  }
+
+  // ========================================
+  // 背景色で塗りつぶしたレイヤー作成
+  // ========================================
+  /**
+   * 背景レイヤー作成（クリーム色で塗りつぶし）
+   * @param {string} name - レイヤー名
+   * @returns {Object} { layerId, konvaGroup }
+   */
+  function createBackgroundLayer(name) {
+    const config = window.TEGAKI_CONFIG;
+    const width = config.canvas.width;
+    const height = config.canvas.height;
+    const bgColor = window.UIComponents.UI_COLORS.cream;
+
+    // 背景レイヤー作成
+    const result = createLayer(name, {
+      opacity: 1.0,
+      visible: true,
+      blendMode: 'normal'
+    });
+
+    // Konva.Rectで背景色を塗る
+    const bgRect = new Konva.Rect({
+      x: 0,
+      y: 0,
+      width: width,
+      height: height,
+      fill: bgColor
+    });
+
+    result.konvaGroup.add(bgRect);
+
+    // 再描画
+    result.konvaGroup.getLayer()?.batchDraw();
+
+    console.log(`[KonvaLayerManager] Background layer created: ${result.layerId}`, {
+      color: bgColor,
+      size: `${width}x${height}`
+    });
+
+    return result;
+  }
+
+  // ========================================
+  // 初期レイヤー作成（自動実行）
+  // ========================================
+  function initializeDefaultLayer() {
+    // CoreRuntime初期化完了を待つ
+    eventBus.on('runtime:initialized', () => {
+      console.log('[KonvaLayerManager] Creating default layers...');
+      
+      // 背景レイヤー作成（クリーム色）
+      createBackgroundLayer('背景');
+      
+      // 描画レイヤー作成（透明）
+      createLayer('レイヤー 1', {
+        opacity: 1.0,
+        visible: true,
+        blendMode: 'normal'
+      });
+      
+      console.log('[KonvaLayerManager] Default layers created');
+    });
+  }
+
+  // ========================================
+  // 初期化
+  // ========================================
+  initializeDefaultLayer();
 
   // ========================================
   // 公開API
   // ========================================
   return {
-    initialize,
     createLayer,
+    createBackgroundLayer,
     deleteLayer,
-    moveLayer,
     getLayer,
     getAllLayers,
-    getLayerMetadata,
-    setActiveLayer,
-    getActiveLayerId,
-    getActiveLayer,
-    renameLayer,
+    getLayerCount,
     setLayerVisible,
-    setLayerOpacity,
-    clearLayer,
-    get stage() { return stage; },
-    get layers() { return layers; }
+    setLayerOpacity
   };
 
 })();
 
-console.log('✅ KonvaLayerManager loaded');
+console.log('✅ KonvaLayerManager Phase 1 loaded (最小実装版)');
