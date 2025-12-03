@@ -1,0 +1,904 @@
+# Tegaki Anime v2.0 改修計画書（別冊2: エクスポート・ビルドシステム）
+
+## 📋 概要
+
+### 目的
+- 各種フォーマットへのエクスポート機能
+- クリップボード転写対応（nijiurachan.net）
+- file://直開き用ビルドシステム
+- 単一HTMLファイル化
+
+### 前提条件
+✅ メイン計画書（Phase 4-15）完了
+✅ 別冊1（Phase X1）完了
+- 全UI機能動作
+- フレーム・タイムライン完成
+- アニメーション再生可能
+
+### 実装タイミング
+🔒 Phase X2として保留
+- 全機能実装完了後に着手
+- 最終仕上げフェーズ
+
+---
+
+## 🎯 エクスポート対応フォーマット
+
+### 静止画
+- ✅ PNG（現在フレーム）
+- ✅ PNG（全レイヤー合成）
+- ⚠️ PSD（レイヤー情報保持） - 優先度低
+
+### アニメーション
+- ✅ APNG（Animated PNG）
+- ✅ GIF（256色）
+- ⚠️ WebM（動画形式） - 優先度低
+- ⚠️ MP4（動画形式） - 優先度低
+
+### クリップボード
+- ✅ PNG画像データ（nijiurachan.net対応）
+- ✅ DataURL形式
+
+---
+
+## 📁 対象ファイル
+
+```
+export/
+├── export-manager.js           🔧 エクスポート統合管理
+├── clipboard-exporter.js       🆕 クリップボード転写
+├── png-exporter.js             ✅ PNG出力（既存流用）
+├── apng-exporter.js            ✅ APNG出力（既存流用）
+└── gif-exporter.js             🆕 GIF出力
+
+ui/
+└── export-popup.js             🆕 エクスポートUI
+
+build/
+├── build-script.sh             🆕 ビルドスクリプト
+└── inline-html.js              🆕 HTML統合ツール
+```
+
+---
+
+## 🚀 Phase X2: エクスポート・ビルドシステム
+
+### **Phase X2-1: エクスポート基盤整備**
+**目標**: export-manager.js 統合管理実装
+
+#### 作業内容
+1. `export/export-manager.js` 改修
+   - 各エクスポーター統合
+   - フォーマット選択機能
+   - プログレス表示
+   - EventBus連携
+
+#### ExportManager 仕様
+```javascript
+/**
+ * ============================================================================
+ * ファイル名: export-manager.js
+ * 責務: エクスポート処理の統合管理
+ * 依存: 
+ *   - event-bus.js (EventBus)
+ *   - frame-system.js (FrameSystem)
+ *   - konva-layer-manager.js (KonvaLayerManager)
+ *   - clipboard-exporter.js (ClipboardExporter)
+ *   - png-exporter.js (PNGExporter)
+ *   - apng-exporter.js (APNGExporter)
+ *   - gif-exporter.js (GIFExporter)
+ * 親依存:
+ *   - export-popup.js
+ *   - keyboard-handler.js (Ctrl+S等)
+ * 子依存:
+ *   - 各エクスポーター
+ * 公開API:
+ *   - exportPNG(options)
+ *   - exportAPNG(options)
+ *   - exportGIF(options)
+ *   - exportToClipboard(options)
+ * イベント発火:
+ *   - 'export:started' { format }
+ *   - 'export:progress' { percent }
+ *   - 'export:completed' { format, dataUrl }
+ *   - 'export:failed' { error }
+ * イベント受信:
+ *   - 'shortcut:export' → エクスポートポップアップ表示
+ * グローバル登録: window.exportManager
+ * 実装状態: 🔧改修
+ * ============================================================================
+ */
+
+class ExportManager {
+  constructor() {
+    this.frameSystem = window.frameSystem;
+    this.konvaLayerManager = window.konvaLayerManager;
+    this.eventBus = window.EventBus;
+    
+    this.exporters = {
+      png: window.pngExporter,
+      apng: window.apngExporter,
+      gif: window.gifExporter,
+      clipboard: window.clipboardExporter
+    };
+    
+    this._setupEventListeners();
+  }
+
+  /**
+   * PNG エクスポート（現在フレーム）
+   */
+  async exportPNG(options = {}) {
+    this.eventBus.emit('export:started', { format: 'PNG' });
+    
+    try {
+      const stage = this.konvaLayerManager.stage;
+      const dataUrl = stage.toDataURL({
+        mimeType: 'image/png',
+        quality: 1.0,
+        pixelRatio: options.scale || 1.0
+      });
+      
+      this._downloadDataUrl(dataUrl, options.filename || 'tegaki.png');
+      
+      this.eventBus.emit('export:completed', { format: 'PNG', dataUrl });
+      return dataUrl;
+    } catch (error) {
+      this.eventBus.emit('export:failed', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * APNG エクスポート（アニメーション）
+   */
+  async exportAPNG(options = {}) {
+    this.eventBus.emit('export:started', { format: 'APNG' });
+    
+    try {
+      const frames = this.frameSystem.getAllFrames();
+      const frameImages = [];
+      
+      for (let i = 0; i < frames.length; i++) {
+        this.frameSystem.setFrame(frames[i].id);
+        await this._waitForRender();
+        
+        const dataUrl = this.konvaLayerManager.stage.toDataURL({
+          mimeType: 'image/png',
+          quality: 1.0
+        });
+        
+        frameImages.push({
+          dataUrl,
+          duration: frames[i].duration
+        });
+        
+        const percent = Math.round((i + 1) / frames.length * 100);
+        this.eventBus.emit('export:progress', { percent });
+      }
+      
+      const apngBlob = await this.exporters.apng.generate(frameImages);
+      const apngUrl = URL.createObjectURL(apngBlob);
+      
+      this._downloadUrl(apngUrl, options.filename || 'tegaki.png');
+      
+      this.eventBus.emit('export:completed', { format: 'APNG', dataUrl: apngUrl });
+      return apngUrl;
+    } catch (error) {
+      this.eventBus.emit('export:failed', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * GIF エクスポート（アニメーション）
+   */
+  async exportGIF(options = {}) {
+    this.eventBus.emit('export:started', { format: 'GIF' });
+    
+    try {
+      const frames = this.frameSystem.getAllFrames();
+      const frameImages = [];
+      
+      for (let i = 0; i < frames.length; i++) {
+        this.frameSystem.setFrame(frames[i].id);
+        await this._waitForRender();
+        
+        const canvas = this.konvaLayerManager.stage.toCanvas();
+        
+        frameImages.push({
+          canvas,
+          duration: frames[i].duration
+        });
+        
+        const percent = Math.round((i + 1) / frames.length * 100);
+        this.eventBus.emit('export:progress', { percent });
+      }
+      
+      const gifBlob = await this.exporters.gif.generate(frameImages, options);
+      const gifUrl = URL.createObjectURL(gifBlob);
+      
+      this._downloadUrl(gifUrl, options.filename || 'tegaki.gif');
+      
+      this.eventBus.emit('export:completed', { format: 'GIF', dataUrl: gifUrl });
+      return gifUrl;
+    } catch (error) {
+      this.eventBus.emit('export:failed', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * クリップボードへコピー（nijiurachan.net対応）
+   */
+  async exportToClipboard(options = {}) {
+    this.eventBus.emit('export:started', { format: 'Clipboard' });
+    
+    try {
+      const stage = this.konvaLayerManager.stage;
+      const blob = await stage.toBlob({
+        mimeType: 'image/png',
+        quality: 1.0,
+        pixelRatio: options.scale || 1.0
+      });
+      
+      await this.exporters.clipboard.copy(blob);
+      
+      this.eventBus.emit('export:completed', { format: 'Clipboard' });
+      return true;
+    } catch (error) {
+      this.eventBus.emit('export:failed', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * レンダリング待機
+   */
+  _waitForRender() {
+    return new Promise(resolve => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(resolve);
+      });
+    });
+  }
+
+  /**
+   * DataURL ダウンロード
+   */
+  _downloadDataUrl(dataUrl, filename) {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    a.click();
+  }
+
+  /**
+   * URL ダウンロード
+   */
+  _downloadUrl(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+  }
+
+  /**
+   * イベントリスナー設定
+   */
+  _setupEventListeners() {
+    this.eventBus.on('shortcut:export', () => {
+      // エクスポートポップアップ表示
+      window.exportPopup?.show();
+    });
+  }
+}
+
+window.exportManager = new ExportManager();
+```
+
+#### 完了条件
+- [ ] ExportManager実装
+- [ ] 各エクスポーター統合
+- [ ] プログレス表示
+- [ ] EventBus連携
+- [ ] エラーハンドリング
+
+---
+
+### **Phase X2-2: クリップボードエクスポーター**
+**目標**: nijiurachan.net 対応クリップボード転写
+
+#### 作業内容
+1. `export/clipboard-exporter.js` 新規作成
+   - Clipboard API 使用
+   - PNG Blob コピー
+   - フォールバック処理
+
+#### ClipboardExporter 仕様
+```javascript
+/**
+ * ============================================================================
+ * ファイル名: clipboard-exporter.js
+ * 責務: クリップボードへの画像転写（nijiurachan.net対応）
+ * 依存: なし（ブラウザAPI）
+ * 親依存: export-manager.js
+ * 子依存: なし
+ * 公開API:
+ *   - copy(blob) → Promise<void>
+ *   - isSupported() → boolean
+ * イベント発火: なし
+ * イベント受信: なし
+ * グローバル登録: window.clipboardExporter
+ * 実装状態: 🆕新規
+ * ============================================================================
+ */
+
+class ClipboardExporter {
+  constructor() {
+    this.supported = this._checkSupport();
+  }
+
+  /**
+   * Clipboard API サポート確認
+   */
+  _checkSupport() {
+    return !!(navigator.clipboard && navigator.clipboard.write);
+  }
+
+  /**
+   * サポート確認
+   */
+  isSupported() {
+    return this.supported;
+  }
+
+  /**
+   * PNG Blob をクリップボードにコピー
+   */
+  async copy(blob) {
+    if (!this.supported) {
+      throw new Error('Clipboard API is not supported');
+    }
+
+    try {
+      const item = new ClipboardItem({
+        'image/png': blob
+      });
+      
+      await navigator.clipboard.write([item]);
+      
+      console.log('[ClipboardExporter] Image copied to clipboard');
+    } catch (error) {
+      console.error('[ClipboardExporter] Failed to copy:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Canvas を直接コピー
+   */
+  async copyCanvas(canvas) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(async (blob) => {
+        try {
+          await this.copy(blob);
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      }, 'image/png');
+    });
+  }
+}
+
+window.clipboardExporter = new ClipboardExporter();
+```
+
+#### 完了条件
+- [ ] ClipboardExporter実装
+- [ ] Clipboard API動作確認
+- [ ] nijiurachan.net貼り付けテスト
+- [ ] エラーハンドリング
+- [ ] サポート判定
+
+#### 参考
+- webgl2_rev30/system/drawing-clipboard.js
+
+---
+
+### **Phase X2-3: GIFエクスポーター**
+**目標**: GIFアニメーション出力
+
+#### 作業内容
+1. `export/gif-exporter.js` 新規作成
+   - gif.js ライブラリ使用検討
+   - または UPNG.js 経由で変換
+   - フレーム減色処理（256色）
+
+#### GIFExporter 仕様
+```javascript
+/**
+ * ============================================================================
+ * ファイル名: gif-exporter.js
+ * 責務: GIFアニメーション生成
+ * 依存: 
+ *   - gif.js (外部ライブラリ) または UPNG.js
+ * 親依存: export-manager.js
+ * 子依存: なし
+ * 公開API:
+ *   - generate(frames, options) → Promise<Blob>
+ * イベント発火: なし
+ * イベント受信: なし
+ * グローバル登録: window.gifExporter
+ * 実装状態: 🆕新規
+ * ============================================================================
+ */
+
+class GIFExporter {
+  /**
+   * GIF生成
+   * @param {Array} frames - { canvas, duration }
+   * @param {Object} options - { quality, repeat }
+   */
+  async generate(frames, options = {}) {
+    const {
+      quality = 10,      // 1-30 (低いほど高品質)
+      repeat = 0,        // 0 = 無限ループ
+      width = 800,
+      height = 600
+    } = options;
+
+    // TODO: gif.js または UPNG.js での実装
+    // 以下は疑似コード
+    
+    const gif = new GIF({
+      workers: 2,
+      quality,
+      repeat,
+      width,
+      height
+    });
+
+    frames.forEach(frame => {
+      gif.addFrame(frame.canvas, { delay: frame.duration });
+    });
+
+    return new Promise((resolve, reject) => {
+      gif.on('finished', (blob) => {
+        resolve(blob);
+      });
+      
+      gif.on('error', (error) => {
+        reject(error);
+      });
+      
+      gif.render();
+    });
+  }
+}
+
+window.gifExporter = new GIFExporter();
+```
+
+#### 完了条件
+- [ ] GIFExporter実装
+- [ ] gif.js 統合（またはUPNG.js）
+- [ ] フレーム減色処理
+- [ ] アニメーションループ
+- [ ] パフォーマンス確認
+
+#### 注意事項
+- gif.js のライセンス確認（MIT）
+- Web Worker 使用によるパフォーマンス向上
+- 256色制限の品質調整
+
+---
+
+### **Phase X2-4: エクスポートUI実装**
+**目標**: export-popup.js 実装
+
+#### 作業内容
+1. `ui/export-popup.js` 新規作成
+   - フォーマット選択
+   - オプション設定（サイズ、品質等）
+   - プログレスバー表示
+   - UIComponents使用
+
+#### レイアウト仕様
+```
+┌─────────────────────────────┐
+│ エクスポート          [×]   │
+├─────────────────────────────┤
+│ フォーマット:               │
+│  ○ PNG (現在フレーム)       │
+│  ○ APNG (アニメーション)    │
+│  ○ GIF (アニメーション)     │
+│  ○ クリップボード           │
+│                             │
+│ オプション:                 │
+│  サイズ: [====] 1.0x        │
+│  品質:   [====] 100%        │
+│                             │
+│ ┌─────────────────────────┐ │
+│ │ ████████░░░░░░░░░  50%  │ │ ← プログレス
+│ └─────────────────────────┘ │
+│                             │
+│      [キャンセル] [出力]    │
+└─────────────────────────────┘
+```
+
+#### HTML構造
+```html
+<div class="export-popup">
+  <div class="export-popup-header">
+    <h3>エクスポート</h3>
+    <button class="export-close-btn">×</button>
+  </div>
+  
+  <div class="export-popup-body">
+    <div class="export-format-select">
+      <label>フォーマット:</label>
+      <label>
+        <input type="radio" name="format" value="png" checked>
+        PNG (現在フレーム)
+      </label>
+      <label>
+        <input type="radio" name="format" value="apng">
+        APNG (アニメーション)
+      </label>
+      <label>
+        <input type="radio" name="format" value="gif">
+        GIF (アニメーション)
+      </label>
+      <label>
+        <input type="radio" name="format" value="clipboard">
+        クリップボード
+      </label>
+    </div>
+    
+    <div class="export-options">
+      <!-- UIComponents.createSlider() -->
+    </div>
+    
+    <div class="export-progress">
+      <div class="export-progress-bar"></div>
+      <span class="export-progress-text">0%</span>
+    </div>
+  </div>
+  
+  <div class="export-popup-footer">
+    <button class="export-cancel-btn">キャンセル</button>
+    <button class="export-submit-btn">出力</button>
+  </div>
+</div>
+```
+
+#### 完了条件
+- [ ] エクスポートポップアップ表示
+- [ ] フォーマット選択
+- [ ] オプション設定
+- [ ] プログレスバー表示
+- [ ] 出力実行
+- [ ] UIComponents統合
+- [ ] futabaカラー適用
+
+#### 参考ファイル
+- webgl2_rev30/ui/export-popup.js
+
+---
+
+### **Phase X2-5: ビルドシステム構築**
+**目標**: file://直開き用単一HTMLファイル生成
+
+#### 作業内容
+1. `build/build-script.sh` 作成
+   - npm依存ライブラリ取得
+   - libs/フォルダにコピー
+   - 全JSファイル結合
+   - HTMLインライン化
+
+#### ビルドスクリプト
+```bash
+#!/bin/bash
+# ============================================================================
+# ファイル名: build-script.sh
+# 責務: 単一HTMLファイルビルド
+# 依存: npm, node
+# ============================================================================
+
+set -e
+
+echo "========================================="
+echo "Tegaki Anime v2.0 Build Script"
+echo "========================================="
+
+# 1. 依存ライブラリインストール
+echo "[1/5] Installing dependencies..."
+npm install konva@9 pixi.js@8 upng-js@2 gsap@3
+
+# 2. libs/にコピー
+echo "[2/5] Copying libraries..."
+mkdir -p libs
+cp node_modules/konva/konva.min.js libs/
+cp node_modules/pixi.js/dist/pixi.min.js libs/
+cp node_modules/upng-js/UPNG.js libs/upng.min.js
+cp node_modules/gsap/dist/gsap.min.js libs/
+
+# 3. 全JSファイル結合
+echo "[3/5] Concatenating JS files..."
+cat \
+  libs/konva.min.js \
+  libs/pixi.min.js \
+  libs/upng.min.js \
+  libs/gsap.min.js \
+  assets/ui-components.js \
+  config.js \
+  system/event-bus.js \
+  system/state-manager.js \
+  system/settings-manager.js \
+  system/history.js \
+  system/camera-system.js \
+  system/popup-manager.js \
+  system/shortcut-manager.js \
+  layers/konva-layer-manager.js \
+  layers/layer-folder-system.js \
+  layers/thumbnail-generator.js \
+  drawing/raster-brush-engine.js \
+  drawing/pressure-handler.js \
+  drawing/pointer-handler.js \
+  drawing/brush-settings.js \
+  drawing/fill-tool.js \
+  drawing/drawing-controller.js \
+  timeline/frame-system.js \
+  timeline/animation-controller.js \
+  timeline/virtual-album.js \
+  export/export-manager.js \
+  export/clipboard-exporter.js \
+  export/apng-exporter.js \
+  export/png-exporter.js \
+  export/gif-exporter.js \
+  ui/layer-panel.js \
+  ui/timeline-panel.js \
+  ui/settings-popup.js \
+  ui/album-popup.js \
+  ui/sidebar.js \
+  ui/quick-access-popup.js \
+  ui/export-popup.js \
+  ui/keyboard-handler.js \
+  core-runtime.js \
+  core-engine.js \
+  > dist/tegaki_anime_all.js
+
+echo "   → dist/tegaki_anime_all.js created"
+
+# 4. HTMLインライン化
+echo "[4/5] Inlining HTML..."
+node build/inline-html.js
+
+echo "   → dist/tegaki_anime_standalone.html created"
+
+# 5. 完了
+echo "[5/5] Build completed!"
+echo "========================================="
+echo "Output: dist/tegaki_anime_standalone.html"
+echo "Size: $(du -h dist/tegaki_anime_standalone.html | cut -f1)"
+echo "========================================="
+```
+
+#### inline-html.js 実装
+```javascript
+/**
+ * ============================================================================
+ * ファイル名: inline-html.js
+ * 責務: HTML・CSS・JSの単一ファイル統合
+ * 依存: Node.js fs module
+ * ============================================================================
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// ファイル読み込み
+const html = fs.readFileSync('index.html', 'utf8');
+const css = fs.readFileSync('styles/main.css', 'utf8');
+const js = fs.readFileSync('dist/tegaki_anime_all.js', 'utf8');
+
+// HTML生成
+const standalone = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tegaki Anime v2.0</title>
+  <style>
+${css}
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  
+  <script>
+${js}
+  </script>
+</body>
+</html>`;
+
+// 出力
+fs.writeFileSync('dist/tegaki_anime_standalone.html', standalone, 'utf8');
+
+console.log('✓ Standalone HTML created');
+```
+
+#### 完了条件
+- [ ] ビルドスクリプト実装
+- [ ] libs/コピー動作
+- [ ] JS結合動作
+- [ ] HTMLインライン化動作
+- [ ] file://動作確認
+- [ ] ファイルサイズ確認（目標: 5MB以下）
+
+---
+
+### **Phase X2-6: 最終テスト・最適化**
+**目標**: 全機能統合テスト・パフォーマンス最適化
+
+#### 作業内容
+1. 全機能動作確認
+   - 描画
+   - レイヤー操作
+   - タイムライン
+   - アニメーション再生
+   - 各種エクスポート
+
+2. パフォーマンス最適化
+   - 不要コンソールログ削除
+   - イベントリスナー最適化
+   - メモリリーク確認
+
+3. コード品質チェック
+   - ヘッダー完全性
+   - DRY原則遵守
+   - 二重実装撲滅
+
+#### テストチェックリスト
+```
+【描画】
+- [ ] ペン描画動作
+- [ ] 筆圧反映
+- [ ] 消しゴム動作
+- [ ] バケツツール動作
+- [ ] Undo/Redo動作
+
+【レイヤー】
+- [ ] レイヤー作成・削除
+- [ ] レイヤードラッグ移動
+- [ ] フォルダ作成・展開
+- [ ] 可視性・ロック切り替え
+- [ ] サムネイル表示
+
+【キャンバス操作】
+- [ ] 拡大・縮小
+- [ ] 回転
+- [ ] パン（移動）
+- [ ] 反転
+- [ ] リセット
+
+【タイムライン】
+- [ ] フレーム作成・削除
+- [ ] フレーム切り替え
+- [ ] フレームドラッグ移動
+- [ ] サムネイル自動更新
+- [ ] アニメーション再生
+
+【エクスポート】
+- [ ] PNG出力
+- [ ] APNG出力
+- [ ] GIF出力
+- [ ] クリップボードコピー
+- [ ] nijiurachan.net貼り付け
+
+【UI】
+- [ ] ショートカット動作
+- [ ] クイックアクセスポップアップ
+- [ ] 設定ポップアップ
+- [ ] サイドバー切り替え
+- [ ] futabaカラー統一
+
+【ビルド】
+- [ ] file://直開き動作
+- [ ] 単一HTMLファイル化
+- [ ] ファイルサイズ確認
+- [ ] 動作速度確認
+```
+
+#### 完了条件
+- [ ] 全機能動作確認
+- [ ] コンソールエラー0件
+- [ ] パフォーマンス問題なし
+- [ ] メモリリークなし
+- [ ] コード品質基準クリア
+
+---
+
+## ✅ Phase X2 完了条件
+
+### エクスポート機能
+- [ ] PNG出力
+- [ ] APNG出力
+- [ ] GIF出力
+- [ ] クリップボードコピー
+- [ ] プログレス表示
+
+### UI機能
+- [ ] エクスポートポップアップ
+- [ ] フォーマット選択
+- [ ] オプション設定
+- [ ] UIComponents統合
+
+### ビルドシステム
+- [ ] ビルドスクリプト動作
+- [ ] libs/統合
+- [ ] JS結合
+- [ ] HTMLインライン化
+- [ ] file://動作
+
+### 統合テスト
+- [ ] 全機能動作
+- [ ] nijiurachan.net対応
+- [ ] パフォーマンス確認
+- [ ] コード品質確認
+
+---
+
+## 📝 実装時の注意事項
+
+### 1. エクスポートフォーマット優先順位
+```
+高優先度:
+✅ PNG (現在フレーム)
+✅ APNG (アニメーション)
+✅ クリップボード (nijiurachan.net)
+
+中優先度:
+⚠️ GIF (256色制限あり)
+
+低優先度:
+⚠️ PSD (レイヤー情報保持)
+⚠️ WebM/MP4 (動画形式)
+```
+
+### 2. クリップボードAPI制約
+```
+- HTTPS または localhost のみ動作
+- file:// では動作しない可能性
+- ユーザージェスチャー必須（ボタンクリック等）
+- ブラウザサポート確認必須
+```
+
+### 3. ビルド時の注意
+```
+- CDN URL → libs/ローカルファイルに変更
+- import/export 構文なし
+- グローバルスコープのみ
+- 結合順序厳守（依存関係）
+```
+
+### 4. ファイルサイズ目標
+```
+- 単一HTMLファイル: 5MB以下
+- ライブラリ合計: 3MB以下
+- アプリケーションコード: 2MB以下
+```
+
+### 5. 将来の拡張予定
+```
+- WebGPU対応
+- WebM/MP4エクスポート
+- PSDエクスポート（レイヤー保持）
+- オンラインストレージ連携
+```
+
+---
+
+## 📞 実装開始時

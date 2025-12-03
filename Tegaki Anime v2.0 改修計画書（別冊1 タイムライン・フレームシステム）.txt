@@ -1,0 +1,798 @@
+# Tegaki Anime v2.0 改修計画書（別冊1: タイムライン・フレームシステム）
+
+## 📋 概要
+
+### 目的
+- フレームベースのアニメーション管理
+- タイムラインUIの実装
+- フレーム間のレイヤー状態管理
+- アニメーションプレビュー機能
+
+### 前提条件
+✅ メイン計画書（Phase 4-15）完了
+- UIコンポーネント統合
+- レイヤーパネル動作
+- Konvaレイヤー管理確立
+
+### 実装タイミング
+🔒 Phase X1として保留
+- レイヤーサムネイル機能完成後に実装
+- UI整備が完全に完了してから着手
+
+---
+
+## 🎬 タイムライン概念図
+
+```
+Timeline (時間軸)
+├─ Frame 1 (100ms)
+│   ├─ Layer1: visible=true, opacity=1.0
+│   ├─ Layer2: visible=false
+│   └─ thumbnail: DataURL
+├─ Frame 2 (100ms)
+│   ├─ Layer1: visible=true, opacity=0.5
+│   ├─ Layer2: visible=true, opacity=1.0
+│   └─ thumbnail: DataURL
+└─ Frame 3 (150ms)
+    └─ ...
+```
+
+### フレームとレイヤーの関係
+```
+Frame (上位概念)
+ ├─ duration: ms単位
+ ├─ layers: [
+ │   { konvaLayerId, visible, opacity, blendMode }
+ │ ]
+ └─ thumbnail: Konva生成
+
+Konva.Layer (下位実装)
+ ├─ 実体はレイヤーパネルで管理
+ └─ フレームが可視性・不透明度を制御
+```
+
+---
+
+## 📁 対象ファイル
+
+```
+timeline/
+├── frame-system.js              🔧 フレーム管理コア
+├── animation-controller.js      ✅ アニメーション再生（既存流用）
+└── virtual-album.js             ✅ バーチャルアルバム（既存流用）
+
+ui/
+└── timeline-panel.js            🔧 タイムラインUI
+
+layers/
+└── thumbnail-generator.js       🔧 フレームサムネイル対応
+```
+
+---
+
+## 🚀 Phase X1: タイムライン・フレームシステム
+
+### **Phase X1-1: フレームデータモデル**
+**目標**: Frame クラス実装・データ構造確立
+
+#### 作業内容
+1. `timeline/frame-system.js` 改修
+   - Frame クラス定義
+   - レイヤー状態配列管理
+   - サムネイル保持
+   - CRUD操作メソッド
+
+#### Frame クラス仕様
+```javascript
+/**
+ * フレーム = タイムライン上の1コマ
+ */
+class Frame {
+  constructor(id, duration = 100) {
+    this.id = id;                    // 'frame-001'
+    this.duration = duration;        // ms
+    this.layers = [];                // レイヤー状態配列
+    this.thumbnail = null;           // DataURL
+    this.createdAt = Date.now();
+  }
+
+  /**
+   * レイヤー追加
+   */
+  addLayer(konvaLayerId, options = {}) {
+    this.layers.push({
+      konvaLayerId,
+      visible: options.visible ?? true,
+      opacity: options.opacity ?? 1.0,
+      blendMode: options.blendMode ?? 'normal'
+    });
+  }
+
+  /**
+   * レイヤー削除
+   */
+  removeLayer(konvaLayerId) {
+    this.layers = this.layers.filter(l => l.konvaLayerId !== konvaLayerId);
+  }
+
+  /**
+   * レイヤー可視性設定
+   */
+  setLayerVisible(konvaLayerId, visible) {
+    const layer = this.layers.find(l => l.konvaLayerId === konvaLayerId);
+    if (layer) {
+      layer.visible = visible;
+    }
+  }
+
+  /**
+   * レイヤー不透明度設定
+   */
+  setLayerOpacity(konvaLayerId, opacity) {
+    const layer = this.layers.find(l => l.konvaLayerId === konvaLayerId);
+    if (layer) {
+      layer.opacity = opacity;
+    }
+  }
+
+  /**
+   * JSON シリアライズ
+   */
+  toJSON() {
+    return {
+      id: this.id,
+      duration: this.duration,
+      layers: this.layers,
+      thumbnail: this.thumbnail,
+      createdAt: this.createdAt
+    };
+  }
+
+  /**
+   * JSON デシリアライズ
+   */
+  static fromJSON(json) {
+    const frame = new Frame(json.id, json.duration);
+    frame.layers = json.layers || [];
+    frame.thumbnail = json.thumbnail || null;
+    frame.createdAt = json.createdAt || Date.now();
+    return frame;
+  }
+}
+```
+
+#### 完了条件
+- [ ] Frame クラス実装
+- [ ] レイヤー状態管理
+- [ ] JSON シリアライズ/デシリアライズ
+- [ ] テストコード作成
+
+---
+
+### **Phase X1-2: FrameSystem 実装**
+**目標**: フレーム管理システム構築
+
+#### 作業内容
+1. `timeline/frame-system.js` FrameSystem クラス実装
+   - フレームコレクション管理
+   - 現在フレーム追跡
+   - Konvaレイヤー同期
+   - EventBus 連携
+
+#### FrameSystem クラス仕様
+```javascript
+/**
+ * ============================================================================
+ * ファイル名: frame-system.js
+ * 責務: フレーム管理・Konvaレイヤー同期
+ * 依存: 
+ *   - event-bus.js (EventBus)
+ *   - konva-layer-manager.js (KonvaLayerManager)
+ *   - thumbnail-generator.js (ThumbnailGenerator)
+ * 親依存:
+ *   - timeline-panel.js
+ *   - animation-controller.js
+ * 子依存:
+ *   - event-bus.js
+ *   - konva-layer-manager.js
+ * 公開API:
+ *   - createFrame(duration)
+ *   - deleteFrame(frameId)
+ *   - setFrame(frameId)
+ *   - updateFrame(frameId, data)
+ *   - getAllFrames()
+ * イベント発火:
+ *   - 'frame:created' { frameId }
+ *   - 'frame:deleted' { frameId }
+ *   - 'frame:changed' { frameId, oldFrameId }
+ *   - 'frame:updated' { frameId }
+ * イベント受信:
+ *   - 'layer:created' → 現在フレームに追加
+ *   - 'layer:deleted' → 全フレームから削除
+ *   - 'layer:visibility-changed' → 現在フレーム更新
+ * グローバル登録: window.frameSystem
+ * 実装状態: 🔧改修
+ * ============================================================================
+ */
+
+class FrameSystem {
+  constructor() {
+    this.frames = new Map();         // frameId → Frame
+    this.frameOrder = [];            // フレーム順序配列
+    this.currentFrameId = null;
+    this.eventBus = window.EventBus;
+    this.konvaLayerManager = window.konvaLayerManager;
+    this.thumbnailGenerator = window.thumbnailGenerator;
+    
+    this._setupEventListeners();
+  }
+
+  /**
+   * フレーム作成
+   */
+  createFrame(duration = 100) {
+    const frameId = `frame-${Date.now()}`;
+    const frame = new Frame(frameId, duration);
+    
+    // 現在のレイヤー状態をコピー
+    if (this.currentFrameId) {
+      const currentFrame = this.frames.get(this.currentFrameId);
+      if (currentFrame) {
+        currentFrame.layers.forEach(layerState => {
+          frame.addLayer(layerState.konvaLayerId, { ...layerState });
+        });
+      }
+    } else {
+      // 初回: 全レイヤーを追加
+      this.konvaLayerManager.getAllLayers().forEach(layer => {
+        frame.addLayer(layer.id(), {
+          visible: layer.visible(),
+          opacity: layer.opacity()
+        });
+      });
+    }
+    
+    this.frames.set(frameId, frame);
+    this.frameOrder.push(frameId);
+    
+    this.eventBus.emit('frame:created', { frameId });
+    
+    return frame;
+  }
+
+  /**
+   * フレーム削除
+   */
+  deleteFrame(frameId) {
+    if (!this.frames.has(frameId)) {
+      throw new Error(`Frame not found: ${frameId}`);
+    }
+    
+    this.frames.delete(frameId);
+    this.frameOrder = this.frameOrder.filter(id => id !== frameId);
+    
+    // 現在フレームの場合は前のフレームに移動
+    if (this.currentFrameId === frameId) {
+      const index = this.frameOrder.indexOf(frameId);
+      const newIndex = Math.max(0, index - 1);
+      this.currentFrameId = this.frameOrder[newIndex] || null;
+      
+      if (this.currentFrameId) {
+        this.setFrame(this.currentFrameId);
+      }
+    }
+    
+    this.eventBus.emit('frame:deleted', { frameId });
+  }
+
+  /**
+   * フレーム切り替え
+   * Konvaレイヤーの可視性・不透明度を更新
+   */
+  setFrame(frameId) {
+    const frame = this.frames.get(frameId);
+    if (!frame) {
+      throw new Error(`Frame not found: ${frameId}`);
+    }
+
+    const oldFrameId = this.currentFrameId;
+
+    // 全レイヤーを非表示化
+    this.konvaLayerManager.getAllLayers().forEach(layer => {
+      layer.visible(false);
+    });
+
+    // フレーム内レイヤーを表示
+    frame.layers.forEach(layerState => {
+      const konvaLayer = this.konvaLayerManager.getLayer(layerState.konvaLayerId);
+      if (konvaLayer) {
+        konvaLayer.visible(layerState.visible);
+        konvaLayer.opacity(layerState.opacity);
+        // TODO: blendMode設定（Konva v9対応確認）
+      }
+    });
+
+    this.currentFrameId = frameId;
+    this.konvaLayerManager.stage.batchDraw();
+    
+    this.eventBus.emit('frame:changed', { frameId, oldFrameId });
+  }
+
+  /**
+   * フレーム更新
+   */
+  updateFrame(frameId, data) {
+    const frame = this.frames.get(frameId);
+    if (!frame) {
+      throw new Error(`Frame not found: ${frameId}`);
+    }
+
+    if (data.duration !== undefined) {
+      frame.duration = data.duration;
+    }
+    
+    if (data.layers) {
+      frame.layers = data.layers;
+    }
+
+    this.eventBus.emit('frame:updated', { frameId });
+  }
+
+  /**
+   * 現在フレーム取得
+   */
+  getCurrentFrame() {
+    return this.frames.get(this.currentFrameId);
+  }
+
+  /**
+   * 全フレーム取得
+   */
+  getAllFrames() {
+    return this.frameOrder.map(id => this.frames.get(id));
+  }
+
+  /**
+   * サムネイル生成
+   */
+  generateThumbnail(frameId) {
+    const frame = this.frames.get(frameId);
+    if (!frame) return null;
+
+    // 一時的にフレームを適用してサムネイル生成
+    const currentId = this.currentFrameId;
+    this.setFrame(frameId);
+    
+    const thumbnail = this.thumbnailGenerator.generateComposite();
+    frame.thumbnail = thumbnail;
+    
+    // 元のフレームに戻す
+    if (currentId && currentId !== frameId) {
+      this.setFrame(currentId);
+    }
+
+    return thumbnail;
+  }
+
+  /**
+   * イベントリスナー設定
+   */
+  _setupEventListeners() {
+    // レイヤー作成時: 現在フレームに追加
+    this.eventBus.on('layer:created', ({ layerId }) => {
+      if (this.currentFrameId) {
+        const frame = this.getCurrentFrame();
+        if (frame) {
+          frame.addLayer(layerId, { visible: true, opacity: 1.0 });
+        }
+      }
+    });
+
+    // レイヤー削除時: 全フレームから削除
+    this.eventBus.on('layer:deleted', ({ layerId }) => {
+      this.frames.forEach(frame => {
+        frame.removeLayer(layerId);
+      });
+    });
+
+    // レイヤー可視性変更時: 現在フレーム更新
+    this.eventBus.on('layer:visibility-changed', ({ layerId, visible }) => {
+      const frame = this.getCurrentFrame();
+      if (frame) {
+        frame.setLayerVisible(layerId, visible);
+      }
+    });
+
+    // レイヤー不透明度変更時: 現在フレーム更新
+    this.eventBus.on('layer:opacity-changed', ({ layerId, opacity }) => {
+      const frame = this.getCurrentFrame();
+      if (frame) {
+        frame.setLayerOpacity(layerId, opacity);
+      }
+    });
+  }
+
+  /**
+   * JSON エクスポート
+   */
+  toJSON() {
+    return {
+      frames: Array.from(this.frames.values()).map(f => f.toJSON()),
+      frameOrder: this.frameOrder,
+      currentFrameId: this.currentFrameId
+    };
+  }
+
+  /**
+   * JSON インポート
+   */
+  fromJSON(json) {
+    this.frames.clear();
+    this.frameOrder = json.frameOrder || [];
+    
+    json.frames.forEach(frameData => {
+      const frame = Frame.fromJSON(frameData);
+      this.frames.set(frame.id, frame);
+    });
+    
+    this.currentFrameId = json.currentFrameId || null;
+    
+    if (this.currentFrameId) {
+      this.setFrame(this.currentFrameId);
+    }
+  }
+}
+
+// グローバル登録
+window.frameSystem = new FrameSystem();
+```
+
+#### 完了条件
+- [ ] FrameSystem実装
+- [ ] フレーム作成・削除動作
+- [ ] フレーム切り替え動作
+- [ ] Konvaレイヤー同期
+- [ ] イベント連携完了
+- [ ] JSON保存・読込
+
+---
+
+### **Phase X1-3: タイムラインUI構築**
+**目標**: timeline-panel.js 実装
+
+#### 作業内容
+1. `ui/timeline-panel.js` 改修
+   - フレームサムネイル表示
+   - フレーム追加・削除ボタン
+   - フレーム選択機能
+   - 再生・停止ボタン
+   - UIComponents使用
+
+#### レイアウト仕様
+```
+┌────────────────────────────────────────┐
+│ [▶] [■] [+] FPS:12 Duration:100ms     │ ← コントロール
+├────────────────────────────────────────┤
+│ ┌───┐ ┌───┐ ┌───┐ ┌───┐              │
+│ │ 1 │ │ 2 │ │ 3 │ │ 4 │  ...         │ ← フレーム
+│ │[□]│ │[□]│ │[□]│ │[□]│              │    サムネイル
+│ └───┘ └───┘ └───┘ └───┘              │
+│  100ms 100ms 150ms 100ms              │ ← 各フレームの長さ
+└────────────────────────────────────────┘
+```
+
+#### HTML構造
+```html
+<div class="timeline-panel">
+  <div class="timeline-controls">
+    <button class="timeline-play-btn">▶</button>
+    <button class="timeline-stop-btn">■</button>
+    <button class="timeline-add-btn">+</button>
+    <div class="timeline-fps">
+      <label>FPS:</label>
+      <!-- UIComponents.createSlider() -->
+    </div>
+  </div>
+  
+  <div class="timeline-frames">
+    <div class="timeline-frame active" data-frame-id="frame-001">
+      <img src="thumbnail.png" class="timeline-thumbnail">
+      <span class="timeline-frame-number">1</span>
+      <span class="timeline-duration">100ms</span>
+      <button class="timeline-delete-frame">×</button>
+    </div>
+    <!-- 他のフレーム -->
+  </div>
+</div>
+```
+
+#### 完了条件
+- [ ] タイムラインパネル表示
+- [ ] フレームサムネイル表示
+- [ ] フレーム選択動作
+- [ ] フレーム追加・削除
+- [ ] UIComponents統合
+- [ ] futabaカラー適用
+
+#### 参考ファイル
+- webgl2_rev30/ui/timeline-ui.js
+- webgl2_rev30/ui/timeline-thumbnail-utils.js
+
+---
+
+### **Phase X1-4: アニメーション再生**
+**目標**: animation-controller.js 連携
+
+#### 作業内容
+1. `timeline/animation-controller.js` 既存流用
+   - FrameSystem連携
+   - FPS設定
+   - ループ再生
+   - 一時停止・再開
+
+2. `ui/timeline-panel.js` コントロール連携
+   - 再生ボタン → animation-controller.play()
+   - 停止ボタン → animation-controller.stop()
+   - FPSスライダー → animation-controller.setFPS()
+
+#### AnimationController 連携仕様
+```javascript
+class AnimationController {
+  constructor() {
+    this.frameSystem = window.frameSystem;
+    this.isPlaying = false;
+    this.fps = 12;
+    this.currentIndex = 0;
+    this.animationId = null;
+  }
+
+  play() {
+    if (this.isPlaying) return;
+    
+    this.isPlaying = true;
+    this._animate();
+    
+    window.EventBus.emit('animation:started');
+  }
+
+  stop() {
+    this.isPlaying = false;
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+    
+    window.EventBus.emit('animation:stopped');
+  }
+
+  _animate() {
+    if (!this.isPlaying) return;
+
+    const frames = this.frameSystem.getAllFrames();
+    if (frames.length === 0) return;
+
+    const currentFrame = frames[this.currentIndex];
+    this.frameSystem.setFrame(currentFrame.id);
+
+    const delay = currentFrame.duration;
+    
+    setTimeout(() => {
+      this.currentIndex = (this.currentIndex + 1) % frames.length;
+      this.animationId = requestAnimationFrame(() => this._animate());
+    }, delay);
+  }
+
+  setFPS(fps) {
+    this.fps = fps;
+    // 全フレームのdurationを更新
+    const frameDuration = 1000 / fps;
+    this.frameSystem.getAllFrames().forEach(frame => {
+      frame.duration = frameDuration;
+    });
+  }
+}
+
+window.animationController = new AnimationController();
+```
+
+#### 完了条件
+- [ ] 再生動作
+- [ ] 停止動作
+- [ ] ループ再生
+- [ ] FPS変更反映
+- [ ] タイムラインUI連携
+
+---
+
+### **Phase X1-5: フレームサムネイル自動更新**
+**目標**: 描画時の自動サムネイル生成
+
+#### 作業内容
+1. `layers/thumbnail-generator.js` 改修
+   - generateComposite() メソッド追加
+   - 全レイヤー合成サムネイル生成
+   - キャッシュ機構
+
+2. イベント連携
+   - 'drawing:stroke-complete' → サムネイル更新
+   - デバウンス処理（連続描画時の負荷軽減）
+
+#### ThumbnailGenerator 改修
+```javascript
+class ThumbnailGenerator {
+  constructor() {
+    this.konvaLayerManager = window.konvaLayerManager;
+    this.frameSystem = window.frameSystem;
+    this.updateTimeout = null;
+    
+    this._setupEventListeners();
+  }
+
+  /**
+   * 複数レイヤー合成サムネイル生成
+   */
+  generateComposite() {
+    const stage = this.konvaLayerManager.stage;
+    
+    return stage.toDataURL({
+      mimeType: 'image/png',
+      quality: 0.8,
+      pixelRatio: 0.25, // 1/4サイズ
+      width: 128,
+      height: 128
+    });
+  }
+
+  /**
+   * 現在フレームのサムネイル更新（デバウンス付き）
+   */
+  updateCurrentFrameThumbnail() {
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+    }
+
+    this.updateTimeout = setTimeout(() => {
+      const currentFrame = this.frameSystem.getCurrentFrame();
+      if (currentFrame) {
+        const thumbnail = this.generateComposite();
+        currentFrame.thumbnail = thumbnail;
+        
+        window.EventBus.emit('thumbnail:updated', { 
+          frameId: currentFrame.id,
+          thumbnail 
+        });
+      }
+    }, 500); // 500ms デバウンス
+  }
+
+  _setupEventListeners() {
+    window.EventBus.on('drawing:stroke-complete', () => {
+      this.updateCurrentFrameThumbnail();
+    });
+  }
+}
+
+window.thumbnailGenerator = new ThumbnailGenerator();
+```
+
+#### 完了条件
+- [ ] 合成サムネイル生成
+- [ ] 描画時自動更新
+- [ ] デバウンス処理
+- [ ] タイムラインUI反映
+- [ ] パフォーマンス確認
+
+---
+
+### **Phase X1-6: フレーム順序変更**
+**目標**: フレームのドラッグ＆ドロップ並び替え
+
+#### 作業内容
+1. `ui/timeline-panel.js` ドラッグ実装
+   - HTML5 Drag and Drop API
+   - ドロップ位置のビジュアルフィードバック
+   - FrameSystem.reorderFrame() 連携
+
+2. `timeline/frame-system.js` メソッド追加
+```javascript
+/**
+ * フレーム順序変更
+ */
+reorderFrame(frameId, newIndex) {
+  const oldIndex = this.frameOrder.indexOf(frameId);
+  if (oldIndex === -1) {
+    throw new Error(`Frame not found: ${frameId}`);
+  }
+
+  this.frameOrder.splice(oldIndex, 1);
+  this.frameOrder.splice(newIndex, 0, frameId);
+
+  this.eventBus.emit('frame:reordered', { frameId, oldIndex, newIndex });
+}
+```
+
+#### 完了条件
+- [ ] ドラッグ開始
+- [ ] ドロップ位置表示
+- [ ] 順序変更動作
+- [ ] アニメーション効果
+- [ ] EventBus通知
+
+---
+
+## ✅ Phase X1 完了条件
+
+### データ管理
+- [ ] Frame クラス実装
+- [ ] FrameSystem実装
+- [ ] JSON保存・読込
+- [ ] レイヤー状態同期
+
+### UI機能
+- [ ] タイムラインパネル表示
+- [ ] フレームサムネイル表示
+- [ ] フレーム選択
+- [ ] フレーム追加・削除
+- [ ] フレームドラッグ移動
+
+### アニメーション
+- [ ] 再生・停止
+- [ ] ループ再生
+- [ ] FPS変更
+- [ ] サムネイル自動更新
+
+### 統合
+- [ ] Konvaレイヤー連携
+- [ ] UIComponents統合
+- [ ] EventBus連携
+- [ ] パフォーマンス確認
+
+---
+
+## 📝 実装時の注意事項
+
+### 1. レイヤーとフレームの関係
+```
+- レイヤーは永続的（削除されるまで存在）
+- フレームはレイヤーの「状態のスナップショット」
+- フレーム切り替え = レイヤーの可視性変更
+```
+
+### 2. サムネイル生成タイミング
+```
+✅ フレーム作成時
+✅ 描画完了時（デバウンス）
+✅ レイヤー変更時（可視性・不透明度）
+❌ pointermove時（負荷大）
+```
+
+### 3. パフォーマンス最適化
+```
+- サムネイルサイズ: 128x128px 固定
+- pixelRatio: 0.25（1/4サイズ）
+- デバウンス: 500ms
+- キャッシュ活用
+```
+
+### 4. 将来の拡張予定
+```
+- オニオンスキン表示
+- フレーム複製
+- フレーム区間選択
+- フレーム一括編集
+```
+
+---
+
+## 📞 実装開始時の確認事項
+
+Phase X1 実装開始前に以下を確認:
+- [ ] メイン計画書 Phase 4-15 完了
+- [ ] レイヤーパネル完全動作
+- [ ] サムネイル生成機能動作
+- [ ] UIComponents統合完了
+- [ ] コンソールエラー0件
+
+---
+
+以上、別冊1（タイムライン・フレームシステム）
