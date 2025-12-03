@@ -8,6 +8,9 @@
  *   - ui-components.js (UIComponents)
  *   - config.js (TEGAKI_CONFIG, TEGAKI_KEYMAP)
  *   - event-bus.js (TegakiEventBus)
+ *   - konva-layer-manager.js (KonvaLayerManager)
+ *   - raster-brush-engine.js (RasterBrushEngine)
+ *   - drawing-controller.js (DrawingController)
  * 親依存:
  *   - index.html → このファイルを参照
  *   - core-engine.js → このファイルの初期化後に実行
@@ -22,7 +25,7 @@
  *   - 'runtime:initialized' - 初期化完了
  *   - 'runtime:error' - 初期化エラー
  * グローバル登録: window.CoreRuntime
- * 実装状態: 🆕新規 Phase 1 - 最小動作版
+ * 実装状態: 🔧改修 Phase 2 - 描画エンジン統合版
  * ============================================================================
  */
 
@@ -55,6 +58,9 @@ window.CoreRuntime = (() => {
   let initialized = false;
   let konvaStage = null;
   let pixiApp = null;
+  let konvaLayerManager = null;
+  let rasterBrushEngine = null;
+  let drawingController = null;
 
   // ========================================
   // 初期化処理
@@ -84,14 +90,23 @@ window.CoreRuntime = (() => {
       // ステップ4: システム初期化（Phase 1では最小限）
       await initializeSystems();
 
-      // ステップ5: イベントハンドラー登録
+      // ステップ5: レイヤーマネージャー初期化
+      await initializeLayerManager();
+
+      // ステップ6: 描画エンジン初期化
+      await initializeDrawingEngine();
+
+      // ステップ7: イベントハンドラー登録
       registerEventHandlers();
 
       initialized = true;
 
       window.TegakiEventBus.emit('runtime:initialized', {
         konvaStage,
-        pixiApp
+        pixiApp,
+        konvaLayerManager,
+        rasterBrushEngine,
+        drawingController
       });
 
       console.log('✅ [CoreRuntime] 初期化完了');
@@ -114,13 +129,12 @@ window.CoreRuntime = (() => {
       throw new Error('#app要素が見つかりません');
     }
 
-    // ToonSquid風レイアウト
+    // ToonSquid風レイアウト + サイドバー
     app.innerHTML = `
       <div class="main-layout">
-        <!-- サイドバー: ツールアイコン用固定領域 -->
+        <!-- サイドバー: ツールアイコン -->
         <div class="sidebar" id="sidebar">
-          <!-- Phase 2: ツールSVGアイコンをここに配置 -->
-          <!-- 固定サイズ・固定位置で表示 -->
+          ${buildSidebarHTML()}
         </div>
 
         <!-- キャンバスエリア -->
@@ -131,16 +145,41 @@ window.CoreRuntime = (() => {
 
       <!-- レイヤーパネル（右側） -->
       <div class="layer-panel-container" id="layer-panel-container">
-        <!-- Phase 2: レイヤーリスト表示 -->
+        <!-- LayerPanel.jsが動的に構築 -->
       </div>
 
       <!-- タイムラインパネル（下部） -->
       <div class="timeline-panel" id="timeline-panel">
-        <!-- Phase 2: フレームサムネイル表示 -->
+        <!-- Phase 6: タイムラインUI -->
       </div>
     `;
 
     console.log('  ✅ DOM構築完了');
+  }
+
+  // ========================================
+  // サイドバーHTML生成
+  // ========================================
+  function buildSidebarHTML() {
+    const tools = [
+      { id: 'pen-tool', icon: 'sprout', title: 'ペン (P)', active: true },
+      { id: 'eraser-tool', icon: 'minus', title: '消しゴム (E)' },
+      { separator: true },
+      { id: 'settings-tool', icon: 'settings', title: '設定 (S)' }
+    ];
+
+    return tools.map(tool => {
+      if (tool.separator) {
+        return '<div class="tool-separator"></div>';
+      }
+      const activeClass = tool.active ? ' active' : '';
+      const icon = window.UIComponents.SVG_ICONS[tool.icon] || '';
+      return `
+        <div class="tool-button${activeClass}" id="${tool.id}" title="${tool.title}">
+          ${icon}
+        </div>
+      `;
+    }).join('');
   }
 
   // ========================================
@@ -274,12 +313,12 @@ window.CoreRuntime = (() => {
   }
 
   // ========================================
-  // システム初期化（Phase 1: 最小限）
+  // システム初期化（Phase 2: 最小限）
   // ========================================
   async function initializeSystems() {
     console.log('  ⚙️ システム初期化中...');
 
-    // Phase 1では依存チェックのみ
+    // Phase 2では依存チェックのみ
     const requiredSystems = [
       'StateManager',
       'SettingsManager',
@@ -296,6 +335,73 @@ window.CoreRuntime = (() => {
     }
 
     console.log('  ✅ システム初期化完了');
+  }
+
+  // ========================================
+  // レイヤーマネージャー初期化
+  // ========================================
+  async function initializeLayerManager() {
+    console.log('  📚 レイヤーマネージャー初期化中...');
+
+    if (!window.KonvaLayerManager) {
+      throw new Error('KonvaLayerManager が読み込まれていません');
+    }
+
+    konvaLayerManager = new window.KonvaLayerManager(
+      konvaStage,
+      window.konvaDrawingGroup
+    );
+
+    // デフォルトレイヤー作成
+    konvaLayerManager.createDefaultLayers();
+
+    // グローバル登録
+    window.konvaLayerManager = konvaLayerManager;
+
+    console.log('  ✅ レイヤーマネージャー初期化完了');
+  }
+
+  // ========================================
+  // 描画エンジン初期化
+  // ========================================
+  async function initializeDrawingEngine() {
+    console.log('  🎨 描画エンジン初期化中...');
+
+    // RasterBrushEngine初期化
+    if (!window.RasterBrushEngine) {
+      throw new Error('RasterBrushEngine が読み込まれていません');
+    }
+
+    rasterBrushEngine = new window.RasterBrushEngine(
+      pixiApp,
+      konvaLayerManager
+    );
+
+    // 既存レイヤーのRenderTexture作成
+    const layerIds = konvaLayerManager.getAllLayerIds();
+    rasterBrushEngine.initializeLayers(layerIds);
+
+    // グローバル登録
+    window.rasterBrushEngine = rasterBrushEngine;
+
+    console.log('  ✅ RasterBrushEngine初期化完了');
+
+    // DrawingController初期化
+    if (!window.DrawingController) {
+      throw new Error('DrawingController が読み込まれていません');
+    }
+
+    drawingController = new window.DrawingController(
+      konvaStage,
+      rasterBrushEngine
+    );
+
+    drawingController.enable();
+
+    // グローバル登録
+    window.drawingController = drawingController;
+
+    console.log('  ✅ DrawingController初期化完了');
   }
 
   // ========================================
@@ -330,6 +436,19 @@ window.CoreRuntime = (() => {
   function shutdown() {
     console.log('🛑 [CoreRuntime] シャットダウン中...');
 
+    if (drawingController) {
+      drawingController.disable();
+      drawingController = null;
+    }
+
+    if (rasterBrushEngine) {
+      rasterBrushEngine = null;
+    }
+
+    if (konvaLayerManager) {
+      konvaLayerManager = null;
+    }
+
     if (konvaStage) {
       konvaStage.destroy();
       konvaStage = null;
@@ -357,9 +476,15 @@ window.CoreRuntime = (() => {
     shutdown,
     get initialized() { return initialized; },
     get konvaStage() { return konvaStage; },
-    get pixiApp() { return pixiApp; }
+    get pixiApp() { return pixiApp; },
+    get konvaLayerManager() { return konvaLayerManager; },
+    get rasterBrushEngine() { return rasterBrushEngine; },
+    get drawingController() { return drawingController; }
   };
 
 })();
 
-console.log('✅ CoreRuntime Phase 1 loaded (最小動作版)');
+console.log('✅ CoreRuntime Phase 2 loaded (描画エンジン統合版)');
+console.log('   🔧 RasterBrushEngine初期化追加');
+console.log('   🔧 DrawingController初期化追加');
+console.log('   🔧 KonvaLayerManager統合');
