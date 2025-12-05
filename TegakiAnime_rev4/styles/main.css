@@ -1,6 +1,6 @@
 /* ============================================================================
  * Tegaki Anime v2.0 - Main Stylesheet
- * ToonSquid風シームレスデザイン + futabaカラー統一
+ * Phase 4-11: webgl2_rev30デザイン完全継承 + Konva対応
  * ========================================================================== */
 
 * { 
@@ -10,7 +10,7 @@
 }
 
 :root {
-  /* futabaカラーパレット */
+  /* futabaカラーパレット統一 */
   --futaba-maroon: #800000;
   --futaba-light-maroon: #9c3836;
   --futaba-medium: #b8706b;
@@ -29,7 +29,7 @@
   
   /* スライダー */
   --slider-active: var(--futaba-maroon);
-  --slider-inactive: var(--futaba-medium);
+  --slider-inactive: #cf9c97;
 }
 
 body {
@@ -51,7 +51,7 @@ body {
 }
 
 /* ========================================
-   サイドバー - 淡い色でコントラスト抑制
+   サイドバー
    ======================================== */
 .sidebar {
   background: var(--futaba-light-medium);
@@ -418,7 +418,7 @@ canvas {
 }
 
 /* ========================================
-   レイヤーパネル - ToonSquid風
+   レイヤーパネル - webgl2_rev30完全継承
    ======================================== */
 .layer-panel-container {
   position: fixed;
@@ -437,6 +437,7 @@ canvas {
   opacity: 0.7;
 }
 
+/* フレーム表示 */
 .frame-indicator {
   display: flex;
   align-items: center;
@@ -483,6 +484,7 @@ canvas {
   font-size: 12px;
 }
 
+/* レイヤーコントロール行 */
 .layer-controls-row {
   display: flex;
   gap: 4px;
@@ -515,6 +517,8 @@ canvas {
   stroke: var(--futaba-maroon);
 }
 
+/* レイヤーリスト */
+#layer-panel-items,
 .layer-panel-items {
   display: flex;
   flex-direction: column;
@@ -529,28 +533,185 @@ canvas {
   backdrop-filter: blur(12px);
 }
 
-/* スクロールバー統一 */
-.layer-panel-items::-webkit-scrollbar {
-  width: 8px;
-}
-
-.layer-panel-items::-webkit-scrollbar-track {
-  background: var(--futaba-light-medium);
+/* レイヤー項目 */
+.layer-item {
+  width: 170px;
+  min-height: 48px;
+  background-color: var(--futaba-background);
+  opacity: 0.9;
+  border: 1px solid var(--futaba-light-medium);
   border-radius: 4px;
+  padding: 5px 7px;
+  margin-bottom: 4px;
+  cursor: grab;
+  display: grid;
+  grid-template-columns: 90px 64px;
+  grid-template-rows: 14px 16px 14px;
+  gap: 1px 1px;
+  align-items: center;
+  position: relative;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s ease;
+  touch-action: none;
+  user-select: none;
 }
 
-.layer-panel-items::-webkit-scrollbar-thumb {
+.layer-item.active {
+  border-color: var(--active-border);
+  border-width: 2px;
+  padding: 4px 6px;
+}
+
+.layer-item:hover {
+  background-color: var(--futaba-cream);
+}
+
+/* フォルダ項目 */
+.folder-item {
+  background-color: var(--futaba-light-medium);
+}
+
+.folder-item.active {
+  border-color: var(--active-border);
+}
+
+/* フォルダの耳 */
+.folder-ear {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30px;
+  height: 14px;
+  background-color: var(--futaba-medium);
+  border-radius: 4px 0 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* フォルダ内レイヤーの縦線 */
+.folder-child-line {
+  position: absolute;
+  left: -12px;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background-color: var(--futaba-medium);
+}
+
+/* レイヤー名 */
+.layer-name {
+  grid-column: 1;
+  grid-row: 3;
+  color: var(--futaba-maroon);
+  font-size: 10px;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  cursor: text;
+  padding: 0;
+  height: 14px;
+  display: flex;
+  align-items: center;
+}
+
+/* 透明度コントロール */
+.layer-opacity-control {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  user-select: none;
+}
+
+.layer-opacity-value {
+  min-width: 30px;
+  text-align: center;
+  color: var(--futaba-maroon);
+  font-size: 9px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+/* 可視性アイコン */
+.layer-visibility {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* フォルダトグルアイコン */
+.folder-toggle-icon {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* サムネイル */
+.layer-thumbnail {
+  grid-column: 2;
+  grid-row: 1/4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 44px;
+  box-sizing: border-box;
+  border: 1px solid var(--futaba-medium);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+  background-color: #f5f5f5;
+}
+
+/* 削除ボタン */
+.layer-delete-button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0;
+  width: 13px;
+  height: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  border-radius: 50%;
+  background: var(--futaba-medium);
+  transition: background 0.2s, transform 0.1s, opacity 0.2s;
+  z-index: 10;
+  opacity: 0;
+}
+
+.layer-delete-button:hover {
   background: var(--futaba-maroon);
-  border-radius: 4px;
+  transform: scale(1.15);
 }
 
-.layer-panel-items::-webkit-scrollbar-thumb:hover {
-  background: var(--futaba-light-maroon);
+/* Sortable用スタイル */
+.sortable-ghost {
+  opacity: 0.4;
 }
 
-.layer-panel-items {
-  scrollbar-width: thin;
-  scrollbar-color: var(--futaba-maroon) var(--futaba-light-medium);
+.sortable-drag {
+  cursor: grabbing !important;
+}
+
+.sortable-chosen {
+  cursor: grabbing !important;
 }
 
 /* ========================================
@@ -574,27 +735,37 @@ canvas {
 }
 
 /* ========================================
-   スクロールバー統一（全般）
+   スクロールバー統一
    ======================================== */
+#layer-panel-items::-webkit-scrollbar,
+.layer-panel-items::-webkit-scrollbar,
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
+#layer-panel-items::-webkit-scrollbar-track,
+.layer-panel-items::-webkit-scrollbar-track,
 *::-webkit-scrollbar-track {
   background: var(--futaba-light-medium);
   border-radius: 4px;
 }
 
+#layer-panel-items::-webkit-scrollbar-thumb,
+.layer-panel-items::-webkit-scrollbar-thumb,
 *::-webkit-scrollbar-thumb {
   background: var(--futaba-maroon);
   border-radius: 4px;
 }
 
+#layer-panel-items::-webkit-scrollbar-thumb:hover,
+.layer-panel-items::-webkit-scrollbar-thumb:hover,
 *::-webkit-scrollbar-thumb:hover {
   background: var(--futaba-light-maroon);
 }
 
+#layer-panel-items,
+.layer-panel-items,
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--futaba-maroon) var(--futaba-light-medium);
