@@ -44,11 +44,11 @@
  ✅ [BrushInterpolator] Initialized
  ✅ brush-interpolator.js loaded
  ✅ raster-layer.js loaded
- ✅ raster-brush-core.js Phase 3.5 loaded (実装完了版)
-    ✅ _drawPoint() 実装完了
-    ✅ PIXI.Graphics フォールバック描画
-    ✅ 筆圧対応円形描画
-    ✅ 消しゴムモード対応
+ ✅ raster-brush-core.js Phase A loaded (緊急修正完了版)
+    ✅ A-1: 筆圧サイズ計算修正 - minPressureSize 正しく適用
+    ✅ A-2: リアルタイム描画実装 - 描画後に即座にレンダリング
+    ✅ A-3: 消しゴム正しい実装 - DST_OUT による真の消去
+    ✅ Phase 3.5 全機能継承
  ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
     ✅ WebGLTexture → PIXI.Sprite変換実装完了
     ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
@@ -198,6 +198,7 @@
  [WebGL2] ✅ DrawingLayer initialized
  [WebGL2] ✅ WebGL context registered
  [RasterBrushCore] ✅ Initialized with WebGL2 context
+ [RasterBrushCore]    Settings manager: OK
  [WebGL2] ✅ RasterBrushCore initialized with GL context
  ✅ [WebGL2DrawingLayer] Pixi.js app linked
  [WebGL2] ✅ Pixi.js app linked
@@ -214,7 +215,7 @@
  📋 Popup "export" registered (priority: 5)
  ✅ Popup "export" initialized successfully
  [RasterBrushCore] startStroke called Object
- [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
  [RasterBrushCore] Point drawn: Object
  [RasterBrushCore] Point drawn: Object
  [RasterBrushCore] finalizeStroke called
@@ -222,7 +223,7 @@
  [History:Push] Before: index=-1, stack=0, cmd="raster-stroke-draw"
  [History:Push] After: index=0, stack=1
  [RasterBrushCore] startStroke called Object
- [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
  [RasterBrushCore] Point drawn: Object
  [RasterBrushCore] Point drawn: Object
  [RasterBrushCore] finalizeStroke called
@@ -230,7 +231,7 @@
  [History:Push] Before: index=0, stack=1, cmd="raster-stroke-draw"
  [History:Push] After: index=1, stack=2
  [RasterBrushCore] startStroke called Object
- [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
  [RasterBrushCore] Point drawn: Object
  [RasterBrushCore] Point drawn: Object
  [RasterBrushCore] finalizeStroke called
@@ -238,75 +239,70 @@
  [History:Push] Before: index=1, stack=2, cmd="raster-stroke-draw"
  [History:Push] After: index=2, stack=3
  [RasterBrushCore] startStroke called Object
- [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
  [RasterBrushCore] Point drawn: Object
  [RasterBrushCore] Point drawn: Object
  [RasterBrushCore] finalizeStroke called
  [RasterBrushCore] ✅ Stroke finalized
  [History:Push] Before: index=2, stack=3, cmd="raster-stroke-draw"
  [History:Push] After: index=3, stack=4
- 👁️ Popup "settings" shown
- [RasterBrushCore] startStroke called Object
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:194 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:219 [RasterBrushCore] ✅ Stroke finalized
+raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
 history.js:194 [History:Push] Before: index=3, stack=4, cmd="raster-stroke-draw"
 history.js:213 [History:Push] After: index=4, stack=5
-raster-brush-core.js:95 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:194 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:219 [RasterBrushCore] ✅ Stroke finalized
+raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
 history.js:194 [History:Push] Before: index=4, stack=5, cmd="raster-stroke-draw"
 history.js:213 [History:Push] After: index=5, stack=6
-raster-brush-core.js:95 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:194 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:219 [RasterBrushCore] ✅ Stroke finalized
+raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
 history.js:194 [History:Push] Before: index=5, stack=6, cmd="raster-stroke-draw"
 history.js:213 [History:Push] After: index=6, stack=7
-history.js:194 [History:Push] Before: index=6, stack=7, cmd="layer-create"
+raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=6, stack=7, cmd="raster-stroke-draw"
 history.js:213 [History:Push] After: index=7, stack=8
-history.js:194 [History:Push] Before: index=7, stack=8, cmd="layer-reorder"
+raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=7, stack=8, cmd="raster-stroke-draw"
 history.js:213 [History:Push] After: index=8, stack=9
-raster-brush-core.js:95 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:194 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:219 [RasterBrushCore] ✅ Stroke finalized
+raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
 history.js:194 [History:Push] Before: index=8, stack=9, cmd="raster-stroke-draw"
 history.js:213 [History:Push] After: index=9, stack=10
-history.js:323 [History:Undo] Before: index=9, stack=10, cmd="raster-stroke-draw"
-history.js:340 [History:Undo] After: index=8, stack=10
-history.js:341 [History:Undo] Next undo will be: layer-reorder
-history.js:323 [History:Undo] Before: index=8, stack=10, cmd="layer-reorder"
-history.js:340 [History:Undo] After: index=7, stack=10
-history.js:341 [History:Undo] Next undo will be: layer-create
-history.js:323 [History:Undo] Before: index=7, stack=10, cmd="layer-create"
-history.js:340 [History:Undo] After: index=6, stack=10
-history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
-history.js:323 [History:Undo] Before: index=6, stack=10, cmd="raster-stroke-draw"
-history.js:340 [History:Undo] After: index=5, stack=10
-history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
-history.js:323 [History:Undo] Before: index=5, stack=10, cmd="raster-stroke-draw"
-history.js:340 [History:Undo] After: index=4, stack=10
-history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
-history.js:323 [History:Undo] Before: index=4, stack=10, cmd="raster-stroke-draw"
-history.js:340 [History:Undo] After: index=3, stack=10
-history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
-history.js:323 [History:Undo] Before: index=3, stack=10, cmd="raster-stroke-draw"
-history.js:340 [History:Undo] After: index=2, stack=10
-history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
-history.js:323 [History:Undo] Before: index=2, stack=10, cmd="raster-stroke-draw"
-history.js:340 [History:Undo] After: index=1, stack=10
-history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
-history.js:323 [History:Undo] Before: index=1, stack=10, cmd="raster-stroke-draw"
-history.js:340 [History:Undo] After: index=0, stack=10
-history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
-history.js:323 [History:Undo] Before: index=0, stack=10, cmd="raster-stroke-draw"
-history.js:340 [History:Undo] After: index=-1, stack=10
-history.js:341 [History:Undo] Next undo will be: none
+raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=9, stack=10, cmd="raster-stroke-draw"
+history.js:213 [History:Push] After: index=10, stack=11
+history.js:194 [History:Push] Before: index=10, stack=11, cmd="layer-create"
+history.js:213 [History:Push] After: index=11, stack=12
+history.js:194 [History:Push] Before: index=11, stack=12, cmd="layer-reorder"
+history.js:213 [History:Push] After: index=12, stack=13

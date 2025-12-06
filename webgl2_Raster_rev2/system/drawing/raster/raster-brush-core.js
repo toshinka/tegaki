@@ -3,10 +3,11 @@
  * ファイル名: system/drawing/raster/raster-brush-core.js
  * 責務: ラスターブラシの中核実装 - WebGL2テクスチャへの直接描画
  * 
- * 【Phase A: 緊急修正完了】
+ * 【Phase A: 緊急修正完了 + PIXI.BLEND_MODES修正】
  * ✅ A-1: 筆圧サイズ計算修正 - minPressureSize 正しく適用
  * ✅ A-2: リアルタイム描画実装 - 描画後に即座にレンダリング
  * ✅ A-3: 消しゴム正しい実装 - DESTINATION_OUT による真の消去
+ * 🔧 PIXI.BLEND_MODES 安全アクセス修正
  * 
  * 【Phase 3.5 実装完了】
  * ✅ _drawPoint() 実装完了 - 実際の描画処理
@@ -152,10 +153,11 @@
             const mode = this.currentStroke.settings?.mode || 'pen';
             if (mode === 'eraser') {
                 // DESTINATION_OUT: 既存のアルファ値を削除（真の消しゴム）
-                this.currentGraphics.blendMode = PIXI.BLEND_MODES.DST_OUT;
+                // PIXI v8では文字列で指定
+                this.currentGraphics.blendMode = 'dst-out';
             } else {
                 // 通常描画
-                this.currentGraphics.blendMode = PIXI.BLEND_MODES.NORMAL;
+                this.currentGraphics.blendMode = 'normal';
             }
             
             // 最初の点を描画
@@ -332,7 +334,7 @@
             // PIXI.Graphicsで円を描画
             if (mode === 'eraser') {
                 // Phase A-3: 消しゴムモード
-                // ブレンドモードは startStroke() で DST_OUT に設定済み
+                // ブレンドモードは startStroke() で 'dst-out' に設定済み
                 // 白い円を描画することでアルファ値を削除
                 this.currentGraphics.circle(localX, localY, pressureSize / 2);
                 this.currentGraphics.fill({
@@ -449,6 +451,7 @@
     console.log('   ✅ A-1: 筆圧サイズ計算修正 - minPressureSize 正しく適用');
     console.log('   ✅ A-2: リアルタイム描画実装 - 描画後に即座にレンダリング');
     console.log('   ✅ A-3: 消しゴム正しい実装 - DST_OUT による真の消去');
+    console.log('   🔧 PIXI.BLEND_MODES 文字列指定に修正');
     console.log('   ✅ Phase 3.5 全機能継承');
 
 })();
