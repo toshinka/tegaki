@@ -106,13 +106,8 @@
                 return false;
             }
             
-            // RasterBrushCore初期化
-            if (window.RasterBrushCore) {
-                if (!window.RasterBrushCore.initialize(this.gl)) {
-                    console.error('[WebGL2DrawingLayer] RasterBrushCore initialization failed');
-                    return false;
-                }
-            }
+            // RasterBrushCore初期化（core-engine.js で行われるためスキップ）
+            // window.rasterBrushCore が core-engine.js で初期化済み
             
             // BrushStamp初期化
             if (window.BrushStamp) {
@@ -662,12 +657,13 @@
     }
 
     // グローバル公開
-    window.WebGL2DrawingLayer = new WebGL2DrawingLayer();
-    
+window.WebGL2DrawingLayer = WebGL2DrawingLayer;
+
     console.log('✅ webgl2-drawing-layer.js Phase 3.3 loaded (ラスター対応版)');
     console.log('   ✅ ベクター合成処理削除');
     console.log('   ✅ ラスターレイヤー合成実装');
     console.log('   ✅ RasterLayer統合');
+    console.log('   🔧 クラスとして公開（シングルトンではなく）');
 
 })();
 

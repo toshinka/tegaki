@@ -1,14 +1,13 @@
 /**
- * @file layer-system.js - Phase 2: フォルダ機能追加版
- * @description レイヤー管理・操作の中核システム + フォルダ管理
+ * ============================================================================
+ * ファイル名: system/layer-system.js - Phase 3: ラスター対応版
+ * 責務: レイヤー管理・操作の中核システム（ラスター方式統合）
  * 
- * 【Phase 2 改修内容】
- * ✅ createFolder() - フォルダ作成
- * ✅ addLayerToFolder() - レイヤーをフォルダに追加
- * ✅ removeLayerFromFolder() - フォルダから取り出し
- * ✅ toggleFolderExpand() - 開閉切替
- * ✅ getVisibleLayers() - 表示されるレイヤーのみ取得
- * ✅ getFolderChildren() - フォルダ内レイヤー取得
+ * 【Phase 3 改修内容】
+ * 🔧 pathsData → rasterStrokes への移行
+ * 🔧 WebGL2 フレームバッファ/テクスチャ対応準備
+ * 🔧 RasterLayer 統合準備（将来的にフレームバッファ管理を追加）
+ * ✅ Phase 2 フォルダ機能完全継承
  * 
  * 【親ファイル依存】
  * - event-bus.js (イベント通信)
@@ -24,7 +23,9 @@
  * - keyboard-handler.js (ショートカット)
  * - thumbnail-system.js (サムネイル更新)
  * - brush-core.js (描画系History登録の責任者)
+ * - raster-brush-core.js (ラスター描画)
  * - drawing-engine.js (activeLayer取得・座標変換)
+ * ============================================================================
  */
 
 (function() {
@@ -37,16 +38,28 @@
             this.eventBus = null;
             this.currentFrameContainer = null;
             this.activeLayerIndex = -1;
+            
+            // フレーム管理
             this.frameRenderTextures = new Map();
             this.frameThumbnailDirty = new Map();
+            
+            // システム参照
             this.cameraSystem = null;
             this.animationSystem = null;
             this.coordAPI = window.CoordinateSystem;
             this.transform = null;
+            
+            // 状態
             this.isInitialized = false;
             this.checkerPattern = null;
+            
+            // 🆕 ラスターレイヤー管理（Phase 3）
+            this.rasterLayerManager = null; // 将来的に RasterLayer インスタンスを保持
         }
 
+        // ================================================================================
+        // 初期化
+        // ================================================================================
 
         init(canvasContainer, eventBus, config) {
             console.log('[LayerSystem] 🔍 init() called');
@@ -56,14 +69,14 @@
             this.config = config || window.TEGAKI_CONFIG;
             if (!this.eventBus) throw new Error('EventBus required for LayerSystem');
             
+            // Transform初期化
             if (window.TegakiLayerTransform) {
                 this.transform = new window.TegakiLayerTransform(this.config, this.coordAPI);
             } else {
                 this.transform = null;
             }
             
-            // 🆕 Phase 1: currentFrameContainerの初期化を改善
-            // 既存のcurrentFrameContainerがあれば再利用、なければ新規作成
+            // currentFrameContainerの初期化
             if (!this.currentFrameContainer) {
                 this.currentFrameContainer = new PIXI.Container();
                 this.currentFrameContainer.label = 'frame_container_init';
@@ -120,7 +133,7 @@
             console.log('[LayerSystem]   ✅ init() completed successfully');
             console.log('[LayerSystem]   currentFrameContainer.children.length:', this.currentFrameContainer.children.length);
             
-            // 🆕 Phase 1: イベント発火でUI側に初期化完了を通知
+            // イベント発火でUI側に初期化完了を通知
             if (this.eventBus) {
                 this.eventBus.emit('layer:system-initialized', {
                     layerCount: this.currentFrameContainer.children.length,
@@ -130,7 +143,7 @@
         }
 
         // ================================================================================
-        // 🆕 Phase 2: フォルダ管理機能
+        // フォルダ管理機能（Phase 2継承）
         // ================================================================================
 
         /**
@@ -139,7 +152,6 @@
          * @returns {{layer: PIXI.Container, index: number}} 作成されたフォルダと配列インデックス
          */
         createFolder(name) {
-            // 🆕 Phase 1: デバッグログ追加
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             console.log('[LayerSystem] 🔍 createFolder() called');
             console.log('[LayerSystem]   name:', name);
@@ -404,7 +416,7 @@
         }
 
         // ================================================================================
-        // 既存メソッド（継承）
+        // レイヤー基本操作
         // ================================================================================
 
         getLayerById(layerId) {
@@ -418,49 +430,293 @@
             }) || null;
         }
 
-        _createSolidBackground(width, height, color = 0xf0e0d6) {
-            const g = new PIXI.Graphics();
-            g.rect(0, 0, width, height);
-            g.fill({ color: color, alpha: 1.0 });
-            g.label = 'backgroundFill';
-            return g;
+        getLayers() {
+            return this.currentFrameContainer ? this.currentFrameContainer.children : [];
+        }
+        
+        getActiveLayer() {
+            const layers = this.getLayers();
+            return this.activeLayerIndex >= 0 && this.activeLayerIndex < layers.length ? layers[this.activeLayerIndex] : null;
         }
 
-        _setupResizeEvents() {
-            if (!this.eventBus) return;
-            
-            this.eventBus.on('camera:resized', (data) => {
-                if (this.checkerPattern && this.checkerPattern.parent && window.checkerUtils) {
-                    const wasVisible = this.checkerPattern.visible;
-                    
-                    this.checkerPattern = window.checkerUtils.resizeCanvasChecker(
-                        this.checkerPattern,
-                        data.width,
-                        data.height
-                    );
-                    
-                    if (this.cameraSystem?.worldContainer && !this.checkerPattern.parent) {
-                        this.cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
-                    }
-                    
-                    const bgLayer = this.getLayers()[0];
-                    const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
-                    this.checkerPattern.visible = !isBackgroundVisible;
+        getActiveLayerIndex() {
+            return this.activeLayerIndex;
+        }
+
+        getLayerIndex(layer) {
+            const layers = this.getLayers();
+            return layers.indexOf(layer);
+        }
+
+        setActiveLayer(index) {
+            const layers = this.getLayers();
+            if (index >= 0 && index < layers.length) {
+                const layer = layers[index];
+                if (layer?.layerData?.isBackground) {
+                    return;
                 }
                 
-                const bgLayer = this.getLayers()[0];
-                if (bgLayer?.layerData?.isBackground && bgLayer.layerData.backgroundGraphics) {
-                    const bg = bgLayer.layerData.backgroundGraphics;
-                    const currentColor = bgLayer.layerData.backgroundColor || 0xf0e0d6;
-                    
-                    bg.clear();
-                    bg.rect(0, 0, data.width, data.height);
-                    bg.fill({ color: currentColor, alpha: 1.0 });
-                }
-                
-                this.requestThumbnailUpdate(0);
+                const oldIndex = this.activeLayerIndex;
+                this.activeLayerIndex = index;
                 this._emitPanelUpdateRequest();
+                this._emitStatusUpdateRequest();
+                if (this.isLayerMoveMode) {
+                    this.updateLayerTransformPanelValues();
+                }
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:activated', { layerIndex: index, oldIndex: oldIndex, layerId: layers[index]?.layerData?.id });
+                }
+            }
+        }
+
+        // ================================================================================
+        // レイヤー作成・削除
+        // ================================================================================
+
+        /**
+         * 次のレイヤー名生成
+         */
+        _generateNextLayerName() {
+            const layers = this.getLayers();
+            const layerNames = layers
+                .filter(l => l.layerData && !l.layerData.isBackground && !l.layerData.isFolder)
+                .map(l => l.layerData.name);
+            
+            const numbers = layerNames
+                .map(name => {
+                    const match = name.match(/^レイヤー(\d+)$/);
+                    return match ? parseInt(match[1], 10) : 0;
+                })
+                .filter(n => n > 0);
+            
+            const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
+            const nextNumber = maxNumber + 1;
+            
+            return `レイヤー${nextNumber}`;
+        }
+
+        createLayer(name, isBackground = false) {
+            if (!this.currentFrameContainer) return null;
+            
+            const layerModel = new window.TegakiDataModels.LayerModel({
+                name: name || (isBackground ? '背景' : this._generateNextLayerName()),
+                isBackground: isBackground
             });
+            const layer = new PIXI.Container();
+            layer.label = layerModel.id;
+            layer.layerData = layerModel;
+            layer.id = layerModel.id;
+            
+            // 🔧 Phase 3: マスク初期化（ラスター方式では将来的にフレームバッファに置き換え）
+            if (this.app && this.app.renderer && !isBackground) {
+                const success = layerModel.initializeMask(
+                    this.config.canvas.width,
+                    this.config.canvas.height,
+                    this.app.renderer
+                );
+                if (success && layerModel.maskSprite) {
+                    layer.addChild(layerModel.maskSprite);
+                }
+            }
+            
+            if (this.transform) {
+                this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+            }
+            
+            if (isBackground) {
+                const bg = this._createSolidBackground(
+                    this.config.canvas.width, 
+                    this.config.canvas.height,
+                    0xf0e0d6
+                );
+                layer.addChild(bg);
+                layer.layerData.backgroundGraphics = bg;
+                layer.layerData.backgroundColor = 0xf0e0d6;
+            }
+            
+            if (window.History && !window.History._manager.isApplying) {
+                const entry = {
+                    name: 'layer-create',
+                    do: () => {
+                        this.currentFrameContainer.addChild(layer);
+                        const layers = this.getLayers();
+                        this.setActiveLayer(layers.length - 1);
+                        this._emitPanelUpdateRequest();
+                        this._emitStatusUpdateRequest();
+                    },
+                    undo: () => {
+                        if (layer.layerData) {
+                            layer.layerData.destroyMask();
+                        }
+                        this.currentFrameContainer.removeChild(layer);
+                        const layers = this.getLayers();
+                        if (this.activeLayerIndex >= layers.length) {
+                            this.activeLayerIndex = Math.max(0, layers.length - 1);
+                        }
+                        this._emitPanelUpdateRequest();
+                        this._emitStatusUpdateRequest();
+                    },
+                    meta: { layerId: layerModel.id, name: layerModel.name }
+                };
+                window.History.push(entry);
+            } else {
+                this.currentFrameContainer.addChild(layer);
+                const layers = this.getLayers();
+                this.setActiveLayer(layers.length - 1);
+                this._emitPanelUpdateRequest();
+                this._emitStatusUpdateRequest();
+            }
+            if (this.eventBus) {
+                this.eventBus.emit('layer:created', { layerId: layerModel.id, name: layerModel.name, isBackground });
+            }
+            const layers = this.getLayers();
+            return { layer, index: layers.length - 1 };
+        }
+
+        deleteLayer(layerIndex) {
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) {
+                return false;
+            }
+            const layer = layers[layerIndex];
+            const layerId = layer.layerData?.id;
+            if (layer.layerData?.isBackground) {
+                return false;
+            }
+            
+            // フォルダの場合、子レイヤーも削除
+            if (layer.layerData?.isFolder) {
+                const children = this.getFolderChildren(layerId);
+                children.forEach(child => {
+                    const childIndex = this.getLayerIndex(child);
+                    if (childIndex >= 0) {
+                        this.deleteLayer(childIndex);
+                    }
+                });
+            }
+            
+            try {
+                const previousActiveIndex = this.activeLayerIndex;
+                if (window.History && !window.History._manager.isApplying) {
+                    const entry = {
+                        name: 'layer-delete',
+                        do: () => {
+                            if (layer.layerData) {
+                                layer.layerData.destroyMask();
+                            }
+                            this.currentFrameContainer.removeChild(layer);
+                            if (layerId && this.transform) {
+                                this.transform.clearTransform(layerId);
+                            }
+                            const remainingLayers = this.getLayers();
+                            if (remainingLayers.length === 0) {
+                                this.activeLayerIndex = -1;
+                            } else if (this.activeLayerIndex >= remainingLayers.length) {
+                                this.activeLayerIndex = remainingLayers.length - 1;
+                            }
+                            this._emitPanelUpdateRequest();
+                            this._emitStatusUpdateRequest();
+                            if (this.eventBus) {
+                                this.eventBus.emit('layer:deleted', { layerId, layerIndex });
+                            }
+                        },
+                        undo: () => {
+                            if (layer.layerData && this.app && this.app.renderer && !layer.layerData.isFolder) {
+                                layer.layerData.initializeMask(
+                                    this.config.canvas.width,
+                                    this.config.canvas.height,
+                                    this.app.renderer
+                                );
+                                if (layer.layerData.maskSprite) {
+                                    layer.addChildAt(layer.layerData.maskSprite, 0);
+                                    this._applyMaskToLayerGraphics(layer);
+                                }
+                            }
+                            this.currentFrameContainer.addChildAt(layer, layerIndex);
+                            this.activeLayerIndex = previousActiveIndex;
+                            this._emitPanelUpdateRequest();
+                            this._emitStatusUpdateRequest();
+                        },
+                        meta: { layerId, layerIndex }
+                    };
+                    window.History.push(entry);
+                } else {
+                    if (layer.layerData) {
+                        layer.layerData.destroyMask();
+                    }
+                    this.currentFrameContainer.removeChild(layer);
+                    if (layerId && this.transform) {
+                        this.transform.clearTransform(layerId);
+                    }
+                    const remainingLayers = this.getLayers();
+                    if (remainingLayers.length === 0) {
+                        this.activeLayerIndex = -1;
+                    } else if (this.activeLayerIndex >= remainingLayers.length) {
+                        this.activeLayerIndex = remainingLayers.length - 1;
+                    }
+                    this._emitPanelUpdateRequest();
+                    this._emitStatusUpdateRequest();
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:deleted', { layerId, layerIndex });
+                    }
+                }
+                if (this.animationSystem?.generateFrameThumbnail) {
+                    const frameIndex = this.animationSystem.getCurrentFrameIndex();
+                    setTimeout(() => {
+                        this.animationSystem.generateFrameThumbnail(frameIndex);
+                    }, 100);
+                }
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // ================================================================================
+        // レイヤープロパティ操作
+        // ================================================================================
+
+        toggleLayerVisibility(layerIndex) {
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
+            const layer = layers[layerIndex];
+            layer.layerData.visible = !layer.layerData.visible;
+            layer.visible = layer.layerData.visible;
+            
+            if (layer.layerData?.isBackground && this.checkerPattern) {
+                this.checkerPattern.visible = !layer.layerData.visible;
+            }
+            
+            this._emitPanelUpdateRequest();
+            if (this.eventBus) {
+                this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
+                this.requestThumbnailUpdate(layerIndex);
+            }
+        }
+
+        setLayerOpacity(layerIndex, opacity) {
+            const layers = this.getLayers();
+            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
+            const layer = layers[layerIndex];
+            if (layer.layerData?.isBackground) return;
+            
+            opacity = Math.max(0, Math.min(1, opacity));
+            
+            layer.alpha = opacity;
+            if (layer.layerData) {
+                layer.layerData.opacity = opacity;
+            }
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:opacity-changed', {
+                    layerIndex,
+                    layerId: layer.layerData?.id,
+                    opacity
+                });
+                this.requestThumbnailUpdate(layerIndex);
+            }
         }
 
         changeBackgroundLayerColor(layerIndex, layerId) {
@@ -491,102 +747,83 @@
             }
         }
 
-        setLayerOpacity(layerIndex, opacity) {
-            const layers = this.getLayers();
-            if (layerIndex < 0 || layerIndex >= layers.length) return;
+        // ================================================================================
+        // 🔧 Phase 3: ラスターストローク管理（ベクターpaths互換インターフェース維持）
+        // ================================================================================
+
+        /**
+         * アクティブレイヤーにパス追加（ラスター互換）
+         * 🔧 Phase 3: pathsData → rasterStrokes への移行準備
+         */
+        addPathToActiveLayer(path) {
+            if (!this.getActiveLayer()) return;
+            const activeLayer = this.getActiveLayer();
+            const layerIndex = this.activeLayerIndex;
             
-            const layer = layers[layerIndex];
-            if (layer.layerData?.isBackground) return;
+            if (activeLayer.layerData?.isBackground || activeLayer.layerData?.isFolder) return;
             
-            opacity = Math.max(0, Math.min(1, opacity));
+            // 🔧 Phase 3: rasterStrokes配列に追加（paths互換性維持）
+            if (activeLayer.layerData && activeLayer.layerData.rasterStrokes) {
+                activeLayer.layerData.rasterStrokes.push(path);
+            } else if (activeLayer.layerData && activeLayer.layerData.paths) {
+                // 従来のpaths配列へのフォールバック
+                activeLayer.layerData.paths.push(path);
+            }
             
-            layer.alpha = opacity;
-            if (layer.layerData) {
-                layer.layerData.opacity = opacity;
+            if (!activeLayer.layerData) {
+                activeLayer.paths = activeLayer.paths || [];
+                activeLayer.paths.push(path);
+            }
+            
+            // Graphics再構築（ラスター方式では不要になる予定）
+            this.rebuildPathGraphics(path);
+            if (path.graphics) {
+                if (activeLayer.layerData && activeLayer.layerData.maskSprite) {
+                    path.graphics.mask = activeLayer.layerData.maskSprite;
+                }
+                activeLayer.addChild(path.graphics);
             }
             
             if (this.eventBus) {
-                this.eventBus.emit('layer:opacity-changed', {
-                    layerIndex,
-                    layerId: layer.layerData?.id,
-                    opacity
-                });
+                this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
                 this.requestThumbnailUpdate(layerIndex);
             }
         }
 
-        getActiveLayerIndex() {
-            return this.activeLayerIndex;
-        }
-        
-        _setupVKeyEvents() {
-            if (!this.eventBus) return;
-            
-            this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
-                if (!this.transform) return;
-                if (!this.transform.app && this.app && this.cameraSystem) {
-                    this.initTransform();
+        /**
+         * レイヤーにパス追加（ラスター互換）
+         */
+        addPathToLayer(layerIndex, path) {
+            const layers = this.getLayers();
+            if (layerIndex >= 0 && layerIndex < layers.length) {
+                const layer = layers[layerIndex];
+                
+                if (layer.layerData?.isBackground || layer.layerData?.isFolder) return;
+                
+                // 🔧 Phase 3: rasterStrokes配列に追加
+                if (layer.layerData.rasterStrokes) {
+                    layer.layerData.rasterStrokes.push(path);
+                } else if (layer.layerData.paths) {
+                    layer.layerData.paths.push(path);
                 }
                 
-                if (pressed) {
-                    this.transform.enterMoveMode();
-                    const activeLayer = this.getActiveLayer();
-                    if (activeLayer) {
-                        this.transform.updateTransformPanelValues(activeLayer);
-                    }
-                } else {
-                    const activeLayer = this.getActiveLayer();
-                    this.transform.exitMoveMode(activeLayer);
-                }
-            });
-        }
-        
-        initTransform() {
-            if (!this.transform || !this.app) return;
-            this.transform.init(this.app, this.cameraSystem);
-            this.transform.onTransformComplete = (layer) => {
-                this.eventBus.emit('layer:transform-confirmed', {layerId: layer.layerData.id});
-                this.requestThumbnailUpdate(this.getLayerIndex(layer));
+                layer.addChild(path.graphics);
                 if (this.animationSystem?.generateFrameThumbnail) {
                     const frameIndex = this.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
                         this.animationSystem.generateFrameThumbnail(frameIndex);
                     }, 100);
                 }
-            };
-            this.transform.onTransformUpdate = (layer, transform) => {
-                this.requestThumbnailUpdate(this.getLayerIndex(layer));
-                this.eventBus.emit('layer:updated', {layerId: layer.layerData.id, transform});
-            };
-            this.transform.onSliderChange = (sliderId, value) => {
-                const activeLayer = this.getActiveLayer();
-                if (!activeLayer) return;
-                const property = sliderId.replace('layer-', '').replace('-slider', '');
-                if (property === 'rotation') {
-                    value = value * Math.PI / 180;
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:path-added', { layerIndex, pathId: path.id, layerId: layer.layerData.id });
+                    this.requestThumbnailUpdate(layerIndex);
                 }
-                this.transform.updateTransform(activeLayer, property, value);
-                this.requestThumbnailUpdate(this.activeLayerIndex);
-            };
-            this.transform.onFlipRequest = (direction) => {
-                this.flipActiveLayer(direction, false);
-            };
-            this.transform.onDragRequest = (dx, dy, shiftKey) => {
-                this._handleLayerDrag(dx, dy, shiftKey);
-            };
-            this.transform.onGetActiveLayer = () => {
-                return this.getActiveLayer();
-            };
-            this.transform.onRebuildRequired = (layer, paths) => {
-                this.safeRebuildLayer(layer, paths);
-            };
+            }
         }
 
-        getLayerIndex(layer) {
-            const layers = this.getLayers();
-            return layers.indexOf(layer);
-        }
-
+        /**
+         * パスGraphics再構築（ラスター方式では段階的に廃止予定）
+         */
         rebuildPathGraphics(path) {
             try {
                 if (path.graphics) {
@@ -632,71 +869,238 @@
             }
         }
 
-        _applyMaskToLayerGraphics(layer) {
-            if (!layer.layerData || !layer.layerData.maskSprite) return;
-            
-            for (const child of layer.children) {
-                if (child === layer.layerData.maskSprite || 
-                    child === layer.layerData.backgroundGraphics) {
-                    continue;
+        /**
+         * レイヤー再構築（ラスター方式では段階的に廃止予定）
+         */
+        safeRebuildLayer(layer, newPaths) {
+            try {
+                const childrenToRemove = [];
+                for (let child of layer.children) {
+                    if (child !== layer.layerData.backgroundGraphics &&
+                        child !== layer.layerData.maskSprite) {
+                        childrenToRemove.push(child);
+                    }
+                }
+                childrenToRemove.forEach(child => {
+                    try {
+                        layer.removeChild(child);
+                        if (child.destroy && typeof child.destroy === 'function') {
+                            child.destroy({ children: true, texture: false, baseTexture: false });
+                        }
+                    } catch (removeError) {}
+                });
+                
+                // 🔧 Phase 3: rasterStrokes配列をクリア
+                if (layer.layerData.rasterStrokes) {
+                    layer.layerData.rasterStrokes = [];
+                } else {
+                    layer.layerData.paths = [];
                 }
                 
-                if (child instanceof PIXI.Graphics) {
-                    child.mask = layer.layerData.maskSprite;
+                let addedCount = 0;
+                for (let i = 0; i < newPaths.length; i++) {
+                    const path = newPaths[i];
+                    try {
+                        const rebuildSuccess = this.rebuildPathGraphics(path);
+                        if (rebuildSuccess && path.graphics) {
+                            if (layer.layerData && layer.layerData.maskSprite) {
+                                path.graphics.mask = layer.layerData.maskSprite;
+                            }
+                            // 🔧 Phase 3: rasterStrokes配列に追加
+                            if (layer.layerData.rasterStrokes) {
+                                layer.layerData.rasterStrokes.push(path);
+                            } else {
+                                layer.layerData.paths.push(path);
+                            }
+                            layer.addChild(path.graphics);
+                            addedCount++;
+                        }
+                    } catch (pathError) {}
+                }
+                return addedCount > 0 || newPaths.length === 0;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // ================================================================================
+        // レイヤー順序操作
+        // ================================================================================
+
+        reorderLayers(fromIndex, toIndex) {
+            const layers = this.getLayers();
+            if (fromIndex < 0 || fromIndex >= layers.length || toIndex < 0 || toIndex >= layers.length || fromIndex === toIndex) {
+                return false;
+            }
+            try {
+                const movedLayer = layers[fromIndex];
+                const oldActiveIndex = this.activeLayerIndex;
+                if (window.History && !window.History._manager.isApplying) {
+                    const entry = {
+                        name: 'layer-reorder',
+                        do: () => {
+                            const layers = this.getLayers();
+                            const [layer] = layers.splice(fromIndex, 1);
+                            layers.splice(toIndex, 0, layer);
+                            this.currentFrameContainer.removeChild(layer);
+                            this.currentFrameContainer.addChildAt(layer, toIndex);
+                            if (this.activeLayerIndex === fromIndex) {
+                                this.activeLayerIndex = toIndex;
+                            } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
+                                this.activeLayerIndex--;
+                            } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
+                                this.activeLayerIndex++;
+                            }
+                            this._emitPanelUpdateRequest();
+                            if (this.eventBus) {
+                                this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });
+                            }
+                        },
+                        undo: () => {
+                            const layers = this.getLayers();
+                            const [layer] = layers.splice(toIndex, 1);
+                            layers.splice(fromIndex, 0, layer);
+                            this.currentFrameContainer.removeChild(layer);
+                            this.currentFrameContainer.addChildAt(layer, fromIndex);
+                            this.activeLayerIndex = oldActiveIndex;
+                            this._emitPanelUpdateRequest();
+                            if (this.eventBus) {
+                                this.eventBus.emit('layer:reordered', { fromIndex: toIndex, toIndex: fromIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });
+                            }
+                        },
+                        meta: { fromIndex, toIndex }
+                    };
+                    window.History.push(entry);
+                } else {
+                    const [layer] = layers.splice(fromIndex, 1);
+                    layers.splice(toIndex, 0, layer);
+                    this.currentFrameContainer.removeChild(layer);
+                    this.currentFrameContainer.addChildAt(layer, toIndex);
+                    if (this.activeLayerIndex === fromIndex) {
+                        this.activeLayerIndex = toIndex;
+                    } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
+                        this.activeLayerIndex--;
+                    } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
+                        this.activeLayerIndex++;
+                    }
+                    this._emitPanelUpdateRequest();
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: movedLayer.layerData?.id });
+                    }
+                }
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        moveActiveLayerHierarchy(direction) {
+            const layers = this.getLayers();
+            if (layers.length <= 1) return;
+            const currentIndex = this.activeLayerIndex;
+            const activeLayer = layers[currentIndex];
+            if (activeLayer?.layerData?.isBackground) return;
+            let newIndex;
+            if (direction === 'up') {
+                newIndex = currentIndex + 1;
+                if (newIndex >= layers.length) return;
+            } else if (direction === 'down') {
+                newIndex = currentIndex - 1;
+                if (newIndex < 0) return;
+                const targetLayer = layers[newIndex];
+                if (targetLayer?.layerData?.isBackground) return;
+            } else {
+                return;
+            }
+            if (window.History && !window.History._manager.isApplying) {
+                const oldIndex = currentIndex;
+                const entry = {
+                    name: 'layer-hierarchy-move',
+                    do: () => {
+                        const layers = this.getLayers();
+                        const layer = layers[oldIndex];
+                        this.currentFrameContainer.removeChildAt(oldIndex);
+                        this.currentFrameContainer.addChildAt(layer, newIndex);
+                        this.activeLayerIndex = newIndex;
+                        this._emitPanelUpdateRequest();
+                        if (this.eventBus) {
+                            this.eventBus.emit('layer:hierarchy-moved', { direction, oldIndex, newIndex, layerId: layer.layerData?.id });
+                        }
+                    },
+                    undo: () => {
+                        const layers = this.getLayers();
+                        const layer = layers[newIndex];
+                        this.currentFrameContainer.removeChildAt(newIndex);
+                        this.currentFrameContainer.addChildAt(layer, oldIndex);
+                        this.activeLayerIndex = oldIndex;
+                        this._emitPanelUpdateRequest();
+                        if (this.eventBus) {
+                            this.eventBus.emit('layer:hierarchy-moved', { direction: direction === 'up' ? 'down' : 'up', oldIndex: newIndex, newIndex: oldIndex, layerId: layer.layerData?.id });
+                        }
+                    },
+                    meta: { direction, oldIndex, newIndex }
+                };
+                window.History.push(entry);
+            } else {
+                this.currentFrameContainer.removeChildAt(currentIndex);
+                this.currentFrameContainer.addChildAt(activeLayer, newIndex);
+                this.activeLayerIndex = newIndex;
+                this._emitPanelUpdateRequest();
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:hierarchy-moved', { direction, oldIndex: currentIndex, newIndex, layerId: activeLayer.layerData?.id });
                 }
             }
         }
 
-        addPathToActiveLayer(path) {
-            if (!this.getActiveLayer()) return;
-            const activeLayer = this.getActiveLayer();
-            const layerIndex = this.activeLayerIndex;
+        selectNextLayer() {
+            const layers = this.getLayers();
+            if (layers.length <= 1) return;
             
-            if (activeLayer.layerData?.isBackground || activeLayer.layerData?.isFolder) return;
+            const currentIndex = this.activeLayerIndex;
+            let newIndex = currentIndex + 1;
             
-            if (activeLayer.layerData && activeLayer.layerData.paths) {
-                activeLayer.layerData.paths.push(path);
-            }
-            if (!activeLayer.layerData) {
-                activeLayer.paths = activeLayer.paths || [];
-                activeLayer.paths.push(path);
-            }
+            if (newIndex >= layers.length) return;
             
-            this.rebuildPathGraphics(path);
-            if (path.graphics) {
-                if (activeLayer.layerData && activeLayer.layerData.maskSprite) {
-                    path.graphics.mask = activeLayer.layerData.maskSprite;
-                }
-                activeLayer.addChild(path.graphics);
-            }
+            const targetLayer = layers[newIndex];
+            if (targetLayer?.layerData?.isBackground) return;
+            
+            this.setActiveLayer(newIndex);
             
             if (this.eventBus) {
-                this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
-                this.requestThumbnailUpdate(layerIndex);
+                this.eventBus.emit('layer:selection-changed', {
+                    oldIndex: currentIndex,
+                    newIndex: newIndex,
+                    layerId: targetLayer?.layerData?.id
+                });
             }
         }
 
-        addPathToLayer(layerIndex, path) {
+        selectPrevLayer() {
             const layers = this.getLayers();
-            if (layerIndex >= 0 && layerIndex < layers.length) {
-                const layer = layers[layerIndex];
-                
-                if (layer.layerData?.isBackground || layer.layerData?.isFolder) return;
-                
-                layer.layerData.paths.push(path);
-                layer.addChild(path.graphics);
-                if (this.animationSystem?.generateFrameThumbnail) {
-                    const frameIndex = this.animationSystem.getCurrentFrameIndex();
-                    setTimeout(() => {
-                        this.animationSystem.generateFrameThumbnail(frameIndex);
-                    }, 100);
-                }
-                if (this.eventBus) {
-                    this.eventBus.emit('layer:path-added', { layerIndex, pathId: path.id, layerId: layer.layerData.id });
-                    this.requestThumbnailUpdate(layerIndex);
-                }
+            if (layers.length <= 1) return;
+            
+            const currentIndex = this.activeLayerIndex;
+            let newIndex = currentIndex - 1;
+            
+            if (newIndex < 0) return;
+            
+            const targetLayer = layers[newIndex];
+            if (targetLayer?.layerData?.isBackground) return;
+            
+            this.setActiveLayer(newIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:selection-changed', {
+                    oldIndex: currentIndex,
+                    newIndex: newIndex,
+                    layerId: targetLayer?.layerData?.id
+                });
             }
         }
+
+        // ================================================================================
+        // レイヤー変形処理
+        // ================================================================================
 
         enterLayerMoveMode() {
             if (this.transform) this.transform.enterMoveMode();
@@ -827,9 +1231,15 @@
             const transformBefore = structuredClone(this.transform.getTransform(layerId));
             if (this.transform._isTransformNonDefault(transformBefore)) {
                 this.transform.confirmTransform(activeLayer);
-                const rebuildSuccess = this.safeRebuildLayer(activeLayer, activeLayer.layerData.paths);
+                
+                // 🔧 Phase 3: rasterStrokes配列を使用
+                const paths = activeLayer.layerData.rasterStrokes || activeLayer.layerData.paths;
+                const rebuildSuccess = this.safeRebuildLayer(activeLayer, paths);
+                
                 if (rebuildSuccess && window.History && !window.History._manager.isApplying) {
-                    const pathsAfter = structuredClone(activeLayer.layerData.paths);
+                    const pathsAfter = activeLayer.layerData.rasterStrokes ? 
+                        structuredClone(activeLayer.layerData.rasterStrokes) :
+                        structuredClone(activeLayer.layerData.paths);
                     const transformAfter = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
                     const entry = {
                         name: 'layer-transform',
@@ -916,111 +1326,9 @@
             }
         }
 
-        safeRebuildLayer(layer, newPaths) {
-            try {
-                const childrenToRemove = [];
-                for (let child of layer.children) {
-                    if (child !== layer.layerData.backgroundGraphics &&
-                        child !== layer.layerData.maskSprite) {
-                        childrenToRemove.push(child);
-                    }
-                }
-                childrenToRemove.forEach(child => {
-                    try {
-                        layer.removeChild(child);
-                        if (child.destroy && typeof child.destroy === 'function') {
-                            child.destroy({ children: true, texture: false, baseTexture: false });
-                        }
-                    } catch (removeError) {}
-                });
-                layer.layerData.paths = [];
-                let addedCount = 0;
-                for (let i = 0; i < newPaths.length; i++) {
-                    const path = newPaths[i];
-                    try {
-                        const rebuildSuccess = this.rebuildPathGraphics(path);
-                        if (rebuildSuccess && path.graphics) {
-                            if (layer.layerData && layer.layerData.maskSprite) {
-                                path.graphics.mask = layer.layerData.maskSprite;
-                            }
-                            layer.layerData.paths.push(path);
-                            layer.addChild(path.graphics);
-                            addedCount++;
-                        }
-                    } catch (pathError) {}
-                }
-                return addedCount > 0 || newPaths.length === 0;
-            } catch (error) {
-                return false;
-            }
-        }
-
-        reorderLayers(fromIndex, toIndex) {
-            const layers = this.getLayers();
-            if (fromIndex < 0 || fromIndex >= layers.length || toIndex < 0 || toIndex >= layers.length || fromIndex === toIndex) {
-                return false;
-            }
-            try {
-                const movedLayer = layers[fromIndex];
-                const oldActiveIndex = this.activeLayerIndex;
-                if (window.History && !window.History._manager.isApplying) {
-                    const entry = {
-                        name: 'layer-reorder',
-                        do: () => {
-                            const layers = this.getLayers();
-                            const [layer] = layers.splice(fromIndex, 1);
-                            layers.splice(toIndex, 0, layer);
-                            this.currentFrameContainer.removeChild(layer);
-                            this.currentFrameContainer.addChildAt(layer, toIndex);
-                            if (this.activeLayerIndex === fromIndex) {
-                                this.activeLayerIndex = toIndex;
-                            } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
-                                this.activeLayerIndex--;
-                            } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
-                                this.activeLayerIndex++;
-                            }
-                            this._emitPanelUpdateRequest();
-                            if (this.eventBus) {
-                                this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });
-                            }
-                        },
-                        undo: () => {
-                            const layers = this.getLayers();
-                            const [layer] = layers.splice(toIndex, 1);
-                            layers.splice(fromIndex, 0, layer);
-                            this.currentFrameContainer.removeChild(layer);
-                            this.currentFrameContainer.addChildAt(layer, fromIndex);
-                            this.activeLayerIndex = oldActiveIndex;
-                            this._emitPanelUpdateRequest();
-                            if (this.eventBus) {
-                                this.eventBus.emit('layer:reordered', { fromIndex: toIndex, toIndex: fromIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });
-                            }
-                        },
-                        meta: { fromIndex, toIndex }
-                    };
-                    window.History.push(entry);
-                } else {
-                    const [layer] = layers.splice(fromIndex, 1);
-                    layers.splice(toIndex, 0, layer);
-                    this.currentFrameContainer.removeChild(layer);
-                    this.currentFrameContainer.addChildAt(layer, toIndex);
-                    if (this.activeLayerIndex === fromIndex) {
-                        this.activeLayerIndex = toIndex;
-                    } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
-                        this.activeLayerIndex--;
-                    } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
-                        this.activeLayerIndex++;
-                    }
-                    this._emitPanelUpdateRequest();
-                    if (this.eventBus) {
-                        this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: movedLayer.layerData?.id });
-                    }
-                }
-                return true;
-            } catch (error) {
-                return false;
-            }
-        }
+        // ================================================================================
+        // フレーム管理
+        // ================================================================================
 
         setCurrentFrameContainer(frameContainer) {
             this.currentFrameContainer = frameContainer;
@@ -1104,16 +1412,74 @@
         clearFrameThumbnailDirty(frameId) {
             this.frameThumbnailDirty.set(frameId, false);
         }
-        
-        getLayers() {
-            return this.currentFrameContainer ? this.currentFrameContainer.children : [];
+
+        // ================================================================================
+        // システム統合
+        // ================================================================================
+
+        _setupVKeyEvents() {
+            if (!this.eventBus) return;
+            
+            this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
+                if (!this.transform) return;
+                if (!this.transform.app && this.app && this.cameraSystem) {
+                    this.initTransform();
+                }
+                
+                if (pressed) {
+                    this.transform.enterMoveMode();
+                    const activeLayer = this.getActiveLayer();
+                    if (activeLayer) {
+                        this.transform.updateTransformPanelValues(activeLayer);
+                    }
+                } else {
+                    const activeLayer = this.getActiveLayer();
+                    this.transform.exitMoveMode(activeLayer);
+                }
+            });
         }
         
-        getActiveLayer() {
-            const layers = this.getLayers();
-            return this.activeLayerIndex >= 0 && this.activeLayerIndex < layers.length ? layers[this.activeLayerIndex] : null;
+        initTransform() {
+            if (!this.transform || !this.app) return;
+            this.transform.init(this.app, this.cameraSystem);
+            this.transform.onTransformComplete = (layer) => {
+                this.eventBus.emit('layer:transform-confirmed', {layerId: layer.layerData.id});
+                this.requestThumbnailUpdate(this.getLayerIndex(layer));
+                if (this.animationSystem?.generateFrameThumbnail) {
+                    const frameIndex = this.animationSystem.getCurrentFrameIndex();
+                    setTimeout(() => {
+                        this.animationSystem.generateFrameThumbnail(frameIndex);
+                    }, 100);
+                }
+            };
+            this.transform.onTransformUpdate = (layer, transform) => {
+                this.requestThumbnailUpdate(this.getLayerIndex(layer));
+                this.eventBus.emit('layer:updated', {layerId: layer.layerData.id, transform});
+            };
+            this.transform.onSliderChange = (sliderId, value) => {
+                const activeLayer = this.getActiveLayer();
+                if (!activeLayer) return;
+                const property = sliderId.replace('layer-', '').replace('-slider', '');
+                if (property === 'rotation') {
+                    value = value * Math.PI / 180;
+                }
+                this.transform.updateTransform(activeLayer, property, value);
+                this.requestThumbnailUpdate(this.activeLayerIndex);
+            };
+            this.transform.onFlipRequest = (direction) => {
+                this.flipActiveLayer(direction, false);
+            };
+            this.transform.onDragRequest = (dx, dy, shiftKey) => {
+                this._handleLayerDrag(dx, dy, shiftKey);
+            };
+            this.transform.onGetActiveLayer = () => {
+                return this.getActiveLayer();
+            };
+            this.transform.onRebuildRequired = (layer, paths) => {
+                this.safeRebuildLayer(layer, paths);
+            };
         }
-        
+
         _setupAnimationSystemIntegration() {
             if (!this.eventBus) return;
             this.eventBus.on('animation:system-ready', () => {
@@ -1240,243 +1606,67 @@
             });
         }
 
-        selectNextLayer() {
-            const layers = this.getLayers();
-            if (layers.length <= 1) return;
+        _setupResizeEvents() {
+            if (!this.eventBus) return;
             
-            const currentIndex = this.activeLayerIndex;
-            let newIndex = currentIndex + 1;
-            
-            if (newIndex >= layers.length) return;
-            
-            const targetLayer = layers[newIndex];
-            if (targetLayer?.layerData?.isBackground) return;
-            
-            this.setActiveLayer(newIndex);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:selection-changed', {
-                    oldIndex: currentIndex,
-                    newIndex: newIndex,
-                    layerId: targetLayer?.layerData?.id
-                });
-            }
-        }
-
-        selectPrevLayer() {
-            const layers = this.getLayers();
-            if (layers.length <= 1) return;
-            
-            const currentIndex = this.activeLayerIndex;
-            let newIndex = currentIndex - 1;
-            
-            if (newIndex < 0) return;
-            
-            const targetLayer = layers[newIndex];
-            if (targetLayer?.layerData?.isBackground) return;
-            
-            this.setActiveLayer(newIndex);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:selection-changed', {
-                    oldIndex: currentIndex,
-                    newIndex: newIndex,
-                    layerId: targetLayer?.layerData?.id
-                });
-            }
-        }
-
-        moveActiveLayerHierarchy(direction) {
-            const layers = this.getLayers();
-            if (layers.length <= 1) return;
-            const currentIndex = this.activeLayerIndex;
-            const activeLayer = layers[currentIndex];
-            if (activeLayer?.layerData?.isBackground) return;
-            let newIndex;
-            if (direction === 'up') {
-                newIndex = currentIndex + 1;
-                if (newIndex >= layers.length) return;
-            } else if (direction === 'down') {
-                newIndex = currentIndex - 1;
-                if (newIndex < 0) return;
-                const targetLayer = layers[newIndex];
-                if (targetLayer?.layerData?.isBackground) return;
-            } else {
-                return;
-            }
-            if (window.History && !window.History._manager.isApplying) {
-                const oldIndex = currentIndex;
-                const entry = {
-                    name: 'layer-hierarchy-move',
-                    do: () => {
-                        const layers = this.getLayers();
-                        const layer = layers[oldIndex];
-                        this.currentFrameContainer.removeChildAt(oldIndex);
-                        this.currentFrameContainer.addChildAt(layer, newIndex);
-                        this.activeLayerIndex = newIndex;
-                        this._emitPanelUpdateRequest();
-                        if (this.eventBus) {
-                            this.eventBus.emit('layer:hierarchy-moved', { direction, oldIndex, newIndex, layerId: layer.layerData?.id });
-                        }
-                    },
-                    undo: () => {
-                        const layers = this.getLayers();
-                        const layer = layers[newIndex];
-                        this.currentFrameContainer.removeChildAt(newIndex);
-                        this.currentFrameContainer.addChildAt(layer, oldIndex);
-                        this.activeLayerIndex = oldIndex;
-                        this._emitPanelUpdateRequest();
-                        if (this.eventBus) {
-                            this.eventBus.emit('layer:hierarchy-moved', { direction: direction === 'up' ? 'down' : 'up', oldIndex: newIndex, newIndex: oldIndex, layerId: layer.layerData?.id });
-                        }
-                    },
-                    meta: { direction, oldIndex, newIndex }
-                };
-                window.History.push(entry);
-            } else {
-                this.currentFrameContainer.removeChildAt(currentIndex);
-                this.currentFrameContainer.addChildAt(activeLayer, newIndex);
-                this.activeLayerIndex = newIndex;
-                this._emitPanelUpdateRequest();
-                if (this.eventBus) {
-                    this.eventBus.emit('layer:hierarchy-moved', { direction, oldIndex: currentIndex, newIndex, layerId: activeLayer.layerData?.id });
-                }
-            }
-        }
-
-        _generateNextLayerName() {
-            const layers = this.getLayers();
-            const layerNames = layers
-                .filter(l => l.layerData && !l.layerData.isBackground && !l.layerData.isFolder)
-                .map(l => l.layerData.name);
-            
-            const numbers = layerNames
-                .map(name => {
-                    const match = name.match(/^レイヤー(\d+)$/);
-                    return match ? parseInt(match[1], 10) : 0;
-                })
-                .filter(n => n > 0);
-            
-            const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
-            const nextNumber = maxNumber + 1;
-            
-            return `レイヤー${nextNumber}`;
-        }
-
-        createLayer(name, isBackground = false) {
-            if (!this.currentFrameContainer) return null;
-            
-            const layerModel = new window.TegakiDataModels.LayerModel({
-                name: name || (isBackground ? '背景' : this._generateNextLayerName()),
-                isBackground: isBackground
-            });
-            const layer = new PIXI.Container();
-            layer.label = layerModel.id;
-            layer.layerData = layerModel;
-            layer.id = layerModel.id;
-            
-            if (this.app && this.app.renderer && !isBackground) {
-                const success = layerModel.initializeMask(
-                    this.config.canvas.width,
-                    this.config.canvas.height,
-                    this.app.renderer
-                );
-                if (success && layerModel.maskSprite) {
-                    layer.addChild(layerModel.maskSprite);
-                }
-            }
-            
-            if (this.transform) {
-                this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
-            }
-            
-            if (isBackground) {
-                const bg = this._createSolidBackground(
-                    this.config.canvas.width, 
-                    this.config.canvas.height,
-                    0xf0e0d6
-                );
-                layer.addChild(bg);
-                layer.layerData.backgroundGraphics = bg;
-                layer.layerData.backgroundColor = 0xf0e0d6;
-            }
-            
-            if (window.History && !window.History._manager.isApplying) {
-                const entry = {
-                    name: 'layer-create',
-                    do: () => {
-                        this.currentFrameContainer.addChild(layer);
-                        const layers = this.getLayers();
-                        this.setActiveLayer(layers.length - 1);
-                        this._emitPanelUpdateRequest();
-                        this._emitStatusUpdateRequest();
-                    },
-                    undo: () => {
-                        if (layer.layerData) {
-                            layer.layerData.destroyMask();
-                        }
-                        this.currentFrameContainer.removeChild(layer);
-                        const layers = this.getLayers();
-                        if (this.activeLayerIndex >= layers.length) {
-                            this.activeLayerIndex = Math.max(0, layers.length - 1);
-                        }
-                        this._emitPanelUpdateRequest();
-                        this._emitStatusUpdateRequest();
-                    },
-                    meta: { layerId: layerModel.id, name: layerModel.name }
-                };
-                window.History.push(entry);
-            } else {
-                this.currentFrameContainer.addChild(layer);
-                const layers = this.getLayers();
-                this.setActiveLayer(layers.length - 1);
-                this._emitPanelUpdateRequest();
-                this._emitStatusUpdateRequest();
-            }
-            if (this.eventBus) {
-                this.eventBus.emit('layer:created', { layerId: layerModel.id, name: layerModel.name, isBackground });
-            }
-            const layers = this.getLayers();
-            return { layer, index: layers.length - 1 };
-        }
-        
-        setActiveLayer(index) {
-            const layers = this.getLayers();
-            if (index >= 0 && index < layers.length) {
-                const layer = layers[index];
-                if (layer?.layerData?.isBackground) {
-                    return;
+            this.eventBus.on('camera:resized', (data) => {
+                if (this.checkerPattern && this.checkerPattern.parent && window.checkerUtils) {
+                    const wasVisible = this.checkerPattern.visible;
+                    
+                    this.checkerPattern = window.checkerUtils.resizeCanvasChecker(
+                        this.checkerPattern,
+                        data.width,
+                        data.height
+                    );
+                    
+                    if (this.cameraSystem?.worldContainer && !this.checkerPattern.parent) {
+                        this.cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
+                    }
+                    
+                    const bgLayer = this.getLayers()[0];
+                    const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
+                    this.checkerPattern.visible = !isBackgroundVisible;
                 }
                 
-                const oldIndex = this.activeLayerIndex;
-                this.activeLayerIndex = index;
+                const bgLayer = this.getLayers()[0];
+                if (bgLayer?.layerData?.isBackground && bgLayer.layerData.backgroundGraphics) {
+                    const bg = bgLayer.layerData.backgroundGraphics;
+                    const currentColor = bgLayer.layerData.backgroundColor || 0xf0e0d6;
+                    
+                    bg.clear();
+                    bg.rect(0, 0, data.width, data.height);
+                    bg.fill({ color: currentColor, alpha: 1.0 });
+                }
+                
+                this.requestThumbnailUpdate(0);
                 this._emitPanelUpdateRequest();
-                this._emitStatusUpdateRequest();
-                if (this.isLayerMoveMode) {
-                    this.updateLayerTransformPanelValues();
-                }
-                if (this.eventBus) {
-                    this.eventBus.emit('layer:activated', { layerIndex: index, oldIndex: oldIndex, layerId: layers[index]?.layerData?.id });
-                }
-            }
+            });
         }
 
-        toggleLayerVisibility(layerIndex) {
-            const layers = this.getLayers();
-            if (layerIndex < 0 || layerIndex >= layers.length) return;
+        // ================================================================================
+        // ヘルパー関数
+        // ================================================================================
+
+        _createSolidBackground(width, height, color = 0xf0e0d6) {
+            const g = new PIXI.Graphics();
+            g.rect(0, 0, width, height);
+            g.fill({ color: color, alpha: 1.0 });
+            g.label = 'backgroundFill';
+            return g;
+        }
+
+        _applyMaskToLayerGraphics(layer) {
+            if (!layer.layerData || !layer.layerData.maskSprite) return;
             
-            const layer = layers[layerIndex];
-            layer.layerData.visible = !layer.layerData.visible;
-            layer.visible = layer.layerData.visible;
-            
-            if (layer.layerData?.isBackground && this.checkerPattern) {
-                this.checkerPattern.visible = !layer.layerData.visible;
-            }
-            
-            this._emitPanelUpdateRequest();
-            if (this.eventBus) {
-                this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
-                this.requestThumbnailUpdate(layerIndex);
+            for (const child of layer.children) {
+                if (child === layer.layerData.maskSprite || 
+                    child === layer.layerData.backgroundGraphics) {
+                    continue;
+                }
+                
+                if (child instanceof PIXI.Graphics) {
+                    child.mask = layer.layerData.maskSprite;
+                }
             }
         }
 
@@ -1508,6 +1698,20 @@
                 });
             }
         }
+
+        requestThumbnailUpdate(layerIndex) {
+            if (this.eventBus) {
+                const layer = this.getLayers()[layerIndex];
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    layerIndex,
+                    layerId: layer?.layerData?.id
+                });
+            }
+        }
+
+        // ================================================================================
+        // システムセットアップ
+        // ================================================================================
 
         setApp(app) {
             this.app = app;
@@ -1596,116 +1800,11 @@
             console.log('[LayerSystem] ✅ Parent chain is valid');
             return true;
         }
-
-        deleteLayer(layerIndex) {
-            const layers = this.getLayers();
-            if (layerIndex < 0 || layerIndex >= layers.length) {
-                return false;
-            }
-            const layer = layers[layerIndex];
-            const layerId = layer.layerData?.id;
-            if (layer.layerData?.isBackground) {
-                return false;
-            }
-            
-            // 🆕 フォルダの場合、子レイヤーも削除
-            if (layer.layerData?.isFolder) {
-                const children = this.getFolderChildren(layerId);
-                children.forEach(child => {
-                    const childIndex = this.getLayerIndex(child);
-                    if (childIndex >= 0) {
-                        this.deleteLayer(childIndex);
-                    }
-                });
-            }
-            
-            try {
-                const previousActiveIndex = this.activeLayerIndex;
-                if (window.History && !window.History._manager.isApplying) {
-                    const entry = {
-                        name: 'layer-delete',
-                        do: () => {
-                            if (layer.layerData) {
-                                layer.layerData.destroyMask();
-                            }
-                            this.currentFrameContainer.removeChild(layer);
-                            if (layerId && this.transform) {
-                                this.transform.clearTransform(layerId);
-                            }
-                            const remainingLayers = this.getLayers();
-                            if (remainingLayers.length === 0) {
-                                this.activeLayerIndex = -1;
-                            } else if (this.activeLayerIndex >= remainingLayers.length) {
-                                this.activeLayerIndex = remainingLayers.length - 1;
-                            }
-                            this._emitPanelUpdateRequest();
-                            this._emitStatusUpdateRequest();
-                            if (this.eventBus) {
-                                this.eventBus.emit('layer:deleted', { layerId, layerIndex });
-                            }
-                        },
-                        undo: () => {
-                            if (layer.layerData && this.app && this.app.renderer && !layer.layerData.isFolder) {
-                                layer.layerData.initializeMask(
-                                    this.config.canvas.width,
-                                    this.config.canvas.height,
-                                    this.app.renderer
-                                );
-                                if (layer.layerData.maskSprite) {
-                                    layer.addChildAt(layer.layerData.maskSprite, 0);
-                                    this._applyMaskToLayerGraphics(layer);
-                                }
-                            }
-                            this.currentFrameContainer.addChildAt(layer, layerIndex);
-                            this.activeLayerIndex = previousActiveIndex;
-                            this._emitPanelUpdateRequest();
-                            this._emitStatusUpdateRequest();
-                        },
-                        meta: { layerId, layerIndex }
-                    };
-                    window.History.push(entry);
-                } else {
-                    if (layer.layerData) {
-                        layer.layerData.destroyMask();
-                    }
-                    this.currentFrameContainer.removeChild(layer);
-                    if (layerId && this.transform) {
-                        this.transform.clearTransform(layerId);
-                    }
-                    const remainingLayers = this.getLayers();
-                    if (remainingLayers.length === 0) {
-                        this.activeLayerIndex = -1;
-                    } else if (this.activeLayerIndex >= remainingLayers.length) {
-                        this.activeLayerIndex = remainingLayers.length - 1;
-                    }
-                    this._emitPanelUpdateRequest();
-                    this._emitStatusUpdateRequest();
-                    if (this.eventBus) {
-                        this.eventBus.emit('layer:deleted', { layerId, layerIndex });
-                    }
-                }
-                if (this.animationSystem?.generateFrameThumbnail) {
-                    const frameIndex = this.animationSystem.getCurrentFrameIndex();
-                    setTimeout(() => {
-                        this.animationSystem.generateFrameThumbnail(frameIndex);
-                    }, 100);
-                }
-                return true;
-            } catch (error) {
-                return false;
-            }
-        }
-        
-        requestThumbnailUpdate(layerIndex) {
-            if (this.eventBus) {
-                const layer = this.getLayers()[layerIndex];
-                this.eventBus.emit('thumbnail:layer-updated', {
-                    layerIndex,
-                    layerId: layer?.layerData?.id
-                });
-            }
-        }
     }
+
+    // ================================================================================
+    // グローバル登録
+    // ================================================================================
 
     window.TegakiLayerSystem = LayerSystem;
     
@@ -1717,11 +1816,9 @@
 
 })();
 
-console.log('✅ layer-system.js Phase 2: フォルダ機能追加版 loaded');
-console.log('   ✅ createFolder() - フォルダ作成');
-console.log('   ✅ addLayerToFolder() - レイヤーをフォルダに追加');
-console.log('   ✅ removeLayerFromFolder() - フォルダから取り出し');
-console.log('   ✅ toggleFolderExpand() - 開閉切替');
-console.log('   ✅ getVisibleLayers() - 表示レイヤーのみ取得');
-console.log('   ✅ getFolderChildren() - フォルダ内レイヤー取得');
-console.log('   ✅ Phase 9完全継承（親子関係・座標変換）');
+console.log('✅ layer-system.js Phase 3: ラスター対応版 loaded');
+console.log('   🔧 pathsData → rasterStrokes 移行準備完了');
+console.log('   🔧 WebGL2 フレームバッファ/テクスチャ対応準備');
+console.log('   🔧 RasterLayer 統合準備（将来的に完全統合）');
+console.log('   ✅ Phase 2 フォルダ機能完全継承');
+console.log('   ✅ 既存の傾き対応・座標変換を完全継承');
