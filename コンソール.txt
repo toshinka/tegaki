@@ -22,14 +22,12 @@
      ✅ confirmTransform()でベクターメッシュ再生成
      ✅ 拡大時のジャギー解消
  ✅ system/checker-utils.js 統一実装版 loaded
- ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
-    ✅ createFolder() - フォルダ作成
-    ✅ addLayerToFolder() - レイヤーをフォルダに追加
-    ✅ removeLayerFromFolder() - フォルダから取り出し
-    ✅ toggleFolderExpand() - 開閉切替
-    ✅ getVisibleLayers() - 表示レイヤーのみ取得
-    ✅ getFolderChildren() - フォルダ内レイヤー取得
-    ✅ Phase 9完全継承（親子関係・座標変換）
+ ✅ layer-system.js Phase 3: ラスター対応版 loaded
+    🔧 pathsData → rasterStrokes 移行準備完了
+    🔧 WebGL2 フレームバッファ/テクスチャ対応準備
+    🔧 RasterLayer 統合準備（将来的に完全統合）
+    ✅ Phase 2 フォルダ機能完全継承
+    ✅ 既存の傾き対応・座標変換を完全継承
  ✅ drawing-clipboard.js Phase C-2.2 loaded
     🔧 clearLayerDrawings(): skipHistory parameter added
  ✅ history.js Phase C-2.3 loaded
@@ -46,7 +44,11 @@
  ✅ [BrushInterpolator] Initialized
  ✅ brush-interpolator.js loaded
  ✅ raster-layer.js loaded
- ✅ raster-brush-core.js loaded
+ ✅ raster-brush-core.js Phase 3.5 loaded (実装完了版)
+    ✅ _drawPoint() 実装完了
+    ✅ PIXI.Graphics フォールバック描画
+    ✅ 筆圧対応円形描画
+    ✅ 消しゴムモード対応
  ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
     ✅ WebGLTexture → PIXI.Sprite変換実装完了
     ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
@@ -55,6 +57,7 @@
     ✅ ベクター合成処理削除
     ✅ ラスターレイヤー合成実装
     ✅ RasterLayer統合
+    🔧 クラスとして公開（シングルトンではなく）
  ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
     ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
  ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
@@ -82,91 +85,228 @@
     ✓ window.VectorOperations.generateStrokePolygon(points, size)
     ✓ config.js perfectFreehand設定自動適用
     🔥 PerfectFreehand統合基盤完成
- ✅ brush-core.js Phase 3.2 loaded (ラスター対応版)
+ ✅ brush-core.js Phase 3.3 loaded (ラスター対応完全版)
+    🔧 window.rasterBrushCore インスタンス参照に修正
     ✅ strokeRenderer → rasterBrushCore 変更
     ✅ pathsData → rasterStrokes 変更
     ✅ History登録ロジック維持
     ✅ Phase C-2.1全機能継承
  ✅ fill-tool.js (Phase 1完全修正版) loaded
-drawing-engine.js:255 ✅ drawing-engine.js Phase B-2 loaded (ペン傾き伝達版)
-drawing-engine.js:256    ✅ startStroke() に tiltX/tiltY/twist 追加
-drawing-engine.js:257    ✅ updateStroke() に tiltX/tiltY/twist 追加
-drawing-engine.js:258    ✅ Phase 4.1全機能継承
-quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
-export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
-export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
-png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
-png-exporter.js:256    🔧 generatePreview()メソッド追加
-png-exporter.js:257    🔧 エラーハンドリング強化
-png-exporter.js:258    🔧 Blob生成の確実性向上
-webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
-webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
-psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
-psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
-psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
-apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
-mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
-dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
-dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
-dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
-slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
-slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
-slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
-slider-utils.js:237    🔧 requestAnimationFrame最適化
-keyboard-handler.js:642 ✅ keyboard-handler.js Phase C-2.2 loaded
-keyboard-handler.js:643    🔧 二重登録完全修正: historyManager.register() 使用
-layer-panel-renderer.js:957 ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
-layer-panel-renderer.js:958    ✅ createFolderElement() - フォルダUI生成
-layer-panel-renderer.js:959    ✅ createFolderEar() - 耳部分SVGアイコン
-layer-panel-renderer.js:960    ✅ 階層表示（左オフセット + 縦線）
-layer-panel-renderer.js:961    ✅ フォルダ開閉アニメーション
-layer-panel-renderer.js:962    ✅ フォルダサムネイル合成対応
-status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
-timeline-thumbnail-utils.js:630 ✅ thumbnail-system.js Phase 4: フォルダサムネイル合成版 loaded
-timeline-thumbnail-utils.js:631    ✅ generateFolderThumbnail() - フォルダ合成サムネイル生成
-timeline-thumbnail-utils.js:632    ✅ _compositeLayers() - 複数レイヤー合成処理
-timeline-thumbnail-utils.js:633    ✅ フォルダサムネイルキャッシュ対応
-timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
-album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
-settings-popup.js:680 ✅ settings-popup.js v3.0 loaded (Phase 4: 流量UI統合版)
-quick-access-popup.js:765 ✅ quick-access-popup.js Phase 7.5.1 loaded
-quick-access-popup.js:766    🎯 フォーカス黒枠完全削除
-quick-access-popup.js:767    🔧 pointerdown時の自動blur処理追加
-quick-access-popup.js:768    ✅ v8.13.17全機能継承
-export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
-export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
-ui-panels.js:418 ✅ ui-panels.js v8.13.16 loaded
-ui-panels.js:419    ✅ フォルダ+ボタン接続完了
-ui-panels.js:420    ✅ createFolder() 正常呼び出し
-core-runtime.js:557 ✅ core-runtime.js (Phase 6 - updateLayerPanelUI完全削除版) loaded
-core-runtime.js:558    ✅ EventBus駆動に完全統一
-core-runtime.js:559    ✅ 存在しないメソッド呼び出し削除
-core-engine.js:717 ✅ core-engine.js v8.33.0 loaded
-core-engine.js:718    🆕 DrawingEngine に StrokeRenderer 参照追加
-core-engine.js:719    ✅ WebGL2初期化準備完了
-core-initializer.js:504 ✅ core-initializer.js Phase 5.2 loaded (ラスター対応版)
-core-initializer.js:505    ✅ WebGL2DrawingLayer初期化
-core-initializer.js:506    ✅ RasterLayer統合
-core-initializer.js:507    ✅ RasterBrushCore統合
-core-initializer.js:508    ✅ Phase 4.1全機能継承
-index.html:116 🚀 ラスター版 v3.0 起動中...
-core-initializer.js:311 [DrawingApp] ✅ Resolution: 2
-core-initializer.js:312 [DrawingApp] ✅ Antialias: undefined
-layer-system.js:52 [LayerSystem] 🔍 init() called
-layer-system.js:53 [LayerSystem]   canvasContainer: Z
-layer-system.js:70 [LayerSystem]   ✅ New currentFrameContainer created
-layer-system.js:95 [LayerSystem]   ✅ Background layer added
-layer-system.js:112 [LayerSystem]   ✅ Layer 1 added, activeLayerIndex set to 1
-layer-system.js:120 [LayerSystem]   ✅ init() completed successfully
-layer-system.js:121 [LayerSystem]   currentFrameContainer.children.length: 2
-index.html:136 ❌ 初期化失敗: Error: [CoreEngine] StrokeRenderer class not loaded
-    at CoreEngine.initialize (core-engine.js:622:23)
-    at DrawingApp.initialize (core-initializer.js:315:48)
-    at async Object.initialize (core-initializer.js:484:9)
-    at async index.html:117:17
-（匿名） @ index.html:136
-brush-core.js:189 Uncaught TypeError: Cannot read properties of null (reading 'getActiveLayer')
-brush-core.js:189 Uncaught TypeError: Cannot read properties of null (reading 'getActiveLayer')
-startStroke @ brush-core.js:189
-_handlePointerDown @ drawing-engine.js:124
-onPointerDown @ pointer-handler.js:86
+ ✅ drawing-engine.js Phase 3.3 loaded (ラスター対応版)
+    🔧 StrokeRenderer → RasterBrushCore 切り替え
+    🔧 setRasterBrushCore() メソッド追加
+    ✅ Phase B-2 全機能継承（傾き伝達）
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js v8.33.0 loaded
+    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+ ✅ png-exporter.js v8.29.0 loaded
+    🔧 generatePreview()メソッド追加
+    🔧 エラーハンドリング強化
+    🔧 Blob生成の確実性向上
+ ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+ ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+    ⚠️ 実装は将来フェーズで追加予定
+    ✓ エラーメッセージで開発中を通知
+ ✅ apng-exporter.js v8.31.0 loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+ ✅ dom-builder.js v8.19.0 loaded
+    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+    ✓ System情報表示（WebGPU/GPU検出）
+ ✅ slider-utils.js v8.13.10 loaded
+    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+    🔧 慣性スクロール実装（velocity計算）
+    🔧 requestAnimationFrame最適化
+ ✅ keyboard-handler.js Phase C-2.2 loaded
+    🔧 二重登録完全修正: historyManager.register() 使用
+ ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
+    ✅ createFolderElement() - フォルダUI生成
+    ✅ createFolderEar() - 耳部分SVGアイコン
+    ✅ 階層表示（左オフセット + 縦線）
+    ✅ フォルダ開閉アニメーション
+    ✅ フォルダサムネイル合成対応
+ ✅ ui/status-display-renderer.js 完全改修版 loaded
+ ✅ thumbnail-system.js Phase 4: フォルダサムネイル合成版 loaded
+    ✅ generateFolderThumbnail() - フォルダ合成サムネイル生成
+    ✅ _compositeLayers() - 複数レイヤー合成処理
+    ✅ フォルダサムネイルキャッシュ対応
+ ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+ ✅ album-popup.js (FRAME改修版) loaded
+ ✅ settings-popup.js v3.0 loaded (Phase 4: 流量UI統合版)
+ ✅ quick-access-popup.js Phase 7.5.1 loaded
+    🎯 フォーカス黒枠完全削除
+    🔧 pointerdown時の自動blur処理追加
+    ✅ v8.13.17全機能継承
+ ✅ export-popup.js v8.29.0 loaded
+    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ ✅ ui-panels.js v8.13.16 loaded
+    ✅ フォルダ+ボタン接続完了
+    ✅ createFolder() 正常呼び出し
+ ✅ core-runtime.js (Phase 6 - updateLayerPanelUI完全削除版) loaded
+    ✅ EventBus駆動に完全統一
+    ✅ 存在しないメソッド呼び出し削除
+ ✅ core-engine.js Phase 3.3 loaded (ラスター対応完全版)
+    🔧 StrokeRenderer → RasterBrushCore 切り替え完了
+    🔧 window.rasterBrushCore インスタンス登録完了
+    🔧 ベクター方式への依存を削除
+    ✅ ラスターブラシシステム初期化完了
+    ✅ v8.33.0 全機能継承
+ ✅ core-initializer.js Phase 5.3 loaded (ラスター対応完全版)
+    🔧 WebGL2DrawingLayerインスタンス化修正
+    🔧 RasterBrushCoreへのGLコンテキスト渡し
+    ✅ Phase 5.2全機能継承
+ 🚀 ラスター版 v3.0 起動中...
+ [DrawingApp] ✅ Resolution: 2
+ [DrawingApp] ✅ Antialias: undefined
+ [CoreEngine] 🚀 Starting initialization...
+ [LayerSystem] 🔍 init() called
+ [LayerSystem]   canvasContainer: Z
+ [LayerSystem]   ✅ New currentFrameContainer created
+ [LayerSystem]   ✅ Background layer added
+ [LayerSystem]   ✅ Layer 1 added, activeLayerIndex set to 1
+ [LayerSystem]   ✅ init() completed successfully
+ [LayerSystem]   currentFrameContainer.children.length: 2
+ ✅ [CoreEngine] StrokeRecorder initialized
+ [RasterBrushCore] Instance created
+ ✅ [CoreEngine] RasterBrushCore instance created and registered
+    window.rasterBrushCore: RasterBrushCore
+ ✅ [DrawingEngine] RasterBrushCore set successfully
+ ✅ [CoreEngine] RasterBrushCore set to DrawingEngine
+ ✅ [BrushCore] Initialized (Raster mode)
+    ✅ rasterBrushCore: OK
+ ✅ [CoreEngine] BrushCore initialized
+ ✅ [CoreEngine] Initialization complete!
+ ✅ PopupManager initialized
+ 📋 Popup "settings" registered (priority: 1)
+ 📋 Popup "quickAccess" registered (priority: 2)
+ 📋 Popup "album" registered (priority: 3)
+ 📋 Popup "resize" registered (priority: 4)
+ 🔧 Initializing all popups...
+ ✅ Popup "settings" initialized successfully
+ ✅ Popup "quickAccess" initialized successfully
+ ✅ Popup "album" initialized successfully
+ ✅ Popup "resize" initialized successfully
+ 📊 Popup initialization: 4 ready, 0 deferred
+ [DrawingApp] 🎨 Initializing WebGL2 (Raster mode)...
+ [WebGL2] 🚀 Starting raster initialization...
+ [WebGL2] 📐 Canvas size: 1630 x 1000
+ [WebGL2] 🎯 Target size: 400 x 400
+ ✅ [WebGL2DrawingLayer] WebGL2 context created
+ ✅ [RasterLayer] Initialized Object
+ ✅ [BrushStamp] Initialized
+ ✅ [WebGL2DrawingLayer] Initialized Object
+ [WebGL2] ✅ DrawingLayer initialized
+ [WebGL2] ✅ WebGL context registered
+ [RasterBrushCore] ✅ Initialized with WebGL2 context
+ [WebGL2] ✅ RasterBrushCore initialized with GL context
+ ✅ [WebGL2DrawingLayer] Pixi.js app linked
+ [WebGL2] ✅ Pixi.js app linked
+ [WebGL2] 📦 Module status:
+          ✅ RasterLayer: ready
+          ✅ BrushStamp: ready
+          ✅ BrushInterpolator: ready
+          ✅ RasterBrushCore: ready
+ [WebGL2] ✅ Raster system initialized successfully
+ [DrawingApp] 📊 WebGL2 Result: ✅ SUCCESS
+ [DrawingApp] ✅ Raster drawing system ready
+ ✅ ラスター版初期化完了
+ 🎬 Pixi Ticker Status: Object
+ 📋 Popup "export" registered (priority: 5)
+ ✅ Popup "export" initialized successfully
+ [RasterBrushCore] startStroke called Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] finalizeStroke called
+ [RasterBrushCore] ✅ Stroke finalized
+ [History:Push] Before: index=-1, stack=0, cmd="raster-stroke-draw"
+ [History:Push] After: index=0, stack=1
+ [RasterBrushCore] startStroke called Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] finalizeStroke called
+ [RasterBrushCore] ✅ Stroke finalized
+ [History:Push] Before: index=0, stack=1, cmd="raster-stroke-draw"
+ [History:Push] After: index=1, stack=2
+ [RasterBrushCore] startStroke called Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] finalizeStroke called
+ [RasterBrushCore] ✅ Stroke finalized
+ [History:Push] Before: index=1, stack=2, cmd="raster-stroke-draw"
+ [History:Push] After: index=2, stack=3
+ [RasterBrushCore] startStroke called Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] finalizeStroke called
+ [RasterBrushCore] ✅ Stroke finalized
+ [History:Push] Before: index=2, stack=3, cmd="raster-stroke-draw"
+ [History:Push] After: index=3, stack=4
+ 👁️ Popup "settings" shown
+ [RasterBrushCore] startStroke called Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+ [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:194 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:219 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=3, stack=4, cmd="raster-stroke-draw"
+history.js:213 [History:Push] After: index=4, stack=5
+raster-brush-core.js:95 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:194 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:219 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=4, stack=5, cmd="raster-stroke-draw"
+history.js:213 [History:Push] After: index=5, stack=6
+raster-brush-core.js:95 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:194 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:219 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=5, stack=6, cmd="raster-stroke-draw"
+history.js:213 [History:Push] After: index=6, stack=7
+history.js:194 [History:Push] Before: index=6, stack=7, cmd="layer-create"
+history.js:213 [History:Push] After: index=7, stack=8
+history.js:194 [History:Push] Before: index=7, stack=8, cmd="layer-reorder"
+history.js:213 [History:Push] After: index=8, stack=9
+raster-brush-core.js:95 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:285 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:194 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:219 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=8, stack=9, cmd="raster-stroke-draw"
+history.js:213 [History:Push] After: index=9, stack=10
+history.js:323 [History:Undo] Before: index=9, stack=10, cmd="raster-stroke-draw"
+history.js:340 [History:Undo] After: index=8, stack=10
+history.js:341 [History:Undo] Next undo will be: layer-reorder
+history.js:323 [History:Undo] Before: index=8, stack=10, cmd="layer-reorder"
+history.js:340 [History:Undo] After: index=7, stack=10
+history.js:341 [History:Undo] Next undo will be: layer-create
+history.js:323 [History:Undo] Before: index=7, stack=10, cmd="layer-create"
+history.js:340 [History:Undo] After: index=6, stack=10
+history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
+history.js:323 [History:Undo] Before: index=6, stack=10, cmd="raster-stroke-draw"
+history.js:340 [History:Undo] After: index=5, stack=10
+history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
+history.js:323 [History:Undo] Before: index=5, stack=10, cmd="raster-stroke-draw"
+history.js:340 [History:Undo] After: index=4, stack=10
+history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
+history.js:323 [History:Undo] Before: index=4, stack=10, cmd="raster-stroke-draw"
+history.js:340 [History:Undo] After: index=3, stack=10
+history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
+history.js:323 [History:Undo] Before: index=3, stack=10, cmd="raster-stroke-draw"
+history.js:340 [History:Undo] After: index=2, stack=10
+history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
+history.js:323 [History:Undo] Before: index=2, stack=10, cmd="raster-stroke-draw"
+history.js:340 [History:Undo] After: index=1, stack=10
+history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
+history.js:323 [History:Undo] Before: index=1, stack=10, cmd="raster-stroke-draw"
+history.js:340 [History:Undo] After: index=0, stack=10
+history.js:341 [History:Undo] Next undo will be: raster-stroke-draw
+history.js:323 [History:Undo] Before: index=0, stack=10, cmd="raster-stroke-draw"
+history.js:340 [History:Undo] After: index=-1, stack=10
+history.js:341 [History:Undo] Next undo will be: none

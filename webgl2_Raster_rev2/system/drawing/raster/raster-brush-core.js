@@ -3,6 +3,11 @@
  * ファイル名: system/drawing/raster/raster-brush-core.js
  * 責務: ラスターブラシの中核実装 - WebGL2テクスチャへの直接描画
  * 
+ * 【Phase A: 緊急修正完了】
+ * ✅ A-1: 筆圧サイズ計算修正 - minPressureSize 正しく適用
+ * ✅ A-2: リアルタイム描画実装 - 描画後に即座にレンダリング
+ * ✅ A-3: 消しゴム正しい実装 - DESTINATION_OUT による真の消去
+ * 
  * 【Phase 3.5 実装完了】
  * ✅ _drawPoint() 実装完了 - 実際の描画処理
  * ✅ PIXI.Graphics へのフォールバック描画
@@ -13,6 +18,7 @@
  * 
  * 【親ファイル依存】
  * - config.js (ブラシ設定)
+ * - settings-manager.js (ユーザー設定)
  * - brush-stamp.js (スタンプ生成)
  * - brush-interpolator.js (補間処理)
  * - raster-layer.js (レイヤー管理)
@@ -54,6 +60,9 @@
             // 描画用Graphics（フォールバック・互換性維持）
             this.currentGraphics = null;
             
+            // Phase A: 設定マネージャー参照
+            this.settingsManager = null;
+            
             console.log('[RasterBrushCore] Instance created');
         }
 
@@ -61,6 +70,11 @@
         // 初期化
         // ================================================================================
 
+        /**
+         * WebGL2コンテキストで初期化
+         * @param {WebGL2RenderingContext} gl - WebGL2コンテキスト
+         * @returns {boolean} 成功/失敗
+         */
         initialize(gl) {
             this.gl = gl;
             
@@ -69,10 +83,27 @@
                 return false;
             }
             
+            // Phase A: SettingsManager取得
+            if (window.TegakiSettingsManager) {
+                if (typeof window.TegakiSettingsManager.get === 'function') {
+                    this.settingsManager = window.TegakiSettingsManager;
+                } else if (typeof window.TegakiSettingsManager === 'function') {
+                    this.settingsManager = new window.TegakiSettingsManager(
+                        window.TegakiEventBus || window.eventBus,
+                        window.TEGAKI_CONFIG
+                    );
+                }
+            }
+            
             console.log('[RasterBrushCore] ✅ Initialized with WebGL2 context');
+            console.log('[RasterBrushCore]    Settings manager:', this.settingsManager ? 'OK' : 'Not available');
             return true;
         }
 
+        /**
+         * ブラシ設定をセット
+         * @param {Object} brushSettings - ブラシ設定オブジェクト
+         */
         setBrushSettings(brushSettings) {
             this.brushSettings = brushSettings;
         }
@@ -90,6 +121,7 @@
          * @param {number} tiltY - 傾きY
          * @param {number} twist - ペン回転
          * @param {Object} settings - ブラシ設定
+         * @returns {boolean} 成功/失敗
          */
         startStroke(localX, localY, pressure, tiltX, tiltY, twist, settings) {
             console.log('[RasterBrushCore] startStroke called', {
@@ -112,12 +144,25 @@
             
             this.currentStroke.points.push({ ...this.lastPoint });
             
-            // 🔧 Phase 3.5: PIXI.Graphics作成
+            // PIXI.Graphics作成
             this.currentGraphics = new PIXI.Graphics();
             this.currentGraphics.label = 'raster_stroke';
             
+            // Phase A-3: 消しゴムモードの場合はブレンドモード設定
+            const mode = this.currentStroke.settings?.mode || 'pen';
+            if (mode === 'eraser') {
+                // DESTINATION_OUT: 既存のアルファ値を削除（真の消しゴム）
+                this.currentGraphics.blendMode = PIXI.BLEND_MODES.DST_OUT;
+            } else {
+                // 通常描画
+                this.currentGraphics.blendMode = PIXI.BLEND_MODES.NORMAL;
+            }
+            
             // 最初の点を描画
-            this._drawPoint(localX, localY, pressure, tiltX, tiltY, twist, settings);
+            this._drawPoint(localX, localY, pressure, tiltX, tiltY, twist, this.currentStroke.settings);
+            
+            // Phase A-2: 即座にレンダリング
+            this._renderImmediate();
             
             return true;
         }
@@ -180,6 +225,9 @@
             }
             
             this.lastPoint = currentPoint;
+            
+            // Phase A-2: 各ポイント描画後に即座にレンダリング
+            this._renderImmediate();
         }
 
         // ================================================================================
@@ -199,7 +247,7 @@
             
             this.isDrawing = false;
             
-            // 🔧 Phase 3.5: Graphicsを返す
+            // Graphicsを返す
             const graphics = this.currentGraphics;
             
             if (graphics) {
@@ -210,6 +258,9 @@
                     isRasterStroke: true
                 };
             }
+            
+            // 最終レンダリング
+            this._renderImmediate();
             
             // クリーンアップ
             this.currentStroke = null;
@@ -238,11 +289,13 @@
         }
 
         // ================================================================================
-        // 内部描画メソッド - Phase 3.5 実装完了
+        // 内部描画メソッド - Phase A 改修版
         // ================================================================================
 
         /**
          * 1ポイントを描画
+         * Phase A-1: 筆圧サイズ計算修正
+         * Phase A-3: 消しゴムブレンドモード修正
          * @private
          */
         _drawPoint(localX, localY, pressure, tiltX, tiltY, twist, settings) {
@@ -257,20 +310,35 @@
             const opacity = settings?.opacity || 1.0;
             const mode = settings?.mode || 'pen';
             
-            // 筆圧によるサイズ調整
-            const pressureSize = size * (0.3 + pressure * 0.7);
+            // Phase A-1: 筆圧によるサイズ調整（設定から minPressureSize を取得）
+            let minPressureSize = 0.01; // デフォルト1%
             
-            // 🔧 Phase 3.5: PIXI.Graphicsで円を描画
+            // SettingsManager から取得を試みる
+            if (this.settingsManager && typeof this.settingsManager.get === 'function') {
+                const setting = this.settingsManager.get('minPressureSize');
+                if (setting !== undefined && !isNaN(setting)) {
+                    minPressureSize = parseFloat(setting);
+                }
+            }
+            
+            // settings から取得を試みる（優先）
+            if (settings?.minPressureSize !== undefined && !isNaN(settings.minPressureSize)) {
+                minPressureSize = parseFloat(settings.minPressureSize);
+            }
+            
+            // 筆圧サイズ計算: minPressureSize 〜 1.0 の範囲でマップ
+            const pressureSize = size * (minPressureSize + pressure * (1.0 - minPressureSize));
+            
+            // PIXI.Graphicsで円を描画
             if (mode === 'eraser') {
-                // 消しゴムモード
+                // Phase A-3: 消しゴムモード
+                // ブレンドモードは startStroke() で DST_OUT に設定済み
+                // 白い円を描画することでアルファ値を削除
                 this.currentGraphics.circle(localX, localY, pressureSize / 2);
                 this.currentGraphics.fill({
                     color: 0xFFFFFF,
                     alpha: 1.0
                 });
-                
-                // ブレンドモードを設定
-                this.currentGraphics.blendMode = 'erase';
             } else {
                 // ペンモード
                 this.currentGraphics.circle(localX, localY, pressureSize / 2);
@@ -286,9 +354,24 @@
                     localX: localX.toFixed(2),
                     localY: localY.toFixed(2),
                     pressure: pressure.toFixed(3),
+                    minPressureSize: minPressureSize.toFixed(3),
                     size: pressureSize.toFixed(2),
                     mode
                 });
+            }
+        }
+
+        /**
+         * Phase A-2: 即座にレンダリング（リアルタイム描画）
+         * @private
+         */
+        _renderImmediate() {
+            if (window.pixiApp && window.pixiApp.renderer && window.pixiApp.stage) {
+                try {
+                    window.pixiApp.renderer.render(window.pixiApp.stage);
+                } catch (error) {
+                    // レンダリングエラーは無視（次のフレームで自動修復）
+                }
             }
         }
 
@@ -301,12 +384,12 @@
          * @param {WebGLFramebuffer} layerFBO - レイヤーのフレームバッファ
          * @param {Array} points - 描画ポイント配列
          * @param {Object} settings - ブラシ設定
-         * @future Phase 3.6
+         * @future Phase C
          */
         renderToFramebuffer(layerFBO, points, settings) {
             if (!this.gl) return;
             
-            // TODO Phase 3.6: 実装
+            // TODO Phase C: 実装
             // 1. layerFBOにバインド
             // 2. ブラシスタンプテクスチャ生成
             // 3. 各ポイントでスタンプ描画
@@ -321,6 +404,7 @@
 
         /**
          * 描画中かどうか
+         * @returns {boolean} 描画中ならtrue
          */
         getIsDrawing() {
             return this.isDrawing;
@@ -328,6 +412,7 @@
 
         /**
          * 現在のストローク情報取得
+         * @returns {Object|null} ストローク情報
          */
         getCurrentStroke() {
             return this.currentStroke;
@@ -335,16 +420,21 @@
         
         /**
          * デバッグ情報取得
+         * @returns {Object} デバッグ情報
          */
         getDebugInfo() {
             return {
                 isDrawing: this.isDrawing,
                 hasGL: this.gl !== null,
+                hasSettingsManager: this.settingsManager !== null,
                 currentStroke: this.currentStroke ? {
                     pointCount: this.currentStroke.points.length,
                     settings: this.currentStroke.settings
                 } : null,
-                hasGraphics: this.currentGraphics !== null
+                hasGraphics: this.currentGraphics !== null,
+                minPressureSize: this.settingsManager 
+                    ? this.settingsManager.get('minPressureSize') 
+                    : 'N/A'
             };
         }
     }
@@ -355,10 +445,10 @@
 
     window.RasterBrushCore = RasterBrushCore;
 
-    console.log('✅ raster-brush-core.js Phase 3.5 loaded (実装完了版)');
-    console.log('   ✅ _drawPoint() 実装完了');
-    console.log('   ✅ PIXI.Graphics フォールバック描画');
-    console.log('   ✅ 筆圧対応円形描画');
-    console.log('   ✅ 消しゴムモード対応');
+    console.log('✅ raster-brush-core.js Phase A loaded (緊急修正完了版)');
+    console.log('   ✅ A-1: 筆圧サイズ計算修正 - minPressureSize 正しく適用');
+    console.log('   ✅ A-2: リアルタイム描画実装 - 描画後に即座にレンダリング');
+    console.log('   ✅ A-3: 消しゴム正しい実装 - DST_OUT による真の消去');
+    console.log('   ✅ Phase 3.5 全機能継承');
 
 })();
