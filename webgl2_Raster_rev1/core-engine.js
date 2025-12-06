@@ -1,10 +1,11 @@
 /**
  * ============================================================================
- * ファイル名: core-engine.js Phase 3.3 (ラスター対応版)
+ * ファイル名: core-engine.js Phase 3.3 (ラスター対応完全版)
  * 責務: システム統合管理・コア機能実装
  * 
  * 【Phase 3.3 改修内容】
  * 🔧 StrokeRenderer → RasterBrushCore への切り替え
+ * 🔧 window.rasterBrushCore インスタンスのグローバル登録追加
  * 🔧 ベクター方式への参照を削除
  * 🔧 ラスターブラシシステム初期化
  * ✅ v8.33.0 全機能継承
@@ -15,7 +16,7 @@
  * - system/drawing-clipboard.js (TegakiDrawingClipboard)
  * - system/drawing/brush-core.js (BrushCore)
  * - system/drawing/drawing-engine.js (DrawingEngine)
- * - system/drawing/raster-brush-core.js (RasterBrushCore) ← 🆕 Phase 3.3
+ * - system/drawing/raster/raster-brush-core.js (RasterBrushCore) ← 🆕 Phase 3.3
  * - system/event-bus.js (TegakiEventBus)
  * - system/export-manager.js (ExportManager)
  * - system/exporters/*.js (各エクスポーター)
@@ -28,6 +29,7 @@
 (function() {
     'use strict';
     
+    // 必須システムチェック
     if (!window.TegakiCameraSystem) throw new Error('system/camera-system.js required');
     if (!window.TegakiLayerSystem) throw new Error('system/layer-system.js required');
     if (!window.TegakiDrawingClipboard) throw new Error('system/drawing-clipboard.js required');
@@ -645,10 +647,12 @@
         }
         
         // ================================================================================
-        // 🔧 Phase 3.3: ラスター方式初期化
+        // 🔧 Phase 3.3: ラスター方式初期化（完全修正版）
         // ================================================================================
         
         initialize() {
+            console.log('[CoreEngine] 🚀 Starting initialization...');
+            
             // 基本システム初期化
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.worldContainer, this.eventBus, CONFIG);
@@ -678,19 +682,22 @@
                 window.pressureHandler,
                 this.cameraSystem
             );
+            console.log('✅ [CoreEngine] StrokeRecorder initialized');
             
-            // 🔧 Phase 3.3: RasterBrushCore初期化（StrokeRendererの代わり）
+            // 🔧 Phase 3.3: RasterBrushCore インスタンス作成
             if (!window.RasterBrushCore) {
                 throw new Error('[CoreEngine] RasterBrushCore class not loaded');
             }
             
+            // インスタンス作成してグローバル登録
             window.rasterBrushCore = new window.RasterBrushCore(
                 this.app,
                 this.layerSystem,
                 this.cameraSystem
             );
             
-            console.log('✅ [CoreEngine] RasterBrushCore initialized');
+            console.log('✅ [CoreEngine] RasterBrushCore instance created and registered');
+            console.log('   window.rasterBrushCore:', window.rasterBrushCore);
             
             // 🔧 Phase 3.3: DrawingEngine に RasterBrushCore を設定
             if (this.drawingEngine && this.drawingEngine.setRasterBrushCore) {
@@ -708,6 +715,7 @@
             }
             
             window.BrushCore.init();
+            console.log('✅ [CoreEngine] BrushCore initialized');
             
             if (!window.BrushCore.strokeRecorder || !window.BrushCore.layerManager) {
                 throw new Error('[CoreEngine] BrushCore.init() failed - dependencies not set');
@@ -770,6 +778,8 @@
                 systems: ['camera', 'layer', 'clipboard', 'drawing', 'raster-brush', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
             });
             
+            console.log('✅ [CoreEngine] Initialization complete!');
+            
             return this;
         }
     }
@@ -791,8 +801,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js Phase 3.3 loaded (ラスター対応版)');
+    console.log('✅ core-engine.js Phase 3.3 loaded (ラスター対応完全版)');
     console.log('   🔧 StrokeRenderer → RasterBrushCore 切り替え完了');
+    console.log('   🔧 window.rasterBrushCore インスタンス登録完了');
     console.log('   🔧 ベクター方式への依存を削除');
     console.log('   ✅ ラスターブラシシステム初期化完了');
     console.log('   ✅ v8.33.0 全機能継承');

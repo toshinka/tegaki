@@ -1,15 +1,6 @@
 /**
- * ================================================================
- * [PART 1/2] Core Classes & Initialization
- * ================================================================
- * ⚠️ このファイルは2パートに分割されています
- * ⚠️ 各パートを順番にコピペして結合してください
- * ================================================================
- */
-
-/**
  * ============================================================
- * brush-core.js - Phase 3.2: ラスター対応版
+ * brush-core.js - Phase 3.3: ラスター対応版（完全修正）
  * ============================================================
  * 【親依存】
  * - drawing-engine.js (呼び出し元)
@@ -17,13 +8,14 @@
  * - coordinate-system.js
  * - system/drawing/pressure-handler.js
  * - system/drawing/stroke-recorder.js
- * - system/drawing/raster/raster-brush-core.js (新規)
+ * - system/drawing/raster/raster-brush-core.js (インスタンス: window.rasterBrushCore)
  * - system/layer-system.js
  * - system/drawing/brush-settings.js
  * - system/drawing/fill-tool.js
  * - system/history.js
  * 
- * 【Phase 3.2改修内容】
+ * 【Phase 3.3改修内容】
+ * 🔧 window.RasterBrushCore (クラス) → window.rasterBrushCore (インスタンス) に修正
  * ✅ strokeRenderer → rasterBrushCore に変更
  * ✅ ラスター描画パイプライン統合
  * ✅ History登録ロジック維持
@@ -34,23 +26,30 @@
 (function() {
     'use strict';
 
+    // ============================================================
+    // BrushCore クラス - 描画管理
+    // ============================================================
+    
     class BrushCore {
         constructor() {
+            // 描画状態
             this.isDrawing = false;
             this.currentStrokeId = null;
+            
+            // 最終座標・筆圧・傾きキャッシュ
             this.lastLocalX = 0;
             this.lastLocalY = 0;
             this.lastPressure = 0;
-            
             this.lastTiltX = 0;
             this.lastTiltY = 0;
             this.lastTwist = 0;
             
+            // システム参照
             this.coordinateSystem = null;
             this.pressureHandler = null;
             this.strokeRecorder = null;
             this.layerManager = null;
-            this.rasterBrushCore = null;  // 変更: strokeRenderer → rasterBrushCore
+            this.rasterBrushCore = null;  // 🔧 Phase 3.3: インスタンス参照
             this.eventBus = null;
             this.brushSettings = null;
             this.fillTool = null;
@@ -59,22 +58,28 @@
             this.eventListenersSetup = false;
         }
         
+        // ============================================================
+        // 初期化 - システム統合
+        // ============================================================
+        
         init() {
             if (this.coordinateSystem) {
                 console.warn('[BrushCore] Already initialized');
                 return;
             }
             
+            // グローバルシステム取得
             this.coordinateSystem = window.CoordinateSystem;
             this.strokeRecorder = window.strokeRecorder;
             this.layerManager = window.layerManager;
-            this.rasterBrushCore = window.RasterBrushCore;  // 変更
+            this.rasterBrushCore = window.rasterBrushCore;  // 🔧 インスタンス取得
             this.eventBus = window.eventBus || window.TegakiEventBus;
             this.brushSettings = window.brushSettings;
             this.fillTool = window.FillTool;
             
             this._initializePressureHandler();
             
+            // 必須システムチェック
             if (!this.coordinateSystem) {
                 throw new Error('[BrushCore] window.CoordinateSystem not initialized');
             }
@@ -85,7 +90,7 @@
                 throw new Error('[BrushCore] window.strokeRecorder not initialized');
             }
             if (!this.rasterBrushCore) {
-                throw new Error('[BrushCore] window.RasterBrushCore not initialized');
+                throw new Error('[BrushCore] window.rasterBrushCore not initialized');
             }
             
             if (!this.brushSettings) {
@@ -95,7 +100,12 @@
             this._setupEventListeners();
             
             console.log('✅ [BrushCore] Initialized (Raster mode)');
+            console.log('   ✅ rasterBrushCore:', this.rasterBrushCore ? 'OK' : 'NG');
         }
+        
+        // ============================================================
+        // 筆圧ハンドラー初期化
+        // ============================================================
         
         _initializePressureHandler() {
             if (window.pressureHandler) {
@@ -116,6 +126,10 @@
             }
         }
         
+        // ============================================================
+        // イベントリスナー設定
+        // ============================================================
+        
         _setupEventListeners() {
             if (this.eventListenersSetup || !this.eventBus) {
                 return;
@@ -123,13 +137,16 @@
             
             this.eventBus.on('brush:mode-changed', (data) => {
                 if (data && data.mode) {
-                    // ラスター方式ではモード変更のみ記録
                     console.log('[BrushCore] Mode changed:', data.mode);
                 }
             });
             
             this.eventListenersSetup = true;
         }
+        
+        // ============================================================
+        // 設定取得 - ブラシ設定統合
+        // ============================================================
         
         _getCurrentSettings() {
             if (!this.brushSettings) {
@@ -155,6 +172,10 @@
             return settings;
         }
         
+        // ============================================================
+        // ブラシモード設定
+        // ============================================================
+        
         setMode(mode) {
             const validModes = ['pen', 'eraser', 'fill'];
             
@@ -177,28 +198,39 @@
             return 'pen';
         }
         
+        // ============================================================
+        // ストローク開始 - Phase B-2: 傾き対応
+        // ============================================================
+        
         startStroke(clientX, clientY, pressure, tiltX = 0, tiltY = 0, twist = 0) {
             const currentMode = this.getMode();
             
+            // 塗りつぶしモード無視
             if (currentMode === 'fill') {
                 return;
             }
             
+            // 二重描画防止
             if (this.isDrawing) return;
             
+            // アクティブレイヤー取得
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer || activeLayer.locked) return;
             
+            // 座標変換: Screen → Canvas → World → Local
             const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
             const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
             const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
             
+            // 筆圧処理
             const processedPressure = this.pressureHandler 
                 ? this.pressureHandler.process(pressure) 
                 : pressure;
             
+            // StrokeRecorderに記録
             this.strokeRecorder.startStroke(localX, localY, processedPressure, tiltX, tiltY, twist);
             
+            // 状態更新
             this.isDrawing = true;
             this.lastLocalX = localX;
             this.lastLocalY = localY;
@@ -207,18 +239,22 @@
             this.lastTiltY = tiltY;
             this.lastTwist = twist;
             
+            // 現在の設定取得
             const settings = this._getCurrentSettings();
             
-            // ラスターブラシコア開始
-            if (this.rasterBrushCore.startStroke) {
+            // 🔧 Phase 3.3: RasterBrushCore開始
+            if (this.rasterBrushCore && this.rasterBrushCore.startStroke) {
                 this.rasterBrushCore.startStroke(
                     localX, localY, 
                     processedPressure, 
                     tiltX, tiltY, twist,
                     settings
                 );
+            } else {
+                console.error('❌ [BrushCore] rasterBrushCore.startStroke not available');
             }
             
+            // イベント発火
             if (this.eventBus) {
                 this.eventBus.emit('drawing:stroke-started', {
                     component: 'drawing',
@@ -237,25 +273,31 @@
             }
         }
         
+        // ============================================================
+        // ストローク更新 - Phase B-2: 傾き対応
+        // ============================================================
+        
         updateStroke(clientX, clientY, pressure, tiltX = 0, tiltY = 0, twist = 0) {
             if (!this.isDrawing) return;
             
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) return;
             
+            // 座標変換
             const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
             const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
             const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
             
+            // 筆圧処理
             const processedPressure = this.pressureHandler 
                 ? this.pressureHandler.process(pressure) 
                 : pressure;
             
-            // stroke-recorderに記録（変更なし）
+            // StrokeRecorderに記録
             this.strokeRecorder.addPoint(localX, localY, processedPressure, tiltX, tiltY, twist);
             
-            // ラスターブラシコアに送信
-            if (this.rasterBrushCore.addStrokePoint) {
+            // 🔧 Phase 3.3: RasterBrushCoreに送信
+            if (this.rasterBrushCore && this.rasterBrushCore.addStrokePoint) {
                 this.rasterBrushCore.addStrokePoint(
                     localX, localY,
                     processedPressure,
@@ -263,6 +305,7 @@
                 );
             }
             
+            // 状態更新
             this.lastLocalX = localX;
             this.lastLocalY = localY;
             this.lastPressure = processedPressure;
@@ -271,28 +314,21 @@
             this.lastTwist = twist;
         }
 
-/**
- * ================================================================
- * [END PART 1] - 次は PART 2 をこの下に貼り付けてください
- * ================================================================
- */
-
-/**
- * ================================================================
- * [PART 2/2] Finalization & Helper Functions
- * ================================================================
- * ⚠️ PART 1 の下にこのコードを貼り付けてください
- * ================================================================
- */
-
+        // ============================================================
+        // ストローク終了 - History統合
+        // Phase C-2.1: 二重配列追加防止
+        // ============================================================
+        
         async finalizeStroke() {
             if (!this.isDrawing) return;
             
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) return;
             
+            // StrokeRecorder終了
             const strokeData = this.strokeRecorder.endStroke();
             
+            // 筆圧ハンドラーリセット
             if (this.pressureHandler && this.pressureHandler.reset) {
                 this.pressureHandler.reset();
             }
@@ -300,17 +336,19 @@
             const settings = this._getCurrentSettings();
             const mode = settings.mode || 'pen';
             
-            // ラスターブラシコア終了
-            const graphics = this.rasterBrushCore.finalizeStroke();
+            // 🔧 Phase 3.3: RasterBrushCore終了
+            const graphics = this.rasterBrushCore ? this.rasterBrushCore.finalizeStroke() : null;
             
             if (graphics) {
                 // レイヤーに追加
                 activeLayer.addChild(graphics);
                 
+                // 即座にレンダリング
                 if (window.pixiApp && window.pixiApp.renderer) {
                     window.pixiApp.renderer.render(window.pixiApp.stage);
                 }
                 
+                // レイヤーデータに記録
                 if (activeLayer.layerData) {
                     if (!activeLayer.layerData.rasterStrokes) {
                         activeLayer.layerData.rasterStrokes = [];
@@ -328,7 +366,7 @@
                         timestamp: Date.now()
                     };
                     
-                    // 配列に追加（History.push前に完了）
+                    // 🔧 Phase C-2.1: History.push前に配列追加完了
                     activeLayer.layerData.rasterStrokes.push(strokeRecord);
                     
                     // History登録
@@ -343,7 +381,7 @@
                         const entry = {
                             name: 'raster-stroke-draw',
                             do: () => {
-                                // Redo時のみ実行
+                                // Redo時のみ実行（初回は既に追加済み）
                                 if (!activeLayer.children.includes(graphicsRef)) {
                                     activeLayer.addChild(graphicsRef);
                                 }
@@ -382,6 +420,7 @@
                     }
                 }
                 
+                // イベント発火
                 const layerIndex = this.layerManager.getLayerIndex(activeLayer);
                 
                 if (this.eventBus && layerIndex !== -1) {
@@ -409,12 +448,13 @@
                 console.warn('[BrushCore] Graphics rendering failed');
             }
             
+            // 状態リセット
             this.isDrawing = false;
-            
             this.lastTiltX = 0;
             this.lastTiltY = 0;
             this.lastTwist = 0;
             
+            // イベント発火
             if (this.eventBus) {
                 this.eventBus.emit('drawing:stroke-completed', {
                     component: 'drawing',
@@ -428,29 +468,37 @@
             }
         }
         
+        // ============================================================
+        // ストロークキャンセル
+        // ============================================================
+        
         cancelStroke() {
             if (!this.isDrawing) return;
             
+            // 筆圧ハンドラーリセット
             if (this.pressureHandler && this.pressureHandler.reset) {
                 this.pressureHandler.reset();
             }
             
+            // RasterBrushCoreキャンセル
             if (this.rasterBrushCore && this.rasterBrushCore.cancelStroke) {
                 this.rasterBrushCore.cancelStroke();
             }
             
+            // プレビューGraphics削除
             if (this.previewGraphics && this.previewGraphics.parent) {
                 this.previewGraphics.parent.removeChild(this.previewGraphics);
                 this.previewGraphics.destroy();
                 this.previewGraphics = null;
             }
             
+            // 状態リセット
             this.isDrawing = false;
-            
             this.lastTiltX = 0;
             this.lastTiltY = 0;
             this.lastTwist = 0;
             
+            // イベント発火
             if (this.eventBus) {
                 this.eventBus.emit('drawing:stroke-cancelled', {
                     component: 'drawing',
@@ -460,23 +508,26 @@
             }
         }
         
+        // ============================================================
+        // 状態確認
+        // ============================================================
+        
         isActive() {
             return this.isDrawing;
         }
     }
     
+    // ============================================================
+    // グローバル登録
+    // ============================================================
+    
     window.BrushCore = new BrushCore();
     
-    console.log('✅ brush-core.js Phase 3.2 loaded (ラスター対応版)');
+    console.log('✅ brush-core.js Phase 3.3 loaded (ラスター対応完全版)');
+    console.log('   🔧 window.rasterBrushCore インスタンス参照に修正');
     console.log('   ✅ strokeRenderer → rasterBrushCore 変更');
     console.log('   ✅ pathsData → rasterStrokes 変更');
     console.log('   ✅ History登録ロジック維持');
     console.log('   ✅ Phase C-2.1全機能継承');
 
 })();
-
-/**
- * ================================================================
- * [END PART 2] - ファイル完成！
- * ================================================================
- */

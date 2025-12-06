@@ -1,22 +1,12 @@
 /**
- * ================================================================
- * [PART 1/2] Dependencies & Initialization
- * ================================================================
- * ⚠️ このファイルは2パートに分割されています
- * ⚠️ 各パートを順番にコピペして結合してください
- * ================================================================
- */
-
-/**
- * @file core-initializer.js - Phase 5.2: ラスター対応版
+ * @file core-initializer.js - Phase 5.3: ラスター対応完全版
  * @description アプリケーション初期化シーケンス制御
  * 
- * 【Phase 5.2 改修内容】
- * ✅ ラスターシステム初期化追加
- * ✅ WebGL2DrawingLayer初期化
- * ✅ RasterLayer初期化
- * ✅ RasterBrushCore初期化
- * ✅ Phase 4.1全機能継承
+ * 【Phase 5.3 改修内容】
+ * 🔧 WebGL2DrawingLayerインスタンス化修正
+ * 🔧 グローバル登録の統一
+ * 🔧 RasterBrushCoreへのglコンテキスト渡し
+ * ✅ Phase 5.2全機能継承
  * 
  * 【親依存】
  * - core-engine.js (CoreEngine)
@@ -30,6 +20,10 @@
 window.CoreInitializer = (function() {
     'use strict';
 
+    // ============================================================
+    // 依存関係チェック
+    // ============================================================
+    
     function checkDependencies() {
         const dependencies = [
             { name: 'PIXI', obj: window.PIXI },
@@ -62,6 +56,10 @@ window.CoreInitializer = (function() {
         return true;
     }
 
+    // ============================================================
+    // DOM構築
+    // ============================================================
+    
     function buildDOM() {
         const appContainer = document.getElementById('app');
         if (!appContainer) throw new Error('#app container not found');
@@ -73,6 +71,10 @@ window.CoreInitializer = (function() {
         document.body.appendChild(statusPanel);
     }
 
+    // ============================================================
+    // 設定マネージャー初期化
+    // ============================================================
+    
     function initializeSettingsManager() {
         if (window.settingsManager) {
             return window.settingsManager;
@@ -88,6 +90,10 @@ window.CoreInitializer = (function() {
         return settingsManager;
     }
 
+    // ============================================================
+    // ポップアップマネージャー初期化
+    // ============================================================
+    
     function initializePopupManager(app, coreEngine) {
         const popupManager = new window.TegakiPopupManager(window.TegakiEventBus);
         
@@ -123,6 +129,10 @@ window.CoreInitializer = (function() {
         return popupManager;
     }
 
+    // ============================================================
+    // EventBus リスナー設定
+    // ============================================================
+    
     function setupEventBusListeners() {
         const eventBus = window.TegakiEventBus;
         if (!eventBus) return;
@@ -135,6 +145,10 @@ window.CoreInitializer = (function() {
         window.StatusDisplayRenderer = statusDisplay;
     }
 
+    // ============================================================
+    // レイヤーパネル初期化
+    // ============================================================
+    
     function initializeLayerPanel(layerSystem, eventBus) {
         if (!window.LayerPanelRenderer) {
             console.warn('[CoreInit] LayerPanelRenderer not loaded');
@@ -162,98 +176,111 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
+    // ============================================================
+    // WebGL2初期化（ラスター版）- Phase 5.3 完全修正
+    // ============================================================
+    
     /**
      * WebGL2初期化（ラスター版）
+     * @param {HTMLCanvasElement} canvas 
+     * @returns {Promise<boolean>}
      */
     async function initializeWebGL2(canvas) {
-        console.log('[WebGL2] Starting raster initialization...');
+        console.log('[WebGL2] 🚀 Starting raster initialization...');
 
         try {
+            // WebGL2DrawingLayerクラス確認
             if (!window.WebGL2DrawingLayer) {
-                console.error('[WebGL2] WebGL2DrawingLayer not found');
+                console.error('[WebGL2] ❌ WebGL2DrawingLayer class not found');
                 return false;
             }
 
             if (!canvas) {
-                console.error('[WebGL2] Canvas not provided');
+                console.error('[WebGL2] ❌ Canvas not provided');
                 return false;
             }
 
             const width = window.TEGAKI_CONFIG.canvas.width;
             const height = window.TEGAKI_CONFIG.canvas.height;
 
-            console.log('[WebGL2] Initializing with canvas:', canvas.width, 'x', canvas.height);
-            console.log('[WebGL2] Target size:', width, 'x', height);
+            console.log('[WebGL2] 📐 Canvas size:', canvas.width, 'x', canvas.height);
+            console.log('[WebGL2] 🎯 Target size:', width, 'x', height);
 
-            // WebGL2DrawingLayer初期化
-            const success = await window.WebGL2DrawingLayer.initialize(canvas, width, height);
+            // 🔧 Phase 5.3: インスタンス作成
+            const webgl2Layer = new window.WebGL2DrawingLayer();
+            
+            // 初期化
+            const success = await webgl2Layer.initialize(canvas, width, height);
             
             if (!success) {
-                console.error('[WebGL2] DrawingLayer initialization failed');
+                console.error('[WebGL2] ❌ DrawingLayer initialization failed');
                 return false;
             }
 
             console.log('[WebGL2] ✅ DrawingLayer initialized');
 
+            // 🔧 Phase 5.3: グローバル登録
+            window.webgl2DrawingLayer = webgl2Layer;
+            
+            // WebGLContextにglを登録（既に initialize 内で行われているが確認）
+            if (window.WebGLContext && window.WebGLContext.gl) {
+                console.log('[WebGL2] ✅ WebGL context registered');
+            }
+
+            // RasterBrushCoreにglコンテキストを設定
+            if (window.rasterBrushCore) {
+                const glContext = window.WebGLContext.gl;
+                if (glContext) {
+                    window.rasterBrushCore.initialize(glContext);
+                    console.log('[WebGL2] ✅ RasterBrushCore initialized with GL context');
+                } else {
+                    console.error('[WebGL2] ❌ GL context not found');
+                }
+            } else {
+                console.warn('[WebGL2] ⚠️ window.rasterBrushCore not found');
+            }
+
             // Pixi統合
             if (window.pixiApp) {
-                window.WebGL2DrawingLayer.setPixiApp(window.pixiApp);
+                webgl2Layer.setPixiApp(window.pixiApp);
+                console.log('[WebGL2] ✅ Pixi.js app linked');
             }
 
-            // RasterLayer確認
-            if (window.RasterLayer && window.RasterLayer.initialized) {
-                console.log('[WebGL2] ✅ RasterLayer ready');
-            } else {
-                console.warn('[WebGL2] ⚠️ RasterLayer not initialized');
-            }
+            // モジュール確認
+            const modules = {
+                'RasterLayer': window.RasterLayer?.initialized,
+                'BrushStamp': !!window.BrushStamp,
+                'BrushInterpolator': !!window.BrushInterpolator,
+                'RasterBrushCore': window.rasterBrushCore?.gl !== null
+            };
 
-            // RasterBrushCore確認
-            if (window.RasterBrushCore && window.RasterBrushCore.initialized) {
-                console.log('[WebGL2] ✅ RasterBrushCore ready');
-            } else {
-                console.warn('[WebGL2] ⚠️ RasterBrushCore not initialized');
-            }
-
-            // BrushStamp確認
-            if (window.BrushStamp) {
-                console.log('[WebGL2] ✅ BrushStamp ready');
-            }
-
-            // BrushInterpolator確認
-            if (window.BrushInterpolator) {
-                console.log('[WebGL2] ✅ BrushInterpolator ready');
+            console.log('[WebGL2] 📦 Module status:');
+            for (const [name, status] of Object.entries(modules)) {
+                const icon = status ? '✅' : '⚠️';
+                console.log(`         ${icon} ${name}: ${status ? 'ready' : 'not ready'}`);
             }
 
             // デバッグオブジェクト登録
             if (window.TegakiDebug) {
-                window.TegakiDebug.webgl2Layer = window.WebGL2DrawingLayer;
+                window.TegakiDebug.webgl2Layer = webgl2Layer;
                 window.TegakiDebug.rasterLayer = window.RasterLayer;
-                window.TegakiDebug.rasterBrush = window.RasterBrushCore;
+                window.TegakiDebug.rasterBrushCore = window.rasterBrushCore;
             }
 
+            console.log('[WebGL2] ✅ Raster system initialized successfully');
             return true;
 
         } catch (error) {
-            console.error('[WebGL2] Raster initialization error:', error);
+            console.error('[WebGL2] ❌ Raster initialization error:', error);
+            console.error(error.stack);
             return false;
         }
     }
 
-/**
- * ================================================================
- * [END PART 1] - 次は PART 2 をこの下に貼り付けてください
- * ================================================================
- */
-
-
-/**
- * ================================================================
- * [PART 2/2] DrawingApp Class & Main Logic
- * ================================================================
- * ⚠️ PART 1 の下にこのコードを貼り付けてください
- * ================================================================
- */
-
+    // ============================================================
+    // DrawingApp クラス
+    // ============================================================
+    
     class DrawingApp {
         constructor() {
             this.pixiApp = null;
@@ -278,21 +305,21 @@ window.CoreInitializer = (function() {
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) throw new Error('Canvas container not found');
             
+            // Pixi.js初期化
             this.pixiApp = new PIXI.Application();
             const screenWidth = window.innerWidth - 50;
             const screenHeight = window.innerHeight;
             
-            // Phase 4.1: アンチエイリアス強化設定
             await this.pixiApp.init({
                 width: screenWidth,
                 height: screenHeight,
                 backgroundAlpha: 0,
-                resolution: 2,              // 高解像度レンダリング
-                antialias: true,            // AA有効
-                autoDensity: true,          // DPR自動対応
+                resolution: 2,
+                antialias: true,
+                autoDensity: true,
                 eventMode: 'static',
-                preference: 'webgl2',       // WebGL2優先
-                powerPreference: 'high-performance' // 高性能モード
+                preference: 'webgl2',
+                powerPreference: 'high-performance'
             });
             
             containerEl.innerHTML = '';
@@ -307,10 +334,10 @@ window.CoreInitializer = (function() {
                 console.log('[DrawingApp] ✅ Pixi Ticker started');
             }
             
-            // Phase 4.1: AA設定確認
             console.log('[DrawingApp] ✅ Resolution:', this.pixiApp.renderer.resolution);
             console.log('[DrawingApp] ✅ Antialias:', this.pixiApp.renderer.context.contextOptions?.antialias);
             
+            // CoreEngine初期化
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
             
@@ -319,6 +346,7 @@ window.CoreInitializer = (function() {
             const brushSettings = this.coreEngine.getBrushSettings();
             window.brushSettings = brushSettings;
             
+            // CoreRuntime初期化
             window.CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
@@ -331,6 +359,7 @@ window.CoreInitializer = (function() {
             
             initializeSettingsManager();
             
+            // UIController初期化
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
@@ -338,21 +367,23 @@ window.CoreInitializer = (function() {
             );
             window.uiController = this.uiController;
 
+            // PopupManager初期化
             this.popupManager = initializePopupManager(this, this.coreEngine);
             
             setupEventBusListeners();
             
+            // LayerPanel初期化
             this.layerPanelRenderer = initializeLayerPanel(
                 this.coreEngine.getLayerManager(),
                 window.TegakiEventBus
             );
             
-            // Phase 5.2: ラスター版WebGL2初期化
-            console.log('[DrawingApp] Initializing WebGL2 (Raster mode)...');
+            // 🔧 Phase 5.3: WebGL2初期化（ラスター版）
+            console.log('[DrawingApp] 🎨 Initializing WebGL2 (Raster mode)...');
 
             if (this.pixiApp.canvas) {
                 this.webgl2Enabled = await initializeWebGL2(this.pixiApp.canvas);
-                console.log('[DrawingApp] WebGL2 Raster result:', this.webgl2Enabled);
+                console.log('[DrawingApp] 📊 WebGL2 Result:', this.webgl2Enabled ? '✅ SUCCESS' : '❌ FAILED');
                 
                 if (this.webgl2Enabled) {
                     console.log('[DrawingApp] ✅ Raster drawing system ready');
@@ -360,15 +391,18 @@ window.CoreInitializer = (function() {
                     console.error('[DrawingApp] ❌ Raster drawing system failed');
                 }
             } else {
-                console.error('[DrawingApp] Canvas not found');
+                console.error('[DrawingApp] ❌ Canvas not found');
             }
             
+            // ExportPopup初期化
             this.initializeExportPopup();
             
+            // API登録
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
                 return window.CoreRuntime.api.camera.resize(newWidth, newHeight);
             };
             
+            // イベントリスナー設定
             this.setupEventListeners();
             this.updateCanvasInfo();
             this.updateDPRInfo();
@@ -471,6 +505,10 @@ window.CoreInitializer = (function() {
         }
     }
 
+    // ============================================================
+    // メイン初期化
+    // ============================================================
+    
     async function initialize() {
         checkDependencies();
         buildDOM();
@@ -492,6 +530,10 @@ window.CoreInitializer = (function() {
         return true;
     }
 
+    // ============================================================
+    // エクスポート
+    // ============================================================
+    
     return {
         initialize,
         checkDependencies,
@@ -501,14 +543,7 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase 5.2 loaded (ラスター対応版)');
-console.log('   ✅ WebGL2DrawingLayer初期化');
-console.log('   ✅ RasterLayer統合');
-console.log('   ✅ RasterBrushCore統合');
-console.log('   ✅ Phase 4.1全機能継承');
-
-/**
- * ================================================================
- * [END PART 2] - ファイル完成！
- * ================================================================
- */
+console.log('✅ core-initializer.js Phase 5.3 loaded (ラスター対応完全版)');
+console.log('   🔧 WebGL2DrawingLayerインスタンス化修正');
+console.log('   🔧 RasterBrushCoreへのGLコンテキスト渡し');
+console.log('   ✅ Phase 5.2全機能継承');

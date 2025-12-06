@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * drawing-engine.js - Phase B-2: ペン傾き伝達実装版
+ * drawing-engine.js - Phase 3.3: ラスター対応版
  * ============================================================
  * 
  * 【親依存】
@@ -10,23 +10,27 @@
  * - system/camera-system.js (CameraSystem)
  * - system/layer-system.js (LayerSystem)
  * - system/event-bus.js (EventBus)
- * - system/drawing/stroke-renderer.js (StrokeRenderer)
+ * - system/drawing/raster/raster-brush-core.js (RasterBrushCore) ← 🆕
  * 
  * 【子依存】
  * - core-engine.js (初期化元)
  * - core-runtime.js (API経由)
  * - system/drawing/fill-tool.js (canvas:pointerdown イベント購読)
- * - core-initializer.js (strokeRenderer参照)
+ * - core-initializer.js (rasterBrushCore参照)
  * 
- * 【Phase B-2改修内容】
- * ✅ _handlePointerDown() 傾き伝達（tiltX/tiltY/twist追加）
- * ✅ _handlePointerMove() 傾き伝達
- * ✅ brush-core.startStroke() / updateStroke() に傾きパラメータ追加
- * ✅ Phase 4.1全機能継承
+ * 【Phase 3.3 改修内容】
+ * 🔧 StrokeRenderer → RasterBrushCore への切り替え
+ * 🔧 setRasterBrushCore() メソッド追加
+ * 🔧 strokeRenderer プロパティを rasterBrushCore に変更
+ * ✅ Phase B-2 全機能継承（傾き伝達）
  * ============================================================
  */
 
 class DrawingEngine {
+    // ============================================================
+    // コンストラクタ - システム初期化
+    // ============================================================
+    
     constructor(app, layerSystem, cameraSystem, history) {
         this.app = app;
         this.layerSystem = layerSystem;
@@ -41,8 +45,9 @@ class DrawingEngine {
             throw new Error('[DrawingEngine] window.BrushCore not initialized. Check core-engine.js initialization order.');
         }
 
+        // 🔧 Phase 3.3: ラスターブラシコア参照
         this.brushSettings = null;
-        this.strokeRenderer = window.strokeRenderer || null;
+        this.rasterBrushCore = window.rasterBrushCore || null;
         
         this.pointerDetach = null;
         this.coordSystem = window.CoordinateSystem;
@@ -52,6 +57,10 @@ class DrawingEngine {
         this._initializeCanvas();
     }
 
+    // ============================================================
+    // キャンバス初期化 - PointerEvent統合
+    // ============================================================
+    
     _initializeCanvas() {
         const canvas = this.app.canvas || this.app.view;
         if (!canvas) {
@@ -76,28 +85,34 @@ class DrawingEngine {
         });
     }
 
-    /**
-     * Phase B-2: 傾き伝達実装
-     * tiltX/tiltY/twist をBrushCoreに渡す
-     */
+    // ============================================================
+    // PointerEvent ハンドラ - 描画開始
+    // Phase B-2: 傾き伝達実装（tiltX/tiltY/twist）
+    // ============================================================
+    
     _handlePointerDown(info, e) {
+        // カメラ移動モード判定
         if (this.cameraSystem?.isCanvasMoveMode()) {
             return;
         }
 
+        // Vキー押下時（レイヤー移動モード）
         if (this.layerSystem?.vKeyPressed) {
             return;
         }
 
+        // 右クリック無視
         if (info.button === 2) {
             return;
         }
 
+        // Screen→Local座標変換
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
         if (!localCoords) {
             return;
         }
 
+        // 塗りつぶしモード処理
         const currentMode = this.brushCore.getMode();
         
         if (currentMode === 'fill') {
@@ -114,6 +129,7 @@ class DrawingEngine {
             return;
         }
 
+        // アクティブポインタ登録
         this.activePointers.set(info.pointerId, {
             type: info.pointerType || 'unknown',
             isDrawing: true
@@ -132,9 +148,11 @@ class DrawingEngine {
         }
     }
 
-    /**
-     * Phase B-2: 傾き伝達実装
-     */
+    // ============================================================
+    // PointerEvent ハンドラ - 描画更新
+    // Phase B-2: 傾き伝達実装
+    // ============================================================
+    
     _handlePointerMove(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo || !pointerInfo.isDrawing) {
@@ -158,6 +176,10 @@ class DrawingEngine {
         }
     }
 
+    // ============================================================
+    // PointerEvent ハンドラ - 描画終了
+    // ============================================================
+    
     _handlePointerUp(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo) {
@@ -173,6 +195,10 @@ class DrawingEngine {
         this.activePointers.delete(info.pointerId);
     }
 
+    // ============================================================
+    // PointerEvent ハンドラ - キャンセル
+    // ============================================================
+    
     _handlePointerCancel(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo) {
@@ -186,8 +212,13 @@ class DrawingEngine {
         this.activePointers.delete(info.pointerId);
     }
 
+    // ============================================================
+    // 座標変換パイプライン: Screen → Canvas → World → Local
+    // ============================================================
+    
     /**
-     * 座標変換パイプライン: Screen → Canvas → World → Local
+     * Screen座標をLocal座標に変換
+     * CoordinateSystemを使用した単一責務実装
      */
     _screenToLocal(clientX, clientY) {
         if (!this.coordSystem) {
@@ -199,16 +230,19 @@ class DrawingEngine {
             return null;
         }
 
+        // Screen → Canvas
         const canvasCoords = this.coordSystem.screenClientToCanvas(clientX, clientY);
         if (!canvasCoords || canvasCoords.canvasX === undefined) {
             return null;
         }
 
+        // Canvas → World
         const worldCoords = this.coordSystem.canvasToWorld(canvasCoords.canvasX, canvasCoords.canvasY);
         if (!worldCoords || worldCoords.worldX === undefined) {
             return null;
         }
 
+        // World → Local
         const localCoords = this.coordSystem.worldToLocal(
             worldCoords.worldX,
             worldCoords.worldY,
@@ -229,18 +263,49 @@ class DrawingEngine {
         };
     }
 
+    // ============================================================
+    // 設定メソッド - 外部システム統合
+    // ============================================================
+    
+    /**
+     * ブラシ設定を設定
+     */
     setBrushSettings(settings) {
         this.brushSettings = settings;
     }
 
-    setStrokeRenderer(renderer) {
-        this.strokeRenderer = renderer;
+    /**
+     * 🔧 Phase 3.3: RasterBrushCore設定メソッド追加
+     */
+    setRasterBrushCore(rasterBrushCore) {
+        this.rasterBrushCore = rasterBrushCore;
+        console.log('✅ [DrawingEngine] RasterBrushCore set successfully');
     }
 
+    /**
+     * 後方互換: setStrokeRenderer() は setRasterBrushCore() のエイリアス
+     * @deprecated Phase 3.3で非推奨
+     */
+    setStrokeRenderer(renderer) {
+        console.warn('⚠️ [DrawingEngine] setStrokeRenderer() is deprecated. Use setRasterBrushCore() instead.');
+        this.setRasterBrushCore(renderer);
+    }
+
+    // ============================================================
+    // Getter メソッド
+    // ============================================================
+    
+    /**
+     * 描画中判定
+     */
     get isDrawing() {
         return this.brushCore && this.brushCore.isActive ? this.brushCore.isActive() : false;
     }
 
+    // ============================================================
+    // クリーンアップ
+    // ============================================================
+    
     destroy() {
         if (this.pointerDetach) {
             this.pointerDetach();
@@ -250,9 +315,13 @@ class DrawingEngine {
     }
 }
 
+// ============================================================
+// グローバル登録
+// ============================================================
+
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js Phase B-2 loaded (ペン傾き伝達版)');
-console.log('   ✅ startStroke() に tiltX/tiltY/twist 追加');
-console.log('   ✅ updateStroke() に tiltX/tiltY/twist 追加');
-console.log('   ✅ Phase 4.1全機能継承');
+console.log('✅ drawing-engine.js Phase 3.3 loaded (ラスター対応版)');
+console.log('   🔧 StrokeRenderer → RasterBrushCore 切り替え');
+console.log('   🔧 setRasterBrushCore() メソッド追加');
+console.log('   ✅ Phase B-2 全機能継承（傾き伝達）');
