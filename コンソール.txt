@@ -48,6 +48,7 @@
     ✅ A-1: 筆圧サイズ計算修正 - minPressureSize 正しく適用
     ✅ A-2: リアルタイム描画実装 - 描画後に即座にレンダリング
     ✅ A-3: 消しゴム正しい実装 - DST_OUT による真の消去
+    🔧 PIXI.BLEND_MODES 文字列指定に修正
     ✅ Phase 3.5 全機能継承
  ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
     ✅ WebGLTexture → PIXI.Sprite変換実装完了
@@ -180,129 +181,63 @@
  📋 Popup "settings" registered (priority: 1)
  📋 Popup "quickAccess" registered (priority: 2)
  📋 Popup "album" registered (priority: 3)
- 📋 Popup "resize" registered (priority: 4)
- 🔧 Initializing all popups...
- ✅ Popup "settings" initialized successfully
- ✅ Popup "quickAccess" initialized successfully
- ✅ Popup "album" initialized successfully
- ✅ Popup "resize" initialized successfully
- 📊 Popup initialization: 4 ready, 0 deferred
- [DrawingApp] 🎨 Initializing WebGL2 (Raster mode)...
- [WebGL2] 🚀 Starting raster initialization...
- [WebGL2] 📐 Canvas size: 1630 x 1000
- [WebGL2] 🎯 Target size: 400 x 400
- ✅ [WebGL2DrawingLayer] WebGL2 context created
- ✅ [RasterLayer] Initialized Object
- ✅ [BrushStamp] Initialized
- ✅ [WebGL2DrawingLayer] Initialized Object
- [WebGL2] ✅ DrawingLayer initialized
- [WebGL2] ✅ WebGL context registered
- [RasterBrushCore] ✅ Initialized with WebGL2 context
- [RasterBrushCore]    Settings manager: OK
- [WebGL2] ✅ RasterBrushCore initialized with GL context
- ✅ [WebGL2DrawingLayer] Pixi.js app linked
- [WebGL2] ✅ Pixi.js app linked
- [WebGL2] 📦 Module status:
-          ✅ RasterLayer: ready
-          ✅ BrushStamp: ready
-          ✅ BrushInterpolator: ready
-          ✅ RasterBrushCore: ready
- [WebGL2] ✅ Raster system initialized successfully
- [DrawingApp] 📊 WebGL2 Result: ✅ SUCCESS
- [DrawingApp] ✅ Raster drawing system ready
- ✅ ラスター版初期化完了
- 🎬 Pixi Ticker Status: Object
- 📋 Popup "export" registered (priority: 5)
- ✅ Popup "export" initialized successfully
- [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] finalizeStroke called
- [RasterBrushCore] ✅ Stroke finalized
- [History:Push] Before: index=-1, stack=0, cmd="raster-stroke-draw"
- [History:Push] After: index=0, stack=1
- [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] finalizeStroke called
- [RasterBrushCore] ✅ Stroke finalized
- [History:Push] Before: index=0, stack=1, cmd="raster-stroke-draw"
- [History:Push] After: index=1, stack=2
- [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] finalizeStroke called
- [RasterBrushCore] ✅ Stroke finalized
- [History:Push] Before: index=1, stack=2, cmd="raster-stroke-draw"
- [History:Push] After: index=2, stack=3
- [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] Point drawn: Object
- [RasterBrushCore] finalizeStroke called
- [RasterBrushCore] ✅ Stroke finalized
- [History:Push] Before: index=2, stack=3, cmd="raster-stroke-draw"
- [History:Push] After: index=3, stack=4
-raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
-history.js:194 [History:Push] Before: index=3, stack=4, cmd="raster-stroke-draw"
-history.js:213 [History:Push] After: index=4, stack=5
-raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
-history.js:194 [History:Push] Before: index=4, stack=5, cmd="raster-stroke-draw"
-history.js:213 [History:Push] After: index=5, stack=6
-raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
-history.js:194 [History:Push] Before: index=5, stack=6, cmd="raster-stroke-draw"
-history.js:213 [History:Push] After: index=6, stack=7
-raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
-history.js:194 [History:Push] Before: index=6, stack=7, cmd="raster-stroke-draw"
-history.js:213 [History:Push] After: index=7, stack=8
-raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
-history.js:194 [History:Push] Before: index=7, stack=8, cmd="raster-stroke-draw"
-history.js:213 [History:Push] After: index=8, stack=9
-raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
-history.js:194 [History:Push] Before: index=8, stack=9, cmd="raster-stroke-draw"
-history.js:213 [History:Push] After: index=9, stack=10
-raster-brush-core.js:127 [RasterBrushCore] startStroke called Object
-raster-brush-core.js:158 Uncaught TypeError: Cannot read properties of undefined (reading 'NORMAL')
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:353 [RasterBrushCore] Point drawn: Object
-raster-brush-core.js:242 [RasterBrushCore] finalizeStroke called
-raster-brush-core.js:270 [RasterBrushCore] ✅ Stroke finalized
-history.js:194 [History:Push] Before: index=9, stack=10, cmd="raster-stroke-draw"
-history.js:213 [History:Push] After: index=10, stack=11
-history.js:194 [History:Push] Before: index=10, stack=11, cmd="layer-create"
-history.js:213 [History:Push] After: index=11, stack=12
-history.js:194 [History:Push] Before: index=11, stack=12, cmd="layer-reorder"
-history.js:213 [History:Push] After: index=12, stack=13
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+core-initializer.js:382 [DrawingApp] 🎨 Initializing WebGL2 (Raster mode)...
+core-initializer.js:189 [WebGL2] 🚀 Starting raster initialization...
+core-initializer.js:206 [WebGL2] 📐 Canvas size: 1630 x 1000
+core-initializer.js:207 [WebGL2] 🎯 Target size: 400 x 400
+webgl2-drawing-layer.js:89 ✅ [WebGL2DrawingLayer] WebGL2 context created
+raster-layer.js:66 ✅ [RasterLayer] Initialized Object
+brush-stamp.js:34 ✅ [BrushStamp] Initialized
+webgl2-drawing-layer.js:133 ✅ [WebGL2DrawingLayer] Initialized Object
+core-initializer.js:220 [WebGL2] ✅ DrawingLayer initialized
+core-initializer.js:227 [WebGL2] ✅ WebGL context registered
+raster-brush-core.js:99 [RasterBrushCore] ✅ Initialized with WebGL2 context
+raster-brush-core.js:100 [RasterBrushCore]    Settings manager: OK
+core-initializer.js:235 [WebGL2] ✅ RasterBrushCore initialized with GL context
+webgl2-drawing-layer.js:250 ✅ [WebGL2DrawingLayer] Pixi.js app linked
+core-initializer.js:246 [WebGL2] ✅ Pixi.js app linked
+core-initializer.js:257 [WebGL2] 📦 Module status:
+core-initializer.js:260          ✅ RasterLayer: ready
+core-initializer.js:260          ✅ BrushStamp: ready
+core-initializer.js:260          ✅ BrushInterpolator: ready
+core-initializer.js:260          ✅ RasterBrushCore: ready
+core-initializer.js:270 [WebGL2] ✅ Raster system initialized successfully
+core-initializer.js:386 [DrawingApp] 📊 WebGL2 Result: ✅ SUCCESS
+core-initializer.js:389 [DrawingApp] ✅ Raster drawing system ready
+index.html:118 ✅ ラスター版初期化完了
+index.html:122 🎬 Pixi Ticker Status: Object
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+raster-brush-core.js:128 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:244 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:272 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=-1, stack=0, cmd="raster-stroke-draw"
+history.js:213 [History:Push] After: index=0, stack=1
+raster-brush-core.js:128 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:244 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:272 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=0, stack=1, cmd="raster-stroke-draw"
+history.js:213 [History:Push] After: index=1, stack=2
+raster-brush-core.js:128 [RasterBrushCore] startStroke called Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:355 [RasterBrushCore] Point drawn: Object
+raster-brush-core.js:244 [RasterBrushCore] finalizeStroke called
+raster-brush-core.js:272 [RasterBrushCore] ✅ Stroke finalized
+history.js:194 [History:Push] Before: index=1, stack=2, cmd="raster-stroke-draw"
+history.js:213 [History:Push] After: index=2, stack=3
+history.js:194 [History:Push] Before: index=2, stack=3, cmd="layer-create"
+history.js:213 [History:Push] After: index=3, stack=4
