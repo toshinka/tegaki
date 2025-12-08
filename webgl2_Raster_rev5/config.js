@@ -1,11 +1,11 @@
 /**
- * @file config.js - Phase 3.1: ラスター対応版
+ * @file config.js - Phase B-3: フロー制御対応版
  * @description グローバル設定・キーマップ定義
  * 
- * 【Phase 3.1改修内容】
- * ✅ brush.raster 設定追加
- * ✅ ラスターブラシパラメータ追加
- * ✅ Phase 7.5.1全機能継承
+ * 【Phase B-3改修内容】
+ * ✅ brush.raster.flow 設定追加
+ * ✅ brush.raster.highSpeedCompensation 設定追加
+ * ✅ Phase 3.1全機能継承
  * 
  * 【親依存】なし（最上位設定ファイル）
  * 【子依存】全システムファイル
@@ -61,7 +61,7 @@ window.TEGAKI_CONFIG = {
     },
     
     /**
-     * Phase 3.1: ラスターブラシ設定
+     * Phase B-3: ラスターブラシ設定（フロー制御追加）
      */
     brush: {
         /**
@@ -110,23 +110,28 @@ window.TEGAKI_CONFIG = {
         },
         
         /**
-         * Phase 3.1: ラスター方式設定
+         * Phase B-3: ラスター方式設定（フロー制御強化）
          */
         raster: {
+            // Phase B-3: フロー制御設定
+            flow: 1.0,                   // デフォルトフロー値 (0.0～1.0)
+            highSpeedCompensation: 0.5,  // 高速補正強度 (0.0～1.0)
+            
             // スタンプ設定
             stamp: {
                 type: 'circle',          // 'circle' | 'texture'
-                hardness: 1.0,           // エッジの硬さ (0.0～1.0)
+                hardness: 0.8,           // エッジの硬さ (0.0～1.0) ※Phase B-4で1.0→0.8
                 spacing: 0.1,            // スタンプ間隔 (0.0～1.0)
                 antialiasing: true       // アンチエイリアス有効
             },
             
-            // 補間設定（drawing.interpolationを使用）
+            // 補間設定（Phase B-2: Catmull-Rom Spline）
             interpolation: {
                 enabled: true,
                 distanceThreshold: 2.5,  // ピクセル
-                maxSteps: 15,
-                adaptiveSpeed: true
+                maxSteps: 20,            // Phase B-2: 15→20に増加
+                adaptiveSpeed: true,
+                method: 'catmull-rom'    // Phase B-2: スプライン補間
             },
             
             // 傾き設定
@@ -537,7 +542,8 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
-console.log('✅ config.js Phase 3.1 loaded (ラスター対応版)');
-console.log('   ✅ brush.raster 設定追加');
-console.log('   ✅ SDF/MSDF無効化');
-console.log('   ✅ Phase 7.5.1全機能継承');
+console.log('✅ config.js Phase B-3 loaded (フロー制御対応版)');
+console.log('   🆕 brush.raster.flow 設定追加');
+console.log('   🆕 brush.raster.highSpeedCompensation 設定追加');
+console.log('   🆕 brush.raster.stamp.hardness 0.8 に最適化');
+console.log('   ✅ Phase 3.1全機能継承');
