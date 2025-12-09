@@ -1,50 +1,63 @@
 /**
  * ============================================================================
  * ファイル名: system/drawing/raster/raster-layer.js
- * 責務: WebGL2フレームバッファベースのレイヤー管理（完全分離版）
- * Phase: C-0 WebGL2/PixiJS完全分離アーキテクチャ
- * 依存: なし（WebGL2コンテキスト完全独立）
+ * 責務: WebGL2フレームバッファベースのレイヤー管理（外部GLコンテキスト使用版）
+ * Phase: C-0.1 WebGL2コンテキスト統合修正版
+ * 依存: なし（WebGL2コンテキストは外部から注入）
  * 親依存: raster-brush-core.js, webgl2-drawing-layer.js
  * 子依存: なし
  * 公開API: initialize(), createLayer(), getFramebuffer(), composite()
  * イベント発火: なし
  * イベント受信: なし
  * グローバル登録: window.RasterLayer
- * 実装状態: 🆕 Phase C-0 完全分離版
+ * 実装状態: 🔧 Phase C-0.1 外部GLコンテキスト対応
  * 
- * 【重要な設計変更】
- * - WebGL2コンテキストはこのクラスが完全に所有
- * - PixiJSとのGLステート競合を完全回避
- * - FBO/テクスチャのライフサイクル管理を強化
- * - gl.finish()による確実な描画完了保証
+ * 【Phase C-0.1 重要な設計変更】
+ * - WebGL2コンテキストは外部から注入（完全分離達成）
+ * - WebGL2DrawingLayerが作成したGLコンテキストを使用
+ * - 独自キャンバス作成は廃止（PixiJSとの競合完全回避）
+ * - FBO/テクスチャのライフサイクル管理を強化維持
  * ============================================================================
  */
 
 class RasterLayer {
   constructor() {
-    // WebGL2コンテキスト（完全独立）
-    this.gl = null;
-    this.canvas = null; // WebGL2専用キャンバス
+    // ================================================================================
+    // WebGL2コンテキスト（外部から注入）
+    // ================================================================================
+    this.gl = null; // 外部から設定される
     
+    // ================================================================================
     // 初期化状態
+    // ================================================================================
     this.initialized = false;
     
+    // ================================================================================
     // レイヤーFBO/テクスチャ管理
+    // ================================================================================
     this.layerFramebuffers = new Map(); // layerId -> WebGLFramebuffer
     this.layerTextures = new Map();     // layerId -> WebGLTexture
     
+    // ================================================================================
     // キャンバスサイズ
+    // ================================================================================
     this.canvasWidth = 400;
     this.canvasHeight = 400;
     
+    // ================================================================================
     // 最適化設定
+    // ================================================================================
     this.autoCreateFBO = true; // 自動FBO作成
-    this.optimizationEnabled = true;
+    this.enableOptimization = true; // 最適化有効化
     
+    // ================================================================================
     // GLステート保存用
+    // ================================================================================
     this.savedGLState = null;
     
+    // ================================================================================
     // デバッグ
+    // ================================================================================
     this.debug = false;
   }
 
@@ -53,64 +66,46 @@ class RasterLayer {
   // ============================================================================
 
   /**
-   * WebGL2コンテキストの初期化（完全独立）
+   * WebGL2コンテキストの初期化（外部GLコンテキスト使用）
+   * @param {WebGL2RenderingContext} gl - 外部から提供されるWebGL2コンテキスト
    * @param {number} width - キャンバス幅
    * @param {number} height - キャンバス高さ
    * @param {Object} options - オプション
    * @returns {boolean} 成功/失敗
    */
-  initialize(width, height, options = {}) {
+  initialize(gl, width, height, options = {}) {
     if (this.initialized) {
       console.warn('[RasterLayer] Already initialized');
       return true;
     }
 
     try {
-      // WebGL2専用キャンバス作成（PixiJSとは完全に別）
-      this.canvas = document.createElement('canvas');
-      this.canvas.width = width;
-      this.canvas.height = height;
-      this.canvas.style.display = 'none'; // 非表示（テクスチャ生成専用）
-
-      // WebGL2コンテキスト取得
-      const contextOptions = {
-        alpha: true,
-        premultipliedAlpha: true,
-        antialias: options.antialias !== false,
-        preserveDrawingBuffer: true, // テクスチャ読み取りのため必須
-        powerPreference: options.highPerformance ? 'high-performance' : 'default'
-      };
-
-      this.gl = this.canvas.getContext('webgl2', contextOptions);
-
-      if (!this.gl) {
-        throw new Error('WebGL2 not supported');
+      // 外部からのGLコンテキストを使用
+      if (!gl) {
+        throw new Error('WebGL2 context not provided');
       }
 
-      // キャンバスサイズ保存
+      this.gl = gl;
       this.canvasWidth = width;
       this.canvasHeight = height;
-
-      // WebGL2初期設定
-      this._setupWebGL2State();
 
       // 最適化設定適用
       if (options.autoCreateFBO !== undefined) {
         this.autoCreateFBO = options.autoCreateFBO;
       }
-      if (options.optimization !== undefined) {
-        this.optimizationEnabled = options.optimization;
+      if (options.enableOptimization !== undefined) {
+        this.enableOptimization = options.enableOptimization;
       }
 
       this._applyOptimizationSettings();
 
       this.initialized = true;
 
-      console.log('[RasterLayer] ✅ Initialized (独立WebGL2コンテキスト)', {
+      console.log('[RasterLayer] ✅ Initialized (外部GLコンテキスト)', {
         width,
         height,
         autoFBO: this.autoCreateFBO,
-        optimization: this.optimizationEnabled
+        optimization: this.enableOptimization
       });
 
       return true;
@@ -122,35 +117,11 @@ class RasterLayer {
   }
 
   /**
-   * WebGL2ステートの初期設定
-   * @private
-   */
-  _setupWebGL2State() {
-    const gl = this.gl;
-
-    // ブレンディング設定（アルファ合成）
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-    // デプステスト無効（2D描画）
-    gl.disable(gl.DEPTH_TEST);
-
-    // カリング無効
-    gl.disable(gl.CULL_FACE);
-
-    // ビューポート設定
-    gl.viewport(0, 0, this.canvasWidth, this.canvasHeight);
-
-    // クリアカラー（透明）
-    gl.clearColor(0, 0, 0, 0);
-  }
-
-  /**
    * 最適化設定の適用
    * @private
    */
   _applyOptimizationSettings() {
-    if (!this.optimizationEnabled) return;
+    if (!this.enableOptimization) return;
 
     const gl = this.gl;
 
@@ -212,7 +183,7 @@ class RasterLayer {
       );
 
       // テクスチャパラメータ設定
-      if (this.optimizationEnabled && this.defaultTextureParams) {
+      if (this.enableOptimization && this.defaultTextureParams) {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, this.defaultTextureParams.minFilter);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, this.defaultTextureParams.magFilter);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, this.defaultTextureParams.wrapS);
@@ -240,7 +211,7 @@ class RasterLayer {
       // FBOステータス確認
       const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
       if (status !== gl.FRAMEBUFFER_COMPLETE) {
-        throw new Error(`FBO incomplete: ${status}`);
+        throw new Error(`FBO incomplete: ${this._getFBOStatusString(status)}`);
       }
 
       // FBOをクリア（透明）
@@ -258,7 +229,11 @@ class RasterLayer {
       this.layerFramebuffers.set(layerId, fbo);
       this.layerTextures.set(layerId, texture);
 
-      console.log(`[RasterLayer] ✅ Layer created: ${layerId}`);
+      console.log(`[RasterLayer] ✅ Layer created: ${layerId}`, {
+        fbo: fbo,
+        texture: texture,
+        size: `${this.canvasWidth}x${this.canvasHeight}`
+      });
 
       return { fbo, texture };
 
@@ -266,6 +241,22 @@ class RasterLayer {
       console.error(`[RasterLayer] ❌ Failed to create layer ${layerId}:`, error);
       this._restoreGLState();
       return null;
+    }
+  }
+
+  /**
+   * FBOステータスを文字列に変換（デバッグ用）
+   * @private
+   */
+  _getFBOStatusString(status) {
+    const gl = this.gl;
+    switch (status) {
+      case gl.FRAMEBUFFER_COMPLETE: return 'COMPLETE';
+      case gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT: return 'INCOMPLETE_ATTACHMENT';
+      case gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: return 'INCOMPLETE_MISSING_ATTACHMENT';
+      case gl.FRAMEBUFFER_INCOMPLETE_DIMENSIONS: return 'INCOMPLETE_DIMENSIONS';
+      case gl.FRAMEBUFFER_UNSUPPORTED: return 'UNSUPPORTED';
+      default: return `UNKNOWN(${status})`;
     }
   }
 
@@ -307,6 +298,34 @@ class RasterLayer {
    */
   getTexture(layerId) {
     return this.layerTextures.get(layerId) || null;
+  }
+
+  /**
+   * レイヤークリア
+   * @param {string} layerId - レイヤーID
+   */
+  clearLayer(layerId) {
+    const fbo = this.layerFramebuffers.get(layerId);
+    if (!fbo) {
+      console.warn(`[RasterLayer] Layer not found: ${layerId}`);
+      return;
+    }
+
+    const gl = this.gl;
+
+    // GLステート保存
+    this._saveGLState();
+
+    // FBOにバインドしてクリア
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.flush();
+
+    // GLステート復元
+    this._restoreGLState();
+
+    console.log(`[RasterLayer] Layer cleared: ${layerId}`);
   }
 
   /**
@@ -390,17 +409,146 @@ class RasterLayer {
   }
 
   // ============================================================================
-  // レイヤー合成（将来実装）
+  // レイヤー合成
   // ============================================================================
 
   /**
-   * 複数レイヤーの合成
-   * @param {Array<string>} layerIds - レイヤーID配列（下から順）
+   * 複数レイヤーの合成（Phase C-2で完全実装予定）
+   * @param {Array<Object>} layerInfos - レイヤー情報配列
    * @param {WebGLFramebuffer} targetFBO - 出力先FBO（nullならデフォルト）
    */
-  composite(layerIds, targetFBO = null) {
-    console.warn('[RasterLayer] composite() not yet implemented');
-    // Phase C-2で実装予定
+  compositeLayers(layerInfos, targetFBO = null) {
+    const gl = this.gl;
+
+    // GLステート保存
+    this._saveGLState();
+
+    // 出力先FBOにバインド
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
+
+    // クリア
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // ブレンディング有効化
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    // 各レイヤーを下から順に描画
+    for (const layerInfo of layerInfos) {
+      if (!layerInfo.visible) continue;
+
+      const texture = this.layerTextures.get(layerInfo.id);
+      if (!texture) continue;
+
+      // Phase C-2: シェーダーを使った本格的な合成を実装予定
+      // 現状は単純なブレンディングのみ
+      // TODO: displayShaderを使った描画に置き換え
+    }
+
+    // GLステート復元
+    this._restoreGLState();
+
+    console.log(`[RasterLayer] Composited ${layerInfos.length} layers (simple mode)`);
+  }
+
+  // ============================================================================
+  // サムネイル生成
+  // ============================================================================
+
+  /**
+   * レイヤーサムネイル生成
+   * @param {string} layerId - レイヤーID
+   * @param {number} size - サムネイルサイズ
+   * @returns {HTMLCanvasElement|null}
+   */
+  generateThumbnail(layerId, size = 48) {
+    const texture = this.layerTextures.get(layerId);
+    const fbo = this.layerFramebuffers.get(layerId);
+
+    if (!texture || !fbo) {
+      console.warn(`[RasterLayer] Layer not found for thumbnail: ${layerId}`);
+      return null;
+    }
+
+    const gl = this.gl;
+
+    // GLステート保存
+    this._saveGLState();
+
+    // ピクセルデータ読み取り
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    const pixels = new Uint8Array(this.canvasWidth * this.canvasHeight * 4);
+    gl.readPixels(0, 0, this.canvasWidth, this.canvasHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // GLステート復元
+    this._restoreGLState();
+
+    // Canvas作成
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    // スケーリング計算
+    const scale = Math.min(size / this.canvasWidth, size / this.canvasHeight);
+    const scaledWidth = this.canvasWidth * scale;
+    const scaledHeight = this.canvasHeight * scale;
+    const offsetX = (size - scaledWidth) / 2;
+    const offsetY = (size - scaledHeight) / 2;
+
+    // 一時キャンバスに元画像を描画
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = this.canvasWidth;
+    tempCanvas.height = this.canvasHeight;
+    const tempCtx = tempCanvas.getContext('2d');
+    const imageData = tempCtx.createImageData(this.canvasWidth, this.canvasHeight);
+
+    // Y軸反転しながらコピー
+    for (let y = 0; y < this.canvasHeight; y++) {
+      for (let x = 0; x < this.canvasWidth; x++) {
+        const srcIdx = ((this.canvasHeight - 1 - y) * this.canvasWidth + x) * 4;
+        const dstIdx = (y * this.canvasWidth + x) * 4;
+        imageData.data[dstIdx + 0] = pixels[srcIdx + 0];
+        imageData.data[dstIdx + 1] = pixels[srcIdx + 1];
+        imageData.data[dstIdx + 2] = pixels[srcIdx + 2];
+        imageData.data[dstIdx + 3] = pixels[srcIdx + 3];
+      }
+    }
+
+    tempCtx.putImageData(imageData, 0, 0);
+
+    // スケーリングして描画
+    ctx.drawImage(tempCanvas, 0, 0, this.canvasWidth, this.canvasHeight, offsetX, offsetY, scaledWidth, scaledHeight);
+
+    return canvas;
+  }
+
+  /**
+   * レイヤーピクセルデータ読み取り
+   * @param {string} layerId - レイヤーID
+   * @returns {Uint8Array|null}
+   */
+  readPixels(layerId) {
+    const fbo = this.layerFramebuffers.get(layerId);
+    if (!fbo) {
+      console.warn(`[RasterLayer] Layer not found: ${layerId}`);
+      return null;
+    }
+
+    const gl = this.gl;
+
+    // GLステート保存
+    this._saveGLState();
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    const pixels = new Uint8Array(this.canvasWidth * this.canvasHeight * 4);
+    gl.readPixels(0, 0, this.canvasWidth, this.canvasHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // GLステート復元
+    this._restoreGLState();
+
+    return pixels;
   }
 
   // ============================================================================
@@ -408,29 +556,24 @@ class RasterLayer {
   // ============================================================================
 
   /**
-   * キャンバスリサイズ
+   * 全レイヤーリサイズ
    * @param {number} newWidth - 新しい幅
    * @param {number} newHeight - 新しい高さ
    */
-  resize(newWidth, newHeight) {
+  resizeAll(newWidth, newHeight) {
     if (!this.initialized) {
       console.error('[RasterLayer] Not initialized');
       return;
     }
 
-    console.log(`[RasterLayer] Resizing: ${this.canvasWidth}x${this.canvasHeight} -> ${newWidth}x${newHeight}`);
+    console.log(`[RasterLayer] Resizing all layers: ${this.canvasWidth}x${this.canvasHeight} -> ${newWidth}x${newHeight}`);
 
-    // キャンバスサイズ変更
-    this.canvas.width = newWidth;
-    this.canvas.height = newHeight;
+    // サイズ更新
     this.canvasWidth = newWidth;
     this.canvasHeight = newHeight;
 
-    // ビューポート更新
-    this.gl.viewport(0, 0, newWidth, newHeight);
-
-    // 既存レイヤーはリサイズ不要（再作成が必要な場合は上位で処理）
-    console.log('[RasterLayer] ✅ Resize completed');
+    // 既存レイヤーは再作成が必要（上位で処理）
+    console.log('[RasterLayer] ⚠️  Existing layers need to be recreated after resize');
   }
 
   // ============================================================================
@@ -448,7 +591,7 @@ class RasterLayer {
       layerCount: this.layerFramebuffers.size,
       layers: Array.from(this.layerFramebuffers.keys()),
       autoCreateFBO: this.autoCreateFBO,
-      optimizationEnabled: this.optimizationEnabled,
+      enableOptimization: this.enableOptimization,
       glContext: this.gl ? 'OK' : 'MISSING'
     };
   }
@@ -457,21 +600,24 @@ class RasterLayer {
    * パフォーマンス診断
    * @returns {Object}
    */
-  getPerformanceDiagnostics() {
+  diagnosePerformance() {
     if (!this.gl) {
       return { error: 'WebGL2 context not available' };
     }
 
     const gl = this.gl;
 
-    return {
+    const info = {
       renderer: gl.getParameter(gl.RENDERER),
       vendor: gl.getParameter(gl.VENDOR),
       version: gl.getParameter(gl.VERSION),
       maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
       maxViewport: gl.getParameter(gl.MAX_VIEWPORT_DIMS),
-      extensions: gl.getSupportedExtensions()
+      layerCount: this.layerFramebuffers.size
     };
+
+    console.log('📊 [RasterLayer] Performance Diagnostics:', info);
+    return info;
   }
 
   // ============================================================================
@@ -481,32 +627,19 @@ class RasterLayer {
   /**
    * 全リソース解放
    */
-  dispose() {
-    console.log('[RasterLayer] Disposing...');
+  destroy() {
+    console.log('[RasterLayer] Destroying...');
 
     // 全レイヤー削除
     for (const layerId of this.layerFramebuffers.keys()) {
       this.deleteLayer(layerId);
     }
 
-    // WebGL2コンテキスト解放
-    if (this.gl) {
-      const ext = this.gl.getExtension('WEBGL_lose_context');
-      if (ext) {
-        ext.loseContext();
-      }
-      this.gl = null;
-    }
-
-    // キャンバス削除
-    if (this.canvas && this.canvas.parentNode) {
-      this.canvas.parentNode.removeChild(this.canvas);
-    }
-    this.canvas = null;
-
+    // GLコンテキストは外部所有なので破棄しない
+    this.gl = null;
     this.initialized = false;
 
-    console.log('[RasterLayer] ✅ Disposed');
+    console.log('[RasterLayer] ✅ Destroyed');
   }
 }
 
@@ -518,12 +651,10 @@ class RasterLayer {
 if (!window.RasterLayer) {
   window.RasterLayer = new RasterLayer();
   console.log('[RasterLayer] ✅ Global instance registered successfully');
-  console.log('[RasterLayer]   ', window.RasterLayer);
 }
 
-console.log('✅ raster-layer.js Phase C-0 loaded (完全分離版)');
-console.log('   ✅ C-0: WebGL2コンテキスト完全独立');
-console.log('   ✅ C-0: PixiJSとのGLステート競合回避');
-console.log('   ✅ C-0: FBO/テクスチャライフサイクル管理');
-console.log('   ✅ C-0: gl.finish()による確実な描画完了保証');
-console.log('   ✅ Phase C-2/C-3全機能継承');
+console.log('✅ raster-layer.js Phase C-0.1 loaded (外部GLコンテキスト対応)');
+console.log('   🔧 C-0.1: WebGL2コンテキスト外部注入方式に変更');
+console.log('   ✅ C-0.1: PixiJSとのGLステート競合完全回避');
+console.log('   ✅ C-0.1: FBO/テクスチャライフサイクル管理強化維持');
+console.log('   ✅ Phase C-0全機能継承');

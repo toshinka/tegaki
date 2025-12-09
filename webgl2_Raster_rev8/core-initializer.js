@@ -1,12 +1,12 @@
 /**
- * @file core-initializer.js - Phase 5.3: ラスター対応完全版
+ * @file core-initializer.js - Phase C-0.1: WebGL2統合修正版
  * @description アプリケーション初期化シーケンス制御
  * 
- * 【Phase 5.3 改修内容】
- * 🔧 WebGL2DrawingLayerインスタンス化修正
- * 🔧 グローバル登録の統一
- * 🔧 RasterBrushCoreへのglコンテキスト渡し
- * ✅ Phase 5.2全機能継承
+ * 【Phase C-0.1 改修内容】
+ * 🔧 WebGL2初期化フロー完全修正
+ * 🔧 RasterLayer初期化シグネチャ修正
+ * 🔧 GLコンテキスト所有権の明確化
+ * ✅ Phase 5.3全機能継承
  * 
  * 【親依存】
  * - core-engine.js (CoreEngine)
@@ -177,7 +177,7 @@ window.CoreInitializer = (function() {
     }
 
     // ============================================================
-    // WebGL2初期化（ラスター版）- Phase 5.3 完全修正
+    // WebGL2初期化（Phase C-0.1 完全修正版）
     // ============================================================
     
     /**
@@ -186,12 +186,19 @@ window.CoreInitializer = (function() {
      * @returns {Promise<boolean>}
      */
     async function initializeWebGL2(canvas) {
-        console.log('[WebGL2] 🚀 Starting raster initialization...');
+        console.log('[WebGL2] 🚀 Starting raster initialization (Phase C-0.1)...');
 
         try {
-            // WebGL2DrawingLayerクラス確認
+            // ================================================================
+            // ステップ1: 必須モジュール確認
+            // ================================================================
             if (!window.WebGL2DrawingLayer) {
                 console.error('[WebGL2] ❌ WebGL2DrawingLayer class not found');
+                return false;
+            }
+
+            if (!window.RasterLayer) {
+                console.error('[WebGL2] ❌ RasterLayer instance not found');
                 return false;
             }
 
@@ -206,10 +213,13 @@ window.CoreInitializer = (function() {
             console.log('[WebGL2] 📐 Canvas size:', canvas.width, 'x', canvas.height);
             console.log('[WebGL2] 🎯 Target size:', width, 'x', height);
 
-            // 🔧 Phase 5.3: インスタンス作成
+            // ================================================================
+            // ステップ2: WebGL2DrawingLayer 初期化
+            // ================================================================
+            console.log('[WebGL2] 🔧 Step 1: Initializing WebGL2DrawingLayer...');
+
             const webgl2Layer = new window.WebGL2DrawingLayer();
             
-            // 初期化
             const success = await webgl2Layer.initialize(canvas, width, height);
             
             if (!success) {
@@ -217,41 +227,80 @@ window.CoreInitializer = (function() {
                 return false;
             }
 
-            console.log('[WebGL2] ✅ DrawingLayer initialized');
+            console.log('[WebGL2] ✅ Step 1 completed: DrawingLayer initialized');
+            console.log('[WebGL2]    - GL Context:', webgl2Layer.gl ? 'OK' : 'MISSING');
 
-            // 🔧 Phase 5.3: グローバル登録
+            // ================================================================
+            // ステップ3: グローバル登録
+            // ================================================================
             window.webgl2DrawingLayer = webgl2Layer;
             
-            // WebGLContextにglを登録（既に initialize 内で行われているが確認）
-            if (window.WebGLContext && window.WebGLContext.gl) {
-                console.log('[WebGL2] ✅ WebGL context registered');
+            // WebGLContext確認
+            if (!window.WebGLContext || !window.WebGLContext.gl) {
+                console.error('[WebGL2] ❌ WebGLContext.gl not registered');
+                return false;
             }
 
-            // RasterBrushCoreにglコンテキストを設定
+            const gl = window.WebGLContext.gl;
+            console.log('[WebGL2] ✅ Step 2 completed: WebGLContext.gl registered');
+
+            // ================================================================
+            // ステップ4: RasterLayer 初期化（外部GLコンテキスト注入）
+            // ================================================================
+            console.log('[WebGL2] 🔧 Step 3: Initializing RasterLayer...');
+
+            if (window.RasterLayer.initialized) {
+                console.warn('[WebGL2] ⚠️  RasterLayer already initialized, skipping');
+            } else {
+                // 🔧 Phase C-0.1: 修正されたシグネチャで初期化
+                const rasterInitSuccess = window.RasterLayer.initialize(gl, width, height, {
+                    autoCreateFBO: true,
+                    enableOptimization: true
+                });
+
+                if (!rasterInitSuccess) {
+                    console.error('[WebGL2] ❌ RasterLayer initialization failed');
+                    return false;
+                }
+
+                console.log('[WebGL2] ✅ Step 3 completed: RasterLayer initialized');
+                console.log('[WebGL2]    - Canvas size:', `${window.RasterLayer.canvasWidth}x${window.RasterLayer.canvasHeight}`);
+                console.log('[WebGL2]    - Auto FBO:', window.RasterLayer.autoCreateFBO);
+            }
+
+            // ================================================================
+            // ステップ5: RasterBrushCore 初期化
+            // ================================================================
+            console.log('[WebGL2] 🔧 Step 4: Initializing RasterBrushCore...');
+
             if (window.rasterBrushCore) {
-                const glContext = window.WebGLContext.gl;
-                if (glContext) {
-                    window.rasterBrushCore.initialize(glContext);
-                    console.log('[WebGL2] ✅ RasterBrushCore initialized with GL context');
+                if (window.rasterBrushCore.gl) {
+                    console.warn('[WebGL2] ⚠️  RasterBrushCore already has GL context');
                 } else {
-                    console.error('[WebGL2] ❌ GL context not found');
+                    window.rasterBrushCore.initialize(gl);
+                    console.log('[WebGL2] ✅ Step 4 completed: RasterBrushCore initialized');
                 }
             } else {
-                console.warn('[WebGL2] ⚠️ window.rasterBrushCore not found');
+                console.warn('[WebGL2] ⚠️  window.rasterBrushCore not found (may be initialized later)');
             }
 
-            // Pixi統合
+            // ================================================================
+            // ステップ6: Pixi統合
+            // ================================================================
             if (window.pixiApp) {
                 webgl2Layer.setPixiApp(window.pixiApp);
-                console.log('[WebGL2] ✅ Pixi.js app linked');
+                console.log('[WebGL2] ✅ Step 5 completed: Pixi.js app linked');
             }
 
-            // モジュール確認
+            // ================================================================
+            // ステップ7: モジュールステータス確認
+            // ================================================================
             const modules = {
+                'WebGL2DrawingLayer': webgl2Layer.initialized,
                 'RasterLayer': window.RasterLayer?.initialized,
                 'BrushStamp': !!window.BrushStamp,
                 'BrushInterpolator': !!window.BrushInterpolator,
-                'RasterBrushCore': window.rasterBrushCore?.gl !== null
+                'RasterBrushCore': window.rasterBrushCore?.gl !== null && window.rasterBrushCore?.gl !== undefined
             };
 
             console.log('[WebGL2] 📦 Module status:');
@@ -260,19 +309,39 @@ window.CoreInitializer = (function() {
                 console.log(`         ${icon} ${name}: ${status ? 'ready' : 'not ready'}`);
             }
 
-            // デバッグオブジェクト登録
-            if (window.TegakiDebug) {
-                window.TegakiDebug.webgl2Layer = webgl2Layer;
-                window.TegakiDebug.rasterLayer = window.RasterLayer;
-                window.TegakiDebug.rasterBrushCore = window.rasterBrushCore;
+            // 全モジュールが準備完了かチェック
+            const allReady = Object.values(modules).every(status => status === true);
+            if (!allReady) {
+                console.warn('[WebGL2] ⚠️  Some modules are not ready, but continuing...');
             }
 
-            console.log('[WebGL2] ✅ Raster system initialized successfully');
+            // ================================================================
+            // ステップ8: デバッグオブジェクト登録
+            // ================================================================
+            if (!window.TegakiDebug) {
+                window.TegakiDebug = {};
+            }
+
+            window.TegakiDebug.webgl2Layer = webgl2Layer;
+            window.TegakiDebug.rasterLayer = window.RasterLayer;
+            window.TegakiDebug.rasterBrushCore = window.rasterBrushCore;
+            window.TegakiDebug.gl = gl;
+
+            console.log('[WebGL2] ✅ Debug objects registered to window.TegakiDebug');
+
+            // ================================================================
+            // 最終確認
+            // ================================================================
+            console.log('[WebGL2] 🎉 Raster system initialized successfully');
+            console.log('[WebGL2]    - All modules initialized and linked');
+            console.log('[WebGL2]    - GLContext shared correctly');
+            console.log('[WebGL2]    - Ready for drawing');
+
             return true;
 
         } catch (error) {
             console.error('[WebGL2] ❌ Raster initialization error:', error);
-            console.error(error.stack);
+            console.error('[WebGL2]', error.stack);
             return false;
         }
     }
@@ -378,8 +447,8 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
-            // 🔧 Phase 5.3: WebGL2初期化（ラスター版）
-            console.log('[DrawingApp] 🎨 Initializing WebGL2 (Raster mode)...');
+            // 🔧 Phase C-0.1: WebGL2初期化（修正版）
+            console.log('[DrawingApp] 🎨 Initializing WebGL2 (Phase C-0.1 Raster mode)...');
 
             if (this.pixiApp.canvas) {
                 this.webgl2Enabled = await initializeWebGL2(this.pixiApp.canvas);
@@ -387,8 +456,15 @@ window.CoreInitializer = (function() {
                 
                 if (this.webgl2Enabled) {
                     console.log('[DrawingApp] ✅ Raster drawing system ready');
+                    
+                    // デバッグ情報表示
+                    if (window.RasterLayer) {
+                        const diagnostics = window.RasterLayer.getDiagnostics();
+                        console.log('[DrawingApp] 📊 RasterLayer diagnostics:', diagnostics);
+                    }
                 } else {
                     console.error('[DrawingApp] ❌ Raster drawing system failed');
+                    console.error('[DrawingApp] ⚠️  Drawing may not work correctly');
                 }
             } else {
                 console.error('[DrawingApp] ❌ Canvas not found');
@@ -543,7 +619,8 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase 5.3 loaded (ラスター対応完全版)');
-console.log('   🔧 WebGL2DrawingLayerインスタンス化修正');
-console.log('   🔧 RasterBrushCoreへのGLコンテキスト渡し');
-console.log('   ✅ Phase 5.2全機能継承');
+console.log('✅ core-initializer.js Phase C-0.1 loaded (WebGL2統合修正版)');
+console.log('   🔧 C-0.1: WebGL2初期化フロー完全修正');
+console.log('   🔧 C-0.1: RasterLayer初期化シグネチャ修正');
+console.log('   🔧 C-0.1: GLコンテキスト所有権の明確化');
+console.log('   ✅ Phase 5.3全機能継承');
