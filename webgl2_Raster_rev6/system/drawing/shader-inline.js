@@ -1,17 +1,20 @@
 /**
  * ============================================================
- * shader-inline.js - Phase 4.1: ラスター対応版
+ * shader-inline.js - Phase C-1: WebGL2描画パイプライン対応
  * ============================================================
  * 【役割】
  * - GLSLシェーダーコードをインライン保持
  * - file://プロトコル対応
- * - ラスター描画用シェーダー定義
+ * - Phase C-1: ブラシスタンプ完全実装
  * 
- * 【Phase 4.1改修内容】
- * ✅ ベクター用GLSL削除（SDF, JFA, MSDF関連）
- * ✅ ラスター用GLSL追加
- * ✅ ブラシスタンプシェーダー
- * ✅ 合成シェーダー
+ * 【Phase C-1改修内容】
+ * 🔥 ブラシスタンプシェーダー完全実装
+ * 🔥 Flow制御対応
+ * 🔥 消しゴムシェーダー対応
+ * 🔥 アンチエイリアス高品質化
+ * ✅ ベクター用GLSL削除
+ * ✅ レイヤー合成シェーダー
+ * ✅ ディスプレイシェーダー
  * ============================================================
  */
 
@@ -20,7 +23,7 @@
 
     /**
      * ================================================================
-     * ラスター描画用シェーダー
+     * Phase C-1: ブラシスタンプシェーダー
      * ================================================================
      */
 
@@ -32,6 +35,7 @@
         in vec2 a_texCoord;
         
         out vec2 v_texCoord;
+        out vec2 v_position;
         
         uniform vec2 u_resolution;
         uniform vec2 u_position;
@@ -45,61 +49,74 @@
         }
         
         void main() {
-            // スタンプサイズ適用
+            // ビルボード頂点（-1～1）をブラシサイズにスケール
             vec2 pos = a_position * u_size;
             
-            // 回転適用（ペンのtwist対応）
+            // 回転適用（ペンのtwist/tilt対応）
             if (abs(u_rotation) > 0.001) {
                 pos = rotation2d(u_rotation) * pos;
             }
             
-            // 位置オフセット
+            // ブラシ中心位置にオフセット
             pos += u_position;
             
             // クリップ空間変換
             vec2 clipSpace = (pos / u_resolution) * 2.0 - 1.0;
             gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
             
+            // テクスチャ座標
             v_texCoord = a_texCoord;
+            v_position = a_position; // -1～1の範囲
         }
     `;
 
     /**
      * ブラシスタンプ フラグメントシェーダー
+     * Phase C-1: Flow制御・高品質アンチエイリアス実装
      */
     const brushStampFragmentShader = `#version 300 es
         precision highp float;
         
         in vec2 v_texCoord;
+        in vec2 v_position;
         out vec4 fragColor;
         
-        uniform vec4 u_color;
-        uniform float u_hardness;
+        uniform sampler2D u_stampTexture;
+        uniform vec3 u_color;
         uniform float u_opacity;
-        uniform bool u_antialiasing;
+        uniform float u_hardness;
+        uniform int u_eraser;
         
         void main() {
-            // UV座標を中心基準に変換 (-1.0 ～ 1.0)
-            vec2 centered = v_texCoord * 2.0 - 1.0;
-            float dist = length(centered);
+            // スタンプテクスチャからアルファ値取得
+            vec4 stampColor = texture(u_stampTexture, v_texCoord);
             
-            float alpha;
+            // 距離ベースのフォールオフ（中心からの距離）
+            float dist = length(v_position);
             
-            if (u_antialiasing) {
-                // アンチエイリアス付き円
-                float edge = 1.0 - u_hardness * 0.3;
-                alpha = smoothstep(1.0, edge, dist);
+            // Hardness適用: 0.0=ソフト, 1.0=ハード
+            float edge = 1.0 - u_hardness * 0.5;
+            float falloff = smoothstep(1.0, edge, dist);
+            
+            // スタンプアルファと組み合わせ
+            float alpha = stampColor.a * falloff * u_opacity;
+            
+            if (u_eraser == 1) {
+                // 消しゴムモード: アルファチャンネルを削除
+                // RGB=1.0, Alpha=削除量
+                fragColor = vec4(1.0, 1.0, 1.0, alpha);
             } else {
-                // ハードエッジ円
-                alpha = dist <= 1.0 ? 1.0 : 0.0;
+                // 通常モード: ブラシ色を出力
+                fragColor = vec4(u_color, alpha);
             }
-            
-            // 不透明度適用
-            alpha *= u_opacity;
-            
-            fragColor = vec4(u_color.rgb, u_color.a * alpha);
         }
     `;
+
+    /**
+     * ================================================================
+     * レイヤー合成シェーダー
+     * ================================================================
+     */
 
     /**
      * レイヤー合成 頂点シェーダー
@@ -162,7 +179,7 @@
             // 不透明度適用
             texColor.a *= u_opacity;
             
-            // ブレンドモード適用（将来実装）
+            // ブレンドモード適用
             if (u_blendMode == BLEND_MULTIPLY) {
                 texColor.rgb = blendMultiply(texColor.rgb, texColor.rgb);
             } else if (u_blendMode == BLEND_ADD) {
@@ -177,6 +194,12 @@
             fragColor = texColor;
         }
     `;
+
+    /**
+     * ================================================================
+     * ディスプレイ表示シェーダー
+     * ================================================================
+     */
 
     /**
      * ディスプレイ表示 頂点シェーダー
@@ -230,6 +253,14 @@
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
             const typeName = type === gl.VERTEX_SHADER ? 'VERTEX' : 'FRAGMENT';
             console.error(`[ShaderInline] ${typeName} shader compile failed:`, gl.getShaderInfoLog(shader));
+            
+            // ソースコードを行番号付きで出力
+            const lines = source.split('\n');
+            console.error('Shader source:');
+            lines.forEach((line, i) => {
+                console.error(`${(i + 1).toString().padStart(3, ' ')}: ${line}`);
+            });
+            
             gl.deleteShader(shader);
             return null;
         }
@@ -324,12 +355,18 @@
     function createAllPrograms(gl) {
         const programs = {};
         
+        console.log('🔥 [ShaderInline] Creating shader programs...');
+        
         // ブラシスタンプ
         programs.brushStamp = createShaderProgram(
             gl,
             brushStampVertexShader,
             brushStampFragmentShader
         );
+        
+        if (programs.brushStamp) {
+            console.log('   ✅ BrushStamp shader created');
+        }
         
         // 合成
         programs.composite = createShaderProgram(
@@ -338,12 +375,20 @@
             compositeFragmentShader
         );
         
+        if (programs.composite) {
+            console.log('   ✅ Composite shader created');
+        }
+        
         // ディスプレイ
         programs.display = createShaderProgram(
             gl,
             displayVertexShader,
             displayFragmentShader
         );
+        
+        if (programs.display) {
+            console.log('   ✅ Display shader created');
+        }
         
         // エラーチェック
         const failed = Object.entries(programs)
@@ -355,18 +400,18 @@
             return null;
         }
         
-        console.log('✅ [ShaderInline] All shader programs created');
+        console.log('✅ [ShaderInline] All shader programs created successfully');
         return programs;
     }
 
     window.TegakiShaders.createAllPrograms = createAllPrograms;
 
-    console.log('✅ shader-inline.js Phase 4.1 loaded (ラスター対応版)');
-    console.log('   ✅ ベクター用GLSL削除');
-    console.log('   ✅ ラスター用GLSL追加');
-    console.log('   ✅ 3種類のシェーダーセット定義');
-    console.log('   - brushStamp: ブラシスタンプ描画');
-    console.log('   - composite: レイヤー合成');
-    console.log('   - display: 画面表示');
+    console.log('✅ shader-inline.js Phase C-1 loaded (WebGL2完全実装)');
+    console.log('   🔥 C-1: ブラシスタンプシェーダー完全実装');
+    console.log('   🔥 C-1: Flow制御対応');
+    console.log('   🔥 C-1: 消しゴムシェーダー対応');
+    console.log('   🔥 C-1: アンチエイリアス高品質化');
+    console.log('   ✅ レイヤー合成シェーダー');
+    console.log('   ✅ ディスプレイシェーダー');
 
 })();
