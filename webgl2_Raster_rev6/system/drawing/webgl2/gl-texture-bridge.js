@@ -1,24 +1,22 @@
 /**
  * ================================================================================
- * gl-texture-bridge.js - Phase 5完全版: WebGLTexture → PIXI.Sprite変換
- * PixiJS v8完全対応版（定数問題解決）
+ * gl-texture-bridge.js - Phase C-1完全版: WebGLTexture → PIXI.Texture変換
+ * PixiJS v8完全対応版
  * ================================================================================
  * 
  * 📁 親ファイル依存:
  *   - webgl2-drawing-layer.js (WebGL2DrawingLayer.gl)
- *   - gl-msdf-pipeline.js (WebGLTexture出力元)
  * 
  * 📄 子ファイル依存:
- *   - brush-core.js (createSpriteFromGLTexture呼び出し元)
+ *   - raster-brush-core.js (テクスチャ変換呼び出し元)
  * 
- * 【Phase 5実装内容】
- * ✅ WebGLTexture → Canvas → PIXI.Sprite変換
- * ✅ PixiJS v8対応（BaseTexture廃止、定数変更対応）
- * ✅ PIXI.Texture.from()直接使用（オプション最小化）
+ * 【Phase C-1実装内容】
+ * 🔥 createTextureFromGL() 追加 - Sprite不要版
+ * ✅ WebGLTexture → Canvas → PIXI.Texture変換
+ * ✅ PixiJS v8対応（BaseTexture廃止）
+ * ✅ PIXI.Texture.from()直接使用
  * ✅ Alpha channel完全保持
- * 
- * 【WebGPU互換API】
- * createSpriteFromGPUTexture() → createSpriteFromGLTexture()に内部変換
+ * ✅ Y軸反転処理
  * 
  * ================================================================================
  */
@@ -31,6 +29,10 @@
       this.gl = null;
       this.initialized = false;
       this.pixiApp = null;
+      
+      // テクスチャキャッシュ（パフォーマンス最適化）
+      this.textureCache = new Map();
+      this.maxCacheSize = 50;
     }
 
     /**
@@ -48,7 +50,105 @@
       this.pixiApp = pixiApp;
       this.initialized = true;
 
-      console.log('[GLTextureBridge] ✅ Initialized (PixiJS v8)');
+      console.log('[GLTextureBridge] ✅ Initialized (PixiJS v8 + Phase C-1)');
+    }
+
+    /**
+     * Phase C-1: WebGLTexture → PIXI.Texture変換（Sprite生成なし）
+     * 
+     * @param {WebGL2RenderingContext} gl - WebGL2コンテキスト
+     * @param {WebGLTexture} glTexture - WebGL2テクスチャ
+     * @returns {PIXI.Texture|null}
+     */
+    createTextureFromGL(gl, glTexture) {
+      if (!glTexture) {
+        console.error('[GLTextureBridge] Invalid texture');
+        return null;
+      }
+
+      try {
+        // 一時FBO作成してテクスチャサイズ取得
+        const fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(
+          gl.FRAMEBUFFER,
+          gl.COLOR_ATTACHMENT0,
+          gl.TEXTURE_2D,
+          glTexture,
+          0
+        );
+
+        // FBO Status確認
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        if (status !== gl.FRAMEBUFFER_COMPLETE) {
+          console.error('[GLTextureBridge] FBO incomplete:', status);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.deleteFramebuffer(fbo);
+          return null;
+        }
+
+        // テクスチャ情報取得（ビューポートから推測）
+        // 注: WebGL2にはテクスチャサイズ直接取得APIがないため、
+        //     FBOサイズを使用
+        gl.bindTexture(gl.TEXTURE_2D, glTexture);
+        
+        // テクスチャパラメータ取得
+        const width = gl.getParameter(gl.VIEWPORT)[2] || 1024;
+        const height = gl.getParameter(gl.VIEWPORT)[3] || 1024;
+        
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        // Pixel data読み取り
+        const pixels = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+        // Unbind & cleanup
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.deleteFramebuffer(fbo);
+
+        // Canvas生成
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', {
+          willReadFrequently: false,
+          alpha: true
+        });
+
+        if (!ctx) {
+          console.error('[GLTextureBridge] Failed to get 2d context');
+          return null;
+        }
+
+        // ImageData生成（Y軸反転）
+        const imageData = ctx.createImageData(width, height);
+
+        // Y軸反転してコピー
+        for (let y = 0; y < height; y++) {
+          const srcRow = (height - 1 - y) * width * 4;
+          const dstRow = y * width * 4;
+          
+          for (let x = 0; x < width * 4; x++) {
+            imageData.data[dstRow + x] = pixels[srcRow + x];
+          }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+
+        // PixiJS v8: Texture.from()で直接生成
+        const texture = PIXI.Texture.from(canvas, {
+          resourceOptions: {
+            width: width,
+            height: height
+          }
+        });
+
+        return texture;
+
+      } catch (error) {
+        console.error('[GLTextureBridge] Error creating texture:', error);
+        return null;
+      }
     }
 
     /**
@@ -84,7 +184,6 @@
         }
 
         // PixiJS v8: Texture.from()で直接生成
-        // オプションなし（デフォルト設定を使用）
         const texture = PIXI.Texture.from(canvas);
 
         // PIXI.Sprite生成
@@ -142,7 +241,10 @@
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', {
+        willReadFrequently: false,
+        alpha: true
+      });
 
       if (!ctx) {
         console.error('[GLTextureBridge] Failed to get 2d context');
@@ -182,9 +284,24 @@
     }
 
     /**
+     * キャッシュクリア
+     */
+    clearCache() {
+      for (const texture of this.textureCache.values()) {
+        try {
+          texture.destroy(true);
+        } catch (e) {
+          // エラー無視
+        }
+      }
+      this.textureCache.clear();
+    }
+
+    /**
      * クリーンアップ
      */
     destroy() {
+      this.clearCache();
       this.gl = null;
       this.pixiApp = null;
       this.initialized = false;
@@ -198,9 +315,11 @@
   // WebGPU互換用エイリアス
   window.WebGPUTextureBridge = instance;
 
-  console.log('✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded');
-  console.log('   ✅ WebGLTexture → PIXI.Sprite変換実装完了');
-  console.log('   ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）');
-  console.log('   ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応');
+  console.log('✅ gl-texture-bridge.js Phase C-1完全版 (PixiJS v8対応) loaded');
+  console.log('   🔥 C-1: createTextureFromGL() 追加（Sprite不要版）');
+  console.log('   ✅ WebGLTexture → PIXI.Texture変換実装完了');
+  console.log('   ✅ PixiJS v8: Texture.from()直接使用');
+  console.log('   ✅ Y軸反転処理実装');
+  console.log('   ✅ WebGPU互換API対応');
 
 })();
