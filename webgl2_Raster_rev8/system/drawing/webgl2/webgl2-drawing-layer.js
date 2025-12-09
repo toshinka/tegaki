@@ -1,16 +1,16 @@
 /**
  * ============================================================
- * webgl2-drawing-layer.js - Phase C完全版
+ * webgl2-drawing-layer.js - Phase C-0.1 修正版
  * ============================================================
  * 【役割】
  * - WebGL2レイヤー統合管理
  * - ラスターテクスチャ合成
  * - Pixi.jsとの連携
  * 
- * 【Phase C完全実装】
- * ✅ C-1: WebGL2描画パイプライン完全統合
- * ✅ C-2: RasterLayer統合強化
- * ✅ C-3: パフォーマンス最適化
+ * 【Phase C-0.1 修正内容】
+ * 🔧 RasterLayer初期化フロー修正
+ * 🔧 外部GLコンテキスト注入方式対応
+ * ✅ Phase C完全実装継承
  * 
  * 【親依存】
  * - gl-texture-bridge.js
@@ -74,7 +74,7 @@
         }
 
         // ================================================================================
-        // 初期化
+        // 初期化（Phase C-0.1 修正版）
         // ================================================================================
 
         async initialize(canvas, width, height) {
@@ -87,14 +87,18 @@
             this.width = width;
             this.height = height;
             
-            // WebGL2コンテキスト取得
+            // ================================================================
+            // ステップ1: WebGL2コンテキスト取得
+            // ================================================================
+            console.log('[WebGL2DrawingLayer] Step 1: Creating WebGL2 context...');
+
             this.gl = canvas.getContext('webgl2', {
                 alpha: true,
                 premultipliedAlpha: true,
                 preserveDrawingBuffer: true,
-                antialias: true, // Phase C-3: アンチエイリアス有効化
-                powerPreference: 'high-performance', // Phase C-3: 高性能モード
-                desynchronized: true // Phase C-3: 非同期レンダリング
+                antialias: true,
+                powerPreference: 'high-performance',
+                desynchronized: true
             });
             
             if (!this.gl) {
@@ -102,64 +106,90 @@
                 return false;
             }
             
-            console.log('✅ [WebGL2DrawingLayer] WebGL2 context created');
-            console.log('   ✅ High-performance mode enabled');
-            console.log('   ✅ Antialiasing enabled');
+            console.log('[WebGL2DrawingLayer] ✅ Step 1 completed: WebGL2 context created');
+            console.log('[WebGL2DrawingLayer]    - High-performance mode enabled');
+            console.log('[WebGL2DrawingLayer]    - Antialiasing enabled');
             
-            // グローバル登録
+            // ================================================================
+            // ステップ2: グローバル登録
+            // ================================================================
             if (!window.WebGLContext) {
                 window.WebGLContext = {};
             }
             window.WebGLContext.gl = this.gl;
+            console.log('[WebGL2DrawingLayer] ✅ Step 2 completed: GLContext registered globally');
             
-            // Phase C-2: RasterLayer初期化（強化版）
-            if (window.RasterLayer) {
-                this.rasterLayer = window.RasterLayer;
-                
-                // 既に初期化済みかチェック
-                if (this.rasterLayer.initialized) {
-                    console.warn('[WebGL2DrawingLayer] RasterLayer already initialized, skipping');
-                } else {
-                    if (!this.rasterLayer.initialize(this.gl, width, height)) {
-                        console.error('[WebGL2DrawingLayer] RasterLayer initialization failed');
-                        return false;
-                    }
-                }
-                
-                // Phase C-2: 自動FBO作成を有効化
-                this.rasterLayer.autoCreateFBO = true;
-                this.rasterLayer.enableOptimization = this.enableOptimization;
-                
-                console.log('✅ [WebGL2DrawingLayer] RasterLayer initialized with optimization');
-            } else {
-                console.error('[WebGL2DrawingLayer] window.RasterLayer not found');
+            // ================================================================
+            // ステップ3: RasterLayer準備（Phase C-0.1 修正）
+            // ================================================================
+            console.log('[WebGL2DrawingLayer] Step 3: Preparing RasterLayer...');
+
+            if (!window.RasterLayer) {
+                console.error('[WebGL2DrawingLayer] ❌ window.RasterLayer not found');
                 console.error('[WebGL2DrawingLayer] Available globals:', Object.keys(window).filter(k => k.includes('Raster')));
                 return false;
             }
+
+            this.rasterLayer = window.RasterLayer;
+
+            // 🔧 Phase C-0.1: 初期化は core-initializer.js で行われる
+            // ここでは参照のみ保持
+            console.log('[WebGL2DrawingLayer] ✅ Step 3 completed: RasterLayer reference obtained');
+            console.log('[WebGL2DrawingLayer]    - Initialization will be done by core-initializer');
             
-            // BrushStamp初期化
+            // ================================================================
+            // ステップ4: BrushStamp初期化
+            // ================================================================
+            console.log('[WebGL2DrawingLayer] Step 4: Initializing BrushStamp...');
+
             if (window.BrushStamp) {
                 window.BrushStamp.initialize(this.gl);
-                console.log('✅ [WebGL2DrawingLayer] BrushStamp initialized');
+                console.log('[WebGL2DrawingLayer] ✅ Step 4 completed: BrushStamp initialized');
+            } else {
+                console.warn('[WebGL2DrawingLayer] ⚠️  BrushStamp not found');
             }
             
-            // TextureBridge初期化
+            // ================================================================
+            // ステップ5: TextureBridge初期化
+            // ================================================================
             if (window.GLTextureBridge) {
                 this.textureBridge = window.GLTextureBridge;
-                console.log('✅ [WebGL2DrawingLayer] TextureBridge ready');
+                console.log('[WebGL2DrawingLayer] ✅ Step 5 completed: TextureBridge ready');
+            } else {
+                console.warn('[WebGL2DrawingLayer] ⚠️  GLTextureBridge not found');
             }
             
-            // ディスプレイシェーダー初期化
+            // ================================================================
+            // ステップ6: ディスプレイシェーダー初期化
+            // ================================================================
+            console.log('[WebGL2DrawingLayer] Step 6: Initializing display shader...');
+
             if (!this._initializeDisplayShader()) {
-                console.error('[WebGL2DrawingLayer] Display shader initialization failed');
+                console.error('[WebGL2DrawingLayer] ❌ Display shader initialization failed');
                 return false;
             }
+
+            console.log('[WebGL2DrawingLayer] ✅ Step 6 completed: Display shader initialized');
             
-            // Phase C-3: WebGL設定最適化
+            // ================================================================
+            // ステップ7: WebGL設定最適化
+            // ================================================================
+            console.log('[WebGL2DrawingLayer] Step 7: Applying optimization settings...');
+
             this._applyOptimizationSettings();
+
+            console.log('[WebGL2DrawingLayer] ✅ Step 7 completed: Optimization applied');
             
+            // ================================================================
+            // 初期化完了
+            // ================================================================
             this.initialized = true;
-            console.log('✅ [WebGL2DrawingLayer] Initialized', { width, height });
+            console.log('[WebGL2DrawingLayer] 🎉 Initialization completed successfully');
+            console.log('[WebGL2DrawingLayer]    - Canvas: ', { width, height });
+            console.log('[WebGL2DrawingLayer]    - GL Context: OK');
+            console.log('[WebGL2DrawingLayer]    - RasterLayer: referenced (init by core-initializer)');
+            console.log('[WebGL2DrawingLayer]    - Display shader: OK');
+
             return true;
         }
 
@@ -188,7 +218,9 @@
             // ヒント設定
             gl.hint(gl.FRAGMENT_SHADER_DERIVATIVE_HINT, gl.NICEST);
             
-            console.log('[WebGL2DrawingLayer] ✅ Optimization settings applied');
+            console.log('[WebGL2DrawingLayer]    - Blend mode: SRC_ALPHA, ONE_MINUS_SRC_ALPHA');
+            console.log('[WebGL2DrawingLayer]    - Depth test: disabled');
+            console.log('[WebGL2DrawingLayer]    - Scissor test: disabled');
         }
 
         // ================================================================================
@@ -253,7 +285,10 @@
             
             gl.bindVertexArray(null);
             
-            console.log('[WebGL2DrawingLayer] ✅ Display shader initialized');
+            console.log('[WebGL2DrawingLayer]    - Vertex shader: compiled');
+            console.log('[WebGL2DrawingLayer]    - Fragment shader: compiled');
+            console.log('[WebGL2DrawingLayer]    - VAO/VBO: created');
+
             return true;
         }
 
@@ -263,7 +298,7 @@
 
         setPixiApp(pixiApp) {
             this.pixiApp = pixiApp;
-            console.log('✅ [WebGL2DrawingLayer] Pixi.js app linked');
+            console.log('[WebGL2DrawingLayer] ✅ Pixi.js app linked');
         }
 
         // ================================================================================
@@ -558,7 +593,7 @@
             console.groupEnd();
         }
 
-        // ================================================================================
+// ================================================================================
         // エクスポート用レンダリング（Phase C-3: 最適化版）
         // ================================================================================
 
@@ -666,11 +701,9 @@
     // ================================================================================
     window.WebGL2DrawingLayer = WebGL2DrawingLayer;
 
-    console.log('✅ webgl2-drawing-layer.js Phase C完全版 loaded');
-    console.log('   🔥 C-1: WebGL2描画パイプライン完全統合');
-    console.log('   ✅ C-2: RasterLayer統合強化（自動FBO作成）');
-    console.log('   ✅ C-3: パフォーマンス最適化');
-    console.log('   ✅ C-3: 高性能モード・アンチエイリアス有効化');
-    console.log('   ✅ C-3: FPS測定・診断機能');
+    console.log('✅ webgl2-drawing-layer.js Phase C-0.1 loaded');
+    console.log('   🔧 C-0.1: RasterLayer初期化フロー修正');
+    console.log('   🔧 C-0.1: 外部GLコンテキスト注入方式対応');
+    console.log('   ✅ Phase C完全実装継承');
 
 })();
