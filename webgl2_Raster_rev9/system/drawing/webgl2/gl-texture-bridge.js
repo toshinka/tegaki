@@ -1,22 +1,22 @@
 /**
  * ============================================================================
  * ファイル名: system/drawing/webgl2/gl-texture-bridge.js
- * 責務: WebGL2 Texture ↔ PIXI.Texture 変換（完全分離版）
- * Phase: C-0 WebGL2/PixiJS完全分離アーキテクチャ
+ * 責務: WebGL2 Texture ↔ PIXI.Texture 変換（PixiJS v8対応完全版）
+ * Phase: C-0.5 PixiJS v8 API完全対応
  * 依存: PixiJS v8
  * 親依存: webgl2-drawing-layer.js, raster-brush-core.js
  * 子依存: なし
- * 公開API: createPixiTextureFromGL(), updatePixiTexture()
+ * 公開API: initialize(), createPixiTextureFromGL(), updatePixiTexture()
  * イベント発火: なし
  * イベント受信: なし
  * グローバル登録: window.GLTextureBridge
- * 実装状態: 🆕 Phase C-0 完全分離版
+ * 実装状態: 🔧 Phase C-0.5 PixiJS v8 API対応
  * 
- * 【重要な設計変更】
- * - WebGL2テクスチャをPixiJS Spriteに安全に変換
- * - GLコンテキスト競合を完全回避
- * - Y軸反転処理を正確に実装
- * - メモリリーク防止の徹底
+ * 【Phase C-0.5 重要な変更】
+ * - PixiJS v8 の新しいテクスチャAPI対応
+ * - PIXI.FORMATS → 削除（v8では不要）
+ * - PIXI.Texture.fromBuffer → 新しい方式に変更
+ * - Canvas経由のフォールバック実装
  * ============================================================================
  */
 
@@ -57,7 +57,7 @@ class GLTextureBridge {
   }
 
   // ============================================================================
-  // WebGL2 Texture → PIXI.Texture 変換
+  // WebGL2 Texture → PIXI.Texture 変換（PixiJS v8対応）
   // ============================================================================
 
   /**
@@ -125,20 +125,16 @@ class GLTextureBridge {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.deleteFramebuffer(tempFBO);
 
-      // Yaxis反転（WebGLとPixiJSの座標系の違いを吸収）
+      // Y軸反転（WebGLとPixiJSの座標系の違いを吸収）
       const flippedPixels = this._flipTextureY(pixels, width, height);
 
-      // PixiJS Textureを作成
-      const pixiTexture = PIXI.Texture.fromBuffer(
-        flippedPixels,
-        width,
-        height,
-        {
-          format: PIXI.FORMATS.RGBA,
-          type: PIXI.TYPES.UNSIGNED_BYTE,
-          alphaMode: PIXI.ALPHA_MODES.PREMULTIPLY_ALPHA
-        }
-      );
+      // 🔧 Phase C-0.5: PixiJS v8 対応のテクスチャ作成
+      // Canvas経由でテクスチャ作成（v8で最も安全な方法）
+      const pixiTexture = this._createTextureFromPixels(flippedPixels, width, height);
+
+      if (!pixiTexture) {
+        throw new Error('Failed to create PixiJS texture');
+      }
 
       // キャッシュに登録
       if (layerId) {
@@ -159,6 +155,41 @@ class GLTextureBridge {
       console.error('[GLTextureBridge] ❌ Failed to create Pixi texture:', error);
       return null;
     }
+  }
+
+  /**
+   * 🔧 Phase C-0.5: PixelデータからPixiJS Textureを作成（v8対応）
+   * @private
+   * @param {Uint8Array} pixels - RGBAピクセルデータ
+   * @param {number} width - 幅
+   * @param {number} height - 高さ
+   * @returns {PIXI.Texture}
+   */
+  _createTextureFromPixels(pixels, width, height) {
+    // Canvas経由でテクスチャ作成（PixiJS v8で最も確実な方法）
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Failed to get 2D context');
+    }
+
+    // ImageDataを作成
+    const imageData = ctx.createImageData(width, height);
+    imageData.data.set(pixels);
+    
+    // Canvasに描画
+    ctx.putImageData(imageData, 0, 0);
+
+    // PixiJS v8: Canvas から Texture を作成
+    const pixiTexture = PIXI.Texture.from(canvas, {
+      scaleMode: PIXI.SCALE_MODES.LINEAR,
+      resolution: 1
+    });
+
+    return pixiTexture;
   }
 
   /**
@@ -199,24 +230,27 @@ class GLTextureBridge {
       // Y軸反転
       const flippedPixels = this._flipTextureY(pixels, width, height);
 
-      // 既存のPixi Textureを更新
+      // 🔧 Phase C-0.5: 既存テクスチャを破棄して新規作成
+      // PixiJS v8では動的更新より再作成の方が確実
       const cached = this.textureCache.get(layerId);
-      const pixiTexture = cached.pixiTexture;
-
-      // BaseTextureのリソースを更新
-      if (pixiTexture && pixiTexture.baseTexture && pixiTexture.baseTexture.resource) {
-        pixiTexture.baseTexture.resource.data = flippedPixels;
-        pixiTexture.baseTexture.resource.update();
+      
+      // 古いテクスチャを破棄
+      if (cached.pixiTexture) {
+        cached.pixiTexture.destroy(true);
       }
 
-      // GLテクスチャ参照を更新
+      // 新しいテクスチャ作成
+      const newPixiTexture = this._createTextureFromPixels(flippedPixels, width, height);
+
+      // キャッシュ更新
       cached.glTexture = glTexture;
+      cached.pixiTexture = newPixiTexture;
 
       if (this.debug) {
         console.log(`[GLTextureBridge] ✅ Texture updated: ${layerId}`);
       }
 
-      return pixiTexture;
+      return newPixiTexture;
 
     } catch (error) {
       console.error(`[GLTextureBridge] ❌ Failed to update texture ${layerId}:`, error);
@@ -401,9 +435,8 @@ if (!window.GLTextureBridge) {
   console.log('[GLTextureBridge] ✅ Global instance registered');
 }
 
-console.log('✅ gl-texture-bridge.js Phase C-0 loaded (完全分離版)');
-console.log('   ✅ C-0: WebGL2 Texture → PIXI.Texture 安全変換');
-console.log('   ✅ C-0: GLコンテキスト競合完全回避');
-console.log('   ✅ C-0: Y軸反転処理正確実装');
-console.log('   ✅ C-0: メモリリーク防止徹底');
-console.log('   ✅ Phase C-1全機能継承');
+console.log('✅ gl-texture-bridge.js Phase C-0.5 loaded');
+console.log('   🔧 C-0.5: PixiJS v8 API完全対応');
+console.log('   🔧 C-0.5: Canvas経由のテクスチャ作成');
+console.log('   🔧 C-0.5: PIXI.FORMATS削除対応');
+console.log('   ✅ Phase C-0全機能継承');
