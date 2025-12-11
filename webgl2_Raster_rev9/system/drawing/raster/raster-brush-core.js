@@ -3,6 +3,11 @@
  * ファイル名: system/drawing/raster/raster-brush-core.js
  * 責務: ラスターブラシの中核実装 - WebGL2 テクスチャ直接描画
  * 
+ * 【Phase C-0.2: FBO自動作成修正 + GLステート完全隔離】
+ * 🔧 getFramebuffer() → getOrCreateLayer() 修正
+ * 🔧 WebGLステート保存/復元の完全実装
+ * 🔧 PixiJSとの競合を完全回避
+ * 
  * 【Phase C-1: WebGL2描画パイプライン完全実装】
  * 🔥 WebGL2 Framebuffer への直接描画
  * 🔥 シェーダーベースのブラシスタンプ描画
@@ -60,6 +65,11 @@
             this.currentLayerTexture = null;
             
             // ================================================================================
+            // 🔧 Phase C-0.2: GLステート保存
+            // ================================================================================
+            this.savedGLState = null;
+            
+            // ================================================================================
             // ストローク管理
             // ================================================================================
             this.currentStroke = null;
@@ -73,7 +83,7 @@
             this.settingsManager = null;
             
             // ================================================================================
-            // Phase C-1: Pixi統合（表示用）
+            // Phase C-1: Pixi統合(表示用)
             // ================================================================================
             this.currentSprite = null;
             this.currentTexture = null;
@@ -209,7 +219,7 @@
                 u_eraser: gl.getUniformLocation(this.brushProgram, 'u_eraser')
             };
             
-            // 頂点バッファ（ビルボード用四角形）
+            // 頂点バッファ(ビルボード用四角形)
             const vertices = new Float32Array([
                 -1, -1,  0, 0,
                  1, -1,  1, 0,
@@ -251,7 +261,128 @@
         }
 
         // ================================================================================
-        // Phase C-1: ストローク開始 - WebGL2 FBO描画
+        // 🔧 Phase C-0.2: GLステート保存/復元
+        // ================================================================================
+
+        /**
+         * WebGLステート保存（描画前に必ず呼ぶ）
+         * @private
+         */
+        _saveGLState() {
+            const gl = this.gl;
+            
+            try {
+                this.savedGLState = {
+                    // フレームバッファ
+                    framebuffer: gl.getParameter(gl.FRAMEBUFFER_BINDING),
+                    renderbuffer: gl.getParameter(gl.RENDERBUFFER_BINDING),
+                    
+                    // ビューポート
+                    viewport: gl.getParameter(gl.VIEWPORT),
+                    
+                    // プログラム
+                    program: gl.getParameter(gl.CURRENT_PROGRAM),
+                    
+                    // VAO
+                    vao: gl.getParameter(gl.VERTEX_ARRAY_BINDING),
+                    
+                    // バッファ
+                    arrayBuffer: gl.getParameter(gl.ARRAY_BUFFER_BINDING),
+                    elementArrayBuffer: gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING),
+                    
+                    // テクスチャ
+                    activeTexture: gl.getParameter(gl.ACTIVE_TEXTURE),
+                    texture2D: gl.getParameter(gl.TEXTURE_BINDING_2D),
+                    textureCubeMap: gl.getParameter(gl.TEXTURE_BINDING_CUBE_MAP),
+                    
+                    // ブレンド
+                    blend: gl.getParameter(gl.BLEND),
+                    blendSrcRGB: gl.getParameter(gl.BLEND_SRC_RGB),
+                    blendDstRGB: gl.getParameter(gl.BLEND_DST_RGB),
+                    blendSrcAlpha: gl.getParameter(gl.BLEND_SRC_ALPHA),
+                    blendDstAlpha: gl.getParameter(gl.BLEND_DST_ALPHA),
+                    blendEquationRGB: gl.getParameter(gl.BLEND_EQUATION_RGB),
+                    blendEquationAlpha: gl.getParameter(gl.BLEND_EQUATION_ALPHA),
+                    
+                    // その他
+                    cullFace: gl.getParameter(gl.CULL_FACE),
+                    depthTest: gl.getParameter(gl.DEPTH_TEST),
+                    scissorTest: gl.getParameter(gl.SCISSOR_TEST),
+                    stencilTest: gl.getParameter(gl.STENCIL_TEST)
+                };
+                
+                if (this.debugMode) {
+                    console.log('[RasterBrushCore] GL state saved:', this.savedGLState);
+                }
+            } catch (error) {
+                console.error('[RasterBrushCore] Failed to save GL state:', error);
+                this.savedGLState = null;
+            }
+        }
+
+        /**
+         * WebGLステート復元（描画後に必ず呼ぶ）
+         * @private
+         */
+        _restoreGLState() {
+            if (!this.savedGLState) return;
+            
+            const gl = this.gl;
+            const state = this.savedGLState;
+            
+            try {
+                // 🔧 C-0.3: プログラムは復元しない（PixiJSに任せる）
+                // gl.useProgram(state.program); // ← これがエラーの原因
+                gl.useProgram(null); // nullに戻してPixiJSに再設定させる
+                
+                // フレームバッファ復元
+                gl.bindFramebuffer(gl.FRAMEBUFFER, state.framebuffer);
+                gl.bindRenderbuffer(gl.RENDERBUFFER, state.renderbuffer);
+                
+                // ビューポート復元
+                if (state.viewport) {
+                    gl.viewport(state.viewport[0], state.viewport[1], state.viewport[2], state.viewport[3]);
+                }
+                
+                // VAOをクリア（PixiJSに任せる）
+                gl.bindVertexArray(null);
+                
+                // バッファをクリア（PixiJSに任せる）
+                gl.bindBuffer(gl.ARRAY_BUFFER, null);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+                
+                // テクスチャをクリア（PixiJSに任せる）
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+                
+                // ブレンド復元
+                if (state.blend) {
+                    gl.enable(gl.BLEND);
+                } else {
+                    gl.disable(gl.BLEND);
+                }
+                gl.blendFuncSeparate(state.blendSrcRGB, state.blendDstRGB, state.blendSrcAlpha, state.blendDstAlpha);
+                gl.blendEquationSeparate(state.blendEquationRGB, state.blendEquationAlpha);
+                
+                // その他復元
+                if (state.cullFace) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
+                if (state.depthTest) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+                if (state.scissorTest) gl.enable(gl.SCISSOR_TEST); else gl.disable(gl.SCISSOR_TEST);
+                if (state.stencilTest) gl.enable(gl.STENCIL_TEST); else gl.disable(gl.STENCIL_TEST);
+                
+                if (this.debugMode) {
+                    console.log('[RasterBrushCore] GL state restored (PixiJS-friendly)');
+                }
+            } catch (error) {
+                console.error('[RasterBrushCore] Failed to restore GL state:', error);
+            } finally {
+                this.savedGLState = null;
+            }
+        }
+
+        // ================================================================================
+        // Phase C-0.2: ストローク開始 - FBO自動作成修正
         // ================================================================================
 
         startStroke(localX, localY, pressure, tiltX, tiltY, twist, settings) {
@@ -284,25 +415,32 @@
             this.maxX = localX + margin;
             this.maxY = localY + margin;
             
-            // Phase C-1: レイヤーFBO取得または作成
+            // 🔧 Phase C-0.2: レイヤーFBO取得または作成
             const activeLayer = this.layerSystem?.getActiveLayer();
             if (!activeLayer || !activeLayer.layerData) {
                 console.error('[RasterBrushCore] No active layer');
+                this._restartPixiRenderer();
                 return false;
             }
             
             const layerId = activeLayer.layerData.id;
             
-            // RasterLayerでFBO確保
-            this.currentLayerFBO = this.rasterLayer.getFramebuffer(layerId);
-            this.currentLayerTexture = this.rasterLayer.getTexture(layerId);
+            // 🔧 C-0.2 重要修正: getFramebuffer() → getOrCreateLayer()
+            const layerData = this.rasterLayer.getOrCreateLayer(layerId);
             
-            if (!this.currentLayerFBO || !this.currentLayerTexture) {
-                console.error('[RasterBrushCore] Failed to get layer FBO');
+            if (!layerData || !layerData.fbo || !layerData.texture) {
+                console.error('[RasterBrushCore] Failed to get/create layer FBO:', {
+                    layerId,
+                    layerData
+                });
+                this._restartPixiRenderer();
                 return false;
             }
             
-            console.log('[RasterBrushCore] FBO acquired:', {
+            this.currentLayerFBO = layerData.fbo;
+            this.currentLayerTexture = layerData.texture;
+            
+            console.log('[RasterBrushCore] ✅ FBO acquired/created:', {
                 layerId,
                 fbo: this.currentLayerFBO,
                 texture: this.currentLayerTexture
@@ -327,28 +465,41 @@
 
         _createDisplaySprite(localX, localY, activeLayer) {
             const gl = this.gl;
+            const layerId = activeLayer.layerData.id;
+            const width = this.rasterLayer.canvasWidth || 1024;
+            const height = this.rasterLayer.canvasHeight || 1024;
             
-            // WebGLTexture → PIXI.Texture変換
+            // 🔧 Phase C-0.3: GLTextureBridge API修正
             if (window.GLTextureBridge && this.currentLayerTexture) {
                 try {
-                    this.currentTexture = window.GLTextureBridge.createTextureFromGL(
-                        gl,
-                        this.currentLayerTexture
+                    // Phase C-0で変更されたAPIシグネチャに対応
+                    this.currentTexture = window.GLTextureBridge.createPixiTextureFromGL(
+                        this.currentLayerTexture,  // glTexture
+                        gl,                        // gl context
+                        width,                     // width
+                        height,                    // height
+                        layerId                    // layerId (cache key)
                     );
+                    
+                    if (!this.currentTexture) {
+                        throw new Error('GLTextureBridge returned null');
+                    }
+                    
+                    console.log('[RasterBrushCore] ✅ GLTextureBridge conversion successful');
                 } catch (error) {
                     console.warn('[RasterBrushCore] GLTextureBridge conversion failed:', error);
                     
                     // フォールバック: 空のテクスチャ作成
                     const canvas = document.createElement('canvas');
-                    canvas.width = this.rasterLayer.canvasWidth || 1024;
-                    canvas.height = this.rasterLayer.canvasHeight || 1024;
+                    canvas.width = width;
+                    canvas.height = height;
                     this.currentTexture = PIXI.Texture.from(canvas);
                 }
             } else {
                 // フォールバック
                 const canvas = document.createElement('canvas');
-                canvas.width = this.rasterLayer.canvasWidth || 1024;
-                canvas.height = this.rasterLayer.canvasHeight || 1024;
+                canvas.width = width;
+                canvas.height = height;
                 this.currentTexture = PIXI.Texture.from(canvas);
             }
             
@@ -433,7 +584,7 @@
         }
 
         // ================================================================================
-        // Phase C-1: WebGL2 FBOへブラシスタンプ描画
+        // 🔧 Phase C-0.2: WebGL2 FBOへブラシスタンプ描画 - GLステート完全隔離
         // ================================================================================
 
         _drawStampToFBO(localX, localY, pressure, tiltX, tiltY, twist, settings) {
@@ -444,12 +595,8 @@
                 return;
             }
             
-            // 🔥 デバッグ: WebGLステート確認
-            const currentProgram = gl.getParameter(gl.CURRENT_PROGRAM);
-            if (currentProgram && currentProgram !== this.brushProgram) {
-                console.warn('[RasterBrushCore] Program mismatch detected, resetting...');
-                gl.useProgram(null);
-            }
+            // 🔧 C-0.2: GLステート保存（PixiJSの状態を完全に退避）
+            this._saveGLState();
             
             // Phase C-1: FBOにバインド
             gl.bindFramebuffer(gl.FRAMEBUFFER, this.currentLayerFBO);
@@ -524,7 +671,7 @@
             const g = ((baseColor >> 8) & 0xFF) / 255.0;
             const b = (baseColor & 0xFF) / 255.0;
             
-            // 回転角度計算（tiltX, tiltY, twist から）
+            // 回転角度計算(tiltX, tiltY, twist から)
             let rotation = 0;
             if (twist !== undefined && twist !== 0) {
                 rotation = twist * Math.PI / 180.0;
@@ -569,23 +716,11 @@
             // 描画
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
             
-            // クリーンアップ - 🔥 Phase C-1: WebGLステートを完全にリセット
-            gl.bindVertexArray(null);
-            gl.bindTexture(gl.TEXTURE_2D, null);
-            gl.useProgram(null); // プログラムのバインド解除
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null); // 🔥 最重要: FBOをnullに戻す
-            gl.disable(gl.BLEND); // ブレンドモード解除
-            
-            // 🔥 追加: すべてのテクスチャユニットをクリア
-            for (let i = 0; i < 8; i++) {
-                gl.activeTexture(gl.TEXTURE0 + i);
-                gl.bindTexture(gl.TEXTURE_2D, null);
-            }
-            gl.activeTexture(gl.TEXTURE0); // デフォルトに戻す
-            
             // Phase C-3: 即座にコマンド実行
             gl.flush();
-            gl.finish(); // 🔥 追加: すべてのコマンドの完了を待つ
+            
+            // 🔧 C-0.2: GLステート復元（PixiJSの状態を完全に戻す）
+            this._restoreGLState();
         }
 
         // ================================================================================
@@ -600,45 +735,6 @@
             if (this.debugMode) {
                 console.log('[RasterBrushCore] Texture update deferred until finalize');
             }
-            
-            return;
-            
-            /* 以下は finalizeStroke() で実行
-            if (!this.currentSprite || !this.currentLayerTexture) {
-                return;
-            }
-            
-            const gl = this.gl;
-            
-            try {
-                // WebGLTexture → PIXI.Texture 更新
-                if (window.GLTextureBridge) {
-                    const newTexture = window.GLTextureBridge.createTextureFromGL(
-                        gl,
-                        this.currentLayerTexture
-                    );
-                    
-                    if (newTexture) {
-                        const oldTexture = this.currentTexture;
-                        this.currentTexture = newTexture;
-                        this.currentSprite.texture = newTexture;
-                        
-                        // 古いテクスチャを破棄
-                        if (oldTexture) {
-                            setTimeout(() => {
-                                try {
-                                    oldTexture.destroy(false);
-                                } catch (e) {
-                                    // エラー無視
-                                }
-                            }, 100);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.warn('[RasterBrushCore] Texture update failed:', error);
-            }
-            */
         }
 
         // ================================================================================
@@ -654,6 +750,71 @@
             if (this.debugMode && this.currentLayerFBO) {
                 console.log('[RasterBrushCore] FBO rendering in progress...');
             }
+        }
+
+        // ================================================================================
+        // 🔧 Phase C-0.2: PixiJSレンダラー再起動ヘルパー
+        // ================================================================================
+
+        /**
+         * PixiJSレンダラーを安全に再起動
+         * 🔧 Phase C-0.6: シェーダーシステムの強制リセット追加
+         * @private
+         */
+        _restartPixiRenderer() {
+            if (!window.pixiApp || !window.pixiApp.ticker) {
+                return;
+            }
+            
+            const gl = this.gl;
+            const renderer = window.pixiApp.renderer;
+            
+            // GLステートをクリーンにリセット
+            if (gl) {
+                try {
+                    gl.useProgram(null);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    gl.bindVertexArray(null);
+                    
+                    for (let i = 0; i < 8; i++) {
+                        gl.activeTexture(gl.TEXTURE0 + i);
+                        gl.bindTexture(gl.TEXTURE_2D, null);
+                    }
+                    gl.activeTexture(gl.TEXTURE0);
+                } catch (e) {
+                    // エラー無視
+                }
+            }
+            
+            // 🔧 Phase C-0.6: PixiJSのシェーダーシステムを強制リセット
+            if (renderer && renderer.shader) {
+                try {
+                    // シェーダーシステムのリセット
+                    if (renderer.shader.reset) {
+                        renderer.shader.reset();
+                    }
+                    
+                    // バッチシステムのリセット
+                    if (renderer.batch && renderer.batch.reset) {
+                        renderer.batch.reset();
+                    }
+                    
+                    // ステートシステムのリセット
+                    if (renderer.state && renderer.state.reset) {
+                        renderer.state.reset();
+                    }
+                    
+                    console.log('[RasterBrushCore] 🔧 PixiJS shader system reset');
+                } catch (e) {
+                    console.warn('[RasterBrushCore] Shader reset failed:', e);
+                }
+            }
+            
+            // Tickerを再開
+            window.pixiApp.ticker.start();
+            console.log('[RasterBrushCore] PixiJS ticker restarted (recovery)');
         }
 
         // ================================================================================
@@ -674,10 +835,20 @@
                 try {
                     console.log('[RasterBrushCore] Finalizing texture update...');
                     
+                    // 🔧 Phase C-0.3: 正しいAPI呼び出し
                     if (window.GLTextureBridge) {
-                        const newTexture = window.GLTextureBridge.createTextureFromGL(
+                        const activeLayer = this.layerSystem?.getActiveLayer();
+                        const layerId = activeLayer?.layerData?.id;
+                        const width = this.rasterLayer.canvasWidth || 1024;
+                        const height = this.rasterLayer.canvasHeight || 1024;
+                        
+                        // updatePixiTexture() を使用（既存テクスチャ更新）
+                        const newTexture = window.GLTextureBridge.updatePixiTexture(
+                            layerId,
+                            this.currentLayerTexture,
                             gl,
-                            this.currentLayerTexture
+                            width,
+                            height
                         );
                         
                         if (newTexture) {
@@ -685,18 +856,12 @@
                             this.currentTexture = newTexture;
                             this.currentSprite.texture = newTexture;
                             
-                            console.log('[RasterBrushCore] Texture updated successfully');
+                            console.log('[RasterBrushCore] ✅ Texture updated successfully');
                             
-                            // 古いテクスチャを破棄
-                            if (oldTexture) {
-                                setTimeout(() => {
-                                    try {
-                                        oldTexture.destroy(false);
-                                    } catch (e) {
-                                        // エラー無視
-                                    }
-                                }, 100);
-                            }
+                            // 古いテクスチャを破棄（updatePixiTextureで管理されているのでスキップ）
+                            // if (oldTexture) { ... }
+                        } else {
+                            console.warn('[RasterBrushCore] ⚠️  updatePixiTexture returned null');
                         }
                     }
                 } catch (error) {
@@ -722,53 +887,20 @@
                 };
             }
             
-            // 🔥 Phase C-1: PixiJSレンダラーを再開
-            if (window.pixiApp && window.pixiApp.renderer) {
-                const renderer = window.pixiApp.renderer;
-                const gl = this.gl;
-                
-                // PixiJS v8: 最小限のステートリセット
+            // 🔧 C-0.2: PixiJSレンダラーを再起動
+            this._restartPixiRenderer();
+            
+            // 🔥 重要: 次のフレームでPixiJSに描画させる(すぐには描画しない)
+            setTimeout(() => {
                 try {
-                    // WebGLステートを強制的にクリア
-                    gl.useProgram(null);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-                    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-                    
-                    // すべてのテクスチャユニットをクリア
-                    for (let i = 0; i < 16; i++) {
-                        gl.activeTexture(gl.TEXTURE0 + i);
-                        gl.bindTexture(gl.TEXTURE_2D, null);
-                        gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+                    if (window.pixiApp && window.pixiApp.renderer) {
+                        window.pixiApp.renderer.render(window.pixiApp.stage);
+                        console.log('[RasterBrushCore] Deferred PixiJS render completed');
                     }
-                    gl.activeTexture(gl.TEXTURE0);
-                    
-                    // VAOをクリア
-                    gl.bindVertexArray(null);
-                    
-                    console.log('[RasterBrushCore] WebGL state fully cleared');
                 } catch (e) {
-                    console.warn('[RasterBrushCore] State clear failed:', e);
+                    console.warn('[RasterBrushCore] Deferred render failed:', e);
                 }
-                
-                // Tickerを再開
-                window.pixiApp.ticker.start();
-                
-                // 🔥 重要: 次のフレームでPixiJSに描画させる（すぐには描画しない）
-                setTimeout(() => {
-                    try {
-                        if (renderer && renderer.render) {
-                            renderer.render(window.pixiApp.stage);
-                            console.log('[RasterBrushCore] Deferred PixiJS render completed');
-                        }
-                    } catch (e) {
-                        console.warn('[RasterBrushCore] Deferred render failed:', e);
-                    }
-                }, 16); // 1フレーム待つ
-                
-                console.log('[RasterBrushCore] PixiJS ticker restarted');
-            }
+            }, 16); // 1フレーム待つ
             
             // クリーンアップ
             this.currentStroke = null;
@@ -812,44 +944,19 @@
             this.isAddedToLayer = false;
             this.targetLayer = null;
             
-            // 🔥 Phase C-1: PixiJSレンダラーを再開
-            if (window.pixiApp && window.pixiApp.renderer) {
-                const renderer = window.pixiApp.renderer;
-                const gl = this.gl;
-                
+            // 🔧 C-0.2: PixiJSレンダラーを再起動
+            this._restartPixiRenderer();
+            
+            // 遅延レンダリング
+            setTimeout(() => {
                 try {
-                    // WebGLステートをクリア
-                    gl.useProgram(null);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-                    gl.bindVertexArray(null);
-                    
-                    for (let i = 0; i < 8; i++) {
-                        gl.activeTexture(gl.TEXTURE0 + i);
-                        gl.bindTexture(gl.TEXTURE_2D, null);
+                    if (window.pixiApp && window.pixiApp.renderer) {
+                        window.pixiApp.renderer.render(window.pixiApp.stage);
                     }
-                    gl.activeTexture(gl.TEXTURE0);
                 } catch (e) {
-                    console.warn('[RasterBrushCore] State clear failed:', e);
+                    // エラー無視
                 }
-                
-                // Tickerを再開
-                window.pixiApp.ticker.start();
-                
-                // 遅延レンダリング
-                setTimeout(() => {
-                    try {
-                        if (renderer && renderer.render) {
-                            renderer.render(window.pixiApp.stage);
-                        }
-                    } catch (e) {
-                        // エラー無視
-                    }
-                }, 16);
-                
-                console.log('[RasterBrushCore] PixiJS ticker restarted (cancel)');
-            }
+            }, 16);
         }
 
         // ================================================================================
@@ -866,7 +973,7 @@
         
         getDebugInfo() {
             return {
-                version: 'Phase C-1: WebGL2 Pipeline',
+                version: 'Phase C-0.2: FBO Auto-Create + GL State Isolation',
                 isDrawing: this.isDrawing,
                 hasGL: this.gl !== null,
                 hasRasterLayer: this.rasterLayer !== null,
@@ -924,12 +1031,13 @@
 
     window.RasterBrushCore = RasterBrushCore;
 
-    console.log('✅ raster-brush-core.js Phase C-1 loaded (WebGL2完全実装)');
-    console.log('   🔥 C-1: WebGL2 Framebufferへの直接描画');
-    console.log('   🔥 C-1: シェーダーベースのブラシスタンプ描画');
-    console.log('   🔥 C-1: 真のGPU加速ラスター描画');
-    console.log('   🔥 C-1: Flow制御・アンチエイリアス実装');
-    console.log('   🔥 C-1: 消しゴム = アルファチャンネル削除');
+    console.log('✅ raster-brush-core.js Phase C-0.6 loaded');
+    console.log('   🔧 C-0.6: PixiJSシェーダーシステム強制リセット');
+    console.log('   🔧 C-0.3: GLTextureBridge API統一修正');
+    console.log('   🔧 C-0.2: getFramebuffer() → getOrCreateLayer() 修正');
+    console.log('   🔧 C-0.2: WebGLステート保存/復元の完全実装');
+    console.log('   🔧 C-0.2: PixiJSとの競合完全回避');
+    console.log('   🔥 C-1: WebGL2完全実装継承');
     console.log('   ✅ Phase A 全機能継承');
 
 })();
