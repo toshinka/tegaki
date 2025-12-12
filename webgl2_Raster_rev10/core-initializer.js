@@ -1,6 +1,11 @@
 /**
- * @file core-initializer.js - Phase C-0.4: GLTextureBridge初期化追加
+ * @file core-initializer.js - Phase Emergency: Ticker制御確立
  * @description アプリケーション初期化シーケンス制御
+ * 
+ * 【Phase Emergency 改修内容】
+ * 🚨 E-3: PixiJS app作成時にautoStart: false設定
+ * 🚨 E-3: 初期化完了後の明示的ticker登録
+ * 🚨 E-3: ticker制御の完全確立
  * 
  * 【Phase C-0.4 改修内容】
  * 🔧 GLTextureBridge.initialize() 呼び出し追加
@@ -11,7 +16,9 @@
 window.CoreInitializer = (function() {
     'use strict';
 
-    // 既存のヘルパー関数群（省略...checkDependencies, buildDOM等は同じ）
+    // ================================================================================
+    // ヘルパー関数群
+    // ================================================================================
     
     function checkDependencies() {
         const dependencies = [
@@ -145,9 +152,9 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
-    // ============================================================
-    // WebGL2初期化（Phase C-0.4: GLTextureBridge初期化追加）
-    // ============================================================
+    // ================================================================================
+    // WebGL2初期化（Phase Emergency: Ticker制御確立）
+    // ================================================================================
     
     /**
      * WebGL2初期化（ラスター版）
@@ -156,7 +163,7 @@ window.CoreInitializer = (function() {
      * @returns {Promise<boolean>}
      */
     async function initializeWebGL2(pixiApp, canvas) {
-        console.log('[WebGL2] 🚀 Starting raster initialization (Phase C-0.4)...');
+        console.log('[WebGL2] 🚀 Starting raster initialization (Phase Emergency)...');
 
         try {
             // 必須チェック
@@ -222,7 +229,7 @@ window.CoreInitializer = (function() {
             }
 
             // ================================================================
-            // 🔧 Phase C-0.4: Step 3.5 - GLTextureBridge初期化
+            // Step 3: GLTextureBridge初期化
             // ================================================================
             console.log('[WebGL2] 🔧 Step 3.5: Initializing GLTextureBridge...');
 
@@ -262,15 +269,36 @@ window.CoreInitializer = (function() {
             }
 
             // ================================================================
+            // 🚨 Phase Emergency: Step 5.5 - Ticker制御確認
+            // ================================================================
+            console.log('[WebGL2] 🚨 Step 5.5: Verifying ticker control...');
+
+            if (pixiApp && pixiApp.ticker) {
+                // tickerが正常に動作しているか確認
+                const tickerRunning = pixiApp.ticker.started;
+                console.log('[WebGL2] 🚨 Ticker status:', tickerRunning ? 'Running' : 'Stopped');
+                
+                // WebGL2DrawingLayerの制御メソッドが利用可能か確認
+                if (typeof webgl2Layer.disablePixiAutoRender === 'function' &&
+                    typeof webgl2Layer.enablePixiAutoRender === 'function') {
+                    console.log('[WebGL2] ✅ Step 5.5 completed: Ticker control methods ready');
+                } else {
+                    console.error('[WebGL2] ❌ Ticker control methods not found');
+                    return false;
+                }
+            }
+
+            // ================================================================
             // Step 6: モジュールステータス確認
             // ================================================================
             const modules = {
                 'WebGL2DrawingLayer': webgl2Layer.initialized,
                 'RasterLayer': window.RasterLayer?.initialized,
-                'GLTextureBridge': window.GLTextureBridge?.initialized,  // 🔧 追加
+                'GLTextureBridge': window.GLTextureBridge?.initialized,
                 'BrushStamp': !!window.BrushStamp,
                 'BrushInterpolator': !!window.BrushInterpolator,
-                'RasterBrushCore': window.rasterBrushCore?.gl !== null
+                'RasterBrushCore': window.rasterBrushCore?.gl !== null,
+                '🚨 Ticker Control': typeof webgl2Layer.disablePixiAutoRender === 'function'
             };
 
             console.log('[WebGL2] 📦 Module status:');
@@ -293,14 +321,15 @@ window.CoreInitializer = (function() {
 
             window.TegakiDebug.webgl2Layer = webgl2Layer;
             window.TegakiDebug.rasterLayer = window.RasterLayer;
-            window.TegakiDebug.glTextureBridge = window.GLTextureBridge;  // 🔧 追加
+            window.TegakiDebug.glTextureBridge = window.GLTextureBridge;
             window.TegakiDebug.rasterBrushCore = window.rasterBrushCore;
             window.TegakiDebug.gl = gl;
 
             console.log('[WebGL2] ✅ Debug objects registered');
 
-            console.log('[WebGL2] 🎉 Raster system initialized successfully');
-            console.log('[WebGL2]    - GLTextureBridge ready for texture conversion');
+            console.log('[WebGL2] 🎉 Raster system initialized successfully (Phase Emergency)');
+            console.log('[WebGL2]    🚨 PixiJS Ticker control established');
+            console.log('[WebGL2]    - GLTextureBridge ready');
             console.log('[WebGL2]    - Ready for drawing');
 
             return true;
@@ -312,9 +341,9 @@ window.CoreInitializer = (function() {
         }
     }
 
-    // ============================================================
+    // ================================================================================
     // DrawingApp クラス
-    // ============================================================
+    // ================================================================================
     
     class DrawingApp {
         constructor() {
@@ -340,7 +369,11 @@ window.CoreInitializer = (function() {
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) throw new Error('Canvas container not found');
             
-            // Pixi.js初期化
+            // ================================================================
+            // 🚨 Phase Emergency: Pixi.js初期化 - autoStart無効化
+            // ================================================================
+            console.log('[DrawingApp] 🚨 Initializing Pixi.js with manual ticker control...');
+
             this.pixiApp = new PIXI.Application();
             const screenWidth = window.innerWidth - 50;
             const screenHeight = window.innerHeight;
@@ -354,7 +387,8 @@ window.CoreInitializer = (function() {
                 autoDensity: true,
                 eventMode: 'static',
                 preference: 'webgl2',
-                powerPreference: 'high-performance'
+                powerPreference: 'high-performance',
+                autoStart: false  // 🚨 Phase Emergency: ticker自動開始を無効化
             });
             
             containerEl.innerHTML = '';
@@ -364,12 +398,7 @@ window.CoreInitializer = (function() {
             
             window.pixiApp = this.pixiApp;
             
-            if (!this.pixiApp.ticker.started) {
-                this.pixiApp.ticker.start();
-                console.log('[DrawingApp] ✅ Pixi Ticker started');
-            }
-            
-            console.log('[DrawingApp] ✅ Resolution:', this.pixiApp.renderer.resolution);
+            console.log('[DrawingApp] 🚨 Pixi.js initialized with autoStart: false');
             
             // CoreEngine初期化
             this.coreEngine = new CoreEngine(this.pixiApp);
@@ -412,8 +441,8 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
-            // 🔧 Phase C-0.4: WebGL2初期化（pixiAppを渡す）
-            console.log('[DrawingApp] 🎨 Initializing WebGL2 (Phase C-0.4)...');
+            // WebGL2初期化
+            console.log('[DrawingApp] 🎨 Initializing WebGL2 (Phase Emergency)...');
 
             if (this.pixiApp && this.pixiApp.canvas) {
                 this.webgl2Enabled = await initializeWebGL2(this.pixiApp, this.pixiApp.canvas);
@@ -436,6 +465,14 @@ window.CoreInitializer = (function() {
                 console.error('[DrawingApp] ❌ Canvas not found');
             }
             
+            // ================================================================
+            // 🚨 Phase Emergency: 初期化完了後にticker明示的開始
+            // ================================================================
+            if (this.pixiApp && this.pixiApp.ticker && !this.pixiApp.ticker.started) {
+                this.pixiApp.ticker.start();
+                console.log('[DrawingApp] 🚨 Pixi Ticker manually started after initialization');
+            }
+            
             // ExportPopup初期化
             this.initializeExportPopup();
             
@@ -449,6 +486,10 @@ window.CoreInitializer = (function() {
             this.updateCanvasInfo();
             this.updateDPRInfo();
             this.startFPSMonitor();
+            
+            console.log('[DrawingApp] 🎉 Application initialized successfully (Phase Emergency)');
+            console.log('[DrawingApp]    🚨 Ticker control: Manual mode');
+            console.log('[DrawingApp]    🚨 autoStart: false → Manual start: true');
             
             return true;
         }
@@ -547,9 +588,9 @@ window.CoreInitializer = (function() {
         }
     }
 
-    // ============================================================
+    // ================================================================================
     // メイン初期化
-    // ============================================================
+    // ================================================================================
     
     async function initialize() {
         checkDependencies();
@@ -572,9 +613,9 @@ window.CoreInitializer = (function() {
         return true;
     }
 
-    // ============================================================
+    // ================================================================================
     // エクスポート
-    // ============================================================
+    // ================================================================================
     
     return {
         initialize,
@@ -585,7 +626,8 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase C-0.4 loaded');
-console.log('   🔧 C-0.4: GLTextureBridge.initialize() 追加');
-console.log('   🔧 C-0.4: 初期化順序最適化');
-console.log('   ✅ Phase C-0.1全機能継承');
+console.log('✅ core-initializer.js Phase Emergency loaded');
+console.log('   🚨 E-3: PixiJS autoStart: false 設定');
+console.log('   🚨 E-3: 初期化完了後の明示的ticker開始');
+console.log('   🚨 E-3: ticker制御の完全確立');
+console.log('   ✅ Phase C-0.4全機能継承');
