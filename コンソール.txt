@@ -49,24 +49,24 @@
     ✅ C-0.1: PixiJSとのGLステート競合完全回避
     ✅ C-0.1: FBO/テクスチャライフサイクル管理強化維持
     ✅ Phase C-0全機能継承
- ✅ raster-brush-core.js Phase C-0.6 loaded
-    🔧 C-0.6: PixiJSシェーダーシステム強制リセット
-    🔧 C-0.3: GLTextureBridge API統一修正
-    🔧 C-0.2: getFramebuffer() → getOrCreateLayer() 修正
-    🔧 C-0.2: WebGLステート保存/復元の完全実装
-    🔧 C-0.2: PixiJSとの競合完全回避
-    🔥 C-1: WebGL2完全実装継承
-    ✅ Phase A 全機能継承
+ ✅ raster-brush-core.js Phase Emergency Rev.2 loaded
+    🚨 Rev.2: PixiJS v8 ticker構造の正確な解析
+    🚨 Rev.2: renderer contextベースのコールバック検出
+    🚨 Rev.2: 全16テクスチャスロットのクリア
+    🚨 Rev.2: PixiJS内部システムの完全リセット
+    🚨 E-1: GL状態機械破壊の完全防止
+    ✅ Phase C 全機能継承
  [GLTextureBridge] ✅ Global instance registered
  ✅ gl-texture-bridge.js Phase C-0.5 loaded
     🔧 C-0.5: PixiJS v8 API完全対応
     🔧 C-0.5: Canvas経由のテクスチャ作成
     🔧 C-0.5: PIXI.FORMATS削除対応
     ✅ Phase C-0全機能継承
- ✅ webgl2-drawing-layer.js Phase C-0.1 loaded
-    🔧 C-0.1: RasterLayer初期化フロー修正
-    🔧 C-0.1: 外部GLコンテキスト注入方式対応
-    ✅ Phase C完全実装継承
+ ✅ webgl2-drawing-layer.js Phase Emergency loaded
+    🚨 E-2: disablePixiAutoRender() / enablePixiAutoRender() 実装
+    🚨 E-2: PixiJS renderコールバック明示的管理
+    🚨 E-2: ticker完全制御インターフェース追加
+    ✅ Phase C-0.1全機能継承
  ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
     ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
  ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
@@ -160,12 +160,14 @@
     🔧 ベクター方式への依存を削除
     ✅ ラスターブラシシステム初期化完了
     ✅ v8.33.0 全機能継承
- ✅ core-initializer.js Phase C-0.4 loaded
-    🔧 C-0.4: GLTextureBridge.initialize() 追加
-    🔧 C-0.4: 初期化順序最適化
-    ✅ Phase C-0.1全機能継承
+ ✅ core-initializer.js Phase Emergency loaded
+    🚨 E-3: PixiJS autoStart: false 設定
+    🚨 E-3: 初期化完了後の明示的ticker開始
+    🚨 E-3: ticker制御の完全確立
+    ✅ Phase C-0.4全機能継承
  🚀 ラスター版 v3.0 起動中...
- [DrawingApp] ✅ Resolution: 2
+ [DrawingApp] 🚨 Initializing Pixi.js with manual ticker control...
+ [DrawingApp] 🚨 Pixi.js initialized with autoStart: false
  [CoreEngine] 🚀 Starting initialization...
  [LayerSystem] 🔍 init() called
  [LayerSystem]   canvasContainer: Z
@@ -194,88 +196,101 @@
  ✅ Popup "album" initialized successfully
  ✅ Popup "resize" initialized successfully
  📊 Popup initialization: 4 ready, 0 deferred
- [DrawingApp] 🎨 Initializing WebGL2 (Phase C-0.4)...
- [WebGL2] 🚀 Starting raster initialization (Phase C-0.4)...
- [WebGL2] 📐 Canvas size: 1644 x 1062
+ [DrawingApp] 🎨 Initializing WebGL2 (Phase Emergency)...
+ [WebGL2] 🚀 Starting raster initialization (Phase Emergency)...
+ [WebGL2] 📐 Canvas size: 1650 x 1068
  [WebGL2] 🎯 Target size: 400 x 400
  [WebGL2] 🔧 Step 1: Initializing WebGL2DrawingLayer...
  [WebGL2DrawingLayer] Step 1: Creating WebGL2 context...
  [WebGL2DrawingLayer] ✅ Step 1 completed: WebGL2 context created
- [WebGL2DrawingLayer]    - High-performance mode enabled
- [WebGL2DrawingLayer]    - Antialiasing enabled
  [WebGL2DrawingLayer] ✅ Step 2 completed: GLContext registered globally
  [WebGL2DrawingLayer] Step 3: Preparing RasterLayer...
  [WebGL2DrawingLayer] ✅ Step 3 completed: RasterLayer reference obtained
- [WebGL2DrawingLayer]    - Initialization will be done by core-initializer
  [WebGL2DrawingLayer] Step 4: Initializing BrushStamp...
  ✅ [BrushStamp] Initialized
  [WebGL2DrawingLayer] ✅ Step 4 completed: BrushStamp initialized
  [WebGL2DrawingLayer] ✅ Step 5 completed: TextureBridge ready
  [WebGL2DrawingLayer] Step 6: Initializing display shader...
- [WebGL2DrawingLayer]    - Vertex shader: compiled
- [WebGL2DrawingLayer]    - Fragment shader: compiled
- [WebGL2DrawingLayer]    - VAO/VBO: created
-webgl2-drawing-layer.js:172 [WebGL2DrawingLayer] ✅ Step 6 completed: Display shader initialized
-webgl2-drawing-layer.js:177 [WebGL2DrawingLayer] Step 7: Applying optimization settings...
-webgl2-drawing-layer.js:221 [WebGL2DrawingLayer]    - Blend mode: SRC_ALPHA, ONE_MINUS_SRC_ALPHA
-webgl2-drawing-layer.js:222 [WebGL2DrawingLayer]    - Depth test: disabled
-webgl2-drawing-layer.js:223 [WebGL2DrawingLayer]    - Scissor test: disabled
-webgl2-drawing-layer.js:181 [WebGL2DrawingLayer] ✅ Step 7 completed: Optimization applied
-webgl2-drawing-layer.js:187 [WebGL2DrawingLayer] 🎉 Initialization completed successfully
-webgl2-drawing-layer.js:188 [WebGL2DrawingLayer]    - Canvas:  Object
-webgl2-drawing-layer.js:189 [WebGL2DrawingLayer]    - GL Context: OK
-webgl2-drawing-layer.js:190 [WebGL2DrawingLayer]    - RasterLayer: referenced (init by core-initializer)
-webgl2-drawing-layer.js:191 [WebGL2DrawingLayer]    - Display shader: OK
-core-initializer.js:193 [WebGL2] ✅ Step 1 completed
-core-initializer.js:203 [WebGL2] ✅ Step 2 completed: GLContext registered
-core-initializer.js:208 [WebGL2] 🔧 Step 3: Initializing RasterLayer...
-raster-layer.js:136 [RasterLayer] ✅ Optimization settings applied
+ [WebGL2DrawingLayer] ✅ Step 6 completed: Display shader initialized
+ [WebGL2DrawingLayer] Step 7: Applying optimization settings...
+ [WebGL2DrawingLayer] ✅ Step 7 completed: Optimization applied
+ [WebGL2DrawingLayer] 🎉 Initialization completed successfully
+ [WebGL2] ✅ Step 1 completed
+ [WebGL2] ✅ Step 2 completed: GLContext registered
+ [WebGL2] 🔧 Step 3: Initializing RasterLayer...
+ [RasterLayer] ✅ Optimization settings applied
 raster-layer.js:104 [RasterLayer] ✅ Initialized (外部GLコンテキスト) Object
-core-initializer.js:221 [WebGL2] ✅ Step 3 completed: RasterLayer initialized
-core-initializer.js:227 [WebGL2] 🔧 Step 3.5: Initializing GLTextureBridge...
+core-initializer.js:228 [WebGL2] ✅ Step 3 completed: RasterLayer initialized
+core-initializer.js:234 [WebGL2] 🔧 Step 3.5: Initializing GLTextureBridge...
 gl-texture-bridge.js:55 [GLTextureBridge] ✅ Initialized with PixiJS app
-core-initializer.js:237 [WebGL2] ✅ Step 3.5 completed: GLTextureBridge initialized
-core-initializer.js:245 [WebGL2] 🔧 Step 4: Initializing RasterBrushCore...
-raster-brush-core.js:119 🔥 [RasterBrushCore] Initializing WebGL2 raster pipeline...
+core-initializer.js:244 [WebGL2] ✅ Step 3.5 completed: GLTextureBridge initialized
+core-initializer.js:252 [WebGL2] 🔧 Step 4: Initializing RasterBrushCore...
+raster-brush-core.js:121 🔥 [RasterBrushCore] Initializing WebGL2 raster pipeline...
 brush-stamp.js:34 ✅ [BrushStamp] Initialized
-raster-brush-core.js:251 ✅ [RasterBrushCore] Brush shader initialized
-raster-brush-core.js:166 ✅ [RasterBrushCore] WebGL2 pipeline initialized
-raster-brush-core.js:167    ✅ RasterLayer: OK
-raster-brush-core.js:168    ✅ BrushStamp: OK
-raster-brush-core.js:169    ✅ BrushInterpolator: OK
-raster-brush-core.js:170    ✅ Shader Program: OK
-raster-brush-core.js:171    ✅ Settings Manager: OK
-core-initializer.js:250 [WebGL2] ✅ Step 4 completed: RasterBrushCore initialized
-webgl2-drawing-layer.js:301 [WebGL2DrawingLayer] ✅ Pixi.js app linked
-core-initializer.js:261 [WebGL2] ✅ Step 5 completed: Pixi.js app linked
-core-initializer.js:276 [WebGL2] 📦 Module status:
-core-initializer.js:279          ✅ WebGL2DrawingLayer: ready
-core-initializer.js:279          ✅ RasterLayer: ready
-core-initializer.js:279          ✅ GLTextureBridge: ready
-core-initializer.js:279          ✅ BrushStamp: ready
-core-initializer.js:279          ✅ BrushInterpolator: ready
-core-initializer.js:279          ✅ RasterBrushCore: ready
-core-initializer.js:300 [WebGL2] ✅ Debug objects registered
-core-initializer.js:302 [WebGL2] 🎉 Raster system initialized successfully
-core-initializer.js:303 [WebGL2]    - GLTextureBridge ready for texture conversion
-core-initializer.js:304 [WebGL2]    - Ready for drawing
-core-initializer.js:420 [DrawingApp] 📊 WebGL2 Result: ✅ SUCCESS
-core-initializer.js:423 [DrawingApp] ✅ Raster drawing system ready
-core-initializer.js:427 [DrawingApp] 📊 RasterLayer: Object
-core-initializer.js:432 [DrawingApp] 📊 GLTextureBridge: Object
+raster-brush-core.js:259 ✅ [RasterBrushCore] Brush shader initialized
+raster-brush-core.js:293 [RasterBrushCore] 🔍 Searching for Pixi render callback...
+raster-brush-core.js:315 [RasterBrushCore] ⚠️  Render callback not found by context match
+_capturePixiRenderCallback @ raster-brush-core.js:315
+raster-brush-core.js:316 [RasterBrushCore] 🔍 Trying alternative detection...
+_capturePixiRenderCallback @ raster-brush-core.js:316
+raster-brush-core.js:332 [RasterBrushCore] 📋 Available callbacks: Array(2)
+raster-brush-core.js:346 [RasterBrushCore] ⚠️⚠️  Using first callback as last resort
+_capturePixiRenderCallback @ raster-brush-core.js:346
+raster-brush-core.js:173 ✅ [RasterBrushCore] WebGL2 pipeline initialized
+raster-brush-core.js:174    ✅ RasterLayer: OK
+raster-brush-core.js:175    ✅ BrushStamp: OK
+raster-brush-core.js:176    ✅ BrushInterpolator: OK
+raster-brush-core.js:177    ✅ Shader Program: OK
+raster-brush-core.js:178    ✅ Settings Manager: OK
+raster-brush-core.js:179    🚨 Pixi Render Callback: Captured
+core-initializer.js:257 [WebGL2] ✅ Step 4 completed: RasterBrushCore initialized
+webgl2-drawing-layer.js:383 [WebGL2DrawingLayer] ✅ Pixi.js app linked
+core-initializer.js:268 [WebGL2] ✅ Step 5 completed: Pixi.js app linked
+core-initializer.js:274 [WebGL2] 🚨 Step 5.5: Verifying ticker control...
+core-initializer.js:279 [WebGL2] 🚨 Ticker status: Stopped
+core-initializer.js:284 [WebGL2] ✅ Step 5.5 completed: Ticker control methods ready
+core-initializer.js:304 [WebGL2] 📦 Module status:
+core-initializer.js:307          ✅ WebGL2DrawingLayer: ready
+core-initializer.js:307          ✅ RasterLayer: ready
+core-initializer.js:307          ✅ GLTextureBridge: ready
+core-initializer.js:307          ✅ BrushStamp: ready
+core-initializer.js:307          ✅ BrushInterpolator: ready
+core-initializer.js:307          ✅ RasterBrushCore: ready
+core-initializer.js:307          ✅ 🚨 Ticker Control: ready
+core-initializer.js:328 [WebGL2] ✅ Debug objects registered
+core-initializer.js:330 [WebGL2] 🎉 Raster system initialized successfully (Phase Emergency)
+core-initializer.js:331 [WebGL2]    🚨 PixiJS Ticker control established
+core-initializer.js:332 [WebGL2]    - GLTextureBridge ready
+core-initializer.js:333 [WebGL2]    - Ready for drawing
+core-initializer.js:449 [DrawingApp] 📊 WebGL2 Result: ✅ SUCCESS
+core-initializer.js:452 [DrawingApp] ✅ Raster drawing system ready
+core-initializer.js:456 [DrawingApp] 📊 RasterLayer: Object
+core-initializer.js:461 [DrawingApp] 📊 GLTextureBridge: Object
+core-initializer.js:473 [DrawingApp] 🚨 Pixi Ticker manually started after initialization
+core-initializer.js:490 [DrawingApp] 🎉 Application initialized successfully (Phase Emergency)
+core-initializer.js:491 [DrawingApp]    🚨 Ticker control: Manual mode
+core-initializer.js:492 [DrawingApp]    🚨 autoStart: false → Manual start: true
 index.html:118 ✅ ラスター版初期化完了
 index.html:122 🎬 Pixi Ticker Status: Object
 popup-manager.js:42 📋 Popup "export" registered (priority: 5)
 popup-manager.js:87 ✅ Popup "export" initialized successfully
-raster-brush-core.js:394 [RasterBrushCore] PixiJS ticker stopped for WebGL2 drawing
-raster-layer.js:277 [RasterLayer] Auto-creating layer: layer_1765415166615_o04rcdccy
-raster-layer.js:232 [RasterLayer] ✅ Layer created: layer_1765415166615_o04rcdccy Object
-raster-brush-core.js:443 [RasterBrushCore] ✅ FBO acquired/created: Object
-raster-brush-core.js:488 [RasterBrushCore] ✅ GLTextureBridge conversion successful
-raster-brush-core.js:836 [RasterBrushCore] Finalizing texture update...
-raster-brush-core.js:859 [RasterBrushCore] ✅ Texture updated successfully
-raster-brush-core.js:809 [RasterBrushCore] 🔧 PixiJS shader system reset
-raster-brush-core.js:817 [RasterBrushCore] PixiJS ticker restarted (recovery)
+raster-brush-core.js:374 [RasterBrushCore] 🚨 Attempting to remove render callback...
+raster-brush-core.js:381 [RasterBrushCore] ⚠️  Callback structure invalid
+_stopPixiTicker @ raster-brush-core.js:381
+raster-brush-core.js:387 [RasterBrushCore] ✅ Ticker.stop() called
+raster-brush-core.js:397 [RasterBrushCore] 🚨 Pixi ticker COMPLETELY stopped
+raster-layer.js:277 [RasterLayer] Auto-creating layer: layer_1765550730724_daao8j3q5
+raster-layer.js:232 [RasterLayer] ✅ Layer created: layer_1765550730724_daao8j3q5 Object
+raster-brush-core.js:392 [RasterBrushCore] 🚨 Ticker stop confirmed (next frame)
+raster-brush-core.js:451 [RasterBrushCore] 🧹 Cleaning GL state...
+raster-brush-core.js:488 [RasterBrushCore] ✅ GL state cleaned up completely
+raster-brush-core.js:438 [RasterBrushCore] Failed to restart Pixi ticker: TypeError: this._resetPixiShaderSystem is not a function
+    at RasterBrushCore._restartPixiTicker (raster-brush-core.js:423:22)
+    at RasterBrushCore.finalizeStroke (raster-brush-core.js:1008:18)
+    at BrushCore.finalizeStroke (brush-core.js:340:74)
+    at DrawingEngine._handlePointerUp (drawing-engine.js:191:32)
+    at HTMLCanvasElement.onPointerUp (pointer-handler.js:122:30)
+_restartPixiTicker @ raster-brush-core.js:438
 WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
 WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
 WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
@@ -302,216 +317,6 @@ WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated 
 WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
 WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
 WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: uniformMatrix3fv: location is not from the associated program
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
-WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
 WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
 WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
 WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
@@ -529,11 +334,12 @@ WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
 WebGL: INVALID_OPERATION: drawElements: no valid shader program in use
 history.js:194 [History:Push] Before: index=-1, stack=0, cmd="raster-stroke-draw"
 history.js:213 [History:Push] After: index=0, stack=1
-WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
-WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
-WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
-WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
-WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
-raster-brush-core.js:898 [RasterBrushCore] Deferred PixiJS render completed
-VM77:17 WebGL: too many errors, no more errors will be reported to the console for this context.
-eval @ VM77:17
+VM77:37 WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
+eval @ VM77:37
+VM77:37 WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
+eval @ VM77:37
+VM77:37 WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
+eval @ VM77:37
+raster-brush-core.js:1015 [RasterBrushCore] Deferred render completed
+VM77:37 WebGL: INVALID_OPERATION: uniform2f: location is not from the associated program
+eval @ VM77:37
