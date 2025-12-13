@@ -1,16 +1,12 @@
 /**
- * @file core-initializer.js - Phase Emergency: Ticker制御確立
- * @description アプリケーション初期化シーケンス制御
+ * @file core-initializer.js - Phase B-Emergency-5
+ * @description アプリケーション初期化シーケンス制御（Canvas分離対応）
  * 
- * 【Phase Emergency 改修内容】
- * 🚨 E-3: PixiJS app作成時にautoStart: false設定
- * 🚨 E-3: 初期化完了後の明示的ticker登録
- * 🚨 E-3: ticker制御の完全確立
- * 
- * 【Phase C-0.4 改修内容】
- * 🔧 GLTextureBridge.initialize() 呼び出し追加
- * 🔧 初期化順序の最適化
- * ✅ Phase C-0.1全機能継承
+ * 【Phase B-Emergency-5 改修内容】
+ * 🚨 BE-5: 描画Canvas独立生成フロー
+ * 🚨 BE-5: ticker制御コード削除（不要）
+ * 🚨 BE-5: GLTextureBridge初期化統合
+ * ✅ 初期化順序最適化
  */
 
 window.CoreInitializer = (function() {
@@ -153,184 +149,151 @@ window.CoreInitializer = (function() {
     }
 
     // ================================================================================
-    // WebGL2初期化（Phase Emergency: Ticker制御確立）
+    // WebGL2初期化（Phase B-Emergency-5: Canvas完全分離）
     // ================================================================================
     
     /**
-     * WebGL2初期化（ラスター版）
-     * @param {PIXI.Application} pixiApp - PixiJSアプリ  
-     * @param {HTMLCanvasElement} canvas 
+     * WebGL2初期化（Phase B-Emergency-5）
+     * 
+     * @param {PIXI.Application} pixiApp - PixiJSアプリ
      * @returns {Promise<boolean>}
      */
-    async function initializeWebGL2(pixiApp, canvas) {
-        console.log('[WebGL2] 🚀 Starting raster initialization (Phase Emergency)...');
+    async function initializeWebGL2(pixiApp) {
+        console.log('[WebGL2] 🚀 Starting raster initialization (Phase BE-5)...');
 
         try {
-            // 必須チェック
-            if (!window.WebGL2DrawingLayer || !window.RasterLayer || !window.GLTextureBridge) {
-                console.error('[WebGL2] ❌ Required modules not found');
-                return false;
+            // 必須モジュールチェック
+            if (!window.WebGL2DrawingLayer) {
+                throw new Error('[WebGL2] ❌ WebGL2DrawingLayer not found');
+            }
+            
+            if (!window.rasterLayer) {
+                throw new Error('[WebGL2] ❌ RasterLayer not found');
+            }
+            
+            if (!window.GLTextureBridge) {
+                throw new Error('[WebGL2] ❌ GLTextureBridge not found');
             }
 
-            if (!pixiApp || !canvas) {
-                console.error('[WebGL2] ❌ PixiApp or Canvas not provided');
-                return false;
+            if (!pixiApp) {
+                throw new Error('[WebGL2] ❌ PixiApp not provided');
             }
 
             const width = window.TEGAKI_CONFIG.canvas.width;
             const height = window.TEGAKI_CONFIG.canvas.height;
 
-            console.log('[WebGL2] 📐 Canvas size:', canvas.width, 'x', canvas.height);
-            console.log('[WebGL2] 🎯 Target size:', width, 'x', height);
+            console.log('[WebGL2] 🎯 Target canvas size:', width, 'x', height);
 
             // ================================================================
-            // Step 1: WebGL2DrawingLayer初期化
+            // Step 1: WebGL2DrawingLayer初期化（描画Canvas生成）
             // ================================================================
             console.log('[WebGL2] 🔧 Step 1: Initializing WebGL2DrawingLayer...');
 
             const webgl2Layer = new window.WebGL2DrawingLayer();
+            const initSuccess = webgl2Layer.initialize(width, height);
             
-            const success = await webgl2Layer.initialize(canvas, width, height);
-            
-            if (!success) {
-                console.error('[WebGL2] ❌ DrawingLayer initialization failed');
-                return false;
+            if (!initSuccess) {
+                throw new Error('[WebGL2] ❌ DrawingLayer initialization failed');
             }
 
-            console.log('[WebGL2] ✅ Step 1 completed');
-            
             window.webgl2DrawingLayer = webgl2Layer;
             
-            if (!window.WebGLContext || !window.WebGLContext.gl) {
-                console.error('[WebGL2] ❌ WebGLContext.gl not registered');
-                return false;
+            console.log('[WebGL2] ✅ Step 1: WebGL2DrawingLayer initialized');
+            console.log('  Drawing Canvas:', webgl2Layer.getDrawingCanvas());
+            console.log('  GL Context:', webgl2Layer.getGLContext());
+
+            // GLContext確認
+            if (!window.GLContext || !window.GLContext.gl) {
+                throw new Error('[WebGL2] ❌ GLContext not registered');
             }
 
-            const gl = window.WebGLContext.gl;
-            console.log('[WebGL2] ✅ Step 2 completed: GLContext registered');
+            const gl = window.GLContext.gl;
+            console.log('[WebGL2] ✅ Step 2: GLContext verified');
 
             // ================================================================
-            // Step 2: RasterLayer初期化
+            // Step 2: RasterLayer既に初期化済み確認
             // ================================================================
-            console.log('[WebGL2] 🔧 Step 3: Initializing RasterLayer...');
+            console.log('[WebGL2] 🔧 Step 3: Verifying RasterLayer...');
 
-            if (!window.RasterLayer.initialized) {
-                const rasterInitSuccess = window.RasterLayer.initialize(gl, width, height, {
-                    autoCreateFBO: true,
-                    enableOptimization: true
-                });
-
-                if (!rasterInitSuccess) {
-                    console.error('[WebGL2] ❌ RasterLayer initialization failed');
-                    return false;
-                }
-
-                console.log('[WebGL2] ✅ Step 3 completed: RasterLayer initialized');
+            if (!window.rasterLayer.initialized) {
+                throw new Error('[WebGL2] ❌ RasterLayer not initialized');
             }
+
+            console.log('[WebGL2] ✅ Step 3: RasterLayer verified');
 
             // ================================================================
             // Step 3: GLTextureBridge初期化
             // ================================================================
-            console.log('[WebGL2] 🔧 Step 3.5: Initializing GLTextureBridge...');
+            console.log('[WebGL2] 🔧 Step 4: Initializing GLTextureBridge...');
 
-            if (!window.GLTextureBridge.initialized) {
-                const bridgeInitSuccess = window.GLTextureBridge.initialize(pixiApp);
-                
-                if (!bridgeInitSuccess) {
-                    console.error('[WebGL2] ❌ GLTextureBridge initialization failed');
-                    return false;
-                }
-
-                console.log('[WebGL2] ✅ Step 3.5 completed: GLTextureBridge initialized');
-            } else {
-                console.warn('[WebGL2] ⚠️  GLTextureBridge already initialized');
+            const drawingCanvas = webgl2Layer.getDrawingCanvas();
+            
+            // GLTextureBridge インスタンス生成（まだなければ）
+            if (!window.glTextureBridge) {
+                window.glTextureBridge = new window.GLTextureBridge();
             }
+            
+            window.glTextureBridge.initialize(drawingCanvas, pixiApp);
+
+            console.log('[WebGL2] ✅ Step 4: GLTextureBridge initialized');
 
             // ================================================================
             // Step 4: RasterBrushCore初期化
             // ================================================================
-            console.log('[WebGL2] 🔧 Step 4: Initializing RasterBrushCore...');
+            console.log('[WebGL2] 🔧 Step 5: Initializing RasterBrushCore...');
 
-            if (window.rasterBrushCore) {
-                if (!window.rasterBrushCore.gl) {
-                    window.rasterBrushCore.initialize(gl);
-                    console.log('[WebGL2] ✅ Step 4 completed: RasterBrushCore initialized');
-                }
-            } else {
-                console.warn('[WebGL2] ⚠️  window.rasterBrushCore not found');
+            if (!window.rasterBrushCore) {
+                throw new Error('[WebGL2] ❌ RasterBrushCore not found');
             }
 
-            // ================================================================
-            // Step 5: Pixi統合
-            // ================================================================
-            if (pixiApp) {
-                webgl2Layer.setPixiApp(pixiApp);
-                console.log('[WebGL2] ✅ Step 5 completed: Pixi.js app linked');
-            }
+            window.rasterBrushCore.initialize(drawingCanvas);
+
+            console.log('[WebGL2] ✅ Step 5: RasterBrushCore initialized');
 
             // ================================================================
-            // 🚨 Phase Emergency: Step 5.5 - Ticker制御確認
-            // ================================================================
-            console.log('[WebGL2] 🚨 Step 5.5: Verifying ticker control...');
-
-            if (pixiApp && pixiApp.ticker) {
-                // tickerが正常に動作しているか確認
-                const tickerRunning = pixiApp.ticker.started;
-                console.log('[WebGL2] 🚨 Ticker status:', tickerRunning ? 'Running' : 'Stopped');
-                
-                // WebGL2DrawingLayerの制御メソッドが利用可能か確認
-                if (typeof webgl2Layer.disablePixiAutoRender === 'function' &&
-                    typeof webgl2Layer.enablePixiAutoRender === 'function') {
-                    console.log('[WebGL2] ✅ Step 5.5 completed: Ticker control methods ready');
-                } else {
-                    console.error('[WebGL2] ❌ Ticker control methods not found');
-                    return false;
-                }
-            }
-
-            // ================================================================
-            // Step 6: モジュールステータス確認
+            // Step 5: 統合確認
             // ================================================================
             const modules = {
                 'WebGL2DrawingLayer': webgl2Layer.initialized,
-                'RasterLayer': window.RasterLayer?.initialized,
-                'GLTextureBridge': window.GLTextureBridge?.initialized,
-                'BrushStamp': !!window.BrushStamp,
-                'BrushInterpolator': !!window.BrushInterpolator,
-                'RasterBrushCore': window.rasterBrushCore?.gl !== null,
-                '🚨 Ticker Control': typeof webgl2Layer.disablePixiAutoRender === 'function'
+                'RasterLayer': window.rasterLayer.initialized,
+                'GLTextureBridge': window.glTextureBridge.initialized,
+                'BrushStamp': !!window.brushStamp,
+                'BrushInterpolator': !!window.brushInterpolator,
+                'RasterBrushCore': window.rasterBrushCore.isInitialized()
             };
 
             console.log('[WebGL2] 📦 Module status:');
             for (const [name, status] of Object.entries(modules)) {
                 const icon = status ? '✅' : '⚠️';
-                console.log(`         ${icon} ${name}: ${status ? 'ready' : 'not ready'}`);
+                console.log(`  ${icon} ${name}: ${status ? 'ready' : 'not ready'}`);
             }
 
             const allReady = Object.values(modules).every(status => status === true);
             if (!allReady) {
-                console.warn('[WebGL2] ⚠️  Some modules are not ready');
+                console.warn('[WebGL2] ⚠️ Some modules are not ready');
+                return false;
             }
 
             // ================================================================
-            // Step 7: デバッグオブジェクト登録
+            // Step 6: デバッグオブジェクト登録
             // ================================================================
             if (!window.TegakiDebug) {
                 window.TegakiDebug = {};
             }
 
             window.TegakiDebug.webgl2Layer = webgl2Layer;
-            window.TegakiDebug.rasterLayer = window.RasterLayer;
-            window.TegakiDebug.glTextureBridge = window.GLTextureBridge;
+            window.TegakiDebug.rasterLayer = window.rasterLayer;
+            window.TegakiDebug.glTextureBridge = window.glTextureBridge;
             window.TegakiDebug.rasterBrushCore = window.rasterBrushCore;
             window.TegakiDebug.gl = gl;
 
             console.log('[WebGL2] ✅ Debug objects registered');
 
-            console.log('[WebGL2] 🎉 Raster system initialized successfully (Phase Emergency)');
-            console.log('[WebGL2]    🚨 PixiJS Ticker control established');
-            console.log('[WebGL2]    - GLTextureBridge ready');
-            console.log('[WebGL2]    - Ready for drawing');
+            console.log('[WebGL2] 🎉 Raster system initialized successfully (Phase BE-5)');
+            console.log('[WebGL2]    🚨 Drawing Canvas: Independent');
+            console.log('[WebGL2]    🚨 Display Canvas: PixiJS managed');
+            console.log('[WebGL2]    🚨 No GL context conflict possible');
+            console.log('[WebGL2]    ✅ Ready for drawing');
 
             return true;
 
@@ -370,9 +333,9 @@ window.CoreInitializer = (function() {
             if (!containerEl) throw new Error('Canvas container not found');
             
             // ================================================================
-            // 🚨 Phase Emergency: Pixi.js初期化 - autoStart無効化
+            // PixiJS初期化（通常通り・ticker制御不要）
             // ================================================================
-            console.log('[DrawingApp] 🚨 Initializing Pixi.js with manual ticker control...');
+            console.log('[DrawingApp] 🎨 Initializing Pixi.js...');
 
             this.pixiApp = new PIXI.Application();
             const screenWidth = window.innerWidth - 50;
@@ -387,8 +350,8 @@ window.CoreInitializer = (function() {
                 autoDensity: true,
                 eventMode: 'static',
                 preference: 'webgl2',
-                powerPreference: 'high-performance',
-                autoStart: false  // 🚨 Phase Emergency: ticker自動開始を無効化
+                powerPreference: 'high-performance'
+                // autoStart: デフォルトtrue（変更不要）
             });
             
             containerEl.innerHTML = '';
@@ -398,7 +361,7 @@ window.CoreInitializer = (function() {
             
             window.pixiApp = this.pixiApp;
             
-            console.log('[DrawingApp] 🚨 Pixi.js initialized with autoStart: false');
+            console.log('[DrawingApp] ✅ Pixi.js initialized (normal mode)');
             
             // CoreEngine初期化
             this.coreEngine = new CoreEngine(this.pixiApp);
@@ -441,36 +404,36 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
-            // WebGL2初期化
-            console.log('[DrawingApp] 🎨 Initializing WebGL2 (Phase Emergency)...');
+            // ================================================================
+            // WebGL2初期化（Phase BE-5: Canvas分離方式）
+            // ================================================================
+            console.log('[DrawingApp] 🚀 Initializing WebGL2 (Phase BE-5)...');
 
-            if (this.pixiApp && this.pixiApp.canvas) {
-                this.webgl2Enabled = await initializeWebGL2(this.pixiApp, this.pixiApp.canvas);
-                console.log('[DrawingApp] 📊 WebGL2 Result:', this.webgl2Enabled ? '✅ SUCCESS' : '❌ FAILED');
+            if (this.pixiApp) {
+                this.webgl2Enabled = await initializeWebGL2(this.pixiApp);
+                
+                console.log('[DrawingApp] 📊 WebGL2 Result:', 
+                    this.webgl2Enabled ? '✅ SUCCESS' : '❌ FAILED'
+                );
                 
                 if (this.webgl2Enabled) {
-                    console.log('[DrawingApp] ✅ Raster drawing system ready');
+                    console.log('[DrawingApp] ✅ Separated WebGL2 system ready');
                     
-                    if (window.RasterLayer) {
-                        const diagnostics = window.RasterLayer.getDiagnostics();
+                    // 診断情報表示
+                    if (window.rasterLayer?.getDiagnostics) {
+                        const diagnostics = window.rasterLayer.getDiagnostics();
                         console.log('[DrawingApp] 📊 RasterLayer:', diagnostics);
                     }
                     
-                    if (window.GLTextureBridge) {
-                        const cacheInfo = window.GLTextureBridge.getCacheInfo();
-                        console.log('[DrawingApp] 📊 GLTextureBridge:', cacheInfo);
+                    if (window.glTextureBridge?.getPerformanceMetrics) {
+                        const metrics = window.glTextureBridge.getPerformanceMetrics();
+                        console.log('[DrawingApp] 📊 GLTextureBridge:', metrics);
                     }
+                } else {
+                    console.error('[DrawingApp] ❌ WebGL2 initialization failed');
                 }
             } else {
-                console.error('[DrawingApp] ❌ Canvas not found');
-            }
-            
-            // ================================================================
-            // 🚨 Phase Emergency: 初期化完了後にticker明示的開始
-            // ================================================================
-            if (this.pixiApp && this.pixiApp.ticker && !this.pixiApp.ticker.started) {
-                this.pixiApp.ticker.start();
-                console.log('[DrawingApp] 🚨 Pixi Ticker manually started after initialization');
+                console.error('[DrawingApp] ❌ PixiApp not found');
             }
             
             // ExportPopup初期化
@@ -487,9 +450,10 @@ window.CoreInitializer = (function() {
             this.updateDPRInfo();
             this.startFPSMonitor();
             
-            console.log('[DrawingApp] 🎉 Application initialized successfully (Phase Emergency)');
-            console.log('[DrawingApp]    🚨 Ticker control: Manual mode');
-            console.log('[DrawingApp]    🚨 autoStart: false → Manual start: true');
+            console.log('[DrawingApp] 🎉 Application initialized successfully (Phase BE-5)');
+            console.log('[DrawingApp]    🚨 Canvas separation: Complete');
+            console.log('[DrawingApp]    ✅ Drawing: Independent Canvas');
+            console.log('[DrawingApp]    ✅ Display: PixiJS Canvas');
             
             return true;
         }
@@ -626,8 +590,8 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js Phase Emergency loaded');
-console.log('   🚨 E-3: PixiJS autoStart: false 設定');
-console.log('   🚨 E-3: 初期化完了後の明示的ticker開始');
-console.log('   🚨 E-3: ticker制御の完全確立');
-console.log('   ✅ Phase C-0.4全機能継承');
+console.log('✅ core-initializer.js Phase B-Emergency-5 loaded');
+console.log('   🚨 BE-5: 描画Canvas独立生成フロー');
+console.log('   🚨 BE-5: ticker制御コード削除（不要）');
+console.log('   🚨 BE-5: GLTextureBridge初期化統合');
+console.log('   ✅ Canvas分離による完全独立実現');
