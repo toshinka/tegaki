@@ -1,12 +1,14 @@
 /**
  * ============================================================================
- * ファイル名: system/layer-system.js - Phase 3: ラスター対応版
- * 責務: レイヤー管理・操作の中核システム（ラスター方式統合）
+ * ファイル名: system/layer-system.js - Phase B-Emergency-4: 転送受信実装
+ * 責務: レイヤー管理・操作の中核システム（WebGL2分離アーキテクチャ対応）
  * 
- * 【Phase 3 改修内容】
- * 🔧 pathsData → rasterStrokes への移行
- * 🔧 WebGL2 フレームバッファ/テクスチャ対応準備
- * 🔧 RasterLayer 統合準備（将来的にフレームバッファ管理を追加）
+ * 【Phase B-Emergency-4 改修内容】
+ * 🚨 BE-4: 転送イベントリスナー登録（layer:texture-updated）
+ * 🚨 BE-4: _receiveTransferredTexture() 実装
+ * 🚨 BE-4: _updateLayerSprite() 実装
+ * 🚨 BE-4: レイヤーSprite自動生成・管理
+ * ✅ Phase 3 ラスター機能完全継承
  * ✅ Phase 2 フォルダ機能完全継承
  * 
  * 【親ファイル依存】
@@ -17,6 +19,7 @@
  * - camera-system.js (worldContainer提供)
  * - config.js (設定値)
  * - history.js (Undo/Redo)
+ * - gl-texture-bridge.js (Texture転送) 🆕
  * 
  * 【子ファイル依存このファイルに】
  * - layer-panel-renderer.js (UI描画 - EventBus経由のみ)
@@ -43,6 +46,9 @@
             this.frameRenderTextures = new Map();
             this.frameThumbnailDirty = new Map();
             
+            // 🆕 BE-4: レイヤーSprite管理（WebGL2分離アーキテクチャ）
+            this.layerSprites = new Map(); // layerId → PIXI.Sprite
+            
             // システム参照
             this.cameraSystem = null;
             this.animationSystem = null;
@@ -53,8 +59,8 @@
             this.isInitialized = false;
             this.checkerPattern = null;
             
-            // 🆕 ラスターレイヤー管理（Phase 3）
-            this.rasterLayerManager = null; // 将来的に RasterLayer インスタンスを保持
+            // ラスターレイヤー管理（Phase 3）
+            this.rasterLayerManager = null;
         }
 
         // ================================================================================
@@ -117,6 +123,9 @@
             layer1.layerData = layer1Model;
             layer1.id = layer1Model.id;
             
+            // 🆕 BE-4: レイヤーSprite生成・登録
+            this._createLayerSprite(layer1Model.id, layer1);
+            
             if (this.transform) {
                 this.transform.setTransform(layer1Model.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
@@ -128,6 +137,9 @@
             this._setupAnimationSystemIntegration();
             this._setupVKeyEvents();
             this._setupResizeEvents();
+            
+            // 🚨 BE-4: 転送イベントリスナー登録
+            this._setupTextureTransferListener();
             
             this.isInitialized = true;
             console.log('[LayerSystem]   ✅ init() completed successfully');
@@ -143,142 +155,244 @@
         }
 
         // ================================================================================
+        // 🚨 BE-4: WebGL2分離アーキテクチャ - Texture転送受信
+        // ================================================================================
+
+        /**
+         * 転送イベントリスナーセットアップ
+         * 
+         * gl-texture-bridge.jsからの'layer:texture-updated'イベントを受信
+         */
+        _setupTextureTransferListener() {
+            if (!this.eventBus) {
+                console.warn('[LayerSystem] ⚠️ EventBus not available for texture transfer');
+                return;
+            }
+
+            this.eventBus.on('layer:texture-updated', (data) => {
+                this._receiveTransferredTexture(data.layerId, data.texture);
+            });
+
+            console.log('[LayerSystem] 📡 BE-4: Texture transfer listener registered');
+        }
+
+        /**
+         * 転送されたTextureを受信してSprite更新
+         * 
+         * @param {string} layerId - レイヤーID
+         * @param {PIXI.Texture} texture - 転送されたTexture
+         */
+        _receiveTransferredTexture(layerId, texture) {
+            console.log('[LayerSystem] 📥 BE-4: Receiving transferred texture:', layerId);
+
+            if (!texture) {
+                console.warn('[LayerSystem] ⚠️ Texture is null/undefined');
+                return;
+            }
+
+            // Sprite更新
+            const success = this._updateLayerSprite(layerId, texture);
+
+            if (success) {
+                console.log('[LayerSystem] ✅ BE-4: Sprite updated successfully');
+                
+                // サムネイル更新リクエスト
+                const layer = this.getLayerById(layerId);
+                if (layer) {
+                    const layerIndex = this.getLayerIndex(layer);
+                    this.requestThumbnailUpdate(layerIndex);
+                }
+            } else {
+                console.warn('[LayerSystem] ⚠️ BE-4: Sprite update failed');
+            }
+        }
+
+        /**
+         * レイヤーSpriteにTextureを適用
+         * 
+         * @param {string} layerId - レイヤーID
+         * @param {PIXI.Texture} texture - 適用するTexture
+         * @returns {boolean} 成功/失敗
+         */
+        _updateLayerSprite(layerId, texture) {
+            // Sprite取得
+            let sprite = this.layerSprites.get(layerId);
+
+            if (!sprite) {
+                console.warn('[LayerSystem] ⚠️ Sprite not found, creating new:', layerId);
+                
+                // Spriteが存在しない場合は新規作成
+                const layer = this.getLayerById(layerId);
+                if (!layer) {
+                    console.error('[LayerSystem] ❌ Layer not found:', layerId);
+                    return false;
+                }
+
+                sprite = this._createLayerSprite(layerId, layer);
+                if (!sprite) {
+                    console.error('[LayerSystem] ❌ Failed to create sprite');
+                    return false;
+                }
+            }
+
+            // Texture適用
+            sprite.texture = texture;
+
+            console.log('[LayerSystem] 🖼️ BE-4: Texture applied to sprite:', {
+                layerId: layerId,
+                textureSize: `${texture.width}x${texture.height}`,
+                spritePosition: `(${sprite.x}, ${sprite.y})`
+            });
+
+            return true;
+        }
+
+        /**
+         * レイヤー用Sprite生成
+         * 
+         * @param {string} layerId - レイヤーID
+         * @param {PIXI.Container} layerContainer - レイヤーContainer
+         * @returns {PIXI.Sprite} 生成されたSprite
+         */
+        _createLayerSprite(layerId, layerContainer) {
+            console.log('[LayerSystem] 🆕 BE-4: Creating layer sprite:', layerId);
+
+            // 空Textureで初期化（後で転送Textureで置き換え）
+            const emptyTexture = PIXI.Texture.EMPTY;
+            const sprite = new PIXI.Sprite(emptyTexture);
+
+            // Sprite設定
+            sprite.label = `sprite_${layerId}`;
+            sprite.x = 0;
+            sprite.y = 0;
+
+            // レイヤーContainerに追加
+            layerContainer.addChild(sprite);
+
+            // Sprite登録
+            this.layerSprites.set(layerId, sprite);
+
+            console.log('[LayerSystem] ✅ BE-4: Layer sprite created and registered');
+
+            return sprite;
+        }
+
+        /**
+         * レイヤーSprite削除
+         * 
+         * @param {string} layerId - レイヤーID
+         */
+        _destroyLayerSprite(layerId) {
+            const sprite = this.layerSprites.get(layerId);
+
+            if (sprite) {
+                // Containerから削除
+                if (sprite.parent) {
+                    sprite.parent.removeChild(sprite);
+                }
+
+                // Sprite破棄
+                sprite.destroy({
+                    children: true,
+                    texture: false, // Textureは別管理
+                    baseTexture: false
+                });
+
+                // 登録削除
+                this.layerSprites.delete(layerId);
+
+                console.log('[LayerSystem] 🗑️ BE-4: Layer sprite destroyed:', layerId);
+            }
+        }
+
+        // ================================================================================
         // フォルダ管理機能（Phase 2継承）
         // ================================================================================
 
         /**
          * フォルダ作成
-         * @param {string} name - フォルダ名
-         * @returns {{layer: PIXI.Container, index: number}} 作成されたフォルダと配列インデックス
          */
         createFolder(name) {
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('[LayerSystem] 🔍 createFolder() called');
-            console.log('[LayerSystem]   name:', name);
-            console.log('[LayerSystem]   currentFrameContainer:', this.currentFrameContainer);
-            console.log('[LayerSystem]   currentFrameContainer.children.length:', this.currentFrameContainer?.children.length);
-            
             if (!this.currentFrameContainer) {
                 console.error('[LayerSystem] ❌ currentFrameContainer is null/undefined');
-                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                 return null;
             }
             
-            console.log('[LayerSystem]   History manager state:', {
-                exists: !!window.History,
-                isApplying: window.History?._manager?.isApplying
-            });
-            
             const folderName = name || this._generateNextFolderName();
-            console.log('[LayerSystem]   Generated folder name:', folderName);
             
             // モデル作成
-            console.log('[LayerSystem]   Creating LayerModel...');
             const folderModel = new window.TegakiDataModels.LayerModel({
                 name: folderName,
                 isFolder: true,
                 folderExpanded: true
             });
-            console.log('[LayerSystem]   LayerModel created:', {
-                id: folderModel.id,
-                name: folderModel.name,
-                isFolder: folderModel.isFolder
-            });
             
             // PIXI.Container作成
-            console.log('[LayerSystem]   Creating PIXI.Container...');
             const folder = new PIXI.Container();
             folder.label = folderModel.id;
             folder.layerData = folderModel;
             folder.id = folderModel.id;
-            console.log('[LayerSystem]   PIXI.Container created:', folder.label);
             
             // Transform初期化
             if (this.transform) {
-                console.log('[LayerSystem]   Setting transform...');
                 this.transform.setTransform(folderModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
-                console.log('[LayerSystem]   Transform set');
-            } else {
-                console.warn('[LayerSystem]   ⚠️ this.transform is not available');
             }
             
             // History登録またはフォルダ追加
             if (window.History && !window.History._manager.isApplying) {
-                console.log('[LayerSystem]   📝 Registering History entry...');
-                
                 try {
                     const entry = {
                         name: 'folder-create',
                         do: () => {
-                            console.log('[LayerSystem]   History DO: Adding folder to container');
                             this.currentFrameContainer.addChild(folder);
                             const layers = this.getLayers();
                             this.setActiveLayer(layers.length - 1);
                             this._emitPanelUpdateRequest();
-                            console.log('[LayerSystem]   History DO: Complete');
                         },
                         undo: () => {
-                            console.log('[LayerSystem]   History UNDO: Removing folder from container');
                             this.currentFrameContainer.removeChild(folder);
                             const layers = this.getLayers();
                             if (this.activeLayerIndex >= layers.length) {
                                 this.activeLayerIndex = Math.max(0, layers.length - 1);
                             }
                             this._emitPanelUpdateRequest();
-                            console.log('[LayerSystem]   History UNDO: Complete');
                         },
                         meta: { folderId: folderModel.id, name: folderName }
                     };
                     
-                    console.log('[LayerSystem]   Pushing to History...');
                     window.History.push(entry);
-                    console.log('[LayerSystem]   ✅ History entry pushed successfully');
                     
                 } catch (error) {
-                    console.error('[LayerSystem]   ❌ History registration failed:', error);
-                    console.error('[LayerSystem]   Error stack:', error.stack);
+                    console.error('[LayerSystem] ❌ History registration failed:', error);
                     
                     // エラー時はフォールバック
-                    console.log('[LayerSystem]   Fallback: Adding folder directly without History');
                     this.currentFrameContainer.addChild(folder);
                     const layers = this.getLayers();
                     this.setActiveLayer(layers.length - 1);
                     this._emitPanelUpdateRequest();
                 }
             } else {
-                console.log('[LayerSystem]   Adding folder directly (History bypassed)');
                 this.currentFrameContainer.addChild(folder);
                 const layers = this.getLayers();
                 this.setActiveLayer(layers.length - 1);
                 this._emitPanelUpdateRequest();
-                console.log('[LayerSystem]   Folder added directly');
             }
             
             // イベント発火
             if (this.eventBus) {
-                console.log('[LayerSystem]   📡 Emitting folder:created event...');
                 this.eventBus.emit('folder:created', { 
                     folderId: folderModel.id, 
                     name: folderName 
                 });
-                console.log('[LayerSystem]   ✅ Event emitted');
-            } else {
-                console.warn('[LayerSystem]   ⚠️ eventBus is not available');
             }
             
             const layers = this.getLayers();
-            console.log('[LayerSystem]   Final layer count:', layers.length);
-            console.log('[LayerSystem]   ✅ createFolder() completed successfully');
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             
             return { layer: folder, index: layers.length - 1 };
         }
 
         /**
          * レイヤーをフォルダに追加
-         * @param {string} layerId - 追加するレイヤーID
-         * @param {string} folderId - 追加先フォルダID
-         * @returns {boolean} 成功/失敗
          */
         addLayerToFolder(layerId, folderId) {
             const layers = this.getLayers();
@@ -306,8 +420,6 @@
 
         /**
          * レイヤーをフォルダから取り出す
-         * @param {string} layerId - 取り出すレイヤーID
-         * @returns {boolean} 成功/失敗
          */
         removeLayerFromFolder(layerId) {
             const layers = this.getLayers();
@@ -336,8 +448,6 @@
 
         /**
          * フォルダの開閉状態を切り替え
-         * @param {string} folderId - フォルダID
-         * @returns {boolean} 成功/失敗
          */
         toggleFolderExpand(folderId) {
             const layers = this.getLayers();
@@ -361,7 +471,6 @@
 
         /**
          * 表示されるレイヤーのみ取得（閉じたフォルダ内を除外）
-         * @returns {Array} 表示レイヤー配列
          */
         getVisibleLayers() {
             const layers = this.getLayers();
@@ -383,8 +492,6 @@
 
         /**
          * フォルダ内のレイヤーを取得
-         * @param {string} folderId - フォルダID
-         * @returns {Array} 子レイヤー配列
          */
         getFolderChildren(folderId) {
             const layers = this.getLayers();
@@ -507,7 +614,12 @@
             layer.layerData = layerModel;
             layer.id = layerModel.id;
             
-            // 🔧 Phase 3: マスク初期化（ラスター方式では将来的にフレームバッファに置き換え）
+            // 🆕 BE-4: 通常レイヤーの場合はSpriteを生成
+            if (!isBackground) {
+                this._createLayerSprite(layerModel.id, layer);
+            }
+            
+            // マスク初期化（将来的にフレームバッファに置き換え）
             if (this.app && this.app.renderer && !isBackground) {
                 const success = layerModel.initializeMask(
                     this.config.canvas.width,
@@ -548,6 +660,9 @@
                         if (layer.layerData) {
                             layer.layerData.destroyMask();
                         }
+                        // 🆕 BE-4: Sprite削除
+                        this._destroyLayerSprite(layerModel.id);
+                        
                         this.currentFrameContainer.removeChild(layer);
                         const layers = this.getLayers();
                         if (this.activeLayerIndex >= layers.length) {
@@ -604,6 +719,9 @@
                             if (layer.layerData) {
                                 layer.layerData.destroyMask();
                             }
+                            // 🆕 BE-4: Sprite削除
+                            this._destroyLayerSprite(layerId);
+                            
                             this.currentFrameContainer.removeChild(layer);
                             if (layerId && this.transform) {
                                 this.transform.clearTransform(layerId);
@@ -632,6 +750,11 @@
                                     this._applyMaskToLayerGraphics(layer);
                                 }
                             }
+                            // 🆕 BE-4: Sprite復元
+                            if (!layer.layerData.isBackground && !layer.layerData.isFolder) {
+                                this._createLayerSprite(layerId, layer);
+                            }
+                            
                             this.currentFrameContainer.addChildAt(layer, layerIndex);
                             this.activeLayerIndex = previousActiveIndex;
                             this._emitPanelUpdateRequest();
@@ -644,6 +767,9 @@
                     if (layer.layerData) {
                         layer.layerData.destroyMask();
                     }
+                    // 🆕 BE-4: Sprite削除
+                    this._destroyLayerSprite(layerId);
+                    
                     this.currentFrameContainer.removeChild(layer);
                     if (layerId && this.transform) {
                         this.transform.clearTransform(layerId);
@@ -748,12 +874,11 @@
         }
 
         // ================================================================================
-        // 🔧 Phase 3: ラスターストローク管理（ベクターpaths互換インターフェース維持）
+        // Phase 3: ラスターストローク管理（ベクターpaths互換インターフェース維持）
         // ================================================================================
 
         /**
          * アクティブレイヤーにパス追加（ラスター互換）
-         * 🔧 Phase 3: pathsData → rasterStrokes への移行準備
          */
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
@@ -762,11 +887,10 @@
             
             if (activeLayer.layerData?.isBackground || activeLayer.layerData?.isFolder) return;
             
-            // 🔧 Phase 3: rasterStrokes配列に追加（paths互換性維持）
+            // Phase 3: rasterStrokes配列に追加（paths互換性維持）
             if (activeLayer.layerData && activeLayer.layerData.rasterStrokes) {
                 activeLayer.layerData.rasterStrokes.push(path);
             } else if (activeLayer.layerData && activeLayer.layerData.paths) {
-                // 従来のpaths配列へのフォールバック
                 activeLayer.layerData.paths.push(path);
             }
             
@@ -800,7 +924,7 @@
                 
                 if (layer.layerData?.isBackground || layer.layerData?.isFolder) return;
                 
-                // 🔧 Phase 3: rasterStrokes配列に追加
+                // Phase 3: rasterStrokes配列に追加
                 if (layer.layerData.rasterStrokes) {
                     layer.layerData.rasterStrokes.push(path);
                 } else if (layer.layerData.paths) {
@@ -890,7 +1014,7 @@
                     } catch (removeError) {}
                 });
                 
-                // 🔧 Phase 3: rasterStrokes配列をクリア
+                // Phase 3: rasterStrokes配列をクリア
                 if (layer.layerData.rasterStrokes) {
                     layer.layerData.rasterStrokes = [];
                 } else {
@@ -906,7 +1030,7 @@
                             if (layer.layerData && layer.layerData.maskSprite) {
                                 path.graphics.mask = layer.layerData.maskSprite;
                             }
-                            // 🔧 Phase 3: rasterStrokes配列に追加
+                            // Phase 3: rasterStrokes配列に追加
                             if (layer.layerData.rasterStrokes) {
                                 layer.layerData.rasterStrokes.push(path);
                             } else {
@@ -1232,7 +1356,7 @@
             if (this.transform._isTransformNonDefault(transformBefore)) {
                 this.transform.confirmTransform(activeLayer);
                 
-                // 🔧 Phase 3: rasterStrokes配列を使用
+                // Phase 3: rasterStrokes配列を使用
                 const paths = activeLayer.layerData.rasterStrokes || activeLayer.layerData.paths;
                 const rebuildSuccess = this.safeRebuildLayer(activeLayer, paths);
                 
@@ -1816,9 +1940,10 @@
 
 })();
 
-console.log('✅ layer-system.js Phase 3: ラスター対応版 loaded');
-console.log('   🔧 pathsData → rasterStrokes 移行準備完了');
-console.log('   🔧 WebGL2 フレームバッファ/テクスチャ対応準備');
-console.log('   🔧 RasterLayer 統合準備（将来的に完全統合）');
+console.log('✅ layer-system.js Phase B-Emergency-4 loaded');
+console.log('   🚨 BE-4: 転送イベントリスナー登録完了');
+console.log('   🚨 BE-4: _receiveTransferredTexture() 実装');
+console.log('   🚨 BE-4: _updateLayerSprite() 実装');
+console.log('   🚨 BE-4: レイヤーSprite自動生成・管理');
+console.log('   ✅ Phase 3 ラスター機能完全継承');
 console.log('   ✅ Phase 2 フォルダ機能完全継承');
-console.log('   ✅ 既存の傾き対応・座標変換を完全継承');
