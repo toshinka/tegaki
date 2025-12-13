@@ -1,0 +1,1702 @@
+提案書：2D マトリクス（最適構成）への設計リプレイス案
+
+目的：既存の「縦軸＝Frame中心」設計を、初期はシンプルで破綻しにくい「セルフォルダがモーフ対象の2Dマトリクス」へ段階的に移行する。
+対象読者：Claude 等の実装担当者（実装順序・ファイル責務に即した説明）。
+出力形式：プレーンテキスト（.txt 貼付け可）、図は ASCII 図で表記。長文なので段階的に読む想定だが、ここで一括提出します。
+
+目次
+
+エグゼクティブサマリ
+
+設計方針（要約）
+
+概念モデル（用語定義）
+
+データモデル（JSON スキーマ＆例）
+
+UI モック（ASCII 図） — Matrix Timeline / Inspector 等
+
+レンダリング／再生パイプライン（擬似コード）
+
+モーフィング戦略（推奨実装）
+
+History / Undo の取り扱い
+
+既存プロジェクトからのマイグレーション案
+
+実装タスクと優先度（Claude向け順序・ファイル責務）
+
+比較（Procreate Dreams / ToonSquid / Live2D / Spine 的観点）
+
+テストケース & QA チェックリスト
+
+拡張案（中期〜長期）
+
+付録：小さなアルゴリズムスニペット（擬似コード）
+
+1. エグゼクティブサマリ
+
+初期フェーズは「セルフォルダのみがモーフ可能」というシンプルルールに統一する。
+
+セルは startFrame と duration（span）を持つ時間的オブジェクト。フォルダはセルの集合であり、共有 transform / mask / blend を提供する。
+
+UI は 2D マトリクス（横 = 時間、縦 = トラック）を採用するが、初期は セル数を抑えた見やすい表示 を優先。
+
+実装は既存の layer-system.js / animation-system.js を壊さない非破壊方式で段階移行する。
+
+レンダラは差分更新＋セル単位 FBO キャッシュを基本にする。モーフは頂点モーフ（GPU 補間）を長期目標とするが、最小実装は「同サンプリング線形補間」。
+
+2. 設計方針（要約）
+
+単一のモーフ単位：セルフォルダのみモーフ対象にする（設計の簡潔性）。
+
+整理フォルダは非セル化：初期はフォルダ内の普通のフォルダは整理目的のみとする（UIの見やすさ優先）。
+
+Z移動は後回し：レンダリング順を時間でキーアニメーションする機能は後期追加。
+
+座標系の現行規約を厳守：screenClientToCanvas() → canvasToWorld() → worldToLocal() の流れを守る（既存ルールと整合）。
+
+差分更新とキャッシュで性能確保。
+
+3. 概念モデル（用語）
+
+Track（行）：Matrix の縦軸。見た目での「トラック」。内部的には trackId を持つ。
+
+Cell（セル）：時間上に置かれる最小編集単位。startFrame / duration / assetRef / localTransform 等を持つ。
+
+Folder（セルフォルダ）：1 つ以上の Cell を横断的に共有するグループ。sharedTransform / mask / blendMode 等を持つ。この Folder がモーフ単位。
+
+整理フォルダ：見た目上の階層整理のみ行い、モーフ対象ではない。
+
+Asset：StrokeGroup、Raster、Mesh 等。セルは Asset の参照を持つ（コピーではなく参照）。
+
+4. データモデル（JSON スキーマ & 具体例）
+最小スキーマ（抜粋）
+project {
+  fps: number,
+  tracks: Track[],
+  folders: Folder[],
+  cells: Cell[],
+  assets: Asset[]
+}
+Track { id, name, z }
+Folder {
+  id, name,
+  childCellIds: [cellId...],
+  sharedProps: { maskId, blendMode },
+  transform: { x,y,scale,rotation },
+  isMorphable: true
+}
+Cell {
+  id, trackId, folderId|null,
+  startFrame, duration,
+  assetRef, localTransform, z,
+  morph?: { type, targets: [{ frameOffset, targetId}], interp:'linear'|'ease' }
+}
+Asset { id, type:'stroke-group'|'bitmap'|'mesh', payload: { ... } }
+
+具体例
+{
+ "fps":24,
+ "tracks":[ {"id":"t0","name":"Character","z":100} ],
+ "folders":[
+   {"id":"f-head","name":"Head","childCellIds":["c1"],"sharedProps":{},"transform":{"x":0,"y":0,"scale":1,"rotation":0},"isMorphable":true}
+ ],
+ "cells":[
+   {"id":"c1","trackId":"t0","folderId":"f-head","startFrame":0,"duration":6,"assetRef":"a-strokes-head","localTransform":{"x":10,"y":5,"scale":1},"z":0}
+ ],
+ "assets":[ {"id":"a-strokes-head","type":"stroke-group","payload":{"strokeIds":["s1","s2"]}} ]
+}
+
+5. UI モック（ASCII 図）
+
+以下は Matrix Timeline の概念図（プレーンテキストで崩れないように）。
+
+Time →  [0] [1] [2] [3] [4] [5] [6] [7] [8] ...
+Track: Character (t0)   |[ f-head:c1 (dur=6)          ]| [ other cells... ]
+Track: BG        (t1)   |    [c_bg0]    |[c_bg1]| ...
+Track: FX        (t2)   |[ c_fx_long (dur=10)            ]|
+
+
+f-head:c1 は folderId:cellId 表記。
+
+セルの端をドラッグして duration を伸縮。セル本体をドラッグで移動（startFrame 改変）。
+
+セル上で右クリック → 「Open Folder Inspector」→ フォルダ共通 transform を編集。
+
+Folder Inspector（サイドペイン、プレーン形式）
+Folder: f-head (Head)
+- Shared Transform: X:0  Y:0  Scale:1.0  Rot:0
+- Mask: none
+- Blend: normal
+- Child Cells:
+  - c1 (track: Character, start:0, duration:6)
+  - c4 (track: Character, start:12, duration:4)
+- Morph: enabled (2 targets)
+
+6. レンダリング / 再生パイプライン（擬似コード）
+高レベル処理
+function renderFrame(frame){
+  const activeCells = project.cells.filter(c => c.startFrame <= frame && frame < c.startFrame + c.duration);
+  const sorted = activeCells.sort((a,b)=> (getZ(a) - getZ(b)));
+  sorted.forEach(cell => {
+    const folder = getFolder(cell.folderId);
+    const worldTransform = composeTransforms(folder?.transform, cell.localTransform);
+    const morphWeight = computeMorphWeight(cell, frame);
+    const drawArgs = prepareDrawArgs(cell.assetRef, morphWeight, worldTransform);
+    drawCell(drawArgs); // GPU: VBO or cached FBO
+  });
+}
+
+差分更新 & キャッシュ
+
+cell.dirty = true のときだけ updateCellFBO(cell) を実行。
+
+drawCell() は cell.fboTexture を quad で描画（transform は shader uniform）。
+
+モーフがある場合は GPU で頂点補間 or 再生成して FBO 更新（実装選択による）。
+
+7. モーフィング戦略（推奨）
+
+段階的アプローチ（最もリスク低く実用的な順）
+
+Prototype（最小）：
+
+各キーフレーム（セル頭・セル末）でストロークを同数サンプリングして配列化。
+
+再生時は linear interpolation で各ポイントを補間 → 三角分割（Earcut）→ VBO 更新。
+
+長所：実装が早い。短所：厳密なトポロジー一致が必要。
+
+実用（推奨）：頂点モーフ
+
+各セルの asset が mesh（同じ頂点レイアウト）であることを保証。GPU shader で v = mix(v0, v1, w).
+
+長所：GPU 補間で高速。短所：メッシュ化と頂点数一致の整備が必要。
+
+拡張：パラメータデフォーマ（bend/twist） + ウェイト併用
+
+大きな変形はパラメータデフォーマで軽量に。細部は頂点モーフで補完。
+
+注意点：モーフ用に「サンプリング/正規化ルール」をツール側で統一する（ストロークのセグメント数・リサンプリング間隔など）。
+
+8. History / Undo の取り扱い
+
+登録タイミング：pointerup（ストローク完了）、セル移動/伸縮完了、フォルダ編集完了。
+
+履歴エントリ形式（既存ルール踏襲）:
+
+{
+  name: 'cell-resize',
+  do: ()=> apply(newState),
+  undo: ()=> apply(oldState),
+  meta: { cellId, folderId, timestamp }
+}
+
+
+注意：セル移動中は 一時状態 を保持し、最終確定（pointerup）で single history entry にまとめる。
+
+フォルダ全体の morph params 変更は一括エントリで。
+
+9. 既存プロジェクトからのマイグレーション案
+
+方針：非破壊で既存ファイルを読み取り、自動変換を行うマイグレータを用意する（migration-v2）。
+
+マッピングルール（旧 -> 新）
+
+旧：layers × frames の固定配列
+
+新：tracks = 既存の top-level layers を map。
+
+各フレームに描かれたコンテンツは Cell として startFrame = frame, duration = 1 でインポート。
+
+既存の layer-hierarchy（フォルダ）は 整理フォルダ にマップ。
+
+既存 stroke IDs を Asset に変換し、Cell.assetRef を参照にする（重複アセットは dedupe）。
+
+マイグレーション擬似コード
+function migrateOldProject(old){
+  const newProject = { fps:old.fps, tracks:[], folders:[], cells:[], assets:[] };
+  old.layers.forEach(layer => {
+    const trackId = registerTrack(layer.name);
+    old.frames.forEach((frameContent, frameIndex)=> {
+      if(frameContent[layer.id]) {
+        const assetId = importAsset(frameContent[layer.id]);
+        const cell = { id: genId(), trackId, startFrame:frameIndex, duration:1, assetRef:assetId, localTransform:identity };
+        newProject.cells.push(cell);
+      }
+    });
+  });
+  return newProject;
+}
+
+10. 実装タスクと優先度（Claude 向け順序・ファイル責務）
+
+既存ファイル一覧（質問内提示）を踏まえ、修正/追加ファイルと担当実装順を提示します。
+
+フェーズ A（初期：最小で動く）
+
+データモデル追加
+
+新ファイル/修正：system/data-models.js を拡張して tracks/folders/cells/assets を追加。
+
+目的：ファイルフォーマット互換のための migration フックも同梱。
+
+Timeline 表示（読み取り専用）
+
+修正：ui/timeline-ui.js と ui/timeline-thumbnail-utils.js
+
+目的：既存 UI を壊さず Matrix 表示を追加（編集はまだ不可）。
+
+セル CRUD + 基本操作
+
+新：system/animation/cell-manager.js
+
+実装：create/move/resize/delete、markCellDirty() を実装。
+
+Hook：history.js に操作登録のエントリを追加。
+
+レンダラ対応（非モーフ）
+
+修正：webgl2-drawing-layer.js / webgl2/gl-stroke-processor.js
+
+実装：cell.fboTexture 管理、renderFrame() の activeCells ループ。
+
+フェーズ B（中期：モーフ & Folder 機能）
+
+Folder Inspector UI & フォルダ操作
+
+修正：ui/layer-panel-renderer.js、system/layer-system.js（Folderの子Cell参照を管理）
+
+基本モーフ（プロトタイプ：同数サンプリング補間）
+
+新：system/drawing/morph-processor.js
+
+修正：stroke-renderer.js（VBO 更新経路を追加）
+
+差分更新＋キャッシュ最適化
+
+修正：webgl2/gl-texture-bridge.js、webgl2-drawing-layer.js（LRU退避、dirty flags）
+
+フェーズ C（長期）
+
+頂点モーフ（GPU 補間）
+
+階層的子セルフォルダ（リグ対応）
+
+Z キーアニメーション（階層移動）
+
+11. 比較（簡潔）
+
+Procreate Dreams / ToonSquid（iPad）
+
+長所：セル単位の使いやすさ、Timeline と Canvas の親和性。
+
+短所：内部実装は閉じており拡張が難しい。
+
+教訓：セルの再利用性とタイムストレッチ機能を軽く実装しておくことが重要。
+
+Live2D
+
+長所：パラメトリックなリギングの強さ。
+
+短所：手描き表現の自由度で制約（パーツ分けが重い）。
+
+教訓：パーツ数を増やさずにリグする工夫（セルフォルダ単位）を採る。
+
+Spine / DragonBones
+
+長所：骨＋ウェイトのスケーラブルなリグ。
+
+短所：手描き線画（freehand stroke）との統合が面倒。
+
+教訓：メッシュ化と頂点モーフを見越したデータモデル設計を最初からしておく。
+
+12. テストケース & QA チェックリスト
+
+ マイグレーション後、既存プロジェクトが再生できる（1フレームセル化でOK）
+
+ セルの移動／伸縮で history に single entry が登録される
+
+ folder.sharedTransform を変えて、子セルに正しく反映される
+
+ 同一セルの複数インスタンス（複製）が描画キャッシュを共有している（メモリ効率）
+
+ モーフ prototype（2-key）で滑らかに中間形状が補間される
+
+ 大規模プロジェクトで 60fps 再生（あるいは target fps）を維持できる（差分更新確認）
+
+13. 拡張案（中期〜長期）
+
+ノードベース表示：セルをノード、フォルダをグルーピングノードにして視覚的リグを可能にする（将来）。
+
+階層影響スライダー：親影響を 0..100% で設定可能に。
+
+セル間リンク（線）：2D マトリクス上でセルを線で繋ぎ、モーフ関係を視覚化。
+
+IndexedDB ベースのセル FBO 永続化：大規模データの退避。
+
+スクリプト API：セル / フォルダを操作できる外部スクリプト（自動化）。
+
+14. 付録：小さなアルゴリズムスニペット（擬似コード）
+morphWeight の計算
+function computeMorphWeight(cell, frame){
+  if(!cell.morph) return 0;
+  const localT = (frame - cell.startFrame) / cell.duration;
+  return easing(localT, cell.morph.interpolation); // easingは linear/easeIn/out など
+}
+
+cell -> isActive 判定
+function isActive(cell, frame){
+  return (cell.startFrame <= frame) && (frame < cell.startFrame + cell.duration);
+}
+
+単純な差分更新フロー
+function updateIfDirty(cell){
+  if(!cell.dirty) return;
+  // 1) rebuild geometry or FBO
+  const geometry = buildGeometryFromAsset(cell.assetRef, cell.morph, cell.localTransform);
+  // 2) upload to VBO or render to FBO
+  if(useMesh) uploadVBO(geometry);
+  else renderToFBO(geometry, cell.fbo);
+  cell.dirty = false;
+}
+
+============================================
+【詳細モック：UI ワイヤーフレーム（初期フェーズ）】
+============================================
+
+以下は レイヤーパネル × 2Dマトリクス × タイムライン × セル構造 を
+あなたの方向性に合わせて “最もシンプルで破綻しない初期案” として可視化したものです。
+
+すべて、Claude が読みやすいように
+UI構造 → 操作フロー → 表示ルール → 例示モック
+という順で記述しています。
+
+① UI 全体構造（初期フェーズ）
++---------------------------------------------------------------+
+|  上部ツールバー                                               |
+|  [ペン] [消しゴム] [選択] [移動] [変形] ...                   |
++---------------------------------------------------------------+
+| 左パネル：レイヤー＆セル構造   |     中央：キャンバス        |
+|--------------------------------|------------------------------|
+|  [Layer Panel]                 |                              |
+|                                |                              |
+|   ┌───────────────┐   |      ▼ 描画領域               |
+|   │  Root Folder (固定) │   |      +----------------------+ |
+|   └───────────────┘   |      |                          | |
+|                                |      |    CANVAS        | |
+|   ● CellFolder_A               |      |                          | |
+|     - layer_1                  |      +----------------------+ |
+|     - layer_2                  |                              |
+|                                |                              |
+|   ▸ Folder_B (整理フォルダ)    |                              |
+|     - layer_3                  |                              |
+|                                |                              |
+|   ● CellFolder_C               |                              |
+|     - layer_4                  |                              |
++---------------------------------------------------------------+
+|                   下部：タイムライン（2Dマトリクス）          |
++---------------------------------------------------------------+
+
+② レイヤーパネルの構造とルール
+[レイヤーパネルのルール]
+
+● = セルフォルダ（モーフ可能唯一単位）
+▸ = 整理フォルダ（モーフしない）
+
+- セルフォルダの中にあるレイヤーはセルの「中身」扱いで、
+  モーフポイントを持たない。
+
+- セルフォルダと同じ階層にあるもののみが 2D マトリクスに現れる。
+
+- 整理フォルダの中身は 2D マトリクスに出ない。
+
+例：
+Root
+ ├─ ● Head
+ │     ├─ base_lineart
+ │     └─ shade
+ │
+ ├─ ▸ Effects
+ │     └─ glow
+ │
+ └─ ● Body
+       └─ line
+
+③ タイムライン（2D マトリクス）仕様
+● タイムラインに表示されるもの：
+セルフォルダのみ
+
+● レイアウト
+
+各セルフォルダは 1 行として表現。
+
+Time →  0f  5f 10f 15f 20f  ... 
+        -----------------------------------------
+Head    | ●---◇-------●--------◇------… 
+Body    | ●-------●--------◇----------…
+
+
+記号の意味：
+
+● = キーフレーム（モーフ変形）
+◇ = 自動補間区間
+
+④ 2Dマトリクスの実際のモック（プレーンテキスト）
+
+これはツールの主力 UI。
+セルの階層＋時間の動きを同時に見せられる。
+
+=================================================================
+ 2D MATRIX TIMELINE  (初期フェーズ)
+=================================================================
+
+ Row = 各セルフォルダ
+ Col = タイム軸
+
+ 時間 →
+      00   05   10   15   20   25   30   35   40
+      ---------------------------------------------------------
+Head |  ●----◇----------●----------◇----------●---
+Body |  ●----------●----------◇--------------------
+Hand |  ●--------◇-----------●--------------◇-------
+      ---------------------------------------------------------
+
+
+※ 初期フェーズでは階層移動（Z順変化）はまだ導入しない。
+※ つまり行の上下が固定している。
+
+⑤ セルフォルダ（Cell Folder） モック
++------------------------------------------------+
+| ● Cell: Head                                   |
++------------------------------------------------+
+|  元レイヤー：                                  |
+|   - base_lineart.png                           |
+|   - shade.png                                   |
+|                                                |
+|  変形設定：                                    |
+|   - モーフ： 有効                              |
+|   - ピボット： Eye_pivot_layer                 |
+|   - 影響度： （初期は常に100%固定）            |
++------------------------------------------------+
+
+⑥ 操作フロー モック（初期フェーズにおけるユーザー動き）
+1. ユーザーが「セル化」したいフォルダを作る
+右クリック → [セルフォルダとして設定]
+フォルダ名の左に ● が付く
+
+2. セルフォルダ内のレイヤーはモーフ非対象
+フォルダ内レイヤーは単なる “絵の中身”
+
+3. タイムラインに行が追加される
+Head（●）が追加される
+
+4. 変形ツールでモーフ形状を作る
+
+→ キーフレームが生成
+
+5. 自動補間（スプライン or 線形）
+⑦ 各UI要素の詳細テキストモック
+▼ レイヤーパネル（テキスト UI）
+[ Layer Panel ]
+-----------------------------------------
+  Root
+   ├─ ● Head
+   │     ├─ base
+   │     └─ shade
+   │
+   ├─ ▸ Effects
+   │     └─ glow
+   │
+   └─ ● Body
+         ├─ body_line
+         └─ body_color
+-----------------------------------------
+
+▼ タイムライン（詳細版）
+Timeline
+===========================================================
+ Cell       | 00 | 05 | 10 | 15 | 20 | 25 | 30 | 35 | 40 |
+-----------------------------------------------------------
+ Head (●)   | ● |  ◇ |  ◇ |  ● |  ◇ |  ◇ |  ● |  ◇ | ◇ |
+ Body (●)   | ● |  ◇ |  ● |  ◇ |  ◇ |  ● |  ◇ |  ◇ | ◇ |
+===========================================================
+
+⑧ 2D マトリクスとレイヤーパネルの紐付け（内部設計モック）
+CellRegistry = {
+  Head: {
+    id: "cell_head",
+    layers: ["base", "shade"],
+    pivot: "pivot_head",   // まだ必須ではないが後々拡張可
+    keyframes: [
+       {frame:0, data:"..."},
+       {frame:15, data:"..."},
+       {frame:30, data:"..."}
+    ]
+  },
+
+  Body: {
+    id: "cell_body",
+    layers: ["body_line","body_color"],
+    keyframes:[ ... ]
+  }
+}
+
+⑨ “初期フェーズの挙動仕様” を一枚にまとめた最重要モック
+============================================================
+   初期フェーズ：Cell / Layer / Timeline の関係（最重要）
+============================================================
+
+- セルフォルダ（● Icon）だけが 2D マトリクスに出る。
+- 整理フォルダ（▸ Icon）は出ない。
+- セルフォルダ内のレイヤーはモーフの対象にならない。
+- 変形はセルフォルダ単位で行う。
+- Z順のアニメーションはまだ導入しない（行は固定）。
+- フォルダ階層はタイムラインの階層とは独立している。
+- 2D マトリクス＝「セル行 × 時間列のみ」の極小構造。
+
+結果：
+  - UIが破綻しない
+  - 実装が単純
+  - リギング初期で最も美しい状態
+  - 後期アップデートで階層連動・Z移動を追加できる
+============================================================
+
+============================================================
+
+内部構造案 — 目次
+
+目的と前提
+
+高レベルアーキテクチャ（モジュール一覧）
+
+データモデル（JSON スキーマ） — 完全型定義 + 例
+
+クラス・モジュール設計（責務、メソッド、公開 API）
+
+状態管理パターン（単一ソース／immutable-ish／イベント）
+
+イベント（EventBus）仕様（イベント名・ペイロード）
+
+レンダリング & キャッシュ戦略（dirty 管理）
+
+History（Undo/Redo）連携仕様
+
+マイグレーション関数（既存フォーマット→新フォーマット）
+
+同期・排他・パフォーマンス注意点
+
+テスト項目（単体・統合）
+
+実装優先度とファイルマップ（Claude 向け）
+
+1) 目的と前提
+
+目的：初期フェーズの「セルフォルダのみがモーフ対象」設計に合わせ、確実に動く・拡張しやすい内部構造を提示する。
+
+前提：
+
+既存コードベース（layer-system.js, animation-system.js, stroke-recorder.js, webgl2-* 等）がある前提で非破壊で統合する。
+
+座標系ルール（screenClientToCanvas() → canvasToWorld() → worldToLocal()）はそのまま踏襲。
+
+DB 永続は JSON files / IndexedDB を想定（フェーズ B以降詳細化）。
+
+2) 高レベルアーキテクチャ（モジュール一覧）
+system/
+  data-models.js          // JSON スキーマ・変換ユーティリティ
+  project-manager.js      // 現在プロジェクトの読み書き・切替
+  cell-manager.js         // Cell CRUD, query, dirty mark
+  folder-manager.js       // Folder CRUD, folder transform API
+  track-manager.js        // Track CRUD, ordering
+  asset-manager.js        // Stroke/bitmap/mesh の管理・dedupe
+  render-manager.js       // renderFrame(), cache管理
+  cache-manager.js        // FBO/LRUキャッシュ, persistence hooks
+  history-manager.js      // undo/redo wrapper (既存history.js拡張)
+  event-bus.js            // 全体イベント
+  migration-v2.js         // 旧フォーマット→新フォーマット
+  morph-processor.js      // prototype morph implementations
+ui/
+  timeline-ui.js          // Matrix UI (read/write hooks to managers)
+  folder-inspector.js     // folder properties editing
+  layer-panel-renderer.js // left panel
+webgl2/
+  gl-texture-bridge.js
+  webgl2-drawing-layer.js
+  gl-stroke-processor.js
+
+3) データモデル（JSON スキーマ）
+
+下は剰余の無い最小単位定義。実装は JS オブジェクト（plain）で扱うが、永続化はこの JSON 形式。
+
+top-level
+{
+  "projectId": "string",
+  "meta": { "name":"", "fps":24, "width":800, "height":600 },
+  "tracks": [ Track ],
+  "folders": [ Folder ],
+  "cells": [ Cell ],
+  "assets": [ Asset ],
+  "settings": { ... }
+}
+
+Track
+{
+  "id": "track-uuid",
+  "name": "Character",
+  "z": 100,
+  "visible": true,
+  "locked": false,
+  "metadata": {}
+}
+
+Folder (セルフォルダ / isMorphable = true のもののみ Matrix に出る)
+{
+  "id": "folder-uuid",
+  "name": "Head",
+  "isMorphable": true,
+  "childCellIds": ["cell-1","cell-2"],
+  "sharedProps": {
+    "maskId": null,
+    "blendMode": "normal",
+    "pivotLayerId": null
+  },
+  "transform": { "x":0,"y":0,"scale":1,"rotation":0 },
+  "meta": {}
+}
+
+Cell
+{
+  "id": "cell-uuid",
+  "trackId": "track-uuid",
+  "folderId": "folder-uuid|null",
+  "assetRef": "asset-uuid",
+  "startFrame": 0,
+  "duration": 1,           // int frames
+  "localTransform": { "x":0,"y":0,"scale":1,"rotation":0 },
+  "z": 0,                  // local z inside track / folder; overall rendering uses track.z + cell.z
+  "morph": null | {
+    "type":"shapekeys",
+    "targets":[ {"frameOffset":0,"assetRef":"asset-uuid-0"}, {"frameOffset":3,"assetRef":"asset-uuid-1"} ],
+    "interpolation":"linear"
+  },
+  "visible": true,
+  "dirty": false,
+  "meta": {}
+}
+
+Asset (stroke-group, bitmap, mesh)
+{
+  "id": "asset-uuid",
+  "type": "stroke-group|bitmap|mesh",
+  "payload": { /* stroke ids or image blob ref or mesh vertices */ },
+  "meta": { "origin":"import" }
+}
+
+4) クラス / モジュール設計（責務・API シグネチャ）
+
+下は Claude が実装するための関数・メソッド一覧（JS スタイル）。各メソッドは EventBus 経由で通知を出す（第6節参照）。
+
+EventBus（既存 system/event-bus.js を拡張）
+
+API
+
+EventBus.on(eventName, handler)
+EventBus.off(eventName, handler)
+EventBus.emit(eventName, payload)
+
+
+重要イベント例
+
+project:loaded { project }
+
+cell:created { cell }
+
+cell:updated { cell }
+
+cell:deleted { cellId }
+
+folder:updated { folder }
+
+render:request { frame }
+
+history:push { entry }
+
+ProjectManager
+
+責務：プロジェクトのロード/保存/切替/オートセーブ
+公開 API
+
+ProjectManager.load(projectJson)
+ProjectManager.save() -> projectJson
+ProjectManager.createNew(meta)
+ProjectManager.getProject() -> projectObject
+
+TrackManager
+
+責務：track の CRUD と z-order 更新
+API
+
+TrackManager.createTrack(name, opts) -> track
+TrackManager.deleteTrack(id)
+TrackManager.moveTrack(id, newIndex)
+TrackManager.getTracks() -> [track]
+
+AssetManager
+
+責務：stroke/bitmap/mesh を dedupe 保持、非同期読み込み（画像）管理
+API
+
+AssetManager.importStrokeGroup(strokeGroup) -> assetId
+AssetManager.importBitmap(blobOrUrl) -> promise(assetId)
+AssetManager.getAsset(id)
+AssetManager.removeAsset(id) // only allowed if not referenced
+
+FolderManager
+
+責務：Folder CRUD、shared transform 編集、child linking
+API
+
+FolderManager.createFolder(name, opts) -> folder
+FolderManager.deleteFolder(folderId)
+FolderManager.addCell(folderId, cellId)
+FolderManager.removeCell(folderId, cellId)
+FolderManager.setTransform(folderId, transform)
+FolderManager.setSharedProps(folderId, props)
+FolderManager.getFolder(folderId)
+
+
+Implementation note: addCell must validate cell existence and update cell.folderId. Emit folder:updated and cell:updated.
+
+CellManager
+
+責務：Cell の CRUD とクエリ（activeCells, cellsByTrack）, dirty フラグ管理
+API
+
+CellManager.createCell({ trackId, folderId=null, assetRef, startFrame, duration, localTransform }) -> cell
+CellManager.updateCell(cellId, patch) -> cell
+CellManager.deleteCell(cellId)
+CellManager.getCell(cellId)
+CellManager.getCellsByTrack(trackId) -> [cell]
+CellManager.getActiveCells(frame) -> [cell]
+CellManager.markDirty(cellId)
+CellManager.markClean(cellId)
+
+
+注意：updateCell は atomic に履歴用 oldState を返す（history 用）。markDirty は RenderManager に通知。
+
+RenderManager
+
+責務：renderFrame(frame) の主担当。キャッシュ参照・差分更新・GPUアップロードを行う。
+API
+
+RenderManager.renderFrame(frame)
+RenderManager.requestRender(frame) // schedules a render, respects throttle
+RenderManager.invalidateCell(cellId) // internal: mark cached FBO invalid
+RenderManager.clearCache()
+
+
+内部ヘルパ
+
+buildGeometryForCell(cell) // uses AssetManager payload
+
+uploadToVBO(geometry)
+
+renderQuadWithTexture(texture, transform)
+
+Flow：
+
+Query CellManager.getActiveCells(frame)
+
+For each cell:
+
+If cell.dirty -> update geometry/FBO via buildGeometryForCell -> cache
+
+Compose folder.transform + cell.localTransform -> world transform
+
+Draw cached FBO or VBO
+
+Emit render:complete
+
+CacheManager
+
+責務：FBO / texture LRU, IndexedDB persistence hook
+API
+
+CacheManager.getCellTexture(cellId) -> texture|null
+CacheManager.setCellTexture(cellId, texture)
+CacheManager.evictIfNeeded()
+CacheManager.persistCellTexture(cellId) // optional
+
+HistoryManager (既存拡張)
+
+責務：undo/redo entry 管理。エントリは do() / undo() を持つ。
+API
+
+HistoryManager.push(entry)
+HistoryManager.undo()
+HistoryManager.redo()
+
+
+entry shape
+
+{
+  name: "cell-resize",
+  do: ()=>{},
+  undo: ()=>{},
+  meta: { cellId, timestamp }
+}
+
+MorphProcessor (prototype)
+
+責務：簡易モーフ（同数サンプリング prototype）を生成する。将来 GPU morph に置換予定。
+API
+
+MorphProcessor.generateMorphGeometry(assetRefStart, assetRefEnd, tNormalized) -> geometry
+
+5) 状態管理パターン
+
+基本方針：Single Source of Truth（Project Object） + 軽量ミュータブル操作 + イベント通知。
+
+すべての CRUD は ProjectManager が保持する project オブジェクトに対して行う。
+
+各 Manager は project の参照を持ち、変更は Manager を通して行うこと（直接改変禁止）。
+
+変更時は**"差分パッチ"（partial object）** を update に渡す。Manager 内で oldState を複製して history.push() 用に保持。
+
+Immutable セマンティクスの採用（浅いコピー）：history 用 oldState copy を作るが、パフォーマンス上の理由で全体を deep clone するのは避ける。Cell/Folder/Track 単位で clone。
+
+例（updateCell 実装骨子）：
+
+function updateCell(cellId, patch){
+  const old = shallowClone(project.cellsMap[cellId]);
+  const newCell = Object.assign({}, old, patch);
+  project.cellsMap[cellId] = newCell;
+  EventBus.emit('cell:updated', newCell);
+  HistoryManager.push({name:'cell:update', do:()=>{}, undo:()=>{...}, meta:{cellId}});
+}
+
+6) EventBus（イベント一覧とペイロード）
+
+最も重要なイベントを列挙。実装は既存 event-bus.js を活用。
+
+project:loaded -> { project }
+cell:created -> { cell }
+cell:updated -> { cell }
+cell:deleted -> { cellId }
+folder:created -> { folder }
+folder:updated -> { folder }
+folder:deleted -> { folderId }
+render:request -> { frame }
+render:complete -> { frame }
+asset:imported -> { assetId }
+history:push -> { entry }
+cache:evict -> { cellId }
+
+
+UI はこれらに subscribe して更新を描画する。RenderManager は cell:updated を受けて invalidateCell を呼ぶ。
+
+7) レンダリング & キャッシュ戦略（dirty 管理）
+
+Cell.dirty boolean を使用する。CellManager.updateCell() は patch 中に描画に影響する変更（assetRef, morph, localTransform, duration 等）を検出して markDirty(cellId) を呼ぶ。
+
+RenderManager.renderFrame(frame) は getActiveCells(frame) を呼び、各 cell の dirty を確認する。dirty -> buildGeometryForCell() → CacheManager.setCellTexture(cellId, texture)。
+
+差分更新：1 フレームに対して必要な cell 数のみ処理（active cells only）。
+
+FBO キャッシュキー：cellId + morphSignature + transformSignature。transformはキャッシュに入れない（描画時に uniform で変換）。モーフがある場合はモーフ状態でキャッシュ分割する。
+
+LRU Eviction：メモリ制限値に応じて oldest unused cell textures を evict。
+
+8) History / Undo の運用
+
+Atomic 操作：セルのドラッグ（移動/resize）は pointerdown で temp state を記録、pointermove は UI 更新のみ（history push しない）、pointerup で一つの history entry を push（do/undo が適用可能）。
+
+履歴に含めるメタ：cellId, oldValue, newValue, timestamp。HistoryManager は do/undo の際に EventBus を使って必要な更新イベントを emit。
+
+9) マイグレーション関数（既存フォーマット→新フォーマット）
+
+既存の「layers × frames」フォーマットから自動移行するサンプル。
+
+function migrateOldProject(oldProject){
+  const newProject = { meta: {...oldProject.meta}, tracks:[], folders:[], cells:[], assets:[] };
+  // 1) Top-level layers => tracks
+  oldProject.layers.forEach(layer => {
+    const track = TrackManager.createTrack(layer.name, { z: layer.z || 0 });
+    // map layerId -> trackId
+  });
+  // 2) For each frame, for each layer, if non-empty -> create cell (duration=1)
+  oldProject.frames.forEach((frameData, frameIndex) => {
+    oldProject.layers.forEach(layer => {
+      const content = frameData[layer.id];
+      if(content){
+         const assetId = AssetManager.importStrokeGroup(content.strokes);
+         const cell = CellManager.createCell({ trackId: trackIdMap[layer.id], assetRef: assetId, startFrame: frameIndex, duration:1, localTransform:identity });
+         // optionally group into folder if layer had folder grouping
+      }
+    });
+  });
+  return newProject;
+}
+
+
+注意点：
+
+重複アセットは AssetManager で dedupe。
+
+古いフォルダは 整理フォルダ にマップ（非セル化）。
+
+10) 同期・排他・パフォーマンス注意点
+
+UI スレッド負荷回避：重い処理（mesh triangulation, geometry build）は WebWorker にオフロード可能に設計（MorphProcessor や buildGeometryForCell）。非同期 API を返す形で実装する。
+
+lock / optimistic updates：ユーザー操作（ドラッグ）中は UI に即時反映しつつ、最終的な整合処理をバックグラウンドで行う。
+
+イベント噴火量の制御：cell:updated は throttle/debounce を UI 側で扱う。history は最終イベントでのみ push。
+
+メモリ制御：FBO テクスチャの合計メモリを監視。超過したら LRU で退避。
+
+11) テスト項目（重要な単体・統合ケース）
+単体
+
+CellManager.create/update/delete の正常系・異常系（存在しない trackId 等）
+
+FolderManager.addCell/removeCell の参照整合性
+
+AssetManager.dedupe の動作（同一 strokeGroup を複数 import したとき）
+
+統合
+
+マイグレーション後、Timeline に正しくセルが並ぶ
+
+セル移動→pointerdown/pointermove/pointerup で single history entry
+
+renderFrame( ) の結果が期待通り（activeCells のみ描画）
+
+キャッシュ eviction/persist の動作（メモリ制限超過）
+
+12) 実装優先度 & ファイルマップ（Claude 向け）
+
+フェーズA（短期） — 優先度高
+
+system/data-models.js（定義・バリデータ）
+
+system/event-bus.js（必要なら軽微拡張）
+
+system/project-manager.js（プロジェクト保持）
+
+system/cell-manager.js（CRUD + queries + dirty）
+
+system/render-manager.js（renderFrame loop + simple cache）
+
+ui/timeline-ui.js（Matrix readonly → create hooks）
+
+フェーズB（中期）
+7. system/folder-manager.js（shared transform）
+8. system/asset-manager.js（dedupe）
+9. system/history-manager.js（既存を統合）
+10. system/morph-processor.js（prototype）
+11. system/cache-manager.js（LRU, IndexedDB）
+
+ファイル責務の具体表
+
+system/data-models.js  -> スキーマ + validation util
+system/project-manager.js -> 全体 project オブジェクトの getter/setter
+system/cell-manager.js -> cell-centric API (create/update/delete/query)
+system/folder-manager.js -> folder-centric API
+system/asset-manager.js  -> asset import / dedupe
+system/render-manager.js -> renderFrame, schedule render
+system/cache-manager.js  -> fbo/textures lifecycle
+system/history-manager.js -> undo/redo
+system/event-bus.js      -> pub/sub
+system/migration-v2.js   -> import legacy
+system/morph-processor.js -> prototype morphing
+
+付録：典型的な実装スニペット（Claude が貼れる実装テンプレ）
+CellManager.createCell の雛形
+// system/cell-manager.js
+function createCell({ trackId, folderId=null, assetRef, startFrame=0, duration=1, localTransform=null }){
+  if(!project.tracksMap[trackId]) throw new Error('Track not found');
+  const id = genUuid('cell');
+  const cell = {
+    id, trackId, folderId, assetRef,
+    startFrame, duration,
+    localTransform: localTransform || {x:0,y:0,scale:1,rotation:0},
+    z:0, visible:true, dirty:true, meta:{}
+  };
+  project.cells.push(cell);
+  project.cellsMap[id] = cell;
+  EventBus.emit('cell:created', {cell});
+  RenderManager.invalidateCell(id);
+  return cell;
+}
+
+RenderManager.renderFrame の雛形
+async function renderFrame(frame){
+  const active = CellManager.getActiveCells(frame).sort(byGlobalZ);
+  for(const cell of active){
+    if(cell.dirty){
+      // possibly async geometry build
+      const geometry = await buildGeometryForCell(cell);
+      const texture = await renderToFBO(geometry);
+      CacheManager.setCellTexture(cell.id, texture);
+      CellManager.markClean(cell.id);
+    }
+    const texture = CacheManager.getCellTexture(cell.id);
+    const folder = FolderManager.getFolder(cell.folderId);
+    const worldTransform = compose(folder?.transform, cell.localTransform);
+    drawTextureQuad(texture, worldTransform);
+  }
+  EventBus.emit('render:complete', {frame});
+}
+
+============================================================
+
+第3部：実装案（Claude がコピペして使える JS ファイル草案）
+
+目的：第2部の内部構造案に沿って、Claude がそのまま実装を始められる「ファイル単位のテンプレ＆主要関数実装」を提示します。プレーンテキストの .js ファイル草案群です。各ファイルは簡潔なコメントと必須の API を含み、後で機能追加しやすい形で作っています。非同期処理や WebWorker 化ポイントはコメントで明記しています。
+
+注：実装草案は ES2023（モジュール非使用）かつ file:// で直接開ける現行ルールに合わせ、グローバル名前空間 window.APP 下へ登録する形にしています（既存コードとの相性を想定）。
+
+共通トップ（bootstrap 片）
+// core-bootstrap.js
+// -- プロジェクト開始時に一度だけ読み込む
+(function(){
+  if(window.APP) return;
+  window.APP = window.APP || {};
+  window.APP.Utils = {
+    genId(prefix='id'){ return `${prefix}_${Math.random().toString(36).slice(2,9)}`; },
+    shallowClone(obj){ return Object.assign({}, obj); },
+    now(){ return Date.now(); }
+  };
+})();
+
+1) event-bus.js
+// system/event-bus.js
+(function(){
+  const listeners = Object.create(null);
+  const EventBus = {
+    on(event, handler){ (listeners[event] = listeners[event]||[]).push(handler); },
+    off(event, handler){
+      if(!listeners[event]) return;
+      const i = listeners[event].indexOf(handler);
+      if(i>=0) listeners[event].splice(i,1);
+    },
+    emit(event, payload){
+      const arr = listeners[event];
+      if(!arr) return;
+      // shallow copy to avoid mutation during iteration
+      for(const h of arr.slice()) {
+        try { h(payload); } catch(e){ console.error('EventBus handler error', e); }
+      }
+    }
+  };
+  window.APP.EventBus = EventBus;
+})();
+
+2) data-models.js
+// system/data-models.js
+(function(){
+  const Schema = {
+    defaultProject(meta={}) {
+      return {
+        projectId: window.APP.Utils.genId('proj'),
+        meta: Object.assign({name:'untitled', fps:24, width:800, height:600}, meta),
+        tracks: [],
+        folders: [],
+        cells: [],
+        assets: [],
+        settings: {}
+      };
+    },
+    // simple validators
+    isTrack(t){ return t && t.id && typeof t.name === 'string'; },
+    isFolder(f){ return f && f.id && typeof f.name === 'string'; },
+    isCell(c){ return c && c.id && typeof c.startFrame === 'number'; }
+  };
+  window.APP.Schema = Schema;
+})();
+
+3) project-manager.js
+// system/project-manager.js
+(function(){
+  const ProjectManager = (function(){
+    let project = null;
+    function load(projectJson){
+      project = projectJson;
+      // build maps for quick lookup
+      rebuildMaps();
+      window.APP.EventBus.emit('project:loaded', {project});
+    }
+    function createNew(meta){
+      project = window.APP.Schema.defaultProject(meta);
+      rebuildMaps();
+      window.APP.EventBus.emit('project:loaded', {project});
+      return project;
+    }
+    function getProject(){ return project; }
+    // internal maps
+    let maps = { tracksMap:{}, foldersMap:{}, cellsMap:{}, assetsMap:{} };
+    function rebuildMaps(){
+      maps = { tracksMap:{}, foldersMap:{}, cellsMap:{}, assetsMap:{} };
+      if(!project) return;
+      for(const t of project.tracks||[]) maps.tracksMap[t.id]=t;
+      for(const f of project.folders||[]) maps.foldersMap[f.id]=f;
+      for(const c of project.cells||[]) maps.cellsMap[c.id]=c;
+      for(const a of project.assets||[]) maps.assetsMap[a.id]=a;
+    }
+    function getMaps(){ return maps; }
+    return { load, createNew, getProject, getMaps, rebuildMaps };
+  })();
+  window.APP.ProjectManager = ProjectManager;
+})();
+
+4) track-manager.js
+// system/track-manager.js
+(function(){
+  const PM = window.APP.ProjectManager;
+  const EventBus = window.APP.EventBus;
+  const TrackManager = {
+    createTrack(name, opts={}){
+      const project = PM.getProject();
+      if(!project) throw new Error('No project loaded');
+      const t = { id: window.APP.Utils.genId('track'), name, z: opts.z||0, visible:true, locked:false, metadata:{} };
+      project.tracks.push(t);
+      PM.rebuildMaps();
+      EventBus.emit('track:created', {track:t});
+      return t;
+    },
+    deleteTrack(id){
+      const p = PM.getProject();
+      p.tracks = p.tracks.filter(t=>t.id!==id);
+      PM.rebuildMaps();
+      EventBus.emit('track:deleted',{trackId:id});
+    },
+    getTracks(){ return PM.getProject().tracks; }
+  };
+  window.APP.TrackManager = TrackManager;
+})();
+
+5) asset-manager.js (簡易)
+// system/asset-manager.js
+(function(){
+  const PM = window.APP.ProjectManager;
+  const EventBus = window.APP.EventBus;
+  const AssetManager = {
+    importStrokeGroup(strokes){
+      const project = PM.getProject();
+      // basic dedupe by JSON text (cheap)
+      const signature = JSON.stringify(strokes);
+      const existing = project.assets.find(a => a.type==='stroke-group' && a.meta && a.meta.signature === signature);
+      if(existing) return existing.id;
+      const id = window.APP.Utils.genId('asset');
+      const asset = { id, type:'stroke-group', payload:{strokes}, meta:{ signature } };
+      project.assets.push(asset);
+      PM.rebuildMaps();
+      EventBus.emit('asset:imported',{assetId:id});
+      return id;
+    },
+    importBitmap(urlOrBlob){
+      // asynchronous path – keep stub for now, return a promise that resolves to asset id
+      const project = PM.getProject();
+      return new Promise((resolve, reject) => {
+        const id = window.APP.Utils.genId('asset');
+        const asset = { id, type:'bitmap', payload:{url:urlOrBlob}, meta:{} };
+        project.assets.push(asset);
+        PM.rebuildMaps();
+        EventBus.emit('asset:imported',{assetId:id});
+        resolve(id);
+      });
+    },
+    getAsset(id){ return PM.getMaps().assetsMap[id] || null; },
+    removeAsset(id){
+      const p = PM.getProject();
+      // only remove if not referenced
+      const used = p.cells.some(c=>c.assetRef===id);
+      if(used) throw new Error('Asset in use');
+      p.assets = p.assets.filter(a=>a.id!==id);
+      PM.rebuildMaps();
+      EventBus.emit('asset:removed',{assetId:id});
+    }
+  };
+  window.APP.AssetManager = AssetManager;
+})();
+
+6) folder-manager.js
+// system/folder-manager.js
+(function(){
+  const PM = window.APP.ProjectManager;
+  const EventBus = window.APP.EventBus;
+  const FolderManager = {
+    createFolder(name, opts={}){
+      const project = PM.getProject();
+      const id = window.APP.Utils.genId('folder');
+      const folder = {
+        id, name,
+        isMorphable: !!opts.isMorphable,
+        childCellIds: [],
+        sharedProps: opts.sharedProps || { maskId:null, blendMode:'normal', pivotLayerId:null },
+        transform: opts.transform || {x:0,y:0,scale:1,rotation:0},
+        meta: {}
+      };
+      project.folders.push(folder);
+      PM.rebuildMaps();
+      EventBus.emit('folder:created',{folder});
+      return folder;
+    },
+    deleteFolder(folderId){
+      const p = PM.getProject();
+      // detach child cells
+      for(const c of p.cells) if(c.folderId===folderId) c.folderId = null;
+      p.folders = p.folders.filter(f=>f.id!==folderId);
+      PM.rebuildMaps();
+      EventBus.emit('folder:deleted',{folderId});
+    },
+    addCell(folderId, cellId){
+      const maps = PM.getMaps();
+      const folder = maps.foldersMap[folderId];
+      const cell = maps.cellsMap[cellId];
+      if(!folder || !cell) throw new Error('Invalid folderId or cellId');
+      if(!folder.childCellIds.includes(cellId)) folder.childCellIds.push(cellId);
+      cell.folderId = folderId;
+      PM.rebuildMaps();
+      EventBus.emit('folder:updated',{folder});
+      EventBus.emit('cell:updated',{cell});
+    },
+    removeCell(folderId, cellId){
+      const maps = PM.getMaps();
+      const folder = maps.foldersMap[folderId];
+      if(!folder) return;
+      folder.childCellIds = folder.childCellIds.filter(id=>id!==cellId);
+      const cell = maps.cellsMap[cellId];
+      if(cell) cell.folderId = null;
+      PM.rebuildMaps();
+      EventBus.emit('folder:updated',{folder});
+    },
+    setTransform(folderId, transform){ // replace whole transform
+      const folder = PM.getMaps().foldersMap[folderId];
+      if(!folder) throw new Error('folder not found');
+      folder.transform = transform;
+      EventBus.emit('folder:updated',{folder});
+    },
+    getFolder(id){ return PM.getMaps().foldersMap[id] || null; }
+  };
+  window.APP.FolderManager = FolderManager;
+})();
+
+7) cell-manager.js
+// system/cell-manager.js
+(function(){
+  const PM = window.APP.ProjectManager;
+  const EventBus = window.APP.EventBus;
+  const RenderManager = window.APP.RenderManager;
+  const CellManager = {
+    createCell({ trackId, folderId=null, assetRef, startFrame=0, duration=1, localTransform=null }){
+      const project = PM.getProject();
+      const id = window.APP.Utils.genId('cell');
+      const cell = {
+        id, trackId, folderId, assetRef,
+        startFrame, duration,
+        localTransform: localTransform || {x:0,y:0,scale:1,rotation:0},
+        z:0, visible:true, dirty:true, meta:{}
+      };
+      project.cells.push(cell);
+      PM.rebuildMaps();
+      EventBus.emit('cell:created',{cell});
+      RenderManager.invalidateCell(cell.id);
+      return cell;
+    },
+    updateCell(cellId, patch){
+      const maps = PM.getMaps();
+      const cell = maps.cellsMap[cellId];
+      if(!cell) throw new Error('cell not found');
+      const old = window.APP.Utils.shallowClone(cell);
+      Object.assign(cell, patch);
+      // detect whether render-affecting changes happened
+      const renderAffecting = ['assetRef','morph','localTransform','startFrame','duration','visible'].some(k=>k in patch);
+      if(renderAffecting) { cell.dirty = true; EventBus.emit('cell:updated',{cell}); RenderManager.invalidateCell(cell.id); }
+      else EventBus.emit('cell:updated',{cell});
+      // return prior for history
+      return { old, new: window.APP.Utils.shallowClone(cell) };
+    },
+    deleteCell(cellId){
+      const project = PM.getProject();
+      project.cells = project.cells.filter(c=>c.id!==cellId);
+      PM.rebuildMaps();
+      EventBus.emit('cell:deleted',{cellId});
+      window.APP.RenderManager.invalidateCell(cellId);
+    },
+    getCell(id){ return PM.getMaps().cellsMap[id] || null; },
+    getCellsByTrack(trackId){ return PM.getProject().cells.filter(c=>c.trackId===trackId); },
+    getActiveCells(frame){ return PM.getProject().cells.filter(c => c.startFrame <= frame && frame < (c.startFrame + c.duration) && c.visible); },
+    markDirty(id){ const c = PM.getMaps().cellsMap[id]; if(c){ c.dirty = true; window.APP.EventBus.emit('cell:updated',{cell:c}); window.APP.RenderManager.invalidateCell(id); } },
+    markClean(id){ const c = PM.getMaps().cellsMap[id]; if(c){ c.dirty = false; } }
+  };
+  window.APP.CellManager = CellManager;
+})();
+
+8) cache-manager.js (FBO texture cache stub)
+// system/cache-manager.js
+(function(){
+  const CacheManager = (function(){
+    const cache = new Map(); // cellId -> { texture, lastUsed }
+    const MAX_ENTRIES = 200; // tuneable
+    function get(cellId){
+      const v = cache.get(cellId);
+      if(!v) return null;
+      v.lastUsed = Date.now();
+      return v.texture;
+    }
+    function set(cellId, texture){
+      cache.set(cellId, {texture, lastUsed: Date.now()});
+      evictIfNeeded();
+    }
+    function evictIfNeeded(){
+      if(cache.size <= MAX_ENTRIES) return;
+      // evict oldest
+      const items = Array.from(cache.entries());
+      items.sort((a,b)=>a[1].lastUsed - b[1].lastUsed);
+      const toEvict = items.slice(0, items.length - MAX_ENTRIES);
+      for(const [key] of toEvict) {
+        // TODO: release WebGL texture properly
+        cache.delete(key);
+        window.APP.EventBus.emit('cache:evict',{cellId:key});
+      }
+    }
+    return { get, set, evictIfNeeded };
+  })();
+  window.APP.CacheManager = CacheManager;
+})();
+
+9) render-manager.js (基本ループ)
+// system/render-manager.js
+(function(){
+  const PM = window.APP.ProjectManager;
+  const EventBus = window.APP.EventBus;
+  const CellManager = window.APP.CellManager;
+  const CacheManager = window.APP.CacheManager;
+  // placeholder draw functions - these should call WebGL2 pipeline
+  function drawTextureQuad(texture, transform){ /* implement in webgl2-drawing-layer */ }
+  async function buildGeometryForCell(cell){
+    // sync or async: if heavy, offload to worker
+    const asset = window.APP.AssetManager.getAsset(cell.assetRef);
+    if(!asset) return null;
+    if(asset.type === 'stroke-group'){
+      // convert strokes to geometry (triangulation) – synchronous prototype
+      // TODO: generate VBO, or render stroke to FBO
+      return { /* geometry representation */ };
+    }
+    return null;
+  }
+
+  const RenderManager = {
+    invalidateCell(cellId){ // mark cached texture invalid (by evicting)
+      // simple approach: evict from cache
+      // More sophisticated: keep cache key with morph signature
+      // but for prototype, just drop
+      CacheManager.evictIfNeeded();
+    },
+    async renderFrame(frame){
+      const active = CellManager.getActiveCells(frame).sort((a,b)=> (a.z - b.z));
+      for(const cell of active){
+        // if no texture cached or dirty: rebuild
+        let tex = CacheManager.get(cell.id);
+        if(!tex || cell.dirty){
+          // build geometry and render to FBO -> texture
+          const geom = await buildGeometryForCell(cell);
+          // renderToFBO(geom) => texture (implementation in webgl2 module)
+          tex = await window.APP.WebGLRenderer.renderCellToTexture(cell, geom); // expected to exist
+          CacheManager.set(cell.id, tex);
+          CellManager.markClean(cell.id);
+        }
+        const folder = window.APP.FolderManager.getFolder(cell.folderId);
+        const worldTransform = composeTransforms(folder ? folder.transform : null, cell.localTransform);
+        drawTextureQuad(tex, worldTransform);
+      }
+      EventBus.emit('render:complete', {frame});
+    }
+  };
+  window.APP.RenderManager = RenderManager;
+  // small helper
+  function composeTransforms(folderT, localT){
+    if(!folderT) return localT;
+    return {
+      x: folderT.x + localT.x,
+      y: folderT.y + localT.y,
+      scale: folderT.scale * localT.scale,
+      rotation: folderT.rotation + localT.rotation
+    };
+  }
+})();
+
+
+実装ノート：window.APP.WebGLRenderer.renderCellToTexture と drawTextureQuad は webgl2-drawing-layer.js 内で実装してください。ここはレンダーパイプライン依存のため切り出します。
+
+10) history-manager.js (簡易)
+// system/history-manager.js
+(function(){
+  const EventBus = window.APP.EventBus;
+  const stack = [];
+  let ptr = -1;
+  function push(entry){
+    // entry: { name, do: fn, undo: fn, meta }
+    // truncate forward
+    stack.splice(ptr+1);
+    stack.push(entry);
+    ptr = stack.length - 1;
+    EventBus.emit('history:push', {entry});
+  }
+  function undo(){
+    if(ptr < 0) return;
+    const entry = stack[ptr];
+    try { entry.undo(); ptr--; EventBus.emit('history:undo',{entry}); } catch(e){ console.error(e); }
+  }
+  function redo(){
+    if(ptr+1 >= stack.length) return;
+    ptr++;
+    const entry = stack[ptr];
+    try { entry.do(); EventBus.emit('history:redo',{entry}); } catch(e){ console.error(e); }
+  }
+  window.APP.HistoryManager = { push, undo, redo };
+})();
+
+11) migration-v2.js (旧フォーマット→新フォーマットの草案)
+// system/migration-v2.js
+(function(){
+  const PM = window.APP.ProjectManager;
+  const AssetManager = window.APP.AssetManager;
+  function migrateOldProject(old){
+    const newP = window.APP.Schema.defaultProject(old.meta || {});
+    // 1) map layers -> tracks
+    const layerToTrack = {};
+    (old.layers||[]).forEach(layer=>{
+      const t = { id: window.APP.Utils.genId('track'), name: layer.name || layer.id, z: layer.z || 0, visible:true, locked:false};
+      newP.tracks.push(t);
+      layerToTrack[layer.id] = t.id;
+    });
+    // 2) frames iteration -> create cells
+    (old.frames||[]).forEach((frameContent, frameIndex)=>{
+      (old.layers||[]).forEach(layer=>{
+        const cellData = frameContent[layer.id];
+        if(!cellData) return;
+        // assume strokegroup
+        const assetId = AssetManager.importStrokeGroup(cellData.strokes || []);
+        const cell = {
+          id: window.APP.Utils.genId('cell'),
+          trackId: layerToTrack[layer.id],
+          folderId: null,
+          assetRef: assetId,
+          startFrame: frameIndex,
+          duration: 1,
+          localTransform: {x:0,y:0,scale:1,rotation:0},
+          z:0, visible:true, dirty:true, meta:{ migrated:true }
+        };
+        newP.cells.push(cell);
+      });
+    });
+    PM.load(newP);
+    return newP;
+  }
+  window.APP.MigrationV2 = { migrateOldProject };
+})();
+
+12) morph-processor.js (プロトタイプ)
+// system/morph-processor.js
+(function(){
+  // Prototype: takes two stroke-group assets and returns interpolated geometry points.
+  async function generateInterpolatedStrokes(assetIdA, assetIdB, tNormalized){
+    const a = window.APP.AssetManager.getAsset(assetIdA);
+    const b = window.APP.AssetManager.getAsset(assetIdB);
+    if(!a || !b) throw new Error('assets missing');
+    // For prototype: resample both stroke lists to same number of points per stroke
+    // Simple naive algorithm: join strokes and linear interpolate points index-wise
+    // TODO: Replace with robust resampling + topological matching
+    const strokesA = a.payload.strokes || [];
+    const strokesB = b.payload.strokes || [];
+    const out = [];
+    const maxLen = Math.max(strokesA.length, strokesB.length);
+    for(let i=0;i<maxLen;i++){
+      const sa = strokesA[i] || strokesA[strokesA.length-1] || [];
+      const sb = strokesB[i] || strokesB[strokesB.length-1] || [];
+      const n = Math.max(sa.length, sb.length, 8);
+      const ra = resamplePoints(sa, n);
+      const rb = resamplePoints(sb, n);
+      const ri = [];
+      for(let p=0;p<n;p++){
+        const x = ra[p].x*(1-tNormalized) + rb[p].x*tNormalized;
+        const y = ra[p].y*(1-tNormalized) + rb[p].y*tNormalized;
+        ri.push({x,y});
+      }
+      out.push(ri);
+    }
+    return out; // stroke->point arrays
+  }
+  // helper (naive) resampling
+  function resamplePoints(points, n){
+    if(!points || points.length===0) {
+      const arr = [];
+      for(let i=0;i<n;i++) arr.push({x:0,y:0});
+      return arr;
+    }
+    // uniform sampling along index (not arc-length) — prototype only
+    const out = [];
+    for(let i=0;i<n;i++){
+      const idx = Math.floor(i*(points.length-1)/(n-1));
+      out.push(points[idx]);
+    }
+    return out;
+  }
+  window.APP.MorphProcessor = { generateInterpolatedStrokes };
+})();
+
+実装メモ（Claude 向け）
+
+webgl2-drawing-layer.js 側に renderCellToTexture(cell, geometry) と低レベル GL ロジックを実装して下さい。ここで FBO を生成・管理し、CacheManager.set(cellId, texture) に渡します。
+
+重たい geometry build は WebWorker にオフロードしてください（MorphProcessor や triangulation）。
+
+この草案は「動くプロトタイプ」を優先した実装設計です。後で GPU morph、MSDF、最適化を差し替えられるように責務を分離しています。
+
+第4部：比較論（Procreate Dreams / ToonSquid / Live2D / Spine／DragonBones／AfterEffects を踏まえた実践的比較）
+
+目的は「これら既存ツールの設計上の強みと弱みから、あなたの最適構成（セルフォルダのみモーフ対象）に対して何をどのように学び取り、実装で活かすか」を明確にすること。
+
+比較の観点（評価軸）
+
+UX（作業しやすさ） — セルの再利用性、操作の直感性
+
+表現力（手描きに対する適合） — ストローク/線の自然さ、モーフ表現力
+
+リギングの柔軟性 — 階層/親子/ウェイト/スケルトンの扱い易さ
+
+パフォーマンス — 実時間再生、メモリ管理、レンダーパイプラインの効率
+
+拡張性 / スクリプト性 — 外部連携、ファイル出力、プラグイン性
+
+1) Procreate / Procreate Dreams（iPad向け）
+
+強み
+
+非常に直感的なセル（レイヤー）操作 — タッチ操作最適化。
+
+セル再利用（コピー）やタイムストレッチがしやすく、アニメ作業の流れが速い。
+
+UIの視認性が高い（大画面タブレット向けに最適化）。
+
+弱み
+
+内部は閉じていて細かなリグ／カスタムパイプライン導入が難しい。
+
+大規模リグ（骨や複雑モーフ）には向かないことが多い。
+
+学び
+
+セルの“軽さ”と即時性を重視する。タイムストレッチとセル再利用の UX を優先して実装することで、ユーザーの満足度が高まる。
+
+2) ToonSquid 系（近年の2Dアニメツール手機向け）
+
+強み
+
+セルの継続的なタイムライン表現。
+
+レイヤー・フォルダ操作とアニメーションが親和性高い。
+
+弱み
+
+一部はラスタ中心であり、ベクターやストローク特有の表現を犠牲にする場合がある。
+
+学び
+
+フォルダを横断する共有プロパティ（mask, pivot, shared transform）は実用的。
+
+3) Live2D
+
+強み
+
+パラメータ駆動の高精度リギング。表情や顔のパラメータアニメが強力。
+
+部分的に非常に滑らかな変形が可能（ペイントとリグの両立）。
+
+弱み
+
+パーツ分割が前提で、手描きストロークや随意の線をそのままモーフするのは手間。
+
+作業フローが分離される（描画工程とリグ工程が別）。
+
+学び
+
+パラメータ制御（親影響度のスライダーやパラメトリックデフォーマ）を取り入れると表現力が上がる。
+
+ただし Live2D のように「全てをパラメータ化」するとユーザー負担が増えるため、セルフォルダ単位での簡潔なパラメータ提供が良いバランス。
+
+4) Spine / DragonBones（ゲーム向け2Dスケルトンアニメ）
+
+強み
+
+スケルトン＋ウェイトによる効率的なアニメ。軽量で再生数が多いシーンに強い。
+
+アニメーションのリターゲッティングが容易。
+
+弱み
+
+Freehand ストロークの滑らかさ/線の保持が得意ではない（メッシュへの変換が必要）。
+
+学び
+
+メッシュ化 + 頂点モーフ はゲーム寄りパフォーマンスで安定する。将来的に頂点モーフを組み込む設計は合理的。
+
+5) After Effects（タイムライン＆レイヤー/合成の王道）
+
+強み
+
+タイムストレッチ、レイヤーの Z キーフレーム、親子関係、エクスプレッション（スクリプト）など高機能。
+
+既存のアニメーターのワークフローをよく理解している（堅牢）。
+
+弱み
+
+手描きストロークを直接扱う作業には向かない（ラスタ中心）。
+
+リアルタイム操作性は劣る。
+
+学び
+
+Z 順のアニメーション（階層移動） を後期機能として計画すべきだが、初期は複雑化を避ける方が良い。
+
+総括：あなたの「セルフォルダだけがモーフ」設計に対する提言（比較から得た実践的な結論）
+
+UX優先でセルの即時性と再利用を第一に（Procreate の教訓）。
+→ タイムストレッチ、コピー、セル共有 asset を簡単に。
+
+フォルダ共有プロパティ（mask/pivot/transform）を初期で整備（ToonSquid 教訓）。
+
+中期で頂点モーフを導入（Spine/DragonBones 教訓） — GPU 補間を想定したメッシュ化を視野に。
+
+パラメータで親影響をコントロールできる「スライダー」 を将来の必須要素として設計に組み込む（Live2D 教訓）。
+
+Z キーアニメーションは後期（After Effects 教訓） — UI とデータモデルを先に安定させてから。
+
+実装優先度（比較論反映）
+
+セル再利用性（Asset参照設計）とタイムストレッチ（Cell.duration）を最初に。
+
+Folder.sharedProps（mask/pivot）を早期に実装。
+
+Morph のプロトタイプ（same-sampling）を作って表現力を検証。
+
+GPU ベースの頂点モーフ（本実装）に移行。
+
+親影響スライダー、階層子セルの親子連携、Z キーを順に追加。
+
+最後に：実運用上の小さな UX 提案（実装に入れると喜ばれる）
+
+セルの「参照プレビュー」：セルを複製したときに参照元を明示（小アイコン）。
+
+セルの“リンク解除”ボタン：インスタンスをコピーして独立させる（参照から独立）。
+
+ライトウェイトの「自動マッチ」ツール：モーフターゲット探索で似た形のストロークを自動提案してくれる（ユーザーコスト軽減）。
+
+オンザフライの低解像度プレビュー：編集時は低解像度キャッシュで即時再生、フレーム書き出し時に高解像度で再レンダリング。
+
+
