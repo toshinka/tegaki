@@ -1,6 +1,13 @@
 /**
- * @file layer-panel-renderer.js - Phase 5+6対応版
- * @description レイヤーパネルUI描画（EventBus完全統合）
+ * @file layer-panel-renderer.js - Phase 3: フォルダUI実装版
+ * @description レイヤーパネルUI描画（フォルダ対応）
+ * 
+ * 【Phase 3 改修内容】
+ * ✅ createFolderElement() - フォルダUI生成
+ * ✅ createFolderEar() - 耳部分SVGアイコン生成
+ * ✅ 階層表示（通常レイヤー/フォルダを左オフセット、フォルダ内レイヤーに左縦線）
+ * ✅ フォルダ開閉アニメーション
+ * ✅ フォルダサムネイル合成表示
  * 
  * 【依存関係】
  * ◆ 親ファイル (このファイルが依存):
@@ -11,11 +18,6 @@
  * 
  * ◆ 子ファイル (このファイルに依存):
  *   なし (UI層・末端ファイル)
- * 
- * 【Phase 5+6 改修内容】
- * ✅ layer:panel-update-requested イベントリスナー追加
- * ✅ LayerSystemからの直接呼び出しを完全排除
- * ✅ EventBus駆動アーキテクチャに統一
  */
 
 (function() {
@@ -57,10 +59,12 @@
         _setupEventListeners() {
             if (!this.eventBus) return;
 
-            // 🔧 Phase 5: LayerSystemからの直接呼び出しをEventBusに統一
             this.eventBus.on('layer:panel-update-requested', () => this.requestUpdate());
-
             this.eventBus.on('layer:created', () => this.requestUpdate());
+            this.eventBus.on('folder:created', () => this.requestUpdate());
+            this.eventBus.on('folder:toggled', () => this.requestUpdate());
+            this.eventBus.on('layer:added-to-folder', () => this.requestUpdate());
+            this.eventBus.on('layer:removed-from-folder', () => this.requestUpdate());
             this.eventBus.on('layer:deleted', () => this.requestUpdate());
             this.eventBus.on('layer:activated', () => this.requestUpdate());
             this.eventBus.on('layer:visibility-changed', () => this.requestUpdate());
@@ -109,6 +113,11 @@
             if (!layers || layers.length === 0) return;
 
             this.container.innerHTML = '';
+            
+            // 🔧 Phase 3.1: パネル高さ固定化（レイヤー数に関わらず一定）
+            this.container.style.maxHeight = '600px';
+            this.container.style.overflowY = 'auto';
+            this.container.style.overflowX = 'hidden';
 
             const reversedLayers = [...layers].reverse();
             const reversedActiveIndex = layers.length - 1 - activeIndex;
@@ -116,12 +125,277 @@
             reversedLayers.forEach((layer, reversedIndex) => {
                 const originalIndex = layers.length - 1 - reversedIndex;
                 const isActive = reversedIndex === reversedActiveIndex;
-                const layerElement = this.createLayerElement(layer, originalIndex, isActive, animationSystem);
+                
+                // 🆕 フォルダ内レイヤーが閉じたフォルダ内にある場合はスキップ
+                if (layer.layerData?.parentId) {
+                    const parentFolder = layers.find(l => l.layerData?.id === layer.layerData.parentId);
+                    if (parentFolder && parentFolder.layerData?.isFolder && !parentFolder.layerData.folderExpanded) {
+                        return;
+                    }
+                }
+                
+                const layerElement = layer.layerData?.isFolder 
+                    ? this.createFolderElement(layer, originalIndex, isActive, layers)
+                    : this.createLayerElement(layer, originalIndex, isActive, animationSystem);
+                    
                 this.container.appendChild(layerElement);
             });
 
             this.initializeSortable();
         }
+
+        // ================================================================================
+        // 🆕 Phase 3: フォルダUI生成
+        // ================================================================================
+
+        createFolderElement(folder, index, isActive, allLayers) {
+            const folderDiv = document.createElement('div');
+            folderDiv.className = 'layer-item folder-item';
+            if (isActive) {
+                folderDiv.classList.add('active');
+            }
+            folderDiv.dataset.layerIndex = index;
+            folderDiv.dataset.isFolder = 'true';
+
+            const isExpanded = folder.layerData.folderExpanded;
+            const bgColor = isExpanded ? '#e9c2ba' : '#cf9c97';
+            const indentLevel = this._calculateIndentLevel(folder, allLayers);
+            const leftOffset = indentLevel * 12;
+
+            folderDiv.style.cssText = `
+                width:170px;
+                min-height:48px;
+                background-color:${bgColor};
+                opacity:0.9;
+                border:1px solid #e9c2ba;
+                border-radius:4px;
+                padding:5px 7px;
+                margin-bottom:4px;
+                margin-left:${leftOffset}px;
+                cursor:grab;
+                display:grid;
+                grid-template-columns:90px 64px;
+                grid-template-rows:14px 16px 14px;
+                gap:1px 1px;
+                align-items:center;
+                position:relative;
+                backdrop-filter:blur(8px);
+                transition:all 0.2s ease;
+                touch-action:none;
+                user-select:none;
+            `;
+
+            if (isActive) {
+                folderDiv.style.borderColor = '#ff6600';
+                folderDiv.style.borderWidth = '2px';
+                folderDiv.style.padding = '4px 6px';
+            }
+
+            // 耳部分
+            const ear = this._createFolderEar(isExpanded);
+            folderDiv.appendChild(ear);
+
+            // 行1: 透明度コントロール（フォルダには不要だが配置保持）
+            const row1 = document.createElement('div');
+            row1.style.cssText = 'grid-column:1;grid-row:1;height:14px;';
+            folderDiv.appendChild(row1);
+
+            // 行2: 可視性アイコン + 開閉トグルアイコン
+            const row2 = document.createElement('div');
+            row2.style.cssText = 'grid-column:1;grid-row:2;display:flex;align-items:center;gap:4px;height:16px;';
+
+            const visibilityIcon = this._createVisibilityIcon(folder, index);
+            row2.appendChild(visibilityIcon);
+
+            const toggleIcon = this._createFolderToggleIcon(folder, index, isExpanded);
+            row2.appendChild(toggleIcon);
+
+            for (let i = 0; i < 2; i++) {
+                const placeholder = document.createElement('div');
+                placeholder.style.cssText = 'width:16px;height:16px;flex-shrink:0;';
+                row2.appendChild(placeholder);
+            }
+            folderDiv.appendChild(row2);
+
+            // 行3: フォルダ名
+            const nameSpan = this._createLayerName(folder, index);
+            folderDiv.appendChild(nameSpan);
+
+            // サムネイル: フォルダ内レイヤーの合成
+            const thumbnail = this.createFolderThumbnail(folder, index, allLayers);
+            thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
+            folderDiv.appendChild(thumbnail);
+
+            // 削除ボタン
+            const deleteBtn = this._createDeleteButton(index);
+            folderDiv.appendChild(deleteBtn);
+            
+            folderDiv.addEventListener('mouseenter', () => {
+                deleteBtn.style.opacity = '1';
+            });
+            
+            folderDiv.addEventListener('mouseleave', () => {
+                deleteBtn.style.opacity = '0';
+            });
+
+            folderDiv.addEventListener('click', (e) => {
+                if (e.target.closest('.layer-delete-button') ||
+                    e.target.closest('.layer-visibility') ||
+                    e.target.closest('.folder-toggle-icon') ||
+                    e.target.closest('.layer-name') ||
+                    this._editingLayerIndex >= 0) {
+                    return;
+                }
+
+                if (window.stateManager) {
+                    window.stateManager.setLastActivePanel('layer');
+                }
+
+                if (this.layerSystem?.setActiveLayer) {
+                    this.layerSystem.setActiveLayer(index);
+                }
+            });
+
+            return folderDiv;
+        }
+
+        /**
+         * 🆕 フォルダの耳部分（左上SVGアイコン付き）
+         */
+        _createFolderEar(isExpanded) {
+            const ear = document.createElement('div');
+            ear.className = 'folder-ear';
+            ear.style.cssText = `
+                position:absolute;
+                top:0;
+                left:0;
+                width:30px;
+                height:14px;
+                background-color:#cf9c97;
+                border-radius:4px 0 4px 0;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                pointer-events:none;
+            `;
+
+            const iconSVG = isExpanded 
+                ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>`
+                : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+
+            ear.innerHTML = iconSVG;
+            return ear;
+        }
+
+        /**
+         * 🆕 フォルダ開閉トグルアイコン
+         */
+        _createFolderToggleIcon(folder, index, isExpanded) {
+            const toggleIcon = document.createElement('div');
+            toggleIcon.className = 'folder-toggle-icon';
+            toggleIcon.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+            
+            toggleIcon.innerHTML = isExpanded
+                ? `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`
+                : `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>`;
+            
+            toggleIcon.title = isExpanded ? 'フォルダを閉じる' : 'フォルダを開く';
+            
+            toggleIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.layerSystem?.toggleFolderExpand) {
+                    this.layerSystem.toggleFolderExpand(folder.layerData.id);
+                }
+            });
+            
+            return toggleIcon;
+        }
+
+        /**
+         * 🆕 フォルダサムネイル生成（中のレイヤー合成）
+         */
+        createFolderThumbnail(folder, index, allLayers) {
+            const maxWidth = 64;
+            const maxHeight = 44;
+            
+            const thumbnailContainer = document.createElement('div');
+            thumbnailContainer.className = 'layer-thumbnail folder-thumbnail';
+            thumbnailContainer.dataset.layerIndex = index;
+            
+            thumbnailContainer.style.width = maxWidth + 'px';
+            thumbnailContainer.style.height = maxHeight + 'px';
+            thumbnailContainer.style.boxSizing = 'border-box';
+            thumbnailContainer.style.border = '1px solid #cf9c97';
+            thumbnailContainer.style.borderRadius = '2px';
+            thumbnailContainer.style.overflow = 'hidden';
+            thumbnailContainer.style.position = 'relative';
+            thumbnailContainer.style.display = 'flex';
+            thumbnailContainer.style.alignItems = 'center';
+            thumbnailContainer.style.justifyContent = 'center';
+            thumbnailContainer.style.flexShrink = '0';
+            thumbnailContainer.style.backgroundColor = '#f5f5f5';
+            
+            if (window.ThumbnailSystem && folder) {
+                this._generateFolderThumbnail(folder, allLayers, maxWidth, maxHeight)
+                    .then(result => {
+                        if (result && result.dataUrl) {
+                            thumbnailContainer.style.width = result.width + 'px';
+                            thumbnailContainer.style.height = result.height + 'px';
+                            
+                            const img = document.createElement('img');
+                            img.src = result.dataUrl;
+                            img.style.width = '100%';
+                            img.style.height = '100%';
+                            img.style.display = 'block';
+                            img.style.objectFit = 'contain';
+                            thumbnailContainer.innerHTML = '';
+                            thumbnailContainer.appendChild(img);
+                        }
+                    })
+                    .catch(() => {});
+            }
+
+            return thumbnailContainer;
+        }
+
+        /**
+         * 🆕 フォルダ内レイヤー合成サムネイル生成
+         */
+        async _generateFolderThumbnail(folder, allLayers, maxWidth, maxHeight) {
+            const children = this.layerSystem.getFolderChildren(folder.layerData.id);
+            
+            if (children.length === 0) {
+                return null;
+            }
+
+            // ThumbnailSystemに委譲
+            if (window.ThumbnailSystem?.generateFolderThumbnail) {
+                return await window.ThumbnailSystem.generateFolderThumbnail(
+                    children, 
+                    maxWidth, 
+                    maxHeight
+                );
+            }
+
+            return null;
+        }
+
+        /**
+         * 🆕 階層レベル計算（左オフセット用）
+         */
+        _calculateIndentLevel(layer, allLayers) {
+            if (layer.layerData?.isBackground) return 0;
+            
+            // 🔧 修正: 通常レイヤー/フォルダは左にオフセットせず、フォルダ内だけ右にオフセット
+            if (!layer.layerData?.parentId) return 0; // 通常レイヤー/フォルダは左端
+            
+            // フォルダ内レイヤーは右にオフセット
+            return 1;
+        }
+
+        // ================================================================================
+        // 既存メソッド（Phase 3対応版）
+        // ================================================================================
 
         createLayerElement(layer, index, isActive, animationSystem) {
             const layerDiv = document.createElement('div');
@@ -132,6 +406,10 @@
             layerDiv.dataset.layerIndex = index;
 
             const isBackground = layer.layerData?.isBackground || false;
+            const allLayers = this.layerSystem?.getLayers() || [];
+            const indentLevel = this._calculateIndentLevel(layer, allLayers);
+            const leftOffset = indentLevel * 12;
+            const hasParent = layer.layerData?.parentId;
             
             layerDiv.style.cssText = `
                 width:170px;
@@ -142,6 +420,7 @@
                 border-radius:4px;
                 padding:5px 7px;
                 margin-bottom:4px;
+                margin-left:${leftOffset}px;
                 cursor:${isBackground ? 'default' : 'grab'};
                 display:grid;
                 grid-template-columns:90px 64px;
@@ -159,6 +438,21 @@
                 layerDiv.style.borderColor = '#ff6600';
                 layerDiv.style.borderWidth = '2px';
                 layerDiv.style.padding = '4px 6px';
+            }
+
+            // 🆕 フォルダ内レイヤーに左縦線を追加
+            if (hasParent) {
+                const verticalLine = document.createElement('div');
+                verticalLine.className = 'folder-child-line';
+                verticalLine.style.cssText = `
+                    position:absolute;
+                    left:-12px;
+                    top:0;
+                    width:2px;
+                    height:100%;
+                    background-color:#cf9c97;
+                `;
+                layerDiv.appendChild(verticalLine);
             }
 
             if (isBackground) {
@@ -660,6 +954,9 @@
     window.LayerPanelRenderer = LayerPanelRenderer;
 })();
 
-console.log('✅ layer-panel-renderer.js (Phase 5+6対応版) loaded');
-console.log('   ✓ layer:panel-update-requested イベントリスナー追加');
-console.log('   ✓ LayerSystemからの直接呼び出し完全排除');
+console.log('✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded');
+console.log('   ✅ createFolderElement() - フォルダUI生成');
+console.log('   ✅ createFolderEar() - 耳部分SVGアイコン');
+console.log('   ✅ 階層表示（左オフセット + 縦線）');
+console.log('   ✅ フォルダ開閉アニメーション');
+console.log('   ✅ フォルダサムネイル合成対応');
