@@ -1,89 +1,74 @@
-config.js:545 ✅ config.js Phase B-3 loaded (フロー制御対応版)
-config.js:546    🆕 brush.raster.flow 設定追加
-config.js:547    🆕 brush.raster.highSpeedCompensation 設定追加
-config.js:548    🆕 brush.raster.stamp.hardness 0.8 に最適化
-config.js:549    ✅ Phase 3.1全機能継承
-data-models.js:484 ✅ data-models.js Phase F-1 loaded (フォルダ対応版)
-data-models.js:485    ✅ LayerModel にフォルダ属性追加
-data-models.js:486    ✅ isFolder / folderExpanded / parentId / childIds
-data-models.js:487    ✅ 既存の傾き対応を完全継承
-data-models.js:488    ✅ DRY原則: レイヤーとフォルダを統一モデルで管理
-batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
-debug-utils.js:553 ✅ debug-utils.js loaded
-debug-utils.js:554    Type: TegakiDebug.help() for available commands
-debug-utils.js:555    Quick check: TegakiDebug.fullDiagnostic()
-popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
-state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
-settings-manager.js:394 ✅ settings-manager.js Phase B-3 loaded (フロー制御対応版)
-settings-manager.js:395    🆕 getBrushFlow() メソッド追加
-settings-manager.js:396    🆕 getHighSpeedCompensation() メソッド追加
-settings-manager.js:397    ✅ Phase 3.6全機能継承
-layer-transform.js:1070  ✅ layer-transform.js Phase 3 loaded
-layer-transform.js:1071     ✅ confirmTransform()でベクターメッシュ再生成
-layer-transform.js:1072     ✅ 拡大時のジャギー解消
-checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
-layer-system.js:1943 ✅ layer-system.js Phase B-Emergency-4 loaded
-layer-system.js:1944    🚨 BE-4: 転送イベントリスナー登録完了
-layer-system.js:1945    🚨 BE-4: _receiveTransferredTexture() 実装
-layer-system.js:1946    🚨 BE-4: _updateLayerSprite() 実装
-layer-system.js:1947    🚨 BE-4: レイヤーSprite自動生成・管理
-layer-system.js:1948    ✅ Phase 3 ラスター機能完全継承
-layer-system.js:1949    ✅ Phase 2 フォルダ機能完全継承
-drawing-clipboard.js:811 ✅ drawing-clipboard.js Phase C-2.2 loaded
-drawing-clipboard.js:812    🔧 clearLayerDrawings(): skipHistory parameter added
-history.js:650 ✅ history.js Phase C-2.3 loaded
-history.js:651    🆕 register()メソッド追加（do実行なし）
-history.js:652    ✅ Phase C-2全機能継承
-shader-inline.js:409 ✅ shader-inline.js Phase C-1 loaded (WebGL2完全実装)
-shader-inline.js:410    🔥 C-1: ブラシスタンプシェーダー完全実装
-shader-inline.js:411    🔥 C-1: Flow制御対応
-shader-inline.js:412    🔥 C-1: 消しゴムシェーダー対応
-shader-inline.js:413    🔥 C-1: アンチエイリアス高品質化
-shader-inline.js:414    ✅ レイヤー合成シェーダー
-shader-inline.js:415    ✅ ディスプレイシェーダー
-brush-stamp.js:252 ✅ brush-stamp.js loaded (Reconstructed for WebGL2)
-brush-interpolator.js:38 ✅ [BrushInterpolator] Initialized
-brush-interpolator.js:207 ✅ brush-interpolator.js loaded
-raster-layer.js:136 [RasterLayer] ✅ Global instance registered
-raster-brush-core.js:153 [RasterBrushCore] ✅ Global instance registered
-gl-texture-bridge.js:113 [GLTextureBridge] ✅ Global instance registered
-webgl2-drawing-layer.js:281 ✅ webgl2-drawing-layer.js Phase B-Emergency-1 loaded
-webgl2-drawing-layer.js:282    🚨 BE-1: 描画Canvas独立生成
-webgl2-drawing-layer.js:283    🚨 BE-1: PixiJSから完全分離
-webgl2-drawing-layer.js:284    ❌ ticker制御削除（不要）
+index.html:1 Access to script at 'file:///D:/GitHub/tegaki/tegaki_rev0/main.js' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome, chrome-extension, chrome-untrusted, data, http, https, isolated-app.
+main.js:1  Failed to load resource: net::ERR_FAILED
+earcut-triangulator.js:1  Failed to load resource: net::ERR_FILE_NOT_FOUND
+config.js:36 Uncaught SyntaxError: Unexpected token 'export'
+coordinate-system.js:30 Uncaught SyntaxError: Unexpected token 'export'
+event-bus.js:24 Uncaught SyntaxError: Unexpected token 'export'
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ debug-utils.js loaded
+    Type: TegakiDebug.help() for available commands
+    Quick check: TegakiDebug.fullDiagnostic()
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js Phase 2 loaded
+    🔧 exportResolution 設定項目追加
+ ✅ layer-transform.js Phase 6 loaded
+    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
+    ✅ createFolder() - フォルダ作成
+    ✅ addLayerToFolder() - レイヤーをフォルダに追加
+    ✅ removeLayerFromFolder() - フォルダから取り出し
+    ✅ toggleFolderExpand() - 開閉切替
+    ✅ getVisibleLayers() - 表示レイヤーのみ取得
+    ✅ getFolderChildren() - フォルダ内レイヤー取得
+    ✅ Phase 9完全継承（親子関係・座標変換）
+ ✅ drawing-clipboard.js Phase 1 loaded
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+gl-msdf-pipeline.js:684 ✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded
+gl-msdf-pipeline.js:685    🔧 テクスチャサイズ計算でアスペクト比を厳密保持
+gl-msdf-pipeline.js:686    🔧 2の累乗丸めによるストローク変形を防止
+gl-stroke-processor.js:541 ✅ gl-stroke-processor.js Phase 4.0 カメラフレーム厳格対応版 loaded
+gl-stroke-processor.js:542    🔧 カメラフレーム外への描画を完全防止
+gl-stroke-processor.js:543    🔧 ポイント座標検証追加
+gl-stroke-processor.js:544    🔧 フレーム外ストロークの早期リジェクト
+gl-stroke-processor.js:545    🔧 統計情報追加
+gl-stroke-processor.js:546    ✅ Phase 3.2完全継承
+gl-stroke-processor.js:547    🎯 デバッグ: TegakiDebug.glStroke.*
+webgl2-drawing-layer.js:360 ✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded
+webgl2-drawing-layer.js:361    📌 window.WebGLContext (主要)
+webgl2-drawing-layer.js:362    📌 window.WebGL2DrawingLayer (互換)
+gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
+gl-mask-layer.js:474    ✅ Circle mask rendering実装
+gl-mask-layer.js:475    ✅ Additive blend対応
+gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
 pointer-handler.js:180 ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
 pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
-pressure-handler.js:180 ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
-pressure-handler.js:181    ✅ 最小筆圧サイズ: 1%-100%の範囲実装
-pressure-handler.js:182    ✅ 平滑化アルゴリズム修正
-stroke-recorder.js:272 ✅ stroke-recorder.js Phase 7 loaded
-stroke-recorder.js:273    ✅ 速度適応補間実装（高速ストローク対応）
-stroke-recorder.js:274    ✅ 補間閾値: 2.5px（Phase 6.5: 5.0px → 最適化）
-stroke-recorder.js:275    ✅ 最大分割数: 15（Phase 6.5: 10 → 増加）
-stroke-recorder.js:276    ✅ ペン入力カエルの卵完全対策
-stroke-recorder.js:277    ⚙️ 速度履歴記録・適応処理実装
-thumbnail-system.js:57 ✅ [ThumbnailSystem] Initialized (Raster mode)
-thumbnail-system.js:273 ✅ thumbnail-system.js Phase 3.5 loaded (ラスター対応版)
-thumbnail-system.js:274    ✅ gl.readPixels() ベース実装
-thumbnail-system.js:275    ✅ RasterLayer統合
-brush-settings.js:313 ✅ brush-settings.js Phase B-6 loaded (ペン傾き設定対応版)
-brush-settings.js:314    ✅ tilt.sensitivity / affectsWidth / affectsRotation 追加
-brush-settings.js:315    ✅ setTiltSettings() / getTiltSettings() 実装
-brush-settings.js:316    ✅ Phase 3-D全機能継承
-blend-modes.js:208 ✅ blend-modes.js Phase 3.7 loaded (ラスター対応版)
-blend-modes.js:209    ✅ WebGL2 glBlendFunc マッピング追加
-blend-modes.js:210    ✅ 8種類のブレンドモード定義
-blend-modes.js:211    ✅ ヘルパー関数提供
+pressure-handler.js:190 ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+pressure-handler.js:191    ✓ 距離ベースフィルタ対応
+pressure-handler.js:192    ✓ window.PressureHandler として公開
+stroke-recorder.js:9 Uncaught SyntaxError: Unexpected token 'export'
+stroke-renderer.js:496 ✅ stroke-renderer.js (Phase 1-FIX) loaded
+stroke-renderer.js:497    🔧 消しゴム: Shader不使用 + blendMode=erase
+stroke-renderer.js:498    ✅ ペン: SDF/MSDF Shader使用
+stroke-renderer.js:499    ✅ PixiJS v8 BlendMode互換
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+blend-modes.js:24 ✅ BlendMode definitions loaded
 vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
 vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
 vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
 vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
-brush-core.js:186 ✅ brush-core.js Phase 3.3 loaded (Fixed)
+brush-core.js:34 Uncaught SyntaxError: Cannot use import statement outside a module
 fill-tool.js:334 ✅ fill-tool.js (Phase 1完全修正版) loaded
-drawing-engine.js:334 ✅ drawing-engine.js Phase 3.3 loaded (ラスター対応版)
-drawing-engine.js:335    🔧 StrokeRenderer → RasterBrushCore 切り替え
-drawing-engine.js:336    🔧 setRasterBrushCore() メソッド追加
-drawing-engine.js:337    ✅ Phase B-2 全機能継承（傾き伝達）
+drawing-engine.js:28 Uncaught SyntaxError: Unexpected token 'export'
 quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
 export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
 export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
@@ -105,72 +90,28 @@ slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
 slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
 slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
 slider-utils.js:237    🔧 requestAnimationFrame最適化
-keyboard-handler.js:642 ✅ keyboard-handler.js Phase C-2.2 loaded
-keyboard-handler.js:643    🔧 二重登録完全修正: historyManager.register() 使用
-layer-panel-renderer.js:957 ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
-layer-panel-renderer.js:958    ✅ createFolderElement() - フォルダUI生成
-layer-panel-renderer.js:959    ✅ createFolderEar() - 耳部分SVGアイコン
-layer-panel-renderer.js:960    ✅ 階層表示（左オフセット + 縦線）
-layer-panel-renderer.js:961    ✅ フォルダ開閉アニメーション
-layer-panel-renderer.js:962    ✅ フォルダサムネイル合成対応
+keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
+keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
+keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+layer-panel-renderer.js:663 ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
+layer-panel-renderer.js:664    ✓ layer:panel-update-requested イベントリスナー追加
+layer-panel-renderer.js:665    ✓ LayerSystemからの直接呼び出し完全排除
 status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
-timeline-thumbnail-utils.js:630 ✅ thumbnail-system.js Phase 4: フォルダサムネイル合成版 loaded
-timeline-thumbnail-utils.js:631    ✅ generateFolderThumbnail() - フォルダ合成サムネイル生成
-timeline-thumbnail-utils.js:632    ✅ _compositeLayers() - 複数レイヤー合成処理
-timeline-thumbnail-utils.js:633    ✅ フォルダサムネイルキャッシュ対応
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
 timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
 album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
-settings-popup.js:680 ✅ settings-popup.js v3.0 loaded (Phase 4: 流量UI統合版)
-quick-access-popup.js:765 ✅ quick-access-popup.js Phase 7.5.1 loaded
-quick-access-popup.js:766    🎯 フォーカス黒枠完全削除
-quick-access-popup.js:767    🔧 pointerdown時の自動blur処理追加
-quick-access-popup.js:768    ✅ v8.13.17全機能継承
+settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
+settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
 export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
 export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
-ui-panels.js:418 ✅ ui-panels.js v8.13.16 loaded
-ui-panels.js:419    ✅ フォルダ+ボタン接続完了
-ui-panels.js:420    ✅ createFolder() 正常呼び出し
-core-runtime.js:557 ✅ core-runtime.js (Phase 6 - updateLayerPanelUI完全削除版) loaded
-core-runtime.js:558    ✅ EventBus駆動に完全統一
-core-runtime.js:559    ✅ 存在しないメソッド呼び出し削除
-core-engine.js:804 ✅ core-engine.js Phase 3.3 loaded (ラスター対応完全版)
-core-engine.js:805    🔧 StrokeRenderer → RasterBrushCore 切り替え完了
-core-engine.js:806    🔧 window.rasterBrushCore インスタンス登録完了
-core-engine.js:807    🔧 ベクター方式への依存を削除
-core-engine.js:808    ✅ ラスターブラシシステム初期化完了
-core-engine.js:809    ✅ v8.33.0 全機能継承
-core-initializer.js:593 ✅ core-initializer.js Phase B-Emergency-5 loaded
-core-initializer.js:594    🚨 BE-5: 描画Canvas独立生成フロー
-core-initializer.js:595    🚨 BE-5: ticker制御コード削除（不要）
-core-initializer.js:596    🚨 BE-5: GLTextureBridge初期化統合
-core-initializer.js:597    ✅ Canvas分離による完全独立実現
-main.js:7 --- main.js loading ---
-main.js:95 --- main.js loaded, waiting for DOMContentLoaded ---
-main.js:101 🚀 ラスター版 v3.0 (ESM) 起動プロセス開始
-core-initializer.js:338 [DrawingApp] 🎨 Initializing Pixi.js...
-core-initializer.js:364 [DrawingApp] ✅ Pixi.js initialized (normal mode)
-core-engine.js:654 [CoreEngine] 🚀 Starting initialization...
-layer-system.js:71 [LayerSystem] 🔍 init() called
-layer-system.js:72 [LayerSystem]   canvasContainer: Z {_events: i, _eventsCount: 0, uid: 2, _updateFlags: 15, renderGroup: null, …}
-layer-system.js:89 [LayerSystem]   ✅ New currentFrameContainer created
-layer-system.js:114 [LayerSystem]   ✅ Background layer added
-layer-system.js:258 [LayerSystem] 🆕 BE-4: Creating layer sprite: temp_layer_1_1778493194107
-layer-system.js:275 [LayerSystem] ✅ BE-4: Layer sprite created and registered
-layer-system.js:134 [LayerSystem]   ✅ Layer 1 added, activeLayerIndex set to 1
-layer-system.js:176 [LayerSystem] 📡 BE-4: Texture transfer listener registered
-layer-system.js:145 [LayerSystem]   ✅ init() completed successfully
-layer-system.js:146 [LayerSystem]   currentFrameContainer.children.length: 2
-core-engine.js:685 ✅ [CoreEngine] StrokeRecorder initialized
-main.js:128 ❌ 初期化失敗: TypeError: window.RasterBrushCore is not a constructor
-    at CoreEngine.initialize (core-engine.js:693:38)
-    at DrawingApp.initialize (core-initializer.js:368:48)
-    at async Object.initialize (core-initializer.js:569:9)
-    at async init (main.js:114:13)
-init @ main.js:128
-await in init
-(anonymous) @ main.js:145
-injection-topics.js:1 Browsing Topics API not found, nothing to remove on http://localhost:5173/, main frame
-drawing-engine.js:94 [DrawingEngine] ⬇️ PointerDown: {id: 1, type: 'pen', canvasMoveMode: true, vKeyPressed: false, button: 0}
-drawing-engine.js:104 [DrawingEngine] 🛑 Cancelled: Canvas move mode active
-drawing-engine.js:94 [DrawingEngine] ⬇️ PointerDown: {id: 1, type: 'pen', canvasMoveMode: true, vKeyPressed: false, button: 0}
-drawing-engine.js:104 [DrawingEngine] 🛑 Cancelled: Canvas move mode active
+ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
+ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
+ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
+index.html:1 Unsafe attempt to load URL file:///D:/GitHub/tegaki/tegaki_rev0/index.html from frame with URL file:///D:/GitHub/tegaki/tegaki_rev0/index.html. 'file:' URLs are treated as unique security origins.
+

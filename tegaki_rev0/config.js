@@ -33,7 +33,7 @@
  * - camera-system.js, layer-system.js等
  */
 
-window.TEGAKI_CONFIG = {
+export const TEGAKI_CONFIG = {
     canvas: { 
         width: 400, 
         height: 400 
@@ -152,6 +152,8 @@ window.TEGAKI_CONFIG = {
     },
     debug: false
 };
+
+window.TEGAKI_CONFIG = TEGAKI_CONFIG;
 
 window.TEGAKI_KEYMAP = {
     actions: {
