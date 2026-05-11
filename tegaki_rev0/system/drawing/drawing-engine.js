@@ -25,7 +25,7 @@
  * - system/drawing/fill-tool.js (canvas:pointerdown イベント購読)
  */
 
-class DrawingEngine {
+export class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
         this.app = app;
         this.layerSystem = layerSystem;

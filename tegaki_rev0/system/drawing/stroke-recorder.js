@@ -6,10 +6,7 @@
  * - エラー発生時のみログ出力
  */
 
-(function() {
-    'use strict';
-
-    class StrokeRecorder {
+export class StrokeRecorder {
         constructor(pressureHandler = null, cameraSystem = null) {
             this.pressureHandler = pressureHandler;
             this.cameraSystem = cameraSystem;
@@ -87,5 +84,3 @@
     console.log('✅ stroke-recorder.js (警告ログ削減版) loaded');
     console.log('   ✓ 不要な警告ログを削除');
     console.log('   ✓ DRY原則準拠');
-
-})();
