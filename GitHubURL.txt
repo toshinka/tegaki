@@ -114,7 +114,8 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_phase1a
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CLAUDE_HANDOFF.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PROGRESS.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TegakiConsole.txt
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GitHubURL.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/phase1a.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/phases/phase1a.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
 
