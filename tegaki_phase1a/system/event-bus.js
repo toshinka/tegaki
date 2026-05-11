@@ -21,7 +21,10 @@
  * - once(event, callback, priority): 一度だけ実行
  */
 
-export class EventBus {
+(function() {
+    'use strict';
+    
+    class EventBus {
         constructor() {
             this.events = {};
             this.debug = false;
@@ -114,3 +117,4 @@ export class EventBus {
     };
     
     window.EventBus = EventBus;
+})();

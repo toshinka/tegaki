@@ -27,7 +27,10 @@
  * - pivot計算順序: position → rotation → scale → pivot
  */
 
-export class CoordinateSystem {
+(function() {
+    'use strict';
+    
+    class CoordinateSystem {
         constructor() {
             this.app = null;
             this.config = null;
@@ -428,11 +431,17 @@ export class CoordinateSystem {
             return canvas ? canvas.height : (this.config?.canvas?.height || 600);
         }
         
+        clearCache() {
+            this.transformCache.clear();
+            this.cacheVersion++;
+        }
     }
     
-    export const coordinateSystem = new CoordinateSystem();
+    const coordinateSystem = new CoordinateSystem();
     window.CoordinateSystem = coordinateSystem;
     
+})();
+
 window.TegakiDebug = window.TegakiDebug || {};
 window.TegakiDebug.coord = {
     testFullPipeline(clientX, clientY) {

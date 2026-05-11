@@ -1,25 +1,18 @@
 /**
- * @file core-runtime.js
+ * @file core-runtime.js - Phase 6: updateLayerPanelUI完全削除版
  * @description 外部APIレイヤー・レガシー互換性
  * 
- * 【Phase 4 改修内容 - Fill Tool 対応】
- * ✅ api.tool.setFill() メソッド追加
- * ✅ api.tool.set('fill') を正式サポート
- * 
- * 【Phase 3 改修内容 - Drawing API簡素化】
- * - api.tool.* を BrushCore.setMode() に直接接続
- * - DrawingEngine を経由しない直接呼び出しに変更
+ * 【Phase 6 改修内容】
+ * ✅ updateLayerPanelUI 完全削除（EventBus駆動に統一）
+ * ✅ _updateLayerPanelUI() 内部メソッド削除
+ * ✅ layer.create 時のパネル更新をEventBusに委譲
  * 
  * 【親ファイル (このファイルが依存)】
- * - core-engine.js (内部システム・リサイズ/エクスポートの真実の情報源)
- * - system/drawing/brush-core.js (BrushCore)
- * - system/drawing/brush-settings.js (BrushSettings)
- * - coordinate-system.js (座標変換)
- * - config.js (設定値)
+ * - core-engine.js (内部システム)
+ * - event-bus.js (イベント駆動)
  * 
  * 【子ファイル (このファイルに依存)】
  * - ui-panels.js (UI制御)
- * - ui/keyboard-handler.js (api.tool.set 呼び出し元)
  */
 
 (function() {
@@ -247,11 +240,6 @@
                 }
             },
             
-            /**
-             * 🔧 Phase 4改修: Fill Tool 対応
-             * - setFill() メソッド追加
-             * - set('fill') を正式サポート
-             */
             tool: {
                 set: (toolName) => {
                     if (!window.BrushCore) {
@@ -259,22 +247,18 @@
                         return false;
                     }
                     
-                    // fill を含む全ツールをサポート
                     const validTools = ['pen', 'eraser', 'fill'];
                     if (!validTools.includes(toolName)) {
                         console.warn(`[CoreRuntime] Invalid tool: ${toolName}`);
                         return false;
                     }
                     
-                    // BrushCore に直接ツールを設定
                     window.BrushCore.setMode(toolName);
                     
-                    // カメラカーソル更新
                     if (CoreRuntime.internal.cameraSystem?.updateCursor) {
                         CoreRuntime.internal.cameraSystem.updateCursor();
                     }
                     
-                    // イベント発行（tool:select と tool:changed の両方）
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('tool:select', { tool: toolName });
                         window.TegakiEventBus.emit('tool:changed', { tool: toolName });
@@ -289,7 +273,7 @@
                 
                 setPen: () => CoreRuntime.api.tool.set('pen'),
                 setEraser: () => CoreRuntime.api.tool.set('eraser'),
-                setFill: () => CoreRuntime.api.tool.set('fill') // 🎨 Phase 4: 追加
+                setFill: () => CoreRuntime.api.tool.set('fill')
             },
             
             brush: {
@@ -393,10 +377,7 @@
                 create: (name, isBackground = false) => {
                     if (CoreRuntime.internal.layerManager) {
                         const result = CoreRuntime.internal.layerManager.createLayer(name, isBackground);
-                        if (result) {
-                            CoreRuntime.internal.layerManager.updateLayerPanelUI();
-                            CoreRuntime.internal.layerManager.updateStatusDisplay();
-                        }
+                        // 🔧 Phase 6: EventBus駆動に統一（updateLayerPanelUI削除）
                         return result;
                     }
                     return null;
@@ -413,7 +394,10 @@
                     const layers = CoreRuntime.internal.layerManager?.getLayers();
                     if (layers && layers[index]) {
                         layers[index].visible = visible;
-                        CoreRuntime.internal.layerManager.updateLayerPanelUI();
+                        // 🔧 Phase 6: EventBus経由で更新
+                        if (window.TegakiEventBus) {
+                            window.TegakiEventBus.emit('layer:panel-update-requested');
+                        }
                         return true;
                     }
                     return false;
@@ -422,7 +406,10 @@
                     const layers = CoreRuntime.internal.layerManager?.getLayers();
                     if (layers && layers[index]) {
                         layers[index].alpha = Math.max(0, Math.min(1, opacity));
-                        CoreRuntime.internal.layerManager.updateLayerPanelUI();
+                        // 🔧 Phase 6: EventBus経由で更新
+                        if (window.TegakiEventBus) {
+                            window.TegakiEventBus.emit('layer:panel-update-requested');
+                        }
                         return true;
                     }
                     return false;
@@ -567,6 +554,6 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 4 - Fill対応版) loaded');
-console.log('   ✓ api.tool.setFill() 追加');
-console.log('   ✓ api.tool.set("fill") サポート');
+console.log('✅ core-runtime.js (Phase 6 - updateLayerPanelUI完全削除版) loaded');
+console.log('   ✅ EventBus駆動に完全統一');
+console.log('   ✅ 存在しないメソッド呼び出し削除');

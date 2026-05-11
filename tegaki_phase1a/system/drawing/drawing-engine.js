@@ -1,15 +1,14 @@
 /**
- * @file system/drawing/drawing-engine.js
+ * @file system/drawing/drawing-engine.js - Phase 4.1
  * @description 座標変換・PointerEvent処理・ストローク制御
+ * 
+ * 【Phase 4.1 改修内容】
+ * ✅ strokeRenderer プロパティ追加
+ * ✅ WebGL2初期化用の参照を提供
  * 
  * 【Phase 4 改修内容 - Fill Tool 対応】
  * ✅ fill モード時にクリックイベントを発行
  * ✅ canvas:pointerdown イベントに localX/localY を含める
- * 
- * 【Phase 3 改修内容 - Drawing API簡素化】
- * - setTool(), getTool(), currentTool プロパティを削除
- * - 責務を座標変換とストローク制御のみに限定
- * - ツール切り替えは BrushCore に完全委譲
  * 
  * 【依存関係 - Parents (このファイルが依存)】
  * - system/drawing/brush-core.js (BrushCore - ツール状態管理)
@@ -18,14 +17,16 @@
  * - system/camera-system.js (CameraSystem)
  * - system/layer-system.js (LayerSystem)
  * - system/event-bus.js (EventBus)
+ * - system/drawing/stroke-renderer.js (StrokeRenderer) ← 🆕 Phase 4.1
  * 
  * 【子ファイル (このファイルに依存)】
  * - core-engine.js (初期化元)
  * - core-runtime.js (API経由)
  * - system/drawing/fill-tool.js (canvas:pointerdown イベント購読)
+ * - core-initializer.js (strokeRenderer参照) ← 🆕 Phase 4.1
  */
 
-export class DrawingEngine {
+class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
         this.app = app;
         this.layerSystem = layerSystem;
@@ -41,6 +42,10 @@ export class DrawingEngine {
         }
 
         this.brushSettings = null;
+        
+        // 🆕 Phase 4.1: StrokeRenderer参照を追加
+        this.strokeRenderer = window.strokeRenderer || null;
+        
         this.pointerDetach = null;
         this.coordSystem = window.CoordinateSystem;
         this.eventBus = window.TegakiEventBus || window.eventBus;
@@ -91,7 +96,6 @@ export class DrawingEngine {
             return;
         }
 
-        // 🔧 Phase 4: fill モード時は canvas:pointerdown イベントを発行
         const currentMode = this.brushCore.getMode();
         
         if (currentMode === 'fill') {
@@ -105,10 +109,9 @@ export class DrawingEngine {
                     pointerType: info.pointerType
                 });
             }
-            return; // FillTool に処理を委譲
+            return;
         }
 
-        // ペン・消しゴムモードの従来処理
         this.activePointers.set(info.pointerId, {
             type: info.pointerType || 'unknown',
             isDrawing: true
@@ -221,6 +224,14 @@ export class DrawingEngine {
     }
 
     /**
+     * 🆕 Phase 4.1: StrokeRenderer 参照を更新
+     * （CoreEngine初期化後に呼ばれる）
+     */
+    setStrokeRenderer(renderer) {
+        this.strokeRenderer = renderer;
+    }
+
+    /**
      * 描画中かどうか
      */
     get isDrawing() {
@@ -241,6 +252,7 @@ export class DrawingEngine {
 
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js (Phase 4 - Fill対応版) loaded');
-console.log('   ✓ fill モード時に canvas:pointerdown イベント発行');
-console.log('   ✓ localX/localY を含むイベントペイロード');
+console.log('✅ drawing-engine.js (Phase 4.1 StrokeRenderer参照追加版) loaded');
+console.log('   ✅ strokeRenderer プロパティ追加');
+console.log('   ✅ setStrokeRenderer() メソッド追加');
+console.log('   ✓ Phase 4 全機能継承');

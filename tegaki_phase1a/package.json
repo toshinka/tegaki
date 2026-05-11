@@ -1,20 +1,5 @@
 {
-  "name": "tegaki",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "devDependencies": {
-    "vite": "^5.0.0"
-  },
   "dependencies": {
-    "pixi.js": "^8.17.0",
-    "perfect-freehand": "^1.2.0",
-    "gsap": "^3.12.0",
-    "lucide-static": "^0.300.0"
+    "libwebp-wasm": "^0.1.6"
   }
 }

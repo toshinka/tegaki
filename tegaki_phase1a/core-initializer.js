@@ -1,16 +1,22 @@
 /**
- * @file core-initializer.js
+ * @file core-initializer.js - Phase 2.1 WebGL2統合版
  * @description アプリケーション初期化シーケンス制御
  * 
- * 【Phase 2 改修内容 - ExportManager初期化の一元化】
- * - ExportManager生成処理を削除
- * - CoreEngine.exportManagerを使用
- * - ExportPopup登録のみ実施
+ * 【Phase 2.1 改修内容】
+ * ✅ WebGPU → WebGL2 への切り替え
+ * ✅ GLStrokeProcessor 初期化追加
+ * ✅ StrokeRenderer へのWebGL2接続
+ * ✅ Phase 2の全機能を完全継承
  * 
- * 【依存関係】
+ * 【依存関係 - Parents】
  * - core-engine.js (CoreEngine・ExportManager生成元)
  * - core-runtime.js (CoreRuntime)
  * - ui-panels.js (UIController)
+ * - system/drawing/webgl2/webgl2-drawing-layer.js (WebGL2DrawingLayer)
+ * - system/drawing/webgl2/gl-stroke-processor.js (GLStrokeProcessor)
+ * 
+ * 【依存関係 - Children】
+ * - なし（初期化ルート）
  */
 
 window.CoreInitializer = (function() {
@@ -148,49 +154,83 @@ window.CoreInitializer = (function() {
         return layerPanelRenderer;
     }
 
-    async function initializeWebGPU(canvas, strokeRenderer) {
+    /**
+     * ========================================================================
+     * 🆕 Phase 2.1: WebGL2 初期化（WebGPU廃止）
+     * ========================================================================
+     */
+    async function initializeWebGL2(canvas, strokeRenderer) {
         const config = window.TEGAKI_CONFIG;
         
-        if (!config.webgpu?.enabled) {
-            return false;
-        }
-
-        if (!window.WebGPUCapabilities) {
-            console.warn('[WebGPU] WebGPUCapabilities not loaded');
-            return false;
-        }
+        console.log('[WebGL2] Starting initialization...');
 
         try {
-            const capabilities = await window.WebGPUCapabilities.checkSupport();
+            // WebGL2 context取得（PixiJSと共有）
+            let gl = canvas.getContext('webgl2', {
+                alpha: true,
+                antialias: true,
+                premultipliedAlpha: true,
+                preserveDrawingBuffer: false
+            });
+
+            if (!gl) {
+                console.warn('[WebGL2] Context creation failed - trying to get existing context');
+                // PixiJSが既に取得している可能性があるので再取得を試みる
+                gl = canvas.getContext('webgl2');
+            }
+
+            if (!gl) {
+                console.error('[WebGL2] Failed to get WebGL2 context');
+                return false;
+            }
+
+            console.log('[WebGL2] Context obtained:', gl.constructor.name);
+
+            // WebGLContext Singleton初期化
+            if (window.WebGLContext) {
+                const initialized = window.WebGLContext.initialize(gl);
+                if (!initialized) {
+                    console.warn('[WebGL2] WebGLContext initialization failed');
+                    return false;
+                }
+                console.log('[WebGL2] WebGLContext initialized');
+            }
+
+            // GLStrokeProcessor Singleton初期化
+            if (!window.GLStrokeProcessor) {
+                console.error('[WebGL2] GLStrokeProcessor not loaded');
+                return false;
+            }
+
+            const processorInitialized = window.GLStrokeProcessor.initialize(gl);
+            if (!processorInitialized) {
+                console.error('[WebGL2] GLStrokeProcessor initialization failed');
+                return false;
+            }
+            console.log('[WebGL2] GLStrokeProcessor initialized');
+
+            // EarcutTriangulator 初期化確認
+            if (window.EarcutTriangulator) {
+                window.EarcutTriangulator._doInitialize();
+                console.log('[WebGL2] EarcutTriangulator initialized:', window.EarcutTriangulator.isInitialized());
+            }
+
+            // StrokeRenderer に WebGL2 接続
+            if (strokeRenderer && strokeRenderer.setWebGLLayer) {
+                await strokeRenderer.setWebGLLayer(null);
+                console.log('[WebGL2] StrokeRenderer connected to WebGL2 pipeline');
+            } else {
+                console.warn('[WebGL2] StrokeRenderer.setWebGLLayer() not found');
+            }
+
+            console.log('✅ [WebGL2] Initialization complete');
+            console.log('   - GLStrokeProcessor:', window.GLStrokeProcessor.isInitialized());
+            console.log('   - EarcutTriangulator:', window.EarcutTriangulator.isInitialized());
             
-            if (!capabilities.supported) {
-                console.warn('[WebGPU] Not supported:', capabilities.error);
-                return false;
-            }
-
-            if (!window.WebGPUDrawingLayer) {
-                console.warn('[WebGPU] WebGPUDrawingLayer not loaded');
-                return false;
-            }
-
-            const webgpuLayer = new window.WebGPUDrawingLayer(canvas);
-            const initialized = await webgpuLayer.initialize();
-
-            if (!initialized) {
-                console.warn('[WebGPU] Initialization failed');
-                return false;
-            }
-
-            if (strokeRenderer && strokeRenderer.setWebGPULayer) {
-                await strokeRenderer.setWebGPULayer(webgpuLayer);
-            }
-
-            window.webgpuLayer = webgpuLayer;
-
             return true;
 
         } catch (error) {
-            console.error('[WebGPU] Initialization error:', error);
+            console.error('[WebGL2] Initialization error:', error);
             return false;
         }
     }
@@ -203,7 +243,7 @@ window.CoreInitializer = (function() {
             this.popupManager = null;
             this.layerPanelRenderer = null;
             this.exportInitialized = false;
-            this.webgpuEnabled = false;
+            this.webgl2Enabled = false;
         }
         
         async initialize() {
@@ -277,16 +317,26 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus
             );
             
-            const strokeRenderer = this.coreEngine.getDrawingEngine()?.strokeRenderer;
+            // 🆕 Phase 2.1: WebGL2初期化
+            console.log('[DrawingApp] Initializing WebGL2...');
+            const drawingEngine = this.coreEngine.getDrawingEngine();
+            const strokeRenderer = drawingEngine?.strokeRenderer;
+            
+            console.log('[DrawingApp] DrawingEngine:', !!drawingEngine);
+            console.log('[DrawingApp] StrokeRenderer:', !!strokeRenderer);
+            console.log('[DrawingApp] Canvas:', !!this.pixiApp.canvas);
+            
             if (strokeRenderer) {
-                this.webgpuEnabled = await initializeWebGPU(
+                this.webgl2Enabled = await initializeWebGL2(
                     this.pixiApp.canvas,
                     strokeRenderer
                 );
+                console.log('[DrawingApp] WebGL2 initialization result:', this.webgl2Enabled);
+            } else {
+                console.error('[DrawingApp] StrokeRenderer not found - WebGL2 initialization skipped');
             }
             
-            // 🔧 Phase 2: ExportPopup登録のみ実施
-            // ExportManager生成はCoreEngine.initialize()で実行済み
+            // ExportPopup登録
             this.initializeExportPopup();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
@@ -302,7 +352,7 @@ window.CoreInitializer = (function() {
         }
         
         /**
-         * 🔧 Phase 2: ExportPopup登録専用メソッド
+         * ExportPopup登録専用メソッド
          * ExportManager生成は不要（CoreEngineで実行済み）
          */
         initializeExportPopup() {
@@ -429,9 +479,12 @@ window.CoreInitializer = (function() {
         initialize,
         checkDependencies,
         DrawingApp,
-        initializeWebGPU,
+        initializeWebGL2,
         initializeLayerPanel
     };
 })();
 
-console.log('✅ core-initializer.js (Phase 2改修版 - ExportManager初期化一元化) loaded');
+console.log('✅ core-initializer.js (Phase 2.1 WebGL2統合版) loaded');
+console.log('   🆕 WebGPU → WebGL2 切り替え完了');
+console.log('   ✅ GLStrokeProcessor 初期化追加');
+console.log('   ✅ Phase 2 全機能継承');
