@@ -1,39 +1,18 @@
 /**
- * @file config.js - v8.14.0 DPR=1固定化版
- * @description グローバル設定・キーマップ定義
- * 
- * 【v8.14.0 改修内容 - Phase 1: DPR=1固定化】
- * 🚨 重要: renderer.resolution を devicePixelRatio から 1 へ固定
- * 理由: 描画時解像度と出力時解像度の一致を保証
- * 方針: DPR=1固定 + 出力時任意解像度スケーリング（Sketchbook方式）
- * 
- * 🚨 後続Claude担当者への警告:
- * - devicePixelRatio を使用した DPR 倍加は厳禁
- * - 本ツールは GPU/WebGPU ベースの PC 優位設計（Retina対応不要）
- * - 解像度制御は出力時のみで行う（export-manager.js 参照）
- * 
- * 【v8.13.15 改修内容】
- * 🎨 TOOL_FILL: Gキー → 塗りつぶしツール追加
- * 
- * 【v8.13.14 改修内容】
- * 🔧 Phase 3: LAYER_DELETE (Ctrl+Delete)、LAYER_CUT (Ctrl+X) 追加
- * 🔧 Phase 3: FRAME_PREV/NEXT (←→) 単体キー化、Ctrl不要に
- * 🔧 Phase 4: GIF_PREV_FRAME / GIF_NEXT_FRAME 削除
- * 🧹 LAYER_CLEAR 削除 (LAYER_DELETE に統合)
- * 📝 ヘッダー依存関係明記
- * 
- * 【親ファイル (このファイルが依存)】
- * なし（最上位設定ファイル）
- * 
- * 【子ファイル (このファイルに依存)】
- * - core-initializer.js (PIXI.Application初期化でresolution参照)
- * - core-engine.js (システム全体の設定参照)
- * - 全システムファイル (window.TEGAKI_CONFIG参照)
- * - keyboard-handler.js (window.TEGAKI_KEYMAP参照)
- * - camera-system.js, layer-system.js等
+ * ============================================================================
+ * ファイル名: config.js
+ * 責務: グローバル設定・キーマップ・カラー定義
+ * 依存: なし
+ * 被依存: 全システムファイル
+ * 公開API: TEGAKI_CONFIG, TEGAKI_KEYMAP, TEGAKI_KEYCONFIG, TEGAKI_COLORS, TEGAKI_UTILS
+ * イベント発火: なし
+ * イベント受信: なし
+ * グローバル登録: window.TEGAKI_CONFIG, window.TEGAKI_KEYMAP, window.TEGAKI_KEYCONFIG, window.TEGAKI_COLORS
+ * 実装状態: ♻️移植
+ * ============================================================================
  */
 
-window.TEGAKI_CONFIG = {
+export const TEGAKI_CONFIG = {
     canvas: { 
         width: 400, 
         height: 400 
@@ -42,19 +21,9 @@ window.TEGAKI_CONFIG = {
     /**
      * 🚨 Phase 1改修: renderer設定
      * resolution: 1 固定（devicePixelRatio 参照を削除）
-     * 
-     * 【設計思想】
-     * - 描画時は常に等倍（DPR=1）で処理
-     * - 出力時に任意解像度でスケーリング（export-manager.js で制御）
-     * - ユーザーの期待値と出力結果を一致させる
-     * 
-     * 【影響】
-     * - 全描画処理が軽量化
-     * - Retina画面で若干の粗さが出る可能性（許容範囲）
-     * - 出力品質は settings-manager.js の exportResolution で制御
      */
     renderer: {
-        resolution: 1,  // 旧: window.devicePixelRatio || 1
+        resolution: 1,
         backgroundColor: 0x000000,
         backgroundAlpha: 0,
         antialias: true
@@ -153,7 +122,7 @@ window.TEGAKI_CONFIG = {
     debug: false
 };
 
-window.TEGAKI_KEYMAP = {
+export const TEGAKI_KEYMAP = {
     actions: {
         UNDO: {
             key: 'KeyZ',
@@ -177,7 +146,6 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             description: '消しゴムツール'
         },
-        // 🎨 v8.13.15: 塗りつぶしツール (Gキー)
         TOOL_FILL: {
             key: 'KeyG',
             ctrl: false,
@@ -466,7 +434,7 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
-window.TEGAKI_KEYCONFIG = {
+export const TEGAKI_KEYCONFIG = {
     pen: 'KeyP',
     eraser: 'KeyE',
     fill: 'KeyG',
@@ -482,7 +450,7 @@ window.TEGAKI_KEYCONFIG = {
     gifPlayPause: 'Space'
 };
 
-window.TEGAKI_COLORS = {
+export const TEGAKI_COLORS = {
     futabaMaroon: '#800000',
     futabaLightMaroon: '#aa5a56',
     futabaMedium: '#cf9c97',
@@ -491,11 +459,15 @@ window.TEGAKI_COLORS = {
     futabaBackground: '#ffffee'
 };
 
-window.TEGAKI_UTILS = {
+export const TEGAKI_UTILS = {
     log: (...args) => {
-        if (window.TEGAKI_CONFIG.debug) console.log(...args);
+        if (TEGAKI_CONFIG.debug) console.log(...args);
     }
 };
 
-console.log('✅ config.js v8.14.0 loaded (Phase 1: DPR=1固定化)');
-console.log('   🚨 renderer.resolution = 1 (devicePixelRatio参照を削除)');
+// 下位互換性のためにグローバルに登録
+window.TEGAKI_CONFIG = TEGAKI_CONFIG;
+window.TEGAKI_KEYMAP = TEGAKI_KEYMAP;
+window.TEGAKI_KEYCONFIG = TEGAKI_KEYCONFIG;
+window.TEGAKI_COLORS = TEGAKI_COLORS;
+window.TEGAKI_UTILS = TEGAKI_UTILS;
