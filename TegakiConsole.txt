@@ -1,0 +1,209 @@
+config.js:509 ✅ config.js v8.14.0 loaded (Phase 1: DPR=1固定化)
+config.js:510    🚨 renderer.resolution = 1 (devicePixelRatio参照を削除)
+data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+debug-utils.js:553 ✅ debug-utils.js loaded
+debug-utils.js:554    Type: TegakiDebug.help() for available commands
+debug-utils.js:555    Quick check: TegakiDebug.fullDiagnostic()
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+state-manager.js:669 ✅ state-manager.js (Phase 8完全実装版) loaded
+settings-manager.js:231 ✅ settings-manager.js Phase 2 loaded
+settings-manager.js:232    🔧 exportResolution 設定項目追加
+ ✅ layer-transform.js Phase 6 loaded
+    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
+    ✅ createFolder() - フォルダ作成
+    ✅ addLayerToFolder() - レイヤーをフォルダに追加
+    ✅ removeLayerFromFolder() - フォルダから取り出し
+    ✅ toggleFolderExpand() - 開閉切替
+    ✅ getVisibleLayers() - 表示レイヤーのみ取得
+    ✅ getFolderChildren() - フォルダ内レイヤー取得
+    ✅ Phase 9完全継承（親子関係・座標変換）
+ ✅ drawing-clipboard.js Phase 1 loaded
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ earcut-triangulator.js Phase 2.0 loaded
+ ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+ ✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded
+    🔧 テクスチャサイズ計算でアスペクト比を厳密保持
+    🔧 2の累乗丸めによるストローク変形を防止
+ ✅ gl-stroke-processor.js Phase 4.0 カメラフレーム厳格対応版 loaded
+    🔧 カメラフレーム外への描画を完全防止
+    🔧 ポイント座標検証追加
+    🔧 フレーム外ストロークの早期リジェクト
+    🔧 統計情報追加
+    ✅ Phase 3.2完全継承
+    🎯 デバッグ: TegakiDebug.glStroke.*
+ ✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded
+    📌 window.WebGLContext (主要)
+    📌 window.WebGL2DrawingLayer (互換)
+ ✅ gl-mask-layer.js Phase 6完全版 loaded
+    ✅ Circle mask rendering実装
+    ✅ Additive blend対応
+    ✅ Compose Pass統合準備完了
+ ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ stroke-recorder.js (警告ログ削減版) loaded
+    ✓ 不要な警告ログを削除
+    ✓ DRY原則準拠
+stroke-renderer.js:167 ✅ stroke-renderer.js (Surgical Update) loaded
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+blend-modes.js:24 ✅ BlendMode definitions loaded
+vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
+vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
+vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
+brush-core.js:372 ✅ brush-core.js (Phase 1-FIX) loaded
+brush-core.js:373    🔧 消しゴムのレイヤー追加を修正
+brush-core.js:374    🔧 tool/mode 記録を統一
+fill-tool.js:334 ✅ fill-tool.js (Phase 1完全修正版) loaded
+drawing-engine.js:255 ✅ drawing-engine.js (Phase 4.1 StrokeRenderer参照追加版) loaded
+drawing-engine.js:256    ✅ strokeRenderer プロパティ追加
+drawing-engine.js:257    ✅ setStrokeRenderer() メソッド追加
+drawing-engine.js:258    ✓ Phase 4 全機能継承
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:531 ✅ export-manager.js v8.33.0 loaded
+export-manager.js:532    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+png-exporter.js:255 ✅ png-exporter.js v8.29.0 loaded
+png-exporter.js:256    🔧 generatePreview()メソッド追加
+png-exporter.js:257    🔧 エラーハンドリング強化
+png-exporter.js:258    🔧 Blob生成の確実性向上
+webp-exporter.js:249 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
+dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
+slider-utils.js:234 ✅ slider-utils.js v8.13.10 loaded
+slider-utils.js:235    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+slider-utils.js:236    🔧 慣性スクロール実装（velocity計算）
+slider-utils.js:237    🔧 requestAnimationFrame最適化
+keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
+keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
+keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+layer-panel-renderer.js:957 ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
+layer-panel-renderer.js:958    ✅ createFolderElement() - フォルダUI生成
+layer-panel-renderer.js:959    ✅ createFolderEar() - 耳部分SVGアイコン
+layer-panel-renderer.js:960    ✅ 階層表示（左オフセット + 縦線）
+layer-panel-renderer.js:961    ✅ フォルダ開閉アニメーション
+layer-panel-renderer.js:962    ✅ フォルダサムネイル合成対応
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:630 ✅ thumbnail-system.js Phase 4: フォルダサムネイル合成版 loaded
+timeline-thumbnail-utils.js:631    ✅ generateFolderThumbnail() - フォルダ合成サムネイル生成
+timeline-thumbnail-utils.js:632    ✅ _compositeLayers() - 複数レイヤー合成処理
+timeline-thumbnail-utils.js:633    ✅ フォルダサムネイルキャッシュ対応
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
+settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:418 ✅ ui-panels.js v8.13.16 loaded
+ui-panels.js:419    ✅ フォルダ+ボタン接続完了
+ui-panels.js:420    ✅ createFolder() 正常呼び出し
+core-runtime.js:557 ✅ core-runtime.js (Phase 6 - updateLayerPanelUI完全削除版) loaded
+core-runtime.js:558    ✅ EventBus駆動に完全統一
+core-runtime.js:559    ✅ 存在しないメソッド呼び出し削除
+core-engine.js:717 ✅ core-engine.js v8.33.0 loaded
+core-engine.js:718    🆕 DrawingEngine に StrokeRenderer 参照追加
+core-engine.js:719    ✅ WebGL2初期化準備完了
+core-initializer.js:487 ✅ core-initializer.js (Phase 2.1 WebGL2統合版) loaded
+core-initializer.js:488    🆕 WebGPU → WebGL2 切り替え完了
+core-initializer.js:489    ✅ GLStrokeProcessor 初期化追加
+core-initializer.js:490    ✅ Phase 2 全機能継承
+index.html:116 🚀 WebGL2 MSDF版 起動中...
+core-engine.js:634 ✅ [CoreEngine] StrokeRenderer set to DrawingEngine
+brush-core.js:95 ✅ [BrushCore] Initialized (Phase 1-FIX)
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+core-initializer.js:321 [DrawingApp] Initializing WebGL2...
+core-initializer.js:325 [DrawingApp] DrawingEngine: true
+core-initializer.js:326 [DrawingApp] StrokeRenderer: true
+core-initializer.js:327 [DrawingApp] Canvas: true
+core-initializer.js:165 [WebGL2] Starting initialization...
+core-initializer.js:187 [WebGL2] Context obtained: WebGL2RenderingContext
+webgl2-drawing-layer.js:58 [WebGL2DrawingLayer] ❌ Canvas not found
+initialize @ webgl2-drawing-layer.js:58
+initializeWebGL2 @ core-initializer.js:191
+initialize @ core-initializer.js:330
+await in initialize
+initialize @ core-initializer.js:467
+（匿名） @ index.html:117
+core-initializer.js:196 [WebGL2] WebGLContext initialized
+core-initializer.js:210 [WebGL2] GLStrokeProcessor initialized
+core-initializer.js:215 [WebGL2] EarcutTriangulator initialized: true
+core-initializer.js:221 [WebGL2] StrokeRenderer connected to WebGL2 pipeline
+core-initializer.js:226 ✅ [WebGL2] Initialization complete
+core-initializer.js:227    - GLStrokeProcessor: true
+core-initializer.js:228    - EarcutTriangulator: true
+core-initializer.js:334 [DrawingApp] WebGL2 initialization result: true
+index.html:118 ✅ WebGL2初期化完了
+RenderGroup.ts:223 Uncaught TypeError: Cannot create property 'renderGroupParent' on boolean 'true'
+addRenderGroupChild @ RenderGroup.ts:223
+addChild @ RenderGroup.ts:262
+addChild @ RenderGroup.ts:273
+addChild @ RenderGroup.ts:273
+addChild @ RenderGroup.ts:273
+init @ RenderGroup.ts:151
+get @ Pool.ts:65
+get @ PoolGroup.ts:51
+enableRenderGroup @ Container.ts:1207
+render @ AbstractRenderer.ts:361
+render @ Application.ts:291
+emit @ TickerListener.ts:64
+update @ Ticker.ts:702
+（匿名） @ Ticker.ts:280
+requestAnimationFrame
+（匿名） @ Ticker.ts:284
+requestAnimationFrame
+_requestIfNeeded @ Ticker.ts:302
+start @ Ticker.ts:565
+（匿名） @ TickerPlugin.ts:195
+init @ TickerPlugin.ts:204
+（匿名） @ Application.ts:259
+init @ Application.ts:257
+await in init
+initialize @ core-initializer.js:266
+initialize @ core-initializer.js:467
+（匿名） @ index.html:117
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+RenderGroup.ts:237 Uncaught TypeError: Cannot create property 'renderGroupParent' on boolean 'true'
+_removeRenderGroupChild @ RenderGroup.ts:237
+removeChild @ RenderGroup.ts:297
+removeChild @ RenderGroup.ts:306
+removeChild @ Container.ts:1129
+createInitialFrameIfNeeded @ animation-system.js:937
+（匿名） @ animation-system.js:270
+setTimeout
+init @ animation-system.js:268
+initializeAnimationSystem @ core-engine.js:316
+initialize @ core-engine.js:651
+initialize @ core-initializer.js:282
+await in initialize
+initialize @ core-initializer.js:467
+（匿名） @ index.html:117
+popup-manager.js:87 ✅ Popup "export" initialized successfully
