@@ -1,0 +1,135 @@
+※私（ユーザー）が現状のペン・消しゴムが上手く使えないので、いっそ破棄して新しくしたい。その際に何を使うと良いか？をClaudeに相談したのが下記。
+WEBGL2+ラスターで行くが安定実装後に、背景のために3Dオブジェクトを配置したり複雑な物理演算変形の事も考え、WEBGPU+ベクターペン実装も検討はしているので、無理がなければオプションとして一考したい。繰り返すがWEBGL2+ラスターの安定運用が有りきの上での話。
+既にファイル分けされてるので大丈夫と思いますが、ペン消しゴムの実装は上手く行かなかったら削除して新実装できるようなモジュール化を。
+
+---
+
+結論：2025年現在のモダンなブラウザペン実装
+最重要ライブラリ：perfect-freehand
+perfect-freehandは[x, y, pressure]または{x, y, pressure}形式の点列を受け取り、筆圧に対応した滑らかなストローク輪郭点を返すライブラリです。simulatePressure: falseにすれば実際のペン筆圧（Wacom・Apple Pencil等）をそのまま使えます。 
+GitHub
+
+javascript
+// こういうイメージ
+import { getStroke } from 'perfect-freehand'
+
+const stroke = getStroke(points, {
+  size: 16,
+  thinning: 0.7,      // 筆圧で細くなる度合い
+  smoothing: 0.5,     // 滑らかさ
+  streamline: 0.5,    // 手ブレ補正
+  simulatePressure: false  // 実筆圧を使う
+})
+// → PixiJSのGraphicsで輪郭ポリゴンとして描画
+これが今の「業界標準」的な位置づけで、tldraw・Excalidrawなどでも採用されています。
+
+参考実装として最有力：Klecks（Kleki のOSS版）
+KlecksはMITライセンスで公開されており、WebGLによるフィルター処理、筆圧対応ブラシを実装しています。 
+GitHub
+
+ロードマップとしてWebGLブラシエンジン、テクスチャ・ブラー・スキャッター・実オパシティ対応のブラシエンジン改良、そして2027年頃にWebGPUへの完全移行を予定しています。 
+Kleki
+
+つまり「今WebGL2でラスターをやって、後でWebGPUへ」というあなたの方針と完全に一致しています。換骨奪胎の参考元として最適です。
+
+あなたのプロジェクト（PixiJS v8ベース）への組み込み方針
+【現状】
+PointerEvent → 独自ラスターブラシコア → PixiJS描画
+
+【置き換え後】
+PointerEvent（筆圧取得）
+  ↓
+perfect-freehand（輪郭ポリゴン生成）
+  ↓
+PixiJS v8 Graphics（ポリゴン塗りつぶし＝ラスター描画）
+
+【消しゴム】
+同じパイプライン + ブレンドモード「erase」
+（PixiJS v8には erase ブレンドモードが標準搭載）
+消しゴムについて補足
+消しゴムが鬼門になりがちな理由と解決策：
+
+方式	問題	備考
+白で塗る	背景色に依存、透過レイヤーで破綻	❌
+Canvas destination-out	合成のたびにレイヤー全体処理	△
+PixiJS BlendMode.ERASE	そのまま使える	✅
+PixiJS v8のBlendMode.ERASEがそのまま答えです。ペンと全く同じパイプラインで、ブレンドモードを切り替えるだけでよくなります。
+
+Geminiへの指示の際の提案
+リファクタリング後にペン・消しゴムを一から作る際、Geminiへの指示としては：
+
+「perfect-freehand ライブラリを使って、
+ PixiJS v8のGraphicsでストロークを描画するクラスを作って。
+ 消しゴムは同じクラスで BlendMode.ERASE を切り替えるだけにして。
+ 筆圧は PointerEvent.pressure から取得。」
+このくらいシンプルな仕様書をClaudeで作って渡すのが現実的だと思います。
+
+
+----
+PixiJSが更新されてるので、お絵かきツールで使えそうなのを調べてもらったのが下記です。
+特にレイヤー・座標系は、今は安定してるものの、レイヤーの変形移動を弄ると爆発しやすいので導入の検討を。
+
+----
+現在の最新はv8.17.0（2025年末〜2026年初頭）です。お絵かきツール目線で有益なものを拾います。
+
+お絵かきツールに関係する主な追加機能
+✅ 直接関係あるもの
+逆マスク（Inverse Masking）
+element.setMask({ mask, inverse: true })で逆マスクが使えるようになりました。切り抜き効果などに使えます。消しゴムの実装バリエーションとして活用できます。 WebBrowserTools
+pixelLine プロパティ
+GraphicsのpixelLineプロパティで、ズームや拡縮に関わらず常に1ピクセル幅の線を描けるようになりました。技術的な作図やUI描画に特に有用です。グリッド表示・補助線系の描画に使えます。 WebBrowserTools
+ContainerのreparentChild
+reparentChild(child)とreparentChildAt(child, index)で、親コンテナを変えてもビジュアル上の位置・スケールが変わらずにレイヤー移動できます。レイヤーの並び替えに直接使える機能です。 WebBrowserTools
+グローバルトランスフォーム取得
+container.getGlobalTransform()、getGlobalTint()、getGlobalAlpha()というグローバル空間での値を取得する関数が追加されました。カメラ変換・座標系変換まわりのバグ温床になりやすい処理がシンプルになります。 WebBrowserTools
+
+△ 間接的に使えるもの
+Canvasレンダラーが実験的に復活
+v8.16.0でCanvasレンダリングの実験的サポートが追加されました。WebGLが使えない環境へのフォールバックとして将来的に有効です。ただし現状はまだ実験的です。 Kleki
+MeshRopeのwidth指定
+MeshRopeに明示的なwidth指定が追加され、テクスチャの高さから独立して縄の太さを設定できるようになりました。テクスチャブラシ的な表現への応用余地があります。 Chrome
+
+現状のプロジェクトへの影響
+あなたのrev13はPixiJS v8ベースなので、バージョンを上げるだけで上記の機能が使えます。特に：
+機能用途reparentChildレイヤー移動の安定化getGlobalTransformcamera-system.jsの簡略化逆マスク消しゴム実装の選択肢追加
+ただし、ペン・消しゴムの根本的な改善はPixiJS本体よりperfect-freehandの導入の方が効果が大きいと思います。PixiJSの新機能はその周辺（レイヤー操作・座標系）を安定させる文脈で効いてくるイメージです。
+
+----
+
+ゼロ荷重付近の挙動：perfect-freehandで何が起きるか
+perfect-freehandは筆圧からストロークの輪郭ポリゴンを生成します。
+javascriptgetStroke(points, {
+  size: 16,        // 基本サイズ
+  thinning: 0.9,   // 1.0に近いほど低筆圧で極細になる
+  simulatePressure: false
+})
+thinning: 1.0にすると、筆圧≈0のとき幅≈0のポリゴンが生成されます。これをWebGL（PixiJS）で描画すると…
+筆圧 1.0  → 幅16px のポリゴン → しっかり描画
+筆圧 0.3  → 幅5px のポリゴン → 細く描画  
+筆圧 0.05 → 幅0.8px のポリゴン → ここがポイント
+サブピクセル幅のポリゴンはWebGLのアンチエイリアスで自然に薄く表示されます。 つまり「幅が細い＝アルファが下がる」という現象がGPU側で自動的に起きます。
+
+ただし「薄くなる」の表現には2種類ある
+アプローチ特徴向いてる表現幅で細らせる（perfect-freehand）線が細くなる、点に近づく筆・鉛筆的不透明度で薄らせる幅はそのまま、色が薄くなる水彩・エアブラシ的両方同時より自然な筆感高品質ブラシ
+鉛筆的なリアリティを出すなら両方を組み合わせるのがモダンな実装です：
+javascript// 筆圧から幅と不透明度を両方計算
+const pressure = event.pressure  // 0.0 〜 1.0
+
+// perfect-freehandへの入力（幅制御）
+points.push([x, y, pressure])
+
+// PixiJSへの描画時（不透明度も下げる）
+graphics.alpha = Math.max(0.1, pressure ** 0.5)
+// ↑ 平方根で低筆圧でも急に消えすぎない調整
+
+実用上の注意点
+ゼロ近辺で幅が0に近づくと、PointerEventがpressure=0を送ってくる誤検知（ペンを浮かせる直前）でゴミ点が出ることがあります。現実的な対処は：
+javascript// 最小筆圧をクランプして完全ゼロを避ける
+const pressure = Math.max(event.pressure, 0.02)
+
+// または一定以下は描画しない
+if (event.pressure < 0.01) return
+このあたりの調整がペン実装で一番手間のかかる部分で、Klecks等のOSS実装を参考にするのが有効です
+
+
+
