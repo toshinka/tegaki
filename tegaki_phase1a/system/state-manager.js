@@ -1,15 +1,25 @@
 /**
- * StateManager - アプリケーション状態の一元管理
- * Phase 8: アクティブ/準アクティブUI管理追加
- * Phase 3.1: Cuts対応版 + History統合完備 + Tool Size管理追加 + EventBus安全化
+ * ============================================================================
+ * ファイル名: system/state-manager.js
+ * 責務: アプリケーション状態の一元管理
+ * 依存: system/event-bus.js
+ * 被依存: core-initializer.js, ui/ui-panels.js等
+ * 公開API: StateManager, stateManager
+ * イベント発火: ui:active-panel-changed, tool:change, toolSize:change, toolOpacity:change, eraserSize:change, eraserOpacity:change, cut:selected, cut:created, cut:deleted, cuts:reordered, cut:updated, layer:added, layer:removed, stroke:added, stroke:removed, layer:selected, tool:updated, state:restored, state:reset
+ * イベント受信: なし
+ * グローバル登録: window.StateManager
+ * 実装状態: ♻️移植
+ * ============================================================================
  */
 
-class StateManager {
+import { TegakiEventBus } from './event-bus.js';
+
+export class StateManager {
     constructor() {
         this.state = this._createInitialState();
         this._eventBus = null;
         this.history = null;
-        this.lastActivePanel = 'layer'; // Phase 8: 'layer' | 'timeline'
+        this.lastActivePanel = 'layer'; // 'layer' | 'timeline'
     }
 
     /**
@@ -17,7 +27,7 @@ class StateManager {
      */
     get eventBus() {
         if (!this._eventBus) {
-            this._eventBus = window.EventBus || window.TegakiEventBus;
+            this._eventBus = window.EventBus || TegakiEventBus;
         }
         return this._eventBus;
     }
@@ -32,7 +42,7 @@ class StateManager {
     }
 
     /**
-     * 初期状態の作成（Cuts構造 + Tool Size）
+     * 初期状態の作成
      */
     _createInitialState() {
         const initialCutId = this._generateId('cut');
@@ -80,11 +90,8 @@ class StateManager {
         return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    // ===== Phase 8: アクティブパネル管理 =====
-
     /**
      * 最後にアクティブになったパネルを設定
-     * @param {string} panel - 'layer' または 'timeline'
      */
     setLastActivePanel(panel) {
         if (panel !== 'layer' && panel !== 'timeline') {
@@ -105,13 +112,10 @@ class StateManager {
 
     /**
      * 現在のアクティブパネルを取得
-     * @returns {string} 'layer' または 'timeline'
      */
     getLastActivePanel() {
         return this.lastActivePanel;
     }
-
-    // ===== Tool Size API =====
 
     getCurrentTool() {
         return this.state.tool.currentTool;
@@ -157,8 +161,6 @@ class StateManager {
         this.state.tool.eraserOpacity = opacity;
         this._safeEmit('eraserOpacity:change', { tool: 'eraser', opacity });
     }
-
-    // ===== Cut Management =====
 
     getCurrentCut() {
         const cut = this.state.timeline.cuts.find(
@@ -651,19 +653,9 @@ class StateManager {
         this.lastActivePanel = 'layer';
         this._safeEmit('state:reset');
     }
-
-    // ===== 後方互換性API =====
-    
-    getCurrentFrame() {
-        console.warn('getCurrentFrame() is deprecated. Use getCurrentCut() instead.');
-        return this.getCurrentCut();
-    }
-
-    getFrameById(frameId) {
-        console.warn('getFrameById() is deprecated. Use getCutById() instead.');
-        return this.getCutById(frameId);
-    }
 }
 
-window.StateManager = new StateManager();
-console.log('✅ state-manager.js (Phase 8完全実装版) loaded');
+export const stateManager = new StateManager();
+
+// 下位互換性のためにグローバルに登録
+window.StateManager = stateManager;

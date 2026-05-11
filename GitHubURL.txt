@@ -108,3 +108,13 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_phase1a
 # - system/drawing/earcut-triangulator.js
 # - system/drawing/stroke-renderer.js
 # - system/drawing/webgl2-drawing-layer.js
+
+
+## Claude確認用別添資料
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CLAUDE_HANDOFF.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PROGRESS.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GitHubURL.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/phase1a.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
+
