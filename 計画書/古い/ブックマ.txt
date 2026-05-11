@@ -1,0 +1,206 @@
+
+保管放置されていたものの出品です。
+こちらは未開封品になります。
+
+フォルダを実装したい。
+・既にあるフォルダ+ボタンで生成される。
+・添付図のような耳のあるフォルダデザインで色は--futaba-light-medium: #e9c2baで塗られている。閉じると--futaba-medium: #cf9c97に。レイヤーの機能は継承される。
+・耳にはフォルダのSVG。開閉時の状態に合わせてアイコンが入れ替わる。耳の縦高さが狭いので小さめに。
+folder
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-icon lucide-folder"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+folder-open
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-open-icon lucide-folder-open"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+・サムネイルは中のレイヤーの合成されたものがでる。
+・中に入ったレイヤーを右にオフセットしたかったが隙間がないので、通常レイヤーやフォルダを左側にオフセットさせる。
+・フォルダに入ったレイヤーは左側に縦線が入る。
+
+フォルダ実装.txtにて改修中です。引き継ぎ願います。
+
+🚨元ファイル+必要な改修で、機能が継承された完全なものの提出をお願いします。
+大規模な改修ですが、基礎部分でもあるので慎重に改修してください。
+今のところ80％くらいの確率で、最初の出力が親子ファイル関係を破棄した継承の無い提出物を初回に出すというのが見られるので注意してください。
+・初心者な私ではパッチコードでは間違う可能性が高いので、元ファイルを継承した完全版のみの提出を行ってください。
+・ヘッダーへの親子依存関係記述をし、Claudeが関連ファイルを読み込まなかった場合の多重実装を防ぐようにする。改修時に記述。
+・多重実装は排除してください。
+・過剰なコンソール表記、実装が既に終わり特に確認の必要のないものはファイル改修時に削除してクリーンにする事。
+・DRY/SOLID原則に基づく明確なファイルの責務分担をしAI(Claude）からの可視性を高める事。
+・改修報告は簡潔に。
+
+
+
+https://lucide.dev/icons/
+
+
+ __lora_!MAN_F__, __lora_!MAN__, __lora_!ANI__, __lora_!ANI_L2__,__lora_!IRA__, __lora_!Basic__,__lora_!ONE__, __lora_!VIP__,  __lora_!BST__, __lora_!TOAORE__, __lora_!KANO__, __lora_!SSSS__, __lora_!kawa__,
+ 
+
+<lora:dmd2_sdxl_4step_lora:1>,
+__man-illust__, __QuaSin__, 
+BREAK,
+1girl,   __girl1__, __girl2__, __body2__, __FaceExp__,   
+__lora_!MAN__,  __lora_!ANI_L2__, __lora_!Basic__,  __lora_!IRA__, __lora_!ONE__,
+__lora_!MAN__,  __lora_!IRA__, __lora_!ONE__,
+
+<lora:dmd2_sdxl_4step_lora:0.8>,
+__man-illust__, __QuaSin__, __angle2__,  __angle1__,(wide shot, full body:1.4),
+BREAK,
+(1girl and 1men having sex,hetero, couple:1.4),  __girl1__,  __girl2__,
+(sheila, Sheila Metallicana:1.2), BASTARD!!, dark blue hair, (retro artstyle:0.5), single thick braid, barefoot, huge breasts, 
+{ 0.1::long hair, blue short dress, bare shoulders, sleeveless, side slit, fingerless gloves, white panties pull down, haif undressing, <lora:Pull Down Clothes:0.8> | 0.1::nude },
+BREAK,
+__sex__, { 0.2::__sex-lying__ | 0.2::__sex-cowgirl__ | 0.1::__sex-doggy__ | 0.3::__sex-standing__ | 0.1::__sex-standog__ }, __men_fat__, 
+__lora_!ANI__, __lora_!MAN__, __lora_!Basic__, __lora_!ONE__, __lora_!BST__,     
+
+ __lora_!KANO__, 
+
+(yukoku_kiriko, idolmaster_shiny_colors:1.0),__lora_!IRA2512__,
+131252323
+ <lora:アクマでふけい__Devil_police_girl__악마_여경:0.2> <lora:Oohara_Kotone_ILXL-000013:0.2> <lora:Atsumare Fushigi Kenkyuu-bu - Asahi Kasugano:0.1> <lora:wag6shi-000026:0.2>  <lora:Maria_Ataraxis:0.2> <lora:_meltina_genei_kakeru_taiyou-elesico-ilxl:0.2> <lora:cibi040-A-IL_v1:0.9>
+
+現在下記を行うことが出来ない。
+いちばん大事なのがアンドゥ周りで、ペンや消しゴムの他レイヤーやキャンバスの編集、新規作成や削除に対して適切にアンドゥ/リドゥされないといけないが、Historyでのカウントが大雑把になってる。それぞれの行動がイベントやヒストリーに関連付けられてないのでは？という疑惑もある。大きなバグが出かねないので優先的に対処、リファクタリング的なものになるレベルでの大きな改修の可能性も考えつつ改修して欲しい。
+
+※PixiJS v8.13からPixiJS v8.14に更新しています。
+pixi.js v8.14で@pixi/coreや@pixi/graphics等が更新されたことによる改善できるものがあるかも確認して欲しい。
+
+【レイヤー操作 - 階層】
+✅ 　タブレットペンでのレイヤーパネルのドラッグ移動　（マウスでは可能）
+【カメラ操作 】
+✅ Space + ↑           : カメラフレームを上に移動　🆕新規追加希望
+✅ Space + ↓           : カメラフレームを下に移動　🆕新規追加希望
+✅ Space + ←           : カメラフレームを左に移動　🆕新規追加希望
+✅ Space + →           : カメラフレームを右に移動　🆕新規追加希望
+【Vキーからのトランスフォームポップアップパネルによるアクティブレイヤー操作 】
+⚠️左右・上下反転ボタンが同パネル内の回転・拡縮をしないと作動しない。
+✅ Vキーによるトランスフォーム+H/Shift+Hでアクティブレイヤー描画物反転
+【UI/設定】
+✅ Ctrl + ,        : 設定を開くのは出来る　→　もう一度「Ctrl + ,」で閉じるようにする
+
+
+✅ H/Shift+Hでカメラ反転時のポップアップ　→　🆕新規追加希望：それぞれ「左右反転中」「上下反転中」のポップアップが画面上部に出るようにする
+
+
+✅ CTRL+Zでのアンドゥ　現状、描画や行動のカウントが雑。カウントされなかったり一度のアンドゥでHistoryが二つ減る等。
+✅ CTRL+Yでのリドゥ
+※アンドゥ/リドゥはイベントへの登録状況が整理されないと、改修できない？
+
+※他現在のショートカットで復旧したいもの・追加したいもの
+【レイヤー操作 - 基本】
+⚠️ Ctrl+Delete  : レイヤークリア（登録あり・実装経路不明確）→アクティブレイヤー削除に変更
+✅ Ctrl+C       : アクティブレイヤーの描画物をクリップボードにコピー　🔧復旧させる、「コピー」とポップアップが上の方に出現させ自動で消えるようにする
+✅ Ctrl+V       : アクティブレイヤーにクリップボード描画物をペースト　🔧復旧させる　
+history.js:31 [History] Invalid command structure: {meta: {…}, undo: ƒ, redo: ƒ}　とエラーがでる
+💡 Ctrl+X       : アクティブレイヤーの描画物をクリップボードにコピーしてから削除。　🆕新規追加希望「切り取り」とポップアップが上の方に出現させ自動で消えるようにする
+
+※現在、新規レイヤー作成をすると下記エラーが出る
+core-runtime.js:397 Uncaught TypeError: CoreRuntime.internal.layerManager.updateLayerPanelUI is not a function
+※またタイムラインサムネイルやクイックアクセスポップアップで、アイコン選択がショートカットとクリックで重複すると再現性は安定しないが橙色の枠でなく黒い枠が出る事がある。設定されたもので無いことや、これが出てると新規フレームが作成され続けたりと不安定になるので消したい。
+
+
+
+/*!
+ * Mebuki Channel Animation Drawing Tool
+ * (c) 2025 toshinka
+ *
+ * Released under the MIT License
+ * https://opensource.org/licenses/MIT
+ *
+ * Icons by Lucide (https://lucide.dev/icons/)
+ * Licensed under the ISC License © Lucide Contributors
+ * 
+ * This script is intentionally obfuscated to protect integrity and prevent
+ * unauthorized modifications on public forums.
+ * Please respect the original authorship and license terms.
+ */
+
+
+/*!
+ * Tegaki Anime Tool / Browser Drawing Tool
+ * (c) 2025 toshinka
+ *
+ * This project is licensed under the MIT License.
+ *
+ * Includes third-party libraries under their respective licenses:
+ * - PixiJS v8.13.0 (MIT License)
+ * - Perfect Freehand v1.2.0 (MIT License)
+ * - SortableJS v1.15.x (MIT License)
+ * - Pako v2.1.0 (MIT License)
+ * - UPNG.js v2.1.0 (MIT License)
+ * - gif.js v0.2.0 (MIT License)
+ * - jsPDF v2.5.1 (MIT License)
+ * - Lucide Icons (Lucide License: https://lucide.dev/license)
+ *
+ * Obfuscated for distribution on public boards to prevent malicious tampering.
+ * Original source available on GitHub.
+ */
+
+
+Canvas座標/World座標/Local座標
+
+Maroon: #800000;     （アクティブペンカラー：デフォルトペン色）
+Stiletto: #9c3836;
+Contessa: #b8706b;
+Eunry: #d4a8a1;
+Bizarre: #f0e0d6;  （背景レイヤー0：デフォルト色）
+Ivory: #ffffee;　（キャンバス背景）
+
+
+#ff8c42　橙色
+
+
+chrome://flags/#force-high-performance-gpu
+
+
+パラメーター,役割（再確認）,備考
+--------------------------------------------------------------------------------------------
+ペンサイズ  ：線の最大太さ。,
+筆圧        ：サイズ、流量、不透明度への筆圧の影響度。,連動ON/OFFまたは感度スライダー。
+不透明度   ：描画する色の最大の透け具合。
+流量      :重ね塗りによる濃度の蓄積度合い。
+硬さ       ：線のエッジのぼかし度。,
+手ブレ補正 :（スタビライザー）,線揺らぎを自動で修正する強さ。,**【追加】**快適な線画に必須のユーティリティ。
+速度連動   ：描画速度によるパラメーター（サイズ/不透明度/流量）の変化。,**【追加】**表現のダイナミズムを向上させる。
+
+
+ToonSquid2やProcreate Dreams
+
+・Vector Warp Grid (ベクターワープグリッド):
+　Odysseyはベクター線に対してグリッド変形を行っています。PixiJSでも、描画したストロークをメッシュ化し、その頂点座標をグリッド（2D配列）で制御すれば、これと同じ**「描いた絵を後からグニュッと直す」** 機能が実装できます。
+
+・Automatic Inbetweens (自動中割り):
+　Odysseyは、フレームAとフレームBのベクターパスを計算して、間を自動で埋める機能があります。これを実装できれば、まさに「Procreate Dreams」のような体験になります。
+
+
+
+【大規模ファイルの分割出力ルール】
+
+■ 適用条件
+・ファイルが1500行を超える場合、複数パートに分割して出力する
+・各パートは800-1000行を目安とする
+
+■ 出力フォーマット
+```javascript
+// ================================================================
+// [PART X/N] セクション名
+// ================================================================
+// ⚠️ このファイルはNパートに分割されています
+// ⚠️ 各パートを順番にコピペして結合してください
+// ================================================================
+
+// コード本体
+
+// ================================================================
+// [END PART X] - 次は PART X+1 をこの下に貼り付けてください
+// ================================================================
+```
+
+■ 分割基準
+1. クラス定義単位で分割（クラスの途中で切らない）
+2. 関連する関数群をまとめる
+3. PART 1 に集約すべきものは集約する。
+
+■ 注意事項
+・各パート出力時に「PART X/N を出力しました。続きを出力しますか？」と確認
+・パート間で変数名・関数名の整合性を保つ
+・最終パートでファイル全体の概要を説明
+
