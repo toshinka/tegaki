@@ -8,7 +8,11 @@
 </head>
 
 <body>
-    <div id="app"></div>
+    <div id="app">
+        <!-- WebGL2用キャンバス（PixiJSのキャンバスとは別に重なるように配置） -->
+        <canvas id="webgl2-canvas" style="position: absolute; pointer-events: none;"></canvas>
+    </div>
+    
     <script type="module" src="/core-initializer.js"></script>
 </body>
 </html>

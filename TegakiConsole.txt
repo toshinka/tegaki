@@ -1,4 +1,97 @@
-index.html:1 Access to script at 'file:///D:/core-initializer.js' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome, chrome-extension, chrome-untrusted, data, http, https, isolated-app.
-core-initializer.js:1  Failed to load resource: net::ERR_FAILED
-index.html:1 Unsafe attempt to load URL file:///D:/GitHub/tegaki/tegaki_phase1a/index.html from frame with URL file:///D:/GitHub/tegaki/tegaki_phase1a/index.html. 'file:' URLs are treated as unique security origins.
-
+client:827 [vite] connecting...
+client:931 [vite] connected.
+core-initializer.js:28 🚀 Tegaki Initializing...
+injection-topics.js:1 Browsing Topics API not found, nothing to remove on http://localhost:5176/, main frame
+popup-manager.js:26 ✅ PopupManager initialized
+core-engine.js:84 [CoreEngine] Initializing sub-systems...
+webgl2-drawing-layer.js:77 [WebGL2DrawingLayer] ✅ Initialized {canvasSize: '400x400', maxTextureSize: 16384, extensions: Array(3)}
+gl-texture-bridge.js:39 [GLTextureBridge] ✅ Initialized (PixiJS v8)
+gl-mask-layer.js:68 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
+brush-core.js:43 [BrushCore] Already initialized
+init @ brush-core.js:43
+initialize @ core-engine.js:166
+await in initialize
+initialize @ core-initializer.js:54
+await in initialize
+(anonymous) @ core-initializer.js:80
+core-engine.js:195 [CoreEngine] All sub-systems initialized.
+core-initializer.js:56 ✅ Tegaki Initialized Successfully
+coordinate-system.js:391 PixiJS Deprecation Warning: Application.view is deprecated, please use Application.canvas instead.Deprecated since v8.0.0
+popup-manager.js:174 ⚠️ Popup "settings" not registered
+get @ popup-manager.js:174
+toggle @ popup-manager.js:228
+togglePopup @ ui-panels.js:49
+settings-tool @ ui-panels.js:192
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:231 ❌ Cannot toggle popup "settings": not ready
+toggle @ popup-manager.js:231
+togglePopup @ ui-panels.js:49
+settings-tool @ ui-panels.js:192
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:174 ⚠️ Popup "settings" not registered
+get @ popup-manager.js:174
+toggle @ popup-manager.js:228
+togglePopup @ ui-panels.js:49
+settings-tool @ ui-panels.js:192
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:231 ❌ Cannot toggle popup "settings": not ready
+toggle @ popup-manager.js:231
+togglePopup @ ui-panels.js:49
+settings-tool @ ui-panels.js:192
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:174 ⚠️ Popup "quickAccess" not registered
+get @ popup-manager.js:174
+toggle @ popup-manager.js:228
+togglePopup @ ui-panels.js:49
+pen-tool @ ui-panels.js:152
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:231 ❌ Cannot toggle popup "quickAccess": not ready
+toggle @ popup-manager.js:231
+togglePopup @ ui-panels.js:49
+pen-tool @ ui-panels.js:152
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:174 ⚠️ Popup "resize" not registered
+get @ popup-manager.js:174
+toggle @ popup-manager.js:228
+togglePopup @ ui-panels.js:49
+resize-tool @ ui-panels.js:176
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:231 ❌ Cannot toggle popup "resize": not ready
+toggle @ popup-manager.js:231
+togglePopup @ ui-panels.js:49
+resize-tool @ ui-panels.js:176
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:174 ⚠️ Popup "export" not registered
+get @ popup-manager.js:174
+toggle @ popup-manager.js:228
+togglePopup @ ui-panels.js:49
+export-tool @ ui-panels.js:189
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:231 ❌ Cannot toggle popup "export": not ready
+toggle @ popup-manager.js:231
+togglePopup @ ui-panels.js:49
+export-tool @ ui-panels.js:189
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:174 ⚠️ Popup "album" not registered
+get @ popup-manager.js:174
+toggle @ popup-manager.js:228
+togglePopup @ ui-panels.js:49
+library-tool @ ui-panels.js:186
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106
+popup-manager.js:231 ❌ Cannot toggle popup "album": not ready
+toggle @ popup-manager.js:231
+togglePopup @ ui-panels.js:49
+library-tool @ ui-panels.js:186
+handleToolClick @ ui-panels.js:197
+(anonymous) @ ui-panels.js:106

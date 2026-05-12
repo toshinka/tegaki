@@ -388,14 +388,11 @@ export class CoordinateSystem {
     }
     
     _getCanvas() {
-        if (this.app?.view) {
-            return this.app.view;
+        if (this.app?.canvas) {
+            return this.app.canvas;
         }
         if (this.app?.renderer?.view) {
             return this.app.renderer.view;
-        }
-        if (this.app?.canvas) {
-            return this.app.canvas;
         }
         const canvases = document.querySelectorAll('canvas');
         return canvases.length > 0 ? canvases[0] : null;

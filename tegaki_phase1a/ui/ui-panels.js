@@ -1,114 +1,101 @@
 /**
- * @file ui/ui-panels.js - v8.13.16 フォルダボタン対応版
- * @description UIコントロールパネル統合管理
- * 
- * 【v8.13.16 改修内容】
- * ✅ フォルダ+ボタン接続（createFolder() 呼び出し）
- * ✅ 「準備中」alert削除
- * 
- * 【親ファイル (このファイルが依存)】
- * - core-runtime.js (API統一インターフェース)
- * - popup-manager.js (ポップアップ制御)
- * - event-bus.js (イベント通信)
- * - system/layer-system.js (LayerSystem)
- * 
- * 【子ファイル (このファイルに依存)】
- * なし（UI層の最上位）
+ * ============================================================================
+ * ファイル名: ui/ui-panels.js
+ * 責務: UIパネル（サイドバー、レイヤーパネル等）のイベント制御と状態更新を担当する
+ * 依存: DOMBuilder, SliderUtils, system/event-bus.js, system/popup-manager.js
+ * 被依存: core-initializer.js
+ * 公開API: UIController
+ * イベント発火: ui:*, tool:select, layer:panel-update-requested等
+ * イベント受信: tool:*, layer:*, camera:*, keyboard:*等
+ * グローバル登録: window.TegakiUI.UIController, window.uiController
+ * 実装状態: ♻️移植
+ * ============================================================================
  */
 
-window.TegakiUI = window.TegakiUI || {};
+import { DOMBuilder } from './dom-builder.js';
+import { SliderUtils } from './slider-utils.js';
+import { TegakiEventBus } from '../system/event-bus.js';
 
-window.TegakiUI.UIController = class {
-    constructor(drawingEngine, layerManager, app) {
+export class UIController {
+    constructor(drawingEngine, layerManager, app, popupManager) {
         this.drawingEngine = drawingEngine;
         this.layerManager = layerManager;
         this.app = app;
+        this.popupManager = popupManager;
+        this.eventBus = TegakiEventBus;
         
-        this.validateCoreRuntime();
         this.setupEventDelegation();
         this.setupEventBusListeners();
-        this.setupSliders();
         this.setupCanvasResize();
         this.setupFlipButtons();
         this.initializeStatusPanel();
-        window.TegakiUI.setupPanelStyles();
-    }
-    
-    validateCoreRuntime() {
-        if (!window.CoreRuntime?.api) {
-            throw new Error('CoreRuntime dependency missing');
-        }
-    }
-    
-    getPopupManager() {
-        return window.PopupManager;
+        this.setupPanelStyles();
     }
     
     showPopup(name) {
-        const manager = this.getPopupManager();
-        if (manager) {
-            manager.show(name);
+        if (this.popupManager) {
+            this.popupManager.show(name);
         }
     }
     
     hidePopup(name) {
-        const manager = this.getPopupManager();
-        if (manager) {
-            manager.hide(name);
+        if (this.popupManager) {
+            this.popupManager.hide(name);
         }
     }
     
     togglePopup(name) {
-        const manager = this.getPopupManager();
-        if (manager) {
-            manager.toggle(name);
+        if (this.popupManager) {
+            this.popupManager.toggle(name);
         }
     }
     
     closeAllPopups(exceptName = null) {
-        const manager = this.getPopupManager();
-        if (manager) {
-            manager.hideAll(exceptName);
+        if (this.popupManager) {
+            this.popupManager.hideAll(exceptName);
         }
     }
     
     initializeStatusPanel() {
         const statusPanel = document.querySelector('.status-panel');
         if (statusPanel) {
-            statusPanel.style.display = 'none';
+            // 必要に応じて初期化
         }
     }
     
     setupEventBusListeners() {
-        const eventBus = window.TegakiEventBus;
-        if (!eventBus) return;
+        if (!this.eventBus) return;
         
-        eventBus.on('ui:toggle-settings', () => {
+        this.eventBus.on('ui:toggle-settings', () => {
             this.togglePopup('settings');
         });
         
-        eventBus.on('ui:show-settings', () => {
+        this.eventBus.on('ui:show-settings', () => {
             this.showPopup('settings');
         });
         
-        eventBus.on('ui:toggle-quick-access', () => {
+        this.eventBus.on('ui:toggle-quick-access', () => {
             this.togglePopup('quickAccess');
         });
         
-        eventBus.on('ui:toggle-album', () => {
+        this.eventBus.on('ui:toggle-album', () => {
             this.togglePopup('album');
         });
         
-        eventBus.on('ui:toggle-export', () => {
+        this.eventBus.on('ui:toggle-export', () => {
             this.togglePopup('export');
         });
         
-        eventBus.on('tool:select', ({ tool }) => {
+        this.eventBus.on('tool:select', ({ tool }) => {
             this.updateToolUI(tool);
         });
         
-        eventBus.on('tool:changed', ({ tool }) => {
+        this.eventBus.on('tool:changed', ({ tool }) => {
             this.updateToolUI(tool);
+        });
+
+        this.eventBus.on('layer:status-update-requested', (data) => {
+            this.updateStatusDisplay(data);
         });
     }
     
@@ -122,24 +109,22 @@ window.TegakiUI.UIController = class {
 
             const layerAddBtn = e.target.closest('#add-layer-btn');
             if (layerAddBtn) {
-                const result = window.CoreRuntime.api.layer.create();
-                if (result) {
-                    window.CoreRuntime.api.layer.setActive(result.index);
+                if (this.layerManager) {
+                    const result = this.layerManager.createLayer();
+                    if (result) {
+                        this.layerManager.setActiveLayer(result.index);
+                    }
                 }
                 return;
             }
             
-            // 🆕 v8.13.16: フォルダ+ボタン接続
             const folderAddBtn = e.target.closest('#add-folder-btn');
             if (folderAddBtn) {
-                const layerSystem = window.layerSystem || window.layerManager;
-                if (layerSystem && layerSystem.createFolder) {
-                    const result = layerSystem.createFolder();
+                if (this.layerManager && this.layerManager.createFolder) {
+                    const result = this.layerManager.createFolder();
                     if (result) {
-                        layerSystem.setActiveLayer(result.index);
+                        this.layerManager.setActiveLayer(result.index);
                     }
-                } else {
-                    console.error('[UIController] LayerSystem.createFolder() not available');
                 }
                 return;
             }
@@ -158,32 +143,41 @@ window.TegakiUI.UIController = class {
         const toolId = button.id;
         const toolMap = {
             'pen-tool': () => {
-                if (!window.CoreRuntime.api.tool.set('pen')) return;
-                window.CoreRuntime.api.layer.exitMoveMode();
+                if (window.CoreRuntime?.api?.tool?.set) {
+                    window.CoreRuntime.api.tool.set('pen');
+                    window.CoreRuntime.api.layer.exitMoveMode();
+                } else if (this.drawingEngine?.brushCore) {
+                    this.drawingEngine.brushCore.setMode('pen');
+                }
                 this.togglePopup('quickAccess');
                 this.updateToolUI('pen');
-                this.syncToolToQuickAccess('pen');
             },
             'eraser-tool': () => {
-                if (!window.CoreRuntime.api.tool.set('eraser')) return;
-                window.CoreRuntime.api.layer.exitMoveMode();
+                if (window.CoreRuntime?.api?.tool?.set) {
+                    window.CoreRuntime.api.tool.set('eraser');
+                    window.CoreRuntime.api.layer.exitMoveMode();
+                } else if (this.drawingEngine?.brushCore) {
+                    this.drawingEngine.brushCore.setMode('eraser');
+                }
                 this.closeAllPopups();
                 this.updateToolUI('eraser');
-                this.syncToolToQuickAccess('eraser');
             },
             'fill-tool': () => {
-                if (!window.CoreRuntime.api.tool.set('fill')) return;
-                window.CoreRuntime.api.layer.exitMoveMode();
+                if (window.CoreRuntime?.api?.tool?.set) {
+                    window.CoreRuntime.api.tool.set('fill');
+                    window.CoreRuntime.api.layer.exitMoveMode();
+                } else if (this.drawingEngine?.brushCore) {
+                    this.drawingEngine.brushCore.setMode('fill');
+                }
                 this.closeAllPopups();
                 this.updateToolUI('fill');
-                this.syncToolToQuickAccess('fill');
             },
             'resize-tool': () => {
                 this.togglePopup('resize');
             },
             'gif-animation-tool': () => {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('ui:toggle-timeline');
+                if (this.eventBus) {
+                    this.eventBus.emit('ui:toggle-timeline');
                 }
                 this.closeAllPopups();
                 this.updateToolUI('gif-animation');
@@ -201,12 +195,6 @@ window.TegakiUI.UIController = class {
         
         const handler = toolMap[toolId];
         if (handler) handler();
-    }
-
-    syncToolToQuickAccess(tool) {
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.emit('ui:sidebar:sync-tool', { tool });
-        }
     }
 
     updateToolUI(tool) {
@@ -231,31 +219,30 @@ window.TegakiUI.UIController = class {
         }
     }
 
-    togglePopupById(popupId) {
-        const popup = document.getElementById(popupId);
-        if (!popup) return;
-        
-        const isVisible = popup.classList.contains('show');
-        popup.classList.toggle('show', !isVisible);
-    }
-    
-    setupSliders() {
-        // quick-access-popup.js が qa-size-slider, qa-opacity-slider を管理
+    updateStatusDisplay(data) {
+        if (data.currentLayer) {
+            const layerEl = document.getElementById('current-layer');
+            if (layerEl) layerEl.textContent = data.currentLayer;
+        }
     }
 
     setupCanvasResize() {
         const applyBtn = document.getElementById('apply-resize');
         if (applyBtn) {
             applyBtn.addEventListener('click', () => {
-                const widthInput = document.getElementById('canvas-width');
-                const heightInput = document.getElementById('canvas-height');
+                const widthDisplay = document.getElementById('canvas-width-display');
+                const heightDisplay = document.getElementById('canvas-height-display');
                 
-                if (widthInput && heightInput) {
-                    const newWidth = parseInt(widthInput.value);
-                    const newHeight = parseInt(heightInput.value);
+                if (widthDisplay && heightDisplay) {
+                    const newWidth = parseInt(widthDisplay.textContent);
+                    const newHeight = parseInt(heightDisplay.textContent);
                     
                     if (newWidth > 0 && newHeight > 0) {
-                        window.CoreRuntime.api.camera.resize(newWidth, newHeight);
+                        if (window.CoreRuntime?.api?.camera?.resize) {
+                            window.CoreRuntime.api.camera.resize(newWidth, newHeight);
+                        } else if (window.coreEngine?.cameraSystem?.resizeCanvas) {
+                            window.coreEngine.cameraSystem.resizeCanvas(newWidth, newHeight);
+                        }
                         this.closeAllPopups();
                     }
                 }
@@ -269,152 +256,72 @@ window.TegakiUI.UIController = class {
         
         if (flipHorizontalBtn) {
             flipHorizontalBtn.addEventListener('click', () => {
-                if (window.CoreRuntime?.api?.layer?.flipActiveLayer) {
-                    window.CoreRuntime.api.layer.flipActiveLayer('horizontal', true);
+                if (this.layerManager?.flipActiveLayer) {
+                    this.layerManager.flipActiveLayer('horizontal', true);
                 }
             });
         }
         
         if (flipVerticalBtn) {
             flipVerticalBtn.addEventListener('click', () => {
-                if (window.CoreRuntime?.api?.layer?.flipActiveLayer) {
-                    window.CoreRuntime.api.layer.flipActiveLayer('vertical', true);
+                if (this.layerManager?.flipActiveLayer) {
+                    this.layerManager.flipActiveLayer('vertical', true);
                 }
             });
         }
     }
-};
 
-window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
-    const container = document.getElementById(sliderId);
-    if (!container) return;
-
-    if (sliderId.startsWith('qa-')) {
-        return;
+    setupPanelStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            .flip-section {
+                gap: 2px !important;
+                height: 56px;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: space-between !important;
+            }
+            
+            .flip-button {
+                padding: 4px 8px !important;
+                font-size: 10px !important;
+                white-space: nowrap !important;
+                height: 26px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                cursor: pointer;
+                background-color: var(--futaba-cream);
+                border: 1px solid var(--futaba-medium);
+            }
+            
+            .flip-button.active {
+                background-color: var(--futaba-light-maroon) !important;
+                border-color: var(--futaba-maroon) !important;
+                color: white;
+            }
+            
+            .tool-button.active {
+                background-color: var(--futaba-background) !important;
+                border: 3px solid #ff8c42 !important;
+            }
+            
+            .tool-button.active svg {
+                stroke: var(--futaba-maroon) !important;
+            }
+            
+            .tool-button:hover:not(.active) {
+                background-color: var(--futaba-light-medium) !important;
+            }
+        `;
+        
+        if (!document.querySelector('style[data-tegaki-panels]')) {
+            style.setAttribute('data-tegaki-panels', 'true');
+            document.head.appendChild(style);
+        }
     }
+}
 
-    const track = container.querySelector('.slider-track');
-    const handle = container.querySelector('.slider-handle');
-    const valueDisplay = container.parentNode?.querySelector('.slider-value');
-
-    if (!track || !handle || !valueDisplay) return;
-
-    let value = initial;
-    let dragging = false;
-
-    const update = (newValue) => {
-        value = Math.max(min, Math.min(max, newValue));
-        const percentage = ((value - min) / (max - min)) * 100;
-        
-        track.style.width = percentage + '%';
-        handle.style.left = percentage + '%';
-        valueDisplay.textContent = callback(value);
-    };
-
-    const getValue = (clientX) => {
-        const rect = container.getBoundingClientRect();
-        const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-        return min + (percentage * (max - min));
-    };
-
-    container.addEventListener('mousedown', (e) => {
-        dragging = true;
-        update(getValue(e.clientX));
-        e.preventDefault();
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (dragging) update(getValue(e.clientX));
-    });
-
-    document.addEventListener('mouseup', () => {
-        dragging = false;
-    });
-
-    update(initial);
-};
-
-window.TegakiUI.setupPanelStyles = function() {
-    const style = document.createElement('style');
-    style.textContent = `
-        .flip-section {
-            gap: 2px !important;
-            height: 56px;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
-        }
-        
-        .flip-button {
-            padding: 4px 8px !important;
-            font-size: 10px !important;
-            white-space: nowrap !important;
-            height: 26px !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-        }
-        
-        .flip-button.active {
-            background-color: var(--futaba-light-maroon) !important;
-            border-color: var(--futaba-maroon) !important;
-        }
-        
-        .slider {
-            position: relative;
-            width: 100%;
-            height: 4px;
-            background: #e0e0e0;
-            border-radius: 2px;
-            cursor: pointer;
-        }
-        
-        .slider-track {
-            position: absolute;
-            height: 100%;
-            background: linear-gradient(to right, #4a90e2, #357abd);
-            border-radius: 2px;
-            transition: width 0.05s;
-        }
-        
-        .slider-handle {
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            border: 2px solid #4a90e2;
-            border-radius: 50%;
-            cursor: grab;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-            transition: left 0.05s;
-        }
-        
-        .slider-handle:active {
-            cursor: grabbing;
-        }
-        
-        .tool-button.active {
-            background-color: var(--futaba-background) !important;
-            border: 3px solid #ff8c42 !important;
-        }
-        
-        .tool-button.active svg {
-            stroke: var(--futaba-maroon) !important;
-        }
-        
-        .tool-button:hover:not(.active) {
-            background-color: var(--futaba-light-medium) !important;
-        }
-    `;
-    
-    if (!document.querySelector('style[data-tegaki-panels]')) {
-        style.setAttribute('data-tegaki-panels', 'true');
-        document.head.appendChild(style);
-    }
-};
-
-console.log('✅ ui-panels.js v8.13.16 loaded');
-console.log('   ✅ フォルダ+ボタン接続完了');
-console.log('   ✅ createFolder() 正常呼び出し');
+// 下位互換性のためにグローバルに登録
+window.TegakiUI = window.TegakiUI || {};
+window.TegakiUI.UIController = UIController;

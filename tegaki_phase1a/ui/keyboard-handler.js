@@ -1,28 +1,22 @@
 /**
- * @file ui/keyboard-handler.js - Phase 6完成版
- * @description キーボードショートカット処理の中核システム
- * 
- * 【Phase 6 改修内容】
- * ✅ BS/DEL: children配列から直接削除（paths配列に依存しない）
- * ✅ Undo/Redo: childrenの参照を保持して復元
- * 🔧 反転処理: 画像消失問題解決
- * 🧹 デバッグログをクリーンアップ
- * 
- * 【親ファイル (このファイルが依存)】
- * - config.js (window.TEGAKI_KEYMAP)
- * - event-bus.js (window.TegakiEventBus)
- * - history.js (window.History)
- * - core-runtime.js (window.CoreRuntime.api)
- * - layer-system.js (window.layerManager)
- * - drawing-clipboard.js (window.drawingClipboard)
- * - system/drawing/fill-tool.js (FillTool)
- * - timeline-ui.js (window.timelineUI)
- * 
- * 【子ファイル (このファイルに依存)】
- * - core-initializer.js (初期化時にinit呼び出し)
+ * ============================================================================
+ * ファイル名: ui/keyboard-handler.js
+ * 責務: キーボードショートカットの検知と各アクションへの振り分けを担当する
+ * 依存: config.js, system/event-bus.js, system/history.js, layer-system.js
+ * 被依存: core-initializer.js
+ * 公開API: KeyboardHandler
+ * イベント発火: keyboard:vkey-state-changed, ui:sidebar:sync-tool, layer:*, camera:*, frame:*, ui:*
+ * イベント受信: なし
+ * グローバル登録: window.KeyboardHandler
+ * 実装状態: ♻️移植
+ * ============================================================================
  */
 
-window.KeyboardHandler = (function() {
+import { TEGAKI_KEYMAP } from '../config.js';
+import { TegakiEventBus } from '../system/event-bus.js';
+import { historyManager } from '../system/history.js';
+
+export const KeyboardHandler = (function() {
     'use strict';
 
     let isInitialized = false;
@@ -40,8 +34,8 @@ window.KeyboardHandler = (function() {
     }
 
     function handleKeyDown(e) {
-        const eventBus = window.TegakiEventBus;
-        const keymap = window.TEGAKI_KEYMAP;
+        const eventBus = TegakiEventBus;
+        const keymap = TEGAKI_KEYMAP;
         
         if (!eventBus || !keymap) return;
         if (isInputFocused()) return;
@@ -74,18 +68,19 @@ window.KeyboardHandler = (function() {
 
     function handleAction(action, event, eventBus) {
         const api = window.CoreRuntime?.api;
+        const history = window.History || historyManager;
         
         switch(action) {
             case 'UNDO':
-                if (window.History?.canUndo()) {
-                    window.History.undo();
+                if (history?.canUndo()) {
+                    history.undo();
                 }
                 event.preventDefault();
                 break;
                 
             case 'REDO':
-                if (window.History?.canRedo()) {
-                    window.History.redo();
+                if (history?.canRedo()) {
+                    history.redo();
                 }
                 event.preventDefault();
                 break;
@@ -93,6 +88,8 @@ window.KeyboardHandler = (function() {
             case 'TOOL_PEN':
                 if (api?.tool.set('pen')) {
                     eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
+                } else if (window.coreEngine?.switchTool) {
+                    window.coreEngine.switchTool('pen');
                 }
                 event.preventDefault();
                 break;
@@ -100,6 +97,8 @@ window.KeyboardHandler = (function() {
             case 'TOOL_ERASER':
                 if (api?.tool.set('eraser')) {
                     eventBus.emit('ui:sidebar:sync-tool', { tool: 'eraser' });
+                } else if (window.coreEngine?.switchTool) {
+                    window.coreEngine.switchTool('eraser');
                 }
                 event.preventDefault();
                 break;
@@ -107,6 +106,8 @@ window.KeyboardHandler = (function() {
             case 'TOOL_FILL':
                 if (api?.tool.set('fill')) {
                     eventBus.emit('ui:sidebar:sync-tool', { tool: 'fill' });
+                } else if (window.coreEngine?.switchTool) {
+                    window.coreEngine.switchTool('fill');
                 }
                 event.preventDefault();
                 break;
@@ -117,6 +118,8 @@ window.KeyboardHandler = (function() {
                     if (result) {
                         api.layer.setActive(result.index);
                     }
+                } else if (window.layerManager?.createLayer) {
+                    window.layerManager.createLayer();
                 }
                 event.preventDefault();
                 break;
@@ -192,14 +195,14 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_FLIP_HORIZONTAL':
-                if (isVKeyPressed()) {
+                if (vKeyPressed) {
                     eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
                 }
                 event.preventDefault();
                 break;
             
             case 'LAYER_FLIP_VERTICAL':
-                if (isVKeyPressed()) {
+                if (vKeyPressed) {
                     eventBus.emit('layer:flip-by-key', { direction: 'vertical' });
                 }
                 event.preventDefault();
@@ -308,10 +311,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    /**
-     * Phase 6完成版: アクティブレイヤーの描画削除
-     * children配列から直接削除し、Undo/Redo対応
-     */
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager || window.layerManager;
         
@@ -321,7 +320,6 @@ window.KeyboardHandler = (function() {
         
         if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return;
         
-        // 削除対象を特定
         const childrenToRemove = [];
         for (let child of activeLayer.children) {
             if (child !== activeLayer.layerData.backgroundGraphics && 
@@ -332,14 +330,15 @@ window.KeyboardHandler = (function() {
         
         if (childrenToRemove.length === 0) return;
         
-        // History登録（childrenの参照を保持）
-        if (window.History && !window.History._manager?.isApplying) {
+        const history = window.History || historyManager;
+        
+        if (history && !history.isApplying) {
             const pathsBackup = structuredClone(activeLayer.layerData.paths);
             const childrenBackup = childrenToRemove.map(child => ({
                 child: child,
                 index: activeLayer.children.indexOf(child)
             }));
-            const layerIndex = layerSystem.activeLayerIndex;
+            const layerIndex = layerSystem.getLayerIndex(activeLayer);
             const layerId = activeLayer.layerData.id;
             
             const entry = {
@@ -353,7 +352,7 @@ window.KeyboardHandler = (function() {
                 meta: { layerId, childCount: childrenToRemove.length }
             };
             
-            window.History.push(entry);
+            history.push(entry);
         } else {
             clearLayerDrawings(layerSystem, activeLayer);
         }
@@ -370,7 +369,6 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        // 🔧 destroy()を呼ばずにremoveのみ（Undo/Redo用に保持）
         childrenToRemove.forEach((child) => {
             try {
                 layer.removeChild(child);
@@ -379,12 +377,13 @@ window.KeyboardHandler = (function() {
         
         layer.layerData.paths = [];
         
-        layerSystem.requestThumbnailUpdate(layerSystem.activeLayerIndex);
+        const layerIndex = layerSystem.getLayerIndex(layer);
+        layerSystem.requestThumbnailUpdate(layerIndex);
         
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.emit('layer:drawings-deleted', {
+        if (TegakiEventBus) {
+            TegakiEventBus.emit('layer:drawings-deleted', {
                 layerId: layer.layerData.id,
-                layerIndex: layerSystem.activeLayerIndex
+                layerIndex: layerIndex
             });
         }
     }
@@ -392,7 +391,6 @@ window.KeyboardHandler = (function() {
     function restoreLayerDrawings(layerSystem, layer, pathsBackup, childrenBackup, layerIndex) {
         if (!layer?.layerData) return;
         
-        // まず現在のchildrenをクリア（destroyはしない - 復元するため）
         const currentChildren = [];
         for (let child of layer.children) {
             if (child !== layer.layerData.backgroundGraphics && 
@@ -405,10 +403,8 @@ window.KeyboardHandler = (function() {
             layer.removeChild(child);
         });
         
-        // pathsを復元
         layer.layerData.paths = structuredClone(pathsBackup);
         
-        // childrenを復元（インデックス順）
         if (childrenBackup && childrenBackup.length > 0) {
             childrenBackup.sort((a, b) => a.index - b.index);
             childrenBackup.forEach(({ child, index }) => {
@@ -426,8 +422,8 @@ window.KeyboardHandler = (function() {
         
         layerSystem.requestThumbnailUpdate(layerIndex);
         
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.emit('layer:drawings-restored', {
+        if (TegakiEventBus) {
+            TegakiEventBus.emit('layer:drawings-restored', {
                 layerId: layer.layerData.id,
                 layerIndex: layerIndex,
                 childCount: childrenBackup?.length || 0
@@ -441,13 +437,11 @@ window.KeyboardHandler = (function() {
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
-        // window blur時にVキー状態をリセット
         window.addEventListener('blur', () => {
             if (vKeyPressed) {
                 vKeyPressed = false;
-                const eventBus = window.TegakiEventBus;
-                if (eventBus) {
-                    eventBus.emit('keyboard:vkey-state-changed', { pressed: false });
+                if (TegakiEventBus) {
+                    TegakiEventBus.emit('keyboard:vkey-state-changed', { pressed: false });
                 }
             }
         });
@@ -456,7 +450,7 @@ window.KeyboardHandler = (function() {
     }
 
     function getShortcutList() {
-        return window.TEGAKI_KEYMAP?.getShortcutList() || [];
+        return TEGAKI_KEYMAP?.getShortcutList() || [];
     }
     
     function isVKeyPressed() {
@@ -466,9 +460,8 @@ window.KeyboardHandler = (function() {
     function setVKeyPressed(state) {
         if (vKeyPressed !== state) {
             vKeyPressed = state;
-            const eventBus = window.TegakiEventBus;
-            if (eventBus) {
-                eventBus.emit('keyboard:vkey-state-changed', { pressed: vKeyPressed });
+            if (TegakiEventBus) {
+                TegakiEventBus.emit('keyboard:vkey-state-changed', { pressed: vKeyPressed });
             }
         }
     }
@@ -483,7 +476,5 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js Phase 6完成版 loaded');
-console.log('   ✅ BS/DEL: 描画削除が正常動作');
-console.log('   ✅ Undo/Redo: children参照保持で完全復元');
-console.log('   🔧 反転処理: 画像消失問題解決');
+// 下位互換性のためにグローバルに登録
+window.KeyboardHandler = KeyboardHandler;

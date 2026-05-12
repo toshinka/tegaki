@@ -701,6 +701,15 @@ export class CameraSystem {
         this.cameraFrame.stroke({ width: 2, color: 0xff0000, alpha: 0.5 });
     }
 
+    get cameraFrameBounds() {
+        return {
+            x: 0,
+            y: 0,
+            width: this.config.canvas.width,
+            height: this.config.canvas.height
+        };
+    }
+
     getCameraFrameCenter() {
         const centerX = this.config.canvas.width / 2;
         const centerY = this.config.canvas.height / 2;
