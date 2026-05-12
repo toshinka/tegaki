@@ -1,30 +1,24 @@
 /**
- * @file ui/resize-popup.js
- * @description キャンバスリサイズポップアップ - ペンタブレット対応版
- * 
- * 【改修履歴】
- * v8.13.2 - スライダー操作のペンタブレット対応
- *   ✅ mouse → pointer イベントに変更
- *   ✅ ポインターキャプチャ設定でペンの追跡を確実に
- *   ✅ passive: false でpreventDefaultを有効化
- *   ✅ touch-action: none をハンドル要素に適用
- * 
- * 【親ファイル (このファイルが依存)】
- * - system/camera-system.js (CameraSystem.resizeCanvas())
- * - system/history.js (履歴管理)
- * - core-engine.js (CoreEngine)
- * 
- * 【子ファイル (このファイルに依存)】
- * - ui-panels.js (UIController経由で初期化)
+ * ============================================================================
+ * ファイル名: ui/resize-popup.js
+ * 責務: キャンバスサイズのリサイズUIとロジックを提供する
+ * 依存: system/event-bus.js, system/camera-system.js, system/history.js
+ * 被依存: core-engine.js, system/popup-manager.js
+ * 公開API: ResizePopup
+ * イベント発火: なし
+ * イベント受信: なし
+ * グローバル登録: window.ResizePopup, window.TegakiUI.ResizePopup
+ * 実装状態: ♻️移植
+ * ============================================================================
  */
 
-window.TegakiUI = window.TegakiUI || {};
+import { TegakiEventBus } from '../system/event-bus.js';
 
-window.TegakiUI.ResizePopup = class {
-    constructor(dependencies) {
+export class ResizePopup {
+    constructor(dependencies = {}) {
         this.coreEngine = dependencies.coreEngine;
         this.history = dependencies.history;
-        this.eventBus = window.TegakiEventBus;
+        this.eventBus = TegakiEventBus;
         
         this.popup = null;
         this.isVisible = false;
@@ -32,8 +26,6 @@ window.TegakiUI.ResizePopup = class {
         
         this.isDraggingWidth = false;
         this.isDraggingHeight = false;
-        
-        // 🔥 ポインターID管理
         this.activeSliderPointerId = null;
         
         this.elements = {};
@@ -71,7 +63,7 @@ window.TegakiUI.ResizePopup = class {
     }
     
     _createPopupElement() {
-        const container = document.querySelector('.canvas-area');
+        const container = document.querySelector('.canvas-area') || document.body;
         if (!container) return;
         
         const popupDiv = document.createElement('div');
@@ -213,15 +205,12 @@ window.TegakiUI.ResizePopup = class {
     }
     
     _setupSliders() {
-        // 🔥 touch-action: none をハンドル要素に適用
         this.elements.widthHandle.style.touchAction = 'none';
         this.elements.heightHandle.style.touchAction = 'none';
         
-        // 🔥 グローバルpointermoveハンドラー（passive: false）
         const globalMoveHandler = (e) => {
             if (!this.isDraggingWidth && !this.isDraggingHeight) return;
             
-            // 🔥 preventDefault()を確実に実行
             e.preventDefault();
             e.stopPropagation();
             
@@ -240,11 +229,9 @@ window.TegakiUI.ResizePopup = class {
             }
         };
         
-        // 🔥 グローバルpointerup/cancelハンドラー
         const globalUpHandler = (e) => {
             if (this.activeSliderPointerId !== e.pointerId) return;
             
-            // ポインターキャプチャ解放
             if (this.isDraggingWidth && this.elements.widthHandle.releasePointerCapture) {
                 try {
                     this.elements.widthHandle.releasePointerCapture(e.pointerId);
@@ -262,21 +249,17 @@ window.TegakiUI.ResizePopup = class {
             this.activeSliderPointerId = null;
         };
         
-        // 🔥 CRITICAL: passive: false で登録
         document.addEventListener('pointermove', globalMoveHandler, { passive: false, capture: true });
         document.addEventListener('pointerup', globalUpHandler, { capture: true });
         document.addEventListener('pointercancel', globalUpHandler, { capture: true });
         
-        // グローバルハンドラーへの参照を保持（destroy用）
         this._globalMoveHandler = globalMoveHandler;
         this._globalUpHandler = globalUpHandler;
         
-        // 🔥 幅ハンドル: pointerdownでキャプチャ開始
         this.elements.widthHandle.addEventListener('pointerdown', (e) => {
             this.isDraggingWidth = true;
             this.activeSliderPointerId = e.pointerId;
             
-            // ポインターキャプチャ設定
             if (this.elements.widthHandle.setPointerCapture) {
                 try {
                     this.elements.widthHandle.setPointerCapture(e.pointerId);
@@ -287,12 +270,10 @@ window.TegakiUI.ResizePopup = class {
             e.stopPropagation();
         });
         
-        // 🔥 高さハンドル: pointerdownでキャプチャ開始
         this.elements.heightHandle.addEventListener('pointerdown', (e) => {
             this.isDraggingHeight = true;
             this.activeSliderPointerId = e.pointerId;
             
-            // ポインターキャプチャ設定
             if (this.elements.heightHandle.setPointerCapture) {
                 try {
                     this.elements.heightHandle.setPointerCapture(e.pointerId);
@@ -303,7 +284,6 @@ window.TegakiUI.ResizePopup = class {
             e.stopPropagation();
         });
         
-        // スライダー直接クリック（幅）
         this.elements.widthSlider.addEventListener('pointerdown', (e) => {
             if (e.target === this.elements.widthHandle) return;
             const rect = this.elements.widthSlider.getBoundingClientRect();
@@ -312,7 +292,6 @@ window.TegakiUI.ResizePopup = class {
             this._updateWidthSlider(Math.round(value));
         });
         
-        // スライダー直接クリック（高さ）
         this.elements.heightSlider.addEventListener('pointerdown', (e) => {
             if (e.target === this.elements.heightHandle) return;
             const rect = this.elements.heightSlider.getBoundingClientRect();
@@ -321,7 +300,6 @@ window.TegakiUI.ResizePopup = class {
             this._updateHeightSlider(Math.round(value));
         });
         
-        // ステップボタン
         this.elements.widthDecrease.addEventListener('pointerdown', () => {
             this._updateWidthSlider(this.currentWidth - 1);
         });
@@ -510,10 +488,6 @@ window.TegakiUI.ResizePopup = class {
         }
     }
     
-    isReady() {
-        return !!this.popup && this.initialized;
-    }
-    
     destroy() {
         this._cleanupEventListeners();
         this.elements = {};
@@ -522,6 +496,9 @@ window.TegakiUI.ResizePopup = class {
         this.isDraggingHeight = false;
         this.activeSliderPointerId = null;
     }
-};
+}
 
-window.ResizePopup = window.TegakiUI.ResizePopup;
+// 下位互換性のためにグローバルに登録
+window.ResizePopup = ResizePopup;
+window.TegakiUI = window.TegakiUI || {};
+window.TegakiUI.ResizePopup = ResizePopup;

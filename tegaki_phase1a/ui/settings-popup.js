@@ -1,29 +1,23 @@
 /**
- * @file ui/settings-popup.js - Phase 1 Ctrl+, 対応版
- * @description 設定ポップアップ - ペンタブレット対応版
- * 
- * 【Phase 1 改修内容】
- * 🔧 ui:open-settings イベントリスナー追加（Ctrl+, 対応）
- * 
- * 【改修履歴】
- * v8.13.2 - スライダー操作のペンタブレット対応
- * v8.13.15 - Ctrl+, ショートカット対応
- * 
- * 【親ファイル (このファイルが依存)】
- * - system/drawing/drawing-engine.js (DrawingEngine)
- * - system/event-bus.js (EventBus)
- * - system/settings-manager.js (SettingsManager)
- * 
- * 【子ファイル (このファイルに依存)】
- * - ui-panels.js (UIController経由で初期化)
+ * ============================================================================
+ * ファイル名: ui/settings-popup.js
+ * 責務: アプリケーションのグローバル設定（筆圧補正、スムーズ度等）のUIを提供する
+ * 依存: system/event-bus.js, system/settings-manager.js
+ * 被依存: core-engine.js, system/popup-manager.js
+ * 公開API: SettingsPopup
+ * イベント発火: settings:pressure-correction, settings:smoothing, settings:pressure-curve
+ * イベント受信: ui:open-settings
+ * グローバル登録: window.SettingsPopup
+ * 実装状態: ♻️移植
+ * ============================================================================
  */
 
-window.TegakiUI = window.TegakiUI || {};
+import { TegakiEventBus } from '../system/event-bus.js';
 
-window.TegakiUI.SettingsPopup = class {
-    constructor(dependencies) {
+export class SettingsPopup {
+    constructor(dependencies = {}) {
         this.drawingEngine = dependencies.drawingEngine;
-        this.eventBus = window.TegakiEventBus;
+        this.eventBus = TegakiEventBus;
         this.settingsManager = this._getSettingsManager();
         
         this.popup = null;
@@ -49,9 +43,6 @@ window.TegakiUI.SettingsPopup = class {
         this._setupEventListeners();
     }
     
-    /**
-     * 🔧 Phase 1: ui:open-settings イベントリスナー追加
-     */
     _setupEventListeners() {
         if (!this.eventBus) return;
         
@@ -61,19 +52,7 @@ window.TegakiUI.SettingsPopup = class {
     }
     
     _getSettingsManager() {
-        const manager = window.TegakiSettingsManager;
-        
-        if (manager && typeof manager.get === 'function') {
-            return manager;
-        }
-        
-        if (manager && typeof manager === 'function') {
-            const instance = new manager(window.TegakiEventBus, window.TEGAKI_CONFIG);
-            window.TegakiSettingsManager = instance;
-            return instance;
-        }
-        
-        return null;
+        return window.TegakiSettingsManager;
     }
     
     _ensurePopupElement() {
@@ -99,7 +78,7 @@ window.TegakiUI.SettingsPopup = class {
     }
     
     _createPopupElement() {
-        const container = document.querySelector('.canvas-area');
+        const container = document.querySelector('.canvas-area') || document.body;
         if (!container) return;
         
         const popupDiv = document.createElement('div');
@@ -132,9 +111,6 @@ window.TegakiUI.SettingsPopup = class {
                     </div>
                     <div class="slider-value" id="pressure-value">1.0</div>
                 </div>
-                <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
-                    筆圧の感度を調整します。大きい値ほど筆圧が強く反映されます。
-                </div>
             </div>
             
             <div class="setting-group">
@@ -145,9 +121,6 @@ window.TegakiUI.SettingsPopup = class {
                         <div class="slider-handle" id="smoothing-handle"></div>
                     </div>
                     <div class="slider-value" id="smoothing-value">0.5</div>
-                </div>
-                <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
-                    線の滑らかさ。値が大きいほど線が滑らかになりますが反応が遅くなります。
                 </div>
             </div>
             
@@ -164,9 +137,6 @@ window.TegakiUI.SettingsPopup = class {
                         重め
                     </button>
                 </div>
-                <div style="font-size: 10px; color: var(--text-secondary);">
-                    筆圧の反応カーブを選択します。お好みの描き心地に調整できます。
-                </div>
             </div>
             
             <div class="setting-group">
@@ -178,9 +148,6 @@ window.TegakiUI.SettingsPopup = class {
                     <span id="status-panel-state" style="font-size: 11px; color: var(--text-secondary); min-width: 60px; text-align: right;">
                         表示中
                     </span>
-                </div>
-                <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
-                    画面左上のステータス情報の表示/非表示を切り替えます。
                 </div>
             </div>
         `;
@@ -319,8 +286,6 @@ window.TegakiUI.SettingsPopup = class {
                 }
                 if (this.settingsManager) {
                     this.settingsManager.set('pressureCorrection', this.currentPressure);
-                } else {
-                    this._saveFallback('pressureCorrection', this.currentPressure);
                 }
             }
             
@@ -332,8 +297,6 @@ window.TegakiUI.SettingsPopup = class {
                 }
                 if (this.settingsManager) {
                     this.settingsManager.set('smoothing', this.currentSmoothing);
-                } else {
-                    this._saveFallback('smoothing', this.currentSmoothing);
                 }
             }
             
@@ -387,8 +350,6 @@ window.TegakiUI.SettingsPopup = class {
             this._updatePressureSlider(value);
             if (this.settingsManager) {
                 this.settingsManager.set('pressureCorrection', this.currentPressure);
-            } else {
-                this._saveFallback('pressureCorrection', this.currentPressure);
             }
         });
         
@@ -400,8 +361,6 @@ window.TegakiUI.SettingsPopup = class {
             this._updateSmoothingSlider(value);
             if (this.settingsManager) {
                 this.settingsManager.set('smoothing', this.currentSmoothing);
-            } else {
-                this._saveFallback('smoothing', this.currentSmoothing);
             }
         });
     }
@@ -450,38 +409,14 @@ window.TegakiUI.SettingsPopup = class {
                 const curve = e.currentTarget.getAttribute('data-curve');
                 if (!curve) return;
                 
-                document.querySelectorAll('.pressure-curve-btn').forEach(b => {
-                    b.classList.remove('active');
-                    b.style.background = 'var(--futaba-background)';
-                    b.style.borderColor = 'var(--futaba-light-medium)';
-                    b.style.color = 'var(--futaba-maroon)';
-                });
-                
-                e.currentTarget.classList.add('active');
-                e.currentTarget.style.background = 'var(--futaba-maroon)';
-                e.currentTarget.style.borderColor = 'var(--futaba-maroon)';
-                e.currentTarget.style.color = 'var(--text-inverse)';
+                this._applyPressureCurveUI(curve);
                 
                 if (this.settingsManager) {
                     this.settingsManager.set('pressureCurve', curve);
-                } else {
-                    this._saveFallback('pressureCurve', curve);
                 }
                 
                 if (this.eventBus) {
                     this.eventBus.emit('settings:pressure-curve', { curve });
-                }
-            });
-            
-            btn.addEventListener('pointerenter', () => {
-                if (!btn.classList.contains('active')) {
-                    btn.style.borderColor = 'var(--futaba-maroon)';
-                }
-            });
-            
-            btn.addEventListener('pointerleave', () => {
-                if (!btn.classList.contains('active')) {
-                    btn.style.borderColor = 'var(--futaba-light-medium)';
                 }
             });
         });
@@ -502,8 +437,7 @@ window.TegakiUI.SettingsPopup = class {
         if (this.settingsManager) {
             settings = this.settingsManager.get();
         } else {
-            const stored = localStorage.getItem('tegaki_settings');
-            settings = stored ? JSON.parse(stored) : this._getDefaults();
+            settings = this._getDefaults();
         }
         
         this._applySettingsToUI(settings);
@@ -554,8 +488,6 @@ window.TegakiUI.SettingsPopup = class {
         
         if (this.settingsManager) {
             this.settingsManager.set('statusPanelVisible', !isVisible);
-        } else {
-            this._saveFallback('statusPanelVisible', !isVisible);
         }
     }
     
@@ -571,15 +503,6 @@ window.TegakiUI.SettingsPopup = class {
         if (this.elements.statusState) {
             this.elements.statusState.textContent = visible ? '表示中' : '非表示中';
         }
-    }
-    
-    _saveFallback(key, value) {
-        try {
-            const stored = localStorage.getItem('tegaki_settings');
-            const settings = stored ? JSON.parse(stored) : {};
-            settings[key] = value;
-            localStorage.setItem('tegaki_settings', JSON.stringify(settings));
-        } catch (error) {}
     }
     
     show() {
@@ -606,13 +529,6 @@ window.TegakiUI.SettingsPopup = class {
         
         this.popup.classList.remove('show');
         this.isVisible = false;
-        
-        if (this.elements.pressureHandle) {
-            this.elements.pressureHandle.style.cursor = 'grab';
-        }
-        if (this.elements.smoothingHandle) {
-            this.elements.smoothingHandle.style.cursor = 'grab';
-        }
     }
     
     toggle() {
@@ -621,10 +537,6 @@ window.TegakiUI.SettingsPopup = class {
         } else {
             this.show();
         }
-    }
-    
-    isReady() {
-        return !!this.popup;
     }
     
     destroy() {
@@ -638,13 +550,8 @@ window.TegakiUI.SettingsPopup = class {
         
         this.elements = {};
         this.initialized = false;
-        this.isDraggingPressure = false;
-        this.isDraggingSmoothing = false;
-        this.activeSliderPointerId = null;
     }
-};
+}
 
-window.SettingsPopup = window.TegakiUI.SettingsPopup;
-
-console.log('✅ settings-popup.js Phase 1 loaded');
-console.log('   🔧 ui:open-settings リスナー追加（Ctrl+, 対応）');
+// 下位互換性のためにグローバルに登録
+window.SettingsPopup = SettingsPopup;

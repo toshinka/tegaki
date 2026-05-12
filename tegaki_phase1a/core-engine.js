@@ -36,6 +36,13 @@ import { UIController } from './ui/ui-panels.js';
 import { KeyboardHandler } from './ui/keyboard-handler.js';
 import { ThumbnailSystem } from './system/drawing/thumbnail-system.js';
 
+// ポップアップのインポート
+import { SettingsPopup } from './ui/settings-popup.js';
+import { QuickAccessPopup } from './ui/quick-access-popup.js';
+import { ResizePopup } from './ui/resize-popup.js';
+import { ExportPopup } from './ui/export-popup.js';
+import { AlbumPopup } from './ui/album-popup.js';
+
 export class CoreEngine {
     constructor(app, options = {}) {
         this.app = app;
@@ -52,6 +59,7 @@ export class CoreEngine {
         this.strokeRecorder = new StrokeRecorder();
         this.brushSettings = new BrushSettings(this.config, this.eventBus);
         this.thumbnailSystem = ThumbnailSystem;
+        this.exportManager = null;
         
         this.drawingEngine = null;
         
@@ -78,6 +86,7 @@ export class CoreEngine {
         window.layerManager = this.layerSystem;
         window.cameraSystem = this.cameraSystem;
         window.ThumbnailSystem = this.thumbnailSystem;
+        window.History = this.history;
     }
 
     async initialize() {
@@ -154,6 +163,11 @@ export class CoreEngine {
         });
         this.coordinateSystem.setCameraSystem(this.cameraSystem);
 
+        // globals 登録（brushCore.init() より前に行う）
+        window.layerManager = this.layerSystem;
+        window.cameraSystem = this.cameraSystem;
+        window.drawingEngine = null; // 後で設定
+
         // 8. ブラシコアの初期化
         // ブラシコアに必要な参照を設定
         this.brushCore.coordinateSystem = this.coordinateSystem;
@@ -176,7 +190,38 @@ export class CoreEngine {
         this.drawingEngine.setBrushSettings(this.brushSettings);
         window.drawingEngine = this.drawingEngine;
 
-        // 10. UI コントローラーの初期化
+        // 10. エクスポートマネージャーの初期化（アニメーションシステムが必要）
+        // ※このフェーズでは暫定的に null チェック付きで作成
+        if (window.animationSystem) {
+            const { ExportManager } = await import('./system/export-manager.js');
+            this.exportManager = new ExportManager(this.app, this.layerSystem, window.animationSystem, this.cameraSystem);
+            window.exportManager = this.exportManager;
+        }
+
+        // 11. ポップアップの登録
+        this.popupManager.register('settings', SettingsPopup, {
+            drawingEngine: this.drawingEngine
+        });
+        this.popupManager.register('quickAccess', QuickAccessPopup, {
+            brushSettings: this.brushSettings
+        });
+        this.popupManager.register('resize', ResizePopup, {
+            coreEngine: this,
+            history: this.history
+        });
+        this.popupManager.register('export', ExportPopup, {
+            exportManager: this.exportManager
+        });
+        this.popupManager.register('album', AlbumPopup, {
+            app: this.app,
+            layerSystem: this.layerSystem,
+            animationSystem: window.animationSystem
+        });
+
+        // 12. ポップアップの初期化実行
+        this.popupManager.initializeAll();
+
+        // 13. UI コントローラーの初期化
         this.uiController = new UIController(
             this.drawingEngine,
             this.layerSystem,
@@ -185,7 +230,7 @@ export class CoreEngine {
         );
         window.uiController = this.uiController;
         
-        // 11. キーボードハンドラの初期化
+        // 13. キーボードハンドラの初期化
         this.keyboardHandler.init();
         
         // 相互参照の解決

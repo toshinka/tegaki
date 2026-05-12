@@ -2,7 +2,7 @@
  * ============================================================================
  * ファイル名: core-initializer.js
  * 責務: アプリケーションの初期化シーケンスを制御する（エントリーポイント）
- * 依存: pixi.js, config.js, system/event-bus.js, coordinate-system.js, system/drawing/brush-core.js, core-engine.js等
+ * 依存: pixi.js, config.js, system/event-bus.js, coordinate-system.js, core-engine.js等
  * 被依存: index.html
  * 公開API: CoreInitializer
  * イベント発火: core:ready
@@ -16,7 +16,6 @@ import * as PIXI from 'pixi.js';
 import { TEGAKI_CONFIG } from './config.js';
 import { TegakiEventBus } from './system/event-bus.js';
 import { coordinateSystem } from './coordinate-system.js';
-import { brushCore } from './system/drawing/brush-core.js';
 import { DrawingEngine } from './system/drawing/drawing-engine.js';
 import { CameraSystem } from './system/camera-system.js';
 import { LayerSystem } from './system/layer-system.js';
