@@ -307,3 +307,8 @@ export const webglContext = new WebGL2DrawingLayer();
 // 下位互換性のためにグローバルに登録
 window.WebGLContext = webglContext;
 window.WebGL2DrawingLayer = webglContext;
+
+console.log('✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded');
+console.log('   📌 window.WebGLContext (主要)');
+console.log('   📌 window.WebGL2DrawingLayer (互換)');
+

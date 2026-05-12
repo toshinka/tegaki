@@ -666,3 +666,8 @@ export const glMSDFPipeline = new GLMSDFPipeline();
 
 // 下位互換性のためにグローバルに登録
 window.GLMSDFPipeline = glMSDFPipeline;
+
+console.log('✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded');
+console.log('   🔧 テクスチャサイズ計算でアスペクト比を厳密保持');
+console.log('   🔧 2の累乗丸めによるストローク変形を防止');
+
