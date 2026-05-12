@@ -1,17 +1,18 @@
 /**
- * @file ui/slider-utils.js
- * @version v8.13.10 - 慣性スクロール実装 + タブレットペン対応
- * 
- * 【v8.13.10 改修内容】
- * 🔧 PointerEvent完全対応（タブレットペン入力の引っかかり解消）
- * 🔧 慣性スクロール実装（velocity計算による滑らか動作）
- * 🔧 requestAnimationFrame最適化
- * 🔧 イベント伝播制御の最適化
+ * ============================================================================
+ * ファイル名: ui/slider-utils.js
+ * 責務: カスタムスライダーUIの生成と制御（慣性スクロール・タブレット対応）
+ * 依存: なし
+ * 被依存: ui-panels.js, quick-access-popup.js等
+ * 公開API: SliderUtils
+ * イベント発火: なし
+ * イベント受信: なし
+ * グローバル登録: window.TegakiUI.SliderUtils
+ * 実装状態: ♻️移植
+ * ============================================================================
  */
 
-window.TegakiUI = window.TegakiUI || {};
-
-window.TegakiUI.SliderUtils = {
+export const SliderUtils = {
     createSlider(options) {
         const {
             container, min = 0, max = 100, initial = 50,
@@ -35,7 +36,6 @@ window.TegakiUI.SliderUtils = {
         let rafId = null;
         let pendingUpdate = null;
         
-        // 🔧 慣性スクロール用
         let velocity = 0;
         let lastMoveTime = 0;
         let lastMoveValue = initial;
@@ -70,7 +70,6 @@ window.TegakiUI.SliderUtils = {
             });
         };
         
-        // 🔧 慣性スクロール適用
         const applyMomentum = () => {
             if (!dragging && Math.abs(velocity) > 0.5) {
                 currentValue += velocity;
@@ -80,7 +79,7 @@ window.TegakiUI.SliderUtils = {
                 pendingUpdate = currentValue;
                 scheduleOnChange();
                 
-                velocity *= 0.92; // 減衰係数
+                velocity *= 0.92;
                 momentumRafId = requestAnimationFrame(applyMomentum);
             } else {
                 velocity = 0;
@@ -132,8 +131,7 @@ window.TegakiUI.SliderUtils = {
             const newValue = getValue(e.clientX);
             updateUI(newValue);
             
-            // 🔧 速度計算（慣性スクロール用）
-            velocity = (newValue - lastMoveValue) / dt * 16; // 60fps基準
+            velocity = (newValue - lastMoveValue) / dt * 16;
             
             lastMoveValue = newValue;
             lastMoveTime = now;
@@ -155,7 +153,6 @@ window.TegakiUI.SliderUtils = {
                 rafId = null;
             }
             
-            // 🔧 慣性スクロール開始
             if (Math.abs(velocity) > 0.5) {
                 applyMomentum();
             }
@@ -231,7 +228,6 @@ window.TegakiUI.SliderUtils = {
     }
 };
 
-console.log('✅ slider-utils.js v8.13.10 loaded');
-console.log('   🔧 PointerEvent完全対応（タブレットペン引っかかり解消）');
-console.log('   🔧 慣性スクロール実装（velocity計算）');
-console.log('   🔧 requestAnimationFrame最適化');
+// 下位互換性のためにグローバルに登録
+window.TegakiUI = window.TegakiUI || {};
+window.TegakiUI.SliderUtils = SliderUtils;

@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "earcut": "^3.0.2",
     "gsap": "^3.15.0",
     "libwebp-wasm": "^0.1.6",
     "perfect-freehand": "^1.2.3",

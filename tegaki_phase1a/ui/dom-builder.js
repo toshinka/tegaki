@@ -1,26 +1,18 @@
-// ================================================================================
-// ui/dom-builder.js - エクスポートUI刷新【v8.19.0】
-// ================================================================================
-// 
-// 【依存関係 - Parents】
-//   なし（Pure DOM構築ユーティリティ）
-// 
-// 【依存関係 - Children】
-//   なし
-// 
-// 【責務】
-//   - UI要素のDOM構築
-//   - ステータスパネル構造定義
-//   - ポップアップパネル構造定義
-// 
-// 【v8.19.0 改修内容】
-//   🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
-//   ✅ DPR表示削除済み
-//   ✅ System情報表示（WebGPU/GPU検出）
-// 
-// ================================================================================
+/**
+ * ============================================================================
+ * ファイル名: ui/dom-builder.js
+ * 責務: アプリケーションのUI構造（サイドバー、パネル、ポップアップ）をDOMで構築する
+ * 依存: なし
+ * 被依存: core-initializer.js, ui-panels.js等
+ * 公開API: DOMBuilder
+ * イベント発火: なし
+ * イベント受信: なし
+ * グローバル登録: window.DOMBuilder
+ * 実装状態: ♻️移植
+ * ============================================================================
+ */
 
-window.DOMBuilder = (function() {
+export const DOMBuilder = (function() {
     'use strict';
 
     // SVGアイコン定義
@@ -141,17 +133,6 @@ window.DOMBuilder = (function() {
         return popup;
     }
 
-    /**
-     * ポップアップパネル: エクスポート【v8.19.0】
-     * 
-     * 🔧 改修内容:
-     *   - ボタン配置: PNG → WEBP → PSD
-     *   - GIF/PDF完全削除
-     * 
-     * ⚠️ 注意:
-     *   このDOM構造は export-popup.js によって動的に上書きされます。
-     *   export-popup.js が正しく動作しない場合のフォールバック用です。
-     */
     function buildExportPopup() {
         const popup = createElement('div', {
             className: 'popup-panel',
@@ -161,7 +142,6 @@ window.DOMBuilder = (function() {
 
         popup.appendChild(createElement('div', { className: 'popup-title', textContent: '画像・アニメ出力' }));
 
-        // 🔧 フォーマット選択: PNG/WEBP/PSD
         const formatSelection = createElement('div', { className: 'format-selection' });
         ['png', 'webp', 'psd'].forEach((fmt) => {
             const btn = createElement('button', {
@@ -173,7 +153,6 @@ window.DOMBuilder = (function() {
         });
         popup.appendChild(formatSelection);
 
-        // エクスポートオプション（export-popup.js が上書き）
         const exportOptions = createElement('div', {
             className: 'export-options',
             id: 'export-options'
@@ -185,7 +164,6 @@ window.DOMBuilder = (function() {
         }));
         popup.appendChild(exportOptions);
 
-        // プログレスバー
         const progress = createElement('div', { className: 'export-progress', id: 'export-progress', style: { display: 'none' } });
         const progressBar = createElement('div', { className: 'progress-bar' });
         progressBar.appendChild(createElement('div', { className: 'progress-fill' }));
@@ -193,7 +171,6 @@ window.DOMBuilder = (function() {
         progress.appendChild(createElement('div', { className: 'progress-text', textContent: '0%' }));
         popup.appendChild(progress);
 
-        // プレビュー
         const previewContainer = createElement('div', {
             className: 'preview-container',
             id: 'preview-container',
@@ -202,14 +179,12 @@ window.DOMBuilder = (function() {
         previewContainer.appendChild(createElement('img', { id: 'preview-image', attributes: { alt: 'Preview' } }));
         popup.appendChild(previewContainer);
 
-        // ステータス
         popup.appendChild(createElement('div', {
             className: 'export-status',
             id: 'export-status',
             style: { display: 'none', fontSize: '12px', color: 'var(--text-secondary)', margin: '8px 0' }
         }));
 
-        // アクションボタン
         const actions = createElement('div', { className: 'export-actions' });
         actions.appendChild(createElement('button', { className: 'action-button', id: 'export-execute', textContent: 'ダウンロード' }));
         actions.appendChild(createElement('button', { className: 'action-button secondary', id: 'export-preview', textContent: 'プレビュー' }));
@@ -218,7 +193,6 @@ window.DOMBuilder = (function() {
         return popup;
     }
 
-    // ポップアップパネル: リサイズ
     function buildResizePopup() {
         const popup = createElement('div', {
             className: 'popup-panel resize-popup-compact',
@@ -226,7 +200,6 @@ window.DOMBuilder = (function() {
             style: { left: '60px', top: '150px' }
         });
 
-        // 幅スライダーグループ
         const widthGroup = createElement('div', { className: 'resize-compact-group' });
         
         const widthLabel = createElement('div', { className: 'resize-compact-label', textContent: '幅' });
@@ -257,12 +230,11 @@ window.DOMBuilder = (function() {
         widthGroup.appendChild(widthSliderRow);
 
         const widthValueRow = createElement('div', { className: 'resize-value-row' });
-        widthValueRow.appendChild(createElement('span', { className: 'resize-value-display', id: 'canvas-width-display', textContent: '344px' }));
+        widthValueRow.appendChild(createElement('span', { className: 'resize-value-display', id: 'canvas-width-display', textContent: '400px' }));
         widthGroup.appendChild(widthValueRow);
 
         popup.appendChild(widthGroup);
 
-        // 高さスライダーグループ
         const heightGroup = createElement('div', { className: 'resize-compact-group' });
         
         const heightLabel = createElement('div', { className: 'resize-compact-label', textContent: '高さ' });
@@ -293,12 +265,11 @@ window.DOMBuilder = (function() {
         heightGroup.appendChild(heightSliderRow);
 
         const heightValueRow = createElement('div', { className: 'resize-value-row' });
-        heightValueRow.appendChild(createElement('span', { className: 'resize-value-display', id: 'canvas-height-display', textContent: '135px' }));
+        heightValueRow.appendChild(createElement('span', { className: 'resize-value-display', id: 'canvas-height-display', textContent: '400px' }));
         heightGroup.appendChild(heightValueRow);
 
         popup.appendChild(heightGroup);
 
-        // プリセットボタン
         const presetGroup = createElement('div', { className: 'resize-preset-group' });
         const presets = [
             { width: 344, height: 135, label: '344×135' },
@@ -315,7 +286,6 @@ window.DOMBuilder = (function() {
         });
         popup.appendChild(presetGroup);
 
-        // リサイズ実行ボタン
         const applyBtn = createElement('button', {
             className: 'resize-apply-btn',
             id: 'apply-resize',
@@ -323,7 +293,6 @@ window.DOMBuilder = (function() {
         });
         popup.appendChild(applyBtn);
 
-        // 入力フィールド（隠し）
         popup.appendChild(createElement('input', {
             className: 'resize-hidden-input',
             id: 'canvas-width-input',
@@ -338,7 +307,6 @@ window.DOMBuilder = (function() {
         return popup;
     }
 
-    // ポップアップパネル: 設定
     function buildSettingsPopup() {
         return createElement('div', {
             className: 'popup-panel',
@@ -347,7 +315,6 @@ window.DOMBuilder = (function() {
         });
     }
 
-    // レイヤー変形パネル
     function buildLayerTransformPanel() {
         const panel = createElement('div', {
             className: 'layer-transform-panel',
@@ -356,7 +323,6 @@ window.DOMBuilder = (function() {
 
         const sections = createElement('div', { className: 'panel-sections' });
 
-        // X/Y位置
         const posSection = createElement('div', { className: 'panel-section' });
         const posGroup = createElement('div', { className: 'compact-slider-group' });
         
@@ -381,7 +347,6 @@ window.DOMBuilder = (function() {
         posSection.appendChild(posGroup);
         sections.appendChild(posSection);
 
-        // 回転/拡縮
         const transSection = createElement('div', { className: 'panel-section' });
         const transGroup = createElement('div', { className: 'compact-slider-group' });
 
@@ -406,7 +371,6 @@ window.DOMBuilder = (function() {
         transSection.appendChild(transGroup);
         sections.appendChild(transSection);
 
-        // フリップボタン
         const flipSection = createElement('div', { className: 'panel-section' });
         const flipGroup = createElement('div', { className: 'flip-section' });
         flipGroup.appendChild(createElement('div', { className: 'flip-button', id: 'flip-horizontal-btn', textContent: '水平反転' }));
@@ -418,14 +382,6 @@ window.DOMBuilder = (function() {
         return panel;
     }
 
-    /**
-     * ステータスパネル構築【v8.16.0】
-     * 
-     * 変更点:
-     *   - DPR表示削除
-     *   - System情報表示追加（id: system-info）
-     *   - FPSとHistoryのid統一（fps → fps-info, history-info維持）
-     */
     function buildStatusPanel() {
         const panel = createElement('div', { className: 'status-panel' });
 
@@ -462,7 +418,6 @@ window.DOMBuilder = (function() {
         return panel;
     }
 
-    // レイヤーパネル
     function buildLayerPanel() {
         const container = createElement('div', {
             className: 'layer-panel-container',
@@ -493,7 +448,6 @@ window.DOMBuilder = (function() {
         return container;
     }
 
-    // メインレイアウト構築
     function buildMainLayout() {
         const mainLayout = createElement('div', { className: 'main-layout' });
         
@@ -515,7 +469,6 @@ window.DOMBuilder = (function() {
         return mainLayout;
     }
 
-    // 公開API
     return {
         buildMainLayout: buildMainLayout,
         buildStatusPanel: buildStatusPanel,
@@ -524,6 +477,5 @@ window.DOMBuilder = (function() {
     };
 })();
 
-console.log('✅ dom-builder.js v8.19.0 loaded');
-console.log('   🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）');
-console.log('   ✓ System情報表示（WebGPU/GPU検出）');
+// 下位互換性のためにグローバルに登録
+window.DOMBuilder = DOMBuilder;
