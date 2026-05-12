@@ -457,3 +457,8 @@ export const glMaskLayer = new GLMaskLayer();
 
 // 下位互換性のためにグローバルに登録
 window.GLMaskLayer = glMaskLayer;
+
+console.log('✅ gl-mask-layer.js Phase 6完全版 loaded');
+console.log('   ✅ Circle mask rendering実装');
+console.log('   ✅ Additive blend対応');
+

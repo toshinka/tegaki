@@ -163,3 +163,8 @@ export const glTextureBridge = new GLTextureBridge();
 // 下位互換性のためにグローバルに登録
 window.GLTextureBridge = glTextureBridge;
 window.WebGPUTextureBridge = glTextureBridge;
+
+console.log('✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded');
+console.log('   ✅ WebGLTexture → PIXI.Sprite変換実装完了');
+console.log('   ✅ PixiJS v8: Texture.from()直接使用');
+

@@ -416,3 +416,9 @@ export const glStrokeProcessor = new GLStrokeProcessor();
 
 // 下位互換性のためにグローバルに登録
 window.GLStrokeProcessor = glStrokeProcessor;
+
+console.log('✅ gl-stroke-processor.js (ESM版) loaded');
+console.log('   🔧 カメラフレーム外への描画を完全防止');
+console.log('   🔧 ポイント座標検証追加');
+console.log('   🎯 デバッグ: TegakiDebug.glStroke.*');
+

@@ -194,7 +194,7 @@ export class CameraSystem {
     }
 
     initializeCamera() {
-        const screen = this.app.stage?.parent?.screen || { width: 800, height: 600 };
+        const screen = this.app.renderer?.screen || this.app.screen || { width: window.innerWidth, height: window.innerHeight };
         const centerX = screen.width / 2;
         const centerY = screen.height / 2;
         
