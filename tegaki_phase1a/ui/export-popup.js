@@ -1,38 +1,29 @@
 /**
- * ================================================================================
- * ui/export-popup.js - WEBP→WebM切替UI【v8.29.0】
- * ================================================================================
- * 
- * 【依存関係 - Parents】
- *   - system/export-manager.js
- *   - system/animation-system.js
- * 
- * 【依存関係 - Children】
- *   なし
- * 
- * 【責務】
- *   - エクスポート設定UI
- *   - PNG→APNG、WEBP→WebM自動切替の説明表示
- *   - プレビュー表示（150x150px厳格固定）
- *   - 進捗表示
- * 
- * 【v8.29.0 改修内容】
- *   🔧 PNG複数フレーム時→APNG説明表示（既存維持）
- *   🔧 WEBP複数フレーム時→WebM説明表示（新規追加）
- *   🔧 プレビュー機能は両フォーマット対応
- * 
- * ================================================================================
+ * ============================================================================
+ * ファイル名: ui/export-popup.js
+ * 責務: 画像および動画のエクスポート設定（フォーマット、解像度等）のUIを提供する
+ * 依存: system/export-manager.js, system/event-bus.js
+ * 被依存: core-engine.js, system/popup-manager.js
+ * 公開API: ExportPopup
+ * イベント発火: なし
+ * イベント受信: export:*
+ * グローバル登録: window.ExportPopup, window.TegakiExportPopup
+ * 実装状態: ♻️移植
+ * ============================================================================
  */
 
-window.TegakiExportPopup = class ExportPopup {
-    constructor(dependencies) {
-        this.manager = dependencies.exportManager;
+import { TegakiEventBus } from '../system/event-bus.js';
+
+export class ExportPopup {
+    constructor(dependencies = {}) {
+        this.manager = dependencies.exportManager || window.exportManager;
         this.selectedFormat = 'png';
         this.selectedResolution = 2;
         this.isVisible = false;
         this.currentPreviewUrl = null;
         this.currentBlob = null;
         this.popup = null;
+        this.eventBus = TegakiEventBus;
         
         this._ensurePopupElement();
         this.setupEventListeners();
@@ -51,6 +42,7 @@ window.TegakiExportPopup = class ExportPopup {
     
     _createPopupElement() {
         const container = document.querySelector('.canvas-area') || document.body;
+        if (!container) return;
         
         const popup = document.createElement('div');
         popup.id = 'export-popup';
@@ -60,28 +52,30 @@ window.TegakiExportPopup = class ExportPopup {
         popup.style.minWidth = '420px';
         popup.style.maxWidth = '600px';
         
-        popup.innerHTML = '<div class="popup-title">画像・動画出力</div>' +
-            '<div class="format-selection">' +
-                '<button class="format-btn selected" data-format="png">PNG</button>' +
-                '<button class="format-btn" data-format="webp">WEBP</button>' +
-                '<button class="format-btn" data-format="psd">PSD</button>' +
-            '</div>' +
-            '<div class="export-options" id="export-options"></div>' +
-            '<div class="export-progress" id="export-progress" style="display: none;">' +
-                '<div class="progress-bar"><div class="progress-fill"></div></div>' +
-                '<div class="progress-text">0%</div>' +
-            '</div>' +
-            '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: #f5f5dc; border: 1px solid #d4b896; border-radius: 6px; padding: 12px;">' +
-                '<div id="preview-message" style="font-size: 12px; color: #800000; margin-bottom: 8px; font-weight: 500;">プレビュー</div>' +
-                '<div style="width: 150px; height: 150px; margin: 0 auto; background: #ffffff; border: 2px solid #d4b896; border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden;">' +
-                    '<img id="preview-image" style="width: 150px; height: 150px; object-fit: contain; display: block;" />' +
-                '</div>' +
-            '</div>' +
-            '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: #800000; margin: 8px 0;"></div>' +
-            '<div class="export-actions">' +
-                '<button class="action-button" id="export-execute">ダウンロード</button>' +
-                '<button class="action-button secondary" id="export-preview">プレビュー</button>' +
-            '</div>';
+        popup.innerHTML = `
+            <div class="popup-title">画像・動画出力</div>
+            <div class="format-selection">
+                <button class="format-btn selected" data-format="png">PNG</button>
+                <button class="format-btn" data-format="webp">WEBP</button>
+                <button class="format-btn" data-format="psd">PSD</button>
+            </div>
+            <div class="export-options" id="export-options"></div>
+            <div class="export-progress" id="export-progress" style="display: none;">
+                <div class="progress-bar"><div class="progress-fill"></div></div>
+                <div class="progress-text">0%</div>
+            </div>
+            <div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: #f5f5dc; border: 1px solid #d4b896; border-radius: 6px; padding: 12px;">
+                <div id="preview-message" style="font-size: 12px; color: #800000; margin-bottom: 8px; font-weight: 500;">プレビュー</div>
+                <div style="width: 150px; height: 150px; margin: 0 auto; background: #ffffff; border: 2px solid #d4b896; border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                    <img id="preview-image" style="width: 150px; height: 150px; object-fit: contain; display: block;" />
+                </div>
+            </div>
+            <div class="export-status" id="export-status" style="display: none; font-size: 12px; color: #800000; margin: 8px 0;"></div>
+            <div class="export-actions">
+                <button class="action-button" id="export-execute">ダウンロード</button>
+                <button class="action-button secondary" id="export-preview">プレビュー</button>
+            </div>
+        `;
         
         container.appendChild(popup);
         this.popup = popup;
@@ -91,7 +85,7 @@ window.TegakiExportPopup = class ExportPopup {
     }
     
     _initializeFormatButtons() {
-        const formatBtns = document.querySelectorAll('.format-btn');
+        const formatBtns = this.popup.querySelectorAll('.format-btn');
         formatBtns.forEach(btn => {
             btn.style.color = 'var(--futaba-maroon)';
             btn.style.backgroundColor = 'var(--futaba-cream)';
@@ -112,7 +106,7 @@ window.TegakiExportPopup = class ExportPopup {
     }
     
     setupEventListeners() {
-        document.addEventListener('click', (e) => {
+        this.popup.addEventListener('click', (e) => {
             const formatBtn = e.target.closest('.format-btn');
             if (formatBtn && !formatBtn.classList.contains('disabled')) {
                 this.selectFormat(formatBtn.dataset.format);
@@ -137,24 +131,17 @@ window.TegakiExportPopup = class ExportPopup {
             }
         });
         
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.on('export:progress', (data) => {
+        if (this.eventBus) {
+            this.eventBus.on('export:progress', (data) => {
                 this.updateProgress(data);
             });
             
-            window.TegakiEventBus.on('export:completed', (data) => {
+            this.eventBus.on('export:completed', (data) => {
                 this.onExportCompleted(data);
             });
             
-            window.TegakiEventBus.on('export:failed', (data) => {
+            this.eventBus.on('export:failed', (data) => {
                 this.onExportFailed(data);
-            });
-            
-            window.TegakiEventBus.on('export:frame-rendered', (data) => {
-                this.updateProgress({
-                    current: data.frame,
-                    total: data.total
-                });
             });
         }
     }
@@ -162,7 +149,8 @@ window.TegakiExportPopup = class ExportPopup {
     selectFormat(format) {
         this.selectedFormat = format;
         
-        document.querySelectorAll('.format-btn').forEach(btn => {
+        const formatBtns = this.popup.querySelectorAll('.format-btn');
+        formatBtns.forEach(btn => {
             const isSelected = btn.dataset.format === format;
             btn.classList.toggle('selected', isSelected);
             
@@ -185,7 +173,8 @@ window.TegakiExportPopup = class ExportPopup {
     selectResolution(resolution) {
         this.selectedResolution = resolution;
         
-        document.querySelectorAll('.resolution-btn').forEach(btn => {
+        const resBtns = this.popup.querySelectorAll('.resolution-btn');
+        resBtns.forEach(btn => {
             const btnResolution = parseInt(btn.dataset.resolution);
             const isSelected = btnResolution === resolution;
             
@@ -223,11 +212,9 @@ window.TegakiExportPopup = class ExportPopup {
     }
     
     getFrameCount() {
-        if (this.manager?.animationSystem?.getAnimationData) {
-            const animData = this.manager.animationSystem.getAnimationData();
-            if (animData?.frames) {
-                return animData.frames.length;
-            }
+        const animData = window.animationSystem?.getAnimationData?.();
+        if (animData?.frames) {
+            return animData.frames.length;
         }
         return 1;
     }
@@ -253,43 +240,45 @@ window.TegakiExportPopup = class ExportPopup {
         
         const frameCount = this.getFrameCount();
         
-        const resolutionUI = (format === 'png' || format === 'webp') ? 
-            '<div style="margin: 12px 0;">' +
-                '<div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 8px;">📐 出力解像度</div>' +
-                '<div style="display: flex; gap: 8px; margin-bottom: 8px;">' +
-                    '<button class="resolution-btn" data-resolution="1" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">1x</button>' +
-                    '<button class="resolution-btn" data-resolution="2" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">2x 推奨</button>' +
-                    '<button class="resolution-btn" data-resolution="4" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">4x</button>' +
-                '</div>' +
-                '<div id="output-size-display" style="font-size: 12px; color: var(--futaba-maroon);">' +
-                    (canvasWidth * this.selectedResolution) + '×' + (canvasHeight * this.selectedResolution) + 'px（' + this.selectedResolution + '倍出力）' +
-                '</div>' +
-                '<div style="font-size: 11px; color: var(--futaba-maroon); margin-top: 4px;">💡 拡大表示時のジャギーを防ぐため、2倍以上推奨</div>' +
-            '</div>' 
-            : '';
+        const resolutionUI = (format === 'png' || format === 'webp') ? `
+            <div style="margin: 12px 0;">
+                <div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 8px;">📐 出力解像度</div>
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <button class="resolution-btn" data-resolution="1" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">1x</button>
+                    <button class="resolution-btn" data-resolution="2" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">2x 推奨</button>
+                    <button class="resolution-btn" data-resolution="4" style="flex: 1; padding: 8px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; background: var(--futaba-cream); color: var(--futaba-maroon); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;">4x</button>
+                </div>
+                <div id="output-size-display" style="font-size: 12px; color: var(--futaba-maroon);">
+                    ${canvasWidth * this.selectedResolution}×${canvasHeight * this.selectedResolution}px（${this.selectedResolution}倍出力）
+                </div>
+                <div style="font-size: 11px; color: var(--futaba-maroon); margin-top: 4px;">💡 拡大表示時のジャギーを防ぐため、2倍以上推奨</div>
+            </div>` : '';
         
         const optionsMap = {
-            'png': '<div class="setting-label">PNG出力（APNG自動検出）</div>' +
-                '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
-                    (frameCount >= 2 
+            'png': `
+                <div class="setting-label">PNG出力（APNG自動検出）</div>
+                <div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">
+                    ${frameCount >= 2 
                         ? `全${frameCount}フレームをAPNGとして出力します。`
-                        : '高品質な画像フォーマットです。') +
-                '</div>' +
-                resolutionUI,
+                        : '高品質な画像フォーマットです。'}
+                </div>
+                ${resolutionUI}`,
                 
-            'webp': '<div class="setting-label">WEBP出力（WebM動画自動検出）</div>' +
-                '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
-                    (frameCount >= 2 
+            'webp': `
+                <div class="setting-label">WEBP出力（WebM動画自動検出）</div>
+                <div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">
+                    ${frameCount >= 2 
                         ? `全${frameCount}フレームをWebM動画として出力します。`
-                        : '高圧縮・高品質な次世代画像フォーマットです。') +
-                '</div>' +
-                resolutionUI,
+                        : '高圧縮・高品質な次世代画像フォーマットです。'}
+                </div>
+                ${resolutionUI}`,
                 
-            'psd': '<div class="setting-label">PSD出力（開発中）</div>' +
-                '<div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">' +
-                    'レイヤー構造を保持したPhotoshop形式での出力です。<br>' +
-                    '⚠️ 現在開発中です。' +
-                '</div>'
+            'psd': `
+                <div class="setting-label">PSD出力（開発中）</div>
+                <div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">
+                    レイヤー構造を保持したPhotoshop形式での出力です。<br>
+                    ⚠️ 現在開発中です。
+                </div>`
         };
         
         optionsEl.innerHTML = optionsMap[format] || '';
@@ -358,9 +347,8 @@ window.TegakiExportPopup = class ExportPopup {
     }
     
     async executeExport() {
-        if (this.manager.isExporting()) {
-            return;
-        }
+        if (!this.manager) return;
+        if (this.manager.isExporting()) return;
         
         const progressEl = document.getElementById('export-progress');
         const executeBtn = document.getElementById('export-execute');
@@ -388,9 +376,8 @@ window.TegakiExportPopup = class ExportPopup {
     }
     
     async executePreview() {
-        if (this.manager.isExporting()) {
-            return;
-        }
+        if (!this.manager) return;
+        if (this.manager.isExporting()) return;
         
         const previewBtn = document.getElementById('export-preview');
         const executeBtn = document.getElementById('export-execute');
@@ -427,7 +414,7 @@ window.TegakiExportPopup = class ExportPopup {
                 formatName = 'WebM動画';
             }
             
-            this.showPreview(result.blob, formatName + 'プレビュー（' + this.selectedResolution + 'x）');
+            this.showPreview(result.blob, `${formatName}プレビュー（${this.selectedResolution}x）`);
             
             if (previewBtn) {
                 previewBtn.textContent = 'プレビュー';
@@ -487,7 +474,7 @@ window.TegakiExportPopup = class ExportPopup {
             formatName = data.format.toUpperCase();
         }
         
-        this.showStatus(formatName + 'ダウンロード完了', false);
+        this.showStatus(`${formatName}ダウンロード完了`, false);
         setTimeout(() => this.hideStatus(), 2000);
     }
     
@@ -500,7 +487,7 @@ window.TegakiExportPopup = class ExportPopup {
         if (executeBtn) executeBtn.disabled = false;
         if (previewBtn) previewBtn.disabled = false;
         
-        this.showStatus('エクスポート失敗: ' + data.error, true);
+        this.showStatus(`エクスポート失敗: ${data.error}`, true);
         this.resetProgress();
     }
     
@@ -550,9 +537,8 @@ window.TegakiExportPopup = class ExportPopup {
     destroy() {
         this.cleanupPreview();
     }
-};
+}
 
-window.ExportPopup = window.TegakiExportPopup;
-
-console.log('✅ export-popup.js v8.29.0 loaded');
-console.log('   🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応');
+// 下位互換性のためにグローバルに登録
+window.ExportPopup = ExportPopup;
+window.TegakiExportPopup = ExportPopup;

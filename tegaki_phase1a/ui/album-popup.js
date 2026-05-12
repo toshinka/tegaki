@@ -1,12 +1,21 @@
-// ===== album-popup.js - FRAME改修版 =====
-// 責務: アルバムUI表示・スナップショット管理
-// 🔥 改修: PopupManager統合、共通インターフェース適用、初期状態の明確化
-// ✅ CUT→FRAME変換完了
+/**
+ * ============================================================================
+ * ファイル名: ui/album-popup.js
+ * 責務: 作品のスナップショット（アルバム）の保存、表示、復元UIを提供する
+ * 依存: pixi.js, system/event-bus.js, system/animation-system.js
+ * 被依存: core-engine.js, system/popup-manager.js
+ * 公開API: AlbumPopup
+ * イベント発火: なし
+ * イベント受信: なし
+ * グローバル登録: window.AlbumPopup, window.TegakiUI.AlbumPopup
+ * 実装状態: ♻️移植
+ * ============================================================================
+ */
 
-window.TegakiUI = window.TegakiUI || {};
+import * as PIXI from 'pixi.js';
 
-window.TegakiUI.AlbumPopup = class {
-    constructor(dependencies) {
+export class AlbumPopup {
+    constructor(dependencies = {}) {
         this.app = dependencies.app;
         this.layerSystem = dependencies.layerSystem;
         this.animationSystem = dependencies.animationSystem;
@@ -31,7 +40,7 @@ window.TegakiUI.AlbumPopup = class {
     }
 
     _createPopupElement() {
-        const container = document.querySelector('.canvas-area');
+        const container = document.querySelector('.canvas-area') || document.body;
         if (!container) return;
         
         const popupDiv = document.createElement('div');
@@ -111,7 +120,8 @@ window.TegakiUI.AlbumPopup = class {
 
         this.app.renderer.render({
             container: currentFrame.container,
-            target: renderTexture
+            target: renderTexture,
+            clear: true
         });
 
         const canvas = this.app.renderer.extract.canvas(renderTexture);
@@ -171,8 +181,6 @@ window.TegakiUI.AlbumPopup = class {
         while (frames.length < snapshot.frameStates.length) {
             if (this.animationSystem.createNewEmptyFrame) {
                 this.animationSystem.createNewEmptyFrame();
-            } else if (this.animationSystem.addFrame) {
-                this.animationSystem.addFrame();
             }
         }
 
@@ -250,12 +258,6 @@ window.TegakiUI.AlbumPopup = class {
         if (this.animationSystem.switchToActiveFrame) {
             this.animationSystem.switchToActiveFrame(snapshot.currentFrame);
         }
-
-        setTimeout(() => {
-            if (this.layerSystem?.updateLayerPanelUI) {
-                this.layerSystem.updateLayerPanelUI();
-            }
-        }, 200);
 
         this.hide();
     }
@@ -427,8 +429,6 @@ window.TegakiUI.AlbumPopup = class {
         }
     }
 
-    // ===== 必須インターフェース =====
-    
     show() {
         if (!this.popup) {
             this._ensurePopupElement();
@@ -461,13 +461,9 @@ window.TegakiUI.AlbumPopup = class {
     isReady() {
         return !!this.popup && !!this.animationSystem;
     }
-    
-    destroy() {
-        // cleanup if needed
-    }
-};
+}
 
-// グローバル公開
-window.AlbumPopup = window.TegakiUI.AlbumPopup;
-
-console.log('✅ album-popup.js (FRAME改修版) loaded');
+// 下位互換性のためにグローバルに登録
+window.AlbumPopup = AlbumPopup;
+window.TegakiUI = window.TegakiUI || {};
+window.TegakiUI.AlbumPopup = AlbumPopup;
