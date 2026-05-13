@@ -31,8 +31,12 @@ export const ThumbnailSystem = {
         if (!this.eventBus) return;
 
         this.eventBus.on('thumbnail:layer-updated', (data) => {
+            const layerMgr = window.layerManager;
+            const layer = layerMgr?.getLayerById(data.layerId);
+            if (!layer) return;
+
             if (data.immediate) {
-                this.generateLayerThumbnail(data.layerIndex, data.layerId);
+                this.generateLayerThumbnail(layer, data.layerIndex);
             } else {
                 this.markLayerDirty(data.layerId);
             }
@@ -65,19 +69,25 @@ export const ThumbnailSystem = {
             const layer = layerMgr.getLayerById(layerId);
             const index = layerMgr.getLayerIndex(layer);
             if (index !== -1) {
-                this.generateLayerThumbnail(index, layerId);
+                this.generateLayerThumbnail(layer, index);
             }
         }
 
         requestAnimationFrame(() => this._processDirtyLayers());
     },
 
-    async generateLayerThumbnail(layerIndex, layerId) {
-        if (!this.app?.renderer) return null;
+    async generateLayerThumbnail(layer, layerIndex, maxWidth = 64, maxHeight = 44) {
+        if (!this.app?.renderer) {
+            console.warn('[ThumbnailSystem] Renderer not available');
+            return null;
+        }
+        if (!layer) {
+            console.warn('[ThumbnailSystem] Layer is null');
+            return null;
+        }
 
-        const layerMgr = window.layerManager;
-        const layer = layerMgr?.getLayerById(layerId);
-        if (!layer) return null;
+        const layerId = layer.layerData?.id || layer.label;
+        console.log(`[ThumbnailSystem] Generating for layer: ${layerId}, index: ${layerIndex}`);
 
         try {
             const canvasWidth = window.TEGAKI_CONFIG?.canvas?.width || 400;
@@ -95,26 +105,36 @@ export const ThumbnailSystem = {
             });
 
             const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+            console.log(`[ThumbnailSystem] Extracted canvas size: ${sourceCanvas.width}x${sourceCanvas.height}`);
             
-            const thumbSize = 48;
+            // アスペクト比を維持したサイズ計算
+            const aspectRatio = canvasWidth / canvasHeight;
+            let thumbW = maxWidth;
+            let thumbH = maxWidth / aspectRatio;
+            
+            if (thumbH > maxHeight) {
+                thumbH = maxHeight;
+                thumbW = maxHeight * aspectRatio;
+            }
+
             const thumbCanvas = document.createElement('canvas');
-            thumbCanvas.width = thumbSize;
-            thumbCanvas.height = thumbSize;
+            thumbCanvas.width = thumbW;
+            thumbCanvas.height = thumbH;
             const ctx = thumbCanvas.getContext('2d');
 
             if (ctx) {
-                ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, thumbSize, thumbSize);
+                ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, thumbW, thumbH);
             }
 
-            const dataURL = thumbCanvas.toDataURL('image/png');
-            this.thumbnails.set(layerId, dataURL);
+            const dataUrl = thumbCanvas.toDataURL('image/png');
+            this.thumbnails.set(layerId, dataUrl);
 
             if (this.eventBus) {
-                this.eventBus.emit('thumbnail:updated', { layerId, layerIndex, dataURL });
+                this.eventBus.emit('thumbnail:updated', { layerId, layerIndex, dataURL: dataUrl });
             }
 
             renderTexture.destroy(true);
-            return dataURL;
+            return { dataUrl, width: thumbW, height: thumbH };
 
         } catch (error) {
             console.error('[ThumbnailSystem] Error:', error);

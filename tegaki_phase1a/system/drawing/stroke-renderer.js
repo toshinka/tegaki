@@ -85,8 +85,8 @@ export class StrokeRenderer {
     }
 
     calculateWidth(pressure, brushSize) {
-        const minRatio = 0.3;
-        const ratio = Math.max(minRatio, pressure || 0.5);
+        const minRatio = 0.02;
+        const ratio = Math.max(minRatio, pressure ?? 0.5);
         return Math.max(this.minPhysicalWidth, brushSize * ratio);
     }
 
@@ -101,27 +101,22 @@ export class StrokeRenderer {
 
         graphics.clear();
         
+        // 消しゴムの場合は BlendMode.ERASE を設定
         if (mode === 'eraser') {
-            graphics.blendMode = 'erase';
+            graphics.blendMode = PIXI.BlendMode.ERASE;
         } else {
-            graphics.blendMode = 'normal';
+            graphics.blendMode = PIXI.BlendMode.NORMAL;
         }
 
         if (points.length === 1) {
             const p = points[0];
             const width = this.calculateWidth(p.pressure, settings.size);
             graphics.circle(p.x, p.y, width / 2);
-            
-            if (mode === 'eraser') {
-                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-            } else {
-                graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
-            }
+            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
             return graphics;
         }
 
-        // Perfect-Freehandを使用したポリゴン生成
-        const strokePoints = points.map(p => [p.x, p.y, p.pressure]);
+        const inputPoints = points.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
         const options = {
             size: settings.size,
             thinning: 0.7,
@@ -131,17 +126,11 @@ export class StrokeRenderer {
             last: true
         };
         
-        const outlinePoints = getStroke(strokePoints, options);
+        const outlinePoints = getStroke(inputPoints, options);
         if (outlinePoints.length < 2) return graphics;
 
-        // 🆕 v8.17: graphics.poly() を使用して輪郭を塗る（closePathでの斜め線を防止）
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
-
-        if (mode === 'eraser') {
-            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-        } else {
-            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
-        }
+        graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
 
         return graphics;
     }
@@ -154,7 +143,6 @@ export class StrokeRenderer {
             return this._renderEraserStroke(strokeData, settings);
         }
         
-        // WebGL2が有効な場合はメッシュで描画
         if (this.webgl2Enabled && this.glStrokeProcessor) {
             try {
                 const mesh = await this._renderWithPerfectFreehand(strokeData, settings);
@@ -166,15 +154,10 @@ export class StrokeRenderer {
             }
         }
         
-        // フォールバック: Graphicsによる描画（getStrokeを使用）
         return this._renderFinalStrokeGraphics(strokeData, settings, mode);
     }
 
     async _renderWithPerfectFreehand(strokeData, settings) {
-        // 注: ユーザーからの指示に基づき、もしWebGL2パスでも問題が出る場合は
-        // ここをGraphics版に差し替えることも可能だが、一旦Meshロジックは維持。
-        // もしMeshで問題が出る場合は、このメソッド自体を以下のGraphics生成に書き換える。
-        
         const points = strokeData.points;
         if (!points || points.length < 2) return null;
 
@@ -210,39 +193,39 @@ export class StrokeRenderer {
 
         mesh.tint = settings.color;
         mesh.alpha = settings.opacity || 1.0;
-        mesh.blendMode = 'normal';
+        mesh.blendMode = PIXI.BlendMode.NORMAL;
 
         return mesh;
     }
 
     _renderEraserStroke(strokeData, settings) {
-        const graphics = new PIXI.Graphics();
-        graphics.blendMode = 'erase';
-        
-        if (strokeData.isSingleDot || strokeData.points.length === 1) {
-            const p = strokeData.points[0];
-            const width = this.calculateWidth(p.pressure, settings.size);
-            graphics.circle(p.x, p.y, width / 2);
-            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-            return graphics;
-        }
-
-        const strokePoints = strokeData.points.map(p => [p.x, p.y, p.pressure]);
+        const inputPoints = strokeData.points.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
         const options = {
             size: settings.size,
-            thinning: 0.7,
-            smoothing: 0.4,
-            streamline: 0.3,
+            thinning: 0.5,
+            smoothing: 0.5,
+            streamline: 0.5,
             simulatePressure: false,
             last: true
         };
         
-        const outlinePoints = getStroke(strokePoints, options);
-        if (outlinePoints.length < 2) return graphics;
+        if (strokeData.isSingleDot || strokeData.points.length === 1) {
+            const p = strokeData.points[0];
+            const width = this.calculateWidth(p.pressure, settings.size);
+            const graphics = new PIXI.Graphics();
+            graphics.circle(p.x, p.y, width / 2);
+            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            graphics.blendMode = PIXI.BlendMode.ERASE;
+            return graphics;
+        }
 
-        // 🆕 graphics.poly() 使用
+        const outlinePoints = getStroke(inputPoints, options);
+        if (!outlinePoints || outlinePoints.length < 2) return null;
+
+        const graphics = new PIXI.Graphics();
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
         graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+        graphics.blendMode = PIXI.BlendMode.ERASE;
 
         return graphics;
     }
@@ -251,20 +234,12 @@ export class StrokeRenderer {
         const graphics = new PIXI.Graphics();
         
         if (mode === 'eraser') {
-            graphics.blendMode = 'erase';
+            graphics.blendMode = PIXI.BlendMode.ERASE;
         } else {
-            graphics.blendMode = 'normal';
+            graphics.blendMode = PIXI.BlendMode.NORMAL;
         }
 
-        if (strokeData.isSingleDot || strokeData.points.length === 1) {
-            const p = strokeData.points[0];
-            const width = this.calculateWidth(p.pressure, settings.size);
-            graphics.circle(p.x, p.y, width / 2);
-            graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
-            return graphics;
-        }
-
-        const strokePoints = strokeData.points.map(p => [p.x, p.y, p.pressure]);
+        const inputPoints = strokeData.points.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
         const options = {
             size: settings.size,
             thinning: 0.7,
@@ -274,12 +249,24 @@ export class StrokeRenderer {
             last: true
         };
 
-        const outlinePoints = getStroke(strokePoints, options);
-        if (outlinePoints.length < 2) return graphics;
+        if (strokeData.isSingleDot || strokeData.points.length === 1) {
+            const p = strokeData.points[0];
+            const width = this.calculateWidth(p.pressure, settings.size);
+            graphics.circle(p.x, p.y, width / 2);
+            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            return graphics;
+        }
 
-        // 🆕 graphics.poly() 使用
+        const outlinePoints = getStroke(inputPoints, options);
+        if (!outlinePoints || outlinePoints.length < 2) return null;
+
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
-        graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
+        
+        if (mode === 'eraser') {
+            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+        } else {
+            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+        }
 
         return graphics;
     }
@@ -290,13 +277,13 @@ export class StrokeRenderer {
         const width = this.calculateWidth(point.pressure, settings.size);
 
         if (mode === 'eraser') {
-            graphics.blendMode = 'erase';
+            graphics.blendMode = PIXI.BlendMode.ERASE;
         } else {
-            graphics.blendMode = 'normal';
+            graphics.blendMode = PIXI.BlendMode.NORMAL;
         }
 
         graphics.circle(point.x, point.y, width / 2);
-        graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
+        graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
 
         return graphics;
     }
