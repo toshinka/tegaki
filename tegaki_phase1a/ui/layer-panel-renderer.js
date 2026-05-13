@@ -424,7 +424,7 @@ export class LayerPanelRenderer {
         layerDiv.appendChild(row2);
 
         const nameSpan = this._createLayerName(layer, index);
-        folderDiv.appendChild(nameSpan);
+        layerDiv.appendChild(nameSpan);
 
         const thumbnail = this.createThumbnail(layer, index);
         thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';

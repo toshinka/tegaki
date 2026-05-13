@@ -132,14 +132,10 @@ export class StrokeRenderer {
         };
         
         const outlinePoints = getStroke(strokePoints, options);
-        
-        if (outlinePoints.length < 3) return graphics;
+        if (outlinePoints.length < 2) return graphics;
 
-        graphics.moveTo(outlinePoints[0][0], outlinePoints[0][1]);
-        for (let i = 1; i < outlinePoints.length; i++) {
-            graphics.lineTo(outlinePoints[i][0], outlinePoints[i][1]);
-        }
-        graphics.closePath();
+        // 🆕 v8.17: graphics.poly() を使用して輪郭を塗る（closePathでの斜め線を防止）
+        graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
 
         if (mode === 'eraser') {
             graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
@@ -175,11 +171,12 @@ export class StrokeRenderer {
     }
 
     async _renderWithPerfectFreehand(strokeData, settings) {
-        const points = strokeData.points;
+        // 注: ユーザーからの指示に基づき、もしWebGL2パスでも問題が出る場合は
+        // ここをGraphics版に差し替えることも可能だが、一旦Meshロジックは維持。
+        // もしMeshで問題が出る場合は、このメソッド自体を以下のGraphics生成に書き換える。
         
-        if (!points || points.length < 2) {
-            return null;
-        }
+        const points = strokeData.points;
+        if (!points || points.length < 2) return null;
 
         const vertexBuffer = this.glStrokeProcessor.createPolygonVertexBuffer(
             points,
@@ -222,6 +219,14 @@ export class StrokeRenderer {
         const graphics = new PIXI.Graphics();
         graphics.blendMode = 'erase';
         
+        if (strokeData.isSingleDot || strokeData.points.length === 1) {
+            const p = strokeData.points[0];
+            const width = this.calculateWidth(p.pressure, settings.size);
+            graphics.circle(p.x, p.y, width / 2);
+            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            return graphics;
+        }
+
         const strokePoints = strokeData.points.map(p => [p.x, p.y, p.pressure]);
         const options = {
             size: settings.size,
@@ -232,22 +237,11 @@ export class StrokeRenderer {
             last: true
         };
         
-        if (strokeData.isSingleDot || strokeData.points.length === 1) {
-            const p = strokeData.points[0];
-            const width = this.calculateWidth(p.pressure, settings.size);
-            graphics.circle(p.x, p.y, width / 2);
-            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-            return graphics;
-        }
-
         const outlinePoints = getStroke(strokePoints, options);
-        if (outlinePoints.length < 3) return graphics;
+        if (outlinePoints.length < 2) return graphics;
 
-        graphics.moveTo(outlinePoints[0][0], outlinePoints[0][1]);
-        for (let i = 1; i < outlinePoints.length; i++) {
-            graphics.lineTo(outlinePoints[i][0], outlinePoints[i][1]);
-        }
-        graphics.closePath();
+        // 🆕 graphics.poly() 使用
+        graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
         graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
 
         return graphics;
@@ -262,6 +256,14 @@ export class StrokeRenderer {
             graphics.blendMode = 'normal';
         }
 
+        if (strokeData.isSingleDot || strokeData.points.length === 1) {
+            const p = strokeData.points[0];
+            const width = this.calculateWidth(p.pressure, settings.size);
+            graphics.circle(p.x, p.y, width / 2);
+            graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
+            return graphics;
+        }
+
         const strokePoints = strokeData.points.map(p => [p.x, p.y, p.pressure]);
         const options = {
             size: settings.size,
@@ -272,22 +274,11 @@ export class StrokeRenderer {
             last: true
         };
 
-        if (strokeData.isSingleDot || strokeData.points.length === 1) {
-            const p = strokeData.points[0];
-            const width = this.calculateWidth(p.pressure, settings.size);
-            graphics.circle(p.x, p.y, width / 2);
-            graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
-            return graphics;
-        }
-
         const outlinePoints = getStroke(strokePoints, options);
-        if (outlinePoints.length < 3) return graphics;
+        if (outlinePoints.length < 2) return graphics;
 
-        graphics.moveTo(outlinePoints[0][0], outlinePoints[0][1]);
-        for (let i = 1; i < outlinePoints.length; i++) {
-            graphics.lineTo(outlinePoints[i][0], outlinePoints[i][1]);
-        }
-        graphics.closePath();
+        // 🆕 graphics.poly() 使用
+        graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
         graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
 
         return graphics;
