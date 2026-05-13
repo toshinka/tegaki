@@ -24,6 +24,10 @@
 
 ## 直近の作業（最新が上）
 
+### 2026-05-12 Phase 1b 修正パッチ適用
+- **layer-panel-renderer.jsのバグ修正**: `createLayerElement` 内の `folderDiv` 参照を `layerDiv` に修正（ReferenceError解消）
+- **stroke-renderer.jsの描画改善**: `perfect-freehand` の描画ロジックに `graphics.poly()` を導入。`closePath()` による始点→終点の斜め三角形バグを解消
+
 ### 2026-05-12 Phase 1b完了
 - **BrushCore二重初期化の解消**: `core-engine.js`での初期化順序を厳格化し、警告を解消
 - **レイヤー構造の復元**: `LayerPanelRenderer`をESM化して統合。起動時に初期レイヤーが表示されるよう修正
@@ -55,17 +59,18 @@
 - [x] perfect-freehandによるポリゴン描画の正式採用
 - [x] 消しゴムのBlendMode.ERASE統一
 - [x] フォールバックコード（Legacy描画）の削除
+- [x] レイヤーパネルRendererの変数スコープ修正
+- [x] ストローク描画の三角形アーティファクト解消
 
 ---
 
 ## Claudeへ
 
-Phase 1bの作業が完了しました。
-- `core-engine.js` でのグローバル登録順序（layerManager -> strokeRecorder -> ... -> brushCore.init）を修正し、初期化の安定性が向上しました。
-- `LayerPanelRenderer` を組み込み、レイヤーの追加・削除・選択がパネル上で視覚的に行えるようになりました。
-- 描画エンジンが `perfect-freehand` ベースに完全に移行し、ペンと消しゴムの両方で滑らかなストロークが生成されます。
+Phase 1bの最終調整が完了しました。
+- `layer-panel-renderer.js` の `ReferenceError` を修正し、レイヤーパネルが正常に機能することを確認しました。
+- `stroke-renderer.js` において、`graphics.poly()` を用いたポリゴン描画へ切り替えました。これにより、ペン描画時に混入していた不自然な三角形の線が消え、描画品質が大幅に改善されました。
 
-次のステップ `phase1c`（筆圧・サイズ・消しゴム品質の向上、および消しゴムによるキャンバス消失バグの修正）の指示をお願いします。
+次のステップ `phase1c`（消しゴムによるキャンバス消失バグの修正、およびストローク品質のさらなる向上）の指示をお願いします。
 
 ---
 
