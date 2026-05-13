@@ -88,6 +88,12 @@ export class LayerSystem {
         this._setupResizeEvents();
         
         this.isInitialized = true;
+        
+        // 初回描画を要求
+        setTimeout(() => {
+            this._emitPanelUpdateRequest();
+            this._emitStatusUpdateRequest();
+        }, 100);
     }
 
     createFolder(name) {

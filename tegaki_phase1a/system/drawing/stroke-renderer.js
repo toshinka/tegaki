@@ -1,18 +1,19 @@
 /**
  * ============================================================================
  * ファイル名: system/drawing/stroke-renderer.js
- * 責務: ストロークの視覚化（プレビュー・最終描画）を担当する
- * 依存: pixi.js, config.js, brush-settings.js
+ * 責務: ストロークの視覚化（プレビュー・最終描画）を担当する。Perfect-Freehandを使用したポリゴン描画を基本とする。
+ * 依存: pixi.js, config.js, brush-settings.js, perfect-freehand
  * 被依存: brush-core.js, core-engine.js等
  * 公開API: StrokeRenderer
  * イベント発火: なし
  * イベント受信: なし
  * グローバル登録: window.StrokeRenderer
- * 実装状態: ♻️移植
+ * 実装状態: ♻️移植・最適化
  * ============================================================================
  */
 
 import * as PIXI from 'pixi.js';
+import { getStroke } from 'perfect-freehand';
 import { TEGAKI_CONFIG } from '../../config.js';
 
 export class StrokeRenderer {
@@ -84,7 +85,7 @@ export class StrokeRenderer {
     }
 
     calculateWidth(pressure, brushSize) {
-        const minRatio = Math.max(0.3, this.minPhysicalWidth);
+        const minRatio = 0.3;
         const ratio = Math.max(minRatio, pressure || 0.5);
         return Math.max(this.minPhysicalWidth, brushSize * ratio);
     }
@@ -98,7 +99,13 @@ export class StrokeRenderer {
             return graphics;
         }
 
-        graphics.blendMode = 'normal';
+        graphics.clear();
+        
+        if (mode === 'eraser') {
+            graphics.blendMode = 'erase';
+        } else {
+            graphics.blendMode = 'normal';
+        }
 
         if (points.length === 1) {
             const p = points[0];
@@ -106,47 +113,44 @@ export class StrokeRenderer {
             graphics.circle(p.x, p.y, width / 2);
             
             if (mode === 'eraser') {
-                graphics.fill({ color: 0xFFFFFF, alpha: 0.5 });
+                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
             } else {
                 graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
             }
             return graphics;
         }
 
-        for (let i = 0; i < points.length - 1; i++) {
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            
-            const w1 = this.calculateWidth(p1.pressure, settings.size);
-            const w2 = this.calculateWidth(p2.pressure, settings.size);
-            const avgWidth = (w1 + w2) / 2;
+        // Perfect-Freehandを使用したポリゴン生成
+        const strokePoints = points.map(p => [p.x, p.y, p.pressure]);
+        const options = {
+            size: settings.size,
+            thinning: 0.7,
+            smoothing: 0.4,
+            streamline: 0.3,
+            simulatePressure: false,
+            last: true
+        };
+        
+        const outlinePoints = getStroke(strokePoints, options);
+        
+        if (outlinePoints.length < 3) return graphics;
 
-            graphics.moveTo(p1.x, p1.y);
-            graphics.lineTo(p2.x, p2.y);
-            
-            if (mode === 'eraser') {
-                graphics.stroke({
-                    width: avgWidth,
-                    color: 0xFFFFFF,
-                    alpha: 0.5,
-                    cap: 'round',
-                    join: 'round'
-                });
-            } else {
-                graphics.stroke({
-                    width: avgWidth,
-                    color: settings.color,
-                    alpha: settings.opacity || 1.0,
-                    cap: 'round',
-                    join: 'round'
-                });
-            }
+        graphics.moveTo(outlinePoints[0][0], outlinePoints[0][1]);
+        for (let i = 1; i < outlinePoints.length; i++) {
+            graphics.lineTo(outlinePoints[i][0], outlinePoints[i][1]);
+        }
+        graphics.closePath();
+
+        if (mode === 'eraser') {
+            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+        } else {
+            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
         }
 
         return graphics;
     }
 
-    async renderFinalStroke(strokeData, providedSettings = null, targetGraphics = null) {
+    async renderFinalStroke(strokeData, providedSettings = null) {
         const settings = this._getSettings(providedSettings);
         const mode = this._getCurrentMode(settings);
         
@@ -154,6 +158,7 @@ export class StrokeRenderer {
             return this._renderEraserStroke(strokeData, settings);
         }
         
+        // WebGL2が有効な場合はメッシュで描画
         if (this.webgl2Enabled && this.glStrokeProcessor) {
             try {
                 const mesh = await this._renderWithPerfectFreehand(strokeData, settings);
@@ -161,11 +166,12 @@ export class StrokeRenderer {
                     return mesh;
                 }
             } catch (error) {
-                console.warn('[StrokeRenderer] Perfect-Freehand failed, fallback to legacy:', error);
+                console.warn('[StrokeRenderer] WebGL2 mesh render failed, fallback to Graphics:', error);
             }
         }
         
-        return this._renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics);
+        // フォールバック: Graphicsによる描画（getStrokeを使用）
+        return this._renderFinalStrokeGraphics(strokeData, settings, mode);
     }
 
     async _renderWithPerfectFreehand(strokeData, settings) {
@@ -209,17 +215,22 @@ export class StrokeRenderer {
         mesh.alpha = settings.opacity || 1.0;
         mesh.blendMode = 'normal';
 
-        if (vertexBuffer.bounds) {
-            mesh.position.set(0, 0);
-        }
-
         return mesh;
     }
 
     _renderEraserStroke(strokeData, settings) {
         const graphics = new PIXI.Graphics();
-        
         graphics.blendMode = 'erase';
+        
+        const strokePoints = strokeData.points.map(p => [p.x, p.y, p.pressure]);
+        const options = {
+            size: settings.size,
+            thinning: 0.7,
+            smoothing: 0.4,
+            streamline: 0.3,
+            simulatePressure: false,
+            last: true
+        };
         
         if (strokeData.isSingleDot || strokeData.points.length === 1) {
             const p = strokeData.points[0];
@@ -229,61 +240,55 @@ export class StrokeRenderer {
             return graphics;
         }
 
-        const points = strokeData.points;
-        for (let i = 0; i < points.length - 1; i++) {
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            
-            const w1 = this.calculateWidth(p1.pressure, settings.size);
-            const w2 = this.calculateWidth(p2.pressure, settings.size);
-            const avgWidth = (w1 + w2) / 2;
+        const outlinePoints = getStroke(strokePoints, options);
+        if (outlinePoints.length < 3) return graphics;
 
-            graphics.moveTo(p1.x, p1.y);
-            graphics.lineTo(p2.x, p2.y);
-            graphics.stroke({
-                width: avgWidth,
-                color: 0xFFFFFF,
-                alpha: 1.0,
-                cap: 'round',
-                join: 'round'
-            });
+        graphics.moveTo(outlinePoints[0][0], outlinePoints[0][1]);
+        for (let i = 1; i < outlinePoints.length; i++) {
+            graphics.lineTo(outlinePoints[i][0], outlinePoints[i][1]);
         }
+        graphics.closePath();
+        graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
 
         return graphics;
     }
 
-    _renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics = null) {
-        const graphics = targetGraphics || new PIXI.Graphics();
+    _renderFinalStrokeGraphics(strokeData, settings, mode) {
+        const graphics = new PIXI.Graphics();
         
-        graphics.blendMode = 'normal';
-
-        if (strokeData.isSingleDot || strokeData.points.length === 1) {
-            return this.renderDot(strokeData.points[0], settings, mode, graphics);
+        if (mode === 'eraser') {
+            graphics.blendMode = 'erase';
+        } else {
+            graphics.blendMode = 'normal';
         }
 
-        const points = strokeData.points;
-        if (points.length === 0) {
+        const strokePoints = strokeData.points.map(p => [p.x, p.y, p.pressure]);
+        const options = {
+            size: settings.size,
+            thinning: 0.7,
+            smoothing: 0.4,
+            streamline: 0.3,
+            simulatePressure: false,
+            last: true
+        };
+
+        if (strokeData.isSingleDot || strokeData.points.length === 1) {
+            const p = strokeData.points[0];
+            const width = this.calculateWidth(p.pressure, settings.size);
+            graphics.circle(p.x, p.y, width / 2);
+            graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
             return graphics;
         }
 
-        for (let i = 0; i < points.length - 1; i++) {
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            
-            const w1 = this.calculateWidth(p1.pressure, settings.size);
-            const w2 = this.calculateWidth(p2.pressure, settings.size);
-            const avgWidth = (w1 + w2) / 2;
+        const outlinePoints = getStroke(strokePoints, options);
+        if (outlinePoints.length < 3) return graphics;
 
-            graphics.moveTo(p1.x, p1.y);
-            graphics.lineTo(p2.x, p2.y);
-            graphics.stroke({
-                width: avgWidth,
-                color: settings.color,
-                alpha: settings.opacity || 1.0,
-                cap: 'round',
-                join: 'round'
-            });
+        graphics.moveTo(outlinePoints[0][0], outlinePoints[0][1]);
+        for (let i = 1; i < outlinePoints.length; i++) {
+            graphics.lineTo(outlinePoints[i][0], outlinePoints[i][1]);
         }
+        graphics.closePath();
+        graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
 
         return graphics;
     }
@@ -293,9 +298,14 @@ export class StrokeRenderer {
         const settings = this._getSettings(providedSettings);
         const width = this.calculateWidth(point.pressure, settings.size);
 
-        graphics.blendMode = 'normal';
+        if (mode === 'eraser') {
+            graphics.blendMode = 'erase';
+        } else {
+            graphics.blendMode = 'normal';
+        }
+
         graphics.circle(point.x, point.y, width / 2);
-        graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+        graphics.fill({ color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: settings.opacity || 1.0 });
 
         return graphics;
     }
@@ -308,7 +318,7 @@ export class StrokeRenderer {
         if (mode === 'eraser') {
             graphics = this._renderEraserStroke(strokeData, settings);
         } else {
-            graphics = this._renderFinalStrokeLegacy(strokeData, settings, mode);
+            graphics = this._renderFinalStrokeGraphics(strokeData, settings, mode);
         }
         
         return {
