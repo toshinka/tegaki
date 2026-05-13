@@ -75,6 +75,8 @@ export class PointerHandler {
             const info = normalizeEvent(e);
             activePointers.set(e.pointerId, info);
 
+            console.log('pointerType:', info.pointerType, 'clientX:', info.clientX, 'clientY:', info.clientY, 'pressure:', info.pressure);
+
             try {
                 e.target.setPointerCapture(e.pointerId);
             } catch (err) {
