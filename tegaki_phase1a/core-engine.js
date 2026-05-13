@@ -35,6 +35,7 @@ import { PopupManager } from './system/popup-manager.js';
 import { UIController } from './ui/ui-panels.js';
 import { KeyboardHandler } from './ui/keyboard-handler.js';
 import { ThumbnailSystem } from './system/drawing/thumbnail-system.js';
+import { LayerPanelRenderer } from './ui/layer-panel-renderer.js';
 
 // ポップアップのインポート
 import { SettingsPopup } from './ui/settings-popup.js';
@@ -62,6 +63,7 @@ export class CoreEngine {
         this.exportManager = null;
         
         this.drawingEngine = null;
+        this.layerPanelRenderer = null;
         
         // WebGL2 コンポーネント
         this.webglContext = webglContext;
@@ -163,23 +165,18 @@ export class CoreEngine {
         });
         this.coordinateSystem.setCameraSystem(this.cameraSystem);
 
-        // globals 登録（brushCore.init() より前に行う）
+        // 8. 各サブシステムのグローバル登録（この順番を守ること）
         window.layerManager = this.layerSystem;
         window.cameraSystem = this.cameraSystem;
-        window.drawingEngine = null; // 後で設定
+        window.strokeRecorder = this.strokeRecorder;
+        window.strokeRenderer = this.strokeRenderer;
+        window.brushSettings = this.brushSettings;
+        window.History = this.history;
 
-        // 8. ブラシコアの初期化
-        // ブラシコアに必要な参照を設定
-        this.brushCore.coordinateSystem = this.coordinateSystem;
-        this.brushCore.strokeRecorder = this.strokeRecorder;
-        this.brushCore.layerManager = this.layerSystem;
-        this.brushCore.strokeRenderer = this.strokeRenderer;
-        this.brushCore.brushSettings = this.brushSettings;
-        this.brushCore.eventBus = this.eventBus;
-        
+        // 9. ブラシコアの初期化
         this.brushCore.init();
         
-        // 9. 描画エンジンの初期化
+        // 10. 描画エンジンの初期化
         this.drawingEngine = new DrawingEngine(
             this.app,
             this.layerSystem,
@@ -190,7 +187,7 @@ export class CoreEngine {
         this.drawingEngine.setBrushSettings(this.brushSettings);
         window.drawingEngine = this.drawingEngine;
 
-        // 10. エクスポートマネージャーの初期化（アニメーションシステムが必要）
+        // 11. エクスポートマネージャーの初期化（アニメーションシステムが必要）
         // ※このフェーズでは暫定的に null チェック付きで作成
         if (window.animationSystem) {
             const { ExportManager } = await import('./system/export-manager.js');
@@ -198,7 +195,7 @@ export class CoreEngine {
             window.exportManager = this.exportManager;
         }
 
-        // 11. ポップアップの登録
+        // 12. ポップアップの登録
         this.popupManager.register('settings', SettingsPopup, {
             drawingEngine: this.drawingEngine
         });
@@ -218,10 +215,21 @@ export class CoreEngine {
             animationSystem: window.animationSystem
         });
 
-        // 12. ポップアップの初期化実行
+        // 13. ポップアップの初期化実行
         this.popupManager.initializeAll();
 
-        // 13. UI コントローラーの初期化
+        // 14. レイヤーパネルレンダラーの初期化
+        const layerListContainer = document.getElementById('layer-list');
+        if (layerListContainer) {
+            this.layerPanelRenderer = new LayerPanelRenderer(
+                layerListContainer,
+                this.layerSystem,
+                this.eventBus
+            );
+            window.layerPanelRenderer = this.layerPanelRenderer;
+        }
+
+        // 15. UI コントローラーの初期化
         this.uiController = new UIController(
             this.drawingEngine,
             this.layerSystem,
@@ -230,7 +238,7 @@ export class CoreEngine {
         );
         window.uiController = this.uiController;
         
-        // 13. キーボードハンドラの初期化
+        // 16. キーボードハンドラの初期化
         this.keyboardHandler.init();
         
         // 相互参照の解決
