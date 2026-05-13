@@ -38,25 +38,12 @@ export class PointerHandler {
         const activePointers = new Map();
 
         /**
-         * pointerType補正ヒューリスティック
-         * Windows等で pen が mouse として報告される問題に対応
+         * 座標変換の分岐を撤廃
          */
         function normalizeEvent(e) {
-            let pType = e.pointerType;
-            
-            if (pType === 'mouse') {
-                const hasPressure = typeof e.pressure === 'number' && e.pressure > 0.01;
-                const hasTilt = typeof e.tiltX === 'number' && 
-                               (e.tiltX !== 0 || e.tiltY !== 0);
-                
-                if (hasPressure || hasTilt) {
-                    pType = 'pen';
-                }
-            }
-            
             return {
                 pointerId: e.pointerId,
-                pointerType: pType,
+                pointerType: e.pointerType,
                 clientX: e.clientX,
                 clientY: e.clientY,
                 pressure: e.pressure ?? 0.5,
@@ -74,8 +61,7 @@ export class PointerHandler {
 
             const info = normalizeEvent(e);
             activePointers.set(e.pointerId, info);
-
-            console.log('pointerType:', info.pointerType, 'clientX:', info.clientX, 'clientY:', info.clientY, 'pressure:', info.pressure);
+            window.lastPointerType = info.pointerType;
 
             try {
                 e.target.setPointerCapture(e.pointerId);
