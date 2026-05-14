@@ -101,12 +101,12 @@ export class StrokeRenderer {
 
         graphics.clear();
         
-        // 消しゴムの場合は 'erase' を設定
+        // 消しゴムの場合はプレビューを描画しない（カーソルのみで十分なため）
         if (mode === 'eraser') {
-            graphics.blendMode = 'erase';
-        } else {
-            graphics.blendMode = 'normal';
+            return graphics;
         }
+
+        graphics.blendMode = 'normal';
 
         if (points.length === 1) {
             const p = points[0];
@@ -145,9 +145,8 @@ export class StrokeRenderer {
         return graphics;
     }
 
-    async renderFinalStroke(strokeData, providedSettings = null) {
-        const settings = this._getSettings(providedSettings);
-        const mode = this._getCurrentMode(settings);
+    async renderFinalStroke(strokeData, settings) {
+        const mode = settings?.mode || this.currentTool || 'pen';
         
         if (mode === 'eraser') {
             return this._renderEraserStroke(strokeData, settings);

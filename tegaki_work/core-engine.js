@@ -141,8 +141,8 @@ export class CoreEngine {
         this.cameraSystem.init(this.app.stage, this.eventBus, this.config);
         
         // 4. レイヤーシステムの初期化
-        this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, this.config);
         this.layerSystem.setApp(this.app);
+        this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, this.config);
         this.layerSystem.setCameraSystem(this.cameraSystem);
         
         // 5. サムネイルシステムの初期化

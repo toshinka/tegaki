@@ -123,3 +123,5 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phas
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CODEX..md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
 
+
+

@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { Graphics } from 'pixi.js';
+import { Graphics, Container } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
 import { coordinateSystem } from '../../coordinate-system.js';
 import { historyManager } from '../history.js';
@@ -261,18 +261,33 @@ export class BrushCore {
             
             // 🆕 RenderTextureへの焼き込み（Raster化）
             if (layerData?.renderTexture) {
-                // ブレンドモードの設定（消しゴムの場合は 'erase'）
-                graphics.blendMode = (mode === 'eraser') ? 'erase' : 'normal';
-                
-                this.layerManager.app.renderer.render({
-                    container: graphics,
-                    target: layerData.renderTexture,
-                    clear: false
-                });
-                
-                // オブジェクト自体は破棄（テクスチャに書き込んだため）
-                if (graphics.destroy) {
-                    graphics.destroy({ children: true, texture: true, baseTexture: true });
+                if (mode === 'eraser') {
+                    // 消しゴムの場合は Container でラップして blendMode = 'erase' を指定
+                    const renderContainer = new Container();
+                    renderContainer.addChild(graphics);
+                    renderContainer.blendMode = 'erase';
+                    
+                    this.layerManager.app.renderer.render({
+                        container: renderContainer,
+                        target: layerData.renderTexture,
+                        clear: false
+                    });
+                    
+                    // 使用後破棄
+                    renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+                } else {
+                    // ペンの場合は通常通り
+                    graphics.blendMode = 'normal';
+                    
+                    this.layerManager.app.renderer.render({
+                        container: graphics,
+                        target: layerData.renderTexture,
+                        clear: false
+                    });
+                    
+                    if (graphics.destroy) {
+                        graphics.destroy({ children: true, texture: true, baseTexture: true });
+                    }
                 }
             } else {
                 // フォールバック: 従来通り子要素として追加
