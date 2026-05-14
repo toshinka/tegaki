@@ -83,7 +83,8 @@ export class DrawingEngine {
             return;
         }
 
-        if (info.button === 2) {
+        const isSecondaryButton = info.button === 2 && info.pointerType !== 'pen';
+        if (isSecondaryButton) {
             return;
         }
 

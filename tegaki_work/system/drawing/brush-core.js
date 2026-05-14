@@ -36,6 +36,8 @@ export class BrushCore {
         
         this.previewGraphics = null;
         this.eventListenersSetup = false;
+        this.realtimeEraserApplied = false; // [指示書] リアルタイム消去済みフラグ
+        this.realtimePenApplied = false;    // [指示書] リアルタイム描画済みフラグ
     }
     
     init() {
@@ -202,15 +204,24 @@ export class BrushCore {
         const dy = localY - this.lastLocalY;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        // 指示書に基づくリアルタイム消去：
-        // 消しゴムの場合、移動中に短いストロークを RenderTexture に焼き込む。
-        if (currentMode === 'eraser' && distance > 1.0) {
+        // 指示書に基づくリアルタイム反映：
+        // 移動がある程度あれば RenderTexture に焼き込む。
+        if (currentMode === 'eraser' && distance > 0.5) {
             const segmentPoints = [
                 { x: this.lastLocalX, y: this.lastLocalY, pressure: this.lastPressure },
                 { x: localX, y: localY, pressure: processedPressure }
             ];
             
             this._renderRealtimeEraserSegment(segmentPoints);
+            this.realtimeEraserApplied = true;
+        } else if (currentMode === 'pen' && distance > 0.5) {
+            const segmentPoints = [
+                { x: this.lastLocalX, y: this.lastLocalY, pressure: this.lastPressure },
+                { x: localX, y: localY, pressure: processedPressure }
+            ];
+            
+            this._renderRealtimePenSegment(segmentPoints);
+            this.realtimePenApplied = true;
         }
 
         const steps = Math.max(1, Math.floor(distance / 5));
@@ -226,7 +237,8 @@ export class BrushCore {
         
         this.strokeRecorder.addPoint(localX, localY, processedPressure);
         
-        if (this.previewGraphics && currentMode !== 'eraser') {
+        // [指示書] ライブ焼き込み中は previewGraphics を使用しない（二重描画防止）
+        if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen') {
             const currentPoints = this.strokeRecorder.getCurrentPoints();
             const settings = this._getCurrentSettings();
             
@@ -252,11 +264,8 @@ export class BrushCore {
 
         const settings = this._getCurrentSettings();
         
-        // 短いGraphicsオブジェクトを生成
-        const graphics = this.strokeRenderer.renderPreview(
-            points,
-            { ...settings, mode: 'eraser' }
-        );
+        // [指示書] 消しゴム用の実描画 Graphics を作る API を使用
+        const graphics = this.strokeRenderer.renderEraserSegment(points, settings);
 
         if (graphics && this.layerManager.app?.renderer) {
             const renderContainer = new Container();
@@ -270,6 +279,29 @@ export class BrushCore {
             });
             
             renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+        }
+    }
+
+    /**
+     * [指示書] ペンのリアルタイム反映用：短いセグメントを直接 RenderTexture に焼き込む
+     */
+    _renderRealtimePenSegment(points) {
+        const activeLayer = this.layerManager.getActiveLayer();
+        if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
+
+        const settings = this._getCurrentSettings();
+        
+        // [指示書] ペン用の実描画 Graphics を作る API を使用
+        const graphics = this.strokeRenderer.renderPenSegment(points, settings);
+
+        if (graphics && this.layerManager.app?.renderer) {
+            this.layerManager.app.renderer.render({
+                container: graphics,
+                target: activeLayer.layerData.renderTexture,
+                clear: false
+            });
+            
+            graphics.destroy({ children: true, texture: true, baseTexture: true });
         }
     }
     
@@ -292,8 +324,14 @@ export class BrushCore {
         
         const settings = this._getCurrentSettings();
         const mode = settings.mode || 'pen';
+
+        // [指示書] リアルタイム反映済みの場合は最終焼き込みをスキップ
+        const alreadyApplied = (mode === 'eraser' && this.realtimeEraserApplied) || 
+                               (mode === 'pen' && this.realtimePenApplied);
         
-        // 最終描画オブジェクト生成
+        const shouldBakeFinal = !alreadyApplied;
+        
+        // 最終描画オブジェクト生成（履歴用やフォールバック用）
         const graphics = await this.strokeRenderer.renderFinalStroke(
             strokeData,
             settings
@@ -302,10 +340,9 @@ export class BrushCore {
         if (graphics && this.layerManager.app?.renderer) {
             const layerData = activeLayer.layerData;
             
-            // 🆕 RenderTextureへの焼き込み（Raster化）
-            if (layerData?.renderTexture) {
+            // 🆕 RenderTextureへの焼き込み
+            if (layerData?.renderTexture && shouldBakeFinal) {
                 if (mode === 'eraser') {
-                    // 消しゴムの場合は Container でラップして blendMode = 'erase' を指定
                     const renderContainer = new Container();
                     renderContainer.addChild(graphics);
                     renderContainer.blendMode = 'erase';
@@ -316,10 +353,8 @@ export class BrushCore {
                         clear: false
                     });
                     
-                    // 使用後破棄
                     renderContainer.destroy({ children: true, texture: true, baseTexture: true });
                 } else {
-                    // ペンの場合は通常通り
                     graphics.blendMode = 'normal';
                     
                     this.layerManager.app.renderer.render({
@@ -332,13 +367,16 @@ export class BrushCore {
                         graphics.destroy({ children: true, texture: true, baseTexture: true });
                     }
                 }
-            } else {
+            } else if (!layerData?.renderTexture) {
                 // フォールバック: 従来通り子要素として追加
                 activeLayer.addChild(graphics);
+            } else if (graphics.destroy) {
+                // 既にライブ焼き込み済みの場合は、生成した graphics を破棄するだけにする
+                graphics.destroy({ children: true, texture: true, baseTexture: true });
             }
             
             if (layerData) {
-                // 履歴用のデータ保存（現在は簡易版）
+                // 履歴用のデータ保存
                 if (!layerData.pathsData) {
                     layerData.pathsData = [];
                 }
@@ -352,8 +390,6 @@ export class BrushCore {
                 };
                 
                 layerData.pathsData.push(pathData);
-                
-                // TODO: Raster化に伴うUndoの再設計（現在は省略）
             }
             
             const layerIndex = this.layerManager.getLayerIndex(activeLayer);
@@ -378,6 +414,8 @@ export class BrushCore {
         }
         
         this.isDrawing = false;
+        this.realtimeEraserApplied = false; 
+        this.realtimePenApplied = false; // フラグリセット
         
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-completed', {

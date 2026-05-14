@@ -397,7 +397,12 @@ export class LayerPanelRenderer {
             layerDiv.appendChild(nameSpan);
 
             const thumbnail = this.createThumbnail(layer, index);
-            thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
+            // [指示書] style.cssText による丸ごと上書きを禁止
+            thumbnail.style.gridColumn = '2';
+            thumbnail.style.gridRow = '1/4';
+            thumbnail.style.display = 'flex';
+            thumbnail.style.alignItems = 'center';
+            thumbnail.style.justifyContent = 'center';
             layerDiv.appendChild(thumbnail);
 
             return layerDiv;
@@ -427,7 +432,12 @@ export class LayerPanelRenderer {
         layerDiv.appendChild(nameSpan);
 
         const thumbnail = this.createThumbnail(layer, index);
-        thumbnail.style.cssText = 'grid-column:2;grid-row:1/4;display:flex;align-items:center;justify-content:center;';
+        // [指示書] style.cssText による丸ごと上書きを禁止
+        thumbnail.style.gridColumn = '2';
+        thumbnail.style.gridRow = '1/4';
+        thumbnail.style.display = 'flex';
+        thumbnail.style.alignItems = 'center';
+        thumbnail.style.justifyContent = 'center';
         layerDiv.appendChild(thumbnail);
 
         const deleteBtn = this._createDeleteButton(index);
@@ -628,7 +638,22 @@ export class LayerPanelRenderer {
         thumbnailContainer.style.alignItems = 'center';
         thumbnailContainer.style.justifyContent = 'center';
         thumbnailContainer.style.flexShrink = '0';
-        thumbnailContainer.style.backgroundColor = '#f5f5f5';
+        
+        // [指示書] 透明レイヤーにはチェッカー背景を表示。背景レイヤーには実背景色を表示。
+        if (layer.layerData?.isBackground) {
+            const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
+            const r = (bgColor >> 16) & 0xFF;
+            const g = (bgColor >> 8) & 0xFF;
+            const b = bgColor & 0xFF;
+            thumbnailContainer.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+        } else {
+            if (window.checkerUtils) {
+                const checkerUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxWidth, maxHeight, 4);
+                thumbnailContainer.style.backgroundImage = `url(${checkerUrl})`;
+            } else {
+                thumbnailContainer.style.backgroundColor = '#f5f5f5';
+            }
+        }
 
         // [指示書] キャッシュがあれば即時表示
         if (window.thumbnailSystem && layer.layerData?.id) {
@@ -636,8 +661,8 @@ export class LayerPanelRenderer {
             if (cachedUrl) {
                 const img = document.createElement('img');
                 img.src = cachedUrl;
-                img.style.width = '100%';
-                img.style.height = '100%';
+                img.style.maxWidth = '100%';
+                img.style.maxHeight = '100%';
                 img.style.display = 'block';
                 img.style.objectFit = 'contain';
                 thumbnailContainer.appendChild(img);
@@ -645,7 +670,7 @@ export class LayerPanelRenderer {
             }
         }
         
-        // キャッシュがない場合は非同期で生成（既存の _updateSingleThumbnail が後で呼ばれる）
+        // キャッシュがない場合は非同期で生成
         return thumbnailContainer;
     }
 
@@ -737,13 +762,11 @@ export class LayerPanelRenderer {
             try {
                 const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, maxWidth, maxHeight);
                 if (result && result.dataUrl) {
-                    thumbnailContainer.style.width = result.width + 'px';
-                    thumbnailContainer.style.height = result.height + 'px';
-                    
+                    // [指示書] 外枠サイズ (width/height) を result で上書きしない
                     const img = document.createElement('img');
                     img.src = result.dataUrl;
-                    img.style.width = '100%';
-                    img.style.height = '100%';
+                    img.style.maxWidth = '100%';
+                    img.style.maxHeight = '100%';
                     img.style.display = 'block';
                     img.style.objectFit = 'contain';
                     thumbnailContainer.innerHTML = '';

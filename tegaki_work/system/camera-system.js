@@ -332,14 +332,16 @@ export class CameraSystem {
         canvas.addEventListener('pointerdown', (e) => {
             if (this.vKeyPressed) return;
             
-            if ((e.button === 2 || this.spacePressed) && !this.shiftPressed) {
+            const isMouseSecondaryButton = e.button === 2 && e.pointerType !== 'pen';
+
+            if ((isMouseSecondaryButton || this.spacePressed) && !this.shiftPressed) {
                 this.isDragging = true;
                 this.canvasMoveMode = true;
                 this.lastPoint = { x: e.clientX, y: e.clientY };
                 this._emitCursorChange('move');
                 this._emitCanvasMoveMode(true);
                 e.preventDefault();
-            } else if ((e.button === 2 || this.spacePressed) && this.shiftPressed) {
+            } else if ((isMouseSecondaryButton || this.spacePressed) && this.shiftPressed) {
                 this.isScaleRotateDragging = true;
                 this.canvasMoveMode = true;
                 this.lastPoint = { x: e.clientX, y: e.clientY };
@@ -365,13 +367,15 @@ export class CameraSystem {
         });
         
         canvas.addEventListener('pointerup', (e) => {
-            if (this.isDragging && (e.button === 2 || !this.spacePressed)) {
+            const isMouseSecondaryButton = e.button === 2 && e.pointerType !== 'pen';
+
+            if (this.isDragging && (isMouseSecondaryButton || !this.spacePressed)) {
                 this.isDragging = false;
                 this.canvasMoveMode = false;
                 this._emitCanvasMoveMode(false);
                 this._emitCursorUpdate();
             }
-            if (this.isScaleRotateDragging && (e.button === 2 || !this.spacePressed)) {
+            if (this.isScaleRotateDragging && (isMouseSecondaryButton || !this.spacePressed)) {
                 this.isScaleRotateDragging = false;
                 this.canvasMoveMode = false;
                 this._emitCanvasMoveMode(false);
