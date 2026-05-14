@@ -1,170 +1,246 @@
+# GEMINI作業指示書：Phase 1c 仕上げ軽微修正 2026-05-15
 
-```md
-# GEMINI作業指示書：tegaki_work 修正順
+対象フォルダ：`tegaki_work/`
 
-対象フォルダ：tegaki_work  
-方針：出力サイズと内部キャンバスサイズは等倍維持。内部2倍解像度化は行わない。
+目的：オーナー実機確認で良好化した部分を維持しつつ、残ったサムネイル表示と軽微なカメラ操作UXを直す。
 
-## 1. タブレットペン入力の調査を最優先
+今回の前提：
 
-目的：液タブペンの pointerdown がどこで止まっているか確認する。
+- 液タブペン描画は改善済みとして扱う。再発させない。
+- 通常ペンのライブラスター描画は良好。ペン描画経路は原則として触らない。
+- 消しゴムのリアルタイム透明消去も良好。触らない。
+- 今回の主対象は「サムネイルの黒背景/灰色枠」「Spaceドラッグ解除」「リサイズ時のキャンバス位置」。
 
-tegaki_work/system/input/pointer-handler.js の pointerdown 処理で、右クリック除外などの条件分岐より前に raw log を追加する。
+作業前に必ず読む：
 
-例：
+1. `TEGAKI.md`
+2. `tegaki_work/PROGRESS.md`
+3. この `GEMINI作業指示書.txt`
+4. 画像資料フォルダの最新SS
+5. `tegaki_work/TegakiConsole.txt`
 
-```js
-console.log('[PointerHandler] raw pointerdown', {
-  pointerType: e.pointerType,
-  button: e.button,
-  buttons: e.buttons,
-  target: e.target?.tagName,
-  id: e.target?.id,
-  className: e.target?.className
-});
-```
+禁止：
 
-確認すること：
+- `PastFiles/` は参照のみ。編集しない。
+- `dist/` を成果物として更新しない。確認は `npm.cmd run build` で行う。
+- ペン/消しゴムの描画方式を大きく戻さない。
+- Perfect Freehand 経路を通常ペンの主経路へ戻さない。
+- `import { BlendMode } from 'pixi.js'` は復活させない。
 
-- pen の pointerdown が出るか
-- `button` が `2` になっていないか
-- target が Pixi canvas か
-- DrawingEngine 側の `[DrawingEngine] Pen Down` まで到達するか
+---
 
-もし `pointerType: 'pen'` で `button: 2` 扱いになっている場合、右クリック除外は以下のようにする。
+## 0. 現状確認
 
-```js
-if (e.button === 2 && e.pointerType !== 'pen') return;
-```
+最新SS：
 
-## 2. 消しゴムをリアルタイム反映に戻す
+- `画像資料/キャンバスの400サイズ部分は黒く全体的にはスペクト比違いレイヤー背景色はOK.png`
 
-現状：pointerup / OFF 時にまとめて消える。  
-目標：ドラッグ中に線が削れる。
+確認できること：
 
-方針：
+- 背景レイヤーの色はかなり正しくなっている。
+- 通常レイヤーのサムネイルで、本来透明なキャンバス領域が黒く出ている。
+- 黒い部分の左右に、サムネイル外枠または余白と思われる淡い灰色/薄色帯が見えている。
+- リサイズしたキャンバス比に合わせて黒領域の形が変わっている。
 
-- eraser preview は表示しなくてよい
-- updateStroke 中に直前点から現在点までの短い eraser stroke を RenderTexture に焼き込む
-- blendMode は `'erase'`
-- undo 用の stroke 記録は維持する
-- pointerup 時に二重で同じ範囲を消さないよう注意
+`TegakiConsole.txt`：
 
-重要：
+- 現時点で致命的なエラーは見当たらない。
+- `pointer-handler.js` の raw pointerdown ログは残っている。不要なら debug 制御に寄せるが、今回は優先度低。
 
-- 背景色で塗る方式には戻さない
-- 透明化 eraser のままにする
-- previewGraphics だけ消して「見た目だけ」変える実装にしない
+---
 
-## 3. レイヤーサムネイルの再表示バグ修正
+## 1. サムネイルの黒背景を透明にする
 
-現象：描いた直後はサムネイルが出るが、別レイヤー選択で消える。
+対象：
 
-原因候補：
-layer-panel-renderer.js の render 時に `innerHTML = ''` で DOM を再生成し、既存 img が消えている。createThumbnail がキャッシュ済み画像を再挿入していない可能性が高い。
+- `tegaki_work/system/drawing/thumbnail-system.js`
+- `tegaki_work/ui/layer-panel-renderer.js`
+- 必要なら `tegaki_work/system/checker-utils.js`
+
+問題：
+
+通常レイヤーのサムネイルで、透明なはずのキャンバス領域が黒く出ている。これは CSS の外枠だけでなく、`ThumbnailSystem.generateLayerThumbnail()` が生成する PNG 自体に黒が焼き込まれている可能性がある。
+
+疑い：
+
+- `RenderTexture.create({ width, height })` 後に `renderer.render({ clear:true, clearColor:0x000000, clearAlpha:0 })` しているが、PixiJS v8 の実際の clear/extract 経路で透明が保持されず黒く抽出されている可能性。
+- `extract.canvas(renderTexture)` の結果が、透明ではなく黒背景の canvas になっている可能性。
+- CSS 側の checker 背景は、上に乗る `<img>` 自体が黒不透明なら見えない。
+
+必須調査：
+
+1. `sourceCanvas` または `thumbCanvas` の代表ピクセルを `getImageData()` で確認する。
+2. 透明領域の alpha が `0` なのか、黒 `rgba(0,0,0,255)` なのかをログで確認する。
+3. alpha が 255 なら CSS では直らない。サムネイル生成側を修正する。
 
 修正方針：
 
-- ThumbnailSystem 側の cache / getThumbnail(layerId) を使う
-- LayerPanelRenderer.createThumbnail(layer) で、既に dataUrl がある場合は `<img>` を即時挿入する
-- layer switch / panel rerender 後もサムネイルが残ることを確認する
+- 通常レイヤーは透明背景の thumbnail PNG を生成する。
+- 背景レイヤーだけは実背景色で塗る。
+- 通常レイヤーの余白/非描画部分は transparent のままにし、UI側の checker または透明背景が見えるようにする。
 
-## 4. 描画中プレビューと確定後の線を一致させる
+実装候補：
 
-現象：描画中は滑らかだが、離した瞬間にジャギーな線へ変形する。
-
-方針：
-
-- 内部2倍解像度化はしない
-- preview と final で perfect-freehand の options を完全一致させる
-- 使用する points もできるだけ同じものにする
-- 座標を整数丸めしない
-- Mesh path は一旦復活させない。Graphics.poly 統一のままで検証する
-
-確認する options：
-
-```js
-{
-  size,
-  thinning: 0.7,
-  smoothing: 0.4,
-  streamline: 0.3,
-  simulatePressure: false,
-  last: true
-}
-```
-
-preview と final で差があれば統一する。
-
-## 5. 鋭角で三角形に塗られる問題の調査
-
-再現性が低いため、まず防御的処理を入れる。
-
-確認・修正候補：
-
-- 同一点、極端に近い点を除外する
-- stroke point が急角度で密集した時に polygon が自己交差していないか確認する
-- size に対して距離が短すぎる補間点を入れすぎていないか確認する
-- perfect-freehand に渡す points の中身を debug 出力できるようにする
-
-例：
-
-```js
-const MIN_DIST = 0.25;
-
-function filterNearPoints(points) {
-  const result = [];
-  for (const p of points) {
-    const last = result[result.length - 1];
-    if (!last) {
-      result.push(p);
-      continue;
-    }
-
-    const dx = p.x - last.x;
-    const dy = p.y - last.y;
-    if (Math.hypot(dx, dy) >= MIN_DIST) {
-      result.push(p);
-    }
-  }
-  return result;
-}
-```
-
-数値は仮。強くしすぎると描線が劣化するので小さく始める。
-
-## 6. RenderTexture のアンチエイリアスは小さく検証
-
-目的：等倍のまま確定後の線品質を少し改善できるか確認する。
+1. 通常レイヤーは、`layer` Container 全体を一時RenderTextureへ描くのではなく、`layer.layerData.renderTexture` または `layer.layerData.layerSprite.texture` から直接抽出できないか確認する。
+2. 直接抽出で alpha が保持されるなら、その経路を採用する。
+3. 直接抽出でも黒くなる場合は、`renderer.extract.pixels()` 等で alpha を検証し、透明ピクセルを保持する経路へ切り替える。
+4. `thumbCanvas` は必ず `ctx.clearRect(0, 0, thumbW, thumbH)` から始め、背景色で塗らない。
 
 注意：
 
-- 内部解像度を 2倍にしない
-- canvas/export サイズを変えない
-- `resolution: 1` 維持
-- PixiJS v8.17.0 で RenderTexture 作成時に antialias 指定が効くかだけ確認する
-- 効果が薄い、または副作用が出るなら採用しない
+- 黒い線を描いたレイヤーが将来あり得るため、「黒を全部透明にする」雑な後処理は禁止。
+- 透明判定が必要な場合は alpha を基準にする。
+- 背景レイヤーの色は現状かなり良いので壊さない。
 
-これは優先度低。先に入力・消しゴム・サムネイルを直す。
+受け入れ条件：
 
-## 作業順
+- 空の通常レイヤーのサムネイルは黒くならない。
+- 通常レイヤーに赤線だけ描いた場合、透明部分は checker または透明背景として見え、線だけが表示される。
+- 背景レイヤーは実キャンバス背景色に見える。
+- キャンバスを非正方形にリサイズしても、透明部分が黒くならない。
 
-1. タブレットペン raw pointer log 追加、原因特定
-2. 液タブペンで描画できるよう修正
-3. 消しゴムのリアルタイム erase 修正
-4. サムネイル cache 再挿入修正
-5. preview/final の perfect-freehand 条件統一
-6. 鋭角三角化の point filter / debug
-7. 等倍 RenderTexture antialias の小検証
+---
 
-## 禁止事項
+## 2. サムネイルの灰色/薄色枠を消す
 
-- 内部2倍解像度化しない
-- 出力サイズを変更しない
-- `resolution: 2` にしない
-- 背景色で塗る消しゴムへ戻さない
-- PixiJS の `BlendMode` named import を復活させない
-- canvas移動系とlayer変形系の座標処理を混ぜない
+対象：
+
+- `tegaki_work/ui/layer-panel-renderer.js`
+
+問題：
+
+最新SSでは、黒いキャンバス領域の左右に淡い灰色/薄色帯が見えている。これはサムネイル画像の `object-fit: contain` で余った領域か、`.layer-thumbnail` の背景が見えている可能性が高い。
+
+方針：
+
+- 通常レイヤーの `.layer-thumbnail` 外枠背景は、灰色ベタではなく透明または checker にする。
+- 背景レイヤーだけは実背景色にする。
+- 枠線 `border: 1px solid #cf9c97` はUIとして必要なら維持してよいが、内部余白が灰色ベタに見える状態は避ける。
+
+確認箇所：
+
+- `createThumbnail()`
+- `_updateSingleThumbnail()` 後に `thumbnailContainer.innerHTML = ''` した際、背景設定が失われていないか。
+- `createFolderThumbnail()` は今回の主対象外だが、同じ灰色背景が見えるなら合わせて修正。
+
+受け入れ条件：
+
+- 通常レイヤーのサムネイル余白が灰色ベタに見えない。
+- リサイズ後の縦横比差による余白も透明/checkerとして見える。
+- 背景レイヤーの表示色は現状より悪化しない。
+
+---
+
+## 3. Space + ドラッグ移動は同時押し中だけ有効にする
+
+対象：
+
+- `tegaki_work/system/camera-system.js`
+
+問題：
+
+Spaceを押しながらドラッグするとキャンバス移動になるが、ドラッグ中にSpaceを先に離すとキャンバス移動が残り、操作しにくい。
+
+方針：
+
+- Space起点のキャンバス移動は、Spaceが押されている間だけ継続する。
+- Spaceを離した瞬間に `isDragging` / `isScaleRotateDragging` / `canvasMoveMode` を false にする。
+- pointerup を待たずに移動モードが終わるようにする。
+
+現在の疑い：
+
+- `pointermove` 側が `this.isDragging` だけを見て移動しており、`this.spacePressed` が false になった後でも移動が継続する。
+- `keyup` が確実に拾えないケースがあると、drag状態が残る。
+
+修正候補：
+
+- Space起点のdragか右クリック起点のdragかを `this.dragStartMode = 'space' | 'rightButton' | null` のように記録する。
+- `pointermove` 冒頭で、`dragStartMode === 'space' && !this.spacePressed` なら即座にdrag終了処理を呼ぶ。
+- `keyup Space` でも同じ終了処理を呼ぶ。
+- keydownでSpaceを押しただけでは `canvasMoveMode = true` にしない。実際にSpace+pointerdownした時に true にする方が自然。
+
+受け入れ条件：
+
+- Space + ドラッグ中にSpaceを離すと、その瞬間にキャンバス移動が止まる。
+- Spaceを押していない通常ドラッグでは描画できる。
+- マウス右クリックドラッグのキャンバス移動が壊れない。
+- 液タブペン描画が再び `canvasMoveMode` にブロックされない。
+
+---
+
+## 4. キャンバスリサイズ時のセンタリング
+
+対象：
+
+- `tegaki_work/system/camera-system.js`
+- 必要なら resize popup / resize event 周辺
+
+問題：
+
+キャンバスリサイズ後、キャンバスが画面外または意図しない位置へ飛ぶ。リサイズ後はキャンバス中心が画面中央付近に来るようにしたい。
+
+緊急度：
+
+- 低。軽微に直せるなら今回一緒に対応。
+- 大きく触る必要があるなら `PROGRESS.md` に残して後続。
+
+方針：
+
+- `resizeCanvas(newWidth, newHeight, ...)` 後に、キャンバス中心を画面中央へ合わせる。
+- 現在の `worldContainer.position.x += offsetX` / `position.y += offsetY` は、scale/rotation/flip を考慮しないため飛びやすい。
+- `screen.center - worldContainer.toGlobal({ x: canvasWidth/2, y: canvasHeight/2 })` の差分で `worldContainer.position` を補正する方が安全。
+
+実装候補：
+
+```js
+centerCanvasOnScreen() {
+    const screen = this.app.renderer?.screen || this.app.screen || { width: window.innerWidth, height: window.innerHeight };
+    const canvasCenter = this.worldContainer.toGlobal({
+        x: this.config.canvas.width / 2,
+        y: this.config.canvas.height / 2
+    });
+    this.worldContainer.x += screen.width / 2 - canvasCenter.x;
+    this.worldContainer.y += screen.height / 2 - canvasCenter.y;
+}
 ```
 
-結論として、方針は「等倍維持で線の確定処理を揃える」です。2倍化は見た目改善としては有効な場合がありますが、このプロジェクトの提出物優先ルールとは衝突しやすいので、今は外す判断でよいです。
+`resizeCanvas()` の最後に呼ぶ。ただし、リサイズUIに「左/中央/右」「上/中央/下」の配置指定がある場合は、その設計と衝突しないよう確認する。
+
+受け入れ条件：
+
+- リサイズ後、キャンバス中心が画面中央付近にある。
+- ズーム倍率が勝手に変わらない。
+- ガイド線、マスク、サムネイル更新が壊れない。
+
+---
+
+## 5. PROGRESS更新
+
+作業後に `tegaki_work/PROGRESS.md` を更新する。
+
+必ず記録：
+
+- 液タブペン/ライブラスター描画/消しゴムは良好維持。
+- サムネイル黒背景が直ったか、残ったか。
+- Spaceドラッグ解除を直したか、後回しにしたか。
+- リサイズ時センタリングを直したか、後回しにしたか。
+
+---
+
+## 6. 確認
+
+必須：
+
+```powershell
+cd tegaki_work
+npm.cmd run build
+```
+
+可能ならブラウザで確認：
+
+1. 通常レイヤーの透明部分が黒くならない。
+2. サムネイルの余白が灰色ベタに見えない。
+3. 背景レイヤーのサムネイル色が実背景色と一致する。
+4. Space + ドラッグ中にSpaceを離すと移動が止まる。
+5. キャンバスリサイズ後、キャンバス中心が画面中央付近に戻る。
+6. 液タブペン描画、通常ペン、消しゴムが悪化していない。

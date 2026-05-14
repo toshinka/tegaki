@@ -87,8 +87,7 @@ export const ThumbnailSystem = {
         }
 
         const layerId = layer.layerData?.id || layer.label;
-        console.log(`[ThumbnailSystem] Generating for layer: ${layerId}, index: ${layerIndex}`);
-
+        
         try {
             const canvasWidth = window.TEGAKI_CONFIG?.canvas?.width || 400;
             const canvasHeight = window.TEGAKI_CONFIG?.canvas?.height || 400;
@@ -98,14 +97,24 @@ export const ThumbnailSystem = {
                 height: canvasHeight
             });
 
+            // [指示書] 背景レイヤーの場合は、RenderTexture を背景色で塗りつぶしてからレンダリング
+            let clearColor = 0x000000;
+            let clearAlpha = 0;
+            
+            if (layer.layerData?.isBackground) {
+                clearColor = layer.layerData.backgroundColor || 0xf0e0d6;
+                clearAlpha = 1;
+            }
+
             this.app.renderer.render({
                 container: layer,
                 target: renderTexture,
-                clear: true
+                clear: true,
+                clearColor: clearColor,
+                clearAlpha: clearAlpha
             });
 
             const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
-            console.log(`[ThumbnailSystem] Extracted canvas size: ${sourceCanvas.width}x${sourceCanvas.height}`);
             
             // アスペクト比を維持したサイズ計算
             const aspectRatio = canvasWidth / canvasHeight;
@@ -123,6 +132,7 @@ export const ThumbnailSystem = {
             const ctx = thumbCanvas.getContext('2d');
 
             if (ctx) {
+                // 背景が透明な場合はチェッカーを描く（任意だが指示書ではCSS側で対応したので、ここは透明のまま）
                 ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, thumbW, thumbH);
             }
 

@@ -91,14 +91,54 @@ export class StrokeRenderer {
     }
 
     /**
+     * [指示書] 消しゴムのリアルタイム反映用：短いセグメント用の実描画Graphicsを生成
+     */
+    renderEraserSegment(points, settings) {
+        return this._renderEraserStroke(
+            { points, isSingleDot: points.length === 1 },
+            { ...settings, mode: 'eraser' }
+        );
+    }
+
+    /**
+     * [指示書] ペンのリアルタイム反映用：短いセグメント用の実描画Graphicsを生成
+     * Graphics.moveTo/lineTo + stroke を使用する。
+     */
+    renderPenSegment(points, settings) {
+        if (!points || points.length < 2) return null;
+        
+        const graphics = new Graphics();
+        graphics.blendMode = 'normal';
+        
+        const color = settings.color;
+        const alpha = settings.opacity || 1.0;
+        const width = settings.size;
+        
+        graphics.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            graphics.lineTo(points[i].x, points[i].y);
+        }
+        
+        graphics.stroke({ 
+            width: width, 
+            color: color, 
+            alpha: alpha, 
+            cap: 'round', 
+            join: 'round' 
+        });
+        
+        return graphics;
+    }
+
+    /**
      * Perfect-Freehand のオプションを統一
      */
     _getFreehandOptions(size) {
         return {
             size: size,
             thinning: 0.7,
-            smoothing: 0.4,
-            streamline: 0.3,
+            smoothing: 0.08, // [指示書] デフォルト補正を弱める (0.4 -> 0.08)
+            streamline: 0.0, // [指示書] デフォルト補正を弱める (0.3 -> 0.0)
             simulatePressure: false,
             last: true
         };
@@ -125,6 +165,37 @@ export class StrokeRenderer {
             }
         }
         return result;
+    }
+
+    /**
+     * [指示書] 高速ストローク対策：異常な輪郭を検知する
+     */
+    _isOutlineSuspicious(outlinePoints, sourcePoints, size) {
+        if (!outlinePoints || outlinePoints.length < 3) return false;
+        
+        const getBounds = (pts) => {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of pts) {
+                const px = p.x ?? p[0];
+                const py = p.y ?? p[1];
+                minX = Math.min(minX, px);
+                minY = Math.min(minY, py);
+                maxX = Math.max(maxX, px);
+                maxY = Math.max(maxY, py);
+            }
+            return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        };
+
+        const sourceBounds = getBounds(sourcePoints);
+        const outlineBounds = getBounds(outlinePoints);
+        const pad = Math.max(size * 3, 12);
+
+        return (
+            outlineBounds.x < sourceBounds.x - pad ||
+            outlineBounds.y < sourceBounds.y - pad ||
+            outlineBounds.x + outlineBounds.width > sourceBounds.x + sourceBounds.width + pad ||
+            outlineBounds.y + outlineBounds.height > sourceBounds.y + sourceBounds.height + pad
+        );
     }
 
     renderPreview(points, providedSettings = null, targetGraphics = null) {
@@ -162,8 +233,18 @@ export class StrokeRenderer {
         const outlinePoints = getStroke(inputPoints, options);
         if (outlinePoints.length < 2) return graphics;
 
-        graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
-        graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+        // [指示書] 異常輪郭検知
+        if (this._isOutlineSuspicious(outlinePoints, filteredPoints, settings.size)) {
+            // 安全なフォールバック描画
+            graphics.moveTo(filteredPoints[0].x, filteredPoints[0].y);
+            for (let i = 1; i < filteredPoints.length; i++) {
+                graphics.lineTo(filteredPoints[i].x, filteredPoints[i].y);
+            }
+            graphics.stroke({ width: settings.size, color: settings.color, alpha: settings.opacity || 1.0, cap: 'round', join: 'round' });
+        } else {
+            graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
+            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+        }
 
         return graphics;
     }
@@ -201,7 +282,16 @@ export class StrokeRenderer {
 
         const inputPoints = filteredPoints.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
         const outlinePoints = getStroke(inputPoints, options);
-        if (!outlinePoints || outlinePoints.length < 2) return null;
+        
+        if (!outlinePoints || outlinePoints.length < 2 || this._isOutlineSuspicious(outlinePoints, filteredPoints, settings.size)) {
+            // 安全なフォールバック
+            graphics.moveTo(filteredPoints[0].x, filteredPoints[0].y);
+            for (let i = 1; i < filteredPoints.length; i++) {
+                graphics.lineTo(filteredPoints[i].x, filteredPoints[i].y);
+            }
+            graphics.stroke({ width: settings.size, color: 0xFFFFFF, alpha: 1.0, cap: 'round', join: 'round' });
+            return graphics;
+        }
 
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
         graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
@@ -236,14 +326,22 @@ export class StrokeRenderer {
         const options = this._getFreehandOptions(settings.size);
 
         const outlinePoints = getStroke(inputPoints, options);
-        if (!outlinePoints || outlinePoints.length < 2) return null;
-
-        graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
         
-        if (mode === 'eraser') {
-            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+        if (!outlinePoints || outlinePoints.length < 2 || this._isOutlineSuspicious(outlinePoints, filteredPoints, settings.size)) {
+            // 安全なフォールバック
+            graphics.moveTo(filteredPoints[0].x, filteredPoints[0].y);
+            for (let i = 1; i < filteredPoints.length; i++) {
+                graphics.lineTo(filteredPoints[i].x, filteredPoints[i].y);
+            }
+            graphics.stroke({ width: settings.size, color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: mode === 'eraser' ? 1.0 : settings.opacity || 1.0, cap: 'round', join: 'round' });
         } else {
-            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+            graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
+            
+            if (mode === 'eraser') {
+                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            } else {
+                graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+            }
         }
 
         return graphics;

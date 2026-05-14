@@ -1,8 +1,8 @@
  [vite] connecting...
  [vite] connected.
- ✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded
-    📌 window.WebGLContext (主要)
-    📌 window.WebGL2DrawingLayer (互換)
+webgl2-drawing-layer.js:311 ✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded
+webgl2-drawing-layer.js:312    📌 window.WebGLContext (主要)
+webgl2-drawing-layer.js:313    📌 window.WebGL2DrawingLayer (互換)
 gl-stroke-processor.js:420 ✅ gl-stroke-processor.js (ESM版) loaded
 gl-stroke-processor.js:421    🔧 カメラフレーム外への描画を完全防止
 gl-stroke-processor.js:422    🔧 ポイント座標検証追加
@@ -17,7 +17,6 @@ gl-mask-layer.js:461 ✅ gl-mask-layer.js Phase 6完全版 loaded
 gl-mask-layer.js:462    ✅ Circle mask rendering実装
 gl-mask-layer.js:463    ✅ Additive blend対応
 core-initializer.js:28 🚀 Tegaki Initializing...
-injection-topics.js:1 Browsing Topics API not found, nothing to remove on http://localhost:5173/, main frame
 popup-manager.js:26 ✅ PopupManager initialized
 core-engine.js:95 [CoreEngine] Initializing sub-systems...
 webgl2-drawing-layer.js:77 [WebGL2DrawingLayer] ✅ Initialized Object
@@ -37,14 +36,11 @@ popup-manager.js:97 ✅ Popup "album" initialized successfully
 popup-manager.js:128 📊 Popup initialization: 5 ready, 0 deferred
 core-engine.js:248 [CoreEngine] All sub-systems initialized.
 core-initializer.js:56 ✅ Tegaki Initialized Successfully
+ Browsing Topics API not found, nothing to remove on http://localhost:5173/, main frame
+popup-manager.js:202 👁️ Popup "quickAccess" shown
 pointer-handler.js:61 [PointerHandler] raw pointerdown Object
 pointer-handler.js:61 [PointerHandler] raw pointerdown Object
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778776616182, index: 1
-thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778776616182, index: 1
-thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
 pointer-handler.js:61 [PointerHandler] raw pointerdown Object
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778776782486_j52xt9iat, index: 2
-thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778776782486_j52xt9iat, index: 2
-thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
+pointer-handler.js:61 [PointerHandler] raw pointerdown Object
+pointer-handler.js:61 [PointerHandler] raw pointerdown Object
+pointer-handler.js:61 [PointerHandler] raw pointerdown Object
