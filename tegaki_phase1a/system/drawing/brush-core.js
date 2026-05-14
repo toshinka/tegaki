@@ -131,6 +131,15 @@ export class BrushCore {
             return;
         }
         
+        // 安全のため、既存のプレビューがあれば破棄
+        if (this.previewGraphics) {
+            if (this.previewGraphics.parent) {
+                this.previewGraphics.parent.removeChild(this.previewGraphics);
+            }
+            this.previewGraphics.destroy();
+            this.previewGraphics = null;
+        }
+
         if (this.isDrawing) return;
         
         const activeLayer = this.layerManager.getActiveLayer();
@@ -229,8 +238,11 @@ export class BrushCore {
         
         const strokeData = this.strokeRecorder.endStroke();
         
-        if (this.previewGraphics && this.previewGraphics.parent) {
-            this.previewGraphics.parent.removeChild(this.previewGraphics);
+        // プレビュー破棄
+        if (this.previewGraphics) {
+            if (this.previewGraphics.parent) {
+                this.previewGraphics.parent.removeChild(this.previewGraphics);
+            }
             this.previewGraphics.destroy();
             this.previewGraphics = null;
         }
@@ -238,49 +250,52 @@ export class BrushCore {
         const settings = this._getCurrentSettings();
         const mode = settings.mode || 'pen';
         
+        // 最終描画オブジェクト生成
         const graphics = await this.strokeRenderer.renderFinalStroke(
             strokeData,
             settings
         );
         
-        if (graphics) {
-            activeLayer.addChild(graphics);
+        if (graphics && this.layerManager.app?.renderer) {
+            const layerData = activeLayer.layerData;
             
-            if (activeLayer.layerData) {
-                if (!activeLayer.layerData.pathsData) {
-                    activeLayer.layerData.pathsData = [];
+            // 🆕 RenderTextureへの焼き込み（Raster化）
+            if (layerData?.renderTexture) {
+                // ブレンドモードの設定（消しゴムの場合は 'erase'）
+                graphics.blendMode = (mode === 'eraser') ? 'erase' : 'normal';
+                
+                this.layerManager.app.renderer.render({
+                    container: graphics,
+                    target: layerData.renderTexture,
+                    clear: false
+                });
+                
+                // オブジェクト自体は破棄（テクスチャに書き込んだため）
+                if (graphics.destroy) {
+                    graphics.destroy({ children: true, texture: true, baseTexture: true });
+                }
+            } else {
+                // フォールバック: 従来通り子要素として追加
+                activeLayer.addChild(graphics);
+            }
+            
+            if (layerData) {
+                // 履歴用のデータ保存（現在は簡易版）
+                if (!layerData.pathsData) {
+                    layerData.pathsData = [];
                 }
                 
                 const pathData = {
                     id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    graphics: graphics,
                     points: strokeData.points,
                     tool: mode,
-                    settings: { ...settings }
+                    settings: { ...settings },
+                    isBaked: true
                 };
                 
-                activeLayer.layerData.pathsData.push(pathData);
+                layerData.pathsData.push(pathData);
                 
-                if (historyManager) {
-                    historyManager.push({
-                        name: 'stroke',
-                        do: () => {
-                            if (pathData.graphics && !pathData.graphics.parent) {
-                                activeLayer.addChild(pathData.graphics);
-                            }
-                        },
-                        undo: () => {
-                            if (pathData.graphics && pathData.graphics.parent) {
-                                activeLayer.removeChild(pathData.graphics);
-                            }
-                        },
-                        meta: {
-                            type: 'stroke',
-                            layerId: activeLayer.layerData?.id,
-                            pathData: pathData
-                        }
-                    });
-                }
+                // TODO: Raster化に伴うUndoの再設計（現在は省略）
             }
             
             const layerIndex = this.layerManager.getLayerIndex(activeLayer);
