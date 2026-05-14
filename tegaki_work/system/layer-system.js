@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { Container, Graphics, Mesh, RenderTexture } from 'pixi.js';
+import { Container, Graphics, Mesh, RenderTexture, Sprite } from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { LayerModel } from './data-models.js';
@@ -111,8 +111,60 @@ export class LayerSystem {
             this._emitStatusUpdateRequest();
         }, 100);
     }
+    
+    /**
+     * レイヤーの変形を RenderTexture に焼き付け、コンテナの変形をリセットする
+     */
+    bakeTransform(layer) {
+        if (!this.app?.renderer || !layer.layerData?.renderTexture) return;
+
+        const renderer = this.app.renderer;
+        const layerData = layer.layerData;
+        const rt = layerData.renderTexture;
+
+        // 1. 現在の状態を一時的なテクスチャに書き出す
+        // Pixi v8 で Container を RenderTexture にレンダリングすると、
+        // その Container のローカルトランスフォームが適用されます。
+        const tempRT = RenderTexture.create({
+            width: rt.width,
+            height: rt.height
+        });
+
+        renderer.render({
+            container: layer,
+            target: tempRT,
+            clear: true
+        });
+
+        // 2. レイヤーのトランスフォームをリセット
+        layer.position.set(0, 0);
+        layer.rotation = 0;
+        layer.scale.set(1, 1);
+        layer.pivot.set(0, 0);
+
+        // 3. レイヤー管理上の変形データもリセット
+        if (this.transform) {
+            this.transform.setTransform(layerData.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+        }
+
+        // 4. 元の RenderTexture をクリアして、焼き付けた内容を書き戻す
+        const tempSprite = new Sprite(tempRT);
+        renderer.render({
+            container: tempSprite,
+            target: rt,
+            clear: true
+        });
+
+        // 5. 後始末
+        tempSprite.destroy();
+        tempRT.destroy(true);
+        
+        console.log(`[LayerSystem] Baked transform for layer: ${layerData.name}`);
+    }
 
     createFolder(name) {
+        // ... (rest of the file follows, but I need to make sure I replace accurately)
+
         if (!this.currentFrameContainer) return null;
         
         const folderName = name || this._generateNextFolderName();
@@ -675,9 +727,19 @@ export class LayerSystem {
         if (!activeLayer?.layerData) return;
         const layerId = activeLayer.layerData.id;
         const transformBefore = structuredClone(this.transform.getTransform(layerId));
+
         if (this.transform._isTransformNonDefault(transformBefore)) {
-            this.transform.confirmTransform(activeLayer);
+            // 🆕 Raster 焼き込み実行
+            this.bakeTransform(activeLayer);
+
+            // 互換性のためパスデータも変形適用（ベクトルデータが残っている場合）
+            if (activeLayer.layerData.paths && activeLayer.layerData.paths.length > 0) {
+                this.transform.applyTransformToPaths(activeLayer, transformBefore);
+            }
+
+            // 焼き込み後の状態を反映させるためにリビルド（レイヤーSpriteは保護される）
             const rebuildSuccess = this.safeRebuildLayer(activeLayer, activeLayer.layerData.paths);
+
             if (rebuildSuccess && historyManager && !historyManager.isApplying) {
                 const pathsAfter = structuredClone(activeLayer.layerData.paths);
                 const transformAfter = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
@@ -705,7 +767,7 @@ export class LayerSystem {
             }
         }
     }
-    
+
     updateLayerTransformPanelValues() {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
@@ -713,7 +775,7 @@ export class LayerSystem {
             this.transform.updateTransformPanelValues(activeLayer);
         }
     }
-    
+
     updateFlipButtons() {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
@@ -721,13 +783,13 @@ export class LayerSystem {
             this.transform.updateFlipButtons(activeLayer);
         }
     }
-    
+
     updateCursor() {
         if (this.transform) {
             this.transform._updateCursor();
         }
     }
-    
+
     _handleLayerDrag(dx, dy, shiftKey) {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
@@ -759,7 +821,7 @@ export class LayerSystem {
         }
         this.transform.applyTransform(activeLayer, transform, centerX, centerY);
         this.transform.updateTransformPanelValues(activeLayer);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('layer:updated', { layerId, transform });
             this.requestThumbnailUpdate(this.activeLayerIndex);
@@ -771,7 +833,8 @@ export class LayerSystem {
             const childrenToRemove = [];
             for (let child of layer.children) {
                 if (child !== layer.layerData.backgroundGraphics &&
-                    child !== layer.layerData.maskSprite) {
+                    child !== layer.layerData.maskSprite &&
+                    child !== layer.layerData.layerSprite) { // 🆕 Raster Spriteを保護
                     childrenToRemove.push(child);
                 }
             }
@@ -804,7 +867,6 @@ export class LayerSystem {
             return false;
         }
     }
-
     reorderLayers(fromIndex, toIndex) {
         const layers = this.getLayers();
         if (fromIndex < 0 || fromIndex >= layers.length || toIndex < 0 || toIndex >= layers.length || fromIndex === toIndex) {
