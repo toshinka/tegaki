@@ -47,10 +47,27 @@
 - **サムネイルに未解決問題あり**: 透明レイヤーが灰色ベタに見える、背景色が実キャンバスと違う、階層移動後にアスペクト比が変わる。画像資料の最新SSを参照。
 - **Vキー変形モードの低優先度バグ**: 拡大後に縮小すると、一度キャンバス外へ出た描画が消える。`bakeTransform()` が固定サイズ RenderTexture に焼き込むため、キャンバス外ピクセルがクリップされる可能性が高い。
 
+### 2026-05-15 Phase 1c 仕上げ（Claude版指示書に基づく修正）
+- **サムネイル黒背景の根本修正**: `thumbnail-system.js` を修正。PixiJS v8 の `renderer.render()` における `clear` パラメータの仕様（RGBA配列 `[r, g, b, a]`）に合わせ、透明レイヤーは `[0,0,0,0]`、背景レイヤーは背景色でクリアするように変更しました。
+- **リサイズ時の背景黒化修正**: `layer-system.js` を修正。
+    - `resizeLayerTextures()` において背景レイヤーをリサイズ対象から除外（`backgroundGraphics` で別途管理されているため）。
+    - `_resizeSingleLayerTexture()` の `renderer.render()` で `clear: [0,0,0,0]` を指定し、新テクスチャへのコピー時に黒く塗りつぶされないよう修正。
+- **液タブペン入力の徹底調査**:
+    - `core-engine.js` に `[DOCUMENT CAPTURE]` ログを追加し、DOM以前でのイベント消失を切り分け可能にしました。
+    - `styles/main.css` と `core-engine.js` の両方で、キャンバスおよびその親要素に対して `touch-action: none` を強制設定し、ブラウザによるスタイラスキャプチャを防止しました。
+- **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
+
+#### ステータス報告
+1. **変更ファイル**: `system/drawing/thumbnail-system.js`, `system/layer-system.js`, `core-engine.js`, `styles/main.css`
+2. **サムネイル sample pixel**: 修正後の実機ログで `rgba[3]` が `0` (透明レイヤー) または `255` (背景レイヤー) になっていることを確認してください。
+3. **リサイズ後の背景色**: 背景色 (#f0e0d6) が維持され、拡大領域が黒くならないよう修正済み。
+4. **[DOCUMENT CAPTURE] ログ**: 液タブペンで触れた際、ターゲット要素（canvas等）と `pointerType: "pen"` が記録されるか確認してください。
+5. **残った問題**: 液タブペンが依然として無反応な場合、ブラウザ/OS設定（Wacomプロパティ等）の可能性があります。ログが出ているが描画されない場合は、PixiJS EventSystem との競合を再調査します。
+
 ### 2026-05-15 Phase 1c リサイズ描画領域・診断強化
 - **リサイズ後の描画領域拡張**: `LayerSystem.js` に `resizeLayerTextures` と `_resizeSingleLayerTexture` を実装。キャンバスリサイズ時に既存レイヤーの `RenderTexture` も新サイズへ拡張・内容コピーするように修正しました。これにより、400x400 を超えて拡大した際も全域に描画・消去が可能になりました。
 - **サムネイル黒背景の根本解決**: `thumbnail-system.js` を修正。生成用テクスチャを `clearAlpha: 0` でクリアし、出力 Canvas も `clearRect` で明示的に初期化することで、透明なレイヤーが黒く塗りつぶされる問題を解消しました。
-- **液タブ入力の精密調査ログ**: `pointer-handler.js` と `drawing-engine.js` に、生イベントと内部ゲートの状態を `JSON.stringify` して出力するログを追加。これにより、液タブペンがどこでブロックされているかを正確に追跡可能にしました。
+- **液タブ入力の精密調査ログ**: `pointer-handler.js` と `drawing-engine.js` に、生イベントと内部ゲートの状態を `JSON.stringify`して出力するログを追加。これにより、液タブペンがどこでブロックされているかを正確に追跡可能にしました。
 - **SpaceドラッグUXの更なる安定化**: `camera-system.js` を修正。Spaceキーを離した際の中断処理を強化し、意図しない移動の継続を防止しました。また、リサイズ後のキャンバス位置を画面中央へ自動補正する処理を確実化しました。
 
 ### 2026-05-15 Phase 1c 仕上げ軽微修正

@@ -105,6 +105,13 @@ export class CoreEngine {
             if (drawingCanvasContainer) {
                 drawingCanvasContainer.appendChild(this.app.canvas);
                 
+                // [指示書] PixiJS が canvas スタイルを上書きする場合に備えて明示設定
+                if (this.app.canvas) {
+                    this.app.canvas.style.touchAction = 'none';
+                    this.app.canvas.style.msTouchAction = 'none';
+                    this.app.canvas.style.pointerEvents = 'auto';
+                }
+
                 // WebGL2キャンバスを同じ場所に配置（重なるように）
                 const glCanvas = document.getElementById('webgl2-canvas');
                 if (glCanvas) {
@@ -252,6 +259,20 @@ export class CoreEngine {
                 timestamp: Date.now()
             });
         }
+
+        // [一時診断] ペン入力のドキュメントレベル到達確認
+        // 確認完了後は削除すること
+        document.addEventListener('pointerdown', (e) => {
+            console.log('[DOCUMENT CAPTURE] pointerdown', JSON.stringify({
+                pointerType: e.pointerType,
+                button: e.button,
+                buttons: e.buttons,
+                pressure: e.pressure,
+                target: e.target?.tagName,
+                targetId: e.target?.id,
+                targetClass: String(e.target?.className || '').substring(0, 40)
+            }));
+        }, { capture: true });  // capture: true で最優先で受け取る
     }
 
     getApp() {

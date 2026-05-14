@@ -89,6 +89,8 @@ body {
     display: flex; 
     justify-content: center; 
     align-items: center; 
+    touch-action: none;          /* 追加: スタイラス入力をブラウザがキャプチャしないよう */
+    -ms-touch-action: none;      /* 追加 */
 }
 
 #drawing-canvas,

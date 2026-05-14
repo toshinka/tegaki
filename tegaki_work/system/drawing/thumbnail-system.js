@@ -97,21 +97,21 @@ export const ThumbnailSystem = {
                 height: canvasHeight
             });
 
-            // [指示書] 背景レイヤーの場合は背景色、通常レイヤーは完全透明でクリア
-            let clearColor = 0x000000;
-            let clearAlpha = 0;
-            
-            if (layer.layerData?.isBackground) {
-                clearColor = layer.layerData.backgroundColor || 0xf0e0d6;
-                clearAlpha = 1;
-            }
+            // [指示書] 背景レイヤーは背景色でクリア、通常レイヤーは透明でクリア
+            const clearValue = layer.layerData?.isBackground
+                ? (() => {
+                    const c = layer.layerData.backgroundColor || 0xf0e0d6;
+                    const r = ((c >> 16) & 0xff) / 255;
+                    const g = ((c >> 8)  & 0xff) / 255;
+                    const b = ( c        & 0xff) / 255;
+                    return [r, g, b, 1.0];
+                })()
+                : [0, 0, 0, 0];  // 透明でクリア
 
             this.app.renderer.render({
                 container: layer,
                 target: renderTexture,
-                clear: true,
-                clearColor: clearColor,
-                clearAlpha: clearAlpha
+                clear: clearValue   // PixiJS v8 の正式形式: RGBA配列 [0〜1]
             });
 
             const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);

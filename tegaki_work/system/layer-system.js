@@ -418,7 +418,8 @@ export class LayerSystem {
         console.log('[LayerSystem] Starting resizeLayerTextures', { newWidth, newHeight, offsetX, offsetY });
 
         for (const layer of this.getLayers()) {
-            if (!layer.layerData || layer.layerData.isFolder) continue;
+            // [指示書] 背景レイヤーとフォルダはスキップ（背景は別途 backgroundGraphics で処理済み）
+            if (!layer.layerData || layer.layerData.isFolder || layer.layerData.isBackground) continue;
             this._resizeSingleLayerTexture(layer, newWidth, newHeight, offsetX, offsetY);
         }
     }
@@ -455,9 +456,7 @@ export class LayerSystem {
         this.app.renderer.render({
             container: tempSprite,
             target: newRT,
-            clear: true,
-            clearColor: 0x000000,
-            clearAlpha: 0
+            clear: [0, 0, 0, 0]   // PixiJS v8 形式: 透明でクリアしてから旧内容を描画
         });
 
         // 3. データの差し替え
