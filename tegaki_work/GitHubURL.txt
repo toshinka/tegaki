@@ -111,17 +111,16 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/li
 
 "D:\GitHub\tegaki\PastFiles\tegaki_phase1b1\PROGRESS.md"
 
-## Claude確認用別添資料
+## Claudeのファイル確認用資料URL
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CLAUDE_HANDOFF.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/TegakiConsole.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CODEX.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1a.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1b.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1c.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CODEX.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
-
 
 

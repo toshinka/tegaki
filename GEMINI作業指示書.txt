@@ -1,233 +1,288 @@
-# GEMINI作業指示書：Phase 1c 仕上げ軽微修正 2026-05-15
+# GEMINI作業指示書：Phase 1c リサイズ描画領域・液タブ・サムネイル再修正 2026-05-15
 
 対象フォルダ：`tegaki_work/`
 
-目的：オーナー実機確認で良好化した部分を維持しつつ、残ったサムネイル表示と軽微なカメラ操作UXを直す。
+目的：実機確認で残っている「液タブペン描画不可」「レイヤーサムネイル黒背景」「リサイズ後に見た目だけ広がり400x400範囲にしか描けない」問題を、報告ではなく実際の原因に基づいて直す。
 
 今回の前提：
 
-- 液タブペン描画は改善済みとして扱う。再発させない。
-- 通常ペンのライブラスター描画は良好。ペン描画経路は原則として触らない。
-- 消しゴムのリアルタイム透明消去も良好。触らない。
-- 今回の主対象は「サムネイルの黒背景/灰色枠」「Spaceドラッグ解除」「リサイズ時のキャンバス位置」。
+- Space同時押し中だけキャンバス移動する挙動は実装済みで良好。
+- リサイズ後のセンタリングは実装済みで良好。
+- 通常ペンのライブラスター筆感は良好。描画方式は大きく戻さない。
+- ただしリサイズ後の描画先が旧RenderTextureサイズに残っている疑いが強いので、レイヤーRenderTextureのリサイズ処理は必須。
 
 作業前に必ず読む：
 
 1. `TEGAKI.md`
 2. `tegaki_work/PROGRESS.md`
 3. この `GEMINI作業指示書.txt`
-4. 画像資料フォルダの最新SS
-5. `tegaki_work/TegakiConsole.txt`
+4. `tegaki_work/TegakiConsole.txt`
+5. 画像資料フォルダの最新SS
 
 禁止：
 
 - `PastFiles/` は参照のみ。編集しない。
 - `dist/` を成果物として更新しない。確認は `npm.cmd run build` で行う。
-- ペン/消しゴムの描画方式を大きく戻さない。
-- Perfect Freehand 経路を通常ペンの主経路へ戻さない。
+- ペンのライブラスター描画を Perfect Freehand / Graphics.poly 主経路へ戻さない。
 - `import { BlendMode } from 'pixi.js'` は復活させない。
+- リサイズ問題を「描画判定だけ広げる」修正で済ませない。描画先RenderTextureも必ず確認する。
 
 ---
 
-## 0. 現状確認
+## 0. 現状整理
 
-最新SS：
+オーナー実機確認：
 
-- `画像資料/キャンバスの400サイズ部分は黒く全体的にはスペクト比違いレイヤー背景色はOK.png`
+- リサイズセンタリングは良好。
+- Space同時押し中のみキャンバス移動も良好。
+- 液タブペン描画不可は未解決。
+- レイヤーサムネイル黒背景は未解決。
+- 新発見：キャンバスをリサイズすると見た目のキャンバスは広がるが、左上 `0,0` から旧 `400x400` 範囲にしか描画できない。
 
-確認できること：
+この新発見は重要。現在のリサイズ処理は `config.canvas.width/height`、赤枠、マスク、背景Graphics、checkerを更新しているが、既存レイヤーの `layerData.renderTexture` を新サイズに作り直していない可能性が高い。
 
-- 背景レイヤーの色はかなり正しくなっている。
-- 通常レイヤーのサムネイルで、本来透明なキャンバス領域が黒く出ている。
-- 黒い部分の左右に、サムネイル外枠または余白と思われる淡い灰色/薄色帯が見えている。
-- リサイズしたキャンバス比に合わせて黒領域の形が変わっている。
-
-`TegakiConsole.txt`：
-
-- 現時点で致命的なエラーは見当たらない。
-- `pointer-handler.js` の raw pointerdown ログは残っている。不要なら debug 制御に寄せるが、今回は優先度低。
+ライブラスター描画は `brush-core.js` で `activeLayer.layerData.renderTexture` に直接焼き込む。したがって、そのRenderTextureが400x400のままなら、見た目だけ広がっても400外には描けない。
 
 ---
 
-## 1. サムネイルの黒背景を透明にする
+## 1. リサイズ後の描画領域400固定を最優先で直す
+
+対象：
+
+- `tegaki_work/system/layer-system.js`
+- `tegaki_work/system/data-models.js`
+- 必要なら `tegaki_work/system/camera-system.js`
+- 必要なら animation frame renderTexture 管理部分
+
+疑いが強い箇所：
+
+- `LayerModel.initializeTexture(width, height)` は新規レイヤー作成時だけ呼ばれる。
+- `LayerSystem._setupResizeEvents()` は checker と背景Graphicsを更新しているが、既存レイヤーの `renderTexture` / `layerSprite` を新サイズへ更新していない。
+- `brush-core.js` は `activeLayer.layerData.renderTexture` へ直接描くため、旧サイズ外の描画が保存されない。
+
+必須調査ログ：
+
+リサイズ前後に各レイヤーで以下を確認する。
+
+```js
+console.log('[LayerSystem] resize layer texture', {
+    layer: layer.layerData?.name,
+    oldCanvas: `${data.oldWidth}x${data.oldHeight}`,
+    newCanvas: `${data.width}x${data.height}`,
+    rt: layer.layerData?.renderTexture && {
+        width: layer.layerData.renderTexture.width,
+        height: layer.layerData.renderTexture.height
+    },
+    spriteTexture: layer.layerData?.layerSprite?.texture && {
+        width: layer.layerData.layerSprite.texture.width,
+        height: layer.layerData.layerSprite.texture.height
+    }
+});
+```
+
+ログは原因確定後、debug制御に寄せるか削除する。
+
+修正方針：
+
+1. `camera:resized` を受けた時に、全既存レイヤーの RenderTexture を新キャンバスサイズへ作り直す。
+2. 旧RenderTextureの内容を新RenderTextureへコピーする。
+3. コピー位置はリサイズUIの `alignOptions` に合わせる。中央基準なら `offsetX = (newWidth - oldWidth) / 2`、`offsetY = (newHeight - oldHeight) / 2`。
+4. `layer.layerData.renderTexture` を新RenderTextureへ差し替える。
+5. `layer.layerData.layerSprite.texture` も新RenderTextureへ差し替える。Sprite自体を作り直す場合は child order を壊さない。
+6. 非背景レイヤーの maskTexture / maskSprite があるなら同じサイズへ更新する。
+7. 背景レイヤーは backgroundGraphics だけでなく、必要なら background layer の renderTexture / layerSprite も新サイズへ更新する。
+8. `frameRenderTextures` やアニメーションフレーム用RenderTextureがある場合も、後で破綻しないよう更新方針を確認する。今回すぐ難しければ `PROGRESS.md` に残す。
+
+実装候補：
+
+`LayerSystem` に次のような専用メソッドを追加する。
+
+```js
+resizeLayerTextures(newWidth, newHeight, oldWidth, oldHeight, alignOptions) {
+    const offsetX = this._getResizeOffsetX(newWidth, oldWidth, alignOptions?.horizontal);
+    const offsetY = this._getResizeOffsetY(newHeight, oldHeight, alignOptions?.vertical);
+
+    for (const layer of this.getLayers()) {
+        if (!layer.layerData || layer.layerData.isFolder) continue;
+        this._resizeSingleLayerTexture(layer, newWidth, newHeight, offsetX, offsetY);
+    }
+}
+```
+
+`_resizeSingleLayerTexture` の考え方：
+
+```js
+const oldRT = layerData.renderTexture;
+const oldSprite = layerData.layerSprite;
+const newRT = RenderTexture.create({ width: newWidth, height: newHeight, antialias: true });
+
+const tempSprite = new Sprite(oldRT);
+tempSprite.position.set(offsetX, offsetY);
+
+renderer.render({
+    container: tempSprite,
+    target: newRT,
+    clear: true,
+    clearColor: 0x000000,
+    clearAlpha: 0
+});
+
+layerData.renderTexture = newRT;
+if (oldSprite) {
+    oldSprite.texture = newRT;
+} else {
+    layerData.layerSprite = new Sprite(newRT);
+    layer.addChildAt(layerData.layerSprite, 0);
+}
+
+oldRT.destroy(true);
+tempSprite.destroy({ texture: false, baseTexture: false });
+```
+
+注意：
+
+- `oldSprite.destroy()` で newRT まで壊さないようにする。
+- 背景GraphicsやmaskSpriteなど、既存child順を壊さない。
+- 旧内容を左上基準で維持するか中央基準で維持するかは resize popup の alignOptions と一致させる。
+- リサイズ後に `requestThumbnailUpdate()` を全レイヤーへ出す。
+
+受け入れ条件：
+
+- 400x400から横長/縦長へ拡大後、旧400範囲外にも描ける。
+- 旧400範囲内の既存描画が消えない。
+- 中央/左/右/上/下などのリサイズ基準がある場合、既存描画の位置が意図通り保持される。
+- 消しゴムも新しい範囲で透明消去できる。
+- サムネイルと書き出しが新サイズを反映する。
+
+---
+
+## 2. 液タブペン描画不可を再調査する
+
+対象：
+
+- `tegaki_work/system/drawing/pointer-handler.js`
+- `tegaki_work/system/drawing/drawing-engine.js`
+- `tegaki_work/system/camera-system.js`
+
+現状：
+
+`TegakiConsole.txt` には `[PointerHandler] raw pointerdown Object` しか残っておらず、肝心の `pointerType/button/buttons/pressure` の値がテキストに残っていない。さらに `[DrawingEngine] Pen Down` が見えない。
+
+可能性：
+
+- 液タブが `pointerType: 'pen'` ではなく `mouse` または空文字で来ている。
+- `button === 2` / `buttons === 2` 扱いで、PointerHandlerまたはCameraSystemで右クリック扱いになっている。
+- CameraSystemが先に `canvasMoveMode` を立て、DrawingEngineがブロックしている。
+- pointerdownは来ているが、DrawingEngine側のdown handlerへ到達していない。
+
+必須修正：
+
+raw pointerdownログを、折りたたまれない文字列ログに変更する。
+
+```js
+console.log('[PointerHandler] raw pointerdown', JSON.stringify({
+    pointerType: e.pointerType,
+    button: e.button,
+    buttons: e.buttons,
+    pressure: e.pressure,
+    pointerId: e.pointerId,
+    isPrimary: e.isPrimary,
+    target: e.target?.tagName,
+    id: e.target?.id,
+    className: String(e.target?.className || '')
+}));
+```
+
+DrawingEngine側も、ペン限定ではなく一時的に全pointerdownの入口ログを出す。
+
+```js
+console.log('[DrawingEngine] down gate', JSON.stringify({
+    pointerType: info.pointerType,
+    button: info.button,
+    buttons: info.buttons,
+    pressure: info.pressure,
+    canvasMove: this.cameraSystem?.isCanvasMoveMode?.(),
+    vKey: this.layerSystem?.vKeyPressed
+}));
+```
+
+修正方針：
+
+- 実測値を見るまで「penだけ通す」前提で閉じない。
+- 液タブが `mouse + button 2` として来るなら、単純な `pointerType !== 'pen'` 判定では直らない。
+- 右クリックキャンバス移動と液タブ接触を区別するため、`buttons`、`pressure`、`pointerId`、発生対象、必要なら最後のUI操作状態を使う。
+- 最低限、キャンバス上の通常描画ツール選択中に `button === 2` でも、液タブ実測パターンは描画へ通す。
+
+受け入れ条件：
+
+- 液タブペンでキャンバスに描ける。
+- マウス右クリックドラッグのキャンバス移動は壊れない。
+- `TegakiConsole.txt` に、液タブ時の pointerType/button/buttons/pressure が読める形で残る。
+- 調査用ログは最終的に debug制御または短期ログとして扱う。
+
+---
+
+## 3. サムネイル黒背景を「結果確認」まで行う
 
 対象：
 
 - `tegaki_work/system/drawing/thumbnail-system.js`
 - `tegaki_work/ui/layer-panel-renderer.js`
-- 必要なら `tegaki_work/system/checker-utils.js`
 
-問題：
+現状：
 
-通常レイヤーのサムネイルで、透明なはずのキャンバス領域が黒く出ている。これは CSS の外枠だけでなく、`ThumbnailSystem.generateLayerThumbnail()` が生成する PNG 自体に黒が焼き込まれている可能性がある。
-
-疑い：
-
-- `RenderTexture.create({ width, height })` 後に `renderer.render({ clear:true, clearColor:0x000000, clearAlpha:0 })` しているが、PixiJS v8 の実際の clear/extract 経路で透明が保持されず黒く抽出されている可能性。
-- `extract.canvas(renderTexture)` の結果が、透明ではなく黒背景の canvas になっている可能性。
-- CSS 側の checker 背景は、上に乗る `<img>` 自体が黒不透明なら見えない。
+GEMINI報告では解消とあるが、実機では未解決。したがって「clearAlpha: 0 と clearRect を入れたから解決」と判断しない。
 
 必須調査：
 
-1. `sourceCanvas` または `thumbCanvas` の代表ピクセルを `getImageData()` で確認する。
-2. 透明領域の alpha が `0` なのか、黒 `rgba(0,0,0,255)` なのかをログで確認する。
-3. alpha が 255 なら CSS では直らない。サムネイル生成側を修正する。
+1. サムネイル生成後の `thumbCanvas` の透明であるべき座標を `getImageData()` で読む。
+2. alpha が 0 か 255 かを文字列ログで出す。
+3. 生成された dataURL 画像自体が黒いのか、UI背景が黒いのかを切り分ける。
 
-修正方針：
-
-- 通常レイヤーは透明背景の thumbnail PNG を生成する。
-- 背景レイヤーだけは実背景色で塗る。
-- 通常レイヤーの余白/非描画部分は transparent のままにし、UI側の checker または透明背景が見えるようにする。
-
-実装候補：
-
-1. 通常レイヤーは、`layer` Container 全体を一時RenderTextureへ描くのではなく、`layer.layerData.renderTexture` または `layer.layerData.layerSprite.texture` から直接抽出できないか確認する。
-2. 直接抽出で alpha が保持されるなら、その経路を採用する。
-3. 直接抽出でも黒くなる場合は、`renderer.extract.pixels()` 等で alpha を検証し、透明ピクセルを保持する経路へ切り替える。
-4. `thumbCanvas` は必ず `ctx.clearRect(0, 0, thumbW, thumbH)` から始め、背景色で塗らない。
-
-注意：
-
-- 黒い線を描いたレイヤーが将来あり得るため、「黒を全部透明にする」雑な後処理は禁止。
-- 透明判定が必要な場合は alpha を基準にする。
-- 背景レイヤーの色は現状かなり良いので壊さない。
-
-受け入れ条件：
-
-- 空の通常レイヤーのサムネイルは黒くならない。
-- 通常レイヤーに赤線だけ描いた場合、透明部分は checker または透明背景として見え、線だけが表示される。
-- 背景レイヤーは実キャンバス背景色に見える。
-- キャンバスを非正方形にリサイズしても、透明部分が黒くならない。
-
----
-
-## 2. サムネイルの灰色/薄色枠を消す
-
-対象：
-
-- `tegaki_work/ui/layer-panel-renderer.js`
-
-問題：
-
-最新SSでは、黒いキャンバス領域の左右に淡い灰色/薄色帯が見えている。これはサムネイル画像の `object-fit: contain` で余った領域か、`.layer-thumbnail` の背景が見えている可能性が高い。
-
-方針：
-
-- 通常レイヤーの `.layer-thumbnail` 外枠背景は、灰色ベタではなく透明または checker にする。
-- 背景レイヤーだけは実背景色にする。
-- 枠線 `border: 1px solid #cf9c97` はUIとして必要なら維持してよいが、内部余白が灰色ベタに見える状態は避ける。
-
-確認箇所：
-
-- `createThumbnail()`
-- `_updateSingleThumbnail()` 後に `thumbnailContainer.innerHTML = ''` した際、背景設定が失われていないか。
-- `createFolderThumbnail()` は今回の主対象外だが、同じ灰色背景が見えるなら合わせて修正。
-
-受け入れ条件：
-
-- 通常レイヤーのサムネイル余白が灰色ベタに見えない。
-- リサイズ後の縦横比差による余白も透明/checkerとして見える。
-- 背景レイヤーの表示色は現状より悪化しない。
-
----
-
-## 3. Space + ドラッグ移動は同時押し中だけ有効にする
-
-対象：
-
-- `tegaki_work/system/camera-system.js`
-
-問題：
-
-Spaceを押しながらドラッグするとキャンバス移動になるが、ドラッグ中にSpaceを先に離すとキャンバス移動が残り、操作しにくい。
-
-方針：
-
-- Space起点のキャンバス移動は、Spaceが押されている間だけ継続する。
-- Spaceを離した瞬間に `isDragging` / `isScaleRotateDragging` / `canvasMoveMode` を false にする。
-- pointerup を待たずに移動モードが終わるようにする。
-
-現在の疑い：
-
-- `pointermove` 側が `this.isDragging` だけを見て移動しており、`this.spacePressed` が false になった後でも移動が継続する。
-- `keyup` が確実に拾えないケースがあると、drag状態が残る。
-
-修正候補：
-
-- Space起点のdragか右クリック起点のdragかを `this.dragStartMode = 'space' | 'rightButton' | null` のように記録する。
-- `pointermove` 冒頭で、`dragStartMode === 'space' && !this.spacePressed` なら即座にdrag終了処理を呼ぶ。
-- `keyup Space` でも同じ終了処理を呼ぶ。
-- keydownでSpaceを押しただけでは `canvasMoveMode = true` にしない。実際にSpace+pointerdownした時に true にする方が自然。
-
-受け入れ条件：
-
-- Space + ドラッグ中にSpaceを離すと、その瞬間にキャンバス移動が止まる。
-- Spaceを押していない通常ドラッグでは描画できる。
-- マウス右クリックドラッグのキャンバス移動が壊れない。
-- 液タブペン描画が再び `canvasMoveMode` にブロックされない。
-
----
-
-## 4. キャンバスリサイズ時のセンタリング
-
-対象：
-
-- `tegaki_work/system/camera-system.js`
-- 必要なら resize popup / resize event 周辺
-
-問題：
-
-キャンバスリサイズ後、キャンバスが画面外または意図しない位置へ飛ぶ。リサイズ後はキャンバス中心が画面中央付近に来るようにしたい。
-
-緊急度：
-
-- 低。軽微に直せるなら今回一緒に対応。
-- 大きく触る必要があるなら `PROGRESS.md` に残して後続。
-
-方針：
-
-- `resizeCanvas(newWidth, newHeight, ...)` 後に、キャンバス中心を画面中央へ合わせる。
-- 現在の `worldContainer.position.x += offsetX` / `position.y += offsetY` は、scale/rotation/flip を考慮しないため飛びやすい。
-- `screen.center - worldContainer.toGlobal({ x: canvasWidth/2, y: canvasHeight/2 })` の差分で `worldContainer.position` を補正する方が安全。
-
-実装候補：
+ログ例：
 
 ```js
-centerCanvasOnScreen() {
-    const screen = this.app.renderer?.screen || this.app.screen || { width: window.innerWidth, height: window.innerHeight };
-    const canvasCenter = this.worldContainer.toGlobal({
-        x: this.config.canvas.width / 2,
-        y: this.config.canvas.height / 2
-    });
-    this.worldContainer.x += screen.width / 2 - canvasCenter.x;
-    this.worldContainer.y += screen.height / 2 - canvasCenter.y;
-}
+const px = ctx.getImageData(1, 1, 1, 1).data;
+console.log('[ThumbnailSystem] sample pixel', JSON.stringify({
+    layer: layer.layerData?.name,
+    isBackground: !!layer.layerData?.isBackground,
+    rgba: Array.from(px),
+    thumbW,
+    thumbH
+}));
 ```
 
-`resizeCanvas()` の最後に呼ぶ。ただし、リサイズUIに「左/中央/右」「上/中央/下」の配置指定がある場合は、その設計と衝突しないよう確認する。
+打開策：
+
+- 通常レイヤーは `layer` Container全体ではなく、`layer.layerData.renderTexture` から直接抽出する経路を検討する。
+- `renderer.extract.canvas(renderTexture)` が透明を黒化するなら、`renderer.extract.pixels()` 等で alpha を保持できる経路を検討する。
+- 黒色を透明化する雑な処理は禁止。黒ペンで描いた線まで消える。
+- alpha が失われている場合だけ、alphaに基づく補正を行う。
 
 受け入れ条件：
 
-- リサイズ後、キャンバス中心が画面中央付近にある。
-- ズーム倍率が勝手に変わらない。
-- ガイド線、マスク、サムネイル更新が壊れない。
+- 空の通常レイヤーサムネイルは黒くならない。
+- 赤線のみの通常レイヤーは、線だけが表示され、未描画部分はchecker/透明として見える。
+- リサイズ後の非正方形キャンバスでも黒背景にならない。
+- 背景レイヤー色は現状より悪化しない。
 
 ---
 
-## 5. PROGRESS更新
+## 4. PROGRESS更新
 
 作業後に `tegaki_work/PROGRESS.md` を更新する。
 
 必ず記録：
 
-- 液タブペン/ライブラスター描画/消しゴムは良好維持。
-- サムネイル黒背景が直ったか、残ったか。
-- Spaceドラッグ解除を直したか、後回しにしたか。
-- リサイズ時センタリングを直したか、後回しにしたか。
+- リサイズ後の既存レイヤーRenderTexture更新を実装したか。
+- 旧400外へ描けるか。
+- 液タブペンの実測 pointerType/button/buttons/pressure。
+- サムネイル黒背景の alpha 調査結果。
+- 未解決なら「未解決」と明記する。報告だけで解消扱いにしない。
 
 ---
 
-## 6. 確認
+## 5. 確認
 
 必須：
 
@@ -236,11 +291,12 @@ cd tegaki_work
 npm.cmd run build
 ```
 
-可能ならブラウザで確認：
+ブラウザ実機確認：
 
-1. 通常レイヤーの透明部分が黒くならない。
-2. サムネイルの余白が灰色ベタに見えない。
-3. 背景レイヤーのサムネイル色が実背景色と一致する。
-4. Space + ドラッグ中にSpaceを離すと移動が止まる。
-5. キャンバスリサイズ後、キャンバス中心が画面中央付近に戻る。
-6. 液タブペン描画、通常ペン、消しゴムが悪化していない。
+1. 400x400から横長/縦長へ拡大し、旧400範囲外へペンで描ける。
+2. 旧400範囲外を消しゴムで消せる。
+3. リサイズ前の描画が消えない。
+4. 液タブペンで描ける。
+5. マウス右クリックドラッグ/Spaceドラッグのキャンバス移動が壊れていない。
+6. 通常レイヤーサムネイルが黒背景にならない。
+7. `TegakiConsole.txt` に原因判断に必要な値が文字列で残る。

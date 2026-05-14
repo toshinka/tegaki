@@ -303,7 +303,7 @@ export class LayerPanelRenderer {
         thumbnailContainer.style.alignItems = 'center';
         thumbnailContainer.style.justifyContent = 'center';
         thumbnailContainer.style.flexShrink = '0';
-        thumbnailContainer.style.backgroundColor = '#f5f5f5';
+        thumbnailContainer.style.backgroundColor = 'transparent'; // [指示書] フォルダも透明に
         
         return thumbnailContainer;
     }
@@ -758,6 +758,26 @@ export class LayerPanelRenderer {
         const maxWidth = 64;
         const maxHeight = 44;
 
+        // [指示書] 更新時も背景スタイルを維持するための処理
+        const applyBackgroundStyle = () => {
+            if (layer.layerData?.isBackground) {
+                const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
+                const r = (bgColor >> 16) & 0xFF;
+                const g = (bgColor >> 8) & 0xFF;
+                const b = bgColor & 0xFF;
+                thumbnailContainer.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+                thumbnailContainer.style.backgroundImage = 'none';
+            } else {
+                if (window.checkerUtils) {
+                    const checkerUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxWidth, maxHeight, 4);
+                    thumbnailContainer.style.backgroundImage = `url(${checkerUrl})`;
+                    thumbnailContainer.style.backgroundColor = 'transparent';
+                } else {
+                    thumbnailContainer.style.backgroundColor = '#f5f5f5';
+                }
+            }
+        };
+
         if (window.ThumbnailSystem) {
             try {
                 const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, maxWidth, maxHeight);
@@ -769,7 +789,9 @@ export class LayerPanelRenderer {
                     img.style.maxHeight = '100%';
                     img.style.display = 'block';
                     img.style.objectFit = 'contain';
+                    
                     thumbnailContainer.innerHTML = '';
+                    applyBackgroundStyle(); // 背景再適用
                     thumbnailContainer.appendChild(img);
                 }
             } catch (error) {}

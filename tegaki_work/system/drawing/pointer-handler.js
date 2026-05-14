@@ -57,15 +57,18 @@ export class PointerHandler {
         }
 
         function onPointerDown(e) {
-            // [指示書] タブレットペン入力の調査用ログ
-            console.log('[PointerHandler] raw pointerdown', {
+            // [指示書] タブレットペン入力の調査用ログを文字列化
+            console.log('[PointerHandler] raw pointerdown', JSON.stringify({
                 pointerType: e.pointerType,
                 button: e.button,
                 buttons: e.buttons,
+                pressure: e.pressure,
+                pointerId: e.pointerId,
+                isPrimary: e.isPrimary,
                 target: e.target?.tagName,
                 id: e.target?.id,
-                className: e.target?.className
-            });
+                className: String(e.target?.className || '')
+            }));
 
             // 右クリック除外（ペン以外の場合のみ除外する）
             if (e.button === 2 && e.pointerType !== 'pen') return;

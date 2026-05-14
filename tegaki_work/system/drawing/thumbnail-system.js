@@ -97,7 +97,7 @@ export const ThumbnailSystem = {
                 height: canvasHeight
             });
 
-            // [指示書] 背景レイヤーの場合は、RenderTexture を背景色で塗りつぶしてからレンダリング
+            // [指示書] 背景レイヤーの場合は背景色、通常レイヤーは完全透明でクリア
             let clearColor = 0x000000;
             let clearAlpha = 0;
             
@@ -132,8 +132,19 @@ export const ThumbnailSystem = {
             const ctx = thumbCanvas.getContext('2d');
 
             if (ctx) {
-                // 背景が透明な場合はチェッカーを描く（任意だが指示書ではCSS側で対応したので、ここは透明のまま）
+                // [指示書] 透明度を維持するため clearRect を明示的に実行
+                ctx.clearRect(0, 0, thumbW, thumbH);
                 ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, thumbW, thumbH);
+                
+                // [指示書] 代表ピクセルの alpha 確認ログ
+                const px = ctx.getImageData(1, 1, 1, 1).data;
+                console.log('[ThumbnailSystem] sample pixel', JSON.stringify({
+                    layer: layer.layerData?.name,
+                    isBackground: !!layer.layerData?.isBackground,
+                    rgba: Array.from(px),
+                    thumbW,
+                    thumbH
+                }));
             }
 
             const dataUrl = thumbCanvas.toDataURL('image/png');
