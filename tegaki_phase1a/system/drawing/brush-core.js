@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Graphics } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
 import { coordinateSystem } from '../../coordinate-system.js';
 import { historyManager } from '../history.js';
@@ -149,7 +149,7 @@ export class BrushCore {
         this.lastLocalY = localY;
         this.lastPressure = processedPressure;
         
-        this.previewGraphics = new PIXI.Graphics();
+        this.previewGraphics = new Graphics();
         this.previewGraphics.label = 'strokePreview';
         activeLayer.addChild(this.previewGraphics);
         

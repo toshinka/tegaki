@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Container, Graphics, RenderTexture } from 'pixi.js';
 
 export class AlbumPopup {
     constructor(dependencies = {}) {
@@ -113,7 +113,7 @@ export class AlbumPopup {
         }
 
         const CONFIG = window.TEGAKI_CONFIG;
-        const renderTexture = PIXI.RenderTexture.create({
+        const renderTexture = RenderTexture.create({
             width: CONFIG.canvas.width,
             height: CONFIG.canvas.height
         });
@@ -197,7 +197,7 @@ export class AlbumPopup {
             }
 
             frameState.layerStates.forEach(layerState => {
-                const layerContainer = new PIXI.Container();
+                const layerContainer = new Container();
                 layerContainer.label = layerState.name;
                 
                 const isVisible = layerState.visible !== false;
@@ -214,7 +214,7 @@ export class AlbumPopup {
                 };
 
                 if (layerState.isBackground) {
-                    const bg = new PIXI.Graphics();
+                    const bg = new Graphics();
                     const CONFIG = window.TEGAKI_CONFIG;
                     const bgColor = layerState.backgroundColor || CONFIG.background.color || 0xF0E0D6;
                     bg.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
@@ -223,7 +223,7 @@ export class AlbumPopup {
                     layerContainer.layerData.backgroundGraphics = bg;
                 } else {
                     layerState.paths.forEach(pathData => {
-                        const graphics = new PIXI.Graphics();
+                        const graphics = new Graphics();
                         pathData.points.forEach(point => {
                             graphics.circle(point.x, point.y, pathData.size / 2);
                             graphics.fill({ color: pathData.color, alpha: pathData.opacity });

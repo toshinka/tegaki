@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { RenderTexture } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
 
 export const ThumbnailSystem = {
@@ -93,7 +93,7 @@ export const ThumbnailSystem = {
             const canvasWidth = window.TEGAKI_CONFIG?.canvas?.width || 400;
             const canvasHeight = window.TEGAKI_CONFIG?.canvas?.height || 400;
             
-            const renderTexture = PIXI.RenderTexture.create({
+            const renderTexture = RenderTexture.create({
                 width: canvasWidth,
                 height: canvasHeight
             });

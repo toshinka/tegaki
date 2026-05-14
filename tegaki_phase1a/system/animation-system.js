@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Container, Graphics } from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { LayerModel } from './data-models.js';
@@ -23,7 +23,7 @@ export class Frame {
         this.name = name || `${Date.now()}F`;
         this.duration = config?.animation?.defaultCutDuration || 0.5;
         
-        this.container = new PIXI.Container();
+        this.container = new Container();
         this.container.label = `frame_${id}`;
         this.container.sortableChildren = true;
         
@@ -108,7 +108,7 @@ export class Frame {
     }
     
     _deserializeLayer(layerData) {
-        const layer = new PIXI.Container();
+        const layer = new Container();
         layer.label = layerData.id;
         
         const layerModel = new LayerModel({
@@ -133,7 +133,7 @@ export class Frame {
         layer.alpha = layerData.opacity || 1.0;
         
         if (layerData.isBackground) {
-            const bg = new PIXI.Graphics();
+            const bg = new Graphics();
             const canvasWidth = this.config?.canvas?.width || 800;
             const canvasHeight = this.config?.canvas?.height || 600;
             const bgColor = this.config?.background?.color || 0xF0E0D6;
@@ -160,7 +160,7 @@ export class Frame {
     _rebuildPath(pathData) {
         if (!pathData?.points || pathData.points.length === 0) return null;
         
-        const graphics = new PIXI.Graphics();
+        const graphics = new Graphics();
         
         pathData.points.forEach(point => {
             if (typeof point.x === 'number' && typeof point.y === 'number' &&
@@ -477,7 +477,7 @@ export class AnimationSystem {
     }
     
     _createBackgroundLayer(frameId) {
-        const layer = new PIXI.Container();
+        const layer = new Container();
         const layerModel = new LayerModel({
             id: `${frameId}_layer_bg_${Date.now()}`,
             name: '背景',
@@ -491,7 +491,7 @@ export class AnimationSystem {
         layer.layerData = layerModel;
         
         const canvasSize = this.getCurrentCanvasSize();
-        const bg = new PIXI.Graphics();
+        const bg = new Graphics();
         bg.rect(0, 0, canvasSize.width, canvasSize.height);
         bg.fill(this.config.background.color);
         layer.addChild(bg);
@@ -501,7 +501,7 @@ export class AnimationSystem {
     }
     
     _createBlankLayer(frameId, name) {
-        const layer = new PIXI.Container();
+        const layer = new Container();
         const layerModel = new LayerModel({
             id: `${frameId}_layer_${Date.now()}`,
             name: name,
@@ -518,7 +518,7 @@ export class AnimationSystem {
     }
     
     _deepCopyLayer(originalLayer) {
-        const layer = new PIXI.Container();
+        const layer = new Container();
         const layerModel = new LayerModel({
             id: `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: originalLayer.layerData?.name || 'Layer',
@@ -540,7 +540,7 @@ export class AnimationSystem {
         
         if (originalLayer.layerData?.isBackground) {
             const canvasSize = this.getCurrentCanvasSize();
-            const bg = new PIXI.Graphics();
+            const bg = new Graphics();
             bg.rect(0, 0, canvasSize.width, canvasSize.height);
             bg.fill(this.config.background.color);
             layer.addChild(bg);
@@ -563,7 +563,7 @@ export class AnimationSystem {
     _deepCopyPath(originalPath) {
         if (!originalPath?.points || originalPath.points.length === 0) return null;
         
-        const graphics = new PIXI.Graphics();
+        const graphics = new Graphics();
         
         const copiedPoints = originalPath.points.map(p => ({ x: p.x, y: p.y }));
         
@@ -692,7 +692,7 @@ export class AnimationSystem {
                 continue;
             }
             
-            if (child instanceof PIXI.Graphics) {
+            if (child instanceof Graphics) {
                 child.mask = layer.layerData.maskSprite;
             }
         }

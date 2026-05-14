@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Graphics, BlendMode, Mesh, Geometry } from 'pixi.js';
 import { getStroke } from 'perfect-freehand';
 import { TEGAKI_CONFIG } from '../../config.js';
 
@@ -85,13 +85,13 @@ export class StrokeRenderer {
     }
 
     calculateWidth(pressure, brushSize) {
-        const minRatio = 0.02;
+        const minRatio = 0.02; // クランプを 0.02 に変更
         const ratio = Math.max(minRatio, pressure ?? 0.5);
         return Math.max(this.minPhysicalWidth, brushSize * ratio);
     }
 
     renderPreview(points, providedSettings = null, targetGraphics = null) {
-        const graphics = targetGraphics || new PIXI.Graphics();
+        const graphics = targetGraphics || new Graphics();
         const settings = this._getSettings(providedSettings);
         const mode = this._getCurrentMode(settings);
 
@@ -103,9 +103,9 @@ export class StrokeRenderer {
         
         // 消しゴムの場合は BlendMode.ERASE を設定
         if (mode === 'eraser') {
-            graphics.blendMode = PIXI.BlendMode.ERASE;
+            graphics.blendMode = BlendMode.ERASE;
         } else {
-            graphics.blendMode = PIXI.BlendMode.NORMAL;
+            graphics.blendMode = BlendMode.NORMAL;
         }
 
         if (points.length === 1) {
@@ -170,7 +170,7 @@ export class StrokeRenderer {
             return null;
         }
 
-        const geometry = new PIXI.Geometry({
+        const geometry = new Geometry({
             attributes: {
                 aPosition: {
                     buffer: vertexBuffer.buffer,
@@ -187,13 +187,13 @@ export class StrokeRenderer {
             }
         });
 
-        const mesh = new PIXI.Mesh({
+        const mesh = new Mesh({
             geometry: geometry
         });
 
         mesh.tint = settings.color;
         mesh.alpha = settings.opacity || 1.0;
-        mesh.blendMode = PIXI.BlendMode.NORMAL;
+        mesh.blendMode = BlendMode.NORMAL;
 
         return mesh;
     }
@@ -212,31 +212,31 @@ export class StrokeRenderer {
         if (strokeData.isSingleDot || strokeData.points.length === 1) {
             const p = strokeData.points[0];
             const width = this.calculateWidth(p.pressure, settings.size);
-            const graphics = new PIXI.Graphics();
+            const graphics = new Graphics();
             graphics.circle(p.x, p.y, width / 2);
             graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-            graphics.blendMode = PIXI.BlendMode.ERASE;
+            graphics.blendMode = BlendMode.ERASE;
             return graphics;
         }
 
         const outlinePoints = getStroke(inputPoints, options);
         if (!outlinePoints || outlinePoints.length < 2) return null;
 
-        const graphics = new PIXI.Graphics();
+        const graphics = new Graphics();
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
         graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-        graphics.blendMode = PIXI.BlendMode.ERASE;
+        graphics.blendMode = BlendMode.ERASE;
 
         return graphics;
     }
 
     _renderFinalStrokeGraphics(strokeData, settings, mode) {
-        const graphics = new PIXI.Graphics();
+        const graphics = new Graphics();
         
         if (mode === 'eraser') {
-            graphics.blendMode = PIXI.BlendMode.ERASE;
+            graphics.blendMode = BlendMode.ERASE;
         } else {
-            graphics.blendMode = PIXI.BlendMode.NORMAL;
+            graphics.blendMode = BlendMode.NORMAL;
         }
 
         const inputPoints = strokeData.points.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
@@ -265,6 +265,7 @@ export class StrokeRenderer {
         if (mode === 'eraser') {
             graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
         } else {
+            // ペンの場合は設定色と不透明度で塗る
             graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
         }
 
@@ -272,14 +273,14 @@ export class StrokeRenderer {
     }
 
     renderDot(point, providedSettings = null, mode = 'pen', targetGraphics = null) {
-        const graphics = targetGraphics || new PIXI.Graphics();
+        const graphics = targetGraphics || new Graphics();
         const settings = this._getSettings(providedSettings);
         const width = this.calculateWidth(point.pressure, settings.size);
 
         if (mode === 'eraser') {
-            graphics.blendMode = PIXI.BlendMode.ERASE;
+            graphics.blendMode = BlendMode.ERASE;
         } else {
-            graphics.blendMode = PIXI.BlendMode.NORMAL;
+            graphics.blendMode = BlendMode.NORMAL;
         }
 
         graphics.circle(point.x, point.y, width / 2);

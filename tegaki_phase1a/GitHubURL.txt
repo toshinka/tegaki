@@ -118,5 +118,8 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_phase1a
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_phase1a/TegakiConsole.txt
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_phase1a/GitHubURL.txt
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1a.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1b.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1c.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CODEX..md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
 

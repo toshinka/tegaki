@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Graphics } from 'pixi.js';
 
 export class CheckerUtils {
     constructor() {
@@ -25,7 +25,7 @@ export class CheckerUtils {
      * キャンバス用チェッカーパターン（PIXI.Graphics）
      */
     createCanvasChecker(width, height) {
-        const g = new PIXI.Graphics();
+        const g = new Graphics();
         
         const cols = Math.ceil(width / this.squareSize);
         const rows = Math.ceil(height / this.squareSize);

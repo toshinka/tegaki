@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Graphics, Matrix } from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { historyManager } from './history.js';
@@ -470,7 +470,7 @@ export class DrawingClipboard {
         layer.alpha = clipData.opacity;
         
         if (clipData.backgroundData) {
-            const bg = new PIXI.Graphics();
+            const bg = new Graphics();
             bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
             bg.fill(clipData.backgroundData.color);
             layer.addChild(bg);
@@ -559,7 +559,7 @@ export class DrawingClipboard {
         }
         
         if (snapshotData.backgroundData) {
-            const bg = new PIXI.Graphics();
+            const bg = new Graphics();
             bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
             bg.fill(snapshotData.backgroundData.color);
             layer.addChild(bg);
@@ -595,7 +595,7 @@ export class DrawingClipboard {
         const centerX = this.config.canvas.width / 2;
         const centerY = this.config.canvas.height / 2;
         
-        const matrix = new PIXI.Matrix();
+        const matrix = new Matrix();
         matrix.translate(-centerX, -centerY);
         matrix.scale(transform.scaleX, transform.scaleY);
         matrix.rotate(transform.rotation);

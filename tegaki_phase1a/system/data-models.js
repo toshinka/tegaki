@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { RenderTexture, Graphics, Sprite } from 'pixi.js';
 
 export const LAYER_SCHEMA = {
     id: { type: 'string', required: true, editable: false },
@@ -60,12 +60,12 @@ export class LayerModel {
         }
 
         try {
-            this.maskTexture = PIXI.RenderTexture.create({
+            this.maskTexture = RenderTexture.create({
                 width: width,
                 height: height
             });
 
-            const whiteRect = new PIXI.Graphics();
+            const whiteRect = new Graphics();
             whiteRect.rect(0, 0, width, height);
             whiteRect.fill({ color: 0xFFFFFF });
 
@@ -77,7 +77,7 @@ export class LayerModel {
 
             whiteRect.destroy({ children: true });
 
-            this.maskSprite = new PIXI.Sprite(this.maskTexture);
+            this.maskSprite = new Sprite(this.maskTexture);
             this.maskSprite.label = 'mask_sprite';
             this.maskSprite.renderable = false;
 
