@@ -121,7 +121,8 @@ export class LayerModel {
         try {
             this.renderTexture = RenderTexture.create({
                 width: width,
-                height: height
+                height: height,
+                antialias: true // [指示書] 小さな検証：アンチエイリアスを有効化
             });
 
             this.layerSprite = new Sprite(this.renderTexture);

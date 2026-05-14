@@ -629,7 +629,23 @@ export class LayerPanelRenderer {
         thumbnailContainer.style.justifyContent = 'center';
         thumbnailContainer.style.flexShrink = '0';
         thumbnailContainer.style.backgroundColor = '#f5f5f5';
+
+        // [指示書] キャッシュがあれば即時表示
+        if (window.thumbnailSystem && layer.layerData?.id) {
+            const cachedUrl = window.thumbnailSystem.getThumbnail(layer.layerData.id);
+            if (cachedUrl) {
+                const img = document.createElement('img');
+                img.src = cachedUrl;
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.display = 'block';
+                img.style.objectFit = 'contain';
+                thumbnailContainer.appendChild(img);
+                return thumbnailContainer;
+            }
+        }
         
+        // キャッシュがない場合は非同期で生成（既存の _updateSingleThumbnail が後で呼ばれる）
         return thumbnailContainer;
     }
 

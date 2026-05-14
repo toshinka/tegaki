@@ -24,6 +24,16 @@
 
 ## 直近の作業（最新が上）
 
+### 2026-05-14 GEMINI作業指示書に基づく改修
+- **液タブペン入力改善**: `pointer-handler.js` に `raw pointerdown` ログを追加。また、ペン入力時に `button === 2` (右クリック) 扱いになってもブロックされないよう条件を緩和。
+- **消しゴムのリアルタイム反映**: `brush-core.js` を修正し、消しゴム使用中のドラッグ時に短いセグメントを直接 `RenderTexture` に焼き込むように変更。これにより、マウスアップを待たずにリアルタイムで線が削れるようになりました。
+- **サムネイル表示バグ修正**: `layer-panel-renderer.js` を修正。パネル再描画時に `ThumbnailSystem` のキャッシュを確認し、既に生成済みのサムネイル画像があれば即座に再挿入するように変更。
+- **描画品質の統一と改善**: 
+    - `stroke-renderer.js` において、プレビューと最終描画の `perfect-freehand` オプションを完全一致させました。
+    - 鋭角での異常描画対策として、極端に近い点を除外するフィルタ (`MIN_DIST = 0.25`) を導入。
+    - `RenderTexture` 生成時に `antialias: true` を設定する小規模な検証を導入（等倍解像度のまま品質向上を試行）。
+- **描画パイプライン整理**: `stroke-renderer.js` から WebGL2 Mesh 経路を完全に排除し、`Graphics.poly` 経路へ一本化。
+
 ### 2026-05-14 Codex報告書に基づく一括修正
 - **サムネイルイベント統一**: `thumbnail:layer-updated` のペイロードを `{ layerIndex, layerId, immediate }` のフラットな形式に統一。不整合による更新失敗を解消。
 - **鋭角ペン描画修正**: `stroke-renderer.js` において、WebGL2 Mesh 経路を一時的に無効化。`Graphics.poly()` 経路に一本化することで、鋭角ストロークでの三角形アーティファクトを回避。
