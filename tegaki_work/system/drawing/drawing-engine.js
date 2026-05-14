@@ -62,11 +62,24 @@ export class DrawingEngine {
     }
 
     _handlePointerDown(info, e) {
+        // デバッグログ追加
+        if (info.pointerType === 'pen') {
+            console.log('[DrawingEngine] Pen Down:', {
+                pointerType: info.pointerType,
+                vKey: this.layerSystem?.vKeyPressed,
+                canvasMove: this.cameraSystem?.isCanvasMoveMode?.(),
+                activeLayer: this.layerSystem?.getActiveLayer?.()?.layerData?.name,
+                button: info.button
+            });
+        }
+
         if (this.cameraSystem?.isCanvasMoveMode()) {
+            if (info.pointerType === 'pen') console.log('[DrawingEngine] Blocked: CanvasMoveMode');
             return;
         }
 
         if (this.layerSystem?.vKeyPressed) {
+            if (info.pointerType === 'pen') console.log('[DrawingEngine] Blocked: VKeyPressed');
             return;
         }
 
@@ -76,6 +89,7 @@ export class DrawingEngine {
 
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
         if (!localCoords) {
+            if (info.pointerType === 'pen') console.log('[DrawingEngine] Blocked: No localCoords');
             return;
         }
 

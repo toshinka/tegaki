@@ -17,6 +17,7 @@ gl-mask-layer.js:461 ✅ gl-mask-layer.js Phase 6完全版 loaded
 gl-mask-layer.js:462    ✅ Circle mask rendering実装
 gl-mask-layer.js:463    ✅ Additive blend対応
 core-initializer.js:28 🚀 Tegaki Initializing...
+injection-topics.js:1 Browsing Topics API not found, nothing to remove on http://localhost:5173/, main frame
 popup-manager.js:26 ✅ PopupManager initialized
 core-engine.js:95 [CoreEngine] Initializing sub-systems...
 webgl2-drawing-layer.js:77 [WebGL2DrawingLayer] ✅ Initialized {canvasSize: '400x400', maxTextureSize: 16384, extensions: Array(3)}
@@ -36,27 +37,39 @@ popup-manager.js:97 ✅ Popup "album" initialized successfully
 popup-manager.js:128 📊 Popup initialization: 5 ready, 0 deferred
 core-engine.js:248 [CoreEngine] All sub-systems initialized.
 core-initializer.js:56 ✅ Tegaki Initialized Successfully
-injection-topics.js:1 Browsing Topics API not found, nothing to remove on http://localhost:5173/, main frame
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778773453389, index: 1
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: temp_layer_1_1778763123536, index: 1
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778773462134_ks3t8lsoh, index: 2
 thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
-popup-manager.js:202 👁️ Popup "quickAccess" shown
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778773462134_ks3t8lsoh, index: 2
+thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778773462134_ks3t8lsoh, index: 2
+thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778773462134_ks3t8lsoh, index: 2
+thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778773462134_ks3t8lsoh, index: 2
+thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778773462134_ks3t8lsoh, index: 2
+thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778773462134_ks3t8lsoh, index: 2
+thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400
+thumbnail-system.js:90 [ThumbnailSystem] Generating for layer: layer_1778773462134_ks3t8lsoh, index: 2
+thumbnail-system.js:108 [ThumbnailSystem] Extracted canvas size: 400x400

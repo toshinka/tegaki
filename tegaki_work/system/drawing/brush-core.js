@@ -327,13 +327,9 @@ export class BrushCore {
                 });
                 
                 this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'drawing',
-                    action: 'stroke-completed',
-                    data: {
-                        layerIndex: layerIndex,
-                        layerId: activeLayer.layerData?.id,
-                        immediate: true
-                    }
+                    layerIndex: layerIndex,
+                    layerId: activeLayer.layerData?.id,
+                    immediate: true
                 });
             }
         }

@@ -24,22 +24,21 @@
 
 ## 直近の作業（最新が上）
 
+### 2026-05-14 Codex報告書に基づく一括修正
+- **サムネイルイベント統一**: `thumbnail:layer-updated` のペイロードを `{ layerIndex, layerId, immediate }` のフラットな形式に統一。不整合による更新失敗を解消。
+- **鋭角ペン描画修正**: `stroke-renderer.js` において、WebGL2 Mesh 経路を一時的に無効化。`Graphics.poly()` 経路に一本化することで、鋭角ストロークでの三角形アーティファクトを回避。
+- **変形確定Bakeの徹底**: Vキー解除時やツール切り替え時に確実に `confirmLayerTransform` (Bake処理) が呼ばれるよう修正。描画再開時にコンテナの `scale` が常に 1 であることを担保。
+- **液タブペンUI操作改善**: 
+    - `quick-access-popup.js` の閉じるボタン・ツールボタンに `click` イベントを追加。
+    - `layer-panel-renderer.js` の Sortable 設定を `forceFallback: true`, `fallbackTolerance: 3` に更新し、ペンでのドラッグ・クリック精度を向上。
+- **液タブペン描画デバッグ**: `drawing-engine.js` に `pointerType === 'pen'` 時のブロック条件判定ログを追加。
+
 ### 2026-05-14 Phase 1c 追加修正
 - **消しゴムプレビュー修正**: `renderPreview` で消しゴム時の描画を無効化。ドラッグ中の不要な軌跡を削除し、UXを向上。
 - **レイヤー1消しゴム対応**: `CoreEngine` でのサブシステム初期化順序を修正。`LayerSystem.init` 前に `app` を確実に設定することで、初期レイヤーに対しても `RenderTexture` が正しく生成され、消しゴムが機能するよう改善。
 - **変形ツール座標ズレ修正 (Bake実装)**: 変形確定時に `bakeTransform` を実行するように変更。変形後の内容を `RenderTexture` に直接書き込み、コンテナの `scale/rotation` を 1/0 にリセットすることで、その後の描画座標やブラシ太さのズレを解消。
 - **Raster Sprite保護**: `safeRebuildLayer` において、`RenderTexture` を表示する `layerSprite` が破棄されないよう保護対象に追加。
 
-### 2026-05-14 Phase 1c 消しゴム修正 (最終)
-- **消しゴム修正 (再修正)**: `RenderTexture` への焼き込み時に、`graphics.blendMode = 'erase'` だけでは不十分だった問題を修正。`Container` でラップし、そのコンテナに対して `blendMode = 'erase'` を指定して `renderer.render` することで、確実に透明消去ができるように修正しました。
-- **描画色確認**: `stroke-renderer.js` が消しゴム時に `0xFFFFFF` (White) を使用していることを確認。焼き込みが失敗して「塗り」になっていたため Ivory 背景上で目立っていた問題を、透明消去の正常化により解決。
-
-### 2026-05-13 Phase 1c 描画バグ修正 & Rasterレイヤー化
-- **ラスターレイヤー実装**: 各レイヤーに `RenderTexture` を導入。ストローク確定時にテクスチャへ直接焼き込む方式へ移行。
-- **消しゴム修正 (Bug 2)**: `renderer.render` を使用して `activeLayer.renderTexture` に対して描画する方式の基礎を実装。
-- **ペン白い軌跡修正 (Bug 1)**: `renderPreview` 内のポリゴン塗りつぶし色が白 (`0xFFFFFF`) に固定されていたバグを修正。
-- **プレビュー管理強化**: `BrushCore.startStroke` 時に既存のプレビューGraphicsを確実に破棄。
-- **筆圧クランプ調整**: 最小筆圧比を `0.02` に設定。
 
 ### 2026-05-13 PixiJS v8 完全に文字列ベースの BlendMode へ移行
 - **BlendMode 定数撤廃**: `'erase'` および `'normal'` という文字列リテラルを直接使用するように変更。

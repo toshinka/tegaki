@@ -455,14 +455,13 @@ export class LayerSystem {
             }
             
             if (pressed) {
-                this.transform.enterMoveMode();
+                this.enterLayerMoveMode();
                 const activeLayer = this.getActiveLayer();
                 if (activeLayer) {
                     this.transform.updateTransformPanelValues(activeLayer);
                 }
             } else {
-                const activeLayer = this.getActiveLayer();
-                this.transform.exitMoveMode(activeLayer);
+                this.exitLayerMoveMode();
             }
         });
     }
@@ -606,14 +605,18 @@ export class LayerSystem {
     
     exitLayerMoveMode() {
         if (!this.transform) return;
+        this.confirmLayerTransform(); // 🆕 変形確定焼き込み
         const activeLayer = this.getActiveLayer();
         this.transform.exitMoveMode(activeLayer);
     }
     
     toggleLayerMoveMode() {
         if (!this.transform) return;
-        const activeLayer = this.getActiveLayer();
-        this.transform.toggleMoveMode(activeLayer);
+        if (this.isLayerMoveMode) {
+            this.exitLayerMoveMode();
+        } else {
+            this.enterLayerMoveMode();
+        }
     }
     
     get isLayerMoveMode() {

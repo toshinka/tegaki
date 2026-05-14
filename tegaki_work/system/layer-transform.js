@@ -434,9 +434,8 @@ export class LayerTransform {
                 const layerIndex = layerMgr.getLayerIndex(layer);
                 
                 this.eventBus.emit('thumbnail:layer-updated', {
-                    component: 'drawing',
-                    action: 'transform-applied',
-                    data: { layerIndex, layerId }
+                    layerIndex,
+                    layerId
                 });
                 
                 this._lastEmitTime = performance.now();
@@ -857,9 +856,8 @@ export class LayerTransform {
         });
         
         this.eventBus.emit('thumbnail:layer-updated', {
-            component: 'layer-transform',
-            action: 'transform-changed',
-            data: { layerIndex, layerId }
+            layerIndex,
+            layerId
         });
         
         this._lastEmitTime = performance.now();

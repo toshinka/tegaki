@@ -260,23 +260,26 @@ export class QuickAccessPopup {
     _setupCloseButton() {
         if (!this.elements.closeBtn) return;
         
-        this.elements.closeBtn.addEventListener('pointerdown', (e) => {
+        const handleClose = (e) => {
             e.stopPropagation();
             this.hide();
-        });
+        };
+
+        this.elements.closeBtn.addEventListener('pointerdown', handleClose);
+        this.elements.closeBtn.addEventListener('click', handleClose);
     }
 
     _setupToolButtons() {
         if (this.elements.penToolBtn) {
-            this.elements.penToolBtn.addEventListener('pointerdown', () => {
-                this._switchTool('pen');
-            });
+            const handlePen = () => this._switchTool('pen');
+            this.elements.penToolBtn.addEventListener('pointerdown', handlePen);
+            this.elements.penToolBtn.addEventListener('click', handlePen);
         }
 
         if (this.elements.eraserToolBtn) {
-            this.elements.eraserToolBtn.addEventListener('pointerdown', () => {
-                this._switchTool('eraser');
-            });
+            const handleEraser = () => this._switchTool('eraser');
+            this.elements.eraserToolBtn.addEventListener('pointerdown', handleEraser);
+            this.elements.eraserToolBtn.addEventListener('click', handleEraser);
         }
 
         if (this.elements.fillToolBtn) {

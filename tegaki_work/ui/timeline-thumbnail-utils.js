@@ -87,9 +87,8 @@
                         
                         if (layerIndex >= 0) {
                             this.eventBus.emit('thumbnail:layer-updated', {
-                                component: 'thumbnail-system',
-                                action: 'v-mode-transform',
-                                data: { layerIndex, layerId }
+                                layerIndex,
+                                layerId
                             });
                         }
                     }
@@ -116,9 +115,8 @@
                     
                     if (layerIndex >= 0) {
                         this.eventBus.emit('thumbnail:layer-updated', {
-                            component: 'thumbnail-system',
-                            action: 'transform-confirmed',
-                            data: { layerIndex, layerId }
+                            layerIndex,
+                            layerId
                         });
                     }
                 }

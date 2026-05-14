@@ -152,17 +152,7 @@ export class StrokeRenderer {
             return this._renderEraserStroke(strokeData, settings);
         }
         
-        if (this.webgl2Enabled && this.glStrokeProcessor) {
-            try {
-                const mesh = await this._renderWithPerfectFreehand(strokeData, settings);
-                if (mesh) {
-                    return mesh;
-                }
-            } catch (error) {
-                console.warn('[StrokeRenderer] WebGL2 mesh render failed, fallback to Graphics:', error);
-            }
-        }
-        
+        // Phase 1cではMesh経路を使わない。鋭角ストロークの三角形化を避けるため、Graphics.poly()に統一する。
         return this._renderFinalStrokeGraphics(strokeData, settings, mode);
     }
 

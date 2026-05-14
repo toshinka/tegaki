@@ -1,0 +1,170 @@
+
+```md
+# GEMINI作業指示書：tegaki_work 修正順
+
+対象フォルダ：tegaki_work  
+方針：出力サイズと内部キャンバスサイズは等倍維持。内部2倍解像度化は行わない。
+
+## 1. タブレットペン入力の調査を最優先
+
+目的：液タブペンの pointerdown がどこで止まっているか確認する。
+
+tegaki_work/system/input/pointer-handler.js の pointerdown 処理で、右クリック除外などの条件分岐より前に raw log を追加する。
+
+例：
+
+```js
+console.log('[PointerHandler] raw pointerdown', {
+  pointerType: e.pointerType,
+  button: e.button,
+  buttons: e.buttons,
+  target: e.target?.tagName,
+  id: e.target?.id,
+  className: e.target?.className
+});
+```
+
+確認すること：
+
+- pen の pointerdown が出るか
+- `button` が `2` になっていないか
+- target が Pixi canvas か
+- DrawingEngine 側の `[DrawingEngine] Pen Down` まで到達するか
+
+もし `pointerType: 'pen'` で `button: 2` 扱いになっている場合、右クリック除外は以下のようにする。
+
+```js
+if (e.button === 2 && e.pointerType !== 'pen') return;
+```
+
+## 2. 消しゴムをリアルタイム反映に戻す
+
+現状：pointerup / OFF 時にまとめて消える。  
+目標：ドラッグ中に線が削れる。
+
+方針：
+
+- eraser preview は表示しなくてよい
+- updateStroke 中に直前点から現在点までの短い eraser stroke を RenderTexture に焼き込む
+- blendMode は `'erase'`
+- undo 用の stroke 記録は維持する
+- pointerup 時に二重で同じ範囲を消さないよう注意
+
+重要：
+
+- 背景色で塗る方式には戻さない
+- 透明化 eraser のままにする
+- previewGraphics だけ消して「見た目だけ」変える実装にしない
+
+## 3. レイヤーサムネイルの再表示バグ修正
+
+現象：描いた直後はサムネイルが出るが、別レイヤー選択で消える。
+
+原因候補：
+layer-panel-renderer.js の render 時に `innerHTML = ''` で DOM を再生成し、既存 img が消えている。createThumbnail がキャッシュ済み画像を再挿入していない可能性が高い。
+
+修正方針：
+
+- ThumbnailSystem 側の cache / getThumbnail(layerId) を使う
+- LayerPanelRenderer.createThumbnail(layer) で、既に dataUrl がある場合は `<img>` を即時挿入する
+- layer switch / panel rerender 後もサムネイルが残ることを確認する
+
+## 4. 描画中プレビューと確定後の線を一致させる
+
+現象：描画中は滑らかだが、離した瞬間にジャギーな線へ変形する。
+
+方針：
+
+- 内部2倍解像度化はしない
+- preview と final で perfect-freehand の options を完全一致させる
+- 使用する points もできるだけ同じものにする
+- 座標を整数丸めしない
+- Mesh path は一旦復活させない。Graphics.poly 統一のままで検証する
+
+確認する options：
+
+```js
+{
+  size,
+  thinning: 0.7,
+  smoothing: 0.4,
+  streamline: 0.3,
+  simulatePressure: false,
+  last: true
+}
+```
+
+preview と final で差があれば統一する。
+
+## 5. 鋭角で三角形に塗られる問題の調査
+
+再現性が低いため、まず防御的処理を入れる。
+
+確認・修正候補：
+
+- 同一点、極端に近い点を除外する
+- stroke point が急角度で密集した時に polygon が自己交差していないか確認する
+- size に対して距離が短すぎる補間点を入れすぎていないか確認する
+- perfect-freehand に渡す points の中身を debug 出力できるようにする
+
+例：
+
+```js
+const MIN_DIST = 0.25;
+
+function filterNearPoints(points) {
+  const result = [];
+  for (const p of points) {
+    const last = result[result.length - 1];
+    if (!last) {
+      result.push(p);
+      continue;
+    }
+
+    const dx = p.x - last.x;
+    const dy = p.y - last.y;
+    if (Math.hypot(dx, dy) >= MIN_DIST) {
+      result.push(p);
+    }
+  }
+  return result;
+}
+```
+
+数値は仮。強くしすぎると描線が劣化するので小さく始める。
+
+## 6. RenderTexture のアンチエイリアスは小さく検証
+
+目的：等倍のまま確定後の線品質を少し改善できるか確認する。
+
+注意：
+
+- 内部解像度を 2倍にしない
+- canvas/export サイズを変えない
+- `resolution: 1` 維持
+- PixiJS v8.17.0 で RenderTexture 作成時に antialias 指定が効くかだけ確認する
+- 効果が薄い、または副作用が出るなら採用しない
+
+これは優先度低。先に入力・消しゴム・サムネイルを直す。
+
+## 作業順
+
+1. タブレットペン raw pointer log 追加、原因特定
+2. 液タブペンで描画できるよう修正
+3. 消しゴムのリアルタイム erase 修正
+4. サムネイル cache 再挿入修正
+5. preview/final の perfect-freehand 条件統一
+6. 鋭角三角化の point filter / debug
+7. 等倍 RenderTexture antialias の小検証
+
+## 禁止事項
+
+- 内部2倍解像度化しない
+- 出力サイズを変更しない
+- `resolution: 2` にしない
+- 背景色で塗る消しゴムへ戻さない
+- PixiJS の `BlendMode` named import を復活させない
+- canvas移動系とlayer変形系の座標処理を混ぜない
+```
+
+結論として、方針は「等倍維持で線の確定処理を揃える」です。2倍化は見た目改善としては有効な場合がありますが、このプロジェクトの提出物優先ルールとは衝突しやすいので、今は外す判断でよいです。
