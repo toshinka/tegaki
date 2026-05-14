@@ -112,7 +112,12 @@ export class StrokeRenderer {
             const p = points[0];
             const width = this.calculateWidth(p.pressure, settings.size);
             graphics.circle(p.x, p.y, width / 2);
-            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            
+            if (mode === 'eraser') {
+                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            } else {
+                graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+            }
             return graphics;
         }
 
@@ -130,7 +135,12 @@ export class StrokeRenderer {
         if (outlinePoints.length < 2) return graphics;
 
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
-        graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+        
+        if (mode === 'eraser') {
+            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+        } else {
+            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+        }
 
         return graphics;
     }

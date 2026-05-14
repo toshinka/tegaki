@@ -42,6 +42,10 @@ export class LayerModel {
         this.maskTexture = null;
         this.maskSprite = null;
         this._maskInitialized = false;
+
+        this.renderTexture = null;
+        this.layerSprite = null;
+        this._textureInitialized = false;
     }
 
     static getSchema() {
@@ -107,6 +111,46 @@ export class LayerModel {
         }
 
         this._maskInitialized = false;
+    }
+
+    initializeTexture(width, height) {
+        if (this._textureInitialized) {
+            this.destroyTexture();
+        }
+
+        try {
+            this.renderTexture = RenderTexture.create({
+                width: width,
+                height: height
+            });
+
+            this.layerSprite = new Sprite(this.renderTexture);
+            this.layerSprite.label = 'layer_raster_sprite';
+            
+            this._textureInitialized = true;
+            return true;
+        } catch (error) {
+            console.error('[LayerModel] Failed to initialize texture:', error);
+            return false;
+        }
+    }
+
+    destroyTexture() {
+        if (this.layerSprite) {
+            try {
+                this.layerSprite.destroy({ children: true, texture: false, baseTexture: false });
+            } catch (e) {}
+            this.layerSprite = null;
+        }
+
+        if (this.renderTexture) {
+            try {
+                this.renderTexture.destroy(true);
+            } catch (e) {}
+            this.renderTexture = null;
+        }
+
+        this._textureInitialized = false;
     }
 
     toJSON() {

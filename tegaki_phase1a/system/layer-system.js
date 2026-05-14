@@ -57,6 +57,14 @@ export class LayerSystem {
         bgLayer.layerData = bgLayerModel;
         bgLayer.id = bgLayerModel.id;
         
+        // 🆕 背景テクスチャ初期化
+        if (this.app?.renderer) {
+            bgLayerModel.initializeTexture(this.config.canvas.width, this.config.canvas.height);
+            if (bgLayerModel.layerSprite) {
+                bgLayer.addChild(bgLayerModel.layerSprite);
+            }
+        }
+
         const bg = this._createSolidBackground(
             this.config.canvas.width, 
             this.config.canvas.height,
@@ -76,6 +84,14 @@ export class LayerSystem {
         layer1.layerData = layer1Model;
         layer1.id = layer1Model.id;
         
+        // 🆕 レイヤー1テクスチャ初期化
+        if (this.app?.renderer) {
+            layer1Model.initializeTexture(this.config.canvas.width, this.config.canvas.height);
+            if (layer1Model.layerSprite) {
+                layer1.addChild(layer1Model.layerSprite);
+            }
+        }
+
         if (this.transform) {
             this.transform.setTransform(layer1Model.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
         }
@@ -1209,6 +1225,14 @@ export class LayerSystem {
         layer.layerData = layerModel;
         layer.id = layerModel.id;
         
+        // 🆕 レイヤー用テクスチャの初期化
+        if (this.app?.renderer) {
+            layerModel.initializeTexture(this.config.canvas.width, this.config.canvas.height);
+            if (layerModel.layerSprite) {
+                layer.addChild(layerModel.layerSprite);
+            }
+        }
+
         if (this.app && this.app.renderer && !isBackground) {
             const success = layerModel.initializeMask(
                 this.config.canvas.width,

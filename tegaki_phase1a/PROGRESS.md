@@ -8,7 +8,7 @@
 ## 現在のフェーズ
 
 **Phase 1c — 液タブペン対応・消しゴム修正・サムネイル**
-作業フォルダ：`tegaki_phase1a`
+作業フォルダ：`tegaki_phase1a` (→ `tegaki_work` へ改名予定)
 
 ---
 
@@ -17,26 +17,22 @@
 | フォルダ | 状態 |
 |---|---|
 | `tegaki_phase0` | ✅ オリジナル保存。触らない |
-| `tegaki_phase1a` | 🔧 現在の作業フォルダ。Phase 1c 実装・Pixi v8 対応完了 |
+| `tegaki_phase1a` | 🔧 現在の作業フォルダ。Rasterレイヤー化・バグ修正完了 |
 | `PastFiles/` | 完了済みフェーズのアーカイブ置き場 |
 
 ---
 
 ## 直近の作業（最新が上）
 
+### 2026-05-13 Phase 1c 描画バグ修正 & Rasterレイヤー化
+- **ラスターレイヤー実装**: 各レイヤーに `RenderTexture` を導入。ストローク確定時にテクスチャへ直接焼き込む方式へ移行。これによりベクターデータの増加による重低減と、消しゴムの確実な動作を両立。
+- **消しゴム修正 (Bug 2)**: `renderer.render` を使用して `activeLayer.renderTexture` に対して `'erase'` ブレンドモードで描画するよう修正。背景を消さず、アクティブレイヤーのみを透明に消去できるようになりました。
+- **ペン白い軌跡修正 (Bug 1)**: `renderPreview` 内のポリゴン塗りつぶし色が白 (`0xFFFFFF`) に固定されていたバグを修正し、現在のブラシ色を使用するように変更。
+- **プレビュー管理強化**: `BrushCore.startStroke` 時に既存のプレビューGraphicsを確実に破棄するようにし、二重表示や残像を防止。
+- **筆圧クランプ調整**: `TEGAKI.md` に合わせ、最小筆圧比を `0.02` に設定。
+
 ### 2026-05-13 PixiJS v8 完全に文字列ベースの BlendMode へ移行
-- **BlendMode 定数撤廃**: `stroke-renderer.js` から `BlendMode` のインポートを削除し、`'erase'` および `'normal'` という文字列リテラルを直接使用するように変更。
-- **PixiJS v8 仕様準拠**: PixiJS v8 では `blendMode` に文字列を指定することが推奨されており、これにより `undefined` エラーを完全に防止。
-
-### 2026-05-13 PixiJS v8 Modular API 移行完了
-- **API 刷新**: `system/` および `ui/` 内の各ファイルにおいて名前付きインポートへ移行し、`PIXI.` プレフィックスを完全に除去。
-- **FillTool のモジュール化**: `fill-tool.js` を ESM モジュールへ変換。
-
-### 2026-05-13 Phase 1c 基本実装完了
-- **アーカイブ処理**: Phase 1bの成果物を `PastFiles/tegaki_phase1b1/` にバックアップ。
-- **液タブペン座標修正**: `pointer-handler.js` の型補正を撤廃。
-- **消しゴム透明化**: 消しゴムを透明に消える挙動に修正。
-- **サムネイルシステム修正**: 引数不整合の解消。
+- **BlendMode 定数撤廃**: `'erase'` および `'normal'` という文字列リテラルを直接使用するように変更。
 
 ---
 
@@ -44,17 +40,16 @@
 
 | 内容 | 場所 | 対応フェーズ |
 |---|---|---|
+| フォルダ名変更の反映 | (OS) | 作業中 |
 | 一部UI（タイムライン等）のESM化未完了 | ui/ | 1d |
-| 筆圧カーブの微調整 | pressure-handler.js | 1d |
 
 ---
 
 ## タスク進捗 (phase1c)
 
-- [x] Phase 1b 成果物のアーカイブ保管
 - [x] `pointerType` による座標分岐の撤廃
-- [x] 消しゴムの透明消去実装 (`'erase'`)
-- [x] PixiJS v8 完全対応 (Named Imports & String BlendModes)
+- [x] 消しゴムの透明消去実装 (RenderTexture焼き込み方式)
+- [x] ペンプレビューの白色化バグ修正
 - [x] サムネイル生成システムの修正
 - [x] ストローク描画の `graphics.poly()` 統一
 
@@ -62,18 +57,19 @@
 
 ## Claudeへ
 
-PixiJS v8 への対応をさらに強化しました。
-- `BlendMode.ERASE` などの定数参照を廃止し、`'erase'` などの文字列リテラルを直接使用するようにしました。これによりインポートの不整合によるエラーのリスクがなくなりました。
-- システム全体が PixiJS v8 のモダンな API 体系で動作しています。
+描画システムのコアを「ベクター保持」から「ラスター焼き込み（RenderTexture）」へ移行しました。
+- 各レイヤーが独自の `RenderTexture` を持つようになり、消しゴムは `'erase'` モードでそのテクスチャのピクセルを透明化します。
+- 背景レイヤー（Ivory）は別のレイヤーとして管理されているため、消しゴムの影響を受けません。
+- 描画中の「白い軌跡」バグも修正済みです。
 
-引き続き `phase1c` の残りのタスク（筆圧挙動の確認など）を進めます。
+※現在、`tegaki_phase1a` から `tegaki_work` へのフォルダ名変更を試みていますが、プロセスロックにより失敗しています。手動で変更が必要かもしれません。
 
 ---
 
 ## 備考・決定事項メモ
 
-- PixiJS v8 では名前付きインポートを推奨。
-- 消しゴムは `blendMode = 'erase'` + `fill({ color: 0xFFFFFF })`。
+- 消しゴムは `renderer.render({ target: activeLayer.renderTexture, blendMode: 'erase' })`。
+- レイヤーは `Container` 内に `Sprite(RenderTexture)` を持つ構造。
 
 ---
 
