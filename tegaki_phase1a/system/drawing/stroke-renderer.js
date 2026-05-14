@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { Graphics, BlendMode, Mesh, Geometry } from 'pixi.js';
+import { Graphics, Mesh, Geometry } from 'pixi.js';
 import { getStroke } from 'perfect-freehand';
 import { TEGAKI_CONFIG } from '../../config.js';
 
@@ -101,11 +101,11 @@ export class StrokeRenderer {
 
         graphics.clear();
         
-        // 消しゴムの場合は BlendMode.ERASE を設定
+        // 消しゴムの場合は 'erase' を設定
         if (mode === 'eraser') {
-            graphics.blendMode = BlendMode.ERASE;
+            graphics.blendMode = 'erase';
         } else {
-            graphics.blendMode = BlendMode.NORMAL;
+            graphics.blendMode = 'normal';
         }
 
         if (points.length === 1) {
@@ -193,7 +193,7 @@ export class StrokeRenderer {
 
         mesh.tint = settings.color;
         mesh.alpha = settings.opacity || 1.0;
-        mesh.blendMode = BlendMode.NORMAL;
+        mesh.blendMode = 'normal';
 
         return mesh;
     }
@@ -215,7 +215,7 @@ export class StrokeRenderer {
             const graphics = new Graphics();
             graphics.circle(p.x, p.y, width / 2);
             graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-            graphics.blendMode = BlendMode.ERASE;
+            graphics.blendMode = 'erase';
             return graphics;
         }
 
@@ -225,7 +225,7 @@ export class StrokeRenderer {
         const graphics = new Graphics();
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
         graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-        graphics.blendMode = BlendMode.ERASE;
+        graphics.blendMode = 'erase';
 
         return graphics;
     }
@@ -234,9 +234,9 @@ export class StrokeRenderer {
         const graphics = new Graphics();
         
         if (mode === 'eraser') {
-            graphics.blendMode = BlendMode.ERASE;
+            graphics.blendMode = 'erase';
         } else {
-            graphics.blendMode = BlendMode.NORMAL;
+            graphics.blendMode = 'normal';
         }
 
         const inputPoints = strokeData.points.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
@@ -278,9 +278,9 @@ export class StrokeRenderer {
         const width = this.calculateWidth(point.pressure, settings.size);
 
         if (mode === 'eraser') {
-            graphics.blendMode = BlendMode.ERASE;
+            graphics.blendMode = 'erase';
         } else {
-            graphics.blendMode = BlendMode.NORMAL;
+            graphics.blendMode = 'normal';
         }
 
         graphics.circle(point.x, point.y, width / 2);

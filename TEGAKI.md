@@ -59,9 +59,17 @@ PointerEvent（筆圧・座標取得）
 perfect-freehand（輪郭ポリゴン生成）
   ↓
 PixiJS v8 Graphics（ポリゴン塗りつぶしで描画）
+  ↓ プレビュー中はGraphicsのまま保持
+  ↓ 確定時にレイヤーのRenderTextureへ焼き込み
 
-消しゴムは同じパイプラインで BlendMode.ERASE を切り替えるだけ
+消しゴムは同じパイプラインで blendMode = 'erase'（文字列）を指定するだけ
 ```
+
+**描画確定時の焼き込み方針（重要）：**
+- プレビュー中（ドラッグ中）→ Graphics オブジェクトで表示
+- ストローク確定時（PointerUp）→ レイヤーの RenderTexture に焼き込んで Graphics を破棄
+- 履歴（Undo用）はストロークデータ（点列）を保存する（RenderTexture全体ではない）
+- 毎フレームGraphicsをclearして作り直す実装は禁止（パフォーマンス劣化）
 
 筆圧の扱い：
 ```javascript
@@ -76,11 +84,17 @@ graphics.alpha = Math.max(0.1, pressure ** 0.5)
 
 | 機能 | 用途 |
 |---|---|
-| `BlendMode.ERASE` | 消しゴム実装（白塗り禁止） |
+| `blendMode = 'erase'` | 消しゴム実装（文字列指定。BlendModeのimport不要） |
+| `blendMode = 'normal'` | 通常ペン描画 |
+| `RenderTexture` | レイヤーへの焼き込み・合成 |
 | `reparentChild()` | レイヤー並び替え（位置・スケール崩れなし） |
 | `getGlobalTransform()` | 座標系補助（camera-system.jsの簡略化） |
 | 逆マスク `inverse: true` | 消しゴムの実装バリエーション |
 | `pixelLine` | グリッド・補助線の1px描画 |
+
+> ⚠️ **PixiJS v8.17.0では `BlendMode` オブジェクトはexportされていない。**
+> `import { BlendMode } from 'pixi.js'` は失敗する。
+> 消しゴム・ブレンドモードは必ず文字列（`'erase'`・`'normal'`）で指定すること。
 
 ### WebGPU・ベクターペンについて（将来オプション）
 
@@ -96,7 +110,9 @@ WebGL2+ラスターの安定運用が完成した後に検討する。
 - TypeScript・Babel・複雑なbundler設定
 - Canvas2D（デバッグ目的の一時使用のみ可）
 - PixiJS の toLocal() / toGlobal()（座標変換に使用禁止）
-- 消しゴムの「白塗り」実装（BlendMode.ERASEを使うこと）
+- `import { BlendMode } from 'pixi.js'`（v8.17.0ではexport不可。文字列で指定すること）
+- 消しゴムの「白塗り」実装（`blendMode = 'erase'` を使うこと）
+- 毎フレームGraphicsをclearして作り直す実装（RenderTextureへ焼き込む方式を使う）
 - 二重実装・循環依存・グローバル変数の重複定義
 - ペンと消しゴムの分離実装（strokeTypeで統合すること）
 - perfect-freehandを使わない独自ブラシ輪郭計算（再発明禁止）
@@ -265,7 +281,7 @@ camera-system.js       : ズーム・パン・worldContainer transform
 drawing-engine.js      : PointerEvent → 筆圧取得・座標変換・ストローク開始
 stroke-recorder.js     : Localポイント記録（変換なし）
 freehand-stroke.js     : perfect-freehandでポイント列→輪郭ポリゴン変換
-                         ペン・消しゴム共通（strokeTypeでBlendMode切り替え）
+                         ペン・消しゴム共通（strokeTypeで blendMode文字列切り替え）
 raster-layer.js        : WebGL2フレームバッファ・レイヤー管理
                          レイヤー並び替えにreparentChild()使用
 webgl2-drawing-layer.js: 合成・出力
@@ -372,6 +388,14 @@ window.EventBus           : イベント通信バス
 - ライブラリのバージョンを確認し、古いAPIを新バージョンに誤用しない
   - PixiJS: **v8.17.0**（v7のAPIを混入させない）
   - perfect-freehand: **最新安定版**（npm installで取得したバージョンを使う）
+- **PixiJS v8.17.0の実exportを確認済みのAPI一覧（これ以外をimportしない）：**
+  ```
+  使用可能: Container, Graphics, Sprite, RenderTexture, Texture,
+            Matrix, Mesh, Geometry, Application, Assets,
+            Filter, Rectangle, Point
+  使用不可: BlendMode（exportなし。'erase'/'normal'の文字列で代替）
+  ```
+- 不明なAPIはnode -e "const p = require('./node_modules/pixi.js'); console.log(Object.keys(p).filter(k=>k.includes('XXX')))" で実在確認してから使う
 - 存在しないファイルパスを推測で書かない。必ず実際のファイル構成を確認してから参照する
 - 500行以上のエラーログを丸ごと処理しようとしない。関係するStack Traceの3〜5行に絞って対処する
 - 不確かな場合は「〜かもしれない」と明示し、確認を求めてから進める
@@ -390,4 +414,4 @@ window.EventBus           : イベント通信バス
 
 ---
 
-*最終更新：2026年5月（命名規則・グローバル登録・レンダーループ・品質目標・ハルシネーション対策・ファイルヘッダー拡充）*
+*最終更新：2026年5月（BlendMode API修正・RenderTexture焼き込み方針追加・PixiJS許可API表追加）*
