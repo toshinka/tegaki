@@ -196,10 +196,23 @@ export class BrushCore {
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
         
         const processedPressure = pressure;
+        const currentMode = this.getMode();
         
         const dx = localX - this.lastLocalX;
         const dy = localY - this.lastLocalY;
         const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // 指示書に基づくリアルタイム消去：
+        // 消しゴムの場合、移動中に短いストロークを RenderTexture に焼き込む。
+        if (currentMode === 'eraser' && distance > 1.0) {
+            const segmentPoints = [
+                { x: this.lastLocalX, y: this.lastLocalY, pressure: this.lastPressure },
+                { x: localX, y: localY, pressure: processedPressure }
+            ];
+            
+            this._renderRealtimeEraserSegment(segmentPoints);
+        }
+
         const steps = Math.max(1, Math.floor(distance / 5));
         
         for (let i = 1; i <= steps; i++) {
@@ -213,7 +226,7 @@ export class BrushCore {
         
         this.strokeRecorder.addPoint(localX, localY, processedPressure);
         
-        if (this.previewGraphics) {
+        if (this.previewGraphics && currentMode !== 'eraser') {
             const currentPoints = this.strokeRecorder.getCurrentPoints();
             const settings = this._getCurrentSettings();
             
@@ -228,6 +241,36 @@ export class BrushCore {
         this.lastLocalX = localX;
         this.lastLocalY = localY;
         this.lastPressure = processedPressure;
+    }
+
+    /**
+     * [指示書] 消しゴムのリアルタイム反映用：短いセグメントを直接 RenderTexture に焼き込む
+     */
+    _renderRealtimeEraserSegment(points) {
+        const activeLayer = this.layerManager.getActiveLayer();
+        if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
+
+        const settings = this._getCurrentSettings();
+        
+        // 短いGraphicsオブジェクトを生成
+        const graphics = this.strokeRenderer.renderPreview(
+            points,
+            { ...settings, mode: 'eraser' }
+        );
+
+        if (graphics && this.layerManager.app?.renderer) {
+            const renderContainer = new Container();
+            renderContainer.addChild(graphics);
+            renderContainer.blendMode = 'erase';
+            
+            this.layerManager.app.renderer.render({
+                container: renderContainer,
+                target: activeLayer.layerData.renderTexture,
+                clear: false
+            });
+            
+            renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+        }
     }
     
     async finalizeStroke() {

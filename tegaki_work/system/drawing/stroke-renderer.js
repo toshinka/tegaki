@@ -90,6 +90,43 @@ export class StrokeRenderer {
         return Math.max(this.minPhysicalWidth, brushSize * ratio);
     }
 
+    /**
+     * Perfect-Freehand のオプションを統一
+     */
+    _getFreehandOptions(size) {
+        return {
+            size: size,
+            thinning: 0.7,
+            smoothing: 0.4,
+            streamline: 0.3,
+            simulatePressure: false,
+            last: true
+        };
+    }
+
+    /**
+     * [指示書] 鋭角対策：極端に近い点を除外するフィルタ
+     */
+    _filterNearPoints(points) {
+        if (!points || points.length === 0) return [];
+        const MIN_DIST = 0.25;
+        const result = [];
+        for (const p of points) {
+            const last = result[result.length - 1];
+            if (!last) {
+                result.push(p);
+                continue;
+            }
+
+            const dx = p.x - last.x;
+            const dy = p.y - last.y;
+            if (Math.hypot(dx, dy) >= MIN_DIST) {
+                result.push(p);
+            }
+        }
+        return result;
+    }
+
     renderPreview(points, providedSettings = null, targetGraphics = null) {
         const graphics = targetGraphics || new Graphics();
         const settings = this._getSettings(providedSettings);
@@ -101,7 +138,7 @@ export class StrokeRenderer {
 
         graphics.clear();
         
-        // 消しゴムの場合はプレビューを描画しない（カーソルのみで十分なため）
+        // 消しゴムの場合はプレビューを描画しない（リアルタイム焼き込みに移行したため）
         if (mode === 'eraser') {
             return graphics;
         }
@@ -112,35 +149,21 @@ export class StrokeRenderer {
             const p = points[0];
             const width = this.calculateWidth(p.pressure, settings.size);
             graphics.circle(p.x, p.y, width / 2);
-            
-            if (mode === 'eraser') {
-                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-            } else {
-                graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
-            }
+            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
             return graphics;
         }
 
-        const inputPoints = points.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
-        const options = {
-            size: settings.size,
-            thinning: 0.7,
-            smoothing: 0.4,
-            streamline: 0.3,
-            simulatePressure: false,
-            last: true
-        };
+        const filteredPoints = this._filterNearPoints(points);
+        if (filteredPoints.length < 2) return graphics;
+
+        const inputPoints = filteredPoints.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
+        const options = this._getFreehandOptions(settings.size);
         
         const outlinePoints = getStroke(inputPoints, options);
         if (outlinePoints.length < 2) return graphics;
 
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
-        
-        if (mode === 'eraser') {
-            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-        } else {
-            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
-        }
+        graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
 
         return graphics;
     }
@@ -152,79 +175,36 @@ export class StrokeRenderer {
             return this._renderEraserStroke(strokeData, settings);
         }
         
-        // Phase 1cではMesh経路を使わない。鋭角ストロークの三角形化を避けるため、Graphics.poly()に統一する。
+        // [指示書] Mesh経路を使わず Graphics.poly に統一
         return this._renderFinalStrokeGraphics(strokeData, settings, mode);
     }
 
     async _renderWithPerfectFreehand(strokeData, settings) {
-        const points = strokeData.points;
-        if (!points || points.length < 2) return null;
-
-        const vertexBuffer = this.glStrokeProcessor.createPolygonVertexBuffer(
-            points,
-            settings.size
-        );
-        
-        if (!vertexBuffer || !vertexBuffer.buffer) {
-            return null;
-        }
-
-        const geometry = new Geometry({
-            attributes: {
-                aPosition: {
-                    buffer: vertexBuffer.buffer,
-                    size: 3,
-                    stride: 28,
-                    offset: 0
-                },
-                aUV: {
-                    buffer: vertexBuffer.buffer,
-                    size: 2,
-                    stride: 28,
-                    offset: 12
-                }
-            }
-        });
-
-        const mesh = new Mesh({
-            geometry: geometry
-        });
-
-        mesh.tint = settings.color;
-        mesh.alpha = settings.opacity || 1.0;
-        mesh.blendMode = 'normal';
-
-        return mesh;
+        // [指示書] Mesh経路は使用しない方針のため、nullを返す
+        return null;
     }
 
     _renderEraserStroke(strokeData, settings) {
-        const inputPoints = strokeData.points.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
-        const options = {
-            size: settings.size,
-            thinning: 0.5,
-            smoothing: 0.5,
-            streamline: 0.5,
-            simulatePressure: false,
-            last: true
-        };
+        const filteredPoints = this._filterNearPoints(strokeData.points);
+        const options = this._getFreehandOptions(settings.size);
         
-        if (strokeData.isSingleDot || strokeData.points.length === 1) {
-            const p = strokeData.points[0];
+        const graphics = new Graphics();
+        graphics.blendMode = 'erase';
+
+        if (strokeData.isSingleDot || filteredPoints.length === 1) {
+            const p = filteredPoints[0] || strokeData.points[0];
             const width = this.calculateWidth(p.pressure, settings.size);
-            const graphics = new Graphics();
             graphics.circle(p.x, p.y, width / 2);
             graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-            graphics.blendMode = 'erase';
             return graphics;
         }
 
+        const inputPoints = filteredPoints.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
         const outlinePoints = getStroke(inputPoints, options);
         if (!outlinePoints || outlinePoints.length < 2) return null;
 
-        const graphics = new Graphics();
         graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
         graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
-        graphics.blendMode = 'erase';
 
         return graphics;
     }
@@ -238,23 +218,22 @@ export class StrokeRenderer {
             graphics.blendMode = 'normal';
         }
 
-        const inputPoints = strokeData.points.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
-        const options = {
-            size: settings.size,
-            thinning: 0.7,
-            smoothing: 0.4,
-            streamline: 0.3,
-            simulatePressure: false,
-            last: true
-        };
-
-        if (strokeData.isSingleDot || strokeData.points.length === 1) {
-            const p = strokeData.points[0];
+        const filteredPoints = this._filterNearPoints(strokeData.points);
+        if (strokeData.isSingleDot || filteredPoints.length === 1) {
+            const p = filteredPoints[0] || strokeData.points[0];
             const width = this.calculateWidth(p.pressure, settings.size);
             graphics.circle(p.x, p.y, width / 2);
-            graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            
+            if (mode === 'eraser') {
+                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            } else {
+                graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+            }
             return graphics;
         }
+
+        const inputPoints = filteredPoints.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
+        const options = this._getFreehandOptions(settings.size);
 
         const outlinePoints = getStroke(inputPoints, options);
         if (!outlinePoints || outlinePoints.length < 2) return null;
@@ -264,7 +243,6 @@ export class StrokeRenderer {
         if (mode === 'eraser') {
             graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
         } else {
-            // ペンの場合は設定色と不透明度で塗る
             graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
         }
 

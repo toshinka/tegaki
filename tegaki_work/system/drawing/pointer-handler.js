@@ -57,7 +57,18 @@ export class PointerHandler {
         }
 
         function onPointerDown(e) {
-            if (e.button === 2) return;
+            // [指示書] タブレットペン入力の調査用ログ
+            console.log('[PointerHandler] raw pointerdown', {
+                pointerType: e.pointerType,
+                button: e.button,
+                buttons: e.buttons,
+                target: e.target?.tagName,
+                id: e.target?.id,
+                className: e.target?.className
+            });
+
+            // 右クリック除外（ペン以外の場合のみ除外する）
+            if (e.button === 2 && e.pointerType !== 'pen') return;
 
             const info = normalizeEvent(e);
             activePointers.set(e.pointerId, info);
