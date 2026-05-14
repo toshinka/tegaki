@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Texture, Sprite } from 'pixi.js';
 
 export class GLTextureBridge {
     constructor() {
@@ -70,8 +70,8 @@ export class GLTextureBridge {
                 return null;
             }
 
-            const texture = PIXI.Texture.from(canvas);
-            const sprite = new PIXI.Sprite(texture);
+            const texture = Texture.from(canvas);
+            const sprite = new Sprite(texture);
             sprite.anchor.set(0, 0);
 
             return sprite;
@@ -167,4 +167,3 @@ window.WebGPUTextureBridge = glTextureBridge;
 console.log('✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded');
 console.log('   ✅ WebGLTexture → PIXI.Sprite変換実装完了');
 console.log('   ✅ PixiJS v8: Texture.from()直接使用');
-

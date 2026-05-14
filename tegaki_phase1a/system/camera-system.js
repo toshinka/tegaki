@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Container, Graphics } from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { coordinateSystem } from '../coordinate-system.js';
@@ -134,24 +134,24 @@ export class CameraSystem {
     }
 
     _createContainers() {
-        this.worldContainer = new PIXI.Container();
+        this.worldContainer = new Container();
         this.worldContainer.label = 'worldContainer';
         this.app.stage.addChild(this.worldContainer);
         
-        this.canvasContainer = new PIXI.Container();
+        this.canvasContainer = new Container();
         this.canvasContainer.label = 'canvasContainer';
         this.worldContainer.addChild(this.canvasContainer);
         
-        this.cameraFrame = new PIXI.Graphics();
+        this.cameraFrame = new Graphics();
         this.cameraFrame.label = 'cameraFrame';
         this.worldContainer.addChild(this.cameraFrame);
         
-        this.guideLines = new PIXI.Container();
+        this.guideLines = new Container();
         this.guideLines.label = 'guideLines';
         this.worldContainer.addChild(this.guideLines);
         this.createGuideLines();
         
-        this.canvasMask = new PIXI.Graphics();
+        this.canvasMask = new Graphics();
         this.canvasMask.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
         this.canvasMask.fill(0xffffff);
         this.worldContainer.addChild(this.canvasMask);
@@ -164,12 +164,12 @@ export class CameraSystem {
         const centerX = this.config.canvas.width / 2;
         const centerY = this.config.canvas.height / 2;
         
-        const verticalLine = new PIXI.Graphics();
+        const verticalLine = new Graphics();
         verticalLine.rect(centerX - 0.5, 0, 1, this.config.canvas.height);
         verticalLine.fill({ color: 0x800000, alpha: 0.8 });
         this.guideLines.addChild(verticalLine);
         
-        const horizontalLine = new PIXI.Graphics();
+        const horizontalLine = new Graphics();
         horizontalLine.rect(0, centerY - 0.5, this.config.canvas.width, 1);
         horizontalLine.fill({ color: 0x800000, alpha: 0.8 });
         this.guideLines.addChild(horizontalLine);

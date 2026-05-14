@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import * as PIXI from 'pixi.js';
+import { Container, Graphics, Mesh, RenderTexture } from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { LayerModel } from './data-models.js';
@@ -44,10 +44,10 @@ export class LayerSystem {
         
         this.transform = new LayerTransform(this.config, this.coordAPI);
         
-        this.currentFrameContainer = new PIXI.Container();
+        this.currentFrameContainer = new Container();
         this.currentFrameContainer.label = 'temporary_frame_container';
         
-        const bgLayer = new PIXI.Container();
+        const bgLayer = new Container();
         const bgLayerModel = new LayerModel({
             id: 'temp_layer_bg_' + Date.now(),
             name: '背景',
@@ -67,7 +67,7 @@ export class LayerSystem {
         bgLayer.layerData.backgroundColor = 0xf0e0d6;
         this.currentFrameContainer.addChild(bgLayer);
         
-        const layer1 = new PIXI.Container();
+        const layer1 = new Container();
         const layer1Model = new LayerModel({
             id: 'temp_layer_1_' + Date.now(),
             name: 'レイヤー1'
@@ -106,7 +106,7 @@ export class LayerSystem {
             folderExpanded: true
         });
         
-        const folder = new PIXI.Container();
+        const folder = new Container();
         folder.label = folderModel.id;
         folder.layerData = folderModel;
         folder.id = folderModel.id;
@@ -277,7 +277,7 @@ export class LayerSystem {
     }
 
     _createSolidBackground(width, height, color = 0xf0e0d6) {
-        const g = new PIXI.Graphics();
+        const g = new Graphics();
         g.rect(0, 0, width, height);
         g.fill({ color: color, alpha: 1.0 });
         g.label = 'backgroundFill';
@@ -454,9 +454,9 @@ export class LayerSystem {
                     }
                 } catch (destroyError) {}
                 path.graphics = null;
-            }
-            path.graphics = new PIXI.Graphics();
-            if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
+                }
+                path.graphics = new Graphics();
+                if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
                 return true;
             }
             
@@ -484,7 +484,7 @@ export class LayerSystem {
                 continue;
             }
             
-            if (child instanceof PIXI.Graphics || child instanceof PIXI.Mesh) {
+            if (child instanceof Graphics || child instanceof Mesh) {
                 child.mask = layer.layerData.maskSprite;
             }
         }
@@ -872,7 +872,7 @@ export class LayerSystem {
     
     createFrameRenderTexture(frameId) {
         if (!this.app?.renderer) return null;
-        const renderTexture = PIXI.RenderTexture.create({
+        const renderTexture = RenderTexture.create({
             width: this.config.canvas.width,
             height: this.config.canvas.height
         });
@@ -892,7 +892,7 @@ export class LayerSystem {
             oldTexture.destroy(true);
         }
         
-        const renderTexture = PIXI.RenderTexture.create({
+        const renderTexture = RenderTexture.create({
             width: currentWidth,
             height: currentHeight
         });
@@ -1204,7 +1204,7 @@ export class LayerSystem {
             name: name || (isBackground ? '背景' : this._generateNextLayerName()),
             isBackground: isBackground
         });
-        const layer = new PIXI.Container();
+        const layer = new Container();
         layer.label = layerModel.id;
         layer.layerData = layerModel;
         layer.id = layerModel.id;
