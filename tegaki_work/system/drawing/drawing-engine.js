@@ -62,6 +62,16 @@ export class DrawingEngine {
     }
 
     _handlePointerDown(info, e) {
+        // [指示書] 全入力の入口ログ
+        console.log('[DrawingEngine] down gate', JSON.stringify({
+            pointerType: info.pointerType,
+            button: info.button,
+            buttons: info.buttons,
+            pressure: info.pressure,
+            canvasMove: this.cameraSystem?.isCanvasMoveMode?.(),
+            vKey: this.layerSystem?.vKeyPressed
+        }));
+
         // デバッグログ追加
         if (info.pointerType === 'pen') {
             console.log('[DrawingEngine] Pen Down:', {

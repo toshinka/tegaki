@@ -43,6 +43,7 @@ export class CameraSystem {
         this.shiftPressed = false;
         this.vKeyPressed = false;
         this.canvasMoveMode = false;
+        this.dragTrigger = null; // [指示書] ドラッグ起点の追跡 ('space' | 'rightButton')
         
         this.worldContainer = null;
         this.canvasContainer = null;
@@ -252,44 +253,14 @@ export class CameraSystem {
         this.config.canvas.width = newWidth;
         this.config.canvas.height = newHeight;
         
-        const widthDiff = newWidth - oldWidth;
-        const heightDiff = newHeight - oldHeight;
-        
-        let offsetX = 0;
-        let offsetY = 0;
-        
-        switch(alignOptions.horizontal) {
-            case 'left':
-                offsetX = 0;
-                break;
-            case 'center':
-                offsetX = widthDiff / 2;
-                break;
-            case 'right':
-                offsetX = widthDiff;
-                break;
-        }
-        
-        switch(alignOptions.vertical) {
-            case 'top':
-                offsetY = 0;
-                break;
-            case 'center':
-                offsetY = heightDiff / 2;
-                break;
-            case 'bottom':
-                offsetY = heightDiff;
-                break;
-        }
-        
-        this.worldContainer.position.x += offsetX;
-        this.worldContainer.position.y += offsetY;
-        
         this.updateGuideLinesForCanvasResize();
         
         if (this.coordinateSystem && typeof this.coordinateSystem.clearCache === 'function') {
             this.coordinateSystem.clearCache();
         }
+
+        // [指示書] リサイズ後のセンタリング
+        this.centerCanvasOnScreen();
         
         if (this.eventBus) {
             this.eventBus.emit('camera:resized', { 
@@ -302,6 +273,25 @@ export class CameraSystem {
             
             this.eventBus.emit('camera:transform-changed');
         }
+    }
+
+    /**
+     * [指示書] キャンバス中心を画面中央へ合わせる
+     */
+    centerCanvasOnScreen() {
+        if (!this.worldContainer) return;
+        const screen = this.app.renderer?.screen || this.app.screen || { width: window.innerWidth, height: window.innerHeight };
+        
+        // 現在のスケール・回転を維持したまま、キャンバス中央のグローバル座標を取得
+        const canvasCenterLocal = {
+            x: this.config.canvas.width / 2,
+            y: this.config.canvas.height / 2
+        };
+        const canvasCenterGlobal = this.worldContainer.toGlobal(canvasCenterLocal);
+        
+        // 画面中央との差分を worldContainer の位置に加算
+        this.worldContainer.x += (screen.width / 2) - canvasCenterGlobal.x;
+        this.worldContainer.y += (screen.height / 2) - canvasCenterGlobal.y;
     }
 
     _setupEvents() {
@@ -337,6 +327,7 @@ export class CameraSystem {
             if ((isMouseSecondaryButton || this.spacePressed) && !this.shiftPressed) {
                 this.isDragging = true;
                 this.canvasMoveMode = true;
+                this.dragTrigger = this.spacePressed ? 'space' : 'rightButton';
                 this.lastPoint = { x: e.clientX, y: e.clientY };
                 this._emitCursorChange('move');
                 this._emitCanvasMoveMode(true);
@@ -344,6 +335,7 @@ export class CameraSystem {
             } else if ((isMouseSecondaryButton || this.spacePressed) && this.shiftPressed) {
                 this.isScaleRotateDragging = true;
                 this.canvasMoveMode = true;
+                this.dragTrigger = this.spacePressed ? 'space' : 'rightButton';
                 this.lastPoint = { x: e.clientX, y: e.clientY };
                 this._emitCursorChange('grab');
                 this._emitCanvasMoveMode(true);
@@ -352,6 +344,12 @@ export class CameraSystem {
         });
         
         canvas.addEventListener('pointermove', (e) => {
+            // [指示書] Space起点のドラッグ中にSpaceが離されたら中断
+            if (this.dragTrigger === 'space' && !this.spacePressed) {
+                this._stopDragging();
+                return;
+            }
+
             if (this.isDragging) {
                 const dx = (e.clientX - this.lastPoint.x) * this.config.camera.dragMoveSpeed;
                 const dy = (e.clientY - this.lastPoint.y) * this.config.camera.dragMoveSpeed;
@@ -370,16 +368,10 @@ export class CameraSystem {
             const isMouseSecondaryButton = e.button === 2 && e.pointerType !== 'pen';
 
             if (this.isDragging && (isMouseSecondaryButton || !this.spacePressed)) {
-                this.isDragging = false;
-                this.canvasMoveMode = false;
-                this._emitCanvasMoveMode(false);
-                this._emitCursorUpdate();
+                this._stopDragging();
             }
             if (this.isScaleRotateDragging && (isMouseSecondaryButton || !this.spacePressed)) {
-                this.isScaleRotateDragging = false;
-                this.canvasMoveMode = false;
-                this._emitCanvasMoveMode(false);
-                this._emitCursorUpdate();
+                this._stopDragging();
             }
         });
 
@@ -419,6 +411,15 @@ export class CameraSystem {
                 return;
             }
         });
+    }
+
+    _stopDragging() {
+        this.isDragging = false;
+        this.isScaleRotateDragging = false;
+        this.canvasMoveMode = false;
+        this.dragTrigger = null;
+        this._emitCanvasMoveMode(false);
+        this._emitCursorUpdate();
     }
 
     _handleScaleRotateDrag(e) {
@@ -493,8 +494,8 @@ export class CameraSystem {
             
             if (e.code === 'Space' && !this.spacePressed) {
                 this.spacePressed = true;
-                this.canvasMoveMode = true;
-                this._emitCanvasMoveMode(true);
+                // [指示書] keydown単体では canvasMoveMode = true にしない。
+                // 実際に pointerdown (Space+Click) した時にモード開始する。
                 this._emitCursorUpdate();
                 e.preventDefault();
                 return;
@@ -512,6 +513,14 @@ export class CameraSystem {
         });
         
         document.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                this.spacePressed = false;
+                // [指示書] Spaceを離した瞬間にドラッグ終了
+                if (this.dragTrigger === 'space') {
+                    this._stopDragging();
+                }
+                this._emitCursorUpdate();
+            }
             this._resetKeyStates(e);
         });
         
@@ -529,16 +538,6 @@ export class CameraSystem {
     }
 
     _resetKeyStates(e) {
-        if (e.code === 'Space') {
-            this.spacePressed = false;
-            if (this.canvasMoveMode) {
-                this.canvasMoveMode = false;
-                this.isDragging = false;
-                this.isScaleRotateDragging = false;
-                this._emitCanvasMoveMode(false);
-            }
-            this._emitCursorUpdate();
-        }
         if (!e.shiftKey) {
             this.shiftPressed = false;
         }
@@ -547,13 +546,7 @@ export class CameraSystem {
     _resetAllKeyStates() {
         this.spacePressed = false;
         this.shiftPressed = false;
-        if (this.canvasMoveMode) {
-            this.canvasMoveMode = false;
-            this.isDragging = false;
-            this.isScaleRotateDragging = false;
-            this._emitCanvasMoveMode(false);
-        }
-        this._emitCursorUpdate();
+        this._stopDragging();
     }
 
     _handleCameraMoveKeys(e) {

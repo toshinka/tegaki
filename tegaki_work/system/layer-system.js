@@ -356,6 +356,9 @@ export class LayerSystem {
         if (!this.eventBus) return;
         
         this.eventBus.on('camera:resized', (data) => {
+            // [指示書] 全レイヤーのテクスチャを新サイズへ拡張
+            this.resizeLayerTextures(data.width, data.height, data.oldWidth, data.oldHeight, data.align);
+
             if (this.checkerPattern && this.checkerPattern.parent && window.checkerUtils) {
                 const wasVisible = this.checkerPattern.visible;
                 
@@ -384,9 +387,99 @@ export class LayerSystem {
                 bg.fill({ color: currentColor, alpha: 1.0 });
             }
             
-            this.requestThumbnailUpdate(0);
+            // 全レイヤーのサムネイル更新を要求
+            const layers = this.getLayers();
+            for (let i = 0; i < layers.length; i++) {
+                this.requestThumbnailUpdate(i);
+            }
             this._emitPanelUpdateRequest();
         });
+    }
+
+    /**
+     * [指示書] キャンバスリサイズに合わせて全レイヤーのテクスチャサイズを更新する
+     */
+    resizeLayerTextures(newWidth, newHeight, oldWidth, oldHeight, alignOptions) {
+        const widthDiff = newWidth - oldWidth;
+        const heightDiff = newHeight - oldHeight;
+        
+        let offsetX = 0;
+        let offsetY = 0;
+        
+        const hAlign = alignOptions?.horizontal || 'center';
+        const vAlign = alignOptions?.vertical || 'center';
+
+        if (hAlign === 'center') offsetX = widthDiff / 2;
+        else if (hAlign === 'right') offsetX = widthDiff;
+
+        if (vAlign === 'center') offsetY = heightDiff / 2;
+        else if (vAlign === 'bottom') offsetY = heightDiff;
+
+        console.log('[LayerSystem] Starting resizeLayerTextures', { newWidth, newHeight, offsetX, offsetY });
+
+        for (const layer of this.getLayers()) {
+            if (!layer.layerData || layer.layerData.isFolder) continue;
+            this._resizeSingleLayerTexture(layer, newWidth, newHeight, offsetX, offsetY);
+        }
+    }
+
+    /**
+     * [指示書] 単一レイヤーの RenderTexture をリサイズし、内容をコピーする
+     */
+    _resizeSingleLayerTexture(layer, newWidth, newHeight, offsetX, offsetY) {
+        const layerData = layer.layerData;
+        if (!layerData || !this.app?.renderer) return;
+
+        const oldRT = layerData.renderTexture;
+        if (!oldRT) return;
+
+        // 調査用ログ
+        console.log('[LayerSystem] resize layer texture', {
+            layer: layerData.name,
+            oldRT: `${oldRT.width}x${oldRT.height}`,
+            newRT: `${newWidth}x${newHeight}`,
+            offset: `${offsetX},${offsetY}`
+        });
+
+        // 1. 新しい RenderTexture 作成
+        const newRT = RenderTexture.create({
+            width: newWidth,
+            height: newHeight,
+            antialias: true
+        });
+
+        // 2. 旧内容を新テクスチャへレンダリング
+        const tempSprite = new Sprite(oldRT);
+        tempSprite.position.set(offsetX, offsetY);
+
+        this.app.renderer.render({
+            container: tempSprite,
+            target: newRT,
+            clear: true,
+            clearColor: 0x000000,
+            clearAlpha: 0
+        });
+
+        // 3. データの差し替え
+        layerData.renderTexture = newRT;
+        if (layerData.layerSprite) {
+            layerData.layerSprite.texture = newRT;
+        } else {
+            layerData.layerSprite = new Sprite(newRT);
+            layerData.layerSprite.label = 'layer_raster_sprite';
+            layer.addChildAt(layerData.layerSprite, 0);
+        }
+
+        // 4. マスクがある場合はマスクもリサイズ
+        if (layerData.maskTexture) {
+            layerData.initializeMask(newWidth, newHeight, this.app.renderer);
+            // 注: 既存マスク内容は「全部塗りつぶし」にリセットされる。
+            // もし複雑なマスク運用がある場合はここもコピーが必要だが、現状は初期化で十分とする。
+        }
+
+        // 5. 旧テクスチャ破棄
+        oldRT.destroy(true);
+        tempSprite.destroy({ texture: false, baseTexture: false });
     }
 
     changeBackgroundLayerColor(layerIndex, layerId) {
