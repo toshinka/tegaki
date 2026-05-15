@@ -213,16 +213,17 @@ export const ThumbnailSystem = {
             const px = ctx.getImageData(checkX, checkY, 1, 1).data;
             const debug = layer._thumbnailDebug || { nonTransparentPixels: 'bg', maxAlpha: px[3], sourceWidth, sourceHeight };
 
-            // [指示書 Phase 1c] ログ形式を指示に合わせる
-            console.log('[ThumbnailSystem] updated', JSON.stringify({
-                layer: layer.layerData?.name,
-                isBackground,
-                source: `${debug.sourceWidth}x${debug.sourceHeight}`,
-                thumb: `${thumbW}x${thumbH}`,
-                nonTransparentPixels: debug.nonTransparentPixels,
-                maxAlpha: debug.maxAlpha,
-                centerRGBA: Array.from(px)
-            }));
+            if (window.TEGAKI_CONFIG?.debug) {
+                console.log('[ThumbnailSystem] updated', JSON.stringify({
+                    layer: layer.layerData?.name,
+                    isBackground,
+                    source: `${debug.sourceWidth}x${debug.sourceHeight}`,
+                    thumb: `${thumbW}x${thumbH}`,
+                    nonTransparentPixels: debug.nonTransparentPixels,
+                    maxAlpha: debug.maxAlpha,
+                    centerRGBA: Array.from(px)
+                }));
+            }
             // ── ⑤ キャッシュ & イベント発火 ─────────────────────────────
             const dataUrl = thumbCanvas.toDataURL('image/png');
             this.thumbnails.set(layerId, dataUrl);

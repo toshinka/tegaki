@@ -119,7 +119,7 @@ export const TEGAKI_CONFIG = {
             previewQuality: 'medium'
         }
     },
-    debug: true
+    debug: false
 };
 
 export const TEGAKI_KEYMAP = {

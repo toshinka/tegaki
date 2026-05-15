@@ -159,7 +159,9 @@ export class LayerSystem {
         tempSprite.destroy();
         tempRT.destroy(true);
         
-        console.log(`[LayerSystem] Baked transform for layer: ${layerData.name}`);
+        if (this.config?.debug) {
+            console.log(`[LayerSystem] Baked transform for layer: ${layerData.name}`);
+        }
     }
 
     createFolder(name) {
@@ -415,7 +417,9 @@ export class LayerSystem {
         if (vAlign === 'center') offsetY = heightDiff / 2;
         else if (vAlign === 'bottom') offsetY = heightDiff;
 
-        console.log('[LayerSystem] Starting resizeLayerTextures', { newWidth, newHeight, offsetX, offsetY });
+        if (this.config?.debug) {
+            console.log('[LayerSystem] Starting resizeLayerTextures', { newWidth, newHeight, offsetX, offsetY });
+        }
 
         for (const layer of this.getLayers()) {
             // [指示書] 背景レイヤーとフォルダはスキップ（背景は別途 backgroundGraphics で処理済み）
@@ -434,13 +438,14 @@ export class LayerSystem {
         const oldRT = layerData.renderTexture;
         if (!oldRT) return;
 
-        // 調査用ログ
-        console.log('[LayerSystem] resize layer texture', {
-            layer: layerData.name,
-            oldRT: `${oldRT.width}x${oldRT.height}`,
-            newRT: `${newWidth}x${newHeight}`,
-            offset: `${offsetX},${offsetY}`
-        });
+        if (this.config?.debug) {
+            console.log('[LayerSystem] resize layer texture', {
+                layer: layerData.name,
+                oldRT: `${oldRT.width}x${oldRT.height}`,
+                newRT: `${newWidth}x${newHeight}`,
+                offset: `${offsetX},${offsetY}`
+            });
+        }
 
         // 1. 新しい RenderTexture 作成
         const newRT = RenderTexture.create({

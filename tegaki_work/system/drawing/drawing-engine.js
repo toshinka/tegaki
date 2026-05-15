@@ -6,7 +6,7 @@
  * 被依存: core-engine.js, core-runtime.js等
  * 公開API: DrawingEngine
  * イベント発火: canvas:pointerdown, ui:drawing-completed
- * イベント受診: なし
+ * イベント受信: なし
  * グローバル登録: window.DrawingEngine
  * 実装状態: ♻️移植
  * ============================================================================
@@ -101,7 +101,9 @@ export class DrawingEngine {
 
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
         if (!localCoords) {
-            if (info.pointerType === 'pen') console.log('[DrawingEngine] Blocked: No localCoords');
+            if (window.TEGAKI_CONFIG?.debug && info.pointerType === 'pen') {
+                console.log('[DrawingEngine] Blocked: No localCoords');
+            }
             return;
         }
 
