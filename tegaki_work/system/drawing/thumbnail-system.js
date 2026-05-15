@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { RenderTexture } from 'pixi.js';
+import { RenderTexture, Sprite } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
 
 export const ThumbnailSystem = {
@@ -207,6 +207,11 @@ export const ThumbnailSystem = {
 };
 
 export const thumbnailSystem = ThumbnailSystem;
+
+// 下位互換性のためにグローバルに登録
+window.ThumbnailSystem = ThumbnailSystem;
+window.thumbnailSystem = ThumbnailSystem;
+ ThumbnailSystem;
 
 // 下位互換性のためにグローバルに登録
 window.ThumbnailSystem = ThumbnailSystem;
