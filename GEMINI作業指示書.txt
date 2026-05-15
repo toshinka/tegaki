@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 1c サムネイル反映・バケツ復旧・ログ整理 2026-05-16
+# GEMINI作業指示書：Phase 1d 初回整理 2026-05-16
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 1c の残課題を、ペン描画の大改修へ戻らずに収束させる。今回は「レイヤーサムネイルにキャンバス描画が反映されない」「バケツツールが実用機能として復旧していない」「診断ログが多すぎる」「ThumbnailSystem の重複名がある」の4点に絞る。
+目的：Phase 1c で復旧した「描ける・消せる・サムネイル反映・基本バケツ」を壊さず、Phase 1d の基盤整理へ入る。今回は新機能追加ではなく、ログ整理、ファイルヘッダー同期、UI/ESM棚卸し、Vキー変形 bake の調査記録に絞る。
 
 ---
 
@@ -11,256 +11,143 @@
 1. `TEGAKI.md`
 2. `GEMINI.md`
 3. `tegaki_work/PROGRESS.md`
-4. この `GEMINI作業指示書.txt`
-5. `tegaki_work/TegakiConsole.txt`
+4. `tegaki_work/NOTES.md`
+5. `task-gemini/phase1d.md`
+6. この `GEMINI作業指示書.txt`
 
 ---
 
 ## 今回の前提
 
-- WebGPU / SDF / MSDF 系は Phase 1c では凍結する。採用検討は Phase 1d 以降。
-- ペンは現状で機能しているため、Phase 1c では深追いしない。
-- 消しゴムも機能しているため、Phase 1c では深追いしない。
-- ペンのライブラスター描画を `perfect-freehand` / `Graphics.poly` 主経路へ戻さない。
-- リサイズセンタリング、Space同時押しパン、リサイズ後の描画範囲修正は大きく触らない。
-- `dist/` は成果物として更新しない。確認は `npm.cmd run build` で行う。
+- WebGPU / SDF / MSDF 系は凍結継続。Phase 1d 初手で復活させない。
+- ペン・消しゴム・サムネイル・基本バケツは Phase 1c 完了扱い。描画方式の大改修へ戻らない。
+- `dist/` は成果物として必要ない限り差分に残さない。
+- `PastFiles/` と `tegaki_phase0/` は編集しない。
+- 既存の `window.*` 依存を一気に撤廃しない。まず棚卸しし、小さく安全な修正だけ行う。
+- CODEX が先行して `TEGAKI_CONFIG.debug` のデフォルトを `false` にし、一部ログを debug 条件へ移した。これを前提に続きの整理を行う。
 
 ---
 
-## 禁止
+## CODEX先行調査メモ
 
-- `PastFiles/`、`tegaki_phase0/` を編集しない。
-- Phase 1c で WebGPU / SDF / MSDF 経路を復活させない。
-- 黒背景を透明化するために「黒ピクセルを透明にする」処理を入れない。黒ペン描画が消える。
-- `window.ThumbnailSystem` を複数ファイルで別実体として上書きしない。
-- サムネイルが直ったと推測だけで報告しない。実際の alpha / nonTransparent / 画面表示で確認する。
-- バケツ復旧を WebGPU 側の SDF flood fill で解決しようとしない。
+確認済み：
+
+- `tegaki_work/config.js` の `debug` が Phase 1c 診断用に `true` のままだった。
+- `thumbnail-system.js` の `[ThumbnailSystem] updated` は通常操作で頻発するため debug 条件が必要。
+- `layer-system.js` のリサイズ・bake ログは通常確認が済んだため debug 条件でよい。
+- `fill-tool.js` の ESM 読込ログは通常時に不要。
+- `drawing-engine.js` ヘッダーに `イベント受診` の typo があった。
+- `layer-system.js` の `bakeTransform()` は固定サイズ `RenderTexture` に焼き込むため、Vキー変形でキャンバス外へ出た描画が失われる原因候補として濃い。
 
 ---
 
-## 1. WebGPU / SDF / MSDF 分岐を Phase 1c では封印する
+## 1. 残ログ整理
 
 対象候補：
 
-- `tegaki_work/config.js`
-- `tegaki_work/system/drawing/fill-tool.js`
-- 必要なら `tegaki_work/system/drawing/stroke-renderer.js`
+- `tegaki_work/core-engine.js`
+- `tegaki_work/core-initializer.js`
+- `tegaki_work/checker-utils.js`
+- `tegaki_work/ui/timeline-ui.js`
+- `tegaki_work/ui/timeline-thumbnail-utils.js`
+- `tegaki_work/ui/status-display-renderer.js`
+- `tegaki_work/system/drawing/pressure-handler.js`
+- `tegaki_work/system/processing/vector-operations.js`
+- `tegaki_work/coordinate-system.js`
 
 方針：
 
-1. `TEGAKI_CONFIG.webgpu.enabled` は Phase 1c では `false` にする。
-2. `fill-tool.js` の `_checkWebGPUSupport()` は、Phase 1c では `this.webgpuAvailable = false` にして即 return でよい。
-3. `_fillLayerWithSDF()` は残してもよいが、通常実行経路からは呼ばれないようにする。
-4. `stroke-renderer.js` 側に WebGL2 / MSDF の初期化分岐があっても、今回の修正で触る必要がなければ触らない。もし触る場合は「1cでは無効化」だけにする。
+1. `rg -n "console\\.(log|debug|warn|error)" tegaki_work -g "*.js" -g "!dist/**" -g "!node_modules/**"` で確認する。
+2. 起動成功やモジュール読込完了だけの `console.log` は削除、または `window.TEGAKI_CONFIG?.debug` / `TEGAKI_UTILS.log` 条件へ移す。
+3. `console.error` と、復旧不能・設定不整合を示す `console.warn` は残してよい。
+4. `coordinate-system.js` の手動診断関数内ログは、その関数が通常操作で呼ばれないなら残してよい。ただし通常操作で出るなら debug 条件へ移す。
 
 受け入れ条件：
 
-- バケツ操作時に SDF / WebGPU 側へ入らない。
-- コンソールに WebGPU / SDF 初期化失敗ログが出ない、または通常操作を妨げない。
+- 通常のペン描画・消しゴム・バケツ・リサイズで Console がログで埋まらない。
+- 残したログの理由を `PROGRESS.md` に書く。
 
 ---
 
-## 2. レイヤーサムネイルが描画を反映しない問題を直す
-
-対象：
-
-- `tegaki_work/system/drawing/thumbnail-system.js`
-- `tegaki_work/ui/layer-panel-renderer.js`
-- `tegaki_work/ui/timeline-thumbnail-utils.js`
-
-重要な原因候補：
-
-PixiJS v8.17.0 の `renderer.extract.pixels()` は、ローカル型定義では raw `Uint8Array` ではなく以下を返す。
-
-```ts
-{
-  pixels: Uint8ClampedArray,
-  width: number,
-  height: number
-}
-```
-
-現在の `thumbnail-system.js` は `renderer.extract.pixels(_tempSprite)` の戻り値を raw 配列のように扱っている可能性がある。この場合、`pixels.buffer` が存在せず、空配列相当になり、`nonTransparent: 0` のままになる。
-
-必須対応：
-
-1. `renderer.extract.pixels()` の戻り値を PixiJS v8.17.0 形式で扱う。
-2. `result.pixels` / `result.width` / `result.height` を優先する。
-3. 互換のため raw配列が返る場合も扱えるようにしてよい。
-4. `sourceRT.width/height` と `result.width/height` が違う場合はログで分かるようにする。
-
-実装例：
-
-```js
-const result = this.app.renderer.extract.pixels({
-    target: sourceRT,
-    clearColor: '#00000000'
-});
-
-const clampedPixels = result?.pixels
-    ? result.pixels
-    : (result instanceof Uint8ClampedArray ? result : new Uint8ClampedArray(result?.buffer || result));
-
-const sourceWidth = Math.round(result?.width || sourceRT.width || canvasWidth);
-const sourceHeight = Math.round(result?.height || sourceRT.height || canvasHeight);
-```
-
-`extract.canvas()` を使う方が簡潔で確実なら、そちらを採用してもよい。ただし透明 alpha が維持されることを必ず確認する。
-
-必須ログ：
-
-```js
-console.log('[ThumbnailSystem] updated', JSON.stringify({
-    layer: layer.layerData?.name,
-    isBackground,
-    source: `${sourceWidth}x${sourceHeight}`,
-    thumb: `${thumbW}x${thumbH}`,
-    nonTransparentPixels,
-    maxAlpha,
-    centerRGBA: Array.from(px)
-}));
-```
-
-このログは Phase 1c 確認用。確認後は debug 制御へ移すか削除対象として `PROGRESS.md` に書く。
-
-受け入れ条件：
-
-- 空の通常レイヤーは `nonTransparentPixels: 0`、`maxAlpha: 0` になる。
-- 描いた通常レイヤーは `nonTransparentPixels > 0`、`maxAlpha > 0` になる。
-- レイヤーパネルのサムネイルに線や塗りが反映される。
-- 未描画部分は黒くならない。
-- 非正方形キャンバスでもサムネイルのアスペクト比が崩れない。
-
----
-
-## 3. ThumbnailSystem の重複名を解消する
-
-対象：
-
-- `tegaki_work/system/drawing/thumbnail-system.js`
-- `tegaki_work/ui/timeline-thumbnail-utils.js`
-- `tegaki_work/ui/layer-panel-renderer.js`
-- 必要なら初期化側
-
-現状の問題：
-
-- `system/drawing/thumbnail-system.js` が `window.ThumbnailSystem` / `window.thumbnailSystem` を登録している。
-- `ui/timeline-thumbnail-utils.js` も末尾で `window.ThumbnailSystem = new ThumbnailSystem(...)` としており、同じグローバル名を別実体で上書きする可能性がある。
-
-方針：
-
-1. レイヤーパネル用のサムネイル生成は `system/drawing/thumbnail-system.js` を正とする。
-2. `window.thumbnailSystem` はこの正本だけを指す。
-3. `ui/timeline-thumbnail-utils.js` 側は、名前を変える。例：
-
-```js
-window.TimelineThumbnailSystem = new TimelineThumbnailSystem(...);
-```
-
-4. クラス名も可能なら `TimelineThumbnailSystem` へ変更する。
-5. `rg "ThumbnailSystem"` で参照を全確認し、レイヤー用とタイムライン用を混同しない。
-
-受け入れ条件：
-
-- `window.ThumbnailSystem` が複数用途で上書きされない。
-- `window.thumbnailSystem.getThumbnail(layerId)` がレイヤーパネル用キャッシュを返す。
-- タイムライン側が壊れない。もし未使用なら、未使用であることを `PROGRESS.md` に書く。
-
----
-
-## 4. バケツツールを Phase 1c 用に復旧する
-
-対象：
-
-- `tegaki_work/system/drawing/fill-tool.js`
-- 必要なら `tegaki_work/system/layer-system.js`
-- 必要なら `tegaki_work/system/history.js`
-
-最小復旧方針：
-
-1. Phase 1c では WebGPU/SDF flood fill を使わない。
-2. まず「バケツで現在レイヤーに塗りがRenderTextureへ焼き込まれ、サムネイルにも反映される」ことを復旧する。
-3. `_fillLayerLegacy()` の矩形サイズは `CONFIG.canvas.width/height` ではなく、原則 `layerData.renderTexture.width/height` を使う。
-4. fill 後は必ず `thumbnail:layer-updated` を emit する。
-5. `layerSprite` を削除・破棄しない。
-
-最低限の実装例：
-
-```js
-const width = Math.round(layerData.renderTexture.width || CONFIG.canvas.width);
-const height = Math.round(layerData.renderTexture.height || CONFIG.canvas.height);
-
-const fillGraphics = new Graphics();
-fillGraphics.rect(0, 0, width, height);
-fillGraphics.fill({ color, alpha });
-
-app.renderer.render({
-    container: fillGraphics,
-    target: layerData.renderTexture,
-    clear: false
-});
-```
-
-注意：
-
-- これは厳密な「閉領域バケツ」ではなく、現時点では全体塗りの復旧でも可。
-- クリック地点からの閉領域 flood fill は Phase 1d 以降で設計してよい。
-- ただし、もし既存実装範囲でCPU flood fillを狭く実装できるなら提案してもよい。無理に入れない。
-
-受け入れ条件：
-
-- バケツツールを選び、通常レイヤーをクリックすると塗りが見える。
-- 塗り後にレイヤーサムネイルも更新される。
-- リサイズ後のキャンバス全体サイズに合わせて塗られる。
-- `layerData.layerSprite` が消えない。
-- 背景レイヤークリック時は現在通り背景色変更または禁止動作を維持する。
-
----
-
-## 5. 過剰診断ログを整理する
+## 2. ファイルヘッダー同期
 
 対象候補：
 
+- `tegaki_work/core-engine.js`
 - `tegaki_work/system/drawing/pointer-handler.js`
 - `tegaki_work/system/drawing/drawing-engine.js`
-- `tegaki_work/system/layer-system.js`
 - `tegaki_work/system/drawing/thumbnail-system.js`
+- `tegaki_work/system/drawing/fill-tool.js`
+- `tegaki_work/system/layer-system.js`
+- `tegaki_work/system/layer-transform.js`
+- `tegaki_work/ui/layer-panel-renderer.js`
+- `tegaki_work/ui/timeline-thumbnail-utils.js`
 
 方針：
 
-1. 液タブ調査用の高頻度ログは、今回の主課題ではないため削減する。
-2. 残すログは今回必要なものだけ。
-   - `ThumbnailSystem` の `nonTransparentPixels/maxAlpha`
-   - バケツ実行時の `method/size/layerId`
-   - エラー・警告
-3. `PointerHandler raw pointerdown`、`DrawingEngine down gate` は、必要なら `window.TEGAKI_CONFIG.debug` 条件へ入れる。
-4. `PROGRESS.md` に「残したログ」と「削除予定」を書く。
+1. 各ファイル先頭ヘッダーの `依存`、`被依存`、`イベント発火`、`イベント受信`、`グローバル登録` が実装と一致しているか確認する。
+2. typo や明らかな不足は修正する。
+3. 大規模な依存整理やリネームは今回行わない。必要なら `PROGRESS.md` に「後続候補」として書く。
+4. `ThumbnailSystem` と `TimelineThumbnailSystem` は責務が混ざらないように、ヘッダーで用途を明記する。
 
 受け入れ条件：
 
-- 通常のペン描画中に console が大量ログで埋まらない。
-- サムネイルとバケツの確認に必要なログは残る。
-- ビルドエラーがない。
+- 主要対象ファイルのヘッダーが現行実装と矛盾しない。
+- 変更したヘッダー一覧を `PROGRESS.md` に書く。
 
 ---
 
-## 6. PROGRESS更新
+## 3. UI/ESM・window依存の棚卸し
 
-作業後に `tegaki_work/PROGRESS.md` を更新する。
+対象候補：
 
-必ず書く：
+- `tegaki_work/ui/`
+- `tegaki_work/core-runtime.js`
+- `tegaki_work/core-initializer.js`
+- `tegaki_work/core-engine.js`
 
-- WebGPU / SDF / MSDF を Phase 1c で封印した内容。
-- サムネイル修正で `extract.pixels()` の戻り値をどう扱ったか。
-- `nonTransparentPixels/maxAlpha` の確認結果。
-- `ThumbnailSystem` 重複名をどう解消したか。
-- バケツが全体塗り復旧なのか、閉領域 flood fill まで復旧したのか。
-- 残した診断ログと削除予定。
-- 未解決があれば未解決と明記する。
+方針：
+
+1. `rg -n "window\\.|document\\.addEventListener|addEventListener\\(" tegaki_work/ui tegaki_work/core-*.js` で依存を棚卸しする。
+2. `window.*` 依存を一括撤廃しない。
+3. 明らかに古い読込ログや不要なグローバル別名だけ、小さく安全に整理する。
+4. 触ると動作確認が重くなる箇所は、今回は調査記録だけでよい。
+
+受け入れ条件：
+
+- 「今回直した箇所」と「後続へ送る箇所」が分かれている。
+- UI 操作の既存経路を壊さない。
 
 ---
 
-## 7. 確認
+## 4. Vキー変形 bake の調査
+
+対象：
+
+- `tegaki_work/system/layer-system.js`
+- `tegaki_work/system/layer-transform.js`
+- `tegaki_work/system/history.js`
+
+確認ポイント：
+
+1. `LayerSystem.bakeTransform()` が `rt.width` / `rt.height` の固定サイズ `RenderTexture` に焼いていないか。
+2. 変形中にキャンバス外へ出たピクセルが、bake 時に `tempRT` へ入らず失われる可能性があるか。
+3. `LayerTransform.confirmTransform()` の paths 変形経路と、現在のライブラスター `RenderTexture` 経路が噛み合っているか。
+4. undo/redo が RenderTexture の内容を復元できる構造か。
+
+今回の扱い：
+
+- 無限キャンバス化や大規模な bake 設計変更はしない。
+- 原因候補と安全な対応案を `PROGRESS.md` に記録する。
+- もし数行で明確に直せるガードや debug ログがあれば実装してよいが、描画内容の破壊リスクがある修正は行わない。
+
+受け入れ条件：
+
+- Vキー変形のキャンバス外クリップについて、原因候補・実装する/しない判断・後続案が `PROGRESS.md` にある。
+
+---
+
+## 5. ビルドと確認
 
 必須：
 
@@ -271,10 +158,29 @@ npm.cmd run build
 
 可能ならブラウザで確認：
 
-1. 通常レイヤーにペンで描く。
-2. レイヤーサムネイルに描画が反映される。
-3. 空レイヤーのサムネイルが黒くならない。
-4. バケツツールで通常レイヤーに塗りが見える。
-5. バケツ後、サムネイルにも塗りが反映される。
-6. 800x600 等へリサイズ後、サムネイル比率とバケツ塗り範囲がキャンバスサイズと合う。
-7. Console が過剰な pointer / drawing ログで埋まらない。
+1. 起動時に致命的エラーがない。
+2. 通常ペンで描ける。
+3. 消しゴムで透明に消せる。
+4. レイヤーサムネイルが更新される。
+5. バケツで通常レイヤーに塗れる。
+6. リサイズ後も描画範囲が崩れない。
+7. `TEGAKI_CONFIG.debug === false` の通常状態で Console が過剰ログに埋まらない。
+
+---
+
+## 6. PROGRESS更新
+
+作業後に `tegaki_work/PROGRESS.md` の先頭へ追記する。
+
+必ず書く：
+
+- 変更ファイル
+- 変更理由
+- 削除または debug 化したログ
+- ヘッダー修正内容
+- UI/ESM/window依存で分かったこと
+- Vキー変形 bake 調査結果
+- `npm.cmd run build` 結果
+- ブラウザ確認結果
+- 残った問題
+- Claude / Codex に判断してほしい点

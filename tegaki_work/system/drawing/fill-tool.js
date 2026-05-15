@@ -352,4 +352,6 @@ if (document.readyState === 'loading') {
     fillTool.initialize();
 }
 
-console.log('✅ fill-tool.js (ESM版) loaded');
+if (window.TEGAKI_CONFIG?.debug) {
+    console.log('fill-tool.js loaded');
+}
