@@ -45,6 +45,11 @@ export class LayerPanelRenderer {
         const animationSystem = window.animationSystem || null;
         this.render(layers, activeIndex, animationSystem);
         this._isInitialized = true;
+
+        // 初回描画時に全サムネイルの生成を要求
+        setTimeout(() => {
+            this.updateAllThumbnails();
+        }, 100);
     }
 
     _setupEventListeners() {
@@ -65,11 +70,8 @@ export class LayerPanelRenderer {
         this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
         this.eventBus.on('camera:resized', () => this.updateAllThumbnails());
         
-        this.eventBus.on('thumbnail:layer-updated', (data) => {
-            if (data && typeof data.layerIndex === 'number') {
-                this._updateSingleThumbnail(data.layerIndex);
-            }
-        });
+        // [指示書 v5/v6 修正] 無限ループ防止のため 'thumbnail:layer-updated' のリスナーを削除。
+        // サムネイルの更新は、生成完了後に発行される 'thumbnail:updated' で一括処理する。
 
         // [指示書 v5] サムネイル生成完了通知を受け取って反映
         this.eventBus.on('thumbnail:updated', (data) => {
@@ -782,7 +784,13 @@ export class LayerPanelRenderer {
         // [指示書] ここで generateLayerThumbnail() を直接呼ぶのをやめる。
         // ThumbnailSystem がイベントを受け取って生成し、
         // thumbnail:updated イベント経由で反映されるのを待つ。
-        // (既に _setupEventListeners に thumbnail:updated のリスナーがあることを確認)
+        if (this.eventBus) {
+            this.eventBus.emit('thumbnail:layer-updated', {
+                layerIndex: layerIndex,
+                layerId: layer.layerData?.id,
+                immediate: true
+            });
+        }
         
         applyBackgroundStyle();
     }

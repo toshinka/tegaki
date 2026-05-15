@@ -45,6 +45,11 @@ export class LayerPanelRenderer {
         const animationSystem = window.animationSystem || null;
         this.render(layers, activeIndex, animationSystem);
         this._isInitialized = true;
+
+        // 初回描画時に全サムネイルの生成を要求
+        setTimeout(() => {
+            this.updateAllThumbnails();
+        }, 100);
     }
 
     _setupEventListeners() {
@@ -65,10 +70,36 @@ export class LayerPanelRenderer {
         this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
         this.eventBus.on('camera:resized', () => this.updateAllThumbnails());
         
-        this.eventBus.on('thumbnail:layer-updated', (data) => {
-            if (data && typeof data.layerIndex === 'number') {
-                this._updateSingleThumbnail(data.layerIndex);
+        // [指示書 v5/v6 修正] 無限ループ防止のため 'thumbnail:layer-updated' のリスナーを削除。
+        // サムネイルの更新は、生成完了後に発行される 'thumbnail:updated' で一括処理する。
+
+        // [指示書 v5] サムネイル生成完了通知を受け取って反映
+        this.eventBus.on('thumbnail:updated', (data) => {
+            if (!data || !data.dataURL) return;
+
+            const layers = this.layerSystem?.getLayers() || [];
+            const layerIndex = data.layerIndex;
+            if (typeof layerIndex !== 'number') return;
+
+            const reversedIndex = layers.length - 1 - layerIndex;
+            const layerItems = this.container.querySelectorAll('.layer-item');
+            if (reversedIndex < 0 || reversedIndex >= layerItems.length) return;
+
+            const thumbnailContainer = layerItems[reversedIndex]
+                ?.querySelector('.layer-thumbnail');
+            if (!thumbnailContainer) return;
+
+            let img = thumbnailContainer.querySelector('img');
+            if (!img) {
+                img = document.createElement('img');
+                img.style.maxWidth = '100%';
+                img.style.maxHeight = '100%';
+                img.style.display = 'block';
+                img.style.objectFit = 'contain';
+                thumbnailContainer.innerHTML = '';
+                thumbnailContainer.appendChild(img);
             }
+            img.src = data.dataURL;
         });
 
         this.eventBus.on('ui:background-color-change-requested', ({ layerIndex, layerId }) => {
@@ -630,7 +661,7 @@ export class LayerPanelRenderer {
         thumbnailContainer.style.width = maxWidth + 'px';
         thumbnailContainer.style.height = maxHeight + 'px';
         thumbnailContainer.style.boxSizing = 'border-box';
-        thumbnailContainer.style.border = '1px solid #cf9c97';
+        thumbnailContainer.style.border = 'none'; // [指示書] 枠線を削除
         thumbnailContainer.style.borderRadius = '2px';
         thumbnailContainer.style.overflow = 'hidden';
         thumbnailContainer.style.position = 'relative';
@@ -638,22 +669,7 @@ export class LayerPanelRenderer {
         thumbnailContainer.style.alignItems = 'center';
         thumbnailContainer.style.justifyContent = 'center';
         thumbnailContainer.style.flexShrink = '0';
-        
-        // [指示書] 透明レイヤーにはチェッカー背景を表示。背景レイヤーには実背景色を表示。
-        if (layer.layerData?.isBackground) {
-            const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
-            const r = (bgColor >> 16) & 0xFF;
-            const g = (bgColor >> 8) & 0xFF;
-            const b = bgColor & 0xFF;
-            thumbnailContainer.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-        } else {
-            if (window.checkerUtils) {
-                const checkerUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxWidth, maxHeight, 4);
-                thumbnailContainer.style.backgroundImage = `url(${checkerUrl})`;
-            } else {
-                thumbnailContainer.style.backgroundColor = '#f5f5f5';
-            }
-        }
+        thumbnailContainer.style.backgroundColor = 'transparent'; // [指示書] 背景を透明に
 
         // [指示書] キャッシュがあれば即時表示
         if (window.thumbnailSystem && layer.layerData?.id) {
@@ -664,7 +680,7 @@ export class LayerPanelRenderer {
                 img.style.maxWidth = '100%';
                 img.style.maxHeight = '100%';
                 img.style.display = 'block';
-                img.style.objectFit = 'contain';
+                img.style.objectFit = 'contain'; // [指示書] アスペクト比維持
                 thumbnailContainer.appendChild(img);
                 return thumbnailContainer;
             }
@@ -760,42 +776,23 @@ export class LayerPanelRenderer {
 
         // [指示書] 更新時も背景スタイルを維持するための処理
         const applyBackgroundStyle = () => {
-            if (layer.layerData?.isBackground) {
-                const bgColor = layer.layerData.backgroundColor || 0xf0e0d6;
-                const r = (bgColor >> 16) & 0xFF;
-                const g = (bgColor >> 8) & 0xFF;
-                const b = bgColor & 0xFF;
-                thumbnailContainer.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-                thumbnailContainer.style.backgroundImage = 'none';
-            } else {
-                if (window.checkerUtils) {
-                    const checkerUrl = window.checkerUtils.createThumbnailCheckerDataURL(maxWidth, maxHeight, 4);
-                    thumbnailContainer.style.backgroundImage = `url(${checkerUrl})`;
-                    thumbnailContainer.style.backgroundColor = 'transparent';
-                } else {
-                    thumbnailContainer.style.backgroundColor = '#f5f5f5';
-                }
-            }
+            thumbnailContainer.style.backgroundColor = 'transparent';
+            thumbnailContainer.style.backgroundImage = 'none';
+            thumbnailContainer.style.border = 'none';
         };
 
-        if (window.ThumbnailSystem) {
-            try {
-                const result = await window.ThumbnailSystem.generateLayerThumbnail(layer, layerIndex, maxWidth, maxHeight);
-                if (result && result.dataUrl) {
-                    // [指示書] 外枠サイズ (width/height) を result で上書きしない
-                    const img = document.createElement('img');
-                    img.src = result.dataUrl;
-                    img.style.maxWidth = '100%';
-                    img.style.maxHeight = '100%';
-                    img.style.display = 'block';
-                    img.style.objectFit = 'contain';
-                    
-                    thumbnailContainer.innerHTML = '';
-                    applyBackgroundStyle(); // 背景再適用
-                    thumbnailContainer.appendChild(img);
-                }
-            } catch (error) {}
+        // [指示書] ここで generateLayerThumbnail() を直接呼ぶのをやめる。
+        // ThumbnailSystem がイベントを受け取って生成し、
+        // thumbnail:updated イベント経由で反映されるのを待つ。
+        if (this.eventBus) {
+            this.eventBus.emit('thumbnail:layer-updated', {
+                layerIndex: layerIndex,
+                layerId: layer.layerData?.id,
+                immediate: true
+            });
         }
+        
+        applyBackgroundStyle();
     }
 
     async updateAllThumbnails() {
