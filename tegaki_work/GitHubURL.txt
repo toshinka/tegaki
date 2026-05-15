@@ -55,12 +55,17 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/stroke-renderer.js
 
 ## Drawing System - WebGL2
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2-drawing-layer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/gl-stroke-processor.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/gl-texture-bridge.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/gl-msdf-pipeline.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/gl-mask-layer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/earcut-triangulator.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/webgl2-drawing-layer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/gl-stroke-processor.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/gl-texture-bridge.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/gl-msdf-pipeline.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/gl-mask-layer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/earcut-triangulator.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/encode.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/jfa-pass.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/render.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/render.vert.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/seed-init.frag.glsl
 
 ## Processing
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/processing/vector-operations.js
