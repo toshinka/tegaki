@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 1c — 完了判定済み / Phase 1d 準備中**
+**Phase 1d — 完了判定済み / Phase 1e 準備中**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -17,12 +17,34 @@
 | フォルダ | 状態 |
 |---|---|
 | `tegaki_phase0` | ✅ オリジナル保存。触らない |
-| `tegaki_work` | 🔧 現在の作業フォルダ。Phase 1c完了判定済み、Phase 1d準備中 |
+| `tegaki_work` | 🔧 現在の作業フォルダ。Phase 1d完了判定済み、Phase 1e準備中 |
 | `PastFiles/` | 完了済みフェーズのアーカイブ置き場 |
 
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-16 Codex準備：Phase 1e 指示書作成
+- **Phase 1e 指示書を作成**: `task-gemini/phase1e.md` を新規作成。描画基本品質、筆圧、補正、四角ペン、設定タブ、Vキー/クイックUI軽量化の範囲と禁止事項を整理した。
+- **Gemini初回作業を限定**: ルートの `GEMINI作業指示書.txt` を Phase 1e 初回作業へ更新。今回は Phase 1e 全体を一気に投げず、筆圧・補正・遅いストローク丸連続問題の棚卸しと安全な小修正に絞る。
+- **Codex判断へ戻す条件を明記**: RenderTexture 焼き込み方式の大改修、半透明ストロークの一時バッファ合成、履歴/EventBus payload 変更、WebGPU/SDF/MSDF/WebGL2 Mesh 復活などは Gemini で無理に進めず、原因と案を記録して止める方針にした。
+- **未実施**: 今回は文書更新のみ。コード変更と build は Gemini 作業後に実施する。
+
+### 2026-05-16 Codex確認：Phase 1d 完了判定・次フェーズ整理
+- **実機感触**: オーナー確認では触った感じ問題なし。`TegakiConsole.txt` でも `PointerHandler raw pointerdown`、`DrawingEngine down gate`、`ThumbnailSystem updated`、リサイズ診断ログが消え、通常操作ログはスリム化している。
+- **残ログの扱い**: WebGL2 / MSDF 系の起動ログはまだ残る。通常操作を埋める高頻度ログではないが、WebGPU / SDF / MSDF 凍結方針と見た目が紛らわしいため、後続で debug 化または import 停止を検討する。
+- **Gemini変更確認**: `stroke-renderer.js` は `TEGAKI_CONFIG.webgpu.enabled === false` の場合に WebGL2 経路へ入らないよう整理されている。Phase 1d の凍結方針と矛盾しない。
+- **ビルド確認**: `cd tegaki_work && npm.cmd run build` 成功。Vite の `dist/` 生成差分は成果物ではないため戻した。
+- **次フェーズ整理**: `TEGAKI.md` と `NOTES.md` に、オーナーメモを Phase 1e/1f/2/低優先将来フェーズへ整理して反映した。アニメ・漫画向け効果は低優先へ送る。
+
+### 2026-05-16 Codex Phase 1d 初回整理・Gemini指示書更新
+- **Phase 1d 指示書へ差し替え**: ルートの `GEMINI作業指示書.txt` を Phase 1c 収束用から Phase 1d 初回整理用へ更新。Gemini には、残ログ整理、主要ファイルヘッダー同期、UI/ESM/window依存棚卸し、Vキー変形 bake 調査記録を依頼する内容にした。
+- **通常時 debug の抑制**: `config.js` の `TEGAKI_CONFIG.debug` を `false` に変更。Phase 1c 診断ログを通常操作へ出し続けない状態を標準にした。
+- **debug 化したログ**: `thumbnail-system.js` の `[ThumbnailSystem] updated`、`layer-system.js` のリサイズ/変形 bake ログ、`fill-tool.js` の ESM 読込ログ、`drawing-engine.js` の pen `No localCoords` ログを debug 条件へ移動。
+- **ヘッダー軽微修正**: `drawing-engine.js` のヘッダー typo `イベント受診` を `イベント受信` に修正。
+- **Vキー変形 bake の初見**: `LayerSystem.bakeTransform()` は現状 `rt.width` / `rt.height` と同サイズの一時 `RenderTexture` へ焼き込む。キャンバス外へ出た描画が bake 時に失われる既知問題の原因候補として濃いが、破壊リスクがあるため今回は実装修正せず、Gemini へ調査記録を指示した。
+- **確認**: `cd tegaki_work && npm.cmd run build` 成功。Vite が `dist/` を生成更新したが、成果物差分ではないため生成差分は戻した。
+- **未確認**: ブラウザ実操作は未実施。Gemini 作業後に `debug === false` の通常状態で Console が過剰ログに埋まらないことを確認する。
 
 ### 2026-05-16 Phase 1c 完了判定・Phase 1d 準備
 - **オーナー実機確認**: レイヤーサムネイルへのキャンバス描画反映復活を確認。バケツ塗りの復旧も確認済み。
@@ -299,10 +321,10 @@
 | 内容 | 場所 | 対応フェーズ |
 |---|---|---|
 | 囲った線の内側だけを塗る「囲い塗り」バケツは未実装。現状は基本塗り復旧まで | `system/drawing/fill-tool.js` | 後続 |
-| Vキー変形でキャンバス外へ出た描画が bake 時に消える可能性 | `system/layer-system.js`, `system/layer-transform.js` | 後続 |
-| Phase 1c 確認用ログが一部残っている。恒久ログと一時ログを仕分ける | `system/drawing/*`, `system/layer-system.js` | 1d |
-| 一部UI（タイムライン等）のESM化・責務整理が未完了 | `ui/` | 1d |
-| WebGPU / SDF / MSDF 系の扱いは凍結中。復活させるなら調査・設計から行う | `system/drawing/webgl2/`, `system/drawing/*sdf*` | 1d以降 |
+| Vキー変形でキャンバス外へ出た描画が bake 時に消える可能性 | `system/layer-system.js`, `system/layer-transform.js` | 1f以降 |
+| WebGL2 / MSDF 系の起動ログが残っている。通常操作ログではないが凍結方針と見た目が紛らわしい | `system/drawing/webgl2/*`, `core-engine.js` | 1e以降 |
+| 一部UI（タイムライン等）のESM化・責務整理はまだ大きな作業として残る | `ui/` | 1f以降 |
+| WebGPU / SDF / MSDF 系の扱いは凍結中。復活させるなら調査・設計から行う | `system/drawing/webgl2/`, `system/drawing/*sdf*` | 後続 |
 
 ---
 
