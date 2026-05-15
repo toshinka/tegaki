@@ -1,288 +1,266 @@
-# GEMINI作業指示書：Phase 1c リサイズ描画領域・液タブ・サムネイル再修正 2026-05-15
+# GEMINI作業指示書：Phase 1c サムネイル反映・バケツ復旧・ログ整理 2026-05-16
 
 対象フォルダ：`tegaki_work/`
 
-目的：実機確認で残っている「液タブペン描画不可」「レイヤーサムネイル黒背景」「リサイズ後に見た目だけ広がり400x400範囲にしか描けない」問題を、報告ではなく実際の原因に基づいて直す。
+目的：Phase 1c の残課題を、ペン描画の大改修へ戻らずに収束させる。今回は「レイヤーサムネイルにキャンバス描画が反映されない」「バケツツールが実用機能として復旧していない」「診断ログが多すぎる」「ThumbnailSystem の重複名がある」の4点に絞る。
 
-今回の前提：
+---
 
-- Space同時押し中だけキャンバス移動する挙動は実装済みで良好。
-- リサイズ後のセンタリングは実装済みで良好。
-- 通常ペンのライブラスター筆感は良好。描画方式は大きく戻さない。
-- ただしリサイズ後の描画先が旧RenderTextureサイズに残っている疑いが強いので、レイヤーRenderTextureのリサイズ処理は必須。
-
-作業前に必ず読む：
+## 作業前に必ず読む
 
 1. `TEGAKI.md`
-2. `tegaki_work/PROGRESS.md`
-3. この `GEMINI作業指示書.txt`
-4. `tegaki_work/TegakiConsole.txt`
-5. 画像資料フォルダの最新SS
-
-禁止：
-
-- `PastFiles/` は参照のみ。編集しない。
-- `dist/` を成果物として更新しない。確認は `npm.cmd run build` で行う。
-- ペンのライブラスター描画を Perfect Freehand / Graphics.poly 主経路へ戻さない。
-- `import { BlendMode } from 'pixi.js'` は復活させない。
-- リサイズ問題を「描画判定だけ広げる」修正で済ませない。描画先RenderTextureも必ず確認する。
+2. `GEMINI.md`
+3. `tegaki_work/PROGRESS.md`
+4. この `GEMINI作業指示書.txt`
+5. `tegaki_work/TegakiConsole.txt`
 
 ---
 
-## 0. 現状整理
+## 今回の前提
 
-オーナー実機確認：
-
-- リサイズセンタリングは良好。
-- Space同時押し中のみキャンバス移動も良好。
-- 液タブペン描画不可は未解決。
-- レイヤーサムネイル黒背景は未解決。
-- 新発見：キャンバスをリサイズすると見た目のキャンバスは広がるが、左上 `0,0` から旧 `400x400` 範囲にしか描画できない。
-
-この新発見は重要。現在のリサイズ処理は `config.canvas.width/height`、赤枠、マスク、背景Graphics、checkerを更新しているが、既存レイヤーの `layerData.renderTexture` を新サイズに作り直していない可能性が高い。
-
-ライブラスター描画は `brush-core.js` で `activeLayer.layerData.renderTexture` に直接焼き込む。したがって、そのRenderTextureが400x400のままなら、見た目だけ広がっても400外には描けない。
+- WebGPU / SDF / MSDF 系は Phase 1c では凍結する。採用検討は Phase 1d 以降。
+- ペンは現状で機能しているため、Phase 1c では深追いしない。
+- 消しゴムも機能しているため、Phase 1c では深追いしない。
+- ペンのライブラスター描画を `perfect-freehand` / `Graphics.poly` 主経路へ戻さない。
+- リサイズセンタリング、Space同時押しパン、リサイズ後の描画範囲修正は大きく触らない。
+- `dist/` は成果物として更新しない。確認は `npm.cmd run build` で行う。
 
 ---
 
-## 1. リサイズ後の描画領域400固定を最優先で直す
+## 禁止
 
-対象：
+- `PastFiles/`、`tegaki_phase0/` を編集しない。
+- Phase 1c で WebGPU / SDF / MSDF 経路を復活させない。
+- 黒背景を透明化するために「黒ピクセルを透明にする」処理を入れない。黒ペン描画が消える。
+- `window.ThumbnailSystem` を複数ファイルで別実体として上書きしない。
+- サムネイルが直ったと推測だけで報告しない。実際の alpha / nonTransparent / 画面表示で確認する。
+- バケツ復旧を WebGPU 側の SDF flood fill で解決しようとしない。
 
-- `tegaki_work/system/layer-system.js`
-- `tegaki_work/system/data-models.js`
-- 必要なら `tegaki_work/system/camera-system.js`
-- 必要なら animation frame renderTexture 管理部分
+---
 
-疑いが強い箇所：
+## 1. WebGPU / SDF / MSDF 分岐を Phase 1c では封印する
 
-- `LayerModel.initializeTexture(width, height)` は新規レイヤー作成時だけ呼ばれる。
-- `LayerSystem._setupResizeEvents()` は checker と背景Graphicsを更新しているが、既存レイヤーの `renderTexture` / `layerSprite` を新サイズへ更新していない。
-- `brush-core.js` は `activeLayer.layerData.renderTexture` へ直接描くため、旧サイズ外の描画が保存されない。
+対象候補：
 
-必須調査ログ：
+- `tegaki_work/config.js`
+- `tegaki_work/system/drawing/fill-tool.js`
+- 必要なら `tegaki_work/system/drawing/stroke-renderer.js`
 
-リサイズ前後に各レイヤーで以下を確認する。
+方針：
 
-```js
-console.log('[LayerSystem] resize layer texture', {
-    layer: layer.layerData?.name,
-    oldCanvas: `${data.oldWidth}x${data.oldHeight}`,
-    newCanvas: `${data.width}x${data.height}`,
-    rt: layer.layerData?.renderTexture && {
-        width: layer.layerData.renderTexture.width,
-        height: layer.layerData.renderTexture.height
-    },
-    spriteTexture: layer.layerData?.layerSprite?.texture && {
-        width: layer.layerData.layerSprite.texture.width,
-        height: layer.layerData.layerSprite.texture.height
-    }
-});
-```
-
-ログは原因確定後、debug制御に寄せるか削除する。
-
-修正方針：
-
-1. `camera:resized` を受けた時に、全既存レイヤーの RenderTexture を新キャンバスサイズへ作り直す。
-2. 旧RenderTextureの内容を新RenderTextureへコピーする。
-3. コピー位置はリサイズUIの `alignOptions` に合わせる。中央基準なら `offsetX = (newWidth - oldWidth) / 2`、`offsetY = (newHeight - oldHeight) / 2`。
-4. `layer.layerData.renderTexture` を新RenderTextureへ差し替える。
-5. `layer.layerData.layerSprite.texture` も新RenderTextureへ差し替える。Sprite自体を作り直す場合は child order を壊さない。
-6. 非背景レイヤーの maskTexture / maskSprite があるなら同じサイズへ更新する。
-7. 背景レイヤーは backgroundGraphics だけでなく、必要なら background layer の renderTexture / layerSprite も新サイズへ更新する。
-8. `frameRenderTextures` やアニメーションフレーム用RenderTextureがある場合も、後で破綻しないよう更新方針を確認する。今回すぐ難しければ `PROGRESS.md` に残す。
-
-実装候補：
-
-`LayerSystem` に次のような専用メソッドを追加する。
-
-```js
-resizeLayerTextures(newWidth, newHeight, oldWidth, oldHeight, alignOptions) {
-    const offsetX = this._getResizeOffsetX(newWidth, oldWidth, alignOptions?.horizontal);
-    const offsetY = this._getResizeOffsetY(newHeight, oldHeight, alignOptions?.vertical);
-
-    for (const layer of this.getLayers()) {
-        if (!layer.layerData || layer.layerData.isFolder) continue;
-        this._resizeSingleLayerTexture(layer, newWidth, newHeight, offsetX, offsetY);
-    }
-}
-```
-
-`_resizeSingleLayerTexture` の考え方：
-
-```js
-const oldRT = layerData.renderTexture;
-const oldSprite = layerData.layerSprite;
-const newRT = RenderTexture.create({ width: newWidth, height: newHeight, antialias: true });
-
-const tempSprite = new Sprite(oldRT);
-tempSprite.position.set(offsetX, offsetY);
-
-renderer.render({
-    container: tempSprite,
-    target: newRT,
-    clear: true,
-    clearColor: 0x000000,
-    clearAlpha: 0
-});
-
-layerData.renderTexture = newRT;
-if (oldSprite) {
-    oldSprite.texture = newRT;
-} else {
-    layerData.layerSprite = new Sprite(newRT);
-    layer.addChildAt(layerData.layerSprite, 0);
-}
-
-oldRT.destroy(true);
-tempSprite.destroy({ texture: false, baseTexture: false });
-```
-
-注意：
-
-- `oldSprite.destroy()` で newRT まで壊さないようにする。
-- 背景GraphicsやmaskSpriteなど、既存child順を壊さない。
-- 旧内容を左上基準で維持するか中央基準で維持するかは resize popup の alignOptions と一致させる。
-- リサイズ後に `requestThumbnailUpdate()` を全レイヤーへ出す。
+1. `TEGAKI_CONFIG.webgpu.enabled` は Phase 1c では `false` にする。
+2. `fill-tool.js` の `_checkWebGPUSupport()` は、Phase 1c では `this.webgpuAvailable = false` にして即 return でよい。
+3. `_fillLayerWithSDF()` は残してもよいが、通常実行経路からは呼ばれないようにする。
+4. `stroke-renderer.js` 側に WebGL2 / MSDF の初期化分岐があっても、今回の修正で触る必要がなければ触らない。もし触る場合は「1cでは無効化」だけにする。
 
 受け入れ条件：
 
-- 400x400から横長/縦長へ拡大後、旧400範囲外にも描ける。
-- 旧400範囲内の既存描画が消えない。
-- 中央/左/右/上/下などのリサイズ基準がある場合、既存描画の位置が意図通り保持される。
-- 消しゴムも新しい範囲で透明消去できる。
-- サムネイルと書き出しが新サイズを反映する。
+- バケツ操作時に SDF / WebGPU 側へ入らない。
+- コンソールに WebGPU / SDF 初期化失敗ログが出ない、または通常操作を妨げない。
 
 ---
 
-## 2. 液タブペン描画不可を再調査する
-
-対象：
-
-- `tegaki_work/system/drawing/pointer-handler.js`
-- `tegaki_work/system/drawing/drawing-engine.js`
-- `tegaki_work/system/camera-system.js`
-
-現状：
-
-`TegakiConsole.txt` には `[PointerHandler] raw pointerdown Object` しか残っておらず、肝心の `pointerType/button/buttons/pressure` の値がテキストに残っていない。さらに `[DrawingEngine] Pen Down` が見えない。
-
-可能性：
-
-- 液タブが `pointerType: 'pen'` ではなく `mouse` または空文字で来ている。
-- `button === 2` / `buttons === 2` 扱いで、PointerHandlerまたはCameraSystemで右クリック扱いになっている。
-- CameraSystemが先に `canvasMoveMode` を立て、DrawingEngineがブロックしている。
-- pointerdownは来ているが、DrawingEngine側のdown handlerへ到達していない。
-
-必須修正：
-
-raw pointerdownログを、折りたたまれない文字列ログに変更する。
-
-```js
-console.log('[PointerHandler] raw pointerdown', JSON.stringify({
-    pointerType: e.pointerType,
-    button: e.button,
-    buttons: e.buttons,
-    pressure: e.pressure,
-    pointerId: e.pointerId,
-    isPrimary: e.isPrimary,
-    target: e.target?.tagName,
-    id: e.target?.id,
-    className: String(e.target?.className || '')
-}));
-```
-
-DrawingEngine側も、ペン限定ではなく一時的に全pointerdownの入口ログを出す。
-
-```js
-console.log('[DrawingEngine] down gate', JSON.stringify({
-    pointerType: info.pointerType,
-    button: info.button,
-    buttons: info.buttons,
-    pressure: info.pressure,
-    canvasMove: this.cameraSystem?.isCanvasMoveMode?.(),
-    vKey: this.layerSystem?.vKeyPressed
-}));
-```
-
-修正方針：
-
-- 実測値を見るまで「penだけ通す」前提で閉じない。
-- 液タブが `mouse + button 2` として来るなら、単純な `pointerType !== 'pen'` 判定では直らない。
-- 右クリックキャンバス移動と液タブ接触を区別するため、`buttons`、`pressure`、`pointerId`、発生対象、必要なら最後のUI操作状態を使う。
-- 最低限、キャンバス上の通常描画ツール選択中に `button === 2` でも、液タブ実測パターンは描画へ通す。
-
-受け入れ条件：
-
-- 液タブペンでキャンバスに描ける。
-- マウス右クリックドラッグのキャンバス移動は壊れない。
-- `TegakiConsole.txt` に、液タブ時の pointerType/button/buttons/pressure が読める形で残る。
-- 調査用ログは最終的に debug制御または短期ログとして扱う。
-
----
-
-## 3. サムネイル黒背景を「結果確認」まで行う
+## 2. レイヤーサムネイルが描画を反映しない問題を直す
 
 対象：
 
 - `tegaki_work/system/drawing/thumbnail-system.js`
 - `tegaki_work/ui/layer-panel-renderer.js`
+- `tegaki_work/ui/timeline-thumbnail-utils.js`
 
-現状：
+重要な原因候補：
 
-GEMINI報告では解消とあるが、実機では未解決。したがって「clearAlpha: 0 と clearRect を入れたから解決」と判断しない。
+PixiJS v8.17.0 の `renderer.extract.pixels()` は、ローカル型定義では raw `Uint8Array` ではなく以下を返す。
 
-必須調査：
+```ts
+{
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number
+}
+```
 
-1. サムネイル生成後の `thumbCanvas` の透明であるべき座標を `getImageData()` で読む。
-2. alpha が 0 か 255 かを文字列ログで出す。
-3. 生成された dataURL 画像自体が黒いのか、UI背景が黒いのかを切り分ける。
+現在の `thumbnail-system.js` は `renderer.extract.pixels(_tempSprite)` の戻り値を raw 配列のように扱っている可能性がある。この場合、`pixels.buffer` が存在せず、空配列相当になり、`nonTransparent: 0` のままになる。
 
-ログ例：
+必須対応：
+
+1. `renderer.extract.pixels()` の戻り値を PixiJS v8.17.0 形式で扱う。
+2. `result.pixels` / `result.width` / `result.height` を優先する。
+3. 互換のため raw配列が返る場合も扱えるようにしてよい。
+4. `sourceRT.width/height` と `result.width/height` が違う場合はログで分かるようにする。
+
+実装例：
 
 ```js
-const px = ctx.getImageData(1, 1, 1, 1).data;
-console.log('[ThumbnailSystem] sample pixel', JSON.stringify({
+const result = this.app.renderer.extract.pixels({
+    target: sourceRT,
+    clearColor: '#00000000'
+});
+
+const clampedPixels = result?.pixels
+    ? result.pixels
+    : (result instanceof Uint8ClampedArray ? result : new Uint8ClampedArray(result?.buffer || result));
+
+const sourceWidth = Math.round(result?.width || sourceRT.width || canvasWidth);
+const sourceHeight = Math.round(result?.height || sourceRT.height || canvasHeight);
+```
+
+`extract.canvas()` を使う方が簡潔で確実なら、そちらを採用してもよい。ただし透明 alpha が維持されることを必ず確認する。
+
+必須ログ：
+
+```js
+console.log('[ThumbnailSystem] updated', JSON.stringify({
     layer: layer.layerData?.name,
-    isBackground: !!layer.layerData?.isBackground,
-    rgba: Array.from(px),
-    thumbW,
-    thumbH
+    isBackground,
+    source: `${sourceWidth}x${sourceHeight}`,
+    thumb: `${thumbW}x${thumbH}`,
+    nonTransparentPixels,
+    maxAlpha,
+    centerRGBA: Array.from(px)
 }));
 ```
 
-打開策：
-
-- 通常レイヤーは `layer` Container全体ではなく、`layer.layerData.renderTexture` から直接抽出する経路を検討する。
-- `renderer.extract.canvas(renderTexture)` が透明を黒化するなら、`renderer.extract.pixels()` 等で alpha を保持できる経路を検討する。
-- 黒色を透明化する雑な処理は禁止。黒ペンで描いた線まで消える。
-- alpha が失われている場合だけ、alphaに基づく補正を行う。
+このログは Phase 1c 確認用。確認後は debug 制御へ移すか削除対象として `PROGRESS.md` に書く。
 
 受け入れ条件：
 
-- 空の通常レイヤーサムネイルは黒くならない。
-- 赤線のみの通常レイヤーは、線だけが表示され、未描画部分はchecker/透明として見える。
-- リサイズ後の非正方形キャンバスでも黒背景にならない。
-- 背景レイヤー色は現状より悪化しない。
+- 空の通常レイヤーは `nonTransparentPixels: 0`、`maxAlpha: 0` になる。
+- 描いた通常レイヤーは `nonTransparentPixels > 0`、`maxAlpha > 0` になる。
+- レイヤーパネルのサムネイルに線や塗りが反映される。
+- 未描画部分は黒くならない。
+- 非正方形キャンバスでもサムネイルのアスペクト比が崩れない。
 
 ---
 
-## 4. PROGRESS更新
+## 3. ThumbnailSystem の重複名を解消する
+
+対象：
+
+- `tegaki_work/system/drawing/thumbnail-system.js`
+- `tegaki_work/ui/timeline-thumbnail-utils.js`
+- `tegaki_work/ui/layer-panel-renderer.js`
+- 必要なら初期化側
+
+現状の問題：
+
+- `system/drawing/thumbnail-system.js` が `window.ThumbnailSystem` / `window.thumbnailSystem` を登録している。
+- `ui/timeline-thumbnail-utils.js` も末尾で `window.ThumbnailSystem = new ThumbnailSystem(...)` としており、同じグローバル名を別実体で上書きする可能性がある。
+
+方針：
+
+1. レイヤーパネル用のサムネイル生成は `system/drawing/thumbnail-system.js` を正とする。
+2. `window.thumbnailSystem` はこの正本だけを指す。
+3. `ui/timeline-thumbnail-utils.js` 側は、名前を変える。例：
+
+```js
+window.TimelineThumbnailSystem = new TimelineThumbnailSystem(...);
+```
+
+4. クラス名も可能なら `TimelineThumbnailSystem` へ変更する。
+5. `rg "ThumbnailSystem"` で参照を全確認し、レイヤー用とタイムライン用を混同しない。
+
+受け入れ条件：
+
+- `window.ThumbnailSystem` が複数用途で上書きされない。
+- `window.thumbnailSystem.getThumbnail(layerId)` がレイヤーパネル用キャッシュを返す。
+- タイムライン側が壊れない。もし未使用なら、未使用であることを `PROGRESS.md` に書く。
+
+---
+
+## 4. バケツツールを Phase 1c 用に復旧する
+
+対象：
+
+- `tegaki_work/system/drawing/fill-tool.js`
+- 必要なら `tegaki_work/system/layer-system.js`
+- 必要なら `tegaki_work/system/history.js`
+
+最小復旧方針：
+
+1. Phase 1c では WebGPU/SDF flood fill を使わない。
+2. まず「バケツで現在レイヤーに塗りがRenderTextureへ焼き込まれ、サムネイルにも反映される」ことを復旧する。
+3. `_fillLayerLegacy()` の矩形サイズは `CONFIG.canvas.width/height` ではなく、原則 `layerData.renderTexture.width/height` を使う。
+4. fill 後は必ず `thumbnail:layer-updated` を emit する。
+5. `layerSprite` を削除・破棄しない。
+
+最低限の実装例：
+
+```js
+const width = Math.round(layerData.renderTexture.width || CONFIG.canvas.width);
+const height = Math.round(layerData.renderTexture.height || CONFIG.canvas.height);
+
+const fillGraphics = new Graphics();
+fillGraphics.rect(0, 0, width, height);
+fillGraphics.fill({ color, alpha });
+
+app.renderer.render({
+    container: fillGraphics,
+    target: layerData.renderTexture,
+    clear: false
+});
+```
+
+注意：
+
+- これは厳密な「閉領域バケツ」ではなく、現時点では全体塗りの復旧でも可。
+- クリック地点からの閉領域 flood fill は Phase 1d 以降で設計してよい。
+- ただし、もし既存実装範囲でCPU flood fillを狭く実装できるなら提案してもよい。無理に入れない。
+
+受け入れ条件：
+
+- バケツツールを選び、通常レイヤーをクリックすると塗りが見える。
+- 塗り後にレイヤーサムネイルも更新される。
+- リサイズ後のキャンバス全体サイズに合わせて塗られる。
+- `layerData.layerSprite` が消えない。
+- 背景レイヤークリック時は現在通り背景色変更または禁止動作を維持する。
+
+---
+
+## 5. 過剰診断ログを整理する
+
+対象候補：
+
+- `tegaki_work/system/drawing/pointer-handler.js`
+- `tegaki_work/system/drawing/drawing-engine.js`
+- `tegaki_work/system/layer-system.js`
+- `tegaki_work/system/drawing/thumbnail-system.js`
+
+方針：
+
+1. 液タブ調査用の高頻度ログは、今回の主課題ではないため削減する。
+2. 残すログは今回必要なものだけ。
+   - `ThumbnailSystem` の `nonTransparentPixels/maxAlpha`
+   - バケツ実行時の `method/size/layerId`
+   - エラー・警告
+3. `PointerHandler raw pointerdown`、`DrawingEngine down gate` は、必要なら `window.TEGAKI_CONFIG.debug` 条件へ入れる。
+4. `PROGRESS.md` に「残したログ」と「削除予定」を書く。
+
+受け入れ条件：
+
+- 通常のペン描画中に console が大量ログで埋まらない。
+- サムネイルとバケツの確認に必要なログは残る。
+- ビルドエラーがない。
+
+---
+
+## 6. PROGRESS更新
 
 作業後に `tegaki_work/PROGRESS.md` を更新する。
 
-必ず記録：
+必ず書く：
 
-- リサイズ後の既存レイヤーRenderTexture更新を実装したか。
-- 旧400外へ描けるか。
-- 液タブペンの実測 pointerType/button/buttons/pressure。
-- サムネイル黒背景の alpha 調査結果。
-- 未解決なら「未解決」と明記する。報告だけで解消扱いにしない。
+- WebGPU / SDF / MSDF を Phase 1c で封印した内容。
+- サムネイル修正で `extract.pixels()` の戻り値をどう扱ったか。
+- `nonTransparentPixels/maxAlpha` の確認結果。
+- `ThumbnailSystem` 重複名をどう解消したか。
+- バケツが全体塗り復旧なのか、閉領域 flood fill まで復旧したのか。
+- 残した診断ログと削除予定。
+- 未解決があれば未解決と明記する。
 
 ---
 
-## 5. 確認
+## 7. 確認
 
 必須：
 
@@ -291,12 +269,12 @@ cd tegaki_work
 npm.cmd run build
 ```
 
-ブラウザ実機確認：
+可能ならブラウザで確認：
 
-1. 400x400から横長/縦長へ拡大し、旧400範囲外へペンで描ける。
-2. 旧400範囲外を消しゴムで消せる。
-3. リサイズ前の描画が消えない。
-4. 液タブペンで描ける。
-5. マウス右クリックドラッグ/Spaceドラッグのキャンバス移動が壊れていない。
-6. 通常レイヤーサムネイルが黒背景にならない。
-7. `TegakiConsole.txt` に原因判断に必要な値が文字列で残る。
+1. 通常レイヤーにペンで描く。
+2. レイヤーサムネイルに描画が反映される。
+3. 空レイヤーのサムネイルが黒くならない。
+4. バケツツールで通常レイヤーに塗りが見える。
+5. バケツ後、サムネイルにも塗りが反映される。
+6. 800x600 等へリサイズ後、サムネイル比率とバケツ塗り範囲がキャンバスサイズと合う。
+7. Console が過剰な pointer / drawing ログで埋まらない。

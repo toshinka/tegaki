@@ -193,3 +193,7 @@ pointermove 以外（down/up）は変更しない。
 4. バケツで塗ったとき layerSprite が消えなくなったか（Yes/No）
 5. getCoalescedEvents を適用した行番号
 6. npm run build の成否
+
+Chrome新APIについての補足（オーナーへ）
+getCoalescedEvents() は Chrome 58 以降で使えましたが、現在は全モダンブラウザで安定しています。ペンの軌跡品質が上がります。getPredictedEvents() は更に先読みできますが、描画への直接利用は慎重に（予測が外れると線がぶれる）。
+バケツツールについては、今回の修正（renderTextureに焼き込む方式）で動くようになるはずです。undo機能は後続で対応します（現状のbackup方式は Graphics オブジェクト参照を保存していたため、renderTexture方式とは相性が悪い）。
