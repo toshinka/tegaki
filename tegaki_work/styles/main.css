@@ -247,13 +247,13 @@ canvas {
 
 .layer-thumbnail {
     box-sizing: border-box;
-    border: 1px solid #cf9c97;
-    border-style: solid !important;
+    border: none !important;
     border-radius: 2px;
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: transparent !important;
 }
 
 .background-color-swatch {

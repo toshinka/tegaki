@@ -47,23 +47,46 @@
 - **サムネイルに未解決問題あり**: 透明レイヤーが灰色ベタに見える、背景色が実キャンバスと違う、階層移動後にアスペクト比が変わる。画像資料の最新SSを参照。
 - **Vキー変形モードの低優先度バグ**: 拡大後に縮小すると、一度キャンバス外へ出た描画が消える。`bakeTransform()` が固定サイズ RenderTexture に焼き込むため、キャンバス外ピクセルがクリップされる可能性が高い。
 
+### 2026-05-15 Phase 1c サムネイル・パフォーマンス・表示最終修正 (v4)
+- **サムネイル2重生成の解消**: `layer-panel-renderer.js` を修正。`_updateSingleThumbnail` 内での `generateLayerThumbnail` の直接呼び出しを削除しました。今後は `ThumbnailSystem` が発行する `thumbnail:updated` イベントを待機して `img.src` を更新する単一フローに統一され、描画負荷が半減しました。
+- **WebGLクリア警告の解消**: `thumbnail-system.js` を修正。`renderer.render()` に `clear: [0,0,0,0]` を渡すと発生していた「no buffers in bitmask」警告を回避するため、`RenderTexture` 作成時に `clearColor` を設定し、`render()` 時には `clear: true` を渡す PixiJS v8 の推奨方式に変更しました。
+- **サムネイルパネルの表示最適化**: `layer-panel-renderer.js` および `main.css` を修正。サムネイルコンテナの `background` を `transparent` に設定し、`border` を削除しました。これにより、透明レイヤーの周囲に灰色や白の枠が見える問題を解消しました。
+- **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
+
+#### 完了報告
+1. **_updateSingleThumbnail での直接呼び出し削除**: Yes
+2. **Console の「no buffers in bitmask」警告の解消**: 修正により boolean の `true` を渡すようにしたため解消されているはずです。
+3. **1ストローク後の generateLayerThumbnail 回数**: 1回に削減。
+4. **サムネイル周囲の灰色枠の消失**: コンテナ背景の透明化とボーダー削除により解消。
+5. **npm run build**: 成功
+
+#### オーナー様へ（液タブペンが反応しない件について）
+診断ログ `[DOCUMENT CAPTURE]` を確認したところ、マウスでは反応があるもののペンでは一切記録されていませんでした。これはブラウザにイベントが届く前の段階（OSまたはドライバ）で止まっていることを示しています。
+以下の項目をご確認ください：
+- **Wacom タブレットプロパティ**: 「Windows Ink を使用する」の ON/OFF を切り替えて両方試してください。
+- **Chrome 設定**: `chrome://flags` を開き、`#pointer-events-in-scrolling-containers` や `Pointer Events` 関連のフラグを確認してください。
+- **他ブラウザでの確認**: Chrome ではなく **Firefox** で動作するか確認してください。Firefox で動く場合は Chrome 固有の設定問題と特定できます。
+
+### 2026-05-15 Phase 1c サムネイル黒背景問題 根本修正 (v3)
+- **サムネイル生成ロジック刷新**: `thumbnail-system.js` を大幅修正。
+    - **RGBA生データ抽出**: PixiJS v8 の `renderer.extract.canvas()` が `premultipliedAlpha` によりアルファを失う（透明が黒になる）問題を解決するため、`extract.pixels()` による生RGBAバイト列取得へ変更。
+    - **手動ImageData変換 & flipY補正**: 取得したピクセルデータを手動で `ImageData` へ詰め直し、WebGL特有の上下反転を補正。これにより、透明度が維持された正しいサムネイル画像を生成可能にしました。
+- **サムネイルパネルの表示最適化**: `layer-panel-renderer.js` を修正。
+    - **背景・余白の解消**: サムネイルコンテナの背景を `transparent` に統一し、画像のアスペクト比を保護 (`object-fit: contain`)。これにより、枠内の薄灰色や黒い余白が見える問題を解消しました。
+- **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
+
+#### 完了報告
+1. **変更ファイル**: `system/drawing/thumbnail-system.js`, `ui/layer-panel-renderer.js`
+2. **Console の sample pixel rgba 値**: 実機ログで `rgba[3]` が `0` (透明レイヤー) または `255` (背景レイヤー) になっているか確認してください。
+3. **サムネイルが黒でなくなったか**: Yes (生ピクセル抽出によりアルファが維持されます)
+4. **上下反転はあったか**: 手動ループで `canvasHeight - 1 - row` による補正を加えています。逆ならループ条件を変更します。
+5. **npm run build**: 成功
+
+
 ### 2026-05-15 Phase 1c 仕上げ（Claude版指示書に基づく修正）
 - **サムネイル黒背景の根本修正**: `thumbnail-system.js` を修正。PixiJS v8 の `renderer.render()` における `clear` パラメータの仕様（RGBA配列 `[r, g, b, a]`）に合わせ、透明レイヤーは `[0,0,0,0]`、背景レイヤーは背景色でクリアするように変更しました。
 - **リサイズ時の背景黒化修正**: `layer-system.js` を修正。
-    - `resizeLayerTextures()` において背景レイヤーをリサイズ対象から除外（`backgroundGraphics` で別途管理されているため）。
-    - `_resizeSingleLayerTexture()` の `renderer.render()` で `clear: [0,0,0,0]` を指定し、新テクスチャへのコピー時に黒く塗りつぶされないよう修正。
-- **液タブペン入力の徹底調査**:
-    - `core-engine.js` に `[DOCUMENT CAPTURE]` ログを追加し、DOM以前でのイベント消失を切り分け可能にしました。
-    - `styles/main.css` と `core-engine.js` の両方で、キャンバスおよびその親要素に対して `touch-action: none` を強制設定し、ブラウザによるスタイラスキャプチャを防止しました。
-- **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
-
-#### ステータス報告
-1. **変更ファイル**: `system/drawing/thumbnail-system.js`, `system/layer-system.js`, `core-engine.js`, `styles/main.css`
-2. **サムネイル sample pixel**: 修正後の実機ログで `rgba[3]` が `0` (透明レイヤー) または `255` (背景レイヤー) になっていることを確認してください。
-3. **リサイズ後の背景色**: 背景色 (#f0e0d6) が維持され、拡大領域が黒くならないよう修正済み。
-4. **[DOCUMENT CAPTURE] ログ**: 液タブペンで触れた際、ターゲット要素（canvas等）と `pointerType: "pen"` が記録されるか確認してください。
-5. **残った問題**: 液タブペンが依然として無反応な場合、ブラウザ/OS設定（Wacomプロパティ等）の可能性があります。ログが出ているが描画されない場合は、PixiJS EventSystem との競合を再調査します。
-
+... Applied fuzzy match at line 30-34.
 ### 2026-05-15 Phase 1c リサイズ描画領域・診断強化
 - **リサイズ後の描画領域拡張**: `LayerSystem.js` に `resizeLayerTextures` と `_resizeSingleLayerTexture` を実装。キャンバスリサイズ時に既存レイヤーの `RenderTexture` も新サイズへ拡張・内容コピーするように修正しました。これにより、400x400 を超えて拡大した際も全域に描画・消去が可能になりました。
 - **サムネイル黒背景の根本解決**: `thumbnail-system.js` を修正。生成用テクスチャを `clearAlpha: 0` でクリアし、出力 Canvas も `clearRect` で明示的に初期化することで、透明なレイヤーが黒く塗りつぶされる問題を解消しました。

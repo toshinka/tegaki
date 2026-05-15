@@ -92,29 +92,33 @@ export const ThumbnailSystem = {
             const canvasWidth = window.TEGAKI_CONFIG?.canvas?.width || 400;
             const canvasHeight = window.TEGAKI_CONFIG?.canvas?.height || 400;
             
-            const renderTexture = RenderTexture.create({
-                width: canvasWidth,
-                height: canvasHeight
-            });
-
-            // [指示書] 背景レイヤーは背景色でクリア、通常レイヤーは透明でクリア
-            const clearValue = layer.layerData?.isBackground
+            // [指示書] 背景レイヤーは背景色、通常レイヤーは透明
+            const clearRGBA = layer.layerData?.isBackground
                 ? (() => {
                     const c = layer.layerData.backgroundColor || 0xf0e0d6;
-                    const r = ((c >> 16) & 0xff) / 255;
-                    const g = ((c >> 8)  & 0xff) / 255;
-                    const b = ( c        & 0xff) / 255;
-                    return [r, g, b, 1.0];
+                    return [
+                        ((c >> 16) & 0xff) / 255,
+                        ((c >> 8)  & 0xff) / 255,
+                        ( c        & 0xff) / 255,
+                        1.0
+                    ];
                 })()
-                : [0, 0, 0, 0];  // 透明でクリア
+                : [0, 0, 0, 0];
+
+            const renderTexture = RenderTexture.create({
+                width: canvasWidth,
+                height: canvasHeight,
+                clearColor: clearRGBA // [指示書] 作成時にクリア色を指定
+            });
 
             this.app.renderer.render({
                 container: layer,
                 target: renderTexture,
-                clear: clearValue   // PixiJS v8 の正式形式: RGBA配列 [0〜1]
+                clear: true   // [指示書] boolean の true にすることで警告を回避
             });
 
-            const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+            // [指示書] extract.canvas() は alpha を失うため pixels() を使用
+            const pixels = this.app.renderer.extract.pixels(renderTexture);
             
             // アスペクト比を維持したサイズ計算
             const aspectRatio = canvasWidth / canvasHeight;
@@ -127,23 +131,50 @@ export const ThumbnailSystem = {
             }
 
             const thumbCanvas = document.createElement('canvas');
-            thumbCanvas.width = thumbW;
-            thumbCanvas.height = thumbH;
+            thumbCanvas.width = Math.round(thumbW);
+            thumbCanvas.height = Math.round(thumbH);
             const ctx = thumbCanvas.getContext('2d');
 
             if (ctx) {
-                // [指示書] 透明度を維持するため clearRect を明示的に実行
-                ctx.clearRect(0, 0, thumbW, thumbH);
-                ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, thumbW, thumbH);
+                // フルサイズで一度 ImageData に変換してから縮小描画
+                const fullCanvas = document.createElement('canvas');
+                fullCanvas.width = canvasWidth;
+                fullCanvas.height = canvasHeight;
+                const fullCtx = fullCanvas.getContext('2d');
+
+                // pixels の型を Uint8ClampedArray に統一
+                const clampedPixels = pixels instanceof Uint8ClampedArray
+                    ? pixels
+                    : new Uint8ClampedArray(pixels.buffer ?? pixels);
+
+                // [指示書] WebGL の上下反転を補正 (flipY)
+                const imageData = fullCtx.createImageData(canvasWidth, canvasHeight);
+                for (let row = 0; row < canvasHeight; row++) {
+                    const srcRow = canvasHeight - 1 - row;  // 上下反転
+                    for (let col = 0; col < canvasWidth; col++) {
+                        const srcIdx = (srcRow * canvasWidth + col) * 4;
+                        const dstIdx = (row   * canvasWidth + col) * 4;
+                        imageData.data[dstIdx]     = clampedPixels[srcIdx];
+                        imageData.data[dstIdx + 1] = clampedPixels[srcIdx + 1];
+                        imageData.data[dstIdx + 2] = clampedPixels[srcIdx + 2];
+                        imageData.data[dstIdx + 3] = clampedPixels[srcIdx + 3];
+                    }
+                }
+                fullCtx.putImageData(imageData, 0, 0);
+
+                // サムネイルサイズへ縮小
+                ctx.clearRect(0, 0, thumbCanvas.width, thumbCanvas.height);
+                ctx.drawImage(fullCanvas, 0, 0, canvasWidth, canvasHeight,
+                                          0, 0, thumbCanvas.width, thumbCanvas.height);
                 
-                // [指示書] 代表ピクセルの alpha 確認ログ
+                // [指示書] 確認ログ
                 const px = ctx.getImageData(1, 1, 1, 1).data;
                 console.log('[ThumbnailSystem] sample pixel', JSON.stringify({
                     layer: layer.layerData?.name,
                     isBackground: !!layer.layerData?.isBackground,
                     rgba: Array.from(px),
-                    thumbW,
-                    thumbH
+                    thumbW: thumbCanvas.width,
+                    thumbH: thumbCanvas.height
                 }));
             }
 
@@ -155,7 +186,7 @@ export const ThumbnailSystem = {
             }
 
             renderTexture.destroy(true);
-            return { dataUrl, width: thumbW, height: thumbH };
+            return { dataUrl, width: thumbCanvas.width, height: thumbCanvas.height };
 
         } catch (error) {
             console.error('[ThumbnailSystem] Error:', error);
