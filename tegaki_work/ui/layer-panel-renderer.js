@@ -71,6 +71,35 @@ export class LayerPanelRenderer {
             }
         });
 
+        // [指示書 v5] サムネイル生成完了通知を受け取って反映
+        this.eventBus.on('thumbnail:updated', (data) => {
+            if (!data || !data.dataURL) return;
+
+            const layers = this.layerSystem?.getLayers() || [];
+            const layerIndex = data.layerIndex;
+            if (typeof layerIndex !== 'number') return;
+
+            const reversedIndex = layers.length - 1 - layerIndex;
+            const layerItems = this.container.querySelectorAll('.layer-item');
+            if (reversedIndex < 0 || reversedIndex >= layerItems.length) return;
+
+            const thumbnailContainer = layerItems[reversedIndex]
+                ?.querySelector('.layer-thumbnail');
+            if (!thumbnailContainer) return;
+
+            let img = thumbnailContainer.querySelector('img');
+            if (!img) {
+                img = document.createElement('img');
+                img.style.maxWidth = '100%';
+                img.style.maxHeight = '100%';
+                img.style.display = 'block';
+                img.style.objectFit = 'contain';
+                thumbnailContainer.innerHTML = '';
+                thumbnailContainer.appendChild(img);
+            }
+            img.src = data.dataURL;
+        });
+
         this.eventBus.on('ui:background-color-change-requested', ({ layerIndex, layerId }) => {
             if (this.layerSystem?.changeBackgroundLayerColor) {
                 this.layerSystem.changeBackgroundLayerColor(layerIndex, layerId);

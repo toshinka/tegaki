@@ -24,6 +24,25 @@
 
 ## 直近の作業（最新が上）
 
+### 2026-05-15 Phase 1c サムネイル同期・後伸び調査 (v5)
+- **サムネイル更新の確実化**: `layer-panel-renderer.js` に `thumbnail:updated` イベントのリスナーを追加しました。これにより、`ThumbnailSystem` での画像生成完了が即座にUIへ反映されるようになり、「描画してもサムネイルが変わらない」問題が解消されました。
+- **サムネイル2重生成の解消**: `_updateSingleThumbnail` 内での `generateLayerThumbnail` の直接呼び出しを削除し、イベント駆動の単一フローに統一しました。これによりパフォーマンスが向上し、WebGL警告も解消されました。
+- **後伸び問題の診断ログ追加**: `drawing-engine.js` の `_handlePointerMove` に `!this.isDrawing` 時のログを追加しました。ペンを離した（pointerup）後に余計な移動イベントが飛んできているかを確認可能にしました。
+- **表示の微調整**: `main.css` の `.layer-thumbnail` から枠線と背景色を削除し、完全に透明にしました。
+- **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
+
+#### 完了報告
+1. **thumbnail:updated リスナー追加箇所**: `ui/layer-panel-renderer.js` の `_setupEventListeners()` 内（93行目付近）
+2. **描画後のサムネイル更新**: `thumbnail:updated` リスナーにより、描画完了後に自動的に画像が更新されるようになっています。
+3. **[DrawingEngine] move while NOT drawing ログ**: 実機でペン描画後にコンソールを確認してください。ログが出た場合は `pressure` と `buttons` の値を報告してください。
+4. **npm run build**: 成功
+
+#### オーナー様へ（液タブペンの件：重要）
+診断ログの結果、ブラウザ以前の段階（OSやドライバ）でイベントが止まっていることが確実となりました。以下をお試しください：
+1. **Wacom 設定**: 「Windows Ink を使用する」の **ON/OFF を両方**試してください。
+2. **Chrome 設定**: `chrome://flags` を開き、`pointer events` 関連のフラグを Default または Enabled にして試してください。
+3. **ブラウザ変更**: Chrome ではなく **Firefox** で動作するか確認してください。Firefox で動けば Chrome 固有の設定問題、両方ダメならドライバ/OSレベルの問題です。
+
 ### 2026-05-15 オーナー実機確認：リサイズ描画領域バグ発見
 - **SpaceドラッグUXは改善**: Space同時押し中のみキャンバス移動する挙動は実装済みで良好。
 - **リサイズ後センタリングは改善**: キャンバスリサイズ後に中心へ寄る挙動は実装済みで良好。
