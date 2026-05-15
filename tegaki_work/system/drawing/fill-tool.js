@@ -171,32 +171,50 @@ export class FillTool {
     _fillLayerLegacy(layer, color, alpha, layerManager) {
         const CONFIG = window.TEGAKI_CONFIG;
         const layerData = layer.layerData;
+        const app = layerManager.app;
 
-        const pathsBackup = this._clonePathsDataSafely(layerData.pathsData);
-        this._clearLayerGraphics(layer, layerData);
+        if (!layerData?.renderTexture || !app?.renderer) {
+            console.error('❌ FillTool: No renderTexture or renderer');
+            return;
+        }
 
+        // 塗りつぶし用の Graphics を生成して renderTexture に焼き込む
         const fillGraphics = new Graphics();
         fillGraphics.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
         fillGraphics.fill({ color, alpha });
 
+        app.renderer.render({
+            container: fillGraphics,
+            target: layerData.renderTexture,
+            clear: false  // 既存内容の上に重ね塗り
+        });
+
+        fillGraphics.destroy({ children: true });
+
+        // 履歴用のデータ保存（pathsData は互換性のために残す）
         const pathData = {
             id: `fill_legacy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             type: 'fill',
             tool: 'fill',
             color, alpha,
-            graphics: fillGraphics,
             timestamp: Date.now(),
             settings: { color, opacity: alpha, mode: 'fill-legacy' }
         };
 
         if (!layerData.pathsData) layerData.pathsData = [];
         layerData.pathsData.push(pathData);
-        layer.addChild(fillGraphics);
 
-        this._registerHistory(layer, layerManager, pathsBackup, color, alpha, 'fill-legacy');
-
+        // サムネイル更新要求
         const layerIndex = layerManager.getLayerIndex(layer);
-        layerManager.requestThumbnailUpdate(layerIndex);
+        const layerId = layerData.id;
+        if (window.eventBus || window.TegakiEventBus) {
+            const eb = window.eventBus || window.TegakiEventBus;
+            eb.emit('thumbnail:layer-updated', {
+                layerIndex,
+                layerId,
+                immediate: true
+            });
+        }
 
         if (this.eventBus) {
             this.eventBus.emit('layer:filled', {

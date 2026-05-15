@@ -93,13 +93,17 @@ export class PointerHandler {
         }
 
         function onPointerMove(e) {
-            const info = normalizeEvent(e);
+            if (!activePointers.has(e.pointerId)) return;
+
+            // getCoalescedEvents() で間引かれた中間点を全て処理
+            const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
             
-            if (activePointers.has(e.pointerId)) {
+            for (const coalescedEvent of events) {
+                const info = normalizeEvent(coalescedEvent);
                 activePointers.set(e.pointerId, info);
                 
                 if (handlers.move) {
-                    handlers.move(info, e);
+                    handlers.move(info, coalescedEvent);
                 }
             }
 

@@ -122,7 +122,10 @@ export const ThumbnailSystem = {
                     return null;
                 }
                 // PixiJS v8: extract.pixels() は Uint8Array か Uint8ClampedArray を返す
-                pixels = this.app.renderer.extract.pixels(sourceRT);
+                // Sprite でラップする（texture: false で Sprite 破棄時に RT を消さない）
+                const _tempSprite = new Sprite(sourceRT);
+                pixels = this.app.renderer.extract.pixels(_tempSprite);
+                _tempSprite.destroy({ texture: false });
             }
 
             // ── ② サムネイル Canvas を生成 ────────────────────────────────
@@ -179,10 +182,8 @@ export const ThumbnailSystem = {
                 const checkY = Math.floor(thumbH / 2);
                 const px = ctx.getImageData(checkX, checkY, 1, 1).data;
 
-                // ログを少し控えめに（重大な変化がある時のみ、または簡潔に）
-                if (px[3] > 0 || isBackground) {
+                // 常に出力（透明か不透明かを問わず確認できるように）
                 console.log(`[ThumbnailSystem] updated: ${layer.layerData?.name || 'layer'}, rgba: [${px.join(',')}]`);
-                }
             // ── ⑤ キャッシュ & イベント発火 ─────────────────────────────
             const dataUrl = thumbCanvas.toDataURL('image/png');
             this.thumbnails.set(layerId, dataUrl);

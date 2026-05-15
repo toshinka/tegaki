@@ -35,10 +35,71 @@ popup-manager.js:97 ✅ Popup "album" initialized successfully
 popup-manager.js:128 📊 Popup initialization: 5 ready, 0 deferred
 core-engine.js:255 [CoreEngine] All sub-systems initialized.
 core-initializer.js:56 ✅ Tegaki Initialized Successfully
-thumbnail-system.js:184 [ThumbnailSystem] updated: 背景, rgba: [240,224,214,255]
+thumbnail-system.js:186 [ThumbnailSystem] updated: 背景, rgba: [240,224,214,255]
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー1, rgba: [0,0,0,0]
 pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"pointerId":2,"isPrimary":true,"target":"CANVAS","id":"","className":""}
 drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"canvasMove":false,"vKey":false}
-pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"pointerId":4,"isPrimary":true,"target":"CANVAS","id":"","className":""}
-drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"canvasMove":false,"vKey":false}
-pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"pointerId":8,"isPrimary":true,"target":"CANVAS","id":"","className":""}
-drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"canvasMove":false,"vKey":false}
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー1, rgba: [0,0,0,0]
+pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"pointerId":3,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"canvasMove":true,"vKey":false}
+pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"pen","button":0,"buttons":1,"pressure":0.02734375,"pointerId":4,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"pen","button":0,"buttons":1,"pressure":0.02734375,"canvasMove":false,"vKey":false}
+drawing-engine.js:77 [DrawingEngine] Pen Down: {pointerType: 'pen', vKey: false, canvasMove: false, activeLayer: 'レイヤー1', button: 0}
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー1, rgba: [0,0,0,0]
+pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"pen","button":0,"buttons":1,"pressure":0.048828125,"pointerId":4,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"pen","button":0,"buttons":1,"pressure":0.048828125,"canvasMove":false,"vKey":false}
+drawing-engine.js:77 [DrawingEngine] Pen Down: {pointerType: 'pen', vKey: false, canvasMove: false, activeLayer: 'レイヤー1', button: 0}
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー1, rgba: [0,0,0,0]
+pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"pen","button":0,"buttons":1,"pressure":0.0380859375,"pointerId":4,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"pen","button":0,"buttons":1,"pressure":0.0380859375,"canvasMove":false,"vKey":false}
+drawing-engine.js:77 [DrawingEngine] Pen Down: {pointerType: 'pen', vKey: false, canvasMove: false, activeLayer: 'レイヤー2', button: 0}
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー2, rgba: [0,0,0,0]
+popup-manager.js:202 👁️ Popup "resize" shown
+layer-system.js:418 [LayerSystem] Starting resizeLayerTextures {newWidth: 800, newHeight: 600, offsetX: 200, offsetY: 100}
+layer-system.js:438 [LayerSystem] resize layer texture {layer: 'レイヤー2', oldRT: '400x400', newRT: '800x600', offset: '200,100'}
+layer-system.js:456 Performance warning: clear() called with no buffers in bitmask
+clear @ WebGLRenderer-DLrfFTdW.js?v=f36be8fc:1364
+startRenderPass @ WebGLRenderer-DLrfFTdW.js?v=f36be8fc:1302
+bind @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:3274
+push @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:3297
+renderStart @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:3193
+emit @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:61
+render @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:218
+(anonymous) @ layer-system.js:456
+(anonymous) @ layer-system.js:423
+(anonymous) @ layer-system.js:360
+(anonymous) @ event-bus.js:45
+(anonymous) @ event-bus.js:43
+(anonymous) @ camera-system.js:266
+(anonymous) @ resize-popup.js:419
+(anonymous) @ history.js:45
+(anonymous) @ resize-popup.js:442
+(anonymous) @ resize-popup.js:397
+layer-system.js:438 [LayerSystem] resize layer texture {layer: 'レイヤー1', oldRT: '400x400', newRT: '800x600', offset: '200,100'}
+layer-system.js:456 Performance warning: clear() called with no buffers in bitmask
+clear @ WebGLRenderer-DLrfFTdW.js?v=f36be8fc:1364
+startRenderPass @ WebGLRenderer-DLrfFTdW.js?v=f36be8fc:1302
+bind @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:3274
+push @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:3297
+renderStart @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:3193
+emit @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:61
+render @ RenderTargetSystem-DENVL5ZU.js?v=f36be8fc:218
+(anonymous) @ layer-system.js:456
+(anonymous) @ layer-system.js:423
+(anonymous) @ layer-system.js:360
+(anonymous) @ event-bus.js:45
+(anonymous) @ event-bus.js:43
+(anonymous) @ camera-system.js:266
+(anonymous) @ resize-popup.js:419
+(anonymous) @ history.js:45
+(anonymous) @ resize-popup.js:442
+(anonymous) @ resize-popup.js:397
+thumbnail-system.js:186 [ThumbnailSystem] updated: 背景, rgba: [240,224,214,255]
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー2, rgba: [0,0,0,0]
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー1, rgba: [0,0,0,0]
+thumbnail-system.js:186 [ThumbnailSystem] updated: 背景, rgba: [240,224,214,255]
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー2, rgba: [0,0,0,0]
+thumbnail-system.js:186 [ThumbnailSystem] updated: レイヤー1, rgba: [0,0,0,0]
+pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"pen","button":0,"buttons":1,"pressure":0.1728515625,"pointerId":4,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"pen","button":0,"buttons":1,"pressure":0.1728515625,"canvasMove":false,"vKey":false}
+drawing-engine.js:77 [DrawingEngine] Pen Down: {pointerType: 'pen', vKey: false, canvasMove: false, activeLayer: 'レイヤー2', button: 0}

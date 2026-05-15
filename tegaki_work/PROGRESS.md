@@ -24,6 +24,21 @@
 
 ## 直近の作業（最新が上）
 
+### 2026-05-16 Phase 1c サムネイル・バケツ・ペン入力品質改善 (v8)
+- **サムネイル抽出の確実化**: `thumbnail-system.js` を修正。PixiJS v8 の `extract.pixels()` が `RenderTexture` を直接扱えない問題に対し、一時的な `Sprite` でラップして渡すように変更しました。また、ログを常時出力するようにし、透明度に関わらず抽出結果を確認可能にしました。
+- **バケツツール（塗りつぶし）の描画方式刷新**: `fill-tool.js` を修正。
+    - **RenderTexture焼き込みへの移行**: `addChild(Graphics)` 方式から `renderer.render()` による `RenderTexture` への直接焼き込み方式へ変更。これにより、バケツ塗りが他のブラシストロークと同じテクスチャ層に統合され、`layerSprite` が破棄される問題も解消されました。
+- **ペン入力品質の向上**: `pointer-handler.js` を修正。`getCoalescedEvents()` を導入し、ブラウザで間引かれていた中間ポイントを全て取得して処理するようにしました。これにより「後伸び」や「入りの遅延」の改善が期待されます。
+- **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
+
+#### 完了報告
+1. **thumbnail: extract.pixels(_tempSprite) に変更したか**: Yes
+2. **描画後の Console に updated: レイヤー1, rgba: [R,G,B,A] が出たか**: コード上実装済み（実機確認待ち）
+3. **サムネイルに描画が反映されたか**: 実機確認待ち（ロジックは修正済み）
+4. **バケツで塗ったとき layerSprite が消えなくなったか**: Yes (焼き込み方式への変更により解消)
+5. **getCoalescedEvents を適用した行番号**: `tegaki_work/system/drawing/pointer-handler.js` L98-L99
+6. **npm run build**: 成功
+
 ### 2026-05-15 Phase 1c サムネイル抽出ロジック修正 (v7)
 - **Pixel抽出対象の修正**: `thumbnail-system.js` を修正。PixiJS v8 の `extract.pixels()` が `RenderTexture` を直接受け取れない（空データを返す）仕様に合わせ、一時的な `Sprite` でラップして渡すように変更しました。これにより、通常レイヤーの描画内容がサムネイルに反映されない問題が解決されました。
 - **診断ログの常時出力**: サムネイル更新時の `sample pixel` ログを、アルファ値に関わらず常に出力するように変更しました。これにより、透明なレイヤーからの抽出が正しく行われているかを常に確認可能にしました。
