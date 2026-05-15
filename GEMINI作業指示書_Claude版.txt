@@ -1,27 +1,20 @@
-GEMINI作業指示書.txt（2026-05-15 Claude版 v7）
+GEMINI作業指示書.txt（2026-05-15 Claude版 v8）
 
-作業対象: tegaki_work/system/drawing/thumbnail-system.js のみ
-修正箇所: generateLayerThumbnail() の pixels 抽出部分（10行程度）
+作業対象: tegaki_work/ を直接編集すること
+今回修正するファイル:
+  1. system/drawing/thumbnail-system.js
+  2. system/drawing/fill-tool.js
+  3. system/drawing/pointer-handler.js（ペン品質改善）
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【修正1】extract.pixels() の引数を修正
+【修正1】thumbnail-system.js — Sprite ラップを実際に適用する
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-■ 原因
-PixiJS v8 の extract.pixels() は RenderTexture を直接受け取れない。
-Sprite でラップしてから渡す必要がある。
-現在のコードはRenderTextureを直接渡しているため、空データが返っている。
+■ 問題
+import { Sprite } は追加されたが、extract.pixels() の引数が
+RenderTexture のままで Sprite でラップされていない。
 
-■ 変更箇所
-import 行に Sprite を追加する。
-
-【変更前】
-import { RenderTexture } from 'pixi.js';
-
-【変更後】
-import { RenderTexture, Sprite } from 'pixi.js';
-
-■ 変更箇所2
+■ 修正箇所
 generateLayerThumbnail() 内の pixels 取得部分。
 
 【変更前】
@@ -39,45 +32,164 @@ if (!sourceRT) {
     return null;
 }
 // PixiJS v8 では extract.pixels() に RenderTexture を直接渡せない
-// Sprite でラップして渡す
-const tempSprite = new Sprite(sourceRT);
-pixels = this.app.renderer.extract.pixels(tempSprite);
-tempSprite.destroy();  // texture は破棄しない（sourceRT はレイヤーが所有）
+// Sprite でラップする（texture: false で Sprite 破棄時に RT を消さない）
+const _tempSprite = new Sprite(sourceRT);
+pixels = this.app.renderer.extract.pixels(_tempSprite);
+_tempSprite.destroy({ texture: false });
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【修正2】確認ログを透明レイヤーでも必ず出す
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-■ 原因
-現在のログは px[3] > 0 の時だけ出力するため、
-透明レイヤーに描いた後でもログが出ず動作確認できない。
-
-■ 変更箇所
+■ ログ条件も修正する
 【変更前】
 if (px[3] > 0 || isBackground) {
-    console.log(`[ThumbnailSystem] updated: ...`);
+    console.log(...)
 }
 
 【変更後】
-// 常にログを出す（透明・不透明を問わず確認できるように）
+// 常に出力（透明か不透明かを問わず確認できるように）
 console.log(`[ThumbnailSystem] updated: ${layer.layerData?.name || 'layer'}, rgba: [${px.join(',')}]`);
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【修正2】fill-tool.js — _clearLayerGraphics が layerSprite を消す問題
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 問題
+_clearLayerGraphics() が layer の全子要素（layerSprite を含む）を
+削除・破棄してしまう。layerSprite は renderTexture を表示する唯一の
+Sprite なので、これが消えると描画内容が見えなくなる。
+
+また fill の Graphics が renderTexture に焼き込まれないため、
+他のブラシ描画と共存できない。
+
+■ 修正方針
+fill を「Graphics を addChild」方式から
+「renderTexture に renderer.render() で焼き込む」方式に変更する。
+_clearLayerGraphics は呼ばない。
+
+■ _fillLayerLegacy() を以下に完全置き換える
+
+_fillLayerLegacy(layer, color, alpha, layerManager) {
+    const CONFIG = window.TEGAKI_CONFIG;
+    const layerData = layer.layerData;
+    const app = layerManager.app;
+
+    if (!layerData?.renderTexture || !app?.renderer) {
+        console.error('❌ FillTool: No renderTexture or renderer');
+        return;
+    }
+
+    // 塗りつぶし用の Graphics を生成して renderTexture に焼き込む
+    const fillGraphics = new Graphics();
+    fillGraphics.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+    fillGraphics.fill({ color, alpha });
+
+    app.renderer.render({
+        container: fillGraphics,
+        target: layerData.renderTexture,
+        clear: false  // 既存内容の上に重ね塗り
+    });
+
+    fillGraphics.destroy({ children: true });
+
+    // 履歴用のデータ保存（pathsData は互換性のために残す）
+    const pathData = {
+        id: `fill_legacy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        type: 'fill',
+        tool: 'fill',
+        color, alpha,
+        timestamp: Date.now(),
+        settings: { color, opacity: alpha, mode: 'fill-legacy' }
+    };
+
+    if (!layerData.pathsData) layerData.pathsData = [];
+    layerData.pathsData.push(pathData);
+
+    // サムネイル更新要求
+    const layerIndex = layerManager.getLayerIndex(layer);
+    const layerId = layerData.id;
+    if (window.eventBus || window.TegakiEventBus) {
+        const eb = window.eventBus || window.TegakiEventBus;
+        eb.emit('thumbnail:layer-updated', {
+            layerIndex,
+            layerId,
+            immediate: true
+        });
+    }
+
+    if (this.eventBus) {
+        this.eventBus.emit('layer:filled', {
+            layerId: layerData.id,
+            color, alpha,
+            method: 'legacy-full'
+        });
+    }
+}
+
+■ _fillLayerWithSDF も同様に修正が必要だが、
+  webgpuAvailable は通常 false なので今回は _fillLayerLegacy のみ修正でよい。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【修正3】pointer-handler.js — getCoalescedEvents でペン品質改善
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 効果
+getCoalescedEvents() を使うとブラウザが間引いた中間ポイントを全て取得できる。
+「後伸び」「入りのディレイ感」が大幅に改善する可能性がある。
+
+■ pointer-handler.js の pointermove ハンドラを探す
+以下のような構造があるはず:
+  canvas.addEventListener('pointermove', (e) => { ... })
+  または
+  onPointerMove(e) { ... }
+
+■ その中で callback を呼んでいる部分を以下に変更する
+
+【変更前（推定）】
+canvas.addEventListener('pointermove', (e) => {
+    // ... info 生成 ...
+    callbacks.move(info, e);
+});
+
+【変更後】
+canvas.addEventListener('pointermove', (e) => {
+    // getCoalescedEvents() で間引かれた中間点を全て処理
+    const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const coalescedEvent of events) {
+        // coalescedEvent から info を生成して move コールバックを呼ぶ
+        // 既存の info 生成ロジックを coalescedEvent に適用すること
+        const info = {
+            clientX: coalescedEvent.clientX,
+            clientY: coalescedEvent.clientY,
+            pressure: coalescedEvent.pressure,
+            pointerType: coalescedEvent.pointerType,
+            pointerId: coalescedEvent.pointerId,
+            button: coalescedEvent.button,
+            buttons: coalescedEvent.buttons,
+            isPrimary: coalescedEvent.isPrimary
+        };
+        callbacks.move(info, coalescedEvent);
+    }
+});
+
+■ 注意
+既存の pointermove の info 生成ロジックをそのまま coalescedEvent に適用する。
+フィールド名が違う場合は既存コードに合わせること。
+pointermove 以外（down/up）は変更しない。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【今回やらないこと】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- _fillLayerWithSDF は触らない
 - layer-panel-renderer.js は触らない
-- brush-core.js は触らない
-- layer-system.js は触らない
+- camera-system.js は触らない
+- リサイズ後 RenderTexture の clear警告は別途対応
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【完了報告（PROGRESS.md に記載）】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. import に Sprite を追加したか（Yes/No）
-2. extract.pixels(tempSprite) に変更したか（Yes/No）
-3. 描画後の Console に
-   [ThumbnailSystem] updated: レイヤー1, rgba: [R,G,B,A]
-   が出たか（出た場合は rgba の値も記載）
-4. rgba[3] が 0 より大きいか（= ピクセルが取れているか）
-5. サムネイルに描画内容が反映されたか（Yes/No）
+1. thumbnail: extract.pixels(_tempSprite) に変更したか（Yes/No）
+2. 描画後の Console に updated: レイヤー1, rgba: [R,G,B,A] が出たか
+   → A（alpha）の値を報告
+3. サムネイルに描画が反映されたか（Yes/No）
+4. バケツで塗ったとき layerSprite が消えなくなったか（Yes/No）
+5. getCoalescedEvents を適用した行番号
 6. npm run build の成否
