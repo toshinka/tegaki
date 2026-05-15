@@ -135,6 +135,17 @@ export class DrawingEngine {
     }
 
     _handlePointerMove(info, e) {
+        // [指示書 v5 一時診断] pointerup後のmove検知
+        /*
+        if (!this.isDrawing) {
+            console.log('[DrawingEngine] move while NOT drawing', JSON.stringify({
+                pointerType: info.pointerType,
+                pressure: info.pressure,
+                buttons: info.buttons
+            }));
+        }
+        */
+
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo || !pointerInfo.isDrawing) {
             return;

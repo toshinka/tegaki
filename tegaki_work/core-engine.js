@@ -262,6 +262,7 @@ export class CoreEngine {
 
         // [一時診断] ペン入力のドキュメントレベル到達確認
         // 確認完了後は削除すること
+        /*
         document.addEventListener('pointerdown', (e) => {
             console.log('[DOCUMENT CAPTURE] pointerdown', JSON.stringify({
                 pointerType: e.pointerType,
@@ -273,6 +274,7 @@ export class CoreEngine {
                 targetClass: String(e.target?.className || '').substring(0, 40)
             }));
         }, { capture: true });  // capture: true で最優先で受け取る
+        */
     }
 
     getApp() {

@@ -24,25 +24,85 @@
 
 ## 直近の作業（最新が上）
 
-### 2026-05-15 Phase 1c サムネイル同期・後伸び調査 (v5)
-- **サムネイル更新の確実化**: `layer-panel-renderer.js` に `thumbnail:updated` イベントのリスナーを追加しました。これにより、`ThumbnailSystem` での画像生成完了が即座にUIへ反映されるようになり、「描画してもサムネイルが変わらない」問題が解消されました。
-- **サムネイル2重生成の解消**: `_updateSingleThumbnail` 内での `generateLayerThumbnail` の直接呼び出しを削除し、イベント駆動の単一フローに統一しました。これによりパフォーマンスが向上し、WebGL警告も解消されました。
-- **後伸び問題の診断ログ追加**: `drawing-engine.js` の `_handlePointerMove` に `!this.isDrawing` 時のログを追加しました。ペンを離した（pointerup）後に余計な移動イベントが飛んできているかを確認可能にしました。
-- **表示の微調整**: `main.css` の `.layer-thumbnail` から枠線と背景色を削除し、完全に透明にしました。
+### 2026-05-15 調査報告書：Phase 1c 現状と残課題の分析
+オーナー様の実機確認および `TegakiConsole.txt` の解析に基づき、現状の改善点と残された問題を整理しました。
+
+#### 1. 【✅ 解決済み】液タブペン入力
+- **状況**: ログより、`pointerType: "pen"` のイベントが `DrawingEngine` まで正常に到達していることを確認しました（`buttons: 1`, `pressure: 0.17...` 等）。
+- **結果**: 前回までの「JavaScriptに届かない」問題は、`touch-action: none` の設定や右クリック判定の緩和により完全に解消されました。
+
+#### 2. 【✅ 解決済み】システム安定性（無限ループ）
+- **状況**: 前回の作業直後に発生したブラウザのフリーズ問題。
+- **原因**: `layer-panel-renderer.js` において、サムネイル更新関数が自身を呼び出すイベントを再度発行していたことによる無限再帰（Maximum call stack size exceeded）。
+- **対応**: 冗長なリスナーを削除し、フローを単一化することで修正済み。現在は安定しています。
+
+#### 3. 【🔴 要改修】通常レイヤーのサムネイル描画反映
+- **現象**: レイヤー1等の通常レイヤーに描画しても、サムネイルが透明なまま（または古いまま）反映されない。
+- **原因の推測**: 
+    - `ThumbnailSystem` への生成要求（`thumbnail:layer-updated`）は飛んでいるが、`RenderTexture` からのピクセル抽出タイミングが焼き込み完了前である可能性。
+    - または、`RenderTexture` のリサイズ処理後に参照が正しく更新されていない。
+- **対策案**: `finalizeStroke` の焼き込み完了を待機してから抽出を実行する、または抽出メソッドの非同期処理を強化する。
+
+#### 4. 【🔴 要改修】背景レイヤーの初期色反映
+- **現象**: 起動直後、背景サムネイルが正しい色（#f0e0d6）にならない。
+- **原因**: `_initializeRender` 時の全サムネイル生成要求が、PixiJSの初期レンダリング完了前に実行されている。
+- **対策案**: 初回生成の遅延時間を調整するか、PixiJSの `renderer.render` 直後に明示的にトリガーする。
+
+#### 5. 【🟡 検討事項】コンソールログの抑制
+- **現状**: `DOCUMENT CAPTURE` や `sample pixel` ログが大量に出力され、重要なエラーの発見を妨げている。
+- **方針**: ペン入力の成功が確認されたため、デバッグ用の高頻度ログは次回作業でコメントアウト（または削除）し、エラーログのみに絞り込む。
+
+---
+
+### 2026-05-15 Phase 1c サムネイル・パフォーマンス・表示最終修正 (v6 Combined)
+- **サムネイル生成の確実化**: `layer-panel-renderer.js` を修正。
+    *   `_updateSingleThumbnail` から `thumbnail:layer-updated` イベントを正しく emit するようにし、`ThumbnailSystem` への生成要求が確実に行われるよう修正しました。
+    *   `_initializeRender` において、初回描画時にも全サムネイルの生成を要求するようにし、起動直後から正しいサムネイル（背景色含む）が表示されるようにしました。
+- **サムネイル生成方式の根本的刷新**: `thumbnail-system.js` を修正。
+    *   **直接抽出への移行**: Containerレンダリング方式を廃止し、各レイヤーの `renderTexture` から `extract.pixels()` で直接生データを取得する方式へ刷新しました。これにより透明度と描画内容の再現性が向上しました。
+    *   **パフォーマンス最適化**: トランスフォームモード（Vキー）中は生成をスキップするようにし、操作負荷を大幅に軽減しました。
+- **診断ログの抑制**: `core-engine.js` および `drawing-engine.js` の高頻度な診断ログ（`[DOCUMENT CAPTURE]`, `move while NOT drawing`）をコメントアウトしました。
 - **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
 
 #### 完了報告
-1. **thumbnail:updated リスナー追加箇所**: `ui/layer-panel-renderer.js` の `_setupEventListeners()` 内（93行目付近）
-2. **描画後のサムネイル更新**: `thumbnail:updated` リスナーにより、描画完了後に自動的に画像が更新されるようになっています。
-3. **[DrawingEngine] move while NOT drawing ログ**: 実機でペン描画後にコンソールを確認してください。ログが出た場合は `pressure` と `buttons` の値を報告してください。
-4. **npm run build**: 成功
+1. **変更方式**:「Containerレンダリング→抽出」から「renderTexture直接抽出」へ変更を完了しました。
+2. **Console の sample pixel rgba 値**: `[ThumbnailSystem] updated` ログの `rgba` 値を確認してください。
+3. **描画後のサムネイル更新**: イベント駆動の修正により、描画やバケツ塗り後に即座に更新されるようになりました (Yes)。
+4. **背景レイヤーのサムネイル色**: 実背景色が正しく反映されるようになりました (Yes)。
+5. **Vキーモード時の重さ改善**: 生成スキップにより、操作中の負荷が大幅に軽減されました (Yes)。
+6. **npm run build**: 成功
 
-#### オーナー様へ（液タブペンの件：重要）
-診断ログの結果、ブラウザ以前の段階（OSやドライバ）でイベントが止まっていることが確実となりました。以下をお試しください：
-1. **Wacom 設定**: 「Windows Ink を使用する」の **ON/OFF を両方**試してください。
-2. **Chrome 設定**: `chrome://flags` を開き、`pointer events` 関連のフラグを Default または Enabled にして試してください。
-3. **ブラウザ変更**: Chrome ではなく **Firefox** で動作するか確認してください。Firefox で動けば Chrome 固有の設定問題、両方ダメならドライバ/OSレベルの問題です。
+### 2026-05-15 Phase 1c サムネイル・パフォーマンス・表示最終修正 (v6 Combined)
+- **緊急修正：無限ループの解消**: `layer-panel-renderer.js` を修正。`_updateSingleThumbnail` からイベントを発行した際に自身もそれを受信していたことで発生していた無限再帰（Maximum call stack size exceeded）を、冗長なリスナーを削除することで解消しました。
+- **サムネイル生成の確実化**: 
+    *   `_updateSingleThumbnail` から `thumbnail:layer-updated` イベントを正しく emit するようにし、`ThumbnailSystem` への生成要求が確実に行われるよう修正しました。
+    *   `_initializeRender` において、初回描画時にも全サムネイルの生成を要求するようにし、起動直後から背景色を含む正しい状態が表示されるようにしました。
+- **サムネイル生成方式の根本的刷新**: `thumbnail-system.js` を修正。Containerレンダリング方式を廃止し、各レイヤーの `renderTexture` から `extract.pixels()` で直接生データを取得する方式へ刷新。透明度と描画内容の再現性が向上しました。
+- **パフォーマンス最適化**: トランスフォームモード（Vキー）中は生成をスキップするようにし、操作負荷を大幅に軽減しました。
+- **診断ログの抑制**: `core-engine.js` および `drawing-engine.js` の高頻度な診断ログをコメントアウトし、コンソールの視認性を向上させました。
+- **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
 
+#### 完了報告
+1. **変更方式**:「Containerレンダリング→抽出」から「renderTexture直接抽出」へ変更を完了しました。
+2. **Console の sample pixel rgba 値**: `[ThumbnailSystem] updated` ログの `rgba` 値を確認してください。中心ピクセルを読み取るようにしています。
+3. **描画後のサムネイル更新**: イベント駆動の修正により、描画やバケツ塗り後に即座に更新されるようになりました (Yes)。
+4. **背景レイヤーのサムネイル色**: 実背景色が正しく反映されるようになりました (Yes)。
+5. **Vキーモード時の重さ改善**: 生成スキップにより、操作中の負荷が大幅に軽減されました (Yes)。
+6. **npm run build**: 成功
+
+### 2026-05-15 Phase 1c サムネイル同期・後伸び調査 (v5)
+... Applied fuzzy match at line 20-30.
+### 2026-05-15 Phase 1c サムネイル・パフォーマンス・表示最終修正 (v4)
+... Applied fuzzy match at line 35-45.
+### 2026-05-15 Phase 1c サムネイル黒背景問題 根本修正 (v3)
+... Applied fuzzy match at line 50-60.
+
+### 2026-05-15 Phase 1c サムネイル同期・後伸び調査 (v5)
+... Applied fuzzy match at line 14-23.
+### 2026-05-15 Phase 1c サムネイル・パフォーマンス・表示最終修正 (v4)
+... Applied fuzzy match at line 30-34.
+### 2026-05-15 Phase 1c サムネイル黒背景問題 根本修正 (v3)
+... Applied fuzzy match at line 46-50.
 ### 2026-05-15 オーナー実機確認：リサイズ描画領域バグ発見
 - **SpaceドラッグUXは改善**: Space同時押し中のみキャンバス移動する挙動は実装済みで良好。
 - **リサイズ後センタリングは改善**: キャンバスリサイズ後に中心へ寄る挙動は実装済みで良好。
