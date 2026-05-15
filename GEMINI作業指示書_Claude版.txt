@@ -1,0 +1,83 @@
+GEMINI作業指示書.txt（2026-05-15 Claude版 v7）
+
+作業対象: tegaki_work/system/drawing/thumbnail-system.js のみ
+修正箇所: generateLayerThumbnail() の pixels 抽出部分（10行程度）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【修正1】extract.pixels() の引数を修正
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 原因
+PixiJS v8 の extract.pixels() は RenderTexture を直接受け取れない。
+Sprite でラップしてから渡す必要がある。
+現在のコードはRenderTextureを直接渡しているため、空データが返っている。
+
+■ 変更箇所
+import 行に Sprite を追加する。
+
+【変更前】
+import { RenderTexture } from 'pixi.js';
+
+【変更後】
+import { RenderTexture, Sprite } from 'pixi.js';
+
+■ 変更箇所2
+generateLayerThumbnail() 内の pixels 取得部分。
+
+【変更前】
+const sourceRT = layer.layerData?.renderTexture;
+if (!sourceRT) {
+    console.warn('[ThumbnailSystem] No renderTexture on layer', layerId);
+    return null;
+}
+pixels = this.app.renderer.extract.pixels(sourceRT);
+
+【変更後】
+const sourceRT = layer.layerData?.renderTexture;
+if (!sourceRT) {
+    console.warn('[ThumbnailSystem] No renderTexture on layer', layerId);
+    return null;
+}
+// PixiJS v8 では extract.pixels() に RenderTexture を直接渡せない
+// Sprite でラップして渡す
+const tempSprite = new Sprite(sourceRT);
+pixels = this.app.renderer.extract.pixels(tempSprite);
+tempSprite.destroy();  // texture は破棄しない（sourceRT はレイヤーが所有）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【修正2】確認ログを透明レイヤーでも必ず出す
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 原因
+現在のログは px[3] > 0 の時だけ出力するため、
+透明レイヤーに描いた後でもログが出ず動作確認できない。
+
+■ 変更箇所
+【変更前】
+if (px[3] > 0 || isBackground) {
+    console.log(`[ThumbnailSystem] updated: ...`);
+}
+
+【変更後】
+// 常にログを出す（透明・不透明を問わず確認できるように）
+console.log(`[ThumbnailSystem] updated: ${layer.layerData?.name || 'layer'}, rgba: [${px.join(',')}]`);
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【今回やらないこと】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- layer-panel-renderer.js は触らない
+- brush-core.js は触らない
+- layer-system.js は触らない
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【完了報告（PROGRESS.md に記載）】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. import に Sprite を追加したか（Yes/No）
+2. extract.pixels(tempSprite) に変更したか（Yes/No）
+3. 描画後の Console に
+   [ThumbnailSystem] updated: レイヤー1, rgba: [R,G,B,A]
+   が出たか（出た場合は rgba の値も記載）
+4. rgba[3] が 0 より大きいか（= ピクセルが取れているか）
+5. サムネイルに描画内容が反映されたか（Yes/No）
+6. npm run build の成否
