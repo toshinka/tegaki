@@ -40,46 +40,5 @@ pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"touch","b
 drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"canvasMove":false,"vKey":false}
 pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"pointerId":4,"isPrimary":true,"target":"CANVAS","id":"","className":""}
 drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"canvasMove":false,"vKey":false}
-popup-manager.js:202 👁️ Popup "resize" shown
-layer-system.js:418 [LayerSystem] Starting resizeLayerTextures {newWidth: 800, newHeight: 600, offsetX: 200, offsetY: 100}
-layer-system.js:438 [LayerSystem] resize layer texture {layer: 'レイヤー1', oldRT: '400x400', newRT: '800x600', offset: '200,100'}
-layer-system.js:456 Performance warning: clear() called with no buffers in bitmask
-clear @ WebGLRenderer-DLrfFTdW.js?v=c1601ffe:1364
-startRenderPass @ WebGLRenderer-DLrfFTdW.js?v=c1601ffe:1302
-bind @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:3274
-push @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:3297
-renderStart @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:3193
-emit @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:61
-render @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:218
-(anonymous) @ layer-system.js:456
-(anonymous) @ layer-system.js:423
-(anonymous) @ layer-system.js:360
-(anonymous) @ event-bus.js:45
-(anonymous) @ event-bus.js:43
-(anonymous) @ camera-system.js:266
-(anonymous) @ resize-popup.js:419
-(anonymous) @ history.js:45
-(anonymous) @ resize-popup.js:442
-(anonymous) @ resize-popup.js:397
-layer-system.js:438 [LayerSystem] resize layer texture {layer: 'レイヤー2', oldRT: '400x400', newRT: '800x600', offset: '200,100'}
-layer-system.js:456 Performance warning: clear() called with no buffers in bitmask
-clear @ WebGLRenderer-DLrfFTdW.js?v=c1601ffe:1364
-startRenderPass @ WebGLRenderer-DLrfFTdW.js?v=c1601ffe:1302
-bind @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:3274
-push @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:3297
-renderStart @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:3193
-emit @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:61
-render @ RenderTargetSystem-DENVL5ZU.js?v=c1601ffe:218
-(anonymous) @ layer-system.js:456
-(anonymous) @ layer-system.js:423
-(anonymous) @ layer-system.js:360
-(anonymous) @ event-bus.js:45
-(anonymous) @ event-bus.js:43
-(anonymous) @ camera-system.js:266
-(anonymous) @ resize-popup.js:419
-(anonymous) @ history.js:45
-(anonymous) @ resize-popup.js:442
-(anonymous) @ resize-popup.js:397
-thumbnail-system.js:184 [ThumbnailSystem] updated: 背景, rgba: [240,224,214,255]
-thumbnail-system.js:184 [ThumbnailSystem] updated: 背景, rgba: [240,224,214,255]
-thumbnail-system.js:184 [ThumbnailSystem] updated: 背景, rgba: [128,0,0,255]
+pointer-handler.js:61 [PointerHandler] raw pointerdown {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"pointerId":8,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:66 [DrawingEngine] down gate {"pointerType":"touch","button":0,"buttons":1,"pressure":1,"canvasMove":false,"vKey":false}
