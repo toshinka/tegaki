@@ -30,32 +30,15 @@ export class StrokeRenderer {
         this.textureBridge = null;
         this.webgl2Enabled = false;
         
-        this.config = TEGAKI_CONFIG?.webgpu || {};
+        this.config = window.TEGAKI_CONFIG?.webgpu || {};
     }
 
     async setWebGLLayer(webgl2Layer) {
-        this.glStrokeProcessor = window.GLStrokeProcessor;
-        
-        if (!this.glStrokeProcessor) {
-            console.error('[StrokeRenderer] GLStrokeProcessor not available');
+        if (!this.config.enabled) {
+            this.webgl2Enabled = false;
             return false;
         }
-        
-        if (!this.glStrokeProcessor.isInitialized()) {
-            console.error('[StrokeRenderer] GLStrokeProcessor not initialized');
-            return false;
-        }
-        
-        if (window.GLMSDFPipeline && this.config.msdf?.enabled !== false) {
-            this.glMSDFPipeline = window.GLMSDFPipeline;
-        }
-        
-        if (window.GLTextureBridge) {
-            this.textureBridge = window.GLTextureBridge;
-        }
-        
-        this.webgl2Enabled = true;
-        return true;
+        return false;
     }
 
     _getSettings(providedSettings = null) {
