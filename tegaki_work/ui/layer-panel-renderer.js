@@ -26,7 +26,7 @@ export class LayerPanelRenderer {
         this._updateTimeout = null;
 
         this._setupEventListeners();
-        
+
         requestAnimationFrame(() => {
             this._initializeRender();
         });
@@ -34,13 +34,13 @@ export class LayerPanelRenderer {
 
     _initializeRender() {
         if (this._isInitialized) return;
-        
+
         const layers = this.layerSystem?.getLayers() || [];
         if (layers.length === 0) {
             setTimeout(() => this._initializeRender(), 50);
             return;
         }
-        
+
         const activeIndex = this.layerSystem?.getActiveLayerIndex() || 0;
         const animationSystem = window.animationSystem || null;
         this.render(layers, activeIndex, animationSystem);
@@ -69,7 +69,7 @@ export class LayerPanelRenderer {
         this.eventBus.on('layer:name-changed', () => this.requestUpdate());
         this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
         this.eventBus.on('camera:resized', () => this.updateAllThumbnails());
-        
+
         // [指示書 v5/v6 修正] 無限ループ防止のため 'thumbnail:layer-updated' のリスナーを削除。
         // サムネイルの更新は、生成完了後に発行される 'thumbnail:updated' で一括処理する。
 
@@ -135,7 +135,7 @@ export class LayerPanelRenderer {
         if (!layers || layers.length === 0) return;
 
         this.container.innerHTML = '';
-        
+
         this.container.style.maxHeight = '600px';
         this.container.style.overflowY = 'auto';
         this.container.style.overflowX = 'hidden';
@@ -146,18 +146,18 @@ export class LayerPanelRenderer {
         reversedLayers.forEach((layer, reversedIndex) => {
             const originalIndex = layers.length - 1 - reversedIndex;
             const isActive = originalIndex === activeIndex;
-            
+
             if (layer.layerData?.parentId) {
                 const parentFolder = layers.find(l => l.layerData?.id === layer.layerData.parentId);
                 if (parentFolder && parentFolder.layerData?.isFolder && !parentFolder.layerData.folderExpanded) {
                     return;
                 }
             }
-            
-            const layerElement = layer.layerData?.isFolder 
+
+            const layerElement = layer.layerData?.isFolder
                 ? this.createFolderElement(layer, originalIndex, isActive, layers)
                 : this.createLayerElement(layer, originalIndex, isActive, animationSystem);
-                
+
             this.container.appendChild(layerElement);
         });
 
@@ -239,11 +239,11 @@ export class LayerPanelRenderer {
 
         const deleteBtn = this._createDeleteButton(index);
         folderDiv.appendChild(deleteBtn);
-        
+
         folderDiv.addEventListener('mouseenter', () => {
             deleteBtn.style.opacity = '1';
         });
-        
+
         folderDiv.addEventListener('mouseleave', () => {
             deleteBtn.style.opacity = '0';
         });
@@ -286,7 +286,7 @@ export class LayerPanelRenderer {
             pointer-events:none;
         `;
 
-        const iconSVG = isExpanded 
+        const iconSVG = isExpanded
             ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>`
             : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
 
@@ -298,31 +298,31 @@ export class LayerPanelRenderer {
         const toggleIcon = document.createElement('div');
         toggleIcon.className = 'folder-toggle-icon';
         toggleIcon.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
-        
+
         toggleIcon.innerHTML = isExpanded
             ? `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`
             : `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>`;
-        
+
         toggleIcon.title = isExpanded ? 'フォルダを閉じる' : 'フォルダを開く';
-        
+
         toggleIcon.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.layerSystem?.toggleFolderExpand) {
                 this.layerSystem.toggleFolderExpand(folder.layerData.id);
             }
         });
-        
+
         return toggleIcon;
     }
 
     createFolderThumbnail(folder, index, allLayers) {
         const maxWidth = 64;
         const maxHeight = 44;
-        
+
         const thumbnailContainer = document.createElement('div');
         thumbnailContainer.className = 'layer-thumbnail folder-thumbnail';
         thumbnailContainer.dataset.layerIndex = index;
-        
+
         thumbnailContainer.style.width = maxWidth + 'px';
         thumbnailContainer.style.height = maxHeight + 'px';
         thumbnailContainer.style.boxSizing = 'border-box';
@@ -335,7 +335,7 @@ export class LayerPanelRenderer {
         thumbnailContainer.style.justifyContent = 'center';
         thumbnailContainer.style.flexShrink = '0';
         thumbnailContainer.style.backgroundColor = 'transparent'; // [指示書] フォルダも透明に
-        
+
         return thumbnailContainer;
     }
 
@@ -358,7 +358,7 @@ export class LayerPanelRenderer {
         const indentLevel = this._calculateIndentLevel(layer, allLayers);
         const leftOffset = indentLevel * 12;
         const hasParent = layer.layerData?.parentId;
-        
+
         layerDiv.style.cssText = `
             width:170px;
             min-height:48px;
@@ -452,7 +452,13 @@ export class LayerPanelRenderer {
         const visibilityIcon = this._createVisibilityIcon(layer, index);
         row2.appendChild(visibilityIcon);
 
-        for (let i = 0; i < 3; i++) {
+        const duplicateBtn = this._createDuplicateButton(index);
+        row2.appendChild(duplicateBtn);
+
+        const mergeDownBtn = this._createMergeDownButton(index);
+        row2.appendChild(mergeDownBtn);
+
+        for (let i = 0; i < 1; i++) {
             const placeholder = document.createElement('div');
             placeholder.style.cssText = 'width:16px;height:16px;flex-shrink:0;';
             row2.appendChild(placeholder);
@@ -473,11 +479,11 @@ export class LayerPanelRenderer {
 
         const deleteBtn = this._createDeleteButton(index);
         layerDiv.appendChild(deleteBtn);
-        
+
         layerDiv.addEventListener('mouseenter', () => {
             deleteBtn.style.opacity = '1';
         });
-        
+
         layerDiv.addEventListener('mouseleave', () => {
             deleteBtn.style.opacity = '0';
         });
@@ -507,9 +513,9 @@ export class LayerPanelRenderer {
         const visibilityIcon = document.createElement('div');
         visibilityIcon.className = 'layer-visibility';
         visibilityIcon.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
-        
+
         const isVisible = layer.layerData?.visible !== false;
-        visibilityIcon.innerHTML = isVisible ? 
+        visibilityIcon.innerHTML = isVisible ?
             `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2">
                 <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
             </svg>` :
@@ -517,14 +523,14 @@ export class LayerPanelRenderer {
                 <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
                 <path d="m2 2 20 20"/>
             </svg>`;
-        
+
         visibilityIcon.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.layerSystem?.toggleLayerVisibility) {
                 this.layerSystem.toggleLayerVisibility(index);
             }
         });
-        
+
         return visibilityIcon;
     }
 
@@ -533,8 +539,8 @@ export class LayerPanelRenderer {
         bucketIcon.className = 'layer-background-color-button';
         bucketIcon.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
         bucketIcon.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" 
-                 viewBox="0 0 24 24" fill="none" stroke="#800000" 
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                 viewBox="0 0 24 24" fill="none" stroke="#800000"
                  stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/>
                 <path d="m5 2 5 5"/>
@@ -587,7 +593,7 @@ export class LayerPanelRenderer {
         opacityContainer.appendChild(decreaseBtn);
         opacityContainer.appendChild(opacityValue);
         opacityContainer.appendChild(increaseBtn);
-        
+
         return opacityContainer;
     }
 
@@ -596,14 +602,14 @@ export class LayerPanelRenderer {
         nameSpan.className = 'layer-name';
         nameSpan.textContent = layer.layerData?.name || `レイヤー${index}`;
         nameSpan.style.cssText = `grid-column:1;grid-row:3;color:#800000;font-size:10px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding:0;height:14px;display:flex;align-items:center;`;
-        
+
         let clickCount = 0;
         let clickTimer = null;
-        
+
         nameSpan.addEventListener('click', (e) => {
             e.stopPropagation();
             clickCount++;
-            
+
             if (clickCount === 1) {
                 clickTimer = setTimeout(() => {
                     clickCount = 0;
@@ -611,13 +617,13 @@ export class LayerPanelRenderer {
             } else if (clickCount === 2) {
                 clearTimeout(clickTimer);
                 clickCount = 0;
-                
+
                 if (this._editingLayerIndex === -1) {
                     this._editLayerName(nameSpan, layer, index);
                 }
             }
         });
-        
+
         return nameSpan;
     }
 
@@ -629,35 +635,79 @@ export class LayerPanelRenderer {
             <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
         </svg>`;
         deleteBtn.title = 'レイヤーを削除';
-        
+
         deleteBtn.addEventListener('mouseenter', function() {
             this.style.backgroundColor = '#800000';
             this.style.transform = 'scale(1.15)';
         });
-        
+
         deleteBtn.addEventListener('mouseleave', function() {
             this.style.backgroundColor = '#cf9c97';
             this.style.transform = 'scale(1)';
         });
-        
+
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.layerSystem?.deleteLayer) {
                 this.layerSystem.deleteLayer(index);
             }
         });
-        
+
         return deleteBtn;
+    }
+
+    _createDuplicateButton(index) {
+        const btn = document.createElement('div');
+        btn.className = 'layer-duplicate-button';
+        btn.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+        btn.title = 'レイヤーを複製';
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this.layerSystem?.duplicateLayer) {
+                this.layerSystem.duplicateLayer(index);
+            }
+        });
+
+        return btn;
+    }
+
+    _createMergeDownButton(index) {
+        const btn = document.createElement('div');
+        btn.className = 'layer-merge-down-button';
+        btn.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+
+        const layers = this.layerSystem?.getLayers?.() || [];
+        const bottomLayer = layers[index - 1];
+        const canMergeDown = index > 1 && !bottomLayer?.layerData?.isBackground && !bottomLayer?.layerData?.isFolder;
+
+        if (!canMergeDown) {
+            btn.style.visibility = 'hidden';
+            btn.style.pointerEvents = 'none';
+        }
+
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>`;
+        btn.title = '下のレイヤーと結合';
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this.layerSystem?.mergeLayerDown) {
+                this.layerSystem.mergeLayerDown(index);
+            }
+        });
+
+        return btn;
     }
 
     createThumbnail(layer, index) {
         const maxWidth = 64;
         const maxHeight = 44;
-        
+
         const thumbnailContainer = document.createElement('div');
         thumbnailContainer.className = 'layer-thumbnail';
         thumbnailContainer.dataset.layerIndex = index;
-        
+
         thumbnailContainer.style.width = maxWidth + 'px';
         thumbnailContainer.style.height = maxHeight + 'px';
         thumbnailContainer.style.boxSizing = 'border-box';
@@ -685,7 +735,7 @@ export class LayerPanelRenderer {
                 return thumbnailContainer;
             }
         }
-        
+
         // キャッシュがない場合は非同期で生成
         return thumbnailContainer;
     }
@@ -705,7 +755,7 @@ export class LayerPanelRenderer {
 
         nameSpan.replaceWith(input);
         this._editingInput = input;
-        
+
         requestAnimationFrame(() => {
             input.focus();
             input.select();
@@ -713,7 +763,7 @@ export class LayerPanelRenderer {
 
         const finishEdit = () => {
             if (this._editingLayerIndex !== index || !this._editingInput) return;
-            
+
             this._editingLayerIndex = -1;
             const currentInput = this._editingInput;
             this._editingInput = null;
@@ -732,7 +782,7 @@ export class LayerPanelRenderer {
                     });
                 }
             }
-            
+
             nameSpan.textContent = newName || originalName;
             currentInput.replaceWith(nameSpan);
         };
@@ -740,7 +790,7 @@ export class LayerPanelRenderer {
         input.addEventListener('blur', () => {
             setTimeout(() => finishEdit(), 150);
         });
-        
+
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -753,7 +803,7 @@ export class LayerPanelRenderer {
                 finishEdit();
             }
         });
-        
+
         input.addEventListener('click', (e) => {
             e.stopPropagation();
         });
@@ -791,7 +841,7 @@ export class LayerPanelRenderer {
                 immediate: true
             });
         }
-        
+
         applyBackgroundStyle();
     }
 

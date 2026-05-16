@@ -157,6 +157,17 @@ window.PNGExporter = (function() {
                         } else if (child instanceof PIXI.Mesh) {
                             const clone = child.clone ? child.clone() : child;
                             container.addChild(clone);
+                        } else if (child instanceof PIXI.Sprite) {
+                            // 🆕 Raster Sprite (RenderTexture) 対応
+                            const clone = new PIXI.Sprite(child.texture);
+                            clone.position.copyFrom(child.position);
+                            clone.scale.copyFrom(child.scale);
+                            clone.rotation = child.rotation;
+                            clone.pivot.copyFrom(child.pivot);
+                            clone.anchor.copyFrom(child.anchor);
+                            clone.alpha = child.alpha;
+                            clone.blendMode = child.blendMode;
+                            container.addChild(clone);
                         }
                     } catch (error) {
                         console.warn('Layer clone failed:', error);

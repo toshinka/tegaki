@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 1e — 完了判定済み / Phase 1f 準備済み**
+**Phase 1f — 完了判定済み / Phase 1g 準備済み**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -17,12 +17,27 @@
 | フォルダ | 状態 |
 |---|---|
 | `tegaki_phase0` | ✅ オリジナル保存。触らない |
-| `tegaki_work` | 🔧 現在の作業フォルダ。Phase 1e完了判定済み、Phase 1f準備済み |
+| `tegaki_work` | 🔧 現在の作業フォルダ。Phase 1f完了判定済み、Phase 1g準備済み |
 | `PastFiles/` | 完了済みフェーズのアーカイブ置き場 |
 
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-16 Phase 1f 完了判定と Phase 1g 準備
+- **実機確認**: アンドゥ・リドゥは良好に作動。途中でリサイズを混ぜても順番通りに戻り、座標ズレなし。行ったり来たりを繰り返しても破綻なし。
+- **Console確認**: 更新された `TegakiConsole.txt` に特別な異常ログは見当たらない。
+- **軽微修正**: `UIController` が `history:changed` を購読していなかったため、ステータスの `History:` 表示が更新されていなかった。`ui-panels.js` に `updateHistoryUI()` を追加し、`dom-builder.js` の初期表示を `0/500` に更新。
+- **Phase 1f 完了扱い**: 描画/消しゴム/バケツ/リサイズをまたいだ履歴と座標整合は完了判定。
+- **Phase 1g 方針**: 保存・出力・レイヤー編集基盤へ進む。初手は PNG エクスポート復旧と既存保存/レイヤー編集経路の棚卸し。
+- **作成/更新**: `task-gemini/phase1g.md` を作成し、`GEMINI作業指示書.txt` を Phase 1g 初回作業へ更新。`TEGAKI.md` / `NOTES.md` / `GEMINI.md` も次フェーズに合わせて同期。
+
+### 2026-05-16 Codex追修正：描画・バケツを履歴へ記録
+- **原因特定**: 現行のペン/消しゴムストロークは RenderTexture へ焼き込まれるだけで `History` に command が積まれていなかった。そのため、描画後に `Ctrl+Z` すると直前の描画ではなく、描画前に実行した `resize-canvas` など過去の履歴まで戻っていた。
+- **修正方針**: 既存のライブラスター方針は維持し、描画操作の前後で対象レイヤーの RenderTexture スナップショットを保持する。完了済み操作として履歴へ記録し、undo/redo は前後スナップショットの復元で行う。
+- **実装**: `history.js` に適用済み command を記録する `record()` を追加。`layer-system.js` に `createLayerRasterSnapshot()` / `restoreLayerRasterSnapshot()` を追加。`brush-core.js` はペン/消しゴム完了時に `draw-pen` / `draw-eraser` を履歴へ記録。`fill-tool.js` は基本バケツを `fill-layer-legacy-full` として履歴へ記録。
+- **期待される改善**: 描画後の `Ctrl+Z` は描画/消しゴム/バケツを先に戻し、描画前のリサイズ履歴へ飛びにくくなる。
+- **確認**: `cd tegaki_work && npm.cmd run build` 成功。ブラウザ自動ドラッグは点入力扱いになり履歴増加の実操作確認までは未完了のため、オーナー実機確認待ち。
 
 ### 2026-05-16 Phase 1e 完了判定と Phase 1f 準備
 - **Phase 1e 完了扱い**: オーナー実機確認で、消しゴム実装、ステータス表示、起動直後の `ペン（筆圧ON）` 表示、`P` / `E` / `G` ショートカット時のステータス名とサイドバー active 枠同期が良好。
@@ -102,6 +117,51 @@
 - **サムネイル診断の強化**: `thumbnail-system.js` を整理。抽出元サイズを `sourceRT.width/height` に合わせ、中心ピクセルだけでなく `nonTransparentPixels` と `maxAlpha` をログに出すようにしました。中心が透明なだけなのか、抽出全体が空なのかを判別しやすくするための診断です。
 - **PixiJS v8 clear指定の整理**: `layer-system.js` のリサイズ時 `renderer.render()` で、`clear: [0,0,0,0]` を `clear: true, clearColor: [0,0,0,0]` に変更しました。`TegakiConsole.txt` に出ていた `clear() called with no buffers in bitmask` 警告の抑制を意図した小修正です。
 - **確認**: `npm run build` 成功。実機では、リサイズ後に 400x400 までしか描けない問題、サムネイルの `nonTransparent/maxAlpha` ログ、Pixi clear warning の消失を確認してください。
+
+### 2026-05-16 Phase 1g 保存・出力・レイヤー編集基盤 (v1)
+- **PNGエクスポートの復旧**: `png-exporter.js` を修正。これまでは `PIXI.Sprite` がクローン対象から漏れていたため、RenderTexture に描かれた内容が出力されなかった問題を解決しました。
+- **エクスポート設定の簡略化**: `export-popup.js` を修正。デフォルト倍率を 1x に変更し、安定性を優先しました。
+- **レイヤー編集機能の拡充**: `layer-system.js` に以下の機能を実装（履歴対応済み）。
+    - **レイヤー複製**: ラスター内容、不透明度、変形状態を保持したまま新規レイヤーとして複製。
+    - **下のレイヤーと結合 (Merge Down)**: 上のレイヤーを下のレイヤーの RenderTexture へ焼き込み、上のレイヤーを削除。
+- **レイヤーパネルUIの更新**: `layer-panel-renderer.js` を修正。各レイヤーに「複製」と「結合」のアイコンボタンを追加しました。
+- **診断ログの整理**: `coordinate-system.js` の詳細な変換ログを `TEGAKI_CONFIG.debug` フラグ配下へ移動し、コンソールのノイズを削減しました。
+- **ビルド確認**: `npm run build` 成功。
+
+### 2026-05-16 Codex追修正：Phase 1g レイヤー編集エラー対応
+- **Console確認**: 下レイヤー結合で `updateLocalTransform` undefined、レイヤー複製で `historyManager.pop is not a function` が発生していた。
+- **画像資料確認**: `1.レイヤーに番号付けサムネイルが上下反転してる？.png` ではサムネイルが上下反転。`3.コピーするがサムネの表示がない.png` から `5.移動確定でサムネイルが表示された.png` では、複製内容は存在するがサムネイル更新が遅れている状態と判断。
+- **修正**: `duplicateLayer()` は存在しない `historyManager.pop()` 依存を廃止し、作成済み操作として `historyManager.record()` へ記録。`mergeLayerDown()` は履歴 `push()` 後に同じ結合を二重実行しないよう修正し、レイヤーID基準で対象を再取得して実行するようにした。
+- **サムネイル即時更新**: 複製・結合後は `thumbnail:layer-updated` に `immediate` を渡して即時生成する。
+- **サムネイル上下反転修正**: `thumbnail-system.js` の Pixi `extract.pixels()` 結果に対する不要な Y 軸反転を廃止。
+- **背景への最終結合を禁止**: 背景レイヤーは不透明な `backgroundGraphics` を持つ特殊レイヤーのため、最後の通常レイヤーを背景へ結合すると RenderTexture の画像がキャンバス上で隠れる。`mergeLayerDown()` とレイヤーパネルUIで背景直上の結合を禁止し、最後の通常レイヤーを残す方針に変更。
+
+#### 完了報告
+- **エクスポート経路**: `ExportManager` -> `PNGExporter` (tempContainer へのレンダリング方式)。
+- **保存形式の判断**: 現状は PNG エクスポートを優先。プロジェクト全体の保存形式は後続で検討。
+- **レイヤー編集の実装内容**: 複製、下のレイヤーと結合、UIボタン追加。
+- **history 対応状況**: `layer-duplicate`, `layer-merge-down` を追加済み。
+- **npm run build**: 成功
+
+### 2026-05-16 Phase 1f アンドゥ座標ズレ・リサイズ調査 (v1)
+- **詳細診断ログの導入**:
+    - `history.js`: コマンドの push 時に `TEGAKI_CONFIG.debug` が有効なら詳細をコンソール出力。
+    - `resize-popup.js`: リサイズ実行・アンドゥ時のサイズと整列設定をログ出力。
+    - `layer-system.js`: `bakeTransform` 実行時の情報をログ出力。
+- **座標ズレの修正・緩和**:
+    - `layer-system.js`: 変形確定（Vキー終了）時に `coordinateSystem.clearCache()` を実行し、古い座標計算情報が残らないように修正。
+    - `layer-system.js`: `layer-transform` の undo 時に「ラスター内容は焼き込まれたまま」である旨の警告ログを追加。
+- **アンドゥ座標ズレの調査結果**:
+    - **再現手順の仮説**: レイヤー変形（Vキー）→ 描画 → アンドゥを実行すると、変形の焼き込みは解除されないのにコンテナの座標だけが戻るため、視覚的な二重変形や描画位置のズレが発生する。
+    - **原因候補**: 現行の `bakeTransform` は `RenderTexture` を永久的に変更するが、履歴にはスナップショットを持たないため、完全なアンドゥが不可能。
+- **現行 resize 経路**: `ResizePopup` -> `CameraSystem.resizeCanvas` -> `camera:resized` イベント -> `LayerSystem.resizeLayerTextures` (新テクスチャ作成・コピー)。
+- **現行 history command 一覧**: `folder-create`, `layer-reorder`, `layer-hierarchy-move`, `layer-create`, `layer-delete`, `layer-flip`, `layer-transform`, `resize-canvas`。
+- **ビルド確認**: `npm run build` 成功。
+
+#### 完了報告
+- **実装した修正**: 診断ログ追加、座標キャッシュクリア強化、変形アンドゥ警告。
+- **残った問題**: `layer-transform` および `resize-canvas` の完全なラスター復旧（スナップショット保持）は未実装。
+- **Codex / Claude に判断してほしい点**: 描画（ストローク）自体の履歴対応が必要か。また、ラスター焼き込みのアンドゥを「スナップショットなし」でどう実現するか、あるいは焼き込みタイミングを遅らせるべきか。
 
 ### 2026-05-16 Phase 1e 筆圧・データ経路・描画品質改善
 - **PressureHandler の統合**: `core-engine.js` で `PressureHandler` をインスタンス化し、`strokeRecorder` へ渡すように修正。`pressure-handler.js` に ESM export を追加しました。これにより、ベースライン補正や距離ベースフィルタが有効になります。

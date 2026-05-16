@@ -18,7 +18,7 @@ export class ExportPopup {
     constructor(dependencies = {}) {
         this.manager = dependencies.exportManager || window.exportManager;
         this.selectedFormat = 'png';
-        this.selectedResolution = 2;
+        this.selectedResolution = 1;
         this.isVisible = false;
         this.currentPreviewUrl = null;
         this.currentBlob = null;

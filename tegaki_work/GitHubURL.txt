@@ -117,6 +117,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/li
 "D:\GitHub\tegaki\PastFiles\tegaki_phase1b1\PROGRESS.md"
 
 ## Claudeのファイル確認用資料URL
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CLAUDE_HANDOFF.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt

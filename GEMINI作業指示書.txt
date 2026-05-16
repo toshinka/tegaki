@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 1f 初回作業 2026-05-16
+# GEMINI作業指示書：Phase 1g 初回作業 2026-05-16
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 1f に入る。保存・出力・レイヤー編集拡張へ進む前に、アンドゥ/リドゥ、リサイズ、Vキー変形後の描画座標ズレを調査し、安全に直せる小さな修正から行う。履歴形式やレイヤー構造の大改修が必要な場合は、実装せず Codex 判断へ戻す。
+目的：Phase 1g に入る。Phase 1f でアンドゥ/リドゥとリサイズ座標整合は実機確認で良好。今回は保存・出力・レイヤー編集基盤へ進む。ただし全機能を一気に実装せず、PNGエクスポート復旧と安全なレイヤー編集の棚卸しから始める。
 
 ---
 
@@ -12,79 +12,64 @@
 2. `GEMINI.md`
 3. `tegaki_work/PROGRESS.md`
 4. `tegaki_work/NOTES.md`
-5. `task-gemini/phase1f.md`
+5. `task-gemini/phase1g.md`
 6. この `GEMINI作業指示書.txt`
 
 ---
 
 ## 今回の前提
 
-- Phase 1e は、筆圧ペン、消しゴム筆圧、低速描画の途切れ対策、ステータス/UI同期まで完了扱い。
-- ペン、消しゴム、サムネイル、基本バケツ、筆圧切替、ステータス表示は壊さない。
+- Phase 1f は、描画/消しゴム/バケツ/リサイズをまたいだアンドゥ・リドゥと座標整合が実機確認で良好。
+- ペン、消しゴム、サムネイル、基本バケツ、筆圧切替、ステータス表示、アンドゥ/リドゥ、リサイズは壊さない。
 - 標準描画は PixiJS v8.17.0 + RenderTexture へのライブラスター焼き込み。
 - WebGPU / SDF / MSDF / WebGL2 Mesh 経路は凍結継続。復活させない。
-- Canvas2D を本番描画へ混ぜない。
+- Canvas2D を本番描画へ混ぜない。ただしエクスポート時の最終抽出・保存形式変換に Canvas を使うのは可。
 - 内部 2 倍化、`resolution: 2` は使わない。
 - `dist/` は成果物として必要ない限り差分に残さない。
-- 保存、エクスポート、レイヤー複製/結合/フォルダ、範囲選択、高機能バケツ、アニメ/漫画効果は今回扱わない。
-
----
-
-## 報告されている症状
-
-- 時々、アンドゥで描画座標がズレる。
-- アンドゥ単体で起きるのか、リサイズ後のアンドゥで起きるのかは未確定。
-- Vキーモードでアクティブレイヤーを少し移動すると、描画可能座標がキャンバスと一致して元に戻ることがある。
-- Console 更新分では致命的エラーは見えていない。起動ログと popup 表示ログが中心。
+- 出力サイズは作業キャンバスサイズと一致させる。
+- 高機能バケツ、範囲選択、アニメ/漫画効果は今回扱わない。
 
 ---
 
 ## 今回の主作業
 
-### 1. 履歴・リサイズ・座標経路の棚卸し
+### 1. 保存・出力・レイヤー編集経路の棚卸し
 
 対象候補：
 
-- `tegaki_work/system/history.js`
-- `tegaki_work/ui/keyboard-handler.js`
-- `tegaki_work/ui/resize-popup.js`
-- `tegaki_work/ui/resize-slider.js`
-- `tegaki_work/system/camera-system.js`
-- `tegaki_work/coordinate-system.js`
+- `tegaki_work/system/export-manager.js`
+- `tegaki_work/system/exporters/png-exporter.js`
+- `tegaki_work/system/exporters/webp-exporter.js`
+- `tegaki_work/system/exporters/psd-exporter.js`
+- `tegaki_work/ui/export-popup.js`
+- `tegaki_work/ui/album-popup.js`
 - `tegaki_work/system/layer-system.js`
-- `tegaki_work/system/layer-transform.js`
-- `tegaki_work/system/drawing/brush-core.js`
-- `tegaki_work/system/drawing/fill-tool.js`
-- `tegaki_work/system/drawing/stroke-renderer.js`
-- `tegaki_work/system/drawing/thumbnail-system.js`
+- `tegaki_work/ui/layer-panel-renderer.js`
+- `tegaki_work/system/data-models.js`
+- `tegaki_work/system/history.js`
 
 確認すること：
 
-1. 描画 stroke の undo/redo が存在するか。存在しない場合、現状の `History` は何を戻しているか。
-2. ペン、消しゴム、バケツ、リサイズ、レイヤー変形がどの形式の history command を push しているか。
-3. `resize-popup.js` と `resize-slider.js` のどちらが現行 UI で使われているか。
-4. リサイズ undo が旧サイズへ戻すとき、描画レイヤーの `RenderTexture` 内容とサイズも戻しているか。
-5. リサイズ時の `alignOptions` が do/undo で逆方向の offset として扱えているか。
-6. `camera:resized` 後に `coordinate-system.clearCache()`、レイヤー transform 状態、サムネイル更新が十分に呼ばれているか。
-7. Vキー変形モードの enter/exit が、座標ズレを直している副作用を持っていないか。
+1. PNG エクスポートが現在の `Container + Sprite(RenderTexture)` レイヤー構造を正しく合成しているか。
+2. 背景レイヤー、透明背景、非表示レイヤー、レイヤー不透明度が出力に反映されるか。
+3. エクスポート時にカメラ位置・ズーム・UI 表示の影響を受けていないか。
+4. 現行の album/save 相当機能があるか。ある場合、何を保存しているか。
+5. レイヤー複製/結合/フォルダ/クリッピングの既存実装や残骸があるか。
+6. レイヤー操作を history に積む既存 command があるか。
 
 この棚卸し結果を `tegaki_work/PROGRESS.md` の先頭へ追記する。
 
 ---
 
-### 2. 再現手順を試す
+### 2. PNG エクスポート復旧を最優先
 
-最低限、以下を試す。
+受け入れ条件：
 
-1. 起動直後 400x400 で線を描く。
-2. `Ctrl+Z` / `Ctrl+Y` を数回行う。
-3. リサイズする。
-4. リサイズ後に線を描く。
-5. `Ctrl+Z` / `Ctrl+Y` を数回行う。
-6. Vキーでアクティブレイヤーを少し移動し、描画座標が直るか見る。
-7. 消しゴム、バケツでも同じ流れを軽く確認する。
-
-再現しない場合でも、どの手順では再現しなかったかを `PROGRESS.md` に記録する。
+- 現在のキャンバスサイズと同じ PNG が出力される。
+- 表示中レイヤーだけが出力される。
+- 背景表示 ON なら背景込み、背景非表示なら透明背景になる。
+- ペン、消しゴム、バケツ、リサイズ後の描画が出力に反映される。
+- 倍率指定や高度な書き出し設定は削除または無効化してよい。
 
 ---
 
@@ -92,23 +77,24 @@
 
 実装してよい候補：
 
-- `resize-popup.js` の undo/redo が `RenderTexture` サイズ・内容・表示 sprite を正しく戻すための小修正。
-- リサイズ履歴コマンドに、旧キャンバスサイズ、旧レイヤー texture 状態、alignment offset を明確に保持する小修正。
-- `camera:resized` 後に coordinate/cache/thumbnail/transform 表示を同期する小修正。
-- 履歴適用中に描画・変形・サムネイル更新が不完全にならないようにする小修正。
-- `TEGAKI_CONFIG.debug === true` のときだけ、history command 名、canvas size、active layer id、RenderTexture size、layer transform を出す診断ログを追加する。
-- 現行で使われていない古い resize 経路が混乱を招く場合は、削除ではなく「非現行」とコメント・PROGRESS に明記する。
+- PNG エクスポート経路の小修正。
+- エクスポート UI の不要な倍率指定を隠す、または無効化する小修正。
+- レイヤー複製の実装。
+- 下レイヤー結合の実装。
+- レイヤー操作を `History` に載せる小修正。
+- 保存/読み込み形式の調査と、最小実装が安全なら実装。
 
 実装しないで止めるもの：
 
-- history command 形式の大幅変更。
-- RenderTexture の履歴スナップショットを毎回保存する大規模設計。
-- レイヤー構造そのものの変更。
-- Vキー変形 bake の全面再設計。
-- 保存・エクスポート・レイヤー編集機能の追加。
+- 保存形式の大きな設計判断。
+- PSD/WEBP/GIF/APNG のまとめて復旧。
+- レイヤー階層モデルの大幅変更。
+- History command 形式の大幅変更。
+- RenderTexture の保持方式変更。
 - WebGPU / SDF / MSDF / WebGL2 Mesh の復活。
+- 範囲選択、切り取り、自由変形の本格実装。
 
-今回の Gemini 作業では、保存/出力やUI拡張は後回しでよい。アンドゥ座標ズレの原因整理と、小修正で直せる範囲を優先する。
+今回の Gemini 作業では、PNGエクスポート復旧を第一優先にする。レイヤー編集は、複製または下レイヤー結合のうち安全に実装できる方からでよい。
 
 ---
 
@@ -127,10 +113,10 @@ npm.cmd run build
 2. 通常ペンで描ける。
 3. 消しゴムで透明に消せる。
 4. 基本バケツが壊れていない。
-5. `Ctrl+Z` / `Ctrl+Y` 後に描画座標がズレない。
-6. リサイズ後、リサイズ undo/redo 後に描画可能範囲と見た目のキャンバスが一致する。
-7. Vキーで少し動かさないと座標が直らない、という状態が解消または原因候補まで絞れている。
-8. `Shift+P` / `Shift+E` とステータス表示が壊れていない。
+5. `Ctrl+Z` / `Ctrl+Y` とリサイズが退行していない。
+6. PNG エクスポートで現在の描画内容が出力される。
+7. 背景表示 ON/OFF と非表示レイヤーが出力に反映される。
+8. 実装したレイヤー編集が history とサムネイルに反映される。
 9. `TEGAKI_CONFIG.debug === false` の通常状態で Console が過剰ログに埋まらない。
 
 ---
@@ -143,11 +129,10 @@ npm.cmd run build
 
 - 変更ファイル
 - 変更理由
-- 現行 resize 経路
-- 現行 history command 一覧
-- アンドゥ座標ズレの再現手順と結果
-- 原因候補
-- 実装した修正
+- エクスポート経路
+- 保存形式の判断
+- レイヤー編集の実装内容
+- history 対応状況
 - `npm.cmd run build` 結果
 - ブラウザ確認結果
 - 残った問題
