@@ -77,10 +77,11 @@ export class StrokeRenderer {
      * [指示書] 消しゴムのリアルタイム反映用：短いセグメント用の実描画Graphicsを生成
      */
     renderEraserSegment(points, settings) {
-        return this._renderEraserStroke(
-            { points, isSingleDot: points.length === 1 },
-            { ...settings, mode: 'eraser' }
-        );
+        return this._renderLineSegment(points, {
+            ...settings,
+            mode: 'eraser',
+            pressureEnabled: settings.eraserPressureEnabled === true
+        });
     }
 
     /**
@@ -88,13 +89,22 @@ export class StrokeRenderer {
      * Graphics.moveTo/lineTo + stroke を使用する。
      */
     renderPenSegment(points, settings) {
+        return this._renderLineSegment(points, {
+            ...settings,
+            mode: 'pen',
+            pressureEnabled: settings.pressureEnabled === true
+        });
+    }
+
+    _renderLineSegment(points, settings) {
         if (!points || points.length < 2) return null;
         
         const graphics = new Graphics();
-        graphics.blendMode = 'normal';
+        const mode = settings.mode || 'pen';
+        graphics.blendMode = mode === 'eraser' ? 'erase' : 'normal';
         
-        const color = settings.color;
-        const alpha = settings.opacity || 1.0;
+        const color = mode === 'eraser' ? 0xFFFFFF : settings.color;
+        const alpha = mode === 'eraser' ? 1.0 : settings.opacity || 1.0;
         const p0 = points[0]?.pressure ?? 1.0;
         const p1 = points[points.length - 1]?.pressure ?? p0;
         const segmentPressure = (p0 + p1) / 2;

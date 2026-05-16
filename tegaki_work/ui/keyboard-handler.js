@@ -67,6 +67,15 @@ export const KeyboardHandler = (function() {
             }
         }
 
+        // Shift+E: 消しゴム筆圧のON/OFF切り替え
+        if (e.code === 'KeyE' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            if (window.brushSettings) {
+                window.brushSettings.toggleEraserPressure();
+                e.preventDefault();
+                return;
+            }
+        }
+
         if (!action) return;
         
         handleAction(action, e, eventBus);
@@ -79,6 +88,15 @@ export const KeyboardHandler = (function() {
     function handleAction(action, event, eventBus) {
         const api = window.CoreRuntime?.api;
         const history = window.History || historyManager;
+
+        const syncToolUI = (tool) => {
+            eventBus.emit('ui:sidebar:sync-tool', { tool });
+            eventBus.emit('tool:changed', {
+                component: 'keyboard',
+                action: 'tool-changed',
+                tool
+            });
+        };
         
         switch(action) {
             case 'UNDO':
@@ -97,27 +115,30 @@ export const KeyboardHandler = (function() {
             
             case 'TOOL_PEN':
                 if (api?.tool.set('pen')) {
-                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
+                    syncToolUI('pen');
                 } else if (window.coreEngine?.switchTool) {
                     window.coreEngine.switchTool('pen');
+                    syncToolUI('pen');
                 }
                 event.preventDefault();
                 break;
             
             case 'TOOL_ERASER':
                 if (api?.tool.set('eraser')) {
-                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'eraser' });
+                    syncToolUI('eraser');
                 } else if (window.coreEngine?.switchTool) {
                     window.coreEngine.switchTool('eraser');
+                    syncToolUI('eraser');
                 }
                 event.preventDefault();
                 break;
             
             case 'TOOL_FILL':
                 if (api?.tool.set('fill')) {
-                    eventBus.emit('ui:sidebar:sync-tool', { tool: 'fill' });
+                    syncToolUI('fill');
                 } else if (window.coreEngine?.switchTool) {
                     window.coreEngine.switchTool('fill');
+                    syncToolUI('fill');
                 }
                 event.preventDefault();
                 break;

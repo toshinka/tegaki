@@ -59,7 +59,8 @@ export class UIController {
     initializeStatusPanel() {
         const statusPanel = document.querySelector('.status-panel');
         if (statusPanel) {
-            // 必要に応じて初期化
+            const currentTool = window.brushSettings?.getMode?.() || window.CoreRuntime?.api?.tool?.get?.() || 'pen';
+            this.updateToolUI(currentTool);
         }
     }
     
@@ -94,7 +95,23 @@ export class UIController {
             this.updateToolUI(tool);
         });
 
+        this.eventBus.on('ui:sidebar:sync-tool', ({ tool }) => {
+            this.updateToolUI(tool);
+        });
+
+        this.eventBus.on('brush:mode-changed', (payload = {}) => {
+            const tool = payload.tool || payload.mode || payload.data?.tool || payload.data?.mode;
+            if (tool) {
+                this.updateToolUI(tool);
+            }
+        });
+
         this.eventBus.on('brush:pressure-enabled-changed', () => {
+            const currentTool = window.brushSettings?.getMode?.() || window.CoreRuntime?.api?.tool?.get?.() || 'pen';
+            this.updateToolUI(currentTool);
+        });
+
+        this.eventBus.on('brush:eraser-pressure-enabled-changed', () => {
             const currentTool = window.brushSettings?.getMode?.() || window.CoreRuntime?.api?.tool?.get?.() || 'pen';
             this.updateToolUI(currentTool);
         });
@@ -214,7 +231,7 @@ export class UIController {
 
         const toolNames = {
             pen: this.getPenStatusName(),
-            eraser: '消しゴム',
+            eraser: this.getEraserStatusName(),
             fill: '塗りつぶし',
             'gif-animation': 'GIFアニメーション'
         };
@@ -227,6 +244,11 @@ export class UIController {
     getPenStatusName() {
         const pressureEnabled = window.brushSettings?.pressureEnabled === true;
         return pressureEnabled ? 'ペン（筆圧ON）' : 'ペン（固定幅）';
+    }
+
+    getEraserStatusName() {
+        const pressureEnabled = window.brushSettings?.eraserPressureEnabled === true;
+        return pressureEnabled ? '消しゴム（筆圧ON）' : '消しゴム（固定幅）';
     }
 
     updateStatusDisplay(data) {

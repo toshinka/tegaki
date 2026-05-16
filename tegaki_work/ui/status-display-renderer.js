@@ -81,10 +81,24 @@ window.TegakiUI.StatusDisplayRenderer = class StatusDisplayRenderer {
             this.updateTool(payload.tool || payload.newTool || payload.data?.tool);
         });
 
+        this.eventBus.on('ui:sidebar:sync-tool', (payload = {}) => {
+            this.updateTool(payload.tool || payload.data?.tool);
+        });
+
+        this.eventBus.on('brush:mode-changed', (payload = {}) => {
+            this.updateTool(payload.tool || payload.mode || payload.data?.tool || payload.data?.mode);
+        });
+
         // 筆圧設定変更
         this.eventBus.on('brush:pressure-enabled-changed', () => {
             if (window.brushSettings?.getMode() === 'pen') {
                 this.updateTool('pen');
+            }
+        });
+
+        this.eventBus.on('brush:eraser-pressure-enabled-changed', () => {
+            if (window.brushSettings?.getMode() === 'eraser') {
+                this.updateTool('eraser');
             }
         });
         
@@ -142,6 +156,9 @@ window.TegakiUI.StatusDisplayRenderer = class StatusDisplayRenderer {
         if (toolName === 'pen') {
             const pressure = window.brushSettings?.pressureEnabled === true;
             displayName = pressure ? 'ペン（筆圧ON）' : 'ペン（固定幅）';
+        } else if (toolName === 'eraser') {
+            const pressure = window.brushSettings?.eraserPressureEnabled === true;
+            displayName = pressure ? '消しゴム（筆圧ON）' : '消しゴム（固定幅）';
         }
 
         this.elements.currentTool.textContent = displayName;

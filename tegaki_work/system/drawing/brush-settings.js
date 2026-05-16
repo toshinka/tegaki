@@ -5,7 +5,7 @@
  * 依存: config.js, system/event-bus.js
  * 被依存: core-engine.js, drawing-engine.js, brush-core.js等
  * 公開API: BrushSettings
- * イベント発火: brush:mode-changed, brush:size-changed, brush:color-changed, brush:opacity-changed, brush:pressure-enabled-changed
+ * イベント発火: brush:mode-changed, brush:size-changed, brush:color-changed, brush:opacity-changed, brush:pressure-enabled-changed, brush:eraser-pressure-enabled-changed
  * イベント受信: なし
  * グローバル登録: window.BrushSettings
  * 実装状態: ♻️移植
@@ -37,7 +37,8 @@ export class BrushSettings {
         this.maxWidth = this.config.BRUSH_DEFAULTS?.maxWidth || 30;
         
         this.mode = 'pen'; // 'pen' | 'eraser' | 'fill'
-        this.pressureEnabled = false;
+        this.pressureEnabled = true;
+        this.eraserPressureEnabled = false;
     }
 
     setMode(mode) {
@@ -135,7 +136,8 @@ export class BrushSettings {
             mode: this.mode,
             minWidth: this.minWidth,
             maxWidth: this.maxWidth,
-            pressureEnabled: this.pressureEnabled
+            pressureEnabled: this.pressureEnabled,
+            eraserPressureEnabled: this.eraserPressureEnabled
         };
     }
 
@@ -155,6 +157,24 @@ export class BrushSettings {
     togglePressure() {
         this.setPressureEnabled(!this.pressureEnabled);
         return this.pressureEnabled;
+    }
+
+    setEraserPressureEnabled(enabled) {
+        const oldEnabled = this.eraserPressureEnabled;
+        this.eraserPressureEnabled = !!enabled;
+
+        if (oldEnabled !== this.eraserPressureEnabled && this.eventBus) {
+            this.eventBus.emit('brush:eraser-pressure-enabled-changed', {
+                component: 'brush',
+                action: 'eraser-pressure-enabled-changed',
+                data: { enabled: this.eraserPressureEnabled, oldEnabled }
+            });
+        }
+    }
+
+    toggleEraserPressure() {
+        this.setEraserPressureEnabled(!this.eraserPressureEnabled);
+        return this.eraserPressureEnabled;
     }
 
     updateSettings(settings) {

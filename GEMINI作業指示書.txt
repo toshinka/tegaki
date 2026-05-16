@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 1e 初回作業 2026-05-16
+# GEMINI作業指示書：Phase 1f 初回作業 2026-05-16
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 1e に入る。今回は Phase 1e 全体を一気に実装せず、描画品質・筆圧・補正のデータ経路を確認し、安全に直せる小さな修正から行う。レンダリング方式を大きく変える必要がある場合は、実装せず Codex 判断へ戻す。
+目的：Phase 1f に入る。保存・出力・レイヤー編集拡張へ進む前に、アンドゥ/リドゥ、リサイズ、Vキー変形後の描画座標ズレを調査し、安全に直せる小さな修正から行う。履歴形式やレイヤー構造の大改修が必要な場合は、実装せず Codex 判断へ戻す。
 
 ---
 
@@ -12,117 +12,103 @@
 2. `GEMINI.md`
 3. `tegaki_work/PROGRESS.md`
 4. `tegaki_work/NOTES.md`
-5. `task-gemini/phase1e.md`
+5. `task-gemini/phase1f.md`
 6. この `GEMINI作業指示書.txt`
 
 ---
 
 ## 今回の前提
 
-- Phase 1d は完了判定済み。
-- ペン、消しゴム、サムネイル、基本バケツは壊さない。
+- Phase 1e は、筆圧ペン、消しゴム筆圧、低速描画の途切れ対策、ステータス/UI同期まで完了扱い。
+- ペン、消しゴム、サムネイル、基本バケツ、筆圧切替、ステータス表示は壊さない。
 - 標準描画は PixiJS v8.17.0 + RenderTexture へのライブラスター焼き込み。
 - WebGPU / SDF / MSDF / WebGL2 Mesh 経路は凍結継続。復活させない。
 - Canvas2D を本番描画へ混ぜない。
 - 内部 2 倍化、`resolution: 2` は使わない。
 - `dist/` は成果物として必要ない限り差分に残さない。
-- 保存、エクスポート、レイヤー編集拡張、高機能バケツ、アニメ/漫画効果は今回扱わない。
+- 保存、エクスポート、レイヤー複製/結合/フォルダ、範囲選択、高機能バケツ、アニメ/漫画効果は今回扱わない。
+
+---
+
+## 報告されている症状
+
+- 時々、アンドゥで描画座標がズレる。
+- アンドゥ単体で起きるのか、リサイズ後のアンドゥで起きるのかは未確定。
+- Vキーモードでアクティブレイヤーを少し移動すると、描画可能座標がキャンバスと一致して元に戻ることがある。
+- Console 更新分では致命的エラーは見えていない。起動ログと popup 表示ログが中心。
 
 ---
 
 ## 今回の主作業
 
-### 1. 描画データ経路の棚卸し
+### 1. 履歴・リサイズ・座標経路の棚卸し
 
 対象候補：
 
-- `tegaki_work/system/drawing/brush-core.js`
-- `tegaki_work/system/drawing/stroke-renderer.js`
-- `tegaki_work/system/drawing/stroke-recorder.js`
-- `tegaki_work/system/drawing/pressure-handler.js`
-- `tegaki_work/system/drawing/pointer-handler.js`
-- `tegaki_work/system/brush-settings.js`
-- `tegaki_work/system/settings-manager.js`
-- `tegaki_work/ui/settings-popup.js`
+- `tegaki_work/system/history.js`
 - `tegaki_work/ui/keyboard-handler.js`
-- `tegaki_work/ui/quick-access-popup.js`
+- `tegaki_work/ui/resize-popup.js`
+- `tegaki_work/ui/resize-slider.js`
+- `tegaki_work/system/camera-system.js`
+- `tegaki_work/coordinate-system.js`
+- `tegaki_work/system/layer-system.js`
+- `tegaki_work/system/layer-transform.js`
+- `tegaki_work/system/drawing/brush-core.js`
+- `tegaki_work/system/drawing/fill-tool.js`
+- `tegaki_work/system/drawing/stroke-renderer.js`
+- `tegaki_work/system/drawing/thumbnail-system.js`
 
 確認すること：
 
-1. PointerEvent の `pressure` がどこで取得され、どこまで渡っているか。
-2. `pressure-handler.js` が実際に使われているか。未使用なら、なぜ未使用か。
-3. `settings-manager.js` / `settings-popup.js` の筆圧・補正設定が描画へ届いているか。
-4. `stroke-renderer.js` のライブラスター線分が筆圧・補正を使っているか。
-5. 遅いストロークが丸の連続に見える原因候補が、線分間隔、cap/join、同一点フィルタ、半透明重なりのどれに近いか。
+1. 描画 stroke の undo/redo が存在するか。存在しない場合、現状の `History` は何を戻しているか。
+2. ペン、消しゴム、バケツ、リサイズ、レイヤー変形がどの形式の history command を push しているか。
+3. `resize-popup.js` と `resize-slider.js` のどちらが現行 UI で使われているか。
+4. リサイズ undo が旧サイズへ戻すとき、描画レイヤーの `RenderTexture` 内容とサイズも戻しているか。
+5. リサイズ時の `alignOptions` が do/undo で逆方向の offset として扱えているか。
+6. `camera:resized` 後に `coordinate-system.clearCache()`、レイヤー transform 状態、サムネイル更新が十分に呼ばれているか。
+7. Vキー変形モードの enter/exit が、座標ズレを直している副作用を持っていないか。
 
 この棚卸し結果を `tegaki_work/PROGRESS.md` の先頭へ追記する。
 
 ---
 
-### 2. 安全に直せる範囲だけ実装
+### 2. 再現手順を試す
+
+最低限、以下を試す。
+
+1. 起動直後 400x400 で線を描く。
+2. `Ctrl+Z` / `Ctrl+Y` を数回行う。
+3. リサイズする。
+4. リサイズ後に線を描く。
+5. `Ctrl+Z` / `Ctrl+Y` を数回行う。
+6. Vキーでアクティブレイヤーを少し移動し、描画座標が直るか見る。
+7. 消しゴム、バケツでも同じ流れを軽く確認する。
+
+再現しない場合でも、どの手順では再現しなかったかを `PROGRESS.md` に記録する。
+
+---
+
+### 3. 安全に直せる範囲だけ実装
 
 実装してよい候補：
 
-- 既存の補正設定を `stroke-renderer.js` のオプションへ渡す小修正。
-- 既存の PointerEvent `pressure` を、ライブラスター線幅へ反映する小修正。
-- 筆圧 OFF 時は固定幅、ON 時は pressure 反映にする設定追加。
-- 筆圧 ON/OFF ショートカットを `Shift+P` で追加する小修正。
-- ステータスバーの `ベクターペン` 表示をやめ、`ペン（固定幅）` / `ペン（筆圧ON）` のように筆圧状態が分かる表示へ変える小修正。
-- 遅いストロークの丸連続感を軽減するための、小さな補間・最小距離・cap/join 調整。
+- `resize-popup.js` の undo/redo が `RenderTexture` サイズ・内容・表示 sprite を正しく戻すための小修正。
+- リサイズ履歴コマンドに、旧キャンバスサイズ、旧レイヤー texture 状態、alignment offset を明確に保持する小修正。
+- `camera:resized` 後に coordinate/cache/thumbnail/transform 表示を同期する小修正。
+- 履歴適用中に描画・変形・サムネイル更新が不完全にならないようにする小修正。
+- `TEGAKI_CONFIG.debug === true` のときだけ、history command 名、canvas size、active layer id、RenderTexture size、layer transform を出す診断ログを追加する。
+- 現行で使われていない古い resize 経路が混乱を招く場合は、削除ではなく「非現行」とコメント・PROGRESS に明記する。
 
 実装しないで止めるもの：
 
-- RenderTexture 焼き込み方式の大改修。
-- 半透明ストロークを一時バッファで合成する設計変更。
-- 履歴形式や EventBus payload の変更。
-- `window.*` singleton の重複が判断できない追加。
+- history command 形式の大幅変更。
+- RenderTexture の履歴スナップショットを毎回保存する大規模設計。
+- レイヤー構造そのものの変更。
+- Vキー変形 bake の全面再設計。
+- 保存・エクスポート・レイヤー編集機能の追加。
 - WebGPU / SDF / MSDF / WebGL2 Mesh の復活。
-- 四角ペン、設定タブ、Vキー変形パネル、クイックパネルの本格改修。
 
-今回の Gemini 作業では、四角ペンと UI 本格改修は後回しでよい。筆圧・補正・遅い線の原因整理を優先する。
-
----
-
-### 3. 筆圧の基準
-
-- マウス入力は従来どおり固定幅で描けること。
-- 筆圧 OFF は固定幅。
-- 筆圧 ON は `pressure` を線幅に反映する。
-- 筆圧 ON/OFF のショートカットは `Shift+P`。
-- `Ctrl+P` はブラウザ印刷と衝突するため使わない。
-- 単体 `0` は仮置き候補だったが、今回は採用しない。
-- 0 荷重付近で完全に消えないよう、最小値を 0.01 から 0.1 程度に置く。
-- まずはリニアな立ち上がりでよい。
-- 高度な筆圧カーブ UI は後続。
-
----
-
-### 4. ステータス表示の基準
-
-- 現在の `ベクターペン` 表示は、現行のライブラスター方針とズレるため使わない。
-- 通常ペンかつ筆圧 OFF は `ペン（固定幅）` を第一候補にする。
-- 通常ペンかつ筆圧 ON は `ペン（筆圧ON）` を第一候補にする。
-- 表示スペースが狭い場合は `ペン / 固定幅`、`ペン / 筆圧ON` のような短縮表記でもよい。
-- 余裕があれば、ペンのサイドバーアイコンに小さいバッジを追加してよい。ただしツール選択状態の背景色と混同しないこと。
-- アイコン全体の反転は、アクティブツール表示と混ざりやすいため避ける。
-
----
-
-### 5. 遅いストローク丸連続問題の基準
-
-確認条件：
-
-- ペン色を半透明 50% 前後にする。
-- ゆっくり斜め線を描く。
-- 丸い点が連続して見えるか確認する。
-
-完了目安：
-
-- ゆっくり描いた線が、丸いビーズ状ではなく連続線に近く見える。
-- 速い線のレスポンスが悪化しない。
-- 消しゴムの透明消去が壊れない。
-
-小修正で改善しない場合は、原因候補と必要そうな設計変更を `PROGRESS.md` に書いて止める。
+今回の Gemini 作業では、保存/出力やUI拡張は後回しでよい。アンドゥ座標ズレの原因整理と、小修正で直せる範囲を優先する。
 
 ---
 
@@ -141,10 +127,11 @@ npm.cmd run build
 2. 通常ペンで描ける。
 3. 消しゴムで透明に消せる。
 4. 基本バケツが壊れていない。
-5. `Shift+P` で筆圧 ON/OFF が切り替わる。
-6. ステータスバーで `ペン（固定幅）` / `ペン（筆圧ON）` 相当の表示が分かる。
-7. 半透明 50% 前後の遅いストロークが以前より自然。
-8. `TEGAKI_CONFIG.debug === false` の通常状態で Console が過剰ログに埋まらない。
+5. `Ctrl+Z` / `Ctrl+Y` 後に描画座標がズレない。
+6. リサイズ後、リサイズ undo/redo 後に描画可能範囲と見た目のキャンバスが一致する。
+7. Vキーで少し動かさないと座標が直らない、という状態が解消または原因候補まで絞れている。
+8. `Shift+P` / `Shift+E` とステータス表示が壊れていない。
+9. `TEGAKI_CONFIG.debug === false` の通常状態で Console が過剰ログに埋まらない。
 
 ---
 
@@ -156,11 +143,11 @@ npm.cmd run build
 
 - 変更ファイル
 - 変更理由
-- 筆圧のデータ経路
-- 補正設定のデータ経路
-- `Shift+P` とステータス表示の実装内容
-- 遅いストローク丸連続問題の原因候補
-- 実装した小修正
+- 現行 resize 経路
+- 現行 history command 一覧
+- アンドゥ座標ズレの再現手順と結果
+- 原因候補
+- 実装した修正
 - `npm.cmd run build` 結果
 - ブラウザ確認結果
 - 残った問題

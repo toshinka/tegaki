@@ -59,7 +59,7 @@ export const DOMBuilder = (function() {
             { separator: true },
             { id: 'resize-tool', icon: 'resize', title: 'リサイズ' },
             { separator: true },
-            { id: 'pen-tool', icon: 'pen', title: 'ベクターペン (P)', active: true },
+            { id: 'pen-tool', icon: 'pen', title: 'ペン (P / Shift+Pで筆圧切替)', active: true },
             { id: 'eraser-tool', icon: 'eraser', title: '消しゴム (E)' },
             { id: 'fill-tool', icon: 'fill', title: '塗りつぶし (G)' },
             { separator: true },
@@ -388,7 +388,7 @@ export const DOMBuilder = (function() {
         const group1 = createElement('div', { className: 'status-group' });
         const items1 = [
             { label: 'Canvas:', id: 'canvas-info', value: '400×400px' },
-            { label: 'Tool:', id: 'current-tool', value: 'ベクターペン' },
+            { label: 'Tool:', id: 'current-tool', value: 'ペン（筆圧ON）' },
             { label: 'Layer:', id: 'current-layer', value: 'レイヤー1' },
             { label: '座標:', id: 'coordinates', value: 'X: 0, Y: 0' },
             { label: 'Transform:', id: 'transform-info', value: 'x:0 y:0 s:1.0 r:0°' },

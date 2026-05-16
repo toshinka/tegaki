@@ -31,6 +31,8 @@ task-gemini/phase1a.md
 task-gemini/phase1b.md
 task-gemini/phase1c.md
 task-gemini/phase1d.md
+task-gemini/phase1e.md
+task-gemini/phase1f.md
 ```
 
 ルール：

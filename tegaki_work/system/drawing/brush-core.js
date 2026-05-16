@@ -24,6 +24,9 @@ export class BrushCore {
         this.lastLocalX = 0;
         this.lastLocalY = 0;
         this.lastPressure = 0;
+        this.lastRenderedLocalX = 0;
+        this.lastRenderedLocalY = 0;
+        this.lastRenderedPressure = 0;
         
         this.coordinateSystem = null;
         this.pressureHandler = null;
@@ -152,7 +155,7 @@ export class BrushCore {
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
         
         const settings = this._getCurrentSettings();
-        const pressureEnabled = settings.pressureEnabled === true && pointerType === 'pen';
+        const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
         const processedPressure = pressureEnabled ? Math.max(0.1, pressure ?? 0.5) : 1.0;
         
         if (pressureEnabled && this.pressureHandler) {
@@ -165,6 +168,9 @@ export class BrushCore {
         this.lastLocalX = localX;
         this.lastLocalY = localY;
         this.lastPressure = processedPressure;
+        this.lastRenderedLocalX = localX;
+        this.lastRenderedLocalY = localY;
+        this.lastRenderedPressure = processedPressure;
         
         this.previewGraphics = new Graphics();
         this.previewGraphics.label = 'strokePreview';
@@ -209,28 +215,10 @@ export class BrushCore {
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         // [指示書] 0荷重付近で消えないよう最小値を 0.1 程度に置く
-        const pressureEnabled = settings.pressureEnabled === true && pointerType === 'pen';
+        const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
         const processedPressure = pressureEnabled ? Math.max(0.1, pressure ?? 0.5) : 1.0;
 
-        // 指示書に基づくリアルタイム反映：
-        // 移動がある程度あれば RenderTexture に焼き込む。
-        if (currentMode === 'eraser' && distance > 0.5) {
-            const segmentPoints = [
-                { x: this.lastLocalX, y: this.lastLocalY, pressure: this.lastPressure },
-                { x: localX, y: localY, pressure: processedPressure }
-            ];
-            
-            this._renderRealtimeEraserSegment(segmentPoints);
-            this.realtimeEraserApplied = true;
-        } else if (currentMode === 'pen' && distance > 0.5) {
-            const segmentPoints = [
-                { x: this.lastLocalX, y: this.lastLocalY, pressure: this.lastPressure },
-                { x: localX, y: localY, pressure: processedPressure }
-            ];
-            
-            this._renderRealtimePenSegment(segmentPoints);
-            this.realtimePenApplied = true;
-        }
+        this._renderRealtimeSegmentIfNeeded(currentMode, localX, localY, processedPressure);
 
         // [指示書] 遅い線の丸連続感軽減：補完間隔を 2px に詰める
         const steps = Math.max(1, Math.floor(distance / 2));
@@ -262,6 +250,40 @@ export class BrushCore {
         this.lastLocalX = localX;
         this.lastLocalY = localY;
         this.lastPressure = processedPressure;
+    }
+
+    _renderRealtimeSegmentIfNeeded(mode, localX, localY, pressure, force = false) {
+        const dx = localX - this.lastRenderedLocalX;
+        const dy = localY - this.lastRenderedLocalY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (!force && distance <= 0.5) return;
+        if (distance <= 0) return;
+
+        const segmentPoints = [
+            { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
+            { x: localX, y: localY, pressure }
+        ];
+
+        if (mode === 'eraser') {
+            this._renderRealtimeEraserSegment(segmentPoints);
+            this.realtimeEraserApplied = true;
+        } else if (mode === 'pen') {
+            this._renderRealtimePenSegment(segmentPoints);
+            this.realtimePenApplied = true;
+        } else {
+            return;
+        }
+
+        this.lastRenderedLocalX = localX;
+        this.lastRenderedLocalY = localY;
+        this.lastRenderedPressure = pressure;
+    }
+
+    _isPressureEnabledForMode(mode, settings, pointerType) {
+        if (pointerType !== 'pen') return false;
+        if (mode === 'eraser') return settings.eraserPressureEnabled === true;
+        return settings.pressureEnabled === true;
     }
 
     /**
@@ -333,6 +355,11 @@ export class BrushCore {
         
         const settings = this._getCurrentSettings();
         const mode = settings.mode || 'pen';
+
+        const finalPoint = strokeData?.points?.[strokeData.points.length - 1];
+        if (finalPoint && ((mode === 'eraser' && this.realtimeEraserApplied) || (mode === 'pen' && this.realtimePenApplied))) {
+            this._renderRealtimeSegmentIfNeeded(mode, finalPoint.x, finalPoint.y, finalPoint.pressure, true);
+        }
 
         // [指示書] リアルタイム反映済みの場合は最終焼き込みをスキップ
         const alreadyApplied = (mode === 'eraser' && this.realtimeEraserApplied) || 
