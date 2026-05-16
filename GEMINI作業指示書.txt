@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 1i 初回作業 2026-05-17
+# GEMINI作業指示書：Phase 1j 初回作業 2026-05-17
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 1h はオーナー実機確認で完了扱い。次は大きい新機能ではなく、AI が読み取りやすく改修しやすい構造整理と、既存 UI の小型改善を行う。
+目的：Phase 1i は Vパネル改善、反転、数値入力、レイヤー不透明度、コピー系の小型操作まで完了扱い。次は新機能追加ではなく、AI が読み取りやすく改修しやすい構造整理、ヘッダー同期、命名/責務棚卸しを行う。
 
 ---
 
@@ -13,7 +13,7 @@
 3. `GEMINI.md`
 4. `tegaki_work/PROGRESS.md`
 5. `tegaki_work/NOTES.md`
-6. `task-gemini/phase1i.md`
+6. `task-gemini/phase1j.md`
 7. この `GEMINI作業指示書.txt`
 
 ---
@@ -21,112 +21,126 @@
 ## 今回の前提
 
 - 標準描画は PixiJS v8.17.0 + RenderTexture へのライブラスター焼き込み。
-- アルバム保管/復帰、PNG エクスポート、DEL 消去とサムネイル整合は良好。
-- アニメボタンは表示入口だけ維持。`animationSystem.init()` は現行描画へ副作用が出るため使わない。
-- APNG/GIF 自動判定、アニメプレビュー、フレームコピーは後続の動画ツール風マトリクス再設計時に扱う。
+- レイヤーは `Container + Sprite(RenderTexture)`。
+- `animationSystem.init()` は現行描画へ副作用が出るため使わない。
 - WebGPU / SDF / MSDF / WebGL2 Mesh 経路は凍結継続。
 - `dist/` は成果物として必要ない限り差分に残さない。
+- 大規模リネーム、ファイル移動、未接続ファイル削除、EventBus payload 変更は実装しない。候補として記録するだけ。
 
 ---
 
 ## 今回の主作業
 
-### 1. 保守性棚卸し
+### 1. 構造マップ作成
 
-まず `task-gemini/phase1i.md` の「保守性棚卸し」を実施する。
+`tegaki_work/ARCHITECTURE.md` を作成する。
 
-優先して見るファイル：
+必ず実コードを確認して書くこと：
+
+- 起動順序。
+- 描画経路。
+- レイヤー/変形/サムネイル経路。
+- UI/ポップアップ/ショートカット経路。
+- 保存/アルバム/エクスポート経路。
+- 凍結中の WebGL2 / SDF / MSDF / animation 本体の扱い。
+- 主要 EventBus 契約。
+
+注意：
+
+- `PastFiles` の内容を現行構造として書かない。
+- 実装詳細を長く写さない。次に読むべき入口と責務境界を示す。
+
+### 2. ファイルヘッダー同期
+
+優先して確認する：
 
 - `tegaki_work/core-engine.js`
 - `tegaki_work/system/layer-system.js`
+- `tegaki_work/system/layer-transform.js`
 - `tegaki_work/system/drawing/brush-core.js`
 - `tegaki_work/system/drawing/drawing-engine.js`
 - `tegaki_work/system/drawing/thumbnail-system.js`
 - `tegaki_work/system/project-manager.js`
 - `tegaki_work/system/export-manager.js`
+- `tegaki_work/system/drawing-clipboard.js`
 - `tegaki_work/ui/ui-panels.js`
 - `tegaki_work/ui/layer-panel-renderer.js`
 - `tegaki_work/ui/keyboard-handler.js`
-- `tegaki_work/system/layer-transform.js`
-- `tegaki_work/system/drawing-clipboard.js`
+- `tegaki_work/ui/dom-builder.js`
 
-軽微な修正は実施してよい：
+直してよい：
 
-- ファイルヘッダーの責務/依存/イベント/グローバル登録のズレ。
-- 古い `ベクターペン`、`phase1a`、明らかに現状と違うコメント。
-- `PROGRESS.md` / `TEGAKI.md` と矛盾する古い表記。
+- ヘッダーの責務、依存、被依存、イベント、グローバル登録のズレ。
+- 古い `ベクター`、`phase1a`、現行方針と違うコメント。
+- 存在しないファイル名や古い参照パス。
 
-実装せず止めるもの：
+直さず記録する：
 
-- 大規模リネーム。
 - ファイル移動。
-- 未接続ファイルの削除。
-- EventBus payload の大変更。
-- 描画パイプライン変更。
+- rename。
+- 関数分割。
+- EventBus 名や payload の変更。
+- window 公開の整理。
 
-これらは `PROGRESS.md` に候補として書き、Codex 判断へ戻す。
+### 3. 命名・重複責務棚卸し
 
-### 2. History ステータス確認
+`tegaki_work/PROGRESS.md` に分類して書く。
 
-確認項目：
+- 今直せる。
+- Codex 判断へ戻す。
+- 凍結維持。
+- 後続機能フェーズ。
 
-- 起動直後。
-- 描画後。
-- DEL 消去後。
-- Undo/Redo 後。
-- アルバムロード後。
+特に見る観点：
 
-既に正しいならコード変更しない。軽微な購読漏れや初期表示ズレだけ修正する。
+- `system/` と `ui/` に同じ責務が重複していないか。
+- UIボタンと keyboard/EventBus の二重発火リスク。
+- thumbnail / project / album / export の責務境界。
+- `window.*` と ESM import の混在箇所。
 
-### 3. V キー変形パネルの小型改善
+### 4. 小UI棚卸し
 
-可能なら実装：
+オーナーメモ追加分を整理する。
 
-- V モード中に `H` で水平反転。
-- V モード中に `Shift+H` で垂直反転。
-- 回転を 360 度範囲にする。
-- 各数値をダブルクリックで直接入力できるようにする。
+確認対象：
 
-注意：
+- レイヤーサムネイルの削除ボタンが見えないがクリック領域だけある問題。
+- popup の `X` ボタン有無とデザイン統一。
+- popup 外クリックで閉じる仕様との共存。
+- レイヤー左右フリック削除、ピンチ操作などタッチ系要望の実装候補。
 
-- 通常描画モードの `H` / `Shift+H` と衝突させない。
-- 変形 bake、履歴、座標整合に深く食い込む場合は実装せず止める。
-- 実装した場合は Undo/Redo と描画座標に悪影響がないか確認する。
+低リスクなら直してよい：
 
-### 4. レイヤー不透明度の数値ドラッグ
+- 消えている削除ボタンの CSS 表示復旧。
+- 既存 class の軽微な見た目統一。
 
-可能なら実装：
+実装しない：
 
-- レイヤーパネルの不透明度数値を横ドラッグして 0〜100% 変更。
-- 既存の ◀▶ 操作は残す。
-- ドラッグ中にサムネ更新を過剰発火させない。
+- フリック削除。
+- ピンチ操作。
+- popup の大規模再設計。
 
-### 5. クリップボード/レイヤーコピー棚卸し
+### 5. Phase 1i 残件確認
 
-まず棚卸し：
+短く確認する：
 
-- `Ctrl+C` / `Ctrl+V` の現行割り当て。
-- `drawing-clipboard.js` に使える API があるか。
-- アクティブレイヤーコピー、新規コピーレイヤー作成が既存 API で可能か。
-- クリップボード画像ペーストが既存実装で安全に可能か。
+- V確定後サムネイルが即時更新されるか。
+- V反転が即表示されるか。
+- Shiftドラッグが拡縮/回転で排他になっているか。
+- History ステータスが破綻していないか。
 
-低リスクなら実装：
-
-- `Ctrl+C`: アクティブレイヤーコピー。
-- `Ctrl+V`: 新規コピーレイヤー作成。
-
-難しければ実装せず、棚卸し結果と案を `PROGRESS.md` に書いて止める。
+狭い不具合なら直してよい。履歴/RenderTexture/座標に深く絡む場合は `PROGRESS.md` に書いて止める。
 
 ---
 
 ## 必ず守ること
 
+- 新機能を広げない。
+- レイヤー構造を大幅に変えない。
 - `animationSystem.init()` を有効化しない。
-- アニメ本体、APNG/GIF 自動判定、アニメプレビューは実装しない。
-- クリッピング、フォルダ、複数レイヤー選択は実装しない。
-- 無限キャンバスや V 変形時のキャンバス外保持は実装しない。
 - WebGPU / SDF / MSDF / WebGL2 Mesh を復活させない。
-- 調査用ログを残さない。残す場合は debug 限定にする。
+- `dist/` 差分を残さない。
+- 調査用 `console.log` を残さない。残す場合は debug 限定にする。
 
 ---
 
@@ -142,13 +156,10 @@ npm.cmd run build
 可能ならブラウザで確認：
 
 1. 起動時に致命的エラーがない。
-2. 通常ペンで遅延なく描ける。
-3. `No renderTexture` エラーが出ない。
-4. アルバム保管/復帰が壊れていない。
-5. PNG エクスポートが壊れていない。
-6. V パネル改善を入れた場合、その操作が動く。
-7. レイヤー不透明度ドラッグを入れた場合、表示と数値が同期する。
-8. History 表示が破綻しない。
+2. 通常ペンで描ける。
+3. Vパネルが壊れていない。
+4. レイヤーサムネイルが更新される。
+5. History 表示が破綻しない。
 
 ---
 
@@ -158,11 +169,12 @@ npm.cmd run build
 
 必ず書く：
 
-- 変更ファイル
-- 棚卸し結果
-- 実装した小型 UI 改善
-- 実装しなかった項目と理由
-- Codex 判断へ戻す候補
-- `npm.cmd run build` 結果
-- ブラウザ確認結果
-- 残った問題
+- 作成/更新したファイル。
+- 構造マップの要点。
+- ヘッダー同期したファイル。
+- 今直した低リスク修正。
+- Codex 判断へ戻す候補。
+- 実装しなかった要望と理由。
+- `npm.cmd run build` 結果。
+- ブラウザ確認結果。
+- 残った問題。
