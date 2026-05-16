@@ -23,6 +23,7 @@ import { LayerSystem } from './system/layer-system.js';
 import { historyManager } from './system/history.js';
 import { StrokeRenderer } from './system/drawing/stroke-renderer.js';
 import { StrokeRecorder } from './system/drawing/stroke-recorder.js';
+import { PressureHandler } from './system/drawing/pressure-handler.js';
 import { BrushSettings } from './system/drawing/brush-settings.js';
 import { fillTool } from './system/drawing/fill-tool.js';
 import { webglContext } from './system/drawing/webgl2/webgl2-drawing-layer.js';
@@ -57,8 +58,9 @@ export class CoreEngine {
         this.cameraSystem = new CameraSystem();
         this.layerSystem = new LayerSystem();
         this.history = historyManager;
+        this.pressureHandler = new PressureHandler();
         this.strokeRenderer = null;
-        this.strokeRecorder = new StrokeRecorder();
+        this.strokeRecorder = new StrokeRecorder(this.pressureHandler);
         this.brushSettings = new BrushSettings(this.config, this.eventBus);
         this.fillTool = fillTool;
         this.thumbnailSystem = ThumbnailSystem;
@@ -85,6 +87,7 @@ export class CoreEngine {
         // グローバル登録（互換性のため）
         window.strokeRecorder = this.strokeRecorder;
         window.brushSettings = this.brushSettings;
+        window.pressureHandler = this.pressureHandler;
         window.FillTool = this.fillTool;
         window.PopupManager = this.popupManager;
         window.KeyboardHandler = this.keyboardHandler;
@@ -181,6 +184,7 @@ export class CoreEngine {
         window.strokeRecorder = this.strokeRecorder;
         window.strokeRenderer = this.strokeRenderer;
         window.brushSettings = this.brushSettings;
+        window.pressureHandler = this.pressureHandler;
         window.FillTool = this.fillTool;
         window.History = this.history;
 

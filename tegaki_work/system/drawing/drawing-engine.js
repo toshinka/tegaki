@@ -132,7 +132,8 @@ export class DrawingEngine {
             this.brushCore.startStroke(
                 info.clientX,
                 info.clientY,
-                info.pressure
+                info.pressure,
+                info.pointerType
             );
         }
     }
@@ -162,7 +163,8 @@ export class DrawingEngine {
             this.brushCore.updateStroke(
                 info.clientX,
                 info.clientY,
-                info.pressure
+                info.pressure,
+                info.pointerType
             );
         }
     }

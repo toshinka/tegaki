@@ -95,7 +95,12 @@ export class StrokeRenderer {
         
         const color = settings.color;
         const alpha = settings.opacity || 1.0;
-        const width = settings.size;
+        const p0 = points[0]?.pressure ?? 1.0;
+        const p1 = points[points.length - 1]?.pressure ?? p0;
+        const segmentPressure = (p0 + p1) / 2;
+        const width = settings.pressureEnabled === true
+            ? this.calculateWidth(segmentPressure, settings.size)
+            : settings.size;
         
         graphics.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) {

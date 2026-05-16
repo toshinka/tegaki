@@ -55,8 +55,18 @@ export const KeyboardHandler = (function() {
             e.preventDefault();
             return;
         }
-        
+
         const action = keymap.getAction(e, { vMode: vKeyPressed });
+
+        // Shift+P: 筆圧のON/OFF切り替え
+        if (e.code === 'KeyP' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            if (window.brushSettings) {
+                window.brushSettings.togglePressure();
+                e.preventDefault();
+                return;
+            }
+        }
+
         if (!action) return;
         
         handleAction(action, e, eventBus);

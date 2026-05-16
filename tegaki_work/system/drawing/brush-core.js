@@ -126,7 +126,7 @@ export class BrushCore {
         return 'pen';
     }
     
-    startStroke(clientX, clientY, pressure) {
+    startStroke(clientX, clientY, pressure, pointerType = 'unknown') {
         const currentMode = this.getMode();
         
         if (currentMode === 'fill') {
@@ -151,8 +151,14 @@ export class BrushCore {
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
         
-        const processedPressure = pressure;
+        const settings = this._getCurrentSettings();
+        const pressureEnabled = settings.pressureEnabled === true && pointerType === 'pen';
+        const processedPressure = pressureEnabled ? Math.max(0.1, pressure ?? 0.5) : 1.0;
         
+        if (pressureEnabled && this.pressureHandler) {
+            this.pressureHandler.startStroke();
+        }
+
         this.strokeRecorder.startStroke(localX, localY, processedPressure);
         
         this.isDrawing = true;
@@ -163,8 +169,6 @@ export class BrushCore {
         this.previewGraphics = new Graphics();
         this.previewGraphics.label = 'strokePreview';
         activeLayer.addChild(this.previewGraphics);
-        
-        const settings = this._getCurrentSettings();
         
         this.strokeRenderer.renderPreview(
             [{ x: localX, y: localY, pressure: processedPressure }],
@@ -187,7 +191,7 @@ export class BrushCore {
         }
     }
     
-    updateStroke(clientX, clientY, pressure) {
+    updateStroke(clientX, clientY, pressure, pointerType = 'unknown') {
         if (!this.isDrawing) return;
         
         const activeLayer = this.layerManager.getActiveLayer();
@@ -197,13 +201,17 @@ export class BrushCore {
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
         
-        const processedPressure = pressure;
+        const settings = this._getCurrentSettings();
         const currentMode = this.getMode();
         
         const dx = localX - this.lastLocalX;
         const dy = localY - this.lastLocalY;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
+        // [指示書] 0荷重付近で消えないよう最小値を 0.1 程度に置く
+        const pressureEnabled = settings.pressureEnabled === true && pointerType === 'pen';
+        const processedPressure = pressureEnabled ? Math.max(0.1, pressure ?? 0.5) : 1.0;
+
         // 指示書に基づくリアルタイム反映：
         // 移動がある程度あれば RenderTexture に焼き込む。
         if (currentMode === 'eraser' && distance > 0.5) {
@@ -224,7 +232,8 @@ export class BrushCore {
             this.realtimePenApplied = true;
         }
 
-        const steps = Math.max(1, Math.floor(distance / 5));
+        // [指示書] 遅い線の丸連続感軽減：補完間隔を 2px に詰める
+        const steps = Math.max(1, Math.floor(distance / 2));
         
         for (let i = 1; i <= steps; i++) {
             const t = i / (steps + 1);
