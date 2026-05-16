@@ -8,7 +8,7 @@
  * イベント発火: ui:layer-selected, ui:background-color-change-requested
  * イベント受信: layer:*, folder:*, thumbnail:layer-updated, animation:frame-changed, camera:resized
  * グローバル登録: window.LayerPanelRenderer
- * 実装状態: ♻️移植
+ * 実装状態: ✅完成/整備
  * ============================================================================
  */
 
@@ -579,7 +579,37 @@ export class LayerPanelRenderer {
         opacityValue.className = 'layer-opacity-value';
         const currentOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
         opacityValue.textContent = `${Math.round(currentOpacity * 100)}%`;
-        opacityValue.style.cssText = 'min-width:30px;text-align:center;color:#800000;font-size:9px;font-weight:bold;flex-shrink:0;';
+        opacityValue.style.cssText = 'min-width:30px;text-align:center;color:#800000;font-size:9px;font-weight:bold;flex-shrink:0;cursor:ew-resize;';
+        opacityValue.title = '左右ドラッグで数値を変更';
+
+        // [指示書] 不透明度数値のドラッグ操作
+        let isDragging = false;
+        let startX = 0;
+        let startOpacity = 0;
+
+        opacityValue.addEventListener('pointerdown', (e) => {
+            isDragging = true;
+            startX = e.clientX;
+            startOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
+            opacityValue.setPointerCapture(e.pointerId);
+            e.stopPropagation();
+        });
+
+        opacityValue.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - startX;
+            // 1px あたり 1% 変化させる
+            const delta = dx / 100;
+            const newOpacity = Math.max(0, Math.min(1, startOpacity + delta));
+            this._setLayerOpacity(index, newOpacity);
+            e.stopPropagation();
+        });
+
+        opacityValue.addEventListener('pointerup', (e) => {
+            isDragging = false;
+            opacityValue.releasePointerCapture(e.pointerId);
+            e.stopPropagation();
+        });
 
         const increaseBtn = document.createElement('button');
         increaseBtn.textContent = '▶';

@@ -8,7 +8,7 @@
  * イベント発火: clipboard:*, layer:drawings-cleared, layer:drawings-restored, layer:delete-*, paste:commit, operation:commit, layer:content-changed
  * イベント受信: clipboard:*, layer:cut-request, layer:delete-active
  * グローバル登録: window.TegakiDrawingClipboard, window.DrawingClipboard
- * 実装状態: ♻️移植
+ * 実装状態: ✅完成/整備
  * ============================================================================
  */
 
@@ -469,6 +469,13 @@ export class DrawingClipboard {
         layer.visible = clipData.visible;
         layer.alpha = clipData.opacity;
         
+        // 🆕 Raster Snapshot 対応
+        if (clipData.rasterSnapshot && this.layerManager?.restoreLayerRasterSnapshot) {
+            // スナップショット内の ID を現在のレイヤーに合わせる
+            const snapshot = { ...clipData.rasterSnapshot, layerId: layerData.id };
+            this.layerManager.restoreLayerRasterSnapshot(snapshot);
+        }
+
         if (clipData.backgroundData) {
             const bg = new Graphics();
             bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
@@ -478,28 +485,31 @@ export class DrawingClipboard {
             layerData.isBackground = true;
         }
         
-        clipData.paths.forEach((pathData) => {
-            try {
-                if (pathData.points && pathData.points.length > 0) {
-                    const newPath = {
-                        id: pathData.id + '_pasted_' + Date.now(),
-                        points: [...pathData.points],
-                        color: pathData.color,
-                        size: pathData.size,
-                        opacity: pathData.opacity,
-                        isComplete: true,
-                        graphics: null
-                    };
-                    
-                    const rebuildSuccess = this.layerManager.rebuildPathGraphics(newPath);
-                    
-                    if (rebuildSuccess && newPath.graphics) {
-                        layerData.paths.push(newPath);
-                        layer.addChild(newPath.graphics);
+        // ベクトルデータ（paths）も一応復元（互換性のため）
+        if (clipData.paths && clipData.paths.length > 0) {
+            clipData.paths.forEach((pathData) => {
+                try {
+                    if (pathData.points && pathData.points.length > 0) {
+                        const newPath = {
+                            id: pathData.id + '_pasted_' + Date.now(),
+                            points: [...pathData.points],
+                            color: pathData.color,
+                            size: pathData.size,
+                            opacity: pathData.opacity,
+                            isComplete: true,
+                            graphics: null
+                        };
+                        
+                        const rebuildSuccess = this.layerManager.rebuildPathGraphics(newPath);
+                        
+                        if (rebuildSuccess && newPath.graphics) {
+                            layerData.paths.push(newPath);
+                            layer.addChild(newPath.graphics);
+                        }
                     }
-                }
-            } catch (pathError) {}
-        });
+                } catch (pathError) {}
+            });
+        }
     }
 
     recordHistory(historyEntry) {

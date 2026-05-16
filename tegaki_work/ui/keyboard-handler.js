@@ -8,7 +8,7 @@
  * イベント発火: keyboard:vkey-state-changed, ui:sidebar:sync-tool, layer:*, camera:*, frame:*, ui:*
  * イベント受信: なし
  * グローバル登録: window.KeyboardHandler
- * 実装状態: ♻️移植
+ * 実装状態: ✅完成/整備
  * ============================================================================
  */
 

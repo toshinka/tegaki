@@ -8,7 +8,7 @@
  * イベント発火: thumbnail:updated
  * イベント受信: thumbnail:layer-updated, frame:updated
  * グローバル登録: window.ThumbnailSystem, window.thumbnailSystem
- * 実装状態: ♻️移植
+ * 実装状態: ✅完成/整備
  * ============================================================================
  */
 

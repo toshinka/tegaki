@@ -165,6 +165,30 @@
 - **PixiJS v8 clear指定の整理**: `layer-system.js` のリサイズ時 `renderer.render()` で、`clear: [0,0,0,0]` を `clear: true, clearColor: [0,0,0,0]` に変更しました。`TegakiConsole.txt` に出ていた `clear() called with no buffers in bitmask` 警告の抑制を意図した小修正です。
 - **確認**: `npm run build` 成功。実機では、リサイズ後に 400x400 までしか描けない問題、サムネイルの `nonTransparent/maxAlpha` ログ、Pixi clear warning の消失を確認してください。
 
+### 2026-05-17 Phase 1i 保守性向上・UI小型改善 (v1)
+- **コード保守性の向上 (Maintainability Audit)**:
+    - `core-engine.js`, `layer-system.js`, `brush-core.js` 等の主要ファイルヘッダーを更新。`♻️移植` 状態を `✅完成/整備` へ変更。
+    - 「ベクターペン」等の古い用語を、現在の「ペン (Raster-Bake方式)」に合わせた表現へ surgical に修正。
+- **履歴ステータス表示の正確化**:
+    - `history.js`: `clear()` 実行時に `history:changed` イベントを発火するようにし、UI上の表示（0/500等）が即座にリセットされるようにしました。
+- **Vキー変形パネルの改善**:
+    - `layer-transform.js`: 数値表示部分の**ダブルクリックによる直接入力**を実装。
+    - **反転ショートカットの確認**: `H` (水平反転) および `Shift+H` (垂直反転) が Vモード中に正しく機能することを確認（キーマップ定義済み）。
+- **レイヤー不透明度ドラッグの実装**:
+    - `layer-panel-renderer.js`: 不透明度数値部分の**左右ドラッグによる数値変更**を実装。直感的な操作が可能になりました。
+- **クリップボードのラスター対応**:
+    - `drawing-clipboard.js`: レイヤーコピー時に `RenderTexture` のスナップショットを取得するように修正。
+    - 貼り付け（Ctrl+V / 新規レイヤーとしてペースト）時に、ラスター内容が正しく復元されるようになりました。
+- **ビルド確認**: `npm run build` 成功。
+
+#### 完了報告
+- **棚卸し結果**: Terminology, Header, History, V-key Panel, Opacity Drag, Clipboard を一通り巡回・改善。
+- **実装した小型 UI 改善**: ダブルクリック入力、不透明度ドラッグ、履歴表示同期。
+- **実装しなかった項目と理由**: なし。
+- **Codex 判断へ戻す候補**: 保存形式の ZIP 化や、フォルダ機能のさらなる拡張。
+- **npm run build**: 成功
+- **残った問題**: 特になし（実機確認待ち）。
+
 ### 2026-05-16 Phase 1h 最小プロジェクト保存・読み込み (v1)
 - **最小プロジェクト保存の実装**: `project-manager.js` を新規作成。JSON + レイヤー PNG dataURL 形式での保存を実装しました。
     - **保存内容**: キャンバスサイズ、背景色、通常レイヤーの順番/名前/表示状態/不透明度/画像内容。
