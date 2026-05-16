@@ -1,100 +1,132 @@
-# GEMINI作業指示書：Phase 1g 初回作業 2026-05-16
+# GEMINI作業指示書：Phase 1i 初回作業 2026-05-17
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 1g に入る。Phase 1f でアンドゥ/リドゥとリサイズ座標整合は実機確認で良好。今回は保存・出力・レイヤー編集基盤へ進む。ただし全機能を一気に実装せず、PNGエクスポート復旧と安全なレイヤー編集の棚卸しから始める。
+目的：Phase 1h はオーナー実機確認で完了扱い。次は大きい新機能ではなく、AI が読み取りやすく改修しやすい構造整理と、既存 UI の小型改善を行う。
 
 ---
 
 ## 作業前に必ず読む
 
-1. `TEGAKI.md`
-2. `GEMINI.md`
-3. `tegaki_work/PROGRESS.md`
-4. `tegaki_work/NOTES.md`
-5. `task-gemini/phase1g.md`
-6. この `GEMINI作業指示書.txt`
+1. `AGENTS.md`
+2. `TEGAKI.md`
+3. `GEMINI.md`
+4. `tegaki_work/PROGRESS.md`
+5. `tegaki_work/NOTES.md`
+6. `task-gemini/phase1i.md`
+7. この `GEMINI作業指示書.txt`
 
 ---
 
 ## 今回の前提
 
-- Phase 1f は、描画/消しゴム/バケツ/リサイズをまたいだアンドゥ・リドゥと座標整合が実機確認で良好。
-- ペン、消しゴム、サムネイル、基本バケツ、筆圧切替、ステータス表示、アンドゥ/リドゥ、リサイズは壊さない。
 - 標準描画は PixiJS v8.17.0 + RenderTexture へのライブラスター焼き込み。
-- WebGPU / SDF / MSDF / WebGL2 Mesh 経路は凍結継続。復活させない。
-- Canvas2D を本番描画へ混ぜない。ただしエクスポート時の最終抽出・保存形式変換に Canvas を使うのは可。
-- 内部 2 倍化、`resolution: 2` は使わない。
+- アルバム保管/復帰、PNG エクスポート、DEL 消去とサムネイル整合は良好。
+- アニメボタンは表示入口だけ維持。`animationSystem.init()` は現行描画へ副作用が出るため使わない。
+- APNG/GIF 自動判定、アニメプレビュー、フレームコピーは後続の動画ツール風マトリクス再設計時に扱う。
+- WebGPU / SDF / MSDF / WebGL2 Mesh 経路は凍結継続。
 - `dist/` は成果物として必要ない限り差分に残さない。
-- 出力サイズは作業キャンバスサイズと一致させる。
-- 高機能バケツ、範囲選択、アニメ/漫画効果は今回扱わない。
 
 ---
 
 ## 今回の主作業
 
-### 1. 保存・出力・レイヤー編集経路の棚卸し
+### 1. 保守性棚卸し
 
-対象候補：
+まず `task-gemini/phase1i.md` の「保守性棚卸し」を実施する。
 
-- `tegaki_work/system/export-manager.js`
-- `tegaki_work/system/exporters/png-exporter.js`
-- `tegaki_work/system/exporters/webp-exporter.js`
-- `tegaki_work/system/exporters/psd-exporter.js`
-- `tegaki_work/ui/export-popup.js`
-- `tegaki_work/ui/album-popup.js`
+優先して見るファイル：
+
+- `tegaki_work/core-engine.js`
 - `tegaki_work/system/layer-system.js`
+- `tegaki_work/system/drawing/brush-core.js`
+- `tegaki_work/system/drawing/drawing-engine.js`
+- `tegaki_work/system/drawing/thumbnail-system.js`
+- `tegaki_work/system/project-manager.js`
+- `tegaki_work/system/export-manager.js`
+- `tegaki_work/ui/ui-panels.js`
 - `tegaki_work/ui/layer-panel-renderer.js`
-- `tegaki_work/system/data-models.js`
-- `tegaki_work/system/history.js`
+- `tegaki_work/ui/keyboard-handler.js`
+- `tegaki_work/system/layer-transform.js`
+- `tegaki_work/system/drawing-clipboard.js`
 
-確認すること：
+軽微な修正は実施してよい：
 
-1. PNG エクスポートが現在の `Container + Sprite(RenderTexture)` レイヤー構造を正しく合成しているか。
-2. 背景レイヤー、透明背景、非表示レイヤー、レイヤー不透明度が出力に反映されるか。
-3. エクスポート時にカメラ位置・ズーム・UI 表示の影響を受けていないか。
-4. 現行の album/save 相当機能があるか。ある場合、何を保存しているか。
-5. レイヤー複製/結合/フォルダ/クリッピングの既存実装や残骸があるか。
-6. レイヤー操作を history に積む既存 command があるか。
+- ファイルヘッダーの責務/依存/イベント/グローバル登録のズレ。
+- 古い `ベクターペン`、`phase1a`、明らかに現状と違うコメント。
+- `PROGRESS.md` / `TEGAKI.md` と矛盾する古い表記。
 
-この棚卸し結果を `tegaki_work/PROGRESS.md` の先頭へ追記する。
+実装せず止めるもの：
+
+- 大規模リネーム。
+- ファイル移動。
+- 未接続ファイルの削除。
+- EventBus payload の大変更。
+- 描画パイプライン変更。
+
+これらは `PROGRESS.md` に候補として書き、Codex 判断へ戻す。
+
+### 2. History ステータス確認
+
+確認項目：
+
+- 起動直後。
+- 描画後。
+- DEL 消去後。
+- Undo/Redo 後。
+- アルバムロード後。
+
+既に正しいならコード変更しない。軽微な購読漏れや初期表示ズレだけ修正する。
+
+### 3. V キー変形パネルの小型改善
+
+可能なら実装：
+
+- V モード中に `H` で水平反転。
+- V モード中に `Shift+H` で垂直反転。
+- 回転を 360 度範囲にする。
+- 各数値をダブルクリックで直接入力できるようにする。
+
+注意：
+
+- 通常描画モードの `H` / `Shift+H` と衝突させない。
+- 変形 bake、履歴、座標整合に深く食い込む場合は実装せず止める。
+- 実装した場合は Undo/Redo と描画座標に悪影響がないか確認する。
+
+### 4. レイヤー不透明度の数値ドラッグ
+
+可能なら実装：
+
+- レイヤーパネルの不透明度数値を横ドラッグして 0〜100% 変更。
+- 既存の ◀▶ 操作は残す。
+- ドラッグ中にサムネ更新を過剰発火させない。
+
+### 5. クリップボード/レイヤーコピー棚卸し
+
+まず棚卸し：
+
+- `Ctrl+C` / `Ctrl+V` の現行割り当て。
+- `drawing-clipboard.js` に使える API があるか。
+- アクティブレイヤーコピー、新規コピーレイヤー作成が既存 API で可能か。
+- クリップボード画像ペーストが既存実装で安全に可能か。
+
+低リスクなら実装：
+
+- `Ctrl+C`: アクティブレイヤーコピー。
+- `Ctrl+V`: 新規コピーレイヤー作成。
+
+難しければ実装せず、棚卸し結果と案を `PROGRESS.md` に書いて止める。
 
 ---
 
-### 2. PNG エクスポート復旧を最優先
+## 必ず守ること
 
-受け入れ条件：
-
-- 現在のキャンバスサイズと同じ PNG が出力される。
-- 表示中レイヤーだけが出力される。
-- 背景表示 ON なら背景込み、背景非表示なら透明背景になる。
-- ペン、消しゴム、バケツ、リサイズ後の描画が出力に反映される。
-- 倍率指定や高度な書き出し設定は削除または無効化してよい。
-
----
-
-### 3. 安全に直せる範囲だけ実装
-
-実装してよい候補：
-
-- PNG エクスポート経路の小修正。
-- エクスポート UI の不要な倍率指定を隠す、または無効化する小修正。
-- レイヤー複製の実装。
-- 下レイヤー結合の実装。
-- レイヤー操作を `History` に載せる小修正。
-- 保存/読み込み形式の調査と、最小実装が安全なら実装。
-
-実装しないで止めるもの：
-
-- 保存形式の大きな設計判断。
-- PSD/WEBP/GIF/APNG のまとめて復旧。
-- レイヤー階層モデルの大幅変更。
-- History command 形式の大幅変更。
-- RenderTexture の保持方式変更。
-- WebGPU / SDF / MSDF / WebGL2 Mesh の復活。
-- 範囲選択、切り取り、自由変形の本格実装。
-
-今回の Gemini 作業では、PNGエクスポート復旧を第一優先にする。レイヤー編集は、複製または下レイヤー結合のうち安全に実装できる方からでよい。
+- `animationSystem.init()` を有効化しない。
+- アニメ本体、APNG/GIF 自動判定、アニメプレビューは実装しない。
+- クリッピング、フォルダ、複数レイヤー選択は実装しない。
+- 無限キャンバスや V 変形時のキャンバス外保持は実装しない。
+- WebGPU / SDF / MSDF / WebGL2 Mesh を復活させない。
+- 調査用ログを残さない。残す場合は debug 限定にする。
 
 ---
 
@@ -110,30 +142,27 @@ npm.cmd run build
 可能ならブラウザで確認：
 
 1. 起動時に致命的エラーがない。
-2. 通常ペンで描ける。
-3. 消しゴムで透明に消せる。
-4. 基本バケツが壊れていない。
-5. `Ctrl+Z` / `Ctrl+Y` とリサイズが退行していない。
-6. PNG エクスポートで現在の描画内容が出力される。
-7. 背景表示 ON/OFF と非表示レイヤーが出力に反映される。
-8. 実装したレイヤー編集が history とサムネイルに反映される。
-9. `TEGAKI_CONFIG.debug === false` の通常状態で Console が過剰ログに埋まらない。
+2. 通常ペンで遅延なく描ける。
+3. `No renderTexture` エラーが出ない。
+4. アルバム保管/復帰が壊れていない。
+5. PNG エクスポートが壊れていない。
+6. V パネル改善を入れた場合、その操作が動く。
+7. レイヤー不透明度ドラッグを入れた場合、表示と数値が同期する。
+8. History 表示が破綻しない。
 
 ---
 
-## PROGRESS更新
+## PROGRESS 更新
 
 作業後に `tegaki_work/PROGRESS.md` の先頭へ追記する。
 
 必ず書く：
 
 - 変更ファイル
-- 変更理由
-- エクスポート経路
-- 保存形式の判断
-- レイヤー編集の実装内容
-- history 対応状況
+- 棚卸し結果
+- 実装した小型 UI 改善
+- 実装しなかった項目と理由
+- Codex 判断へ戻す候補
 - `npm.cmd run build` 結果
 - ブラウザ確認結果
 - 残った問題
-- Codex / Claude に判断してほしい点
