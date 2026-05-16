@@ -77,8 +77,15 @@ window.TegakiUI.StatusDisplayRenderer = class StatusDisplayRenderer {
         if (!this.eventBus) return;
         
         // ツール変更
-        this.eventBus.on('tool:changed', ({ newTool }) => {
-            this.updateTool(newTool);
+        this.eventBus.on('tool:changed', (payload = {}) => {
+            this.updateTool(payload.tool || payload.newTool || payload.data?.tool);
+        });
+
+        // 筆圧設定変更
+        this.eventBus.on('brush:pressure-enabled-changed', () => {
+            if (window.brushSettings?.getMode() === 'pen') {
+                this.updateTool('pen');
+            }
         });
         
         // レイヤー変更
@@ -123,14 +130,21 @@ window.TegakiUI.StatusDisplayRenderer = class StatusDisplayRenderer {
         if (!this.elements.currentTool) return;
         
         const toolNames = {
-            'pen': 'ベクターペン',
+            'pen': 'ペン',
             'eraser': '消しゴム',
             'move': 'レイヤー移動',
             'fill': '塗りつぶし',
             'gif-animation': 'GIFアニメーション'
         };
         
-        this.elements.currentTool.textContent = toolNames[toolName] || toolName;
+        let displayName = toolNames[toolName] || toolName;
+
+        if (toolName === 'pen') {
+            const pressure = window.brushSettings?.pressureEnabled === true;
+            displayName = pressure ? 'ペン（筆圧ON）' : 'ペン（固定幅）';
+        }
+
+        this.elements.currentTool.textContent = displayName;
     }
     
     updateLayer(layerName) {

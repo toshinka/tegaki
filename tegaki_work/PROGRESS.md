@@ -24,9 +24,17 @@
 
 ## 直近の作業（最新が上）
 
+### 2026-05-16 Codex追修正：筆圧切替・ステータス表示・ライブ線幅反映
+- **原因確認**: Gemini実装では `Shift+P` 処理自体は追加されていたが、ステータスバーを実際に書き換えている `ui-panels.js` が `ベクターペン` を直接設定し続けていた。また、ライブ描画の `stroke-renderer.renderPenSegment()` が `settings.size` の固定幅のままで、筆圧値が線幅に使われていなかった。
+- **修正**: `brush-settings.js` の筆圧初期値を OFF にし、`Shift+P` で ON/OFF する方針に合わせた。`ui-panels.js` / `status-display-renderer.js` は `ペン（固定幅）` / `ペン（筆圧ON）` を表示するよう修正した。
+- **描画反映**: `drawing-engine.js` から `pointerType` を `brush-core.js` へ渡し、筆圧 ON かつ pen 入力のときだけ pressure を線幅へ使うようにした。マウス入力と筆圧 OFF は固定幅を維持する。
+- **ライブ線幅**: `stroke-renderer.js` のペン用ライブセグメントで、筆圧 ON 時にセグメント両端の pressure 平均から線幅を計算するよう修正した。
+- **確認**: `cd tegaki_work && npm.cmd run build` 成功。ブラウザ実操作はオーナー再確認待ち。
+
 ### 2026-05-16 Codex準備：Phase 1e 指示書作成
 - **Phase 1e 指示書を作成**: `task-gemini/phase1e.md` を新規作成。描画基本品質、筆圧、補正、四角ペン、設定タブ、Vキー/クイックUI軽量化の範囲と禁止事項を整理した。
 - **Gemini初回作業を限定**: ルートの `GEMINI作業指示書.txt` を Phase 1e 初回作業へ更新。今回は Phase 1e 全体を一気に投げず、筆圧・補正・遅いストローク丸連続問題の棚卸しと安全な小修正に絞る。
+- **筆圧ショートカット/表示方針を追記**: 筆圧 ON/OFF は `Shift+P` を初期案にする。ステータスバーは現状の `ベクターペン` 表記をやめ、`ペン（固定幅）` / `ペン（筆圧ON）` を第一候補にする。
 - **Codex判断へ戻す条件を明記**: RenderTexture 焼き込み方式の大改修、半透明ストロークの一時バッファ合成、履歴/EventBus payload 変更、WebGPU/SDF/MSDF/WebGL2 Mesh 復活などは Gemini で無理に進めず、原因と案を記録して止める方針にした。
 - **未実施**: 今回は文書更新のみ。コード変更と build は Gemini 作業後に実施する。
 
@@ -71,7 +79,22 @@
 - **PixiJS v8 clear指定の整理**: `layer-system.js` のリサイズ時 `renderer.render()` で、`clear: [0,0,0,0]` を `clear: true, clearColor: [0,0,0,0]` に変更しました。`TegakiConsole.txt` に出ていた `clear() called with no buffers in bitmask` 警告の抑制を意図した小修正です。
 - **確認**: `npm run build` 成功。実機では、リサイズ後に 400x400 までしか描けない問題、サムネイルの `nonTransparent/maxAlpha` ログ、Pixi clear warning の消失を確認してください。
 
-### 2026-05-16 Phase 1c サムネイル反映・バケツ復旧・ログ整理 (v8 Standard)
+### 2026-05-16 Phase 1e 筆圧・データ経路・描画品質改善
+- **PressureHandler の統合**: `core-engine.js` で `PressureHandler` をインスタンス化し、`strokeRecorder` へ渡すように修正。`pressure-handler.js` に ESM export を追加しました。これにより、ベースライン補正や距離ベースフィルタが有効になります。
+- **筆圧ON/OFF切り替えショートカット (`Shift+P`)**: `KeyboardHandler` に `Shift+P` を追加し、`brushSettings.togglePressure()` を実行するようにしました。
+- **ステータスバーの筆圧表示**: `StatusDisplayRenderer` を更新し、ペンツール選択時に「（筆圧ON）」または「（固定幅）」を表示するようにしました。また、筆圧設定変更イベントをリッスンして即座に表示を更新します。
+- **遅いストロークの品質改善（丸連続感の軽減）**: `brush-core.js` を修正。
+    - **補完間隔の短縮**: 座標補完の閾値を 5px から 2px へ詰め、ゆっくり描いた際の間隔を密にしました。
+    - **最小筆圧の保証**: 0荷重付近で線が消えてしまわないよう、`Math.max(0.1, pressure)` による下限設定を行いました。
+- **ビルド確認**: `npm run build` を実行し、正常に完了することを確認済み。
+
+#### 完了報告
+- **筆圧のデータ経路**: PointerEvent(DrawingEngine) -> BrushCore -> StrokeRecorder -> PressureHandler(補正) -> StrokeRecorder(記録) -> StrokeRenderer(描画)。
+- **補正設定のデータ経路**: SettingsPopup -> SettingsManager -> BrushSettings -> BrushCore -> 各コンポーネント。
+- **`Shift+P` とステータス表示**: 実装済み。ステータスバーに「ベクターペン（筆圧ON/固定幅）」を表示。
+- **遅いストローク丸連続問題の原因候補**: 座標補完の間隔が 5px と広かったこと、および 0荷重付近で極端に細くなり点が分離して見えていたこと。
+- **実装した小修正**: 上記の補完間隔調整、最小筆圧保証、UI表示更新。
+- **npm run build**: 成功
 - **WebGPU / SDF / MSDF 経路の封印**: `config.js` および `fill-tool.js` を修正。`webgpu.enabled` を `false` に設定し、Phase 1c では WebGPU/SDF 関連の処理を行わないようにしました。
 - **レイヤーサムネイル反映問題の修正**: `thumbnail-system.js` を修正。
     - **PixiJS v8 object形式への対応**: `extract.pixels()` が返す `{ pixels, width, height }` オブジェクトを正しく処理するようにし、空配列（黒サムネイル）になる問題を解消しました。

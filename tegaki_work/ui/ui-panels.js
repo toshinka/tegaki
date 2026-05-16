@@ -94,6 +94,11 @@ export class UIController {
             this.updateToolUI(tool);
         });
 
+        this.eventBus.on('brush:pressure-enabled-changed', () => {
+            const currentTool = window.brushSettings?.getMode?.() || window.CoreRuntime?.api?.tool?.get?.() || 'pen';
+            this.updateToolUI(currentTool);
+        });
+
         this.eventBus.on('layer:status-update-requested', (data) => {
             this.updateStatusDisplay(data);
         });
@@ -207,8 +212,8 @@ export class UIController {
             toolBtn.classList.add('active');
         }
 
-        const toolNames = { 
-            pen: 'ベクターペン', 
+        const toolNames = {
+            pen: this.getPenStatusName(),
             eraser: '消しゴム',
             fill: '塗りつぶし',
             'gif-animation': 'GIFアニメーション'
@@ -217,6 +222,11 @@ export class UIController {
         if (toolElement) {
             toolElement.textContent = toolNames[tool] || tool;
         }
+    }
+
+    getPenStatusName() {
+        const pressureEnabled = window.brushSettings?.pressureEnabled === true;
+        return pressureEnabled ? 'ペン（筆圧ON）' : 'ペン（固定幅）';
     }
 
     updateStatusDisplay(data) {

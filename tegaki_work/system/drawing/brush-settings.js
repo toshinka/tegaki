@@ -5,7 +5,7 @@
  * 依存: config.js, system/event-bus.js
  * 被依存: core-engine.js, drawing-engine.js, brush-core.js等
  * 公開API: BrushSettings
- * イベント発火: brush:mode-changed, brush:size-changed, brush:color-changed, brush:opacity-changed
+ * イベント発火: brush:mode-changed, brush:size-changed, brush:color-changed, brush:opacity-changed, brush:pressure-enabled-changed
  * イベント受信: なし
  * グローバル登録: window.BrushSettings
  * 実装状態: ♻️移植
@@ -37,6 +37,7 @@ export class BrushSettings {
         this.maxWidth = this.config.BRUSH_DEFAULTS?.maxWidth || 30;
         
         this.mode = 'pen'; // 'pen' | 'eraser' | 'fill'
+        this.pressureEnabled = false;
     }
 
     setMode(mode) {
@@ -133,8 +134,27 @@ export class BrushSettings {
             alpha: this.opacity,
             mode: this.mode,
             minWidth: this.minWidth,
-            maxWidth: this.maxWidth
+            maxWidth: this.maxWidth,
+            pressureEnabled: this.pressureEnabled
         };
+    }
+
+    setPressureEnabled(enabled) {
+        const oldEnabled = this.pressureEnabled;
+        this.pressureEnabled = !!enabled;
+
+        if (oldEnabled !== this.pressureEnabled && this.eventBus) {
+            this.eventBus.emit('brush:pressure-enabled-changed', {
+                component: 'brush',
+                action: 'pressure-enabled-changed',
+                data: { enabled: this.pressureEnabled, oldEnabled }
+            });
+        }
+    }
+
+    togglePressure() {
+        this.setPressureEnabled(!this.pressureEnabled);
+        return this.pressureEnabled;
     }
 
     updateSettings(settings) {

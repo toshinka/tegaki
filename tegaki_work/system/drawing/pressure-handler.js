@@ -192,3 +192,5 @@
     console.log('   ✓ window.PressureHandler として公開');
 
 })();
+
+export const PressureHandler = window.PressureHandler;
