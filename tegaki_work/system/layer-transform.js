@@ -8,7 +8,7 @@
  * イベント発火: layer:updated, layer:transform-updated, thumbnail:layer-updated
  * イベント受信: keyboard:vkey-state-changed, layer:flip-by-key, layer:reset-transform
  * グローバル登録: window.LayerTransform
- * 実装状態: ♻️移植
+ * 実装状態: ✅完成/整備
  * ============================================================================
  */
 
@@ -608,7 +608,53 @@ export class LayerTransform {
 
         if (sliderInstance) {
             this._sliderInstances.set(sliderId, sliderInstance);
+            
+            // [指示書] 数値部分のダブルクリックで直接入力
+            const valueDisplay = container.querySelector('.slider-value');
+            if (valueDisplay) {
+                valueDisplay.style.cursor = 'text';
+                valueDisplay.title = 'ダブルクリックで数値を直接入力';
+                valueDisplay.addEventListener('dblclick', (e) => {
+                    this._showDirectInput(valueDisplay, sliderInstance, property, min, max);
+                });
+            }
         }
+    }
+
+    _showDirectInput(displayEl, slider, property, min, max) {
+        const currentVal = slider.getValue();
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.value = currentVal;
+        input.step = property === 'scale' ? '0.01' : '1';
+        input.style.cssText = 'width:50px;font-size:10px;border:1px solid #800000;background:#fff;color:#800000;padding:0 2px;';
+        
+        const originalDisplay = displayEl.textContent;
+        displayEl.textContent = '';
+        displayEl.appendChild(input);
+        input.focus();
+        input.select();
+
+        const finish = () => {
+            if (!input.parentNode) return;
+            const val = parseFloat(input.value);
+            if (!isNaN(val)) {
+                const clamped = Math.max(min, Math.min(max, val));
+                slider.setValue(clamped);
+                // onChange が自動で呼ばれる
+            }
+            displayEl.removeChild(input);
+            slider.updateDisplay(); // 表示を元に戻す
+        };
+
+        input.addEventListener('blur', finish);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') finish();
+            if (e.key === 'Escape') {
+                input.value = currentVal;
+                finish();
+            }
+        });
     }
 
     _setupDragEvents() {

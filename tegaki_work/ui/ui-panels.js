@@ -8,7 +8,7 @@
  * イベント発火: ui:*, tool:select, layer:panel-update-requested等
  * イベント受信: tool:*, layer:*, camera:*, keyboard:*等
  * グローバル登録: window.TegakiUI.UIController, window.uiController
- * 実装状態: ♻️移植
+ * 実装状態: ✅完成/整備
  * ============================================================================
  */
 

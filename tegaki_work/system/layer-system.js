@@ -8,7 +8,7 @@
  * イベント発火: layer:*, folder:*, thumbnail:layer-updated, frame:updated
  * イベント受信: camera:resized, keyboard:vkey-state-changed, animation:*, layer:copy-request, layer:paste-request等
  * グローバル登録: window.TegakiLayerSystem, window.layerManager
- * 実装状態: ♻️移植
+ * 実装状態: ✅完成/整備
  * ============================================================================
  */
 
