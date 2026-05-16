@@ -61,6 +61,7 @@ export class UIController {
         if (statusPanel) {
             const currentTool = window.brushSettings?.getMode?.() || window.CoreRuntime?.api?.tool?.get?.() || 'pen';
             this.updateToolUI(currentTool);
+            this.updateHistoryUI();
         }
     }
     
@@ -118,6 +119,10 @@ export class UIController {
 
         this.eventBus.on('layer:status-update-requested', (data) => {
             this.updateStatusDisplay(data);
+        });
+
+        this.eventBus.on('history:changed', (data) => {
+            this.updateHistoryUI(data);
         });
     }
     
@@ -256,6 +261,19 @@ export class UIController {
             const layerEl = document.getElementById('current-layer');
             if (layerEl) layerEl.textContent = data.currentLayer;
         }
+    }
+
+    updateHistoryUI(data = null) {
+        const historyElement = document.getElementById('history-info');
+        if (!historyElement) return;
+
+        const history = window.History;
+        const currentIndex = data?.currentIndex ?? history?.index ?? -1;
+        const canUndo = data?.canUndo ?? history?.canUndo?.() ?? false;
+        const displayIndex = canUndo ? currentIndex + 1 : 0;
+        const maxSize = history?.maxSize || 500;
+
+        historyElement.textContent = `${displayIndex}/${maxSize}`;
     }
 
     setupCanvasResize() {

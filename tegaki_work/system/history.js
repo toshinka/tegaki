@@ -38,6 +38,10 @@ export class HistoryManager {
         try {
             this.isApplying = true;
             
+            if (window.TEGAKI_CONFIG?.debug) {
+                console.log(`[History] Push: ${command.name}`, command.meta || {});
+            }
+
             // 現在位置より後ろのスタックを削除
             this.stack.splice(this.index + 1);
             
@@ -62,6 +66,32 @@ export class HistoryManager {
         } finally {
             this.isApplying = false;
         }
+    }
+
+    record(command) {
+        if (this.isApplying) {
+            return;
+        }
+
+        if (!this._validateCommand(command)) {
+            console.error('[History] Invalid applied command structure:', command);
+            return;
+        }
+
+        this.stack.splice(this.index + 1);
+        this.stack.push(command);
+        this.index++;
+
+        if (this.stack.length > this.maxSize) {
+            this.stack.shift();
+            this.index--;
+        }
+
+        if (window.TEGAKI_CONFIG?.debug) {
+            console.log(`[History] Record applied: ${command.name}`, command.meta || {});
+        }
+
+        this._notifyHistoryChanged();
     }
 
     undo() {

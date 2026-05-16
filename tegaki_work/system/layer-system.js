@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { Container, Graphics, Mesh, RenderTexture, Sprite } from 'pixi.js';
+import { Container, Graphics, Mesh, RenderTexture, Sprite, Texture } from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { LayerModel } from './data-models.js';
@@ -41,12 +41,12 @@ export class LayerSystem {
         this.eventBus = eventBus || TegakiEventBus;
         this.config = config || TEGAKI_CONFIG;
         if (!this.eventBus) throw new Error('EventBus required for LayerSystem');
-        
+
         this.transform = new LayerTransform(this.config, this.coordAPI);
-        
+
         this.currentFrameContainer = new Container();
         this.currentFrameContainer.label = 'temporary_frame_container';
-        
+
         const bgLayer = new Container();
         const bgLayerModel = new LayerModel({
             id: 'temp_layer_bg_' + Date.now(),
@@ -56,7 +56,7 @@ export class LayerSystem {
         bgLayer.label = bgLayerModel.id;
         bgLayer.layerData = bgLayerModel;
         bgLayer.id = bgLayerModel.id;
-        
+
         // 🆕 背景テクスチャ初期化
         if (this.app?.renderer) {
             bgLayerModel.initializeTexture(this.config.canvas.width, this.config.canvas.height);
@@ -66,7 +66,7 @@ export class LayerSystem {
         }
 
         const bg = this._createSolidBackground(
-            this.config.canvas.width, 
+            this.config.canvas.width,
             this.config.canvas.height,
             0xf0e0d6
         );
@@ -74,7 +74,7 @@ export class LayerSystem {
         bgLayer.layerData.backgroundGraphics = bg;
         bgLayer.layerData.backgroundColor = 0xf0e0d6;
         this.currentFrameContainer.addChild(bgLayer);
-        
+
         const layer1 = new Container();
         const layer1Model = new LayerModel({
             id: 'temp_layer_1_' + Date.now(),
@@ -83,7 +83,7 @@ export class LayerSystem {
         layer1.label = layer1Model.id;
         layer1.layerData = layer1Model;
         layer1.id = layer1Model.id;
-        
+
         // 🆕 レイヤー1テクスチャ初期化
         if (this.app?.renderer) {
             layer1Model.initializeTexture(this.config.canvas.width, this.config.canvas.height);
@@ -97,21 +97,21 @@ export class LayerSystem {
         }
         this.currentFrameContainer.addChild(layer1);
         this.activeLayerIndex = 1;
-        
+
         this._setupLayerOperations();
         this._setupAnimationSystemIntegration();
         this._setupVKeyEvents();
         this._setupResizeEvents();
-        
+
         this.isInitialized = true;
-        
+
         // 初回描画を要求
         setTimeout(() => {
             this._emitPanelUpdateRequest();
             this._emitStatusUpdateRequest();
         }, 100);
     }
-    
+
     /**
      * レイヤーの変形を RenderTexture に焼き付け、コンテナの変形をリセットする
      */
@@ -121,6 +121,10 @@ export class LayerSystem {
         const renderer = this.app.renderer;
         const layerData = layer.layerData;
         const rt = layerData.renderTexture;
+
+        if (window.TEGAKI_CONFIG?.debug) {
+            console.log(`[LayerSystem] Baking transform for layer: ${layerData.name} into ${rt.width}x${rt.height} RT`);
+        }
 
         // 1. 現在の状態を一時的なテクスチャに書き出す
         // Pixi v8 で Container を RenderTexture にレンダリングすると、
@@ -158,7 +162,7 @@ export class LayerSystem {
         // 5. 後始末
         tempSprite.destroy();
         tempRT.destroy(true);
-        
+
         if (this.config?.debug) {
             console.log(`[LayerSystem] Baked transform for layer: ${layerData.name}`);
         }
@@ -168,23 +172,23 @@ export class LayerSystem {
         // ... (rest of the file follows, but I need to make sure I replace accurately)
 
         if (!this.currentFrameContainer) return null;
-        
+
         const folderName = name || this._generateNextFolderName();
         const folderModel = new LayerModel({
             name: folderName,
             isFolder: true,
             folderExpanded: true
         });
-        
+
         const folder = new Container();
         folder.label = folderModel.id;
         folder.layerData = folderModel;
         folder.id = folderModel.id;
-        
+
         if (this.transform) {
             this.transform.setTransform(folderModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
         }
-        
+
         if (historyManager && !historyManager.isApplying) {
             const entry = {
                 name: 'folder-create',
@@ -211,14 +215,14 @@ export class LayerSystem {
             this.setActiveLayer(layers.length - 1);
             this._emitPanelUpdateRequest();
         }
-        
+
         if (this.eventBus) {
-            this.eventBus.emit('folder:created', { 
-                folderId: folderModel.id, 
-                name: folderName 
+            this.eventBus.emit('folder:created', {
+                folderId: folderModel.id,
+                name: folderName
             });
         }
-        
+
         const layers = this.getLayers();
         return { layer: folder, index: layers.length - 1 };
     }
@@ -227,75 +231,75 @@ export class LayerSystem {
         const layers = this.getLayers();
         const layer = layers.find(l => l.layerData?.id === layerId);
         const folder = layers.find(l => l.layerData?.id === folderId);
-        
+
         if (!layer || !folder || !folder.layerData?.isFolder) return false;
         if (layer.layerData?.isBackground) return false;
-        
+
         if (!folder.layerData.addChild(layerId)) return false;
-        
+
         layer.layerData.parentId = folderId;
-        
+
         this._emitPanelUpdateRequest();
-        
+
         if (this.eventBus) {
-            this.eventBus.emit('layer:added-to-folder', { 
-                layerId, 
-                folderId 
+            this.eventBus.emit('layer:added-to-folder', {
+                layerId,
+                folderId
             });
         }
-        
+
         return true;
     }
 
     removeLayerFromFolder(layerId) {
         const layers = this.getLayers();
         const layer = layers.find(l => l.layerData?.id === layerId);
-        
+
         if (!layer || !layer.layerData?.parentId) return false;
-        
+
         const folder = layers.find(l => l.layerData?.id === layer.layerData.parentId);
         if (!folder || !folder.layerData?.isFolder) return false;
-        
+
         if (!folder.layerData.removeChild(layerId)) return false;
-        
+
         layer.layerData.parentId = null;
-        
+
         this._emitPanelUpdateRequest();
-        
+
         if (this.eventBus) {
-            this.eventBus.emit('layer:removed-from-folder', { 
-                layerId, 
-                folderId: folder.layerData.id 
+            this.eventBus.emit('layer:removed-from-folder', {
+                layerId,
+                folderId: folder.layerData.id
             });
         }
-        
+
         return true;
     }
 
     toggleFolderExpand(folderId) {
         const layers = this.getLayers();
         const folder = layers.find(l => l.layerData?.id === folderId);
-        
+
         if (!folder || !folder.layerData?.isFolder) return false;
-        
+
         folder.layerData.toggleExpanded();
-        
+
         this._emitPanelUpdateRequest();
-        
+
         if (this.eventBus) {
-            this.eventBus.emit('folder:toggled', { 
-                folderId, 
-                expanded: folder.layerData.folderExpanded 
+            this.eventBus.emit('folder:toggled', {
+                folderId,
+                expanded: folder.layerData.folderExpanded
             });
         }
-        
+
         return true;
     }
 
     getVisibleLayers() {
         const layers = this.getLayers();
         const visibleLayers = [];
-        
+
         for (const layer of layers) {
             if (layer.layerData?.parentId) {
                 const parentFolder = layers.find(l => l.layerData?.id === layer.layerData.parentId);
@@ -305,16 +309,16 @@ export class LayerSystem {
             }
             visibleLayers.push(layer);
         }
-        
+
         return visibleLayers;
     }
 
     getFolderChildren(folderId) {
         const layers = this.getLayers();
         const folder = layers.find(l => l.layerData?.id === folderId);
-        
+
         if (!folder || !folder.layerData?.isFolder) return [];
-        
+
         return layers.filter(l => l.layerData?.parentId === folderId);
     }
 
@@ -323,25 +327,25 @@ export class LayerSystem {
         const folderNames = layers
             .filter(l => l.layerData?.isFolder)
             .map(l => l.layerData.name);
-        
+
         const numbers = folderNames
             .map(name => {
                 const match = name.match(/^フォルダ(\d+)$/);
                 return match ? parseInt(match[1], 10) : 0;
             })
             .filter(n => n > 0);
-        
+
         const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
         return `フォルダ${maxNumber + 1}`;
     }
 
     getLayerById(layerId) {
         if (!layerId) return null;
-        
+
         const layers = this.getLayers();
         return layers.find(layer => {
-            return layer.id === layerId || 
-                   layer.label === layerId || 
+            return layer.id === layerId ||
+                   layer.label === layerId ||
                    layer.layerData?.id === layerId;
         }) || null;
     }
@@ -356,39 +360,39 @@ export class LayerSystem {
 
     _setupResizeEvents() {
         if (!this.eventBus) return;
-        
+
         this.eventBus.on('camera:resized', (data) => {
             // [指示書] 全レイヤーのテクスチャを新サイズへ拡張
             this.resizeLayerTextures(data.width, data.height, data.oldWidth, data.oldHeight, data.align);
 
             if (this.checkerPattern && this.checkerPattern.parent && window.checkerUtils) {
                 const wasVisible = this.checkerPattern.visible;
-                
+
                 this.checkerPattern = window.checkerUtils.resizeCanvasChecker(
                     this.checkerPattern,
                     data.width,
                     data.height
                 );
-                
+
                 if (this.cameraSystem?.worldContainer && !this.checkerPattern.parent) {
                     this.cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
                 }
-                
+
                 const bgLayer = this.getLayers()[0];
                 const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
                 this.checkerPattern.visible = !isBackgroundVisible;
             }
-            
+
             const bgLayer = this.getLayers()[0];
             if (bgLayer?.layerData?.isBackground && bgLayer.layerData.backgroundGraphics) {
                 const bg = bgLayer.layerData.backgroundGraphics;
                 const currentColor = bgLayer.layerData.backgroundColor || 0xf0e0d6;
-                
+
                 bg.clear();
                 bg.rect(0, 0, data.width, data.height);
                 bg.fill({ color: currentColor, alpha: 1.0 });
             }
-            
+
             // 全レイヤーのサムネイル更新を要求
             const layers = this.getLayers();
             for (let i = 0; i < layers.length; i++) {
@@ -404,10 +408,10 @@ export class LayerSystem {
     resizeLayerTextures(newWidth, newHeight, oldWidth, oldHeight, alignOptions) {
         const widthDiff = newWidth - oldWidth;
         const heightDiff = newHeight - oldHeight;
-        
+
         let offsetX = 0;
         let offsetY = 0;
-        
+
         const hAlign = alignOptions?.horizontal || 'center';
         const vAlign = alignOptions?.vertical || 'center';
 
@@ -490,21 +494,21 @@ export class LayerSystem {
     changeBackgroundLayerColor(layerIndex, layerId) {
         const layers = this.getLayers();
         if (layerIndex < 0 || layerIndex >= layers.length) return;
-        
+
         const layer = layers[layerIndex];
         if (!layer?.layerData?.isBackground) return;
-        
+
         const color = window.brushSettings?.getColor() || 0xf0e0d6;
-        
+
         layer.layerData.backgroundColor = color;
-        
+
         const bg = layer.layerData.backgroundGraphics;
         if (bg) {
             bg.clear();
             bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
             bg.fill({ color: color, alpha: 1.0 });
         }
-        
+
         if (this.eventBus) {
             this.eventBus.emit('layer:background-color-changed', {
                 layerIndex,
@@ -518,17 +522,17 @@ export class LayerSystem {
     setLayerOpacity(layerIndex, opacity) {
         const layers = this.getLayers();
         if (layerIndex < 0 || layerIndex >= layers.length) return;
-        
+
         const layer = layers[layerIndex];
         if (layer.layerData?.isBackground) return;
-        
+
         opacity = Math.max(0, Math.min(1, opacity));
-        
+
         layer.alpha = opacity;
         if (layer.layerData) {
             layer.layerData.opacity = opacity;
         }
-        
+
         if (this.eventBus) {
             this.eventBus.emit('layer:opacity-changed', {
                 layerIndex,
@@ -542,16 +546,112 @@ export class LayerSystem {
     getActiveLayerIndex() {
         return this.activeLayerIndex;
     }
-    
+
+    createLayerRasterSnapshot(layer) {
+        if (!layer?.layerData?.renderTexture || !this.app?.renderer) return null;
+
+        const layerData = layer.layerData;
+        const renderTexture = layerData.renderTexture;
+        const tempSprite = new Sprite(renderTexture);
+        let result = null;
+
+        try {
+            result = this.app.renderer.extract.pixels({
+                target: tempSprite,
+                clearColor: '#00000000'
+            });
+        } finally {
+            tempSprite.destroy({ texture: false, baseTexture: false });
+        }
+
+        const sourcePixels = result?.pixels || (result instanceof Uint8ClampedArray ? result : new Uint8ClampedArray(result?.buffer || result));
+        const width = Math.round(result?.width || renderTexture.width || this.config.canvas.width);
+        const height = Math.round(result?.height || renderTexture.height || this.config.canvas.height);
+
+        return {
+            layerId: layerData.id,
+            width,
+            height,
+            pixels: new Uint8ClampedArray(sourcePixels),
+            pathsData: structuredClone(layerData.pathsData || []),
+            paths: structuredClone(layerData.paths || [])
+        };
+    }
+
+    restoreLayerRasterSnapshot(snapshot) {
+        if (!snapshot || !this.app?.renderer) return false;
+
+        const layer = this.getLayers().find(candidate => candidate.layerData?.id === snapshot.layerId);
+        if (!layer?.layerData) return false;
+
+        const layerData = layer.layerData;
+        const width = Math.max(1, Math.round(snapshot.width));
+        const height = Math.max(1, Math.round(snapshot.height));
+
+        if (!layerData.renderTexture || layerData.renderTexture.width !== width || layerData.renderTexture.height !== height) {
+            if (layerData.renderTexture) {
+                layerData.renderTexture.destroy(true);
+            }
+            layerData.renderTexture = RenderTexture.create({
+                width,
+                height,
+                antialias: true
+            });
+
+            if (layerData.layerSprite) {
+                layerData.layerSprite.texture = layerData.renderTexture;
+            } else {
+                layerData.layerSprite = new Sprite(layerData.renderTexture);
+                layerData.layerSprite.label = 'layer_raster_sprite';
+                layer.addChildAt(layerData.layerSprite, 0);
+            }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+
+        const imageData = new ImageData(new Uint8ClampedArray(snapshot.pixels), width, height);
+        ctx.putImageData(imageData, 0, 0);
+
+        const texture = Texture.from(canvas);
+        const sprite = new Sprite(texture);
+
+        this.app.renderer.render({
+            container: sprite,
+            target: layerData.renderTexture,
+            clear: true,
+            clearColor: [0, 0, 0, 0]
+        });
+
+        sprite.destroy({ texture: true, baseTexture: true });
+
+        layerData.pathsData = structuredClone(snapshot.pathsData || []);
+        layerData.paths = structuredClone(snapshot.paths || []);
+
+        const layerIndex = this.getLayerIndex(layer);
+        if (layerIndex !== -1) {
+            this.requestThumbnailUpdate(layerIndex);
+        }
+        if (this.coordAPI) {
+            this.coordAPI.clearCache();
+        }
+        this._emitPanelUpdateRequest();
+
+        return true;
+    }
+
     _setupVKeyEvents() {
         if (!this.eventBus) return;
-        
+
         this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
             if (!this.transform) return;
             if (!this.transform.app && this.app && this.cameraSystem) {
                 this.initTransform();
             }
-            
+
             if (pressed) {
                 this.enterLayerMoveMode();
                 const activeLayer = this.getActiveLayer();
@@ -563,7 +663,7 @@ export class LayerSystem {
             }
         });
     }
-    
+
     initTransform() {
         if (!this.transform || !this.app) return;
         this.transform.init(this.app, this.cameraSystem);
@@ -624,7 +724,7 @@ export class LayerSystem {
                 if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
                 return true;
             }
-            
+
             // WebGL2版ではMeshを使用するため、ここはLegacyフォールバック用
             for (let point of path.points) {
                 if (typeof point.x === 'number' && typeof point.y === 'number' &&
@@ -642,13 +742,13 @@ export class LayerSystem {
 
     _applyMaskToLayerGraphics(layer) {
         if (!layer.layerData || !layer.layerData.maskSprite) return;
-        
+
         for (const child of layer.children) {
-            if (child === layer.layerData.maskSprite || 
+            if (child === layer.layerData.maskSprite ||
                 child === layer.layerData.backgroundGraphics) {
                 continue;
             }
-            
+
             if (child instanceof Graphics || child instanceof Mesh) {
                 child.mask = layer.layerData.maskSprite;
             }
@@ -659,13 +759,13 @@ export class LayerSystem {
         if (!this.getActiveLayer()) return;
         const activeLayer = this.getActiveLayer();
         const layerIndex = this.activeLayerIndex;
-        
+
         if (activeLayer.layerData?.isBackground || activeLayer.layerData?.isFolder) return;
-        
+
         if (activeLayer.layerData && activeLayer.layerData.paths) {
             activeLayer.layerData.paths.push(path);
         }
-        
+
         this.rebuildPathGraphics(path);
         if (path.graphics) {
             if (activeLayer.layerData && activeLayer.layerData.maskSprite) {
@@ -673,7 +773,7 @@ export class LayerSystem {
             }
             activeLayer.addChild(path.graphics);
         }
-        
+
         if (this.eventBus) {
             this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
             this.requestThumbnailUpdate(layerIndex);
@@ -684,12 +784,12 @@ export class LayerSystem {
         const layers = this.getLayers();
         if (layerIndex >= 0 && layerIndex < layers.length) {
             const layer = layers[layerIndex];
-            
+
             if (layer.layerData?.isBackground || layer.layerData?.isFolder) return;
-            
+
             layer.layerData.paths.push(path);
             layer.addChild(path.graphics);
-            
+
             if (this.eventBus) {
                 this.eventBus.emit('layer:path-added', { layerIndex, pathId: path.id, layerId: layer.layerData.id });
                 this.requestThumbnailUpdate(layerIndex);
@@ -700,14 +800,14 @@ export class LayerSystem {
     enterLayerMoveMode() {
         if (this.transform) this.transform.enterMoveMode();
     }
-    
+
     exitLayerMoveMode() {
         if (!this.transform) return;
         this.confirmLayerTransform(); // 🆕 変形確定焼き込み
         const activeLayer = this.getActiveLayer();
         this.transform.exitMoveMode(activeLayer);
     }
-    
+
     toggleLayerMoveMode() {
         if (!this.transform) return;
         if (this.isLayerMoveMode) {
@@ -716,15 +816,15 @@ export class LayerSystem {
             this.enterLayerMoveMode();
         }
     }
-    
+
     get isLayerMoveMode() {
         return this.transform?.isVKeyPressed || false;
     }
-    
+
     get vKeyPressed() {
         return this.transform?.isVKeyPressed || false;
     }
-    
+
     updateActiveLayerTransform(property, value) {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
@@ -732,39 +832,39 @@ export class LayerSystem {
             this.transform.updateTransform(activeLayer, property, value);
         }
     }
-    
+
     flipActiveLayer(direction, bypassVKeyCheck = false) {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
         if (!activeLayer?.layerData) return;
         if (activeLayer.layerData.isBackground || activeLayer.layerData.isFolder) return;
-        
+
         if (!bypassVKeyCheck && !this.isLayerMoveMode) return;
-        
+
         const layerId = activeLayer.layerData.id;
         const layerIndex = this.activeLayerIndex;
-        
+
         if (historyManager && !historyManager.isApplying) {
-            const transformBefore = structuredClone(this.transform.getTransform(layerId) || 
+            const transformBefore = structuredClone(this.transform.getTransform(layerId) ||
                 { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
-            
-            const transform = this.transform.getTransform(layerId) || 
+
+            const transform = this.transform.getTransform(layerId) ||
                 { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
-            
+
             if (direction === 'horizontal') {
                 transform.scaleX *= -1;
             } else if (direction === 'vertical') {
                 transform.scaleY *= -1;
             }
-            
+
             this.transform.setTransform(layerId, transform);
-            
+
             const centerX = this.config.canvas.width / 2;
             const centerY = this.config.canvas.height / 2;
             this.transform.applyTransform(activeLayer, transform, centerX, centerY);
-            
+
             const transformAfter = structuredClone(transform);
-            
+
             historyManager.push({
                 name: `layer-flip-${direction}`,
                 do: () => {
@@ -792,15 +892,15 @@ export class LayerSystem {
         } else {
             this.transform.flipLayer(activeLayer, direction, true);
         }
-        
+
         if (this.eventBus) {
-            this.eventBus.emit('layer:transform-updated', { 
-                layerId: activeLayer.layerData.id 
+            this.eventBus.emit('layer:transform-updated', {
+                layerId: activeLayer.layerData.id
             });
             this.requestThumbnailUpdate(this.activeLayerIndex);
         }
     }
-    
+
     moveActiveLayer(keyCode) {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
@@ -809,7 +909,7 @@ export class LayerSystem {
             this.requestThumbnailUpdate(this.activeLayerIndex);
         }
     }
-    
+
     transformActiveLayer(keyCode) {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
@@ -821,7 +921,7 @@ export class LayerSystem {
         }
         this.requestThumbnailUpdate(this.activeLayerIndex);
     }
-    
+
     confirmLayerTransform() {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
@@ -841,6 +941,11 @@ export class LayerSystem {
             // 焼き込み後の状態を反映させるためにリビルド（レイヤーSpriteは保護される）
             const rebuildSuccess = this.safeRebuildLayer(activeLayer, activeLayer.layerData.paths);
 
+            // 座標変換キャッシュをクリア
+            if (this.coordAPI) {
+                this.coordAPI.clearCache();
+            }
+
             if (rebuildSuccess && historyManager && !historyManager.isApplying) {
                 const pathsAfter = structuredClone(activeLayer.layerData.paths);
                 const transformAfter = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
@@ -853,16 +958,21 @@ export class LayerSystem {
                         activeLayer.rotation = 0;
                         activeLayer.scale.set(1, 1);
                         activeLayer.pivot.set(0, 0);
+                        if (this.coordAPI) this.coordAPI.clearCache();
                         this.requestThumbnailUpdate(this.activeLayerIndex);
                     },
                     undo: () => {
+                        if (window.TEGAKI_CONFIG?.debug) {
+                            console.warn('[LayerSystem] Undo layer-transform: Restoring container transform, but raster content remains baked in RenderTexture!');
+                        }
                         this.transform.setTransform(layerId, transformBefore);
                         const centerX = this.config.canvas.width / 2;
                         const centerY = this.config.canvas.height / 2;
                         this.transform.applyTransform(activeLayer, transformBefore, centerX, centerY);
+                        if (this.coordAPI) this.coordAPI.clearCache();
                         this.requestThumbnailUpdate(this.activeLayerIndex);
                     },
-                    meta: { layerId, type: 'transform' }
+                    meta: { layerId, type: 'transform', transformBefore }
                 };
                 historyManager.push(entry);
             }
@@ -1041,14 +1151,14 @@ export class LayerSystem {
         if (layers.length > 0) {
             this.activeLayerIndex = layers.length - 1;
         }
-        
+
         this._emitPanelUpdateRequest();
         this._emitStatusUpdateRequest();
         if (this.isLayerMoveMode) {
             this.updateLayerTransformPanelValues();
         }
     }
-    
+
     createFrameRenderTexture(frameId) {
         if (!this.app?.renderer) return null;
         const renderTexture = RenderTexture.create({
@@ -1059,48 +1169,48 @@ export class LayerSystem {
         this.frameThumbnailDirty.set(frameId, true);
         return renderTexture;
     }
-    
+
     renderFrameToTexture(frameId, frameContainer) {
         if (!this.app?.renderer) return;
-        
+
         const currentWidth = this.config.canvas.width;
         const currentHeight = this.config.canvas.height;
-        
+
         const oldTexture = this.frameRenderTextures.get(frameId);
         if (oldTexture) {
             oldTexture.destroy(true);
         }
-        
+
         const renderTexture = RenderTexture.create({
             width: currentWidth,
             height: currentHeight
         });
-        
+
         this.frameRenderTextures.set(frameId, renderTexture);
-        
+
         const container = frameContainer || this.currentFrameContainer;
         if (!container) return;
-        
+
         this.app.renderer.render({
             container: container,
             target: renderTexture,
             clear: true
         });
-        
+
         this.markFrameThumbnailDirty(frameId);
     }
-    
+
     markFrameThumbnailDirty(frameId) {
         this.frameThumbnailDirty.set(frameId, true);
         if (this.eventBus) {
             this.eventBus.emit('frame:updated', { frameId: frameId });
         }
     }
-    
+
     getFrameRenderTexture(frameId) {
         return this.frameRenderTextures.get(frameId);
     }
-    
+
     destroyFrameRenderTexture(frameId) {
         const renderTexture = this.frameRenderTextures.get(frameId);
         if (renderTexture) {
@@ -1109,24 +1219,24 @@ export class LayerSystem {
             this.frameThumbnailDirty.delete(frameId);
         }
     }
-    
+
     isFrameThumbnailDirty(frameId) {
         return this.frameThumbnailDirty.get(frameId) || false;
     }
-    
+
     clearFrameThumbnailDirty(frameId) {
         this.frameThumbnailDirty.set(frameId, false);
     }
-    
+
     getLayers() {
         return this.currentFrameContainer ? this.currentFrameContainer.children : [];
     }
-    
+
     getActiveLayer() {
         const layers = this.getLayers();
         return this.activeLayerIndex >= 0 && this.activeLayerIndex < layers.length ? layers[this.activeLayerIndex] : null;
     }
-    
+
     _setupAnimationSystemIntegration() {
         if (!this.eventBus) return;
         this.eventBus.on('animation:system-ready', () => {
@@ -1152,7 +1262,7 @@ export class LayerSystem {
             }, 100);
         });
     }
-    
+
     _establishAnimationSystemConnection() {
         if (window.TegakiAnimationSystem && !this.animationSystem) {
             const possibleInstances = [
@@ -1174,78 +1284,78 @@ export class LayerSystem {
 
     _setupLayerOperations() {
         if (!this.eventBus) return;
-        
+
         this.eventBus.on('layer:copy-request', () => {
             if (window.drawingClipboard) {
                 window.drawingClipboard.copyActiveLayer();
             }
         });
-        
+
         this.eventBus.on('layer:paste-request', () => {
             if (window.drawingClipboard) {
                 window.drawingClipboard.pasteLayer();
             }
         });
-        
+
         this.eventBus.on('layer:flip-by-key', ({ direction }) => {
             this.flipActiveLayer(direction, false);
         });
-        
+
         this.eventBus.on('layer:move-by-key', ({ direction }) => {
             this.moveActiveLayer(direction);
         });
-        
+
         this.eventBus.on('layer:scale-by-key', ({ direction }) => {
             this.transformActiveLayer(direction);
         });
-        
+
         this.eventBus.on('layer:rotate-by-key', ({ direction }) => {
             this.transformActiveLayer(direction);
         });
-        
+
         this.eventBus.on('layer:select-next', () => {
             this.selectNextLayer();
         });
-        
+
         this.eventBus.on('layer:select-prev', () => {
             this.selectPrevLayer();
         });
-        
+
         this.eventBus.on('layer:order-up', () => {
             const layers = this.getLayers();
             const currentIndex = this.activeLayerIndex;
             const activeLayer = layers[currentIndex];
-            
+
             if (!activeLayer || activeLayer.layerData?.isBackground) return;
             if (currentIndex >= layers.length - 1) return;
-            
+
             this.reorderLayers(currentIndex, currentIndex + 1);
         });
-        
+
         this.eventBus.on('layer:order-down', () => {
             const layers = this.getLayers();
             const currentIndex = this.activeLayerIndex;
             const activeLayer = layers[currentIndex];
-            
+
             if (!activeLayer || activeLayer.layerData?.isBackground) return;
             if (currentIndex <= 0) return;
-            
+
             const targetLayer = layers[currentIndex - 1];
             if (targetLayer?.layerData?.isBackground) return;
-            
+
             this.reorderLayers(currentIndex, currentIndex - 1);
         });
-        
+
         this.eventBus.on('layer:toggle-move-mode', () => {
             this.toggleLayerMoveMode();
         });
-        
+
         this.eventBus.on('tool:select', () => {
             if (this.isLayerMoveMode) {
                 this.exitLayerMoveMode();
             }
         });
-        
+
         window.addEventListener('blur', () => {
             if (this.vKeyPressed) {
                 this.exitLayerMoveMode();
@@ -1256,17 +1366,17 @@ export class LayerSystem {
     selectNextLayer() {
         const layers = this.getLayers();
         if (layers.length <= 1) return;
-        
+
         const currentIndex = this.activeLayerIndex;
         let newIndex = currentIndex + 1;
-        
+
         if (newIndex >= layers.length) return;
-        
+
         const targetLayer = layers[newIndex];
         if (targetLayer?.layerData?.isBackground) return;
-        
+
         this.setActiveLayer(newIndex);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('layer:selection-changed', {
                 oldIndex: currentIndex,
@@ -1279,17 +1389,17 @@ export class LayerSystem {
     selectPrevLayer() {
         const layers = this.getLayers();
         if (layers.length <= 1) return;
-        
+
         const currentIndex = this.activeLayerIndex;
         let newIndex = currentIndex - 1;
-        
+
         if (newIndex < 0) return;
-        
+
         const targetLayer = layers[newIndex];
         if (targetLayer?.layerData?.isBackground) return;
-        
+
         this.setActiveLayer(newIndex);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('layer:selection-changed', {
                 oldIndex: currentIndex,
@@ -1362,23 +1472,23 @@ export class LayerSystem {
         const layerNames = layers
             .filter(l => l.layerData && !l.layerData.isBackground && !l.layerData.isFolder)
             .map(l => l.layerData.name);
-        
+
         const numbers = layerNames
             .map(name => {
                 const match = name.match(/^レイヤー(\d+)$/);
                 return match ? parseInt(match[1], 10) : 0;
             })
             .filter(n => n > 0);
-        
+
         const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
         const nextNumber = maxNumber + 1;
-        
+
         return `レイヤー${nextNumber}`;
     }
 
     createLayer(name, isBackground = false) {
         if (!this.currentFrameContainer) return null;
-        
+
         const layerModel = new LayerModel({
             name: name || (isBackground ? '背景' : this._generateNextLayerName()),
             isBackground: isBackground
@@ -1387,7 +1497,7 @@ export class LayerSystem {
         layer.label = layerModel.id;
         layer.layerData = layerModel;
         layer.id = layerModel.id;
-        
+
         // 🆕 レイヤー用テクスチャの初期化
         if (this.app?.renderer) {
             layerModel.initializeTexture(this.config.canvas.width, this.config.canvas.height);
@@ -1406,14 +1516,14 @@ export class LayerSystem {
                 layer.addChild(layerModel.maskSprite);
             }
         }
-        
+
         if (this.transform) {
             this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
         }
-        
+
         if (isBackground) {
             const bg = this._createSolidBackground(
-                this.config.canvas.width, 
+                this.config.canvas.width,
                 this.config.canvas.height,
                 0xf0e0d6
             );
@@ -1421,7 +1531,7 @@ export class LayerSystem {
             layer.layerData.backgroundGraphics = bg;
             layer.layerData.backgroundColor = 0xf0e0d6;
         }
-        
+
         if (historyManager && !historyManager.isApplying) {
             const entry = {
                 name: 'layer-create',
@@ -1460,7 +1570,7 @@ export class LayerSystem {
         const layers = this.getLayers();
         return { layer, index: layers.length - 1 };
     }
-    
+
     setActiveLayer(index) {
         const layers = this.getLayers();
         if (index >= 0 && index < layers.length) {
@@ -1468,7 +1578,7 @@ export class LayerSystem {
             if (layer?.layerData?.isBackground) {
                 return;
             }
-            
+
             const oldIndex = this.activeLayerIndex;
             this.activeLayerIndex = index;
             this._emitPanelUpdateRequest();
@@ -1485,15 +1595,15 @@ export class LayerSystem {
     toggleLayerVisibility(layerIndex) {
         const layers = this.getLayers();
         if (layerIndex < 0 || layerIndex >= layers.length) return;
-        
+
         const layer = layers[layerIndex];
         layer.layerData.visible = !layer.layerData.visible;
         layer.visible = layer.layerData.visible;
-        
+
         if (layer.layerData?.isBackground && this.checkerPattern) {
             this.checkerPattern.visible = !layer.layerData.visible;
         }
-        
+
         this._emitPanelUpdateRequest();
         if (this.eventBus) {
             this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible, layerId: layer.layerData.id });
@@ -1520,7 +1630,7 @@ export class LayerSystem {
     _emitStatusUpdateRequest() {
         const layers = this.getLayers();
         const currentLayerName = this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex]?.layerData?.name : 'なし';
-        
+
         if (this.eventBus) {
             this.eventBus.emit('layer:status-update-requested', {
                 currentLayer: currentLayerName,
@@ -1532,7 +1642,7 @@ export class LayerSystem {
 
     setApp(app) {
         this.app = app;
-        
+
         if (this.transform && !this.transform.app && this.cameraSystem) {
             this.initTransform();
         }
@@ -1540,37 +1650,37 @@ export class LayerSystem {
 
     setCameraSystem(cameraSystem) {
         this.cameraSystem = cameraSystem;
-        
+
         if (cameraSystem?.canvasContainer && this.currentFrameContainer) {
             const currentParent = this.currentFrameContainer.parent;
-            
+
             if (!currentParent) {
                 cameraSystem.canvasContainer.addChildAt(this.currentFrameContainer, 0);
             } else if (currentParent !== cameraSystem.canvasContainer) {
                 currentParent.removeChild(this.currentFrameContainer);
                 cameraSystem.canvasContainer.addChildAt(this.currentFrameContainer, 0);
             }
-            
+
             const isChild = this.currentFrameContainer.parent === cameraSystem.canvasContainer;
             if (!isChild) {
                 console.error('[LayerSystem] ❌ Failed to establish parent-child relationship');
             }
         }
-        
+
         if (cameraSystem?.canvasContainer && window.checkerUtils) {
             this.checkerPattern = window.checkerUtils.createCanvasChecker(
                 this.config.canvas.width,
                 this.config.canvas.height
             );
-            
+
             const bgLayer = this.getLayers()[0];
             const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
             this.checkerPattern.visible = !isBackgroundVisible;
-            
+
             cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
             cameraSystem.canvasContainer.setChildIndex(this.currentFrameContainer, 1);
         }
-        
+
         if (this.transform && this.app && !this.transform.app) {
             this.initTransform();
         }
@@ -1581,39 +1691,39 @@ export class LayerSystem {
             console.error('[LayerSystem] currentFrameContainer not found');
             return false;
         }
-        
+
         const activeLayer = this.getActiveLayer();
         if (!activeLayer) {
             console.error('[LayerSystem] No active layer');
             return false;
         }
-        
+
         console.log('[LayerSystem] Parent Chain Verification:');
-        
+
         let current = activeLayer;
         let depth = 0;
         let foundWorldContainer = false;
-        
+
         while (current && depth < 10) {
             const label = current.label || current.constructor.name;
             console.log(`  [${depth}] ${label}`);
-            
+
             if (current === this.cameraSystem?.worldContainer) {
                 foundWorldContainer = true;
                 console.log('  ✅ worldContainer found in chain at depth', depth);
                 break;
             }
-            
+
             current = current.parent;
             depth++;
         }
-        
+
         if (!foundWorldContainer) {
             console.error('  ❌ worldContainer NOT found in chain');
             console.error('  Chain ended at:', current ? (current.label || current.constructor.name) : 'null');
             return false;
         }
-        
+
         console.log('[LayerSystem] ✅ Parent chain is valid');
         return true;
     }
@@ -1628,7 +1738,7 @@ export class LayerSystem {
         if (layer.layerData?.isBackground) {
             return false;
         }
-        
+
         if (layer.layerData?.isFolder) {
             const children = this.getFolderChildren(layerId);
             children.forEach(child => {
@@ -1638,7 +1748,7 @@ export class LayerSystem {
                 }
             });
         }
-        
+
         try {
             const previousActiveIndex = this.activeLayerIndex;
             if (historyManager && !historyManager.isApplying) {
@@ -1715,15 +1825,202 @@ export class LayerSystem {
             return false;
         }
     }
-    
-    requestThumbnailUpdate(layerIndex) {
+
+    requestThumbnailUpdate(layerIndex, immediate = false) {
         if (this.eventBus) {
             const layer = this.getLayers()[layerIndex];
             this.eventBus.emit('thumbnail:layer-updated', {
                 layerIndex,
-                layerId: layer?.layerData?.id
+                layerId: layer?.layerData?.id,
+                immediate
             });
         }
+    }
+
+    /**
+     * 🆕 レイヤー複製
+     */
+    duplicateLayer(layerIndex) {
+        const layers = this.getLayers();
+        if (layerIndex < 0 || layerIndex >= layers.length) return null;
+
+        const sourceLayer = layers[layerIndex];
+        if (sourceLayer.layerData?.isBackground || sourceLayer.layerData?.isFolder) return null;
+
+        const sourceData = sourceLayer.layerData;
+        const newName = `${sourceData.name} のコピー`;
+
+        // 1. 新規レイヤー作成（複製全体を1履歴にするため、createLayer履歴は抑止）
+        const wasApplying = historyManager?.isApplying === true;
+        if (historyManager) historyManager.isApplying = true;
+        const created = this.createLayer(newName);
+        if (historyManager) historyManager.isApplying = wasApplying;
+
+        const { layer: newLayer, index: newIndex } = created || {};
+        if (!newLayer) return null;
+
+        // 2. 状態コピー
+        newLayer.alpha = sourceLayer.alpha;
+        newLayer.visible = sourceLayer.visible;
+        newLayer.layerData.opacity = sourceData.opacity;
+        newLayer.layerData.visible = sourceData.visible;
+
+        // 3. ラスター内容コピー
+        if (sourceData.renderTexture && newLayer.layerData.renderTexture && this.app?.renderer) {
+            const tempSprite = new Sprite(sourceData.renderTexture);
+            this.app.renderer.render({
+                container: tempSprite,
+                target: newLayer.layerData.renderTexture,
+                clear: true,
+                clearColor: [0, 0, 0, 0]
+            });
+            tempSprite.destroy({ texture: false, baseTexture: false });
+        }
+
+        // 4. トランスフォームコピー
+        if (this.transform) {
+            const sourceTransform = this.transform.getTransform(sourceData.id);
+            if (sourceTransform) {
+                this.transform.setTransform(newLayer.layerData.id, structuredClone(sourceTransform));
+                // コンテナのプロパティも同期
+                newLayer.position.copyFrom(sourceLayer.position);
+                newLayer.scale.copyFrom(sourceLayer.scale);
+                newLayer.rotation = sourceLayer.rotation;
+                newLayer.pivot.copyFrom(sourceLayer.pivot);
+            }
+        }
+
+        // 5. 履歴へ記録
+        if (historyManager && !historyManager.isApplying) {
+            const snapshot = this.createLayerRasterSnapshot(newLayer);
+            historyManager.record({
+                name: 'layer-duplicate',
+                do: () => {
+                    if (!newLayer.parent) {
+                        this.currentFrameContainer.addChildAt(newLayer, Math.min(newIndex, this.currentFrameContainer.children.length));
+                    }
+                    this.restoreLayerRasterSnapshot(snapshot);
+                    this.setActiveLayer(this.getLayerIndex(newLayer));
+                    this._emitPanelUpdateRequest();
+                },
+                undo: () => {
+                    if (newLayer.parent) {
+                        this.currentFrameContainer.removeChild(newLayer);
+                    }
+                    const remaining = this.getLayers();
+                    this.activeLayerIndex = Math.min(layerIndex, remaining.length - 1);
+                    this._emitPanelUpdateRequest();
+                },
+                meta: { sourceId: sourceData.id, newId: newLayer.layerData.id }
+            });
+        }
+
+        this.requestThumbnailUpdate(newIndex, true);
+        return { layer: newLayer, index: newIndex };
+    }
+
+    /**
+     * 🆕 下のレイヤーと結合
+     */
+    mergeLayerDown(layerIndex) {
+        const layers = this.getLayers();
+        // 下に通常レイヤーが必要。背景レイヤーは不透明な背景塗りを持つ特殊レイヤーなので、
+        // RenderTexture に焼き込むとキャンバス上では隠れてしまう。
+        if (layerIndex <= 0 || layerIndex >= layers.length) return false;
+
+        const topLayer = layers[layerIndex];
+        const bottomLayer = layers[layerIndex - 1];
+
+        if (topLayer.layerData?.isFolder || bottomLayer.layerData?.isFolder || bottomLayer.layerData?.isBackground) {
+            console.warn('[LayerSystem] Merge down requires a normal layer below');
+            return false;
+        }
+
+        if (!topLayer?.layerData || !bottomLayer?.layerData) return false;
+
+        // 履歴用スナップショット
+        const topSnapshot = this.createLayerRasterSnapshot(topLayer);
+        const bottomSnapshotBefore = this.createLayerRasterSnapshot(bottomLayer);
+        const topOriginalIndex = layerIndex;
+
+        if (historyManager && !historyManager.isApplying) {
+            const entry = {
+                name: 'layer-merge-down',
+                do: () => {
+                    this._executeMergeDownById(topSnapshot.layerId, bottomSnapshotBefore.layerId);
+                },
+                undo: () => {
+                    // 1. 下のレイヤーを復元
+                    this.restoreLayerRasterSnapshot(bottomSnapshotBefore);
+                    // 2. 上のレイヤーを再挿入
+                    if (!topLayer.parent) {
+                        this.currentFrameContainer.addChildAt(topLayer, Math.min(topOriginalIndex, this.currentFrameContainer.children.length));
+                    }
+                    this.restoreLayerRasterSnapshot(topSnapshot);
+                    this.setActiveLayer(this.getLayerIndex(topLayer));
+                    this._emitPanelUpdateRequest();
+                },
+                meta: { topId: topLayer.layerData.id, bottomId: bottomLayer.layerData.id }
+            };
+
+            historyManager.push(entry);
+            return true;
+        }
+
+        return this._executeMergeDown(layerIndex);
+    }
+
+    _executeMergeDown(layerIndex) {
+        const layers = this.getLayers();
+        const topLayer = layers[layerIndex];
+        const bottomLayer = layers[layerIndex - 1];
+        return this._executeMergeDownLayers(topLayer, bottomLayer);
+    }
+
+    _executeMergeDownById(topLayerId, bottomLayerId) {
+        const layers = this.getLayers();
+        const topLayer = layers.find(layer => layer.layerData?.id === topLayerId);
+        const bottomLayer = layers.find(layer => layer.layerData?.id === bottomLayerId);
+        return this._executeMergeDownLayers(topLayer, bottomLayer);
+    }
+
+    _executeMergeDownLayers(topLayer, bottomLayer) {
+        if (!topLayer?.layerData || !bottomLayer?.layerData) return false;
+        if (topLayer.layerData.isFolder || bottomLayer.layerData.isFolder || bottomLayer.layerData.isBackground) return false;
+        if (!this.app?.renderer || !bottomLayer.layerData.renderTexture) return false;
+
+        // 1. 上のレイヤーを下のレイヤーの RenderTexture に焼き込む
+        // opacity や transform を維持したままレンダリング
+        const renderContainer = new Container();
+        const topSprite = topLayer.layerData.layerSprite
+            ? new Sprite(topLayer.layerData.layerSprite.texture)
+            : null;
+
+        if (!topSprite) return false;
+
+        topSprite.alpha = topLayer.alpha ?? topLayer.layerData.opacity ?? 1;
+        renderContainer.addChild(topSprite);
+
+        this.app.renderer.render({
+            container: renderContainer,
+            target: bottomLayer.layerData.renderTexture,
+            clear: false
+        });
+
+        renderContainer.destroy({ children: true, texture: false, baseTexture: false });
+
+        // 2. 上のレイヤーを削除
+        if (topLayer.parent) {
+            this.currentFrameContainer.removeChild(topLayer);
+        }
+
+        // 3. 下のレイヤーをアクティブに
+        const bottomIndex = this.getLayerIndex(bottomLayer);
+        this.setActiveLayer(bottomIndex);
+        this.requestThumbnailUpdate(bottomIndex, true);
+        this._emitPanelUpdateRequest();
+
+        return true;
     }
 }
 

@@ -405,7 +405,7 @@ export const DOMBuilder = (function() {
         const group2 = createElement('div', { className: 'status-group' });
         const items2 = [
             { label: 'FPS:', id: 'fps-info', value: '60' },
-            { label: 'History:', id: 'history-info', value: '0/50' }
+            { label: 'History:', id: 'history-info', value: '0/500' }
         ];
         items2.forEach(item => {
             const statusItem = createElement('div', { className: 'status-item' });

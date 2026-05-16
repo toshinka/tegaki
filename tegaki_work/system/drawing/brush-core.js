@@ -41,6 +41,7 @@ export class BrushCore {
         this.eventListenersSetup = false;
         this.realtimeEraserApplied = false; // [指示書] リアルタイム消去済みフラグ
         this.realtimePenApplied = false;    // [指示書] リアルタイム描画済みフラグ
+        this.strokeHistoryBefore = null;
     }
     
     init() {
@@ -149,6 +150,7 @@ export class BrushCore {
         
         const activeLayer = this.layerManager.getActiveLayer();
         if (!activeLayer || activeLayer.locked) return;
+        this.strokeHistoryBefore = this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null;
         
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
@@ -427,6 +429,8 @@ export class BrushCore {
                 
                 layerData.pathsData.push(pathData);
             }
+
+            this._recordStrokeHistory(activeLayer, mode);
             
             const layerIndex = this.layerManager.getLayerIndex(activeLayer);
             
@@ -452,6 +456,7 @@ export class BrushCore {
         this.isDrawing = false;
         this.realtimeEraserApplied = false; 
         this.realtimePenApplied = false; // フラグリセット
+        this.strokeHistoryBefore = null;
         
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-completed', {
@@ -465,6 +470,35 @@ export class BrushCore {
             });
         }
     }
+
+    _recordStrokeHistory(layer, mode) {
+        const beforeSnapshot = this.strokeHistoryBefore;
+        if (!beforeSnapshot || !historyManager || historyManager.isApplying) return;
+        if (!this.layerManager?.createLayerRasterSnapshot || !this.layerManager?.restoreLayerRasterSnapshot) return;
+
+        const afterSnapshot = this.layerManager.createLayerRasterSnapshot(layer);
+        if (!afterSnapshot) return;
+
+        const layerId = layer.layerData?.id;
+        const layerIndex = this.layerManager.getLayerIndex(layer);
+
+        historyManager.record({
+            name: `draw-${mode}`,
+            do: () => {
+                this.layerManager.restoreLayerRasterSnapshot(afterSnapshot);
+            },
+            undo: () => {
+                this.layerManager.restoreLayerRasterSnapshot(beforeSnapshot);
+            },
+            meta: {
+                type: 'draw',
+                mode,
+                layerId,
+                layerIndex,
+                pointCount: afterSnapshot.pathsData?.length || 0
+            }
+        });
+    }
     
     cancelStroke() {
         if (!this.isDrawing) return;
@@ -476,6 +510,7 @@ export class BrushCore {
         }
         
         this.isDrawing = false;
+        this.strokeHistoryBefore = null;
         
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-cancelled', {

@@ -416,6 +416,9 @@ export class ResizePopup {
         const command = {
             name: 'resize-canvas',
             do: () => {
+                if (window.TEGAKI_CONFIG?.debug) {
+                    console.log(`[ResizePopup] do: resize-canvas ${oldWidth}x${oldHeight} -> ${newWidth}x${newHeight}`, alignOptions);
+                }
                 this.coreEngine.getCameraSystem().resizeCanvas(newWidth, newHeight, alignOptions);
                 
                 const canvasInfoElement = document.getElementById('canvas-info');
@@ -424,6 +427,9 @@ export class ResizePopup {
                 }
             },
             undo: () => {
+                if (window.TEGAKI_CONFIG?.debug) {
+                    console.log(`[ResizePopup] undo: resize-canvas ${newWidth}x${newHeight} -> ${oldWidth}x${oldHeight}`, alignOptions);
+                }
                 this.coreEngine.getCameraSystem().resizeCanvas(oldWidth, oldHeight, alignOptions);
                 
                 const canvasInfoElement = document.getElementById('canvas-info');

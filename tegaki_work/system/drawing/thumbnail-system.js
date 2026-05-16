@@ -177,15 +177,15 @@ export const ThumbnailSystem = {
 
                 if (!fullCtx) return null;
 
-                // [指示書 v6] WebGL は Y 軸が反転しているため flipY 補正
+                // Pixi の extract.pixels() 経由では表示向きで取得されるため、
+                // ここでは Y 軸反転を入れない。
                 const imageData = fullCtx.createImageData(sourceWidth, sourceHeight);
                 const data = imageData.data;
                 let nonTransparentPixels = 0;
                 let maxAlpha = 0;
 
                 for (let row = 0; row < sourceHeight; row++) {
-                    const srcRow = sourceHeight - 1 - row;
-                    const srcBase = srcRow * sourceWidth * 4;
+                    const srcBase = row * sourceWidth * 4;
                     const dstBase = row * sourceWidth * 4;
 
                     // 高速コピー

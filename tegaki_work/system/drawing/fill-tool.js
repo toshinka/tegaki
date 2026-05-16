@@ -169,6 +169,7 @@ export class FillTool {
         const CONFIG = window.TEGAKI_CONFIG;
         const layerData = layer.layerData;
         const app = layerManager.app;
+        const beforeSnapshot = layerManager.createLayerRasterSnapshot?.(layer) || null;
 
         if (!layerData?.renderTexture || !app?.renderer) {
             console.error('❌ FillTool: No renderTexture or renderer');
@@ -214,6 +215,8 @@ export class FillTool {
         if (!layerData.pathsData) layerData.pathsData = [];
         layerData.pathsData.push(pathData);
 
+        this._recordRasterFillHistory(layer, layerManager, beforeSnapshot, color, alpha, 'legacy-full');
+
         // サムネイル更新要求
         const layerIndex = layerManager.getLayerIndex(layer);
         const layerId = layerData.id;
@@ -233,6 +236,29 @@ export class FillTool {
                 method: 'legacy-full'
             });
         }
+    }
+
+    _recordRasterFillHistory(layer, layerManager, beforeSnapshot, fillColor, fillAlpha, method) {
+        const history = window.History;
+        if (!history || history.isApplying || !beforeSnapshot) return;
+        if (!layerManager.createLayerRasterSnapshot || !layerManager.restoreLayerRasterSnapshot) return;
+
+        const afterSnapshot = layerManager.createLayerRasterSnapshot(layer);
+        if (!afterSnapshot) return;
+
+        const layerIndex = layerManager.getLayerIndex(layer);
+        const layerId = layer.layerData?.id;
+
+        history.record({
+            name: `fill-layer-${method}`,
+            do: () => {
+                layerManager.restoreLayerRasterSnapshot(afterSnapshot);
+            },
+            undo: () => {
+                layerManager.restoreLayerRasterSnapshot(beforeSnapshot);
+            },
+            meta: { layerId, layerIndex, fillColor, fillAlpha, method }
+        });
     }
 
     _clearLayerGraphics(layer, layerData) {

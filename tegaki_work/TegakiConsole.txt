@@ -18,7 +18,6 @@ gl-mask-layer.js:461 ✅ gl-mask-layer.js Phase 6完全版 loaded
 gl-mask-layer.js:462    ✅ Circle mask rendering実装
 gl-mask-layer.js:463    ✅ Additive blend対応
 core-initializer.js:28 🚀 Tegaki Initializing...
-injection-topics.js:1 Browsing Topics API removed from http://localhost:5173/ which is main frame
 popup-manager.js:26 ✅ PopupManager initialized
 core-engine.js:101 [CoreEngine] Initializing sub-systems...
 webgl2-drawing-layer.js:77 [WebGL2DrawingLayer] ✅ Initialized {canvasSize: '400x400', maxTextureSize: 16384, extensions: Array(3)}
@@ -38,6 +37,5 @@ popup-manager.js:97 ✅ Popup "album" initialized successfully
 popup-manager.js:128 📊 Popup initialization: 5 ready, 0 deferred
 core-engine.js:266 [CoreEngine] All sub-systems initialized.
 core-initializer.js:56 ✅ Tegaki Initialized Successfully
-popup-manager.js:202 👁️ Popup "quickAccess" shown
-popup-manager.js:202 👁️ Popup "resize" shown
-popup-manager.js:202 👁️ Popup "resize" shown
+injection-topics.js:1 Browsing Topics API removed from http://localhost:5173/ which is main frame
+popup-manager.js:202 👁️ Popup "settings" shown

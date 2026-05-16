@@ -435,6 +435,10 @@ window.CoordinateSystem = coordinateSystem;
 window.TegakiDebug = window.TegakiDebug || {};
 window.TegakiDebug.coord = {
     testFullPipeline(clientX, clientY) {
+        if (!window.TEGAKI_CONFIG?.debug) {
+            console.log('💡 Run TEGAKI_CONFIG.debug = true to see full pipeline logs');
+            return;
+        }
         console.log('=== 座標変換フルパイプライン ===');
         console.log('Input Screen:', { clientX, clientY });
         
