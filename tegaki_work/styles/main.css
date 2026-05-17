@@ -264,31 +264,31 @@ canvas {
 }
 
 .sortable-ghost {
-    opacity: 0.4 !important;
-    background-color: rgba(170, 90, 86, 0.3) !important;
+    opacity: 0.28 !important;
+    background-color: rgba(170, 90, 86, 0.16) !important;
     border: 2px dashed var(--futaba-maroon) !important;
-    transform: scale(0.95) !important;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transform: none !important;
+    transition: opacity 0.18s ease-out, background-color 0.18s ease-out !important;
 }
 
-.sortable-drag {
-    opacity: 0.85 !important;
-    transform: rotate(3deg) scale(1.05) !important;
-    box-shadow: 0 8px 24px rgba(128, 0, 0, 0.4), 0 2px 8px rgba(128, 0, 0, 0.2) !important;
+.sortable-drag,
+.sortable-fallback {
+    opacity: 0.78 !important;
+    transform: none !important;
+    box-shadow: 0 8px 20px rgba(128, 0, 0, 0.28), 0 2px 8px rgba(128, 0, 0, 0.18) !important;
     cursor: grabbing !important;
     background: var(--futaba-cream) !important;
     border: 2px solid var(--active-border) !important;
     z-index: 10000 !important;
-    transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
-                box-shadow 0.15s ease-out,
+    transition: box-shadow 0.15s ease-out,
                 opacity 0.15s ease-out !important;
 }
 
 .sortable-chosen {
     background-color: rgba(255, 140, 66, 0.15) !important;
     border-color: var(--active-border) !important;
-    transform: scale(0.98) !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transform: none !important;
+    transition: background-color 0.2s ease-out, border-color 0.2s ease-out !important;
 }
 
 .layer-item.background-layer {
@@ -1174,6 +1174,53 @@ canvas {
 .sortable-ghost {
     opacity: 0.4;
     background: var(--futaba-light-medium) !important;
+}
+
+/* ===== アルバムツールバー ===== */
+.album-toolbar {
+    padding: 0 0 16px 0;
+    border-bottom: 2px solid var(--futaba-light-medium);
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.album-toolbar-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.album-toolbar-group:not(:last-child) {
+    padding-right: 12px;
+    border-right: 1px solid var(--futaba-light-medium);
+}
+
+.ui-icon-button.active {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+    border-color: var(--futaba-maroon);
+}
+
+.album-selection-badge {
+    background: #ff8c42;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: bold;
+    min-width: 16px;
+    text-align: center;
+}
+
+.album-card.selection-mode {
+    cursor: pointer;
+}
+
+.album-card:not(.selection-mode) .thumbnail-container {
+    cursor: pointer;
 }
 
 #settings-popup {

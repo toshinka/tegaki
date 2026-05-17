@@ -1,6 +1,6 @@
  ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
-pressure-handler.js:191    ✓ 距離ベースフィルタ対応
-pressure-handler.js:192    ✓ window.PressureHandler として公開
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
 png-exporter.js:232 ✅ png-exporter.js v8.29.0 loaded
 png-exporter.js:233    🔧 generatePreview()メソッド追加
 png-exporter.js:234    🔧 エラーハンドリング強化
@@ -32,7 +32,7 @@ gl-mask-layer.js:461 ✅ gl-mask-layer.js Phase 6完全版 loaded
 gl-mask-layer.js:462    ✅ Circle mask rendering実装
 gl-mask-layer.js:463    ✅ Additive blend対応
 core-initializer.js:28 🚀 Tegaki Initializing...
- Browsing Topics API removed from http://localhost:5173/ which is main frame
+ Browsing Topics API removed from http://localhost:5174/ which is main frame
 popup-manager.js:26 ✅ PopupManager initialized
 core-engine.js:117 [CoreEngine] Initializing sub-systems...
 webgl2-drawing-layer.js:77 [WebGL2DrawingLayer] ✅ Initialized Object
@@ -56,6 +56,4 @@ popup-manager.js:202 👁️ Popup "album" shown
 popup-manager.js:202 👁️ Popup "album" shown
 popup-manager.js:202 👁️ Popup "album" shown
 popup-manager.js:202 👁️ Popup "album" shown
-popup-manager.js:202 👁️ Popup "resize" shown
-popup-manager.js:202 👁️ Popup "settings" shown
-popup-manager.js:222 🙈 Popup "settings" hidden
+popup-manager.js:202 👁️ Popup "album" shown

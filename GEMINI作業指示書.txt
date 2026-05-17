@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 1l 初回作業 2026-05-17
+# GEMINI作業指示書：Phase 2 初回棚卸し 2026-05-17
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 1k は UI アイコン・小ボタン共通化まで完了扱い。次はオーナーメモ追加分3を受けて、アルバムカードのドラッグ並べ替えと選択状態の土台を作る。HTMLエクスポート/インポートは影響が大きいため、初回は設計メモまでを基本とする。
+目的：Phase 1m は完了扱い。次は Phase 2 として、レイヤーパネルとレイヤー操作の基盤を整理する。初回は大きく作り替えず、棚卸しと低リスクな小修正に絞る。
 
 ---
 
@@ -12,124 +12,86 @@
 2. `TEGAKI.md`
 3. `GEMINI.md`
 4. `tegaki_work/PROGRESS.md`
-5. `tegaki_work/NOTES.md`
+5. `tegaki_work/PHASE2_HANDOFF.md`
 6. `tegaki_work/ARCHITECTURE.md`
-7. `task-gemini/phase1l.md`
+7. `task-gemini/phase2.md`
 8. この `GEMINI作業指示書.txt`
 
 ---
 
-## 今回の前提
+## Phase 2 の前提
 
-- 標準描画は PixiJS v8.17.0 + RenderTexture へのライブラスター焼き込み。
-- 描画、履歴、レイヤー構造、アニメ本体の挙動を変えない。
-- WebGPU / SDF / MSDF / WebGL2 Mesh 経路は凍結継続。
+- 描画、履歴、保存形式、アルバム形式は不用意に変えない。
 - `animationSystem.init()` は有効化しない。
+- WebGPU / SDF / MSDF / WebGL2 Mesh 経路は凍結継続。
+- アニメ、物理演算、動画ツール風タイムラインは後続。
+- エアブラシ、囲い塗り、定規、範囲選択などの描画補助も後続。
 - `dist/` は成果物として必要ない限り差分に残さない。
-- 保存形式の大変更、localStorage から IndexedDB への移行、HTMLエクスポート/インポート本実装は Codex判断へ戻す。
 
 ---
 
-## 直近の状態
+## 今回の作業
 
-Codex確認済み：
-
-- Console は起動ログと popup 表示/非表示ログ中心で、致命的エラーなし。
-- `ui/ui-icons.js` が新設され、主要UIのアイコン参照は共通化済み。
-- `UI_ICONS.download` のSVG座標、フォルダ開閉アイコン、不要importは Codex が軽微補修済み。
-- `npm.cmd run build` 成功済み。
-
----
-
-## 今回の主作業
-
-### 1. アルバム保存経路を棚卸し
+### 1. レイヤー関連の棚卸し
 
 確認する：
 
-- `tegaki_work/ui/album-popup.js`
-- `tegaki_work/system/virtual-album.js`
-- `tegaki_work/system/project-manager.js`
-- `tegaki_work/ui/ui-icons.js`
-- `tegaki_work/styles/main.css`
+- `system/layer-system.js`
+- `ui/layer-panel-renderer.js`
+- `system/layer-transform.js`
+- `system/drawing/thumbnail-system.js`
+- `ui/ui-icons.js`
+- `styles/main.css`
 
 `PROGRESS.md` に短く書く：
 
-- 現在のアルバム正本は localStorage か IndexedDB か。
-- `VirtualAlbum` は現行UIで使われているか。
-- HTMLエクスポート/インポートに必要そうなデータ。
+- レイヤー作成/削除/複製/結合の責務。
+- レイヤーパネル描画とイベント処理の責務。
+- クリッピング、フォルダ、複数選択を入れる場合の影響範囲。
+- すぐ直せる小さなUI不整合。
+- Codex判断へ戻すべき大きな設計判断。
 
-### 2. アルバムカードのドラッグ並べ替え
+### 2. 低リスクなら小修正
 
-実装方針：
+候補：
 
-- 既存依存の `sortablejs` を使う。
-- `#albumGallery` 内のカードをドラッグ可能にする。
-- 並べ替え後に `this.snapshots` の順番を更新し、`_saveToStorage()` で保存する。
+- レイヤーパネルの表示密度に関する小さなCSS調整。
+- 削除/閉じるボタンの見た目の残り不整合。
+- 透明度UIやアイコン配置の軽い整備。
+- ヘッダーと実依存のズレ修正。
 
-受け入れ条件：
+やらない：
 
-- アルバムカードをドラッグして順番変更できる。
-- popupを閉じて開き直しても順番が維持される。
-- カードクリックで復元する既存挙動が壊れない。
-- ダウンロード/削除ボタンのクリックがドラッグや復元クリックと干渉しない。
-
-### 3. 選択状態の土台
-
-初回推奨：
-
-- `this.selectedSnapshotIds = new Set()` を `AlbumPopup` に持つ。
-- `Ctrl+クリック` で選択トグル。
-- 通常クリックは従来どおり復元。
-- 選択中カードに class を付け、見た目だけ分かるようにする。
-
-注意：
-
-- Shift範囲選択、ドラッグ範囲選択、一括移動は初回では実装しない。
-- 一括削除や一括エクスポートは、低リスクならボタンだけ追加してもよいが、迷う場合は設計メモまで。
-
-### 4. HTML保存/読込の設計メモ
-
-初回で本実装しない：
-
-- アルバム全体HTMLエクスポート。
-- HTMLインポート。
-- 階層構造つきアルバム。
-
-`NOTES.md` か `PROGRESS.md` に書く：
-
-- HTMLに含めるべき情報。
-- `projectData` と thumbnail の両方が必要な理由。
-- ファイルサイズ問題。
-- 旧保存データとの互換性。
-- localStorage / IndexedDB / HTML ファイルの役割分担案。
+- クリッピング/フォルダの本実装。
+- 複数レイヤー一括操作の本実装。
+- レイヤー内部データ構造の変更。
+- ToonSquid風UIへの大改修。
 
 ---
 
-## ビルドと確認
+## ドラッグ感触について
 
-必須：
+アルバム並べ替えは動作完了扱い。
+Windows風の「薄いカードがホバリングして追従する」感触は SortableJS 調整だけでは未達。
+
+レイヤーパネルのドラッグを触る場合も、まず既存 SortableJS を維持する。
+独自ドラッグUIが必要だと判断したら実装せず Codexへ戻す。
+
+---
+
+## ビルド
 
 ```powershell
 cd tegaki_work
 npm.cmd run build
 ```
 
-可能ならブラウザ確認：
-
-1. 起動時に致命的エラーがない。
-2. アルバムを開ける。
-3. 現在の状態を保存できる。
-4. カードをドラッグで並べ替えできる。
-5. 閉じて開いても順番が残る。
-6. カードクリック復元、個別PNG保存、削除が壊れていない。
-
 ---
 
 ## Codex判断へ戻す条件
 
-- localStorage から IndexedDB への移行が必要になる。
-- 既存アルバムデータの互換性を壊す必要がある。
-- `ProjectManager` の保存形式変更が必要になる。
-- ドラッグとクリック復元が安定して共存しない。
-- HTMLエクスポート/インポートの本実装が必要になる。
+- レイヤーの内部データ構造変更が必要。
+- クリッピングやフォルダが保存形式・履歴形式に影響する。
+- 複数レイヤー操作が複雑化する。
+- レイヤーパネルの大幅なUI再設計が必要。
+- SortableJS ではなく独自ドラッグUIが必要。

@@ -1013,9 +1013,6 @@ export class LayerSystem {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
         if (!activeLayer?.layerData) return;
-        const worldScale = this.cameraSystem ? this.cameraSystem.worldContainer.scale.x : 1;
-        const adjustedDx = dx / worldScale;
-        const adjustedDy = dy / worldScale;
         const layerId = activeLayer.layerData.id;
         let transform = this.transform.getTransform(layerId);
         if (!transform) {
@@ -1037,8 +1034,8 @@ export class LayerSystem {
                 return;
             }
         } else {
-            transform.x += adjustedDx;
-            transform.y += adjustedDy;
+            transform.x += dx;
+            transform.y += dy;
         }
         this.transform.applyTransform(activeLayer, transform, centerX, centerY);
         this.transform.updateTransformPanelValues(activeLayer);

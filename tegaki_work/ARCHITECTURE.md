@@ -50,7 +50,10 @@
 
 - **プロジェクト保存**: `ProjectManager` が担当。
     - 全レイヤーのメタデータと画像を JSON にまとめ、ローカルファイルとして保存。
-- **アルバム保管**: `VirtualAlbum` が担当。IndexedDB に `projectData` とサムネイルを保存。
+- **アルバム保管**: 現行UIでは `AlbumPopup` が担当し、`localStorage` の `tegaki_album` を正本にする。
+    - 各スナップショットは `thumbnail` と `projectData` を持つ。
+    - アルバムHTML書き出しは、サムネイル表示と `tegaki-album-data` JSONをHTML内に埋め込む。
+    - `VirtualAlbum` は IndexedDB 版の未接続実装として残っているため、正本に切り替える場合は設計判断が必要。
 - **画像出力**: `ExportManager` -> `PNGExporter`。全表示レイヤーを一時的な `RenderTexture` へレンダリングして PNG を抽出。
 
 ---
@@ -109,5 +112,5 @@ Phase 1k での整理方針：
 
 ---
 
-*最終更新日: 2026-05-17 (Phase 1k)*
+*最終更新日: 2026-05-17 (Phase 2 handoff)*
 
