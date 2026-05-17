@@ -6,7 +6,7 @@
  * 被依存: ui-panels.js, core-engine.js
  * 公開API: LayerPanelRenderer
  * イベント発火: ui:layer-selected, ui:background-color-change-requested
- * イベント受信: layer:*, folder:*, thumbnail:layer-updated, animation:frame-changed, camera:resized
+ * イベント受信: layer:*, folder:*, thumbnail:updated, animation:frame-changed, camera:resized
  * グローバル登録: window.LayerPanelRenderer
  * 実装状態: ✅完成/整備
  * ============================================================================
@@ -186,8 +186,8 @@ export class LayerPanelRenderer {
             opacity:0.9;
             border:1px solid #e9c2ba;
             border-radius:4px;
-            padding:5px 7px;
-            margin-bottom:4px;
+            padding:4px 6px;
+            margin-bottom:3px;
             margin-left:${leftOffset}px;
             cursor:grab;
             display:grid;
@@ -205,7 +205,6 @@ export class LayerPanelRenderer {
         if (isActive) {
             folderDiv.style.borderColor = '#ff6600';
             folderDiv.style.borderWidth = '2px';
-            folderDiv.style.padding = '4px 6px';
         }
 
         const ear = this._createFolderEar(isExpanded);
@@ -361,6 +360,9 @@ export class LayerPanelRenderer {
         layerDiv.dataset.layerIndex = index;
 
         const isBackground = layer.layerData?.isBackground || false;
+        if (isBackground) {
+            layerDiv.classList.add('background-layer');
+        }
         const allLayers = this.layerSystem?.getLayers() || [];
         const indentLevel = this._calculateIndentLevel(layer, allLayers);
         const leftOffset = indentLevel * 12;
@@ -373,8 +375,8 @@ export class LayerPanelRenderer {
             opacity:0.9;
             border:1px solid #e9c2ba;
             border-radius:4px;
-            padding:5px 7px;
-            margin-bottom:4px;
+            padding:4px 6px;
+            margin-bottom:3px;
             margin-left:${leftOffset}px;
             cursor:${isBackground ? 'default' : 'grab'};
             display:grid;
@@ -392,7 +394,6 @@ export class LayerPanelRenderer {
         if (isActive && !isBackground) {
             layerDiv.style.borderColor = '#ff6600';
             layerDiv.style.borderWidth = '2px';
-            layerDiv.style.padding = '4px 6px';
         }
 
         if (hasParent) {
@@ -486,14 +487,6 @@ export class LayerPanelRenderer {
 
         const deleteBtn = this._createDeleteButton(index);
         layerDiv.appendChild(deleteBtn);
-
-        layerDiv.addEventListener('mouseenter', () => {
-            deleteBtn.style.opacity = '1';
-        });
-
-        layerDiv.addEventListener('mouseleave', () => {
-            deleteBtn.style.opacity = '0.4';
-        });
 
         layerDiv.addEventListener('click', (e) => {
             if (e.target.closest('.layer-delete-button') ||

@@ -24,6 +24,43 @@
 
 ## 直近の作業（最新が上）
 
+### 2026-05-17 Codex確認：Phase 2初回Gemini作業レビューとPhase 2b企画
+- **Console確認**: 更新された `TegakiConsole.txt` は起動成功と album popup 表示ログ中心。致命的な `TypeError` / `ReferenceError` は見当たらない。
+- **Gemini差分確認**: `layer-panel-renderer.js` のヘッダー更新、レイヤー行 padding/margin の微調整、削除ボタン hover 処理の CSS への一本化、`main.css` のレイヤーパネル padding 微調整に収まっている。前回のような丸ごと上書きや対象外ファイルへの横展開はなし。
+- **ビルド確認**: `tegaki_work` で `npm.cmd run build` 成功。生成された `dist/` 差分は成果物ではないため整理済み。
+- **Phase 2b企画**: 次はレイヤーパネルUIスリム化の設計確認へ進む。レイヤー行は情報表示を優先し、複製/結合/削除/透明度などの編集操作は将来的にアクティブレイヤー操作バーへ寄せる方針。ただし 2b ではクリッピング本体、複数選択本体、保存/履歴形式変更、ToonSquid風全面再設計は行わない。
+- **担当切り分け**: レイヤーパネルDOM再配置やアクティブ操作バー新設は Codex が直接担当する。Gemini は棚卸し、PROGRESS記録、50行以内の小修正、Codex指定の局所変更のみ担当可能。
+- **指示書更新**: `task-gemini/phase2b.md` を作成し、`GEMINI作業指示書.txt` を Phase 2b 用へ更新。
+
+### 2026-05-17 Gemini：Phase 2 開始・初期棚卸し (Initial Inventory)
+- **ビルド確認**: `npm.cmd run build` 成功。
+- **レイヤー関連の棚卸し結果**:
+    - `system/layer-system.js`: レイヤー作成/削除/複製/結合の実処理を担当。`LayerModel` を使用し、各 PIXI Container に `layerData` としてメタデータを保持する構造。
+    - `ui/layer-panel-renderer.js`: DOM ベースの UI 描画を担当。`grid` レイアウト（90px 64px 3行）を使用し、SortableJS で並べ替えを実現。サムネイル更新は `ThumbnailSystem` からのイベント駆動。
+    - `system/layer-transform.js`: Vキー変形（一時状態）と確定 bake 処理を担当。
+    - `system/drawing/thumbnail-system.js`: `extract.pixels()` による非同期サムネイル生成を担当。Vキーモード中はスキップする最適化済み。
+- **Phase 2 への影響範囲分析**:
+    - **クリッピング**: `layer-panel-renderer.js` に状態アイコンの追加が必要。`layer-system.js` で PIXI の BlendMode またはマスク処理の組み込みが必要。
+    - **フォルダ**: 既存の `parentId` 判定とインデント表示の仕組みがあるが、さらなる階層化や一括操作への拡張余地あり。
+    - **複数選択**: `activeLayerIndex`（単一）から `activeLayerIds`（Set等）への拡張が `LayerSystem` と UI 両面で必要。
+- **低リスク小修正**:
+    - `layer-panel-renderer.js` のヘッダー情報を最新化。
+    - `layer-item` の表示密度向上のため、CSS マージンを微調整（4px -> 3px）。
+    - 削除ボタンのホバー挙動が CSS と JS で重複していた部分を整理。
+
+### 2026-05-17 Codex：Phase 2開始・Gemini事故復旧後の安全な初回小修正
+- **復旧確認**: `tegaki_work_バックアップ` を `tegaki_work` に戻した状態で確認。`ui/layer-panel-renderer.js` と `ui/dom-builder.js` は破損短縮版ではなく、Phase 1m 完了時の内容へ戻っている。
+- **ビルド確認**: 初回は `dist/` 生成物削除の権限問題で失敗。権限付き再実行で `npm.cmd run build` 成功。ソース起因の parse error は解消済み。
+- **Gemini再発防止**: `GEMINI.md`、`GEMINI作業指示書.txt`、`task-gemini/phase2.md` に、既存JS丸ごと上書き禁止、`layer-panel-renderer.js` 大幅短縮禁止、対象外ファイルへの横展開禁止、ビルド失敗時の連鎖修正禁止を追記。
+- **Phase 2棚卸し**:
+    - `system/layer-system.js`: レイヤー作成/削除/複製/結合、フォルダ作成/開閉/子管理、opacity、順序変更、変形 bake などの実処理を担当。
+    - `ui/layer-panel-renderer.js`: レイヤーパネル DOM、可視/複製/結合/不透明度/名前編集/サムネイル枠、SortableJS 並べ替えを担当。保存形式や履歴形式は持たない。
+    - `system/layer-transform.js`: Vキー変形の一時 transform と確定 bake 周辺。Phase 2 初回では触らない。
+    - `system/drawing/thumbnail-system.js`: RenderTexture からのサムネイル生成と `thumbnail:updated` 通知を担当。レイヤーUI密度変更だけで触るべきではない。
+    - `ui/ui-icons.js` / `styles/main.css`: 既存の共通アイコンと小ボタンCSSは利用可能。ただしJS構造を壊してまでCSSへ移す作業はしない。
+- **小修正**: `layer-panel-renderer.js` で背景レイヤーに既存CSS用の `background-layer` class を付与。既に `main.css` に用意されていた背景レイヤー専用 hover/drag 抑制スタイルが実際に効くようにした。
+- **Codex判断へ戻す設計事項**: クリッピングのデータ構造、レイヤーフォルダの保存/履歴対象、複数レイヤー一括結合や一括移動、ToonSquid風の大幅UI再設計。
+
 ### 2026-05-17 Codex判断：Phase 1m完了、Phase 2へ移行準備
 - **Console確認**: 更新された `TegakiConsole.txt` は起動ログと album popup 表示ログ中心。致命的エラーは見当たらない。
 - **アルバム完了判定**: オーナーが HTML エクスポート、HTML インポート、アルバム復元を確認済み。アルバムは Phase 1m の完成形として扱う。

@@ -203,7 +203,7 @@ canvas {
     display: flex; 
     flex-direction: column; 
     gap: 3px; 
-    padding: 4px; 
+    padding: 3px; 
     pointer-events: all; 
     max-height: 60vh; 
     overflow-y: auto; 
