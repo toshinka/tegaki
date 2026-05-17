@@ -13,6 +13,9 @@
  */
 
 import { Container, Graphics, RenderTexture } from 'pixi.js';
+import Sortable from 'sortablejs';
+
+import { UI_ICONS } from './ui-icons.js';
 
 export class AlbumPopup {
     constructor(dependencies = {}) {
@@ -23,6 +26,8 @@ export class AlbumPopup {
         this.popup = null;
         this.isVisible = false;
         this.snapshots = [];
+        this.selectedSnapshotIds = new Set();
+        this.sortable = null;
         
         this._loadSnapshots();
         this._ensurePopupElement();
@@ -247,80 +252,40 @@ export class AlbumPopup {
         if (!gallery) return;
 
         gallery.innerHTML = '';
+        
+        if (this.sortable) {
+            this.sortable.destroy();
+            this.sortable = null;
+        }
 
-        this.snapshots.forEach(snapshot => {
+        this.snapshots.forEach((snapshot, index) => {
             const card = document.createElement('div');
-            card.style.cssText = `
-                background: #ffffee;
-                border: 1px solid var(--futaba-light-medium);
-                border-radius: 6px;
-                overflow: hidden;
-                transition: all 0.2s;
-                width: 130px;
-                height: 130px;
-                display: flex;
-                flex-direction: column;
-            `;
+            card.className = 'album-card';
+            if (this.selectedSnapshotIds.has(snapshot.id)) {
+                card.classList.add('selected');
+            }
+            card.dataset.id = snapshot.id;
+            card.dataset.index = index;
             
             const thumbnailContainer = document.createElement('div');
-            thumbnailContainer.style.cssText = `
-                width: 130px;
-                height: 98px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                overflow: hidden;
-                background: #ffffee;
-                flex-shrink: 0;
-            `;
+            thumbnailContainer.className = 'thumbnail-container';
 
             const img = document.createElement('img');
             img.src = snapshot.thumbnail;
-            img.style.cssText = `
-                display: block;
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-                cursor: pointer;
-            `;
             
-            img.onclick = (e) => {
-                e.stopPropagation();
-                this._loadSnapshot(snapshot);
-            };
-
             thumbnailContainer.appendChild(img);
 
             const actions = document.createElement('div');
-            actions.style.cssText = `
-                height: 32px;
-                padding: 4px;
-                display: flex;
-                gap: 4px;
-                border-top: 1px solid var(--futaba-light-medium);
-                align-items: center;
-                flex-shrink: 0;
-            `;
-
-            card.onmouseenter = () => {
-                card.style.transform = 'translateY(-2px)';
-                card.style.borderColor = 'var(--futaba-maroon)';
-                card.style.boxShadow = '0 4px 8px rgba(128, 0, 0, 0.2)';
-            };
-            card.onmouseleave = () => {
-                card.style.transform = 'translateY(0)';
-                card.style.borderColor = 'var(--futaba-light-medium)';
-                card.style.boxShadow = 'none';
-            };
+            actions.className = 'actions';
 
             const downloadBtn = this._createIconButton(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+                UI_ICONS.download,
                 'var(--futaba-maroon)',
                 () => this._downloadAsPNG(snapshot)
             );
             
             const delBtn = this._createIconButton(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
+                UI_ICONS.trash,
                 '#800000',
                 () => this._deleteSnapshot(snapshot.id)
             );
@@ -330,43 +295,54 @@ export class AlbumPopup {
 
             card.appendChild(thumbnailContainer);
             card.appendChild(actions);
+            
+            // カード全体のクリックイベント
+            card.addEventListener('click', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    e.stopPropagation();
+                    if (this.selectedSnapshotIds.has(snapshot.id)) {
+                        this.selectedSnapshotIds.delete(snapshot.id);
+                        card.classList.remove('selected');
+                    } else {
+                        this.selectedSnapshotIds.add(snapshot.id);
+                        card.classList.add('selected');
+                    }
+                    return;
+                }
+                
+                // ボタンのクリックは _createIconButton 側で stopPropagation している想定
+                this._loadSnapshot(snapshot);
+            });
+
             gallery.appendChild(card);
+        });
+
+        // SortableJS の初期化
+        this.sortable = new Sortable(gallery, {
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            onEnd: () => {
+                const newOrder = [];
+                const cards = gallery.querySelectorAll('.album-card');
+                cards.forEach(card => {
+                    const id = parseInt(card.dataset.id);
+                    const snap = this.snapshots.find(s => s.id === id);
+                    if (snap) newOrder.push(snap);
+                });
+                this.snapshots = newOrder;
+                this._saveToStorage();
+                // index 属性の更新などのために再レンダリングは不要だが、
+                // 必要なら dataset.index を更新する
+            }
         });
     }
 
     _createIconButton(svgContent, color, onClick) {
         const btn = document.createElement('button');
+        btn.className = 'ui-icon-button ui-icon-button--small';
         btn.innerHTML = svgContent;
-        btn.style.cssText = `
-            background: var(--futaba-background);
-            border: 1px solid var(--futaba-light-medium);
-            color: ${color};
-            padding: 4px;
-            cursor: pointer;
-            border-radius: 4px;
-            transition: all 0.2s;
-            width: 28px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        `;
+        btn.style.color = color;
         
-        const hoverColor = color === '#800000' ? '#d32f2f' : color;
-        
-        btn.onmouseenter = () => {
-            btn.style.background = hoverColor;
-            btn.style.borderColor = hoverColor;
-            const svg = btn.querySelector('svg');
-            if (svg) svg.setAttribute('stroke', 'white');
-        };
-        btn.onmouseleave = () => {
-            btn.style.background = 'var(--futaba-background)';
-            btn.style.borderColor = 'var(--futaba-light-medium)';
-            const svg = btn.querySelector('svg');
-            if (svg) svg.setAttribute('stroke', color);
-        };
         btn.onclick = (e) => {
             e.stopPropagation();
             onClick();

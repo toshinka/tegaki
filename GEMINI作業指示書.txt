@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 1j 初回作業 2026-05-17
+# GEMINI作業指示書：Phase 1l 初回作業 2026-05-17
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 1i は Vパネル改善、反転、数値入力、レイヤー不透明度、コピー系の小型操作まで完了扱い。次は新機能追加ではなく、AI が読み取りやすく改修しやすい構造整理、ヘッダー同期、命名/責務棚卸しを行う。
+目的：Phase 1k は UI アイコン・小ボタン共通化まで完了扱い。次はオーナーメモ追加分3を受けて、アルバムカードのドラッグ並べ替えと選択状態の土台を作る。HTMLエクスポート/インポートは影響が大きいため、初回は設計メモまでを基本とする。
 
 ---
 
@@ -13,134 +13,96 @@
 3. `GEMINI.md`
 4. `tegaki_work/PROGRESS.md`
 5. `tegaki_work/NOTES.md`
-6. `task-gemini/phase1j.md`
-7. この `GEMINI作業指示書.txt`
+6. `tegaki_work/ARCHITECTURE.md`
+7. `task-gemini/phase1l.md`
+8. この `GEMINI作業指示書.txt`
 
 ---
 
 ## 今回の前提
 
 - 標準描画は PixiJS v8.17.0 + RenderTexture へのライブラスター焼き込み。
-- レイヤーは `Container + Sprite(RenderTexture)`。
-- `animationSystem.init()` は現行描画へ副作用が出るため使わない。
+- 描画、履歴、レイヤー構造、アニメ本体の挙動を変えない。
 - WebGPU / SDF / MSDF / WebGL2 Mesh 経路は凍結継続。
+- `animationSystem.init()` は有効化しない。
 - `dist/` は成果物として必要ない限り差分に残さない。
-- 大規模リネーム、ファイル移動、未接続ファイル削除、EventBus payload 変更は実装しない。候補として記録するだけ。
+- 保存形式の大変更、localStorage から IndexedDB への移行、HTMLエクスポート/インポート本実装は Codex判断へ戻す。
+
+---
+
+## 直近の状態
+
+Codex確認済み：
+
+- Console は起動ログと popup 表示/非表示ログ中心で、致命的エラーなし。
+- `ui/ui-icons.js` が新設され、主要UIのアイコン参照は共通化済み。
+- `UI_ICONS.download` のSVG座標、フォルダ開閉アイコン、不要importは Codex が軽微補修済み。
+- `npm.cmd run build` 成功済み。
 
 ---
 
 ## 今回の主作業
 
-### 1. 構造マップ作成
+### 1. アルバム保存経路を棚卸し
 
-`tegaki_work/ARCHITECTURE.md` を作成する。
+確認する：
 
-必ず実コードを確認して書くこと：
+- `tegaki_work/ui/album-popup.js`
+- `tegaki_work/system/virtual-album.js`
+- `tegaki_work/system/project-manager.js`
+- `tegaki_work/ui/ui-icons.js`
+- `tegaki_work/styles/main.css`
 
-- 起動順序。
-- 描画経路。
-- レイヤー/変形/サムネイル経路。
-- UI/ポップアップ/ショートカット経路。
-- 保存/アルバム/エクスポート経路。
-- 凍結中の WebGL2 / SDF / MSDF / animation 本体の扱い。
-- 主要 EventBus 契約。
+`PROGRESS.md` に短く書く：
+
+- 現在のアルバム正本は localStorage か IndexedDB か。
+- `VirtualAlbum` は現行UIで使われているか。
+- HTMLエクスポート/インポートに必要そうなデータ。
+
+### 2. アルバムカードのドラッグ並べ替え
+
+実装方針：
+
+- 既存依存の `sortablejs` を使う。
+- `#albumGallery` 内のカードをドラッグ可能にする。
+- 並べ替え後に `this.snapshots` の順番を更新し、`_saveToStorage()` で保存する。
+
+受け入れ条件：
+
+- アルバムカードをドラッグして順番変更できる。
+- popupを閉じて開き直しても順番が維持される。
+- カードクリックで復元する既存挙動が壊れない。
+- ダウンロード/削除ボタンのクリックがドラッグや復元クリックと干渉しない。
+
+### 3. 選択状態の土台
+
+初回推奨：
+
+- `this.selectedSnapshotIds = new Set()` を `AlbumPopup` に持つ。
+- `Ctrl+クリック` で選択トグル。
+- 通常クリックは従来どおり復元。
+- 選択中カードに class を付け、見た目だけ分かるようにする。
 
 注意：
 
-- `PastFiles` の内容を現行構造として書かない。
-- 実装詳細を長く写さない。次に読むべき入口と責務境界を示す。
+- Shift範囲選択、ドラッグ範囲選択、一括移動は初回では実装しない。
+- 一括削除や一括エクスポートは、低リスクならボタンだけ追加してもよいが、迷う場合は設計メモまで。
 
-### 2. ファイルヘッダー同期
+### 4. HTML保存/読込の設計メモ
 
-優先して確認する：
+初回で本実装しない：
 
-- `tegaki_work/core-engine.js`
-- `tegaki_work/system/layer-system.js`
-- `tegaki_work/system/layer-transform.js`
-- `tegaki_work/system/drawing/brush-core.js`
-- `tegaki_work/system/drawing/drawing-engine.js`
-- `tegaki_work/system/drawing/thumbnail-system.js`
-- `tegaki_work/system/project-manager.js`
-- `tegaki_work/system/export-manager.js`
-- `tegaki_work/system/drawing-clipboard.js`
-- `tegaki_work/ui/ui-panels.js`
-- `tegaki_work/ui/layer-panel-renderer.js`
-- `tegaki_work/ui/keyboard-handler.js`
-- `tegaki_work/ui/dom-builder.js`
+- アルバム全体HTMLエクスポート。
+- HTMLインポート。
+- 階層構造つきアルバム。
 
-直してよい：
+`NOTES.md` か `PROGRESS.md` に書く：
 
-- ヘッダーの責務、依存、被依存、イベント、グローバル登録のズレ。
-- 古い `ベクター`、`phase1a`、現行方針と違うコメント。
-- 存在しないファイル名や古い参照パス。
-
-直さず記録する：
-
-- ファイル移動。
-- rename。
-- 関数分割。
-- EventBus 名や payload の変更。
-- window 公開の整理。
-
-### 3. 命名・重複責務棚卸し
-
-`tegaki_work/PROGRESS.md` に分類して書く。
-
-- 今直せる。
-- Codex 判断へ戻す。
-- 凍結維持。
-- 後続機能フェーズ。
-
-特に見る観点：
-
-- `system/` と `ui/` に同じ責務が重複していないか。
-- UIボタンと keyboard/EventBus の二重発火リスク。
-- thumbnail / project / album / export の責務境界。
-- `window.*` と ESM import の混在箇所。
-
-### 4. 小UI棚卸し
-
-オーナーメモ追加分を整理する。
-
-確認対象：
-
-- レイヤーサムネイルの削除ボタンが見えないがクリック領域だけある問題。
-- popup の `X` ボタン有無とデザイン統一。
-- popup 外クリックで閉じる仕様との共存。
-- レイヤー左右フリック削除、ピンチ操作などタッチ系要望の実装候補。
-
-低リスクなら直してよい：
-
-- 消えている削除ボタンの CSS 表示復旧。
-- 既存 class の軽微な見た目統一。
-
-実装しない：
-
-- フリック削除。
-- ピンチ操作。
-- popup の大規模再設計。
-
-### 5. Phase 1i 残件確認
-
-短く確認する：
-
-- V確定後サムネイルが即時更新されるか。
-- V反転が即表示されるか。
-- Shiftドラッグが拡縮/回転で排他になっているか。
-- History ステータスが破綻していないか。
-
-狭い不具合なら直してよい。履歴/RenderTexture/座標に深く絡む場合は `PROGRESS.md` に書いて止める。
-
----
-
-## 必ず守ること
-
-- 新機能を広げない。
-- レイヤー構造を大幅に変えない。
-- `animationSystem.init()` を有効化しない。
-- WebGPU / SDF / MSDF / WebGL2 Mesh を復活させない。
-- `dist/` 差分を残さない。
-- 調査用 `console.log` を残さない。残す場合は debug 限定にする。
+- HTMLに含めるべき情報。
+- `projectData` と thumbnail の両方が必要な理由。
+- ファイルサイズ問題。
+- 旧保存データとの互換性。
+- localStorage / IndexedDB / HTML ファイルの役割分担案。
 
 ---
 
@@ -153,28 +115,21 @@ cd tegaki_work
 npm.cmd run build
 ```
 
-可能ならブラウザで確認：
+可能ならブラウザ確認：
 
 1. 起動時に致命的エラーがない。
-2. 通常ペンで描ける。
-3. Vパネルが壊れていない。
-4. レイヤーサムネイルが更新される。
-5. History 表示が破綻しない。
+2. アルバムを開ける。
+3. 現在の状態を保存できる。
+4. カードをドラッグで並べ替えできる。
+5. 閉じて開いても順番が残る。
+6. カードクリック復元、個別PNG保存、削除が壊れていない。
 
 ---
 
-## PROGRESS 更新
+## Codex判断へ戻す条件
 
-作業後に `tegaki_work/PROGRESS.md` の先頭へ追記する。
-
-必ず書く：
-
-- 作成/更新したファイル。
-- 構造マップの要点。
-- ヘッダー同期したファイル。
-- 今直した低リスク修正。
-- Codex 判断へ戻す候補。
-- 実装しなかった要望と理由。
-- `npm.cmd run build` 結果。
-- ブラウザ確認結果。
-- 残った問題。
+- localStorage から IndexedDB への移行が必要になる。
+- 既存アルバムデータの互換性を壊す必要がある。
+- `ProjectManager` の保存形式変更が必要になる。
+- ドラッグとクリック復元が安定して共存しない。
+- HTMLエクスポート/インポートの本実装が必要になる。
