@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 2 初回棚卸し 2026-05-17
+# GEMINI作業指示書：Phase 2b レイヤーパネルUI整理 2026-05-17
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 1m は完了扱い。次は Phase 2 として、レイヤーパネルとレイヤー操作の基盤を整理する。初回は大きく作り替えず、棚卸しと低リスクな小修正に絞る。
+目的：Phase 2 初回棚卸しは完了。次は Phase 2b として、レイヤーパネルUIスリム化の設計確認へ進む。ただし Gemini に任せる場合は、大きく作り替えず、棚卸しと Codex が指定した小修正だけに絞る。
 
 ---
 
@@ -15,7 +15,8 @@
 5. `tegaki_work/PHASE2_HANDOFF.md`
 6. `tegaki_work/ARCHITECTURE.md`
 7. `task-gemini/phase2.md`
-8. この `GEMINI作業指示書.txt`
+8. `task-gemini/phase2b.md`
+9. この `GEMINI作業指示書.txt`
 
 ---
 
@@ -32,40 +33,41 @@
 
 ## 今回の作業
 
-### 1. レイヤー関連の棚卸し
+### 0. 今回の再発防止ルール
+
+前回、`ui/layer-panel-renderer.js` を大幅短縮して上書きし、`ui/dom-builder.js` 末尾に壊れた断片が混入して起動不能になった。
+今回は以下を厳守する。
+
+- `write_file` 相当で既存 JS を丸ごと上書きしない。
+- `ui/layer-panel-renderer.js` の大規模短縮、クラス再構成、DOM 構造の置換をしない。
+- 指定対象外の `timeline-ui.js`、`album-popup.js`、`dom-builder.js`、`ui-icons.js` へ作業を広げない。
+- CSS へ寄せるために既存 JS ロジックやインライン保護処理を削らない。
+- ビルドが失敗したら、追加修正を連鎖させず停止して原因を報告する。
+- 差分は小さく保つ。50 行を超える変更が必要なら Codex へ戻す。
+
+### 1. Phase 2b の確認
 
 確認する：
 
-- `system/layer-system.js`
+- `task-gemini/phase2b.md`
 - `ui/layer-panel-renderer.js`
-- `system/layer-transform.js`
-- `system/drawing/thumbnail-system.js`
-- `ui/ui-icons.js`
 - `styles/main.css`
+- `system/layer-system.js`
 
 `PROGRESS.md` に短く書く：
 
-- レイヤー作成/削除/複製/結合の責務。
-- レイヤーパネル描画とイベント処理の責務。
-- クリッピング、フォルダ、複数選択を入れる場合の影響範囲。
-- すぐ直せる小さなUI不整合。
-- Codex判断へ戻すべき大きな設計判断。
+- レイヤー行から外せる操作候補。
+- アクティブレイヤー操作バーへ移すべき操作候補。
+- クリッピング/複数選択/フォルダで Codex 判断へ戻す点。
+- Gemini が触ってよい小修正があるか。
 
-### 2. 低リスクなら小修正
+### 2. 実装してよい範囲
 
-候補：
+Codex が明示した場合だけ、50 行以内で以下を実装してよい。
 
-- レイヤーパネルの表示密度に関する小さなCSS調整。
-- 削除/閉じるボタンの見た目の残り不整合。
-- 透明度UIやアイコン配置の軽い整備。
-- ヘッダーと実依存のズレ修正。
-
-やらない：
-
-- クリッピング/フォルダの本実装。
-- 複数レイヤー一括操作の本実装。
-- レイヤー内部データ構造の変更。
-- ToonSquid風UIへの大改修。
+- CSS の余白やサイズの微調整。
+- ヘッダーとイベント名の同期。
+- class 付与などの局所接続。
 
 ---
 
@@ -95,3 +97,4 @@ npm.cmd run build
 - 複数レイヤー操作が複雑化する。
 - レイヤーパネルの大幅なUI再設計が必要。
 - SortableJS ではなく独自ドラッグUIが必要。
+- アクティブレイヤー操作バーを新設したくなった。
