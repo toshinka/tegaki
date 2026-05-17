@@ -27,6 +27,7 @@ export class AlbumPopup {
         this.isVisible = false;
         this.snapshots = [];
         this.selectedSnapshotIds = new Set();
+        this.lastSelectedSnapshotId = null;
         this.sortable = null;
         
         this._loadSnapshots();
@@ -300,13 +301,15 @@ export class AlbumPopup {
             card.addEventListener('click', (e) => {
                 if (e.ctrlKey || e.metaKey) {
                     e.stopPropagation();
-                    if (this.selectedSnapshotIds.has(snapshot.id)) {
-                        this.selectedSnapshotIds.delete(snapshot.id);
-                        card.classList.remove('selected');
-                    } else {
-                        this.selectedSnapshotIds.add(snapshot.id);
-                        card.classList.add('selected');
-                    }
+                    this._toggleSnapshotSelection(snapshot.id);
+                    this._renderGallery();
+                    return;
+                }
+
+                if (e.shiftKey) {
+                    e.stopPropagation();
+                    this._selectSnapshotRange(snapshot.id);
+                    this._renderGallery();
                     return;
                 }
                 
@@ -337,6 +340,36 @@ export class AlbumPopup {
         });
     }
 
+    _toggleSnapshotSelection(id) {
+        if (this.selectedSnapshotIds.has(id)) {
+            this.selectedSnapshotIds.delete(id);
+        } else {
+            this.selectedSnapshotIds.add(id);
+            this.lastSelectedSnapshotId = id;
+        }
+    }
+
+    _selectSnapshotRange(id) {
+        if (!this.lastSelectedSnapshotId || !this.snapshots.some(s => s.id === this.lastSelectedSnapshotId)) {
+            this.selectedSnapshotIds.add(id);
+            this.lastSelectedSnapshotId = id;
+            return;
+        }
+
+        const start = this.snapshots.findIndex(s => s.id === this.lastSelectedSnapshotId);
+        const end = this.snapshots.findIndex(s => s.id === id);
+        if (start === -1 || end === -1) {
+            this.selectedSnapshotIds.add(id);
+            this.lastSelectedSnapshotId = id;
+            return;
+        }
+
+        const [from, to] = start < end ? [start, end] : [end, start];
+        for (let i = from; i <= to; i++) {
+            this.selectedSnapshotIds.add(this.snapshots[i].id);
+        }
+    }
+
     _createIconButton(svgContent, color, onClick) {
         const btn = document.createElement('button');
         btn.className = 'ui-icon-button ui-icon-button--small';
@@ -358,7 +391,20 @@ export class AlbumPopup {
     }
 
     _deleteSnapshot(id) {
-        this.snapshots = this.snapshots.filter(s => s.id !== id);
+        const deleteIds = this.selectedSnapshotIds.has(id) && this.selectedSnapshotIds.size > 1
+            ? Array.from(this.selectedSnapshotIds)
+            : [id];
+
+        if (deleteIds.length > 1 && !window.confirm(`${deleteIds.length}件のアルバム項目を削除しますか？`)) {
+            return;
+        }
+
+        const deleteSet = new Set(deleteIds);
+        this.snapshots = this.snapshots.filter(s => !deleteSet.has(s.id));
+        deleteIds.forEach(deleteId => this.selectedSnapshotIds.delete(deleteId));
+        if (this.lastSelectedSnapshotId && deleteSet.has(this.lastSelectedSnapshotId)) {
+            this.lastSelectedSnapshotId = null;
+        }
         this._saveToStorage();
         this._renderGallery();
     }
@@ -380,6 +426,8 @@ export class AlbumPopup {
         if (stored) {
             try {
                 this.snapshots = JSON.parse(stored);
+                this.selectedSnapshotIds.clear();
+                this.lastSelectedSnapshotId = null;
             } catch (e) {
                 this.snapshots = [];
             }
