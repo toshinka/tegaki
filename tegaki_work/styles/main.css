@@ -356,6 +356,125 @@ canvas {
     animation: fadeIn 0.3s; 
 }
 
+.ui-close-button {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--futaba-medium);
+    color: var(--futaba-background);
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s, opacity 0.2s;
+    line-height: 1;
+    user-select: none;
+}
+
+.ui-close-button:hover {
+    background: var(--futaba-maroon);
+    transform: scale(1.1);
+}
+
+.ui-close-button:active {
+    transform: scale(0.95);
+}
+
+.ui-close-button svg {
+    fill: none;
+    stroke: currentColor;
+    pointer-events: none;
+}
+
+.ui-close-button--small {
+    width: 13px;
+    height: 13px;
+}
+
+.ui-close-button--small svg {
+    width: 8px;
+    height: 8px;
+    stroke-width: 4;
+}
+
+.ui-close-button--medium {
+    width: 20px;
+    height: 20px;
+}
+
+.ui-close-button--medium svg {
+    width: 13px;
+    height: 13px;
+    stroke-width: 3;
+}
+
+/* ===== 統一アイコンボタン ===== */
+.ui-icon-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.ui-icon-button:hover {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+    border-color: var(--futaba-maroon);
+}
+
+.ui-icon-button svg {
+    pointer-events: none;
+}
+
+.ui-icon-button--small {
+    width: 20px;
+    height: 20px;
+    padding: 2px;
+}
+
+.ui-icon-button--small svg {
+    width: 14px;
+    height: 14px;
+}
+
+.ui-icon-button--medium {
+    width: 28px;
+    height: 24px;
+    padding: 4px;
+}
+
+.ui-icon-button--medium svg {
+    width: 16px;
+    height: 16px;
+}
+
+.popup-close-btn,
+.quick-access-close-btn {
+    top: 6px;
+    right: 6px;
+    z-index: 10;
+}
+
+.layer-delete-button {
+    top: 3px;
+    right: 3px;
+    z-index: 10;
+    opacity: 0.4;
+}
+
+.layer-item:hover .layer-delete-button {
+    opacity: 1;
+}
+
 @keyframes fadeIn { 
     from { 
         opacity: 0; 
@@ -459,38 +578,6 @@ canvas {
     min-width: 280px !important;
     max-width: 300px;
     padding: 14px !important;
-}
-
-.quick-access-close-btn {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 20px;
-    height: 20px;
-    background: var(--futaba-medium);
-    border: none;
-    border-radius: 50%;
-    color: var(--futaba-background);
-    font-size: 14px;
-    font-weight: bold;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    z-index: 10;
-    line-height: 1;
-    padding: 0;
-    user-select: none;
-}
-
-.quick-access-close-btn:hover {
-    background: var(--futaba-maroon);
-    transform: scale(1.1);
-}
-
-.quick-access-close-btn:active {
-    transform: scale(0.95);
 }
 
 /* ===== クイックアクセス - ツールボタン統一 ===== */
@@ -1027,6 +1114,66 @@ canvas {
     cursor: context-menu;
     display: block;
     margin: 0 auto;
+}
+
+/* ===== アルバムポップアップ追加スタイル ===== */
+.album-card {
+    background: #ffffee;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: all 0.2s;
+    width: 130px;
+    height: 130px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    cursor: grab;
+    user-select: none;
+}
+
+.album-card:active {
+    cursor: grabbing;
+}
+
+.album-card.selected {
+    border: 3px solid #ff8c42 !important;
+    box-shadow: 0 0 8px rgba(255, 140, 66, 0.5) !important;
+    transform: translateY(-2px);
+}
+
+.album-card .thumbnail-container {
+    width: 130px;
+    height: 98px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #ffffee;
+    flex-shrink: 0;
+    pointer-events: none; /* 下の画像へのクリックを貫通させないため、あるいはカード全体のクリックで制御 */
+}
+
+.album-card img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.album-card .actions {
+    height: 32px;
+    padding: 4px;
+    display: flex;
+    gap: 4px;
+    border-top: 1px solid var(--futaba-light-medium);
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.sortable-ghost {
+    opacity: 0.4;
+    background: var(--futaba-light-medium) !important;
 }
 
 #settings-popup {
