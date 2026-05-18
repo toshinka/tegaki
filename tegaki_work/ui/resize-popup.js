@@ -37,8 +37,9 @@ export class ResizePopup {
         this.horizontalAlign = 'center';
         this.verticalAlign = 'center';
         
-        this.MIN_SIZE = 100;
-        this.MAX_SIZE = 2000;
+        const canvasConfig = window.TEGAKI_CONFIG?.canvas || {};
+        this.MIN_SIZE = canvasConfig.minSize || 100;
+        this.MAX_SIZE = canvasConfig.maxSize || 2500;
         
         this._ensurePopupElement();
     }

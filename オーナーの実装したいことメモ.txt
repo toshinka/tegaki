@@ -163,3 +163,41 @@ monitor-up　※ロードアイコン候補
 lucide-static
 https://lucide.dev/icons/
 
+
+物理演算アニメ導入時のWEBGPU利用について、現状を他GPTに聞いて返ってきた解答が以下。
+***
+
+ざっと見た限り、現状のWebGL2基盤としては大丈夫そうです。ただし、将来の「物理演算だけWebGPU化」を考えると、少し注意点があります。
+
+良い点は、構成上すでに core-engine.js がサブシステムを束ね、LayerSystem、DrawingEngine、StrokeRenderer、WebGL2系コンポーネントを分けて初期化していることです。WebGL2系も webgl2-drawing-layer.js、gl-stroke-processor.js、gl-texture-bridge.js、gl-msdf-pipeline.js、gl-mask-layer.js に分離されています。これは後から WebGPUPhysicsEngine や WebGPUMeshDeformer を追加しやすい形です。
+
+一方で、現状はPixiJSの RenderTexture 依存がかなり中心です。レイヤー作成・リサイズ・焼き込み・変形ベイクがPixi/RenderTextureを前提にしているので、WebGPUを差し込む場合は「描画レイヤー全体をWebGPU化」より、まずは物理計算結果だけを座標・メッシュ・変形パラメータとして返す方式が安全です。
+
+特に気になるのは window.* グローバル登録が多い点です。これは今の開発速度には便利ですが、将来WebGL2版・WebGPU版・CPU版を差し替える時に依存関係が見えにくくなります。CoreEngine 経由で依存注入する形に寄せると、WebGPU物理演算を独立モジュールとして入れやすくなります。
+
+現状のおすすめ判断はこうです。
+
+WebGL2継続で問題なし。WebGPU化を急ぐ必要はない。
+ただし、今のうちに PhysicsEngine 用の空の差し込み口を作っておくとよいです。
+
+class CPUPhysicsEngine {}
+class WebGPUPhysicsEngine {}
+
+そして基幹データは、
+
+layer.renderTexture
+mesh.glBuffer
+
+のようにGPUリソース直結で持たず、
+
+object.meshData
+object.bones
+object.physicsParams
+object.transform
+
+のようにAPI非依存で持つのが安全です。
+
+今の構成で一番危ないのは「WebGPUが入らないこと」ではなく、物理演算対象までPixi Container / RenderTexture / window参照に密結合してしまうことです。そこだけ避ければ、このまま進めて大丈夫そうです。
+
+
+
