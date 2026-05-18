@@ -1,107 +1,107 @@
-# GitHubURL — tegaki_work ファイル一覧
+# GitHubURL — PastFiles/tegaki_phase2c ファイル一覧
 # 用途：ClaudeがGitHubから直接ファイルを読み込む際のURL集
 # 更新ルール：新規ファイル追加・削除・フォルダ名変更のたびに必ず更新すること
 
 # ベースURL
-# https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/
+# https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/
 
 ---
 
 ## エントリポイント・スタイル
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/index.html
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/styles/main.css
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/index.html
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/styles/main.css
 
 ## コンフィグ・座標系
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/config.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/coordinate-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/config.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/coordinate-system.js
 
 ## イベント
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/event-bus.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/event-bus.js
 
 ## データモデル
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/data-models.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/batch-api.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/data-models.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/batch-api.js
 
 ## デバッグ
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/debug-utils.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/debug-utils.js
 
 ## システム
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/popup-manager.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/state-manager.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/settings-manager.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/camera-system.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/layer-transform.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/checker-utils.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/layer-system.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing-clipboard.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/history.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/virtual-album.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/popup-manager.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/state-manager.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/settings-manager.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/camera-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/layer-transform.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/checker-utils.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/layer-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing-clipboard.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/history.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/virtual-album.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/animation-system.js
 
 ## Drawing System - Base
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/pointer-handler.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/pressure-handler.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/stroke-recorder.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/pointer-handler.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/pressure-handler.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/stroke-recorder.js
 
 ## Drawing System - 統合
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/thumbnail-system.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/brush-settings.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/stroke-transformer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/blend-modes.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/raster-brush-core.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/brush-core.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/fill-tool.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/drawing-engine.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/stroke-renderer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/thumbnail-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/brush-settings.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/stroke-transformer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/blend-modes.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/raster-brush-core.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/brush-core.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/fill-tool.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/drawing-engine.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/stroke-renderer.js
 
 ## Drawing System - WebGL2
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/webgl2-drawing-layer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/gl-stroke-processor.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/gl-texture-bridge.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/gl-msdf-pipeline.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/gl-mask-layer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/earcut-triangulator.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/encode.frag.glsl
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/jfa-pass.frag.glsl
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/render.frag.glsl
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/render.vert.glsl
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/webgl2/shaders/seed-init.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/webgl2-drawing-layer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/gl-stroke-processor.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/gl-texture-bridge.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/gl-msdf-pipeline.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/gl-mask-layer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/earcut-triangulator.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/shaders/encode.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/shaders/jfa-pass.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/shaders/render.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/shaders/render.vert.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/drawing/webgl2/shaders/seed-init.frag.glsl
 
 ## Processing
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/processing/vector-operations.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/processing/vector-operations.js
 
 ## エクスポート
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/quick-export-ui.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/export-manager.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/png-exporter.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/webp-exporter.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/psd-exporter.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/apng-exporter.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/webm-exporter.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/mp4-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/quick-export-ui.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/export-manager.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/exporters/png-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/exporters/webp-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/exporters/psd-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/exporters/apng-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/exporters/webm-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/system/exporters/mp4-exporter.js
 
 ## UI
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/dom-builder.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/slider-utils.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/keyboard-handler.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/aked/main/tegaki_work/ui/resize-popup.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-panel-renderer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/status-display-renderer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/timeline-thumbnail-utils.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/timeline-ui.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/album-popup.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/settings-popup.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/quick-access-popup.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/export-popup.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/ui-panels.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/dom-builder.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/slider-utils.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/keyboard-handler.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/aked/main/PastFiles/tegaki_phase2c/ui/resize-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/layer-panel-renderer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/status-display-renderer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/timeline-thumbnail-utils.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/timeline-ui.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/album-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/settings-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/quick-access-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/export-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/ui/ui-panels.js
 
 ## Core
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/core-runtime.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/core-engine.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/core-initializer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/core-runtime.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/core-engine.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/core-initializer.js
 
 ## Libs（ローカル同梱）
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/libs/gsap.min.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/libs/gsap.min.js
 
 ---
 # ⚠️ パス要確認ファイル（コンソールでは読み込まれているが正確なパスが不明）
@@ -120,9 +120,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/li
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CLAUDE_HANDOFF.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/TegakiConsole.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/GitHubURL.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/PROGRESS.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2c/TegakiConsole.txt
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CODEX.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI作業指示書.txt

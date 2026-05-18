@@ -190,6 +190,14 @@ export class UIController {
                 return;
             }
 
+            const layerAttributeBtn = e.target.closest('#layer-attribute-panel-btn');
+            if (layerAttributeBtn) {
+                this.eventBus?.emit('ui:layer-attribute-panel-requested', {
+                    anchorElement: layerAttributeBtn
+                });
+                return;
+            }
+
             const duplicateActiveBtn = e.target.closest('#duplicate-active-layer-btn');
             if (duplicateActiveBtn) {
                 this.handleActiveLayerOperation('duplicate', duplicateActiveBtn);
@@ -261,9 +269,45 @@ export class UIController {
         }
 
         if (action === 'delete') {
+            const batchDeleteIndexes = this._getBatchDeleteLayerIndexes(activeIndex);
+            if (batchDeleteIndexes.length > 1) {
+                batchDeleteIndexes.forEach(index => {
+                    this.layerManager.deleteLayer?.(index);
+                });
+                return stop();
+            }
             this.layerManager.deleteLayer?.(activeIndex);
             return stop();
         }
+    }
+
+    _getBatchDeleteLayerIndexes(activeIndex) {
+        const layers = this.layerManager?.getLayers?.() || [];
+        const selectedIds = new Set(this.layerManager?.getSelectedLayerIds?.() || []);
+        if (selectedIds.size <= 1) return [];
+
+        const hasSelectedAncestor = (layer) => {
+            let parentId = layer?.layerData?.parentId || null;
+            const visited = new Set();
+            while (parentId && !visited.has(parentId)) {
+                visited.add(parentId);
+                if (selectedIds.has(parentId)) return true;
+                const parent = layers.find(candidate => candidate.layerData?.id === parentId);
+                parentId = parent?.layerData?.parentId || null;
+            }
+            return false;
+        };
+
+        return layers
+            .map((layer, index) => ({ layer, index }))
+            .filter(({ layer }) => {
+                const data = layer?.layerData;
+                if (!data?.id || data.isBackground) return false;
+                if (!selectedIds.has(data.id)) return false;
+                return !hasSelectedAncestor(layer);
+            })
+            .map(({ index }) => index)
+            .sort((a, b) => b - a);
     }
     
     handleToolClick(button) {

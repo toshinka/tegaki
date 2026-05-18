@@ -1,12 +1,12 @@
 /**
  * ============================================================================
  * ファイル名: ui/layer-panel-renderer.js
- * 責務: レイヤーパネルのUI（レイヤー一覧、可視性、透明度、並び替え）を描画する
+ * 責務: レイヤーパネルのUI（レイヤー一覧、選択、可視性、透明度、合成モード、クリッピング状態、並び替え）を描画する
  * 依存: layer-system.js, thumbnail-system.js, event-bus.js, config.js, Sortable
  * 被依存: ui-panels.js, core-engine.js
  * 公開API: LayerPanelRenderer
  * イベント発火: ui:layer-selected, ui:background-color-change-requested
- * イベント受信: layer:*, folder:*, thumbnail:updated, animation:frame-changed, camera:resized
+ * イベント受信: layer:*, folder:*, thumbnail:updated, animation:frame-changed, camera:resized, ui:layer-attribute-panel-requested
  * グローバル登録: window.LayerPanelRenderer
  * 実装状態: ✅完成/整備
  * ============================================================================
@@ -25,8 +25,18 @@ export class LayerPanelRenderer {
         this._editingLayerIndex = -1;
         this._editingInput = null;
         this._updateTimeout = null;
+        this._layerAttributePopup = null;
+        this._attributePopupLayerIndex = -1;
+        this._attributePopupAnchorElement = null;
+        this._attributePopupDrag = null;
+        this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
+        this._handleAttributePopupKeydown = this._handleAttributePopupKeydown.bind(this);
+        this._handleAttributePopupDragMove = this._handleAttributePopupDragMove.bind(this);
+        this._handleAttributePopupDragEnd = this._handleAttributePopupDragEnd.bind(this);
+        this._handleLayerPanelKeydown = this._handleLayerPanelKeydown.bind(this);
 
         this._setupEventListeners();
+        document.addEventListener('keydown', this._handleLayerPanelKeydown, true);
 
         requestAnimationFrame(() => {
             this._initializeRender();
@@ -65,10 +75,16 @@ export class LayerPanelRenderer {
         this.eventBus.on('layer:deleted', () => this.requestUpdate());
         this.eventBus.on('layer:activated', ({ layerIndex }) => {
             this._applyActiveLayerState(layerIndex);
+            if (this._layerAttributePopup?.classList.contains('show')) {
+                this._retargetLayerAttributePopup(layerIndex);
+            }
             this.requestUpdate();
         });
         this.eventBus.on('layer:visibility-changed', () => this.requestUpdate());
         this.eventBus.on('layer:opacity-changed', () => this.requestUpdate());
+        this.eventBus.on('layer:blend-mode-changed', () => this.requestUpdate());
+        this.eventBus.on('layer:clipping-changed', () => this.requestUpdate());
+        this.eventBus.on('layer:multi-selection-changed', () => this.requestUpdate());
         this.eventBus.on('layer:background-color-changed', () => this.requestUpdate());
         this.eventBus.on('layer:name-changed', () => this.requestUpdate());
         this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
@@ -121,6 +137,10 @@ export class LayerPanelRenderer {
                 this.layerSystem.setActiveLayer(layerIndex);
             }
         });
+
+        this.eventBus.on('ui:layer-attribute-panel-requested', ({ anchorElement } = {}) => {
+            this.showActiveLayerAttributePopup(anchorElement);
+        });
     }
 
     requestUpdate() {
@@ -147,16 +167,18 @@ export class LayerPanelRenderer {
 
         const reversedLayers = [...layers].reverse();
         const reversedActiveIndex = layers.length - 1 - activeIndex;
+        const selectedLayerIds = new Set(this.layerSystem?.getSelectedLayerIds?.() || []);
 
         reversedLayers.forEach((layer, reversedIndex) => {
             const originalIndex = layers.length - 1 - reversedIndex;
             const isActive = originalIndex === activeIndex;
+            const isSelected = selectedLayerIds.has(layer.layerData?.id);
 
             if (this._isLayerHiddenByClosedFolder(layer, layers)) return;
 
             const layerElement = layer.layerData?.isFolder
-                ? this.createFolderElement(layer, originalIndex, isActive, layers)
-                : this.createLayerElement(layer, originalIndex, isActive, animationSystem);
+                ? this.createFolderElement(layer, originalIndex, isActive, layers, isSelected)
+                : this.createLayerElement(layer, originalIndex, isActive, animationSystem, isSelected);
 
             this.container.appendChild(layerElement);
         });
@@ -165,11 +187,14 @@ export class LayerPanelRenderer {
         this._updateScrollState();
     }
 
-    createFolderElement(folder, index, isActive, allLayers) {
+    createFolderElement(folder, index, isActive, allLayers, isSelected = false) {
         const folderDiv = document.createElement('div');
         folderDiv.className = 'layer-item folder-item';
         if (isActive) {
             folderDiv.classList.add('active');
+        }
+        if (isSelected) {
+            folderDiv.classList.add('selected');
         }
         folderDiv.dataset.layerIndex = index;
         folderDiv.dataset.isFolder = 'true';
@@ -206,17 +231,26 @@ export class LayerPanelRenderer {
         if (isActive) {
             folderDiv.style.borderColor = '#ff6600';
             folderDiv.style.borderWidth = '2px';
+        } else if (isSelected) {
+            folderDiv.style.borderColor = 'rgba(255, 140, 66, 0.6)';
         }
 
         const thumbnail = this.createFolderThumbnail(folder, index, allLayers);
         thumbnail.style.cssText = 'grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;';
         folderDiv.appendChild(thumbnail);
 
-        const nameSpan = this._createLayerName(folder, index);
-        nameSpan.style.cssText = 'grid-column:2;grid-row:1;color:#800000;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding:0;height:20px;display:flex;align-items:center;';
-        folderDiv.appendChild(nameSpan);
+        const details = document.createElement('div');
+        details.style.cssText = 'grid-column:2;grid-row:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;height:32px;';
 
-        const clipStatus = this._createClipStatusIcon(folder);
+        const opacityContainer = this._createOpacityControl(folder, index);
+        details.appendChild(opacityContainer);
+
+        const nameSpan = this._createLayerName(folder, index);
+        nameSpan.style.cssText = 'color:#800000;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding:0;height:16px;display:flex;align-items:center;min-width:0;';
+        details.appendChild(nameSpan);
+        folderDiv.appendChild(details);
+
+        const clipStatus = this._createClipStatusIcon(folder, index);
         clipStatus.style.gridColumn = '3';
         clipStatus.style.gridRow = '1';
         folderDiv.appendChild(clipStatus);
@@ -229,6 +263,7 @@ export class LayerPanelRenderer {
         folderDiv.addEventListener('click', (e) => {
             if (e.target.closest('.layer-delete-button') ||
                 e.target.closest('.layer-visibility') ||
+                e.target.closest('.layer-opacity-control') ||
                 e.target.closest('.folder-toggle-icon') ||
                 this._editingLayerIndex >= 0) {
                 return;
@@ -238,9 +273,7 @@ export class LayerPanelRenderer {
                 window.stateManager.setLastActivePanel('layer');
             }
 
-            if (this.layerSystem?.setActiveLayer) {
-                this.layerSystem.setActiveLayer(index);
-            }
+            this._handleLayerItemClick(e, index);
         });
 
         return folderDiv;
@@ -377,11 +410,14 @@ export class LayerPanelRenderer {
         return false;
     }
 
-    createLayerElement(layer, index, isActive, animationSystem) {
+    createLayerElement(layer, index, isActive, animationSystem, isSelected = false) {
         const layerDiv = document.createElement('div');
         layerDiv.className = 'layer-item';
         if (isActive) {
             layerDiv.classList.add('active');
+        }
+        if (isSelected) {
+            layerDiv.classList.add('selected');
         }
         layerDiv.dataset.layerIndex = index;
 
@@ -421,6 +457,8 @@ export class LayerPanelRenderer {
         if (isActive && !isBackground) {
             layerDiv.style.borderColor = '#ff6600';
             layerDiv.style.borderWidth = '2px';
+        } else if (isSelected && !isBackground) {
+            layerDiv.style.borderColor = 'rgba(255, 140, 66, 0.6)';
         }
 
         if (hasParent) {
@@ -484,7 +522,7 @@ export class LayerPanelRenderer {
         details.appendChild(nameSpan);
         layerDiv.appendChild(details);
 
-        const clipStatus = this._createClipStatusIcon(layer);
+        const clipStatus = this._createClipStatusIcon(layer, index);
         clipStatus.style.gridColumn = '3';
         clipStatus.style.gridRow = '1';
         layerDiv.appendChild(clipStatus);
@@ -496,7 +534,7 @@ export class LayerPanelRenderer {
 
         layerDiv.addEventListener('click', (e) => {
             if (e.target.closest('.layer-delete-button') ||
-                e.target.closest('.layer-opacity-control button') ||
+                e.target.closest('.layer-opacity-control') ||
                 e.target.closest('.layer-visibility') ||
                 this._editingLayerIndex >= 0) {
                 return;
@@ -506,23 +544,35 @@ export class LayerPanelRenderer {
                 window.stateManager.setLastActivePanel('layer');
             }
 
-            if (this.layerSystem?.setActiveLayer) {
-                this.layerSystem.setActiveLayer(index);
-            }
+            this._handleLayerItemClick(e, index);
         });
 
         return layerDiv;
     }
 
-    _createClipStatusIcon(layer) {
+    _createClipStatusIcon(layer, index = -1) {
         const clipIcon = document.createElement('div');
         clipIcon.className = 'layer-clip-status';
-        clipIcon.style.cssText = 'width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#800000;opacity:0.35;';
+        const isClipping = layer.layerData?.clipping === true;
+        const canToggle = !layer.layerData?.isBackground && !layer.layerData?.isFolder;
+        clipIcon.style.cssText = `width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#800000;opacity:${isClipping ? '1' : '0.28'};cursor:${canToggle ? 'pointer' : 'default'};`;
         clipIcon.title = layer.layerData?.clipping ? 'クリッピングON' : 'クリッピング未使用';
 
-        if (layer.layerData?.clipping) {
-            clipIcon.innerHTML = '<span style="font-size:13px;line-height:1;font-weight:bold;">C</span>';
-            clipIcon.style.opacity = '1';
+        if (canToggle || isClipping) {
+            clipIcon.innerHTML = UI_ICONS.paperclip;
+        }
+
+        if (canToggle) {
+            clipIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.layerSystem?.toggleLayerClipping) {
+                    this.layerSystem.toggleLayerClipping(index);
+                }
+                if (this._layerAttributePopup?.classList.contains('show') &&
+                    this._attributePopupLayerIndex === index) {
+                    this._syncLayerAttributePopup(this._layerAttributePopup, index);
+                }
+            });
         }
 
         return clipIcon;
@@ -569,67 +619,423 @@ export class LayerPanelRenderer {
     _createOpacityControl(layer, index) {
         const opacityContainer = document.createElement('div');
         opacityContainer.className = 'layer-opacity-control';
-        opacityContainer.style.cssText = 'display:flex;align-items:center;gap:2px;font-size:10px;user-select:none;height:14px;';
-
-        const decreaseBtn = document.createElement('button');
-        decreaseBtn.textContent = '◀';
-        decreaseBtn.style.cssText = 'padding:0;font-size:9px;line-height:1;height:12px;width:12px;cursor:pointer;border:none;background:transparent;color:#800000;flex-shrink:0;';
-        decreaseBtn.title = '透明度 -10%';
-        decreaseBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._adjustLayerOpacity(index, -0.1);
-        });
+        opacityContainer.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:10px;user-select:none;height:14px;min-width:0;';
 
         const opacityValue = document.createElement('span');
         opacityValue.className = 'layer-opacity-value';
         const currentOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
         opacityValue.textContent = `${Math.round(currentOpacity * 100)}%`;
-        opacityValue.style.cssText = 'min-width:30px;text-align:left;color:#800000;font-size:10px;font-weight:bold;flex-shrink:0;cursor:ew-resize;';
-        opacityValue.title = '左右ドラッグで数値を変更';
+        opacityValue.style.cssText = 'min-width:30px;text-align:left;color:#800000;font-size:10px;font-weight:bold;flex-shrink:0;cursor:default;';
+        opacityValue.title = '右サイドバーのスライダーアイコンでレイヤー属性';
 
-        // [指示書] 不透明度数値のドラッグ操作
-        let isDragging = false;
-        let startX = 0;
-        let startOpacity = 0;
+        const blendLabel = document.createElement('span');
+        blendLabel.className = 'layer-blend-mode-label';
+        const blendMode = layer.layerData?.blendMode || 'normal';
+        blendLabel.textContent = this._getBlendModeLabel(blendMode);
+        blendLabel.style.cssText = `color:#800000;font-size:9px;font-weight:bold;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:32px;opacity:${blendMode === 'normal' ? '0' : '0.72'};`;
 
-        opacityValue.addEventListener('pointerdown', (e) => {
-            isDragging = true;
-            startX = e.clientX;
-            startOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
-            opacityValue.setPointerCapture(e.pointerId);
-            e.stopPropagation();
-        });
-
-        opacityValue.addEventListener('pointermove', (e) => {
-            if (!isDragging) return;
-            const dx = e.clientX - startX;
-            // 1px あたり 1% 変化させる
-            const delta = dx / 100;
-            const newOpacity = Math.max(0, Math.min(1, startOpacity + delta));
-            this._setLayerOpacity(index, newOpacity);
-            e.stopPropagation();
-        });
-
-        opacityValue.addEventListener('pointerup', (e) => {
-            isDragging = false;
-            opacityValue.releasePointerCapture(e.pointerId);
-            e.stopPropagation();
-        });
-
-        const increaseBtn = document.createElement('button');
-        increaseBtn.textContent = '▶';
-        increaseBtn.style.cssText = 'padding:0;font-size:9px;line-height:1;height:12px;width:12px;cursor:pointer;border:none;background:transparent;color:#800000;flex-shrink:0;';
-        increaseBtn.title = '透明度 +10%';
-        increaseBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._adjustLayerOpacity(index, 0.1);
-        });
-
-        opacityContainer.appendChild(decreaseBtn);
         opacityContainer.appendChild(opacityValue);
-        opacityContainer.appendChild(increaseBtn);
+        opacityContainer.appendChild(blendLabel);
 
         return opacityContainer;
+    }
+
+    _showLayerAttributePopup(layerIndex, anchorElement) {
+        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+        if (!layer || layer.layerData?.isBackground) return;
+
+        if (this.layerSystem?.setActiveLayer) {
+            this.layerSystem.setActiveLayer(layerIndex);
+        }
+
+        const popup = this._ensureLayerAttributePopup();
+        this._attributePopupLayerIndex = layerIndex;
+        this._attributePopupAnchorElement = anchorElement;
+        popup.dataset.layerIndex = String(layerIndex);
+        this._renderLayerAttributePopupContent(popup, layerIndex);
+
+        popup.classList.add('show');
+        popup.style.display = 'block';
+        this._positionLayerAttributePopup(popup, anchorElement);
+
+        requestAnimationFrame(() => {
+            document.addEventListener('pointerdown', this._handleAttributePopupOutsidePointerDown, true);
+            document.addEventListener('keydown', this._handleAttributePopupKeydown, true);
+        });
+    }
+
+    showActiveLayerAttributePopup(anchorElement = null) {
+        const activeIndex = this.layerSystem?.getActiveLayerIndex?.();
+        if (typeof activeIndex !== 'number' || activeIndex < 0) return;
+        const fallbackAnchor = this.container?.querySelector(`.layer-item[data-layer-index="${activeIndex}"]`);
+        this._showLayerAttributePopup(activeIndex, anchorElement || fallbackAnchor);
+    }
+
+    _ensureLayerAttributePopup() {
+        if (this._layerAttributePopup?.isConnected) {
+            return this._layerAttributePopup;
+        }
+
+        const popup = document.createElement('div');
+        popup.className = 'layer-attribute-popup';
+        popup.setAttribute('role', 'dialog');
+        popup.setAttribute('aria-label', 'レイヤー属性');
+        document.body.appendChild(popup);
+        this._layerAttributePopup = popup;
+        return popup;
+    }
+
+    _renderLayerAttributePopupContent(popup, layerIndex) {
+        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+        if (!layer?.layerData) return;
+
+        const opacity = Math.round((layer.alpha ?? layer.layerData.opacity ?? 1) * 100);
+        const blendMode = layer.layerData.blendMode || 'normal';
+        const clipping = layer.layerData.clipping === true;
+        const isFolder = layer.layerData.isFolder === true;
+        const layerName = this._escapeHtml(layer.layerData.name || 'レイヤー');
+        const presets = [0, 25, 50, 75, 100];
+        const blendModes = [
+            { value: 'normal', label: '通常' },
+            { value: 'multiply', label: '乗算' },
+            { value: 'add', label: '加算' },
+            { value: 'overlay', label: 'オーバーレイ' }
+        ];
+
+        popup.innerHTML = `
+            <div class="layer-attribute-popup__header">
+                <div class="layer-attribute-drag-strip" title="ドラッグして移動"></div>
+                <button type="button" class="layer-attribute-title" data-action="rename-layer" title="名前変更">${layerName}</button>
+                <button type="button" class="layer-attribute-close" data-action="close-popup" title="閉じる">${UI_ICONS.close}</button>
+            </div>
+            <div class="layer-attribute-popup__presets">
+                ${presets.map(value => `<button type="button" class="layer-attribute-preset${value === opacity ? ' active' : ''}" data-opacity="${value}" title="${value}%">${value}</button>`).join('')}
+            </div>
+            <div class="layer-attribute-popup__slider-row">
+                <input class="layer-attribute-opacity-slider" type="range" min="0" max="100" step="1" value="${opacity}" aria-label="透明度">
+                <span class="layer-attribute-opacity-label" title="ダブルクリックで数値入力">${opacity}%</span>
+            </div>
+            ${isFolder ? '' : `
+                <div class="layer-attribute-popup__attribute-row">
+                    <label class="layer-attribute-blend-field">
+                        <span class="layer-attribute-blend-label">合成</span>
+                        <select class="layer-attribute-blend-select" aria-label="合成モード">
+                            ${blendModes.map(mode => `<option value="${mode.value}"${mode.value === blendMode ? ' selected' : ''}>${mode.label}</option>`).join('')}
+                        </select>
+                    </label>
+                    <button type="button" class="layer-attribute-clip-toggle${clipping ? ' active' : ''}" data-action="toggle-clipping" title="クリッピング">
+                        ${UI_ICONS.paperclip}
+                    </button>
+                </div>
+            `}
+        `;
+
+        popup.querySelector('[data-action="close-popup"]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._hideLayerAttributePopup();
+        });
+
+        popup.querySelector('[data-action="rename-layer"]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._editLayerAttributeNameValue(popup, layerIndex);
+        });
+
+        popup.querySelector('.layer-attribute-drag-strip')?.addEventListener('pointerdown', (e) => {
+            this._startLayerAttributePopupDrag(e, popup);
+        });
+
+        popup.querySelectorAll('[data-opacity]').forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const value = parseInt(button.dataset.opacity, 10);
+                this._setLayerOpacity(layerIndex, value / 100);
+                this._syncLayerAttributePopup(popup, layerIndex);
+            });
+        });
+
+        const slider = popup.querySelector('.layer-attribute-opacity-slider');
+        slider?.addEventListener('input', (e) => {
+            e.stopPropagation();
+            const value = parseInt(e.target.value, 10);
+            this._setLayerOpacity(layerIndex, value / 100);
+            this._syncLayerAttributePopup(popup, layerIndex);
+        });
+
+        popup.querySelector('.layer-attribute-opacity-label')?.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            this._editLayerAttributeOpacityValue(popup, layerIndex);
+        });
+
+        const blendSelect = popup.querySelector('.layer-attribute-blend-select');
+        blendSelect?.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (this.layerSystem?.setLayerBlendMode) {
+                this.layerSystem.setLayerBlendMode(layerIndex, e.target.value);
+            }
+            this._syncLayerAttributePopup(popup, layerIndex);
+        });
+
+        popup.querySelector('[data-action="toggle-clipping"]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this.layerSystem?.toggleLayerClipping) {
+                this.layerSystem.toggleLayerClipping(layerIndex);
+            }
+            this._syncLayerAttributePopup(popup, layerIndex);
+        });
+    }
+
+    _syncLayerAttributePopup(popup, layerIndex) {
+        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+        if (!layer?.layerData) {
+            this._hideLayerAttributePopup();
+            return;
+        }
+
+        const opacity = Math.round((layer.alpha ?? layer.layerData.opacity ?? 1) * 100);
+        const blendMode = layer.layerData.blendMode || 'normal';
+        const clipping = layer.layerData.clipping === true;
+
+        const slider = popup.querySelector('.layer-attribute-opacity-slider');
+        if (slider) slider.value = String(opacity);
+        const label = popup.querySelector('.layer-attribute-opacity-label');
+        if (label) label.textContent = `${opacity}%`;
+
+        popup.querySelectorAll('[data-opacity]').forEach(button => {
+            button.classList.toggle('active', parseInt(button.dataset.opacity, 10) === opacity);
+        });
+        const select = popup.querySelector('.layer-attribute-blend-select');
+        if (select) select.value = blendMode;
+        popup.querySelector('[data-action="toggle-clipping"]')?.classList.toggle('active', clipping);
+    }
+
+    _positionLayerAttributePopup(popup, anchorElement) {
+        const anchorRect = anchorElement.getBoundingClientRect();
+        const popupRect = popup.getBoundingClientRect();
+        const margin = 8;
+        const layerListRect = this.container?.getBoundingClientRect?.();
+        const activeItemRect = this.container
+            ?.querySelector(`.layer-item[data-layer-index="${this._attributePopupLayerIndex}"]`)
+            ?.getBoundingClientRect?.();
+        const preferredLeft = layerListRect
+            ? layerListRect.left - popupRect.width - margin
+            : anchorRect.left - popupRect.width - margin;
+        const fallbackLeft = layerListRect
+            ? layerListRect.right + margin
+            : anchorRect.right + margin;
+        const left = preferredLeft >= margin
+            ? preferredLeft
+            : Math.min(window.innerWidth - popupRect.width - margin, fallbackLeft);
+        const anchorTop = activeItemRect?.top ?? anchorRect.top;
+        const top = Math.max(
+            margin,
+            Math.min(window.innerHeight - popupRect.height - margin, anchorTop - 8)
+        );
+
+        popup.style.left = `${left}px`;
+        popup.style.top = `${top}px`;
+    }
+
+    _getBlendModeLabel(blendMode) {
+        const labels = {
+            normal: '',
+            multiply: '乗算',
+            add: '加算',
+            overlay: 'OL'
+        };
+        return labels[blendMode] || '';
+    }
+
+    _handleAttributePopupOutsidePointerDown(e) {
+        if (!this._layerAttributePopup?.classList.contains('show')) return;
+        if (this._layerAttributePopup.contains(e.target)) return;
+        if (this.container?.contains(e.target)) return;
+        this._hideLayerAttributePopup();
+    }
+
+    _handleAttributePopupKeydown(e) {
+        if (e.key === 'Escape') {
+            this._hideLayerAttributePopup();
+        }
+    }
+
+    _hideLayerAttributePopup() {
+        if (!this._layerAttributePopup) return;
+        this._layerAttributePopup.classList.remove('show');
+        this._layerAttributePopup.style.display = 'none';
+        this._attributePopupLayerIndex = -1;
+        this._attributePopupAnchorElement = null;
+        this._handleAttributePopupDragEnd();
+        document.removeEventListener('pointerdown', this._handleAttributePopupOutsidePointerDown, true);
+        document.removeEventListener('keydown', this._handleAttributePopupKeydown, true);
+    }
+
+    _retargetLayerAttributePopup(layerIndex) {
+        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+        if (!layer || layer.layerData?.isBackground) return;
+
+        const popup = this._layerAttributePopup;
+        if (!popup) return;
+
+        this._attributePopupLayerIndex = layerIndex;
+        popup.dataset.layerIndex = String(layerIndex);
+        this._renderLayerAttributePopupContent(popup, layerIndex);
+    }
+
+    _startLayerAttributePopupDrag(e, popup) {
+        if (!popup?.classList.contains('show')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = popup.getBoundingClientRect();
+        this._attributePopupDrag = {
+            pointerId: e.pointerId,
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            captureTarget: popup
+        };
+        try {
+            popup.setPointerCapture?.(e.pointerId);
+        } catch (err) {}
+        document.addEventListener('pointermove', this._handleAttributePopupDragMove, { passive: false, capture: true });
+        document.addEventListener('pointerup', this._handleAttributePopupDragEnd, { capture: true });
+        document.addEventListener('pointercancel', this._handleAttributePopupDragEnd, { capture: true });
+    }
+
+    _handleAttributePopupDragMove(e) {
+        if (!this._attributePopupDrag || !this._layerAttributePopup) return;
+        if (e.pointerId !== this._attributePopupDrag.pointerId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const popup = this._layerAttributePopup;
+        const rect = popup.getBoundingClientRect();
+        const margin = 4;
+        const left = Math.max(margin, Math.min(window.innerWidth - rect.width - margin, e.clientX - this._attributePopupDrag.offsetX));
+        const top = Math.max(margin, Math.min(window.innerHeight - rect.height - margin, e.clientY - this._attributePopupDrag.offsetY));
+        popup.style.left = `${left}px`;
+        popup.style.top = `${top}px`;
+    }
+
+    _handleAttributePopupDragEnd(e = null) {
+        if (!this._attributePopupDrag) return;
+        if (e && e.pointerId !== this._attributePopupDrag.pointerId) return;
+        const { pointerId, captureTarget } = this._attributePopupDrag;
+        try {
+            captureTarget?.releasePointerCapture?.(pointerId);
+        } catch (err) {}
+        document.removeEventListener('pointermove', this._handleAttributePopupDragMove, true);
+        document.removeEventListener('pointerup', this._handleAttributePopupDragEnd, true);
+        document.removeEventListener('pointercancel', this._handleAttributePopupDragEnd, true);
+        this._attributePopupDrag = null;
+    }
+
+    _editLayerAttributeOpacityValue(popup, layerIndex) {
+        const label = popup.querySelector('.layer-attribute-opacity-label');
+        if (!label || label.querySelector('input')) return;
+
+        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+        const opacity = Math.round((layer?.alpha ?? layer?.layerData?.opacity ?? 1) * 100);
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.max = '100';
+        input.step = '1';
+        input.value = String(opacity);
+        input.className = 'layer-attribute-opacity-input';
+        label.textContent = '';
+        label.appendChild(input);
+
+        const finish = (commit) => {
+            const raw = parseInt(input.value, 10);
+            const value = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : opacity;
+            if (commit) {
+                this._setLayerOpacity(layerIndex, value / 100);
+            }
+            this._syncLayerAttributePopup(popup, layerIndex);
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(false);
+            }
+        });
+        input.addEventListener('blur', () => finish(true));
+
+        requestAnimationFrame(() => {
+            input.focus();
+            input.select();
+        });
+    }
+
+    _editLayerAttributeNameValue(popup, layerIndex) {
+        const title = popup.querySelector('.layer-attribute-title');
+        if (!title || title.querySelector('input')) return;
+
+        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+        if (!layer?.layerData || layer.layerData.isBackground) return;
+
+        const originalName = layer.layerData.name || 'レイヤー';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = originalName;
+        input.className = 'layer-attribute-name-input';
+        title.textContent = '';
+        title.appendChild(input);
+
+        const finish = (commit) => {
+            const nextName = input.value.trim();
+            if (commit && nextName && nextName !== originalName) {
+                layer.layerData.name = nextName;
+                this.eventBus?.emit('layer:name-changed', {
+                    layerIndex,
+                    layerId: layer.layerData.id,
+                    oldName: originalName,
+                    newName: nextName
+                });
+            }
+            this._renderLayerAttributePopupContent(popup, layerIndex);
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(false);
+            }
+        });
+        input.addEventListener('blur', () => finish(true));
+
+        requestAnimationFrame(() => {
+            input.focus();
+            input.select();
+        });
+    }
+
+    _escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    _handleLayerItemClick(e, index) {
+        if (e.shiftKey && this.layerSystem?.selectLayerRange) {
+            this.layerSystem.selectLayerRange(index);
+        } else if ((e.ctrlKey || e.metaKey) && this.layerSystem?.toggleLayerSelection) {
+            this.layerSystem.toggleLayerSelection(index);
+        } else if (this.layerSystem?.setActiveLayer) {
+            this.layerSystem.setActiveLayer(index);
+        }
     }
 
     _createLayerName(layer, index) {
@@ -639,18 +1045,9 @@ export class LayerPanelRenderer {
         nameSpan.style.cssText = `grid-column:1;grid-row:3;color:#800000;font-size:10px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding:0;height:14px;display:flex;align-items:center;`;
 
         nameSpan.addEventListener('click', (e) => {
-            if (e.shiftKey) {
-                e.stopPropagation();
-                e.preventDefault();
-                if (this.layerSystem?.setActiveLayer) {
-                    this.layerSystem.setActiveLayer(index);
-                }
-                if (this._editingLayerIndex === -1) {
-                    setTimeout(() => this._editLayerName(nameSpan, layer, index), 20);
-                }
-            }
+            if (e.shiftKey || e.ctrlKey || e.metaKey) return;
         });
-        nameSpan.title = 'Shift+クリックで名前変更';
+        nameSpan.title = 'F2で名前変更';
 
         return nameSpan;
     }
@@ -901,9 +1298,29 @@ export class LayerPanelRenderer {
         this.container?.querySelectorAll('.layer-item').forEach(item => {
             const isActive = parseInt(item.dataset.layerIndex, 10) === activeIndex;
             item.classList.toggle('active', isActive);
-            item.style.borderColor = isActive ? '#ff6600' : '#e9c2ba';
+            const isSelected = item.classList.contains('selected');
+            item.style.borderColor = isActive ? '#ff6600' : (isSelected ? 'rgba(255, 140, 66, 0.6)' : '#e9c2ba');
             item.style.borderWidth = isActive ? '2px' : '1px';
         });
+    }
+
+    _handleLayerPanelKeydown(e) {
+        if (e.key !== 'F2') return;
+        const target = e.target;
+        if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+        if (this._editingLayerIndex >= 0) return;
+
+        const activeIndex = this.layerSystem?.getActiveLayerIndex?.();
+        if (typeof activeIndex !== 'number' || activeIndex < 0) return;
+
+        const item = this.container?.querySelector(`.layer-item[data-layer-index="${activeIndex}"]`);
+        const nameSpan = item?.querySelector('.layer-name');
+        const layer = this.layerSystem?.getLayers?.()?.[activeIndex];
+        if (!nameSpan || !layer || layer.layerData?.isBackground) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        this._editLayerName(nameSpan, layer, activeIndex);
     }
 
     initializeSortable() {
@@ -1152,6 +1569,10 @@ export class LayerPanelRenderer {
         if (this._updateTimeout) {
             clearTimeout(this._updateTimeout);
         }
+        document.removeEventListener('keydown', this._handleLayerPanelKeydown, true);
+        this._hideLayerAttributePopup();
+        this._layerAttributePopup?.remove();
+        this._layerAttributePopup = null;
         this._editingLayerIndex = -1;
         this._editingInput = null;
     }
