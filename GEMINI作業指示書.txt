@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 2g 複数選択レイヤーの一括操作 / レイヤー行判定の軽量化 2026-05-18
+# GEMINI作業指示書：Phase 2k キャンバス上限 / カメラ拡縮範囲の安全確認 2026-05-19
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 2f で複数選択の土台は入った。Phase 2g では、選択中レイヤーへ一括操作を接続する前の棚卸しと、Codex指定の小修正だけを行う。
+目的：Phase 2j でストロークの黒ずみと pointerup 後の線幅変化は一区切り。Phase 2k では、キャンバスサイズ変更の片辺上限を 2500px へ広げる準備と、キャンバス操作での拡縮倍率を少し広げるための影響範囲を棚卸しする。
 
 ---
 
@@ -14,21 +14,18 @@
 4. `tegaki_work/PROGRESS.md`
 5. `tegaki_work/NOTES.md`
 6. `tegaki_work/ARCHITECTURE.md`
-7. `task-gemini/phase2.md`
-8. `task-gemini/phase2g.md`
-9. この `GEMINI作業指示書.txt`
+7. `task-gemini/phase2k.md`
+8. この `GEMINI作業指示書.txt`
 
 ---
 
 ## 今回の最重要ルール
 
-- `ui/layer-panel-renderer.js` を丸ごと上書きしない。
-- 既存JSを短縮版へ置き換えない。
-- 指定外のファイルへ横展開しない。
-- フォルダD&D、SortableJS、独自ドラッグUIには触らない。
-- 一括削除、結合、フォルダ投入の本体実装は Codex 指示なしで行わない。
-- ビルドが失敗したら、連鎖修正せず停止して原因を報告する。
-- 差分は50行以内。超えるなら Codex へ戻す。
+- 内部キャンバス2倍化、`resolution: 2`、WebGL2 Mesh復活、WebGPU/SDF/MSDF採用はしない。
+- RenderTexture の基本構造、履歴スナップショット方式、保存形式は独自判断で変えない。
+- 2500px は第一候補。3000px は保留候補として扱い、勝手に採用しない。
+- キャンバスサイズ上限とカメラズーム範囲の確認に限定し、線補正・手ブレ補正・後補正は実装しない。
+- 50行を超える修正、複数サブシステムにまたがる修正、履歴/保存形式の変更が必要に見えた場合は Codex へ戻す。
 
 ---
 
@@ -36,35 +33,50 @@
 
 ### 1. 棚卸し
 
-以下を読んで、現状を `PROGRESS.md` に短く記録する。
+以下を確認し、`PROGRESS.md` に短く整理する。
 
+- `ui/resize-popup.js`
+  - 現在の `MAX_SIZE`。
+  - プリセット値。
+  - スライダーと直接入力があるか。
+  - 2500px 上限にする場合の差分がどこに出るか。
+- `system/camera-system.js`
+  - `TEGAKI_CONFIG.camera.minScale / maxScale` の使われ方。
+  - ホイール、ドラッグ、ショートカットなど、倍率変更経路。
+- `config.js`
+  - `camera` 設定。
+  - `renderer.resolution` が 1 固定であること。
 - `system/layer-system.js`
-  - `selectedLayerIds` / `getSelectedLayerIndexes()` の現状。
-  - `deleteLayer()` / `mergeLayerDown()` / `setLayerClipping()` の単体操作経路。
-- `ui/ui-panels.js`
-  - 右サイドバー操作が active レイヤーへどう届いているか。
-- `ui/layer-panel-renderer.js`
-  - 行クリック、Ctrl/Cmd、Shift、F2、属性パネルの現状。
+  - リサイズ時に既存レイヤー RenderTexture が拡張される経路。
+  - 背景レイヤー、フォルダ、クリッピングへの影響候補。
+- `history.js` とリサイズ履歴経路
+  - リサイズ操作が undo / redo で戻る経路。
+  - 2500px時に履歴メモリが増える点の注意。
 
-### 2. 実装してよい範囲
+### 2. 記録すること
 
-Codex が明示した場合のみ、50行以内で以下を実装してよい。
+`PROGRESS.md` に以下を整理する。
 
-- CSS の選択色やボタン色の小調整。
-- ヘッダーとイベント名の同期。
-- 一括操作の条件表を `PROGRESS.md` に追記。
+- 2500px 上限化で触るべき最小ファイル。
+- 2500px で増えるメモリ/履歴コストの概算と注意点。
+- カメラ拡縮範囲を広げる場合の候補値とリスク。
+- Gemini が実装してよい小修正と、Codex判断へ戻すべき修正。
 
-### 3. 実装しないこと
+### 3. 実装してよい範囲
 
-- `LayerSystem` の一括削除/一括結合/一括クリッピング本体。
-- フォルダへの複数投入。
-- SortableJS / 独自D&D の変更。
-- クイックパネル全面刷新。
-- トップバー本実装。
+初回は原則として棚卸しと `PROGRESS.md` 記録まで。
+
+オーナーまたは Codex が明示した場合のみ、50行以内で以下を実装してよい。
+
+- `ui/resize-popup.js` の片辺上限を 2000px から 2500px に変更する。
+- 表示文やコメントで 3000px と書かれている箇所を 2500px 第一候補へ直す。
+- `PROGRESS.md` への確認結果追記。
 
 ---
 
 ## ビルド
+
+コード変更をした場合のみ実行する。
 
 ```powershell
 cd tegaki_work
@@ -77,6 +89,8 @@ npm.cmd run build
 
 ## Codex判断へ戻す条件
 
-- 複数選択状態を使って実際にレイヤーを削除・結合・移動したくなった。
-- 履歴形式や保存形式への影響が出る。
-- 50行を超える修正が必要。
+- `LayerSystem.resizeLayerTextures()` の中身を変える必要がありそう。
+- `HistoryManager` や保存形式の変更が必要に見える。
+- 2500px で描画やサムネイルが壊れる。
+- カメラ拡縮範囲変更で座標ズレや描画位置ズレが出る。
+- 設定 popup のタブ化や線補正実装を同時にやりたくなった。

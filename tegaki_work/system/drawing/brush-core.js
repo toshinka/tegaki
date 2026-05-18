@@ -228,10 +228,9 @@ export class BrushCore {
         const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
         const processedPressure = pressureEnabled ? Math.max(0.1, pressure ?? 0.5) : 1.0;
 
-        this._renderRealtimeSegmentIfNeeded(currentMode, localX, localY, processedPressure);
-
-        // [指示書] 遅い線の丸連続感軽減：補完間隔を 2px に詰める
-        const steps = Math.max(1, Math.floor(distance / 2));
+        // カメラ縮小時は1つの画面移動が大きなlocal距離になるため、記録とライブ表示の両方を細かく補間する。
+        const interpolationStep = 1;
+        const steps = Math.max(1, Math.floor(distance / interpolationStep));
         
         for (let i = 1; i <= steps; i++) {
             const t = i / (steps + 1);
@@ -239,9 +238,11 @@ export class BrushCore {
             const interpY = this.lastLocalY + dy * t;
             const interpPressure = this.lastPressure + (processedPressure - this.lastPressure) * t;
             
+            this._renderRealtimeSegmentIfNeeded(currentMode, interpX, interpY, interpPressure);
             this.strokeRecorder.addPoint(interpX, interpY, interpPressure);
         }
         
+        this._renderRealtimeSegmentIfNeeded(currentMode, localX, localY, processedPressure);
         this.strokeRecorder.addPoint(localX, localY, processedPressure);
         
         // [指示書] ライブ焼き込み中は previewGraphics を使用しない（二重描画防止）
@@ -371,21 +372,21 @@ export class BrushCore {
             this._renderRealtimeSegmentIfNeeded(mode, finalPoint.x, finalPoint.y, finalPoint.pressure, true);
         }
 
-        // [指示書] リアルタイム反映済みの場合は最終焼き込みをスキップ
-        const alreadyApplied = (mode === 'eraser' && this.realtimeEraserApplied) || 
+        const alreadyApplied = (mode === 'eraser' && this.realtimeEraserApplied) ||
                                (mode === 'pen' && this.realtimePenApplied);
-        
+
+        // 通常のペン/消しゴムはドラッグ中のライブ焼き込みを完成形にする。
+        // pointerup 後に別アルゴリズムで焼き直すと、線幅や軌跡が変わって描画体験が崩れる。
         const shouldBakeFinal = !alreadyApplied;
-        
-        // 最終描画オブジェクト生成（履歴用やフォールバック用）
-        const graphics = await this.strokeRenderer.renderFinalStroke(
-            strokeData,
-            settings
-        );
-        
+
+        // 最終描画オブジェクト生成。ライブ焼き込み済みなら余計な再生成を避ける。
+        const graphics = shouldBakeFinal
+            ? await this.strokeRenderer.renderFinalStroke(strokeData, settings)
+            : null;
+
+        const layerData = activeLayer.layerData;
+
         if (graphics && this.layerManager.app?.renderer) {
-            const layerData = activeLayer.layerData;
-            
             // 🆕 RenderTextureへの焼き込み
             if (layerData?.renderTexture && shouldBakeFinal) {
                 if (mode === 'eraser') {
@@ -420,45 +421,45 @@ export class BrushCore {
                 // 既にライブ焼き込み済みの場合は、生成した graphics を破棄するだけにする
                 graphics.destroy({ children: true, texture: true, baseTexture: true });
             }
-            
-            if (layerData) {
-                // 履歴用のデータ保存
-                if (!layerData.pathsData) {
-                    layerData.pathsData = [];
-                }
-                
-                const pathData = {
-                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    points: strokeData.points,
-                    tool: mode,
-                    settings: { ...settings },
-                    isBaked: true
-                };
-                
-                layerData.pathsData.push(pathData);
+        }
+
+        if (layerData) {
+            // 履歴用のデータ保存
+            if (!layerData.pathsData) {
+                layerData.pathsData = [];
             }
 
-            this._recordStrokeHistory(activeLayer, mode);
-            
-            const layerIndex = this.layerManager.getLayerIndex(activeLayer);
-            
-            if (this.eventBus && layerIndex !== -1) {
-                this.eventBus.emit('layer:path-added', {
-                    component: 'drawing',
-                    action: 'path-added',
-                    data: {
-                        layerIndex: layerIndex,
-                        layerId: activeLayer.layerData?.id,
-                        mode: mode
-                    }
-                });
-                
-                this.eventBus.emit('thumbnail:layer-updated', {
+            const pathData = {
+                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                points: strokeData.points,
+                tool: mode,
+                settings: { ...settings },
+                isBaked: true
+            };
+
+            layerData.pathsData.push(pathData);
+        }
+
+        this._recordStrokeHistory(activeLayer, mode);
+
+        const layerIndex = this.layerManager.getLayerIndex(activeLayer);
+
+        if (this.eventBus && layerIndex !== -1) {
+            this.eventBus.emit('layer:path-added', {
+                component: 'drawing',
+                action: 'path-added',
+                data: {
                     layerIndex: layerIndex,
                     layerId: activeLayer.layerData?.id,
-                    immediate: true
-                });
-            }
+                    mode: mode
+                }
+            });
+
+            this.eventBus.emit('thumbnail:layer-updated', {
+                layerIndex: layerIndex,
+                layerId: activeLayer.layerData?.id,
+                immediate: true
+            });
         }
         
         this.isDrawing = false;
