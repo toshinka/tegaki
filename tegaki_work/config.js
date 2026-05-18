@@ -15,7 +15,9 @@
 export const TEGAKI_CONFIG = {
     canvas: { 
         width: 400, 
-        height: 400 
+        height: 400,
+        minSize: 100,
+        maxSize: 2500
     },
     
     /**
@@ -65,8 +67,8 @@ export const TEGAKI_CONFIG = {
         }
     },
     camera: {
-        minScale: 0.1,
-        maxScale: 5.0,
+        minScale: 0.05,
+        maxScale: 10.0,
         initialScale: 1.0,
         wheelZoomSpeed: 0.1,
         wheelRotationSpeed: 0.05,
