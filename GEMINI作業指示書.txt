@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 2d 透明度ポップアップ / 合成モードUI / クリッピングUI下準備 2026-05-18
+# GEMINI作業指示書：Phase 2g 複数選択レイヤーの一括操作 / レイヤー行判定の軽量化 2026-05-18
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 2c のフォルダD&Dは暫定実装として凍結済み。今回はドラッグを触らず、透明度ポップアップ、合成モードUI、クリッピングUIへ進むための棚卸しと小さな安全確認に絞る。
+目的：Phase 2f で複数選択の土台は入った。Phase 2g では、選択中レイヤーへ一括操作を接続する前の棚卸しと、Codex指定の小修正だけを行う。
 
 ---
 
@@ -15,18 +15,18 @@
 5. `tegaki_work/NOTES.md`
 6. `tegaki_work/ARCHITECTURE.md`
 7. `task-gemini/phase2.md`
-8. `task-gemini/phase2b.md`
-9. `task-gemini/phase2d.md`
-10. この `GEMINI作業指示書.txt`
+8. `task-gemini/phase2g.md`
+9. この `GEMINI作業指示書.txt`
 
 ---
 
 ## 今回の最重要ルール
 
-- フォルダD&D、SortableJS、独自ドラッグUIには触らない。
 - `ui/layer-panel-renderer.js` を丸ごと上書きしない。
 - 既存JSを短縮版へ置き換えない。
 - 指定外のファイルへ横展開しない。
+- フォルダD&D、SortableJS、独自ドラッグUIには触らない。
+- 一括削除、結合、フォルダ投入の本体実装は Codex 指示なしで行わない。
 - ビルドが失敗したら、連鎖修正せず停止して原因を報告する。
 - 差分は50行以内。超えるなら Codex へ戻す。
 
@@ -38,34 +38,29 @@
 
 以下を読んで、現状を `PROGRESS.md` に短く記録する。
 
-- `ui/layer-panel-renderer.js`
-  - 透明度表示と既存ドラッグ操作。
-  - クリップ状態欄の表示。
 - `system/layer-system.js`
-  - `setLayerOpacity()` 相当の既存経路。
-  - 合成モードやクリッピングに関係しそうな状態。
-- `system/project-manager.js`
-  - 保存/復元で `blendMode` や `clipping` 相当が扱われているか。
-- `system/data-models.js`
-  - LayerModel に該当フィールドがあるか。
-- `styles/main.css`
-  - ポップアップや小ボタンに流用できる既存クラス。
+  - `selectedLayerIds` / `getSelectedLayerIndexes()` の現状。
+  - `deleteLayer()` / `mergeLayerDown()` / `setLayerClipping()` の単体操作経路。
+- `ui/ui-panels.js`
+  - 右サイドバー操作が active レイヤーへどう届いているか。
+- `ui/layer-panel-renderer.js`
+  - 行クリック、Ctrl/Cmd、Shift、F2、属性パネルの現状。
 
 ### 2. 実装してよい範囲
 
 Codex が明示した場合のみ、50行以内で以下を実装してよい。
 
-- CSS の余白/サイズ調整。
+- CSS の選択色やボタン色の小調整。
 - ヘッダーとイベント名の同期。
-- 既存フィールドの読み取り確認用の短いコメント整理。
+- 一括操作の条件表を `PROGRESS.md` に追記。
 
 ### 3. 実装しないこと
 
-- 透明度ポップアップ本体の新設。
-- 合成モードの Pixi 接続。
-- クリッピング本体の実装。
-- 保存形式、履歴形式、描画処理の変更。
-- フォルダD&D、SortableJS、独自ドラッグUIの変更。
+- `LayerSystem` の一括削除/一括結合/一括クリッピング本体。
+- フォルダへの複数投入。
+- SortableJS / 独自D&D の変更。
+- クイックパネル全面刷新。
+- トップバー本実装。
 
 ---
 
@@ -82,8 +77,6 @@ npm.cmd run build
 
 ## Codex判断へ戻す条件
 
-- 透明度ポップアップのDOM新設が必要。
-- 合成モードを実際に Pixi へ接続したくなった。
-- クリッピングが描画/保存/履歴/サムネイルへ影響する。
+- 複数選択状態を使って実際にレイヤーを削除・結合・移動したくなった。
+- 履歴形式や保存形式への影響が出る。
 - 50行を超える修正が必要。
-- フォルダD&Dの追加調整が必要に見えた。
