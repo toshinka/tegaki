@@ -4,10 +4,10 @@
  ✅ png-exporter.js v8.29.0 loaded
     🔧 generatePreview()メソッド追加
     🔧 エラーハンドリング強化
-    🔧 Blob生成の確実性向上
- ✅ apng-exporter.js v8.31.0 loaded
- ✅ gif-exporter.js v8.17.1 loaded
-    🎨 antialias:true でジャギー除去
+png-exporter.js:235    🔧 Blob生成の確実性向上
+apng-exporter.js:283 ✅ apng-exporter.js v8.31.0 loaded
+gif-exporter.js:344 ✅ gif-exporter.js v8.17.1 loaded
+gif-exporter.js:345    🎨 antialias:true でジャギー除去
 gif-exporter.js:346    ✓ CDNフォールバックで file:// 対応
 webp-exporter.js:251 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
 webp-exporter.js:252    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
@@ -52,7 +52,3 @@ popup-manager.js:97 ✅ Popup "album" initialized successfully
 popup-manager.js:128 📊 Popup initialization: 5 ready, 0 deferred
 core-engine.js:307 [CoreEngine] All sub-systems initialized.
 core-initializer.js:56 ✅ Tegaki Initialized Successfully
-popup-manager.js:202 👁️ Popup "export" shown
-popup-manager.js:202 👁️ Popup "album" shown
-popup-manager.js:202 👁️ Popup "resize" shown
-popup-manager.js:202 👁️ Popup "quickAccess" shown
