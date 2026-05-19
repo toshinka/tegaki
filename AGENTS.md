@@ -1,48 +1,82 @@
-# AGENTS.md
+# AGENTS.md — AIエージェント共通ガイド（開発・運用ルール正本）
 
-> AI agents should read this file first. The authoritative project plan is `TEGAKI.md`.
+> [!IMPORTANT]
+> AIエージェントは作業開始時に必ずこのファイルを最初に読んでください。
+> プロジェクト全体の技術方針・計画の正本は `TEGAKI.md` です。このファイルと `TEGAKI.md` が衝突する場合、`TEGAKI.md` が優先されます。
 
-## Read Order
+---
 
-1. `TEGAKI.md`
-   - Project direction, current phase, technical stack, forbidden changes.
-2. `tegaki_work/PROGRESS.md`
-   - Current implementation state, confirmed fixes, known issues.
-3. The task-specific instruction file named by the owner.
-   - Short fix: `GEMINI作業指示書.txt`
-   - Phase work: `task-gemini/*.md`
-   - Codex guidance: `CODEX.md`
-   - Gemini guidance: `GEMINI.md`
+## 1. 最初に読むドキュメントと順序
 
-## Workspace Rules
+作業を開始する前に、必ず以下の順番でファイルを読み込んで状況を把握してください。
+1. **`TEGAKI.md`** — プロジェクト方針、技術スタック、禁止事項、AI作業規律。
+2. **`tegaki_work/PROGRESS.md`** — 現在のフェーズ状況、直近の作業ログ、既知バグ、残タスク。
+3. **今回の作業指示ファイル**:
+   - 細かい不具合修正・追修正：ルートの **`GEMINI作業指示書.txt`** を最優先で読む。
+   - 大きなフェーズ作業・機能追加：**`task-gemini/`** 内の指定された `phase*.md` を読む。
 
-- Current implementation target: `tegaki_work/`.
-- Do not edit `PastFiles/` unless the owner explicitly asks.
-- Treat old `tegaki_phase*` references as historical unless confirmed by `TEGAKI.md`.
-- Do not leave build artifacts in `tegaki_work/dist/` unless the owner asks for them.
-- Do not revert unrelated user or agent changes.
+---
 
-## Engineering Rules
+## 2. ワークスペースの基本ルール
 
-- Search with `rg` before adding a new class, function, event, or responsibility.
-- Prefer existing EventBus contracts and local helper APIs.
-- Keep edits narrowly scoped to the requested bug or phase.
-- Update file headers when dependencies, emitted events, received events, or responsibilities change.
-- Use `TEGAKI_CONFIG.debug` for temporary diagnostic logs; remove noisy logs after confirmation.
-- Run `npm.cmd run build` from `tegaki_work/` when code changes are made.
+- **作業対象ディレクトリ**: すべての実装・変更は `tegaki_work/` に対して行います。
+- **アーカイブの保護**: `PastFiles/` 内のファイルは参照用です。指示がない限り絶対に編集・削除しないでください。
+- **不要ファイルのクリーンアップ**: 作業完了時のコミット（Git PUSH前）に `tegaki_work/dist/` などのビルド生成物を含めないでください。
+- **他AIやユーザー変更の維持**: 自分が指示されていない箇所のコードやドキュメントを勝手に巻き戻したり（Revert）、削除したりしないでください。
 
-## Current Tegaki Direction
+---
 
-- Drawing is raster-first: live stroke segments are baked into each layer's `RenderTexture`.
-- Layers are PixiJS `Container + Sprite(RenderTexture)`.
-- Background is a special layer with opaque `backgroundGraphics`; do not treat it as a normal merge target.
-- Perfect Freehand is auxiliary/legacy, not the sole source of truth for current drawing.
-- WebGPU/SDF/MSDF/WebGL2 mesh paths are frozen unless a phase explicitly reopens them.
+## 3. 破壊的編集の禁止（安全規律）
 
-## Agent Roles
+過去にファイルを丸ごと上書きしてアプリが起動不能になった事故を防ぐため、以下の規律を遵守してください。
+1. **差分編集の徹底**: JSファイルの編集は、丸ごと置き換えるのではなく、変更が必要な箇所に絞って部分置換（`replace_file_content` 等）で行ってください。
+2. **大規模変更の事前相談**: 100行を超える一括削除、主要クラス（`LayerSystem` や `DrawingEngine` 等）の再構成、DOM構造の大幅置換を行う場合は、実装前にオーナーおよび設計担当AIの確認を取ってください。
+3. **スコープの限定**: 指示された課題と関係のないファイル（例：ブラシ修正なのに `timeline-ui.js` や `album-popup.js`）へ作業範囲を広げないでください。
+4. **インラインスタイルの禁止**: UI要素を生成する際、JavaScript側で大量のインラインスタイル（`element.style.xxx`）を直接記述しないでください。共通スタイルは必ず `main.css` へクラスとして定義し、JS側からはクラスの追加・削除（`classList.add` / `remove`）で見た目を制御してください。
+5. **ビルドエラー時の対応**: `npm.cmd run build` が失敗した場合は、原因を1件に絞って報告してください。推測で関係のない複数ファイルを連鎖的に修正しないでください。
 
-- Codex: local investigation, root-cause fixes, document synchronization, narrow code changes.
-- Claude: design review and second opinion.
-- Gemini CLI: implementation from explicit instruction files.
+---
 
-When this file conflicts with `TEGAKI.md`, `TEGAKI.md` wins.
+## 4. エンジニアリング & 描画方針のルール
+
+- **既存実装の検索**: 新規クラス、関数、イベントを定義する前に、必ず `rg` で同じ役割の既存実装がないか検索してください。
+- **EventBus契約の厳守**: `emit` / `on` を変更・追加する前に、同じイベント名を全検索し、送受信される payload の型や構造を一貫させてください（異なる形式を混在させない）。
+- **デバッグログのクリーンアップ**: 調査用の `console.log` 等は確認後に消去してください。一時的に残す場合は、`TEGAKI_CONFIG.debug` が `true` の場合のみ出力されるよう制御し、その目的と削除条件を記述してください。
+- **ラスターファースト描画**:
+  - 本アプリの描画は「ラスター焼き込み」方式です。ライブストロークの線分は、各レイヤーの持つ `RenderTexture` に逐次焼き込まれます。
+  - レイヤー構造は、PixiJSの `Container` 内に `Sprite(RenderTexture)` を配置する形で実現されています。
+  - 背景レイヤーは `backgroundGraphics` を持つ特殊な不透明レイヤーであり、通常の通常レイヤーへの結合や消去の対象外です。
+  - Perfect Freehand は補助的な線補間ライブラリであり、現在の主描画経路では描画の一致性を重視し、線を丸めすぎない方針となっています。
+  - WebGPU、SDF/MSDF、WebGL2 Mesh などの描画パスは現在凍結中です。指示がない限り触らないでください。
+
+---
+
+## 5. AI体制と開発ワークフロー（外部AI連携）
+
+プロジェクトは、ローカルで動くAI（Antigravity/Codex）と、外部の高性能AI（GPT-5.5/Claude無料枠等）を組み合わせた体制で進めます。
+
+### 役割分担
+- **Claude (外部)**: 全体設計の統括、方針判断、GitHub上のコードレビュー、Gemini向け指示書の作成。
+- **Codex (ローカル)**: ローカル実ファイル調査、不具合の切り分け、ドキュメント同期、小さく安全な直接修正。
+- **Gemini CLI (ローカル)**: `tegaki_work/` での主実装、ビルド検証、ブラウザ動作確認、`PROGRESS.md` の更新。
+- **オーナー (人間)**: 実機（液晶タブレット含む）での動作確認、最終意思決定、Git操作（PUSH等）。
+
+### 連携ワークフロー
+1. **チャットの開始**:
+   - 新規チャットを立ち上げ、AIがこの `AGENTS.md` および `PROGRESS.md` を読み込む。
+2. **Phase選定セッション**:
+   - オーナーとAIで次のPhaseについて対話し、方針を決定する。検討が難航した時のみ、`資料_説明用画像/` や `オーナーの実装したいことメモ.txt` を参考にする。
+3. **新規計画の立ち上げ**:
+   - 新機能や構造見直しの際は、AIが理解・実装しやすい順序を考慮してPhaseを構成し、`task-gemini/phaseX.md` を新規作成する。
+4. **実装作業の切り分け（適材適所）**:
+   - **ローカルで処理**: 伝達コストの低い単純な修正、または複数ファイルに跨る極めて難易度の高い修正（必要に応じてPROやHighモデルへの切り替えを提案）。
+   - **外部AIに投げる**: 単一〜少数ファイルでコピーが容易だが手間がかかる作業。ローカルAIが詳細な説明とGitHubのRaw URLを添えた指示書を作成し、`task-external/` フォルダへ保管した上で外部に投げる。
+5. **リネーム退避（バックアップ）**:
+   - 作業の節目で `archive.js`（`archive.bat`）を使い、現行の `tegaki_work` を `PastFiles/` 内へフェーズ名でリネームコピーして退避する。
+   - GitへのPUSH操作はオーナーが手動で行う。
+6. **成果物の受け取り**:
+   - 外部AIから戻ってきたファイルは、オーナーがルートの `incoming/` フォルダへ保存する。
+7. **Geminiによる結合・ビルド検証**:
+   - Geminiが `incoming/` 内の成果物を確認し、問題なければ `tegaki_work/` の対象ファイルへ反映（マージ）する。
+   - `npm.cmd run build` を実行してビルドが成功することを確認する。
+   - オーナーの実機動作確認でOKが出たらフェーズ完了とする。

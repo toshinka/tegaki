@@ -43,6 +43,7 @@ export class DrawingEngine {
             console.error('❌ [DrawingEngine] Canvas not found');
             return;
         }
+        this.canvas = canvas;
 
         canvas.style.touchAction = 'none';
 
@@ -59,6 +60,20 @@ export class DrawingEngine {
         }, {
             preventDefault: true
         });
+
+        // マウス移動（ホバー・描画時両方）の座標をステータスバーに通知
+        this._onCanvasPointerMove = (e) => {
+            if (this.coordSystem) {
+                const world = this.coordSystem.screenClientToWorld(e.clientX, e.clientY);
+                if (isFinite(world.worldX) && isFinite(world.worldY)) {
+                    this.eventBus.emit('ui:mouse-move', {
+                        x: Math.round(world.worldX),
+                        y: Math.round(world.worldY)
+                    });
+                }
+            }
+        };
+        canvas.addEventListener('pointermove', this._onCanvasPointerMove);
     }
 
     _handlePointerDown(info, e) {
@@ -259,6 +274,9 @@ export class DrawingEngine {
         if (this.pointerDetach) {
             this.pointerDetach();
             this.pointerDetach = null;
+        }
+        if (this.canvas && this._onCanvasPointerMove) {
+            this.canvas.removeEventListener('pointermove', this._onCanvasPointerMove);
         }
         this.activePointers.clear();
     }
