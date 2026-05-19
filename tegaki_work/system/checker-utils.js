@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { Graphics } from 'pixi.js';
+import { Texture, TilingSprite } from 'pixi.js';
 
 export class CheckerUtils {
     constructor() {
@@ -22,32 +22,19 @@ export class CheckerUtils {
     }
 
     /**
-     * キャンバス用チェッカーパターン（PIXI.Graphics）
+     * キャンバス用チェッカーパターン（PIXI.TilingSprite）
      */
     createCanvasChecker(width, height) {
-        const g = new Graphics();
-        
-        const cols = Math.ceil(width / this.squareSize);
-        const rows = Math.ceil(height / this.squareSize);
-        
-        for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < cols; col++) {
-                const x = col * this.squareSize;
-                const y = row * this.squareSize;
-                const isEvenCol = col % 2 === 0;
-                const isEvenRow = row % 2 === 0;
-                const color = (isEvenCol === isEvenRow) ? this.color1 : this.color2;
-                
-                g.rect(x, y, this.squareSize, this.squareSize);
-                g.fill({ color });
-            }
-        }
-        
-        g.label = 'checkerPattern';
-        g.visible = false;
-        g.zIndex = -1000;
-        
-        return g;
+        const texture = Texture.from(this.createThumbnailCheckerCanvas(this.squareSize * 2, this.squareSize * 2, this.squareSize));
+        texture.source.style.addressMode = 'repeat';
+
+        const checker = new TilingSprite({ texture, width, height });
+        checker.label = 'checkerPattern';
+        checker.visible = false;
+        checker.zIndex = -1000;
+        checker._tegakiCheckerBaseSquareSize = this.squareSize;
+
+        return checker;
     }
 
     /**
@@ -94,6 +81,8 @@ export class CheckerUtils {
         const wasVisible = checker.visible;
         const parent = checker.parent;
         const zIndex = checker.zIndex;
+        const tileScaleX = checker.tileScale?.x ?? 1;
+        const tileScaleY = checker.tileScale?.y ?? 1;
         
         if (parent) {
             parent.removeChild(checker);
@@ -103,6 +92,7 @@ export class CheckerUtils {
         const newChecker = this.createCanvasChecker(newWidth, newHeight);
         newChecker.visible = wasVisible;
         newChecker.zIndex = zIndex;
+        newChecker.tileScale?.set(tileScaleX, tileScaleY);
         
         if (parent) {
             parent.addChildAt(newChecker, 0);

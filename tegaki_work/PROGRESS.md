@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 2k — キャンバス上限 / カメラ拡縮範囲の安全確認**
+**Phase 2l — 透明キャンバス市松表示 / 背景非表示時の見た目整備**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -17,12 +17,38 @@
 | フォルダ | 状態 |
 |---|---|
 | `tegaki_phase0` | ✅ オリジナル保存。触らない |
-| `tegaki_work` | 🔧 現在の作業フォルダ。Phase 2k（キャンバス上限 / カメラ拡縮範囲の安全確認）へ移行準備済み。 |
+| `tegaki_work` | 🔧 現在の作業フォルダ。Phase 2l（透明キャンバス市松表示 / 背景非表示時の見た目整備）へ移行準備済み。 |
 | `PastFiles/` | 完了済みフェーズのアーカイブ置き場 |
 
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-19 Codex修正：透明市松の即時表示とズーム非依存化
+- **原因判断**: Gemini の修正はリサイズ時の同期補強に留まっており、背景レイヤーの目アイコン操作時に市松表示が確実に再同期されていなかった。また、従来の `Graphics` 矩形による checker はキャンバス内オブジェクトのため、カメラズームでマス目サイズも拡縮していた。
+- **修正**: `checker-utils.js` のキャンバス用 checker を小さな市松テクスチャ + `TilingSprite` へ変更。`core-engine.js` から `system/checker-utils.js` を明示 import し、ランタイムに `window.checkerUtils` が登録されるよう接続した。`LayerSystem` は背景 visibility 切替時とカメラ transform 時に checker を同期し、`tileScale` をカメラ倍率の逆数へ更新することで、画面上の市松サイズを一定に保つ。
+- **色判断**: いったん柔らかい `cream + background` に戻した。現物確認後、必要なら `lightMedium` へ再変更する。
+- **標準挙動メモ**: 透明 checker は作品データではなく表示補助。PNG/保存/レイヤー内容へ焼き込まない。
+
+### 2026-05-19 Gemini：Phase 2l 透明市松表示の現状棚卸し
+- **市松模様の生成ロジック (`checker-utils.js`)**:
+    - 現在の色設定: `color1: 0xf0e0d6` (cream), `color2: 0xffffee` (background)。
+    - 修正方針: `color2` を `0xe9c2ba` (lightMedium相当) へ変更し、Tegaki既定カラーへ統一する。
+    - 生成API: `createCanvasChecker` (PIXI用) と `createThumbnailCheckerCanvas` (サムネイル用) があり、個別に色指定は可能だが、現在は constructor の初期値に依存している。
+- **表示同期の現状 (`layer-system.js`)**:
+    - `LayerSystem.setCameraSystem(cameraSystem)`: `cameraSystem.canvasContainer` へ checker を追加する経路がある。`CameraSystem` 側には旧名 `attachCheckerPatternToWorld()` 呼び出しの痕跡があるが、現在の実装では `LayerSystem` 側の `_refreshCheckerPattern()` が実体。
+    - リサイズ同期: `_setupResizeEvents` 内で `checkerUtils.resizeCanvasChecker` が呼ばれており、サイズ追従は実装済み。
+    - **同期漏れの懸念**: 背景レイヤーの目アイコン操作 (`visible` 切替) と市松の `visible` が連動していない可能性がある。`changeBackgroundLayerColor` 等の周辺も確認が必要。
+- **サムネイルへの影響 (`thumbnail-system.js`)**:
+    - 通常レイヤーのサムネイルは透明度を維持しており、背景が市松になるかは「描画先」の canvas 次第。現状のサムネイル生成では透過 PNG として扱われているため、副作用は限定的。
+- **実装判断 (次の一手)**:
+    - [低リスク] `checker-utils.js` の `color2` を `0xe9c2ba` へ変更。
+    - [低リスク] `LayerSystem` 内で背景 visibility と市松 visibility の同期を徹底（`visible` 更新時に `checkerPattern` も操作）。
+
+### 2026-05-19 Codex判断：Phase 2k完了、Phase 2lへ移行準備
+- **Phase 2k完了判定**: オーナー確認で、リサイズ上限 2500px とカメラ倍率 5%〜1000% は問題なし。保存性能や履歴メモリ最適化は、実操作で重さが見えた時の別Phaseへ送る。
+- **次フェーズ候補の整理**: 追加メモにある「背景レイヤーを消した時、キャンバス背景が貫通するのではなく透明を表す市松模様にしたい」を Phase 2l とする。既に `checker-utils.js` と `LayerSystem.attachCheckerPatternToWorld()` の土台があるため、低リスクに進めやすい。
+- **方針**: 市松色は白/グレーではなく、ツール既定色の `cream` と `lightMedium` 系で統一する。背景レイヤー表示時は通常背景、非表示時だけ市松を表示する。
 
 ### 2026-05-19 Codex追修正：キャンバス上限値の参照元を config に集約
 - **確認**: Gemini の `MAX_SIZE = 2500` と `camera.minScale/maxScale = 0.05/10.0` 変更は、Phase 2k の目的に沿った低リスク差分と判断。

@@ -37,6 +37,7 @@ export class LayerSystem {
         this.transform = null;
         this.isInitialized = false;
         this.checkerPattern = null;
+        this._checkerTileScale = null;
     }
 
     init(canvasContainer, eventBus, config) {
@@ -576,23 +577,7 @@ export class LayerSystem {
             // [指示書] 全レイヤーのテクスチャを新サイズへ拡張
             this.resizeLayerTextures(data.width, data.height, data.oldWidth, data.oldHeight, data.align);
 
-            if (this.checkerPattern && this.checkerPattern.parent && window.checkerUtils) {
-                const wasVisible = this.checkerPattern.visible;
-
-                this.checkerPattern = window.checkerUtils.resizeCanvasChecker(
-                    this.checkerPattern,
-                    data.width,
-                    data.height
-                );
-
-                if (this.cameraSystem?.worldContainer && !this.checkerPattern.parent) {
-                    this.cameraSystem.worldContainer.addChildAt(this.checkerPattern, 0);
-                }
-
-                const bgLayer = this.getLayers()[0];
-                const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
-                this.checkerPattern.visible = !isBackgroundVisible;
-            }
+            this._refreshCheckerPattern(true);
 
             const bgLayer = this.getLayers()[0];
             if (bgLayer?.layerData?.isBackground && bgLayer.layerData.backgroundGraphics) {
@@ -611,6 +596,49 @@ export class LayerSystem {
             }
             this._emitPanelUpdateRequest();
         });
+
+        this.eventBus.on('camera:transform-changed', () => {
+            this._refreshCheckerPattern(false);
+        });
+    }
+
+    _getCheckerTileScale() {
+        const scale = Math.max(Math.abs(this.cameraSystem?.worldContainer?.scale?.x || 1), 0.01);
+        return 1 / scale;
+    }
+
+    _refreshCheckerPattern(forceRecreate = false) {
+        if (!window.checkerUtils || !this.cameraSystem?.canvasContainer) return;
+
+        const bgLayer = this.getLayers()[0];
+        const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
+        const tileScale = this._getCheckerTileScale();
+        const shouldRecreate = forceRecreate ||
+            !this.checkerPattern ||
+            !this.checkerPattern.parent;
+
+        if (shouldRecreate) {
+            if (this.checkerPattern?.parent) {
+                this.checkerPattern.parent.removeChild(this.checkerPattern);
+                this.checkerPattern.destroy();
+            }
+
+            this.checkerPattern = window.checkerUtils.createCanvasChecker(
+                this.config.canvas.width,
+                this.config.canvas.height
+            );
+            this.cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
+            if (this.currentFrameContainer?.parent === this.cameraSystem.canvasContainer) {
+                this.cameraSystem.canvasContainer.setChildIndex(this.currentFrameContainer, 1);
+            }
+        }
+
+        if (this.checkerPattern?.tileScale && Math.abs((this._checkerTileScale || 0) - tileScale) > 0.001) {
+            this.checkerPattern.tileScale.set(tileScale);
+            this._checkerTileScale = tileScale;
+        }
+
+        this.checkerPattern.visible = !isBackgroundVisible;
     }
 
     /**
@@ -2080,8 +2108,8 @@ export class LayerSystem {
         layer.layerData.visible = !layer.layerData.visible;
         layer.visible = layer.layerData.visible;
 
-        if (layer.layerData?.isBackground && this.checkerPattern) {
-            this.checkerPattern.visible = !layer.layerData.visible;
+        if (layer.layerData?.isBackground) {
+            this._refreshCheckerPattern(false);
         }
 
         this._emitPanelUpdateRequest();
@@ -2149,17 +2177,7 @@ export class LayerSystem {
         }
 
         if (cameraSystem?.canvasContainer && window.checkerUtils) {
-            this.checkerPattern = window.checkerUtils.createCanvasChecker(
-                this.config.canvas.width,
-                this.config.canvas.height
-            );
-
-            const bgLayer = this.getLayers()[0];
-            const isBackgroundVisible = bgLayer?.layerData?.visible !== false;
-            this.checkerPattern.visible = !isBackgroundVisible;
-
-            cameraSystem.canvasContainer.addChildAt(this.checkerPattern, 0);
-            cameraSystem.canvasContainer.setChildIndex(this.currentFrameContainer, 1);
+            this._refreshCheckerPattern(true);
         }
 
         if (this.transform && this.app && !this.transform.app) {
