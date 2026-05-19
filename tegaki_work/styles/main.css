@@ -897,6 +897,17 @@ canvas {
     height: 16px;
 }
 
+.ui-icon-button--large {
+    width: 36px;
+    height: 32px;
+    padding: 4px;
+}
+
+.ui-icon-button--large svg {
+    width: 24px;
+    height: 24px;
+}
+
 .ui-icon-button.layer-op-button {
     width: 38px;
     height: 38px;

@@ -50,6 +50,7 @@ task-gemini/phase2i.md
 task-gemini/phase2j.md
 task-gemini/phase2k.md
 task-gemini/phase2l.md
+task-gemini/phase2m.md
 ```
 
 ルール：
