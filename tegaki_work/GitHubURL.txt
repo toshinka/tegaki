@@ -126,10 +126,6 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Te
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CODEX.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI作業指示書.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1f.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1e.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1d.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1c.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1b.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase1a.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase2m.md
+
 

@@ -70,7 +70,12 @@ export class AlbumPopup {
             <!-- アルバムツールバー -->
             <div class="album-toolbar">
                 <div class="album-toolbar-group">
-                    <button id="albumSave" class="action-button" title="現在の状態をアルバムに追加">現在の状態を保存</button>
+                    <button id="albumSave" class="ui-icon-button ui-icon-button--large" title="現在の状態をアルバムに追加">
+                        ${UI_ICONS.library.replace('stroke-width="1.5"', 'stroke-width="1.8"')}
+                    </button>
+                    <button id="albumRestore" class="ui-icon-button ui-icon-button--medium" title="選択中をロード" style="display:none;">
+                        ${UI_ICONS.monitorUp}
+                    </button>
                 </div>
 
                 <div class="album-toolbar-group">
@@ -110,6 +115,9 @@ export class AlbumPopup {
         const batchDeleteBtn = document.getElementById('albumBatchDelete');
         if (batchDeleteBtn) batchDeleteBtn.onclick = () => this._batchDelete();
 
+        const restoreBtn = document.getElementById('albumRestore');
+        if (restoreBtn) restoreBtn.onclick = () => this._loadSelectedSnapshot();
+
         const exportBtn = document.getElementById('albumExport');
         if (exportBtn) exportBtn.onclick = () => this._exportAlbum();
 
@@ -118,6 +126,15 @@ export class AlbumPopup {
         if (importBtn && importFile) {
             importBtn.onclick = () => importFile.click();
             importFile.onchange = (e) => this._handleAlbumImport(e);
+        }
+    }
+
+    _loadSelectedSnapshot() {
+        if (this.selectedSnapshotIds.size !== 1) return;
+        const id = Array.from(this.selectedSnapshotIds)[0];
+        const snapshot = this.snapshots.find(s => s.id === id);
+        if (snapshot) {
+            this._loadSnapshot(snapshot);
         }
     }
 
@@ -145,6 +162,7 @@ export class AlbumPopup {
     _updateToolbarState() {
         const badge = document.getElementById('albumSelectionCount');
         const delBtn = document.getElementById('albumBatchDelete');
+        const restoreBtn = document.getElementById('albumRestore');
         const count = this.selectedSnapshotIds.size;
 
         if (badge) {
@@ -154,6 +172,11 @@ export class AlbumPopup {
 
         if (delBtn) {
             delBtn.style.display = (this.selectionMode && count > 0) ? 'flex' : 'none';
+        }
+
+        if (restoreBtn) {
+            // 1つだけ選択されている時のみロード可能
+            restoreBtn.style.display = (count === 1) ? 'flex' : 'none';
         }
     }
 
@@ -515,28 +538,24 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             
             // カード全体のクリックイベント
             card.addEventListener('click', (e) => {
+                e.stopPropagation();
+
                 if (e.shiftKey) {
-                    e.stopPropagation();
                     this._setSelectionMode(true);
                     this._selectSnapshotRange(snapshot.id);
-                    this._updateToolbarState();
-                    this._renderGallery();
-                    return;
-                }
-
-                if (this.selectionMode || e.ctrlKey || e.metaKey) {
-                    e.stopPropagation();
-                    if (e.ctrlKey || e.metaKey) {
-                        this._setSelectionMode(true);
-                    }
+                } else if (e.ctrlKey || e.metaKey) {
+                    this._setSelectionMode(true);
                     this._toggleSnapshotSelection(snapshot.id);
-                    this._updateToolbarState();
-                    this._renderGallery();
-                    return;
+                } else {
+                    // 通常クリックも選択（即ロード防止）
+                    // 単一選択に切り替える
+                    this.selectedSnapshotIds.clear();
+                    this.selectedSnapshotIds.add(snapshot.id);
+                    this.lastSelectedSnapshotId = snapshot.id;
                 }
                 
-                // 通常クリックは復元
-                this._loadSnapshot(snapshot);
+                this._updateToolbarState();
+                this._renderGallery();
             });
 
             gallery.appendChild(card);
