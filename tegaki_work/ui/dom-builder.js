@@ -98,6 +98,11 @@ export const DOMBuilder = (function() {
         const canvasArea = createElement('div', { className: 'canvas-area' });
         const drawingCanvas = createElement('div', { id: 'drawing-canvas' });
         canvasArea.appendChild(drawingCanvas);
+
+        // 反転警告コンテナ
+        const warningContainer = createElement('div', { className: 'canvas-warning-container', id: 'canvas-warning-container' });
+        canvasArea.appendChild(warningContainer);
+
         return canvasArea;
     }
 
@@ -391,6 +396,7 @@ export const DOMBuilder = (function() {
         const flipGroup = createElement('div', { className: 'flip-section' });
         flipGroup.appendChild(createElement('div', { className: 'flip-button', id: 'flip-horizontal-btn', textContent: '水平反転' }));
         flipGroup.appendChild(createElement('div', { className: 'flip-button', id: 'flip-vertical-btn', textContent: '垂直反転' }));
+        flipGroup.appendChild(createElement('div', { className: 'flip-button', id: 'layer-transform-reset-btn', textContent: 'リセット' }));
         flipSection.appendChild(flipGroup);
         sections.appendChild(flipSection);
 

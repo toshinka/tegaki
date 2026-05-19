@@ -76,6 +76,7 @@ export class ProjectManager {
                         target: data.renderTexture,
                         clearColor: '#00000000'
                     });
+                    this._unpremultiplyCanvas(canvas);
                     imageData = canvas.toDataURL('image/png');
                 } catch (e) {
                     console.error('[ProjectManager] Failed to extract layer image:', e);
@@ -288,6 +289,31 @@ export class ProjectManager {
             img.onerror = reject;
             img.src = dataURL;
         });
+    }
+
+    /**
+     * Canvas の ImageData をアンプリマルチプライドに変換する
+     * @param {HTMLCanvasElement} canvas
+     * @returns {HTMLCanvasElement}
+     */
+    _unpremultiplyCanvas(canvas) {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return canvas;
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imageData.data;
+
+        for (let i = 0; i < d.length; i += 4) {
+            const a = d[i + 3];
+            if (a > 0 && a < 255) {
+                d[i]     = Math.min(255, Math.round(d[i]     * 255 / a));
+                d[i + 1] = Math.min(255, Math.round(d[i + 1] * 255 / a));
+                d[i + 2] = Math.min(255, Math.round(d[i + 2] * 255 / a));
+            }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        return canvas;
     }
 }
 

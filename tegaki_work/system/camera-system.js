@@ -642,7 +642,9 @@ export class CameraSystem {
                 x: Math.round(this.worldContainer.x),
                 y: Math.round(this.worldContainer.y),
                 scale: Math.abs(this.worldContainer.scale.x).toFixed(2),
-                rotation: Math.round(this.rotation % 360)
+                rotation: Math.round(this.rotation % 360),
+                horizontalFlipped: !!this.horizontalFlipped,
+                verticalFlipped: !!this.verticalFlipped
             });
         }
     }

@@ -498,7 +498,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
 
         const canvas = this.app.renderer.extract.canvas({
             target,
-            clearColor: '#00000000'
+            clearColor: [1, 1, 1, 1]
         });
         return canvas?.toDataURL?.('image/png') || null;
     }

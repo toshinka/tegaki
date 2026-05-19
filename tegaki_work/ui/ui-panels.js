@@ -129,6 +129,10 @@ export class UIController {
         this.eventBus.on('popup:initialized', () => {
             this.ensurePopupCloseButtons();
         });
+
+        this.eventBus.on('camera:transform-changed', (payload) => {
+            this.updateCameraFlipWarning(payload);
+        });
     }
 
     ensurePopupCloseButtons() {
@@ -144,6 +148,27 @@ export class UIController {
             popup.appendChild(button);
         });
     }
+
+    updateCameraFlipWarning(payload = {}) {
+        const container = document.getElementById('canvas-warning-container');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        if (payload.horizontalFlipped) {
+            const badge = document.createElement('div');
+            badge.className = 'canvas-warning-badge';
+            badge.textContent = '左右反転中';
+            container.appendChild(badge);
+        }
+
+        if (payload.verticalFlipped) {
+            const badge = document.createElement('div');
+            badge.className = 'canvas-warning-badge';
+            badge.textContent = '上下反転中';
+            container.appendChild(badge);
+        }
+    }
     
     setupEventDelegation() {
         document.addEventListener('click', (e) => {
@@ -157,6 +182,12 @@ export class UIController {
             if (flipButton) {
                 const direction = flipButton.id === 'flip-horizontal-btn' ? 'horizontal' : 'vertical';
                 this.eventBus.emit('layer:flip-requested', { direction, bypassVKeyCheck: true });
+                return;
+            }
+
+            const resetButton = e.target.closest('#layer-transform-reset-btn');
+            if (resetButton) {
+                this.eventBus.emit('layer:reset-transform');
                 return;
             }
 
@@ -447,8 +478,10 @@ export class UIController {
     setupFlipButtons() {
         const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
         const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+        const resetTransformBtn = document.getElementById('layer-transform-reset-btn');
         flipHorizontalBtn?.removeAttribute('disabled');
         flipVerticalBtn?.removeAttribute('disabled');
+        resetTransformBtn?.removeAttribute('disabled');
     }
 
     setupPanelStyles() {
@@ -456,7 +489,7 @@ export class UIController {
         style.textContent = `
             .flip-section {
                 gap: 2px !important;
-                height: 56px;
+                height: 82px;
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: space-between !important;

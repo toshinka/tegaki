@@ -387,6 +387,34 @@ export class ExportManager {
         return await this.generatePreview(format, options).then(r => r.blob);
     }
 
+    /**
+     * Canvas の ImageData をアンプリマルチプライドに変換する
+     * Pixi の extract.canvas() はプリマルチプライド値をそのまま返すため、
+     * PNG 保存前に必ずこの関数を通すこと。
+     * @param {HTMLCanvasElement} canvas
+     * @returns {HTMLCanvasElement} 同じ canvas オブジェクト（破壊的変更）
+     */
+    _unpremultiplyCanvas(canvas) {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return canvas;
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imageData.data;
+
+        for (let i = 0; i < d.length; i += 4) {
+            const a = d[i + 3];
+            if (a > 0 && a < 255) {
+                // プリマルチプライドを元の RGB 値に戻す
+                d[i]     = Math.min(255, Math.round(d[i]     * 255 / a));
+                d[i + 1] = Math.min(255, Math.round(d[i + 1] * 255 / a));
+                d[i + 2] = Math.min(255, Math.round(d[i + 2] * 255 / a));
+            }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        return canvas;
+    }
+
     renderToCanvas(options = {}) {
         const width = options.width || this.getCanvasSize().width;
         const height = options.height || this.getCanvasSize().height;
@@ -418,6 +446,7 @@ export class ExportManager {
         });
 
         renderTexture.destroy(true);
+        this._unpremultiplyCanvas(canvas);
         return canvas;
     }
     
