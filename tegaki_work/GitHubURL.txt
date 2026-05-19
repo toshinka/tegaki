@@ -37,6 +37,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/history.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/virtual-album.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/project-manager.js
 
 ## Drawing System - Base
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/pointer-handler.js
@@ -79,12 +80,13 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/apng-exporter.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/webm-exporter.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/mp4-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/exporters/gif-exporter.js
 
 ## UI
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/dom-builder.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/slider-utils.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/keyboard-handler.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/aked/main/tegaki_work/ui/resize-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/resize-popup.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-panel-renderer.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/status-display-renderer.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/timeline-thumbnail-utils.js
@@ -94,6 +96,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/quick-access-popup.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/export-popup.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/ui-panels.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/popup-drag-helper.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/resize-slider.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/ui-icons.js
 
 ## Core
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/core-runtime.js
