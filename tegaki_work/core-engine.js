@@ -2,7 +2,7 @@
  * ============================================================================
  * ファイル名: core-engine.js
  * 責務: 各サブシステムの初期化、接続、ライフサイクル管理を担当する
- * 依存: pixi.js, system/*, ui/*
+ * 依存: pixi.js, system/*, ui/*, system/checker-utils.js
  * 被依存: core-initializer.js
  * 公開API: CoreEngine
  * イベント発火: engine:initialized, engine:ready
@@ -47,6 +47,7 @@ import { PopupManager } from './system/popup-manager.js';
 import { UIController } from './ui/ui-panels.js';
 import { KeyboardHandler } from './ui/keyboard-handler.js';
 import { ThumbnailSystem } from './system/drawing/thumbnail-system.js';
+import './system/checker-utils.js';
 import { LayerPanelRenderer } from './ui/layer-panel-renderer.js';
 
 // ポップアップのインポート

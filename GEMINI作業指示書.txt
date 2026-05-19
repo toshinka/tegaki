@@ -1,8 +1,8 @@
-# GEMINI作業指示書：Phase 2k キャンバス上限 / カメラ拡縮範囲の安全確認 2026-05-19
+# GEMINI作業指示書：Phase 2l 透明キャンバス市松表示 / 背景非表示時の見た目整備 2026-05-19
 
 対象フォルダ：`tegaki_work/`
 
-目的：Phase 2j でストロークの黒ずみと pointerup 後の線幅変化は一区切り。Phase 2k では、キャンバスサイズ変更の片辺上限を 2500px へ広げる準備と、キャンバス操作での拡縮倍率を少し広げるための影響範囲を棚卸しする。
+目的：Phase 2k でキャンバス上限とカメラ拡縮範囲は一区切り。Phase 2l では、背景レイヤーを非表示にした時にページ背景がそのまま貫通して見えるのではなく、透明キャンバスを示す市松模様を表示する。色は白/グレーではなく、Tegaki既定カラーの `cream` と `lightMedium` 系へ統一する。
 
 ---
 
@@ -14,18 +14,18 @@
 4. `tegaki_work/PROGRESS.md`
 5. `tegaki_work/NOTES.md`
 6. `tegaki_work/ARCHITECTURE.md`
-7. `task-gemini/phase2k.md`
+7. `task-gemini/phase2l.md`
 8. この `GEMINI作業指示書.txt`
 
 ---
 
 ## 今回の最重要ルール
 
-- 内部キャンバス2倍化、`resolution: 2`、WebGL2 Mesh復活、WebGPU/SDF/MSDF採用はしない。
-- RenderTexture の基本構造、履歴スナップショット方式、保存形式は独自判断で変えない。
-- 2500px は第一候補。3000px は保留候補として扱い、勝手に採用しない。
-- キャンバスサイズ上限とカメラズーム範囲の確認に限定し、線補正・手ブレ補正・後補正は実装しない。
-- 50行を超える修正、複数サブシステムにまたがる修正、履歴/保存形式の変更が必要に見えた場合は Codex へ戻す。
+- 背景レイヤー、レイヤー構造、保存形式、描画パイプラインを大きく変えない。
+- 新しい市松システムを作らず、既存の `system/checker-utils.js` と `LayerSystem` の土台を優先して確認する。
+- 市松色は白/グレーにしない。`TEGAKI_COLORS` / `styles/main.css` の既定色に寄せる。
+- 背景レイヤーが表示中の時は通常の背景色を維持し、背景レイヤー非表示時だけ市松が見えるようにする。
+- 50行を超える修正、保存形式変更、サムネイル生成の大改造が必要に見えた場合は Codex へ戻す。
 
 ---
 
@@ -35,41 +35,37 @@
 
 以下を確認し、`PROGRESS.md` に短く整理する。
 
-- `ui/resize-popup.js`
-  - 現在の `MAX_SIZE`。
-  - プリセット値。
-  - スライダーと直接入力があるか。
-  - 2500px 上限にする場合の差分がどこに出るか。
-- `system/camera-system.js`
-  - `TEGAKI_CONFIG.camera.minScale / maxScale` の使われ方。
-  - ホイール、ドラッグ、ショートカットなど、倍率変更経路。
-- `config.js`
-  - `camera` 設定。
-  - `renderer.resolution` が 1 固定であること。
+- `system/checker-utils.js`
+  - キャンバス用チェッカーの色、squareSize、生成/リサイズAPI。
+  - 現在 `cream + background` になっていないか。
 - `system/layer-system.js`
-  - リサイズ時に既存レイヤー RenderTexture が拡張される経路。
-  - 背景レイヤー、フォルダ、クリッピングへの影響候補。
-- `history.js` とリサイズ履歴経路
-  - リサイズ操作が undo / redo で戻る経路。
-  - 2500px時に履歴メモリが増える点の注意。
+  - `attachCheckerPatternToWorld()` の呼び出し経路。
+  - 背景レイヤーの visibility 切替時に checker が表示/非表示されるか。
+  - リサイズ時に checker が更新されるか。
+- `system/camera-system.js`
+  - `canvasContainer` へ checker が接続されるタイミング。
+- `system/drawing/thumbnail-system.js`
+  - サムネイル用 checker とキャンバス用 checker の違い。今回サムネイルまで触る必要があるか。
+- `styles/main.css` / `config.js`
+  - `cream` と `lightMedium` 相当のカラー値。
 
 ### 2. 記録すること
 
 `PROGRESS.md` に以下を整理する。
 
-- 2500px 上限化で触るべき最小ファイル。
-- 2500px で増えるメモリ/履歴コストの概算と注意点。
-- カメラ拡縮範囲を広げる場合の候補値とリスク。
+- 現在の市松表示がどこまで実装済みか。
+- 既定カラーとのズレ。
+- 背景非表示時、リサイズ後、保存/読み込み後で確認すべき挙動。
 - Gemini が実装してよい小修正と、Codex判断へ戻すべき修正。
 
 ### 3. 実装してよい範囲
 
-初回は原則として棚卸しと `PROGRESS.md` 記録まで。
+初回は棚卸しと `PROGRESS.md` 記録を優先する。
 
 オーナーまたは Codex が明示した場合のみ、50行以内で以下を実装してよい。
 
-- `ui/resize-popup.js` の片辺上限を 2000px から 2500px に変更する。
-- 表示文やコメントで 3000px と書かれている箇所を 2500px 第一候補へ直す。
+- `system/checker-utils.js` の市松色を `cream + lightMedium` 相当へ変更する。
+- 背景レイヤー visibility と checker visibility の同期漏れが明らかなら、小さく補修する。
 - `PROGRESS.md` への確認結果追記。
 
 ---
@@ -89,8 +85,8 @@ npm.cmd run build
 
 ## Codex判断へ戻す条件
 
-- `LayerSystem.resizeLayerTextures()` の中身を変える必要がありそう。
-- `HistoryManager` や保存形式の変更が必要に見える。
-- 2500px で描画やサムネイルが壊れる。
-- カメラ拡縮範囲変更で座標ズレや描画位置ズレが出る。
-- 設定 popup のタブ化や線補正実装を同時にやりたくなった。
+- checker 表示が保存/読み込み構造に絡む。
+- 背景レイヤーを通常レイヤー化したくなった。
+- `LayerSystem` のレイヤー順序や container 構造を変える必要がありそう。
+- サムネイル生成の構造変更が必要に見える。
+- UIカラー規定に反する色を使いたくなった。
