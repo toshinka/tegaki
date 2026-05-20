@@ -48,12 +48,15 @@ export class QuickAccessPopup {
         this.currentTool = 'pen';
         
         this.MIN_SIZE = 0.5;
-        this.MAX_SIZE = 30;
         this.MIN_OPACITY = 0;
         this.MAX_OPACITY = 100;
         
         this._ensurePanelExists();
         this._injectStyles();
+    }
+
+    get MAX_SIZE() {
+        return window.brushSettings ? window.brushSettings.getMaxSize() : 30;
     }
 
     _injectStyles() {
@@ -168,6 +171,9 @@ export class QuickAccessPopup {
                     <button class="qa-tool-button" id="qa-eraser-tool" title="消しゴム">
                         ${UI_ICONS.eraser}
                     </button>
+                    <button class="qa-tool-button" id="qa-airbrush-tool" title="スプレー / 透明スプレー (B)">
+                        ${UI_ICONS.airbrush}
+                    </button>
                     <button class="qa-tool-button" id="qa-fill-tool" title="塗りつぶし">
                         ${UI_ICONS.fill}
                     </button>
@@ -210,6 +216,7 @@ export class QuickAccessPopup {
         this.elements = {
             closeBtn: document.getElementById('quick-access-close-btn'),
             penToolBtn: document.getElementById('qa-pen-tool'),
+            airbrushToolBtn: document.getElementById('qa-airbrush-tool'),
             eraserToolBtn: document.getElementById('qa-eraser-tool'),
             fillToolBtn: document.getElementById('qa-fill-tool'),
             sizeSlider: document.getElementById('pen-size-slider'),
@@ -268,6 +275,15 @@ export class QuickAccessPopup {
             this.elements.penToolBtn.addEventListener('click', handlePen);
         }
 
+        if (this.elements.airbrushToolBtn) {
+            const handleAirbrush = () => {
+                let nextMode = this.currentTool === 'airbrush' ? 'airbrush-erase' : 'airbrush';
+                this._switchTool(nextMode);
+            };
+            this.elements.airbrushToolBtn.addEventListener('pointerdown', handleAirbrush);
+            this.elements.airbrushToolBtn.addEventListener('click', handleAirbrush);
+        }
+
         if (this.elements.eraserToolBtn) {
             const handleEraser = () => this._switchTool('eraser');
             this.elements.eraserToolBtn.addEventListener('pointerdown', handleEraser);
@@ -299,21 +315,34 @@ export class QuickAccessPopup {
     }
 
     _updateToolButtons() {
-        const buttons = {
+        const buttons = [
+            this.elements.penToolBtn,
+            this.elements.airbrushToolBtn,
+            this.elements.eraserToolBtn,
+            this.elements.fillToolBtn
+        ];
+
+        buttons.forEach(btn => {
+            if (btn) btn.classList.remove('active');
+        });
+
+        const activeMap = {
             pen: this.elements.penToolBtn,
+            airbrush: this.elements.airbrushToolBtn,
+            'airbrush-erase': this.elements.airbrushToolBtn,
             eraser: this.elements.eraserToolBtn,
             fill: this.elements.fillToolBtn
         };
 
-        Object.entries(buttons).forEach(([toolName, btn]) => {
-            if (!btn) return;
-            
-            if (toolName === this.currentTool) {
-                btn.classList.add('active');
+        const activeBtn = activeMap[this.currentTool];
+        if (activeBtn) {
+            activeBtn.classList.add('active');
+            if (this.currentTool === 'airbrush-erase') {
+                activeBtn.classList.add('erase-mode');
             } else {
-                btn.classList.remove('active');
+                activeBtn.classList.remove('erase-mode');
             }
-        });
+        }
     }
 
     _setupColorButtons() {

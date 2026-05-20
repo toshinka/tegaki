@@ -374,6 +374,19 @@ export class UIController {
                 this.closeAllPopups();
                 this.updateToolUI('fill');
             },
+            'airbrush-tool': () => {
+                let currentMode = window.brushSettings?.getMode();
+                let nextMode = currentMode === 'airbrush' ? 'airbrush-erase' : 'airbrush';
+                
+                if (window.CoreRuntime?.api?.tool?.set) {
+                    window.CoreRuntime.api.tool.set(nextMode);
+                    window.CoreRuntime.api.layer.exitMoveMode();
+                } else if (this.drawingEngine?.brushCore) {
+                    this.drawingEngine.brushCore.setMode(nextMode);
+                }
+                this.closeAllPopups();
+                this.updateToolUI(nextMode);
+            },
             'resize-tool': () => {
                 this.togglePopup('resize');
             },
@@ -404,15 +417,23 @@ export class UIController {
             btn.classList.remove('active');
         });
         
-        const toolBtn = document.getElementById(tool + '-tool');
+        let baseTool = tool.startsWith('airbrush') ? 'airbrush' : tool;
+        const toolBtn = document.getElementById(baseTool + '-tool');
         if (toolBtn) {
             toolBtn.classList.add('active');
+            if (tool === 'airbrush-erase') {
+                toolBtn.classList.add('erase-mode');
+            } else {
+                toolBtn.classList.remove('erase-mode');
+            }
         }
 
         const toolNames = {
             pen: this.getPenStatusName(),
             eraser: this.getEraserStatusName(),
             fill: '塗りつぶし',
+            airbrush: 'スプレー',
+            'airbrush-erase': '透明スプレー',
             'gif-animation': 'GIFアニメーション'
         };
         const toolElement = document.getElementById('current-tool');

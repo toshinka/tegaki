@@ -94,6 +94,15 @@ body {
     stroke: var(--futaba-maroon);
 }
 
+.tool-button.active.erase-mode {
+    background: var(--futaba-maroon);
+    border: 3px solid var(--futaba-maroon);
+}
+
+.tool-button.active.erase-mode svg {
+    stroke: var(--futaba-background);
+}
+
 .tool-separator { 
     width: 28px;
     height: 10px; 
@@ -1207,6 +1216,15 @@ canvas {
 
 .qa-tool-button.active svg {
     stroke: var(--futaba-maroon);
+}
+
+.qa-tool-button.active.erase-mode {
+    background: var(--futaba-maroon);
+    border: 3px solid var(--futaba-maroon);
+}
+
+.qa-tool-button.active.erase-mode svg {
+    stroke: var(--futaba-background);
 }
 
 .resize-compact-group {

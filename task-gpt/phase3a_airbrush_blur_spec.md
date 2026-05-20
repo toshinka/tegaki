@@ -3,6 +3,15 @@
 > このファイルは外部AI（GPT-5.5）に作業を依頼するための指示書です。
 > 対象コードの参照URLや実装アルゴリズム、UIへの繋ぎ込み方法を明記しています。
 
+> [!IMPORTANT]
+> **外部AI（作業担当者）への重要な注意とワークフロー指示**
+> 1. **コードの読み込み元（参照用）**:
+>    - GitHubのキャッシュ遅延を防ぎ、完全に固定された最新のスナップショットを参照するため、参照用URLはすべて **`PastFiles/tegaki_phase2q2/...`** を指しています。コードの設計や理解にはこれらのURLを参照してください。
+> 2. **提案コードの出力先（ターゲット）**:
+>    - 提案する差分（Git Diff形式または詳細な置換指示）は、すべて本番作業フォルダである **`tegaki_work/...`** 以下の同名ファイルに対する変更として記述・出力してください。
+> 3. **ファイル編集の制約**:
+>    - 外部AIがリポジトリを直接編集・PUSHすることはありません。提案された差分は、ローカル環境で動く専用AI（Antigravity等）およびオーナーの手によって検証された後、ローカルの `tegaki_work/` に反映（マージ）されます。
+
 ---
 
 ## 1. プロジェクトの基本情報 & 開発環境
@@ -16,22 +25,22 @@
 ## 2. 実装対象ファイル
 外部AIは、以下のファイルに対して差分（Git Diff形式または詳細な置換指示）を作成してください。
 
-1. **`tegaki_work/system/drawing/brush-settings.js`**
-   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/brush-settings.js
+1. **`PastFiles/tegaki_phase2q2/system/drawing/brush-settings.js`**
+   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2q2/system/drawing/brush-settings.js
    - 新しいモード `'airbrush'` と `'blur'` の追加。
    - エアブラシ用のプロパティ（スタンプ密度等）や、ぼかし強度などの変数の受け口を追加。
-2. **`tegaki_work/system/drawing/brush-core.js`**
-   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/brush-core.js
+2. **`PastFiles/tegaki_phase2q2/system/drawing/brush-core.js`**
+   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2q2/system/drawing/brush-core.js
    - 描画中のライフサイクル (`startStroke`, `updateStroke`, `finalizeStroke`) にエアブラシおよびぼかしブラシの処理を統合。
    - ペンや消しゴムと同様に、ドラッグ中にリアルタイムに `RenderTexture` に焼き込む経路（`_renderRealtimeSegmentIfNeeded`）を接続。
-3. **`tegaki_work/system/drawing/stroke-renderer.js`**
-   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/stroke-renderer.js
+3. **`PastFiles/tegaki_phase2q2/system/drawing/stroke-renderer.js`**
+   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2q2/system/drawing/stroke-renderer.js
    - エアブラシおよびぼかしブラシの実際のピクセル描画・サンプリングロジック。
-4. **`tegaki_work/ui/dom-builder.js`**
-   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/dom-builder.js
+4. **`PastFiles/tegaki_phase2q2/ui/dom-builder.js`**
+   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2q2/ui/dom-builder.js
    - 属性パネル（またはクイックアクセス等）に「エアブラシ」「ぼかし」を追加。
-5. **`tegaki_work/ui/ui-panels.js`**
-   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/ui-panels.js
+5. **`PastFiles/tegaki_phase2q2/ui/ui-panels.js`**
+   - URL: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/tegaki_phase2q2/ui/ui-panels.js
    - 選択時にイベントを発火して設定を同期する UI 導線。
 
 ---

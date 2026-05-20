@@ -69,6 +69,7 @@ export const DOMBuilder = (function() {
             { separator: true },
             { id: 'pen-tool', icon: 'pen', title: 'ペン (P / Shift+Pで筆圧切替)', active: true },
             { id: 'eraser-tool', icon: 'eraser', title: '消しゴム (E)' },
+            { id: 'airbrush-tool', icon: 'airbrush', title: 'スプレー / 透明スプレー (B)' },
             { id: 'fill-tool', icon: 'fill', title: '塗りつぶし (G)' },
             { separator: true },
             { id: 'gif-animation-tool', icon: 'animation', title: 'GIFアニメーション (Alt+A)' },
@@ -80,11 +81,15 @@ export const DOMBuilder = (function() {
             if (tool.separator) {
                 sidebar.appendChild(createElement('div', { className: 'tool-separator' }));
             } else {
+                const iconHtml = tool.textIcon
+                    ? `<span class="tool-button-text-icon">${tool.textIcon}</span>`
+                    : ICONS[tool.icon];
+
                 const btn = createElement('div', {
                     className: tool.active ? 'tool-button active' : 'tool-button',
                     id: tool.id,
                     title: tool.title,
-                    innerHTML: ICONS[tool.icon]
+                    innerHTML: iconHtml || ''
                 });
                 sidebar.appendChild(btn);
             }
