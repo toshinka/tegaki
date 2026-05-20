@@ -1,0 +1,61 @@
+オーナーの問い：
+https://github.com/axnospaint/axnospaint-lib　
+ここからバケツツールの実装に係るところって絞ることが出来る？
+
+
+GPTの解答：
+GitHubリポジトリを見て、ファイル名・関数名・依存関係からバケツ/塗りつぶしに関係する箇所を絞ります。必要なら「読むべきファイル」と「移植時に見るポイント」に分けます。
+
+思考時間: 1m 0s
+
+絞れます。バケツツール周りでまず見るべき本命はこのあたりです。
+
+一番重要なのは src/js/pendefine/fill.js です。ここに通常バケツの本体があります。Fill extends PenObj として定義され、type = 'fill'、threshold、toneLevel、Undo可否などを持ちます。クリック終了時の end(x, y) で対象画像を取得し、regionFill(...) に渡して塗り領域の ImageData を作り、最後にブラシ用キャンバスへ putImageData して write() しています。
+
+次に重要なのが Fill.prototype.regionFill です。実質的な flood fill 処理です。クリック地点の RGB / Alpha を読み、透明領域か有色領域かで判定を分け、pxlArr をスタックとして使って上下左右に探索しています。Processed 配列で処理済みピクセルを管理し、再帰ではなく while ループで処理しています。
+
+fill.js の塗り判定はかなり単純です。開始点が透明なら「透明ピクセルだけ」を塗り対象にし、開始点が有色なら「Alphaあり、かつRGB完全一致」のピクセルだけを塗ります。つまり許容色差つきの一般的な「近似色バケツ」ではなく、基本は完全一致型です。境界補正は axp_pen_range_fillThreshold の値を oversize として読み、境界外側に追加で setPixel する形です。
+
+グラデーションバケツは src/js/pendefine/fillgradation.js です。これは Fill を継承しており、通常バケツの regionFill でまず白い塗りマスクを作り、その領域に source-in でグラデーションを流し込む構成です。矩形範囲は getRectSize(img_output) で取得し、角度は gradation から計算しています。
+
+共通の書き込み処理を見るなら src/js/pendefine/_penobj.js です。Fill は PenObj を継承していて、色取得は getColorRGB()、合成モード初期化は init_globalCompositeOperation()、最終的なレイヤー反映は write() 側にあります。移植するなら、バケツ本体だけでなく write() の「一時キャンバス → 現在レイヤーへ反映 → 全体更新」の流れも確認したほうがいいです。
+
+UI・ツール登録側は src/js/window_pen.js です。ここで Fill と Fillgradation を import し、penObj['axp_penmode_fill'] と penObj['axp_penmode_fillgradation'] として登録しています。つまり AXNOS Paint ではバケツも「ペンモードの一種」として扱われています。
+
+設定UI側は src/html/window_pen.txt です。バケツ関連では axp_pen_form_fillThreshold / axp_pen_range_fillThreshold が「塗り範囲拡張」、axp_pen_form_fillGradationDeg / axp_pen_range_fillGradationDeg が「グラデーション角度」、axp_pen_select_fillMode が「全レイヤー参照か現在レイヤー参照か」の切替です。
+
+見る順番としては、まずこれで十分です。
+
+src/js/pendefine/fill.js
+通常バケツ本体。最重要。
+
+src/js/pendefine/fillgradation.js
+階調バケツ。通常バケツの応用。
+
+src/js/pendefine/_penobj.js
+色取得、合成モード、レイヤー書き込み、Undo共通処理。
+
+src/js/window_pen.js
+ツール登録、選択、スライダー表示制御。
+
+src/html/window_pen.txt
+バケツ設定UI。境界補正、参照対象、グラデーション角度。
+
+移植観点では、特に使えそうなのは regionFill の構造です。ただしそのまま入れるより、あなたの現在の fill-tool.js に合わせて次のように分解したほうが安全です。
+
+getReferenceImageData()
+現在レイヤー参照か、全レイヤー合成参照かを選ぶ。
+
+floodFillMask(startX, startY, sourceImageData, options)
+塗り対象のマスクだけ作る。
+
+expandMask(mask, grow)
+境界補正。AXNOSの oversize 相当。
+
+renderFill(mask, color | gradient | pattern)
+単色、トーン、グラデーションなどを流し込む。
+
+commitToLayer(imageData)
+あなたのレイヤーシステムへ反映し、Undoを積む。
+
+AXNOS版は「実装が短くて読みやすい」一方で、近似色許容、アンチエイリアス線の隙間対策、WebGLレイヤー合成、透明保護、マスクレイヤーなどをそのまま現代的に扱う作りではありません。参考にするなら、まずは regionFill の探索・処理済み管理・全レイヤー/現在レイヤー参照切替の考え方を吸収するのがよいです。コードを直接取り込む場合は、リポジトリが MPL-2.0 ライセンスで公開されている点も確認しておいたほうがいいです。
