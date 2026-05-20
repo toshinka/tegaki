@@ -154,6 +154,20 @@ export const KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            case 'TOOL_AIRBRUSH_BLUR_TOGGLE': {
+                const currentTool = api?.tool.get() || window.coreEngine?.brushCore.getMode();
+                let nextTool = currentTool === 'airbrush' ? 'airbrush-erase' : 'airbrush';
+                
+                if (api?.tool.set(nextTool)) {
+                    syncToolUI(nextTool);
+                } else if (window.coreEngine?.switchTool) {
+                    window.coreEngine.switchTool(nextTool);
+                    syncToolUI(nextTool);
+                }
+                event.preventDefault();
+                break;
+            }
+            
             case 'LAYER_CREATE':
                 if (api?.layer.create) {
                     const result = api.layer.create();

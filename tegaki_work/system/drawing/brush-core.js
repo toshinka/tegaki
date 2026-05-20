@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { Graphics, Container } from 'pixi.js';
+import { Graphics, Container, Sprite, RenderTexture } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
 import { coordinateSystem } from '../../coordinate-system.js';
 import { historyManager } from '../history.js';
@@ -41,6 +41,10 @@ export class BrushCore {
         this.eventListenersSetup = false;
         this.realtimeEraserApplied = false; // [指示書] リアルタイム消去済みフラグ
         this.realtimePenApplied = false;    // [指示書] リアルタイム描画済みフラグ
+        this.realtimeAirbrushApplied = false;
+        this.realtimeBlurApplied = false;
+        this.airbrushState = null;
+        this.blurState = null;
         this.strokeHistoryBefore = null;
     }
     
@@ -97,7 +101,10 @@ export class BrushCore {
                 size: 3,
                 opacity: 1.0,
                 color: 0x800000,
-                mode: 'pen'
+                mode: 'pen',
+                airbrushSpacingRatio: 0.18,
+                airbrushFlow: 0.22,
+                blurStrength: 4
             };
         }
         
@@ -105,7 +112,7 @@ export class BrushCore {
     }
     
     setMode(mode) {
-        const validModes = ['pen', 'eraser', 'fill'];
+        const validModes = ['pen', 'eraser', 'fill', 'airbrush', 'airbrush-erase', 'blur'];
         
         if (!validModes.includes(mode)) {
             console.error(`[BrushCore] Invalid brush mode: ${mode}`);
@@ -157,6 +164,14 @@ export class BrushCore {
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
         
         const settings = this._getCurrentSettings();
+        this.airbrushState = (currentMode === 'airbrush' || currentMode === 'airbrush-erase') ? {} : null;
+
+        if (currentMode === 'blur') {
+            this._beginBlurStroke(activeLayer, settings);
+        } else {
+            this._cleanupBlurStroke();
+        }
+
         const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
         const processedPressure = pressureEnabled ? Math.max(0.1, pressure ?? 0.5) : 1.0;
         
@@ -191,6 +206,14 @@ export class BrushCore {
             settings,
             this.previewGraphics
         );
+
+        if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
+            this._renderRealtimeAirbrushSegment([{ x: localX, y: localY, pressure: processedPressure }]);
+            this.realtimeAirbrushApplied = true;
+        } else if (currentMode === 'blur') {
+            this._renderRealtimeBlurSegment([{ x: localX, y: localY, pressure: processedPressure }]);
+            this.realtimeBlurApplied = true;
+        }
         
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-started', {
@@ -246,7 +269,7 @@ export class BrushCore {
         this.strokeRecorder.addPoint(localX, localY, processedPressure);
         
         // [指示書] ライブ焼き込み中は previewGraphics を使用しない（二重描画防止）
-        if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen') {
+        if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen' && currentMode !== 'airbrush' && currentMode !== 'airbrush-erase' && currentMode !== 'blur') {
             const currentPoints = this.strokeRecorder.getCurrentPoints();
             const settings = this._getCurrentSettings();
             
@@ -269,19 +292,28 @@ export class BrushCore {
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (!force && distance <= 0.5) return;
-        if (distance <= 0) return;
 
-        const segmentPoints = [
-            { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
-            { x: localX, y: localY, pressure }
-        ];
+        const segmentPoints = distance <= 0
+            ? [{ x: localX, y: localY, pressure }]
+            : [
+                { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
+                { x: localX, y: localY, pressure }
+              ];
 
         if (mode === 'eraser') {
+            if (distance <= 0) return;
             this._renderRealtimeEraserSegment(segmentPoints);
             this.realtimeEraserApplied = true;
         } else if (mode === 'pen') {
+            if (distance <= 0) return;
             this._renderRealtimePenSegment(segmentPoints);
             this.realtimePenApplied = true;
+        } else if (mode === 'airbrush' || mode === 'airbrush-erase') {
+            this._renderRealtimeAirbrushSegment(segmentPoints);
+            this.realtimeAirbrushApplied = true;
+        } else if (mode === 'blur') {
+            this._renderRealtimeBlurSegment(segmentPoints);
+            this.realtimeBlurApplied = true;
         } else {
             return;
         }
@@ -294,6 +326,8 @@ export class BrushCore {
     _isPressureEnabledForMode(mode, settings, pointerType) {
         if (pointerType !== 'pen') return false;
         if (mode === 'eraser') return settings.eraserPressureEnabled === true;
+        if (mode === 'airbrush' || mode === 'airbrush-erase') return settings.pressureEnabled === true;
+        if (mode === 'blur') return false;
         return settings.pressureEnabled === true;
     }
 
@@ -346,7 +380,99 @@ export class BrushCore {
             graphics.destroy({ children: true, texture: true, baseTexture: true });
         }
     }
-    
+
+    /**
+     * Phase 3a: エアブラシのリアルタイム反映用。
+     * 柔らかい円形スタンプを短いセグメント上に配置し、RenderTextureへ焼き込む。
+     */
+    _renderRealtimeAirbrushSegment(points) {
+        const activeLayer = this.layerManager.getActiveLayer();
+        if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
+
+        const settings = this._getCurrentSettings();
+        const renderContainer = this.strokeRenderer.renderAirbrushSegment(points, settings, this.airbrushState || {});
+
+        if (renderContainer && this.layerManager.app?.renderer) {
+            this.layerManager.app.renderer.render({
+                container: renderContainer,
+                target: activeLayer.layerData.renderTexture,
+                clear: false
+            });
+
+            // cached texture を破棄しないため texture/baseTexture は指定しない。
+            renderContainer.destroy({ children: true });
+        }
+    }
+
+    /**
+     * Phase 3a: ぼかしブラシの開始時スナップショットを作成する。
+     */
+    _beginBlurStroke(activeLayer, settings) {
+        this._cleanupBlurStroke();
+
+        const renderer = this.layerManager.app?.renderer;
+        const sourceRenderTexture = activeLayer?.layerData?.renderTexture;
+
+        if (!renderer || !sourceRenderTexture) {
+            this.blurState = null;
+            return;
+        }
+
+        const width = sourceRenderTexture.width || activeLayer.layerData?.width || this.layerManager.canvasWidth || 1;
+        const height = sourceRenderTexture.height || activeLayer.layerData?.height || this.layerManager.canvasHeight || 1;
+
+        const blurSourceTexture = RenderTexture.create({
+            width,
+            height,
+            resolution: 1
+        });
+
+        const sourceSprite = new Sprite(sourceRenderTexture);
+
+        renderer.render({
+            container: sourceSprite,
+            target: blurSourceTexture,
+            clear: true
+        });
+
+        sourceSprite.destroy();
+
+        this.blurState = {
+            sourceTexture: blurSourceTexture,
+            blurStrength: settings.blurStrength ?? 4
+        };
+    }
+
+    /**
+     * Phase 3a: ぼかしブラシのリアルタイム反映用。
+     * ストローク開始時点の複製テクスチャにBlurFilterをかけ、マスク領域だけ焼き込む。
+     */
+    _renderRealtimeBlurSegment(points) {
+        const activeLayer = this.layerManager.getActiveLayer();
+        if (!activeLayer || !activeLayer.layerData?.renderTexture || !this.blurState?.sourceTexture) return;
+
+        const settings = this._getCurrentSettings();
+        const renderContainer = this.strokeRenderer.renderBlurSegment(points, settings, this.blurState.sourceTexture);
+
+        if (renderContainer && this.layerManager.app?.renderer) {
+            this.layerManager.app.renderer.render({
+                container: renderContainer,
+                target: activeLayer.layerData.renderTexture,
+                clear: false
+            });
+
+            renderContainer.__tegakiDestroyFilters?.();
+            renderContainer.destroy({ children: true });
+        }
+    }
+
+    _cleanupBlurStroke() {
+        if (this.blurState?.sourceTexture) {
+            this.blurState.sourceTexture.destroy(true);
+        }
+        this.blurState = null;
+    }
+
     async finalizeStroke() {
         if (!this.isDrawing) return;
         
@@ -368,12 +494,17 @@ export class BrushCore {
         const mode = settings.mode || 'pen';
 
         const finalPoint = strokeData?.points?.[strokeData.points.length - 1];
-        if (finalPoint && ((mode === 'eraser' && this.realtimeEraserApplied) || (mode === 'pen' && this.realtimePenApplied))) {
+        const hasRealtimeApplied =
+            (mode === 'eraser' && this.realtimeEraserApplied) ||
+            (mode === 'pen' && this.realtimePenApplied) ||
+            ((mode === 'airbrush' || mode === 'airbrush-erase') && this.realtimeAirbrushApplied) ||
+            (mode === 'blur' && this.realtimeBlurApplied);
+
+        if (finalPoint && hasRealtimeApplied) {
             this._renderRealtimeSegmentIfNeeded(mode, finalPoint.x, finalPoint.y, finalPoint.pressure, true);
         }
 
-        const alreadyApplied = (mode === 'eraser' && this.realtimeEraserApplied) ||
-                               (mode === 'pen' && this.realtimePenApplied);
+        const alreadyApplied = hasRealtimeApplied;
 
         // 通常のペン/消しゴムはドラッグ中のライブ焼き込みを完成形にする。
         // pointerup 後に別アルゴリズムで焼き直すと、線幅や軌跡が変わって描画体験が崩れる。
@@ -464,7 +595,11 @@ export class BrushCore {
         
         this.isDrawing = false;
         this.realtimeEraserApplied = false; 
-        this.realtimePenApplied = false; // フラグリセット
+        this.realtimePenApplied = false;
+        this.realtimeAirbrushApplied = false;
+        this.realtimeBlurApplied = false;
+        this.airbrushState = null;
+        this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
         
         if (this.eventBus) {
@@ -519,6 +654,12 @@ export class BrushCore {
         }
         
         this.isDrawing = false;
+        this.realtimeEraserApplied = false;
+        this.realtimePenApplied = false;
+        this.realtimeAirbrushApplied = false;
+        this.realtimeBlurApplied = false;
+        this.airbrushState = null;
+        this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
         
         if (this.eventBus) {

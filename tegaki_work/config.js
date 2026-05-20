@@ -155,6 +155,12 @@ export const TEGAKI_KEYMAP = {
             shift: false,
             description: '塗りつぶしツール'
         },
+        TOOL_AIRBRUSH_BLUR_TOGGLE: {
+            key: 'KeyB',
+            ctrl: false,
+            shift: false,
+            description: 'エアブラシ/ぼかし切替'
+        },
         LAYER_CREATE: {
             key: 'KeyL',
             ctrl: true,
@@ -441,6 +447,7 @@ export const TEGAKI_KEYCONFIG = {
     pen: 'KeyP',
     eraser: 'KeyE',
     fill: 'KeyG',
+    airbrushBlurToggle: 'KeyB',
     layerMode: 'KeyV',
     canvasReset: 'Digit0',
     horizontalFlip: 'KeyH',

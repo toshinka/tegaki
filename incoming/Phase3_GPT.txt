@@ -1,0 +1,918 @@
+問題ありません。追加質疑なしで進められます。
+以下は、`PastFiles/tegaki_phase2q2/` を参照元にし、`tegaki_work/` へ適用する前提の実装提案です。作業対象が `tegaki_work/` である点、ライブラスター焼き込みが標準パイプラインである点、Phase 3 にエアブラシ/ぼかしが含まれる点に沿っています。  
+仕様書側も、対象ファイルとアルゴリズム、インラインスタイル禁止を明示しています。 
+
+以下をそのままアンチグラビティ/Geminiに渡してください。
+
+---
+
+## Phase 3a 実装提案：エアブラシ / ぼかしブラシ
+
+### 前提
+
+参照元は `PastFiles/tegaki_phase2q2/...`。
+適用先はすべて `tegaki_work/...`。
+
+今回は既存の通常ペン・消しゴム・塗りつぶし・Undo/Redoを壊さないため、既存の `BrushCore._renderRealtimeSegmentIfNeeded()` に `airbrush` / `blur` を追加する。
+`pen` / `eraser` の確定時再描画スキップ方針と同様、`airbrush` / `blur` もドラッグ中にRenderTextureへ焼き込んだ結果を完成形とする。
+
+---
+
+# 1. `tegaki_work/system/drawing/brush-settings.js`
+
+## 変更方針
+
+`mode` に `airbrush` / `blur` を追加。
+エアブラシ用に `airbrushSpacingRatio` / `airbrushFlow`、ぼかし用に `blurStrength` を持たせる。
+
+## 差分指示
+
+### 1-1. ヘッダー更新
+
+`イベント発火` を以下へ更新。
+
+```js
+ * イベント発火: brush:mode-changed, brush:size-changed, brush:color-changed, brush:opacity-changed, brush:pressure-enabled-changed, brush:eraser-pressure-enabled-changed, brush:airbrush-settings-changed, brush:blur-settings-changed
+```
+
+### 1-2. constructor のデフォルト値追加
+
+`this.eraserPressureEnabled = false;` の直後に追加。
+
+```js
+    // Phase 3a: エアブラシ / ぼかしブラシ設定
+    // airbrushSpacingRatio: 小さいほど高密度。size * ratio がスタンプ間隔になる。
+    this.airbrushSpacingRatio = this.config.BRUSH_DEFAULTS?.airbrushSpacingRatio ?? 0.18;
+    // airbrushFlow: 1スタンプあたりの濃度。opacity と掛け合わせる。
+    this.airbrushFlow = this.config.BRUSH_DEFAULTS?.airbrushFlow ?? 0.22;
+    // blurStrength: PixiJS BlurFilter の強度。強すぎると重くなるため初期値は控えめ。
+    this.blurStrength = this.config.BRUSH_DEFAULTS?.blurStrength ?? 4;
+```
+
+### 1-3. `setMode(mode)` の許可モード変更
+
+Before:
+
+```js
+    if (mode !== 'pen' && mode !== 'eraser' && mode !== 'fill') {
+      console.warn('[BrushSettings] Invalid mode:', mode, '(allowed: pen, eraser, fill)');
+      return;
+    }
+```
+
+After:
+
+```js
+    const validModes = ['pen', 'eraser', 'fill', 'airbrush', 'blur'];
+    if (!validModes.includes(mode)) {
+      console.warn('[BrushSettings] Invalid mode:', mode, `(allowed: ${validModes.join(', ')})`);
+      return;
+    }
+```
+
+### 1-4. `getSettings()` に追加
+
+Before:
+
+```js
+      pressureEnabled: this.pressureEnabled,
+      eraserPressureEnabled: this.eraserPressureEnabled
+```
+
+After:
+
+```js
+      pressureEnabled: this.pressureEnabled,
+      eraserPressureEnabled: this.eraserPressureEnabled,
+      airbrushSpacingRatio: this.airbrushSpacingRatio,
+      airbrushFlow: this.airbrushFlow,
+      blurStrength: this.blurStrength
+```
+
+### 1-5. 設定API追加
+
+`toggleEraserPressure()` の後ろに追加。
+
+```js
+  setAirbrushSpacingRatio(ratio) {
+    const oldRatio = this.airbrushSpacingRatio;
+    this.airbrushSpacingRatio = Math.max(0.05, Math.min(1.0, Number(ratio) || 0.18));
+
+    if (oldRatio !== this.airbrushSpacingRatio && this.eventBus) {
+      this.eventBus.emit('brush:airbrush-settings-changed', {
+        component: 'brush',
+        action: 'airbrush-settings-changed',
+        data: {
+          airbrushSpacingRatio: this.airbrushSpacingRatio,
+          airbrushFlow: this.airbrushFlow
+        }
+      });
+    }
+  }
+
+  setAirbrushFlow(flow) {
+    const oldFlow = this.airbrushFlow;
+    this.airbrushFlow = Math.max(0.01, Math.min(1.0, Number(flow) || 0.22));
+
+    if (oldFlow !== this.airbrushFlow && this.eventBus) {
+      this.eventBus.emit('brush:airbrush-settings-changed', {
+        component: 'brush',
+        action: 'airbrush-settings-changed',
+        data: {
+          airbrushSpacingRatio: this.airbrushSpacingRatio,
+          airbrushFlow: this.airbrushFlow
+        }
+      });
+    }
+  }
+
+  setBlurStrength(strength) {
+    const oldStrength = this.blurStrength;
+    this.blurStrength = Math.max(0.5, Math.min(16, Number(strength) || 4));
+
+    if (oldStrength !== this.blurStrength && this.eventBus) {
+      this.eventBus.emit('brush:blur-settings-changed', {
+        component: 'brush',
+        action: 'blur-settings-changed',
+        data: {
+          blurStrength: this.blurStrength
+        }
+      });
+    }
+  }
+```
+
+### 1-6. `updateSettings(settings)` に追加
+
+`settings.mode` の処理の後ろに追加。
+
+```js
+    if (settings.airbrushSpacingRatio !== undefined && settings.airbrushSpacingRatio !== this.airbrushSpacingRatio) {
+      this.setAirbrushSpacingRatio(settings.airbrushSpacingRatio);
+      changed = true;
+    }
+
+    if (settings.airbrushFlow !== undefined && settings.airbrushFlow !== this.airbrushFlow) {
+      this.setAirbrushFlow(settings.airbrushFlow);
+      changed = true;
+    }
+
+    if (settings.blurStrength !== undefined && settings.blurStrength !== this.blurStrength) {
+      this.setBlurStrength(settings.blurStrength);
+      changed = true;
+    }
+```
+
+---
+
+# 2. `tegaki_work/system/drawing/stroke-renderer.js`
+
+## 変更方針
+
+`StrokeRenderer` に以下を追加する。
+
+* エアブラシ用の柔らかい円形テクスチャを遅延生成・キャッシュ。
+* `renderAirbrushSegment(points, settings, state)` を追加。
+* `renderBlurSegment(points, settings, blurSourceTexture)` を追加。
+* `renderPreview()` は `airbrush` / `blur` のプレビューを描かない。ライブ焼き込みに任せる。
+
+## 差分指示
+
+### 2-1. import変更
+
+Before:
+
+```js
+import { Graphics, Mesh, Geometry } from 'pixi.js';
+```
+
+After:
+
+```js
+import { Graphics, Mesh, Geometry, Container, Sprite, Texture, BlurFilter } from 'pixi.js';
+```
+
+### 2-2. constructor にキャッシュ追加
+
+`this.webgl2Enabled = false;` の後ろに追加。
+
+```js
+    this.airbrushTexture = null;
+```
+
+### 2-3. `renderPenSegment()` の後ろに追加
+
+```js
+  /**
+   * Phase 3a: エアブラシのリアルタイム焼き込み用コンテナを生成する。
+   * state は BrushCore 側でストローク中だけ保持し、スタンプ間隔の端数を持ち越す。
+   */
+  renderAirbrushSegment(points, settings, state = {}) {
+    if (!points || points.length < 1) return null;
+
+    const container = new Container();
+    const texture = this._getAirbrushTexture();
+
+    if (points.length === 1) {
+      const p = points[0];
+      this._addAirbrushDab(container, texture, p.x, p.y, p.pressure ?? 1.0, settings);
+      state.initialized = true;
+      state.nextDistance = this._getAirbrushSpacing(settings);
+      return container;
+    }
+
+    const start = points[0];
+    const end = points[points.length - 1];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const distance = Math.hypot(dx, dy);
+
+    if (distance <= 0) {
+      this._addAirbrushDab(container, texture, end.x, end.y, end.pressure ?? 1.0, settings);
+      return container;
+    }
+
+    const spacing = this._getAirbrushSpacing(settings);
+    let nextDistance;
+
+    if (!state.initialized) {
+      nextDistance = 0;
+      state.initialized = true;
+    } else {
+      nextDistance = state.nextDistance ?? spacing;
+    }
+
+    while (nextDistance <= distance) {
+      const t = nextDistance / distance;
+      const x = start.x + dx * t;
+      const y = start.y + dy * t;
+      const pressure = (start.pressure ?? 1.0) + ((end.pressure ?? 1.0) - (start.pressure ?? 1.0)) * t;
+
+      this._addAirbrushDab(container, texture, x, y, pressure, settings);
+      nextDistance += spacing;
+    }
+
+    state.nextDistance = nextDistance - distance;
+    return container.children.length > 0 ? container : null;
+  }
+
+  _getAirbrushSpacing(settings) {
+    const size = Math.max(1, settings.size || 1);
+    const ratio = settings.airbrushSpacingRatio ?? 0.18;
+    return Math.max(1, size * ratio);
+  }
+
+  _addAirbrushDab(container, texture, x, y, pressure, settings) {
+    const size = settings.pressureEnabled === true
+      ? this.calculateWidth(Math.max(0.1, pressure ?? 1.0), settings.size)
+      : settings.size;
+
+    const sprite = new Sprite(texture);
+    sprite.anchor.set(0.5);
+    sprite.position.set(x, y);
+    sprite.width = size;
+    sprite.height = size;
+    sprite.tint = settings.color ?? 0x800000;
+    sprite.alpha = Math.max(0.01, Math.min(1, (settings.opacity ?? 1.0) * (settings.airbrushFlow ?? 0.22)));
+    sprite.blendMode = 'normal';
+
+    container.addChild(sprite);
+  }
+
+  _getAirbrushTexture() {
+    if (this.airbrushTexture) {
+      return this.airbrushTexture;
+    }
+
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+
+    const ctx = canvas.getContext('2d');
+    const center = size / 2;
+    const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
+
+    gradient.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+    gradient.addColorStop(0.35, 'rgba(255, 255, 255, 0.55)');
+    gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.16)');
+    gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    this.airbrushTexture = Texture.from(canvas);
+    return this.airbrushTexture;
+  }
+
+  /**
+   * Phase 3a: ぼかしブラシのリアルタイム焼き込み用コンテナを生成する。
+   * blurSourceTexture はストローク開始時点のアクティブレイヤー複製。
+   */
+  renderBlurSegment(points, settings, blurSourceTexture) {
+    if (!points || points.length < 1 || !blurSourceTexture) return null;
+
+    const container = new Container();
+    const sourceSprite = new Sprite(blurSourceTexture);
+    const maskGraphics = new Graphics();
+
+    const width = Math.max(1, settings.size || 1);
+    const strength = Math.max(0.5, Math.min(16, settings.blurStrength ?? 4));
+
+    if (points.length === 1) {
+      const p = points[0];
+      maskGraphics.circle(p.x, p.y, width / 2);
+      maskGraphics.fill({ color: 0xffffff, alpha: 1 });
+    } else {
+      maskGraphics.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        maskGraphics.lineTo(points[i].x, points[i].y);
+      }
+      maskGraphics.stroke({
+        width,
+        color: 0xffffff,
+        alpha: 1,
+        cap: 'round',
+        join: 'round'
+      });
+    }
+
+    const blurFilter = new BlurFilter({
+      strength,
+      quality: 2,
+      resolution: 1
+    });
+
+    sourceSprite.filters = [blurFilter];
+    sourceSprite.mask = maskGraphics;
+    sourceSprite.blendMode = 'normal';
+
+    container.addChild(sourceSprite);
+    container.addChild(maskGraphics);
+
+    // BrushCore 側で destroy 前に呼ぶ。Container.destroy だけでは Filter の破棄が曖昧なため明示する。
+    container.__tegakiDestroyFilters = () => {
+      sourceSprite.filters = null;
+      blurFilter.destroy();
+    };
+
+    return container;
+  }
+```
+
+### 2-4. `renderPreview()` の早期returnを変更
+
+Before:
+
+```js
+    // 消しゴムの場合はプレビューを描画しない（リアルタイム焼き込みに移行したため）
+
+    if (mode === 'eraser') {
+
+      return graphics;
+
+    }
+```
+
+After:
+
+```js
+    // 消しゴム・ペン・エアブラシ・ぼかしはライブ焼き込み側を正にする。
+    // previewGraphics で重ね描きすると見た目と確定結果がずれるため描画しない。
+    if (mode === 'eraser' || mode === 'airbrush' || mode === 'blur') {
+      return graphics;
+    }
+```
+
+補足: `pen` は既存 `BrushCore` 側で previewGraphics を使わない条件になっているため、ここでは既存挙動を変えない。
+
+---
+
+# 3. `tegaki_work/system/drawing/brush-core.js`
+
+## 変更方針
+
+`BrushCore` に以下を追加。
+
+* `airbrush` / `blur` モード許可。
+* ライブ焼き込み分岐追加。
+* ぼかし用の一時RenderTextureをストローク開始時に作成、終了時に破棄。
+* 履歴は既存の `createLayerRasterSnapshot()` / `restoreLayerRasterSnapshot()` を使う。
+
+## 差分指示
+
+### 3-1. import変更
+
+Before:
+
+```js
+import { Graphics, Container } from 'pixi.js';
+```
+
+After:
+
+```js
+import { Graphics, Container, Sprite, RenderTexture } from 'pixi.js';
+```
+
+### 3-2. ヘッダー更新
+
+責務を以下へ更新。
+
+```js
+ * 責務: ストローク（ペン・消しゴム・塗りつぶし・エアブラシ・ぼかし）の開始・更新・完了とクリッピング中のプレビュー表示を統括する
+```
+
+### 3-3. constructor に状態追加
+
+`this.realtimePenApplied = false;` の後ろに追加。
+
+```js
+    this.realtimeAirbrushApplied = false;
+    this.realtimeBlurApplied = false;
+    this.airbrushState = null;
+    this.blurState = null;
+```
+
+### 3-4. `_getCurrentSettings()` のフォールバック更新
+
+Before:
+
+```js
+      return { size: 3, opacity: 1.0, color: 0x800000, mode: 'pen' };
+```
+
+After:
+
+```js
+      return {
+        size: 3,
+        opacity: 1.0,
+        color: 0x800000,
+        mode: 'pen',
+        airbrushSpacingRatio: 0.18,
+        airbrushFlow: 0.22,
+        blurStrength: 4
+      };
+```
+
+### 3-5. `setMode(mode)` の許可モード更新
+
+Before:
+
+```js
+    const validModes = ['pen', 'eraser', 'fill'];
+```
+
+After:
+
+```js
+    const validModes = ['pen', 'eraser', 'fill', 'airbrush', 'blur'];
+```
+
+### 3-6. `startStroke()` に初期化追加
+
+`this.strokeHistoryBefore = ...` の後ろに、既存座標計算より前ではなく、`settings` 取得後に追加する。
+
+`const settings = this._getCurrentSettings();` の後ろに追加。
+
+```js
+    this.airbrushState = currentMode === 'airbrush' ? {} : null;
+
+    if (currentMode === 'blur') {
+      this._beginBlurStroke(activeLayer, settings);
+    } else {
+      this._cleanupBlurStroke();
+    }
+```
+
+さらに、`this.strokeRenderer.renderPreview(...)` の後ろに追加。
+
+```js
+    if (currentMode === 'airbrush') {
+      this._renderRealtimeAirbrushSegment([{ x: localX, y: localY, pressure: processedPressure }]);
+      this.realtimeAirbrushApplied = true;
+    } else if (currentMode === 'blur') {
+      this._renderRealtimeBlurSegment([{ x: localX, y: localY, pressure: processedPressure }]);
+      this.realtimeBlurApplied = true;
+    }
+```
+
+### 3-7. `updateStroke()` の preview 条件変更
+
+Before:
+
+```js
+    if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen') {
+```
+
+After:
+
+```js
+    if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen' && currentMode !== 'airbrush' && currentMode !== 'blur') {
+```
+
+### 3-8. `_renderRealtimeSegmentIfNeeded()` を置換
+
+既存の同名関数を以下へ置換。
+
+```js
+  _renderRealtimeSegmentIfNeeded(mode, localX, localY, pressure, force = false) {
+    const dx = localX - this.lastRenderedLocalX;
+    const dy = localY - this.lastRenderedLocalY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (!force && distance <= 0.5) return;
+
+    const segmentPoints = distance <= 0
+      ? [{ x: localX, y: localY, pressure }]
+      : [
+          { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
+          { x: localX, y: localY, pressure }
+        ];
+
+    if (mode === 'eraser') {
+      if (distance <= 0) return;
+      this._renderRealtimeEraserSegment(segmentPoints);
+      this.realtimeEraserApplied = true;
+    } else if (mode === 'pen') {
+      if (distance <= 0) return;
+      this._renderRealtimePenSegment(segmentPoints);
+      this.realtimePenApplied = true;
+    } else if (mode === 'airbrush') {
+      this._renderRealtimeAirbrushSegment(segmentPoints);
+      this.realtimeAirbrushApplied = true;
+    } else if (mode === 'blur') {
+      this._renderRealtimeBlurSegment(segmentPoints);
+      this.realtimeBlurApplied = true;
+    } else {
+      return;
+    }
+
+    this.lastRenderedLocalX = localX;
+    this.lastRenderedLocalY = localY;
+    this.lastRenderedPressure = pressure;
+  }
+```
+
+### 3-9. `_isPressureEnabledForMode()` を置換
+
+```js
+  _isPressureEnabledForMode(mode, settings, pointerType) {
+    if (pointerType !== 'pen') return false;
+    if (mode === 'eraser') return settings.eraserPressureEnabled === true;
+    if (mode === 'airbrush') return settings.pressureEnabled === true;
+    if (mode === 'blur') return false;
+    return settings.pressureEnabled === true;
+  }
+```
+
+### 3-10. `_renderRealtimePenSegment()` の後ろに追加
+
+```js
+  /**
+   * Phase 3a: エアブラシのリアルタイム反映用。
+   * 柔らかい円形スタンプを短いセグメント上に配置し、RenderTextureへ焼き込む。
+   */
+  _renderRealtimeAirbrushSegment(points) {
+    const activeLayer = this.layerManager.getActiveLayer();
+    if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
+
+    const settings = this._getCurrentSettings();
+    const renderContainer = this.strokeRenderer.renderAirbrushSegment(points, settings, this.airbrushState || {});
+
+    if (renderContainer && this.layerManager.app?.renderer) {
+      this.layerManager.app.renderer.render({
+        container: renderContainer,
+        target: activeLayer.layerData.renderTexture,
+        clear: false
+      });
+
+      // cached texture を破棄しないため texture/baseTexture は指定しない。
+      renderContainer.destroy({ children: true });
+    }
+  }
+
+  /**
+   * Phase 3a: ぼかしブラシの開始時スナップショットを作成する。
+   */
+  _beginBlurStroke(activeLayer, settings) {
+    this._cleanupBlurStroke();
+
+    const renderer = this.layerManager.app?.renderer;
+    const sourceRenderTexture = activeLayer?.layerData?.renderTexture;
+
+    if (!renderer || !sourceRenderTexture) {
+      this.blurState = null;
+      return;
+    }
+
+    const width = sourceRenderTexture.width || activeLayer.layerData?.width || this.layerManager.canvasWidth || 1;
+    const height = sourceRenderTexture.height || activeLayer.layerData?.height || this.layerManager.canvasHeight || 1;
+
+    const blurSourceTexture = RenderTexture.create({
+      width,
+      height,
+      resolution: 1
+    });
+
+    const sourceSprite = new Sprite(sourceRenderTexture);
+
+    renderer.render({
+      container: sourceSprite,
+      target: blurSourceTexture,
+      clear: true
+    });
+
+    sourceSprite.destroy();
+
+    this.blurState = {
+      sourceTexture: blurSourceTexture,
+      blurStrength: settings.blurStrength ?? 4
+    };
+  }
+
+  /**
+   * Phase 3a: ぼかしブラシのリアルタイム反映用。
+   * ストローク開始時点の複製テクスチャにBlurFilterをかけ、マスク領域だけ焼き込む。
+   */
+  _renderRealtimeBlurSegment(points) {
+    const activeLayer = this.layerManager.getActiveLayer();
+    if (!activeLayer || !activeLayer.layerData?.renderTexture || !this.blurState?.sourceTexture) return;
+
+    const settings = this._getCurrentSettings();
+    const renderContainer = this.strokeRenderer.renderBlurSegment(points, settings, this.blurState.sourceTexture);
+
+    if (renderContainer && this.layerManager.app?.renderer) {
+      this.layerManager.app.renderer.render({
+        container: renderContainer,
+        target: activeLayer.layerData.renderTexture,
+        clear: false
+      });
+
+      renderContainer.__tegakiDestroyFilters?.();
+      renderContainer.destroy({ children: true });
+    }
+  }
+
+  _cleanupBlurStroke() {
+    if (this.blurState?.sourceTexture) {
+      this.blurState.sourceTexture.destroy(true);
+    }
+    this.blurState = null;
+  }
+```
+
+### 3-11. `finalizeStroke()` の判定変更
+
+Before:
+
+```js
+    if (finalPoint && ((mode === 'eraser' && this.realtimeEraserApplied) || (mode === 'pen' && this.realtimePenApplied))) {
+      this._renderRealtimeSegmentIfNeeded(mode, finalPoint.x, finalPoint.y, finalPoint.pressure, true);
+    }
+
+    const alreadyApplied = (mode === 'eraser' && this.realtimeEraserApplied) || (mode === 'pen' && this.realtimePenApplied);
+```
+
+After:
+
+```js
+    const hasRealtimeApplied =
+      (mode === 'eraser' && this.realtimeEraserApplied) ||
+      (mode === 'pen' && this.realtimePenApplied) ||
+      (mode === 'airbrush' && this.realtimeAirbrushApplied) ||
+      (mode === 'blur' && this.realtimeBlurApplied);
+
+    if (finalPoint && hasRealtimeApplied) {
+      this._renderRealtimeSegmentIfNeeded(mode, finalPoint.x, finalPoint.y, finalPoint.pressure, true);
+    }
+
+    const alreadyApplied = hasRealtimeApplied;
+```
+
+### 3-12. `finalizeStroke()` のリセット処理に追加
+
+Before:
+
+```js
+    this.realtimeEraserApplied = false;
+    this.realtimePenApplied = false; // フラグリセット
+    this.strokeHistoryBefore = null;
+```
+
+After:
+
+```js
+    this.realtimeEraserApplied = false;
+    this.realtimePenApplied = false;
+    this.realtimeAirbrushApplied = false;
+    this.realtimeBlurApplied = false;
+    this.airbrushState = null;
+    this._cleanupBlurStroke();
+    this.strokeHistoryBefore = null;
+```
+
+### 3-13. `cancelStroke()` に後始末追加
+
+`this.strokeHistoryBefore = null;` の前に追加。
+
+```js
+    this.realtimeEraserApplied = false;
+    this.realtimePenApplied = false;
+    this.realtimeAirbrushApplied = false;
+    this.realtimeBlurApplied = false;
+    this.airbrushState = null;
+    this._cleanupBlurStroke();
+```
+
+---
+
+# 4. `tegaki_work/ui/dom-builder.js`
+
+## 変更方針
+
+サイドバーにエアブラシ・ぼかしボタンを追加。
+`UI_ICONS` に未定義アイコンを増やさず、テキストアイコンを使えるようにする。
+
+## 差分指示
+
+### 4-1. tools配列を変更
+
+Before:
+
+```js
+    { id: 'pen-tool', icon: 'pen', title: 'ペン (P / Shift+Pで筆圧切替)', active: true },
+
+    { id: 'eraser-tool', icon: 'eraser', title: '消しゴム (E)' },
+    { id: 'fill-tool', icon: 'fill', title: '塗りつぶし (G)' },
+```
+
+After:
+
+```js
+    { id: 'pen-tool', icon: 'pen', title: 'ペン (P / Shift+Pで筆圧切替)', active: true },
+    { id: 'airbrush-tool', textIcon: '霧', title: 'エアブラシ' },
+    { id: 'blur-tool', textIcon: 'ぼ', title: 'ぼかし' },
+    { id: 'eraser-tool', icon: 'eraser', title: '消しゴム (E)' },
+    { id: 'fill-tool', icon: 'fill', title: '塗りつぶし (G)' },
+```
+
+### 4-2. sidebar button生成を変更
+
+Before:
+
+```js
+      const btn = createElement('div', {
+        className: tool.active ? 'tool-button active' : 'tool-button',
+        id: tool.id,
+        title: tool.title,
+        innerHTML: ICONS[tool.icon]
+      });
+```
+
+After:
+
+```js
+      const iconHtml = tool.textIcon
+        ? `<span class="tool-button-text-icon">${tool.textIcon}</span>`
+        : ICONS[tool.icon];
+
+      const btn = createElement('div', {
+        className: tool.active ? 'tool-button active' : 'tool-button',
+        id: tool.id,
+        title: tool.title,
+        innerHTML: iconHtml || ''
+      });
+```
+
+---
+
+# 5. `tegaki_work/ui/ui-panels.js`
+
+## 変更方針
+
+クリック処理・ステータス表示・active同期に `airbrush` / `blur` を追加。
+
+## 差分指示
+
+### 5-1. `handleToolClick(button)` の `toolMap` に追加
+
+`pen-tool` と `eraser-tool` の間に追加。
+
+```js
+      'airbrush-tool': () => {
+        if (window.CoreRuntime?.api?.tool?.set) {
+          window.CoreRuntime.api.tool.set('airbrush');
+          window.CoreRuntime.api.layer.exitMoveMode();
+        } else if (this.drawingEngine?.brushCore) {
+          this.drawingEngine.brushCore.setMode('airbrush');
+        }
+
+        this.closeAllPopups();
+        this.updateToolUI('airbrush');
+      },
+
+      'blur-tool': () => {
+        if (window.CoreRuntime?.api?.tool?.set) {
+          window.CoreRuntime.api.tool.set('blur');
+          window.CoreRuntime.api.layer.exitMoveMode();
+        } else if (this.drawingEngine?.brushCore) {
+          this.drawingEngine.brushCore.setMode('blur');
+        }
+
+        this.closeAllPopups();
+        this.updateToolUI('blur');
+      },
+```
+
+### 5-2. `updateToolUI(tool)` の `toolNames` に追加
+
+Before:
+
+```js
+      const toolNames = {
+        pen: this.getPenStatusName(),
+        eraser: this.getEraserStatusName(),
+        fill: '塗りつぶし',
+        'gif-animation': 'GIFアニメーション'
+      };
+```
+
+After:
+
+```js
+      const toolNames = {
+        pen: this.getPenStatusName(),
+        airbrush: 'エアブラシ',
+        blur: 'ぼかし',
+        eraser: this.getEraserStatusName(),
+        fill: '塗りつぶし',
+        'gif-animation': 'GIFアニメーション'
+      };
+```
+
+---
+
+# 6. `tegaki_work/styles/main.css`
+
+## 変更方針
+
+`dom-builder.js` にテキストアイコンを追加するため、CSSクラスを追加する。
+インラインスタイルは禁止なのでCSSに集約する。
+
+## 追加CSS
+
+任意のUI共通ボタン定義付近に追加。
+
+```css
+.tool-button-text-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35em;
+  height: 1.35em;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: currentColor;
+  user-select: none;
+  pointer-events: none;
+}
+```
+
+---
+
+# 7. 注意点
+
+`brush-core.js` のぼかし処理では、ストローク開始時のレイヤー状態を `blurSourceTexture` に複製し、描画中はその複製に `BlurFilter` をかけた結果だけをマスク焼き込みする。これにより、ぼかし結果をさらにぼかし続けて黒ずみ・肥大化する挙動を避ける。
+
+ただし、PixiJS v8 の `RenderTexture.width / height` が環境によって期待値を返さない場合がある。その場合はローカル実装側で `activeLayer.layerData.width / height`、またはレイヤーシステム側のキャンバスサイズ取得APIに合わせて補正すること。
+
+`renderContainer.destroy({ children: true, texture: true, baseTexture: true })` はエアブラシでは使わない。エアブラシのSpriteはキャッシュ済みTextureを共有するため、texture破棄を指定すると次回以降の描画が壊れる可能性がある。
+
+---
+
+# 8. 受け入れ条件
+
+最低限、以下を確認する。
+
+1. ペン、消しゴム、塗りつぶしが従来通り動く。
+2. エアブラシを選ぶと、柔らかい円形スタンプがストロークに沿って焼き込まれる。
+3. エアブラシは筆圧ON時にサイズ変化する。
+4. ぼかしを選ぶと、アクティブレイヤー上の既存描画だけがストローク部分で平滑化される。
+5. ぼかし中に透明部分が黒ずまない。
+6. pointerup後に見た目が変化しない。
+7. Undo/Redoでエアブラシ・ぼかしの前後状態が戻る。
+8. レイヤーサムネイルが更新される。
+9. `npm run build` が成功する。
+10. ブラウザconsoleに新規エラーが出ない。
+
+---
+
+# 9. 残リスク
+
+ぼかしブラシは今回の中で最もリスクが高いです。特に `BlurFilter` + `mask` + `RenderTexture` 焼き込みは、PixiJS v8の内部仕様や対象レイヤーの座標系に依存します。もし黒ずみや座標ズレが出る場合、次の段階では `stroke-renderer.js` 側ではなく、`layer-system.js` のRenderTexture生成サイズ・透明クリア・premultiplied alpha対策を確認してください。
+
+今回の提案では `layer-system.js` には触れていません。影響範囲をPhase 3a対象ファイル中心に抑えるためです。

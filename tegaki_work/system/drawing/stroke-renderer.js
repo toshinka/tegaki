@@ -12,7 +12,7 @@
  * ============================================================================
  */
 
-import { Graphics, Mesh, Geometry } from 'pixi.js';
+import { Graphics, Mesh, Geometry, Container, Sprite, Texture, BlurFilter } from 'pixi.js';
 import { getStroke } from 'perfect-freehand';
 import { TEGAKI_CONFIG } from '../../config.js';
 
@@ -29,6 +29,7 @@ export class StrokeRenderer {
         this.glMSDFPipeline = null;
         this.textureBridge = null;
         this.webgl2Enabled = false;
+        this.airbrushTexture = null;
         
         this.config = window.TEGAKI_CONFIG?.webgpu || {};
     }
@@ -94,6 +95,166 @@ export class StrokeRenderer {
             mode: 'pen',
             pressureEnabled: settings.pressureEnabled === true
         });
+    }
+
+    /**
+     * Phase 3a: エアブラシのリアルタイム焼き込み用コンテナを生成する。
+     * state は BrushCore 側でストローク中だけ保持し、スタンプ間隔の端数を持ち越す。
+     */
+    renderAirbrushSegment(points, settings, state = {}) {
+        if (!points || points.length < 1) return null;
+
+        const container = new Container();
+        const texture = this._getAirbrushTexture();
+
+        if (points.length === 1) {
+            const p = points[0];
+            this._addAirbrushDab(container, texture, p.x, p.y, p.pressure ?? 1.0, settings);
+            state.initialized = true;
+            state.nextDistance = this._getAirbrushSpacing(settings);
+            return container;
+        }
+
+        const start = points[0];
+        const end = points[points.length - 1];
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const distance = Math.hypot(dx, dy);
+
+        if (distance <= 0) {
+            this._addAirbrushDab(container, texture, end.x, end.y, end.pressure ?? 1.0, settings);
+            return container;
+        }
+
+        const spacing = this._getAirbrushSpacing(settings);
+        let nextDistance;
+
+        if (!state.initialized) {
+            nextDistance = 0;
+            state.initialized = true;
+        } else {
+            nextDistance = state.nextDistance ?? spacing;
+        }
+
+        while (nextDistance <= distance) {
+            const t = nextDistance / distance;
+            const x = start.x + dx * t;
+            const y = start.y + dy * t;
+            const pressure = (start.pressure ?? 1.0) + ((end.pressure ?? 1.0) - (start.pressure ?? 1.0)) * t;
+
+            this._addAirbrushDab(container, texture, x, y, pressure, settings);
+            nextDistance += spacing;
+        }
+
+        state.nextDistance = nextDistance - distance;
+        return container.children.length > 0 ? container : null;
+    }
+
+    _getAirbrushSpacing(settings) {
+        const size = Math.max(1, settings.size || 1);
+        const ratio = settings.airbrushSpacingRatio ?? 0.18;
+        return Math.max(1, size * ratio);
+    }
+
+    _addAirbrushDab(container, texture, x, y, pressure, settings) {
+        const size = settings.pressureEnabled === true
+            ? this.calculateWidth(Math.max(0.1, pressure ?? 1.0), settings.size)
+            : settings.size;
+
+        const sprite = new Sprite(texture);
+        sprite.anchor.set(0.5);
+        sprite.position.set(x, y);
+        sprite.width = size;
+        sprite.height = size;
+        sprite.tint = settings.mode === 'airbrush-erase' ? 0xffffff : (settings.color ?? 0x800000);
+        sprite.alpha = Math.max(0.01, Math.min(1, (settings.opacity ?? 1.0) * (settings.airbrushFlow ?? 0.22)));
+        sprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'normal';
+
+        container.addChild(sprite);
+    }
+
+    _getAirbrushTexture() {
+        if (this.airbrushTexture) {
+            return this.airbrushTexture;
+        }
+
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+
+        const ctx = canvas.getContext('2d');
+        const center = size / 2;
+
+        ctx.clearRect(0, 0, size, size);
+        
+        // 非常に滑らかな放射状グラデーション（透明部分は確実に白ベースの透明にする）
+        const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
+        gradient.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+        gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.6)');
+        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)');
+        gradient.addColorStop(0.8, 'rgba(255, 255, 255, 0.02)');
+        gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, size, size);
+
+        this.airbrushTexture = Texture.from(canvas);
+        return this.airbrushTexture;
+    }
+
+    /**
+     * Phase 3a: ぼかしブラシのリアルタイム焼き込み用コンテナを生成する。
+     * blurSourceTexture はストローク開始時点のアクティブレイヤー複製。
+     */
+    renderBlurSegment(points, settings, blurSourceTexture) {
+        if (!points || points.length < 1 || !blurSourceTexture) return null;
+
+        const container = new Container();
+        const sourceSprite = new Sprite(blurSourceTexture);
+        const maskGraphics = new Graphics();
+
+        const width = Math.max(1, settings.size || 1);
+        const strength = Math.max(0.5, Math.min(16, settings.blurStrength ?? 4));
+
+        if (points.length === 1) {
+            const p = points[0];
+            maskGraphics.circle(p.x, p.y, width / 2);
+            maskGraphics.fill({ color: 0xffffff, alpha: 1 });
+        } else {
+            maskGraphics.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                maskGraphics.lineTo(points[i].x, points[i].y);
+            }
+            maskGraphics.stroke({
+                width,
+                color: 0xffffff,
+                alpha: 1,
+                cap: 'round',
+                join: 'round'
+            });
+        }
+
+        const blurFilter = new BlurFilter({
+            strength,
+            quality: 2,
+            resolution: 1
+        });
+
+        sourceSprite.filters = [blurFilter];
+        sourceSprite.mask = maskGraphics;
+        sourceSprite.blendMode = 'normal';
+
+        container.addChild(sourceSprite);
+        container.addChild(maskGraphics);
+
+        // BrushCore 側で destroy 前に呼ぶ。Container.destroy だけでは Filter の破棄が曖昧なため明示する。
+        container.__tegakiDestroyFilters = () => {
+            sourceSprite.filters = null;
+            blurFilter.destroy();
+        };
+
+        return container;
     }
 
     _renderLineSegment(points, settings) {
@@ -207,8 +368,9 @@ export class StrokeRenderer {
 
         graphics.clear();
         
-        // 消しゴムの場合はプレビューを描画しない（リアルタイム焼き込みに移行したため）
-        if (mode === 'eraser') {
+        // 消しゴム・ペン・エアブラシ・ぼかしはライブ焼き込み側を正にする。
+        // previewGraphics で重ね描きすると見た目と確定結果がずれるため描画しない。
+        if (mode === 'eraser' || mode === 'airbrush' || mode === 'blur') {
             return graphics;
         }
 
