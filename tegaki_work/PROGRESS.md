@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 3h — バケツツールの更なる高度化 【次フェーズ】**
+**Phase 3h — バケツツールの更なる高度化 【進行中】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,14 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-20 Gemini：Phase 3h バケツツールの更なる高度化（調査・計画）
+- **調査完了**: `SettingsPopup` へのタブ追加、`G` キーの循環切り替え、`FillTool` の消しモード対応の実現性を確認。
+- **設計方針の策定**: 
+    - `SettingsManager` にバケツ関連の設定項目を追加。
+    - `SettingsPopup` に「バケツ」タブを新設し、QAPのスペースを圧迫せずに詳細設定を可能にする。
+    - `G` キーで `fill` と `eraser-fill` を交互に切り替える。
+- **計画書作成**: `task-gemini/phase3h.md` を作成。
 
 ### 2026-05-20 Codex：Phase 3g完了判定と後続整理
 - **実装確認**: `fill-tool.js` は `gapClosePixels: 1` と `underpaintPixels: 1` を分離し、gap close 後に underpaint dilation を行う形になっている。`npm.cmd run build` 成功。
