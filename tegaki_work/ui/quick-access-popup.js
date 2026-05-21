@@ -238,6 +238,12 @@ export class QuickAccessPopup {
                 gap: 5px;
             }
 
+            .qa-palette-header-right {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }
+
             .qa-color-slot-btn {
                 display: inline-flex;
                 align-items: center;
@@ -318,8 +324,9 @@ export class QuickAccessPopup {
 
             .qa-color-circle-container {
                 display: none;
-                margin-bottom: 8px;
-                width: 100%;
+                margin: 4px auto 8px;
+                width: 132px;
+                max-width: 72%;
                 aspect-ratio: 1;
                 background: rgba(128, 0, 0, 0.04);
                 border-radius: 50%;
@@ -552,11 +559,12 @@ export class QuickAccessPopup {
                 display: grid;
                 grid-template-columns: repeat(5, 1fr);
                 gap: 4px;
+                margin-top: 2px;
             }
 
             .qa-preset-slot {
                 position: relative;
-                height: 36px;
+                height: 46px;
                 border-radius: 8px;
                 border: 1px solid rgba(128, 0, 0, 0.2);
                 background: rgba(255, 255, 238, 0.54);
@@ -567,7 +575,7 @@ export class QuickAccessPopup {
                 justify-content: center;
                 gap: 2px;
                 transition: transform 0.12s ease, border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
-                padding: 2px;
+                padding: 5px 2px 3px;
                 overflow: hidden;
             }
 
@@ -630,24 +638,24 @@ export class QuickAccessPopup {
             /* ─── スライダー ─── */
             .qa-slider-card {
                 display: grid;
-                gap: 6px;
-                padding: 9px;
-                border-radius: 12px;
+                gap: 4px;
+                padding: 6px 8px;
+                border-radius: 10px;
                 border: 1px solid rgba(128, 0, 0, 0.14);
                 background: rgba(255, 255, 238, 0.42);
             }
 
             .qa-slider-row {
                 display: grid;
-                grid-template-columns: 26px 1fr 26px;
+                grid-template-columns: 22px 1fr 22px;
                 align-items: center;
-                gap: 6px;
+                gap: 5px;
             }
 
             .qa-arrow-btn {
-                width: 26px;
-                height: 24px;
-                border-radius: 8px;
+                width: 22px;
+                height: 20px;
+                border-radius: 7px;
                 border: 1px solid rgba(128, 0, 0, 0.22);
                 background: rgba(255, 255, 238, 0.64);
                 color: var(--futaba-maroon);
@@ -665,7 +673,7 @@ export class QuickAccessPopup {
 
             .qa-slider {
                 position: relative;
-                height: 16px;
+                height: 12px;
                 border-radius: 999px;
                 background: rgba(128, 0, 0, 0.12);
                 box-shadow: inset 0 1px 2px rgba(80, 32, 24, 0.14);
@@ -688,8 +696,8 @@ export class QuickAccessPopup {
                 position: absolute;
                 top: 50%;
                 left: 0%;
-                width: 14px;
-                height: 14px;
+                width: 13px;
+                height: 13px;
                 border-radius: 50%;
                 transform: translate(-50%, -50%);
                 border: 1px solid rgba(128, 0, 0, 0.48);
@@ -769,6 +777,15 @@ export class QuickAccessPopup {
                 <div class="qa-palette-header-row">
                     <div class="qa-palette-header-left">
                         <div class="qa-section-label">COLOR</div>
+                        <button class="qa-mini-toggle-btn" id="qa-color-circle-toggle-btn" title="カラーサークルを表示" type="button">
+                            ${UI_ICONS.palette}
+                        </button>
+                        <button class="qa-eyedropper-btn" id="qa-eyedropper-btn" title="スポイト (I)" aria-label="スポイト" type="button">
+                            ${UI_ICONS.eyedropper}
+                        </button>
+                        <span class="qa-current-color-dot" id="qa-current-color-dot" title="現在色" aria-label="現在色"></span>
+                    </div>
+                    <div class="qa-palette-header-right">
                         <div class="qa-color-slot-btn-wrapper">
                             <button class="qa-color-slot-btn" id="qa-color-slot-toggle-btn"
                                 title="カラースロット切替" aria-label="カラースロット切替" type="button">
@@ -787,18 +804,11 @@ export class QuickAccessPopup {
                                 </button>
                             </div>
                         </div>
-                        <button class="qa-eyedropper-btn" id="qa-eyedropper-btn" title="スポイト (I)" aria-label="スポイト" type="button">
-                            ${UI_ICONS.eyedropper}
-                        </button>
-                        <button class="qa-mini-toggle-btn" id="qa-color-circle-toggle-btn" title="カラーサークルを表示" type="button">
-                            ${UI_ICONS.palette}
-                        </button>
-                        <span class="qa-current-color-dot" id="qa-current-color-dot" title="現在色" aria-label="現在色"></span>
+                        <div class="qa-section-value" id="qa-active-color-slot-label">COLOR 1</div>
                     </div>
-                    <div class="qa-section-value" id="qa-active-color-slot-label">COLOR 1</div>
                 </div>
                 <div id="qa-color-circle-container" class="qa-color-circle-container">
-                    <!-- 未来のカラーサークルがここに入る -->
+                    <canvas id="qa-color-circle-canvas" width="120" height="120"></canvas>
                 </div>
                 <div id="pen-color-palette" class="qa-palette-grid">
                     ${paletteHtml}
@@ -943,7 +953,8 @@ export class QuickAccessPopup {
             eyedropperBtn: document.getElementById('qa-eyedropper-btn'),
             currentColorDot: document.getElementById('qa-current-color-dot'),
             colorCircleToggleBtn: document.getElementById('qa-color-circle-toggle-btn'),
-            colorCircleContainer: document.getElementById('qa-color-circle-container')
+            colorCircleContainer: document.getElementById('qa-color-circle-container'),
+            colorCircleCanvas: document.getElementById('qa-color-circle-canvas')
         };
     }
 
@@ -963,6 +974,7 @@ export class QuickAccessPopup {
         this._setupColorButtons();
         this._setupColorSlotUI();
         this._setupSliders();
+        this._setupColorCircleHandlers();
         this._setupPanelDragHandlers();
         this._setupEventListeners();
         this._setupOutsideClickHandler();
@@ -1026,6 +1038,203 @@ export class QuickAccessPopup {
         
         const isExpanded = this.elements.colorCircleContainer.classList.toggle('expanded');
         this.elements.colorCircleToggleBtn.classList.toggle('active', isExpanded);
+
+        if (isExpanded) {
+            this._drawColorCircle();
+        }
+    }
+
+    _drawColorCircle() {
+        const canvas = this.elements.colorCircleCanvas;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const outerR = w / 2 - 2;
+        const innerR = outerR - 12;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 1. Hue Ring
+        for (let angle = 0; angle < 360; angle++) {
+            const startAngle = (angle - 0.5) * Math.PI / 180;
+            const endAngle = (angle + 1.5) * Math.PI / 180;
+            ctx.beginPath();
+            ctx.arc(cx, cy, (outerR + innerR) / 2, startAngle, endAngle);
+            ctx.strokeStyle = `hsl(${angle}, 100%, 50%)`;
+            ctx.lineWidth = outerR - innerR;
+            ctx.stroke();
+        }
+
+        // 2. SV Area (Square)
+        const currentHSV = this._rgbToHsv(this.brushSettings?.getColor() || 0);
+        const hue = currentHSV.h;
+        const side = (innerR - 2) * Math.sqrt(2);
+        const x0 = cx - side / 2;
+        const y0 = cy - side / 2;
+
+        const imgData = ctx.createImageData(Math.floor(side), Math.floor(side));
+        for (let y = 0; y < side; y++) {
+            for (let x = 0; x < side; x++) {
+                const s = x / side;
+                const v = 1 - (y / side);
+                const rgb = this._hsvToRgb(hue, s, v);
+                const idx = (Math.floor(y) * Math.floor(side) + Math.floor(x)) * 4;
+                imgData.data[idx] = rgb.r;
+                imgData.data[idx + 1] = rgb.g;
+                imgData.data[idx + 2] = rgb.b;
+                imgData.data[idx + 3] = 255;
+            }
+        }
+        ctx.putImageData(imgData, x0, y0);
+
+        // 3. Indicators
+        this._drawIndicators(ctx, cx, cy, outerR, innerR, side, currentHSV);
+    }
+
+    _drawIndicators(ctx, cx, cy, outerR, innerR, side, hsv) {
+        // Hue indicator
+        const angle = hsv.h * Math.PI / 180;
+        const r = (outerR + innerR) / 2;
+        const hx = cx + r * Math.cos(angle);
+        const hy = cy + r * Math.sin(angle);
+
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // SV indicator
+        const sx = cx - side / 2 + hsv.s * side;
+        const sy = cy - side / 2 + (1 - hsv.v) * side;
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+
+    _setupColorCircleHandlers() {
+        const canvas = this.elements.colorCircleCanvas;
+        if (!canvas) return;
+
+        const handlePointer = (e) => {
+            if (e.buttons === 0 && e.type !== 'pointerdown') return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const w = canvas.width;
+            const h = canvas.height;
+            const cx = w / 2;
+            const cy = h / 2;
+            const outerR = w / 2 - 2;
+            const innerR = outerR - 12;
+            const side = (innerR - 2) * Math.sqrt(2);
+            
+            const dx = x - cx;
+            const dy = y - cy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            const currentHSV = this._rgbToHsv(this.brushSettings?.getColor() || 0);
+            
+            // Hue Ring check
+            if (dist >= innerR - 2 && dist <= outerR + 2) {
+                let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                if (angle < 0) angle += 360;
+                const rgb = this._hsvToRgb(angle, currentHSV.s, currentHSV.v);
+                const hex = (rgb.r << 16) | (rgb.g << 8) | rgb.b;
+                this.brushSettings.setColor(hex);
+            } 
+            // SV Square check
+            else {
+                const x0 = cx - side / 2;
+                const y0 = cy - side / 2;
+                if (x >= x0 && x <= x0 + side && y >= y0 && y <= y0 + side) {
+                    const s = Math.max(0, Math.min(1, (x - x0) / side));
+                    const v = Math.max(0, Math.min(1, 1 - (y - y0) / side));
+                    const rgb = this._hsvToRgb(currentHSV.h, s, v);
+                    const hex = (rgb.r << 16) | (rgb.g << 8) | rgb.b;
+                    this.brushSettings.setColor(hex);
+                }
+            }
+        };
+
+        canvas.addEventListener('pointerdown', (e) => {
+            canvas.setPointerCapture(e.pointerId);
+            handlePointer(e);
+        });
+
+        canvas.addEventListener('pointermove', (e) => {
+            if (canvas.hasPointerCapture(e.pointerId)) {
+                handlePointer(e);
+            }
+        });
+
+        canvas.addEventListener('pointerup', (e) => {
+            canvas.releasePointerCapture(e.pointerId);
+        });
+    }
+
+    _rgbToHsv(hex) {
+        const r = ((hex >> 16) & 0xff) / 255;
+        const g = ((hex >> 8) & 0xff) / 255;
+        const b = (hex & 0xff) / 255;
+
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let h, s, v = max;
+
+        const d = max - min;
+        s = max === 0 ? 0 : d / max;
+
+        if (max === min) {
+            h = 0;
+        } else {
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+
+        return { h: h * 360, s, v };
+    }
+
+    _hsvToRgb(h, s, v) {
+        let r, g, b;
+        const i = Math.floor(h / 60);
+        const f = h / 60 - i;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+
+        switch (i % 6) {
+            case 0: r = v, g = t, b = p; break;
+            case 1: r = q, g = v, b = p; break;
+            case 2: r = p, g = v, b = t; break;
+            case 3: r = p, g = q, b = v; break;
+            case 4: r = t, g = p, b = v; break;
+            case 5: r = v, g = p, b = q; break;
+        }
+
+        return {
+            r: Math.round(r * 255),
+            g: Math.round(g * 255),
+            b: Math.round(b * 255)
+        };
     }
 
     _setupPresetSlots() {
