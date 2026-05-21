@@ -173,6 +173,12 @@ export const TEGAKI_KEYMAP = {
             shift: false,
             description: 'エアブラシ/ぼかし切替'
         },
+        COLOR_SWAP_MAIN_SUB: {
+            key: 'KeyX',
+            ctrl: false,
+            shift: false,
+            description: 'メイン/サブカラーを入れ替え'
+        },
         LAYER_CREATE: {
             key: 'KeyL',
             ctrl: true,

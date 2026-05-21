@@ -212,6 +212,11 @@ export const KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             }
+
+            case 'COLOR_SWAP_MAIN_SUB':
+                eventBus.emit('color:swap-main-sub');
+                event.preventDefault();
+                break;
             
             case 'LAYER_CREATE':
                 if (api?.layer.create) {

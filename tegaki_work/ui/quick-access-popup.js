@@ -18,12 +18,16 @@ import { UI_ICONS } from './ui-icons.js';
 const QA_STORAGE_KEYS = {
     position: 'quick-access-position',
     presets: 'tegaki-quick-access-tool-presets-v1',
-    colorSlots: 'tegaki-quick-access-color-slots-v1'
+    colorSlots: 'tegaki-quick-access-color-slots-v1',
+    mainSubColors: 'tegaki-quick-access-main-sub-colors-v1'
 };
 
 const QA_PRESET_TOOLS = ['pen', 'eraser', 'airbrush'];
 const QA_PRESET_SLOT_COUNT = 5;
 const QA_COLOR_SLOT_COUNT = 5;
+const QA_DEFAULT_MAIN_COLOR = 0x800000;
+const QA_DEFAULT_SUB_COLOR = 0xf0e0d6;
+const QA_LEGACY_SUB_COLOR = 0xffffff;
 
 const QA_DEFAULT_PRESETS = {
     pen: [
@@ -107,6 +111,11 @@ export class QuickAccessPopup {
         this.activeColorIndex = 0; // 各COLOR内の0〜11
         this.colorSlots = this._loadColorSlots();
         this.isColorSubPopupOpen = false;
+
+        // メイン/サブカラー
+        const savedColors = this._loadMainSubColors();
+        this.mainColor = savedColors.main;
+        this.subColor = savedColors.sub;
 
         this.MIN_SIZE = 0.5;
         this.MIN_OPACITY = 0;
@@ -320,6 +329,46 @@ export class QuickAccessPopup {
                 box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
                 background: #800000;
                 flex: 0 0 auto;
+                display: none; /* メイン/サブ表示に切り替えるため非表示 */
+            }
+
+            .qa-color-swatches {
+                display: flex;
+                align-items: center;
+                position: relative;
+                width: 24px;
+                height: 20px;
+                flex: 0 0 auto;
+            }
+
+            .qa-swatch {
+                width: 14px;
+                height: 14px;
+                border: 1px solid rgba(128, 0, 0, 0.32);
+                border-radius: 3px;
+                position: absolute;
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+                cursor: pointer;
+                transition: transform 0.1s ease;
+            }
+
+            .qa-swatch:hover {
+                transform: scale(1.1);
+                z-index: 5 !important;
+            }
+
+            .qa-swatch-main {
+                background: #800000;
+                top: 0;
+                left: 0;
+                z-index: 2;
+            }
+
+            .qa-swatch-sub {
+                background: #ffffee;
+                bottom: 0;
+                right: 0;
+                z-index: 1;
             }
 
             .qa-color-circle-container {
@@ -335,6 +384,12 @@ export class QuickAccessPopup {
             }
 
             .qa-color-circle-container.expanded {
+                display: block;
+            }
+
+            .qa-color-circle-container canvas {
+                width: 100%;
+                height: 100%;
                 display: block;
             }
 
@@ -783,6 +838,10 @@ export class QuickAccessPopup {
                         <button class="qa-eyedropper-btn" id="qa-eyedropper-btn" title="スポイト (I)" aria-label="スポイト" type="button">
                             ${UI_ICONS.eyedropper}
                         </button>
+                        <div class="qa-color-swatches" id="qa-color-swatches" title="メイン/サブカラー (Xで入替)">
+                            <div class="qa-swatch qa-swatch-sub" id="qa-swatch-sub"></div>
+                            <div class="qa-swatch qa-swatch-main" id="qa-swatch-main"></div>
+                        </div>
                         <span class="qa-current-color-dot" id="qa-current-color-dot" title="現在色" aria-label="現在色"></span>
                     </div>
                     <div class="qa-palette-header-right">
@@ -808,7 +867,7 @@ export class QuickAccessPopup {
                     </div>
                 </div>
                 <div id="qa-color-circle-container" class="qa-color-circle-container">
-                    <canvas id="qa-color-circle-canvas" width="120" height="120"></canvas>
+                    <canvas id="qa-color-circle-canvas" width="132" height="132"></canvas>
                 </div>
                 <div id="pen-color-palette" class="qa-palette-grid">
                     ${paletteHtml}
@@ -952,6 +1011,8 @@ export class QuickAccessPopup {
             activeColorSlotLabel: document.getElementById('qa-active-color-slot-label'),
             eyedropperBtn: document.getElementById('qa-eyedropper-btn'),
             currentColorDot: document.getElementById('qa-current-color-dot'),
+            swatchMain: document.getElementById('qa-swatch-main'),
+            swatchSub: document.getElementById('qa-swatch-sub'),
             colorCircleToggleBtn: document.getElementById('qa-color-circle-toggle-btn'),
             colorCircleContainer: document.getElementById('qa-color-circle-container'),
             colorCircleCanvas: document.getElementById('qa-color-circle-canvas')
@@ -1173,18 +1234,32 @@ export class QuickAccessPopup {
         };
 
         canvas.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             canvas.setPointerCapture(e.pointerId);
             handlePointer(e);
         });
 
         canvas.addEventListener('pointermove', (e) => {
             if (canvas.hasPointerCapture(e.pointerId)) {
+                e.preventDefault();
+                e.stopPropagation();
                 handlePointer(e);
             }
         });
 
         canvas.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             canvas.releasePointerCapture(e.pointerId);
+        });
+
+        canvas.addEventListener('pointercancel', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (canvas.hasPointerCapture(e.pointerId)) {
+                canvas.releasePointerCapture(e.pointerId);
+            }
         });
     }
 
@@ -1268,6 +1343,10 @@ export class QuickAccessPopup {
 
                 this._updateColorButtons();
             });
+        });
+
+        this._bindPointerAction(this.elements.swatchSub, () => {
+            this._swapMainSubColors();
         });
     }
 
@@ -1503,7 +1582,8 @@ export class QuickAccessPopup {
                 target.closest('button') ||
                 target.closest('.qa-slider') ||
                 target.closest('.qa-preset-slot') ||
-                target.closest('.qa-palette-grid');
+                target.closest('.qa-palette-grid') ||
+                target.closest('.qa-color-circle-container');
 
             if (isInteractive) return;
 
@@ -1603,6 +1683,11 @@ export class QuickAccessPopup {
 
         this.eventBus.on('brush:color-changed', (event = {}) => {
             this._updateColorButtons();
+            this._updateCurrentColorDot();
+        });
+
+        this.eventBus.on('color:swap-main-sub', () => {
+            this._swapMainSubColors();
         });
     }
 
@@ -1914,6 +1999,62 @@ export class QuickAccessPopup {
         if (!this.elements?.currentColorDot || !this.brushSettings?.getColor) return;
         const currentColor = Number.isInteger(color) ? color : this.brushSettings.getColor();
         this.elements.currentColorDot.style.backgroundColor = `#${currentColor.toString(16).padStart(6, '0')}`;
+
+        // メインカラーを同期
+        this.mainColor = currentColor;
+        if (this.elements.swatchMain) {
+            this.elements.swatchMain.style.background = this._colorToCss(this.mainColor);
+        }
+        if (this.elements.swatchSub) {
+            this.elements.swatchSub.style.background = this._colorToCss(this.subColor);
+        }
+
+        // カラーサークルが展開中なら再描画（インジケーター移動のため）
+        if (this.elements.colorCircleContainer?.classList.contains('expanded')) {
+            this._drawColorCircle();
+        }
+        
+        this._saveMainSubColors();
+    }
+
+    _swapMainSubColors() {
+        const oldMain = this.mainColor;
+        this.mainColor = this.subColor;
+        this.subColor = oldMain;
+
+        if (this.brushSettings?.setColor) {
+            this.brushSettings.setColor(this.mainColor);
+        }
+
+        this._updateUI();
+        this._saveMainSubColors();
+
+        if (this.eventBus) {
+            this.eventBus.emit('brush:color-changed', { color: this.mainColor });
+        }
+    }
+
+    _loadMainSubColors() {
+        try {
+            const saved = localStorage.getItem(QA_STORAGE_KEYS.mainSubColors);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return {
+                    main: typeof parsed.main === 'number' ? parsed.main : QA_DEFAULT_MAIN_COLOR,
+                    sub: typeof parsed.sub === 'number' && parsed.sub !== QA_LEGACY_SUB_COLOR
+                        ? parsed.sub
+                        : QA_DEFAULT_SUB_COLOR
+                };
+            }
+        } catch (e) {}
+        return { main: QA_DEFAULT_MAIN_COLOR, sub: QA_DEFAULT_SUB_COLOR };
+    }
+
+    _saveMainSubColors() {
+        try {
+            const data = { main: this.mainColor, sub: this.subColor };
+            localStorage.setItem(QA_STORAGE_KEYS.mainSubColors, JSON.stringify(data));
+        } catch (e) {}
     }
 
     _syncActiveColorIndexFromCurrentColor() {
