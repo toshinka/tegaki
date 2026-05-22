@@ -246,6 +246,7 @@ export class LayerSystem {
         if (!folder.layerData.addChild(layerId)) return false;
 
         layer.layerData.parentId = folderId;
+        folder.layerData.folderExpanded = true;
 
         this._emitPanelUpdateRequest();
 
@@ -253,6 +254,10 @@ export class LayerSystem {
             this.eventBus.emit('layer:added-to-folder', {
                 layerId,
                 folderId
+            });
+            this.eventBus.emit('folder:toggled', {
+                folderId,
+                expanded: true
             });
         }
 
@@ -276,6 +281,7 @@ export class LayerSystem {
 
         folder.layerData.addChild(layerId);
         layer.layerData.parentId = folderId;
+        folder.layerData.folderExpanded = true;
 
         let fromIndex = layers.indexOf(layer);
         let folderIndex = layers.indexOf(folder);
@@ -289,6 +295,7 @@ export class LayerSystem {
         this._emitPanelUpdateRequest();
         if (this.eventBus) {
             this.eventBus.emit('layer:added-to-folder', { layerId, folderId });
+            this.eventBus.emit('folder:toggled', { folderId, expanded: true });
             this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: layerId });
         }
 

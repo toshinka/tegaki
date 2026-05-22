@@ -68,19 +68,18 @@ export class LayerPanelRenderer {
     _setupEventListeners() {
         if (!this.eventBus) return;
 
-        this.eventBus.on('layer:panel-update-requested', () => this.requestUpdate());
-        this.eventBus.on('layer:created', () => this.requestUpdate());
-        this.eventBus.on('folder:created', () => this.requestUpdate());
+        this.eventBus.on('layer:panel-update-requested', () => this.requestUpdate({ force: true }));
+        this.eventBus.on('layer:created', () => this.requestUpdate({ force: true }));
+        this.eventBus.on('folder:created', () => this.requestUpdate({ force: true }));
         this.eventBus.on('folder:toggled', () => this.requestUpdate());
         this.eventBus.on('layer:added-to-folder', () => this.requestUpdate());
         this.eventBus.on('layer:removed-from-folder', () => this.requestUpdate());
         this.eventBus.on('layer:deleted', () => this.requestUpdate());
         this.eventBus.on('layer:activated', ({ layerIndex }) => {
-            this._applyActiveLayerState(layerIndex);
             if (this._layerAttributePopup?.classList.contains('show')) {
                 this._retargetLayerAttributePopup(layerIndex);
             }
-            this.requestUpdate();
+            this.requestUpdate({ force: true });
         });
         this.eventBus.on('layer:visibility-changed', () => this.requestUpdate());
         this.eventBus.on('layer:opacity-changed', () => this.requestUpdate());
@@ -145,7 +144,12 @@ export class LayerPanelRenderer {
         });
     }
 
-    requestUpdate() {
+    requestUpdate(options = {}) {
+        const force = options.force === true;
+        if (force) {
+            this._resetDragState();
+        }
+
         if (this._isSortableDragging) {
             this._pendingUpdateAfterDrag = true;
             return;
@@ -159,6 +163,13 @@ export class LayerPanelRenderer {
             const animationSystem = window.animationSystem || null;
             this.render(layers, activeIndex, animationSystem);
         }, 16);
+    }
+
+    _resetDragState() {
+        this._isSortableDragging = false;
+        this._pendingUpdateAfterDrag = false;
+        this._dragFolderTargetId = null;
+        this._finishFolderDrag();
     }
 
     render(layers, activeIndex, animationSystem = null) {
@@ -1406,14 +1417,21 @@ export class LayerPanelRenderer {
 
                         const layers = this.layerSystem.getLayers();
                         const oldIndex = parseInt(evt.item.dataset.layerIndex, 10);
-                        const newIndex = layers.length - 1 - evt.newIndex;
+                        if (Number.isNaN(oldIndex)) return;
+
                         const draggedLayer = layers[oldIndex];
-                        const targetFolderId = this._dragFolderTargetId;
+                        const finalTarget = this._findFolderDropTarget(evt, draggedLayer);
+                        const targetFolderId = this._dragFolderTargetId || finalTarget?.folder?.layerData?.id;
 
                         if (targetFolderId && this.layerSystem.moveLayerIntoFolder) {
                             this.layerSystem.moveLayerIntoFolder(draggedLayer?.layerData?.id, targetFolderId);
                         } else {
-                            this.layerSystem.reorderLayers(oldIndex, newIndex);
+                            const newIndex = this._resolveLayerIndexFromSortedDom(evt, oldIndex);
+                            if (newIndex !== null && newIndex !== oldIndex) {
+                                this.layerSystem.reorderLayers(oldIndex, newIndex);
+                            } else {
+                                this.requestUpdate();
+                            }
                         }
                     } finally {
                         this._finishFolderDrag();
@@ -1427,6 +1445,20 @@ export class LayerPanelRenderer {
                 }
             });
         } catch (error) {}
+    }
+
+    _resolveLayerIndexFromSortedDom(evt, oldIndex) {
+        const nextItem = evt.item?.nextElementSibling?.closest?.('.layer-item') || null;
+        if (!nextItem || !this.container?.contains(nextItem)) {
+            return 0;
+        }
+
+        const nextIndex = parseInt(nextItem.dataset.layerIndex, 10);
+        if (Number.isNaN(nextIndex)) return null;
+
+        // DOMは上から下、Pixiレイヤー配列は下から上。ドラッグ項目は
+        // 「DOM上で直下にある表示レイヤー」の1つ上へ置く。
+        return nextIndex > oldIndex ? nextIndex : nextIndex + 1;
     }
 
     _findFolderDropTarget(evt, draggedLayer) {
