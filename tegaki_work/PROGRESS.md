@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 4g — 新アニメテーブルの正式入口化MVP 【準備完了】**
+**Phase 4g — 新アニメテーブルの正式入口化MVP 【完了】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,15 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-22 Gemini：Phase 4g 新アニメテーブルの正式入口化MVP (完了)
+- **サイドバー導線の刷新**:
+    - 左サイドバーのアニメアイコンから、旧タイムラインではなく新アニメテーブル (`animationTable`) が開くように `ui/ui-panels.js` を改修。
+    - 新テーブルを開く際、旧タイムラインが表示中であれば自動的に閉じる連携ロジックを追加。
+- **UI表示の最適化**:
+    - ツール表示名を「GIFアニメーション」から「アニメテーブル」へ更新。
+    - サイドバーのアイコン選択状態（active）を、新アニメテーブルの表示状況と連動。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4g_report.md` を作成。
 
 ### 2026-05-22 Codex：Phase 4f確認・バケツ設定補修・Phase 4g指示作成
 - **Phase 4f確認**: `phase4f_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。再生ヘッドMVPは新アニメテーブル内の状態に閉じており、旧 `animation-system.js` の再生系や `animationSystem.init()` へは接続していない。

@@ -424,11 +424,23 @@ export class UIController {
                 this.togglePopup('resize');
             },
             'gif-animation-tool': () => {
-                if (this.eventBus) {
-                    this.eventBus.emit('ui:toggle-timeline');
+                // 旧タイムラインが表示中なら閉じる
+                const timelineUI = window.timelineUI;
+                if (timelineUI?.isVisible) {
+                    timelineUI.hide();
                 }
-                this.closeAllPopups();
-                this.updateToolUI('gif-animation');
+
+                this.togglePopup('animationTable');
+                
+                // 表示状態に合わせてサイドバーの選択状態を更新
+                const animTable = this.popupManager?.get('animationTable');
+                if (animTable?.isVisible) {
+                    this.updateToolUI('gif-animation');
+                } else {
+                    // 閉じた場合は、現在のブラシなどのツール表示に戻す
+                    const currentTool = window.brushSettings?.getMode?.() || 'pen';
+                    this.updateToolUI(currentTool);
+                }
             },
             'library-tool': () => {
                 this.togglePopup('album');
@@ -470,7 +482,7 @@ export class UIController {
             airbrush: 'スプレー',
             'airbrush-erase': '透明スプレー',
             'eyedropper': 'スポイト',
-            'gif-animation': 'GIFアニメーション'
+            'gif-animation': 'アニメテーブル'
         };
         const toolElement = document.getElementById('current-tool');
         if (toolElement) {
