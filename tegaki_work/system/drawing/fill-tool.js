@@ -31,8 +31,8 @@ export class FillTool {
         // 🧪 Phase 3f: 表示中レイヤー参照をデフォルトで有効化
         this.settings = {
             referenceAllLayers: true,  // 表示中レイヤーすべてを参照するか
-            gapClosePixels: 1,         // 🧪 Phase 3g: 1px 隙間閉じを検証
-            underpaintPixels: 1,       // 新規: 塗り領域を線の下へ少し広げる補正
+            gapClosePixels: 0,         // デフォルト: 隙間閉じOFF
+            underpaintPixels: 1,       // デフォルト: 線の下へ弱めに潜り込ませる
             antialias: true            // 塗りの縁を少しぼかすか
         };
     }

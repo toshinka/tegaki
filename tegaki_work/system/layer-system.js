@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * ファイル名: system/layer-system.js
- * 責務: レイヤーの追加・削除・並び替え・可視性・透明度・合成モード・クリッピング表示・フォルダ管理を統括する
+ * 責務: レイヤーの追加・削除・並び替え・可視性・透明度・合成モード・クリッピング表示・フォルダ管理・履歴用ラスターsnapshotを統括する
  * 依存: pixi.js, config.js, system/event-bus.js, system/data-models.js, system/layer-transform.js, coordinate-system.js
  * 被依存: core-engine.js, drawing-engine.js, brush-core.js等
  * 公開API: LayerSystem
@@ -1069,15 +1069,32 @@ export class LayerSystem {
         const sourcePixels = result?.pixels || (result instanceof Uint8ClampedArray ? result : new Uint8ClampedArray(result?.buffer || result));
         const width = Math.round(result?.width || renderTexture.width || this.config.canvas.width);
         const height = Math.round(result?.height || renderTexture.height || this.config.canvas.height);
+        const pixels = new Uint8ClampedArray(sourcePixels);
+        this._unpremultiplyPixelBuffer(pixels);
 
         return {
             layerId: layerData.id,
             width,
             height,
-            pixels: new Uint8ClampedArray(sourcePixels),
+            pixels,
             pathsData: structuredClone(layerData.pathsData || []),
             paths: structuredClone(layerData.paths || [])
         };
+    }
+
+    _unpremultiplyPixelBuffer(pixels) {
+        if (!pixels) return pixels;
+
+        for (let i = 0; i < pixels.length; i += 4) {
+            const alpha = pixels[i + 3];
+            if (alpha > 0 && alpha < 255) {
+                pixels[i] = Math.min(255, Math.round(pixels[i] * 255 / alpha));
+                pixels[i + 1] = Math.min(255, Math.round(pixels[i + 1] * 255 / alpha));
+                pixels[i + 2] = Math.min(255, Math.round(pixels[i + 2] * 255 / alpha));
+            }
+        }
+
+        return pixels;
     }
 
     /**

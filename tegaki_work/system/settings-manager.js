@@ -43,7 +43,7 @@ export class SettingsManager {
                 ? this.config.ui.statusPanelVisible 
                 : true,
             exportResolution: '2',
-            bucketGapClose: 1,
+            bucketGapClose: 0,
             bucketUnderpaint: 1,
             bucketReferenceAllLayers: true
         };

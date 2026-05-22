@@ -1755,6 +1755,10 @@ export class QuickAccessPopup {
     }
 
     _selectPresetSlot(index) {
+        if (!this.initialized) {
+            this.initialize();
+        }
+
         const presetKey = this._getPresetToolKey();
         if (!presetKey) return;
 
@@ -1768,6 +1772,10 @@ export class QuickAccessPopup {
     }
 
     selectAdjacentPresetSlot(delta) {
+        if (!this.initialized) {
+            this.initialize();
+        }
+
         const presetKey = this._getPresetToolKey();
         if (!presetKey) return false;
 
@@ -1938,12 +1946,13 @@ export class QuickAccessPopup {
     _updatePresetSlots() {
         const presetKey = this._getPresetToolKey();
         const isPresetEnabled = Boolean(presetKey);
+        const presetSlots = Array.isArray(this.elements?.presetSlots) ? this.elements.presetSlots : [];
 
         if (this.elements.presetStatus) {
             this.elements.presetStatus.textContent = isPresetEnabled ? `${presetKey} slots` : 'not used';
         }
 
-        this.elements.presetSlots.forEach((slot, index) => {
+        presetSlots.forEach((slot, index) => {
             slot.classList.toggle('active', isPresetEnabled && (this.activePresetSlots[presetKey] ?? 0) === index);
             slot.disabled = !isPresetEnabled;
 

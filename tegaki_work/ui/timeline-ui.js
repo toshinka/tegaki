@@ -306,6 +306,9 @@
                             </svg>
                         </button>
                     </div>
+                    <button id="toggle-new-table-btn" class="retime-btn timeline-new-table-btn" title="新アニメテーブル(設計中)へ切替">
+                        USE NEW TABLE
+                    </button>
                 </div>
                 <button class="timeline-close" id="close-timeline" title="タイムラインを閉じる">×</button>
             `;
@@ -482,6 +485,7 @@
         }
         .retime-btn:hover svg { stroke: white !important; }
         .retime-btn svg { width: 12px !important; height: 12px !important; stroke: #800000 !important; transition: stroke 0.2s ease !important; }
+        .timeline-new-table-btn { width: auto !important; padding: 0 8px !important; font-size: 9px !important; }
         
         #repeat-btn { min-width: 34px !important; padding: 6px !important; }
         #repeat-btn.repeat-active { background: #aa5a56 !important; color: var(--futaba-background) !important; }
@@ -541,6 +545,14 @@
             document.getElementById('copy-paste-frame-btn')?.addEventListener('click', () => this.executeFrameCopyPaste());
             document.getElementById('rename-frames-btn')?.addEventListener('click', () => this.executeRenameFrames());
             document.getElementById('retime-frames-btn')?.addEventListener('click', () => this.executeRetimeFrames());
+            document.getElementById('toggle-new-table-btn')?.addEventListener('click', () => {
+                const popupManager = window.coreEngine?.popupManager || window.PopupManager;
+                const animTable = popupManager?.get('animationTable');
+                if (animTable) {
+                    this.hide();
+                    animTable.show();
+                }
+            });
             document.getElementById('close-timeline')?.addEventListener('click', () => this.hide());
         }
         

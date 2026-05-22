@@ -44,6 +44,7 @@ import { glTextureBridge } from './system/drawing/webgl2/gl-texture-bridge.js';
 import { glMaskLayer } from './system/drawing/webgl2/gl-mask-layer.js';
 import { TegakiDebug } from './system/debug-utils.js';
 import { DOMBuilder } from './ui/dom-builder.js';
+import { AnimationTablePopup } from './ui/animation-table-popup.js';
 import { PopupManager } from './system/popup-manager.js';
 import { SettingsManager } from './system/settings-manager.js';
 import { UIController } from './ui/ui-panels.js';
@@ -282,6 +283,10 @@ export class CoreEngine {
             app: this.app,
             layerSystem: this.layerSystem,
             animationSystem: null
+        });
+        this.popupManager.register('animationTable', AnimationTablePopup, {
+            layerSystem: this.layerSystem,
+            animationSystem: this.animationSystem
         });
 
         // 15. ポップアップの初期化実行

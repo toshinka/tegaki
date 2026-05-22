@@ -177,11 +177,11 @@ export class SettingsPopup {
                 <div class="setting-group">
                     <div class="setting-label">隙間閉じ (Gap Close)</div>
                     <div class="pressure-curve-selection" id="bucket-gap-options">
-                        <button class="pressure-curve-btn bucket-level-btn" data-bucket-setting="gap" data-value="0">OFF</button>
-                        <button class="pressure-curve-btn bucket-level-btn active" data-bucket-setting="gap" data-value="1">弱</button>
+                        <button class="pressure-curve-btn bucket-level-btn active" data-bucket-setting="gap" data-value="0">OFF</button>
+                        <button class="pressure-curve-btn bucket-level-btn" data-bucket-setting="gap" data-value="1">弱</button>
                         <button class="pressure-curve-btn bucket-level-btn" data-bucket-setting="gap" data-value="2">中</button>
                         <button class="pressure-curve-btn bucket-level-btn" data-bucket-setting="gap" data-value="3">強</button>
-                        <div class="slider-value" id="bucket-gap-value">1px</div>
+                        <div class="slider-value" id="bucket-gap-value">0px</div>
                     </div>
                     <div class="setting-description">線にわずかな隙間があっても漏れないように補正します (0-3px)</div>
                 </div>
@@ -485,9 +485,6 @@ export class SettingsPopup {
         buttons?.forEach((btn) => {
             const active = parseInt(btn.dataset.value, 10) === value;
             btn.classList.toggle('active', active);
-            btn.style.background = active ? 'rgba(207, 156, 151, 0.82)' : 'rgba(255, 255, 238, 0.62)';
-            btn.style.borderColor = active ? 'var(--futaba-medium)' : 'rgba(207, 156, 151, 0.78)';
-            btn.style.color = 'var(--futaba-maroon)';
         });
     }
 
@@ -528,7 +525,7 @@ export class SettingsPopup {
             });
         });
 
-        const curveBtns = document.querySelectorAll('.pressure-curve-btn');
+        const curveBtns = document.querySelectorAll('.pressure-curve-btn[data-curve]');
         curveBtns.forEach(btn => {
             btn.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
@@ -556,7 +553,7 @@ export class SettingsPopup {
             smoothing: 0.5,
             pressureCurve: 'linear',
             statusPanelVisible: true,
-            bucketGapClose: 1,
+            bucketGapClose: 0,
             bucketUnderpaint: 1,
             bucketReferenceAllLayers: true
         };
@@ -603,7 +600,7 @@ export class SettingsPopup {
     }
 
     _applyPressureCurveUI(curve) {
-        const curveBtns = document.querySelectorAll('.pressure-curve-btn');
+        const curveBtns = document.querySelectorAll('.pressure-curve-btn[data-curve]');
         curveBtns.forEach(btn => {
             const btnCurve = btn.getAttribute('data-curve');
             if (btnCurve === curve) {

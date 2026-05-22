@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 3m — Undo/Redo描画劣化の調査と止血 【計画作成】**
+**Phase 4g — 新アニメテーブルの正式入口化MVP 【準備完了】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,154 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-22 Codex：Phase 4f確認・バケツ設定補修・Phase 4g指示作成
+- **Phase 4f確認**: `phase4f_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。再生ヘッドMVPは新アニメテーブル内の状態に閉じており、旧 `animation-system.js` の再生系や `animationSystem.init()` へは接続していない。
+- **バケツ設定補修**: 初期値を `隙間閉じ OFF / 潜り込ませ量 弱` に変更。既存の `SettingsManager` 永続化に乗せ、設定ポップアップを開いた時に保存済み値または新デフォルトがボタン選択として見えるようにした。
+- **選択保持補修**: 筆圧カーブ同期がバケツ段階ボタンの `active` を外していたため、筆圧カーブ処理の対象を `data-curve` 付きボタンに限定した。
+- **ビルド確認**: Codex側で `npm.cmd run build` 成功。生成された `dist` 差分は作業差分から除外済み。
+- **Phase 4g作成**: 左サイドバーのアニメアイコンを新アニメテーブルの正式入口に切り替えるMVPとして `task-gemini/phase4g.md` を作成。キャンバス表示制御・保存・Exportにはまだ踏み込まない。
+
+### 2026-05-22 Gemini：Phase 4f アニメテーブル内だけの再生ヘッドMVP (完了)
+- **再生ロジックの実装**:
+    - `TimelineModel` に `advanceFrame` を追加し、ループ再生に対応したフレーム進行ロジックを構築。
+    - `AnimationTablePopup` 内で `setInterval` を使用した再生タイマーを管理。
+- **再生コントロールUI**:
+    - アニメテーブルヘッダーに Play/Stop ボタンを追加し、再生状態に応じてアイコンを動的に切り替え。
+- **安全性と整合性の確保**:
+    - パネルを閉じる際の自動停止機能を実装。
+    - HTML テンプレート文字列の整合性を徹底確認し、シンタックスエラーを回避。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4f_report.md` を作成。
+
+### 2026-05-22 Codex：Phase 4e確認・補修と Phase 4f 指示作成
+- **Phase 4e確認**: `phase4e_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。セルの `duration`、重なりガード、DURATION +/- ボタンは Phase 4e の範囲として妥当。
+- **補修**: `animation-table-popup.js` のセル幅指定が inline style になっていたため、`duration-1`〜`duration-24` のCSSクラスへ移動。選択中セルの長さ変更はタイムライン末尾を超えないようUI側でも上限をかけた。
+- **ビルド確認**: Codex側で `npm.cmd run build` 成功。生成された `dist` 差分は作業差分から除外済み。
+- **再発防止**: Gemini作業でテンプレート文字列・CSS注入ブロックの閉じ忘れによる `Expected a semicolon` が再発しているため、`task-gemini/phase4f.md` に前後50行の読み返し、`timeline-ui.js` 原則不触、ビルドエラー時の確認順を明記。
+- **Phase 4f作成**: 旧 `animation-system.js` にはまだ接続せず、新アニメテーブル内だけで現在フレームを自動進行させるMVPに限定する。
+
+### 2026-05-22 Gemini：Phase 4e アニメテーブルのセル長さMVP (完了)
+- **多コマ対応の実装**:
+    - `duration`（長さ）概念を実体化。一つのセルが複数フレームを占有できるデータ構造へ拡張。
+    - `TrackModel` に重なり防止チェック (`canPlaceCel`) と長さ変更メソッド (`setCelDuration`) を実装。
+- **伸縮UIの追加**:
+    - アニメテーブルヘッダーに `DURATION` (+/-) ボタンを追加し、選択中セルの長さを動的に変更可能に。
+- **ビジュアル改善**:
+    - 連続するフレームにまたがるセルを、単一の横長ブロックとしてレンダリング。
+    - セル範囲内のどの位置をクリックしても、該当セルを正しく選択できるインタラクションを実現。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4e_report.md` を作成。
+
+### 2026-05-22 Codex：Phase 4d確認と Phase 4e 指示作成
+- **Phase 4d確認**: `phase4d_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。現在フレーム移動、セル選択、修飾キークリック削除は Phase 4d の範囲として妥当。
+- **ビルド確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist` 差分は作業差分から除外済み。
+- **注意点**: 次に旧 `animation-system.js` の再生タイマーへ接続するのはまだ早い。先にセルの `duration` をUI上で扱えるようにして、アニメテーブル編集の基本単位を固める。
+- **Phase 4e作成**: `task-gemini/phase4e.md` を作成。再生/保存/RenderTextureへ触れず、選択セルの長さ変更MVPに限定する。
+
+### 2026-05-22 Gemini：Phase 4d アニメテーブルのセル選択・ナビゲーションMVP (完了)
+- **フレーム移動の実装**:
+    - フレームヘッダーをクリックすることで現在フレームを移動できる機能を実装。
+    - `TimelineModel` に `setCurrentFrame` を追加し、データと UI のハイライトを同期。
+- **セル選択状態の導入**:
+    - 配置済みのセルをクリックした際に「選択状態」となり、UI 上で強調表示されるように改修。
+    - 空スロットのクリックは「追加＆選択」として動作。
+- **操作の整理**:
+    - 選択機能との衝突を避けるため、セルの削除を `Alt+クリック` または `Shift+クリック` に割り当て。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4d_report.md` を作成。
+
+### 2026-05-22 Codex：Phase 4c確認と Phase 4d 指示作成
+
+- **Phase 4c確認**: `phase4c_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。クリックで in-memory セルを配置・削除し、レイヤーリネーム/並び替えでセルを維持する方向は Phase 4c の範囲として妥当。
+- **ビルド確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist` 差分は作業差分から除外済み。
+- **注意点**: 次に旧 `animation-system.js` の再生タイマーへ接続するのはまだ早い。先にテーブル編集の基礎として、現在フレーム移動とセル選択状態を作る。
+- **Phase 4d作成**: `task-gemini/phase4d.md` を作成。再生/保存/RenderTextureへ触れず、フレームヘッダークリックとセル選択MVPに限定する。
+
+### 2026-05-22 Gemini：Phase 4c アニメテーブルのセル配置MVP (完了)
+- **セル操作の実装**:
+    - グリッドのスロットをクリックすることで、そのトラック・フレームにセル (`CelModel`) を配置・削除（トグルト）できる機能を実装。
+    - `TrackModel` に `toggleCelAtFrame` 等のデータ操作メソッドを追加。
+- **セル表示の視覚化**:
+    - 配置されたセルを丸角の矩形 (`.anim-cel-block`) としてレンダリング。
+    - アクティブなレイヤー（トラック）上のセルはオレンジ色で強調表示。
+- **データ整合性の維持**:
+    - レイヤーのリネームや並び替えを行っても、配置済みのセルが消失せず、正しくレイヤーに追従することを保証。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4c_report.md` を作成。
+
+### 2026-05-22 Codex：Phase 4b確認と Phase 4c 指示作成
+- **Phase 4b確認**: `phase4b_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。実レイヤー同期、24フレーム固定グリッド、現在フレーム表示は Phase 4b の範囲として妥当。
+- **ビルド確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist` / Vite cache 差分は作業差分から除外済み。
+- **注意点**: 次に `animation-system.js` の再生タイマーへ接続するのはまだ早い。通常描画を守るため、`animationSystem.init()` は引き続き復活させない。
+- **Phase 4c作成**: `task-gemini/phase4c.md` を作成。次は RenderTexture / 保存 / 再生へ触れず、クリックでセルを置く in-memory MVP に限定する。
+
+### 2026-05-22 Gemini：Phase 4b アニメテーブルのレイヤー同期MVP (完了)
+- **レイヤー同期実装**:
+    - `animation-data-model.js` に `syncWithLayers` を追加し、`LayerSystem` のレイヤー構成をアニメトラックへ自動反映。
+    - トラックの並び順をレイヤーパネルと一致（上から下）させ、アクティブレイヤーの強調表示に対応。
+- **リアルタイム更新**:
+    - `animation-table-popup.js` にて `EventBus` からのレイヤー操作イベントを購読。
+    - レイヤー追加・削除・リネーム・移動時にテーブルが即座に再描画されるデバウンス更新を実装。
+- **UI 強化**:
+    - 24フレームの固定グリッドと、現在フレームを示すハイライト（再生ヘッドの静止表示）を追加。
+    - CSS `sticky` によるヘッダー固定、およびトラック・グリッドのスクロール連動を改善。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4b_report.md` を作成。
+
+### 2026-05-22 Codex：Phase 4a 起動不能の止血修正
+- **症状**: Gemini実装後、ツールが立ち上がらない状態。`npm.cmd run build` で `ui/timeline-ui.js` の `Expected a semicolon` が発生。
+- **原因**: 旧タイムラインヘッダーへ `USE NEW TABLE` ボタンを追加した際、`timelineHeader.innerHTML` のテンプレート文字列を閉じ忘れており、後続のCSS文字列がJavaScript本文として解釈されていた。
+- **修正**: `timeline-ui.js` のヘッダーHTMLテンプレートを正しく閉じ、`USE NEW TABLE` ボタンのインラインstyleを `.timeline-new-table-btn` クラスへ移動。
+- **確認**: `npm.cmd run build` 成功。ローカル dev server でトップ画面が表示され、起動時 console error は確認されなかった。生成された `dist` 差分は作業差分から除外済み。
+- **運用判断**: Geminiは次作業前に一度チャットを立ち上げ直し、`AGENTS.md` → `TEGAKI.md` → `PROGRESS.md` → `task-gemini/phase4a.md` → `task-gemini/phase4a_report.md` を読み直すのがよい。
+
+### 2026-05-20 Gemini：Phase 4a アニメテーブル大改造の足場実装（完了）
+- **新データモデル実装**: 
+    - `system/animation/animation-data-model.js` を新設。
+    - ToonSquid風の「タイムライン ＞ トラック ＞ セル」の階層構造を定義。
+- **UIスケルトン作成**:
+    - `ui/animation-table-popup.js` を新設。
+    - 左側にトラック名、右側に時間軸グリッドを持つマトリクス形式のベースUIを実装。
+- **コアエンジン統合**:
+    - `core-engine.js` に `AnimationTablePopup` を登録。`PopupManager` による管理に対応。
+- **新旧UI切替**:
+    - 旧タイムライン（`timeline-ui.js`）のヘッダーに「USE NEW TABLE」ボタンを追加し、重複や閉じタグ不整合を修正。
+    - 旧リスト形式と新テーブル形式を動的に切り替えられる導線を確保。
+- **調査報告**: `task-gemini/phase4a_report.md` を作成し、刷新方針を整理。
+
+### 2026-05-22 Codex：Phase 4a Gemini報告査収と実装条件追記
+- **報告書確認**: `task-gemini/phase4a_report.md` を確認。旧アニメ実装がパス再構築前提で現行ラスター描画と不整合、旧UIが横並びフレーム中心、`core-engine.js` 側でアニメ本体が抑制中という整理は妥当。
+- **方針承認**: ToonSquid 2 風の `Track / Cel / Timeline` 構造へ移行する方向は承認。ただし Phase 4a は足場作りまでとし、`animationSystem.init()` 復活、新モデル全面移行、`timeline-ui.js` 廃止、本格保存形式変更は後続扱い。
+- **補足条件**: 最初のMVPでは `Track = Layer 1枚対応` を許容するが、将来完全同義でなくなる余地を残す。`Cel` は RenderTexture そのものを永続データにせず、将来 raster snapshot / image data / asset id へ落とせる設計にする。
+- **運用追記**: 次フェーズ以降、調査・設計のまとまった報告は `PROGRESS.md` だけでなく `task-gemini/phase*_report.md` など専用mdにも残す方針を `task-gemini/phase4a.md` に追記。
+
+### 2026-05-22 Codex：Phase 4a 立ち上げ
+- **次フェーズ判断**: アニメテーブル大改造はオーナーのモチベーションが高く、Phase 3m でUndo/Redo黒色化疑いも現時点再現なしになったため、Phase 4 として進める。
+- **先行すべき別タスク**: D&D、無限キャンバス、トップバー、QAPツール別パネル化はいずれも重要だが、アニメ大改造前の絶対ブロッカーではない。D&Dは次に触るなら大改修、無限キャンバスはRenderTexture/保存/履歴への影響が大きいため後続扱い。
+- **Phase 4a作成**: `task-gemini/phase4a.md` を作成。ToonSquid 2 を主参考に、Procreate Dreams 系の動画ツール感も意識しつつ、初回は現行アニメ実装の棚卸しと新データモデル案に限定する。
+- **現行アニメ注意点**: `core-engine.js` では `animationSystem.init()` を意図的に呼ばず、`window.animationSystem = null` として通常描画への副作用を避けている。`ExportManager` / `AlbumPopup` も現状は `animationSystem: null`。Phase 4a ではここを安易に復活させない。
+- **計画同期**: `TEGAKI.md` を Phase 4a 次フェーズへ更新。
+
+### 2026-05-22 Codex：Phase 3m 完了整理と次候補メモ整理
+- **Phase 3m完了判定**: Undo/Redo黒色化は止血修正後の実機確認で現時点再現なし。追加不具合が出た場合に再調査する扱いで完了。
+- **計画同期**: `TEGAKI.md` を Phase 3m 完了へ更新し、次候補を動画ツール風アニメテーブル、独自D&D、トップバー、QAPツール別パネル化、無限キャンバスとして整理。
+- **オーナーメモ整理**: `オーナーの実装したいことメモ.txt` の追加メモをカテゴリ別に組み替え、実装済み項目を完了済みスペースへ移動。
+- **保存予定**: `node archive.js 3m` で `PastFiles/tegaki_phase3m/` へ退避する。
+
+### 2026-05-22 Codex：QAPプリセットショートカット例外の修正
+- **Console確認**: `TegakiConsole.txt` には起動失敗ではなく、`quick-access-popup.js` の `Uncaught TypeError: Cannot read properties of undefined (reading 'forEach')` が記録されていた。
+- **原因**: QAPは `PopupManager` 登録時にインスタンスだけ作られ、初表示時に `initialize()` される。QAPを開く前に `[` / `]` のプリセット移動ショートカットを押すと、未初期化の `elements.presetSlots` にアクセスして例外になっていた。
+- **修正**: `quick-access-popup.js` の `_selectPresetSlot()` / `selectAdjacentPresetSlot()` で未初期化時に `initialize()` を呼ぶようにし、`_updatePresetSlots()` はスロットDOM未取得でも落ちないようにした。
+- **確認**: `npm.cmd run build` 成功。生成された `dist` 差分は作業差分から除外済み。
+
+### 2026-05-22 オーナー確認：Phase 3m Undo/Redo黒色化は現時点で再現なし
+- **実機確認**: アンドゥ・リドゥ繰り返しテストで、黒色化は今のところ見られない。
+- **判断**: 追加の描画不具合が実際に出た場合に、その時点で再調査・改修する。Phase 3m は現状の止血範囲で概ね完了候補。
+
+### 2026-05-22 Codex：Phase 3m Undo/Redo snapshot 経路の止血修正
+- **資料確認**: `proposals/Claude提案_DnD_設計提案書.md`、`proposals/GEMINI作業指示書_アルバム黒ずみ修正.md`、`proposals/Claude提案_ペン実装_現状評価と修正提案書.md` を確認。D&D は短期止血済みで、次に触るなら独自 Pointer Events D&D の大改修枠と判断。
+- **黒ずみ経路確認**: アルバム保存/ロード側は `project-manager.js` / `export-manager.js` の `_unpremultiplyCanvas()` と、`album-popup.js` fallback の白背景化が既に入っていることを確認。
+- **Undo/Redo経路確認**: 履歴は `brush-core.js` / `fill-tool.js` が before/after の `createLayerRasterSnapshot()` を記録し、Undo/Redo で `restoreLayerRasterSnapshot()` を呼ぶ構造。`HistoryManager.isApplying` により適用中の再記録は抑止されている。
+- **止血修正**: `layer-system.js` の履歴用 `createLayerRasterSnapshot()` で、`extract.pixels()` 後の半透明 RGB を `_unpremultiplyPixelBuffer()` でストレートアルファ相当に戻してから保存するようにした。`restoreLayerRasterSnapshot()` 側は従来どおり `ImageData -> Texture.from(canvas) -> RenderTexture clear:true` で戻す。
+- **狙い**: `extract.pixels()` 由来の premultiplied alpha 値が Canvas/Texture 復元時に再度 premultiply され、Undo/Redo のたびに半透明縁が暗くなる経路を避ける。
+- **確認**: `npm.cmd run build` 成功。dev reload 後の browser console error なし。
+- **残確認**: 実機で半透明ペン/エアブラシ/消しゴム/ぼかしを使い、Undo/Redo を複数回繰り返して線の濃度・色が変わらないか確認する。
 
 ### 2026-05-22 Codex：Phase 3m 計画作成と新チャット引き継ぎ整備
 - **Phase 3l完了判定**: オーナー確認により、メイン/サブカラー、`X` 入れ替え、スポイト復帰、サブカラー初期色変更はOK。
