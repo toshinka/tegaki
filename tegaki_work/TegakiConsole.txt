@@ -1,11 +1,11 @@
-pressure-handler.js:190 ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
-pressure-handler.js:191    ✓ 距離ベースフィルタ対応
-pressure-handler.js:192    ✓ window.PressureHandler として公開
-png-exporter.js:232 ✅ png-exporter.js v8.29.0 loaded
-png-exporter.js:233    🔧 generatePreview()メソッド追加
-png-exporter.js:234    🔧 エラーハンドリング強化
-png-exporter.js:235    🔧 Blob生成の確実性向上
-apng-exporter.js:283 ✅ apng-exporter.js v8.31.0 loaded
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ png-exporter.js v8.29.0 loaded
+    🔧 generatePreview()メソッド追加
+    🔧 エラーハンドリング強化
+    🔧 Blob生成の確実性向上
+ ✅ apng-exporter.js v8.31.0 loaded
 gif-exporter.js:344 ✅ gif-exporter.js v8.17.1 loaded
 gif-exporter.js:345    🎨 antialias:true でジャギー除去
 gif-exporter.js:346    ✓ CDNフォールバックで file:// 対応
@@ -32,9 +32,9 @@ gl-mask-layer.js:461 ✅ gl-mask-layer.js Phase 6完全版 loaded
 gl-mask-layer.js:462    ✅ Circle mask rendering実装
 gl-mask-layer.js:463    ✅ Additive blend対応
 core-initializer.js:28 🚀 Tegaki Initializing...
-injection-topics.js:1 Browsing Topics API removed from http://localhost:5173/ which is main frame
+ Browsing Topics API removed from http://localhost:5173/ which is main frame
 popup-manager.js:26 ✅ PopupManager initialized
-core-engine.js:123 [CoreEngine] Initializing sub-systems...
+core-engine.js:124 [CoreEngine] Initializing sub-systems...
 webgl2-drawing-layer.js:77 [WebGL2DrawingLayer] ✅ Initialized Object
 gl-texture-bridge.js:39 [GLTextureBridge] ✅ Initialized (PixiJS v8)
 gl-mask-layer.js:68 [GLMaskLayer] ✅ Initialized Object
@@ -52,5 +52,16 @@ popup-manager.js:97 ✅ Popup "export" initialized successfully
 popup-manager.js:97 ✅ Popup "album" initialized successfully
 popup-manager.js:97 ✅ Popup "animationTable" initialized successfully
 popup-manager.js:128 📊 Popup initialization: 6 ready, 0 deferred
-core-engine.js:322 [CoreEngine] All sub-systems initialized.
+core-engine.js:341 [CoreEngine] All sub-systems initialized.
 core-initializer.js:56 ✅ Tegaki Initialized Successfully
+popup-manager.js:202 👁️ Popup "album" shown
+popup-manager.js:202 👁️ Popup "album" shown
+popup-manager.js:202 👁️ Popup "animationTable" shown
+animation-table-popup.js:844 [AnimationTable] Clip moved Object
+animation-table-popup.js:844 [AnimationTable] Clip moved Object
+animation-table-popup.js:844 [AnimationTable] Clip moved Object
+animation-table-popup.js:844 [AnimationTable] Clip moved Object
+animation-table-popup.js:844 [AnimationTable] Clip moved Object
+animation-table-popup.js:844 [AnimationTable] Clip moved Object
+animation-table-popup.js:844 [AnimationTable] Clip moved Object
+animation-table-popup.js:844 [AnimationTable] Clip moved Object

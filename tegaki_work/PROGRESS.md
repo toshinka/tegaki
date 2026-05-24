@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 4p — ClipAsset 再利用MVP（セルコピー/ペースト） 【準備中】**
+**Phase 4y — Clip Asset Make Unique MVP 【完了】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,248 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-24 Codex：Phase 4z指示作成
+- **次フェーズ判断**: レーン/ClipAssetフォルダ/Virtual Layer Panelはまだ待つ。二重作業を避けつつ進めるため、新規セル作成時点で空Assetを持たせる基礎整備へ進む。
+- **Phase 4z作成**: `task-gemini/phase4z.md` を作成。`DrawingSnapshotModel.isBlank`、空Asset作成ヘルパー、新規セルへの空Asset紐付け、CAPTURE/AUTO時の `isBlank=false`、空Assetセルの白丸非表示に限定。
+- **保留**: Asset Library、ClipAssetフォルダ、Lane独自管理UI、Clip内部レイヤー、Undo/Redo統合、D&Dペン操作改善は後続扱い。Phase 4z以降は `phase4z1.md`, `phase4z2.md` のASCII連番を使う。
+
+### 2026-05-24 Codex：Phase 4y確認と互換Snapshot補修
+- **Phase 4y確認**: `phase4y_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。`countAssetReferences()` / `isAssetShared()` / `makeClipAssetUnique()`、`UNIQUE` ボタン、共有Assetのリンク表示は実装されている。
+- **補修**: Make Unique後の `clip.rasterSnapshot.pixels` が新しい `DrawingSnapshot` と同じ配列参照になっていたため、互換フィールド側もコピーを持つよう補修。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4y Clip Asset Make Unique MVP (完了)
+- **アセット独立化 (Make Unique) 実装**:
+    - `TimelineModel` に `makeClipAssetUnique()` を追加。共有アセットを物理複製して切り離すロジックを確立。
+    - アセット参照数カウント機能により、正確な共有判定を実現。
+- **共有状態の可視化**:
+    - 複数のクリップで共有されているアセットに「リンク（鎖）」アイコンを表示するUIを実装。
+- **UI統合**:
+    - ヘッダーに `UNIQUE` ボタンを追加し、アセット共有中のみ有効化・強調する制御を導入。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4y_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4y指示作成
+- **次フェーズ判断**: EDIT + AUTO によりClipを描き替えやすくなった一方、COPY/PASTE由来の同一 `assetId` 共有では片方の編集が全Clipへ反映される。複数選択より先に、選択Clipだけ独立Assetへ切り離す `UNIQUE` を入れて編集事故を減らす。
+- **Phase 4y作成**: `task-gemini/phase4y.md` を作成。`TimelineModel` にAsset参照数ヘルパーと `makeClipAssetUnique()` を追加し、UIに `UNIQUE` ボタンを置くMVPに限定。
+- **保留**: Asset Library、共有Clip一覧、Undo/Redo統合、複数Clip一括UNIQUE、Clip内部レイヤーのディープコピー、Virtual Layer Panelは後続扱い。
+
+### 2026-05-24 Codex：Phase 4x確認とEDIT残留補修
+- **Phase 4x確認**: `phase4x_report.md` と `animation-table-popup.js` を確認。`EDIT` トグル、Clip Edit Mode、EDIT中の実レイヤー優先表示、AUTO連携、編集中セル/ヘッダー強調は実装されている。
+- **補修**: 再生開始、パネル非表示、左右キー移動、選択Clip削除時にEDIT状態が残る可能性があったため、各経路で `exitClipEditMode()` を呼ぶよう補修。
+- **補修**: ヘッダードラッグ判定から `AUTO` / `EDIT` チェックボックスを除外し、トグル操作時にパネル移動が誤発火しないようにした。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4x Clip Edit Mode MVP (完了)
+- **クリップ編集モード (EDIT) の実装**:
+    - `EDIT` トグルを追加。有効時、アニメーションの全体合成表示を一時停止し、選択中セルのソース実レイヤーをキャンバスに復元して直接編集可能にする仕組みを構築。
+    - 編集終了時やフレーム移動時に、自動で安全にプレビュー状態へ復帰するガードロジックを実装。
+- **AUTO + EDIT の連携強化**:
+    - 編集モード中の描画終了をトリガーに、Snapshot を自動更新するワークフローを確立。
+- **UI/UX の視覚的強化**:
+    - 編集中のセルを水色の発光エフェクト (`.editing`) で強調。
+    - EDIT モード中はパネルヘッダーの色を変更し、モードの視認性を向上。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4x_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4x指示作成
+- **次フェーズ判断**: Phase 4w でAUTO反映は成立したが、PREVIEW ON中は実レイヤーのライブ描画とプレビューContainerが競合し、ペンを離した瞬間に反映される体感が残る。次は `Clip Edit Mode` を作り、選択Clip編集中はPREVIEW合成を一時停止して実レイヤー描画を優先する。
+- **Phase 4x作成**: `task-gemini/phase4x.md` を作成。`EDIT` UI、`isClipEditModeActive`、PREVIEW状態の一時退避/復帰、EDIT + AUTOの関係整理に限定。
+- **保留**: Virtual Layer Panel、Clip内部レイヤー、Frame番号クリック時のセルフォルダ表示、バケツ/貼り付け/変形のAuto Capture、D&Dペン操作改善、durationハンドル大型化は後続扱い。
+- **Phase名メモ**: 4z以降も継続する場合は、ファイル名・URL・Windows環境で扱いやすい `phase4z1.md`, `phase4z2.md` 形式を優先する。ギリシャ文字などの非ASCII記号は避ける。
+
+### 2026-05-24 Codex：Phase 4w確認とAuto Capture所感整理
+- **Phase 4w確認**: `phase4w_report.md` と `animation-table-popup.js` を確認。`AUTO` トグル、`drawing:stroke-completed` 購読、選択Clipと描画実レイヤー一致時のみの自動Snapshot更新、既存DrawingSnapshot更新は実装されている。
+- **所感整理**: AUTO + PREVIEW ON では、ストローク中の実レイヤー表示がプレビュー層と競合しやすく、ペンを離した瞬間に反映される体感になる。これはClip Edit View / Virtual Layer Panel未実装の暫定制約として扱い、レーン周りが進んでから整理する。
+- **入力UX整理**: ペンでのクリップ移動やduration伸縮がやりにくい件は、タイムラインD&Dのポインタ操作設計として後続扱い。レイヤーパネルD&D修正の習作にもなるため、次以降で必要なら移動候補表示やハンドル大型化を検討する。
+- **軽補修**: 手動Capture時に残っていた不要な `console.log` を削除。Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4w Auto Capture / Auto-Key MVP (完了)
+- **自動キャプチャ機能の実装**:
+    - アニメテーブルに `AUTO` トグルを追加。有効時、描画終了を検知して選択中のセルへ現在の描画内容を自動で記録する仕組みを構築。
+    - `drawing:stroke-completed` イベントを購読し、適切なレイヤー・セルの組み合わせ時のみ発火するガードロジックを実装。
+- **アセット更新ロジックの最適化**:
+    - 既存の `ClipAsset` / `DrawingSnapshot` がある場合は新規作成せず、内容を上書き更新するように改修。
+    - 更新時にテクスチャキャッシュを適切に破棄し、メモリ効率とプレビューの即応性を両立。
+- **操作整合性の維持**:
+    - 手動キャプチャとのロジック統合。移動・伸縮・複製などの既存機能への影響がないことを確認。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4w_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4w指示作成
+- **次フェーズ判断**: Phase 4v でClip移動D&Dが成立したため、次は作画手数を減らす Auto Capture / Auto-Key MVP へ進める。対象は安全に拾える `drawing:stroke-completed` のみとし、バケツ・貼り付け・変形・Undo/Redo統合は後続へ回す。
+- **Phase 4w作成**: `task-gemini/phase4w.md` を作成。`AUTO` トグルを追加し、ON時だけ選択Clipと描画実レイヤーが一致した場合にSnapshotを自動更新する方針。既存ClipAsset / DrawingSnapshot更新とTexture cache破棄も指示。
+- **保留**: 空フレームへの自動Clip作成、ClipAsset共有の自動独立化、Clip内部編集、Virtual Layer Panel、Preview ON中の本格編集UX、アニメ保存形式完成は後続扱い。
+
+### 2026-05-24 Codex：Phase 4v確認と移動フィードバック軽補修
+- **Phase 4v確認**: `phase4v_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。`canMoveClip()` / `moveClip()` とクリップ本体D&Dは指示範囲内で実装されている。
+- **所感整理**: 二重橙点灯は、通常レイヤーのactive Laneとアニメテーブル上の選択Clipが別概念になり始めた影響。レーン/Clip内部編集が進んでから整理する方が安全。
+- **軽補修**: 移動成功時の不要な `console.log` を削除し、`.anim-cel-block.moving` のアウトラインと影を少し強めて、ドラッグ中であることを見分けやすくした。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4v Timeline Clip Move MVP (完了)
+- **クリップ移動ロジックの実装**:
+    - `TimelineModel` に `canMoveClip` と `moveClip` メソッドを追加。フレーム・レーン間の移動の妥当性検証とデータ更新を可能に。
+    - レーン移動時には、所属実レイヤーの ID (`sourceLayerId`, `layerId`) を自動的に更新し、プレビュー整合性を維持。
+- **ドラッグ＆ドロップ操作の実装**:
+    - クリップブロック本体をドラッグして直感的に位置を移動できる機能を実装。
+    - 移動中はブロックを半透明化し、カーソルを `grabbing` に変更する視覚フィードバックを追加。
+    - **誤クリック防止**: 一定距離（4px）以上の移動でドラッグ判定とするデバウンスを導入し、クリック操作（選択）との競合を回避。
+- **安全性の確保**:
+    - 既存の「リタイミングハンドル（端の伸縮）」と「移動（本体ドラッグ）」の判定領域を明確に分離。
+    - 移動先の重なりチェックを徹底し、既存データの上書き・破壊を防止。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4v_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4v指示作成
+- **次フェーズ判断**: Phase 4u で Lane/ClipInstance 足場が入ったため、次は自動キャプチャより先にタイムライン上の配置操作を固める。描画エンジンやHistoryへ触る前に、ClipInstance の移動整合性を確認する。
+- **Phase 4v作成**: `task-gemini/phase4v.md` を作成。対象はアニメテーブル内のクリップ移動D&Dのみ。`TimelineModel.moveClip()` などモデル側の移動判定を先に作り、UIは `.anim-cel-block` 本体ドラッグへ接続するMVPに限定。
+- **保留**: レイヤーパネルD&D、Lane並べ替え、複数セル選択、Shift/Altドラッグ複製、Undo/Redo統合、自動キャプチャ、Virtual Layer Panel、Clip内部編集は後続扱い。
+
+### 2026-05-24 Codex：Phase 4u確認
+- **実装確認**: `phase4u_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。`LaneModel` / `ClipInstanceModel` が追加され、`TrackModel` / `CelModel` は互換エイリアスとして維持されている。
+- **互換確認**: `sourceLayerId` と `layerId` の二重保持、`getLaneForSourceLayer()` / `findClipEntry()` の追加、UI側の主要参照委譲、左上表示 `LANES` への変更を確認。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4u Lane/ClipInstance 足場化MVP (完了)
+- **データモデルの Lane/Clip 構造化**:
+    - `animation-data-model.js` に `LaneModel` と `ClipInstanceModel` を導入。長期的な「独立描画コンテナ」構想に向けたデータ構造の足場を構築。
+    - `TrackModel` / `CelModel` を互換エイリアスとして維持し、既存コードとの接続を保証。
+    - `sourceLayerId` を新設し、`layerId` との二重持ち（互換連動）により、実レイヤー直結から段階的に脱却する準備を完了。
+- **UI 内部ロジックのリファクタリング**:
+    - `AnimationTablePopup` 内の検索・同期ロジックを、モデル側の新しい補助メソッド（`findClipEntry`, `getLaneForSourceLayer` 等）へ集約。
+    - 左上ヘッダーの表示名を `TRACKS` から `LANES` へ変更。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4u_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4u指示作成
+- **次フェーズ判断**: Phase 4t の実機確認で、Frame単位の合成表示とセル単独編集表示の切り分けはレーン/クリップ構造が未整備だと深追いが危険と判断。表示UIの大改修ではなく、先に `Track = Layer` 依存を薄める足場化へ進める。
+- **Phase 4u作成**: `task-gemini/phase4u.md` を作成。`LaneModel` / `ClipInstanceModel` を追加しつつ、既存 `TrackModel` / `CelModel` / `tracks` / `cels` は互換維持するMVPに限定。
+- **保留**: Virtual Layer Panel、Clip内部レイヤー編集、Frame番号クリック時のセルフォルダ表示、Lane追加/削除UI、Solo/Mute、セルD&D、自動キャプチャ、アニメ保存形式完成は後続扱い。
+
+### 2026-05-24 Codex：Phase 4t確認とFrame/Clip表示スコープ補足
+- **Phase 4t確認**: `phase4t_report.md` と `animation-table-popup.js` を確認。`ONION` トグル、前後1フレーム表示、再生中非表示、セル選択中は同一track限定の実装は Phase 4t 指示範囲として成立。
+- **表示スコープ整理**: 現状はプレビューContainer上で、フレームヘッダー/左右キーは全セル合成、セルクリック時は選択セル単独表示。レイヤーパネル側をFrame内クリップ群の仮想フォルダへ切り替える機構は未実装。
+- **設計メモ追記**: `task-gemini/phase4n_preview_scope_note.md` に、Frame番号クリック時のFrame Compositeと、将来のVirtual Layer Panel / Clip内部レイヤー表示の切り分けを追記。レーン整備前には深追いしない方針。
+
+### 2026-05-24 Gemini：Phase 4t Animation Onion Skin MVP (完了)
+- **オニオンスキン機能の実装**:
+    - タイムラインプレビュー時に、現在フレームの前後（-1, +1）を半透明で重ねて表示する機能を実装。
+    - 前フレームを青系 (`0x4f8cff`)、次フレームを赤系 (`0xff8c42`) に色分けし、視認性を向上。
+- **プレビューロジックのリファクタリング**:
+    - 描画処理を `_renderFrameComposite`, `_renderOnionSkins`, `_renderCelPreview` に分割し、責務を明確化。
+    - `TimelineModel.getSnapshotForCel()` を介したアセットベースのSnapshot解決を徹底。
+- **UI/UX の向上**:
+    - アニメテーブルヘッダーに `ONION` 切り替えトグルを追加。
+    - 再生中（isPlaying）は自動でオニオンスキンを非表示にする制御を導入。
+    - セル選択中は、該当トラックのみにオニオンスキンを限定する「フォーカス表示」に対応。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4t_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4t指示作成
+- **次フェーズ判断**: 保存基盤の IndexedDB 化が完了し、多数アルバム保管も実機確認できたため、アニメ作業へ戻る。自動キャプチャやセルD&Dより先に、既存プレビューContainerで小さく実装できる作画支援として Onion Skin を入れる。
+- **Phase 4t作成**: `task-gemini/phase4t.md` を作成。`ONION` トグル、前後1フレームの薄い表示、Frame Composite Preview と Selected Cel 表示の切り分け、`getSnapshotForCel()` 経由のSnapshot解決に限定。
+- **保留**: 複数枚 onion、濃度/色設定UI、Y軸階層 onion、Solo/Mute、自動キャプチャ、セルD&D、LaneModel化は後続扱い。
+
+### 2026-05-24 Codex：Phase 4s確認とAlbumStorage全削除補修
+- **Phase 4s確認**: `phase4s_report.md`、`album-storage.js`、`album-popup.js`、`ARCHITECTURE.md` を確認。通常アルバムは IndexedDB `TegakiAlbumStorage` 正本へ移行し、Hospital `TegakiEmergencyRecovery` とは分離されている。
+- **補修**: `AlbumStorage.putAllSnapshots([])` が空配列時に IndexedDB を clear せず resolve していたため、全削除やロールバック時に古い項目が残る可能性があった。`store.clear()` 後に現在配列を書き直す実装へ変更。
+- **確認**: `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4s SAVE: Album IndexedDB 正本化MVP (完了)
+- **アルバムストレージの IndexedDB 移行**:
+    - `system/album-storage.js` を新設し、アルバムデータの正本を `localStorage` から IndexedDB へ切り替え。
+    - 5MB の壁を突破し、アニメ化等による巨大プロジェクトデータの安全な保存環境を確立。
+- **自動移行の実装**:
+    - 初回起動時に `localStorage` の既存アルバムデータを IndexedDB へ自動引き継ぎするロジックを実装。
+- **UI 非同期接続の完遂**:
+    - `AlbumPopup` の保存・読込・削除・インポート・エクスポート全経路を新ストレージへ接続し、非同期処理を徹底。
+- **ドキュメントの整合性確保**:
+    - `ARCHITECTURE.md` を更新し、新保存構造を反映。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4s_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4s指示作成
+- **次フェーズ判断**: アルバム10件程度で容量限界が見えるため、アニメ保存へ進む前に通常アルバムの正本を `localStorage` から IndexedDB へ移す。アルバム多めとHistory過多はクラッシュ/不安定化の原因になり得るため、SAVE系の足場を先に固める。
+- **Phase 4s作成**: `task-gemini/phase4s.md` を作成。通常アルバム用 `AlbumStorage` を新設し、新規保存/一覧復元/削除/並べ替え/インポート後追加を IndexedDB に寄せるMVPに限定。
+- **互換方針**: 旧 `localStorage tegaki_album` は初回移行元として読むが、新規保存の fallback には使わない。HTMLエクスポート/インポート形式は維持し、Hospital Recovery とはDBを分離する。
+
+### 2026-05-24 Codex：Phase 4r2確認とアルバムImport失敗の切り分け補修
+- **Phase 4r2確認**: `phase4r2_report.md` と `emergency-recovery-store.js` を確認。自動退避は 1秒 debounce / 5秒 throttle へ即応化され、`pagehide` / `visibilitychange` で `forceCheckpointSoon()` を試みる導線が追加されている。
+- **症状整理**: アルバムインポート失敗 alert は、ファイル解析失敗だけでなく、追加後の `localStorage.setItem()` 失敗や描画更新失敗も同じ文言で表示する構造だった。
+- **補修**: `album-popup.js` のインポート処理を、ファイル解析失敗・保存容量/保存処理失敗・ファイル読み取り失敗へ分離。保存失敗時は追加前の `snapshots` へロールバックするようにした。
+- **確認**: `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4r2 Hospital Recovery 即応化 (完了)
+- **自動退避の高速化**:
+    - `EmergencyRecoveryStore` の保存間隔を短縮（1秒 debounce + 5秒 throttle）。クラッシュ直前の状態をより確実に拾えるよう即応性を向上。
+    - 保存中の再変更を検知し、完了後にデバウンス付きで再保存を予約するロジックを実装。
+- **ページ離脱ガードの追加**:
+    - `pagehide` / `visibilitychange` イベントをトリガーに、ブラウザを閉じる瞬間の最終退避を試みる補助導線を `core-engine.js` に追加。
+- **復元仕様の確定**:
+    - Hospital 復旧時に Undo/Redo 履歴をリセットし、最新の描画状態で確定させる仕様を実装・明記。
+- **UI 状態管理の補修**:
+    - アルバム右端の Hospital ボタン表示制御と tooltip 更新ロジックを最適化。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4r2_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4r2指示作成・Hospital配置修正
+
+- **次フェーズ判断**: Hospital は「履歴復元」ではなく「最新確定状態を1件だけ上書き退避し、復帰後のHistoryはリセット」でよい。Phase 4r の 60秒 throttle では即応性が薄いため、横道の小改修として Phase 4r2 を立てる。
+- **Phase 4r2作成**: `task-gemini/phase4r2.md` を作成。`EmergencyRecoveryStore` の debounce/throttle 短縮、保存中変更後の再退避、`pagehide` / `visibilitychange` での離脱時保存試行、Hospital復帰後のHistoryリセット仕様確認に限定。
+- **保留**: History command 永続化、Undo/Redo復元、複数世代バックアップ、合成PNG軽量退避、起動時自動復元ダイアログは後続扱い。
+
+### 2026-05-24 Codex：Phase 4r確認とHospitalボタン配置補修
+- **表示確認**: Gemini実装では Hospital ボタンがアルバム保存/ロード群の中にあり、自動退避データがない場合は `display:none` で完全非表示だった。
+- **補修**: Hospital ボタンをアルバムツールバー右端の専用グループへ移動し、退避データがない場合も薄い disabled 表示に変更。退避データがある場合は赤系表示と tooltip 日時で復帰可能状態を示す。
+- **補修**: Hospital 専用スタイルを JS 内の動的 style 注入から `styles/main.css` へ移動。
+- **確認**: `npm.cmd run build` 成功。ブラウザでアルバムを開き、トップバー右端に Hospital アイコンが表示されることを確認。
+
+### 2026-05-24 Gemini：Phase 4r Hospital Recovery / 緊急復帰チェックポイント (完了)
+- **緊急復帰システムの構築**:
+    - `system/emergency-recovery-store.js` を新設。IndexedDB を用いた大容量・非破壊の自動退避機能を実装。
+    - 描画履歴の変化をトリガーに、60秒間隔（デバウンス3秒）で最新プロジェクト状態をバックアップする仕組みを構築。
+- **復旧 UI の実装**:
+    - アルバムポップアップに `Hospital` ボタンを追加。退避データが存在する場合のみ表示されるインテリジェントな表示制御を実装。
+    - ボタンから最後のチェックポイント（日時付き）を確認し、ワンクリックでキャンバスへ復帰できるフローを実現。
+- **リソース配慮**:
+    - `localStorage` を使用しない設計により、アルバム全体の容量制限問題を回避。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4r_report.md` を作成。
+
+### 2026-05-24 Codex：Phase 4q確認とSnapshot表示補修
+- **Phase 4q確認**: `phase4q_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。`TimelineModel.getSnapshotForCel()` は `assetId -> ClipAsset -> DrawingSnapshot` を優先し、見つからない場合のみ `cel.rasterSnapshot` へ fallback する実装になっている。
+- **補修**: アニメテーブル上の Snapshot 有無表示がまだ `cel.rasterSnapshot` だけを見ていたため、`this.model.getSnapshotForCel(cel)` 経由へ変更。asset参照のみのセルでも Snapshot マークが出るようにした。
+- **確認**: `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-23 Gemini：Phase 4q Preview参照元の ClipAsset 化MVP (完了)
+- **参照解決ロジックの実装**:
+    - `TimelineModel` に `getSnapshotForCel` 等のメソッドを追加。`assetId -> ClipAsset -> DrawingSnapshot` の経路でデータを解決する仕組みを構築。
+- **プレビュー表示の移行**:
+    - `AnimationTablePopup` のレンダリング処理を、直接の Snapshot 参照から新アセットモデル経由の解決へ移行。
+    - 過去データとの互換性のために `rasterSnapshot` フィールドを fallback として維持。
+- **データモデルの正本化**:
+    - COPY/PASTE したセルが同じ `assetId` を共有し、アセットを一元的に参照していることを確認。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4q_report.md` を作成。
+
+### 2026-05-23 Codex：長時間描画停止疑いの棚卸しとHospital復帰案
+- **原因候補**: `HistoryManager.maxSize` は 500 件で古い履歴を破棄しているため、履歴配列の無限増殖ではない。ただし各履歴 command がレイヤーのラスター before/after Snapshot を持つため、長時間描画ではメモリ圧迫が起こり得る。
+- **保存経路確認**: 現行アルバムは `localStorage` の `tegaki_album` が正本で、各レイヤーを PNG dataURL として保存する。緊急退避を同じ localStorage に自動保存すると容量上限エラーを誘発しやすい。
+- **次タスク化**: `task-gemini/phase4r.md` を作成。Hospital 復帰は通常アルバムとは混ぜず、IndexedDB に最新1件の自動チェックポイントを強く間引いて保存し、アルバム内ボタンから復元する方針。
+- **現時点判断**: 4q作業と衝突させないため、本体改修はPhase 4q返却後の独立Phase候補とする。
+
+### 2026-05-23 Codex：Phase 4q指示作成
+- **次フェーズ判断**: `ClipAsset` 再利用が成立したため、次はプレビュー参照元を `Cel.rasterSnapshot` 直参照から `assetId -> ClipAsset -> DrawingSnapshot` へ寄せる。
+- **Phase 4q作成**: `task-gemini/phase4q.md` を作成。`TimelineModel` に参照解決メソッドを追加し、`AnimationTablePopup._renderCelPreview()` が asset経由で Snapshot を取得できるMVPに限定。
+- **保留**: `rasterSnapshot` 削除、保存/ロードUI、Export、ライブラリUI、未使用Asset掃除、オニオンスキン、Solo/Mute、LaneModel化は後続扱い。
+
+### 2026-05-23 Codex：Phase 4p確認・ログ除去
+- **Phase 4p確認**: `phase4p_report.md` と `animation-table-popup.js` を確認。COPY/PASTE は同一 `assetId` と `duration` を保持し、既存セルとの重なりを `canPlaceCel()` で防ぐ実装になっている。
+- **補修**: `copySelectedCel()` に残っていた調査用 `console.log` を削除。
+- **次フェーズ判断**: レーン整備前のコピー/ペーストは操作感が分かりにくいが、同一アセット参照の実証としては成立。次はD&Dや表示支援へ行く前に、プレビュー参照元を `rasterSnapshot` 直参照から `assetId -> ClipAsset -> DrawingSnapshot` へ寄せる。
+
+### 2026-05-23 Gemini：Phase 4p ClipAsset 再利用MVP (完了)
+- **コピー＆ペーストの実装**:
+    - アニメテーブルに COPY/PASTE ボタンを追加。セルの情報を保持し、他のフレームやトラックへ複製可能に。
+    - 貼り付け時、同一アセット ID を参照させることで、データ実体を増やさずに「アセットの再利用」を実現。
+- **操作安全性の強化**:
+    - 貼り付け時のセル重なり自動チェックを実装し、既存データの誤上書きを防止。
+    - フォルダトラックへの貼り付け無効化、削除時のアセット本体保護などの整合性を確保。
+- **操作系の安定化**:
+    - ドラッグ移動や伸縮操作後のクリック判定を改善。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4p_report.md` を作成。
 
 ### 2026-05-23 Codex：Phase 4p指示作成
 - **次フェーズ判断**: Phase 4o で `ClipAsset` 参照の足場ができたため、次は1つの `ClipAsset` を複数セルから参照できることを小さく確認する。
