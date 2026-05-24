@@ -35,6 +35,13 @@ export class AnimationTablePopup {
         this._backupSnapshots = new Map(); // layerId -> snapshot (元の状態バックアップ)
         this.animationPreviewContainer = null;
         this._snapshotTextureCache = new WeakMap();
+        
+        // オニオンスキン関連
+        this.isOnionSkinActive = false;
+        this.onionSkinPrevAlpha = 0.30;
+        this.onionSkinNextAlpha = 0.20;
+        this.onionSkinPrevTint = 0x4f8cff; // 前フレーム：青系
+        this.onionSkinNextTint = 0xff8c42; // 次フレーム：赤系
 
         // ドラッグ移動関連
         this._isDragging = false;
@@ -44,6 +51,21 @@ export class AnimationTablePopup {
         // リタイミング（セル伸縮）関連
         this._isRetiming = false;
         this._retimingData = null;
+
+        // コピー/ペースト関連
+        this._copiedCelRef = null;
+
+        // クリップ移動関連
+        this._clipMoveData = null;
+        this._clipMoveMoved = false;
+        this._isClipMoving = false;
+
+        // 自動キャプチャ関連
+        this.isAutoCaptureActive = false;
+
+        // クリップ編集モード関連
+        this.isClipEditModeActive = false;
+        this._previewBeforeClipEdit = null;
         
         this._ensurePanelElement();
     }
@@ -77,6 +99,9 @@ export class AnimationTablePopup {
     hide() {
         if (!this.panel) return;
         this.stop();
+        if (this.isClipEditModeActive) {
+            this.exitClipEditMode();
+        }
         this._restoreVisibility();
         this.panel.style.display = 'none';
         this.isVisible = false;
@@ -89,6 +114,9 @@ export class AnimationTablePopup {
 
     play() {
         if (this.isPlaying) return;
+        if (this.isClipEditModeActive) {
+            this.exitClipEditMode();
+        }
         this.selectedCelId = null;
         this.isPlaying = true;
         this._updatePlayButtonUI();
@@ -144,6 +172,41 @@ export class AnimationTablePopup {
         }, 32);
     }
 
+    enterClipEditMode() {
+        if (!this.selectedCelId) {
+            this.isClipEditModeActive = false;
+            this.render();
+            return;
+        }
+
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        if (!entry || entry.lane.type === 'folder') {
+            this.isClipEditModeActive = false;
+            this.render();
+            return;
+        }
+
+        if (this.isPlaying) this.stop();
+
+        this._previewBeforeClipEdit = this.isPreviewActive;
+        this.isClipEditModeActive = true;
+        
+        // 合成プレビューを一時停止して実レイヤー表示を戻す
+        this._restoreVisibility();
+        this.render();
+    }
+
+    exitClipEditMode(options = {}) {
+        this.isClipEditModeActive = false;
+        
+        if (this._previewBeforeClipEdit !== null) {
+            this.isPreviewActive = this._previewBeforeClipEdit;
+            this._previewBeforeClipEdit = null;
+        }
+
+        this.render();
+    }
+
     _applyVisibilityPreview() {
         if (!this.isVisible || !this.isPreviewActive || !this.layerSystem) return;
         
@@ -156,73 +219,113 @@ export class AnimationTablePopup {
         const currentFrame = this.model.playback.currentFrame;
 
         // 1. まず、タイムラインで管理されている全実レイヤーを一時的に非表示にする
-        // @future 将来的に Lane/Clip 化された後は、実レイヤーを表示するかどうかは
-        // 「プレビュー層」と「編集中の実レイヤー（Edit View）」の切り替えで制御する。
         layers.forEach(layer => {
             const layerData = layer.layerData;
             if (!layerData || layerData.isBackground || layerData.isFolder) return;
 
-            const isTracked = this.model.tracks.some(t => t.layerId === layerData.id);
+            const isTracked = this.model.tracks.some(t => (t.sourceLayerId || t.layerId) === layerData.id);
             if (isTracked) {
                 layer.visible = false;
             }
         });
 
-        // 2. セル選択中は Clip Edit View として、そのセルだけを確認する。
-        // 再生中は Frame Composite Preview を優先し、現在フレーム全体を合成表示する。
+        // 2. オニオンスキンの描画 (再生中・OFF時はスキップ)
+        if (this.isOnionSkinActive && !this.isPlaying) {
+            this._renderOnionSkins(currentFrame, layers);
+        }
+
+        // 3. メインプレビュー（現在フレーム）の描画
         if (this.selectedCelId && !this.isPlaying) {
             const selectedEntry = this._findSelectedCelEntry();
             if (selectedEntry) {
-                this._renderCelPreview(selectedEntry.track, selectedEntry.cel, layers, {
+                this._renderCelPreview(selectedEntry.lane, selectedEntry.clip, layers, {
                     allowSourceLayerFallback: true
                 });
             }
-
-            this._visibilityPreviewApplied = true;
-            return;
-        }
-
-        // 3. 現在フレームの Snapshot を合成表示順（下から上）に Container へ追加する
-        // データの tracks[0] は UI の一番上（＝レイヤーの前面）なので、逆順で addChild する
-        const tracks = this.model.tracks;
-        for (let i = tracks.length - 1; i >= 0; i--) {
-            const track = tracks[i];
-            const cel = track.getCelAtFrame(currentFrame);
-            this._renderCelPreview(track, cel, layers, {
-                allowSourceLayerFallback: false
-            });
+        } else {
+            // 現在フレームの全セル合成
+            this._renderFrameComposite(currentFrame, layers);
         }
 
         this._visibilityPreviewApplied = true;
     }
 
-    _findSelectedCelEntry() {
-        if (!this.selectedCelId) return null;
-
-        for (const track of this.model.tracks) {
-            const cel = track.cels.find(c => c.id === this.selectedCelId);
+    _renderFrameComposite(frameIndex, layers, options = {}) {
+        const tracks = this.model.tracks;
+        // データの tracks[0] は UI の一番上（＝レイヤーの前面）なので、逆順で addChild する
+        for (let i = tracks.length - 1; i >= 0; i--) {
+            const track = tracks[i];
+            const cel = track.getCelAtFrame(frameIndex);
             if (cel) {
-                return { track, cel };
+                this._renderCelPreview(track, cel, layers, {
+                    ...options,
+                    allowSourceLayerFallback: false
+                });
             }
         }
+    }
 
-        return null;
+    _renderOnionSkins(currentFrame, layers) {
+        // 前フレーム
+        if (currentFrame > 0) {
+            this._renderOnionFrame(currentFrame - 1, layers, {
+                alpha: this.onionSkinPrevAlpha,
+                tint: this.onionSkinPrevTint
+            });
+        }
+
+        // 次フレーム
+        if (currentFrame < this.model.totalFrames - 1) {
+            this._renderOnionFrame(currentFrame + 1, layers, {
+                alpha: this.onionSkinNextAlpha,
+                tint: this.onionSkinNextTint
+            });
+        }
+    }
+
+    _renderOnionFrame(frameIndex, layers, options) {
+        // セル選択中は同じ track の前後だけ、非選択時は全トラック合成
+        if (this.selectedCelId) {
+            const selectedEntry = this._findSelectedCelEntry();
+            if (selectedEntry) {
+                const cel = selectedEntry.lane.getCelAtFrame(frameIndex);
+                if (cel) {
+                    this._renderCelPreview(selectedEntry.lane, cel, layers, options);
+                }
+            }
+        } else {
+            this._renderFrameComposite(frameIndex, layers, options);
+        }
+    }
+
+    _findSelectedCelEntry() {
+        return this.model.findClipEntry(this.selectedCelId);
     }
 
     _renderCelPreview(track, cel, layers, options = {}) {
         if (!track || !cel) return;
 
-        const sourceLayer = layers.find(l => l.layerData?.id === track.layerId);
+        // sourceLayerId 優先
+        const sourceLayer = layers.find(l => l.layerData?.id === (track.sourceLayerId || track.layerId));
+        const snapshot = this.model.getSnapshotForCel(cel);
 
-        if (cel.rasterSnapshot && this.animationPreviewContainer) {
-            const texture = this._getTextureFromSnapshot(cel.rasterSnapshot);
+        if (snapshot && this.animationPreviewContainer) {
+            const texture = this._getTextureFromSnapshot(snapshot);
             if (texture) {
                 const sprite = new Sprite(texture);
-                // 本来のレイヤー設定（透明度・合成モード）を継承して合成
-                // @future これらも将来は ClipInstance / Lane 側の設定を参照するようになる。
+                
+                // 本来のレイヤー設定（透明度・合成モード）を継承
                 if (sourceLayer?.layerData) {
                     sprite.blendMode = sourceLayer.layerData.blendMode || 'normal';
-                    sprite.alpha = sourceLayer.layerData.opacity ?? 1.0;
+                    const baseAlpha = sourceLayer.layerData.opacity ?? 1.0;
+                    sprite.alpha = baseAlpha * (options.alpha ?? 1.0);
+                } else {
+                    sprite.alpha = options.alpha ?? 1.0;
+                }
+
+                // ティント（オニオン用）
+                if (options.tint !== undefined) {
+                    sprite.tint = options.tint;
                 }
 
                 this.animationPreviewContainer.addChild(sprite);
@@ -231,7 +334,6 @@ export class AnimationTablePopup {
         }
 
         // Snapshot未取得の選択セルは、編集対象が見えるようにソース実レイヤーだけを暫定表示する。
-        // Frame Composite Preview では未キャプチャセルを表示しない。
         if (options.allowSourceLayerFallback && sourceLayer?.layerData) {
             sourceLayer.visible = sourceLayer.layerData.visible !== false;
         }
@@ -246,7 +348,7 @@ export class AnimationTablePopup {
         
         const layers = this.layerSystem.getLayers() || [];
 
-        // Snapshotバックアップの復元（実レイヤーを汚染しなくなったため、Mapはクリアのみ）
+        // Snapshotバックアップの復元
         this._backupSnapshots.clear();
 
         // Visibility の復元
@@ -270,14 +372,13 @@ export class AnimationTablePopup {
         this.animationPreviewContainer = new Container();
         this.animationPreviewContainer.label = 'animation_preview_container';
         
-        // currentFrameContainer (通常 index 1) より上に配置
+        // currentFrameContainer より上に配置
         canvasContainer.addChild(this.animationPreviewContainer);
     }
 
     _getTextureFromSnapshot(snapshot) {
         if (!snapshot || !snapshot.pixels) return null;
         
-        // Snapshot本体は将来serialize対象になるため、Pixi Textureは外部WeakMapに保持する。
         const cachedTexture = this._snapshotTextureCache.get(snapshot);
         if (cachedTexture && !cachedTexture.destroyed) {
             return cachedTexture;
@@ -301,61 +402,149 @@ export class AnimationTablePopup {
     }
 
     captureSelectedCel() {
+        this._captureSelectedClip();
+    }
+
+    _captureSelectedClip(options = {}) {
+        const { silent = false, requireSourceLayerId = null } = options;
         if (!this.selectedCelId || !this.layerSystem) return;
 
-        let targetCel = null;
-        let targetTrack = null;
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        if (!entry) return;
 
-        for (const track of this.model.tracks) {
-            const cel = track.cels.find(c => c.id === this.selectedCelId);
-            if (cel) {
-                targetCel = cel;
-                targetTrack = track;
-                break;
+        const { lane, clip } = entry;
+        const sourceLayerId = lane.sourceLayerId || lane.layerId;
+
+        // ID指定がある場合は一致チェック
+        if (requireSourceLayerId && sourceLayerId !== requireSourceLayerId) return;
+
+        const layers = this.layerSystem.getLayers();
+        const layer = layers.find(l => l.layerData?.id === sourceLayerId);
+        
+        if (layer) {
+            // 1. レイヤーから Snapshot 生成
+            const rawSnapshot = this.layerSystem.createLayerRasterSnapshot(layer);
+            if (!rawSnapshot) return;
+
+            // 2. 既存の ClipAsset / DrawingSnapshotModel の更新または新規作成
+            if (clip.assetId) {
+                const asset = this.model.getClipAsset(clip.assetId);
+                if (asset && asset.drawingSnapshotId) {
+                    const snapshot = this.model.getDrawingSnapshot(asset.drawingSnapshotId);
+                    if (snapshot) {
+                        // 既存のテクスチャキャッシュを破棄
+                        const oldTexture = this._snapshotTextureCache.get(snapshot);
+                        if (oldTexture && !oldTexture.destroyed) {
+                            try { oldTexture.destroy(true); } catch (e) {}
+                            this._snapshotTextureCache.delete(snapshot);
+                        }
+
+                        // データの更新
+                        snapshot.width = rawSnapshot.width;
+                        snapshot.height = rawSnapshot.height;
+                        snapshot.pixels = rawSnapshot.pixels;
+                        snapshot.updatedAt = Date.now();
+                        asset.updatedAt = Date.now();
+
+                        // 互換フィールドも更新
+                        clip.rasterSnapshot = rawSnapshot;
+
+                        this.render();
+                        return;
+                    }
+                }
             }
+
+            // 新規作成フロー
+            const drawingSnapshot = new DrawingSnapshotModel({
+                width: rawSnapshot.width,
+                height: rawSnapshot.height,
+                pixels: rawSnapshot.pixels
+            });
+            this.model.drawingSnapshots.push(drawingSnapshot);
+
+            const clipAsset = new ClipAssetModel({
+                name: `Asset for ${lane.name}`,
+                drawingSnapshotId: drawingSnapshot.id
+            });
+            this.model.clipAssets.push(clipAsset);
+
+            clip.assetId = clipAsset.id;
+            clip.rasterSnapshot = rawSnapshot;
+
+            this.render();
+        }
+    }
+
+    _handleDrawingCompleted(data = {}) {
+        if (!this.isVisible || !this.isAutoCaptureActive || !this.selectedCelId) return;
+
+        const layerId = data.layerId || data.data?.layerId;
+        if (!layerId) return;
+
+        this._captureSelectedClip({
+            silent: true,
+            requireSourceLayerId: layerId
+        });
+    }
+
+    makeSelectedClipUnique() {
+        if (!this.selectedCelId) return;
+
+        const result = this.model.makeClipAssetUnique(this.selectedCelId);
+        if (result.ok) {
+            this.render();
+        } else {
+            console.warn('[AnimationTable] Make Unique failed:', result.reason);
+        }
+    }
+
+    copySelectedCel() {
+        if (!this.selectedCelId) return;
+
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        if (entry) {
+            const clip = entry.clip;
+            this._copiedCelRef = {
+                assetId: clip.assetId,
+                rasterSnapshot: clip.rasterSnapshot, // 互換用
+                duration: clip.duration
+            };
+        }
+    }
+
+    pasteCopiedCel() {
+        if (!this._copiedCelRef || !this.layerSystem) return;
+
+        const currentFrame = this.model.playback.currentFrame;
+        const activeIndex = this.layerSystem.getActiveLayerIndex();
+        const layers = this.layerSystem.getLayers();
+        const activeLayer = layers[activeIndex];
+        if (!activeLayer?.layerData) return;
+
+        // アクティブレイヤーに対応するレーンを探す
+        const lane = this.model.getLaneForSourceLayer(activeLayer.layerData.id);
+        if (!lane || lane.type === 'folder') return;
+
+        // 重なりチェック
+        if (!lane.canPlaceCel(currentFrame, this._copiedCelRef.duration)) {
+            console.warn('[AnimationTable] Cannot paste: Space occupied');
+            return;
         }
 
-        if (targetCel && targetTrack) {
-            const layers = this.layerSystem.getLayers();
-            const layer = layers.find(l => l.layerData?.id === targetTrack.layerId);
-            
-            if (layer) {
-                // 1. レイヤーから Snapshot (旧形式/Raw) を生成
-                const rawSnapshot = this.layerSystem.createLayerRasterSnapshot(layer);
-                if (!rawSnapshot) return;
+        // 新規セル作成 (ClipInstanceModel)
+        const newClip = lane.addCel({
+            sourceLayerId: lane.sourceLayerId,
+            layerId: lane.layerId,
+            assetId: this._copiedCelRef.assetId,
+            rasterSnapshot: this._copiedCelRef.rasterSnapshot, // 互換用
+            startFrame: currentFrame,
+            duration: this._copiedCelRef.duration
+        });
 
-                // 2. DrawingSnapshotModel を作成して登録
-                const drawingSnapshot = new DrawingSnapshotModel({
-                    width: rawSnapshot.width,
-                    height: rawSnapshot.height,
-                    pixels: rawSnapshot.pixels
-                });
-                this.model.drawingSnapshots.push(drawingSnapshot);
-
-                // 3. ClipAssetModel を作成して登録
-                const clipAsset = new ClipAssetModel({
-                    name: `Asset for ${targetTrack.name}`,
-                    drawingSnapshotId: drawingSnapshot.id
-                });
-                this.model.clipAssets.push(clipAsset);
-
-                // 4. セルへ assetId を紐付け
-                targetCel.assetId = clipAsset.id;
-
-                // --- 互換性維持エリア ---
-                // 以前のテクスチャがあれば破棄
-                const oldSnapshot = targetCel.rasterSnapshot;
-                const oldTexture = oldSnapshot ? this._snapshotTextureCache.get(oldSnapshot) : null;
-                if (oldTexture && !oldTexture.destroyed) {
-                    try { oldTexture.destroy(true); } catch (e) {}
-                    this._snapshotTextureCache.delete(oldSnapshot);
-                }
-                // プレビュー用に旧フィールドも更新しておく
-                targetCel.rasterSnapshot = rawSnapshot;
-                // -----------------------
-
-                this.render();
-            }
+        if (newClip) {
+            this.selectedCelId = newClip.id;
+            this.render();
         }
     }
 
@@ -363,7 +552,6 @@ export class AnimationTablePopup {
         if (!this.panel || !this.isVisible) return;
         
         // 【重要】モデルを LayerSystem と同期（暫定接続）
-        // @future 将来的にタイムラインが「正本」となり、実レイヤーへの依存は解消される予定。
         const layers = this.layerSystem?.getLayers() || [];
         const activeIndex = this.layerSystem?.getActiveLayerIndex() || 0;
         this.model.syncWithLayers(layers, activeIndex);
@@ -371,8 +559,26 @@ export class AnimationTablePopup {
         const trackList = this.panel.querySelector('.anim-track-list');
         const timelineGrid = this.panel.querySelector('.anim-timeline-grid');
         
+        // パネル全体の編集状態クラス
+        this.panel.classList.toggle('clip-edit-active', this.isClipEditModeActive);
+        
+        // UI上のチェック状態同期
+        const editChk = this.panel.querySelector('#anim-clip-edit-chk');
+        if (editChk) {
+            editChk.checked = this.isClipEditModeActive;
+            editChk.disabled = !this.selectedCelId;
+        }
+
+        const uniqueBtn = this.panel.querySelector('#anim-unique-btn');
+        if (uniqueBtn) {
+            const selectedEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+            const hasAsset = selectedEntry?.clip?.assetId;
+            uniqueBtn.disabled = !hasAsset;
+            // 共有中なら少し目立たせるなどの工夫も可能だが、まずはdisabled制御のみ
+        }
+
         if (trackList) {
-            let trackHtml = `<div class="anim-track-header">TRACKS</div>`;
+            let trackHtml = `<div class="anim-track-header">LANES</div>`;
             this.model.tracks.forEach(track => {
                 const activeClass = track.active ? ' active' : '';
                 const typeClass = track.type === 'folder' ? ' is-folder' : '';
@@ -403,19 +609,26 @@ export class AnimationTablePopup {
                     const isCurrent = (i === currentFrame) ? ' current-col' : '';
                     const cel = track.getCelAtFrame(i);
                     const hasCelClass = cel ? ' has-cel' : '';
-                    const isSelected = cel && cel.id === this.selectedCelId ? ' selected' : '';
-                    const hasSnapshotClass = cel && cel.rasterSnapshot ? ' has-snapshot' : '';
+                    const isSelected = cel && cel.id === this.selectedCelId;
+                    const selectedClass = isSelected ? ' selected' : '';
+                    const editingClass = (isSelected && this.isClipEditModeActive) ? ' editing' : '';
+
+                    const isShared = cel && cel.assetId && this.model.isAssetShared(cel.assetId);
+                    const sharedClass = isShared ? ' shared-asset' : '';
+
+                    const hasSnapshot = cel && !!this.model.getSnapshotForCel(cel);
+                    const hasSnapshotClass = hasSnapshot ? ' has-snapshot' : '';
                     
-                    // セルの開始位置かチェック（UIブロックを描画するため）
                     const isStart = cel && cel.startFrame === i;
                     
                     const durationClass = isStart ? ` duration-${Math.max(1, Math.min(cel.duration, totalFrames))}` : '';
-                    gridHtml += `<div class="anim-cell-slot${isCurrent}${hasCelClass}" 
+                    gridHtml += `<div class="anim-cell-slot${isCurrent}${hasCelClass}${selectedClass}" 
                                      data-track-id="${track.id}" 
                                      data-frame-index="${i}">
-                                     ${isStart ? `<div class="anim-cel-block${isSelected}${hasSnapshotClass}${durationClass}" data-cel-id="${cel.id}">
+                                     ${isStart ? `<div class="anim-cel-block${selectedClass}${editingClass}${hasSnapshotClass}${sharedClass}${durationClass}" data-cel-id="${cel.id}">
                                          <div class="anim-cel-handle" data-cel-id="${cel.id}"></div>
-                                         ${cel.rasterSnapshot ? '<div class="anim-snapshot-icon"></div>' : ''}
+                                         ${hasSnapshot ? '<div class="anim-snapshot-icon"></div>' : ''}
+                                         ${isShared ? '<div class="anim-shared-icon" title="Shared Asset"></div>' : ''}
                                      </div>` : ''}
                                  </div>`;
                 }
@@ -424,8 +637,11 @@ export class AnimationTablePopup {
             timelineGrid.innerHTML = gridHtml;
         }
 
-        // キャンバス表示のプレビュー適用
-        if (this.isPreviewActive) {
+        // プレビューの適用判定
+        if (this.isClipEditModeActive) {
+            // EDITモード中は合成を停止し、実レイヤー描画を優先
+            this._restoreVisibility();
+        } else if (this.isPreviewActive) {
             this._applyVisibilityPreview();
         } else {
             this._restoreVisibility();
@@ -449,6 +665,15 @@ export class AnimationTablePopup {
                     <label class="anim-preview-toggle" title="キャンバス表示をタイムラインに連動させる">
                         <input type="checkbox" id="anim-preview-chk" ${this.isPreviewActive ? 'checked' : ''}> PREVIEW
                     </label>
+                    <label class="anim-preview-toggle" title="前後フレームを薄く表示">
+                        <input type="checkbox" id="anim-onion-chk" ${this.isOnionSkinActive ? 'checked' : ''}> ONION
+                    </label>
+                    <label class="anim-preview-toggle" title="描画終了時に選択中セルへ自動キャプチャ">
+                        <input type="checkbox" id="anim-auto-capture-chk" ${this.isAutoCaptureActive ? 'checked' : ''}> AUTO
+                    </label>
+                    <label class="anim-preview-toggle" title="選択Clipを実レイヤーで編集">
+                        <input type="checkbox" id="anim-clip-edit-chk" ${this.isClipEditModeActive ? 'checked' : ''}> EDIT
+                    </label>
                 </div>
                 <div class="anim-table-header-center">
                     <div class="anim-duration-controls">
@@ -458,6 +683,11 @@ export class AnimationTablePopup {
                     </div>
                     <div class="anim-capture-controls">
                         <button class="anim-tool-btn anim-capture-btn" id="anim-capture-btn" title="選択中セルに現在のレイヤー内容をキャプチャ">CAPTURE</button>
+                    </div>
+                    <div class="anim-copy-paste-controls">
+                        <button class="anim-tool-btn anim-unique-btn" id="anim-unique-btn" title="選択Clipだけ独立したAssetにする">UNIQUE</button>
+                        <button class="anim-tool-btn anim-copy-btn" id="anim-copy-btn" title="選択セルをコピー">COPY</button>
+                        <button class="anim-tool-btn anim-paste-btn" id="anim-paste-btn" title="コピーした内容を貼り付け">PASTE</button>
                     </div>
                 </div>
                 <div class="anim-table-header-right">
@@ -498,6 +728,32 @@ export class AnimationTablePopup {
             });
         }
 
+        const onionChk = this.panel.querySelector('#anim-onion-chk');
+        if (onionChk) {
+            onionChk.addEventListener('change', (e) => {
+                this.isOnionSkinActive = e.target.checked;
+                this.render();
+            });
+        }
+
+        const autoCaptureChk = this.panel.querySelector('#anim-auto-capture-chk');
+        if (autoCaptureChk) {
+            autoCaptureChk.addEventListener('change', (e) => {
+                this.isAutoCaptureActive = e.target.checked;
+            });
+        }
+
+        const editChk = this.panel.querySelector('#anim-clip-edit-chk');
+        if (editChk) {
+            editChk.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    this.enterClipEditMode();
+                } else {
+                    this.exitClipEditMode();
+                }
+            });
+        }
+
         const decBtn = this.panel.querySelector('#anim-duration-dec');
         const incBtn = this.panel.querySelector('#anim-duration-inc');
         
@@ -513,13 +769,29 @@ export class AnimationTablePopup {
             captureBtn.addEventListener('click', () => this.captureSelectedCel());
         }
 
+        const uniqueBtn = this.panel.querySelector('#anim-unique-btn');
+        if (uniqueBtn) {
+            uniqueBtn.addEventListener('click', () => this.makeSelectedClipUnique());
+        }
+
+        const copyBtn = this.panel.querySelector('#anim-copy-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => this.copySelectedCel());
+        }
+
+        const pasteBtn = this.panel.querySelector('#anim-paste-btn');
+        if (pasteBtn) {
+            pasteBtn.addEventListener('click', () => this.pasteCopiedCel());
+        }
+
         const timelineGrid = this.panel.querySelector('.anim-timeline-grid');
         if (timelineGrid) {
             timelineGrid.addEventListener('click', (e) => {
-                // ドラッグ・伸縮中なら無視
-                if (this._dragMoved || this._retimingMoved) {
+                // ドラッグ・伸縮・移動中なら無視
+                if (this._dragMoved || this._retimingMoved || this._clipMoveMoved) {
                     this._dragMoved = false;
                     this._retimingMoved = false;
+                    this._clipMoveMoved = false;
                     return;
                 }
 
@@ -527,6 +799,7 @@ export class AnimationTablePopup {
                 const frameNum = e.target.closest('.anim-frame-num');
                 if (frameNum) {
                     const frameIndex = parseInt(frameNum.dataset.frameIndex, 10);
+                    if (this.isClipEditModeActive) this.exitClipEditMode();
                     this.selectedCelId = null;
                     this.model.setCurrentFrame(frameIndex);
                     this.render();
@@ -559,6 +832,7 @@ export class AnimationTablePopup {
                         this.selectedCelId = existingCel.id;
                     } else {
                         const newCel = track.addCel({
+                            sourceLayerId: track.sourceLayerId,
                             layerId: track.layerId,
                             startFrame: frameIndex,
                             duration: 1
@@ -572,39 +846,60 @@ export class AnimationTablePopup {
                 this.render();
             });
 
-            // セル伸縮（リタイミング）の開始
+            // マウスダウン：リタイミング または クリップ移動
             timelineGrid.addEventListener('mousedown', (e) => {
+                // 1. リタイミング（右端ハンドル）
                 const handle = e.target.closest('.anim-cel-handle');
-                if (!handle) return;
+                if (handle) {
+                    const celId = handle.dataset.celId;
+                    const entry = this.model.findClipEntry(celId);
 
-                const celId = handle.dataset.celId;
-                let targetCel = null;
-                let targetTrack = null;
+                    if (entry) {
+                        const { lane, clip } = entry;
+                        this._isRetiming = true;
+                        this._retimingMoved = false;
+                        this._retimingData = {
+                            cel: clip,
+                            track: lane,
+                            startDuration: clip.duration,
+                            startX: e.clientX
+                        };
 
-                for (const track of this.model.tracks) {
-                    const cel = track.cels.find(c => c.id === celId);
-                    if (cel) {
-                        targetCel = cel;
-                        targetTrack = track;
-                        break;
+                        this.selectedCelId = celId;
+                        this.render();
+
+                        document.addEventListener('mousemove', this._onRetimingMouseMove);
+                        document.addEventListener('mouseup', this._onRetimingMouseUp);
+                        e.stopPropagation();
+                        e.preventDefault();
                     }
+                    return;
                 }
 
-                if (targetCel && targetTrack) {
-                    this._isRetiming = true;
-                    this._retimingMoved = false;
-                    this._retimingData = {
-                        cel: targetCel,
-                        track: targetTrack,
-                        startDuration: targetCel.duration,
-                        startX: e.clientX
+                // 2. クリップ移動（ブロック本体）
+                const block = e.target.closest('.anim-cel-block');
+                if (block) {
+                    const clipId = block.dataset.celId;
+                    const entry = this.model.findClipEntry(clipId);
+                    if (!entry) return;
+
+                    this._isClipMoving = true;
+                    this._clipMoveMoved = false;
+                    this._clipMoveData = {
+                        clipId,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        sourceLaneId: entry.lane.id,
+                        sourceStartFrame: entry.clip.startFrame
                     };
+                    
+                    this.selectedCelId = clipId;
+                    // ドラッグ中は少し透明にするなどのフィードバック
+                    block.classList.add('moving');
 
-                    this.selectedCelId = celId;
-                    this.render();
-
-                    document.addEventListener('mousemove', this._onRetimingMouseMove);
-                    document.addEventListener('mouseup', this._onRetimingMouseUp);
+                    document.addEventListener('mousemove', this._onClipMoveMouseMove);
+                    document.addEventListener('mouseup', this._onClipMoveMouseUp);
+                    
                     e.stopPropagation();
                     e.preventDefault();
                 }
@@ -614,7 +909,7 @@ export class AnimationTablePopup {
         // ドラッグ移動の実装
         const header = this.panel.querySelector('.anim-table-header');
         header.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.anim-tool-btn, .ui-close-button, #anim-preview-chk')) return;
+            if (e.target.closest('.anim-tool-btn, .ui-close-button, #anim-preview-chk, #anim-onion-chk, #anim-auto-capture-chk, #anim-clip-edit-chk')) return;
             
             this._isDragging = true;
             this._dragMoved = false;
@@ -676,6 +971,47 @@ export class AnimationTablePopup {
                 this._retimingMoved = false;
             }, 0);
         };
+
+        this._onClipMoveMouseMove = (e) => {
+            if (!this._isClipMoving || !this._clipMoveData) return;
+
+            const dx = e.clientX - this._clipMoveData.startX;
+            const dy = e.clientY - this._clipMoveData.startY;
+            
+            if (!this._clipMoveMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+                this._clipMoveMoved = true;
+                // 移動開始のフィードバック
+                const block = this.panel.querySelector(`.anim-cel-block[data-cel-id="${this._clipMoveData.clipId}"]`);
+                if (block) block.classList.add('moving');
+            }
+        };
+
+        this._onClipMoveMouseUp = (e) => {
+            if (!this._isClipMoving || !this._clipMoveData) return;
+
+            if (this._clipMoveMoved) {
+                // ドロップ先の解決
+                const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+                const slot = targetEl?.closest('.anim-cell-slot');
+
+                if (slot) {
+                    const targetLaneId = slot.dataset.trackId;
+                    const targetFrame = parseInt(slot.dataset.frameIndex, 10);
+                    
+                    const result = this.model.moveClip(this._clipMoveData.clipId, targetLaneId, targetFrame);
+                }
+            }
+
+            this._isClipMoving = false;
+            this._clipMoveData = null;
+            document.removeEventListener('mousemove', this._onClipMoveMouseMove);
+            document.removeEventListener('mouseup', this._onClipMoveMouseUp);
+            
+            // 少し遅延させてからフラグを下ろす（click誤爆防止）
+            setTimeout(() => {
+                this.render();
+            }, 0);
+        };
     }
 
     _updatePanelPosition() {
@@ -689,16 +1025,13 @@ export class AnimationTablePopup {
     _adjustSelectedCelDuration(delta) {
         if (!this.selectedCelId) return;
 
-        // すべてのトラックから該当セルを探す
-        for (const track of this.model.tracks) {
-            const cel = track.cels.find(c => c.id === this.selectedCelId);
-            if (cel) {
-                const maxDuration = Math.max(1, this.model.totalFrames - cel.startFrame);
-                const newDuration = Math.max(1, Math.min(maxDuration, cel.duration + delta));
-                if (track.setCelDuration(cel.id, newDuration)) {
-                    this.render();
-                }
-                break;
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        if (entry) {
+            const { lane, clip } = entry;
+            const maxDuration = Math.max(1, this.model.totalFrames - clip.startFrame);
+            const newDuration = Math.max(1, Math.min(maxDuration, clip.duration + delta));
+            if (lane.setCelDuration(clip.id, newDuration)) {
+                this.render();
             }
         }
     }
@@ -785,6 +1118,17 @@ export class AnimationTablePopup {
                 border-color: #ff6600;
             }
 
+            .anim-tool-btn:disabled {
+                opacity: 0.3;
+                cursor: not-allowed;
+                background: rgba(255,255,255,0.05);
+            }
+
+            .anim-unique-btn:not(:disabled):hover {
+                background: #4caf50;
+                border-color: #81c784;
+            }
+
             .anim-play-btn {
                 margin-right: 8px;
                 width: 24px;
@@ -830,6 +1174,20 @@ export class AnimationTablePopup {
                 width: auto;
                 font-size: 9px;
                 background: rgba(255,255,255,0.1);
+            }
+
+            .anim-copy-paste-controls {
+                margin-left: 8px;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+            }
+
+            .anim-copy-btn, .anim-paste-btn {
+                padding: 0 6px;
+                width: auto;
+                font-size: 8px;
+                background: rgba(255,255,255,0.05);
             }
 
             .anim-table-viewport {
@@ -1001,6 +1359,16 @@ export class AnimationTablePopup {
                 flex-shrink: 0;
                 position: relative;
                 pointer-events: auto;
+                cursor: grab;
+            }
+
+            .anim-cel-block.moving {
+                opacity: 0.72;
+                transform: scale(1.08);
+                cursor: grabbing;
+                z-index: 100;
+                outline: 3px solid rgba(255, 255, 255, 0.95);
+                box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.65), 0 8px 18px rgba(128, 0, 0, 0.35);
             }
 
             .anim-cel-handle {
@@ -1041,6 +1409,37 @@ export class AnimationTablePopup {
                 pointer-events: none;
             }
 
+            .anim-shared-icon {
+                position: absolute;
+                right: 12px;
+                top: 6px;
+                width: 10px;
+                height: 10px;
+                pointer-events: none;
+                opacity: 0.8;
+            }
+
+            .anim-shared-icon::before, .anim-shared-icon::after {
+                content: '';
+                position: absolute;
+                width: 6px;
+                height: 4px;
+                border: 1.5px solid white;
+                border-radius: 2px;
+            }
+
+            .anim-shared-icon::before {
+                top: 0;
+                left: 0;
+                transform: rotate(-45deg);
+            }
+
+            .anim-shared-icon::after {
+                bottom: 0;
+                right: 0;
+                transform: rotate(-45deg);
+            }
+
             .anim-cel-block.duration-1 { width: 22px; }
             .anim-cel-block.duration-2 { width: 52px; }
             .anim-cel-block.duration-3 { width: 82px; }
@@ -1073,6 +1472,17 @@ export class AnimationTablePopup {
                 border: 2px solid white;
             }
 
+            .anim-cel-block.editing {
+                background: #00e5ff !important;
+                border: 2px solid white;
+                box-shadow: 0 0 15px rgba(0, 229, 255, 0.8);
+                transform: scaleY(1.15);
+            }
+
+            .clip-edit-active .anim-table-header {
+                background: #00acc1; /* EDITモード中はヘッダー色を変更 */
+            }
+
             .anim-timeline-row.active .anim-cel-block {
                 background: #ff6600;
             }
@@ -1099,6 +1509,11 @@ export class AnimationTablePopup {
         // アニメーション系
         this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
 
+        // 自動キャプチャ
+        this.eventBus.on('drawing:stroke-completed', (data = {}) => {
+            this._handleDrawingCompleted(data);
+        });
+
         // キーボードショートカット
         document.addEventListener('keydown', (e) => {
             if (!this.isVisible) return;
@@ -1112,6 +1527,7 @@ export class AnimationTablePopup {
             if (e.key === 'ArrowLeft') {
                 const current = this.model.playback.currentFrame;
                 if (current > 0) {
+                    if (this.isClipEditModeActive) this.exitClipEditMode();
                     this.selectedCelId = null;
                     this.model.setCurrentFrame(current - 1);
                     this.render();
@@ -1120,6 +1536,7 @@ export class AnimationTablePopup {
             } else if (e.key === 'ArrowRight') {
                 const current = this.model.playback.currentFrame;
                 if (current < this.model.totalFrames - 1) {
+                    if (this.isClipEditModeActive) this.exitClipEditMode();
                     this.selectedCelId = null;
                     this.model.setCurrentFrame(current + 1);
                     this.render();
@@ -1128,14 +1545,12 @@ export class AnimationTablePopup {
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (this.selectedCelId) {
                     // すべてのトラックから該当セルを探して削除
-                    for (const track of this.model.tracks) {
-                        const cel = track.cels.find(c => c.id === this.selectedCelId);
-                        if (cel) {
-                            track.removeCelAtFrame(cel.startFrame);
-                            this.selectedCelId = null;
-                            this.render();
-                            break;
-                        }
+                    const entry = this.model.findClipEntry(this.selectedCelId);
+                    if (entry) {
+                        entry.lane.removeCelAtFrame(entry.clip.startFrame);
+                        this.selectedCelId = null;
+                        if (this.isClipEditModeActive) this.exitClipEditMode();
+                        this.render();
                     }
                 }
             }

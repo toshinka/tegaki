@@ -278,3 +278,10 @@ medium: '#b8706b'
 lightMedium: '#d4a8a1' パネル背景
 cream: '#f0e0d6'  
 maroonからcreamの中間色で75％がlightMaroon: '#9c3836'/　50％がmedium: '#b8706b'/25％がlightMedium: '#d4a8a1'だと思うのだけど、#d4a8a1がちゃんとグラデ色なのか怪しい。この3色がmaroonからcreamの中間色なのかを調査して欲しい。
+・　右サイドバーのレイヤー+アイコンの上に少し隙間を開けてレイヤーパネル表示ON/OFFアイコンが欲しい。上下の幅はゴミ箱とレイヤー合成ボタンの間と同じくらいで。
+・　アニメタイムテーブルを画面端ドラッグで幅を変更できるようにしたい。縦長で横短めにしてキャンバスと横並びにできると、左手のハンドジェスチャーで他インライン、右手でキャンバスに描くというクールなダブルプレイが可能になる。ライバルアニメ制作ツールの中でも、そういう操作はユニークかも？横資源がある、PC用の液タブを使う意味合いと合理性が高まるかと思う。
+・　ブラウザバックとかメモリリーク？とかで突然ののファイルエラー時に、絵を描いた最後の状態を復帰させるボタン。長押しでゲージが溜まって復帰するか念押しメッセージで復帰。アルバム内にあると自然かな？
+hospital
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-hospital-icon lucide-hospital"><path d="M12 7v4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M14 9h-4"/><path d="M18 11h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2"/><path d="M18 21V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16"/></svg>
+
+
