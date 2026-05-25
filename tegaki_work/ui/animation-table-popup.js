@@ -382,10 +382,70 @@ export class AnimationTablePopup {
         return this.model.findClipEntry(this.selectedCelId);
     }
 
+    /**
+     * ClipAsset の内部レイヤーを合成してプレビュー描画する (Phase 4z10)
+     */
+    _renderClipAssetInternalLayerPreview(track, cel, layers, options = {}) {
+        if (!cel || !this.animationPreviewContainer) return false;
+
+        const result = this.model.getPreviewInternalLayersForCel(cel);
+        if (!result || !result.ok) return false;
+
+        const { asset, layers: internalLayers } = result;
+        const sourceLayer = layers.find(l => l.layerData?.id === (track.sourceLayerId || track.layerId));
+        
+        // 描画順：末尾から先頭へ (配列先頭がInspector上で上＝前面になるように)
+        for (let i = internalLayers.length - 1; i >= 0; i--) {
+            const internalLayer = internalLayers[i];
+            
+            // 可視性チェック
+            if (internalLayer.visible === false) continue;
+            
+            // 不透明度チェック
+            const opacity = typeof internalLayer.opacity === 'number' ? internalLayer.opacity : 1.0;
+            if (opacity <= 0) continue;
+
+            const snapshot = this.model.getDrawingSnapshot(internalLayer.drawingSnapshotId);
+            if (!snapshot) continue;
+
+            const texture = this._getTextureFromSnapshot(snapshot);
+            if (!texture) continue;
+
+            const sprite = new Sprite(texture);
+            
+            // アルファの積算：実レイヤー透明度 * 内部レイヤー透明度 * オプション（オニオン等）
+            const baseAlpha = sourceLayer?.layerData?.opacity ?? 1.0;
+            sprite.alpha = baseAlpha * opacity * (options.alpha ?? 1.0);
+            
+            // 合成モード：内部レイヤーの設定を優先
+            if (internalLayer.blendMode && internalLayer.blendMode !== 'normal') {
+                sprite.blendMode = internalLayer.blendMode;
+            } else if (sourceLayer?.layerData?.blendMode) {
+                sprite.blendMode = sourceLayer.layerData.blendMode;
+            } else {
+                sprite.blendMode = 'normal';
+            }
+
+            // ティント（オニオン用）
+            if (options.tint !== undefined) {
+                sprite.tint = options.tint;
+            }
+
+            this.animationPreviewContainer.addChild(sprite);
+        }
+
+        return true;
+    }
+
     _renderCelPreview(track, cel, layers, options = {}) {
         if (!track || !cel) return;
 
-        // sourceLayerId 優先
+        // Phase 4z10: 内部レイヤー合成プレビューを試行
+        if (this._renderClipAssetInternalLayerPreview(track, cel, layers, options)) {
+            return;
+        }
+
+        // --- 以下、従来の単一Snapshotプレビュー (Fallback用) ---
         const sourceLayer = layers.find(l => l.layerData?.id === (track.sourceLayerId || track.layerId));
         const snapshot = this.model.getSnapshotForCel(cel);
 
