@@ -44,16 +44,46 @@ export class DrawingSnapshotModel {
 }
 
 /**
- * クリップ本体（アセット）
- * 将来、内部レイヤー構造・内部タイムライン・物理演算を持つ。
+ * クリップ素材のフォルダ
  */
-export class ClipAssetModel {
+export class ClipAssetFolderModel {
     constructor(options = {}) {
         this.id = options.id || createId();
-        this.name = options.name || 'New Asset';
-        this.type = options.type || 'raster'; // 'raster' | 'vector' | 'group'
-        this.drawingSnapshotId = options.drawingSnapshotId || null; // 参照
-        this.internalLayers = options.internalLayers || []; // 将来用
+        this.name = options.name || 'Assets';
+        this.parentFolderId = options.parentFolderId || null;
+        this.colorTag = options.colorTag || null;
+        this.expanded = options.expanded !== false;
+        this.createdAt = options.createdAt || Date.now();
+        this.updatedAt = options.updatedAt || Date.now();
+    }
+
+    serialize() {
+        return {
+            id: this.id,
+            name: this.name,
+            parentFolderId: this.parentFolderId,
+            colorTag: this.colorTag,
+            expanded: this.expanded,
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt
+        };
+    }
+}
+
+/**
+ * クリップ素材の内部レイヤー
+ */
+export class ClipAssetInternalLayerModel {
+    constructor(options = {}) {
+        this.id = options.id || createId();
+        this.name = options.name || 'Layer';
+        this.type = options.type || 'raster'; // 'raster' | 'folder'
+        this.visible = options.visible !== false;
+        this.opacity = options.opacity ?? 1;
+        this.blendMode = options.blendMode || 'normal';
+        this.drawingSnapshotId = options.drawingSnapshotId || null;
+        this.parentLayerId = options.parentLayerId || null;
+        this.isBackground = options.isBackground === true;
         this.createdAt = options.createdAt || Date.now();
         this.updatedAt = options.updatedAt || Date.now();
     }
@@ -63,8 +93,45 @@ export class ClipAssetModel {
             id: this.id,
             name: this.name,
             type: this.type,
+            visible: this.visible,
+            opacity: this.opacity,
+            blendMode: this.blendMode,
             drawingSnapshotId: this.drawingSnapshotId,
-            internalLayers: this.internalLayers,
+            parentLayerId: this.parentLayerId,
+            isBackground: this.isBackground,
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt
+        };
+    }
+}
+
+/**
+ * クリップ本体（アセット）
+ * 将来、内部レイヤー構造・内部タイムライン・物理演算を持つ。
+ */
+export class ClipAssetModel {
+    constructor(options = {}) {
+        this.id = options.id || createId();
+        this.name = options.name || 'New Asset';
+        this.type = options.type || 'raster'; // 'raster' | 'vector' | 'group'
+        this.folderId = options.folderId || null; // 所属フォルダ
+        this.drawingSnapshotId = options.drawingSnapshotId || null; // 参照
+        
+        // Phase 4z6: モデル化
+        this.internalLayers = (options.internalLayers || []).map(layer => new ClipAssetInternalLayerModel(layer));
+        
+        this.createdAt = options.createdAt || Date.now();
+        this.updatedAt = options.updatedAt || Date.now();
+    }
+
+    serialize() {
+        return {
+            id: this.id,
+            name: this.name,
+            type: this.type,
+            folderId: this.folderId,
+            drawingSnapshotId: this.drawingSnapshotId,
+            internalLayers: this.internalLayers.map(l => l.serialize()),
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
@@ -235,6 +302,7 @@ export class TimelineModel {
         // 内部リスト名はまだ tracks を維持
         this.tracks = (options.tracks || []).map(track => new LaneModel(track));
         
+        this.clipAssetFolders = (options.clipAssetFolders || []).map(folder => new ClipAssetFolderModel(folder));
         this.clipAssets = (options.clipAssets || []).map(asset => new ClipAssetModel(asset));
         this.drawingSnapshots = (options.drawingSnapshots || []).map(snap => new DrawingSnapshotModel(snap));
         this.playback = {
@@ -279,11 +347,242 @@ export class TimelineModel {
     }
 
     /**
+     * 指定IDのクリップアセットフォルダを取得
+     */
+    getClipAssetFolder(folderId) {
+        if (!folderId) return null;
+        return this.clipAssetFolders.find(f => f.id === folderId) || null;
+    }
+
+    /**
+     * デフォルトフォルダを確保する
+     */
+    ensureDefaultClipAssetFolder() {
+        let folder = this.clipAssetFolders.find(f => f.name === 'Default Assets' && !f.parentFolderId);
+        if (!folder) {
+            folder = new ClipAssetFolderModel({ name: 'Default Assets' });
+            this.clipAssetFolders.push(folder);
+        }
+        return folder;
+    }
+
+    /**
+     * 新しいアセットフォルダを作成
+     */
+    createClipAssetFolder(options = {}) {
+        if (options.parentFolderId && !this.getClipAssetFolder(options.parentFolderId)) {
+            return { ok: false, reason: 'parent-not-found' };
+        }
+        const folder = new ClipAssetFolderModel(options);
+        this.clipAssetFolders.push(folder);
+        return { ok: true, folder };
+    }
+
+    /**
+     * フォルダ名を変更
+     */
+    renameClipAssetFolder(folderId, name) {
+        const folder = this.getClipAssetFolder(folderId);
+        if (!folder) return { ok: false, reason: 'not-found' };
+        const trimmedName = typeof name === 'string' ? name.trim() : '';
+        if (!trimmedName) return { ok: false, reason: 'invalid-name' };
+        folder.name = trimmedName;
+        folder.updatedAt = Date.now();
+        return { ok: true, folder };
+    }
+
+    /**
+     * アセットをフォルダへ移動
+     */
+    moveClipAssetToFolder(assetId, folderId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        if (folderId !== null) {
+            const folder = this.getClipAssetFolder(folderId);
+            if (!folder) return { ok: false, reason: 'folder-not-found' };
+        }
+
+        asset.folderId = folderId;
+        asset.updatedAt = Date.now();
+        return { ok: true, asset };
+    }
+
+    /**
+     * 指定フォルダ内のアセット一覧を取得
+     */
+    getClipAssetsInFolder(folderId) {
+        return this.clipAssets.filter(a => a.folderId === folderId);
+    }
+
+    /**
+     * 内部レイヤーを作成するヘルパー
+     */
+    createClipAssetInternalLayer(options = {}) {
+        return new ClipAssetInternalLayerModel(options);
+    }
+
+    /**
+     * アセットの内部レイヤー整合性を確保する
+     */
+    ensureClipAssetInternalLayer(assetId, options = {}) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        if (asset.internalLayers.length === 0) {
+            const layer = this.createClipAssetInternalLayer({
+                name: options.name || 'Layer 1',
+                drawingSnapshotId: asset.drawingSnapshotId,
+                type: 'raster'
+            });
+            asset.internalLayers.push(layer);
+            return { ok: true, asset, layer, created: true };
+        }
+
+        return { ok: true, asset, layer: asset.internalLayers[0], created: false };
+    }
+
+    /**
+     * アセットに内部レイヤーを追加
+     */
+    addClipAssetInternalLayer(assetId, options = {}) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        const nextNum = asset.internalLayers.length + 1;
+        const layer = this.createClipAssetInternalLayer({
+            name: options.name || `Layer ${nextNum}`,
+            type: options.type || 'raster',
+            drawingSnapshotId: options.drawingSnapshotId || null
+        });
+
+        asset.internalLayers.push(layer);
+        asset.updatedAt = Date.now();
+        return { ok: true, asset, layer };
+    }
+
+    /**
+     * アセットの内部レイヤーを削除
+     */
+    removeClipAssetInternalLayer(assetId, layerId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        if (asset.internalLayers.length <= 1) {
+            return { ok: false, reason: 'last-layer' };
+        }
+
+        const index = asset.internalLayers.findIndex(l => l.id === layerId);
+        if (index === -1) return { ok: false, reason: 'layer-not-found' };
+
+        const removedLayer = asset.internalLayers.splice(index, 1)[0];
+        asset.updatedAt = Date.now();
+        return { ok: true, asset, layer: removedLayer };
+    }
+
+    /**
+     * アセットの内部レイヤー名を変更
+     */
+    renameClipAssetInternalLayer(assetId, layerId, name) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        const layer = asset.internalLayers.find(l => l.id === layerId);
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+
+        const trimmedName = typeof name === 'string' ? name.trim() : '';
+        if (!trimmedName) return { ok: false, reason: 'invalid-name' };
+
+        layer.name = trimmedName;
+        layer.updatedAt = Date.now();
+        return { ok: true, asset, layer };
+    }
+
+    /**
+     * アセットの内部レイヤーの可視性を切り替え
+     */
+    toggleClipAssetInternalLayerVisibility(assetId, layerId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        const layer = asset.internalLayers.find(l => l.id === layerId);
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+
+        layer.visible = !layer.visible;
+        layer.updatedAt = Date.now();
+        return { ok: true, asset, layer };
+    }
+
+    /**
+     * アセットの内部レイヤー順序を変更
+     * direction: 'up' (添字を減らす = Inspector上で上へ) | 'down' (添字を増やす = 下へ)
+     */
+    moveClipAssetInternalLayer(assetId, layerId, direction) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        const layers = asset.internalLayers;
+        const index = layers.findIndex(l => l.id === layerId);
+        if (index === -1) return { ok: false, reason: 'layer-not-found' };
+
+        const targetIndex = (direction === 'up') ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= layers.length) {
+            return { ok: false, reason: 'out-of-range' };
+        }
+
+        // 要素の入れ替え
+        const temp = layers[index];
+        layers[index] = layers[targetIndex];
+        layers[targetIndex] = temp;
+
+        asset.updatedAt = Date.now();
+        return { ok: true, asset, layer: layers[targetIndex], index: targetIndex };
+    }
+
+    /**
      * 指定IDの描画スナップショットを取得
      */
     getDrawingSnapshot(snapshotId) {
         if (!snapshotId) return null;
         return this.drawingSnapshots.find(s => s.id === snapshotId) || null;
+    }
+
+    /**
+     * 空のアセットとスナップショットを作成する
+     */
+    createBlankClipAsset(options = {}) {
+        const width = options.width || 1;
+        const height = options.height || 1;
+        const pixelCount = width * height * 4;
+        const pixels = new Uint8ClampedArray(pixelCount); // 初期値は 0 (透明)
+
+        const snapshot = new DrawingSnapshotModel({
+            width,
+            height,
+            pixels,
+            isBlank: true
+        });
+        this.drawingSnapshots.push(snapshot);
+
+        const asset = new ClipAssetModel({
+            name: options.name || 'Blank Clip',
+            type: 'raster',
+            drawingSnapshotId: snapshot.id,
+            folderId: options.folderId || null
+        });
+
+        // Phase 4z6: 初期内部レイヤーの追加
+        asset.internalLayers = [
+            this.createClipAssetInternalLayer({
+                name: options.layerName || 'Layer 1',
+                type: 'raster',
+                drawingSnapshotId: snapshot.id
+            })
+        ];
+
+        this.clipAssets.push(asset);
+
+        return { asset, snapshot };
     }
 
     /**
@@ -318,11 +617,16 @@ export class TimelineModel {
 
         const originalSnapshot = this.getSnapshotForCel(clip);
         if (!originalSnapshot) return { ok: false, reason: 'snapshot-not-found' };
+        this.ensureClipAssetInternalLayer(originalAsset.id, {
+            name: 'Layer 1',
+            drawingSnapshotId: originalAsset.drawingSnapshotId
+        });
 
         // 1. スナップショットの複製
         const newSnapshot = new DrawingSnapshotModel({
             width: originalSnapshot.width,
             height: originalSnapshot.height,
+            isBlank: originalSnapshot.isBlank, // Phase 4z: Blank状態を継承
             // pixels は Uint8ClampedArray または Array なので slice でコピー
             pixels: originalSnapshot.pixels ? (
                 originalSnapshot.pixels instanceof Uint8ClampedArray 
@@ -337,10 +641,31 @@ export class TimelineModel {
         const newAsset = new ClipAssetModel({
             name: `${originalAsset.name} copy`,
             type: originalAsset.type,
-            drawingSnapshotId: newSnapshot.id,
-            // internalLayers は将来用だが一応浅いコピー
-            internalLayers: originalAsset.internalLayers ? [...originalAsset.internalLayers] : []
+            folderId: originalAsset.folderId, // Phase 4z3: フォルダを継承
+            drawingSnapshotId: newSnapshot.id
         });
+
+        // Phase 4z6: 内部レイヤーのディープコピー
+        newAsset.internalLayers = originalAsset.internalLayers.map(layer => {
+            return this.createClipAssetInternalLayer({
+                ...layer.serialize(),
+                id: createId(), // 新規ID
+                drawingSnapshotId: newSnapshot.id, // 複製後Snapshotへ
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            });
+        });
+
+        // 整合性補完（既存データで internalLayers が空だった場合など）
+        if (newAsset.internalLayers.length === 0) {
+            newAsset.internalLayers = [
+                this.createClipAssetInternalLayer({
+                    name: 'Layer 1',
+                    type: 'raster',
+                    drawingSnapshotId: newSnapshot.id
+                })
+            ];
+        }
 
         // 3. モデルへ追加
         this.drawingSnapshots.push(newSnapshot);
@@ -492,6 +817,7 @@ export class TimelineModel {
             fps: this.fps,
             totalFrames: this.totalFrames,
             tracks: this.tracks.map(track => track.serialize()),
+            clipAssetFolders: this.clipAssetFolders.map(folder => folder.serialize()),
             clipAssets: this.clipAssets.map(asset => asset.serialize()),
             drawingSnapshots: this.drawingSnapshots.map(snap => snap.serialize()),
             playback: { ...this.playback }
@@ -507,3 +833,5 @@ window.LaneModel = LaneModel;
 window.TimelineModel = TimelineModel;
 window.DrawingSnapshotModel = DrawingSnapshotModel;
 window.ClipAssetModel = ClipAssetModel;
+window.ClipAssetFolderModel = ClipAssetFolderModel;
+window.ClipAssetInternalLayerModel = ClipAssetInternalLayerModel;
