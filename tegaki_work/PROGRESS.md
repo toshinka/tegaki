@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 4y — Clip Asset Make Unique MVP 【完了】**
+**Phase 4z9 — ClipAsset Internal Layer Order MVP 【完了】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,181 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-25 Codex：新チャット移行用Handoff作成
+- **引き継ぎ作成**: `tegaki_work/PHASE4Z_HANDOFF.md` を作成。新チャットのCodexが読むべき順番、Phase 4z6〜4z9の現在地、Preview/背景/内部Layerの設計判断、次Phase候補を整理。
+- **次Phase方針**: 次Phase指示書は新チャット側で最新ファイルを読み直して作成する。候補は内部Layer合成Preview基盤、Virtual Layer Panel棚卸し、または4z系整理。
+- **役割分担明記**: 棚卸しや限定実装はGemini、軽微補修・高難度/重要改修・レビューはCodexが担当する運用を引き継ぎに明記。
+
+### 2026-05-25 Codex：Phase 4z9確認
+- **Phase 4z9確認**: `phase4z9_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。`moveClipAssetInternalLayer()`、Inspectorの `▲` / `▼`、先頭/末尾のdisabled、選択維持は実装されている。
+- **順序方針**: Inspector表示は配列先頭が上/前面。将来の合成Previewでは末尾から描画して先頭を前面にする案が報告書に記録されている。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z9 ClipAsset Internal Layer Order MVP (完了)
+- **レイヤー順序操作実装**: `TimelineModel` に `moveClipAssetInternalLayer()` を追加し、アセット内の前後関係を操作可能に。
+- **Inspector UI 拡張**: 各レイヤー行に `▲` / `▼` ボタンを配置。
+- **境界・選択制御**: 先頭/末尾でのボタン無効化、および順序変更後の選択状態維持を実装。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z9_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z9指示作成
+- **次フェーズ判断**: 内部LayerのCRUDが入ったため、次は合成PreviewやVirtual Layer Panelに進む前に、内部Layer配列の順序をユーザー操作で変更できるようにする。
+- **Phase 4z9作成**: `task-gemini/phase4z9.md` を作成。Internal Layers Inspector内で上下ボタンによる順序移動、境界ガード、選択維持を行うMVPに限定。
+- **保留**: 内部Layer D&D、内部Layer合成Preview、実描画、Virtual Layer Panel、通常レイヤーパネル切替、blendMode/opacity編集、CAPTURE/AUTO/EDIT整理は後続扱い。
+
+### 2026-05-25 Codex：Phase 4z8確認とInspector UI補修
+- **Phase 4z8確認**: `phase4z8_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。内部Layerの追加、削除、リネーム、visible切替、最後の1枚削除ガードは実装されている。
+- **補修**: `.anim-lib-label` のCSSが二重定義され、Internal Layersヘッダーの `+` ボタン配置が後勝ちで崩れうるため、後側定義にもflex配置を反映。
+- **補修**: 非表示内部Layer行に `is-hidden` クラスを付け、Inspector上で行全体が薄く見えるようにした。Previewには引き続き影響させない。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z8 ClipAsset Internal Layer CRUD MVP (完了)
+- **内部レイヤー管理機能実装**: `TimelineModel` に追加・リネーム・削除・可視性トグルのヘルパーメソッドを実装。
+- **Inspector UI 拡張**: 各レイヤー行に「👁 (表示)」「✎ (リネーム)」「× (削除)」ボタンを配置。ヘッダーに「+ (追加)」ボタンを新設。
+- **安全性確保**: アセットの最後の1レイヤーが削除されるのを防ぐガードロジックを導入。
+- **UX改善**: 削除後の選択自動移動、リネーム時の `prompt()` 利用など、Inspector 内での最小限の操作を可能にした。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z8_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z8指示作成
+- **次フェーズ判断**: 内部Layer Inspectorで構造が見えるようになったため、次はVirtual Layer Panelや合成Previewではなく、内部Layerの最小CRUDをInspector内に閉じて実装する。
+- **Phase 4z8作成**: `task-gemini/phase4z8.md` を作成。内部Layerの追加、削除、リネーム、visible切替、最後のLayer削除ガードを純データ操作として整える。
+- **保留**: 内部Layerへの実描画、内部Layer合成Preview、Virtual Layer Panel、通常レイヤーパネル切替、内部Layer D&D、Snapshot GC、CAPTURE/AUTO/EDIT整理は後続扱い。
+
+### 2026-05-24 Gemini：Phase 4z7 ClipAsset Internal Layer Inspector Skeleton (完了)
+- **内部レイヤー Inspector 実装**: Asset Library 内に、選択中のアセットが持つ内部レイヤーを詳細表示するインスペクターを新設。
+- **3カラムレイアウト**: フォルダ・アセット・内部レイヤーを一度に確認できる UI 構成に拡張。
+- **詳細メタデータ表示**: レイヤー名、タイプ、可視性、不透明度、合成モード、Snapshot の有無を一覧表示。
+- **データ連動**: タイムラインでのクリップ選択と連動してインスペクターを表示。内部レイヤーの個別選択状態も管理。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z7_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z7指示作成
+- **次フェーズ判断**: 内部Layerのデータ基盤が入ったため、次はVirtual Layer Panelや編集機能ではなく、Asset Library内で選択中Assetの内部Layerを確認できるInspectorの骨格へ進む。
+- **Phase 4z7作成**: `task-gemini/phase4z7.md` を作成。内部Layer名、type、visible、opacity、blendMode、Snapshot有無を表示し、クリックで選択状態だけ持てるようにするMVP。
+- **保留**: 内部Layerの追加/削除/リネーム、visible/opacity/blendMode編集、内部Layer合成Preview、通常レイヤーパネル切替、CAPTURE/AUTO/EDIT整理、Asset Library本格D&Dは後続扱い。
+
+### 2026-05-25 Codex：Phase 4z6確認と内部Layer補修
+- **Phase 4z6確認**: `phase4z6_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。`ClipAssetInternalLayerModel`、`ClipAssetModel.internalLayers` のモデル化、Blank/CAPTURE/Auto-Seed/Make Unique時の内部Layer作成、Asset Libraryの `L:n` 表示は実装されている。
+- **補修**: 既存AssetをCAPTURE/AUTOで更新する経路では、`internalLayers` が空の古いAssetを補完していなかったため、更新時に `ensureClipAssetInternalLayer()` を呼び、raster内部Layerの `drawingSnapshotId` をAsset本体と同期するよう修正。
+- **補修**: Make Unique前に元Assetの内部Layerを補完するようにし、古いAssetを独立化しても内部Layer情報が欠落しないようにした。
+- **補修**: `ClipAssetInternalLayerModel` を `window` へ登録し、他UI/デバッグから参照できるようにした。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z6 ClipAsset Internal Layer Data Foundation (完了)
+- **内部レイヤーモデル実装**: `ClipAssetInternalLayerModel` を追加。アセットが独自のレイヤー階層を持てる基盤を構築。
+- **データ構造の高度化**: `ClipAssetModel` 内で内部レイヤーをインスタンス管理し、シリアライズに対応。
+- **生成パスの対応**: 空アセット作成、キャプチャ、初期シード、UNIQUE（独立化）時に初期レイヤーの自動生成やディープコピーを行うよう拡張。
+- **UIフィードバック**: Asset Library 内に各アセットの内部レイヤー数を表示するように改修。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z6_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z6指示作成
+- **次フェーズ判断**: 初期ClipAsset Seedが入ったため、次はFrame複製やUIより先に、ClipAsset内部レイヤーの純データ基盤を固める。現行PreviewはSnapshot表示のまま維持する。
+- **Phase 4z6作成**: `task-gemini/phase4z6.md` を作成。`ClipAssetInternalLayerModel`、`ClipAssetModel.internalLayers` のモデル化、Blank/CAPTURE/Auto-Seed/Make Unique時の内部Layer整合に限定。
+- **背景方針**: 共有背景はClipAsset内部Layer化しない。線だけのClipが透ける場合は、各Clip側の塗りLayerで遮蔽する前提。
+- **保留**: 内部Layer編集UI、Virtual Layer Panel、内部Layer合成Preview、複数通常LayerのClipAsset内部化、Frame 2で前Frame複製、CAPTURE/AUTO/EDIT整理は後続扱い。
+
+### 2026-05-25 Codex：Phase 4z5確認と背景/Blank補修
+- **Phase 4z5確認**: `phase4z5_report.md` と `animation-table-popup.js` を確認。初回表示時のFrame 1自動ClipAsset Seed、重複防止、Asset Library反映は実装されている。
+- **補修**: 背景レイヤーがアクティブな場合、背景Laneを掴んでreturnする可能性があったため、Seed対象Lane選定時点で背景/フォルダLayerを除外し、通常Layerへフォールバックするよう修正。
+- **補修**: 空の透明レイヤーを初期Seedした場合に非Blank扱いになるため、Snapshotのalphaを走査して完全透明なら `isBlank: true` にするBlank判定を追加。
+- **背景方針確認**: ツール背景は全Clip共通の下地で、描画物ではない。線だけのClipは合成時に下のClipが透けるため、必要な遮蔽は各Clip側で色を塗る前提。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z5 Initial ClipAsset Auto-Seed MVP (完了)
+- **初期シード機能実装**: アニメテーブル初回表示時に、現在のレイヤー描画を自動的に1コマ目の `ClipAsset` として登録。
+- **ターゲット選定**: アクティブレイヤーまたは最上位の通常レーンを自動判別。背景レイヤーは除外。
+- **UX改善**: 既存の描画内容が即座にタイムラインへ反映されるようになり、アニメーション作成の開始がスムーズに。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z5_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z5指示作成
+- **次フェーズ判断**: 1レーンのパラパラ漫画/ストーリーボードを軽く始められるよう、アニメテーブル表示時にFrame 1 / 対象Laneへ初期ClipAssetを自動SeedするMVPへ進む。
+- **背景方針**: 背景レイヤーは共有のキャンバス下地であり、絵としての背景ではない。ClipAsset内部へコピーせず、絵の背景が必要な場合は通常レイヤーとして描いたものをClipAsset対象にする。
+- **Phase 4z5作成**: `task-gemini/phase4z5.md` を作成。既存通常レイヤー描画をFrame 1のClipAsset Snapshotとして自動作成し、重複作成・背景/フォルダLane対象化を避けるMVPに限定。
+- **保留**: ClipAsset内部レイヤー、複数通常レイヤーの内部Layer化、Frame 2で前Frameを複製、背景レイヤーのAsset化、Virtual Layer Panel、CAPTURE/AUTO/EDIT整理は後続扱い。
+
+### 2026-05-25 Codex：Phase 4z4確認と単一レーン設計メモ追記
+- **Phase 4z4確認**: `phase4z4_report.md` と `animation-table-popup.js` を確認。`ASSETS` トグル、フォルダ一覧、Asset一覧、Blank/Refs表示、選択中ClipのAsset強調は実装されている。
+- **補修**: `anim-asset-library` の表示切替にインライン `style.display` を使っていたため、`is-visible` クラス制御へ変更。
+- **設計メモ追記**: `task-gemini/phase4n_preview_scope_note.md` に、1レーンのパラパラ漫画/ストーリーボードでも内部的には `ClipAsset` / `ClipInstance` に乗せるが、軽い作画体験では保管庫を意識させない方針を追記。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z4 Asset Library Skeleton MVP (完了)
+- **ライブラリUI実装**: タイムライン下部に展開する2カラム（フォルダ/アセット）形式の管理パネルを構築。
+- **データ連動表示**: 前フェーズのフォルダ基盤を活用し、所属アセットのフィルタリング・名前・メタ情報（空/参照数）を表示。
+- **選択状態の同期**: タイムラインで選択中のクリップが参照しているアセットをライブラリ内で強調表示（青い強調線）する機能を実装。
+- **ASSETSトグル**: ヘッダー右側にパネル表示切り替えボタンを追加。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z4_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z4指示作成
+- **次フェーズ判断**: ClipAssetフォルダのデータ基盤が入ったため、次は装飾やレイヤーパネル統合ではなく、Asset Libraryの最小可視化へ進む。まずGeminiに骨格を実装させ、CODEXで確認・補修する。
+- **Phase 4z4作成**: `task-gemini/phase4z4.md` を作成。アニメテーブル内に `ASSETS` トグル、フォルダ一覧、Asset一覧、Blank/共有数/選択中ClipのAsset強調を表示するMVPに限定。
+- **保留**: AssetのD&D、Asset配置、Asset/Folderリネーム・削除UI、サムネイル、ClipAssetフォルダの最終デザイン、レイヤーパネル統合、Clip内部レイヤーは後続扱い。
+
+### 2026-05-25 Codex：Phase 4z3確認とFolderヘルパー補修
+- **Phase 4z3確認**: `phase4z3_report.md` と `animation-data-model.js` を確認。`ClipAssetFolderModel`、`ClipAssetModel.folderId`、`TimelineModel.clipAssetFolders`、フォルダ操作ヘルパー、serialize対応は実装されている。
+- **補修**: `createClipAssetFolder()` で存在しない `parentFolderId` を受け付けないようにし、`renameClipAssetFolder()` で空名を拒否してtrim済み名称を保存するようにした。Asset Library UI前にデータの破綻を防ぐための小補修。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z3 ClipAsset Folder Data Foundation (完了)
+- **フォルダデータモデル実装**: `ClipAssetFolderModel` を追加し、アセットを保管・分類する基盤を構築。
+- **アセット所属管理**: `ClipAssetModel` に `folderId` を追加。新規作成・複製・キャプチャ時にフォルダ情報を保持・継承可能に。
+- **管理ヘルパー拡充**: `TimelineModel` にフォルダの作成・リネーム・移動・取得などの純データ操作メソッドを実装。
+- **シリアライズ対応**: タイムラインの保存データにフォルダ構造が含まれるよう拡張。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z3_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z3指示作成
+- **次フェーズ判断**: レーンとClipAssetフォルダを早めに入れないと、暫定UIの二重整備が増える。まず装飾やレイヤーパネル表示ではなく、ClipAssetを分類する純データ基盤から始める。
+- **Phase 4z3作成**: `task-gemini/phase4z3.md` を作成。`ClipAssetFolderModel`、`ClipAssetModel.folderId`、`TimelineModel.clipAssetFolders`、フォルダ作成/リネーム/Asset移動/一覧取得ヘルパーに限定。
+- **保留**: ClipAssetフォルダの見た目、レイヤーパネル表示、Asset Library popup、Clipごとの枠色、SVG装飾、Clip内部レイヤー、`AUTO`/`EDIT`/`CAPTURE`/`UNIQUE`整理は後続扱い。
+
+### 2026-05-25 Codex：Phase 4z2確認とSET対象ID補修
+- **Phase 4z2確認**: `phase4z2_report.md` と `animation-table-popup.js` を確認。`includedLanes` Scope、Lane行のincludeボタン、複数Laneフィルタ、再生開始時の対象Lane固定は実装されている。
+- **補修**: `includedLaneIds` は一時状態のため、レーン削除/同期後に古いLane IDが残るとSET表示が空になりやすい。描画フィルタ取得時に現存Lane IDと照合し、古いIDを除去する処理を追加。
+- **判断**: ここまでの細かい暫定UI追加で二重整備の気配が強くなっているため、次は細部UIより `Lane` 独立管理と `ClipAsset` フォルダ/ライブラリ足場を優先するのが妥当。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z2 Lane Playback Include MVP (完了)
+- **SETスコープ機能実装**: プレビュー/再生対象を任意に複数選択できる `includedLanes` (SET) モードを導入。
+- **複数Laneフィルタリング**: `_getPreviewLaneFilterIds` を実装し、キャンバス合成およびオニオンスキンが複数の対象レーンを正しく処理できるように拡張。
+- **UI追加**: スコープ切り替えに `SET` ボタンを追加。各レーンに `+`/`✓` (include) ボタンを設置し、直感的な対象選択を可能に。
+- **再生時の安定化**: 再生開始時の対象セットを固定する `activePlaybackLaneIds` ロジックを実装。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z2_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z2指示作成
+- **次フェーズ判断**: `CAPTURE` という名称は現行Snapshot記録と将来の複数Lane再生対象記録で衝突するため、名前付きキャプチャー機能ではなく、Lane行側のチェック/点灯で「SET再生対象に含める」MVPへ進める。
+- **Phase 4z2作成**: `task-gemini/phase4z2.md` を作成。Scopeを `ALL / LANE / SET` に拡張し、Lane行のincludeボタンで複数Laneを再生/プレビュー対象にできる一時状態を作る。
+- **暫定UIメモ**: `AUTO`、`EDIT`、現行 `CAPTURE`、`UNIQUE` はLane/Clip内部レイヤー/Virtual Layer Panelが整うと消える、または名前や位置が変わる可能性が高い。今回も本格UI整理は後続扱い。
+- **保留**: 名前付きPlayback Set保存、複数セット管理、Solo/Mute完全実装、Virtual Layer Panel、Clip内部レイヤー、Asset Library、`CAPTURE` 正式改名は後続扱い。
+
+### 2026-05-25 Codex：Phase 4z1確認とScope UI補修
+- **Phase 4z1確認**: `phase4z1_report.md` と `animation-table-popup.js` を確認。`playbackScope`、`activePlaybackLaneId`、`ALL/LANE` フィルタ、ONIONへのLaneフィルタ適用は実装されている。
+- **補修**: `LANE` 再生開始時、選択ClipのLaneを固定する前に選択解除していたため、Lane固定がアクティブレイヤー依存へ落ちる可能性があった。Lane固定後に選択解除する順序へ修正。
+- **補修**: `SCOPE: ALL/LANE` UIをヘッダー中央から再生ボタン横へ移動。再生対象切替として認識しやすい配置へ調整。
+- **補修**: ヘッダードラッグ判定からScopeボタン等の操作UIを包括的に除外し、クリック操作とパネル移動が競合しにくいようにした。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z1 Playback Scope: All / Active Lane MVP (完了)
+- **再生スコープ機能実装**: プレビューおよび再生の対象を「全レーン」または「アクティブレーンのみ」に切り替える `playbackScope` を実装。
+- **描画フィルタリング**: `_renderFrameComposite` 等にレーンフィルタを導入し、特定レーンのみの合成・オニオンスキン表示を可能に。
+- **UI追加**: ヘッダーに `SCOPE: ALL | LANE` ボタンを追加し、現在のモードを視覚的に強調表示。
+- **再生時の安定化**: `LANE` モード再生開始時に、その時点のアクティブレーンを固定するロジックを導入。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z1_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z1指示作成
+- **次フェーズ判断**: オーナーの再生/表示観念は、標準の全体合成表示と、編集/確認用の限定表示を分ける設計として問題なし。レーン/Virtual Layer Panel本実装前に、軽量な `ALL` / `LANE` 再生スコープを入れるのが妥当。
+- **Phase 4z1作成**: `task-gemini/phase4z1.md` を作成。`ALL` は現在フレーム上の全Clip合成、`LANE` は選択Clipまたはアクティブレイヤー由来のActive Laneのみを表示/再生するMVPに限定。
+- **保留**: 複数Laneを記録する `Lane Set` / `Playback Capture`、Virtual Layer Panel、ClipAssetフォルダ、Asset Library、Clip内部レイヤー、Export仕様変更、ペン操作向けD&D改善は後続扱い。
+
+### 2026-05-25 Codex：Phase 4z確認と再生/キャプチャ概念メモ追記
+- **Phase 4z確認**: `phase4z_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。`isBlank`、空Asset自動生成、空セルの白丸非表示、CAPTURE/AUTO時の `isBlank=false`、UNIQUE有効条件の整理は実装されている。
+- **補修**: 新規空セルの互換 `rasterSnapshot.pixels` が正本Snapshotと同じ配列参照になっていたため、互換フィールド側もコピーを持つよう補修。
+- **設計メモ追記**: `task-gemini/phase4n_preview_scope_note.md` に、将来の「全Lane再生」「Active Lane再生」「複数Laneを記録するPlayback Capture/Lane Set」と、現行 `CAPTURE` ボタンの命名衝突について追記。レーン/Asset Library/Virtual Layer Panel整備後に反映する。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z Blank Clip Asset on Cel Create MVP (完了)
+- **空アセット自動生成**: セル作成時にキャンバスサイズに合わせた空の `ClipAsset` を自動割り当て。これにより、作成後即座に独立した編集が可能に。
+- **`isBlank` 状態管理**: スナップショットに「空」フラグを導入。中身があるまでスナップショットアイコン（白丸）を非表示にし、タイムラインを視覚的に整理。
+- **UI改善**: `UNIQUE` ボタンを「アセット共有中」のみ有効化するよう最適化。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z_report.md` を作成。
 
 ### 2026-05-24 Codex：Phase 4z指示作成
 - **次フェーズ判断**: レーン/ClipAssetフォルダ/Virtual Layer Panelはまだ待つ。二重作業を避けつつ進めるため、新規セル作成時点で空Assetを持たせる基礎整備へ進む。
