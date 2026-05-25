@@ -690,6 +690,33 @@ export class TimelineModel {
     }
 
     /**
+     * セルに対応するプレビュー用の内部レイヤー一覧を解決する
+     */
+    getPreviewInternalLayersForCel(cel) {
+        if (!cel || !cel.assetId) return null;
+        const asset = this.getClipAsset(cel.assetId);
+        if (!asset) return null;
+
+        // 内部レイヤーが空なら補完 (安全策)
+        if (asset.internalLayers.length === 0) {
+            this.ensureClipAssetInternalLayer(asset.id);
+        }
+
+        // Preview対象レイヤーの抽出 (raster かつ snapshotIDあり)
+        const layers = asset.internalLayers.filter(l => {
+            return l.type === 'raster' && l.drawingSnapshotId;
+        });
+
+        if (layers.length === 0) return null;
+
+        return {
+            ok: true,
+            asset,
+            layers // Inspector上の並び順（先頭が前面）
+        };
+    }
+
+    /**
      * セルに対応する描画スナップショットを解決する
      */
     getSnapshotForCel(cel) {
