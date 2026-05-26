@@ -33,3 +33,9 @@
 1.  **内部レイヤー編集の本格化**: 内部レイヤーごとの `opacity` / `blendMode` を UI から変更できるスライダーやセレクトボックスの実装。
 2.  **Virtual Layer Panel**: メインのレイヤーパネルの描画対象を、タイムラインで選択中の「内部レイヤー」へ動的に切り替える仕組み。これにより、アセット内部への直接描き込みが可能になります。
 3.  **合成プレビューの最適化**: 毎回 Sprite を生成するのではなく、アセットが更新されたタイミングで RenderTarget 等へ焼き込みを行い、キャッシュする処理の検討。
+
+## 4. Codex確認追記
+
+- `getPreviewInternalLayersForCel()` のPreview対象抽出を、`drawingSnapshotId` の有無だけでなく実Snapshot取得まで確認する形に補修しました。
+- これにより、内部Layerが壊れたSnapshot参照だけを持つ場合でも、空Previewで止まらず従来の単一Snapshot Previewへfallbackできます。
+- Codex側でも `npm.cmd run build` 成功を確認しました。

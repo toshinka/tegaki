@@ -702,9 +702,9 @@ export class TimelineModel {
             this.ensureClipAssetInternalLayer(asset.id);
         }
 
-        // Preview対象レイヤーの抽出 (raster かつ snapshotIDあり)
+        // Preview対象レイヤーの抽出 (raster かつ実Snapshotあり)
         const layers = asset.internalLayers.filter(l => {
-            return l.type === 'raster' && l.drawingSnapshotId;
+            return l.type === 'raster' && this.getDrawingSnapshot(l.drawingSnapshotId);
         });
 
         if (layers.length === 0) return null;
