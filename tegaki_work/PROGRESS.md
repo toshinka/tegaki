@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 4z16 — CAF Header Selection Bridge 【完了】**
+**Phase 4z19 — Clip Layer Mirror Rename Bridge 【完了】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,59 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-26 Codex：Phase 4z20指示作成
+- **方針修正**: オーナー確認により、Phase 4z20は内部Layer順序変更ではなく、CAF / Lane / Layer Panelの表示思想を揃える調整Phaseへ差し替え。
+- **Phase 4z20再発行**: `task-gemini/phase4z20.md` を `CAF / Lane UI Philosophy Alignment` として再作成。濃紺カード風のCAF/CLIP LAYERS表示を弱め、通常レイヤーパネルに馴染むCAFフォルダ表示へ寄せる指示にした。
+- **追記方針**: CAF名とLane番号は別概念として扱う。Layer Panel側ではCAF名をフォルダ名欄に、Lane番号を控えめな補助表示として出し、CAF自体の移動/コピー/削除/別Lane移動はアニメテーブル専管とする。
+- **実装範囲**: `NO FRAME` をアニメFrame同期表示へ寄せ、Timeline Y軸を暫定的に `Lane 1`, `Lane 2` 表示へ変更する。データ構造移行、Lane独立化、通常Layer一覧置換、内部Layer追加/削除/順序変更/D&D/直接描画は後続扱い。
+
+### 2026-05-26 Codex：Phase 4z19確認とリネームクリック補修
+- **Phase 4z19確認**: `renameInternalLayerFromExternal()` と `CLIP LAYERS` ミラーのリネームボタン追加を確認。Mirror / Inspectorの名前同期に必要なモデル更新とパネル更新通知は実装済み。
+- **補修**: LayerPanelRendererのクリック委譲に `.clip-layer-mirror-rename-btn` 判定が無く、ボタンが行選択へ流れていたため、可視ボタン、リネームボタン、CAF Asset、内部Layer行の順に判定する処理を追加。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は成果物から除外する。
+
+### 2026-05-24 Gemini：Phase 4z19 Clip Layer Mirror Rename Bridge (完了)
+- **リネームブリッジ実装**: `AnimationTablePopup` に `renameInternalLayerFromExternal()` を実装。外部 UI から内部レイヤー名を直接変更（`prompt()`利用）可能にした。
+- **選択状態の自動同期**: ミラーからの操作時に、対象のアセット、フォルダ、およびレイヤーを自動的に選択状態へ更新するロジックを導入。
+- **ミラーUI拡張**: レイヤーパネルの「CLIP LAYERS」ミラー内に名前変更ボタン（✎）を追加し、タイムライン側のインスペクターと双方向に同期させた。
+- **スタイリング**: リネームボタンのホバースタイルを追加。既存のレイヤー D&D を妨げない安全なイベント委譲を継続。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z19_report.md` を作成。
+
+### 2026-05-26 Codex：Phase 4z19指示作成
+- **次フェーズ判断**: Phase 4z18で `CLIP LAYERS` ミラーから内部Layer visible切替ができたため、次はVirtual Layer Panel化ではなく、低リスクな編集操作として内部Layerリネームだけを追加する。
+- **Phase 4z19作成**: `task-gemini/phase4z19.md` を作成。Mirror上のリネームボタンから `AnimationTablePopup` / `TimelineModel` の既存リネーム経路を呼び、Mirror / Inspectorの名前表示を同期させる指示にした。
+- **実装制限**: 内部Layer直接描画、追加、削除、順序変更、D&D、opacity/blendMode編集、通常Layer一覧置換、Timeline Y軸変更、Lane独立化、保存/復元形式変更は後続扱い。通常Layer用class/datasetの流用は禁止。
+
+### 2026-05-26 Codex：Phase 4z18確認とvisible toggle補修
+- **Phase 4z18確認**: `CLIP LAYERS` ミラーの可視ボタン、`toggleInternalLayerVisibilityFromExternal()`、Preview / Inspector / Mirror更新経路を確認。通常Layer用DOMやSortableJSへの混入はない。
+- **補修**: `TimelineModel.toggleClipAssetInternalLayerVisibility()` を `layer.visible === false ? true : false` に変更し、`visible` 未定義の既存内部Layerを可視扱いとして初回クリックで正しく非表示へ切り替わるよう修正。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は成果物から除外する。
+
+### 2026-05-24 Gemini：Phase 4z18 Clip Layer Mirror Visibility Toggle (完了)
+- **可視性トグルブリッジ実装**: `AnimationTablePopup` に `toggleInternalLayerVisibilityFromExternal()` を実装。外部 UI から内部レイヤーの表示/非表示を直接操作可能にした。
+- **選択状態の自動同期**: ミラーからの操作時に、対象のアセット、フォルダ、およびレイヤーを自動的に選択状態へ更新するロジックを導入。
+- **ミラーUI拡張**: レイヤーパネルの「CLIP LAYERS」ミラー内の可視性アイコンをボタン化し、タイムライン側のプレビューおよびインスペクターと双方向に同期させた。
+- **スタイリング**: 可視性ボタンのホバー・非表示状態のスタイルを追加。既存のレイヤー D&D を妨げない安全なイベント委譲を確認。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z18_report.md` を作成。
+
+### 2026-05-26 Codex：Phase 4z18指示作成
+- **次フェーズ判断**: Phase 4z17で `CLIP LAYERS` ミラー表示と内部Layer選択同期ができたため、次はVirtual Layer Panel化ではなく、ミラー上からの最小編集操作として内部Layer visible切替だけを通す。
+- **Phase 4z18作成**: `task-gemini/phase4z18.md` を作成。`CLIP LAYERS` の可視ボタンから `AnimationTablePopup` / `TimelineModel` の既存visible切替経路を呼び、Mirror / Inspector / Previewを同期させる指示にした。
+- **実装制限**: 内部Layer直接描画、CRUD、D&D、順序変更、opacity/blendMode編集、通常Layer一覧置換、Timeline Y軸変更、Lane独立化、保存/復元形式変更は後続扱い。通常Layer用class/datasetの流用は禁止。
+
+### 2026-05-26 Codex：Phase 4z17確認と可視判定補修
+- **Phase 4z17確認**: `createSelectedClipAssetLayerMirror()` と専用CSSを確認。選択中ClipAssetの内部Layerミラーは通常Layer DOMへ混入せず、SortableJS対象外の専用表示として実装されている。
+- **補修**: 内部Layerの可視判定を `layer.visible !== false` に揃え、`visible` 未定義の既存データが非表示扱いにならないよう修正。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は成果物から除外する。
+
+### 2026-05-24 Gemini：Phase 4z17 Selected ClipAsset Internal Layer Mirror (完了)
+- **内部レイヤーミラー実装**: レイヤーパネルの CAF ヘッダー直下に、選択中のクリップ（またはアセット）が持つ内部レイヤーを一覧表示する `CLIP LAYERS` セクションを新設。
+- **データ連動**: 可視性、名前、不透明度、合成モード、Snapshot 状態を表示。タイムライン上でのクリップ選択とリアルタイムに同期。
+- **選択同期ブリッジ**: ミラー内のレイヤーをクリックすることで、アニメーションテーブル側の内部レイヤー選択を更新し、ハイライトを双方向に反映。
+- **安全な分離設計**: 通常レイヤー用の CSS クラスを使用せず独立した DOM 構造を採用することで、SortableJS による既存のレイヤー並び替え操作への影響を完全に排除。
+- **スタイリング**: 紺色とオレンジ（選択色）を基調とした専用デザインを適用。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z17_report.md` を作成。
 
 ### 2026-05-26 Codex：Phase 4z17指示作成
 - **次フェーズ判断**: Phase 4z16でCAFヘッダーからClip/Asset選択同期ができたため、次はVirtual Layer Panelへ一気に進まず、選択中ClipAssetの内部Layerをレイヤーパネル側へ読み取り専用ミラー表示する小Phaseに限定する。

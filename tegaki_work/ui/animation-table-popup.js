@@ -882,19 +882,44 @@ export class AnimationTablePopup {
     renameInternalLayer(layerId) {
         const asset = this._getSelectedAssetForInspector();
         if (!asset || !layerId) return;
+        this.renameInternalLayerFromExternal(asset.id, layerId);
+    }
+
+    /**
+     * 外部UI（レイヤーパネル等）から内部Layer名を変更する (Phase 4z19)
+     */
+    renameInternalLayerFromExternal(assetId, layerId, name = null, options = {}) {
+        const asset = this.model.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
 
         const layer = asset.internalLayers.find(l => l.id === layerId);
-        if (!layer) return;
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
 
-        const newName = prompt('Enter new layer name:', layer.name);
-        if (newName === null) return;
+        // 名前の確定
+        let nextName = name;
+        if (nextName === null || nextName === undefined) {
+            nextName = prompt('Enter new layer name:', layer.name);
+            if (nextName === null) return { ok: false, reason: 'cancelled' };
+        }
 
-        const result = this.model.renameClipAssetInternalLayer(asset.id, layerId, newName);
+        const result = this.model.renameClipAssetInternalLayer(asset.id, layerId, nextName);
         if (result.ok) {
+            // 選択状態の同期
+            this.selectedAssetId = asset.id;
+            this.selectedAssetFolderId = asset.folderId || null;
+            this.selectedInternalLayerId = layerId;
+
             this.render();
-        } else if (result.reason === 'invalid-name') {
+
+            // レイヤーパネル側にも通知
+            if (this.eventBus) {
+                this.eventBus.emit('layer:panel-update-requested');
+            }
+        } else if (result.reason === 'invalid-name' && name === null) {
             alert('Invalid name. It cannot be empty.');
         }
+
+        return result;
     }
 
     removeInternalLayer(layerId) {
@@ -915,11 +940,31 @@ export class AnimationTablePopup {
     toggleInternalLayerVisibility(layerId) {
         const asset = this._getSelectedAssetForInspector();
         if (!asset || !layerId) return;
+        this.toggleInternalLayerVisibilityFromExternal(asset.id, layerId);
+    }
+
+    /**
+     * 外部UI（レイヤーパネル等）から内部Layerの可視性を切り替える (Phase 4z18)
+     */
+    toggleInternalLayerVisibilityFromExternal(assetId, layerId, options = {}) {
+        const asset = this.model.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
 
         const result = this.model.toggleClipAssetInternalLayerVisibility(asset.id, layerId);
         if (result.ok) {
+            // 選択状態の同期
+            this.selectedAssetId = asset.id;
+            this.selectedAssetFolderId = asset.folderId || null;
+            this.selectedInternalLayerId = layerId;
+
             this.render();
+
+            // レイヤーパネル側にも通知
+            if (this.eventBus) {
+                this.eventBus.emit('layer:panel-update-requested');
+            }
         }
+        return result;
     }
 
     /**

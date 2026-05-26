@@ -508,7 +508,7 @@ export class TimelineModel {
         const layer = asset.internalLayers.find(l => l.id === layerId);
         if (!layer) return { ok: false, reason: 'layer-not-found' };
 
-        layer.visible = !layer.visible;
+        layer.visible = layer.visible === false ? true : false;
         layer.updatedAt = Date.now();
         return { ok: true, asset, layer };
     }
