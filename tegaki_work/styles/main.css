@@ -189,6 +189,102 @@ canvas {
     pointer-events: none; 
 }
 
+/* CAF Readonly Header (Phase 4z15/4z16) */
+.caf-readonly-header {
+    background: #2c3e50; /* 通常Folderより濃い紺色 */
+    color: white;
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin: 0 14px 8px 0;
+    font-size: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    border-left: 4px solid #3498db;
+    user-select: none;
+    pointer-events: auto; /* Phase 4z16: ボタンクリックを許可 */
+}
+
+.caf-readonly-title {
+    font-weight: bold;
+    font-size: 9px;
+    opacity: 0.8;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 2px;
+}
+
+.caf-readonly-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-left: 2px;
+}
+
+.caf-readonly-badge {
+    background: #3498db;
+    color: white;
+    font-size: 8px;
+    font-weight: bold;
+    padding: 0 4px;
+    border-radius: 3px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+}
+
+.caf-readonly-name {
+    font-weight: bold;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.caf-readonly-count {
+    opacity: 0.6;
+    font-size: 8px;
+}
+
+.caf-readonly-asset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding-left: 4px;
+    margin-top: 2px;
+}
+
+.caf-readonly-asset {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    color: white;
+    font-size: 8px;
+    padding: 1px 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.1s;
+}
+
+.caf-readonly-asset:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: #3498db;
+}
+
+.caf-readonly-asset.is-selected {
+    background: #ff6600;
+    border-color: white;
+    font-weight: bold;
+    box-shadow: 0 0 4px rgba(255, 102, 0, 0.5);
+}
+
+.caf-readonly-more {
+    font-size: 8px;
+    opacity: 0.5;
+    padding-top: 2px;
+}
+
 .frame-indicator { 
     position: relative;
     left: auto;

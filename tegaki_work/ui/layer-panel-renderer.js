@@ -40,6 +40,18 @@ export class LayerPanelRenderer {
         this._setupEventListeners();
         document.addEventListener('keydown', this._handleLayerPanelKeydown, true);
 
+        // Phase 4z16: CAFヘッダークリックイベント (委譲)
+        this.container.addEventListener('click', (e) => {
+            const assetBtn = e.target.closest('.caf-readonly-asset');
+            if (assetBtn) {
+                const clipId = assetBtn.dataset.clipId;
+                const animationTable = window.PopupManager?.get?.('animationTable');
+                if (animationTable?.selectClipAssetFromExternal && clipId) {
+                    animationTable.selectClipAssetFromExternal(clipId, { source: 'layer-panel-caf-header' });
+                }
+            }
+        });
+
         requestAnimationFrame(() => {
             this._initializeRender();
         });
@@ -182,6 +194,12 @@ export class LayerPanelRenderer {
 
         this.container.style.overflowY = 'auto';
         this.container.style.overflowX = 'hidden';
+
+        // Phase 4z15: CAF読み取り専用ヘッダーの描画
+        const cafHeader = this.createCafReadonlyHeader();
+        if (cafHeader) {
+            this.container.appendChild(cafHeader);
+        }
 
         const reversedLayers = [...layers].reverse();
         const reversedActiveIndex = layers.length - 1 - activeIndex;
@@ -1355,6 +1373,7 @@ export class LayerPanelRenderer {
                 ghostClass: 'sortable-ghost',
                 dragClass: 'sortable-drag',
                 chosenClass: 'sortable-chosen',
+                draggable: '.layer-item',
                 forceFallback: true,
                 fallbackOnBody: true,
                 fallbackTolerance: 3,
@@ -1606,6 +1625,63 @@ export class LayerPanelRenderer {
             const isScrollable = this.container.scrollHeight > this.container.clientHeight + 1;
             this.container.classList.toggle('layer-panel-items--scrollable', isScrollable);
         });
+    }
+
+    /**
+     * 現在フレームの使用アセットを表示する読み取り専用ヘッダーを作成 (Phase 4z15/4z16)
+     */
+    createCafReadonlyHeader() {
+        const animationTable = window.PopupManager?.get?.('animationTable');
+        if (!animationTable || !animationTable.model) return null;
+
+        const tree = animationTable.model.getFrameAssetTree();
+        if (!tree || tree.groups.length === 0) return null;
+
+        const header = document.createElement('div');
+        header.className = 'caf-readonly-header';
+
+        let html = '<div class="caf-readonly-title">FRAME ASSETS</div>';
+
+        const selectedCelId = animationTable.selectedCelId;
+
+        tree.groups.forEach(group => {
+            html += `
+                <div class="caf-readonly-group">
+                    <span class="caf-readonly-badge">CAF</span>
+                    <span class="caf-readonly-name">${this._escapeHtml(group.folderName)}</span>
+                    <span class="caf-readonly-count">${group.clips.length}</span>
+                </div>
+                <div class="caf-readonly-asset-row">
+            `;
+
+            // 表示アセットをボタン化
+            group.clips.forEach((clipEntry, index) => {
+                const isSelected = selectedCelId === clipEntry.clipId;
+                const selectedClass = isSelected ? ' is-selected' : '';
+                const clipId = this._escapeHtml(clipEntry.clipId);
+                const assetId = this._escapeHtml(clipEntry.assetId);
+
+                // 3件まで実表示、それ以降は数だけ出す
+                if (index < 3) {
+                    html += `
+                        <button class="caf-readonly-asset${selectedClass}"
+                                data-clip-id="${clipId}"
+                                data-asset-id="${assetId}"
+                                title="Click to select clip in Timeline">
+                            ${this._escapeHtml(clipEntry.assetName)}
+                        </button>
+                    `;
+                } else if (index === 3) {
+                    const moreCount = group.clips.length - 3;
+                    html += `<span class="caf-readonly-more">+${moreCount} more</span>`;
+                }
+            });
+
+            html += `</div>`;
+        });
+
+        header.innerHTML = html;
+        return header;
     }
 
     destroy() {

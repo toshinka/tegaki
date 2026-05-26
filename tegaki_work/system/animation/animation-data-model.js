@@ -540,6 +540,113 @@ export class TimelineModel {
     }
 
     /**
+     * 指定FrameのClipAsset/CAF構造をタイムラインY軸順で解決する (Phase 4z14)
+     */
+    getFrameAssetTree(frameIndex = this.playback.currentFrame, options = {}) {
+        const results = {
+            frameIndex,
+            groups: [],
+            clips: [],
+            missingAssets: []
+        };
+
+        const groupMap = new Map(); // folderId -> group object
+
+        // Uncategorizedグループの初期化 (必要になったら results.groups へ追加)
+        const uncategorizedGroup = {
+            folderId: null,
+            folderName: 'Uncategorized',
+            isUncategorized: true,
+            laneIds: [],
+            clips: []
+        };
+
+        // 1. Timeline Y軸順（this.tracksの順）に走査
+        this.tracks.forEach((lane, laneIndex) => {
+            const clip = lane.getCelAtFrame(frameIndex);
+            if (!clip) return;
+
+            const laneInfo = {
+                laneId: lane.id,
+                laneName: lane.name,
+                laneIndex: laneIndex
+            };
+
+            // アセット解決
+            if (!clip.assetId) {
+                results.missingAssets.push({
+                    clipId: clip.id,
+                    ...laneInfo,
+                    reason: 'no-asset-id'
+                });
+                return;
+            }
+
+            const asset = this.getClipAsset(clip.assetId);
+            if (!asset) {
+                results.missingAssets.push({
+                    clipId: clip.id,
+                    ...laneInfo,
+                    reason: 'asset-not-found'
+                });
+                return;
+            }
+
+            // スナップショット解決 (isBlank判定用)
+            const snapshot = this.getDrawingSnapshot(asset.drawingSnapshotId);
+
+            // Clip Entryの作成
+            const clipEntry = {
+                clipId: clip.id,
+                ...laneInfo,
+                assetId: asset.id,
+                assetName: asset.name,
+                folderId: asset.folderId,
+                internalLayerCount: asset.internalLayers.length,
+                visibleInternalLayerCount: asset.internalLayers.filter(l => l.visible !== false).length,
+                isBlank: snapshot ? snapshot.isBlank === true : true,
+                startFrame: clip.startFrame,
+                duration: clip.duration
+            };
+
+            // フラットリストへ追加
+            results.clips.push(clipEntry);
+
+            // グループ化
+            let folder = null;
+            if (asset.folderId) {
+                folder = this.getClipAssetFolder(asset.folderId);
+            }
+
+            if (folder) {
+                let group = groupMap.get(folder.id);
+                if (!group) {
+                    group = {
+                        folderId: folder.id,
+                        folderName: folder.name,
+                        isUncategorized: false,
+                        laneIds: [],
+                        clips: []
+                    };
+                    groupMap.set(folder.id, group);
+                    results.groups.push(group); // 最初に出現したY軸順で追加
+                }
+                if (!group.laneIds.includes(lane.id)) group.laneIds.push(lane.id);
+                group.clips.push(clipEntry);
+            } else {
+                // Uncategorized
+                if (!results.groups.includes(uncategorizedGroup)) {
+                    results.groups.push(uncategorizedGroup); // 最初に出現したY軸順で追加
+                }
+                if (!uncategorizedGroup.laneIds.includes(lane.id)) uncategorizedGroup.laneIds.push(lane.id);
+                uncategorizedGroup.clips.push(clipEntry);
+            }
+        });
+
+        return results;
+    }
+
+    /**
      * 指定IDの描画スナップショットを取得
      */
     getDrawingSnapshot(snapshotId) {

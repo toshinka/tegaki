@@ -804,6 +804,71 @@ export class AnimationTablePopup {
         }
     }
 
+    createAssetFolder() {
+        const name = prompt('Enter new folder name:');
+        if (!name || !name.trim()) return;
+
+        const result = this.model.createClipAssetFolder({ name: name.trim() });
+        if (result.ok) {
+            this.selectedAssetFolderId = result.folder.id;
+            this.selectedAssetId = null;
+            this.selectedInternalLayerId = null;
+            this.render();
+        }
+    }
+
+    renameSelectedAssetFolder() {
+        if (this.selectedAssetFolderId === null) return;
+        const folder = this.model.getClipAssetFolder(this.selectedAssetFolderId);
+        if (!folder) return;
+
+        const newName = prompt('Enter new folder name:', folder.name);
+        if (!newName || !newName.trim()) return;
+
+        const result = this.model.renameClipAssetFolder(this.selectedAssetFolderId, newName.trim());
+        if (result.ok) {
+            this.render();
+        }
+    }
+
+    moveSelectedAssetToFolder() {
+        if (!this.selectedAssetId) return;
+        const asset = this.model.getClipAsset(this.selectedAssetId);
+        if (!asset) return;
+
+        const folders = this.model.clipAssetFolders;
+        let promptText = 'Select destination folder number:\n0: Uncategorized\n';
+        folders.forEach((f, i) => {
+            promptText += `${i + 1}: ${f.name}\n`;
+        });
+
+        const input = prompt(promptText, '0');
+        if (input === null) return;
+
+        const index = Number(input.trim());
+        if (!Number.isInteger(index)) {
+            alert('Invalid folder number.');
+            return;
+        }
+
+        let targetFolderId = null;
+        if (index > 0 && index <= folders.length) {
+            targetFolderId = folders[index - 1].id;
+        } else if (index === 0) {
+            targetFolderId = null;
+        } else {
+            alert('Invalid folder number.');
+            return;
+        }
+
+        const result = this.model.moveClipAssetToFolder(this.selectedAssetId, targetFolderId);
+        if (result.ok) {
+            // 移動先フォルダを表示対象にする
+            this.selectedAssetFolderId = targetFolderId;
+            this.render();
+        }
+    }
+
     moveInternalLayer(layerId, direction) {
         const asset = this._getSelectedAssetForInspector();
         if (!asset || !layerId) return;
@@ -855,6 +920,47 @@ export class AnimationTablePopup {
         if (result.ok) {
             this.render();
         }
+    }
+
+    /**
+     * 外部UI（レイヤーパネル等）からクリップ・アセットを選択する (Phase 4z16)
+     */
+    selectClipAssetFromExternal(clipId, options = {}) {
+        const entry = this.model.findClipEntry(clipId);
+        if (!entry) return { ok: false, reason: 'clip-not-found' };
+
+        const { clip } = entry;
+
+        // 1. クリップ選択
+        this.selectedCelId = clip.id;
+
+        // 2. アセット関連の選択状態更新
+        if (clip.assetId) {
+            const asset = this.model.getClipAsset(clip.assetId);
+            if (asset) {
+                this.selectedAssetId = asset.id;
+                this.selectedAssetFolderId = asset.folderId || null;
+            } else {
+                this.selectedAssetId = null;
+                this.selectedAssetFolderId = null;
+            }
+        } else {
+            this.selectedAssetId = null;
+            this.selectedAssetFolderId = null;
+        }
+
+        // 内部レイヤー選択はリセット
+        this.selectedInternalLayerId = null;
+
+        // 3. 再描画
+        this.render();
+
+        // 4. レイヤーパネル側にも通知（ヘッダーの選択表示更新用）
+        if (this.eventBus) {
+            this.eventBus.emit('layer:panel-update-requested');
+        }
+
+        return { ok: true, clip, assetId: clip.assetId };
     }
 
     _isRasterSnapshotBlank(snapshot) {
@@ -1082,17 +1188,21 @@ export class AnimationTablePopup {
     _renderAssetLibrary(container) {
         if (!container) return;
 
-        // 1. フォルダ一覧の生成
+        // 1. フォルダ一覧の生成 (Phase 4z11: 件数表示追加)
+        const uncategorizedCount = this.model.getClipAssetsInFolder(null).length;
         let folderHtml = `
             <div class="anim-lib-folder-item${this.selectedAssetFolderId === null ? ' selected' : ''}" data-folder-id="uncategorized">
-                Uncategorized
+                <span class="anim-lib-folder-name">Uncategorized</span>
+                <span class="anim-lib-folder-count">${uncategorizedCount}</span>
             </div>`;
         
         this.model.clipAssetFolders.forEach(folder => {
             const isSelected = this.selectedAssetFolderId === folder.id;
+            const count = this.model.getClipAssetsInFolder(folder.id).length;
             folderHtml += `
                 <div class="anim-lib-folder-item${isSelected ? ' selected' : ''}" data-folder-id="${folder.id}">
-                    ${this._escapeHtml(folder.name)}
+                    <span class="anim-lib-folder-name">${this._escapeHtml(folder.name)}</span>
+                    <span class="anim-lib-folder-count">${count}</span>
                 </div>`;
         });
 
@@ -1128,11 +1238,20 @@ export class AnimationTablePopup {
 
         container.innerHTML = `
             <div class="anim-lib-folders">
-                <div class="anim-lib-label">FOLDERS</div>
+                <div class="anim-lib-label">
+                    ASSET FOLDERS
+                    <div class="anim-lib-folder-actions">
+                        <button class="anim-folder-add-btn" title="Create asset folder">+</button>
+                        <button class="anim-folder-rename-btn" title="Rename selected folder" ${this.selectedAssetFolderId === null ? 'disabled' : ''}>✎</button>
+                    </div>
+                </div>
                 <div class="anim-lib-list ui-scrollbar">${folderHtml}</div>
             </div>
             <div class="anim-lib-assets">
-                <div class="anim-lib-label">ASSETS</div>
+                <div class="anim-lib-label">
+                    ASSETS
+                    <button class="anim-asset-move-btn" title="Move selected asset to folder" ${!this.selectedAssetId ? 'disabled' : ''}>MOVE</button>
+                </div>
                 <div class="anim-lib-list ui-scrollbar">${assetHtml}</div>
             </div>
             <div class="anim-internal-layer-inspector" id="anim-internal-layer-inspector">
@@ -1261,14 +1380,39 @@ export class AnimationTablePopup {
         const libraryPanel = this.panel.querySelector('#anim-asset-library');
         if (libraryPanel) {
             libraryPanel.addEventListener('click', (e) => {
+                // フォルダ作成 (Phase 4z11)
+                if (e.target.closest('.anim-folder-add-btn')) {
+                    this.createAssetFolder();
+                    return;
+                }
+                // フォルダリネーム (Phase 4z11)
+                if (e.target.closest('.anim-folder-rename-btn')) {
+                    this.renameSelectedAssetFolder();
+                    return;
+                }
+                // アセット移動 (Phase 4z11)
+                if (e.target.closest('.anim-asset-move-btn')) {
+                    this.moveSelectedAssetToFolder();
+                    return;
+                }
+
                 // フォルダ選択
                 const folderItem = e.target.closest('.anim-lib-folder-item');
                 if (folderItem) {
                     const fid = folderItem.dataset.folderId;
-                    this.selectedAssetFolderId = fid === 'uncategorized' ? null : fid;
-                    this.selectedAssetId = null; // フォルダ切り替えでアセット選択クリア
-                    this.selectedInternalLayerId = null; // 内部レイヤー選択クリア
-                    this.render();
+                    const nextFolderId = fid === 'uncategorized' ? null : fid;
+
+                    if (this.selectedAssetFolderId !== nextFolderId) {
+                        this.selectedAssetFolderId = nextFolderId;
+
+                        // フォルダ切り替え時に、現在の選択中Assetが移動先フォルダにないならクリア
+                        const assetsInFolder = this.model.getClipAssetsInFolder(this.selectedAssetFolderId);
+                        if (!assetsInFolder.some(a => a.id === this.selectedAssetId)) {
+                            this.selectedAssetId = null;
+                            this.selectedInternalLayerId = null;
+                        }
+                        this.render();
+                    }
                     return;
                 }
                 
@@ -2106,6 +2250,54 @@ export class AnimationTablePopup {
                 background: rgba(128, 128, 128, 0.2);
                 padding: 0 4px;
                 border-radius: 2px;
+            }
+
+            .anim-lib-folder-actions {
+                display: flex;
+                gap: 2px;
+            }
+
+            .anim-folder-add-btn, .anim-folder-rename-btn, .anim-asset-move-btn {
+                background: rgba(255, 255, 255, 0.3);
+                border: 1px solid rgba(128, 0, 0, 0.1);
+                border-radius: 2px;
+                color: var(--futaba-maroon);
+                cursor: pointer;
+                font-size: 10px;
+                padding: 0 4px;
+                line-height: 1.4;
+                height: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .anim-folder-add-btn:hover, .anim-folder-rename-btn:hover, .anim-asset-move-btn:hover {
+                background: white;
+                border-color: #ff6600;
+                color: #ff6600;
+            }
+
+            .anim-folder-rename-btn:disabled, .anim-asset-move-btn:disabled {
+                opacity: 0.2;
+                cursor: default;
+            }
+
+            .anim-lib-folder-item {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .anim-lib-folder-count {
+                font-size: 8px;
+                opacity: 0.4;
+                background: rgba(0,0,0,0.05);
+                padding: 0 4px;
+                border-radius: 8px;
+                min-width: 12px;
+                text-align: center;
             }
 
             .anim-lib-empty {
