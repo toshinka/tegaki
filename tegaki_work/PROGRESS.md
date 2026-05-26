@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 4z10 — ClipAsset Internal Layer Composite Preview Foundation 【完了】**
+**Phase 4z16 — CAF Header Selection Bridge 【完了】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,118 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-26 Codex：Phase 4z17指示作成
+- **次フェーズ判断**: Phase 4z16でCAFヘッダーからClip/Asset選択同期ができたため、次はVirtual Layer Panelへ一気に進まず、選択中ClipAssetの内部Layerをレイヤーパネル側へ読み取り専用ミラー表示する小Phaseに限定する。
+- **Phase 4z17作成**: `task-gemini/phase4z17.md` を作成。CAFヘッダー下に `CLIP LAYERS` として選択中ClipAssetの内部Layer名、visible、opacity、blendMode、snapshot状態を専用DOM/classで表示する指示にした。
+- **実装制限**: 通常Layer一覧の置換、内部Layer直接描画、内部Layer CRUD/D&D、Timeline Y軸変更、Lane独立化、保存/復元形式変更は後続扱い。`.layer-item` / `.folder-item` / `data-layer-index` / `data-is-folder` の流用は禁止。
+
+### 2026-05-26 Codex：Phase 4z16確認と選択同期補修
+- **Phase 4z16確認**: `selectClipAssetFromExternal()` とCAFヘッダーbutton化を確認。Layer Panel側から現在Frame上のClip/Assetを選択し、Asset Library / Inspectorへ同期する橋渡しは実装済み。
+- **補修**: 外部選択時にAsset解決へ失敗した場合、古い `selectedAssetFolderId` が残らないよう `null` へ戻す処理を追加。
+- **補修**: CAFヘッダーの `data-clip-id` / `data-asset-id` をHTML属性へ入れる前にエスケープし、追加メソッド周辺のインデントを整理。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は成果物から除外する。
+
+### 2026-05-24 Gemini：Phase 4z16 CAF Header Selection Bridge (完了)
+- **選択ブリッジ実装**: `AnimationTablePopup` に `selectClipAssetFromExternal()` を実装し、外部UIからクリップ・アセット・フォルダの選択状態を同期可能にした。
+- **インタラクティブCAFヘッダー**: レイヤーパネル上部のアセット表示をボタン化し、クリックでタイムライン上の該当クリップを即座に選択できるようにした。
+- **表示同期**: ヘッダー内での選択状態（ハイライト）とタイムライン上の選択を相互に反映。選択変更時には EventBus を通じてパネル更新を通知。
+- **スタイリング**: `.caf-readonly-asset` のホバーおよび選択状態 (`.is-selected`) のスタイルを追加。ヘッダーの `pointer-events` を有効化し、既存のレイヤー D&D に干渉しない範囲でクリック操作を実現。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z16_report.md` を作成。
+
+### 2026-05-26 Codex：Phase 4z16指示作成
+- **次フェーズ判断**: Phase 4z15でCAFヘッダー表示が入ったため、次はVirtual Layer Panelへ進まず、CAFヘッダーから現在Frame上のClip/Assetを選択する橋渡しに限定する。
+- **Phase 4z16作成**: `task-gemini/phase4z16.md` を作成。CAFヘッダー内Assetクリックで `AnimationTablePopup` 側の `selectedCelId` / `selectedAssetId` / `selectedAssetFolderId` を同期し、Asset Library / Internal Layer Inspectorへ反映する指示にした。
+- **実装制限**: CAF表示を通常Layer DOMへ混ぜない。`.layer-item` / `.folder-item` / `data-layer-index` / `data-is-folder` 流用禁止、Virtual Layer Panel・内部Layer直接描画・Timeline Y軸変更・Lane独立化・保存形式変更は後続扱い。
+
+### 2026-05-26 Codex：Phase 4z15確認とSortable除外補強
+- **Phase 4z15確認**: `layer-panel-renderer.js` / `main.css` / `phase4z15_report.md` を確認。`FRAME ASSETS` ヘッダーは専用CAF classで実装され、通常Layer/Folder DOMへ混入していない。
+- **補修**: `pointer-events: none` に加え、SortableJS設定へ `draggable: '.layer-item'` を追加し、CAFヘッダーが並び替え対象にならないことをコード上でも明示。
+- **生成物整理**: Geminiのビルドで生成された `dist/` 差分は成果物から除外する。
+
+### 2026-05-24 Gemini：Phase 4z15 Layer Panel CAF Readonly Header (完了)
+- **読み取り専用CAFヘッダー実装**: レイヤーパネルの最上部に、現在フレームで使用されているクリップアセット（素材）の情報を表示するヘッダーを追加。
+- **データ連動**: `TimelineModel.getFrameAssetTree()` を活用し、CAF（フォルダ名）やアセット名のサマリーを自動抽出・表示。
+- **スタイリング**: 通常のレイヤーフォルダと区別するため、濃い紺色の背景色と青色のアクセントを適用。
+- **安全性確保**: `pointer-events: none` を設定し、SortableJS によるレイヤー操作や D&D を一切妨げない完全な読み取り専用領域として実装。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z15_report.md` を作成。
+
+### 2026-05-26 Codex：Phase 4z15指示作成
+
+- **次フェーズ判断**: Phase 4z14の `getFrameAssetTree()` を使い、レイヤーパネル本体へ混ぜる前の安全な第一歩として、読み取り専用CAFヘッダー表示を次Phaseにする。
+- **Phase 4z15作成**: `task-gemini/phase4z15.md` を作成。`LayerPanelRenderer` 上部に現在FrameのCAF/ClipAsset概要を専用DOM/classで表示し、通常Layer/Folder DOMやD&Dには触れない指示に限定。
+- **実装制限**: `.layer-item` / `.folder-item` / `data-layer-index` / `data-is-folder` の流用禁止、SortableJS対象外、Virtual Layer Panel・内部Layer直接描画・Timeline Y軸変更・Laneデータモデル変更は後続扱い。
+
+### 2026-05-26 Codex：Phase 4z14確認
+- **Phase 4z14確認**: `phase4z14_report.md` と `animation-data-model.js` を確認。`getFrameAssetTree()` はUI非依存の純データヘルパーとして実装され、Frame内ClipAssetをY軸順でflat/group list化できる。
+- **安全性確認**: `assetId` 欠落/参照切れは `missingAssets`、存在しない `folderId` はUncategorized扱いとなり、後続UIで安全に処理できる。
+- **次候補**: 次は `getFrameAssetTree()` を使った読み取り専用CAF表示へ進める。ただし `.layer-item` は流用せず、SortableJS対象外の専用DOM/classから始める。
+- **生成物整理**: Geminiのビルドで生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z14 Frame Asset Tree Helper (完了)
+- **データ解決ヘルパー実装**: `TimelineModel` に `getFrameAssetTree()` を追加。指定フレームの使用アセットを CAF 階層に基づき自動抽出するロジックを構築。
+- **タイムライン Y 軸順の維持**: 抽出結果およびグループ化の順序を、タイムライン上の重なり順（Lane 配列順）と一致させ、プレビューとの整合性を確保。
+- **堅牢なエラーハンドリング**: アセット未設定や欠落（Missing Asset）をエラーにせず、専用リストへ記録して後続処理を継続する安全設計。
+- **Uncategorized 対応**: フォルダ未指定のアセットを仮想グループへ集約。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z14_report.md` を作成。
+
+### 2026-05-26 Codex：Phase 4z14指示作成
+- **次フェーズ判断**: レイヤーパネルDOMへ入る前に、後続のCAF Header / CAF行 / Virtual Layer Panelで共通入力になる現在FrameのClipAsset/CAFツリーを返す純データヘルパーを優先する。
+- **Phase 4z14作成**: `task-gemini/phase4z14.md` を作成。`TimelineModel.getFrameAssetTree(frameIndex, options)` 相当のヘルパー追加、Timeline Y軸順の維持、Uncategorized group、Missing Asset記録、flat/group listの戻り値に限定。
+- **実装制限**: UI変更なし。レイヤーパネル表示、CAF Header、CAF専用CSS、Virtual Layer Panel、Timeline Y軸変更、D&D、保存/復元形式変更は後続扱い。
+
+### 2026-05-26 Codex：Phase 4z13確認
+- **Phase 4z13確認**: `phase4z13_report.md` を確認。通常レイヤーパネル構造、CAF表示案A/B/C、視覚区別案、現在FrameからのCAF/ClipAsset解決手順、D&D破損リスクの整理は妥当。
+- **判断追記**: 次はレイヤーパネルDOMへ直接入らず、現在FrameのClipAsset/CAFツリーを返す純データヘルパーを優先する。表示順は初期実装ではタイムラインY軸順、排他表示はまだ入れない。
+
+### 2026-05-24 Gemini：Phase 4z13 CAF Layer Panel Display Plan (完了)
+- **レイヤーパネル構造の棚卸し**: `layer-panel-renderer.js` および `layer-system.js` を詳細調査。通常レイヤーとフォルダの DOM 構成、インデント算出、SortableJS D&D の依存関係を特定。
+- **表示案の策定**: CAF（ClipAssetFolder）をレイヤーパネルに統合するための 3 案（案A: 読み取り専用ヘッダー、案B: 独立した CAF 行、案C: 別セクション化）を提示。
+- **視覚区別案の提示**: 通常フォルダと CAF を混同しないための配色・ラベル・アイコン等のデザイン指針を整理。
+- **データ解決ロジックの定義**: `currentFrame` から使用アセットを抽出し、CAF 階層へマッピングする疑似手順を策定。
+- **次Phase候補の提案**: 「Frame Asset 一覧ヘルパーの実装」「パネル上部への CAF ヘッダー表示」「CAF 専用 CSS クラスの定義」を提案。
+- **確認**: JS/CSS の変更は行わず、設計棚卸しと報告書作成のみを完了。
+
+### 2026-05-26 Codex：Phase 4z13指示作成
+- **次フェーズ判断**: CAF相当の上位概念を将来レイヤーパネルにも表示する前提が固まったため、実装前に通常Folder表示構造・D&D依存・視覚区別・表示対象データ解決を棚卸しする。
+- **Phase 4z13作成**: `task-gemini/phase4z13.md` を作成。CAFを通常フォルダより上位概念としてレイヤーパネルへ表示するための案A/B/C、視覚区別案、現在FrameからCAF/ClipAssetを解決する疑似手順、危険な一括変更を報告書化する指示に限定。
+- **実装制限**: 今回はJS/CSS変更なし。レイヤーパネルDOM変更、CAF実表示、Virtual Layer Panel、内部Layer直接描画、Timeline Y軸変更、D&D追加、保存形式変更は後続扱い。
+
+### 2026-05-26 Codex：Phase 4z12確認と設計前提追記
+- **Phase 4z12確認**: `phase4z12_report.md` を確認。`syncWithLayers()` / `sourceLayerId` 依存、Lane独立化案、小Phase候補、危険な一括変更の棚卸しは概ね妥当。
+- **設計前提追記**: 編集対象の正本は最終的にClipAssetFolder / ClipAsset / ClipAssetInternalLayer側へ寄せること、そのフレーム上のCAF相当上位単位は将来レイヤーパネルにも表示することを報告書とhandoffへ追記。
+- **表示方針メモ**: 通常フォルダとCAFを混同しないため、濃い色・別系統の色・英字ラベルなどで視覚的に区別する候補を記録。ただしレイヤーパネル側表示は一気に実装せず、小Phaseへ分割する。
+
+### 2026-05-24 Gemini：Phase 4z12 ClipAsset / Lane Migration Plan (完了)
+- **依存関係の棚卸し**: `animation-data-model.js`, `animation-table-popup.js` 等を調査し、Lane と通常レイヤーの結合箇所（`syncWithLayers`, `sourceLayerId` 等）を特定。
+- **移行計画の策定**: Lane を通常レイヤーから独立させ、「時間軸上の配置行」へと再定義するための 2 案（案A: 段階的独立、案B: 新規独立レーン）を比較。
+- **小Phase候補の提示**: 「レーン表示の通し番号化」「アセットの任意割り当て」「Virtual Layer Panel の接続調査」の 3 つの次ステップを提案。
+- **報告書作成**: `task-gemini/phase4z12_report.md` に詳細をまとめ、危険な一括変更や Codex への相談事項を明記。
+- **確認**: 実装変更は行わず、設計検討のみを完了。
+
+### 2026-05-26 Codex：Phase 4z12指示作成
+- **次フェーズ判断**: Phase 4z11でClipAssetFolder UIの足場が整ったため、次はいきなりY軸/Lane構造を変更せず、`Lane = 通常Layer由来` の暫定構造からClipAsset中心構造へ移るための設計棚卸しを行う。
+- **Phase 4z12作成**: `task-gemini/phase4z12.md` を作成。Laneと通常Layerの依存箇所、Y軸表示変更の影響、ClipAssetFolder / ClipAsset / ClipInstance / 内部Layer / Lane の関係、次の小Phase候補を報告書化する指示に限定。
+- **実装制限**: 今回はJS/CSS変更なし。Timeline Y軸表示変更、Laneデータモデル変更、Virtual Layer Panel、内部Layerへの直接描画、保存形式変更、D&D追加は後続扱い。
+
+### 2026-05-26 Codex：Phase 4z11確認と選択整合補修
+- **Phase 4z11確認**: `phase4z11_report.md` と `animation-table-popup.js` を確認。Asset Folderの作成・リネーム、Asset移動、フォルダ別件数表示、`Uncategorized` リネーム不可は実装されている。
+- **補修**: 新規フォルダ作成時に空フォルダへ切り替わっても前フォルダの `selectedAssetId` / `selectedInternalLayerId` が残らないようクリア処理を追加。
+- **補修**: `MOVE` の移動先番号入力で `1abc` のような値が通らないよう、整数入力のみ受け付ける検証に変更。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z11 ClipAsset Folder UI MVP (完了)
+- **フォルダ管理機能実装**: Asset Library 内にアセットフォルダの「新規作成」「リネーム」機能を追加。
+- **アセット移動**: 選択したアセットを特定のフォルダへ移動する `MOVE` 機能を実装。簡易的な `prompt()` による移動先指定を採用。
+- **UI表示拡張**: 各フォルダに属するアセット数をバッジ表示。フォルダ切り替え時の選択状態クリアロジックを導入し、整合性を向上。
+- **スタイリング**: フォルダとアセットの管理エリアを整理し、ボタンの `disabled` 制御やホバー装飾を追加。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z11_report.md` を作成。
+
+### 2026-05-26 Codex：Phase 4z11指示作成
+- **次フェーズ判断**: ClipAssetFolderはデータ基盤とAsset Library表示枠はあるが、ユーザー操作としてはまだ保管庫になっていないため、Virtual Layer Panelより先にFolder UI MVPを整える。
+- **Phase 4z11作成**: `task-gemini/phase4z11.md` を作成。Asset Library内でAsset Folderの作成・リネーム、Assetのフォルダ移動、フォルダ別Asset数表示、選択状態整合を行うMVPに限定。
+- **方針確認**: 現在のLane = 通常Layer対応は暫定足場であり、最終的にはClipAssetFolder内のClipAsset/内部Layerを時間軸へ配置する方向。通常レイヤーフォルダとClipAssetFolderは混同しない。
+- **保留**: Virtual Layer Panel、内部Layerへの実描画、Lane独立管理、Asset/Folder D&D、ClipAssetをTimelineへ配置する処理、通常レイヤー/通常フォルダのAsset化は後続扱い。
 
 ### 2026-05-26 Codex：Phase 4z10確認とfallback補修
 - **Phase 4z10確認**: `phase4z10_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。内部Layer合成Preview、末尾→先頭描画、`visible` / `opacity` / `blendMode` 反映、従来Preview fallback の実装を確認。
