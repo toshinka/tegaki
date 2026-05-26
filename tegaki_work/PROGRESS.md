@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 4z9 — ClipAsset Internal Layer Order MVP 【完了】**
+**Phase 4z10 — ClipAsset Internal Layer Composite Preview Foundation 【完了】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,24 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-26 Codex：Phase 4z10確認とfallback補修
+- **Phase 4z10確認**: `phase4z10_report.md`、`animation-data-model.js`、`animation-table-popup.js` を確認。内部Layer合成Preview、末尾→先頭描画、`visible` / `opacity` / `blendMode` 反映、従来Preview fallback の実装を確認。
+- **補修**: 内部Layerに `drawingSnapshotId` はあるが実Snapshotが取得できない場合、空Previewで止まらず従来Previewへfallbackできるよう、Preview対象抽出を「raster かつ実Snapshotあり」に変更。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は作業対象から除外。
+
+### 2026-05-24 Gemini：Phase 4z10 ClipAsset Internal Layer Composite Preview Foundation (完了)
+- **内部レイヤー合成プレビュー基盤実装**:
+    - `TimelineModel` に、Clipの内部レイヤーからプレビュー対象を抽出するヘルパーを追加。
+    - アニメPreviewコンテナにて、内部レイヤーを背面から前面（配列末尾から先頭）の順で合成描画するロジックを実装。
+- **データ連動表示**: 内部レイヤーの `visible`（可視性）、`opacity`（透明度）、`blendMode`（合成モード）をプレビューに反映可能に。
+- **セーフティ機能**: 内部レイヤーが存在しない、または Snapshot がない場合は、従来の単一 Snapshot プレビューへ自動フォールバックする仕組みを構築。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z10_report.md` を作成。
+
+### 2026-05-25 Codex：Phase 4z10指示作成
+- **次フェーズ判断**: 内部LayerのCRUDと順序操作が入ったため、これらを実際にキャンバス上で「重ねて見える」ようにするプレビュー基盤を作る。
+- **Phase 4z10作成**: `task-gemini/phase4z10.md` を作成。`TimelineModel` のヘルパー追加、`_renderCelPreview()` の分岐、複数Spriteによる合成描画、`visible`/`opacity`/`blendMode` 反映、従来Previewへのfallbackに限定。
+- **保留**: 内部Layerへの直接描画、Virtual Layer Panel、内部レイヤー編集UI（スライダー等）、合成結果のキャッシュ/ベイク、通常レイヤーパネルとのExport連携は後続扱い。
 
 ### 2026-05-25 Codex：新チャット移行用Handoff作成
 - **引き継ぎ作成**: `tegaki_work/PHASE4Z_HANDOFF.md` を作成。新チャットのCodexが読むべき順番、Phase 4z6〜4z9の現在地、Preview/背景/内部Layerの設計判断、次Phase候補を整理。
