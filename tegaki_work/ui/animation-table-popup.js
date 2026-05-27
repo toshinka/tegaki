@@ -150,6 +150,11 @@ export class AnimationTablePopup {
                 this.stop();
             } else {
                 this.render();
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:frame-changed', {
+                        frameIndex: this.model.playback.currentFrame
+                    });
+                }
             }
         }, interval);
     }
@@ -194,6 +199,18 @@ export class AnimationTablePopup {
             this._updateTimeout = null;
             this.render();
         }, 32);
+    }
+
+    /**
+     * レイヤーパネル側の表示更新を要求する (Phase 4z21)
+     */
+    _requestLayerPanelSync() {
+        if (this.eventBus) {
+            this.eventBus.emit('layer:panel-update-requested');
+        }
+        if (window.timelineUI?.updateLayerPanelIndicator) {
+            window.timelineUI.updateLayerPanelIndicator();
+        }
     }
 
     enterClipEditMode() {
@@ -600,6 +617,7 @@ export class AnimationTablePopup {
                         clip.rasterSnapshot = rawSnapshot;
 
                         this.render();
+                        this._requestLayerPanelSync(); // Phase 4z21
                         return;
                     }
                 }
@@ -635,6 +653,7 @@ export class AnimationTablePopup {
             clip.rasterSnapshot = rawSnapshot;
 
             this.render();
+            this._requestLayerPanelSync(); // Phase 4z21
         }
     }
 
@@ -656,6 +675,7 @@ export class AnimationTablePopup {
         const result = this.model.makeClipAssetUnique(this.selectedCelId);
         if (result.ok) {
             this.render();
+            this._requestLayerPanelSync(); // Phase 4z21
         } else {
             console.warn('[AnimationTable] Make Unique failed:', result.reason);
         }
@@ -1077,6 +1097,7 @@ export class AnimationTablePopup {
 
         if (trackList) {
             let trackHtml = `<div class="anim-track-header">LANES</div>`;
+            let visibleLaneIndex = 1;
             this.model.tracks.forEach(track => {
                 const activeClass = track.active ? ' active' : '';
                 const typeClass = track.type === 'folder' ? ' is-folder' : '';
@@ -1088,10 +1109,18 @@ export class AnimationTablePopup {
                 const includeBtn = (track.type === 'folder') ? '' : 
                     `<button class="anim-lane-include-btn${includeActive}" data-lane-id="${track.id}" title="${includeTitle}">${isIncluded ? '✓' : '+'}</button>`;
 
+                let displayName = track.name;
+                if (track.type !== 'folder' && !track.isBackground) {
+                    displayName = `Lane ${visibleLaneIndex}`;
+                    visibleLaneIndex++;
+                } else if (track.isBackground) {
+                    displayName = `Background`;
+                }
+
                 trackHtml += `
                     <div class="anim-track-item${activeClass}${typeClass}" data-track-id="${track.id}">
                         ${includeBtn}
-                        <span class="anim-track-name">${this._escapeHtml(track.name)}</span>
+                        <span class="anim-track-name">${this._escapeHtml(displayName)}</span>
                     </div>`;
             });
             trackList.innerHTML = trackHtml;
@@ -1156,6 +1185,13 @@ export class AnimationTablePopup {
             this._applyVisibilityPreview();
         } else {
             this._restoreVisibility();
+        }
+
+        window.timelineUI?.updateLayerPanelIndicator?.();
+
+        // Phase 4z21: レイヤーパネルとの同期 (再生中以外)
+        if (!this.isPlaying) {
+            this._requestLayerPanelSync();
         }
     }
 
@@ -2724,6 +2760,11 @@ export class AnimationTablePopup {
                     this.selectedCelId = null;
                     this.model.setCurrentFrame(current - 1);
                     this.render();
+                    if (this.eventBus) {
+                        this.eventBus.emit('animation:frame-changed', {
+                            frameIndex: this.model.playback.currentFrame
+                        });
+                    }
                 }
                 e.preventDefault();
             } else if (e.key === 'ArrowRight') {
@@ -2733,6 +2774,11 @@ export class AnimationTablePopup {
                     this.selectedCelId = null;
                     this.model.setCurrentFrame(current + 1);
                     this.render();
+                    if (this.eventBus) {
+                        this.eventBus.emit('animation:frame-changed', {
+                            frameIndex: this.model.playback.currentFrame
+                        });
+                    }
                 }
                 e.preventDefault();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
