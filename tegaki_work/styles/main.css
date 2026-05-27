@@ -189,115 +189,100 @@ canvas {
     pointer-events: none; 
 }
 
-/* CAF Readonly Header (Phase 4z15/4z16) */
-.caf-readonly-header {
-    background: #2c3e50; /* 通常Folderより濃い紺色 */
-    color: white;
-    border-radius: 6px;
-    padding: 6px 8px;
-    margin: 0 14px 8px 0;
-    font-size: 10px;
+/* CAF Simple Header (Phase 4z20) */
+.caf-simple-header {
+    background: transparent;
+    color: var(--futaba-maroon);
+    padding: 0;
+    margin: 0 14px 4px 0;
+    font-size: 13px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    border-left: 4px solid #3498db;
-    user-select: none;
-    pointer-events: auto; /* Phase 4z16: ボタンクリックを許可 */
+    gap: 0;
+    pointer-events: auto;
 }
 
-.caf-readonly-title {
-    font-weight: bold;
-    font-size: 9px;
-    opacity: 0.8;
-    letter-spacing: 0.05em;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding-bottom: 2px;
+.caf-simple-group {
+    border: 2px solid var(--active-border);
+    border-radius: 6px;
+    background: rgba(255, 235, 205, 0.72);
+    overflow: hidden;
 }
 
-.caf-readonly-group {
-    display: flex;
+.caf-simple-group-title {
+    min-height: 38px;
+    display: grid;
+    grid-template-columns: 56px 1fr 38px;
     align-items: center;
-    gap: 4px;
-    padding-left: 2px;
+    gap: 6px;
+    padding: 6px 8px;
+    font-weight: bold;
+    color: var(--futaba-maroon);
 }
 
-.caf-readonly-badge {
-    background: #3498db;
-    color: white;
-    font-size: 8px;
-    font-weight: bold;
-    padding: 0 4px;
-    border-radius: 3px;
-    height: 12px;
-    display: flex;
-    align-items: center;
+.caf-simple-lane {
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+    opacity: 0.75;
 }
 
-.caf-readonly-name {
-    font-weight: bold;
-    flex: 1;
+.caf-simple-badge {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: end;
+    font-size: 10px;
+    line-height: 1;
+    text-align: center;
+    opacity: 0.7;
+}
+
+.caf-simple-name {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.caf-simple-asset {
+    margin: 0 8px 7px 58px;
+    padding: 3px 6px;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    transition: all 0.15s;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.caf-readonly-count {
-    opacity: 0.6;
-    font-size: 8px;
+.caf-simple-asset:hover {
+    background: rgba(255, 255, 238, 0.8);
+    border-color: var(--futaba-light-medium);
 }
 
-.caf-readonly-asset-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding-left: 4px;
-    margin-top: 2px;
-}
-
-.caf-readonly-asset {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 3px;
-    color: white;
-    font-size: 8px;
-    padding: 1px 6px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.1s;
-}
-
-.caf-readonly-asset:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: #3498db;
-}
-
-.caf-readonly-asset.is-selected {
-    background: #ff6600;
-    border-color: white;
+.caf-simple-asset.is-selected {
+    background: rgba(255, 140, 66, 0.15);
+    border-color: var(--active-border);
+    color: var(--futaba-maroon);
     font-weight: bold;
-    box-shadow: 0 0 4px rgba(255, 102, 0, 0.5);
-}
-
-.caf-readonly-more {
-    font-size: 8px;
-    opacity: 0.5;
-    padding-top: 2px;
 }
 
 /* Selected ClipAsset Internal Layer Mirror (Phase 4z17) */
 .clip-layer-mirror {
-    background: rgba(44, 62, 80, 0.95); /* CAFヘッダーと同系統の濃紺 */
-    color: white;
-    border-radius: 6px;
-    padding: 6px;
-    margin: 0 14px 8px 0;
-    font-size: 9px;
+    background: transparent;
+    color: var(--futaba-maroon);
+    padding: 0;
+    margin: -3px 14px 8px 0;
+    font-size: 11px;
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    border-left: 4px solid #e67e22; /* オレンジ色のアクセント（Clip選択色） */
+    gap: 0;
+    box-shadow: none;
+    border-left: none;
     pointer-events: auto;
 }
 
@@ -322,26 +307,30 @@ canvas {
 .clip-layer-mirror-list {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 0;
 }
 
 .clip-layer-mirror-row {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 3px 6px;
-    border-radius: 3px;
+    min-height: 30px;
+    padding: 3px 8px 3px 60px;
+    border: 1px solid var(--futaba-light-medium);
+    border-top: none;
+    border-radius: 0;
+    background: rgba(255, 255, 238, 0.72);
     cursor: pointer;
     transition: background 0.1s;
 }
 
 .clip-layer-mirror-row:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 245, 220, 0.95);
 }
 
 .clip-layer-mirror-row.is-selected {
-    background: rgba(230, 126, 34, 0.3);
-    box-shadow: inset 0 0 0 1px rgba(230, 126, 34, 0.5);
+    background: rgba(255, 140, 66, 0.14);
+    box-shadow: inset 2px 0 0 var(--active-border);
 }
 
 .clip-layer-mirror-row.is-hidden {
@@ -351,7 +340,7 @@ canvas {
 .clip-layer-mirror-visibility-btn {
     background: transparent;
     border: none;
-    color: white;
+    color: var(--futaba-maroon);
     font-size: 11px;
     width: 16px;
     height: 16px;
@@ -376,7 +365,7 @@ canvas {
 .clip-layer-mirror-rename-btn {
     background: transparent;
     border: none;
-    color: white;
+    color: var(--futaba-maroon);
     font-size: 9px;
     width: 14px;
     height: 14px;
@@ -391,7 +380,7 @@ canvas {
 
 .clip-layer-mirror-rename-btn:hover {
     opacity: 1;
-    color: #3498db;
+    color: var(--active-border);
 }
 
 .clip-layer-mirror-visibility {

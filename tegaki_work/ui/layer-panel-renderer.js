@@ -66,8 +66,8 @@ export class LayerPanelRenderer {
                 return;
             }
 
-            // 2. CAFヘッダーのアセットボタン
-            const assetBtn = e.target.closest('.caf-readonly-asset');
+            // 2. CAFフォルダ内のアセット行
+            const assetBtn = e.target.closest('.caf-simple-asset');
             if (assetBtn) {
                 const clipId = assetBtn.dataset.clipId;
                 const animationTable = window.PopupManager?.get?.('animationTable');
@@ -1683,43 +1683,38 @@ export class LayerPanelRenderer {
         if (!tree || tree.groups.length === 0) return null;
 
         const header = document.createElement('div');
-        header.className = 'caf-readonly-header';
+        header.className = 'caf-simple-header';
 
-        let html = '<div class="caf-readonly-title">FRAME ASSETS</div>';
-
+        let html = '';
         const selectedCelId = animationTable.selectedCelId;
 
         tree.groups.forEach(group => {
+            const folderName = group.folderName === 'Uncategorized' ? 'Uncategorized' : group.folderName;
+            const firstClip = group.clips[0];
+            const laneLabel = Number.isInteger(firstClip?.laneIndex) ? `Lane ${firstClip.laneIndex + 1}` : '';
             html += `
-                <div class="caf-readonly-group">
-                    <span class="caf-readonly-badge">CAF</span>
-                    <span class="caf-readonly-name">${this._escapeHtml(group.folderName)}</span>
-                    <span class="caf-readonly-count">${group.clips.length}</span>
-                </div>
-                <div class="caf-readonly-asset-row">
+                <div class="caf-simple-group">
+                    <div class="caf-simple-group-title">
+                        <span class="caf-simple-lane">${this._escapeHtml(laneLabel)}</span>
+                        <span class="caf-simple-badge">CAF</span>
+                        <span class="caf-simple-name">${this._escapeHtml(folderName)}</span>
+                    </div>
             `;
 
-            // 表示アセットをボタン化
-            group.clips.forEach((clipEntry, index) => {
+            group.clips.forEach(clipEntry => {
                 const isSelected = selectedCelId === clipEntry.clipId;
                 const selectedClass = isSelected ? ' is-selected' : '';
                 const clipId = this._escapeHtml(clipEntry.clipId);
                 const assetId = this._escapeHtml(clipEntry.assetId);
 
-                // 3件まで実表示、それ以降は数だけ出す
-                if (index < 3) {
-                    html += `
-                        <button class="caf-readonly-asset${selectedClass}"
-                                data-clip-id="${clipId}"
-                                data-asset-id="${assetId}"
-                                title="Click to select clip in Timeline">
-                            ${this._escapeHtml(clipEntry.assetName)}
-                        </button>
-                    `;
-                } else if (index === 3) {
-                    const moreCount = group.clips.length - 3;
-                    html += `<span class="caf-readonly-more">+${moreCount} more</span>`;
-                }
+                html += `
+                    <div class="caf-simple-asset${selectedClass}"
+                         data-clip-id="${clipId}"
+                         data-asset-id="${assetId}"
+                         title="Click to select clip in Timeline">
+                        ${this._escapeHtml(clipEntry.assetName)}
+                    </div>
+                `;
             });
 
             html += `</div>`;
@@ -1816,8 +1811,6 @@ export class LayerPanelRenderer {
         }
 
         mirror.innerHTML = `
-            <div class="clip-layer-mirror-title">CLIP LAYERS</div>
-            <div class="clip-layer-mirror-asset">${this._escapeHtml(asset.name)}</div>
             <div class="clip-layer-mirror-list">${layerHtml}</div>
         `;
 

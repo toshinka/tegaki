@@ -795,6 +795,17 @@
             const frameDisplay = document.getElementById('frame-display');
             if (!frameDisplay) return;
             
+            // Phase 4z20: 新アニメテーブルのFrameに同期する
+            const popupManager = window.coreEngine?.popupManager || window.PopupManager;
+            const animTable = popupManager?.get?.('animationTable');
+            if (animTable && animTable.model && typeof animTable.model.playback?.currentFrame === 'number') {
+                const currentFrame = animTable.model.playback.currentFrame;
+                frameDisplay.textContent = `Frame ${currentFrame + 1}`;
+                document.getElementById('frame-prev-btn')?.removeAttribute('disabled');
+                document.getElementById('frame-next-btn')?.removeAttribute('disabled');
+                return;
+            }
+
             const animData = this.animationSystem.getAnimationData();
             const totalFrames = animData.frames.length;
             

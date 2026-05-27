@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 4z19 — Clip Layer Mirror Rename Bridge 【完了】**
+**Phase 4z21 — CAF Operation Authority Boundary 【完了】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,25 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-24 Gemini：Phase 4z21 CAF Operation Authority Boundary (完了)
+- **権限境界の確立**: CAF/クリップの構造操作権限をアニメーションテーブル側に集約。レイヤーパネルは反映と内部編集のみを行う役割分担を明確化。
+- **同期ロジック補強**: `_requestLayerPanelSync()` ヘルパーを導入し、クリップ・アセット・フォルダ・内部レイヤーの全構造変更操作後にレイヤーパネルへ更新を通知。
+- **イベント通知修正**: 再生中およびキーボードナビゲーション時の `animation:frame-changed` 発火を保証し、パネル側の追従性を向上。
+- **パフォーマンス最適化**: 再生中の同期通知を制限し、描画パフォーマンスを維持。
+- **ビルド確認**: `npm.cmd run build` 成功。`task-gemini/phase4z21_report.md` を作成。
+
+### 2026-05-26 Codex：Phase 4z21指示作成
+- **次フェーズ判断**: Phase 4z20でCAF/Lane/Layer Panelの表示思想を寄せたため、次は見た目を増やさず、CAF自体の操作権限をアニメテーブル側へ固定し、Layer Panelは反映表示とCAF内部編集に限定する境界を固める。
+- **Phase 4z21作成**: `task-gemini/phase4z21.md` を作成。アニメテーブル側のClip/CAF操作棚卸し、操作後のLayer Panel更新同期、Layer Panel側でCAF自体の移動/コピー/削除を持たせない確認に限定。
+- **実装制限**: Lane独立化、`syncWithLayers()` 根本変更、CAF/内部Layer D&D、内部Layer追加/削除/順序変更、直接描画、通常Layer一覧置換、保存形式変更は後続扱い。
+
+### 2026-05-26 Codex：Phase 4z20確認とCAF表示補修
+- **Phase 4z20確認**: Antigravity/Gemini実装を確認。Timeline Y軸のLane表示は入ったが、CAFクリックclass不一致と濃紺 `CLIP LAYERS` カード残存があった。
+- **補修**: CAFクリック委譲を `.caf-simple-asset` に修正し、CAF/Asset選択が反応するようにした。
+- **補修**: `CLIP LAYERS` の独立カード感を弱め、CAF配下の薄い内部Layer行として見えるようCSS/DOMを調整。CAF名とLane表示は分離し、Laneは補助情報として表示。
+- **補修**: 新アニメテーブルの `render()` 後に `window.timelineUI.updateLayerPanelIndicator()` を呼び、Frame表示が `Frame 1` 等へ同期しやすいよう補強。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は成果物から除外する。
 
 ### 2026-05-26 Codex：Phase 4z20指示作成
 - **方針修正**: オーナー確認により、Phase 4z20は内部Layer順序変更ではなく、CAF / Lane / Layer Panelの表示思想を揃える調整Phaseへ差し替え。
