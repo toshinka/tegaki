@@ -1,3 +1,13 @@
+## Claudeのファイル確認用資料URL
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_BOUNDARY.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_HANDOFF.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-gemini/phase4z22.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-gemini/phase4z22_report.md
+
+
 # GitHubURL — tegaki_work ファイル一覧
 # 用途：ClaudeがGitHubから直接ファイルを読み込む際のURL集
 # 更新ルール：新規ファイル追加・削除・フォルダ名変更のたびに必ず更新すること
@@ -121,16 +131,5 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/li
 
 "D:\GitHub\tegaki\PastFiles\tegaki_phase1b1\PROGRESS.md"
 
-## Claudeのファイル確認用資料URL
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CLAUDE_HANDOFF.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/TegakiConsole.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/CODEX.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/GEMINI作業指示書.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/PastFiles/phase2m.md
 
 

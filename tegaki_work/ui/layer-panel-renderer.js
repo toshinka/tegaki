@@ -31,6 +31,8 @@ export class LayerPanelRenderer {
         this._attributePopupDrag = null;
         this._isSortableDragging = false;
         this._pendingUpdateAfterDrag = false;
+        this._expandedCafClipIds = new Set();
+        this._collapsedCafClipIds = new Set();
         this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
         this._handleAttributePopupKeydown = this._handleAttributePopupKeydown.bind(this);
         this._handleAttributePopupDragMove = this._handleAttributePopupDragMove.bind(this);
@@ -54,20 +56,47 @@ export class LayerPanelRenderer {
                 return;
             }
 
-            // 1. 内部レイヤーミラーのリネームボタン (Phase 4z19)
-            const renameBtn = e.target.closest('.clip-layer-mirror-rename-btn');
-            if (renameBtn) {
-                const assetId = renameBtn.dataset.assetId;
-                const layerId = renameBtn.dataset.internalLayerId;
+            // 1. 内部レイヤーミラーのクリッピングボタン
+            const clipBtn = e.target.closest('.clip-layer-mirror-clip-btn');
+            if (clipBtn) {
+                const assetId = clipBtn.dataset.assetId;
+                const layerId = clipBtn.dataset.internalLayerId;
                 const animationTable = window.PopupManager?.get?.('animationTable');
-                if (animationTable?.renameInternalLayerFromExternal && assetId && layerId) {
-                    animationTable.renameInternalLayerFromExternal(assetId, layerId, null, { source: 'layer-panel-clip-layer-mirror' });
+                if (animationTable?.toggleInternalLayerClippingFromExternal && assetId && layerId) {
+                    animationTable.toggleInternalLayerClippingFromExternal(assetId, layerId, { source: 'layer-panel-clip-layer-mirror' });
+                }
+                return;
+            }
+
+            const cafVisBtn = e.target.closest('.caf-simple-visibility-btn');
+            if (cafVisBtn) {
+                const clipId = cafVisBtn.dataset.clipId;
+                const animationTable = window.PopupManager?.get?.('animationTable');
+                if (animationTable?.toggleClipVisibilityFromExternal && clipId) {
+                    animationTable.toggleClipVisibilityFromExternal(clipId, { source: 'layer-panel-caf-header' });
+                }
+                return;
+            }
+
+            const cafToggleBtn = e.target.closest('.caf-simple-toggle-btn');
+            if (cafToggleBtn) {
+                const clipId = cafToggleBtn.dataset.clipId;
+                if (clipId) {
+                    const isExpanded = cafToggleBtn.getAttribute('aria-expanded') === 'true';
+                    if (isExpanded) {
+                        this._expandedCafClipIds.delete(clipId);
+                        this._collapsedCafClipIds.add(clipId);
+                    } else {
+                        this._expandedCafClipIds.add(clipId);
+                        this._collapsedCafClipIds.delete(clipId);
+                    }
+                    this.requestUpdate({ force: true });
                 }
                 return;
             }
 
             // 2. CAFフォルダ内のアセット行
-            const assetBtn = e.target.closest('.caf-simple-asset');
+            const assetBtn = e.target.closest('.caf-simple-asset, .caf-simple-group-title');
             if (assetBtn) {
                 const clipId = assetBtn.dataset.clipId;
                 const animationTable = window.PopupManager?.get?.('animationTable');
@@ -84,6 +113,7 @@ export class LayerPanelRenderer {
                 const animationTable = window.PopupManager?.get?.('animationTable');
                 if (animationTable && layerId) {
                     animationTable.selectedInternalLayerId = layerId;
+                    animationTable._syncActiveWorkingLayerToSelectedInternalLayer?.();
                     animationTable.render();
                     this.requestUpdate({ force: true });
                 }
@@ -149,16 +179,14 @@ export class LayerPanelRenderer {
         this.eventBus.on('thumbnail:updated', (data) => {
             if (!data || !data.dataURL) return;
 
-            const layers = this.layerSystem?.getLayers() || [];
             const layerIndex = data.layerIndex;
             if (typeof layerIndex !== 'number') return;
 
-            const reversedIndex = layers.length - 1 - layerIndex;
-            const layerItems = this.container.querySelectorAll('.layer-item');
-            if (reversedIndex < 0 || reversedIndex >= layerItems.length) return;
+            const layerItems = Array.from(this.container.querySelectorAll('.layer-item'));
+            const targetItem = layerItems.find(item => Number(item.dataset.layerIndex) === layerIndex);
+            if (!targetItem) return;
 
-            const thumbnailContainer = layerItems[reversedIndex]
-                ?.querySelector('.layer-thumbnail');
+            const thumbnailContainer = targetItem.querySelector('.layer-thumbnail');
             if (!thumbnailContainer) return;
 
             let img = thumbnailContainer.querySelector('img');
@@ -240,15 +268,24 @@ export class LayerPanelRenderer {
             this.container.appendChild(cafHeader);
         }
 
-        // Phase 4z17: 選択中ClipAssetの内部レイヤーミラーの描画
-        const internalMirror = this.createSelectedClipAssetLayerMirror();
-        if (internalMirror) {
-            this.container.appendChild(internalMirror);
-        }
-
         const reversedLayers = [...layers].reverse();
         const reversedActiveIndex = layers.length - 1 - activeIndex;
         const selectedLayerIds = new Set(this.layerSystem?.getSelectedLayerIds?.() || []);
+        const animationTable = window.PopupManager?.get?.('animationTable');
+        const hideAnimationWorkingLayers = !!(
+            animationTable?.model &&
+            animationTable.model.tracks?.length > 0
+        );
+        const hideWorkingLayersForEmptyAnimFrame = !!(
+            animationTable?.isVisible &&
+            animationTable?.model &&
+            !animationTable.selectedCelId
+        );
+        const hideWorkingLayersForAnimClip = !!(
+            animationTable?.isVisible &&
+            animationTable?.model &&
+            animationTable.selectedCelId
+        );
 
         reversedLayers.forEach((layer, reversedIndex) => {
             const originalIndex = layers.length - 1 - reversedIndex;
@@ -256,6 +293,24 @@ export class LayerPanelRenderer {
             const isSelected = selectedLayerIds.has(layer.layerData?.id);
 
             if (this._isLayerHiddenByClosedFolder(layer, layers)) return;
+            if (
+                hideAnimationWorkingLayers &&
+                layer.layerData?.isAnimationWorkingLayer === true &&
+                !layer.layerData.isBackground &&
+                !layer.layerData.isFolder
+            ) return;
+            if (
+                hideWorkingLayersForEmptyAnimFrame &&
+                layer.layerData &&
+                !layer.layerData.isBackground &&
+                !layer.layerData.isFolder
+            ) return;
+            if (
+                hideWorkingLayersForAnimClip &&
+                layer.layerData &&
+                !layer.layerData.isBackground &&
+                !layer.layerData.isFolder
+            ) return;
 
             const layerElement = layer.layerData?.isFolder
                 ? this.createFolderElement(layer, originalIndex, isActive, layers, isSelected)
@@ -1679,7 +1734,8 @@ export class LayerPanelRenderer {
         const animationTable = window.PopupManager?.get?.('animationTable');
         if (!animationTable || !animationTable.model) return null;
 
-        const tree = animationTable.model.getFrameAssetTree();
+        const treeOptions = this._getFrameAssetTreeOptionsForAnimationScope(animationTable);
+        const tree = animationTable.model.getFrameAssetTree(undefined, treeOptions);
         if (!tree || tree.groups.length === 0) return null;
 
         const header = document.createElement('div');
@@ -1688,27 +1744,57 @@ export class LayerPanelRenderer {
         let html = '';
         const selectedCelId = animationTable.selectedCelId;
 
-        tree.groups.forEach(group => {
-            const folderName = group.folderName === 'Uncategorized' ? 'Uncategorized' : group.folderName;
+        tree.groups.forEach((group, groupIndex) => {
+            const folderName = group.folderName === 'Uncategorized' ? `CAF${groupIndex + 1}` : group.folderName;
             const firstClip = group.clips[0];
+            const selectedClipEntry = group.clips.find(clip => clip.clipId === selectedCelId) || null;
+            const groupSelectedClass = selectedClipEntry ? ' is-selected' : '';
+            const isExpanded = !this._collapsedCafClipIds.has(firstClip?.clipId)
+                && (!!selectedClipEntry || this._expandedCafClipIds.has(firstClip?.clipId));
+            const groupExpandedClass = isExpanded ? ' is-expanded' : ' is-collapsed';
             const laneLabel = Number.isInteger(firstClip?.laneIndex) ? `Lane ${firstClip.laneIndex + 1}` : '';
+            const firstClipId = this._escapeHtml(firstClip?.clipId || '');
+            const firstAssetId = this._escapeHtml(firstClip?.assetId || '');
+            const clipEntry = firstClip?.clipId ? animationTable.model.findClipEntry(firstClip.clipId) : null;
+            const isClipVisible = clipEntry?.clip?.visible !== false;
+            const visibilityIcon = isClipVisible ? UI_ICONS.eye : UI_ICONS.eyeOff;
+            const mirrorClipEntry = selectedClipEntry || firstClip;
+            const mirrorAsset = mirrorClipEntry?.assetId
+                ? animationTable.model.getClipAsset(mirrorClipEntry.assetId)
+                : null;
             html += `
-                <div class="caf-simple-group">
-                    <div class="caf-simple-group-title">
-                        <span class="caf-simple-lane">${this._escapeHtml(laneLabel)}</span>
-                        <span class="caf-simple-badge">CAF</span>
+                <div class="caf-simple-group${groupSelectedClass}${groupExpandedClass}">
+                    <div class="caf-simple-group-title${groupSelectedClass}${groupExpandedClass}"
+                         data-clip-id="${firstClipId}"
+                         data-asset-id="${firstAssetId}"
+                         title="CAF Clipを選択">
+                        <button class="caf-simple-icon caf-simple-toggle-btn"
+                                data-clip-id="${firstClipId}"
+                                aria-expanded="${isExpanded ? 'true' : 'false'}"
+                                title="${isExpanded ? 'CAFを閉じる' : 'CAFを開く'}"
+                                aria-label="${isExpanded ? 'CAFを閉じる' : 'CAFを開く'}">
+                            ${isExpanded ? UI_ICONS.folderOpen : UI_ICONS.folder}
+                        </button>
                         <span class="caf-simple-name">${this._escapeHtml(folderName)}</span>
+                        <span class="caf-simple-lane">${this._escapeHtml(laneLabel)}</span>
+                        <button class="caf-simple-visibility-btn ui-icon-button ui-icon-button--small${isClipVisible ? '' : ' is-hidden'}"
+                                data-clip-id="${firstClipId}"
+                                title="CAF Clipの表示/非表示">
+                            ${visibilityIcon}
+                        </button>
                     </div>
             `;
 
             group.clips.forEach(clipEntry => {
                 const isSelected = selectedCelId === clipEntry.clipId;
+                const isClipVisible = clipEntry.visible !== false;
                 const selectedClass = isSelected ? ' is-selected' : '';
+                const hiddenClass = isClipVisible ? '' : ' is-hidden';
                 const clipId = this._escapeHtml(clipEntry.clipId);
                 const assetId = this._escapeHtml(clipEntry.assetId);
 
                 html += `
-                    <div class="caf-simple-asset${selectedClass}"
+                    <div class="caf-simple-asset${selectedClass}${hiddenClass}"
                          data-clip-id="${clipId}"
                          data-asset-id="${assetId}"
                          title="Click to select clip in Timeline">
@@ -1717,11 +1803,47 @@ export class LayerPanelRenderer {
                 `;
             });
 
+            if (isExpanded && mirrorAsset) {
+                html += this._createClipAssetLayerMirrorHtml(mirrorAsset, animationTable);
+            }
+
             html += `</div>`;
         });
 
         header.innerHTML = html;
         return header;
+    }
+
+    _getFrameAssetTreeOptionsForAnimationScope(animationTable) {
+        if (!animationTable) return {};
+        if (animationTable.playbackScope === 'activeLane') {
+            return animationTable.activeLaneId ? { laneIds: [animationTable.activeLaneId] } : { laneIds: [] };
+        }
+        if (animationTable.playbackScope === 'includedLanes') {
+            const validLaneIds = new Set(
+                (animationTable.model?.tracks || [])
+                    .filter(track => track && !track.isBackground && track.type !== 'folder')
+                    .map(track => track.id)
+            );
+            const laneIds = [...(animationTable.includedLaneIds || [])].filter(laneId => validLaneIds.has(laneId));
+            return laneIds.length > 0 ? { laneIds } : {};
+        }
+        return {};
+    }
+
+    _snapshotToDataUrl(snapshot) {
+        if (!snapshot?.pixels || !snapshot.width || !snapshot.height) return '';
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = snapshot.width;
+            canvas.height = snapshot.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return '';
+            ctx.putImageData(new ImageData(new Uint8ClampedArray(snapshot.pixels), snapshot.width, snapshot.height), 0, 0);
+            return canvas.toDataURL('image/png');
+        } catch (e) {
+            return '';
+        }
     }
 
     /**
@@ -1739,28 +1861,11 @@ export class LayerPanelRenderer {
             }
         }
 
-        // 2. Asset Libraryの選択から解決
-        if (animationTable.selectedAssetId) {
-            return animationTable.model.getClipAsset(animationTable.selectedAssetId);
-        }
-
         return null;
     }
 
-    /**
-     * 選択中アセットの内部レイヤー一覧ミラーを表示する (Phase 4z17)
-     */
-    createSelectedClipAssetLayerMirror() {
-        const asset = this._getSelectedClipAssetForLayerPanel();
-        if (!asset) return null;
-
-        const animationTable = window.PopupManager?.get?.('animationTable');
-        if (!animationTable || !animationTable.model) return null;
-
+    _createClipAssetLayerMirrorHtml(asset, animationTable) {
         const selectedInternalLayerId = animationTable.selectedInternalLayerId;
-
-        const mirror = document.createElement('div');
-        mirror.className = 'clip-layer-mirror';
 
         let layerHtml = '';
         if (asset.internalLayers.length === 0) {
@@ -1773,48 +1878,66 @@ export class LayerPanelRenderer {
                 const isHidden = !isVisible;
                 const selectedClass = isSelected ? ' is-selected' : '';
                 const hiddenClass = isHidden ? ' is-hidden' : '';
+                const clippingClass = layer.clipping === true ? ' is-clipping' : '';
 
                 const snapshot = animationTable.model.getDrawingSnapshot(layer.drawingSnapshotId);
-                const hasSnapshot = !!snapshot;
-                const isBlank = snapshot?.isBlank === true;
+                const thumbUrl = this._snapshotToDataUrl(snapshot);
 
                 const safeAssetId = this._escapeHtml(asset.id);
                 const safeLayerId = this._escapeHtml(layer.id);
+                const opacityLabel = `${Math.round(layer.opacity * 100)}%`;
+                const visibilityIconName = isVisible ? 'eye' : 'eyeOff';
 
                 layerHtml += `
                     <div class="clip-layer-mirror-row${selectedClass}${hiddenClass}"
                          data-internal-layer-id="${safeLayerId}"
                          data-asset-id="${safeAssetId}">
-                        <button class="clip-layer-mirror-visibility-btn${isHidden ? ' is-hidden' : ''}"
+                        <span class="folder-child-line" aria-hidden="true"></span>
+                        <span class="clip-layer-mirror-thumb">
+                            ${thumbUrl ? `<img src="${thumbUrl}" alt="">` : ''}
+                        </span>
+                        <span class="clip-layer-mirror-details">
+                            <span class="clip-layer-mirror-opacity">${this._escapeHtml(opacityLabel)}</span>
+                            <span class="clip-layer-mirror-name">${this._escapeHtml(layer.name)}</span>
+                        </span>
+                        <button class="clip-layer-mirror-clip-btn ui-icon-button ui-icon-button--small${clippingClass}"
                                 data-internal-layer-id="${safeLayerId}"
                                 data-asset-id="${safeAssetId}"
-                                title="Toggle internal layer visibility">
-                            ${isVisible ? '👁' : '·'}
+                                title="クリッピング">
+                            ${UI_ICONS.paperclip}
                         </button>
-                        <span class="clip-layer-mirror-name">${this._escapeHtml(layer.name)}</span>
-                        <div class="clip-layer-mirror-meta">
-                            <span class="meta-opacity">${Math.round(layer.opacity * 100)}%</span>
-                            <span class="meta-blend">${this._escapeHtml(layer.blendMode)}</span>
-                            <button class="clip-layer-mirror-rename-btn"
-                                    data-internal-layer-id="${safeLayerId}"
-                                    data-asset-id="${safeAssetId}"
-                                    title="Rename internal layer">
-                                ✎
-                            </button>
-                            <span class="meta-snapshot ${isBlank ? 'is-blank' : (hasSnapshot ? 'has-data' : 'none')}">
-                                ${isBlank ? 'blank' : (hasSnapshot ? 'snapshot' : 'none')}
-                            </span>
-                        </div>
+                        <button class="clip-layer-mirror-visibility-btn ui-icon-button ui-icon-button--small${isHidden ? ' is-hidden' : ''}"
+                                data-internal-layer-id="${safeLayerId}"
+                                data-asset-id="${safeAssetId}"
+                                title="内部レイヤーの表示/非表示">
+                            ${UI_ICONS[visibilityIconName]}
+                        </button>
                     </div>
                 `;
             });
         }
 
-        mirror.innerHTML = `
+        return `
+            <div class="clip-layer-mirror">
             <div class="clip-layer-mirror-list">${layerHtml}</div>
+            </div>
         `;
+    }
 
-        return mirror;
+    /**
+     * 選択中アセットの内部レイヤー一覧ミラーを表示する (Phase 4z17)
+     */
+    createSelectedClipAssetLayerMirror() {
+        const asset = this._getSelectedClipAssetForLayerPanel();
+        if (!asset) return null;
+
+        const animationTable = window.PopupManager?.get?.('animationTable');
+        if (!animationTable || !animationTable.model) return null;
+
+        const mirror = document.createElement('div');
+        mirror.innerHTML = this._createClipAssetLayerMirrorHtml(asset, animationTable);
+
+        return mirror.firstElementChild;
     }
 
     destroy() {

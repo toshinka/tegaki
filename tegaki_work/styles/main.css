@@ -180,7 +180,7 @@ canvas {
     transform: none; 
     z-index: 1; 
     display: grid; 
-    grid-template-columns: 176px 18px auto;
+    grid-template-columns: 204px 18px auto;
     grid-template-rows: auto minmax(0, 1fr);
     align-items: center;
     column-gap: 8px; 
@@ -194,7 +194,7 @@ canvas {
     background: transparent;
     color: var(--futaba-maroon);
     padding: 0;
-    margin: 0 14px 4px 0;
+    margin: 0 6px 4px 0;
     font-size: 13px;
     display: flex;
     flex-direction: column;
@@ -203,27 +203,79 @@ canvas {
 }
 
 .caf-simple-group {
-    border: 2px solid var(--active-border);
+    border: 1px solid var(--futaba-light-medium);
     border-radius: 6px;
-    background: rgba(255, 235, 205, 0.72);
+    background: rgba(240, 224, 214, 0.74);
     overflow: hidden;
+    box-sizing: border-box;
+}
+
+.caf-simple-group.is-selected {
+    border: 2px solid var(--active-border);
 }
 
 .caf-simple-group-title {
-    min-height: 38px;
+    min-height: 48px;
     display: grid;
-    grid-template-columns: 56px 1fr 38px;
+    grid-template-columns: 34px minmax(0, 1fr) 20px;
+    grid-template-rows: 18px 16px;
     align-items: center;
-    gap: 6px;
+    gap: 0 5px;
     padding: 6px 8px;
     font-weight: bold;
     color: var(--futaba-maroon);
+    cursor: pointer;
+}
+
+.caf-simple-toggle-btn {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--futaba-maroon);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+}
+
+.caf-simple-toggle-btn:hover {
+    background: rgba(128, 0, 0, 0.06);
+}
+
+.caf-simple-group-title:not(.is-selected) {
+    opacity: 0.82;
+}
+
+.caf-simple-icon {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--futaba-maroon);
+}
+
+.caf-simple-icon svg {
+    width: 30px;
+    height: 24px;
+    stroke: currentColor;
+    fill: rgba(128, 0, 0, 0.10);
+    stroke-width: 2;
 }
 
 .caf-simple-lane {
+    grid-column: 2;
+    grid-row: 2;
     font-size: 11px;
     line-height: 1;
-    text-align: center;
+    text-align: left;
     opacity: 0.75;
 }
 
@@ -241,12 +293,27 @@ canvas {
     grid-column: 2;
     grid-row: 1;
     font-size: 15px;
+    line-height: 1.1;
+    text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+.caf-simple-visibility-btn {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    width: 18px;
+    height: 18px;
+    color: var(--futaba-maroon);
+}
+
+.caf-simple-visibility-btn.is-hidden {
+    opacity: 0.45;
+}
+
 .caf-simple-asset {
+    display: none;
     margin: 0 8px 7px 58px;
     padding: 3px 6px;
     cursor: pointer;
@@ -276,7 +343,7 @@ canvas {
     background: transparent;
     color: var(--futaba-maroon);
     padding: 0;
-    margin: -3px 14px 8px 0;
+    margin: -1px 8px 8px 0;
     font-size: 11px;
     display: flex;
     flex-direction: column;
@@ -308,29 +375,67 @@ canvas {
     display: flex;
     flex-direction: column;
     gap: 0;
+    margin-left: 10px;
+    margin-right: 8px;
+    padding-left: 0;
 }
 
 .clip-layer-mirror-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 18px 18px;
+    grid-template-rows: 32px;
+    align-items: center;
+    gap: 0 5px;
+    width: auto;
+    min-height: 38px;
+    padding: 3px 5px;
+    margin-bottom: 2px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: rgba(255, 255, 238, 0.92);
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.clip-layer-mirror-row .folder-child-line {
+    position: absolute;
+    left: -10px;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background-color: rgba(128, 0, 0, 0.22);
+}
+
+.clip-layer-mirror-thumb {
+    grid-column: 1;
+    grid-row: 1;
+    width: 34px;
+    height: 30px;
+    border-radius: 3px;
+    background: rgba(128, 0, 0, 0.05);
+    overflow: hidden;
     display: flex;
     align-items: center;
-    gap: 6px;
-    min-height: 30px;
-    padding: 3px 8px 3px 60px;
-    border: 1px solid var(--futaba-light-medium);
-    border-top: none;
-    border-radius: 0;
-    background: rgba(255, 255, 238, 0.72);
-    cursor: pointer;
-    transition: background 0.1s;
+    justify-content: center;
+}
+
+.clip-layer-mirror-thumb img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
 }
 
 .clip-layer-mirror-row:hover {
-    background: rgba(255, 245, 220, 0.95);
+    background: rgba(240, 224, 214, 0.42);
 }
 
 .clip-layer-mirror-row.is-selected {
-    background: rgba(255, 140, 66, 0.14);
-    box-shadow: inset 2px 0 0 var(--active-border);
+    border-color: var(--active-border);
+    border-width: 2px;
+    background: rgba(240, 224, 214, 0.52);
 }
 
 .clip-layer-mirror-row.is-hidden {
@@ -338,49 +443,19 @@ canvas {
 }
 
 .clip-layer-mirror-visibility-btn {
-    background: transparent;
-    border: none;
+    grid-column: 4;
+    grid-row: 1;
+    width: 18px;
+    height: 18px;
     color: var(--futaba-maroon);
-    font-size: 11px;
-    width: 16px;
-    height: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    padding: 0;
-    opacity: 0.7;
-    transition: opacity 0.1s, transform 0.1s;
 }
 
 .clip-layer-mirror-visibility-btn:hover {
-    opacity: 1;
-    transform: scale(1.1);
+    transform: none;
 }
 
 .clip-layer-mirror-visibility-btn.is-hidden {
-    opacity: 0.3;
-}
-
-.clip-layer-mirror-rename-btn {
-    background: transparent;
-    border: none;
-    color: var(--futaba-maroon);
-    font-size: 9px;
-    width: 14px;
-    height: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    padding: 0;
-    opacity: 0.4;
-    transition: opacity 0.1s, color 0.1s;
-}
-
-.clip-layer-mirror-rename-btn:hover {
-    opacity: 1;
-    color: var(--active-border);
+    opacity: 0.45;
 }
 
 .clip-layer-mirror-visibility {
@@ -390,17 +465,46 @@ canvas {
 }
 
 .clip-layer-mirror-name {
-    flex: 1;
+    color: var(--futaba-maroon);
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 16px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.clip-layer-mirror-meta {
+.clip-layer-mirror-details {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
     display: flex;
-    gap: 5px;
-    font-size: 7px;
-    opacity: 0.5;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    height: 32px;
+}
+
+.clip-layer-mirror-opacity {
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+}
+
+.clip-layer-mirror-clip-btn {
+    grid-column: 3;
+    grid-row: 1;
+    width: 18px;
+    height: 18px;
+    color: var(--futaba-maroon);
+    opacity: 0.28;
+}
+
+.clip-layer-mirror-clip-btn.is-clipping {
+    opacity: 1;
+    background: rgba(240, 224, 214, 0.72);
+    border-color: var(--active-border);
 }
 
 .clip-layer-mirror-empty {

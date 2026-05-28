@@ -81,6 +81,7 @@ export class ClipAssetInternalLayerModel {
         this.visible = options.visible !== false;
         this.opacity = options.opacity ?? 1;
         this.blendMode = options.blendMode || 'normal';
+        this.clipping = options.clipping === true;
         this.drawingSnapshotId = options.drawingSnapshotId || null;
         this.parentLayerId = options.parentLayerId || null;
         this.isBackground = options.isBackground === true;
@@ -96,6 +97,7 @@ export class ClipAssetInternalLayerModel {
             visible: this.visible,
             opacity: this.opacity,
             blendMode: this.blendMode,
+            clipping: this.clipping,
             drawingSnapshotId: this.drawingSnapshotId,
             parentLayerId: this.parentLayerId,
             isBackground: this.isBackground,
@@ -154,6 +156,7 @@ export class ClipInstanceModel {
         this.startFrame = options.startFrame || 0;
         this.duration = options.duration || 1;
         this.isKeyframe = options.isKeyframe !== false;
+        this.visible = options.visible !== false;
         
         // 暫定互換用：直接 Snapshot 保持
         this.rasterSnapshot = options.rasterSnapshot || null; 
@@ -168,6 +171,7 @@ export class ClipInstanceModel {
             startFrame: this.startFrame,
             duration: this.duration,
             isKeyframe: this.isKeyframe,
+            visible: this.visible,
             rasterSnapshot: this.rasterSnapshot
         };
     }
@@ -186,11 +190,17 @@ export class LaneModel {
     constructor(options = {}) {
         this.id = options.id || createId();
         
-        // 暫定：実レイヤーとの紐付け
+        // 実レイヤーとの紐付けは移行用。null の Lane はアニメ専用行として保持できる。
         this.sourceLayerId = options.sourceLayerId || options.layerId || null;
         this.layerId = this.sourceLayerId; // backward compatibility
         
         this.name = options.name || 'Lane';
+        this.displayName = options.displayName || null;
+        this.sourceName = options.sourceName || null;
+        this.kind = options.kind || (this.sourceLayerId ? 'layer-linked' : 'independent');
+        this.orderIndex = Number.isInteger(options.orderIndex) ? options.orderIndex : 0;
+        this.sourceMissing = options.sourceMissing === true;
+        this.isBackground = options.isBackground === true;
         this.type = options.type || 'raster'; // 'raster' | 'folder'
         this.active = options.active === true;
         
@@ -279,6 +289,12 @@ export class LaneModel {
             sourceLayerId: this.sourceLayerId,
             layerId: this.layerId, // 互換維持
             name: this.name,
+            displayName: this.displayName,
+            sourceName: this.sourceName,
+            kind: this.kind,
+            orderIndex: this.orderIndex,
+            sourceMissing: this.sourceMissing,
+            isBackground: this.isBackground,
             type: this.type,
             active: this.active,
             cels: this.cels.map(cel => cel.serialize())
@@ -301,6 +317,7 @@ export class TimelineModel {
         
         // 内部リスト名はまだ tracks を維持
         this.tracks = (options.tracks || []).map(track => new LaneModel(track));
+        this.layerSyncInitialized = this.tracks.length > 0;
         
         this.clipAssetFolders = (options.clipAssetFolders || []).map(folder => new ClipAssetFolderModel(folder));
         this.clipAssets = (options.clipAssets || []).map(asset => new ClipAssetModel(asset));
@@ -318,6 +335,47 @@ export class TimelineModel {
     getLaneForSourceLayer(sourceLayerId) {
         if (!sourceLayerId) return null;
         return this.tracks.find(t => t.sourceLayerId === sourceLayerId || t.layerId === sourceLayerId) || null;
+    }
+
+    getLaneDisplayName(lane, laneIndex = null) {
+        if (!lane) return 'Lane';
+        if (lane.displayName) return lane.displayName;
+        if (lane.isBackground) return 'Background';
+        if (lane.type === 'folder') return lane.sourceName || lane.name || 'Folder';
+        if (lane.kind === 'independent' && lane.name) return lane.name;
+        if (!Number.isInteger(laneIndex)) {
+            let visibleIndex = 0;
+            for (const track of this.tracks) {
+                if (track.type === 'folder' || track.isBackground) continue;
+                if (track === lane) {
+                    laneIndex = visibleIndex;
+                    break;
+                }
+                visibleIndex += 1;
+            }
+        }
+        if (Number.isInteger(laneIndex)) return `Lane ${laneIndex + 1}`;
+        return lane.name || 'Lane';
+    }
+
+    createIndependentLane(options = {}) {
+        const laneIndex = this.tracks.filter(t => t.type !== 'folder' && !t.isBackground).length;
+        const lane = new LaneModel({
+            ...options,
+            sourceLayerId: null,
+            layerId: null,
+            kind: 'independent',
+            name: options.name || `Lane ${laneIndex + 1}`,
+            type: options.type || 'raster',
+            orderIndex: Number.isInteger(options.orderIndex) ? options.orderIndex : this.tracks.length
+        });
+        const backgroundIndex = this.tracks.findIndex(t => t.isBackground);
+        if (backgroundIndex >= 0) {
+            this.tracks.splice(backgroundIndex, 0, lane);
+        } else {
+            this.tracks.push(lane);
+        }
+        return lane;
     }
 
     getClipById(clipId) {
@@ -431,7 +489,7 @@ export class TimelineModel {
 
         if (asset.internalLayers.length === 0) {
             const layer = this.createClipAssetInternalLayer({
-                name: options.name || 'Layer 1',
+                name: options.name || 'レイヤー1',
                 drawingSnapshotId: asset.drawingSnapshotId,
                 type: 'raster'
             });
@@ -451,7 +509,7 @@ export class TimelineModel {
 
         const nextNum = asset.internalLayers.length + 1;
         const layer = this.createClipAssetInternalLayer({
-            name: options.name || `Layer ${nextNum}`,
+            name: options.name || `レイヤー${nextNum}`,
             type: options.type || 'raster',
             drawingSnapshotId: options.drawingSnapshotId || null
         });
@@ -513,6 +571,19 @@ export class TimelineModel {
         return { ok: true, asset, layer };
     }
 
+    toggleClipAssetInternalLayerClipping(assetId, layerId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        const layer = asset.internalLayers.find(l => l.id === layerId);
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+
+        layer.clipping = layer.clipping !== true;
+        layer.updatedAt = Date.now();
+        asset.updatedAt = Date.now();
+        return { ok: true, asset, layer };
+    }
+
     /**
      * アセットの内部レイヤー順序を変更
      * direction: 'up' (添字を減らす = Inspector上で上へ) | 'down' (添字を増やす = 下へ)
@@ -550,6 +621,7 @@ export class TimelineModel {
             missingAssets: []
         };
 
+        const laneIdFilter = Array.isArray(options.laneIds) ? new Set(options.laneIds) : null;
         const groupMap = new Map(); // folderId -> group object
 
         // Uncategorizedグループの初期化 (必要になったら results.groups へ追加)
@@ -562,13 +634,17 @@ export class TimelineModel {
         };
 
         // 1. Timeline Y軸順（this.tracksの順）に走査
-        this.tracks.forEach((lane, laneIndex) => {
+        let visibleLaneIndex = 0;
+        this.tracks.forEach(lane => {
+            if (lane.type === 'folder' || lane.isBackground) return;
+            const laneIndex = visibleLaneIndex++;
+            if (laneIdFilter && !laneIdFilter.has(lane.id)) return;
             const clip = lane.getCelAtFrame(frameIndex);
             if (!clip) return;
 
             const laneInfo = {
                 laneId: lane.id,
-                laneName: lane.name,
+                laneName: this.getLaneDisplayName(lane, laneIndex),
                 laneIndex: laneIndex
             };
 
@@ -605,6 +681,7 @@ export class TimelineModel {
                 internalLayerCount: asset.internalLayers.length,
                 visibleInternalLayerCount: asset.internalLayers.filter(l => l.visible !== false).length,
                 isBlank: snapshot ? snapshot.isBlank === true : true,
+                visible: clip.visible !== false,
                 startFrame: clip.startFrame,
                 duration: clip.duration
             };
@@ -681,7 +758,7 @@ export class TimelineModel {
         // Phase 4z6: 初期内部レイヤーの追加
         asset.internalLayers = [
             this.createClipAssetInternalLayer({
-                name: options.layerName || 'Layer 1',
+                name: options.layerName || 'レイヤー1',
                 type: 'raster',
                 drawingSnapshotId: snapshot.id
             })
@@ -706,94 +783,6 @@ export class TimelineModel {
 
     isAssetShared(assetId) {
         return this.countAssetReferences(assetId) > 1;
-    }
-
-    /**
-     * クリップを独立化（Make Unique）する
-     * 参照しているアセットを複製し、自分だけの新しいアセットを参照するようにする。
-     */
-    makeClipAssetUnique(clipId) {
-        const entry = this.findClipEntry(clipId);
-        if (!entry) return { ok: false, reason: 'not-found' };
-
-        const clip = entry.clip;
-        if (!clip.assetId) return { ok: false, reason: 'no-asset' };
-
-        const originalAsset = this.getClipAsset(clip.assetId);
-        if (!originalAsset) return { ok: false, reason: 'asset-not-found' };
-
-        const originalSnapshot = this.getSnapshotForCel(clip);
-        if (!originalSnapshot) return { ok: false, reason: 'snapshot-not-found' };
-        this.ensureClipAssetInternalLayer(originalAsset.id, {
-            name: 'Layer 1',
-            drawingSnapshotId: originalAsset.drawingSnapshotId
-        });
-
-        // 1. スナップショットの複製
-        const newSnapshot = new DrawingSnapshotModel({
-            width: originalSnapshot.width,
-            height: originalSnapshot.height,
-            isBlank: originalSnapshot.isBlank, // Phase 4z: Blank状態を継承
-            // pixels は Uint8ClampedArray または Array なので slice でコピー
-            pixels: originalSnapshot.pixels ? (
-                originalSnapshot.pixels instanceof Uint8ClampedArray 
-                ? new Uint8ClampedArray(originalSnapshot.pixels) 
-                : [...originalSnapshot.pixels]
-            ) : null,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        });
-
-        // 2. アセットの複製
-        const newAsset = new ClipAssetModel({
-            name: `${originalAsset.name} copy`,
-            type: originalAsset.type,
-            folderId: originalAsset.folderId, // Phase 4z3: フォルダを継承
-            drawingSnapshotId: newSnapshot.id
-        });
-
-        // Phase 4z6: 内部レイヤーのディープコピー
-        newAsset.internalLayers = originalAsset.internalLayers.map(layer => {
-            return this.createClipAssetInternalLayer({
-                ...layer.serialize(),
-                id: createId(), // 新規ID
-                drawingSnapshotId: newSnapshot.id, // 複製後Snapshotへ
-                createdAt: Date.now(),
-                updatedAt: Date.now()
-            });
-        });
-
-        // 整合性補完（既存データで internalLayers が空だった場合など）
-        if (newAsset.internalLayers.length === 0) {
-            newAsset.internalLayers = [
-                this.createClipAssetInternalLayer({
-                    name: 'Layer 1',
-                    type: 'raster',
-                    drawingSnapshotId: newSnapshot.id
-                })
-            ];
-        }
-
-        // 3. モデルへ追加
-        this.drawingSnapshots.push(newSnapshot);
-        this.clipAssets.push(newAsset);
-
-        // 4. クリップの参照を更新
-        clip.assetId = newAsset.id;
-        
-        // 互換フィールドの更新
-        const rasterPixels = newSnapshot.pixels ? (
-            newSnapshot.pixels instanceof Uint8ClampedArray
-            ? new Uint8ClampedArray(newSnapshot.pixels)
-            : [...newSnapshot.pixels]
-        ) : null;
-        clip.rasterSnapshot = {
-            width: newSnapshot.width,
-            height: newSnapshot.height,
-            pixels: rasterPixels
-        };
-
-        return { ok: true, clip, asset: newAsset, snapshot: newSnapshot };
     }
 
     /**
@@ -893,32 +882,71 @@ export class TimelineModel {
         const reversedLayers = [...layers].reverse();
         const activeLayer = layers[activeIndex];
         const activeLayerId = activeLayer?.layerData?.id;
+        const existingBySourceLayerId = new Map();
+        const retainedUnlinkedLanes = [];
 
+        this.tracks.forEach((lane, index) => {
+            lane.orderIndex = Number.isInteger(lane.orderIndex) ? lane.orderIndex : index;
+            if (lane.sourceLayerId || lane.layerId) {
+                existingBySourceLayerId.set(lane.sourceLayerId || lane.layerId, lane);
+            } else {
+                retainedUnlinkedLanes.push(lane);
+            }
+        });
+
+        const allowInitialLayerImport = !this.layerSyncInitialized && this.tracks.length === 0;
+        const syncActiveFromLayerSystem = allowInitialLayerImport;
         const newTracks = reversedLayers.map(layer => {
             const layerData = layer.layerData;
             if (!layerData) return null;
+            if (layerData.isFolder) return null;
+            if (layerData.isBackground) return null;
 
             // 既存のレーンがあれば再利用
-            const existingLane = this.getLaneForSourceLayer(layerData.id);
+            const existingLane = existingBySourceLayerId.get(layerData.id);
             
             if (existingLane) {
-                existingLane.name = layerData.name;
+                existingLane.sourceName = layerData.name;
                 existingLane.type = layerData.isFolder ? 'folder' : 'raster';
-                existingLane.active = (layerData.id === activeLayerId);
+                if (syncActiveFromLayerSystem) {
+                    existingLane.active = (layerData.id === activeLayerId);
+                }
+                existingLane.kind = existingLane.kind || 'layer-linked';
+                existingLane.sourceMissing = false;
+                existingLane.isBackground = false;
                 return existingLane;
             } else {
+                if (!allowInitialLayerImport) return null;
                 // 新規作成 (LaneModel)
                 return new LaneModel({
                     sourceLayerId: layerData.id,
                     layerId: layerData.id,
                     name: layerData.name,
-                    type: layerData.isFolder ? 'folder' : 'raster',
-                    active: (layerData.id === activeLayerId)
+                    sourceName: layerData.name,
+                    kind: 'layer-linked',
+                    type: 'raster',
+                    active: syncActiveFromLayerSystem && (layerData.id === activeLayerId),
+                    isBackground: false
                 });
             }
         }).filter(Boolean);
 
-        this.tracks = newTracks;
+        const liveSourceIds = new Set(reversedLayers.map(layer => layer.layerData?.id).filter(Boolean));
+        const missingSourceLanes = this.tracks.filter(lane => {
+            const sourceLayerId = lane.sourceLayerId || lane.layerId;
+            if (!sourceLayerId || liveSourceIds.has(sourceLayerId)) return false;
+            return lane.cels.length > 0 || lane.kind === 'independent';
+        }).map(lane => {
+            lane.sourceMissing = true;
+            lane.active = false;
+            return lane;
+        });
+
+        this.tracks = [...newTracks, ...missingSourceLanes, ...retainedUnlinkedLanes];
+        this.tracks.forEach((lane, index) => {
+            lane.orderIndex = index;
+        });
+        this.layerSyncInitialized = true;
     }
 
     /**

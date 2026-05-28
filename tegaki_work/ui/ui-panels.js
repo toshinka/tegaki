@@ -212,6 +212,21 @@ export class UIController {
 
             const layerAddBtn = e.target.closest('#add-layer-btn');
             if (layerAddBtn) {
+                const animationTable = this.popupManager?.get?.('animationTable');
+                const hasAnimationContext = !!(
+                    animationTable?.model
+                    && (
+                        animationTable.model.tracks?.length > 0
+                        || animationTable.model.clipAssets?.length > 0
+                    )
+                );
+                if (hasAnimationContext) {
+                    if (animationTable.selectedCelId && typeof animationTable.addInternalLayer === 'function') {
+                        animationTable.addInternalLayer();
+                    }
+                    return;
+                }
+
                 if (this.layerManager) {
                     const referenceLayer = this.layerManager.getActiveLayer?.();
                     const result = this.layerManager.createLayer();
@@ -227,6 +242,18 @@ export class UIController {
             
             const folderAddBtn = e.target.closest('#add-folder-btn');
             if (folderAddBtn) {
+                const animationTable = this.popupManager?.get?.('animationTable');
+                const hasAnimationContext = !!(
+                    animationTable?.model
+                    && (
+                        animationTable.model.tracks?.length > 0
+                        || animationTable.model.clipAssets?.length > 0
+                    )
+                );
+                if (hasAnimationContext) {
+                    return;
+                }
+
                 if (this.layerManager && this.layerManager.createFolder) {
                     const referenceLayer = this.layerManager.getActiveLayer?.();
                     const result = this.layerManager.createFolder();

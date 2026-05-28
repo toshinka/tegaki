@@ -7,7 +7,7 @@
 
 ## 現在のフェーズ
 
-**Phase 4z21 — CAF Operation Authority Boundary 【完了】**
+**Phase 4z23 — Independent Lane Model Foundation 【Codex実装・確認中】**
 作業フォルダ：`tegaki_work`
 
 ---
@@ -23,6 +23,94 @@
 ---
 
 ## 直近の作業（最新が上）
+
+### 2026-05-27 Codex：Phase 4z23 Independent Lane Model Foundation
+- **CAF開閉UI再整理**: 左端の `+/-` 開閉ボタンを廃止し、CAFフォルダアイコン自体をクリックして通常Folder/OpenFolder SVGが切り替わる形へ変更。CAF内部カードはオレンジ寄りの面色を抑え、ふたばMaroon系の薄い中間色へ寄せた。
+- **CAF内部カード余白補正**: CAF枠右線と内部Layerカード右線が接触して見える状態を避けるため、内部Layerリスト右側に余白を追加。
+- **Scope反映のCAF表示補修**: Layer PanelのCAF一覧生成にアニメテーブルのScopeを渡し、`LANE` ではアクティブLane、`SET` ではチェックLaneだけを `getFrameAssetTree()` が走査するようにした。アクティブLane/Frameが空の時に別LaneのCAFがLayer Panelへ出る経路を抑制。
+- **CAF開閉アイコン統一**: CAFを開いた時のフォルダアイコンを、通常フォルダで使っている共通 `folderOpen` SVGへ統一。
+- **ゴースト周辺調査メモ**: Vキー変形やアルバム保存は現状LayerSystemの現在状態を入口にしており、ClipAsset/CAF全体を正規永続化する経路は未確立。CAF安定後に保存/復元・Vキー操作対象を明示Phase化する。
+- **CAF開閉と幅調整**: Layer PanelのCAF行へ開閉ボタンを追加し、非アクティブCAFでも内部Layerを展開/収納できるようにした。CAF/内部Layerカードは右側スクロールレーン手前まで少し広げ、内部Layerの常時オレンジ感を弱めてアクティブカードの識別を優先した。
+- **CAF内部Layer表示の所属補正**: Layer Panelの内部LayerミラーをCAF一覧とは別ブロックで表示する構造をやめ、選択中Clipを含むCAFグループ直下にだけ差し込むよう変更。CAF1/CAF2を切り替えた時に、CAF2配下へ両方の内部Layerが展開されて見える経路を抑制。
+- **CAF選択強調の整理**: 非選択CAFは細枠、選択CAFだけ太枠にし、複数CAFが同時にアクティブ表示されているように見える状態を軽減。
+- **CAF名の連番化**: 新規ClipAsset作成時に `CAF1` 固定表示へ落ちないよう、`CAF1`, `CAF2`... の空き番号でClipAssetFolderを作り、Blank Clip/初回SeedのAssetへ割り当てるようにした。
+- **Clip選択時のFrame/Lane同期**: 既存Clipクリック、CAFヘッダークリック、リタイミング/移動開始時に `selectedCelId` / `activeLaneId` / `currentFrame` / `track.active` を同時更新する `_activateClipEntry()` を追加。Frame4のClipを選んでもFrame1のPreviewが混ざる経路を抑制。
+- **Z軸選択の逆同期**: 通常 `↑/↓` でLayerSystem側のアクティブLayerが変わった時、アニメ作業Layerであれば対応するClipAsset内部Layerを `selectedInternalLayerId` へ反映する橋渡しを追加。Lane移動とは分離しつつ、Z軸選択の表示同期を進めた。
+- **Z軸操作からY軸への逆流抑制**: `syncWithLayers()` が通常LayerSystemのアクティブLayerを毎回Laneの `active` に再反映していたため、初回Layer輸入時だけに限定した。これにより通常の `↑/↓` レイヤー選択がLane選択へ漏れる経路を切り、Lane移動は `Alt + ↑/↓` に寄せる。
+- **UNIQUE導線撤去**: Clipごとの小箱化が進み `UNIQUE` ボタンの役割が薄れたため、アニメテーブルヘッダーの `UNIQUE` ボタン、イベント接続、専用CSS、未使用の `makeClipAssetUnique()` を削除した。共有Asset判定は既存Clip表示の互換情報として残す。
+- **CAF内部Layer選択と描画先同期**: CAF内部Layerミラー/Inspectorで選択した内部Layerに対応する一時作業Layerを、LayerSystem側のアクティブLayerにも同期するようにした。レイヤー2を選んだのにレイヤー1へ描かれる経路を抑制。
+- **テーブル非表示時の描画保存補修**: アニメテーブルを閉じていても選択Clipがある場合は、描画完了時に作業Layer内容をClipAssetへ保存し、Layer Panel更新を要求するようにした。
+- **内部Layer選択維持**: ClipAsset再キャプチャ時に内部Layer IDが再生成されても、選択中だった内部Layerの配列位置を引き継ぎ、描画後に選択が先頭へ戻る経路を抑制。
+- **サムネイル誤反映補修**: Layer Panelの `thumbnail:updated` 反映先を、全レイヤー逆順indexではなく `data-layer-index` 一致で探すよう変更。アニメ作業Layerを非表示にした状態で、隠れたLayerのサムネイルが背景カードへ表示される経路を抑制。
+- **アニメ文脈後の右側+誤流入抑制**: アニメテーブルを一度開いてモデル/ClipAssetが存在する状態では、テーブルを閉じていても右サイドバーのレイヤー `+` / フォルダ `+` を通常Layer/Folder作成へ流さないようにした。CAF外通常Layerが次回表示時にCAFへ吸われる/ゴースト化する入口を絞る。
+- **Lane同期の初回輸入化**: `syncWithLayers()` に初回同期済みフラグを追加し、アニメテーブルを一度開いた後に通常Layerを増やしても次回表示時に新規Laneへ輸入しないようにした。
+- **CAF内部カード移植Step1**: CAF内部Layerミラーの幅を通常Layerカードと同じ160pxへ戻し、可視ボタンを既存 `UI_ICONS.eye/eyeOff` に統一。ホバーリネームはカード面から外し、紙クリップを内部Layerの即時クリッピング操作へ寄せた。
+- **Layer Panel右側+のアニメ分岐**: アニメテーブル表示中は右サイドバーのレイヤー `+` を通常Layer作成へ流さず、選択中ClipAssetの内部Layer追加として扱うよう変更。未選択時は通常作業Layerを増やさず no-op。
+- **アニメ中の通常フォルダ追加抑制**: アニメテーブル表示中のフォルダ `+` は通常Layer Panel側のFolder作成へ流さないようにした。CAF内部Folderは未設計のため、現時点では誤った通常Folderを作らないことを優先。
+- **内部Layerカード再整形**: CAF配下の内部Layerミラーを細いデバッグ表示から、通常Layerカードに近いサムネイル/透明度/名前/クリッピング/可視ボタン構成へ寄せた。
+- **内部Layer名の英字混在補修**: `ensureClipAssetInternalLayer()` と内部Layer追加時の既定名を `レイヤー1` / `レイヤーN` に統一。
+- **右端ボタン重なり補修**: アニメテーブル内の閉じるボタンだけ `position: static` に戻し、`LIB` ボタンと重ならないようにした。
+- **通常Layer追加のLane漏れ停止**: `syncWithLayers()` は初期同期後に新規通常Layer/FolderからLaneを自動生成しないよう変更。Lane追加はアニメテーブル内のLane `+` に寄せる。
+- **CAF表示再整理**: CAF行を通常フォルダ風に戻し、`CAF1` 名、左フォルダアイコン、右側Lane表示へ変更。内部LayerミラーにはSnapshotサムネイルを表示するようにした。
+- **ヘッダー渋滞整理**: `ANIMATION TABLE` 表記を削除し、COPY/PASTEをSVGアイコンボタン化。Asset Libraryボタンは `LIB` へ短縮し、右端の閉じるボタンとの重なりを軽減。
+- **通常フォルダのY軸漏れ抑制**: 通常Layer Panel側で作った通常フォルダを、アニメテーブルのLane一覧/Timelineグリッドから除外。通常フォルダはX/Y盤面ではなくClip内部Z軸側の概念として扱う方針に寄せた。
+- **CAF配下表示の整理**: アニメClip選択中は通常作業レイヤー行をLayer Panelに出さず、CAFの下に内部Layerミラーだけを表示するようにした。内部Layerミラーには左アクセント線を追加し、CAF配下に入っていることを示す。
+- **初回CAF同期補修**: アニメテーブル初回表示直後にLayer Panel同期を明示発火し、Frame移動やLane移動を挟まないとCAFが出ない経路を抑制。
+- **暫定UI整理**: `CAPTURE` / `AUTO` / `EDIT` は現在の自動保存・Scope設計ではボタンとして意味が曖昧になったため、UIから退避。内部メソッドは互換のため残す。
+- **アニメテーブル外観調整**: 濃いMaroon帯をやめ、他パネルに近い淡いヘッダーへ変更。中央操作の文字重なりを減らし、`ASSETS` 表記は `ASSET` へ短縮。
+- **3Dマトリクス方針追記**: `PHASE4Z_BOUNDARY.md` に、X=Frame / Y=Lane / Z=ClipAsset内部Layer/Folder の3次元マトリクス概念を追記。BackgroundはX/Y軸のLaneではなく、常にZ軸最下層の基底要素として扱う方針を明文化。
+- **Background Lane除外**: アニメテーブルのLane一覧/Timelineグリッド/Preview合成/Clip配置対象からBackgroundを除外。独立Lane追加時もBackgroundより下ではなく、Backgroundの手前へ挿入するようにした。
+- **CAF Lane表記補正**: `getFrameAssetTree()` のLane番号計算からBackground/Folderを除外し、Layer PanelのCAF補助表示が実際のアニメLane番号へ寄りやすいよう補正。
+- **Layer Panel重複表示抑制**: アニメClip選択中は、Clip同期で余った非表示の通常作業レイヤー行をLayer Panelへ出さないようにした。内部Layerミラー側を正本に寄せ、通常作業バッファの残骸表示を減らす。
+- **Blank Clip初期名整理**: 新規Blank ClipAssetの初期内部Layer名を `Layer 1` から `レイヤー1` へ変更し、英字/カナ混在を抑制。
+- **アニメ操作キー整理**: 空セルへのClip作成と既存Clip削除を `Alt + クリック` のトグルへ統一。`Alt + ↑/↓` でアクティブLaneを移動し、通常レイヤーパネルの上下キー操作と分離する足場を追加。
+- **Preview中CAPTURE補修**: Previewが実レイヤーを一時的に `visible=false` にするためCAPTURE対象が空になる問題を修正。ClipAssetへの取り込みは一時表示状態ではなく `layerData.visible` を基準にした。
+- **描画完了時のClip保存**: 選択Clipがある状態では、AUTOチェックの有無に関わらず描画完了時に作業レイヤーを選択ClipAssetへ保存するよう変更。Preview中でも描画結果がClipプレビューへ反映される足場にした。
+- **空Frame表示の抑制**: 対象Lane/FrameにClipがない場合、通常作業レイヤーをすべて非表示にし、Layer Panel側でもアニメテーブル表示中かつ選択Clipなしなら通常作業レイヤー行を出さないようにした。
+- **Frame移動前保存**: Frameヘッダー移動、左右キー移動、別Clip選択、再生開始前に、現在選択中Clipへ作業レイヤー内容を退避するようにした。これによりFrame2へ移った時にFrame1の描画が失われる経路を抑制。
+- **空セル作成の明示化**: 空セルの通常クリックでClipが作成される挙動を停止。既存Clipは通常クリックで選択、空セルへの新規Blank Clip作成と既存Clip削除は `Alt + クリック` のトグルに限定。
+- **Frame/Lane小箱化の暫定同期**: 選択中Laneを `activeLaneId` として保持し、Frame移動・Clip選択・Clip新規作成時に、対象ClipAssetの内部Layerスナップショットを通常作業レイヤーへ復元する橋渡しを追加。対象Lane/FrameにClipがない場合は作業レイヤーを空にして、前Frameの内容が残らないようにした。
+- **空Clipの作業レイヤー初期化**: 新規Blank ClipAssetを作った直後、作業レイヤー側も内部Layer 1枚相当へ同期するようにした。余った通常レイヤーは空にして非表示へ寄せる。
+- **Preview Scope補修**: `selectedCelId` があるだけでALLプレビューが選択Clip単独表示へ切り替わっていたため、Preview Scopeを正本にして、ALLは常に現在Frame全体を合成するよう修正。OnionもScopeに従う。
+- **Layer Panelミラー補修**: 選択Clipがない状態でAsset Library側の選択だけから `CLIP LAYERS` ミラーが残る経路を止めた。Layer Panelの内部Layerミラーはアニメテーブル上の選択Clipに紐づく場合だけ表示する。
+- **ClipAsset Z軸取り込み**: 初回Seed時に、Lane元レイヤー1枚ではなく、現在表示中の通常レイヤー群を1つのClipAsset内部Layer構造として取り込むよう変更。LaneはY軸、通常レイヤー群はClip内Z軸として扱う足場にした。
+- **新規Clip生成整理**: 別Frame/Laneへ新規作成するClipは、既存の表示中レイヤー束をコピーせず、Blank ClipAsset（内部Layer 1枚）から開始するよう修正。
+- **Capture整理**: `CAPTURE` はLane元レイヤー1枚ではなく、現在表示中の通常レイヤー束を選択ClipAssetの内部Layer群として更新するよう修正。これにより、LaneがZ軸側の単一レイヤーへ戻る挙動を抑制。
+- **内部Layer合成補正**: 複数内部Layerを持つClipAssetのPreviewでは、Lane元レイヤーのopacity/blendModeを重ね掛けせず、各内部Layerのopacity/blendModeを使って合成するよう補正。
+- **CAF/内部Layer即時操作整理**: `ClipInstance.visible` と `ClipAssetInternalLayer.clipping` をモデルへ追加し、Layer Panel上のCAF目アイコンでClip単位の表示/非表示、内部Layer紙クリップでクリッピングON/OFFを切り替えられるようにした。Scope SETとは別のClip表示制御として扱う。
+- **Clip移動後同期補修**: クリップを別Lane/Frameへドラッグ移動した直後に、`currentFrame` / `activeLaneId` / `selectedCelId` / 作業Layer復元を移動先へ同期するよう補修。移動直後にキャンバスとLayer Panelが別Frame/Laneを見てしまう経路を抑制。
+- **アニメテーブル非表示時同期補修**: アニメテーブルを閉じる前に選択Clipへ作業Layer内容を保存し、閉じた後にLayer Panelへ再同期通知を出すよう補修。
+- **ONION/PREVIEWフォーカス補修**: ONION/PREVIEWチェック後にチェックボックスへフォーカスが残り、左右キーでFrame移動できない経路を抑制。変更直後にblurし、この2つのチェックボックスに限り左右キー処理を通す。
+- **旧カードゴースト抑制**: ClipAsset同期に使う通常Layerへ `isAnimationWorkingLayer` を付与し、Layer Panelではアニメテーブルモデルが存在する間はその作業バッファ行を表示しないようにした。CAF内カードを正本に寄せ、CAF外の旧カードへD&D等を積まない方針。
+- **目的**: 4z22で確認した `syncWithLayers()` の強結合を、いきなり切断せずに弱めるため、通常Layerに存在しないLaneをモデル上で保持できる足場を追加。
+- **LaneModel拡張**: `displayName` / `sourceName` / `kind` / `orderIndex` / `sourceMissing` / `isBackground` を追加し、`sourceLayerId: null` のアニメ専用Laneを表現できるようにした。
+- **非破壊同期へ変更**: `syncWithLayers()` が毎回 `this.tracks = newTracks` で完全置換する構造を改め、独立Laneと、元Layerが消えてもClipを持つLaneを破棄しないようにした。
+- **表示名整理**: `TimelineModel.getLaneDisplayName()` を追加し、Timeline Y軸とAsset名生成で通常Layer名ではなくLane表示名を使うようにした。通常Folder/Backgroundは従来の意味を維持。
+- **最小UI追加**: アニメテーブルのLaneヘッダーへ `+` を追加し、`sourceLayerId: null` の独立Laneを手動追加できるようにした。追加LaneにはBlank Clipを置ける。
+- **安全策**: 独立Lane上のClipでは、実レイヤー由来の `CAPTURE` と `EDIT` はまだ成立しないため、EDITチェックを無効化し、CAPTUREは警告して中断する。
+- **スコープ制限**: Lane削除/並べ替えUI、保存形式の大変更、Layer Panel改修、Virtual Layer Panel、描画ターゲット切替は未実装。今回は独立Laneの生存性とBlank Clip配置に限定。
+- **確認**: `npm.cmd run build` 成功。生成された `dist/` 差分は成果物から除外する。
+
+### 2026-05-27 Gemini：Phase 4z22 Lane / CAF Dependency Audit (完了)
+- **依存関係の棚卸し**: `syncWithLayers()` および `sourceLayerId` の使用箇所を詳細に調査。Lane が通常レイヤーの数や順序に強力に縛られている現状を特定。
+- **操作別依存分析**: クリップ作成、キャプチャ、プレビュー等の主要操作における実レイヤー依存度を整理。
+- **リスクの明文化**: 同期解除に伴う「レイヤーパネルとの乖離」や「描画先レイヤーの喪失」といった Lane 独立化へ向けた課題を抽出。
+- **次Phase候補の提示**: 「Lane モデルの独立化」「表示インデックスの永続化」「ソースレイヤー抜きのクリップ生成」の 3 案を提案し、Codex/Gemini の役割分担を整理。
+- **報告書作成**: `task-gemini/phase4z22_report.md` を作成。
+- **確認**: 本フェーズは調査専用のため、コード変更なし。
+
+### 2026-05-27 Codex：Phase 4z境界ロック文書とPhase 4z22指示作成
+- **境界ロック文書追加**: `tegaki_work/PHASE4Z_BOUNDARY.md` を新規作成。CAF / Lane / ClipAsset / ClipInstance / Layer Panel の責務と、Geminiが触ってよい範囲・触ってはいけない範囲を明文化。
+- **方針固定**: CAF自体の作成・削除・移動・コピー・Frame/Lane移動はアニメテーブル正本。Layer Panelは現在Frameの反映表示とCAF内部編集の入口に限定。
+- **Layer Panel制限**: 以後、Layer Panel側でCAF自体のD&D / copy / delete / Lane移動UIを作らない。濃紺カード風やダッシュボード風のCAF表示再導入も禁止。
+- **Phase 4z22作成**: `task-gemini/phase4z22.md` を作成。次は実装ではなく、`syncWithLayers()` と `sourceLayerId` 依存を棚卸しし、Lane独立化へ向けた小Phase候補を出す調査専用Phaseとする。
+- **実装制限**: 4z22ではコード変更、CSS変更、Layer Panel DOM変更、Lane独立化本実装、保存形式変更、EventBus追加、SortableJS変更を行わない。
+
+### 2026-05-27 Codex：Phase 4z21確認と同期ループ補修
+- **Phase 4z21確認**: `_requestLayerPanelSync()` とアニメテーブル側の同期通知追加を確認。CAF自体の操作UIはLayer Panel側へ追加されておらず、SortableJS対象外のまま。
+- **補修**: `render()` 末尾で `_requestLayerPanelSync()` を呼ぶ実装は `render -> layer:panel-update-requested -> requestUpdate -> render` の更新ループになり得るため削除。
+- **補修**: 代わりにClip作成/削除、Frame変更、Paste、Clip移動、Duration変更、Asset Folder作成/リネーム/移動、内部Layer追加/削除/順序変更など構造変更箇所へ明示同期を追加・確認。
+- **確認**: Codex側でも `npm.cmd run build` 成功。生成された `dist/` 差分は成果物から除外する。
 
 ### 2026-05-24 Gemini：Phase 4z21 CAF Operation Authority Boundary (完了)
 - **権限境界の確立**: CAF/クリップの構造操作権限をアニメーションテーブル側に集約。レイヤーパネルは反映と内部編集のみを行う役割分担を明確化。
