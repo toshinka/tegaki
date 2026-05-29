@@ -81,7 +81,7 @@ export class SettingsPopup {
             this.popup.style.display = '';
 
             // 重要: スライダー等が存在しない場合は、DOMBuilder版（枠のみ）と判断して中身を構築する
-            if (!document.getElementById('pressure-correction-slider')) {
+            if (!document.getElementById('status-panel-toggle')) {
                 this._populateContent();
             }
         }
@@ -128,22 +128,22 @@ export class SettingsPopup {
 
             <div class="ui-tabs">
                 <button class="ui-tab-btn active" data-tab="settings">設定</button>
+                <button class="ui-tab-btn" data-tab="pen">ペン</button>
                 <button class="ui-tab-btn" data-tab="bucket">バケツ</button>
                 <button class="ui-tab-btn" data-tab="help">ショートカット</button>
             </div>
 
             <div id="tab-settings" class="ui-tab-content active">
                 <div class="setting-group">
-                    <div class="setting-label">筆圧補正（感度）</div>
-                    <div class="slider-container">
-                        <div class="slider" id="pressure-correction-slider">
-                            <div class="slider-track" id="pressure-track"></div>
-                            <div class="slider-handle" id="pressure-handle"></div>
-                        </div>
-                        <div class="slider-value" id="pressure-value">1.0</div>
+                    <div class="setting-label">ステータスパネル</div>
+                    <div class="status-panel-controls">
+                        <button id="status-panel-toggle">非表示</button>
+                        <span id="status-panel-state">表示中</span>
                     </div>
                 </div>
+            </div>
 
+            <div id="tab-pen" class="ui-tab-content">
                 <div class="setting-group">
                     <div class="setting-label">線補正（スムーズ度）</div>
                     <div class="slider-container">
@@ -156,19 +156,22 @@ export class SettingsPopup {
                 </div>
 
                 <div class="setting-group">
+                    <div class="setting-label">筆圧補正（感度）</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pressure-correction-slider">
+                            <div class="slider-track" id="pressure-track"></div>
+                            <div class="slider-handle" id="pressure-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pressure-value">1.0</div>
+                    </div>
+                </div>
+
+                <div class="setting-group">
                     <div class="setting-label">筆圧カーブ</div>
                     <div class="pressure-curve-selection">
                         <button class="pressure-curve-btn active" data-curve="linear">リニア</button>
                         <button class="pressure-curve-btn" data-curve="ease-in">軽め</button>
                         <button class="pressure-curve-btn" data-curve="ease-out">重め</button>
-                    </div>
-                </div>
-
-                <div class="setting-group">
-                    <div class="setting-label">ステータスパネル</div>
-                    <div class="status-panel-controls">
-                        <button id="status-panel-toggle">非表示</button>
-                        <span id="status-panel-state">表示中</span>
                     </div>
                 </div>
             </div>
@@ -600,20 +603,9 @@ export class SettingsPopup {
     }
 
     _applyPressureCurveUI(curve) {
-        const curveBtns = document.querySelectorAll('.pressure-curve-btn[data-curve]');
+        const curveBtns = this.popup.querySelectorAll('.pressure-curve-btn[data-curve]');
         curveBtns.forEach(btn => {
-            const btnCurve = btn.getAttribute('data-curve');
-            if (btnCurve === curve) {
-                btn.classList.add('active');
-                btn.style.background = 'rgba(207, 156, 151, 0.82)';
-                btn.style.borderColor = 'var(--futaba-medium)';
-                btn.style.color = 'var(--futaba-maroon)';
-            } else {
-                btn.classList.remove('active');
-                btn.style.background = 'rgba(255, 255, 238, 0.62)';
-                btn.style.borderColor = 'rgba(207, 156, 151, 0.78)';
-                btn.style.color = 'var(--futaba-maroon)';
-            }
+            btn.classList.toggle('active', btn.getAttribute('data-curve') === curve);
         });
     }
 

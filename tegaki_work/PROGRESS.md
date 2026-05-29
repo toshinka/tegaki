@@ -25,6 +25,7 @@
 ## 直近の作業（最新が上）
 
 ### 2026-05-27 Codex：Phase 4z23 Independent Lane Model Foundation
+- **CAF安定化優先のD&D境界補強**: アニメテーブルモデル/ClipAssetが存在する文脈では、旧通常Layer用のSortableJS D&Dを無効化。CAF内部D&Dは旧導線を流用せず、CAF/内部Folder構造が固まってから専用に再設計する方針へ寄せた。
 - **CAF開閉UI再整理**: 左端の `+/-` 開閉ボタンを廃止し、CAFフォルダアイコン自体をクリックして通常Folder/OpenFolder SVGが切り替わる形へ変更。CAF内部カードはオレンジ寄りの面色を抑え、ふたばMaroon系の薄い中間色へ寄せた。
 - **CAF内部カード余白補正**: CAF枠右線と内部Layerカード右線が接触して見える状態を避けるため、内部Layerリスト右側に余白を追加。
 - **Scope反映のCAF表示補修**: Layer PanelのCAF一覧生成にアニメテーブルのScopeを渡し、`LANE` ではアクティブLane、`SET` ではチェックLaneだけを `getFrameAssetTree()` が走査するようにした。アクティブLane/Frameが空の時に別LaneのCAFがLayer Panelへ出る経路を抑制。

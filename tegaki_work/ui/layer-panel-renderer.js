@@ -272,10 +272,8 @@ export class LayerPanelRenderer {
         const reversedActiveIndex = layers.length - 1 - activeIndex;
         const selectedLayerIds = new Set(this.layerSystem?.getSelectedLayerIds?.() || []);
         const animationTable = window.PopupManager?.get?.('animationTable');
-        const hideAnimationWorkingLayers = !!(
-            animationTable?.model &&
-            animationTable.model.tracks?.length > 0
-        );
+        const hasAnimationContext = this._hasAnimationContext(animationTable);
+        const hideAnimationWorkingLayers = hasAnimationContext;
         const hideWorkingLayersForEmptyAnimFrame = !!(
             animationTable?.isVisible &&
             animationTable?.model &&
@@ -322,7 +320,20 @@ export class LayerPanelRenderer {
         if (!this.sortable) {
             this.initializeSortable();
         }
+        if (this.sortable) {
+            this.sortable.option('disabled', hasAnimationContext);
+        }
         this._updateScrollState();
+    }
+
+    _hasAnimationContext(animationTable = window.PopupManager?.get?.('animationTable')) {
+        return !!(
+            animationTable?.model &&
+            (
+                (animationTable.model.tracks?.length || 0) > 0 ||
+                (animationTable.model.clipAssets?.length || 0) > 0
+            )
+        );
     }
 
     createFolderElement(folder, index, isActive, allLayers, isSelected = false) {
@@ -1474,6 +1485,7 @@ export class LayerPanelRenderer {
                 dragClass: 'sortable-drag',
                 chosenClass: 'sortable-chosen',
                 draggable: '.layer-item',
+                disabled: this._hasAnimationContext(),
                 forceFallback: true,
                 fallbackOnBody: true,
                 fallbackTolerance: 3,

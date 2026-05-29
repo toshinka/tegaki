@@ -12,6 +12,43 @@
  * ============================================================================
  */
 
+class LazyBrush {
+    constructor(radius = 8) {
+        this.radius = radius;
+        this.penX = null;
+        this.penY = null;
+    }
+
+    reset(x, y) {
+        this.penX = x;
+        this.penY = y;
+    }
+
+    update(x, y) {
+        if (this.penX === null) {
+            this.reset(x, y);
+            return { x, y, moved: true };
+        }
+        
+        // 従来の「剛体的なデッドゾーン（半径によるクランプ）」から、
+        // 描き始めの遅延（点のまま線が出ない現象）を解消するため、
+        // 設定値に基づく減衰（Lerp/指数移動平均）方式へアップグレードします。
+        // lazyRadius = 0 の場合は即時追従（damping = 1.0）
+        const damping = this.radius <= 0 ? 1.0 : 1 / (1 + this.radius * 0.3);
+        
+        const dx = x - this.penX;
+        const dy = y - this.penY;
+        
+        this.penX += dx * damping;
+        this.penY += dy * damping;
+        
+        // わずかでも移動していれば描画イベントを発火し、遅延感を取り除きます
+        const moved = Math.hypot(dx * damping, dy * damping) > 0.05;
+        
+        return { x: this.penX, y: this.penY, moved };
+    }
+}
+
 export class PointerHandler {
     /**
      * 要素にPointerEventハンドラをアタッチ
@@ -36,17 +73,36 @@ export class PointerHandler {
         } = options;
 
         const activePointers = new Map();
+        const lazyBrushes = new Map();
 
         /**
-         * 座標変換の分岐を撤廃
+         * 筆圧軽減・カーブ適用
+         * pressureCorrection: 補正係数 (0.1〜3.0)
+         * pressureCurve: 'linear' | 'ease-in' | 'ease-out'
+         */
+        function applyPressureCurve(p, curve) {
+            if (curve === 'ease-in')  return p * p;           // 軽め：弱押しで細く
+            if (curve === 'ease-out') return 1 - (1 - p)**2; // 重め：強押しでないと太くならない
+            return p; // linear
+        }
+
+        /**
+         * 座標変換の分岐を統合
          */
         function normalizeEvent(e) {
+            const sm = window.TegakiSettingsManager;
+            const rawPressure = e.pressure ?? 0.5;
+            const correction = sm ? (sm.get('pressureCorrection') ?? 1.0) : 1.0;
+            const curve = sm ? (sm.get('pressureCurve') ?? 'linear') : 'linear';
+            const corrected = Math.min(1.0, Math.max(0.0, rawPressure * correction));
+            const pressure = applyPressureCurve(corrected, curve);
+
             return {
                 pointerId: e.pointerId,
                 pointerType: e.pointerType,
                 clientX: e.clientX,
                 clientY: e.clientY,
-                pressure: e.pressure ?? 0.5,
+                pressure,
                 tiltX: e.tiltX ?? 0,
                 tiltY: e.tiltY ?? 0,
                 twist: e.twist ?? 0,
@@ -76,6 +132,17 @@ export class PointerHandler {
             if (e.button === 2 && e.pointerType !== 'pen') return;
 
             const info = normalizeEvent(e);
+
+            const lazyEnabled = window.TEGAKI_CONFIG?.pen?.lazyEnabled ?? true;
+            if (lazyEnabled) {
+                // 初期値は smoothing 中央値（0.5）→ radius=8 相当
+                const sm = window.TegakiSettingsManager;
+                const smoothing = sm ? (sm.get('smoothing') ?? 0.5) : 0.5;
+                const brush = new LazyBrush(smoothing * 16);
+                lazyBrushes.set(e.pointerId, brush);
+                brush.reset(info.clientX, info.clientY);
+            }
+
             activePointers.set(e.pointerId, info);
             window.lastPointerType = info.pointerType;
 
@@ -102,9 +169,32 @@ export class PointerHandler {
             
             for (const coalescedEvent of events) {
                 const info = normalizeEvent(coalescedEvent);
+                
+                let shouldTrigger = true;
+                const lazyEnabled = window.TEGAKI_CONFIG?.pen?.lazyEnabled ?? true;
+                if (lazyEnabled) {
+                    let brush = lazyBrushes.get(e.pointerId);
+                    if (!brush) {
+                        const sm = window.TegakiSettingsManager;
+                        const smoothing = sm ? (sm.get('smoothing') ?? 0.5) : 0.5;
+                        brush = new LazyBrush(smoothing * 16);
+                        lazyBrushes.set(e.pointerId, brush);
+                        brush.reset(info.clientX, info.clientY);
+                    }
+                    // スライダー値をリアルタイム反映（0.5→radius8 、範囲0〜16）
+                    const sm = window.TegakiSettingsManager;
+                    const smoothing = sm ? (sm.get('smoothing') ?? 0.5) : 0.5;
+                    brush.radius = smoothing * 16;
+
+                    const res = brush.update(info.clientX, info.clientY);
+                    info.clientX = res.x;
+                    info.clientY = res.y;
+                    shouldTrigger = res.moved;
+                }
+
                 activePointers.set(e.pointerId, info);
                 
-                if (handlers.move) {
+                if (shouldTrigger && handlers.move) {
                     handlers.move(info, coalescedEvent);
                 }
             }
@@ -117,6 +207,15 @@ export class PointerHandler {
         function onPointerUp(e) {
             const info = normalizeEvent(e);
 
+            const lazyEnabled = window.TEGAKI_CONFIG?.pen?.lazyEnabled ?? true;
+            if (lazyEnabled) {
+                const brush = lazyBrushes.get(e.pointerId);
+                if (brush && brush.penX !== null) {
+                    info.clientX = brush.penX;
+                    info.clientY = brush.penY;
+                }
+            }
+
             try {
                 e.target.releasePointerCapture(e.pointerId);
             } catch (err) {
@@ -128,6 +227,7 @@ export class PointerHandler {
             }
 
             activePointers.delete(e.pointerId);
+            lazyBrushes.delete(e.pointerId);
 
             if (preventDefault) {
                 e.preventDefault();
@@ -136,6 +236,15 @@ export class PointerHandler {
 
         function onPointerCancel(e) {
             const info = normalizeEvent(e);
+
+            const lazyEnabled = window.TEGAKI_CONFIG?.pen?.lazyEnabled ?? true;
+            if (lazyEnabled) {
+                const brush = lazyBrushes.get(e.pointerId);
+                if (brush && brush.penX !== null) {
+                    info.clientX = brush.penX;
+                    info.clientY = brush.penY;
+                }
+            }
 
             try {
                 e.target.releasePointerCapture(e.pointerId);
@@ -146,6 +255,7 @@ export class PointerHandler {
             }
 
             activePointers.delete(e.pointerId);
+            lazyBrushes.delete(e.pointerId);
 
             if (preventDefault) {
                 e.preventDefault();
