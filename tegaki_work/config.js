@@ -35,6 +35,7 @@ export const TEGAKI_CONFIG = {
         size: 10, 
         opacity: 0.85, 
         color: 0x800000,
+        lazyEnabled: true,
         pressure: {
             baselineCalibration: true,
             baselineSampleCount: 5,
