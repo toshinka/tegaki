@@ -4,8 +4,11 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_BOUNDARY.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_HANDOFF.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-gemini/phase4z22.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-gemini/phase4z22_report.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PEN_PROGRESS.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/proposals/GEMINI提案_ペン設定タブ新設_設定接続_実装計画書.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/proposals/implementation_plan.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/proposals/pen-improvement-proposal.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/proposals/GEMINI提案_ペン設定タブ新設_設定接続_実装計画書.md
 
 
 # GitHubURL — tegaki_work ファイル一覧
