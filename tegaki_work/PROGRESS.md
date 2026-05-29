@@ -5,7 +5,17 @@
 
 ---
 
-## 現在のフェーズ
+## フェーズ履歴
+
+**Phase 4z24 — Pen Settings Optimization & Stability Cleanup 【Gemini実装】**
+2026-05-29
+- **LazyBrush**: 座標に加えて「筆圧」の平滑化（Lerp）を実装。インク溜まりを解消。
+- **Pressure Curve**: コメントの誤り修正、および3乗ベースへの深化。
+- **Safeguards**: 描き始めの筆圧スパイク抑制ロジックを追加。
+- **System Cleanup**: 不要な `resize-slider.js` をアーカイブ。
+- **Diagnostics**: スパイク検知機能付き詳細ログを実装。
+- **Status**: Space+Pen ドラッグが移動操作であることを確認。
+
 
 **Phase 4z23 — Independent Lane Model Foundation 【Codex実装・確認中】**
 作業フォルダ：`tegaki_work`

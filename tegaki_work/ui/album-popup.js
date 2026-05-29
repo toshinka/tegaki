@@ -318,7 +318,7 @@ export class AlbumPopup {
 <title>Tegaki Album</title>
 <style>
 body{margin:0;background:#ffffee;color:#3a2018;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
-header{position:sticky;top:0;background:#f0e0d6;border-bottom:1px solid #cf9c97;padding:14px 18px;font-weight:700;color:#8b0000;}
+header{position:sticky;top:0;background:#f0e0d6;border-bottom:1px solid #b8706b;padding:14px 18px;font-weight:700;color:#8b0000;}
 main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;padding:18px;}
 .album-card{margin:0;background:#ffffee;border:1px solid #efc9c4;border-radius:6px;overflow:hidden;}
 .album-card img{display:block;width:100%;aspect-ratio:1/1;object-fit:contain;background:#ffffee;}

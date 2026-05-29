@@ -491,7 +491,7 @@ export class LayerPanelRenderer {
         thumbnailContainer.style.width = maxWidth + 'px';
         thumbnailContainer.style.height = maxHeight + 'px';
         thumbnailContainer.style.boxSizing = 'border-box';
-        thumbnailContainer.style.border = '1px solid #cf9c97';
+        thumbnailContainer.style.border = '1px solid #b8706b';
         thumbnailContainer.style.borderRadius = '2px';
         thumbnailContainer.style.overflow = 'hidden';
         thumbnailContainer.style.position = 'relative';

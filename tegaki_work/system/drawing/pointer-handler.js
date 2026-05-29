@@ -17,35 +17,50 @@ class LazyBrush {
         this.radius = radius;
         this.penX = null;
         this.penY = null;
+        this.pressure = null; // 筆圧の平滑化用
     }
 
-    reset(x, y) {
+    reset(x, y, pressure = 0.5) {
         this.penX = x;
         this.penY = y;
+        this.pressure = pressure;
     }
 
-    update(x, y) {
+    /**
+     * @param {number} x - 生のX座標
+     * @param {number} y - 生のY座標
+     * @param {number} rawPressure - 補正・カーブ適用後の筆圧
+     * @returns {Object} 補正後の座標と筆圧
+     */
+    update(x, y, rawPressure) {
         if (this.penX === null) {
-            this.reset(x, y);
-            return { x, y, moved: true };
+            this.reset(x, y, rawPressure);
+            return { x, y, pressure: rawPressure, moved: true };
         }
         
-        // 従来の「剛体的なデッドゾーン（半径によるクランプ）」から、
-        // 描き始めの遅延（点のまま線が出ない現象）を解消するため、
-        // 設定値に基づく減衰（Lerp/指数移動平均）方式へアップグレードします。
-        // lazyRadius = 0 の場合は即時追従（damping = 1.0）
-        const damping = this.radius <= 0 ? 1.0 : 1 / (1 + this.radius * 0.3);
-        
+        // --- 座標の平滑化 ---
         const dx = x - this.penX;
         const dy = y - this.penY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 0.0001) {
+            const damping = this.radius <= 0 ? 1.0 : Math.min(1.0, dist / (dist + this.radius));
+            this.penX += dx * damping;
+            this.penY += dy * damping;
+        }
+
+        // --- 筆圧の平滑化 (インク溜まり・スパイク防止) ---
+        // 指数移動平均を適用。0.15 (非常に滑らか) 〜 1.0 (即時)
+        // 手ブレ補正（radius）が強いほど、筆圧の変化も緩やかに追従させます
+        const pDamping = this.radius <= 0 ? 1.0 : Math.max(0.15, 1.0 - (this.radius / 256));
+        this.pressure += (rawPressure - this.pressure) * pDamping;
         
-        this.penX += dx * damping;
-        this.penY += dy * damping;
-        
-        // わずかでも移動していれば描画イベントを発火し、遅延感を取り除きます
-        const moved = Math.hypot(dx * damping, dy * damping) > 0.05;
-        
-        return { x: this.penX, y: this.penY, moved };
+        return { 
+            x: this.penX, 
+            y: this.penY, 
+            pressure: this.pressure, 
+            moved: dist > 0.0001 
+        };
     }
 }
 
@@ -75,14 +90,39 @@ export class PointerHandler {
         const activePointers = new Map();
         const lazyBrushes = new Map();
 
-        /**
-         * 筆圧軽減・カーブ適用
-         * pressureCorrection: 補正係数 (0.1〜3.0)
-         * pressureCurve: 'linear' | 'ease-in' | 'ease-out'
-         */
+        // [診断用] 液タブ等の入力トラブル解析用フラグ
+        // 開発者コンソールで window.TegakiPointerDebug = true にすると詳細ログが出ます
+        window.TegakiPointerDebug = false;
+
+        function logDiagnostic(type, e, info, smoothed = null) {
+            if (!window.TegakiPointerDebug) return;
+            
+            // [インク溜まり調査] 筆圧の急激な変化を検知
+            const rawP = e.pressure ?? 0.5;
+            const normP = info?.pressure ?? 0.5;
+            const isSpike = (type === 'down' && rawP > 0.8) || (type === 'move' && Math.abs(rawP - (window._lastRawP || 0.5)) > 0.4);
+            window._lastRawP = rawP;
+
+            console.log(`[PointerDiag] ${type}${isSpike ? ' 🔥SPIKE' : ''}:`, {
+                id: e.pointerId,
+                type: e.pointerType,
+                button: e.button,
+                buttons: e.buttons,
+                rawP: rawP.toFixed(3),
+                normP: normP.toFixed(3),
+                finalP: smoothed ? smoothed.pressure.toFixed(3) : normP.toFixed(3),
+                rawX: Math.round(e.clientX),
+                rawY: Math.round(e.clientY),
+                smX: smoothed ? Math.round(smoothed.x) : null,
+                smY: smoothed ? Math.round(smoothed.y) : null,
+                isPrimary: e.isPrimary
+            });
+        }
+
         function applyPressureCurve(p, curve) {
-            if (curve === 'ease-in')  return p * p;           // 軽め：弱押しで細く
-            if (curve === 'ease-out') return 1 - (1 - p)**2; // 重め：強押しでないと太くならない
+            // [案3] より極端でメリハリのあるカーブにするため、累乗を 2 -> 3 へ引き上げます
+            if (curve === 'ease-in')  return p * p * p;           // 重め：かなり強く押さないと太くならない
+            if (curve === 'ease-out') return 1 - (1 - p)**3;     // 軽め：少しの力で一気に太くなる
             return p; // linear
         }
 
@@ -113,35 +153,25 @@ export class PointerHandler {
         }
 
         function onPointerDown(e) {
-            // [指示書] タブレットペン入力の調査用ログを文字列化
-            if (window.TEGAKI_CONFIG?.debug) {
-                console.log('[PointerHandler] raw pointerdown', JSON.stringify({
-                    pointerType: e.pointerType,
-                    button: e.button,
-                    buttons: e.buttons,
-                    pressure: e.pressure,
-                    pointerId: e.pointerId,
-                    isPrimary: e.isPrimary,
-                    target: e.target?.tagName,
-                    id: e.target?.id,
-                    className: String(e.target?.className || '')
-                }));
-            }
-
+            const info = normalizeEvent(e);
+            
             // 右クリック除外（ペン以外の場合のみ除外する）
             if (e.button === 2 && e.pointerType !== 'pen') return;
 
-            const info = normalizeEvent(e);
-
             const lazyEnabled = window.TEGAKI_CONFIG?.pen?.lazyEnabled ?? true;
+            let smoothed = null;
             if (lazyEnabled) {
-                // 初期値は smoothing 中央値（0.5）→ radius=8 相当
                 const sm = window.TegakiSettingsManager;
                 const smoothing = sm ? (sm.get('smoothing') ?? 0.5) : 0.5;
-                const brush = new LazyBrush(smoothing * 16);
+                const brush = new LazyBrush(smoothing * 128);
                 lazyBrushes.set(e.pointerId, brush);
-                brush.reset(info.clientX, info.clientY);
+                smoothed = brush.update(info.clientX, info.clientY, info.pressure);
+                
+                // 平滑化後の筆圧を適用
+                info.pressure = smoothed.pressure;
             }
+
+            logDiagnostic('down', e, info, smoothed);
 
             activePointers.set(e.pointerId, info);
             window.lastPointerType = info.pointerType;
@@ -172,25 +202,30 @@ export class PointerHandler {
                 
                 let shouldTrigger = true;
                 const lazyEnabled = window.TEGAKI_CONFIG?.pen?.lazyEnabled ?? true;
+                let smoothed = null;
+
                 if (lazyEnabled) {
                     let brush = lazyBrushes.get(e.pointerId);
-                    if (!brush) {
-                        const sm = window.TegakiSettingsManager;
-                        const smoothing = sm ? (sm.get('smoothing') ?? 0.5) : 0.5;
-                        brush = new LazyBrush(smoothing * 16);
-                        lazyBrushes.set(e.pointerId, brush);
-                        brush.reset(info.clientX, info.clientY);
-                    }
-                    // スライダー値をリアルタイム反映（0.5→radius8 、範囲0〜16）
                     const sm = window.TegakiSettingsManager;
                     const smoothing = sm ? (sm.get('smoothing') ?? 0.5) : 0.5;
-                    brush.radius = smoothing * 16;
+                    
+                    if (!brush) {
+                        brush = new LazyBrush(smoothing * 128);
+                        lazyBrushes.set(e.pointerId, brush);
+                        brush.reset(info.clientX, info.clientY, info.pressure);
+                    }
+                    
+                    // スライダー値をリアルタイム反映（最大128）
+                    brush.radius = smoothing * 128;
 
-                    const res = brush.update(info.clientX, info.clientY);
-                    info.clientX = res.x;
-                    info.clientY = res.y;
-                    shouldTrigger = res.moved;
+                    smoothed = brush.update(info.clientX, info.clientY, info.pressure);
+                    info.clientX = smoothed.x;
+                    info.clientY = smoothed.y;
+                    info.pressure = smoothed.pressure;
+                    shouldTrigger = smoothed.moved;
                 }
+
+                logDiagnostic('move', coalescedEvent, info, smoothed);
 
                 activePointers.set(e.pointerId, info);
                 
