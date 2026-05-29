@@ -56,7 +56,8 @@ const QA_DEFAULT_PRESETS = {
 // カラースロット初期値 (各スロット12色: 上段6 + 下段6)
 const QA_DEFAULT_COLOR_SLOTS = [
     // COLOR 1: ふたばカラー + グレースケール
-    [0x800000, 0xaa5a56, 0xcf9c97, 0xe9c2ba, 0xf0e0d6, 0xffffee,
+    // [2026-05-29 改修] オーナー提供の正確なRGB値へ更新
+    [0x800000, 0x9c3836, 0xb8706b, 0xd4a8a1, 0xf0e0d6, 0xffffee,
      0xffffff, 0xcccccc, 0x999999, 0x666666, 0x333333, 0x000000],
     // COLOR 2: 暖色系
     [0xff0000, 0xff4400, 0xff8800, 0xffaa00, 0xffcc44, 0xffee88,
@@ -2228,12 +2229,22 @@ export class QuickAccessPopup {
                 return QA_DEFAULT_COLOR_SLOTS.map((s) => [...s]);
             }
 
+            // [2026-05-29 改修] 旧カラーコードを検知した場合、新パレットへ自動的に移行します
+            const legacyMap = {
+                0xaa5a56: 0x9c3836,
+                0xcf9c97: 0xb8706b,
+                0xe9c2ba: 0xd4a8a1
+            };
+
             // 各スロットの色数を12に正規化
             return parsed.map((slot, i) => {
                 if (!Array.isArray(slot) || slot.length !== 12) {
                     return [...QA_DEFAULT_COLOR_SLOTS[i]];
                 }
-                return slot.map((c) => Number(c) || 0);
+                return slot.map((c) => {
+                    const colorNum = Number(c) || 0;
+                    return legacyMap[colorNum] !== undefined ? legacyMap[colorNum] : colorNum;
+                });
             });
         } catch (error) {
             return QA_DEFAULT_COLOR_SLOTS.map((s) => [...s]);

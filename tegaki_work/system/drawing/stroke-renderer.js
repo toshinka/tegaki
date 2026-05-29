@@ -167,39 +167,43 @@ export class StrokeRenderer {
             ? this.calculateWidth(Math.max(0.1, pressure ?? 1.0), settings.size)
             : settings.size;
 
-        // [スプレー改修] スタンプの間隔や個数を Scatter 設定に同期
-        const scatterCount = Math.max(1, Math.floor(1 + scatter * 5)); 
-        const scatterRange = baseSize * (0.1 + scatter * 0.7); // 飛散範囲を 10% 〜 80% で可変
+        // [スプレー改修] 散布の均一性を向上
+        const scatterCount = Math.max(1, Math.floor(1 + scatter * 8)); 
+        const scatterRange = baseSize * (0.1 + scatter * 0.8); 
+
+        const isErase = settings.mode === 'airbrush-erase' || settings.mode === 'eraser';
 
         for (let i = 0; i < scatterCount; i++) {
             const sprite = new Sprite(texture);
             sprite.anchor.set(0.5);
 
-            // 座標を範囲内でランダムに散らす
+            // [指示書] 均一な円形散布のための計算
             const angle = Math.random() * Math.PI * 2;
             const dist = Math.sqrt(Math.random()) * scatterRange;
             sprite.position.set(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist);
             
             sprite.rotation = Math.random() * Math.PI * 2;
             
-            // Grain (粒の大きさ) 設定を反映
             const scaleMod = (0.5 + grain) * (0.8 + Math.random() * 0.4); 
             sprite.width = baseSize * scaleMod;
             sprite.height = baseSize * scaleMod;
 
-            sprite.tint = settings.mode === 'airbrush-erase' ? 0xffffff : (settings.color ?? 0x800000);
+            // [消しゴム対応] 削除モードなら純粋な白、通常なら描画色
+            sprite.tint = isErase ? 0xffffff : (settings.color ?? 0x800000);
             
-            // Flow (流量) 設定を反映。累積しやすいようにさらに調整
-            sprite.alpha = Math.max(0.001, Math.min(1, (settings.opacity ?? 1.0) * flow * 0.2));
+            // Flow 適用。
+            const alpha = Math.max(0.001, (settings.opacity ?? 1.0) * flow * 0.15);
+            sprite.alpha = alpha;
             
-            sprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'normal';
+            // 重要：各粒子（dab）単位でブレンドモードを指定する
+            sprite.blendMode = isErase ? 'erase' : 'normal';
+            
             container.addChild(sprite);
         }
     }
 
     _getAirbrushTexture() {
         if (this.airbrushTexture) {
-            // [スプレー改修] 常に最新の設定でテクスチャを生成し直すためのフラグチェック
             const sm = window.TegakiSettingsManager;
             const grain = sm ? (sm.get('airbrushGrain') ?? 0.5) : 0.5;
             if (this._lastGrain === grain) return this.airbrushTexture;
@@ -219,31 +223,34 @@ export class StrokeRenderer {
 
         ctx.clearRect(0, 0, size, size);
         
-        // --- 1. ベースのグラデーション ---
+        // --- 1. 中心部を濃くし、周辺を劇的に淡くする（黒ずみ・灰色化対策） ---
         const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
-        gradient.addColorStop(0.0, 'rgba(255, 255, 255, 0.8)');
-        gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.3)');
-        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.08)');
-        gradient.addColorStop(0.8, 'rgba(255, 255, 255, 0.02)');
+        gradient.addColorStop(0.0, 'rgba(255, 255, 255, 0.9)');
+        gradient.addColorStop(0.15, 'rgba(255, 255, 255, 0.4)');
+        gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.1)');
+        gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.02)');
         gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
         
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, size, size);
 
-        // --- 2. ノイズ（粒状感）の反映 ---
+        // --- 2. ノイズの最適化 ---
         const imageData = ctx.getImageData(0, 0, size, size);
         const data = imageData.data;
         for (let i = 0; i < data.length; i += 4) {
-            // grain 値が小さいほどノイズを細かく、大きいほど粗く
-            const noiseBase = 1.0 - (grain * 0.5);
-            const noise = Math.random() < noiseBase ? (0.8 + Math.random() * 0.2) : (Math.random() * 0.4);
+            // 中心から遠いほどノイズを間引いてボケを綺麗に
+            const pixX = (i / 4) % size;
+            const pixY = Math.floor((i / 4) / size);
+            const distRatio = Math.hypot(pixX - center, pixY - center) / center;
+
+            const noiseThreshold = 0.2 + (grain * 0.4);
+            const noise = Math.random() < noiseThreshold ? (0.6 + Math.random() * 0.4) : (Math.random() * 0.3);
+            
             data[i + 3] *= noise;
             
-            const x = (i / 4) % size;
-            const y = Math.floor((i / 4) / size);
-            const dist = Math.hypot(x - center, y - center) / center;
-            if (Math.random() < dist * 0.7) {
-                data[i + 3] *= 0.2;
+            // 周辺部の極薄いピクセルを完全に消して「汚れ」に見えるのを防ぐ
+            if (distRatio > 0.6 && data[i + 3] < 15) {
+                data[i + 3] = 0;
             }
         }
         ctx.putImageData(imageData, 0, 0);
@@ -424,7 +431,7 @@ export class StrokeRenderer {
         
         // 消しゴム・ペン・エアブラシ・ぼかしはライブ焼き込み側を正にする。
         // previewGraphics で重ね描きすると見た目と確定結果がずれるため描画しない。
-        if (mode === 'eraser' || mode === 'airbrush' || mode === 'blur') {
+        if (mode === 'eraser' || mode === 'airbrush' || mode === 'airbrush-erase' || mode === 'blur') {
             return graphics;
         }
 
