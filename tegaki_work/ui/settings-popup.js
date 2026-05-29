@@ -25,16 +25,17 @@ export class SettingsPopup {
         this.isVisible = false;
         this.initialized = false;
 
-        this.isDraggingPressure = false;
-        this.isDraggingSmoothing = false;
-
         this.activeSliderPointerId = null;
+        this.activeSliderType = null;
         this.popupDragCleanup = null;
 
         this.elements = {};
 
         this.currentPressure = 1.0;
         this.currentSmoothing = 0.5;
+        this.currentAirbrushFlow = 0.22;
+        this.currentAirbrushScatter = 0.5;
+        this.currentAirbrushGrain = 0.5;
 
         this.MIN_PRESSURE = 0.1;
         this.MAX_PRESSURE = 3.0;
@@ -80,7 +81,6 @@ export class SettingsPopup {
             this.popup.classList.remove('show');
             this.popup.style.display = '';
 
-            // 重要: スライダー等が存在しない場合は、DOMBuilder版（枠のみ）と判断して中身を構築する
             if (!document.getElementById('status-panel-toggle')) {
                 this._populateContent();
             }
@@ -115,7 +115,6 @@ export class SettingsPopup {
     _populateContent() {
         if (!this.popup) return;
 
-        // DOMBuilderがあれば閉じるボタンを利用、なければ自前で構築
         const closeBtnHtml = window.DOMBuilder
             ? window.DOMBuilder.createCloseButton('settings-popup').outerHTML
             : `<button class="ui-close-button ui-close-button--medium popup-close-btn" data-action="close-popup" data-target="settings-popup">
@@ -129,6 +128,7 @@ export class SettingsPopup {
             <div class="ui-tabs">
                 <button class="ui-tab-btn active" data-tab="settings">設定</button>
                 <button class="ui-tab-btn" data-tab="pen">ペン</button>
+                <button class="ui-tab-btn" data-tab="spray">スプレー</button>
                 <button class="ui-tab-btn" data-tab="bucket">バケツ</button>
                 <button class="ui-tab-btn" data-tab="help">ショートカット</button>
             </div>
@@ -173,6 +173,44 @@ export class SettingsPopup {
                         <button class="pressure-curve-btn" data-curve="ease-in">軽め</button>
                         <button class="pressure-curve-btn" data-curve="ease-out">重め</button>
                     </div>
+                </div>
+            </div>
+
+            <div id="tab-spray" class="ui-tab-content">
+                <div class="setting-group">
+                    <div class="setting-label">流量 (Flow)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="airbrush-flow-slider">
+                            <div class="slider-track" id="airbrush-flow-track"></div>
+                            <div class="slider-handle" id="airbrush-flow-handle"></div>
+                        </div>
+                        <div class="slider-value" id="airbrush-flow-value">0.22</div>
+                    </div>
+                    <div class="setting-description">1発あたりのインク量。低いと塗り重ねによる累積が活きます。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">飛散 (Scatter)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="airbrush-scatter-slider">
+                            <div class="slider-track" id="airbrush-scatter-track"></div>
+                            <div class="slider-handle" id="airbrush-scatter-handle"></div>
+                        </div>
+                        <div class="slider-value" id="airbrush-scatter-value">0.50</div>
+                    </div>
+                    <div class="setting-description">粒子の広がり。大きいほど広範囲にパラパラと散ります。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">粒の大きさ (Grain)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="airbrush-grain-slider">
+                            <div class="slider-track" id="airbrush-grain-track"></div>
+                            <div class="slider-handle" id="airbrush-grain-handle"></div>
+                        </div>
+                        <div class="slider-value" id="airbrush-grain-value">0.50</div>
+                    </div>
+                    <div class="setting-description">粒子1つ1つのサイズ。小さいと煙のような霧になります。</div>
                 </div>
             </div>
 
@@ -238,17 +276,9 @@ export class SettingsPopup {
                     <div class="help-item"><span class="help-label">画像・動画出力</span><span class="help-key">Ctrl + E</span></div>
                     <div class="help-item"><span class="help-label">クイックアクセス</span><span class="help-key">Q</span></div>
                 </div>
-
-                <div style="margin-top: 20px; padding: 10px; background: rgba(255, 140, 66, 0.08); border: 1px solid rgba(255, 140, 66, 0.2); border-radius: 6px; font-size: 11px; color: var(--text-primary); line-height: 1.6;">
-                    <b style="color: #ff6600;">✨ 変形モード(V) の小技:</b><br>
-                    ・<b>矢印キー:</b> 1pxずつ微調整<br>
-                    ・<b>H キー:</b> 左右反転<br>
-                    ・<b>Shift + H キー:</b> 上下反転
-                </div>
             </div>
         `;
 
-        // 閉じるボタンのイベント紐付け
         const closeBtn = this.popup.querySelector('.ui-close-button');
         if (closeBtn) {
             closeBtn.onclick = () => this.hide();
@@ -264,7 +294,6 @@ export class SettingsPopup {
         tabBtns.forEach(btn => {
             btn.onclick = () => {
                 const targetTab = btn.dataset.tab;
-
                 tabBtns.forEach(b => b.classList.toggle('active', b === btn));
                 contents.forEach(c => {
                     const isActive = c.id === `tab-${targetTab}`;
@@ -286,6 +315,21 @@ export class SettingsPopup {
             smoothingHandle: document.getElementById('smoothing-handle'),
             smoothingValue: document.getElementById('smoothing-value'),
 
+            airbrushFlowSlider: document.getElementById('airbrush-flow-slider'),
+            airbrushFlowTrack: document.getElementById('airbrush-flow-track'),
+            airbrushFlowHandle: document.getElementById('airbrush-flow-handle'),
+            airbrushFlowValue: document.getElementById('airbrush-flow-value'),
+
+            airbrushScatterSlider: document.getElementById('airbrush-scatter-slider'),
+            airbrushScatterTrack: document.getElementById('airbrush-scatter-track'),
+            airbrushScatterHandle: document.getElementById('airbrush-scatter-handle'),
+            airbrushScatterValue: document.getElementById('airbrush-scatter-value'),
+
+            airbrushGrainSlider: document.getElementById('airbrush-grain-slider'),
+            airbrushGrainTrack: document.getElementById('airbrush-grain-track'),
+            airbrushGrainHandle: document.getElementById('airbrush-grain-handle'),
+            airbrushGrainValue: document.getElementById('airbrush-grain-value'),
+
             bucketGapButtons: Array.from(document.querySelectorAll('[data-bucket-setting="gap"]')),
             bucketGapValue: document.getElementById('bucket-gap-value'),
 
@@ -298,20 +342,15 @@ export class SettingsPopup {
             bucketRefToggle: document.getElementById('bucket-ref-all-toggle'),
             bucketRefState: document.getElementById('bucket-ref-all-state')
         };
-
-        // インラインスタイル指定を削除 (CSS 側で一括管理)
     }
-
 
     initialize() {
         if (this.initialized) return;
-
         this._cacheElements();
         this._setupSliders();
         this._setupPopupDrag();
         this._setupButtons();
         this._loadSettings();
-
         this.initialized = true;
     }
 
@@ -322,54 +361,49 @@ export class SettingsPopup {
 
     _setupSliders() {
         const globalMoveHandler = (e) => {
-            if (!this.isDraggingPressure && !this.isDraggingSmoothing) return;
+            if (this.activeSliderPointerId !== e.pointerId) return;
+            if (!this.activeSliderType) return;
 
             e.preventDefault();
             e.stopPropagation();
 
-            if (this.isDraggingPressure && this.activeSliderPointerId === e.pointerId) {
-                const rect = this.elements.pressureSlider.getBoundingClientRect();
-                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                const value = this.MIN_PRESSURE + ((this.MAX_PRESSURE - this.MIN_PRESSURE) * percent / 100);
-                this._updatePressureSlider(value);
-            }
+            const sliderType = this.activeSliderType;
+            const sliderElement = this.elements[`${sliderType}Slider`];
+            if (!sliderElement) return;
 
-            if (this.isDraggingSmoothing && this.activeSliderPointerId === e.pointerId) {
-                const rect = this.elements.smoothingSlider.getBoundingClientRect();
-                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                const value = this.MIN_SMOOTHING + ((this.MAX_SMOOTHING - this.MIN_SMOOTHING) * percent / 100);
-                this._updateSmoothingSlider(value);
-            }
+            const rect = sliderElement.getBoundingClientRect();
+            const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+            
+            let min = 0, max = 1.0;
+            if (sliderType === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
+            else if (sliderType === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
+            else if (sliderType === 'airbrushFlow') { min = 0.01; max = 1.0; }
+            else if (sliderType === 'airbrushScatter') { min = 0.0; max = 1.0; }
+            else if (sliderType === 'airbrushGrain') { min = 0.1; max = 2.0; }
 
+            const value = min + ((max - min) * percent / 100);
+            this._updateGenericSlider(sliderType, value);
         };
 
         const globalUpHandler = (e) => {
             if (this.activeSliderPointerId !== e.pointerId) return;
 
-            if (this.isDraggingPressure) {
-                if (this.elements.pressureHandle.releasePointerCapture) {
-                    try {
-                        this.elements.pressureHandle.releasePointerCapture(e.pointerId);
-                    } catch (err) {}
+            const type = this.activeSliderType;
+            if (type) {
+                const handle = this.elements[`${type}Handle`];
+                if (handle?.releasePointerCapture) {
+                    try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
                 }
+                
+                let settingKey = type;
+                if (type === 'pressure') settingKey = 'pressureCorrection';
                 if (this.settingsManager) {
-                    this.settingsManager.set('pressureCorrection', this.currentPressure);
+                    const val = this[`current${type.charAt(0).toUpperCase() + type.slice(1)}`];
+                    this.settingsManager.set(settingKey, val);
                 }
             }
 
-            if (this.isDraggingSmoothing) {
-                if (this.elements.smoothingHandle.releasePointerCapture) {
-                    try {
-                        this.elements.smoothingHandle.releasePointerCapture(e.pointerId);
-                    } catch (err) {}
-                }
-                if (this.settingsManager) {
-                    this.settingsManager.set('smoothing', this.currentSmoothing);
-                }
-            }
-
-            this.isDraggingPressure = false;
-            this.isDraggingSmoothing = false;
+            this.activeSliderType = null;
             this.activeSliderPointerId = null;
         };
 
@@ -377,111 +411,88 @@ export class SettingsPopup {
         document.addEventListener('pointerup', globalUpHandler, { capture: true });
         document.addEventListener('pointercancel', globalUpHandler, { capture: true });
 
-        this._globalMoveHandler = globalMoveHandler;
-        this._globalUpHandler = globalUpHandler;
+        const setupSliderEvents = (type) => {
+            const slider = this.elements[`${type}Slider`];
+            const handle = this.elements[`${type}Handle`];
+            if (!slider || !handle) return;
 
-        this.elements.pressureHandle.addEventListener('pointerdown', (e) => {
-            this.isDraggingPressure = true;
-            this.activeSliderPointerId = e.pointerId;
-            this.elements.pressureHandle.style.cursor = 'grabbing';
+            handle.addEventListener('pointerdown', (e) => {
+                this.activeSliderType = type;
+                this.activeSliderPointerId = e.pointerId;
+                if (handle.setPointerCapture) {
+                    try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+                }
+                e.preventDefault();
+                e.stopPropagation();
+            });
 
-            if (this.elements.pressureHandle.setPointerCapture) {
-                try {
-                    this.elements.pressureHandle.setPointerCapture(e.pointerId);
-                } catch (err) {}
-            }
+            slider.addEventListener('pointerdown', (e) => {
+                if (e.target === handle) return;
+                this.activeSliderType = type;
+                this.activeSliderPointerId = e.pointerId;
+                const rect = slider.getBoundingClientRect();
+                const percent = ((e.clientX - rect.left) / rect.width) * 100;
+                
+                let min = 0, max = 1.0;
+                if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
+                else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
+                else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
+                else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
+                else if (type === 'airbrushGrain') { min = 0.1; max = 2.0; }
 
-            e.preventDefault();
-            e.stopPropagation();
-        });
+                const value = min + ((max - min) * percent / 100);
+                this._updateGenericSlider(type, value);
+                
+                let settingKey = type;
+                if (type === 'pressure') settingKey = 'pressureCorrection';
+                this.settingsManager?.set(settingKey, value);
+            });
+        };
 
-        this.elements.smoothingHandle.addEventListener('pointerdown', (e) => {
-            this.isDraggingSmoothing = true;
-            this.activeSliderPointerId = e.pointerId;
-            this.elements.smoothingHandle.style.cursor = 'grabbing';
-
-            if (this.elements.smoothingHandle.setPointerCapture) {
-                try {
-                    this.elements.smoothingHandle.setPointerCapture(e.pointerId);
-                } catch (err) {}
-            }
-
-            e.preventDefault();
-            e.stopPropagation();
-        });
-
-        this.elements.pressureSlider.addEventListener('pointerdown', (e) => {
-            if (e.target === this.elements.pressureHandle) return;
-            const rect = this.elements.pressureSlider.getBoundingClientRect();
-            const percent = ((e.clientX - rect.left) / rect.width) * 100;
-            const value = this.MIN_PRESSURE + ((this.MAX_PRESSURE - this.MIN_PRESSURE) * percent / 100);
-            this._updatePressureSlider(value);
-            if (this.settingsManager) {
-                this.settingsManager.set('pressureCorrection', this.currentPressure);
-            }
-        });
-
-        this.elements.smoothingSlider.addEventListener('pointerdown', (e) => {
-            if (e.target === this.elements.smoothingHandle) return;
-            const rect = this.elements.smoothingSlider.getBoundingClientRect();
-            const percent = ((e.clientX - rect.left) / rect.width) * 100;
-            const value = this.MIN_SMOOTHING + ((this.MAX_SMOOTHING - this.MIN_SMOOTHING) * percent / 100);
-            this._updateSmoothingSlider(value);
-            if (this.settingsManager) {
-                this.settingsManager.set('smoothing', this.currentSmoothing);
-            }
-        });
-
+        ['pressure', 'smoothing', 'airbrushFlow', 'airbrushScatter', 'airbrushGrain'].forEach(setupSliderEvents);
     }
 
-    _updatePressureSlider(value) {
-        this.currentPressure = Math.max(this.MIN_PRESSURE, Math.min(this.MAX_PRESSURE, value));
-        const percent = ((this.currentPressure - this.MIN_PRESSURE) / (this.MAX_PRESSURE - this.MIN_PRESSURE)) * 100;
+    _updateGenericSlider(type, value) {
+        let min = 0, max = 1.0;
+        if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
+        else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
+        else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
+        else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
+        else if (type === 'airbrushGrain') { min = 0.1; max = 2.0; }
 
-        this.elements.pressureTrack.style.width = percent + '%';
-        this.elements.pressureHandle.style.left = percent + '%';
-        this.elements.pressureValue.textContent = this.currentPressure.toFixed(2);
+        const val = Math.max(min, Math.min(max, value));
+        this[`current${type.charAt(0).toUpperCase() + type.slice(1)}`] = val;
+
+        const percent = ((val - min) / (max - min)) * 100;
+        const track = this.elements[`${type}Track`];
+        const handle = this.elements[`${type}Handle`];
+        const display = this.elements[`${type}Value`];
+
+        if (track) track.style.width = percent + '%';
+        if (handle) handle.style.left = percent + '%';
+        if (display) display.textContent = val.toFixed(2);
 
         if (this.eventBus) {
-            this.eventBus.emit('settings:pressure-correction', { value: this.currentPressure });
-        }
-    }
-
-    _updateSmoothingSlider(value) {
-        this.currentSmoothing = Math.max(this.MIN_SMOOTHING, Math.min(this.MAX_SMOOTHING, value));
-        const percent = ((this.currentSmoothing - this.MIN_SMOOTHING) / (this.MAX_SMOOTHING - this.MIN_SMOOTHING)) * 100;
-
-        this.elements.smoothingTrack.style.width = percent + '%';
-        this.elements.smoothingHandle.style.left = percent + '%';
-        this.elements.smoothingValue.textContent = this.currentSmoothing.toFixed(2);
-
-        if (this.eventBus) {
-            this.eventBus.emit('settings:smoothing', { value: this.currentSmoothing });
+            let eventName = `settings:${type.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
+            if (type === 'pressure') eventName = 'settings:pressure-correction';
+            this.eventBus.emit(eventName, { value: val });
         }
     }
 
     _updateBucketGapSlider(value) {
         const rounded = Math.round(Math.max(0, Math.min(3, value)));
         this.currentBucketGap = rounded;
-
         this._syncBucketLevelButtons(this.elements.bucketGapButtons, rounded);
         if (this.elements.bucketGapValue) this.elements.bucketGapValue.textContent = rounded + 'px';
-
-        if (this.eventBus) {
-            this.eventBus.emit('settings:bucket-gap-close', { value: rounded });
-        }
+        if (this.eventBus) this.eventBus.emit('settings:bucket-gap-close', { value: rounded });
     }
 
     _updateBucketUnderpaintSlider(value) {
         const rounded = Math.round(Math.max(0, Math.min(4, value)));
         this.currentBucketUnderpaint = rounded;
-
         this._syncBucketLevelButtons(this.elements.bucketUnderpaintButtons, rounded);
         if (this.elements.bucketUnderpaintValue) this.elements.bucketUnderpaintValue.textContent = rounded + 'px';
-
-        if (this.eventBus) {
-            this.eventBus.emit('settings:bucket-underpaint', { value: rounded });
-        }
+        if (this.eventBus) this.eventBus.emit('settings:bucket-underpaint', { value: rounded });
     }
 
     _syncBucketLevelButtons(buttons, value) {
@@ -494,58 +505,41 @@ export class SettingsPopup {
     _setupButtons() {
         if (this.elements.statusToggle) {
             this.elements.statusToggle.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 this._toggleStatusPanel();
             });
         }
-
         if (this.elements.bucketRefToggle) {
             this.elements.bucketRefToggle.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 this._toggleBucketRef();
             });
         }
-
         this.elements.bucketGapButtons?.forEach((btn) => {
             btn.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 const value = parseInt(btn.dataset.value, 10);
                 this._updateBucketGapSlider(value);
                 this.settingsManager?.set('bucketGapClose', this.currentBucketGap);
             });
         });
-
         this.elements.bucketUnderpaintButtons?.forEach((btn) => {
             btn.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 const value = parseInt(btn.dataset.value, 10);
                 this._updateBucketUnderpaintSlider(value);
                 this.settingsManager?.set('bucketUnderpaint', this.currentBucketUnderpaint);
             });
         });
-
         const curveBtns = document.querySelectorAll('.pressure-curve-btn[data-curve]');
         curveBtns.forEach(btn => {
             btn.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-
+                e.preventDefault(); e.stopPropagation();
                 const curve = e.currentTarget.getAttribute('data-curve');
                 if (!curve) return;
-
                 this._applyPressureCurveUI(curve);
-
-                if (this.settingsManager) {
-                    this.settingsManager.set('pressureCurve', curve);
-                }
-
-                if (this.eventBus) {
-                    this.eventBus.emit('settings:pressure-curve', { curve });
-                }
+                this.settingsManager?.set('pressureCurve', curve);
+                if (this.eventBus) this.eventBus.emit('settings:pressure-curve', { curve });
             });
         });
     }
@@ -555,6 +549,9 @@ export class SettingsPopup {
             pressureCorrection: 1.0,
             smoothing: 0.5,
             pressureCurve: 'linear',
+            airbrushFlow: 0.22,
+            airbrushScatter: 0.5,
+            airbrushGrain: 0.5,
             statusPanelVisible: true,
             bucketGapClose: 0,
             bucketUnderpaint: 1,
@@ -563,43 +560,22 @@ export class SettingsPopup {
     }
 
     _loadSettings() {
-        let settings;
-
-        if (this.settingsManager) {
-            settings = this.settingsManager.get();
-        } else {
-            settings = this._getDefaults();
-        }
-
+        const settings = this.settingsManager ? this.settingsManager.get() : this._getDefaults();
         this._applySettingsToUI(settings);
     }
 
     _applySettingsToUI(settings) {
         const defaults = this._getDefaults();
-
-        const pressure = settings.pressureCorrection !== undefined ? settings.pressureCorrection : defaults.pressureCorrection;
-        this._updatePressureSlider(pressure);
-
-        const smoothing = settings.smoothing !== undefined ? settings.smoothing : defaults.smoothing;
-        this._updateSmoothingSlider(smoothing);
-
-        const bucketGap = settings.bucketGapClose !== undefined ? settings.bucketGapClose : defaults.bucketGapClose;
-        this._updateBucketGapSlider(bucketGap);
-
-        const bucketUnderpaint = settings.bucketUnderpaint !== undefined ? settings.bucketUnderpaint : defaults.bucketUnderpaint;
-        this._updateBucketUnderpaintSlider(bucketUnderpaint);
-
-        if (settings.bucketReferenceAllLayers !== undefined) {
-            this._setBucketRefVisibility(settings.bucketReferenceAllLayers);
-        }
-
-        if (settings.pressureCurve !== undefined) {
-            this._applyPressureCurveUI(settings.pressureCurve);
-        }
-
-        if (settings.statusPanelVisible !== undefined) {
-            this._setStatusPanelVisibility(settings.statusPanelVisible);
-        }
+        this._updateGenericSlider('pressure', settings.pressureCorrection ?? defaults.pressureCorrection);
+        this._updateGenericSlider('smoothing', settings.smoothing ?? defaults.smoothing);
+        this._updateGenericSlider('airbrushFlow', settings.airbrushFlow ?? defaults.airbrushFlow);
+        this._updateGenericSlider('airbrushScatter', settings.airbrushScatter ?? defaults.airbrushScatter);
+        this._updateGenericSlider('airbrushGrain', settings.airbrushGrain ?? defaults.airbrushGrain);
+        this._updateBucketGapSlider(settings.bucketGapClose ?? defaults.bucketGapClose);
+        this._updateBucketUnderpaintSlider(settings.bucketUnderpaint ?? defaults.bucketUnderpaint);
+        this._setBucketRefVisibility(settings.bucketReferenceAllLayers ?? defaults.bucketReferenceAllLayers);
+        this._applyPressureCurveUI(settings.pressureCurve ?? defaults.pressureCurve);
+        this._setStatusPanelVisibility(settings.statusPanelVisible ?? defaults.statusPanelVisible);
     }
 
     _applyPressureCurveUI(curve) {
@@ -612,79 +588,47 @@ export class SettingsPopup {
     _toggleStatusPanel() {
         const statusPanel = document.querySelector('.status-panel');
         if (!statusPanel) return;
-
         const isVisible = statusPanel.style.display !== 'none';
         this._setStatusPanelVisibility(!isVisible);
-
-        if (this.settingsManager) {
-            this.settingsManager.set('statusPanelVisible', !isVisible);
-        }
+        this.settingsManager?.set('statusPanelVisible', !isVisible);
     }
 
     _setStatusPanelVisibility(visible) {
         const statusPanel = document.querySelector('.status-panel');
         if (!statusPanel) return;
-
         statusPanel.style.display = visible ? 'flex' : 'none';
-
-        if (this.elements.statusToggle) {
-            this.elements.statusToggle.textContent = visible ? '非表示' : '表示';
-        }
-        if (this.elements.statusState) {
-            this.elements.statusState.textContent = visible ? '表示中' : '非表示中';
-        }
+        if (this.elements.statusToggle) this.elements.statusToggle.textContent = visible ? '非表示' : '表示';
+        if (this.elements.statusState) this.elements.statusState.textContent = visible ? '表示中' : '非表示中';
     }
 
     _toggleBucketRef() {
         const current = this.elements.bucketRefToggle.textContent === '有効';
         this._setBucketRefVisibility(!current);
-
-        if (this.settingsManager) {
-            this.settingsManager.set('bucketReferenceAllLayers', !current);
-        }
+        this.settingsManager?.set('bucketReferenceAllLayers', !current);
     }
 
     _setBucketRefVisibility(visible) {
-        if (this.elements.bucketRefToggle) {
-            this.elements.bucketRefToggle.textContent = visible ? '有効' : '無効';
-        }
-        if (this.elements.bucketRefState) {
-            this.elements.bucketRefState.textContent = visible ? '参照中' : '非参照';
-        }
+        if (this.elements.bucketRefToggle) this.elements.bucketRefToggle.textContent = visible ? '有効' : '無効';
+        if (this.elements.bucketRefState) this.elements.bucketRefState.textContent = visible ? '参照中' : '非参照';
     }
 
     show() {
-        if (!this.popup) {
-            this._ensurePopupElement();
-        }
-
+        if (!this.popup) this._ensurePopupElement();
         if (!this.popup) return;
-
-        if (!this.initialized) {
-            this.initialize();
-        }
-
+        if (!this.initialized) this.initialize();
         this.popup.classList.add('show');
         this.isVisible = true;
-
-        if (this.initialized) {
-            this._loadSettings();
-        }
+        this._loadSettings();
     }
 
     hide() {
         if (!this.popup) return;
-
         this.popup.classList.remove('show');
         this.isVisible = false;
     }
 
     toggle() {
-        if (this.isVisible) {
-            this.hide();
-        } else {
-            this.show();
-        }
+        if (this.isVisible) this.hide(); else this.show();
     }
 
     destroy() {
@@ -692,18 +636,11 @@ export class SettingsPopup {
             document.removeEventListener('pointermove', this._globalMoveHandler, true);
             document.removeEventListener('pointerup', this._globalUpHandler, true);
             document.removeEventListener('pointercancel', this._globalUpHandler, true);
-            this._globalMoveHandler = null;
-            this._globalUpHandler = null;
         }
-        if (this.popupDragCleanup) {
-            this.popupDragCleanup();
-            this.popupDragCleanup = null;
-        }
-
+        if (this.popupDragCleanup) this.popupDragCleanup();
         this.elements = {};
         this.initialized = false;
     }
 }
 
-// 下位互換性のためにグローバルに登録
 window.SettingsPopup = SettingsPopup;

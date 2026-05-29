@@ -56,7 +56,7 @@ class QuickExportUI {
                 transition: background 0.2s;
             }
             .quick-export-buttons button:hover {
-                background: #aa5a56;
+                background: #9c3835;
             }
             .quick-export-buttons button:disabled {
                 background: #ccc;
@@ -228,7 +228,7 @@ class QuickExportUI {
         downloadBtn.style.cssText = `
             margin-top: 10px;
             padding: 10px 20px;
-            background: #aa5a56;
+            background: #9c3835;
             color: white;
             border: none;
             border-radius: 4px;

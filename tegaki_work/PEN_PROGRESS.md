@@ -91,3 +91,13 @@ pen: {
 - `onPointerMove` 内で毎ポインターイベントごとに `smoothing` 値を `TegakiSettingsManager` から読み出し `brush.radius` をリアルタイム更新する仕組みを実装。
 - `config.js` から `lazyRadius` を削除し、`SettingsManager` の `smoothing` に一元化。
 - `npm run build` にてエラーなし・ビルド成功（266ms）を確認。
+
+## 2. 2026-05-29 作業ログ: 手ブレ補正最適化 & 仕様確認
+- **筆圧の平滑化（Pressure Smoothing）実装**: 筆圧に対しても指数移動平均（Lerp）を適用。急激な筆圧の変化（スパイク）を抑え、インク溜まりのような滲みを解消。
+- **描き始めのスパイク抑制**: `normalizeEvent` にて、描き始めの一瞬だけ極端に高い筆圧が報告された場合に、標準的な値（0.5）へ制限するセーフガードを導入。
+- **診断ログの拡張**: 筆圧スパイク検知（🔥SPIKE表示）と、平滑化前後の筆圧値（rawP / finalP）を比較表示できるよう機能を強化。
+- **仕様確認**: Space + ペンドラッグが標準的なキャンバス移動操作であることを確認し、`camera-system.js` に注釈を追加。
+- **不要ファイル整理**: 二重実装だった `ui/resize-slider.js` を `PastFiles/OldFiles/` へアーカイブ。
+- **設定永続化の確認**: `SettingsManager.js` による `localStorage` への保存・復元が正常に機能していることを確認。
+- **診断用ログの実装**: `pointer-handler.js` に `logDiagnostic` を追加。コンソールで `window.TegakiPointerDebug = true` に設定することで、液タブ等の入力トラブル解析が可能。
+

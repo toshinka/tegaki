@@ -4,10 +4,9 @@
 
 :root {
     --futaba-maroon: #800000; 
-    --futaba-light-maroon: #aa5a56; 
-    --futaba-medium: #cf9c97;
-    --futaba-light-medium: #e9c2ba; 
-    --futaba-cream: #f0e0d6; 
+    --futaba-light-maroon: #9c3835;
+    --futaba-medium: #b8706b;
+    --futaba-light-medium: #d4a8a0;    --futaba-cream: #f0e0d6; 
     --futaba-background: #ffffee;
     --text-primary: #2c1810; 
     --text-secondary: #5d4037; 

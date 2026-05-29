@@ -488,7 +488,7 @@
         .timeline-new-table-btn { width: auto !important; padding: 0 8px !important; font-size: 9px !important; }
         
         #repeat-btn { min-width: 34px !important; padding: 6px !important; }
-        #repeat-btn.repeat-active { background: #aa5a56 !important; color: var(--futaba-background) !important; }
+        #repeat-btn.repeat-active { background: #9c3835 !important; color: var(--futaba-background) !important; }
         #repeat-btn.repeat-inactive { background: #ffffee !important; opacity: 0.6 !important; }
         #repeat-btn svg { width: 14px !important; height: 14px !important; }
         .timeline-controls button#play-btn.playing { background: var(--futaba-maroon) !important; color: white !important; }

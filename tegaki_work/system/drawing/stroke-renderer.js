@@ -152,33 +152,64 @@ export class StrokeRenderer {
 
     _getAirbrushSpacing(settings) {
         const size = Math.max(1, settings.size || 1);
-        const ratio = settings.airbrushSpacingRatio ?? 0.18;
-        return Math.max(1, size * ratio);
+        // [指示書] 密度を向上 (0.18 -> 0.08) し、より隙間のない霧を実現
+        const ratio = settings.airbrushSpacingRatio ?? 0.08;
+        return Math.max(0.5, size * ratio);
     }
 
     _addAirbrushDab(container, texture, x, y, pressure, settings) {
-        const size = settings.pressureEnabled === true
+        const sm = window.TegakiSettingsManager;
+        const flow = sm ? (sm.get('airbrushFlow') ?? 0.22) : 0.22;
+        const scatter = sm ? (sm.get('airbrushScatter') ?? 0.5) : 0.5;
+        const grain = sm ? (sm.get('airbrushGrain') ?? 0.5) : 0.5;
+
+        const baseSize = settings.pressureEnabled === true
             ? this.calculateWidth(Math.max(0.1, pressure ?? 1.0), settings.size)
             : settings.size;
 
-        const sprite = new Sprite(texture);
-        sprite.anchor.set(0.5);
-        sprite.position.set(x, y);
-        sprite.width = size;
-        sprite.height = size;
-        sprite.tint = settings.mode === 'airbrush-erase' ? 0xffffff : (settings.color ?? 0x800000);
-        sprite.alpha = Math.max(0.01, Math.min(1, (settings.opacity ?? 1.0) * (settings.airbrushFlow ?? 0.22)));
-        sprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'normal';
+        // [スプレー改修] スタンプの間隔や個数を Scatter 設定に同期
+        const scatterCount = Math.max(1, Math.floor(1 + scatter * 5)); 
+        const scatterRange = baseSize * (0.1 + scatter * 0.7); // 飛散範囲を 10% 〜 80% で可変
 
-        container.addChild(sprite);
+        for (let i = 0; i < scatterCount; i++) {
+            const sprite = new Sprite(texture);
+            sprite.anchor.set(0.5);
+
+            // 座標を範囲内でランダムに散らす
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Math.sqrt(Math.random()) * scatterRange;
+            sprite.position.set(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist);
+            
+            sprite.rotation = Math.random() * Math.PI * 2;
+            
+            // Grain (粒の大きさ) 設定を反映
+            const scaleMod = (0.5 + grain) * (0.8 + Math.random() * 0.4); 
+            sprite.width = baseSize * scaleMod;
+            sprite.height = baseSize * scaleMod;
+
+            sprite.tint = settings.mode === 'airbrush-erase' ? 0xffffff : (settings.color ?? 0x800000);
+            
+            // Flow (流量) 設定を反映。累積しやすいようにさらに調整
+            sprite.alpha = Math.max(0.001, Math.min(1, (settings.opacity ?? 1.0) * flow * 0.2));
+            
+            sprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'normal';
+            container.addChild(sprite);
+        }
     }
 
     _getAirbrushTexture() {
         if (this.airbrushTexture) {
-            return this.airbrushTexture;
+            // [スプレー改修] 常に最新の設定でテクスチャを生成し直すためのフラグチェック
+            const sm = window.TegakiSettingsManager;
+            const grain = sm ? (sm.get('airbrushGrain') ?? 0.5) : 0.5;
+            if (this._lastGrain === grain) return this.airbrushTexture;
+            this._lastGrain = grain;
         }
 
-        const size = 128;
+        const sm = window.TegakiSettingsManager;
+        const grain = sm ? (sm.get('airbrushGrain') ?? 0.5) : 0.5;
+
+        const size = 256; 
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
@@ -188,16 +219,34 @@ export class StrokeRenderer {
 
         ctx.clearRect(0, 0, size, size);
         
-        // 非常に滑らかな放射状グラデーション（透明部分は確実に白ベースの透明にする）
+        // --- 1. ベースのグラデーション ---
         const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
-        gradient.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
-        gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.6)');
-        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)');
+        gradient.addColorStop(0.0, 'rgba(255, 255, 255, 0.8)');
+        gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.3)');
+        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.08)');
         gradient.addColorStop(0.8, 'rgba(255, 255, 255, 0.02)');
         gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
         
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, size, size);
+
+        // --- 2. ノイズ（粒状感）の反映 ---
+        const imageData = ctx.getImageData(0, 0, size, size);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            // grain 値が小さいほどノイズを細かく、大きいほど粗く
+            const noiseBase = 1.0 - (grain * 0.5);
+            const noise = Math.random() < noiseBase ? (0.8 + Math.random() * 0.2) : (Math.random() * 0.4);
+            data[i + 3] *= noise;
+            
+            const x = (i / 4) % size;
+            const y = Math.floor((i / 4) / size);
+            const dist = Math.hypot(x - center, y - center) / center;
+            if (Math.random() < dist * 0.7) {
+                data[i + 3] *= 0.2;
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
 
         this.airbrushTexture = Texture.from(canvas);
         return this.airbrushTexture;
@@ -293,11 +342,16 @@ export class StrokeRenderer {
      * Perfect-Freehand のオプションを統一
      */
     _getFreehandOptions(size) {
+        const sm = window.TegakiSettingsManager;
+        const userSmoothing = sm ? (sm.get('smoothing') ?? 0.5) : 0.5;
+
         return {
             size: size,
             thinning: 0.7,
-            smoothing: 0.08, // [指示書] デフォルト補正を弱める (0.4 -> 0.08)
-            streamline: 0.0, // [指示書] デフォルト補正を弱める (0.3 -> 0.0)
+            // [案3拡張] 入力補正（LazyBrush）の拡大に合わせ、
+            // Perfect-Freehand 側の平滑化強度も最大値を 0.4 -> 0.8 へ引き上げます。
+            smoothing: 0.02 + userSmoothing * 0.78,
+            streamline: 0.0,
             simulatePressure: false,
             last: true
         };

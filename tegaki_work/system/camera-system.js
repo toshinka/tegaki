@@ -325,6 +325,8 @@ export class CameraSystem {
             
             const isMouseSecondaryButton = e.button === 2 && e.pointerType !== 'pen';
 
+            // [仕様確認済] Spaceキー押下中、またはマウス右ボタン（ペン以外）でのドラッグをキャンバス移動とみなす。
+            // ペンでのSpace+ドラッグは標準的なキャンバス移動操作であり、描画はブロックされるのが正しい動作。
             if ((isMouseSecondaryButton || this.spacePressed) && !this.shiftPressed) {
                 this.isDragging = true;
                 this.canvasMoveMode = true;

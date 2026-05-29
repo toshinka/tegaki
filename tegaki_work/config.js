@@ -502,9 +502,9 @@ export const TEGAKI_KEYCONFIG = {
 
 export const TEGAKI_COLORS = {
     futabaMaroon: '#800000',
-    futabaLightMaroon: '#aa5a56',
-    futabaMedium: '#cf9c97',
-    futabaLightMedium: '#e9c2ba',
+    futabaLightMaroon: '#9c3835',
+    futabaMedium: '#b8706b',
+    futabaLightMedium: '#d4a8a0',
     futabaCream: '#f0e0d6',
     futabaBackground: '#ffffee'
 };
