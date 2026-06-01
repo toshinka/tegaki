@@ -7,8 +7,9 @@
  * ============================================================================
  */
 
-import { Container, Sprite, Texture } from 'pixi.js';
+import { Container, RenderTexture, Sprite, Texture } from 'pixi.js';
 import { TegakiEventBus } from '../system/event-bus.js';
+import { historyManager } from '../system/history.js';
 import { TimelineModel, ClipAssetModel, DrawingSnapshotModel } from '../system/animation/animation-data-model.js';
 
 export class AnimationTablePopup {
@@ -67,6 +68,11 @@ export class AnimationTablePopup {
         // クリップ編集モード関連
         this.isClipEditModeActive = false;
         this._previewBeforeClipEdit = null;
+        this._previewBeforeTransform = null;
+        this.isTransformPreviewSuspended = false;
+        this.isDrawingPreviewSuspended = false;
+        this._attributePreviewSyncFrame = null;
+        this._drawingHistoryBeforeStates = new Map();
 
         // 再生スコープ関連
         this.playbackScope = 'all'; // 'all' | 'activeLane' | 'includedLanes'
@@ -78,6 +84,7 @@ export class AnimationTablePopup {
         this.selectedAssetId = null;
         this.selectedAssetFolderId = null; // null = Uncategorized
         this.selectedInternalLayerId = null; // Phase 4z7
+        this._internalLayerClipboard = null;
         
         // 初期シード関連 (Phase 4z5)
         this.initialClipAssetSeeded = false;
@@ -97,6 +104,8 @@ export class AnimationTablePopup {
     show() {
         if (!this.initialized) this.initialize();
         if (this.isVisible) return;
+
+        this._saveSelectedClipFromWorkingLayers();
         
         this.panel.style.display = 'flex';
         this.isVisible = true;
@@ -218,6 +227,21 @@ export class AnimationTablePopup {
         }
     }
 
+    _flushLayerPanelSync() {
+        this._requestLayerPanelSync();
+        const renderer = window.layerPanelRenderer;
+        if (!renderer) return;
+
+        if (renderer._updateTimeout) {
+            clearTimeout(renderer._updateTimeout);
+            renderer._updateTimeout = null;
+        }
+
+        const layers = this.layerSystem?.getLayers?.() || [];
+        const activeIndex = this.layerSystem?.getActiveLayerIndex?.() || 0;
+        renderer.render(layers, activeIndex, window.animationSystem || null);
+    }
+
     enterClipEditMode() {
         if (!this.selectedCelId) {
             this.isClipEditModeActive = false;
@@ -253,17 +277,43 @@ export class AnimationTablePopup {
         this.render();
     }
 
+    _enterTransformEditPreviewMode() {
+        if (!this.isVisible || !this.selectedCelId || this.isTransformPreviewSuspended) return;
+
+        this._previewBeforeTransform = this.isPreviewActive;
+        this.isTransformPreviewSuspended = true;
+        this._restoreVisibility();
+        this.render();
+    }
+
+    _exitTransformEditPreviewMode() {
+        if (!this.isTransformPreviewSuspended) return;
+
+        this.isTransformPreviewSuspended = false;
+        if (this._previewBeforeTransform !== null) {
+            this.isPreviewActive = this._previewBeforeTransform;
+            this._previewBeforeTransform = null;
+        }
+        this.render();
+    }
+
     /**
      * 現在のコンテキストから「アクティブなプレビュー対象Lane」を解決する
      */
     _getActivePreviewLane() {
-        // 1. 選択Clipがある場合はそのLane
+        // 1. UI上のアクティブLaneを優先する
+        if (this.activeLaneId) {
+            const lane = this.model.tracks.find(track => track.id === this.activeLaneId);
+            if (lane && !lane.isBackground && lane.type !== 'folder') return lane;
+        }
+
+        // 2. activeLaneId が未設定の場合だけ選択ClipのLaneを使う
         if (this.selectedCelId) {
             const entry = this.model.findClipEntry(this.selectedCelId);
             if (entry?.lane) return entry.lane;
         }
 
-        // 2. 選択Clipがない場合は、LayerSystemのアクティブレイヤーに対応するLane
+        // 3. 旧Layer連動は移行用fallbackに限定する
         const activeLayer = this.layerSystem?.getActiveLayer?.();
         const activeLayerId = activeLayer?.layerData?.id || activeLayer?.id;
         if (activeLayerId && this.model.getLaneForSourceLayer) {
@@ -312,13 +362,13 @@ export class AnimationTablePopup {
         // Phase 4z2: LaneフィルタIDセットの取得
         const filterIds = this._getPreviewLaneFilterIds();
 
-        // 1. まず、タイムラインで管理されている全実レイヤーを一時的に非表示にする
+        // 1. まず、タイムラインで管理されている全実レイヤーとCAF作業レイヤーを一時的に非表示にする
         layers.forEach(layer => {
             const layerData = layer.layerData;
             if (!layerData || layerData.isBackground || layerData.isFolder) return;
 
             const isTracked = this.model.tracks.some(t => (t.sourceLayerId || t.layerId) === layerData.id);
-            if (isTracked) {
+            if (isTracked || layerData.isAnimationWorkingLayer === true) {
                 layer.visible = false;
             }
         });
@@ -385,6 +435,18 @@ export class AnimationTablePopup {
         return this.model.findClipEntry(this.selectedCelId);
     }
 
+    _findClipEntryByAssetId(assetId) {
+        if (!assetId) return null;
+        for (const lane of this.model.tracks || []) {
+            for (const clip of lane.cels || []) {
+                if (clip?.assetId === assetId) {
+                    return { lane, track: lane, clip };
+                }
+            }
+        }
+        return null;
+    }
+
     _getSelectedClipSourceLayerId() {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         if (!entry?.lane) return null;
@@ -401,14 +463,16 @@ export class AnimationTablePopup {
         if (!result || !result.ok) return false;
 
         const { asset, layers: internalLayers } = result;
+        const drawableInternalLayers = internalLayers.filter(layer => layer?.type !== 'folder');
         const sourceLayer = layers.find(l => l.layerData?.id === (track.sourceLayerId || track.layerId));
         
         // 描画順：末尾から先頭へ (配列先頭がInspector上で上＝前面になるように)
         for (let i = internalLayers.length - 1; i >= 0; i--) {
             const internalLayer = internalLayers[i];
+            if (internalLayer.type === 'folder') continue;
             
             // 可視性チェック
-            if (internalLayer.visible === false) continue;
+            if (!this._isInternalLayerEffectivelyVisible(asset, internalLayer)) continue;
             
             // 不透明度チェック
             const opacity = typeof internalLayer.opacity === 'number' ? internalLayer.opacity : 1.0;
@@ -417,19 +481,20 @@ export class AnimationTablePopup {
             const snapshot = this.model.getDrawingSnapshot(internalLayer.drawingSnapshotId);
             if (!snapshot) continue;
 
-            const texture = this._getTextureFromSnapshot(snapshot);
+            const displaySnapshot = this._createInternalClippedSnapshot(asset, internalLayer, snapshot) || snapshot;
+            const texture = this._getTextureFromSnapshot(displaySnapshot);
             if (!texture) continue;
 
             const sprite = new Sprite(texture);
             
             // アルファの積算：実レイヤー透明度 * 内部レイヤー透明度 * オプション（オニオン等）
-            const baseAlpha = internalLayers.length <= 1 ? (sourceLayer?.layerData?.opacity ?? 1.0) : 1.0;
+            const baseAlpha = drawableInternalLayers.length <= 1 ? (sourceLayer?.layerData?.opacity ?? 1.0) : 1.0;
             sprite.alpha = baseAlpha * opacity * (options.alpha ?? 1.0);
             
             // 合成モード：内部レイヤーの設定を優先
             if (internalLayer.blendMode && internalLayer.blendMode !== 'normal') {
                 sprite.blendMode = internalLayer.blendMode;
-            } else if (sourceLayer?.layerData?.blendMode && internalLayers.length <= 1) {
+            } else if (sourceLayer?.layerData?.blendMode && drawableInternalLayers.length <= 1) {
                 sprite.blendMode = sourceLayer.layerData.blendMode;
             } else {
                 sprite.blendMode = 'normal';
@@ -444,6 +509,163 @@ export class AnimationTablePopup {
         }
 
         return true;
+    }
+
+    _createInternalClippedSnapshot(asset, layer, snapshot) {
+        const clippingOwner = this._findInternalClippingOwner(asset, layer);
+        const sourceItem = clippingOwner
+            ? this._findInternalClippingSourceItem(asset, clippingOwner)
+            : null;
+        if (!snapshot?.pixels || !sourceItem) return null;
+
+        const sourceItems = sourceItem.type === 'folder'
+            ? this._getInternalFolderDescendantRasterLayers(asset, sourceItem.id)
+            : [sourceItem];
+        const visibleSourceSnapshots = sourceItems.map(item => {
+            if (!this._isInternalLayerEffectivelyVisible(asset, item)) return null;
+            return this.model.getDrawingSnapshot(item.drawingSnapshotId);
+        }).filter(sourceSnapshot => {
+            return sourceSnapshot
+                && sourceSnapshot.pixels
+                && sourceSnapshot.width === snapshot.width
+                && sourceSnapshot.height === snapshot.height;
+        });
+        if (visibleSourceSnapshots.length === 0) return null;
+
+        const maskedPixels = new Uint8ClampedArray(snapshot.pixels);
+        const maskAlpha = new Uint8ClampedArray(snapshot.width * snapshot.height);
+        visibleSourceSnapshots.forEach(sourceSnapshot => {
+            const sourcePixels = sourceSnapshot.pixels;
+            for (let sourceIndex = 3, maskIndex = 0; sourceIndex < sourcePixels.length; sourceIndex += 4, maskIndex++) {
+                if (sourcePixels[sourceIndex] > maskAlpha[maskIndex]) {
+                    maskAlpha[maskIndex] = sourcePixels[sourceIndex];
+                }
+            }
+        });
+
+        const maskThreshold = 128;
+        for (let targetIndex = 3, maskIndex = 0; targetIndex < maskedPixels.length; targetIndex += 4, maskIndex++) {
+            maskedPixels[targetIndex] = maskAlpha[maskIndex] >= maskThreshold ? maskedPixels[targetIndex] : 0;
+        }
+
+        return {
+            width: snapshot.width,
+            height: snapshot.height,
+            pixels: maskedPixels
+        };
+    }
+
+    _createInternalClippingMask(asset, layer) {
+        const clippingOwner = this._findInternalClippingOwner(asset, layer);
+        const sourceItem = clippingOwner
+            ? this._findInternalClippingSourceItem(asset, clippingOwner)
+            : null;
+        if (!sourceItem) return null;
+
+        const maskSprites = this._createInternalMaskSprites(asset, sourceItem);
+        if (maskSprites.length === 0) return null;
+
+        const compositeMask = this._createCompositeMaskSprite(maskSprites);
+        if (compositeMask) return compositeMask;
+
+        const maskContainer = new Container();
+        maskContainer.eventMode = 'none';
+        maskSprites.forEach(sprite => maskContainer.addChild(sprite));
+        return maskContainer;
+    }
+
+    _createCompositeMaskSprite(maskSprites) {
+        const renderer = this.layerSystem?.app?.renderer || this.app?.renderer || window.coreEngine?.app?.renderer;
+        if (!renderer || maskSprites.length === 0) return null;
+
+        const size = this._getCanvasSnapshotSize();
+        const renderTexture = RenderTexture.create({
+            width: size.width,
+            height: size.height
+        });
+        const maskContainer = new Container();
+        maskSprites.forEach(sprite => maskContainer.addChild(sprite));
+        renderer.render({
+            container: maskContainer,
+            target: renderTexture,
+            clear: true,
+            clearColor: [0, 0, 0, 0]
+        });
+        maskContainer.destroy({ children: true, texture: false, baseTexture: false });
+
+        const maskSprite = new Sprite(renderTexture);
+        maskSprite.eventMode = 'none';
+        return maskSprite;
+    }
+
+    _findInternalClippingOwner(asset, layer) {
+        if (!asset || !layer) return null;
+
+        const byId = new Map((asset.internalLayers || []).map(item => [item.id, item]));
+        let current = layer;
+        const visited = new Set();
+
+        while (current && !visited.has(current.id)) {
+            visited.add(current.id);
+            if (current.clipping === true) return current;
+            current = current.parentLayerId ? byId.get(current.parentLayerId) : null;
+        }
+
+        return null;
+    }
+
+    _findInternalClippingSourceItem(asset, clippingOwner) {
+        if (!asset || !clippingOwner) return null;
+
+        const layers = asset.internalLayers || [];
+        const layerIndex = layers.findIndex(item => item.id === clippingOwner.id);
+        if (layerIndex < 0) return null;
+
+        const parentId = clippingOwner.parentLayerId || null;
+        for (let index = layerIndex + 1; index < layers.length; index++) {
+            const candidate = layers[index];
+            if (!candidate) continue;
+            if ((candidate.parentLayerId || null) !== parentId) continue;
+            if (!this._isInternalLayerEffectivelyVisible(asset, candidate)) return null;
+            return candidate;
+        }
+
+        return null;
+    }
+
+    _createInternalMaskSprites(asset, sourceItem) {
+        if (!sourceItem) return [];
+
+        const sourceItems = sourceItem.type === 'folder'
+            ? this._getInternalFolderDescendantRasterLayers(asset, sourceItem.id)
+            : [sourceItem];
+
+        return sourceItems.map(item => {
+            if (!this._isInternalLayerEffectivelyVisible(asset, item)) return null;
+            const snapshot = this.model.getDrawingSnapshot(item.drawingSnapshotId);
+            const texture = snapshot ? this._getTextureFromSnapshot(snapshot) : null;
+            if (!texture) return null;
+            const sprite = new Sprite(texture);
+            sprite.eventMode = 'none';
+            return sprite;
+        }).filter(Boolean);
+    }
+
+    _getInternalFolderDescendantRasterLayers(asset, folderId) {
+        const layers = asset?.internalLayers || [];
+        const result = [];
+        const collect = (parentId) => {
+            layers.forEach(layer => {
+                if ((layer.parentLayerId || null) !== parentId) return;
+                if (layer.type === 'folder') {
+                    collect(layer.id);
+                    return;
+                }
+                result.push(layer);
+            });
+        };
+        collect(folderId);
+        return result;
     }
 
     _renderCelPreview(track, cel, layers, options = {}) {
@@ -550,6 +772,10 @@ export class AnimationTablePopup {
         }
     }
 
+    _invalidateSnapshotTextureCache() {
+        this._snapshotTextureCache = new WeakMap();
+    }
+
     captureSelectedCel() {
         this._captureSelectedClip();
     }
@@ -571,30 +797,37 @@ export class AnimationTablePopup {
         const previousInternalLayerIndex = existingAsset
             ? existingAsset.internalLayers.findIndex(layer => layer.id === this.selectedInternalLayerId)
             : -1;
+        const expectedDrawableLayerCount = existingAsset
+            ? this._getDrawableInternalLayers(existingAsset).length
+            : null;
         const captured = this._createClipAssetFromVisibleLayers({
             name: existingAsset?.name || `Asset for ${this.model.getLaneDisplayName ? this.model.getLaneDisplayName(lane) : lane.name}`,
-            folderId: existingAsset?.folderId ?? folderId
+            folderId: existingAsset?.folderId ?? folderId,
+            maxWorkingLayerCount: expectedDrawableLayerCount
         });
 
         if (existingAsset) {
             const capturedIndex = this.model.clipAssets.findIndex(asset => asset.id === captured.asset.id);
             if (capturedIndex !== -1) this.model.clipAssets.splice(capturedIndex, 1);
             existingAsset.drawingSnapshotId = captured.asset.drawingSnapshotId;
-            existingAsset.internalLayers = captured.asset.internalLayers;
+            existingAsset.internalLayers = this._mergeCapturedInternalLayers(existingAsset, captured.asset.internalLayers);
             existingAsset.updatedAt = Date.now();
             clip.assetId = existingAsset.id;
             const nextInternalIndex = previousInternalLayerIndex >= 0 ? previousInternalLayerIndex : 0;
-            this.selectedInternalLayerId = existingAsset.internalLayers[nextInternalIndex]?.id
-                || existingAsset.internalLayers[0]?.id
+            const drawableInternalLayers = this._getDrawableInternalLayers(existingAsset);
+            this.selectedInternalLayerId = drawableInternalLayers[nextInternalIndex]?.id
+                || drawableInternalLayers[0]?.id
                 || null;
         } else {
             clip.assetId = captured.asset.id;
-            this.selectedInternalLayerId = captured.asset.internalLayers[0]?.id || null;
+            this.selectedInternalLayerId = this._getDrawableInternalLayers(captured.asset)[0]?.id || null;
         }
 
         clip.rasterSnapshot = captured.rasterSnapshot;
         this.selectedAssetId = clip.assetId;
         this.selectedAssetFolderId = existingAsset?.folderId ?? captured.asset.folderId ?? null;
+        this._invalidateSnapshotTextureCache();
+        this._markWorkingLayerSnapshotIds(existingAsset || captured.asset);
 
         if (renderAfter) {
             this.render();
@@ -602,12 +835,68 @@ export class AnimationTablePopup {
         }
     }
 
-    _saveSelectedClipFromWorkingLayers() {
+    _mergeCapturedInternalLayers(existingAsset, capturedInternalLayers) {
+        const capturedDrawableLayers = this._getDrawableInternalLayers({ internalLayers: capturedInternalLayers });
+        const nextInternalLayers = [];
+        let drawableIndex = 0;
+
+        existingAsset.internalLayers.forEach(existingLayer => {
+            if (existingLayer.type === 'folder') {
+                nextInternalLayers.push(existingLayer);
+                return;
+            }
+
+            const capturedLayer = capturedDrawableLayers[drawableIndex];
+            drawableIndex += 1;
+            if (!capturedLayer) return;
+
+            existingLayer.name = capturedLayer.name;
+            existingLayer.visible = capturedLayer.visible;
+            existingLayer.opacity = capturedLayer.opacity;
+            existingLayer.blendMode = capturedLayer.blendMode;
+            existingLayer.clipping = capturedLayer.clipping;
+            existingLayer.drawingSnapshotId = capturedLayer.drawingSnapshotId;
+            existingLayer.updatedAt = Date.now();
+            nextInternalLayers.push(existingLayer);
+        });
+
+        for (; drawableIndex < capturedDrawableLayers.length; drawableIndex++) {
+            nextInternalLayers.push(capturedDrawableLayers[drawableIndex]);
+        }
+
+        return nextInternalLayers;
+    }
+
+    _saveSelectedClipFromWorkingLayers(options = {}) {
         if (!this.selectedCelId || !this.layerSystem) return false;
         const entry = this.model.findClipEntry(this.selectedCelId);
         if (!entry?.clip) return false;
+        if (options.force !== true && !this._hasDirtyWorkingLayersForClip(entry.clip)) return false;
         this._captureSelectedClip({ silent: true, renderAfter: false });
         return true;
+    }
+
+    _hasDirtyWorkingLayersForClip(clip) {
+        if (!clip?.assetId || !this.layerSystem) return false;
+        const asset = this.model.getClipAsset(clip.assetId);
+        if (!asset) return false;
+
+        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
+        const targetLayers = this._getRasterWorkingLayers();
+        for (let index = 0; index < drawableInternalLayers.length; index++) {
+            const targetLayer = targetLayers[index];
+            const snapshotId = drawableInternalLayers[index]?.drawingSnapshotId || null;
+            if (!targetLayer?.layerData || targetLayer.layerData.animationSnapshotId !== snapshotId) {
+                return true;
+            }
+        }
+        for (let index = drawableInternalLayers.length; index < targetLayers.length; index++) {
+            const targetLayer = targetLayers[index];
+            if (targetLayer?.layerData?.animationSnapshotId !== null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     _handleDrawingCompleted(data = {}) {
@@ -615,12 +904,79 @@ export class AnimationTablePopup {
 
         const layerId = data.layerId || data.data?.layerId;
         if (!layerId) return;
+        if (!this._isAnimationWorkingLayerId(layerId)) return;
+
+        const beforeState = this._drawingHistoryBeforeStates.get(layerId) || null;
+        this._drawingHistoryBeforeStates.delete(layerId);
+        const asset = this._getSelectedAssetForInspector();
+        const selectedInternalLayerId = this.selectedInternalLayerId || null;
 
         this._captureSelectedClip({
             silent: true,
             requireSourceLayerId: this.isAutoCaptureActive ? layerId : null
         });
+        this.isDrawingPreviewSuspended = false;
+
+        const afterAsset = asset?.id ? this.model.getClipAsset(asset.id) : null;
+        const afterState = afterAsset ? this._captureInternalLayerHistoryState(afterAsset) : null;
+        if (afterAsset && beforeState && afterState) {
+            this._recordInternalLayerHistoryFromStates(afterAsset, beforeState, afterState, 'caf-internal-layer-draw', {
+                type: 'caf-internal-layer-draw',
+                clipId: this.selectedCelId,
+                layerId,
+                internalLayerId: selectedInternalLayerId,
+                mode: data.mode || data.data?.mode || 'draw'
+            });
+        }
+    }
+
+    _handleDrawingStarted(data = {}) {
+        if (!this.isVisible || !this.selectedCelId) return;
+
+        const layerId = data.layerId || data.data?.layerId;
+        if (!layerId || !this._isAnimationWorkingLayerId(layerId)) return;
+
+        const asset = this._getSelectedAssetForInspector();
+        if (asset) {
+            this._drawingHistoryBeforeStates.set(layerId, this._captureInternalLayerHistoryState(asset));
+        }
+        this._invalidateWorkingLayerSnapshotId(layerId);
+        if (this.isPreviewActive) {
+            this.isDrawingPreviewSuspended = true;
+            this._restoreVisibility();
+        }
+    }
+
+    _handleHistoryChanged(data = {}) {
+        if (!this.isVisible || !this.selectedCelId) return;
+        if (!['record', 'undo', 'redo'].includes(data.action)) return;
+        if (data.action === 'record' && data.meta?.type === 'draw') return;
+        if (typeof data.meta?.type === 'string' && data.meta.type.startsWith('caf-')) return;
+
+        const layerId = data.meta?.layerId || null;
+        if (!layerId || !this._isAnimationWorkingLayerId(layerId)) return;
+        if (this.isTransformPreviewSuspended) return;
+
+        this._saveSelectedClipFromWorkingLayers();
+        this.render();
         this._requestLayerPanelSync();
+    }
+
+    _handleLayerDeleted(data = {}) {
+        if (!this.isVisible || !this.selectedCelId) return;
+
+        this._saveSelectedClipFromWorkingLayers();
+        this.render();
+        this._flushLayerPanelSync();
+    }
+
+
+    _isAnimationWorkingLayerId(layerId) {
+        if (!layerId || !this.layerSystem) return false;
+        return this._getRasterWorkingLayers().some(layer => {
+            return layer.layerData?.id === layerId
+                && layer.layerData?.isAnimationWorkingLayer === true;
+        });
     }
 
     copySelectedCel() {
@@ -720,15 +1076,18 @@ export class AnimationTablePopup {
             const isBlank = snapshot?.isBlank === true;
             const hasSnapshot = !!snapshot;
             const isVisible = layer.visible !== false;
+            const isEffectivelyVisible = this._isInternalLayerEffectivelyVisible(asset, layer);
+            const isFolder = layer.type === 'folder';
+            const depth = this._getInternalLayerDepth(asset, layer);
 
             const isFirst = index === 0;
             const isLast = index === asset.internalLayers.length - 1;
 
             layerHtml += `
-                <div class="anim-internal-layer-row${isSelected ? ' is-selected' : ''}${isVisible ? '' : ' is-hidden'}" data-layer-id="${layer.id}">
+                <div class="anim-internal-layer-row${isSelected ? ' is-selected' : ''}${isEffectivelyVisible ? '' : ' is-hidden'}${isFolder ? ' is-folder' : ''} depth-${depth}" data-layer-id="${layer.id}" data-depth="${depth}">
                     <div class="anim-internal-layer-main">
                         <button class="anim-layer-visibility-btn ${isVisible ? 'visible' : 'hidden'}" title="Toggle Visibility">${isVisible ? '👁' : '·'}</button>
-                        <div class="anim-internal-layer-name" title="Double click to rename">${this._escapeHtml(layer.name)}</div>
+                        <div class="anim-internal-layer-name" title="Double click to rename">${isFolder ? '[Folder] ' : ''}${this._escapeHtml(layer.name)}</div>
                         <div class="anim-layer-row-actions">
                             <button class="anim-layer-order-btn up" title="Move Up" ${isFirst ? 'disabled' : ''}>▲</button>
                             <button class="anim-layer-order-btn down" title="Move Down" ${isLast ? 'disabled' : ''}>▼</button>
@@ -758,17 +1117,98 @@ export class AnimationTablePopup {
         `;
     }
 
+    _getInternalLayerDepth(asset, layer) {
+        if (!asset || !layer?.parentLayerId) return 0;
+        const byId = new Map((asset.internalLayers || []).map(item => [item.id, item]));
+        let depth = 0;
+        let parentId = layer.parentLayerId;
+        const visited = new Set();
+
+        while (parentId && !visited.has(parentId) && depth < 4) {
+            visited.add(parentId);
+            const parent = byId.get(parentId);
+            if (!parent) break;
+            depth += 1;
+            parentId = parent.parentLayerId || null;
+        }
+
+        return Math.min(depth, 4);
+    }
+
+    _isInternalLayerEffectivelyVisible(asset, layer) {
+        if (!asset || !layer || layer.visible === false) return false;
+
+        const byId = new Map((asset.internalLayers || []).map(item => [item.id, item]));
+        let parentId = layer.parentLayerId || null;
+        const visited = new Set();
+
+        while (parentId && !visited.has(parentId)) {
+            visited.add(parentId);
+            const parent = byId.get(parentId);
+            if (!parent) break;
+            if (parent.visible === false) return false;
+            parentId = parent.parentLayerId || null;
+        }
+
+        return true;
+    }
+
+    _getInternalLayerCreationParentId(asset) {
+        if (!asset || !this.selectedInternalLayerId) return null;
+
+        const selectedLayer = (asset.internalLayers || []).find(layer => layer.id === this.selectedInternalLayerId);
+        if (!selectedLayer) return null;
+
+        if (selectedLayer.type === 'folder') {
+            return selectedLayer.id;
+        }
+
+        return selectedLayer.parentLayerId || null;
+    }
+
     addInternalLayer() {
         const asset = this._getSelectedAssetForInspector();
         if (!asset) return;
 
-        const result = this.model.addClipAssetInternalLayer(asset.id);
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const parentLayerId = this._getInternalLayerCreationParentId(asset);
+        const result = this.model.addClipAssetInternalLayer(asset.id, {
+            parentLayerId,
+            insertAfterLayerId: this.selectedInternalLayerId || parentLayerId
+        });
         if (result.ok) {
             this.selectedInternalLayerId = result.layer.id;
-            this._ensureWorkingLayerCapacity(asset.internalLayers.length);
+            this._ensureWorkingLayerCapacity(this._getDrawableInternalLayers(asset).length);
             this._syncSelectedClipToWorkingLayers();
             this.render();
-            this._requestLayerPanelSync();
+            this._flushLayerPanelSync();
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-create', {
+                type: 'caf-internal-layer-create',
+                layerId: result.layer.id
+            });
+        }
+    }
+
+    addInternalFolder() {
+        const asset = this._getSelectedAssetForInspector();
+        if (!asset || !this.model.addClipAssetInternalFolder) return;
+
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const parentLayerId = this._getInternalLayerCreationParentId(asset);
+        const result = this.model.addClipAssetInternalFolder(asset.id, {
+            parentLayerId,
+            insertAfterLayerId: this.selectedInternalLayerId || parentLayerId
+        });
+        if (result.ok) {
+            this.selectedInternalLayerId = result.layer.id;
+            this.selectedAssetId = asset.id;
+            this.selectedAssetFolderId = asset.folderId || null;
+            this.render();
+            this._flushLayerPanelSync();
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-folder-create', {
+                type: 'caf-internal-folder-create',
+                layerId: result.layer.id
+            });
         }
     }
 
@@ -788,10 +1228,6 @@ export class AnimationTablePopup {
 
     addIndependentLane() {
         const lane = this.model.createIndependentLane();
-        this.model.tracks.forEach(track => {
-            track.active = track.id === lane.id;
-        });
-        this.includedLaneIds.add(lane.id);
         this.selectedCelId = null;
         this.render();
         this._requestLayerPanelSync();
@@ -856,10 +1292,543 @@ export class AnimationTablePopup {
         const asset = this._getSelectedAssetForInspector();
         if (!asset || !layerId) return;
 
-        const result = this.model.moveClipAssetInternalLayer(asset.id, layerId, direction);
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this._applyInternalLayerMoveByStep(asset, layerId, direction);
         if (result.ok) {
+            this._syncSelectedClipToWorkingLayers();
             this.render();
-            this._requestLayerPanelSync();
+            this._flushLayerPanelSync();
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-reorder', {
+                type: 'caf-internal-layer-reorder',
+                layerId,
+                direction,
+                index: result.index
+            });
+        }
+    }
+
+    _applyInternalLayerMoveByStep(asset, layerId, direction) {
+        const layers = asset?.internalLayers || [];
+        const movingLayer = layers.find(layer => layer.id === layerId);
+        if (!movingLayer) return { ok: false, reason: 'layer-not-found' };
+
+        const movingIds = this._getInternalLayerSubtreeIds(asset, layerId);
+        const firstIndex = layers.findIndex(layer => movingIds.has(layer.id));
+        const lastIndex = layers.reduce((last, layer, index) => movingIds.has(layer.id) ? index : last, -1);
+        if (firstIndex < 0 || lastIndex < firstIndex) return { ok: false, reason: 'invalid-subtree' };
+
+        if (direction === 'up') {
+            const targetLayer = layers[firstIndex - 1];
+            if (!targetLayer) return { ok: false, reason: 'out-of-range' };
+            return this._applyInternalLayerMoveToPosition(asset, layerId, targetLayer.id, 'before');
+        }
+
+        const targetLayer = layers[lastIndex + 1];
+        if (!targetLayer) return { ok: false, reason: 'out-of-range' };
+        return this._applyInternalLayerMoveToPosition(asset, layerId, targetLayer.id, 'after');
+    }
+
+    moveInternalLayerToPosition(assetId, layerId, targetLayerId, placement = 'after') {
+        const asset = this.model.getClipAsset(assetId);
+        if (!asset || !layerId || !targetLayerId || layerId === targetLayerId) {
+            return { ok: false, reason: 'invalid-target' };
+        }
+
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this._applyInternalLayerMoveToPosition(asset, layerId, targetLayerId, placement);
+        if (result.ok) {
+            this.selectedAssetId = asset.id;
+            this.selectedAssetFolderId = asset.folderId || null;
+            this.selectedInternalLayerId = layerId;
+            this._syncSelectedClipToWorkingLayers();
+            this.render();
+            this._flushLayerPanelSync();
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-dnd', {
+                type: 'caf-internal-layer-dnd',
+                layerId,
+                targetLayerId,
+                placement: result.placement
+            });
+        }
+        return result;
+    }
+
+    _applyInternalLayerMoveToPosition(asset, layerId, targetLayerId, placement = 'after') {
+        const layers = asset?.internalLayers || [];
+        const movingLayer = layers.find(layer => layer.id === layerId);
+        const targetLayer = layers.find(layer => layer.id === targetLayerId);
+        if (!movingLayer || !targetLayer) return { ok: false, reason: 'layer-not-found' };
+
+        const movingIds = this._getInternalLayerSubtreeIds(asset, layerId);
+        if (movingIds.has(targetLayerId)) return { ok: false, reason: 'cannot-drop-on-descendant' };
+
+        const nextPlacement = placement === 'inside' && targetLayer.type === 'folder'
+            ? 'inside'
+            : (placement === 'before' ? 'before' : 'after');
+        const movedLayers = layers.filter(layer => movingIds.has(layer.id));
+        const remainingLayers = layers.filter(layer => !movingIds.has(layer.id));
+        const targetIndex = remainingLayers.findIndex(layer => layer.id === targetLayerId);
+        if (targetIndex < 0) return { ok: false, reason: 'target-not-found' };
+
+        if (nextPlacement === 'inside') {
+            movingLayer.parentLayerId = targetLayer.id;
+        } else {
+            movingLayer.parentLayerId = targetLayer.parentLayerId || null;
+        }
+        movingLayer.updatedAt = Date.now();
+
+        let insertIndex = targetIndex;
+        if (nextPlacement === 'after' || nextPlacement === 'inside') {
+            const targetSubtreeIds = this._getInternalLayerSubtreeIds({ internalLayers: remainingLayers }, targetLayerId);
+            insertIndex = targetIndex + 1;
+            for (let index = targetIndex + 1; index < remainingLayers.length; index++) {
+                if (!targetSubtreeIds.has(remainingLayers[index].id)) break;
+                insertIndex = index + 1;
+            }
+        }
+
+        remainingLayers.splice(insertIndex, 0, ...movedLayers);
+        asset.internalLayers = remainingLayers;
+        asset.updatedAt = Date.now();
+        return { ok: true, asset, layer: movingLayer, placement: nextPlacement, index: insertIndex };
+    }
+
+    _getInternalLayerSubtreeIds(asset, layerId) {
+        const layers = asset?.internalLayers || [];
+        const ids = new Set([layerId]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            layers.forEach(layer => {
+                if (layer.parentLayerId && ids.has(layer.parentLayerId) && !ids.has(layer.id)) {
+                    ids.add(layer.id);
+                    changed = true;
+                }
+            });
+        }
+        return ids;
+    }
+
+    duplicateInternalLayer(layerId) {
+        const asset = this._getSelectedAssetForInspector();
+        if (!asset || !layerId || !this.model.duplicateClipAssetInternalLayer) return { ok: false, reason: 'unavailable' };
+
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this.model.duplicateClipAssetInternalLayer(asset.id, layerId);
+        if (result.ok) {
+            this.selectedInternalLayerId = result.layer?.id || null;
+            this._ensureWorkingLayerCapacity(this._getDrawableInternalLayers(asset).length);
+            this._syncSelectedClipToWorkingLayers();
+            this.render();
+            this._flushLayerPanelSync();
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-duplicate', {
+                type: 'caf-internal-layer-duplicate',
+                layerId,
+                duplicatedLayerId: result.layer?.id || null
+            });
+        }
+        return result;
+    }
+
+    copyInternalLayer(layerId = this.selectedInternalLayerId) {
+        const asset = this._getSelectedAssetForInspector();
+        if (!asset || !layerId) return { ok: false, reason: 'asset-not-found' };
+
+        const selectedLayer = asset.internalLayers.find(layer => layer.id === layerId);
+        if (!selectedLayer) return { ok: false, reason: 'layer-not-found' };
+
+        const sourceIds = new Set([layerId]);
+        if (selectedLayer.type === 'folder') {
+            let changed = true;
+            while (changed) {
+                changed = false;
+                asset.internalLayers.forEach(layer => {
+                    if (layer.parentLayerId && sourceIds.has(layer.parentLayerId) && !sourceIds.has(layer.id)) {
+                        sourceIds.add(layer.id);
+                        changed = true;
+                    }
+                });
+            }
+        }
+
+        const layers = asset.internalLayers
+            .filter(layer => sourceIds.has(layer.id))
+            .map(layer => {
+                const snapshot = layer.drawingSnapshotId
+                    ? this.model.getDrawingSnapshot(layer.drawingSnapshotId)
+                    : null;
+                return {
+                    layer: layer.serialize ? layer.serialize() : { ...layer },
+                    snapshot: snapshot?.serialize ? snapshot.serialize() : (snapshot ? { ...snapshot } : null)
+                };
+            });
+
+        this._internalLayerClipboard = {
+            rootLayerId: layerId,
+            layers
+        };
+        return { ok: true, count: layers.length };
+    }
+
+    pasteInternalLayer() {
+        const asset = this._getSelectedAssetForInspector();
+        const clipboard = this._internalLayerClipboard;
+        if (!asset || !clipboard?.layers?.length) return { ok: false, reason: 'clipboard-empty' };
+
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const parentLayerId = this._getInternalLayerCreationParentId(asset);
+        const insertAfterLayerId = this.selectedInternalLayerId || parentLayerId;
+        const idMap = new Map();
+        const pastedLayers = clipboard.layers.map((entry, index) => {
+            const sourceLayer = entry.layer;
+            let drawingSnapshotId = null;
+            if (entry.snapshot?.pixels) {
+                const snapshot = new DrawingSnapshotModel({
+                    width: entry.snapshot.width,
+                    height: entry.snapshot.height,
+                    pixels: new Uint8ClampedArray(entry.snapshot.pixels),
+                    isBlank: entry.snapshot.isBlank === true
+                });
+                this.model.drawingSnapshots.push(snapshot);
+                drawingSnapshotId = snapshot.id;
+            }
+
+            const layer = this.model.createClipAssetInternalLayer({
+                name: index === 0 ? `${sourceLayer.name} copy` : sourceLayer.name,
+                type: sourceLayer.type,
+                visible: sourceLayer.visible !== false,
+                opacity: sourceLayer.opacity ?? 1,
+                blendMode: sourceLayer.blendMode || 'normal',
+                clipping: sourceLayer.clipping === true,
+                drawingSnapshotId,
+                parentLayerId: sourceLayer.parentLayerId,
+                isBackground: sourceLayer.isBackground === true
+            });
+            idMap.set(sourceLayer.id, layer.id);
+            return { layer, sourceLayer };
+        });
+
+        pastedLayers.forEach(({ layer, sourceLayer }, index) => {
+            if (sourceLayer.parentLayerId && idMap.has(sourceLayer.parentLayerId)) {
+                layer.parentLayerId = idMap.get(sourceLayer.parentLayerId);
+            } else if (index === 0) {
+                layer.parentLayerId = parentLayerId;
+            } else if (sourceLayer.parentLayerId && !idMap.has(sourceLayer.parentLayerId)) {
+                layer.parentLayerId = parentLayerId;
+            }
+        });
+
+        const insertIndex = this.model._resolveInternalLayerInsertIndex
+            ? this.model._resolveInternalLayerInsertIndex(asset, { insertAfterLayerId })
+            : asset.internalLayers.length;
+        asset.internalLayers.splice(insertIndex, 0, ...pastedLayers.map(entry => entry.layer));
+        asset.updatedAt = Date.now();
+        this.selectedInternalLayerId = pastedLayers[0]?.layer?.id || null;
+        this._ensureWorkingLayerCapacity(this._getDrawableInternalLayers(asset).length);
+        this._syncSelectedClipToWorkingLayers();
+        this.render();
+        this._flushLayerPanelSync();
+        this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-paste', {
+            type: 'caf-internal-layer-paste',
+            layerId: pastedLayers[0]?.layer?.id || null,
+            count: pastedLayers.length
+        });
+        return { ok: true, layer: pastedLayers[0]?.layer || null, pastedLayers: pastedLayers.map(entry => entry.layer) };
+    }
+
+    cutInternalLayer(layerId = this.selectedInternalLayerId) {
+        const copyResult = this.copyInternalLayer(layerId);
+        if (!copyResult.ok) return copyResult;
+        this.removeInternalLayer(layerId, { historyName: 'caf-internal-layer-cut' });
+        return copyResult;
+    }
+
+    mergeInternalLayerDown(layerId = this.selectedInternalLayerId) {
+        const asset = this._getSelectedAssetForInspector();
+        if (!asset || !layerId) return { ok: false, reason: 'asset-not-found' };
+
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this._applyInternalLayerMergeDown(asset, layerId);
+        if (result.ok) {
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-merge-down', {
+                type: 'caf-internal-merge-down',
+                layerId,
+                targetLayerId: result.layer?.id || null
+            });
+        }
+        return result;
+    }
+
+    _applyInternalLayerMergeDown(asset, layerId) {
+        const layers = asset.internalLayers || [];
+        const sourceIndex = layers.findIndex(layer => layer.id === layerId);
+        const sourceLayer = layers[sourceIndex];
+        if (!sourceLayer) return { ok: false, reason: 'layer-not-found' };
+        if (sourceLayer.type === 'folder' || sourceLayer.isBackground) {
+            return { ok: false, reason: 'not-raster-layer' };
+        }
+
+        const targetIndex = layers.findIndex((layer, index) => {
+            return index > sourceIndex
+                && layer.parentLayerId === sourceLayer.parentLayerId
+                && layer.type !== 'folder'
+                && layer.isBackground !== true;
+        });
+        const targetLayer = layers[targetIndex];
+        if (!targetLayer) return { ok: false, reason: 'no-layer-below' };
+
+        const sourceSnapshot = this.model.getDrawingSnapshot(sourceLayer.drawingSnapshotId);
+        const targetSnapshot = this.model.getDrawingSnapshot(targetLayer.drawingSnapshotId);
+        const size = this._getCanvasSnapshotSize();
+        const width = Math.max(sourceSnapshot?.width || 0, targetSnapshot?.width || 0, size.width || 1);
+        const height = Math.max(sourceSnapshot?.height || 0, targetSnapshot?.height || 0, size.height || 1);
+        const mergedSnapshot = this._mergeInternalLayerSnapshots({
+            width,
+            height,
+            sourceSnapshot,
+            targetSnapshot,
+            sourceLayer,
+            targetLayer
+        });
+        if (!mergedSnapshot) return { ok: false, reason: 'snapshot-merge-failed' };
+
+        this.model.drawingSnapshots.push(mergedSnapshot);
+        targetLayer.drawingSnapshotId = mergedSnapshot.id;
+        targetLayer.updatedAt = Date.now();
+        targetLayer.visible = targetLayer.visible !== false;
+        layers.splice(sourceIndex, 1);
+        asset.updatedAt = Date.now();
+        this.selectedInternalLayerId = targetLayer.id;
+        this._invalidateSnapshotTextureCache();
+        this._syncSelectedClipToWorkingLayers();
+        this.render();
+        this._flushLayerPanelSync();
+        return { ok: true, asset, layer: targetLayer, removedLayer: sourceLayer };
+    }
+
+    _captureInternalLayerHistoryState(asset) {
+        if (!asset) return null;
+        return {
+            assetId: asset.id,
+            selectedCelId: this.selectedCelId || null,
+            selectedInternalLayerId: this.selectedInternalLayerId || null,
+            clipAssets: (this.model.clipAssets || []).map(clipAsset => {
+                return clipAsset.serialize ? clipAsset.serialize() : { ...clipAsset };
+            }),
+            internalLayers: (asset.internalLayers || []).map(layer => {
+                return layer.serialize ? layer.serialize() : { ...layer };
+            }),
+            drawingSnapshots: (this.model.drawingSnapshots || []).map(snapshot => {
+                return snapshot.serialize ? snapshot.serialize() : { ...snapshot };
+            })
+        };
+    }
+
+    _recordInternalLayerHistory(asset, beforeState, name, meta = {}) {
+        if (!asset || !beforeState || !historyManager || historyManager.isApplying) return false;
+        const afterState = this._captureInternalLayerHistoryState(asset);
+        historyManager.record({
+            name,
+            do: () => this._restoreInternalLayerHistoryState(asset.id, afterState),
+            undo: () => this._restoreInternalLayerHistoryState(asset.id, beforeState),
+            meta: {
+                assetId: asset.id,
+                ...meta
+            }
+        });
+        return true;
+    }
+
+    _recordInternalLayerHistoryFromStates(asset, beforeState, afterState, name, meta = {}) {
+        if (!asset || !beforeState || !afterState || !historyManager || historyManager.isApplying) return false;
+        historyManager.record({
+            name,
+            do: () => this._restoreInternalLayerHistoryState(asset.id, afterState),
+            undo: () => this._restoreInternalLayerHistoryState(asset.id, beforeState),
+            meta: {
+                assetId: asset.id,
+                ...meta
+            }
+        });
+        return true;
+    }
+
+    _captureTimelineHistoryState() {
+        const state = this.model.serialize ? this.model.serialize() : {};
+        return {
+            ...state,
+            selectedCelId: this.selectedCelId || null,
+            selectedAssetId: this.selectedAssetId || null,
+            selectedAssetFolderId: this.selectedAssetFolderId || null,
+            selectedInternalLayerId: this.selectedInternalLayerId || null,
+            activeLaneId: this.activeLaneId || null
+        };
+    }
+
+    _recordTimelineHistory(beforeState, afterState, name, meta = {}) {
+        if (!beforeState || !afterState || !historyManager || historyManager.isApplying) return false;
+        historyManager.record({
+            name,
+            do: () => this._restoreTimelineHistoryState(afterState),
+            undo: () => this._restoreTimelineHistoryState(beforeState),
+            meta
+        });
+        return true;
+    }
+
+    _restoreTimelineHistoryState(state) {
+        if (!state) return false;
+        const restoredModel = new TimelineModel(state);
+        this.model.fps = restoredModel.fps;
+        this.model.totalFrames = restoredModel.totalFrames;
+        this.model.tracks = restoredModel.tracks;
+        this.model.clipAssetFolders = restoredModel.clipAssetFolders;
+        this.model.clipAssets = restoredModel.clipAssets;
+        this.model.drawingSnapshots = restoredModel.drawingSnapshots;
+        this.model.playback = { ...restoredModel.playback };
+        this.model.layerSyncInitialized = restoredModel.layerSyncInitialized;
+
+        this.activeLaneId = state.activeLaneId || null;
+        const activeLane = this.activeLaneId ? this.model.getLaneById(this.activeLaneId) : null;
+        if (activeLane && activeLane.type !== 'folder' && !activeLane.isBackground) {
+            this.model.tracks.forEach(track => {
+                track.active = track.id === activeLane.id;
+            });
+        } else {
+            this.activeLaneId = null;
+            this.model.tracks.forEach(track => {
+                track.active = false;
+            });
+        }
+
+        this.selectedCelId = state.selectedCelId || null;
+        this.selectedAssetId = state.selectedAssetId || null;
+        this.selectedAssetFolderId = state.selectedAssetFolderId || null;
+        this.selectedInternalLayerId = state.selectedInternalLayerId || null;
+        this._invalidateSnapshotTextureCache();
+
+        const selectedEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (selectedEntry?.clip) {
+            this.activeLaneId = selectedEntry.lane?.id || this.activeLaneId;
+            this.model.tracks.forEach(track => {
+                track.active = track.id === this.activeLaneId;
+            });
+            this._activateClipEntry(selectedEntry, { saveCurrent: false });
+        } else {
+            this._syncWorkingLayersForCurrentFrame();
+        }
+
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    _restoreInternalLayerHistoryState(assetId, state) {
+        if (!assetId || !state) return false;
+        if (Array.isArray(state.clipAssets)) {
+            this.model.clipAssets = state.clipAssets.map(clipAsset => new ClipAssetModel(clipAsset));
+        }
+        let asset = this.model.getClipAsset(assetId);
+        if (!asset) return false;
+
+        if (!Array.isArray(state.clipAssets)) {
+            asset.internalLayers = (state.internalLayers || []).map(layer => {
+                return this.model.createClipAssetInternalLayer(layer);
+            });
+        }
+        this.model.drawingSnapshots = (state.drawingSnapshots || []).map(snapshot => {
+            return new DrawingSnapshotModel({
+                ...snapshot,
+                pixels: snapshot.pixels && typeof snapshot.pixels.length === 'number'
+                    ? new Uint8ClampedArray(snapshot.pixels)
+                    : snapshot.pixels
+            });
+        });
+        asset = this.model.getClipAsset(assetId);
+        if (!asset) return false;
+        asset.updatedAt = Date.now();
+        const entry = (state.selectedCelId ? this.model.findClipEntry(state.selectedCelId) : null)
+            || this._findClipEntryByAssetId(asset.id);
+        if (entry?.clip) {
+            this.selectedCelId = entry.clip.id;
+            this.activeLaneId = entry.lane?.id || this.activeLaneId;
+            if (Number.isInteger(entry.clip.startFrame)) {
+                this.model.setCurrentFrame(entry.clip.startFrame);
+            }
+            this.model.tracks.forEach(track => {
+                track.active = track.id === this.activeLaneId;
+            });
+        }
+        this.selectedAssetId = asset.id;
+        this.selectedAssetFolderId = asset.folderId || null;
+        this.selectedInternalLayerId = state.selectedInternalLayerId || this._getDrawableInternalLayers(asset)[0]?.id || null;
+        this._invalidateSnapshotTextureCache();
+        this._ensureWorkingLayerCapacity(this._getDrawableInternalLayers(asset).length);
+        this._restoreVisibility();
+        const clipToSync = entry?.clip || this.model.findClipEntry(this.selectedCelId)?.clip || null;
+        if (clipToSync) {
+            this._syncClipAssetToWorkingLayers(clipToSync, { forceRestore: true });
+        }
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    _mergeInternalLayerSnapshots({ width, height, sourceSnapshot, targetSnapshot, sourceLayer, targetLayer }) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        this._putSnapshotPixels(ctx, targetSnapshot, width, height);
+
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = width;
+        sourceCanvas.height = height;
+        const sourceCtx = sourceCanvas.getContext('2d');
+        if (!sourceCtx) return null;
+        this._putSnapshotPixels(sourceCtx, sourceSnapshot, width, height);
+
+        if (sourceLayer?.clipping === true && targetSnapshot?.pixels) {
+            sourceCtx.globalCompositeOperation = 'destination-in';
+            this._putSnapshotPixels(sourceCtx, targetSnapshot, width, height);
+            sourceCtx.globalCompositeOperation = 'source-over';
+        }
+
+        ctx.globalAlpha = sourceLayer?.opacity ?? 1;
+        ctx.globalCompositeOperation = this._canvasCompositeModeForBlendMode(sourceLayer?.blendMode || 'normal');
+        ctx.drawImage(sourceCanvas, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+
+        const imageData = ctx.getImageData(0, 0, width, height);
+        return new DrawingSnapshotModel({
+            width,
+            height,
+            pixels: new Uint8ClampedArray(imageData.data),
+            isBlank: false
+        });
+    }
+
+    _putSnapshotPixels(ctx, snapshot, width, height) {
+        if (!snapshot?.pixels) return false;
+        const snapshotWidth = Math.max(1, Math.round(snapshot.width || width));
+        const snapshotHeight = Math.max(1, Math.round(snapshot.height || height));
+        const imageData = new ImageData(new Uint8ClampedArray(snapshot.pixels), snapshotWidth, snapshotHeight);
+        ctx.putImageData(imageData, 0, 0);
+        return true;
+    }
+
+    _canvasCompositeModeForBlendMode(blendMode) {
+        switch (blendMode) {
+            case 'multiply':
+            case 'overlay':
+                return blendMode;
+            case 'add':
+                return 'lighter';
+            default:
+                return 'source-over';
         }
     }
 
@@ -886,16 +1855,22 @@ export class AnimationTablePopup {
             if (nextName === null) return { ok: false, reason: 'cancelled' };
         }
 
+        const beforeState = this._captureInternalLayerHistoryState(asset);
         const result = this.model.renameClipAssetInternalLayer(asset.id, layerId, nextName);
         if (result.ok) {
             // 選択状態の同期
             this.selectedAssetId = asset.id;
             this.selectedAssetFolderId = asset.folderId || null;
             this.selectedInternalLayerId = layerId;
-            this._syncActiveWorkingLayerToSelectedInternalLayer(asset);
+            this._syncSelectedClipToWorkingLayers();
 
             this.render();
-            this._requestLayerPanelSync(); // Phase 4z21
+            this._flushLayerPanelSync();
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-rename', {
+                type: 'caf-internal-layer-rename',
+                layerId,
+                name: result.layer?.name || nextName
+            });
         } else if (result.reason === 'invalid-name' && name === null) {
             alert('Invalid name. It cannot be empty.');
         }
@@ -903,20 +1878,61 @@ export class AnimationTablePopup {
         return result;
     }
 
-    removeInternalLayer(layerId) {
+    removeInternalLayer(layerId, options = {}) {
         const asset = this._getSelectedAssetForInspector();
         if (!asset || !layerId) return;
 
+        const beforeState = this._captureInternalLayerHistoryState(asset);
         const result = this.model.removeClipAssetInternalLayer(asset.id, layerId);
         if (result.ok) {
-            if (this.selectedInternalLayerId === layerId) {
-                this.selectedInternalLayerId = asset.internalLayers[0]?.id || null;
+            const removedIds = new Set((result.removedLayers || [result.layer]).map(layer => layer?.id).filter(Boolean));
+            if (removedIds.has(this.selectedInternalLayerId)) {
+                this.selectedInternalLayerId = result.fallbackLayer?.id || this._getDrawableInternalLayers(asset)[0]?.id || null;
             }
+            this._syncSelectedClipToWorkingLayers();
             this.render();
-            this._requestLayerPanelSync();
+            this._flushLayerPanelSync();
+            const historyName = options.historyName || 'caf-internal-layer-delete';
+            this._recordInternalLayerHistory(asset, beforeState, historyName, {
+                type: historyName,
+                layerId,
+                removedLayerIds: Array.from(removedIds)
+            });
         } else if (result.reason === 'last-layer') {
             alert('Cannot delete the last layer of an asset.');
         }
+    }
+
+    clearInternalLayerDrawing(layerId) {
+        const asset = this._getSelectedAssetForInspector();
+        if (!asset || !layerId) return { ok: false, reason: 'asset-not-found' };
+
+        const layer = asset.internalLayers.find(item => item.id === layerId);
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+        if (layer.type === 'folder' || layer.isBackground) return { ok: false, reason: 'not-raster-layer' };
+
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const size = this._getCanvasSnapshotSize();
+        const blankSnapshot = new DrawingSnapshotModel({
+            width: size.width,
+            height: size.height,
+            pixels: new Uint8ClampedArray(size.width * size.height * 4),
+            isBlank: true
+        });
+        this.model.drawingSnapshots.push(blankSnapshot);
+        layer.drawingSnapshotId = blankSnapshot.id;
+        layer.updatedAt = Date.now();
+        asset.updatedAt = Date.now();
+        this.selectedInternalLayerId = layer.id;
+        this._invalidateSnapshotTextureCache();
+        this._syncSelectedClipToWorkingLayers();
+        this.render();
+        this._flushLayerPanelSync();
+        this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-clear', {
+            type: 'caf-internal-layer-clear',
+            layerId
+        });
+        return { ok: true, asset, layer };
     }
 
     toggleInternalLayerVisibility(layerId) {
@@ -932,20 +1948,22 @@ export class AnimationTablePopup {
         const asset = this.model.getClipAsset(assetId);
         if (!asset) return { ok: false, reason: 'asset-not-found' };
 
+        const beforeState = this._captureInternalLayerHistoryState(asset);
         const result = this.model.toggleClipAssetInternalLayerVisibility(asset.id, layerId);
         if (result.ok) {
             // 選択状態の同期
             this.selectedAssetId = asset.id;
             this.selectedAssetFolderId = asset.folderId || null;
             this.selectedInternalLayerId = layerId;
-            this._syncActiveWorkingLayerToSelectedInternalLayer(asset);
+            this._syncSelectedClipToWorkingLayers();
 
             this.render();
-
-            // レイヤーパネル側にも通知
-            if (this.eventBus) {
-                this.eventBus.emit('layer:panel-update-requested');
-            }
+            this._flushLayerPanelSync();
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-visibility', {
+                type: 'caf-internal-layer-visibility',
+                layerId,
+                visible: result.layer?.visible !== false
+            });
         }
         return result;
     }
@@ -954,14 +1972,24 @@ export class AnimationTablePopup {
         const asset = this.model.getClipAsset(assetId);
         if (!asset) return { ok: false, reason: 'asset-not-found' };
 
+        const beforeState = this._captureInternalLayerHistoryState(asset);
         const result = this.model.toggleClipAssetInternalLayerClipping(asset.id, layerId);
         if (result.ok) {
             this.selectedAssetId = asset.id;
             this.selectedAssetFolderId = asset.folderId || null;
             this.selectedInternalLayerId = layerId;
-            this._syncSelectedClipToWorkingLayers();
+            if (result.layer?.type === 'folder') {
+                this._invalidateSnapshotTextureCache();
+            } else {
+                this._syncSelectedClipToWorkingLayers();
+            }
             this.render();
-            this._requestLayerPanelSync();
+            this._flushLayerPanelSync();
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-clipping', {
+                type: 'caf-internal-layer-clipping',
+                layerId,
+                clipping: result.layer?.clipping === true
+            });
         }
         return result;
     }
@@ -970,11 +1998,42 @@ export class AnimationTablePopup {
         const entry = this.model.findClipEntry(clipId);
         if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
 
+        const beforeVisible = entry.clip.visible !== false;
         entry.clip.visible = entry.clip.visible === false ? true : false;
+        const afterVisible = entry.clip.visible !== false;
         this._activateClipEntry(entry);
+        this._syncClipAssetToWorkingLayers(entry.clip);
         this.render();
-        this._requestLayerPanelSync();
+        this._flushLayerPanelSync();
+        this._recordClipVisibilityHistory(clipId, beforeVisible, afterVisible);
         return { ok: true, clip: entry.clip, lane: entry.lane };
+    }
+
+    _recordClipVisibilityHistory(clipId, beforeVisible, afterVisible) {
+        if (!clipId || beforeVisible === afterVisible || !historyManager || historyManager.isApplying) return false;
+        historyManager.record({
+            name: 'caf-clip-visibility',
+            do: () => this._restoreClipVisibilityHistoryState(clipId, afterVisible),
+            undo: () => this._restoreClipVisibilityHistoryState(clipId, beforeVisible),
+            meta: {
+                type: 'caf-clip-visibility',
+                clipId,
+                visible: afterVisible
+            }
+        });
+        return true;
+    }
+
+    _restoreClipVisibilityHistoryState(clipId, visible) {
+        const entry = this.model.findClipEntry(clipId);
+        if (!entry?.clip) return false;
+
+        entry.clip.visible = visible !== false;
+        this._activateClipEntry(entry, { saveCurrent: false });
+        this._syncClipAssetToWorkingLayers(entry.clip);
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
     }
 
     /**
@@ -1055,14 +2114,42 @@ export class AnimationTablePopup {
         });
     }
 
+    _getDrawableInternalLayers(asset) {
+        return (asset?.internalLayers || []).filter(layer => {
+            return layer && layer.type !== 'folder' && layer.isBackground !== true;
+        });
+    }
+
+    _getVisibleLayerItemsForClipAsset(options = {}) {
+        if (!this.layerSystem) return [];
+        const workingLayers = this._getRasterWorkingLayers();
+        if (workingLayers.some(layer => layer.layerData?.isAnimationWorkingLayer === true)) {
+            const maxCount = Number.isInteger(options.maxWorkingLayerCount)
+                ? Math.max(0, options.maxWorkingLayerCount)
+                : workingLayers.length;
+            return workingLayers.slice(0, maxCount);
+        }
+
+        const layers = this.layerSystem.getLayers() || [];
+        return [...layers].reverse().filter(layer => {
+            const layerData = layer?.layerData;
+            if (!layerData || layerData.isBackground) return false;
+            if (layerData.isAnimationWorkingLayer) return false;
+            if (layerData.isFolder) return true;
+            return !!layerData.renderTexture && layerData.visible !== false;
+        });
+    }
+
     _getRasterWorkingLayers() {
         if (!this.layerSystem) return [];
         const layers = this.layerSystem.getLayers() || [];
-        return [...layers].reverse().filter(layer => {
+        const rasterLayers = [...layers].reverse().filter(layer => {
             const layerData = layer?.layerData;
             if (!layerData || layerData.isBackground || layerData.isFolder) return false;
             return !!layerData.renderTexture;
         });
+        const animationWorkingLayers = rasterLayers.filter(layer => layer.layerData?.isAnimationWorkingLayer === true);
+        return animationWorkingLayers.length > 0 ? animationWorkingLayers : rasterLayers;
     }
 
     _ensureWorkingLayerCapacity(requiredCount) {
@@ -1071,17 +2158,44 @@ export class AnimationTablePopup {
         while (this._getRasterWorkingLayers().length < requiredCount) {
             const result = this.layerSystem.createLayer?.();
             if (!result) break;
+            if (result.layer?.layerData) {
+                result.layer.layerData.isAnimationWorkingLayer = true;
+                result.layer.visible = false;
+                result.layer.layerData.visible = false;
+            }
         }
     }
 
     _createClipAssetFromVisibleLayers(options = {}) {
         const name = options.name || 'Clip Asset';
-        const sourceLayers = this._getVisibleRasterLayersForClipAsset();
+        const sourceLayers = this._getVisibleLayerItemsForClipAsset({
+            maxWorkingLayerCount: options.maxWorkingLayerCount
+        });
         const internalLayers = [];
+        const importedLayerIdMap = new Map();
+        const pendingParentLinks = [];
         let primarySnapshot = null;
         let primaryRasterSnapshot = null;
 
         sourceLayers.forEach(layer => {
+            const layerData = layer.layerData;
+            if (!layerData) return;
+
+            if (layerData.isFolder) {
+                const folderLayer = this.model.createClipAssetInternalLayer({
+                    name: layerData.name || 'フォルダ',
+                    type: 'folder',
+                    visible: layerData.visible !== false,
+                    opacity: layerData.opacity ?? 1,
+                    blendMode: 'normal',
+                    parentLayerId: layerData.parentId ? importedLayerIdMap.get(layerData.parentId) || null : null
+                });
+                importedLayerIdMap.set(layerData.id, folderLayer.id);
+                if (layerData.parentId) pendingParentLinks.push({ internalLayer: folderLayer, parentId: layerData.parentId });
+                internalLayers.push(folderLayer);
+                return;
+            }
+
             const rawSnapshot = this.layerSystem.createLayerRasterSnapshot(layer);
             if (!rawSnapshot) return;
 
@@ -1093,21 +2207,28 @@ export class AnimationTablePopup {
             });
             this.model.drawingSnapshots.push(drawingSnapshot);
 
-            const layerData = layer.layerData;
-            internalLayers.push(this.model.createClipAssetInternalLayer({
+            const internalLayer = this.model.createClipAssetInternalLayer({
                 name: layerData.name || 'Layer',
                 type: 'raster',
                 visible: layerData.visible !== false,
                 opacity: layerData.opacity ?? 1,
                 blendMode: layerData.blendMode || 'normal',
                 clipping: layerData.clipping === true,
+                parentLayerId: layerData.parentId ? importedLayerIdMap.get(layerData.parentId) || null : null,
                 drawingSnapshotId: drawingSnapshot.id
-            }));
+            });
+            importedLayerIdMap.set(layerData.id, internalLayer.id);
+            if (layerData.parentId) pendingParentLinks.push({ internalLayer, parentId: layerData.parentId });
+            internalLayers.push(internalLayer);
 
             if (!primarySnapshot) {
                 primarySnapshot = drawingSnapshot;
                 primaryRasterSnapshot = rawSnapshot;
             }
+        });
+
+        pendingParentLinks.forEach(({ internalLayer, parentId }) => {
+            internalLayer.parentLayerId = importedLayerIdMap.get(parentId) || null;
         });
 
         if (!primarySnapshot) {
@@ -1156,53 +2277,94 @@ export class AnimationTablePopup {
         };
     }
 
-    _syncClipAssetToWorkingLayers(clip) {
+    _syncClipAssetToWorkingLayers(clip, options = {}) {
         if (!clip?.assetId || !this.layerSystem) return false;
         const asset = this.model.getClipAsset(clip.assetId);
         if (!asset) return false;
+        const forceRestore = options.forceRestore === true;
 
+        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
         const targetLayers = this._getRasterWorkingLayers();
         if (targetLayers.length === 0) return false;
-        if (!asset.internalLayers.some(layer => layer.id === this.selectedInternalLayerId)) {
-            this.selectedInternalLayerId = asset.internalLayers[0]?.id || null;
+        if (!drawableInternalLayers.some(layer => layer.id === this.selectedInternalLayerId)) {
+            this.selectedInternalLayerId = drawableInternalLayers[0]?.id || null;
         }
 
-        asset.internalLayers.forEach((internalLayer, index) => {
+        drawableInternalLayers.forEach((internalLayer, index) => {
             const targetLayer = targetLayers[index];
             if (!targetLayer?.layerData) return;
 
             const snapshot = this.model.getDrawingSnapshot(internalLayer.drawingSnapshotId);
-            const restoreSnapshot = snapshot
-                ? {
-                    ...snapshot,
-                    layerId: targetLayer.layerData.id,
-                    pathsData: [],
-                    paths: []
-                }
-                : this._createBlankRasterSnapshot(targetLayer.layerData.id);
+            const snapshotId = internalLayer.drawingSnapshotId || null;
+            if (forceRestore || targetLayer.layerData.animationSnapshotId !== snapshotId) {
+                const restoreSnapshot = snapshot
+                    ? {
+                        ...snapshot,
+                        layerId: targetLayer.layerData.id,
+                        pathsData: [],
+                        paths: []
+                    }
+                    : this._createBlankRasterSnapshot(targetLayer.layerData.id);
 
-            this.layerSystem.restoreLayerRasterSnapshot(restoreSnapshot);
+                this.layerSystem.restoreLayerRasterSnapshot(restoreSnapshot);
+                targetLayer.layerData.animationSnapshotId = snapshotId;
+            }
             targetLayer.layerData.isAnimationWorkingLayer = true;
             targetLayer.layerData.name = internalLayer.name || targetLayer.layerData.name;
-            targetLayer.layerData.opacity = internalLayer.opacity ?? 1;
-            targetLayer.layerData.blendMode = internalLayer.blendMode || 'normal';
+            const opacity = internalLayer.opacity ?? 1;
+            const blendMode = internalLayer.blendMode || 'normal';
+            targetLayer.alpha = opacity;
+            targetLayer.blendMode = blendMode;
+            if (targetLayer.layerData.layerSprite) {
+                targetLayer.layerData.layerSprite.blendMode = blendMode;
+            }
+            targetLayer.layerData.opacity = opacity;
+            targetLayer.layerData.blendMode = blendMode;
             targetLayer.layerData.clipping = internalLayer.clipping === true;
-            targetLayer.visible = internalLayer.visible !== false;
-            targetLayer.layerData.visible = internalLayer.visible !== false;
+            targetLayer.layerData.parentId = internalLayer.parentLayerId || null;
+            const isEffectivelyVisible = clip.visible !== false
+                && this._isInternalLayerEffectivelyVisible(asset, internalLayer);
+            targetLayer.visible = isEffectivelyVisible;
+            targetLayer.layerData.visible = isEffectivelyVisible;
         });
 
-        for (let index = asset.internalLayers.length; index < targetLayers.length; index++) {
+        for (let index = drawableInternalLayers.length; index < targetLayers.length; index++) {
             const targetLayer = targetLayers[index];
             if (!targetLayer?.layerData) continue;
-            this.layerSystem.restoreLayerRasterSnapshot(this._createBlankRasterSnapshot(targetLayer.layerData.id));
+            if (forceRestore || targetLayer.layerData.animationSnapshotId !== null) {
+                this.layerSystem.restoreLayerRasterSnapshot(this._createBlankRasterSnapshot(targetLayer.layerData.id));
+                targetLayer.layerData.animationSnapshotId = null;
+            }
             targetLayer.layerData.isAnimationWorkingLayer = true;
+            targetLayer.layerData.parentId = null;
             targetLayer.visible = false;
             targetLayer.layerData.visible = false;
         }
 
+        this.layerSystem.refreshClippingMasks?.();
         this._syncActiveWorkingLayerToSelectedInternalLayer(asset);
         this._requestLayerPanelSync();
         return true;
+    }
+
+    _markWorkingLayerSnapshotIds(asset) {
+        if (!asset || !this.layerSystem) return;
+
+        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
+        const targetLayers = this._getRasterWorkingLayers();
+        drawableInternalLayers.forEach((internalLayer, index) => {
+            const targetLayer = targetLayers[index];
+            if (!targetLayer?.layerData) return;
+            targetLayer.layerData.animationSnapshotId = internalLayer.drawingSnapshotId || null;
+        });
+    }
+
+    _invalidateWorkingLayerSnapshotId(layerId) {
+        if (!layerId || !this.layerSystem) return;
+        const layer = (this.layerSystem.getLayers?.() || []).find(candidate => candidate.layerData?.id === layerId);
+        if (layer?.layerData) {
+            layer.layerData.animationSnapshotId = null;
+        }
     }
 
     _syncActiveWorkingLayerToSelectedInternalLayer(asset = null) {
@@ -1210,7 +2372,8 @@ export class AnimationTablePopup {
         const targetAsset = asset || this._getSelectedAssetForInspector();
         if (!targetAsset || !this.selectedInternalLayerId) return false;
 
-        const internalIndex = targetAsset.internalLayers.findIndex(layer => layer.id === this.selectedInternalLayerId);
+        const drawableInternalLayers = this._getDrawableInternalLayers(targetAsset);
+        const internalIndex = drawableInternalLayers.findIndex(layer => layer.id === this.selectedInternalLayerId);
         if (internalIndex < 0) return false;
 
         const targetLayer = this._getRasterWorkingLayers()[internalIndex];
@@ -1239,9 +2402,10 @@ export class AnimationTablePopup {
 
         const workingLayers = this._getRasterWorkingLayers();
         const internalIndex = workingLayers.indexOf(activeLayer);
-        if (internalIndex < 0 || internalIndex >= asset.internalLayers.length) return false;
+        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
+        if (internalIndex < 0 || internalIndex >= drawableInternalLayers.length) return false;
 
-        const nextLayerId = asset.internalLayers[internalIndex]?.id || null;
+        const nextLayerId = drawableInternalLayers[internalIndex]?.id || null;
         if (!nextLayerId || nextLayerId === this.selectedInternalLayerId) return false;
 
         this.selectedInternalLayerId = nextLayerId;
@@ -1249,10 +2413,53 @@ export class AnimationTablePopup {
         return true;
     }
 
-    _syncSelectedClipToWorkingLayers() {
+    _syncSelectedInternalLayerAttributesFromWorkingLayer(layerIndex = null) {
+        if (!this.layerSystem || !this.selectedCelId) return false;
+        const asset = this._getSelectedAssetForInspector();
+        if (!asset?.internalLayers?.length) return false;
+
+        const layers = this.layerSystem.getLayers() || [];
+        const activeIndex = Number.isInteger(layerIndex)
+            ? layerIndex
+            : (this.layerSystem.activeLayerIndex ?? this.layerSystem.currentLayerIndex);
+        const activeLayer = layers[activeIndex];
+        if (!activeLayer?.layerData?.isAnimationWorkingLayer) return false;
+
+        const workingLayers = this._getRasterWorkingLayers();
+        const internalIndex = workingLayers.indexOf(activeLayer);
+        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
+        const internalLayer = drawableInternalLayers[internalIndex];
+        if (!internalLayer) return false;
+
+        internalLayer.opacity = activeLayer.layerData.opacity ?? 1;
+        internalLayer.blendMode = activeLayer.layerData.blendMode || 'normal';
+        internalLayer.clipping = activeLayer.layerData.clipping === true;
+        internalLayer.updatedAt = Date.now();
+        asset.updatedAt = Date.now();
+
+        if (this.selectedInternalLayerId !== internalLayer.id) {
+            this.selectedInternalLayerId = internalLayer.id;
+        }
+        this._scheduleInternalLayerAttributePreviewSync();
+        return true;
+    }
+
+    _scheduleInternalLayerAttributePreviewSync() {
+        if (this._attributePreviewSyncFrame !== null) return;
+
+        this._attributePreviewSyncFrame = requestAnimationFrame(() => {
+            this._attributePreviewSyncFrame = null;
+            if (this.isVisible && this.isPreviewActive) {
+                this.render();
+            }
+            this._requestLayerPanelSync();
+        });
+    }
+
+    _syncSelectedClipToWorkingLayers(options = {}) {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         if (!entry?.clip) return false;
-        return this._syncClipAssetToWorkingLayers(entry.clip);
+        return this._syncClipAssetToWorkingLayers(entry.clip, options);
     }
 
     _clearWorkingLayersForEmptyFrame() {
@@ -1263,9 +2470,11 @@ export class AnimationTablePopup {
             if (!targetLayer?.layerData) return;
             this.layerSystem.restoreLayerRasterSnapshot(this._createBlankRasterSnapshot(targetLayer.layerData.id));
             targetLayer.layerData.isAnimationWorkingLayer = true;
+            targetLayer.layerData.animationSnapshotId = null;
             targetLayer.layerData.name = index === 0 ? 'レイヤー1' : targetLayer.layerData.name;
             targetLayer.layerData.opacity = 1;
             targetLayer.layerData.blendMode = 'normal';
+            targetLayer.layerData.parentId = null;
             targetLayer.visible = false;
             targetLayer.layerData.visible = false;
         });
@@ -1308,13 +2517,22 @@ export class AnimationTablePopup {
         if (!nextLane || nextLane.id === this.activeLaneId) return false;
 
         this._saveSelectedClipFromWorkingLayers();
-        this.activeLaneId = nextLane.id;
-        this.model.tracks.forEach(track => {
-            track.active = track.id === nextLane.id;
-        });
+        this._setActiveLane(nextLane.id);
         this._syncWorkingLayersForCurrentFrame();
         this.render();
         this._requestLayerPanelSync();
+        return true;
+    }
+
+    _setActiveLane(laneId) {
+        if (!laneId) return false;
+        const lane = this.model.tracks.find(track => track.id === laneId);
+        if (!lane || lane.type === 'folder' || lane.isBackground) return false;
+
+        this.activeLaneId = lane.id;
+        this.model.tracks.forEach(track => {
+            track.active = track.id === lane.id;
+        });
         return true;
     }
 
@@ -1377,7 +2595,7 @@ export class AnimationTablePopup {
             let visibleLaneIndex = 0;
             this.model.tracks.forEach((track, trackIndex) => {
                 if (track.isBackground || track.type === 'folder') return;
-                const activeClass = track.active ? ' active' : '';
+                const activeClass = (track.active || track.id === this.activeLaneId) ? ' active' : '';
                 const typeClass = track.type === 'folder' ? ' is-folder' : '';
                 
                 // Phase 4z2: includeボタンの追加
@@ -1415,7 +2633,7 @@ export class AnimationTablePopup {
             let gridHtml = headerHtml;
             this.model.tracks.forEach(track => {
                 if (track.isBackground || track.type === 'folder') return;
-                const activeClass = track.active ? ' active' : '';
+                const activeClass = (track.active || track.id === this.activeLaneId) ? ' active' : '';
                 const isFolder = track.type === 'folder';
                 const folderClass = isFolder ? ' is-folder' : '';
                 
@@ -1454,7 +2672,7 @@ export class AnimationTablePopup {
         }
 
         // プレビューの適用判定
-        if (this.isClipEditModeActive) {
+        if (this.isClipEditModeActive || this.isTransformPreviewSuspended || this.isDrawingPreviewSuspended) {
             // EDITモード中は合成を停止し、実レイヤー描画を優先
             this._restoreVisibility();
         } else if (this.isPreviewActive) {
@@ -1674,6 +2892,7 @@ export class AnimationTablePopup {
             // 自動作成されたクリップを選択状態にする
             this.selectedCelId = newClip.id;
             this.activeLaneId = targetLane.id;
+            this._syncClipAssetToWorkingLayers(newClip);
         }
 
         this.initialClipAssetSeeded = true;
@@ -1928,7 +3147,7 @@ export class AnimationTablePopup {
                 const frameIndex = parseInt(slot.dataset.frameIndex, 10);
                 const track = this.model.tracks.find(t => t.id === trackId);
                 if (!track) return;
-                this.activeLaneId = track.id;
+                this._setActiveLane(track.id);
 
                 // フォルダトラックはセル配置不可
                 if (track.type === 'folder' || track.isBackground) return;
@@ -1937,12 +3156,22 @@ export class AnimationTablePopup {
 
                 // Alt+Click でClipを作成/削除する。通常クリックは選択/Frame移動のみ。
                 if (e.altKey) {
+                    this._saveSelectedClipFromWorkingLayers();
+                    const beforeState = this._captureTimelineHistoryState();
                     if (existingCel) {
+                        const removedCelId = existingCel.id;
+                        const removedAssetId = existingCel.assetId || null;
                         if (this.selectedCelId === existingCel.id) this.selectedCelId = null;
                         track.removeCelAtFrame(existingCel.startFrame);
                         this._syncWorkingLayersForCurrentFrame();
+                        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-delete', {
+                            type: 'caf-clip-delete',
+                            clipId: removedCelId,
+                            assetId: removedAssetId,
+                            laneId: track.id,
+                            frameIndex
+                        });
                     } else {
-                        this._saveSelectedClipFromWorkingLayers();
                         // 新規Frame/LaneのClipは空のClipAssetから始める。
                         const size = this._getCanvasSnapshotSize();
                         const cafFolder = this._createNextClipAssetFolder();
@@ -1968,6 +3197,13 @@ export class AnimationTablePopup {
                         });
                         if (newCel) {
                             this._activateClipEntry({ lane: track, track, clip: newCel }, { saveCurrent: false });
+                            this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-create', {
+                                type: 'caf-clip-create',
+                                clipId: newCel.id,
+                                assetId: asset.id,
+                                laneId: track.id,
+                                frameIndex
+                            });
                         }
                     }
                 } else {
@@ -2459,6 +3695,23 @@ export class AnimationTablePopup {
                 cursor: pointer;
             }
 
+            .anim-internal-layer-row.depth-1 {
+                padding-left: 24px;
+            }
+
+            .anim-internal-layer-row.depth-2 {
+                padding-left: 36px;
+            }
+
+            .anim-internal-layer-row.depth-3,
+            .anim-internal-layer-row.depth-4 {
+                padding-left: 48px;
+            }
+
+            .anim-internal-layer-row.is-folder {
+                background: rgba(240, 224, 214, 0.35);
+            }
+
             .anim-internal-layer-row:hover {
                 background: rgba(255, 102, 0, 0.05);
             }
@@ -2872,6 +4125,10 @@ export class AnimationTablePopup {
                 background: rgba(255, 102, 0, 0.05);
             }
 
+            .anim-timeline-row.active .anim-cell-slot {
+                background: rgba(255, 102, 0, 0.045);
+            }
+
             .anim-cell-slot {
                 width: 30px;
                 flex-shrink: 0;
@@ -2894,6 +4151,10 @@ export class AnimationTablePopup {
 
             .anim-cell-slot.current-col {
                 background: rgba(255, 102, 0, 0.05);
+            }
+
+            .anim-timeline-row.active .anim-cell-slot.current-col {
+                background: rgba(255, 102, 0, 0.12);
             }
 
             .anim-cell-slot.selected {
@@ -3049,18 +4310,52 @@ export class AnimationTablePopup {
         // レイヤー系の更新を購読
         this.eventBus.on('layer:panel-update-requested', () => this.requestUpdate());
         this.eventBus.on('layer:created', () => this.requestUpdate());
-        this.eventBus.on('layer:deleted', () => this.requestUpdate());
+        this.eventBus.on('layer:deleted', (data = {}) => {
+            this._handleLayerDeleted(data);
+            this.requestUpdate();
+        });
         this.eventBus.on('layer:activated', ({ layerIndex } = {}) => {
             this._syncSelectedInternalLayerFromActiveWorkingLayer(layerIndex);
             this.requestUpdate();
         });
         this.eventBus.on('layer:reordered', () => this.requestUpdate());
         this.eventBus.on('layer:name-changed', () => this.requestUpdate());
+        this.eventBus.on('layer:opacity-changed', ({ layerIndex } = {}) => {
+            this._syncSelectedInternalLayerAttributesFromWorkingLayer(layerIndex);
+        });
+        this.eventBus.on('layer:blend-mode-changed', ({ layerIndex } = {}) => {
+            this._syncSelectedInternalLayerAttributesFromWorkingLayer(layerIndex);
+        });
+        this.eventBus.on('layer:clipping-changed', ({ layerIndex } = {}) => {
+            this._syncSelectedInternalLayerAttributesFromWorkingLayer(layerIndex);
+        });
         
         // アニメーション系
         this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
+        this.eventBus.on('history:changed', (data = {}) => {
+            this._handleHistoryChanged(data);
+        });
+        this.eventBus.on('keyboard:vkey-state-changed', ({ pressed } = {}) => {
+            if (pressed) {
+                this._enterTransformEditPreviewMode();
+            }
+        });
+        this.eventBus.on('layer:transform-exit', ({ layerId } = {}) => {
+            const shouldSave = layerId && this._isAnimationWorkingLayerId(layerId);
+            requestAnimationFrame(() => {
+                if (shouldSave) {
+                    this._invalidateWorkingLayerSnapshotId(layerId);
+                    this._saveSelectedClipFromWorkingLayers({ force: true });
+                    this._requestLayerPanelSync();
+                }
+                this._exitTransformEditPreviewMode();
+            });
+        });
 
         // 自動キャプチャ
+        this.eventBus.on('drawing:stroke-started', (data = {}) => {
+            this._handleDrawingStarted(data);
+        });
         this.eventBus.on('drawing:stroke-completed', (data = {}) => {
             this._handleDrawingCompleted(data);
         });
@@ -3114,19 +4409,6 @@ export class AnimationTablePopup {
                     }
                 }
                 e.preventDefault();
-            } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (this.selectedCelId) {
-                    // すべてのトラックから該当セルを探して削除
-                    const entry = this.model.findClipEntry(this.selectedCelId);
-                    if (entry) {
-                        entry.lane.removeCelAtFrame(entry.clip.startFrame);
-                        this.selectedCelId = null;
-                        this._syncWorkingLayersForCurrentFrame();
-                        if (this.isClipEditModeActive) this.exitClipEditMode();
-                        this.render();
-                        this._requestLayerPanelSync(); // Phase 4z21
-                    }
-                }
             }
         });
     }

@@ -174,7 +174,9 @@ export class BrushCore {
         }
 
         const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
-        const processedPressure = pressureEnabled ? Math.max(0.1, pressure ?? 0.5) : 1.0;
+        // PointerEvent の down 圧は液タブによってスパイクすることがある。
+        // 開始点だけは極小に固定し、2点目以降は updateStroke() の実筆圧へ立ち上げる。
+        const processedPressure = pressureEnabled ? 0.0 : 1.0;
 
         if (pressureEnabled && this.pressureHandler) {
             this.pressureHandler.startStroke();
@@ -248,9 +250,10 @@ export class BrushCore {
         const dy = localY - this.lastLocalY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        // [指示書] 0荷重付近で消えないよう最小値を 0.1 程度に置く
+        // 描き始めの 0.0 と合わせるため、最小値を 0.1 -> 0.0 に変更。
+        // これにより点描時の突然の肥大化を防ぐ。
         const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
-        const processedPressure = pressureEnabled ? Math.max(0.1, pressure ?? 0.5) : 1.0;
+        const processedPressure = pressureEnabled ? Math.max(0.0, pressure ?? 0.0) : 1.0;
 
         // カメラ縮小時は1つの画面移動が大きなlocal距離になるため、記録とライブ表示の両方を細かく補間する。
         const interpolationStep = currentMode === 'lasso-fill' ? 5 : 1; // 投げ縄は少し粗めで良い
@@ -670,6 +673,7 @@ export class BrushCore {
         const beforeSnapshot = this.strokeHistoryBefore;
         if (!beforeSnapshot || !historyManager || historyManager.isApplying) return;
         if (!this.layerManager?.createLayerRasterSnapshot || !this.layerManager?.restoreLayerRasterSnapshot) return;
+        if (layer?.layerData?.isAnimationWorkingLayer === true) return;
 
         const afterSnapshot = this.layerManager.createLayerRasterSnapshot(layer);
         if (!afterSnapshot) return;

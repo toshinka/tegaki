@@ -251,6 +251,9 @@ export class UIController {
                     )
                 );
                 if (hasAnimationContext) {
+                    if (animationTable.selectedCelId && typeof animationTable.addInternalFolder === 'function') {
+                        animationTable.addInternalFolder();
+                    }
                     return;
                 }
 
@@ -322,6 +325,34 @@ export class UIController {
 
     handleActiveLayerOperation(action, triggerEl = null) {
         if (!this.layerManager) return;
+
+        const animationTable = this.popupManager?.get?.('animationTable');
+        if (action === 'duplicate' && animationTable?.isVisible && animationTable.selectedCelId) {
+            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
+            if (selectedInternalLayerId && typeof animationTable.duplicateInternalLayer === 'function') {
+                animationTable.duplicateInternalLayer(selectedInternalLayerId);
+                triggerEl?.blur?.();
+                return;
+            }
+        }
+
+        if (action === 'mergeDown' && animationTable?.isVisible && animationTable.selectedCelId) {
+            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
+            if (selectedInternalLayerId && typeof animationTable.mergeInternalLayerDown === 'function') {
+                animationTable.mergeInternalLayerDown(selectedInternalLayerId);
+            }
+            triggerEl?.blur?.();
+            return;
+        }
+
+        if (action === 'delete' && animationTable?.isVisible && animationTable.selectedCelId) {
+            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
+            if (selectedInternalLayerId && typeof animationTable.removeInternalLayer === 'function') {
+                animationTable.removeInternalLayer(selectedInternalLayerId);
+                triggerEl?.blur?.();
+                return;
+            }
+        }
 
         const activeIndex = this.layerManager.getActiveLayerIndex?.() ?? this.layerManager.activeLayerIndex;
         if (activeIndex == null || activeIndex < 0) return;

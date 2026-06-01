@@ -219,6 +219,10 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_CREATE':
+                if (handleAnimationTableLayerShortcut('create')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.layer.create) {
                     const result = api.layer.create();
                     if (result) {
@@ -231,26 +235,47 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_DELETE_DRAWINGS':
+                if (handleAnimationTableLayerShortcut('clear')) {
+                    event.stopImmediatePropagation();
+                    event.preventDefault();
+                    break;
+                }
                 deleteActiveLayerDrawings();
                 event.preventDefault();
                 break;
             
             case 'LAYER_DELETE':
+                if (handleAnimationTableLayerShortcut('delete')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:delete-active');
                 event.preventDefault();
                 break;
             
             case 'LAYER_COPY':
+                if (handleAnimationTableLayerShortcut('copy')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:copy-request');
                 event.preventDefault();
                 break;
             
             case 'LAYER_PASTE':
+                if (handleAnimationTableLayerShortcut('paste')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:paste-request');
                 event.preventDefault();
                 break;
             
             case 'LAYER_CUT':
+                if (handleAnimationTableLayerShortcut('cut')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:cut-request');
                 event.preventDefault();
                 break;
@@ -329,11 +354,19 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_ORDER_UP':
+                if (handleAnimationTableLayerShortcut('order-up')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:order-up');
                 event.preventDefault();
                 break;
             
             case 'LAYER_ORDER_DOWN':
+                if (handleAnimationTableLayerShortcut('order-down')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:order-down');
                 event.preventDefault();
                 break;
@@ -445,6 +478,79 @@ export const KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
         }
+    }
+
+    function handleAnimationTableLayerShortcut(action) {
+        const animationTable = window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable');
+        if (!animationTable?.isVisible) return false;
+        if (!animationTable.selectedCelId) {
+            return [
+                'create',
+                'delete',
+                'clear',
+                'copy',
+                'paste',
+                'cut',
+                'order-up',
+                'order-down',
+                'block'
+            ].includes(action);
+        }
+
+        if (action === 'create') {
+            animationTable.addInternalLayer?.();
+            return true;
+        }
+
+        if (action === 'delete') {
+            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
+            if (selectedInternalLayerId && animationTable.removeInternalLayer) {
+                animationTable.removeInternalLayer(selectedInternalLayerId);
+            }
+            return true;
+        }
+
+        if (action === 'clear') {
+            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
+            if (selectedInternalLayerId && animationTable.clearInternalLayerDrawing) {
+                animationTable.clearInternalLayerDrawing(selectedInternalLayerId);
+            }
+            return true;
+        }
+
+        if (action === 'copy') {
+            animationTable.copyInternalLayer?.();
+            return true;
+        }
+
+        if (action === 'paste') {
+            animationTable.pasteInternalLayer?.();
+            return true;
+        }
+
+        if (action === 'cut') {
+            animationTable.cutInternalLayer?.();
+            return true;
+        }
+
+        if (action === 'order-up') {
+            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
+            if (selectedInternalLayerId && animationTable.moveInternalLayer) {
+                animationTable.moveInternalLayer(selectedInternalLayerId, 'up');
+            }
+            return true;
+        }
+
+        if (action === 'order-down') {
+            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
+            if (selectedInternalLayerId && animationTable.moveInternalLayer) {
+                animationTable.moveInternalLayer(selectedInternalLayerId, 'down');
+            }
+            return true;
+        }
+
+        return action === 'block';
     }
 
     function selectQuickAccessPresetSlot(delta) {

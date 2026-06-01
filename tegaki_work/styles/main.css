@@ -398,6 +398,27 @@ canvas {
     transition: all 0.2s ease;
 }
 
+.clip-layer-mirror-row.depth-1 {
+    margin-left: 14px;
+}
+
+.clip-layer-mirror-row.depth-2 {
+    margin-left: 28px;
+}
+
+.clip-layer-mirror-row.depth-3,
+.clip-layer-mirror-row.depth-4 {
+    margin-left: 42px;
+}
+
+.clip-layer-mirror-row.is-folder {
+    background: rgba(240, 224, 214, 0.72);
+}
+
+.clip-layer-mirror-row.is-folder.is-collapsed {
+    background: rgba(240, 224, 214, 0.58);
+}
+
 .clip-layer-mirror-row .folder-child-line {
     position: absolute;
     left: -10px;
@@ -405,6 +426,10 @@ canvas {
     width: 2px;
     height: 100%;
     background-color: rgba(128, 0, 0, 0.22);
+}
+
+.clip-layer-mirror-row.is-folder .folder-child-line {
+    background-color: rgba(128, 0, 0, 0.34);
 }
 
 .clip-layer-mirror-thumb {
@@ -418,6 +443,11 @@ canvas {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+.clip-layer-mirror-row.is-folder .clip-layer-mirror-thumb svg {
+    width: 24px;
+    height: 24px;
 }
 
 .clip-layer-mirror-thumb img {
@@ -439,6 +469,47 @@ canvas {
 
 .clip-layer-mirror-row.is-hidden {
     opacity: 0.4;
+}
+
+.clip-layer-mirror-row.is-dragging {
+    opacity: 0.35;
+}
+
+.clip-layer-mirror-drag-ghost {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0.72;
+    transform: scale(1.02);
+    transform-origin: top left;
+    will-change: transform;
+    box-shadow: 0 8px 18px rgba(128, 0, 0, 0.22);
+}
+
+.clip-layer-mirror-row.is-dnd-before::before,
+.clip-layer-mirror-row.is-dnd-after::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--active-border);
+    box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
+}
+
+.clip-layer-mirror-row.is-dnd-before::before {
+    top: -3px;
+}
+
+.clip-layer-mirror-row.is-dnd-after::after {
+    bottom: -3px;
+}
+
+.clip-layer-mirror-row.is-dnd-inside {
+    outline: 2px solid var(--active-border);
+    outline-offset: 2px;
+    background: rgba(255, 102, 0, 0.12);
 }
 
 .clip-layer-mirror-visibility-btn {

@@ -9,7 +9,7 @@
  * 動作仕様:
  * - ストローク開始時の初期N点からベースライン(無負荷時の圧力)を算出
  * - 補正式: (raw - baseline) / (1 - baseline)
- * - ベースライン算出中は pressure = 0 を返す
+ * - ベースライン算出中は rawPressure を返し、開始時の固定圧を避ける
  * - tiltX/Y, twistデータを保持し、将来の高度な筆圧表現に備える
  * 
  * Phase 3追加:
@@ -73,8 +73,8 @@
                     this.baseline = Math.min(...this.baselineSamples);
                     this.isCalibrated = true;
                 } else {
-                    // 算出中は0.5を返す（修正：0だと点が表示されない）
-                    return 0.5;
+                    // 算出中は rawPressure をそのまま返す（0.5だと一瞬太くなるバグの原因）
+                    return rawPressure;
                 }
             }
 

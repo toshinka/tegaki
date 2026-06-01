@@ -35,15 +35,25 @@ export class StrokeRecorder {
             return;
         }
         
-        let processedPressure = rawPressure;
-        if (this.pressureHandler && this.pressureHandler.processPressure) {
-            processedPressure = this.pressureHandler.processPressure(rawPressure);
+        let pressure = rawPressure;
+        if (this.pressureHandler) {
+            // [修正] メソッド名が getCalibratedPressure だったのを正しく呼び出す。
+            pressure = this.pressureHandler.getCalibratedPressure(rawPressure);
+
+            // [修正] 距離ベースのフィルタを適用してスムージングを効かせる。
+            if (this.currentPoints.length > 0) {
+                const prev = this.currentPoints[this.currentPoints.length - 1];
+                // 変数名が間違っていたのを修正 (x, y -> localX, localY)
+                const distance = Math.hypot(localX - prev.x, localY - prev.y);
+                pressure = this.pressureHandler.applyDistanceFilter(pressure, prev.pressure, distance);
+            }
+            this.pressureHandler.updatePreviousPressure(pressure);
         }
         
         const point = {
             x: localX,
             y: localY,
-            pressure: processedPressure,
+            pressure: pressure, // processedPressure ではなく pressure を使用
             time: Date.now() - this.startTime
         };
         

@@ -1376,12 +1376,33 @@ export class LayerSystem {
 
     exitLayerMoveMode() {
         if (!this.transform) return;
-        this.confirmLayerTransform(); // 🆕 変形確定焼き込み
         const activeLayer = this.getActiveLayer();
-        this.transform.exitMoveMode(activeLayer);
-        const layerIndex = this.getLayerIndex(activeLayer);
-        if (layerIndex !== -1) {
-            this.requestThumbnailUpdate(layerIndex, true);
+        let transformConfirmed = false;
+
+        try {
+            this.confirmLayerTransform(); // 🆕 変形確定焼き込み
+            transformConfirmed = true;
+        } catch (error) {
+            console.error('[LayerSystem] Failed to confirm layer transform:', error);
+        } finally {
+            this.transform.exitMoveMode(activeLayer);
+            if (this.cameraSystem?.setVKeyPressed) {
+                this.cameraSystem.setVKeyPressed(false);
+            }
+            const layerIndex = this.getLayerIndex(activeLayer);
+            if (layerIndex !== -1) {
+                this.requestThumbnailUpdate(layerIndex, true);
+            }
+            if (this.coordAPI) {
+                this.coordAPI.clearCache();
+            }
+            if (this.eventBus) {
+                this.eventBus.emit('layer:transform-exit', {
+                    layerId: activeLayer?.layerData?.id || null,
+                    confirmed: transformConfirmed
+                });
+                this._emitPanelUpdateRequest();
+            }
         }
     }
 
