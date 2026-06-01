@@ -7,6 +7,181 @@
 
 ## フェーズ履歴
 
+**Phase 4z26 — CAF / Working Layer Ghost Guard 【Codex実装】**
+2026-05-31
+- **作業LayerのLane誤輸入抑制**:
+  - `animation-data-model.js`: `TimelineModel.syncWithLayers()` で `isAnimationWorkingLayer` を通常Lane生成対象から除外。CAF内部Layer編集用の一時作業Layerが、通常Layer由来Laneとして再輸入される経路を止めた。
+- **ClipAsset同期先の絞り込み**:
+  - `animation-table-popup.js`: アニメ作業Layerが存在する場合、ClipAssetの復元・保存・内部Layer選択同期は `isAnimationWorkingLayer` 付きLayerだけを対象にするよう変更。初回Seed前は従来通り通常表示Layerを取り込めるようfallbackを残した。
+  - `animation-table-popup.js`: 内部Layer追加で作られた不足分の作業Layerへ即座に `isAnimationWorkingLayer` を付け、通常Layer/通常Lane側へ混ざらないようにした。
+- **Layer Panelゴースト表示抑制**:
+  - `layer-panel-renderer.js`: アニメテーブル表示中かつ選択Clip/空Frame文脈では、背景以外の旧通常Layer/通常FolderをLayer Panel本体へ出さず、CAF/内部Layerミラーを正面に出す方針へ寄せた。
+- **通常FolderのCAF内部取り込み**:
+  - `animation-table-popup.js`: アニメテーブル初回Seed/ClipAsset作成時に、通常Folderを `ClipAssetInternalLayerModel` の `type: 'folder'` として取り込むよう補修。通常Layerの `parentId` はCAF内部の `parentLayerId` へID変換して保持する。
+  - `animation-table-popup.js`: Preview合成、作業Layer復元、内部Layer選択同期は `type: 'folder'` を描画対象から除外し、ラスター内部Layerだけを作業Layerへ割り当てるよう補修。
+  - `animation-data-model.js`: 内部Layer追加時に `visible` / `opacity` / `blendMode` / `clipping` / `parentLayerId` を受け渡せるよう補強し、削除ガードは「最後の描画Layer」を守る判定へ変更。
+  - `layer-panel-renderer.js`: CAF内部Layerミラーで `type: 'folder'` をフォルダ行として表示し、ラスター用のクリッピングボタンを出さないようにした。
+  - `layer-panel-renderer.js` / `animation-table-popup.js` / `styles/main.css`: `parentLayerId` から内部Layer階層の深度を計算し、CAF内部ミラーとAsset Library Inspectorの両方で子Layerをインデント表示するよう補修。開閉やD&D収納は未実装のまま、まず排出表示を減らす段階に限定。
+- **削除即時反映補修**:
+  - `animation-table-popup.js`: CAF内部Layer/Folder削除後に選択Clipの作業Layerへ即時再同期し、Frame移動を挟まないと削除状態が反映されない経路を補修。
+  - `animation-data-model.js`: 内部Folder削除時に子Layerの `parentLayerId` を解除し、存在しない親へのぶら下がりを残さないようにした。
+- **Frame移動時のCAF内部Folder消失補修**:
+  - `animation-table-popup.js`: Frame移動前の自動保存で作業LayerからClipAssetを再キャプチャする際、既存CAF内部Folderを保持し、再キャプチャしたラスターLayerだけを既存描画Layerスロットへ反映するマージ処理を追加。保存のたびに `internalLayers` 全体をラスターだけで置換してFolder階層が消える経路を止めた。
+- **Lane=Layer旧仕様の初期同期抑制**:
+  - `animation-data-model.js`: 初回 `syncWithLayers()` で通常ラスターレイヤー数ぶんLaneを作る旧挙動を止め、アクティブまたは先頭のラスターレイヤー1本だけをLane足場として作るよう変更。通常Layer/Folder群はClip内部Z軸として取り込む。
+  - `animation-data-model.js`: `isAnimationWorkingLayer` はlive source扱いから外し、CAF同期後のFrame移動/再renderで既存Clipを持つLaneが消える経路を抑制。
+- **Laneアクティブ選択補修**:
+  - `animation-table-popup.js`: セルクリック時に `activeLaneId` だけでなく `track.active` も同期する `_setActiveLane()` を追加し、ショートカットキー以外でもLaneをアクティブ化できるよう補修。
+  - `animation-table-popup.js`: active表示判定を `track.active || track.id === activeLaneId` にし、Lane 1を含む全Laneで行/列ハイライトが分かるよう背景指定を補強。
+  - `animation-table-popup.js`: 新規Lane追加時にSET再生対象へ自動追加していた処理を停止。新規Laneはアクティブ化のみ行い、緑チェックはユーザー操作で明示ONにする。
+  - `animation-table-popup.js`: 新規Lane追加がアクティブLaneを奪わないよう変更。Scope LANEの対象も選択Clip優先ではなく `activeLaneId` 優先へ寄せ、UI上のLane選択とPreview対象がズレる経路を抑制。
+- **CAF内部Folder新規作成の最小接続**:
+  - `animation-data-model.js`: `addClipAssetInternalFolder()` を追加し、ClipAsset内部に `type: 'folder'` の内部Folderを作れるようにした。
+  - `animation-table-popup.js`: 選択中ClipAssetへ内部Folderを追加する `addInternalFolder()` を追加。
+  - `ui-panels.js`: アニメ文脈かつ選択Clipがある場合、右サイドバーのFolder `+` を通常Folder作成ではなくCAF内部Folder作成へ分岐。D&D/開閉は未実装。
+- **CAF内部Folder配下作成の最小接続**:
+  - `animation-table-popup.js`: CAF内部Folderを選択した状態でLayer `+` / Folder `+` を押すと、そのFolderの `parentLayerId` を持つ内部Layer/Folderとして追加されるようにした。子Layer選択時は同じ親Folder配下へ兄弟追加する。
+  - `animation-table-popup.js`: CAF内部Layer/Folder新規作成をHistoryへ `record()` するようにした。Undo/Redo時は対象ClipAssetの `internalLayers` / `drawingSnapshots` をbefore/after状態へ復元し、Layer Panelを即時flushする。
+- **CAF内部Folderの可視性継承**:
+  - `animation-table-popup.js`: Preview合成と作業Layer同期で、内部Layer自身だけでなく親Folder列の `visible` も見て有効可視性を判定するようにした。Folderの目OFFで配下LayerがCanvas/Previewから消える。
+  - `layer-panel-renderer.js`: CAF内部Layerミラーでも親Folderが非表示の子Layer/子Folderを薄表示扱いにし、見た目と描画結果がズレにくいようにした。
+  - `animation-table-popup.js`: CAF内部Layer/Folderの可視ON/OFFをHistoryへ `record()` し、Undo/Redo時に可視状態を即時復元するようにした。
+- **CAF/内部Layer可視トグル同期補修**:
+  - `animation-table-popup.js`: 内部Layer/Folderの可視トグル後に、選択Layerのアクティブ化だけでなく選択Clip全体を作業Layerへ再同期するよう修正。最新Layer以外の目OFFがCanvasへ反映されない経路を抑制。
+  - `animation-table-popup.js`: CAF自体の目OFFも作業Layer可視状態へ反映し、Clip単位の非表示時は配下の全内部Layerを非表示として同期するようにした。
+  - `animation-table-popup.js`: CAF本体の可視ON/OFFをHistoryへ `record()` し、Undo/Redo時にClip可視状態を即時復元するようにした。
+- **CAF内部Layerクリッピング反映補修**:
+  - `animation-table-popup.js`: 内部Layerの `clipping` を作業Layerへ同期した後に `LayerSystem.refreshClippingMasks()` を呼び、CAF内部カードの紙クリップ操作が実Canvasへ反映されるようにした。
+  - `animation-table-popup.js`: CAF内部Preview合成でも、同じ親Folder配下の直下ラスターLayerをマスク元として使う最小クリッピング処理を追加。親Folderが違うLayerにはクリッピングしない。
+  - `animation-table-popup.js`: CAF内部Layer/FolderのクリッピングON/OFFをHistoryへ `record()` し、Undo/Redo時に即時復元するようにした。
+- **CAF内部Layerリネーム導線接続**:
+  - `layer-panel-renderer.js`: CAF内部カードの名前部分をダブルクリックした時、既存の `renameInternalLayerFromExternal()` へ委譲して内部Layer/Folder名を変更できるようにした。通常Layer用DOMやSortableJSには混ぜない。
+  - `animation-table-popup.js`: CAF内部Layer/Folder名変更をHistoryへ `record()` し、Undo/Redo時に名称変更前後のCAF内部構造を即時復元するようにした。
+- **CAF内部Layer属性パネル逆同期**:
+  - `animation-table-popup.js`: アクティブ作業Layerの不透明度・合成モード・クリッピング変更イベントを購読し、対応するCAF内部Layerの `opacity` / `blendMode` / `clipping` へ戻すようにした。属性パネル操作がFrame移動でCAF内部値に戻される経路を抑制。
+  - `animation-table-popup.js`: CAF内部Layerから作業Layerへ戻す同期でPixiコンテナの `alpha` / `blendMode` も更新し、属性変更後は選択Clip全体を即時再同期してLayer Panelをflushするよう補修。透明度・合成モード変更がFrame/Lane移動まで見た目に安定しない経路を抑制。
+- **CAF内部Layer順序変更の即時同期**:
+  - `animation-table-popup.js`: Asset Library Inspectorの内部Layer上下ボタン操作後、選択Clip全体を作業Layerへ再同期するようにした。順序変更がFrame/Lane移動までCanvas側へ反映されない経路を抑制。
+  - `animation-table-popup.js`: CAF内部Layer上下移動をHistoryへ `record()` し、Undo/Redo時に移動前後のCAF内部構造を即時復元するようにした。
+- **未修正・要調査**:
+  - Vキー変形でアクティブLayerを移動/拡縮して確定した後、Canvas上の画像表示が固定され、Space+ドラッグのキャンバス移動、Frame移動による表示更新、通常描画のCanvas反映が止まる場合がある。描画してもLayer Panelサムネイルだけが更新される。次に扱う場合は `LayerSystem.confirmLayerTransform()` / `LayerTransform.exitMoveMode()` / 変形確定後の入力状態・RenderTexture復帰を起点に切り分ける。
+- **Vキー変形確定後の入力固着ガード**:
+  - `layer-system.js`: `exitLayerMoveMode()` を `try/finally` 化し、変形焼き込み・履歴記録・snapshot処理の途中で失敗しても必ず `LayerTransform.exitMoveMode()` と `cameraSystem.setVKeyPressed(false)` を実行するようにした。V変形確定後にSpace+ドラッグや描画入力がVモード扱いで固着する経路の止血。
+- **アニメパネル展開中の描画/History同期補修**:
+  - `history.js`: `history:changed` に `action` / `commandName` / `meta` を載せ、Undo/Redo/record後に対象Layerを判定できるようにした。
+  - `animation-table-popup.js`: アニメ作業Layerに対するHistory record/undo/redo後、選択Clipを作業LayerからCAF内部Snapshotへ再保存し、Previewを更新するようにした。Undo/Redo後にPreviewだけ古いCAF画像を見続ける経路を抑制。
+  - `animation-table-popup.js`: 描画完了時のCAF保存はアニメ作業Layerで描いた場合に限定し、通常Layer操作が選択CAFへ吸われる経路を抑制。
+  - `animation-table-popup.js`: 既存CAFを保存し直す時は、非表示のアニメ作業Layerも内部Layer数ぶんキャプチャ対象に含めるよう変更。Folder/Layerの非表示状態で保存した時に内部Layerが詰まり、絵が削除・入れ替わる経路を抑制。
+- **アニメPreview中のV変形衝突抑制**:
+  - `animation-table-popup.js`: Vキー変形開始時にアニメPreviewを一時停止して作業Layer表示へ戻し、変形終了時に作業LayerからCAF内部Snapshotへ保存してPreviewを復帰するようにした。Preview snapshotと変形対象RenderTextureが分裂し、アニメパネル表示中だけ旧画像/空画像が出る経路を抑制。
+- **V変形確定直後の旧CAF Preview復帰補修**:
+  - `animation-table-popup.js`: 変形中の `history:changed` ではCAF保存を走らせず、`layer:transform-exit` の次フレームで作業LayerからCAFへ保存してからPreviewを復帰するようにした。確定直後だけ古いCAF snapshotへ戻り、パネルを閉じると変形済み実Layerが見える分裂を抑制。
+  - `animation-table-popup.js`: CAF保存時にsnapshot texture cacheを無効化し、同Frame内の再描画で古いPreviewテクスチャを再利用しないようにした。
+- **初回アニメパネル展開直後の作業Layer同期補修**:
+  - `animation-table-popup.js`: 初回CAF/Clip自動Seed直後に `_syncClipAssetToWorkingLayers()` を実行し、Frame/Lane移動を待たずに既存Layerをアニメ作業Layerとしてフラグ付け・同期するようにした。初回のペン描画/変形だけCAF保存やPreview反映が走らない経路を抑制。
+- **アニメパネル再展開時の作業Layer吸い上げ**:
+  - `animation-table-popup.js`: パネルを閉じている間にアニメ作業Layerへ入った通常描画/操作を、再展開時の `render()` 前に `_saveSelectedClipFromWorkingLayers()` でCAFへ保存するようにした。再オープン直後に古いCAF snapshotが作業Layerの最新状態を隠す経路を抑制。
+- **CAF内部Folder開閉表示**:
+  - `layer-panel-renderer.js` / `styles/main.css`: CAF内部ミラーのFolder行クリックで子孫内部Layer/Folderを開閉表示できるようにした。開閉状態はLayer Panel側の表示状態に限定し、ClipAsset内部構造やD&D順序は変更しない。
+- **CAF内部Folder開閉時の選択維持**:
+  - `layer-panel-renderer.js`: CAF内部Folder行をクリックして開閉する際、同時にそのFolderを `selectedInternalLayerId` として選択するようにした。開閉導入後もLayer `+` / Folder `+` が選択中Folder配下へ追加される導線を維持。
+- **CAF内部Folder削除の通常Folder寄せ**:
+  - `animation-data-model.js`: CAF内部Folder削除時、通常LayerSystemのFolder削除に近く、子孫の内部Layer/Folderも再帰削除するようにした。Folder削除で全描画Layerが消える場合は、CAFを空のままにせず新しい空ラスタ内部Layerを1枚補充する。
+  - `animation-table-popup.js`: 再帰削除で選択中の子孫Layerが消えた場合も、選択内部Layerを残存描画Layerまたは補充Layerへ戻すようにした。
+  - `animation-table-popup.js`: 削除後はイベント待ちだけでなくLayer Panel Rendererを即時flushし、Frame/Lane移動を挟まないとCAFミラー表示が消えない経路を補修。
+  - `ui-panels.js`: アニメパネル表示中の右サイドバー削除は、通常 `LayerSystem.deleteLayer()` ではなく選択中CAF内部Layer/Folderの `removeInternalLayer()` へ委譲するようにした。
+  - `animation-table-popup.js`: `layer:deleted` 受信時も選択Clipを保存して即時render/Layer Panel flushを行い、削除表示の1ターン遅れを抑制。
+  - `animation-table-popup.js`: CAF内部Layer/Folder削除をHistoryへ `record()` し、Undo/Redo時に削除前後のCAF内部構造を即時復元するようにした。Cut時も削除履歴ではなくCut履歴名で同じ復元経路に乗せる。
+- **CAF内部Layer/Folder複製の最小接続**:
+  - `animation-data-model.js`: `duplicateClipAssetInternalLayer()` を追加。内部LayerはSnapshotを複製して別ID化し、内部Folderは子孫Layer/Folderごと複製して親子関係を新IDへ張り替える。
+  - `animation-table-popup.js` / `ui-panels.js`: アニメパネル表示中の右サイドバー複製を、通常Layer複製ではなく選択中CAF内部Layer/Folder複製へ委譲し、複製後に作業LayerとLayer Panelを即時同期する。
+  - `animation-table-popup.js`: CAF内部Layer/Folder複製・PasteをHistoryへ `record()` し、Undo/Redo時に複製/貼り付け前後のCAF内部構造を即時復元するようにした。
+- **CAF内部FolderクリッピングPreview**:
+  - `layer-panel-renderer.js`: CAF内部Folderにも紙クリップボタンを表示し、Layerと同じ `toggleInternalLayerClippingFromExternal()` へ接続するようにした。
+  - `animation-table-popup.js`: 内部Layer自身または親Folderの `clipping` をPreview合成時に解決し、直下の次Layer/Folderをマスク元として使うようにした。マスク元がFolderの場合は、その子孫ラスターLayerを合成したマスクとして扱う。
+  - `animation-table-popup.js`: Folderクリッピング切替時は選択Folderを維持し、作業Layer同期で選択が先頭Layerへ戻る経路を避けるようにした。
+- **CAF内部作成位置補修**:
+  - `animation-data-model.js`: 内部Layer/Folder追加時、単純に末尾へpushせず、選択Layer/Folderの子孫ブロック直後へ挿入するようにした。親Folderが選択されている場合は、そのFolder配下の末尾に入る。
+  - `animation-table-popup.js`: 内部Layer/Folder追加時に `insertAfterLayerId` として現在の選択内部Layerを渡し、アクティブ選択と作成位置がズレないようにした。
+- **CAF内部Layer D&Dの最小接続**:
+  - `layer-panel-renderer.js` / `styles/main.css`: CAF内部Layerミラー行だけを対象に、SortableJSを使わないPointer EventsベースのD&Dを追加。半透明ゴースト追従、前後挿入ライン、Folder内投入ハイライトを表示する。
+  - `animation-table-popup.js`: CAF内部Layer/FolderをD&Dで前後移動またはFolder内へ移動する `moveInternalLayerToPosition()` を追加。移動対象の子孫ブロックはまとめて移動し、移動先が自身の子孫の場合は拒否する。
+  - `animation-table-popup.js`: CAF内部D&D移動をHistoryへ `record()` し、Undo/Redo時に移動前後のCAF内部構造を即時復元するようにした。
+  - `layer-panel-renderer.js` / `styles/main.css`: D&Dゴーストの追従更新を `left/top` 変更から `translate3d()` へ変更し、レイアウト再計算を減らした。
+- **CAF文脈の順序ショートカット整理**:
+  - `keyboard-handler.js`: アニメパネル表示中のLayer順序上げ/下げショートカットを通常 `LayerSystem` の `layer:order-up/down` へ流さず、CAF内部Layer/Folderの `moveInternalLayer()` へ委譲するようにした。
+  - `animation-table-popup.js`: CAF内部Layer/Folderの上下移動を、単純な隣接要素swapではなく子孫ブロック単位の移動へ変更。Folder移動で子Layer/子Folderが置き去りになる経路を抑制。
+- **未修正・要調査**:
+  - CAF本体/内部Layer/Folderの表示・非表示トグルが遅く感じる。CAF全体の同期/Preview再生成が重いのか、可視トグル時のLayer Panel flushやSnapshot保存だけが局所的に重いのか、D&D後の足回り点検で切り分ける。
+- **描画後CAF同期の重複抑制**:
+  - `animation-table-popup.js`: アニメ作業Layerへのペン描画後、`draw-*` のHistory recordと `drawing:stroke-completed` の両方でCAF保存/Preview更新が走る経路を整理。描画record時はHistory側同期をスキップし、stroke completed側のCAF保存に一本化した。
+  - `animation-table-popup.js`: `drawing:stroke-completed` 内のLayer Panel同期要求を、`_captureSelectedClip()` 内の既存同期に任せるようにして二重発火を減らした。描画後に表示/非表示トグルが重くなる問題の一次切り分け。
+- **CAF内部Layer属性スライダーの過剰同期抑制**:
+  - `animation-table-popup.js`: アクティブ作業Layerの透明度/合成/クリッピング変更をCAF内部Layerへ戻す際、入力イベントごとの作業Layer全再同期・Preview即render・Layer Panel強制flushをやめ、内部属性の即時更新と次フレームのPreview/Panel更新へ分離した。属性パネルのスライダー操作が重くなる経路を軽減。
+- **アニメ作業Layerサムネイル生成の抑制**:
+  - `thumbnail-system.js`: `isAnimationWorkingLayer` 付きの一時作業Layerでは通常Layer用サムネイル生成をスキップするようにした。CAFミラーはClipAsset Snapshotからサムネイルを描くため、ペン描画ごとのPixi全ピクセル抽出/PNG化を避ける。
+- **Preview中描画の表示経路整理**:
+  - `animation-table-popup.js`: アニメPreview ON中に作業Layerへ描画を開始した場合、`drawing:stroke-started` でCAF Previewを一時解除し、実作業Layer表示へ戻すようにした。Preview合成結果を見ながら裏の作業Layerへ描いて、stroke完了後まで反映されない二重表示状態を避ける。
+  - `animation-table-popup.js`: 描画中だけ `isDrawingPreviewSuspended` を立て、通常の `render()` が走ってもPreviewを再適用しないようにした。stroke中に実Layer表示とCAF Previewが交互に出て点滅する経路を抑制。
+  - `animation-table-popup.js`: `animationSnapshotId` による同一Snapshot復元スキップを、描画開始時に対象作業LayerのSnapshot IDを必ず無効化し、ClipAsset保存後だけ新Snapshot IDを刻む形で再導入。Layer/Folder追加時に未変更の既存Layerを再ラスタライズして線が太る/新規Layer作成が重くなる経路を抑制する。
+  - `animation-table-popup.js`: CAF内部HistoryのUndo/Redo復元では `forceRestore` を使い、Snapshot IDが同じでも履歴上のピクセル差分を必ず作業Layerへ戻すようにした。
+  - `animation-table-popup.js`: Preview適用時に通常Track紐づきLayerだけでなく `isAnimationWorkingLayer` 付きのCAF作業Layerも非表示化するよう補修。stroke完了後にCAF Previewと作業Layerが重なり、描画中より線が太く見える経路を抑制。
+  - `animation-table-popup.js`: 空Frame同期で作業Layerを空にした時、直前CAFの `animationSnapshotId` と `parentId` も消すよう補修。空Frame上でLayer選択/順序系ショートカットを触った後、元Frameへ戻ると「同一Snapshotなので復元不要」と誤判定して描画物が空のまま残る経路を抑制。
+  - `keyboard-handler.js`: アニメパネル表示中は、選択Clipがない空FrameでもLayer作成/削除/コピー/順序変更系ショートカットを通常LayerSystemへ流さず吸収するよう補修。CAF作業Layerを空Frame上で通常レイヤーとしてZ移動してしまう経路を止めた。
+- **CAF描画HistoryのAsset境界化**:
+  - `brush-core.js`: `isAnimationWorkingLayer` 付き作業Layerへの描画では通常Layer用の `draw-*` ラスター履歴を積まないようにした。CAF間で使い回す作業Layer IDだけを持つ履歴が、別CAF選択中のUndo/Redoで混信する経路を止めた。
+  - `animation-table-popup.js`: CAF作業Layerへの描画開始時に対象ClipAssetの内部Layer状態を保存し、描画完了後は `caf-internal-layer-draw` としてAsset単位の履歴を積むようにした。Undo/RedoはClipAsset IDとClip IDを持つ状態復元で行う。
+  - `animation-table-popup.js`: CAF内部履歴stateに `selectedCelId` を追加し、Undo/Redo時は対象Clipへ選択/Frame/Laneを戻してから作業Layerへ復元するよう補修。CAF1の履歴をCAF2選択中に適用して描画が移る経路を抑制。
+  - `animation-table-popup.js`: `history:changed` の後追い保存はCAF内部履歴では実行しないようにした。復元処理自身が作業Layer同期まで行うため、イベント後に現在選択CAFへ再保存して混ぜる経路を避ける。
+  - `animation-table-popup.js`: CAF内部履歴復元時、作業Layerへforce restoreする前にPreview表示を一度解除して残存Previewコンテナを消すようにした。Undo/Redo直後に消えたはずの描画が一瞬残る残像経路を軽減。
+  - `animation-table-popup.js`: Frame/Lane移動前の自動保存は、作業Layerの `animationSnapshotId` が対象CAF内部Snapshotと一致している場合スキップするようにした。Undoで復元済みの空/旧状態を、移動時に再キャプチャしてゴーストをCAFへ戻す経路を抑制する。V変形確定時だけは対象LayerをDirty化して強制保存する。
+  - `animation-table-popup.js`: CAF内部履歴stateに対象CAFだけでなく全 `clipAssets` のserialize結果を含め、Undo/Redo時は全CAFの内部Layer参照を同じ履歴地点へ戻すよう補修。Snapshot配列だけ巻き戻り、他CAFの内部Layerが古い描画Snapshot IDを参照し続けてCanvas上にゴースト表示される経路を抑制。
+- **Folderマスク合成補修**:
+  - `animation-table-popup.js`: マスク元Folderが複数子Layerを持つ場合、Containerを直接maskにせず一度RenderTextureへ合成したSpriteをマスクに使うようにした。Folder内Layer同士のクリッピングが通常Layer同士と同じ見え方に近づく。
+  - `animation-table-popup.js`: CAF PreviewのマスクSpriteを `renderable=false` にしないよう変更。Pixi側でマスク描画パスまで無効化され、マスク境界だけ見えて対象の外側が残る経路を抑制。
+  - `animation-table-popup.js`: マスクSpriteをPreview表示ツリーへ通常追加しないよう変更。マスク元Layer/Folder自体が可視描画として混ざり、逆マスクのように見える経路を抑制。
+  - `animation-table-popup.js`: 単一Layerマスクも含めてRenderTexture化したマスクSpriteを使うよう統一。
+  - `animation-table-popup.js`: CAF PreviewではPixi maskへの依存をやめ、対象Snapshotのalphaをマスク元Snapshot群のalphaで直接乗算する方式へ変更。Folder間クリッピングで表示順が逆転したように見える経路を避ける。
+  - `animation-table-popup.js`: Folderマスクの弱い漏れを抑えるため、Preview用alphaマスクに閾値を追加。低alphaの線や薄い境界がマスクとして赤を浮かび上がらせる経路を抑制。
+- **保留判断**:
+  - CAF内部Folder間クリッピングは、マスク対象/マスク元の子Layer選別仕様が未確定で場当たり調整になりやすいため一時凍結。外部設計レビュー後に再開する。
+- **CAF文脈の下結合導線整理**:
+  - `ui-panels.js`: アニメパネル表示中の右サイドバー下結合が通常 `LayerSystem.mergeLayerDown()` へ流れないよう止めた。CAF内部Layer/Folderの下結合仕様が未定の間、作業Layerだけが結合されCAF内部Snapshotと分裂する経路を抑制。
+  - `animation-table-popup.js` / `ui-panels.js`: アニメパネル表示中の右サイドバー下結合をCAF内部Layer用に接続。選択中の内部ラスタLayerを、同じ親Folder配下で直下にある内部ラスタLayerへCanvas合成して焼き込み、元Layerを削除する。Folder選択や下に同階層ラスタLayerがない場合は何もしない。
+  - `animation-table-popup.js`: CAF内部下結合をHistoryへ `record()` し、Undo/Redo時は対象ClipAssetの `internalLayers` と `drawingSnapshots` をbefore/after状態へ復元するようにした。通常Layer履歴ではなくCAF内部構造単位で戻す。
+- **CAF文脈のキーボード導線整理**:
+  - `keyboard-handler.js`: アニメパネル表示中の `Ctrl+L` は通常Layer作成ではなくCAF内部Layer追加へ委譲するようにした。
+  - `keyboard-handler.js`: アニメパネル表示中の `Ctrl+Delete` は通常Layer削除ではなく選択中CAF内部Layer/Folder削除へ委譲するようにした。
+  - `keyboard-handler.js` / `animation-table-popup.js`: アニメパネル表示中の `Delete` / `Backspace` は通常作業Layerのラスタだけを消すのではなく、選択中CAF内部LayerのSnapshotを空Snapshotへ差し替えるようにした。Folder選択時は未定義操作として何もしない。
+  - `animation-table-popup.js`: `Delete` / `Backspace` で選択セル自体を削除していたアニメテーブル側keydown処理を削除。KeyboardHandler側の「絵だけ削除」と二重発火し、CAF/Layer/Laneが消える経路を止めた。
+  - `keyboard-handler.js`: アニメパネル表示中の `Delete` / `Backspace` 処理後に `stopImmediatePropagation()` し、他のkeydownリスナーへ伝播しないようにした。
+  - `animation-table-popup.js`: CAF内部Layerの描画クリアをHistoryへ `record()` し、Undo/Redo時にクリア前後のSnapshotを即時復元するようにした。
+- **CAF内部Layer/Folderクリップボード**:
+  - `animation-table-popup.js`: CAF内部Layer/Folder用の一時クリップボードを追加。LayerはSnapshot込み、Folderは子孫Layer/Folder込みでコピーできるようにした。
+  - `animation-table-popup.js`: Paste時は新IDと新Snapshotで現在選択位置付近へ再生成し、親子関係も新IDへ張り替える。Cutはコピー後に既存のCAF内部削除経路へ委譲する。
+  - `keyboard-handler.js`: アニメパネル表示中の `Ctrl+C` / `Ctrl+V` / `Ctrl+X` を通常LayerクリップボードではなくCAF内部Layer/Folderの copy/paste/cut へ委譲するようにした。
+- **CAFセル作成/削除のHistory化**:
+  - `animation-table-popup.js`: Alt+ClickによるCAF/Clipセル作成・削除を `caf-clip-create` / `caf-clip-delete` としてHistoryへ記録するようにした。
+  - `animation-table-popup.js`: Undo/Redo時は `TimelineModel` の `tracks` / `clipAssets` / `clipAssetFolders` / `drawingSnapshots` / `playback` と選択状態をまとめて復元し、内部Layer履歴とは別にFrame/Lane上のCAF配置を戻せるようにした。
+  - `animation-table-popup.js`: CAFセル作成/削除の履歴取得前に選択中CAFの作業Layerを保存し、直前描画の保存とセル操作履歴が混線しないようにした。
+- **確認**:
+  - `npm.cmd run build` 成功。
+  - Browserプラグインでのローカル画面確認は、Node REPL側が `windows sandbox failed: spawn setup refresh` で落ちたため未実施。
+
+**Phase 4z25 — Space+Pen Navigation & Pressure Consistency Fix 【Gemini実装】**
+2026-05-30
+- **描き始め・点描バグの根本修正**:
+  - `brush-core.js`: `updateStroke` の筆圧下限を `0.1` -> `0.0` に変更し、開始時との不一致（突然の肥大化）を解消。
+  - `stroke-renderer.js`: `renderPreview` の1点ガードを削除し、即時フィードバックを復活。
+  - `stroke-recorder.js`: `PressureHandler` との接続ミス（メソッド名相違）を修正し、距離ベースのスムージングを再有効化。
+  - `pressure-handler.js`: キャリブレーション中の固定筆圧 `0.5` を廃止し、生値を返すよう修正。
+- **点描時の大きな丸の追加抑制（Codex補修）**:
+  - `brush-core.js`: 筆圧ONのペンでは pointerdown の開始点筆圧を常に `0.0` に固定し、液タブ側の開始圧スパイクが単点ストロークへ焼き込まれる経路を抑制。
+  - `pointer-handler.js`: 生pointerdownログを `TEGAKI_CONFIG.debug` 限定へ戻し、通常使用時のコンソール汚染を防止。
+  - `stroke-renderer.js` / `pressure-handler.js`: 既存挙動に合わせて整形とコメントを同期。
+- **Space+Pen Drag**: ペン入力時にSpaceキーを併用した場合でもキャンバス移動（手のひらツール）ができるように復旧。
+  - `camera-system.js`: `pointerdown` / `pointerup` におけるペン入力の明示的な除外を削除し、操作の安定性を向上。
+
 **Phase 4z24 — Pen Settings Optimization & Stability Cleanup 【Gemini実装】**
 2026-05-29
 - **LazyBrush**: 座標に加えて「筆圧」の平滑化（Lerp）を実装。インク溜まりを解消。

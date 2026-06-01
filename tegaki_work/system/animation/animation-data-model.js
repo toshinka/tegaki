@@ -511,12 +511,66 @@ export class TimelineModel {
         const layer = this.createClipAssetInternalLayer({
             name: options.name || `レイヤー${nextNum}`,
             type: options.type || 'raster',
-            drawingSnapshotId: options.drawingSnapshotId || null
+            visible: options.visible !== false,
+            opacity: options.opacity ?? 1,
+            blendMode: options.blendMode || 'normal',
+            clipping: options.clipping === true,
+            drawingSnapshotId: options.drawingSnapshotId || null,
+            parentLayerId: options.parentLayerId || null
         });
 
-        asset.internalLayers.push(layer);
+        const insertIndex = this._resolveInternalLayerInsertIndex(asset, options);
+        asset.internalLayers.splice(insertIndex, 0, layer);
         asset.updatedAt = Date.now();
         return { ok: true, asset, layer };
+    }
+
+    addClipAssetInternalFolder(assetId, options = {}) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        const folderCount = asset.internalLayers.filter(layer => layer.type === 'folder').length;
+        const folder = this.createClipAssetInternalLayer({
+            name: options.name || `フォルダ${folderCount + 1}`,
+            type: 'folder',
+            visible: options.visible !== false,
+            opacity: options.opacity ?? 1,
+            blendMode: 'normal',
+            parentLayerId: options.parentLayerId || null
+        });
+
+        const insertIndex = this._resolveInternalLayerInsertIndex(asset, options);
+        asset.internalLayers.splice(insertIndex, 0, folder);
+        asset.updatedAt = Date.now();
+        return { ok: true, asset, layer: folder };
+    }
+
+    _resolveInternalLayerInsertIndex(asset, options = {}) {
+        const layers = asset?.internalLayers || [];
+        const referenceId = options.insertAfterLayerId || options.parentLayerId || null;
+        if (!referenceId) return layers.length;
+
+        const referenceIndex = layers.findIndex(layer => layer.id === referenceId);
+        if (referenceIndex < 0) return layers.length;
+
+        const subtreeIds = new Set([referenceId]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            layers.forEach(layer => {
+                if (layer.parentLayerId && subtreeIds.has(layer.parentLayerId) && !subtreeIds.has(layer.id)) {
+                    subtreeIds.add(layer.id);
+                    changed = true;
+                }
+            });
+        }
+
+        let insertIndex = referenceIndex + 1;
+        for (let index = referenceIndex + 1; index < layers.length; index++) {
+            if (!subtreeIds.has(layers[index].id)) break;
+            insertIndex = index + 1;
+        }
+        return insertIndex;
     }
 
     /**
@@ -526,16 +580,125 @@ export class TimelineModel {
         const asset = this.getClipAsset(assetId);
         if (!asset) return { ok: false, reason: 'asset-not-found' };
 
-        if (asset.internalLayers.length <= 1) {
+        const targetLayer = asset.internalLayers.find(l => l.id === layerId);
+        const drawableLayers = asset.internalLayers.filter(l => l.type !== 'folder' && l.isBackground !== true);
+        const deleteIds = new Set([layerId]);
+
+        if (targetLayer?.type === 'folder') {
+            let changed = true;
+            while (changed) {
+                changed = false;
+                asset.internalLayers.forEach(layer => {
+                    if (layer.parentLayerId && deleteIds.has(layer.parentLayerId) && !deleteIds.has(layer.id)) {
+                        deleteIds.add(layer.id);
+                        changed = true;
+                    }
+                });
+            }
+        }
+
+        const deletingDrawableCount = asset.internalLayers.filter(layer => {
+            return deleteIds.has(layer.id) && layer.type !== 'folder' && layer.isBackground !== true;
+        }).length;
+        if (targetLayer?.type !== 'folder' && drawableLayers.length - deletingDrawableCount <= 0) {
             return { ok: false, reason: 'last-layer' };
         }
 
         const index = asset.internalLayers.findIndex(l => l.id === layerId);
         if (index === -1) return { ok: false, reason: 'layer-not-found' };
 
-        const removedLayer = asset.internalLayers.splice(index, 1)[0];
+        const removedLayers = asset.internalLayers.filter(layer => deleteIds.has(layer.id));
+        asset.internalLayers = asset.internalLayers.filter(layer => !deleteIds.has(layer.id));
+        asset.internalLayers.forEach(layer => {
+            if (layer.parentLayerId && deleteIds.has(layer.parentLayerId)) {
+                layer.parentLayerId = null;
+                layer.updatedAt = Date.now();
+            }
+        });
+        const remainingDrawableLayers = asset.internalLayers.filter(layer => {
+            return layer.type !== 'folder' && layer.isBackground !== true;
+        });
+        let fallbackLayer = null;
+        if (remainingDrawableLayers.length === 0) {
+            fallbackLayer = this.createClipAssetInternalLayer({
+                name: 'レイヤー1',
+                type: 'raster'
+            });
+            asset.internalLayers.push(fallbackLayer);
+        }
         asset.updatedAt = Date.now();
-        return { ok: true, asset, layer: removedLayer };
+        return { ok: true, asset, layer: removedLayers[0], removedLayers, fallbackLayer };
+    }
+
+    duplicateClipAssetInternalLayer(assetId, layerId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+
+        const targetLayer = asset.internalLayers.find(layer => layer.id === layerId);
+        if (!targetLayer) return { ok: false, reason: 'layer-not-found' };
+
+        const sourceIds = new Set([layerId]);
+        if (targetLayer.type === 'folder') {
+            let changed = true;
+            while (changed) {
+                changed = false;
+                asset.internalLayers.forEach(layer => {
+                    if (layer.parentLayerId && sourceIds.has(layer.parentLayerId) && !sourceIds.has(layer.id)) {
+                        sourceIds.add(layer.id);
+                        changed = true;
+                    }
+                });
+            }
+        }
+
+        const sourceLayers = asset.internalLayers.filter(layer => sourceIds.has(layer.id));
+        const idMap = new Map();
+        const duplicatedLayers = sourceLayers.map(layer => {
+            const nextSnapshotId = layer.drawingSnapshotId
+                ? this._duplicateDrawingSnapshot(layer.drawingSnapshotId)
+                : null;
+            const duplicate = this.createClipAssetInternalLayer({
+                name: `${layer.name} copy`,
+                type: layer.type,
+                visible: layer.visible !== false,
+                opacity: layer.opacity ?? 1,
+                blendMode: layer.blendMode || 'normal',
+                clipping: layer.clipping === true,
+                drawingSnapshotId: nextSnapshotId,
+                parentLayerId: layer.parentLayerId,
+                isBackground: layer.isBackground === true
+            });
+            idMap.set(layer.id, duplicate.id);
+            return duplicate;
+        });
+
+        duplicatedLayers.forEach(layer => {
+            if (layer.parentLayerId && idMap.has(layer.parentLayerId)) {
+                layer.parentLayerId = idMap.get(layer.parentLayerId);
+            }
+        });
+
+        const insertIndex = Math.max(...sourceLayers.map(layer => asset.internalLayers.findIndex(item => item.id === layer.id))) + 1;
+        asset.internalLayers.splice(insertIndex, 0, ...duplicatedLayers);
+        asset.updatedAt = Date.now();
+        return { ok: true, asset, layer: duplicatedLayers[0], duplicatedLayers };
+    }
+
+    _duplicateDrawingSnapshot(snapshotId) {
+        const snapshot = this.getDrawingSnapshot(snapshotId);
+        if (!snapshot) return null;
+
+        const pixels = snapshot.pixels && typeof snapshot.pixels.length === 'number'
+            ? new Uint8ClampedArray(snapshot.pixels)
+            : snapshot.pixels;
+        const duplicate = new DrawingSnapshotModel({
+            width: snapshot.width,
+            height: snapshot.height,
+            pixels,
+            isBlank: snapshot.isBlank === true
+        });
+        this.drawingSnapshots.push(duplicate);
+        return duplicate.id;
     }
 
     /**
@@ -896,11 +1059,26 @@ export class TimelineModel {
 
         const allowInitialLayerImport = !this.layerSyncInitialized && this.tracks.length === 0;
         const syncActiveFromLayerSystem = allowInitialLayerImport;
+        const importableRasterLayers = reversedLayers.filter(layer => {
+            const layerData = layer?.layerData;
+            return !!(
+                layerData &&
+                !layerData.isFolder &&
+                !layerData.isBackground &&
+                !layerData.isAnimationWorkingLayer
+            );
+        });
+        const initialLaneSourceLayer = importableRasterLayers.find(layer => layer.layerData?.id === activeLayerId)
+            || importableRasterLayers[0]
+            || null;
+        const initialLaneSourceLayerId = initialLaneSourceLayer?.layerData?.id || null;
         const newTracks = reversedLayers.map(layer => {
             const layerData = layer.layerData;
             if (!layerData) return null;
             if (layerData.isFolder) return null;
             if (layerData.isBackground) return null;
+            if (layerData.isAnimationWorkingLayer) return null;
+            if (allowInitialLayerImport && layerData.id !== initialLaneSourceLayerId) return null;
 
             // 既存のレーンがあれば再利用
             const existingLane = existingBySourceLayerId.get(layerData.id);
@@ -925,13 +1103,13 @@ export class TimelineModel {
                     sourceName: layerData.name,
                     kind: 'layer-linked',
                     type: 'raster',
-                    active: syncActiveFromLayerSystem && (layerData.id === activeLayerId),
+                    active: true,
                     isBackground: false
                 });
             }
         }).filter(Boolean);
 
-        const liveSourceIds = new Set(reversedLayers.map(layer => layer.layerData?.id).filter(Boolean));
+        const liveSourceIds = new Set(importableRasterLayers.map(layer => layer.layerData?.id).filter(Boolean));
         const missingSourceLanes = this.tracks.filter(lane => {
             const sourceLayerId = lane.sourceLayerId || lane.layerId;
             if (!sourceLayerId || liveSourceIds.has(sourceLayerId)) return false;

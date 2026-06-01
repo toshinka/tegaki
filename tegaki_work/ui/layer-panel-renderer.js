@@ -33,17 +33,29 @@ export class LayerPanelRenderer {
         this._pendingUpdateAfterDrag = false;
         this._expandedCafClipIds = new Set();
         this._collapsedCafClipIds = new Set();
+        this._collapsedClipInternalFolderIds = new Set();
+        this._clipLayerMirrorDrag = null;
+        this._clipLayerMirrorDragSuppressClick = false;
         this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
         this._handleAttributePopupKeydown = this._handleAttributePopupKeydown.bind(this);
         this._handleAttributePopupDragMove = this._handleAttributePopupDragMove.bind(this);
         this._handleAttributePopupDragEnd = this._handleAttributePopupDragEnd.bind(this);
         this._handleLayerPanelKeydown = this._handleLayerPanelKeydown.bind(this);
+        this._handleClipLayerMirrorPointerDown = this._handleClipLayerMirrorPointerDown.bind(this);
+        this._handleClipLayerMirrorPointerMove = this._handleClipLayerMirrorPointerMove.bind(this);
+        this._handleClipLayerMirrorPointerUp = this._handleClipLayerMirrorPointerUp.bind(this);
 
         this._setupEventListeners();
         document.addEventListener('keydown', this._handleLayerPanelKeydown, true);
+        this.container.addEventListener('pointerdown', this._handleClipLayerMirrorPointerDown);
 
         // Phase 4z16: CAFヘッダークリックイベント (委譲)
         this.container.addEventListener('click', (e) => {
+            if (this._clipLayerMirrorDragSuppressClick) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             // 0. 内部レイヤーミラーの可視ボタン (Phase 4z18)
             const visBtn = e.target.closest('.clip-layer-mirror-visibility-btn');
             if (visBtn) {
@@ -110,7 +122,23 @@ export class LayerPanelRenderer {
             const mirrorRow = e.target.closest('.clip-layer-mirror-row');
             if (mirrorRow) {
                 const layerId = mirrorRow.dataset.internalLayerId;
+                const assetId = mirrorRow.dataset.assetId;
                 const animationTable = window.PopupManager?.get?.('animationTable');
+                const asset = assetId && animationTable?.model
+                    ? animationTable.model.getClipAsset(assetId)
+                    : null;
+                const internalLayer = asset?.internalLayers?.find(layer => layer.id === layerId);
+                if (internalLayer?.type === 'folder' && !e.target.closest('.clip-layer-mirror-visibility-btn')) {
+                    if (animationTable && layerId) {
+                        animationTable.selectedAssetId = assetId || animationTable.selectedAssetId;
+                        animationTable.selectedAssetFolderId = asset?.folderId || null;
+                        animationTable.selectedInternalLayerId = layerId;
+                        animationTable.render();
+                    }
+                    this._toggleClipInternalFolder(assetId, layerId);
+                    this.requestUpdate({ force: true });
+                    return;
+                }
                 if (animationTable && layerId) {
                     animationTable.selectedInternalLayerId = layerId;
                     animationTable._syncActiveWorkingLayerToSelectedInternalLayer?.();
@@ -121,8 +149,152 @@ export class LayerPanelRenderer {
             }
         });
 
+        this.container.addEventListener('dblclick', (e) => {
+            const mirrorName = e.target.closest('.clip-layer-mirror-name');
+            if (!mirrorName) return;
+
+            const mirrorRow = mirrorName.closest('.clip-layer-mirror-row');
+            const assetId = mirrorRow?.dataset.assetId;
+            const layerId = mirrorRow?.dataset.internalLayerId;
+            const animationTable = window.PopupManager?.get?.('animationTable');
+            if (animationTable?.renameInternalLayerFromExternal && assetId && layerId) {
+                animationTable.renameInternalLayerFromExternal(assetId, layerId, null, { source: 'layer-panel-clip-layer-mirror' });
+            }
+        });
+
         requestAnimationFrame(() => {
             this._initializeRender();
+        });
+    }
+
+    _getClipInternalFolderKey(assetId, layerId) {
+        return `${assetId || 'asset'}:${layerId}`;
+    }
+
+    _isClipInternalFolderCollapsed(assetId, layerId) {
+        return this._collapsedClipInternalFolderIds.has(this._getClipInternalFolderKey(assetId, layerId));
+    }
+
+    _toggleClipInternalFolder(assetId, layerId) {
+        const key = this._getClipInternalFolderKey(assetId, layerId);
+        if (this._collapsedClipInternalFolderIds.has(key)) {
+            this._collapsedClipInternalFolderIds.delete(key);
+        } else {
+            this._collapsedClipInternalFolderIds.add(key);
+        }
+    }
+
+    _handleClipLayerMirrorPointerDown(e) {
+        if (e.button !== 0) return;
+        if (e.target.closest('button, input, textarea, select')) return;
+
+        const row = e.target.closest('.clip-layer-mirror-row');
+        if (!row || !this.container.contains(row)) return;
+
+        this._clipLayerMirrorDrag = {
+            pointerId: e.pointerId,
+            row,
+            assetId: row.dataset.assetId,
+            layerId: row.dataset.internalLayerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            offsetX: e.clientX - row.getBoundingClientRect().left,
+            offsetY: e.clientY - row.getBoundingClientRect().top,
+            active: false,
+            ghost: null,
+            targetRow: null,
+            placement: null
+        };
+
+        document.addEventListener('pointermove', this._handleClipLayerMirrorPointerMove, { passive: false });
+        document.addEventListener('pointerup', this._handleClipLayerMirrorPointerUp, { capture: true });
+        document.addEventListener('pointercancel', this._handleClipLayerMirrorPointerUp, { capture: true });
+    }
+
+    _handleClipLayerMirrorPointerMove(e) {
+        const drag = this._clipLayerMirrorDrag;
+        if (!drag || e.pointerId !== drag.pointerId) return;
+
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        if (!drag.active && Math.hypot(dx, dy) < 5) return;
+
+        e.preventDefault();
+        if (!drag.active) {
+            drag.active = true;
+            drag.row.classList.add('is-dragging');
+            drag.ghost = drag.row.cloneNode(true);
+            drag.ghost.classList.add('clip-layer-mirror-drag-ghost');
+            drag.ghost.style.width = `${drag.row.getBoundingClientRect().width}px`;
+            drag.ghost.style.left = '0px';
+            drag.ghost.style.top = '0px';
+            document.body.appendChild(drag.ghost);
+        }
+
+        drag.ghost.style.transform = `translate3d(${e.clientX - drag.offsetX}px, ${e.clientY - drag.offsetY}px, 0) scale(1.02)`;
+        this._updateClipLayerMirrorDropTarget(e.clientX, e.clientY);
+    }
+
+    _updateClipLayerMirrorDropTarget(x, y) {
+        const drag = this._clipLayerMirrorDrag;
+        if (!drag?.active) return;
+
+        this._clearClipLayerMirrorDropTarget();
+        const targetRow = document.elementFromPoint(x, y)?.closest?.('.clip-layer-mirror-row') || null;
+        if (!targetRow || targetRow === drag.row || !this.container.contains(targetRow)) {
+            drag.targetRow = null;
+            drag.placement = null;
+            return;
+        }
+
+        const rect = targetRow.getBoundingClientRect();
+        const ratio = rect.height > 0 ? (y - rect.top) / rect.height : 0.5;
+        const isFolder = targetRow.classList.contains('is-folder');
+        const placement = isFolder && ratio > 0.25 && ratio < 0.75
+            ? 'inside'
+            : (ratio < 0.5 ? 'before' : 'after');
+
+        targetRow.classList.add(`is-dnd-${placement}`);
+        drag.targetRow = targetRow;
+        drag.placement = placement;
+    }
+
+    _handleClipLayerMirrorPointerUp(e) {
+        const drag = this._clipLayerMirrorDrag;
+        if (!drag || e.pointerId !== drag.pointerId) return;
+
+        if (drag.active) {
+            e.preventDefault();
+            e.stopPropagation();
+            this._clipLayerMirrorDragSuppressClick = true;
+            setTimeout(() => {
+                this._clipLayerMirrorDragSuppressClick = false;
+            }, 80);
+
+            const animationTable = window.PopupManager?.get?.('animationTable');
+            const targetLayerId = drag.targetRow?.dataset.internalLayerId;
+            if (animationTable?.moveInternalLayerToPosition && drag.assetId && drag.layerId && targetLayerId && drag.placement) {
+                animationTable.moveInternalLayerToPosition(drag.assetId, drag.layerId, targetLayerId, drag.placement);
+            }
+        }
+
+        this._finishClipLayerMirrorDrag();
+    }
+
+    _finishClipLayerMirrorDrag() {
+        const drag = this._clipLayerMirrorDrag;
+        document.removeEventListener('pointermove', this._handleClipLayerMirrorPointerMove);
+        document.removeEventListener('pointerup', this._handleClipLayerMirrorPointerUp, true);
+        document.removeEventListener('pointercancel', this._handleClipLayerMirrorPointerUp, true);
+        this._clearClipLayerMirrorDropTarget();
+        if (drag?.row) drag.row.classList.remove('is-dragging');
+        if (drag?.ghost?.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+        this._clipLayerMirrorDrag = null;
+    }
+
+    _clearClipLayerMirrorDropTarget() {
+        this.container?.querySelectorAll('.clip-layer-mirror-row.is-dnd-before, .clip-layer-mirror-row.is-dnd-after, .clip-layer-mirror-row.is-dnd-inside').forEach(row => {
+            row.classList.remove('is-dnd-before', 'is-dnd-after', 'is-dnd-inside');
         });
     }
 
@@ -300,14 +472,12 @@ export class LayerPanelRenderer {
             if (
                 hideWorkingLayersForEmptyAnimFrame &&
                 layer.layerData &&
-                !layer.layerData.isBackground &&
-                !layer.layerData.isFolder
+                !layer.layerData.isBackground
             ) return;
             if (
                 hideWorkingLayersForAnimClip &&
                 layer.layerData &&
-                !layer.layerData.isBackground &&
-                !layer.layerData.isFolder
+                !layer.layerData.isBackground
             ) return;
 
             const layerElement = layer.layerData?.isFolder
@@ -1883,30 +2053,39 @@ export class LayerPanelRenderer {
         if (asset.internalLayers.length === 0) {
             layerHtml = '<div class="clip-layer-mirror-empty">No internal layers</div>';
         } else {
+            const internalLayerDepths = this._getClipAssetInternalLayerDepths(asset);
+            const hiddenByCollapsedFolderIds = this._getHiddenClipAssetInternalLayerIds(asset);
             // Inspectorと同じ表示順（先頭が前面）
             asset.internalLayers.forEach(layer => {
+                if (hiddenByCollapsedFolderIds.has(layer.id)) return;
                 const isSelected = selectedInternalLayerId === layer.id;
                 const isVisible = layer.visible !== false;
-                const isHidden = !isVisible;
+                const isEffectivelyVisible = this._isClipAssetInternalLayerEffectivelyVisible(asset, layer);
+                const isHidden = !isEffectivelyVisible;
+                const isFolder = layer.type === 'folder';
+                const isFolderCollapsed = isFolder && this._isClipInternalFolderCollapsed(asset.id, layer.id);
+                const depth = internalLayerDepths.get(layer.id) || 0;
                 const selectedClass = isSelected ? ' is-selected' : '';
                 const hiddenClass = isHidden ? ' is-hidden' : '';
+                const collapsedClass = isFolderCollapsed ? ' is-collapsed' : '';
                 const clippingClass = layer.clipping === true ? ' is-clipping' : '';
 
-                const snapshot = animationTable.model.getDrawingSnapshot(layer.drawingSnapshotId);
+                const snapshot = isFolder ? null : animationTable.model.getDrawingSnapshot(layer.drawingSnapshotId);
                 const thumbUrl = this._snapshotToDataUrl(snapshot);
 
                 const safeAssetId = this._escapeHtml(asset.id);
                 const safeLayerId = this._escapeHtml(layer.id);
-                const opacityLabel = `${Math.round(layer.opacity * 100)}%`;
+                const opacityLabel = isFolder ? 'Folder' : `${Math.round(layer.opacity * 100)}%`;
                 const visibilityIconName = isVisible ? 'eye' : 'eyeOff';
 
                 layerHtml += `
-                    <div class="clip-layer-mirror-row${selectedClass}${hiddenClass}"
+                    <div class="clip-layer-mirror-row${selectedClass}${hiddenClass}${isFolder ? ' is-folder' : ''}${collapsedClass} depth-${depth}"
                          data-internal-layer-id="${safeLayerId}"
-                         data-asset-id="${safeAssetId}">
+                         data-asset-id="${safeAssetId}"
+                         data-depth="${depth}">
                         <span class="folder-child-line" aria-hidden="true"></span>
                         <span class="clip-layer-mirror-thumb">
-                            ${thumbUrl ? `<img src="${thumbUrl}" alt="">` : ''}
+                            ${isFolder ? (isFolderCollapsed ? UI_ICONS.folder : UI_ICONS.folderOpen) : (thumbUrl ? `<img src="${thumbUrl}" alt="">` : '')}
                         </span>
                         <span class="clip-layer-mirror-details">
                             <span class="clip-layer-mirror-opacity">${this._escapeHtml(opacityLabel)}</span>
@@ -1934,6 +2113,70 @@ export class LayerPanelRenderer {
             <div class="clip-layer-mirror-list">${layerHtml}</div>
             </div>
         `;
+    }
+
+    _getClipAssetInternalLayerDepths(asset) {
+        const depths = new Map();
+        const byId = new Map((asset?.internalLayers || []).map(layer => [layer.id, layer]));
+
+        (asset?.internalLayers || []).forEach(layer => {
+            let depth = 0;
+            let parentId = layer.parentLayerId || null;
+            const visited = new Set();
+
+            while (parentId && !visited.has(parentId) && depth < 4) {
+                visited.add(parentId);
+                const parent = byId.get(parentId);
+                if (!parent) break;
+                depth += 1;
+                parentId = parent.parentLayerId || null;
+            }
+
+            depths.set(layer.id, Math.min(depth, 4));
+        });
+
+        return depths;
+    }
+
+    _getHiddenClipAssetInternalLayerIds(asset) {
+        const hiddenIds = new Set();
+        const byId = new Map((asset?.internalLayers || []).map(layer => [layer.id, layer]));
+
+        (asset?.internalLayers || []).forEach(layer => {
+            let parentId = layer.parentLayerId || null;
+            const visited = new Set();
+
+            while (parentId && !visited.has(parentId)) {
+                visited.add(parentId);
+                const parent = byId.get(parentId);
+                if (!parent) break;
+                if (parent.type === 'folder' && this._isClipInternalFolderCollapsed(asset.id, parent.id)) {
+                    hiddenIds.add(layer.id);
+                    break;
+                }
+                parentId = parent.parentLayerId || null;
+            }
+        });
+
+        return hiddenIds;
+    }
+
+    _isClipAssetInternalLayerEffectivelyVisible(asset, layer) {
+        if (!asset || !layer || layer.visible === false) return false;
+
+        const byId = new Map((asset.internalLayers || []).map(item => [item.id, item]));
+        let parentId = layer.parentLayerId || null;
+        const visited = new Set();
+
+        while (parentId && !visited.has(parentId)) {
+            visited.add(parentId);
+            const parent = byId.get(parentId);
+            if (!parent) break;
+            if (parent.visible === false) return false;
+            parentId = parent.parentLayerId || null;
+        }
+
+        return true;
     }
 
     /**

@@ -1,9 +1,46 @@
 # PHASE4Z HANDOFF — アニメテーブル / ClipAsset内部Layer基盤
 
 作成日: 2026-05-25  
-更新日: 2026-05-28
+更新日: 2026-05-31
 作業対象: `tegaki_work/`  
-現在地: **Phase 4z23 — Independent Lane Model Foundation Codex実装**
+現在地: **Phase 4z25 — Space+Pen Navigation & Pressure Consistency Fix / Phase 4z23 CAF安定化継続**
+
+---
+
+## 2026-05-31 新チャット用クイック現況
+
+新チャットでは、このセクションを読んだうえで `PROGRESS.md` の最新ログを正本として扱う。
+
+### 現在の状態
+
+- アニメ構造は、X=Frame / Y=Lane / Z=ClipAsset内部Layer/Folder の3次元マトリクス方針で進行中。
+- Laneは通常Layerから完全独立済みではないが、`syncWithLayers()` の自動輸入は初回寄りに抑制され、独立Laneの足場が入っている。
+- ClipはFrame/Lane上の小さい箱として扱う方向へ移行中。新規Blank Clipは既存Z軸束をコピーせず、内部Layer 1枚から開始する。
+- Layer PanelはCAF/内部Layerの反映表示と狭い内部編集入口。CAF自体の移動・削除・コピー・Lane移動はアニメテーブルが正本。
+- CAF表示はかなり整理されたが、CAF内部Folder、CAF間Layer D&D、Lane削除/並べ替え、保存/復元、Vキー変形、Album出力は未確定。
+- 右サイドバーの通常Layer/Folder追加は、アニメ文脈では通常Layer/Laneへ誤流入しないよう暫定ガード済み。
+- `CAPTURE` / `AUTO` / `EDIT` / `UNIQUE` は現行UI上では退避または撤去済み。互換用内部経路が残っている箇所はある。
+
+### 直近の描画系補修
+
+- Phase 4z24/4z25で、Space+Pen移動、LazyBrush/筆圧周辺、点描時の描き始め不整合が調整された。
+- 2026-05-31 Codex補修で、筆圧ONペンの開始点だけを `0.0` 固定にし、点描中に時々大きな `●` が出る経路を抑制した。
+- `pointer-handler.js` の生pointerdownログは `TEGAKI_CONFIG.debug` 限定へ戻した。
+- 古い `proposals/GEMINI_PEN_STARTUP_FIX.md` は、現在方針と逆向きで読み込みノイズになるため削除済み。
+
+### 次に優先するなら
+
+1. CAF安定化の継続: CAF内部Folder、CAF内/CAF間D&D、CAF開閉・内部Layer所属表示の整理。
+2. Lane操作の整理: Lane削除、Lane並べ替え、Alt系ショートカットの安定化。
+3. ゴースト/作業Layer経路の棚卸し: `isAnimationWorkingLayer`、Layer Panel非表示、保存・復元・Vキー・Albumが旧LayerSystemを参照する経路の確認。
+4. 描画レスポンス確認: アニメテーブル表示中の描画遅延が残る場合、Pointer/LazyBrushより先にLayerPanel同期頻度とPreview再描画頻度を疑う。
+
+### 新チャットで触る前の注意
+
+- `PHASE4Z_BOUNDARY.md` を正本として、Layer Panel側へ大きく作り込まない。
+- Geminiへは、CAF/Lane根幹、SortableJS、保存形式、RenderTexture合成、LayerSystem境界変更を丸投げしない。
+- `task-gemini/` の古いPhase指示は履歴として読む。現在状態の正本は `PROGRESS.md` とこのHandoff。
+- `画像資料/点描をしてると時々●が出現する.png` は、点描バグの実例資料として残す。
 
 ---
 
@@ -370,12 +407,8 @@ Codexが見るべき作業:
 
 ## 直近の確認結果
 
-- Phase 4z9はCodex確認済み。
-- Phase 4z10はCodex確認済み。内部Layerの壊れたSnapshot参照では従来Previewへfallbackする補修済み。
-- Phase 4z11はCodex確認済み。新規フォルダ作成時の選択クリアとMOVE番号入力検証を補修済み。
-- Phase 4z12はCodex確認済み。編集対象の正本はCAF/ClipAsset側へ寄せ、将来はCAF相当の上位概念をレイヤーパネルにも表示する前提を報告書へ追記済み。
-- Phase 4z13はCodex確認済み。次はレイヤーパネルDOMへ入る前に、現在FrameのClipAsset/CAFツリーを返す純データヘルパーを優先する判断。
-- Phase 4z14はCodex確認済み。`getFrameAssetTree()` はUI非依存の純データヘルパーとして実装済み。
-- `npm.cmd run build` 成功。
+- Phase 4z23はCodex実装継続中。CAF/Lane/Layer Panelの境界整理、Clip小箱化、CAF内部Layerミラー、Preview Scope、Background Lane除外、CAF連番、Frame/Lane同期などが大きく進んだ。
+- Phase 4z24/4z25はGemini実装とCodex補修により、Space+Pen移動と筆圧/点描周辺を調整済み。
+- `npm.cmd run build` は2026-05-31時点で成功。
 - 生成された `dist/` 差分は除外済み。
-- 現在の `PROGRESS.md` は Phase 4z14完了状態。
+- 現在の `PROGRESS.md` は Phase 4z25 と Phase 4z23詳細ログが最新。

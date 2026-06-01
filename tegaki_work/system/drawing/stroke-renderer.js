@@ -69,8 +69,11 @@ export class StrokeRenderer {
     }
 
     calculateWidth(pressure, brushSize) {
-        const minRatio = 0.02; // クランプを 0.02 に変更
-        const ratio = Math.max(minRatio, pressure ?? 0.5);
+        const minRatio = 0.02;
+        // フォールバックを 0.5 → 0.0 に変更。
+        // pressure が未定義のとき（ペンダウン直後）は極細から始まる。
+        // マウス入力は pointer-handler.js 側で 0.5 に補完されるためここは 0.0 でよい。
+        const ratio = Math.max(minRatio, pressure ?? 0.0);
         return Math.max(this.minPhysicalWidth, brushSize * ratio);
     }
 
@@ -423,15 +426,19 @@ export class StrokeRenderer {
         const settings = this._getSettings(providedSettings);
         const mode = this._getCurrentMode(settings);
 
-        if (points.length === 0) {
+        if (!points || points.length === 0) {
             return graphics;
         }
 
+        // 1点目から描画する（点描時の即時フィードバックのためガードを削除）。
+        // 描き始めの太さは calculateWidth 側のフォールバック (0.0) で制御する。
+
         graphics.clear();
-        
+
         // 消しゴム・ペン・エアブラシ・ぼかしはライブ焼き込み側を正にする。
         // previewGraphics で重ね描きすると見た目と確定結果がずれるため描画しない。
-        if (mode === 'eraser' || mode === 'airbrush' || mode === 'airbrush-erase' || mode === 'blur') {
+        // ※ペン(pen)もライブ焼き込み対象のため、プレビューは描かない。
+        if (mode === 'pen' || mode === 'eraser' || mode === 'airbrush' || mode === 'airbrush-erase' || mode === 'blur') {
             return graphics;
         }
 
@@ -448,9 +455,10 @@ export class StrokeRenderer {
         const filteredPoints = this._filterNearPoints(points);
         if (filteredPoints.length < 2) return graphics;
 
-        const inputPoints = filteredPoints.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.5, 0.02)]);
+        // フォールバックを 0.5 -> 0.0 へ。
+        const inputPoints = filteredPoints.map(p => [p.x, p.y, Math.max(p.pressure ?? 0.0, 0.02)]);
         const options = this._getFreehandOptions(settings.size);
-        
+
         const outlinePoints = getStroke(inputPoints, options);
         if (outlinePoints.length < 2) return graphics;
 

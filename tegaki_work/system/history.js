@@ -58,7 +58,7 @@ export class HistoryManager {
                 this.index--;
             }
             
-            this._notifyHistoryChanged();
+            this._notifyHistoryChanged(command, 'push');
             
         } catch (error) {
             console.error('[History] Command execution failed:', error);
@@ -91,7 +91,7 @@ export class HistoryManager {
             console.log(`[History] Record applied: ${command.name}`, command.meta || {});
         }
 
-        this._notifyHistoryChanged();
+        this._notifyHistoryChanged(command, 'record');
     }
 
     undo() {
@@ -111,7 +111,7 @@ export class HistoryManager {
             }
             
             this.index--;
-            this._notifyHistoryChanged();
+            this._notifyHistoryChanged(command, 'undo');
             
         } catch (error) {
             console.error('[History] Undo failed:', error);
@@ -144,7 +144,7 @@ export class HistoryManager {
                 throw doError;
             }
 
-            this._notifyHistoryChanged();
+            this._notifyHistoryChanged(command, 'redo');
             
         } catch (error) {
             console.error('[History] Redo failed:', error);
@@ -165,7 +165,7 @@ export class HistoryManager {
     clear() {
         this.stack = [];
         this.index = -1;
-        this._notifyHistoryChanged();
+        this._notifyHistoryChanged(null, 'clear');
     }
 
     createComposite(commands, name = 'composite') {
@@ -193,13 +193,16 @@ export class HistoryManager {
         );
     }
 
-    _notifyHistoryChanged() {
+    _notifyHistoryChanged(command = null, action = 'changed') {
         if (TegakiEventBus) {
             TegakiEventBus.emit('history:changed', {
                 canUndo: this.canUndo(),
                 canRedo: this.canRedo(),
                 stackSize: this.stack.length,
-                currentIndex: this.index
+                currentIndex: this.index,
+                action,
+                commandName: command?.name || null,
+                meta: command?.meta || null
             });
         }
     }

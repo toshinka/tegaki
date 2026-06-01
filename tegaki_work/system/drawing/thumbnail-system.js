@@ -34,6 +34,7 @@ export const ThumbnailSystem = {
             const layerMgr = window.layerManager;
             const layer = layerMgr?.getLayerById(data.layerId);
             if (!layer) return;
+            if (layer.layerData?.isAnimationWorkingLayer) return;
 
             if (data.immediate) {
                 this.generateLayerThumbnail(layer, data.layerIndex);

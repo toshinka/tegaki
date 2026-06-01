@@ -322,11 +322,13 @@ export class CameraSystem {
     _setupMouseEvents(canvas) {
         canvas.addEventListener('pointerdown', (e) => {
             if (this.vKeyPressed) return;
-            
+
+            // [修正] ペン入力でもSpaceキーが押されている場合はカメラ移動を許可する。
+            // Spaceなしの場合は、ペンは描画エンジンへ通すために無視する。
+            if (e.pointerType === 'pen' && !this.spacePressed) return;
+
             const isMouseSecondaryButton = e.button === 2 && e.pointerType !== 'pen';
 
-            // [仕様確認済] Spaceキー押下中、またはマウス右ボタン（ペン以外）でのドラッグをキャンバス移動とみなす。
-            // ペンでのSpace+ドラッグは標準的なキャンバス移動操作であり、描画はブロックされるのが正しい動作。
             if ((isMouseSecondaryButton || this.spacePressed) && !this.shiftPressed) {
                 this.isDragging = true;
                 this.canvasMoveMode = true;
@@ -360,12 +362,9 @@ export class CameraSystem {
             }
 
             // Space+ドラッグは接触/左ボタンが残っている間だけ継続する。
+            // (ペン入力の場合は pressure が 0 になっても pointerup が来るまで継続させたいケースもあるが、
+            //  基本的には e.buttons === 0 で判定して安全に中断する)
             if (this.dragTrigger === 'space' && e.buttons === 0) {
-                this._stopDragging();
-                return;
-            }
-
-            if (this.dragTrigger === 'space' && e.pointerType === 'pen' && e.pressure <= 0.001) {
                 this._stopDragging();
                 return;
             }
@@ -385,11 +384,11 @@ export class CameraSystem {
         });
         
         canvas.addEventListener('pointerup', (e) => {
-            const isMouseSecondaryButton = e.button === 2 && e.pointerType !== 'pen';
-
             if (this.dragPointerId !== null && e.pointerId !== this.dragPointerId) {
                 return;
             }
+
+            const isMouseSecondaryButton = e.button === 2 && e.pointerType !== 'pen';
 
             if (this.isDragging && (this.dragTrigger === 'space' || isMouseSecondaryButton || !this.spacePressed)) {
                 this._stopDragging();
