@@ -41,6 +41,7 @@ export const KeyboardHandler = (function() {
         if (!eventBus || !keymap) return;
         if (isInputFocused()) return;
         
+        if (e.key === 'F2') return;
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
         if (e.key.startsWith('F') && e.key.length <= 3) {
             e.preventDefault();
@@ -53,6 +54,31 @@ export const KeyboardHandler = (function() {
             if (activeLayer?.layerData?.isFolder && layerManager?.toggleFolderExpand) {
                 layerManager.toggleFolderExpand(activeLayer.layerData.id);
                 e.preventDefault();
+                return;
+            }
+        }
+
+        if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && (e.key === 'Delete' || e.key === 'Backspace')) {
+            const animationTable = window.PopupManager?.get?.('animationTable')
+                || window.coreEngine?.popupManager?.get?.('animationTable');
+            if (animationTable?.isVisible && animationTable.deleteActiveSelection?.()) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+            }
+        }
+
+        if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && (e.code === 'KeyC' || e.code === 'KeyV')) {
+            const animationTable = window.PopupManager?.get?.('animationTable')
+                || window.coreEngine?.popupManager?.get?.('animationTable');
+            if (animationTable?.isVisible) {
+                if (e.code === 'KeyC') {
+                    animationTable.copySelectedCel?.();
+                } else {
+                    animationTable.pasteCopiedCel?.();
+                }
+                e.preventDefault();
+                e.stopImmediatePropagation();
                 return;
             }
         }
@@ -281,51 +307,91 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_RESET':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:reset-transform');
                 event.preventDefault();
                 break;
             
             case 'LAYER_MOVE_UP':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:move-by-key', { direction: 'ArrowUp' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_MOVE_DOWN':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:move-by-key', { direction: 'ArrowDown' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_MOVE_LEFT':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:move-by-key', { direction: 'ArrowLeft' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_MOVE_RIGHT':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:move-by-key', { direction: 'ArrowRight' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_SCALE_UP':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:scale-by-key', { direction: 'ArrowUp' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_SCALE_DOWN':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:scale-by-key', { direction: 'ArrowDown' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_ROTATE_LEFT':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:rotate-by-key', { direction: 'ArrowLeft' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_ROTATE_RIGHT':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 eventBus.emit('layer:rotate-by-key', { direction: 'ArrowRight' });
                 event.preventDefault();
                 break;
             
             case 'LAYER_FLIP_HORIZONTAL':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (vKeyPressed) {
                     eventBus.emit('layer:flip-by-key', { direction: 'horizontal' });
                 }
@@ -333,6 +399,10 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_FLIP_VERTICAL':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (vKeyPressed) {
                     eventBus.emit('layer:flip-by-key', { direction: 'vertical' });
                 }
@@ -340,6 +410,10 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_HIERARCHY_UP':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (!vKeyPressed) {
                     eventBus.emit('layer:select-next');
                 }
@@ -347,6 +421,10 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_HIERARCHY_DOWN':
+                if (handleAnimationTableLayerShortcut('block-empty')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (!vKeyPressed) {
                     eventBus.emit('layer:select-prev');
                 }
@@ -494,8 +572,13 @@ export const KeyboardHandler = (function() {
                 'cut',
                 'order-up',
                 'order-down',
+                'block-empty',
                 'block'
             ].includes(action);
+        }
+
+        if (action === 'block-empty') {
+            return false;
         }
 
         if (action === 'create') {

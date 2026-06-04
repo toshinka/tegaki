@@ -16,6 +16,45 @@ function createId() {
         : Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
 
+function numberOrDefault(value, fallback) {
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function clonePlainObject(value, fallback = {}) {
+    const cloneFallback = () => Array.isArray(fallback) ? [...fallback] : { ...fallback };
+    if (!value || typeof value !== 'object') return cloneFallback();
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch {
+        return cloneFallback();
+    }
+}
+
+function createDefaultClipTransform() {
+    return {
+        x: 0,
+        y: 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        anchorX: 0.5,
+        anchorY: 0.5
+    };
+}
+
+function normalizeClipTransform(transform = {}) {
+    const defaults = createDefaultClipTransform();
+    return {
+        x: numberOrDefault(transform.x, defaults.x),
+        y: numberOrDefault(transform.y, defaults.y),
+        scaleX: numberOrDefault(transform.scaleX, defaults.scaleX),
+        scaleY: numberOrDefault(transform.scaleY, defaults.scaleY),
+        rotation: numberOrDefault(transform.rotation, defaults.rotation),
+        anchorX: numberOrDefault(transform.anchorX, defaults.anchorX),
+        anchorY: numberOrDefault(transform.anchorY, defaults.anchorY)
+    };
+}
+
 /**
  * 描画内容の最小保存単位（スナップショット）
  */
@@ -157,6 +196,18 @@ export class ClipInstanceModel {
         this.duration = options.duration || 1;
         this.isKeyframe = options.isKeyframe !== false;
         this.visible = options.visible !== false;
+
+        // ClipAsset は絵素材、ClipInstance は配置/運動パラメータを持つ。
+        // 将来のキーフレーム・物理演算では、この transform をCAFセル単位の正本にする。
+        this.transform = normalizeClipTransform(options.transform || {});
+        this.transformKeyframes = Array.isArray(options.transformKeyframes)
+            ? options.transformKeyframes.map(keyframe => clonePlainObject(keyframe))
+            : [];
+        this.physics = clonePlainObject(options.physics, {
+            enabled: false,
+            rigId: null,
+            cacheId: null
+        });
         
         // 暫定互換用：直接 Snapshot 保持
         this.rasterSnapshot = options.rasterSnapshot || null; 
@@ -172,6 +223,13 @@ export class ClipInstanceModel {
             duration: this.duration,
             isKeyframe: this.isKeyframe,
             visible: this.visible,
+            transform: normalizeClipTransform(this.transform),
+            transformKeyframes: this.transformKeyframes.map(keyframe => clonePlainObject(keyframe)),
+            physics: clonePlainObject(this.physics, {
+                enabled: false,
+                rigId: null,
+                cacheId: null
+            }),
             rasterSnapshot: this.rasterSnapshot
         };
     }
@@ -396,6 +454,42 @@ export class TimelineModel {
         return null;
     }
 
+    setClipTransform(clipId, transform = {}) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry) return { ok: false, reason: 'clip-not-found' };
+
+        entry.clip.transform = normalizeClipTransform({
+            ...(entry.clip.transform || {}),
+            ...(transform || {})
+        });
+        return { ok: true, lane: entry.lane, clip: entry.clip };
+    }
+
+    setClipTransformKeyframes(clipId, keyframes = []) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry) return { ok: false, reason: 'clip-not-found' };
+
+        entry.clip.transformKeyframes = Array.isArray(keyframes)
+            ? keyframes.map(keyframe => clonePlainObject(keyframe))
+            : [];
+        return { ok: true, lane: entry.lane, clip: entry.clip };
+    }
+
+    setClipPhysics(clipId, physics = {}) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry) return { ok: false, reason: 'clip-not-found' };
+
+        entry.clip.physics = clonePlainObject({
+            ...(entry.clip.physics || {}),
+            ...(physics || {})
+        }, {
+            enabled: false,
+            rigId: null,
+            cacheId: null
+        });
+        return { ok: true, lane: entry.lane, clip: entry.clip };
+    }
+
     /**
      * 指定IDのクリップアセットを取得
      */
@@ -449,6 +543,28 @@ export class TimelineModel {
         return { ok: true, folder };
     }
 
+    removeClipAssetFolder(folderId) {
+        const folderIndex = this.clipAssetFolders.findIndex(folder => folder.id === folderId);
+        if (folderIndex < 0) return { ok: false, reason: 'folder-not-found' };
+        if (this.getClipAssetsInFolder(folderId).length > 0) {
+            return { ok: false, reason: 'folder-not-empty' };
+        }
+
+        const [folder] = this.clipAssetFolders.splice(folderIndex, 1);
+        return { ok: true, folder };
+    }
+
+    renameClipAsset(assetId, name) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const trimmedName = typeof name === 'string' ? name.trim() : '';
+        if (!trimmedName) return { ok: false, reason: 'invalid-name' };
+
+        asset.name = trimmedName;
+        asset.updatedAt = Date.now();
+        return { ok: true, asset };
+    }
+
     /**
      * アセットをフォルダへ移動
      */
@@ -464,6 +580,42 @@ export class TimelineModel {
         asset.folderId = folderId;
         asset.updatedAt = Date.now();
         return { ok: true, asset };
+    }
+
+    removeClipAsset(assetId, options = {}) {
+        const assetIndex = this.clipAssets.findIndex(asset => asset.id === assetId);
+        if (assetIndex < 0) return { ok: false, reason: 'asset-not-found' };
+        if (this.countAssetReferences(assetId) > 0 && options.force !== true) {
+            return { ok: false, reason: 'asset-in-use' };
+        }
+
+        const [removedAsset] = this.clipAssets.splice(assetIndex, 1);
+        const candidateSnapshotIds = new Set();
+        if (removedAsset.drawingSnapshotId) candidateSnapshotIds.add(removedAsset.drawingSnapshotId);
+        removedAsset.internalLayers.forEach(layer => {
+            if (layer.drawingSnapshotId) candidateSnapshotIds.add(layer.drawingSnapshotId);
+        });
+
+        const referencedSnapshotIds = new Set();
+        this.clipAssets.forEach(asset => {
+            if (asset.drawingSnapshotId) referencedSnapshotIds.add(asset.drawingSnapshotId);
+            asset.internalLayers.forEach(layer => {
+                if (layer.drawingSnapshotId) referencedSnapshotIds.add(layer.drawingSnapshotId);
+            });
+        });
+
+        const removedSnapshotIds = [];
+        if (options.keepSnapshots !== true) {
+            this.drawingSnapshots = this.drawingSnapshots.filter(snapshot => {
+                if (!candidateSnapshotIds.has(snapshot.id) || referencedSnapshotIds.has(snapshot.id)) {
+                    return true;
+                }
+                removedSnapshotIds.push(snapshot.id);
+                return false;
+            });
+        }
+
+        return { ok: true, asset: removedAsset, removedSnapshotIds };
     }
 
     /**
@@ -846,7 +998,14 @@ export class TimelineModel {
                 isBlank: snapshot ? snapshot.isBlank === true : true,
                 visible: clip.visible !== false,
                 startFrame: clip.startFrame,
-                duration: clip.duration
+                duration: clip.duration,
+                transform: normalizeClipTransform(clip.transform || {}),
+                transformKeyframes: (clip.transformKeyframes || []).map(keyframe => clonePlainObject(keyframe)),
+                physics: clonePlainObject(clip.physics, {
+                    enabled: false,
+                    rigId: null,
+                    cacheId: null
+                })
             };
 
             // フラットリストへ追加
@@ -946,6 +1105,56 @@ export class TimelineModel {
 
     isAssetShared(assetId) {
         return this.countAssetReferences(assetId) > 1;
+    }
+
+    duplicateClipAsset(assetId, options = {}) {
+        const sourceAsset = this.getClipAsset(assetId);
+        if (!sourceAsset) return { ok: false, reason: 'asset-not-found' };
+
+        const primarySnapshotId = sourceAsset.drawingSnapshotId
+            ? this._duplicateDrawingSnapshot(sourceAsset.drawingSnapshotId)
+            : null;
+        const duplicateAsset = new ClipAssetModel({
+            name: options.name || `${sourceAsset.name} copy`,
+            type: sourceAsset.type,
+            folderId: options.folderId ?? sourceAsset.folderId,
+            drawingSnapshotId: primarySnapshotId
+        });
+
+        const layerIdMap = new Map();
+        duplicateAsset.internalLayers = sourceAsset.internalLayers.map(layer => {
+            let snapshotId = null;
+            if (layer.drawingSnapshotId) {
+                snapshotId = layer.drawingSnapshotId === sourceAsset.drawingSnapshotId
+                    ? primarySnapshotId
+                    : this._duplicateDrawingSnapshot(layer.drawingSnapshotId);
+            }
+            const duplicateLayer = this.createClipAssetInternalLayer({
+                name: layer.name,
+                type: layer.type,
+                visible: layer.visible !== false,
+                opacity: layer.opacity ?? 1,
+                blendMode: layer.blendMode || 'normal',
+                clipping: layer.clipping === true,
+                drawingSnapshotId: snapshotId,
+                parentLayerId: layer.parentLayerId,
+                isBackground: layer.isBackground === true
+            });
+            layerIdMap.set(layer.id, duplicateLayer.id);
+            return duplicateLayer;
+        });
+
+        duplicateAsset.internalLayers.forEach(layer => {
+            if (layer.parentLayerId) {
+                layer.parentLayerId = layerIdMap.get(layer.parentLayerId) || null;
+            }
+        });
+
+        const now = Date.now();
+        duplicateAsset.createdAt = now;
+        duplicateAsset.updatedAt = now;
+        this.clipAssets.push(duplicateAsset);
+        return { ok: true, sourceAsset, asset: duplicateAsset };
     }
 
     /**

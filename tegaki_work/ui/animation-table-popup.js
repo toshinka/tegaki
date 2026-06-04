@@ -26,6 +26,7 @@ export class AnimationTablePopup {
         this.model = new TimelineModel();
         this.selectedCelId = null;
         this.activeLaneId = null;
+        this.isLaneOnlySelected = false;
         
         // 再生関連
         this.isPlaying = false;
@@ -49,6 +50,9 @@ export class AnimationTablePopup {
         this._isDragging = false;
         this._dragOffset = { x: 0, y: 0 };
         this._panelPos = { x: 70, y: null }; // y は初期表示時に下部固定から計算
+        this._isResizing = false;
+        this._resizeStart = null;
+        this._panelSize = { width: null, height: 260 };
 
         // リタイミング（セル伸縮）関連
         this._isRetiming = false;
@@ -61,6 +65,7 @@ export class AnimationTablePopup {
         this._clipMoveData = null;
         this._clipMoveMoved = false;
         this._isClipMoving = false;
+        this._clipMovePreviewSlot = null;
 
         // 自動キャプチャ関連
         this.isAutoCaptureActive = false;
@@ -78,6 +83,7 @@ export class AnimationTablePopup {
         this.playbackScope = 'all'; // 'all' | 'activeLane' | 'includedLanes'
         this.activePlaybackLaneIds = null; // Set<string> | null
         this.includedLaneIds = new Set();
+        this.timelineCellWidth = 30;
 
         // アセットライブラリ関連 (Phase 4z4)
         this.isAssetLibraryVisible = false;
@@ -131,7 +137,7 @@ export class AnimationTablePopup {
         this._restoreVisibility();
         this.panel.style.display = 'none';
         this.isVisible = false;
-        this._requestLayerPanelSync();
+        this._requestLayerPanelSync({ force: true });
     }
 
     toggle() {
@@ -208,6 +214,7 @@ export class AnimationTablePopup {
 
     requestUpdate() {
         if (!this.isVisible) return;
+        if (this._editingLaneNameInline) return;
         if (this._updateTimeout) return;
         this._updateTimeout = setTimeout(() => {
             this._updateTimeout = null;
@@ -218,9 +225,14 @@ export class AnimationTablePopup {
     /**
      * レイヤーパネル側の表示更新を要求する (Phase 4z21)
      */
-    _requestLayerPanelSync() {
+    _requestLayerPanelSync(options = {}) {
         if (this.eventBus) {
-            this.eventBus.emit('layer:panel-update-requested');
+            this.eventBus.emit('layer:panel-update-requested', {
+                force: options.force === true
+            });
+        }
+        if (options.force === true && window.layerPanelRenderer?.requestUpdate) {
+            window.layerPanelRenderer.requestUpdate({ force: true });
         }
         if (window.timelineUI?.updateLayerPanelIndicator) {
             window.timelineUI.updateLayerPanelIndicator();
@@ -980,55 +992,115 @@ export class AnimationTablePopup {
     }
 
     copySelectedCel() {
-        if (!this.selectedCelId) return;
+        if (!this.selectedCelId) return false;
 
+        this._saveSelectedClipFromWorkingLayers();
         const entry = this.model.findClipEntry(this.selectedCelId);
         if (entry) {
             const clip = entry.clip;
             this._copiedCelRef = {
                 assetId: clip.assetId,
                 rasterSnapshot: clip.rasterSnapshot, // 互換用
-                duration: clip.duration
+                duration: clip.duration,
+                transform: this._cloneClipInstanceMetadata(clip.transform),
+                transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
+                physics: this._cloneClipInstanceMetadata(clip.physics)
             };
+            this.render();
+            return true;
+        }
+        return false;
+    }
+
+    _cloneClipInstanceMetadata(value, fallback = null) {
+        if (value == null) return fallback;
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch {
+            return fallback;
         }
     }
 
     pasteCopiedCel() {
-        if (!this._copiedCelRef || !this.layerSystem) return;
+        if (!this._copiedCelRef || !this.layerSystem) return false;
 
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
         const currentFrame = this.model.playback.currentFrame;
-        const activeIndex = this.layerSystem.getActiveLayerIndex();
-        const layers = this.layerSystem.getLayers();
-        const activeLayer = layers[activeIndex];
-        if (!activeLayer?.layerData) return;
-
-        // アクティブレイヤーに対応するレーンを探す
-        const lane = this.model.getLaneForSourceLayer(activeLayer.layerData.id);
-        if (!lane || lane.type === 'folder' || lane.isBackground) return;
+        const lane = this.activeLaneId
+            ? this.model.getLaneById(this.activeLaneId)
+            : null;
+        if (!lane || lane.type === 'folder' || lane.isBackground) return false;
 
         // 重なりチェック
         if (!lane.canPlaceCel(currentFrame, this._copiedCelRef.duration)) {
             console.warn('[AnimationTable] Cannot paste: Space occupied');
-            return;
+            return false;
         }
+
+        const duplicateAssetResult = this._copiedCelRef.assetId && this.model.duplicateClipAsset
+            ? this.model.duplicateClipAsset(this._copiedCelRef.assetId)
+            : null;
+        if (this._copiedCelRef.assetId && duplicateAssetResult && !duplicateAssetResult.ok) {
+            console.warn('[AnimationTable] Cannot paste: Failed to duplicate clip asset', duplicateAssetResult.reason);
+            return false;
+        }
+        const pastedAsset = duplicateAssetResult?.ok ? duplicateAssetResult.asset : null;
+        const pastedAssetId = pastedAsset?.id || this._copiedCelRef.assetId || null;
+        const primarySnapshot = pastedAsset?.drawingSnapshotId
+            ? this.model.getDrawingSnapshot(pastedAsset.drawingSnapshotId)
+            : null;
+        const pastedRasterSnapshot = primarySnapshot
+            ? primarySnapshot.serialize()
+            : this._cloneClipInstanceMetadata(this._copiedCelRef.rasterSnapshot);
 
         // 新規セル作成 (ClipInstanceModel)
         const newClip = lane.addCel({
             sourceLayerId: lane.sourceLayerId,
             layerId: lane.layerId,
-            assetId: this._copiedCelRef.assetId,
-            rasterSnapshot: this._copiedCelRef.rasterSnapshot, // 互換用
+            assetId: pastedAssetId,
+            rasterSnapshot: pastedRasterSnapshot, // 互換用
             startFrame: currentFrame,
-            duration: this._copiedCelRef.duration
+            duration: this._copiedCelRef.duration,
+            transform: this._cloneClipInstanceMetadata(this._copiedCelRef.transform),
+            transformKeyframes: this._cloneClipInstanceMetadata(this._copiedCelRef.transformKeyframes, []),
+            physics: this._cloneClipInstanceMetadata(this._copiedCelRef.physics)
         });
 
-        if (newClip) {
-            this.selectedCelId = newClip.id;
-            this.activeLaneId = lane.id;
-            this._syncClipAssetToWorkingLayers(newClip);
-            this.render();
-            this._requestLayerPanelSync();
+        if (!newClip) {
+            if (pastedAsset) {
+                this._restoreTimelineHistoryState(beforeState);
+            }
+            return false;
         }
+
+        this.selectedCelId = newClip.id;
+        this.activeLaneId = lane.id;
+        this._syncClipAssetToWorkingLayers(newClip);
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-paste', {
+            type: 'caf-clip-paste',
+            clipId: newClip.id,
+            assetId: newClip.assetId || null,
+            sourceAssetId: this._copiedCelRef.assetId || null,
+            duplicatedAssetId: pastedAsset?.id || null,
+            laneId: lane.id,
+            frameIndex: currentFrame
+        });
+        this.render();
+        this._requestLayerPanelSync();
+        return true;
+    }
+
+    canPasteCopiedCel() {
+        if (!this._copiedCelRef || !this.layerSystem) return false;
+        const currentFrame = this.model.playback.currentFrame;
+        const lane = this.activeLaneId
+            ? this.model.getLaneById(this.activeLaneId)
+            : null;
+        return !!lane
+            && lane.type !== 'folder'
+            && !lane.isBackground
+            && lane.canPlaceCel(currentFrame, this._copiedCelRef.duration || 1);
     }
 
     _getCanvasSnapshotSize() {
@@ -1115,6 +1187,57 @@ export class AnimationTablePopup {
                 ${layerHtml}
             </div>
         `;
+    }
+
+    _editInternalLayerInspectorNameInline(row, layerId) {
+        const asset = this._getSelectedAssetForInspector();
+        const layer = asset?.internalLayers?.find(item => item.id === layerId);
+        const nameEl = row?.querySelector('.anim-internal-layer-name');
+        if (!asset || !layer || !nameEl || nameEl.querySelector('input')) return false;
+
+        this.selectedAssetId = asset.id;
+        this.selectedAssetFolderId = asset.folderId || null;
+        this.selectedInternalLayerId = layerId;
+
+        const currentName = layer.name || 'Layer';
+        const prefix = layer.type === 'folder' ? '[Folder] ' : '';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentName;
+        input.className = 'anim-internal-layer-name-input';
+        nameEl.textContent = '';
+        nameEl.appendChild(input);
+
+        const finish = (shouldCommit) => {
+            if (!input.parentNode) return;
+            const nextName = input.value.trim();
+            nameEl.textContent = `${prefix}${nextName || currentName}`;
+            if (shouldCommit && nextName && nextName !== currentName) {
+                this.renameInternalLayerFromExternal(asset.id, layerId, nextName, { source: 'animation-inspector-inline' });
+            }
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(false);
+            }
+        });
+        input.addEventListener('blur', () => finish(true));
+        input.addEventListener('pointerdown', (e) => e.stopPropagation());
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('dblclick', (e) => e.stopPropagation());
+
+        requestAnimationFrame(() => {
+            input.focus();
+            input.select();
+        });
+        return true;
     }
 
     _getInternalLayerDepth(asset, layer) {
@@ -1216,22 +1339,134 @@ export class AnimationTablePopup {
         const name = prompt('Enter new folder name:');
         if (!name || !name.trim()) return;
 
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
         const result = this.model.createClipAssetFolder({ name: name.trim() });
         if (result.ok) {
             this.selectedAssetFolderId = result.folder.id;
             this.selectedAssetId = null;
             this.selectedInternalLayerId = null;
+            this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-folder-create', {
+                type: 'caf-folder-create',
+                folderId: result.folder.id,
+                name: result.folder.name
+            });
             this.render();
-            this._requestLayerPanelSync();
+            this._flushLayerPanelSync();
         }
     }
 
     addIndependentLane() {
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
         const lane = this.model.createIndependentLane();
+        if (!lane) return null;
         this.selectedCelId = null;
+        this.selectedAssetId = null;
+        this.selectedAssetFolderId = null;
+        this.selectedInternalLayerId = null;
+        this.isLaneOnlySelected = true;
+        this._setActiveLane(lane.id);
+        this._clearWorkingLayersForEmptyFrame();
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-lane-create', {
+            type: 'caf-lane-create',
+            laneId: lane.id
+        });
         this.render();
         this._requestLayerPanelSync();
         return lane;
+    }
+
+    deleteActiveLane() {
+        const lanes = this.model.tracks.filter(track => track.type !== 'folder' && !track.isBackground);
+        if (lanes.length <= 1) return false;
+
+        const targetIndex = Math.max(0, lanes.findIndex(lane => lane.id === this.activeLaneId));
+        const targetLane = lanes[targetIndex] || lanes[0];
+        if (!targetLane) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const removedLaneId = targetLane.id;
+        const removedClipIds = (targetLane.cels || []).map(clip => clip.id);
+        const modelIndex = this.model.tracks.findIndex(track => track.id === removedLaneId);
+        if (modelIndex < 0) return false;
+
+        this.model.tracks.splice(modelIndex, 1);
+        this.includedLaneIds.delete(removedLaneId);
+        const nextLane = lanes[targetIndex + 1] || lanes[targetIndex - 1] || null;
+        this.selectedCelId = null;
+        this.selectedAssetId = null;
+        this.selectedAssetFolderId = null;
+        this.selectedInternalLayerId = null;
+        if (nextLane) {
+            this.isLaneOnlySelected = true;
+            this._setActiveLane(nextLane.id);
+            this._clearWorkingLayersForEmptyFrame();
+        } else {
+            this.isLaneOnlySelected = false;
+            this.activeLaneId = null;
+            this._syncWorkingLayersForCurrentFrame();
+        }
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-lane-delete', {
+            type: 'caf-lane-delete',
+            laneId: removedLaneId,
+            clipIds: removedClipIds
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    renameLane(laneId = this.activeLaneId, requestedName = null) {
+        const lane = laneId ? this.model.getLaneById(laneId) : null;
+        if (!lane || lane.type === 'folder' || lane.isBackground) return false;
+
+        const currentName = this.model.getLaneDisplayName
+            ? this.model.getLaneDisplayName(lane)
+            : (lane.displayName || lane.name || 'Lane');
+        const nextName = requestedName === null ? prompt('Lane name:', currentName) : requestedName;
+        if (!nextName || !nextName.trim()) return false;
+        const trimmedName = nextName.trim();
+        if (trimmedName === currentName && trimmedName === (lane.displayName || lane.name)) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const oldName = lane.displayName || lane.name || currentName;
+        lane.name = trimmedName;
+        lane.displayName = trimmedName;
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-lane-rename', {
+            type: 'caf-lane-rename',
+            laneId: lane.id,
+            oldName,
+            newName: trimmedName
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    renameClipAssetFolderFromExternal(folderId, requestedName, options = {}) {
+        const folder = folderId ? this.model.getClipAssetFolder(folderId) : null;
+        if (!folder) return false;
+        const nextName = typeof requestedName === 'string' ? requestedName.trim() : '';
+        if (!nextName || nextName === folder.name) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const oldName = folder.name;
+        const result = this.model.renameClipAssetFolder(folderId, nextName);
+        if (!result.ok) return false;
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-folder-rename', {
+            type: 'caf-folder-rename',
+            folderId,
+            oldName,
+            newName: nextName,
+            source: options.source || 'external'
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
     }
 
     renameSelectedAssetFolder() {
@@ -1242,11 +1477,83 @@ export class AnimationTablePopup {
         const newName = prompt('Enter new folder name:', folder.name);
         if (!newName || !newName.trim()) return;
 
-        const result = this.model.renameClipAssetFolder(this.selectedAssetFolderId, newName.trim());
-        if (result.ok) {
-            this.render();
-            this._requestLayerPanelSync();
-        }
+        this.renameClipAssetFolderFromExternal(this.selectedAssetFolderId, newName.trim(), {
+            source: 'animation-asset-library-prompt'
+        });
+    }
+
+    deleteSelectedAssetFolder() {
+        if (!this.selectedAssetFolderId || !this.model.removeClipAssetFolder) return false;
+        const folder = this.model.getClipAssetFolder(this.selectedAssetFolderId);
+        if (!folder) return false;
+        if (this.model.getClipAssetsInFolder(folder.id).length > 0) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const folderId = folder.id;
+        const folderName = folder.name;
+        const result = this.model.removeClipAssetFolder(folderId);
+        if (!result.ok) return false;
+
+        this.selectedAssetFolderId = null;
+        this.selectedAssetId = null;
+        this.selectedInternalLayerId = null;
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-folder-delete', {
+            type: 'caf-folder-delete',
+            folderId,
+            name: folderName
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    _editAssetFolderNameInline(folderItem) {
+        const folderId = folderItem?.dataset?.folderId;
+        if (!folderId || folderId === 'uncategorized') return false;
+        const folder = this.model.getClipAssetFolder(folderId);
+        const nameEl = folderItem.querySelector('.anim-lib-folder-name');
+        if (!folder || !nameEl || nameEl.querySelector('input')) return false;
+
+        this.selectedAssetFolderId = folderId;
+        const currentName = folder.name || 'Folder';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentName;
+        input.className = 'anim-lib-folder-name-input';
+        nameEl.textContent = '';
+        nameEl.appendChild(input);
+
+        const finish = (shouldCommit) => {
+            if (!input.parentNode) return;
+            const nextName = input.value.trim();
+            nameEl.textContent = nextName || currentName;
+            if (shouldCommit && nextName && nextName !== currentName) {
+                this.renameClipAssetFolderFromExternal(folderId, nextName, { source: 'animation-asset-library-inline' });
+            }
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(false);
+            }
+        });
+        input.addEventListener('blur', () => finish(true));
+        input.addEventListener('pointerdown', (e) => e.stopPropagation());
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('dblclick', (e) => e.stopPropagation());
+
+        requestAnimationFrame(() => {
+            input.focus();
+            input.select();
+        });
+        return true;
     }
 
     moveSelectedAssetToFolder() {
@@ -1279,13 +1586,126 @@ export class AnimationTablePopup {
             return;
         }
 
-        const result = this.model.moveClipAssetToFolder(this.selectedAssetId, targetFolderId);
+        if ((asset.folderId || null) === targetFolderId) return;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const sourceFolderId = asset.folderId || null;
+        const assetId = this.selectedAssetId;
+        const result = this.model.moveClipAssetToFolder(assetId, targetFolderId);
         if (result.ok) {
             // 移動先フォルダを表示対象にする
             this.selectedAssetFolderId = targetFolderId;
+            this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-asset-move-folder', {
+                type: 'caf-asset-move-folder',
+                assetId,
+                sourceFolderId,
+                targetFolderId
+            });
             this.render();
-            this._requestLayerPanelSync();
+            this._flushLayerPanelSync();
         }
+    }
+
+    deleteSelectedAssetFromLibrary() {
+        if (!this.selectedAssetId || !this.model.removeClipAsset) return false;
+        const asset = this.model.getClipAsset(this.selectedAssetId);
+        if (!asset) return false;
+        if (this.model.countAssetReferences(asset.id) > 0) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const folderId = asset.folderId || null;
+        const assetId = asset.id;
+        const result = this.model.removeClipAsset(assetId);
+        if (!result.ok) return false;
+
+        this.selectedAssetId = null;
+        this.selectedInternalLayerId = null;
+        this.selectedAssetFolderId = folderId;
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-asset-delete', {
+            type: 'caf-asset-delete',
+            assetId,
+            folderId,
+            removedSnapshotIds: result.removedSnapshotIds || []
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    renameClipAssetFromExternal(assetId, requestedName, options = {}) {
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        if (!asset || !this.model.renameClipAsset) return false;
+        const nextName = typeof requestedName === 'string' ? requestedName.trim() : '';
+        if (!nextName || nextName === asset.name) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const oldName = asset.name;
+        const result = this.model.renameClipAsset(assetId, nextName);
+        if (!result.ok) return false;
+        this.selectedAssetId = assetId;
+        this.selectedAssetFolderId = result.asset.folderId || null;
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-asset-rename', {
+            type: 'caf-asset-rename',
+            assetId,
+            oldName,
+            newName: nextName,
+            source: options.source || 'external'
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    _editAssetNameInline(assetItem) {
+        const assetId = assetItem?.dataset?.assetId;
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        const nameEl = assetItem?.querySelector('.anim-lib-asset-name');
+        if (!asset || !nameEl || nameEl.querySelector('input')) return false;
+
+        this.selectedAssetId = assetId;
+        const currentName = asset.name || 'Asset';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentName;
+        input.className = 'anim-lib-asset-name-input';
+        nameEl.textContent = '';
+        nameEl.appendChild(input);
+
+        const finish = (shouldCommit) => {
+            if (!input.parentNode) return;
+            const nextName = input.value.trim();
+            nameEl.textContent = nextName || currentName;
+            if (shouldCommit && nextName && nextName !== currentName) {
+                this.renameClipAssetFromExternal(assetId, nextName, {
+                    source: 'animation-asset-library-inline'
+                });
+            }
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                finish(false);
+            }
+        });
+        input.addEventListener('blur', () => finish(true));
+        input.addEventListener('pointerdown', (e) => e.stopPropagation());
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('dblclick', (e) => e.stopPropagation());
+
+        requestAnimationFrame(() => {
+            input.focus();
+            input.select();
+        });
+        return true;
     }
 
     moveInternalLayer(layerId, direction) {
@@ -1661,7 +2081,10 @@ export class AnimationTablePopup {
             selectedAssetId: this.selectedAssetId || null,
             selectedAssetFolderId: this.selectedAssetFolderId || null,
             selectedInternalLayerId: this.selectedInternalLayerId || null,
-            activeLaneId: this.activeLaneId || null
+            activeLaneId: this.activeLaneId || null,
+            isLaneOnlySelected: this.isLaneOnlySelected === true,
+            includedLaneIds: [...this.includedLaneIds],
+            playbackScope: this.playbackScope
         };
     }
 
@@ -1674,6 +2097,46 @@ export class AnimationTablePopup {
             meta
         });
         return true;
+    }
+
+    deleteSelectedClip() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.lane || !entry?.clip) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const removedCelId = entry.clip.id;
+        const removedAssetId = entry.clip.assetId || null;
+        const removedFrame = entry.clip.startFrame;
+        const laneId = entry.lane.id;
+
+        if (this.isClipEditModeActive) this.exitClipEditMode();
+        entry.lane.removeCelAtFrame(removedFrame);
+        this.selectedCelId = null;
+        this.selectedAssetId = null;
+        this.selectedAssetFolderId = null;
+        this.selectedInternalLayerId = null;
+        this._syncWorkingLayersForCurrentFrame();
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-delete', {
+            type: 'caf-clip-delete',
+            clipId: removedCelId,
+            assetId: removedAssetId,
+            laneId,
+            frameIndex: removedFrame
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    deleteActiveSelection() {
+        if (this.selectedCelId) {
+            return this.deleteSelectedClip();
+        }
+        if (this.isLaneOnlySelected) {
+            return this.deleteActiveLane();
+        }
+        return false;
     }
 
     _restoreTimelineHistoryState(state) {
@@ -1705,6 +2168,9 @@ export class AnimationTablePopup {
         this.selectedAssetId = state.selectedAssetId || null;
         this.selectedAssetFolderId = state.selectedAssetFolderId || null;
         this.selectedInternalLayerId = state.selectedInternalLayerId || null;
+        this.isLaneOnlySelected = state.isLaneOnlySelected === true && !this.selectedCelId;
+        this.includedLaneIds = new Set(Array.isArray(state.includedLaneIds) ? state.includedLaneIds : []);
+        this.playbackScope = state.playbackScope || this.playbackScope || 'all';
         this._invalidateSnapshotTextureCache();
 
         const selectedEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
@@ -1714,6 +2180,8 @@ export class AnimationTablePopup {
                 track.active = track.id === this.activeLaneId;
             });
             this._activateClipEntry(selectedEntry, { saveCurrent: false });
+        } else if (this.isLaneOnlySelected) {
+            this._clearWorkingLayersForEmptyFrame();
         } else {
             this._syncWorkingLayersForCurrentFrame();
         }
@@ -2009,6 +2477,51 @@ export class AnimationTablePopup {
         return { ok: true, clip: entry.clip, lane: entry.lane };
     }
 
+    updateClipTransformFromExternal(clipId, transform = {}, options = {}) {
+        return this._updateClipMotionMetadataFromExternal('transform', clipId, transform, options);
+    }
+
+    updateClipTransformKeyframesFromExternal(clipId, keyframes = [], options = {}) {
+        return this._updateClipMotionMetadataFromExternal('transformKeyframes', clipId, keyframes, options);
+    }
+
+    updateClipPhysicsFromExternal(clipId, physics = {}, options = {}) {
+        return this._updateClipMotionMetadataFromExternal('physics', clipId, physics, options);
+    }
+
+    _updateClipMotionMetadataFromExternal(kind, clipId, value, options = {}) {
+        const entry = this.model.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+
+        if (options.saveCurrent !== false) {
+            this._saveSelectedClipFromWorkingLayers();
+        }
+        const beforeState = this._captureTimelineHistoryState();
+        let result = { ok: false, reason: 'invalid-kind' };
+
+        if (kind === 'transform') {
+            result = this.model.setClipTransform(clipId, value);
+        } else if (kind === 'transformKeyframes') {
+            result = this.model.setClipTransformKeyframes(clipId, value);
+        } else if (kind === 'physics') {
+            result = this.model.setClipPhysics(clipId, value);
+        }
+
+        if (!result.ok) return result;
+
+        this._activateClipEntry(result, { saveCurrent: false });
+        this.render();
+        this._flushLayerPanelSync();
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), `caf-clip-${kind}`, {
+            type: `caf-clip-${kind}`,
+            clipId,
+            assetId: result.clip.assetId || null,
+            laneId: result.lane?.id || null,
+            source: options.source || 'external'
+        });
+        return result;
+    }
+
     _recordClipVisibilityHistory(clipId, beforeVisible, afterVisible) {
         if (!clipId || beforeVisible === afterVisible || !historyManager || historyManager.isApplying) return false;
         historyManager.record({
@@ -2071,6 +2584,7 @@ export class AnimationTablePopup {
 
     _activateClipEntry(entry, options = {}) {
         if (!entry?.clip) return false;
+        this.isLaneOnlySelected = false;
         if (this.selectedCelId !== entry.clip.id && options.saveCurrent !== false) {
             this._saveSelectedClipFromWorkingLayers();
         }
@@ -2491,6 +3005,7 @@ export class AnimationTablePopup {
         const clip = lane?.getCelAtFrame ? lane.getCelAtFrame(frameIndex) : null;
 
         if (clip) {
+            this.isLaneOnlySelected = false;
             this.selectedCelId = clip.id;
             this.selectedAssetId = clip.assetId || null;
             const asset = clip.assetId ? this.model.getClipAsset(clip.assetId) : null;
@@ -2500,6 +3015,7 @@ export class AnimationTablePopup {
             return true;
         }
 
+        this.isLaneOnlySelected = false;
         this.selectedCelId = null;
         this.selectedAssetId = null;
         this.selectedInternalLayerId = null;
@@ -2536,8 +3052,81 @@ export class AnimationTablePopup {
         return true;
     }
 
+    _selectLaneOnly(laneId) {
+        this._saveSelectedClipFromWorkingLayers();
+        if (!this._setActiveLane(laneId)) return false;
+        this.selectedCelId = null;
+        this.selectedAssetId = null;
+        this.selectedAssetFolderId = null;
+        this.selectedInternalLayerId = null;
+        this.isLaneOnlySelected = true;
+        this._clearWorkingLayersForEmptyFrame();
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    _editLaneNameInline(nameElement, laneId) {
+        const lane = laneId ? this.model.getLaneById(laneId) : null;
+        if (!nameElement || !lane || lane.type === 'folder' || lane.isBackground) return false;
+        const currentName = this.model.getLaneDisplayName
+            ? this.model.getLaneDisplayName(lane)
+            : (lane.displayName || lane.name || 'Lane');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentName;
+        input.className = 'anim-track-name-input';
+        this._editingLaneNameInline = true;
+        const editStartedAt = performance.now();
+
+        const finishEdit = (shouldCommit) => {
+            if (!input.parentNode) return;
+            const nextName = input.value.trim();
+            nameElement.textContent = nextName || currentName;
+            input.replaceWith(nameElement);
+            this._editingLaneNameInline = false;
+            if (shouldCommit && nextName && nextName !== currentName) {
+                this.renameLane(laneId, nextName);
+            }
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                finishEdit(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                input.value = currentName;
+                finishEdit(false);
+            }
+        });
+        input.addEventListener('blur', () => {
+            if (performance.now() - editStartedAt < 160) {
+                requestAnimationFrame(() => {
+                    if (input.parentNode) input.focus();
+                });
+                return;
+            }
+            finishEdit(true);
+        });
+        input.addEventListener('mousedown', (e) => e.stopPropagation());
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('dblclick', (e) => e.stopPropagation());
+
+        nameElement.replaceWith(input);
+        requestAnimationFrame(() => {
+            input.focus();
+            input.select();
+        });
+        return true;
+    }
+
     render() {
         if (!this.panel || !this.isVisible) return;
+        this.panel.style.setProperty('--anim-cell-width', `${this.timelineCellWidth}px`);
+        this.panel.style.setProperty('--anim-cel-inset', '8px');
         
         // 【重要】モデルを LayerSystem と同期（暫定接続）
         const layers = this.layerSystem?.getLayers() || [];
@@ -2553,7 +3142,10 @@ export class AnimationTablePopup {
         const timelineGrid = this.panel.querySelector('.anim-timeline-grid');
         
         // パネル全体の編集状態クラス
+        this._updateHeaderNarrowState();
         this.panel.classList.toggle('clip-edit-active', this.isClipEditModeActive);
+        this.panel.classList.toggle('set-scope-active', this.playbackScope === 'includedLanes');
+        this.panel.classList.toggle('lane-only-selected', this.isLaneOnlySelected === true);
         
         // UI上のチェック状態同期
         const editChk = this.panel.querySelector('#anim-clip-edit-chk');
@@ -2578,6 +3170,66 @@ export class AnimationTablePopup {
             assetsBtn.classList.toggle('active', this.isAssetLibraryVisible);
         }
 
+        const durationDecBtn = this.panel.querySelector('#anim-duration-dec');
+        const durationIncBtn = this.panel.querySelector('#anim-duration-inc');
+        if (durationDecBtn || durationIncBtn) {
+            const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+            const clip = entry?.clip || null;
+            const lane = entry?.lane || null;
+            const canDecrease = !!clip && clip.duration > 1;
+            const maxDuration = clip ? Math.max(1, this.model.totalFrames - clip.startFrame) : 1;
+            const canIncrease = !!clip
+                && !!lane
+                && clip.duration < maxDuration
+                && lane.canPlaceCel(clip.startFrame, clip.duration + 1, clip.id);
+            if (durationDecBtn) {
+                durationDecBtn.disabled = !canDecrease;
+                durationDecBtn.title = canDecrease
+                    ? '選択CAFのDurationを1短くする'
+                    : 'Durationを短くできるCAFがありません';
+            }
+            if (durationIncBtn) {
+                durationIncBtn.disabled = !canIncrease;
+                durationIncBtn.title = canIncrease
+                    ? '選択CAFのDurationを1長くする'
+                    : 'Durationを長くできる空きがありません';
+            }
+        }
+
+        const copyBtn = this.panel.querySelector('#anim-copy-btn');
+        if (copyBtn) {
+            copyBtn.disabled = !this.selectedCelId;
+            copyBtn.title = this.selectedCelId
+                ? '選択CAFをコピー (Alt+C)'
+                : 'コピーするCAFを選択してください';
+        }
+
+        const pasteBtn = this.panel.querySelector('#anim-paste-btn');
+        if (pasteBtn) {
+            const canPaste = this.canPasteCopiedCel();
+            pasteBtn.disabled = !canPaste;
+            pasteBtn.title = canPaste
+                ? 'コピーしたCAFを現在Frame/Laneへ貼り付け (Alt+V)'
+                : '貼り付け可能なコピー元または空きセルがありません';
+        }
+
+        const zoomOutBtn = this.panel.querySelector('#anim-zoom-out-btn');
+        const zoomInBtn = this.panel.querySelector('#anim-zoom-in-btn');
+        const zoomValue = this.panel.querySelector('#anim-zoom-value');
+        if (zoomOutBtn) zoomOutBtn.disabled = this.timelineCellWidth <= 18;
+        if (zoomInBtn) zoomInBtn.disabled = this.timelineCellWidth >= 44;
+        if (zoomValue) zoomValue.textContent = `${Math.round((this.timelineCellWidth / 30) * 100)}%`;
+
+        const fpsInput = this.panel.querySelector('#anim-fps-input');
+        if (fpsInput && document.activeElement !== fpsInput) {
+            fpsInput.value = String(this.model.fps || 12);
+        }
+        const totalFramesInput = this.panel.querySelector('#anim-total-frames-input');
+        if (totalFramesInput && document.activeElement !== totalFramesInput) {
+            totalFramesInput.value = String(this.model.totalFrames || 24);
+            totalFramesInput.min = String(this._getMinimumTotalFrames());
+        }
+
         const libraryPanel = this.panel.querySelector('#anim-asset-library');
         if (libraryPanel) {
             libraryPanel.classList.toggle('is-visible', this.isAssetLibraryVisible);
@@ -2589,8 +3241,11 @@ export class AnimationTablePopup {
         if (trackList) {
             let trackHtml = `
                 <div class="anim-track-header">
-                    <span>LANES</span>
-                    <button class="anim-lane-add-btn" title="Add independent animation Lane">+</button>
+                    <span class="anim-axis-label anim-axis-label--lanes">
+                        <button class="anim-lane-add-btn" title="Add independent animation Lane">+</button>
+                        Lanes
+                    </span>
+                    <span class="anim-axis-label anim-axis-label--timeline">Timeline</span>
                 </div>`;
             let visibleLaneIndex = 0;
             this.model.tracks.forEach((track, trackIndex) => {
@@ -2603,7 +3258,7 @@ export class AnimationTablePopup {
                 const includeActive = isIncluded ? ' active' : '';
                 const includeTitle = isIncluded ? 'このLaneをSET再生対象から外す' : 'このLaneをSET再生対象に含める';
                 const includeBtn = (track.type === 'folder' || track.isBackground) ? '' :
-                    `<button class="anim-lane-include-btn${includeActive}" data-lane-id="${track.id}" title="${includeTitle}">${isIncluded ? '✓' : '+'}</button>`;
+                    `<button class="anim-lane-include-btn${includeActive}" data-lane-id="${track.id}" title="${includeTitle}">${isIncluded ? '✓' : ''}</button>`;
 
                 const displayIndex = (track.type === 'folder' || track.isBackground) ? null : visibleLaneIndex++;
                 const displayName = this.model.getLaneDisplayName
@@ -2612,8 +3267,8 @@ export class AnimationTablePopup {
 
                 trackHtml += `
                     <div class="anim-track-item${activeClass}${typeClass}" data-track-id="${track.id}">
-                        ${includeBtn}
                         <span class="anim-track-name">${this._escapeHtml(displayName)}</span>
+                        ${includeBtn}
                     </div>`;
             });
             trackList.innerHTML = trackHtml;
@@ -2622,10 +3277,11 @@ export class AnimationTablePopup {
         if (timelineGrid) {
             const totalFrames = this.model.totalFrames;
             const currentFrame = this.model.playback.currentFrame;
+            const showCurrentFrame = !this.isLaneOnlySelected;
 
             let headerHtml = `<div class="anim-timeline-header">`;
             for (let i = 0; i < totalFrames; i++) {
-                const isCurrent = (i === currentFrame) ? ' current' : '';
+                const isCurrent = (showCurrentFrame && i === currentFrame) ? ' current' : '';
                 headerHtml += `<div class="anim-frame-num${isCurrent}" data-frame-index="${i}">${i + 1}</div>`;
             }
             headerHtml += `</div>`;
@@ -2639,7 +3295,7 @@ export class AnimationTablePopup {
                 
                 gridHtml += `<div class="anim-timeline-row${activeClass}${folderClass}">`;
                 for (let i = 0; i < totalFrames; i++) {
-                    const isCurrent = (i === currentFrame) ? ' current-col' : '';
+                    const isCurrent = (showCurrentFrame && i === currentFrame) ? ' current-col' : '';
                     const cel = track.getCelAtFrame(i);
                     const hasCelClass = cel ? ' has-cel' : '';
                     const isSelected = cel && cel.id === this.selectedCelId;
@@ -2660,7 +3316,8 @@ export class AnimationTablePopup {
                                      data-track-id="${track.id}" 
                                      data-frame-index="${i}">
                                      ${isStart ? `<div class="anim-cel-block${selectedClass}${editingClass}${hasSnapshotClass}${sharedClass}${durationClass}" data-cel-id="${cel.id}">
-                                         <div class="anim-cel-handle" data-cel-id="${cel.id}"></div>
+                                         <div class="anim-cel-handle anim-cel-handle--left" data-cel-id="${cel.id}" data-edge="left"></div>
+                                         <div class="anim-cel-handle anim-cel-handle--right" data-cel-id="${cel.id}" data-edge="right"></div>
                                          ${hasSnapshot ? '<div class="anim-snapshot-icon"></div>' : ''}
                                          ${isShared ? '<div class="anim-shared-icon" title="Shared Asset"></div>' : ''}
                                      </div>` : ''}
@@ -2672,13 +3329,28 @@ export class AnimationTablePopup {
         }
 
         // プレビューの適用判定
-        if (this.isClipEditModeActive || this.isTransformPreviewSuspended || this.isDrawingPreviewSuspended) {
+        if (this.isLaneOnlySelected) {
+            this._restoreVisibility();
+        } else if (this.isClipEditModeActive || this.isTransformPreviewSuspended || this.isDrawingPreviewSuspended) {
             // EDITモード中は合成を停止し、実レイヤー描画を優先
             this._restoreVisibility();
         } else if (this.isPreviewActive) {
             this._applyVisibilityPreview();
         } else {
             this._restoreVisibility();
+        }
+
+        const deleteActiveBtn = this.panel.querySelector('#anim-delete-active-btn');
+        if (deleteActiveBtn) {
+            const laneCount = this.model.tracks.filter(track => track.type !== 'folder' && !track.isBackground).length;
+            const canDeleteClip = !!this.selectedCelId;
+            const canDeleteLane = this.isLaneOnlySelected && !!this.activeLaneId && laneCount > 1;
+            deleteActiveBtn.disabled = !(canDeleteClip || canDeleteLane);
+            const title = canDeleteLane
+                ? 'アクティブLaneを削除 (Alt+Delete / Alt+Backspace)'
+                : '選択CAFを削除 (Alt+Delete / Alt+Backspace)';
+            deleteActiveBtn.title = title;
+            deleteActiveBtn.setAttribute('aria-label', canDeleteLane ? 'Delete active Lane' : 'Delete selected CAF');
         }
 
         window.timelineUI?.updateLayerPanelIndicator?.();
@@ -2709,6 +3381,14 @@ export class AnimationTablePopup {
                     <label class="anim-preview-toggle" title="前後フレームを薄く表示">
                         <input type="checkbox" id="anim-onion-chk" ${this.isOnionSkinActive ? 'checked' : ''}> ONION
                     </label>
+                    <div class="anim-timeline-settings" title="Timeline settings">
+                        <label class="anim-setting-field">FPS
+                            <input type="number" id="anim-fps-input" min="1" max="60" step="1" value="${this.model.fps}">
+                        </label>
+                        <label class="anim-setting-field">FRAMES
+                            <input type="number" id="anim-total-frames-input" min="1" max="240" step="1" value="${this.model.totalFrames}">
+                        </label>
+                    </div>
                 </div>
                 <div class="anim-table-header-center">
                     <div class="anim-duration-controls">
@@ -2722,6 +3402,9 @@ export class AnimationTablePopup {
                         </button>
                         <button class="anim-tool-btn anim-paste-btn anim-icon-btn" id="anim-paste-btn" title="コピーした内容を貼り付け" aria-label="Paste copied clip">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                        </button>
+                        <button class="anim-tool-btn anim-delete-btn anim-icon-btn" id="anim-delete-active-btn" title="選択CAFを削除 (Alt+Delete / Alt+Backspace)" aria-label="Delete selected CAF">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M9 11v6"/><path d="M15 11v6"/></svg>
                         </button>
                     </div>
                 </div>
@@ -2738,9 +3421,15 @@ export class AnimationTablePopup {
                     </div>
                 </div>
             </div>
+            <div class="anim-zoom-controls" title="Timeline zoom">
+                <button class="anim-zoom-btn" id="anim-zoom-out-btn" aria-label="Zoom out timeline">-</button>
+                <span class="anim-zoom-value" id="anim-zoom-value">100%</span>
+                <button class="anim-zoom-btn" id="anim-zoom-in-btn" aria-label="Zoom in timeline">+</button>
+            </div>
             <div class="anim-asset-library" id="anim-asset-library">
                 <!-- Library content will be rendered here -->
             </div>
+            <div class="anim-resize-handle" title="Resize animation table" aria-hidden="true"></div>
         `;
         
         document.body.appendChild(this.panel);
@@ -2768,10 +3457,17 @@ export class AnimationTablePopup {
                     <span class="anim-lib-folder-count">${count}</span>
                 </div>`;
         });
+        const selectedFolderAssetCount = this.selectedAssetFolderId
+            ? this.model.getClipAssetsInFolder(this.selectedAssetFolderId).length
+            : 0;
+        const canDeleteSelectedFolder = !!this.selectedAssetFolderId && selectedFolderAssetCount === 0;
 
         // 2. アセット一覧の生成
         const assets = this.model.getClipAssetsInFolder(this.selectedAssetFolderId);
         let assetHtml = '';
+        const selectedLibraryAsset = this.selectedAssetId ? this.model.getClipAsset(this.selectedAssetId) : null;
+        const selectedAssetRefCount = selectedLibraryAsset ? this.model.countAssetReferences(selectedLibraryAsset.id) : 0;
+        const canDeleteSelectedAsset = !!selectedLibraryAsset && selectedAssetRefCount === 0;
         
         // 現在選択中のClipが参照しているAssetを特定
         const currentClipAssetId = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId)?.clip?.assetId : null;
@@ -2806,6 +3502,7 @@ export class AnimationTablePopup {
                     <div class="anim-lib-folder-actions">
                         <button class="anim-folder-add-btn" title="Create asset folder">+</button>
                         <button class="anim-folder-rename-btn" title="Rename selected folder" ${this.selectedAssetFolderId === null ? 'disabled' : ''}>✎</button>
+                        <button class="anim-folder-delete-btn" title="${canDeleteSelectedFolder ? 'Delete empty selected folder' : 'Only empty folders can be deleted'}" ${canDeleteSelectedFolder ? '' : 'disabled'}>DEL</button>
                     </div>
                 </div>
                 <div class="anim-lib-list ui-scrollbar">${folderHtml}</div>
@@ -2813,7 +3510,10 @@ export class AnimationTablePopup {
             <div class="anim-lib-assets">
                 <div class="anim-lib-label">
                     ASSETS
-                    <button class="anim-asset-move-btn" title="Move selected asset to folder" ${!this.selectedAssetId ? 'disabled' : ''}>MOVE</button>
+                    <div class="anim-lib-asset-actions">
+                        <button class="anim-asset-move-btn" title="Move selected asset to folder" ${!this.selectedAssetId ? 'disabled' : ''}>MOVE</button>
+                        <button class="anim-asset-delete-btn" title="${canDeleteSelectedAsset ? 'Delete unreferenced selected asset' : 'Only unreferenced assets can be deleted'}" ${canDeleteSelectedAsset ? '' : 'disabled'}>DEL</button>
+                    </div>
                 </div>
                 <div class="anim-lib-list ui-scrollbar">${assetHtml}</div>
             </div>
@@ -2928,7 +3628,14 @@ export class AnimationTablePopup {
                 }
                 // フォルダリネーム (Phase 4z11)
                 if (e.target.closest('.anim-folder-rename-btn')) {
-                    this.renameSelectedAssetFolder();
+                    const selectedFolderItem = libraryPanel.querySelector(`.anim-lib-folder-item.selected[data-folder-id="${this.selectedAssetFolderId || ''}"]`);
+                    if (!this._editAssetFolderNameInline(selectedFolderItem)) {
+                        this.renameSelectedAssetFolder();
+                    }
+                    return;
+                }
+                if (e.target.closest('.anim-folder-delete-btn')) {
+                    this.deleteSelectedAssetFolder();
                     return;
                 }
                 // アセット移動 (Phase 4z11)
@@ -2936,10 +3643,20 @@ export class AnimationTablePopup {
                     this.moveSelectedAssetToFolder();
                     return;
                 }
+                if (e.target.closest('.anim-asset-delete-btn')) {
+                    this.deleteSelectedAssetFromLibrary();
+                    return;
+                }
 
                 // フォルダ選択
                 const folderItem = e.target.closest('.anim-lib-folder-item');
                 if (folderItem) {
+                    if (e.target.closest('.anim-lib-folder-name') && e.detail >= 2) {
+                        this._editAssetFolderNameInline(folderItem);
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
                     const fid = folderItem.dataset.folderId;
                     const nextFolderId = fid === 'uncategorized' ? null : fid;
 
@@ -2960,6 +3677,12 @@ export class AnimationTablePopup {
                 // アセット選択
                 const assetItem = e.target.closest('.anim-lib-asset-item');
                 if (assetItem) {
+                    if (e.target.closest('.anim-lib-asset-name') && e.detail >= 2) {
+                        this._editAssetNameInline(assetItem);
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
                     this.selectedAssetId = assetItem.dataset.assetId;
                     this.selectedInternalLayerId = null; // アセット切り替えで内部レイヤー選択クリア
                     this.render();
@@ -2977,7 +3700,11 @@ export class AnimationTablePopup {
                         return;
                     }
                     if (e.target.closest('.anim-layer-rename-btn')) {
-                        this.renameInternalLayer(layerId);
+                        this._editInternalLayerInspectorNameInline(internalLayerItem, layerId);
+                        return;
+                    }
+                    if (e.target.closest('.anim-internal-layer-name') && e.detail >= 2) {
+                        this._editInternalLayerInspectorNameInline(internalLayerItem, layerId);
                         return;
                     }
                     if (e.target.closest('.anim-layer-delete-btn')) {
@@ -3054,6 +3781,29 @@ export class AnimationTablePopup {
             incBtn.addEventListener('click', () => this._adjustSelectedCelDuration(1));
         }
 
+        const fpsInput = this.panel.querySelector('#anim-fps-input');
+        const totalFramesInput = this.panel.querySelector('#anim-total-frames-input');
+        if (fpsInput) {
+            fpsInput.addEventListener('change', () => this._updateTimelineSettingsFromInputs());
+            fpsInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    fpsInput.blur();
+                }
+                e.stopPropagation();
+            });
+        }
+        if (totalFramesInput) {
+            totalFramesInput.addEventListener('change', () => this._updateTimelineSettingsFromInputs());
+            totalFramesInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    totalFramesInput.blur();
+                }
+                e.stopPropagation();
+            });
+        }
+
         const captureBtn = this.panel.querySelector('#anim-capture-btn');
         if (captureBtn) {
             captureBtn.addEventListener('click', () => this.captureSelectedCel());
@@ -3067,6 +3817,20 @@ export class AnimationTablePopup {
         const pasteBtn = this.panel.querySelector('#anim-paste-btn');
         if (pasteBtn) {
             pasteBtn.addEventListener('click', () => this.pasteCopiedCel());
+        }
+
+        const deleteActiveBtn = this.panel.querySelector('#anim-delete-active-btn');
+        if (deleteActiveBtn) {
+            deleteActiveBtn.addEventListener('click', () => this.deleteActiveSelection());
+        }
+
+        const zoomOutBtn = this.panel.querySelector('#anim-zoom-out-btn');
+        const zoomInBtn = this.panel.querySelector('#anim-zoom-in-btn');
+        if (zoomOutBtn) {
+            zoomOutBtn.addEventListener('click', () => this._adjustTimelineZoom(-1));
+        }
+        if (zoomInBtn) {
+            zoomInBtn.addEventListener('click', () => this._adjustTimelineZoom(1));
         }
 
         const scopeAllBtn = this.panel.querySelector('#anim-scope-all-btn');
@@ -3102,7 +3866,7 @@ export class AnimationTablePopup {
                 }
 
                 const includeBtn = e.target.closest('.anim-lane-include-btn');
-                if (includeBtn) {
+                if (includeBtn && this.playbackScope === 'includedLanes') {
                     const laneId = includeBtn.dataset.laneId;
                     if (this.includedLaneIds.has(laneId)) {
                         this.includedLaneIds.delete(laneId);
@@ -3111,8 +3875,16 @@ export class AnimationTablePopup {
                     }
                     this.render();
                     e.stopPropagation();
+                    return;
+                }
+
+                const laneItem = e.target.closest('.anim-track-item');
+                if (laneItem) {
+                    this._selectLaneOnly(laneItem.dataset.trackId);
+                    e.stopPropagation();
                 }
             });
+
         }
 
         const timelineGrid = this.panel.querySelector('.anim-timeline-grid');
@@ -3156,22 +3928,12 @@ export class AnimationTablePopup {
 
                 // Alt+Click でClipを作成/削除する。通常クリックは選択/Frame移動のみ。
                 if (e.altKey) {
-                    this._saveSelectedClipFromWorkingLayers();
-                    const beforeState = this._captureTimelineHistoryState();
                     if (existingCel) {
-                        const removedCelId = existingCel.id;
-                        const removedAssetId = existingCel.assetId || null;
-                        if (this.selectedCelId === existingCel.id) this.selectedCelId = null;
-                        track.removeCelAtFrame(existingCel.startFrame);
-                        this._syncWorkingLayersForCurrentFrame();
-                        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-delete', {
-                            type: 'caf-clip-delete',
-                            clipId: removedCelId,
-                            assetId: removedAssetId,
-                            laneId: track.id,
-                            frameIndex
-                        });
+                        this._activateClipEntry({ lane: track, track, clip: existingCel }, { saveCurrent: true });
+                        this.deleteSelectedClip();
                     } else {
+                        this._saveSelectedClipFromWorkingLayers();
+                        const beforeState = this._captureTimelineHistoryState();
                         // 新規Frame/LaneのClipは空のClipAssetから始める。
                         const size = this._getCanvasSnapshotSize();
                         const cafFolder = this._createNextClipAssetFolder();
@@ -3223,7 +3985,7 @@ export class AnimationTablePopup {
 
             // マウスダウン：リタイミング または クリップ移動
             timelineGrid.addEventListener('mousedown', (e) => {
-                // 1. リタイミング（右端ハンドル）
+                // 1. リタイミング（左右端ハンドル）
                 const handle = e.target.closest('.anim-cel-handle');
                 if (handle) {
                     const celId = handle.dataset.celId;
@@ -3231,13 +3993,22 @@ export class AnimationTablePopup {
 
                     if (entry) {
                         const { lane, clip } = entry;
+                        this._saveSelectedClipFromWorkingLayers();
                         this._isRetiming = true;
                         this._retimingMoved = false;
                         this._retimingData = {
                             cel: clip,
                             track: lane,
+                            edge: handle.dataset.edge === 'left' ? 'left' : 'right',
+                            startFrame: clip.startFrame,
                             startDuration: clip.duration,
-                            startX: e.clientX
+                            startX: e.clientX,
+                            laneSnapshot: (lane.cels || []).map(cel => ({
+                                id: cel.id,
+                                startFrame: cel.startFrame,
+                                duration: cel.duration
+                            })),
+                            beforeState: this._captureTimelineHistoryState()
                         };
 
                         this._activateClipEntry(entry);
@@ -3258,6 +4029,7 @@ export class AnimationTablePopup {
                     const entry = this.model.findClipEntry(clipId);
                     if (!entry) return;
 
+                    this._saveSelectedClipFromWorkingLayers();
                     this._isClipMoving = true;
                     this._clipMoveMoved = false;
                     this._clipMoveData = {
@@ -3265,7 +4037,8 @@ export class AnimationTablePopup {
                         startX: e.clientX,
                         startY: e.clientY,
                         sourceLaneId: entry.lane.id,
-                        sourceStartFrame: entry.clip.startFrame
+                        sourceStartFrame: entry.clip.startFrame,
+                        beforeState: this._captureTimelineHistoryState()
                     };
                     
                     this._activateClipEntry(entry);
@@ -3284,7 +4057,7 @@ export class AnimationTablePopup {
         // ドラッグ移動の実装
         const header = this.panel.querySelector('.anim-table-header');
         header.addEventListener('mousedown', (e) => {
-            if (e.target.closest('button, input, label, .anim-scope-controls, .anim-duration-controls, .anim-capture-controls, .anim-copy-paste-controls')) return;
+            if (e.target.closest('button, input, label, .anim-scope-controls, .anim-duration-controls, .anim-capture-controls, .anim-copy-paste-controls, .anim-timeline-settings')) return;
             
             this._isDragging = true;
             this._dragMoved = false;
@@ -3318,26 +4091,75 @@ export class AnimationTablePopup {
             }, 0);
         };
 
+        const resizeHandle = this.panel.querySelector('.anim-resize-handle');
+        if (resizeHandle) {
+            resizeHandle.addEventListener('mousedown', (e) => {
+                const rect = this.panel.getBoundingClientRect();
+                this._isResizing = true;
+                this._resizeStart = {
+                    x: e.clientX,
+                    y: e.clientY,
+                    width: rect.width,
+                    height: rect.height
+                };
+                document.addEventListener('mousemove', this._onResizeMouseMove);
+                document.addEventListener('mouseup', this._onResizeMouseUp);
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        }
+
+        this._onResizeMouseMove = (e) => {
+            if (!this._isResizing || !this._resizeStart) return;
+            const minWidth = 460;
+            const minHeight = 180;
+            const maxWidth = Math.max(minWidth, window.innerWidth - this._panelPos.x - 8);
+            const maxHeight = Math.max(minHeight, window.innerHeight - this._panelPos.y - 8);
+            const nextWidth = Math.max(minWidth, Math.min(maxWidth, this._resizeStart.width + (e.clientX - this._resizeStart.x)));
+            const nextHeight = Math.max(minHeight, Math.min(maxHeight, this._resizeStart.height + (e.clientY - this._resizeStart.y)));
+
+            this._panelSize.width = nextWidth;
+            this._panelSize.height = nextHeight;
+            this._updatePanelPosition();
+        };
+
+        this._onResizeMouseUp = () => {
+            this._isResizing = false;
+            this._resizeStart = null;
+            document.removeEventListener('mousemove', this._onResizeMouseMove);
+            document.removeEventListener('mouseup', this._onResizeMouseUp);
+        };
+
         this._onRetimingMouseMove = (e) => {
             if (!this._isRetiming || !this._retimingData) return;
             this._retimingMoved = true;
 
             const deltaX = e.clientX - this._retimingData.startX;
-            const deltaFrames = Math.round(deltaX / 30);
-            
-            const newDuration = Math.max(1, this._retimingData.startDuration + deltaFrames);
-            const { cel, track } = this._retimingData;
+            const deltaFrames = Math.round(deltaX / this.timelineCellWidth);
 
-            // タイムライン末尾制限
-            const maxDuration = this.model.totalFrames - cel.startFrame;
-            const finalDuration = Math.min(newDuration, maxDuration);
-
-            if (track.setCelDuration(cel.id, finalDuration)) {
+            if (this._applyRetimingWithPush(this._retimingData, deltaFrames)) {
                 this.render();
             }
         };
 
         this._onRetimingMouseUp = () => {
+            const retimingData = this._retimingData;
+            const startFrameChanged = retimingData?.cel?.startFrame !== retimingData?.startFrame;
+            const durationChanged = retimingData?.cel?.duration !== retimingData?.startDuration;
+            if (this._retimingMoved && retimingData?.cel && (startFrameChanged || durationChanged)) {
+                this._recordTimelineHistory(retimingData.beforeState, this._captureTimelineHistoryState(), 'caf-clip-retime', {
+                    type: 'caf-clip-retime',
+                    clipId: retimingData.cel.id,
+                    assetId: retimingData.cel.assetId || null,
+                    laneId: retimingData.track?.id || null,
+                    frameIndex: retimingData.cel.startFrame,
+                    beforeStartFrame: retimingData.startFrame,
+                    afterStartFrame: retimingData.cel.startFrame,
+                    beforeDuration: retimingData.startDuration,
+                    afterDuration: retimingData.cel.duration,
+                    edge: retimingData.edge || 'right'
+                });
+            }
             this._isRetiming = false;
             this._retimingData = null;
             document.removeEventListener('mousemove', this._onRetimingMouseMove);
@@ -3360,6 +4182,8 @@ export class AnimationTablePopup {
                 const block = this.panel.querySelector(`.anim-cel-block[data-cel-id="${this._clipMoveData.clipId}"]`);
                 if (block) block.classList.add('moving');
             }
+
+            this._updateClipMovePreview(e.clientX, e.clientY);
         };
 
         this._onClipMoveMouseUp = (e) => {
@@ -3367,13 +4191,14 @@ export class AnimationTablePopup {
 
             if (this._clipMoveMoved) {
                 // ドロップ先の解決
-                const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-                const slot = targetEl?.closest('.anim-cell-slot');
+                const slot = this._getClipMoveTargetSlot(e.clientX, e.clientY);
 
                 if (slot) {
                     const targetLaneId = slot.dataset.trackId;
                     const targetFrame = parseInt(slot.dataset.frameIndex, 10);
                     
+                    const movedToNewSlot = targetLaneId !== this._clipMoveData.sourceLaneId
+                        || targetFrame !== this._clipMoveData.sourceStartFrame;
                     const result = this.model.moveClip(this._clipMoveData.clipId, targetLaneId, targetFrame);
                     if (result.ok) {
                         this.selectedCelId = result.clip.id;
@@ -3383,12 +4208,24 @@ export class AnimationTablePopup {
                             track.active = track.id === result.lane.id;
                         });
                         this._syncClipAssetToWorkingLayers(result.clip);
+                        if (movedToNewSlot) {
+                            this._recordTimelineHistory(this._clipMoveData.beforeState, this._captureTimelineHistoryState(), 'caf-clip-move', {
+                                type: 'caf-clip-move',
+                                clipId: result.clip.id,
+                                assetId: result.clip.assetId || null,
+                                fromLaneId: this._clipMoveData.sourceLaneId,
+                                toLaneId: result.lane.id,
+                                fromFrame: this._clipMoveData.sourceStartFrame,
+                                toFrame: result.clip.startFrame
+                            });
+                        }
                     }
                 }
             }
 
             this._isClipMoving = false;
             this._clipMoveData = null;
+            this._clearClipMovePreview();
             document.removeEventListener('mousemove', this._onClipMoveMouseMove);
             document.removeEventListener('mouseup', this._onClipMoveMouseUp);
             
@@ -3404,8 +4241,21 @@ export class AnimationTablePopup {
         if (!this.panel) return;
         this.panel.style.left = `${this._panelPos.x}px`;
         this.panel.style.top = `${this._panelPos.y}px`;
+        if (this._panelSize.width !== null) {
+            this.panel.style.width = `${this._panelSize.width}px`;
+        }
+        if (this._panelSize.height !== null) {
+            this.panel.style.height = `${this._panelSize.height}px`;
+        }
         this.panel.style.right = 'auto';
         this.panel.style.bottom = 'auto';
+        this._updateHeaderNarrowState();
+    }
+
+    _updateHeaderNarrowState() {
+        if (!this.panel) return;
+        const width = this._panelSize.width || this.panel.getBoundingClientRect().width || 0;
+        this.panel.classList.toggle('is-narrow', width > 0 && width <= 760);
     }
 
     _adjustSelectedCelDuration(delta) {
@@ -3416,11 +4266,93 @@ export class AnimationTablePopup {
             const { lane, clip } = entry;
             const maxDuration = Math.max(1, this.model.totalFrames - clip.startFrame);
             const newDuration = Math.max(1, Math.min(maxDuration, clip.duration + delta));
+            if (newDuration === clip.duration) return;
+            this._saveSelectedClipFromWorkingLayers();
+            const beforeState = this._captureTimelineHistoryState();
+            const previousDuration = clip.duration;
             if (lane.setCelDuration(clip.id, newDuration)) {
+                this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-duration', {
+                    type: 'caf-clip-duration',
+                    clipId: clip.id,
+                    assetId: clip.assetId || null,
+                    laneId: lane.id,
+                    frameIndex: clip.startFrame,
+                    beforeDuration: previousDuration,
+                    afterDuration: newDuration
+                });
                 this.render();
                 this._requestLayerPanelSync();
             }
         }
+    }
+
+    _getMinimumTotalFrames() {
+        let minFrames = 1;
+        for (const lane of this.model.tracks || []) {
+            for (const clip of lane.cels || []) {
+                minFrames = Math.max(minFrames, clip.startFrame + clip.duration);
+            }
+        }
+        return Math.max(minFrames, (this.model.playback?.currentFrame || 0) + 1);
+    }
+
+    _updateTimelineSettingsFromInputs() {
+        const fpsInput = this.panel?.querySelector('#anim-fps-input');
+        const totalFramesInput = this.panel?.querySelector('#anim-total-frames-input');
+        if (!fpsInput && !totalFramesInput) return false;
+
+        const currentFps = this.model.fps || 12;
+        const currentTotalFrames = this.model.totalFrames || 24;
+        const nextFps = fpsInput
+            ? Math.max(1, Math.min(60, Math.round(Number(fpsInput.value) || currentFps)))
+            : currentFps;
+        const minTotalFrames = this._getMinimumTotalFrames();
+        const nextTotalFrames = totalFramesInput
+            ? Math.max(minTotalFrames, Math.min(240, Math.round(Number(totalFramesInput.value) || currentTotalFrames)))
+            : currentTotalFrames;
+
+        if (fpsInput) fpsInput.value = String(nextFps);
+        if (totalFramesInput) {
+            totalFramesInput.min = String(minTotalFrames);
+            totalFramesInput.value = String(nextTotalFrames);
+        }
+        if (nextFps === currentFps && nextTotalFrames === currentTotalFrames) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const wasPlaying = this.isPlaying;
+        if (wasPlaying) this.stop();
+
+        this.model.fps = nextFps;
+        this.model.totalFrames = nextTotalFrames;
+        if (this.model.playback.currentFrame >= nextTotalFrames) {
+            this.model.playback.currentFrame = nextTotalFrames - 1;
+        }
+
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-timeline-settings', {
+            type: 'caf-timeline-settings',
+            beforeFps: currentFps,
+            afterFps: nextFps,
+            beforeTotalFrames: currentTotalFrames,
+            afterTotalFrames: nextTotalFrames
+        });
+        this.render();
+        this._requestLayerPanelSync();
+        if (wasPlaying) this.play();
+        return true;
+    }
+
+    _adjustTimelineZoom(delta) {
+        const zoomSteps = [18, 22, 26, 30, 36, 44];
+        const currentIndex = zoomSteps.findIndex(width => width >= this.timelineCellWidth);
+        const baseIndex = currentIndex >= 0 ? currentIndex : zoomSteps.indexOf(30);
+        const nextIndex = Math.max(0, Math.min(zoomSteps.length - 1, baseIndex + delta));
+        const nextWidth = zoomSteps[nextIndex];
+        if (!nextWidth || nextWidth === this.timelineCellWidth) return false;
+
+        this.timelineCellWidth = nextWidth;
+        this.render();
+        return true;
     }
 
     _injectStyles() {
@@ -3428,14 +4360,20 @@ export class AnimationTablePopup {
         
         const style = document.createElement('style');
         style.id = 'animation-table-styles';
+        const durationWidthCss = Array.from({ length: 240 }, (_, index) => {
+            const duration = index + 1;
+            return `.anim-cel-block.duration-${duration} { width: calc(var(--anim-cell-width) * ${duration} - var(--anim-cel-inset)); }`;
+        }).join('\n');
         style.textContent = `
             .animation-table-panel {
                 position: fixed;
+                --anim-cell-width: 30px;
+                --anim-cel-inset: 8px;
                 bottom: 20px;
                 left: 70px;
                 width: calc(100vw - 320px);
                 height: 260px;
-                min-width: 400px;
+                min-width: 460px;
                 z-index: 2000;
                 display: flex;
                 flex-direction: column;
@@ -3452,14 +4390,16 @@ export class AnimationTablePopup {
                 background: rgba(255, 251, 230, 0.96);
                 color: var(--futaba-maroon);
                 display: flex;
+                flex-wrap: wrap;
                 justify-content: space-between;
                 align-items: center;
+                position: relative;
                 font-size: 11px;
                 font-weight: bold;
                 cursor: move;
                 flex-shrink: 0;
                 border-bottom: 1px solid rgba(128, 0, 0, 0.2);
-                gap: 10px;
+                gap: 6px 10px;
             }
 
             .anim-table-header-left,
@@ -3472,17 +4412,18 @@ export class AnimationTablePopup {
             }
 
             .anim-table-header-left {
-                flex: 0 1 auto;
+                flex: 1 1 380px;
+                flex-wrap: wrap;
             }
 
             .anim-table-header-center {
-                flex: 1 1 auto;
+                flex: 1 1 220px;
                 justify-content: center;
             }
 
             .anim-table-header-right {
                 justify-content: flex-end;
-                flex-shrink: 0;
+                flex: 0 0 auto;
                 padding-right: 2px;
             }
 
@@ -3571,6 +4512,49 @@ export class AnimationTablePopup {
                 cursor: pointer;
             }
 
+            .anim-timeline-settings {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                margin-left: 2px;
+                padding: 2px 6px;
+                border-radius: 6px;
+                background: rgba(128, 0, 0, 0.06);
+                cursor: default;
+            }
+
+            .anim-setting-field {
+                display: flex;
+                align-items: center;
+                gap: 3px;
+                font-size: 9px;
+                color: var(--futaba-maroon);
+                opacity: 0.82;
+                cursor: default;
+                user-select: none;
+            }
+
+            .anim-setting-field input {
+                width: 34px;
+                height: 18px;
+                box-sizing: border-box;
+                border: 1px solid rgba(128, 0, 0, 0.22);
+                border-radius: 4px;
+                background: rgba(255, 255, 255, 0.62);
+                color: var(--futaba-maroon);
+                font-size: 10px;
+                font-weight: 700;
+                text-align: center;
+                padding: 0 2px;
+                outline: none;
+            }
+
+            .anim-setting-field input:focus {
+                border-color: rgba(255, 102, 0, 0.9);
+                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
+                background: rgba(255, 255, 255, 0.92);
+            }
+
             .anim-capture-controls {
                 margin-left: 12px;
                 display: flex;
@@ -3585,10 +4569,43 @@ export class AnimationTablePopup {
             }
 
             .anim-copy-paste-controls {
-                margin-left: 6px;
+                margin-left: 2px;
                 display: flex;
                 align-items: center;
                 gap: 3px;
+            }
+
+            .animation-table-panel.is-narrow .anim-table-header {
+                align-items: center;
+                justify-content: flex-start;
+                padding: 5px 34px 5px 10px;
+                gap: 6px 8px;
+            }
+
+            .animation-table-panel.is-narrow .anim-table-header-left,
+            .animation-table-panel.is-narrow .anim-table-header-center,
+            .animation-table-panel.is-narrow .anim-table-header-right {
+                display: contents;
+            }
+
+            .animation-table-panel.is-narrow .anim-play-btn,
+            .animation-table-panel.is-narrow .anim-preview-toggle,
+            .animation-table-panel.is-narrow .anim-timeline-settings,
+            .animation-table-panel.is-narrow .anim-copy-paste-controls,
+            .animation-table-panel.is-narrow #anim-assets-toggle-btn {
+                margin-left: 0;
+                margin-right: 0;
+            }
+
+            .animation-table-panel.is-narrow .anim-duration-controls {
+                gap: 5px;
+                padding: 2px 6px;
+            }
+
+            .animation-table-panel.is-narrow #anim-table-close-btn {
+                position: absolute !important;
+                top: 8px;
+                right: 8px;
             }
 
             .anim-icon-btn svg {
@@ -3644,6 +4661,72 @@ export class AnimationTablePopup {
                 flex: 1;
                 overflow: auto;
                 background: rgba(128, 0, 0, 0.02);
+            }
+
+            .anim-zoom-controls {
+                position: absolute;
+                right: 8px;
+                bottom: 2px;
+                z-index: 35;
+                display: flex;
+                align-items: center;
+                gap: 3px;
+                padding: 2px 4px;
+                border-radius: 6px;
+                background: rgba(255, 251, 230, 0.9);
+                border: 1px solid rgba(128, 0, 0, 0.18);
+                box-shadow: 0 2px 6px rgba(128, 0, 0, 0.12);
+            }
+
+            .anim-zoom-btn {
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid rgba(128, 0, 0, 0.28);
+                background: rgba(255, 255, 255, 0.65);
+                color: var(--futaba-maroon);
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1;
+                cursor: pointer;
+                padding: 0;
+            }
+
+            .anim-zoom-btn:hover:not(:disabled) {
+                border-color: rgba(255, 102, 0, 0.85);
+                background: rgba(255, 255, 255, 0.95);
+            }
+
+            .anim-zoom-btn:disabled {
+                opacity: 0.28;
+                cursor: default;
+            }
+
+            .anim-zoom-value {
+                min-width: 28px;
+                text-align: center;
+                font-size: 9px;
+                font-weight: 700;
+                color: var(--futaba-maroon);
+                opacity: 0.78;
+            }
+
+            .anim-resize-handle {
+                position: absolute;
+                right: 3px;
+                bottom: 3px;
+                width: 16px;
+                height: 16px;
+                cursor: nwse-resize;
+                z-index: 36;
+                opacity: 0.45;
+                background:
+                    linear-gradient(135deg, transparent 0 44%, rgba(128, 0, 0, 0.55) 45% 52%, transparent 53%),
+                    linear-gradient(135deg, transparent 0 62%, rgba(128, 0, 0, 0.45) 63% 70%, transparent 71%);
+            }
+
+            .anim-resize-handle:hover {
+                opacity: 0.85;
             }
 
             .anim-asset-library {
@@ -3740,6 +4823,22 @@ export class AnimationTablePopup {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+            }
+
+            .anim-internal-layer-name-input {
+                width: 100%;
+                min-width: 0;
+                height: 20px;
+                box-sizing: border-box;
+                border: 1px solid rgba(207, 156, 151, 0.85);
+                border-radius: 4px;
+                background: rgba(255, 255, 238, 0.96);
+                color: var(--futaba-maroon);
+                font-size: 10px;
+                font-weight: 700;
+                outline: none;
+                padding: 1px 4px;
+                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
             }
 
             .anim-layer-row-actions {
@@ -3860,6 +4959,38 @@ export class AnimationTablePopup {
                 font-weight: bold;
             }
 
+            .anim-lib-folder-name-input {
+                width: 72px;
+                min-width: 0;
+                height: 18px;
+                box-sizing: border-box;
+                border: 1px solid rgba(207, 156, 151, 0.85);
+                border-radius: 4px;
+                background: rgba(255, 255, 238, 0.96);
+                color: var(--futaba-maroon);
+                font-size: 10px;
+                font-weight: 700;
+                outline: none;
+                padding: 1px 4px;
+                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
+            }
+
+            .anim-lib-asset-name-input {
+                width: 86px;
+                min-width: 0;
+                height: 18px;
+                box-sizing: border-box;
+                border: 1px solid rgba(207, 156, 151, 0.85);
+                border-radius: 4px;
+                background: rgba(255, 255, 238, 0.96);
+                color: var(--futaba-maroon);
+                font-size: 10px;
+                font-weight: 700;
+                outline: none;
+                padding: 1px 4px;
+                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
+            }
+
             .anim-lib-asset-item {
                 display: flex;
                 justify-content: space-between;
@@ -3890,7 +5021,12 @@ export class AnimationTablePopup {
                 gap: 2px;
             }
 
-            .anim-folder-add-btn, .anim-folder-rename-btn, .anim-asset-move-btn {
+            .anim-lib-asset-actions {
+                display: flex;
+                gap: 2px;
+            }
+
+            .anim-folder-add-btn, .anim-folder-rename-btn, .anim-folder-delete-btn, .anim-asset-move-btn, .anim-asset-delete-btn {
                 background: rgba(255, 255, 255, 0.3);
                 border: 1px solid rgba(128, 0, 0, 0.1);
                 border-radius: 2px;
@@ -3905,13 +5041,17 @@ export class AnimationTablePopup {
                 justify-content: center;
             }
 
-            .anim-folder-add-btn:hover, .anim-folder-rename-btn:hover, .anim-asset-move-btn:hover {
+            .anim-folder-add-btn:hover:not(:disabled),
+            .anim-folder-rename-btn:hover:not(:disabled),
+            .anim-folder-delete-btn:hover:not(:disabled),
+            .anim-asset-move-btn:hover:not(:disabled),
+            .anim-asset-delete-btn:hover:not(:disabled) {
                 background: white;
                 border-color: #ff6600;
                 color: #ff6600;
             }
 
-            .anim-folder-rename-btn:disabled, .anim-asset-move-btn:disabled {
+            .anim-folder-rename-btn:disabled, .anim-folder-delete-btn:disabled, .anim-asset-move-btn:disabled, .anim-asset-delete-btn:disabled {
                 opacity: 0.2;
                 cursor: default;
             }
@@ -3961,18 +5101,55 @@ export class AnimationTablePopup {
 
             .anim-track-header {
                 height: 24px;
-                padding: 4px 8px;
+                padding: 0 8px;
                 font-size: 9px;
                 color: var(--futaba-maroon);
                 background: rgba(128, 0, 0, 0.05);
                 border-bottom: 1px solid var(--futaba-light-medium);
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 6px;
+                box-sizing: border-box;
                 position: sticky;
                 top: 0;
                 z-index: 21;
+                overflow: hidden;
+                display: grid;
+                grid-template-columns: 78px 1fr;
+                align-items: center;
+                column-gap: 10px;
+            }
+
+            .anim-track-header::before {
+                content: '';
+                position: absolute;
+                left: 84px;
+                top: 2px;
+                width: 1px;
+                height: 26px;
+                background: rgba(128, 0, 0, 0.32);
+                transform: rotate(-10deg);
+                transform-origin: top center;
+                pointer-events: none;
+            }
+
+            .anim-axis-label {
+                position: relative;
+                z-index: 1;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                line-height: 1;
+                white-space: nowrap;
+            }
+
+            .anim-axis-label--timeline {
+                justify-self: start;
+                font-size: 10px;
+                opacity: 0.8;
+            }
+
+            .anim-axis-label--lanes {
+                justify-self: start;
+                font-size: 10px;
+                font-weight: bold;
             }
 
             .anim-lane-add-btn {
@@ -4011,6 +5188,7 @@ export class AnimationTablePopup {
                 align-items: center;
                 gap: 6px;
                 background: rgba(255, 255, 238, 0.6);
+                cursor: pointer;
             }
 
             .anim-track-name {
@@ -4019,25 +5197,47 @@ export class AnimationTablePopup {
                 text-overflow: ellipsis;
             }
 
+            .anim-track-name-input {
+                flex: 1;
+                min-width: 0;
+                height: 22px;
+                box-sizing: border-box;
+                border: 1px solid rgba(207, 156, 151, 0.85);
+                border-radius: 4px;
+                background: rgba(255, 255, 238, 0.9);
+                color: var(--futaba-maroon);
+                font-size: 11px;
+                font-weight: 700;
+                outline: none;
+                padding: 1px 4px;
+                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.16);
+            }
+
             .anim-lane-include-btn {
                 width: 14px;
                 height: 14px;
-                border-radius: 50%;
+                border-radius: 3px;
                 border: 1px solid rgba(128, 0, 0, 0.3);
-                background: rgba(255, 255, 255, 0.5);
+                background: rgba(255, 255, 255, 0.25);
                 color: var(--futaba-maroon);
                 font-size: 10px;
                 line-height: 1;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                cursor: pointer;
+                cursor: default;
                 padding: 0;
                 flex-shrink: 0;
                 transition: all 0.2s;
+                opacity: 0.18;
             }
 
-            .anim-lane-include-btn:hover {
+            .set-scope-active .anim-lane-include-btn {
+                opacity: 0.55;
+                cursor: pointer;
+            }
+
+            .set-scope-active .anim-lane-include-btn:hover {
                 background: white;
                 border-color: #ff6600;
             }
@@ -4047,6 +5247,7 @@ export class AnimationTablePopup {
                 color: white;
                 border-color: #4caf50;
                 font-weight: bold;
+                opacity: 1;
             }
 
             .anim-track-item.is-folder {
@@ -4062,6 +5263,11 @@ export class AnimationTablePopup {
                 padding-left: 5px;
             }
 
+            .animation-table-panel.lane-only-selected .anim-track-item.active {
+                box-shadow: inset 0 0 0 2px #ff6600;
+                border-radius: 4px;
+            }
+
             .anim-timeline-grid-container {
                 flex: 1;
                 background: transparent;
@@ -4073,7 +5279,7 @@ export class AnimationTablePopup {
                 min-width: 100%;
                 background-image: 
                     linear-gradient(to right, rgba(128, 0, 0, 0.05) 1px, transparent 1px);
-                background-size: 30px 100%;
+                background-size: var(--anim-cell-width) 100%;
             }
 
             .anim-timeline-header {
@@ -4087,7 +5293,7 @@ export class AnimationTablePopup {
             }
 
             .anim-frame-num {
-                width: 30px;
+                width: var(--anim-cell-width);
                 flex-shrink: 0;
                 display: flex;
                 align-items: center;
@@ -4130,7 +5336,7 @@ export class AnimationTablePopup {
             }
 
             .anim-cell-slot {
-                width: 30px;
+                width: var(--anim-cell-width);
                 flex-shrink: 0;
                 border-right: 1px solid rgba(128, 0, 0, 0.05);
                 box-sizing: border-box;
@@ -4184,35 +5390,61 @@ export class AnimationTablePopup {
                 box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.65), 0 8px 18px rgba(128, 0, 0, 0.35);
             }
 
+            .anim-cell-slot.move-target {
+                background: rgba(255, 102, 0, 0.38) !important;
+                box-shadow:
+                    inset 0 0 0 3px rgba(255, 102, 0, 0.95),
+                    inset 0 0 16px rgba(255, 102, 0, 0.5);
+            }
+
+            .anim-cell-slot.move-target-blocked {
+                background: rgba(160, 0, 0, 0.22) !important;
+                box-shadow: inset 0 0 0 2px rgba(128, 0, 0, 0.65);
+            }
+
             .anim-cel-handle {
                 position: absolute;
-                right: 0;
                 top: 0;
                 bottom: 0;
-                width: 8px;
+                width: 5px;
                 cursor: ew-resize;
-                background: rgba(255, 255, 255, 0.2);
-                border-radius: 0 4px 4px 0;
+                background: transparent;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                z-index: 2;
+            }
+
+            .anim-cel-handle--left {
+                left: -2px;
+            }
+
+            .anim-cel-handle--right {
+                right: -2px;
             }
 
             .anim-cel-handle::after {
                 content: '';
-                width: 2px;
-                height: 10px;
-                background: rgba(255, 255, 255, 0.5);
-                border-radius: 1px;
+                width: 1px;
+                height: 14px;
+                background: rgba(255, 255, 255, 0.38);
+                border-radius: 999px;
+                opacity: 0.75;
+                box-shadow: 0 0 2px rgba(128, 0, 0, 0.25);
             }
 
             .anim-cel-handle:hover {
-                background: rgba(255, 255, 255, 0.4);
+                background: rgba(255, 255, 255, 0.16);
+            }
+
+            .anim-cel-handle:hover::after {
+                background: rgba(255, 255, 255, 0.85);
+                opacity: 1;
             }
 
             .anim-snapshot-icon {
                 position: absolute;
-                left: 4px;
+                left: 8px;
                 top: 4px;
                 width: 6px;
                 height: 6px;
@@ -4253,30 +5485,7 @@ export class AnimationTablePopup {
                 transform: rotate(-45deg);
             }
 
-            .anim-cel-block.duration-1 { width: 22px; }
-            .anim-cel-block.duration-2 { width: 52px; }
-            .anim-cel-block.duration-3 { width: 82px; }
-            .anim-cel-block.duration-4 { width: 112px; }
-            .anim-cel-block.duration-5 { width: 142px; }
-            .anim-cel-block.duration-6 { width: 172px; }
-            .anim-cel-block.duration-7 { width: 202px; }
-            .anim-cel-block.duration-8 { width: 232px; }
-            .anim-cel-block.duration-9 { width: 262px; }
-            .anim-cel-block.duration-10 { width: 292px; }
-            .anim-cel-block.duration-11 { width: 322px; }
-            .anim-cel-block.duration-12 { width: 352px; }
-            .anim-cel-block.duration-13 { width: 382px; }
-            .anim-cel-block.duration-14 { width: 412px; }
-            .anim-cel-block.duration-15 { width: 442px; }
-            .anim-cel-block.duration-16 { width: 472px; }
-            .anim-cel-block.duration-17 { width: 502px; }
-            .anim-cel-block.duration-18 { width: 532px; }
-            .anim-cel-block.duration-19 { width: 562px; }
-            .anim-cel-block.duration-20 { width: 592px; }
-            .anim-cel-block.duration-21 { width: 622px; }
-            .anim-cel-block.duration-22 { width: 652px; }
-            .anim-cel-block.duration-23 { width: 682px; }
-            .anim-cel-block.duration-24 { width: 712px; }
+            ${durationWidthCss}
 
             .anim-cel-block.selected {
                 background: #ff6600;
@@ -4302,6 +5511,120 @@ export class AnimationTablePopup {
             }
         `;
         document.head.appendChild(style);
+    }
+
+    _restoreRetimingLaneSnapshot(track, snapshot = []) {
+        if (!track || !Array.isArray(snapshot)) return;
+        const byId = new Map(snapshot.map(item => [item.id, item]));
+        (track.cels || []).forEach(cel => {
+            const original = byId.get(cel.id);
+            if (!original) return;
+            cel.startFrame = original.startFrame;
+            cel.duration = original.duration;
+        });
+    }
+
+    _applyRetimingWithPush(retimingData, deltaFrames) {
+        const { cel, track, laneSnapshot, edge, startFrame, startDuration } = retimingData || {};
+        if (!cel || !track || !Array.isArray(laneSnapshot)) return false;
+
+        this._restoreRetimingLaneSnapshot(track, laneSnapshot);
+
+        const totalFrames = Math.max(1, this.model.totalFrames || 1);
+        const originalEnd = startFrame + startDuration;
+        const others = (track.cels || []).filter(item => item.id !== cel.id);
+
+        if (edge === 'left') {
+            const targetStart = Math.max(0, Math.min(originalEnd - 1, startFrame + deltaFrames));
+            const targetDuration = Math.max(1, originalEnd - targetStart);
+            let requiredStart = targetStart;
+            const previousCels = others
+                .filter(item => item.startFrame < originalEnd)
+                .sort((a, b) => b.startFrame - a.startFrame);
+
+            for (const item of previousCels) {
+                const itemEnd = item.startFrame + item.duration;
+                if (itemEnd <= requiredStart) continue;
+                item.startFrame = requiredStart - item.duration;
+                requiredStart = item.startFrame;
+                if (item.startFrame < 0) {
+                    this._restoreRetimingLaneSnapshot(track, laneSnapshot);
+                    return false;
+                }
+            }
+
+            cel.startFrame = targetStart;
+            cel.duration = targetDuration;
+            return true;
+        }
+
+        const targetDuration = Math.max(1, Math.min(startDuration + deltaFrames, totalFrames - startFrame));
+        let requiredEnd = startFrame + targetDuration;
+        const nextCels = others
+            .filter(item => item.startFrame >= startFrame)
+            .sort((a, b) => a.startFrame - b.startFrame);
+
+        for (const item of nextCels) {
+            if (item.startFrame >= requiredEnd) continue;
+            item.startFrame = requiredEnd;
+            requiredEnd = item.startFrame + item.duration;
+            if (requiredEnd > totalFrames) {
+                this._restoreRetimingLaneSnapshot(track, laneSnapshot);
+                return false;
+            }
+        }
+
+        cel.startFrame = startFrame;
+        cel.duration = targetDuration;
+        return true;
+    }
+
+    _clearClipMovePreview() {
+        if (!this._clipMovePreviewSlot) return;
+        this._clipMovePreviewSlot.classList.remove('move-target', 'move-target-blocked');
+        this._clipMovePreviewSlot = null;
+    }
+
+    _getClipMoveTargetSlot(clientX, clientY) {
+        if (!this._clipMoveData || !this.panel) return null;
+        const movingBlock = this.panel?.querySelector(`.anim-cel-block[data-cel-id="${this._clipMoveData.clipId}"]`);
+        const previousPointerEvents = movingBlock?.style.pointerEvents;
+        if (movingBlock) movingBlock.style.pointerEvents = 'none';
+        const targetEl = document.elementFromPoint(clientX, clientY);
+        if (movingBlock) movingBlock.style.pointerEvents = previousPointerEvents || '';
+
+        const slot = targetEl?.closest?.('.anim-cell-slot') || null;
+        if (slot) return slot;
+
+        const grid = this.panel.querySelector('.anim-timeline-grid');
+        if (!grid) return null;
+        const row = [...grid.querySelectorAll('.anim-timeline-row')].find(item => {
+            const rect = item.getBoundingClientRect();
+            return clientY >= rect.top && clientY <= rect.bottom;
+        });
+        if (!row) return null;
+        const firstSlot = row.querySelector('.anim-cell-slot');
+        if (!firstSlot) return null;
+        const rect = firstSlot.getBoundingClientRect();
+        const frameIndex = Math.floor((clientX - rect.left) / this.timelineCellWidth);
+        if (frameIndex < 0 || frameIndex >= this.model.totalFrames) return null;
+        return row.querySelector(`.anim-cell-slot[data-frame-index="${frameIndex}"]`);
+    }
+
+    _updateClipMovePreview(clientX, clientY) {
+        if (!this._clipMoveData) return;
+        const slot = this._getClipMoveTargetSlot(clientX, clientY);
+        if (slot === this._clipMovePreviewSlot) return;
+
+        this._clearClipMovePreview();
+        if (!slot) return;
+
+        const targetLaneId = slot.dataset.trackId;
+        const targetFrame = parseInt(slot.dataset.frameIndex, 10);
+        const canMove = Number.isInteger(targetFrame)
+            && this.model.canMoveClip(this._clipMoveData.clipId, targetLaneId, targetFrame).ok;
+        slot.classList.add(canMove ? 'move-target' : 'move-target-blocked');
+        this._clipMovePreviewSlot = slot;
     }
 
     _setupEventListeners() {
@@ -4373,7 +5696,11 @@ export class AnimationTablePopup {
             );
             if (isInput) return;
 
-            if (e.altKey && e.key === 'ArrowUp') {
+            if (e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) {
+                this.deleteActiveSelection();
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            } else if (e.altKey && e.key === 'ArrowUp') {
                 this._moveActiveLaneBy(-1);
                 e.preventDefault();
             } else if (e.altKey && e.key === 'ArrowDown') {
