@@ -276,6 +276,7 @@ canvas {
     line-height: 1;
     text-align: left;
     opacity: 0.75;
+    cursor: text;
 }
 
 .caf-simple-badge {
@@ -297,6 +298,7 @@ canvas {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: text;
 }
 
 .caf-simple-visibility-btn {
@@ -395,6 +397,8 @@ canvas {
     cursor: pointer;
     position: relative;
     user-select: none;
+    touch-action: none;
+    -ms-touch-action: none;
     transition: all 0.2s ease;
 }
 
@@ -542,6 +546,45 @@ canvas {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: text;
+}
+
+.layer-panel-inline-name-input {
+    min-width: 0;
+    width: 100%;
+    height: 18px;
+    box-sizing: border-box;
+    border: 1px solid rgba(207, 156, 151, 0.85);
+    border-radius: 4px;
+    background: rgba(255, 255, 238, 0.88);
+    color: var(--futaba-maroon);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 16px;
+    outline: none;
+    padding: 1px 4px;
+    box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.16);
+}
+
+.layer-panel-inline-name-input.caf-simple-name,
+.layer-panel-inline-name-input.caf-simple-lane {
+    grid-column: 2;
+    width: 100%;
+}
+
+.layer-panel-inline-name-input.caf-simple-name {
+    grid-row: 1;
+    height: 22px;
+    font-size: 15px;
+}
+
+.layer-panel-inline-name-input.caf-simple-lane {
+    grid-row: 2;
+}
+
+.layer-panel-inline-name-input.clip-layer-mirror-name {
+    width: 100%;
+    height: 18px;
 }
 
 .clip-layer-mirror-details {

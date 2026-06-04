@@ -9,6 +9,119 @@
 
 **Phase 4z26 — CAF / Working Layer Ghost Guard 【Codex実装】**
 2026-05-31
+- **アニメテーブル狭幅ヘッダー折り返し再調整**:
+  - `animation-table-popup.js`: 狭幅時のヘッダーで左/中央/右グループの幅指定が余白を作っていたため、`display: contents` で各操作部品を個別に折り返すよう変更。最小幅でも2段程度へ詰まりやすくした。
+  - `animation-table-popup.js`: 狭幅時の閉じるボタンをヘッダー右上へ `absolute` 固定し、折り返し行の末尾へ流れて見失われる状態を抑制。
+  - `animation-table-popup.js`: 画面幅ではなくアニメテーブル自身の幅で `is-narrow` クラスを付けるよう補修。横長画面内でパネルだけ縦長にした場合も狭幅ヘッダー配置が発火するようにした。
+  - `animation-table-popup.js`: 最小幅をCSS/リサイズ処理ともに `460px` へ統一し、最小幅でヘッダーが3段へ落ちにくい下限に調整。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAFセル両端リタイムと移動予告強調**:
+  - `animation-table-popup.js`: CAFセルに左端/右端のリタイムハンドルを追加。左端ドラッグでは開始FrameとDurationを同時に調整し、右端ドラッグでは従来通りDurationを調整する。
+  - `animation-table-popup.js`: リタイム中は開始時のLane配置から毎回再計算し、伸長方向にあるCAFを同一Lane内で連鎖的に押し出すようにした。Timeline端まで押し出せない場合は、そのドラッグ位置の変更を適用しない。
+  - `animation-table-popup.js`: CAFドラッグ移動中の移動先セルに濃いオレンジの `move-target` 表示を出し、移動不可セルは赤寄りの `move-target-blocked` で示すようにした。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAFリタイムハンドルUI微調整**:
+  - `animation-table-popup.js`: 左右リタイムハンドルの常時表示を白い太棒から端の細いスリットへ変更し、単一セルでも主張が強すぎない見た目にした。
+  - `animation-table-popup.js`: リタイム判定幅を狭めつつ、左右端から少し外側へ逃がして、CAF中央部のドラッグ移動を邪魔しにくくした。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Timeline FPS/総フレーム数の最小UI追加**:
+  - `animation-table-popup.js`: アニメテーブルヘッダーへ `FPS` / `FRAMES` の小型number入力を追加し、`model.fps` と `model.totalFrames` を直接変更できるようにした。
+  - `animation-table-popup.js`: 総フレーム数を縮める場合は、既存CAF終端と現在Frameを下回らないよう自動クランプする。FPS変更中に再生していた場合は、タイマーを再作成して新FPSを反映する。
+  - `animation-table-popup.js`: 変更を `caf-timeline-settings` としてTimeline Historyへ記録し、Undo/RedoでFPS/総フレーム数を復元できるようにした。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **長尺CAF表示幅のFRAMES対応**:
+  - `animation-table-popup.js`: CAFセル幅の `duration-N` CSSを固定24フレーム分から、注入時に240フレーム分まで自動生成する方式へ変更。`FRAMES` を24超へ伸ばした時も長いCAFの表示幅が追従するようにした。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Timeline縮尺UI追加**:
+  - `animation-table-popup.js`: アニメテーブル右下にTimeline zoom `- / +` と倍率表示を追加。セル幅を 18 / 22 / 26 / 30 / 36 / 44px の範囲で切り替えられるようにした。
+  - `animation-table-popup.js`: セル幅、フレーム番号幅、グリッド背景、CAF幅CSS、リタイム時のドラッグ距離換算を同じ `timelineCellWidth` に揃えた。長尺Timeline時の表示密度調整を可能にしつつ、数字省略などの細かい表示最適化は後続へ残す。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **長尺CAFの1Frame単位ドラッグ移動補修**:
+  - `animation-table-popup.js`: CAF移動のドロップ先解決を `elementFromPoint()` 直読みから専用 `_getClipMoveTargetSlot()` へ統一。移動中のCAF本体を一時的にpointer対象から外し、下のセルを拾うようにした。
+  - `animation-table-popup.js`: 下のセルを直接拾えない場合は、Timeline行と `timelineCellWidth` からFrame座標を算出するfallbackを追加。長いCAFを開始位置から隣Frameへ1Frameずつ動かせるようにした。
+  - `animation-table-popup.js`: Timeline zoom `- / +` を横スクロールバーと同じ下端行の右端へ移動。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **アニメテーブル右下リサイズ追加**:
+  - `animation-table-popup.js`: パネル右下に小さい斜線リサイズハンドルを追加し、アニメテーブルの幅/高さをドラッグで変更できるようにした。
+  - `animation-table-popup.js`: リサイズは最小 420x180px、画面外へ伸びすぎない範囲へクランプ。パネル移動とは別イベントにし、既存ヘッダードラッグとは干渉しないようにした。
+  - 注意: 位置/サイズの永続保存や左右分割レイアウト専用UIは未実装。まずLane多数・長尺Timeline時に表示領域を広げる最小接続に限定。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **アニメテーブル狭幅ヘッダー折り返し**:
+  - `animation-table-popup.js`: アニメテーブルヘッダーを `flex-wrap` 対応にし、縦長リサイズ時にトップバー要素が重なりにくいよう調整。狭幅時は左側の再生/Scope/Preview/FPS系を1段目、Duration/Copy/Paste/Delete系を2段目へ回す。
+  - `animation-table-popup.js`: LIB/Closeは右上へ残し、パネル操作の出口が見失われにくい配置にした。4辺リサイズや専用左右分割レイアウトは未実装。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAFセルCopy/Pasteの独立Asset化**:
+  - `animation-data-model.js`: `duplicateClipAsset()` を追加し、ClipAsset本体・内部Layer/Folder階層・各DrawingSnapshotを深く複製できるようにした。内部Layerの親子関係は新IDへ張り替え、代表Snapshotと内部LayerSnapshotが同一だった場合は複製側でも同一参照を保つ。
+  - `animation-table-popup.js`: セルPaste時にコピー元の `assetId` を共有せず、複製Assetを作って新Clipへ割り当てるよう変更。`transform` / `transformKeyframes` / `physics` は従来通りClipInstanceメタとしてコピーする。
+  - 効果: コピーしたCAFを別Frame/Laneへ貼り付けて絵を動かす・描き替える場合に、コピー元や他のコピーと描画内容が同期してしまう経路を抑制。
+  - **確認**: `node --check tegaki_work/system/animation/animation-data-model.js` / `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAFセルCopy/Paste導線の追加補修**:
+  - `animation-table-popup.js`: CAFセルCopy前に選択CAFの作業Layerを保存し、描画直後にコピーしても最新Snapshotを複製対象にするようにした。
+  - `animation-table-popup.js`: Paste中にAsset複製後のセル作成が失敗した場合、Timeline stateをPaste前へ戻して未参照Asset/Snapshotが残らないようにした。
+  - `animation-table-popup.js`: Copy/Pasteボタンのdisabled/titleを選択CAF・コピー元・貼り付け先セルの空き状態に合わせて同期し、押しても何も起きない状態を減らした。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/system/animation/animation-data-model.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAFセルCopy/Pasteショートカット追加**:
+  - `keyboard-handler.js`: アニメテーブル表示中の `Alt+C` をCAFセルCopy、`Alt+V` をCAFセルPasteへ接続。通常の `Ctrl+C/V` は既存の内部Layer/通常Layer系ショートカットとして残した。
+  - `animation-table-popup.js`: `copySelectedCel()` / `pasteCopiedCel()` が成否booleanを返すようにし、Paste可否判定を `canPasteCopiedCel()` に集約。ボタンtitleにも `Alt+C` / `Alt+V` を反映した。
+  - アニメテーブル表示中の `Alt+C/V` は実行不可でも通常系へフォールバックさせず吸収し、旧LayerSystem側との混線を避ける。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/ui/keyboard-handler.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Asset Library未参照Asset削除導線**:
+  - `animation-data-model.js`: `removeClipAsset()` を追加。参照中Assetは通常削除不可にし、未参照Asset削除時は他Assetから参照されていないDrawingSnapshotも合わせて掃除する。
+  - `animation-table-popup.js`: Asset LibraryのASSETSヘッダーへ `DEL` ボタンを追加。選択Assetの `Refs` が0の場合だけ有効化し、削除は `caf-asset-delete` としてTimeline Historyへ記録する。
+  - 狙い: CAF Paste独立化で増えるコピー素材を、参照が切れた後に明示的に整理できるようにする。参照中Assetの削除はCAFセル消失に直結するため、今回は扱わない。
+  - **確認**: `node --check tegaki_work/system/animation/animation-data-model.js` / `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Asset Library操作のHistory化補強**:
+  - `animation-table-popup.js`: Asset Folder作成を `caf-folder-create` としてTimeline Historyへ記録するようにした。
+  - `animation-table-popup.js`: Asset移動を `caf-asset-move-folder` としてTimeline Historyへ記録し、移動元/移動先Folder IDをmetaへ残すようにした。
+  - `animation-table-popup.js`: Prompt経由のAsset Folderリネームも履歴付き `renameClipAssetFolderFromExternal()` へ委譲し、インライン編集と同じUndo/Redo経路に揃えた。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/system/animation/animation-data-model.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Asset Library空Folder削除導線**:
+  - `animation-data-model.js`: `removeClipAssetFolder()` を追加。Folder内にAssetがある場合は削除不可にし、空Folderだけ削除できるようにした。
+  - `animation-table-popup.js`: Asset Folderヘッダーへ `DEL` ボタンを追加。選択Folderが空の場合だけ有効化し、削除は `caf-folder-delete` としてTimeline Historyへ記録する。
+  - **確認**: `node --check tegaki_work/system/animation/animation-data-model.js` / `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Asset Library Asset名変更のHistory化**:
+  - `animation-data-model.js`: `renameClipAsset()` を追加し、ClipAsset名をモデル側で変更できるようにした。
+  - `animation-table-popup.js`: Asset LibraryのAsset名ダブルクリックで行内input編集できるようにし、変更を `caf-asset-rename` としてTimeline Historyへ記録するようにした。
+  - **確認**: `node --check tegaki_work/system/animation/animation-data-model.js` / `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAF Durationボタン状態同期**:
+  - `animation-table-popup.js`: Duration +/- ボタンを選択CAFと伸縮可否に合わせてdisabled/title同期するようにした。CAF未選択、Duration 1以下、後続セル衝突、Timeline末尾到達時は押せない状態にする。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/system/animation/animation-data-model.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **アニメテーブル閉鎖後のCAF作業Layer漏れ抑制**:
+  - `layer-panel-renderer.js`: `isAnimationWorkingLayer` 付きLayer/Folderは、アニメテーブル表示中だけでなく常に通常Layer Panel本体から除外するようにした。CAF内部編集用の一時作業Layer/Folderが、テーブルを閉じた後にCAF外の通常カードとして見える経路を抑制。
+  - `animation-table-popup.js`: `hide()` 時のLayer Panel同期をforce更新へ変更し、閉じた直後に旧通常カード表示が残る余地を減らした。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **NO FRAME時ショートカット漏れ抑制**:
+  - `keyboard-handler.js`: アニメテーブル表示中かつ選択CAFがない状態では、V変形系、反転、リセット、通常上下レイヤー選択ショートカットを旧LayerSystemへ流さず吸収するようにした。CAF外の通常Layer/Folder操作へ落ちる経路を追加で抑制。
+  - **確認**: `node --check tegaki_work/ui/keyboard-handler.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **右サイドバー操作のCAF文脈ガード**:
+  - `ui-panels.js`: アニメテーブル表示中は、複製/下結合/削除ボタンを通常LayerSystemへフォールバックさせず、選択CAF内部Layer/Folder操作だけへ限定するようにした。CAF未選択時や内部Layer未選択時は何もせず吸収する。
+  - `ui-panels.js`: CAF未選択時の水平/垂直反転と変形リセットボタンも旧LayerSystemへ流さないようにした。
+  - **確認**: `node --check tegaki_work/ui/ui-panels.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **将来物理演算向けCAFデータ境界メモ**:
+  - 方針: `ClipAsset` はPSD互換寄りの絵素材本体として、内部Layer/Folder/Snapshot/opacity/blend/clippingを保持する。X/Y移動・回転・拡縮・キーフレーム・物理演算結果は素材ではなく、タイムライン上の `ClipInstance` / CAFセル側に持たせる。
+  - 理由: 同じAssetを複数セルで再利用した時、Asset側に変形値を置くと全配置が同時に変形してしまう。Instance側に置けば、PSD的な絵データを保ったままセルごとの運動・物理キャッシュを持てる。
+  - 将来: Asset側にはRig定義や初期姿勢、Instance側には `transform` / `transformKeyframes` / `physics.cacheId` を置く方向が自然。PSD書き出しではAsset内部Layerを優先し、物理/Transformは外部メタまたは焼き込みフレームとして扱う。
+- **ClipInstance変形メタの保存器追加**:
+  - `animation-data-model.js`: `ClipInstanceModel` に `transform`（x/y/scaleX/scaleY/rotation/anchorX/anchorY）、`transformKeyframes`、`physics`（enabled/rigId/cacheId）を追加。現時点では描画反映せず、保存・履歴復元・将来拡張用のデータ器に限定。
+  - `animation-table-popup.js`: CAFセルCopy/Paste時に `transform` / `transformKeyframes` / `physics` を落とさないようにした。
+  - **確認**: `node --check tegaki_work/system/animation/animation-data-model.js` / `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **ClipInstance変形メタAPI追加**:
+  - `animation-data-model.js`: `setClipTransform()` / `setClipTransformKeyframes()` / `setClipPhysics()` を追加し、将来のUI・物理演算側がCAFセル単位の配置/運動メタを更新できる入口を作った。
+  - `animation-data-model.js`: `getFrameAssetTree()` のClipEntryに `transform` / `transformKeyframes` / `physics` を含め、Preview/Export/物理演算側がAsset絵素材とInstance運動メタを分けて参照できるようにした。
+  - **確認**: `node --check tegaki_work/system/animation/animation-data-model.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **ClipInstance変形メタの履歴付き外部入口**:
+  - `animation-table-popup.js`: `updateClipTransformFromExternal()` / `updateClipTransformKeyframesFromExternal()` / `updateClipPhysicsFromExternal()` を追加。将来の変形UI・物理演算エンジンからCAFセル単位のメタを更新し、Timeline Historyへ `caf-clip-transform` / `caf-clip-transformKeyframes` / `caf-clip-physics` として記録できる入口を用意した。
+  - 現時点では描画反映は行わず、更新後の選択・再描画・Layer Panel同期・Undo/Redo復元経路を揃えるための接続に限定。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Vite build復旧**:
+  - `vite.config.js`: Vite 8 / Rolldown環境で、デフォルトHTML入力がWindows絶対パスの `index.html` を emitted fileName として扱い `npm.cmd run build` が失敗する経路を抑制するため、Rollup入力を相対名の `index: 'index.html'` として明示。
+  - **確認**: `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAFミラー名前編集の入力分離**:
+  - `layer-panel-renderer.js`: CAF内部Layer/Folderミラーの名前部分をD&D開始対象から除外し、ダブルクリックでインライン編集へ入れるよう補修。内部Folderの開閉はサムネイル/フォルダアイコン側クリックに限定し、名前中央クリックで開閉しないようにした。
+  - `layer-panel-renderer.js`: `F2` で選択中CAF内部Layer/Folderの名前をインライン編集できる経路を追加。通常Layer/Folder名も名前部分のイベントを行クリック/SortableJSから分離。
+  - `layer-panel-renderer.js`: CAF内部Folderのサムネイル/フォルダアイコン上ではD&D用 `pointerdown` を開始しないようにし、開閉クリックが殺される経路を補修。通常Folderサムネイルも `pointerdown` を行D&Dへ渡さないようにした。
+  - `keyboard-handler.js`: 共通キーボードハンドラのFキー抑制から `F2` を除外し、レイヤーパネル側の名前編集ショートカットへ届くようにした。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `node --check tegaki_work/ui/keyboard-handler.js` 成功。`npm.cmd run build` は Vite/Rolldown の `index.html` emitted fileName 絶対パス扱いエラーで失敗（コード変換は完了、distは復元）。
 - **作業LayerのLane誤輸入抑制**:
   - `animation-data-model.js`: `TimelineModel.syncWithLayers()` で `isAnimationWorkingLayer` を通常Lane生成対象から除外。CAF内部Layer編集用の一時作業Layerが、通常Layer由来Laneとして再輸入される経路を止めた。
 - **ClipAsset同期先の絞り込み**:
@@ -164,6 +277,66 @@
   - `animation-table-popup.js`: Alt+ClickによるCAF/Clipセル作成・削除を `caf-clip-create` / `caf-clip-delete` としてHistoryへ記録するようにした。
   - `animation-table-popup.js`: Undo/Redo時は `TimelineModel` の `tracks` / `clipAssets` / `clipAssetFolders` / `drawingSnapshots` / `playback` と選択状態をまとめて復元し、内部Layer履歴とは別にFrame/Lane上のCAF配置を戻せるようにした。
   - `animation-table-popup.js`: CAFセル作成/削除の履歴取得前に選択中CAFの作業Layerを保存し、直前描画の保存とセル操作履歴が混線しないようにした。
+- **アクティブCAF削除導線**:
+  - `animation-table-popup.js`: アニメテーブル上部に選択CAF削除用のゴミ箱ボタンを追加し、選択CAFがない時はdisabledにするようにした。
+  - `animation-table-popup.js`: `Alt+Delete` / `Alt+Backspace` でアクティブCAFを削除できるようにした。削除は `caf-clip-delete` のTimeline History経路へ乗せ、Undo/Redoで作成前後のCAF配置・選択状態を復元する。
+  - `animation-table-popup.js`: 既存セルへのAlt+Click削除も同じ `deleteSelectedClip()` 経路へ集約し、履歴と作業Layer保存の挙動を揃えた。
+  - `keyboard-handler.js`: `Alt+Delete` / `Alt+Backspace` は通常Keymap判定より前でCAF削除へ分岐するよう補修。共通Delete処理に吸われてアニメテーブル側keydownへ届かない経路を止めた。
+- **CAFセル操作のHistory化拡張**:
+  - `animation-table-popup.js`: CAFセルPasteを `caf-clip-paste` としてTimeline Historyへ記録するようにした。Paste先Laneは旧Layer逆引きではなく `activeLaneId` を正本として使う。
+  - `animation-table-popup.js`: Duration +/- ボタン変更を `caf-clip-duration` としてHistoryへ記録するようにした。
+  - `animation-table-popup.js`: セル右端ドラッグのリタイミングを `caf-clip-retime`、セル本体ドラッグ移動を `caf-clip-move` としてHistoryへ記録するようにした。開始前に選択CAFの作業Layerを保存し、失敗/同位置ドロップでは履歴を増やさない。
+- **アニメテーブル左上軸ラベル整理**:
+  - `animation-table-popup.js`: 左上ヘッダーを単なる `LANES` 表記から、中央付近のバックスラッシュ区切り付き `+ Lanes` / `Timeline` 表示へ変更。X=Timeline、Y=Lanes の2次元盤面であることを明示した。
+  - `animation-table-popup.js`: Lane追加 `+` は `Lanes` 側ラベルの左へ移し、Timeline側操作に見えないようにした。
+- **Lane追加のHistory化**:
+  - `animation-table-popup.js`: `+ Lanes` による独立Lane追加を `caf-lane-create` としてTimeline Historyへ記録するようにした。追加前に選択CAFを保存し、追加後は新Laneをアクティブ化して空Frame同期まで行う。
+- **Lane削除のHistory化**:
+  - `animation-table-popup.js`: `- Lanes` ボタンを追加し、アクティブLaneを中のCAFセルごと削除できるようにした。最後の1Laneはdisabledで削除不可。
+  - `animation-table-popup.js`: Lane削除を `caf-lane-delete` としてTimeline Historyへ記録し、Undo/RedoでLane上のCAFセルや選択状態ごと復元するようにした。
+  - `animation-table-popup.js`: Timeline History stateに `includedLaneIds` / `playbackScope` を含め、Lane削除/復元時にSET対象チェックが置き去りにならないようにした。
+- **Lane操作UIの誤爆抑制**:
+  - `animation-table-popup.js`: `- Lanes` を撤去し、アクティブLane削除を上部操作群のゴミ箱ボタンへ移した。Lane削除は軽い `-` ではなく明示的な削除操作として扱う。
+  - `animation-table-popup.js`: Lane左パネル行クリックで「Laneのみ選択」できるようにした。この状態ではCAF選択を解除し、作業Layerを空にしてPreview合成も止めるため、NO CAF相当の表示になる。
+  - `animation-table-popup.js`: 各LaneのSET対象ボタンを右端の薄いチェック枠へ移し、ScopeがSETの時だけ操作可能にした。Lane追加 `+` との誤認を抑制する。
+- **Lane単独選択と共有ゴミ箱補修**:
+  - `animation-table-popup.js`: CAF削除用とLane削除用に分かれていた上部ゴミ箱を共有化。CAF選択中はCAF削除、Lane単独選択中はアクティブLane削除として動作する。
+  - `animation-table-popup.js`: Lane単独選択状態をTimeline History stateへ含め、Lane追加/削除/Undo/Redo後もCAF未選択・空Frame表示を維持するよう補修。
+  - `animation-table-popup.js`: Lane単独選択中はTimelineの現在Frame列ハイライトを消し、CAFセル未選択状態がUI上でも分かるようにした。
+  - `keyboard-handler.js`: `Alt+Delete` / `Alt+Backspace` を共有削除入口へ委譲し、CAF選択中とLane単独選択中の削除ショートカットを同一経路に揃えた。
+- **Lane単独選択の視認性補修**:
+  - `timeline-ui.js`: Lane単独選択中は右上のFrame表示を `NO FRAME` にし、左右Frame移動ボタンもdisabledにするようにした。
+  - `animation-table-popup.js`: 左Lane行のアクティブ表示を左線だけでなくオレンジ内枠でも示し、時間セルではなくLane軸側が選択されていることを見分けやすくした。
+- **Lane名変更と枠表示調整**:
+  - `animation-table-popup.js`: 左Lane行のオレンジ内枠はLane単独選択時だけ出すようにし、通常のアクティブLane表示は従来の縦棒と行色に戻した。
+  - `animation-table-popup.js`: Lane名をダブルクリックで変更できるようにした。変更は `caf-lane-rename` としてTimeline Historyへ記録し、Undo/Redo対象にした。
+  - `animation-table-popup.js`: Lane名ダブルクリック時に通常クリック側のrenderでDOMが差し替わり、名前変更へ入れない経路を抑えるため、`click` の `detail >= 2` で名前変更を起動するよう追修正。
+- **名前変更UIのインライン化**:
+  - `animation-table-popup.js`: アニメテーブル左端のLane名変更を `prompt()` ではなく、その場のinput差し替えで行うようにした。確定後は既存の `caf-lane-rename` 履歴経路へ流す。
+  - `animation-table-popup.js`: CAFフォルダ名を外部入力値から履歴付きで変更する `renameClipAssetFolderFromExternal()` を追加。
+  - `layer-panel-renderer.js` / `styles/main.css`: Layer Panel上のCAF名、CAF補助Lane名、CAF内部Layer/Folder名をダブルクリックでインライン編集できるようにした。CAF名はClipAssetFolder、Lane名はLaneModel、内部Layer名はClipAssetInternalLayerへ同期する。
+- **保留: アニメテーブル左Lane名のインライン編集初回即閉じ**:
+  - Layer Panel側のCAF名/Lane名/CAF内部Layer名変更と同期は動作確認済み。
+  - アニメテーブル左端のLane名編集は、ダブルクリック初回や編集成功後の再ダブルクリックでinputが即閉じる挙動が残る。Lane名クリック時の通常render、遅延 `requestUpdate()`、作業Layer同期を抑制しても完全には解消しなかった。
+  - 実用導線はLayer Panel側のLane名編集で代替できるため、現時点では深追いせず棚上げ。再開時はイベント順序（click/detail/dblclick/blur）とDOM差し替えの実測ログ、または別AIレビューで原因確認する。
+- **アニメテーブル左Lane名編集の入口停止**:
+  - `animation-table-popup.js`: 初回即閉じが残るアニメテーブル左端Lane名のダブルクリック編集入口を無効化した。Lane名クリックはLane単独選択に戻し、名前変更は動作確認済みのLayer Panel側へ一本化する。
+  - `animation-table-popup.js`: 左端Lane名の `cursor: text` を外し、アニメテーブル側で直接編集できるように見える誤認を抑制。
+- **CAF文脈の属性ポップアップ名変更分岐**:
+  - `layer-panel-renderer.js`: アニメテーブル表示中かつCAF内部Layer/Folder選択中は、右サイドバー属性ポップアップの名前欄を通常作業Layer名ではなくCAF内部Layer/Folder名として表示・変更するようにした。変更は既存の `renameInternalLayerFromExternal()` に委譲し、CAF内部名変更Historyへ流す。
+- **CAF内部D&Dのペン入力補強**:
+  - `layer-panel-renderer.js`: CAF内部Layer/FolderミラーのPointer Events D&D開始時に `setPointerCapture()` を取り、document側の `pointermove` もcaptureで拾うようにした。ペン入力時に接触中イベントが別要素/ブラウザ側へ流れてゴーストが即消える経路を抑制。
+  - `styles/main.css`: `.clip-layer-mirror-row` に `touch-action: none` を付与し、ペン/タッチ系入力でブラウザジェスチャ扱いになりD&Dが中断される余地を減らした。
+- **Asset Library内部Layer名変更のインライン化**:
+  - `animation-table-popup.js`: Asset Library Inspector内の内部Layer/Folder名変更ボタンを `prompt()` ではなく行内input編集へ変更。名前ダブルクリックも同じ行内編集へ接続し、確定後は既存の `renameInternalLayerFromExternal()` とCAF内部名変更Historyへ流す。
+- **CAF内部Layerサムネイルのキャンバス比率追従**:
+  - `layer-panel-renderer.js`: 通常Layerサムネイルと同じキャンバス比率計算をLayer Panel側ヘルパー化し、CAF内部Layerミラーのサムネイル枠にも適用した。キャンバスサイズ変更後にCAF側だけ正方形寄りの比率で残る経路を補修。
+  - `layer-panel-renderer.js`: `canvas:resized` / `camera:resized` 受信時にサムネイル更新だけでなくLayer Panel再renderも要求し、CAFミラーのサムネイル寸法を即時更新するようにした。
+- **Asset Library Folder名変更のインライン化**:
+  - `animation-table-popup.js`: Asset LibraryのFolder名変更を、可能な場合は選択Folder行のinput差し替えで行うようにした。Folder名ダブルクリックも同じ行内編集へ接続し、確定後は `renameClipAssetFolderFromExternal()` 経由でTimeline Historyへ記録する。
+- **通常Layer/Folderカード名変更の復旧**:
+  - `layer-panel-renderer.js`: 通常Layer/Folderカードの名前ダブルクリック編集を復旧し、F2と同じ `_editLayerName()` へ接続した。CAF名/Lane名のLayer Panel側ダブルクリック編集とは別経路のまま維持。
+  - `layer-panel-renderer.js`: 通常Folderの開閉はサムネイル/フォルダアイコン付近のクリックに限定し、名前や行クリックは選択・名前変更側へ寄せる方針を維持。フォルダサムネイルには明示的なpointerカーソルを付けた。
 - **確認**:
   - `npm.cmd run build` 成功。
   - Browserプラグインでのローカル画面確認は、Node REPL側が `windows sandbox failed: spawn setup refresh` で落ちたため未実施。

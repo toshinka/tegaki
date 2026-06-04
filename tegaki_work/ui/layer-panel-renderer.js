@@ -90,6 +90,36 @@ export class LayerPanelRenderer {
                 return;
             }
 
+            const cafName = e.target.closest('.caf-simple-name');
+            if (cafName && e.detail >= 2) {
+                const folderId = cafName.dataset.folderId;
+                const originalName = cafName.textContent || '';
+                const animationTable = window.PopupManager?.get?.('animationTable');
+                if (folderId && animationTable?.renameClipAssetFolderFromExternal) {
+                    this._editInlineText(cafName, originalName, (nextName) => {
+                        animationTable.renameClipAssetFolderFromExternal(folderId, nextName, { source: 'layer-panel-caf-header' });
+                    });
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                return;
+            }
+
+            const cafLane = e.target.closest('.caf-simple-lane');
+            if (cafLane && e.detail >= 2) {
+                const laneId = cafLane.dataset.laneId;
+                const originalName = cafLane.textContent || '';
+                const animationTable = window.PopupManager?.get?.('animationTable');
+                if (laneId && animationTable?.renameLane) {
+                    this._editInlineText(cafLane, originalName, (nextName) => {
+                        animationTable.renameLane(laneId, nextName);
+                    });
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                return;
+            }
+
             const cafToggleBtn = e.target.closest('.caf-simple-toggle-btn');
             if (cafToggleBtn) {
                 const clipId = cafToggleBtn.dataset.clipId;
@@ -118,6 +148,22 @@ export class LayerPanelRenderer {
                 return;
             }
 
+            const mirrorNameForEdit = e.target.closest('.clip-layer-mirror-name');
+            if (mirrorNameForEdit && e.detail >= 2) {
+                const mirrorRow = mirrorNameForEdit.closest('.clip-layer-mirror-row');
+                const assetId = mirrorRow?.dataset.assetId;
+                const layerId = mirrorRow?.dataset.internalLayerId;
+                const animationTable = window.PopupManager?.get?.('animationTable');
+                if (animationTable?.renameInternalLayerFromExternal && assetId && layerId) {
+                    this._editInlineText(mirrorNameForEdit, mirrorNameForEdit.textContent || '', (nextName) => {
+                        animationTable.renameInternalLayerFromExternal(assetId, layerId, nextName, { source: 'layer-panel-clip-layer-mirror' });
+                    });
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                return;
+            }
+
             // 3. 内部レイヤーミラーの行 (Phase 4z17)
             const mirrorRow = e.target.closest('.clip-layer-mirror-row');
             if (mirrorRow) {
@@ -128,7 +174,11 @@ export class LayerPanelRenderer {
                     ? animationTable.model.getClipAsset(assetId)
                     : null;
                 const internalLayer = asset?.internalLayers?.find(layer => layer.id === layerId);
-                if (internalLayer?.type === 'folder' && !e.target.closest('.clip-layer-mirror-visibility-btn')) {
+                if (
+                    internalLayer?.type === 'folder' &&
+                    e.target.closest('.clip-layer-mirror-thumb') &&
+                    !e.target.closest('.clip-layer-mirror-visibility-btn')
+                ) {
                     if (animationTable && layerId) {
                         animationTable.selectedAssetId = assetId || animationTable.selectedAssetId;
                         animationTable.selectedAssetFolderId = asset?.folderId || null;
@@ -146,19 +196,6 @@ export class LayerPanelRenderer {
                     this.requestUpdate({ force: true });
                 }
                 return;
-            }
-        });
-
-        this.container.addEventListener('dblclick', (e) => {
-            const mirrorName = e.target.closest('.clip-layer-mirror-name');
-            if (!mirrorName) return;
-
-            const mirrorRow = mirrorName.closest('.clip-layer-mirror-row');
-            const assetId = mirrorRow?.dataset.assetId;
-            const layerId = mirrorRow?.dataset.internalLayerId;
-            const animationTable = window.PopupManager?.get?.('animationTable');
-            if (animationTable?.renameInternalLayerFromExternal && assetId && layerId) {
-                animationTable.renameInternalLayerFromExternal(assetId, layerId, null, { source: 'layer-panel-clip-layer-mirror' });
             }
         });
 
@@ -187,13 +224,24 @@ export class LayerPanelRenderer {
     _handleClipLayerMirrorPointerDown(e) {
         if (e.button !== 0) return;
         if (e.target.closest('button, input, textarea, select')) return;
+        if (e.target.closest('.clip-layer-mirror-name')) return;
 
         const row = e.target.closest('.clip-layer-mirror-row');
         if (!row || !this.container.contains(row)) return;
+        if (row.classList.contains('is-folder') && e.target.closest('.clip-layer-mirror-thumb')) {
+            return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+            row.setPointerCapture?.(e.pointerId);
+        } catch (err) {}
 
         this._clipLayerMirrorDrag = {
             pointerId: e.pointerId,
             row,
+            captureTarget: row,
             assetId: row.dataset.assetId,
             layerId: row.dataset.internalLayerId,
             startX: e.clientX,
@@ -206,7 +254,7 @@ export class LayerPanelRenderer {
             placement: null
         };
 
-        document.addEventListener('pointermove', this._handleClipLayerMirrorPointerMove, { passive: false });
+        document.addEventListener('pointermove', this._handleClipLayerMirrorPointerMove, { passive: false, capture: true });
         document.addEventListener('pointerup', this._handleClipLayerMirrorPointerUp, { capture: true });
         document.addEventListener('pointercancel', this._handleClipLayerMirrorPointerUp, { capture: true });
     }
@@ -283,10 +331,13 @@ export class LayerPanelRenderer {
 
     _finishClipLayerMirrorDrag() {
         const drag = this._clipLayerMirrorDrag;
-        document.removeEventListener('pointermove', this._handleClipLayerMirrorPointerMove);
+        document.removeEventListener('pointermove', this._handleClipLayerMirrorPointerMove, true);
         document.removeEventListener('pointerup', this._handleClipLayerMirrorPointerUp, true);
         document.removeEventListener('pointercancel', this._handleClipLayerMirrorPointerUp, true);
         this._clearClipLayerMirrorDropTarget();
+        try {
+            drag?.captureTarget?.releasePointerCapture?.(drag.pointerId);
+        } catch (err) {}
         if (drag?.row) drag.row.classList.remove('is-dragging');
         if (drag?.ghost?.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
         this._clipLayerMirrorDrag = null;
@@ -342,7 +393,14 @@ export class LayerPanelRenderer {
         this.eventBus.on('layer:background-color-changed', () => this.requestUpdate());
         this.eventBus.on('layer:name-changed', () => this.requestUpdate());
         this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
-        this.eventBus.on('camera:resized', () => this.updateAllThumbnails());
+        this.eventBus.on('camera:resized', () => {
+            this.updateAllThumbnails();
+            this.requestUpdate({ force: true });
+        });
+        this.eventBus.on('canvas:resized', () => {
+            this.updateAllThumbnails();
+            this.requestUpdate({ force: true });
+        });
 
         // [指示書 v5/v6 修正] 無限ループ防止のため 'thumbnail:layer-updated' のリスナーを削除。
         // サムネイルの更新は、生成完了後に発行される 'thumbnail:updated' で一括処理する。
@@ -445,7 +503,7 @@ export class LayerPanelRenderer {
         const selectedLayerIds = new Set(this.layerSystem?.getSelectedLayerIds?.() || []);
         const animationTable = window.PopupManager?.get?.('animationTable');
         const hasAnimationContext = this._hasAnimationContext(animationTable);
-        const hideAnimationWorkingLayers = hasAnimationContext;
+        const hideAnimationWorkingLayers = true;
         const hideWorkingLayersForEmptyAnimFrame = !!(
             animationTable?.isVisible &&
             animationTable?.model &&
@@ -466,8 +524,7 @@ export class LayerPanelRenderer {
             if (
                 hideAnimationWorkingLayers &&
                 layer.layerData?.isAnimationWorkingLayer === true &&
-                !layer.layerData.isBackground &&
-                !layer.layerData.isFolder
+                !layer.layerData.isBackground
             ) return;
             if (
                 hideWorkingLayersForEmptyAnimFrame &&
@@ -669,6 +726,7 @@ export class LayerPanelRenderer {
         thumbnailContainer.style.alignItems = 'center';
         thumbnailContainer.style.justifyContent = 'center';
         thumbnailContainer.style.flexShrink = '0';
+        thumbnailContainer.style.cursor = 'pointer';
         const isExpanded = folder.layerData?.folderExpanded;
         thumbnailContainer.style.backgroundColor = isExpanded
             ? 'rgba(207, 156, 151, 0.22)'
@@ -689,6 +747,9 @@ export class LayerPanelRenderer {
             if (this.layerSystem?.toggleFolderExpand) {
                 this.layerSystem.toggleFolderExpand(folder.layerData.id);
             }
+        });
+        thumbnailContainer.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
         });
         thumbnailContainer.title = folder.layerData?.folderExpanded ? 'フォルダを閉じる' : 'フォルダを開く';
 
@@ -1007,12 +1068,15 @@ export class LayerPanelRenderer {
     _renderLayerAttributePopupContent(popup, layerIndex) {
         const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
         if (!layer?.layerData) return;
+        const animationTarget = this._getAnimationAttributeTarget();
 
         const opacity = Math.round((layer.alpha ?? layer.layerData.opacity ?? 1) * 100);
         const blendMode = layer.layerData.blendMode || 'normal';
         const clipping = layer.layerData.clipping === true;
-        const isFolder = layer.layerData.isFolder === true;
-        const layerName = this._escapeHtml(layer.layerData.name || 'レイヤー');
+        const isFolder = animationTarget?.internalLayer?.type === 'folder'
+            || layer.layerData.isFolder === true;
+        const rawLayerName = animationTarget?.internalLayer?.name || layer.layerData.name || 'レイヤー';
+        const layerName = this._escapeHtml(rawLayerName);
         const presets = [0, 25, 50, 75, 100];
         const blendModes = [
             { value: 'normal', label: '通常' },
@@ -1125,6 +1189,20 @@ export class LayerPanelRenderer {
         const select = popup.querySelector('.layer-attribute-blend-select');
         if (select) select.value = blendMode;
         popup.querySelector('[data-action="toggle-clipping"]')?.classList.toggle('active', clipping);
+    }
+
+    _getAnimationAttributeTarget() {
+        const animationTable = window.PopupManager?.get?.('animationTable');
+        if (!animationTable?.isVisible || !animationTable.selectedCelId || !animationTable.selectedInternalLayerId) {
+            return null;
+        }
+        const entry = animationTable.model?.findClipEntry?.(animationTable.selectedCelId);
+        const asset = entry?.clip?.assetId
+            ? animationTable.model.getClipAsset(entry.clip.assetId)
+            : null;
+        const internalLayer = asset?.internalLayers?.find(layer => layer.id === animationTable.selectedInternalLayerId) || null;
+        if (!asset || !internalLayer) return null;
+        return { animationTable, asset, internalLayer };
     }
 
     _positionLayerAttributePopup(popup, anchorElement) {
@@ -1297,7 +1375,8 @@ export class LayerPanelRenderer {
         const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
         if (!layer?.layerData || layer.layerData.isBackground) return;
 
-        const originalName = layer.layerData.name || 'レイヤー';
+        const animationTarget = this._getAnimationAttributeTarget();
+        const originalName = animationTarget?.internalLayer?.name || layer.layerData.name || 'レイヤー';
         const input = document.createElement('input');
         input.type = 'text';
         input.value = originalName;
@@ -1308,13 +1387,22 @@ export class LayerPanelRenderer {
         const finish = (commit) => {
             const nextName = input.value.trim();
             if (commit && nextName && nextName !== originalName) {
-                layer.layerData.name = nextName;
-                this.eventBus?.emit('layer:name-changed', {
-                    layerIndex,
-                    layerId: layer.layerData.id,
-                    oldName: originalName,
-                    newName: nextName
-                });
+                if (animationTarget?.animationTable?.renameInternalLayerFromExternal) {
+                    animationTarget.animationTable.renameInternalLayerFromExternal(
+                        animationTarget.asset.id,
+                        animationTarget.internalLayer.id,
+                        nextName,
+                        { source: 'layer-attribute-popup' }
+                    );
+                } else {
+                    layer.layerData.name = nextName;
+                    this.eventBus?.emit('layer:name-changed', {
+                        layerIndex,
+                        layerId: layer.layerData.id,
+                        oldName: originalName,
+                        newName: nextName
+                    });
+                }
             }
             this._renderLayerAttributePopupContent(popup, layerIndex);
         };
@@ -1332,6 +1420,47 @@ export class LayerPanelRenderer {
         });
         input.addEventListener('blur', () => finish(true));
 
+        requestAnimationFrame(() => {
+            input.focus();
+            input.select();
+        });
+    }
+
+    _editInlineText(textElement, originalName, commit) {
+        if (!textElement || textElement.querySelector('input')) return;
+        const currentName = String(originalName || '').trim();
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentName;
+        input.className = `layer-panel-inline-name-input ${textElement.className || ''}`.trim();
+
+        const finishEdit = (shouldCommit) => {
+            if (!input.parentNode) return;
+            const nextName = input.value.trim();
+            textElement.textContent = nextName || currentName;
+            input.replaceWith(textElement);
+            if (shouldCommit && nextName && nextName !== currentName) {
+                commit?.(nextName);
+            }
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                finishEdit(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                input.value = currentName;
+                finishEdit(false);
+            }
+        });
+        input.addEventListener('blur', () => finishEdit(true));
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('dblclick', (e) => e.stopPropagation());
+
+        textElement.replaceWith(input);
         requestAnimationFrame(() => {
             input.focus();
             input.select();
@@ -1363,10 +1492,25 @@ export class LayerPanelRenderer {
         nameSpan.textContent = layer.layerData?.name || `レイヤー${index}`;
         nameSpan.style.cssText = `grid-column:1;grid-row:3;color:#800000;font-size:10px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding:0;height:14px;display:flex;align-items:center;`;
 
-        nameSpan.addEventListener('click', (e) => {
+        nameSpan.addEventListener('dblclick', (e) => {
             if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation?.();
+            this._editLayerName(nameSpan, layer, index);
         });
-        nameSpan.title = 'F2で名前変更';
+        nameSpan.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+        });
+        nameSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (e.detail >= 2 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                e.stopImmediatePropagation?.();
+                this._editLayerName(nameSpan, layer, index);
+            }
+        });
+        nameSpan.title = 'ダブルクリック または F2 で名前変更';
 
         return nameSpan;
     }
@@ -1434,8 +1578,7 @@ export class LayerPanelRenderer {
     }
 
     createThumbnail(layer, index) {
-        const maxWidth = 40;
-        const maxHeight = 32;
+        const { width: maxWidth, height: maxHeight } = this._calculateLayerThumbnailSize(40, 32);
 
         const thumbnailContainer = document.createElement('div');
         thumbnailContainer.className = 'layer-thumbnail';
@@ -1471,6 +1614,30 @@ export class LayerPanelRenderer {
 
         // キャッシュがない場合は非同期で生成
         return thumbnailContainer;
+    }
+
+    _calculateLayerThumbnailSize(maxWidth = 40, maxHeight = 32) {
+        const canvasWidth = this.layerSystem?.config?.canvas?.width
+            || window.TEGAKI_CONFIG?.canvas?.width
+            || 800;
+        const canvasHeight = this.layerSystem?.config?.canvas?.height
+            || window.TEGAKI_CONFIG?.canvas?.height
+            || 600;
+        const canvasAspect = canvasHeight > 0 ? canvasWidth / canvasHeight : 1;
+        const thumbAspect = maxHeight > 0 ? maxWidth / maxHeight : 1;
+
+        let width = maxWidth;
+        let height = maxHeight;
+        if (canvasAspect > thumbAspect) {
+            height = Math.round(maxWidth / canvasAspect);
+        } else {
+            width = Math.round(maxHeight * canvasAspect);
+        }
+
+        return {
+            width: Math.max(1, Math.min(maxWidth, width)),
+            height: Math.max(1, Math.min(maxHeight, height))
+        };
     }
 
     _editLayerName(nameSpan, layer, index) {
@@ -1540,6 +1707,12 @@ export class LayerPanelRenderer {
         });
 
         input.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        input.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+        });
+        input.addEventListener('dblclick', (e) => {
             e.stopPropagation();
         });
     }
@@ -1628,6 +1801,28 @@ export class LayerPanelRenderer {
         const target = e.target;
         if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
         if (this._editingLayerIndex >= 0) return;
+
+        const animationTarget = this._getAnimationAttributeTarget?.();
+        const animationAssetId = animationTarget?.asset?.id;
+        if (animationTarget?.animationTable && animationAssetId && animationTarget?.internalLayer?.id) {
+            const mirrorName = this.container?.querySelector(
+                `.clip-layer-mirror-row[data-asset-id="${CSS.escape(animationAssetId)}"]` +
+                `[data-internal-layer-id="${CSS.escape(animationTarget.internalLayer.id)}"] .clip-layer-mirror-name`
+            );
+            if (mirrorName) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._editInlineText(mirrorName, mirrorName.textContent || '', (nextName) => {
+                    animationTarget.animationTable.renameInternalLayerFromExternal(
+                        animationAssetId,
+                        animationTarget.internalLayer.id,
+                        nextName,
+                        { source: 'layer-panel-clip-layer-mirror-f2' }
+                    );
+                });
+                return;
+            }
+        }
 
         const activeIndex = this.layerSystem?.getActiveLayerIndex?.();
         if (typeof activeIndex !== 'number' || activeIndex < 0) return;
@@ -1934,7 +2129,9 @@ export class LayerPanelRenderer {
             const isExpanded = !this._collapsedCafClipIds.has(firstClip?.clipId)
                 && (!!selectedClipEntry || this._expandedCafClipIds.has(firstClip?.clipId));
             const groupExpandedClass = isExpanded ? ' is-expanded' : ' is-collapsed';
-            const laneLabel = Number.isInteger(firstClip?.laneIndex) ? `Lane ${firstClip.laneIndex + 1}` : '';
+            const laneLabel = firstClip?.laneName || (Number.isInteger(firstClip?.laneIndex) ? `Lane ${firstClip.laneIndex + 1}` : '');
+            const folderId = this._escapeHtml(group.folderId || '');
+            const laneId = this._escapeHtml(firstClip?.laneId || '');
             const firstClipId = this._escapeHtml(firstClip?.clipId || '');
             const firstAssetId = this._escapeHtml(firstClip?.assetId || '');
             const clipEntry = firstClip?.clipId ? animationTable.model.findClipEntry(firstClip.clipId) : null;
@@ -1957,8 +2154,8 @@ export class LayerPanelRenderer {
                                 aria-label="${isExpanded ? 'CAFを閉じる' : 'CAFを開く'}">
                             ${isExpanded ? UI_ICONS.folderOpen : UI_ICONS.folder}
                         </button>
-                        <span class="caf-simple-name">${this._escapeHtml(folderName)}</span>
-                        <span class="caf-simple-lane">${this._escapeHtml(laneLabel)}</span>
+                        <span class="caf-simple-name" data-folder-id="${folderId}">${this._escapeHtml(folderName)}</span>
+                        <span class="caf-simple-lane" data-lane-id="${laneId}">${this._escapeHtml(laneLabel)}</span>
                         <button class="caf-simple-visibility-btn ui-icon-button ui-icon-button--small${isClipVisible ? '' : ' is-hidden'}"
                                 data-clip-id="${firstClipId}"
                                 title="CAF Clipの表示/非表示">
@@ -2048,6 +2245,8 @@ export class LayerPanelRenderer {
 
     _createClipAssetLayerMirrorHtml(asset, animationTable) {
         const selectedInternalLayerId = animationTable.selectedInternalLayerId;
+        const mirrorThumbSize = this._calculateLayerThumbnailSize(34, 30);
+        const mirrorThumbStyle = `width:${mirrorThumbSize.width}px;height:${mirrorThumbSize.height}px;`;
 
         let layerHtml = '';
         if (asset.internalLayers.length === 0) {
@@ -2084,7 +2283,7 @@ export class LayerPanelRenderer {
                          data-asset-id="${safeAssetId}"
                          data-depth="${depth}">
                         <span class="folder-child-line" aria-hidden="true"></span>
-                        <span class="clip-layer-mirror-thumb">
+                        <span class="clip-layer-mirror-thumb" style="${mirrorThumbStyle}">
                             ${isFolder ? (isFolderCollapsed ? UI_ICONS.folder : UI_ICONS.folderOpen) : (thumbUrl ? `<img src="${thumbUrl}" alt="">` : '')}
                         </span>
                         <span class="clip-layer-mirror-details">

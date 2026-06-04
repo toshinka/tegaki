@@ -199,6 +199,10 @@ export class UIController {
 
             const flipButton = e.target.closest('#flip-horizontal-btn, #flip-vertical-btn');
             if (flipButton) {
+                if (this._shouldBlockNormalLayerOperation()) {
+                    flipButton.blur?.();
+                    return;
+                }
                 const direction = flipButton.id === 'flip-horizontal-btn' ? 'horizontal' : 'vertical';
                 this.eventBus.emit('layer:flip-requested', { direction, bypassVKeyCheck: true });
                 return;
@@ -206,6 +210,10 @@ export class UIController {
 
             const resetButton = e.target.closest('#layer-transform-reset-btn');
             if (resetButton) {
+                if (this._shouldBlockNormalLayerOperation()) {
+                    resetButton.blur?.();
+                    return;
+                }
                 this.eventBus.emit('layer:reset-transform');
                 return;
             }
@@ -327,28 +335,34 @@ export class UIController {
         if (!this.layerManager) return;
 
         const animationTable = this.popupManager?.get?.('animationTable');
-        if (action === 'duplicate' && animationTable?.isVisible && animationTable.selectedCelId) {
-            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
-            if (selectedInternalLayerId && typeof animationTable.duplicateInternalLayer === 'function') {
-                animationTable.duplicateInternalLayer(selectedInternalLayerId);
+        if (animationTable?.isVisible) {
+            if (!animationTable.selectedCelId) {
                 triggerEl?.blur?.();
                 return;
             }
-        }
 
-        if (action === 'mergeDown' && animationTable?.isVisible && animationTable.selectedCelId) {
             const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
-            if (selectedInternalLayerId && typeof animationTable.mergeInternalLayerDown === 'function') {
-                animationTable.mergeInternalLayerDown(selectedInternalLayerId);
+
+            if (action === 'duplicate') {
+                if (selectedInternalLayerId && typeof animationTable.duplicateInternalLayer === 'function') {
+                    animationTable.duplicateInternalLayer(selectedInternalLayerId);
+                }
+                triggerEl?.blur?.();
+                return;
             }
-            triggerEl?.blur?.();
-            return;
-        }
 
-        if (action === 'delete' && animationTable?.isVisible && animationTable.selectedCelId) {
-            const selectedInternalLayerId = animationTable.selectedInternalLayerId || null;
-            if (selectedInternalLayerId && typeof animationTable.removeInternalLayer === 'function') {
-                animationTable.removeInternalLayer(selectedInternalLayerId);
+            if (action === 'mergeDown') {
+                if (selectedInternalLayerId && typeof animationTable.mergeInternalLayerDown === 'function') {
+                    animationTable.mergeInternalLayerDown(selectedInternalLayerId);
+                }
+                triggerEl?.blur?.();
+                return;
+            }
+
+            if (action === 'delete') {
+                if (selectedInternalLayerId && typeof animationTable.removeInternalLayer === 'function') {
+                    animationTable.removeInternalLayer(selectedInternalLayerId);
+                }
                 triggerEl?.blur?.();
                 return;
             }
@@ -398,6 +412,11 @@ export class UIController {
             this.layerManager.deleteLayer?.(activeIndex);
             return stop();
         }
+    }
+
+    _shouldBlockNormalLayerOperation() {
+        const animationTable = this.popupManager?.get?.('animationTable');
+        return !!(animationTable?.isVisible && !animationTable.selectedCelId);
     }
 
     _getBatchDeleteLayerIndexes(activeIndex) {

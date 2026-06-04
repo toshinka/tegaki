@@ -799,6 +799,12 @@
             const popupManager = window.coreEngine?.popupManager || window.PopupManager;
             const animTable = popupManager?.get?.('animationTable');
             if (animTable && animTable.model && typeof animTable.model.playback?.currentFrame === 'number') {
+                if (animTable.isLaneOnlySelected) {
+                    frameDisplay.textContent = 'NO FRAME';
+                    document.getElementById('frame-prev-btn')?.setAttribute('disabled', 'true');
+                    document.getElementById('frame-next-btn')?.setAttribute('disabled', 'true');
+                    return;
+                }
                 const currentFrame = animTable.model.playback.currentFrame;
                 frameDisplay.textContent = `Frame ${currentFrame + 1}`;
                 document.getElementById('frame-prev-btn')?.removeAttribute('disabled');
