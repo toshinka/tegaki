@@ -3,7 +3,7 @@
 作成日: 2026-05-25  
 更新日: 2026-05-31
 作業対象: `tegaki_work/`  
-現在地: **Phase 4z25 — Space+Pen Navigation & Pressure Consistency Fix / Phase 4z23 CAF安定化継続**
+現在地: **Phase 4z26 — CAF / Working Layer Ghost Guard 継続**
 
 ---
 
@@ -14,11 +14,12 @@
 ### 現在の状態
 
 - アニメ構造は、X=Frame / Y=Lane / Z=ClipAsset内部Layer/Folder の3次元マトリクス方針で進行中。
-- Laneは通常Layerから完全独立済みではないが、`syncWithLayers()` の自動輸入は初回寄りに抑制され、独立Laneの足場が入っている。
+- Laneは通常Layerから完全独立済みではないが、`syncWithLayers()` の自動輸入は初回寄りに抑制され、独立Laneの作成/削除/履歴/名前編集の足場が入っている。
 - ClipはFrame/Lane上の小さい箱として扱う方向へ移行中。新規Blank Clipは既存Z軸束をコピーせず、内部Layer 1枚から開始する。
-- Layer PanelはCAF/内部Layerの反映表示と狭い内部編集入口。CAF自体の移動・削除・コピー・Lane移動はアニメテーブルが正本。
-- CAF表示はかなり整理されたが、CAF内部Folder、CAF間Layer D&D、Lane削除/並べ替え、保存/復元、Vキー変形、Album出力は未確定。
-- 右サイドバーの通常Layer/Folder追加は、アニメ文脈では通常Layer/Laneへ誤流入しないよう暫定ガード済み。
+- Layer PanelはCAF/内部Layerの反映表示と狭い内部編集入口。CAF自体のFrame/Lane移動、コピー、貼り付け、削除、Duration変更はアニメテーブルが正本。
+- CAF表示と操作は大きく整理済み。CAF内部Layer/Folderの作成、削除、名前変更、開閉、D&D、可視/クリッピング、下結合、履歴化は概ね入っている。
+- アニメテーブル側は、CAFセル移動、両端伸縮、押し出し伸縮、単セルペン用下部グリップ、伸縮/不可フィードバック、FPS/FRAMES、Timeline zoom、パネル位置/サイズ保存まで入っている。
+- 右サイドバーの通常Layer/Folder追加や通常Layer操作は、アニメ文脈ではCAF内部操作へ寄せるか吸収し、CAF外通常Layer/Laneへ誤流入しないよう暫定ガード済み。
 - `CAPTURE` / `AUTO` / `EDIT` / `UNIQUE` は現行UI上では退避または撤去済み。互換用内部経路が残っている箇所はある。
 
 ### 直近の描画系補修
@@ -30,9 +31,9 @@
 
 ### 次に優先するなら
 
-1. CAF安定化の継続: CAF内部Folder、CAF内/CAF間D&D、CAF開閉・内部Layer所属表示の整理。
-2. Lane操作の整理: Lane削除、Lane並べ替え、Alt系ショートカットの安定化。
-3. ゴースト/作業Layer経路の棚卸し: `isAnimationWorkingLayer`、Layer Panel非表示、保存・復元・Vキー・Albumが旧LayerSystemを参照する経路の確認。
+1. 通常レイヤーパネル統合: アニメテーブル展開前後で、通常Layer/FolderカードとCAF内部Layer/Folderカードの操作差・表示差を縮める。旧SortableJS D&DはCAF側Pointer D&Dを参考に置き換える候補。
+2. 旧LayerSystem混線の追加棚卸し: テーブルを閉じた状態、保存/復元、Vキー変形、Album/Export、通常ショートカットがCAF正本から外れないか確認する。
+3. 保存/復元と出力: TimelineModel / ClipAsset / ClipInstance / transformメタ / 内部Layer階層が保存やAlbum出力で落ちないか確認する。
 4. 描画レスポンス確認: アニメテーブル表示中の描画遅延が残る場合、Pointer/LazyBrushより先にLayerPanel同期頻度とPreview再描画頻度を疑う。
 
 ### 新チャットで触る前の注意
@@ -407,8 +408,8 @@ Codexが見るべき作業:
 
 ## 直近の確認結果
 
-- Phase 4z23はCodex実装継続中。CAF/Lane/Layer Panelの境界整理、Clip小箱化、CAF内部Layerミラー、Preview Scope、Background Lane除外、CAF連番、Frame/Lane同期などが大きく進んだ。
+- Phase 4z26はCodex実装継続中。CAF/Lane/Layer Panelの境界整理、Clip小箱化、CAF内部Layer/Folder編集、CAFセルD&D/伸縮、History/Ghost抑制、UIレスポンス調整が大きく進んだ。
 - Phase 4z24/4z25はGemini実装とCodex補修により、Space+Pen移動と筆圧/点描周辺を調整済み。
 - `npm.cmd run build` は2026-05-31時点で成功。
 - 生成された `dist/` 差分は除外済み。
-- 現在の `PROGRESS.md` は Phase 4z25 と Phase 4z23詳細ログが最新。
+- 現在の `PROGRESS.md` は Phase 4z26 の詳細ログが最新。

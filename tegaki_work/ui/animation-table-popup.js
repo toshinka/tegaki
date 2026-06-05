@@ -12,6 +12,9 @@ import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { TimelineModel, ClipAssetModel, DrawingSnapshotModel } from '../system/animation/animation-data-model.js';
 
+const ANIMATION_TABLE_UI_STORAGE_KEY = 'tegaki_animation_table_ui_v1';
+const TIMELINE_ZOOM_STEPS = [18, 22, 26, 30, 36, 44];
+
 export class AnimationTablePopup {
     constructor(dependencies = {}) {
         this.eventBus = TegakiEventBus;
@@ -48,9 +51,11 @@ export class AnimationTablePopup {
 
         // ドラッグ移動関連
         this._isDragging = false;
+        this._dragPointerId = null;
         this._dragOffset = { x: 0, y: 0 };
         this._panelPos = { x: 70, y: null }; // y は初期表示時に下部固定から計算
         this._isResizing = false;
+        this._resizePointerId = null;
         this._resizeStart = null;
         this._panelSize = { width: null, height: 260 };
 
@@ -95,6 +100,7 @@ export class AnimationTablePopup {
         // 初期シード関連 (Phase 4z5)
         this.initialClipAssetSeeded = false;
 
+        this._loadUiPreferences();
         this._ensurePanelElement();
     }
 
@@ -120,8 +126,9 @@ export class AnimationTablePopup {
         if (this._panelPos.y === null) {
             const rect = this.panel.getBoundingClientRect();
             this._panelPos.y = window.innerHeight - rect.height - 20;
-            this._updatePanelPosition();
         }
+        this._clampPanelPlacement();
+        this._updatePanelPosition();
 
         this.render();
         this._requestLayerPanelSync();
@@ -138,6 +145,69 @@ export class AnimationTablePopup {
         this.panel.style.display = 'none';
         this.isVisible = false;
         this._requestLayerPanelSync({ force: true });
+    }
+
+    _loadUiPreferences() {
+        if (typeof localStorage === 'undefined') return;
+        try {
+            const raw = localStorage.getItem(ANIMATION_TABLE_UI_STORAGE_KEY);
+            if (!raw) return;
+            const prefs = JSON.parse(raw);
+            if (!prefs || typeof prefs !== 'object') return;
+
+            const pos = prefs.panelPos || {};
+            if (Number.isFinite(pos.x)) {
+                this._panelPos.x = Math.max(0, pos.x);
+            }
+            if (Number.isFinite(pos.y)) {
+                this._panelPos.y = Math.max(0, pos.y);
+            }
+
+            const size = prefs.panelSize || {};
+            if (Number.isFinite(size.width)) {
+                this._panelSize.width = Math.max(460, size.width);
+            }
+            if (Number.isFinite(size.height)) {
+                this._panelSize.height = Math.max(180, size.height);
+            }
+
+            if (TIMELINE_ZOOM_STEPS.includes(prefs.timelineCellWidth)) {
+                this.timelineCellWidth = prefs.timelineCellWidth;
+            }
+        } catch (error) {}
+    }
+
+    _saveUiPreferences() {
+        if (typeof localStorage === 'undefined') return;
+        try {
+            localStorage.setItem(ANIMATION_TABLE_UI_STORAGE_KEY, JSON.stringify({
+                panelPos: {
+                    x: Number.isFinite(this._panelPos.x) ? this._panelPos.x : 70,
+                    y: Number.isFinite(this._panelPos.y) ? this._panelPos.y : null
+                },
+                panelSize: {
+                    width: Number.isFinite(this._panelSize.width) ? this._panelSize.width : null,
+                    height: Number.isFinite(this._panelSize.height) ? this._panelSize.height : 260
+                },
+                timelineCellWidth: this.timelineCellWidth
+            }));
+        } catch (error) {}
+    }
+
+    _clampPanelPlacement() {
+        const minWidth = 460;
+        const minHeight = 180;
+        if (Number.isFinite(this._panelSize.width)) {
+            this._panelSize.width = Math.max(minWidth, Math.min(this._panelSize.width, Math.max(minWidth, window.innerWidth - 8)));
+        }
+        if (Number.isFinite(this._panelSize.height)) {
+            this._panelSize.height = Math.max(minHeight, Math.min(this._panelSize.height, Math.max(minHeight, window.innerHeight - 8)));
+        }
+
+        const width = this._panelSize.width || this.panel?.getBoundingClientRect?.().width || 760;
+        const height = this._panelSize.height || this.panel?.getBoundingClientRect?.().height || 260;
+        this._panelPos.x = Math.max(0, Math.min(Math.max(0, window.innerWidth - Math.min(width, window.innerWidth)), this._panelPos.x));
+        this._panelPos.y = Math.max(0, Math.min(Math.max(0, window.innerHeight - Math.min(height, window.innerHeight)), this._panelPos.y ?? 0));
     }
 
     toggle() {
@@ -228,7 +298,8 @@ export class AnimationTablePopup {
     _requestLayerPanelSync(options = {}) {
         if (this.eventBus) {
             this.eventBus.emit('layer:panel-update-requested', {
-                force: options.force === true
+                force: options.force === true,
+                skipRender: options.skipRender === true
             });
         }
         if (options.force === true && window.layerPanelRenderer?.requestUpdate) {
@@ -240,8 +311,9 @@ export class AnimationTablePopup {
     }
 
     _flushLayerPanelSync() {
-        this._requestLayerPanelSync();
+        this._requestLayerPanelSync({ skipRender: true });
         const renderer = window.layerPanelRenderer;
+        this._emitAnimationLayerStatusUpdate();
         if (!renderer) return;
 
         if (renderer._updateTimeout) {
@@ -252,6 +324,17 @@ export class AnimationTablePopup {
         const layers = this.layerSystem?.getLayers?.() || [];
         const activeIndex = this.layerSystem?.getActiveLayerIndex?.() || 0;
         renderer.render(layers, activeIndex, window.animationSystem || null);
+    }
+
+    _emitAnimationLayerStatusUpdate() {
+        if (!this.eventBus?.emit) return;
+        const entry = this.selectedCelId ? this.model?.findClipEntry?.(this.selectedCelId) : null;
+        const asset = entry?.clip?.assetId ? this.model?.getClipAsset?.(entry.clip.assetId) : null;
+        const selectedLayer = asset?.internalLayers?.find(layer => layer.id === this.selectedInternalLayerId) || null;
+        this.eventBus.emit('layer:status-update-requested', {
+            currentLayer: selectedLayer?.name || asset?.name || entry?.clip?.name || (this.selectedCelId ? 'CAF' : 'NO FRAME'),
+            source: 'animation-table-layer-status'
+        });
     }
 
     enterClipEditMode() {
@@ -323,13 +406,6 @@ export class AnimationTablePopup {
         if (this.selectedCelId) {
             const entry = this.model.findClipEntry(this.selectedCelId);
             if (entry?.lane) return entry.lane;
-        }
-
-        // 3. 旧Layer連動は移行用fallbackに限定する
-        const activeLayer = this.layerSystem?.getActiveLayer?.();
-        const activeLayerId = activeLayer?.layerData?.id || activeLayer?.id;
-        if (activeLayerId && this.model.getLaneForSourceLayer) {
-            return this.model.getLaneForSourceLayer(activeLayerId);
         }
 
         return null;
@@ -459,10 +535,10 @@ export class AnimationTablePopup {
         return null;
     }
 
-    _getSelectedClipSourceLayerId() {
+    _canEditSelectedClipAsset() {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
-        if (!entry?.lane) return null;
-        return entry.lane.sourceLayerId || entry.lane.layerId || null;
+        if (!entry?.clip || !entry.lane || entry.lane.type === 'folder' || entry.lane.isBackground) return false;
+        return !!(entry.clip.assetId && this.model.getClipAsset(entry.clip.assetId));
     }
 
     /**
@@ -475,8 +551,6 @@ export class AnimationTablePopup {
         if (!result || !result.ok) return false;
 
         const { asset, layers: internalLayers } = result;
-        const drawableInternalLayers = internalLayers.filter(layer => layer?.type !== 'folder');
-        const sourceLayer = layers.find(l => l.layerData?.id === (track.sourceLayerId || track.layerId));
         
         // 描画順：末尾から先頭へ (配列先頭がInspector上で上＝前面になるように)
         for (let i = internalLayers.length - 1; i >= 0; i--) {
@@ -499,15 +573,11 @@ export class AnimationTablePopup {
 
             const sprite = new Sprite(texture);
             
-            // アルファの積算：実レイヤー透明度 * 内部レイヤー透明度 * オプション（オニオン等）
-            const baseAlpha = drawableInternalLayers.length <= 1 ? (sourceLayer?.layerData?.opacity ?? 1.0) : 1.0;
-            sprite.alpha = baseAlpha * opacity * (options.alpha ?? 1.0);
+            sprite.alpha = opacity * (options.alpha ?? 1.0);
             
             // 合成モード：内部レイヤーの設定を優先
             if (internalLayer.blendMode && internalLayer.blendMode !== 'normal') {
                 sprite.blendMode = internalLayer.blendMode;
-            } else if (sourceLayer?.layerData?.blendMode && drawableInternalLayers.length <= 1) {
-                sprite.blendMode = sourceLayer.layerData.blendMode;
             } else {
                 sprite.blendMode = 'normal';
             }
@@ -1056,8 +1126,6 @@ export class AnimationTablePopup {
 
         // 新規セル作成 (ClipInstanceModel)
         const newClip = lane.addCel({
-            sourceLayerId: lane.sourceLayerId,
-            layerId: lane.layerId,
             assetId: pastedAssetId,
             rasterSnapshot: pastedRasterSnapshot, // 互換用
             startFrame: currentFrame,
@@ -1712,7 +1780,10 @@ export class AnimationTablePopup {
         const asset = this._getSelectedAssetForInspector();
         if (!asset || !layerId) return;
 
-        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const shouldRecordHistory = options.recordHistory !== false;
+        const beforeState = shouldRecordHistory
+            ? (options.beforeState || this._captureInternalLayerHistoryState(asset))
+            : null;
         const result = this._applyInternalLayerMoveByStep(asset, layerId, direction);
         if (result.ok) {
             this._syncSelectedClipToWorkingLayers();
@@ -2462,6 +2533,72 @@ export class AnimationTablePopup {
         return result;
     }
 
+    setInternalLayerAttributesFromExternal(assetId, layerId, attributes = {}, options = {}) {
+        const asset = this.model.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const layer = asset.internalLayers.find(item => item.id === layerId);
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+
+        const shouldRecordHistory = options.recordHistory !== false;
+        const beforeState = shouldRecordHistory
+            ? (options.beforeState || this._captureInternalLayerHistoryState(asset))
+            : null;
+        let changed = false;
+
+        if (typeof attributes.opacity === 'number') {
+            const nextOpacity = Math.max(0, Math.min(1, attributes.opacity));
+            if (layer.opacity !== nextOpacity) {
+                layer.opacity = nextOpacity;
+                changed = true;
+            }
+        }
+
+        if (typeof attributes.blendMode === 'string' && layer.type !== 'folder') {
+            const nextBlendMode = attributes.blendMode || 'normal';
+            if (layer.blendMode !== nextBlendMode) {
+                layer.blendMode = nextBlendMode;
+                changed = true;
+            }
+        }
+
+        if (typeof attributes.clipping === 'boolean' && layer.type !== 'folder') {
+            if (layer.clipping !== attributes.clipping) {
+                layer.clipping = attributes.clipping;
+                changed = true;
+            }
+        }
+
+        if (!changed && !(options.forceHistory === true && options.beforeState)) {
+            return { ok: true, asset, layer, changed: false };
+        }
+
+        layer.updatedAt = Date.now();
+        asset.updatedAt = Date.now();
+        this.selectedAssetId = asset.id;
+        this.selectedAssetFolderId = asset.folderId || null;
+        this.selectedInternalLayerId = layerId;
+
+        if (layer.type === 'folder') {
+            this._invalidateSnapshotTextureCache();
+        } else {
+            this._syncSelectedClipToWorkingLayers();
+        }
+
+        this.render();
+        this._flushLayerPanelSync();
+        if (shouldRecordHistory) {
+            const historyName = options.historyName || 'caf-internal-layer-attributes';
+            this._recordInternalLayerHistory(asset, beforeState, historyName, {
+                type: historyName,
+                layerId,
+                opacity: layer.opacity,
+                blendMode: layer.blendMode,
+                clipping: layer.clipping === true
+            });
+        }
+        return { ok: true, asset, layer, changed: true };
+    }
+
     toggleClipVisibilityFromExternal(clipId, options = {}) {
         const entry = this.model.findClipEntry(clipId);
         if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
@@ -2578,6 +2715,7 @@ export class AnimationTablePopup {
 
         // 3. 再描画
         this.render();
+        this._emitAnimationLayerStatusUpdate();
 
         return { ok: true, clip, assetId: clip.assetId };
     }
@@ -3151,7 +3289,7 @@ export class AnimationTablePopup {
         const editChk = this.panel.querySelector('#anim-clip-edit-chk');
         if (editChk) {
             editChk.checked = this.isClipEditModeActive;
-            editChk.disabled = !this.selectedCelId || !this._getSelectedClipSourceLayerId();
+            editChk.disabled = !this._canEditSelectedClipAsset();
         }
 
         // Scopeボタンの表示同期
@@ -3181,7 +3319,7 @@ export class AnimationTablePopup {
             const canIncrease = !!clip
                 && !!lane
                 && clip.duration < maxDuration
-                && lane.canPlaceCel(clip.startFrame, clip.duration + 1, clip.id);
+                && this._canAdjustSelectedCelDuration(1);
             if (durationDecBtn) {
                 durationDecBtn.disabled = !canDecrease;
                 durationDecBtn.title = canDecrease
@@ -3311,13 +3449,23 @@ export class AnimationTablePopup {
                     
                     const isStart = cel && cel.startFrame === i;
                     
-                    const durationClass = isStart ? ` duration-${Math.max(1, Math.min(cel.duration, totalFrames))}` : '';
+                    const duration = isStart ? Math.max(1, Math.min(cel.duration, totalFrames)) : 0;
+                    const durationClass = isStart ? ` duration-${duration}` : '';
+                    const retimingEdge = (isStart && this._isRetiming && this._retimingData?.cel?.id === cel.id)
+                        ? (this._retimingData.edge === 'left' ? 'left' : 'right')
+                        : '';
+                    const retimingBlockedClass = (retimingEdge && this._retimingData?.blocked) ? ' retiming-blocked' : '';
+                    const retimingClass = retimingEdge ? ` retiming retiming-${retimingEdge}${retimingBlockedClass}` : '';
                     gridHtml += `<div class="anim-cell-slot${isCurrent}${hasCelClass}${selectedClass}" 
                                      data-track-id="${track.id}" 
                                      data-frame-index="${i}">
-                                     ${isStart ? `<div class="anim-cel-block${selectedClass}${editingClass}${hasSnapshotClass}${sharedClass}${durationClass}" data-cel-id="${cel.id}">
+                                     ${isStart ? `<div class="anim-cel-block${selectedClass}${editingClass}${hasSnapshotClass}${sharedClass}${durationClass}${retimingClass}" data-cel-id="${cel.id}">
                                          <div class="anim-cel-handle anim-cel-handle--left" data-cel-id="${cel.id}" data-edge="left"></div>
                                          <div class="anim-cel-handle anim-cel-handle--right" data-cel-id="${cel.id}" data-edge="right"></div>
+                                         ${duration === 1 ? `<div class="anim-cel-resize-grip" aria-hidden="true">
+                                             <div class="anim-cel-handle anim-cel-handle--bottom-left" data-cel-id="${cel.id}" data-edge="left"></div>
+                                             <div class="anim-cel-handle anim-cel-handle--bottom-right" data-cel-id="${cel.id}" data-edge="right"></div>
+                                         </div>` : ''}
                                          ${hasSnapshot ? '<div class="anim-snapshot-icon"></div>' : ''}
                                          ${isShared ? '<div class="anim-shared-icon" title="Shared Asset"></div>' : ''}
                                      </div>` : ''}
@@ -3433,6 +3581,11 @@ export class AnimationTablePopup {
         `;
         
         document.body.appendChild(this.panel);
+        this.panel.addEventListener('contextmenu', (e) => {
+            if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+            e.preventDefault();
+            e.stopPropagation();
+        });
         
         this._setupPanelEvents();
     }
@@ -3568,6 +3721,7 @@ export class AnimationTablePopup {
 
         // 2. 重複チェック: すでにFrame 0（1コマ目）にClipがある場合は何もしない
         if (targetLane.getCelAtFrame(0)) {
+            this.model.detachLaneSourceLayer?.(targetLane.id);
             this.initialClipAssetSeeded = true;
             return;
         }
@@ -3580,8 +3734,6 @@ export class AnimationTablePopup {
         });
 
         const newClip = targetLane.addCel({
-            sourceLayerId: targetLane.sourceLayerId,
-            layerId: targetLane.layerId,
             assetId: asset.id,
             startFrame: 0,
             duration: 1,
@@ -3589,6 +3741,7 @@ export class AnimationTablePopup {
         });
 
         if (newClip) {
+            this.model.detachLaneSourceLayer?.(targetLane.id);
             // 自動作成されたクリップを選択状態にする
             this.selectedCelId = newClip.id;
             this.activeLaneId = targetLane.id;
@@ -3889,6 +4042,11 @@ export class AnimationTablePopup {
 
         const timelineGrid = this.panel.querySelector('.anim-timeline-grid');
         if (timelineGrid) {
+            timelineGrid.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
             timelineGrid.addEventListener('click', (e) => {
                 // ドラッグ・伸縮・移動中なら無視
                 if (this._dragMoved || this._retimingMoved || this._clipMoveMoved) {
@@ -3945,8 +4103,6 @@ export class AnimationTablePopup {
                         });
 
                         const newCel = track.addCel({
-                            sourceLayerId: track.sourceLayerId,
-                            layerId: track.layerId,
                             assetId: asset.id,
                             startFrame: frameIndex,
                             duration: 1,
@@ -3983,15 +4139,27 @@ export class AnimationTablePopup {
                 this._requestLayerPanelSync();
             });
 
-            // マウスダウン：リタイミング または クリップ移動
-            timelineGrid.addEventListener('mousedown', (e) => {
+            // ポインター操作：リタイミング または クリップ移動
+            timelineGrid.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
                 // 1. リタイミング（左右端ハンドル）
                 const handle = e.target.closest('.anim-cel-handle');
                 if (handle) {
                     const celId = handle.dataset.celId;
                     const entry = this.model.findClipEntry(celId);
 
-                    if (entry) {
+                    let shouldStartRetiming = !!entry;
+                    if (shouldStartRetiming && e.pointerType === 'pen' && (entry.clip?.duration || 1) <= 1) {
+                        const blockRect = handle.closest('.anim-cel-block')?.getBoundingClientRect();
+                        const edge = handle.dataset.edge === 'left' ? 'left' : 'right';
+                        const isBottomGrip = handle.classList.contains('anim-cel-handle--bottom-left') ||
+                            handle.classList.contains('anim-cel-handle--bottom-right');
+                        // 単セルCAFのペン操作では、セル内側は移動、外側の隙間寄りだけ伸縮にする。
+                        shouldStartRetiming = isBottomGrip || (blockRect
+                            ? (edge === 'left' ? e.clientX <= blockRect.left + 2 : e.clientX >= blockRect.right - 2)
+                            : false);
+                    }
+                    if (shouldStartRetiming) {
                         const { lane, clip } = entry;
                         this._saveSelectedClipFromWorkingLayers();
                         this._isRetiming = true;
@@ -4014,12 +4182,13 @@ export class AnimationTablePopup {
                         this._activateClipEntry(entry);
                         this.render();
 
-                        document.addEventListener('mousemove', this._onRetimingMouseMove);
-                        document.addEventListener('mouseup', this._onRetimingMouseUp);
+                        document.addEventListener('pointermove', this._onRetimingMouseMove, { passive: false });
+                        document.addEventListener('pointerup', this._onRetimingMouseUp);
+                        document.addEventListener('pointercancel', this._onRetimingMouseUp);
                         e.stopPropagation();
                         e.preventDefault();
                     }
-                    return;
+                    if (shouldStartRetiming) return;
                 }
 
                 // 2. クリップ移動（ブロック本体）
@@ -4045,8 +4214,9 @@ export class AnimationTablePopup {
                     // ドラッグ中は少し透明にするなどのフィードバック
                     block.classList.add('moving');
 
-                    document.addEventListener('mousemove', this._onClipMoveMouseMove);
-                    document.addEventListener('mouseup', this._onClipMoveMouseUp);
+                    document.addEventListener('pointermove', this._onClipMoveMouseMove, { passive: false });
+                    document.addEventListener('pointerup', this._onClipMoveMouseUp);
+                    document.addEventListener('pointercancel', this._onClipMoveMouseUp);
                     
                     e.stopPropagation();
                     e.preventDefault();
@@ -4056,21 +4226,29 @@ export class AnimationTablePopup {
 
         // ドラッグ移動の実装
         const header = this.panel.querySelector('.anim-table-header');
-        header.addEventListener('mousedown', (e) => {
+        header.addEventListener('pointerdown', (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
             if (e.target.closest('button, input, label, .anim-scope-controls, .anim-duration-controls, .anim-capture-controls, .anim-copy-paste-controls, .anim-timeline-settings')) return;
             
             this._isDragging = true;
             this._dragMoved = false;
+            this._dragPointerId = e.pointerId;
             this._dragOffset.x = e.clientX - this._panelPos.x;
             this._dragOffset.y = e.clientY - this._panelPos.y;
             
-            document.addEventListener('mousemove', this._onMouseMove);
-            document.addEventListener('mouseup', this._onMouseUp);
+            try {
+                header.setPointerCapture?.(e.pointerId);
+            } catch (err) {}
+            document.addEventListener('pointermove', this._onMouseMove, { passive: false });
+            document.addEventListener('pointerup', this._onMouseUp);
+            document.addEventListener('pointercancel', this._onMouseUp);
             e.preventDefault();
         });
 
         this._onMouseMove = (e) => {
             if (!this._isDragging) return;
+            if (this._dragPointerId !== undefined && e.pointerId !== this._dragPointerId) return;
+            e.preventDefault?.();
             this._dragMoved = true;
             this._panelPos.x = e.clientX - this._dragOffset.x;
             this._panelPos.y = e.clientY - this._dragOffset.y;
@@ -4082,10 +4260,18 @@ export class AnimationTablePopup {
             this._updatePanelPosition();
         };
 
-        this._onMouseUp = () => {
+        this._onMouseUp = (e = null) => {
+            if (e && this._dragPointerId !== undefined && e.pointerId !== this._dragPointerId) return;
             this._isDragging = false;
-            document.removeEventListener('mousemove', this._onMouseMove);
-            document.removeEventListener('mouseup', this._onMouseUp);
+            try {
+                header.releasePointerCapture?.(this._dragPointerId);
+            } catch (err) {}
+            this._dragPointerId = null;
+            document.removeEventListener('pointermove', this._onMouseMove);
+            document.removeEventListener('pointerup', this._onMouseUp);
+            document.removeEventListener('pointercancel', this._onMouseUp);
+            this._clampPanelPlacement();
+            this._saveUiPreferences();
             setTimeout(() => {
                 this._dragMoved = false;
             }, 0);
@@ -4093,17 +4279,23 @@ export class AnimationTablePopup {
 
         const resizeHandle = this.panel.querySelector('.anim-resize-handle');
         if (resizeHandle) {
-            resizeHandle.addEventListener('mousedown', (e) => {
+            resizeHandle.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
                 const rect = this.panel.getBoundingClientRect();
                 this._isResizing = true;
+                this._resizePointerId = e.pointerId;
                 this._resizeStart = {
                     x: e.clientX,
                     y: e.clientY,
                     width: rect.width,
                     height: rect.height
                 };
-                document.addEventListener('mousemove', this._onResizeMouseMove);
-                document.addEventListener('mouseup', this._onResizeMouseUp);
+                try {
+                    resizeHandle.setPointerCapture?.(e.pointerId);
+                } catch (err) {}
+                document.addEventListener('pointermove', this._onResizeMouseMove, { passive: false });
+                document.addEventListener('pointerup', this._onResizeMouseUp);
+                document.addEventListener('pointercancel', this._onResizeMouseUp);
                 e.preventDefault();
                 e.stopPropagation();
             });
@@ -4111,6 +4303,8 @@ export class AnimationTablePopup {
 
         this._onResizeMouseMove = (e) => {
             if (!this._isResizing || !this._resizeStart) return;
+            if (this._resizePointerId !== undefined && e.pointerId !== this._resizePointerId) return;
+            e.preventDefault?.();
             const minWidth = 460;
             const minHeight = 180;
             const maxWidth = Math.max(minWidth, window.innerWidth - this._panelPos.x - 8);
@@ -4123,27 +4317,41 @@ export class AnimationTablePopup {
             this._updatePanelPosition();
         };
 
-        this._onResizeMouseUp = () => {
+        this._onResizeMouseUp = (e = null) => {
+            if (e && this._resizePointerId !== undefined && e.pointerId !== this._resizePointerId) return;
             this._isResizing = false;
             this._resizeStart = null;
-            document.removeEventListener('mousemove', this._onResizeMouseMove);
-            document.removeEventListener('mouseup', this._onResizeMouseUp);
+            try {
+                resizeHandle?.releasePointerCapture?.(this._resizePointerId);
+            } catch (err) {}
+            this._resizePointerId = null;
+            document.removeEventListener('pointermove', this._onResizeMouseMove);
+            document.removeEventListener('pointerup', this._onResizeMouseUp);
+            document.removeEventListener('pointercancel', this._onResizeMouseUp);
+            this._clampPanelPlacement();
+            this._updatePanelPosition();
+            this._saveUiPreferences();
         };
 
         this._onRetimingMouseMove = (e) => {
             if (!this._isRetiming || !this._retimingData) return;
+            e.preventDefault?.();
             this._retimingMoved = true;
 
             const deltaX = e.clientX - this._retimingData.startX;
             const deltaFrames = Math.round(deltaX / this.timelineCellWidth);
 
-            if (this._applyRetimingWithPush(this._retimingData, deltaFrames)) {
-                this.render();
-            }
+            const applied = this._applyRetimingWithPush(this._retimingData, deltaFrames);
+            this._retimingData.blocked = !applied;
+            this.render();
         };
 
         this._onRetimingMouseUp = () => {
             const retimingData = this._retimingData;
+            const retimingBlock = retimingData?.cel?.id
+                ? this.panel.querySelector(`.anim-cel-block[data-cel-id="${retimingData.cel.id}"]`)
+                : null;
+            retimingBlock?.classList.remove('retiming', 'retiming-left', 'retiming-right', 'retiming-blocked');
             const startFrameChanged = retimingData?.cel?.startFrame !== retimingData?.startFrame;
             const durationChanged = retimingData?.cel?.duration !== retimingData?.startDuration;
             if (this._retimingMoved && retimingData?.cel && (startFrameChanged || durationChanged)) {
@@ -4162,8 +4370,9 @@ export class AnimationTablePopup {
             }
             this._isRetiming = false;
             this._retimingData = null;
-            document.removeEventListener('mousemove', this._onRetimingMouseMove);
-            document.removeEventListener('mouseup', this._onRetimingMouseUp);
+            document.removeEventListener('pointermove', this._onRetimingMouseMove);
+            document.removeEventListener('pointerup', this._onRetimingMouseUp);
+            document.removeEventListener('pointercancel', this._onRetimingMouseUp);
             setTimeout(() => {
                 this._retimingMoved = false;
                 this._requestLayerPanelSync(); // Phase 4z21
@@ -4172,6 +4381,7 @@ export class AnimationTablePopup {
 
         this._onClipMoveMouseMove = (e) => {
             if (!this._isClipMoving || !this._clipMoveData) return;
+            e.preventDefault?.();
 
             const dx = e.clientX - this._clipMoveData.startX;
             const dy = e.clientY - this._clipMoveData.startY;
@@ -4226,8 +4436,9 @@ export class AnimationTablePopup {
             this._isClipMoving = false;
             this._clipMoveData = null;
             this._clearClipMovePreview();
-            document.removeEventListener('mousemove', this._onClipMoveMouseMove);
-            document.removeEventListener('mouseup', this._onClipMoveMouseUp);
+            document.removeEventListener('pointermove', this._onClipMoveMouseMove);
+            document.removeEventListener('pointerup', this._onClipMoveMouseUp);
+            document.removeEventListener('pointercancel', this._onClipMoveMouseUp);
             
             // 少し遅延させてからフラグを下ろす（click誤爆防止）
             setTimeout(() => {
@@ -4270,7 +4481,19 @@ export class AnimationTablePopup {
             this._saveSelectedClipFromWorkingLayers();
             const beforeState = this._captureTimelineHistoryState();
             const previousDuration = clip.duration;
-            if (lane.setCelDuration(clip.id, newDuration)) {
+            const retimingData = {
+                cel: clip,
+                track: lane,
+                edge: 'right',
+                startFrame: clip.startFrame,
+                startDuration: clip.duration,
+                laneSnapshot: (lane.cels || []).map(cel => ({
+                    id: cel.id,
+                    startFrame: cel.startFrame,
+                    duration: cel.duration
+                }))
+            };
+            if (this._applyRetimingWithPush(retimingData, newDuration - previousDuration)) {
                 this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-duration', {
                     type: 'caf-clip-duration',
                     clipId: clip.id,
@@ -4284,6 +4507,33 @@ export class AnimationTablePopup {
                 this._requestLayerPanelSync();
             }
         }
+    }
+
+    _canAdjustSelectedCelDuration(delta) {
+        if (!this.selectedCelId) return false;
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        if (!entry?.lane || !entry.clip) return false;
+
+        const { lane, clip } = entry;
+        const maxDuration = Math.max(1, this.model.totalFrames - clip.startFrame);
+        const newDuration = Math.max(1, Math.min(maxDuration, clip.duration + delta));
+        if (newDuration === clip.duration) return false;
+
+        const laneSnapshot = (lane.cels || []).map(cel => ({
+            id: cel.id,
+            startFrame: cel.startFrame,
+            duration: cel.duration
+        }));
+        const ok = this._applyRetimingWithPush({
+            cel: clip,
+            track: lane,
+            edge: 'right',
+            startFrame: clip.startFrame,
+            startDuration: clip.duration,
+            laneSnapshot
+        }, newDuration - clip.duration);
+        this._restoreRetimingLaneSnapshot(lane, laneSnapshot);
+        return ok;
     }
 
     _getMinimumTotalFrames() {
@@ -4343,14 +4593,14 @@ export class AnimationTablePopup {
     }
 
     _adjustTimelineZoom(delta) {
-        const zoomSteps = [18, 22, 26, 30, 36, 44];
-        const currentIndex = zoomSteps.findIndex(width => width >= this.timelineCellWidth);
-        const baseIndex = currentIndex >= 0 ? currentIndex : zoomSteps.indexOf(30);
-        const nextIndex = Math.max(0, Math.min(zoomSteps.length - 1, baseIndex + delta));
-        const nextWidth = zoomSteps[nextIndex];
+        const currentIndex = TIMELINE_ZOOM_STEPS.findIndex(width => width >= this.timelineCellWidth);
+        const baseIndex = currentIndex >= 0 ? currentIndex : TIMELINE_ZOOM_STEPS.indexOf(30);
+        const nextIndex = Math.max(0, Math.min(TIMELINE_ZOOM_STEPS.length - 1, baseIndex + delta));
+        const nextWidth = TIMELINE_ZOOM_STEPS[nextIndex];
         if (!nextWidth || nextWidth === this.timelineCellWidth) return false;
 
         this.timelineCellWidth = nextWidth;
+        this._saveUiPreferences();
         this.render();
         return true;
     }
@@ -4400,6 +4650,7 @@ export class AnimationTablePopup {
                 flex-shrink: 0;
                 border-bottom: 1px solid rgba(128, 0, 0, 0.2);
                 gap: 6px 10px;
+                touch-action: none;
             }
 
             .anim-table-header-left,
@@ -4720,6 +4971,7 @@ export class AnimationTablePopup {
                 cursor: nwse-resize;
                 z-index: 36;
                 opacity: 0.45;
+                touch-action: none;
                 background:
                     linear-gradient(135deg, transparent 0 44%, rgba(128, 0, 0, 0.55) 45% 52%, transparent 53%),
                     linear-gradient(135deg, transparent 0 62%, rgba(128, 0, 0, 0.45) 63% 70%, transparent 71%);
@@ -5378,6 +5630,8 @@ export class AnimationTablePopup {
                 flex-shrink: 0;
                 position: relative;
                 pointer-events: auto;
+                touch-action: none;
+                user-select: none;
                 cursor: grab;
             }
 
@@ -5388,6 +5642,46 @@ export class AnimationTablePopup {
                 z-index: 100;
                 outline: 3px solid rgba(255, 255, 255, 0.95);
                 box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.65), 0 8px 18px rgba(128, 0, 0, 0.35);
+            }
+
+            .anim-cel-block.retiming {
+                cursor: ew-resize;
+                outline: 2px solid rgba(255, 255, 255, 0.88);
+                box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.55), 0 6px 14px rgba(128, 0, 0, 0.26);
+                z-index: 90;
+            }
+
+            .anim-cel-block.retiming::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                width: min(50%, calc(var(--anim-cell-width) * 0.5));
+                background: rgba(255, 183, 92, 0.78);
+                box-shadow: 0 0 12px rgba(255, 102, 0, 0.85);
+                pointer-events: none;
+                z-index: 1;
+            }
+
+            .anim-cel-block.retiming-left::before {
+                left: 0;
+                border-radius: 4px 0 0 4px;
+            }
+
+            .anim-cel-block.retiming-right::before {
+                right: 0;
+                border-radius: 0 4px 4px 0;
+            }
+
+            .anim-cel-block.retiming-blocked {
+                background: #9a2f2f !important;
+                outline-color: rgba(255, 236, 226, 0.92);
+                box-shadow: 0 0 0 3px rgba(160, 0, 0, 0.55), 0 6px 14px rgba(128, 0, 0, 0.25);
+            }
+
+            .anim-cel-block.retiming-blocked::before {
+                background: rgba(160, 0, 0, 0.42);
+                box-shadow: inset 0 0 0 2px rgba(255, 236, 226, 0.75), 0 0 10px rgba(160, 0, 0, 0.65);
             }
 
             .anim-cell-slot.move-target {
@@ -5406,40 +5700,85 @@ export class AnimationTablePopup {
                 position: absolute;
                 top: 0;
                 bottom: 0;
-                width: 5px;
+                width: 6px;
                 cursor: ew-resize;
                 background: transparent;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 z-index: 2;
+                touch-action: none;
             }
 
             .anim-cel-handle--left {
-                left: -2px;
+                left: -5px;
             }
 
             .anim-cel-handle--right {
-                right: -2px;
+                right: -5px;
             }
 
             .anim-cel-handle::after {
-                content: '';
-                width: 1px;
-                height: 14px;
-                background: rgba(255, 255, 255, 0.38);
-                border-radius: 999px;
-                opacity: 0.75;
-                box-shadow: 0 0 2px rgba(128, 0, 0, 0.25);
+                content: none;
             }
 
             .anim-cel-handle:hover {
-                background: rgba(255, 255, 255, 0.16);
+                background: rgba(255, 255, 255, 0.1);
             }
 
             .anim-cel-handle:hover::after {
-                background: rgba(255, 255, 255, 0.85);
-                opacity: 1;
+                content: none;
+            }
+
+            .anim-cel-resize-grip {
+                position: absolute;
+                left: 4px;
+                right: 4px;
+                bottom: 2px;
+                height: 9px;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.18);
+                display: none;
+                align-items: center;
+                justify-content: center;
+                color: rgba(255, 255, 255, 0.9);
+                font-size: 10px;
+                line-height: 1;
+                font-weight: 700;
+                pointer-events: auto;
+                z-index: 3;
+            }
+
+            .anim-cel-block.duration-1 .anim-cel-resize-grip {
+                display: flex;
+            }
+
+            .anim-cel-resize-grip::before {
+                content: '↔';
+                pointer-events: none;
+                transform: translateY(-0.5px);
+            }
+
+            .anim-cel-resize-grip:hover {
+                background: rgba(255, 255, 255, 0.28);
+            }
+
+            .anim-cel-handle--bottom-left,
+            .anim-cel-handle--bottom-right {
+                top: 0;
+                bottom: 0;
+                width: 50%;
+                height: auto;
+                background: transparent;
+                z-index: 4;
+            }
+
+            .anim-cel-handle--bottom-left {
+                left: 0;
+            }
+
+            .anim-cel-handle--bottom-right {
+                right: 0;
             }
 
             .anim-snapshot-icon {
@@ -5631,7 +5970,10 @@ export class AnimationTablePopup {
         if (!this.eventBus) return;
         
         // レイヤー系の更新を購読
-        this.eventBus.on('layer:panel-update-requested', () => this.requestUpdate());
+        this.eventBus.on('layer:panel-update-requested', (payload = {}) => {
+            if (payload.skipRender === true) return;
+            this.requestUpdate();
+        });
         this.eventBus.on('layer:created', () => this.requestUpdate());
         this.eventBus.on('layer:deleted', (data = {}) => {
             this._handleLayerDeleted(data);

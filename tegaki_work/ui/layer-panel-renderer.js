@@ -29,11 +29,13 @@ export class LayerPanelRenderer {
         this._attributePopupLayerIndex = -1;
         this._attributePopupAnchorElement = null;
         this._attributePopupDrag = null;
+        this._attributeOpacityEditState = null;
         this._isSortableDragging = false;
         this._pendingUpdateAfterDrag = false;
         this._expandedCafClipIds = new Set();
         this._collapsedCafClipIds = new Set();
         this._collapsedClipInternalFolderIds = new Set();
+        this._clipSnapshotThumbCache = new Map();
         this._clipLayerMirrorDrag = null;
         this._clipLayerMirrorDragSuppressClick = false;
         this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
@@ -48,6 +50,12 @@ export class LayerPanelRenderer {
         this._setupEventListeners();
         document.addEventListener('keydown', this._handleLayerPanelKeydown, true);
         this.container.addEventListener('pointerdown', this._handleClipLayerMirrorPointerDown);
+        this.container.addEventListener('contextmenu', (e) => {
+            if (!this._hasAnimationContext()) return;
+            if (e.target.closest('.caf-simple-header, .clip-layer-mirror-row')) {
+                e.preventDefault();
+            }
+        });
 
         // Phase 4z16: CAFヘッダークリックイベント (委譲)
         this.container.addEventListener('click', (e) => {
@@ -179,22 +187,16 @@ export class LayerPanelRenderer {
                     e.target.closest('.clip-layer-mirror-thumb') &&
                     !e.target.closest('.clip-layer-mirror-visibility-btn')
                 ) {
-                    if (animationTable && layerId) {
-                        animationTable.selectedAssetId = assetId || animationTable.selectedAssetId;
-                        animationTable.selectedAssetFolderId = asset?.folderId || null;
-                        animationTable.selectedInternalLayerId = layerId;
-                        animationTable.render();
-                    }
+                    this._selectClipLayerMirrorRow(mirrorRow, { syncWorkingLayer: false, renderAnimationTable: true });
                     this._toggleClipInternalFolder(assetId, layerId);
                     this.requestUpdate({ force: true });
                     return;
                 }
-                if (animationTable && layerId) {
-                    animationTable.selectedInternalLayerId = layerId;
-                    animationTable._syncActiveWorkingLayerToSelectedInternalLayer?.();
-                    animationTable.render();
-                    this.requestUpdate({ force: true });
-                }
+                this._selectClipLayerMirrorRow(mirrorRow, {
+                    syncWorkingLayer: true,
+                    renderAnimationTable: true,
+                    requestLayerPanelUpdate: true
+                });
                 return;
             }
         });
@@ -224,13 +226,19 @@ export class LayerPanelRenderer {
     _handleClipLayerMirrorPointerDown(e) {
         if (e.button !== 0) return;
         if (e.target.closest('button, input, textarea, select')) return;
-        if (e.target.closest('.clip-layer-mirror-name')) return;
 
         const row = e.target.closest('.clip-layer-mirror-row');
         if (!row || !this.container.contains(row)) return;
         if (row.classList.contains('is-folder') && e.target.closest('.clip-layer-mirror-thumb')) {
             return;
         }
+
+        this._selectClipLayerMirrorRow(row, {
+            syncWorkingLayer: false,
+            renderAnimationTable: false,
+            requestLayerPanelUpdate: false,
+            visualOnly: true
+        });
 
         e.preventDefault();
         e.stopPropagation();
@@ -257,6 +265,43 @@ export class LayerPanelRenderer {
         document.addEventListener('pointermove', this._handleClipLayerMirrorPointerMove, { passive: false, capture: true });
         document.addEventListener('pointerup', this._handleClipLayerMirrorPointerUp, { capture: true });
         document.addEventListener('pointercancel', this._handleClipLayerMirrorPointerUp, { capture: true });
+    }
+
+    _selectClipLayerMirrorRow(row, options = {}) {
+        if (!row) return false;
+        const layerId = row.dataset.internalLayerId;
+        const assetId = row.dataset.assetId;
+        const animationTable = window.PopupManager?.get?.('animationTable');
+        if (!animationTable || !layerId) return false;
+
+        const asset = assetId && animationTable.model
+            ? animationTable.model.getClipAsset(assetId)
+            : null;
+        animationTable.selectedAssetId = assetId || animationTable.selectedAssetId;
+        animationTable.selectedAssetFolderId = asset?.folderId || null;
+        animationTable.selectedInternalLayerId = layerId;
+
+        if (options.visualOnly !== false) {
+            this.container?.querySelectorAll('.clip-layer-mirror-row.is-selected').forEach(candidate => {
+                candidate.classList.toggle('is-selected', candidate === row);
+            });
+            row.classList.add('is-selected');
+        }
+
+        if (options.syncWorkingLayer) {
+            animationTable._syncActiveWorkingLayerToSelectedInternalLayer?.(asset);
+        }
+        this.eventBus?.emit?.('layer:status-update-requested', {
+            currentLayer: asset?.internalLayers?.find(layer => layer.id === layerId)?.name || asset?.name || 'CAF',
+            source: 'layer-panel-clip-layer-mirror'
+        });
+        if (options.renderAnimationTable) {
+            animationTable.render?.();
+        }
+        if (options.requestLayerPanelUpdate) {
+            this.requestUpdate({ force: true });
+        }
+        return true;
     }
 
     _handleClipLayerMirrorPointerMove(e) {
@@ -372,7 +417,10 @@ export class LayerPanelRenderer {
     _setupEventListeners() {
         if (!this.eventBus) return;
 
-        this.eventBus.on('layer:panel-update-requested', () => this.requestUpdate({ force: true }));
+        this.eventBus.on('layer:panel-update-requested', (payload = {}) => {
+            if (payload.skipRender === true) return;
+            this.requestUpdate({ force: true });
+        });
         this.eventBus.on('layer:created', () => this.requestUpdate({ force: true }));
         this.eventBus.on('folder:created', () => this.requestUpdate({ force: true }));
         this.eventBus.on('folder:toggled', () => this.requestUpdate());
@@ -504,16 +552,7 @@ export class LayerPanelRenderer {
         const animationTable = window.PopupManager?.get?.('animationTable');
         const hasAnimationContext = this._hasAnimationContext(animationTable);
         const hideAnimationWorkingLayers = true;
-        const hideWorkingLayersForEmptyAnimFrame = !!(
-            animationTable?.isVisible &&
-            animationTable?.model &&
-            !animationTable.selectedCelId
-        );
-        const hideWorkingLayersForAnimClip = !!(
-            animationTable?.isVisible &&
-            animationTable?.model &&
-            animationTable.selectedCelId
-        );
+        const hideNormalLayersForAnimationContext = hasAnimationContext;
 
         reversedLayers.forEach((layer, reversedIndex) => {
             const originalIndex = layers.length - 1 - reversedIndex;
@@ -527,12 +566,7 @@ export class LayerPanelRenderer {
                 !layer.layerData.isBackground
             ) return;
             if (
-                hideWorkingLayersForEmptyAnimFrame &&
-                layer.layerData &&
-                !layer.layerData.isBackground
-            ) return;
-            if (
-                hideWorkingLayersForAnimClip &&
+                hideNormalLayersForAnimationContext &&
                 layer.layerData &&
                 !layer.layerData.isBackground
             ) return;
@@ -747,9 +781,6 @@ export class LayerPanelRenderer {
             if (this.layerSystem?.toggleFolderExpand) {
                 this.layerSystem.toggleFolderExpand(folder.layerData.id);
             }
-        });
-        thumbnailContainer.addEventListener('pointerdown', (e) => {
-            e.stopPropagation();
         });
         thumbnailContainer.title = folder.layerData?.folderExpanded ? 'フォルダを閉じる' : 'フォルダを開く';
 
@@ -1045,10 +1076,26 @@ export class LayerPanelRenderer {
     }
 
     showActiveLayerAttributePopup(anchorElement = null) {
-        const activeIndex = this.layerSystem?.getActiveLayerIndex?.();
+        const activeIndex = this._getLayerAttributeTargetIndex();
         if (typeof activeIndex !== 'number' || activeIndex < 0) return;
         const fallbackAnchor = this.container?.querySelector(`.layer-item[data-layer-index="${activeIndex}"]`);
         this._showLayerAttributePopup(activeIndex, anchorElement || fallbackAnchor);
+    }
+
+    _getLayerAttributeTargetIndex() {
+        const animationTarget = this._getAnimationAttributeTarget();
+        if (animationTarget?.animationTable && animationTarget?.internalLayer?.type !== 'folder') {
+            const drawableInternalLayers = animationTarget.animationTable._getDrawableInternalLayers?.(animationTarget.asset) || [];
+            const workingLayers = animationTarget.animationTable._getRasterWorkingLayers?.() || [];
+            const internalIndex = drawableInternalLayers.findIndex(layer => layer.id === animationTarget.internalLayer.id);
+            const targetLayer = internalIndex >= 0 ? workingLayers[internalIndex] : null;
+            if (targetLayer?.layerData?.id) {
+                const layers = this.layerSystem?.getLayers?.() || [];
+                const layerIndex = layers.findIndex(layer => layer?.layerData?.id === targetLayer.layerData.id);
+                if (layerIndex >= 0) return layerIndex;
+            }
+        }
+        return this.layerSystem?.getActiveLayerIndex?.();
     }
 
     _ensureLayerAttributePopup() {
@@ -1068,14 +1115,13 @@ export class LayerPanelRenderer {
     _renderLayerAttributePopupContent(popup, layerIndex) {
         const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
         if (!layer?.layerData) return;
-        const animationTarget = this._getAnimationAttributeTarget();
+        const viewState = this._getLayerAttributeViewState(layerIndex);
 
-        const opacity = Math.round((layer.alpha ?? layer.layerData.opacity ?? 1) * 100);
-        const blendMode = layer.layerData.blendMode || 'normal';
-        const clipping = layer.layerData.clipping === true;
-        const isFolder = animationTarget?.internalLayer?.type === 'folder'
-            || layer.layerData.isFolder === true;
-        const rawLayerName = animationTarget?.internalLayer?.name || layer.layerData.name || 'レイヤー';
+        const opacity = viewState.opacity;
+        const blendMode = viewState.blendMode;
+        const clipping = viewState.clipping;
+        const isFolder = viewState.isFolder;
+        const rawLayerName = viewState.name;
         const layerName = this._escapeHtml(rawLayerName);
         const presets = [0, 25, 50, 75, 100];
         const blendModes = [
@@ -1137,10 +1183,22 @@ export class LayerPanelRenderer {
         });
 
         const slider = popup.querySelector('.layer-attribute-opacity-slider');
+        slider?.addEventListener('pointerdown', () => {
+            this._beginLayerAttributeOpacityEdit(layerIndex);
+        });
+        slider?.addEventListener('focus', () => {
+            this._beginLayerAttributeOpacityEdit(layerIndex);
+        });
         slider?.addEventListener('input', (e) => {
             e.stopPropagation();
             const value = parseInt(e.target.value, 10);
-            this._setLayerOpacity(layerIndex, value / 100);
+            this._setLayerOpacity(layerIndex, value / 100, { recordHistory: false });
+            this._syncLayerAttributePopup(popup, layerIndex);
+        });
+        slider?.addEventListener('change', (e) => {
+            e.stopPropagation();
+            const value = parseInt(e.target.value, 10);
+            this._commitLayerAttributeOpacityEdit(layerIndex, value / 100);
             this._syncLayerAttributePopup(popup, layerIndex);
         });
 
@@ -1152,7 +1210,15 @@ export class LayerPanelRenderer {
         const blendSelect = popup.querySelector('.layer-attribute-blend-select');
         blendSelect?.addEventListener('change', (e) => {
             e.stopPropagation();
-            if (this.layerSystem?.setLayerBlendMode) {
+            const animationTarget = this._getAnimationAttributeTarget();
+            if (animationTarget?.animationTable?.setInternalLayerAttributesFromExternal) {
+                animationTarget.animationTable.setInternalLayerAttributesFromExternal(
+                    animationTarget.asset.id,
+                    animationTarget.internalLayer.id,
+                    { blendMode: e.target.value },
+                    { source: 'layer-attribute-popup-blend' }
+                );
+            } else if (this.layerSystem?.setLayerBlendMode) {
                 this.layerSystem.setLayerBlendMode(layerIndex, e.target.value);
             }
             this._syncLayerAttributePopup(popup, layerIndex);
@@ -1160,7 +1226,15 @@ export class LayerPanelRenderer {
 
         popup.querySelector('[data-action="toggle-clipping"]')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (this.layerSystem?.toggleLayerClipping) {
+            const animationTarget = this._getAnimationAttributeTarget();
+            if (animationTarget?.animationTable?.setInternalLayerAttributesFromExternal) {
+                animationTarget.animationTable.setInternalLayerAttributesFromExternal(
+                    animationTarget.asset.id,
+                    animationTarget.internalLayer.id,
+                    { clipping: animationTarget.internalLayer.clipping !== true },
+                    { source: 'layer-attribute-popup-clipping' }
+                );
+            } else if (this.layerSystem?.toggleLayerClipping) {
                 this.layerSystem.toggleLayerClipping(layerIndex);
             }
             this._syncLayerAttributePopup(popup, layerIndex);
@@ -1174,9 +1248,10 @@ export class LayerPanelRenderer {
             return;
         }
 
-        const opacity = Math.round((layer.alpha ?? layer.layerData.opacity ?? 1) * 100);
-        const blendMode = layer.layerData.blendMode || 'normal';
-        const clipping = layer.layerData.clipping === true;
+        const viewState = this._getLayerAttributeViewState(layerIndex);
+        const opacity = viewState.opacity;
+        const blendMode = viewState.blendMode;
+        const clipping = viewState.clipping;
 
         const slider = popup.querySelector('.layer-attribute-opacity-slider');
         if (slider) slider.value = String(opacity);
@@ -1191,9 +1266,25 @@ export class LayerPanelRenderer {
         popup.querySelector('[data-action="toggle-clipping"]')?.classList.toggle('active', clipping);
     }
 
+    _getLayerAttributeViewState(layerIndex) {
+        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+        const animationTarget = this._getAnimationAttributeTarget();
+        const source = animationTarget?.internalLayer || layer?.layerData || {};
+        const opacity = typeof source.opacity === 'number'
+            ? source.opacity
+            : (typeof layer?.alpha === 'number' ? layer.alpha : 1);
+        return {
+            name: source.name || layer?.layerData?.name || 'レイヤー',
+            opacity: Math.round(opacity * 100),
+            blendMode: source.blendMode || 'normal',
+            clipping: source.clipping === true,
+            isFolder: source.type === 'folder' || source.isFolder === true
+        };
+    }
+
     _getAnimationAttributeTarget() {
         const animationTable = window.PopupManager?.get?.('animationTable');
-        if (!animationTable?.isVisible || !animationTable.selectedCelId || !animationTable.selectedInternalLayerId) {
+        if (!animationTable?.model || !animationTable.selectedCelId || !animationTable.selectedInternalLayerId) {
             return null;
         }
         const entry = animationTable.model?.findClipEntry?.(animationTable.selectedCelId);
@@ -1262,6 +1353,7 @@ export class LayerPanelRenderer {
         this._attributePopupLayerIndex = -1;
         this._attributePopupAnchorElement = null;
         this._handleAttributePopupDragEnd();
+        this._attributeOpacityEditState = null;
         document.removeEventListener('pointerdown', this._handleAttributePopupOutsidePointerDown, true);
         document.removeEventListener('keydown', this._handleAttributePopupKeydown, true);
     }
@@ -1328,8 +1420,7 @@ export class LayerPanelRenderer {
         const label = popup.querySelector('.layer-attribute-opacity-label');
         if (!label || label.querySelector('input')) return;
 
-        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
-        const opacity = Math.round((layer?.alpha ?? layer?.layerData?.opacity ?? 1) * 100);
+        const opacity = this._getLayerAttributeViewState(layerIndex).opacity;
         const input = document.createElement('input');
         input.type = 'number';
         input.min = '0';
@@ -1498,9 +1589,6 @@ export class LayerPanelRenderer {
             e.stopPropagation();
             e.stopImmediatePropagation?.();
             this._editLayerName(nameSpan, layer, index);
-        });
-        nameSpan.addEventListener('pointerdown', (e) => {
-            e.stopPropagation();
         });
         nameSpan.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1768,8 +1856,73 @@ export class LayerPanelRenderer {
         this._setLayerOpacity(layerIndex, newOpacity);
     }
 
-    _setLayerOpacity(layerIndex, opacity) {
-        if (this.layerSystem.setLayerOpacity) {
+    _beginLayerAttributeOpacityEdit(layerIndex) {
+        const animationTarget = this._getAnimationAttributeTarget?.();
+        if (!animationTarget?.animationTable?._captureInternalLayerHistoryState) {
+            this._attributeOpacityEditState = null;
+            return;
+        }
+
+        const existing = this._attributeOpacityEditState;
+        if (
+            existing?.assetId === animationTarget.asset.id &&
+            existing?.layerId === animationTarget.internalLayer.id
+        ) {
+            return;
+        }
+
+        this._attributeOpacityEditState = {
+            layerIndex,
+            assetId: animationTarget.asset.id,
+            layerId: animationTarget.internalLayer.id,
+            initialOpacity: animationTarget.internalLayer.opacity ?? 1,
+            beforeState: animationTarget.animationTable._captureInternalLayerHistoryState(animationTarget.asset)
+        };
+    }
+
+    _commitLayerAttributeOpacityEdit(layerIndex, opacity) {
+        const animationTarget = this._getAnimationAttributeTarget?.();
+        const editState = this._attributeOpacityEditState;
+        if (
+            animationTarget?.animationTable?.setInternalLayerAttributesFromExternal &&
+            editState?.assetId === animationTarget.asset.id &&
+            editState?.layerId === animationTarget.internalLayer.id
+        ) {
+            const nextOpacity = Math.max(0, Math.min(1, opacity));
+            if (Math.abs((editState.initialOpacity ?? 1) - nextOpacity) > 0.0001) {
+                animationTarget.animationTable.setInternalLayerAttributesFromExternal(
+                    animationTarget.asset.id,
+                    animationTarget.internalLayer.id,
+                    { opacity: nextOpacity },
+                    {
+                        source: 'layer-attribute-popup-opacity-commit',
+                        historyName: 'caf-internal-layer-opacity',
+                        beforeState: editState.beforeState,
+                        forceHistory: true
+                    }
+                );
+            }
+            this._attributeOpacityEditState = null;
+            return;
+        }
+
+        this._setLayerOpacity(layerIndex, opacity);
+        this._attributeOpacityEditState = null;
+    }
+
+    _setLayerOpacity(layerIndex, opacity, options = {}) {
+        const animationTarget = this._getAnimationAttributeTarget?.();
+        if (animationTarget?.animationTable?.setInternalLayerAttributesFromExternal) {
+            animationTarget.animationTable.setInternalLayerAttributesFromExternal(
+                animationTarget.asset.id,
+                animationTarget.internalLayer.id,
+                { opacity },
+                {
+                    source: 'layer-attribute-popup-opacity',
+                    recordHistory: options.recordHistory !== false
+                }
+            );
+        } else if (this.layerSystem.setLayerOpacity) {
             this.layerSystem.setLayerOpacity(layerIndex, opacity);
         }
 
@@ -1853,12 +2006,21 @@ export class LayerPanelRenderer {
                 disabled: this._hasAnimationContext(),
                 forceFallback: true,
                 fallbackOnBody: true,
-                fallbackTolerance: 3,
+                fallbackTolerance: 2,
+                touchStartThreshold: 2,
                 swapThreshold: 0.65,
                 delay: 0,
                 delayOnTouchOnly: false,
+                preventOnFilter: false,
 
                 filter: (evt) => {
+                    if (evt.target.closest(
+                        '.layer-visibility, .layer-opacity-control, .layer-clip-status, ' +
+                        '.layer-background-color-button, .layer-duplicate-button, .layer-merge-down-button, ' +
+                        '.layer-delete-button, input, textarea, select, [contenteditable="true"]'
+                    )) {
+                        return true;
+                    }
                     const item = evt.target.closest('.layer-item');
                     if (!item) return false;
                     const layerIndex = parseInt(item.dataset.layerIndex);
@@ -2212,6 +2374,11 @@ export class LayerPanelRenderer {
 
     _snapshotToDataUrl(snapshot) {
         if (!snapshot?.pixels || !snapshot.width || !snapshot.height) return '';
+        if (snapshot.isBlank === true) return '';
+        const cacheKey = `${snapshot.id || 'snapshot'}:${snapshot.updatedAt || 0}:${snapshot.width}x${snapshot.height}`;
+        const cachedUrl = this._clipSnapshotThumbCache.get(cacheKey);
+        if (cachedUrl) return cachedUrl;
+
         try {
             const canvas = document.createElement('canvas');
             canvas.width = snapshot.width;
@@ -2219,7 +2386,13 @@ export class LayerPanelRenderer {
             const ctx = canvas.getContext('2d');
             if (!ctx) return '';
             ctx.putImageData(new ImageData(new Uint8ClampedArray(snapshot.pixels), snapshot.width, snapshot.height), 0, 0);
-            return canvas.toDataURL('image/png');
+            const dataUrl = canvas.toDataURL('image/png');
+            this._clipSnapshotThumbCache.set(cacheKey, dataUrl);
+            if (this._clipSnapshotThumbCache.size > 240) {
+                const oldestKey = this._clipSnapshotThumbCache.keys().next().value;
+                if (oldestKey) this._clipSnapshotThumbCache.delete(oldestKey);
+            }
+            return dataUrl;
         } catch (e) {
             return '';
         }
@@ -2408,6 +2581,7 @@ export class LayerPanelRenderer {
         this._layerAttributePopup = null;
         this._editingLayerIndex = -1;
         this._editingInput = null;
+        this._clipSnapshotThumbCache.clear();
     }
 }
 

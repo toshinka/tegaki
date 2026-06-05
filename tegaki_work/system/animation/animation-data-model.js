@@ -333,12 +333,21 @@ export class LaneModel {
             this.removeCelAtFrame(frameIndex);
         } else {
             this.addCel({
-                sourceLayerId: this.sourceLayerId,
-                layerId: this.layerId,
                 startFrame: frameIndex,
                 duration: 1
             });
         }
+    }
+
+    detachSourceLayer() {
+        this.sourceLayerId = null;
+        this.layerId = null;
+        this.kind = 'independent';
+        this.sourceMissing = false;
+        this.cels.forEach(cel => {
+            cel.sourceLayerId = null;
+            cel.layerId = null;
+        });
     }
 
     serialize() {
@@ -434,6 +443,13 @@ export class TimelineModel {
             this.tracks.push(lane);
         }
         return lane;
+    }
+
+    detachLaneSourceLayer(laneId) {
+        const lane = this.getLaneById(laneId);
+        if (!lane) return false;
+        lane.detachSourceLayer();
+        return true;
     }
 
     getClipById(clipId) {
@@ -1236,9 +1252,9 @@ export class TimelineModel {
             sourceLane.cels = sourceLane.cels.filter(c => c.id !== clip.id);
             targetLane.cels.push(clip);
             
-            // 移動先レーンの実レイヤーIDを継承
-            clip.sourceLayerId = targetLane.sourceLayerId;
-            clip.layerId = targetLane.layerId;
+            // 移動先Laneが独立Laneなら、旧LayerSystem IDを持ち込まない。
+            clip.sourceLayerId = targetLane.sourceLayerId || null;
+            clip.layerId = targetLane.layerId || null;
         }
         
         clip.startFrame = targetStartFrame;

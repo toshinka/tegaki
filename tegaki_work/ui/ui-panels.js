@@ -31,6 +31,7 @@ export class UIController {
         this.initializeStatusPanel();
         this.setupPanelStyles();
         this.ensurePopupCloseButtons();
+        this.syncLayerPanelActionButtons();
     }
     
     showPopup(name) {
@@ -139,10 +140,24 @@ export class UIController {
 
         this.eventBus.on('layer:status-update-requested', (data) => {
             this.updateStatusDisplay(data);
+            this.syncLayerPanelActionButtons();
         });
 
         this.eventBus.on('history:changed', (data) => {
             this.updateHistoryUI(data);
+            this.syncLayerPanelActionButtons();
+        });
+
+        this.eventBus.on('layer:panel-update-requested', () => {
+            this.syncLayerPanelActionButtons();
+        });
+
+        this.eventBus.on('layer:activated', () => {
+            this.syncLayerPanelActionButtons();
+        });
+
+        this.eventBus.on('animation:frame-changed', () => {
+            this.syncLayerPanelActionButtons();
         });
 
         this.eventBus.on('popup:initialized', () => {
@@ -220,18 +235,16 @@ export class UIController {
 
             const layerAddBtn = e.target.closest('#add-layer-btn');
             if (layerAddBtn) {
-                const animationTable = this.popupManager?.get?.('animationTable');
-                const hasAnimationContext = !!(
-                    animationTable?.model
-                    && (
-                        animationTable.model.tracks?.length > 0
-                        || animationTable.model.clipAssets?.length > 0
-                    )
-                );
-                if (hasAnimationContext) {
-                    if (animationTable.selectedCelId && typeof animationTable.addInternalLayer === 'function') {
-                        animationTable.addInternalLayer();
+                if (this._isLayerPanelControlDisabled(layerAddBtn)) {
+                    layerAddBtn.blur?.();
+                    return;
+                }
+                const animationContext = this._getAnimationLayerContext();
+                if (animationContext.hasContext) {
+                    if (animationContext.hasSelectedClip && typeof animationContext.table.addInternalLayer === 'function') {
+                        animationContext.table.addInternalLayer();
                     }
+                    layerAddBtn.blur?.();
                     return;
                 }
 
@@ -250,18 +263,16 @@ export class UIController {
             
             const folderAddBtn = e.target.closest('#add-folder-btn');
             if (folderAddBtn) {
-                const animationTable = this.popupManager?.get?.('animationTable');
-                const hasAnimationContext = !!(
-                    animationTable?.model
-                    && (
-                        animationTable.model.tracks?.length > 0
-                        || animationTable.model.clipAssets?.length > 0
-                    )
-                );
-                if (hasAnimationContext) {
-                    if (animationTable.selectedCelId && typeof animationTable.addInternalFolder === 'function') {
-                        animationTable.addInternalFolder();
+                if (this._isLayerPanelControlDisabled(folderAddBtn)) {
+                    folderAddBtn.blur?.();
+                    return;
+                }
+                const animationContext = this._getAnimationLayerContext();
+                if (animationContext.hasContext) {
+                    if (animationContext.hasSelectedClip && typeof animationContext.table.addInternalFolder === 'function') {
+                        animationContext.table.addInternalFolder();
                     }
+                    folderAddBtn.blur?.();
                     return;
                 }
 
@@ -280,6 +291,10 @@ export class UIController {
 
             const layerAttributeBtn = e.target.closest('#layer-attribute-panel-btn');
             if (layerAttributeBtn) {
+                if (this._isLayerPanelControlDisabled(layerAttributeBtn)) {
+                    layerAttributeBtn.blur?.();
+                    return;
+                }
                 this.eventBus?.emit('ui:layer-attribute-panel-requested', {
                     anchorElement: layerAttributeBtn
                 });
@@ -288,18 +303,30 @@ export class UIController {
 
             const duplicateActiveBtn = e.target.closest('#duplicate-active-layer-btn');
             if (duplicateActiveBtn) {
+                if (this._isLayerPanelControlDisabled(duplicateActiveBtn)) {
+                    duplicateActiveBtn.blur?.();
+                    return;
+                }
                 this.handleActiveLayerOperation('duplicate', duplicateActiveBtn);
                 return;
             }
 
             const mergeActiveBtn = e.target.closest('#merge-active-layer-btn');
             if (mergeActiveBtn) {
+                if (this._isLayerPanelControlDisabled(mergeActiveBtn)) {
+                    mergeActiveBtn.blur?.();
+                    return;
+                }
                 this.handleActiveLayerOperation('mergeDown', mergeActiveBtn);
                 return;
             }
 
             const deleteActiveBtn = e.target.closest('#delete-active-layer-btn');
             if (deleteActiveBtn) {
+                if (this._isLayerPanelControlDisabled(deleteActiveBtn)) {
+                    deleteActiveBtn.blur?.();
+                    return;
+                }
                 this.handleActiveLayerOperation('delete', deleteActiveBtn);
                 return;
             }
@@ -334,9 +361,10 @@ export class UIController {
     handleActiveLayerOperation(action, triggerEl = null) {
         if (!this.layerManager) return;
 
-        const animationTable = this.popupManager?.get?.('animationTable');
-        if (animationTable?.isVisible) {
-            if (!animationTable.selectedCelId) {
+        const animationContext = this._getAnimationLayerContext();
+        if (animationContext.hasContext) {
+            const animationTable = animationContext.table;
+            if (!animationContext.hasSelectedClip) {
                 triggerEl?.blur?.();
                 return;
             }
@@ -415,8 +443,91 @@ export class UIController {
     }
 
     _shouldBlockNormalLayerOperation() {
-        const animationTable = this.popupManager?.get?.('animationTable');
-        return !!(animationTable?.isVisible && !animationTable.selectedCelId);
+        const animationContext = this._getAnimationLayerContext();
+        return !!(animationContext.hasContext && !animationContext.hasSelectedClip);
+    }
+
+    _getAnimationLayerContext() {
+        const table = this.popupManager?.get?.('animationTable');
+        const hasContext = !!(
+            table?.model
+            && (
+                (table.model.tracks?.length || 0) > 0
+                || (table.model.clipAssets?.length || 0) > 0
+            )
+        );
+        return {
+            table,
+            hasContext,
+            hasSelectedClip: !!(hasContext && table?.selectedCelId)
+        };
+    }
+
+    _getAnimationSelectedInternalLayer() {
+        const animationContext = this._getAnimationLayerContext();
+        const table = animationContext.table;
+        if (!animationContext.hasSelectedClip || !table?.selectedInternalLayerId) {
+            return {
+                table,
+                asset: null,
+                layer: null
+            };
+        }
+
+        const entry = table.model?.findClipEntry?.(table.selectedCelId);
+        const asset = entry?.clip?.assetId ? table.model.getClipAsset(entry.clip.assetId) : null;
+        const layer = asset?.internalLayers?.find(item => item.id === table.selectedInternalLayerId) || null;
+        return {
+            table,
+            asset,
+            layer
+        };
+    }
+
+    _isLayerPanelControlDisabled(control) {
+        return !!(
+            control?.disabled
+            || control?.classList?.contains('is-disabled')
+            || control?.getAttribute?.('aria-disabled') === 'true'
+        );
+    }
+
+    _setLayerPanelControlDisabled(control, disabled) {
+        if (!control) return;
+        control.classList.toggle('is-disabled', disabled);
+        control.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        if ('disabled' in control) {
+            control.disabled = disabled;
+        }
+    }
+
+    syncLayerPanelActionButtons() {
+        const controls = {
+            addLayer: document.getElementById('add-layer-btn'),
+            addFolder: document.getElementById('add-folder-btn'),
+            attribute: document.getElementById('layer-attribute-panel-btn'),
+            duplicate: document.getElementById('duplicate-active-layer-btn'),
+            mergeDown: document.getElementById('merge-active-layer-btn'),
+            delete: document.getElementById('delete-active-layer-btn')
+        };
+        const animationContext = this._getAnimationLayerContext();
+
+        if (!animationContext.hasContext) {
+            Object.values(controls).forEach(control => this._setLayerPanelControlDisabled(control, false));
+            return;
+        }
+
+        const { layer } = this._getAnimationSelectedInternalLayer();
+        const hasClip = animationContext.hasSelectedClip;
+        const hasLayer = !!layer;
+        const isFolder = layer?.type === 'folder' || layer?.isFolder === true;
+
+        this._setLayerPanelControlDisabled(controls.addLayer, !hasClip);
+        this._setLayerPanelControlDisabled(controls.addFolder, !hasClip);
+        this._setLayerPanelControlDisabled(controls.attribute, !hasLayer);
+        this._setLayerPanelControlDisabled(controls.duplicate, !hasLayer);
+        this._setLayerPanelControlDisabled(controls.delete, !hasLayer);
+        this._setLayerPanelControlDisabled(controls.mergeDown, !hasLayer || isFolder);
     }
 
     _getBatchDeleteLayerIndexes(activeIndex) {
@@ -580,8 +691,22 @@ export class UIController {
     updateStatusDisplay(data) {
         if (data.currentLayer) {
             const layerEl = document.getElementById('current-layer');
-            if (layerEl) layerEl.textContent = data.currentLayer;
+            if (layerEl) layerEl.textContent = this._getAnimationLayerStatusName() || data.currentLayer;
         }
+    }
+
+    _getAnimationLayerStatusName() {
+        const animationContext = this._getAnimationLayerContext();
+        const table = animationContext.table;
+        if (!animationContext.hasContext) return null;
+        if (!animationContext.hasSelectedClip) return 'NO FRAME';
+
+        const entry = table.model?.findClipEntry?.(table.selectedCelId);
+        const asset = entry?.clip?.assetId ? table.model.getClipAsset(entry.clip.assetId) : null;
+        const selectedLayer = asset?.internalLayers?.find(layer => layer.id === table.selectedInternalLayerId) || null;
+        if (selectedLayer?.name) return selectedLayer.name;
+        if (asset?.name) return asset.name;
+        return entry?.clip?.name || 'CAF';
     }
 
     updateHistoryUI(data = null) {
