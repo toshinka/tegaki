@@ -558,10 +558,20 @@ export const KeyboardHandler = (function() {
         }
     }
 
+    function hasAnimationLayerContext(animationTable) {
+        return !!(
+            animationTable?.model &&
+            (
+                (animationTable.model.tracks?.length || 0) > 0 ||
+                (animationTable.model.clipAssets?.length || 0) > 0
+            )
+        );
+    }
+
     function handleAnimationTableLayerShortcut(action) {
         const animationTable = window.PopupManager?.get?.('animationTable')
             || window.coreEngine?.popupManager?.get?.('animationTable');
-        if (!animationTable?.isVisible) return false;
+        if (!hasAnimationLayerContext(animationTable)) return false;
         if (!animationTable.selectedCelId) {
             return [
                 'create',

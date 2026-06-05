@@ -9,6 +9,124 @@
 
 **Phase 4z26 — CAF / Working Layer Ghost Guard 【Codex実装】**
 2026-05-31
+- **レイヤーパネル統合: CAF即時同期の再描画予約抑制**:
+  - `animation-table-popup.js`: `_flushLayerPanelSync()` でレイヤーパネルを即時描画する場合、`layer:panel-update-requested` に `skipRender` を付けるよう変更。イベントで更新予約を入れてから即キャンセルする無駄な経路を減らした。
+  - `animation-table-popup.js`: 同イベントを購読するアニメテーブル自身も `skipRender` を見て再描画予約を避けるよう変更。CAF内部Layer操作後の即時同期で、アニメテーブル側にも不要な遅延レンダーが積まれる状態を抑制。
+  - `layer-panel-renderer.js`: `layer:panel-update-requested` の `skipRender` を見て、CAF側から直接描画される同期では追加の `requestUpdate()` を積まないようにした。
+  - `layer-panel-renderer.js`: CAFミラーサムネイル生成で空Snapshot (`isBlank`) はDataURL化せず空サムネイルのまま扱うよう変更。空内部Layerが多い状態でのパネル再描画負荷を少し抑制。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAFミラーサムネイルDataURLキャッシュ**:
+  - `layer-panel-renderer.js`: CAF内部Layerミラーのサムネイル生成に Snapshot ID / `updatedAt` / サイズ単位のDataURLキャッシュを追加。レイヤーパネル再描画のたびに全内部Layer SnapshotをCanvasへ戻してDataURL化する経路を抑制した。
+  - `layer-panel-renderer.js`: CAF文脈のレイヤーパネル内では、CAFヘッダー/内部Layerミラー行の `contextmenu` を抑制。統合後のCAF操作面でブラウザ既定メニューが割り込む経路を減らした。
+  - 狙い: CAF内部Layer/Folderが増えた状態で、選択変更・属性変更・D&D後のレイヤーパネル再描画がサムネイル再生成に引きずられる状態を軽減し、CAFベース統合後の表示負荷を下げる。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAF内部Layer透明度スライダー履歴集約**:
+  - `animation-table-popup.js`: `setInternalLayerAttributesFromExternal()` に `recordHistory: false` と外部指定 `beforeState` を受ける経路を追加。属性スライダーのプレビュー適用と確定履歴を分離できるようにした。
+  - `layer-panel-renderer.js`: CAF内部Layer選択中の透明度スライダーは、ドラッグ/フォーカス時に開始状態を保持し、`input` 中は履歴なしで即時反映、`change` 時に開始状態から最終値までを1履歴として記録するよう変更。スライダー操作でHistoryが細かく積まれる状態を抑制。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAF内部Layer属性の直接適用**:
+  - `animation-table-popup.js`: 外部UIからCAF内部Layerの透明度/合成モード/クリッピングを直接変更する `setInternalLayerAttributesFromExternal()` を追加。変更時は内部Layer履歴、作業Layer同期、レイヤーパネル同期を既存のCAF内部Layer操作経路に揃えた。
+  - `layer-panel-renderer.js`: レイヤー属性ポップアップの透明度プリセット/スライダー/数値入力、合成モード、クリッピング操作を、CAF内部Layer選択中は旧LayerSystemではなく `ClipAsset.internalLayers` 側へ適用するよう変更。内部フォルダの透明度変更もCAF正本へ直接反映する。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAF選択ステータス通知補強**:
+  - `animation-table-popup.js`: `_flushLayerPanelSync()` 時に選択中CAF/内部Layer名を `layer:status-update-requested` へ通知するヘルパーを追加。CAF側の選択・同期フラッシュ後に、下部ステータスと右サイドバーの有効/無効状態が旧LayerSystem状態へ残りにくいようにした。
+  - `animation-table-popup.js`: レイヤーパネルCAFヘッダー等から `selectClipAssetFromExternal()` でClipを選んだ直後にも同じステータス通知を発行。Clip選択のみ/内部Layer選択ありのどちらでもCAF文脈GUIの状態更新経路を揃えた。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAF文脈ボタン状態同期**:
+  - `ui-panels.js`: 右サイドバーのレイヤー追加/フォルダ追加/属性/複製/下結合/削除ボタンを、CAF文脈では選択Clipと選択内部Layerの状態から有効/無効同期するよう変更。NO FRAME状態や内部Layer未選択時に旧LayerSystem操作へ見た目だけ残るズレを抑制。
+  - `ui-panels.js`: 無効状態のボタンはクリック側でも早期returnするようにし、押せない表示と実操作を一致させた。内部フォルダ選択時は下結合を無効化し、CAF内部Layer操作の誤導線を減らした。
+  - `main.css`: divベースの追加ボタンも含めて `is-disabled` 表示を追加し、CAF文脈で操作不可状態が視覚的に分かるようにした。
+  - **確認**: `node --check tegaki_work/ui/ui-panels.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: 属性パネル対象Layer逆引き**:
+  - `layer-panel-renderer.js`: レイヤー属性パネルを開く際、CAF内部Layer選択中は `selectedInternalLayerId` から対応する作業Layer indexを逆引きして対象にするよう変更。旧アクティブLayerに残ったまま属性パネルが開くズレを抑制。
+  - CAF内部フォルダは作業Layerを持たないため、従来のアクティブLayerをアンカーにしつつ表示値だけCAFフォルダ正本を使う方針を維持。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: 属性パネル表示値のCAF内部Layer正本化**:
+  - `layer-panel-renderer.js`: レイヤー属性パネルのタイトル/透明度/合成/クリッピング/フォルダ判定の表示値を、CAF内部Layer選択中は旧作業Layerではなく `ClipAsset.internalLayers` 側から読むよう変更。
+  - 操作適用は既存の作業Layer同期経路を維持。透明度/合成/クリッピングの履歴化済み経路を壊さず、パネル表示だけが旧作業Layer名/値へズレる状態を抑制した。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAF内部Layerステータス表示同期**:
+  - `ui-panels.js` / `status-display-renderer.js`: 下部ステータスの `Layer:` 表示を、アニメーション文脈では旧LayerSystemの作業Layer名ではなく選択中CAF内部Layer名へ優先同期するよう変更。選択Clipがない場合は `NO FRAME` を表示。
+  - `layer-panel-renderer.js`: CAF内部Layerミラー行の選択時に `layer:status-update-requested` を発行し、クリック/ペン選択直後にステータス表示が追従するようにした。
+  - **確認**: `node --check tegaki_work/ui/ui-panels.js` / `node --check tegaki_work/ui/status-display-renderer.js` / `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAF内部Layerショートカット文脈固定**:
+  - `keyboard-handler.js`: レイヤー作成/削除/描画クリア/コピー/貼り付け/切り取り/上下移動系ショートカットのCAF分岐を、`animationTable.isVisible` ではなくアニメーションモデルにLane/ClipAssetが存在するかで判定するよう変更。
+  - 狙い: アニメテーブルを閉じた後も右レイヤーパネル側がCAF内部Layer編集口として残るため、キー操作だけ旧LayerSystemへ漏れてCAF外作業Layerを操作する経路を抑制。
+  - **確認**: `node --check tegaki_work/ui/keyboard-handler.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **アニメテーブル本体移動/リサイズのペン入力対応**:
+  - `animation-table-popup.js`: アニメテーブルヘッダーのパネル移動と右下リサイズを `mousedown/mousemove/mouseup` から `pointerdown/pointermove/pointerup/pointercancel` へ変更。マウスとタブレットペンで同じ操作経路を通るようにした。
+  - `animation-table-popup.js`: 移動/リサイズ中は `pointerId` を保持し、別ポインタ混入を無視。ヘッダーとリサイズハンドルに `touch-action: none` を付け、ペン入力時にブラウザ既定操作へ奪われにくくした。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAF内部Layer D&Dゴースト追従改善**:
+  - `main.css`: CAF内部LayerミラーD&Dのcloneゴーストに `transition: none !important` を追加。元行の `transition: all 0.2s ease` を継承してtransform移動が遅延補間される状態を止めた。
+  - 狙い: 名前部分D&D対応後に残っていた「掴めているがゴースト追従が遅い」レスポンス低下を軽減し、Pointer移動とゴースト表示をより直結させる。
+  - **確認**: `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAF内部Layer D&Dの名前部分掴み対応**:
+  - `layer-panel-renderer.js`: CAF内部Layerミラー行のPointer D&D開始判定から `.clip-layer-mirror-name` 除外を撤去。レイヤー/フォルダ名の文字上からでもドラッグ開始できるようにした。
+  - ダブルクリックによるインライン名前変更はクリック委譲側に残し、ドラッグしきい値未満の操作では従来通りクリック/ダブルクリック処理へ流す。名前部分だけ掴めないことでレスポンスが悪く見える状態を抑制。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル操作のCAF文脈固定**:
+  - `ui-panels.js`: レイヤー追加/フォルダ追加/複製/下結合/削除の分岐を「アニメテーブル表示中」ではなく「アニメーションモデルにLane/ClipAssetが存在するか」で判定するよう変更。CAF文脈ではアニメテーブルを閉じていても旧LayerSystem操作へ落ちないようにした。
+  - `ui-panels.js`: CAF文脈で選択Clipがない場合は通常Layer操作へfallbackせず、ボタンをblurして終了する。NO FRAME / Lane-only状態から旧作業Layerを誤操作する経路を抑制。
+  - `layer-panel-renderer.js`: レイヤー属性パネルのCAF内部Layerターゲット解決から `animationTable.isVisible` 条件を外し、テーブル非表示でも選択CAF/内部Layerがある場合はCAF内部Layer属性を対象にする。
+  - **確認**: `node --check tegaki_work/ui/ui-panels.js` / `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合足場: CAF内部Layer選択経路の共通化**:
+  - `layer-panel-renderer.js`: レイヤーパネル側CAFミラー行の内部Layer選択処理を `_selectClipLayerMirrorRow()` に集約。通常クリック、フォルダ開閉前の選択、D&D開始前の視覚選択で同じ状態更新を使えるようにした。
+  - `layer-panel-renderer.js`: ペン/マウスでCAF内部Layer行を押した時点で選択枠だけ即時反映し、クリック確定時に作業Layer同期・アニメテーブル再描画・レイヤーパネル更新を行うよう分離。今後の通常レイヤーパネル統合で旧SortableJS経路を置き換える接続点にする。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAF文脈での旧通常Layerカード露出抑制**:
+  - `layer-panel-renderer.js`: アニメーションモデルにLane/ClipAssetが存在する場合、アニメテーブル表示中/非表示中に関係なく通常Layer/Folderカードをレイヤーパネルから隠し、CAFヘッダー/内部Layerミラー + 背景表示へ寄せるよう変更。
+  - 狙い: アニメテーブルを閉じた後にCAF配下の作業Layer/Folderが旧レイヤーカードとしてCAF外へ見える混線をUI表示側で塞ぎ、今後のCAFベース統合の正本をCAF側に固定する。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **DurationボタンのCAF押し出し伸縮対応**:
+  - `animation-table-popup.js`: ヘッダーの `DURATION +` 判定を `lane.canPlaceCel()` 直判定から、左右ドラッグ伸縮と同じ `_applyRetimingWithPush()` のシミュレーションへ変更。隣接CAFを押し出せる場合はボタンでも伸長可能にした。
+  - `animation-table-popup.js`: `DURATION +/-` 実行時も右端リタイム相当の押し出し処理を使うようにし、ボタン伸縮とドラッグ伸縮の挙動差を縮小。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAF伸縮不可フィードバック追加**:
+  - `animation-table-popup.js`: CAFリタイム中にTimeline端や押し出し不可で伸縮を適用できない場合、対象CAFへ `retiming-blocked` 表示を付け、赤寄りのブロックフィードバックを出すようにした。
+  - `animation-table-popup.js`: 伸縮成功/失敗のどちらでもリタイム中表示を再描画し、「掴めていない」のか「掴めているがその方向へ伸ばせない」のかを判別しやすくした。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAF伸縮開始フィードバック追加**:
+  - `animation-table-popup.js`: CAFの左右端または単セル下部グリップでリタイム開始した際、対象CAFへ `retiming-left/right` 表示を付け、掴んだ側の半セル程度をオレンジ発光させるようにした。
+  - `animation-table-popup.js`: リタイム中の再描画でもフィードバックが維持されるよう、レンダー時に `_retimingData.edge` からクラスを復元。リタイム終了時はクラスを除去して残留を防止。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **単セルCAF伸縮グリップ追加**:
+  - `animation-table-popup.js`: 単セルCAFに下部横方向グリップを追加。左右端の透明伸縮判定は維持しつつ、下側の `↔` 表示部分をペン入力時の伸縮主判定として使えるようにした。
+  - `animation-table-popup.js`: 下部グリップは左右半分で左端/右端リタイムを分け、可視Clip本体の中央は従来通りドラッグ移動を優先。単セル状態で端を狙う厳しさを補助する。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **単セルCAFのペンドラッグ開始補修**:
+  - `animation-table-popup.js`: ペンタブレット入力で単セルCAFを掴む際、左右リタイムハンドルへ吸われて移動開始できないことがあったため、Duration 1のペン操作ではセル内側を移動、外側の隙間寄りを伸縮として判定するよう調整。
+  - `animation-table-popup.js`: 左右リタイムハンドルを少し外側へ逃がし、可視Clip本体の移動判定を食いにくくした。マウス操作とDuration 2以上のCAFは従来通り端ハンドルで伸縮可能。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **アニメテーブル右クリックメニュー抑止**:
+  - `animation-table-popup.js`: CAFセル伸縮/移動中にブラウザの右クリックメニューが出ることがあったため、アニメテーブルパネル上の `contextmenu` を抑止。入力欄だけは編集用メニューを残す。
+  - `animation-table-popup.js`: Timelineグリッドにも個別の `contextmenu` 抑止を追加し、動的再描画されるClip/リタイムハンドル周辺で右クリックメニューが出る経路を塞いだ。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **アニメテーブルUI状態保持と旧D&D棚上げ判断**:
+  - 方針: 通常レイヤーパネルD&Dの残る掴みにくさはSortableJS由来の入力判定まで踏み込む可能性が高いため、これ以上の止血調整は棚上げ。CAFベース統合時に、CAF内D&Dで安定した独自Pointer Events系へ寄せる。
+  - `animation-table-popup.js`: アニメテーブルのパネル位置・サイズ・Timeline zoomを `localStorage` に保存/復元する最小接続を追加。移動/リサイズ/ズーム確定時のみ保存し、表示時は画面内へクランプする。
+  - 効果: 縦長配置や横並び配置、Timeline縮尺を作業ごとに復元しやすくし、CAF穴埋め作業中のUI再設定コストを減らす。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル通常カードD&Dのペン入力補修**:
+  - `layer-panel-renderer.js`: 通常レイヤーパネルカードの名前テキストとフォルダサムネイルで `pointerdown` を止めていたため、ペン入力時にSortableJSのドラッグ開始へ届きにくい状態を補修。クリック/ダブルクリック処理は維持しつつ、カード面として掴める範囲を広げた。
+  - `layer-panel-renderer.js`: 目アイコン、クリッピング、透明度、複製、下結合、削除などの操作部品はSortableの `filter` でD&D開始対象から除外。押して離した時に操作部品側でドラッグ候補へ入る混線を抑制した。
+  - `layer-panel-renderer.js`: SortableJSの `fallbackTolerance` / `touchStartThreshold` をペン入力向けに軽く調整。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **CAFセルD&DのPointer Events化**:
+  - `animation-table-popup.js`: Timeline上のCAFセル移動/左右リタイム開始を `mousedown` 依存から `pointerdown` へ変更し、移動/リタイム追跡も `pointermove` / `pointerup` / `pointercancel` へ統一。マウスとタブレットペンで同じClip操作経路を通るようにした。
+  - `animation-table-popup.js`: CAFセル本体と左右リタイムハンドルに `touch-action: none` / `user-select: none` を付与し、ペン入力時にブラウザ側の既定操作へ奪われにくくした。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+  - **次確認候補**: 通常レイヤーパネルカードのD&DはまだSortableJS経路で、カード内のサムネイル/名前/操作ボタンが `pointerdown` を止める箇所が多い。CAF内ミラーD&Dと同じPointer Events系へ寄せるか、掴み領域を明示するかを後続で検討する。
+- **Preview/EDIT経路の旧Layer fallback削減**:
+  - `animation-table-popup.js`: Preview Scope `LANE` のアクティブLane解決から、旧LayerSystemのアクティブLayerをLaneへ逆引きするfallbackを削除。Scopeはアニメテーブル側の `activeLaneId` / 選択Clipを正本に寄せた。
+  - `animation-table-popup.js`: Clip編集チェックの有効判定を `sourceLayerId` 必須から、選択Clipが有効なClipAssetを持つかどうかへ変更。独立Lane化後もCAF内部Layer編集の入口が閉じないようにした。
+  - `animation-table-popup.js`: ClipAsset内部Layerプレビューで、旧通常Layerのopacity/blendModeを借りるfallbackを撤去。CAF内部Layerのopacity/blendModeを表示正本として扱う。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/system/animation/animation-data-model.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Lane/CAFの旧Layer ID継承抑制**:
+  - `animation-data-model.js`: `LaneModel.detachSourceLayer()` / `TimelineModel.detachLaneSourceLayer()` を追加。Laneを通常Layer由来の `sourceLayerId/layerId` から切り離し、配下Clipも独立ClipとしてIDをnullへ揃えられるようにした。
+  - `animation-table-popup.js`: 初回CAF取り込み後、対象Laneを独立Laneへ切り替えるよう変更。通常Layer群はCAF内部Layerとして吸い上げるが、その後のFrame/Lane操作は旧LayerSystem IDに依存しない方向へ寄せた。
+  - `animation-table-popup.js` / `animation-data-model.js`: 新規CAF、Paste CAF、Lane間移動で `sourceLayerId/layerId` を新規Clipへ持ち込まないよう補修。CAF小箱化後のClipが通常Layerカード側へ戻る経路をさらに狭めた。
+  - **確認**: `node --check tegaki_work/system/animation/animation-data-model.js` / `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
 - **アニメテーブル狭幅ヘッダー折り返し再調整**:
   - `animation-table-popup.js`: 狭幅時のヘッダーで左/中央/右グループの幅指定が余白を作っていたため、`display: contents` で各操作部品を個別に折り返すよう変更。最小幅でも2段程度へ詰まりやすくした。
   - `animation-table-popup.js`: 狭幅時の閉じるボタンをヘッダー右上へ `absolute` 固定し、折り返し行の末尾へ流れて見失われる状態を抑制。

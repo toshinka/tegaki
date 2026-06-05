@@ -166,7 +166,7 @@ window.TegakiUI.StatusDisplayRenderer = class StatusDisplayRenderer {
     
     updateLayer(layerName) {
         if (!this.elements.currentLayer) return;
-        this.elements.currentLayer.textContent = layerName || 'なし';
+        this.elements.currentLayer.textContent = this._getAnimationLayerStatusName() || layerName || 'なし';
     }
     
     /**
@@ -174,6 +174,12 @@ window.TegakiUI.StatusDisplayRenderer = class StatusDisplayRenderer {
      */
     updateLayerFromManager() {
         if (!window.layerManager) return;
+
+        const animationLayerName = this._getAnimationLayerStatusName();
+        if (animationLayerName) {
+            this.updateLayer(animationLayerName);
+            return;
+        }
         
         const layers = window.layerManager.getLayers();
         const activeIndex = window.layerManager.getActiveLayerIndex();
@@ -183,6 +189,27 @@ window.TegakiUI.StatusDisplayRenderer = class StatusDisplayRenderer {
             const layerName = layer.layerData?.name || `レイヤー${activeIndex}`;
             this.updateLayer(layerName);
         }
+    }
+
+    _getAnimationLayerStatusName() {
+        const animationTable = window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable');
+        const hasAnimationContext = !!(
+            animationTable?.model &&
+            (
+                (animationTable.model.tracks?.length || 0) > 0 ||
+                (animationTable.model.clipAssets?.length || 0) > 0
+            )
+        );
+        if (!hasAnimationContext) return null;
+        if (!animationTable.selectedCelId) return 'NO FRAME';
+
+        const entry = animationTable.model.findClipEntry?.(animationTable.selectedCelId);
+        const asset = entry?.clip?.assetId ? animationTable.model.getClipAsset(entry.clip.assetId) : null;
+        const selectedLayer = asset?.internalLayers?.find(layer => layer.id === animationTable.selectedInternalLayerId) || null;
+        if (selectedLayer?.name) return selectedLayer.name;
+        if (asset?.name) return asset.name;
+        return entry?.clip?.name || 'CAF';
     }
     
     updateCanvasInfo(width, height) {

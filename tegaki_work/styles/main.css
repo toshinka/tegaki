@@ -486,6 +486,7 @@ canvas {
     opacity: 0.72;
     transform: scale(1.02);
     transform-origin: top left;
+    transition: none !important;
     will-change: transform;
     box-shadow: 0 8px 18px rgba(128, 0, 0, 0.22);
 }
@@ -756,6 +757,23 @@ canvas {
 .folder-add-button { 
     opacity: 0.9; 
     cursor: pointer; 
+}
+
+.layer-add-button.is-disabled,
+.folder-add-button.is-disabled,
+.ui-icon-button.layer-op-button.is-disabled,
+.ui-icon-button.layer-op-button:disabled {
+    opacity: 0.32;
+    cursor: default;
+    transform: none;
+}
+
+.layer-add-button.is-disabled:hover,
+.folder-add-button.is-disabled:hover,
+.ui-icon-button.layer-op-button.is-disabled:hover,
+.ui-icon-button.layer-op-button:disabled:hover {
+    background: rgba(255, 255, 238, 0.82);
+    transform: none;
 }
 
 .layer-add-button:focus-visible,
