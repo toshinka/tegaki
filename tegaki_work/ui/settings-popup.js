@@ -33,9 +33,9 @@ export class SettingsPopup {
 
         this.currentPressure = 1.0;
         this.currentSmoothing = 0.5;
-        this.currentAirbrushFlow = 0.22;
-        this.currentAirbrushScatter = 0.5;
-        this.currentAirbrushGrain = 0.5;
+        this.currentAirbrushFlow = 0.08;
+        this.currentAirbrushScatter = 0.0;
+        this.currentAirbrushSoftness = 0.8;
 
         this.MIN_PRESSURE = 0.1;
         this.MAX_PRESSURE = 3.0;
@@ -184,33 +184,33 @@ export class SettingsPopup {
                             <div class="slider-track" id="airbrush-flow-track"></div>
                             <div class="slider-handle" id="airbrush-flow-handle"></div>
                         </div>
-                        <div class="slider-value" id="airbrush-flow-value">0.22</div>
+                        <div class="slider-value" id="airbrush-flow-value">0.08</div>
                     </div>
-                    <div class="setting-description">1発あたりのインク量。低いと塗り重ねによる累積が活きます。</div>
+                    <div class="setting-description">1回のスタンプあたりの濃度。低いほど重ね塗りでゆっくり色が乗ります。</div>
                 </div>
 
                 <div class="setting-group">
-                    <div class="setting-label">飛散 (Scatter)</div>
+                    <div class="setting-label">エッジの柔らかさ (Softness)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="airbrush-softness-slider">
+                            <div class="slider-track" id="airbrush-softness-track"></div>
+                            <div class="slider-handle" id="airbrush-softness-handle"></div>
+                        </div>
+                        <div class="slider-value" id="airbrush-softness-value">0.80</div>
+                    </div>
+                    <div class="setting-description">高いほど周辺がなめらかにフェード。低いほど輪郭がはっきりした円形になります。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">揺らぎ (Scatter)</div>
                     <div class="slider-container">
                         <div class="slider" id="airbrush-scatter-slider">
                             <div class="slider-track" id="airbrush-scatter-track"></div>
                             <div class="slider-handle" id="airbrush-scatter-handle"></div>
                         </div>
-                        <div class="slider-value" id="airbrush-scatter-value">0.50</div>
+                        <div class="slider-value" id="airbrush-scatter-value">0.00</div>
                     </div>
-                    <div class="setting-description">粒子の広がり。大きいほど広範囲にパラパラと散ります。</div>
-                </div>
-
-                <div class="setting-group">
-                    <div class="setting-label">粒の大きさ (Grain)</div>
-                    <div class="slider-container">
-                        <div class="slider" id="airbrush-grain-slider">
-                            <div class="slider-track" id="airbrush-grain-track"></div>
-                            <div class="slider-handle" id="airbrush-grain-handle"></div>
-                        </div>
-                        <div class="slider-value" id="airbrush-grain-value">0.50</div>
-                    </div>
-                    <div class="setting-description">粒子1つ1つのサイズ。小さいと煙のような霧になります。</div>
+                    <div class="setting-description">各スタンプ位置にわずかなランダムオフセットを加えます。0でも十分滑らか。</div>
                 </div>
             </div>
 
@@ -320,15 +320,15 @@ export class SettingsPopup {
             airbrushFlowHandle: document.getElementById('airbrush-flow-handle'),
             airbrushFlowValue: document.getElementById('airbrush-flow-value'),
 
+            airbrushSoftnessSlider: document.getElementById('airbrush-softness-slider'),
+            airbrushSoftnessTrack: document.getElementById('airbrush-softness-track'),
+            airbrushSoftnessHandle: document.getElementById('airbrush-softness-handle'),
+            airbrushSoftnessValue: document.getElementById('airbrush-softness-value'),
+
             airbrushScatterSlider: document.getElementById('airbrush-scatter-slider'),
             airbrushScatterTrack: document.getElementById('airbrush-scatter-track'),
             airbrushScatterHandle: document.getElementById('airbrush-scatter-handle'),
             airbrushScatterValue: document.getElementById('airbrush-scatter-value'),
-
-            airbrushGrainSlider: document.getElementById('airbrush-grain-slider'),
-            airbrushGrainTrack: document.getElementById('airbrush-grain-track'),
-            airbrushGrainHandle: document.getElementById('airbrush-grain-handle'),
-            airbrushGrainValue: document.getElementById('airbrush-grain-value'),
 
             bucketGapButtons: Array.from(document.querySelectorAll('[data-bucket-setting="gap"]')),
             bucketGapValue: document.getElementById('bucket-gap-value'),
@@ -378,8 +378,8 @@ export class SettingsPopup {
             if (sliderType === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
             else if (sliderType === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
             else if (sliderType === 'airbrushFlow') { min = 0.01; max = 1.0; }
+            else if (sliderType === 'airbrushSoftness') { min = 0.0; max = 1.0; }
             else if (sliderType === 'airbrushScatter') { min = 0.0; max = 1.0; }
-            else if (sliderType === 'airbrushGrain') { min = 0.1; max = 2.0; }
 
             const value = min + ((max - min) * percent / 100);
             this._updateGenericSlider(sliderType, value);
@@ -437,8 +437,8 @@ export class SettingsPopup {
                 if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
                 else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
                 else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
+                else if (type === 'airbrushSoftness') { min = 0.0; max = 1.0; }
                 else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
-                else if (type === 'airbrushGrain') { min = 0.1; max = 2.0; }
 
                 const value = min + ((max - min) * percent / 100);
                 this._updateGenericSlider(type, value);
@@ -449,7 +449,7 @@ export class SettingsPopup {
             });
         };
 
-        ['pressure', 'smoothing', 'airbrushFlow', 'airbrushScatter', 'airbrushGrain'].forEach(setupSliderEvents);
+        ['pressure', 'smoothing', 'airbrushFlow', 'airbrushSoftness', 'airbrushScatter'].forEach(setupSliderEvents);
     }
 
     _updateGenericSlider(type, value) {
@@ -457,8 +457,8 @@ export class SettingsPopup {
         if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
         else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
         else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
+        else if (type === 'airbrushSoftness') { min = 0.0; max = 1.0; }
         else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
-        else if (type === 'airbrushGrain') { min = 0.1; max = 2.0; }
 
         const val = Math.max(min, Math.min(max, value));
         this[`current${type.charAt(0).toUpperCase() + type.slice(1)}`] = val;
@@ -549,9 +549,9 @@ export class SettingsPopup {
             pressureCorrection: 1.0,
             smoothing: 0.5,
             pressureCurve: 'linear',
-            airbrushFlow: 0.22,
-            airbrushScatter: 0.5,
-            airbrushGrain: 0.5,
+            airbrushFlow: 0.08,
+            airbrushSoftness: 0.8,
+            airbrushScatter: 0.0,
             statusPanelVisible: true,
             bucketGapClose: 0,
             bucketUnderpaint: 1,
@@ -569,8 +569,8 @@ export class SettingsPopup {
         this._updateGenericSlider('pressure', settings.pressureCorrection ?? defaults.pressureCorrection);
         this._updateGenericSlider('smoothing', settings.smoothing ?? defaults.smoothing);
         this._updateGenericSlider('airbrushFlow', settings.airbrushFlow ?? defaults.airbrushFlow);
+        this._updateGenericSlider('airbrushSoftness', settings.airbrushSoftness ?? defaults.airbrushSoftness);
         this._updateGenericSlider('airbrushScatter', settings.airbrushScatter ?? defaults.airbrushScatter);
-        this._updateGenericSlider('airbrushGrain', settings.airbrushGrain ?? defaults.airbrushGrain);
         this._updateBucketGapSlider(settings.bucketGapClose ?? defaults.bucketGapClose);
         this._updateBucketUnderpaintSlider(settings.bucketUnderpaint ?? defaults.bucketUnderpaint);
         this._setBucketRefVisibility(settings.bucketReferenceAllLayers ?? defaults.bucketReferenceAllLayers);

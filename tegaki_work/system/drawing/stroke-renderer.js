@@ -162,61 +162,55 @@ export class StrokeRenderer {
 
     _addAirbrushDab(container, texture, x, y, pressure, settings) {
         const sm = window.TegakiSettingsManager;
-        const flow = sm ? (sm.get('airbrushFlow') ?? 0.22) : 0.22;
-        const scatter = sm ? (sm.get('airbrushScatter') ?? 0.5) : 0.5;
-        const grain = sm ? (sm.get('airbrushGrain') ?? 0.5) : 0.5;
+        const flow = sm ? (sm.get('airbrushFlow') ?? 0.08) : 0.08;
+        // scatter: 中心からのわずかなランダムオフセット量（0=完全中心固定、1=サイズの20%ぶれ）
+        const scatter = sm ? (sm.get('airbrushScatter') ?? 0.0) : 0.0;
 
         const baseSize = settings.pressureEnabled === true
             ? this.calculateWidth(Math.max(0.1, pressure ?? 1.0), settings.size)
             : settings.size;
 
-        // [スプレー改修] 散布の均一性を向上
-        const scatterCount = Math.max(1, Math.floor(1 + scatter * 8)); 
-        const scatterRange = baseSize * (0.1 + scatter * 0.8); 
-
         const isErase = settings.mode === 'airbrush-erase' || settings.mode === 'eraser';
 
-        for (let i = 0; i < scatterCount; i++) {
-            const sprite = new Sprite(texture);
-            sprite.anchor.set(0.5);
+        // ソフトdab方式: 1スタンプ = 1つのソフト円形。
+        // scatterが0より大きい場合のみわずかにオフセットして「揺らぎ」を加える。
+        const sprite = new Sprite(texture);
+        sprite.anchor.set(0.5);
 
-            // [指示書] 均一な円形散布のための計算
+        let dabX = x;
+        let dabY = y;
+        if (scatter > 0) {
             const angle = Math.random() * Math.PI * 2;
-            const dist = Math.sqrt(Math.random()) * scatterRange;
-            sprite.position.set(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist);
-            
-            sprite.rotation = Math.random() * Math.PI * 2;
-            
-            const scaleMod = (0.5 + grain) * (0.8 + Math.random() * 0.4); 
-            sprite.width = baseSize * scaleMod;
-            sprite.height = baseSize * scaleMod;
-
-            // [消しゴム対応] 削除モードなら純粋な白、通常なら描画色
-            sprite.tint = isErase ? 0xffffff : (settings.color ?? 0x800000);
-            
-            // Flow 適用。
-            const alpha = Math.max(0.001, (settings.opacity ?? 1.0) * flow * 0.15);
-            sprite.alpha = alpha;
-            
-            // 重要：各粒子（dab）単位でブレンドモードを指定する
-            sprite.blendMode = isErase ? 'erase' : 'normal';
-            
-            container.addChild(sprite);
+            const dist = Math.random() * baseSize * scatter * 0.2;
+            dabX = x + Math.cos(angle) * dist;
+            dabY = y + Math.sin(angle) * dist;
         }
+        sprite.position.set(dabX, dabY);
+        sprite.width = baseSize;
+        sprite.height = baseSize;
+
+        sprite.tint = isErase ? 0xffffff : (settings.color ?? 0x800000);
+
+        // flow: 1dabあたりのopacity。低い値で塗り重ねて密度を出す。
+        const alpha = Math.max(0.001, (settings.opacity ?? 1.0) * flow);
+        sprite.alpha = alpha;
+
+        sprite.blendMode = isErase ? 'erase' : 'normal';
+
+        container.addChild(sprite);
     }
 
     _getAirbrushTexture() {
-        if (this.airbrushTexture) {
-            const sm = window.TegakiSettingsManager;
-            const grain = sm ? (sm.get('airbrushGrain') ?? 0.5) : 0.5;
-            if (this._lastGrain === grain) return this.airbrushTexture;
-            this._lastGrain = grain;
-        }
-
         const sm = window.TegakiSettingsManager;
-        const grain = sm ? (sm.get('airbrushGrain') ?? 0.5) : 0.5;
+        // softness: グラデーションの広がり具合（0=硬いエッジ、1=最もソフトなエッジ）
+        const softness = sm ? (sm.get('airbrushSoftness') ?? 0.8) : 0.8;
 
-        const size = 256; 
+        if (this.airbrushTexture && this._lastSoftness === softness) {
+            return this.airbrushTexture;
+        }
+        this._lastSoftness = softness;
+
+        const size = 256;
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
@@ -225,39 +219,32 @@ export class StrokeRenderer {
         const center = size / 2;
 
         ctx.clearRect(0, 0, size, size);
-        
-        // --- 1. 中心部を濃くし、周辺を劇的に淡くする（黒ずみ・灰色化対策） ---
+
+        // ソフトdabのガウシアン風グラデーション。
+        // softness が高いほど中心の濃い領域が狭まり、周辺が広く柔らかくなる。
+        // softness=0: 中心まで一定に濃く硬いエッジ → ほぼ均一な円
+        // softness=1: 中心だけ濃く、外側へ急激にフェード → 霧状
+        const hardEdge = 1.0 - softness;          // 0.0〜1.0 (softness反転)
+        const innerStop = hardEdge * 0.3;          // 均一濃度を保つ半径
+        const midStop = innerStop + (1.0 - innerStop) * 0.4;
+
         const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
-        gradient.addColorStop(0.0, 'rgba(255, 255, 255, 0.9)');
-        gradient.addColorStop(0.15, 'rgba(255, 255, 255, 0.4)');
-        gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.1)');
-        gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.02)');
-        gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
-        
+        gradient.addColorStop(0.0,       'rgba(255, 255, 255, 1.0)');
+        if (innerStop > 0.01) {
+            gradient.addColorStop(innerStop, 'rgba(255, 255, 255, 1.0)');
+        }
+        gradient.addColorStop(midStop,   `rgba(255, 255, 255, ${(0.4 * softness).toFixed(3)})`);
+        gradient.addColorStop(0.85,      'rgba(255, 255, 255, 0.02)');
+        gradient.addColorStop(1.0,       'rgba(255, 255, 255, 0.0)');
+
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, size, size);
 
-        // --- 2. ノイズの最適化 ---
-        const imageData = ctx.getImageData(0, 0, size, size);
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-            // 中心から遠いほどノイズを間引いてボケを綺麗に
-            const pixX = (i / 4) % size;
-            const pixY = Math.floor((i / 4) / size);
-            const distRatio = Math.hypot(pixX - center, pixY - center) / center;
+        // ノイズは加えない。滑らかなグラデーションをそのまま使用する。
 
-            const noiseThreshold = 0.2 + (grain * 0.4);
-            const noise = Math.random() < noiseThreshold ? (0.6 + Math.random() * 0.4) : (Math.random() * 0.3);
-            
-            data[i + 3] *= noise;
-            
-            // 周辺部の極薄いピクセルを完全に消して「汚れ」に見えるのを防ぐ
-            if (distRatio > 0.6 && data[i + 3] < 15) {
-                data[i + 3] = 0;
-            }
+        if (this.airbrushTexture) {
+            this.airbrushTexture.destroy();
         }
-        ctx.putImageData(imageData, 0, 0);
-
         this.airbrushTexture = Texture.from(canvas);
         return this.airbrushTexture;
     }
