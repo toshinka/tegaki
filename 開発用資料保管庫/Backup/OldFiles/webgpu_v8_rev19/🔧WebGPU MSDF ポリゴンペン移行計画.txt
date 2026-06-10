@@ -1,0 +1,668 @@
+================================================================================
+WebGPU MSDF ポリゴンペン移行計画書 v1.0
+PerfectFreehand依存脱却 → Compute Shader完結型描画基盤構築
+================================================================================
+
+【凡例】
+⚠️ = 問題箇所・実装不完全
+🔧 = 改修必要
+✅ = 正常動作確認済み
+❌ = 未実装・機能不全
+🔍 = 要調査
+📁 = 親ファイル
+📄 = 子ファイル
+🔀 = イベントフロー関連
+🚀 = 新規実装
+♻️ = 大規模改修
+
+================================================================================
+1. 移行判断と戦略方針
+================================================================================
+
+【現状診断】
+⚠️ PerfectFreehand依存により以下の構造的問題が発生:
+  - CPU → GPU間の二段階処理によるレイテンシ
+  - ラスタライズ的ぼやけ（Fragment Shaderの限界）
+  - 消しゴムBlendModeの不安定性
+  - 同期待機の複雑化によるフリッカー
+
+【移行理由】
+✅ 統一描画基盤: ペン/消しゴム/ブラシをSDF演算で統一
+✅ GPU完結処理: Compute内で距離計算→合成→出力
+✅ ベクター品質: 拡大縮小耐性のあるエッジ表現
+✅ 拡張容易性: 新ブラシ = 距離関数の派生実装
+
+【戦略方針】
+📌 段階的移行（Phase制）でリスク分散
+📌 CPU fallback不要（WebGPU前提で統一）
+📌 PerfectFreehand完全削除（依存ゼロ化）
+📌 座標変換パイプラインは維持（drawing-engine経由）
+
+================================================================================
+2. アーキテクチャ設計
+================================================================================
+
+【新規描画フロー】
+
+🔀 PointerEvent (screen座標)
+  ↓
+📄 drawing-engine.js ✅ [変更不要]
+  - screenClientToCanvas() [DPI補正]
+  - canvasToWorld() [worldContainer逆行列]
+  - worldToLocal() [親チェーン逆算]
+  ↓ {localX, localY, pressure}
+📄 brush-core.js ✅ [変更不要]
+  - startStroke() / updateStroke()
+  ↓
+📄 stroke-recorder.js ✅ [変更不要]
+  - addPoint() [Local座標記録]
+  ↓ points[]
+🚀 gpu-stroke-processor.js 【新規】
+  - points[] → EdgeBuffer変換
+  - GPU StorageBuffer転送
+  ↓ EdgeBuffer (GPU)
+🚀 msdf-generator-compute.wgsl 【新規】
+  - Seed初期化 Compute Pass
+  - JFA (Jump Flood Algorithm) Compute Pass
+  - MSDF Encode Compute Pass
+  ↓ MSDF Texture (GPU)
+🚀 msdf-compose-compute.wgsl 【新規】
+  - 前フレームMSDF + 新ストローク合成
+  - Pen: min() / Eraser: max()
+  ↓ Composed MSDF Texture (GPU)
+🚀 msdf-render.wgsl 【新規】
+  - median(r,g,b) → smoothstep → alpha
+  ↓ Final Render Texture
+📄 webgpu-texture-bridge.js ✅ [変更不要]
+  - GPUTexture → Pixi.Sprite
+  ↓
+📄 画面表示
+
+【削除対象】
+❌ polygon-generator.js (PerfectFreehand依存)
+❌ webgpu-geometry-layer.js (Vertex/Index転送不要)
+❌ earcut-triangulator.js (三角化不要)
+❌ stroke-renderer.js (新実装へ置換)
+
+【新規ファイル】
+🚀 gpu-stroke-processor.js
+🚀 msdf-seed-init.wgsl
+🚀 msdf-jfa-pass.wgsl
+🚀 msdf-encode.wgsl
+🚀 msdf-compose.wgsl
+🚀 msdf-render.wgsl
+🚀 msdf-pipeline-manager.js
+
+【改修ファイル】
+♻️ core-initializer.js (初期化順序変更)
+♻️ webgpu-drawing-layer.js (Compute対応拡張)
+
+================================================================================
+3. 技術要件・仕様詳細
+================================================================================
+
+【3-1. EdgeBuffer構造】
+
+Float32Array構造:
+  [x0, y0, x1, y1, edgeId, channelId, padding, padding]
+  - x0,y0: エッジ始点
+  - x1,y1: エッジ終点
+  - edgeId: エッジ識別子（符号判定用）
+  - channelId: MSDF割り当てチャンネル (0=R, 1=G, 2=B)
+
+GPU StorageBuffer:
+  @group(0) @binding(0) var<storage, read> edges: array<vec4<f32>>;
+
+────────────────────────────────────────────────────────────────
+
+【3-2. MSDF生成パイプライン】
+
+■ Phase A: Seed初期化
+  - エッジ端点・中点を seedTexture へ書き込み
+  - 各Seedに最近接EdgeId記録
+  - Format: rgba32float
+
+■ Phase B: JFA (Jump Flood Algorithm)
+  - Ping-Pong テクスチャで近接Seed伝播
+  - Step: canvas_max_size / 2 → 1 (log2反復)
+  - 距離二乗で最小Seedを選択
+
+■ Phase C: MSDF Encode
+  - 各ピクセルで最近接EdgeへのSigned Distance計算
+  - 符号判定: EdgeのWinding Number法
+  - 3チャンネル (R/G/B) に異なるEdge距離記録
+
+■ Phase D: Compose
+  - 前フレームMSDF + 新ストロークMSDF合成
+  - Pen: min(prev, new) [距離の最小値]
+  - Eraser: max(prev, new) [距離の最大値]
+
+■ Phase E: Render
+  - median(r,g,b) で統合距離取得
+  - smoothstep(threshold-range, threshold+range, d) → alpha
+  - Fragment Shader出力
+
+────────────────────────────────────────────────────────────────
+
+【3-3. Compute Shader workgroup設計】
+
+seedInit: @workgroup_size(64)
+  - 1D dispatch: edgeCount
+
+jfaPass: @workgroup_size(8,8)
+  - 2D dispatch: (width/8, height/8)
+
+msdfEncode: @workgroup_size(8,8)
+  - 2D dispatch: (width/8, height/8)
+
+compose: @workgroup_size(8,8)
+  - 2D dispatch: (width/8, height/8)
+
+render: Fragment Shader (workgroup不要)
+
+────────────────────────────────────────────────────────────────
+
+【3-4. Texture Format】
+
+seedTexture: rgba32float
+  - r,g: Seed座標 (x,y)
+  - b: EdgeId
+  - a: 距離二乗
+
+msdfTexture: rgba16float
+  - r,g,b: 各チャンネル距離
+  - a: 未使用（将来拡張用）
+
+composedTexture: rgba16float
+
+finalTexture: rgba8unorm
+
+────────────────────────────────────────────────────────────────
+
+【3-5. 符号判定（Inside/Outside）】
+
+方式: CPU事前計算 + GPU参照
+
+stroke-recorder.js:
+  - ストローク終了時にWinding計算
+  - 各EdgeにinsideFlag付与 (-1 or +1)
+
+EdgeBuffer拡張:
+  [x0, y0, x1, y1, edgeId, channelId, insideFlag, padding]
+
+msdf-encode.wgsl:
+  - EdgeBufferからinsideFlagを参照
+  - distance *= insideFlag で符号適用
+
+================================================================================
+4. ファイル別改修詳細
+================================================================================
+
+【4-1. 新規: gpu-stroke-processor.js】
+────────────────────────────────────────────────────────────────
+🚀 責務:
+  - stroke-recorder.points[] → EdgeBuffer変換
+  - GPU StorageBuffer作成・転送
+  - EdgeBuffer管理（作成/破棄）
+
+📁 依存Parents:
+  - stroke-recorder.js (points取得)
+  - webgpu-drawing-layer.js (device/queue)
+
+📄 依存Children:
+  - msdf-pipeline-manager.js (EdgeBuffer渡し)
+
+主要メソッド:
+  - createEdgeBuffer(points[], windingData)
+    → Float32Array EdgeBuffer
+  
+  - uploadToGPU(edgeBuffer)
+    → GPUBuffer
+  
+  - calculateWinding(points[])
+    → insideFlag[] (-1 or +1 per edge)
+
+────────────────────────────────────────────────────────────────
+
+【4-2. 新規: msdf-pipeline-manager.js】
+────────────────────────────────────────────────────────────────
+🚀 責務:
+  - Compute Pipeline統合管理
+  - Seed/JFA/Encode/Compose/Render Pass実行
+  - Texture Ping-Pong管理
+
+📁 依存Parents:
+  - webgpu-drawing-layer.js (device/queue/format)
+  - gpu-stroke-processor.js (EdgeBuffer)
+
+📄 依存Children:
+  - brush-core.js (呼び出し元)
+
+主要メソッド:
+  - initialize(device, format)
+  - generateMSDF(edgeBuffer, bounds, existingMSDF)
+    → MSDF Texture
+  
+  - composeMSDF(prevMSDF, newMSDF, mode='pen')
+    → Composed MSDF Texture
+  
+  - renderToTexture(msdfTexture, width, height)
+    → Final Render Texture
+
+内部メソッド:
+  - _seedInitPass(edgeBuffer, seedTexture)
+  - _jfaPass(srcTexture, dstTexture, step)
+  - _encodePass(seedTexture, edgeBuffer, msdfTexture)
+  - _composePass(prevMSDF, newMSDF, mode)
+
+────────────────────────────────────────────────────────────────
+
+【4-3. 新規: msdf-seed-init.wgsl】
+────────────────────────────────────────────────────────────────
+🚀 Compute Shader
+
+Input:
+  @group(0) @binding(0) var<storage, read> edges: array<vec4<f32>>;
+  @group(0) @binding(1) var seedTex: texture_storage_2d<rgba32float, write>;
+
+処理:
+  - エッジ端点 (x0,y0), (x1,y1) を seedTex へ書き込み
+  - 中点 ((x0+x1)/2, (y0+y1)/2) も書き込み
+  - 各Seedに edgeId 記録
+
+────────────────────────────────────────────────────────────────
+
+【4-4. 新規: msdf-jfa-pass.wgsl】
+────────────────────────────────────────────────────────────────
+🚀 Compute Shader (Ping-Pong用)
+
+Input:
+  @group(0) @binding(0) var srcTex: texture_2d<f32>;
+  @group(0) @binding(1) var dstTex: texture_storage_2d<rgba32float, write>;
+  @group(0) @binding(2) var<uniform> uStep: u32;
+
+処理:
+  - 自座標 + 8方向 (±step) のSeedをサンプル
+  - 距離二乗で最小Seedを選択
+  - dstTex へ書き込み
+
+────────────────────────────────────────────────────────────────
+
+【4-5. 新規: msdf-encode.wgsl】
+────────────────────────────────────────────────────────────────
+🚀 Compute Shader
+
+Input:
+  @group(0) @binding(0) var seedTex: texture_2d<f32>;
+  @group(0) @binding(1) var<storage, read> edges: array<vec4<f32>>;
+  @group(0) @binding(2) var msdfTex: texture_storage_2d<rgba16float, write>;
+
+処理:
+  - seedTex から最近接EdgeId取得
+  - Edgeへの最短距離計算（点-線分距離）
+  - insideFlag で符号適用
+  - channelId に応じて r/g/b に書き込み
+
+────────────────────────────────────────────────────────────────
+
+【4-6. 新規: msdf-compose.wgsl】
+────────────────────────────────────────────────────────────────
+🚀 Compute Shader
+
+Input:
+  @group(0) @binding(0) var prevMSDF: texture_2d<f32>;
+  @group(0) @binding(1) var newMSDF: texture_2d<f32>;
+  @group(0) @binding(2) var<uniform> uMode: u32; // 0=pen, 1=eraser
+  @group(0) @binding(3) var outTex: texture_storage_2d<rgba16float, write>;
+
+処理:
+  - mode=pen: min(prev, new)
+  - mode=eraser: max(prev, new)
+
+────────────────────────────────────────────────────────────────
+
+【4-7. 新規: msdf-render.wgsl】
+────────────────────────────────────────────────────────────────
+🚀 Fragment Shader
+
+Input:
+  @group(0) @binding(0) var msdfSampler: sampler;
+  @group(0) @binding(1) var msdfTex: texture_2d<f32>;
+  @group(0) @binding(2) var<uniform> uThreshold: f32;
+  @group(0) @binding(3) var<uniform> uRange: f32;
+  @group(0) @binding(4) var<uniform> uColor: vec4<f32>;
+
+処理:
+  - ms = textureSample(msdfTex, uv)
+  - d = median(ms.r, ms.g, ms.b)
+  - alpha = smoothstep(uThreshold-uRange, uThreshold+uRange, d)
+  - return vec4(uColor.rgb, uColor.a * alpha)
+
+────────────────────────────────────────────────────────────────
+
+【4-8. 改修: core-initializer.js】
+────────────────────────────────────────────────────────────────
+♻️ 変更内容:
+
+初期化順序変更:
+  ❌ 削除: webgpu-geometry-layer.js
+  ❌ 削除: earcut-triangulator.js
+  🚀 追加: gpu-stroke-processor.js
+  🚀 追加: msdf-pipeline-manager.js
+
+初期化シーケンス:
+  1. webgpu-drawing-layer.initialize()
+  2. gpu-stroke-processor.initialize()
+  3. msdf-pipeline-manager.initialize()
+  4. webgpu-texture-bridge.initialize()
+
+────────────────────────────────────────────────────────────────
+
+【4-9. 改修: webgpu-drawing-layer.js】
+────────────────────────────────────────────────────────────────
+♻️ 変更内容:
+
+Compute対応拡張:
+  - createComputePipeline() メソッド追加
+  - Compute BindGroupLayout作成サポート
+  - StorageBuffer作成ヘルパー追加
+
+メソッド追加:
+  - createStorageBuffer(size, label)
+  - createComputePipeline(shaderModule, layout, entryPoint)
+  - createStorageTexture(width, height, format)
+
+────────────────────────────────────────────────────────────────
+
+【4-10. 改修: brush-core.js】
+────────────────────────────────────────────────────────────────
+♻️ 変更内容:
+
+stroke終了処理変更:
+  
+  // 旧
+  ❌ const polygon = polygonGenerator.generate(points);
+  ❌ strokeRenderer.renderPreview(polygon, ...);
+
+  // 新
+  ✅ const edgeBuffer = gpuStrokeProcessor.createEdgeBuffer(points);
+  ✅ const msdfTexture = msdfPipelineManager.generateMSDF(edgeBuffer, bounds);
+  ✅ const sprite = textureBridge.createSpriteFromGPUTexture(msdfTexture, ...);
+
+────────────────────────────────────────────────────────────────
+
+【4-11. 削除対象詳細】
+
+❌ polygon-generator.js
+  - PerfectFreehand実行処理
+  - 完全削除
+
+❌ webgpu-geometry-layer.js
+  - Vertex/IndexBuffer転送
+  - RenderPipeline管理
+  - 完全削除
+
+❌ earcut-triangulator.js
+  - 三角化処理
+  - 完全削除
+
+❌ stroke-renderer.js
+  - 旧描画フロー
+  - msdf-pipeline-manager.js へ置換
+
+================================================================================
+5. 実装フェーズ計画
+================================================================================
+
+【Phase 0: 準備・検証】 (1日)
+────────────────────────────────────────────────────────────────
+✅ WebGPU Compute機能確認
+  - device.createComputePipeline() 動作確認
+  - StorageBuffer read/write 確認
+
+✅ テストキャンバス作成
+  - 単純な矩形EdgeBufferでSeed初期化テスト
+  - seedTexture可視化（デバッグ用）
+
+────────────────────────────────────────────────────────────────
+
+【Phase 1: Seed初期化実装】 (2日)
+────────────────────────────────────────────────────────────────
+🚀 gpu-stroke-processor.js 実装
+  - createEdgeBuffer() メソッド
+  - uploadToGPU() メソッド
+
+🚀 msdf-seed-init.wgsl 実装
+  - エッジ端点・中点書き込み
+
+🚀 msdf-pipeline-manager.js 骨格作成
+  - _seedInitPass() 実装
+
+✅ 検証:
+  - seedTexture可視化で端点が正しく書き込まれる
+
+────────────────────────────────────────────────────────────────
+
+【Phase 2: JFA実装】 (3日)
+────────────────────────────────────────────────────────────────
+🚀 msdf-jfa-pass.wgsl 実装
+  - 8方向Seed伝播
+  - 距離二乗比較
+
+🚀 Ping-Pong Texture管理
+  - msdf-pipeline-manager.js 内実装
+  - _jfaPass() 反復実行
+
+✅ 検証:
+  - JFA完了後のseedTexture可視化
+  - 全ピクセルが最近接Seed保持確認
+
+────────────────────────────────────────────────────────────────
+
+【Phase 3: MSDF Encode実装】 (3日)
+────────────────────────────────────────────────────────────────
+🚀 msdf-encode.wgsl 実装
+  - 点-線分距離計算
+  - 符号判定（CPU事前計算版）
+
+🚀 Winding計算実装
+  - gpu-stroke-processor.calculateWinding()
+  - EdgeBufferへinsideFlag追加
+
+✅ 検証:
+  - msdfTexture可視化（R/G/B各チャンネル）
+  - 符号（内外判定）正確性確認
+
+────────────────────────────────────────────────────────────────
+
+【Phase 4: Compose & Render実装】 (2日)
+────────────────────────────────────────────────────────────────
+🚀 msdf-compose.wgsl 実装
+  - Pen: min() / Eraser: max()
+
+🚀 msdf-render.wgsl 実装
+  - median() → smoothstep → alpha
+
+🚀 msdf-pipeline-manager.js 統合
+  - composeMSDF() / renderToTexture()
+
+✅ 検証:
+  - ペン描画でエッジ滑らか
+  - 消しゴムで正確に消去
+
+────────────────────────────────────────────────────────────────
+
+【Phase 5: 統合・最適化】 (3日)
+────────────────────────────────────────────────────────────────
+♻️ brush-core.js 統合
+  - 旧フロー削除
+  - 新フロー接続
+
+🔧 パフォーマンス最適化
+  - workgroup_size調整
+  - Seed密度チューニング
+  - Texture Format最適化（rgba16float確認）
+
+✅ 検証:
+  - 連続描画60fps維持
+  - メモリリーク無し
+  - GPU使用率確認
+
+────────────────────────────────────────────────────────────────
+
+【Phase 6: QA・エッジケース対応】 (2日)
+────────────────────────────────────────────────────────────────
+🔍 エッジケーステスト
+  - 極端に細いストローク
+  - 高速ストローク
+  - 自己交差ストローク
+  - レイヤー切り替え時の挙動
+
+🔧 不具合修正
+  - 符号判定精度改善
+  - JFA Step数調整
+  - Threshold/Range調整
+
+✅ 最終検証:
+  - 各ブラウザ動作確認（Chrome/Edge）
+  - DPR固定動作確認
+
+================================================================================
+6. メソッド・シンボル辞典
+================================================================================
+
+【グローバルオブジェクト】
+
+✅ window.WebGPUDrawingLayer
+  - device: GPUDevice
+  - queue: GPUQueue
+  - format: GPUTextureFormat
+  - createStorageBuffer(size, label): GPUBuffer
+  - createComputePipeline(module, layout, entry): GPUComputePipeline
+  - createStorageTexture(w, h, format): GPUTexture
+
+🚀 window.GPUStrokeProcessor
+  - initialize(device): Promise<void>
+  - createEdgeBuffer(points[], windingData): Float32Array
+  - uploadToGPU(edgeBuffer): GPUBuffer
+  - calculateWinding(points[]): Float32Array
+  - destroy(): void
+
+🚀 window.MSDFPipelineManager
+  - initialize(device, format): Promise<void>
+  - generateMSDF(edgeBuffer, bounds, existingMSDF): GPUTexture
+  - composeMSDF(prevMSDF, newMSDF, mode): GPUTexture
+  - renderToTexture(msdfTexture, w, h): GPUTexture
+  - destroy(): void
+
+✅ window.WebGPUTextureBridge [変更不要]
+  - createSpriteFromGPUTexture(texture, w, h): Promise<Sprite>
+
+【削除シンボル】
+
+❌ window.WebGPUGeometryLayer
+❌ window.EarcutTriangulator
+❌ window.PolygonGenerator
+❌ window.StrokeRenderer
+
+【座標変換メソッド】 [変更不要]
+
+📄 drawing-engine.js
+  - screenClientToCanvas(screenX, screenY): {canvasX, canvasY}
+  - canvasToWorld(canvasX, canvasY): {worldX, worldY}
+  - worldToLocal(worldX, worldY, container): {localX, localY}
+
+【新規メソッド詳細】
+
+gpu-stroke-processor.js:
+  - createEdgeBuffer(points, windingData)
+    Input: points[] = [x0,y0, x1,y1, ...]
+           windingData = {insideFlags: [...]}
+    Output: Float32Array EdgeBuffer
+    
+  - calculateWinding(points)
+    Input: points[] (closed loop)
+    Output: {insideFlags: Float32Array}
+    Algorithm: Winding Number法
+
+msdf-pipeline-manager.js:
+  - generateMSDF(edgeBuffer, bounds, existingMSDF)
+    Input: GPUBuffer edgeBuffer
+           bounds = {minX, minY, maxX, maxY}
+           existingMSDF = GPUTexture or null
+    Output: GPUTexture (MSDF)
+    
+    内部処理:
+      1. Seed初期化 Compute Pass
+      2. JFA Pass (log2(max(w,h)) 反復)
+      3. MSDF Encode Compute Pass
+      4. existingMSDF存在時は Compose Pass実行
+    
+  - composeMSDF(prevMSDF, newMSDF, mode)
+    Input: prevMSDF, newMSDF (GPUTexture)
+           mode = 'pen' | 'eraser'
+    Output: GPUTexture (Composed MSDF)
+    
+  - renderToTexture(msdfTexture, w, h)
+    Input: msdfTexture (GPUTexture)
+    Output: GPUTexture (rgba8unorm, final render)
+
+================================================================================
+7. 座標系・データフロー詳細
+================================================================================
+
+【座標系】
+
+Screen → Canvas → World → Local → EdgeBuffer → GPU
+
+EdgeBuffer座標系: Local座標系
+  - drawing-engine で Local変換完了済み
+  - gpu-stroke-processor で受け取りそのまま使用
+  - GPU側で NDC変換不要（Compute内で独立処理）
+
+【データフロー】
+
+PointerEvent
+  ↓ [drawing-engine]
+Local座標 {localX, localY, pressure}
+  ↓ [stroke-recorder]
+points[] = [x0,y0, x1,y1, ...]
+  ↓ [gpu-stroke-processor]
+EdgeBuffer Float32Array + Winding計算
+  ↓ [uploadToGPU]
+GPU StorageBuffer
+  ↓ [msdf-pipeline-manager]
+MSDF Generation (Seed → JFA → Encode)
+  ↓
+MSDF Texture (rgba16float)
+  ↓ [Compose Pass]
+Composed MSDF Texture
+  ↓ [Render Pass]
+Final Texture (rgba8unorm)
+  ↓ [webgpu-texture-bridge]
+Pixi.Sprite
+  ↓
+画面表示
+
+================================================================================
+8. パフォーマンス目標・制約
+================================================================================
+
+【目標】
+✅ 60fps維持（2048x2048キャンバス、ブラシ径32）
+✅ 80-120fps到達（タイル化実装後）
+✅ GPU使用率 < 50%
+✅ メモリリーク無し
+
+【制約】
+⚠️ Texture Format: rgba16float 必須
+  - webgpu-capabilities.js で事前確認
+  - 非対応環境は起動時エラー
+
+⚠️ Compute Shader制限
+  - maxComputeInvocationsPerWorkgroup: 256
+  - workgroup_size(8,8) = 64 (推奨)
+
+⚠️ Seed密度 vs 精度トレードオフ
+  - Seed密度高 → 精度向上、コスト増
+  - 初期値: エッジ端点 + 中点のみ

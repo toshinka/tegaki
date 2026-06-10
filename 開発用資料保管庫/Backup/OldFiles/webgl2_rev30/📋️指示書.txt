@@ -1,0 +1,313 @@
+
+WEBGL2・perfect-freehand・SDF/MSDFメッシュポリゴンペンを実装を考えています。
+
+ただ一度失敗したために、いくつかのファイルをロールバックしてます。（添付画像は失敗したときのものですが、間違えて貼り付けたものなので気にしないでください）
+また、準備済みであるものの接続がされていないのもあります。
+実装に当たってまず現状整理をしたいです。
+
+・現状はどういう経路で描かれているのか？
+・perfect-freehandは使われているか？
+・perfect-freehandが使われていないのであれば、その実装はどうすれば良いのか？
+・perfect-freehandを使うのにあたり、pixi.jsと競合したりしないか？分離し責任分界を明確にする必要あるのか？
+・WEBGL2化とSDF/MSDFメッシュポリゴンペンを実装するに辺り、最初にクリーンアップをするべきか？
+・読み込みであるが現在繋がれていないファイルは、後で必要になるかどうか？
+
+ファイルを読み込んだ後、フロー・親子関係・メソッド・プロパティ・インスタンス等が書かれた辞典を作成してください。正しいフローなのか、親子ファイルですれ違ったやりとりをしてないか、使用/未使用ファイルのチェックと未使用のものはそのファイルが今後必要なのかのチェックも。
+ファイル辞典を作ることで、必要なもの・そうでないもの/過去の整理すべきゴミ・ファイル間のメソッド等の勘違い登録を把握し、現状をクリーンにするための指南書としたいのです。
+
+改修はClaudeが行うので過剰なコード例は必要ないと考えます。無くてもClaudeなら思いつくようなものは省き冗長化しない必要最低限で、ただ内容は密としAIからの可読性が良好なものを作成してください。
+txtにコピペしたいのでプレーンな記述でアーティファクト側での提出をしてください。
+【凡例】
+⚠️ = 問題箇所・実装不完全
+🔧 = 改修必要
+✅ = 正常動作確認済み
+❌ = 未実装・機能不全
+🔍 = 要調査
+📁 = 親ファイル
+📄 = 子ファイル
+🔀 = イベントフロー関連
+
+
+
+
+
+それでは計画書に沿って改修してください。まとめてファイルを作成すると、
+
+元ファイル+必要な改修で、機能が継承された完全なものの提出をし辛くなると思われるので、一度に提出するファイル数は適切に、元ファイルの必要なメソッドの継承を重視してください。
+
+
+必要なメソッド等の継承が行われておらず、キャンバスが出現しなくなりました。
+🚨元ファイル+必要な改修で、機能が継承された完全なものの提出をお願いします
+
+
+
+
+WEBGL2・perfect-freehand・SDF/MSDFメッシュポリゴンペンを実装中です。
+
+
+ファイルを読み込んだ後、フロー・親子関係・メソッド・プロパティ・インスタンス等も把握してから作業に移ってください。
+
+PerfectFreehand関連で改修していたところ、ペンのストロークが終わると過剰に補正されて、ユーザーの意図通りではならない線に変形するようになりました。
+Perfect-Freehandをリアルタイム描画しようとしても上手くいかないので、Perfect-Freehand の形状補正を捨てて “ベクター・メッシュ生成の入口” としてだけ使うようにしたいです。
+その後で📖  Tegaki WebGL2 - Perfect-Freehand統合完了 & Phase 3以降実装計画書.txtを進めたいですがどうでしょうか？GPT5アドバイス.txtも参考にしてください。
+ファイルを読み込んだ後、フロー・親子関係・メソッド・プロパティ・インスタンス等も把握してから作業に移ってください。
+
+
+🚨元ファイル+必要な改修で、機能が継承された完全なものの提出をお願いします。
+今のところ80％くらいの確率で、最初の出力が親子ファイル関係を破棄した継承の無い提出物を初回に出すというのが見られるので注意してください。
+・初心者な私ではパッチコードでは間違う可能性が高いので、元ファイルを継承した完全版のみの提出を行ってください。
+・ヘッダーへの親子依存関係記述をし、Claudeが関連ファイルを読み込まなかった場合の多重実装を防ぐようにする。改修時に記述。
+・多重実装は排除してください。
+・過剰なコンソール表記、実装が既に終わり特に確認の必要のないものはファイル改修時に削除してクリーンにする事。
+・DRY/SOLID原則に基づく明確なファイルの責務分担をしAI(Claude）からの可視性を高める事。
+・改修報告は簡潔に。
+
+改修事項ばかりにフォーカスし、元ファイルからのメソッドを疎かにし継承が失われる場合があります。
+無理に一度に多数のファイルを出すのではなく、丁寧に一つのファイルを親子メソッドを確認しながら、計画に沿いつつ改修を開始してください。
+
+
+
+
+🚨多重実装が頻繁に起こるので、ヘッダーへの親子依存関係記述を改修時に行うこと。
+🚨DRY/SOLIDに基づいてるかを常にチェックし二重実装を撲滅・殲滅してください。
+・過剰なコンソールログ表記、実装が既に終わり特に確認の必要のないものはファイル改修時に削除してクリーンにする事。
+・デバッグはなるべくコンソールコマンドで行い、ファイルの可視性を高める。
+・なぜポリゴンペンを目指すのか？→　ベクターでのエアブラシや水彩ペン実装に不可欠なので。
+・いくつもの改修書を発行して使ってるのでPhase数はそれほど当てになりません。
+＝＝＝＝＝＝
+私はコーディング初心者で、コーディングは全てClaude任せです。なのでファイル構造やコードはClaudeからの可読性と・改修し易さとアーキテクチャの明確化が最優先です。
+本ツールは下記ガイドラインで改修しています。
+
+================================================================================
+ブラウザお絵かきツール - ガイドライン短版（WebGL2対応）
+
+【実行環境・技術スタック】
+・環境: Chrome最新、file:// 直開き可能、CSPはブックマークレット対応予定
+・フレームワーク: PixiJS v8.14(CDN)、ES2023(モジュール不使用)
+・GPU API: WebGL2 / fallback 不要
+・禁止: Canvas2D, TypeScript, Vite, ESM, bundler, Babel
+・file://プロトコルでは外部ファイル読み込みが不可能なのでGLSLコードをJavaScript内にインライン化する。
+・Perfect-Freehandは"ベクター・メッシュ生成の入口"としてのみ使用
+
+【座標変換パイプライン - 重要】
+・PointerEvent.clientX/Y
+・→ screenClientToCanvas() [DPI補正]
+・→ canvasToWorld() [worldContainer逆行列]
+・→ worldToLocal() [手動逆算・親チェーン遡査]
+・→ Local座標確定
+・→ strokeRecorder記録
+
+・PointerEvent は常に WebGL2 キャンバスの生の DOM イベントで受け取り、
+  screenClientToCanvas()→canvasToWorld()→worldToLocal() を drawing-engine が単一で実行する。
+・Pixi の toLocal()/toGlobal() は使用禁止。
+・Pixi は UI 表示のために DOM イベント登録をしてもよいが、
+  座標変換のオーナーシップは drawing-engine に一本化する。
+・PixiJSの内部関数に依存せず、純粋な数学計算のみで座標変換を行う
+
+【ファイル責務 - 厳格】
+・coordinate-system.js : Screen/Canvas/World/Local 変換のみ
+・camera-system.js : worldContainer transform, ズーム・パン
+・drawing-engine.js : PointerEvent → Local座標変換、ストローク開始
+・stroke-recorder.js : Local座標ポイント直接記録(座標変換なし)
+・stroke-renderer.js : Local座標からビジュアル生成 (PerfectFreehand → ポリゴン)
+・webgl-geometry-layer.js : PerfectFreehand出力→GL頂点転送・Mesh描画
+・webgl-mask-layer.js : マスク処理(SDF/MSDF合成) // 【将来追加予定】
+・webgl-drawing-layer.js : 合成・出力統合（Pixi背景上への描画） // 【将来追加予定】
+
+【命名ルール - 必須】
+・パラメータ名に座標系を明示:
+  localX, localY / worldX, worldY / screenX, screenY
+・メソッド名で座標系を区別:
+  screenClientToCanvas() / canvasToWorld() / worldToLocal()
+・イベント名: component:action フォーマット統一
+・WebGL2系は "gl" 接頭: glDevice, glProgram, glTexture など
+・レンダーループは WebGL2 が唯一のマスターとする。
+  Pixi の ticker を停止し、必要な場合は WebGL2 の renderLoop 内で
+  pixiApp.renderer.render(stage) を手動で呼ぶ
+  （順序：glRender() → pixiRender()）。
+
+・pointer イベントの一次取得は WebGL2 キャンバスが担う（setPointerCapture を用いる）。
+  Pixi のインタラクティブ管理機能は無効化し、
+  UI が pointer を必要とする場合は EventBus を経由して同期すること。
+
+【二重変換防止 - 最重要】
+・Local座標変換は drawing-engine で完結。
+・stroke-recorder では受け取った座標をそのまま保存（追加変換禁止）。
+・同一ポイントに対する複数座標変換を明示的に禁止。
+・Pixi 側座標変換は UI 取得用に限定。
+
+【グローバルオブジェクト統一】
+✓ window.CoordinateSystem
+✓ window.cameraSystem
+✓ window.layerManager
+・WebGL2 関連は window.WebGLContext（gl, programs, shaders, format 等）に集約する。
+・Pixi 用の global は window.PixiUI 等に分離する。グローバル重複を厳禁。
+
+❌ 削除候補(重複):
+window.TEGAKI_COORDINATE_SYSTEM
+
+【worldToLocal() 実装 - 注意】
+❌ PIXI v8 toLocal() は使用厳禁
+理由: 親チェーン全体の worldTransform を使用し、
+      worldContainer.position が含まれて負数が混ざるため。
+
+✓ 手動逆算で実装
+  親コンテナをスキャンし、
+  各 position/scale/rotation を逆順に適用する。
+
+================================================================================
+
+■ 実装品質基準
+・多数ある競合ツールとの差別化のためモダン実装を心がけ、後方互換は気にしない。
+・目標：120Hz/ひねり回転・傾き検出ベクターペンの実装。
+・DRY/SOLID原則に基づく明確な責務分担を行い、Claudeからの可視性を高める。
+・APIの不一致・断片化・EventBus統合の不完全性・設定参照の混在・二重実装などを排除する。
+・命名規則・初期化順・イベント・管理構造の統一を行い保守性を高める。
+・Distance Field 生成は将来的に GPU Compute / FBO ベースで実装する（CPU禁止）【v2.2】
+・PerfectFreehand出力はポリゴン化し、CPUラスタライズは禁止【v2.3】
+・PixiJSはUIホスト・レイヤー管理のみ。描画責務は一切持たせない【v2.3】
+・DPRは一倍で固定化。Retina対応による品質のブレを避ける。
+
+■ 禁止事項【WebGL2版 v2.4】
+
+🚫 二重変換（pointer → view → world → geometry の座標変換を複数箇所で実施）
+    ※ 座標変換は「StrokeCoordinateTransformer」の単一責務に集約する。
+🚫 PIXI v8 の toLocal() / toGlobal() を worldToLocal 実装に使用
+    ※ Pixi の座標系計算は使用しない。描画座標は WebGLDrawingLayer 側で一元管理。
+🚫 グローバルオブジェクトの重複定義
+    ※ WebGLContext / StrokeRecorder / DrawingEngine などは単一インスタンスを厳守。
+🚫 Canvas2D の使用（CPU ラスタライズが発生するため）
+    ※ debug 可視化目的での一時使用のみ可（本番ロジックへの混入は禁止）。
+🚫 ラスターペンの実装（CPU描画）【v2.1】
+    ※ 本番処理は必ず GPU（WebGL2 VBO/IBO または MSDF シェーダ）で行う。
+🚫 フォールバック処理・曖昧な暗黙修復動作
+    ※ エラーは例外として明示的に扱い、黙って内部状態を書き換えない。
+🚫 バージョン混在（PixiJS v7 / v8 の同時対応）
+    ※ v8 固定。依存は最小限、UI レイヤー管理以外の責務を与えない。
+🚫 二実装による肥大化、過度なエラー演出
+    ※ 同じ機能を Pixi / WebGL / custom-class の 3 カ所に書かない。
+🚫 循環依存
+    ※ DrawingEngine → StrokeRecorder → CoordinateTransformer → DrawingEngine のループ禁止。
+🚫 CPU側での距離場計算（SDF / MSDF）
+    ※ SDF/MSDF 生成と半径補正は必ず GPU シェーダ上で処理する。
+🚫 ペン/消しゴムの分離実装【v2.2】
+    ※ strokeType: 'draw' | 'erase' を統合パスで扱い、別エンジンは持たせない。
+🚫 Pixi.Graphics を本番描画に使用（CPUラスタライズのため）
+    ★例外：座標デバッグ・パス可視化のための一時的使用は許可
+    ※ 本番ロジック（ペン本体・消しゴム・水彩など）には混在させない。
+🚫 Pixi が WebGL2 の gl コンテキストを直接操作すること
+    ※ WebGL の全管理は WebGLContext クラスのみが行い、Pixi は UI レイヤーに限定する。
+
+
+
+================================================================================
+
+ブラウザお絵かきツール
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/index.html
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/styles/main.css
+コンフィグ
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/config.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/coordinate-system.js
+イベント
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/event-bus.js
+データモデル
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/data-models.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/batch-api.js
+デバッグ
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/debug-utils.js
+システム
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/popup-manager.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/state-manager.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/settings-manager.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/camera-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/layer-transform.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/checker-utils.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/layer-system.js 
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing-clipboard.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/history.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/virtual-album.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/animation-system.js
+Earcut Triangulator (共通) 
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/earcut-triangulator.js
+
+WebGL2 Base
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/gl-texture-bridge.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/gl-msdf-pipeline.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/gl-stroke-processor.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/webgl2-drawing-layer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/gl-mask-layer.js
+WebGL2 shaders
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/shaders/seed-init.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/shaders/jfa-pass.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/shaders/encode.frag.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/shaders/render.vert.glsl
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/webgl2/shaders/render.frag.glsl
+
+rawing System - 基盤処理
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/pointer-handler.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/pressure-handler.js
+ポリゴンジェネレーター  
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/stroke-recorder.js
+SDF
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/sdf-brush-shader.js
+
+Drawing System - 統合
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/stroke-renderer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/thumbnail-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/brush-settings.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/stroke-transformer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/blend-modes.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/processing/vector-operations.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/brush-core.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/fill-tool.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/drawing/drawing-engine.js
+エクスポート
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/quick-export-ui.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/export-manager.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/exporters/png-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/exporters/webp-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/exporters/psd-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/exporters/apng-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/exporters/webm-exporter.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/system/exporters/mp4-exporter.js
+UI
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/dom-builder.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/slider-utils.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/keyboard-handler.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/resize-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/layer-panel-renderer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/status-display-renderer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/timeline-thumbnail-utils.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/timeline-ui.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/album-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/settings-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/quick-access-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/export-popup.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/ui/ui-panels.js
+Core
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/core-runtime.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/core-engine.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/core-initializer.js
+
+libs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/libs/gsap.min.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/libs/perfect-freehand-1.2.0.min.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/libs/ffmpeg-wasm-0.12.15.min.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/libs/ffmpeg-core.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/webgl2_rev9/libs/ffmpeg-core.wasm
+
+下記カラーで構成する。スライダーが灰色になったり、安易に黒や白等使わないように注意し色の統一をさせること。
+--futaba-maroon: #800000;     （アクティブペンカラー：デフォルトペン色）
+--futaba-light-maroon: #aa5a56;
+--futaba-medium: #cf9c97;
+--futaba-light-medium: #e9c2ba;
+--futaba-cream: #f0e0d6;  （キャンバス背景レイヤー0：デフォルト色）
+--futaba-background: #ffffee;
+
+
+使用SVG
+lucide-static
+https://lucide.dev/guide/packages/lucide-static
+
+
+

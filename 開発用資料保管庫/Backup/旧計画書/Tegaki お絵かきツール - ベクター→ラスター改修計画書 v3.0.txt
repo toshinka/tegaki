@@ -1,0 +1,979 @@
+================================================================================
+Tegaki お絵かきツール - ベクター→ラスター改修計画書 v3.0
+================================================================================
+
+作成日: 2024-12-04
+対象: webgl2_rev30 全ファイル
+目的: ベクター方式からラスター方式への完全移行
+
+================================================================================
+第1章: 現状分析 - ファイル辞典
+================================================================================
+
+【凡例】
+✅ = 正常動作・保持
+🔧 = 改修必要
+❌ = 削除対象
+⚠️ = 要調査・実装不完全
+📁 = 親ファイル（他に依存される）
+📄 = 子ファイル（他に依存する）
+🔀 = イベントフロー関連
+
+------------------------------------------------------------------------
+1.1 コアファイル（初期化・設定）
+------------------------------------------------------------------------
+
+📁 config.js
+  ✅ グローバル設定・キーマップ定義
+  ✅ TEGAKI_CONFIG, TEGAKI_KEYMAP を提供
+  ✅ ブラシ設定（pen, eraser, fill, flow等）
+  🔧 ラスター用パラメータ追加必要
+     - brush.raster.stamp 設定
+     - brush.raster.interpolation 設定
+  依存: なし
+  被依存: 全ファイル
+
+📁 coordinate-system.js
+  ✅ 座標変換システム統一管理
+  ✅ Screen→Canvas→World→Local変換
+  ✅ worldToLocal() 手動逆算実装
+  ✅ 保持（変更なし）
+  メソッド:
+    - screenClientToCanvas(clientX, clientY)
+    - canvasToWorld(canvasX, canvasY)
+    - worldToLocal(worldX, worldY, container)
+    - screenClientToWorld(), screenClientToLocal()
+  依存: config.js, event-bus.js, camera-system.js
+  被依存: drawing-engine.js, stroke-recorder.js
+
+📄 core-initializer.js
+  ✅ システム初期化オーケストレーター
+  🔧 WebGL2初期化部分をラスター用に改修
+  依存: 全システムファイル
+  被依存: index.html (DOMContentLoaded)
+
+📄 core-engine.js
+  ✅ エンジン統合管理
+  🔧 BrushCore初期化をラスター用に
+  依存: layerManager, cameraSystem, history
+
+📄 core-runtime.js
+  ✅ APIエンドポイント提供
+  ✅ 保持（変更なし）
+
+------------------------------------------------------------------------
+1.2 イベントシステム
+------------------------------------------------------------------------
+
+📁 system/event-bus.js
+  ✅ グローバルイベント管理
+  ✅ 保持（変更なし）
+  イベント例:
+    🔀 'canvas:pointerdown', 'drawing:stroke-started'
+    🔀 'layer:path-added', 'thumbnail:layer-updated'
+  依存: なし
+  被依存: 全システムファイル
+
+------------------------------------------------------------------------
+1.3 データモデル・管理
+------------------------------------------------------------------------
+
+📁 system/data-models.js
+  ✅ データ構造定義
+  🔧 ラスターストロークデータ構造追加
+  依存: なし
+
+📁 system/batch-api.js
+  ✅ バッチ処理API
+  ✅ 保持（変更なし）
+
+📁 system/state-manager.js
+  ✅ アプリケーション状態管理
+  ✅ 保持（変更なし）
+
+📁 system/settings-manager.js
+  ✅ 設定管理
+  🔧 ラスター設定項目追加
+
+📁 system/layer-system.js
+  ✅ レイヤー管理
+  🔧 レイヤーデータ構造を調整
+     - pathsData → rasterStrokes
+  依存: event-bus, data-models
+  被依存: drawing-engine, brush-core
+
+📁 system/history.js
+  ✅ Undo/Redo管理
+  ✅ 保持（軽微な調整のみ）
+  依存: event-bus
+
+📁 system/camera-system.js
+  ✅ カメラ・ビューポート管理
+  ✅ 保持（変更なし）
+
+📁 system/virtual-album.js
+  ✅ アルバム機能
+  ✅ 保持（変更なし）
+
+📁 system/animation-system.js
+  ✅ アニメーション管理
+  ✅ 保持（変更なし）
+
+------------------------------------------------------------------------
+1.4 描画システム - 基盤（保持）
+------------------------------------------------------------------------
+
+📁 system/drawing/pointer-handler.js
+  ✅ PointerEvent統一処理
+  ✅ 保持（変更なし）
+  メソッド:
+    - attach(canvas, callbacks, options)
+  依存: なし
+  被依存: drawing-engine.js
+
+📁 system/drawing/pressure-handler.js
+  ✅ 筆圧処理・キャリブレーション
+  ✅ 保持（変更なし）
+  メソッド:
+    - process(pressure)
+    - reset()
+  依存: なし
+  被依存: brush-core.js
+
+📁 system/drawing/stroke-recorder.js
+  ✅ Local座標ポイント記録
+  ✅ 保持（変更なし）
+  メソッド:
+    - startStroke(localX, localY, pressure, tiltX, tiltY, twist)
+    - addPoint(localX, localY, pressure, tiltX, tiltY, twist)
+    - endStroke()
+    - getCurrentPoints()
+  依存: なし
+  被依存: brush-core.js
+
+📁 system/drawing/brush-settings.js
+  ✅ ブラシ設定管理
+  ✅ 保持（軽微な調整のみ）
+  メソッド:
+    - getSettings()
+    - setMode(mode)
+    - getMode()
+  依存: config.js
+  被依存: brush-core.js, stroke-renderer.js
+
+------------------------------------------------------------------------
+1.5 描画システム - ベクター方式（削除対象）
+------------------------------------------------------------------------
+
+❌ system/drawing/webgl2/gl-msdf-pipeline.js
+  用途: MSDF生成パイプライン
+  理由: ラスター方式では不要
+
+❌ system/drawing/webgl2/gl-stroke-processor.js
+  用途: ストロークポリゴン生成
+  理由: ラスター方式では不要
+
+❌ system/drawing/webgl2/shaders/seed-init.frag.glsl
+❌ system/drawing/webgl2/shaders/jfa-pass.frag.glsl
+❌ system/drawing/webgl2/shaders/encode.frag.glsl
+  用途: JFA Distance Field 計算
+  理由: ラスター方式では不要
+
+❌ system/drawing/webgl2/shaders/render.vert.glsl
+❌ system/drawing/webgl2/shaders/render.frag.glsl
+  用途: ベクター描画シェーダー
+  理由: ラスター用に置き換え
+
+❌ system/earcut-triangulator.js
+  用途: ポリゴン三角形分割
+  理由: ラスター方式では不要
+
+❌ system/drawing/sdf-brush-shader.js
+  ⚠️ 存在不明（index.htmlに記載なし）
+  理由: SDF関連は不要
+
+------------------------------------------------------------------------
+1.6 描画システム - 改修対象
+------------------------------------------------------------------------
+
+📄 system/drawing/drawing-engine.js
+  現状: PointerEvent → Local座標変換、BrushCore呼び出し
+  Phase: B-2（傾き伝達実装済み）
+  🔧 改修内容:
+     - BrushCore呼び出しはそのまま
+     - 座標変換パイプラインは保持
+  メソッド:
+    - _handlePointerDown(info, e)
+    - _handlePointerMove(info, e)
+    - _handlePointerUp(info, e)
+    - _screenToLocal(clientX, clientY)
+  依存: brush-core, pointer-handler, coordinate-system
+  被依存: core-engine.js
+
+📄 system/drawing/brush-core.js
+  現状: ストローク管理、StrokeRenderer呼び出し
+  Phase: C-2.1（History登録修正済み）
+  🔧 改修内容:
+     - strokeRenderer → rasterBrushCore に変更
+     - History登録ロジックはそのまま
+     - finalizeStroke() 内部処理を変更
+  メソッド:
+    - startStroke(clientX, clientY, pressure, tiltX, tiltY, twist)
+    - updateStroke(clientX, clientY, pressure, tiltX, tiltY, twist)
+    - finalizeStroke()
+    - cancelStroke()
+  依存: coordinate-system, pressure-handler, stroke-recorder, stroke-renderer
+  被依存: drawing-engine.js
+
+📄 system/drawing/stroke-renderer.js
+  現状: ベクターメッシュ生成・MSDF処理
+  Phase: B-5（傾きベース幅変調）
+  🔧 改修内容:
+     ❌ 完全削除または名前変更
+     ✅ 新規 raster-brush-core.js に置き換え
+  メソッド（削除）:
+    - _renderWithPolygon()
+    - _renderIncrementalSegment()
+    - renderFinalStroke()
+  依存: gl-stroke-processor, gl-msdf-pipeline, webgl2-drawing-layer
+  被依存: brush-core.js
+
+------------------------------------------------------------------------
+1.7 WebGL2レイヤー管理
+------------------------------------------------------------------------
+
+📄 system/drawing/webgl2/gl-texture-bridge.js
+  現状: Pixi.js Texture ↔ WebGL Texture 変換
+  ✅ 保持（ラスターレイヤー管理に使用）
+  依存: PixiJS
+  被依存: webgl2-drawing-layer
+
+📄 system/drawing/webgl2/webgl2-drawing-layer.js
+  現状: WebGL2描画レイヤー統合
+  Phase: 3.6
+  🔧 大幅改修
+     - ベクター合成 → ラスターテクスチャ合成
+     - フレームバッファ管理追加
+  依存: gl-texture-bridge
+  被依存: stroke-renderer
+
+❌ system/drawing/webgl2/gl-mask-layer.js
+  用途: マスク処理
+  ⚠️ 実装不完全（コメント: 将来追加予定）
+  理由: 未使用
+
+------------------------------------------------------------------------
+1.8 その他描画関連
+------------------------------------------------------------------------
+
+📁 system/drawing/fill-tool.js
+  ✅ 塗りつぶしツール
+  ✅ 保持（変更なし）
+  依存: event-bus, layer-system
+  被依存: brush-core
+
+📁 system/drawing/blend-modes.js
+  ✅ ブレンドモード定義
+  🔧 ラスター用実装に調整
+  依存: なし
+
+📁 system/drawing/stroke-transformer.js
+  ✅ ストローク変形処理
+  🔧 ラスター対応に調整
+
+📁 system/drawing/thumbnail-system.js
+  ✅ サムネイル生成
+  🔧 gl.readPixels() ベースに変更
+
+📁 system/processing/vector-operations.js
+  ⚠️ 用途不明（ベクター演算？）
+  🔍 要調査
+
+📁 system/layer-transform.js
+  ✅ レイヤー変形処理
+  ✅ 保持（変更なし）
+
+📁 system/drawing-clipboard.js
+  ✅ クリップボード管理
+  ✅ 保持（変更なし）
+
+📁 system/checker-utils.js
+  ✅ チェッカーパターン背景
+  ✅ 保持（変更なし）
+
+------------------------------------------------------------------------
+1.9 エクスポート
+------------------------------------------------------------------------
+
+📁 system/export-manager.js
+  ✅ エクスポート統合管理
+  ✅ 保持（変更なし）
+
+📁 system/quick-export-ui.js
+  ✅ クイックエクスポートUI
+  ✅ 保持（変更なし）
+
+📁 system/exporters/png-exporter.js
+📁 system/exporters/webp-exporter.js
+📁 system/exporters/psd-exporter.js
+📁 system/exporters/apng-exporter.js
+📁 system/exporters/webm-exporter.js
+📁 system/exporters/mp4-exporter.js
+  ✅ 各形式エクスポーター
+  ✅ 保持（変更なし）
+
+------------------------------------------------------------------------
+1.10 UI
+------------------------------------------------------------------------
+
+📁 ui/dom-builder.js
+📁 ui/slider-utils.js
+📁 ui/keyboard-handler.js
+📁 ui/resize-popup.js
+📁 ui/layer-panel-renderer.js
+📁 ui/status-display-renderer.js
+📁 ui/timeline-thumbnail-utils.js
+📁 ui/timeline-ui.js
+📁 ui/album-popup.js
+📁 ui/settings-popup.js
+📁 ui/quick-access-popup.js
+📁 ui/export-popup.js
+📁 ui/ui-panels.js
+  ✅ UI関連ファイル
+  ✅ 保持（変更なし）
+
+------------------------------------------------------------------------
+1.11 デバッグ
+------------------------------------------------------------------------
+
+📁 system/debug-utils.js
+  ✅ デバッグユーティリティ
+  ✅ 保持（変更なし）
+
+📁 system/popup-manager.js
+  ✅ ポップアップ管理
+  ✅ 保持（変更なし）
+
+================================================================================
+第2章: 問題点・課題
+================================================================================
+
+2.1 アーキテクチャ上の問題
+------------------------------------------------------------------------
+
+⚠️ ベクター依存の強固な結合
+  - stroke-renderer.js が gl-stroke-processor に強依存
+  - brush-core.js が stroke-renderer 前提の実装
+  - History登録がベクターGraphics前提
+
+⚠️ Perfect-Freehandへの依存
+  - gl-stroke-processor.js 内で使用
+  - ポリゴン生成パイプラインの根幹
+
+⚠️ MSDF/JFA処理の複雑性
+  - gl-msdf-pipeline.js の削除影響範囲が不明
+  - shader-inline.js がGLSLコード保持
+
+2.2 未使用・実装不完全ファイル
+------------------------------------------------------------------------
+
+❌ gl-mask-layer.js
+  - コメントに「将来追加予定」
+  - 実際には使用されていない
+
+⚠️ vector-operations.js
+  - 用途不明
+  - 他ファイルからの参照が不明確
+
+⚠️ shader-inline.js
+  - ベクター用GLSLシェーダーをインライン保持
+  - file://対応のため
+  - ラスター化後は不要の可能性
+
+2.3 座標系の整合性
+------------------------------------------------------------------------
+
+✅ 座標変換パイプライン自体は正常
+  - coordinate-system.js は問題なし
+  - drawing-engine.js の変換処理も正常
+
+⚠️ レイヤーデータ構造の不統一
+  - pathsData と paths の二重管理
+  - ベクター前提の構造
+
+================================================================================
+第3章: 改修計画 - フェーズ構成
+================================================================================
+
+------------------------------------------------------------------------
+Phase 1: 準備・環境整備
+------------------------------------------------------------------------
+
+1.1 ガイドライン更新 ✅完了
+  - v3.0ラスター版ガイドライン作成済み
+
+1.2 バックアップ・ブランチ作成
+  - webgl2_rev30 → webgl2_rev30_vector_backup
+  - 新ブランチ: webgl2_rev31_raster
+
+1.3 削除ファイルリスト確定
+  ❌ gl-msdf-pipeline.js
+  ❌ gl-stroke-processor.js
+  ❌ shaders/*.glsl (5ファイル)
+  ❌ earcut-triangulator.js
+  ❌ gl-mask-layer.js
+  ❌ stroke-renderer.js (または改名)
+
+------------------------------------------------------------------------
+Phase 2: 新規ラスターシステム実装
+------------------------------------------------------------------------
+
+2.1 ラスターブラシコア作成
+  📄 新規: system/drawing/raster/raster-brush-core.js
+  役割: ブラシスタンプをテクスチャに描画
+  メソッド:
+    - initialize(gl)
+    - startStroke(localX, localY, pressure, tiltX, tiltY, twist, settings)
+    - addStrokePoint(localX, localY, pressure, tiltX, tiltY, twist)
+    - finalizeStroke() → Graphics
+    - renderToFramebuffer(layerFBO, points, settings)
+  実装要件:
+    - 前回点との補間処理
+    - ブラシスタンプ描画（円形）
+    - 筆圧対応（サイズ・不透明度）
+    - 傾き対応（回転・幅変調）
+
+2.2 ブラシスタンプ生成
+  📄 新規: system/drawing/raster/brush-stamp.js
+  役割: ブラシスタンプ画像生成
+  メソッド:
+    - generateCircleStamp(radius, hardness)
+    - generateTextureStamp(imageData)
+    - applyAntialiasing(stamp)
+  実装要件:
+    - フラグメントシェーダーで円形生成
+    - アンチエイリアス処理
+    - テクスチャキャッシュ
+
+2.3 補間システム
+  📄 新規: system/drawing/raster/brush-interpolator.js
+  役割: ストロークポイント間の補間
+  メソッド:
+    - interpolate(p1, p2, steps)
+    - calculateSteps(distance, speed)
+  実装要件:
+    - 距離ベース補間
+    - 速度適応補間
+    - 筆圧・傾き補間
+
+2.4 ラスターレイヤー管理
+  📄 新規: system/drawing/raster/raster-layer.js
+  役割: WebGL2フレームバッファベースのレイヤー管理
+  メソッド:
+    - createLayer(width, height)
+    - getFramebuffer(layerId)
+    - getTexture(layerId)
+    - composite(layers, targetFBO)
+    - readPixels(layerId) → Uint8Array
+  実装要件:
+    - 1レイヤー = 1 FBO + 1 RGBA texture
+    - ブレンドモード対応
+    - サムネイル生成（gl.readPixels）
+
+------------------------------------------------------------------------
+Phase 3: 既存ファイル改修
+------------------------------------------------------------------------
+
+3.1 config.js
+  🔧 追加項目:
+    brush.raster = {
+      stamp: {
+        type: 'circle',          // 'circle' | 'texture'
+        hardness: 1.0,           // 0.0～1.0
+        spacing: 0.1             // スタンプ間隔
+      },
+      interpolation: {
+        enabled: true,
+        distanceThreshold: 2.5,  // ピクセル
+        maxSteps: 15,
+        adaptiveSpeed: true
+      },
+      antialiasing: true
+    }
+
+3.2 brush-core.js
+  🔧 改修内容:
+    - strokeRenderer → rasterBrushCore に差し替え
+    - startStroke(): rasterBrushCore.startStroke() 呼び出し
+    - updateStroke(): rasterBrushCore.addStrokePoint() 呼び出し
+    - finalizeStroke(): rasterBrushCore.finalizeStroke() 呼び出し
+    - History登録ロジックは維持
+  依存変更:
+    削除: stroke-renderer.js
+    追加: raster-brush-core.js
+
+3.3 drawing-engine.js
+  🔧 改修内容:
+    - BrushCore呼び出しはそのまま
+    - 座標変換パイプライン維持
+  変更: なし（BrushCore内部で完結）
+
+3.4 webgl2-drawing-layer.js
+  🔧 大幅改修:
+    - ベクター合成処理を削除
+    - ラスターテクスチャ合成に変更
+    - フレームバッファ管理追加
+  新規メソッド:
+    - initializeFramebuffers(layerCount)
+    - compositeRasterLayers(layers)
+    - blitToPixi(texture)
+
+3.5 layer-system.js
+  🔧 軽微な改修:
+    - layerData.pathsData → layerData.rasterStrokes
+    - layerData構造変更
+      旧: { pathsData: [], paths: [] }
+      新: { rasterStrokes: [], framebuffer: FBO }
+
+3.6 thumbnail-system.js
+  🔧 改修内容:
+    - gl.readPixels() ベースに変更
+    - raster-layer.js の readPixels() 使用
+
+3.7 settings-manager.js
+  🔧 追加設定項目:
+    - ラスターブラシ設定
+
+3.8 blend-modes.js
+  🔧 改修内容:
+    - ラスター用ブレンドモード実装
+    - WebGL2 glBlendFunc 設定
+
+------------------------------------------------------------------------
+Phase 4: シェーダー実装
+------------------------------------------------------------------------
+
+4.1 ブラシスタンプシェーダー
+  📄 新規: system/drawing/raster/shaders/brush-stamp.frag.glsl
+  役割: 円形スタンプ生成
+  入力: uv, center, radius, hardness
+  出力: RGBA（アンチエイリアス付き円）
+
+4.2 合成シェーダー
+  📄 新規: system/drawing/raster/shaders/composite.frag.glsl
+  役割: レイヤーテクスチャ合成
+  入力: 複数テクスチャ, ブレンドモード
+  出力: 合成結果
+
+4.3 shader-inline.js
+  🔧 改修内容:
+    - ベクター用GLSL削除
+    - ラスター用GLSL追加
+
+------------------------------------------------------------------------
+Phase 5: 統合・テスト
+------------------------------------------------------------------------
+
+5.1 ファイル削除
+  - Phase 1.3 のリストに従い削除
+
+5.2 index.html更新
+  削除:
+    <script src="system/drawing/webgl2/gl-msdf-pipeline.js"></script>
+    <script src="system/drawing/webgl2/gl-stroke-processor.js"></script>
+    <script src="system/earcut-triangulator.js"></script>
+    <script src="system/drawing/webgl2/gl-mask-layer.js"></script>
+    <script src="system/drawing/stroke-renderer.js"></script>
+  
+  追加:
+    <script src="system/drawing/raster/brush-stamp.js"></script>
+    <script src="system/drawing/raster/brush-interpolator.js"></script>
+    <script src="system/drawing/raster/raster-layer.js"></script>
+    <script src="system/drawing/raster/raster-brush-core.js"></script>
+
+5.3 初期化順序調整
+  core-initializer.js:
+    - WebGL2初期化
+    - raster-layer 初期化
+    - raster-brush-core 初期化
+    - BrushCore 初期化
+
+5.4 動作確認
+  - 基本描画: ペン・消しゴム
+  - 筆圧対応
+  - 傾き対応
+  - Undo/Redo
+  - レイヤー操作
+  - エクスポート
+
+------------------------------------------------------------------------
+Phase 6: 最適化・クリーンアップ
+------------------------------------------------------------------------
+
+6.1 パフォーマンス最適化
+  - テクスチャキャッシュ
+  - 描画バッチング
+  - FBO再利用
+
+6.2 メモリ管理
+  - 不要テクスチャ解放
+  - FBO削除処理
+
+6.3 コード整理
+  - 未使用変数削除
+  - コメント整理
+  - デバッグログ削除
+
+================================================================================
+第4章: ファイル構成 - 改修後
+================================================================================
+
+【新規作成ファイル】
+  system/drawing/raster/raster-brush-core.js      (500行想定)
+  system/drawing/raster/brush-stamp.js            (300行想定)
+  system/drawing/raster/brush-interpolator.js     (200行想定)
+  system/drawing/raster/raster-layer.js           (400行想定)
+  system/drawing/raster/shaders/brush-stamp.frag.glsl
+  system/drawing/raster/shaders/composite.frag.glsl
+
+【大幅改修ファイル】
+  system/drawing/brush-core.js                    (600行 → 650行)
+  system/drawing/webgl2/webgl2-drawing-layer.js   (800行 → 900行)
+  system/drawing/thumbnail-system.js              (300行 → 350行)
+
+【軽微改修ファイル】
+  config.js                                       (+50行)
+  system/layer-system.js                          (+20行)
+  system/settings-manager.js                      (+30行)
+  system/drawing/blend-modes.js                   (+50行)
+  system/drawing/shader-inline.js                 (改修)
+  core-initializer.js                             (+30行)
+
+【削除ファイル】
+  system/drawing/webgl2/gl-msdf-pipeline.js
+  system/drawing/webgl2/gl-stroke-processor.js
+  system/drawing/webgl2/shaders/seed-init.frag.glsl
+  system/drawing/webgl2/shaders/jfa-pass.frag.glsl
+  system/drawing/webgl2/shaders/encode.frag.glsl
+  system/drawing/webgl2/shaders/render.vert.glsl
+  system/drawing/webgl2/shaders/render.frag.glsl
+  system/earcut-triangulator.js
+  system/drawing/webgl2/gl-mask-layer.js
+  system/drawing/stroke-renderer.js
+
+【保持ファイル（変更なし）】
+  coordinate-system.js
+  system/drawing/pointer-handler.js
+  system/drawing/pressure-handler.js
+  system/drawing/stroke-recorder.js
+  system/drawing/brush-settings.js
+  system/drawing/fill-tool.js
+  system/camera-system.js
+  system/history.js
+  system/event-bus.js
+  その他UI・エクスポート関連全て
+
+================================================================================
+第5章: 実装優先順位
+================================================================================
+
+【最優先】Phase 2.1, 2.2, 2.3
+  - raster-brush-core.js
+  - brush-stamp.js
+  - brush-interpolator.js
+  理由: 描画の根幹
+
+【高優先】Phase 2.4, 3.2
+  - raster-layer.js
+  - brush-core.js改修
+  理由: レイヤー管理とBrushCore統合
+
+【中優先】Phase 3.4, 4.1, 4.2
+  - webgl2-drawing-layer.js改修
+  - シェーダー実装
+  理由: 合成処理
+
+【低優先】Phase 3.6, 3.7, 5.2
+  - thumbnail-system.js
+  - settings-manager.js
+  - index.html更新
+  理由: 補助機能
+
+【最低優先】Phase 6
+  - 最適化・クリーンアップ
+  理由: 動作確認後
+
+================================================================================
+第6章: リスク・注意事項
+================================================================================
+
+6.1 技術的リスク
+------------------------------------------------------------------------
+
+⚠️ WebGL2フレームバッファの互換性
+  - ブラウザ依存の挙動差異
+  - テクスチャフォーマット制約
+
+⚠️ パフォーマンス劣化
+  - ベクター→ラスターでメモリ使用量増加
+  - 大きなキャンバスサイズでFBO確保失敗の可能性
+
+⚠️ 既存データの互換性
+  - ベクター形式で保存済みのデータが読めなくなる
+
+6.2 実装上の注意
+------------------------------------------------------------------------
+
+【座標変換の厳守】
+  - drawing-engine.jsの変換パイプライン維持
+  - brush-core.jsで追加変換しない
+  - raster-brush-core.jsはLocal座標を受け取る
+
+【History整合性】
+  - brush-core.jsのHistory登録ロジック維持
+  - do()内で配列追加しない（Phase C-2.1の修正維持）
+
+【イベントフロー】
+  - EventBus経由のイベント発行を維持
+  - 'drawing:stroke-started', 'layer:path-added'等
+
+【グローバルオブジェクト】
+  - window.BrushCore維持
+  - window.rasterBrushCore新規追加
+  - window.strokeRenderer削除
+
+【DPR固定】
+  - resolution = 1 固定維持
+
+6.3 後方互換性
+------------------------------------------------------------------------
+
+❌ ベクター形式データの読み込み不可
+  - 移行ツールの提供は検討外
+  - ユーザーに再描画を促す
+
+⚠️ エクスポート形式
+  - PNG/WebP/PSD等は問題なし
+  - 内部形式（JSON）は非互換
+
+6.4 段階的ロールアウト
+------------------------------------------------------------------------
+
+推奨アプローチ:
+  1. Phase 2完了時点でα版リリース
+  2. 基本描画のみテスト
+  3. Phase 3完了時点でβ版リリース
+  4. 全機能テスト
+  5. Phase 5完了時点で正式リリース
+
+================================================================================
+第7章: 成功基準
+================================================================================
+
+7.1 必須要件（Phase 5.4で確認）
+------------------------------------------------------------------------
+
+✅ 基本描画動作
+  - ペンで線が引ける
+  - 消しゴムで消せる
+  - 塗りつぶしが動作する
+
+✅ 筆圧対応
+  - サイズが筆圧で変わる
+  - 不透明度が筆圧で変わる
+
+✅ 傾き対応
+  - twist/tiltXY が記録される
+  - 幅変調が動作する
+
+✅ レイヤー操作
+  - レイヤー追加・削除
+  - レイヤー順序変更
+  - レイヤー変形
+
+✅ Undo/Redo
+  - ストローク単位でUndoできる
+  - Redoが正常動作
+
+✅ エクスポート
+  - PNG/WebP出力が正常
+
+7.2 性能要件
+------------------------------------------------------------------------
+
+✅ フレームレート
+  - 120Hz入力に追従（目標）
+  - 最低60fps維持
+
+✅ メモリ使用量
+  - 400x400キャンバスで50MB以内
+  - 10レイヤーで200MB以内
+
+7.3 コード品質
+------------------------------------------------------------------------
+
+✅ ガイドライン準拠
+  - 座標変換パイプライン遵守
+  - 命名規則統一
+  - イベントフロー統一
+
+✅ 保守性
+  - ファイル責務明確
+  - コメント充実
+  - デバッグログ整備
+
+================================================================================
+付録A: GLSLシェーダー仕様
+================================================================================
+
+A.1 brush-stamp.frag.glsl
+------------------------------------------------------------------------
+
+precision highp float;
+
+uniform vec2 u_center;      // スタンプ中心
+uniform float u_radius;     // 半径
+uniform float u_hardness;   // エッジの硬さ (0.0～1.0)
+uniform vec4 u_color;       // RGBA
+
+in vec2 v_uv;
+out vec4 fragColor;
+
+void main() {
+    vec2 diff = v_uv - u_center;
+    float dist = length(diff);
+    
+    // アンチエイリアス付き円
+    float edge = u_radius * (1.0 - u_hardness * 0.5);
+    float alpha = smoothstep(u_radius, edge, dist);
+    
+    fragColor = vec4(u_color.rgb, u_color.a * alpha);
+}
+
+A.2 composite.frag.glsl
+------------------------------------------------------------------------
+
+precision highp float;
+
+uniform sampler2D u_layer1;
+uniform sampler2D u_layer2;
+uniform int u_blendMode;  // 0=normal, 1=multiply, 2=add, etc.
+uniform float u_opacity;
+
+in vec2 v_uv;
+out vec4 fragColor;
+
+void main() {
+    vec4 base = texture(u_layer1, v_uv);
+    vec4 blend = texture(u_layer2, v_uv);
+    
+    if (u_blendMode == 0) {
+        // Normal
+        fragColor = mix(base, blend, blend.a * u_opacity);
+    } else if (u_blendMode == 1) {
+        // Multiply
+        fragColor = base * blend * u_opacity;
+    } else if (u_blendMode == 2) {
+        // Add
+        fragColor = base + blend * u_opacity;
+    }
+    // 他のブレンドモード追加
+}
+
+================================================================================
+付録B: データ構造定義
+================================================================================
+
+B.1 ラスターストローク
+------------------------------------------------------------------------
+
+RasterStroke {
+  id: string,                     // 一意ID
+  points: Point[],                // Local座標ポイント配列
+  settings: BrushSettings,        // 描画時の設定
+  framebufferData: {
+    x: number,                    // FBO内のオフセット
+    y: number,
+    width: number,
+    height: number
+  },
+  createdAt: number,              // タイムスタンプ
+  tool: 'pen' | 'eraser'
+}
+
+Point {
+  localX: number,
+  localY: number,
+  pressure: number,
+  tiltX: number,
+  tiltY: number,
+  twist: number,
+  time: number
+}
+
+B.2 レイヤーデータ（改修後）
+------------------------------------------------------------------------
+
+LayerData {
+  id: string,
+  name: string,
+  visible: boolean,
+  locked: boolean,
+  opacity: number,
+  blendMode: string,
+  rasterStrokes: RasterStroke[],  // 旧: pathsData
+  framebuffer: WebGLFramebuffer,  // 新規
+  texture: WebGLTexture,          // 新規
+  width: number,
+  height: number
+}
+
+================================================================================
+付録C: 実装チェックリスト
+================================================================================
+
+Phase 1: 準備
+  [ ] ガイドラインv3.0完成
+  [ ] バックアップブランチ作成
+  [ ] 削除ファイルリスト確定
+
+Phase 2: 新規実装
+  [ ] raster-brush-core.js 完成
+  [ ] brush-stamp.js 完成
+  [ ] brush-interpolator.js 完成
+  [ ] raster-layer.js 完成
+
+Phase 3: 既存改修
+  [ ] config.js 更新
+  [ ] brush-core.js 改修
+  [ ] webgl2-drawing-layer.js 改修
+  [ ] layer-system.js 改修
+  [ ] thumbnail-system.js 改修
+  [ ] settings-manager.js 更新
+  [ ] blend-modes.js 改修
+
+Phase 4: シェーダー
+  [ ] brush-stamp.frag.glsl 実装
+  [ ] composite.frag.glsl 実装
+  [ ] shader-inline.js 更新
+
+Phase 5: 統合
+  [ ] ファイル削除実行
+  [ ] index.html 更新
+  [ ] core-initializer.js 更新
+  [ ] 基本描画テスト
+  [ ] 筆圧テスト
+  [ ] 傾きテスト
+  [ ] レイヤー操作テスト
+  [ ] Undo/Redoテスト
+  [ ] エクスポートテスト
+
+Phase 6: 最適化
+  [ ] パフォーマンス計測
+  [ ] メモリ使用量計測
+  [ ] テクスチャキャッシュ実装
+  [ ] コード整理
+
+================================================================================
+END OF DOCUMENT
+================================================================================

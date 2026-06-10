@@ -1,0 +1,202 @@
+ ✅ config.js - Perfect-Freehand形状補正ゼロ版 loaded
+    ✅ smoothing: 0（形状変形なし）
+    ✅ streamline: 0（終了後変形なし）
+    ✅ thinning: 0（線が太らない）
+    ✅ easing: t=>t（補間停止）
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ debug-utils.js loaded
+    Type: TegakiDebug.help() for available commands
+    Quick check: TegakiDebug.fullDiagnostic()
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js v2.4 loaded (筆圧設定対応版)
+settings-manager.js:215    ✅ minPressureSize/pressureSensitivity 追加
+settings-manager.js:216    ❌ pressureCorrection/pressureCurve 廃止
+layer-transform.js:1070  ✅ layer-transform.js Phase 3 loaded
+layer-transform.js:1071     ✅ confirmTransform()でベクターメッシュ再生成
+layer-transform.js:1072     ✅ 拡大時のジャギー解消
+checker-utils.js:163 ✅ system/checker-utils.js 統一実装版 loaded
+layer-system.js:1628 ✅ layer-system.js Phase 2: フォルダ機能追加版 loaded
+layer-system.js:1629    ✅ createFolder() - フォルダ作成
+layer-system.js:1630    ✅ addLayerToFolder() - レイヤーをフォルダに追加
+layer-system.js:1631    ✅ removeLayerFromFolder() - フォルダから取り出し
+layer-system.js:1632    ✅ toggleFolderExpand() - 開閉切替
+layer-system.js:1633    ✅ getVisibleLayers() - 表示レイヤーのみ取得
+layer-system.js:1634    ✅ getFolderChildren() - フォルダ内レイヤー取得
+layer-system.js:1635    ✅ Phase 9完全継承（親子関係・座標変換）
+drawing-clipboard.js:827 ✅ drawing-clipboard.js Phase 1 loaded
+drawing-clipboard.js:828    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+drawing-clipboard.js:829    🎨 ポップアップ: レイヤーコピー、切り取り
+history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
+earcut-triangulator.js:149 ✅ earcut-triangulator.js Phase 2.0 loaded
+gl-texture-bridge.js:201 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+gl-texture-bridge.js:202    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+gl-texture-bridge.js:203    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+gl-texture-bridge.js:204    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+gl-msdf-pipeline.js:684 ✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded
+gl-msdf-pipeline.js:685    🔧 テクスチャサイズ計算でアスペクト比を厳密保持
+gl-msdf-pipeline.js:686    🔧 2の累乗丸めによるストローク変形を防止
+gl-stroke-processor.js:586 ✅ gl-stroke-processor.js Phase 3.6I loaded
+gl-stroke-processor.js:587    🔥 Perfect-Freehand完全不使用（削除推奨）
+gl-stroke-processor.js:588    🎨 独自リボン生成（鋭角完全対応）
+gl-stroke-processor.js:589    🔧 ベベル120度・線の太さ保持
+gl-stroke-processor.js:590    ✅ 極端な鋭角（45度以下）特殊処理
+gl-stroke-processor.js:591    ✅ 自己交差完全回避・痩せ問題修正
+webgl2-drawing-layer.js:418 ✅ webgl2-drawing-layer.js Phase 3.1 loaded
+webgl2-drawing-layer.js:419    ✅ Perfect-Freehand UMDビルド対応
+webgl2-drawing-layer.js:420    ✅ GLStrokeProcessor自動初期化
+gl-mask-layer.js:473 ✅ gl-mask-layer.js Phase 6完全版 loaded
+gl-mask-layer.js:474    ✅ Circle mask rendering実装
+gl-mask-layer.js:475    ✅ Additive blend対応
+gl-mask-layer.js:476    ✅ Compose Pass統合準備完了
+pointer-handler.js:180 ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+pointer-handler.js:181    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+pressure-handler.js:180 ✅ pressure-handler.js v2.4.2 loaded (筆圧カーブ完全修正版)
+pressure-handler.js:181    ✅ 最小筆圧サイズ: 1%-100%の範囲実装
+pressure-handler.js:182    ✅ 平滑化アルゴリズム修正
+stroke-recorder.js:87 ✅ stroke-recorder.js (警告ログ削減版) loaded
+stroke-recorder.js:88    ✓ 不要な警告ログを削除
+stroke-recorder.js:89    ✓ DRY原則準拠
+stroke-renderer.js:426 ✅ stroke-renderer.js - Perfect-Freehand形状補正ゼロ対応版 loaded
+stroke-renderer.js:427    ✅ smoothing/streamline/thinning完全無効化
+stroke-renderer.js:428    ✅ ユーザーが描いた線をそのまま保持
+stroke-renderer.js:429    ✅ Phase 3: レイヤー変形時の再生成対応
+thumbnail-system.js:507 ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+brush-settings.js:222 ✅ brush-settings.js (Phase 3-D Clean) loaded
+blend-modes.js:24 ✅ BlendMode definitions loaded
+vector-operations.js:144 ✅ vector-operations.js Phase 1完全版 loaded
+vector-operations.js:145    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+vector-operations.js:146    ✓ config.js perfectFreehand設定自動適用
+vector-operations.js:147    🔥 PerfectFreehand統合基盤完成
+ ✅ brush-core.js v2.4.1 loaded (メッシュ追加確認版)
+    ✅ レイヤー追加後の確認ログ実装
+    ✅ Pixi手動レンダリングトリガー追加
+ ✅ fill-tool.js (Phase 1完全修正版) loaded
+ ✅ drawing-engine.js (Phase 4.1 StrokeRenderer参照追加版) loaded
+    ✅ strokeRenderer プロパティ追加
+    ✅ setStrokeRenderer() メソッド追加
+    ✓ Phase 4 全機能継承
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js v8.33.0 loaded
+    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+ ✅ png-exporter.js v8.29.0 loaded
+    🔧 generatePreview()メソッド追加
+    🔧 エラーハンドリング強化
+    🔧 Blob生成の確実性向上
+ ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+ ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+    ⚠️ 実装は将来フェーズで追加予定
+    ✓ エラーメッセージで開発中を通知
+ ✅ apng-exporter.js v8.31.0 loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+ ✅ dom-builder.js v8.19.0 loaded
+    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+    ✓ System情報表示（WebGPU/GPU検出）
+ ✅ slider-utils.js v8.13.10 loaded
+    🔧 PointerEvent完全対応（タブレットペン引っかかり解消）
+    🔧 慣性スクロール実装（velocity計算）
+    🔧 requestAnimationFrame最適化
+ ✅ keyboard-handler.js Phase 6完成版 loaded
+    ✅ BS/DEL: 描画削除が正常動作
+    ✅ Undo/Redo: children参照保持で完全復元
+    🔧 反転処理: 画像消失問題解決
+ ✅ layer-panel-renderer.js Phase 3: フォルダUI実装版 loaded
+layer-panel-renderer.js:958    ✅ createFolderElement() - フォルダUI生成
+layer-panel-renderer.js:959    ✅ createFolderEar() - 耳部分SVGアイコン
+layer-panel-renderer.js:960    ✅ 階層表示（左オフセット + 縦線）
+layer-panel-renderer.js:961    ✅ フォルダ開閉アニメーション
+layer-panel-renderer.js:962    ✅ フォルダサムネイル合成対応
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:630 ✅ thumbnail-system.js Phase 4: フォルダサムネイル合成版 loaded
+timeline-thumbnail-utils.js:631    ✅ generateFolderThumbnail() - フォルダ合成サムネイル生成
+timeline-thumbnail-utils.js:632    ✅ _compositeLayers() - 複数レイヤー合成処理
+timeline-thumbnail-utils.js:633    ✅ フォルダサムネイルキャッシュ対応
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:580 ✅ settings-popup.js v2.4 loaded (筆圧設定改修版)
+settings-popup.js:581    ✅ 筆圧最小値スライダー実装
+settings-popup.js:582    ✅ 筆圧感度スライダー実装
+settings-popup.js:583    ❌ 筆圧カーブ選択廃止
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:418 ✅ ui-panels.js v8.13.16 loaded
+ui-panels.js:419    ✅ フォルダ+ボタン接続完了
+ui-panels.js:420    ✅ createFolder() 正常呼び出し
+core-runtime.js:557 ✅ core-runtime.js (Phase 6 - updateLayerPanelUI完全削除版) loaded
+core-runtime.js:558    ✅ EventBus駆動に完全統一
+core-runtime.js:559    ✅ 存在しないメソッド呼び出し削除
+core-engine.js:717 ✅ core-engine.js v8.33.0 loaded
+core-engine.js:718    🆕 DrawingEngine に StrokeRenderer 参照追加
+core-engine.js:719    ✅ WebGL2初期化準備完了
+core-initializer.js:451  ✅ core-initializer.js (Phase 3.1 レンダーループ修正版) loaded
+core-initializer.js:452     ✅ window.pixiAppグローバル参照追加
+core-initializer.js:453     ✅ Pixi Ticker明示的開始
+index.html:116 🚀 WebGL2 MSDF版 起動中...
+core-engine.js:634 ✅ [CoreEngine] StrokeRenderer set to DrawingEngine
+brush-core.js:82 ✅ [BrushCore] Initialized (v2.4.1 メッシュ追加確認版)
+brush-core.js:83    ✅ PressureHandler: true
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+core-initializer.js:299 [DrawingApp] Initializing WebGL2...
+core-initializer.js:159 [WebGL2] Starting initialization...
+core-initializer.js:172 [WebGL2] Canvas found: 752 x 532
+webgl2-drawing-layer.js:107 [WebGL2DrawingLayer] ✅ Initialized {canvasSize: '752x532', maxTextureSize: 16384, extensions: Array(3)}
+webgl2-drawing-layer.js:141 [WebGL2DrawingLayer] Perfect-Freehand not loaded
+_initializeGLStrokeProcessor @ webgl2-drawing-layer.js:141
+initialize @ webgl2-drawing-layer.js:114
+initializeWebGL2 @ core-initializer.js:174
+initialize @ core-initializer.js:304
+await in initialize
+initialize @ core-initializer.js:431
+（匿名） @ index.html:117
+webgl2-drawing-layer.js:142   window.PerfectFreehand: undefined
+_initializeGLStrokeProcessor @ webgl2-drawing-layer.js:142
+initialize @ webgl2-drawing-layer.js:114
+initializeWebGL2 @ core-initializer.js:174
+initialize @ core-initializer.js:304
+await in initialize
+initialize @ core-initializer.js:431
+（匿名） @ index.html:117
+webgl2-drawing-layer.js:143   window.getStroke: undefined
+_initializeGLStrokeProcessor @ webgl2-drawing-layer.js:143
+initialize @ webgl2-drawing-layer.js:114
+initializeWebGL2 @ core-initializer.js:174
+initialize @ core-initializer.js:304
+await in initialize
+initialize @ core-initializer.js:431
+（匿名） @ index.html:117
+core-initializer.js:181 [WebGL2] ✅ Context initialized
+core-initializer.js:184 [WebGL2] ⚠️ GLStrokeProcessor not available
+initializeWebGL2 @ core-initializer.js:184
+await in initializeWebGL2
+initialize @ core-initializer.js:304
+await in initialize
+initialize @ core-initializer.js:431
+（匿名） @ index.html:117
+core-initializer.js:308 [DrawingApp] WebGL2 result: false
+index.html:118 ✅ WebGL2初期化完了
+index.html:122 🎬 Pixi Ticker Status: {started: true, speed: 1, maxFPS: 0, FPS: 59.99999999999999}
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+brush-core.js:291 [BrushCore] ✅ Mesh added to layer: {label: 'Graphics', layerId: 'layer_1763875915551_hou2jcasr', layerChildren: 1, meshVisible: true, meshRenderable: true}
+brush-core.js:302 [BrushCore] 🔄 Manual Pixi render triggered
+brush-core.js:291 [BrushCore] ✅ Mesh added to layer: {label: 'Graphics', layerId: 'layer_1763875915551_hou2jcasr', layerChildren: 2, meshVisible: true, meshRenderable: true}
+brush-core.js:302 [BrushCore] 🔄 Manual Pixi render triggered
+brush-core.js:291 [BrushCore] ✅ Mesh added to layer: {label: 'Graphics', layerId: 'layer_1763875915551_hou2jcasr', layerChildren: 3, meshVisible: true, meshRenderable: true}
+brush-core.js:302 [BrushCore] 🔄 Manual Pixi render triggered
+brush-core.js:291 [BrushCore] ✅ Mesh added to layer: {label: 'Graphics', layerId: 'layer_1763875915551_hou2jcasr', layerChildren: 4, meshVisible: true, meshRenderable: true}
+brush-core.js:302 [BrushCore] 🔄 Manual Pixi render triggered
+brush-core.js:291 [BrushCore] ✅ Mesh added to layer: {label: 'Graphics', layerId: 'layer_1763875915551_hou2jcasr', layerChildren: 5, meshVisible: true, meshRenderable: true}
+brush-core.js:302 [BrushCore] 🔄 Manual Pixi render triggered

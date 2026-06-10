@@ -1,0 +1,393 @@
+ ✅ config.js (Phase 4完全版: TEGAKI_KEYCONFIG_MANAGER追加) loaded
+ ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
+ ✅ coordinate-system.js (worldToLocal修正版) loaded
+    - 修正: worldToLocal() の pivot 計算順序を修正
+    - Vキーモード時の NaN 問題を解決
+ ✅ Debug commands: TegakiDebug.coord.*
+ ✅ data-models.js (backgroundColor追加版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ camera-system.js (Phase 2完全実装版) loaded
+ ✅ layer-transform.js (Phase 1-4完全改修版 + NaN誤検知修正) loaded
+    ✓ Phase 1: イベント発火の修正 (layer:transform-updated 発火)
+    ✓ Phase 2: 座標系 NaN 対策 (isFinite チェック + 誤検知修正)
+    ✓ Phase 3: UI受信側の整備 (イベントペイロード最適化)
+    ✓ Phase 4: ショートカット整合性 (反転機能修復)
+    ✓ 追加修正: coordinateSystem初期化・world座標プロパティ名修正
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+    - ✅ CTRL+V behavior: overwrite active layer
+    - ✅ Commit events: paste:commit, operation:commit
+    - ✅ Thumbnail auto-update on paste
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ animation-system.js (Phase 1改修版・フレーム名統一: xF形式) loaded
+ ✅ system/drawing/webgpu/webgpu-capabilities.js loaded
+ ✅ system/drawing/msdf/msdf-brush-shader.js loaded
+ ✅ pointer-handler.js (Phase 2: ヒューリスティック追加版) loaded
+    ✓ pointerType="mouse" with pressure/tilt → auto-corrects to "pen"
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ curve-interpolator.js (Phase 3) loaded
+    - Catmull-Rom スプライン補間
+    - 適応的サンプリング対応
+    - tiltX/Y/twist データ補間対応
+ ✅ stroke-recorder.js (警告ログ削減版) loaded
+    ✓ 不要な警告ログを削除
+    ✓ DRY原則準拠
+ ✅ sdf-brush-shader.js (Phase 3-A) loaded
+    ✓ SDF fragment shader with smoothstep()
+    ✓ Scale-independent smooth edges
+    ✓ Pressure-sensitive softness control
+ ✅ sdf-texture-generator.js (Phase 3-A) loaded
+    ✓ Circle SDF generation
+    ✓ Soft/Hard brush variations
+    ✓ Ellipse SDF generation
+    ✓ Texture caching system
+ ✅ sdf-mesh-builder.js (Phase 3-B) loaded
+    ✓ Segment mesh generation
+    ✓ Optimized batch mesh generation
+    ✓ Preview mesh with simplification
+    ✓ Custom shader support
+ ✅ stroke-renderer.js (PIXI定数エラー修正版) loaded
+    ✓ blendMode を文字列に統一: "normal" / "erase"
+    ✓ PIXI.BLEND_MODES 参照エラー解消
+ [BrushSettings] Initialized (Phase 1): Object
+ ✅ Global window.brushSettings instance created
+ ✅ brush-settings.js (Phase 1: シングルトン統一版) loaded
+    ✓ Singleton pattern implemented
+    ✓ Global instance: window.brushSettings
+    ✓ EventBus integration complete
+ ✅ brush-core.js (エラー修正版) loaded
+    ✓ EventBus ペイロード形式修正
+    ✓ brush:size-changed エラー解消
+ ✅ drawing-engine.js (警告修正版) loaded
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js (CUT→FRAME完全修正版) loaded
+ ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+ ✅ apng-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ gif-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ webp-exporter.js (静止画・動画自動判定対応版) loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+ ✅ pdf-exporter.js (CUT→FRAME完全対応版) loaded
+ ✅ dom-builder.js (ID重複解消版) loaded
+    - #pen-settings → #legacy-pen-settings に変更
+    - pen-size-slider → legacy-pen-size-slider に変更
+    - quick-access-popup.jsとのID競合を完全解消
+ ✅ ui/slider-utils.js loaded
+    - 責務: スライダーUIの統一実装
+    - DRY原則: settings-popup.js と ui-panels.js で共有
+    - API: createSlider() / createSimpleSlider()
+ ✅ keyboard-handler.js (P/Eサイドバー同期版) loaded
+ ✅ resize-popup.js (Phase 4完了: ロジック削減版) loaded
+ ✅ ui/layer-panel-renderer.js (背景サムネイル完全修正版) loaded
+ ✅ ui/status-display-renderer.js loaded
+ ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:583 ✅ settings-popup.js (即応性完全修正版) loaded
+settings-popup.js:584    - CSS transition完全除去（!important付き）
+settings-popup.js:585    - DOM更新を同期的に即座実行
+settings-popup.js:586    - quick-access/resize-popupと完全同等の動作
+quick-access-popup.js:538 ✅ quick-access-popup.js (背景ドラッグ + 閉じるボタン版) loaded
+quick-access-popup.js:539    - 背景ドラッグで移動可能（スライダー/ボタン以外）
+quick-access-popup.js:540    - 右上×ボタンで閉じる
+quick-access-popup.js:541    - 画面外クリックで閉じない（常時開きっぱなし可能）
+export-popup.js:423 ✅ export-popup.js (frameInfo修正版＋PDF有効化) loaded
+ui-panels.js:439 ✅ ui-panels.js (Phase 2: タブレットペンドラッグ対応版) loaded
+ui-panels.js:440    ✓ Sortable.js with forceFallback: true (tablet pen support)
+ui-panels.js:441    ✓ Layer drag & drop with pen input enabled
+core-runtime.js:644 ✅ core-runtime.js (Phase 1: PointerEvent二重登録削除版) loaded
+core-runtime.js:645    ✓ Stage pointer events removed
+core-runtime.js:646    ✓ All pointer handling delegated to DrawingEngine
+core-engine.js:835 ✅ core-engine.js loaded
+core-initializer.js:437 ✅ core-initializer.js loaded
+debug-utils.js:328 ✅ debug-utils.js (TEGAKI_DEBUG) loaded
+brush-settings.js:13 [BrushSettings] Instance already exists. Returning existing instance.
+BrushSettings @ brush-settings.js:13
+drawing-clipboard.js:19 DrawingClipboard: Initializing...
+drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+brush-core.js:61 [BrushCore] window.brushSettings reference: true
+brush-core.js:65 [BrushCore] window.pressureHandler not found - pressure sensitivity disabled
+init @ brush-core.js:65
+brush-core.js:107 ✅ [BrushCore] EventBus listeners setup complete
+brush-core.js:70 ✅ [BrushCore] Initialized (Phase 1: BrushSettings統一版)
+brush-core.js:71    - CoordinateSystem: true
+brush-core.js:72    - LayerManager: true
+brush-core.js:73    - StrokeRecorder: true
+brush-core.js:74    - StrokeRenderer: true
+brush-core.js:75    - PressureHandler: false
+brush-core.js:76    - BrushSettings: true
+core-initializer.js:60 ✅ SettingsManager initialized
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+core-initializer.js:137 ✅ LayerPanelRenderer initialized
+index.html:110 ✅ Application initialized (Phase 4-B: MSDF完全統合版)
+ui-panels.js:301 ✅ Sortable initialized with tablet pen support
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+// ブラウザコンソールに貼り付けて実行
+(function debugLayerThumbnailSystem() {
+    console.log('=== レイヤーサムネイル完全デバッグ ===\n');
+    
+    // 1. LayerPanelRendererの複数インスタンス確認
+    console.log('📋 Step 1: LayerPanelRenderer インスタンス調査');
+    
+    const possibleInstances = [
+        { path: 'window.CoreRuntime.internal.layerPanelRenderer', instance: window.CoreRuntime?.internal?.layerPanelRenderer },
+        { path: 'window.layerPanelRenderer', instance: window.layerPanelRenderer },
+        { path: 'window.uiPanels?.layerPanelRenderer', instance: window.uiPanels?.layerPanelRenderer }
+    ];
+    
+    let activeRenderer = null;
+    possibleInstances.forEach(({ path, instance }) => {
+        if (instance) {
+            console.log(`✅ ${path} 存在`);
+            console.log('  container:', instance.container);
+            console.log('  container.id:', instance.container?.id);
+            console.log('  eventBus:', !!instance.eventBus);
+            console.log('  layerSystem:', !!instance.layerSystem);
+            activeRenderer = instance;
+        } else {
+            console.log(`❌ ${path} 存在しない`);
+        }
+    });
+    
+    if (!activeRenderer) {
+        console.error('❌ LayerPanelRendererのインスタンスが見つかりません');
+        return;
+    }
+    
+    console.log('\n📋 Step 2: 背景レイヤー詳細調査');
+    const layers = window.layerSystem?.getLayers() || [];
+    const bgLayer = layers[0];
+    
+    if (!bgLayer) {
+        console.error('❌ 背景レイヤーが存在しません');
+        return;
+    }
+    
+    console.log('背景レイヤー情報:');
+    console.log('  layerData.isBackground:', bgLayer.layerData?.isBackground);
+    console.log('  layerData.backgroundColor:', bgLayer.layerData?.backgroundColor);
+    console.log('  layerData.backgroundColor (HEX):', 
+        bgLayer.layerData?.backgroundColor ? 
+        '#' + bgLayer.layerData.backgroundColor.toString(16).padStart(6, '0') : 
+        'undefined');
+    console.log('  layerData.visible:', bgLayer.layerData?.visible);
+    console.log('  layerData.backgroundGraphics:', !!bgLayer.layerData?.backgroundGraphics);
+    
+    // 2. DOM上のサムネイル要素確認
+    console.log('\n📋 Step 3: DOM上のサムネイル要素調査');
+    const layerItems = document.querySelectorAll('.layer-item');
+    console.log(`レイヤーアイテム数: ${layerItems.length}`);
+    
+    layerItems.forEach((item, i) => {
+        const index = parseInt(item.dataset.layerIndex);
+        const thumbnail = item.querySelector('.layer-thumbnail');
+        const layerName = item.querySelector('.layer-name')?.textContent;
+        
+        console.log(`\n--- レイヤーアイテム [${i}] (index: ${index}) "${layerName}" ---`);
+        
+        if (thumbnail) {
+            console.log('  サムネイル発見:');
+            console.log('    backgroundColor:', thumbnail.style.backgroundColor);
+            console.log('    backgroundImage:', thumbnail.style.backgroundImage);
+            console.log('    border:', thumbnail.style.border);
+            console.log('    width:', thumbnail.style.width);
+            console.log('    height:', thumbnail.style.height);
+            
+            const computed = window.getComputedStyle(thumbnail);
+            console.log('    計算済みbackgroundColor:', computed.backgroundColor);
+            console.log('    計算済みborder:', computed.border);
+            console.log('    計算済みwidth:', computed.width);
+            console.log('    計算済みheight:', computed.height);
+            
+            // 背景レイヤーの場合
+            if (index === 0) {
+                console.log('\n  🔍 これは背景レイヤーです');
+                console.log('    期待される色: #f0e0d6');
+                console.log('    実際の色:', thumbnail.style.backgroundColor);
+                
+                if (!thumbnail.style.backgroundColor || thumbnail.style.backgroundColor === '') {
+                    console.error('    ❌ backgroundColor が設定されていません！');
+                }
+            }
+        } else {
+            console.error('  ❌ サムネイル要素が見つかりません');
+        }
+    });
+    
+    // 3. EventBusのリスナー確認
+    console.log('\n📋 Step 4: EventBus リスナー調査');
+    const eventBus = window.eventBus || window.CoreRuntime?.internal?.eventBus;
+    
+    if (eventBus) {
+        console.log('✅ EventBus 存在');
+        
+        // thumbnail:layer-updated イベントのリスナー確認
+        const thumbnailListeners = eventBus._listeners?.['thumbnail:layer-updated'];
+        console.log('thumbnail:layer-updated リスナー数:', thumbnailListeners?.length || 0);
+        
+        if (thumbnailListeners && thumbnailListeners.length > 0) {
+            console.log('  登録済みリスナー:');
+            thumbnailListeners.forEach((listener, i) => {
+                console.log(`    [${i}]`, listener);
+            });
+        }
+    } else {
+        console.error('❌ EventBus が見つかりません');
+    }
+    
+    // 4. createThumbnailメソッドを直接実行してテスト
+    console.log('\n📋 Step 5: createThumbnail() 直接実行テスト');
+    
+    if (activeRenderer && typeof activeRenderer.createThumbnail === 'function') {
+        console.log('✅ createThumbnail メソッド存在');
+        
+        try {
+            const testThumbnail = activeRenderer.createThumbnail(bgLayer, 0);
+            console.log('生成されたサムネイル:');
+            console.log('  backgroundColor:', testThumbnail.style.backgroundColor);
+            console.log('  backgroundImage:', testThumbnail.style.backgroundImage);
+            console.log('  border:', testThumbnail.style.border);
+            
+            if (!testThumbnail.style.backgroundColor) {
+                console.error('❌ createThumbnail() が backgroundColor を設定していません');
+            } else {
+                console.log('✅ createThumbnail() は正しく backgroundColor を設定しています');
+            }
+        } catch (error) {
+            console.error('❌ createThumbnail() 実行エラー:', error);
+        }
+    }
+    
+    // 5. layer-transform.jsのイベント発火確認
+    console.log('\n📋 Step 6: layer-transform イベント発火調査');
+    
+    const transform = window.layerSystem?.transform;
+    if (transform) {
+        console.log('✅ LayerTransform 存在');
+        console.log('  onTransformUpdate コールバック:', typeof transform.onTransformUpdate);
+        
+        // イベントリスナーを一時的に追加してテスト
+        if (eventBus) {
+            const testListener = (data) => {
+                console.log('🔔 thumbnail:layer-updated イベント受信:', data);
+            };
+            
+            eventBus.on('thumbnail:layer-updated', testListener);
+            console.log('✅ テストリスナー追加完了');
+            console.log('→ Vキーでレイヤーをドラッグして、イベントが発火するか確認してください');
+            
+            // 10秒後に自動削除
+            setTimeout(() => {
+                eventBus.off('thumbnail:layer-updated', testListener);
+                console.log('⏱️ テストリスナー削除完了');
+            }, 10000);
+        }
+    } else {
+        console.error('❌ LayerTransform が見つかりません');
+    }
+    
+    // 6. CSSスタイル確認
+    console.log('\n📋 Step 7: CSS スタイル調査');
+    const styleSheets = Array.from(document.styleSheets);
+    let borderRuleFound = false;
+    
+    styleSheets.forEach((sheet, i) => {
+        try {
+            const rules = Array.from(sheet.cssRules || []);
+            rules.forEach(rule => {
+                if (rule.selectorText && rule.selectorText.includes('.layer-thumbnail')) {
+                    console.log(`CSS Rule 発見 (stylesheet ${i}):`, rule.cssText);
+                    if (rule.style.border) {
+                        borderRuleFound = true;
+                        console.log('  ✅ border プロパティあり:', rule.style.border);
+                    }
+                }
+            });
+        } catch (e) {
+            // CORS制限でアクセスできないスタイルシートはスキップ
+        }
+    });
+    
+    if (!borderRuleFound) {
+        console.warn('⚠️ .layer-thumbnail の border CSS ルールが見つかりません');
+        console.log('  → インラインスタイルのみで設定されている可能性');
+    }
+    
+    // 7. 手動修正テスト
+    console.log('\n📋 Step 8: 手動修正テスト');
+    
+    const bgLayerItem = Array.from(layerItems).find(item => {
+        return parseInt(item.dataset.layerIndex) === 0;
+    });
+    
+    if (bgLayerItem) {
+        const thumbnail = bgLayerItem.querySelector('.layer-thumbnail');
+        if (thumbnail) {
+            console.log('🔧 背景レイヤーサムネイルを手動修正します...');
+            
+            // 強制的に背景色を設定
+            thumbnail.style.backgroundImage = 'none';
+            thumbnail.style.backgroundColor = '#f0e0d6';
+            thumbnail.style.border = '1px solid #cf9c97';
+            
+            console.log('✅ 修正完了');
+            console.log('  新しい backgroundColor:', thumbnail.style.backgroundColor);
+            console.log('  新しい border:', thumbnail.style.border);
+            
+            setTimeout(() => {
+                console.log('\n⏱️ 100ms後の確認:');
+                console.log('  backgroundColor:', thumbnail.style.backgroundColor);
+                console.log('  計算済み backgroundColor:', window.getComputedStyle(thumbnail).backgroundColor);
+                console.log('  border:', thumbnail.style.border);
+                console.log('  計算済み border:', window.getComputedStyle(thumbnail).border);
+            }, 100);
+        }
+    }
+    
+    // 8. LayerPanelRendererのメソッド一覧
+    console.log('\n📋 Step 9: LayerPanelRenderer メソッド一覧');
+    if (activeRenderer) {
+        const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(activeRenderer));
+        console.log('メソッド:', methods);
+    }
+    
+    console.log('\n=== デバッグ完了 ===');
+    console.log('\n次のテストを実行してください:');
+    console.log('1. Vキーを押してレイヤーをドラッグ → コンソールに🔔イベントが表示されるか確認');
+    console.log('2. 背景レイヤーサムネイルの色が #f0e0d6 (ベージュ) になっているか確認');
+    console.log('3. サムネイルに枠が表示されているか確認');
+})();
+VM88:3 === レイヤーサムネイル完全デバッグ ===
+
+VM88:6 📋 Step 1: LayerPanelRenderer インスタンス調査
+VM88:24 ❌ window.CoreRuntime.internal.layerPanelRenderer 存在しない
+VM88:17 ✅ window.layerPanelRenderer 存在
+VM88:18   container: <div id=​"layer-list" class=​"layer-panel-items">​…​</div>​flex
+VM88:19   container.id: layer-list
+VM88:20   eventBus: true
+VM88:21   layerSystem: true
+VM88:24 ❌ window.uiPanels?.layerPanelRenderer 存在しない
+VM88:33 
+📋 Step 2: 背景レイヤー詳細調査
+VM88:38 ❌ 背景レイヤーが存在しません
+debugLayerThumbnailSystem @ VM88:38
+（匿名） @ VM88:235
+undefined

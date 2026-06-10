@@ -1,0 +1,91 @@
+📋 フォルダ機能実装改修書
+🎯 実装要件
+
+フォルダ型レイヤーの追加
+
+LayerModelにフォルダ属性追加
+親子関係管理機能実装
+
+
+UIデザイン
+
+フォルダ: --futaba-light-medium: #e9c2ba (開)
+フォルダ閉: --futaba-medium: #cf9c97
+耳部分にSVGアイコン
+
+
+階層表示
+
+通常レイヤー/フォルダ: 左オフセット
+フォルダ内レイヤー: 左縦線表示
+
+
+サムネイル合成
+
+フォルダ内全レイヤーの合成表示
+
+
+
+
+📁 改修ファイル
+1️⃣ data-models.js (LayerModel拡張)
+javascript// フォルダ属性追加
+isFolder: false,        // フォルダフラグ
+folderExpanded: true,   // 開閉状態
+parentId: null,         // 親フォルダID
+childIds: []            // 子レイヤーID配列
+2️⃣ layer-system.js (フォルダ管理機能)
+javascript// 新規メソッド追加
+- createFolder(name)           // フォルダ作成
+- addLayerToFolder(layerId, folderId) // レイヤーをフォルダに追加
+- removeLayerFromFolder(layerId)      // フォルダから取り出し
+- toggleFolderExpand(folderId)        // 開閉切替
+- getVisibleLayers()                  // 開いているレイヤーのみ取得
+- getFolderChildren(folderId)         // フォルダ内レイヤー取得
+3️⃣ layer-panel-renderer.js (UI拡張)
+javascript// フォルダ対応UI実装
+- createFolderElement()       // フォルダUI生成
+- createFolderEar()           // 耳部分生成
+- renderHierarchy()           // 階層構造描画
+- createVerticalLine()        // 左縦線生成
+- generateFolderThumbnail()   // 合成サムネイル
+
+🚀 実装順序
+Phase 1: data-models.js 拡張 (10分)
+
+LayerModel拡張
+バリデーション追加
+
+Phase 2: layer-system.js コア機能 (30分)
+
+フォルダ作成/削除
+親子関係管理
+階層取得ロジック
+
+Phase 3: layer-panel-renderer.js UI (40分)
+
+フォルダ要素生成
+階層表示ロジック
+開閉アニメーション
+ドラッグ&ドロップ対応
+
+Phase 4: thumbnail-system.js 合成 (20分)
+
+フォルダサムネイル合成ロジック
+
+
+⚠️ 注意事項
+
+DRY原則厳守: 既存レイヤー機能を最大限再利用
+EventBus統一: 全ての状態変更はEventBus経由
+座標系統一: 既存の座標変換パイプライン継承
+History対応: Undo/Redo完全対応
+二重実装禁止: フォルダとレイヤーで処理を分離しない
+
+※フォルダの耳の所のSVGの閉まってる時と開いてる時に下記を使ってください。
+
+folder
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-icon lucide-folder"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+
+folder-open
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-open-icon lucide-folder-open"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>

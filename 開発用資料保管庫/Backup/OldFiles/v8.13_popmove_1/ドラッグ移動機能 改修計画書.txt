@@ -1,0 +1,203 @@
+================================================================================
+quick-access-popup.js ドラッグ移動機能 改修計画書
+================================================================================
+対象バージョン: v8.13_Vmode_Phase1u
+最終更新: 2025-10-23
+
+【目的】
+quick-access-popup をドラッグで自由に移動可能にし、位置をlocalStorageに永続化する。
+将来的にタッチデバイス対応の基盤とする。
+
+【設計方針】
+1. ミニマル実装（PopupManager統合は不要）
+2. 既存のEventBus/SettingsManagerパターンを踏襲
+3. 他ポップアップへの影響ゼロ
+4. タッチ対応の拡張余地を確保
+
+================================================================================
+Phase 1: quick-access-popup.js にドラッグ機能を統合
+================================================================================
+
+【改修対象ファイル】
+- ui/quick-access-popup.js
+
+【参考実装】
+- ui/resize-popup.js (スライダーのグローバルmousemove/mouseupパターン)
+- system/settings-manager.js (localStorage永続化パターン)
+
+【実装内容】
+
+■ 1-1. コンストラクタ拡張
+追加プロパティ:
+  - this.isDragging = false
+  - this.dragStartX = 0
+  - this.dragStartY = 0
+  - this.panelStartX = 0
+  - this.panelStartY = 0
+  - this.dragMoveHandler = null (グローバルイベントハンドラー)
+  - this.dragUpHandler = null
+
+■ 1-2. ドラッグヘッダー追加
+_populateContent()内のHTML修正:
+  - ポップアップ最上部にドラッグハンドル用divを追加
+  - クラス名: "quick-access-drag-handle"
+  - スタイル: カーソルmove、ビジュアル表現（:::など）
+
+■ 1-3. ドラッグイベント設定
+新規メソッド _setupDragHandlers():
+  - ドラッグハンドルに mousedown イベント
+  - グローバル mousemove/mouseup をアロー関数で定義
+  - resize-popup.jsと同じパターン（this参照固定）
+
+処理フロー:
+  mousedown → isDragging=true, 初期座標保存
+  mousemove → isDraggingがtrueなら差分計算してpanel.style更新
+  mouseup → isDragging=false, 位置を永続化
+
+■ 1-4. 位置の永続化
+新規メソッド:
+  - _savePosition(x, y) → localStorage.setItem('quick-access-position', JSON.stringify({x, y}))
+  - _loadPosition() → localStorage.getItem() → panel.style反映
+
+呼び出しタイミング:
+  - show()内で_loadPosition()
+  - mouseup内で_savePosition()
+
+■ 1-5. destroy()拡張
+既存のmouseMoveHandler/mouseUpHandlerに加え:
+  - dragMoveHandler削除
+  - dragUpHandler削除
+
+================================================================================
+Phase 2: CSS スタイル追加
+================================================================================
+
+【改修対象ファイル】
+- styles/main.css
+
+【追加スタイル】
+
+.quick-access-drag-handle {
+    width: 100%;
+    height: 24px;
+    background: var(--futaba-cream);
+    border-bottom: 1px solid var(--futaba-light-medium);
+    cursor: move;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    border-radius: 16px 16px 0 0;
+    margin: -20px -20px 12px -20px;
+    padding: 0 20px;
+    font-size: 14px;
+    color: var(--futaba-medium);
+    font-weight: bold;
+}
+
+.quick-access-drag-handle:hover {
+    background: var(--futaba-light-medium);
+    color: var(--futaba-maroon);
+}
+
+.quick-access-drag-handle:active {
+    cursor: grabbing;
+    background: var(--futaba-medium);
+}
+
+注意事項:
+  - 既存の .popup-panel padding: 20px を考慮したネガティブマージン
+  - border-radiusは.popup-panelと合わせる
+
+================================================================================
+Phase 3: 画面境界チェック（オプション）
+================================================================================
+
+【実装推奨度】
+必須ではないが、UX向上のため実装推奨
+
+【実装内容】
+_setupDragHandlers()のmousemove内で境界チェック:
+
+const viewportWidth = window.innerWidth;
+const viewportHeight = window.innerHeight;
+const panelRect = this.panel.getBoundingClientRect();
+
+newX = Math.max(0, Math.min(newX, viewportWidth - panelRect.width));
+newY = Math.max(0, Math.min(newY, viewportHeight - panelRect.height));
+
+================================================================================
+Phase 4: タッチ対応（将来実装）
+================================================================================
+
+【実装時期】
+スマホ対応フェーズで実装
+
+【準備事項】
+現在のマウスイベント構造で、タッチ対応追加が容易:
+  - touchstart → mousedown相当
+  - touchmove → mousemove相当
+  - touchend → mouseup相当
+
+実装パターン:
+  handlePointerDown(e) {
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    // 既存のドラッグロジック
+  }
+
+注意: touch-action: none をCSSで設定
+
+================================================================================
+実装順序とチェックリスト
+================================================================================
+
+□ Phase 1-1: コンストラクタにプロパティ追加
+□ Phase 1-2: _populateContent()にドラッグハンドル追加
+□ Phase 1-3: _setupDragHandlers()実装
+□ Phase 1-4: _savePosition()/_loadPosition()実装
+□ Phase 1-5: initialize()から_setupDragHandlers()呼び出し
+□ Phase 1-6: destroy()にドラッグハンドラー削除追加
+□ Phase 2: CSSにドラッグハンドルスタイル追加
+□ Phase 3: 境界チェック実装（推奨）
+□ 動作確認: ドラッグ移動、位置保存、リロード後復元
+
+================================================================================
+依存関係とAPI
+================================================================================
+
+【使用するグローバルAPI】
+- localStorage.setItem / getItem (位置永続化)
+- document.addEventListener / removeEventListener (グローバルイベント)
+- window.TegakiEventBus (既存のイベントバス、必須ではない)
+
+【変更しないAPI】
+- PopupManager (show/hide/toggle/isReadyは変更なし)
+- EventBus通知 (brush:*イベントは維持)
+- BrushSettings連携 (既存実装を維持)
+
+【他ファイルへの影響】
+なし。quick-access-popup.jsの内部実装のみ。
+
+================================================================================
+テストポイント
+================================================================================
+
+1. ドラッグハンドルをドラッグして移動できるか
+2. ポップアップ本体をドラッグしても移動しないか（ハンドルのみ有効）
+3. 画面外にドラッグできないか（Phase 3実装時）
+4. リロード後に位置が復元されるか
+5. スライダー操作が正常に動作するか（ドラッグ機能と干渉しない）
+6. destroy()後にイベントリスナーが残らないか
+
+================================================================================
+完了基準
+================================================================================
+
+- ドラッグハンドルで自由に移動可能
+- 位置がlocalStorageに保存され、リロード後も復元
+- 既存のスライダー・カラーパレット機能が正常動作
+- メモリリーク無し（destroy()で完全クリーンアップ）
+- コンソールエラー無し
+
+================================================================================
