@@ -402,6 +402,189 @@ canvas {
     transition: all 0.2s ease;
 }
 
+.legacy-layer-card-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 18px 18px;
+    grid-template-rows: 32px;
+    align-items: center;
+    gap: 0 5px;
+    width: var(--legacy-card-width, 160px);
+    min-height: 38px;
+    padding: 3px 5px;
+    margin-bottom: 2px;
+    margin-left: var(--legacy-card-margin-left, 0);
+    border: var(--legacy-card-border-width, 1px) solid var(--legacy-card-border-color, #e9c2ba);
+    border-radius: 4px;
+    background-color: var(--legacy-card-bg, #ffffee);
+    opacity: 0.9;
+    cursor: grab;
+    position: relative;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+    touch-action: none;
+    -ms-touch-action: none;
+    user-select: none;
+}
+
+.legacy-layer-card-row.background-layer {
+    cursor: default;
+}
+
+.legacy-layer-card-details {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    height: 32px;
+}
+
+.legacy-layer-card-name {
+    grid-column: 2;
+    grid-row: 1;
+    color: var(--futaba-maroon);
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+    cursor: text;
+    padding: 0;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.legacy-layer-card-background-name {
+    cursor: default;
+    height: 20px;
+}
+
+.legacy-layer-card-thumb {
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.legacy-layer-card-third-action {
+    grid-column: 3;
+    grid-row: 1;
+}
+
+.legacy-layer-card-visibility-action {
+    grid-column: 4;
+    grid-row: 1;
+}
+
+.layer-clip-status {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--futaba-maroon);
+    opacity: 0.28;
+    cursor: default;
+}
+
+.layer-clip-status.is-clipping {
+    opacity: 1;
+}
+
+.layer-clip-status.is-toggleable {
+    cursor: pointer;
+}
+
+.legacy-layer-card-row .layer-visibility,
+.legacy-layer-card-row .layer-background-color-button,
+.legacy-layer-card-row .layer-duplicate-button,
+.legacy-layer-card-row .layer-merge-down-button {
+    width: 16px;
+    height: 16px;
+    padding: 2px;
+}
+
+.legacy-layer-card-row .layer-visibility svg,
+.legacy-layer-card-row .layer-background-color-button svg,
+.legacy-layer-card-row .layer-duplicate-button svg,
+.legacy-layer-card-row .layer-merge-down-button svg {
+    width: 12px;
+    height: 12px;
+}
+
+.layer-merge-down-button.is-disabled {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.layer-opacity-control {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    user-select: none;
+    height: 14px;
+    min-width: 0;
+}
+
+.layer-opacity-value {
+    min-width: 30px;
+    text-align: left;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: bold;
+    flex-shrink: 0;
+    cursor: default;
+}
+
+.layer-blend-mode-label {
+    color: var(--futaba-maroon);
+    font-size: 9px;
+    font-weight: bold;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 32px;
+    opacity: 0.72;
+}
+
+.layer-blend-mode-label.is-normal {
+    opacity: 0;
+}
+
+.legacy-layer-card-row .folder-child-line {
+    position: absolute;
+    left: -12px;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background-color: #cf9c97;
+}
+
+.legacy-layer-card-row .folder-thumbnail {
+    box-sizing: border-box;
+    border: 1px solid #b8706b;
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+    cursor: pointer;
+    color: var(--futaba-maroon);
+    background-color: rgba(128, 0, 0, 0.16);
+}
+
+.legacy-layer-card-row .folder-thumbnail.is-expanded {
+    background-color: rgba(207, 156, 151, 0.22);
+}
+
 .clip-layer-mirror-row.depth-1 {
     margin-left: 14px;
 }
@@ -439,8 +622,8 @@ canvas {
 .clip-layer-mirror-thumb {
     grid-column: 1;
     grid-row: 1;
-    width: 34px;
-    height: 30px;
+    width: var(--card-thumb-width, 34px);
+    height: var(--card-thumb-height, 30px);
     border-radius: 3px;
     background: rgba(128, 0, 0, 0.05);
     overflow: hidden;
@@ -475,11 +658,13 @@ canvas {
     opacity: 0.4;
 }
 
-.clip-layer-mirror-row.is-dragging {
+.clip-layer-mirror-row.is-dragging,
+.legacy-layer-card-row.is-dragging {
     opacity: 0.35;
 }
 
-.clip-layer-mirror-drag-ghost {
+.clip-layer-mirror-drag-ghost,
+.layer-panel-card-drag-ghost {
     position: fixed;
     z-index: 10000;
     pointer-events: none;
@@ -492,7 +677,9 @@ canvas {
 }
 
 .clip-layer-mirror-row.is-dnd-before::before,
-.clip-layer-mirror-row.is-dnd-after::after {
+.clip-layer-mirror-row.is-dnd-after::after,
+.legacy-layer-card-row.is-dnd-before::before,
+.legacy-layer-card-row.is-dnd-after::after {
     content: "";
     position: absolute;
     left: 4px;
@@ -503,15 +690,18 @@ canvas {
     box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
 }
 
-.clip-layer-mirror-row.is-dnd-before::before {
+.clip-layer-mirror-row.is-dnd-before::before,
+.legacy-layer-card-row.is-dnd-before::before {
     top: -3px;
 }
 
-.clip-layer-mirror-row.is-dnd-after::after {
+.clip-layer-mirror-row.is-dnd-after::after,
+.legacy-layer-card-row.is-dnd-after::after {
     bottom: -3px;
 }
 
-.clip-layer-mirror-row.is-dnd-inside {
+.clip-layer-mirror-row.is-dnd-inside,
+.legacy-layer-card-row.is-dnd-inside {
     outline: 2px solid var(--active-border);
     outline-offset: 2px;
     background: rgba(255, 102, 0, 0.12);
@@ -584,6 +774,13 @@ canvas {
 }
 
 .layer-panel-inline-name-input.clip-layer-mirror-name {
+    width: 100%;
+    height: 18px;
+}
+
+.layer-panel-inline-name-input.legacy-layer-card-name {
+    grid-column: 2;
+    grid-row: 1;
     width: 100%;
     height: 18px;
 }
@@ -866,14 +1063,25 @@ canvas {
 }
 
 .layer-thumbnail {
+    width: var(--legacy-thumb-width, 40px);
+    height: var(--legacy-thumb-height, 32px);
     box-sizing: border-box;
     border: none !important;
     border-radius: 2px;
     overflow: hidden;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     background: transparent !important;
+}
+
+.layer-thumbnail-image {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+    object-fit: contain;
 }
 
 .background-color-swatch {
