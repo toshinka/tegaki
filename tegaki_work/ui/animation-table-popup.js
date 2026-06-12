@@ -81,6 +81,7 @@ export class AnimationTablePopup {
         this._previewBeforeTransform = null;
         this.isTransformPreviewSuspended = false;
         this._transformHistoryBeforeState = null;
+        this._transformWorkingLayerBeforeSignature = null;
         this.isDrawingPreviewSuspended = false;
         this._attributePreviewSyncFrame = null;
         this._drawingHistoryBeforeStates = new Map();
@@ -381,6 +382,7 @@ export class AnimationTablePopup {
         this._transformHistoryBeforeState = asset
             ? this._captureInternalLayerHistoryState(asset)
             : null;
+        this._transformWorkingLayerBeforeSignature = this._captureWorkingLayerTransformSignature();
         this._previewBeforeTransform = this.isPreviewActive;
         this.isTransformPreviewSuspended = true;
         this._restoreVisibility();
@@ -392,6 +394,7 @@ export class AnimationTablePopup {
 
         this.isTransformPreviewSuspended = false;
         this._transformHistoryBeforeState = null;
+        this._transformWorkingLayerBeforeSignature = null;
         if (this._previewBeforeTransform !== null) {
             this.isPreviewActive = this._previewBeforeTransform;
             this._previewBeforeTransform = null;
@@ -2754,6 +2757,7 @@ export class AnimationTablePopup {
 
         // 3. 再描画
         this.render();
+        this._flushLayerPanelSync();
         this._emitAnimationLayerStatusUpdate();
 
         return { ok: true, clip, assetId: clip.assetId };
@@ -2841,6 +2845,23 @@ export class AnimationTablePopup {
         });
         const animationWorkingLayers = rasterLayers.filter(layer => layer.layerData?.isAnimationWorkingLayer === true);
         return animationWorkingLayers.length > 0 ? animationWorkingLayers : rasterLayers;
+    }
+
+    _captureWorkingLayerTransformSignature() {
+        return this._getRasterWorkingLayers().map(layer => {
+            const layerData = layer?.layerData || {};
+            return {
+                id: layerData.id || null,
+                snapshotId: layerData.animationSnapshotId || null,
+                x: Number(layer?.position?.x || 0),
+                y: Number(layer?.position?.y || 0),
+                rotation: Number(layer?.rotation || 0),
+                scaleX: Number(layer?.scale?.x ?? 1),
+                scaleY: Number(layer?.scale?.y ?? 1),
+                alpha: Number(layer?.alpha ?? layerData.opacity ?? 1),
+                visible: layer?.visible !== false
+            };
+        });
     }
 
     _ensureWorkingLayerCapacity(requiredCount) {
@@ -6056,7 +6077,18 @@ export class AnimationTablePopup {
             if (!this.isTransformPreviewSuspended) return;
             requestAnimationFrame(() => {
                 const beforeState = this._transformHistoryBeforeState;
-                const saved = this._saveSelectedClipFromWorkingLayers({ force: true });
+                const beforeSignature = this._transformWorkingLayerBeforeSignature;
+                const afterSignature = this._captureWorkingLayerTransformSignature();
+                const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+                const hasDirtyWorkingLayers = entry?.clip ? this._hasDirtyWorkingLayersForClip(entry.clip) : false;
+                const hasTransformChange = !!beforeSignature
+                    && JSON.stringify(beforeSignature) !== JSON.stringify(afterSignature);
+                if (!hasDirtyWorkingLayers && !hasTransformChange) {
+                    this._exitTransformEditPreviewMode();
+                    return;
+                }
+
+                const saved = this._saveSelectedClipFromWorkingLayers({ force: hasTransformChange });
                 if (saved) {
                     const asset = this._getSelectedAssetForInspector();
                     const afterState = asset ? this._captureInternalLayerHistoryState(asset) : null;

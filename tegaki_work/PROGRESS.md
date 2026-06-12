@@ -24,6 +24,169 @@
 
 **Phase 4z26 — CAF / Working Layer Ghost Guard 【Codex実装】**
 2026-05-31
+- **Task3進行: HTML側ボタン生成ヘルパーのtagName対応**:
+  - `layer-panel-renderer.js`: HTML側 `_createLayerPanelIconButtonHtml()` に `tagName` を追加し、DOM側 `_createLayerPanelIconButton()` と引数形をさらに揃えた。
+  - 既定は従来通り `button` とし、button出力時は `type="button"` を明示するよう変更。
+  - 狙い: CAFカード/旧カードのボタン生成ヘルパーを後続で畳み込みやすくするため、DOM側とHTML側の差分を小さくする。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: レイヤーパネルボタンclass生成の共通化**:
+  - `layer-panel-renderer.js`: DOM側 `_createLayerPanelIconButton()` とHTML側 `_createLayerPanelIconButtonHtml()` のclass文字列生成を `_createLayerPanelButtonClassName()` へ集約。
+  - 既定の `ui-icon-button ui-icon-button--small` とCAF専用 `caf-simple-icon` の使い分けは維持し、見た目とイベント対象classは変更していない。
+  - 狙い: 旧カード/CAFカードのボタン生成ヘルパー統合に向けて、class組み立ての重複を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: DOM側ボタン属性適用の共通化**:
+  - `layer-panel-renderer.js`: DOM要素へ任意属性を適用する `_applyLayerPanelAttributes()` を追加し、DOM側 `_createLayerPanelIconButton()` から使用するよう変更。
+  - `_createLayerPanelIconButton()` に `dataAttributes` / `extraAttributes` を追加し、HTML側 `_createLayerPanelIconButtonHtml()` と同じ属性指定の形に近づけた。
+  - 既存の削除/複製/下結合/可視/クリッピング等のボタン呼び出しはそのまま動くよう既定値を維持。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: レイヤーパネルアイコンHTML解決の共通化**:
+  - `layer-panel-renderer.js`: DOM側 `_createLayerPanelIconButton()` とHTML側 `_createLayerPanelIconButtonHtml()` のアイコンHTML取得を `_resolveLayerPanelIconHtml()` へ集約。
+  - HTML側で使っていた `fallbackIconName` をDOM側ヘルパーにも受け口として追加し、ボタン生成ヘルパー同士の引数差を縮めた。
+  - 狙い: CAFカード/旧カードの小型アイコンボタン統合に向けて、アイコン解決の重複と分岐差を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: CAFヘッダートグルボタンHTML生成の共通化**:
+  - `layer-panel-renderer.js`: CAFヘッダーの開閉トグルボタンを `_createLayerPanelIconButtonHtml()` 経由へ変更し、HTML直書きのbutton生成を削減。
+  - `_createLayerPanelIconButtonHtml()` に `baseClass` / `ariaLabel` / `extraAttributes` を追加し、既定の `ui-icon-button` 系ボタンとCAF専用 `caf-simple-icon` ボタンを同じ入口で生成できるようにした。
+  - `caf-simple-toggle-btn`、`data-clip-id`、`aria-expanded` は維持し、クリック委譲と開閉挙動の契約は変更していない。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: レイヤーパネルHTML data属性生成の共通化**:
+  - `layer-panel-renderer.js`: HTML文字列側の `data-*` 属性生成を `_createLayerPanelDataAttributes()` へ集約し、CAFカード本体と小型アイコンボタンの属性文字列化を同じ入口へ寄せた。
+  - `_createLayerPanelCardDataAttributes()` はカード用の属性選定に専念し、エスケープと空値除外は共通ヘルパー側へ移した。
+  - 狙い: CAFカードHTMLと旧カードDOMの統合前に、HTML側で残っていた属性組み立ての重複を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: CAFヘッダー可視ボタンHTML生成の共通化**:
+  - `layer-panel-renderer.js`: CAFヘッダーの表示/非表示ボタンを `_createLayerPanelIconButtonHtml()` 経由へ変更し、CAF内部Layerミラーの操作ボタンと同じHTML生成経路へ寄せた。
+  - `caf-simple-visibility-btn` と `data-clip-id` は維持し、クリック委譲と可視切替の契約は変更していない。
+  - 狙い: CAFヘッダー/CAF内部カード/旧カードで分散していた小型アイコンボタン生成を段階的に同じ設計へ寄せる。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: CAF内部カード操作ボタンHTML生成の共通化**:
+  - `layer-panel-renderer.js`: CAF内部Layerミラーのクリッピング/可視ボタンHTMLを `_createLayerPanelIconButtonHtml()` 経由へ変更。
+  - event delegationで使う `.clip-layer-mirror-clip-btn` / `.clip-layer-mirror-visibility-btn` と `data-internal-layer-id` / `data-asset-id` は維持し、挙動変更を避けた。
+  - 狙い: 旧カード側の `_createLayerPanelIconButton()` とCAF内部カードHTMLのボタン生成を同じ設計へ寄せ、カード統合時の重複マークアップを減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カードサムネイルDOM生成の共通化**:
+  - `layer-panel-renderer.js`: 通常Layer/Folderサムネイルのコンテナ生成を `_createLayerThumbnailContainer()` へ集約し、`--legacy-thumb-*` の適用入口を一箇所に整理。
+  - `thumbnail:updated` と初回サムネイル表示で使う画像生成を `_createLayerThumbnailImage()` へ集約し、`layer-thumbnail-image` class付与を統一。
+  - 狙い: CAFカード側のサムネイルCSS変数経路に合わせ、通常レイヤーパネル側もサムネイルDOM生成と画像class付与の重複を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カード部品コンテナ生成の共通化**:
+  - `layer-panel-renderer.js`: 旧カードの詳細欄コンテナ、透明度/合成モード表示コンテナ、子階層ラインを `_createLayerPanelCardPart()` 経由へ変更。
+  - 表示classとDOM配置は維持し、通常Layer/Folderカード内の小部品生成入口だけを整理。
+  - 狙い: 旧カードShell、名前、メタ表示、操作ボタンに続き、カード内部コンテナも共通生成経路へ寄せ、CAFカードとの部品統合時に残る個別DOM生成を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カードメタ表示span生成の共通化**:
+  - `layer-panel-renderer.js`: 旧Layerカードの透明度表示と合成モード表示を `_createLayerPanelMetaElement()` 経由へ変更し、メタ情報spanの個別生成を削減。
+  - 表示内容、class、合成モード通常時の非表示扱い、属性パネル導線のtitleは既存挙動を維持。
+  - 狙い: CAF内部カードの `metaLabel` 系と旧カードの透明度/合成モード表示を後続で統合しやすいよう、メタ表示DOMの生成入口を整理する。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カード名前span生成の共通化**:
+  - `layer-panel-renderer.js`: 通常Layer/Folder名と背景名のspan生成を `_createLayerPanelNameElement()` 経由へ変更し、旧カード内の名前DOM生成入口を統一。
+  - 背景レイヤーは編集不可の特殊扱いを維持し、通常Layer/Folderは既存のダブルクリック/F2編集経路を維持。
+  - 狙い: CAFヘッダー/内部Layer名と同じ方向で、名前表示と名前編集対象のDOM構成を整理し、旧カード側の個別生成を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カード削除ボタン生成の共通化**:
+  - `layer-panel-renderer.js`: 旧Layerカード用の削除ボタンを `_createLayerPanelIconButton()` 経由へ変更し、同ヘルパーを `button` タグ・close系class・aria-labelにも対応させた。
+  - 狙い: 可視/クリッピング/背景色/複製/下結合に続き、旧カードの操作ボタン生成を同じ入口へ寄せ、カード部品統合時の残差を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カード複製/下結合アイコン生成の共通化**:
+  - `layer-panel-renderer.js`: 旧Layerカードの複製/下結合ボタン生成を `_createLayerPanelIconButton()` 経由へ変更し、小型アイコン生成の個別実装を削減。
+  - `main.css`: 下結合不可時の `visibility/pointer-events` をJS直書きから `.layer-merge-down-button.is-disabled` へ移管。
+  - 狙い: 通常レイヤーパネルカードの操作ボタン群を同じ生成・無効化パターンに寄せ、CAFカードとの部品統合に向けて分岐を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カードクリッピングアイコン生成の共通化**:
+  - `layer-panel-renderer.js`: 通常Layerカードのクリッピング表示を `_createLayerPanelIconButton()` 経由へ変更し、可視/背景色アイコンと同じ小型アイコン生成経路へ統一。
+  - フォルダ/背景では空枠、通常Layerではpaperclip表示という既存挙動は維持し、`is-clipping` / `is-toggleable` の意味付けもそのまま残した。
+  - 狙い: 通常レイヤーパネルカードの右端操作部品をCAFカードと同じボタン生成系へ寄せ、カード統合時の部品差分を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カード操作アイコン生成の共通化**:
+  - `layer-panel-renderer.js`: 通常Layer/背景カードの可視アイコン・背景色アイコン生成を `_createLayerPanelIconButton()` 経由へ変更し、個別に `ui-icon-button ui-icon-button--small` を組み立てる重複を削減。
+  - 狙い: CAF内部カードと旧Layer/Folderカードで共通する小型アイコンボタンの生成経路を寄せ、今後のカード統合時にアイコン寸法・class・title付与の調整箇所を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧Layer/Folderサムネイル表示のCSS変数化**:
+  - `layer-panel-renderer.js`: 通常Layer/Folderサムネイルの幅/高さとサムネイル画像表示styleを、直接style指定から `--legacy-thumb-*` と `layer-thumbnail-image` classへ変更。`thumbnail:updated` の遅延反映経路も同じclassを使うよう統一。
+  - `main.css`: `.layer-thumbnail` に `--legacy-thumb-width` / `--legacy-thumb-height` 参照を追加し、画像の `object-fit: contain` などを `.layer-thumbnail-image` へ移管。
+  - 狙い: 通常レイヤーパネル側のサムネイルもCAFカードと同じ「CSS変数 + class」経路へ寄せ、カード統合後のアスペクト比・見た目調整箇所を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧カードDOM側のCSS変数適用ヘルパー化**:
+  - `layer-panel-renderer.js`: 旧Layer/FolderカードShellで直接 `style.setProperty()` していた `--legacy-card-*` 変数を、`_applyLayerPanelCardStyleVars()` 経由へ変更。
+  - 狙い: CAFカードHTML側の `_createLayerPanelCardStyleAttributes()` と対になるDOM用ヘルパーを用意し、通常レイヤーパネルカードとCAFカードの動的style指定経路を揃える。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: CAFカードサムネイル寸法のCSS変数化**:
+  - `layer-panel-renderer.js`: CAF内部Layerミラーのサムネイル幅/高さを直接 `style="width:...;height:..."` で出す経路から、`_createLayerPanelCardStyleAttributes()` によるCSS変数出力へ変更。
+  - `main.css`: `clip-layer-mirror-thumb` の幅/高さを `--card-thumb-width` / `--card-thumb-height` 参照へ変更。
+  - 狙い: CAFカードHTML生成も旧カードと同じく「class + data + 必要最小限のCSS変数」構成へ寄せ、後続のカード生成共通化で使えるstyle属性生成ヘルパーを用意する。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 通常Layer/Folder名編集inputの共通class化**:
+  - `layer-panel-renderer.js`: 通常Layer/Folderの名前編集inputを、CAFヘッダー/CAF内部Layer名編集と同じ `layer-panel-inline-name-input` 経路へ接続し、JS側のインラインstyle指定を削除。
+  - `main.css`: `layer-panel-inline-name-input.legacy-layer-card-name` を追加し、旧カード内の名前編集配置をCSSで指定。
+  - 狙い: 通常Layer/FolderカードもCAFカード同様に、表示と編集状態をclassベースで扱う構造へ寄せる。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧フォルダカード残骸の整理**:
+  - `layer-panel-renderer.js`: 未使用になっていた旧フォルダ耳/旧トグルアイコン生成関数を削除し、フォルダ開閉は現行のフォルダサムネイルクリック経路へ一本化。
+  - `layer-panel-renderer.js` / `main.css`: 旧Layer/Folderカード名の古い `grid-row:3` インライン指定、フォルダサムネイル、子階層ライン、旧操作アイコン寸法をCSS classへ移管。
+  - 狙い: 通常レイヤーパネルカードをCAFカード同様のclassベース構造へ寄せ、使われていない旧UI部品を残さない。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 背景レイヤーカードの見た目統一**:
+  - `layer-panel-renderer.js`: 背景レイヤーの名前表示とバケツ/可視アイコン配置を、通常旧カードと同じ `legacy-layer-card-*` class経路へ接続。
+  - `main.css`: 背景レイヤーを特殊扱いのまま、旧カード内の表示/背景色アイコン寸法を16px枠・12px SVGへ揃える指定を追加。
+  - 狙い: 背景レイヤーはCAF外に出る特殊レイヤーとして残しつつ、パネルカードとしての密度とアイコンサイズはLayer/Folderカードと統一する。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧Layer/FolderカードのCSS責務移管**:
+  - `layer-panel-renderer.js`: 旧Layer/Folderカード外枠の固定style、詳細欄、サムネイル配置、右端アイコン、透明度/合成モード表示の直書きstyleを削減し、classとCSS変数へ移行。
+  - `main.css`: `legacy-layer-card-row` / `legacy-layer-card-details` / `legacy-layer-card-thumb` / `legacy-layer-card-*action` / `layer-opacity-*` / `layer-clip-status` の共通スタイルを追加。
+  - 狙い: 旧カード生成をCAFカードと同じ「class + data + 必要最小限の動的値」構成へ寄せ、今後のカード統合・D&D統合の調整箇所を減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧Layer/Folderカード内部部品の共通化**:
+  - `layer-panel-renderer.js`: 旧Layer/Folderカードの詳細欄、サムネイル配置、右端のクリップ/可視アイコン、クリック選択処理を `_appendLegacyLayerCardDetails()` / `_appendLegacyLayerCardThumbnail()` / `_appendLegacyLayerCardActionIcons()` / `_attachLegacyLayerCardClick()` へ切り出し。
+  - 背景レイヤーの特殊表示、既存の名前編集、透明度、クリッピング、表示切替、フォルダ開閉のDOM部品は維持。
+  - 狙い: 旧Layer/Folderカード生成をCAFカード基盤へ寄せるため、Shellだけでなく内部構造側の二重実装も段階的に減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: レイヤーパネル旧SortableJS依存の撤去**:
+  - `layer-panel-renderer.js`: `sortablejs` import、`initializeSortable()`、SortableJS専用のdrop解決/DOM並び替え補助、`sortable` インスタンス破棄経路を削除。
+  - `requestUpdate()` のドラッグ中延期判定を旧Sortable状態ではなく共通D&D状態 `_cardDrag?.active` へ変更し、保留更新の処理も `_finishLayerPanelCardDrag()` 側へ移動。
+  - 狙い: 旧Layer/FolderカードD&DをCAF側と同じpointer D&D基盤へ統一し、旧SortableJSとの二重D&D実装を残さない。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧Layer/FolderカードD&Dの共通pointer経路接続**:
+  - `layer-panel-renderer.js`: レイヤーパネルのpointer入口を `_handleLayerPanelCardPointerDown()` に統一し、CAF内部Layerミラーと旧Layer/Folderカードを同じ `_startLayerPanelCardDrag()` 経路へ接続。
+  - 旧Layer/Folderカード用に `_handleLegacyLayerCardPointerDown()` / `_applyLegacyLayerCardDropFromPointer()` / `_resolveLayerIndexFromPointerDrop()` を追加し、共通D&Dの `before` / `after` / `inside` 結果を `LayerSystem.reorderLayers()` / `moveLayerIntoFolder()` へ適用。
+  - `render()` 時の SortableJS 初期化を止め、既存インスタンスがあれば破棄するよう変更。旧カードD&Dは共通pointer経路へ寄せた。
+  - `main.css`: `layer-panel-card-drag-ghost` と旧カード用drop予告classを追加し、旧Layer/FolderカードでもCAF側と同じゴースト/挿入ライン/insideハイライトを表示。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧Layer D&D適用処理の分離**:
+  - `layer-panel-renderer.js`: SortableJS の `onEnd` に直書きされていた旧Layer/Folderの並び替え・フォルダ投入適用処理を `_applyLegacyLayerCardDropFromSortable()` へ切り出し。
+  - drop先解決を `_resolveLegacyLayerCardDrop()` に分離し、SortableJSイベント固有の形から少し切り離した。
+  - 狙い: 旧カードD&D本体を後続で共通D&Dヘルパーへ置き換える際、移動適用ロジックを再利用しやすくする。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: カード共通class/data属性の導入**:
+  - `layer-panel-renderer.js`: CAF内部Layerミラー行と旧Layer/Folder行の両方に `layer-panel-card-row` と `data-card-kind` / `data-layer-id` / `data-depth` などの共通カード識別dataを持たせる補助関数を追加。
+  - `_createLayerPanelCardHtml()` は共通class/data生成を通す形へ変更し、旧カードShell側も同じ補助関数でclass/dataを付与。
+  - 狙い: 旧Layer/FolderカードをCAFカードD&Dと同じselector・識別子で扱えるようにし、後続の旧SortableJS撤去と共通D&D接続の足場を作る。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task3進行: 旧Layer/FolderカードShellの共通化**:
+  - `layer-panel-renderer.js`: 通常Layer/Folderカードの外枠生成を `_createLegacyLayerCardShell()` に切り出し、`createLayerElement()` / `createFolderElement()` に重複していた class / data属性 / grid / 階層indent / active・selected枠表示を一本化。
+  - 旧LayerSystem操作先、名前編集、透明度、クリッピング、表示切替、フォルダ開閉の既存DOM部品とイベントは維持。
+  - 狙い: 旧Layer/FolderカードをCAFカード生成・共通D&Dへ寄せる前段として、見た目と行Shellの二重実装を先に減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task2完了: CAFカードD&Dの共通ヘルパー化**:
+  - `layer-panel-renderer.js`: CAF内部LayerミラーのD&D状態を `_cardDrag` に統一し、開始処理を `_startLayerPanelCardDrag()`、drop判定を `_updateLayerPanelCardDropTarget()`、終了処理を `_finishLayerPanelCardDrag()` へ整理。
+  - CAF固有の移動処理は `onDrop` / `canDropInside` / `rowSelector` / `ghostClass` の設定として渡す形にし、後続で旧Layer/FolderカードD&Dを同じ入口へ差し替えられるようにした。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **Task1完了: CAFカード描画の共通関数化**:
+  - `layer-panel-renderer.js`: CAF内部Layerミラーの1行HTML生成を `_createLayerPanelCardHtml()` へ切り出し、既存の `clip-layer-mirror-*` class / data属性を維持したまま共通カード生成経路を通すよう変更。
+  - 狙い: 旧Layer/Folderカードを後続で同じカード描画関数へ寄せる足場を作り、見た目・ボタン・D&D対象DOMの二重実装を段階的に減らす。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAF Clip外部選択後の同期フラッシュ**:
+  - `animation-table-popup.js`: レイヤーパネル側CAFヘッダーから `selectClipAssetFromExternal()` でClipを選択した後、アニメテーブル再描画だけでなく `_flushLayerPanelSync()` も実行するよう変更。
+  - 狙い: レイヤーパネルから別CAF Clipへ移った直後に、CAFミラーの選択枠・属性パネル・内部Layer選択表示が一手遅れて旧対象へ残る余地を減らす。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAFヘッダー操作対象の選択Clip追従**:
+  - `layer-panel-renderer.js`: CAFグループヘッダーの選択・可視ON/OFF・Lane表示を、同グループ内で選択中のClipがある場合はそのClipへ向けるよう変更。開閉キーだけは従来通りグループ先頭Clipを使うよう分離。
+  - 狙い: 同一CAFグループに複数Clipがある状態で、ヘッダー操作が常に先頭Clipへ作用して選択中Clipとズレる混線を避ける。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
+- **レイヤーパネル統合: CAF側V変形の空保存抑制**:
+  - `animation-table-popup.js`: V変形プレビュー開始時に作業Layerのsnapshot参照・位置・回転・拡縮・表示状態をシグネチャとして保持し、VキーOFF時に実差分がない場合はCAF保存と履歴登録を行わないよう変更。
+  - 狙い: Vキーを押して戻しただけの空操作でCAF内部Layer snapshotや `caf-internal-layer-transform` 履歴が増える余地を減らし、将来のInstance transform移行前の暫定経路を安定させる。
+  - **確認**: `node --check tegaki_work/ui/animation-table-popup.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
 - **レイヤーパネル統合: CAF側V変形の履歴化**:
   - `animation-table-popup.js`: V変形プレビュー開始時に選択CAFの内部Layer履歴状態を保持し、VキーOFF保存後に差分がある場合は `caf-internal-layer-transform` として履歴登録するよう変更。
   - 狙い: 旧LayerSystemの変形履歴に依存せず、CAF内部Layer正本へのV変形反映をUndo/Redo対象にする。
@@ -354,6 +517,7 @@
   - 方針: `ClipAsset` はPSD互換寄りの絵素材本体として、内部Layer/Folder/Snapshot/opacity/blend/clippingを保持する。X/Y移動・回転・拡縮・キーフレーム・物理演算結果は素材ではなく、タイムライン上の `ClipInstance` / CAFセル側に持たせる。
   - 理由: 同じAssetを複数セルで再利用した時、Asset側に変形値を置くと全配置が同時に変形してしまう。Instance側に置けば、PSD的な絵データを保ったままセルごとの運動・物理キャッシュを持てる。
   - 将来: Asset側にはRig定義や初期姿勢、Instance側には `transform` / `transformKeyframes` / `physics.cacheId` を置く方向が自然。PSD書き出しではAsset内部Layerを優先し、物理/Transformは外部メタまたは焼き込みフレームとして扱う。
+  - 補足: X/Y移動だけなら本来は `ClipInstance.transform.x/y` として非破壊に持てるため、ラスター劣化を避けられる。現行V変形のCAF内部Layerスナップショット保存は統合途中の暫定経路であり、将来は移動/回転/拡縮をInstance transformへ逃がし、必要時だけ焼き込む形へ差し替える。
 - **ClipInstance変形メタの保存器追加**:
   - `animation-data-model.js`: `ClipInstanceModel` に `transform`（x/y/scaleX/scaleY/rotation/anchorX/anchorY）、`transformKeyframes`、`physics`（enabled/rigId/cacheId）を追加。現時点では描画反映せず、保存・履歴復元・将来拡張用のデータ器に限定。
   - `animation-table-popup.js`: CAFセルCopy/Paste時に `transform` / `transformKeyframes` / `physics` を落とさないようにした。

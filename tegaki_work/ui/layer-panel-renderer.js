@@ -2,7 +2,7 @@
  * ============================================================================
  * ファイル名: ui/layer-panel-renderer.js
  * 責務: レイヤーパネルのUI（レイヤー一覧、選択、可視性、透明度、合成モード、クリッピング状態、並び替え）を描画する
- * 依存: layer-system.js, thumbnail-system.js, event-bus.js, config.js, Sortable
+ * 依存: layer-system.js, thumbnail-system.js, event-bus.js, config.js
  * 被依存: ui-panels.js, core-engine.js
  * 公開API: LayerPanelRenderer
  * イベント発火: ui:layer-selected, ui:background-color-change-requested
@@ -12,7 +12,6 @@
  * ============================================================================
  */
 
-import Sortable from 'sortablejs';
 import { UI_ICONS } from './ui-icons.js';
 
 export class LayerPanelRenderer {
@@ -20,7 +19,6 @@ export class LayerPanelRenderer {
         this.container = container;
         this.layerSystem = layerSystem;
         this.eventBus = eventBus;
-        this.sortable = null;
         this._isInitialized = false;
         this._editingLayerIndex = -1;
         this._editingInput = null;
@@ -30,26 +28,25 @@ export class LayerPanelRenderer {
         this._attributePopupAnchorElement = null;
         this._attributePopupDrag = null;
         this._attributeOpacityEditState = null;
-        this._isSortableDragging = false;
         this._pendingUpdateAfterDrag = false;
         this._expandedCafClipIds = new Set();
         this._collapsedCafClipIds = new Set();
         this._collapsedClipInternalFolderIds = new Set();
         this._clipSnapshotThumbCache = new Map();
-        this._clipLayerMirrorDrag = null;
-        this._clipLayerMirrorDragSuppressClick = false;
+        this._cardDrag = null;
+        this._cardDragSuppressClick = false;
         this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
         this._handleAttributePopupKeydown = this._handleAttributePopupKeydown.bind(this);
         this._handleAttributePopupDragMove = this._handleAttributePopupDragMove.bind(this);
         this._handleAttributePopupDragEnd = this._handleAttributePopupDragEnd.bind(this);
         this._handleLayerPanelKeydown = this._handleLayerPanelKeydown.bind(this);
-        this._handleClipLayerMirrorPointerDown = this._handleClipLayerMirrorPointerDown.bind(this);
+        this._handleLayerPanelCardPointerDown = this._handleLayerPanelCardPointerDown.bind(this);
         this._handleClipLayerMirrorPointerMove = this._handleClipLayerMirrorPointerMove.bind(this);
         this._handleClipLayerMirrorPointerUp = this._handleClipLayerMirrorPointerUp.bind(this);
 
         this._setupEventListeners();
         document.addEventListener('keydown', this._handleLayerPanelKeydown, true);
-        this.container.addEventListener('pointerdown', this._handleClipLayerMirrorPointerDown);
+        this.container.addEventListener('pointerdown', this._handleLayerPanelCardPointerDown);
         this.container.addEventListener('contextmenu', (e) => {
             if (!this._hasAnimationContext()) return;
             if (e.target.closest('.caf-simple-header, .clip-layer-mirror-row')) {
@@ -59,7 +56,7 @@ export class LayerPanelRenderer {
 
         // Phase 4z16: CAFヘッダークリックイベント (委譲)
         this.container.addEventListener('click', (e) => {
-            if (this._clipLayerMirrorDragSuppressClick) {
+            if (this._cardDragSuppressClick) {
                 e.preventDefault();
                 e.stopPropagation();
                 return;
@@ -231,22 +228,82 @@ export class LayerPanelRenderer {
         }
     }
 
-    _handleClipLayerMirrorPointerDown(e) {
-        if (e.button !== 0) return;
-        if (e.target.closest('button, input, textarea, select')) return;
-
-        const row = e.target.closest('.clip-layer-mirror-row');
-        if (!row || !this.container.contains(row)) return;
-        if (row.classList.contains('is-folder') && e.target.closest('.clip-layer-mirror-thumb')) {
+    _handleLayerPanelCardPointerDown(e) {
+        const mirrorRow = e.target.closest('.clip-layer-mirror-row');
+        if (mirrorRow) {
+            this._handleClipLayerMirrorPointerDown(e, mirrorRow);
             return;
         }
 
-        this._selectClipLayerMirrorRow(row, {
-            syncWorkingLayer: false,
-            renderAnimationTable: false,
-            requestLayerPanelUpdate: false,
-            visualOnly: true
+        const legacyRow = e.target.closest('.legacy-layer-card-row');
+        if (legacyRow && !this._hasAnimationContext()) {
+            this._handleLegacyLayerCardPointerDown(e, legacyRow);
+        }
+    }
+
+    _handleClipLayerMirrorPointerDown(e, row = e.target.closest('.clip-layer-mirror-row')) {
+        this._startLayerPanelCardDrag(e, row, {
+            dragKind: 'clip-layer-mirror',
+            rowSelector: '.clip-layer-mirror-row',
+            ghostClass: 'clip-layer-mirror-drag-ghost',
+            skipDrag: (event, targetRow) => targetRow.classList.contains('is-folder')
+                && event.target.closest('.clip-layer-mirror-thumb'),
+            onSelect: (targetRow) => {
+                this._selectClipLayerMirrorRow(targetRow, {
+                    syncWorkingLayer: false,
+                    renderAnimationTable: false,
+                    requestLayerPanelUpdate: false,
+                    visualOnly: true
+                });
+            },
+            canDropInside: (targetRow) => targetRow.classList.contains('is-folder'),
+            onDrop: ({ drag, targetRow, placement }) => {
+                const animationTable = window.PopupManager?.get?.('animationTable');
+                const targetLayerId = targetRow?.dataset.internalLayerId;
+                if (animationTable?.moveInternalLayerToPosition && drag.assetId && drag.layerId && targetLayerId && placement) {
+                    animationTable.moveInternalLayerToPosition(drag.assetId, drag.layerId, targetLayerId, placement);
+                }
+            }
         });
+    }
+
+    _handleLegacyLayerCardPointerDown(e, row = e.target.closest('.legacy-layer-card-row')) {
+        this._startLayerPanelCardDrag(e, row, {
+            dragKind: 'legacy-layer-card',
+            rowSelector: '.legacy-layer-card-row',
+            ghostClass: 'layer-panel-card-drag-ghost',
+            skipDrag: (event, targetRow) => {
+                if (event.target.closest(
+                    '.layer-visibility, .layer-opacity-control, .layer-clip-status, ' +
+                    '.layer-background-color-button, .layer-duplicate-button, .layer-merge-down-button, ' +
+                    '.layer-delete-button, input, textarea, select, [contenteditable="true"]'
+                )) {
+                    return true;
+                }
+                const layerIndex = parseInt(targetRow.dataset.layerIndex, 10);
+                const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+                return !layer || layer.layerData?.isBackground === true;
+            },
+            onSelect: (targetRow) => {
+                const layerIndex = parseInt(targetRow.dataset.layerIndex, 10);
+                if (!Number.isNaN(layerIndex)) {
+                    this.layerSystem?.setActiveLayer?.(layerIndex);
+                }
+            },
+            canDropInside: (targetRow) => targetRow.dataset.isFolder === 'true',
+            onDrop: ({ drag, targetRow, placement }) => {
+                this._applyLegacyLayerCardDropFromPointer(drag, targetRow, placement);
+            }
+        });
+    }
+
+    _startLayerPanelCardDrag(e, row, options = {}) {
+        if (e.button !== 0) return false;
+        if (e.target.closest('button, input, textarea, select')) return false;
+        if (!row || !this.container.contains(row)) return false;
+        if (options.skipDrag?.(e, row) === true) return false;
+
+        options.onSelect?.(row);
 
         e.preventDefault();
         e.stopPropagation();
@@ -254,16 +311,22 @@ export class LayerPanelRenderer {
             row.setPointerCapture?.(e.pointerId);
         } catch (err) {}
 
-        this._clipLayerMirrorDrag = {
+        const rect = row.getBoundingClientRect();
+        this._cardDrag = {
             pointerId: e.pointerId,
             row,
             captureTarget: row,
+            dragKind: options.dragKind || 'card',
+            rowSelector: options.rowSelector || '.layer-panel-card-row',
+            ghostClass: options.ghostClass || 'layer-panel-card-drag-ghost',
+            canDropInside: options.canDropInside || null,
+            onDrop: options.onDrop || null,
             assetId: row.dataset.assetId,
-            layerId: row.dataset.internalLayerId,
+            layerId: row.dataset.internalLayerId || row.dataset.layerId,
             startX: e.clientX,
             startY: e.clientY,
-            offsetX: e.clientX - row.getBoundingClientRect().left,
-            offsetY: e.clientY - row.getBoundingClientRect().top,
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
             active: false,
             ghost: null,
             targetRow: null,
@@ -273,6 +336,7 @@ export class LayerPanelRenderer {
         document.addEventListener('pointermove', this._handleClipLayerMirrorPointerMove, { passive: false, capture: true });
         document.addEventListener('pointerup', this._handleClipLayerMirrorPointerUp, { capture: true });
         document.addEventListener('pointercancel', this._handleClipLayerMirrorPointerUp, { capture: true });
+        return true;
     }
 
     _selectClipLayerMirrorRow(row, options = {}) {
@@ -314,7 +378,7 @@ export class LayerPanelRenderer {
     }
 
     _handleClipLayerMirrorPointerMove(e) {
-        const drag = this._clipLayerMirrorDrag;
+        const drag = this._cardDrag;
         if (!drag || e.pointerId !== drag.pointerId) return;
 
         const dx = e.clientX - drag.startX;
@@ -326,7 +390,7 @@ export class LayerPanelRenderer {
             drag.active = true;
             drag.row.classList.add('is-dragging');
             drag.ghost = drag.row.cloneNode(true);
-            drag.ghost.classList.add('clip-layer-mirror-drag-ghost');
+            drag.ghost.classList.add(drag.ghostClass);
             drag.ghost.style.width = `${drag.row.getBoundingClientRect().width}px`;
             drag.ghost.style.left = '0px';
             drag.ghost.style.top = '0px';
@@ -334,15 +398,15 @@ export class LayerPanelRenderer {
         }
 
         drag.ghost.style.transform = `translate3d(${e.clientX - drag.offsetX}px, ${e.clientY - drag.offsetY}px, 0) rotate(2deg) scale(1.02)`;
-        this._updateClipLayerMirrorDropTarget(e.clientX, e.clientY);
+        this._updateLayerPanelCardDropTarget(e.clientX, e.clientY);
     }
 
-    _updateClipLayerMirrorDropTarget(x, y) {
-        const drag = this._clipLayerMirrorDrag;
+    _updateLayerPanelCardDropTarget(x, y) {
+        const drag = this._cardDrag;
         if (!drag?.active) return;
 
-        this._clearClipLayerMirrorDropTarget();
-        const targetRow = document.elementFromPoint(x, y)?.closest?.('.clip-layer-mirror-row') || null;
+        this._clearLayerPanelCardDropTarget();
+        const targetRow = document.elementFromPoint(x, y)?.closest?.(drag.rowSelector) || null;
         if (!targetRow || targetRow === drag.row || !this.container.contains(targetRow)) {
             drag.targetRow = null;
             drag.placement = null;
@@ -351,8 +415,8 @@ export class LayerPanelRenderer {
 
         const rect = targetRow.getBoundingClientRect();
         const ratio = rect.height > 0 ? (y - rect.top) / rect.height : 0.5;
-        const isFolder = targetRow.classList.contains('is-folder');
-        const placement = isFolder && ratio > 0.25 && ratio < 0.75
+        const canDropInside = drag.canDropInside?.(targetRow) === true;
+        const placement = canDropInside && ratio > 0.25 && ratio < 0.75
             ? 'inside'
             : (ratio < 0.5 ? 'before' : 'after');
 
@@ -362,43 +426,44 @@ export class LayerPanelRenderer {
     }
 
     _handleClipLayerMirrorPointerUp(e) {
-        const drag = this._clipLayerMirrorDrag;
+        const drag = this._cardDrag;
         if (!drag || e.pointerId !== drag.pointerId) return;
 
         if (drag.active) {
             e.preventDefault();
             e.stopPropagation();
-            this._clipLayerMirrorDragSuppressClick = true;
+            this._cardDragSuppressClick = true;
             setTimeout(() => {
-                this._clipLayerMirrorDragSuppressClick = false;
+                this._cardDragSuppressClick = false;
             }, 80);
 
-            const animationTable = window.PopupManager?.get?.('animationTable');
-            const targetLayerId = drag.targetRow?.dataset.internalLayerId;
-            if (animationTable?.moveInternalLayerToPosition && drag.assetId && drag.layerId && targetLayerId && drag.placement) {
-                animationTable.moveInternalLayerToPosition(drag.assetId, drag.layerId, targetLayerId, drag.placement);
-            }
+            drag.onDrop?.({ drag, targetRow: drag.targetRow, placement: drag.placement });
         }
 
-        this._finishClipLayerMirrorDrag();
+        this._finishLayerPanelCardDrag();
     }
 
-    _finishClipLayerMirrorDrag() {
-        const drag = this._clipLayerMirrorDrag;
+    _finishLayerPanelCardDrag() {
+        const drag = this._cardDrag;
         document.removeEventListener('pointermove', this._handleClipLayerMirrorPointerMove, true);
         document.removeEventListener('pointerup', this._handleClipLayerMirrorPointerUp, true);
         document.removeEventListener('pointercancel', this._handleClipLayerMirrorPointerUp, true);
-        this._clearClipLayerMirrorDropTarget();
+        this._clearLayerPanelCardDropTarget();
         try {
             drag?.captureTarget?.releasePointerCapture?.(drag.pointerId);
         } catch (err) {}
         if (drag?.row) drag.row.classList.remove('is-dragging');
         if (drag?.ghost?.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
-        this._clipLayerMirrorDrag = null;
+        this._cardDrag = null;
+        if (this._pendingUpdateAfterDrag) {
+            this._pendingUpdateAfterDrag = false;
+            this.requestUpdate();
+        }
     }
 
-    _clearClipLayerMirrorDropTarget() {
-        this.container?.querySelectorAll('.clip-layer-mirror-row.is-dnd-before, .clip-layer-mirror-row.is-dnd-after, .clip-layer-mirror-row.is-dnd-inside').forEach(row => {
+    _clearLayerPanelCardDropTarget() {
+        const selector = this._cardDrag?.rowSelector || '.clip-layer-mirror-row';
+        this.container?.querySelectorAll(`${selector}.is-dnd-before, ${selector}.is-dnd-after, ${selector}.is-dnd-inside`).forEach(row => {
             row.classList.remove('is-dnd-before', 'is-dnd-after', 'is-dnd-inside');
         });
     }
@@ -483,13 +548,11 @@ export class LayerPanelRenderer {
 
             let img = thumbnailContainer.querySelector('img');
             if (!img) {
-                img = document.createElement('img');
-                img.style.maxWidth = '100%';
-                img.style.maxHeight = '100%';
-                img.style.display = 'block';
-                img.style.objectFit = 'contain';
+                img = this._createLayerThumbnailImage();
                 thumbnailContainer.innerHTML = '';
                 thumbnailContainer.appendChild(img);
+            } else {
+                img.classList.add('layer-thumbnail-image');
             }
             img.src = data.dataURL;
         });
@@ -521,7 +584,7 @@ export class LayerPanelRenderer {
             this._resetDragState();
         }
 
-        if (this._isSortableDragging) {
+        if (this._cardDrag?.active) {
             this._pendingUpdateAfterDrag = true;
             return;
         }
@@ -537,17 +600,15 @@ export class LayerPanelRenderer {
     }
 
     _resetDragState() {
-        this._isSortableDragging = false;
         this._pendingUpdateAfterDrag = false;
-        this._dragFolderTargetId = null;
         this._finishFolderDrag();
+        this._finishLayerPanelCardDrag();
     }
 
     render(layers, activeIndex, animationSystem = null) {
         if (!this.container) return;
         if (!layers || layers.length === 0) return;
 
-        this._dragFolderTargetId = null;
         this.container.innerHTML = '';
         this.container.classList.remove('layer-panel-items--folder-dragging');
 
@@ -592,12 +653,6 @@ export class LayerPanelRenderer {
             this.container.appendChild(layerElement);
         });
 
-        if (!this.sortable) {
-            this.initializeSortable();
-        }
-        if (this.sortable) {
-            this.sortable.option('disabled', hasAnimationContext);
-        }
         this._updateScrollState();
     }
 
@@ -611,85 +666,181 @@ export class LayerPanelRenderer {
         );
     }
 
-    createFolderElement(folder, index, isActive, allLayers, isSelected = false) {
-        const folderDiv = document.createElement('div');
-        folderDiv.className = 'layer-item folder-item';
+    _createLegacyLayerCardShell({
+        layer,
+        index,
+        isActive = false,
+        isSelected = false,
+        allLayers = [],
+        isFolder = false,
+        isBackground = false
+    } = {}) {
+        const card = document.createElement('div');
+        const cardClasses = this._getLayerPanelCardClassNames('legacy-layer-card', {
+            isSelected,
+            isFolder,
+            isHidden: layer?.layerData?.visible === false,
+            extraClasses: [
+                'layer-item',
+                isFolder ? 'folder-item' : '',
+                isBackground ? 'background-layer' : '',
+                isActive ? 'active' : ''
+            ]
+        });
+        card.className = cardClasses;
+        this._applyLayerPanelCardDataset(card, {
+            cardKind: 'legacy-layer',
+            layerId: layer?.layerData?.id || '',
+            layerIndex: index,
+            depth: this._calculateIndentLevel(layer, allLayers),
+            isFolder,
+            isBackground
+        });
         if (isActive) {
-            folderDiv.classList.add('active');
+            card.classList.add('active');
         }
         if (isSelected) {
-            folderDiv.classList.add('selected');
+            card.classList.add('selected');
         }
-        folderDiv.dataset.layerIndex = index;
-        folderDiv.dataset.isFolder = 'true';
+        if (isBackground) {
+            card.classList.add('background-layer');
+        }
+        if (isFolder) {
+            card.dataset.isFolder = 'true';
+        }
 
-        const isExpanded = folder.layerData.folderExpanded;
-        const bgColor = isExpanded ? '#e9c2ba' : '#cf9c97';
-        const indentLevel = this._calculateIndentLevel(folder, allLayers);
+        const isExpanded = layer?.layerData?.folderExpanded;
+        const indentLevel = this._calculateIndentLevel(layer, allLayers);
         const leftOffset = indentLevel * 12;
         const rowWidth = isActive ? 160 : Math.max(120, 160 - indentLevel * 14);
+        const bgColor = isFolder
+            ? (isExpanded ? '#e9c2ba' : '#cf9c97')
+            : '#ffffee';
 
-        folderDiv.style.cssText = `
-            width:${rowWidth}px;
-            min-height:38px;
-            background-color:${bgColor};
-            opacity:0.9;
-            border:1px solid #e9c2ba;
-            border-radius:4px;
-            padding:3px 5px;
-            margin-bottom:2px;
-            margin-left:${leftOffset}px;
-            cursor:grab;
-            display:grid;
-            grid-template-columns:40px minmax(0, 1fr) 18px 18px;
-            grid-template-rows:32px;
-            gap:0 5px;
-            align-items:center;
-            position:relative;
-            backdrop-filter:blur(8px);
-            transition:all 0.2s ease;
-            touch-action:none;
-            user-select:none;
-        `;
+        this._applyLayerPanelCardStyleVars(card, {
+            '--legacy-card-width': `${rowWidth}px`,
+            '--legacy-card-margin-left': `${leftOffset}px`,
+            '--legacy-card-bg': bgColor,
+            '--legacy-card-border-color': isActive && !isBackground
+                ? '#ff6600'
+                : (isSelected && !isBackground ? 'rgba(255, 140, 66, 0.6)' : ''),
+            '--legacy-card-border-width': isActive && !isBackground ? '2px' : ''
+        });
 
-        if (isActive) {
-            folderDiv.style.borderColor = '#ff6600';
-            folderDiv.style.borderWidth = '2px';
-        } else if (isSelected) {
-            folderDiv.style.borderColor = 'rgba(255, 140, 66, 0.6)';
-        }
+        return card;
+    }
 
-        const thumbnail = this.createFolderThumbnail(folder, index, allLayers);
-        thumbnail.style.cssText = 'grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;';
-        folderDiv.appendChild(thumbnail);
+    _getLayerPanelCardClassNames(variant, options = {}) {
+        return [
+            'layer-panel-card-row',
+            `${variant}-row`,
+            options.isSelected ? 'is-selected' : '',
+            options.isHidden ? 'is-hidden' : '',
+            options.isFolder ? 'is-folder' : '',
+            options.isCollapsed ? 'is-collapsed' : '',
+            Number.isInteger(options.depth) ? `depth-${options.depth}` : '',
+            ...(options.extraClasses || [])
+        ].filter(Boolean).join(' ');
+    }
 
-        const details = document.createElement('div');
-        details.style.cssText = 'grid-column:2;grid-row:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;height:32px;';
+    _applyLayerPanelCardDataset(element, options = {}) {
+        if (!element?.dataset) return;
+        if (options.cardKind) element.dataset.cardKind = options.cardKind;
+        if (options.assetId !== undefined) element.dataset.assetId = options.assetId;
+        if (options.layerId !== undefined) element.dataset.layerId = options.layerId;
+        if (options.internalLayerId !== undefined) element.dataset.internalLayerId = options.internalLayerId;
+        if (options.layerIndex !== undefined) element.dataset.layerIndex = String(options.layerIndex);
+        if (Number.isInteger(options.depth)) element.dataset.depth = String(options.depth);
+        if (options.isFolder) element.dataset.isFolder = 'true';
+        if (options.isBackground) element.dataset.isBackground = 'true';
+    }
 
-        const opacityContainer = this._createOpacityControl(folder, index);
+    _applyLayerPanelAttributes(element, attributes = {}) {
+        if (!element?.setAttribute) return;
+        Object.entries(attributes)
+            .filter(([, value]) => value !== undefined && value !== null && value !== '')
+            .forEach(([name, value]) => {
+                element.setAttribute(name, String(value));
+            });
+    }
+
+    _createLayerPanelCardDataAttributes(options = {}) {
+        return this._createLayerPanelDataAttributes({
+            'data-card-kind': options.cardKind,
+            'data-asset-id': options.assetId,
+            'data-layer-id': options.layerId,
+            'data-internal-layer-id': options.internalLayerId,
+            'data-layer-index': options.layerIndex,
+            'data-depth': Number.isInteger(options.depth) ? options.depth : '',
+            'data-is-folder': options.isFolder ? 'true' : '',
+            'data-is-background': options.isBackground ? 'true' : ''
+        });
+    }
+
+    _createLayerPanelDataAttributes(attributes = {}) {
+        return Object.entries(attributes)
+            .filter(([, value]) => value !== undefined && value !== null && value !== '')
+            .map(([name, value]) => `${name}="${this._escapeHtml(String(value))}"`)
+            .join(' ');
+    }
+
+    _createLayerPanelCardStyleAttributes(cssVars = {}) {
+        const declarations = Object.entries(cssVars)
+            .filter(([, value]) => value !== undefined && value !== null && value !== '')
+            .map(([name, value]) => `${name}:${String(value)}`);
+        return declarations.length > 0
+            ? `style="${this._escapeHtml(declarations.join(';'))}"`
+            : '';
+    }
+
+    _applyLayerPanelCardStyleVars(element, cssVars = {}) {
+        if (!element?.style) return;
+        Object.entries(cssVars)
+            .filter(([, value]) => value !== undefined && value !== null && value !== '')
+            .forEach(([name, value]) => {
+                element.style.setProperty(name, String(value));
+            });
+    }
+
+    _appendLegacyLayerCardDetails(card, layer, index) {
+        const details = this._createLayerPanelCardPart('div', 'legacy-layer-card-details');
+
+        const opacityContainer = this._createOpacityControl(layer, index);
         details.appendChild(opacityContainer);
 
-        const nameSpan = this._createLayerName(folder, index);
-        nameSpan.style.cssText = 'color:#800000;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding:0;height:16px;display:flex;align-items:center;min-width:0;';
+        const nameSpan = this._createLayerName(layer, index, {
+            extraClasses: ['legacy-layer-card-name']
+        });
         details.appendChild(nameSpan);
-        folderDiv.appendChild(details);
 
-        const clipStatus = this._createClipStatusIcon(folder, index);
-        clipStatus.style.gridColumn = '3';
-        clipStatus.style.gridRow = '1';
-        folderDiv.appendChild(clipStatus);
+        card.appendChild(details);
+        return details;
+    }
 
-        const visibilityIcon = this._createVisibilityIcon(folder, index);
-        visibilityIcon.style.gridColumn = '4';
-        visibilityIcon.style.gridRow = '1';
-        folderDiv.appendChild(visibilityIcon);
+    _appendLegacyLayerCardActionIcons(card, layer, index, options = {}) {
+        const thirdIcon = options.thirdIcon || this._createClipStatusIcon(layer, index);
+        thirdIcon.classList.add('legacy-layer-card-third-action');
+        card.appendChild(thirdIcon);
 
-        folderDiv.addEventListener('click', (e) => {
-            if (e.target.closest('.layer-delete-button') ||
-                e.target.closest('.layer-visibility') ||
-                e.target.closest('.layer-opacity-control') ||
-                e.target.closest('.folder-toggle-icon') ||
-                this._editingLayerIndex >= 0) {
+        const visibilityIcon = this._createVisibilityIcon(layer, index);
+        visibilityIcon.classList.add('legacy-layer-card-visibility-action');
+        card.appendChild(visibilityIcon);
+    }
+
+    _attachLegacyLayerCardClick(card, index, options = {}) {
+        const extraIgnoredSelector = options.extraIgnoredSelector
+            ? `, ${options.extraIgnoredSelector}`
+            : '';
+        card.addEventListener('click', (e) => {
+            if (this._cardDragSuppressClick) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            if (e.target.closest(
+                '.layer-delete-button, .layer-visibility, .layer-opacity-control, ' +
+                `.layer-clip-status${extraIgnoredSelector}`
+            ) || this._editingLayerIndex >= 0) {
                 return;
             }
 
@@ -699,87 +850,47 @@ export class LayerPanelRenderer {
 
             this._handleLayerItemClick(e, index);
         });
+    }
+
+    _appendLegacyLayerCardThumbnail(card, thumbnail) {
+        thumbnail.classList.add('legacy-layer-card-thumb');
+        card.appendChild(thumbnail);
+        return thumbnail;
+    }
+
+
+    createFolderElement(folder, index, isActive, allLayers, isSelected = false) {
+        const folderDiv = this._createLegacyLayerCardShell({
+            layer: folder,
+            index,
+            isActive,
+            isSelected,
+            allLayers,
+            isFolder: true
+        });
+
+        const thumbnail = this.createFolderThumbnail(folder, index);
+        this._appendLegacyLayerCardThumbnail(folderDiv, thumbnail);
+
+        this._appendLegacyLayerCardDetails(folderDiv, folder, index);
+        this._appendLegacyLayerCardActionIcons(folderDiv, folder, index);
+        this._attachLegacyLayerCardClick(folderDiv, index);
 
         return folderDiv;
     }
 
-    _createFolderEar(isExpanded) {
-        const ear = document.createElement('div');
-        ear.className = 'folder-ear';
-        ear.style.cssText = `
-            position:absolute;
-            top:0;
-            left:0;
-            width:30px;
-            height:14px;
-            background-color:#cf9c97;
-            border-radius:4px 0 4px 0;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            pointer-events:none;
-        `;
-
-        ear.innerHTML = isExpanded ? UI_ICONS.folderOpen : UI_ICONS.folder;
-        const svg = ear.querySelector('svg');
-        if (svg) {
-            svg.setAttribute('width', '12');
-            svg.setAttribute('height', '12');
-            svg.setAttribute('stroke', '#800000');
-        }
-        return ear;
-    }
-
-    _createFolderToggleIcon(folder, index, isExpanded) {
-        const toggleIcon = document.createElement('div');
-        toggleIcon.className = 'folder-toggle-icon';
-        toggleIcon.style.cssText = 'cursor:pointer;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
-
-        toggleIcon.innerHTML = isExpanded ? UI_ICONS.chevronDown : UI_ICONS.chevronRight;
-        const svg = toggleIcon.querySelector('svg');
-        if (svg) {
-            svg.setAttribute('width', '14');
-            svg.setAttribute('height', '14');
-            svg.setAttribute('stroke', '#800000');
-        }
-
-        toggleIcon.title = isExpanded ? 'フォルダを閉じる' : 'フォルダを開く';
-
-        toggleIcon.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (this.layerSystem?.toggleFolderExpand) {
-                this.layerSystem.toggleFolderExpand(folder.layerData.id);
-            }
-        });
-
-        return toggleIcon;
-    }
-
-    createFolderThumbnail(folder, index, allLayers) {
+    createFolderThumbnail(folder, index) {
         const maxWidth = 40;
         const maxHeight = 32;
 
-        const thumbnailContainer = document.createElement('div');
-        thumbnailContainer.className = 'layer-thumbnail folder-thumbnail';
-        thumbnailContainer.dataset.layerIndex = index;
+        const thumbnailContainer = this._createLayerThumbnailContainer(index, {
+            extraClasses: ['folder-thumbnail'],
+            width: maxWidth,
+            height: maxHeight
+        });
 
-        thumbnailContainer.style.width = maxWidth + 'px';
-        thumbnailContainer.style.height = maxHeight + 'px';
-        thumbnailContainer.style.boxSizing = 'border-box';
-        thumbnailContainer.style.border = '1px solid #b8706b';
-        thumbnailContainer.style.borderRadius = '2px';
-        thumbnailContainer.style.overflow = 'hidden';
-        thumbnailContainer.style.position = 'relative';
-        thumbnailContainer.style.display = 'flex';
-        thumbnailContainer.style.alignItems = 'center';
-        thumbnailContainer.style.justifyContent = 'center';
-        thumbnailContainer.style.flexShrink = '0';
-        thumbnailContainer.style.cursor = 'pointer';
         const isExpanded = folder.layerData?.folderExpanded;
-        thumbnailContainer.style.backgroundColor = isExpanded
-            ? 'rgba(207, 156, 151, 0.22)'
-            : 'rgba(128, 0, 0, 0.16)';
-        thumbnailContainer.style.color = '#800000';
+        thumbnailContainer.classList.toggle('is-expanded', !!isExpanded);
         thumbnailContainer.innerHTML = isExpanded ? UI_ICONS.folderOpen : UI_ICONS.folder;
         const svg = thumbnailContainer.querySelector('svg');
         if (svg) {
@@ -791,7 +902,6 @@ export class LayerPanelRenderer {
         thumbnailContainer.addEventListener('click', (e) => {
             e.stopPropagation();
             this._finishFolderDrag();
-            this._dragFolderTargetId = null;
             if (this.layerSystem?.toggleFolderExpand) {
                 this.layerSystem.toggleFolderExpand(folder.layerData.id);
             }
@@ -836,156 +946,62 @@ export class LayerPanelRenderer {
     }
 
     createLayerElement(layer, index, isActive, animationSystem, isSelected = false) {
-        const layerDiv = document.createElement('div');
-        layerDiv.className = 'layer-item';
-        if (isActive) {
-            layerDiv.classList.add('active');
-        }
-        if (isSelected) {
-            layerDiv.classList.add('selected');
-        }
-        layerDiv.dataset.layerIndex = index;
-
         const isBackground = layer.layerData?.isBackground || false;
-        if (isBackground) {
-            layerDiv.classList.add('background-layer');
-        }
         const allLayers = this.layerSystem?.getLayers() || [];
-        const indentLevel = this._calculateIndentLevel(layer, allLayers);
-        const leftOffset = indentLevel * 12;
         const hasParent = layer.layerData?.parentId;
-        const rowWidth = isActive ? 160 : Math.max(120, 160 - indentLevel * 14);
-
-        layerDiv.style.cssText = `
-            width:${rowWidth}px;
-            min-height:38px;
-            background-color:#ffffee;
-            opacity:0.9;
-            border:1px solid #e9c2ba;
-            border-radius:4px;
-            padding:3px 5px;
-            margin-bottom:2px;
-            margin-left:${leftOffset}px;
-            cursor:${isBackground ? 'default' : 'grab'};
-            display:grid;
-            grid-template-columns:40px minmax(0, 1fr) 18px 18px;
-            grid-template-rows:32px;
-            gap:0 5px;
-            align-items:center;
-            position:relative;
-            backdrop-filter:blur(8px);
-            transition:all 0.2s ease;
-            touch-action:none;
-            user-select:none;
-        `;
-
-        if (isActive && !isBackground) {
-            layerDiv.style.borderColor = '#ff6600';
-            layerDiv.style.borderWidth = '2px';
-        } else if (isSelected && !isBackground) {
-            layerDiv.style.borderColor = 'rgba(255, 140, 66, 0.6)';
-        }
+        const layerDiv = this._createLegacyLayerCardShell({
+            layer,
+            index,
+            isActive,
+            isSelected,
+            allLayers,
+            isBackground
+        });
 
         if (hasParent) {
-            const verticalLine = document.createElement('div');
-            verticalLine.className = 'folder-child-line';
-            verticalLine.style.cssText = `
-                position:absolute;
-                left:-12px;
-                top:0;
-                width:2px;
-                height:100%;
-                background-color:#cf9c97;
-            `;
+            const verticalLine = this._createLayerPanelCardPart('div', 'folder-child-line');
             layerDiv.appendChild(verticalLine);
         }
 
         if (isBackground) {
             const thumbnail = this.createThumbnail(layer, index);
-            thumbnail.style.gridColumn = '1';
-            thumbnail.style.gridRow = '1';
-            thumbnail.style.display = 'flex';
-            thumbnail.style.alignItems = 'center';
-            thumbnail.style.justifyContent = 'center';
-            layerDiv.appendChild(thumbnail);
+            this._appendLegacyLayerCardThumbnail(layerDiv, thumbnail);
 
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'layer-name';
-            nameSpan.textContent = '背景';
-            nameSpan.style.cssText = 'grid-column:2;grid-row:1;color:#800000;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:default;padding:0;height:20px;display:flex;align-items:center;';
+            const nameSpan = this._createLayerPanelNameElement({
+                text: '背景',
+                extraClasses: ['legacy-layer-card-name', 'legacy-layer-card-background-name'],
+                title: '背景レイヤー'
+            });
             layerDiv.appendChild(nameSpan);
 
             const bucketIcon = this._createBucketIcon(index, layer);
-            bucketIcon.style.gridColumn = '3';
-            bucketIcon.style.gridRow = '1';
-            layerDiv.appendChild(bucketIcon);
-
-            const visibilityIcon = this._createVisibilityIcon(layer, index);
-            visibilityIcon.style.gridColumn = '4';
-            visibilityIcon.style.gridRow = '1';
-            layerDiv.appendChild(visibilityIcon);
+            this._appendLegacyLayerCardActionIcons(layerDiv, layer, index, {
+                thirdIcon: bucketIcon
+            });
 
             return layerDiv;
         }
 
         const thumbnail = this.createThumbnail(layer, index);
-        thumbnail.style.gridColumn = '1';
-        thumbnail.style.gridRow = '1';
-        thumbnail.style.display = 'flex';
-        thumbnail.style.alignItems = 'center';
-        thumbnail.style.justifyContent = 'center';
-        layerDiv.appendChild(thumbnail);
+        this._appendLegacyLayerCardThumbnail(layerDiv, thumbnail);
 
-        const details = document.createElement('div');
-        details.style.cssText = 'grid-column:2;grid-row:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;height:32px;';
-
-        const opacityContainer = this._createOpacityControl(layer, index);
-        details.appendChild(opacityContainer);
-
-        const nameSpan = this._createLayerName(layer, index);
-        nameSpan.style.cssText = 'color:#800000;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding:0;height:16px;display:flex;align-items:center;min-width:0;';
-        details.appendChild(nameSpan);
-        layerDiv.appendChild(details);
-
-        const clipStatus = this._createClipStatusIcon(layer, index);
-        clipStatus.style.gridColumn = '3';
-        clipStatus.style.gridRow = '1';
-        layerDiv.appendChild(clipStatus);
-
-        const visibilityIcon = this._createVisibilityIcon(layer, index);
-        visibilityIcon.style.gridColumn = '4';
-        visibilityIcon.style.gridRow = '1';
-        layerDiv.appendChild(visibilityIcon);
-
-        layerDiv.addEventListener('click', (e) => {
-            if (e.target.closest('.layer-delete-button') ||
-                e.target.closest('.layer-opacity-control') ||
-                e.target.closest('.layer-visibility') ||
-                this._editingLayerIndex >= 0) {
-                return;
-            }
-
-            if (window.stateManager) {
-                window.stateManager.setLastActivePanel('layer');
-            }
-
-            this._handleLayerItemClick(e, index);
-        });
+        this._appendLegacyLayerCardDetails(layerDiv, layer, index);
+        this._appendLegacyLayerCardActionIcons(layerDiv, layer, index);
+        this._attachLegacyLayerCardClick(layerDiv, index);
 
         return layerDiv;
     }
 
     _createClipStatusIcon(layer, index = -1) {
-        const clipIcon = document.createElement('div');
-        clipIcon.className = 'layer-clip-status';
         const isClipping = layer.layerData?.clipping === true;
         const canToggle = !layer.layerData?.isBackground && !layer.layerData?.isFolder;
-        clipIcon.style.cssText = `width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#800000;opacity:${isClipping ? '1' : '0.28'};cursor:${canToggle ? 'pointer' : 'default'};`;
-        clipIcon.title = layer.layerData?.clipping ? 'クリッピングON' : 'クリッピング未使用';
-
-        if (canToggle || isClipping) {
-            clipIcon.innerHTML = UI_ICONS.paperclip;
-        }
+        const clipIcon = this._createLayerPanelIconButton({
+            className: 'layer-clip-status',
+            iconName: canToggle || isClipping ? 'paperclip' : '',
+            title: isClipping ? 'クリッピングON' : 'クリッピング未使用'
+        });
+        clipIcon.classList.toggle('is-clipping', isClipping);
+        clipIcon.classList.toggle('is-toggleable', canToggle);
 
         if (canToggle) {
             clipIcon.addEventListener('click', (e) => {
@@ -1006,11 +1022,12 @@ export class LayerPanelRenderer {
     _createVisibilityIcon(layer, index) {
         const isVisible = layer.layerData?.visible !== false;
         const iconName = isVisible ? 'eye' : 'eyeOff';
-        
-        const visibilityIcon = document.createElement('div');
-        visibilityIcon.className = 'layer-visibility ui-icon-button ui-icon-button--small';
-        visibilityIcon.style.cssText = 'width:16px;height:16px;';
-        visibilityIcon.innerHTML = UI_ICONS[iconName];
+
+        const visibilityIcon = this._createLayerPanelIconButton({
+            className: 'layer-visibility',
+            iconName,
+            title: isVisible ? 'レイヤーを非表示' : 'レイヤーを表示'
+        });
 
         visibilityIcon.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1023,12 +1040,12 @@ export class LayerPanelRenderer {
     }
 
     _createBucketIcon(index, layer) {
-        const bucketIcon = document.createElement('div');
-        bucketIcon.className = 'layer-background-color-button ui-icon-button ui-icon-button--small';
-        bucketIcon.style.cssText = 'width:16px;height:16px;';
-        bucketIcon.innerHTML = UI_ICONS.fill;
-        bucketIcon.title = '背景色を現在のペンカラーに変更';
-        
+        const bucketIcon = this._createLayerPanelIconButton({
+            className: 'layer-background-color-button',
+            iconName: 'fill',
+            title: '背景色を現在のペンカラーに変更'
+        });
+
         bucketIcon.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.eventBus) {
@@ -1041,28 +1058,79 @@ export class LayerPanelRenderer {
         return bucketIcon;
     }
 
+    _createLayerPanelIconButton({
+        tagName = 'div',
+        className = '',
+        baseClass = 'ui-icon-button ui-icon-button--small',
+        iconName = 'eye',
+        fallbackIconName = '',
+        title = '',
+        ariaLabel = '',
+        dataAttributes = {},
+        extraAttributes = {}
+    } = {}) {
+        const icon = document.createElement(tagName);
+        icon.className = this._createLayerPanelButtonClassName(className, baseClass);
+        if (tagName.toLowerCase() === 'button') {
+            icon.type = 'button';
+        }
+        icon.innerHTML = this._resolveLayerPanelIconHtml(iconName, fallbackIconName);
+        if (title) {
+            icon.title = title;
+        }
+        this._applyLayerPanelAttributes(icon, {
+            ...dataAttributes,
+            ...extraAttributes,
+            'aria-label': ariaLabel
+        });
+        return icon;
+    }
+
+    _createLayerPanelButtonClassName(className = '', baseClass = 'ui-icon-button ui-icon-button--small') {
+        return `${className} ${baseClass}`.trim();
+    }
+
+    _resolveLayerPanelIconHtml(iconName = '', fallbackIconName = '') {
+        return UI_ICONS[iconName] || (fallbackIconName ? UI_ICONS[fallbackIconName] : '') || '';
+    }
+
     _createOpacityControl(layer, index) {
-        const opacityContainer = document.createElement('div');
-        opacityContainer.className = 'layer-opacity-control';
-        opacityContainer.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:10px;user-select:none;height:14px;min-width:0;';
+        const opacityContainer = this._createLayerPanelCardPart('div', 'layer-opacity-control');
 
-        const opacityValue = document.createElement('span');
-        opacityValue.className = 'layer-opacity-value';
         const currentOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
-        opacityValue.textContent = `${Math.round(currentOpacity * 100)}%`;
-        opacityValue.style.cssText = 'min-width:30px;text-align:left;color:#800000;font-size:10px;font-weight:bold;flex-shrink:0;cursor:default;';
-        opacityValue.title = '右サイドバーのスライダーアイコンでレイヤー属性';
+        const opacityValue = this._createLayerPanelMetaElement({
+            text: `${Math.round(currentOpacity * 100)}%`,
+            className: 'layer-opacity-value',
+            title: '右サイドバーのスライダーアイコンでレイヤー属性'
+        });
 
-        const blendLabel = document.createElement('span');
-        blendLabel.className = 'layer-blend-mode-label';
         const blendMode = layer.layerData?.blendMode || 'normal';
-        blendLabel.textContent = this._getBlendModeLabel(blendMode);
-        blendLabel.style.cssText = `color:#800000;font-size:9px;font-weight:bold;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:32px;opacity:${blendMode === 'normal' ? '0' : '0.72'};`;
+        const blendLabel = this._createLayerPanelMetaElement({
+            text: this._getBlendModeLabel(blendMode),
+            className: 'layer-blend-mode-label'
+        });
+        blendLabel.classList.toggle('is-normal', blendMode === 'normal');
 
         opacityContainer.appendChild(opacityValue);
         opacityContainer.appendChild(blendLabel);
 
         return opacityContainer;
+    }
+
+    _createLayerPanelCardPart(tagName = 'div', className = '') {
+        const element = document.createElement(tagName);
+        element.className = className;
+        return element;
+    }
+
+    _createLayerPanelMetaElement({ text = '', className = '', title = '' } = {}) {
+        const element = document.createElement('span');
+        element.className = className;
+        element.textContent = text;
+        if (title) {
+            element.title = title;
+        }
+        return element;
     }
 
     _showLayerAttributePopup(layerIndex, anchorElement) {
@@ -1634,11 +1702,22 @@ export class LayerPanelRenderer {
         }
     }
 
-    _createLayerName(layer, index) {
+    _createLayerPanelNameElement({ text = '', extraClasses = [], title = '' } = {}) {
         const nameSpan = document.createElement('span');
-        nameSpan.className = 'layer-name';
-        nameSpan.textContent = layer.layerData?.name || `レイヤー${index}`;
-        nameSpan.style.cssText = `grid-column:1;grid-row:3;color:#800000;font-size:10px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:text;padding:0;height:14px;display:flex;align-items:center;`;
+        nameSpan.className = ['layer-name', ...extraClasses].filter(Boolean).join(' ');
+        nameSpan.textContent = text;
+        if (title) {
+            nameSpan.title = title;
+        }
+        return nameSpan;
+    }
+
+    _createLayerName(layer, index, options = {}) {
+        const nameSpan = this._createLayerPanelNameElement({
+            text: layer.layerData?.name || `レイヤー${index}`,
+            extraClasses: options.extraClasses || [],
+            title: 'ダブルクリック または F2 で名前変更'
+        });
 
         nameSpan.addEventListener('dblclick', (e) => {
             if (e.shiftKey || e.ctrlKey || e.metaKey) return;
@@ -1655,18 +1734,19 @@ export class LayerPanelRenderer {
                 this._editLayerName(nameSpan, layer, index);
             }
         });
-        nameSpan.title = 'ダブルクリック または F2 で名前変更';
 
         return nameSpan;
     }
 
     _createDeleteButton(index) {
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'ui-close-button ui-close-button--small layer-delete-button';
-        deleteBtn.type = 'button';
-        deleteBtn.innerHTML = UI_ICONS.close;
-        deleteBtn.title = 'レイヤーを削除';
-        deleteBtn.setAttribute('aria-label', 'レイヤーを削除');
+        const deleteBtn = this._createLayerPanelIconButton({
+            tagName: 'button',
+            className: 'layer-delete-button',
+            baseClass: 'ui-close-button ui-close-button--small',
+            iconName: 'close',
+            title: 'レイヤーを削除',
+            ariaLabel: 'レイヤーを削除'
+        });
 
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1679,11 +1759,11 @@ export class LayerPanelRenderer {
     }
 
     _createDuplicateButton(index) {
-        const btn = document.createElement('div');
-        btn.className = 'layer-duplicate-button ui-icon-button ui-icon-button--small';
-        btn.style.cssText = 'width:16px;height:16px;';
-        btn.innerHTML = UI_ICONS.duplicate;
-        btn.title = 'レイヤーを複製';
+        const btn = this._createLayerPanelIconButton({
+            className: 'layer-duplicate-button',
+            iconName: 'duplicate',
+            title: 'レイヤーを複製'
+        });
 
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1696,24 +1776,23 @@ export class LayerPanelRenderer {
     }
 
     _createMergeDownButton(index) {
-        const btn = document.createElement('div');
-        btn.className = 'layer-merge-down-button ui-icon-button ui-icon-button--small';
-        btn.style.cssText = 'width:16px;height:16px;';
+        const btn = this._createLayerPanelIconButton({
+            className: 'layer-merge-down-button',
+            iconName: 'mergeDown',
+            title: '下のレイヤーと結合'
+        });
 
         const layers = this.layerSystem?.getLayers?.() || [];
         const bottomLayer = layers[index - 1];
         const canMergeDown = index > 1 && !bottomLayer?.layerData?.isBackground && !bottomLayer?.layerData?.isFolder;
 
         if (!canMergeDown) {
-            btn.style.visibility = 'hidden';
-            btn.style.pointerEvents = 'none';
+            btn.classList.add('is-disabled');
         }
-
-        btn.innerHTML = UI_ICONS.mergeDown;
-        btn.title = '下のレイヤーと結合';
 
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (!canMergeDown) return;
             if (this.layerSystem?.mergeLayerDown) {
                 this.layerSystem.mergeLayerDown(index);
             }
@@ -1725,33 +1804,17 @@ export class LayerPanelRenderer {
     createThumbnail(layer, index) {
         const { width: maxWidth, height: maxHeight } = this._calculateLayerThumbnailSize(40, 32);
 
-        const thumbnailContainer = document.createElement('div');
-        thumbnailContainer.className = 'layer-thumbnail';
-        thumbnailContainer.dataset.layerIndex = index;
-
-        thumbnailContainer.style.width = maxWidth + 'px';
-        thumbnailContainer.style.height = maxHeight + 'px';
-        thumbnailContainer.style.boxSizing = 'border-box';
-        thumbnailContainer.style.border = 'none'; // [指示書] 枠線を削除
-        thumbnailContainer.style.borderRadius = '2px';
-        thumbnailContainer.style.overflow = 'hidden';
-        thumbnailContainer.style.position = 'relative';
-        thumbnailContainer.style.display = 'flex';
-        thumbnailContainer.style.alignItems = 'center';
-        thumbnailContainer.style.justifyContent = 'center';
-        thumbnailContainer.style.flexShrink = '0';
-        thumbnailContainer.style.backgroundColor = 'transparent'; // [指示書] 背景を透明に
+        const thumbnailContainer = this._createLayerThumbnailContainer(index, {
+            width: maxWidth,
+            height: maxHeight
+        });
 
         // [指示書] キャッシュがあれば即時表示
         if (window.thumbnailSystem && layer.layerData?.id) {
             const cachedUrl = window.thumbnailSystem.getThumbnail(layer.layerData.id);
             if (cachedUrl) {
-                const img = document.createElement('img');
+                const img = this._createLayerThumbnailImage();
                 img.src = cachedUrl;
-                img.style.maxWidth = '100%';
-                img.style.maxHeight = '100%';
-                img.style.display = 'block';
-                img.style.objectFit = 'contain'; // [指示書] アスペクト比維持
                 thumbnailContainer.appendChild(img);
                 return thumbnailContainer;
             }
@@ -1759,6 +1822,26 @@ export class LayerPanelRenderer {
 
         // キャッシュがない場合は非同期で生成
         return thumbnailContainer;
+    }
+
+    _createLayerThumbnailContainer(index, { extraClasses = [], width = 40, height = 32 } = {}) {
+        const thumbnailContainer = document.createElement('div');
+        thumbnailContainer.className = ['layer-thumbnail', ...extraClasses].filter(Boolean).join(' ');
+        thumbnailContainer.dataset.layerIndex = index;
+        this._applyLayerPanelCardStyleVars(thumbnailContainer, {
+            '--legacy-thumb-width': `${Math.max(1, width)}px`,
+            '--legacy-thumb-height': `${Math.max(1, height)}px`
+        });
+        return thumbnailContainer;
+    }
+
+    _createLayerThumbnailImage(src = '') {
+        const img = document.createElement('img');
+        img.className = 'layer-thumbnail-image';
+        if (src) {
+            img.src = src;
+        }
+        return img;
     }
 
     _calculateLayerThumbnailSize(maxWidth = 40, maxHeight = 32) {
@@ -1796,9 +1879,7 @@ export class LayerPanelRenderer {
         const input = document.createElement('input');
         input.type = 'text';
         input.value = originalName;
-        const gridColumn = nameSpan.style.gridColumn || 'auto';
-        const gridRow = nameSpan.style.gridRow || 'auto';
-        input.style.cssText = `grid-column:${gridColumn};grid-row:${gridRow};color:#800000;font-size:10px;font-weight:bold;background:#fff;border:1px solid #800000;border-radius:2px;padding:1px 3px;width:100%;box-sizing:border-box;height:16px;`;
+        input.className = `layer-panel-inline-name-input ${nameSpan.className || ''}`.trim();
 
         nameSpan.replaceWith(input);
         this._editingInput = input;
@@ -2053,215 +2134,53 @@ export class LayerPanelRenderer {
         this._editLayerName(nameSpan, layer, activeIndex);
     }
 
-    initializeSortable() {
-        if (this.sortable) return;
-        if (!window.Sortable && !Sortable) return;
-        const sortableLib = Sortable || window.Sortable;
-
-        try {
-            this.sortable = sortableLib.create(this.container, {
-                animation: 200,
-                easing: 'cubic-bezier(0.25, 0.8, 0.25, 1)',
-                ghostClass: 'sortable-ghost',
-                dragClass: 'sortable-drag',
-                chosenClass: 'sortable-chosen',
-                draggable: '.layer-item',
-                disabled: this._hasAnimationContext(),
-                forceFallback: true,
-                fallbackOnBody: true,
-                fallbackTolerance: 2,
-                touchStartThreshold: 2,
-                swapThreshold: 0.65,
-                delay: 0,
-                delayOnTouchOnly: false,
-                preventOnFilter: false,
-
-                filter: (evt) => {
-                    if (evt.target.closest(
-                        '.layer-visibility, .layer-opacity-control, .layer-clip-status, ' +
-                        '.layer-background-color-button, .layer-duplicate-button, .layer-merge-down-button, ' +
-                        '.layer-delete-button, input, textarea, select, [contenteditable="true"]'
-                    )) {
-                        return true;
-                    }
-                    const item = evt.target.closest('.layer-item');
-                    if (!item) return false;
-                    const layerIndex = parseInt(item.dataset.layerIndex);
-                    const layers = this.layerSystem?.getLayers() || [];
-                    const layer = layers[layerIndex];
-                    return layer?.layerData?.isBackground || false;
-                },
-
-                onChoose: (evt) => {
-                    const item = evt.item;
-                    item.style.cursor = 'grabbing';
-                    this._isSortableDragging = true;
-                    this._pendingUpdateAfterDrag = false;
-                    this._dragFolderTargetId = null;
-                    this.container.classList.add('layer-panel-items--folder-dragging');
-                },
-
-                onUnchoose: () => {
-                    this._finishFolderDrag();
-                },
-
-                onMove: (evt) => {
-                    this._clearFolderDropTarget();
-
-                    const draggedIndex = parseInt(evt.dragged?.dataset?.layerIndex, 10);
-                    if (Number.isNaN(draggedIndex)) {
-                        this._dragFolderTargetId = null;
-                        return true;
-                    }
-
-                    const layers = this.layerSystem?.getLayers?.() || [];
-                    const draggedLayer = layers[draggedIndex];
-                    const target = this._findFolderDropTarget(evt, draggedLayer);
-                    if (!target) {
-                        this._dragFolderTargetId = null;
-                        return true;
-                    }
-
-                    this._dragFolderTargetId = target.folder.layerData.id;
-                    target.element.classList.add('folder-drop-target');
-
-                    // フォルダ投入候補中は Sortable の上下入れ替えを止め、候補が逃げないようにする。
-                    return false;
-                },
-
-                onEnd: (evt) => {
-                    evt.item.style.opacity = '';
-                    evt.item.style.cursor = '';
-
-                    try {
-                        if (!this.layerSystem?.reorderLayers) return;
-
-                        const layers = this.layerSystem.getLayers();
-                        const oldIndex = parseInt(evt.item.dataset.layerIndex, 10);
-                        if (Number.isNaN(oldIndex)) return;
-
-                        const draggedLayer = layers[oldIndex];
-                        const finalTarget = this._findFolderDropTarget(evt, draggedLayer);
-                        const targetFolderId = this._dragFolderTargetId || finalTarget?.folder?.layerData?.id;
-
-                        if (targetFolderId && this.layerSystem.moveLayerIntoFolder) {
-                            this.layerSystem.moveLayerIntoFolder(draggedLayer?.layerData?.id, targetFolderId);
-                        } else {
-                            const newIndex = this._resolveLayerIndexFromSortedDom(evt, oldIndex);
-                            if (newIndex !== null && newIndex !== oldIndex) {
-                                this.layerSystem.reorderLayers(oldIndex, newIndex);
-                            } else {
-                                this.requestUpdate();
-                            }
-                        }
-                    } finally {
-                        this._finishFolderDrag();
-                        this._dragFolderTargetId = null;
-                        this._isSortableDragging = false;
-                        if (this._pendingUpdateAfterDrag) {
-                            this._pendingUpdateAfterDrag = false;
-                            this.requestUpdate();
-                        }
-                    }
-                }
-            });
-        } catch (error) {}
-    }
-
-    _resolveLayerIndexFromSortedDom(evt, oldIndex) {
-        const nextItem = evt.item?.nextElementSibling?.closest?.('.layer-item') || null;
-        if (!nextItem || !this.container?.contains(nextItem)) {
-            return 0;
+    _applyLegacyLayerCardDropFromPointer(drag, targetRow, placement) {
+        if (!this.layerSystem?.reorderLayers || !drag?.row || !targetRow || !placement) {
+            this.requestUpdate();
+            return false;
         }
 
-        const nextIndex = parseInt(nextItem.dataset.layerIndex, 10);
-        if (Number.isNaN(nextIndex)) return null;
-
-        // DOMは上から下、Pixiレイヤー配列は下から上。ドラッグ項目は
-        // 「DOM上で直下にある表示レイヤー」の1つ上へ置く。
-        return nextIndex > oldIndex ? nextIndex : nextIndex + 1;
-    }
-
-    _findFolderDropTarget(evt, draggedLayer) {
-        const originalEvent = evt.originalEvent;
-        if (!originalEvent || !draggedLayer) return null;
-
-        const x = originalEvent.clientX;
-        const y = originalEvent.clientY;
-        const candidates = [];
-
-        if (typeof document.elementsFromPoint === 'function') {
-            const elements = document.elementsFromPoint(x, y);
-            for (const element of elements) {
-                const item = element.closest?.('.layer-item');
-                if (!item || item === evt.dragged || !this.container.contains(item)) continue;
-                if (item.dataset?.isFolder === 'true') {
-                    candidates.push({ element: item, hitElement: item, mode: 'folder' });
-                    continue;
-                }
-
-                const parentFolderElement = this._findParentFolderElementForItem(item);
-                if (parentFolderElement &&
-                    parentFolderElement !== evt.dragged &&
-                    this._shouldUseParentFolderDrop(draggedLayer, parentFolderElement)) {
-                    candidates.push({ element: parentFolderElement, hitElement: item, mode: 'child' });
-                }
-            }
+        const layers = this.layerSystem.getLayers();
+        const oldIndex = parseInt(drag.row.dataset.layerIndex, 10);
+        const targetIndex = parseInt(targetRow.dataset.layerIndex, 10);
+        if (Number.isNaN(oldIndex) || Number.isNaN(targetIndex) || oldIndex === targetIndex) {
+            this.requestUpdate();
+            return false;
         }
 
-        const related = evt.related?.closest?.('.layer-item');
-        if (related?.dataset?.isFolder === 'true' && related !== evt.dragged) {
-            candidates.push({ element: related, hitElement: related, mode: 'folder' });
-        } else if (related && related !== evt.dragged) {
-            const parentFolderElement = this._findParentFolderElementForItem(related);
-            if (parentFolderElement &&
-                parentFolderElement !== evt.dragged &&
-                this._shouldUseParentFolderDrop(draggedLayer, parentFolderElement)) {
-                candidates.push({ element: parentFolderElement, hitElement: related, mode: 'child' });
-            }
+        const draggedLayer = layers[oldIndex];
+        const targetLayer = layers[targetIndex];
+        if (!draggedLayer || draggedLayer.layerData?.isBackground) {
+            this.requestUpdate();
+            return false;
         }
 
-        const seen = new Set();
-        for (const candidate of candidates) {
-            const { element, hitElement, mode } = candidate;
-            if (seen.has(element)) continue;
-            seen.add(element);
-
-            const folderIndex = parseInt(element.dataset.layerIndex, 10);
-            const folder = this.layerSystem?.getLayers?.()?.[folderIndex];
-            if (!this._canDropIntoFolder(draggedLayer, folder)) continue;
-            if (!this._isFolderMouthDrop(x, y, hitElement, mode)) continue;
-            return { element, folder };
+        if (placement === 'inside' && this._canDropIntoFolder(draggedLayer, targetLayer) && this.layerSystem.moveLayerIntoFolder) {
+            this.layerSystem.moveLayerIntoFolder(draggedLayer.layerData?.id, targetLayer.layerData?.id);
+            return true;
         }
 
-        return null;
+        const newIndex = this._resolveLayerIndexFromPointerDrop(oldIndex, targetIndex, placement);
+        if (newIndex !== null && newIndex !== oldIndex) {
+            this.layerSystem.reorderLayers(oldIndex, newIndex);
+            return true;
+        }
+
+        this.requestUpdate();
+        return false;
     }
 
-    _findParentFolderElementForItem(item) {
-        const layerIndex = parseInt(item?.dataset?.layerIndex, 10);
-        if (Number.isNaN(layerIndex)) return null;
+    _resolveLayerIndexFromPointerDrop(oldIndex, targetIndex, placement) {
+        if (Number.isNaN(oldIndex) || Number.isNaN(targetIndex)) return null;
+        const layers = this.layerSystem?.getLayers?.() || [];
+        if (targetIndex < 0 || targetIndex >= layers.length) return null;
 
-        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
-        const parentId = layer?.layerData?.parentId;
-        if (!parentId) return null;
-
-        return Array.from(this.container.querySelectorAll('.layer-item[data-is-folder="true"]'))
-            .find(folderElement => {
-                const folderIndex = parseInt(folderElement.dataset.layerIndex, 10);
-                const folder = this.layerSystem?.getLayers?.()?.[folderIndex];
-                return folder?.layerData?.id === parentId;
-            }) || null;
-    }
-
-    _shouldUseParentFolderDrop(draggedLayer, folderElement) {
-        const folderIndex = parseInt(folderElement?.dataset?.layerIndex, 10);
-        if (Number.isNaN(folderIndex)) return false;
-
-        const folder = this.layerSystem?.getLayers?.()?.[folderIndex];
-        if (!folder?.layerData?.isFolder) return false;
-
-        // 同じフォルダ内の並び替えでは、親フォルダの口判定を出さず Sortable に任せる。
-        return draggedLayer?.layerData?.parentId !== folder.layerData.id;
+        // 画面上のbeforeは配列上では対象の上、afterは対象の下。
+        let newIndex = placement === 'before' ? targetIndex + 1 : targetIndex;
+        if (oldIndex < newIndex) {
+            newIndex -= 1;
+        }
+        return Math.max(0, Math.min(layers.length - 1, newIndex));
     }
 
     _canDropIntoFolder(layer, folder) {
@@ -2278,36 +2197,6 @@ export class LayerPanelRenderer {
         }
 
         return true;
-    }
-
-    _isFolderBodyDrop(evt, related) {
-        if (evt.willInsertAfter || !evt.originalEvent || !related?.getBoundingClientRect) {
-            return false;
-        }
-
-        const rect = related.getBoundingClientRect();
-        const x = evt.originalEvent.clientX;
-        const y = evt.originalEvent.clientY;
-        const insideX = x >= rect.left + 8 && x <= rect.right - 8;
-        const insideY = y >= rect.top + rect.height * 0.25 && y <= rect.bottom - rect.height * 0.25;
-        return insideX && insideY;
-    }
-
-    _isFolderMouthDrop(x, y, folderElement, mode = 'folder') {
-        if (!folderElement?.getBoundingClientRect) return false;
-
-        const rect = folderElement.getBoundingClientRect();
-        const topRatio = (y - rect.top) / Math.max(1, rect.height);
-        if (mode === 'folder' && (topRatio < 0.22 || topRatio > 0.78)) {
-            return false;
-        }
-
-        const expandedTop = mode === 'child' ? rect.top - 4 : rect.top;
-        const expandedBottom = mode === 'child' ? rect.bottom + 4 : rect.bottom;
-        const expandedLeft = rect.left - 8;
-        const expandedRight = rect.right + 8;
-
-        return x >= expandedLeft && x <= expandedRight && y >= expandedTop && y <= expandedBottom;
     }
 
     _clearFolderDropTarget() {
@@ -2350,42 +2239,55 @@ export class LayerPanelRenderer {
             const folderName = group.folderName === 'Uncategorized' ? `CAF${groupIndex + 1}` : group.folderName;
             const firstClip = group.clips[0];
             const selectedClipEntry = group.clips.find(clip => clip.clipId === selectedCelId) || null;
+            const primaryClipEntry = selectedClipEntry || firstClip;
             const groupSelectedClass = selectedClipEntry ? ' is-selected' : '';
             const isExpanded = !this._collapsedCafClipIds.has(firstClip?.clipId)
                 && (!!selectedClipEntry || this._expandedCafClipIds.has(firstClip?.clipId));
             const groupExpandedClass = isExpanded ? ' is-expanded' : ' is-collapsed';
-            const laneLabel = firstClip?.laneName || (Number.isInteger(firstClip?.laneIndex) ? `Lane ${firstClip.laneIndex + 1}` : '');
+            const laneLabel = primaryClipEntry?.laneName || (Number.isInteger(primaryClipEntry?.laneIndex) ? `Lane ${primaryClipEntry.laneIndex + 1}` : '');
             const folderId = this._escapeHtml(group.folderId || '');
-            const laneId = this._escapeHtml(firstClip?.laneId || '');
-            const firstClipId = this._escapeHtml(firstClip?.clipId || '');
-            const firstAssetId = this._escapeHtml(firstClip?.assetId || '');
-            const clipEntry = firstClip?.clipId ? animationTable.model.findClipEntry(firstClip.clipId) : null;
+            const laneId = this._escapeHtml(primaryClipEntry?.laneId || '');
+            const primaryClipId = this._escapeHtml(primaryClipEntry?.clipId || '');
+            const primaryAssetId = this._escapeHtml(primaryClipEntry?.assetId || '');
+            const clipEntry = primaryClipEntry?.clipId ? animationTable.model.findClipEntry(primaryClipEntry.clipId) : null;
             const isClipVisible = clipEntry?.clip?.visible !== false;
-            const visibilityIcon = isClipVisible ? UI_ICONS.eye : UI_ICONS.eyeOff;
-            const mirrorClipEntry = selectedClipEntry || firstClip;
+            const toggleTitle = isExpanded ? 'CAFを閉じる' : 'CAFを開く';
+            const toggleButtonHtml = this._createLayerPanelIconButtonHtml({
+                className: 'caf-simple-toggle-btn',
+                baseClass: 'caf-simple-icon',
+                iconName: isExpanded ? 'folderOpen' : 'folder',
+                title: toggleTitle,
+                ariaLabel: toggleTitle,
+                dataAttributes: {
+                    'data-clip-id': firstClip?.clipId || ''
+                },
+                extraAttributes: {
+                    'aria-expanded': isExpanded ? 'true' : 'false'
+                }
+            });
+            const visibilityButtonHtml = this._createLayerPanelIconButtonHtml({
+                className: `caf-simple-visibility-btn${isClipVisible ? '' : ' is-hidden'}`,
+                iconName: isClipVisible ? 'eye' : 'eyeOff',
+                fallbackIconName: 'eye',
+                title: 'CAF Clipの表示/非表示',
+                dataAttributes: {
+                    'data-clip-id': primaryClipEntry?.clipId || ''
+                }
+            });
+            const mirrorClipEntry = primaryClipEntry;
             const mirrorAsset = mirrorClipEntry?.assetId
                 ? animationTable.model.getClipAsset(mirrorClipEntry.assetId)
                 : null;
             html += `
                 <div class="caf-simple-group${groupSelectedClass}${groupExpandedClass}">
                     <div class="caf-simple-group-title${groupSelectedClass}${groupExpandedClass}"
-                         data-clip-id="${firstClipId}"
-                         data-asset-id="${firstAssetId}"
+                         data-clip-id="${primaryClipId}"
+                         data-asset-id="${primaryAssetId}"
                          title="CAF Clipを選択">
-                        <button class="caf-simple-icon caf-simple-toggle-btn"
-                                data-clip-id="${firstClipId}"
-                                aria-expanded="${isExpanded ? 'true' : 'false'}"
-                                title="${isExpanded ? 'CAFを閉じる' : 'CAFを開く'}"
-                                aria-label="${isExpanded ? 'CAFを閉じる' : 'CAFを開く'}">
-                            ${isExpanded ? UI_ICONS.folderOpen : UI_ICONS.folder}
-                        </button>
+                        ${toggleButtonHtml}
                         <span class="caf-simple-name" data-folder-id="${folderId}">${this._escapeHtml(folderName)}</span>
                         <span class="caf-simple-lane" data-lane-id="${laneId}">${this._escapeHtml(laneLabel)}</span>
-                        <button class="caf-simple-visibility-btn ui-icon-button ui-icon-button--small${isClipVisible ? '' : ' is-hidden'}"
-                                data-clip-id="${firstClipId}"
-                                title="CAF Clipの表示/非表示">
-                            ${visibilityIcon}
-                        </button>
+                        ${visibilityButtonHtml}
                     </div>
             `;
 
@@ -2482,7 +2384,6 @@ export class LayerPanelRenderer {
     _createClipAssetLayerMirrorHtml(asset, animationTable) {
         const selectedInternalLayerId = animationTable.selectedInternalLayerId;
         const mirrorThumbSize = this._calculateLayerThumbnailSize(34, 30);
-        const mirrorThumbStyle = `width:${mirrorThumbSize.width}px;height:${mirrorThumbSize.height}px;`;
 
         let layerHtml = '';
         if (asset.internalLayers.length === 0) {
@@ -2500,46 +2401,31 @@ export class LayerPanelRenderer {
                 const isFolder = layer.type === 'folder';
                 const isFolderCollapsed = isFolder && this._isClipInternalFolderCollapsed(asset.id, layer.id);
                 const depth = internalLayerDepths.get(layer.id) || 0;
-                const selectedClass = isSelected ? ' is-selected' : '';
-                const hiddenClass = isHidden ? ' is-hidden' : '';
-                const collapsedClass = isFolderCollapsed ? ' is-collapsed' : '';
-                const clippingClass = layer.clipping === true ? ' is-clipping' : '';
 
                 const snapshot = isFolder ? null : animationTable.model.getDrawingSnapshot(layer.drawingSnapshotId);
                 const thumbUrl = this._snapshotToDataUrl(snapshot);
-
-                const safeAssetId = this._escapeHtml(asset.id);
-                const safeLayerId = this._escapeHtml(layer.id);
                 const opacityLabel = isFolder ? 'Folder' : `${Math.round(layer.opacity * 100)}%`;
                 const visibilityIconName = isVisible ? 'eye' : 'eyeOff';
-
-                layerHtml += `
-                    <div class="clip-layer-mirror-row${selectedClass}${hiddenClass}${isFolder ? ' is-folder' : ''}${collapsedClass} depth-${depth}"
-                         data-internal-layer-id="${safeLayerId}"
-                         data-asset-id="${safeAssetId}"
-                         data-depth="${depth}">
-                        <span class="folder-child-line" aria-hidden="true"></span>
-                        <span class="clip-layer-mirror-thumb" style="${mirrorThumbStyle}">
-                            ${isFolder ? (isFolderCollapsed ? UI_ICONS.folder : UI_ICONS.folderOpen) : (thumbUrl ? `<img src="${thumbUrl}" alt="">` : '')}
-                        </span>
-                        <span class="clip-layer-mirror-details">
-                            <span class="clip-layer-mirror-opacity">${this._escapeHtml(opacityLabel)}</span>
-                            <span class="clip-layer-mirror-name">${this._escapeHtml(layer.name)}</span>
-                        </span>
-                        <button class="clip-layer-mirror-clip-btn ui-icon-button ui-icon-button--small${clippingClass}"
-                                data-internal-layer-id="${safeLayerId}"
-                                data-asset-id="${safeAssetId}"
-                                title="クリッピング">
-                            ${UI_ICONS.paperclip}
-                        </button>
-                        <button class="clip-layer-mirror-visibility-btn ui-icon-button ui-icon-button--small${isHidden ? ' is-hidden' : ''}"
-                                data-internal-layer-id="${safeLayerId}"
-                                data-asset-id="${safeAssetId}"
-                                title="内部レイヤーの表示/非表示">
-                            ${UI_ICONS[visibilityIconName]}
-                        </button>
-                    </div>
-                `;
+                layerHtml += this._createLayerPanelCardHtml({
+                    variant: 'clip-layer-mirror',
+                    assetId: asset.id,
+                    layerId: layer.id,
+                    depth,
+                    name: layer.name,
+                    metaLabel: opacityLabel,
+                    thumbnailSize: mirrorThumbSize,
+                    thumbnailHtml: isFolder
+                        ? (isFolderCollapsed ? UI_ICONS.folder : UI_ICONS.folderOpen)
+                        : (thumbUrl ? `<img src="${thumbUrl}" alt="">` : ''),
+                    isSelected,
+                    isHidden,
+                    isFolder,
+                    isCollapsed: isFolderCollapsed,
+                    isClipping: layer.clipping === true,
+                    visibilityIconName,
+                    clipTitle: 'クリッピング',
+                    visibilityTitle: '内部レイヤーの表示/非表示'
+                });
             });
         }
 
@@ -2547,6 +2433,97 @@ export class LayerPanelRenderer {
             <div class="clip-layer-mirror">
             <div class="clip-layer-mirror-list">${layerHtml}</div>
             </div>
+        `;
+    }
+
+    _createLayerPanelCardHtml(options = {}) {
+        const variant = options.variant || 'clip-layer-mirror';
+        const depth = Number.isInteger(options.depth) ? options.depth : 0;
+        const thumbSize = options.thumbnailSize || { width: 34, height: 30 };
+        const thumbStyleAttributes = this._createLayerPanelCardStyleAttributes({
+            '--card-thumb-width': Number.isFinite(thumbSize.width) ? `${Math.max(1, thumbSize.width)}px` : '',
+            '--card-thumb-height': Number.isFinite(thumbSize.height) ? `${Math.max(1, thumbSize.height)}px` : ''
+        });
+        const rowClasses = this._getLayerPanelCardClassNames(variant, {
+            isSelected: options.isSelected,
+            isHidden: options.isHidden,
+            isFolder: options.isFolder,
+            isCollapsed: options.isCollapsed,
+            depth
+        });
+        const rowDataAttributes = this._createLayerPanelCardDataAttributes({
+            cardKind: variant,
+            assetId: options.assetId || '',
+            layerId: options.layerId || '',
+            internalLayerId: options.layerId || '',
+            depth,
+            isFolder: options.isFolder
+        });
+        const clipClass = options.isClipping ? ' is-clipping' : '';
+        const visibilityClass = options.isHidden ? ' is-hidden' : '';
+        const visibilityIconName = options.visibilityIconName || 'eye';
+        const clipButtonHtml = this._createLayerPanelIconButtonHtml({
+            className: `${variant}-clip-btn${clipClass}`,
+            iconName: 'paperclip',
+            title: options.clipTitle || 'クリッピング',
+            dataAttributes: {
+                'data-internal-layer-id': options.layerId || '',
+                'data-asset-id': options.assetId || ''
+            }
+        });
+        const visibilityButtonHtml = this._createLayerPanelIconButtonHtml({
+            className: `${variant}-visibility-btn${visibilityClass}`,
+            iconName: visibilityIconName,
+            fallbackIconName: 'eye',
+            title: options.visibilityTitle || '表示/非表示',
+            dataAttributes: {
+                'data-internal-layer-id': options.layerId || '',
+                'data-asset-id': options.assetId || ''
+            }
+        });
+
+        return `
+            <div class="${rowClasses}"
+                 ${rowDataAttributes}>
+                <span class="folder-child-line" aria-hidden="true"></span>
+                <span class="${variant}-thumb" ${thumbStyleAttributes}>
+                    ${options.thumbnailHtml || ''}
+                </span>
+                <span class="${variant}-details">
+                    <span class="${variant}-opacity">${this._escapeHtml(options.metaLabel || '')}</span>
+                    <span class="${variant}-name">${this._escapeHtml(options.name || '')}</span>
+                </span>
+                ${clipButtonHtml}
+                ${visibilityButtonHtml}
+            </div>
+        `;
+    }
+
+    _createLayerPanelIconButtonHtml({
+        tagName = 'button',
+        className = '',
+        baseClass = 'ui-icon-button ui-icon-button--small',
+        iconName = 'eye',
+        fallbackIconName = '',
+        title = '',
+        ariaLabel = '',
+        dataAttributes = {},
+        extraAttributes = {}
+    } = {}) {
+        const attributeHtml = this._createLayerPanelDataAttributes({
+            ...dataAttributes,
+            ...extraAttributes,
+            'aria-label': ariaLabel
+        });
+        const extraAttributeHtml = attributeHtml ? ` ${attributeHtml}` : '';
+        const iconHtml = this._resolveLayerPanelIconHtml(iconName, fallbackIconName);
+        const safeTagName = /^[a-z][a-z0-9-]*$/i.test(tagName) ? tagName : 'button';
+        const typeAttributeHtml = safeTagName.toLowerCase() === 'button' ? ' type="button"' : '';
+        return `
+            <${safeTagName}${typeAttributeHtml} class="${this._escapeHtml(this._createLayerPanelButtonClassName(className, baseClass))}"${extraAttributeHtml}
+                    title="${this._escapeHtml(title)}">
+                ${iconHtml}
+            </${safeTagName}>
         `;
     }
 
@@ -2631,10 +2608,6 @@ export class LayerPanelRenderer {
     }
 
     destroy() {
-        if (this.sortable) {
-            this.sortable.destroy();
-            this.sortable = null;
-        }
         if (this._updateTimeout) {
             clearTimeout(this._updateTimeout);
         }
