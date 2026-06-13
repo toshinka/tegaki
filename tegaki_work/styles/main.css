@@ -339,19 +339,22 @@ canvas {
     font-weight: bold;
 }
 
-/* Selected ClipAsset Internal Layer Mirror (Phase 4z17) */
-.clip-layer-mirror {
+.layer-panel-card-group {
     background: transparent;
     color: var(--futaba-maroon);
-    padding: 0;
-    margin: -1px 8px 8px 0;
     font-size: 11px;
     display: flex;
     flex-direction: column;
     gap: 0;
     box-shadow: none;
-    border-left: none;
     pointer-events: auto;
+}
+
+/* Selected ClipAsset Internal Layer Mirror (Phase 4z17) */
+.clip-layer-mirror {
+    padding: 0;
+    margin: -1px 8px 8px 0;
+    border-left: none;
 }
 
 .clip-layer-mirror-title {
@@ -372,29 +375,28 @@ canvas {
     text-overflow: ellipsis;
 }
 
-.clip-layer-mirror-list {
+.layer-panel-card-list {
     display: flex;
     flex-direction: column;
     gap: 0;
+}
+
+.clip-layer-mirror-list {
     margin-left: 10px;
     margin-right: 8px;
     padding-left: 0;
 }
 
-.clip-layer-mirror-row {
+.layer-panel-card-row {
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr) 18px 18px;
     grid-template-rows: 32px;
     align-items: center;
     gap: 0 5px;
-    width: auto;
     min-height: 38px;
     padding: 3px 5px;
     margin-bottom: 2px;
-    border: 1px solid var(--futaba-light-medium);
     border-radius: 4px;
-    background: rgba(255, 255, 238, 0.92);
-    cursor: pointer;
     position: relative;
     user-select: none;
     touch-action: none;
@@ -402,35 +404,61 @@ canvas {
     transition: all 0.2s ease;
 }
 
+.layer-panel-card-row:hover {
+    background: var(--card-row-hover-bg, var(--card-row-bg, inherit));
+}
+
+.layer-panel-card-row.is-selected {
+    border-color: var(--card-row-selected-border-color, var(--active-border));
+    border-width: var(--card-row-selected-border-width, 2px);
+    background: var(--card-row-selected-bg, var(--card-row-bg, inherit));
+}
+
+.layer-panel-card-row.is-active {
+    border-color: var(--card-row-active-border-color, var(--card-row-selected-border-color, var(--active-border)));
+    border-width: var(--card-row-active-border-width, var(--card-row-selected-border-width, 2px));
+    background: var(--card-row-active-bg, var(--card-row-selected-bg, var(--card-row-bg, inherit)));
+}
+
+.layer-panel-card-row.is-hidden {
+    opacity: var(--card-row-hidden-opacity, 0.4);
+}
+
+.clip-layer-mirror-row {
+    width: auto;
+    border: 1px solid var(--futaba-light-medium);
+    background: rgba(255, 255, 238, 0.92);
+    --card-row-hover-bg: rgba(240, 224, 214, 0.42);
+    --card-row-selected-bg: rgba(240, 224, 214, 0.52);
+    --card-row-selected-border-color: var(--active-border);
+    --card-row-selected-border-width: 2px;
+    --card-row-hidden-opacity: 0.4;
+    --card-action-hidden-opacity: 0.45;
+    --card-action-active-bg: rgba(240, 224, 214, 0.72);
+    --card-action-active-border-color: var(--active-border);
+    cursor: pointer;
+}
+
 .legacy-layer-card-row {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) 18px 18px;
-    grid-template-rows: 32px;
-    align-items: center;
-    gap: 0 5px;
-    width: var(--legacy-card-width, 160px);
-    min-height: 38px;
-    padding: 3px 5px;
-    margin-bottom: 2px;
-    margin-left: var(--legacy-card-margin-left, 0);
-    border: var(--legacy-card-border-width, 1px) solid var(--legacy-card-border-color, #e9c2ba);
-    border-radius: 4px;
-    background-color: var(--legacy-card-bg, #ffffee);
+    width: var(--card-row-width, var(--legacy-card-width, 160px));
+    margin-left: var(--card-row-margin-left, var(--legacy-card-margin-left, 0));
+    border: var(--card-row-border-width, var(--legacy-card-border-width, 1px)) solid var(--card-row-border-color, var(--legacy-card-border-color, #e9c2ba));
+    background-color: var(--card-row-bg, var(--legacy-card-bg, #ffffee));
+    --card-row-hover-bg: var(--card-row-bg, var(--legacy-card-bg, #ffffee));
+    --card-row-selected-bg: var(--card-row-bg, var(--legacy-card-bg, #ffffee));
+    --card-row-selected-border-color: var(--card-row-border-color, var(--legacy-card-border-color, rgba(255, 140, 66, 0.6)));
+    --card-row-selected-border-width: var(--card-row-border-width, var(--legacy-card-border-width, 1px));
+    --card-row-hidden-opacity: 0.9;
     opacity: 0.9;
     cursor: grab;
-    position: relative;
     backdrop-filter: blur(8px);
-    transition: all 0.2s ease;
-    touch-action: none;
-    -ms-touch-action: none;
-    user-select: none;
 }
 
 .legacy-layer-card-row.background-layer {
     cursor: default;
 }
 
-.legacy-layer-card-details {
+.layer-panel-card-details {
     grid-column: 2;
     grid-row: 1;
     min-width: 0;
@@ -441,30 +469,7 @@ canvas {
     height: 32px;
 }
 
-.legacy-layer-card-name {
-    grid-column: 2;
-    grid-row: 1;
-    color: var(--futaba-maroon);
-    font-size: 11px;
-    font-weight: bold;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: left;
-    cursor: text;
-    padding: 0;
-    height: 16px;
-    display: flex;
-    align-items: center;
-    min-width: 0;
-}
-
-.legacy-layer-card-background-name {
-    cursor: default;
-    height: 20px;
-}
-
-.legacy-layer-card-thumb {
+.layer-panel-card-thumb {
     grid-column: 1;
     grid-row: 1;
     display: flex;
@@ -472,14 +477,71 @@ canvas {
     justify-content: center;
 }
 
-.legacy-layer-card-third-action {
+.layer-panel-card-action--clip {
     grid-column: 3;
     grid-row: 1;
 }
 
-.legacy-layer-card-visibility-action {
+.layer-panel-card-action--visibility {
     grid-column: 4;
     grid-row: 1;
+}
+
+.layer-panel-card-action {
+    width: 18px;
+    height: 18px;
+}
+
+.layer-panel-card-action.is-hidden {
+    opacity: var(--card-action-hidden-opacity, 0.45);
+}
+
+.layer-panel-card-action.is-clipping {
+    opacity: var(--card-action-active-opacity, 1);
+    background: var(--card-action-active-bg, transparent);
+    border-color: var(--card-action-active-border-color, transparent);
+}
+
+.legacy-layer-card-row .layer-panel-card-action {
+    width: 16px;
+    height: 16px;
+    padding: 2px;
+}
+
+.legacy-layer-card-row .layer-panel-card-action svg {
+    width: 12px;
+    height: 12px;
+}
+
+.layer-panel-card-name {
+    color: var(--futaba-maroon);
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: text;
+    min-width: 0;
+}
+
+.layer-panel-card-meta {
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+}
+
+.legacy-layer-card-name {
+    text-align: left;
+    padding: 0;
+    height: 16px;
+    display: flex;
+    align-items: center;
+}
+
+.legacy-layer-card-background-name {
+    cursor: default;
+    height: 20px;
 }
 
 .layer-clip-status {
@@ -500,23 +562,6 @@ canvas {
 
 .layer-clip-status.is-toggleable {
     cursor: pointer;
-}
-
-.legacy-layer-card-row .layer-visibility,
-.legacy-layer-card-row .layer-background-color-button,
-.legacy-layer-card-row .layer-duplicate-button,
-.legacy-layer-card-row .layer-merge-down-button {
-    width: 16px;
-    height: 16px;
-    padding: 2px;
-}
-
-.legacy-layer-card-row .layer-visibility svg,
-.legacy-layer-card-row .layer-background-color-button svg,
-.legacy-layer-card-row .layer-duplicate-button svg,
-.legacy-layer-card-row .layer-merge-down-button svg {
-    width: 12px;
-    height: 12px;
 }
 
 .layer-merge-down-button.is-disabled {
@@ -560,29 +605,35 @@ canvas {
     opacity: 0;
 }
 
-.legacy-layer-card-row .folder-child-line {
+.layer-panel-card-child-line {
     position: absolute;
-    left: -12px;
     top: 0;
     width: 2px;
     height: 100%;
+}
+
+.legacy-layer-card-row .folder-child-line {
+    left: -12px;
     background-color: #cf9c97;
 }
 
-.legacy-layer-card-row .folder-thumbnail {
+.layer-panel-card-thumb--folder {
     box-sizing: border-box;
     border: 1px solid #b8706b;
     border-radius: 2px;
     overflow: hidden;
     position: relative;
     flex-shrink: 0;
-    cursor: pointer;
     color: var(--futaba-maroon);
     background-color: rgba(128, 0, 0, 0.16);
 }
 
-.legacy-layer-card-row .folder-thumbnail.is-expanded {
+.layer-panel-card-thumb--folder.is-expanded {
     background-color: rgba(207, 156, 151, 0.22);
+}
+
+.legacy-layer-card-row .folder-thumbnail {
+    cursor: pointer;
 }
 
 .clip-layer-mirror-row.depth-1 {
@@ -607,11 +658,7 @@ canvas {
 }
 
 .clip-layer-mirror-row .folder-child-line {
-    position: absolute;
     left: -10px;
-    top: 0;
-    width: 2px;
-    height: 100%;
     background-color: rgba(128, 0, 0, 0.22);
 }
 
@@ -620,46 +667,26 @@ canvas {
 }
 
 .clip-layer-mirror-thumb {
-    grid-column: 1;
-    grid-row: 1;
     width: var(--card-thumb-width, 34px);
     height: var(--card-thumb-height, 30px);
     border-radius: 3px;
     background: rgba(128, 0, 0, 0.05);
     overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
-.clip-layer-mirror-row.is-folder .clip-layer-mirror-thumb svg {
+.layer-panel-card-thumb--folder svg {
     width: 24px;
     height: 24px;
 }
 
-.clip-layer-mirror-thumb img {
+.layer-panel-card-thumb-image {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
     display: block;
 }
 
-.clip-layer-mirror-row:hover {
-    background: rgba(240, 224, 214, 0.42);
-}
-
-.clip-layer-mirror-row.is-selected {
-    border-color: var(--active-border);
-    border-width: 2px;
-    background: rgba(240, 224, 214, 0.52);
-}
-
-.clip-layer-mirror-row.is-hidden {
-    opacity: 0.4;
-}
-
-.clip-layer-mirror-row.is-dragging,
-.legacy-layer-card-row.is-dragging {
+.layer-panel-card-row.is-dragging {
     opacity: 0.35;
 }
 
@@ -676,10 +703,8 @@ canvas {
     box-shadow: 0 8px 18px rgba(128, 0, 0, 0.22);
 }
 
-.clip-layer-mirror-row.is-dnd-before::before,
-.clip-layer-mirror-row.is-dnd-after::after,
-.legacy-layer-card-row.is-dnd-before::before,
-.legacy-layer-card-row.is-dnd-after::after {
+.layer-panel-card-row.is-dnd-before::before,
+.layer-panel-card-row.is-dnd-after::after {
     content: "";
     position: absolute;
     left: 4px;
@@ -690,37 +715,26 @@ canvas {
     box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
 }
 
-.clip-layer-mirror-row.is-dnd-before::before,
-.legacy-layer-card-row.is-dnd-before::before {
+.layer-panel-card-row.is-dnd-before::before {
     top: -3px;
 }
 
-.clip-layer-mirror-row.is-dnd-after::after,
-.legacy-layer-card-row.is-dnd-after::after {
+.layer-panel-card-row.is-dnd-after::after {
     bottom: -3px;
 }
 
-.clip-layer-mirror-row.is-dnd-inside,
-.legacy-layer-card-row.is-dnd-inside {
+.layer-panel-card-row.is-dnd-inside {
     outline: 2px solid var(--active-border);
     outline-offset: 2px;
     background: rgba(255, 102, 0, 0.12);
 }
 
 .clip-layer-mirror-visibility-btn {
-    grid-column: 4;
-    grid-row: 1;
-    width: 18px;
-    height: 18px;
     color: var(--futaba-maroon);
 }
 
 .clip-layer-mirror-visibility-btn:hover {
     transform: none;
-}
-
-.clip-layer-mirror-visibility-btn.is-hidden {
-    opacity: 0.45;
 }
 
 .clip-layer-mirror-visibility {
@@ -730,14 +744,7 @@ canvas {
 }
 
 .clip-layer-mirror-name {
-    color: var(--futaba-maroon);
-    font-size: 11px;
-    font-weight: bold;
     line-height: 16px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: text;
 }
 
 .layer-panel-inline-name-input {
@@ -773,7 +780,7 @@ canvas {
     grid-row: 2;
 }
 
-.layer-panel-inline-name-input.clip-layer-mirror-name {
+.layer-panel-inline-name-input.layer-panel-card-name {
     width: 100%;
     height: 18px;
 }
@@ -781,44 +788,14 @@ canvas {
 .layer-panel-inline-name-input.legacy-layer-card-name {
     grid-column: 2;
     grid-row: 1;
-    width: 100%;
-    height: 18px;
-}
-
-.clip-layer-mirror-details {
-    grid-column: 2;
-    grid-row: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 1px;
-    height: 32px;
-}
-
-.clip-layer-mirror-opacity {
-    color: var(--futaba-maroon);
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 14px;
 }
 
 .clip-layer-mirror-clip-btn {
-    grid-column: 3;
-    grid-row: 1;
-    width: 18px;
-    height: 18px;
     color: var(--futaba-maroon);
     opacity: 0.28;
 }
 
-.clip-layer-mirror-clip-btn.is-clipping {
-    opacity: 1;
-    background: rgba(240, 224, 214, 0.72);
-    border-color: var(--active-border);
-}
-
-.clip-layer-mirror-empty {
+.layer-panel-card-empty {
     padding: 10px;
     text-align: center;
     opacity: 0.5;
@@ -1023,20 +1000,24 @@ canvas {
     box-shadow: 2px 0 4px rgba(128, 0, 0, 0.1);
 }
 
-.layer-item.active {
+.layer-item.active,
+.layer-item.is-active {
     border-color: var(--active-border) !important;
     box-shadow: 0 0 0 1px rgba(255, 140, 66, 0.35), 2px 0 8px rgba(128, 0, 0, 0.14);
 }
 
-.layer-item.selected {
+.layer-item.selected,
+.layer-item.is-selected {
     background-color: rgba(255, 140, 66, 0.15) !important;
 }
 
-.layer-item.selected:not(.active) {
+.layer-item.selected:not(.active),
+.layer-item.is-selected:not(.is-active) {
     border-color: rgba(255, 140, 66, 0.6) !important;
 }
 
-.layer-panel-items.panel-inactive .layer-item.active {
+.layer-panel-items.panel-inactive .layer-item.active,
+.layer-panel-items.panel-inactive .layer-item.is-active {
     border-color: var(--futaba-medium) !important;
 }
 
@@ -1063,8 +1044,8 @@ canvas {
 }
 
 .layer-thumbnail {
-    width: var(--legacy-thumb-width, 40px);
-    height: var(--legacy-thumb-height, 32px);
+    width: var(--card-thumb-width, var(--legacy-thumb-width, 40px));
+    height: var(--card-thumb-height, var(--legacy-thumb-height, 32px));
     box-sizing: border-box;
     border: none !important;
     border-radius: 2px;
@@ -1075,13 +1056,6 @@ canvas {
     justify-content: center;
     flex-shrink: 0;
     background: transparent !important;
-}
-
-.layer-thumbnail-image {
-    max-width: 100%;
-    max-height: 100%;
-    display: block;
-    object-fit: contain;
 }
 
 .background-color-swatch {
