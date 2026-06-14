@@ -24,6 +24,36 @@
 
 **Phase 4z26 — CAF / Working Layer Ghost Guard 【Codex実装】**
 2026-05-31
+- **Task5進行: CAF内部カードselectorのvariant設定化**:
+  - `layer-panel-renderer.js`: CAF内部カードの row / name / thumb / visibility / clipping button selector を `_getLayerPanelCardVariantConfig('clip-layer-mirror')` に集約。
+  - click委譲、contextmenu抑制、D&D開始、フォルダ開閉判定、選択解除、F2名前編集対象探索をvariant設定経由に寄せた。旧Layer/Folderカードのrow selectorも同じ設定入口へ移した。
+  - `_createLayerPanelCardRowModel()` でvariant名を設定経由に正規化し、DOM/HTMLカード生成の入口差を少し減らした。
+  - 旧Layer/Folderカードのshell/details/action/thumbnail/背景名部品もvariant名経由にし、旧カード固有文字列を互換classとvariant定義へ寄せた。
+  - 旧カードのclip/visibility/背景色ボタン追加を `_appendLayerPanelCardActionIcon()` に集約し、DOM側アクション追加もカード共通ヘルパーを通すようにした。
+  - DOM/HTML双方のアイコンボタン生成を `_createLayerPanelButtonElementFromModel()` / `_createLayerPanelButtonHtmlFromModel()` に分離し、同一button modelから展開する形を明確化した。
+  - 旧導線の削除/複製/下結合ボタン生成を `_createLegacyLayerOperationButton()` に集約し、操作ボタンも同じbutton model経路へ寄せた。
+  - 旧Layer/FolderカードのD&D/クリック除外selectorを `legacy-layer-card` variant設定の `interactiveSelectors` に移し、カード種別設定から参照する形にした。
+  - HTML側カード行生成 `_createLayerPanelCardRowHtml()` が `cardModel` を直接受け取れるようにし、DOM/HTML双方で同じrow modelを入口にする形へ寄せた。
+  - DOM側カード部品追加を `_appendLayerPanelCardParts()` に集約し、旧カードdetails/opacity/背景名、カードアクション、CAFヘッダー/行追加を同じappend経路に寄せた。
+  - サムネイルサイズCSS変数生成を `_createLayerPanelCardThumbnailStyleVars()` に集約し、旧カードDOMとCAF内部カードHTMLで同じサイズ変数入口を使うようにした。
+  - DOM/HTML双方のカード部品生成を `_createLayerPanelCardPartModel()` 経由に寄せ、子線生成も同じpartヘルパーを使うようにした。
+  - テキストspan生成を `_createLayerPanelTextSpanModel()` 経由に寄せ、DOM側メタ/名前表示とHTML側テキスト生成の入口を揃えた。
+  - 旧カード名DOMとCAF内部カード名HTMLを `_createLayerPanelNameModel()` 経由に寄せ、名前表示のclass/text/title組み立て入口を共通化した。
+  - DOM/HTML双方のボタン生成で必要な `type="button"` を `_createLayerPanelButtonModel()` 側の属性生成に寄せ、ボタンタグ判定の重複を減らした。
+  - フォルダサムネイル、クリッピング、通常合成表示、無効ボタンなどの状態class付与を `_applyLayerPanelStateClasses()` に集約した。
+  - HTML側ボタンの状態class文字列も `_createLayerPanelStateClassNames()` / `_createLayerPanelClassName()` 経由に寄せ、DOM/HTMLで状態class組み立て方針を揃えた。
+  - CAFヘッダーの選択/開閉/非表示class組み立ても同じclassヘルパー経由へ寄せ、ヘッダーとカードで状態classの作り方を揃えた。
+  - CAFヘッダー内の名前/レーンspanとasset行生成を `_createLayerPanelElementHtml()` 経由の小ヘルパーへ寄せ、手書きHTMLとdata属性エスケープの散在を減らした。
+  - CAFヘッダーのグループ外枠/タイトル生成も `_createCafHeaderGroupHtml()` / `_createCafHeaderGroupTitleHtml()` へ分離し、開始タグ/終了タグの手書き範囲を減らした。
+  - CAFヘッダーの開閉/可視ボタン生成を `_createCafHeaderToggleButtonHtml()` / `_createCafHeaderVisibilityButtonHtml()` へ分離し、ヘッダー組み立て側からボタン細部を外した。
+  - CAF内部カードのクリップ/可視ボタン生成を `_createLayerPanelCardClipButtonHtml()` / `_createLayerPanelCardVisibilityButtonHtml()` へ分離し、カードHTML本体からアクションボタン細部を外した。
+  - CAF内部カードのサムネイル/詳細HTML生成を `_createLayerPanelCardThumbnailHtml()` / `_createLayerPanelCardDetailsHtml()` へ分離し、カードHTML本体から部品細部を外した。
+  - ClipAsset内部レイヤーからCAF内部カードoptionsを作る処理を `_createClipLayerMirrorCardOptions()` へ分離し、ループ側をカード生成呼び出しに集中させた。
+  - 旧Layer/Folderカードのrow model生成を `_createLegacyLayerCardRowModel()` へ分離し、旧カードshell側も共通row model生成とDOM生成を分けた。
+  - カードD&Dのdrop payload生成を `_createLayerPanelCardDropPayload()` へ分離し、旧カード/CAF内部カードのdrop入力形を揃えた。
+  - 挙動は変更せず、CAF内部カードと旧カードのselector散在を減らし、カード種別ごとの共通化入口を広げた。
+  - 既知差分: 旧Layer/FolderカードD&Dは、外部レイヤーをフォルダ配下の既存子レイヤー間へ直接挿入できず、フォルダ本体へのdropでしか収納できない。CAF内部カードD&Dでは子レイヤー間への挿入が可能。統合時にCAF側の挙動へ寄せる対象。
+  - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
 - **Task5進行: カードvariant設定の共通化**:
   - `layer-panel-renderer.js`: 旧Layer/FolderカードとCAF内部カードの `variant` 名、row selector、D&Dゴーストclassを `_getLayerPanelCardVariantConfig()` へ集約。
   - `_getClipLayerMirrorCardDragOptions()` / `_getLegacyLayerCardDragOptions()` / `_createLayerPanelCardHtml()` / `_createLayerPanelCardDragState()` が同じvariant設定入口を使うように整理。

@@ -49,7 +49,8 @@ export class LayerPanelRenderer {
         this.container.addEventListener('pointerdown', this._handleLayerPanelCardPointerDown);
         this.container.addEventListener('contextmenu', (e) => {
             if (!this._hasAnimationContext()) return;
-            if (e.target.closest('.caf-simple-header, .clip-layer-mirror-row')) {
+            const clipMirrorVariant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
+            if (e.target.closest(`.caf-simple-header, ${clipMirrorVariant.rowSelector}`)) {
                 e.preventDefault();
             }
         });
@@ -59,15 +60,16 @@ export class LayerPanelRenderer {
             if (this._consumeLayerPanelCardSuppressedClick(e)) {
                 return;
             }
+            const clipMirrorVariant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
             // 0. 内部レイヤーミラーの可視ボタン (Phase 4z18)
-            const visBtn = e.target.closest('.clip-layer-mirror-visibility-btn');
+            const visBtn = e.target.closest(clipMirrorVariant.visibilityButtonSelector);
             if (visBtn) {
                 this._toggleClipLayerMirrorVisibilityFromClick(visBtn);
                 return;
             }
 
             // 1. 内部レイヤーミラーのクリッピングボタン
-            const clipBtn = e.target.closest('.clip-layer-mirror-clip-btn');
+            const clipBtn = e.target.closest(clipMirrorVariant.clipButtonSelector);
             if (clipBtn) {
                 this._toggleClipLayerMirrorClippingFromClick(clipBtn);
                 return;
@@ -104,14 +106,14 @@ export class LayerPanelRenderer {
                 return;
             }
 
-            const mirrorNameForEdit = e.target.closest('.clip-layer-mirror-name');
+            const mirrorNameForEdit = e.target.closest(clipMirrorVariant.nameSelector);
             if (mirrorNameForEdit && e.detail >= 2) {
                 this._editClipLayerMirrorNameFromClick(e, mirrorNameForEdit);
                 return;
             }
 
             // 3. 内部レイヤーミラーの行 (Phase 4z17)
-            const mirrorRow = e.target.closest('.clip-layer-mirror-row');
+            const mirrorRow = e.target.closest(clipMirrorVariant.rowSelector);
             if (mirrorRow) {
                 this._handleClipLayerMirrorRowClick(e, mirrorRow);
                 return;
@@ -236,7 +238,7 @@ export class LayerPanelRenderer {
     }
 
     _editClipLayerMirrorName(mirrorName, options = {}) {
-        const mirrorRow = mirrorName?.closest('.clip-layer-mirror-row');
+        const mirrorRow = mirrorName?.closest(this._getLayerPanelCardVariantConfig('clip-layer-mirror').rowSelector);
         const assetId = mirrorRow?.dataset.assetId;
         const layerId = mirrorRow?.dataset.internalLayerId;
         const animationTable = window.PopupManager?.get?.('animationTable');
@@ -260,8 +262,8 @@ export class LayerPanelRenderer {
         const internalLayer = asset?.internalLayers?.find(layer => layer.id === layerId);
         if (
             internalLayer?.type === 'folder' &&
-            e.target.closest('.clip-layer-mirror-thumb') &&
-            !e.target.closest('.clip-layer-mirror-visibility-btn')
+            e.target.closest(this._getLayerPanelCardVariantConfig('clip-layer-mirror').thumbSelector) &&
+            !e.target.closest(this._getLayerPanelCardVariantConfig('clip-layer-mirror').visibilityButtonSelector)
         ) {
             this._selectClipLayerMirrorRow(mirrorRow, { syncWorkingLayer: false, renderAnimationTable: true });
             this._toggleClipInternalFolder(assetId, layerId);
@@ -278,19 +280,21 @@ export class LayerPanelRenderer {
     }
 
     _handleLayerPanelCardPointerDown(e) {
-        const mirrorRow = e.target.closest('.clip-layer-mirror-row');
+        const clipMirrorVariant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
+        const legacyVariant = this._getLayerPanelCardVariantConfig('legacy-layer-card');
+        const mirrorRow = e.target.closest(clipMirrorVariant.rowSelector);
         if (mirrorRow) {
             this._handleClipLayerMirrorPointerDown(e, mirrorRow);
             return;
         }
 
-        const legacyRow = e.target.closest('.legacy-layer-card-row');
+        const legacyRow = e.target.closest(legacyVariant.rowSelector);
         if (legacyRow && !this._hasAnimationContext()) {
             this._handleLegacyLayerCardPointerDown(e, legacyRow);
         }
     }
 
-    _handleClipLayerMirrorPointerDown(e, row = e.target.closest('.clip-layer-mirror-row')) {
+    _handleClipLayerMirrorPointerDown(e, row = e.target.closest(this._getLayerPanelCardVariantConfig('clip-layer-mirror').rowSelector)) {
         this._startLayerPanelCardDrag(e, row, this._getClipLayerMirrorCardDragOptions());
     }
 
@@ -301,7 +305,7 @@ export class LayerPanelRenderer {
             rowSelector: variant.rowSelector,
             ghostClass: variant.ghostClass,
             skipDrag: (event, targetRow) => targetRow.classList.contains('is-folder')
-                && event.target.closest('.clip-layer-mirror-thumb'),
+                && event.target.closest(variant.thumbSelector),
             onSelect: (targetRow) => {
                 this._selectClipLayerMirrorRow(targetRow, {
                     syncWorkingLayer: false,
@@ -317,7 +321,7 @@ export class LayerPanelRenderer {
         };
     }
 
-    _handleLegacyLayerCardPointerDown(e, row = e.target.closest('.legacy-layer-card-row')) {
+    _handleLegacyLayerCardPointerDown(e, row = e.target.closest(this._getLayerPanelCardVariantConfig('legacy-layer-card').rowSelector)) {
         this._startLayerPanelCardDrag(e, row, this._getLegacyLayerCardDragOptions());
     }
 
@@ -353,18 +357,34 @@ export class LayerPanelRenderer {
             'clip-layer-mirror': {
                 name: 'clip-layer-mirror',
                 rowSelector: '.clip-layer-mirror-row',
+                nameSelector: '.clip-layer-mirror-name',
+                thumbSelector: '.clip-layer-mirror-thumb',
+                visibilityButtonSelector: '.clip-layer-mirror-visibility-btn',
+                clipButtonSelector: '.clip-layer-mirror-clip-btn',
                 ghostClass: 'clip-layer-mirror-drag-ghost'
             },
             'legacy-layer-card': {
                 name: 'legacy-layer-card',
                 rowSelector: '.legacy-layer-card-row',
-                ghostClass: 'layer-panel-card-drag-ghost'
+                nameSelector: '.legacy-layer-card-name',
+                ghostClass: 'layer-panel-card-drag-ghost',
+                interactiveSelectors: [
+                    '.layer-panel-card-action',
+                    '.layer-delete-button',
+                    '.layer-visibility',
+                    '.layer-opacity-control',
+                    '.layer-clip-status',
+                    '.layer-background-color-button',
+                    '.layer-duplicate-button',
+                    '.layer-merge-down-button'
+                ]
             }
         };
         return configs[variant] || {
             name: variant,
             rowSelector: '.layer-panel-card-row',
-            ghostClass: 'layer-panel-card-drag-ghost'
+            ghostClass: 'layer-panel-card-drag-ghost',
+            interactiveSelectors: []
         };
     }
 
@@ -434,7 +454,8 @@ export class LayerPanelRenderer {
         animationTable.selectedInternalLayerId = layerId;
 
         if (options.visualOnly !== false) {
-            this.container?.querySelectorAll('.clip-layer-mirror-row.is-selected').forEach(candidate => {
+            const variant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
+            this.container?.querySelectorAll(`${variant.rowSelector}.is-selected`).forEach(candidate => {
                 candidate.classList.toggle('is-selected', candidate === row);
             });
             row.classList.add('is-selected');
@@ -550,11 +571,18 @@ export class LayerPanelRenderer {
 
     _applyLayerPanelCardDrop(drag) {
         if (!drag?.onDrop) return false;
-        return drag.onDrop({
+        return drag.onDrop(this._createLayerPanelCardDropPayload(drag)) === true;
+    }
+
+    _createLayerPanelCardDropPayload(drag) {
+        return {
             drag,
-            targetRow: drag.targetRow,
-            placement: drag.placement
-        }) === true;
+            targetRow: drag?.targetRow || null,
+            placement: drag?.placement || null,
+            dragKind: drag?.dragKind || '',
+            layerId: drag?.layerId || '',
+            assetId: drag?.assetId || ''
+        };
     }
 
     _finishLayerPanelCardDrag() {
@@ -576,21 +604,17 @@ export class LayerPanelRenderer {
     }
 
     _clearLayerPanelCardDropTarget() {
-        const selector = this._cardDrag?.rowSelector || '.clip-layer-mirror-row';
+        const fallbackVariant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
+        const selector = this._cardDrag?.rowSelector || fallbackVariant.rowSelector;
         this.container?.querySelectorAll(`${selector}.is-dnd-before, ${selector}.is-dnd-after, ${selector}.is-dnd-inside`).forEach(row => {
             row.classList.remove('is-dnd-before', 'is-dnd-after', 'is-dnd-inside');
         });
     }
 
     _getLegacyLayerCardInteractiveSelector(extraSelector = '') {
+        const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card');
         return [
-            '.layer-delete-button',
-            '.layer-visibility',
-            '.layer-opacity-control',
-            '.layer-clip-status',
-            '.layer-background-color-button',
-            '.layer-duplicate-button',
-            '.layer-merge-down-button',
+            ...(variant.interactiveSelectors || []),
             'input',
             'textarea',
             'select',
@@ -685,7 +709,7 @@ export class LayerPanelRenderer {
             if (!img) {
                 img = this._createLayerThumbnailImage();
                 thumbnailContainer.innerHTML = '';
-                thumbnailContainer.appendChild(img);
+                this._appendLayerPanelCardParts(thumbnailContainer, img);
             } else {
                 img.classList.add('layer-panel-card-thumb-image', 'layer-thumbnail-image');
             }
@@ -753,7 +777,7 @@ export class LayerPanelRenderer {
         // Phase 4z15: CAF読み取り専用ヘッダーの描画
         const cafHeader = this.createCafReadonlyHeader();
         if (cafHeader) {
-            this.container.appendChild(cafHeader);
+            this._appendLayerPanelCardParts(this.container, cafHeader);
         }
 
         const reversedLayers = [...layers].reverse();
@@ -785,7 +809,7 @@ export class LayerPanelRenderer {
                 ? this.createFolderElement(layer, originalIndex, isActive, layers, isSelected)
                 : this.createLayerElement(layer, originalIndex, isActive, animationSystem, isSelected);
 
-            this.container.appendChild(layerElement);
+            this._appendLayerPanelCardParts(this.container, layerElement);
         });
 
         this._updateScrollState();
@@ -810,6 +834,28 @@ export class LayerPanelRenderer {
         isFolder = false,
         isBackground = false
     } = {}) {
+        return this._createLayerPanelCardRowElement(
+            this._createLegacyLayerCardRowModel({
+                layer,
+                index,
+                isActive,
+                isSelected,
+                allLayers,
+                isFolder,
+                isBackground
+            })
+        );
+    }
+
+    _createLegacyLayerCardRowModel({
+        layer,
+        index,
+        isActive = false,
+        isSelected = false,
+        allLayers = [],
+        isFolder = false,
+        isBackground = false
+    } = {}) {
         const depth = this._calculateIndentLevel(layer, allLayers);
         const isExpanded = layer?.layerData?.folderExpanded;
         const leftOffset = depth * 12;
@@ -817,7 +863,8 @@ export class LayerPanelRenderer {
         const bgColor = isFolder
             ? (isExpanded ? '#e9c2ba' : '#cf9c97')
             : '#ffffee';
-        const cardModel = this._createLayerPanelCardRowModel('legacy-layer-card', {
+        const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
+        return this._createLayerPanelCardRowModel(variant, {
             classOptions: {
                 isActive,
                 isSelected,
@@ -859,13 +906,13 @@ export class LayerPanelRenderer {
                 '--legacy-card-border-width': isActive && !isBackground ? '2px' : ''
             }
         });
-        const card = this._createLayerPanelCardRowElement(cardModel);
-        return card;
     }
 
     _createLayerPanelCardRowModel(variant, { classOptions = {}, dataOptions = {}, styleVars = {} } = {}) {
+        const resolvedVariant = this._getLayerPanelCardVariantConfig(variant).name;
         return {
-            className: this._getLayerPanelCardClassNames(variant, classOptions),
+            variant: resolvedVariant,
+            className: this._getLayerPanelCardClassNames(resolvedVariant, classOptions),
             dataOptions,
             dataAttributes: this._createLayerPanelCardDataAttributes(dataOptions),
             styleVars,
@@ -955,36 +1002,36 @@ export class LayerPanelRenderer {
     }
 
     _getLayerPanelCardPartClassName(variant, part, extraClasses = []) {
+        const resolvedVariant = variant ? this._getLayerPanelCardVariantConfig(variant).name : '';
         return [
             'layer-panel-card-' + part,
-            variant ? `${variant}-${part}` : '',
+            resolvedVariant ? `${resolvedVariant}-${part}` : '',
             ...(Array.isArray(extraClasses) ? extraClasses : [extraClasses])
         ].filter(Boolean).join(' ');
     }
 
     _appendLegacyLayerCardDetails(card, layer, index) {
-        const details = this._createLayerPanelCardPartElement('legacy-layer-card', 'details');
+        const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
+        const details = this._createLayerPanelCardPartElement(variant, 'details');
 
         const opacityContainer = this._createOpacityControl(layer, index);
-        details.appendChild(opacityContainer);
 
         const nameSpan = this._createLayerName(layer, index, {
-            extraClasses: [this._getLayerPanelCardPartClassName('legacy-layer-card', 'name')]
+            extraClasses: [this._getLayerPanelCardPartClassName(variant, 'name')]
         });
-        details.appendChild(nameSpan);
+        this._appendLayerPanelCardParts(details, opacityContainer, nameSpan);
 
-        card.appendChild(details);
+        this._appendLayerPanelCardParts(card, details);
         return details;
     }
 
     _appendLegacyLayerCardActionIcons(card, layer, index, options = {}) {
+        const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
         const thirdIcon = options.thirdIcon || this._createClipStatusIcon(layer, index);
-        this._applyLayerPanelCardActionClasses(thirdIcon, 'legacy-layer-card', 'clip', 'legacy-layer-card-third-action');
-        card.appendChild(thirdIcon);
+        this._appendLayerPanelCardActionIcon(card, thirdIcon, variant, 'clip', 'legacy-layer-card-third-action');
 
         const visibilityIcon = this._createVisibilityIcon(layer, index);
-        this._applyLayerPanelCardActionClasses(visibilityIcon, 'legacy-layer-card', 'visibility', 'legacy-layer-card-visibility-action');
-        card.appendChild(visibilityIcon);
+        this._appendLayerPanelCardActionIcon(card, visibilityIcon, variant, 'visibility', 'legacy-layer-card-visibility-action');
     }
 
     _attachLegacyLayerCardClick(card, index, options = {}) {
@@ -1012,15 +1059,37 @@ export class LayerPanelRenderer {
     }
 
     _appendLegacyLayerCardThumbnail(card, thumbnail) {
-        thumbnail.classList.add('layer-panel-card-thumb', 'legacy-layer-card-thumb');
-        card.appendChild(thumbnail);
+        const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
+        thumbnail.classList.add('layer-panel-card-thumb', `${variant}-thumb`);
+        this._appendLayerPanelCardParts(card, thumbnail);
         return thumbnail;
     }
 
     _createLayerPanelCardChildLineElement() {
-        return this._createLayerPanelCardPart('div', 'layer-panel-card-child-line folder-child-line', {
+        return this._createLayerPanelCardPartElement('', 'child-line', {
+            extraClasses: ['folder-child-line'],
             attributes: { 'aria-hidden': 'true' }
         });
+    }
+
+    _createLayerPanelCardPartModel(variant, part, {
+        tagName = 'div',
+        extraClasses = [],
+        attributes = {},
+        styleVars = {},
+        rawAttributes = '',
+        extraAttributes = {},
+        content = ''
+    } = {}) {
+        return {
+            tagName,
+            className: this._getLayerPanelCardPartClassName(variant, part, extraClasses),
+            attributes,
+            styleVars,
+            rawAttributes,
+            extraAttributes,
+            content
+        };
     }
 
     _createLayerPanelCardPartElement(variant, part, {
@@ -1029,11 +1098,28 @@ export class LayerPanelRenderer {
         attributes = {},
         styleVars = {}
     } = {}) {
-        return this._createLayerPanelCardPart(
+        const partModel = this._createLayerPanelCardPartModel(variant, part, {
             tagName,
-            this._getLayerPanelCardPartClassName(variant, part, extraClasses),
-            { attributes, styleVars }
+            extraClasses,
+            attributes,
+            styleVars
+        });
+        return this._createLayerPanelCardPart(
+            partModel.tagName,
+            partModel.className,
+            {
+                attributes: partModel.attributes,
+                styleVars: partModel.styleVars
+            }
         );
+    }
+
+    _appendLayerPanelCardParts(parent, ...parts) {
+        if (!parent?.appendChild) return parent || null;
+        parts
+            .filter(Boolean)
+            .forEach(part => parent.appendChild(part));
+        return parent;
     }
 
     _createLayerPanelCardPartHtml(variant, part, {
@@ -1043,12 +1129,19 @@ export class LayerPanelRenderer {
         extraAttributes = {},
         content = ''
     } = {}) {
-        return this._createLayerPanelElementHtml({
+        const partModel = this._createLayerPanelCardPartModel(variant, part, {
             tagName,
-            className: this._getLayerPanelCardPartClassName(variant, part, extraClasses),
+            extraClasses,
             rawAttributes,
             extraAttributes,
             content
+        });
+        return this._createLayerPanelElementHtml({
+            tagName: partModel.tagName,
+            className: partModel.className,
+            rawAttributes: partModel.rawAttributes,
+            extraAttributes: partModel.extraAttributes,
+            content: partModel.content
         });
     }
 
@@ -1073,6 +1166,33 @@ export class LayerPanelRenderer {
             .split(/\s+/)
             .filter(Boolean)
             .forEach(className => element.classList.add(className));
+    }
+
+    _applyLayerPanelStateClasses(element, stateClasses = {}) {
+        if (!element?.classList) return;
+        Object.entries(stateClasses).forEach(([className, isEnabled]) => {
+            element.classList.toggle(className, !!isEnabled);
+        });
+    }
+
+    _createLayerPanelStateClassNames(stateClasses = {}) {
+        return Object.entries(stateClasses)
+            .filter(([, isEnabled]) => !!isEnabled)
+            .map(([className]) => className);
+    }
+
+    _createLayerPanelClassName(...classGroups) {
+        return classGroups.flatMap(group => {
+            if (Array.isArray(group)) return group;
+            return [group];
+        }).filter(Boolean).join(' ');
+    }
+
+    _appendLayerPanelCardActionIcon(card, icon, variant, actionRole, extraClasses = []) {
+        if (!card || !icon) return null;
+        this._applyLayerPanelCardActionClasses(icon, variant, actionRole, extraClasses);
+        this._appendLayerPanelCardParts(card, icon);
+        return icon;
     }
 
 
@@ -1107,8 +1227,10 @@ export class LayerPanelRenderer {
         });
 
         const isExpanded = folder.layerData?.folderExpanded;
-        thumbnailContainer.classList.toggle('is-expanded', !!isExpanded);
-        thumbnailContainer.classList.toggle('is-collapsed', !isExpanded);
+        this._applyLayerPanelStateClasses(thumbnailContainer, {
+            'is-expanded': isExpanded,
+            'is-collapsed': !isExpanded
+        });
         thumbnailContainer.innerHTML = isExpanded ? UI_ICONS.folderOpen : UI_ICONS.folder;
         const svg = thumbnailContainer.querySelector('svg');
         if (svg) {
@@ -1177,22 +1299,23 @@ export class LayerPanelRenderer {
         });
 
         if (hasParent) {
-            layerDiv.appendChild(this._createLayerPanelCardChildLineElement());
+            this._appendLayerPanelCardParts(layerDiv, this._createLayerPanelCardChildLineElement());
         }
 
         if (isBackground) {
+            const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
             const thumbnail = this.createThumbnail(layer, index);
             this._appendLegacyLayerCardThumbnail(layerDiv, thumbnail);
 
             const nameSpan = this._createLayerPanelNameElement({
                 text: '背景',
                 extraClasses: [
-                    this._getLayerPanelCardPartClassName('legacy-layer-card', 'name'),
+                    this._getLayerPanelCardPartClassName(variant, 'name'),
                     'legacy-layer-card-background-name'
                 ],
                 title: '背景レイヤー'
             });
-            layerDiv.appendChild(nameSpan);
+            this._appendLayerPanelCardParts(layerDiv, nameSpan);
 
             const bucketIcon = this._createBucketIcon(index, layer);
             this._appendLegacyLayerCardActionIcons(layerDiv, layer, index, {
@@ -1220,8 +1343,10 @@ export class LayerPanelRenderer {
             iconName: canToggle || isClipping ? 'paperclip' : '',
             title: isClipping ? 'クリッピングON' : 'クリッピング未使用'
         });
-        clipIcon.classList.toggle('is-clipping', isClipping);
-        clipIcon.classList.toggle('is-toggleable', canToggle);
+        this._applyLayerPanelStateClasses(clipIcon, {
+            'is-clipping': isClipping,
+            'is-toggleable': canToggle
+        });
 
         if (canToggle) {
             clipIcon.addEventListener('click', (e) => {
@@ -1311,13 +1436,14 @@ export class LayerPanelRenderer {
             dataAttributes,
             extraAttributes
         });
-        const icon = document.createElement(buttonModel.tagName);
-        icon.className = buttonModel.className;
-        if (this._isLayerPanelButtonTag(buttonModel.tagName)) {
-            icon.type = 'button';
-        }
-        icon.innerHTML = buttonModel.iconHtml;
-        this._applyLayerPanelAttributes(icon, buttonModel.attributes);
+        return this._createLayerPanelButtonElementFromModel(buttonModel);
+    }
+
+    _createLayerPanelButtonElementFromModel(buttonModel = {}) {
+        const icon = document.createElement(buttonModel.tagName || 'div');
+        icon.className = buttonModel.className || '';
+        icon.innerHTML = buttonModel.iconHtml || '';
+        this._applyLayerPanelAttributes(icon, buttonModel.attributes || {});
         return icon;
     }
 
@@ -1333,15 +1459,17 @@ export class LayerPanelRenderer {
         dataAttributes = {},
         extraAttributes = {}
     } = {}) {
+        const resolvedTagName = this._resolveLayerPanelTagName(tagName, fallbackTagName);
         return {
-            tagName: this._resolveLayerPanelTagName(tagName, fallbackTagName),
+            tagName: resolvedTagName,
             className: this._createLayerPanelButtonClassName(className, baseClass),
             iconHtml: this._resolveLayerPanelIconHtml(iconName, fallbackIconName),
             attributes: this._createLayerPanelButtonAttributes({
                 dataAttributes,
                 extraAttributes,
                 title,
-                ariaLabel
+                ariaLabel,
+                isButtonTag: this._isLayerPanelButtonTag(resolvedTagName)
             })
         };
     }
@@ -1354,11 +1482,13 @@ export class LayerPanelRenderer {
         dataAttributes = {},
         extraAttributes = {},
         title = '',
-        ariaLabel = ''
+        ariaLabel = '',
+        isButtonTag = false
     } = {}) {
         return {
             ...dataAttributes,
             ...extraAttributes,
+            type: isButtonTag ? 'button' : '',
             title,
             'aria-label': ariaLabel
         };
@@ -1391,10 +1521,11 @@ export class LayerPanelRenderer {
             text: this._getBlendModeLabel(blendMode),
             className: 'layer-blend-mode-label'
         });
-        blendLabel.classList.toggle('is-normal', blendMode === 'normal');
+        this._applyLayerPanelStateClasses(blendLabel, {
+            'is-normal': blendMode === 'normal'
+        });
 
-        opacityContainer.appendChild(opacityValue);
-        opacityContainer.appendChild(blendLabel);
+        this._appendLayerPanelCardParts(opacityContainer, opacityValue, blendLabel);
 
         return opacityContainer;
     }
@@ -1411,11 +1542,22 @@ export class LayerPanelRenderer {
         return this._createLayerPanelTextSpanElement({ text, className, title });
     }
 
+    _createLayerPanelTextSpanModel({ text = '', className = '', title = '' } = {}) {
+        return {
+            tagName: 'span',
+            text,
+            className,
+            attributes: { title },
+            content: this._escapeHtml(text)
+        };
+    }
+
     _createLayerPanelTextSpanElement({ text = '', className = '', title = '' } = {}) {
-        const element = this._createLayerPanelCardPart('span', className, {
-            attributes: { title }
+        const textModel = this._createLayerPanelTextSpanModel({ text, className, title });
+        const element = this._createLayerPanelCardPart(textModel.tagName, textModel.className, {
+            attributes: textModel.attributes
         });
-        element.textContent = text;
+        element.textContent = textModel.text;
         return element;
     }
 
@@ -1988,12 +2130,28 @@ export class LayerPanelRenderer {
         }
     }
 
-    _createLayerPanelNameElement({ text = '', extraClasses = [], title = '' } = {}) {
-        return this._createLayerPanelTextSpanElement({
+    _createLayerPanelNameModel({ text = '', extraClasses = [], title = '', baseClasses = ['layer-name'] } = {}) {
+        return {
             text,
-            className: ['layer-name', ...extraClasses].filter(Boolean).join(' '),
+            className: [
+                ...(Array.isArray(baseClasses) ? baseClasses : [baseClasses]),
+                ...(Array.isArray(extraClasses) ? extraClasses : [extraClasses])
+            ].filter(Boolean).join(' '),
             title
+        };
+    }
+
+    _createLayerPanelNameElement(options = {}) {
+        const nameModel = this._createLayerPanelNameModel(options);
+        return this._createLayerPanelTextSpanElement(nameModel);
+    }
+
+    _createLayerPanelCardNameHtml(variant, options = {}) {
+        const nameModel = this._createLayerPanelNameModel({
+            ...options,
+            baseClasses: []
         });
+        return this._createLayerPanelCardTextPartHtml(variant, 'name', nameModel);
     }
 
     _createLayerName(layer, index, options = {}) {
@@ -2023,59 +2181,73 @@ export class LayerPanelRenderer {
     }
 
     _createDeleteButton(index) {
-        const deleteBtn = this._createLayerPanelIconButton({
+        return this._createLegacyLayerOperationButton({
+            index,
             tagName: 'button',
             className: 'layer-delete-button',
             baseClass: 'ui-close-button ui-close-button--small',
             iconName: 'close',
             title: 'レイヤーを削除',
-            ariaLabel: 'レイヤーを削除'
+            ariaLabel: 'レイヤーを削除',
+            onActivate: () => this._deleteLegacyLayerFromClick(index)
         });
-
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._deleteLegacyLayerFromClick(index);
-        });
-
-        return deleteBtn;
     }
 
     _createDuplicateButton(index) {
-        const btn = this._createLayerPanelIconButton({
+        return this._createLegacyLayerOperationButton({
+            index,
             className: 'layer-duplicate-button',
             iconName: 'duplicate',
-            title: 'レイヤーを複製'
+            title: 'レイヤーを複製',
+            onActivate: () => this._duplicateLegacyLayerFromClick(index)
         });
-
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._duplicateLegacyLayerFromClick(index);
-        });
-
-        return btn;
     }
 
     _createMergeDownButton(index) {
-        const btn = this._createLayerPanelIconButton({
-            className: 'layer-merge-down-button',
-            iconName: 'mergeDown',
-            title: '下のレイヤーと結合'
-        });
-
         const layers = this.layerSystem?.getLayers?.() || [];
         const bottomLayer = layers[index - 1];
         const canMergeDown = index > 1 && !bottomLayer?.layerData?.isBackground && !bottomLayer?.layerData?.isFolder;
 
-        if (!canMergeDown) {
-            btn.classList.add('is-disabled');
-        }
+        return this._createLegacyLayerOperationButton({
+            index,
+            className: 'layer-merge-down-button',
+            iconName: 'mergeDown',
+            title: '下のレイヤーと結合',
+            isDisabled: !canMergeDown,
+            onActivate: () => this._mergeLegacyLayerDownFromClick(index)
+        });
+    }
 
+    _createLegacyLayerOperationButton({
+        index,
+        tagName = 'div',
+        className = '',
+        baseClass = 'ui-icon-button ui-icon-button--small',
+        iconName = '',
+        title = '',
+        ariaLabel = '',
+        isDisabled = false,
+        onActivate = null
+    } = {}) {
+        const btn = this._createLayerPanelIconButton({
+            tagName,
+            className,
+            baseClass,
+            iconName,
+            title,
+            ariaLabel,
+            dataAttributes: {
+                'data-layer-index': Number.isInteger(index) ? index : ''
+            }
+        });
+        this._applyLayerPanelStateClasses(btn, {
+            'is-disabled': isDisabled
+        });
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (!canMergeDown) return;
-            this._mergeLegacyLayerDownFromClick(index);
+            if (isDisabled) return;
+            onActivate?.();
         });
-
         return btn;
     }
 
@@ -2111,7 +2283,7 @@ export class LayerPanelRenderer {
             if (cachedUrl) {
                 const img = this._createLayerThumbnailImage();
                 img.src = cachedUrl;
-                thumbnailContainer.appendChild(img);
+                this._appendLayerPanelCardParts(thumbnailContainer, img);
                 return thumbnailContainer;
             }
         }
@@ -2123,12 +2295,9 @@ export class LayerPanelRenderer {
     _createLayerThumbnailContainer(index, { extraClasses = [], width = 40, height = 32 } = {}) {
         return this._createLayerPanelCardPart('div', ['layer-thumbnail', ...extraClasses].filter(Boolean).join(' '), {
             attributes: { 'data-layer-index': index },
-            styleVars: {
-                '--card-thumb-width': `${Math.max(1, width)}px`,
-                '--card-thumb-height': `${Math.max(1, height)}px`,
-                '--legacy-thumb-width': `${Math.max(1, width)}px`,
-                '--legacy-thumb-height': `${Math.max(1, height)}px`
-            }
+            styleVars: this._createLayerPanelCardThumbnailStyleVars({ width, height }, {
+                includeLegacyVars: true
+            })
         });
     }
 
@@ -2395,9 +2564,10 @@ export class LayerPanelRenderer {
         const animationTarget = this._getAnimationAttributeTarget?.();
         const animationAssetId = animationTarget?.asset?.id;
         if (animationTarget?.animationTable && animationAssetId && animationTarget?.internalLayer?.id) {
+            const variant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
             const mirrorName = this.container?.querySelector(
-                `.clip-layer-mirror-row[data-asset-id="${CSS.escape(animationAssetId)}"]` +
-                `[data-internal-layer-id="${CSS.escape(animationTarget.internalLayer.id)}"] .clip-layer-mirror-name`
+                `${variant.rowSelector}[data-asset-id="${CSS.escape(animationAssetId)}"]` +
+                `[data-internal-layer-id="${CSS.escape(animationTarget.internalLayer.id)}"] ${variant.nameSelector}`
             );
             if (mirrorName) {
                 e.preventDefault();
@@ -2541,84 +2711,151 @@ export class LayerPanelRenderer {
             const firstClip = group.clips[0];
             const selectedClipEntry = group.clips.find(clip => clip.clipId === selectedCelId) || null;
             const primaryClipEntry = selectedClipEntry || firstClip;
-            const groupSelectedClass = selectedClipEntry ? ' is-selected' : '';
             const isExpanded = !this._collapsedCafClipIds.has(firstClip?.clipId)
                 && (!!selectedClipEntry || this._expandedCafClipIds.has(firstClip?.clipId));
-            const groupExpandedClass = isExpanded ? ' is-expanded' : ' is-collapsed';
+            const groupStateClasses = this._createLayerPanelStateClassNames({
+                'is-selected': selectedClipEntry,
+                'is-expanded': isExpanded,
+                'is-collapsed': !isExpanded
+            });
             const laneLabel = primaryClipEntry?.laneName || (Number.isInteger(primaryClipEntry?.laneIndex) ? `Lane ${primaryClipEntry.laneIndex + 1}` : '');
-            const folderId = this._escapeHtml(group.folderId || '');
-            const laneId = this._escapeHtml(primaryClipEntry?.laneId || '');
-            const primaryClipId = this._escapeHtml(primaryClipEntry?.clipId || '');
-            const primaryAssetId = this._escapeHtml(primaryClipEntry?.assetId || '');
             const clipEntry = primaryClipEntry?.clipId ? animationTable.model.findClipEntry(primaryClipEntry.clipId) : null;
             const isClipVisible = clipEntry?.clip?.visible !== false;
-            const toggleTitle = isExpanded ? 'CAFを閉じる' : 'CAFを開く';
-            const toggleButtonHtml = this._createLayerPanelIconButtonHtml({
-                className: 'caf-simple-toggle-btn',
-                baseClass: 'caf-simple-icon',
-                iconName: isExpanded ? 'folderOpen' : 'folder',
-                title: toggleTitle,
-                ariaLabel: toggleTitle,
-                dataAttributes: {
-                    'data-clip-id': firstClip?.clipId || ''
-                },
-                extraAttributes: {
-                    'aria-expanded': isExpanded ? 'true' : 'false'
-                }
+            const toggleButtonHtml = this._createCafHeaderToggleButtonHtml({
+                clipId: firstClip?.clipId || '',
+                isExpanded
             });
-            const visibilityButtonHtml = this._createLayerPanelIconButtonHtml({
-                className: `caf-simple-visibility-btn${isClipVisible ? '' : ' is-hidden'}`,
-                iconName: isClipVisible ? 'eye' : 'eyeOff',
-                fallbackIconName: 'eye',
-                title: 'CAF Clipの表示/非表示',
-                dataAttributes: {
-                    'data-clip-id': primaryClipEntry?.clipId || ''
-                }
+            const visibilityButtonHtml = this._createCafHeaderVisibilityButtonHtml({
+                clipId: primaryClipEntry?.clipId || '',
+                isVisible: isClipVisible
             });
             const mirrorClipEntry = primaryClipEntry;
             const mirrorAsset = mirrorClipEntry?.assetId
                 ? animationTable.model.getClipAsset(mirrorClipEntry.assetId)
                 : null;
-            html += `
-                <div class="caf-simple-group${groupSelectedClass}${groupExpandedClass}">
-                    <div class="caf-simple-group-title${groupSelectedClass}${groupExpandedClass}"
-                         data-clip-id="${primaryClipId}"
-                         data-asset-id="${primaryAssetId}"
-                         title="CAF Clipを選択">
-                        ${toggleButtonHtml}
-                        <span class="caf-simple-name" data-folder-id="${folderId}">${this._escapeHtml(folderName)}</span>
-                        <span class="caf-simple-lane" data-lane-id="${laneId}">${this._escapeHtml(laneLabel)}</span>
-                        ${visibilityButtonHtml}
-                    </div>
-            `;
+            const folderNameHtml = this._createCafHeaderTextHtml('caf-simple-name', folderName, {
+                'data-folder-id': group.folderId || ''
+            });
+            const laneNameHtml = this._createCafHeaderTextHtml('caf-simple-lane', laneLabel, {
+                'data-lane-id': primaryClipEntry?.laneId || ''
+            });
+            let groupContent = this._createCafHeaderGroupTitleHtml({
+                className: this._createLayerPanelClassName('caf-simple-group-title', groupStateClasses),
+                clipId: primaryClipEntry?.clipId || '',
+                assetId: primaryClipEntry?.assetId || '',
+                content: `
+                    ${toggleButtonHtml}
+                    ${folderNameHtml}
+                    ${laneNameHtml}
+                    ${visibilityButtonHtml}
+                `
+            });
 
             group.clips.forEach(clipEntry => {
                 const isSelected = selectedCelId === clipEntry.clipId;
                 const isClipVisible = clipEntry.visible !== false;
-                const selectedClass = isSelected ? ' is-selected' : '';
-                const hiddenClass = isClipVisible ? '' : ' is-hidden';
-                const clipId = this._escapeHtml(clipEntry.clipId);
-                const assetId = this._escapeHtml(clipEntry.assetId);
-
-                html += `
-                    <div class="caf-simple-asset${selectedClass}${hiddenClass}"
-                         data-clip-id="${clipId}"
-                         data-asset-id="${assetId}"
-                         title="Click to select clip in Timeline">
-                        ${this._escapeHtml(clipEntry.assetName)}
-                    </div>
-                `;
+                const assetClassName = this._createLayerPanelClassName(
+                    'caf-simple-asset',
+                    this._createLayerPanelStateClassNames({
+                        'is-selected': isSelected,
+                        'is-hidden': !isClipVisible
+                    })
+                );
+                groupContent += this._createCafHeaderAssetHtml({
+                    className: assetClassName,
+                    clipId: clipEntry.clipId,
+                    assetId: clipEntry.assetId,
+                    assetName: clipEntry.assetName
+                });
             });
 
             if (isExpanded && mirrorAsset) {
-                html += this._createClipAssetLayerMirrorHtml(mirrorAsset, animationTable);
+                groupContent += this._createClipAssetLayerMirrorHtml(mirrorAsset, animationTable);
             }
 
-            html += `</div>`;
+            html += this._createCafHeaderGroupHtml({
+                className: this._createLayerPanelClassName('caf-simple-group', groupStateClasses),
+                content: groupContent
+            });
         });
 
         header.innerHTML = html;
         return header;
+    }
+
+    _createCafHeaderTextHtml(className, text, extraAttributes = {}) {
+        return this._createLayerPanelElementHtml({
+            tagName: 'span',
+            className,
+            extraAttributes,
+            content: this._escapeHtml(text || '')
+        });
+    }
+
+    _createCafHeaderToggleButtonHtml({ clipId = '', isExpanded = false } = {}) {
+        const title = isExpanded ? 'CAFを閉じる' : 'CAFを開く';
+        return this._createLayerPanelIconButtonHtml({
+            className: 'caf-simple-toggle-btn',
+            baseClass: 'caf-simple-icon',
+            iconName: isExpanded ? 'folderOpen' : 'folder',
+            title,
+            ariaLabel: title,
+            dataAttributes: {
+                'data-clip-id': clipId || ''
+            },
+            extraAttributes: {
+                'aria-expanded': isExpanded ? 'true' : 'false'
+            }
+        });
+    }
+
+    _createCafHeaderVisibilityButtonHtml({ clipId = '', isVisible = true } = {}) {
+        return this._createLayerPanelIconButtonHtml({
+            className: this._createLayerPanelClassName(
+                'caf-simple-visibility-btn',
+                this._createLayerPanelStateClassNames({ 'is-hidden': !isVisible })
+            ),
+            iconName: isVisible ? 'eye' : 'eyeOff',
+            fallbackIconName: 'eye',
+            title: 'CAF Clipの表示/非表示',
+            dataAttributes: {
+                'data-clip-id': clipId || ''
+            }
+        });
+    }
+
+    _createCafHeaderGroupHtml({ className = 'caf-simple-group', content = '' } = {}) {
+        return this._createLayerPanelElementHtml({
+            tagName: 'div',
+            className,
+            content
+        });
+    }
+
+    _createCafHeaderGroupTitleHtml({ className = 'caf-simple-group-title', clipId = '', assetId = '', content = '' } = {}) {
+        return this._createLayerPanelElementHtml({
+            tagName: 'div',
+            className,
+            extraAttributes: {
+                'data-clip-id': clipId || '',
+                'data-asset-id': assetId || '',
+                title: 'CAF Clipを選択'
+            },
+            content
+        });
+    }
+
+    _createCafHeaderAssetHtml({ className = 'caf-simple-asset', clipId = '', assetId = '', assetName = '' } = {}) {
+        return this._createLayerPanelElementHtml({
+            tagName: 'div',
+            className,
+            extraAttributes: {
+                'data-clip-id': clipId || '',
+                'data-asset-id': assetId || '',
+                title: 'Click to select clip in Timeline'
+            },
+            content: this._escapeHtml(assetName || '')
+        });
     }
 
     _getFrameAssetTreeOptionsForAnimationScope(animationTable) {
@@ -2699,38 +2936,16 @@ export class LayerPanelRenderer {
             // Inspectorと同じ表示順（先頭が前面）
             asset.internalLayers.forEach(layer => {
                 if (hiddenByCollapsedFolderIds.has(layer.id)) return;
-                const isSelected = selectedInternalLayerId === layer.id;
-                const isVisible = layer.visible !== false;
-                const isEffectivelyVisible = this._isClipAssetInternalLayerEffectivelyVisible(asset, layer);
-                const isHidden = !isEffectivelyVisible;
-                const isFolder = layer.type === 'folder';
-                const isFolderCollapsed = isFolder && this._isClipInternalFolderCollapsed(asset.id, layer.id);
-                const depth = internalLayerDepths.get(layer.id) || 0;
-
-                const snapshot = isFolder ? null : animationTable.model.getDrawingSnapshot(layer.drawingSnapshotId);
-                const thumbUrl = this._snapshotToDataUrl(snapshot);
-                const opacityLabel = isFolder ? 'Folder' : `${Math.round(layer.opacity * 100)}%`;
-                const visibilityIconName = isVisible ? 'eye' : 'eyeOff';
-                layerHtml += this._createLayerPanelCardHtml({
-                    variant: 'clip-layer-mirror',
-                    assetId: asset.id,
-                    layerId: layer.id,
-                    depth,
-                    name: layer.name,
-                    metaLabel: opacityLabel,
-                    thumbnailSize: mirrorThumbSize,
-                    thumbnailHtml: isFolder
-                        ? (isFolderCollapsed ? UI_ICONS.folder : UI_ICONS.folderOpen)
-                        : this._createLayerThumbnailImageHtml(thumbUrl),
-                    isSelected,
-                    isHidden,
-                    isFolder,
-                    isCollapsed: isFolderCollapsed,
-                    isClipping: layer.clipping === true,
-                    visibilityIconName,
-                    clipTitle: 'クリッピング',
-                    visibilityTitle: '内部レイヤーの表示/非表示'
-                });
+                layerHtml += this._createLayerPanelCardHtml(
+                    this._createClipLayerMirrorCardOptions({
+                        asset,
+                        layer,
+                        animationTable,
+                        selectedInternalLayerId,
+                        internalLayerDepths,
+                        thumbnailSize: mirrorThumbSize
+                    })
+                );
             });
         }
 
@@ -2744,6 +2959,42 @@ export class LayerPanelRenderer {
             className: 'layer-panel-card-group clip-layer-mirror',
             content: listHtml
         });
+    }
+
+    _createClipLayerMirrorCardOptions({
+        asset,
+        layer,
+        animationTable,
+        selectedInternalLayerId = '',
+        internalLayerDepths = new Map(),
+        thumbnailSize = { width: 34, height: 30 }
+    } = {}) {
+        const isSelected = selectedInternalLayerId === layer?.id;
+        const isVisible = layer?.visible !== false;
+        const isFolder = layer?.type === 'folder';
+        const isCollapsed = isFolder && this._isClipInternalFolderCollapsed(asset?.id, layer?.id);
+        const snapshot = isFolder ? null : animationTable?.model?.getDrawingSnapshot?.(layer?.drawingSnapshotId);
+        const thumbUrl = this._snapshotToDataUrl(snapshot);
+        return {
+            variant: 'clip-layer-mirror',
+            assetId: asset?.id || '',
+            layerId: layer?.id || '',
+            depth: internalLayerDepths.get(layer?.id) || 0,
+            name: layer?.name || '',
+            metaLabel: isFolder ? 'Folder' : `${Math.round((layer?.opacity ?? 1) * 100)}%`,
+            thumbnailSize,
+            thumbnailHtml: isFolder
+                ? (isCollapsed ? UI_ICONS.folder : UI_ICONS.folderOpen)
+                : this._createLayerThumbnailImageHtml(thumbUrl),
+            isSelected,
+            isHidden: !this._isClipAssetInternalLayerEffectivelyVisible(asset, layer),
+            isFolder,
+            isCollapsed,
+            isClipping: layer?.clipping === true,
+            visibilityIconName: isVisible ? 'eye' : 'eyeOff',
+            clipTitle: 'クリッピング',
+            visibilityTitle: '内部レイヤーの表示/非表示'
+        };
     }
 
     _createLayerPanelCardHtml(options = {}) {
@@ -2768,55 +3019,40 @@ export class LayerPanelRenderer {
                 isFolder: options.isFolder
             }
         });
-        const clipClass = options.isClipping ? ' is-clipping' : '';
-        const visibilityClass = options.isHidden ? ' is-hidden' : '';
-        const visibilityIconName = options.visibilityIconName || 'eye';
-        const clipButtonHtml = this._createLayerPanelCardActionButtonHtml(variant, 'clip', {
-            extraClasses: `${variant}-clip-btn${clipClass}`,
-            iconName: 'paperclip',
-            title: options.clipTitle || 'クリッピング',
-            dataAttributes: {
-                'data-internal-layer-id': options.layerId || '',
-                'data-asset-id': options.assetId || ''
-            }
+        const clipButtonHtml = this._createLayerPanelCardClipButtonHtml(variant, {
+            layerId: options.layerId || '',
+            assetId: options.assetId || '',
+            isClipping: options.isClipping,
+            title: options.clipTitle || 'クリッピング'
         });
-        const visibilityButtonHtml = this._createLayerPanelCardActionButtonHtml(variant, 'visibility', {
-            extraClasses: `${variant}-visibility-btn${visibilityClass}`,
-            iconName: visibilityIconName,
-            fallbackIconName: 'eye',
-            title: options.visibilityTitle || '表示/非表示',
-            dataAttributes: {
-                'data-internal-layer-id': options.layerId || '',
-                'data-asset-id': options.assetId || ''
-            }
+        const visibilityButtonHtml = this._createLayerPanelCardVisibilityButtonHtml(variant, {
+            layerId: options.layerId || '',
+            assetId: options.assetId || '',
+            isHidden: options.isHidden,
+            iconName: options.visibilityIconName || 'eye',
+            title: options.visibilityTitle || '表示/非表示'
         });
         const metaHtml = this._createLayerPanelCardTextPartHtml(variant, 'meta', {
             extraClasses: `${variant}-opacity`,
             text: options.metaLabel || ''
         });
-        const nameHtml = this._createLayerPanelCardTextPartHtml(variant, 'name', {
+        const nameHtml = this._createLayerPanelCardNameHtml(variant, {
             text: options.name || ''
         });
         const childLineHtml = this._createLayerPanelCardChildLineHtml();
-        const thumbnailExtraClasses = options.isFolder
-            ? ['layer-panel-card-thumb--folder', options.isCollapsed ? 'is-collapsed' : 'is-expanded']
-            : [];
-        const thumbnailHtml = this._createLayerPanelCardPartHtml(variant, 'thumb', {
-            extraClasses: thumbnailExtraClasses,
-            rawAttributes: thumbStyleAttributes,
+        const thumbnailHtml = this._createLayerPanelCardThumbnailHtml(variant, {
+            isFolder: options.isFolder,
+            isCollapsed: options.isCollapsed,
+            styleAttributes: thumbStyleAttributes,
             content: options.thumbnailHtml || ''
         });
-        const detailsHtml = this._createLayerPanelCardPartHtml(variant, 'details', {
-            content: `
-                    ${metaHtml}
-                    ${nameHtml}
-            `
+        const detailsHtml = this._createLayerPanelCardDetailsHtml(variant, {
+            metaHtml,
+            nameHtml
         });
 
         return this._createLayerPanelCardRowHtml({
-            className: rowModel.className,
-            rawAttributes: rowModel.dataAttributes,
-            styleAttributes: rowModel.styleAttributes,
+            cardModel: rowModel,
             content: `
                 ${childLineHtml}
                 ${thumbnailHtml}
@@ -2827,28 +3063,68 @@ export class LayerPanelRenderer {
         });
     }
 
-    _createLayerPanelCardRowHtml({ className = '', rawAttributes = '', styleAttributes = '', content = '' } = {}) {
-        const combinedAttributes = [rawAttributes, styleAttributes].filter(Boolean).join(' ');
+    _createLayerPanelCardRowHtml({
+        cardModel = null,
+        className = '',
+        rawAttributes = '',
+        styleAttributes = '',
+        content = ''
+    } = {}) {
+        const resolvedClassName = cardModel?.className || className;
+        const resolvedDataAttributes = cardModel?.dataAttributes || rawAttributes;
+        const resolvedStyleAttributes = cardModel?.styleAttributes || styleAttributes;
+        const combinedAttributes = [resolvedDataAttributes, resolvedStyleAttributes].filter(Boolean).join(' ');
         return this._createLayerPanelElementHtml({
             tagName: 'div',
-            className,
+            className: resolvedClassName,
             rawAttributes: combinedAttributes,
             content
         });
     }
 
     _createLayerPanelCardChildLineHtml() {
-        return this._createLayerPanelElementHtml({
-            className: 'layer-panel-card-child-line folder-child-line',
+        return this._createLayerPanelCardPartHtml('', 'child-line', {
+            tagName: 'div',
+            extraClasses: ['folder-child-line'],
             extraAttributes: { 'aria-hidden': 'true' }
         });
     }
 
-    _createLayerPanelCardThumbnailStyleAttributes(size = {}) {
-        return this._createLayerPanelCardStyleAttributes({
-            '--card-thumb-width': Number.isFinite(size.width) ? `${Math.max(1, size.width)}px` : '',
-            '--card-thumb-height': Number.isFinite(size.height) ? `${Math.max(1, size.height)}px` : ''
+    _createLayerPanelCardThumbnailHtml(variant, { isFolder = false, isCollapsed = false, styleAttributes = '', content = '' } = {}) {
+        const extraClasses = isFolder
+            ? ['layer-panel-card-thumb--folder', isCollapsed ? 'is-collapsed' : 'is-expanded']
+            : [];
+        return this._createLayerPanelCardPartHtml(variant, 'thumb', {
+            extraClasses,
+            rawAttributes: styleAttributes,
+            content
         });
+    }
+
+    _createLayerPanelCardDetailsHtml(variant, { metaHtml = '', nameHtml = '' } = {}) {
+        return this._createLayerPanelCardPartHtml(variant, 'details', {
+            content: `
+                ${metaHtml}
+                ${nameHtml}
+            `
+        });
+    }
+
+    _createLayerPanelCardThumbnailStyleAttributes(size = {}) {
+        return this._createLayerPanelCardStyleAttributes(
+            this._createLayerPanelCardThumbnailStyleVars(size)
+        );
+    }
+
+    _createLayerPanelCardThumbnailStyleVars(size = {}, { includeLegacyVars = false } = {}) {
+        const width = Number.isFinite(size.width) ? `${Math.max(1, size.width)}px` : '';
+        const height = Number.isFinite(size.height) ? `${Math.max(1, size.height)}px` : '';
+        return {
+            '--card-thumb-width': width,
+            '--card-thumb-height': height,
+            '--legacy-thumb-width': includeLegacyVars ? width : '',
+            '--legacy-thumb-height': includeLegacyVars ? height : ''
+        };
     }
 
     _createLayerPanelCardActionButtonHtml(variant, action, options = {}) {
@@ -2858,11 +3134,44 @@ export class LayerPanelRenderer {
         });
     }
 
+    _createLayerPanelCardClipButtonHtml(variant, { layerId = '', assetId = '', isClipping = false, title = 'クリッピング' } = {}) {
+        return this._createLayerPanelCardActionButtonHtml(variant, 'clip', {
+            extraClasses: this._createLayerPanelClassName(
+                `${variant}-clip-btn`,
+                this._createLayerPanelStateClassNames({ 'is-clipping': isClipping })
+            ),
+            iconName: 'paperclip',
+            title,
+            dataAttributes: {
+                'data-internal-layer-id': layerId || '',
+                'data-asset-id': assetId || ''
+            }
+        });
+    }
+
+    _createLayerPanelCardVisibilityButtonHtml(variant, { layerId = '', assetId = '', isHidden = false, iconName = 'eye', title = '表示/非表示' } = {}) {
+        return this._createLayerPanelCardActionButtonHtml(variant, 'visibility', {
+            extraClasses: this._createLayerPanelClassName(
+                `${variant}-visibility-btn`,
+                this._createLayerPanelStateClassNames({ 'is-hidden': isHidden })
+            ),
+            iconName,
+            fallbackIconName: 'eye',
+            title,
+            dataAttributes: {
+                'data-internal-layer-id': layerId || '',
+                'data-asset-id': assetId || ''
+            }
+        });
+    }
+
     _createLayerPanelTextSpanHtml({ className = '', text = '', title = '' } = {}) {
+        const textModel = this._createLayerPanelTextSpanModel({ text, className, title });
         return this._createLayerPanelElementHtml({
-            className,
-            extraAttributes: { title },
-            content: this._escapeHtml(text)
+            tagName: textModel.tagName,
+            className: textModel.className,
+            extraAttributes: textModel.attributes,
+            content: textModel.content
         });
     }
 
@@ -2903,13 +3212,19 @@ export class LayerPanelRenderer {
             dataAttributes,
             extraAttributes
         });
-        const attributeHtml = this._createLayerPanelDataAttributes(buttonModel.attributes);
+        return this._createLayerPanelButtonHtmlFromModel(buttonModel);
+    }
+
+    _createLayerPanelButtonHtmlFromModel(buttonModel = {}) {
+        const tagName = buttonModel.tagName || 'button';
+        const className = buttonModel.className || '';
+        const iconHtml = buttonModel.iconHtml || '';
+        const attributeHtml = this._createLayerPanelDataAttributes(buttonModel.attributes || {});
         const extraAttributeHtml = attributeHtml ? ` ${attributeHtml}` : '';
-        const typeAttributeHtml = this._isLayerPanelButtonTag(buttonModel.tagName) ? ' type="button"' : '';
         return `
-            <${buttonModel.tagName}${typeAttributeHtml} class="${this._escapeHtml(buttonModel.className)}"${extraAttributeHtml}>
-                ${buttonModel.iconHtml}
-            </${buttonModel.tagName}>
+            <${tagName} class="${this._escapeHtml(className)}"${extraAttributeHtml}>
+                ${iconHtml}
+            </${tagName}>
         `;
     }
 
