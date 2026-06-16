@@ -264,6 +264,13 @@ export class LayerSystem {
         return true;
     }
 
+    canPlaceLayerInFolder(layerId, folderId) {
+        const layers = this.getLayers();
+        const layer = layers.find(l => l.layerData?.id === layerId);
+        const folder = layers.find(l => l.layerData?.id === folderId);
+        return this._canPlaceInFolder(layer, folder);
+    }
+
     moveLayerIntoFolder(layerId, folderId) {
         const layers = this.getLayers();
         const layer = layers.find(l => l.layerData?.id === layerId);
@@ -300,6 +307,211 @@ export class LayerSystem {
         }
 
         return true;
+    }
+
+    moveLayerNearLayerInFolder(layerId, referenceLayerId, placement) {
+        if (!this._isLayerPositionPlacement(placement)) return false;
+
+        const target = this._resolveLayerNearLayerInFolderTarget(layerId, referenceLayerId);
+        if (!target) return false;
+
+        const beforeState = this._captureLayerPlacementState();
+        const applyMove = () => {
+            const moved = this._applyLayerNearLayerInFolder(layerId, referenceLayerId, placement);
+            if (moved) {
+                this._emitPanelUpdateRequest();
+            }
+            return moved;
+        };
+
+        if (historyManager && !historyManager.isApplying) {
+            const entry = {
+                name: 'layer-move-into-folder-position',
+                do: () => applyMove(),
+                undo: () => {
+                    const currentIndex = this.getLayers().findIndex(l => l.layerData?.id === layerId);
+                    this._restoreLayerPlacementState(beforeState);
+                    this._emitPanelUpdateRequest();
+                    this._emitLayerPlacementChanged({
+                        fromIndex: currentIndex,
+                        toIndex: beforeState.order.indexOf(layerId),
+                        movedLayerId: layerId
+                    });
+                },
+                meta: { layerId, referenceLayerId, placement, folderId: target.folderId }
+            };
+            historyManager.push(entry);
+            return true;
+        }
+
+        return applyMove();
+    }
+
+    _applyLayerNearLayerInFolder(layerId, referenceLayerId, placement) {
+        const target = this._resolveLayerNearLayerInFolderTarget(layerId, referenceLayerId);
+        if (!target) return false;
+
+        const { layers, layer, referenceLayer, folder, folderId } = target;
+        const previousParentId = layer.layerData.parentId || null;
+        if (previousParentId && previousParentId !== folderId) {
+            const previousFolder = layers.find(l => l.layerData?.id === previousParentId);
+            previousFolder?.layerData?.removeChild(layerId);
+        }
+
+        folder.layerData.addChild(layerId);
+        layer.layerData.parentId = folderId;
+        folder.layerData.folderExpanded = true;
+
+        const currentLayers = this.getLayers();
+        const oldIndex = currentLayers.indexOf(layer);
+        const targetIndex = currentLayers.indexOf(referenceLayer);
+        const newIndex = this._resolveLayerIndexForPlacement(oldIndex, targetIndex, placement);
+        if (newIndex === null) return false;
+
+        this._moveLayerObjectToIndex(layer, newIndex);
+        this._finalizeLayerReorder(layer);
+
+        this._emitLayerPlacementChanged({
+            layerId,
+            folderId,
+            fromIndex: oldIndex,
+            toIndex: this.getLayerIndex(layer),
+            movedLayerId: layerId,
+            expanded: true
+        });
+
+        return true;
+    }
+
+    _resolveLayerNearLayerInFolderTarget(layerId, referenceLayerId) {
+        if (!layerId || !referenceLayerId || layerId === referenceLayerId) return null;
+
+        const layers = this.getLayers();
+        const layer = layers.find(l => l.layerData?.id === layerId);
+        const referenceLayer = layers.find(l => l.layerData?.id === referenceLayerId);
+        const folderId = referenceLayer?.layerData?.parentId || null;
+        const folder = layers.find(l => l.layerData?.id === folderId);
+
+        if (!folderId || !this._canPlaceInFolder(layer, folder)) return null;
+
+        return { layers, layer, referenceLayer, folder, folderId };
+    }
+
+    _emitLayerPlacementChanged({ layerId, folderId, fromIndex, toIndex, movedLayerId, expanded } = {}) {
+        if (!this.eventBus) return;
+
+        if (layerId && folderId) {
+            this.eventBus.emit('layer:added-to-folder', { layerId, folderId });
+        }
+        if (folderId && expanded !== undefined) {
+            this.eventBus.emit('folder:toggled', { folderId, expanded });
+        }
+        this.eventBus.emit('layer:reordered', {
+            fromIndex,
+            toIndex,
+            activeIndex: this.activeLayerIndex,
+            movedLayerId
+        });
+    }
+
+    _resolveLayerIndexForPlacement(oldIndex, targetIndex, placement) {
+        if (!this._isLayerPositionPlacement(placement)) return null;
+        if (Number.isNaN(oldIndex) || Number.isNaN(targetIndex)) return null;
+        const layers = this.getLayers();
+        if (targetIndex < 0 || targetIndex >= layers.length) return null;
+
+        let newIndex = placement === 'before' ? targetIndex + 1 : targetIndex;
+        if (oldIndex < newIndex) {
+            newIndex -= 1;
+        }
+        return Math.max(0, Math.min(layers.length - 1, newIndex));
+    }
+
+    _isLayerPositionPlacement(placement) {
+        return placement === 'before' || placement === 'after';
+    }
+
+    _captureLayerPlacementState() {
+        const layers = this.getLayers();
+        return {
+            order: this._captureLayerOrderState(layers),
+            activeLayerId: layers[this.activeLayerIndex]?.layerData?.id || null,
+            activeLayerIndex: this.activeLayerIndex,
+            parents: this._captureLayerParentState(layers),
+            folders: this._captureLayerFolderState(layers)
+        };
+    }
+
+    _captureLayerOrderState(layers = this.getLayers()) {
+        return layers.map(layer => layer.layerData?.id).filter(Boolean);
+    }
+
+    _captureLayerParentState(layers = this.getLayers()) {
+        return layers.map(layer => ({
+            id: layer.layerData?.id,
+            parentId: layer.layerData?.parentId || null
+        })).filter(entry => entry.id);
+    }
+
+    _captureLayerFolderState(layers = this.getLayers()) {
+        return layers
+            .filter(layer => layer.layerData?.isFolder)
+            .map(folder => ({
+                id: folder.layerData.id,
+                children: [...(folder.layerData.children || [])],
+                folderExpanded: folder.layerData.folderExpanded
+            }));
+    }
+
+    _restoreLayerPlacementState(state) {
+        if (!state || !this.currentFrameContainer) return false;
+
+        const layers = this.getLayers();
+        const byId = new Map(layers.map(layer => [layer.layerData?.id, layer]));
+
+        this._restoreLayerParentState(state.parents, byId);
+        this._restoreLayerFolderState(state.folders, byId);
+        this._restoreLayerOrderState(state.order, byId);
+
+        const restoredLayers = this.getLayers();
+        const activeIndex = restoredLayers.findIndex(layer => layer.layerData?.id === state.activeLayerId);
+        if (activeIndex >= 0) {
+            this.activeLayerIndex = activeIndex;
+        } else if (typeof state.activeLayerIndex === 'number') {
+            this.activeLayerIndex = Math.max(0, Math.min(state.activeLayerIndex, restoredLayers.length - 1));
+        }
+        this.refreshClippingMasks();
+        return true;
+    }
+
+    _restoreLayerParentState(parents, byId) {
+        parents?.forEach(({ id, parentId }) => {
+            const layer = byId.get(id);
+            if (layer?.layerData) {
+                layer.layerData.parentId = parentId || null;
+            }
+        });
+    }
+
+    _restoreLayerFolderState(folders, byId) {
+        folders?.forEach(({ id, children, folderExpanded }) => {
+            const folder = byId.get(id);
+            if (folder?.layerData?.isFolder) {
+                folder.layerData.children = Array.isArray(children) ? [...children] : [];
+                folder.layerData.folderExpanded = folderExpanded;
+            }
+        });
+    }
+
+    _restoreLayerOrderState(order, byId) {
+        order?.forEach((id, index) => {
+            const layer = byId.get(id);
+            if (!layer) return;
+            if (layer.parent) {
+                this.currentFrameContainer.removeChild(layer);
+            }
+            this.currentFrameContainer.addChildAt(layer, Math.min(index, this.currentFrameContainer.children.length));
+        });
     }
 
     _placeDuplicatedLayer(newLayer, sourceLayer, sourceIndex) {

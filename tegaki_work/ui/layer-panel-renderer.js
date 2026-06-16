@@ -280,22 +280,35 @@ export class LayerPanelRenderer {
     }
 
     _handleLayerPanelCardPointerDown(e) {
-        const clipMirrorVariant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
-        const legacyVariant = this._getLayerPanelCardVariantConfig('legacy-layer-card');
-        const mirrorRow = e.target.closest(clipMirrorVariant.rowSelector);
-        if (mirrorRow) {
-            this._handleClipLayerMirrorPointerDown(e, mirrorRow);
-            return;
-        }
+        const target = this._resolveLayerPanelCardPointerTarget(e);
+        if (!target) return;
 
-        const legacyRow = e.target.closest(legacyVariant.rowSelector);
-        if (legacyRow && !this._hasAnimationContext()) {
-            this._handleLegacyLayerCardPointerDown(e, legacyRow);
-        }
+        this._startLayerPanelCardDrag(e, target.row, target.options);
     }
 
-    _handleClipLayerMirrorPointerDown(e, row = e.target.closest(this._getLayerPanelCardVariantConfig('clip-layer-mirror').rowSelector)) {
-        this._startLayerPanelCardDrag(e, row, this._getClipLayerMirrorCardDragOptions());
+    _resolveLayerPanelCardPointerTarget(e) {
+        for (const entry of this._getLayerPanelCardPointerDragEntries()) {
+            if (entry.disabled?.()) continue;
+            const row = e.target.closest(entry.variant.rowSelector);
+            if (row) {
+                return { row, options: entry.options };
+            }
+        }
+        return null;
+    }
+
+    _getLayerPanelCardPointerDragEntries() {
+        return [
+            {
+                variant: this._getLayerPanelCardVariantConfig('clip-layer-mirror'),
+                options: this._getClipLayerMirrorCardDragOptions()
+            },
+            {
+                variant: this._getLayerPanelCardVariantConfig('legacy-layer-card'),
+                options: this._getLegacyLayerCardDragOptions(),
+                disabled: () => this._hasAnimationContext()
+            }
+        ];
     }
 
     _getClipLayerMirrorCardDragOptions() {
@@ -315,14 +328,10 @@ export class LayerPanelRenderer {
                 });
             },
             canDropInside: (targetRow) => targetRow.classList.contains('is-folder'),
-            onDrop: ({ drag, targetRow, placement }) => {
-                this._applyClipLayerMirrorCardDropFromPointer(drag, targetRow, placement);
+            onDrop: (dropPayload) => {
+                this._applyClipLayerMirrorCardDropFromPointer(dropPayload);
             }
         };
-    }
-
-    _handleLegacyLayerCardPointerDown(e, row = e.target.closest(this._getLayerPanelCardVariantConfig('legacy-layer-card').rowSelector)) {
-        this._startLayerPanelCardDrag(e, row, this._getLegacyLayerCardDragOptions());
     }
 
     _getLegacyLayerCardDragOptions() {
@@ -346,8 +355,8 @@ export class LayerPanelRenderer {
                 }
             },
             canDropInside: (targetRow) => targetRow.dataset.isFolder === 'true',
-            onDrop: ({ drag, targetRow, placement }) => {
-                this._applyLegacyLayerCardDropFromPointer(drag, targetRow, placement);
+            onDrop: (dropPayload) => {
+                this._applyLegacyLayerCardDropFromPointer(dropPayload);
             }
         };
     }
@@ -571,7 +580,9 @@ export class LayerPanelRenderer {
 
     _applyLayerPanelCardDrop(drag) {
         if (!drag?.onDrop) return false;
-        return drag.onDrop(this._createLayerPanelCardDropPayload(drag)) === true;
+        const payload = this._createLayerPanelCardDropPayload(drag);
+        if (!this._isLayerPanelCardDropPayloadReady(payload)) return false;
+        return drag.onDrop(payload) === true;
     }
 
     _createLayerPanelCardDropPayload(drag) {
@@ -583,6 +594,10 @@ export class LayerPanelRenderer {
             layerId: drag?.layerId || '',
             assetId: drag?.assetId || ''
         };
+    }
+
+    _isLayerPanelCardDropPayloadReady(payload) {
+        return !!(payload?.drag && payload.targetRow && payload.placement);
     }
 
     _finishLayerPanelCardDrag() {
@@ -847,6 +862,39 @@ export class LayerPanelRenderer {
         );
     }
 
+    _createLegacyLayerCardElement(options = {}) {
+        const card = this._createLegacyLayerCardShell(options);
+        this._populateLayerPanelCardElement(card, this._createLegacyLayerCardParts(options));
+        if (!options.isBackground) {
+            this._attachLegacyLayerCardClick(card, options.index);
+        }
+        return card;
+    }
+
+    _createLegacyLayerCardOptions({
+        layer,
+        index,
+        isActive = false,
+        isSelected = false,
+        allLayers = [],
+        isFolder = false,
+        isBackground = false,
+        includeChildLine = false,
+        actionOptions = {}
+    } = {}) {
+        return {
+            layer,
+            index,
+            isActive,
+            isSelected,
+            allLayers,
+            isFolder,
+            isBackground,
+            includeChildLine,
+            actionOptions
+        };
+    }
+
     _createLegacyLayerCardRowModel({
         layer,
         index,
@@ -860,52 +908,106 @@ export class LayerPanelRenderer {
         const isExpanded = layer?.layerData?.folderExpanded;
         const leftOffset = depth * 12;
         const rowWidth = isActive ? 160 : Math.max(120, 160 - depth * 14);
-        const bgColor = isFolder
-            ? (isExpanded ? '#e9c2ba' : '#cf9c97')
-            : '#ffffee';
+        const rowStyleState = this._createLegacyLayerCardRowStyleState({
+            depth,
+            rowWidth,
+            leftOffset,
+            isActive,
+            isSelected,
+            isFolder,
+            isExpanded,
+            isBackground
+        });
         const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
-        return this._createLayerPanelCardRowModel(variant, {
-            classOptions: {
+        return this._createLayerPanelCardRowModelFromOptions(variant, {
+            classOptions: this._createLegacyLayerCardClassOptions({
+                layer,
                 isActive,
                 isSelected,
                 isFolder,
-                isHidden: layer?.layerData?.visible === false,
-                extraClasses: [
-                    'layer-item',
-                    isFolder ? 'folder-item' : '',
-                    isBackground ? 'background-layer' : '',
-                    isActive ? 'active' : '',
-                    isSelected ? 'selected' : ''
-                ]
-            },
-            dataOptions: {
-                cardKind: 'legacy-layer',
-                layerId: layer?.layerData?.id || '',
-                layerIndex: index,
+                isBackground
+            }),
+            dataOptions: this._createLegacyLayerCardDataOptions({
+                layer,
+                index,
                 depth,
                 isFolder,
                 isBackground
-            },
-            styleVars: {
-                '--card-row-width': `${rowWidth}px`,
-                '--card-row-margin-left': `${leftOffset}px`,
-                '--card-row-bg': bgColor,
-                '--card-row-border-color': isActive && !isBackground
-                    ? '#ff6600'
-                    : (isSelected && !isBackground ? 'rgba(255, 140, 66, 0.6)' : ''),
-                '--card-row-border-width': isActive && !isBackground ? '2px' : '',
-                '--card-row-active-border-color': isActive && !isBackground ? '#ff6600' : '',
-                '--card-row-active-border-width': isActive && !isBackground ? '2px' : '',
-                '--card-row-active-bg': bgColor,
-                '--legacy-card-width': `${rowWidth}px`,
-                '--legacy-card-margin-left': `${leftOffset}px`,
-                '--legacy-card-bg': bgColor,
-                '--legacy-card-border-color': isActive && !isBackground
-                    ? '#ff6600'
-                    : (isSelected && !isBackground ? 'rgba(255, 140, 66, 0.6)' : ''),
-                '--legacy-card-border-width': isActive && !isBackground ? '2px' : ''
-            }
+            }),
+            styleVars: rowStyleState
         });
+    }
+
+    _createLegacyLayerCardClassOptions({
+        layer,
+        isActive = false,
+        isSelected = false,
+        isFolder = false,
+        isBackground = false
+    } = {}) {
+        return this._createLayerPanelCardBaseClassOptions({
+            isActive,
+            isSelected,
+            isFolder,
+            isHidden: layer?.layerData?.visible === false,
+            extraClasses: [
+                'layer-item',
+                isFolder ? 'folder-item' : '',
+                isBackground ? 'background-layer' : '',
+                isActive ? 'active' : '',
+                isSelected ? 'selected' : ''
+            ]
+        });
+    }
+
+    _createLegacyLayerCardDataOptions({
+        layer,
+        index,
+        depth = 0,
+        isFolder = false,
+        isBackground = false
+    } = {}) {
+        return this._createLayerPanelCardBaseDataOptions({
+            cardKind: 'legacy-layer',
+            layerId: layer?.layerData?.id || '',
+            layerIndex: index,
+            depth,
+            isFolder,
+            isBackground
+        });
+    }
+
+    _createLegacyLayerCardRowStyleState({
+        rowWidth = 160,
+        leftOffset = 0,
+        isActive = false,
+        isSelected = false,
+        isFolder = false,
+        isExpanded = false,
+        isBackground = false
+    } = {}) {
+        const bgColor = isFolder
+            ? (isExpanded ? '#e9c2ba' : '#cf9c97')
+            : '#ffffee';
+        const borderColor = isActive && !isBackground
+            ? '#ff6600'
+            : (isSelected && !isBackground ? 'rgba(255, 140, 66, 0.6)' : '');
+        const borderWidth = isActive && !isBackground ? '2px' : '';
+        return {
+            '--card-row-width': `${rowWidth}px`,
+            '--card-row-margin-left': `${leftOffset}px`,
+            '--card-row-bg': bgColor,
+            '--card-row-border-color': borderColor,
+            '--card-row-border-width': borderWidth,
+            '--card-row-active-border-color': borderColor,
+            '--card-row-active-border-width': borderWidth,
+            '--card-row-active-bg': bgColor,
+            '--legacy-card-width': `${rowWidth}px`,
+            '--legacy-card-margin-left': `${leftOffset}px`,
+            '--legacy-card-bg': bgColor,
+            '--legacy-card-border-color': borderColor,
+            '--legacy-card-border-width': borderWidth
+        };
     }
 
     _createLayerPanelCardRowModel(variant, { classOptions = {}, dataOptions = {}, styleVars = {} } = {}) {
@@ -1010,28 +1112,38 @@ export class LayerPanelRenderer {
         ].filter(Boolean).join(' ');
     }
 
-    _appendLegacyLayerCardDetails(card, layer, index) {
+    _createLegacyLayerCardDetailsElement(layer, index) {
         const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
-        const details = this._createLayerPanelCardPartElement(variant, 'details');
-
-        const opacityContainer = this._createOpacityControl(layer, index);
-
-        const nameSpan = this._createLayerName(layer, index, {
-            extraClasses: [this._getLayerPanelCardPartClassName(variant, 'name')]
+        return this._createLayerPanelCardDetailsElement(variant, {
+            metaElement: this._createOpacityControl(layer, index),
+            nameElement: this._createLayerName(layer, index, {
+                variant
+            })
         });
-        this._appendLayerPanelCardParts(details, opacityContainer, nameSpan);
+    }
 
-        this._appendLayerPanelCardParts(card, details);
+    _createLayerPanelCardDetailsElement(variant, { metaElement = null, nameElement = null } = {}) {
+        const details = this._createLayerPanelCardPartElement(variant, 'details');
+        this._appendLayerPanelCardParts(
+            details,
+            ...this._createLayerPanelCardDetailsParts({ metaElement, nameElement })
+        );
         return details;
     }
 
-    _appendLegacyLayerCardActionIcons(card, layer, index, options = {}) {
+    _createLegacyLayerCardActionElements(layer, index, options = {}) {
         const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
-        const thirdIcon = options.thirdIcon || this._createClipStatusIcon(layer, index);
-        this._appendLayerPanelCardActionIcon(card, thirdIcon, variant, 'clip', 'legacy-layer-card-third-action');
-
-        const visibilityIcon = this._createVisibilityIcon(layer, index);
-        this._appendLayerPanelCardActionIcon(card, visibilityIcon, variant, 'visibility', 'legacy-layer-card-visibility-action');
+        const thirdIcon = options.thirdIcon || this._createClipStatusIcon(layer, index, {
+            variant,
+            actionRole: 'clip',
+            extraClasses: ['legacy-layer-card-third-action']
+        });
+        const visibilityIcon = this._createVisibilityIcon(layer, index, {
+            variant,
+            actionRole: 'visibility',
+            extraClasses: ['legacy-layer-card-visibility-action']
+        });
+        return [thirdIcon, visibilityIcon];
     }
 
     _attachLegacyLayerCardClick(card, index, options = {}) {
@@ -1058,11 +1170,68 @@ export class LayerPanelRenderer {
         return true;
     }
 
-    _appendLegacyLayerCardThumbnail(card, thumbnail) {
+    _createLegacyLayerCardContentParts(options = {}) {
+        const { layer, index, includeChildLine = false, actionOptions = {} } = options;
+        return this._createLayerPanelCardContentParts({
+            childLine: includeChildLine ? this._createLayerPanelCardChildLineElement() : null,
+            thumbnail: this._createLegacyLayerCardThumbnail(layer, index),
+            details: this._createLegacyLayerCardDetailsElement(layer, index),
+            actions: this._createLegacyLayerCardActionElements(layer, index, actionOptions)
+        });
+    }
+
+    _createLegacyLayerCardParts(options = {}) {
+        return options.isBackground
+            ? this._createLegacyBackgroundLayerCardContentParts(options)
+            : this._createLegacyLayerCardContentParts(options);
+    }
+
+    _createLegacyBackgroundLayerCardContentParts(options = {}) {
+        const { layer, index } = options;
+        const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
+        const nameSpan = this._createLayerPanelNameElement({
+            text: '背景',
+            extraClasses: [
+                this._getLayerPanelCardPartClassName(variant, 'name'),
+                'legacy-layer-card-background-name'
+            ],
+            title: '背景レイヤー'
+        });
+        return this._createLayerPanelCardContentParts({
+            thumbnail: this._createLegacyLayerCardThumbnail(layer, index),
+            details: nameSpan,
+            actions: this._createLegacyLayerCardActionElements(layer, index, {
+                thirdIcon: this._createBucketIcon(index, layer)
+            })
+        });
+    }
+
+    _createLegacyLayerCardThumbnail(layer, index) {
+        return this._prepareLegacyLayerCardThumbnail(
+            layer?.layerData?.isFolder
+                ? this.createFolderThumbnail(layer, index)
+                : this.createThumbnail(layer, index)
+        );
+    }
+
+    _prepareLegacyLayerCardThumbnail(thumbnail) {
+        if (!thumbnail) return null;
         const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
         thumbnail.classList.add('layer-panel-card-thumb', `${variant}-thumb`);
-        this._appendLayerPanelCardParts(card, thumbnail);
         return thumbnail;
+    }
+
+    _createLayerPanelCardContentParts({ childLine = null, thumbnail = null, details = null, actions = [] } = {}) {
+        return [
+            childLine,
+            thumbnail,
+            details,
+            ...this._normalizeLayerPanelPartList(actions)
+        ].filter(Boolean);
+    }
+
+    _normalizeLayerPanelPartList(parts = []) {
+        return Array.isArray(parts) ? parts : [parts];
     }
 
     _createLayerPanelCardChildLineElement() {
@@ -1120,6 +1289,13 @@ export class LayerPanelRenderer {
             .filter(Boolean)
             .forEach(part => parent.appendChild(part));
         return parent;
+    }
+
+    _populateLayerPanelCardElement(card, parts = []) {
+        return this._appendLayerPanelCardParts(
+            card,
+            ...this._normalizeLayerPanelPartList(parts)
+        );
     }
 
     _createLayerPanelCardPartHtml(variant, part, {
@@ -1188,32 +1364,27 @@ export class LayerPanelRenderer {
         }).filter(Boolean).join(' ');
     }
 
-    _appendLayerPanelCardActionIcon(card, icon, variant, actionRole, extraClasses = []) {
-        if (!card || !icon) return null;
-        this._applyLayerPanelCardActionClasses(icon, variant, actionRole, extraClasses);
-        this._appendLayerPanelCardParts(card, icon);
-        return icon;
+    _normalizeLayerPanelClassList(classes = []) {
+        return Array.isArray(classes) ? classes.filter(Boolean) : [classes].filter(Boolean);
+    }
+
+    _createLayerPanelCardActionButtonElement(variant, actionRole, options = {}) {
+        return this._createLayerPanelIconButton({
+            ...options,
+            className: this._getLayerPanelCardActionClassNames(variant, actionRole, options.extraClasses || '')
+        });
     }
 
 
     createFolderElement(folder, index, isActive, allLayers, isSelected = false) {
-        const folderDiv = this._createLegacyLayerCardShell({
+        return this._createLegacyLayerCardElement(this._createLegacyLayerCardOptions({
             layer: folder,
             index,
             isActive,
             isSelected,
             allLayers,
             isFolder: true
-        });
-
-        const thumbnail = this.createFolderThumbnail(folder, index);
-        this._appendLegacyLayerCardThumbnail(folderDiv, thumbnail);
-
-        this._appendLegacyLayerCardDetails(folderDiv, folder, index);
-        this._appendLegacyLayerCardActionIcons(folderDiv, folder, index);
-        this._attachLegacyLayerCardClick(folderDiv, index);
-
-        return folderDiv;
+        }));
     }
 
     createFolderThumbnail(folder, index) {
@@ -1223,14 +1394,12 @@ export class LayerPanelRenderer {
         const thumbnailContainer = this._createLayerThumbnailContainer(index, {
             extraClasses: ['layer-panel-card-thumb--folder', 'folder-thumbnail'],
             width: maxWidth,
-            height: maxHeight
+            height: maxHeight,
+            isFolder: true,
+            isCollapsed: !folder.layerData?.folderExpanded
         });
 
         const isExpanded = folder.layerData?.folderExpanded;
-        this._applyLayerPanelStateClasses(thumbnailContainer, {
-            'is-expanded': isExpanded,
-            'is-collapsed': !isExpanded
-        });
         thumbnailContainer.innerHTML = isExpanded ? UI_ICONS.folderOpen : UI_ICONS.folder;
         const svg = thumbnailContainer.querySelector('svg');
         if (svg) {
@@ -1289,60 +1458,32 @@ export class LayerPanelRenderer {
         const isBackground = layer.layerData?.isBackground || false;
         const allLayers = this.layerSystem?.getLayers() || [];
         const hasParent = layer.layerData?.parentId;
-        const layerDiv = this._createLegacyLayerCardShell({
+        return this._createLegacyLayerCardElement(this._createLegacyLayerCardOptions({
             layer,
             index,
             isActive,
             isSelected,
             allLayers,
-            isBackground
-        });
-
-        if (hasParent) {
-            this._appendLayerPanelCardParts(layerDiv, this._createLayerPanelCardChildLineElement());
-        }
-
-        if (isBackground) {
-            const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card').name;
-            const thumbnail = this.createThumbnail(layer, index);
-            this._appendLegacyLayerCardThumbnail(layerDiv, thumbnail);
-
-            const nameSpan = this._createLayerPanelNameElement({
-                text: '背景',
-                extraClasses: [
-                    this._getLayerPanelCardPartClassName(variant, 'name'),
-                    'legacy-layer-card-background-name'
-                ],
-                title: '背景レイヤー'
-            });
-            this._appendLayerPanelCardParts(layerDiv, nameSpan);
-
-            const bucketIcon = this._createBucketIcon(index, layer);
-            this._appendLegacyLayerCardActionIcons(layerDiv, layer, index, {
-                thirdIcon: bucketIcon
-            });
-
-            return layerDiv;
-        }
-
-        const thumbnail = this.createThumbnail(layer, index);
-        this._appendLegacyLayerCardThumbnail(layerDiv, thumbnail);
-
-        this._appendLegacyLayerCardDetails(layerDiv, layer, index);
-        this._appendLegacyLayerCardActionIcons(layerDiv, layer, index);
-        this._attachLegacyLayerCardClick(layerDiv, index);
-
-        return layerDiv;
+            isBackground,
+            includeChildLine: !!hasParent
+        }));
     }
 
-    _createClipStatusIcon(layer, index = -1) {
+    _createClipStatusIcon(layer, index = -1, options = {}) {
         const isClipping = layer.layerData?.clipping === true;
         const canToggle = !layer.layerData?.isBackground && !layer.layerData?.isFolder;
-        const clipIcon = this._createLayerPanelIconButton({
-            className: 'layer-clip-status',
-            iconName: canToggle || isClipping ? 'paperclip' : '',
-            title: isClipping ? 'クリッピングON' : 'クリッピング未使用'
-        });
+        const createButton = options.variant && options.actionRole
+            ? () => this._createLayerPanelCardActionButtonElement(options.variant, options.actionRole, {
+                extraClasses: ['layer-clip-status', ...this._normalizeLayerPanelClassList(options.extraClasses)],
+                iconName: canToggle || isClipping ? 'paperclip' : '',
+                title: isClipping ? 'クリッピングON' : 'クリッピング未使用'
+            })
+            : () => this._createLayerPanelIconButton({
+                className: 'layer-clip-status',
+                iconName: canToggle || isClipping ? 'paperclip' : '',
+                title: isClipping ? 'クリッピングON' : 'クリッピング未使用'
+            });
+        const clipIcon = createButton();
         this._applyLayerPanelStateClasses(clipIcon, {
             'is-clipping': isClipping,
             'is-toggleable': canToggle
@@ -1358,15 +1499,21 @@ export class LayerPanelRenderer {
         return clipIcon;
     }
 
-    _createVisibilityIcon(layer, index) {
+    _createVisibilityIcon(layer, index, options = {}) {
         const isVisible = layer.layerData?.visible !== false;
         const iconName = isVisible ? 'eye' : 'eyeOff';
 
-        const visibilityIcon = this._createLayerPanelIconButton({
-            className: 'layer-visibility',
-            iconName,
-            title: isVisible ? 'レイヤーを非表示' : 'レイヤーを表示'
-        });
+        const visibilityIcon = options.variant && options.actionRole
+            ? this._createLayerPanelCardActionButtonElement(options.variant, options.actionRole, {
+                extraClasses: ['layer-visibility', ...this._normalizeLayerPanelClassList(options.extraClasses)],
+                iconName,
+                title: isVisible ? 'レイヤーを非表示' : 'レイヤーを表示'
+            })
+            : this._createLayerPanelIconButton({
+                className: 'layer-visibility',
+                iconName,
+                title: isVisible ? 'レイヤーを非表示' : 'レイヤーを表示'
+            });
 
         visibilityIcon.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1424,7 +1571,7 @@ export class LayerPanelRenderer {
         dataAttributes = {},
         extraAttributes = {}
     } = {}) {
-        const buttonModel = this._createLayerPanelButtonModel({
+        const buttonModel = this._createLayerPanelIconButtonModel({
             tagName,
             fallbackTagName: 'div',
             className,
@@ -1437,6 +1584,10 @@ export class LayerPanelRenderer {
             extraAttributes
         });
         return this._createLayerPanelButtonElementFromModel(buttonModel);
+    }
+
+    _createLayerPanelIconButtonModel(options = {}) {
+        return this._createLayerPanelButtonModel(options);
     }
 
     _createLayerPanelButtonElementFromModel(buttonModel = {}) {
@@ -1539,7 +1690,13 @@ export class LayerPanelRenderer {
     }
 
     _createLayerPanelMetaElement({ text = '', className = '', title = '' } = {}) {
-        return this._createLayerPanelTextSpanElement({ text, className, title });
+        return this._createLayerPanelTextSpanElement(
+            this._createLayerPanelMetaModel({ text, className, title })
+        );
+    }
+
+    _createLayerPanelMetaModel({ text = '', className = '', title = '' } = {}) {
+        return this._createLayerPanelTextSpanModel({ text, className, title });
     }
 
     _createLayerPanelTextSpanModel({ text = '', className = '', title = '' } = {}) {
@@ -2146,20 +2303,37 @@ export class LayerPanelRenderer {
         return this._createLayerPanelTextSpanElement(nameModel);
     }
 
-    _createLayerPanelCardNameHtml(variant, options = {}) {
-        const nameModel = this._createLayerPanelNameModel({
+    _createLayerPanelCardNameModel(variant, options = {}) {
+        return this._createLayerPanelNameModel({
             ...options,
-            baseClasses: []
+            baseClasses: options.baseClasses || [],
+            extraClasses: [
+                this._getLayerPanelCardPartClassName(variant, 'name'),
+                ...this._normalizeLayerPanelClassList(options.extraClasses)
+            ]
         });
+    }
+
+    _createLayerPanelCardNameElement(variant, options = {}) {
+        return this._createLayerPanelTextSpanElement(
+            this._createLayerPanelCardNameModel(variant, options)
+        );
+    }
+
+    _createLayerPanelCardNameHtml(variant, options = {}) {
+        const nameModel = this._createLayerPanelCardNameModel(variant, options);
         return this._createLayerPanelCardTextPartHtml(variant, 'name', nameModel);
     }
 
     _createLayerName(layer, index, options = {}) {
-        const nameSpan = this._createLayerPanelNameElement({
+        const nameOptions = {
             text: layer.layerData?.name || `レイヤー${index}`,
             extraClasses: options.extraClasses || [],
             title: 'ダブルクリック または F2 で名前変更'
-        });
+        };
+        const nameSpan = options.variant
+            ? this._createLayerPanelCardNameElement(options.variant, nameOptions)
+            : this._createLayerPanelNameElement(nameOptions);
 
         nameSpan.addEventListener('dblclick', (e) => {
             if (e.shiftKey || e.ctrlKey || e.metaKey) return;
@@ -2292,12 +2466,30 @@ export class LayerPanelRenderer {
         return thumbnailContainer;
     }
 
-    _createLayerThumbnailContainer(index, { extraClasses = [], width = 40, height = 32 } = {}) {
-        return this._createLayerPanelCardPart('div', ['layer-thumbnail', ...extraClasses].filter(Boolean).join(' '), {
+    _createLayerThumbnailContainer(index, { extraClasses = [], width = 40, height = 32, isFolder = false, isCollapsed = false } = {}) {
+        return this._createLayerPanelCardThumbnailElement('', {
+            extraClasses: ['layer-thumbnail', ...extraClasses],
+            size: { width, height },
             attributes: { 'data-layer-index': index },
-            styleVars: this._createLayerPanelCardThumbnailStyleVars({ width, height }, {
-                includeLegacyVars: true
-            })
+            includeLegacyVars: true,
+            isFolder,
+            isCollapsed
+        });
+    }
+
+    _createLayerPanelCardThumbnailElement(variant, {
+        extraClasses = [],
+        size = {},
+        attributes = {},
+        includeLegacyVars = false,
+        isFolder = false,
+        isCollapsed = false
+    } = {}) {
+        const stateClasses = this._createLayerPanelCardThumbnailStateClasses({ isFolder, isCollapsed });
+        return this._createLayerPanelCardPartElement(variant, 'thumb', {
+            extraClasses: [...extraClasses, ...stateClasses],
+            attributes,
+            styleVars: this._createLayerPanelCardThumbnailStyleVars(size, { includeLegacyVars })
         });
     }
 
@@ -2595,35 +2787,25 @@ export class LayerPanelRenderer {
         this._editLayerName(nameSpan, layer, activeIndex);
     }
 
-    _applyLegacyLayerCardDropFromPointer(drag, targetRow, placement) {
-        if (!this.layerSystem?.reorderLayers || !drag?.row || !targetRow || !placement) {
+    _applyLegacyLayerCardDropFromPointer(dropPayload = {}) {
+        if (!this.layerSystem?.reorderLayers) {
             this.requestUpdate();
             return false;
         }
 
-        const layers = this.layerSystem.getLayers();
-        const oldIndex = parseInt(drag.row.dataset.layerIndex, 10);
-        const targetIndex = parseInt(targetRow.dataset.layerIndex, 10);
-        if (Number.isNaN(oldIndex) || Number.isNaN(targetIndex) || oldIndex === targetIndex) {
+        const dropTarget = this._resolveLegacyLayerCardDropTarget(dropPayload);
+        if (!this._isLegacyLayerCardDropTargetReady(dropTarget)) {
             this.requestUpdate();
             return false;
         }
 
-        const draggedLayer = layers[oldIndex];
-        const targetLayer = layers[targetIndex];
+        const { draggedLayer } = dropTarget;
         if (!draggedLayer || draggedLayer.layerData?.isBackground) {
             this.requestUpdate();
             return false;
         }
 
-        if (placement === 'inside' && this._canDropIntoFolder(draggedLayer, targetLayer) && this.layerSystem.moveLayerIntoFolder) {
-            this.layerSystem.moveLayerIntoFolder(draggedLayer.layerData?.id, targetLayer.layerData?.id);
-            return true;
-        }
-
-        const newIndex = this._resolveLayerIndexFromPointerDrop(oldIndex, targetIndex, placement);
-        if (newIndex !== null && newIndex !== oldIndex) {
-            this.layerSystem.reorderLayers(oldIndex, newIndex);
+        if (this._applyLegacyLayerCardDropOperation(dropTarget)) {
             return true;
         }
 
@@ -2631,17 +2813,119 @@ export class LayerPanelRenderer {
         return false;
     }
 
-    _applyClipLayerMirrorCardDropFromPointer(drag, targetRow, placement) {
+    _resolveLegacyLayerCardDropTarget({ drag, targetRow, placement } = {}) {
+        const layers = this.layerSystem?.getLayers?.() || [];
+        const oldIndex = parseInt(drag?.row?.dataset?.layerIndex, 10);
+        const targetIndex = parseInt(targetRow?.dataset?.layerIndex, 10);
+        if (Number.isNaN(oldIndex) || Number.isNaN(targetIndex)) return null;
+        const normalizedPlacement = placement || null;
+
+        return {
+            oldIndex,
+            targetIndex,
+            draggedLayer: layers[oldIndex] || null,
+            targetLayer: layers[targetIndex] || null,
+            draggedParentId: this._getLegacyLayerCardDropParentId(layers[oldIndex]),
+            targetParentId: this._getLegacyLayerCardDropParentId(layers[targetIndex]),
+            placement: normalizedPlacement,
+            isInsideDrop: normalizedPlacement === 'inside',
+            isPositionDrop: this._isLegacyLayerCardPositionDrop(normalizedPlacement)
+        };
+    }
+
+    _getLegacyLayerCardDropParentId(layer) {
+        return layer?.layerData?.parentId || null;
+    }
+
+    _isLegacyLayerCardDropTargetReady(dropTarget) {
+        if (!dropTarget) return false;
+        if (dropTarget.oldIndex === dropTarget.targetIndex) return false;
+        return !!dropTarget.placement;
+    }
+
+    _applyLegacyLayerCardDropOperation(dropTarget) {
+        return (
+            this._applyLegacyLayerCardDropIntoFolder(dropTarget) ||
+            this._applyLegacyLayerCardMoveIntoTargetFolderPosition(dropTarget) ||
+            this._applyLegacyLayerCardReorderInsideSameFolder(dropTarget) ||
+            this._applyLegacyLayerCardReorderDrop(dropTarget)
+        );
+    }
+
+    _applyLegacyLayerCardDropIntoFolder({ draggedLayer, targetLayer, isInsideDrop } = {}) {
+        if (!isInsideDrop) return false;
+        if (!this.layerSystem?.moveLayerIntoFolder) return false;
+        if (!this._canDropIntoFolder(draggedLayer, targetLayer)) return false;
+
+        this.layerSystem.moveLayerIntoFolder(draggedLayer.layerData?.id, targetLayer.layerData?.id);
+        return true;
+    }
+
+    _applyLegacyLayerCardMoveIntoTargetFolderPosition(dropTarget = {}) {
+        if (!this._isLegacyLayerCardMoveIntoTargetFolderPosition(dropTarget)) return false;
+        if (!this.layerSystem?.moveLayerNearLayerInFolder) return false;
+
+        const { draggedLayer, targetLayer, placement } = dropTarget;
+        return this.layerSystem.moveLayerNearLayerInFolder(
+            draggedLayer.layerData?.id,
+            targetLayer.layerData?.id,
+            placement
+        ) === true;
+    }
+
+    _isLegacyLayerCardMoveIntoTargetFolderPosition({ draggedParentId, targetParentId, isPositionDrop } = {}) {
+        return !!targetParentId &&
+            draggedParentId !== targetParentId &&
+            isPositionDrop;
+    }
+
+    _applyLegacyLayerCardReorderInsideSameFolder(dropTarget = {}) {
+        if (!this._isLegacyLayerCardSameFolderDrop(dropTarget)) return false;
+        return this._applyLegacyLayerCardReorderDrop(dropTarget);
+    }
+
+    _isLegacyLayerCardSameFolderDrop({ draggedParentId, targetParentId, isPositionDrop } = {}) {
+        return !!draggedParentId &&
+            draggedParentId === targetParentId &&
+            isPositionDrop;
+    }
+
+    _isLegacyLayerCardPositionDrop(placement) {
+        return placement === 'before' || placement === 'after';
+    }
+
+    _applyLegacyLayerCardReorderDrop({ oldIndex, targetIndex, placement } = {}) {
+        if (!this.layerSystem?.reorderLayers) return false;
+
+        const newIndex = this._resolveLayerIndexFromPointerDrop(oldIndex, targetIndex, placement);
+        if (newIndex === null || newIndex === oldIndex) return false;
+
+        this.layerSystem.reorderLayers(oldIndex, newIndex);
+        return true;
+    }
+
+    _applyClipLayerMirrorCardDropFromPointer(dropPayload = {}) {
         const animationTable = window.PopupManager?.get?.('animationTable');
-        const targetLayerId = targetRow?.dataset.internalLayerId;
-        if (animationTable?.moveInternalLayerToPosition && drag?.assetId && drag?.layerId && targetLayerId && placement) {
-            animationTable.moveInternalLayerToPosition(drag.assetId, drag.layerId, targetLayerId, placement);
+        const { sourceAssetId, sourceLayerId, targetLayerId, placement } =
+            this._resolveClipLayerMirrorDropTarget(dropPayload);
+        if (animationTable?.moveInternalLayerToPosition && sourceAssetId && sourceLayerId && targetLayerId && placement) {
+            animationTable.moveInternalLayerToPosition(sourceAssetId, sourceLayerId, targetLayerId, placement);
             return true;
         }
         return false;
     }
 
+    _resolveClipLayerMirrorDropTarget({ drag, targetRow, placement, assetId, layerId } = {}) {
+        return {
+            sourceAssetId: assetId || drag?.assetId || '',
+            sourceLayerId: layerId || drag?.layerId || '',
+            targetLayerId: targetRow?.dataset.internalLayerId || '',
+            placement: placement || null
+        };
+    }
+
     _resolveLayerIndexFromPointerDrop(oldIndex, targetIndex, placement) {
+        if (!this._isLegacyLayerCardPositionDrop(placement)) return null;
         if (Number.isNaN(oldIndex) || Number.isNaN(targetIndex)) return null;
         const layers = this.layerSystem?.getLayers?.() || [];
         if (targetIndex < 0 || targetIndex >= layers.length) return null;
@@ -2655,6 +2939,12 @@ export class LayerPanelRenderer {
     }
 
     _canDropIntoFolder(layer, folder) {
+        if (this.layerSystem?.canPlaceLayerInFolder) {
+            return this.layerSystem.canPlaceLayerInFolder(
+                layer?.layerData?.id,
+                folder?.layerData?.id
+            );
+        }
         if (!layer || !folder?.layerData?.isFolder) return false;
         if (layer.layerData?.isBackground) return false;
         if (layer.layerData?.id === folder.layerData.id) return false;
@@ -2998,47 +3288,41 @@ export class LayerPanelRenderer {
     }
 
     _createLayerPanelCardHtml(options = {}) {
-        const variant = this._getLayerPanelCardVariantConfig(options.variant || 'clip-layer-mirror').name;
-        const depth = Number.isInteger(options.depth) ? options.depth : 0;
+        return this._createClipLayerMirrorCardHtml(options);
+    }
+
+    _createClipLayerMirrorCardHtml(options = {}) {
+        const rowModel = this._createClipLayerMirrorCardRowModel(options);
+        const variant = rowModel.variant;
         const thumbSize = options.thumbnailSize || { width: 34, height: 30 };
         const thumbStyleAttributes = this._createLayerPanelCardThumbnailStyleAttributes(thumbSize);
-        const rowModel = this._createLayerPanelCardRowModel(variant, {
-            classOptions: {
-                isSelected: options.isSelected,
-                isHidden: options.isHidden,
-                isFolder: options.isFolder,
-                isCollapsed: options.isCollapsed,
-                depth
-            },
-            dataOptions: {
-                cardKind: variant,
-                assetId: options.assetId || '',
-                layerId: options.layerId || '',
-                internalLayerId: options.layerId || '',
-                depth,
-                isFolder: options.isFolder
-            }
+        const cardParts = this._createClipLayerMirrorCardHtmlParts(variant, options, thumbStyleAttributes);
+
+        return this._createLayerPanelCardRowHtmlFromParts(rowModel, cardParts);
+    }
+
+    _createClipLayerMirrorCardRowModel(options = {}) {
+        const variant = this._getLayerPanelCardVariantConfig(options.variant || 'clip-layer-mirror').name;
+        const depth = Number.isInteger(options.depth) ? options.depth : 0;
+        return this._createLayerPanelCardRowModelFromOptions(variant, {
+            classOptions: this._createClipLayerMirrorCardClassOptions(options, depth),
+            dataOptions: this._createClipLayerMirrorCardDataOptions(variant, options, depth)
         });
-        const clipButtonHtml = this._createLayerPanelCardClipButtonHtml(variant, {
-            layerId: options.layerId || '',
-            assetId: options.assetId || '',
-            isClipping: options.isClipping,
-            title: options.clipTitle || 'クリッピング'
+    }
+
+    _createLayerPanelCardRowModelFromOptions(variant, {
+        classOptions = {},
+        dataOptions = {},
+        styleVars = {}
+    } = {}) {
+        return this._createLayerPanelCardRowModel(variant, {
+            classOptions,
+            dataOptions,
+            styleVars
         });
-        const visibilityButtonHtml = this._createLayerPanelCardVisibilityButtonHtml(variant, {
-            layerId: options.layerId || '',
-            assetId: options.assetId || '',
-            isHidden: options.isHidden,
-            iconName: options.visibilityIconName || 'eye',
-            title: options.visibilityTitle || '表示/非表示'
-        });
-        const metaHtml = this._createLayerPanelCardTextPartHtml(variant, 'meta', {
-            extraClasses: `${variant}-opacity`,
-            text: options.metaLabel || ''
-        });
-        const nameHtml = this._createLayerPanelCardNameHtml(variant, {
-            text: options.name || ''
-        });
+    }
+
+    _createClipLayerMirrorCardHtmlParts(variant, options = {}, thumbStyleAttributes = '') {
         const childLineHtml = this._createLayerPanelCardChildLineHtml();
         const thumbnailHtml = this._createLayerPanelCardThumbnailHtml(variant, {
             isFolder: options.isFolder,
@@ -3046,21 +3330,108 @@ export class LayerPanelRenderer {
             styleAttributes: thumbStyleAttributes,
             content: options.thumbnailHtml || ''
         });
-        const detailsHtml = this._createLayerPanelCardDetailsHtml(variant, {
+
+        return this._createLayerPanelCardContentParts({
+            childLine: childLineHtml,
+            thumbnail: thumbnailHtml,
+            details: this._createClipLayerMirrorCardDetailsHtml(variant, options),
+            actions: this._createClipLayerMirrorCardActionHtmlParts(variant, options)
+        });
+    }
+
+    _createClipLayerMirrorCardDetailsHtml(variant, options = {}) {
+        const metaHtml = this._createLayerPanelCardMetaHtml(variant, {
+            extraClasses: `${variant}-opacity`,
+            text: options.metaLabel || ''
+        });
+        const nameHtml = this._createLayerPanelCardNameHtml(variant, {
+            text: options.name || ''
+        });
+        return this._createLayerPanelCardDetailsHtml(variant, {
             metaHtml,
             nameHtml
         });
+    }
 
-        return this._createLayerPanelCardRowHtml({
-            cardModel: rowModel,
-            content: `
-                ${childLineHtml}
-                ${thumbnailHtml}
-                ${detailsHtml}
-                ${clipButtonHtml}
-                ${visibilityButtonHtml}
-            `
+    _createClipLayerMirrorCardActionHtmlParts(variant, options = {}) {
+        return [
+            this._createLayerPanelCardClipButtonHtml(variant, {
+                layerId: options.layerId || '',
+                assetId: options.assetId || '',
+                isClipping: options.isClipping,
+                title: options.clipTitle || 'クリッピング'
+            }),
+            this._createLayerPanelCardVisibilityButtonHtml(variant, {
+                layerId: options.layerId || '',
+                assetId: options.assetId || '',
+                isHidden: options.isHidden,
+                iconName: options.visibilityIconName || 'eye',
+                title: options.visibilityTitle || '表示/非表示'
+            })
+        ];
+    }
+
+    _createClipLayerMirrorCardClassOptions(options = {}, depth = 0) {
+        return this._createLayerPanelCardBaseClassOptions({
+            isSelected: options.isSelected,
+            isHidden: options.isHidden,
+            isFolder: options.isFolder,
+            isCollapsed: options.isCollapsed,
+            depth
         });
+    }
+
+    _createClipLayerMirrorCardDataOptions(variant, options = {}, depth = 0) {
+        return this._createLayerPanelCardBaseDataOptions({
+            cardKind: variant,
+            assetId: options.assetId || '',
+            layerId: options.layerId || '',
+            internalLayerId: options.layerId || '',
+            depth,
+            isFolder: options.isFolder
+        });
+    }
+
+    _createLayerPanelCardBaseClassOptions({
+        isActive = false,
+        isSelected = false,
+        isHidden = false,
+        isFolder = false,
+        isCollapsed = false,
+        depth,
+        extraClasses = []
+    } = {}) {
+        return {
+            isActive,
+            isSelected,
+            isHidden,
+            isFolder,
+            isCollapsed,
+            depth,
+            extraClasses
+        };
+    }
+
+    _createLayerPanelCardBaseDataOptions({
+        cardKind = '',
+        assetId = '',
+        layerId = '',
+        internalLayerId = '',
+        layerIndex,
+        depth,
+        isFolder = false,
+        isBackground = false
+    } = {}) {
+        return {
+            cardKind,
+            assetId,
+            layerId,
+            internalLayerId,
+            layerIndex,
+            depth,
+            isFolder,
+            isBackground
+        };
     }
 
     _createLayerPanelCardRowHtml({
@@ -3082,6 +3453,13 @@ export class LayerPanelRenderer {
         });
     }
 
+    _createLayerPanelCardRowHtmlFromParts(rowModel, parts = []) {
+        return this._createLayerPanelCardRowHtml({
+            cardModel: rowModel,
+            content: this._normalizeLayerPanelPartList(parts).join('\n')
+        });
+    }
+
     _createLayerPanelCardChildLineHtml() {
         return this._createLayerPanelCardPartHtml('', 'child-line', {
             tagName: 'div',
@@ -3091,9 +3469,7 @@ export class LayerPanelRenderer {
     }
 
     _createLayerPanelCardThumbnailHtml(variant, { isFolder = false, isCollapsed = false, styleAttributes = '', content = '' } = {}) {
-        const extraClasses = isFolder
-            ? ['layer-panel-card-thumb--folder', isCollapsed ? 'is-collapsed' : 'is-expanded']
-            : [];
+        const extraClasses = this._createLayerPanelCardThumbnailStateClasses({ isFolder, isCollapsed });
         return this._createLayerPanelCardPartHtml(variant, 'thumb', {
             extraClasses,
             rawAttributes: styleAttributes,
@@ -3101,13 +3477,29 @@ export class LayerPanelRenderer {
         });
     }
 
+    _createLayerPanelCardThumbnailStateClasses({ isFolder = false, isCollapsed = false } = {}) {
+        return isFolder
+            ? ['layer-panel-card-thumb--folder', isCollapsed ? 'is-collapsed' : 'is-expanded']
+            : [];
+    }
+
     _createLayerPanelCardDetailsHtml(variant, { metaHtml = '', nameHtml = '' } = {}) {
+        const parts = this._createLayerPanelCardDetailsParts({ metaHtml, nameHtml });
         return this._createLayerPanelCardPartHtml(variant, 'details', {
-            content: `
-                ${metaHtml}
-                ${nameHtml}
-            `
+            content: parts.join('\n')
         });
+    }
+
+    _createLayerPanelCardMetaHtml(variant, options = {}) {
+        return this._createLayerPanelCardTextPartHtml(
+            variant,
+            'meta',
+            this._createLayerPanelMetaModel(options)
+        );
+    }
+
+    _createLayerPanelCardDetailsParts({ metaElement = null, nameElement = null, metaHtml = '', nameHtml = '' } = {}) {
+        return [metaElement || metaHtml, nameElement || nameHtml].filter(Boolean);
     }
 
     _createLayerPanelCardThumbnailStyleAttributes(size = {}) {
@@ -3200,7 +3592,7 @@ export class LayerPanelRenderer {
         dataAttributes = {},
         extraAttributes = {}
     } = {}) {
-        const buttonModel = this._createLayerPanelButtonModel({
+        const buttonModel = this._createLayerPanelIconButtonModel({
             tagName,
             fallbackTagName: 'button',
             className,
