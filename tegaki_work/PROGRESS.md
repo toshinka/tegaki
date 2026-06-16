@@ -51,8 +51,50 @@
   - ClipAsset内部レイヤーからCAF内部カードoptionsを作る処理を `_createClipLayerMirrorCardOptions()` へ分離し、ループ側をカード生成呼び出しに集中させた。
   - 旧Layer/Folderカードのrow model生成を `_createLegacyLayerCardRowModel()` へ分離し、旧カードshell側も共通row model生成とDOM生成を分けた。
   - カードD&Dのdrop payload生成を `_createLayerPanelCardDropPayload()` へ分離し、旧カード/CAF内部カードのdrop入力形を揃えた。
-  - 挙動は変更せず、CAF内部カードと旧カードのselector散在を減らし、カード種別ごとの共通化入口を広げた。
-  - 既知差分: 旧Layer/FolderカードD&Dは、外部レイヤーをフォルダ配下の既存子レイヤー間へ直接挿入できず、フォルダ本体へのdropでしか収納できない。CAF内部カードD&Dでは子レイヤー間への挿入が可能。統合時にCAF側の挙動へ寄せる対象。
+  - 旧カード/CAF内部カードのdrop実行入口をpayload受けに揃え、旧カードD&Dの対象解決を `_resolveLegacyLayerCardDropTarget()` へ分離した。
+  - カードD&Dのdrop payload検証を `_isLayerPanelCardDropPayloadReady()` へ分離し、CAF内部カードのdrop対象ID解決を `_resolveClipLayerMirrorDropTarget()` へ切り出した。
+  - 旧Layer/Folderカードのdrop適用を `_applyLegacyLayerCardDropIntoFolder()` / `_applyLegacyLayerCardReorderDrop()` へ分離し、フォルダ収納と並べ替えの差し替え点を明確化した。
+  - 旧Layer/Folderカードのdrop対象検証を `_isLegacyLayerCardDropTargetReady()`、適用順序を `_applyLegacyLayerCardDropOperation()` へ分離し、旧D&D挙動をCAF側へ寄せるための入口をさらに狭めた。
+  - 旧Layer/Folderカードのdrop targetに `draggedParentId` / `targetParentId` を持たせ、親ID解決を `_getLegacyLayerCardDropParentId()` へ分離した。旧D&Dでフォルダ配下の子レイヤー間へ挿入するための準備。
+  - 旧Layer/Folderカードの同一フォルダ内reorder経路を `_applyLegacyLayerCardReorderInsideSameFolder()` / `_isLegacyLayerCardSameFolderDrop()` として明示し、外部レイヤーを子間へ挿入する次段階の分岐点を作った。
+  - `LayerSystem.moveLayerNearLayerInFolder()` を追加し、旧Layer/Folderカードでも外部レイヤーをフォルダ配下の子レイヤー間へ挿入できる経路を用意した。親子状態とレイヤー順は履歴undo/redoで復元できるようplacement stateを保存する。
+  - 旧カードD&D側に `_applyLegacyLayerCardMoveIntoTargetFolderPosition()` を追加し、フォルダ配下の子レイヤー上でbefore/after dropした場合はCAF側に近い子間挿入を優先するよう接続した。
+  - `moveLayerNearLayerInFolder()` のイベント通知を `_emitLayerPlacementChanged()` へ集約し、フォルダ収納/展開/並べ替え通知のpayloadを一箇所で扱う形にした。
+  - レイヤー配置履歴の復元処理を `_restoreLayerParentState()` / `_restoreLayerFolderState()` / `_restoreLayerOrderState()` に分離し、親子状態・フォルダchildren・表示順の復元単位を明確化した。
+  - レイヤー配置履歴の取得処理も `_captureLayerParentState()` / `_captureLayerFolderState()` / `_captureLayerOrderState()` に分離し、取得と復元の単位を揃えた。
+  - 旧カードD&Dのbefore/after判定を `_isLegacyLayerCardPositionDrop()` に集約し、外部からフォルダ内へ入れる判定と同一フォルダ内reorder判定で同じ配置条件を見るようにした。
+  - 旧カードD&Dのdrop target生成時に `isInsideDrop` / `isPositionDrop` を持たせ、各drop分岐が生の `placement` 文字列を直接判定しない形へ寄せた。
+  - `LayerSystem.moveLayerNearLayerInFolder()` の対象解決を `_resolveLayerNearLayerInFolderTarget()` に集約し、同一layer指定・参照先なし・フォルダ外参照などの無効条件を一箇所で落とすようにした。
+  - `moveLayerNearLayerInFolder()` のundo通知で、対象解決リファクタ後に残っていた未定義 `layer` 参照を排除し、復元前indexから `layer:reordered` のfrom/toを作るよう修正した。
+  - `LayerSystem` 側のbefore/after placement判定を `_isLayerPositionPlacement()` に集約し、API入口とindex計算で同じ有効条件を見るようにした。
+  - 旧カード通常reorderのindex計算 `_resolveLayerIndexFromPointerDrop()` も `_isLegacyLayerCardPositionDrop()` を通すようにし、inside/不正placementを通常reorderへ流さないようにした。
+  - 配置履歴stateに `activeLayerIndex` fallbackを含め、`moveLayerNearLayerInFolder()` のundo側で別途保持していたactive indexをplacement state復元へ統合した。
+  - `LayerSystem.canPlaceLayerInFolder()` を追加し、旧カード側のフォルダdrop可否判定をシステム側の `_canPlaceInFolder()` へ委譲した。UI側に残っていた親子ループ防止条件の重複を減らし、CAF側と同じ配置制約を使う形に寄せた。
+  - カードD&Dのpointerdown入口を `_resolveLayerPanelCardPointerTarget()` / `_getLayerPanelCardPointerDragEntries()` へ分離し、CAF内部カードと旧Layer/Folderカードの開始分岐をvariant entriesから解決する形にした。
+  - カードdetails生成を `_createLayerPanelCardDetailsElement()` / `_createLayerPanelCardDetailsParts()` 経由へ寄せ、旧カードDOM側とCAF内部カードHTML側でメタ/名前部品の並べ方を同じ入口にした。
+  - 旧カードサムネイルDOM生成を `_createLayerPanelCardThumbnailElement()` 経由へ寄せ、CAF内部カードHTML側と同じ `_createLayerPanelCardThumbnailStateClasses()` でFolder開閉状態classを作るようにした。
+  - アイコンボタンmodel生成を `_createLayerPanelIconButtonModel()` に分離し、DOM版/HTML版のボタン生成が同じmodel入口を使う形にした。
+  - 旧カードのclip/visibilityアクションを `_createLayerPanelCardActionButtonElement()` 経由で生成するようにし、CAF内部カードHTML側の `_createLayerPanelCardActionButtonHtml()` と対応するDOM入口を用意した。未使用になった後付けアクションclass appendヘルパーは削除。
+  - カード名モデルを `_createLayerPanelCardNameModel()` へ分離し、旧カードDOM側の名前spanとCAF内部カードHTML側の名前表示が同じカード名モデル入口を使う形にした。
+  - メタ表示モデルを `_createLayerPanelMetaModel()` へ分離し、旧カードDOM側の透明度/合成表示とCAF内部カードHTML側のmeta表示が同じテキストモデル入口を通る形にした。
+  - 旧カード行のstyle変数生成を `_createLegacyLayerCardRowStyleState()` へ分離し、row model生成側から背景色・枠色・幅/インデント計算を切り出した。カード行モデルはclass/data/styleを受ける入口に近づけた。
+  - CAF内部カードHTML側のrow class/data生成を `_createClipLayerMirrorCardClassOptions()` / `_createClipLayerMirrorCardDataOptions()` へ分離し、旧カード側の `_createLegacyLayerCardClassOptions()` / `_createLegacyLayerCardDataOptions()` と対応する構造にした。
+  - 旧カード/CAF内部カードのrow class/data optionsが `_createLayerPanelCardBaseClassOptions()` / `_createLayerPanelCardBaseDataOptions()` を通るようにし、選択・非表示・フォルダ・階層・data属性指定の共通入口を作った。
+  - CAF内部カードHTMLの部品組み立てを `_createClipLayerMirrorCardHtmlParts()` へ分離し、DOM側の `_appendLayerPanelCardParts()` と同じ「カード部品を並べる」構造へ寄せた。
+  - CAF内部カードHTMLのdetails/action生成を `_createClipLayerMirrorCardDetailsHtml()` / `_createClipLayerMirrorCardActionHtmlParts()` へ分離し、旧カード側のdetails/action追加処理と対応する単位にした。
+  - 旧カード側のdetails/action生成を `_createLegacyLayerCardDetailsElement()` / `_createLegacyLayerCardActionElements()` に分離し、通常Layer/Folderカードの組み立てを `_createLegacyLayerCardContentParts()` 経由のparts配列appendに寄せた。
+  - 背景レイヤーカードも `_createLegacyBackgroundLayerCardContentParts()` 経由のparts配列生成へ寄せ、旧カードのappend専用ヘルパーを削除した。
+  - 旧カード/CAF内部カードのcontent parts整列を `_createLayerPanelCardContentParts()` に通し、DOM要素とHTML文字列の双方で childLine / thumbnail / details / actions の並べ方を同じ入口にした。
+  - 旧カードcontent parts内で `_createLegacyLayerCardThumbnail()` を呼ぶ形にし、通常Layer/Folderカードの呼び出し元からサムネイル生成責務を外した。
+  - 旧カード入力を `_createLegacyLayerCardOptions()` に集約し、row model生成・通常content parts・背景content partsが同じoptions経路を使う形へ寄せた。
+  - 旧カードDOM生成入口を `_createLegacyLayerCardElement()` にまとめ、shell生成・content parts追加・通常カードclick接続を同じ関数で扱う形にした。
+  - CAF内部カードHTML生成入口を `_createClipLayerMirrorCardHtml()` へ分け、row model生成を `_createClipLayerMirrorCardRowModel()` に分離した。旧カードDOM側の `_createLegacyLayerCardElement()` / row model生成と対応する構造に寄せた。
+  - 旧カード/CAF内部カードのrow model生成を `_createLayerPanelCardRowModelFromOptions()` 経由にし、variant別のclass/data/style指定を共通row builderへ渡す入口を揃えた。
+  - 旧カードDOM側のparts流し込みを `_populateLayerPanelCardElement()`、CAF内部カードHTML側のparts描画を `_createLayerPanelCardRowHtmlFromParts()` に分離し、row/card + parts の処理単位を揃えた。
+  - 旧カードの通常/背景parts分岐を `_createLegacyLayerCardParts()` に分離し、`_createLegacyLayerCardElement()` 本体を shell生成・parts流し込み・click接続だけにした。
+  - 旧カード行のclass/data生成を `_createLegacyLayerCardClassOptions()` / `_createLegacyLayerCardDataOptions()` へ分離し、旧カード固有の互換classとdata属性指定をrow model本体から切り出した。
+  - CAF内部カードと旧カードのselector散在を減らしつつ、旧カードD&Dのフォルダ内挿入挙動をCAF側へ一歩寄せた。
+  - 残存確認: `legacy-layer-card-*` / `clip-layer-mirror-*` のclass名と、CAF内部カードHTML生成・旧カードDOM生成の差分はまだ残る。挙動経路はかなり共通化済みだが、完全な単一カードrenderer化まではTask5内の残作業。
   - **確認**: `node --check tegaki_work/ui/layer-panel-renderer.js` / `npm.cmd run build` 成功。検証で生成された `dist` のハッシュ生成物は作業差分から除外済み。
 - **Task5進行: カードvariant設定の共通化**:
   - `layer-panel-renderer.js`: 旧Layer/FolderカードとCAF内部カードの `variant` 名、row selector、D&Dゴーストclassを `_getLayerPanelCardVariantConfig()` へ集約。
