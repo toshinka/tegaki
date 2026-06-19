@@ -528,12 +528,11 @@ export const DOMBuilder = (function() {
 
         const canvasArea = buildCanvasArea();
         canvasArea.appendChild(buildPenSettingsPopup());
-        canvasArea.appendChild(buildExportPopup());
-        canvasArea.appendChild(buildResizePopup());
-        canvasArea.appendChild(buildSettingsPopup());
-        canvasArea.appendChild(buildLayerTransformPanel());
-        
         mainLayout.appendChild(canvasArea);
+        mainLayout.appendChild(buildExportPopup());
+        mainLayout.appendChild(buildResizePopup());
+        mainLayout.appendChild(buildSettingsPopup());
+        mainLayout.appendChild(buildLayerTransformPanel());
 
         const rightPanel = createElement('div', { className: 'right-panel' });
         rightPanel.appendChild(buildLayerPanel());

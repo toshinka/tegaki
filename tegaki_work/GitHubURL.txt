@@ -3,12 +3,8 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_BOUNDARY.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_HANDOFF.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PEN_PROGRESS.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/proposals/GEMINI提案_ペン設定タブ新設_設定接続_実装計画書.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/proposals/implementation_plan.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/proposals/pen-improvement-proposal.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/proposals/GEMINI提案_ペン設定タブ新設_設定接続_実装計画書.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/00_%E8%A8%88%E7%94%BB%E7%B4%A2%E5%BC%95.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/%E5%AE%9F%E8%A3%85%E3%81%97%E3%81%9F%E3%81%84%E3%81%93%E3%81%A8%E3%83%A1%E3%83%A2.txt
 
 
 # GitHubURL — tegaki_work ファイル一覧
@@ -133,6 +129,5 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/li
 # - system/drawing/webgl2-drawing-layer.js
 
 "D:\GitHub\tegaki\PastFiles\tegaki_phase1b1\PROGRESS.md"
-
 
 

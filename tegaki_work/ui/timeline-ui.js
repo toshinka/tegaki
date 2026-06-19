@@ -1,6 +1,6 @@
-// ===== ui/timeline-ui.js - Phase 4: レイヤー変形連携完全版 =====
-// Phase 4: layer:transform-updated イベント購読追加
-// Vモード編集がタイムラインサムネイルに即座に反映
+// ===== ui/timeline-ui.js - Timeline UI / Layer Panel Frame Indicator =====
+// 旧Timeline UIと新Animation TableのFrame表示を橋渡しする。
+// Layer PanelのFrame indicatorはAnimation Table表示中だけ有効化する。
 
 (function() {
     'use strict';
@@ -792,13 +792,19 @@
         }
         
         updateLayerPanelIndicator() {
+            const frameIndicator = document.querySelector('#layer-panel-container .frame-indicator');
             const frameDisplay = document.getElementById('frame-display');
-            if (!frameDisplay) return;
+            if (!frameIndicator || !frameDisplay) return;
             
             // Phase 4z20: 新アニメテーブルのFrameに同期する
             const popupManager = window.coreEngine?.popupManager || window.PopupManager;
             const animTable = popupManager?.get?.('animationTable');
-            if (animTable && animTable.model && typeof animTable.model.playback?.currentFrame === 'number') {
+            const isAnimationTableVisible = animTable?.isVisible === true;
+            frameIndicator.classList.toggle('is-visible', isAnimationTableVisible);
+            frameIndicator.setAttribute('aria-hidden', isAnimationTableVisible ? 'false' : 'true');
+            if (!isAnimationTableVisible) return;
+
+            if (animTable.model && typeof animTable.model.playback?.currentFrame === 'number') {
                 if (animTable.isLaneOnlySelected) {
                     frameDisplay.textContent = 'NO FRAME';
                     document.getElementById('frame-prev-btn')?.setAttribute('disabled', 'true');

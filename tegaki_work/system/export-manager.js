@@ -14,6 +14,7 @@
 
 import * as PIXI from 'pixi.js';
 import { TegakiEventBus } from './event-bus.js';
+import { TimelineFrameCompositor } from './animation/timeline-frame-compositor.js';
 
 export class ExportManager {
     constructor(app, layerSystem, animationSystem = null, cameraSystem = null) {
@@ -43,11 +44,50 @@ export class ExportManager {
      * フレーム数取得（厳格版）
      */
     _getFrameCount() {
+        const timelineSource = this._getTimelineSource();
+        if (timelineSource) {
+            return timelineSource.compositor.getFrameCount();
+        }
         const animData = this.animationSystem?.getAnimationData?.();
         if (!animData || !animData.frames || !Array.isArray(animData.frames)) {
             return 0;
         }
         return animData.frames.length;
+    }
+
+    getFrameCount() {
+        return this._getFrameCount();
+    }
+
+    getAnimationFPS() {
+        const timelineSource = this._getTimelineSource();
+        if (timelineSource) return timelineSource.compositor.getFps();
+        return this.animationSystem?.getAnimationData?.()?.fps || 12;
+    }
+
+    _getTimelineSource() {
+        const popup = window.PopupManager?.popups?.get?.('animationTable')?.instance;
+        const model = popup?.model;
+        if (!model) return null;
+        const compositor = new TimelineFrameCompositor(model, this.layerSystem);
+        return compositor.getFrameCount() > 0 ? { model, compositor } : null;
+    }
+
+    async renderAnimationFrames(options = {}) {
+        const timelineSource = this._getTimelineSource();
+        if (timelineSource) {
+            return timelineSource.compositor.renderFrames({
+                ...options,
+                onProgress: (current, total) => {
+                    TegakiEventBus?.emit('export:progress', {
+                        current,
+                        total,
+                        progress: Math.round((current / total) * 100)
+                    });
+                }
+            });
+        }
+        return null;
     }
     
     /**
@@ -168,42 +208,39 @@ export class ExportManager {
         }
         
         try {
-            const pngExporter = this.exporters['png'];
-            if (!pngExporter) {
-                throw new Error('PNG Exporter not available');
-            }
-            
-            const currentFrame = this.animationSystem.getCurrentFrameIndex();
             const blobs = [];
-            
-            for (let i = 0; i < frameCount; i++) {
-                this.animationSystem.setCurrentFrame(i);
-                await this._waitFrame();
-                
-                const blob = await pngExporter.generateBlob({
-                    resolution: resolution,
-                    transparent: options.transparent
-                });
-                
-                const frameNum = String(i + 1).padStart(4, '0');
-                const filename = `${baseName}_${frameNum}.png`;
-                
-                this.downloadFile(blob, filename);
-                blobs.push({ blob, filename, index: i });
-                
-                const progress = Math.round(((i + 1) / frameCount) * 100);
-                this.currentExport.progress = progress;
-                
-                if (TegakiEventBus) {
-                    TegakiEventBus.emit('export:progress', {
-                        current: i + 1,
-                        total: frameCount,
-                        progress: progress
-                    });
+            const timelineFrames = await this.renderAnimationFrames({
+                ...options,
+                resolution
+            });
+
+            if (timelineFrames) {
+                for (let i = 0; i < timelineFrames.length; i++) {
+                    const blob = await this._canvasToPNGBlob(timelineFrames[i].canvas);
+                    const frameNum = String(i + 1).padStart(4, '0');
+                    const filename = `${baseName}_${frameNum}.png`;
+                    this.downloadFile(blob, filename);
+                    blobs.push({ blob, filename, index: timelineFrames[i].index });
                 }
+            } else {
+                const pngExporter = this.exporters['png'];
+                const currentFrame = this.animationSystem.getCurrentFrameIndex();
+                for (let i = 0; i < frameCount; i++) {
+                    this.animationSystem.setCurrentFrame(i);
+                    await this._waitFrame();
+                    const blob = await pngExporter.generateBlob({
+                        resolution,
+                        transparent: options.transparent
+                    });
+                
+                    const frameNum = String(i + 1).padStart(4, '0');
+                    const filename = `${baseName}_${frameNum}.png`;
+                
+                    this.downloadFile(blob, filename);
+                    blobs.push({ blob, filename, index: i });
+                }
+                this.animationSystem.setCurrentFrame(currentFrame);
             }
-            
-            this.animationSystem.setCurrentFrame(currentFrame);
             
             if (TegakiEventBus) {
                 TegakiEventBus.emit('export:completed', {
@@ -215,18 +252,16 @@ export class ExportManager {
             
             this.currentExport = null;
             
-            const animData = this.animationSystem.getAnimationData();
             return {
                 blobs: blobs,
                 baseName: baseName,
                 frameCount: frameCount,
-                ffmpegCommand: this._generateFFmpegCommand(baseName, animData)
+                ffmpegCommand: this._generateFFmpegCommand(baseName, {
+                    fps: this.getAnimationFPS()
+                })
             };
             
         } catch (error) {
-            const currentFrame = this.animationSystem.getCurrentFrameIndex();
-            this.animationSystem.setCurrentFrame(currentFrame);
-            
             this.currentExport = null;
             
             if (TegakiEventBus) {
@@ -238,6 +273,15 @@ export class ExportManager {
             
             throw error;
         }
+    }
+
+    _canvasToPNGBlob(canvas) {
+        return new Promise((resolve, reject) => {
+            canvas.toBlob(blob => {
+                if (blob) resolve(blob);
+                else reject(new Error('PNG Blob generation failed'));
+            }, 'image/png');
+        });
     }
     
     /**

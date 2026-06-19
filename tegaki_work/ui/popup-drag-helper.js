@@ -27,6 +27,15 @@ const DEFAULT_INTERACTIVE_SELECTOR = [
     '.popup-close-btn'
 ].join(',');
 
+export function mountPopupAtOverlayRoot(popup) {
+    if (!popup) return null;
+    const overlayRoot = document.querySelector('.main-layout') || document.body;
+    if (popup.parentElement !== overlayRoot) {
+        overlayRoot.appendChild(popup);
+    }
+    return popup;
+}
+
 export function attachPopupDrag(popup, options = {}) {
     if (!popup) return () => {};
 

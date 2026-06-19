@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * ファイル名: ui/animation-table-popup.js
- * 責務: 動画ツール風アニメーションテーブル（ToonSquid風）のUIを提供する
+ * 責務: 動画ツール風アニメーションテーブル（ToonSquid風）のUI、CAF合成preview、Timeline操作を提供する
  * 依存: system/event-bus.js, system/animation/animation-data-model.js
  * 被依存: core-engine.js, system/popup-manager.js
  * ============================================================================
@@ -71,6 +71,11 @@ export class AnimationTablePopup {
         this._clipMoveMoved = false;
         this._isClipMoving = false;
         this._clipMovePreviewSlot = null;
+
+        // Timeline viewportの修飾ドラッグ操作
+        this._timelineViewportGesture = null;
+        this._timelineGestureMoved = false;
+        this._timelineSpacePressed = false;
 
         // 自動キャプチャ関連
         this.isAutoCaptureActive = false;
@@ -483,9 +488,62 @@ export class AnimationTablePopup {
         this._visibilityPreviewApplied = true;
     }
 
+    _applyDrawingVisibilityPreview() {
+        if (!this.isVisible || !this.isPreviewActive || !this.selectedCelId || !this.layerSystem) return;
+
+        this._ensurePreviewContainer();
+        if (this.animationPreviewContainer) {
+            this.animationPreviewContainer.removeChildren();
+        }
+
+        const layers = this.layerSystem.getLayers() || [];
+        const currentFrame = this.model.playback.currentFrame;
+        const filterIds = this._getPreviewLaneFilterIds();
+
+        layers.forEach(layer => {
+            const layerData = layer.layerData;
+            if (!layerData || layerData.isBackground || layerData.isFolder) return;
+
+            const isTracked = this.model.tracks.some(t => (t.sourceLayerId || t.layerId) === layerData.id);
+            if (isTracked || layerData.isAnimationWorkingLayer === true) {
+                layer.visible = false;
+            }
+        });
+
+        this._renderFrameComposite(currentFrame, layers, {
+            filterIds,
+            excludeClipIds: new Set([this.selectedCelId])
+        });
+        this._showSelectedClipWorkingLayers();
+        this._visibilityPreviewApplied = true;
+    }
+
+    _showSelectedClipWorkingLayers() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.clip?.assetId) return false;
+
+        const asset = this.model.getClipAsset(entry.clip.assetId);
+        if (!asset) return false;
+
+        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
+        const workingLayers = this._getRasterWorkingLayers();
+        drawableInternalLayers.forEach((internalLayer, index) => {
+            const workingLayer = workingLayers[index];
+            if (!workingLayer?.layerData) return;
+            workingLayer.visible = entry.clip.visible !== false
+                && this._isInternalLayerEffectivelyVisible(asset, internalLayer);
+        });
+        for (let index = drawableInternalLayers.length; index < workingLayers.length; index++) {
+            if (workingLayers[index]) workingLayers[index].visible = false;
+        }
+        this.layerSystem.refreshClippingMasks?.();
+        return true;
+    }
+
     _renderFrameComposite(frameIndex, layers, options = {}) {
         const tracks = this.model.tracks;
         const filterIds = options.filterIds || null;
+        const excludeClipIds = options.excludeClipIds || null;
 
         // データの tracks[0] は UI の一番上（＝レイヤーの前面）なので、逆順で addChild する
         for (let i = tracks.length - 1; i >= 0; i--) {
@@ -496,7 +554,7 @@ export class AnimationTablePopup {
             if (filterIds && !filterIds.has(track.id)) continue;
 
             const cel = track.getCelAtFrame(frameIndex);
-            if (cel && cel.visible !== false) {
+            if (cel && cel.visible !== false && !excludeClipIds?.has(cel.id)) {
                 this._renderCelPreview(track, cel, layers, {
                     ...options,
                     allowSourceLayerFallback: false
@@ -1005,9 +1063,12 @@ export class AnimationTablePopup {
 
         this._captureSelectedClip({
             silent: true,
-            requireSourceLayerId: this.isAutoCaptureActive ? layerId : null
+            requireSourceLayerId: this.isAutoCaptureActive ? layerId : null,
+            renderAfter: false
         });
         this.isDrawingPreviewSuspended = false;
+        this.render();
+        this._requestLayerPanelSync();
 
         const afterAsset = asset?.id ? this.model.getClipAsset(asset.id) : null;
         const afterState = afterAsset ? this._captureInternalLayerHistoryState(afterAsset) : null;
@@ -1020,6 +1081,13 @@ export class AnimationTablePopup {
                 mode: data.mode || data.data?.mode || 'draw'
             });
         }
+    }
+
+    _handleDrawingCancelled() {
+        if (!this.isDrawingPreviewSuspended) return;
+        this.isDrawingPreviewSuspended = false;
+        this._drawingHistoryBeforeStates.clear();
+        this.render();
     }
 
     _handleDrawingStarted(data = {}) {
@@ -1035,7 +1103,7 @@ export class AnimationTablePopup {
         this._invalidateWorkingLayerSnapshotId(layerId);
         if (this.isPreviewActive) {
             this.isDrawingPreviewSuspended = true;
-            this._restoreVisibility();
+            this._applyDrawingVisibilityPreview();
         }
     }
 
@@ -2996,6 +3064,7 @@ export class AnimationTablePopup {
         const forceRestore = options.forceRestore === true;
 
         const drawableInternalLayers = this._getDrawableInternalLayers(asset);
+        this._ensureWorkingLayerCapacity(drawableInternalLayers.length);
         const targetLayers = this._getRasterWorkingLayers();
         if (targetLayers.length === 0) return false;
         if (!drawableInternalLayers.some(layer => layer.id === this.selectedInternalLayerId)) {
@@ -3235,6 +3304,29 @@ export class AnimationTablePopup {
         this._syncWorkingLayersForCurrentFrame();
         this.render();
         this._requestLayerPanelSync();
+        return true;
+    }
+
+    _moveSelectedClipWithinCurrentFrame(direction) {
+        if (!this.selectedCelId || direction === 0) return false;
+
+        const frameIndex = this.model.playback.currentFrame;
+        const entries = this.model.tracks.map(lane => {
+            if (lane.type === 'folder' || lane.isBackground) return null;
+            const clip = lane.getCelAtFrame?.(frameIndex) || null;
+            return clip ? { lane, track: lane, clip } : null;
+        }).filter(Boolean);
+        if (entries.length <= 1) return false;
+
+        const currentIndex = entries.findIndex(entry => entry.clip.id === this.selectedCelId);
+        if (currentIndex < 0) return false;
+        const nextIndex = Math.max(0, Math.min(entries.length - 1, currentIndex + direction));
+        const nextEntry = entries[nextIndex];
+        if (!nextEntry || nextEntry.clip.id === this.selectedCelId) return false;
+
+        this._activateClipEntry(nextEntry);
+        this.render();
+        this._flushLayerPanelSync();
         return true;
     }
 
@@ -3539,8 +3631,11 @@ export class AnimationTablePopup {
         // プレビューの適用判定
         if (this.isLaneOnlySelected) {
             this._restoreVisibility();
-        } else if (this.isClipEditModeActive || this.isTransformPreviewSuspended || this.isDrawingPreviewSuspended) {
-            // EDITモード中は合成を停止し、実レイヤー描画を優先
+        } else if (this.isDrawingPreviewSuspended) {
+            // 描画対象CAFだけworking Layerへ切り替え、同一Frameの他CAFは合成previewへ残す。
+            this._applyDrawingVisibilityPreview();
+        } else if (this.isClipEditModeActive || this.isTransformPreviewSuspended) {
+            // EDIT/変形中は合成を停止し、実レイヤー表示を優先する。
             this._restoreVisibility();
         } else if (this.isPreviewActive) {
             this._applyVisibilityPreview();
@@ -4046,6 +4141,68 @@ export class AnimationTablePopup {
             zoomInBtn.addEventListener('click', () => this._adjustTimelineZoom(1));
         }
 
+        const timelineViewport = this.panel.querySelector('.anim-table-viewport');
+        if (timelineViewport) {
+            timelineViewport.addEventListener('wheel', (e) => {
+                if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+
+                if (e.ctrlKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.deltaY === 0) return;
+                    this._adjustTimelineZoom(e.deltaY < 0 ? 1 : -1);
+                    return;
+                }
+
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    timelineViewport.scrollLeft += e.deltaX || e.deltaY;
+                    return;
+                }
+
+                if (e.deltaY !== 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    timelineViewport.scrollTop += e.deltaY;
+                }
+            }, { passive: false });
+
+            timelineViewport.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                if (!this._timelineSpacePressed) return;
+                if (e.target.closest('button, input, label, select, textarea, [contenteditable="true"], .anim-cel-block, .anim-cel-handle, .anim-cel-resize-grip')) return;
+
+                const rect = timelineViewport.getBoundingClientRect();
+                const trackListWidth = this.panel.querySelector('.anim-track-list')?.getBoundingClientRect().width || 0;
+                const localX = e.clientX - rect.left;
+                const anchorContentX = timelineViewport.scrollLeft + localX;
+                this._timelineViewportGesture = {
+                    mode: e.shiftKey ? 'zoom' : 'pan',
+                    pointerId: e.pointerId,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    startScrollLeft: timelineViewport.scrollLeft,
+                    startScrollTop: timelineViewport.scrollTop,
+                    startCellWidth: this.timelineCellWidth,
+                    startZoomIndex: Math.max(0, TIMELINE_ZOOM_STEPS.indexOf(this.timelineCellWidth)),
+                    anchorLocalX: localX,
+                    anchorTimelineX: Math.max(0, anchorContentX - trackListWidth),
+                    trackListWidth
+                };
+                this._timelineGestureMoved = false;
+                this.panel.classList.add(e.shiftKey ? 'timeline-zoom-dragging' : 'timeline-pan-dragging');
+                try {
+                    timelineViewport.setPointerCapture?.(e.pointerId);
+                } catch (error) {}
+                document.addEventListener('pointermove', this._onTimelineViewportPointerMove, { passive: false });
+                document.addEventListener('pointerup', this._onTimelineViewportPointerUp);
+                document.addEventListener('pointercancel', this._onTimelineViewportPointerUp);
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        }
+
         const scopeAllBtn = this.panel.querySelector('#anim-scope-all-btn');
         const scopeLaneBtn = this.panel.querySelector('#anim-scope-lane-btn');
         const scopeSetBtn = this.panel.querySelector('#anim-scope-set-btn');
@@ -4072,6 +4229,7 @@ export class AnimationTablePopup {
         const trackList = this.panel.querySelector('.anim-track-list');
         if (trackList) {
             trackList.addEventListener('click', (e) => {
+                if (this._timelineGestureMoved) return;
                 if (e.target.closest('.anim-lane-add-btn')) {
                     this.addIndependentLane();
                     e.stopPropagation();
@@ -4109,7 +4267,7 @@ export class AnimationTablePopup {
 
             timelineGrid.addEventListener('click', (e) => {
                 // ドラッグ・伸縮・移動中なら無視
-                if (this._dragMoved || this._retimingMoved || this._clipMoveMoved) {
+                if (this._dragMoved || this._retimingMoved || this._clipMoveMoved || this._timelineGestureMoved) {
                     this._dragMoved = false;
                     this._retimingMoved = false;
                     this._clipMoveMoved = false;
@@ -4335,6 +4493,55 @@ export class AnimationTablePopup {
             setTimeout(() => {
                 this._dragMoved = false;
             }, 0);
+        };
+
+        this._onTimelineViewportPointerMove = (e) => {
+            const gesture = this._timelineViewportGesture;
+            if (!gesture || e.pointerId !== gesture.pointerId) return;
+
+            const deltaX = e.clientX - gesture.startX;
+            const deltaY = e.clientY - gesture.startY;
+            if (!this._timelineGestureMoved && Math.hypot(deltaX, deltaY) < 4) return;
+            this._timelineGestureMoved = true;
+            e.preventDefault();
+
+            if (gesture.mode === 'pan') {
+                timelineViewport.scrollLeft = gesture.startScrollLeft - deltaX;
+                timelineViewport.scrollTop = gesture.startScrollTop - deltaY;
+                return;
+            }
+
+            const zoomStepDelta = Math.trunc(-deltaY / 28);
+            const nextIndex = Math.max(
+                0,
+                Math.min(TIMELINE_ZOOM_STEPS.length - 1, gesture.startZoomIndex + zoomStepDelta)
+            );
+            const nextCellWidth = TIMELINE_ZOOM_STEPS[nextIndex];
+            if (!nextCellWidth || nextCellWidth === this.timelineCellWidth) return;
+
+            const scaleRatio = nextCellWidth / gesture.startCellWidth;
+            this._adjustTimelineZoom(nextIndex - TIMELINE_ZOOM_STEPS.indexOf(this.timelineCellWidth));
+            timelineViewport.scrollLeft = gesture.trackListWidth
+                + (gesture.anchorTimelineX * scaleRatio)
+                - gesture.anchorLocalX;
+        };
+
+        this._onTimelineViewportPointerUp = (e = null) => {
+            const gesture = this._timelineViewportGesture;
+            if (!gesture || (e && e.pointerId !== gesture.pointerId)) return;
+            try {
+                timelineViewport.releasePointerCapture?.(gesture.pointerId);
+            } catch (error) {}
+            this._timelineViewportGesture = null;
+            this.panel.classList.remove('timeline-pan-dragging', 'timeline-zoom-dragging');
+            document.removeEventListener('pointermove', this._onTimelineViewportPointerMove);
+            document.removeEventListener('pointerup', this._onTimelineViewportPointerUp);
+            document.removeEventListener('pointercancel', this._onTimelineViewportPointerUp);
+            if (this._timelineGestureMoved) {
+                setTimeout(() => {
+                    this._timelineGestureMoved = false;
+                }, 0);
+            }
         };
 
         const resizeHandle = this.panel.querySelector('.anim-resize-handle');
@@ -4972,6 +5179,16 @@ export class AnimationTablePopup {
                 flex: 1;
                 overflow: auto;
                 background: rgba(128, 0, 0, 0.02);
+            }
+
+            .animation-table-panel.timeline-pan-dragging .anim-table-viewport {
+                cursor: grabbing;
+                user-select: none;
+            }
+
+            .animation-table-panel.timeline-zoom-dragging .anim-table-viewport {
+                cursor: ns-resize;
+                user-select: none;
             }
 
             .anim-zoom-controls {
@@ -6123,6 +6340,9 @@ export class AnimationTablePopup {
         this.eventBus.on('drawing:stroke-completed', (data = {}) => {
             this._handleDrawingCompleted(data);
         });
+        this.eventBus.on('drawing:stroke-cancelled', () => {
+            this._handleDrawingCancelled();
+        });
 
         // キーボードショートカット
         document.addEventListener('keydown', (e) => {
@@ -6137,6 +6357,11 @@ export class AnimationTablePopup {
             );
             if (isInput) return;
 
+            if (e.code === 'Space') {
+                this._timelineSpacePressed = true;
+                return;
+            }
+
             if (e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) {
                 this.deleteActiveSelection();
                 e.preventDefault();
@@ -6147,6 +6372,14 @@ export class AnimationTablePopup {
             } else if (e.altKey && e.key === 'ArrowDown') {
                 this._moveActiveLaneBy(1);
                 e.preventDefault();
+            } else if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'ArrowUp') {
+                this._moveSelectedClipWithinCurrentFrame(-1);
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            } else if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'ArrowDown') {
+                this._moveSelectedClipWithinCurrentFrame(1);
+                e.preventDefault();
+                e.stopImmediatePropagation();
             } else if (e.key === 'ArrowLeft') {
                 const current = this.model.playback.currentFrame;
                 if (current > 0) {
@@ -6177,6 +6410,19 @@ export class AnimationTablePopup {
                     }
                 }
                 e.preventDefault();
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.code !== 'Space') return;
+            this._timelineSpacePressed = false;
+            if (this._timelineViewportGesture) {
+                this._onTimelineViewportPointerUp?.();
+            }
+        });
+        window.addEventListener('blur', () => {
+            this._timelineSpacePressed = false;
+            if (this._timelineViewportGesture) {
+                this._onTimelineViewportPointerUp?.();
             }
         });
     }

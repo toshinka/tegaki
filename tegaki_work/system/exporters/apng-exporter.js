@@ -31,6 +31,7 @@
  */
 
 import * as PIXI from 'pixi.js';
+import UPNG from 'upng-js';
 
 window.APNGExporter = (function() {
     'use strict';
@@ -48,8 +49,8 @@ window.APNGExporter = (function() {
          * UPNG.js利用可能性チェック
          */
         _checkUPNGAvailability() {
-            if (typeof UPNG === 'undefined') {
-                throw new Error('UPNG.js not loaded. Include: https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.js');
+            if (!UPNG?.encode) {
+                throw new Error('UPNG encoder is not available');
             }
         }
         
@@ -63,19 +64,15 @@ window.APNGExporter = (function() {
             
             this._checkUPNGAvailability();
             
-            if (!this.manager?.animationSystem) {
-                throw new Error('AnimationSystem not available');
-            }
-            
-            const animData = this.manager.animationSystem.getAnimationData();
-            if (!animData?.frames || animData.frames.length < 2) {
+            const frameCount = this.manager.getFrameCount?.() || 0;
+            if (frameCount < 2) {
                 throw new Error('APNGには2つ以上のフレームが必要です');
             }
             
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('export:started', { 
                     format: 'apng',
-                    frames: animData.frames.length
+                    frames: frameCount
                 });
             }
             
@@ -93,7 +90,7 @@ window.APNGExporter = (function() {
                     window.TegakiEventBus.emit('export:completed', {
                         format: 'apng',
                         size: blob.size,
-                        frames: animData.frames.length,
+                        frames: frameCount,
                         filename: filename
                     });
                 }
@@ -116,17 +113,43 @@ window.APNGExporter = (function() {
          * APNG Blob生成【v8.31.0 独立コンテナ方式】
          */
         async generateBlob(options = {}) {
+            const resolution = options.resolution || 2;
+            const timelineFrames = await this.manager.renderAnimationFrames({
+                ...options,
+                resolution
+            });
+            if (timelineFrames) {
+                if (timelineFrames.length < 2) {
+                    throw new Error('APNGには2つ以上のフレームが必要です');
+                }
+                const firstCanvas = timelineFrames[0].canvas;
+                const frames = timelineFrames.map(frame => {
+                    const ctx = frame.canvas.getContext('2d', { willReadFrequently: true });
+                    return ctx.getImageData(0, 0, frame.canvas.width, frame.canvas.height).data.buffer;
+                });
+                const delays = timelineFrames.map(frame => frame.delayMs);
+                const apngBuffer = UPNG.encode(
+                    frames,
+                    firstCanvas.width,
+                    firstCanvas.height,
+                    0,
+                    delays
+                );
+                return new Blob([apngBuffer], { type: 'image/png' });
+            }
+
+            if (!this.manager?.animationSystem) {
+                throw new Error('AnimationSystem not available');
+            }
+
             const CONFIG = window.TEGAKI_CONFIG;
             const animData = this.manager.animationSystem.getAnimationData();
-            const resolution = options.resolution || 2;
-            
             const settings = {
                 width: CONFIG.canvas.width * resolution,
                 height: CONFIG.canvas.height * resolution,
                 fps: options.fps || 12,
-                resolution: resolution
+                resolution
             };
-            
             const frames = [];
             const delays = [];
             

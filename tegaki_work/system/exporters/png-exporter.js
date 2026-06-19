@@ -45,9 +45,7 @@ window.PNGExporter = (function() {
          * APNG自動切替判定
          */
         _shouldUseAPNG() {
-            const animData = this.manager.animationSystem?.getAnimationData?.();
-            const frameCount = animData?.frames?.length || 0;
-            return frameCount >= 2;
+            return this.manager.getFrameCount?.() >= 2;
         }
         
         /**

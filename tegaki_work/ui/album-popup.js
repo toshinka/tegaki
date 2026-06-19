@@ -17,6 +17,7 @@ import Sortable from 'sortablejs';
 
 import { UI_ICONS } from './ui-icons.js';
 import { albumStorage } from '../system/album-storage.js';
+import { mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 
 export class AlbumPopup {
     constructor(dependencies = {}) {
@@ -52,13 +53,14 @@ export class AlbumPopup {
         if (!this.popup) {
             this._createPopupElement();
         } else {
+            mountPopupAtOverlayRoot(this.popup);
             this.popup.classList.remove('show');
             this.popup.style.display = 'none';
         }
     }
 
     _createPopupElement() {
-        const container = document.querySelector('.canvas-area') || document.body;
+        const container = document.querySelector('.main-layout') || document.body;
         if (!container) return;
 
         const popupDiv = document.createElement('div');
@@ -390,10 +392,12 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             if (confirm(`${data.snapshots.length}件の項目を現在のアルバムに追加しますか？`)) {
                 // IDの衝突を避けるために再採番
                 const now = Date.now();
-                const newSnapshots = data.snapshots.map((s, idx) => ({
-                    ...s,
-                    id: now + idx + Math.floor(Math.random() * 1000)
-                }));
+                const newSnapshots = data.snapshots.map((snapshot, index) =>
+                    this._normalizeImportedSnapshot(
+                        snapshot,
+                        now + index + Math.floor(Math.random() * 1000)
+                    )
+                );
 
                 const previousSnapshots = [...this.snapshots];
                 try {
@@ -415,6 +419,30 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             e.target.value = '';
         };
         reader.readAsText(file);
+    }
+
+    _normalizeImportedSnapshot(snapshot, nextId) {
+        const normalized = {
+            ...(snapshot && typeof snapshot === 'object' ? snapshot : {}),
+            id: nextId
+        };
+        if (typeof normalized.projectData === 'string') {
+            try {
+                normalized.projectData = JSON.parse(normalized.projectData);
+            } catch {
+                normalized.projectData = null;
+            }
+        }
+        if (!normalized.projectData && normalized.project && typeof normalized.project === 'object') {
+            normalized.projectData = normalized.project;
+        }
+        normalized.timestamp = Number.isFinite(normalized.timestamp)
+            ? normalized.timestamp
+            : Date.now();
+        normalized.thumbnail = typeof normalized.thumbnail === 'string'
+            ? normalized.thumbnail
+            : '';
+        return normalized;
     }
 
     _parseAlbumImportText(text) {
@@ -478,8 +506,12 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
     }
 
     async _loadSnapshot(snapshot) {
-        if (snapshot?.projectData && window.projectManager?.loadProject) {
-            await window.projectManager.loadProject(snapshot.projectData);
+        const normalizedSnapshot = this._normalizeImportedSnapshot(
+            snapshot,
+            snapshot?.id ?? Date.now()
+        );
+        if (normalizedSnapshot.projectData && window.projectManager?.loadProject) {
+            await window.projectManager.loadProject(normalizedSnapshot.projectData);
             this.hide();
             return;
         }
