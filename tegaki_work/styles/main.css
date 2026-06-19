@@ -2436,6 +2436,29 @@ canvas {
     width: 56px;
 }
 
+.history-setting-auto {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--futaba-maroon);
+    font-size: 12px;
+}
+
+.history-setting-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.history-setting-row label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--futaba-maroon);
+    font-size: 12px;
+}
+
 .preview-container img { 
     max-width: 100%; 
     max-height: 200px; 

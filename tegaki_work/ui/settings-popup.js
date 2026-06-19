@@ -142,6 +142,32 @@ export class SettingsPopup {
                         <span id="status-panel-state">表示中</span>
                     </div>
                 </div>
+                <div class="setting-group">
+                    <div class="setting-label">History</div>
+                    <label class="history-setting-auto">
+                        <input id="history-auto-adjust" type="checkbox" checked>
+                        端末メモリに合わせて自動調整
+                    </label>
+                    <div class="history-setting-row">
+                        <label>履歴回数
+                            <select id="history-max-entries">
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="250">250</option>
+                                <option value="500">500</option>
+                            </select>
+                        </label>
+                        <label>メモリ上限
+                            <select id="history-max-memory">
+                                <option value="128">128 MB</option>
+                                <option value="256">256 MB</option>
+                                <option value="512">512 MB</option>
+                                <option value="1024">1024 MB</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="history-usage-display" class="setting-description">履歴: 0 / 250　使用量: 0 / 256 MB</div>
+                </div>
             </div>
 
             <div id="tab-pen" class="ui-tab-content">
@@ -339,6 +365,10 @@ export class SettingsPopup {
 
             statusToggle: document.getElementById('status-panel-toggle'),
             statusState: document.getElementById('status-panel-state'),
+            historyAutoAdjust: document.getElementById('history-auto-adjust'),
+            historyMaxEntries: document.getElementById('history-max-entries'),
+            historyMaxMemory: document.getElementById('history-max-memory'),
+            historyUsage: document.getElementById('history-usage-display'),
 
             bucketRefToggle: document.getElementById('bucket-ref-all-toggle'),
             bucketRefState: document.getElementById('bucket-ref-all-state')
@@ -352,6 +382,7 @@ export class SettingsPopup {
         this._setupPopupDrag();
         this._setupButtons();
         this._loadSettings();
+        this.eventBus?.on('history:changed', () => this._updateHistoryUsageDisplay());
         this.initialized = true;
     }
 
@@ -516,6 +547,27 @@ export class SettingsPopup {
                 this._toggleBucketRef();
             });
         }
+        this.elements.historyAutoAdjust?.addEventListener('change', () => {
+            const enabled = this.elements.historyAutoAdjust.checked;
+            this.settingsManager?.set('historyAutoAdjust', enabled);
+            if (enabled) {
+                const automatic = this.settingsManager?.getAutomaticHistoryDefaults?.();
+                if (automatic) {
+                    this.elements.historyMaxEntries.value = String(automatic.maxEntries);
+                    this.elements.historyMaxMemory.value = String(automatic.maxMemoryMB);
+                }
+            }
+            this._syncHistoryControlState();
+            this._updateHistoryUsageDisplay();
+        });
+        this.elements.historyMaxEntries?.addEventListener('change', () => {
+            this.settingsManager?.set('historyMaxEntries', Number(this.elements.historyMaxEntries.value));
+            this._updateHistoryUsageDisplay();
+        });
+        this.elements.historyMaxMemory?.addEventListener('change', () => {
+            this.settingsManager?.set('historyMaxMemoryMB', Number(this.elements.historyMaxMemory.value));
+            this._updateHistoryUsageDisplay();
+        });
         this.elements.bucketGapButtons?.forEach((btn) => {
             btn.addEventListener('pointerdown', (e) => {
                 e.preventDefault(); e.stopPropagation();
@@ -556,7 +608,10 @@ export class SettingsPopup {
             statusPanelVisible: true,
             bucketGapClose: 0,
             bucketUnderpaint: 1,
-            bucketReferenceAllLayers: true
+            bucketReferenceAllLayers: true,
+            historyAutoAdjust: true,
+            historyMaxEntries: 250,
+            historyMaxMemoryMB: 256
         };
     }
 
@@ -577,6 +632,44 @@ export class SettingsPopup {
         this._setBucketRefVisibility(settings.bucketReferenceAllLayers ?? defaults.bucketReferenceAllLayers);
         this._applyPressureCurveUI(settings.pressureCurve ?? defaults.pressureCurve);
         this._setStatusPanelVisibility(settings.statusPanelVisible ?? defaults.statusPanelVisible);
+        this._applyHistorySettingsUI(settings);
+    }
+
+    _applyHistorySettingsUI(settings) {
+        const automatic = this.settingsManager?.getAutomaticHistoryDefaults?.()
+            || { maxEntries: 250, maxMemoryMB: 256 };
+        const autoAdjust = settings.historyAutoAdjust !== false;
+        if (this.elements.historyAutoAdjust) {
+            this.elements.historyAutoAdjust.checked = autoAdjust;
+        }
+        if (this.elements.historyMaxEntries) {
+            this.elements.historyMaxEntries.value = String(
+                autoAdjust ? automatic.maxEntries : (settings.historyMaxEntries || 250)
+            );
+        }
+        if (this.elements.historyMaxMemory) {
+            this.elements.historyMaxMemory.value = String(
+                autoAdjust ? automatic.maxMemoryMB : (settings.historyMaxMemoryMB || 256)
+            );
+        }
+        this._syncHistoryControlState();
+        this._updateHistoryUsageDisplay();
+    }
+
+    _syncHistoryControlState() {
+        const disabled = this.elements.historyAutoAdjust?.checked === true;
+        if (this.elements.historyMaxEntries) this.elements.historyMaxEntries.disabled = disabled;
+        if (this.elements.historyMaxMemory) this.elements.historyMaxMemory.disabled = disabled;
+    }
+
+    _updateHistoryUsageDisplay() {
+        if (!this.elements.historyUsage) return;
+        const usage = window.History?.getUsage?.();
+        if (!usage) return;
+        const usedMB = usage.bytes / (1024 * 1024);
+        const maxMB = usage.maxBytes / (1024 * 1024);
+        this.elements.historyUsage.textContent =
+            `履歴: ${usage.entries} / ${usage.maxEntries}　使用量: ${usedMB.toFixed(1)} / ${Math.round(maxMB)} MB`;
     }
 
     _applyPressureCurveUI(curve) {

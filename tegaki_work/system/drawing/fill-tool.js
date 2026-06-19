@@ -510,7 +510,9 @@ export class FillTool {
             undo: () => {
                 layerManager.restoreLayerRasterSnapshot(beforeSnapshot);
             },
-            meta: { layerId, layerIndex, fillColor, fillAlpha, method }
+            meta: { layerId, layerIndex, fillColor, fillAlpha, method },
+            byteSize: (beforeSnapshot.pixels?.byteLength || 0)
+                + (afterSnapshot.pixels?.byteLength || 0)
         });
     }
 
