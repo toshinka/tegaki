@@ -60,6 +60,14 @@
 
 ## 変形・物理・Perform
 
+### Raster変形の反復劣化 `調査`
+
+- Vキー変形は確定ごとにRenderTextureへ再サンプリングするため、移動・拡縮・回転を何度も確定すると画質が劣化し得る。
+- Phase 5cでは1回のconfirmにつき再サンプリング1回であることを維持し、意図しない二重bakeを防ぐ。
+- 単純移動の整数pixel化、変形session中の元Snapshot維持、非破壊transform stateの保持を比較する。
+- 描画再開時、保存時、export時のどこで最終bakeするかを決めずに、原画像cacheだけを追加しない。
+- Phase 5dのfloating selectionと共通の「開始時Snapshot + preview transform + 1回のconfirm」境界から拡張する。
+
 ### ClipInstance transformとkeyframe `候補`
 
 - position、rotation、scale、opacityをClipInstance側へ保持する。

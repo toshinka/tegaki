@@ -1,758 +1,173 @@
-# TEGAKI プロジェクト計画書
+# TEGAKI — 技術方針・禁止事項
 
-> Gemini CLI・Claude・Codex が参照する共通方針。
-> 作業前に必ず読み、ここに反する実装へ進む場合は先にオーナーへ確認すること。
+更新日: 2026-06-19
 
----
+> Tegakiの技術方針の正本。
+> 現在状態は `tegaki_work/PROGRESS.md`、未実装計画は
+> `開発用資料保管庫/proposals/00_計画索引.md` を参照する。
 
-## 最優先ルール
+## 1. プロダクト方針
 
-- 現在の作業対象は `tegaki_work/`。`PastFiles/` と `tegaki_phase0` は参照・保存用で、通常作業では触らない。
-- オーナーはコーディング初心者。AI が全実装を担うため、可読性・責務分離・依存関係の明確さを最優先する。
-- DRY/SOLID を常に確認し、二重実装・循環依存・同じ責務の複数配置を作らない。
-- 各ファイルのヘッダーは改修時に必ず更新し、依存・被依存・イベントのズレを放置しない。
-- 過剰な `console.log` は確認完了後に削除する。長期的に必要な診断ログは用途を明記して残す。
-- 不明な API・存在不明のファイル・古い計画の内容を推測で使わない。実ファイルと実バージョンを確認してから実装する。
-- 新規クラス・関数・イベントを作る前に、必ず既存実装を `rg` で検索し、同じ責務の二重実装を避ける。
-- `TEGAKI.md`、`GEMINI.md`、`CODEX.md`、作業指示書の参照パスや役割分担がズレた場合は、実装前に修正またはオーナーへ確認する。
+Tegakiはブラウザで動作するラスターお絵かき・アニメーション統合ツール。
+デスクトップ液晶タブレットを主対象とし、キャンバスを主役にした簡潔なUIを維持する。
 
----
+- UIの原点: 「はっちゃん」の潔さ。
+- 操作感の参考: Adobe Fresco、ToonSquid、Procreate Dreams。
+- 新機能より、描画の追従性、保存復元、Undo/Redo、出力の一致を優先する。
+- アニメ機能が通常描画を壊さず、通常描画がCAF編集を壊さない境界を守る。
 
-## 現在の方針
+## 2. 正本と作業対象
 
-ブラウザで動作するお絵かきツール。
-デスクトップ液タブを主対象にしつつ、スマホ・タブレットでも最低限快適に動くことを目標にする。
+- 実装: `tegaki_work/`
+- 現在状態: `tegaki_work/PROGRESS.md`
+- Phase指示: `task-codex/`
+- 未実装計画: `開発用資料保管庫/proposals/`
+- 完了文書: `開発用資料保管庫/Archive/`
+- 要望の簡略一覧: `開発用資料保管庫/実装したいことメモ.txt`
 
-UI の原点はふたばちゃんねる用ツール「はっちゃん」の潔さ。
-ただし実装と操作感は、現代的なお絵かきアプリに近づける。
+`PastFiles/` と `Backup/` はオーナー管理の参照・退避領域。通常作業では触らない。
+過去Phaseの履歴は現行方針ではない。必要な技術境界だけ現行文書へ残す。
 
-現在状態は `tegaki_work/PROGRESS.md`、未実装計画は
-`開発用資料保管庫/proposals/00_計画索引.md` を入口として確認する。
-`開発用資料保管庫/実装したいことメモ.txt` はオーナーの原文メモであり、
-実装指示として直接扱わず proposals へ整理してからPhase化する。
-
-### 開発フェーズ
-
-**Phase 1c（完了判定済み）**
-
-- 液タブペン入力対応
-- 消しゴムの透明リアルタイム消去
-- レイヤーサムネイルの安定表示
-- ペン/消しゴムのライブラスター描画と確定後差異の解消
-- 鋭角ストロークの三角形アーティファクト対策
-- V キー変形後の bake と座標・ブラシサイズ維持
-- リサイズ後の RenderTexture / 描画可能範囲 / サムネイル抽出範囲の整合
-- 基本バケツ塗りの復旧
-
-**Phase 1d（完了判定済み）**
-
-- UI 未整理部分の ESM 化・責務整理
-- Phase 1c で残った一時診断ログの整理
-- ファイルヘッダーと EventBus / window 登録の現状同期
-- V キー変形時のキャンバス外クリップ問題の調査
-- ショートカットとポップアップ操作の整理
-- 書き出し・履歴・タイムライン周辺の安定化
-- WebGPU / SDF / MSDF 系の再検討と、採用する場合の正式設計
-
-**Phase 1e（完了判定済み：描画の基本品質）**
-
-- 遅いストロークが丸の連続に見える問題の改善
-- 筆圧入力の実装と `Shift+P` による ON/OFF ショートカット
-- ステータスバーの `ベクターペン` 表示を、`ペン（固定幅）` / `ペン（筆圧ON）` など現行描画方式に合う表記へ変更
-- 消しゴム筆圧の `Shift+E` 切替とステータス表示
-- ツールショートカット時のサイドバー active 枠とステータス表示同期
-- ペン補正、四角ペン、設定タブ、Vキー/クイックUI軽量化は後続へ移動
-
-**Phase 1f（完了判定済み：履歴・リサイズ・座標整合）**
-
-- アンドゥ/リドゥ後に描画座標がズレる問題の調査と修正
-- リサイズ do/undo/redo 後の RenderTexture、表示 sprite、キャンバスサイズ、描画可能範囲の整合
-- Vキーモードで少し動かすと座標が戻る現象の原因切り分け
-- `History` command と resize 経路の棚卸し
-- debug 限定の履歴/座標診断ログ整備
-- 描画/消しゴム/バケツを RenderTexture スナップショット履歴へ記録
-- History ステータス表示の更新
-
-**Phase 1g（完了判定済み：出力・レイヤー編集基盤）**
-
-- エクスポート機能の復旧
-- PNG エクスポートの復旧
-- レイヤー複製、下レイヤー結合
-- レイヤーサムネイル上下反転と即時更新の修正
-- 背景への最終結合禁止
-
-**Phase 1h（完了判定済み：アルバム保管・PNG出力・保存復帰）**
-
-- JSON + レイヤー PNG dataURL による最小プロジェクト保存
-- 保存 JSON からの読み込み復元
-- キャンバスサイズ、背景色、背景表示状態、通常レイヤー順/名前/表示/不透明度/画像の復元
-- 読み込み後のサムネイル更新、描画、PNG エクスポート、履歴表示の整合
-- サイドバーの記録導線を JSON 直保存ではなくアルバム保管へ復旧
-- アルバムからの PNG ダウンロード、カード削除、カードクリック復帰
-- DEL によるアクティブレイヤー描画消去とサムネイル/保存復帰の整合
-- アニメボタンは表示入口のみ軽復旧。アニメ本体は現行描画へ副作用が出るため未接続
-
-**Phase 1i（完了判定済み：保守性と小型UI操作の整備）**
-
-- AI が読み取りやすいファイル名、配置、責務、ヘッダー、EventBus 契約の棚卸し
-- 重複責務・旧式ファイル・未接続モジュールの整理方針作成。ただし削除や大移動は Codex 判断へ戻す
-- ステータスの History カウント再確認
-- V キー変形パネルの水平反転/垂直反転、`V+H` / `V+Shift+H` 相当のショートカット整理
-- V キー変形パネルの回転 360 度化、数値ダブルクリック直接入力
-- レイヤー不透明度の数値ドラッグ操作
-- クリップボード画像貼り付け、アクティブレイヤーコピー/新規コピーレイヤー作成の棚卸しと小実装
-
-**Phase 1j（完了判定済み：AI向け構造整理と保守性マップ）**
-
-- `tegaki_work/ARCHITECTURE.md` など、AI が次に読むべき構造マップを作る
-- 起動順序、描画経路、レイヤー/変形/サムネイル、UI/ショートカット、保存/出力の責務境界を明文化する
-- 主要ファイルのヘッダーと実際の依存/EventBus/window登録を同期する
-- 命名、ファイル配置、責務重複、未接続ファイル、凍結ファイルを棚卸しし、今直すものと Codex 判断へ戻すものに分ける
-- レイヤー削除ボタンや popup の `X` ボタンなど、小UIの見た目不整合を低リスク範囲で整理する
-- 大規模リネーム、ファイル移動、削除、主要 EventBus payload 変更は実装しない
-
-**Phase 1k（完了判定済み：UI部品・アイコン共通化）**
-
-- `dom-builder.js` に混在している SVG アイコン定義を、専用の `ui-icons` 系モジュールへ段階的に移す
-- close / trash / duplicate / download / upload など、再利用頻度が高いアイコンを単一ソース化する
-- `.ui-close-button`、`.ui-icon-button`、サイズ修飾子など、共通CSSクラスで見た目を管理する
-- レイヤー削除ボタン、popup閉じボタン、Qパネル閉じボタンなどを同じ設計へ寄せる
-- 機能追加や大規模UI再設計は行わず、挙動を変えずに参照元と見た目の整理を優先する
-- アニメ旧UIや凍結系ファイルの大量SVG置換は、現行描画へ副作用が出ない範囲に限定する
-
-**Phase 1l（完了判定済み：アルバム管理基盤拡張）**
-
-- アルバムカードのドラッグ並べ替え
-- アルバムカードの選択状態と、複数選択の土台
-- 個別削除/個別PNG保存の既存導線を壊さず、複数選択時の一括削除・一括エクスポート設計を整理する
-- アルバム全体保存/HTMLエクスポート/インポートは、保存形式・復元対象・互換性を先に設計し、初回で無理に本実装しない
-- `AlbumPopup` の localStorage 保存と `VirtualAlbum` の IndexedDB 保存の責務差を棚卸しし、どちらを正本にするか Codex判断へ戻す
-
-**Phase 1m（完了判定済み：アルバムUI整理・入出力導線）**
-
-- アルバムカードの選択は一括削除/一括エクスポート用に限定し、複数選択カードのまとめて移動は行わない
-- `現在の状態を保存` の横に、選択モード、一括削除、アルバムHTML保存、アルバム読み込みの上部ツールバーを作る
-- カード内の個別PNG保存/削除ボタンは撤去または非表示候補にし、操作の主導線を上部ツールバーへ集約する
-- アルバムのドラッグ並べ替えとレイヤーパネル並べ替えは、Windows風にドラッグ対象が半透明で追従し、挿入先が自然に空く感触へ寄せる
-- アルバムHTMLエクスポート/インポートは `projectData` と `thumbnail` を含むポータブル形式として試作し、旧JSON読み込み互換を残す
-- ドラッグ並べ替えは動作完了。ただし Windows 風ホバー追従は SortableJS 調整の限界として後続UI刷新へ保留
-
-**Phase 2（進行中：レイヤー/UI編集基盤 + 描画品質点検）**
-
-- レイヤーパネルを多数レイヤー向けにスリム化する。ToonSquid風の配置を参考にしつつ、現行UIへ合わせる
-- レイヤー複製、下のレイヤーとの結合、クリッピング、レイヤーフォルダの仕様を整理して小さく実装する
-- 複数レイヤー選択、一括結合、一括クリッピング、まとめて移動は段階導入する
-- レイヤー透明度の操作、サムネイル/目/クリップ状態/名前/削除導線を整理する
-- レイヤー削除ボタン、popup閉じボタン、共通アイコン/CSSの整合を維持する
-- クリップボード画像貼り付け、アクティブレイヤーコピー/貼り付けの残作業を扱う
-- Phase 2初回は、実装より先に `layer-system.js`、`layer-panel-renderer.js`、`ui-icons.js`、`main.css` の責務を再確認し、AIが改修しやすい単位へ作業を分ける
-- Phase 2j では、キャンバスサイズやカメラズーム条件でストロークがジャギーに見える問題を、内部2倍化やWebGL2復活なしで棚卸しする
-- Phase 2k では、キャンバス片辺上限 2500px とカメラ拡縮範囲を、RenderTexture/履歴メモリへの影響を確認しながら小さく扱う
-- Phase 2l では、背景レイヤー非表示時の透明キャンバス表現を、市松模様と既定カラーで整える
-- Phase 2m では、アルバム popup のクリック即ロードを避け、選択と明示的ロードの導線へ整理した。
-- Phase 2n では、アルバム popup のビジュアルを共通の透過デザインへ統一し、細部の質感を向上させた。
-
-**Phase 2o（完了：UI コンポーネント標準化と CSS 集約）**
-
-- ポップアップ、ボタン、スライダー等の UI 部品を標準化し、スタイルを CSS へ集約して AI の作業精度を向上させた。
-
-**Phase 2p（進行中：ヘルプ・ショートカット一覧）**
-
-- 操作ガイドおよびショートカットキーの早見表ポップアップを実装し、ユーザーの利便性を向上させる。
-
-**Phase 3a（完了判定済み：エアブラシ・ぼかし）**
-
-- エアブラシ
-- ぼかし
-
-**Phase 3b（完了判定済み：クイックアクセスポップアップ刷新）**
-
-- クイックパネルの色/サイズ/不透明度プリセット整理
-- ツール別サイズ・不透明度スロット
-- COLOR 1〜5 のカラースロット
-- カラーサークルとスポイトは後続
-
-**Phase 3c（完了判定済み：囲い塗りバケツMVP）**
-
-- 囲い塗り・隙間閉じ・表示レイヤー参照などの高機能バケツ
-- クイックパネルのレイヤーパネル上表示補修
-- `[` / `]` によるクイックパネル内プリセットスロット移動
-
-**Phase 3d（完了判定済み：囲い塗り（投げ縄塗り））**
-
-- バケツの隙間漏れとは別に、手描きで囲った範囲を明示的に塗る投げ縄塗りを検討する
-
-**Phase 3e（完了：高機能バケツ強化の棚卸しと基盤整備）**
-
-- 通常バケツの gap close / 表示中レイヤー参照 / 境界判定を優先して検討する
-- 投げ縄、多角形、楕円、矩形塗りは選択範囲ツールに近いため、バケツ強化後に必要性を再評価する
-
-**Phase 3f（完了：表示中レイヤー参照バケツ MVP）**
-
-- 線画を別レイヤーに置いたまま、アクティブな塗りレイヤーへ通常バケツで塗れるようにする
-- 将来の `G` キー循環候補は、表示中レイヤー参照バケツ、消しバケツ、編集レイヤーのみバケツの順で検討する
-- 消しバケツ、gap close 本実装、図形塗り追加は Phase 3f では扱わず、参照バケツの安定化を優先する
-
-**Phase 3g（完了：隙間閉じ Gap Close の検証実装）**
-
-- 表示中レイヤー参照バケツを前提に、1-2px 程度の小さな隙間閉じを低リスクに検証する
-- まずは UI を増やさず固定値または内部設定で確認し、にじみや主線外への漏れ、処理負荷を評価する
-- 消しバケツは別途ショートカット候補として扱い、Phase 3g では gap close と混ぜない
-
-**Phase 3h（完了：バケツ設定タブと消しバケツ）**
-
-- Phase 3g の CPU ベース gap close / underpaint は及第点として固定し、これ以上の強い補正は後続研究に回す
-- 残る髪の毛状の複雑な塗り残しは、WebGPU / SDF / JFA などの正式設計フェーズで扱う候補にする
-- バケツ設定を設定ポップアップの「バケツ」タブへ集約し、gap close / underpaint / 表示中レイヤー参照を永続設定として扱う
-- 通常バケツと消しバケツを `G` キー、サイドバー、QAP から循環切替できるようにした
-- 消しバケツは flood fill マスク内の alpha を直接 0 にする方式で透明化し、白塗り化を避ける
-
-**Phase 3i〜3l（完了：色操作の基礎）**
-
-- スポイト、カラーサークル、メイン/サブカラー、`X` キー入れ替えを QAP に実装済み
-- カラースロットへの明示登録、リアルパレット案、色履歴などは後続の色管理拡張へ回す
-
-**Phase 3m（完了：Undo/Redo描画劣化の調査と止血）**
-
-- アニメテーブル大改修へ進む前に、履歴復元で線の色・濃度・alpha が変わらないか確認する
-- 主線が黒ずむ/Undo・Redo後に値が変わる疑いを、`history.js`、`brush-core.js`、`layer-system.js` の RenderTexture snapshot 経路から切り分ける
-- 原因が狭い場合のみ止血修正し、大規模な描画エンジン再設計は行わない
-- 履歴用 `extract.pixels()` snapshot 経路で半透明RGBをストレートアルファ相当に戻す止血を行い、Undo/Redo繰り返しでの黒色化はオーナー実機確認では現時点で再現なし
-
-**Phase 4a〜4b（完了：アニメテーブル大改造の足場・レイヤー同期MVP）**
-
-- ToonSquid 2 を主参考に、Procreate Dreams 系の動画ツール感も意識した新アニメテーブルへ進む
-- ただし初回は全面実装ではなく、現行 `animation-system.js` / `timeline-ui.js` / `core-engine.js` の接続状態を棚卸しする
-- `animationSystem.init()` は通常描画への副作用を避けるため現在抑制中。安易に復活させない
-- Frame / Track / Layer / Clip / Keyframe / Easing を混同しないデータモデル案を作る
-- 通常描画を壊さず、明示的なアニメモードまたは新テーブル足場を作る
-- 物理演算、WebGPU、無限キャンバス、独自D&Dは混ぜず、後続候補として分離する
-- Phase 4b で新アニメテーブルは `LayerSystem` の実レイヤー一覧と同期し、24フレーム固定グリッドと現在フレーム表示を持つ状態になった
-
-**Phase 4c〜4f（完了：アニメテーブル編集MVP）**
-
-- Phase 4c: アニメテーブルのセル配置MVP
-- Phase 4d: アニメテーブルのセル選択・フレームカーソルMVP
-- Phase 4e: アニメテーブルのセル長さMVP
-- Phase 4f: アニメテーブル内だけの再生ヘッドMVP
-- ここまでは新アニメテーブル内のモデル/UIを固める段階であり、キャンバス表示制御、保存/ロード、Export、旧 `animation-system.js` 再接続にはまだ踏み込んでいない
-
-**Phase 4g〜4k（進行中：アニメテーブル実用化MVP）**
-
-- Phase 4g: 左サイドバーのアニメアイコンを新アニメテーブルの正式入口にした
-- Phase 4h: アニメテーブルを開いたまま使えるフローティングパネル化、縦スクロール同期、左右キー移動、フォルダ行保護を実装
-- Phase 4i: セル有無に応じた実レイヤー表示プレビューを実装。ただし `layerData.visible` は破壊せず、閉じた時に復元する
-- Phase 4j: セル右端ドラッグによる duration 変更、Delete/Backspace 削除を実装
-- Phase 4k: 選択セルへ RenderTexture Snapshot を手動キャプチャし、プレビュー時だけ実レイヤーへ復元表示する試作を実装
-- ここまでの `Track = LayerSystem の実レイヤー` は、アニメテーブルを素早く動かすための暫定足場であり、最終仕様として固定しない
-- 長期到達点では、アニメテーブルの X 軸は時間、Y 軸は表示・配置・管理のための Lane/階層であり、通常レイヤー階層そのものではない
-- 長期到達点では、セル/クリップが独立した描画コンテナを持ち、その内部に個別のレイヤー構造・Snapshot・将来の物理演算データを保持する
-- 将来の「犬」「猫」などの再利用可能なクリップ素材は、保管庫/ライブラリに保存し、アニメテーブル上のセル/クリップインスタンスとして配置できる設計を目指す
-- Phase 4k の `rasterSnapshot` は、将来の ClipDocument / ClipAsset / DrawingSnapshot へ移行するための最小実験であり、保存形式や本格編集の正本にはしない
-- Phase 4系の Gemini 作業では、`timeline-ui.js` / `animation-table-popup.js` のテンプレート文字列・CSS注入ブロックの閉じ忘れによる `Expected a semicolon` が複数回発生している。HTML/CSSテンプレート編集後は必ず該当メソッド前後を読み返してからビルドする
-
-**Phase 4以降（次候補）**
-
-- Phase 4l: アニメデータモデルの用語と到達点を整理し、`Track = Layer` 暫定実装から Lane / Clip / ClipAsset 方式へ進む移行計画を作る
-- アニメセル/クリップの移動・コピー・保存/ロード・Export は、Phase 4l の整理後に着手する
-- レイヤー/アルバムの独自 Pointer Events D&D
-- トップバーとキーボードなし操作
-- QAP のツール別パネル化・スリム化
-- 無限キャンバス / 外部領域保持
-
-**Phase 4以降（描画補助・編集ツール高度化の残項目）**
-
-- 直線、円、矩形
-- 定規、自在定規
-- 範囲選択、切り取り、貼り付けなどの編集ツール
-
-**Phase 5以降（物理演算・漫画向け特殊機能）**
-
-- 物理演算・メッシュ変形・ボーン
-- APNG/GIF の自動判定、アニメプレビュー、エクスポート連携
-- ベクター系の再検討
-- スクリーントーン
-- 集中線、ウニフラッシュ
-
----
-
-## 技術スタック
+## 3. 技術スタック
 
 ```text
-言語:         JavaScript
-モジュール:   ESM import/export
-ビルド:       Vite
-実行環境:     Chrome 最新
-描画基盤:     PixiJS v8.17.0
-レイヤー:     PixiJS Container + Sprite(RenderTexture)
-ストローク:   ライブラスター線分 -> RenderTexture 焼き込み（perfect-freehand は補助/旧経路）
-UI:           DOM + PixiJS + lucide-static
-アニメ:       GSAP（UI用途）
-並び替え:     SortableJS
+言語:       JavaScript
+モジュール: ESM
+ビルド:     Vite
+対象:       Chrome 最新
+描画:       PixiJS v8.17.0
+Layer:      Container + Sprite(RenderTexture)
+UI:         DOM + PixiJS + lucide-static
+UI animation: GSAP
+D&D:        SortableJS または共通Pointer D&D engine
 ```
 
-### 旧計画との優先順位
+TypeScript化、複雑なbundler再構成、file://直開き前提への変更は行わない。
 
-`計画書/指示書.txt` には旧方針が含まれる。
-以下は現在の方針と矛盾するため採用しない。
+## 4. 描画パイプライン
 
-- Vite 禁止
-- ESM 禁止
-- perfect-freehand 禁止
-- Pixi.Graphics の本番使用禁止
-- PixiJS を UI 表示のみに限定する方針
-- WebGL2 フレームバッファ直描画を現フェーズで必須にする方針
-- file:// 直開き前提
-
-採用するのは以下のみ。
-
-- DRY/SOLID の徹底
-- ファイルヘッダーによる依存関係の明示
-- 座標変換の単一責務化
-- `toLocal()` / `toGlobal()` 依存の禁止
-- DPR 1 倍固定
-- 過剰ログ削除
-- フォールバックや暗黙修復を作らない方針
-- 色・UI 方針
-- 既存実装検索、EventBus 契約確認、一時ログ管理、AI 設定ファイル同期などの作業規律
-
----
-
-## 描画パイプライン
-
-現在の標準パイプラインは以下。
+標準経路:
 
 ```text
 PointerEvent
-  -> drawing-engine で座標変換
-  -> stroke-recorder に local 座標を記録
-  -> brush-core が短い線分を生成
-  -> ドラッグ中に対象レイヤーの RenderTexture へ逐次焼き込み
-  -> pointerup 時に undo 用 stroke 記録と最終状態を確定
+  -> drawing-engineで座標変換
+  -> stroke-recorderへlocal座標を記録
+  -> brush-coreが短い線分を生成
+  -> 対象LayerのRenderTextureへ逐次焼き込み
+  -> pointerupで履歴と最終状態を確定
 ```
 
-### ペン
-
-- Phase 1c では、ペンも消しゴムと同じライブラスター方式を標準にする。
-- 「軌跡を描いて離した瞬間に補正される」感触は、細密描画ではデフォルトにしない。
-- `perfect-freehand` は補助/旧経路として扱い、使う場合も強い自動補正をデフォルトにしない。
-- 座標は整数丸めしない。
-- 同一点・極端に近い点は必要に応じて小さくフィルタする。
-- WebGL2 Mesh 経路は現時点では復活させない。
-- WebGPU / SDF / MSDF 系の描画・塗りつぶし経路は Phase 1c では凍結する。既存コードに分岐が残っていても、1c の不具合修正では使わない。
-
-`perfect-freehand` を使う場合の基準値。
-線を勝手に丸めないことを優先し、補正は将来スライダーで上げる。
-
-```javascript
-{
-  size,
-  thinning: 0.7,
-  smoothing: 0.08,
-  streamline: 0,
-  simulatePressure: false,
-  last: true
-}
-```
-
-### 消しゴム
-
-- 背景色で塗る方式は禁止。
-- 消しゴムは透明化として実装する。
-- PixiJS v8.17.0 では `BlendMode` を named import しない。
-- ブレンドモードは文字列で指定する。
-
-```javascript
-graphics.blendMode = 'erase';
-```
-
-リアルタイム消しゴムの基準。
-
-- ドラッグ中に短いセグメントを `RenderTexture` へ焼き込む。
-- pointerup / ツール OFF まで消去結果が出ない実装は禁止。
-- eraser preview は表示しなくてよい。
-- pointerup 時に同じ範囲を二重消去しない。
-- undo 用の stroke 記録は維持する。
-
-### RenderTexture
-
-- 各描画レイヤーは `RenderTexture` を持つ。
-- レイヤー表示は `Sprite(RenderTexture)` で行う。
-- ストローク確定時に `renderer.render({ target: layer.renderTexture, clear: false })` 系で焼き込む。
-- リサイズ時は各描画レイヤーの `RenderTexture` を新サイズへ作り直し、旧内容を適切な offset で移す。
-- リサイズ後は見た目のキャンバスサイズ、描画可能範囲、サムネイル抽出元サイズが一致していること。
-- V キー変形確定時は bake し、コンテナの `scale/rotation` を通常状態へ戻す。
-- 変形後にペンサイズや描画範囲が引きずられてはいけない。
-
----
-
-## 解像度・出力ルール
-
-- DPR は 1 倍固定。
-- 内部キャンバスを 2 倍化しない。
-- `resolution: 2` を採用しない。
+- ペンと消しゴムは同じライブラスター基盤を使う。
+- 消しゴムは背景色塗りではなく `blendMode = 'erase'` による透明化。
+- 座標は drawing-engine 側へ集約し、同一pointを二重変換しない。
+- PixiJS `toLocal()` / `toGlobal()` を描画座標変換へ使わない。
+- DPRは1倍。内部2倍化や `resolution: 2` を採用しない。
 - 出力サイズと内部作業サイズを一致させる。
-- 400 x 400 で描いたものは、400 x 400 の提出物として意図が変わらないことを優先する。
-- 等倍のまま改善できるアンチエイリアス設定は小さく検証してよいが、副作用があれば採用しない。
+- `perfect-freehand` は補助経路。線を過度に丸める既定値へ戻さない。
 
----
+## 5. Layer・CAF・Timeline境界
 
-## 座標変換
+- 通常Layerの正本は `LayerSystem`。
+- アニメの正本は `TimelineModel / Lane / Clip / ClipAsset / DrawingSnapshot`。
+- animation working Layerは、選択CAFを既存描画engineへ接続する一時的な表示・入力アダプター。
+- working Layerを保存正本や全Frame共通Layerとして扱わない。
+- CAF切替やFrame切替だけでHistoryをリセットしない。
+- Raster履歴は変更対象の前後Snapshotを保持し、無関係なCAF全体を複製しない。
+- 通常LayerとCAF内部Layerは、UI rendererを共有してもdata adapterとHistory復元先を分離する。
+- Layer Panel / CAF UIは「1つのUI engine、2つのdata adapter」を維持する。
+- 責務詳細は `tegaki_work/PHASE4Z_BOUNDARY.md` を参照する。
 
-座標変換は drawing-engine 側に集約する。
+## 6. RenderTexture・変形・履歴
 
-```text
-PointerEvent.clientX/Y
-  -> screenClientToCanvas()
-  -> canvasToWorld()
-  -> worldToLocal()
-  -> Local 座標
-  -> stroke-recorder へ記録
-```
+- 各描画LayerはRenderTextureを持ち、Spriteで表示する。
+- リサイズ後はRenderTexture、表示範囲、描画可能範囲、thumbnail抽出範囲を一致させる。
+- Vキー変形はpreviewと確定を分離し、確定時に一度だけラスターへ焼き込む。
+- 変形確定後はcontainerのscale / rotationを通常状態へ戻す。
+- History commandの現行契約は `{ name, do, undo, byteSize?, meta? }`。
+- 件数上限と推定メモリ上限の両方を適用し、線形Undo順を壊さず古い履歴から破棄する。
+- class階層の導入は目的ではない。既存command契約で表現できない具体的問題がある場合だけ再設計する。
 
-ルール。
+## 7. EventBus・グローバル
 
-- `stroke-recorder` は受け取った local 座標をそのまま保存する。
-- 同一ポイントに対する二重変換を禁止する。
-- PixiJS の `toLocal()` / `toGlobal()` を座標変換に使わない。
-- canvas 移動・ズームとレイヤー変形の座標処理を混ぜない。
-- 変数名には座標系を明示する。
+- event名は原則 `component:action`。
+- `emit` / `on` の追加・変更前に、同名eventを `rg` で全検索する。
+- event名だけでなくpayload構造を1種類へ統一する。
+- 送信側と受信側を同じ変更内で更新する。
+- `TegakiEventBus.EVENTS` は有効な共有定数として使えるが、全eventの機械的一括置換は行わない。
+- listener無しemit、emit無しlistener、旧system依存は、実検索で未使用を証明してから削除する。
+- `window.*` は既存互換境界として残る。新規追加を避け、削減は依存先を確認して段階的に行う。
 
-```javascript
-localX, localY
-worldX, worldY
-screenX, screenY
-```
+## 8. UI・カラーパレット
 
----
+キャンバスを主役にし、大きな常設windowを増やさない。
+popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 
-## PixiJS v8.17.0 ルール
-
-`BlendMode` は export されない前提で扱う。
-
-禁止。
-
-```javascript
-import { BlendMode } from 'pixi.js';
-```
-
-使用する。
-
-```javascript
-graphics.blendMode = 'normal';
-graphics.blendMode = 'erase';
-```
-
-import する API は実在確認済みのものに限定する。
-不明な場合は実プロジェクトの `node_modules/pixi.js` で確認する。
-
-```powershell
-node -e "const p = require('./node_modules/pixi.js'); console.log(Object.keys(p).filter(k=>k.includes('XXX')))"
-```
-
-主に使用する API。
+安易な黒・白・グレーの直書きを避け、原則として次のCSS変数を使う。
 
 ```text
-Application, Container, Graphics, Sprite, RenderTexture, Texture,
-Matrix, Rectangle, Point, Assets
+--futaba-maroon:       #800000
+--futaba-light-maroon: #9c3835
+--futaba-medium:       #b8706b
+--futaba-light-medium: #d4a8a0
+--futaba-cream:        #f0e0d6
+--futaba-background:   #ffffee
+--text-primary:        #2c1810
+--text-secondary:      #5d4037
+--active-border:       #ff8c42
 ```
 
----
-
-## ファイル責務
-
-実ファイル構成を優先する。
-存在しない理想ファイル名へ無理に寄せない。
-
-主な責務。
-
-```text
-coordinate-system.js
-  Screen/Canvas/World/Local 変換
-
-system/camera-system.js
-  ズーム・パン・worldContainer transform
-
-system/drawing/drawing-engine.js
-  PointerEvent 受信後の描画制御、座標変換、stroke 開始
-
-system/drawing/pointer-handler.js
-  DOM pointer event の正規化、pointer capture、raw 入力診断
-
-system/drawing/stroke-recorder.js
-  local 座標ポイント列と筆圧情報の記録
-
-system/drawing/stroke-renderer.js
-  perfect-freehand -> Graphics.poly 変換、ペン・消しゴム形状生成
-
-system/drawing/brush-core.js
-  preview 管理、RenderTexture への焼き込み、リアルタイム eraser
-
-system/drawing/thumbnail-system.js
-  レイヤー RenderTexture からサムネイル生成・キャッシュ
-
-ui/layer-panel-renderer.js
-  レイヤーパネル DOM、サムネイル表示、SortableJS 操作
-
-system/layer-system.js
-  レイヤー生成・削除・選択・順序管理
-
-system/layer-transform.js
-  V キー変形、変形確定 bake
-```
-
----
-
-## ファイルヘッダー
-
-各 JS ファイルの先頭に以下を維持する。
-改修で依存やイベントが変わった場合は必ず更新する。
-
-```javascript
-/**
- * ============================================================================
- * ファイル名: system/drawing/example.js
- * 責務: このファイルが唯一担う処理
- * 依存: import または使用する主要モジュール
- * 被依存: このファイルを import または使用する主要モジュール
- * 公開API: export するクラス・関数
- * イベント発火: EventBus 経由で発行するイベント名、なければ「なし」
- * イベント受信: EventBus 経由で受信するイベント名、なければ「なし」
- * グローバル登録: window.XXX、なければ「なし」
- * 実装状態: 新規 / 移植 / 改修
- * ============================================================================
- */
-```
-
-ヘッダーは AI が影響範囲を読むための索引。
-古い依存関係を残すと調査が誤るため、コード変更と同じ重要度で扱う。
-
-責務が曖昧なファイルや複数システムの接点では、ヘッダーの「責務」に境界を書く。
-例。
-
-```text
-責務: レイヤーパネル DOM の描画とユーザー操作受付。サムネイル画像の生成処理は thumbnail-system.js に委譲する。
-```
-
-対象ファイルの責務外へ変更が広がる場合は、作業報告に理由を書く。
-
----
-
-## イベント・グローバル
-
-イベント名は `component:action` 形式。
-
-例。
-
-```text
-layer:added
-layer:activated
-thumbnail:layer-updated
-thumbnail:updated
-stroke:start
-stroke:end
-```
-
-グローバル登録は重複禁止。
-同じ役割の singleton を複数作らない。
-
-```text
-window.CoordinateSystem
-window.cameraSystem
-window.layerManager
-window.EventBus
-window.PixiUI
-window.WebGLContext
-```
-
-EventBus のルール。
-
-- `emit` または `on` を追加・変更する前に、同じイベント名を `rg` で全検索する。
-- payload 形式はイベントごとに 1 種類へ統一する。`{ data: {...} }` とフラット形式を混在させない。
-- 既存イベントの payload を変える場合は、送信側と受信側を同じ作業内で更新する。
-- 一時的な互換処理を入れる場合は、削除条件をコメントまたは作業報告に残す。
-
----
-
-## UI 方針
-
-コンセプトは「はっちゃん」の潔さ + 現代的なお絵かきアプリの操作感。
-
-参考。
-
-```text
-Adobe Fresco       全体印象、ツール配置、スマートさ
-ToonSquid 2        タイムライン、ノード構造
-Procreate Dreams   アニメーション UX
-はっちゃん          キャンバス優先、余計なものを置かない潔さ
-```
-
-配置。
-
-- キャンバスを主役にする。
-- ツール切り替えは左サイドバー。
-- カラーパレット・ペンサイズ・タイムラインはショートカットまたはサイドバーボタンで出し入れする。
-- 画面に常時置きっぱなしの大きなウィンドウを増やさない。
-- 液タブのペン操作でボタン・ポップアップ・レイヤー操作が成立することを確認する。
-
----
-
-## カラーパレット
-
-安易な黒・白・グレーへ逃げない。
-UI 部品は原則この範囲から選ぶ。
-
-```text
-Maroon:   #800000  アクティブペン色
-Stiletto: #9c3836
-Contessa: #b8706b
-Eunry:    #d4a8a1  パネル背景
-Bizarre:  #f0e0d6  背景レイヤー0
-Ivory:    #ffffee  ページ・キャンバス系背景
-Accent:   #ff8c42  アクティブ強調
-
----
-
-## UI コンポーネント標準化ルール
-
-AI が効率的かつ美しく UI を構築するための基本定石。
-
-### 共通クラスの活用
-
-JS 側での `style.xxx = ...` による直接指定を最小限にし、以下の CSS クラスを優先して使用する。
-
-- `.popup-panel--translucent`: 透過 ＋ ぼかし（backdrop-filter）を伴う共通パネル。
-- `.ui-icon-button`: アイコンボタンの基本クラス。`--small`, `--medium`, `--large` でサイズを使い分ける。
-- `.ui-scrollbar`: 目に優しい透過栗色の共通スクロールバー（ホバーで太くなる演出を含む）。
-
-### ポップアップ構造
-
-全てのポップアップは以下の構造を基本とする。
-
-```html
-<div class="popup-panel popup-panel--translucent">
-    <button class="ui-close-button"> ... </button>
-    <div class="popup-title"> タイトル </div>
-    <div class="popup-content"> ... </div>
-</div>
-```
-
----
-
-## 品質基準
-## 品質基準
-
-- Chrome 最新を対象にする。
-- 後方互換は重視しない。
-- 目標は 120Hz 入力に耐える描画体験。
-- 筆圧・傾き・ひねりは取得できる構造を維持する。
-- ただし Phase 1c ではまず描けること、消せること、座標が壊れないことを優先する。
-- 例外や不整合は明示的に扱う。
-- フォールバック処理・暗黙修復・黙った状態書き換えを作らない。
-
----
-
-## 禁止事項
-
-- TypeScript 化
-- 複雑な bundler 設定
-- Canvas2D を本番描画ロジックへ混入
-- `import { BlendMode } from 'pixi.js'`
-- 背景色で塗る消しゴム
-- 内部 2 倍解像度化
-- `resolution: 2`
-- PixiJS `toLocal()` / `toGlobal()` による描画座標変換
-- ペンと消しゴムの別エンジン化
-- perfect-freehand を使わない独自輪郭生成への置き換え
-- WebGL2 Mesh 経路の安易な復活
-- Phase 1c で WebGPU / SDF / MSDF 系の新規採用・復活を行うこと
-- 二重実装
-- 循環依存
-- 古い `tegaki_phase1a` パスを新規記述へ増やすこと
-- 設定値・色・サイズ・イベント名・座標変換を複数箇所へ直書きして分散させること
-- 調査用ログを目的や削除条件なしで恒久化すること
-- `dist/` などビルド生成物を、成果物として必要ない作業で差分に残すこと
-
----
-
-## AI 作業規律
-
-AI は実装前に以下を確認する。
-
-1. 既存実装検索  
-   `rg` で同じ責務のクラス、関数、イベント、グローバル登録を探す。既存 API で済む場合は新設しない。
-
-2. 変更範囲の確認  
-   対象ファイルのヘッダーと責務を読み、責務外の変更を避ける。必要な場合は理由を作業報告に書く。
-
-3. EventBus 契約確認  
-   イベント名を全検索し、payload 形式と受信側の期待値を確認してから変更する。
-
-4. 設定値の参照元確認  
-   色、ブラシ補正、サムネイルサイズ、解像度、しきい値は `config.js`、settings、既存定数を優先する。直書きする場合は理由を残す。
-
-5. 受け入れ条件の先出し  
-   作業指示書には「何ができたら完了か」を書く。例：液タブで描ける、右クリックでは描けない、サムネイルサイズが崩れない。
-
-AI は作業後に以下を報告する。
-
-- 変更ファイル
-- 変更理由
-- 確認コマンド
-- ブラウザ確認結果
-- 残った問題
-- Claude / Codex に判断してほしい点
-- 追加した一時ログと削除予定
-
----
-
-## 作業フロー
-
-1. `TEGAKI.md` と `tegaki_work/PROGRESS.md` を読む。
-2. 対象ファイルのヘッダーと実装を読む。
-3. `rg` で既存実装、同名イベント、同じ責務のファイルを検索する。
-4. 方針と矛盾する場合は、実装前にオーナーへ確認する。
-5. 変更後は関連ヘッダーを更新する。
-6. `npm run dev` または `npm run build` で確認する。
-7. ブラウザ console の主要エラーを確認する。
-8. `tegaki_work/PROGRESS.md` を更新する。
-9. デバッグログが不要になったら削除する。残す場合は目的と削除条件を書く。
-10. 成果物でない生成物や不要な差分を残さない。
-
----
-
-## アーカイブ手順
-
-フェーズ完了時のみ実施する。
-
-1. `tegaki_work/PROGRESS.md`
-2. `tegaki_work/GitHubURL.txt`
-3. `tegaki_work/TegakiConsole.txt`
-
-上記が最新であることを確認する。
-
-その後、`tegaki_work/` を `PastFiles/tegaki_phase[フェーズ名][連番]/` へコピーする。
-`tegaki_work/` 本体は移動・削除しない。
-
-コピー先の `GitHubURL.txt` だけ、URL パスをコピー先フォルダへ置換する。
-作業中の `tegaki_work/GitHubURL.txt` は書き換えない。
-
----
-
-## AI 別役割
-
-```text
-Claude
-  指示統括、設計整理、GitHub 経由レビュー
-
-Gemini CLI
-  実装担当。tegaki_work/ を中心に変更する。
-
-Codex
-  ローカル調査・原因切り分け・GEMINI への作業順整理。
-  小さく原因が明確な修正、ドキュメント同期、警告整理は直接行ってよい。
-```
-
----
-
-*最終更新: 2026-05-19*
+- 通常文字、disabled文字、input/select/optionもパレット範囲へ揃える。
+- 色やscrollbarを実装する前に、CSS変数と `.ui-scrollbar` 等の共通classを検索して再利用する。
+- 共通定義が存在する場合、同じ役割の色値・scrollbar装飾をcomponent内へ再定義しない。
+- 静的装飾はCSS classで管理する。
+- 動的な座標・寸法・D&D shift・canvas/Pixi色変換は必要な範囲でJSが扱ってよい。
+- popupの重なりはz-index値だけでなく、mount先とstacking contextを確認する。
+- 命名・component規約は `開発用資料保管庫/proposals/UI_CSSスタイルガイド.md` を参照する。
+- 既存classを一括renameしない。変更対象component内で互換性を保ちながら段階移行する。
+
+## 9. ファイル責務とヘッダー
+
+- 実際のimport、export、EventBus検索結果を依存関係の正本とする。
+- 新規fileは責務と公開APIが分かる短いJSDocを付ける。
+- 既存headerがあるfileは、責務・公開API・event契約が変わった時に更新する。
+- 「被依存」一覧を毎回完全手動同期することや、全fileへ長い定型headerを追加することは必須にしない。
+- headerがコードと矛盾する場合はコードを推測せず、headerを修正する。
+
+## 10. 凍結・禁止事項
+
+- WebGPU、SDF/MSDF、WebGL2 Meshの新規採用・復活。
+- Canvas2Dを本番stroke描画へ混入。
+- `import { BlendMode } from 'pixi.js'`。
+- 背景色で塗る消しゴム。
+- 内部2倍解像度化。
+- 通常LayerとCAF data modelの安易な統合。
+- 描画target抽象class、BasePopup、HistoryCommand class等を、利用箇所の具体的重複なしに先行導入すること。
+- EventBus literalやCSS classの全件一括置換。
+- 二重実装、循環依存、暗黙のfallback、黙ったstate修復。
+- 調査ログやbuild生成物を不要な差分として残すこと。
+
+## 11. 作業規律
+
+実装前:
+
+1. `AGENTS.md`、本書、`PROGRESS.md`、Phase指示書を読む。
+2. `rg` で同責務、同名event、global、CSS classを確認する。
+3. 受け入れ条件と対象外を確定する。
+4. 主要class再構成や大幅DOM変更が必要なら先に相談する。
+
+実装後:
+
+1. 構文確認と `npm.cmd run build`。
+2. 関連UI、描画、Undo/Redo、保存/出力を規模に応じて実操作確認。
+3. browser consoleの新規errorを確認。
+4. `PROGRESS.md` を現在状態へ更新。
+5. 完了Phase指示書をArchiveへ移す。
+6. `dist/` 等の生成差分を残さない。
+
+## 12. 現行ロードマップ
+
+- 完了: Phase 5a、Phase 5b、Phase 5c。
+- 次の機能Phase: `task-codex/phase5d.md`。
+- 保守性・UIスタイル整理: `task-codex/phase5e.md`。機能Phaseの前提にはせず、独立した監査・小分け修正として扱う。
+
+過去Phase一覧は本書へ再掲しない。完了内容はArchiveとGit履歴を参照する。
