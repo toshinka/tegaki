@@ -1,0 +1,139 @@
+config.js:507 ✅ config.js v8.14.2 Phase 1改修版 loaded
+config.js:508    🔧 PerfectFreehand設定リニア化
+config.js:509    ✓ thinning: 0 (線の太り補正無効)
+config.js:510    ✓ smoothing: 0 (補間最小化)
+config.js:511    ✓ streamline: 0 (遅延補正なし)
+coordinate-system.js:438 ✅ coordinate-system.js v8.14.0 (WebGL2 Phase 1) loaded
+coordinate-system.js:439    🔧 PixiJS v8 applyInverse() 対応
+data-models.js:276 ✅ data-models.js (backgroundColor追加版) loaded
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ state-manager.js (Phase 8完全実装版) loaded
+ ✅ settings-manager.js Phase 2 loaded
+    🔧 exportResolution 設定項目追加
+ ✅ layer-transform.js Phase 6 loaded
+    🔧 flipLayer(): confirmTransform()削除 - 反転時の画像消失を解決
+ ✅ system/checker-utils.js 統一実装版 loaded
+ ✅ layer-system.js Phase 8完成版 loaded
+    ✅ getLayerById() メソッド追加
+    ✅ LayerModel.id 確実取得保証
+    ✅ history.js との統合対応完了
+ ✅ drawing-clipboard.js Phase 1 loaded
+    🔧 cutActiveLayer(): 描画のみ削除（レイヤー保持）
+    🎨 ポップアップ: レイヤーコピー、切り取り
+ ✅ history.js Phase 4 mask snapshot対応完全版 loaded
+    ✅ pushEraseMask() 実装
+    ✅ beginAction/endAction/addPoint 実装
+ ✅ webgl2-drawing-layer.js Phase 1 loaded
+ ✅ gl-msdf-pipeline.js Phase 6完全修正版 loaded
+    ✅ Render shader: 7 floats/vertex 対応
+    ✅ gl-stroke-processor.js と完全一致
+ ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+    ✅ PixiJS v8: Texture.from()直接使用（定数問題解決）
+    ✅ WebGPU互換API (createSpriteFromGPUTexture) 対応
+ ✅ gl-mask-layer.js Phase 6完全版 loaded
+    ✅ Circle mask rendering実装
+    ✅ Additive blend対応
+    ✅ Compose Pass統合準備完了
+ ✅ pointer-handler.js Phase 1 loaded
+    🔧 pressure正規化修正（マウス=0, ペン=e.pressure）
+    🔧 EventEmitter風API実装（.on / .off）
+ ✅ pressure-handler.js Phase 1 loaded
+    🔧 ベースライン未確定時にraw値返却（0.5固定削除）
+ ✅ stroke-recorder.js Phase 0 loaded
+    ✓ 自動初期化完了（initialize()不要）
+    ✓ Local座標記録専用（座標変換なし）
+    ✓ PerfectFreehand互換形式対応
+ ✅ stroke-renderer.js (WebGL2移行版) loaded
+    🔧 WebGPU → WebGL2 参照変更完了
+ ✅ thumbnail-system.js (v1.1: 統一アスペクト比対応) loaded
+ ✅ brush-settings.js (Phase 3-D Clean) loaded
+ ✅ BlendMode definitions loaded
+ ✅ vector-operations.js Phase 1完全版 loaded
+    ✓ window.VectorOperations.generateStrokePolygon(points, size)
+    ✓ config.js perfectFreehand設定自動適用
+    🔥 PerfectFreehand統合基盤完成
+ ✅ brush-core.js Phase 6統合修正版 loaded
+    ✅ MSDF戻り値 { texture, width, height } 対応
+    ✅ createSpriteFromGLTexture 呼び出し統一
+ ✅ fill-tool.js (WebGPU競合修正版) loaded
+    ❌ 独自WebGPU初期化を削除
+    ✅ 既存インスタンス参照のみ
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js v8.33.0 loaded
+    🔧 PNG→APNG維持 / WEBP→WebM自動切替対応
+ ✅ png-exporter.js v8.29.0 loaded
+    🔧 generatePreview()メソッド追加
+    🔧 エラーハンドリング強化
+    🔧 Blob生成の確実性向上
+ ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:250    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:170 ✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)
+psd-exporter.js:171    ⚠️ 実装は将来フェーズで追加予定
+psd-exporter.js:172    ✓ エラーメッセージで開発中を通知
+apng-exporter.js:281 ✅ apng-exporter.js v8.31.0 loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+dom-builder.js:527 ✅ dom-builder.js v8.19.0 loaded
+dom-builder.js:528    🔧 エクスポートボタン: PNG/WEBP/PSD（GIF/PDF削除）
+dom-builder.js:529    ✓ System情報表示（WebGPU/GPU検出）
+slider-utils.js:265 ✅ slider-utils.js v8.14.0 loaded
+slider-utils.js:266    🔧 PointerEvent配信問題修正完了
+keyboard-handler.js:486 ✅ keyboard-handler.js Phase 6完成版 loaded
+keyboard-handler.js:487    ✅ BS/DEL: 描画削除が正常動作
+keyboard-handler.js:488    ✅ Undo/Redo: children参照保持で完全復元
+keyboard-handler.js:489    🔧 反転処理: 画像消失問題解決
+layer-panel-renderer.js:663 ✅ layer-panel-renderer.js (Phase 5+6対応版) loaded
+layer-panel-renderer.js:664    ✓ layer:panel-update-requested イベントリスナー追加
+layer-panel-renderer.js:665    ✓ LayerSystemからの直接呼び出し完全排除
+status-display-renderer.js:317 ✅ ui/status-display-renderer.js 完全改修版 loaded
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:649 ✅ settings-popup.js Phase 1 loaded
+settings-popup.js:650    🔧 ui:open-settings リスナー追加（Ctrl+, 対応）
+quick-access-popup.js:740 ✅ quick-access-popup.js v8.13.17 loaded
+export-popup.js:557 ✅ export-popup.js v8.29.0 loaded
+export-popup.js:558    🔧 PNG→APNG維持 / WEBP→WebM自動切替UI対応
+ui-panels.js:420 ✅ ui-panels.js v8.13.15 loaded
+ui-panels.js:421    🎨 サイドバー軽量デザイン: オレンジ枠のみ
+ui-panels.js:422    🎯 SVG色統一: 常にvar(--futaba-maroon)
+core-runtime.js:578 ✅ core-runtime.js (Phase 5 - UI例外修正版) loaded
+core-engine.js:767 ✅ core-engine.js Phase 4-C完全版 loaded
+core-engine.js:768    🔧 リアルタイムプレビュー統合完了
+core-engine.js:769    🔧 Master Loop: pointer → preview → render
+index.html:111 🚀 WebGL2 MSDF版 起動中...
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+webgl2-drawing-layer.js:87 [WebGL2DrawingLayer] ✅ Initialized {maxTextureSize: 16384, extensions: Array(3)}
+core-initializer.js:187 [WebGL2] Drawing Layer initialized
+gl-stroke-processor.js:26 [GLStrokeProcessor] ✅ Initialized
+core-initializer.js:196 [WebGL2] GLStrokeProcessor initialized
+gl-msdf-pipeline.js:53 [GLMSDFPipeline] ✅ Initialized (Phase 6: 7 floats/vertex対応)
+core-initializer.js:201 [WebGL2] GLMSDFPipeline initialized
+gl-texture-bridge.js:51 [GLTextureBridge] ✅ Initialized (PixiJS v8)
+core-initializer.js:209 [WebGL2] GLTextureBridge initialized
+gl-mask-layer.js:82 [GLMaskLayer] ✅ Initialized {width: 400, height: 400}
+core-initializer.js:221 [WebGL2] GLMaskLayer initialized
+stroke-renderer.js:76 [StrokeRenderer] ✅ Initialized (WebGL2 mode)
+core-initializer.js:236 [WebGL2] StrokeRenderer initialized
+core-initializer.js:238 [WebGL2] ✅ Phase 6 initialization complete
+core-initializer.js:345 [App] Re-initializing BrushCore with WebGL2 components
+core-initializer.js:356 [App] ✅ BrushCore re-initialized with WebGL2 (Phase 6)
+index.html:113 ✅ WebGL2初期化完了
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+popup-manager.js:192 👁️ Popup "quickAccess" shown

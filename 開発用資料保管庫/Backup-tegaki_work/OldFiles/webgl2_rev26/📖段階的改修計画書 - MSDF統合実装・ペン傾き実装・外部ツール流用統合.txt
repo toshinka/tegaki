@@ -1,0 +1,732 @@
+================================================================================
+ブラウザお絵かきツール - 段階的改修計画書（Rev.20版）
+MSDF統合実装・ペン傾き実装・外部ツール流用統合
+Rev.20 → Rev.21 移行計画
+================================================================================
+
+■ 現状分析（Rev.20時点の詳細）
+
+【座標変換パイプライン】
+📁 coordinate-system.js ✅ Phase 完了
+  - screenClientToCanvas() / canvasToWorld() / worldToLocal() 正常動作
+  - DPI補正・逆行列計算・親チェーン遡査 実装済み
+  
+📁 camera-system.js ✅
+  - worldContainer transform管理
+  - ズーム・パン機能実装済み
+
+📁 drawing-engine.js ✅ Phase 4.1
+  - PointerEvent → Local座標変換 正常動作
+  - _screenToLocal() パイプライン完成
+  - strokeRenderer参照追加済み
+  ❌ tiltX/tiltY/twist データ未伝達
+  - BrushCore連携: startStroke(clientX, clientY, pressure)
+    ❌ tilt/twistパラメータ未追加
+
+【PointerEvent処理】
+📄 pointer-handler.js ✅ Phase 2
+  - PointerEvent統一ハンドラ実装済み
+  - normalizeEvent() で tiltX/tiltY/twist 取得済み
+  - pointerType補正（pen誤認防止）実装済み
+  ✅ 傾き取得完了（ただし未使用）
+  
+📄 pressure-handler.js ✅
+  - 筆圧取得・正規化 実装済み
+  🔧 傾き連携インターフェース未実装
+
+【ストローク処理】
+📄 stroke-recorder.js 🔍
+  - Local座標記録 正常動作
+  - 座標変換なし（ガイドライン準拠）
+  ❌ tiltX/tiltY/twist フィールド未記録
+
+📄 stroke-renderer.js ✅ Phase 7.5
+  - 高速ストローク補償実装済み
+  - gl-stroke-processor連携 正常動作
+  - _renderWithPolygon() でポリゴン描画
+  - 流量不透明度計算（Phase 7.5）
+  ❌ MSDF統合未実装
+  ❌ 傾きベース幅変調未実装
+
+【WebGL2ポリゴン生成】
+📄 gl-stroke-processor.js ✅ Phase 4.0D
+  - Perfect-Freehand完全削除済み ✅
+  - 独自リボン生成実装完了 ✅
+  - Earcut三角形分割 正常動作
+  - カエルの卵最小化（Phase 4.0D）
+  - createPolygonVertexBuffer() 実装済み
+    - 入力: points[{x, y, pressure}]
+    - 出力: {buffer, vertexCount, bounds, hasPressure}
+  ❌ tilt情報未対応（頂点属性拡張必要）
+
+【MSDF統合状態】
+📁 gl-msdf-pipeline.js ⚠️ Phase 6.2
+  - JFA（Jump Flooding Algorithm）実装済み ✅
+  - shader-inline.js統合完了 ✅
+  - generateMSDF() メソッド実装済み ✅
+    - パラメータ: (edgeBufferData, bounds, existingMSDF, settings, vertexBufferData, vertexCount, edgeCount)
+    - 返り値: {texture, width, height}
+  ❌ stroke-renderer.jsから未呼び出し
+  ❌ _renderWithPolygon() との統合未完了
+
+📄 webgl2-drawing-layer.js ✅ Phase 3.6
+  - WebGL2コンテキスト初期化完了
+  - GLStrokeProcessor初期化済み
+  - FBO生成・削除メソッド実装済み
+  ✅ window.WebGLContext / window.WebGL2DrawingLayer 登録済み
+
+📄 shader-inline.js ✅ Phase 6.2
+  - GLSLシェーダー インライン化完了
+  - window.GLSLShaders 登録済み
+    - renderVert, renderFrag
+    - seedInit, jfaPass, encode
+
+【シェーダー】
+📄 shaders/render.vert.glsl ✅
+  - 基本頂点シェーダー実装済み
+  ❌ tilt属性未定義
+
+📄 shaders/render.frag.glsl ⚠️
+  - MSDF描画ロジック基本実装あり
+  🔧 傾きベース描画未実装
+  🔧 アンチエイリアス改善余地あり
+
+📄 shaders/seed-init.frag.glsl ✅
+📄 shaders/jfa-pass.frag.glsl ✅
+📄 shaders/encode.frag.glsl ✅
+
+【データモデル】
+📄 data-models.js 🔧
+  - StrokeData 実装済み
+    - points[{x, y, pressure, time}]
+  ❌ tiltX, tiltY, twist フィールド未定義
+  - toJSON() で傾き未シリアライズ
+
+【ブラシ設定】
+📄 brush-settings.js ✅
+  - ブラシパラメータ管理 実装済み
+  ❌ 傾き感度設定未実装
+  - 必要な設定項目:
+    - tiltSensitivity: 0.5
+    - tiltAffectsWidth: true
+    - tiltAffectsRotation: false
+
+【履歴管理】
+📁 history.js ✅
+  - window.historyManager 正常動作
+  - コマンドパターン実装済み
+  🔧 Penpot比較改善余地あり（低優先度）
+
+================================================================================
+
+■ 改修が不要な項目（Rev.20で既に完了）
+
+❌ Phase 1（従来計画）: PixiJS v8 公式サンプル統合
+  理由: gl-stroke-processor.js Phase 4.0D で独自実装完了済み
+  状態: Perfect-Freehand完全削除・Earcut三角形分割実装済み
+  結論: この Phase は実施不要
+
+✅ ポリゴン生成: 独自リボン生成実装が Phase 4.0D で完成
+✅ Mesh生成: stroke-renderer.js で _renderWithPolygon() 実装済み
+✅ 座標変換: drawing-engine.js で完全動作
+✅ WebGL2基盤: webgl2-drawing-layer.js 初期化完了
+
+================================================================================
+
+■ MSDF統合実装計画（最優先 Phase A）
+
+【現状問題点】
+❌ gl-msdf-pipeline.generateMSDF() が呼ばれていない
+❌ stroke-renderer._renderWithPolygon() が MSDF を使っていない
+❌ 現状は Pixi.Graphics でポリゴン描画（CPU処理混在）
+
+【統合目標】
+✅ WebGL2 MSDF描画パイプライン完全動作
+✅ GPU描画のみ（CPUラスタライズ完全廃止）
+✅ アンチエイリアス品質向上
+
+【Phase A-1: stroke-renderer.js のMSDF統合準備】
+期間: 2-3時間
+
+📄 stroke-renderer.js 🔧
+  
+  改修箇所1: _renderWithPolygon() メソッド
+    現状コード解析:
+      - gl-stroke-processor.createPolygonVertexBuffer() 呼び出し
+      - vertexBuffer = {buffer, vertexCount, bounds, hasPressure}
+      - Pixi.Graphics でポリゴン描画（CPU処理）
+    
+    改修内容:
+      - MSDF生成フラグ追加 (config.webgpu.msdf.enabled チェック)
+      - gl-msdf-pipeline.generateMSDF() 呼び出し追加
+        const msdfResult = await window.GLMSDFPipeline.generateMSDF(
+          null,  // edgeBufferData (不要)
+          vertexBuffer.bounds,
+          null,  // existingMSDF
+          {
+            color: settings.color,
+            opacity: finalOpacity
+          },
+          vertexBuffer.buffer,
+          vertexBuffer.vertexCount,
+          0  // edgeCount (不要)
+        );
+      - MSDF Texture → Pixi.Sprite 変換
+        if (msdfResult && msdfResult.texture) {
+          const sprite = new PIXI.Sprite(PIXI.Texture.from(msdfResult.texture));
+          // bounds適用
+          return sprite;
+        }
+    
+    依存関係:
+      - window.GLMSDFPipeline (Phase 6.2で実装済み)
+      - window.WebGL2DrawingLayer.createFBO() (実装済み)
+  
+  改修箇所2: renderPreview() メソッド
+    - インクリメンタルプレビューもMSDF対応検討
+    - ただし速度優先のためPixi.Graphics維持も選択肢
+
+【Phase A-2: gl-msdf-pipeline.js の統合調整】
+期間: 1-2時間
+
+📄 gl-msdf-pipeline.js 🔧
+  
+  確認項目:
+    - generateMSDF() パラメータ検証
+      ✅ edgeBufferData: null でも動作するか
+      ✅ vertexBufferData: Float32Array (stride=3) 対応確認
+      ✅ bounds: {minX, minY, maxX, maxY, width, height} 形式確認
+  
+  改修内容:
+    - エラーハンドリング強化
+      if (!vertexBufferData || vertexCount === 0) {
+        console.warn('[GLMSDFPipeline] Invalid vertex data');
+        return null;
+      }
+    
+    - FBO削除漏れチェック
+      - seedFBO, jfaResult.tempFBO, msdfFBO の確実な削除
+    
+    - 返り値テクスチャの所有権明確化
+      ※ outputFBO.texture を返すが、outputFBO自体は削除
+      ※ 呼び出し側でtexture削除責任
+
+【Phase A-3: render.frag.glsl の改善】
+期間: 1時間
+
+📄 shaders/render.frag.glsl 🔧
+  
+  現状確認:
+    - window.GLSLShaders.renderFrag に実装あり
+    - 基本的なMSDF描画ロジックは実装済み
+  
+  改修内容:
+    - アンチエイリアス改善
+      float pixelDist = fwidth(vTexCoord.x) * uRange;
+      float alpha = smoothstep(0.5 - pixelDist, 0.5 + pixelDist, dist);
+    
+    - 筆圧ベース閾値調整（Phase B後に実装）
+      float threshold = 0.5 - (v_pressure - 0.5) * 0.1;
+
+【Phase A-4: 統合テスト】
+期間: 1時間
+
+  テスト項目:
+    ✅ MSDF生成成功（texture返却確認）
+    ✅ Pixi.Sprite描画確認
+    ✅ アンチエイリアス品質確認
+    ✅ FBO削除漏れなし（メモリリーク防止）
+    ✅ エラー時のフォールバック動作
+
+  パフォーマンス確認:
+    - ストローク描画時間 < 16ms（60fps維持）
+    - MSDF生成時間計測・ログ出力
+
+Phase A 完了条件:
+✅ stroke-renderer._renderWithPolygon() からMSDF生成成功
+✅ WebGL2 Texture → Pixi.Sprite 描画成功
+✅ アンチエイリアス品質が Pixi.Graphics より向上
+✅ FBO削除正常動作（メモリリーク無し）
+
+Phase A 推定所要時間: 5-7時間
+
+================================================================================
+
+■ ペン傾き実装計画（Phase B）
+
+【Phase B-1: データモデル拡張】
+期間: 1時間
+
+📄 data-models.js 🔧
+  
+  StrokeData拡張:
+    toJSON() 修正:
+      points: this.points.map(p => ({
+        x: p.x,
+        y: p.y,
+        pressure: p.pressure,
+        time: p.time,
+        tiltX: p.tiltX !== undefined ? p.tiltX : 0,
+        tiltY: p.tiltY !== undefined ? p.tiltY : 0,
+        twist: p.twist !== undefined ? p.twist : 0
+      }))
+  
+  STROKE_SCHEMA拡張:
+    points: {
+      type: 'array',
+      required: true,
+      editable: false,
+      itemSchema: {
+        x: 'number',
+        y: 'number',
+        pressure: 'number',
+        time: 'number',
+        tiltX: 'number',  // -1 〜 1
+        tiltY: 'number',  // -1 〜 1
+        twist: 'number'   // 0 〜 2π
+      }
+    }
+
+【Phase B-2: drawing-engine.js 傾き伝達】
+期間: 1-2時間
+
+📄 drawing-engine.js 🔧
+  
+  改修箇所: _handlePointerDown() / _handlePointerMove()
+    
+    現状コード:
+      this.brushCore.startStroke(
+        info.clientX,
+        info.clientY,
+        info.pressure
+      );
+    
+    改修後:
+      this.brushCore.startStroke(
+        info.clientX,
+        info.clientY,
+        info.pressure,
+        info.tiltX,   // 追加
+        info.tiltY,   // 追加
+        info.twist    // 追加
+      );
+    
+    同様に updateStroke() も拡張
+
+【Phase B-3: brush-core.js 傾き処理】
+期間: 1-2時間
+
+📄 brush-core.js 🔧
+  
+  改修箇所: startStroke() / updateStroke()
+    
+    パラメータ追加:
+      startStroke(clientX, clientY, pressure, tiltX = 0, tiltY = 0, twist = 0)
+    
+    ポイント記録に傾き追加:
+      const point = {
+        localX: localCoords.localX,
+        localY: localCoords.localY,
+        pressure: pressure,
+        tiltX: tiltX,
+        tiltY: tiltY,
+        twist: twist,
+        time: Date.now()
+      };
+    
+    stroke-recorder.recordPoint() に渡す
+
+【Phase B-4: gl-stroke-processor.js 傾き対応】
+期間: 2-3時間
+
+📄 gl-stroke-processor.js 🔧
+  
+  改修内容:
+    
+    1. 頂点バッファ拡張（stride 3 → 5）
+      現状: [x, y, pressure] (3 floats)
+      改修: [x, y, pressure, tiltX, tiltY] (5 floats)
+    
+    2. createPolygonVertexBuffer() 修正
+      normalizedPoints に tiltX/tiltY 追加:
+        return {
+          x: p.x,
+          y: p.y,
+          sizePressure: sizePressure,
+          flowPressure: flowPressure,
+          rawPressure: rawPressure,
+          tiltX: p.tiltX !== undefined ? p.tiltX : 0,
+          tiltY: p.tiltY !== undefined ? p.tiltY : 0
+        };
+    
+    3. _generateRibbonWithPressure() 修正
+      segments に tiltX/tiltY 追加
+      
+      polygon配列生成時:
+        for (const seg of segments) {
+          polygon.push(seg.left.x, seg.left.y);
+          flowPressures.push(seg.left.flowPressure);
+          tiltData.push(seg.left.tiltX, seg.left.tiltY);
+        }
+      
+      返り値: { polygon, flowPressures, tiltData }
+    
+    4. 頂点バッファ書き込み修正
+      buffer[i * 5] = x;
+      buffer[i * 5 + 1] = y;
+      buffer[i * 5 + 2] = flowPressure;
+      buffer[i * 5 + 3] = tiltX;
+      buffer[i * 5 + 4] = tiltY;
+    
+    5. 返り値更新
+      return {
+        buffer,
+        vertexCount,
+        bounds,
+        hasPressure: true,
+        hasTilt: true,
+        stride: 5
+      };
+
+【Phase B-5: 傾きベース幅変調実装】
+期間: 1-2時間
+
+📄 stroke-renderer.js 🔧
+  
+  新規メソッド追加:
+    _calculateTiltWidth(point, baseWidth, settings)
+      入力:
+        - point: {tiltX, tiltY, pressure}
+        - baseWidth: number
+        - settings: {tiltSensitivity, tiltAffectsWidth}
+      
+      処理:
+        if (!settings.tiltAffectsWidth) return baseWidth;
+        
+        const tiltMagnitude = Math.sqrt(
+          point.tiltX * point.tiltX + 
+          point.tiltY * point.tiltY
+        );
+        
+        const widthModulation = 1.0 + 
+          (tiltMagnitude * settings.tiltSensitivity);
+        
+        return baseWidth * widthModulation;
+      
+      返り値: number (調整後の幅)
+    
+    _renderWithPolygon() 内で適用:
+      const adjustedSize = this._calculateTiltWidth(
+        formattedPoints[0],
+        settings.size,
+        settings
+      );
+
+【Phase B-6: brush-settings.js 拡張】
+期間: 30分
+
+📄 brush-settings.js 🔧
+  
+  デフォルト設定追加:
+    tilt: {
+      sensitivity: 0.5,        // 傾き感度
+      affectsWidth: true,      // 幅変調ON/OFF
+      affectsRotation: false,  // 回転ON/OFF（Phase C実装）
+      widthMin: 0.5,          // 最小幅比率
+      widthMax: 1.5           // 最大幅比率
+    }
+
+【Phase B-7: WebGL2シェーダー対応】
+期間: 1-2時間
+
+📄 shaders/render.vert.glsl 🔧
+  
+  頂点属性追加:
+    layout(location = 0) in vec2 aPosition;
+    layout(location = 1) in vec2 aTexCoord;
+    layout(location = 2) in vec3 aReserved;  // [pressure, tiltX, tiltY]
+    
+    out vec2 vTexCoord;
+    out float vPressure;
+    out vec2 vTilt;
+    
+    void main() {
+      // ... 既存処理 ...
+      vPressure = aReserved.x;
+      vTilt = aReserved.yz;
+    }
+
+📄 shaders/render.frag.glsl 🔧
+  
+  傾きベース描画:
+    in vec2 vTilt;
+    in float vPressure;
+    
+    void main() {
+      // MSDF距離場サンプリング
+      vec4 msdf = texture(uMSDF, vTexCoord);
+      float dist = median(msdf.rgb);
+      
+      // 傾きベース閾値調整
+      float tiltMagnitude = length(vTilt);
+      float threshold = 0.5 - (tiltMagnitude * 0.1);
+      
+      // アンチエイリアス
+      float pixelDist = fwidth(vTexCoord.x) * uRange;
+      float alpha = smoothstep(
+        threshold - pixelDist,
+        threshold + pixelDist,
+        dist
+      );
+      
+      // 筆圧反映
+      alpha *= vPressure;
+      
+      gl_FragColor = vec4(uColor, alpha * uOpacity);
+    }
+
+【Phase B-8: UI実装】
+期間: 1時間
+
+📄 ui/settings-popup.js 🔧
+  
+  傾き設定UI追加:
+    - スライダー: 傾き感度（0.0 〜 1.0）
+    - トグル: 幅変調ON/OFF
+    - プレビュー: リアルタイム傾き可視化（オプション）
+
+Phase B 完了条件:
+✅ pointer-handler → drawing-engine → brush-core → stroke-recorder で傾き伝達成功
+✅ data-models.StrokeData に tiltX/tiltY/twist 保存成功
+✅ gl-stroke-processor で stride=5 頂点バッファ生成成功
+✅ 傾きベース幅変調が動作（液タブ実機テスト）
+✅ WebGL2シェーダーで傾き反映描画成功
+
+Phase B 推定所要時間: 8-12時間
+
+================================================================================
+
+■ 外部ツール参考実装（Phase C - オプション・低優先度）
+
+【Phase C-1: Penpot 座標変換レビュー】
+期間: 1-2時間
+
+  目的: coordinate-system.js の最適化検討
+  
+  手順:
+    1. https://github.com/penpot/penpot の viewport.cljs 確認
+    2. 行列スタック管理との比較
+    3. 改善点があれば取り込み
+  
+  注意: ClojureScript → JavaScript 変換必要
+  優先度: 低（現状正常動作のため）
+
+【Phase C-2: Penpot History Manager 参考改善】
+期間: 2-3時間
+
+  目的: history.js の Undo/Redo 構造改善
+  
+  流用元: https://github.com/penpot/penpot/blob/main/frontend/src/app/main/data/workspace/undo.cljs
+  
+  改善項目:
+    - コマンドパターンの最適化
+    - メタデータ構造の拡張
+    - メモリ効率化（大量ストローク対応）
+  
+  優先度: 低（Phase A, B完了後に検討）
+
+【Phase C-3: tldraw-physics 参考（将来実装）】
+期間: 未定
+
+  目的: 物理シミュレーション実装
+  
+  判断: ProcreateDreams / ToonSquid2 的なツールでは不要
+  優先度: 最低（現時点では実装不要）
+
+================================================================================
+
+■ 段階的実装フロー（推奨順序）
+
+【Week 1】
+Phase A-1〜A-2: MSDF統合（前半）
+  → stroke-renderer.js 改修
+  → gl-msdf-pipeline.js 調整
+  期間: 3-5時間
+  期待成果: MSDF生成パイプライン動作確認
+
+Phase A-3〜A-4: MSDF統合（後半）
+  → render.frag.glsl 改善
+  → 統合テスト
+  期間: 2時間
+  期待成果: WebGL2 MSDF描画完全動作
+
+【Week 2】
+Phase B-1〜B-3: ペン傾き実装（前半）
+  → data-models.js 拡張
+  → drawing-engine.js 傾き伝達
+  → brush-core.js 傾き処理
+  期間: 3-5時間
+  期待成果: 傾きデータ取得・記録完了
+
+Phase B-4〜B-5: ペン傾き実装（中盤）
+  → gl-stroke-processor.js 傾き対応
+  → 傾きベース幅変調実装
+  期間: 3-5時間
+  期待成果: 頂点バッファ stride=5 生成成功
+
+【Week 3】
+Phase B-6〜B-8: ペン傾き実装（後半）
+  → brush-settings.js 拡張
+  → WebGL2シェーダー対応
+  → UI実装
+  期間: 3-4時間
+  期待成果: 傾き検出ベクターペン完全動作
+
+統合テスト・最適化
+  → 液タブ実機テスト（120Hz確認）
+  → MSDF + 傾き 同時動作確認
+  → パフォーマンス測定・最適化
+  期間: 2-3時間
+
+【Week 4〜（オプション）】
+Phase C-1: Penpot 座標変換レビュー
+Phase C-2: Penpot History Manager 改善
+
+================================================================================
+
+■ ファイル依存関係マップ（Phase A, B実装時）
+
+【Phase A: MSDF統合】
+📁 stroke-renderer.js (改修)
+  ├─ 📄 gl-stroke-processor.js (既存・変更なし)
+  ├─ 📄 gl-msdf-pipeline.js (調整)
+  │   ├─ 📄 shader-inline.js (既存)
+  │   └─ 📁 webgl2-drawing-layer.js (既存)
+  └─ 📄 config.js (設定確認)
+
+【Phase B: ペン傾き】
+📄 pointer-handler.js (既存・変更なし)
+  ↓ tiltX/tiltY/twist
+📁 drawing-engine.js (改修)
+  ↓
+📄 brush-core.js (改修)
+  ↓
+📄 stroke-recorder.js (確認・軽微修正可能性)
+  ↓
+📄 data-models.js (改修)
+
+📄 gl-stroke-processor.js (改修)
+  ↓ stride=5 buffer
+📄 stroke-renderer.js (改修)
+  ↓
+📄 shaders/render.vert.glsl (改修)
+📄 shaders/render.frag.glsl (改修)
+
+📄 brush-settings.js (改修)
+📄 ui/settings-popup.js (改修)
+
+================================================================================
+
+■ 注意事項・制約確認
+
+【ガイドライン遵守】
+✅ 座標変換一本化: drawing-engine のみが変換オーナー（変更なし）
+✅ 二重変換禁止: stroke-recorder は座標変換なし（変更なし）
+✅ Pixi toLocal()/toGlobal() 使用禁止（遵守済み）
+✅ CPU ラスタライズ禁止: MSDF統合で完全GPU化
+✅ Canvas2D 使用禁止（デバッグ除く）
+✅ DPR固定1.0（変更なし）
+✅ History登録: pointerup時のみ（変更なし）
+
+【Phase A 注意点】
+⚠️ MSDF生成は非同期処理（await必須）
+⚠️ FBO削除漏れ厳禁（メモリリーク防止）
+⚠️ Texture所有権の明確化（誰が削除するか）
+⚠️ エラー時のフォールバック（Pixi.Graphics維持）
+
+【Phase B 注意点】
+⚠️ stride変更により既存バッファ読み込みに影響
+⚠️ シェーダー attribute 定義順序厳守
+⚠️ 傾き正規化（-1〜1範囲保証）
+⚠️ 液タブ実機テスト必須（傾き検出確認）
+
+【グローバルオブジェクト】
+✅ window.CoordinateSystem
+✅ window.cameraSystem
+✅ window.layerManager
+✅ window.historyManager
+✅ window.WebGLContext
+✅ window.WebGL2DrawingLayer
+✅ window.GLMSDFPipeline
+✅ window.GLSLShaders
+✅ window.PixiUI（Pixi UI専用）
+
+【禁止事項再確認】
+❌ 二重変換
+❌ Pixi.Graphics 本番描画使用（Phase A後は完全WebGL2化）
+❌ CPU SDF/MSDF 計算
+❌ strokeType分離実装
+❌ 循環依存
+
+================================================================================
+
+■ 完了判定基準
+
+【Phase A 完了条件】
+✅ gl-msdf-pipeline.generateMSDF() 成功（texture返却）
+✅ stroke-renderer._renderWithPolygon() からMSDF生成成功
+✅ WebGL2 Texture → Pixi.Sprite 描画成功
+✅ アンチエイリアス品質向上確認
+✅ FBO削除正常動作（メモリリーク無し）
+✅ パフォーマンス: ストローク描画 < 16ms（60fps維持）
+
+【Phase B 完了条件】
+✅ pointer-handler → drawing-engine → brush-core で傾き伝達成功
+✅ data-models.StrokeData に tiltX/tiltY/twist 保存・シリアライズ成功
+✅ gl-stroke-processor.createPolygonVertexBuffer() で stride=5 生成成功
+✅ 傾きベース幅変調動作確認（液タブ実機テスト）
+✅ WebGL2シェーダーで傾き反映描画成功
+✅ UI設定（傾き感度・幅変調ON/OFF）動作確認
+✅ 120Hzリフレッシュレート維持
+
+【全体完了条件（Phase A + B）】
+✅ MSDF + 傾き 同時動作確認
+✅ ProcreateDreams / ToonSquid2 相当のペン品質達成
+✅ 座標変換パイプライン単一責務維持
+✅ WebGL2 / PixiJS 責務分離維持
+✅ History登録正常動作
+✅ file:// 直開き動作確認
+✅ GPU描画のみ（CPUラスタライズ完全廃止）
+
+================================================================================
+
+■ 推定工数・スケジュール
+
+Phase A（MSDF統合）: 5-7時間
+  - A-1: 2-3時間
+  - A-2: 1-2時間
+  - A-3: 1時間
+  - A-4: 1時間
+
+Phase B（ペン傾き）: 8-12時間
+  - B-1: 1時間
+  - B-2: 1-2時間
+  - B-3: 1-2時間
+  - B-4: 2-3時間
+  - B-5: 1-2時間
+  - B-6: 30分
+  - B-7: 1-2時間
+  - B-8: 1時間
+
+統合テスト: 2-3時間
+
+Phase C（オプション）: 3-5時間
+
+合計（Phase A + B + テスト）: 15-22時間
+合計（Phase A + B + C + テスト）: 18-27時間
+
+推奨実装期間: 2-3週間（Phase A, B のみ）
+
+================================================================================
+End of Document - Rev.20版
+================================================================================

@@ -1,0 +1,514 @@
+================================================================================
+PerfectFreehand + GPUマスク統合改修計画書 v1.0
+================================================================================
+
+【改修目的】
+ペン・消しゴム・バケツ塗りをGPUマスクで統合し、PerfectFreehandによる
+滑らかなポリゴン生成とWebGPU完全移行を実現する。
+
+【現状問題】
+- 消しゴムがblendMode依存でマスク統合できていない
+- バケツ塗りが閉領域認識不可
+- WebGPU化が部分的（SDFのみ）
+- ラスタライズ的処理が残存
+- Canvas2D依存が一部残存
+
+【方針】
+1. PerfectFreehand導入でポリゴン生成統一
+2. GPUマスクレイヤーでペン/消しゴム/塗り統合
+3. WebGPU Compute Shader完全移行
+4. SDF/MSDF + マスク合成で描画統一
+
+================================================================================
+Phase 0: 事前準備・調査
+================================================================================
+
+【目的】
+- perfect-freehand統合準備
+- 二重実装調査
+- 依存関係整理
+
+【改修ファイル】
+なし（調査のみ）
+
+【参考ファイル】
+- libs/perfect-freehand-1.2.0.min.js ✅検証済
+- system/drawing/stroke-recorder.js
+- system/drawing/stroke-renderer.js
+- system/drawing/brush-core.js
+- system/drawing/sdf-mesh-builder.js
+- system/drawing/webgpu/webgpu-drawing-layer.js
+
+【調査項目】
+✅ perfect-freehand CDN不要（ビルド版使用）
+✅ UMD形式でglobalThis.PerfectFreehand利用可能
+⚠️ stroke-renderer.js 消しゴムが blendMode 依存
+⚠️ SDFMeshBuilder が未使用（二重実装の可能性）
+⚠️ WebGPUDrawingLayer がマスク未対応
+
+【二重実装発見】
+1. stroke-renderer.js の _renderEraserStroke() と _renderFinalStrokeLegacy()
+   → ほぼ同一処理（Graphics描画）
+2. sdf-mesh-builder.js が未参照
+   → stroke-renderer.js が直接SDF処理
+3. curve-interpolator.js 参照箇所が stroke-renderer.js のみ
+   → PerfectFreehandで置き換え可能
+
+================================================================================
+Phase 1: PerfectFreehand統合基盤
+================================================================================
+
+【目的】
+- stroke-recorder.js にPerfectFreehand統合
+- ポリゴン生成パイプライン構築
+- 既存描画との互換性維持
+
+【改修ファイル】
+1. system/drawing/stroke-recorder.js ★PRIMARY
+2. system/drawing/polygon-generator.js ★NEW
+3. config.js (perfect-freehand設定追加)
+
+【依存Parents】
+- libs/perfect-freehand-1.2.0.min.js
+- coordinate-system.js (Local座標)
+- pressure-handler.js (筆圧)
+
+【依存Children】
+- brush-core.js (startStroke/addPoint/endStroke呼出)
+- stroke-renderer.js (ポリゴン受取)
+
+【メソッド索引】
+stroke-recorder.js:
+  - startStroke(localX, localY, pressure)
+  - addPoint(localX, localY, pressure)
+  - endStroke() → {points, polygon, isSingleDot}
+  - _generatePolygon() ★NEW
+
+polygon-generator.js ★NEW:
+  - generate(points, options) → polygon
+  - _callPerfectFreehand(points, settings)
+  - _validatePolygon(polygon)
+
+【処理フロー】
+PointerEvent → brush-core.js
+  → strokeRecorder.addPoint(localX, localY, pressure)
+    → 内部バッファに蓄積
+  → strokeRecorder.endStroke()
+    → PerfectFreehand.getStroke(points, options)
+    → {points, polygon} 返却
+  → stroke-renderer.js へ
+
+【config.js追加項目】
+```
+TEGAKI_CONFIG.perfectFreehand = {
+  enabled: true,
+  size: 16,
+  thinning: 0.5,
+  smoothing: 0.5,
+  streamline: 0.5,
+  easing: t => t,
+  simulatePressure: false, // 筆圧は外部処理
+  start: { taper: 0, cap: true },
+  end: { taper: 0, cap: true }
+};
+```
+
+【注意点】
+- PerfectFreehandは[x,y,pressure]配列を要求
+- strokeRecorder内でフォーマット変換
+- 既存points形式 {x, y, pressure} も保持
+- polygon生成は endStroke() 時のみ
+
+================================================================================
+Phase 2: WebGPUマスクレイヤー実装
+================================================================================
+
+【目的】
+- ペン/消しゴム/塗り統合マスクテクスチャ生成
+- マスク加算/減算パイプライン構築
+- SDF統合準備
+
+【改修ファイル】
+1. system/drawing/webgpu/webgpu-mask-layer.js ★NEW PRIMARY
+2. system/drawing/webgpu/shaders/mask-polygon.wgsl ★NEW
+3. system/drawing/webgpu/shaders/mask-composite.wgsl ★NEW
+4. system/drawing/webgpu/webgpu-drawing-layer.js (拡張)
+
+【依存Parents】
+- webgpu-drawing-layer.js (GPUDevice/Queue)
+- polygon-generator.js (ポリゴン入力)
+
+【依存Children】
+- stroke-renderer.js (マスク参照描画)
+- fill-tool.js (領域判定)
+
+【メソッド索引】
+webgpu-mask-layer.js ★NEW:
+  - initialize(device, width, height)
+  - createMaskTexture() → GPUTexture
+  - addPolygonToMask(polygon, mode) // mode: 'add'|'subtract'
+  - compositeWithSDF(sdfTexture, maskTexture)
+  - getMaskTexture() → GPUTexture
+  - clear()
+
+【Shader索引】
+mask-polygon.wgsl:
+  - @compute polygonToMask(polygon[], width, height)
+  - ポリゴン内外判定（Ray Casting）
+  - マスク値書込（0.0~1.0）
+
+mask-composite.wgsl:
+  - @compute compositeMask(maskA, maskB, mode)
+  - mode='add': maskA + maskB
+  - mode='subtract': maskA - maskB
+  - mode='multiply': maskA * maskB
+
+【処理フロー】
+polygon生成 → webgpu-mask-layer.addPolygonToMask(polygon, 'add')
+  → mask-polygon.wgsl でポリゴン→マスク変換
+  → 既存マスクと合成（mask-composite.wgsl）
+  → マスクテクスチャ更新
+
+消しゴム → addPolygonToMask(polygon, 'subtract')
+  → マスク減算処理
+
+【マスクテクスチャ仕様】
+- Format: r32float or rgba8unorm
+- Range: 0.0(透明) ~ 1.0(不透明)
+- 1チャンネル（ペン/消しゴム統合）
+- レイヤー毎に1テクスチャ
+
+【注意点】
+- ポリゴン→マスク変換はGPU Compute必須
+- CPU側Ray Casting禁止
+- マスク合成もGPU完結
+
+================================================================================
+Phase 3: SDF+マスク統合描画
+================================================================================
+
+【目的】
+- SDF生成とマスク合成を統合
+- stroke-renderer.js のペン/消しゴム統合
+- blendMode依存を排除
+
+【改修ファイル】
+1. system/drawing/stroke-renderer.js ★PRIMARY
+2. system/drawing/sdf-brush-shader.js (拡張)
+3. system/drawing/webgpu/shaders/sdf-mask-composite.wgsl ★NEW
+
+【依存Parents】
+- webgpu-mask-layer.js (マスクテクスチャ)
+- webgpu-compute-sdf.js (SDF生成)
+- polygon-generator.js (ポリゴン)
+
+【依存Children】
+- brush-core.js (finalizeStroke呼出)
+- layer-system.js (レイヤー追加)
+
+【メソッド索引】
+stroke-renderer.js:
+  - renderFinalStroke(strokeData, settings) ★統合
+  - _renderWithMask(polygon, maskTexture, settings)
+  - _generateSDFFromPolygon(polygon)
+  - _compositeSDFWithMask(sdfTexture, maskTexture, mode)
+
+sdf-brush-shader.js:
+  - createMaskCompositeShader(mode) ★NEW
+  - mode: 'pen'(add) | 'eraser'(subtract)
+
+【Shader索引】
+sdf-mask-composite.wgsl ★NEW:
+  - @fragment compositeSDF(sdfTexture, maskTexture, mode)
+  - ペン: sdf * (1.0 - mask) + mask
+  - 消しゴム: mask * (1.0 - sdf)
+
+【処理フロー統合】
+strokeData.polygon → _generateSDFFromPolygon()
+  → sdfTexture生成
+  → maskLayer.getMaskTexture()
+  → _compositeSDFWithMask(sdf, mask, settings.mode)
+  → 最終描画Sprite生成
+  → レイヤー追加
+
+ペン: マスクに加算
+消しゴム: マスクから減算（背景色不要）
+
+【削除項目】
+❌ _renderEraserStroke() 削除
+❌ _renderFinalStrokeLegacy() 削除
+❌ blendMode='erase' 削除
+
+【統一後メソッド】
+✅ renderFinalStroke(strokeData, settings)
+  - settings.mode で 'pen'|'eraser' 判定
+  - 内部で mask 加算/減算切替
+  - 1つのパイプラインで処理
+
+【注意点】
+- Legacy描画完全削除
+- Graphics使用禁止（ペン/消しゴム共に）
+- SDF+マスクのみで描画
+
+================================================================================
+Phase 4: バケツ塗りGPU統合
+================================================================================
+
+【目的】
+- FloodFillをGPU実装
+- マスクレイヤーで領域管理
+- 閉領域認識
+
+【改修ファイル】
+1. system/drawing/fill-tool.js ★PRIMARY
+2. system/drawing/webgpu/shaders/flood-fill.wgsl ★NEW
+3. system/drawing/webgpu/webgpu-mask-layer.js (拡張)
+
+【依存Parents】
+- webgpu-mask-layer.js (マスク参照/更新)
+- layer-system.js (レイヤー取得)
+
+【依存Children】
+- brush-core.js (fillモード処理)
+- drawing-engine.js (クリックイベント)
+
+【メソッド索引】
+fill-tool.js:
+  - fill(localX, localY, color, tolerance)
+  - _gpuFloodFill(seedPoint, maskTexture, tolerance)
+  - _updateMaskWithFill(fillMask, targetMask)
+
+webgpu-mask-layer.js 追加:
+  - floodFill(seedX, seedY, tolerance) → fillMask
+  - mergeFillMask(fillMask)
+
+【Shader索引】
+flood-fill.wgsl ★NEW:
+  - @compute seedFill(maskTexture, seedPos, tolerance)
+  - Jump Flooding Algorithm実装
+  - 閉領域検出（マスク境界=1.0の箇所）
+  - 塗り領域マスク生成
+
+【処理フロー】
+クリック(localX, localY) → fill-tool.fill()
+  → maskLayer.getMaskTexture()
+  → _gpuFloodFill(seed, mask, tolerance)
+    → flood-fill.wgsl 実行
+    → fillMask生成（0/1）
+  → maskLayer.mergeFillMask(fillMask)
+  → マスク更新
+  → stroke-renderer経由で描画
+
+【注意点】
+- CPU側FloodFill禁止
+- Jump Flooding AlgorithmでGPU最適化
+- マスク境界を閉領域として認識
+- tolerance はマスク値の差分判定
+
+================================================================================
+Phase 5: エアブラシ・水彩対応
+================================================================================
+
+【目的】
+- 半透明ブラシのマスク加算
+- マスク境界の滑らか表現
+- 後編集対応
+
+【改修ファイル】
+1. system/drawing/brush-settings.js (モード追加)
+2. system/drawing/webgpu/shaders/brush-composite.wgsl ★NEW
+3. system/drawing/stroke-renderer.js (ブラシモード追加)
+
+【依存Parents】
+- webgpu-mask-layer.js
+- polygon-generator.js
+
+【依存Children】
+- brush-core.js
+
+【メソッド索引】
+brush-settings.js:
+  - setMode(mode) // 'pen'|'eraser'|'fill'|'airbrush'|'watercolor'
+  - setBrushOpacity(opacity)
+  - setBrushFlow(flow)
+
+stroke-renderer.js 追加:
+  - _renderBrushStroke(polygon, settings)
+  - _applyBrushComposite(sdfTexture, maskTexture, brushMode)
+
+【Shader索引】
+brush-composite.wgsl ★NEW:
+  - @fragment airbrush(sdf, mask, opacity, flow)
+  - @fragment watercolor(sdf, mask, opacity, blend)
+
+【処理フロー】
+polygon生成 → _renderBrushStroke()
+  → SDF生成
+  → brush-composite.wgsl でマスク加算
+    - airbrush: mask += sdf * opacity * flow
+    - watercolor: mask = blend(mask, sdf, opacity)
+  → マスク更新
+
+【注意点】
+- ブラシもマスクに統合
+- 後から消しゴム可能
+- 半透明重ね塗り対応
+
+================================================================================
+Phase 6: 最終統合・クリーンアップ
+================================================================================
+
+【目的】
+- 二重実装削除
+- Legacy描画完全削除
+- Canvas2D参照削除
+
+【削除ファイル】
+❌ system/drawing/sdf-mesh-builder.js （未使用）
+❌ system/drawing/curve-interpolator.js （PerfectFreehandで代替）
+
+【改修ファイル】
+1. stroke-renderer.js (削除処理)
+2. brush-core.js (削除参照)
+3. config.js (legacy設定削除)
+
+【削除メソッド】
+stroke-renderer.js:
+  ❌ _renderEraserStroke()
+  ❌ _renderFinalStrokeLegacy()
+  ❌ renderDot()
+
+【削除設定】
+config.js:
+  ❌ TEGAKI_CONFIG.webgpu.legacy.enabled
+  ❌ TEGAKI_CONFIG.canvas2d.*
+
+【検証項目】
+✅ ペン描画がマスク統合で動作
+✅ 消しゴムがマスク減算で動作
+✅ バケツ塗りが閉領域認識
+✅ エアブラシ・水彩が半透明加算
+✅ 全描画がWebGPU完結
+✅ Canvas2D未使用
+✅ blendMode未使用（マスク合成のみ）
+
+【最終確認】
+- console.logで "Canvas2D" 検索 → 0件
+- console.logで "blendMode" 検索 → 0件（設定箇所のみ）
+- console.logで "toLocal" 検索 → 0件（worldToLocal統一）
+
+================================================================================
+シンボル索引辞典
+================================================================================
+
+【座標系変換】
+coordinate-system.js:
+  - screenClientToCanvas(clientX, clientY) → {canvasX, canvasY}
+  - canvasToWorld(canvasX, canvasY) → {worldX, worldY}
+  - worldToLocal(worldX, worldY, layer) → {localX, localY}
+
+【ストローク処理】
+stroke-recorder.js:
+  - startStroke(localX, localY, pressure)
+  - addPoint(localX, localY, pressure)
+  - endStroke() → {points, polygon, isSingleDot}
+
+polygon-generator.js ★NEW:
+  - generate(points, options) → polygon
+
+【描画処理】
+stroke-renderer.js:
+  - renderFinalStroke(strokeData, settings) → Sprite
+  - _renderWithMask(polygon, mask, settings)
+  - _generateSDFFromPolygon(polygon) → sdfTexture
+  - _compositeSDFWithMask(sdf, mask, mode) → Sprite
+
+【マスク管理】
+webgpu-mask-layer.js ★NEW:
+  - initialize(device, width, height)
+  - addPolygonToMask(polygon, mode)
+  - getMaskTexture() → GPUTexture
+  - floodFill(x, y, tolerance) → fillMask
+  - mergeFillMask(fillMask)
+
+【WebGPU基盤】
+webgpu-drawing-layer.js:
+  - initialize() → GPUDevice
+  - getDevice() → GPUDevice
+  - getQueue() → GPUQueue
+
+webgpu-compute-sdf.js:
+  - generateSDF(points, width, height, radius) → sdfData
+
+【Shader】
+mask-polygon.wgsl: ポリゴン→マスク変換
+mask-composite.wgsl: マスク加算/減算
+sdf-mask-composite.wgsl: SDF+マスク合成
+flood-fill.wgsl: GPU FloodFill
+brush-composite.wgsl: ブラシ合成
+
+【設定】
+config.js:
+  - TEGAKI_CONFIG.perfectFreehand
+  - TEGAKI_CONFIG.webgpu.mask
+  - TEGAKI_CONFIG.webgpu.sdf
+  - TEGAKI_CONFIG.webgpu.msdf
+
+brush-settings.js:
+  - getSettings() → {size, opacity, color, mode}
+  - setMode(mode)
+
+【イベント】
+event-bus.js:
+  - emit('drawing:stroke-started', data)
+  - emit('drawing:stroke-completed', data)
+  - emit('layer:path-added', data)
+
+================================================================================
+Phase別改修優先度
+================================================================================
+
+Phase 1: PerfectFreehand統合基盤 ★★★★★ 最優先
+  - 他Phase全ての基盤
+
+Phase 2: WebGPUマスクレイヤー ★★★★★ 最優先
+  - Phase 3-5 の前提
+
+Phase 3: SDF+マスク統合描画 ★★★★☆ 高優先
+  - ペン/消しゴム統合の本丸
+
+Phase 4: バケツ塗りGPU統合 ★★★☆☆ 中優先
+  - 独立機能、後回し可能
+
+Phase 5: エアブラシ・水彩対応 ★★☆☆☆ 低優先
+  - 拡張機能、最後
+
+Phase 6: 最終統合・クリーンアップ ★★★★☆ 高優先
+  - Phase 3完了後すぐ実施
+
+【推奨実施順序】
+Phase 1 → Phase 2 → Phase 3 → Phase 6 → Phase 4 → Phase 5
+
+================================================================================
+改修時の注意事項（Claude向け）
+================================================================================
+
+【必須チェック】
+✅ 各Phaseで二重実装を発見したら即座に削除
+✅ 座標変換は coordinate-system.js のメソッドのみ使用
+✅ Local座標は stroke-recorder.js で記録、変換しない
+✅ GPU Compute必須箇所でCPU処理禁止
+✅ Canvas2D, blendMode禁止（Phase 3以降）
+✅ Legacy描画メソッド残存チェック
+
+【各Phase完了時】
+- console.log で該当Phase完了メッセージ出力
+- 依存ファイルの動作確認
+- 二重実装の最終チェック
+
+【最終Phase完了時】
+- 全ファイルで "Canvas2D" "blendMode" "toLocal" 検索
+- GPU完結の確認
+- マスク統合の動作確認
+
+================================================================================

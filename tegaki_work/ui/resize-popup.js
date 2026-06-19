@@ -13,7 +13,7 @@
  */
 
 import { TegakiEventBus } from '../system/event-bus.js';
-import { attachPopupDrag } from './popup-drag-helper.js';
+import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 
 export class ResizePopup {
     constructor(dependencies = {}) {
@@ -50,6 +50,7 @@ export class ResizePopup {
         if (!this.popup) {
             this._createPopupElement();
         } else {
+            mountPopupAtOverlayRoot(this.popup);
             this.popup.classList.remove('show');
             this.popup.style.display = '';
             
@@ -67,7 +68,7 @@ export class ResizePopup {
     }
     
     _createPopupElement() {
-        const container = document.querySelector('.canvas-area') || document.body;
+        const container = document.querySelector('.main-layout') || document.body;
         if (!container) return;
         
         const popupDiv = document.createElement('div');

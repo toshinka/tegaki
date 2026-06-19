@@ -277,9 +277,42 @@ export class LayerSystem {
         const folder = layers.find(l => l.layerData?.id === folderId);
 
         if (!this._canPlaceInFolder(layer, folder)) return false;
+        if (layer.layerData.parentId === folderId) return true;
+
+        const beforeState = this._captureLayerPlacementState();
+        const applyMove = () => this._applyMoveLayerIntoFolder(layerId, folderId);
+
+        if (historyManager && !historyManager.isApplying) {
+            const entry = {
+                name: 'layer-move-into-folder',
+                do: () => applyMove(),
+                undo: () => {
+                    const currentIndex = this.getLayers().findIndex(l => l.layerData?.id === layerId);
+                    this._restoreLayerPlacementState(beforeState);
+                    this._emitPanelUpdateRequest();
+                    this._emitLayerPlacementChanged({
+                        fromIndex: currentIndex,
+                        toIndex: beforeState.order.indexOf(layerId),
+                        movedLayerId: layerId
+                    });
+                },
+                meta: { layerId, folderId }
+            };
+            historyManager.push(entry);
+            return true;
+        }
+
+        return applyMove();
+    }
+
+    _applyMoveLayerIntoFolder(layerId, folderId) {
+        const layers = this.getLayers();
+        const layer = layers.find(l => l.layerData?.id === layerId);
+        const folder = layers.find(l => l.layerData?.id === folderId);
+
+        if (!this._canPlaceInFolder(layer, folder)) return false;
 
         const previousParentId = layer.layerData.parentId;
-        if (previousParentId === folderId) return true;
 
         if (previousParentId) {
             const previousFolder = layers.find(l => l.layerData?.id === previousParentId);
@@ -300,11 +333,14 @@ export class LayerSystem {
         this._compactFolderChildren(folderId);
 
         this._emitPanelUpdateRequest();
-        if (this.eventBus) {
-            this.eventBus.emit('layer:added-to-folder', { layerId, folderId });
-            this.eventBus.emit('folder:toggled', { folderId, expanded: true });
-            this.eventBus.emit('layer:reordered', { fromIndex, toIndex, activeIndex: this.activeLayerIndex, movedLayerId: layerId });
-        }
+        this._emitLayerPlacementChanged({
+            layerId,
+            folderId,
+            fromIndex,
+            toIndex: this.getLayerIndex(layer),
+            movedLayerId: layerId,
+            expanded: true
+        });
 
         return true;
     }

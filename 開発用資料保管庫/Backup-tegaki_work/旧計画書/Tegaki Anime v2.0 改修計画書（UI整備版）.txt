@@ -1,0 +1,731 @@
+# Tegaki Anime v2.0 改修計画書（UI整備版）
+
+## 📋 改修概要
+
+### 目的
+- webgl2_rev30からのUIデザイン・使い勝手の完全継承
+- 共通UIコンポーネントの統一化（スライダー、SVGアイコン等）
+- レイヤーパネルの機能回復
+- キャンバス操作機能の実装（拡大・回転・移動等）
+- ショートカットシステムの集約化
+
+### 前提条件
+✅ Phase 1-3 完了済み
+- キャンバス出現
+- ペン描画動作
+- 筆圧反映
+
+### 改修対象外（別冊化）
+- タイムライン・フレームシステム → 別冊1（Phase X1）
+- エクスポート・ビルドシステム → 別冊2（Phase X2）
+
+---
+
+## 🎨 futaba統一カラーパレット
+
+```javascript
+// 全UIで統一使用
+const UI_COLORS = {
+  maroon: '#800000',           // アクティブペンカラー（デフォルト）
+  lightMaroon: '#aa5a56',      // ホバー状態
+  medium: '#cf9c97',           // ボーダー・非アクティブ
+  lightMedium: '#e9c2ba',      // パネル背景
+  cream: '#f0e0d6',            // キャンバス背景
+  background: '#ffffee',       // ページ背景
+  activeSlider: '#800000',     // スライダーアクティブ
+  inactiveSlider: '#cf9c97',   // スライダー非アクティブ
+  dangerRed: '#d32f2f'         // 削除ボタン
+};
+```
+
+⚠️ **配色変更の可能性**: 容易に変更できる構造を維持すること
+
+---
+
+## 📁 改修対象ファイル構成
+
+```
+tegaki_anime_v2/
+├── assets/
+│   └── ui-components.js            🆕 共通UIコンポーネント・SVG統合
+│
+├── system/
+│   ├── camera-system.js            🔧 キャンバス操作（拡大・回転・移動）
+│   └── shortcut-manager.js         🆕 ショートカット集約管理
+│
+├── ui/
+│   ├── layer-panel.js              🔧 レイヤーパネル（webgl2_rev30継承）
+│   ├── sidebar.js                  🆕 サイドバー（ツールアイコン配置）
+│   ├── quick-access-popup.js       🆕 Qキーポップアップ
+│   ├── settings-popup.js           🔧 設定ポップアップ（色継承）
+│   └── keyboard-handler.js         🔧 キーボード処理（集約化連携）
+│
+└── drawing/
+    └── fill-tool.js                🔧 バケツツール実装
+```
+
+---
+
+## 🚀 改修フェーズ（Phase 4-15）
+
+### **Phase 4: 共通UIコンポーネント統合**
+**目標**: スライダー・ボタン・スイッチ・SVGアイコンの統一化
+
+#### 作業内容
+1. `assets/ui-components.js` 新規作成
+   - UI_COLORS定数定義
+   - SVG_ICONS統合（lucide-static互換）
+   - createSlider() 実装
+   - createButton() 実装
+   - createSwitch() 実装
+   - createDeleteButton() 実装
+
+2. `styles/main.css` に共通スタイル追加
+   - `.ui-slider` スタイル
+   - `.ui-button` スタイル
+   - `.ui-switch` スタイル
+   - `.ui-delete-button` スタイル
+
+#### 完了条件
+- [ ] UI_COLORSで全色定数管理
+- [ ] SVG_ICONSに20+アイコン登録
+- [ ] 4種類のコンポーネント関数実装
+- [ ] CSSで統一デザイン適用
+- [ ] グレーや黒・白のハードコード0件
+
+#### 参考ファイル
+- webgl2_rev30/ui/slider-utils.js
+- webgl2_rev30/ui/dom-builder.js
+
+---
+
+### **Phase 5: ショートカット集約システム**
+**目標**: キーバインド一元管理・変更容易性の確保
+
+#### 作業内容
+1. `system/shortcut-manager.js` 新規作成
+   - キーマップ定義オブジェクト
+   - registerShortcut() メソッド
+   - unregisterShortcut() メソッド
+   - getShortcutList() メソッド
+   - EventBus連携
+
+2. `ui/keyboard-handler.js` 改修
+   - ShortcutManager統合
+   - 個別キーハンドリング削除
+   - イベント委譲方式に変更
+
+#### キーマップ例
+```javascript
+const KEYMAP = {
+  TOOL_PEN: 'P',
+  TOOL_ERASER: 'E',
+  TOOL_BUCKET: 'G',
+  QUICK_ACCESS: 'Q',
+  CANVAS_ROTATE_LEFT: 'R',
+  CANVAS_ROTATE_RIGHT: 'Shift+R',
+  CANVAS_ZOOM_IN: 'Ctrl+=',
+  CANVAS_ZOOM_OUT: 'Ctrl+-',
+  CANVAS_RESET: 'Ctrl+0',
+  LAYER_NEW: 'Ctrl+Shift+N',
+  LAYER_DELETE: 'Delete',
+  UNDO: 'Ctrl+Z',
+  REDO: 'Ctrl+Shift+Z'
+};
+```
+
+#### 完了条件
+- [ ] ShortcutManager実装完了
+- [ ] keyboard-handler.js統合完了
+- [ ] キー変更が1箇所で完結
+- [ ] 重複キー検出機能
+- [ ] EventBus経由でコマンド発火
+
+#### 参考ファイル
+- webgl2_rev30/ui/keyboard-handler.js
+
+---
+
+### **Phase 6: キャンバス操作システム**
+**目標**: 拡大・回転・移動・反転をショートカットで実装
+
+#### 作業内容
+1. `system/camera-system.js` 改修
+   - Konva.Stage変換統合
+   - zoom(scale) メソッド
+   - rotate(angle) メソッド
+   - pan(dx, dy) メソッド
+   - flip(axis) メソッド（'horizontal' | 'vertical'）
+   - reset() メソッド
+
+2. ショートカット連携
+   - ShortcutManagerに登録
+   - マウスホイール対応（Ctrl+Wheel = Zoom）
+   - スペースキー+ドラッグ = Pan
+
+#### 実装仕様
+```javascript
+// camera-system.js 主要メソッド
+class CameraSystem {
+  zoom(scale) {
+    // Konva.Stage.scale()
+    // 範囲: 0.1 - 10.0
+    // アンチエイリアス確認可能レベルまで拡大
+  }
+  
+  rotate(angleDeg) {
+    // Konva.Stage.rotation()
+    // 15度刻み推奨
+  }
+  
+  pan(dx, dy) {
+    // Konva.Stage.position()
+  }
+  
+  flip(axis) {
+    // Konva.Stage.scaleX(-1) or scaleY(-1)
+  }
+  
+  reset() {
+    // scale(1), rotation(0), position(0,0)
+  }
+}
+```
+
+#### 完了条件
+- [ ] 拡大・縮小動作
+- [ ] 回転動作（15度刻み）
+- [ ] パン（移動）動作
+- [ ] 水平・垂直反転動作
+- [ ] リセット動作
+- [ ] アンチエイリアス確認可能な拡大率
+- [ ] ショートカット連携完了
+
+#### 参考ファイル
+- webgl2_rev30/system/camera-system.js
+
+---
+
+### **Phase 7: レイヤーパネル基礎構造**
+**目標**: webgl2_rev30のデザイン・レイアウト継承
+
+#### 作業内容
+1. `ui/layer-panel.js` 改修
+   - UIComponents使用に変更
+   - futabaカラー適用
+   - パネルレイアウト継承
+   - スクロール可能領域実装
+
+2. HTML/CSS構造
+   - `.layer-panel` コンテナ
+   - `.layer-panel-header` ヘッダー
+   - `.layer-panel-list` レイヤーリスト
+   - `.layer-panel-footer` フッター
+
+#### レイアウト仕様
+```
+┌─────────────────────────┐
+│ レイヤー      [+][-][⚙] │ ← ヘッダー
+├─────────────────────────┤
+│ 📁 フォルダ1    [▼][👁][🔒]│
+│   🎨 レイヤー2  [👁][🔒]   │
+│   🎨 レイヤー1  [👁][🔒]   │ ← リスト（スクロール可）
+│ 🎨 背景        [👁][🔒]   │
+├─────────────────────────┤
+│ 不透明度: [========] 100%│ ← フッター
+└─────────────────────────┘
+```
+
+#### 完了条件
+- [ ] パネル配置完了
+- [ ] futabaカラー適用
+- [ ] スクロール動作確認
+- [ ] UIComponents統合
+- [ ] webgl2_rev30デザイン継承
+
+#### 参考ファイル
+- webgl2_rev30/ui/layer-panel-renderer.js
+- webgl2_rev30/styles/main.css
+
+---
+
+### **Phase 8: レイヤーサムネイル表示**
+**目標**: Konvaベースの単純サムネイル表示
+
+#### 作業内容
+1. `layers/thumbnail-generator.js` 改修
+   - Konva.Layer.toDataURL()使用
+   - 64x64px サムネイル生成
+   - キャッシュ機構実装
+
+2. `ui/layer-panel.js` 連携
+   - サムネイル表示領域追加
+   - 更新イベント受信
+   - 遅延ロード実装
+
+#### サムネイル仕様
+```javascript
+// thumbnail-generator.js
+class ThumbnailGenerator {
+  generate(konvaLayer) {
+    return konvaLayer.toDataURL({
+      mimeType: 'image/png',
+      quality: 0.8,
+      pixelRatio: 0.25, // 1/4サイズ
+      width: 64,
+      height: 64
+    });
+  }
+}
+```
+
+#### 完了条件
+- [ ] サムネイル生成動作
+- [ ] レイヤーパネルに表示
+- [ ] 描画時自動更新
+- [ ] キャッシュ機能動作
+- [ ] パフォーマンス確認（遅延なし）
+
+#### 参考ファイル
+- webgl2_rev30/system/drawing/thumbnail-system.js
+
+---
+
+### **Phase 9: レイヤー操作UI実装**
+**目標**: 可視性・ロック・削除ボタン実装
+
+#### 作業内容
+1. `ui/layer-panel.js` 機能追加
+   - 👁アイコン: 可視性トグル
+   - 🔒アイコン: ロックトグル
+   - 🗑アイコン: 削除（確認ダイアログ）
+   - UIComponents.SVG_ICONS使用
+
+2. イベント連携
+   - EventBus経由でKonvaLayerManager通信
+   - 状態変更の即時反映
+
+#### UI要素仕様
+```html
+<!-- レイヤー行 -->
+<div class="layer-item">
+  <img src="thumbnail.png" class="layer-thumbnail">
+  <span class="layer-name">レイヤー1</span>
+  <button class="layer-visible-btn">[👁]</button>
+  <button class="layer-lock-btn">[🔒]</button>
+  <button class="layer-delete-btn">[🗑]</button>
+</div>
+```
+
+#### 完了条件
+- [ ] 可視性トグル動作
+- [ ] ロックトグル動作
+- [ ] 削除動作（確認あり）
+- [ ] SVGアイコン表示
+- [ ] ホバーエフェクト
+
+#### 参考ファイル
+- webgl2_rev30/ui/layer-panel-renderer.js
+
+---
+
+### **Phase 10: レイヤードラッグ移動**
+**目標**: レイヤー順序のドラッグ＆ドロップ変更
+
+#### 作業内容
+1. `ui/layer-panel.js` ドラッグ実装
+   - HTML5 Drag and Drop API使用
+   - または Konva.Draggable使用検討
+   - ドロップ位置のビジュアルフィードバック
+
+2. `layers/konva-layer-manager.js` 連携
+   - moveLayer(layerId, newIndex) メソッド
+   - Konva.Layer.zIndex()更新
+   - EventBus通知
+
+#### ドラッグ仕様
+```javascript
+// ドラッグ開始
+layerItem.addEventListener('dragstart', (e) => {
+  e.dataTransfer.setData('layerId', layerId);
+});
+
+// ドロップ
+layerItem.addEventListener('drop', (e) => {
+  const draggedId = e.dataTransfer.getData('layerId');
+  const targetIndex = getDropIndex(e.clientY);
+  window.konvaLayerManager.moveLayer(draggedId, targetIndex);
+});
+```
+
+#### 完了条件
+- [ ] ドラッグ開始動作
+- [ ] ドロップ位置表示
+- [ ] レイヤー順序変更
+- [ ] Konva.Layer.zIndex()同期
+- [ ] アニメーション効果（GSAP）
+
+#### 参考ファイル
+- webgl2_rev30/ui/layer-panel-renderer.js（ドラッグ処理）
+
+---
+
+### **Phase 11: レイヤーフォルダ機能**
+**目標**: フォルダ階層・展開/折りたたみ実装
+
+#### 作業内容
+1. `layers/layer-folder-system.js` 改修
+   - Konva.Group = フォルダ
+   - createFolder() メソッド
+   - addToFolder() メソッド
+   - toggleFolder() メソッド
+
+2. `ui/layer-panel.js` UI実装
+   - フォルダアイコン表示
+   - インデント表示
+   - 展開/折りたたみアニメーション
+
+#### フォルダ構造
+```
+Konva.Stage
+ └─ DrawingGroup
+     ├─ Folder1 (Konva.Group)
+     │   ├─ Layer2
+     │   └─ Layer1
+     └─ Layer0 (背景)
+```
+
+#### 完了条件
+- [ ] フォルダ作成動作
+- [ ] レイヤーをフォルダに追加
+- [ ] 展開/折りたたみ動作
+- [ ] インデント表示
+- [ ] ドラッグでフォルダ移動対応
+
+#### 参考ファイル
+- webgl2_rev30/system/layer-system.js（フォルダ機能）
+
+---
+
+### **Phase 12: サイドバー実装**
+**目標**: ツールアイコン配置・切り替え機能
+
+#### 作業内容
+1. `ui/sidebar.js` 新規作成
+   - 縦配置ツールバー
+   - ペン・消しゴム・バケツアイコン
+   - UIComponents.SVG_ICONS使用
+   - アクティブ状態表示
+
+2. レイアウト
+   - 左端固定配置
+   - アイコンサイズ: 32x32px
+   - ホバーエフェクト
+   - アクティブ時の強調表示
+
+#### HTML構造
+```html
+<div class="sidebar">
+  <button class="sidebar-btn active" data-tool="pen">
+    <!-- SVG: pen -->
+  </button>
+  <button class="sidebar-btn" data-tool="eraser">
+    <!-- SVG: eraser -->
+  </button>
+  <button class="sidebar-btn" data-tool="bucket">
+    <!-- SVG: bucket -->
+  </button>
+</div>
+```
+
+#### 完了条件
+- [ ] サイドバー表示
+- [ ] ペン・消しゴム切り替え
+- [ ] バケツ選択可能
+- [ ] アクティブ状態表示
+- [ ] futabaカラー適用
+
+#### 参考ファイル
+- webgl2_rev30（サイドバーレイアウト参考）
+
+---
+
+### **Phase 13: バケツツール実装**
+**目標**: 塗りつぶし機能実装
+
+#### 作業内容
+1. `drawing/fill-tool.js` 改修
+   - フラッドフィル アルゴリズム
+   - 色許容値設定
+   - アンチエイリアス対応
+   - EventBus連携
+
+2. UI統合
+   - サイドバーから選択
+   - カーソル変更
+   - 実行時のプログレス表示
+
+#### アルゴリズム
+```javascript
+// シンプルなスタックベースフラッドフィル
+function floodFill(x, y, targetColor, fillColor) {
+  const stack = [{x, y}];
+  while (stack.length > 0) {
+    const {x, y} = stack.pop();
+    if (getPixel(x, y) === targetColor) {
+      setPixel(x, y, fillColor);
+      stack.push({x: x+1, y}, {x: x-1, y}, {x, y: y+1}, {x, y: y-1});
+    }
+  }
+}
+```
+
+#### 完了条件
+- [ ] 塗りつぶし動作
+- [ ] 色許容値調整可能
+- [ ] アンチエイリアス考慮
+- [ ] パフォーマンス確認
+- [ ] Undo/Redo対応
+
+#### 参考ファイル
+- webgl2_rev30/system/drawing/fill-tool.js
+
+---
+
+### **Phase 14: クイックアクセスポップアップ**
+**目標**: Qキーで起動する動的ポップアップ実装
+
+#### 作業内容
+1. `ui/quick-access-popup.js` 新規作成
+   - Qキーでトグル表示
+   - ブラシサイズスライダー
+   - カラースロット（5色+透明）
+   - ツール切り替えアイコン（小サイズ）
+   - UIComponents使用
+
+2. カラースロット仕様
+```javascript
+const COLOR_SLOTS = [
+  { color: '#800000', label: 'maroon' },
+  { color: '#aa5a56', label: 'lightMaroon' },
+  { color: '#cf9c97', label: 'medium' },
+  { color: '#e9c2ba', label: 'lightMedium' },
+  { color: '#f0e0d6', label: 'cream' },
+  { color: 'transparent', label: '透明' }
+];
+```
+
+3. レイアウト
+   - 画面中央表示
+   - セミトランスペアレント背景
+   - GSAP フェードイン/アウト
+
+#### ポップアップ構造
+```
+┌────────────────────────┐
+│ ブラシサイズ: [====] 10│
+│ ┌──┬──┬──┬──┬──┬──┐  │
+│ │🟤│🔴│🟠│🟡│⬜│❌│  │ ← カラースロット
+│ └──┴──┴──┴──┴──┴──┘  │
+│ [🖊][🧹][🪣]            │ ← ツール（小）
+└────────────────────────┘
+```
+
+#### 完了条件
+- [ ] Qキートグル動作
+- [ ] スライダー表示・変更
+- [ ] カラースロット表示・選択
+- [ ] ツール小アイコン表示
+- [ ] フェード効果動作
+- [ ] ESCキーで閉じる
+
+#### 参考ファイル
+- webgl2_rev30/ui/quick-access-popup.js
+
+---
+
+### **Phase 15: 設定ポップアップ色継承**
+**目標**: 既存設定UIへのfutabaカラー適用
+
+#### 作業内容
+1. `ui/settings-popup.js` 改修
+   - UIComponents.UI_COLORS使用
+   - UIComponents.createSlider()使用
+   - UIComponents.createSwitch()使用
+   - ハードコード色削除
+
+2. デザイン統一
+   - パネル背景: lightMedium
+   - ボーダー: medium
+   - アクティブ: maroon
+   - スライダー: activeSlider/inactiveSlider
+
+#### 完了条件
+- [ ] futabaカラー完全適用
+- [ ] UIComponents統合完了
+- [ ] ハードコード色0件
+- [ ] webgl2_rev30デザイン継承
+
+#### 参考ファイル
+- webgl2_rev30/ui/settings-popup.js
+
+---
+
+## ✅ 全体完了条件
+
+### コード品質
+- [ ] 全ファイルにヘッダー記載
+- [ ] 親子依存関係明記
+- [ ] DRY原則遵守（二重実装0件）
+- [ ] SOLID原則遵守
+- [ ] 1ファイル1000行以下
+
+### UI統一性
+- [ ] UIComponents統合率100%
+- [ ] futabaカラー適用率100%
+- [ ] SVGアイコン統合率100%
+- [ ] ハードコード色0件
+- [ ] webgl2_rev30デザイン継承完了
+
+### 機能動作
+- [ ] キャンバス拡大・回転・移動動作
+- [ ] レイヤーパネル表示・操作
+- [ ] サムネイル表示
+- [ ] ドラッグ移動動作
+- [ ] フォルダ機能動作
+- [ ] サイドバー表示・切り替え
+- [ ] バケツツール動作
+- [ ] クイックアクセスポップアップ動作
+- [ ] ショートカット集約動作
+- [ ] アンチエイリアス確認可能な拡大
+
+### パフォーマンス
+- [ ] レイヤー操作遅延なし
+- [ ] サムネイル生成遅延なし
+- [ ] ドラッグ動作滑らか
+- [ ] コンソールエラー0件
+
+---
+
+## 📝 改修ガイドライン
+
+### ファイルヘッダー必須項目
+```javascript
+/**
+ * ============================================================================
+ * ファイル名: ui-components.js
+ * 責務: 共通UIコンポーネント・SVG・色定数統一管理
+ * 依存: なし（完全独立）
+ * 親依存: layer-panel.js, quick-access-popup.js, settings-popup.js
+ * 子依存: なし
+ * 公開API: UI_COLORS, SVG_ICONS, createSlider(), createButton()...
+ * イベント発火: なし
+ * イベント受信: なし
+ * グローバル登録: window.UIComponents
+ * 実装状態: 🆕新規
+ * ============================================================================
+ */
+```
+
+### 色使用の鉄則
+```javascript
+// ❌ 禁止
+const color = '#cccccc'; // グレーのハードコード
+const bg = '#000000';    // 黒のハードコード
+
+// ✅ 推奨
+const color = UIComponents.UI_COLORS.medium;
+const bg = UIComponents.UI_COLORS.maroon;
+```
+
+### SVG使用の鉄則
+```javascript
+// ❌ 禁止
+const icon = `<svg>...</svg>`; // 直接埋め込み
+
+// ✅ 推奨
+const icon = UIComponents.SVG_ICONS.layers;
+```
+
+### 分割ファイル規則
+```javascript
+// ========================================
+// Part 1: 主要機能 (500行)
+// ========================================
+class MainClass { /* ... */ }
+
+// ========================================
+// Part 2: 補助機能 (400行)
+// このコメントの下に Part 2 をコピペしてください
+// ========================================
+const helpers = { /* ... */ };
+
+// ========================================
+// Part 2 ここまで
+// ========================================
+```
+
+---
+
+## 🐛 頻出エラー防止策
+
+### 1. メソッド名不一致禁止
+- EventBus発火前に受信側メソッド存在確認
+- API呼び出し前にオブジェクト存在確認
+
+### 2. グローバル依存確認
+```javascript
+if (!window.UIComponents) {
+  throw new Error('UIComponents が読み込まれていません');
+}
+```
+
+### 3. イベント名統一
+```
+component:action 形式厳守
+例: layer:created, tool:changed, camera:zoomed
+```
+
+### 4. コンソールログ削減
+```javascript
+// ✅ 重要イベントのみ
+console.log('[LayerPanel] Layer created:', layerId);
+
+// ❌ 高頻度イベント禁止
+// pointermove, frame update 等
+```
+
+---
+
+## 📞 質問時のテンプレート
+
+```
+【質問】Phase X の実装について
+【状況】
+- 現在の進捗
+- 問題点
+
+【依存ファイル】
+- XXX.js（ヘッダーのみ）
+
+【期待する動作】
+- 具体的な要件
+
+【参考コード】
+（該当箇所のみ抜粋）
+
+【補足】
+- 1000行超える場合は分割指示をお願いします
+```
+
+---
+
+## 🔄 次のステップ
+
+UI整備完了後:
+1. **別冊1参照**: タイムライン・フレームシステム実装
+2. **別冊2参照**: エクスポート・ビルドシステム実装
+
+---
+
+以上、UI整備版改修計画書（Phase 4-15）

@@ -24,6 +24,8 @@
  */
 
 import * as PIXI from 'pixi.js';
+import GIF from 'gif.js';
+import gifWorkerUrl from 'gif.js/dist/gif.worker.js?url';
 
 window.GIFExporter = (function() {
     'use strict';
@@ -35,7 +37,7 @@ window.GIFExporter = (function() {
             }
             this.manager = exportManager;
             this.isExporting = false;
-            this.workerBlobURL = null;
+            this.workerBlobURL = gifWorkerUrl;
         }
         
         async generateBlob(options = {}) {
@@ -43,12 +45,8 @@ window.GIFExporter = (function() {
                 throw new Error('GIF export already in progress');
             }
             
-            if (!this.manager?.animationSystem) {
-                throw new Error('AnimationSystem not available');
-            }
-            
-            const animData = this.manager.animationSystem.getAnimationData();
-            if (!animData?.frames || animData.frames.length === 0) {
+            const frameCount = this.manager.getFrameCount?.() || 0;
+            if (frameCount === 0) {
                 throw new Error('アニメーションにフレームが含まれていません');
             }
             
@@ -93,31 +91,48 @@ window.GIFExporter = (function() {
                     });
                 });
                 
-                const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
-                
-                for (let i = 0; i < animData.frames.length; i++) {
-                    const frame = animData.frames[i];
-                    
-                    this.manager.animationSystem.applyFrameToLayers(i);
-                    await this.waitFrame();
-                    
-                    const canvas = await this.renderFrameToCanvas(settings);
-                    
-                    if (canvas) {
-                        const delayMs = frame.duration !== undefined && frame.duration !== null
-                            ? Math.round(frame.duration * 1000)
-                            : 100;
-                        
-                        gif.addFrame(canvas, { delay: delayMs });
-                    }
-                    
-                    window.TegakiEventBus?.emit('export:frame-rendered', { 
-                        frame: i + 1, 
-                        total: animData.frames.length 
+                const timelineFrames = await this.manager.renderAnimationFrames({
+                    ...options,
+                    width: settings.width,
+                    height: settings.height,
+                    resolution: settings.width / window.TEGAKI_CONFIG.canvas.width
+                });
+
+                if (timelineFrames) {
+                    timelineFrames.forEach((frame, index) => {
+                        gif.addFrame(frame.canvas, { delay: frame.delayMs });
+                        window.TegakiEventBus?.emit('export:frame-rendered', {
+                            frame: index + 1,
+                            total: timelineFrames.length
+                        });
                     });
+                } else {
+                    if (!this.manager?.animationSystem) {
+                        throw new Error('AnimationSystem not available');
+                    }
+                    const animData = this.manager.animationSystem.getAnimationData();
+                    const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
+                    try {
+                        for (let i = 0; i < animData.frames.length; i++) {
+                            const frame = animData.frames[i];
+                            this.manager.animationSystem.applyFrameToLayers(i);
+                            await this.waitFrame();
+                            const canvas = await this.renderFrameToCanvas(settings);
+                            if (canvas) {
+                                const delayMs = frame.duration !== undefined && frame.duration !== null
+                                    ? Math.round(frame.duration * 1000)
+                                    : 100;
+                                gif.addFrame(canvas, { delay: delayMs });
+                            }
+                            window.TegakiEventBus?.emit('export:frame-rendered', {
+                                frame: i + 1,
+                                total: animData.frames.length
+                            });
+                        }
+                    } finally {
+                        this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
+                    }
                 }
-                
-                this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
                 
                 const blob = await this.renderGIF(gif);
                 
@@ -141,11 +156,10 @@ window.GIFExporter = (function() {
                 
                 this.manager.downloadFile(blob, filename);
                 
-                const animData = this.manager.animationSystem.getAnimationData();
                 window.TegakiEventBus?.emit('export:completed', {
                     format: 'gif',
                     size: blob.size,
-                    frames: animData.frames.length,
+                    frames: this.manager.getFrameCount?.() || 1,
                     filename: filename
                 });
                 

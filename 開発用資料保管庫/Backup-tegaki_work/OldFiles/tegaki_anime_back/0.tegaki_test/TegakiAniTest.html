@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tegaki.js アニメ対応版 ローカルテスト環境</title>
+
+    <style>
+        /* 基本的なスタイルリセット */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #ffffee; /* ふたば系背景色 */
+        }
+
+        /* アプリ全体のコンテナ */
+        #app-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* トップバー */
+        #top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 16px;
+            background-color: #f0e0d6;
+            border-bottom: 2px solid #cf9c97;
+            color: #800000;
+        }
+        
+        #top-bar h1 {
+            font-size: 18px;
+            margin: 0;
+        }
+        
+        #top-bar .button-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* 投稿ボタンのスタイル */
+        #post-button {
+            padding: 8px 16px;
+            background: #800000;
+            color: white;
+            border: 1px solid #aa5a56;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #post-button:hover {
+            background: #aa5a56;
+        }
+
+
+        /* TegakiAnimeCoreのインスタンスが描画されるメイン領域 */
+        #main-content {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        /* TegakiAnimeCoreに渡すコンテナ */
+        #tegaki-app-container {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <header id="top-bar">
+            <h1>めぶき🌱ちゃんねる　apng/gifアニメ 投稿テスト</h1>
+            <div class="button-group">
+                <button id="post-button">投稿</button>
+            </div>
+        </header>
+
+        <main id="main-content">
+            <div id="tegaki-app-container"></div>
+        </main>
+    </div>
+
+    <script src="tegaki_anime.js"></script>
+
+    <script>
+        // DOMの読み込みが完了したら実行
+        document.addEventListener('DOMContentLoaded', () => {
+            // TegakiAnimeCoreのインスタンスを生成するコンテナ要素を取得
+            const container = document.getElementById('tegaki-app-container');
+
+            // ▼▼▼ 修正点1: 呼び出すクラス名を TegakiAnimeCore に変更 ▼▼▼
+            if (container && window.TegakiAnimeCore) {
+                // ▼▼▼ 修正点2: インスタンス化するクラス名を TegakiAnimeCore に変更 ▼▼▼
+                new window.TegakiAnimeCore(container);
+                console.log('[Loader] TegakiAnimeCore initialized for local testing.');
+            } else {
+                console.error('TegakiAnimeCoreクラスまたはコンテナ要素が見つかりません。tegaki_anime.jsが正しく読み込まれているか確認してください。');
+            }
+        });
+    </script>
+
+</body>
+</html>

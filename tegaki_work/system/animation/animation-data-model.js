@@ -1386,6 +1386,15 @@ export class TimelineModel {
             const existingLane = existingBySourceLayerId.get(layerData.id);
             
             if (existingLane) {
+                const previousSourceName = existingLane.sourceName;
+                if (
+                    existingLane.kind === 'layer-linked'
+                    && existingLane.displayName
+                    && existingLane.displayName === previousSourceName
+                    && /^レイヤー\d+$/.test(existingLane.displayName)
+                ) {
+                    existingLane.displayName = null;
+                }
                 existingLane.sourceName = layerData.name;
                 existingLane.type = layerData.isFolder ? 'folder' : 'raster';
                 if (syncActiveFromLayerSystem) {
@@ -1401,7 +1410,7 @@ export class TimelineModel {
                 return new LaneModel({
                     sourceLayerId: layerData.id,
                     layerId: layerData.id,
-                    name: layerData.name,
+                    name: 'Lane 1',
                     sourceName: layerData.name,
                     kind: 'layer-linked',
                     type: 'raster',

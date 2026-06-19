@@ -1,0 +1,544 @@
+# 🎨 Tegaki WebGL2 - ファイル辞典 & フロー解析
+
+## 📋 現状サマリー
+
+### ✅ 描画フロー（現在の経路）
+```
+PointerEvent
+  ↓
+drawing-engine.js (_handlePointerDown/Move/Up)
+  ↓ Screen → Canvas → World → Local 座標変換
+brush-core.js (startStroke/updateStroke/finalizeStroke)
+  ↓
+stroke-recorder.js (ポイント記録)
+  ↓
+stroke-renderer.js (renderFinalStroke)
+  ↓ ペン: SDF/MSDF試行 → Legacy fallback
+  ↓ 消しゴム: 通常Graphics (Shader不使用)
+PIXI.Graphics (最終出力)
+```
+
+### ⚠️ Perfect-Freehand の状況
+- **ライブラリ**: ✅ 読み込み済み (`libs/perfect-freehand-1.2.0.min.js`)
+- **使用箇所**: ✅ `gl-stroke-processor.js` で使用中
+- **接続状況**: ❌ **stroke-renderer.js から呼び出されていない**
+- **問題**: stroke-renderer.js は直接 PIXI.Graphics に描画しており、ポリゴン化されていない
+
+### 🔍 WebGL2/MSDF ポリゴンペン実装状況
+- **WebGL2 Context**: ✅ 初期化済み (`webgl2-drawing-layer.js`)
+- **Perfect-Freehand → Polygon**: ✅ 実装済み (`gl-stroke-processor.js`)
+- **Earcut 三角形分割**: ✅ 実装済み (`earcut-triangulator.js`)
+- **MSDF Pipeline**: ✅ 実装済み (`gl-msdf-pipeline.js`)
+- **接続**: ❌ **stroke-renderer.js が WebGL2 パイプラインを使用していない**
+
+---
+
+## 📁 ファイル構造 & 親子関係
+
+### 🏗️ コア初期化フロー
+
+```mermaid
+graph TD
+    A[index.html] --> B[core-initializer.js]
+    B --> C[core-engine.js]
+    C --> D[core-runtime.js]
+    
+    C --> E[camera-system.js]
+    C --> F[layer-system.js]
+    C --> G[drawing-engine.js]
+    C --> H[brush-core.js]
+    
+    style A fill:#e1f5ff
+    style B fill:#fff4e1
+    style C fill:#ffe1e1
+```
+
+#### 📄 `index.html`
+- **責務**: ライブラリ読み込み順序の管理
+- **子ファイル**: すべてのJS
+- **注意**: Perfect-Freehand は CDN ではなくローカル (`libs/`) から読み込み
+
+#### 📄 `core-initializer.js`
+- **責務**: アプリケーション初期化シーケンス
+- **親依存**:
+  - `PIXI` (CDN)
+  - `core-engine.js` (CoreEngine)
+  - `core-runtime.js` (CoreRuntime)
+  - `ui-panels.js` (UIController)
+- **子ファイル**: すべてのシステム
+- **グローバル**: `window.CoreInitializer`
+- **主要メソッド**:
+  - `initialize()` - メイン初期化
+  - `initializeWebGPU()` - WebGPU初期化 (未使用)
+  - `initializeLayerPanel()` - レイヤーパネル初期化
+
+#### 📄 `core-engine.js` v8.32.0
+- **責務**: システム統合管理・コア機能実装
+- **親依存**:
+  - `camera-system.js`
+  - `layer-system.js`
+  - `drawing-clipboard.js`
+  - `brush-core.js`
+  - `event-bus.js`
+- **子ファイル**: すべてのシステム
+- **グローバル**: `window.TegakiCore.CoreEngine`
+- **主要クラス**:
+  - `CoreEngine` - メインエンジン
+  - `UnifiedKeyHandler` - キーボードハンドラ
+- **主要メソッド**:
+  - `initialize()` - システム初期化
+  - `initializeExportManager()` - エクスポート初期化
+  - `initializeAnimationSystem()` - アニメーション初期化
+
+---
+
+### 🎨 描画システムフロー
+
+```mermaid
+graph LR
+    A[drawing-engine.js] --> B[brush-core.js]
+    B --> C[stroke-recorder.js]
+    B --> D[stroke-renderer.js]
+    D --> E[PIXI.Graphics]
+    
+    F[gl-stroke-processor.js] -.未接続.-> D
+    G[perfect-freehand] --> F
+    
+    style D fill:#ffcccc
+    style F fill:#ccccff
+```
+
+#### 📄 `drawing-engine.js` (Phase 4)
+- **責務**: 座標変換・PointerEvent処理・ストローク制御
+- **親依存**:
+  - `brush-core.js` (BrushCore)
+  - `pointer-handler.js` (PointerHandler)
+  - `coordinate-system.js` (CoordinateSystem)
+  - `camera-system.js` (CameraSystem)
+  - `layer-system.js` (LayerSystem)
+  - `event-bus.js` (EventBus)
+- **子ファイル**:
+  - `core-engine.js` (初期化元)
+  - `core-runtime.js` (API経由)
+  - `fill-tool.js` (canvas:pointerdown イベント購読)
+- **グローバル**: `window.DrawingEngine`
+- **主要メソッド**:
+  - `_handlePointerDown()` - ポインター開始
+  - `_handlePointerMove()` - ポインター移動
+  - `_handlePointerUp()` - ポインター終了
+  - `_screenToLocal()` - 座標変換パイプライン
+- **座標変換**: Screen → Canvas → World → Local
+
+#### 📄 `brush-core.js` (Phase 1-FIX)
+- **責務**: ストローク開始/更新/完了処理
+- **親依存**:
+  - `event-bus.js`
+  - `coordinate-system.js`
+  - `pressure-handler.js` (オプション)
+  - `stroke-recorder.js`
+  - `stroke-renderer.js`
+  - `layer-system.js`
+  - `brush-settings.js`
+  - `fill-tool.js`
+- **子ファイル**: なし (リーフノード)
+- **グローバル**: `window.BrushCore` (Singleton)
+- **主要メソッド**:
+  - `init()` - 初期化
+  - `startStroke()` - ストローク開始
+  - `updateStroke()` - ストローク更新
+  - `finalizeStroke()` - ストローク確定
+  - `setMode(mode)` - ツール切り替え (pen/eraser/fill)
+  - `getMode()` - 現在のモード取得
+- **修正内容**: 消しゴムのレイヤー追加を修正
+
+#### 📄 `stroke-recorder.js` (警告ログ削減版)
+- **責務**: ストロークポイント記録専用
+- **親依存**:
+  - `pressure-handler.js` (オプション)
+  - `camera-system.js` (オプション)
+- **子ファイル**: `brush-core.js`
+- **グローバル**: `window.StrokeRecorder`
+- **主要メソッド**:
+  - `startStroke(localX, localY, rawPressure)` - 記録開始
+  - `addPoint(localX, localY, rawPressure)` - ポイント追加
+  - `endStroke()` - 記録終了 → strokeData 返却
+  - `getCurrentPoints()` - 現在のポイント取得
+  - `isActive()` - 記録中判定
+- **注意**: **座標変換は一切行わない** (受け取った座標をそのまま保存)
+
+#### 📄 `stroke-renderer.js` (Phase 1-FIX)
+- **責務**: ストロークの視覚化（プレビュー・最終描画）
+- **親依存**:
+  - `PixiJS v8.13` (Graphics, Sprite, Mesh)
+  - `webgpu-drawing-layer.js` ❌ (WebGPU統合 - 未使用)
+  - `webgpu-compute-sdf.js` ❌ (SDF生成 - 未使用)
+  - `webgpu-compute-msdf.js` ❌ (MSDF生成 - 未使用)
+  - `webgpu-texture-bridge.js` ❌ (テクスチャ変換 - 未使用)
+  - `sdf-brush-shader.js` ❌ (統合shader - 未使用)
+  - `msdf-brush-shader.js` ❌ (MSDF shader - 未使用)
+  - `brush-settings.js` (settings取得)
+  - `curve-interpolator.js` ❌ (補間処理 - 未使用)
+- **子ファイル**:
+  - `brush-core.js` (ストローク描画)
+  - `layer-system.js` (レイヤー追加)
+- **グローバル**: `window.StrokeRenderer`
+- **主要メソッド**:
+  - `renderPreview()` - リアルタイムプレビュー
+  - `renderFinalStroke()` - 最終描画
+  - `_renderEraserStroke()` - 消しゴム専用描画 (Shader不使用)
+  - `_renderFinalStrokeMSDF()` ❌ - MSDF描画 (未接続)
+  - `_renderFinalStrokeWebGPU()` ❌ - SDF描画 (未接続)
+  - `_renderFinalStrokeLegacy()` - Legacy描画 (実際に使用)
+- **問題点**: 
+  - ❌ **Perfect-Freehand を使用していない**
+  - ❌ **WebGL2/MSDF パイプラインが未接続**
+  - ❌ **ポリゴン化されていない (PIXI.Graphics 直接描画)**
+
+---
+
+### 🔧 WebGL2 システム (準備済み・未接続)
+
+```mermaid
+graph TD
+    A[webgl2-drawing-layer.js] --> B[gl-stroke-processor.js]
+    B --> C[gl-msdf-pipeline.js]
+    B --> D[gl-texture-bridge.js]
+    
+    E[perfect-freehand] --> B
+    F[earcut-triangulator.js] --> B
+    
+    style A fill:#ccffcc
+    style B fill:#ccffcc
+    style C fill:#ccffcc
+    style D fill:#ccffcc
+    style E fill:#ffffcc
+    style F fill:#ffffcc
+```
+
+#### 📄 `webgl2-drawing-layer.js` (Phase 1 完全修正版)
+- **責務**: WebGL2 context初期化・管理
+- **親依存**: なし (リーフノード)
+- **子ファイル**:
+  - `gl-stroke-processor.js`
+  - `gl-msdf-pipeline.js`
+  - `gl-texture-bridge.js`
+  - `gl-mask-layer.js`
+- **グローバル**: 
+  - `window.WebGLContext` (主要)
+  - `window.WebGL2DrawingLayer` (互換)
+- **主要メソッド**:
+  - `initialize()` - WebGL2初期化
+  - `createShader()` - Shader作成
+  - `createProgram()` - Programリンク
+  - `createFBO()` - FBO生成
+  - `createTexture()` - Texture生成
+- **状態**: ✅ 初期化済み・動作確認済み
+
+#### 📄 `gl-stroke-processor.js` (Phase 4.0)
+- **責務**: Perfect-Freehand出力 → GPU頂点バッファ生成
+- **親依存**:
+  - `libs/perfect-freehand-1.2.0.min.js` ✅
+  - `system/earcut-triangulator.js` ✅
+  - `config.js`
+  - `webgl2-drawing-layer.js`
+  - `camera-system.js`
+- **子ファイル**:
+  - `brush-core.js` ❌ (呼び出し元 - 未接続)
+  - `gl-msdf-pipeline.js` ❌ (バッファ受け取り - 未接続)
+- **グローバル**: `window.GLStrokeProcessor` (Singleton)
+- **主要メソッド**:
+  - `initialize(gl)` - 初期化
+  - `createPolygonVertexBuffer()` - ポリゴン頂点バッファ生成
+  - `createEdgeBuffer()` - エッジバッファ生成 (MSDF用)
+  - `calculateBounds()` - Bounds計算
+  - `uploadToGPU()` - GPUバッファアップロード
+- **状態**: ✅ 実装済み・テスト済み・**未接続**
+- **Phase 4.0改修内容**:
+  - カメラフレーム外への描画を完全防止
+  - ポイント座標の検証追加
+  - Bounds計算の精度向上
+
+#### 📄 `gl-msdf-pipeline.js`
+- **責務**: MSDF (Multi-channel Signed Distance Field) 生成パイプライン
+- **親依存**:
+  - `webgl2-drawing-layer.js`
+  - `gl-stroke-processor.js`
+  - GLSLシェーダーファイル群
+- **状態**: ✅ 実装済み・**未接続**
+
+#### 📄 `gl-texture-bridge.js`
+- **責務**: WebGL2 Texture ↔ PixiJS Texture 相互変換
+- **親依存**:
+  - `webgl2-drawing-layer.js`
+  - `PixiJS v8`
+- **状態**: ✅ 実装済み・**未接続**
+
+#### 📄 `earcut-triangulator.js`
+- **責務**: Earcut 三角形分割実行
+- **親依存**: Earcut.js (CDN?)
+- **子ファイル**: `gl-stroke-processor.js`
+- **グローバル**: `window.EarcutTriangulator`
+- **状態**: ✅ 実装済み・動作確認済み
+
+#### 📄 `libs/perfect-freehand-1.2.0.min.js`
+- **責務**: ストロークポイント → アウトラインポリゴン変換
+- **グローバル**: `window.PerfectFreehand`
+- **使用箇所**: `gl-stroke-processor.js` の `_executePerfectFreehand()`
+- **状態**: ✅ 読み込み済み・動作確認済み
+
+---
+
+### 📊 座標系システム
+
+#### 📄 `coordinate-system.js`
+- **責務**: 座標変換パイプライン (Screen/Canvas/World/Local)
+- **グローバル**: `window.CoordinateSystem`
+- **主要メソッド**:
+  - `screenClientToCanvas()` - Screen → Canvas
+  - `canvasToWorld()` - Canvas → World
+  - `worldToLocal()` - World → Local
+- **注意**: **PixiJS の toLocal()/toGlobal() は使用禁止**
+
+#### 📄 `camera-system.js`
+- **責務**: worldContainer transform, ズーム・パン
+- **グローバル**: `window.cameraSystem`, `window.TegakiCameraSystem`
+
+#### 📄 `layer-system.js`
+- **責務**: レイヤー管理
+- **グローバル**: `window.layerManager`, `window.TegakiLayerSystem`
+
+---
+
+## 🔀 イベントフロー
+
+### 主要イベント
+- `drawing:stroke-started` - ストローク開始
+- `drawing:stroke-completed` - ストローク完了
+- `layer:path-added` - パス追加
+- `thumbnail:layer-updated` - サムネイル更新
+- `canvas:pointerdown` - キャンバスクリック (fill用)
+
+### EventBus
+- **グローバル**: `window.TegakiEventBus`, `window.eventBus`
+- **ファイル**: `system/event-bus.js`
+
+---
+
+## ❌ 未使用ファイル
+
+以下のファイルは読み込まれているが、**現在の描画フローで使用されていない**:
+
+### WebGL2関連 (準備済み・未接続)
+- ✅ `webgl2-drawing-layer.js` - 初期化済みだが未使用
+- ✅ `gl-stroke-processor.js` - Perfect-Freehand実装済みだが未接続
+- ✅ `gl-msdf-pipeline.js` - MSDF実装済みだが未接続
+- ✅ `gl-texture-bridge.js` - Texture Bridge実装済みだが未接続
+- ✅ `gl-mask-layer.js` - マスク処理実装済みだが未接続
+- ✅ `earcut-triangulator.js` - 三角形分割実装済みだが未接続
+
+### Shader関連 (準備済み・未接続)
+- ✅ `sdf-brush-shader.js` - SDF Shader実装済みだが未使用
+- 🔍 `system/drawing/webgl2/shaders/*.glsl` - GLSLファイル群 (要確認)
+
+### その他
+- ❌ `curve-interpolator.js` - 補間処理 (stroke-renderer.js で参照されるが未実装?)
+
+---
+
+## 🚨 主要な問題点
+
+### 1. ❌ Perfect-Freehand 未接続
+**現状**: `stroke-renderer.js` が直接 `PIXI.Graphics` に描画
+**問題**: ポリゴン化されていない → WebGL2/MSDF パイプラインが使えない
+
+### 2. ❌ WebGL2 パイプライン未接続
+**現状**: `gl-stroke-processor.js` が孤立している
+**問題**: 
+- `stroke-renderer.js` から呼び出されていない
+- `renderFinalStroke()` が Legacy描画のみ
+
+### 3. ⚠️ 座標変換の責務混在
+**現状**: `drawing-engine.js` で座標変換完了後、`stroke-recorder.js` に渡す
+**問題**: 現状は問題ないが、ドキュメントで明記が必要
+
+### 4. ⚠️ ファイル名の不一致
+**ドキュメント**: `webgpu-*` と記載
+**実際**: `webgl2-*` ファイルが存在
+**影響**: ドキュメントと実装の乖離
+
+---
+
+## ✅ 正常動作しているもの
+
+### 描画基盤
+- ✅ PointerEvent処理 (`drawing-engine.js`)
+- ✅ 座標変換パイプライン (`coordinate-system.js`)
+- ✅ ストローク記録 (`stroke-recorder.js`)
+- ✅ ペン/消しゴム切り替え (`brush-core.js`)
+- ✅ レイヤー管理 (`layer-system.js`)
+- ✅ カメラ管理 (`camera-system.js`)
+
+### UI
+- ✅ レイヤーパネル (`layer-panel-renderer.js`)
+- ✅ キーボードハンドラ (`keyboard-handler.js`)
+- ✅ ポップアップ管理 (`popup-manager.js`)
+
+### エクスポート
+- ✅ PNG/APNG/GIF/WebP/MP4 (`exporters/*.js`)
+
+---
+
+## 🔧 WebGL2・MSDF・ポリゴンペン実装ロードマップ
+
+### Phase 1: stroke-renderer.js 改修
+**目的**: Perfect-Freehand → WebGL2 パイプラインへの接続
+
+**変更箇所**: `stroke-renderer.js` の `renderFinalStroke()`
+
+**実装手順**:
+```javascript
+async renderFinalStroke(strokeData, providedSettings = null, targetGraphics = null) {
+  const settings = this._getSettings(providedSettings);
+  const mode = this._getCurrentMode(settings);
+  
+  // 消しゴムは従来通り
+  if (mode === 'eraser') {
+    return this._renderEraserStroke(strokeData, settings);
+  }
+  
+  // 🆕 Perfect-Freehand → WebGL2 パイプライン
+  if (window.GLStrokeProcessor && window.GLStrokeProcessor.isInitialized()) {
+    try {
+      // 1. Perfect-Freehand でポリゴン化
+      const vertexBuffer = window.GLStrokeProcessor.createPolygonVertexBuffer(
+        strokeData.points,
+        settings.size
+      );
+      
+      if (vertexBuffer) {
+        // 2. WebGL2 で描画
+        return this._renderWithWebGL2(vertexBuffer, settings);
+      }
+    } catch (error) {
+      console.warn('[StrokeRenderer] WebGL2 failed, fallback to legacy:', error);
+    }
+  }
+  
+  // Fallback: Legacy描画
+  return this._renderFinalStrokeLegacy(strokeData, settings, mode, targetGraphics);
+}
+
+_renderWithWebGL2(vertexBuffer, settings) {
+  // TODO: WebGL2 Mesh生成
+  // TODO: Pixi.Mesh でラップ
+  // TODO: Shader適用
+  return mesh;
+}
+```
+
+### Phase 2: WebGL2 Mesh 生成
+**目的**: `gl-stroke-processor.js` の頂点バッファを Pixi.Mesh に変換
+
+**実装箇所**: `stroke-renderer.js` の `_renderWithWebGL2()`
+
+**手順**:
+1. `vertexBuffer.buffer` (Float32Array) を Pixi.Geometry に変換
+2. Pixi.Mesh を生成
+3. Shader適用 (SDF/MSDF)
+4. レイヤーに追加
+
+### Phase 3: MSDF Shader 統合
+**目的**: MSDF Pipeline を有効化
+
+**実装箇所**: `gl-msdf-pipeline.js` の統合
+
+**手順**:
+1. `gl-msdf-pipeline.js` 初期化
+2. `stroke-renderer.js` から呼び出し
+3. MSDF Texture生成
+4. Shader適用
+
+### Phase 4: クリーンアップ
+**目的**: 不要なコード削除・ドキュメント更新
+
+**タスク**:
+- ❌ Legacy描画コードの削除 (オプション)
+- ✅ ドキュメント更新 (webgpu → webgl2)
+- ✅ 未使用ファイルの整理
+
+---
+
+## 📝 推奨アクション
+
+### 🔥 緊急度: 高
+1. **stroke-renderer.js 改修** - Perfect-Freehand 接続
+2. **WebGL2 パイプライン接続** - gl-stroke-processor.js 統合
+3. **Pixi.Mesh 生成実装** - WebGL2 頂点バッファ → Mesh
+
+### ⚡ 緊急度: 中
+4. **MSDF Pipeline 統合** - gl-msdf-pipeline.js 接続
+5. **Shader 統合** - SDF/MSDF Shader 適用
+6. **ドキュメント更新** - webgpu → webgl2 修正
+
+### 🧹 緊急度: 低
+7. **未使用ファイル整理** - curve-interpolator.js 等
+8. **Legacy描画削除** - オプション (fallback として残す?)
+9. **コードコメント追加** - 各ファイルの責務明記
+
+---
+
+## 🎯 結論
+
+### 現状
+- ✅ **描画基盤は完璧に動作**
+- ✅ **WebGL2/Perfect-Freehand/MSDF は実装済み**
+- ❌ **接続が未完了** (stroke-renderer.js が孤立)
+
+### 最優先タスク
+**`stroke-renderer.js` の `renderFinalStroke()` を改修し、`gl-stroke-processor.js` を呼び出すこと。**
+
+これにより:
+- Perfect-Freehand によるポリゴン化
+- WebGL2 による高速描画
+- MSDF による高品質レンダリング
+
+が一気に実現します。
+
+### クリーンアップの必要性
+**現時点では不要**です。まず Phase 1-3 を完了させ、動作確認後にクリーンアップを検討すべきです。
+
+---
+
+## 📚 参考資料
+
+### 座標変換パイプライン
+```
+PointerEvent.clientX/Y
+  ↓ screenClientToCanvas() [DPI補正]
+  ↓ canvasToWorld() [worldContainer逆行列]
+  ↓ worldToLocal() [手動逆算・親チェーン遡査]
+Local座標確定
+  ↓ strokeRecorder記録
+```
+
+### グローバルオブジェクト
+- `window.CoordinateSystem` - 座標変換
+- `window.cameraSystem` - カメラ管理
+- `window.layerManager` - レイヤー管理
+- `window.WebGLContext` - WebGL2コンテキスト (Singleton)
+- `window.GLStrokeProcessor` - Perfect-Freehand処理 (Singleton)
+- `window.BrushCore` - ブラシコア (Singleton)
+
+### デバッグコマンド
+```javascript
+// WebGL2統計
+TegakiDebug.glStroke.enable()  // デバッグモード有効化
+TegakiDebug.glStroke.stats()   // 統計表示
+TegakiDebug.glStroke.reset()   // 統計リセット
+```
+
+---
+
+**作成日**: 2025-01-XX  
+**バージョン**: v1.0.0  
+**ステータス**: 📝 要実装 (Phase 1-3)

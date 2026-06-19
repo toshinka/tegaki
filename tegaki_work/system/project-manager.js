@@ -11,6 +11,7 @@
 
 import { TegakiEventBus } from './event-bus.js';
 import { TEGAKI_CONFIG } from '../config.js';
+import { TimelineModel } from './animation/animation-data-model.js';
 import * as PIXI from 'pixi.js';
 
 export class ProjectManager {
@@ -31,7 +32,7 @@ export class ProjectManager {
         const canvasHeight = TEGAKI_CONFIG.canvas.height;
 
         const projectData = {
-            version: 1,
+            version: 2,
             app: "tegaki",
             canvas: {
                 width: canvasWidth,
@@ -41,8 +42,20 @@ export class ProjectManager {
                 color: TEGAKI_CONFIG.canvas.backgroundColor || 0xf0e0d6,
                 visible: true // 現状固定
             },
-            layers: []
+            layers: [],
+            animation: null,
+            animationState: null
         };
+
+        const animationTable = this._getAnimationTable();
+        if (
+            animationTable?.model?.serialize &&
+            this._hasAnimationProjectData(animationTable.model)
+        ) {
+            animationTable._saveSelectedClipFromWorkingLayers?.({ force: true });
+            projectData.animation = animationTable.model.serialize();
+            projectData.animationState = this._captureAnimationUiState(animationTable);
+        }
 
         // レイヤー情報を収集（背景は別途保存）
         for (let i = 0; i < layers.length; i++) {
@@ -147,6 +160,12 @@ export class ProjectManager {
 
         // 3. レイヤー復元（既存の通常レイヤーを全削除してから追加）
         if (projectData.layers && this.layerSystem) {
+            const legacyParentByChildId = this._createLegacyFolderParentMap(projectData.layers);
+            const folderIdByKey = new Map(
+                projectData.layers
+                    .filter(layerInfo => layerInfo?.isFolder && layerInfo.id != null)
+                    .map(layerInfo => [String(layerInfo.id), layerInfo.id])
+            );
             // 背景以外のレイヤーを削除
             const currentLayers = [...this.layerSystem.getLayers()];
             for (let i = currentLayers.length - 1; i >= 0; i--) {
@@ -170,7 +189,11 @@ export class ProjectManager {
                 layer.label = layer.layerData.id;
                 layer.layerData.visible = layerInfo.visible !== false;
                 layer.layerData.opacity = layerInfo.opacity !== undefined ? layerInfo.opacity : 1.0;
-                layer.layerData.parentId = layerInfo.parentId || null;
+                layer.layerData.parentId = this._resolveLoadedLayerParentId(
+                    layerInfo,
+                    folderIdByKey,
+                    legacyParentByChildId
+                );
                 layer.layerData.blendMode = layerInfo.blendMode || 'normal';
                 layer.layerData.clipping = layerInfo.clipping === true;
                 if (layerInfo.isFolder) {
@@ -212,17 +235,172 @@ export class ProjectManager {
             }
         }
 
-        // 4. 履歴クリア
+        // 4. CAF / TimelineModel 復元
+        if (this._hasAnimationProjectData(projectData.animation)) {
+            this._restoreAnimationProjectData(projectData.animation, projectData.animationState);
+        } else {
+            this._resetAnimationProjectData();
+        }
+
+        // 5. 履歴クリア
         if (window.History) {
             window.History.clear();
         }
 
-        // 5. UI更新要求
+        // 6. UI更新要求
         if (this.eventBus) {
             this.eventBus.emit('layer:panel-update-requested');
         }
 
         this.refreshLoadedProjectUI();
+    }
+
+    _createLegacyFolderParentMap(layerInfos = []) {
+        const parentByChildId = new Map();
+        layerInfos.forEach(layerInfo => {
+            if (!layerInfo?.isFolder || !Array.isArray(layerInfo.children)) return;
+            layerInfo.children.forEach(childEntry => {
+                const childId = childEntry && typeof childEntry === 'object'
+                    ? childEntry.id
+                    : childEntry;
+                if (childId != null && layerInfo.id != null) {
+                    const childKey = String(childId);
+                    if (!parentByChildId.has(childKey)) {
+                        parentByChildId.set(childKey, layerInfo.id);
+                    }
+                }
+            });
+        });
+        return parentByChildId;
+    }
+
+    _resolveLoadedLayerParentId(layerInfo, folderIdByKey, legacyParentByChildId) {
+        if (!layerInfo || layerInfo.id == null) return null;
+
+        const explicitParentKey = layerInfo.parentId != null
+            ? String(layerInfo.parentId)
+            : null;
+        if (explicitParentKey && folderIdByKey.has(explicitParentKey)) {
+            return folderIdByKey.get(explicitParentKey);
+        }
+
+        return legacyParentByChildId.get(String(layerInfo.id)) || null;
+    }
+
+    _getAnimationTable() {
+        return window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable')
+            || null;
+    }
+
+    _hasAnimationProjectData(animationData) {
+        return !!(
+            animationData &&
+            (
+                (animationData.tracks?.length || 0) > 0 ||
+                (animationData.clipAssets?.length || 0) > 0
+            )
+        );
+    }
+
+    _resetAnimationProjectData() {
+        const animationTable = this._getAnimationTable();
+        if (!animationTable) return false;
+
+        animationTable.stop?.();
+        animationTable._restoreVisibility?.();
+        animationTable.model = new TimelineModel();
+        this._restoreAnimationUiState(animationTable);
+        animationTable.initialClipAssetSeeded = false;
+        animationTable._copiedCelRef = null;
+        animationTable._internalLayerClipboard = null;
+        animationTable._invalidateSnapshotTextureCache?.();
+        animationTable.render?.();
+        animationTable._flushLayerPanelSync?.();
+        return true;
+    }
+
+    _captureAnimationUiState(animationTable) {
+        return {
+            selectedCelId: animationTable.selectedCelId || null,
+            activeLaneId: animationTable.activeLaneId || null,
+            selectedAssetId: animationTable.selectedAssetId || null,
+            selectedAssetFolderId: animationTable.selectedAssetFolderId || null,
+            selectedInternalLayerId: animationTable.selectedInternalLayerId || null,
+            isLaneOnlySelected: animationTable.isLaneOnlySelected === true,
+            playbackScope: animationTable.playbackScope || 'all',
+            includedLaneIds: [...(animationTable.includedLaneIds || [])]
+        };
+    }
+
+    _restoreAnimationProjectData(animationData, animationState = null) {
+        const animationTable = this._getAnimationTable();
+        if (!animationTable) return false;
+
+        animationTable.stop?.();
+        animationTable._restoreVisibility?.();
+        animationTable.model = new TimelineModel(animationData || {});
+        this._restoreAnimationUiState(animationTable, animationState);
+        animationTable.initialClipAssetSeeded = animationTable.model.clipAssets.length > 0;
+        animationTable._copiedCelRef = null;
+        animationTable._internalLayerClipboard = null;
+        animationTable._invalidateSnapshotTextureCache?.();
+
+        const selectedEntry = animationTable.selectedCelId
+            ? animationTable.model.findClipEntry(animationTable.selectedCelId)
+            : null;
+        if (selectedEntry?.clip) {
+            animationTable.activeLaneId = selectedEntry.lane.id;
+            animationTable.model.setCurrentFrame(selectedEntry.clip.startFrame);
+            animationTable._activateClipEntry?.(selectedEntry, { saveCurrent: false });
+        } else if (animationTable.isLaneOnlySelected) {
+            animationTable._clearWorkingLayersForEmptyFrame?.();
+        } else {
+            animationTable._syncWorkingLayersForCurrentFrame?.();
+        }
+        animationTable.render?.();
+        animationTable._flushLayerPanelSync?.();
+        return true;
+    }
+
+    _restoreAnimationUiState(animationTable, animationState = null) {
+        const state = animationState || {};
+        const selectedEntry = state.selectedCelId
+            ? animationTable.model.findClipEntry(state.selectedCelId)
+            : null;
+        const activeLane = state.activeLaneId
+            ? animationTable.model.getLaneById(state.activeLaneId)
+            : null;
+        const selectedAsset = state.selectedAssetId
+            ? animationTable.model.getClipAsset(state.selectedAssetId)
+            : null;
+
+        animationTable.selectedCelId = selectedEntry?.clip?.id || null;
+        animationTable.activeLaneId = selectedEntry?.lane?.id
+            || (activeLane && activeLane.type !== 'folder' && !activeLane.isBackground ? activeLane.id : null);
+        animationTable.isLaneOnlySelected = state.isLaneOnlySelected === true
+            && !animationTable.selectedCelId
+            && !!animationTable.activeLaneId;
+        animationTable.selectedAssetId = selectedAsset?.id
+            || (selectedEntry?.clip?.assetId || null);
+        const resolvedAsset = animationTable.selectedAssetId
+            ? animationTable.model.getClipAsset(animationTable.selectedAssetId)
+            : null;
+        animationTable.selectedAssetFolderId = resolvedAsset?.folderId || null;
+        animationTable.selectedInternalLayerId = resolvedAsset?.internalLayers?.some(
+            layer => layer.id === state.selectedInternalLayerId
+        ) ? state.selectedInternalLayerId : (resolvedAsset?.internalLayers?.[0]?.id || null);
+        animationTable.playbackScope = ['all', 'activeLane', 'includedLanes'].includes(state.playbackScope)
+            ? state.playbackScope
+            : 'all';
+        const validLaneIds = new Set(animationTable.model.tracks.map(track => track.id));
+        animationTable.includedLaneIds = new Set(
+            (Array.isArray(state.includedLaneIds) ? state.includedLaneIds : [])
+                .filter(laneId => validLaneIds.has(laneId))
+        );
+        animationTable.model.tracks.forEach(track => {
+            track.active = track.id === animationTable.activeLaneId;
+        });
     }
 
     refreshLoadedProjectUI() {

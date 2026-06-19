@@ -109,7 +109,7 @@ body {
     margin: 0; 
 }
 
-.canvas-area { 
+.canvas-area {
     background: var(--futaba-background); 
     position: fixed; 
     inset: 0;
@@ -117,7 +117,7 @@ body {
     display: flex; 
     justify-content: center; 
     align-items: center; 
-    z-index: 0;
+    z-index: auto;
     touch-action: none;          /* 追加: スタイラス入力をブラウザがキャプチャしないよう */
     -ms-touch-action: none;      /* 追加 */
 }
@@ -204,13 +204,14 @@ canvas {
 .caf-simple-group {
     border: 1px solid var(--futaba-light-medium);
     border-radius: 6px;
-    background: rgba(240, 224, 214, 0.74);
+    background: rgba(255, 255, 238, 0.46);
     overflow: hidden;
     box-sizing: border-box;
 }
 
 .caf-simple-group.is-selected {
     border: 2px solid var(--active-border);
+    background: rgba(255, 255, 238, 0.68);
 }
 
 .caf-simple-group-title {
@@ -357,24 +358,6 @@ canvas {
     border-left: none;
 }
 
-.clip-layer-mirror-title {
-    font-weight: bold;
-    font-size: 8px;
-    opacity: 0.6;
-    letter-spacing: 0.1em;
-    padding-bottom: 2px;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-}
-
-.clip-layer-mirror-asset {
-    font-weight: bold;
-    color: #f1c40f; /* ゴールド系の色でアセット名を強調 */
-    padding: 2px 0 4px 2px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .layer-panel-card-list {
     display: flex;
     flex-direction: column;
@@ -388,8 +371,25 @@ canvas {
 }
 
 .layer-panel-card-row {
+    --layer-card-thumb-max-width: 40px;
+    --layer-card-thumb-max-height: 32px;
+    --layer-card-action-size: 18px;
+    --layer-card-action-padding: 2px;
+    --layer-card-action-icon-size: 14px;
+    --layer-card-folder-icon-size: 22px;
+    --layer-card-drag-source-opacity: 0.35;
+    --layer-card-drag-ghost-opacity: 0.72;
+    --layer-card-drag-ghost-rotation: 2deg;
+    --layer-card-drag-ghost-scale: 1.02;
+    --layer-card-drag-ghost-shadow: 0 8px 18px rgba(128, 0, 0, 0.22);
+    --layer-card-dnd-transition-duration: 140ms;
+    --layer-card-dnd-transition-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) 18px 18px;
+    grid-template-columns:
+        var(--layer-card-thumb-max-width)
+        minmax(0, 1fr)
+        var(--layer-card-action-size)
+        var(--layer-card-action-size);
     grid-template-rows: 32px;
     align-items: center;
     gap: 0 5px;
@@ -401,7 +401,12 @@ canvas {
     user-select: none;
     touch-action: none;
     -ms-touch-action: none;
-    transition: all 0.2s ease;
+    transition:
+        transform var(--layer-card-dnd-transition-duration) var(--layer-card-dnd-transition-easing),
+        opacity 0.2s ease,
+        background-color 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
 }
 
 .layer-panel-card-row:hover {
@@ -487,9 +492,16 @@ canvas {
     grid-row: 1;
 }
 
-.layer-panel-card-action {
-    width: 18px;
-    height: 18px;
+.layer-panel-card-action.ui-icon-button {
+    box-sizing: border-box;
+    width: var(--layer-card-action-size);
+    height: var(--layer-card-action-size);
+    padding: var(--layer-card-action-padding);
+}
+
+.layer-panel-card-action.ui-icon-button svg {
+    width: var(--layer-card-action-icon-size);
+    height: var(--layer-card-action-icon-size);
 }
 
 .layer-panel-card-action.is-hidden {
@@ -500,17 +512,6 @@ canvas {
     opacity: var(--card-action-active-opacity, 1);
     background: var(--card-action-active-bg, transparent);
     border-color: var(--card-action-active-border-color, transparent);
-}
-
-.legacy-layer-card-row .layer-panel-card-action {
-    width: 16px;
-    height: 16px;
-    padding: 2px;
-}
-
-.legacy-layer-card-row .layer-panel-card-action svg {
-    width: 12px;
-    height: 12px;
 }
 
 .layer-panel-card-name {
@@ -667,16 +668,16 @@ canvas {
 }
 
 .clip-layer-mirror-thumb {
-    width: var(--card-thumb-width, 34px);
-    height: var(--card-thumb-height, 30px);
+    width: var(--card-thumb-width, var(--layer-card-thumb-max-width));
+    height: var(--card-thumb-height, var(--layer-card-thumb-max-height));
     border-radius: 3px;
     background: rgba(128, 0, 0, 0.05);
     overflow: hidden;
 }
 
 .layer-panel-card-thumb--folder svg {
-    width: 24px;
-    height: 24px;
+    width: var(--layer-card-folder-icon-size);
+    height: var(--layer-card-folder-icon-size);
 }
 
 .layer-panel-card-thumb-image {
@@ -687,20 +688,36 @@ canvas {
 }
 
 .layer-panel-card-row.is-dragging {
-    opacity: 0.35;
+    opacity: var(--layer-card-drag-source-opacity);
+    transform: scale(0.985);
 }
 
-.clip-layer-mirror-drag-ghost,
 .layer-panel-card-drag-ghost {
     position: fixed;
     z-index: 10000;
     pointer-events: none;
-    opacity: 0.72;
-    transform: rotate(2deg) scale(1.02);
+    opacity: var(--layer-card-drag-ghost-opacity);
     transform-origin: top left;
     transition: none !important;
     will-change: transform;
-    box-shadow: 0 8px 18px rgba(128, 0, 0, 0.22);
+    box-shadow: var(--layer-card-drag-ghost-shadow);
+}
+
+.layer-panel-card-drag-preview {
+    box-sizing: border-box;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    padding: 7px 12px;
+    color: var(--futaba-maroon);
+    background: rgba(255, 255, 238, 0.96);
+    border: 2px solid var(--active-border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .layer-panel-card-row.is-dnd-before::before,
@@ -713,6 +730,7 @@ canvas {
     border-radius: 999px;
     background: var(--active-border);
     box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
+    animation: layer-panel-card-drop-marker-in var(--layer-card-dnd-transition-duration) var(--layer-card-dnd-transition-easing);
 }
 
 .layer-panel-card-row.is-dnd-before::before {
@@ -723,10 +741,42 @@ canvas {
     bottom: -3px;
 }
 
+.layer-panel-card-row.is-dnd-shift-down {
+    transform: translateY(var(--layer-card-dnd-reorder-shift, 40px)) !important;
+}
+
+.layer-panel-card-row.is-dnd-shift-up {
+    transform: translateY(calc(var(--layer-card-dnd-reorder-shift, 40px) * -1)) !important;
+}
+
 .layer-panel-card-row.is-dnd-inside {
     outline: 2px solid var(--active-border);
     outline-offset: 2px;
     background: rgba(255, 102, 0, 0.12);
+    transform: scale(1.015);
+    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.14);
+}
+
+@keyframes layer-panel-card-drop-marker-in {
+    from {
+        opacity: 0;
+        transform: scaleX(0.35);
+    }
+    to {
+        opacity: 1;
+        transform: scaleX(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layer-panel-card-row {
+        --layer-card-dnd-transition-duration: 0ms;
+    }
+
+    .layer-panel-card-row.is-dnd-before::before,
+    .layer-panel-card-row.is-dnd-after::after {
+        animation: none;
+    }
 }
 
 .clip-layer-mirror-visibility-btn {
@@ -735,12 +785,6 @@ canvas {
 
 .clip-layer-mirror-visibility-btn:hover {
     transform: none;
-}
-
-.clip-layer-mirror-visibility {
-    width: 12px;
-    text-align: center;
-    opacity: 0.7;
 }
 
 .clip-layer-mirror-name {
@@ -807,9 +851,9 @@ canvas {
     left: auto;
     top: auto;
     width: auto;
-    grid-column: 1 / span 2;
+    grid-column: 1;
     grid-row: 1;
-    display: flex; 
+    display: none;
     align-items: center; 
     justify-content: center;
     background: rgba(240, 224, 214, 0.38);
@@ -820,9 +864,13 @@ canvas {
     gap: 4px; 
     font-size: 11px; 
     font-weight: bold; 
-    margin-bottom: 6px;
+    margin: 0 6px 6px 0;
     backdrop-filter: blur(4px);
     box-shadow: 0 2px 8px rgba(128, 0, 0, 0.08);
+}
+
+.frame-indicator.is-visible {
+    display: flex;
 }
 
 .frame-nav-btn { 
@@ -1431,7 +1479,7 @@ canvas {
     border-radius: 16px; 
     box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3); 
     padding: 20px; 
-    z-index: 2000; 
+    z-index: 3000;
     display: none; 
     min-width: 280px; 
 }
@@ -1447,6 +1495,14 @@ canvas {
     border-radius: 8px;
     box-shadow: 0 12px 30px rgba(128, 0, 0, 0.18);
     backdrop-filter: blur(14px);
+}
+
+/* 左サイドバーから開く作業窓は、サイドバーとLayer Panelの前面へ明確に出す。 */
+#album-popup,
+#export-popup,
+#resize-settings,
+#settings-popup {
+    z-index: 4000;
 }
 
 .popup-panel--dragging {
@@ -2359,6 +2415,25 @@ canvas {
     align-items: center;
     justify-content: center;
     overflow: hidden;
+}
+
+.export-animation-range {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    color: var(--futaba-maroon);
+    font-size: 12px;
+}
+
+.export-animation-range label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.export-animation-range input {
+    width: 56px;
 }
 
 .preview-container img { 

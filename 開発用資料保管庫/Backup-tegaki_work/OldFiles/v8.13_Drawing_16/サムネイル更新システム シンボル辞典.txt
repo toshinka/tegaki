@@ -1,0 +1,203 @@
+# サムネイル更新システム シンボル辞典
+
+## 問題概要
+1. **レイヤーサムネイル**: 何か一つ操作を挟まないと反映されない
+2. **タイムラインサムネイル (GIF)**: 全く反映されない
+
+---
+
+## 問題箇所マッピング
+
+### 【問題1】レイヤーサムネイル遅延
+
+#### layer-system.js の仕組み
+
+| メソッド | 役割 | 現在の動作 | 問題 |
+|---------|------|---------|------|
+| `requestThumbnailUpdate(layerIndex)` | 更新リクエスト登録 | `thumbnailUpdateQueue.add()` + 500ms遅延タイマー設定 | ✅ 仕組みは正常 |
+| `processThumbnailUpdates()` | キュー処理実行 | 500msごとにキュー内容を処理 | **遅延が2段階** |
+| `updateThumbnail(layerIndex)` | 実際の描画 | RenderTextureで1フレームレンダリング | ✅ 実装は正常 |
+
+#### EventBusとの連携
+
+**描画後のイベント発火順序:**
+```
+finalizeStroke() 
+  → layer:modified イベント
+  → (EventBus受け取り遅延)
+  → requestThumbnailUpdate()呼び出し
+  → 500ms待機
+  → processThumbnailUpdates()実行
+```
+
+**問題点:**
+- `layer:modified` → `requestThumbnailUpdate()` の呼び出しが**自動で行われていない**
+- drawing-engine.js から明示的な呼び出しがない
+- ユーザーがレイヤーをクリックする → UIが再描画される → その後ろでサムネイルが更新される
+
+---
+
+### 【問題2】タイムラインサムネイル未反映
+
+#### animation-system.js の仕組み
+
+| メソッド | 役割 | 現在の状態 |
+|---------|------|-----------|
+| `generateCutThumbnail(cutIndex)` | Cut用サムネイル生成 | RenderTextureを canvasに変換 |
+| `switchToActiveCut(cutIndex)` | CUT切り替え | `layerSystem.renderCutToTexture()` 呼び出し |
+| `getCurrentCut()` | 現在のCUT取得 | 返却のみ |
+
+#### timeline-ui.js の仕組み
+
+| メソッド | 役割 | 問題 |
+|---------|------|------|
+| `setupThumbnailAutoUpdate()` | イベントリスナー登録 | **発火条件が厳しい** |
+| `requestThumbnailUpdate()` | 更新リクエスト | 150ms遅延タイマー設定 |
+| `updateCurrentCutThumbnail()` | 実行 | async/await処理 |
+| `updateSingleCutThumbnail(i)` | DOM反映 | **DOMまで到達していない可能性** |
+
+#### イベントリスナー登録内容
+
+```javascript
+// timeline-ui.js setupThumbnailAutoUpdate()
+this.eventBus.on('layer:updated', () => { /* リクエスト */ });
+this.eventBus.on('layer:path-added', () => { /* リクエスト */ });
+this.eventBus.on('layer:visibility-changed', () => { /* リクエスト */ });
+this.eventBus.on('layer:opacity-changed', () => { /* リクエスト */ });
+this.eventBus.on('drawing:path-completed', () => { /* リクエスト */ });
+this.eventBus.on('drawing:erase-completed', () => { /* リクエスト */ });
+```
+
+**問題:**
+- `layer:modified` (drawing-engine.jsから発火) を**リッスンしていない**
+- `layer:path-added` はペン描画終了後に発火されるべきだが、実装されていない
+- **タイムラインサムネイル更新トリガーが一切ない**
+
+---
+
+## 根本原因
+
+### layer-systemのサムネイル更新
+
+```mermaid
+graph LR
+    A["描画完了<br/>finalizeStroke()"]
+    B["layer:modified<br/>EventBus発火"]
+    C["requestThumbnailUpdate<br/>呼び出し?"]
+    D["500ms遅延"]
+    E["updateThumbnail()実行"]
+    F["DOM反映"]
+    
+    A -->|明示呼び出しなし| B
+    B -->|受け取るシステムなし| C
+    C -->|呼び出されない| D
+    D -->|処理されず| E
+    E -->|実行されず| F
+```
+
+**実装ギャップ:**
+- `drawing-engine.js` が `layer:modified` を発火するが
+- `layer-system.js` はこのイベントを**リッスンしていない**
+- 代わりに「誰かが明示的に `requestThumbnailUpdate()` を呼ぶ」前提設計
+- UI操作でレイヤーパネルが再描画される際に `updateLayerPanelUI()` が呼ばれ
+- そこで **初めてサムネイルが更新される**
+
+### タイムラインのサムネイル更新
+
+```mermaid
+graph LR
+    A["描画完了<br/>finalizeStroke()"]
+    B["layer:modified発火"]
+    C["timeline-ui.js<br/>リッスンなし"]
+    D["generateCutThumbnail<br/>呼ばれない"]
+    E["タイムラインDOMに<br/>反映されない"]
+    
+    A --> B
+    B -->|リッスンしない| C
+    C -->|更新されない| D
+    D -->|DOMに反映なし| E
+```
+
+**追加問題:**
+- `generateCutThumbnail()` は呼ばれても
+- `updateSingleCutThumbnail(i)` で DOM反映されているか不明
+- GIF再生中なら `generateCutThumbnailOptimized()` が定期実行されるはずだが
+- その結果が **DOM/UIに反映されるパイプがない**
+
+---
+
+## 修正案
+
+### 【修正1】layer-system.js に EventBus リスナー追加
+
+```javascript
+// system/layer-system.js の init() メソッド内に追加
+this.eventBus.on('layer:modified', (data) => {
+    this.requestThumbnailUpdate(data.layerIndex || this.activeLayerIndex);
+});
+```
+
+### 【修正2】timeline-ui.js に `layer:modified` リスナー追加
+
+```javascript
+// ui/timeline-ui.js の setupThumbnailAutoUpdate() に追加
+this.eventBus.on('layer:modified', () => {
+    this.requestThumbnailUpdate();  // 現在のCUT用サムネイル更新
+});
+
+this.eventBus.on('stroke:end', () => {
+    this.requestThumbnailUpdate();  // ストローク終了時も更新
+});
+```
+
+### 【修正3】drawing-engine.js が正しくイベント発火しているか確認
+
+```javascript
+// finalizeStroke() の最後で以下のように発火
+if (this.eventBus) {
+    this.eventBus.emit('layer:modified', {
+        layerId: layerId,
+        tool: activeTool,
+        layerIndex: this.layerSystem.activeLayerIndex  // ← 追加
+    });
+}
+```
+
+### 【修正4】timeline-ui.js の DOM反映パイプ確保
+
+```javascript
+// updateSingleCutThumbnail(cutIndex) で確実にDOMを更新
+updateSingleCutThumbnail(cutIndex) {
+    const cutItem = this.cutsContainer.querySelector(
+        `.cut-item[data-cut-index="${cutIndex}"]`
+    );
+    if (!cutItem) return;
+    
+    const cut = this.animationSystem.animationData.cuts[cutIndex];
+    if (!cut?.thumbnailCanvas) return;
+    
+    const thumbnail = cutItem.querySelector('.cut-thumbnail');
+    if (!thumbnail) return;
+    
+    // DOM明示更新
+    const img = thumbnail.querySelector('img');
+    if (img) {
+        img.src = cut.thumbnailCanvas.toDataURL();
+    } else {
+        const newImg = document.createElement('img');
+        newImg.src = cut.thumbnailCanvas.toDataURL();
+        thumbnail.innerHTML = '';
+        thumbnail.appendChild(newImg);
+    }
+}
+```
+
+---
+
+## チェックリスト
+
+- [ ] `drawing-engine.js::finalizeStroke()` が `layer:modified` + `layerIndex` を発火
+- [ ] `layer-system.js::init()` が `layer:modified` をリッスン → `requestThumbnailUpdate()` 呼び出し
+- [ ] `timeline-ui.js::setupThumbnailAutoUpdate()` が `layer:modified` + `stroke:end` をリッスン
+- [ ] `updateSingleCutThumbnail()` が確実にDOMを更新
+- [ ] `generateCutThumbnail()` が完了後に `updateSingleCutThumbnail()` を呼び出し

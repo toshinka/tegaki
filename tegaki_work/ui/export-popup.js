@@ -13,7 +13,7 @@
  */
 
 import { TegakiEventBus } from '../system/event-bus.js';
-import { attachPopupDrag } from './popup-drag-helper.js';
+import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 
 export class ExportPopup {
     constructor(dependencies = {}) {
@@ -40,6 +40,7 @@ export class ExportPopup {
         if (!this.popup) {
             this._createPopupElement();
         } else {
+            mountPopupAtOverlayRoot(this.popup);
             this.popup.classList.remove('show');
             this.popup.style.display = '';
             this.popup.classList.add('popup-panel--translucent');
@@ -47,7 +48,7 @@ export class ExportPopup {
     }
     
     _createPopupElement() {
-        const container = document.querySelector('.canvas-area') || document.body;
+        const container = document.querySelector('.main-layout') || document.body;
         if (!container) return;
         
         const popup = document.createElement('div');
@@ -204,11 +205,7 @@ export class ExportPopup {
     }
     
     getFrameCount() {
-        const animData = window.animationSystem?.getAnimationData?.();
-        if (animData?.frames) {
-            return animData.frames.length;
-        }
-        return 1;
+        return Math.max(1, this.manager?.getFrameCount?.() || 1);
     }
     
     updatePreviewButtonVisibility() {
@@ -231,6 +228,12 @@ export class ExportPopup {
         }
         
         const frameCount = this.getFrameCount();
+        const animationRangeUI = frameCount >= 2 ? `
+            <div class="export-animation-range">
+                <label>開始 <input id="export-frame-start" type="number" min="1" max="${frameCount}" value="1"></label>
+                <label>終了 <input id="export-frame-end" type="number" min="1" max="${frameCount}" value="${frameCount}"></label>
+                <span>${this.manager?.getAnimationFPS?.() || 12} FPS</span>
+            </div>` : '';
         
         const resolutionUI = '';
         
@@ -241,7 +244,8 @@ export class ExportPopup {
                     ${frameCount >= 2 
                         ? `全${frameCount}フレームをAPNGとして出力します。`
                         : `現在のキャンバスをPNG画像として出力します。サイズ: ${canvasWidth}×${canvasHeight}px`}
-                </div>`,
+                </div>
+                ${animationRangeUI}`,
                 
             'gif': `
                 <div class="setting-label">GIF出力（CUT数で自動判定）</div>
@@ -249,7 +253,8 @@ export class ExportPopup {
                     ${frameCount >= 2
                         ? `全${frameCount}フレームをGIFアニメとして出力します。`
                         : `現在のキャンバスをGIF画像として出力します。サイズ: ${canvasWidth}×${canvasHeight}px`}
-                </div>`,
+                </div>
+                ${animationRangeUI}`,
 
             'webp': `
                 <div class="setting-label">WEBP出力（WebM動画自動検出）</div>
@@ -348,7 +353,8 @@ export class ExportPopup {
         
         try {
             const options = {
-                resolution: this.selectedResolution
+                resolution: this.selectedResolution,
+                ...this.getAnimationRangeOptions()
             };
             await this.manager.export(this.selectedFormat, options);
         } catch (error) {
@@ -386,8 +392,13 @@ export class ExportPopup {
         }
         
         try {
+            const canvas = window.TEGAKI_CONFIG?.canvas || { width: 400, height: 400 };
+            const previewResolution = isAnimation
+                ? Math.min(this.selectedResolution, 200 / Math.max(canvas.width, canvas.height))
+                : this.selectedResolution;
             const options = {
-                resolution: this.selectedResolution
+                resolution: previewResolution,
+                ...this.getAnimationRangeOptions()
             };
             const result = await this.manager.generatePreview(this.selectedFormat, options);
             
@@ -400,7 +411,12 @@ export class ExportPopup {
                 formatName = 'WebM動画';
             }
             
-            this.showPreview(result.blob, `${formatName}プレビュー（${this.selectedResolution}x）`);
+            this.showPreview(
+                result.blob,
+                isAnimation
+                    ? `${formatName}軽量ループプレビュー`
+                    : `${formatName}プレビュー（${this.selectedResolution}x）`
+            );
             
             if (previewBtn) {
                 previewBtn.textContent = 'プレビュー';
@@ -422,6 +438,19 @@ export class ExportPopup {
         }
     }
     
+    getAnimationRangeOptions() {
+        const frameCount = this.getFrameCount();
+        if (frameCount < 2) return {};
+        const startInput = document.getElementById('export-frame-start');
+        const endInput = document.getElementById('export-frame-end');
+        const start = Math.min(frameCount - 1, Math.max(1, Number(startInput?.value) || 1));
+        const end = Math.min(frameCount, Math.max(start + 1, Number(endInput?.value) || frameCount));
+        return {
+            startFrame: start - 1,
+            endFrame: end - 1
+        };
+    }
+
     updateProgress(data) {
         const progressFill = document.querySelector('#export-progress .progress-fill');
         const progressText = document.querySelector('#export-progress .progress-text');

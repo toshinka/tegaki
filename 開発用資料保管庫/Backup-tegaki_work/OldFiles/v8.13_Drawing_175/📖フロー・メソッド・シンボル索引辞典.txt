@@ -1,0 +1,1309 @@
+================================================================================
+ブラウザお絵かきツール v8.13 - フロー・メソッド・シンボル索引辞典
+================================================================================
+
+【凡例】
+✅ = 正常動作確認済み
+⚠️ = 問題箇所・実装不完全
+🔧 = 改修必要
+❌ = 未実装・機能不全
+🔍 = 要調査
+📁 = 親ファイル
+📄 = 子ファイル
+🔀 = イベントフロー関連
+
+================================================================================
+【1】ショートカット定義一覧表
+================================================================================
+
+【ツール切り替え】
+✅ P                : ペンツール切り替え
+✅ E                : 消しゴムツール切り替え
+✅ V                : レイヤートランスフォームモードトグル
+
+【Undo/Redo】
+✅ Ctrl+Z          : 元に戻す
+✅ Ctrl+Y          : やり直し
+✅ Ctrl+Shift+Z    : やり直し（代替）
+
+【レイヤー操作 - 基本】
+✅ Ctrl+L          : レイヤー追加
+✅ Delete          : レイヤーの絵を削除
+✅ Backspace       : レイヤーの絵を削除（同上）
+⚠️ Ctrl+Delete     : レイヤークリア（登録あり・実装経路不明確）
+✅ Ctrl+C          : レイヤーコピー
+✅ Ctrl+V          : レイヤーペースト
+
+【レイヤー操作 - トランスフォーム（Vキー押下時）】
+✅ V + ↑           : レイヤーを上に移動
+✅ V + ↓           : レイヤーを下に移動
+✅ V + ←           : レイヤーを左に移動
+✅ V + →           : レイヤーを右に移動
+✅ V + Shift + ↑   : レイヤー拡大
+✅ V + Shift + ↓   : レイヤー縮小
+✅ V + Shift + ←   : レイヤー左回転
+✅ V + Shift + →   : レイヤー右回転
+✅ V + H           : レイヤー水平反転
+✅ V + Shift + H   : レイヤー垂直反転
+✅ V + Ctrl + 0    : レイヤー位置・サイズリセット
+
+【レイヤー操作 - 階層】
+✅ ↑               : レイヤー選択を上へ（vMode=false）
+✅ ↓               : レイヤー選択を下へ（vMode=false）
+✅ Ctrl + ↑        : レイヤー順序を上げる
+✅ Ctrl + ↓        : レイヤー順序を下げる
+
+【カメラ操作】
+✅ H               : キャンバス水平反転（vMode=false）
+✅ Shift + H       : キャンバス垂直反転（vMode=false）
+✅ Ctrl + 0        : カメラリセット（vMode=false）
+
+【アニメーション/GIF】
+✅ Ctrl + ←        : 前のフレーム
+✅ Ctrl + →        : 次のフレーム
+✅ Ctrl + Space    : 再生/停止
+✅ Shift + A       : タイムライン表示切替
+✅ Shift + N       : 新規フレーム作成
+✅ Shift + C       : フレームコピー
+
+【UI/設定】
+✅ Ctrl + ,        : 設定を開く
+✅ Ctrl + E        : エクスポート
+✅ Q               : クイックアクセス
+
+【マウス/ドラッグ操作】
+✅ Space + ドラッグ        : キャンバス移動
+✅ Space + Shift + ドラッグ : カメラ拡縮・回転
+✅ 右クリック + ドラッグ    : キャンバス移動
+✅ Shift + 右クリック + ドラッグ : カメラ拡縮・回転
+✅ ホイール                : ズーム
+✅ Space + ホイール        : ズーム
+✅ Space + Shift + ホイール : 回転
+
+================================================================================
+【2】ショートカット実装状況の詳細検証
+================================================================================
+
+【2-1】✅ 実装完了・正常動作確認済み
+
+┌─────────────────────────────────────────┐
+│ ✅ BS/DELキーでアクティブレイヤーの描画削除 │
+├─────────────────────────────────────────┤
+│ 📁 config.js                             │
+│   - TEGAKI_KEYMAP.actions.LAYER_DELETE_DRAWINGS │
+│   - [Delete], [Backspace]              │
+│ 📄 keyboard-handler.js                  │
+│   - handleAction('LAYER_DELETE_DRAWINGS') │
+│   - deleteActiveLayerDrawings()         │
+│   - clearLayerDrawings()                │
+│   - restoreLayerDrawings()              │
+│ 📄 layer-system.js                      │
+│   - layerData.paths配列をクリア          │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│ ✅ 反転ボタンクリックで正常に反転        │
+├─────────────────────────────────────────┤
+│ 📄 layer-transform.js                   │
+│   - onFlipRequest(direction)            │
+│ 📄 layer-system.js                      │
+│   - flipActiveLayer(direction, bypassVKeyCheck) │
+│   - transform.flipLayer(layer, direction, skipHistory=true) │
+│   - History登録は一度のみ（v8.13.8で修正） │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│ ✅ Vキーによるレイヤートランスフォームのポップアップ │
+├─────────────────────────────────────────┤
+│ 📄 keyboard-handler.js                  │
+│   - vKeyPressed トグル変数管理           │
+│   - TegakiEventBus.emit('keyboard:vkey-pressed') │
+│ 📄 layer-system.js                      │
+│   - _setupVKeyEvents()                  │
+│   - transform.enterMoveMode()           │
+│   - transform.exitMoveMode()            │
+│ 📄 layer-transform.js                   │
+│   - isVKeyPressed フラグ管理             │
+│   - トランスフォームパネル表示制御       │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│ ✅ Vキー+H/Shift+Hでレイヤー反転         │
+├─────────────────────────────────────────┤
+│ 📁 config.js                             │
+│   - LAYER_FLIP_HORIZONTAL (V + H)       │
+│   - LAYER_FLIP_VERTICAL (V + Shift + H) │
+│ 📄 keyboard-handler.js                  │
+│   - handleAction() で vMode判定          │
+│   - eventBus.emit('layer:flip-by-key')  │
+│ 📄 layer-system.js                      │
+│   - _setupLayerOperations()             │
+│   - flipActiveLayer(direction, false)   │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│ ✅ H/Shift+Hでカメラ反転                 │
+├─────────────────────────────────────────┤
+│ 📁 config.js                             │
+│   - CAMERA_FLIP_HORIZONTAL (H)          │
+│   - CAMERA_FLIP_VERTICAL (Shift + H)    │
+│ 📄 keyboard-handler.js                  │
+│   - handleAction('CAMERA_FLIP_HORIZONTAL') │
+│   - eventBus.emit('camera:flip-horizontal') │
+│ 📄 camera-system.js                     │
+│   - _handleCameraFlipKeys()             │
+│   - worldContainer.scale反転             │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│ ✅ CTRL+Zで反転のアンドゥ                │
+│ ✅ CTRL+Yで反転のリドゥ                  │
+├─────────────────────────────────────────┤
+│ 📄 history.js                           │
+│   - undo(), redo() メソッド              │
+│   - _manager.isApplying フラグで二重登録防止 │
+│ 📄 layer-system.js                      │
+│   - flipActiveLayer() 内でHistory.push()  │
+│   - entry: { name, do, undo, meta }     │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│ ✅ 反転ボタンのactive状態が正しく表示     │
+├─────────────────────────────────────────┤
+│ 📄 layer-transform.js                   │
+│   - updateFlipButtons()                 │
+│   - scaleX/scaleYの符号判定              │
+│   - .active クラス付与                   │
+└─────────────────────────────────────────┘
+
+【2-2】⚠️ 問題箇所・要調査
+
+┌─────────────────────────────────────────┐
+│ ⚠️ LAYER_CLEAR (Ctrl+Delete)            │
+├─────────────────────────────────────────┤
+│ 📁 config.js                             │
+│   - LAYER_CLEAR定義あり                  │
+│ 📄 keyboard-handler.js                  │
+│   - handleAction('LAYER_CLEAR')         │
+│   - eventBus.emit('layer:clear-active') │
+│ 🔍 問題：layer:clear-activeのリスナーが  │
+│    どこにも見当たらない                  │
+│ 🔧 改修提案：                            │
+│    1) layer-system.jsにリスナー追加      │
+│    2) 不要ならconfig.jsから削除          │
+└─────────────────────────────────────────┘
+
+【2-3】🔍 多重実装の疑い・要確認
+
+┌─────────────────────────────────────────┐
+│ 🔍 Vキー状態管理の多重箇所               │
+├─────────────────────────────────────────┤
+│ keyboard-handler.js                     │
+│   - vKeyPressed 変数                     │
+│ layer-system.js                         │
+│   - vKeyPressed getter (transform経由)   │
+│ layer-transform.js                      │
+│   - isVKeyPressed フラグ                 │
+│ camera-system.js                        │
+│   - vKeyPressed 変数                     │
+│ 🔧 改修提案：                            │
+│    keyboard-handler.jsを唯一の真実の源   │
+│    他は全てEventBus経由で同期            │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│ 🔍 座標変換メソッドの重複                │
+├─────────────────────────────────────────┤
+│ coordinate-system.js                    │
+│   - screenClientToCanvas()              │
+│   - canvasToWorld()                     │
+│   - worldToLocal()                      │
+│ camera-system.js                        │
+│   - screenClientToWorld()               │
+│   - worldToScreen()                     │
+│   - screenToLayer()                     │
+│   - screenToCanvas()                    │
+│ 🔧 改修提案：                            │
+│    camera-system内のメソッドを            │
+│    coordinate-system.js呼び出しに統一    │
+└─────────────────────────────────────────┘
+
+================================================================================
+【3】イベントフロー全体図
+================================================================================
+
+【3-1】レイヤー反転のイベントフロー
+
+ユーザー入力: V + H
+    ↓
+keyboard-handler.js
+    ↓ handleKeyDown()
+    ↓ getAction(e, {vMode: vKeyPressed})
+    ↓ → 'LAYER_FLIP_HORIZONTAL'
+    ↓
+    ↓ handleAction('LAYER_FLIP_HORIZONTAL')
+    ↓ if (isVKeyPressed())
+    ↓ eventBus.emit('layer:flip-by-key', {direction: 'horizontal'})
+    ↓
+layer-system.js
+    ↓ _setupLayerOperations()
+    ↓ eventBus.on('layer:flip-by-key')
+    ↓ flipActiveLayer(direction, false)
+    ↓
+    ↓ if (!bypassVKeyCheck && !isLayerMoveMode) return
+    ↓ transform.flipLayer(activeLayer, direction, skipHistory=true)
+    ↓
+layer-transform.js
+    ↓ flipLayer(layer, direction, skipHistory)
+    ↓ vectorOperations.flipPathPoints()
+    ↓ if (!skipHistory) confirmTransform() ← スキップされる
+    ↓
+layer-system.js
+    ↓ History.push({ name: 'layer-flip-horizontal', do, undo })
+    ↓ requestThumbnailUpdate()
+    ↓ eventBus.emit('layer:transform-updated')
+
+【3-2】カメラ反転のイベントフロー
+
+ユーザー入力: H (vMode=false)
+    ↓
+keyboard-handler.js
+    ↓ handleKeyDown()
+    ↓ getAction(e, {vMode: false})
+    ↓ → 'CAMERA_FLIP_HORIZONTAL'
+    ↓
+    ↓ handleAction('CAMERA_FLIP_HORIZONTAL')
+    ↓ eventBus.emit('camera:flip-horizontal')
+    ↓
+camera-system.js
+    ↓ _handleCameraFlipKeys() ← 実際はkeydownイベント直接
+    ↓ horizontalFlipped = !horizontalFlipped
+    ↓ worldContainer.scale.x *= -1
+    ↓ _emitTransformChanged()
+
+🔍 注意：camera-system.jsは'camera:flip-horizontal'イベントを
+リッスンしていない。keyboard内で直接発火しているが、
+実際の処理はcamera-system内の_handleCameraFlipKeys()で
+独立して行われている。
+
+🔧 改修提案：EventBus経由の統一化
+
+【3-3】BS/DELキーでの描画削除フロー
+
+ユーザー入力: Delete or Backspace
+    ↓
+keyboard-handler.js
+    ↓ handleKeyDown()
+    ↓ getAction(e) → 'LAYER_DELETE_DRAWINGS'
+    ↓
+    ↓ handleAction('LAYER_DELETE_DRAWINGS')
+    ↓ deleteActiveLayerDrawings()
+    ↓
+    ↓ layerSystem.getActiveLayer()
+    ↓ if (isBackground) return
+    ↓ pathsBackup = structuredClone(paths)
+    ↓
+    ↓ History.push({
+    ↓   do: clearLayerDrawings(),
+    ↓   undo: restoreLayerDrawings(pathsBackup)
+    ↓ })
+    ↓
+    ↓ clearLayerDrawings()
+    ↓   - layer.layerData.paths = []
+    ↓   - child.destroy()
+    ↓   - eventBus.emit('layer:drawings-deleted')
+    ↓   - requestThumbnailUpdate()
+
+================================================================================
+【4】グローバルオブジェクト索引
+================================================================================
+
+【4-1】設定・定義系
+
+window.TEGAKI_CONFIG
+    📁 config.js
+    - canvas: {width, height}
+    - pen: {size, opacity, color, pressure}
+    - webgpu: {enabled, sdf, msdf}
+    - camera: {minScale, maxScale, ...}
+    - layer: {minX, maxX, minScale, ...}
+    - background: {color}
+    - history: {maxSize, autoSaveInterval}
+    - thumbnail: {SIZE, RENDER_SCALE}
+    - animation: {defaultFPS, ...}
+
+window.TEGAKI_KEYMAP
+    📁 config.js
+    - actions: {Object}
+    - getAction(event, context)
+    - getKeyDisplayName(keyCode)
+    - getShortcutList()
+
+window.TEGAKI_KEYCONFIG
+    📁 config.js
+    ⚠️ 旧式定義・TEGAKI_KEYMAPと重複
+    🔧 削除推奨
+
+window.TEGAKI_COLORS
+    📁 config.js
+    - futaba色パレット定義
+
+【4-2】システム系
+
+window.TegakiEventBus
+    📁 event-bus.js
+    - on(event, callback, priority)
+    - off(event, callback)
+    - emit(event, data)
+    - once(event, callback, priority)
+    - EVENTS: {定数定義}
+
+window.CoordinateSystem
+    📁 coordinate-system.js
+    - screenClientToCanvas()
+    - canvasToWorld()
+    - worldToLocal()
+    ⚠️ window.TEGAKI_COORDINATE_SYSTEMとの重複あり
+
+window.cameraSystem
+    📁 camera-system.js (TegakiCameraSystem)
+    - worldContainer, canvasContainer
+    - resetCanvas()
+    - resizeCanvas()
+    - setZoom(), pan()
+    - screenToLayer(), screenToCanvas()
+
+window.layerManager
+    📁 layer-system.js (TegakiLayerSystem)
+    - currentFrameContainer
+    - activeLayerIndex
+    - transform (TegakiLayerTransform)
+    - getLayers(), getActiveLayer()
+    - createLayer(), deleteLayer()
+    - setActiveLayer()
+    - flipActiveLayer()
+    - addPathToActiveLayer()
+
+window.History
+    📁 history.js
+    - push(entry)
+    - undo(), redo()
+    - canUndo(), canRedo()
+    - _manager.isApplying
+
+【4-3】描画系
+
+window.drawingEngine
+    📁 drawing-engine.js
+    - startStroke(), addStrokePoint(), endStroke()
+    - pointerHandler, pressureHandler
+    - strokeRecorder, strokeRenderer
+
+window.brushSettings
+    📁 brush-settings.js
+    - getColor(), setColor()
+    - getSize(), setSize()
+    - getOpacity(), setOpacity()
+
+window.brushCore
+    📁 brush-core.js
+    - currentTool ('pen' or 'eraser')
+    - setTool(tool)
+    - getTool()
+
+【4-4】UI系
+
+window.KeyboardHandler
+    📁 keyboard-handler.js
+    - init()
+    - isVKeyPressed()
+    - setVKeyPressed(state)
+    - deleteActiveLayerDrawings()
+
+window.timelineUI
+    📁 timeline-ui.js
+    - isVisible
+    - goToPreviousCutSafe()
+    - goToNextCutSafe()
+    - togglePlayStop()
+
+window.animationSystem
+    📁 animation-system.js
+    - createNewEmptyFrame()
+    - getCurrentFrameIndex()
+    - generateFrameThumbnail()
+
+================================================================================
+【5】メソッド責務マトリクス
+================================================================================
+
+【5-1】座標変換
+
+┌──────────────────────┬─────────────────────┐
+│ メソッド             │ 責務ファイル        │
+├──────────────────────┼─────────────────────┤
+│ screenClientToCanvas │ coordinate-system.js│
+│ canvasToWorld        │ coordinate-system.js│
+│ worldToLocal         │ coordinate-system.js│
+│ screenClientToWorld  │ camera-system.js ⚠️ │
+│ worldToScreen        │ camera-system.js ⚠️ │
+│ screenToLayer        │ camera-system.js ⚠️ │
+│ screenToCanvas       │ camera-system.js ⚠️ │
+└──────────────────────┴─────────────────────┘
+
+🔧 改修提案：camera-system内のメソッドを
+   coordinate-system.js呼び出しに統一
+
+【5-2】レイヤー操作
+
+┌──────────────────────┬─────────────────────┐
+│ メソッド             │ 責務ファイル        │
+├──────────────────────┼─────────────────────┤
+│ createLayer          │ layer-system.js     │
+│ deleteLayer          │ layer-system.js     │
+│ setActiveLayer       │ layer-system.js     │
+│ flipActiveLayer      │ layer-system.js     │
+│ moveActiveLayer      │ layer-system.js     │
+│ transformActiveLayer │ layer-system.js     │
+│ reorderLayers        │ layer-system.js     │
+│ addPathToActiveLayer │ layer-system.js     │
+│ rebuildPathGraphics  │ layer-system.js     │
+│ safeRebuildLayer     │ layer-system.js     │
+└──────────────────────┴─────────────────────┘
+
+【5-3】トランスフォーム
+
+┌──────────────────────┬─────────────────────┐
+│ メソッド             │ 責務ファイル        │
+├──────────────────────┼─────────────────────┤
+│ flipLayer            │ layer-transform.js  │
+│ moveLayer            │ layer-transform.js  │
+│ scaleLayer           │ layer-transform.js  │
+│ rotateLayer          │ layer-transform.js  │
+│ confirmTransform     │ layer-transform.js  │
+│ enterMoveMode        │ layer-transform.js  │
+│ exitMoveMode         │ layer-transform.js  │
+│ updateTransform      │ layer-transform.js  │
+│ applyTransform       │ layer-transform.js  │
+└──────────────────────┴─────────────────────┘
+
+【5-4】カメラ操作
+
+┌──────────────────────┬─────────────────────┐
+│ メソッド             │ 責務ファイル        │
+├──────────────────────┼─────────────────────┤
+│ resetCanvas          │ camera-system.js    │
+│ resizeCanvas         │ camera-system.js    │
+│ setZoom              │ camera-system.js    │
+│ pan                  │ camera-system.js    │
+│ _handleWheelZoom     │ camera-system.js    │
+│ _handleWheelRotation │ camera-system.js    │
+│ _handleCameraFlipKeys│ camera-system.js    │
+└──────────────────────┴─────────────────────┘
+
+【5-5】History管理
+
+┌──────────────────────┬─────────────────────┐
+│ メソッド             │ 責務ファイル        │
+├──────────────────────┼─────────────────────┤
+│ push                 │ history.js          │
+│ undo                 │ history.js          │
+│ redo                 │ history.js          │
+│ canUndo              │ history.js          │
+│ canRedo              │ history.js          │
+└──────────────────────┴─────────────────────┘
+
+================================================================================
+【6】イベント名一覧
+================================================================================
+
+【6-1】キーボード関連
+
+keyboard:vkey-pressed
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupVKeyEvents()
+    📥 camera-system.js → setVKeyPressed() (間接)
+
+【6-2】レイヤー関連
+
+layer:created
+    📤 layer-system.js → createLayer()
+    📥 未確認
+
+layer:deleted
+    📤 layer-system.js → deleteLayer()
+    📥 未確認
+
+layer:activated
+    📤 layer-system.js → setActiveLayer()
+    📥 layer-panel-renderer.js (推測)
+
+layer:updated
+    📤 layer-system.js → 各種操作
+    📥 未確認
+
+layer:transform-updated
+    📤 layer-system.js → flipActiveLayer()
+    📥 未確認
+
+layer:transform-confirmed
+    📤 layer-system.js → transform.onTransformComplete
+    📥 未確認
+
+layer:flip-by-key
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+
+layer:move-by-key
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+
+layer:scale-by-key
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+
+layer:rotate-by-key
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+
+layer:select-next
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+
+layer:select-prev
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+
+layer:order-up
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+
+layer:order-down
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+
+layer:copy-request
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+         → drawing-clipboard.js
+
+layer:paste-request
+    📤 keyboard-handler.js
+    📥 layer-system.js → _setupLayerOperations()
+         → drawing-clipboard.js
+
+⚠️ layer:clear-active
+    📤 keyboard-handler.js
+    ❌ リスナーが見当たらない
+
+layer:drawings-deleted
+    📤 keyboard-handler.js → deleteActiveLayerDrawings()
+    📥 未確認
+
+layer:drawings-restored
+    📤 keyboard-handler.js → restoreLayerDrawings()
+    📥 未確認
+
+layer:panel-update-requested
+    📤 layer-system.js → _emitPanelUpdateRequest()
+    📥 layer-panel-renderer.js
+
+layer:status-update-requested
+    📤 layer-system.js → _emitStatusUpdateRequest()
+    📥 status-display-renderer.js
+
+layer:stroke-added
+    📤 layer-system.js → addPathToActiveLayer()
+    📥 未確認
+
+layer:background-color-changed
+    📤 layer-system.js → changeBackgroundLayerColor()
+    📥 未確認
+
+layer:opacity-changed
+    📤 layer-system.js → setLayerOpacity()
+    📥 未確認
+
+layer:visibility-changed
+    📤 layer-system.js → toggleLayerVisibility()
+    📥 未確認
+
+【6-3】カメラ関連
+
+camera:flip-horizontal
+    📤 keyboard-handler.js
+    ❌ camera-system.jsにリスナーなし
+    🔍 実装は_handleCameraFlipKeys()で独立
+
+camera:flip-vertical
+    📤 keyboard-handler.js
+    ❌ camera-system.jsにリスナーなし
+    🔍 実装は_handleCameraFlipKeys()で独立
+
+camera:reset
+    📤 keyboard-handler.js
+    ❌ camera-system.jsにリスナーなし
+    🔍 実装はkeydownイベントで独立
+
+camera:transform-changed
+    📤 camera-system.js → 各種操作
+    📥 status-display-renderer.js (推測)
+
+camera:canvas-move-mode
+    📤 camera-system.js
+    📥 未確認
+
+camera:cursor-changed
+    📤 camera-system.js
+    📥 ui-panels.js等
+
+camera:resized
+    📤 camera-system.js → resizeCanvas()
+    📥 layer-system.js → _setupResizeEvents()
+
+【6-4】ツール関連
+
+tool:select
+    📤 不明
+    📥 layer-system.js → _setupLayerOperations()
+
+ui:sidebar:sync-tool
+    📤 keyboard-handler.js
+    📥 ui-panels.js (推測)
+
+【6-5】アニメーション/GIF関連
+
+animation:system-ready
+    📤 animation-system.js
+    📥 layer-system.js → _setupAnimationSystemIntegration()
+
+animation:frame-applied
+    📤 animation-system.js
+    📥 layer-system.js
+
+animation:frame-created
+    📤 animation-system.js
+    📥 layer-system.js
+
+animation:frame-deleted
+    📤 animation-system.js
+    📥 layer-system.js
+
+frame:copy-current
+    📤 keyboard-handler.js
+    📥 timeline-ui.js等
+
+frame:paste-right-adjacent
+    📤 keyboard-handler.js
+    📥 timeline-ui.js等
+
+frame:updated
+    📤 layer-system.js → markFrameThumbnailDirty()
+    📥 timeline-ui.js等
+
+【6-6】UI関連
+
+ui:toggle-timeline
+    📤 keyboard-handler.js
+    📥 timeline-ui.js
+
+ui:open-settings
+    📤 keyboard-handler.js
+    📥 settings-popup.js
+
+ui:toggle-export
+    📤 keyboard-handler.js
+    📥 export-popup.js
+
+ui:toggle-quick-access
+    📤 keyboard-handler.js
+    📥 quick-access-popup.js
+
+【6-7】History関連
+
+history:changed
+    📤 history.js
+    📥 未確認
+
+history:undo-completed
+    📤 history.js
+    📥 未確認
+
+history:redo-completed
+    📤 history.js
+    📥 未確認
+
+【6-8】サムネイル関連
+
+thumbnail:layer-updated
+    📤 layer-system.js → requestThumbnailUpdate()
+    📥 thumbnail-system.js (推測)
+
+================================================================================
+【7】多重実装・重複の詳細分析
+================================================================================
+
+【7-1】⚠️ Vキー状態管理の多重実装
+
+実装箇所A: keyboard-handler.js
+    変数: vKeyPressed (let)
+    更新: handleKeyDown() でトグル
+    通知: eventBus.emit('keyboard:vkey-pressed')
+    
+実装箇所B: camera-system.js
+    変数: vKeyPressed
+    更新: setVKeyPressed(pressed) 経由
+    用途: カーソル表示制御
+    
+実装箇所C: layer-transform.js
+    変数: isVKeyPressed
+    更新: enterMoveMode(), exitMoveMode()
+    用途: トランスフォームモード判定
+    
+実装箇所D: layer-system.js
+    ゲッター: get vKeyPressed()
+    実装: return this.transform?.isVKeyPressed || false
+    用途: 外部からの状態確認
+
+🔧 改修提案：
+    - keyboard-handler.jsを唯一の真実の源(Single Source of Truth)とする
+    - 他の全箇所はEventBus経由で同期
+    - camera-system.js: eventBus.on('keyboard:vkey-pressed')で更新
+    - layer-transform.js: eventBus.on('keyboard:vkey-pressed')で更新
+    - layer-system.js: ゲッターは削除、transform経由で参照
+
+【7-2】⚠️ 座標変換メソッドの重複
+
+coordinate-system.js (正規実装)
+    - screenClientToCanvas(screenX, screenY)
+    - canvasToWorld(canvasX, canvasY)
+    - worldToLocal(worldX, worldY, layer)
+    
+camera-system.js (重複実装)
+    - screenClientToWorld(app, clientX, clientY)
+    - worldToScreen(app, worldX, worldY)
+    - screenToLayer(screenX, screenY)
+    - screenToCanvas(screenX, screenY)
+
+問題点：
+    1. 同じ機能を異なる名前で実装
+    2. coordinate-system.jsの存在意義が不明確化
+    3. メンテナンスコストの増加
+    4. 変換ロジックの不整合リスク
+
+🔧 改修提案：
+    camera-system.js内のメソッドを削除し、
+    coordinate-system.jsの統一APIを使用：
+    
+    // 削除対象
+    - screenClientToWorld() → CoordinateSystem.screenClientToCanvas() + canvasToWorld()
+    - worldToScreen() → 新規実装が必要ならcoordinate-system.jsに追加
+    - screenToLayer() → CoordinateSystem.worldToLocal()使用
+    - screenToCanvas() → CoordinateSystem.screenClientToCanvas()使用
+
+【7-3】⚠️ カメラ反転イベントの不整合
+
+keyboard-handler.js
+    case 'CAMERA_FLIP_HORIZONTAL':
+        eventBus.emit('camera:flip-horizontal');
+        
+    case 'CAMERA_FLIP_VERTICAL':
+        eventBus.emit('camera:flip-vertical');
+
+camera-system.js
+    ❌ 'camera:flip-horizontal' のリスナーなし
+    ❌ 'camera:flip-vertical' のリスナーなし
+    
+    実装は _handleCameraFlipKeys() で独立:
+    document.addEventListener('keydown', (e) => {
+        ...
+        this._handleCameraFlipKeys(e);
+    });
+
+問題点：
+    1. EventBusで発火されているが受信されない
+    2. 実際の処理はkeydownイベントで直接実行
+    3. keyboard-handler.jsとcamera-system.jsの二重処理の可能性
+
+🔧 改修提案：
+    パターンA: EventBus統一
+        camera-system.jsに以下を追加:
+        eventBus.on('camera:flip-horizontal', () => {...});
+        eventBus.on('camera:flip-vertical', () => {...});
+        _handleCameraFlipKeys()内のHキー処理を削除
+        
+    パターンB: 直接処理統一
+        keyboard-handler.jsから以下を削除:
+        eventBus.emit('camera:flip-horizontal');
+        eventBus.emit('camera:flip-vertical');
+        camera-system.js側の処理のみ残す
+
+【7-4】⚠️ TEGAKI_KEYCONFIG の廃止推奨
+
+config.js内に2つのキーマップ定義:
+
+実装A: window.TEGAKI_KEYMAP (新式・使用中)
+    - actions: {...}
+    - getAction(event, context)
+    - getKeyDisplayName(keyCode)
+    - getShortcutList()
+
+実装B: window.TEGAKI_KEYCONFIG (旧式・未使用)
+    - pen: 'KeyP'
+    - eraser: 'KeyE'
+    - layerMode: 'KeyV'
+    - canvasReset: 'Digit0'
+    - horizontalFlip: 'KeyH'
+    - ... (単純なkey-valueマップ)
+
+使用状況：
+    ✅ TEGAKI_KEYMAP: keyboard-handler.jsで使用
+    ❌ TEGAKI_KEYCONFIG: どこからも参照されていない
+
+🔧 改修提案：
+    TEGAKI_KEYCONFIGを完全削除
+
+【7-5】⚠️ layer:clear-active イベントの未実装
+
+keyboard-handler.js (発火側)
+    case 'LAYER_CLEAR':
+        eventBus.emit('layer:clear-active');
+        event.preventDefault();
+        break;
+
+❌ リスナーが存在しない
+
+config.js (定義)
+    LAYER_CLEAR: {
+        key: 'Delete',
+        ctrl: true,
+        shift: false,
+        description: 'レイヤークリア'
+    }
+
+問題点：
+    1. Ctrl+Deleteのショートカットが定義されているが動作しない
+    2. layer:clear-activeイベントを受け取る箇所がない
+    3. LAYER_DELETE_DRAWINGS (Delete単体) との機能重複
+
+🔧 改修提案：
+    パターンA: 機能実装
+        layer-system.jsに追加:
+        eventBus.on('layer:clear-active', () => {
+            // アクティブレイヤーの全描画をクリア
+            // LAYER_DELETE_DRAWINGSと同じ処理
+        });
+        
+    パターンB: 削除
+        不要なら config.js から LAYER_CLEAR定義を削除
+
+================================================================================
+【8】ファイル依存関係ツリー
+================================================================================
+
+【8-1】設定・基盤レイヤー (Layer 0)
+
+config.js
+    ├─ 子: 全ファイル (TEGAKI_CONFIG参照)
+    └─ 親: なし
+
+event-bus.js
+    ├─ 子: 全システムファイル
+    └─ 親: なし
+
+coordinate-system.js
+    ├─ 子: camera-system.js, layer-system.js, drawing-engine.js
+    └─ 親: なし
+
+【8-2】データ/ユーティリティレイヤー (Layer 1)
+
+data-models.js
+    ├─ 子: layer-system.js
+    └─ 親: なし
+
+history.js
+    ├─ 子: layer-system.js, keyboard-handler.js
+    └─ 親: event-bus.js
+
+batch-api.js
+    ├─ 子: 不明
+    └─ 親: なし
+
+【8-3】システムコアレイヤー (Layer 2)
+
+camera-system.js
+    ├─ 子: drawing-engine.js, layer-transform.js
+    ├─ 親: config.js, event-bus.js, coordinate-system.js
+    └─ 依存: layerManager (相互参照)
+
+layer-system.js
+    ├─ 子: drawing-engine.js, layer-panel-renderer.js
+    ├─ 親: event-bus.js, data-models.js, layer-transform.js
+    │       coordinate-system.js, config.js, history.js
+    └─ 依存: cameraSystem, animationSystem
+
+layer-transform.js
+    ├─ 子: layer-system.js (逆向き委譲)
+    ├─ 親: config.js, coordinate-system.js
+    └─ 依存: vectorOperations, cameraSystem
+
+【8-4】描画システムレイヤー (Layer 3)
+
+drawing-engine.js
+    ├─ 子: ui-panels.js, core-engine.js
+    ├─ 親: camera-system.js, layer-system.js
+    │       pointer-handler.js, pressure-handler.js
+    │       stroke-recorder.js, stroke-renderer.js
+    └─ 依存: brushCore, brushSettings
+
+stroke-recorder.js
+    ├─ 子: drawing-engine.js
+    └─ 親: なし (純粋データ記録)
+
+stroke-renderer.js
+    ├─ 子: drawing-engine.js
+    └─ 親: sdf-mesh-builder.js, msdf-brush-shader.js
+
+brush-core.js
+    ├─ 子: drawing-engine.js, core-runtime.js
+    └─ 親: brushSettings
+
+brush-settings.js
+    ├─ 子: brush-core.js, drawing-engine.js
+    └─ 親: config.js
+
+【8-5】UIレイヤー (Layer 4)
+
+keyboard-handler.js
+    ├─ 子: core-initializer.js
+    ├─ 親: config.js, event-bus.js, history.js
+    │       core-runtime.js (api参照)
+    └─ 依存: layerSystem (window.drawingApp.layerManager)
+
+layer-panel-renderer.js
+    ├─ 子: ui-panels.js
+    └─ 親: event-bus.js (layer:* イベント購読)
+
+timeline-ui.js
+    ├─ 子: core-engine.js
+    └─ 親: animationSystem
+
+ui-panels.js
+    ├─ 子: core-initializer.js
+    └─ 親: 各種UI系ファイル
+
+【8-6】統合レイヤー (Layer 5)
+
+core-runtime.js
+    ├─ 子: keyboard-handler.js, 各種UI
+    ├─ 親: 全システム
+    └─ 提供: window.CoreRuntime.api
+
+core-engine.js
+    ├─ 子: core-initializer.js
+    ├─ 親: 全システム
+    └─ 統合: 全機能の初期化・連携
+
+core-initializer.js
+    ├─ 子: index.html (エントリーポイント)
+    └─ 親: core-engine.js
+
+================================================================================
+【9】廃止・統合の検討対象
+================================================================================
+
+【9-1】✅ 即座に削除可能
+
+1. window.TEGAKI_KEYCONFIG (config.js)
+    理由: どこからも参照されていない
+    影響: なし
+    
+2. window.TEGAKI_COORDINATE_SYSTEM (もし存在すれば)
+    理由: window.CoordinateSystemと重複
+    影響: 参照箇所を全てCoordinateSystemに統一
+
+【9-2】🔧 改修後に削除可能
+
+1. camera-system.js内の座標変換メソッド
+    - screenClientToWorld()
+    - worldToScreen()
+    - screenToLayer()
+    - screenToCanvas()
+    理由: coordinate-system.jsと機能重複
+    改修: coordinate-system.jsのAPIを使用するよう修正後に削除
+
+2. camera-system.js内の_handleCameraFlipKeys()のHキー処理
+    理由: EventBus統一後は不要
+    改修: EventBusリスナー実装後に削除
+
+3. layer-system.js内の vKeyPressed ゲッター
+    理由: keyboard-handler.jsへの統一後は不要
+    改修: 参照箇所を全てEventBus経由に変更後に削除
+
+【9-3】❓ 機能確認が必要
+
+1. LAYER_CLEAR (Ctrl+Delete)
+    現状: 定義あり・実装なし
+    確認事項: 
+        - LAYER_DELETE_DRAWINGSとの機能差は？
+        - 本当に必要な機能か？
+    
+    選択肢A: 実装する
+        → layer-system.jsにリスナー追加
+    
+    選択肢B: 削除する
+        → config.jsから定義削除
+
+2. camera:flip-* イベント
+    現状: 発火されているが受信されない
+    確認事項:
+        - EventBus統一すべきか？
+        - 直接処理で十分か？
+    
+    選択肢A: EventBus統一
+        → camera-system.jsにリスナー追加
+        → _handleCameraFlipKeys()から処理削除
+    
+    選択肢B: 直接処理のみ
+        → keyboard-handler.jsからイベント発火削除
+
+【9-4】🔍 将来的な統合候補
+
+1. tool:* イベントと ui:sidebar:sync-tool
+    現状: ツール切り替え時のUI同期が分散
+    統合案: tool:changed イベントに統一
+
+2. layer:* イベントの整理
+    現状: 20種類以上のイベントが存在
+    統合案: 
+        - layer:state-changed に集約
+        - payloadで詳細を判断
+        - 必要に応じて個別イベントも残す
+
+================================================================================
+【10】改修優先順位
+================================================================================
+
+【優先度: 高 (即座に対応)】
+
+🔧 1. TEGAKI_KEYCONFIG の削除
+    影響範囲: なし
+    作業時間: 5分
+    リスク: なし
+    
+🔧 2. layer:clear-active の実装 or 削除判断
+    影響範囲: keyboard-handler.js, config.js, layer-system.js
+    作業時間: 30分
+    リスク: 低
+    
+🔧 3. camera:flip-* イベントの統一
+    影響範囲: keyboard-handler.js, camera-system.js
+    作業時間: 1時間
+    リスク: 中 (テスト必須)
+
+【優先度: 中 (計画的に対応)】
+
+🔧 4. Vキー状態管理の一元化
+    影響範囲: keyboard-handler.js, camera-system.js,
+              layer-transform.js, layer-system.js
+    作業時間: 2時間
+    リスク: 中 (広範囲の変更)
+    
+🔧 5. 座標変換メソッドの統一
+    影響範囲: camera-system.js, coordinate-system.js,
+              drawing-engine.js (呼び出し側)
+    作業時間: 3時間
+    リスク: 高 (座標系の核心部分)
+
+【優先度: 低 (リファクタリング時に)】
+
+🔧 6. layer:* イベントの整理
+    影響範囲: 全システム
+    作業時間: 半日以上
+    リスク: 高
+    
+🔧 7. ファイル依存関係の文書化強化
+    影響範囲: 全ファイルのヘッダーコメント
+    作業時間: 1日
+    リスク: なし
+
+================================================================================
+【11】テスト項目チェックリスト
+================================================================================
+
+【基本動作テスト】
+
+✅ ペン/消しゴム切り替え (P/E)
+✅ レイヤー追加 (Ctrl+L)
+✅ レイヤー削除の絵 (Delete/Backspace)
+✅ Undo/Redo (Ctrl+Z/Y)
+
+【Vキーモードテスト】
+
+✅ Vキー押下でトランスフォームパネル表示
+✅ V + 矢印キーでレイヤー移動
+✅ V + Shift + 矢印キーで拡大縮小・回転
+✅ V + H でレイヤー水平反転
+✅ V + Shift + H でレイヤー垂直反転
+✅ V + Ctrl + 0 でリセット
+✅ Vキー離脱でパネル非表示
+
+【カメラ操作テスト】
+
+✅ H でキャンバス水平反転
+✅ Shift + H でキャンバス垂直反転
+✅ Ctrl + 0 でカメラリセット
+✅ Space + ドラッグでキャンバス移動
+✅ Space + Shift + ドラッグで拡縮・回転
+✅ ホイールでズーム
+
+【反転History動作テスト】
+
+✅ V + H 後に Ctrl+Z で元に戻る
+✅ V + Shift + H 後に Ctrl+Z で元に戻る
+✅ H 後に Ctrl+Z で元に戻る
+✅ Shift + H 後に Ctrl+Z で元に戻る
+✅ 反転→Undo→Redoで正しく動作
+
+【問題箇所テスト】
+
+⚠️ Ctrl + Delete でレイヤークリア
+    → 期待: レイヤーの絵が全削除
+    → 実際: 動作しない（未実装）
+
+🔍 Vキー状態の同期
+    → Vキー押下中にウィンドウフォーカス喪失
+    → 期待: Vキー状態がリセットされる
+    → 確認: keyboard-handler/camera-system両方でリセット
+
+🔍 カメラ反転イベント
+    → H/Shift+H押下時
+    → 確認: EventBusでイベント発火されているか
+    → 確認: camera-system.jsで処理されているか
+
+================================================================================
+【12】推奨される次のアクション
+================================================================================
+
+【Phase 1: クリーンアップ (1-2時間)】
+
+1. ✅ TEGAKI_KEYCONFIG削除
+    ファイル: config.js
+    
+2. 🔧 layer:clear-active判断
+    オプションA: 削除（LAYER_DELETE_DRAWINGSと重複）
+    オプションB: 実装（別機能として必要）
+
+3. 🔧 使用されていないイベント定義の削除
+    調査対象: event-bus.js の EVENTS定数
+
+【Phase 2: 統一化 (2-3時間)】
+
+4. 🔧 camera:flip-* イベントの統一
+    推奨: EventBus統一パターン
+    
+5. 🔧 Vキー状態管理の一元化
+    推奨: keyboard-handler.jsを真実の源とする
+
+【Phase 3: リファクタリング (半日)】
+
+6. 🔧 座標変換メソッドの統一
+    coordinate-system.jsに全機能集約
+    
+7. 📝 ファイルヘッダーの依存関係更新
+    各ファイルに正確な親子関係を記述
+
+【Phase 4: テスト・検証 (2-3時間)】
+
+8. ✅ 全ショートカットの動作確認
+9. ✅ Historyの二重登録チェック
+10. ✅ イベントフローの整合性確認
+
+================================================================================
+【付録A】グローバル変数汚染の状況
+================================================================================
+
+window直下に定義されているオブジェクト:
+
+[設定系]
+- TEGAKI_CONFIG
+- TEGAKI_KEYMAP
+- TEGAKI_KEYCONFIG ⚠️ 未使用・削除推奨
+- TEGAKI_COLORS
+- TEGAKI_UTILS
+
+[システム系]
+- TegakiEventBus
+- CoordinateSystem
+- TEGAKI_COORDINATE_SYSTEM ⚠️ 重複の可能性
+
+[インスタンス系]
+- cameraSystem
+- layerManager (drawingApp.layerManager経由も)
+- drawingEngine
+- animationSystem
+- timelineUI
+
+[ユーティリティ系]
+- KeyboardHandler
+- History
+- brushCore
+- brushSettings
+- drawingClipboard
+- checkerUtils
+
+[統合API系]
+- CoreRuntime
+- CoreEngine
+- CoreInitializer
+
+[クラス定義系]
+- TegakiCameraSystem
+- TegakiLayerSystem
+- TegakiLayerTransform
+- TegakiAnimationSystem
+- EventBus
+
+合計: 約30個のグローバル変数
+
+🔧 改修提案: 
+    window.Tegaki = { ... } のような
+    単一の名前空間に統合することを検討
+
+================================================================================
+【付録B】コンソールログ削除候補
+================================================================================
+
+各ファイル末尾の読み込み確認ログ:
+    console.log('✅ xxx.js loaded')
+    
+削除推奨理由:
+    - 本番環境では不要
+    - デバッグ時はNetwork/Sourcesパネルで確認可能
+    - 過剰なコンソール出力
+
+代替案:
+    - window.TEGAKI_CONFIG.debugがtrueの時のみ出力
+    - または完全削除
+
+================================================================================
+【付録C】未使用export/importの可能性
+================================================================================
+
+注意: 本ツールはES Modulesを使用していないため、
+      export/import構文は使用されていない。
+      
+全てグローバル変数での連携となっており、
+これが依存関係の不明確化の一因となっている。
+
+将来的なモジュール化の検討:
+    1. ES Modules化
+    2. 明示的なimport/export
+    3. bundler (Vite等) の導入
+
+ただしガイドラインで禁止されているため、
+現状維持も選択肢。
+
+================================================================================
+End of Document
+================================================================================
