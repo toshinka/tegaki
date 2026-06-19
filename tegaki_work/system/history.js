@@ -19,7 +19,8 @@ export class HistoryManager {
         this.stack = [];
         this.index = -1;
         this.isApplying = false;
-        this.maxSize = 500;
+        this.maxSize = 250;
+        this.maxMemoryBytes = 256 * 1024 * 1024;
         
         // 後方互換性
         this._manager = this;
@@ -52,11 +53,7 @@ export class HistoryManager {
             this.stack.push(command);
             this.index++;
             
-            // スタックサイズ制限
-            if (this.stack.length > this.maxSize) {
-                this.stack.shift();
-                this.index--;
-            }
+            this._enforceLimits();
             
             this._notifyHistoryChanged(command, 'push');
             
@@ -82,10 +79,7 @@ export class HistoryManager {
         this.stack.push(command);
         this.index++;
 
-        if (this.stack.length > this.maxSize) {
-            this.stack.shift();
-            this.index--;
-        }
+        this._enforceLimits();
 
         if (window.TEGAKI_CONFIG?.debug) {
             console.log(`[History] Record applied: ${command.name}`, command.meta || {});
@@ -168,6 +162,55 @@ export class HistoryManager {
         this._notifyHistoryChanged(null, 'clear');
     }
 
+    configureLimits(options = {}) {
+        const maxEntries = Number(options.maxEntries);
+        const maxMemoryMB = Number(options.maxMemoryMB);
+        if (Number.isFinite(maxEntries)) {
+            this.maxSize = Math.max(1, Math.round(maxEntries));
+        }
+        if (Number.isFinite(maxMemoryMB)) {
+            this.maxMemoryBytes = Math.max(1, maxMemoryMB) * 1024 * 1024;
+        }
+        this._enforceLimits();
+        this._notifyHistoryChanged(null, 'limits-changed');
+    }
+
+    getUsage() {
+        return {
+            entries: this.stack.length,
+            maxEntries: this.maxSize,
+            bytes: this._getTotalByteSize(),
+            maxBytes: this.maxMemoryBytes
+        };
+    }
+
+    _getCommandByteSize(command) {
+        const declared = Number(command?.byteSize ?? command?.meta?.byteSize);
+        return Number.isFinite(declared) && declared > 0 ? declared : 0;
+    }
+
+    _getTotalByteSize() {
+        return this.stack.reduce((total, command) => {
+            return total + this._getCommandByteSize(command);
+        }, 0);
+    }
+
+    _enforceLimits() {
+        let totalBytes = this._getTotalByteSize();
+        while (
+            this.stack.length > 0
+            && (
+                this.stack.length > this.maxSize
+                || (this.stack.length > 1 && totalBytes > this.maxMemoryBytes)
+            )
+        ) {
+            const removed = this.stack.shift();
+            totalBytes -= this._getCommandByteSize(removed);
+            this.index--;
+        }
+        this.index = Math.max(-1, Math.min(this.index, this.stack.length - 1));
+    }
+
     createComposite(commands, name = 'composite') {
         return {
             name: name,
@@ -200,6 +243,7 @@ export class HistoryManager {
                 canRedo: this.canRedo(),
                 stackSize: this.stack.length,
                 currentIndex: this.index,
+                usage: this.getUsage(),
                 action,
                 commandName: command?.name || null,
                 meta: command?.meta || null

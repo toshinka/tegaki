@@ -1059,21 +1059,20 @@ export class AnimationTablePopup {
         const beforeState = this._drawingHistoryBeforeStates.get(layerId) || null;
         this._drawingHistoryBeforeStates.delete(layerId);
         const asset = this._getSelectedAssetForInspector();
-        const selectedInternalLayerId = this.selectedInternalLayerId || null;
-
-        this._captureSelectedClip({
-            silent: true,
-            requireSourceLayerId: this.isAutoCaptureActive ? layerId : null,
-            renderAfter: false
-        });
+        const selectedInternalLayerId = beforeState?.internalLayerId
+            || this.selectedInternalLayerId
+            || null;
+        const captured = this._captureDrawingLayerToSelectedClip(layerId, selectedInternalLayerId);
         this.isDrawingPreviewSuspended = false;
         this.render();
         this._requestLayerPanelSync();
 
         const afterAsset = asset?.id ? this.model.getClipAsset(asset.id) : null;
-        const afterState = afterAsset ? this._captureInternalLayerHistoryState(afterAsset) : null;
+        const afterState = captured
+            ? this._captureCafRasterHistoryState(afterAsset, selectedInternalLayerId)
+            : null;
         if (afterAsset && beforeState && afterState) {
-            this._recordInternalLayerHistoryFromStates(afterAsset, beforeState, afterState, 'caf-internal-layer-draw', {
+            this._recordCafRasterHistory(afterAsset, beforeState, afterState, {
                 type: 'caf-internal-layer-draw',
                 clipId: this.selectedCelId,
                 layerId,
@@ -1098,13 +1097,184 @@ export class AnimationTablePopup {
 
         const asset = this._getSelectedAssetForInspector();
         if (asset) {
-            this._drawingHistoryBeforeStates.set(layerId, this._captureInternalLayerHistoryState(asset));
+            const internalLayerId = this._resolveInternalLayerIdForWorkingLayer(asset, layerId);
+            const beforeState = this._captureCafRasterHistoryState(asset, internalLayerId);
+            if (beforeState) {
+                this._drawingHistoryBeforeStates.set(layerId, beforeState);
+            }
         }
         this._invalidateWorkingLayerSnapshotId(layerId);
         if (this.isPreviewActive) {
             this.isDrawingPreviewSuspended = true;
             this._applyDrawingVisibilityPreview();
         }
+    }
+
+    _resolveInternalLayerIdForWorkingLayer(asset, workingLayerId) {
+        if (!asset || !workingLayerId) return this.selectedInternalLayerId || null;
+        const workingLayers = this._getRasterWorkingLayers();
+        const workingIndex = workingLayers.findIndex(layer => layer.layerData?.id === workingLayerId);
+        if (workingIndex < 0) return this.selectedInternalLayerId || null;
+        return this._getDrawableInternalLayers(asset)[workingIndex]?.id
+            || this.selectedInternalLayerId
+            || null;
+    }
+
+    _captureDrawingLayerToSelectedClip(workingLayerId, internalLayerId) {
+        if (!workingLayerId || !internalLayerId || !this.layerSystem) return false;
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
+        const internalLayer = asset?.internalLayers?.find(layer => layer.id === internalLayerId);
+        const workingLayer = (this.layerSystem.getLayers?.() || [])
+            .find(layer => layer.layerData?.id === workingLayerId);
+        if (!entry?.clip || !asset || !internalLayer || !workingLayer) return false;
+
+        const rawSnapshot = this.layerSystem.createLayerRasterSnapshot(workingLayer);
+        if (!rawSnapshot?.pixels) return false;
+        const drawingSnapshot = new DrawingSnapshotModel({
+            width: rawSnapshot.width,
+            height: rawSnapshot.height,
+            pixels: new Uint8ClampedArray(rawSnapshot.pixels),
+            isBlank: this._isRasterSnapshotBlank(rawSnapshot)
+        });
+        this.model.drawingSnapshots.push(drawingSnapshot);
+        internalLayer.drawingSnapshotId = drawingSnapshot.id;
+        internalLayer.updatedAt = Date.now();
+        asset.updatedAt = Date.now();
+
+        const drawableLayers = this._getDrawableInternalLayers(asset);
+        if (drawableLayers[0]?.id === internalLayer.id) {
+            asset.drawingSnapshotId = drawingSnapshot.id;
+            entry.clip.rasterSnapshot = {
+                width: rawSnapshot.width,
+                height: rawSnapshot.height,
+                pixels: new Uint8ClampedArray(rawSnapshot.pixels)
+            };
+        }
+
+        workingLayer.layerData.animationSnapshotId = drawingSnapshot.id;
+        this.selectedInternalLayerId = internalLayer.id;
+        this.selectedAssetId = asset.id;
+        this.selectedAssetFolderId = asset.folderId || null;
+        this._invalidateSnapshotTextureCache();
+        return true;
+    }
+
+    _captureCafRasterHistoryState(asset, internalLayerId) {
+        if (!asset || !internalLayerId) return null;
+        const internalLayer = asset.internalLayers?.find(layer => layer.id === internalLayerId);
+        const snapshot = internalLayer?.drawingSnapshotId
+            ? this.model.getDrawingSnapshot(internalLayer.drawingSnapshotId)
+            : null;
+        if (!internalLayer || !snapshot?.pixels) return null;
+
+        return {
+            assetId: asset.id,
+            clipId: this.selectedCelId || null,
+            internalLayerId,
+            layer: internalLayer.serialize ? internalLayer.serialize() : { ...internalLayer },
+            snapshot: {
+                id: snapshot.id,
+                width: snapshot.width,
+                height: snapshot.height,
+                pixels: new Uint8ClampedArray(snapshot.pixels),
+                isBlank: snapshot.isBlank === true,
+                createdAt: snapshot.createdAt,
+                updatedAt: snapshot.updatedAt
+            }
+        };
+    }
+
+    _recordCafRasterHistory(asset, beforeState, afterState, meta = {}) {
+        if (!asset || !beforeState || !afterState || !historyManager || historyManager.isApplying) {
+            return false;
+        }
+        const byteSize = (beforeState.snapshot?.pixels?.byteLength || 0)
+            + (afterState.snapshot?.pixels?.byteLength || 0);
+        historyManager.record({
+            name: 'caf-internal-layer-draw',
+            do: () => this._restoreCafRasterHistoryState(afterState),
+            undo: () => this._restoreCafRasterHistoryState(beforeState),
+            byteSize,
+            meta: {
+                historyKind: 'raster',
+                assetId: asset.id,
+                ...meta
+            }
+        });
+        this._collectUnreferencedDrawingSnapshots();
+        return true;
+    }
+
+    _restoreCafRasterHistoryState(state) {
+        if (!state?.assetId || !state.internalLayerId || !state.snapshot) return false;
+        const asset = this.model.getClipAsset(state.assetId);
+        const internalLayer = asset?.internalLayers?.find(layer => layer.id === state.internalLayerId);
+        if (!asset || !internalLayer) return false;
+
+        const restoredSnapshot = new DrawingSnapshotModel({
+            ...state.snapshot,
+            pixels: new Uint8ClampedArray(state.snapshot.pixels)
+        });
+        const snapshotIndex = this.model.drawingSnapshots
+            .findIndex(snapshot => snapshot.id === restoredSnapshot.id);
+        if (snapshotIndex >= 0) {
+            this.model.drawingSnapshots[snapshotIndex] = restoredSnapshot;
+        } else {
+            this.model.drawingSnapshots.push(restoredSnapshot);
+        }
+
+        Object.assign(internalLayer, state.layer, {
+            drawingSnapshotId: restoredSnapshot.id,
+            updatedAt: Date.now()
+        });
+        const drawableLayers = this._getDrawableInternalLayers(asset);
+        if (drawableLayers[0]?.id === internalLayer.id) {
+            asset.drawingSnapshotId = restoredSnapshot.id;
+        }
+        asset.updatedAt = Date.now();
+
+        const entry = (state.clipId ? this.model.findClipEntry(state.clipId) : null)
+            || this._findClipEntryByAssetId(asset.id);
+        if (entry?.clip) {
+            if (drawableLayers[0]?.id === internalLayer.id) {
+                entry.clip.rasterSnapshot = {
+                    width: restoredSnapshot.width,
+                    height: restoredSnapshot.height,
+                    pixels: new Uint8ClampedArray(restoredSnapshot.pixels)
+                };
+            }
+            this.selectedCelId = entry.clip.id;
+            this.activeLaneId = entry.lane?.id || this.activeLaneId;
+            this.model.setCurrentFrame(entry.clip.startFrame);
+            this.model.tracks.forEach(track => {
+                track.active = track.id === this.activeLaneId;
+            });
+        }
+        this.selectedAssetId = asset.id;
+        this.selectedAssetFolderId = asset.folderId || null;
+        this.selectedInternalLayerId = internalLayer.id;
+        this._invalidateSnapshotTextureCache();
+        this._ensureWorkingLayerCapacity(drawableLayers.length);
+        if (entry?.clip) {
+            this._syncClipAssetToWorkingLayers(entry.clip, { forceRestore: true });
+        }
+        this._collectUnreferencedDrawingSnapshots();
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    _collectUnreferencedDrawingSnapshots() {
+        const referencedIds = new Set();
+        (this.model.clipAssets || []).forEach(asset => {
+            if (asset.drawingSnapshotId) referencedIds.add(asset.drawingSnapshotId);
+            (asset.internalLayers || []).forEach(layer => {
+                if (layer.drawingSnapshotId) referencedIds.add(layer.drawingSnapshotId);
+            });
+        });
+        this.model.drawingSnapshots = (this.model.drawingSnapshots || [])
+            .filter(snapshot => referencedIds.has(snapshot.id));
     }
 
     _handleHistoryChanged(data = {}) {

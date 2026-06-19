@@ -74,6 +74,11 @@ export class CoreEngine {
         this.layerSystem = new LayerSystem();
         this.history = historyManager;
         this.settingsManager = new SettingsManager(this.eventBus, this.config);
+        this._applyHistorySettings();
+        this.eventBus.on('settings:updated', () => this._applyHistorySettings());
+        this.eventBus.on('settings:history-auto-adjust', () => this._applyHistorySettings());
+        this.eventBus.on('settings:history-max-entries', () => this._applyHistorySettings());
+        this.eventBus.on('settings:history-max-memory-mb', () => this._applyHistorySettings());
         this.pressureHandler = new PressureHandler();
         this.strokeRenderer = null;
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler);
@@ -118,6 +123,19 @@ export class CoreEngine {
         window.cameraSystem = this.cameraSystem;
         window.ThumbnailSystem = this.thumbnailSystem;
         window.History = this.history;
+    }
+
+    _applyHistorySettings() {
+        const automatic = this.settingsManager.getAutomaticHistoryDefaults();
+        const autoAdjust = this.settingsManager.get('historyAutoAdjust') !== false;
+        this.history.configureLimits({
+            maxEntries: autoAdjust
+                ? automatic.maxEntries
+                : this.settingsManager.get('historyMaxEntries'),
+            maxMemoryMB: autoAdjust
+                ? automatic.maxMemoryMB
+                : this.settingsManager.get('historyMaxMemoryMB')
+        });
     }
 
     async initialize() {

@@ -1832,7 +1832,9 @@ export class LayerSystem {
                         name: 'layer-transform',
                         do: () => applyTransformSnapshot(afterSnapshot, transformAfter),
                         undo: () => applyTransformSnapshot(beforeSnapshot, transformBefore),
-                        meta: { layerId, type: 'transform', transformBefore, transformAfter }
+                        meta: { layerId, type: 'transform', transformBefore, transformAfter },
+                        byteSize: (beforeSnapshot.pixels?.byteLength || 0)
+                            + (afterSnapshot.pixels?.byteLength || 0)
                     };
                     historyManager.record(entry);
                 }
@@ -2863,7 +2865,9 @@ export class LayerSystem {
                     this.setActiveLayer(this.getLayerIndex(topLayer));
                     this._emitPanelUpdateRequest();
                 },
-                meta: { topId: topLayer.layerData.id, bottomId: bottomLayer.layerData.id }
+                meta: { topId: topLayer.layerData.id, bottomId: bottomLayer.layerData.id },
+                byteSize: (topSnapshot.pixels?.byteLength || 0)
+                    + (bottomSnapshotBefore.pixels?.byteLength || 0)
             };
 
             historyManager.push(entry);

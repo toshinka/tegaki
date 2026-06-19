@@ -35,6 +35,7 @@ export class SettingsManager {
     }
     
     getDefaults() {
+        const historyDefaults = this.getAutomaticHistoryDefaults();
         return {
             pressureCorrection: this.config?.userSettings?.pressureCorrection || 1.0,
             smoothing: this.config?.userSettings?.smoothing || 0.5,
@@ -45,8 +46,21 @@ export class SettingsManager {
             exportResolution: '2',
             bucketGapClose: 0,
             bucketUnderpaint: 1,
-            bucketReferenceAllLayers: true
+            bucketReferenceAllLayers: true,
+            historyAutoAdjust: true,
+            historyMaxEntries: historyDefaults.maxEntries,
+            historyMaxMemoryMB: historyDefaults.maxMemoryMB
         };
+    }
+
+    getAutomaticHistoryDefaults() {
+        const deviceMemory = Number(globalThis.navigator?.deviceMemory);
+        if (Number.isFinite(deviceMemory)) {
+            if (deviceMemory <= 4) return { maxEntries: 100, maxMemoryMB: 128 };
+            if (deviceMemory < 16) return { maxEntries: 250, maxMemoryMB: 256 };
+            return { maxEntries: 500, maxMemoryMB: 512 };
+        }
+        return { maxEntries: 250, maxMemoryMB: 256 };
     }
     
     get(key) {
@@ -119,6 +133,17 @@ export class SettingsManager {
             },
             bucketReferenceAllLayers: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
+            },
+            historyAutoAdjust: (v) => {
+                return typeof v === 'boolean' ? v : undefined;
+            },
+            historyMaxEntries: (v) => {
+                const num = parseInt(v, 10);
+                return [50, 100, 250, 500].includes(num) ? num : undefined;
+            },
+            historyMaxMemoryMB: (v) => {
+                const num = parseInt(v, 10);
+                return [128, 256, 512, 1024].includes(num) ? num : undefined;
             }
         };
         
@@ -175,7 +200,10 @@ export class SettingsManager {
             'exportResolution',
             'bucketGapClose',
             'bucketUnderpaint',
-            'bucketReferenceAllLayers'
+            'bucketReferenceAllLayers',
+            'historyAutoAdjust',
+            'historyMaxEntries',
+            'historyMaxMemoryMB'
         ];
         
         settingKeys.forEach(key => {

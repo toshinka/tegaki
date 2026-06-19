@@ -158,7 +158,9 @@ export class BrushCore {
 
         const activeLayer = this.layerManager.getActiveLayer();
         if (!activeLayer || activeLayer.locked) return;
-        this.strokeHistoryBefore = this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null;
+        this.strokeHistoryBefore = activeLayer.layerData?.isAnimationWorkingLayer === true
+            ? null
+            : (this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null);
 
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
@@ -695,7 +697,9 @@ export class BrushCore {
                 layerId,
                 layerIndex,
                 pointCount: afterSnapshot.pathsData?.length || 0
-            }
+            },
+            byteSize: (beforeSnapshot.pixels?.byteLength || 0)
+                + (afterSnapshot.pixels?.byteLength || 0)
         });
     }
     

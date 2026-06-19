@@ -13,6 +13,7 @@
  */
 
 import * as PIXI from 'pixi.js';
+import 'pixi.js/advanced-blend-modes';
 import { TEGAKI_CONFIG } from './config.js';
 import { TegakiEventBus } from './system/event-bus.js';
 import { coordinateSystem } from './coordinate-system.js';

@@ -11,7 +11,7 @@
 ## 現在のPhase
 
 Phase 5aは追補を含め完了し、指示書を `開発用資料保管庫/Archive/phase5a.md` へ退避した。
-次回はPhase 5bのCAF / Timeline共通Frame出力経路と履歴負荷整理を開始する。
+Phase 5bのCAF / Timeline共通Frame出力経路と履歴負荷整理を実装中。
 
 ### Phase 5a完了 — アニメ編集中の表示回帰と周辺UI
 
@@ -43,7 +43,7 @@ Phase 5aは追補を含め完了し、指示書を `開発用資料保管庫/Arc
   - Shift/Ctrl修飾ホイールとSpace系修飾ドラッグを含め追補確認完了。
   - 受け入れ条件と追補項目に既知残存なし。
 
-### 次回Phase 5b — CAF / Timeline共通Frame出力経路と履歴負荷整理
+### Phase 5b — CAF / Timeline共通Frame出力経路と履歴負荷整理
 
 - `system/animation/timeline-frame-compositor.js` を追加。
   - TimelineModel / ClipAsset / DrawingSnapshotからCanvas Frame列を生成する。
@@ -76,6 +76,24 @@ Phase 5aは追補を含め完了し、指示書を `開発用資料保管庫/Arc
   - CAF描画履歴を対象CAF / 内部Layer / 前後Snapshot単位へ縮小する。
   - 未参照DrawingSnapshotを回収し、animation working Layerの通常Layer用履歴取得を省略する。
   - Settings PopupへHistory件数、推定メモリ上限、自動調整、現在使用量を追加する。
+- 履歴負荷追補の実装:
+  - CAF描画開始時の履歴取得を、全ClipAsset / 全DrawingSnapshotのserializeから、対象CAF・内部Layer・前Snapshotだけを保持するTypedArray差分へ変更した。
+  - stroke完了時は全working Layerを再キャプチャせず、実際に描画したanimation working Layerだけを新DrawingSnapshotへ更新する。
+  - animation working LayerではBrushCoreの通常Layer用stroke Snapshot取得を省略し、CAF専用履歴との二重取得を止めた。
+  - CAF Raster履歴はClip ID / Asset ID / internal Layer IDを保持し、Undo / Redo時に対象CAF・Frame・内部Layerへ編集文脈を復帰する。
+  - 現在のClipAssetから参照されないDrawingSnapshotを更新・Undo / Redo後に回収する。
+  - History commandへ `byteSize` 契約を追加し、CAF描画、通常描画、塗りつぶし、Raster変形、Layer結合の保持量を計上する。
+  - HistoryManagerへ件数上限と推定メモリ上限を追加。上限超過時は線形Undo順を維持して最古の連続履歴から破棄する。
+  - Settings Popupへ自動調整、50/100/250/500件、128/256/512/1024MB、現在使用量表示を追加した。
+  - `navigator.deviceMemory` による初期値と、手動設定のlocalStorage復元を接続した。
+- 自動確認:
+  - History容量制御の単体確認で、メモリ上限・件数上限・index整合が成立する。
+  - Browserで自動設定、手動100件/128MB切替、使用量表示、再度自動設定への復帰を確認。
+  - CAF描画で履歴が1件追加され、Undo / Redoが動作する。
+  - 3 CAF相当の操作後の描画入力処理は約70ms以内で完了し、従来の秒単位停止は再現しない。
+- 実機確認待ち:
+  - 液タブで3 CAF以上を切り替え、各CAFへ連続描画した際のstroke追従。
+  - CAF Aで描画後にCAF Bへ切り替え、Undo / RedoでCAF Aの描画と編集対象が復帰すること。
 
 ### Phase 4z26完了状態
 
