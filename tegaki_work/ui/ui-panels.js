@@ -218,6 +218,15 @@ export class UIController {
                     flipButton.blur?.();
                     return;
                 }
+                const selectionApi = window.CoreRuntime?.api?.selection;
+                if (selectionApi?.getState?.()?.transformSessionActive) {
+                    const direction = flipButton.id === 'flip-horizontal-btn'
+                        ? 'horizontal'
+                        : 'vertical';
+                    selectionApi.flipTransform?.(direction);
+                    flipButton.blur?.();
+                    return;
+                }
                 if (this._shouldBlockNormalLayerOperation({ blockAnimationContext: true })) {
                     flipButton.blur?.();
                     return;
@@ -230,6 +239,12 @@ export class UIController {
             const resetButton = e.target.closest('#layer-transform-reset-btn');
             if (resetButton) {
                 if (this._isLayerPanelControlDisabled(resetButton)) {
+                    resetButton.blur?.();
+                    return;
+                }
+                const selectionApi = window.CoreRuntime?.api?.selection;
+                if (selectionApi?.getState?.()?.transformSessionActive) {
+                    selectionApi.resetTransform?.();
                     resetButton.blur?.();
                     return;
                 }
@@ -612,6 +627,12 @@ export class UIController {
                 this.closeAllPopups();
                 this.updateToolUI(nextMode);
             },
+            'selection-tool': () => {
+                window.CoreRuntime?.api?.selection?.setToolActive?.(true);
+                window.CoreRuntime?.api?.layer?.exitMoveMode?.();
+                this.closeAllPopups();
+                this.updateToolUI('selection');
+            },
             'airbrush-tool': () => {
                 let currentMode = window.brushSettings?.getMode();
                 let nextMode = currentMode === 'airbrush' ? 'airbrush-erase' : 'airbrush';
@@ -687,7 +708,8 @@ export class UIController {
             airbrush: 'スプレー',
             'airbrush-erase': '透明スプレー',
             'eyedropper': 'スポイト',
-            'gif-animation': 'アニメテーブル'
+            'gif-animation': 'アニメテーブル',
+            selection: '矩形選択'
         };
         const toolElement = document.getElementById('current-tool');
         if (toolElement) {

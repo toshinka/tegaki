@@ -53,6 +53,7 @@ import { ThumbnailSystem } from './system/drawing/thumbnail-system.js';
 import './system/checker-utils.js';
 import { LayerPanelRenderer } from './ui/layer-panel-renderer.js';
 import { emergencyRecoveryStore } from './system/emergency-recovery-store.js';
+import { PixelSelectionSystem } from './system/pixel-selection-system.js';
 
 // ポップアップのインポート
 import { SettingsPopup } from './ui/settings-popup.js';
@@ -91,6 +92,7 @@ export class CoreEngine {
         this.exportManager = null;
         
         this.drawingEngine = null;
+        this.pixelSelectionSystem = new PixelSelectionSystem();
         this.layerPanelRenderer = null;
         
         // WebGL2 コンポーネント
@@ -252,6 +254,15 @@ export class CoreEngine {
 
         // 11. ブラシコアの初期化
         this.brushCore.init();
+
+        // 11.5 pixel selectionは描画入力より先にcapture phaseで接続する
+        this.pixelSelectionSystem.init({
+            app: this.app,
+            layerSystem: this.layerSystem,
+            cameraSystem: this.cameraSystem,
+            eventBus: this.eventBus
+        });
+        window.pixelSelectionSystem = this.pixelSelectionSystem;
         
         // 12. 描画エンジンの初期化
         this.drawingEngine = new DrawingEngine(

@@ -38,6 +38,7 @@ export class LayerSystem {
         this.isInitialized = false;
         this.checkerPattern = null;
         this._checkerTileScale = null;
+        this._layerTransformSession = null;
     }
 
     init(canvasContainer, eventBus, config) {
@@ -1467,7 +1468,7 @@ export class LayerSystem {
     _setupVKeyEvents() {
         if (!this.eventBus) return;
 
-        this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
+        this.eventBus.on('keyboard:vkey-state-changed', ({ pressed, cancelled = false }) => {
             if (!this.transform) return;
             if (!this.transform.app && this.app && this.cameraSystem) {
                 this.initTransform();
@@ -1484,7 +1485,7 @@ export class LayerSystem {
                     this.transform.updateTransformPanelValues(activeLayer);
                 }
             } else {
-                this.exitLayerMoveMode();
+                this.exitLayerMoveMode({ cancelled });
             }
         });
     }
@@ -1623,17 +1624,35 @@ export class LayerSystem {
     }
 
     enterLayerMoveMode() {
-        if (this.transform) this.transform.enterMoveMode();
-    }
-
-    exitLayerMoveMode() {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
+        if (!activeLayer?.layerData || activeLayer.layerData.isBackground || activeLayer.layerData.isFolder) return;
+
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transform.getTransform(layerId)
+            || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+        this._layerTransformSession = {
+            layerId,
+            transform: structuredClone(transform)
+        };
+        this.transform.enterMoveMode();
+    }
+
+    exitLayerMoveMode(options = {}) {
+        if (!this.transform) return;
+        const cancelled = options.cancelled === true;
+        const sessionLayer = this._layerTransformSession?.layerId
+            ? this.getLayers().find(layer => layer.layerData?.id === this._layerTransformSession.layerId)
+            : null;
+        const activeLayer = sessionLayer || this.getActiveLayer();
         let transformConfirmed = false;
 
         try {
-            this.confirmLayerTransform(); // 🆕 変形確定焼き込み
-            transformConfirmed = true;
+            if (cancelled) {
+                this._restoreLayerTransformSession(activeLayer);
+            } else {
+                transformConfirmed = this.confirmLayerTransform() === true;
+            }
         } catch (error) {
             console.error('[LayerSystem] Failed to confirm layer transform:', error);
         } finally {
@@ -1651,11 +1670,39 @@ export class LayerSystem {
             if (this.eventBus) {
                 this.eventBus.emit('layer:transform-exit', {
                     layerId: activeLayer?.layerData?.id || null,
-                    confirmed: transformConfirmed
+                    confirmed: transformConfirmed,
+                    cancelled
                 });
                 this._emitPanelUpdateRequest();
             }
+            this._layerTransformSession = null;
         }
+    }
+
+    _restoreLayerTransformSession(layer) {
+        const session = this._layerTransformSession;
+        if (!session || !layer?.layerData || layer.layerData.id !== session.layerId) return false;
+
+        const transform = structuredClone(session.transform);
+        this.transform.setTransform(session.layerId, transform);
+        if (this.transform._isTransformNonDefault(transform)) {
+            this.transform.applyTransform(
+                layer,
+                transform,
+                this.config.canvas.width / 2,
+                this.config.canvas.height / 2
+            );
+        } else {
+            layer.position.set(0, 0);
+            layer.rotation = 0;
+            layer.scale.set(1, 1);
+            layer.pivot.set(0, 0);
+        }
+        this.transform.updateTransformPanelValues(layer);
+        this.transform.updateFlipButtons(layer);
+        this.coordAPI?.clearCache?.();
+        this.requestThumbnailUpdate(this.getLayerIndex(layer), true);
+        return true;
     }
 
     toggleLayerMoveMode() {
@@ -1777,9 +1824,9 @@ export class LayerSystem {
     }
 
     confirmLayerTransform() {
-        if (!this.transform) return;
+        if (!this.transform) return false;
         const activeLayer = this.getActiveLayer();
-        if (!activeLayer?.layerData) return;
+        if (!activeLayer?.layerData) return false;
         const layerId = activeLayer.layerData.id;
         const transformBefore = structuredClone(this.transform.getTransform(layerId));
 
@@ -1796,6 +1843,7 @@ export class LayerSystem {
 
             // 焼き込み後の状態を反映させるためにリビルド（レイヤーSpriteは保護される）
             const rebuildSuccess = this.safeRebuildLayer(activeLayer, activeLayer.layerData.paths);
+            this.refreshClippingMasks();
 
             // 座標変換キャッシュをクリア
             if (this.coordAPI) {
@@ -1831,15 +1879,23 @@ export class LayerSystem {
                     const entry = {
                         name: 'layer-transform',
                         do: () => applyTransformSnapshot(afterSnapshot, transformAfter),
-                        undo: () => applyTransformSnapshot(beforeSnapshot, transformBefore),
-                        meta: { layerId, type: 'transform', transformBefore, transformAfter },
+                        undo: () => applyTransformSnapshot(beforeSnapshot, transformAfter),
+                        meta: {
+                            layerId,
+                            type: 'transform',
+                            requestedTransform: transformBefore,
+                            transformBefore: transformAfter,
+                            transformAfter
+                        },
                         byteSize: (beforeSnapshot.pixels?.byteLength || 0)
                             + (afterSnapshot.pixels?.byteLength || 0)
                     };
                     historyManager.record(entry);
                 }
             }
+            return rebuildSuccess;
         }
+        return false;
     }
 
     updateLayerTransformPanelValues() {

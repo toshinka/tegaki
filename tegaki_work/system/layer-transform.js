@@ -16,6 +16,7 @@ import * as PIXI from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { coordinateSystem } from '../coordinate-system.js';
+import { createCenteredTransformMatrix } from './transform-math.js';
 
 export class LayerTransform {
     constructor(config, coordAPI) {
@@ -26,6 +27,7 @@ export class LayerTransform {
         this.transforms = new Map();
         this.isVKeyPressed = false;
         this.isDragging = false;
+        this.dragPointerId = null;
         this.isPanelDragging = false;
         this.panelDragPointerId = null;
         this.dragTransformMode = null;
@@ -49,6 +51,7 @@ export class LayerTransform {
         this._lastEmitTime = 0;
         this._emitTimer = null;
         this._sliderInstances = new Map();
+        this._syncingSelectionPanel = false;
     }
 
     init(app, cameraSystem) {
@@ -81,10 +84,32 @@ export class LayerTransform {
         
         this.eventBus.on('layer:reset-transform', () => {
             if (this._hasAnimationLayerContext()) return;
+            const selectionApi = this._getSelectionTransformApi();
+            if (selectionApi?.getState?.()?.transformSessionActive) {
+                selectionApi.resetTransform?.();
+                this._updateSelectionTransformPanel();
+                return;
+            }
             if (this.isVKeyPressed) {
                 this.resetTransform();
             }
         });
+
+        this.eventBus.on('selection:transform-started', () => {
+            this.transformPanel?.classList.add('show');
+            this._updateSelectionTransformPanel();
+        });
+        this.eventBus.on('selection:transform-preview-updated', () => {
+            this._updateSelectionTransformPanel();
+        });
+        this.eventBus.on('selection:transform-ended', () => {
+            if (!this.isVKeyPressed) this.transformPanel?.classList.remove('show');
+            this._clearTransformPanelFlipState();
+        });
+    }
+
+    _getSelectionTransformApi() {
+        return window.CoreRuntime?.api?.selection || null;
     }
 
     _hasAnimationLayerContext() {
@@ -503,23 +528,7 @@ export class LayerTransform {
     }
 
     _createTransformMatrix(transform, centerX, centerY) {
-        const x = Number(transform.x) || 0;
-        const y = Number(transform.y) || 0;
-        const rotation = Number(transform.rotation) || 0;
-        const scaleX = Number(transform.scaleX) || 1;
-        const scaleY = Number(transform.scaleY) || 1;
-        
-        const cos = Math.cos(rotation);
-        const sin = Math.sin(rotation);
-        
-        return {
-            a: scaleX * cos,
-            b: scaleX * sin,
-            c: -scaleY * sin,
-            d: scaleY * cos,
-            tx: -centerX * scaleX * cos + centerY * scaleY * sin + centerX + x,
-            ty: -centerX * scaleX * sin - centerY * scaleY * cos + centerY + y
-        };
+        return createCenteredTransformMatrix(transform, centerX, centerY);
     }
     
     _transformPoints(points, matrix) {
@@ -603,6 +612,15 @@ export class LayerTransform {
                     while (value < min) value += (max - min);
                 }
                 
+                const selectionApi = this._getSelectionTransformApi();
+                if (selectionApi?.getState?.()?.transformSessionActive) {
+                    if (this._syncingSelectionPanel) return;
+                    const transformValue = property === 'rotation'
+                        ? (value * Math.PI / 180)
+                        : value;
+                    selectionApi.updateTransform?.(property, transformValue);
+                    return;
+                }
                 const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
                 if (activeLayer) {
                     const transformValue = property === 'rotation' 
@@ -620,7 +638,6 @@ export class LayerTransform {
             // [指示書] 数値部分のダブルクリックで直接入力
             const valueDisplay = container.parentNode?.querySelector('.slider-value');
             if (valueDisplay) {
-                valueDisplay.style.cursor = 'text';
                 valueDisplay.title = 'ダブルクリックで数値を直接入力';
                 valueDisplay.addEventListener('dblclick', (e) => {
                     this._showDirectInput(valueDisplay, sliderInstance, property, min, max);
@@ -635,7 +652,7 @@ export class LayerTransform {
         input.type = 'number';
         input.value = currentVal;
         input.step = property === 'scale' ? '0.01' : '1';
-        input.style.cssText = 'width:50px;font-size:10px;border:1px solid #800000;background:#fff;color:#800000;padding:0 2px;';
+        input.className = 'layer-transform-value-input';
         
         const originalDisplay = displayEl.textContent;
         displayEl.textContent = '';
@@ -687,27 +704,43 @@ export class LayerTransform {
                 const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
                 
                 this.isDragging = true;
+                this.dragPointerId = e.pointerId;
                 this.dragStartPoint = { x: world.worldX, y: world.worldY };
                 this.dragLastPoint = { x: world.worldX, y: world.worldY };
                 this.dragTransformMode = null;
                 canvas.style.cursor = 'move';
+                try {
+                    canvas.setPointerCapture?.(e.pointerId);
+                } catch (error) {}
                 e.preventDefault();
             }
         });
         
         canvas.addEventListener('pointermove', (e) => {
+            if (this.dragPointerId !== null && e.pointerId !== this.dragPointerId) return;
             if (this.isDragging && this.isVKeyPressed) {
                 this._handleDrag(e);
             }
         });
         
-        canvas.addEventListener('pointerup', () => {
-            if (this.isDragging) {
-                this.isDragging = false;
-                this.dragTransformMode = null;
-                this._updateCursor();
-            }
+        canvas.addEventListener('pointerup', (e) => {
+            this._finishCanvasDrag(canvas, e.pointerId);
         });
+
+        canvas.addEventListener('pointercancel', (e) => {
+            this._finishCanvasDrag(canvas, e.pointerId);
+        });
+    }
+
+    _finishCanvasDrag(canvas, pointerId) {
+        if (this.dragPointerId !== null && pointerId !== this.dragPointerId) return;
+        this.isDragging = false;
+        this.dragTransformMode = null;
+        try {
+            canvas.releasePointerCapture?.(pointerId);
+        } catch (error) {}
+        this.dragPointerId = null;
+        this._updateCursor();
     }
 
     _setupPanelDrag() {
@@ -1024,6 +1057,31 @@ export class LayerTransform {
                 flipVBtn.classList.remove('active');
             }
         }
+    }
+
+    _updateSelectionTransformPanel() {
+        if (!this.transformPanel) return;
+        const transform = this._getSelectionTransformApi()?.getTransform?.();
+        if (!transform) return;
+        this._syncingSelectionPanel = true;
+        try {
+            this._sliderInstances.get('layer-x-slider')?.setValue(transform.x);
+            this._sliderInstances.get('layer-y-slider')?.setValue(transform.y);
+            this._sliderInstances.get('layer-rotation-slider')
+                ?.setValue((transform.rotation * 180) / Math.PI);
+            this._sliderInstances.get('layer-scale-slider')?.setValue(Math.abs(transform.scaleX));
+        } finally {
+            this._syncingSelectionPanel = false;
+        }
+        document.getElementById('flip-horizontal-btn')
+            ?.classList.toggle('active', transform.scaleX < 0);
+        document.getElementById('flip-vertical-btn')
+            ?.classList.toggle('active', transform.scaleY < 0);
+    }
+
+    _clearTransformPanelFlipState() {
+        document.getElementById('flip-horizontal-btn')?.classList.remove('active');
+        document.getElementById('flip-vertical-btn')?.classList.remove('active');
     }
 
     _getSafeCanvas() {

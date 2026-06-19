@@ -93,6 +93,10 @@ export class DrawingEngine {
     }
 
     _handlePointerDown(info, e) {
+        if (window.pixelSelectionSystem?.isToolActive?.()) {
+            return;
+        }
+
         // [指示書] 全入力の入口ログ
         if (window.TEGAKI_CONFIG?.debug) {
             console.log('[DrawingEngine] down gate', JSON.stringify({

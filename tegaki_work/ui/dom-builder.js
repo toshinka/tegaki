@@ -71,6 +71,7 @@ export const DOMBuilder = (function() {
             { id: 'eraser-tool', icon: 'eraser', title: '消しゴム (E)' },
             { id: 'airbrush-tool', icon: 'airbrush', title: 'スプレー / 透明スプレー (B)' },
             { id: 'fill-tool', icon: 'fill', title: '塗りつぶし (G)' },
+            { id: 'selection-tool', icon: 'rectangleSelect', title: '矩形選択 (M)' },
             { separator: true },
             { id: 'gif-animation-tool', icon: 'animation', title: 'GIFアニメーション (Alt+A)' },
             { separator: true },

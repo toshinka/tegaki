@@ -26,6 +26,7 @@ export class ProjectManager {
      */
     async exportProject() {
         if (!this.layerSystem || !this.app) return null;
+        this._commitFloatingSelection();
 
         const layers = this.layerSystem.getLayers();
         const canvasWidth = TEGAKI_CONFIG.canvas.width;
@@ -138,6 +139,7 @@ export class ProjectManager {
         if (!projectData || projectData.app !== 'tegaki') {
             throw new Error('Invalid project data');
         }
+        window.CoreRuntime?.api?.selection?.clear?.();
 
         // 1. キャンバスサイズ復元
         if (projectData.canvas) {
@@ -291,6 +293,12 @@ export class ProjectManager {
         return window.PopupManager?.get?.('animationTable')
             || window.coreEngine?.popupManager?.get?.('animationTable')
             || null;
+    }
+
+    _commitFloatingSelection() {
+        const selectionApi = window.CoreRuntime?.api?.selection;
+        if (!selectionApi?.getState?.()?.transformSessionActive) return false;
+        return selectionApi.confirmTransform?.() === true;
     }
 
     _hasAnimationProjectData(animationData) {

@@ -4472,8 +4472,8 @@ export class AnimationTablePopup {
 
                 const existingCel = track.getCelAtFrame(frameIndex);
 
-                // Alt+Click でClipを作成/削除する。通常クリックは選択/Frame移動のみ。
-                if (e.altKey) {
+                // Ctrl+Click でClipを作成/削除する。通常クリックは選択/Frame移動のみ。
+                if (e.ctrlKey || e.metaKey) {
                     if (existingCel) {
                         this._activateClipEntry({ lane: track, track, clip: existingCel }, { saveCurrent: true });
                         this.deleteSelectedClip();
@@ -4513,7 +4513,7 @@ export class AnimationTablePopup {
                         }
                     }
                 } else {
-                    // 通常クリック：既存Clipの選択、またはFrame移動。空セルのClip作成はAlt+Clickに限定する。
+                    // 通常クリック：既存Clipの選択、またはFrame移動。空セルのClip作成はCtrl+Clickに限定する。
                     if (existingCel) {
                         this._activateClipEntry({ lane: track, track, clip: existingCel });
                     } else {

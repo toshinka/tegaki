@@ -88,33 +88,13 @@ export class CameraSystem {
         
         // カメラ水平反転
         this.eventBus.on('camera:flip-horizontal', () => {
-            const centerX = this.config.canvas.width / 2;
-            const centerY = this.config.canvas.height / 2;
-            const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            
-            this.horizontalFlipped = !this.horizontalFlipped;
-            this.worldContainer.scale.x *= -1;
-            
-            const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-            this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-            
+            this._toggleViewFlip('horizontal');
             this._emitTransformChanged();
         });
         
         // カメラ垂直反転
         this.eventBus.on('camera:flip-vertical', () => {
-            const centerX = this.config.canvas.width / 2;
-            const centerY = this.config.canvas.height / 2;
-            const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            
-            this.verticalFlipped = !this.verticalFlipped;
-            this.worldContainer.scale.y *= -1;
-            
-            const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-            this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-            
+            this._toggleViewFlip('vertical');
             this._emitTransformChanged();
         });
         
@@ -225,6 +205,56 @@ export class CameraSystem {
         this._emitTransformChanged();
     }
 
+    _getCanvasCenterStagePoint() {
+        const localX = this.config.canvas.width / 2;
+        const localY = this.config.canvas.height / 2;
+        const pivot = this.worldContainer.pivot || { x: 0, y: 0 };
+        const scaleX = this.worldContainer.scale?.x ?? 1;
+        const scaleY = this.worldContainer.scale?.y ?? 1;
+        const rotation = this.worldContainer.rotation || 0;
+        const cos = Math.cos(rotation);
+        const sin = Math.sin(rotation);
+        const scaledX = (localX - pivot.x) * scaleX;
+        const scaledY = (localY - pivot.y) * scaleY;
+
+        return {
+            x: this.worldContainer.x + (scaledX * cos) - (scaledY * sin),
+            y: this.worldContainer.y + (scaledX * sin) + (scaledY * cos)
+        };
+    }
+
+    _preserveCanvasCenter(updateTransform) {
+        const before = this._getCanvasCenterStagePoint();
+        updateTransform();
+        const after = this._getCanvasCenterStagePoint();
+        this.worldContainer.x += before.x - after.x;
+        this.worldContainer.y += before.y - after.y;
+    }
+
+    _getScaleMagnitude() {
+        return Math.abs(this.worldContainer.scale?.x || this.config.camera.initialScale);
+    }
+
+    _applyScaleMagnitude(scaleMagnitude) {
+        const horizontalSign = this.horizontalFlipped ? -1 : 1;
+        const verticalSign = this.verticalFlipped ? -1 : 1;
+        this.worldContainer.scale.set(
+            scaleMagnitude * horizontalSign,
+            scaleMagnitude * verticalSign
+        );
+    }
+
+    _toggleViewFlip(direction) {
+        this._preserveCanvasCenter(() => {
+            if (direction === 'horizontal') {
+                this.horizontalFlipped = !this.horizontalFlipped;
+            } else if (direction === 'vertical') {
+                this.verticalFlipped = !this.verticalFlipped;
+            }
+            this._applyScaleMagnitude(this._getScaleMagnitude());
+        });
+    }
+
     screenClientToWorld(clientX, clientY) {
         if (!this.worldContainer) {
             return { x: clientX, y: clientY };
@@ -282,13 +312,7 @@ export class CameraSystem {
     centerCanvasOnScreen() {
         if (!this.worldContainer) return;
         const screen = this.app.renderer?.screen || this.app.screen || { width: window.innerWidth, height: window.innerHeight };
-        
-        // 現在のスケール・回転を維持したまま、キャンバス中央のグローバル座標を取得
-        const canvasCenterLocal = {
-            x: this.config.canvas.width / 2,
-            y: this.config.canvas.height / 2
-        };
-        const canvasCenterGlobal = this.worldContainer.toGlobal(canvasCenterLocal);
+        const canvasCenterGlobal = this._getCanvasCenterStagePoint();
         
         // 画面中央との差分を worldContainer の位置に加算
         this.worldContainer.x += (screen.width / 2) - canvasCenterGlobal.x;
@@ -456,26 +480,14 @@ export class CameraSystem {
         const dx = e.clientX - this.lastPoint.x;
         const dy = e.clientY - this.lastPoint.y;
         
-        const centerX = this.config.canvas.width / 2;
-        const centerY = this.config.canvas.height / 2;
-        const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-        
         if (Math.abs(dx) > Math.abs(dy)) {
-            this.rotation += (dx * this.config.camera.dragRotationSpeed);
-            this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
-            
-            const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-            this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+            this._rotateCamera(dx * this.config.camera.dragRotationSpeed);
         } else {
             const scaleFactor = 1 + (-dy * this.config.camera.dragScaleSpeed);
-            const newScale = this.worldContainer.scale.x * scaleFactor;
+            const newScale = this._getScaleMagnitude() * scaleFactor;
             
             if (newScale >= this.config.camera.minScale && newScale <= this.config.camera.maxScale) {
-                this.worldContainer.scale.set(newScale);
-                const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-                this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                this._preserveCanvasCenter(() => this._applyScaleMagnitude(newScale));
             }
         }
         
@@ -486,29 +498,15 @@ export class CameraSystem {
     _handleWheelRotation(e, centerX, centerY) {
         const rotationDelta = e.deltaY < 0 ? 
             this.config.camera.keyRotationDegree : -this.config.camera.keyRotationDegree;
-        
-        const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-        
-        this.rotation += rotationDelta;
-        this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
-        
-        const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-        this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-        this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+        this._rotateCamera(rotationDelta);
     }
 
     _handleWheelZoom(e, centerX, centerY) {
         const scaleFactor = e.deltaY < 0 ? 1 + this.config.camera.wheelZoomSpeed : 1 - this.config.camera.wheelZoomSpeed;
-        const newScale = this.worldContainer.scale.x * scaleFactor;
+        const newScale = this._getScaleMagnitude() * scaleFactor;
         
         if (newScale >= this.config.camera.minScale && newScale <= this.config.camera.maxScale) {
-            const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            
-            this.worldContainer.scale.set(newScale);
-            
-            const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-            this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+            this._preserveCanvasCenter(() => this._applyScaleMagnitude(newScale));
         }
     }
 
@@ -595,22 +593,18 @@ export class CameraSystem {
 
     _handleCameraTransformKeys(e) {
         if (this.spacePressed && this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-            const centerX = this.config.canvas.width / 2;
-            const centerY = this.config.canvas.height / 2;
-            const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            
             switch(e.code) {
                 case 'ArrowUp':
-                    this._scaleCamera(1 + this.config.camera.wheelZoomSpeed, worldCenter, centerX, centerY);
+                    this._scaleCamera(1 + this.config.camera.wheelZoomSpeed);
                     break;
                 case 'ArrowDown':
-                    this._scaleCamera(1 - this.config.camera.wheelZoomSpeed, worldCenter, centerX, centerY);
+                    this._scaleCamera(1 - this.config.camera.wheelZoomSpeed);
                     break;
                 case 'ArrowLeft':
-                    this._rotateCamera(-this.config.camera.keyRotationDegree, worldCenter, centerX, centerY);
+                    this._rotateCamera(-this.config.camera.keyRotationDegree);
                     break;
                 case 'ArrowRight':
-                    this._rotateCamera(this.config.camera.keyRotationDegree, worldCenter, centerX, centerY);
+                    this._rotateCamera(this.config.camera.keyRotationDegree);
                     break;
             }
             
@@ -619,22 +613,18 @@ export class CameraSystem {
         }
     }
 
-    _scaleCamera(scaleFactor, worldCenter, centerX, centerY) {
-        const newScale = this.worldContainer.scale.x * scaleFactor;
+    _scaleCamera(scaleFactor) {
+        const newScale = this._getScaleMagnitude() * scaleFactor;
         if (newScale >= this.config.camera.minScale && newScale <= this.config.camera.maxScale) {
-            this.worldContainer.scale.set(newScale);
-            const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-            this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-            this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+            this._preserveCanvasCenter(() => this._applyScaleMagnitude(newScale));
         }
     }
 
-    _rotateCamera(rotationDelta, worldCenter, centerX, centerY) {
-        this.rotation += rotationDelta;
-        this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
-        const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-        this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-        this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+    _rotateCamera(rotationDelta) {
+        this._preserveCanvasCenter(() => {
+            this.rotation += rotationDelta;
+            this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
+        });
     }
 
     _emitTransformChanged() {
@@ -691,7 +681,7 @@ export class CameraSystem {
 
     setZoom(level) {
         const clampedLevel = Math.max(this.config.camera.minScale, Math.min(this.config.camera.maxScale, level));
-        this.worldContainer.scale.set(clampedLevel);
+        this._preserveCanvasCenter(() => this._applyScaleMagnitude(clampedLevel));
         this._emitTransformChanged();
     }
 
@@ -707,8 +697,10 @@ export class CameraSystem {
     }
 
     toScreenCoords(worldX, worldY) {
-        const canvasPoint = { x: worldX, y: worldY };
-        return this.canvasContainer.toGlobal(canvasPoint);
+        const canvasPoint = this.coordinateSystem?.worldToCanvas?.(worldX, worldY);
+        return canvasPoint
+            ? { x: canvasPoint.canvasX, y: canvasPoint.canvasY }
+            : { x: worldX, y: worldY };
     }
 
     isPointInExtendedCanvas(canvasPoint, margin = 50) {
@@ -738,9 +730,7 @@ export class CameraSystem {
     }
 
     getCameraFrameCenter() {
-        const centerX = this.config.canvas.width / 2;
-        const centerY = this.config.canvas.height / 2;
-        return this.worldContainer.toGlobal({ x: centerX, y: centerY });
+        return this._getCanvasCenterStagePoint();
     }
 
     isCanvasMoveMode() {

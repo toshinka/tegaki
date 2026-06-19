@@ -183,8 +183,23 @@ export class FillTool {
         const { pixels, width, height } = boundarySnapshot;
         const startX = Math.floor(localX);
         const startY = Math.floor(localY);
+        const selectionBounds = window.CoreRuntime?.api?.selection
+            ?.getBoundsForLayer?.(layerData.id);
+        const selectionRect = selectionBounds ? {
+            x0: Math.max(0, Math.floor(selectionBounds.x)),
+            y0: Math.max(0, Math.floor(selectionBounds.y)),
+            x1: Math.min(width, Math.ceil(selectionBounds.x + selectionBounds.width)),
+            y1: Math.min(height, Math.ceil(selectionBounds.y + selectionBounds.height))
+        } : null;
+        const isInsideSelection = (x, y) => !selectionRect || (
+            x >= selectionRect.x0
+            && x < selectionRect.x1
+            && y >= selectionRect.y0
+            && y < selectionRect.y1
+        );
 
         if (startX < 0 || startX >= width || startY < 0 || startY >= height) return;
+        if (!isInsideSelection(startX, startY)) return;
 
         const gap = this.settings.gapClosePixels || 0;
         const underpaint = this.settings.underpaintPixels || 0;
@@ -208,7 +223,7 @@ export class FillTool {
             const [x, y] = stack.pop();
             const idx = y * width + x;
 
-            if (mask[idx]) continue;
+            if (mask[idx] || !isInsideSelection(x, y)) continue;
             
             // 境界判定 (Gap Close 対応: 周囲 gap ピクセル内に壁があるか)
             let isWall = false;
@@ -249,10 +264,10 @@ export class FillTool {
 
             if (!isWall) {
                 mask[idx] = 255;
-                if (x > 0) stack.push([x - 1, y]);
-                if (x < width - 1) stack.push([x + 1, y]);
-                if (y > 0) stack.push([x, y - 1]);
-                if (y < height - 1) stack.push([x, y + 1]);
+                if (x > 0 && isInsideSelection(x - 1, y)) stack.push([x - 1, y]);
+                if (x < width - 1 && isInsideSelection(x + 1, y)) stack.push([x + 1, y]);
+                if (y > 0 && isInsideSelection(x, y - 1)) stack.push([x, y - 1]);
+                if (y < height - 1 && isInsideSelection(x, y + 1)) stack.push([x, y + 1]);
             }
         }
 
@@ -311,6 +326,14 @@ export class FillTool {
             }
         }
 
+        if (selectionRect) {
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (!isInsideSelection(x, y)) finalMask[y * width + x] = 0;
+                }
+            }
+        }
+
         // 3. マスクテクスチャの生成
         const canvas = document.createElement('canvas');
         canvas.width = width;
@@ -349,6 +372,7 @@ export class FillTool {
             }
 
             layerManager.restoreLayerRasterSnapshot(afterSnapshot);
+            window.CoreRuntime?.api?.selection?.constrainLayer?.(layer, beforeSnapshot);
             this._recordRasterFillHistory(layer, layerManager, beforeSnapshot, color, 0, 'eraser-fill');
 
             const layerIndex = layerManager.getLayerIndex(layer);
@@ -389,6 +413,7 @@ export class FillTool {
 
         // 6. 履歴・サムネイル更新
         const method = 'floodfill';
+        window.CoreRuntime?.api?.selection?.constrainLayer?.(layer, beforeSnapshot);
         this._recordRasterFillHistory(layer, layerManager, beforeSnapshot, color, alpha, method);
         
         const layerIndex = layerManager.getLayerIndex(layer);
@@ -441,6 +466,7 @@ export class FillTool {
         maskGraphics.destroy({ children: true });
 
         // 4. 履歴記録
+        window.CoreRuntime?.api?.selection?.constrainLayer?.(layer, snapshot);
         this._recordRasterFillHistory(layer, layerManager, snapshot, color, alpha, 'lasso-fill');
 
         // 5. サムネイル更新
@@ -478,6 +504,7 @@ export class FillTool {
         });
 
         fillGraphics.destroy({ children: true });
+        window.CoreRuntime?.api?.selection?.constrainLayer?.(layer, beforeSnapshot);
         this._recordRasterFillHistory(layer, layerManager, beforeSnapshot, color, alpha, 'legacy-full');
         
         const layerIndex = layerManager.getLayerIndex(layer);

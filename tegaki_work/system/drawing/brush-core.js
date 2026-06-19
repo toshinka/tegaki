@@ -628,6 +628,10 @@ export class BrushCore {
             layerData.pathsData.push(pathData);
         }
 
+        window.CoreRuntime?.api?.selection?.constrainLayer?.(
+            activeLayer,
+            this.strokeHistoryBefore
+        );
         this._recordStrokeHistory(activeLayer, mode);
 
         const layerIndex = this.layerManager.getLayerIndex(activeLayer);

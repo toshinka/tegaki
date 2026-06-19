@@ -138,6 +138,12 @@ export const TEGAKI_KEYMAP = {
             { key: 'KeyY', ctrl: true, shift: false, description: 'やり直し' },
             { key: 'KeyZ', ctrl: true, shift: true, description: 'やり直し' }
         ],
+        SELECT_ALL: {
+            key: 'KeyA',
+            ctrl: true,
+            shift: false,
+            description: 'キャンバス全体を選択'
+        },
         TOOL_PEN: {
             key: 'KeyP',
             ctrl: false,
@@ -155,6 +161,12 @@ export const TEGAKI_KEYMAP = {
             ctrl: false,
             shift: false,
             description: '塗りつぶしツール'
+        },
+        TOOL_RECT_SELECTION: {
+            key: 'KeyM',
+            ctrl: false,
+            shift: false,
+            description: '矩形選択ツール'
         },
         TOOL_LASSO_FILL: {
             key: 'KeyL',
@@ -213,6 +225,12 @@ export const TEGAKI_KEYMAP = {
             ctrl: true,
             shift: false,
             description: 'レイヤー切り取り'
+        },
+        SELECTION_CLEAR: {
+            key: 'KeyD',
+            ctrl: true,
+            shift: false,
+            description: '選択範囲を解除'
         },
         LAYER_RESET: {
             key: 'Digit0',
@@ -445,10 +463,10 @@ export const TEGAKI_KEYMAP = {
     
     getKeyDisplayName(keyCode) {
         const displayNames = {
-            'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H',
+            'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H', 'KeyD': 'D',
             'KeyA': 'A', 'KeyN': 'N', 'KeyC': 'C', 'KeyL': 'L',
             'KeyZ': 'Z', 'KeyY': 'Y', 'KeyQ': 'Q', 'KeyX': 'X',
-            'KeyG': 'G',
+            'KeyG': 'G', 'KeyM': 'M',
             'Comma': ',', 'Digit0': '0', 'Plus': '+',
             'BracketLeft': '[', 'BracketRight': ']',
             'ArrowUp': '↑', 'ArrowDown': '↓',
@@ -467,7 +485,7 @@ export const TEGAKI_KEYMAP = {
                 if (cfg.ctrl) parts.push('Ctrl');
                 if (cfg.shift) parts.push('Shift');
                 if (cfg.alt) parts.push('Alt');
-                if (cfg.vMode) parts.push('V +');
+                if (cfg.vMode) parts.push('変形中 +');
                 parts.push(this.getKeyDisplayName(cfg.key));
                 return parts.join('+');
             });

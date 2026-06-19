@@ -129,6 +129,40 @@ canvas {
     -ms-touch-action: none;
 }
 
+#drawing-canvas canvas.pixel-selection-tool-active {
+    cursor: cell;
+}
+
+.pixel-selection-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    visibility: hidden;
+    overflow: visible;
+}
+
+.pixel-selection-overlay.is-visible {
+    visibility: visible;
+}
+
+.pixel-selection-marquee {
+    fill: rgba(255, 140, 66, 0.06);
+    stroke: var(--futaba-maroon);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
+    animation: pixel-selection-march 0.7s linear infinite;
+}
+
+@keyframes pixel-selection-march {
+    to {
+        stroke-dashoffset: -10;
+    }
+}
+
 .canvas-warning-container {
     position: absolute;
     top: 60px;
@@ -141,8 +175,9 @@ canvas {
 }
 
 .canvas-warning-badge {
-    background-color: rgba(220, 53, 69, 0.9);
-    color: white;
+    background-color: rgba(128, 0, 0, 0.88);
+    color: var(--futaba-background);
+    border: 1px solid var(--futaba-light-medium);
     padding: 6px 12px;
     border-radius: 4px;
     font-size: 12px;
@@ -2208,6 +2243,22 @@ canvas {
     cursor: text;
 }
 
+.layer-transform-value-input {
+    width: 50px;
+    color: var(--futaba-maroon);
+    background: var(--futaba-background);
+    border: 1px solid var(--futaba-maroon);
+    border-radius: 2px;
+    outline: none;
+    padding: 0 2px;
+    font-size: 10px;
+}
+
+.layer-transform-value-input:focus {
+    border-color: var(--active-border);
+    box-shadow: 0 0 0 2px rgba(255, 140, 66, 0.16);
+}
+
 .panel-section { 
     display: flex; 
     flex-direction: column; 
@@ -2459,6 +2510,42 @@ canvas {
     font-size: 12px;
 }
 
+.history-setting-auto input {
+    accent-color: var(--futaba-maroon);
+}
+
+.history-setting-row select {
+    color: var(--futaba-maroon);
+    background: rgba(255, 255, 238, 0.82);
+    border: 1px solid rgba(207, 156, 151, 0.78);
+    border-radius: 5px;
+    outline: none;
+    padding: 3px 22px 3px 6px;
+    font: inherit;
+    font-weight: 700;
+}
+
+.history-setting-row select:hover,
+.history-setting-row select:focus {
+    border-color: var(--futaba-medium);
+    background: rgba(255, 255, 238, 0.94);
+}
+
+.history-setting-row select:disabled {
+    color: var(--text-secondary);
+    opacity: 0.62;
+}
+
+.history-setting-row select option,
+.history-setting-row select option:checked {
+    color: var(--futaba-maroon);
+    background: var(--futaba-background);
+}
+
+#history-usage-display {
+    color: var(--futaba-maroon);
+}
+
 .preview-container img { 
     max-width: 100%; 
     max-height: 200px; 
@@ -2653,8 +2740,8 @@ canvas {
 }
 
 .album-selection-badge {
-    background: #ff8c42;
-    color: white;
+    background: var(--active-border);
+    color: var(--text-inverse);
     font-size: 10px;
     padding: 2px 6px;
     border-radius: 10px;

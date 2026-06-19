@@ -119,6 +119,7 @@ export class ExportManager {
      * エクスポート実行
      */
     async export(format, options = {}) {
+        this._commitFloatingSelection();
         let targetFormat = format;
         let actualFormat = format;
         
@@ -189,6 +190,7 @@ export class ExportManager {
      * 連番PNG一括出力（ffmpeg変換用）
      */
     async exportSequencePNG(options = {}) {
+        this._commitFloatingSelection();
         const frameCount = this._getFrameCount();
         if (frameCount < 2) {
             throw new Error('アニメーションフレームが2枚以上必要です');
@@ -309,6 +311,7 @@ export class ExportManager {
      * プレビュー生成
      */
     async generatePreview(format, options = {}) {
+        this._commitFloatingSelection();
         let targetFormat = format;
         let actualFormat = format;
         
@@ -370,6 +373,12 @@ export class ExportManager {
         
         return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
                `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    }
+
+    _commitFloatingSelection() {
+        const selectionApi = window.CoreRuntime?.api?.selection;
+        if (!selectionApi?.getState?.()?.transformSessionActive) return false;
+        return selectionApi.confirmTransform?.() === true;
     }
     
     _generateFilename(format, timestamp) {

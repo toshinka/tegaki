@@ -26,6 +26,7 @@ export const CoreRuntime = (function() {
                 tool: {
                     get: () => engine.brushCore.getMode(),
                     set: (mode) => {
+                        engine.pixelSelectionSystem?.setToolActive?.(false);
                         engine.brushCore.setMode(mode);
                         return true;
                     },
@@ -67,6 +68,35 @@ export const CoreRuntime = (function() {
                     canRedo: () => engine.history.canRedo(),
                     clear: () => engine.history.clear()
                 },
+                selection: {
+                    getState: () => engine.pixelSelectionSystem?.getState?.() || null,
+                    getBoundsForLayer: (layerId) =>
+                        engine.pixelSelectionSystem?.getBoundsForLayer?.(layerId) || null,
+                    hasSelection: () => engine.pixelSelectionSystem?.hasSelection?.() === true,
+                    setToolActive: (active) => engine.pixelSelectionSystem?.setToolActive?.(active) === true,
+                    selectAll: () => engine.pixelSelectionSystem?.selectAll?.() === true,
+                    requestTransform: () => engine.pixelSelectionSystem?.requestTransform?.() === true,
+                    confirmTransform: () =>
+                        engine.pixelSelectionSystem?.confirmTransform?.() === true,
+                    cancelTransform: () =>
+                        engine.pixelSelectionSystem?.cancelTransform?.('api') === true,
+                    paste: () => engine.pixelSelectionSystem?.pasteSelection?.() === true,
+                    getTransform: () => engine.pixelSelectionSystem?.getTransform?.() || null,
+                    updateTransform: (property, value) =>
+                        engine.pixelSelectionSystem?.updateTransform?.(property, value) === true,
+                    flipTransform: (direction) =>
+                        engine.pixelSelectionSystem?.flipTransform?.(direction) === true,
+                    resetTransform: () =>
+                        engine.pixelSelectionSystem?.resetTransform?.() === true,
+                    constrainLayer: (layer, beforeSnapshot) =>
+                        engine.pixelSelectionSystem?.constrainLayerToSelection?.(
+                            layer,
+                            beforeSnapshot
+                        ) === true,
+                    clear: () => engine.pixelSelectionSystem?.clearSelection?.('api') === true,
+                    copy: () => engine.pixelSelectionSystem?.copySelection?.() === true,
+                    delete: () => engine.pixelSelectionSystem?.deleteSelection?.() === true
+                },
                 export: {
                     png: (options) => window.exportManager?.export('png', options),
                     webp: (options) => window.exportManager?.export('webp', options),
@@ -84,6 +114,7 @@ export const CoreRuntime = (function() {
                 layerManager: engine.layerSystem,
                 cameraSystem: engine.cameraSystem,
                 drawingEngine: engine.drawingEngine,
+                pixelSelectionSystem: engine.pixelSelectionSystem,
                 brushCore: engine.brushCore,
                 eventBus: engine.eventBus
             };

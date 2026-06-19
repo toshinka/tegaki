@@ -30,6 +30,7 @@ export const KeyboardHandler = (function() {
         return (
             activeElement.tagName === 'INPUT' ||
             activeElement.tagName === 'TEXTAREA' ||
+            activeElement.tagName === 'SELECT' ||
             activeElement.isContentEditable
         );
     }
@@ -62,6 +63,17 @@ export const KeyboardHandler = (function() {
             }
         }
 
+        if (e.key === 'Escape' && vKeyPressed) {
+            vKeyPressed = false;
+            eventBus.emit('keyboard:vkey-state-changed', {
+                pressed: false,
+                cancelled: true
+            });
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
+        }
+
         if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && (e.key === 'Delete' || e.key === 'Backspace')) {
             const animationTable = window.PopupManager?.get?.('animationTable')
                 || window.coreEngine?.popupManager?.get?.('animationTable');
@@ -86,12 +98,19 @@ export const KeyboardHandler = (function() {
                 return;
             }
         }
-        
-        // Vキーのトグル処理
+
+        // VキーでLayer / selection変形モードをトグルする。
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             if (!e.repeat) {
-                vKeyPressed = !vKeyPressed;
-                eventBus.emit('keyboard:vkey-state-changed', { pressed: vKeyPressed });
+                if (window.CoreRuntime?.api?.selection?.hasSelection?.()) {
+                    window.CoreRuntime.api.selection.requestTransform?.();
+                } else {
+                    vKeyPressed = !vKeyPressed;
+                    eventBus.emit('keyboard:vkey-state-changed', {
+                        pressed: vKeyPressed,
+                        source: 'transform-shortcut'
+                    });
+                }
             }
             e.preventDefault();
             return;
@@ -130,7 +149,7 @@ export const KeyboardHandler = (function() {
     }
 
     function handleKeyUp(e) {
-        // Vキーはトグル式なので、keyupでは何もしない
+        // 変形モードはVのトグル式なので、keyupでは何もしない
     }
 
     function getQuickAccessPresetShortcutDelta(event) {
@@ -156,6 +175,13 @@ export const KeyboardHandler = (function() {
         };
         
         switch(action) {
+            case 'SELECT_ALL':
+                if (api?.selection?.selectAll?.()) {
+                    syncToolUI('selection');
+                }
+                event.preventDefault();
+                break;
+
             case 'UNDO':
                 if (history?.canUndo()) {
                     history.undo();
@@ -206,6 +232,14 @@ export const KeyboardHandler = (function() {
                 } else if (window.coreEngine?.switchTool) {
                     window.coreEngine.switchTool(targetFillMode);
                     syncToolUI(targetFillMode);
+                }
+                event.preventDefault();
+                break;
+
+            case 'TOOL_RECT_SELECTION':
+                if (api?.selection?.setToolActive) {
+                    api.selection.setToolActive(true);
+                    syncToolUI('selection');
                 }
                 event.preventDefault();
                 break;
