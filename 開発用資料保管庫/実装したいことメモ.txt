@@ -1,158 +1,88 @@
-※計画書作成以降に思いついたことの追記部分
-・アニメテーブルでCAFが最後に置かれた場所で、停止する/ループするという判定も設けたい。今現在ループ再生は無いので、それと一緒に実装を。ループアイコンの上にトップバーボタンでも設ければよいだろうか？
-・タイムラインに2箇所マーキングすると、その部分だけ再生とかにしたい。CTRLかShiftかALTを押しながらクリックで、二箇所ついたらその判定にする感じで。修飾キーは相応しそうなので。
-・同一タイムラインのLane１にはCAF1、Lane2にはCAF2が配置されており、それぞれ絵が描かれてる。アニメーテーブルを開いてる時は両方表示されるが、テーブルを消すとアクティブなCAFの絵のみが表示される。これはこれで便利だけと、関連性が見えたほうが良い時もある。なので、表示/非表示/Laneオニオンスキンで入れ替えれるようにしたい。オニオンは、https://lucide.dev/icons/square-stack　このアイコンが良いかな？配置位置はレイヤーパネルの　◀FRAME1▶ってフレーム切り替えの部分の空いてるところに置いとこうかな。最初が表示の目のマークだと分かり難そうだから、初期はオニオンにしとくと良さそう。
-・無限キャンバスの実装
-・Vキーによるアクティブレイヤー描画物の移動で、絵がだんだんと劣化していくこれを防ぎたい。クリスタなんかは拡縮でも劣化しない？ベクターじゃなくでも劣化しない拡縮変形って可能だったっけ？見間違いかも知れない。
----
 # オーナーの実装したいことメモ
 
-更新日: 2026-06-19
+更新日: 2026-06-21
 
-このファイルは、実装したい内容を短く確認するための簡略版。
-詳細仕様、依存関係、実装順は `開発用資料保管庫/proposals/` と `task-gemini/` を正本とする。
+このファイルは要望を短く確認する簡略版。
+詳細仕様、依存関係、実装順は `開発用資料保管庫/proposals/` と `task-codex/` を正本とする。
 
 状態:
 
-- `優先`: 直近Phaseまたは不具合として扱う。
-- `候補`: 必要性と依存関係を見てPhase化する。
+- `実行中`: 現在のPhase。
+- `計画済み`: 実行指示書を作成済みで、次に着手するPhase。
+- `候補`: 依存関係と実機影響を見てPhase化する。
+- `調査`: 原因・方式比較を先に行う。
 - `保留`: 基盤完成や技術検証を待つ。
-- `完了`: 実装済み。回帰が出た場合だけ再確認する。
 
----
+## 完了した直近Phase
 
-## 直近の優先事項
+### Phase 5f: Folder selection clipboard `完了`
 
-### Phase 5a: アニメ編集中の表示とUI `優先`
+- Folder選択時、Canvas上の同じ選択範囲を配下Raster Layerへ適用する。
+- Ctrl+C / Ctrl+VでFolder階層と各Layerの選択pixelをまとめて複製する。
+- Undo / RedoはFolder全体を1操作として扱う。
+- Animation Tableへ貼り付けた場合は、internal Folder / Layerを持つ新規CAFへ変換する。
+- Folder target resolver、clipboard payload、通常Folder paste、cut / delete、CAF変換、Undo / Redo、Album復元まで完了。
 
-- アニメテーブルを開いて描画している間、同一Frameの非アクティブCAFが消える不具合を直す。
-- アニメテーブルを開く前は `NO FRAME` パネルを表示しない。
-- Frame表示とCAF枠を短くし、右サイドバー側の死にスペースを詰める。
-- アニメテーブル内のホイール操作を整理する。
-  - 通常ホイール: Lane領域の縦スクロール。
-  - Shift+ホイール: Timelineの横スクロール。
-  - Ctrl+ホイール: Timeline zoom。
-- 詳細: `task-gemini/phase5a.md`
-
-### Phase 5b: アニメ出力 `優先`
-
-- CAF / Timelineから共通のFrame画像列を作る。
-- 既存の連番PNG、APNG、GIF出力を同じFrame合成経路へ接続する。
-- 出力前後で現在Frame、CAF選択、Layer表示状態を変えない。
-- 出力ポップアップ内で範囲やFPSを指定し、軽量なループ確認ができるようにする。
-- 詳細: `task-gemini/phase5b.md`
-
-### Phase 5c: 表示反転と変形品質 `優先`
-
-- キャンバス表示反転は、拡大・移動後の現在表示中心を保って反転する。
-- 表示反転はVキーによる描画物の変形とは分離し、保存画像へ焼き込まない。
-- 反転中であることを薄く表示する。
-- Vキー変形確定後にCanvas表示やSpace移動が止まり、サムネイルだけ更新される場合がある既知症状を確認・修正する。
-- Vキー変形は、preview、確定時の1回焼き込み、整数移動、Undo/Redoを監査する。
-- 選択範囲でも使える共通transform sessionへ整理する。
-- 詳細: `task-gemini/phase5c.md`
-
-### Phase 5d: 選択範囲 `優先`
-
-- 最初は矩形のpixel selectionを実装する。
-- 選択範囲の移動、拡大縮小、回転、反転、削除、copy/pasteを扱う。
-- VキーのLayer全体変形と同じ変形・履歴基盤を使う。
-- 投げ縄、自動選択、featherはMVP後に検討する。
-- 詳細: `task-gemini/phase5d.md`
-
-### エアブラシ品質 `優先・独立調査`
-
-- 同じ色を重ねた時の黒ずみやモアレを解消し、選択色へ自然に収束させる。
-- まず現行PixiJS経路のalpha、flow、dab合成を調査する。
-- WebGPU化は、現行経路での修正が非効率と確認できた場合だけ独立研究へ移す。
-
----
+詳細: `開発用資料保管庫/Archive/phase5f.md`
 
 ## 描画・編集・出力
 
-- 逆クリッピング。クリップなし、通常、反転を循環し、表示・保存・History・CAF内部Layerを揃える。`候補`
+- エアブラシ設定とdab描画責務の整理、同色重ね塗りの黒ずみ、始点dot、周期的な丸い重なりを現行PixiJS経路で修正した。`完了`
+- 逆クリッピングを、表示・保存・History・CAF内部Layerまで揃える。通常Layerまで完了。`進行中`
 - 外部画像をCtrl+Vで貼り付け、アスペクト比を保ってキャンバス内へ縮小する。`候補`
-- 直線、円、矩形とShiftスナップ。`候補`
-- 直線定規、自在定規、集中線定規。`候補`
+- 直線、円、矩形、Shiftスナップ、定規機能。`候補`
+- 円形・折れ線等の選択形状を追加する場合はShift+M切替を候補にし、単独Mの選択ON/OFFを維持する。`候補`
+- PSD入出力でLayer階層を維持する。`候補`
 - スクリーントーン、集中線、ウニフラッシュ、コマ枠マスク。`保留`
-- アクティブCAFのLayer階層をPSD出力する。`候補`
-- PSD読込時にLayer階層を保ち、大きい画像を自動縮小する。`候補`
 
 詳細: `開発用資料保管庫/proposals/01_描画・編集・出力.md`
 
----
-
 ## UI・カラー・Album
 
-- 小型トップバーへホーム、Undo/Redo、回転、表示反転、Layer Panel表示切替を置き、設定で非表示にする。`候補`
-- QAPをスリム化し、ツール別オプションへ切り替える。折りたたみも検討する。`候補`
-- ボタン、スライダー、スクロールバー、透過パネルのデザインを共通化する。`継続`
+- 小型トップバーへホーム、Undo/Redo、回転、表示反転、Layer Panel表示切替を置く。`候補`
+- QAPをスリム化し、ツール別オプションと折りたたみを検討する。`候補`
 - 配色ジェネレーター、基本カラーセット、パレットスロット並べ替え。`候補`
 - 上下左右を指定できるキャンバスリサイズと半透明preview。`候補`
-- Ctrl+S保存成功トースト、Albumの全選択・選択解除、アイコン配色整理。`候補`
-- Historyが500件前後へ増えた時の速度とメモリ使用量を改善する。`候補`
+- Ctrl+S保存成功トースト、Album全選択・選択解除、アイコン配色整理。`候補`
+- History長期使用時の速度とメモリを計測・改善する。`調査`
 
 詳細: `開発用資料保管庫/proposals/02_UI・操作・カラー・アルバム.md`
 
----
+## アニメーション・CAF・変形
 
-## アニメーション・CAF
-
-- Lane、ClipInstance、ClipAssetを正本とし、旧Track=Layer依存を段階的に外す。`継続`
-- CAF内部Layerへの直接描画経路を完成させ、working Layerを互換層へ縮小する。`継続`
+- 再生終端を最後のCAFまたはOUT markerにし、停止 / ループを切り替える。`候補`
+- TimelineへIN / OUT markerを置き、指定範囲だけ再生する。`候補`
+- Animation Tableを閉じた時の表示を、アクティブCAF / 全Lane合成 / Lane onionから選ぶ。`候補`
 - Lane追加・削除・並べ替え、ClipのFrame/Lane移動、duration、複製、UNIQUE化。`候補`
-- FPSごとの1秒境界をTimeline上で強調する。`候補`
-- ClipInstanceのposition、rotation、scale、opacityとkeyframeを実装する。`候補`
-- easing curveとグラフUI。`候補`
-- 再生中の変形をkeyframeとして記録するPerform機能。`保留`
-- 髪、服、アクセサリーの遅れ追従などの物理演算。`保留`
-- Live2D風のmesh / warp変形。`保留`
+- CAF内部Layerへの直接描画を完成させ、working Layerを互換層へ縮小する。`候補`
+- Phase 5hでVキー変形の反復Raster劣化を計測し、通常Layerとselectionの整数移動を非再サンプリング化した。`完了`
+- ClipInstance transform、keyframe、easing、グラフUI。`候補`
+- Perform記録、物理演算、Live2D風mesh / warp。`保留`
 
 詳細: `開発用資料保管庫/proposals/03_アニメーション・CAF・変形.md`
 
----
-
 ## 保存・ストレージ・外部連携
 
-- IndexedDBは日常保存、外部ファイルは長期保管として使い分ける。`継続`
-- `navigator.storage.estimate()` で使用量とquotaをAlbumへ表示する。`候補`
-- Album、緊急復帰、cacheを区別して安全に容量整理する。`候補`
-- File System Access APIで、ユーザー指定フォルダへprojectを保存する。`候補`
-- ブラウザ保存と外部projectを相互にexport/importする。`候補`
+- AlbumへIndexedDB使用量とquotaを表示する。`候補`
+- Album、緊急復帰、cacheを区別して容量整理する。`候補`
+- File System Access APIでユーザー指定フォルダへprojectを保存する。`候補`
+- ブラウザ保存と外部projectを相互にexport / importする。`候補`
 
 詳細: `開発用資料保管庫/proposals/04_保存・ストレージ・外部連携.md`
 
----
-
 ## 長期研究
 
-- MP4/GIFをFrame分解し、編集ロックした参考Laneへ置くロトスコープ支援。`候補`
-- Node.jsによるローカルAI Adapter、ComfyUI、ffmpeg、LLM翻訳連携。`保留`
-- 始点・終点を指定したAI補間と、低opacityの生成参考Lane。`保留`
-- 高品質エアブラシ、大量Frame合成、mesh等へのWebGPU利用。`保留`
-- スタンプ描画エンジン全面置換、SDF/MSDF、無限キャンバス。`保留`
-
-WebGPU化した方が明確に短く高品質になる機能は、計測後に独立Phaseとして扱う。
-現行PixiJSで十分に実装できる機能を、理由なくWebGPU待ちにはしない。
+- 無限キャンバスをchunk / tile、保存形式、差分Historyから研究する。`保留`
+- MP4 / GIFをFrame分解し、編集ロックした参考Laneへ置く。`候補`
+- Node.jsローカルAI Adapter、ComfyUI、ffmpeg、LLM翻訳連携。`保留`
+- 始点・終点を指定したAI補間と低opacityの生成参考Lane。`保留`
+- 大量dabの性能、高度な素材・粒子質感、大量Frame合成、mesh等へのWebGPU利用。現行エアブラシ不具合の修正条件にはしない。`保留`
+- スタンプ描画エンジン全面置換、SDF/MSDF。`保留`
 
 詳細: `開発用資料保管庫/proposals/05_長期研究_AI・WebGPU・物理.md`
 
----
+## 共通希望
 
-## 実装時の共通希望
-
-- 同じUI部品、変形処理、Frame合成処理を複製せず、責務の分かる共通入口から利用する。
-- ただしLayerSystemとClipAssetのデータ正本やHistoryを無理に統合しない。
-- 表示共通化とデータモデル統合を混同しない。
-- 現在動いている通常作画、CAF、保存・復元を壊さない小さい単位で進める。
-
----
-
-## 最近完了した内容
-
-- Layer PanelとCAF内部カードの共通renderer、Pointer D&D、ghost、押しのけanimation。
-- CAFパネル背景色と右側余白の軽量化。
-- LazyBrushと手ブレ補正設定の接続。
-- キャンバス片辺上限2500px。
-- CAF内部Layer/Folderの基本操作、copy/paste、保存・復元。
-- IndexedDBによるAlbum保存基盤。
+- UI、transform、Frame合成を二重実装せず、責務の分かる共通入口から使う。
+- 通常LayerとCAFはUIを共有しても、data正本とHistoryを統合しない。
+- 通常作画、CAF、保存・復元を壊さない小さいsliceで進める。

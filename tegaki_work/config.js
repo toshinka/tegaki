@@ -48,7 +48,11 @@ export const TEGAKI_CONFIG = {
         size: 10,
         opacity: 1.0,
         minWidth: 1,
-        maxWidth: 10
+        maxWidth: 10,
+        airbrushSpacingRatio: 0.1,
+        airbrushFlow: 0.08,
+        airbrushSoftness: 0.8,
+        airbrushScatter: 0.0
     },
     webgpu: {
         enabled: false,
@@ -166,7 +170,7 @@ export const TEGAKI_KEYMAP = {
             key: 'KeyM',
             ctrl: false,
             shift: false,
-            description: '矩形選択ツール'
+            description: '矩形選択ツール ON/OFF'
         },
         TOOL_LASSO_FILL: {
             key: 'KeyL',

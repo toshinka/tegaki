@@ -16,6 +16,7 @@ import { Graphics, Container, Sprite, RenderTexture } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
 import { coordinateSystem } from '../../coordinate-system.js';
 import { historyManager } from '../history.js';
+import { isInverseClipping } from '../clipping-mode.js';
 
 export class BrushCore {
     constructor() {
@@ -103,8 +104,10 @@ export class BrushCore {
                 opacity: 1.0,
                 color: 0x800000,
                 mode: 'pen',
-                airbrushSpacingRatio: 0.18,
-                airbrushFlow: 0.22,
+                airbrushSpacingRatio: 0.1,
+                airbrushFlow: 0.08,
+                airbrushSoftness: 0.8,
+                airbrushScatter: 0.0,
                 blurStrength: 4
             };
         }
@@ -167,7 +170,11 @@ export class BrushCore {
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
 
         const settings = this._getCurrentSettings();
-        this.airbrushState = (currentMode === 'airbrush' || currentMode === 'airbrush-erase') ? {} : null;
+        if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
+            this._beginAirbrushStroke(activeLayer, settings);
+        } else {
+            this._cleanupAirbrushStroke();
+        }
 
         if (currentMode === 'blur') {
             this._beginBlurStroke(activeLayer, settings);
@@ -176,6 +183,9 @@ export class BrushCore {
         }
 
         const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
+        if (this.airbrushState) {
+            this.airbrushState.pressureEnabled = pressureEnabled;
+        }
         // PointerEvent の down 圧は液タブによってスパイクすることがある。
         // 開始点だけは極小に固定し、2点目以降は updateStroke() の実筆圧へ立ち上げる。
         const processedPressure = pressureEnabled ? 0.0 : 1.0;
@@ -200,7 +210,10 @@ export class BrushCore {
         if (activeLayer.layerData?.clipping) {
             const clippingMask = activeLayer.layerData.clippingMaskSprite;
             if (clippingMask) {
-                this.previewGraphics.mask = clippingMask;
+                this.previewGraphics.setMask({
+                    mask: clippingMask,
+                    inverse: isInverseClipping(activeLayer.layerData)
+                });
             } else {
                 this.previewGraphics.visible = false;
             }
@@ -213,8 +226,8 @@ export class BrushCore {
         );
 
         if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
-            this._renderRealtimeAirbrushSegment([{ x: localX, y: localY, pressure: processedPressure }]);
-            this.realtimeAirbrushApplied = true;
+            // pointerdown直後の筆圧0をdab化すると、線頭に孤立した点が残る。
+            // airbrushは最初の移動segment、または筆圧なし入力のtap確定時に描画する。
         } else if (currentMode === 'blur') {
             this._renderRealtimeBlurSegment([{ x: localX, y: localY, pressure: processedPressure }]);
             this.realtimeBlurApplied = true;
@@ -426,22 +439,121 @@ export class BrushCore {
      * 柔らかい円形スタンプを短いセグメント上に配置し、RenderTextureへ焼き込む。
      */
     _renderRealtimeAirbrushSegment(points) {
-        const activeLayer = this.layerManager.getActiveLayer();
-        if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
+        if (!this.airbrushState?.targetLayer || !this.airbrushState?.maskTexture) return;
 
         const settings = this._getCurrentSettings();
-        const renderContainer = this.strokeRenderer.renderAirbrushSegment(points, settings, this.airbrushState || {});
+        const maskSettings = {
+            ...settings,
+            color: 0xffffff,
+            mode: 'airbrush'
+        };
+        const renderContainer = this.strokeRenderer.renderAirbrushSegment(
+            points,
+            maskSettings,
+            this.airbrushState.spacingState
+        );
 
         if (renderContainer && this.layerManager.app?.renderer) {
             this.layerManager.app.renderer.render({
                 container: renderContainer,
-                target: activeLayer.layerData.renderTexture,
+                target: this.airbrushState.maskTexture,
                 clear: false
             });
 
             // cached texture を破棄しないため texture/baseTexture は指定しない。
             renderContainer.destroy({ children: true });
         }
+    }
+
+    _beginAirbrushStroke(activeLayer, settings) {
+        this._cleanupAirbrushStroke();
+
+        const sourceRenderTexture = activeLayer?.layerData?.renderTexture;
+        if (!sourceRenderTexture || !this.layerManager.app?.renderer) {
+            return;
+        }
+
+        const width = sourceRenderTexture.width
+            || activeLayer.layerData?.width
+            || this.layerManager.canvasWidth
+            || 1;
+        const height = sourceRenderTexture.height
+            || activeLayer.layerData?.height
+            || this.layerManager.canvasHeight
+            || 1;
+        const maskTexture = RenderTexture.create({
+            width,
+            height,
+            resolution: 1
+        });
+        const previewSprite = new Sprite(maskTexture);
+        previewSprite.label = 'airbrushStrokePreview';
+        previewSprite.tint = settings.mode === 'airbrush-erase'
+            ? 0xffffff
+            : (settings.color ?? 0x800000);
+        previewSprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'normal';
+
+        if (activeLayer.layerData?.clipping) {
+            const clippingMask = activeLayer.layerData.clippingMaskSprite;
+            if (clippingMask) {
+                previewSprite.setMask({
+                    mask: clippingMask,
+                    inverse: isInverseClipping(activeLayer.layerData)
+                });
+            } else {
+                previewSprite.visible = false;
+            }
+        }
+
+        activeLayer.addChild(previewSprite);
+        this.airbrushState = {
+            targetLayer: activeLayer,
+            maskTexture,
+            previewSprite,
+            spacingState: {},
+            mode: settings.mode,
+            color: settings.color ?? 0x800000
+        };
+    }
+
+    _commitAirbrushStroke(activeLayer) {
+        const state = this.airbrushState;
+        const target = activeLayer?.layerData?.renderTexture;
+        const renderer = this.layerManager.app?.renderer;
+        if (!state?.previewSprite || !target || !renderer) return false;
+
+        if (state.previewSprite.parent) {
+            state.previewSprite.parent.removeChild(state.previewSprite);
+        }
+        state.previewSprite.mask = null;
+        state.previewSprite.setMask({ inverse: false });
+        const commitSprite = new Sprite(state.maskTexture);
+        commitSprite.tint = state.mode === 'airbrush-erase'
+            ? 0xffffff
+            : state.color;
+        commitSprite.blendMode = state.mode === 'airbrush-erase' ? 'erase' : 'normal';
+
+        renderer.render({
+            container: commitSprite,
+            target,
+            clear: false
+        });
+        commitSprite.destroy({ texture: false, baseTexture: false });
+        return true;
+    }
+
+    _cleanupAirbrushStroke() {
+        const state = this.airbrushState;
+        if (state?.previewSprite) {
+            state.previewSprite.mask = null;
+            state.previewSprite.setMask({ inverse: false });
+            if (state.previewSprite.parent) {
+                state.previewSprite.parent.removeChild(state.previewSprite);
+            }
+            state.previewSprite.destroy({ texture: false, baseTexture: false });
+        }
+        state?.maskTexture?.destroy(true);
+        this.airbrushState = null;
     }
 
     /**
@@ -516,7 +628,7 @@ export class BrushCore {
     async finalizeStroke() {
         if (!this.isDrawing) return;
 
-        const activeLayer = this.layerManager.getActiveLayer();
+        const activeLayer = this.airbrushState?.targetLayer || this.layerManager.getActiveLayer();
         if (!activeLayer) return;
 
         const strokeData = this.strokeRecorder.endStroke();
@@ -551,6 +663,15 @@ export class BrushCore {
         }
 
         const finalPoint = strokeData?.points?.[strokeData.points.length - 1];
+        if (
+            (mode === 'airbrush' || mode === 'airbrush-erase')
+            && !this.realtimeAirbrushApplied
+            && finalPoint
+            && this.airbrushState?.pressureEnabled !== true
+        ) {
+            this._renderRealtimeAirbrushSegment([finalPoint]);
+            this.realtimeAirbrushApplied = true;
+        }
         const hasRealtimeApplied =
             (mode === 'eraser' && this.realtimeEraserApplied) ||
             (mode === 'pen' && this.realtimePenApplied) ||
@@ -559,6 +680,10 @@ export class BrushCore {
 
         if (finalPoint && hasRealtimeApplied) {
             this._renderRealtimeSegmentIfNeeded(mode, finalPoint.x, finalPoint.y, finalPoint.pressure, true);
+        }
+
+        if ((mode === 'airbrush' || mode === 'airbrush-erase') && hasRealtimeApplied) {
+            this._commitAirbrushStroke(activeLayer);
         }
 
         const alreadyApplied = hasRealtimeApplied;
@@ -659,7 +784,7 @@ export class BrushCore {
         this.realtimePenApplied = false;
         this.realtimeAirbrushApplied = false;
         this.realtimeBlurApplied = false;
-        this.airbrushState = null;
+        this._cleanupAirbrushStroke();
         this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
 
@@ -721,7 +846,7 @@ export class BrushCore {
         this.realtimePenApplied = false;
         this.realtimeAirbrushApplied = false;
         this.realtimeBlurApplied = false;
-        this.airbrushState = null;
+        this._cleanupAirbrushStroke();
         this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
         

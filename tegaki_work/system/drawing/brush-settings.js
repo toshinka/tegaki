@@ -16,7 +16,7 @@ import { TEGAKI_CONFIG } from '../../config.js';
 import { TegakiEventBus } from '../event-bus.js';
 
 export class BrushSettings {
-    constructor(config, eventBus) {
+    constructor(config, eventBus, settingsManager = null) {
         // シングルトンチェック（互換性維持）
         if (window.brushSettings && arguments.length === 0) {
             return window.brushSettings;
@@ -24,6 +24,7 @@ export class BrushSettings {
 
         this.config = config || TEGAKI_CONFIG;
         this.eventBus = eventBus || TegakiEventBus;
+        this.settingsManager = settingsManager;
 
         if (!this.config) {
             throw new Error('[BrushSettings] Config is required');
@@ -52,9 +53,11 @@ export class BrushSettings {
 
         // Phase 3a: エアブラシ / ぼかしブラシ設定
         // airbrushSpacingRatio: 小さいほど高密度。size * ratio がスタンプ間隔になる。
-        this.airbrushSpacingRatio = this.config.BRUSH_DEFAULTS?.airbrushSpacingRatio ?? 0.18;
-        // airbrushFlow: 1スタンプあたりの濃度。opacity と掛け合わせる。
-        this.airbrushFlow = this.config.BRUSH_DEFAULTS?.airbrushFlow ?? 0.22;
+        this.airbrushSpacingRatio = this.config.BRUSH_DEFAULTS?.airbrushSpacingRatio ?? 0.1;
+        // airbrushFlow: 線としての濃度。dab alphaはspacingに応じて描画側で補正する。
+        this.airbrushFlow = this.config.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08;
+        this.airbrushSoftness = this.config.BRUSH_DEFAULTS?.airbrushSoftness ?? 0.8;
+        this.airbrushScatter = this.config.BRUSH_DEFAULTS?.airbrushScatter ?? 0.0;
         // blurStrength: PixiJS BlurFilter の強度。強すぎると重くなるため初期値は控えめ。
         this.blurStrength = this.config.BRUSH_DEFAULTS?.blurStrength ?? 4;
     }
@@ -170,6 +173,7 @@ export class BrushSettings {
     }
 
     getSettings() {
+        const airbrush = this.getAirbrushSettings();
         return {
             size: this.getSize(),
             color: this.color,
@@ -180,9 +184,38 @@ export class BrushSettings {
             maxWidth: this.getMaxSize(),
             pressureEnabled: this.pressureEnabled,
             eraserPressureEnabled: this.eraserPressureEnabled,
-            airbrushSpacingRatio: this.airbrushSpacingRatio,
-            airbrushFlow: this.airbrushFlow,
+            airbrushSpacingRatio: airbrush.spacingRatio,
+            airbrushFlow: airbrush.flow,
+            airbrushSoftness: airbrush.softness,
+            airbrushScatter: airbrush.scatter,
             blurStrength: this.blurStrength
+        };
+    }
+
+    getAirbrushSettings() {
+        const flow = this.settingsManager?.get?.('airbrushFlow');
+        const softness = this.settingsManager?.get?.('airbrushSoftness');
+        const scatter = this.settingsManager?.get?.('airbrushScatter');
+        const normalize = (value, fallback, min, max) => {
+            const numeric = Number(value);
+            return Math.max(min, Math.min(max, Number.isFinite(numeric) ? numeric : fallback));
+        };
+
+        return Object.freeze({
+            spacingRatio: normalize(this.airbrushSpacingRatio, 0.1, 0.05, 1),
+            flow: normalize(flow, this.airbrushFlow, 0.01, 1),
+            softness: normalize(softness, this.airbrushSoftness, 0, 1),
+            scatter: normalize(scatter, this.airbrushScatter, 0, 1)
+        });
+    }
+
+    _getAirbrushEventData() {
+        const settings = this.getAirbrushSettings();
+        return {
+            airbrushSpacingRatio: settings.spacingRatio,
+            airbrushFlow: settings.flow,
+            airbrushSoftness: settings.softness,
+            airbrushScatter: settings.scatter
         };
     }
 
@@ -224,32 +257,63 @@ export class BrushSettings {
 
     setAirbrushSpacingRatio(ratio) {
         const oldRatio = this.airbrushSpacingRatio;
-        this.airbrushSpacingRatio = Math.max(0.05, Math.min(1.0, Number(ratio) || 0.18));
+        const fallback = this.config.BRUSH_DEFAULTS?.airbrushSpacingRatio ?? 0.1;
+        this.airbrushSpacingRatio = Math.max(0.05, Math.min(1.0, Number(ratio) || fallback));
 
         if (oldRatio !== this.airbrushSpacingRatio && this.eventBus) {
             this.eventBus.emit('brush:airbrush-settings-changed', {
                 component: 'brush',
                 action: 'airbrush-settings-changed',
                 data: {
-                    airbrushSpacingRatio: this.airbrushSpacingRatio,
-                    airbrushFlow: this.airbrushFlow
+                    ...this._getAirbrushEventData()
                 }
             });
         }
     }
 
     setAirbrushFlow(flow) {
-        const oldFlow = this.airbrushFlow;
-        this.airbrushFlow = Math.max(0.01, Math.min(1.0, Number(flow) || 0.22));
+        const oldFlow = this.getAirbrushSettings().flow;
+        const fallback = this.config.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08;
+        this.airbrushFlow = Math.max(0.01, Math.min(1.0, Number(flow) || fallback));
+        this.settingsManager?.set?.('airbrushFlow', this.airbrushFlow);
 
         if (oldFlow !== this.airbrushFlow && this.eventBus) {
             this.eventBus.emit('brush:airbrush-settings-changed', {
                 component: 'brush',
                 action: 'airbrush-settings-changed',
-                data: {
-                    airbrushSpacingRatio: this.airbrushSpacingRatio,
-                    airbrushFlow: this.airbrushFlow
-                }
+                data: this._getAirbrushEventData()
+            });
+        }
+    }
+
+    setAirbrushSoftness(softness) {
+        const oldSoftness = this.getAirbrushSettings().softness;
+        const fallback = this.config.BRUSH_DEFAULTS?.airbrushSoftness ?? 0.8;
+        const numeric = Number(softness);
+        this.airbrushSoftness = Math.max(0, Math.min(1, Number.isFinite(numeric) ? numeric : fallback));
+        this.settingsManager?.set?.('airbrushSoftness', this.airbrushSoftness);
+
+        if (oldSoftness !== this.airbrushSoftness && this.eventBus) {
+            this.eventBus.emit('brush:airbrush-settings-changed', {
+                component: 'brush',
+                action: 'airbrush-settings-changed',
+                data: this._getAirbrushEventData()
+            });
+        }
+    }
+
+    setAirbrushScatter(scatter) {
+        const oldScatter = this.getAirbrushSettings().scatter;
+        const fallback = this.config.BRUSH_DEFAULTS?.airbrushScatter ?? 0;
+        const numeric = Number(scatter);
+        this.airbrushScatter = Math.max(0, Math.min(1, Number.isFinite(numeric) ? numeric : fallback));
+        this.settingsManager?.set?.('airbrushScatter', this.airbrushScatter);
+
+        if (oldScatter !== this.airbrushScatter && this.eventBus) {
+            this.eventBus.emit('brush:airbrush-settings-changed', {
+                component: 'brush',
+                action: 'airbrush-settings-changed',
+                data: this._getAirbrushEventData()
             });
         }
     }
@@ -297,8 +361,18 @@ export class BrushSettings {
             changed = true;
         }
 
-        if (settings.airbrushFlow !== undefined && settings.airbrushFlow !== this.airbrushFlow) {
+        if (settings.airbrushFlow !== undefined && settings.airbrushFlow !== this.getAirbrushSettings().flow) {
             this.setAirbrushFlow(settings.airbrushFlow);
+            changed = true;
+        }
+
+        if (settings.airbrushSoftness !== undefined && settings.airbrushSoftness !== this.getAirbrushSettings().softness) {
+            this.setAirbrushSoftness(settings.airbrushSoftness);
+            changed = true;
+        }
+
+        if (settings.airbrushScatter !== undefined && settings.airbrushScatter !== this.getAirbrushSettings().scatter) {
+            this.setAirbrushScatter(settings.airbrushScatter);
             changed = true;
         }
 

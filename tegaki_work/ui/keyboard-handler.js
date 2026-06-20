@@ -22,6 +22,7 @@ export const KeyboardHandler = (function() {
 
     let isInitialized = false;
     let vKeyPressed = false;
+    let shortcutContext = 'canvas';
 
     function isInputFocused() {
         const activeElement = document.activeElement;
@@ -47,6 +48,27 @@ export const KeyboardHandler = (function() {
         if (e.key.startsWith('F') && e.key.length <= 3) {
             e.preventDefault();
             return;
+        }
+
+        const primaryModifier = e.ctrlKey || e.metaKey;
+        if (
+            primaryModifier
+            && !e.shiftKey
+            && !e.altKey
+            && (e.code === 'KeyC' || e.code === 'KeyV')
+        ) {
+            const animationTable = window.PopupManager?.get?.('animationTable')
+                || window.coreEngine?.popupManager?.get?.('animationTable');
+            if (shortcutContext === 'animation' && animationTable?.isVisible) {
+                if (e.code === 'KeyC') {
+                    animationTable.copySelectedCel?.();
+                } else {
+                    animationTable.pasteBestClipboardAtCurrentCell?.();
+                }
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+            }
         }
 
         if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
@@ -238,8 +260,25 @@ export const KeyboardHandler = (function() {
 
             case 'TOOL_RECT_SELECTION':
                 if (api?.selection?.setToolActive) {
-                    api.selection.setToolActive(true);
-                    syncToolUI('selection');
+                    if (event.repeat) {
+                        event.preventDefault();
+                        break;
+                    }
+                    const selectionActive = api.selection.isToolActive?.() === true;
+                    if (selectionActive) {
+                        if (api.selection.hasSelection?.()) {
+                            api.selection.confirmTransform?.();
+                            api.selection.clear?.();
+                        }
+                        api.selection.setToolActive(false);
+                        const fallbackTool = api?.tool?.get?.()
+                            || window.brushSettings?.getMode?.()
+                            || 'pen';
+                        syncToolUI(fallbackTool);
+                    } else {
+                        api.selection.setToolActive(true);
+                        syncToolUI('selection');
+                    }
                 }
                 event.preventDefault();
                 break;
@@ -318,7 +357,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_COPY':
-                if (handleAnimationTableLayerShortcut('copy')) {
+                if (shortcutContext === 'animation' && handleAnimationTableLayerShortcut('copy')) {
                     event.preventDefault();
                     break;
                 }
@@ -327,7 +366,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_PASTE':
-                if (handleAnimationTableLayerShortcut('paste')) {
+                if (shortcutContext === 'animation' && handleAnimationTableLayerShortcut('paste')) {
                     event.preventDefault();
                     break;
                 }
@@ -828,6 +867,20 @@ export const KeyboardHandler = (function() {
     function init() {
         if (isInitialized) return;
 
+        document.documentElement.dataset.tegakiShortcutContext = shortcutContext;
+        document.addEventListener('pointerdown', event => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target) return;
+
+            if (target.closest('#animation-table-popup')) {
+                shortcutContext = 'animation';
+            } else if (target.closest('#drawing-canvas, #layer-panel-container, .layer-panel-container')) {
+                shortcutContext = 'canvas';
+            } else {
+                return;
+            }
+            document.documentElement.dataset.tegakiShortcutContext = shortcutContext;
+        }, { capture: true });
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
@@ -864,6 +917,7 @@ export const KeyboardHandler = (function() {
         init,
         isInputFocused,
         getShortcutList,
+        getShortcutContext: () => shortcutContext,
         isVKeyPressed,
         setVKeyPressed,
         deleteActiveLayerDrawings

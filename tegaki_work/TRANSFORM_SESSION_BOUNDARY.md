@@ -83,6 +83,15 @@ Layer全体とselectionの差は「対象Raster範囲とmask」であり、trans
 - selection transform中のH / Shift+Hはselection水平 / 垂直反転を優先し、camera flipへ渡さない。
 - preview対象はselection専用Pixi Sprite、保存正本は通常Layer RenderTextureのまま維持する。
 
+## Phase 5hの接続状況
+
+- 通常Layerとpixel selectionの純粋な平行移動は、確定時にx / yを整数化してRGBA bufferをshiftする。
+- canvas外へ出たpixelは破棄し、空いた領域は透明化する。
+- Layer全体とselectionは `system/raster-translation.js` の同じ純粋helperを使う。
+- selection移動とfloating pasteの重なりは既存source-over合成を維持する。
+- 回転・拡縮・flip・複合変形は従来の1回bake / Canvas2D fallbackを維持する。
+- 永続transform state、原画像cache、保存形式変更は導入していない。
+
 ## 制約
 
 - CAF internal Layerへ接続する場合、通常Layer HistoryではなくCAF Raster履歴adapterを使う。

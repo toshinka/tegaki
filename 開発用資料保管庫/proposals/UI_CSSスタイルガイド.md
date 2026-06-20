@@ -1,6 +1,6 @@
 # Tegaki UI / CSS スタイルガイド
 
-更新日: 2026-06-19
+更新日: 2026-06-20
 
 ## 役割
 
@@ -169,5 +169,6 @@ UI変更時:
 
 - `TEGAKI.md`
 - `AGENTS.md`
-- `開発用資料保管庫/proposals/06_構造改善・保守性.md`
-- `task-codex/phase5e.md`
+- `開発用資料保管庫/Archive/06_構造改善・保守性.md`
+- `開発用資料保管庫/Archive/phase5e.md`
+- `開発用資料保管庫/Archive/PHASE5E_AUDIT.md`

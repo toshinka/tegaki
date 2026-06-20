@@ -157,7 +157,7 @@ export const DOMBuilder = (function() {
         const popup = createElement('div', {
             className: 'popup-panel popup-panel--translucent',
             id: 'export-popup',
-            style: { left: '60px', top: '10px', minWidth: '420px' }
+            style: { left: '60px', top: '10px' }
         });
 
         popup.appendChild(createCloseButton('export-popup'));
@@ -180,7 +180,7 @@ export const DOMBuilder = (function() {
         });
         exportOptions.appendChild(createElement('div', { className: 'setting-label', textContent: 'PNG出力' }));
         exportOptions.appendChild(createElement('div', {
-            style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' },
+            className: 'export-option-description',
             textContent: '現在のキャンバス状態をPNG画像として出力します。'
         }));
         popup.appendChild(exportOptions);
@@ -193,7 +193,7 @@ export const DOMBuilder = (function() {
         popup.appendChild(progress);
 
         const previewContainer = createElement('div', {
-            className: 'preview-container',
+            className: 'preview-container ui-scrollbar',
             id: 'preview-container',
             style: { display: 'none' }
         });
@@ -203,7 +203,7 @@ export const DOMBuilder = (function() {
         popup.appendChild(createElement('div', {
             className: 'export-status',
             id: 'export-status',
-            style: { display: 'none', fontSize: '12px', color: 'var(--text-secondary)', margin: '8px 0' }
+            style: { display: 'none' }
         }));
 
         const actions = createElement('div', { className: 'export-actions' });
@@ -332,7 +332,7 @@ export const DOMBuilder = (function() {
 
     function buildSettingsPopup() {
         const popup = createElement('div', {
-            className: 'popup-panel popup-panel--translucent',
+            className: 'popup-panel popup-panel--translucent ui-scrollbar',
             id: 'settings-popup',
             style: { left: '60px', top: '250px' }
         });

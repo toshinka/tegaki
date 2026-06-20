@@ -13,6 +13,7 @@
  */
 
 import { RenderTexture, Graphics, Sprite } from 'pixi.js';
+import { applyClippingMode, normalizeClippingMode } from './clipping-mode.js';
 
 export const LAYER_SCHEMA = {
     id: { type: 'string', required: true, editable: false },
@@ -25,6 +26,7 @@ export const LAYER_SCHEMA = {
     parentId: { type: 'string', default: null, editable: true },
     backgroundColor: { type: 'number', default: 0xf0e0d6, editable: true },
     clipping: { type: 'boolean', default: false, editable: true },
+    clippingMode: { type: 'string', default: 'none', editable: true },
     blendMode: { type: 'string', default: 'normal', editable: true },
     locked: { type: 'boolean', default: false, editable: true }
 };
@@ -41,7 +43,10 @@ export class LayerModel {
         this.parentId = data.parentId || null;
         this.children = Array.isArray(data.children) ? [...data.children] : [];
         this.backgroundColor = data.backgroundColor !== undefined ? data.backgroundColor : 0xf0e0d6;
-        this.clipping = data.clipping || false;
+        applyClippingMode(
+            this,
+            normalizeClippingMode(data.clippingMode, data.clipping === true)
+        );
         this.blendMode = data.blendMode || 'normal';
         this.locked = data.locked || false;
         this.paths = data.paths || [];
@@ -189,6 +194,7 @@ export class LayerModel {
             isBackground: this.isBackground,
             backgroundColor: this.backgroundColor,
             clipping: this.clipping,
+            clippingMode: this.clippingMode,
             blendMode: this.blendMode,
             locked: this.locked
         };

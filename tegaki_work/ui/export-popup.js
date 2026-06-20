@@ -44,6 +44,7 @@ export class ExportPopup {
             this.popup.classList.remove('show');
             this.popup.style.display = '';
             this.popup.classList.add('popup-panel--translucent');
+            this.popup.querySelector('.preview-container')?.classList.add('ui-scrollbar');
         }
     }
     
@@ -56,8 +57,6 @@ export class ExportPopup {
         popup.className = 'popup-panel popup-panel--translucent';
         popup.style.left = '60px';
         popup.style.top = '200px';
-        popup.style.minWidth = '420px';
-        popup.style.maxWidth = '600px';
         
         // DOMBuilderがあれば閉じるボタンを利用、なければ自前で構築
         const closeBtnHtml = window.DOMBuilder 
@@ -80,7 +79,7 @@ export class ExportPopup {
                 <div class="progress-bar"><div class="progress-fill"></div></div>
                 <div class="progress-text">0%</div>
             </div>
-            <div class="preview-container" id="preview-container" style="display: none;">
+            <div class="preview-container ui-scrollbar" id="preview-container" style="display: none;">
                 <div id="preview-message" class="preview-message">プレビュー</div>
                 <div class="preview-image-wrapper">
                     <img id="preview-image" />
@@ -240,7 +239,7 @@ export class ExportPopup {
         const optionsMap = {
             'png': `
                 <div class="setting-label">PNG出力（APNG自動検出）</div>
-                <div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">
+                <div class="export-option-description">
                     ${frameCount >= 2 
                         ? `全${frameCount}フレームをAPNGとして出力します。`
                         : `現在のキャンバスをPNG画像として出力します。サイズ: ${canvasWidth}×${canvasHeight}px`}
@@ -249,7 +248,7 @@ export class ExportPopup {
                 
             'gif': `
                 <div class="setting-label">GIF出力（CUT数で自動判定）</div>
-                <div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">
+                <div class="export-option-description">
                     ${frameCount >= 2
                         ? `全${frameCount}フレームをGIFアニメとして出力します。`
                         : `現在のキャンバスをGIF画像として出力します。サイズ: ${canvasWidth}×${canvasHeight}px`}
@@ -258,7 +257,7 @@ export class ExportPopup {
 
             'webp': `
                 <div class="setting-label">WEBP出力（WebM動画自動検出）</div>
-                <div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">
+                <div class="export-option-description">
                     ${frameCount >= 2 
                         ? `全${frameCount}フレームをWebM動画として出力します。`
                         : `現在のキャンバスをWEBP画像として出力します。サイズ: ${canvasWidth}×${canvasHeight}px`}
@@ -266,7 +265,7 @@ export class ExportPopup {
                 
             'psd': `
                 <div class="setting-label">PSD出力（開発中）</div>
-                <div style="font-size: 12px; color: var(--futaba-maroon); margin-top: 8px;">
+                <div class="export-option-description">
                     レイヤー構造を保持したPhotoshop形式での出力です。<br>
                     ⚠️ 現在開発中です。
                 </div>`
@@ -327,13 +326,14 @@ export class ExportPopup {
         
         statusEl.textContent = message;
         statusEl.style.display = 'block';
-        statusEl.style.color = isError ? '#cc0000' : 'var(--futaba-maroon)';
+        statusEl.classList.toggle('is-error', Boolean(isError));
     }
     
     hideStatus() {
         const statusEl = document.getElementById('export-status');
         if (statusEl) {
             statusEl.style.display = 'none';
+            statusEl.classList.remove('is-error');
         }
     }
     
