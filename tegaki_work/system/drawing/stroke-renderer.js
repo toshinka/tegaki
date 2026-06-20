@@ -12,9 +12,10 @@
  * ============================================================================
  */
 
-import { Graphics, Mesh, Geometry, Container, Sprite, Texture, BlurFilter } from 'pixi.js';
+import { Graphics, Mesh, Geometry, Container, Sprite, BlurFilter, RenderTexture } from 'pixi.js';
 import { getStroke } from 'perfect-freehand';
 import { TEGAKI_CONFIG } from '../../config.js';
+import { AirbrushDabRenderer } from './airbrush-dab-renderer.js';
 
 export class StrokeRenderer {
     constructor(app, layerSystem, cameraSystem) {
@@ -29,7 +30,9 @@ export class StrokeRenderer {
         this.glMSDFPipeline = null;
         this.textureBridge = null;
         this.webgl2Enabled = false;
-        this.airbrushTexture = null;
+        this.airbrushDabRenderer = new AirbrushDabRenderer({
+            calculateWidth: (pressure, size) => this.calculateWidth(pressure, size)
+        });
         
         this.config = window.TEGAKI_CONFIG?.webgpu || {};
     }
@@ -105,148 +108,219 @@ export class StrokeRenderer {
      * state は BrushCore 側でストローク中だけ保持し、スタンプ間隔の端数を持ち越す。
      */
     renderAirbrushSegment(points, settings, state = {}) {
-        if (!points || points.length < 1) return null;
-
-        const container = new Container();
-        const texture = this._getAirbrushTexture();
-
-        if (points.length === 1) {
-            const p = points[0];
-            this._addAirbrushDab(container, texture, p.x, p.y, p.pressure ?? 1.0, settings);
-            state.initialized = true;
-            state.nextDistance = this._getAirbrushSpacing(settings);
-            return container;
-        }
-
-        const start = points[0];
-        const end = points[points.length - 1];
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const distance = Math.hypot(dx, dy);
-
-        if (distance <= 0) {
-            this._addAirbrushDab(container, texture, end.x, end.y, end.pressure ?? 1.0, settings);
-            return container;
-        }
-
-        const spacing = this._getAirbrushSpacing(settings);
-        let nextDistance;
-
-        if (!state.initialized) {
-            nextDistance = 0;
-            state.initialized = true;
-        } else {
-            nextDistance = state.nextDistance ?? spacing;
-        }
-
-        while (nextDistance <= distance) {
-            const t = nextDistance / distance;
-            const x = start.x + dx * t;
-            const y = start.y + dy * t;
-            const pressure = (start.pressure ?? 1.0) + ((end.pressure ?? 1.0) - (start.pressure ?? 1.0)) * t;
-
-            this._addAirbrushDab(container, texture, x, y, pressure, settings);
-            nextDistance += spacing;
-        }
-
-        state.nextDistance = nextDistance - distance;
-        return container.children.length > 0 ? container : null;
+        return this.airbrushDabRenderer.renderSegment(points, settings, state);
     }
 
-    _getAirbrushSpacing(settings) {
-        const size = Math.max(1, settings.size || 1);
-        // [指示書] 密度を向上 (0.18 -> 0.08) し、より隙間のない霧を実現
-        const ratio = settings.airbrushSpacingRatio ?? 0.08;
-        return Math.max(0.5, size * ratio);
+    /**
+     * Phase 5g Slice 1: 現行airbrush経路を一時RenderTextureへ反復描画し、
+     * pixel値と簡易profileを返す。通常実行では使用せずdebug時だけ許可する。
+     */
+    diagnoseAirbrushComposition(options = {}) {
+        if (!TEGAKI_CONFIG.debug) {
+            throw new Error('[StrokeRenderer] Airbrush diagnostics require TEGAKI_CONFIG.debug = true');
+        }
+        if (!this.app?.renderer) {
+            throw new Error('[StrokeRenderer] Renderer is not available');
+        }
+
+        const baseSettings = this._getSettings();
+        const settings = {
+            ...baseSettings,
+            mode: 'airbrush',
+            size: Math.max(4, Number(options.size ?? baseSettings.size ?? 30)),
+            color: Number(options.color ?? baseSettings.color ?? 0x800000),
+            opacity: Math.max(0, Math.min(1, Number(options.opacity ?? baseSettings.opacity ?? 1))),
+            pressureEnabled: false,
+            airbrushSpacingRatio: Number(options.spacingRatio ?? baseSettings.airbrushSpacingRatio ?? 0.1),
+            airbrushFlow: Number(options.flow ?? baseSettings.airbrushFlow ?? 0.08),
+            airbrushSoftness: Number(options.softness ?? baseSettings.airbrushSoftness ?? 0.8),
+            airbrushScatter: Number(options.scatter ?? baseSettings.airbrushScatter ?? 0)
+        };
+        const width = Math.max(64, Math.round(options.width ?? 192));
+        const height = Math.max(64, Math.round(options.height ?? 96));
+        const repetitions = Array.from(new Set(
+            (options.repetitions || [1, 2, 4, 8, 16, 32, 64])
+                .map(value => Math.max(1, Math.round(Number(value) || 1)))
+        )).sort((a, b) => a - b);
+        const path = options.path === 'line' ? 'line' : 'point';
+        const backgroundColor = options.backgroundColor === undefined
+            ? null
+            : Number(options.backgroundColor);
+        const target = RenderTexture.create({ width, height, resolution: 1 });
+        const centerX = Math.floor(width / 2);
+        const centerY = Math.floor(height / 2);
+        const lineInset = Math.max(settings.size, 16);
+        const points = path === 'line'
+            ? [
+                { x: lineInset, y: centerY, pressure: 1 },
+                { x: width - lineInset, y: centerY, pressure: 1 }
+            ]
+            : [{ x: centerX, y: centerY, pressure: 1 }];
+        const results = [];
+
+        try {
+            if (backgroundColor !== null) {
+                const background = new Graphics();
+                background.rect(0, 0, width, height);
+                background.fill({ color: backgroundColor, alpha: 1 });
+                this.app.renderer.render({
+                    container: background,
+                    target,
+                    clear: true,
+                    clearColor: [0, 0, 0, 0]
+                });
+                background.destroy();
+            } else {
+                const empty = new Container();
+                this.app.renderer.render({
+                    container: empty,
+                    target,
+                    clear: true,
+                    clearColor: [0, 0, 0, 0]
+                });
+                empty.destroy();
+            }
+
+            let rendered = 0;
+            const maximum = repetitions[repetitions.length - 1];
+            for (let count = 1; count <= maximum; count++) {
+                const renderContainer = this.renderAirbrushSegment(points, settings, {});
+                if (renderContainer) {
+                    this.app.renderer.render({
+                        container: renderContainer,
+                        target,
+                        clear: false
+                    });
+                    renderContainer.destroy({ children: true });
+                }
+                rendered++;
+
+                if (repetitions.includes(rendered)) {
+                    const extracted = this.app.renderer.extract.pixels({ target });
+                    const sourcePixels = extracted?.pixels
+                        || (extracted instanceof Uint8ClampedArray
+                            ? extracted
+                            : new Uint8ClampedArray(extracted?.buffer || extracted));
+                    const pixels = new Uint8ClampedArray(sourcePixels);
+                    const sampleWidth = Math.round(extracted?.width || width);
+                    const sampleHeight = Math.round(extracted?.height || height);
+                    const center = this._readAirbrushDiagnosticPixel(
+                        pixels,
+                        sampleWidth,
+                        sampleHeight,
+                        centerX,
+                        centerY
+                    );
+                    const targetColor = {
+                        r: (settings.color >> 16) & 0xff,
+                        g: (settings.color >> 8) & 0xff,
+                        b: settings.color & 0xff
+                    };
+                    results.push({
+                        repetitions: rendered,
+                        center: {
+                            ...center,
+                            target: targetColor,
+                            straightDelta: {
+                                r: center.straight.r - targetColor.r,
+                                g: center.straight.g - targetColor.g,
+                                b: center.straight.b - targetColor.b
+                            }
+                        },
+                        profile: this._summarizeAirbrushDiagnosticProfile(
+                            pixels,
+                            sampleWidth,
+                            sampleHeight,
+                            centerY,
+                            path === 'line' ? lineInset : centerX - Math.ceil(settings.size / 2),
+                            path === 'line' ? width - lineInset : centerX + Math.ceil(settings.size / 2)
+                        )
+                    });
+                }
+            }
+        } finally {
+            target.destroy(true);
+        }
+
+        return {
+            path,
+            width,
+            height,
+            backgroundColor,
+            settings: {
+                size: settings.size,
+                color: settings.color,
+                opacity: settings.opacity,
+                spacingRatio: settings.airbrushSpacingRatio ?? null,
+                flow: settings.airbrushFlow,
+                softness: settings.airbrushSoftness,
+                scatter: settings.airbrushScatter
+            },
+            results
+        };
     }
 
-    _addAirbrushDab(container, texture, x, y, pressure, settings) {
-        const sm = window.TegakiSettingsManager;
-        const flow = sm ? (sm.get('airbrushFlow') ?? 0.08) : 0.08;
-        // scatter: 中心からのわずかなランダムオフセット量（0=完全中心固定、1=サイズの20%ぶれ）
-        const scatter = sm ? (sm.get('airbrushScatter') ?? 0.0) : 0.0;
+    _readAirbrushDiagnosticPixel(pixels, width, height, x, y) {
+        const px = Math.max(0, Math.min(width - 1, Math.round(x)));
+        const py = Math.max(0, Math.min(height - 1, Math.round(y)));
+        const index = (py * width + px) * 4;
+        const raw = {
+            r: pixels[index] ?? 0,
+            g: pixels[index + 1] ?? 0,
+            b: pixels[index + 2] ?? 0,
+            a: pixels[index + 3] ?? 0
+        };
+        const alphaScale = raw.a > 0 && raw.a < 255 ? 255 / raw.a : 1;
 
-        const baseSize = settings.pressureEnabled === true
-            ? this.calculateWidth(Math.max(0.1, pressure ?? 1.0), settings.size)
-            : settings.size;
-
-        const isErase = settings.mode === 'airbrush-erase' || settings.mode === 'eraser';
-
-        // ソフトdab方式: 1スタンプ = 1つのソフト円形。
-        // scatterが0より大きい場合のみわずかにオフセットして「揺らぎ」を加える。
-        const sprite = new Sprite(texture);
-        sprite.anchor.set(0.5);
-
-        let dabX = x;
-        let dabY = y;
-        if (scatter > 0) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * baseSize * scatter * 0.2;
-            dabX = x + Math.cos(angle) * dist;
-            dabY = y + Math.sin(angle) * dist;
-        }
-        sprite.position.set(dabX, dabY);
-        sprite.width = baseSize;
-        sprite.height = baseSize;
-
-        sprite.tint = isErase ? 0xffffff : (settings.color ?? 0x800000);
-
-        // flow: 1dabあたりのopacity。低い値で塗り重ねて密度を出す。
-        const alpha = Math.max(0.001, (settings.opacity ?? 1.0) * flow);
-        sprite.alpha = alpha;
-
-        sprite.blendMode = isErase ? 'erase' : 'normal';
-
-        container.addChild(sprite);
+        return {
+            raw,
+            straight: {
+                r: Math.min(255, Math.round(raw.r * alphaScale)),
+                g: Math.min(255, Math.round(raw.g * alphaScale)),
+                b: Math.min(255, Math.round(raw.b * alphaScale)),
+                a: raw.a
+            }
+        };
     }
 
-    _getAirbrushTexture() {
-        const sm = window.TegakiSettingsManager;
-        // softness: グラデーションの広がり具合（0=硬いエッジ、1=最もソフトなエッジ）
-        const softness = sm ? (sm.get('airbrushSoftness') ?? 0.8) : 0.8;
+    _summarizeAirbrushDiagnosticProfile(pixels, width, height, y, startX, endX) {
+        const alphaValues = [];
+        const lumaValues = [];
+        const from = Math.max(0, Math.min(width - 1, Math.round(startX)));
+        const to = Math.max(from, Math.min(width - 1, Math.round(endX)));
 
-        if (this.airbrushTexture && this._lastSoftness === softness) {
-            return this.airbrushTexture;
+        for (let x = from; x <= to; x++) {
+            const sample = this._readAirbrushDiagnosticPixel(pixels, width, height, x, y);
+            alphaValues.push(sample.raw.a);
+            lumaValues.push(
+                (sample.straight.r * 0.2126)
+                + (sample.straight.g * 0.7152)
+                + (sample.straight.b * 0.0722)
+            );
         }
-        this._lastSoftness = softness;
 
-        const size = 256;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
+        const summarize = (values) => {
+            const minimum = values.length ? Math.min(...values) : 0;
+            const maximum = values.length ? Math.max(...values) : 0;
+            const mean = values.length
+                ? values.reduce((sum, value) => sum + value, 0) / values.length
+                : 0;
+            const variance = values.length
+                ? values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length
+                : 0;
+            return {
+                min: Number(minimum.toFixed(3)),
+                max: Number(maximum.toFixed(3)),
+                mean: Number(mean.toFixed(3)),
+                stdDev: Number(Math.sqrt(variance).toFixed(3))
+            };
+        };
 
-        const ctx = canvas.getContext('2d');
-        const center = size / 2;
-
-        ctx.clearRect(0, 0, size, size);
-
-        // ソフトdabのガウシアン風グラデーション。
-        // softness が高いほど中心の濃い領域が狭まり、周辺が広く柔らかくなる。
-        // softness=0: 中心まで一定に濃く硬いエッジ → ほぼ均一な円
-        // softness=1: 中心だけ濃く、外側へ急激にフェード → 霧状
-        const hardEdge = 1.0 - softness;          // 0.0〜1.0 (softness反転)
-        const innerStop = hardEdge * 0.3;          // 均一濃度を保つ半径
-        const midStop = innerStop + (1.0 - innerStop) * 0.4;
-
-        const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
-        gradient.addColorStop(0.0,       'rgba(255, 255, 255, 1.0)');
-        if (innerStop > 0.01) {
-            gradient.addColorStop(innerStop, 'rgba(255, 255, 255, 1.0)');
-        }
-        gradient.addColorStop(midStop,   `rgba(255, 255, 255, ${(0.4 * softness).toFixed(3)})`);
-        gradient.addColorStop(0.85,      'rgba(255, 255, 255, 0.02)');
-        gradient.addColorStop(1.0,       'rgba(255, 255, 255, 0.0)');
-
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, size, size);
-
-        // ノイズは加えない。滑らかなグラデーションをそのまま使用する。
-
-        if (this.airbrushTexture) {
-            this.airbrushTexture.destroy();
-        }
-        this.airbrushTexture = Texture.from(canvas);
-        return this.airbrushTexture;
+        return {
+            samples: alphaValues.length,
+            alpha: summarize(alphaValues),
+            straightLuma: summarize(lumaValues)
+        };
     }
 
     /**

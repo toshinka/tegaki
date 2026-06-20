@@ -40,6 +40,9 @@ export class SettingsManager {
             pressureCorrection: this.config?.userSettings?.pressureCorrection || 1.0,
             smoothing: this.config?.userSettings?.smoothing || 0.5,
             pressureCurve: this.config?.userSettings?.pressureCurve || 'linear',
+            airbrushFlow: this.config?.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08,
+            airbrushSoftness: this.config?.BRUSH_DEFAULTS?.airbrushSoftness ?? 0.8,
+            airbrushScatter: this.config?.BRUSH_DEFAULTS?.airbrushScatter ?? 0.0,
             statusPanelVisible: this.config?.ui?.statusPanelVisible !== undefined 
                 ? this.config.ui.statusPanelVisible 
                 : true,
@@ -115,6 +118,18 @@ export class SettingsManager {
             },
             pressureCurve: (v) => {
                 return ['linear', 'ease-in', 'ease-out'].includes(v) ? v : undefined;
+            },
+            airbrushFlow: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.01, Math.min(1.0, num));
+            },
+            airbrushSoftness: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            airbrushScatter: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
             },
             statusPanelVisible: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
@@ -196,6 +211,9 @@ export class SettingsManager {
             'pressureCorrection',
             'smoothing',
             'pressureCurve',
+            'airbrushFlow',
+            'airbrushSoftness',
+            'airbrushScatter',
             'statusPanelVisible',
             'exportResolution',
             'bucketGapClose',

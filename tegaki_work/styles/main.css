@@ -596,6 +596,12 @@ canvas {
     opacity: 1;
 }
 
+.layer-clip-status.is-inverse-clipping,
+.layer-attribute-clip-toggle.is-inverse-clipping {
+    color: var(--futaba-medium);
+    border-color: var(--futaba-medium);
+}
+
 .layer-clip-status.is-toggleable {
     cursor: pointer;
 }
@@ -1756,6 +1762,25 @@ canvas {
     gap: 8px;
 }
 
+.settings-help-tab {
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.help-section-title {
+    margin: 16px 0 8px 4px;
+    padding-left: 8px;
+    border-left: 3px solid var(--futaba-maroon);
+    color: var(--futaba-maroon);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.help-section-title:first-child {
+    margin-top: 4px;
+}
+
 .help-item {
     display: flex;
     justify-content: space-between;
@@ -2437,6 +2462,46 @@ canvas {
     min-height: 80px; 
 }
 
+.export-option-description {
+    margin-top: 8px;
+    color: var(--futaba-maroon);
+    font-size: 12px;
+}
+
+.export-progress {
+    margin: 8px 0;
+}
+
+.export-progress .progress-bar {
+    height: 8px;
+    overflow: hidden;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 999px;
+    background: var(--futaba-background);
+}
+
+.export-progress .progress-fill {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--futaba-medium);
+    transition: width 0.15s ease-out;
+}
+
+.export-progress .progress-text {
+    margin-top: 4px;
+    color: var(--futaba-maroon);
+    font-size: 11px;
+    font-weight: 700;
+    text-align: right;
+}
+
+.export-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .preview-container { 
     max-height: 350px; 
     overflow: auto;
@@ -2485,6 +2550,19 @@ canvas {
 
 .export-animation-range input {
     width: 56px;
+    padding: 3px 5px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    outline: none;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font: inherit;
+    font-weight: 700;
+}
+
+.export-animation-range input:hover,
+.export-animation-range input:focus-visible {
+    border-color: var(--active-border);
 }
 
 .history-setting-auto {
@@ -2563,7 +2641,26 @@ canvas {
     text-align: center;
 }
 
+.export-status.is-error {
+    color: var(--active-border);
+}
+
+#export-popup .action-button:disabled,
+#export-popup .action-button:disabled:hover {
+    border-color: var(--futaba-light-medium) !important;
+    background: var(--futaba-background) !important;
+    color: var(--text-secondary) !important;
+    cursor: not-allowed;
+    opacity: 0.62;
+    transform: none;
+}
+
 /* ===== 共通スクロールバー (目に優しい透過栗色) ===== */
+.ui-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
+}
+
 .ui-scrollbar::-webkit-scrollbar {
     width: 14px;
 }
@@ -2581,7 +2678,7 @@ canvas {
 }
 
 .ui-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #b8706b;
+    background: var(--futaba-medium);
     border: 2px solid transparent;
 }
 
@@ -2753,6 +2850,8 @@ canvas {
 #settings-popup {
     min-width: 340px;
     max-width: 360px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
 }
 
 #settings-popup,

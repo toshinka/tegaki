@@ -11,6 +11,7 @@ import { Container, RenderTexture, Sprite, Texture } from 'pixi.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { TimelineModel, ClipAssetModel, DrawingSnapshotModel } from '../system/animation/animation-data-model.js';
+import { createCenteredTransformMatrix } from '../system/transform-math.js';
 
 const ANIMATION_TABLE_UI_STORAGE_KEY = 'tegaki_animation_table_ui_v1';
 const TIMELINE_ZOOM_STEPS = [18, 22, 26, 30, 36, 44];
@@ -1287,6 +1288,9 @@ export class AnimationTablePopup {
         if (!layerId || !this._isAnimationWorkingLayerId(layerId)) return;
         if (this.isTransformPreviewSuspended) return;
 
+        if (data.meta?.type === 'pixel-selection') {
+            this._invalidateWorkingLayerSnapshotId(layerId);
+        }
         this._saveSelectedClipFromWorkingLayers();
         this.render();
         this._requestLayerPanelSync();
@@ -1322,12 +1326,312 @@ export class AnimationTablePopup {
                 duration: clip.duration,
                 transform: this._cloneClipInstanceMetadata(clip.transform),
                 transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
-                physics: this._cloneClipInstanceMetadata(clip.physics)
+                physics: this._cloneClipInstanceMetadata(clip.physics),
+                copiedAt: Date.now()
             };
             this.render();
             return true;
         }
         return false;
+    }
+
+    getCopiedCelTimestamp() {
+        return Number(this._copiedCelRef?.copiedAt) || 0;
+    }
+
+    pasteBestClipboardAtCurrentCell() {
+        const selectionClipboard = window.pixelSelectionSystem?.getClipboardPayload?.() || null;
+        const selectionCopiedAt = Number(selectionClipboard?.copiedAt) || 0;
+        if (selectionClipboard && selectionCopiedAt > this.getCopiedCelTimestamp()) {
+            return this.pasteCanvasSelectionAsNewCel(selectionClipboard);
+        }
+        return this.pasteCopiedCel();
+    }
+
+    pasteCanvasSelectionAsNewCel(clipboard = null) {
+        const source = clipboard || window.pixelSelectionSystem?.getClipboardPayload?.();
+        if (source?.kind === 'folder-pixel-selection') {
+            return this.pasteFolderSelectionAsNewCel(source);
+        }
+        if (!source?.pixels || !this.layerSystem) return false;
+
+        const currentFrame = this.model.playback.currentFrame;
+        const lane = this.activeLaneId ? this.model.getLaneById(this.activeLaneId) : null;
+        if (!lane || lane.type === 'folder' || lane.isBackground || !lane.canPlaceCel(currentFrame, 1)) {
+            return false;
+        }
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const size = this._getCanvasSnapshotSize();
+        const pixels = new Uint8ClampedArray(size.width * size.height * 4);
+        const x = Math.max(0, Math.min(size.width - source.width, Math.round(source.sourceBounds?.x || 0)));
+        const y = Math.max(0, Math.min(size.height - source.height, Math.round(source.sourceBounds?.y || 0)));
+        for (let row = 0; row < source.height; row++) {
+            const sourceStart = row * source.width * 4;
+            const targetStart = ((y + row) * size.width + x) * 4;
+            pixels.set(source.pixels.subarray(sourceStart, sourceStart + source.width * 4), targetStart);
+        }
+
+        const snapshot = new DrawingSnapshotModel({
+            width: size.width,
+            height: size.height,
+            pixels,
+            isBlank: false
+        });
+        this.model.drawingSnapshots.push(snapshot);
+        const folder = this._createNextClipAssetFolder();
+        const asset = new ClipAssetModel({
+            name: '選択範囲から作成',
+            type: 'raster',
+            folderId: folder?.id || null,
+            drawingSnapshotId: snapshot.id
+        });
+        asset.internalLayers = [
+            this.model.createClipAssetInternalLayer({
+                name: '選択範囲',
+                type: 'raster',
+                drawingSnapshotId: snapshot.id
+            })
+        ];
+        this.model.clipAssets.push(asset);
+
+        const newClip = lane.addCel({
+            assetId: asset.id,
+            startFrame: currentFrame,
+            duration: 1,
+            rasterSnapshot: snapshot.serialize()
+        });
+        if (!newClip) {
+            this._restoreTimelineHistoryState(beforeState);
+            return false;
+        }
+
+        this.selectedCelId = newClip.id;
+        this.activeLaneId = lane.id;
+        this.selectedAssetId = asset.id;
+        this.selectedAssetFolderId = asset.folderId || null;
+        this.selectedInternalLayerId = asset.internalLayers[0].id;
+        this._syncClipAssetToWorkingLayers(newClip);
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-paste-selection', {
+            type: 'caf-clip-paste-selection',
+            clipId: newClip.id,
+            assetId: asset.id,
+            laneId: lane.id,
+            frameIndex: currentFrame,
+            sourceLayerId: source.sourceLayerId || null,
+            bounds: { x, y, width: source.width, height: source.height }
+        });
+        this.render();
+        this._requestLayerPanelSync();
+        return true;
+    }
+
+    pasteFolderSelectionAsNewCel(clipboard = null) {
+        const source = clipboard || window.pixelSelectionSystem?.getClipboardPayload?.();
+        const isValid = window.pixelSelectionSystem?.validateClipboardPayload?.(source);
+        if (
+            !source
+            || source.kind !== 'folder-pixel-selection'
+            || source.version !== 1
+            || isValid === false
+            || !this.layerSystem
+        ) {
+            return false;
+        }
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const currentFrame = this.model.playback.currentFrame;
+        const target = this._resolveSelectionPasteTarget(currentFrame, 1);
+        const lane = target?.lane || null;
+        if (!lane) return false;
+
+        const size = this._getCanvasSnapshotSize();
+        const assetFolder = this._createNextClipAssetFolder();
+        if (!assetFolder) {
+            this._restoreTimelineHistoryState(beforeState);
+            return false;
+        }
+
+        const internalRoot = this.model.createClipAssetInternalLayer({
+            name: source.rootFolder.name || 'フォルダ',
+            type: 'folder',
+            visible: source.rootFolder.visible !== false,
+            opacity: Number.isFinite(source.rootFolder.opacity) ? source.rootFolder.opacity : 1,
+            blendMode: 'normal'
+        });
+        const internalBySourceKey = new Map([['root', internalRoot]]);
+        const createdEntries = [];
+        let primarySnapshot = null;
+        let primaryInternalLayer = null;
+        let rasterByteSize = 0;
+
+        const sortedEntries = [...source.entries].sort((a, b) => b.order - a.order);
+        for (const entry of sortedEntries) {
+            let drawingSnapshot = null;
+            if (entry.type === 'raster') {
+                const pixels = this._createCanvasPixelsFromFolderClipboardEntry(entry, source, size);
+                drawingSnapshot = new DrawingSnapshotModel({
+                    width: size.width,
+                    height: size.height,
+                    pixels,
+                    isBlank: this._isRasterSnapshotBlank({ pixels })
+                });
+                this.model.drawingSnapshots.push(drawingSnapshot);
+                rasterByteSize += drawingSnapshot.pixels?.byteLength || 0;
+            }
+
+            const internalLayer = this.model.createClipAssetInternalLayer({
+                name: entry.name || (entry.type === 'folder' ? 'フォルダ' : 'レイヤー'),
+                type: entry.type,
+                visible: entry.visible !== false,
+                opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+                blendMode: entry.blendMode || 'normal',
+                clipping: entry.clipping === true,
+                drawingSnapshotId: drawingSnapshot?.id || null
+            });
+            internalBySourceKey.set(entry.sourceKey, internalLayer);
+            createdEntries.push({ entry, internalLayer });
+            if (drawingSnapshot && !primarySnapshot) {
+                primarySnapshot = drawingSnapshot;
+                primaryInternalLayer = internalLayer;
+            }
+        }
+
+        for (const { entry, internalLayer } of createdEntries) {
+            internalLayer.parentLayerId = internalBySourceKey.get(entry.relativeParentKey)?.id
+                || internalRoot.id;
+        }
+
+        if (!primarySnapshot || !primaryInternalLayer) {
+            this._restoreTimelineHistoryState(beforeState);
+            return false;
+        }
+
+        const asset = new ClipAssetModel({
+            name: `${source.rootFolder.name || 'フォルダ'} から作成`,
+            type: 'raster',
+            folderId: assetFolder.id,
+            drawingSnapshotId: primarySnapshot.id
+        });
+        asset.internalLayers = [
+            internalRoot,
+            ...createdEntries.map(({ internalLayer }) => internalLayer)
+        ];
+        this.model.clipAssets.push(asset);
+
+        const newClip = lane.addCel({
+            assetId: asset.id,
+            startFrame: currentFrame,
+            duration: 1,
+            rasterSnapshot: primarySnapshot.serialize()
+        });
+        if (!newClip) {
+            this._restoreTimelineHistoryState(beforeState);
+            return false;
+        }
+
+        this.selectedCelId = newClip.id;
+        this.activeLaneId = lane.id;
+        this.isLaneOnlySelected = false;
+        this.selectedAssetId = asset.id;
+        this.selectedAssetFolderId = asset.folderId;
+        this.selectedInternalLayerId = primaryInternalLayer.id;
+        this.model.tracks.forEach(track => {
+            track.active = track.id === lane.id;
+        });
+        this._syncClipAssetToWorkingLayers(newClip);
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            'caf-clip-paste-folder-selection',
+            {
+                type: 'caf-clip-paste-folder-selection',
+                clipId: newClip.id,
+                assetId: asset.id,
+                assetFolderId: assetFolder.id,
+                laneId: lane.id,
+                frameIndex: currentFrame,
+                createdLaneId: target.created ? lane.id : null,
+                internalLayerCount: asset.internalLayers.length,
+                rasterCount: createdEntries.filter(record => record.entry.type === 'raster').length,
+                bounds: { ...(source.canvasBounds || {}) },
+                byteSize: rasterByteSize
+            }
+        );
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    _resolveSelectionPasteTarget(frameIndex, duration = 1) {
+        const isAvailable = (lane) => {
+            return !!lane
+                && lane.type !== 'folder'
+                && !lane.isBackground
+                && lane.canPlaceCel(frameIndex, duration);
+        };
+        const activeLane = this.activeLaneId ? this.model.getLaneById(this.activeLaneId) : null;
+        if (isAvailable(activeLane)) return { lane: activeLane, created: false };
+
+        const availableLane = this.model.tracks.find(isAvailable);
+        if (availableLane) return { lane: availableLane, created: false };
+
+        const createdLane = this.model.createIndependentLane();
+        return createdLane ? { lane: createdLane, created: true } : null;
+    }
+
+    _createCanvasPixelsFromFolderClipboardEntry(entry, payload, size) {
+        const pixels = new Uint8ClampedArray(size.width * size.height * 4);
+        if (!(entry?.pixels instanceof Uint8ClampedArray)) return pixels;
+
+        const sourceWidth = Math.max(1, Math.round(entry.width || 1));
+        const sourceHeight = Math.max(1, Math.round(entry.height || 1));
+        const localBounds = entry.localBounds || {};
+        const localX = Math.round(localBounds.x || 0);
+        const localY = Math.round(localBounds.y || 0);
+        const matrix = createCenteredTransformMatrix(
+            entry.transform || {},
+            size.width / 2,
+            size.height / 2
+        );
+        const determinant = matrix.a * matrix.d - matrix.b * matrix.c;
+        if (Math.abs(determinant) < 1e-8) return pixels;
+
+        const selection = payload.canvasBounds || {
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height
+        };
+        const x0 = Math.max(0, Math.floor(selection.x || 0));
+        const y0 = Math.max(0, Math.floor(selection.y || 0));
+        const x1 = Math.min(size.width, Math.ceil((selection.x || 0) + (selection.width || 0)));
+        const y1 = Math.min(size.height, Math.ceil((selection.y || 0) + (selection.height || 0)));
+
+        for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+                const translatedX = x + 0.5 - matrix.tx;
+                const translatedY = y + 0.5 - matrix.ty;
+                const sourceCanvasX = (matrix.d * translatedX - matrix.c * translatedY) / determinant;
+                const sourceCanvasY = (-matrix.b * translatedX + matrix.a * translatedY) / determinant;
+                const sourceX = Math.floor(sourceCanvasX) - localX;
+                const sourceY = Math.floor(sourceCanvasY) - localY;
+                if (
+                    sourceX < 0
+                    || sourceY < 0
+                    || sourceX >= sourceWidth
+                    || sourceY >= sourceHeight
+                ) {
+                    continue;
+                }
+                const sourceIndex = (sourceY * sourceWidth + sourceX) * 4;
+                const targetIndex = (y * size.width + x) * 4;
+                pixels.set(entry.pixels.subarray(sourceIndex, sourceIndex + 4), targetIndex);
+            }
+        }
+        return pixels;
     }
 
     _cloneClipInstanceMetadata(value, fallback = null) {
@@ -1417,6 +1721,24 @@ export class AnimationTablePopup {
             && lane.type !== 'folder'
             && !lane.isBackground
             && lane.canPlaceCel(currentFrame, this._copiedCelRef.duration || 1);
+    }
+
+    canPasteCanvasSelection(clipboard = null) {
+        if (!clipboard || !this.layerSystem) return false;
+        if (clipboard.kind === 'folder-pixel-selection') {
+            return clipboard.version === 1
+                && Array.isArray(clipboard.entries)
+                && clipboard.entries.some(entry => entry.type === 'raster');
+        }
+        if (!clipboard.pixels) return false;
+        const currentFrame = this.model.playback.currentFrame;
+        const lane = this.activeLaneId
+            ? this.model.getLaneById(this.activeLaneId)
+            : null;
+        return !!lane
+            && lane.type !== 'folder'
+            && !lane.isBackground
+            && lane.canPlaceCel(currentFrame, 1);
     }
 
     _getCanvasSnapshotSize() {
@@ -2414,11 +2736,13 @@ export class AnimationTablePopup {
 
     _recordTimelineHistory(beforeState, afterState, name, meta = {}) {
         if (!beforeState || !afterState || !historyManager || historyManager.isApplying) return false;
+        const { byteSize = 0, ...historyMeta } = meta;
         historyManager.record({
             name,
             do: () => this._restoreTimelineHistoryState(afterState),
             undo: () => this._restoreTimelineHistoryState(beforeState),
-            meta
+            byteSize,
+            meta: historyMeta
         });
         return true;
     }
@@ -3660,16 +3984,18 @@ export class AnimationTablePopup {
         if (copyBtn) {
             copyBtn.disabled = !this.selectedCelId;
             copyBtn.title = this.selectedCelId
-                ? '選択CAFをコピー (Alt+C)'
+                ? '選択CAFをコピー (Ctrl+C)'
                 : 'コピーするCAFを選択してください';
         }
 
         const pasteBtn = this.panel.querySelector('#anim-paste-btn');
         if (pasteBtn) {
-            const canPaste = this.canPasteCopiedCel();
+            const selectionClipboard = window.pixelSelectionSystem?.getClipboardPayload?.() || null;
+            const canPaste = this.canPasteCopiedCel()
+                || this.canPasteCanvasSelection(selectionClipboard);
             pasteBtn.disabled = !canPaste;
             pasteBtn.title = canPaste
-                ? 'コピーしたCAFを現在Frame/Laneへ貼り付け (Alt+V)'
+                ? '最新のCAFまたは選択範囲を現在Frame/Laneへ貼り付け (Ctrl+V)'
                 : '貼り付け可能なコピー元または空きセルがありません';
         }
 
@@ -4294,7 +4620,7 @@ export class AnimationTablePopup {
 
         const pasteBtn = this.panel.querySelector('#anim-paste-btn');
         if (pasteBtn) {
-            pasteBtn.addEventListener('click', () => this.pasteCopiedCel());
+            pasteBtn.addEventListener('click', () => this.pasteBestClipboardAtCurrentCell());
         }
 
         const deleteActiveBtn = this.panel.querySelector('#anim-delete-active-btn');
@@ -6512,6 +6838,16 @@ export class AnimationTablePopup {
         });
         this.eventBus.on('drawing:stroke-cancelled', () => {
             this._handleDrawingCancelled();
+        });
+        this.eventBus.on('selection:tool-changed', ({ active } = {}) => {
+            if (!this.isVisible || !this.selectedCelId) return;
+            if (active === true) {
+                this.isDrawingPreviewSuspended = true;
+                this._applyDrawingVisibilityPreview();
+            } else if (this.isDrawingPreviewSuspended) {
+                this.isDrawingPreviewSuspended = false;
+                this.render();
+            }
         });
 
         // キーボードショートカット

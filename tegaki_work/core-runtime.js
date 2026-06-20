@@ -70,6 +70,8 @@ export const CoreRuntime = (function() {
                 },
                 selection: {
                     getState: () => engine.pixelSelectionSystem?.getState?.() || null,
+                    isToolActive: () =>
+                        engine.pixelSelectionSystem?.isToolActive?.() === true,
                     getBoundsForLayer: (layerId) =>
                         engine.pixelSelectionSystem?.getBoundsForLayer?.(layerId) || null,
                     hasSelection: () => engine.pixelSelectionSystem?.hasSelection?.() === true,
@@ -81,6 +83,12 @@ export const CoreRuntime = (function() {
                     cancelTransform: () =>
                         engine.pixelSelectionSystem?.cancelTransform?.('api') === true,
                     paste: () => engine.pixelSelectionSystem?.pasteSelection?.() === true,
+                    pasteAsNewLayer: () =>
+                        engine.pixelSelectionSystem?.pasteSelectionAsNewLayer?.() === true,
+                    getClipboard: () =>
+                        engine.pixelSelectionSystem?.getClipboardPayload?.() || null,
+                    validateClipboard: (payload) =>
+                        engine.pixelSelectionSystem?.validateClipboardPayload?.(payload) === true,
                     getTransform: () => engine.pixelSelectionSystem?.getTransform?.() || null,
                     updateTransform: (property, value) =>
                         engine.pixelSelectionSystem?.updateTransform?.(property, value) === true,

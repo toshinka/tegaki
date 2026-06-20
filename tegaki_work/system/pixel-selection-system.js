@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * ファイル名: system/pixel-selection-system.js
- * 責務: 通常Raster Layerのpixel selection状態、矩形入力、overlay、基本編集を管理する
+ * 責務: 通常Raster Layer / Folderのpixel selection状態、矩形入力、clipboard、基本編集を管理する
  * 依存: coordinate-system.js, system/event-bus.js, system/history.js
  * 被依存: core-engine.js, core-runtime.js, ui/*
  * 公開API: PixelSelectionSystem
@@ -13,9 +13,12 @@ import { TegakiEventBus } from './event-bus.js';
 import { historyManager } from './history.js';
 import { Sprite, Texture } from 'pixi.js';
 import { applyTransformMatrix, createCenteredTransformMatrix } from './transform-math.js';
+import { resolveIntegerTranslation, translateRgbaPixels } from './raster-translation.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MIN_SELECTION_SIZE = 1;
+const FOLDER_CLIPBOARD_KIND = 'folder-pixel-selection';
+const FOLDER_CLIPBOARD_VERSION = 1;
 
 export class PixelSelectionSystem {
     constructor() {
@@ -64,6 +67,10 @@ export class PixelSelectionSystem {
             active: this.state.active,
             layerId: this.state.layerId,
             bounds: { ...this.state.bounds },
+            scope: this.state.scope ? { ...this.state.scope } : {
+                kind: 'layer',
+                layerId: this.state.layerId
+            },
             mode: this.state.mode,
             transformSessionActive: this.state.transformSessionActive === true
         };
@@ -197,14 +204,21 @@ export class PixelSelectionSystem {
     }
 
     selectAll() {
-        const layer = this._getEligibleActiveLayer();
-        if (!layer) return false;
-
-        const width = Math.max(1, Math.round(layer.layerData.renderTexture.width));
-        const height = Math.max(1, Math.round(layer.layerData.renderTexture.height));
+        const target = this._getActiveSelectionTarget();
+        if (!target) return false;
+        const isFolder = target.kind === 'folder';
+        const width = isFolder
+            ? Math.max(1, Math.round(this.layerSystem.config?.canvas?.width || 1))
+            : Math.max(1, Math.round(target.layer.layerData.renderTexture.width));
+        const height = isFolder
+            ? Math.max(1, Math.round(this.layerSystem.config?.canvas?.height || 1))
+            : Math.max(1, Math.round(target.layer.layerData.renderTexture.height));
         this.state = {
             active: true,
-            layerId: layer.layerData.id,
+            layerId: target.layer.layerData.id,
+            scope: isFolder
+                ? { kind: 'folder', folderId: target.layer.layerData.id }
+                : { kind: 'layer', layerId: target.layer.layerData.id },
             bounds: { x: 0, y: 0, width, height },
             mode: 'rectangle',
             transformSessionActive: false
@@ -220,6 +234,7 @@ export class PixelSelectionSystem {
 
     requestTransform() {
         if (!this.hasSelection()) return false;
+        if (this.state?.scope?.kind === 'folder') return false;
         if (this.transformSession) {
             return this.confirmTransform();
         }
@@ -233,7 +248,7 @@ export class PixelSelectionSystem {
     }
 
     pasteSelection() {
-        if (!this.clipboard) return false;
+        if (!this.clipboard || this.clipboard.kind === FOLDER_CLIPBOARD_KIND) return false;
         if (this.transformSession && !this.confirmTransform()) return false;
 
         const layer = this._getEligibleActiveLayer();
@@ -266,6 +281,151 @@ export class PixelSelectionSystem {
         });
     }
 
+    pasteSelectionAsNewLayer() {
+        const clipboard = this.getClipboardPayload();
+        if (clipboard?.kind === FOLDER_CLIPBOARD_KIND) {
+            if (!this.validateClipboardPayload(clipboard)) return false;
+            const result = this.layerSystem?.pasteFolderSelectionPayload?.(clipboard);
+            if (!result?.rootFolder?.layerData) return false;
+            this.state = {
+                active: true,
+                layerId: result.rootFolder.layerData.id,
+                scope: {
+                    kind: 'folder',
+                    folderId: result.rootFolder.layerData.id
+                },
+                bounds: { ...clipboard.canvasBounds },
+                mode: 'rectangle',
+                transformSessionActive: false
+            };
+            this.setToolActive(true);
+            this._scheduleOverlayUpdate();
+            return true;
+        }
+        if (
+            !clipboard
+            || clipboard.kind !== 'pixel-selection'
+            || !this.layerSystem?.createLayer
+            || !this.layerSystem?.restoreLayerRasterSnapshot
+        ) {
+            return false;
+        }
+        if (this.transformSession && !this.confirmTransform()) return false;
+
+        const canvasWidth = Math.max(1, Math.round(this.layerSystem.config?.canvas?.width || clipboard.width));
+        const canvasHeight = Math.max(1, Math.round(this.layerSystem.config?.canvas?.height || clipboard.height));
+        const pixels = new Uint8ClampedArray(canvasWidth * canvasHeight * 4);
+        const x = Math.max(0, Math.min(canvasWidth - clipboard.width, Math.round(clipboard.sourceBounds?.x || 0)));
+        const y = Math.max(0, Math.min(canvasHeight - clipboard.height, Math.round(clipboard.sourceBounds?.y || 0)));
+        this._blendRegion(
+            pixels,
+            canvasWidth,
+            canvasHeight,
+            clipboard.pixels,
+            clipboard.width,
+            clipboard.height,
+            x,
+            y
+        );
+
+        const created = this.layerSystem.createLayer('選択範囲のコピー');
+        const layer = created?.layer;
+        if (!layer?.layerData) return false;
+        if (!this.layerSystem.restoreLayerRasterSnapshot({
+            layerId: layer.layerData.id,
+            width: canvasWidth,
+            height: canvasHeight,
+            pixels,
+            paths: [],
+            pathsData: []
+        })) {
+            return false;
+        }
+
+        this.state = {
+            active: true,
+            layerId: layer.layerData.id,
+            bounds: { x, y, width: clipboard.width, height: clipboard.height },
+            mode: 'rectangle',
+            transformSessionActive: false
+        };
+        this.setToolActive(true);
+        this.layerSystem.requestThumbnailUpdate?.(created.index, true);
+        this.eventBus?.emit('selection:pasted-as-new-layer', {
+            layerId: layer.layerData.id,
+            layerIndex: created.index,
+            bounds: { ...this.state.bounds }
+        });
+        this._scheduleOverlayUpdate();
+        return true;
+    }
+
+    getClipboardPayload() {
+        if (!this.clipboard) return null;
+        if (this.clipboard.kind === FOLDER_CLIPBOARD_KIND) {
+            return {
+                kind: FOLDER_CLIPBOARD_KIND,
+                version: this.clipboard.version,
+                copiedAt: this.clipboard.copiedAt,
+                canvasBounds: { ...this.clipboard.canvasBounds },
+                rootFolder: { ...this.clipboard.rootFolder },
+                entries: this.clipboard.entries.map(entry => ({
+                    ...entry,
+                    localBounds: entry.localBounds ? { ...entry.localBounds } : null,
+                    transform: entry.transform ? { ...entry.transform } : null,
+                    pixels: entry.pixels ? new Uint8ClampedArray(entry.pixels) : null
+                }))
+            };
+        }
+        return {
+            kind: 'pixel-selection',
+            sourceLayerId: this.clipboard.sourceLayerId || null,
+            sourceBounds: { ...(this.clipboard.sourceBounds || {}) },
+            width: this.clipboard.width,
+            height: this.clipboard.height,
+            pixels: new Uint8ClampedArray(this.clipboard.pixels),
+            copiedAt: Number(this.clipboard.copiedAt) || 0
+        };
+    }
+
+    validateClipboardPayload(payload = this.clipboard) {
+        if (!payload || typeof payload !== 'object') return false;
+        if (payload.kind === 'pixel-selection') {
+            return Number.isFinite(payload.width)
+                && payload.width > 0
+                && Number.isFinite(payload.height)
+                && payload.height > 0
+                && payload.pixels instanceof Uint8ClampedArray
+                && payload.pixels.length === payload.width * payload.height * 4;
+        }
+        if (payload.kind !== FOLDER_CLIPBOARD_KIND || payload.version !== FOLDER_CLIPBOARD_VERSION) {
+            return false;
+        }
+        if (!payload.rootFolder?.sourceId || !Array.isArray(payload.entries)) return false;
+        const sourceKeys = new Set(['root']);
+        for (const entry of payload.entries) {
+            if (!entry?.sourceKey || sourceKeys.has(entry.sourceKey)) return false;
+            sourceKeys.add(entry.sourceKey);
+        }
+        for (const entry of payload.entries) {
+            if (!sourceKeys.has(entry.relativeParentKey)) return false;
+            if (entry.type === 'folder') continue;
+            if (entry.type !== 'raster') return false;
+            if (
+                !entry.localBounds
+                || !Number.isFinite(entry.width)
+                || entry.width < 1
+                || !Number.isFinite(entry.height)
+                || entry.height < 1
+            ) {
+                return false;
+            }
+            if (!(entry.pixels instanceof Uint8ClampedArray)) return false;
+            if (entry.pixels.length !== entry.width * entry.height * 4) return false;
+        }
+        return true;
+    }
+
     confirmTransform() {
         const session = this.transformSession;
         if (!session) return false;
@@ -276,7 +436,10 @@ export class PixelSelectionSystem {
             paths: [],
             pathsData: []
         };
-        const transformed = this._renderTransformedRegion(session);
+        const integerTranslation = resolveIntegerTranslation(session.transform);
+        const transformed = integerTranslation
+            ? this._translateFloatingRegion(session, integerTranslation)
+            : this._renderTransformedRegion(session);
         if (!transformed) return false;
         this._blendRegion(
             after.pixels,
@@ -288,6 +451,14 @@ export class PixelSelectionSystem {
             0,
             0
         );
+        if (integerTranslation) {
+            this.state.bounds = {
+                x: session.originX + integerTranslation.dx,
+                y: session.originY + integerTranslation.dy,
+                width: session.width,
+                height: session.height
+            };
+        }
 
         this._destroyFloatingPreview();
         if (!this.layerSystem.restoreLayerRasterSnapshot(after)) {
@@ -344,6 +515,9 @@ export class PixelSelectionSystem {
     }
 
     copySelection() {
+        if (this.state?.scope?.kind === 'folder') {
+            return this._copyFolderSelection();
+        }
         const context = this._getSelectionContext();
         if (!context) return false;
         const snapshot = this.layerSystem.createLayerRasterSnapshot(context.layer);
@@ -352,11 +526,13 @@ export class PixelSelectionSystem {
         if (!region) return false;
 
         this.clipboard = {
+            kind: 'pixel-selection',
             sourceLayerId: context.layer.layerData.id,
             sourceBounds: { ...context.bounds },
             width: region.width,
             height: region.height,
-            pixels: region.pixels
+            pixels: region.pixels,
+            copiedAt: Date.now()
         };
         this.eventBus?.emit('selection:clipboard-changed', {
             available: true,
@@ -366,7 +542,105 @@ export class PixelSelectionSystem {
         return true;
     }
 
-    deleteSelection() {
+    _copyFolderSelection() {
+        const context = this._getFolderSelectionContext();
+        if (!context) return false;
+
+        const sourceKeyById = new Map([[context.folder.layerData.id, 'root']]);
+        context.targets.entries.forEach((entry, index) => {
+            sourceKeyById.set(entry.layer.layerData.id, `entry-${index}`);
+        });
+
+        const entries = [];
+        for (const target of context.targets.entries) {
+            const layer = target.layer;
+            const data = layer.layerData;
+            const sourceKey = sourceKeyById.get(data.id);
+            const relativeParentKey = sourceKeyById.get(data.parentId);
+            if (!sourceKey || !relativeParentKey) return false;
+
+            const common = {
+                sourceKey,
+                sourceId: data.id,
+                sourceParentId: data.parentId || null,
+                relativeParentKey,
+                order: target.order,
+                depth: target.depth,
+                type: target.type,
+                name: data.name || (target.type === 'folder' ? 'フォルダ' : 'レイヤー'),
+                visible: data.visible !== false && layer.visible !== false,
+                opacity: Number.isFinite(data.opacity) ? data.opacity : (layer.alpha ?? 1),
+                blendMode: data.blendMode || 'normal',
+                clipping: data.clipping === true,
+                clippingMode: data.clippingMode || (data.clipping === true ? 'normal' : 'none')
+            };
+            if (target.type === 'folder') {
+                entries.push({
+                    ...common,
+                    folderExpanded: data.folderExpanded !== false
+                });
+                continue;
+            }
+
+            const snapshot = this.layerSystem.createLayerRasterSnapshot(layer);
+            if (!snapshot?.pixels) return false;
+            const localBounds = this._resolveCanvasBoundsForLayer(context.bounds, layer, snapshot);
+            const region = localBounds
+                ? this._extractMaskedLayerRegion(snapshot, localBounds, context.bounds, layer)
+                : {
+                    localBounds: { x: 0, y: 0, width: 1, height: 1 },
+                    width: 1,
+                    height: 1,
+                    pixels: new Uint8ClampedArray(4),
+                    selectionEmpty: true
+                };
+            if (!region) return false;
+            entries.push({
+                ...common,
+                transform: {
+                    ...(this.layerSystem.transform?.getTransform?.(data.id)
+                        || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 })
+                },
+                localBounds: region.localBounds,
+                width: region.width,
+                height: region.height,
+                pixels: region.pixels,
+                selectionEmpty: region.selectionEmpty === true
+            });
+        }
+
+        const folderData = context.folder.layerData;
+        const payload = {
+            kind: FOLDER_CLIPBOARD_KIND,
+            version: FOLDER_CLIPBOARD_VERSION,
+            copiedAt: Date.now(),
+            canvasBounds: { ...context.bounds },
+            rootFolder: {
+                sourceId: folderData.id,
+                name: folderData.name || 'フォルダ',
+                visible: folderData.visible !== false && context.folder.visible !== false,
+                opacity: Number.isFinite(folderData.opacity) ? folderData.opacity : 1,
+                folderExpanded: folderData.folderExpanded !== false
+            },
+            entries
+        };
+        if (!this.validateClipboardPayload(payload)) return false;
+        this.clipboard = payload;
+        this.eventBus?.emit('selection:clipboard-changed', {
+            available: true,
+            kind: FOLDER_CLIPBOARD_KIND,
+            folderId: folderData.id,
+            entryCount: entries.length,
+            rasterCount: entries.filter(entry => entry.type === 'raster').length,
+            bounds: { ...context.bounds }
+        });
+        return true;
+    }
+
+    deleteSelection(action = 'delete') {
+        if (this.state?.scope?.kind === 'folder') {
+            return this._deleteFolderSelection(action);
+        }
         const context = this._getSelectionContext();
         if (!context) return false;
         const before = this.layerSystem.createLayerRasterSnapshot(context.layer);
@@ -401,6 +675,90 @@ export class PixelSelectionSystem {
         this.eventBus?.emit('selection:changed', {
             ...this.getState(),
             action: 'delete'
+        });
+        return true;
+    }
+
+    _deleteFolderSelection(action = 'delete') {
+        const context = this._getFolderSelectionContext();
+        if (!context) return false;
+
+        const changes = [];
+        for (const target of context.targets.entries) {
+            if (target.type !== 'raster') continue;
+            const before = this.layerSystem.createLayerRasterSnapshot(target.layer);
+            if (!before?.pixels) return false;
+            const localBounds = this._resolveCanvasBoundsForLayer(
+                context.bounds,
+                target.layer,
+                before
+            );
+            if (!localBounds) continue;
+            const after = {
+                ...before,
+                pixels: new Uint8ClampedArray(before.pixels),
+                paths: [],
+                pathsData: []
+            };
+            const changed = this._clearCanvasBoundsFromLayerSnapshot(
+                after,
+                localBounds,
+                context.bounds,
+                target.layer
+            );
+            if (!changed) continue;
+            changes.push({
+                layer: target.layer,
+                layerId: target.layer.layerData.id,
+                before,
+                after
+            });
+        }
+        if (changes.length === 0) return false;
+
+        const restoreChanges = (snapshotKey) => {
+            let restoredAll = true;
+            for (const change of changes) {
+                const restored = this.layerSystem.restoreLayerRasterSnapshot(change[snapshotKey]);
+                restoredAll = restoredAll && restored;
+                if (restored) {
+                    this.layerSystem.requestThumbnailUpdate?.(
+                        this.layerSystem.getLayerIndex(change.layer),
+                        true
+                    );
+                }
+            }
+            this.layerSystem.refreshClippingMasks?.();
+            this.layerSystem.coordAPI?.clearCache?.();
+            this._scheduleOverlayUpdate();
+            return restoredAll;
+        };
+
+        if (!restoreChanges('after')) {
+            restoreChanges('before');
+            return false;
+        }
+        this.history.record({
+            name: action === 'cut' ? 'folder-selection-cut' : 'folder-selection-delete',
+            do: () => restoreChanges('after'),
+            undo: () => restoreChanges('before'),
+            byteSize: changes.reduce((total, change) => {
+                return total
+                    + (change.before.pixels?.byteLength || 0)
+                    + (change.after.pixels?.byteLength || 0);
+            }, 0),
+            meta: {
+                type: FOLDER_CLIPBOARD_KIND,
+                action,
+                folderId: context.folder.layerData.id,
+                layerIds: changes.map(change => change.layerId),
+                bounds: { ...context.bounds }
+            }
+        });
+        this.eventBus?.emit('selection:changed', {
+            ...this.getState(),
+            action,
+            affectedLayerIds: changes.map(change => change.layerId)
         });
         return true;
     }
@@ -492,7 +850,8 @@ export class PixelSelectionSystem {
                 return;
             }
             if (primaryModifier && !event.shiftKey && !event.altKey && event.code === 'KeyV') {
-                if (this.pasteSelection()) {
+                if (document.documentElement.dataset.tegakiShortcutContext === 'animation') return;
+                if (this.pasteSelectionAsNewLayer()) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
                 }
@@ -500,6 +859,7 @@ export class PixelSelectionSystem {
             }
             if (!this.hasSelection()) return;
             if (primaryModifier && !event.shiftKey && !event.altKey && event.code === 'KeyC') {
+                if (document.documentElement.dataset.tegakiShortcutContext === 'animation') return;
                 if (this.copySelection()) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
@@ -507,7 +867,7 @@ export class PixelSelectionSystem {
                 return;
             }
             if (primaryModifier && !event.shiftKey && !event.altKey && event.code === 'KeyX') {
-                if (this.copySelection() && this.deleteSelection()) {
+                if (this.copySelection() && this.deleteSelection('cut')) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
                 }
@@ -540,6 +900,24 @@ export class PixelSelectionSystem {
             ['layer:deleted', ({ layerId } = {}) => {
                 if (this.state?.layerId === layerId) this.clearSelection('layer-deleted');
             }],
+            ['selection:folder-pasted', ({ folderId, bounds } = {}) => {
+                if (!folderId || !bounds) return;
+                this.state = {
+                    active: true,
+                    layerId: folderId,
+                    scope: { kind: 'folder', folderId },
+                    bounds: { ...bounds },
+                    mode: 'rectangle',
+                    transformSessionActive: false
+                };
+                this.setToolActive(true);
+                this._scheduleOverlayUpdate();
+            }],
+            ['selection:folder-paste-undone', ({ folderId } = {}) => {
+                if (folderId && this.state?.scope?.folderId === folderId) {
+                    this.clearSelection('folder-paste-undo');
+                }
+            }],
             ['tool:changed', ({ tool } = {}) => {
                 if (tool && tool !== 'selection' && this.toolActive) this.setToolActive(false);
             }],
@@ -560,12 +938,16 @@ export class PixelSelectionSystem {
     _handlePointerDown(event) {
         if (!this.toolActive || event.button !== 0) return;
         if (this.cameraSystem?.isCanvasMoveMode?.() || this.layerSystem?.vKeyPressed) return;
-        const layer = this._getEligibleActiveLayer();
-        if (!layer) return;
-        const point = this._clientToLayerPoint(event.clientX, event.clientY, layer);
+        const target = this._getActiveSelectionTarget();
+        if (!target) return;
+        const layer = target.layer;
+        const point = target.kind === 'folder'
+            ? this._clientToCanvasPoint(event.clientX, event.clientY)
+            : this._clientToLayerPoint(event.clientX, event.clientY, layer);
         if (!point) return;
 
         if (this.transformSession) {
+            if (target.kind === 'folder') return;
             if (!this._pointInTransform(point, this.transformSession)) return;
             this.drag = {
                 type: 'transform-move',
@@ -589,12 +971,16 @@ export class PixelSelectionSystem {
             type: 'selection-create',
             pointerId: event.pointerId,
             layer,
+            coordinateSpace: target.kind === 'folder' ? 'canvas' : 'layer',
             start: point,
             current: point
         };
         this.state = {
             active: true,
             layerId: layer.layerData.id,
+            scope: target.kind === 'folder'
+                ? { kind: 'folder', folderId: layer.layerData.id }
+                : { kind: 'layer', layerId: layer.layerData.id },
             bounds: this._boundsFromPoints(point, point),
             mode: 'rectangle',
             transformSessionActive: false
@@ -611,7 +997,9 @@ export class PixelSelectionSystem {
 
     _handlePointerMove(event) {
         if (!this.drag || event.pointerId !== this.drag.pointerId) return;
-        const point = this._clientToLayerPoint(event.clientX, event.clientY, this.drag.layer);
+        const point = this.drag.coordinateSpace === 'canvas'
+            ? this._clientToCanvasPoint(event.clientX, event.clientY)
+            : this._clientToLayerPoint(event.clientX, event.clientY, this.drag.layer);
         if (!point) return;
 
         if (this.drag.type === 'transform-move' && this.transformSession) {
@@ -720,16 +1108,56 @@ export class PixelSelectionSystem {
         const layer = this.layerSystem?.getActiveLayer?.();
         const data = layer?.layerData;
         if (!layer || !data?.renderTexture) return null;
-        if (data.isBackground || data.isFolder || data.isAnimationWorkingLayer === true) return null;
+        if (data.isBackground || data.isFolder) return null;
+        if (data.isAnimationWorkingLayer === true && !this._canSelectAnimationWorkingLayer()) {
+            return null;
+        }
         return layer;
+    }
+
+    _getActiveSelectionTarget() {
+        const layer = this.layerSystem?.getActiveLayer?.();
+        const data = layer?.layerData;
+        if (!layer || !data || data.isBackground) return null;
+        if (data.isAnimationWorkingLayer === true && !this._canSelectAnimationWorkingLayer()) {
+            return null;
+        }
+        if (data.isFolder) {
+            const targets = this.layerSystem?.getFolderSelectionTargets?.(data.id);
+            const hasRaster = targets?.entries?.some(entry => entry.type === 'raster');
+            return hasRaster ? { kind: 'folder', layer, targets } : null;
+        }
+        if (!data.renderTexture) return null;
+        return { kind: 'layer', layer };
+    }
+
+    _canSelectAnimationWorkingLayer() {
+        const animationTable = window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable');
+        return animationTable?.isVisible === true && !!animationTable.selectedCelId;
     }
 
     _getSelectionContext() {
         if (!this.hasSelection()) return null;
+        if (this.state?.scope?.kind === 'folder') return null;
         const layer = this.layerSystem?.getLayers?.()
             ?.find(candidate => candidate.layerData?.id === this.state.layerId);
         if (!layer || layer !== this._getEligibleActiveLayer()) return null;
         return { layer, bounds: { ...this.state.bounds } };
+    }
+
+    _getFolderSelectionContext() {
+        if (!this.hasSelection() || this.state?.scope?.kind !== 'folder') return null;
+        const folderId = this.state.scope.folderId || this.state.layerId;
+        const activeLayer = this.layerSystem?.getActiveLayer?.();
+        if (activeLayer?.layerData?.id !== folderId || !activeLayer.layerData.isFolder) return null;
+        const targets = this.layerSystem?.getFolderSelectionTargets?.(folderId);
+        if (!targets?.entries?.some(entry => entry.type === 'raster')) return null;
+        return {
+            folder: targets.rootFolder,
+            targets,
+            bounds: { ...this.state.bounds }
+        };
     }
 
     _clientToLayerPoint(clientX, clientY, layer) {
@@ -740,6 +1168,17 @@ export class PixelSelectionSystem {
         return {
             x: Math.max(0, Math.min(width, local.localX)),
             y: Math.max(0, Math.min(height, local.localY))
+        };
+    }
+
+    _clientToCanvasPoint(clientX, clientY) {
+        const world = this.coordSystem?.screenClientToWorld?.(clientX, clientY);
+        if (!world || !Number.isFinite(world.worldX) || !Number.isFinite(world.worldY)) return null;
+        const width = Math.max(1, Math.round(this.layerSystem?.config?.canvas?.width || 1));
+        const height = Math.max(1, Math.round(this.layerSystem?.config?.canvas?.height || 1));
+        return {
+            x: Math.max(0, Math.min(width, world.worldX)),
+            y: Math.max(0, Math.min(height, world.worldY))
         };
     }
 
@@ -928,6 +1367,43 @@ export class PixelSelectionSystem {
         };
     }
 
+    _translateFloatingRegion(session, translation) {
+        const canvasPixels = new Uint8ClampedArray(
+            session.canvasWidth * session.canvasHeight * 4
+        );
+        for (let row = 0; row < session.height; row++) {
+            const targetY = session.originY + row;
+            if (targetY < 0 || targetY >= session.canvasHeight) continue;
+            const sourceStart = row * session.width * 4;
+            const sourceX = Math.max(0, -session.originX);
+            const targetX = Math.max(0, session.originX);
+            const copyWidth = Math.min(
+                session.width - sourceX,
+                session.canvasWidth - targetX
+            );
+            if (copyWidth <= 0) continue;
+            const targetStart = (targetY * session.canvasWidth + targetX) * 4;
+            canvasPixels.set(
+                session.pixels.subarray(
+                    sourceStart + sourceX * 4,
+                    sourceStart + (sourceX + copyWidth) * 4
+                ),
+                targetStart
+            );
+        }
+        return {
+            width: session.canvasWidth,
+            height: session.canvasHeight,
+            pixels: translateRgbaPixels(
+                canvasPixels,
+                session.canvasWidth,
+                session.canvasHeight,
+                translation.dx,
+                translation.dy
+            )
+        };
+    }
+
     _finishTransformSession(confirmed) {
         if (this.state) this.state.transformSessionActive = false;
         this.drag = null;
@@ -949,6 +1425,28 @@ export class PixelSelectionSystem {
 
     _updateOverlay() {
         if (!this.overlay || !this.overlayPolygon) return;
+        const folderContext = this._getFolderSelectionContext();
+        if (folderContext) {
+            const bounds = folderContext.bounds;
+            const screenPoints = [
+                { x: bounds.x, y: bounds.y },
+                { x: bounds.x + bounds.width, y: bounds.y },
+                { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+                { x: bounds.x, y: bounds.y + bounds.height }
+            ].map(point => this.coordSystem.worldToScreen(point.x, point.y));
+            if (screenPoints.some(point => {
+                return !Number.isFinite(point?.clientX) || !Number.isFinite(point?.clientY);
+            })) {
+                this.overlay.classList.remove('is-visible');
+                return;
+            }
+            this.overlayPolygon.setAttribute(
+                'points',
+                screenPoints.map(point => `${point.clientX},${point.clientY}`).join(' ')
+            );
+            this.overlay.classList.add('is-visible');
+            return;
+        }
         const context = this._getSelectionContext();
         if (!context) {
             this.overlay.classList.remove('is-visible');
@@ -1015,6 +1513,113 @@ export class PixelSelectionSystem {
             pixels.set(snapshot.pixels.subarray(sourceStart, sourceStart + width * 4), targetStart);
         }
         return { width, height, pixels };
+    }
+
+    _resolveCanvasBoundsForLayer(canvasBounds, layer, snapshot) {
+        const corners = [
+            { x: canvasBounds.x, y: canvasBounds.y },
+            { x: canvasBounds.x + canvasBounds.width, y: canvasBounds.y },
+            { x: canvasBounds.x + canvasBounds.width, y: canvasBounds.y + canvasBounds.height },
+            { x: canvasBounds.x, y: canvasBounds.y + canvasBounds.height }
+        ].map(point => this.coordSystem.worldToLocal(point.x, point.y, layer));
+        if (corners.some(point => {
+            return !Number.isFinite(point?.localX) || !Number.isFinite(point?.localY);
+        })) {
+            return null;
+        }
+        const minX = Math.max(0, Math.floor(Math.min(...corners.map(point => point.localX))));
+        const minY = Math.max(0, Math.floor(Math.min(...corners.map(point => point.localY))));
+        const maxX = Math.min(snapshot.width, Math.ceil(Math.max(...corners.map(point => point.localX))));
+        const maxY = Math.min(snapshot.height, Math.ceil(Math.max(...corners.map(point => point.localY))));
+        if (maxX <= minX || maxY <= minY) return null;
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    }
+
+    _extractMaskedLayerRegion(snapshot, localBounds, canvasBounds, layer) {
+        if (!localBounds) return null;
+        const region = this._extractRegion(snapshot, localBounds);
+        if (!region) return null;
+        const pixels = new Uint8ClampedArray(region.pixels);
+        for (let y = 0; y < region.height; y++) {
+            for (let x = 0; x < region.width; x++) {
+                const world = this._layerLocalToWorld(
+                    localBounds.x + x + 0.5,
+                    localBounds.y + y + 0.5,
+                    layer
+                );
+                if (!world || !this._pointInBounds(world, canvasBounds)) {
+                    const index = (y * region.width + x) * 4;
+                    pixels.fill(0, index, index + 4);
+                }
+            }
+        }
+        return {
+            localBounds: { ...localBounds },
+            width: region.width,
+            height: region.height,
+            pixels
+        };
+    }
+
+    _clearCanvasBoundsFromLayerSnapshot(snapshot, localBounds, canvasBounds, layer) {
+        let changed = false;
+        const x0 = Math.max(0, Math.floor(localBounds.x));
+        const y0 = Math.max(0, Math.floor(localBounds.y));
+        const x1 = Math.min(snapshot.width, Math.ceil(localBounds.x + localBounds.width));
+        const y1 = Math.min(snapshot.height, Math.ceil(localBounds.y + localBounds.height));
+        for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+                const world = this._layerLocalToWorld(x + 0.5, y + 0.5, layer);
+                if (!world || !this._pointInBounds(world, canvasBounds)) continue;
+                const index = (y * snapshot.width + x) * 4;
+                if (
+                    snapshot.pixels[index] !== 0
+                    || snapshot.pixels[index + 1] !== 0
+                    || snapshot.pixels[index + 2] !== 0
+                    || snapshot.pixels[index + 3] !== 0
+                ) {
+                    snapshot.pixels.fill(0, index, index + 4);
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    _layerLocalToWorld(localX, localY, layer) {
+        if (!layer) return null;
+        const transforms = [];
+        const worldContainer = this.cameraSystem?.worldContainer || null;
+        let node = layer;
+        while (node && node !== worldContainer) {
+            transforms.push({
+                position: node.position || { x: 0, y: 0 },
+                pivot: node.pivot || { x: 0, y: 0 },
+                scale: node.scale || { x: 1, y: 1 },
+                rotation: Number(node.rotation) || 0
+            });
+            node = node.parent;
+        }
+
+        let x = localX;
+        let y = localY;
+        for (const transform of transforms) {
+            x -= transform.pivot.x;
+            y -= transform.pivot.y;
+            x *= transform.scale.x;
+            y *= transform.scale.y;
+            if (Math.abs(transform.rotation) > 1e-6) {
+                const cos = Math.cos(transform.rotation);
+                const sin = Math.sin(transform.rotation);
+                const nextX = x * cos - y * sin;
+                const nextY = x * sin + y * cos;
+                x = nextX;
+                y = nextY;
+            }
+            x += transform.position.x;
+            y += transform.position.y;
+        }
+        return { x, y };
     }
 
     _clearRegion(pixels, snapshotWidth, bounds) {

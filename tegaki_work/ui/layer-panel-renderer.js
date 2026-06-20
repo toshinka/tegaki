@@ -13,6 +13,7 @@
  */
 
 import { UI_ICONS } from './ui-icons.js';
+import { getClippingMode, isInverseClipping } from '../system/clipping-mode.js';
 
 export class LayerPanelRenderer {
     constructor(container, layerSystem, eventBus) {
@@ -1597,22 +1598,25 @@ export class LayerPanelRenderer {
     }
 
     _createClipStatusIcon(layer, index = -1, options = {}) {
-        const isClipping = layer.layerData?.clipping === true;
+        const clippingMode = getClippingMode(layer.layerData);
+        const isClipping = clippingMode !== 'none';
+        const isInverse = clippingMode === 'inverse';
         const canToggle = !layer.layerData?.isBackground && !layer.layerData?.isFolder;
         const createButton = options.variant && options.actionRole
             ? () => this._createLayerPanelCardActionButtonElement(options.variant, options.actionRole, {
                 extraClasses: ['layer-clip-status', ...this._normalizeLayerPanelClassList(options.extraClasses)],
                 iconName: canToggle || isClipping ? 'paperclip' : '',
-                title: isClipping ? 'クリッピングON' : 'クリッピング未使用'
+                title: isInverse ? '逆クリッピングON' : (isClipping ? 'クリッピングON' : 'クリッピング未使用')
             })
             : () => this._createLayerPanelIconButton({
                 className: 'layer-clip-status',
                 iconName: canToggle || isClipping ? 'paperclip' : '',
-                title: isClipping ? 'クリッピングON' : 'クリッピング未使用'
+                title: isInverse ? '逆クリッピングON' : (isClipping ? 'クリッピングON' : 'クリッピング未使用')
             });
         const clipIcon = createButton();
         this._applyLayerPanelStateClasses(clipIcon, {
             'is-clipping': isClipping,
+            'is-inverse-clipping': isInverse,
             'is-toggleable': canToggle
         });
 
@@ -1901,6 +1905,7 @@ export class LayerPanelRenderer {
         const opacity = viewState.opacity;
         const blendMode = viewState.blendMode;
         const clipping = viewState.clipping;
+        const inverseClipping = viewState.inverseClipping;
         const isFolder = viewState.isFolder;
         const rawLayerName = viewState.name;
         const layerName = this._escapeHtml(rawLayerName);
@@ -1933,7 +1938,7 @@ export class LayerPanelRenderer {
                             ${blendModes.map(mode => `<option value="${mode.value}"${mode.value === blendMode ? ' selected' : ''}>${mode.label}</option>`).join('')}
                         </select>
                     </label>
-                    <button type="button" class="layer-attribute-clip-toggle${clipping ? ' active' : ''}" data-action="toggle-clipping" title="クリッピング">
+                    <button type="button" class="layer-attribute-clip-toggle${clipping ? ' active' : ''}${inverseClipping ? ' is-inverse-clipping' : ''}" data-action="toggle-clipping" title="${inverseClipping ? '逆クリッピングON' : (clipping ? 'クリッピングON' : 'クリッピング未使用')}">
                         ${UI_ICONS.paperclip}
                     </button>
                 </div>
@@ -2033,6 +2038,7 @@ export class LayerPanelRenderer {
         const opacity = viewState.opacity;
         const blendMode = viewState.blendMode;
         const clipping = viewState.clipping;
+        const inverseClipping = viewState.inverseClipping;
 
         const slider = popup.querySelector('.layer-attribute-opacity-slider');
         if (slider) slider.value = String(opacity);
@@ -2044,7 +2050,14 @@ export class LayerPanelRenderer {
         });
         const select = popup.querySelector('.layer-attribute-blend-select');
         if (select) select.value = blendMode;
-        popup.querySelector('[data-action="toggle-clipping"]')?.classList.toggle('active', clipping);
+        const clippingButton = popup.querySelector('[data-action="toggle-clipping"]');
+        clippingButton?.classList.toggle('active', clipping);
+        clippingButton?.classList.toggle('is-inverse-clipping', inverseClipping);
+        if (clippingButton) {
+            clippingButton.title = inverseClipping
+                ? '逆クリッピングON'
+                : (clipping ? 'クリッピングON' : 'クリッピング未使用');
+        }
     }
 
     _syncOpenLayerAttributePopupToCurrentTarget() {
@@ -2069,6 +2082,7 @@ export class LayerPanelRenderer {
         const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
         const animationTarget = this._getAnimationAttributeTarget();
         const source = animationTarget?.internalLayer || layer?.layerData || {};
+        const normalLayerClippingMode = animationTarget ? null : getClippingMode(source);
         const opacity = typeof source.opacity === 'number'
             ? source.opacity
             : (typeof layer?.alpha === 'number' ? layer.alpha : 1);
@@ -2076,7 +2090,12 @@ export class LayerPanelRenderer {
             name: source.name || layer?.layerData?.name || 'レイヤー',
             opacity: Math.round(opacity * 100),
             blendMode: source.blendMode || 'normal',
-            clipping: source.clipping === true,
+            clipping: animationTarget
+                ? source.clipping === true
+                : normalLayerClippingMode !== 'none',
+            inverseClipping: animationTarget
+                ? false
+                : isInverseClipping(source),
             isFolder: source.type === 'folder' || source.isFolder === true
         };
     }

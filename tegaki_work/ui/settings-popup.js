@@ -88,11 +88,9 @@ export class SettingsPopup {
         }
 
         if (this.popup) {
-            this.popup.classList.add('popup-panel--translucent');
+            this.popup.classList.add('popup-panel--translucent', 'ui-scrollbar');
             this.popup.style.top = '60px';
             this.popup.style.left = '60px';
-            this.popup.style.maxHeight = 'calc(100vh - 120px)';
-            this.popup.style.overflowY = 'auto';
         }
     }
 
@@ -102,11 +100,9 @@ export class SettingsPopup {
 
         const popupDiv = document.createElement('div');
         popupDiv.id = 'settings-popup';
-        popupDiv.className = 'popup-panel popup-panel--translucent';
+        popupDiv.className = 'popup-panel popup-panel--translucent ui-scrollbar';
         popupDiv.style.top = '60px';
         popupDiv.style.left = '60px';
-        popupDiv.style.maxHeight = 'calc(100vh - 120px)';
-        popupDiv.style.overflowY = 'auto';
 
         container.appendChild(popupDiv);
         this.popup = popupDiv;
@@ -213,7 +209,7 @@ export class SettingsPopup {
                         </div>
                         <div class="slider-value" id="airbrush-flow-value">0.08</div>
                     </div>
-                    <div class="setting-description">1回のスタンプあたりの濃度。低いほど重ね塗りでゆっくり色が乗ります。</div>
+                    <div class="setting-description">線としての濃度。低いほど重ね塗りでゆっくり色が乗ります。</div>
                 </div>
 
                 <div class="setting-group">
@@ -277,28 +273,28 @@ export class SettingsPopup {
                 </div>
             </div>
 
-            <div id="tab-help" class="ui-tab-content ui-scrollbar" style="max-height: 400px; overflow-y: auto; padding-right: 8px;">
+            <div id="tab-help" class="ui-tab-content settings-help-tab ui-scrollbar">
                 <div class="help-list">
-                    <div style="font-size: 11px; font-weight: 700; color: var(--futaba-maroon); margin: 4px 0 8px 4px; border-left: 3px solid var(--futaba-maroon); padding-left: 8px;">ツール</div>
+                    <div class="help-section-title">ツール</div>
                     <div class="help-item"><span class="help-label">ペンツール</span><span class="help-key">B</span></div>
                     <div class="help-item"><span class="help-label">消しゴムツール</span><span class="help-key">E</span></div>
                     <div class="help-item"><span class="help-label">塗りつぶしツール</span><span class="help-key">G</span></div>
                     <div class="help-item"><span class="help-label">投げ縄塗りツール</span><span class="help-key">L</span></div>
                     <div class="help-item"><span class="help-label">変形モード（トグル）</span><span class="help-key">V</span></div>
 
-                    <div style="font-size: 11px; font-weight: 700; color: var(--futaba-maroon); margin: 16px 0 8px 4px; border-left: 3px solid var(--futaba-maroon); padding-left: 8px;">編集・履歴</div>
+                    <div class="help-section-title">編集・履歴</div>
                     <div class="help-item"><span class="help-label">元に戻す (Undo)</span><span class="help-key">Z / Ctrl+Z</span></div>
                     <div class="help-item"><span class="help-label">やり直し (Redo)</span><span class="help-key">Y / Ctrl+Y</span></div>
                     <div class="help-item"><span class="help-label">レイヤー描画消去</span><span class="help-key">Del / BackSpace</span></div>
 
-                    <div style="font-size: 11px; font-weight: 700; color: var(--futaba-maroon); margin: 16px 0 8px 4px; border-left: 3px solid var(--futaba-maroon); padding-left: 8px;">表示・操作</div>
+                    <div class="help-section-title">表示・操作</div>
                     <div class="help-item"><span class="help-label">手のひら（画面移動）</span><span class="help-key">Space + ドラッグ</span></div>
                     <div class="help-item"><span class="help-label">ペン筆圧 ON/OFF</span><span class="help-key">Shift + P</span></div>
                     <div class="help-item"><span class="help-label">消しゴム筆圧 ON/OFF</span><span class="help-key">Shift + E</span></div>
                     <div class="help-item"><span class="help-label">アニメ再生/停止</span><span class="help-key">Ctrl + Space</span></div>
                     <div class="help-item"><span class="help-label">フォルダー開閉</span><span class="help-key">Enter</span></div>
 
-                    <div style="font-size: 11px; font-weight: 700; color: var(--futaba-maroon); margin: 16px 0 8px 4px; border-left: 3px solid var(--futaba-maroon); padding-left: 8px;">パネル開閉</div>
+                    <div class="help-section-title">パネル開閉</div>
                     <div class="help-item"><span class="help-label">設定・ヘルプ</span><span class="help-key">Ctrl + K</span></div>
                     <div class="help-item"><span class="help-label">画像・動画出力</span><span class="help-key">Ctrl + E</span></div>
                     <div class="help-item"><span class="help-label">クイックアクセス</span><span class="help-key">Q</span></div>
@@ -592,19 +588,20 @@ export class SettingsPopup {
                 if (!curve) return;
                 this._applyPressureCurveUI(curve);
                 this.settingsManager?.set('pressureCurve', curve);
-                if (this.eventBus) this.eventBus.emit('settings:pressure-curve', { curve });
             });
         });
     }
 
     _getDefaults() {
+        const managerDefaults = this.settingsManager?.getDefaults?.() || {};
         return {
+            ...managerDefaults,
             pressureCorrection: 1.0,
             smoothing: 0.5,
             pressureCurve: 'linear',
-            airbrushFlow: 0.08,
-            airbrushSoftness: 0.8,
-            airbrushScatter: 0.0,
+            airbrushFlow: managerDefaults.airbrushFlow ?? 0.08,
+            airbrushSoftness: managerDefaults.airbrushSoftness ?? 0.8,
+            airbrushScatter: managerDefaults.airbrushScatter ?? 0.0,
             statusPanelVisible: true,
             bucketGapClose: 0,
             bucketUnderpaint: 1,

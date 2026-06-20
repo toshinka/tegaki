@@ -83,7 +83,7 @@ export class CoreEngine {
         this.pressureHandler = new PressureHandler();
         this.strokeRenderer = null;
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler);
-        this.brushSettings = new BrushSettings(this.config, this.eventBus);
+        this.brushSettings = new BrushSettings(this.config, this.eventBus, this.settingsManager);
         this.fillTool = fillTool;
         this.projectManager = new ProjectManager(this.layerSystem, this.app);
         this.thumbnailSystem = ThumbnailSystem;

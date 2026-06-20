@@ -1,6 +1,6 @@
 # TEGAKI — 技術方針・禁止事項
 
-更新日: 2026-06-19
+更新日: 2026-06-21
 
 > Tegakiの技術方針の正本。
 > 現在状態は `tegaki_work/PROGRESS.md`、未実装計画は
@@ -166,8 +166,16 @@ popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 
 ## 12. 現行ロードマップ
 
-- 完了: Phase 5a、Phase 5b、Phase 5c。
-- 次の機能Phase: `task-codex/phase5d.md`。
-- 保守性・UIスタイル整理: `task-codex/phase5e.md`。機能Phaseの前提にはせず、独立した監査・小分け修正として扱う。
+- 完了: Phase 5a、Phase 5b、Phase 5c、Phase 5d、Phase 5e、Phase 5f。
+- Phase 5gのAirbrush描画境界整理と重ね塗り品質修正まで完了。
+- Phase 5hのRaster変形反復劣化低減まで完了。
+- 完了記録は `開発用資料保管庫/Archive/phase5h.md`。
+- 現行PhaseはPhase 5i。通常LayerとCAF internal Layerの逆クリッピングを、
+  旧boolean保存互換とHistory分離を維持して統合する。
+- 通常Layerの3状態、Pixi inverse mask、描画preview、HistoryはSlice 1-2で完了。
+- 次はCAF internal LayerとCAF専用Historyを接続する。
+- 指示書は `task-codex/phase5i.md`。
+- Phase 5gの完了記録は `開発用資料保管庫/Archive/phase5g.md`。
+- Phase 5eの監査結果は `開発用資料保管庫/Archive/PHASE5E_AUDIT.md` を参照する。
 
 過去Phase一覧は本書へ再掲しない。完了内容はArchiveとGit履歴を参照する。

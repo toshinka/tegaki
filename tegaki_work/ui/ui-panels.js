@@ -630,7 +630,10 @@ export class UIController {
             'selection-tool': () => {
                 window.CoreRuntime?.api?.selection?.setToolActive?.(true);
                 window.CoreRuntime?.api?.layer?.exitMoveMode?.();
-                this.closeAllPopups();
+                const animationTable = this.popupManager?.get?.('animationTable');
+                if (!animationTable?.isVisible) {
+                    this.closeAllPopups();
+                }
                 this.updateToolUI('selection');
             },
             'airbrush-tool': () => {

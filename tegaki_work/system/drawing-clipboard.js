@@ -542,14 +542,14 @@ export class DrawingClipboard {
     }
 
     recordHistory(historyEntry) {
-        if (historyManager && historyManager.push) {
+        if (historyManager && historyManager.record) {
             const command = {
                 name: 'paste-operation',
+                do: () => {
+                    this.restoreLayerFromClipboard(historyEntry.layerId, historyEntry.newData);
+                },
                 undo: () => {
                     this.restoreLayerFromSnapshot(historyEntry.layerId, historyEntry.previousData);
-                },
-                redo: () => {
-                    this.restoreLayerFromClipboard(historyEntry.layerId, historyEntry.newData);
                 },
                 meta: {
                     type: historyEntry.type,
@@ -558,7 +558,7 @@ export class DrawingClipboard {
                 }
             };
             
-            historyManager.push(command);
+            historyManager.record(command);
         }
     }
 

@@ -19,6 +19,15 @@ import { LayerModel } from './data-models.js';
 import { historyManager } from './history.js';
 import { coordinateSystem } from '../coordinate-system.js';
 import { LayerTransform } from './layer-transform.js';
+import { resolveIntegerTranslation, translateRgbaPixels } from './raster-translation.js';
+import {
+    CLIPPING_MODES,
+    applyClippingMode,
+    cycleClippingMode,
+    getClippingMode,
+    isClippingEnabled,
+    isInverseClipping
+} from './clipping-mode.js';
 
 export class LayerSystem {
     constructor() {
@@ -790,6 +799,310 @@ export class LayerSystem {
         return layers.filter(l => l.layerData?.parentId === folderId);
     }
 
+    getFolderSelectionTargets(folderId) {
+        const layers = this.getLayers();
+        const rootFolder = layers.find(layer => {
+            return layer.layerData?.id === folderId && layer.layerData.isFolder;
+        });
+        if (!rootFolder) return null;
+
+        const byId = new Map(
+            layers
+                .filter(layer => layer.layerData?.id)
+                .map(layer => [layer.layerData.id, layer])
+        );
+        const resolveDepth = layer => {
+            let parentId = layer.layerData?.parentId || null;
+            let depth = 0;
+            const visited = new Set();
+            while (parentId && !visited.has(parentId)) {
+                if (parentId === folderId) return depth + 1;
+                visited.add(parentId);
+                const parent = byId.get(parentId);
+                if (!parent?.layerData?.isFolder) return -1;
+                parentId = parent.layerData.parentId || null;
+                depth += 1;
+            }
+            return -1;
+        };
+
+        const entries = [];
+        layers.forEach((layer, order) => {
+            if (!layer?.layerData || layer === rootFolder) return;
+            const depth = resolveDepth(layer);
+            if (depth < 1) return;
+            entries.push({
+                layer,
+                order,
+                depth,
+                parentId: layer.layerData.parentId || null,
+                type: layer.layerData.isFolder ? 'folder' : 'raster'
+            });
+        });
+
+        return {
+            rootFolder,
+            rootIndex: layers.indexOf(rootFolder),
+            entries
+        };
+    }
+
+    pasteFolderSelectionPayload(payload) {
+        if (
+            payload?.kind !== 'folder-pixel-selection'
+            || payload.version !== 1
+            || !payload.rootFolder
+            || !Array.isArray(payload.entries)
+            || !this.currentFrameContainer
+        ) {
+            return null;
+        }
+
+        const previousState = {
+            activeLayerId: this.getLayers()[this.activeLayerIndex]?.layerData?.id || null,
+            selectedLayerIds: this.getSelectedLayerIds()
+        };
+        const createdByKey = new Map();
+        const createdRecords = [];
+        const canvasWidth = Math.max(1, Math.round(this.config?.canvas?.width || 1));
+        const canvasHeight = Math.max(1, Math.round(this.config?.canvas?.height || 1));
+        const wasApplying = historyManager?.isApplying === true;
+
+        try {
+            if (historyManager) historyManager.isApplying = true;
+            const rootResult = this.createFolder(`${payload.rootFolder.name || 'フォルダ'} のコピー`);
+            const rootFolder = rootResult?.layer;
+            if (!rootFolder?.layerData) return null;
+            createdByKey.set('root', rootFolder);
+
+            const sortedEntries = [...payload.entries].sort((a, b) => a.order - b.order);
+            for (const entry of sortedEntries) {
+                const result = entry.type === 'folder'
+                    ? this.createFolder(entry.name)
+                    : this.createLayer(entry.name);
+                const layer = result?.layer;
+                if (!layer?.layerData) throw new Error('Failed to create folder clipboard entry');
+                createdByKey.set(entry.sourceKey, layer);
+                createdRecords.push({ entry, layer });
+            }
+
+            const applied = this._applyFolderSelectionPasteState({
+                payload,
+                rootFolder,
+                createdByKey,
+                createdRecords,
+                canvasWidth,
+                canvasHeight
+            });
+            if (!applied) throw new Error('Failed to apply folder clipboard hierarchy');
+
+            const byteSize = payload.entries.reduce((total, entry) => {
+                return total + (entry.pixels?.byteLength || 0);
+            }, 0);
+            if (historyManager && !wasApplying) {
+                historyManager.isApplying = false;
+                historyManager.record({
+                    name: 'folder-selection-paste',
+                    do: () => {
+                        this._applyFolderSelectionPasteState({
+                            payload,
+                            rootFolder,
+                            createdByKey,
+                            createdRecords,
+                            canvasWidth,
+                            canvasHeight
+                        });
+                    },
+                    undo: () => {
+                        this._removeFolderSelectionPasteState({
+                            rootFolder,
+                            createdRecords,
+                            previousState
+                        });
+                    },
+                    byteSize,
+                    meta: {
+                        type: 'folder-pixel-selection',
+                        action: 'paste',
+                        rootFolderId: rootFolder.layerData.id,
+                        entryCount: createdRecords.length,
+                        rasterCount: createdRecords.filter(record => record.entry.type === 'raster').length
+                    }
+                });
+            }
+
+            return {
+                rootFolder,
+                rootIndex: this.getLayerIndex(rootFolder),
+                createdRecords
+            };
+        } catch (error) {
+            const rootFolder = createdByKey.get('root');
+            this._removeFolderSelectionPasteState({
+                rootFolder,
+                createdRecords,
+                previousState
+            });
+            console.error('[LayerSystem] Folder selection paste failed:', error);
+            return null;
+        } finally {
+            if (historyManager) historyManager.isApplying = wasApplying;
+        }
+    }
+
+    _applyFolderSelectionPasteState({
+        payload,
+        rootFolder,
+        createdByKey,
+        createdRecords,
+        canvasWidth,
+        canvasHeight
+    }) {
+        if (!rootFolder?.layerData) return false;
+        const orderedLayers = createdRecords
+            .slice()
+            .sort((a, b) => a.entry.order - b.entry.order)
+            .map(record => record.layer);
+        orderedLayers.push(rootFolder);
+        orderedLayers.forEach(layer => {
+            if (layer.parent) this.currentFrameContainer.removeChild(layer);
+            this.currentFrameContainer.addChild(layer);
+        });
+
+        for (const layer of orderedLayers) {
+            if (!layer?.layerData) continue;
+            layer.layerData.parentId = null;
+            if (layer.layerData.isFolder) layer.layerData.children = [];
+        }
+
+        rootFolder.layerData.name = `${payload.rootFolder.name || 'フォルダ'} のコピー`;
+        rootFolder.layerData.visible = payload.rootFolder.visible !== false;
+        rootFolder.visible = rootFolder.layerData.visible;
+        rootFolder.layerData.opacity = Number.isFinite(payload.rootFolder.opacity)
+            ? payload.rootFolder.opacity
+            : 1;
+        rootFolder.alpha = rootFolder.layerData.opacity;
+        rootFolder.layerData.folderExpanded = payload.rootFolder.folderExpanded !== false;
+
+        for (const record of createdRecords) {
+            const { entry, layer } = record;
+            const data = layer.layerData;
+            const parent = createdByKey.get(entry.relativeParentKey);
+            if (!parent?.layerData?.isFolder) return false;
+
+            data.name = entry.name || (entry.type === 'folder' ? 'フォルダ' : 'レイヤー');
+            data.parentId = parent.layerData.id;
+            parent.layerData.addChild(data.id);
+            data.visible = entry.visible !== false;
+            layer.visible = data.visible;
+            data.opacity = Number.isFinite(entry.opacity) ? entry.opacity : 1;
+            layer.alpha = data.opacity;
+            data.blendMode = entry.blendMode || 'normal';
+            applyClippingMode(
+                data,
+                entry.clippingMode || (entry.clipping === true ? CLIPPING_MODES.NORMAL : CLIPPING_MODES.NONE)
+            );
+            layer.blendMode = data.blendMode;
+            if (data.layerSprite) data.layerSprite.blendMode = data.blendMode;
+
+            if (entry.type === 'folder') {
+                data.folderExpanded = entry.folderExpanded !== false;
+                continue;
+            }
+
+            const pixels = new Uint8ClampedArray(canvasWidth * canvasHeight * 4);
+            const localBounds = entry.localBounds || {};
+            const x = Math.max(0, Math.round(localBounds.x || 0));
+            const y = Math.max(0, Math.round(localBounds.y || 0));
+            const width = Math.max(1, Math.round(entry.width || 1));
+            const height = Math.max(1, Math.round(entry.height || 1));
+            for (let row = 0; row < height && y + row < canvasHeight; row++) {
+                const sourceStart = row * width * 4;
+                const copyWidth = Math.min(width, canvasWidth - x);
+                if (copyWidth <= 0) break;
+                const targetStart = ((y + row) * canvasWidth + x) * 4;
+                pixels.set(
+                    entry.pixels.subarray(sourceStart, sourceStart + copyWidth * 4),
+                    targetStart
+                );
+            }
+            this.restoreLayerRasterSnapshot({
+                layerId: data.id,
+                width: canvasWidth,
+                height: canvasHeight,
+                pixels,
+                paths: [],
+                pathsData: []
+            });
+            const transform = {
+                x: Number(entry.transform?.x) || 0,
+                y: Number(entry.transform?.y) || 0,
+                rotation: Number(entry.transform?.rotation) || 0,
+                scaleX: Number(entry.transform?.scaleX) || 1,
+                scaleY: Number(entry.transform?.scaleY) || 1
+            };
+            this.transform?.setTransform?.(data.id, { ...transform });
+            this.transform?.applyTransform?.(
+                layer,
+                transform,
+                canvasWidth / 2,
+                canvasHeight / 2
+            );
+            this.requestThumbnailUpdate(this.getLayerIndex(layer), true);
+        }
+
+        this.activeLayerIndex = this.getLayerIndex(rootFolder);
+        this._setSingleLayerSelection(this.activeLayerIndex);
+        this.refreshClippingMasks();
+        this.coordAPI?.clearCache?.();
+        this._emitPanelUpdateRequest();
+        this._emitStatusUpdateRequest();
+        this._emitMultiSelectionChanged('folder-selection-paste');
+        this.eventBus?.emit('selection:folder-pasted', {
+            folderId: rootFolder.layerData.id,
+            entryCount: createdRecords.length,
+            bounds: { ...(payload.canvasBounds || {}) }
+        });
+        return true;
+    }
+
+    _removeFolderSelectionPasteState({ rootFolder, createdRecords, previousState }) {
+        const createdLayers = [
+            ...createdRecords.map(record => record.layer),
+            rootFolder
+        ].filter(Boolean);
+        for (const layer of createdLayers) {
+            if (layer.parent === this.currentFrameContainer) {
+                this.currentFrameContainer.removeChild(layer);
+            }
+        }
+
+        const layers = this.getLayers();
+        const previousActiveIndex = layers.findIndex(layer => {
+            return layer.layerData?.id === previousState?.activeLayerId;
+        });
+        this.activeLayerIndex = previousActiveIndex >= 0
+            ? previousActiveIndex
+            : Math.max(0, layers.length - 1);
+        this.selectedLayerIds = new Set(
+            (previousState?.selectedLayerIds || []).filter(id => {
+                return layers.some(layer => layer.layerData?.id === id);
+            })
+        );
+        if (this.selectedLayerIds.size === 0) {
+            this._setSingleLayerSelection(this.activeLayerIndex);
+        }
+        this.refreshClippingMasks();
+        this.coordAPI?.clearCache?.();
+        this._emitPanelUpdateRequest();
+        this._emitStatusUpdateRequest();
+        this._emitMultiSelectionChanged('folder-selection-paste-undo');
+        this.eventBus?.emit('selection:folder-paste-undone', {
+            folderId: rootFolder?.layerData?.id || null
+        });
+        return true;
+    }
+
     _generateNextFolderName() {
         const layers = this.getLayers();
         const folderNames = layers
@@ -1068,36 +1381,69 @@ export class LayerSystem {
         return true;
     }
 
-    setLayerClipping(layerIndex, clipping) {
+    setLayerClippingMode(layerIndex, clippingMode, options = {}) {
         const layers = this.getLayers();
         if (layerIndex < 0 || layerIndex >= layers.length) return false;
 
         const layer = layers[layerIndex];
         if (layer.layerData?.isBackground || layer.layerData?.isFolder) return false;
 
-        const nextClipping = clipping === true;
-        if (layer.layerData) {
-            layer.layerData.clipping = nextClipping;
-        }
-        this.refreshClippingMasks();
+        const layerId = layer.layerData.id;
+        const previousMode = getClippingMode(layer.layerData);
+        const nextMode = applyClippingMode({}, clippingMode);
+        if (previousMode === nextMode) return false;
 
-        if (this.eventBus) {
-            this.eventBus.emit('layer:clipping-changed', {
-                layerIndex,
-                layerId: layer.layerData?.id,
-                clipping: nextClipping
+        const applyMode = (mode) => {
+            const currentLayers = this.getLayers();
+            const currentIndex = currentLayers.findIndex(candidate => candidate?.layerData?.id === layerId);
+            const currentLayer = currentLayers[currentIndex];
+            if (currentIndex < 0 || !currentLayer?.layerData) return false;
+
+            const appliedMode = applyClippingMode(currentLayer.layerData, mode);
+            this.refreshClippingMasks();
+            if (this.eventBus) {
+                this.eventBus.emit('layer:clipping-changed', {
+                    layerIndex: currentIndex,
+                    layerId,
+                    clipping: appliedMode !== CLIPPING_MODES.NONE,
+                    clippingMode: appliedMode,
+                    inverse: appliedMode === CLIPPING_MODES.INVERSE
+                });
+                this._emitPanelUpdateRequest();
+                this.requestThumbnailUpdate(currentIndex, true);
+            }
+            return true;
+        };
+
+        if (options.recordHistory !== false && historyManager && !historyManager.isApplying) {
+            historyManager.push({
+                name: 'layer-clipping-mode',
+                do: () => applyMode(nextMode),
+                undo: () => applyMode(previousMode),
+                meta: { layerId, previousMode, nextMode }
             });
-            this._emitPanelUpdateRequest();
-            this.requestThumbnailUpdate(layerIndex, true);
+            return true;
         }
 
+        applyMode(nextMode);
         return true;
+    }
+
+    setLayerClipping(layerIndex, clipping, options = {}) {
+        return this.setLayerClippingMode(
+            layerIndex,
+            clipping === true ? CLIPPING_MODES.NORMAL : CLIPPING_MODES.NONE,
+            options
+        );
     }
 
     toggleLayerClipping(layerIndex) {
         const layer = this.getLayers()[layerIndex];
         if (!layer?.layerData) return false;
-        return this.setLayerClipping(layerIndex, !layer.layerData.clipping);
+        return this.setLayerClippingMode(
+            layerIndex,
+            cycleClippingMode(getClippingMode(layer.layerData))
+        );
     }
 
     refreshClippingMasks() {
@@ -1110,7 +1456,7 @@ export class LayerSystem {
 
         for (const layer of layers) {
             const data = layer.layerData;
-            if (!data || data.isBackground || data.isFolder || data.clipping !== true) continue;
+            if (!data || data.isBackground || data.isFolder || !isClippingEnabled(data)) continue;
             if (!data.layerSprite || !data.renderTexture) continue;
 
             const sourceLayer = this._findClippingSourceLayer(layer, layers);
@@ -1126,10 +1472,12 @@ export class LayerSystem {
             maskSprite.eventMode = 'none';
             layer.addChildAt(maskSprite, 0);
 
-            data.layerSprite.mask = maskSprite;
-            this._applyClippingMaskToLayerChildren(layer, maskSprite);
+            const inverse = isInverseClipping(data);
+            this._setClippingMask(data.layerSprite, maskSprite, inverse);
+            this._applyClippingMaskToLayerChildren(layer, maskSprite, inverse);
             data.layerSprite.visible = true;
             data.clippingMaskSprite = maskSprite;
+            data.clippingMaskInverse = inverse;
             data.effectiveClippingSourceId = sourceLayer.layerData.id;
         }
     }
@@ -1139,12 +1487,12 @@ export class LayerSystem {
         if (!data) return;
 
         if (data.layerSprite && data.clippingMaskSprite && data.layerSprite.mask === data.clippingMaskSprite) {
-            data.layerSprite.mask = null;
+            this._setClippingMask(data.layerSprite, null, false);
         }
         if (data.clippingMaskSprite) {
             for (const child of layer.children || []) {
                 if (child && child.mask === data.clippingMaskSprite) {
-                    child.mask = null;
+                    this._setClippingMask(child, null, false);
                 }
             }
         }
@@ -1158,16 +1506,39 @@ export class LayerSystem {
             data.clippingMaskSprite.destroy({ children: true, texture: false, baseTexture: false });
             data.clippingMaskSprite = null;
         }
+        data.clippingMaskInverse = false;
         data.effectiveClippingSourceId = null;
     }
 
-    _applyClippingMaskToLayerChildren(layer, maskSprite) {
+    _setClippingMask(target, maskSprite, inverse = false) {
+        if (!target) return;
+        if (!maskSprite) {
+            target.mask = null;
+            if (typeof target.setMask === 'function') {
+                target.setMask({ inverse: false });
+            }
+            return;
+        }
+        if (typeof target.setMask === 'function') {
+            target.setMask({ mask: maskSprite, inverse: inverse === true });
+            // Pixi v8.17 evaluates mask bounds before AlphaMaskPipe copies
+            // _maskOptions.inverse into the effect. Keep the effect in sync
+            // immediately so the first inverse frame does not use normal bounds.
+            if (target._maskEffect) {
+                target._maskEffect.inverse = inverse === true;
+            }
+            return;
+        }
+        target.mask = maskSprite;
+    }
+
+    _applyClippingMaskToLayerChildren(layer, maskSprite, inverse = false) {
         const data = layer?.layerData;
         if (!data || !maskSprite) return;
 
         for (const child of layer.children || []) {
             if (!child || child === maskSprite || child === data.maskSprite || child === data.backgroundGraphics) continue;
-            child.mask = maskSprite;
+            this._setClippingMask(child, maskSprite, inverse);
         }
     }
 
@@ -1832,13 +2203,63 @@ export class LayerSystem {
 
         if (this.transform._isTransformNonDefault(transformBefore)) {
             const beforeSnapshot = this.createLayerRasterSnapshot(activeLayer);
+            const integerTranslation = resolveIntegerTranslation(transformBefore);
 
-            // 🆕 Raster 焼き込み実行
-            this.bakeTransform(activeLayer);
+            if (integerTranslation && beforeSnapshot) {
+                if (integerTranslation.dx === 0 && integerTranslation.dy === 0) {
+                    activeLayer.position.set(0, 0);
+                    activeLayer.rotation = 0;
+                    activeLayer.scale.set(1, 1);
+                    activeLayer.pivot.set(0, 0);
+                    this.transform.setTransform(
+                        layerId,
+                        { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }
+                    );
+                    return true;
+                }
+                const roundedTransform = {
+                    x: integerTranslation.dx,
+                    y: integerTranslation.dy,
+                    rotation: 0,
+                    scaleX: 1,
+                    scaleY: 1
+                };
+                const translatedSnapshot = {
+                    ...beforeSnapshot,
+                    pixels: translateRgbaPixels(
+                        beforeSnapshot.pixels,
+                        beforeSnapshot.width,
+                        beforeSnapshot.height,
+                        integerTranslation.dx,
+                        integerTranslation.dy
+                    )
+                };
 
-            // 互換性のためパスデータも変形適用（ベクトルデータが残っている場合）
-            if (activeLayer.layerData.paths && activeLayer.layerData.paths.length > 0) {
-                this.transform.applyTransformToPaths(activeLayer, transformBefore);
+                if (activeLayer.layerData.paths && activeLayer.layerData.paths.length > 0) {
+                    this.transform.applyTransformToPaths(activeLayer, roundedTransform);
+                    translatedSnapshot.paths = structuredClone(activeLayer.layerData.paths);
+                }
+
+                activeLayer.position.set(0, 0);
+                activeLayer.rotation = 0;
+                activeLayer.scale.set(1, 1);
+                activeLayer.pivot.set(0, 0);
+                this.transform.setTransform(
+                    layerId,
+                    { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }
+                );
+                if (!this.restoreLayerRasterSnapshot(translatedSnapshot)) {
+                    this.restoreLayerRasterSnapshot(beforeSnapshot);
+                    return false;
+                }
+            } else {
+                // 回転・拡縮・flip・複合変形は現行の1回bakeへ残す。
+                this.bakeTransform(activeLayer);
+
+                // 互換性のためパスデータも変形適用（ベクトルデータが残っている場合）
+                if (activeLayer.layerData.paths && activeLayer.layerData.paths.length > 0) {
+                    this.transform.applyTransformToPaths(activeLayer, transformBefore);
+                }
             }
 
             // 焼き込み後の状態を反映させるためにリビルド（レイヤーSpriteは保護される）
@@ -2803,7 +3224,7 @@ export class LayerSystem {
         newLayer.layerData.opacity = sourceData.opacity;
         newLayer.layerData.visible = sourceData.visible;
         newLayer.layerData.blendMode = sourceData.blendMode || 'normal';
-        newLayer.layerData.clipping = sourceData.clipping === true;
+        applyClippingMode(newLayer.layerData, getClippingMode(sourceData));
         newLayer.blendMode = newLayer.layerData.blendMode;
         if (newLayer.layerData.layerSprite) {
             newLayer.layerData.layerSprite.blendMode = newLayer.layerData.blendMode;
