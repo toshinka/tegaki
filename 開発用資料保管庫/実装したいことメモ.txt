@@ -28,7 +28,7 @@
 ## 描画・編集・出力
 
 - エアブラシ設定とdab描画責務の整理、同色重ね塗りの黒ずみ、始点dot、周期的な丸い重なりを現行PixiJS経路で修正した。`完了`
-- 逆クリッピングを、表示・保存・History・CAF内部Layerまで揃える。通常Layerまで完了。`進行中`
+- 逆クリッピングを、表示・保存・History・CAF内部Layerまで揃える。`完了`
 - 外部画像をCtrl+Vで貼り付け、アスペクト比を保ってキャンバス内へ縮小する。`候補`
 - 直線、円、矩形、Shiftスナップ、定規機能。`候補`
 - 円形・折れ線等の選択形状を追加する場合はShift+M切替を候補にし、単独Mの選択ON/OFFを維持する。`候補`
@@ -50,8 +50,8 @@
 
 ## アニメーション・CAF・変形
 
-- 再生終端を最後のCAFまたはOUT markerにし、停止 / ループを切り替える。`候補`
-- TimelineへIN / OUT markerを置き、指定範囲だけ再生する。`候補`
+- 再生終端を最後のCAFまたはOUT markerにし、停止 / ループを切り替える。`実行中`
+- TimelineへIN / OUT markerを置き、指定範囲だけ再生する。`実行中`
 - Animation Tableを閉じた時の表示を、アクティブCAF / 全Lane合成 / Lane onionから選ぶ。`候補`
 - Lane追加・削除・並べ替え、ClipのFrame/Lane移動、duration、複製、UNIQUE化。`候補`
 - CAF内部Layerへの直接描画を完成させ、working Layerを互換層へ縮小する。`候補`

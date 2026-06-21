@@ -391,7 +391,10 @@ export class TimelineModel {
         this.drawingSnapshots = (options.drawingSnapshots || []).map(snap => new DrawingSnapshotModel(snap));
         this.playback = {
             currentFrame: options.playback?.currentFrame || 0,
-            loop: options.playback?.loop !== false
+            loop: options.playback?.loop !== false,
+            endMode: options.playback?.endMode || 'timeline', // 'timeline' | 'last-clip' | 'out-marker'
+            inFrame: (options.playback?.inFrame !== undefined && options.playback?.inFrame !== null) ? Number(options.playback.inFrame) : null,
+            outFrame: (options.playback?.outFrame !== undefined && options.playback?.outFrame !== null) ? Number(options.playback.outFrame) : null
         };
     }
 
@@ -1448,13 +1451,107 @@ export class TimelineModel {
     }
 
     /**
-     * フレームを一コマ進める
+     * 現在の再生設定 (playbackScope 等) を考慮して実質的な再生範囲 (start, end) を決定する
+     * @param {Object} options { playbackScope: 'all' | 'activeLane' | 'includedLanes', activeLaneId: string|null, includedLaneIds: Set<string> }
+     * @returns {{start: number, end: number}}
      */
-    advanceFrame() {
+    getPlaybackRange(options = {}) {
+        let start = 0;
+        if (this.playback.inFrame !== null && this.playback.inFrame >= 0) {
+            start = Math.min(this.playback.inFrame, this.totalFrames - 1);
+        }
+
+        let end = this.totalFrames - 1;
+        const endMode = this.playback.endMode || 'timeline';
+
+        if (endMode === 'last-clip') {
+            // 現在のscopeに含まれるLaneの中から最後に存在するCAFの終了フレームを取得
+            let maxFrame = -1;
+            const scope = options.playbackScope || 'all';
+            const activeLaneId = options.activeLaneId || null;
+            const includedLaneIds = options.includedLaneIds || new Set();
+
+            this.tracks.forEach(track => {
+                if (track.isBackground || track.type === 'folder') return;
+
+                // フィルタの適用
+                if (scope === 'activeLane' && track.id !== activeLaneId) return;
+                if (scope === 'includedLanes' && !includedLaneIds.has(track.id)) return;
+
+                track.cels.forEach(cel => {
+                    const celEnd = cel.startFrame + cel.duration - 1;
+                    if (celEnd > maxFrame) {
+                        maxFrame = celEnd;
+                    }
+                });
+            });
+
+            if (maxFrame >= 0) {
+                end = Math.min(maxFrame, this.totalFrames - 1);
+            }
+        } else if (endMode === 'out-marker') {
+            if (this.playback.outFrame !== null && this.playback.outFrame >= 0) {
+                end = Math.min(this.playback.outFrame, this.totalFrames - 1);
+            }
+        }
+
+        // 開始位置が終了位置より後の場合は安全に開始位置に揃えるか0-originにフォールバック
+        if (start > end) {
+            start = 0;
+        }
+
+        return { start, end };
+    }
+
+    /**
+     * マーカー位置や再生フレームの整合性を維持するためのクランプ処理
+     */
+    clampPlaybackSettings() {
+        if (this.playback.inFrame !== null) {
+            if (this.playback.inFrame >= this.totalFrames) {
+                this.playback.inFrame = this.totalFrames - 1;
+            }
+            if (this.playback.inFrame < 0) {
+                this.playback.inFrame = 0;
+            }
+        }
+        if (this.playback.outFrame !== null) {
+            if (this.playback.outFrame >= this.totalFrames) {
+                this.playback.outFrame = this.totalFrames - 1;
+            }
+            if (this.playback.outFrame < 0) {
+                this.playback.outFrame = 0;
+            }
+        }
+        // 反転している場合は揃える
+        if (this.playback.inFrame !== null && this.playback.outFrame !== null && this.playback.inFrame > this.playback.outFrame) {
+            this.playback.outFrame = this.playback.inFrame;
+        }
+        if (this.playback.currentFrame >= this.totalFrames) {
+            this.playback.currentFrame = this.totalFrames - 1;
+        }
+        if (this.playback.currentFrame < 0) {
+            this.playback.currentFrame = 0;
+        }
+    }
+
+    /**
+     * フレームを一コマ進める（再生範囲とループ設定を考慮）
+     * @param {Object} options { playbackScope: 'all'|'activeLane'|'includedLanes', activeLaneId: string|null, includedLaneIds: Set<string> }
+     */
+    advanceFrame(options = {}) {
+        const { start, end } = this.getPlaybackRange(options);
+
+        // 再生中のフレームが現在の有効範囲外であれば、まず開始フレームに移動する
+        if (this.playback.currentFrame < start || this.playback.currentFrame > end) {
+            this.playback.currentFrame = start;
+            return true;
+        }
+
         let nextFrame = this.playback.currentFrame + 1;
-        if (nextFrame >= this.totalFrames) {
+        if (nextFrame > end) {
             if (this.playback.loop) {
-                nextFrame = 0;
+                nextFrame = start;
             } else {
                 return false;
             }

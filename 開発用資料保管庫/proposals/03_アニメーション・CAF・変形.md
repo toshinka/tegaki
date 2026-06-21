@@ -39,7 +39,7 @@
 - working Layerは移行用互換層として段階的に縮小する。
 - 通常描画モードを壊さず、明示的なアニメ編集状態で切り替える。
 
-### 再生終端・ループ・範囲指定 `候補`
+### Phase 5j: 再生終端・ループ・範囲指定 `実装途中・監査修正中`
 
 - `TimelineModel.playback.loop` と終端時の停止処理は存在するが、Animation Tableから明示的に切り替えるUIが不足している。
 - 再生終端は「総Frame末尾」だけでなく「最後に配置されたCAFの終端」またはユーザー指定OUT markerを選べるようにする。
@@ -47,6 +47,10 @@
 - Timeline上のIN / OUT markerで部分再生範囲を指定する。
 - 修飾clickはCtrl+ClickのCAF作成・削除、Shift操作、Timeline panと競合を監査してから決める。先にキーを固定しない。
 - marker、loop、終端基準をproject保存対象にするか、UI session状態に留めるかをPhase化時に決める。
+- Phase 5jではTimelineModelのproject保存対象とし、Export popupの範囲入力とは分離する。
+- 実行指示書は `task-codex/phase5j.md`。
+- 2026-06-21監査でmodel helperは確認したが、scope別実再生、正規化、UI、History、
+  marker CSSが未完了。`tegaki_work/PHASE5J_AUDIT.md` に沿って修正する。
 
 ### Animation Tableを閉じた時のLane表示モード `候補`
 

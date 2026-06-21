@@ -1,12 +1,31 @@
 # 長期研究: AI・WebGPU・物理
 
-更新日: 2026-06-20
+更新日: 2026-06-21
 
 ## 基本方針
 
 この文書の項目は通常Phaseへ混ぜない。現行PixiJSラスター経路で十分な機能は先に完成させる。
 
 「WebGPU化した方が結果的に短く、品質も高い」と具体的な計測で判断できた機能のみ、独立研究Phaseへ移す。
+
+## PixiJS v8.19評価
+
+2026-06-21時点でPixiJS v8.19.0がlatestだが、Tegakiはv8.17.0を使用している。
+
+- v8.19.0で追加されたWebGPU関連は、MSAA RenderTexture向けのopt-in
+  `transientAttachment`。描画backend全体の既定化ではない。
+- 公式Application guideのrenderer `preference`既定値は`webgl`。
+- opt-inの`pixi.js/html-source`は追加されたが、TegakiのTimeline previewや
+  RenderTexture正本へ採用する理由はない。
+- Graphics to SVG ExportとSprite Mask Channelsはv8.19.0公式release noteで
+  追加機能として確認できないため、未確認APIを計画へ組み込まない。
+
+v8.17からv8.19への更新は、WebGPU有効化と分離した互換監査候補とする。
+
+- package / lock更新前後のbuild比較。
+- RenderTexture描画、extract、inverse clipping、advanced blend、保存復元の回帰。
+- rendererは明示的にWebGLを維持する。
+- WebGPU切替、SDF/MSDF復活、描画pipeline再構成を同時に行わない。
 
 ## WebGPU候補
 
