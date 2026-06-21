@@ -12,6 +12,10 @@
 import { TegakiEventBus } from './event-bus.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TimelineModel } from './animation/animation-data-model.js';
+import {
+    applyClippingMode,
+    getClippingMode
+} from './clipping-mode.js';
 import * as PIXI from 'pixi.js';
 
 export class ProjectManager {
@@ -105,6 +109,7 @@ export class ProjectManager {
                 blendMode: data.blendMode || 'normal',
                 parentId: data.parentId || null,
                 clipping: data.clipping === true,
+                clippingMode: getClippingMode(data),
                 image: imageData
             });
         }
@@ -168,6 +173,11 @@ export class ProjectManager {
                     .filter(layerInfo => layerInfo?.isFolder && layerInfo.id != null)
                     .map(layerInfo => [String(layerInfo.id), layerInfo.id])
             );
+            // Pixiのinverse AlphaMask描画命令が旧Layerを参照したまま
+            // RenderTexture破棄へ進まないよう、mask解除を1描画フレーム先行させる。
+            this.layerSystem.clearClippingMasks?.();
+            await new Promise(resolve => requestAnimationFrame(resolve));
+
             // 背景以外のレイヤーを削除
             const currentLayers = [...this.layerSystem.getLayers()];
             for (let i = currentLayers.length - 1; i >= 0; i--) {
@@ -197,7 +207,10 @@ export class ProjectManager {
                     legacyParentByChildId
                 );
                 layer.layerData.blendMode = layerInfo.blendMode || 'normal';
-                layer.layerData.clipping = layerInfo.clipping === true;
+                applyClippingMode(
+                    layer.layerData,
+                    layerInfo.clippingMode || (layerInfo.clipping === true ? 'normal' : 'none')
+                );
                 if (layerInfo.isFolder) {
                     layer.layerData.isFolder = true;
                     layer.layerData.folderExpanded = layerInfo.folderExpanded !== false;
@@ -427,6 +440,8 @@ export class ProjectManager {
         if (topDrawableIndex >= 0 && typeof this.layerSystem.setActiveLayer === 'function') {
             this.layerSystem.setActiveLayer(topDrawableIndex);
         }
+
+        this.layerSystem.refreshClippingMasks?.();
 
         layers.forEach((layer, index) => {
             if (layer.layerData?.isFolder) return;

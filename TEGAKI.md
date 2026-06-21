@@ -170,11 +170,19 @@ popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 - Phase 5gのAirbrush描画境界整理と重ね塗り品質修正まで完了。
 - Phase 5hのRaster変形反復劣化低減まで完了。
 - 完了記録は `開発用資料保管庫/Archive/phase5h.md`。
-- 現行PhaseはPhase 5i。通常LayerとCAF internal Layerの逆クリッピングを、
-  旧boolean保存互換とHistory分離を維持して統合する。
+- Phase 5iの通常Layer / CAF internal Layer逆クリッピング統合は完了。
 - 通常Layerの3状態、Pixi inverse mask、描画preview、HistoryはSlice 1-2で完了。
-- 次はCAF internal LayerとCAF専用Historyを接続する。
-- 指示書は `task-codex/phase5i.md`。
+- CAF internal Layerの3状態、CAF専用History、working Layer同期、共通UIはSlice 3で完了。
+- CAF preview、merge、Frame compositor、保存復元はSlice 4で完了。
+- 完了記録は `開発用資料保管庫/Archive/phase5i.md`。
+- 現行PhaseはPhase 5j。別AIの部分実装を2026-06-21に監査し、
+  playback scope接続、正規化、操作UI、Historyが未完了と判定した。
+- 監査結果は `tegaki_work/PHASE5J_AUDIT.md`。
+- Timelineのloop、終端基準、IN / OUT再生範囲を、
+  playback scopeとExport範囲から分離して修正継続する。
+- 指示書は `task-codex/phase5j.md`。
+- PixiJS v8.19.0でもrenderer既定はWebGL。依存更新とWebGPU採用を分離し、
+  WebGPU凍結方針は維持する。
 - Phase 5gの完了記録は `開発用資料保管庫/Archive/phase5g.md`。
 - Phase 5eの監査結果は `開発用資料保管庫/Archive/PHASE5E_AUDIT.md` を参照する。
 

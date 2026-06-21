@@ -4064,15 +4064,26 @@ export class AnimationTablePopup {
             const totalFrames = this.model.totalFrames;
             const currentFrame = this.model.playback.currentFrame;
             const showCurrentFrame = !this.isLaneOnlySelected;
+            const inFrame = this.model.playback.inFrame;
+            const outFrame = this.model.playback.outFrame;
 
             let headerHtml = `<div class="anim-timeline-header">`;
             for (let i = 0; i < totalFrames; i++) {
                 const isCurrent = (showCurrentFrame && i === currentFrame) ? ' current' : '';
-                headerHtml += `<div class="anim-frame-num${isCurrent}" data-frame-index="${i}">${i + 1}</div>`;
+                const isInMarker = (inFrame === i) ? ' in-marker' : '';
+                const isOutMarker = (outFrame === i) ? ' out-marker' : '';
+                const markerLabel = (inFrame === i && outFrame === i) ? 'IN/OUT' : ((inFrame === i) ? 'IN' : ((outFrame === i) ? 'OUT' : ''));
+                const markerBadge = markerLabel ? `<span class="anim-marker-badge">${markerLabel}</span>` : '';
+                headerHtml += `<div class="anim-frame-num${isCurrent}${isInMarker}${isOutMarker}" data-frame-index="${i}">${i + 1}${markerBadge}</div>`;
             }
             headerHtml += `</div>`;
 
             let gridHtml = headerHtml;
+            const range = this.model.getPlaybackRange({
+                playbackScope: this.playbackScope,
+                activeLaneId: this.activeLaneId,
+                includedLaneIds: this.includedLaneIds
+            });
             this.model.tracks.forEach(track => {
                 if (track.isBackground || track.type === 'folder') return;
                 const activeClass = (track.active || track.id === this.activeLaneId) ? ' active' : '';

@@ -13,7 +13,11 @@
  */
 
 import { UI_ICONS } from './ui-icons.js';
-import { getClippingMode, isInverseClipping } from '../system/clipping-mode.js';
+import {
+    cycleClippingMode,
+    getClippingMode,
+    isInverseClipping
+} from '../system/clipping-mode.js';
 
 export class LayerPanelRenderer {
     constructor(container, layerSystem, eventBus) {
@@ -2017,7 +2021,11 @@ export class LayerPanelRenderer {
                 animationTarget.animationTable.setInternalLayerAttributesFromExternal(
                     animationTarget.asset.id,
                     animationTarget.internalLayer.id,
-                    { clipping: animationTarget.internalLayer.clipping !== true },
+                    {
+                        clippingMode: cycleClippingMode(
+                            getClippingMode(animationTarget.internalLayer)
+                        )
+                    },
                     { source: 'layer-attribute-popup-clipping' }
                 );
             } else if (this.layerSystem?.toggleLayerClipping) {
@@ -2082,7 +2090,7 @@ export class LayerPanelRenderer {
         const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
         const animationTarget = this._getAnimationAttributeTarget();
         const source = animationTarget?.internalLayer || layer?.layerData || {};
-        const normalLayerClippingMode = animationTarget ? null : getClippingMode(source);
+        const clippingMode = getClippingMode(source);
         const opacity = typeof source.opacity === 'number'
             ? source.opacity
             : (typeof layer?.alpha === 'number' ? layer.alpha : 1);
@@ -2090,12 +2098,8 @@ export class LayerPanelRenderer {
             name: source.name || layer?.layerData?.name || 'レイヤー',
             opacity: Math.round(opacity * 100),
             blendMode: source.blendMode || 'normal',
-            clipping: animationTarget
-                ? source.clipping === true
-                : normalLayerClippingMode !== 'none',
-            inverseClipping: animationTarget
-                ? false
-                : isInverseClipping(source),
+            clipping: clippingMode !== 'none',
+            inverseClipping: isInverseClipping(source),
             isFolder: source.type === 'folder' || source.isFolder === true
         };
     }
@@ -3382,9 +3386,12 @@ export class LayerPanelRenderer {
             isFolder,
             hasParent: !!layer?.parentLayerId,
             isCollapsed,
-            isClipping: layer?.clipping === true,
+            isClipping: getClippingMode(layer) !== 'none',
+            isInverseClipping: isInverseClipping(layer),
             visibilityIconName: isVisible ? 'eye' : 'eyeOff',
-            clipTitle: 'クリッピング',
+            clipTitle: isInverseClipping(layer)
+                ? '逆クリッピングON'
+                : (getClippingMode(layer) !== 'none' ? 'クリッピングON' : 'クリッピング未使用'),
             visibilityTitle: '内部レイヤーの表示/非表示'
         };
     }
@@ -3427,7 +3434,10 @@ export class LayerPanelRenderer {
                 this._createLayerPanelCardActionButtonElement(variant, 'clip', {
                     extraClasses: this._createLayerPanelClassName(
                         `${variant}-clip-btn`,
-                        this._createLayerPanelStateClassNames({ 'is-clipping': options.isClipping })
+                        this._createLayerPanelStateClassNames({
+                            'is-clipping': options.isClipping,
+                            'is-inverse-clipping': options.isInverseClipping
+                        })
                     ),
                     iconName: 'paperclip',
                     title: options.clipTitle || 'クリッピング',

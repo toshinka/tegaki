@@ -1450,9 +1450,7 @@ export class LayerSystem {
         const layers = this.getLayers();
         if (!layers.length) return;
 
-        for (const layer of layers) {
-            this._clearLayerClippingMask(layer);
-        }
+        this.clearClippingMasks();
 
         for (const layer of layers) {
             const data = layer.layerData;
@@ -2047,6 +2045,12 @@ export class LayerSystem {
                 this._emitPanelUpdateRequest();
             }
             this._layerTransformSession = null;
+        }
+    }
+
+    clearClippingMasks() {
+        for (const layer of this.getLayers()) {
+            this._clearLayerClippingMask(layer);
         }
     }
 
@@ -3100,6 +3104,7 @@ export class LayerSystem {
                 const entry = {
                     name: 'layer-delete',
                     do: () => {
+                        this.clearClippingMasks();
                         if (layer.layerData) {
                             layer.layerData.destroyMask();
                         }
@@ -3113,6 +3118,7 @@ export class LayerSystem {
                         } else if (this.activeLayerIndex >= remainingLayers.length) {
                             this.activeLayerIndex = remainingLayers.length - 1;
                         }
+                        this.refreshClippingMasks();
                         this._emitPanelUpdateRequest();
                         this._emitStatusUpdateRequest();
                         if (this.eventBus) {
@@ -3133,6 +3139,7 @@ export class LayerSystem {
                         }
                         this.currentFrameContainer.addChildAt(layer, layerIndex);
                         this.activeLayerIndex = previousActiveIndex;
+                        this.refreshClippingMasks();
                         this._emitPanelUpdateRequest();
                         this._emitStatusUpdateRequest();
                     },
@@ -3140,6 +3147,7 @@ export class LayerSystem {
                 };
                 historyManager.push(entry);
             } else {
+                this.clearClippingMasks();
                 if (layer.layerData) {
                     layer.layerData.destroyMask();
                 }
@@ -3153,6 +3161,7 @@ export class LayerSystem {
                 } else if (this.activeLayerIndex >= remainingLayers.length) {
                     this.activeLayerIndex = remainingLayers.length - 1;
                 }
+                this.refreshClippingMasks();
                 this._emitPanelUpdateRequest();
                 this._emitStatusUpdateRequest();
                 if (this.eventBus) {

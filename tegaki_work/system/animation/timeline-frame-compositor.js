@@ -2,6 +2,11 @@
  * TimelineModel / ClipAsset から exporter 共通の Canvas フレーム列を生成する。
  * UI の preview DOM や現在選択中の Frame / CAF / Layer 状態には依存しない。
  */
+import {
+    CLIPPING_MODES,
+    getClippingMode
+} from '../clipping-mode.js';
+
 export class TimelineFrameCompositor {
     constructor(model, layerSystem = null) {
         if (!model) throw new Error('TimelineFrameCompositor: model is required');
@@ -191,8 +196,12 @@ export class TimelineFrameCompositor {
 
     _applyClippingMask(asset, layer, ctx, width, height) {
         const owner = this._findClippingOwner(asset, layer);
+        if (!owner) return;
         const source = owner ? this._findClippingSource(asset, owner) : null;
-        if (!source) return;
+        if (!source) {
+            ctx.clearRect(0, 0, width, height);
+            return;
+        }
 
         const maskCanvas = this._createCanvas(width, height);
         const maskCtx = maskCanvas.getContext('2d');
@@ -209,10 +218,15 @@ export class TimelineFrameCompositor {
             maskCtx.drawImage(sourceCanvas, 0, 0);
             hasMask = true;
         });
-        if (!hasMask) return;
+        if (!hasMask) {
+            ctx.clearRect(0, 0, width, height);
+            return;
+        }
 
         ctx.save();
-        ctx.globalCompositeOperation = 'destination-in';
+        ctx.globalCompositeOperation = getClippingMode(owner) === CLIPPING_MODES.INVERSE
+            ? 'destination-out'
+            : 'destination-in';
         ctx.drawImage(maskCanvas, 0, 0);
         ctx.restore();
     }
@@ -287,7 +301,7 @@ export class TimelineFrameCompositor {
         const visited = new Set();
         while (current && !visited.has(current.id)) {
             visited.add(current.id);
-            if (current.clipping === true) return current;
+            if (getClippingMode(current) !== CLIPPING_MODES.NONE) return current;
             current = current.parentLayerId ? byId.get(current.parentLayerId) : null;
         }
         return null;

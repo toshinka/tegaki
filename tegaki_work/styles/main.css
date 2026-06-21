@@ -597,6 +597,7 @@ canvas {
 }
 
 .layer-clip-status.is-inverse-clipping,
+.layer-panel-card-action.is-inverse-clipping,
 .layer-attribute-clip-toggle.is-inverse-clipping {
     color: var(--futaba-medium);
     border-color: var(--futaba-medium);
