@@ -77,6 +77,7 @@ Phase 5pの無限キャンバス / 欄外ラスター保持も完了。
 - Album上の `active-caf` snapshotを開くと、現在選択中のCAFへ内部Layer / FolderとDrawingSnapshotを取り込み、Timeline Historyへ `caf-import-album-active-caf` として記録する。
 - Album toolbarは通常Project保存 / アクティブCAF保存、通常Projectロード / アクティブCAFロードを本アイコンの色違いで分ける。`active-caf` snapshotはアクティブCAFへ取り込むだけでなく、通常ProjectのLayer / Folder構造として開くこともできる。
 - 画像読み込みボタンでPSDファイルも選べるようにし、`.psd` の場合は選択中のアクティブCAFへPSD Layer / Folder構造を取り込む。PSD childrenはTegaki内部Layer順へ反転し、Layer `left/top` はDrawingSnapshot `rasterBounds.x/y` として保持する。
+- PSD import時はLayer imageDataの透明余白をalpha boundsで刈り込んでDrawingSnapshot化する。読み込み中は処理中indicatorを表示し、重いPSDでも操作不能に見えにくくする。
 - CAF全体PSD export、通常LayerへのPSD import、CAFモードからアクティブCAF以外を破棄して通常モードへ戻す操作は後続候補として残す。
 
 ## Clipboard / CAF table追記

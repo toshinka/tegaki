@@ -31,6 +31,8 @@ export class PsdImporter {
         }
 
         try {
+            this._showOperation(`PSDを取り込み中... ${file.name || ''}`.trim());
+            await this._nextFrame();
             const buffer = await file.arrayBuffer();
             const psd = readPsd(buffer, {
                 useImageData: true,
@@ -75,6 +77,8 @@ export class PsdImporter {
             console.error('[PsdImporter] Active CAF PSD import failed:', error);
             alert('PSDの取り込みに失敗しました。');
             return false;
+        } finally {
+            this._hideOperation();
         }
     }
 
@@ -244,6 +248,20 @@ export class PsdImporter {
             || window.PopupManager?.popups?.get?.('animationTable')?.instance
             || window.coreEngine?.popupManager?.get?.('animationTable')
             || null;
+    }
+
+    _showOperation(message) {
+        const layerSystem = window.layerManager || window.coreEngine?.layerSystem || null;
+        layerSystem?._showOperationIndicator?.(message || 'PSDを取り込み中...');
+    }
+
+    _hideOperation() {
+        const layerSystem = window.layerManager || window.coreEngine?.layerSystem || null;
+        layerSystem?._hideOperationIndicator?.();
+    }
+
+    _nextFrame() {
+        return new Promise(resolve => requestAnimationFrame(() => resolve()));
     }
 }
 
