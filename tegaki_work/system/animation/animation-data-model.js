@@ -2,10 +2,12 @@
  * ============================================================================
  * ファイル名: system/animation/animation-data-model.js
  * 責務: 新アニメーションテーブル（ToonSquid風）の純粋データ構造を定義する
- * 依存: なし
+ * 依存: system/raster-bounds.js
  * 被依存: animation-system.js, animation-table-popup.js
  * ============================================================================
  */
+
+import { normalizeRasterBounds } from '../raster-bounds.js';
 
 /**
  * ID生成ユーティリティ
@@ -61,8 +63,14 @@ function normalizeClipTransform(transform = {}) {
 export class DrawingSnapshotModel {
     constructor(options = {}) {
         this.id = options.id || createId();
-        this.width = options.width || 0;
-        this.height = options.height || 0;
+        this.width = options.width || options.rasterBounds?.width || 0;
+        this.height = options.height || options.rasterBounds?.height || 0;
+        this.rasterBounds = normalizeRasterBounds(options.rasterBounds, {
+            width: this.width || 1,
+            height: this.height || 1
+        });
+        if (this.width > 0) this.rasterBounds.width = this.width;
+        if (this.height > 0) this.rasterBounds.height = this.height;
         this.pixels = options.pixels || null; // Uint8ClampedArray or Array
         this.isBlank = options.isBlank === true;
         this.createdAt = options.createdAt || Date.now();
@@ -74,6 +82,7 @@ export class DrawingSnapshotModel {
             id: this.id,
             width: this.width,
             height: this.height,
+            rasterBounds: { ...this.rasterBounds },
             pixels: this.pixels && typeof this.pixels.length === 'number' ? Array.from(this.pixels) : this.pixels,
             isBlank: this.isBlank,
             createdAt: this.createdAt,
@@ -210,7 +219,15 @@ export class ClipInstanceModel {
         });
         
         // 暫定互換用：直接 Snapshot 保持
-        this.rasterSnapshot = options.rasterSnapshot || null; 
+        this.rasterSnapshot = options.rasterSnapshot
+            ? {
+                ...options.rasterSnapshot,
+                rasterBounds: normalizeRasterBounds(options.rasterSnapshot.rasterBounds, {
+                    width: options.rasterSnapshot.width || 1,
+                    height: options.rasterSnapshot.height || 1
+                })
+            }
+            : null;
     }
 
     serialize() {
@@ -231,6 +248,11 @@ export class ClipInstanceModel {
                 cacheId: null
             }),
             rasterSnapshot: this.rasterSnapshot
+                ? {
+                    ...this.rasterSnapshot,
+                    rasterBounds: { ...this.rasterSnapshot.rasterBounds }
+                }
+                : null
         };
     }
 }
@@ -396,6 +418,7 @@ export class TimelineModel {
             inFrame: (options.playback?.inFrame !== undefined && options.playback?.inFrame !== null) ? Number(options.playback.inFrame) : null,
             outFrame: (options.playback?.outFrame !== undefined && options.playback?.outFrame !== null) ? Number(options.playback.outFrame) : null
         };
+        this.clampPlaybackSettings();
     }
 
     getLaneById(laneId) {
@@ -865,6 +888,7 @@ export class TimelineModel {
         const duplicate = new DrawingSnapshotModel({
             width: snapshot.width,
             height: snapshot.height,
+            rasterBounds: snapshot.rasterBounds,
             pixels,
             isBlank: snapshot.isBlank === true
         });
@@ -1445,8 +1469,9 @@ export class TimelineModel {
      * 現在フレームを設定
      */
     setCurrentFrame(frameIndex) {
-        if (frameIndex >= 0 && frameIndex < this.totalFrames) {
-            this.playback.currentFrame = frameIndex;
+        const nextFrame = Math.round(Number(frameIndex));
+        if (Number.isFinite(nextFrame) && nextFrame >= 0 && nextFrame < this.totalFrames) {
+            this.playback.currentFrame = nextFrame;
         }
     }
 
@@ -1495,9 +1520,9 @@ export class TimelineModel {
             }
         }
 
-        // 開始位置が終了位置より後の場合は安全に開始位置に揃えるか0-originにフォールバック
+        // 開始位置が終了位置より後の場合は有効終端へ揃え、範囲外再生を避ける。
         if (start > end) {
-            start = 0;
+            start = end;
         }
 
         return { start, end };
@@ -1507,32 +1532,34 @@ export class TimelineModel {
      * マーカー位置や再生フレームの整合性を維持するためのクランプ処理
      */
     clampPlaybackSettings() {
-        if (this.playback.inFrame !== null) {
-            if (this.playback.inFrame >= this.totalFrames) {
-                this.playback.inFrame = this.totalFrames - 1;
-            }
-            if (this.playback.inFrame < 0) {
-                this.playback.inFrame = 0;
-            }
+        const allowedEndModes = new Set(['timeline', 'last-clip', 'out-marker']);
+        if (!allowedEndModes.has(this.playback.endMode)) {
+            this.playback.endMode = 'timeline';
         }
-        if (this.playback.outFrame !== null) {
-            if (this.playback.outFrame >= this.totalFrames) {
-                this.playback.outFrame = this.totalFrames - 1;
-            }
-            if (this.playback.outFrame < 0) {
-                this.playback.outFrame = 0;
-            }
-        }
-        // 反転している場合は揃える
+
+        this.playback.loop = this.playback.loop !== false;
+
+        this.totalFrames = Math.max(1, Math.round(Number(this.totalFrames) || 1));
+
+        const normalizeFrameOrNull = (value) => {
+            if (value === null || value === undefined) return null;
+            const frame = Math.round(Number(value));
+            if (!Number.isFinite(frame)) return null;
+            return Math.max(0, Math.min(this.totalFrames - 1, frame));
+        };
+
+        this.playback.currentFrame = Math.max(0, Math.min(
+            this.totalFrames - 1,
+            Math.round(Number(this.playback.currentFrame) || 0)
+        ));
+        this.playback.inFrame = normalizeFrameOrNull(this.playback.inFrame);
+        this.playback.outFrame = normalizeFrameOrNull(this.playback.outFrame);
+
+        // 反転している場合はOUTをINへ揃える。解除は明示操作で行う。
         if (this.playback.inFrame !== null && this.playback.outFrame !== null && this.playback.inFrame > this.playback.outFrame) {
             this.playback.outFrame = this.playback.inFrame;
         }
-        if (this.playback.currentFrame >= this.totalFrames) {
-            this.playback.currentFrame = this.totalFrames - 1;
-        }
-        if (this.playback.currentFrame < 0) {
-            this.playback.currentFrame = 0;
-        }
+
     }
 
     /**

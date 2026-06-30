@@ -16,6 +16,7 @@ import {
     applyClippingMode,
     getClippingMode
 } from './clipping-mode.js';
+import { normalizeRasterBounds } from './raster-bounds.js';
 import * as PIXI from 'pixi.js';
 
 export class ProjectManager {
@@ -23,14 +24,20 @@ export class ProjectManager {
         this.layerSystem = layerSystem;
         this.app = app;
         this.eventBus = TegakiEventBus;
+        this.currentFileHandle = null;
+        this.currentFileName = null;
     }
 
     /**
      * プロジェクトをJSONデータとしてエクスポート
      */
-    async exportProject() {
+    async exportProject(options = {}) {
         if (!this.layerSystem || !this.app) return null;
+        const profileEnabled = options.profile === true || TEGAKI_CONFIG.debug === true;
+        const profile = profileEnabled ? this._createExportProfile() : null;
+        const exportStartedAt = this._now();
         this._commitFloatingSelection();
+        if (profile) profile.timings.commitFloatingSelectionMs = this._elapsed(exportStartedAt);
 
         const layers = this.layerSystem.getLayers();
         const canvasWidth = TEGAKI_CONFIG.canvas.width;
@@ -57,12 +64,24 @@ export class ProjectManager {
             animationTable?.model?.serialize &&
             this._hasAnimationProjectData(animationTable.model)
         ) {
+            const saveClipStartedAt = this._now();
             animationTable._saveSelectedClipFromWorkingLayers?.({ force: true });
-            projectData.animation = animationTable.model.serialize();
+            if (profile) profile.timings.saveSelectedClipMs = this._elapsed(saveClipStartedAt);
+
+            if (profile) {
+                profile.animation.beforeSerialize = this._getAnimationSerializeStats(animationTable.model);
+            }
+            const animationSerializeStartedAt = this._now();
+            projectData.animation = await this._serializeAnimationForProject(animationTable.model, profile);
+            if (profile) {
+                profile.timings.animationSerializeMs = this._elapsed(animationSerializeStartedAt);
+                profile.animation.afterSerialize = this._getSerializedAnimationStats(projectData.animation);
+            }
             projectData.animationState = this._captureAnimationUiState(animationTable);
         }
 
         // レイヤー情報を収集（背景は別途保存）
+        const layersStartedAt = this._now();
         for (let i = 0; i < layers.length; i++) {
             const layer = layers[i];
             const data = layer.layerData;
@@ -110,8 +129,18 @@ export class ProjectManager {
                 parentId: data.parentId || null,
                 clipping: data.clipping === true,
                 clippingMode: getClippingMode(data),
+                rasterBounds: normalizeRasterBounds(data.rasterBounds, {
+                    width: data.renderTexture?.width || canvasWidth,
+                    height: data.renderTexture?.height || canvasHeight
+                }),
                 image: imageData
             });
+        }
+        if (profile) {
+            profile.timings.layersSerializeMs = this._elapsed(layersStartedAt);
+            profile.timings.exportProjectMs = this._elapsed(exportStartedAt);
+            profile.layers = this._getLayerExportStats(projectData.layers);
+            this._attachExportProfile(projectData, profile);
         }
 
         return projectData;
@@ -120,11 +149,54 @@ export class ProjectManager {
     /**
      * プロジェクトJSONをファイルとしてダウンロード
      */
-    async saveToFile() {
-        const data = await this.exportProject();
-        if (!data) return;
+    async saveToFile(options = {}) {
+        let fileHandle = null;
+        if (options.preferNative === true && this._canUseNativeFileSave()) {
+            const fileHandleResult = await this._getFileHandleForSave(options);
+            if (fileHandleResult?.cancelled === true && options.cancelledIfNoHandle === true) {
+                return { ok: false, cancelled: true };
+            }
+            fileHandle = fileHandleResult?.handle || null;
+        }
+        const data = await this.exportProject({ profile: TEGAKI_CONFIG.debug === true });
+        if (!data) return { ok: false, reason: 'empty-project' };
+        return this.saveProjectDataToFile(data, {
+            ...options,
+            fileHandle: fileHandle || options.fileHandle || null
+        });
+    }
 
-        const json = JSON.stringify(data);
+    async saveProjectDataToFile(projectData, options = {}) {
+        if (!projectData) return { ok: false, reason: 'empty-project' };
+        const stringifyStartedAt = this._now();
+        const json = JSON.stringify(projectData);
+        this._finalizeExportProfile(projectData, {
+            stringifyMs: this._elapsed(stringifyStartedAt),
+            jsonLength: json.length
+        });
+        if (TEGAKI_CONFIG.debug === true && projectData.__exportProfile) {
+            console.info('[ProjectManager] export profile', projectData.__exportProfile);
+        }
+
+        const fileHandle = options.fileHandle
+            || (options.preferNative === true ? this.currentFileHandle : null);
+        if (fileHandle && this._canUseNativeFileSave()) {
+            try {
+                await this._writeTextToFileHandle(fileHandle, json);
+                this.currentFileHandle = fileHandle;
+                this.currentFileName = fileHandle.name || this.currentFileName;
+                if (options.showToast === true) {
+                    this._showSaveToast(`保存しました${this.currentFileName ? `: ${this.currentFileName}` : ''}`);
+                }
+                return { ok: true, native: true, fileName: this.currentFileName };
+            } catch (error) {
+                if (error?.name === 'AbortError') {
+                    return { ok: false, cancelled: true };
+                }
+                console.warn('[ProjectManager] Native file save failed; falling back to download.', error);
+            }
+        }
+
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         
@@ -135,6 +207,263 @@ export class ProjectManager {
         a.click();
         
         URL.revokeObjectURL(url);
+        if (options.showToast === true) {
+            this._showSaveToast('保存ファイルをダウンロードしました');
+        }
+        return { ok: true, native: false };
+    }
+
+    async quickSave(options = {}) {
+        if (!this.hasCurrentAnimationProject()) {
+            return { handled: false, reason: 'no-animation-project' };
+        }
+        const result = await this.saveToFile({
+            preferNative: true,
+            showToast: true,
+            forcePicker: options.forcePicker === true || !this.currentFileHandle,
+            cancelledIfNoHandle: true
+        });
+        return {
+            handled: true,
+            ...(result || {})
+        };
+    }
+
+    async selectSaveLocation(options = {}) {
+        if (!this._canUseNativeFileSave()) {
+            this._showSaveToast('このブラウザでは保存先の固定に対応していません');
+            return { ok: false, reason: 'native-file-save-unavailable' };
+        }
+        const result = await this._getFileHandleForSave({
+            forcePicker: true,
+            suggestedName: options.suggestedName || null
+        });
+        if (result?.cancelled) return { ok: false, cancelled: true };
+        if (!result?.handle) return { ok: false, reason: 'no-handle' };
+        this.currentFileHandle = result.handle;
+        this.currentFileName = result.handle.name || this.currentFileName;
+        if (options.showToast !== false) {
+            this._showSaveToast(`保存先: ${this.currentFileName || '選択済み'}`);
+        }
+        return { ok: true, fileName: this.currentFileName };
+    }
+
+    getCurrentSaveTargetLabel() {
+        return this.currentFileName || '';
+    }
+
+    hasCurrentAnimationProject() {
+        const animationTable = this._getAnimationTable();
+        return this._hasAnimationProjectData(animationTable?.model);
+    }
+
+    async profileProjectExport() {
+        const data = await this.exportProject({ profile: true });
+        if (!data) return null;
+        const stringifyStartedAt = this._now();
+        const json = JSON.stringify(data);
+        return this._finalizeExportProfile(data, {
+            stringifyMs: this._elapsed(stringifyStartedAt),
+            jsonLength: json.length
+        });
+    }
+
+    _now() {
+        return globalThis.performance?.now?.() || Date.now();
+    }
+
+    _elapsed(startedAt) {
+        return Math.max(0, this._now() - startedAt);
+    }
+
+    _createExportProfile() {
+        return {
+            collectedAt: new Date().toISOString(),
+            timings: {
+                commitFloatingSelectionMs: 0,
+                saveSelectedClipMs: 0,
+                animationSerializeMs: 0,
+                layersSerializeMs: 0,
+                exportProjectMs: 0,
+                stringifyMs: null,
+                animationSerializeYields: 0
+            },
+            animation: {
+                beforeSerialize: null,
+                afterSerialize: null
+            },
+            layers: null,
+            jsonLength: null,
+            warnings: []
+        };
+    }
+
+    _canUseNativeFileSave() {
+        return typeof globalThis.showSaveFilePicker === 'function';
+    }
+
+    async _getFileHandleForSave(options = {}) {
+        if (this.currentFileHandle && options.forcePicker !== true) {
+            return { handle: this.currentFileHandle };
+        }
+        if (!this._canUseNativeFileSave()) return null;
+        try {
+            const suggestedName = options.suggestedName || this.currentFileName || `tegaki_project_${this._timestampForFile()}.json`;
+            const handle = await globalThis.showSaveFilePicker({
+                suggestedName,
+                types: [{
+                    description: 'Tegaki Project JSON',
+                    accept: {
+                        'application/json': ['.json']
+                    }
+                }]
+            });
+            return { handle };
+        } catch (error) {
+            if (error?.name === 'AbortError') {
+                return { cancelled: true };
+            }
+            console.warn('[ProjectManager] File picker failed; falling back to download.', error);
+            return null;
+        }
+    }
+
+    async _writeTextToFileHandle(fileHandle, text) {
+        const writable = await fileHandle.createWritable();
+        try {
+            await writable.write(text);
+        } finally {
+            await writable.close();
+        }
+    }
+
+    _timestampForFile() {
+        return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    }
+
+    _showSaveToast(message) {
+        let toast = document.getElementById('project-save-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'project-save-toast';
+            toast.className = 'project-save-toast';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(this._saveToastTimer);
+        this._saveToastTimer = setTimeout(() => {
+            toast.classList.remove('show');
+        }, 1600);
+    }
+
+    async _serializeAnimationForProject(model, profile = null) {
+        let sliceStartedAt = this._now();
+        const serializedSnapshots = [];
+        const snapshots = model?.drawingSnapshots || [];
+
+        for (let index = 0; index < snapshots.length; index++) {
+            serializedSnapshots.push(snapshots[index]?.serialize ? snapshots[index].serialize() : { ...snapshots[index] });
+            if (this._elapsed(sliceStartedAt) > 12 || index % 4 === 3) {
+                if (profile) profile.timings.animationSerializeYields++;
+                await this._yieldToBrowser();
+                sliceStartedAt = this._now();
+            }
+        }
+
+        return {
+            fps: model.fps,
+            totalFrames: model.totalFrames,
+            tracks: (model.tracks || []).map(track => track.serialize ? track.serialize() : { ...track }),
+            clipAssetFolders: (model.clipAssetFolders || []).map(folder => folder.serialize ? folder.serialize() : { ...folder }),
+            clipAssets: (model.clipAssets || []).map(asset => asset.serialize ? asset.serialize() : { ...asset }),
+            drawingSnapshots: serializedSnapshots,
+            playback: { ...(model.playback || {}) }
+        };
+    }
+
+    _yieldToBrowser() {
+        return new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    _attachExportProfile(projectData, profile) {
+        if (!projectData || !profile) return;
+        Object.defineProperty(projectData, '__exportProfile', {
+            value: profile,
+            enumerable: false,
+            configurable: true
+        });
+    }
+
+    _finalizeExportProfile(projectData, details = {}) {
+        const profile = projectData?.__exportProfile;
+        if (!profile) return null;
+        if (Number.isFinite(details.stringifyMs)) {
+            profile.timings.stringifyMs = details.stringifyMs;
+        }
+        if (Number.isFinite(details.jsonLength)) {
+            profile.jsonLength = details.jsonLength;
+            if (details.jsonLength > 100 * 1024 * 1024) {
+                profile.warnings.push('Project JSON exceeds 100MB; save/download may be delayed.');
+            }
+        }
+        return profile;
+    }
+
+    _getAnimationSerializeStats(model) {
+        const snapshots = model?.drawingSnapshots || [];
+        let pixelBytes = 0;
+        let pixelElements = 0;
+        let withPixels = 0;
+        snapshots.forEach(snapshot => {
+            const pixels = snapshot?.pixels;
+            const length = Number(pixels?.length) || 0;
+            const bytes = Number(pixels?.byteLength) || length;
+            if (length > 0 || bytes > 0) withPixels++;
+            pixelBytes += bytes;
+            pixelElements += length;
+        });
+        return {
+            totalFrames: model?.totalFrames || 0,
+            tracks: model?.tracks?.length || 0,
+            clipAssets: model?.clipAssets?.length || 0,
+            drawingSnapshots: snapshots.length,
+            drawingSnapshotsWithPixels: withPixels,
+            pixelBytes,
+            pixelElements,
+            estimatedArrayNumberBytes: pixelElements * 8
+        };
+    }
+
+    _getSerializedAnimationStats(animationData) {
+        const snapshots = animationData?.drawingSnapshots || [];
+        let serializedPixelElements = 0;
+        snapshots.forEach(snapshot => {
+            serializedPixelElements += Number(snapshot?.pixels?.length) || 0;
+        });
+        return {
+            tracks: animationData?.tracks?.length || 0,
+            clipAssets: animationData?.clipAssets?.length || 0,
+            drawingSnapshots: snapshots.length,
+            serializedPixelElements,
+            estimatedArrayNumberBytes: serializedPixelElements * 8
+        };
+    }
+
+    _getLayerExportStats(layers = []) {
+        let imageChars = 0;
+        let rasterLayerCount = 0;
+        layers.forEach(layer => {
+            if (typeof layer?.image === 'string') {
+                rasterLayerCount++;
+                imageChars += layer.image.length;
+            }
+        });
+        return {
+            count: layers.length,
+            rasterLayerCount,
+            imageChars
+        };
     }
 
     /**
@@ -226,9 +555,22 @@ export class ProjectManager {
                     }
                 }
 
-                // 画像復元
-                if (!layerInfo.isFolder && layerInfo.image && layer.layerData.renderTexture && this.app.renderer) {
-                    await this._loadLayerImage(layer.layerData.renderTexture, layerInfo.image);
+                if (!layerInfo.isFolder) {
+                    const savedRasterBounds = normalizeRasterBounds(layerInfo.rasterBounds, {
+                        width: TEGAKI_CONFIG.canvas.width,
+                        height: TEGAKI_CONFIG.canvas.height
+                    });
+                    if (layerInfo.image && layer.layerData.renderTexture && this.app.renderer) {
+                        await this._loadLayerImage(layer, layerInfo.image, savedRasterBounds);
+                    }
+                    const rasterBounds = normalizeRasterBounds(savedRasterBounds, {
+                        width: layer.layerData.renderTexture?.width || savedRasterBounds.width,
+                        height: layer.layerData.renderTexture?.height || savedRasterBounds.height
+                    });
+                    rasterBounds.width = layer.layerData.renderTexture?.width || rasterBounds.width;
+                    rasterBounds.height = layer.layerData.renderTexture?.height || rasterBounds.height;
+                    layer.layerData.rasterBounds = rasterBounds;
+                    layer.layerData.layerSprite?.position.set(rasterBounds.x, rasterBounds.y);
                 }
             }
 
@@ -466,11 +808,50 @@ export class ProjectManager {
     /**
      * dataURLからRenderTextureへ画像を読み込む
      */
-    _loadLayerImage(renderTexture, dataURL) {
+    _loadLayerImage(target, dataURL, rasterBounds = null) {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.onload = () => {
                 try {
+                    const layerData = target?.layerData || null;
+                    let renderTexture = layerData ? layerData.renderTexture : target;
+                    const imageWidth = Math.max(1, Math.round(img.naturalWidth || img.width || renderTexture?.width || 1));
+                    const imageHeight = Math.max(1, Math.round(img.naturalHeight || img.height || renderTexture?.height || 1));
+                    const requestedWidth = Math.max(1, Math.round(rasterBounds?.width || imageWidth));
+                    const requestedHeight = Math.max(1, Math.round(rasterBounds?.height || imageHeight));
+                    const targetWidth = Math.max(imageWidth, requestedWidth);
+                    const targetHeight = Math.max(imageHeight, requestedHeight);
+
+                    if (layerData && (!renderTexture || renderTexture.width !== targetWidth || renderTexture.height !== targetHeight)) {
+                        if (renderTexture) {
+                            renderTexture.destroy(true);
+                        }
+                        renderTexture = PIXI.RenderTexture.create({
+                            width: targetWidth,
+                            height: targetHeight,
+                            antialias: true
+                        });
+                        layerData.renderTexture = renderTexture;
+                        if (layerData.layerSprite) {
+                            layerData.layerSprite.texture = renderTexture;
+                        }
+                    }
+
+                    if (!renderTexture) {
+                        throw new Error('RenderTexture is not available for layer image restore.');
+                    }
+
+                    if (layerData) {
+                        const nextBounds = normalizeRasterBounds(rasterBounds, {
+                            width: targetWidth,
+                            height: targetHeight
+                        });
+                        nextBounds.width = targetWidth;
+                        nextBounds.height = targetHeight;
+                        layerData.rasterBounds = nextBounds;
+                        layerData.layerSprite?.position.set(nextBounds.x, nextBounds.y);
+                    }
+
                     // PixiJS v8 の基盤テクスチャを作成
                     const texture = PIXI.Texture.from(img);
                     const sprite = new PIXI.Sprite(texture);

@@ -227,7 +227,10 @@ export class UIController {
                     flipButton.blur?.();
                     return;
                 }
-                if (this._shouldBlockNormalLayerOperation({ blockAnimationContext: true })) {
+                if (this._shouldBlockNormalLayerOperation({
+                    blockAnimationContext: true,
+                    allowAnimationWorkingLayerTransform: true
+                })) {
                     flipButton.blur?.();
                     return;
                 }
@@ -248,7 +251,10 @@ export class UIController {
                     resetButton.blur?.();
                     return;
                 }
-                if (this._shouldBlockNormalLayerOperation({ blockAnimationContext: true })) {
+                if (this._shouldBlockNormalLayerOperation({
+                    blockAnimationContext: true,
+                    allowAnimationWorkingLayerTransform: true
+                })) {
                     resetButton.blur?.();
                     return;
                 }
@@ -467,6 +473,13 @@ export class UIController {
 
     _shouldBlockNormalLayerOperation(options = {}) {
         const animationContext = this._getAnimationLayerContext();
+        if (
+            options.allowAnimationWorkingLayerTransform === true
+            && animationContext.hasContext
+            && this.layerManager?.getActiveLayer?.()?.layerData?.isAnimationWorkingLayer === true
+        ) {
+            return false;
+        }
         return !!(
             animationContext.hasContext &&
             (options.blockAnimationContext === true || !animationContext.hasSelectedClip)
@@ -557,9 +570,10 @@ export class UIController {
         this._setLayerPanelControlDisabled(controls.duplicate, !hasLayer);
         this._setLayerPanelControlDisabled(controls.delete, !hasLayer);
         this._setLayerPanelControlDisabled(controls.mergeDown, !hasLayer || isFolder);
-        this._setLayerPanelControlDisabled(controls.flipHorizontal, true);
-        this._setLayerPanelControlDisabled(controls.flipVertical, true);
-        this._setLayerPanelControlDisabled(controls.resetTransform, true);
+        const canTransformActiveWorkingLayer = this.layerManager?.getActiveLayer?.()?.layerData?.isAnimationWorkingLayer === true;
+        this._setLayerPanelControlDisabled(controls.flipHorizontal, !canTransformActiveWorkingLayer);
+        this._setLayerPanelControlDisabled(controls.flipVertical, !canTransformActiveWorkingLayer);
+        this._setLayerPanelControlDisabled(controls.resetTransform, !canTransformActiveWorkingLayer);
     }
 
     _getBatchDeleteLayerIndexes(activeIndex) {
@@ -590,9 +604,37 @@ export class UIController {
             .map(({ index }) => index)
             .sort((a, b) => b - a);
     }
+
+    _confirmActiveTransformsForToolSwitch(nextTool) {
+        const selectionApi = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
+        if (nextTool !== 'selection' && selectionApi?.getState?.()?.transformSessionActive) {
+            if (selectionApi.confirmTransform?.() !== true) return false;
+        }
+
+        const layerApi = window.CoreRuntime?.api?.layer;
+        const layerManager = this.layerManager || window.layerManager || window.drawingApp?.layerManager;
+        if (nextTool !== 'layer-move' && (layerManager?.isLayerMoveMode || layerManager?.vKeyPressed)) {
+            const result = layerApi?.exitMoveMode
+                ? layerApi.exitMoveMode()
+                : layerManager?.exitLayerMoveMode?.();
+            if (result === false) return false;
+        }
+
+        return true;
+    }
     
     handleToolClick(button) {
         const toolId = button.id;
+        const transformExitTool = {
+            'pen-tool': 'pen',
+            'eraser-tool': 'eraser',
+            'fill-tool': 'fill',
+            'selection-tool': 'selection',
+            'airbrush-tool': 'airbrush'
+        }[toolId];
+        if (transformExitTool && !this._confirmActiveTransformsForToolSwitch(transformExitTool)) {
+            return;
+        }
         const toolMap = {
             'pen-tool': () => {
                 if (window.CoreRuntime?.api?.tool?.set) {
@@ -673,6 +715,9 @@ export class UIController {
             },
             'library-tool': () => {
                 this.togglePopup('album');
+            },
+            'image-import-tool': () => {
+                window.imageImporter?.openFileDialog?.();
             },
             'export-tool': () => {
                 this.togglePopup('export');
@@ -767,6 +812,9 @@ export class UIController {
     setupCanvasResize() {
         const applyBtn = document.getElementById('apply-resize');
         if (applyBtn) {
+            if (applyBtn.closest('#resize-settings')) {
+                return;
+            }
             applyBtn.addEventListener('click', () => {
                 const widthDisplay = document.getElementById('canvas-width-display');
                 const heightDisplay = document.getElementById('canvas-height-display');

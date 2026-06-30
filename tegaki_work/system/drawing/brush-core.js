@@ -9,6 +9,11 @@
  * イベント受信: brush:mode-changed
  * グローバル登録: window.BrushCore
  * 実装状態: ✅完成/整備
+ *
+ * Phase 5p共通契約:
+ * - 通常Layer / CAF working Layerとも、stroke前に `current bounds ∪ Project frame` へRTを拡張する。
+ * - 通常History用beforeとselection制限用beforeは分離する。CAFは通常Historyを記録しないが、selection制限は同じbeforeで必ず行う。
+ * - selection制限は PixelSelectionSystem.constrainLayer() がProject座標でbefore/after bounds差を吸収する。
  * ============================================================================
  */
 
@@ -46,7 +51,11 @@ export class BrushCore {
         this.realtimeBlurApplied = false;
         this.airbrushState = null;
         this.blurState = null;
+        this.penOpacityState = null;
         this.strokeHistoryBefore = null;
+        this.strokeSelectionBefore = null;
+        this.strokeInputProfile = null;
+        this.strokeInputProfiler = this._ensureStrokeInputProfiler();
     }
     
     init() {
@@ -141,7 +150,7 @@ export class BrushCore {
         return 'pen';
     }
 
-    startStroke(clientX, clientY, pressure, pointerType = 'unknown') {
+    startStroke(clientX, clientY, pressure, pointerType = 'unknown', inputProfile = null) {
         const currentMode = this.getMode();
 
         if (currentMode === 'fill' || currentMode === 'eraser-fill' || currentMode === 'eyedropper') {
@@ -161,19 +170,28 @@ export class BrushCore {
 
         const activeLayer = this.layerManager.getActiveLayer();
         if (!activeLayer || activeLayer.locked) return;
+        const beforeSnapshot = this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null;
         this.strokeHistoryBefore = activeLayer.layerData?.isAnimationWorkingLayer === true
             ? null
-            : (this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null);
+            : beforeSnapshot;
+        this.strokeSelectionBefore = beforeSnapshot;
 
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
 
         const settings = this._getCurrentSettings();
+        this._ensureLayerRasterFrameForStroke(activeLayer, settings, currentMode);
         if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
             this._beginAirbrushStroke(activeLayer, settings);
         } else {
             this._cleanupAirbrushStroke();
+        }
+
+        if (this._shouldUsePenOpacityIsolation(currentMode, settings)) {
+            this._beginPenOpacityStroke(activeLayer, settings);
+        } else {
+            this._cleanupPenOpacityStroke();
         }
 
         if (currentMode === 'blur') {
@@ -195,6 +213,26 @@ export class BrushCore {
         }
 
         this.strokeRecorder.startStroke(localX, localY, processedPressure);
+        this.strokeInputProfile = window.TEGAKI_CONFIG?.debug
+            ? {
+                id: `stroke_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                mode: currentMode,
+                pointerType,
+                size: settings.size,
+                opacity: settings.opacity,
+                pressureEnabled,
+                penOpacityIsolation: this.penOpacityState !== null,
+                target: {
+                    layerId: activeLayer.layerData?.id ?? null,
+                    layerName: activeLayer.layerData?.name ?? null,
+                    isAnimationWorkingLayer: activeLayer.layerData?.isAnimationWorkingLayer === true
+                },
+                startTime: Date.now(),
+                events: 0,
+                interpolatedPoints: 0,
+                realtimeSegments: 0
+            }
+            : null;
 
         this.isDrawing = true;
         this.lastLocalX = localX;
@@ -246,9 +284,26 @@ export class BrushCore {
                 }
             });
         }
+
+        this._logInputProfile('down', inputProfile, {
+            mode: currentMode,
+            pointerType,
+            processedPressure,
+            recorder: this.strokeRecorder.getCurrentStats?.() || null,
+            interpolation: {
+                generatedPoints: 0,
+                afterEventPointCount: this.strokeRecorder.getCurrentPoints().length
+            },
+            render: {
+                previewCreated: !!this.previewGraphics,
+                realtimeApplied: false,
+                penOpacityIsolation: this.penOpacityState !== null,
+                finalBakeExpected: currentMode !== 'pen' && currentMode !== 'eraser' && currentMode !== 'airbrush' && currentMode !== 'airbrush-erase' && currentMode !== 'blur'
+            }
+        });
     }
 
-    updateStroke(clientX, clientY, pressure, pointerType = 'unknown') {
+    updateStroke(clientX, clientY, pressure, pointerType = 'unknown', inputProfile = null) {
         if (!this.isDrawing) return;
 
         const activeLayer = this.layerManager.getActiveLayer();
@@ -273,6 +328,8 @@ export class BrushCore {
         // カメラ縮小時は1つの画面移動が大きなlocal距離になるため、記録とライブ表示の両方を細かく補間する。
         const interpolationStep = currentMode === 'lasso-fill' ? 5 : 1; // 投げ縄は少し粗めで良い
         const steps = Math.max(1, Math.floor(distance / interpolationStep));
+        const pointsBeforeEvent = this.strokeRecorder.getCurrentPoints().length;
+        let generatedPoints = 0;
 
         for (let i = 1; i <= steps; i++) {
             const t = i / (steps + 1);
@@ -282,10 +339,12 @@ export class BrushCore {
 
             this._renderRealtimeSegmentIfNeeded(currentMode, interpX, interpY, interpPressure);
             this.strokeRecorder.addPoint(interpX, interpY, interpPressure);
+            generatedPoints++;
         }
 
         this._renderRealtimeSegmentIfNeeded(currentMode, localX, localY, processedPressure);
         this.strokeRecorder.addPoint(localX, localY, processedPressure);
+        generatedPoints++;
 
         // [指示書] ライブ焼き込み中は previewGraphics を使用しない（二重描画防止）
         if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen' && currentMode !== 'airbrush' && currentMode !== 'airbrush-erase' && currentMode !== 'blur') {
@@ -307,6 +366,32 @@ export class BrushCore {
         this.lastLocalX = localX;
         this.lastLocalY = localY;
         this.lastPressure = processedPressure;
+
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.events++;
+            this.strokeInputProfile.interpolatedPoints += Math.max(0, generatedPoints - 1);
+        }
+
+        this._logInputProfile('move', inputProfile, {
+            mode: currentMode,
+            pointerType,
+            processedPressure,
+            recorder: this.strokeRecorder.getCurrentStats?.() || null,
+            interpolation: {
+                distance: Number(distance.toFixed(3)),
+                step: interpolationStep,
+                loopSteps: steps,
+                generatedPoints,
+                pointCountBefore: pointsBeforeEvent,
+                afterEventPointCount: this.strokeRecorder.getCurrentPoints().length
+            },
+            render: {
+                realtimeApplied: this._hasRealtimeApplied(currentMode),
+                realtimeMode: currentMode,
+                penOpacityIsolation: this.penOpacityState !== null,
+                previewActive: !!this.previewGraphics
+            }
+        });
     }
 
     _renderLassoPreview(points, settings) {
@@ -343,11 +428,12 @@ export class BrushCore {
 
         if (!force && distance <= 0.5) return;
 
+        const renderPressure = this._stabilizeInitialPenRealtimePressure(mode, pressure, distance);
         const segmentPoints = distance <= 0
             ? [{ x: localX, y: localY, pressure }]
             : [
                 { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
-                { x: localX, y: localY, pressure }
+                { x: localX, y: localY, pressure: renderPressure }
               ];
 
         if (mode === 'eraser') {
@@ -373,7 +459,82 @@ export class BrushCore {
 
         this.lastRenderedLocalX = localX;
         this.lastRenderedLocalY = localY;
-        this.lastRenderedPressure = pressure;
+        this.lastRenderedPressure = renderPressure;
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.realtimeSegments++;
+        }
+    }
+
+    _ensureLayerRasterFrameForStroke(activeLayer, settings, mode) {
+        if (!activeLayer?.layerData?.renderTexture) return;
+        if (!['pen', 'eraser', 'airbrush', 'airbrush-erase', 'blur'].includes(mode)) return;
+        if (typeof this.layerManager?.ensureLayerRasterBoundsForRect !== 'function') return;
+
+        const canvasConfig = this.layerManager.config?.canvas || window.TEGAKI_CONFIG?.canvas || {};
+        const width = Math.max(
+            1,
+            Math.round(Number(canvasConfig.width || this.layerManager.canvasWidth || activeLayer.layerData.renderTexture.width || 1))
+        );
+        const height = Math.max(
+            1,
+            Math.round(Number(canvasConfig.height || this.layerManager.canvasHeight || activeLayer.layerData.renderTexture.height || 1))
+        );
+        const padding = Math.ceil(Math.max(4, Number(settings?.size ?? 1) * 2));
+
+        const result = this.layerManager.ensureLayerRasterBoundsForRect(activeLayer, {
+            x: 0,
+            y: 0,
+            width,
+            height
+        }, { padding });
+
+        if (window.TEGAKI_CONFIG?.debug && result?.changed) {
+            console.info('[BrushCore] expanded active layer raster bounds for stroke', {
+                layerId: activeLayer.layerData.id,
+                mode,
+                bounds: result.bounds
+            });
+        }
+    }
+
+    _getLayerRasterBounds(layer) {
+        const data = layer?.layerData;
+        const renderTexture = data?.renderTexture;
+        const source = data?.rasterBounds || {};
+        const width = Math.max(1, Math.round(Number(source.width || renderTexture?.width || 1)));
+        const height = Math.max(1, Math.round(Number(source.height || renderTexture?.height || 1)));
+        const x = Number(source.x);
+        const y = Number(source.y);
+        return {
+            x: Number.isFinite(x) ? Math.round(x) : 0,
+            y: Number.isFinite(y) ? Math.round(y) : 0,
+            width,
+            height
+        };
+    }
+
+    _applyLayerRasterRenderOffset(layer, displayObject) {
+        if (!displayObject) return;
+        const bounds = this._getLayerRasterBounds(layer);
+        displayObject.position.set(
+            (displayObject.position?.x || 0) - bounds.x,
+            (displayObject.position?.y || 0) - bounds.y
+        );
+    }
+
+    _syncLayerRasterSpritePosition(layer, sprite) {
+        if (!sprite) return;
+        const bounds = this._getLayerRasterBounds(layer);
+        sprite.position.set(bounds.x, bounds.y);
+    }
+
+    _projectPointsToLayerRaster(layer, points) {
+        const bounds = this._getLayerRasterBounds(layer);
+        return (points || []).map(point => ({
+            ...point,
+            x: point.x - bounds.x,
+            y: point.y - bounds.y
+        }));
     }
 
     _isPressureEnabledForMode(mode, settings, pointerType) {
@@ -400,6 +561,7 @@ export class BrushCore {
             const renderContainer = new Container();
             renderContainer.addChild(graphics);
             renderContainer.blendMode = 'erase';
+            this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
 
             this.layerManager.app.renderer.render({
                 container: renderContainer,
@@ -415,23 +577,136 @@ export class BrushCore {
      * [指示書] ペンのリアルタイム反映用：短いセグメントを直接 RenderTexture に焼き込む
      */
     _renderRealtimePenSegment(points) {
-        const activeLayer = this.layerManager.getActiveLayer();
+        const activeLayer = this.penOpacityState?.targetLayer || this.layerManager.getActiveLayer();
         if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
 
         const settings = this._getCurrentSettings();
+        const renderTarget = this.penOpacityState?.texture || activeLayer.layerData.renderTexture;
+        const renderSettings = this.penOpacityState
+            ? { ...settings, opacity: 1.0 }
+            : settings;
 
         // [指示書] ペン用の実描画 Graphics を作る API を使用
-        const graphics = this.strokeRenderer.renderPenSegment(points, settings);
+        const graphics = this.strokeRenderer.renderPenSegment(points, renderSettings);
 
         if (graphics && this.layerManager.app?.renderer) {
+            const renderContainer = new Container();
+            renderContainer.addChild(graphics);
+            this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
+
             this.layerManager.app.renderer.render({
-                container: graphics,
-                target: activeLayer.layerData.renderTexture,
+                container: renderContainer,
+                target: renderTarget,
                 clear: false
             });
 
-            graphics.destroy({ children: true, texture: true, baseTexture: true });
+            renderContainer.destroy({ children: true, texture: true, baseTexture: true });
         }
+    }
+
+    _shouldUsePenOpacityIsolation(mode, settings) {
+        const opacity = Number(settings?.opacity ?? 1);
+        return mode === 'pen'
+            && Number.isFinite(opacity)
+            && opacity >= 0
+            && opacity < 0.999;
+    }
+
+    _beginPenOpacityStroke(activeLayer, settings) {
+        this._cleanupPenOpacityStroke();
+
+        const sourceRenderTexture = activeLayer?.layerData?.renderTexture;
+        if (!sourceRenderTexture || !this.layerManager.app?.renderer) {
+            return;
+        }
+
+        const width = sourceRenderTexture.width
+            || activeLayer.layerData?.width
+            || this.layerManager.canvasWidth
+            || 1;
+        const height = sourceRenderTexture.height
+            || activeLayer.layerData?.height
+            || this.layerManager.canvasHeight
+            || 1;
+        const texture = RenderTexture.create({
+            width,
+            height,
+            resolution: 1,
+            antialias: true
+        });
+        const empty = new Container();
+        this.layerManager.app.renderer.render({
+            container: empty,
+            target: texture,
+            clear: true,
+            clearColor: [0, 0, 0, 0]
+        });
+        empty.destroy();
+
+        const previewSprite = new Sprite(texture);
+        previewSprite.label = 'penOpacityStrokePreview';
+        previewSprite.alpha = Math.max(0, Math.min(1, Number(settings.opacity ?? 1)));
+        previewSprite.blendMode = 'normal';
+        this._syncLayerRasterSpritePosition(activeLayer, previewSprite);
+
+        if (activeLayer.layerData?.clipping) {
+            const clippingMask = activeLayer.layerData.clippingMaskSprite;
+            if (clippingMask) {
+                previewSprite.setMask({
+                    mask: clippingMask,
+                    inverse: isInverseClipping(activeLayer.layerData)
+                });
+            } else {
+                previewSprite.visible = false;
+            }
+        }
+
+        activeLayer.addChild(previewSprite);
+        this.penOpacityState = {
+            targetLayer: activeLayer,
+            texture,
+            previewSprite,
+            opacity: previewSprite.alpha
+        };
+    }
+
+    _commitPenOpacityStroke(activeLayer) {
+        const state = this.penOpacityState;
+        const target = activeLayer?.layerData?.renderTexture;
+        const renderer = this.layerManager.app?.renderer;
+        if (!state?.previewSprite || !state?.texture || !target || !renderer) return false;
+
+        if (state.previewSprite.parent) {
+            state.previewSprite.parent.removeChild(state.previewSprite);
+        }
+        state.previewSprite.mask = null;
+        state.previewSprite.setMask({ inverse: false });
+
+        const commitSprite = new Sprite(state.texture);
+        commitSprite.alpha = state.opacity;
+        commitSprite.blendMode = 'normal';
+
+        renderer.render({
+            container: commitSprite,
+            target,
+            clear: false
+        });
+        commitSprite.destroy({ texture: false, baseTexture: false });
+        return true;
+    }
+
+    _cleanupPenOpacityStroke() {
+        const state = this.penOpacityState;
+        if (state?.previewSprite) {
+            state.previewSprite.mask = null;
+            state.previewSprite.setMask({ inverse: false });
+            if (state.previewSprite.parent) {
+                state.previewSprite.parent.removeChild(state.previewSprite);
+            }
+            state.previewSprite.destroy({ texture: false, baseTexture: false });
+        }
+        state?.texture?.destroy(true);
+        this.penOpacityState = null;
     }
 
     /**
@@ -454,6 +729,7 @@ export class BrushCore {
         );
 
         if (renderContainer && this.layerManager.app?.renderer) {
+            this._applyLayerRasterRenderOffset(this.airbrushState.targetLayer, renderContainer);
             this.layerManager.app.renderer.render({
                 container: renderContainer,
                 target: this.airbrushState.maskTexture,
@@ -492,6 +768,7 @@ export class BrushCore {
             ? 0xffffff
             : (settings.color ?? 0x800000);
         previewSprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'normal';
+        this._syncLayerRasterSpritePosition(activeLayer, previewSprite);
 
         if (activeLayer.layerData?.clipping) {
             const clippingMask = activeLayer.layerData.clippingMaskSprite;
@@ -604,7 +881,8 @@ export class BrushCore {
         if (!activeLayer || !activeLayer.layerData?.renderTexture || !this.blurState?.sourceTexture) return;
 
         const settings = this._getCurrentSettings();
-        const renderContainer = this.strokeRenderer.renderBlurSegment(points, settings, this.blurState.sourceTexture);
+        const rasterPoints = this._projectPointsToLayerRaster(activeLayer, points);
+        const renderContainer = this.strokeRenderer.renderBlurSegment(rasterPoints, settings, this.blurState.sourceTexture);
 
         if (renderContainer && this.layerManager.app?.renderer) {
             this.layerManager.app.renderer.render({
@@ -625,13 +903,30 @@ export class BrushCore {
         this.blurState = null;
     }
 
-    async finalizeStroke() {
+    async finalizeStroke(inputProfile = null) {
         if (!this.isDrawing) return;
 
-        const activeLayer = this.airbrushState?.targetLayer || this.layerManager.getActiveLayer();
+        const activeLayer = this.airbrushState?.targetLayer
+            || this.penOpacityState?.targetLayer
+            || this.layerManager.getActiveLayer();
         if (!activeLayer) return;
 
-        const strokeData = this.strokeRecorder.endStroke();
+        let strokeData = this.strokeRecorder.endStroke();
+        this._logInputProfile('up', inputProfile, {
+            mode: this.getMode(),
+            pointerType: inputProfile?.pointerType || 'unknown',
+            recorder: this.strokeRecorder._summarizePoints?.(strokeData.points) || null,
+            pressureHandler: this.pressureHandler
+                ? {
+                    baseline: Number((this.pressureHandler.getBaseline?.() ?? 0).toFixed(4)),
+                    calibrated: this.pressureHandler.isReady?.() === true,
+                    distanceFilter: this.pressureHandler.enableDistanceFilter === true
+                }
+                : null,
+            interpolation: {
+                finalPointCount: strokeData.points.length
+            }
+        });
 
         // プレビュー破棄
         if (this.previewGraphics) {
@@ -648,19 +943,34 @@ export class BrushCore {
         // 🆕 Phase 3d: 投げ縄塗り
         if (mode === 'lasso-fill') {
             if (strokeData.points.length >= 3) {
-                this.fillTool.performLassoFill(
+                await this.fillTool.performLassoFill(
                     strokeData.points,
                     settings.color,
                     settings.opacity,
                     activeLayer,
                     this.layerManager,
-                    this.strokeHistoryBefore
+                    this.strokeSelectionBefore
                 );
             }
             this.isDrawing = false;
             this.strokeHistoryBefore = null;
+            this.strokeSelectionBefore = null;
+            this.strokeInputProfile = null;
+            if (this.eventBus) {
+                this.eventBus.emit('drawing:stroke-completed', {
+                    component: 'drawing',
+                    action: 'stroke-completed',
+                    data: {
+                        mode,
+                        layerId: activeLayer.layerData?.id,
+                        pointCount: strokeData.points.length
+                    }
+                });
+            }
             return;
         }
+
+        strokeData = this._stabilizeShortPenStroke(strokeData, settings, mode);
 
         const finalPoint = strokeData?.points?.[strokeData.points.length - 1];
         if (
@@ -685,8 +995,12 @@ export class BrushCore {
         if ((mode === 'airbrush' || mode === 'airbrush-erase') && hasRealtimeApplied) {
             this._commitAirbrushStroke(activeLayer);
         }
+        if (mode === 'pen' && this.penOpacityState && hasRealtimeApplied) {
+            this._commitPenOpacityStroke(activeLayer);
+        }
 
         const alreadyApplied = hasRealtimeApplied;
+        const penOpacityIsolationUsed = this.strokeInputProfile?.penOpacityIsolation === true;
 
         // 通常のペン/消しゴムはドラッグ中のライブ焼き込みを完成形にする。
         // pointerup 後に別アルゴリズムで焼き直すと、線幅や軌跡が変わって描画体験が崩れる。
@@ -706,6 +1020,7 @@ export class BrushCore {
                     const renderContainer = new Container();
                     renderContainer.addChild(graphics);
                     renderContainer.blendMode = 'erase';
+                    this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
 
                     this.layerManager.app.renderer.render({
                         container: renderContainer,
@@ -716,16 +1031,17 @@ export class BrushCore {
                     renderContainer.destroy({ children: true, texture: true, baseTexture: true });
                 } else {
                     graphics.blendMode = 'normal';
+                    const renderContainer = new Container();
+                    renderContainer.addChild(graphics);
+                    this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
 
                     this.layerManager.app.renderer.render({
-                        container: graphics,
+                        container: renderContainer,
                         target: layerData.renderTexture,
                         clear: false
                     });
 
-                    if (graphics.destroy) {
-                        graphics.destroy({ children: true, texture: true, baseTexture: true });
-                    }
+                    renderContainer.destroy({ children: true, texture: true, baseTexture: true });
                 }
             } else if (!layerData?.renderTexture) {
                 // フォールバック: 従来通り子要素として追加
@@ -755,7 +1071,7 @@ export class BrushCore {
 
         window.CoreRuntime?.api?.selection?.constrainLayer?.(
             activeLayer,
-            this.strokeHistoryBefore
+            this.strokeSelectionBefore
         );
         this._recordStrokeHistory(activeLayer, mode);
 
@@ -785,8 +1101,21 @@ export class BrushCore {
         this.realtimeAirbrushApplied = false;
         this.realtimeBlurApplied = false;
         this._cleanupAirbrushStroke();
+        this._cleanupPenOpacityStroke();
         this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
+        this.strokeSelectionBefore = null;
+        this._logStrokeFinalizeProfile({
+            mode,
+            pointCount: strokeData.points.length,
+            duration: strokeData.duration,
+            realtimeApplied: alreadyApplied,
+            finalBakeRendered: shouldBakeFinal,
+            penOpacityIsolation: penOpacityIsolationUsed,
+            shortStrokeStabilized: this.strokeInputProfile?.shortStrokeStabilized || null,
+            recorder: this.strokeRecorder._summarizePoints?.(strokeData.points) || null
+        });
+        this.strokeInputProfile = null;
 
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-completed', {
@@ -800,6 +1129,77 @@ export class BrushCore {
             });
         }
     }
+
+    _stabilizeShortPenStroke(strokeData, settings, mode) {
+        const points = strokeData?.points || [];
+        if (
+            mode !== 'pen'
+            || settings?.pressureEnabled !== true
+            || points.length === 0
+        ) {
+            return strokeData;
+        }
+
+        const stats = this.strokeRecorder._summarizePoints?.(points) || null;
+        const totalDistance = Number(stats?.distance ?? 0);
+        const maxDistance = Number(stats?.maxDistance ?? 0);
+        const isPointInput = strokeData.isSingleDot === true || totalDistance <= 0.75;
+        const isVeryShortInput = isPointInput || (points.length <= 3 && maxDistance <= 1.25);
+
+        if (!isVeryShortInput) {
+            return strokeData;
+        }
+
+        const pressureCap = this._getShortPenPressureCap(settings);
+        const stabilizedPoints = (isPointInput ? [points[0]] : points).map(point => ({
+            ...point,
+            pressure: Math.min(Number(point.pressure ?? 0), pressureCap)
+        }));
+
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.shortStrokeStabilized = {
+                pointCount: points.length,
+                totalDistance: Number(totalDistance.toFixed(3)),
+                maxDistance: Number(maxDistance.toFixed(3)),
+                pressureCap: Number(pressureCap.toFixed(4)),
+                collapsedToDot: isPointInput
+            };
+        }
+
+        return {
+            ...strokeData,
+            points: stabilizedPoints,
+            isSingleDot: isPointInput
+        };
+    }
+
+    _stabilizeInitialPenRealtimePressure(mode, pressure, distance) {
+        if (mode !== 'pen' || this.realtimePenApplied) {
+            return pressure;
+        }
+
+        const settings = this._getCurrentSettings();
+        if (settings?.pressureEnabled !== true || distance > 1.25) {
+            return pressure;
+        }
+
+        const pressureCap = this._getShortPenPressureCap(settings);
+        const cappedPressure = Math.min(Number(pressure ?? 0), pressureCap);
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.initialRealtimePressureCapped = {
+                distance: Number(distance.toFixed(3)),
+                pressure: Number((pressure ?? 0).toFixed?.(4) ?? pressure),
+                pressureCap: Number(pressureCap.toFixed(4))
+            };
+        }
+        return cappedPressure;
+    }
+
+    _getShortPenPressureCap(settings) {
+        const size = Math.max(1, Number(settings?.size ?? 1));
+        return Math.max(0.02, Math.min(0.12, 2.5 / size));
+    }
+
     _recordStrokeHistory(layer, mode) {
         const beforeSnapshot = this.strokeHistoryBefore;
         if (!beforeSnapshot || !historyManager || historyManager.isApplying) return;
@@ -831,6 +1231,168 @@ export class BrushCore {
                 + (afterSnapshot.pixels?.byteLength || 0)
         });
     }
+
+    _hasRealtimeApplied(mode) {
+        return (
+            (mode === 'eraser' && this.realtimeEraserApplied) ||
+            (mode === 'pen' && this.realtimePenApplied) ||
+            ((mode === 'airbrush' || mode === 'airbrush-erase') && this.realtimeAirbrushApplied) ||
+            (mode === 'blur' && this.realtimeBlurApplied)
+        );
+    }
+
+    _logInputProfile(stage, inputProfile, details = {}) {
+        if (!window.TEGAKI_CONFIG?.debug || !inputProfile) {
+            return;
+        }
+
+        console.info('[StrokeInputProfile] event', {
+            strokeId: this.strokeInputProfile?.id ?? null,
+            stage,
+            input: inputProfile,
+            details
+        });
+        this._getStrokeInputProfiler()?.recordEvent?.({
+            strokeId: this.strokeInputProfile?.id ?? null,
+            stage,
+            input: inputProfile,
+            details,
+            at: Date.now()
+        });
+    }
+
+    _logStrokeFinalizeProfile(details = {}) {
+        if (!window.TEGAKI_CONFIG?.debug || !this.strokeInputProfile) {
+            return;
+        }
+
+        const elapsedMs = Date.now() - this.strokeInputProfile.startTime;
+        const entry = {
+            ...this.strokeInputProfile,
+            elapsedMs,
+            details
+        };
+        console.info('[StrokeInputProfile] finalize', entry);
+        this._getStrokeInputProfiler()?.recordFinalize?.(entry);
+    }
+
+    _getStrokeInputProfiler() {
+        return window.TegakiStrokeInputProfiler || this._ensureStrokeInputProfiler();
+    }
+
+    _ensureStrokeInputProfiler() {
+        if (window.TegakiStrokeInputProfiler) {
+            return window.TegakiStrokeInputProfiler;
+        }
+
+        const store = {
+            events: [],
+            strokes: [],
+            label: null,
+            maxEvents: 2000,
+            maxStrokes: 200,
+            setEnabled(enabled = true) {
+                if (window.TEGAKI_CONFIG) {
+                    window.TEGAKI_CONFIG.debug = enabled === true;
+                }
+                return this.isEnabled();
+            },
+            isEnabled() {
+                return window.TEGAKI_CONFIG?.debug === true;
+            },
+            setLabel(label = null) {
+                this.label = label ? String(label) : null;
+                return this.label;
+            },
+            clear() {
+                this.events = [];
+                this.strokes = [];
+                return this.summary();
+            },
+            recordEvent(entry) {
+                if (!this.isEnabled()) return;
+                this.events.push({
+                    label: this.label,
+                    ...entry
+                });
+                if (this.events.length > this.maxEvents) {
+                    this.events.splice(0, this.events.length - this.maxEvents);
+                }
+            },
+            recordFinalize(entry) {
+                if (!this.isEnabled()) return;
+                this.strokes.push({
+                    label: this.label,
+                    ...entry
+                });
+                if (this.strokes.length > this.maxStrokes) {
+                    this.strokes.splice(0, this.strokes.length - this.maxStrokes);
+                }
+            },
+            getEvents() {
+                return this.events.map(entry => ({ ...entry }));
+            },
+            getStrokes() {
+                return this.strokes.map(entry => ({ ...entry }));
+            },
+            lastStroke() {
+                return this.strokes[this.strokes.length - 1] || null;
+            },
+            summary() {
+                const byLabel = {};
+                for (const stroke of this.strokes) {
+                    const key = stroke.label || 'unlabeled';
+                    if (!byLabel[key]) {
+                        byLabel[key] = {
+                            count: 0,
+                            events: 0,
+                            points: 0,
+                            interpolatedPoints: 0,
+                            realtimeSegments: 0,
+                            coalescedEvents: 0,
+                            coalescedSamples: 0
+                        };
+                    }
+                    byLabel[key].count++;
+                    byLabel[key].events += stroke.events || 0;
+                    byLabel[key].points += stroke.details?.pointCount || 0;
+                    byLabel[key].interpolatedPoints += stroke.interpolatedPoints || 0;
+                    byLabel[key].realtimeSegments += stroke.realtimeSegments || 0;
+                }
+
+                for (const event of this.events) {
+                    const key = event.label || 'unlabeled';
+                    if (!byLabel[key]) {
+                        byLabel[key] = {
+                            count: 0,
+                            events: 0,
+                            points: 0,
+                            interpolatedPoints: 0,
+                            realtimeSegments: 0,
+                            coalescedEvents: 0,
+                            coalescedSamples: 0
+                        };
+                    }
+                    const count = event.input?.coalesced?.count || 0;
+                    if (count > 0) {
+                        byLabel[key].coalescedEvents++;
+                        byLabel[key].coalescedSamples += count;
+                    }
+                }
+
+                return {
+                    enabled: this.isEnabled(),
+                    label: this.label,
+                    eventCount: this.events.length,
+                    strokeCount: this.strokes.length,
+                    byLabel
+                };
+            }
+        };
+
+        window.TegakiStrokeInputProfiler = store;
+        return store;
+    }
     
     cancelStroke() {
         if (!this.isDrawing) return;
@@ -847,8 +1409,10 @@ export class BrushCore {
         this.realtimeAirbrushApplied = false;
         this.realtimeBlurApplied = false;
         this._cleanupAirbrushStroke();
+        this._cleanupPenOpacityStroke();
         this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
+        this.strokeSelectionBefore = null;
         
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-cancelled', {

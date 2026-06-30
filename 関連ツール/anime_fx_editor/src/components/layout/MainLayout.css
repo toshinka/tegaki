@@ -1,0 +1,80 @@
+/**
+ * @file MainLayout.css
+ * @description MainLayoutコンポーネント専用のスタイル。
+ * CSS GridとFlexboxを使用して、各エリアのサイズを制御します。
+ */
+
+.layout-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  position: relative;
+}
+
+.drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 122, 204, 0.2);
+  border: 4px dashed var(--accent-color);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* Let drops pass through */
+}
+
+.drop-overlay h2 {
+  color: var(--accent-color);
+  font-size: 2rem;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.layout-header {
+  height: var(--header-height);
+  background-color: var(--bg-panel-header);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.layout-header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-highlight);
+}
+
+.layout-workspace {
+  display: flex;
+  flex: 1; /* 残りの高さをすべて埋める */
+  overflow: hidden;
+}
+
+.layout-preview-area {
+  flex: 1;
+  background-color: var(--bg-base);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.layout-inspector-area {
+  width: var(--inspector-width);
+  background-color: var(--bg-panel);
+  border-left: 1px solid var(--border-color);
+  overflow-y: auto;
+}
+
+.layout-timeline-area {
+  height: var(--timeline-height);
+  background-color: var(--bg-timeline);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}

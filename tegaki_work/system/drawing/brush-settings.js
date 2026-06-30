@@ -174,6 +174,11 @@ export class BrushSettings {
 
     getSettings() {
         const airbrush = this.getAirbrushSettings();
+        const pressureOpacityEnabled = this.settingsManager?.get?.('pressureOpacityEnabled') !== false;
+        const pressureOpacityStrength = Math.max(
+            0,
+            Math.min(1, Number(this.settingsManager?.get?.('pressureOpacityStrength') ?? 0.65))
+        );
         return {
             size: this.getSize(),
             color: this.color,
@@ -183,6 +188,8 @@ export class BrushSettings {
             minWidth: this.minWidth,
             maxWidth: this.getMaxSize(),
             pressureEnabled: this.pressureEnabled,
+            pressureOpacityEnabled,
+            pressureOpacityStrength,
             eraserPressureEnabled: this.eraserPressureEnabled,
             airbrushSpacingRatio: airbrush.spacingRatio,
             airbrushFlow: airbrush.flow,

@@ -16,7 +16,8 @@ export const SliderUtils = {
     createSlider(options) {
         const {
             container, min = 0, max = 100, initial = 50,
-            step = null, onChange = null, onCommit = null, format = null
+            step = null, onChange = null, onCommit = null, format = null,
+            momentum = true
         } = options;
         
         const containerEl = typeof container === 'string' 
@@ -157,8 +158,10 @@ export const SliderUtils = {
                 rafId = null;
             }
             
-            if (Math.abs(velocity) > 0.5) {
+            if (momentum && Math.abs(velocity) > 0.5) {
                 applyMomentum();
+            } else {
+                velocity = 0;
             }
             
             if (onCommit) {

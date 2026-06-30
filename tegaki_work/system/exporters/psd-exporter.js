@@ -1,6 +1,6 @@
 /**
  * ================================================================================
- * system/exporters/psd-exporter.js - PSD出力基盤
+ * system/exporters/psd-exporter.js - PSD出力
  * ================================================================================
  * 
  * 【依存関係 - Parents】
@@ -8,25 +8,18 @@
  *   - event-bus.js (イベント発行)
  * 
  * 【依存関係 - Children】
- *   - ag-psd (将来導入予定)
+ *   - ag-psd
  * 
  * 【責務】
  *   - PSD形式でのレイヤー構造保持出力
  *   - レイヤー階層・ブレンドモード・不透明度の保持
  * 
- * 【v8.18.0 初期実装】
- *   ⚠️ Phase 5: ボタン配置のみ
- *   ❌ 実装は将来フェーズで追加予定
- *   ✅ エラーメッセージで開発中であることを通知
- * 
- * 【将来実装計画（Phase 6+）】
- *   - ag-psd ライブラリ統合
- *   - レイヤー個別スクリーンショット
- *   - ブレンドモード変換マッピング
- *   - Photoshop互換性確認
- * 
  * ================================================================================
  */
+
+import { writePsdUint8Array } from 'ag-psd';
+import { normalizeRasterBounds } from '../raster-bounds.js';
+import { CLIPPING_MODES, getClippingMode } from '../clipping-mode.js';
 
 window.PSDExporter = (function() {
     'use strict';
@@ -39,19 +32,26 @@ window.PSDExporter = (function() {
             this.manager = exportManager;
         }
         
-        /**
-         * PSD出力実行
-         * 
-         * ⚠️ Phase 5: 開発中ステータス
-         */
         async export(options = {}) {
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('export:started', { format: 'psd' });
             }
             
             try {
-                // Phase 5: 未実装エラー
-                throw new Error('PSD出力は現在開発中です。\n今後のアップデートでご利用いただけます。');
+                const blob = await this.generateBlob(options);
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                const filename = options.filename || `tegaki_${timestamp}.psd`;
+                if (!options.skipDownload) {
+                    this.manager.downloadFile(blob, filename);
+                }
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:completed', {
+                        format: 'psd',
+                        size: blob.size,
+                        filename
+                    });
+                }
+                return { blob, filename, format: 'psd' };
             } catch (error) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('export:failed', { 
@@ -62,51 +62,303 @@ window.PSDExporter = (function() {
                 throw error;
             }
         }
-        
-        /**
-         * PSD Blob生成（将来実装）
-         * 
-         * ⚠️ Phase 6+ での実装内容:
-         * 
-         * 1. レイヤー階層取得
-         *    const layers = this.manager.layerSystem.getAllLayers();
-         * 
-         * 2. 各レイヤーをスクリーンショット
-         *    for (const layer of layers) {
-         *      const canvas = this.manager.app.renderer.extract.canvas({
-         *        target: layer.container,
-         *        alpha: true,
-         *        resolution: 1
-         *      });
-         *      // canvas → ImageData
-         *    }
-         * 
-         * 3. PSD構造構築
-         *    const psdStructure = {
-         *      width: CONFIG.canvas.width,
-         *      height: CONFIG.canvas.height,
-         *      children: psdLayers
-         *    };
-         * 
-         * 4. ag-psd でエンコード
-         *    import('https://cdn.jsdelivr.net/npm/ag-psd/dist/bundle.js')
-         *      .then(agPsd => {
-         *        const buffer = agPsd.writePsd(psdStructure);
-         *        return new Blob([buffer], { type: 'application/octet-stream' });
-         *      });
-         */
+
         async generateBlob(options = {}) {
-            throw new Error('PSD Blob generation not yet implemented');
+            if (!this.manager?.layerSystem) {
+                throw new Error('LayerSystem not available');
+            }
+
+            await this._waitFrame();
+            if (options.psdScope === 'active-caf') {
+                this._saveActiveCafWorkingLayers();
+            }
+            const psd = this._buildPsdStructure(options);
+            const bytes = writePsdUint8Array(psd, {
+                invalidateTextLayers: true,
+                trimImageData: false
+            });
+            return new Blob([bytes], {
+                type: 'application/octet-stream'
+            });
         }
-        
-        /**
-         * ブレンドモード変換（将来実装）
-         * 
-         * PixiJS → Photoshop ブレンドモード変換マッピング
-         */
-        _convertBlendMode(pixiBlendMode) {
+
+        _waitFrame() {
+            return new Promise(resolve => requestAnimationFrame(resolve));
+        }
+
+        _buildPsdStructure(options = {}) {
+            if (options.psdScope === 'active-caf') {
+                return this._buildActiveCafPsdStructure(options);
+            }
+
+            const CONFIG = window.TEGAKI_CONFIG;
+            const width = Math.max(1, Math.round(options.width || CONFIG?.canvas?.width || 400));
+            const height = Math.max(1, Math.round(options.height || CONFIG?.canvas?.height || 400));
+            const layers = this.manager.layerSystem.getLayers?.() || [];
+            const children = this._buildPsdChildren(layers, null);
+            const compositeCanvas = this.manager.renderToCanvas?.({
+                width,
+                height,
+                resolution: 1,
+                transparent: false
+            });
+
+            return {
+                width,
+                height,
+                children,
+                canvas: compositeCanvas || undefined
+            };
+        }
+
+        _buildActiveCafPsdStructure(options = {}) {
+            const CONFIG = window.TEGAKI_CONFIG;
+            const width = Math.max(1, Math.round(options.width || CONFIG?.canvas?.width || 400));
+            const height = Math.max(1, Math.round(options.height || CONFIG?.canvas?.height || 400));
+            const animationTable = this._getAnimationTable();
+            const model = animationTable?.model;
+            const asset = animationTable?.selectedAssetId
+                ? model?.getClipAsset?.(animationTable.selectedAssetId)
+                : null;
+
+            if (!asset) {
+                throw new Error('アクティブCAFが選択されていません');
+            }
+
+            const children = this._buildCafPsdChildren(asset, model, null);
+            const compositeCanvas = this._renderActiveCafComposite(asset, model, width, height);
+
+            return {
+                width,
+                height,
+                children,
+                canvas: compositeCanvas || undefined
+            };
+        }
+
+        _buildPsdChildren(layers, parentId) {
+            const siblings = (layers || []).filter(layer => {
+                const data = layer?.layerData;
+                if (!data || data.isBackground) return false;
+                return (data.parentId || null) === (parentId || null);
+            });
+
+            return siblings
+                .slice()
+                .reverse()
+                .map(layer => this._createPsdLayer(layer, layers))
+                .filter(Boolean);
+        }
+
+        _createPsdLayer(layer, allLayers) {
+            const data = layer?.layerData;
+            if (!data || data.isBackground) return null;
+
+            if (data.isFolder) {
+                return {
+                    name: this._sanitizeLayerName(data.name || 'Folder'),
+                    children: this._buildPsdChildren(allLayers, data.id),
+                    opened: data.folderExpanded !== false,
+                    hidden: data.visible === false || layer.visible === false,
+                    opacity: this._normalizeOpacity(data.opacity),
+                    blendMode: this._convertBlendMode(data.blendMode, true)
+                };
+            }
+
+            const snapshot = this.manager.layerSystem.createLayerRasterSnapshot?.(layer);
+            if (!snapshot?.pixels || !snapshot.width || !snapshot.height) {
+                return null;
+            }
+
+            const imageData = new ImageData(
+                new Uint8ClampedArray(snapshot.pixels),
+                snapshot.width,
+                snapshot.height
+            );
+            const rasterBounds = normalizeRasterBounds(snapshot.rasterBounds, {
+                x: 0,
+                y: 0,
+                width: snapshot.width,
+                height: snapshot.height
+            });
+
+            return {
+                name: this._sanitizeLayerName(data.name || 'Layer'),
+                left: Math.round(rasterBounds.x),
+                top: Math.round(rasterBounds.y),
+                imageData,
+                opacity: this._normalizeOpacity(data.opacity),
+                blendMode: this._convertBlendMode(data.blendMode, false),
+                hidden: data.visible === false || layer.visible === false,
+                clipping: getClippingMode(data) === CLIPPING_MODES.NORMAL
+            };
+        }
+
+        _buildCafPsdChildren(asset, model, parentId) {
+            const layers = asset?.internalLayers || [];
+            const siblings = layers.filter(layer => {
+                if (!layer || layer.isBackground) return false;
+                return (layer.parentLayerId || null) === (parentId || null);
+            });
+
+            return siblings
+                .slice()
+                .reverse()
+                .map(layer => this._createCafPsdLayer(asset, model, layer))
+                .filter(Boolean);
+        }
+
+        _createCafPsdLayer(asset, model, layer) {
+            if (!layer || layer.isBackground) return null;
+
+            if (layer.type === 'folder') {
+                return {
+                    name: this._sanitizeLayerName(layer.name || 'Folder'),
+                    children: this._buildCafPsdChildren(asset, model, layer.id),
+                    opened: layer.folderExpanded !== false,
+                    hidden: layer.visible === false,
+                    opacity: this._normalizeOpacity(layer.opacity),
+                    blendMode: this._convertBlendMode(layer.blendMode, true)
+                };
+            }
+
+            const snapshot = model?.getDrawingSnapshot?.(layer.drawingSnapshotId);
+            if (!snapshot?.pixels || !snapshot.width || !snapshot.height) {
+                return null;
+            }
+
+            const pixels = snapshot.pixels instanceof Uint8ClampedArray
+                ? snapshot.pixels
+                : new Uint8ClampedArray(snapshot.pixels);
+            const imageData = new ImageData(
+                new Uint8ClampedArray(pixels),
+                snapshot.width,
+                snapshot.height
+            );
+            const rasterBounds = normalizeRasterBounds(snapshot.rasterBounds, {
+                x: 0,
+                y: 0,
+                width: snapshot.width,
+                height: snapshot.height
+            });
+
+            return {
+                name: this._sanitizeLayerName(layer.name || 'Layer'),
+                left: Math.round(rasterBounds.x),
+                top: Math.round(rasterBounds.y),
+                imageData,
+                opacity: this._normalizeOpacity(layer.opacity),
+                blendMode: this._convertBlendMode(layer.blendMode, false),
+                hidden: layer.visible === false,
+                clipping: getClippingMode(layer) === CLIPPING_MODES.NORMAL
+            };
+        }
+
+        _renderActiveCafComposite(asset, model, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return null;
+
+            const rendered = this._renderCafLayerGroup(ctx, asset, model, null, width, height);
+            return rendered ? canvas : null;
+        }
+
+        _renderCafLayerGroup(ctx, asset, model, parentId, width, height) {
+            const layers = asset?.internalLayers || [];
+            const siblings = layers.filter(layer => (layer.parentLayerId || null) === (parentId || null));
+            let rendered = false;
+
+            for (let index = siblings.length - 1; index >= 0; index--) {
+                const layer = siblings[index];
+                if (!layer || layer.visible === false) continue;
+
+                if (layer.type === 'folder') {
+                    const folderCanvas = document.createElement('canvas');
+                    folderCanvas.width = width;
+                    folderCanvas.height = height;
+                    const folderCtx = folderCanvas.getContext('2d');
+                    if (!folderCtx) continue;
+                    const hasFolderContent = this._renderCafLayerGroup(folderCtx, asset, model, layer.id, width, height);
+                    const opacity = this._normalizeOpacity(layer.opacity);
+                    if (!hasFolderContent || opacity <= 0) continue;
+
+                    ctx.save();
+                    ctx.globalAlpha = opacity;
+                    ctx.globalCompositeOperation = this._compositeMode(layer.blendMode);
+                    ctx.drawImage(folderCanvas, 0, 0);
+                    ctx.restore();
+                    rendered = true;
+                    continue;
+                }
+
+                const snapshot = model?.getDrawingSnapshot?.(layer.drawingSnapshotId);
+                const snapshotCanvas = this._createSnapshotCanvas(snapshot);
+                if (!snapshotCanvas) continue;
+                const rasterBounds = normalizeRasterBounds(snapshot.rasterBounds, {
+                    width: snapshot.width,
+                    height: snapshot.height
+                });
+
+                ctx.save();
+                ctx.globalAlpha = this._normalizeOpacity(layer.opacity);
+                ctx.globalCompositeOperation = this._compositeMode(layer.blendMode);
+                ctx.drawImage(snapshotCanvas, rasterBounds.x, rasterBounds.y);
+                ctx.restore();
+                rendered = true;
+            }
+
+            return rendered;
+        }
+
+        _createSnapshotCanvas(snapshot) {
+            if (!snapshot?.pixels || !snapshot.width || !snapshot.height) return null;
+            const canvas = document.createElement('canvas');
+            canvas.width = snapshot.width;
+            canvas.height = snapshot.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return null;
+            const pixels = snapshot.pixels instanceof Uint8ClampedArray
+                ? snapshot.pixels
+                : new Uint8ClampedArray(snapshot.pixels);
+            ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), snapshot.width, snapshot.height), 0, 0);
+            return canvas;
+        }
+
+        _compositeMode(blendMode) {
+            if (blendMode === 'add') return 'lighter';
+            const supported = new Set([
+                'multiply', 'screen', 'overlay', 'darken', 'lighten',
+                'color-dodge', 'color-burn', 'hard-light', 'soft-light',
+                'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'
+            ]);
+            return supported.has(blendMode) ? blendMode : 'source-over';
+        }
+
+        _getAnimationTable() {
+            return window.PopupManager?.get?.('animationTable')
+                || window.PopupManager?.popups?.get?.('animationTable')?.instance
+                || window.coreEngine?.popupManager?.get?.('animationTable')
+                || null;
+        }
+
+        _saveActiveCafWorkingLayers() {
+            const animationTable = this._getAnimationTable();
+            animationTable?._saveSelectedClipFromWorkingLayers?.({ force: true });
+        }
+
+        _sanitizeLayerName(name) {
+            return String(name || 'Layer').slice(0, 255);
+        }
+
+        _normalizeOpacity(opacity) {
+            return Math.max(0, Math.min(1, Number.isFinite(opacity) ? opacity : 1));
+        }
+
+        _convertBlendMode(blendMode, isFolder = false) {
             const blendModeMap = {
-                'normal': 'normal',
+                'normal': isFolder ? 'pass through' : 'normal',
                 'multiply': 'multiply',
                 'screen': 'screen',
                 'overlay': 'overlay',
@@ -120,53 +372,12 @@ window.PSDExporter = (function() {
                 'difference': 'difference',
                 'exclusion': 'exclusion'
             };
-            
-            return blendModeMap[pixiBlendMode] || 'normal';
-        }
-        
-        /**
-         * レイヤー構造構築（将来実装）
-         */
-        async _buildPsdStructure() {
-            const CONFIG = window.TEGAKI_CONFIG;
-            const layers = this.manager.layerSystem.getAllLayers();
-            const psdLayers = [];
-            
-            for (const layer of layers) {
-                // スクリーンショット取得
-                const canvas = this.manager.app.renderer.extract.canvas({
-                    target: layer.container,
-                    alpha: true,
-                    resolution: 1,
-                    antialias: true
-                });
-                
-                // Canvas → ImageData
-                const ctx = canvas.getContext('2d');
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                
-                // PSDレイヤー情報
-                psdLayers.push({
-                    name: layer.name || `Layer ${layer.id}`,
-                    canvas: canvas,
-                    imageData: imageData,
-                    opacity: Math.round((layer.opacity || 1) * 255),
-                    blendMode: this._convertBlendMode(layer.blendMode || 'normal'),
-                    visible: layer.visible !== false
-                });
-            }
-            
-            return {
-                width: CONFIG.canvas.width,
-                height: CONFIG.canvas.height,
-                children: psdLayers
-            };
+
+            return blendModeMap[blendMode] || (isFolder ? 'pass through' : 'normal');
         }
     }
     
     return PSDExporter;
 })();
 
-console.log('✅ psd-exporter.js v8.18.0 loaded (Phase 5: ボタン配置用)');
-console.log('   ⚠️ 実装は将来フェーズで追加予定');
-console.log('   ✓ エラーメッセージで開発中を通知');
+console.log('✅ psd-exporter.js loaded');

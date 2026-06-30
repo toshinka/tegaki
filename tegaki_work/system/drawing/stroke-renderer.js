@@ -80,6 +80,18 @@ export class StrokeRenderer {
         return Math.max(this.minPhysicalWidth, brushSize * ratio);
     }
 
+    calculateOpacity(pressure, baseOpacity, settings = {}) {
+        const opacity = Math.max(0, Math.min(1, Number(baseOpacity ?? 1)));
+        if (settings.pressureEnabled !== true || settings.pressureOpacityEnabled === false) {
+            return opacity;
+        }
+
+        const pressureOpacity = Math.max(0, Math.min(1, Number(pressure ?? 0)));
+        const strength = Math.max(0, Math.min(1, Number(settings.pressureOpacityStrength ?? 0.65)));
+        const opacityFactor = 1 - ((1 - pressureOpacity) * strength);
+        return opacity * opacityFactor;
+    }
+
     /**
      * [指示書] 消しゴムのリアルタイム反映用：短いセグメント用の実描画Graphicsを生成
      */
@@ -385,13 +397,16 @@ export class StrokeRenderer {
         graphics.blendMode = mode === 'eraser' ? 'erase' : 'normal';
         
         const color = mode === 'eraser' ? 0xFFFFFF : settings.color;
-        const alpha = mode === 'eraser' ? 1.0 : settings.opacity || 1.0;
+        const baseAlpha = mode === 'eraser' ? 1.0 : (settings.opacity ?? 1.0);
         const p0 = points[0]?.pressure ?? 1.0;
         const p1 = points[points.length - 1]?.pressure ?? p0;
         const segmentPressure = (p0 + p1) / 2;
         const width = settings.pressureEnabled === true
             ? this.calculateWidth(segmentPressure, settings.size)
             : settings.size;
+        const alpha = mode === 'eraser'
+            ? 1.0
+            : this.calculateOpacity(segmentPressure, baseAlpha, settings);
         
         graphics.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) {
@@ -509,7 +524,10 @@ export class StrokeRenderer {
             const p = points[0];
             const width = this.calculateWidth(p.pressure, settings.size);
             graphics.circle(p.x, p.y, width / 2);
-            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+            graphics.fill({
+                color: settings.color,
+                alpha: this.calculateOpacity(p.pressure, settings.opacity ?? 1.0, settings)
+            });
             return graphics;
         }
 
@@ -530,10 +548,16 @@ export class StrokeRenderer {
             for (let i = 1; i < filteredPoints.length; i++) {
                 graphics.lineTo(filteredPoints[i].x, filteredPoints[i].y);
             }
-            graphics.stroke({ width: settings.size, color: settings.color, alpha: settings.opacity || 1.0, cap: 'round', join: 'round' });
+            graphics.stroke({
+                width: settings.size,
+                color: settings.color,
+                alpha: this.calculateOpacity(filteredPoints.at(-1)?.pressure, settings.opacity ?? 1.0, settings),
+                cap: 'round',
+                join: 'round'
+            });
         } else {
             graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
-            graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+            graphics.fill({ color: settings.color, alpha: settings.opacity ?? 1.0 });
         }
 
         return graphics;
@@ -607,7 +631,10 @@ export class StrokeRenderer {
             if (mode === 'eraser') {
                 graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
             } else {
-                graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+                graphics.fill({
+                    color: settings.color,
+                    alpha: this.calculateOpacity(p.pressure, settings.opacity ?? 1.0, settings)
+                });
             }
             return graphics;
         }
@@ -623,14 +650,22 @@ export class StrokeRenderer {
             for (let i = 1; i < filteredPoints.length; i++) {
                 graphics.lineTo(filteredPoints[i].x, filteredPoints[i].y);
             }
-            graphics.stroke({ width: settings.size, color: mode === 'eraser' ? 0xFFFFFF : settings.color, alpha: mode === 'eraser' ? 1.0 : settings.opacity || 1.0, cap: 'round', join: 'round' });
+            graphics.stroke({
+                width: settings.size,
+                color: mode === 'eraser' ? 0xFFFFFF : settings.color,
+                alpha: mode === 'eraser'
+                    ? 1.0
+                    : this.calculateOpacity(filteredPoints.at(-1)?.pressure, settings.opacity ?? 1.0, settings),
+                cap: 'round',
+                join: 'round'
+            });
         } else {
             graphics.poly(outlinePoints.map(p => ({ x: p[0], y: p[1] })));
             
             if (mode === 'eraser') {
                 graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
             } else {
-                graphics.fill({ color: settings.color, alpha: settings.opacity || 1.0 });
+                graphics.fill({ color: settings.color, alpha: settings.opacity ?? 1.0 });
             }
         }
 

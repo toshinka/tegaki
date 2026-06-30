@@ -19,7 +19,9 @@ import { LayerModel } from './data-models.js';
 import { historyManager } from './history.js';
 import { coordinateSystem } from '../coordinate-system.js';
 import { LayerTransform } from './layer-transform.js';
-import { resolveIntegerTranslation, translateRgbaPixels } from './raster-translation.js';
+import { resolveIntegerTranslation } from './raster-translation.js';
+import { normalizeRasterBounds, normalizeRasterSnapshot, translateRasterBounds } from './raster-bounds.js';
+import { applyTransformMatrix, createCenteredTransformMatrix } from './transform-math.js';
 import {
     CLIPPING_MODES,
     applyClippingMode,
@@ -129,57 +131,168 @@ export class LayerSystem {
     /**
      * レイヤーの変形を RenderTexture に焼き付け、コンテナの変形をリセットする
      */
-    bakeTransform(layer) {
-        if (!this.app?.renderer || !layer.layerData?.renderTexture) return;
+    bakeTransform(layer, transformOverride = null, sourceSnapshotOverride = null) {
+        if (!this.app?.renderer || !layer?.layerData?.renderTexture) return false;
 
-        const renderer = this.app.renderer;
         const layerData = layer.layerData;
-        const rt = layerData.renderTexture;
+        const rawTransformState = structuredClone(
+            transformOverride
+                || this.transform?.getTransform?.(layerData.id)
+                || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }
+        );
+        const transformState = this._normalizeTransformStateForBake(rawTransformState);
+        if (!transformState) {
+            console.warn('[LayerSystem] transform bake skipped: invalid transform state', {
+                layerId: layerData.id,
+                transform: rawTransformState
+            });
+            return false;
+        }
+        const sourceSnapshot = sourceSnapshotOverride || this.createLayerRasterSnapshot(layer);
+        if (!sourceSnapshot?.pixels) return false;
 
-        if (window.TEGAKI_CONFIG?.debug) {
-            console.log(`[LayerSystem] Baking transform for layer: ${layerData.name} into ${rt.width}x${rt.height} RT`);
+        const sourceBounds = normalizeRasterBounds(sourceSnapshot.rasterBounds, {
+            width: sourceSnapshot.width,
+            height: sourceSnapshot.height
+        });
+        sourceBounds.width = Math.max(1, Math.round(sourceSnapshot.width || sourceBounds.width));
+        sourceBounds.height = Math.max(1, Math.round(sourceSnapshot.height || sourceBounds.height));
+
+        const targetBounds = this._calculateTransformedRasterBounds(sourceBounds, transformState);
+        const maxTextureSize = this._getMaxRenderTextureSize();
+        if (
+            !targetBounds
+            || targetBounds.width > maxTextureSize
+            || targetBounds.height > maxTextureSize
+            || !this._isRasterBakeSizeAllowed(targetBounds)
+        ) {
+            console.warn('[LayerSystem] transform bake skipped: exceeds max texture size', {
+                layerId: layerData.id,
+                targetBounds,
+                maxTextureSize
+            });
+            return false;
         }
 
-        // 1. 現在の状態を一時的なテクスチャに書き出す
-        // Pixi v8 で Container を RenderTexture にレンダリングすると、
-        // その Container のローカルトランスフォームが適用されます。
-        const tempRT = RenderTexture.create({
-            width: rt.width,
-            height: rt.height
-        });
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = sourceBounds.width;
+        sourceCanvas.height = sourceBounds.height;
+        const sourceCtx = sourceCanvas.getContext('2d');
+        if (!sourceCtx) return false;
+        sourceCtx.putImageData(
+            new ImageData(new Uint8ClampedArray(sourceSnapshot.pixels), sourceBounds.width, sourceBounds.height),
+            0,
+            0
+        );
 
-        renderer.render({
-            container: layer,
-            target: tempRT,
-            clear: true
-        });
+        const targetCanvas = document.createElement('canvas');
+        targetCanvas.width = targetBounds.width;
+        targetCanvas.height = targetBounds.height;
+        const targetCtx = targetCanvas.getContext('2d');
+        if (!targetCtx) return false;
 
-        // 2. レイヤーのトランスフォームをリセット
-        layer.position.set(0, 0);
-        layer.rotation = 0;
-        layer.scale.set(1, 1);
-        layer.pivot.set(0, 0);
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        const matrix = createCenteredTransformMatrix(transformState, centerX, centerY);
+        targetCtx.clearRect(0, 0, targetBounds.width, targetBounds.height);
+        targetCtx.imageSmoothingEnabled = true;
+        targetCtx.imageSmoothingQuality = 'high';
+        targetCtx.setTransform(
+            matrix.a,
+            matrix.b,
+            matrix.c,
+            matrix.d,
+            matrix.tx - targetBounds.x,
+            matrix.ty - targetBounds.y
+        );
+        targetCtx.drawImage(sourceCanvas, sourceBounds.x, sourceBounds.y);
 
-        // 3. レイヤー管理上の変形データもリセット
-        if (this.transform) {
-            this.transform.setTransform(layerData.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+        const bakedPixels = targetCtx.getImageData(0, 0, targetBounds.width, targetBounds.height).data;
+        const nextSnapshot = {
+            ...sourceSnapshot,
+            width: targetBounds.width,
+            height: targetBounds.height,
+            rasterBounds: { ...targetBounds },
+            pixels: new Uint8ClampedArray(bakedPixels)
+        };
+
+        this._resetDisplayTransform(layer);
+        this.transform?.setTransform?.(
+            layerData.id,
+            { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }
+        );
+
+        const restored = this.restoreLayerRasterSnapshot(nextSnapshot);
+        if (this.config?.debug && restored) {
+            console.log(`[LayerSystem] Baked transform for layer: ${layerData.name}`, {
+                sourceBounds,
+                targetBounds,
+                transform: transformState
+            });
         }
+        return restored;
+    }
 
-        // 4. 元の RenderTexture をクリアして、焼き付けた内容を書き戻す
-        const tempSprite = new Sprite(tempRT);
-        renderer.render({
-            container: tempSprite,
-            target: rt,
-            clear: true
-        });
-
-        // 5. 後始末
-        tempSprite.destroy();
-        tempRT.destroy(true);
-
-        if (this.config?.debug) {
-            console.log(`[LayerSystem] Baked transform for layer: ${layerData.name}`);
+    _calculateTransformedRasterBounds(sourceBounds, transformState) {
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        const matrix = createCenteredTransformMatrix(transformState, centerX, centerY);
+        const x0 = sourceBounds.x;
+        const y0 = sourceBounds.y;
+        const x1 = sourceBounds.x + sourceBounds.width;
+        const y1 = sourceBounds.y + sourceBounds.height;
+        const corners = [
+            applyTransformMatrix(matrix, x0, y0),
+            applyTransformMatrix(matrix, x1, y0),
+            applyTransformMatrix(matrix, x1, y1),
+            applyTransformMatrix(matrix, x0, y1)
+        ];
+        if (corners.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+            return null;
         }
+        const minX = Math.min(...corners.map(point => point.x));
+        const minY = Math.min(...corners.map(point => point.y));
+        const maxX = Math.max(...corners.map(point => point.x));
+        const maxY = Math.max(...corners.map(point => point.y));
+        const padding = 2;
+        const left = Math.floor(minX - padding);
+        const top = Math.floor(minY - padding);
+        const right = Math.ceil(maxX + padding);
+        const bottom = Math.ceil(maxY + padding);
+        return {
+            x: left,
+            y: top,
+            width: Math.max(1, right - left),
+            height: Math.max(1, bottom - top)
+        };
+    }
+
+    _normalizeTransformStateForBake(transform) {
+        const x = Number(transform?.x);
+        const y = Number(transform?.y);
+        const rotation = Number(transform?.rotation);
+        const scaleX = Number(transform?.scaleX);
+        const scaleY = Number(transform?.scaleY);
+        if (
+            !Number.isFinite(x)
+            || !Number.isFinite(y)
+            || !Number.isFinite(rotation)
+            || !Number.isFinite(scaleX)
+            || !Number.isFinite(scaleY)
+            || Math.abs(scaleX) < 0.001
+            || Math.abs(scaleY) < 0.001
+        ) {
+            return null;
+        }
+        return { x, y, rotation, scaleX, scaleY };
+    }
+
+    _isRasterBakeSizeAllowed(bounds) {
+        const width = Math.round(bounds?.width || 0);
+        const height = Math.round(bounds?.height || 0);
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false;
+        const maxPixels = 16 * 1024 * 1024;
+        return width * height <= maxPixels;
     }
 
     createFolder(name) {
@@ -950,6 +1063,203 @@ export class LayerSystem {
         }
     }
 
+    pasteLayerBlockPayload(payload) {
+        if (
+            payload?.kind !== 'layer-block'
+            || payload.version !== 1
+            || !Array.isArray(payload.layers)
+            || payload.layers.length === 0
+            || !this.currentFrameContainer
+        ) {
+            return null;
+        }
+
+        const previousState = {
+            activeLayerId: this.getLayers()[this.activeLayerIndex]?.layerData?.id || null,
+            selectedLayerIds: this.getSelectedLayerIds()
+        };
+        const createdBySourceId = new Map();
+        const createdRecords = [];
+        const wasApplying = historyManager?.isApplying === true;
+
+        try {
+            if (historyManager) historyManager.isApplying = true;
+            const sortedEntries = [...payload.layers].sort((a, b) => a.order - b.order);
+            for (const entry of sortedEntries) {
+                const result = entry.type === 'folder'
+                    ? this.createFolder(entry.name)
+                    : this.createLayer(entry.name);
+                const layer = result?.layer;
+                if (!layer?.layerData) throw new Error('Failed to create layer block entry');
+                createdBySourceId.set(entry.sourceId, layer);
+                createdRecords.push({ entry, layer });
+            }
+
+            const applied = this._applyLayerBlockPasteState({
+                payload,
+                createdBySourceId,
+                createdRecords
+            });
+            if (!applied) throw new Error('Failed to apply layer block payload');
+
+            const byteSize = payload.layers.reduce((total, entry) => {
+                return total + (entry.rasterSnapshot?.pixels?.byteLength || 0);
+            }, 0);
+            if (historyManager && !wasApplying) {
+                historyManager.isApplying = false;
+                historyManager.record({
+                    name: 'layer-block-paste',
+                    do: () => {
+                        this._applyLayerBlockPasteState({
+                            payload,
+                            createdBySourceId,
+                            createdRecords
+                        });
+                    },
+                    undo: () => {
+                        this._removeLayerBlockPasteState({
+                            createdRecords,
+                            previousState
+                        });
+                    },
+                    byteSize,
+                    meta: {
+                        type: 'layer-block',
+                        action: 'paste',
+                        rootSourceId: payload.rootSourceId || null,
+                        rootLayerId: createdBySourceId.get(payload.rootSourceId)?.layerData?.id || null,
+                        layerCount: createdRecords.length,
+                        rasterCount: createdRecords.filter(record => record.entry.type === 'raster').length
+                    }
+                });
+            }
+
+            return {
+                rootLayer: createdBySourceId.get(payload.rootSourceId) || createdRecords[0]?.layer || null,
+                rootIndex: this.getLayerIndex(createdBySourceId.get(payload.rootSourceId) || createdRecords[0]?.layer),
+                createdRecords
+            };
+        } catch (error) {
+            this._removeLayerBlockPasteState({ createdRecords, previousState });
+            console.error('[LayerSystem] Layer block paste failed:', error);
+            return null;
+        } finally {
+            if (historyManager) historyManager.isApplying = wasApplying;
+        }
+    }
+
+    _applyLayerBlockPasteState({ payload, createdBySourceId, createdRecords }) {
+        if (!payload || !createdBySourceId || !Array.isArray(createdRecords)) return false;
+        const orderedRecords = createdRecords.slice().sort((a, b) => a.entry.order - b.entry.order);
+
+        orderedRecords.forEach(({ layer }) => {
+            if (layer.parent) this.currentFrameContainer.removeChild(layer);
+            this.currentFrameContainer.addChild(layer);
+        });
+
+        for (const { layer } of orderedRecords) {
+            if (!layer?.layerData) continue;
+            layer.layerData.parentId = null;
+            if (layer.layerData.isFolder) layer.layerData.children = [];
+        }
+
+        for (const { entry, layer } of orderedRecords) {
+            const data = layer.layerData;
+            const isRoot = entry.sourceId === payload.rootSourceId;
+            data.name = isRoot
+                ? `${entry.name || (entry.type === 'folder' ? 'フォルダ' : 'レイヤー')} のコピー`
+                : (entry.name || (entry.type === 'folder' ? 'フォルダ' : 'レイヤー'));
+            data.visible = entry.visible !== false;
+            layer.visible = data.visible;
+            data.opacity = Number.isFinite(entry.opacity) ? entry.opacity : 1;
+            layer.alpha = data.opacity;
+            data.blendMode = entry.blendMode || 'normal';
+            layer.blendMode = data.blendMode;
+            if (data.layerSprite) data.layerSprite.blendMode = data.blendMode;
+            applyClippingMode(
+                data,
+                entry.clippingMode || (entry.clipping === true ? CLIPPING_MODES.NORMAL : CLIPPING_MODES.NONE)
+            );
+
+            const parentLayer = createdBySourceId.get(entry.parentSourceId);
+            if (parentLayer?.layerData?.isFolder) {
+                data.parentId = parentLayer.layerData.id;
+                parentLayer.layerData.addChild(data.id);
+            }
+
+            if (entry.type === 'folder') {
+                data.folderExpanded = entry.folderExpanded !== false;
+                continue;
+            }
+
+            if (entry.rasterSnapshot) {
+                this.restoreLayerRasterSnapshot({
+                    ...entry.rasterSnapshot,
+                    layerId: data.id,
+                    pixels: entry.rasterSnapshot.pixels
+                        ? new Uint8ClampedArray(entry.rasterSnapshot.pixels)
+                        : null,
+                    rasterBounds: entry.rasterSnapshot.rasterBounds
+                        ? { ...entry.rasterSnapshot.rasterBounds }
+                        : null
+                });
+                if (data.layerSprite) data.layerSprite.blendMode = data.blendMode;
+            }
+
+            const transform = {
+                x: Number(entry.transform?.x) || 0,
+                y: Number(entry.transform?.y) || 0,
+                rotation: Number(entry.transform?.rotation) || 0,
+                scaleX: Number(entry.transform?.scaleX) || 1,
+                scaleY: Number(entry.transform?.scaleY) || 1
+            };
+            this.transform?.setTransform?.(data.id, { ...transform });
+            this.transform?.applyTransform?.(
+                layer,
+                transform,
+                this.config.canvas.width / 2,
+                this.config.canvas.height / 2
+            );
+            this.requestThumbnailUpdate(this.getLayerIndex(layer), true);
+        }
+
+        const rootLayer = createdBySourceId.get(payload.rootSourceId) || orderedRecords[0]?.layer || null;
+        if (rootLayer) {
+            this.activeLayerIndex = this.getLayerIndex(rootLayer);
+            this._setSingleLayerSelection(this.activeLayerIndex);
+        }
+        this.refreshClippingMasks();
+        this.coordAPI?.clearCache?.();
+        this._emitPanelUpdateRequest();
+        this._emitStatusUpdateRequest();
+        return true;
+    }
+
+    _removeLayerBlockPasteState({ createdRecords, previousState }) {
+        const createdLayers = (createdRecords || []).map(record => record.layer).filter(Boolean);
+        for (const layer of createdLayers) {
+            if (layer?.layerData?.parentId) {
+                const parent = this.getLayers().find(candidate => candidate.layerData?.id === layer.layerData.parentId);
+                parent?.layerData?.removeChild(layer.layerData.id);
+            }
+        }
+        for (const layer of createdLayers) {
+            if (layer?.parent === this.currentFrameContainer) {
+                this.currentFrameContainer.removeChild(layer);
+            }
+        }
+        const layers = this.getLayers();
+        const previousActiveIndex = layers.findIndex(layer => layer.layerData?.id === previousState?.activeLayerId);
+        this.activeLayerIndex = previousActiveIndex >= 0 ? previousActiveIndex : Math.min(this.activeLayerIndex, layers.length - 1);
+        if (Array.isArray(previousState?.selectedLayerIds)) {
+            this.selectedLayerIds = new Set(previousState.selectedLayerIds);
+        }
+        this.refreshClippingMasks();
+        this.coordAPI?.clearCache?.();
+        this._emitPanelUpdateRequest();
+        this._emitStatusUpdateRequest();
+    }
+
     _applyFolderSelectionPasteState({
         payload,
         rootFolder,
@@ -1336,10 +1646,10 @@ export class LayerSystem {
 
         opacity = Math.max(0, Math.min(1, opacity));
 
-        layer.alpha = opacity;
         if (layer.layerData) {
             layer.layerData.opacity = opacity;
         }
+        this._refreshLayerEffectiveAlpha();
 
         if (this.eventBus) {
             this.eventBus.emit('layer:opacity-changed', {
@@ -1356,7 +1666,7 @@ export class LayerSystem {
         if (layerIndex < 0 || layerIndex >= layers.length) return false;
 
         const layer = layers[layerIndex];
-        if (layer.layerData?.isBackground || layer.layerData?.isFolder) return false;
+        if (layer.layerData?.isBackground) return false;
 
         const allowedModes = new Set(['normal', 'multiply', 'add', 'overlay']);
         const nextMode = allowedModes.has(blendMode) ? blendMode : 'normal';
@@ -1468,6 +1778,13 @@ export class LayerSystem {
             maskSprite.label = 'clipping_mask_sprite';
             maskSprite.renderable = false;
             maskSprite.eventMode = 'none';
+            const sourceBounds = normalizeRasterBounds(sourceLayer.layerData.rasterBounds, {
+                width: sourceLayer.layerData.renderTexture.width,
+                height: sourceLayer.layerData.renderTexture.height
+            });
+            sourceBounds.width = sourceLayer.layerData.renderTexture.width;
+            sourceBounds.height = sourceLayer.layerData.renderTexture.height;
+            maskSprite.position.set(sourceBounds.x, sourceBounds.y);
             layer.addChildAt(maskSprite, 0);
 
             const inverse = isInverseClipping(data);
@@ -1694,13 +2011,29 @@ export class LayerSystem {
         const sourcePixels = result?.pixels || (result instanceof Uint8ClampedArray ? result : new Uint8ClampedArray(result?.buffer || result));
         const width = Math.round(result?.width || renderTexture.width || this.config.canvas.width);
         const height = Math.round(result?.height || renderTexture.height || this.config.canvas.height);
+        const rasterBounds = normalizeRasterBounds(layerData.rasterBounds, { width, height });
+        rasterBounds.width = width;
+        rasterBounds.height = height;
+        layerData.rasterBounds = rasterBounds;
+        if (layerData.layerSprite) {
+            layerData.layerSprite.position.set(rasterBounds.x, rasterBounds.y);
+        }
         const pixels = new Uint8ClampedArray(sourcePixels);
         this._unpremultiplyPixelBuffer(pixels);
+        this._debugValidateRasterSnapshot({
+            source: 'create',
+            layerId: layerData.id,
+            width,
+            height,
+            pixels,
+            rasterBounds
+        });
 
         return {
             layerId: layerData.id,
             width,
             height,
+            rasterBounds: { ...rasterBounds },
             pixels,
             pathsData: structuredClone(layerData.pathsData || []),
             paths: structuredClone(layerData.paths || [])
@@ -1772,12 +2105,25 @@ export class LayerSystem {
     restoreLayerRasterSnapshot(snapshot) {
         if (!snapshot || !this.app?.renderer) return false;
 
-        const layer = this.getLayers().find(candidate => candidate.layerData?.id === snapshot.layerId);
+        const normalizedSnapshot = normalizeRasterSnapshot(snapshot, {
+            width: this.config?.canvas?.width || 1,
+            height: this.config?.canvas?.height || 1
+        });
+        const layer = this.getLayers().find(candidate => candidate.layerData?.id === normalizedSnapshot.layerId);
         if (!layer?.layerData) return false;
 
         const layerData = layer.layerData;
-        const width = Math.max(1, Math.round(snapshot.width));
-        const height = Math.max(1, Math.round(snapshot.height));
+        const width = normalizedSnapshot.width;
+        const height = normalizedSnapshot.height;
+        const rasterBounds = normalizedSnapshot.rasterBounds;
+        this._debugValidateRasterSnapshot({
+            source: 'restore',
+            layerId: layerData.id,
+            width,
+            height,
+            pixels: normalizedSnapshot.pixels,
+            rasterBounds
+        });
 
         if (!layerData.renderTexture || layerData.renderTexture.width !== width || layerData.renderTexture.height !== height) {
             if (layerData.renderTexture) {
@@ -1797,6 +2143,10 @@ export class LayerSystem {
                 layer.addChildAt(layerData.layerSprite, 0);
             }
         }
+        layerData.rasterBounds = { ...rasterBounds };
+        if (layerData.layerSprite) {
+            layerData.layerSprite.position.set(rasterBounds.x, rasterBounds.y);
+        }
 
         const canvas = document.createElement('canvas');
         canvas.width = width;
@@ -1804,7 +2154,7 @@ export class LayerSystem {
         const ctx = canvas.getContext('2d');
         if (!ctx) return false;
 
-        const imageData = new ImageData(new Uint8ClampedArray(snapshot.pixels), width, height);
+        const imageData = new ImageData(new Uint8ClampedArray(normalizedSnapshot.pixels), width, height);
         ctx.putImageData(imageData, 0, 0);
 
         const texture = Texture.from(canvas);
@@ -1819,8 +2169,8 @@ export class LayerSystem {
 
         sprite.destroy({ texture: true, baseTexture: true });
 
-        layerData.pathsData = structuredClone(snapshot.pathsData || []);
-        layerData.paths = structuredClone(snapshot.paths || []);
+        layerData.pathsData = structuredClone(normalizedSnapshot.pathsData || []);
+        layerData.paths = structuredClone(normalizedSnapshot.paths || []);
 
         const layerIndex = this.getLayerIndex(layer);
         if (layerIndex !== -1) {
@@ -1834,6 +2184,280 @@ export class LayerSystem {
         return true;
     }
 
+    ensureLayerRasterBoundsForRect(layer, rect, options = {}) {
+        const layerData = layer?.layerData;
+        const renderer = this.app?.renderer;
+        const oldRT = layerData?.renderTexture;
+        if (!layerData || !renderer || !oldRT || layerData.isFolder || layerData.isBackground) {
+            return { ok: false, changed: false, bounds: null };
+        }
+
+        const padding = Math.max(0, Number(options.padding ?? 0) || 0);
+        const rectX = Number(rect?.x);
+        const rectY = Number(rect?.y);
+        const rectWidth = Number(rect?.width);
+        const rectHeight = Number(rect?.height);
+        if (
+            !Number.isFinite(rectX)
+            || !Number.isFinite(rectY)
+            || !Number.isFinite(rectWidth)
+            || !Number.isFinite(rectHeight)
+            || rectWidth <= 0
+            || rectHeight <= 0
+        ) {
+            return { ok: false, changed: false, bounds: null };
+        }
+
+        const oldBounds = normalizeRasterBounds(layerData.rasterBounds, {
+            width: oldRT.width,
+            height: oldRT.height
+        });
+        oldBounds.width = Math.max(1, Math.round(oldRT.width));
+        oldBounds.height = Math.max(1, Math.round(oldRT.height));
+
+        const targetMinX = Math.floor(rectX - padding);
+        const targetMinY = Math.floor(rectY - padding);
+        const targetMaxX = Math.ceil(rectX + rectWidth + padding);
+        const targetMaxY = Math.ceil(rectY + rectHeight + padding);
+        const minX = Math.min(oldBounds.x, targetMinX);
+        const minY = Math.min(oldBounds.y, targetMinY);
+        const maxX = Math.max(oldBounds.x + oldBounds.width, targetMaxX);
+        const maxY = Math.max(oldBounds.y + oldBounds.height, targetMaxY);
+        const newBounds = {
+            x: minX,
+            y: minY,
+            width: Math.max(1, maxX - minX),
+            height: Math.max(1, maxY - minY)
+        };
+
+        const unchanged = newBounds.x === oldBounds.x
+            && newBounds.y === oldBounds.y
+            && newBounds.width === oldBounds.width
+            && newBounds.height === oldBounds.height;
+        if (unchanged) {
+            layerData.rasterBounds = oldBounds;
+            layerData.layerSprite?.position.set(oldBounds.x, oldBounds.y);
+            return { ok: true, changed: false, bounds: { ...oldBounds } };
+        }
+
+        const maxTextureSize = this._getMaxRenderTextureSize();
+        if (newBounds.width > maxTextureSize || newBounds.height > maxTextureSize) {
+            console.warn('[LayerSystem] raster bounds expansion skipped: exceeds max texture size', {
+                layerId: layerData.id,
+                requested: newBounds,
+                maxTextureSize
+            });
+            return { ok: false, changed: false, bounds: { ...oldBounds } };
+        }
+
+        const newRT = RenderTexture.create({
+            width: newBounds.width,
+            height: newBounds.height,
+            antialias: true
+        });
+        const oldSprite = new Sprite(oldRT);
+        oldSprite.position.set(oldBounds.x - newBounds.x, oldBounds.y - newBounds.y);
+
+        renderer.render({
+            container: oldSprite,
+            target: newRT,
+            clear: true,
+            clearColor: [0, 0, 0, 0]
+        });
+
+        layerData.renderTexture = newRT;
+        layerData.rasterBounds = { ...newBounds };
+        if (layerData.layerSprite) {
+            layerData.layerSprite.texture = newRT;
+            layerData.layerSprite.position.set(newBounds.x, newBounds.y);
+            layerData.layerSprite.blendMode = layerData.blendMode || layerData.layerSprite.blendMode;
+        } else {
+            layerData.layerSprite = new Sprite(newRT);
+            layerData.layerSprite.label = 'layer_raster_sprite';
+            layerData.layerSprite.position.set(newBounds.x, newBounds.y);
+            layer.addChildAt(layerData.layerSprite, 0);
+        }
+
+        oldRT.destroy(true);
+        oldSprite.destroy({ texture: false, baseTexture: false });
+
+        if (this.coordAPI) this.coordAPI.clearCache();
+        this.refreshClippingMasks();
+        return { ok: true, changed: true, bounds: { ...newBounds } };
+    }
+
+    centerActiveLayerRasterInProjectFrame(options = {}) {
+        return this.centerLayerRasterInProjectFrame(this.getActiveLayer(), options);
+    }
+
+    centerLayerRasterInProjectFrame(layer, options = {}) {
+        const layerData = layer?.layerData;
+        if (!layerData?.renderTexture || layerData.isBackground || layerData.isFolder) return false;
+
+        const beforeSnapshot = this.createLayerRasterSnapshot(layer);
+        if (!beforeSnapshot?.pixels) return false;
+
+        const bounds = normalizeRasterBounds(beforeSnapshot.rasterBounds, {
+            width: beforeSnapshot.width,
+            height: beforeSnapshot.height
+        });
+        const frameWidth = Math.max(1, Math.round(this.config?.canvas?.width || bounds.width));
+        const frameHeight = Math.max(1, Math.round(this.config?.canvas?.height || bounds.height));
+        const nextBounds = {
+            ...bounds,
+            x: Math.round((frameWidth - bounds.width) / 2),
+            y: Math.round((frameHeight - bounds.height) / 2)
+        };
+
+        if (nextBounds.x === bounds.x && nextBounds.y === bounds.y) return false;
+
+        const layerId = layerData.id;
+        const isAnimationWorkingLayer = layerData.isAnimationWorkingLayer === true;
+        if (isAnimationWorkingLayer) {
+            this.eventBus?.emit('drawing:stroke-started', {
+                layerId,
+                mode: 'raster-recenter',
+                source: options.source || 'off-frame-badge'
+            });
+        }
+
+        const afterSnapshot = {
+            ...beforeSnapshot,
+            rasterBounds: nextBounds,
+            pixels: new Uint8ClampedArray(beforeSnapshot.pixels)
+        };
+
+        if (!this.restoreLayerRasterSnapshot(afterSnapshot)) {
+            if (isAnimationWorkingLayer) {
+                this.eventBus?.emit('drawing:stroke-cancelled', {
+                    layerId,
+                    mode: 'raster-recenter',
+                    source: options.source || 'off-frame-badge'
+                });
+            }
+            return false;
+        }
+
+        this.eventBus?.emit('layer:content-changed', {
+            layerId,
+            source: 'raster-recenter'
+        });
+
+        if (isAnimationWorkingLayer) {
+            this.eventBus?.emit('drawing:stroke-completed', {
+                layerId,
+                mode: 'raster-recenter',
+                source: options.source || 'off-frame-badge'
+            });
+            return true;
+        }
+
+        if (historyManager && !historyManager.isApplying) {
+            const restoreSnapshot = (snapshot) => {
+                this.restoreLayerRasterSnapshot(snapshot);
+                this.eventBus?.emit('layer:content-changed', {
+                    layerId,
+                    source: 'raster-recenter-history'
+                });
+            };
+            historyManager.record({
+                name: 'layer-raster-recenter',
+                do: () => restoreSnapshot(afterSnapshot),
+                undo: () => restoreSnapshot(beforeSnapshot),
+                meta: {
+                    layerId,
+                    source: options.source || 'off-frame-badge',
+                    beforeBounds: beforeSnapshot.rasterBounds,
+                    afterBounds: afterSnapshot.rasterBounds
+                },
+                byteSize: (beforeSnapshot.pixels?.byteLength || 0)
+                    + (afterSnapshot.pixels?.byteLength || 0)
+            });
+        }
+
+        return true;
+    }
+
+    _getMaxRenderTextureSize() {
+        const renderer = this.app?.renderer;
+        const candidates = [
+            renderer?.limits?.maxTextureSize,
+            renderer?.texture?.maxTextureSize,
+            renderer?.renderPipes?.texture?.maxTextureSize
+        ].map(value => Number(value)).filter(value => Number.isFinite(value) && value > 0);
+        return Math.max(1, Math.min(...(candidates.length ? candidates : [8192])));
+    }
+
+    _debugValidateRasterSnapshot(snapshot) {
+        if (!this.config?.debug || !snapshot) return;
+        const expectedLength = snapshot.width * snapshot.height * 4;
+        const actualLength = snapshot.pixels?.length || 0;
+        if (actualLength > 0 && actualLength !== expectedLength) {
+            console.warn('[LayerSystem] raster snapshot pixel length mismatch', {
+                source: snapshot.source,
+                layerId: snapshot.layerId,
+                expectedLength,
+                actualLength
+            });
+        }
+        const bounds = snapshot.rasterBounds;
+        if (!bounds || bounds.width !== snapshot.width || bounds.height !== snapshot.height) {
+            console.warn('[LayerSystem] raster bounds size mismatch', {
+                source: snapshot.source,
+                layerId: snapshot.layerId,
+                width: snapshot.width,
+                height: snapshot.height,
+                rasterBounds: bounds
+            });
+        }
+    }
+
+    _refreshLayerEffectiveAlpha() {
+        const layers = this.getLayers();
+        const byId = new Map(
+            layers
+                .filter(layer => layer?.layerData?.id)
+                .map(layer => [layer.layerData.id, layer])
+        );
+        const effectiveAlphaById = new Map();
+
+        const resolveAlpha = (layer) => {
+            const data = layer?.layerData;
+            if (!data) return 1;
+            if (effectiveAlphaById.has(data.id)) return effectiveAlphaById.get(data.id);
+
+            const ownOpacity = data.isAnimationWorkingLayer === true && Number.isFinite(data.effectiveOpacity)
+                ? data.effectiveOpacity
+                : Number.isFinite(data.opacity)
+                ? data.opacity
+                : (Number.isFinite(layer.alpha) ? layer.alpha : 1);
+            let alpha = Math.max(0, Math.min(1, ownOpacity));
+            const visited = new Set([data.id]);
+            let parentId = data.parentId || null;
+
+            while (parentId && !visited.has(parentId)) {
+                visited.add(parentId);
+                const parent = byId.get(parentId);
+                const parentData = parent?.layerData;
+                if (!parentData?.isFolder) break;
+                const parentOpacity = Number.isFinite(parentData.opacity)
+                    ? parentData.opacity
+                    : (Number.isFinite(parent.alpha) ? parent.alpha : 1);
+                alpha *= Math.max(0, Math.min(1, parentOpacity));
+                parentId = parentData.parentId || null;
+            }
+
+            effectiveAlphaById.set(data.id, alpha);
+            return alpha;
+        };
+
+        for (const layer of layers) {
+            const data = layer?.layerData;
+            if (!data || data.isBackground) continue;
+            layer.alpha = resolveAlpha(layer);
+        }
+    }
+
     _setupVKeyEvents() {
         if (!this.eventBus) return;
 
@@ -1842,7 +2466,7 @@ export class LayerSystem {
             if (!this.transform.app && this.app && this.cameraSystem) {
                 this.initTransform();
             }
-            if (this._hasAnimationLayerContext()) {
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) {
                 this.exitLayerMoveMode();
                 return;
             }
@@ -1883,7 +2507,7 @@ export class LayerSystem {
             if (property === 'rotation') {
                 value = value * Math.PI / 180;
             }
-            this.transform.updateTransform(activeLayer, property, value);
+            this.updateActiveLayerTransform(property, value);
             this.requestThumbnailUpdate(this.activeLayerIndex);
         };
         this.transform.onFlipRequest = (direction) => {
@@ -1995,16 +2619,103 @@ export class LayerSystem {
     enterLayerMoveMode() {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
-        if (!activeLayer?.layerData || activeLayer.layerData.isBackground || activeLayer.layerData.isFolder) return;
+        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return;
+        if (activeLayer.layerData.isFolder && !this._isFolderWithRasterTargets(activeLayer)) return;
 
         const layerId = activeLayer.layerData.id;
         const transform = this.transform.getTransform(layerId)
             || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
         this._layerTransformSession = {
             layerId,
-            transform: structuredClone(transform)
+            transform: structuredClone(transform),
+            targetLayerTransforms: this._captureFolderTargetTransformState(activeLayer)
         };
         this.transform.enterMoveMode();
+    }
+
+    _isFolderWithRasterTargets(folderLayer) {
+        return this._getFolderRasterLayers(folderLayer).length > 0;
+    }
+
+    _getFolderRasterLayers(folderLayer) {
+        const folderId = folderLayer?.layerData?.id;
+        if (!folderId || !folderLayer.layerData.isFolder) return [];
+        const targets = this.getFolderSelectionTargets(folderId);
+        return (targets?.entries || [])
+            .filter(entry => entry.type === 'raster' && entry.layer?.layerData?.renderTexture)
+            .map(entry => entry.layer);
+    }
+
+    _captureFolderTargetTransformState(folderLayer) {
+        if (!folderLayer?.layerData?.isFolder) return [];
+        const layers = [folderLayer, ...this._getFolderRasterLayers(folderLayer)];
+        return layers.map(layer => ({
+            layerId: layer.layerData.id,
+            transform: structuredClone(
+                this.transform?.getTransform?.(layer.layerData.id)
+                    || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }
+            ),
+            display: {
+                x: layer.position?.x || 0,
+                y: layer.position?.y || 0,
+                rotation: layer.rotation || 0,
+                scaleX: layer.scale?.x || 1,
+                scaleY: layer.scale?.y || 1,
+                pivotX: layer.pivot?.x || 0,
+                pivotY: layer.pivot?.y || 0
+            }
+        }));
+    }
+
+    _restoreFolderTargetTransformState(records = []) {
+        if (!Array.isArray(records) || records.length === 0) return;
+        const byId = new Map(
+            this.getLayers()
+                .filter(layer => layer?.layerData?.id)
+                .map(layer => [layer.layerData.id, layer])
+        );
+        for (const record of records) {
+            const layer = byId.get(record.layerId);
+            if (!layer) continue;
+            this.transform?.setTransform?.(record.layerId, structuredClone(record.transform));
+            const display = record.display || {};
+            layer.position?.set?.(display.x || 0, display.y || 0);
+            layer.rotation = display.rotation || 0;
+            layer.scale?.set?.(
+                Number.isFinite(display.scaleX) ? display.scaleX : 1,
+                Number.isFinite(display.scaleY) ? display.scaleY : 1
+            );
+            layer.pivot?.set?.(display.pivotX || 0, display.pivotY || 0);
+        }
+    }
+
+    _resetDisplayTransform(layer) {
+        if (!layer) return;
+        layer.position?.set?.(0, 0);
+        layer.rotation = 0;
+        layer.scale?.set?.(1, 1);
+        layer.pivot?.set?.(0, 0);
+    }
+
+    _applyFolderPreviewTransform(folderLayer, transform) {
+        if (!folderLayer?.layerData?.isFolder || !this.transform) return false;
+        const layerId = folderLayer.layerData.id;
+        const nextTransform = structuredClone(transform || this.transform.getTransform(layerId)
+            || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+        this.transform.setTransform(layerId, nextTransform);
+        this._resetDisplayTransform(folderLayer);
+
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        for (const targetLayer of this._getFolderRasterLayers(folderLayer)) {
+            this.transform.setTransform(targetLayer.layerData.id, structuredClone(nextTransform));
+            this.transform.applyTransform(targetLayer, nextTransform, centerX, centerY);
+        }
+        this.transform.updateTransformPanelValues(folderLayer);
+        this.transform.updateFlipButtons(folderLayer);
+        this.coordAPI?.clearCache?.();
+        this.eventBus?.emit('layer:updated', { layerId, transform: structuredClone(nextTransform) });
+        return true;
     }
 
     exitLayerMoveMode(options = {}) {
@@ -2014,6 +2725,22 @@ export class LayerSystem {
             ? this.getLayers().find(layer => layer.layerData?.id === this._layerTransformSession.layerId)
             : null;
         const activeLayer = sessionLayer || this.getActiveLayer();
+        if (!cancelled && !options.deferredForBusyIndicator && !this._folderTransformConfirmDeferred && activeLayer?.layerData?.isFolder) {
+            const targetCount = this._getFolderRasterLayers(activeLayer).length;
+            if (targetCount > 1) {
+                this._folderTransformConfirmDeferred = true;
+                this._showOperationIndicator(`フォルダ変形を確定中... ${targetCount} layers`);
+                requestAnimationFrame(() => {
+                    setTimeout(() => {
+                        this.exitLayerMoveMode({
+                            ...options,
+                            deferredForBusyIndicator: true
+                        });
+                    }, 0);
+                });
+                return;
+            }
+        }
         let transformConfirmed = false;
 
         try {
@@ -2045,7 +2772,31 @@ export class LayerSystem {
                 this._emitPanelUpdateRequest();
             }
             this._layerTransformSession = null;
+            this._folderTransformConfirmDeferred = false;
+            this._hideOperationIndicator();
         }
+    }
+
+    _showOperationIndicator(message) {
+        if (typeof document === 'undefined') return;
+        let indicator = document.getElementById('tegaki-operation-indicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'tegaki-operation-indicator';
+            indicator.className = 'tegaki-operation-indicator';
+            indicator.innerHTML = '<span class="tegaki-operation-spinner"></span><span class="tegaki-operation-text"></span>';
+            document.body.appendChild(indicator);
+        }
+        const text = indicator.querySelector('.tegaki-operation-text');
+        if (text) text.textContent = message || '処理中...';
+        indicator.classList.add('show');
+    }
+
+    _hideOperationIndicator() {
+        const indicator = typeof document !== 'undefined'
+            ? document.getElementById('tegaki-operation-indicator')
+            : null;
+        indicator?.classList.remove('show');
     }
 
     clearClippingMasks() {
@@ -2057,6 +2808,14 @@ export class LayerSystem {
     _restoreLayerTransformSession(layer) {
         const session = this._layerTransformSession;
         if (!session || !layer?.layerData || layer.layerData.id !== session.layerId) return false;
+        if (layer.layerData.isFolder) {
+            this._restoreFolderTargetTransformState(session.targetLayerTransforms);
+            this.transform.updateTransformPanelValues(layer);
+            this.transform.updateFlipButtons(layer);
+            this.coordAPI?.clearCache?.();
+            this.requestThumbnailUpdate(this.getLayerIndex(layer), true);
+            return true;
+        }
 
         const transform = structuredClone(session.transform);
         this.transform.setTransform(session.layerId, transform);
@@ -2102,6 +2861,10 @@ export class LayerSystem {
         const activeLayer = this.getActiveLayer();
         if (activeLayer) {
             this.transform.updateTransform(activeLayer, property, value);
+            if (activeLayer.layerData?.isFolder) {
+                const transform = this.transform.getTransform(activeLayer.layerData.id);
+                this._applyFolderPreviewTransform(activeLayer, transform);
+            }
         }
     }
 
@@ -2109,9 +2872,28 @@ export class LayerSystem {
         if (!this.transform) return;
         const activeLayer = this.getActiveLayer();
         if (!activeLayer?.layerData) return;
-        if (activeLayer.layerData.isBackground || activeLayer.layerData.isFolder) return;
+        if (activeLayer.layerData.isBackground) return;
 
         if (!bypassVKeyCheck && !this.isLayerMoveMode) return;
+
+        if (activeLayer.layerData.isFolder) {
+            const layerId = activeLayer.layerData.id;
+            const transformBefore = structuredClone(
+                this.transform.getTransform(layerId)
+                    || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }
+            );
+            const transformAfter = structuredClone(transformBefore);
+            if (direction === 'horizontal') {
+                transformAfter.scaleX *= -1;
+            } else if (direction === 'vertical') {
+                transformAfter.scaleY *= -1;
+            } else {
+                return;
+            }
+            this._applyFolderPreviewTransform(activeLayer, transformAfter);
+            this.eventBus?.emit('layer:transform-updated', { layerId });
+            return;
+        }
 
         const layerId = activeLayer.layerData.id;
         const layerIndex = this.activeLayerIndex;
@@ -2182,6 +2964,10 @@ export class LayerSystem {
         const activeLayer = this.getActiveLayer();
         if (activeLayer) {
             this.transform.moveLayer(activeLayer, keyCode);
+            if (activeLayer.layerData?.isFolder) {
+                const transform = this.transform.getTransform(activeLayer.layerData.id);
+                this._applyFolderPreviewTransform(activeLayer, transform);
+            }
             this.requestThumbnailUpdate(this.activeLayerIndex);
         }
     }
@@ -2195,13 +2981,20 @@ export class LayerSystem {
         } else if (keyCode === 'ArrowLeft' || keyCode === 'ArrowRight') {
             this.transform.rotateLayer(activeLayer, keyCode);
         }
+        if (activeLayer.layerData?.isFolder) {
+            const transform = this.transform.getTransform(activeLayer.layerData.id);
+            this._applyFolderPreviewTransform(activeLayer, transform);
+        }
         this.requestThumbnailUpdate(this.activeLayerIndex);
     }
 
-    confirmLayerTransform() {
+    confirmLayerTransform(layerOverride = null) {
         if (!this.transform) return false;
-        const activeLayer = this.getActiveLayer();
+        const activeLayer = layerOverride || this.getActiveLayer();
         if (!activeLayer?.layerData) return false;
+        if (activeLayer.layerData.isFolder) {
+            return this._confirmFolderTransform(activeLayer);
+        }
         const layerId = activeLayer.layerData.id;
         const transformBefore = structuredClone(this.transform.getTransform(layerId));
 
@@ -2230,13 +3023,16 @@ export class LayerSystem {
                 };
                 const translatedSnapshot = {
                     ...beforeSnapshot,
-                    pixels: translateRgbaPixels(
-                        beforeSnapshot.pixels,
-                        beforeSnapshot.width,
-                        beforeSnapshot.height,
+                    rasterBounds: translateRasterBounds(
+                        beforeSnapshot.rasterBounds,
                         integerTranslation.dx,
-                        integerTranslation.dy
-                    )
+                        integerTranslation.dy,
+                        {
+                            width: beforeSnapshot.width,
+                            height: beforeSnapshot.height
+                        }
+                    ),
+                    pixels: new Uint8ClampedArray(beforeSnapshot.pixels)
                 };
 
                 if (activeLayer.layerData.paths && activeLayer.layerData.paths.length > 0) {
@@ -2257,8 +3053,11 @@ export class LayerSystem {
                     return false;
                 }
             } else {
-                // 回転・拡縮・flip・複合変形は現行の1回bakeへ残す。
-                this.bakeTransform(activeLayer);
+                // 回転・拡縮・flip・複合変形は、変形後AABBへ拡張して焼き込む。
+                if (!this.bakeTransform(activeLayer, transformBefore, beforeSnapshot)) {
+                    this.restoreLayerRasterSnapshot(beforeSnapshot);
+                    return false;
+                }
 
                 // 互換性のためパスデータも変形適用（ベクトルデータが残っている場合）
                 if (activeLayer.layerData.paths && activeLayer.layerData.paths.length > 0) {
@@ -2275,7 +3074,8 @@ export class LayerSystem {
                 this.coordAPI.clearCache();
             }
 
-            if (rebuildSuccess && historyManager && !historyManager.isApplying && beforeSnapshot) {
+            const shouldRecordNormalLayerHistory = activeLayer.layerData.isAnimationWorkingLayer !== true;
+            if (shouldRecordNormalLayerHistory && rebuildSuccess && historyManager && !historyManager.isApplying && beforeSnapshot) {
                 const afterSnapshot = this.createLayerRasterSnapshot(activeLayer);
                 const transformAfter = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
 
@@ -2321,6 +3121,145 @@ export class LayerSystem {
             return rebuildSuccess;
         }
         return false;
+    }
+
+    _confirmFolderTransform(folderLayer) {
+        if (!folderLayer?.layerData?.isFolder || !this.transform) return false;
+        const folderId = folderLayer.layerData.id;
+        const transformBefore = structuredClone(
+            this.transform.getTransform(folderId)
+                || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }
+        );
+        if (!this.transform._isTransformNonDefault(transformBefore)) return false;
+
+        const targets = this._getFolderRasterLayers(folderLayer);
+        if (targets.length === 0) return false;
+
+        const beforeSnapshots = targets
+            .map(layer => this.createLayerRasterSnapshot(layer))
+            .filter(Boolean);
+        if (beforeSnapshots.length !== targets.length) return false;
+
+        const integerTranslation = resolveIntegerTranslation(transformBefore);
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        const affectedLayerIds = targets.map(layer => layer.layerData.id);
+        const resetTransform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+        let success = true;
+
+        if (integerTranslation) {
+            for (let index = 0; index < targets.length; index++) {
+                const targetLayer = targets[index];
+                const beforeSnapshot = beforeSnapshots[index];
+                const translatedSnapshot = {
+                    ...beforeSnapshot,
+                    rasterBounds: translateRasterBounds(
+                        beforeSnapshot.rasterBounds,
+                        integerTranslation.dx,
+                        integerTranslation.dy,
+                        {
+                            width: beforeSnapshot.width,
+                            height: beforeSnapshot.height
+                        }
+                    ),
+                    pixels: new Uint8ClampedArray(beforeSnapshot.pixels)
+                };
+
+                if (targetLayer.layerData.paths && targetLayer.layerData.paths.length > 0) {
+                    this.transform.applyTransformToPaths(targetLayer, transformBefore);
+                    translatedSnapshot.paths = structuredClone(targetLayer.layerData.paths);
+                }
+
+                this._resetDisplayTransform(targetLayer);
+                this.transform.setTransform(targetLayer.layerData.id, structuredClone(resetTransform));
+                success = this.restoreLayerRasterSnapshot(translatedSnapshot) && success;
+            }
+        } else {
+            for (let index = 0; index < targets.length; index++) {
+                const targetLayer = targets[index];
+                const beforeSnapshot = beforeSnapshots[index];
+                this.transform.setTransform(targetLayer.layerData.id, structuredClone(transformBefore));
+                if (!this.bakeTransform(targetLayer, transformBefore, beforeSnapshot)) {
+                    this.transform.setTransform(targetLayer.layerData.id, structuredClone(resetTransform));
+                    this._resetDisplayTransform(targetLayer);
+                    success = false;
+                    continue;
+                }
+                if (targetLayer.layerData.paths && targetLayer.layerData.paths.length > 0) {
+                    this.transform.applyTransformToPaths(targetLayer, transformBefore);
+                }
+                success = this.safeRebuildLayer(targetLayer, targetLayer.layerData.paths) && success;
+                this.transform.setTransform(targetLayer.layerData.id, structuredClone(resetTransform));
+                this._resetDisplayTransform(targetLayer);
+            }
+        }
+
+        this.transform.setTransform(folderId, structuredClone(resetTransform));
+        this._resetDisplayTransform(folderLayer);
+        this.refreshClippingMasks();
+        this.coordAPI?.clearCache?.();
+
+        if (!success) {
+            for (const snapshot of beforeSnapshots) {
+                this.restoreLayerRasterSnapshot(snapshot);
+                this.transform.setTransform(snapshot.layerId, structuredClone(resetTransform));
+                const targetLayer = this.getLayers().find(layer => layer.layerData?.id === snapshot.layerId);
+                this._resetDisplayTransform(targetLayer);
+            }
+            this.transform.setTransform(folderId, structuredClone(resetTransform));
+            this._resetDisplayTransform(folderLayer);
+            return false;
+        }
+
+        const afterSnapshots = targets
+            .map(layer => this.createLayerRasterSnapshot(layer))
+            .filter(Boolean);
+
+        const restoreSnapshots = (snapshots) => {
+            let restoredAll = true;
+            for (const snapshot of snapshots) {
+                restoredAll = this.restoreLayerRasterSnapshot(snapshot) && restoredAll;
+                this.transform.setTransform(snapshot.layerId, structuredClone(resetTransform));
+                const targetLayer = this.getLayers().find(layer => layer.layerData?.id === snapshot.layerId);
+                this._resetDisplayTransform(targetLayer);
+                this.requestThumbnailUpdate(this.getLayerIndex(targetLayer), true);
+            }
+            this.transform.setTransform(folderId, structuredClone(resetTransform));
+            this._resetDisplayTransform(folderLayer);
+            this.refreshClippingMasks();
+            this.coordAPI?.clearCache?.();
+            this._emitPanelUpdateRequest();
+            return restoredAll;
+        };
+
+        if (afterSnapshots.length === targets.length && historyManager && !historyManager.isApplying) {
+            historyManager.record({
+                name: 'folder-transform',
+                do: () => restoreSnapshots(afterSnapshots),
+                undo: () => restoreSnapshots(beforeSnapshots),
+                byteSize: beforeSnapshots.reduce((total, snapshot, index) => {
+                    return total
+                        + (snapshot.pixels?.byteLength || 0)
+                        + (afterSnapshots[index]?.pixels?.byteLength || 0);
+                }, 0),
+                meta: {
+                    type: 'folder-transform',
+                    folderId,
+                    layerIds: affectedLayerIds,
+                    requestedTransform: transformBefore
+                }
+            });
+        }
+
+        for (const layerId of affectedLayerIds) {
+            this.eventBus?.emit('layer:content-changed', {
+                layerId,
+                source: 'folder-transform'
+            });
+        }
+        this.eventBus?.emit('layer:transform-confirmed', { layerId: folderId });
+        this._emitPanelUpdateRequest();
+        return true;
     }
 
     updateLayerTransformPanelValues() {
@@ -2373,8 +3312,12 @@ export class LayerSystem {
             transform.x += dx;
             transform.y += dy;
         }
-        this.transform.applyTransform(activeLayer, transform, centerX, centerY);
-        this.transform.updateTransformPanelValues(activeLayer);
+        if (activeLayer.layerData.isFolder) {
+            this._applyFolderPreviewTransform(activeLayer, transform);
+        } else {
+            this.transform.applyTransform(activeLayer, transform, centerX, centerY);
+            this.transform.updateTransformPanelValues(activeLayer);
+        }
 
         if (this.eventBus) {
             this.eventBus.emit('layer:updated', { layerId, transform });
@@ -2611,41 +3554,51 @@ export class LayerSystem {
         if (!this.eventBus) return;
 
         this.eventBus.on('layer:copy-request', () => {
-            if (this._hasAnimationLayerContext()) return;
+            if (this._hasAnimationLayerContext()) {
+                const table = window.PopupManager?.get?.('animationTable')
+                    || window.coreEngine?.popupManager?.get?.('animationTable');
+                table?.copyInternalLayer?.();
+                return;
+            }
             if (window.drawingClipboard) {
                 window.drawingClipboard.copyActiveLayer();
             }
         });
 
         this.eventBus.on('layer:paste-request', () => {
-            if (this._hasAnimationLayerContext()) return;
+            if (this._hasAnimationLayerContext()) {
+                const table = window.PopupManager?.get?.('animationTable')
+                    || window.coreEngine?.popupManager?.get?.('animationTable');
+                table?.pasteInternalLayer?.();
+                return;
+            }
             if (window.drawingClipboard) {
                 window.drawingClipboard.pasteLayer();
             }
         });
 
         this.eventBus.on('layer:flip-by-key', ({ direction }) => {
-            if (this._hasAnimationLayerContext()) return;
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
             this.flipActiveLayer(direction, false);
         });
 
         this.eventBus.on('layer:flip-requested', ({ direction, bypassVKeyCheck = true }) => {
-            if (this._hasAnimationLayerContext()) return;
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
             this.flipActiveLayer(direction, bypassVKeyCheck);
         });
 
         this.eventBus.on('layer:move-by-key', ({ direction }) => {
-            if (this._hasAnimationLayerContext()) return;
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
             this.moveActiveLayer(direction);
         });
 
         this.eventBus.on('layer:scale-by-key', ({ direction }) => {
-            if (this._hasAnimationLayerContext()) return;
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
             this.transformActiveLayer(direction);
         });
 
         this.eventBus.on('layer:rotate-by-key', ({ direction }) => {
-            if (this._hasAnimationLayerContext()) return;
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
             this.transformActiveLayer(direction);
         });
 
@@ -2712,6 +3665,11 @@ export class LayerSystem {
                 (animationTable.model.clipAssets?.length || 0) > 0
             )
         );
+    }
+
+    _canTransformActiveAnimationWorkingLayer() {
+        const activeLayer = this.getActiveLayer();
+        return activeLayer?.layerData?.isAnimationWorkingLayer === true;
     }
 
     selectNextLayer() {
@@ -2976,6 +3934,7 @@ export class LayerSystem {
     }
 
     _emitPanelUpdateRequest() {
+        this._refreshLayerEffectiveAlpha();
         this.refreshClippingMasks();
         if (this.eventBus) {
             this.eventBus.emit('layer:panel-update-requested', {
@@ -3249,6 +4208,14 @@ export class LayerSystem {
                 clearColor: [0, 0, 0, 0]
             });
             tempSprite.destroy({ texture: false, baseTexture: false });
+            const rasterBounds = normalizeRasterBounds(sourceData.rasterBounds, {
+                width: newLayer.layerData.renderTexture.width,
+                height: newLayer.layerData.renderTexture.height
+            });
+            rasterBounds.width = newLayer.layerData.renderTexture.width;
+            rasterBounds.height = newLayer.layerData.renderTexture.height;
+            newLayer.layerData.rasterBounds = rasterBounds;
+            newLayer.layerData.layerSprite?.position.set(rasterBounds.x, rasterBounds.y);
         }
 
         // 4. トランスフォームコピー
@@ -3382,6 +4349,29 @@ export class LayerSystem {
         if (topLayer.layerData.isFolder || bottomLayer.layerData.isFolder || bottomLayer.layerData.isBackground) return false;
         if (!this.app?.renderer || !topLayer.layerData.renderTexture || !bottomLayer.layerData.renderTexture) return false;
 
+        const topBounds = normalizeRasterBounds(topLayer.layerData.rasterBounds, {
+            width: topLayer.layerData.renderTexture.width,
+            height: topLayer.layerData.renderTexture.height
+        });
+        topBounds.width = topLayer.layerData.renderTexture.width;
+        topBounds.height = topLayer.layerData.renderTexture.height;
+
+        const expanded = this.ensureLayerRasterBoundsForRect(bottomLayer, topBounds, { padding: 0 });
+        if (!expanded.ok) {
+            console.warn('[LayerSystem] Merge down skipped: destination bounds cannot expand', {
+                topLayerId: topLayer.layerData.id,
+                bottomLayerId: bottomLayer.layerData.id,
+                topBounds
+            });
+            return false;
+        }
+        const bottomBounds = normalizeRasterBounds(bottomLayer.layerData.rasterBounds, {
+            width: bottomLayer.layerData.renderTexture.width,
+            height: bottomLayer.layerData.renderTexture.height
+        });
+        bottomBounds.width = bottomLayer.layerData.renderTexture.width;
+        bottomBounds.height = bottomLayer.layerData.renderTexture.height;
+
         // 1. 上のレイヤーを下のレイヤーの RenderTexture に焼き込む
         // opacity や transform を維持したままレンダリング
         const renderContainer = new Container();
@@ -3392,6 +4382,7 @@ export class LayerSystem {
         if (!topSprite) return false;
 
         topSprite.alpha = topLayer.alpha ?? topLayer.layerData.opacity ?? 1;
+        topSprite.position.set(topBounds.x - bottomBounds.x, topBounds.y - bottomBounds.y);
         renderContainer.addChild(topSprite);
 
         this.app.renderer.render({

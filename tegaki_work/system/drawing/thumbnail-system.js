@@ -14,6 +14,7 @@
 
 import { Sprite } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
+import { normalizeRasterBounds } from '../raster-bounds.js';
 
 export const ThumbnailSystem = {
     app: null,
@@ -100,6 +101,7 @@ export const ThumbnailSystem = {
         try {
             const canvasWidth = window.TEGAKI_CONFIG?.canvas?.width || 400;
             const canvasHeight = window.TEGAKI_CONFIG?.canvas?.height || 400;
+            const projectFrame = { x: 0, y: 0, width: canvasWidth, height: canvasHeight };
 
             const aspectRatio = canvasWidth / canvasHeight;
             let thumbW = maxWidth;
@@ -118,6 +120,8 @@ export const ThumbnailSystem = {
             let pixels = null;
             let sourceWidth = canvasWidth;
             let sourceHeight = canvasHeight;
+            let rasterBounds = projectFrame;
+            let hasOffFramePixels = false;
 
             if (isBackground) {
                 // 背景は単色。ピクセルループ不要。後段で Canvas に塗りつぶす。
@@ -140,6 +144,12 @@ export const ThumbnailSystem = {
                 pixels = result?.pixels || (result instanceof Uint8ClampedArray ? result : new Uint8ClampedArray(result?.buffer || result));
                 sourceWidth = Math.round(result?.width || sourceRT.width || canvasWidth);
                 sourceHeight = Math.round(result?.height || sourceRT.height || canvasHeight);
+                rasterBounds = normalizeRasterBounds(layer.layerData?.rasterBounds, {
+                    width: sourceWidth,
+                    height: sourceHeight
+                });
+                rasterBounds.width = sourceWidth;
+                rasterBounds.height = sourceHeight;
             }
 
             // ── ② サムネイル Canvas を生成 ────────────────────────────────
@@ -186,28 +196,60 @@ export const ThumbnailSystem = {
                 const imageData = fullCtx.createImageData(sourceWidth, sourceHeight);
                 const data = imageData.data;
                 let nonTransparentPixels = 0;
+                let offFramePixels = 0;
                 let maxAlpha = 0;
 
                 for (let row = 0; row < sourceHeight; row++) {
                     const srcBase = row * sourceWidth * 4;
                     const dstBase = row * sourceWidth * 4;
+                    const projectY = rasterBounds.y + row;
+                    const rowOutsideFrame = projectY < projectFrame.y
+                        || projectY >= projectFrame.y + projectFrame.height;
 
                     // 高速コピー
                     const rowData = clampedPixels.subarray(srcBase, srcBase + sourceWidth * 4);
                     data.set(rowData, dstBase);
 
-                    for (let i = 3; i < rowData.length; i += 4) {
+                    for (let i = 3, col = 0; i < rowData.length; i += 4, col++) {
                         const alpha = rowData[i];
                         if (alpha > 0) nonTransparentPixels++;
                         if (alpha > maxAlpha) maxAlpha = alpha;
+                        if (alpha > 0) {
+                            const projectX = rasterBounds.x + col;
+                            if (
+                                rowOutsideFrame
+                                || projectX < projectFrame.x
+                                || projectX >= projectFrame.x + projectFrame.width
+                            ) {
+                                offFramePixels++;
+                            }
+                        }
                     }
                 }
+                hasOffFramePixels = offFramePixels > 0;
                 fullCtx.putImageData(imageData, 0, 0);
 
-                ctx.drawImage(fullCanvas, 0, 0, sourceWidth, sourceHeight,
-                                          0, 0, thumbW, thumbH);
+                const projectCanvas = document.createElement('canvas');
+                projectCanvas.width = canvasWidth;
+                projectCanvas.height = canvasHeight;
+                const projectCtx = projectCanvas.getContext('2d');
+                if (!projectCtx) return null;
 
-                layer._thumbnailDebug = { nonTransparentPixels, maxAlpha, sourceWidth, sourceHeight };
+                projectCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+                projectCtx.drawImage(fullCanvas, rasterBounds.x, rasterBounds.y);
+
+                ctx.drawImage(projectCanvas, 0, 0, canvasWidth, canvasHeight,
+                                             0, 0, thumbW, thumbH);
+
+                layer._thumbnailDebug = {
+                    nonTransparentPixels,
+                    maxAlpha,
+                    sourceWidth,
+                    sourceHeight,
+                    rasterBounds,
+                    offFramePixels,
+                    hasOffFramePixels
+                };
             }
 
             // ── ④ 確認ログ ──────────────────────────────────────────────
@@ -222,6 +264,9 @@ export const ThumbnailSystem = {
                     layer: layer.layerData?.name,
                     isBackground,
                     source: `${debug.sourceWidth}x${debug.sourceHeight}`,
+                    rasterBounds: debug.rasterBounds,
+                    offFramePixels: debug.offFramePixels,
+                    hasOffFramePixels: !!debug.hasOffFramePixels,
                     thumb: `${thumbW}x${thumbH}`,
                     nonTransparentPixels: debug.nonTransparentPixels,
                     maxAlpha: debug.maxAlpha,
@@ -234,7 +279,11 @@ export const ThumbnailSystem = {
 
             if (this.eventBus) {
                 this.eventBus.emit('thumbnail:updated', {
-                    layerId, layerIndex, dataURL: dataUrl
+                    layerId,
+                    layerIndex,
+                    dataURL: dataUrl,
+                    rasterBounds,
+                    hasOffFramePixels
                 });
             }
 

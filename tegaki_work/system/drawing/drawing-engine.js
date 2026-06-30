@@ -105,13 +105,15 @@ export class DrawingEngine {
                 buttons: info.buttons,
                 pressure: info.pressure,
                 canvasMove: this.cameraSystem?.isCanvasMoveMode?.(),
-                vKey: this.layerSystem?.vKeyPressed
+                vKey: this.layerSystem?.vKeyPressed,
+                selectionTransform: this._isSelectionTransformActive()
             }));
 
             if (info.pointerType === 'pen') {
                 console.log('[DrawingEngine] Pen Down:', {
                     pointerType: info.pointerType,
                     vKey: this.layerSystem?.vKeyPressed,
+                    selectionTransform: this._isSelectionTransformActive(),
                     canvasMove: this.cameraSystem?.isCanvasMoveMode?.(),
                     activeLayer: this.layerSystem?.getActiveLayer?.()?.layerData?.name,
                     button: info.button
@@ -124,8 +126,8 @@ export class DrawingEngine {
             return;
         }
 
-        if (this.layerSystem?.vKeyPressed) {
-            if (window.TEGAKI_CONFIG?.debug && info.pointerType === 'pen') console.log('[DrawingEngine] Blocked: VKeyPressed');
+        if (this._isTransformModeActive()) {
+            if (window.TEGAKI_CONFIG?.debug && info.pointerType === 'pen') console.log('[DrawingEngine] Blocked: TransformMode');
             return;
         }
 
@@ -159,6 +161,8 @@ export class DrawingEngine {
             return;
         }
 
+        this._attachInputProfileLocal(info, localCoords);
+
         const activeLayer = this.layerSystem?.getActiveLayer?.();
         const activeData = activeLayer?.layerData;
         if (!activeData || activeData.isBackground || activeData.isFolder || !activeData.renderTexture) {
@@ -189,9 +193,19 @@ export class DrawingEngine {
                 info.clientX,
                 info.clientY,
                 info.pressure,
-                info.pointerType
+                info.pointerType,
+                info.inputProfile
             );
         }
+    }
+
+    _isSelectionTransformActive() {
+        return window.CoreRuntime?.api?.selection?.getState?.()?.transformSessionActive === true
+            || window.pixelSelectionSystem?.getState?.()?.transformSessionActive === true;
+    }
+
+    _isTransformModeActive() {
+        return this.layerSystem?.vKeyPressed === true || this._isSelectionTransformActive();
     }
 
     _getCurrentMode() {
@@ -223,11 +237,15 @@ export class DrawingEngine {
         }
 
         if (this.brushCore.updateStroke) {
+            if (window.TEGAKI_CONFIG?.debug) {
+                this._attachInputProfileLocal(info, this._screenToLocal(info.clientX, info.clientY));
+            }
             this.brushCore.updateStroke(
                 info.clientX,
                 info.clientY,
                 info.pressure,
-                info.pointerType
+                info.pointerType,
+                info.inputProfile
             );
         }
     }
@@ -240,7 +258,10 @@ export class DrawingEngine {
 
         if (this.brushCore && this.brushCore.isActive && this.brushCore.isActive()) {
             if (this.brushCore.finalizeStroke) {
-                this.brushCore.finalizeStroke();
+                if (window.TEGAKI_CONFIG?.debug) {
+                    this._attachInputProfileLocal(info, this._screenToLocal(info.clientX, info.clientY));
+                }
+                this.brushCore.finalizeStroke(info.inputProfile);
             }
         }
 
@@ -316,6 +337,75 @@ export class DrawingEngine {
         }
 
         return worldCoords;
+    }
+
+    _attachInputProfileLocal(info, localCoords) {
+        if (!window.TEGAKI_CONFIG?.debug || !info?.inputProfile || !localCoords) {
+            return;
+        }
+
+        info.inputProfile.local = {
+            x: Number(localCoords.localX.toFixed(3)),
+            y: Number(localCoords.localY.toFixed(3))
+        };
+        info.inputProfile.coalesced.local = this._summarizeCoalescedLocal(info.originalEvent);
+    }
+
+    _summarizeCoalescedLocal(event) {
+        if (typeof event?.getCoalescedEvents !== 'function') {
+            return {
+                supported: false,
+                count: 0,
+                localX: { min: null, max: null, delta: null },
+                localY: { min: null, max: null, delta: null }
+            };
+        }
+
+        let events = [];
+        try {
+            events = event.getCoalescedEvents() || [];
+        } catch (err) {
+            events = [];
+        }
+
+        const localPoints = events
+            .map(item => this._screenToLocal(item.clientX, item.clientY))
+            .filter(point => point && Number.isFinite(point.localX) && Number.isFinite(point.localY));
+
+        const summarize = (values) => {
+            if (!values.length) {
+                return { min: null, max: null, delta: null };
+            }
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            return {
+                min: Number(min.toFixed(3)),
+                max: Number(max.toFixed(3)),
+                delta: Number((max - min).toFixed(3))
+            };
+        };
+
+        return {
+            supported: true,
+            count: events.length,
+            validLocalCount: localPoints.length,
+            localX: summarize(localPoints.map(point => point.localX)),
+            localY: summarize(localPoints.map(point => point.localY)),
+            samples: localPoints.length <= 4
+                ? localPoints.map(point => ({
+                    x: Number(point.localX.toFixed(3)),
+                    y: Number(point.localY.toFixed(3))
+                }))
+                : [
+                    localPoints[0],
+                    localPoints[1],
+                    localPoints[localPoints.length - 2],
+                    localPoints[localPoints.length - 1]
+                ].map(point => ({
+                    x: Number(point.localX.toFixed(3)),
+                    y: Number(point.localY.toFixed(3))
+                }))
+        };
     }
 
     setBrushSettings(settings) {

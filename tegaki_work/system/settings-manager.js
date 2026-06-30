@@ -40,6 +40,8 @@ export class SettingsManager {
             pressureCorrection: this.config?.userSettings?.pressureCorrection || 1.0,
             smoothing: this.config?.userSettings?.smoothing || 0.5,
             pressureCurve: this.config?.userSettings?.pressureCurve || 'linear',
+            pressureOpacityEnabled: this.config?.userSettings?.pressureOpacityEnabled !== false,
+            pressureOpacityStrength: this.config?.userSettings?.pressureOpacityStrength ?? 0.65,
             airbrushFlow: this.config?.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08,
             airbrushSoftness: this.config?.BRUSH_DEFAULTS?.airbrushSoftness ?? 0.8,
             airbrushScatter: this.config?.BRUSH_DEFAULTS?.airbrushScatter ?? 0.0,
@@ -58,12 +60,21 @@ export class SettingsManager {
 
     getAutomaticHistoryDefaults() {
         const deviceMemory = Number(globalThis.navigator?.deviceMemory);
-        if (Number.isFinite(deviceMemory)) {
-            if (deviceMemory <= 4) return { maxEntries: 100, maxMemoryMB: 128 };
-            if (deviceMemory < 16) return { maxEntries: 250, maxMemoryMB: 256 };
-            return { maxEntries: 500, maxMemoryMB: 512 };
+        const heapLimitMB = Number(globalThis.performance?.memory?.jsHeapSizeLimit) / 1024 / 1024;
+        const heapLimitGB = Number.isFinite(heapLimitMB) && heapLimitMB > 0 ? heapLimitMB / 1024 : 0;
+        const memoryGB = Math.max(
+            Number.isFinite(deviceMemory) ? deviceMemory : 0,
+            heapLimitGB
+        );
+
+        if (memoryGB > 0) {
+            if (memoryGB <= 4) return { maxEntries: 100, maxMemoryMB: 256 };
+            if (memoryGB < 8) return { maxEntries: 250, maxMemoryMB: 512 };
+            if (memoryGB < 16) return { maxEntries: 500, maxMemoryMB: 1024 };
+            if (memoryGB < 32) return { maxEntries: 500, maxMemoryMB: 2048 };
+            return { maxEntries: 500, maxMemoryMB: 4096 };
         }
-        return { maxEntries: 250, maxMemoryMB: 256 };
+        return { maxEntries: 250, maxMemoryMB: 512 };
     }
     
     get(key) {
@@ -119,6 +130,13 @@ export class SettingsManager {
             pressureCurve: (v) => {
                 return ['linear', 'ease-in', 'ease-out'].includes(v) ? v : undefined;
             },
+            pressureOpacityEnabled: (v) => {
+                return typeof v === 'boolean' ? v : undefined;
+            },
+            pressureOpacityStrength: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
             airbrushFlow: (v) => {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.max(0.01, Math.min(1.0, num));
@@ -158,7 +176,7 @@ export class SettingsManager {
             },
             historyMaxMemoryMB: (v) => {
                 const num = parseInt(v, 10);
-                return [128, 256, 512, 1024].includes(num) ? num : undefined;
+                return [128, 256, 512, 1024, 2048, 4096, 8192, 12288, 16384].includes(num) ? num : undefined;
             }
         };
         
@@ -211,6 +229,8 @@ export class SettingsManager {
             'pressureCorrection',
             'smoothing',
             'pressureCurve',
+            'pressureOpacityEnabled',
+            'pressureOpacityStrength',
             'airbrushFlow',
             'airbrushSoftness',
             'airbrushScatter',

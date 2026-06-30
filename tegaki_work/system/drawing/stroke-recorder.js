@@ -32,7 +32,7 @@ export class StrokeRecorder {
     
     addPoint(localX, localY, rawPressure) {
         if (!this.isRecording) {
-            return;
+            return null;
         }
         
         let pressure = rawPressure;
@@ -58,6 +58,7 @@ export class StrokeRecorder {
         };
         
         this.currentPoints.push(point);
+        return point;
     }
     
     endStroke() {
@@ -80,6 +81,45 @@ export class StrokeRecorder {
     
     getCurrentPoints() {
         return [...this.currentPoints];
+    }
+
+    getCurrentStats() {
+        return this._summarizePoints(this.currentPoints);
+    }
+
+    _summarizePoints(points) {
+        const count = points.length;
+        let distance = 0;
+        let pressureDeltaTotal = 0;
+        let maxDistance = 0;
+        let maxPressureDelta = 0;
+        let minPressure = count ? points[0].pressure : null;
+        let maxPressure = count ? points[0].pressure : null;
+
+        for (let i = 1; i < count; i++) {
+            const prev = points[i - 1];
+            const current = points[i];
+            const segmentDistance = Math.hypot(current.x - prev.x, current.y - prev.y);
+            const pressureDelta = Math.abs((current.pressure ?? 0) - (prev.pressure ?? 0));
+            distance += segmentDistance;
+            pressureDeltaTotal += pressureDelta;
+            maxDistance = Math.max(maxDistance, segmentDistance);
+            maxPressureDelta = Math.max(maxPressureDelta, pressureDelta);
+            minPressure = Math.min(minPressure, current.pressure ?? 0);
+            maxPressure = Math.max(maxPressure, current.pressure ?? 0);
+        }
+
+        return {
+            count,
+            distance: Number(distance.toFixed(3)),
+            maxDistance: Number(maxDistance.toFixed(3)),
+            pressure: {
+                min: minPressure === null ? null : Number(minPressure.toFixed(4)),
+                max: maxPressure === null ? null : Number(maxPressure.toFixed(4)),
+                deltaTotal: Number(pressureDeltaTotal.toFixed(4)),
+                maxDelta: Number(maxPressureDelta.toFixed(4))
+            }
+        };
     }
     
     isActive() {

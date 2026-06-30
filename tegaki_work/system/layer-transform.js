@@ -69,7 +69,7 @@ export class LayerTransform {
         if (!this.eventBus) return;
         
         this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
-            if (this._hasAnimationLayerContext()) {
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) {
                 const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
                 this.exitMoveMode(activeLayer);
                 return;
@@ -83,7 +83,7 @@ export class LayerTransform {
         });
         
         this.eventBus.on('layer:reset-transform', () => {
-            if (this._hasAnimationLayerContext()) return;
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
             const selectionApi = this._getSelectionTransformApi();
             if (selectionApi?.getState?.()?.transformSessionActive) {
                 selectionApi.resetTransform?.();
@@ -122,6 +122,11 @@ export class LayerTransform {
                 (animationTable.model.clipAssets?.length || 0) > 0
             )
         );
+    }
+
+    _canTransformActiveAnimationWorkingLayer() {
+        const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
+        return activeLayer?.layerData?.isAnimationWorkingLayer === true;
     }
 
     enterMoveMode() {
@@ -606,6 +611,7 @@ export class LayerTransform {
             min: min,
             max: max,
             initial: initial,
+            momentum: false,
             onChange: (value) => {
                 if (property === 'rotation' && this.config.layer.rotationLoop) {
                     while (value > max) value -= (max - min);

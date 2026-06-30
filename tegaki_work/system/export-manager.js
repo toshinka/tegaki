@@ -385,6 +385,7 @@ export class ExportManager {
         const ext = {
             'png': '.png',
             'apng': '.png',
+            'gif': '.gif',
             'webp': '.webp',
             'webm': '.webm',
             'psd': '.psd',

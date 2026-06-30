@@ -125,6 +125,10 @@ export const TEGAKI_CONFIG = {
         playback: {
             loopByDefault: true,
             previewQuality: 'medium'
+        },
+        snapshotTextureCache: {
+            maxEntries: 96,
+            maxBytes: 512 * 1024 * 1024
         }
     },
     debug: false
@@ -420,7 +424,7 @@ export const TEGAKI_KEYMAP = {
             key: 'KeyS',
             ctrl: true,
             shift: false,
-            description: '現在の状態をアルバムに保存'
+            description: '現在の状態を保存'
         },
         QUICK_ACCESS_TOGGLE: {
             key: 'KeyQ',

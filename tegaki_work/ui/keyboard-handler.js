@@ -6,7 +6,7 @@
  * 被依存: core-initializer.js
  * 公開API: KeyboardHandler
  * イベント発火: keyboard:vkey-state-changed, ui:sidebar:sync-tool, layer:*, camera:*, frame:*, ui:*
- * イベント受信: なし
+ * イベント受信: layer:transform-exit
  * グローバル登録: window.KeyboardHandler
  * 実装状態: ✅完成/整備
  * ============================================================================
@@ -34,6 +34,25 @@ export const KeyboardHandler = (function() {
             activeElement.tagName === 'SELECT' ||
             activeElement.isContentEditable
         );
+    }
+
+    function confirmActiveTransformsForToolSwitch(nextTool) {
+        const selectionApi = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
+        if (nextTool !== 'selection' && selectionApi?.getState?.()?.transformSessionActive) {
+            if (selectionApi.confirmTransform?.() !== true) return false;
+        }
+
+        const layerManager = window.layerManager || window.drawingApp?.layerManager;
+        if (nextTool !== 'layer-move' && (layerManager?.isLayerMoveMode || layerManager?.vKeyPressed)) {
+            const layerApi = window.CoreRuntime?.api?.layer;
+            const result = layerApi?.exitMoveMode
+                ? layerApi.exitMoveMode()
+                : layerManager?.exitLayerMoveMode?.();
+            if (result === false) return false;
+            vKeyPressed = false;
+        }
+
+        return true;
     }
 
     function handleKeyDown(e) {
@@ -69,6 +88,17 @@ export const KeyboardHandler = (function() {
                 e.stopImmediatePropagation();
                 return;
             }
+        }
+        if (
+            primaryModifier
+            && e.shiftKey
+            && !e.altKey
+            && e.code === 'KeyV'
+        ) {
+            handleLayerPaste(eventBus, e);
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
         }
 
         if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
@@ -127,11 +157,21 @@ export const KeyboardHandler = (function() {
                 if (window.CoreRuntime?.api?.selection?.hasSelection?.()) {
                     window.CoreRuntime.api.selection.requestTransform?.();
                 } else {
-                    vKeyPressed = !vKeyPressed;
-                    eventBus.emit('keyboard:vkey-state-changed', {
-                        pressed: vKeyPressed,
-                        source: 'transform-shortcut'
-                    });
+                    const nextVKeyState = !vKeyPressed;
+                    if (nextVKeyState) {
+                        const animationTable = window.PopupManager?.get?.('animationTable')
+                            || window.coreEngine?.popupManager?.get?.('animationTable');
+                        animationTable?.prepareInternalFolderTransform?.();
+                    }
+                    if (nextVKeyState && !canStartLayerTransform()) {
+                        vKeyPressed = false;
+                    } else {
+                        vKeyPressed = nextVKeyState;
+                        eventBus.emit('keyboard:vkey-state-changed', {
+                            pressed: vKeyPressed,
+                            source: 'transform-shortcut'
+                        });
+                    }
                 }
             }
             e.preventDefault();
@@ -219,6 +259,10 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'TOOL_PEN':
+                if (!confirmActiveTransformsForToolSwitch('pen')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.tool.set('pen')) {
                     syncToolUI('pen');
                 } else if (window.coreEngine?.switchTool) {
@@ -229,6 +273,10 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'TOOL_ERASER':
+                if (!confirmActiveTransformsForToolSwitch('eraser')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.tool.set('eraser')) {
                     syncToolUI('eraser');
                 } else if (window.coreEngine?.switchTool) {
@@ -249,6 +297,10 @@ export const KeyboardHandler = (function() {
                     targetFillMode = 'fill';
                 }
 
+                if (!confirmActiveTransformsForToolSwitch(targetFillMode)) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.tool.set(targetFillMode)) {
                     syncToolUI(targetFillMode);
                 } else if (window.coreEngine?.switchTool) {
@@ -259,6 +311,10 @@ export const KeyboardHandler = (function() {
                 break;
 
             case 'TOOL_RECT_SELECTION':
+                if (!confirmActiveTransformsForToolSwitch('selection')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.selection?.setToolActive) {
                     if (event.repeat) {
                         event.preventDefault();
@@ -284,6 +340,10 @@ export const KeyboardHandler = (function() {
                 break;
 
             case 'TOOL_LASSO_FILL':
+                if (!confirmActiveTransformsForToolSwitch('lasso-fill')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.tool.set('lasso-fill')) {
                     syncToolUI('lasso-fill');
                 } else if (window.coreEngine?.switchTool) {
@@ -294,6 +354,10 @@ export const KeyboardHandler = (function() {
                 break;
 
             case 'TOOL_EYEDROPPER':
+                if (!confirmActiveTransformsForToolSwitch('eyedropper')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.tool.set('eyedropper')) {
                     syncToolUI('eyedropper');
                 } else if (window.coreEngine?.switchTool) {
@@ -306,6 +370,10 @@ export const KeyboardHandler = (function() {
                 const currentTool = api?.tool.get() || window.coreEngine?.brushCore.getMode();
                 let nextTool = currentTool === 'airbrush' ? 'airbrush-erase' : 'airbrush';
                 
+                if (!confirmActiveTransformsForToolSwitch(nextTool)) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.tool.set(nextTool)) {
                     syncToolUI(nextTool);
                 } else if (window.coreEngine?.switchTool) {
@@ -370,7 +438,7 @@ export const KeyboardHandler = (function() {
                     event.preventDefault();
                     break;
                 }
-                eventBus.emit('layer:paste-request');
+                handleLayerPaste(eventBus, event);
                 event.preventDefault();
                 break;
             
@@ -384,7 +452,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_RESET':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -393,7 +461,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_MOVE_UP':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -402,7 +470,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_MOVE_DOWN':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -411,7 +479,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_MOVE_LEFT':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -420,7 +488,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_MOVE_RIGHT':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -429,7 +497,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_SCALE_UP':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -438,7 +506,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_SCALE_DOWN':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -447,7 +515,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_ROTATE_LEFT':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -456,7 +524,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_ROTATE_RIGHT':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -465,7 +533,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_FLIP_HORIZONTAL':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -476,7 +544,7 @@ export const KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_FLIP_VERTICAL':
-                if (handleAnimationTableLayerShortcut('block')) {
+                if (!vKeyPressed && handleAnimationTableLayerShortcut('block')) {
                     event.preventDefault();
                     break;
                 }
@@ -600,12 +668,7 @@ export const KeyboardHandler = (function() {
 
             case 'ALBUM_QUICK_SAVE': {
                 event.preventDefault();
-                const albumPopup = window.coreEngine?.popupManager?.get?.('album') || window.albumPopup;
-                if (albumPopup?.saveCurrentSnapshot) {
-                    albumPopup.saveCurrentSnapshot();
-                } else if (albumPopup?._saveSnapshot) {
-                    albumPopup._saveSnapshot();
-                }
+                handleQuickSave();
                 break;
             }
             
@@ -635,6 +698,40 @@ export const KeyboardHandler = (function() {
         }
     }
 
+    async function handleQuickSave() {
+        const projectManager = window.projectManager || window.coreEngine?.projectManager;
+        const result = await projectManager?.quickSave?.();
+        if (result?.handled) return;
+
+        const albumPopup = window.coreEngine?.popupManager?.get?.('album') || window.albumPopup;
+        if (albumPopup?.saveCurrentSnapshot) {
+            albumPopup.saveCurrentSnapshot();
+        } else if (albumPopup?._saveSnapshot) {
+            albumPopup._saveSnapshot();
+        }
+    }
+
+    function handleLayerPaste(eventBus, event = null) {
+        const wantsSystemClipboard = event?.shiftKey === true;
+        if (wantsSystemClipboard) {
+            const imageImporter = window.imageImporter || window.coreEngine?.imageImporter;
+            if (imageImporter?.pasteFromSystemClipboard) {
+                imageImporter.pasteFromSystemClipboard();
+            }
+            return;
+        }
+
+        const imageImporter = window.imageImporter || window.coreEngine?.imageImporter;
+        imageImporter?.suppressNextSystemPaste?.();
+        const drawingClipboard = window.drawingClipboard;
+        if (drawingClipboard?.hasClipboardData?.()) {
+            eventBus.emit('layer:paste-request');
+            return;
+        }
+
+        eventBus.emit('layer:paste-request');
+    }
+
     function hasAnimationLayerContext(animationTable) {
         return !!(
             animationTable?.model &&
@@ -643,6 +740,24 @@ export const KeyboardHandler = (function() {
                 (animationTable.model.clipAssets?.length || 0) > 0
             )
         );
+    }
+
+    function canStartLayerTransform() {
+        const animationTable = window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable');
+
+        const layerManager = window.layerManager || window.drawingApp?.layerManager;
+        const activeLayer = layerManager?.getActiveLayer?.();
+        const layerData = activeLayer?.layerData;
+        if (hasAnimationLayerContext(animationTable)) {
+            return !!(layerData && layerData.isAnimationWorkingLayer === true);
+        }
+        if (!layerData || layerData.isBackground) return false;
+        if (layerData.isFolder) {
+            const targets = layerManager?.getFolderSelectionTargets?.(layerData.id);
+            return targets?.entries?.some(entry => entry.type === 'raster') === true;
+        }
+        return true;
     }
 
     function handleAnimationTableLayerShortcut(action) {
@@ -883,6 +998,10 @@ export const KeyboardHandler = (function() {
         }, { capture: true });
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
+
+        TegakiEventBus?.on?.('layer:transform-exit', () => {
+            vKeyPressed = false;
+        });
         
         window.addEventListener('blur', () => {
             if (vKeyPressed) {

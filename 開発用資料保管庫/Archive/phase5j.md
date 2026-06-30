@@ -1,12 +1,11 @@
 # Phase 5j — Timeline再生範囲・終端・ループ制御
 
-更新日: 2026-06-21
-状態: 実装途中（2026-06-21監査で要修正）
+更新日: 2026-06-27
+状態: 完了
 
-> [!IMPORTANT]
-> 別AIによる部分実装を維持し、最初に
-> `tegaki_work/PHASE5J_AUDIT.md` の修正必須項目を解消する。
-> 現在はmodel helperとmarker描画入口だけが存在し、Phase完了条件は未達。
+> 2026-06-21監査で不足していたscope別実再生、playback正規化、
+> 操作UI、History、marker表示を2026-06-27に接続した。
+> 実装時の監査記録は `開発用資料保管庫/Archive/PHASE5J_AUDIT.md`。
 
 ## 目的
 

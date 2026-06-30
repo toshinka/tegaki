@@ -1,6 +1,6 @@
 # アニメーション・CAF・変形計画
 
-更新日: 2026-06-20
+更新日: 2026-06-28
 
 ## 現在の到達点
 
@@ -14,7 +14,8 @@
 
 ## 直近の不具合
 
-現時点で再現確認中の重大不具合なし。
+- 多枚数CAFの重化・クラッシュはPhase 5kで、snapshot / History / thumbnail / Texture cacheの常駐量計測と上限・破棄境界を追加済み。
+- 同種の再発が出た場合だけ、cold frame退避やHistory state delta化を再検討する。
 描画中の非アクティブCAF表示回帰はPhase 5aで修正済み。
 
 ## 直近候補
@@ -39,18 +40,22 @@
 - working Layerは移行用互換層として段階的に縮小する。
 - 通常描画モードを壊さず、明示的なアニメ編集状態で切り替える。
 
-### Phase 5j: 再生終端・ループ・範囲指定 `実装途中・監査修正中`
+### Phase 5j: 再生終端・ループ・範囲指定 `完了`
 
-- `TimelineModel.playback.loop` と終端時の停止処理は存在するが、Animation Tableから明示的に切り替えるUIが不足している。
-- 再生終端は「総Frame末尾」だけでなく「最後に配置されたCAFの終端」またはユーザー指定OUT markerを選べるようにする。
-- 停止 / ループを小型buttonで切り替え、現在状態をアイコンとtooltipで明示する。
-- Timeline上のIN / OUT markerで部分再生範囲を指定する。
-- 修飾clickはCtrl+ClickのCAF作成・削除、Shift操作、Timeline panと競合を監査してから決める。先にキーを固定しない。
-- marker、loop、終端基準をproject保存対象にするか、UI session状態に留めるかをPhase化時に決める。
-- Phase 5jではTimelineModelのproject保存対象とし、Export popupの範囲入力とは分離する。
-- 実行指示書は `task-codex/phase5j.md`。
-- 2026-06-21監査でmodel helperは確認したが、scope別実再生、正規化、UI、History、
-  marker CSSが未完了。`tegaki_work/PHASE5J_AUDIT.md` に沿って修正する。
+- Animation Tableからloop、終端基準、IN / OUT markerを操作できる。
+- `ALL / LANE / SET` は再生対象Lane、IN / OUTは時間範囲として分離した。
+- last-clip終端は再生開始時に固定したscope対象Lane集合で計算する。
+- playback設定はTimelineModelのproject保存対象とし、Export popupの範囲入力とは分離した。
+- 完了記録は `開発用資料保管庫/Archive/phase5j.md`。
+
+### Phase 5k: 多枚数CAFのメモリ・VRAM安定化 `完了`
+
+- 多枚数CAF作成時の重化・クラッシュを固定入力で再現し、snapshot / History / thumbnail / Texture / RenderTextureの常駐量を計測する。
+- オーナー環境は64GB RAM / RTX4070無印。低性能PCへ過度に合わせず、ただしブラウザ内のJS heap / WebGL texture制約を前提に上限を設計する。
+- 現在Frameと表示中Frameだけを熱いcacheにし、非表示FrameのTexture / thumbnailを上限付きで破棄する方針を優先する。
+- IndexedDB / Blob退避やWorker圧縮は冷たいFrame向けの比較候補。描画中CAFへ同期的に使わない。
+- WebGPUはメモリ上限の直接解決策ではないため、Phase 5kへ混ぜない。まずWebGL / PixiJS v8.17経路で常駐copyを減らす。
+- 完了記録は `開発用資料保管庫/Archive/phase5k.md`。
 
 ### Animation Tableを閉じた時のLane表示モード `候補`
 
@@ -98,6 +103,23 @@
 - 固定計測と通常Raster Layer・pixel selectionの整数平行移動を完了した。
 - clipping、Folder、保存復元、PNG preview、表示反転、CAF境界の最終回帰も完了した。
 - 完了記録は `開発用資料保管庫/Archive/phase5h.md`。
+
+### Phase 5n: selectionなしVキーLayer全体変形入口 `完了`
+
+- 選択範囲が無い状態で `V` キーを押した時、通常Raster Layer全体の移動・変形sessionへ確実に入ることを確認する。
+- selectionがある時はselection変形を優先し、selection解除後はLayer全体変形へ戻る。
+- Background、Folder、ClipInstance transformへ対象を広げない。
+- Phase 5hの整数平行移動非再サンプリング経路、confirm / cancel、Undo / Redo、保存復元を維持する。
+- 通常Layerに加え、Animation Table / CAF working Layer上でも `V` 単独でLayer全体変形へ入り、確定結果をCAF raster Historyへ記録する。
+- 完了記録は `開発用資料保管庫/Archive/phase5n.md`。
+
+### Phase 5p: 無限キャンバス / 欄外ラスター保持 `現行`
+
+- 詳細設計は `開発用資料保管庫/proposals/06_無限キャンバス.md`。
+- Phase 5nのLayer全体移動とPhase 5oの画像importにより、アニメ素材をProject frame外へ逃がす操作が現実的になった。
+- 現行の固定RenderTexture契約では、欄外へ出たpixelが変形確定やsnapshot保存時に切り捨てられる。
+- Project frame、Timeline frame、通常export範囲は固定し、通常Raster Layer / CAF internal Raster Layerの保存矩形だけを `rasterBounds` として可変化する。
+- CAF working Layer restore / capture、DrawingSnapshot、CAF raster History、Frame compositor、保存復元をbounds対応する。
 
 ### ClipInstance transformとkeyframe `候補`
 

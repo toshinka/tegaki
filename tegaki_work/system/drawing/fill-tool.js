@@ -9,11 +9,17 @@
  * イベント受信: tool:select, tool:changed, brush:mode-changed, canvas:pointerdown
  * グローバル登録: window.FillTool
  * 実装状態: 🧪Phase 3f 表示中レイヤー参照有効化 (Flood Fill MVP + Lasso Fill 済)
+ *
+ * Phase 5p共通契約:
+ * - 通常Layer / CAF working Layerとも、fill前に `current bounds ∪ Project frame` へRTを拡張する。
+ * - CAFではboundary取得前にdrawing:stroke-startedを出し、working Layerを表示対象へ戻す。
+ * - History用beforeとselection制限用beforeは分離し、selection制限はProject座標でbounds差を吸収する。
  * ============================================================================
  */
 
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
+import { normalizeRasterBounds } from '../raster-bounds.js';
 
 // 塗りつぶしのしきい値定数 (Phase 3e 以降は設定UI化を検討)
 const FILL_ALPHA_THRESHOLD = 24;  // これ以上の不透明度は「壁」とみなす
@@ -142,6 +148,16 @@ export class FillTool {
 
         const fillColor = brushSettings.getColor();
         const fillAlpha = brushSettings.getOpacity();
+        const isAnimationWorkingLayer = activeLayer.layerData?.isAnimationWorkingLayer === true;
+
+        if (isAnimationWorkingLayer) {
+            this._emitCafFillEvent('drawing:stroke-started', activeLayer, localX, localY);
+        }
+
+        const historyBeforeSnapshot = layerManager.createLayerRasterSnapshot?.(activeLayer) || null;
+        this._ensureLayerRasterFrameForFill(activeLayer, layerManager);
+        const workingBeforeSnapshot = layerManager.createLayerRasterSnapshot?.(activeLayer)
+            || historyBeforeSnapshot;
 
         // 🧪 Phase 3e: 表示中レイヤー参照の判定
         let boundarySnapshot = null;
@@ -153,10 +169,46 @@ export class FillTool {
 
         if (!boundarySnapshot) {
             console.error('❌ FillTool: Failed to capture boundary snapshot');
+            if (isAnimationWorkingLayer) {
+                this.eventBus?.emit('drawing:stroke-cancelled', {
+                    component: 'drawing',
+                    action: 'stroke-cancelled',
+                    data: {
+                        layerId: activeLayer.layerData?.id,
+                        mode: brushSettings.getMode?.() || 'fill'
+                    }
+                });
+            }
             return;
         }
 
-        this._fillLayerFloodFill(activeLayer, fillColor, fillAlpha, localX, localY, layerManager, boundarySnapshot);
+        try {
+            this._fillLayerFloodFill(
+                activeLayer,
+                fillColor,
+                fillAlpha,
+                localX,
+                localY,
+                layerManager,
+                boundarySnapshot,
+                { historyBeforeSnapshot, workingBeforeSnapshot }
+            );
+            if (isAnimationWorkingLayer) {
+                this._emitCafFillEvent('drawing:stroke-completed', activeLayer, localX, localY);
+            }
+        } catch (error) {
+            if (isAnimationWorkingLayer) {
+                this.eventBus?.emit('drawing:stroke-cancelled', {
+                    component: 'drawing',
+                    action: 'stroke-cancelled',
+                    data: {
+                        layerId: activeLayer.layerData?.id,
+                        mode: brushSettings.getMode?.() || 'fill'
+                    }
+                });
+            }
+            throw error;
+        }
     }
 
     /**
@@ -169,7 +221,7 @@ export class FillTool {
      * @param {LayerSystem} layerManager
      * @param {Object} boundarySnapshot 境界判定に使用するピクセルデータ
      */
-    _fillLayerFloodFill(layer, color, alpha, localX, localY, layerManager, boundarySnapshot) {
+    _fillLayerFloodFill(layer, color, alpha, localX, localY, layerManager, boundarySnapshot, options = {}) {
         const CONFIG = window.TEGAKI_CONFIG;
         const layerData = layer.layerData;
         const app = layerManager.app;
@@ -177,19 +229,50 @@ export class FillTool {
         if (!layerData?.renderTexture || !app?.renderer) return;
 
         // 塗り前のスナップショット取得（履歴用）
-        const beforeSnapshot = layerManager.createLayerRasterSnapshot?.(layer) || null;
+        const historyBeforeSnapshot = options.historyBeforeSnapshot
+            || layerManager.createLayerRasterSnapshot?.(layer)
+            || null;
+        const beforeSnapshot = options.workingBeforeSnapshot
+            || historyBeforeSnapshot
+            || null;
         if (!beforeSnapshot) return;
 
         const { pixels, width, height } = boundarySnapshot;
-        const startX = Math.floor(localX);
-        const startY = Math.floor(localY);
+        const targetBounds = normalizeRasterBounds(beforeSnapshot.rasterBounds, {
+            width: beforeSnapshot.width,
+            height: beforeSnapshot.height
+        });
+        targetBounds.width = beforeSnapshot.width;
+        targetBounds.height = beforeSnapshot.height;
+        let boundaryBounds = normalizeRasterBounds(boundarySnapshot.rasterBounds, {
+            x: this.settings.referenceAllLayers ? 0 : targetBounds.x,
+            y: this.settings.referenceAllLayers ? 0 : targetBounds.y,
+            width,
+            height
+        });
+        boundaryBounds.width = width;
+        boundaryBounds.height = height;
+        const croppedBoundary = this._cropBoundarySnapshotToProjectFrame(
+            { ...boundarySnapshot, width, height, pixels },
+            boundaryBounds,
+            layerManager,
+            { x: localX, y: localY }
+        );
+        const workingPixels = croppedBoundary?.pixels || pixels;
+        const workingWidth = croppedBoundary?.width || width;
+        const workingHeight = croppedBoundary?.height || height;
+        if (croppedBoundary?.rasterBounds) {
+            boundaryBounds = croppedBoundary.rasterBounds;
+        }
+        const startX = Math.floor(localX - boundaryBounds.x);
+        const startY = Math.floor(localY - boundaryBounds.y);
         const selectionBounds = window.CoreRuntime?.api?.selection
             ?.getBoundsForLayer?.(layerData.id);
         const selectionRect = selectionBounds ? {
-            x0: Math.max(0, Math.floor(selectionBounds.x)),
-            y0: Math.max(0, Math.floor(selectionBounds.y)),
-            x1: Math.min(width, Math.ceil(selectionBounds.x + selectionBounds.width)),
-            y1: Math.min(height, Math.ceil(selectionBounds.y + selectionBounds.height))
+            x0: Math.max(0, Math.floor(selectionBounds.x - boundaryBounds.x)),
+            y0: Math.max(0, Math.floor(selectionBounds.y - boundaryBounds.y)),
+            x1: Math.min(workingWidth, Math.ceil(selectionBounds.x + selectionBounds.width - boundaryBounds.x)),
+            y1: Math.min(workingHeight, Math.ceil(selectionBounds.y + selectionBounds.height - boundaryBounds.y))
         } : null;
         const isInsideSelection = (x, y) => !selectionRect || (
             x >= selectionRect.x0
@@ -198,7 +281,7 @@ export class FillTool {
             && y < selectionRect.y1
         );
 
-        if (startX < 0 || startX >= width || startY < 0 || startY >= height) return;
+        if (startX < 0 || startX >= workingWidth || startY < 0 || startY >= workingHeight) return;
         if (!isInsideSelection(startX, startY)) return;
 
         const gap = this.settings.gapClosePixels || 0;
@@ -208,20 +291,20 @@ export class FillTool {
         }
 
         // 1. Flood Fill アルゴリズムの実行 (BFS)
-        const mask = new Uint8Array(width * height);
+        const mask = new Uint8Array(workingWidth * workingHeight);
         const stack = [[startX, startY]];
         
-        const startIdx = (startY * width + startX) * 4;
-        const startR = pixels[startIdx];
-        const startG = pixels[startIdx + 1];
-        const startB = pixels[startIdx + 2];
-        const startA = pixels[startIdx + 3];
+        const startIdx = (startY * workingWidth + startX) * 4;
+        const startR = workingPixels[startIdx];
+        const startG = workingPixels[startIdx + 1];
+        const startB = workingPixels[startIdx + 2];
+        const startA = workingPixels[startIdx + 3];
 
         const isStartTransparent = startA < FILL_ALPHA_THRESHOLD;
 
         while (stack.length > 0) {
             const [x, y] = stack.pop();
-            const idx = y * width + x;
+            const idx = y * workingWidth + x;
 
             if (mask[idx] || !isInsideSelection(x, y)) continue;
             
@@ -232,15 +315,15 @@ export class FillTool {
                     for (let kx = -gap; kx <= gap; kx++) {
                         const nx = x + kx;
                         const ny = y + ky;
-                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                            const nIdx = (ny * width + nx) * 4;
-                            const na = pixels[nIdx + 3];
+                        if (nx >= 0 && nx < workingWidth && ny >= 0 && ny < workingHeight) {
+                            const nIdx = (ny * workingWidth + nx) * 4;
+                            const na = workingPixels[nIdx + 3];
                             if (isStartTransparent) {
                                 if (na >= FILL_ALPHA_THRESHOLD) { isWall = true; break; }
                             } else {
-                                const nr = pixels[nIdx];
-                                const ng = pixels[nIdx + 1];
-                                const nb = pixels[nIdx + 2];
+                                const nr = workingPixels[nIdx];
+                                const ng = workingPixels[nIdx + 1];
+                                const nb = workingPixels[nIdx + 2];
                                 const diff = Math.abs(nr - startR) + Math.abs(ng - startG) + Math.abs(nb - startB);
                                 if (diff >= FILL_COLOR_TOLERANCE * 3) { isWall = true; break; }
                             }
@@ -250,13 +333,13 @@ export class FillTool {
                 }
             } else {
                 const pixIdx = idx * 4;
-                const a = pixels[pixIdx + 3];
+                const a = workingPixels[pixIdx + 3];
                 if (isStartTransparent) {
                     if (a >= FILL_ALPHA_THRESHOLD) isWall = true;
                 } else {
-                    const r = pixels[pixIdx];
-                    const g = pixels[pixIdx + 1];
-                    const b = pixels[pixIdx + 2];
+                    const r = workingPixels[pixIdx];
+                    const g = workingPixels[pixIdx + 1];
+                    const b = workingPixels[pixIdx + 2];
                     const diff = Math.abs(r - startR) + Math.abs(g - startG) + Math.abs(b - startB);
                     if (diff >= FILL_COLOR_TOLERANCE * 3) isWall = true;
                 }
@@ -265,19 +348,19 @@ export class FillTool {
             if (!isWall) {
                 mask[idx] = 255;
                 if (x > 0 && isInsideSelection(x - 1, y)) stack.push([x - 1, y]);
-                if (x < width - 1 && isInsideSelection(x + 1, y)) stack.push([x + 1, y]);
+                if (x < workingWidth - 1 && isInsideSelection(x + 1, y)) stack.push([x + 1, y]);
                 if (y > 0 && isInsideSelection(x, y - 1)) stack.push([x, y - 1]);
-                if (y < height - 1 && isInsideSelection(x, y + 1)) stack.push([x, y + 1]);
+                if (y < workingHeight - 1 && isInsideSelection(x, y + 1)) stack.push([x, y + 1]);
             }
         }
 
         // 2. Gap Close dilation (if any)
         let maskAfterGap = mask;
         if (gap > 0) {
-            maskAfterGap = new Uint8Array(width * height);
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const idx = y * width + x;
+            maskAfterGap = new Uint8Array(workingWidth * workingHeight);
+            for (let y = 0; y < workingHeight; y++) {
+                for (let x = 0; x < workingWidth; x++) {
+                    const idx = y * workingWidth + x;
                     if (mask[idx] === 0) {
                         // 周囲 gap ピクセル内に塗られたピクセルがあれば、自分も塗る (Dilation)
                         let shouldExpand = false;
@@ -285,8 +368,8 @@ export class FillTool {
                             for (let kx = -gap; kx <= gap; kx++) {
                                 const nx = x + kx;
                                 const ny = y + ky;
-                                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                                    if (mask[ny * width + nx] === 255) { shouldExpand = true; break; }
+                                if (nx >= 0 && nx < workingWidth && ny >= 0 && ny < workingHeight) {
+                                    if (mask[ny * workingWidth + nx] === 255) { shouldExpand = true; break; }
                                 }
                             }
                             if (shouldExpand) break;
@@ -302,18 +385,18 @@ export class FillTool {
         // 3. Underpaint dilation (expand fill slightly into interior)
         let finalMask = maskAfterGap;
         if (underpaint > 0) {
-            finalMask = new Uint8Array(width * height);
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const idx = y * width + x;
+            finalMask = new Uint8Array(workingWidth * workingHeight);
+            for (let y = 0; y < workingHeight; y++) {
+                for (let x = 0; x < workingWidth; x++) {
+                    const idx = y * workingWidth + x;
                     if (maskAfterGap[idx] === 0) {
                         let shouldExpand = false;
                         for (let ky = -underpaint; ky <= underpaint; ky++) {
                             for (let kx = -underpaint; kx <= underpaint; kx++) {
                                 const nx = x + kx;
                                 const ny = y + ky;
-                                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                                    if (maskAfterGap[ny * width + nx] === 255) { shouldExpand = true; break; }
+                                if (nx >= 0 && nx < workingWidth && ny >= 0 && ny < workingHeight) {
+                                    if (maskAfterGap[ny * workingWidth + nx] === 255) { shouldExpand = true; break; }
                                 }
                             }
                             if (shouldExpand) break;
@@ -327,21 +410,21 @@ export class FillTool {
         }
 
         if (selectionRect) {
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    if (!isInsideSelection(x, y)) finalMask[y * width + x] = 0;
+            for (let y = 0; y < workingHeight; y++) {
+                for (let x = 0; x < workingWidth; x++) {
+                    if (!isInsideSelection(x, y)) finalMask[y * workingWidth + x] = 0;
                 }
             }
         }
 
         // 3. マスクテクスチャの生成
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = workingWidth;
+        canvas.height = workingHeight;
         const ctx = canvas.getContext('2d');
-        const maskImageData = ctx.createImageData(width, height);
+        const maskImageData = ctx.createImageData(workingWidth, workingHeight);
         
-        for (let i = 0; i < width * height; i++) {
+        for (let i = 0; i < workingWidth * workingHeight; i++) {
             const v = finalMask[i];
             const ii = i * 4;
             maskImageData.data[ii] = 255;
@@ -362,18 +445,24 @@ export class FillTool {
                 paths: structuredClone(beforeSnapshot.paths || [])
             };
 
-            for (let i = 0; i < width * height; i++) {
-                if (finalMask[i] !== 255) continue;
-                const ii = i * 4;
-                afterSnapshot.pixels[ii] = 0;
-                afterSnapshot.pixels[ii + 1] = 0;
-                afterSnapshot.pixels[ii + 2] = 0;
-                afterSnapshot.pixels[ii + 3] = 0;
+            for (let y = 0; y < workingHeight; y++) {
+                const targetY = boundaryBounds.y + y - targetBounds.y;
+                if (targetY < 0 || targetY >= afterSnapshot.height) continue;
+                for (let x = 0; x < workingWidth; x++) {
+                    if (finalMask[y * workingWidth + x] !== 255) continue;
+                    const targetX = boundaryBounds.x + x - targetBounds.x;
+                    if (targetX < 0 || targetX >= afterSnapshot.width) continue;
+                    const ii = (targetY * afterSnapshot.width + targetX) * 4;
+                    afterSnapshot.pixels[ii] = 0;
+                    afterSnapshot.pixels[ii + 1] = 0;
+                    afterSnapshot.pixels[ii + 2] = 0;
+                    afterSnapshot.pixels[ii + 3] = 0;
+                }
             }
 
             layerManager.restoreLayerRasterSnapshot(afterSnapshot);
             window.CoreRuntime?.api?.selection?.constrainLayer?.(layer, beforeSnapshot);
-            this._recordRasterFillHistory(layer, layerManager, beforeSnapshot, color, 0, 'eraser-fill');
+            this._recordRasterFillHistory(layer, layerManager, historyBeforeSnapshot, color, 0, 'eraser-fill');
 
             const layerIndex = layerManager.getLayerIndex(layer);
             layerManager.requestThumbnailUpdate(layerIndex, true);
@@ -391,14 +480,18 @@ export class FillTool {
 
         const maskTexture = Texture.from(canvas);
         const maskSprite = new Sprite(maskTexture);
+        maskSprite.position.set(boundaryBounds.x - targetBounds.x, boundaryBounds.y - targetBounds.y);
+        maskSprite.renderable = false;
+        maskSprite.eventMode = 'none';
 
         // 4. RenderTexture への焼き込み
         const fillGraphics = new Graphics();
-        fillGraphics.rect(0, 0, width, height);
+        fillGraphics.rect(0, 0, targetBounds.width, targetBounds.height);
         fillGraphics.fill({ color, alpha });
         fillGraphics.mask = maskSprite;
 
         const renderContainer = new Container();
+        renderContainer.addChild(maskSprite);
         renderContainer.addChild(fillGraphics);
 
         app.renderer.render({
@@ -408,13 +501,14 @@ export class FillTool {
         });
 
         // 5. 後始末
+        renderContainer.removeChild(maskSprite);
         renderContainer.destroy({ children: true });
         maskSprite.destroy({ texture: true, baseTexture: true });
 
         // 6. 履歴・サムネイル更新
         const method = 'floodfill';
         window.CoreRuntime?.api?.selection?.constrainLayer?.(layer, beforeSnapshot);
-        this._recordRasterFillHistory(layer, layerManager, beforeSnapshot, color, alpha, method);
+        this._recordRasterFillHistory(layer, layerManager, historyBeforeSnapshot, color, alpha, method);
         
         const layerIndex = layerManager.getLayerIndex(layer);
         layerManager.requestThumbnailUpdate(layerIndex, true);
@@ -437,16 +531,34 @@ export class FillTool {
         const layerData = layer.layerData;
         if (!layerData?.renderTexture || !app?.renderer) return;
 
+        const lassoBounds = this._getPointBounds(points);
+        const historyBeforeSnapshot = beforeSnapshot || layerManager.createLayerRasterSnapshot?.(layer);
+        if (!historyBeforeSnapshot) return;
+        if (lassoBounds && typeof layerManager.ensureLayerRasterBoundsForRect === 'function') {
+            const expanded = layerManager.ensureLayerRasterBoundsForRect(layer, lassoBounds, { padding: 0 });
+            if (expanded?.ok === false) return;
+        }
+
         // スナップショットが渡されていない場合は作成
-        const snapshot = beforeSnapshot || layerManager.createLayerRasterSnapshot?.(layer);
+        const snapshot = historyBeforeSnapshot;
         if (!snapshot) return;
 
         const width = layerData.renderTexture.width;
         const height = layerData.renderTexture.height;
+        const rasterBounds = normalizeRasterBounds(layerData.rasterBounds, {
+            width,
+            height
+        });
+        rasterBounds.width = width;
+        rasterBounds.height = height;
+        const localPoints = points.map(point => ({
+            x: point.x - rasterBounds.x,
+            y: point.y - rasterBounds.y
+        }));
 
         // 1. マスクの作成 (Graphics.poly)
         const maskGraphics = new Graphics();
-        maskGraphics.poly(points.map(p => ({ x: p.x, y: p.y })));
+        maskGraphics.poly(localPoints);
         maskGraphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
 
         // 2. 塗りつぶしの実行
@@ -480,6 +592,23 @@ export class FillTool {
                 method: 'lasso-fill'
             });
         }
+    }
+
+    _getPointBounds(points = []) {
+        if (!Array.isArray(points) || points.length < 1) return null;
+        const xs = points.map(point => Number(point?.x)).filter(Number.isFinite);
+        const ys = points.map(point => Number(point?.y)).filter(Number.isFinite);
+        if (!xs.length || !ys.length) return null;
+        const minX = Math.floor(Math.min(...xs));
+        const minY = Math.floor(Math.min(...ys));
+        const maxX = Math.ceil(Math.max(...xs));
+        const maxY = Math.ceil(Math.max(...ys));
+        return {
+            x: minX,
+            y: minY,
+            width: Math.max(1, maxX - minX),
+            height: Math.max(1, maxY - minY)
+        };
     }
 
     _fillLayerLegacy(layer, color, alpha, layerManager) {
@@ -522,6 +651,7 @@ export class FillTool {
     _recordRasterFillHistory(layer, layerManager, beforeSnapshot, fillColor, fillAlpha, method) {
         const history = window.History;
         if (!history || history.isApplying || !beforeSnapshot) return;
+        if (layer?.layerData?.isAnimationWorkingLayer === true) return;
 
         const afterSnapshot = layerManager.createLayerRasterSnapshot(layer);
         if (!afterSnapshot) return;
@@ -541,6 +671,97 @@ export class FillTool {
             byteSize: (beforeSnapshot.pixels?.byteLength || 0)
                 + (afterSnapshot.pixels?.byteLength || 0)
         });
+    }
+
+    _ensureLayerRasterFrameForFill(activeLayer, layerManager) {
+        if (!activeLayer?.layerData?.renderTexture) return null;
+        if (typeof layerManager?.ensureLayerRasterBoundsForRect !== 'function') return null;
+
+        const canvasConfig = layerManager.config?.canvas || window.TEGAKI_CONFIG?.canvas || {};
+        const width = Math.max(
+            1,
+            Math.round(Number(canvasConfig.width || layerManager.canvasWidth || activeLayer.layerData.renderTexture.width || 1))
+        );
+        const height = Math.max(
+            1,
+            Math.round(Number(canvasConfig.height || layerManager.canvasHeight || activeLayer.layerData.renderTexture.height || 1))
+        );
+        return layerManager.ensureLayerRasterBoundsForRect(activeLayer, {
+            x: 0,
+            y: 0,
+            width,
+            height
+        }, { padding: 0 });
+    }
+
+    _emitCafFillEvent(type, layer, localX, localY) {
+        const mode = window.brushSettings?.getMode?.() || 'fill';
+        this.eventBus?.emit(type, {
+            component: 'drawing',
+            action: type.replace('drawing:', ''),
+            data: {
+                mode,
+                layerId: layer.layerData?.id,
+                localX,
+                localY,
+                pressure: 1
+            }
+        });
+    }
+
+    _cropBoundarySnapshotToProjectFrame(snapshot, bounds, layerManager, point) {
+        const canvasConfig = layerManager?.config?.canvas || window.TEGAKI_CONFIG?.canvas || {};
+        const projectFrame = {
+            x: 0,
+            y: 0,
+            width: Math.max(1, Math.round(Number(canvasConfig.width || snapshot.width || 1))),
+            height: Math.max(1, Math.round(Number(canvasConfig.height || snapshot.height || 1)))
+        };
+        if (
+            point.x < projectFrame.x
+            || point.y < projectFrame.y
+            || point.x >= projectFrame.x + projectFrame.width
+            || point.y >= projectFrame.y + projectFrame.height
+        ) {
+            return null;
+        }
+
+        const x0 = Math.max(bounds.x, projectFrame.x);
+        const y0 = Math.max(bounds.y, projectFrame.y);
+        const x1 = Math.min(bounds.x + bounds.width, projectFrame.x + projectFrame.width);
+        const y1 = Math.min(bounds.y + bounds.height, projectFrame.y + projectFrame.height);
+        const cropWidth = Math.max(0, x1 - x0);
+        const cropHeight = Math.max(0, y1 - y0);
+        if (
+            cropWidth <= 0
+            || cropHeight <= 0
+            || (cropWidth === snapshot.width && cropHeight === snapshot.height && x0 === bounds.x && y0 === bounds.y)
+        ) {
+            return null;
+        }
+
+        const source = snapshot.pixels;
+        const cropped = new Uint8ClampedArray(cropWidth * cropHeight * 4);
+        for (let row = 0; row < cropHeight; row++) {
+            const sourceY = y0 - bounds.y + row;
+            const sourceX = x0 - bounds.x;
+            const sourceOffset = (sourceY * snapshot.width + sourceX) * 4;
+            const targetOffset = row * cropWidth * 4;
+            cropped.set(source.subarray(sourceOffset, sourceOffset + cropWidth * 4), targetOffset);
+        }
+
+        return {
+            ...snapshot,
+            width: cropWidth,
+            height: cropHeight,
+            pixels: cropped,
+            rasterBounds: {
+                x: x0,
+                y: y0,
+                width: cropWidth,
+                height: cropHeight
+            }
+        };
     }
 
     isToolActive() {

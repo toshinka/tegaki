@@ -46,9 +46,6 @@ window.GIFExporter = (function() {
             }
             
             const frameCount = this.manager.getFrameCount?.() || 0;
-            if (frameCount === 0) {
-                throw new Error('アニメーションにフレームが含まれていません');
-            }
             
             const settings = {
                 width: options.width || window.TEGAKI_CONFIG.canvas.width,
@@ -98,13 +95,25 @@ window.GIFExporter = (function() {
                     resolution: settings.width / window.TEGAKI_CONFIG.canvas.width
                 });
 
-                if (timelineFrames) {
+                if (timelineFrames && timelineFrames.length > 0) {
                     timelineFrames.forEach((frame, index) => {
                         gif.addFrame(frame.canvas, { delay: frame.delayMs });
                         window.TegakiEventBus?.emit('export:frame-rendered', {
                             frame: index + 1,
                             total: timelineFrames.length
                         });
+                    });
+                } else if (frameCount <= 1) {
+                    const canvas = this.manager.renderToCanvas({
+                        width: settings.width,
+                        height: settings.height,
+                        resolution: 1,
+                        transparent: options.transparent === true
+                    });
+                    gif.addFrame(canvas, { delay: 100 });
+                    window.TegakiEventBus?.emit('export:frame-rendered', {
+                        frame: 1,
+                        total: 1
                     });
                 } else {
                     if (!this.manager?.animationSystem) {

@@ -158,11 +158,16 @@ export class SettingsPopup {
                                 <option value="128">128 MB</option>
                                 <option value="256">256 MB</option>
                                 <option value="512">512 MB</option>
-                                <option value="1024">1024 MB</option>
+                                <option value="1024">1 GB</option>
+                                <option value="2048">2 GB</option>
+                                <option value="4096">4 GB</option>
+                                <option value="8192">8 GB</option>
+                                <option value="12288">12 GB</option>
+                                <option value="16384">16 GB</option>
                             </select>
                         </label>
                     </div>
-                    <div id="history-usage-display" class="setting-description">履歴: 0 / 250　使用量: 0 / 256 MB</div>
+                    <div id="history-usage-display" class="setting-description">履歴: 0 / 250　使用量: 0 / 512 MB</div>
                 </div>
             </div>
 
@@ -196,6 +201,22 @@ export class SettingsPopup {
                         <button class="pressure-curve-btn" data-curve="ease-in">軽め</button>
                         <button class="pressure-curve-btn" data-curve="ease-out">重め</button>
                     </div>
+                </div>
+
+                <div class="setting-group">
+                    <label class="history-setting-auto">
+                        <input id="pressure-opacity-toggle" type="checkbox" checked>
+                        筆圧で濃度を変える
+                    </label>
+                    <div class="setting-label">筆圧濃度</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pressure-opacity-slider">
+                            <div class="slider-track" id="pressure-opacity-track"></div>
+                            <div class="slider-handle" id="pressure-opacity-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pressure-opacity-value">0.65</div>
+                    </div>
+                    <div class="setting-description">弱い筆圧では線を薄くします。上限はOPACITYに従い、高いほど0から上限まで濃淡が強く出ます。</div>
                 </div>
             </div>
 
@@ -332,6 +353,11 @@ export class SettingsPopup {
             pressureTrack: document.getElementById('pressure-track'),
             pressureHandle: document.getElementById('pressure-handle'),
             pressureValue: document.getElementById('pressure-value'),
+            pressureOpacityToggle: document.getElementById('pressure-opacity-toggle'),
+            pressureOpacitySlider: document.getElementById('pressure-opacity-slider'),
+            pressureOpacityTrack: document.getElementById('pressure-opacity-track'),
+            pressureOpacityHandle: document.getElementById('pressure-opacity-handle'),
+            pressureOpacityValue: document.getElementById('pressure-opacity-value'),
 
             smoothingSlider: document.getElementById('smoothing-slider'),
             smoothingTrack: document.getElementById('smoothing-track'),
@@ -405,6 +431,7 @@ export class SettingsPopup {
             let min = 0, max = 1.0;
             if (sliderType === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
             else if (sliderType === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
+            else if (sliderType === 'pressureOpacity') { min = 0.0; max = 1.0; }
             else if (sliderType === 'airbrushFlow') { min = 0.01; max = 1.0; }
             else if (sliderType === 'airbrushSoftness') { min = 0.0; max = 1.0; }
             else if (sliderType === 'airbrushScatter') { min = 0.0; max = 1.0; }
@@ -425,6 +452,7 @@ export class SettingsPopup {
                 
                 let settingKey = type;
                 if (type === 'pressure') settingKey = 'pressureCorrection';
+                if (type === 'pressureOpacity') settingKey = 'pressureOpacityStrength';
                 if (this.settingsManager) {
                     const val = this[`current${type.charAt(0).toUpperCase() + type.slice(1)}`];
                     this.settingsManager.set(settingKey, val);
@@ -464,6 +492,7 @@ export class SettingsPopup {
                 let min = 0, max = 1.0;
                 if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
                 else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
+                else if (type === 'pressureOpacity') { min = 0.0; max = 1.0; }
                 else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
                 else if (type === 'airbrushSoftness') { min = 0.0; max = 1.0; }
                 else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
@@ -473,17 +502,19 @@ export class SettingsPopup {
                 
                 let settingKey = type;
                 if (type === 'pressure') settingKey = 'pressureCorrection';
+                if (type === 'pressureOpacity') settingKey = 'pressureOpacityStrength';
                 this.settingsManager?.set(settingKey, value);
             });
         };
 
-        ['pressure', 'smoothing', 'airbrushFlow', 'airbrushSoftness', 'airbrushScatter'].forEach(setupSliderEvents);
+        ['pressure', 'smoothing', 'pressureOpacity', 'airbrushFlow', 'airbrushSoftness', 'airbrushScatter'].forEach(setupSliderEvents);
     }
 
     _updateGenericSlider(type, value) {
         let min = 0, max = 1.0;
         if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
         else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
+        else if (type === 'pressureOpacity') { min = 0.0; max = 1.0; }
         else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
         else if (type === 'airbrushSoftness') { min = 0.0; max = 1.0; }
         else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
@@ -503,6 +534,7 @@ export class SettingsPopup {
         if (this.eventBus) {
             let eventName = `settings:${type.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
             if (type === 'pressure') eventName = 'settings:pressure-correction';
+            if (type === 'pressureOpacity') eventName = 'settings:pressure-opacity-strength';
             this.eventBus.emit(eventName, { value: val });
         }
     }
@@ -590,6 +622,9 @@ export class SettingsPopup {
                 this.settingsManager?.set('pressureCurve', curve);
             });
         });
+        this.elements.pressureOpacityToggle?.addEventListener('change', () => {
+            this.settingsManager?.set('pressureOpacityEnabled', this.elements.pressureOpacityToggle.checked);
+        });
     }
 
     _getDefaults() {
@@ -599,6 +634,8 @@ export class SettingsPopup {
             pressureCorrection: 1.0,
             smoothing: 0.5,
             pressureCurve: 'linear',
+            pressureOpacityEnabled: true,
+            pressureOpacityStrength: 0.65,
             airbrushFlow: managerDefaults.airbrushFlow ?? 0.08,
             airbrushSoftness: managerDefaults.airbrushSoftness ?? 0.8,
             airbrushScatter: managerDefaults.airbrushScatter ?? 0.0,
@@ -608,7 +645,7 @@ export class SettingsPopup {
             bucketReferenceAllLayers: true,
             historyAutoAdjust: true,
             historyMaxEntries: 250,
-            historyMaxMemoryMB: 256
+            historyMaxMemoryMB: 512
         };
     }
 
@@ -621,6 +658,7 @@ export class SettingsPopup {
         const defaults = this._getDefaults();
         this._updateGenericSlider('pressure', settings.pressureCorrection ?? defaults.pressureCorrection);
         this._updateGenericSlider('smoothing', settings.smoothing ?? defaults.smoothing);
+        this._updateGenericSlider('pressureOpacity', settings.pressureOpacityStrength ?? defaults.pressureOpacityStrength);
         this._updateGenericSlider('airbrushFlow', settings.airbrushFlow ?? defaults.airbrushFlow);
         this._updateGenericSlider('airbrushSoftness', settings.airbrushSoftness ?? defaults.airbrushSoftness);
         this._updateGenericSlider('airbrushScatter', settings.airbrushScatter ?? defaults.airbrushScatter);
@@ -628,13 +666,20 @@ export class SettingsPopup {
         this._updateBucketUnderpaintSlider(settings.bucketUnderpaint ?? defaults.bucketUnderpaint);
         this._setBucketRefVisibility(settings.bucketReferenceAllLayers ?? defaults.bucketReferenceAllLayers);
         this._applyPressureCurveUI(settings.pressureCurve ?? defaults.pressureCurve);
+        this._setPressureOpacityEnabled(settings.pressureOpacityEnabled ?? defaults.pressureOpacityEnabled);
         this._setStatusPanelVisibility(settings.statusPanelVisible ?? defaults.statusPanelVisible);
         this._applyHistorySettingsUI(settings);
     }
 
+    _setPressureOpacityEnabled(enabled) {
+        if (this.elements.pressureOpacityToggle) {
+            this.elements.pressureOpacityToggle.checked = enabled !== false;
+        }
+    }
+
     _applyHistorySettingsUI(settings) {
         const automatic = this.settingsManager?.getAutomaticHistoryDefaults?.()
-            || { maxEntries: 250, maxMemoryMB: 256 };
+            || { maxEntries: 250, maxMemoryMB: 512 };
         const autoAdjust = settings.historyAutoAdjust !== false;
         if (this.elements.historyAutoAdjust) {
             this.elements.historyAutoAdjust.checked = autoAdjust;
@@ -646,7 +691,7 @@ export class SettingsPopup {
         }
         if (this.elements.historyMaxMemory) {
             this.elements.historyMaxMemory.value = String(
-                autoAdjust ? automatic.maxMemoryMB : (settings.historyMaxMemoryMB || 256)
+                autoAdjust ? automatic.maxMemoryMB : (settings.historyMaxMemoryMB || 512)
             );
         }
         this._syncHistoryControlState();
@@ -665,8 +710,19 @@ export class SettingsPopup {
         if (!usage) return;
         const usedMB = usage.bytes / (1024 * 1024);
         const maxMB = usage.maxBytes / (1024 * 1024);
+        const usageRatio = usage.maxBytes > 0 ? usage.bytes / usage.maxBytes : 0;
+        const formatLimit = (valueMB) => {
+            return valueMB >= 1024
+                ? `${(valueMB / 1024).toFixed(valueMB % 1024 === 0 ? 0 : 1)} GB`
+                : `${Math.round(valueMB)} MB`;
+        };
+        const pressure = usageRatio >= 0.95 ? 'critical' : (usageRatio >= 0.8 ? 'warning' : 'normal');
+        const suffix = pressure === 'critical'
+            ? '　上限付近'
+            : (pressure === 'warning' ? '　高め' : '');
+        this.elements.historyUsage.dataset.pressure = pressure;
         this.elements.historyUsage.textContent =
-            `履歴: ${usage.entries} / ${usage.maxEntries}　使用量: ${usedMB.toFixed(1)} / ${Math.round(maxMB)} MB`;
+            `履歴: ${usage.entries} / ${usage.maxEntries}　使用量: ${usedMB.toFixed(1)} MB / ${formatLimit(maxMB)}${suffix}`;
     }
 
     _applyPressureCurveUI(curve) {

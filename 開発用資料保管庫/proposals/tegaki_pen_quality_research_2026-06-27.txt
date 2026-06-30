@@ -1,0 +1,600 @@
+※以下は別AIが限定されたTEGAKIの情報で調査したものであり、実際に価値のあるデータなのかは再度調査の必要あり。
+
+----------------------
+
+Tegaki ペン品質改善メモ
+Graphite.rs 参考点 + WebGPU 解放時の可能性 + 2025-2026追加調査
+調査日: 2026-06-27
+
+============================================================
+0. 要約
+============================================================
+
+結論:
+Graphite.rs / Graphite は、今の Tegaki のペン品質改善に直接組み込むライブラリとしては適さない。
+ただし「非破壊ストローク」「ノードグラフ的な再生成」「ラスターとベクターの中間表現」という設計思想は参考になる。
+
+WebGPU は、単に描画APIを置き換えるだけではペンの線は綺麗にならない。
+ただし、次のような仕組みを作る場合には品質向上の余地が大きい。
+
+- GPUでストローク形状を再生成する
+- analytic AA / coverage AA で線の縁を綺麗にする
+- SDF / MSDF / 距離場的な表現で拡大縮小に強い線を作る
+- テクスチャブラシ、エアブラシ、粒子ブラシ、混色、ぼかし、にじみをcompute shaderで処理する
+- ストロークをピクセルではなく点列 + パラメータとして保持し、必要時に再レンダーする
+
+ただし Tegaki の現在方針では WebGPU、SDF/MSDF、WebGL2 Mesh は正式Phaseまで凍結、DPR 1倍、内部2倍化禁止、Canvas2D本番stroke混入禁止である。
+したがって今すぐ本体へ入れる候補ではなく、将来の隔離実験として扱うのが安全。
+
+2025-2026時点で追加で拾えた重要候補は以下。
+
+A. すぐ効きやすい: getCoalescedEvents(), pointerrawupdate, getPredictedEvents(), Ink API
+B. 中期で効く: StrokeQualityFilter、筆圧平滑化、速度依存補間、角保存simplification、ペン別補正
+C. 研究価値あり: GPU vector brush rendering / Ciallo、Graphiteの2026 GPU brush engine計画
+D. 表現系として将来価値あり: Neural Brush / AI brush、ただし基本ペン改善としては重い
+
+現実的な優先順位:
+1. WebGPUではなく、入力点の品質を上げる
+2. stroke-recorder と stroke-renderer / brush-core の間に StrokeQualityFilter を追加する
+3. 現行PixiJS経路のまま、筆圧・速度・補間・join/capを改善する
+4. WebGPUは本体から隔離した Brush Lab で比較実験する
+5. 将来、WebGPUを解放するなら「通常ペン全面置換」ではなく「GPU Brush / Vector Brush / 高品質AAペン」の別経路として始める
+
+============================================================
+1. Tegaki現行方針との関係
+============================================================
+
+Tegaki の現行描画経路は以下。
+
+PointerEvent
+  -> drawing-engineで座標変換
+  -> stroke-recorderへlocal座標を記録
+  -> brush-coreが短い線分を生成
+  -> 対象LayerのRenderTextureへ逐次焼き込み
+  -> pointerupで履歴と最終状態を確定
+
+現行方針上の重要制約:
+
+- 本番描画は PixiJS RenderTexture へのライブラスター焼き込み
+- WebGPU、SDF/MSDF、WebGL2 Mesh は正式Phaseまで凍結
+- Canvas2D を本番stroke描画へ混入しない
+- DPRは1倍
+- 内部2倍化や resolution: 2 は採用しない
+- 出力サイズと内部作業サイズを一致させる
+- perfect-freehand は補助経路。線を過度に丸める既定値へ戻さない
+
+このため、今すぐの改善は「大規模レンダリング基盤置換」ではなく、入力点・点列補正・筆圧補正・既存PixiJS焼き込み品質の改善に置くのが安全。
+
+============================================================
+2. Graphite.rs / Graphite から参考にできること
+============================================================
+
+2.1 Graphite は何か
+
+Graphite は Rust 製のオープンソース2Dグラフィックエディタ。
+現在の公開説明では、主な成熟領域は vector art / graphic design / procedural graphics であり、ラスター編集は限定的・実験的。
+Graphite の中核は Graphene というノードベース・非破壊編集の考え方。
+
+重要点:
+Graphite は「ペンエンジンだけを持ってくる軽量ライブラリ」ではない。
+Tegakiに導入するには、Rust/WASM、ノードグラフ、非破壊ドキュメント、再レンダー、履歴、保存形式などを巻き込む。
+
+2.2 Graphite のラスター筆は現時点で未成熟
+
+Graphite公式ドキュメントでは、Raster compositing は成長中の能力であり、Brush tool は simple doodles and sketches 用のプロトタイプとされている。
+また、能力が限定的で、バグや性能問題があり、将来全面的に書き直す予定と説明されている。
+
+したがって、Graphiteの現在のBrush toolを Tegaki の高品質ペンの参考実装として見るのは危険。
+
+2.3 参考になる設計思想
+
+Graphite から参考にできるのは、実装コードより設計思想。
+
+(1) ストロークを非破壊データとして扱う
+
+ピクセルへ即焼き込みして終わりではなく、点列・筆圧・傾き・ブラシパラメータ・生成手順を残し、必要に応じて再生成する。
+Tegakiでも stroke-recorder に点列を残しているなら、将来的に「再レンダー」「後補正」「高品質確定描画」に進める余地がある。
+
+(2) ラスターとベクターの中間表現
+
+完全なベクターではなく、ラスターの表現力を持ちながら、中心線・スタンプ・エアブラシなどのパラメータを保持する。
+これは後述の Ciallo に近い方向。
+
+(3) ノードグラフ的な再生成
+
+Tegaki本体にGraphite型ノードグラフを入れる必要はない。
+ただし「StrokeQualityFilterを1ステップとして扱う」「確定時に点列から最終strokeを再生成する」程度なら参考になる。
+
+(4) キャッシュと再計算の分離
+
+GraphiteのGrapheneはノード計算結果をキャッシュし、変更された下流だけ再計算する発想を持つ。
+Tegakiでも将来、CAFや多数フレームで「ストロークデータは保持、表示用RenderTextureはキャッシュ」と分ける設計に活かせる。
+
+2.4 Tegakiへの判断
+
+採用判断:
+- Graphite本体やGrapheneをTegakiへ直接導入しない
+- GraphiteのBrush toolを高品質ペン実装として信用しない
+- 参考にするのは「非破壊ストローク」「再レンダー」「ノード的処理段階」「キャッシュ」の思想だけ
+
+============================================================
+3. WebGPUを解放した場合にペン品質が上がる要素
+============================================================
+
+3.1 WebGPUで上がる品質と、上がらない品質
+
+WebGPUで上がりやすいもの:
+
+- 複雑なブラシの処理速度
+- 大きいブラシサイズでの安定性
+- エアブラシ・ぼかし・にじみ・混色
+- テクスチャブラシや粒子ブラシ
+- GPU上でのcoverage / analytic AA
+- ストローク再生成と高品質確定描画
+- 多数ストロークのプレビュー・再描画
+
+WebGPUだけでは上がらないもの:
+
+- 入力点が少ない問題
+- 筆圧が暴れる問題
+- 低速時の手ブレ
+- 速筆時のカクつき
+- 補間が直線的な問題
+- 描画中と確定後の線が違う問題
+
+つまり、WebGPUは「描画計算の器」を強くする技術。
+ペンの気持ちよさには、入力処理・点列処理・筆圧処理の方が先に効く。
+
+3.2 WebGPUで狙える具体的改善
+
+A. GPU Brush / compute brush
+
+compute shaderで、ブラシ先端のスタンプ、ぼかし、散布、粒子、にじみ、混色を処理する。
+CPUでは重い処理でも並列化できる。
+
+向くブラシ:
+- airbrush
+- watercolor風
+- pencil grain
+- smudge
+- blur brush
+- thick paint風
+- large soft brush
+
+向かない、または過剰なもの:
+- 単純な1px〜数pxの普通ペン
+- 小さいキャンバスでの軽量線画ペン
+
+B. analytic AA / coverage AA
+
+線の輪郭を単純なピクセル塗りではなく、ピクセル内の被覆率として計算する。
+これにより、DPR 1倍でも線の縁が自然になる可能性がある。
+内部2倍化禁止のTegakiでは、解像度を上げずに縁を改善する技術として価値がある。
+
+C. SDF / MSDF / 距離場ベースのstroke
+
+中心線や輪郭から距離場を作り、シェーダーで滑らかな境界を描く。
+拡大・縮小・変形に強い。
+ただし現行方針ではSDF/MSDFは凍結対象。
+将来の「清書ペン」「ベクター補正ペン」用の研究候補。
+
+D. GPU vector brush rendering
+
+ストロークをベクター的に保持しつつ、ラスター的なスタンプ・エアブラシ表現をGPUで描く。
+2025-2026周辺で特に注目できるのが Ciallo。
+
+E. 非破壊・解像度非依存stroke
+
+点列・筆圧・傾き・ブラシ設定を保存し、必要に応じてGPUで再レンダーする。
+線の後補正、キャンバスサイズ変更、出力サイズ変更に強い。
+ただしTegakiの現在の正本はRenderTextureなので、大きな設計変更になる。
+
+3.3 WebGPU化のリスク
+
+- PixiJSの現行RenderTexture基盤と二重化しやすい
+- 履歴、Undo/Redo、CAF、保存復元、Exportとの境界が複雑になる
+- GPUリソース管理、メモリ破棄、デバイスロスト対応が必要
+- ブラウザ差やドライバ差を受けやすい
+- WebGPU shader / pipeline のデバッグコストが高い
+- セキュリティ・互換性面の新しい不確実性がある
+
+3.4 WebGPU解放時の安全な入り方
+
+本体置換ではなく、隔離した Brush Lab として始める。
+
+Brush Lab の比較対象:
+
+- 現行PixiJS方式
+- 現行PixiJS + StrokeQualityFilter
+- WebGPU analytic stroke
+- WebGPU texture brush
+- WebGPU airbrush / soft brush
+
+評価軸:
+
+- 入力遅延
+- 線の縁の綺麗さ
+- 筆圧変化の自然さ
+- 入り抜き
+- 速筆時の破綻
+- 低速時の震え
+- Undo保存コスト
+- CAF多枚数時のメモリ / VRAM
+- Export結果との一致
+
+============================================================
+4. 2025-2026で追加調査した品質向上候補
+============================================================
+
+4.1 getCoalescedEvents()
+
+最重要候補。
+PointerEventでは、ブラウザが複数の細かい移動を1つのpointermoveにまとめることがある。
+getCoalescedEvents()を使うと、まとめられる前の細かい点列を取り出せる。
+W3C Pointer Events仕様では、描画アプリでより滑らかな曲線に近づけられる例が説明されている。
+
+Tegakiへの効き方:
+
+- 速筆時のカクつきを減らせる可能性
+- 直線補間ではなく、実際のポインタ移動に近い点列を使える
+- 現行構造に比較的入れやすい
+- WebGPU不要
+
+注意:
+
+- 親イベントとcoalesced eventsを二重処理しない
+- timeStamp順を維持する
+- pointerrawupdateと併用する場合はイベント順に注意
+
+推奨度: 最優先
+
+4.2 pointerrawupdate
+
+pointermoveより高頻度・低遅延に近い入力を受け取るためのイベント。
+仕様上は、ユーザーエージェントが可能な限り早く、JavaScriptが処理できる頻度でdispatchすることを目指す。
+
+Tegakiへの効き方:
+
+- 高リフレッシュレートペン環境で入力密度が上がる可能性
+- 速筆時の追従性が上がる可能性
+
+注意:
+
+- 対応ブラウザが限定される
+- 追加するとページ性能へ悪影響が出る可能性が仕様上も注意されている
+- まずは feature detect して実験設定にするべき
+
+推奨度: 実験候補
+
+4.3 getPredictedEvents()
+
+ブラウザが未来のポインタ位置を予測するAPI。
+描画アプリは予測点へ一時的に「描き先」を出し、次の実測点が来たら予測描画を捨てることで体感遅延を下げられる。
+
+Tegakiへの効き方:
+
+- 描画遅延を視覚的に減らせる可能性
+- 実際の最終線品質ではなく、ライブ時の気持ちよさに効く
+
+注意:
+
+- 予測が外れるとゴーストや戻りが出る
+- RenderTextureへ直接焼き込むと取り消しが難しい
+- Tegakiでは「preview layer」にだけ描く必要がある
+
+推奨度: 中期実験
+
+4.4 Ink API / Delegated Ink Trail
+
+OSレベルのcompositorを使ってペン軌跡を低遅延表示するためのAPI。
+MDNでは、inking appでペンストロークを描く際にレイテンシ低減と性能向上を目的とするAPIと説明されている。
+
+Tegakiへの効き方:
+
+- 確定線ではなく、ライブ中の追従感に効く
+- JavaScript event loopを迂回する低遅延表示の可能性がある
+
+注意:
+
+- 対応が限定的
+- 表示できる軌跡表現は制限される可能性が高い
+- 本番strokeとは別の低遅延プレビューとして扱うべき
+
+推奨度: Chrome限定の研究候補
+
+4.5 Canvas desynchronized
+
+Canvas context取得時の desynchronized ヒントは、キャンバスのpaint cycleをevent loopからずらして低遅延化するためのヒント。
+ただし Tegaki はPixiJS / WebGL系RenderTextureであり、Canvas2D本番stroke混入は禁止なので直接候補ではない。
+
+Tegakiへの効き方:
+
+- 低遅延表示の思想としては参考になる
+- Canvas2D本番描画への導入は不適
+
+推奨度: Tegaki本体では低い
+
+4.6 GPU-accelerated vector brush rendering / Ciallo
+
+Ciallo は、デジタルペインティングとアニメーション向けに、ラスター的なブラシ表現とベクター的な編集しやすさのギャップを埋めるGPUベースのstroke rendering研究。
+vanilla、stamp、airbrush strokesの効率的なレンダリングを扱い、open-source prototype drawing systemもある。
+
+Tegakiへの効き方:
+
+- Graphiteより直接的に「ペン品質 / GPU brush」に関係する
+- スタンプブラシ、エアブラシ、再編集可能strokeの参考になる
+- ラスター直焼きとベクター保持の中間設計として有力
+
+注意:
+
+- 研究実装をそのままTegakiへ入れる話ではない
+- WebGPU / WebGL / mesh / shader の導入を伴う可能性が高い
+- 現行凍結方針とは衝突する
+
+推奨度: WebGPU解放後の主要研究候補
+
+4.7 Graphite 2026 GPU brush engine 計画
+
+Google Summer of Code 2026のGraphite関連プロジェクトに、drawing tablet / touch support と modern GPU-accelerated brush engine がある。
+説明では pressure / tilt 対応、非破壊・解像度非依存stroke rendering、高品質painting workflowが含まれる。
+
+Tegakiへの効き方:
+
+- 方向性としては非常に近い
+- ただし2026時点では「参考になる未来方向」であり、安定した採用候補ではない
+- 成果が出たら後追い調査する価値がある
+
+推奨度: 継続監視
+
+4.8 Neural Brush / AI Brush
+
+NVIDIA Neural Brushstroke Engine のように、GAN等で画材風のブラシ表現を学習し、ユーザーのstrokeに応じた自然画材風ブラシを作る研究がある。
+
+Tegakiへの効き方:
+
+- 特殊ブラシ、質感ブラシ、後処理には面白い
+- 普通の線画ペンの品質改善としては重い
+- ブラウザ内リアルタイム用途ではモデルサイズ、推論速度、UI制御が課題
+
+推奨度: 長期研究。基本ペン改善では後回し。
+
+============================================================
+5. Tegaki向け実装ロードマップ案
+============================================================
+
+Phase A: 低リスク・高効果
+
+A1. getCoalescedEvents()対応
+
+pointer-handler または stroke-recorder 入口で、pointermove / pointerrawupdate の点列抽出を統一する。
+
+処理方針:
+
+- event.getCoalescedEvents があればそれを使う
+- なければ event 単体を使う
+- 親イベントとcoalesced eventを二重処理しない
+- timeStamp順に stroke-recorder へ渡す
+- pressure / tilt / pointerType / buttons を保持する
+
+A2. 筆圧だけを平滑化する
+
+座標を強く平滑化すると、描き味が遅れる。
+まず pressure のみ EMA / median-like filter を入れる。
+
+例:
+
+- pressureSmooth = lerp(prevPressure, rawPressure, alpha)
+- alpha は速度や筆圧変化量で可変
+- 入り抜きでは過度に鈍らせない
+
+A3. 極小ジッター除去
+
+低速時にだけ、0.1〜0.5px程度の揺れを抑える。
+固定値ではなく、ブラシサイズ・ズーム・速度で変える。
+
+A4. 計測ログ
+
+品質改善は主観だけだと判断できない。
+debug配下で次を測る。
+
+- event間隔
+- coalesced event数
+- point間距離
+- pressure変化量
+- stroke生成時間
+- renderTexture焼き込み時間
+- pointerup確定時間
+
+Phase B: StrokeQualityFilter
+
+stroke-recorder と brush-core / stroke-renderer の間に薄い変換層を作る。
+
+役割:
+
+- raw pointsを受け取る
+- ペン種別ごとに補正する
+- 補正後pointsを既存描画へ渡す
+- raw pointsは必要なら保存できるようにする
+
+フィルタ候補:
+
+- pressure smoothing
+- velocity estimation
+- centripetal Catmull-Rom interpolation
+- angle-preserving simplification
+- taper correction
+- speed-to-width correction
+- minimum segment merge
+
+注意:
+
+- perfect-freehand の smoothing を単に上げるだけにしない
+- ライブ描画と確定描画で見た目を変えない
+- Undo/Redoや保存正本を壊さない
+
+Phase C: ペン別プリセット
+
+同じ補正を全ペンにかけない。
+
+例:
+
+Gペン:
+- 角を残す
+- 筆圧はやや滑らか
+- 入り抜きを強める
+
+鉛筆:
+- 座標補正は弱め
+- 筆圧・速度で粒子密度変化
+- テクスチャ感重視
+
+サインペン:
+- 線幅変化は少なめ
+- edge AA重視
+- 速度依存の揺れ除去
+
+エアブラシ:
+- WebGPU候補
+- CPU/PixiJSでは軽量実装に留める
+
+Phase D: WebGPU Brush Lab
+
+本体から隔離して、WebGPUを実験する。
+通常Layer、CAF、History、保存には接続しない。
+
+実験内容:
+
+- 同じ点列を現行PixiJSとWebGPUで描き比べる
+- analytic AA stroke
+- texture stamp brush
+- soft brush / airbrush
+- large brush performance
+- device lost handling
+
+採用判定:
+
+- 現行PixiJS + StrokeQualityFilterより明確に良いか
+- 遅延が悪化しないか
+- CAF多枚数でVRAMが破綻しないか
+- Undo/Redoと保存設計を壊さないか
+
+============================================================
+6. 優先順位表
+============================================================
+
+最優先:
+- getCoalescedEvents()
+- 筆圧平滑化
+- 速度計算
+- 極小ジッター除去
+- StrokeQualityFilter設計
+
+次点:
+- pointerrawupdate 実験
+- getPredictedEvents による preview-only 描き先表示
+- ペン別補正プリセット
+- join/cap/入り抜き改善
+
+中期:
+- Ciallo型 GPU vector brush rendering 調査
+- WebGPU Brush Lab
+- analytic AA / coverage AA
+- texture brush / airbrush のGPU化
+
+長期:
+- 非破壊・解像度非依存stroke
+- SDF/MSDF stroke
+- Graphite 2026 GPU brush engine成果の追跡
+- Neural Brush / AI Brush
+
+今は避ける:
+- Graphite本体の導入
+- Grapheneノードグラフの導入
+- WebGPU全面移行
+- 通常ペンの全面GPU置換
+- 内部2倍解像度化
+- Canvas2D本番stroke混入
+
+============================================================
+7. Codex / 実装AI向け短縮指示案
+============================================================
+
+目的:
+Tegakiのペン品質改善のため、WebGPUやGraphite導入ではなく、まず入力点とstroke点列の品質を改善する。
+
+対象:
+- tegaki_work/system/drawing/pointer-handler.js
+- tegaki_work/system/drawing/stroke-recorder.js
+- tegaki_work/system/drawing/brush-core.js
+- tegaki_work/system/drawing/stroke-renderer.js
+- 必要なら新規: tegaki_work/system/drawing/stroke-quality-filter.js
+
+方針:
+1. PointerEvent.getCoalescedEvents() を feature detect して、pointermove の実点列を取り出す。
+2. 親eventとcoalesced eventを二重処理しない。
+3. timeStamp順を保つ。
+4. pressure / tilt / pointerType / buttons を保持する。
+5. stroke-recorder と brush-core / stroke-renderer の間に薄い StrokeQualityFilter を入れる案を調査する。
+6. 最初のfilterは pressure smoothing と極小ジッター除去だけに限定する。
+7. perfect-freehand の smoothing / streamline を安易に強くしない。
+8. ライブ描画と確定描画の見た目差を作らない。
+9. WebGPU、SDF/MSDF、WebGL2 Mesh、Canvas2D本番stroke混入、内部2倍化は行わない。
+10. debug計測は TEGAKI_CONFIG.debug 配下に限定し、不要ログは残さない。
+
+受け入れ条件:
+- 既存の描画、消しゴム、Undo/Redo、保存復元を壊さない
+- node --check が通る
+- npm run build が通る
+- Chromeで通常ペンの描画ができる
+- feature unsupported環境では従来通り動く
+
+============================================================
+8. 参照URL
+============================================================
+
+Tegaki現行方針:
+- ユーザー提供 TEGAKI.md
+- ユーザー提供 AGENTS.md
+
+Graphite:
+- https://graphite.art/features/
+- https://graphite.art/learn/introduction/features-and-limitations/
+- https://graphite.art/blog/distributed-computing-in-the-graphene-runtime/
+- https://github.com/GraphiteEditor/Graphite
+- https://summerofcode.withgoogle.com/programs/2026/projects/TQhpRSAt
+
+Pointer / Ink / Web APIs:
+- https://www.w3.org/TR/pointerevents3/
+- https://developer.mozilla.org/en-US/docs/Web/API/PointerEvent/getCoalescedEvents
+- https://developer.mozilla.org/en-US/docs/Web/API/PointerEvent/getPredictedEvents
+- https://developer.mozilla.org/en-US/docs/Web/API/Ink_API
+- https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/getContext
+- https://developer.chrome.com/blog/desynchronized
+
+WebGPU:
+- https://www.w3.org/TR/webgpu/
+- https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API
+- https://webgpu.org/
+- https://codelabs.developers.google.com/your-first-webgpu-app
+
+GPU brush / research:
+- https://cislab.hkust-gz.edu.cn/publications/ciallo-gpu-accelerated-rendering-of-vector-brush-strokes/
+- https://dl.acm.org/doi/10.1145/3641519.3657418
+- https://research.nvidia.com/labs/toronto-ai/brushstroke_engine/
+
+============================================================
+9. 最終判断
+============================================================
+
+Graphiteは、今のTegakiのペン品質改善に直接入れるものではない。
+WebGPUは、解放すれば将来的に大きな表現力を得られるが、普通ペンの滑らかさ改善の第一手ではない。
+
+最初にやるべきなのは、以下。
+
+1. getCoalescedEvents()で入力点の密度を上げる
+2. pressure smoothingで筆圧の暴れを抑える
+3. 速度依存の補間・ジッター除去を入れる
+4. StrokeQualityFilterとして既存経路に薄く挿す
+5. それでも足りない表現、特にエアブラシ・テクスチャ・混色・高品質AAをWebGPU Brush Labで検証する
+
+この順序なら、Tegakiの現行方針を壊さず、かつ将来のWebGPU / Graphite的な非破壊ストローク設計にもつながる。
