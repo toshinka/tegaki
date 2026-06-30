@@ -175,12 +175,18 @@ popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 - CAF internal Layerの3状態、CAF専用History、working Layer同期、共通UIはSlice 3で完了。
 - CAF preview、merge、Frame compositor、保存復元はSlice 4で完了。
 - 完了記録は `開発用資料保管庫/Archive/phase5i.md`。
-- 現行PhaseはPhase 5j。別AIの部分実装を2026-06-21に監査し、
-  playback scope接続、正規化、操作UI、Historyが未完了と判定した。
-- 監査結果は `tegaki_work/PHASE5J_AUDIT.md`。
-- Timelineのloop、終端基準、IN / OUT再生範囲を、
-  playback scopeとExport範囲から分離して修正継続する。
-- 指示書は `task-codex/phase5j.md`。
+- Phase 5jのTimeline再生範囲・終端・ループ制御は完了。
+- playback scope接続、正規化、loop / endMode / IN / OUT UI、History、marker表示を接続した。
+- 完了記録は `開発用資料保管庫/Archive/phase5j.md`。
+- Phase 5kの多枚数CAFメモリ・VRAM・History常駐量の計測と上限・破棄境界実装は完了。
+- Phase 5lの大容量CAF保存・復元・Export安定化は完了。
+- Phase 5lではAlbumへ巨大CAF projectDataを抱え続ける設計を避け、Album一覧の軽量化と、最新Chromium系File System Access APIによるCAF外部ファイル保存導線を実装した。
+- Phase 5mのペン入力点・筆圧・補間品質改善は完了。
+- Phase 5nのVキーLayer全体変形入口の再確認と修正は完了。
+- Phase 5oの画像import / 外部クリップボード画像貼り付けは完了。
+- Phase 5oではPSD読み込みや複数Layer importを棚上げし、外部画像をアクティブRaster Layerへ貼り付ける入口だけを実装した。既存のLayer / CAF / Folder clipboard契約を優先する。
+- Phase 5pの無限キャンバス / 欄外ラスター保持は完了。
+- Phase 5pではProject frame、背景Layer、通常export範囲は固定し、通常Raster Layer / CAF internal Raster Layerの保存矩形を可変化した。WebGPU、DPR 2倍化、tiled canvas本格導入は混ぜていない。
 - PixiJS v8.19.0でもrenderer既定はWebGL。依存更新とWebGPU採用を分離し、
   WebGPU凍結方針は維持する。
 - Phase 5gの完了記録は `開発用資料保管庫/Archive/phase5g.md`。

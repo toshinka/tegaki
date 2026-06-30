@@ -20,6 +20,7 @@ export class ExportPopup {
         this.manager = dependencies.exportManager || window.exportManager;
         this.selectedFormat = 'png';
         this.selectedResolution = 1;
+        this.psdScope = 'normal';
         this.isVisible = false;
         this.currentPreviewUrl = null;
         this.currentBlob = null;
@@ -122,6 +123,12 @@ export class ExportPopup {
                 return;
             }
             
+            const psdScopeBtn = e.target.closest('.psd-scope-btn');
+            if (psdScopeBtn && !psdScopeBtn.disabled) {
+                this.selectPsdScope(psdScopeBtn.dataset.scope);
+                return;
+            }
+
             const resBtn = e.target.closest('.resolution-btn');
             if (resBtn) {
                 const newResolution = parseInt(resBtn.dataset.resolution);
@@ -185,6 +192,13 @@ export class ExportPopup {
         this.updateOutputSize();
     }
 
+    selectPsdScope(scope) {
+        this.psdScope = scope === 'active-caf' ? 'active-caf' : 'normal';
+        this.popup?.querySelectorAll('.psd-scope-btn')?.forEach(btn => {
+            btn.classList.toggle('selected', btn.dataset.scope === this.psdScope);
+        });
+    }
+
     
     updateOutputSize() {
         const outputSizeEl = document.getElementById('output-size-display');
@@ -227,6 +241,10 @@ export class ExportPopup {
         }
         
         const frameCount = this.getFrameCount();
+        const activeCaf = this.getActiveCafForExport();
+        if (!activeCaf && this.psdScope === 'active-caf') {
+            this.psdScope = 'normal';
+        }
         const animationRangeUI = frameCount >= 2 ? `
             <div class="export-animation-range">
                 <label>開始 <input id="export-frame-start" type="number" min="1" max="${frameCount}" value="1"></label>
@@ -264,10 +282,18 @@ export class ExportPopup {
                 </div>`,
                 
             'psd': `
-                <div class="setting-label">PSD出力（開発中）</div>
+                <div class="setting-label">PSD出力</div>
                 <div class="export-option-description">
-                    レイヤー構造を保持したPhotoshop形式での出力です。<br>
-                    ⚠️ 現在開発中です。
+                    通常Layer / Folder、またはアクティブCAF内部Layer / FolderをPSDへ出力します。
+                </div>
+                <div class="resolution-options">
+                    <button class="resolution-btn psd-scope-btn ${this.psdScope === 'normal' ? 'selected' : ''}" data-scope="normal">通常Layer</button>
+                    <button class="resolution-btn psd-scope-btn ${this.psdScope === 'active-caf' ? 'selected' : ''}" data-scope="active-caf" ${activeCaf ? '' : 'disabled'}>アクティブCAF</button>
+                </div>
+                <div class="export-option-description">
+                    ${activeCaf
+                        ? `選択中CAF: ${this.escapeHtml(activeCaf.name || 'CAF')}`
+                        : `アクティブCAFを出力するには、アニメテーブルでCAFを選択してください。`}
                 </div>`
         };
         
@@ -354,7 +380,8 @@ export class ExportPopup {
         try {
             const options = {
                 resolution: this.selectedResolution,
-                ...this.getAnimationRangeOptions()
+                ...this.getAnimationRangeOptions(),
+                ...this.getPsdExportOptions()
             };
             await this.manager.export(this.selectedFormat, options);
         } catch (error) {
@@ -449,6 +476,32 @@ export class ExportPopup {
             startFrame: start - 1,
             endFrame: end - 1
         };
+    }
+
+    getPsdExportOptions() {
+        if (this.selectedFormat !== 'psd') return {};
+        return {
+            psdScope: this.psdScope
+        };
+    }
+
+    getActiveCafForExport() {
+        const table = window.PopupManager?.get?.('animationTable')
+            || window.PopupManager?.popups?.get?.('animationTable')?.instance
+            || window.coreEngine?.popupManager?.get?.('animationTable')
+            || null;
+        if (!table?.selectedAssetId || !table.model?.getClipAsset) return null;
+        return table.model.getClipAsset(table.selectedAssetId) || null;
+    }
+
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[char]);
     }
 
     updateProgress(data) {

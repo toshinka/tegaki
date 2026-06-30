@@ -14,6 +14,7 @@
 
 import { RenderTexture, Graphics, Sprite } from 'pixi.js';
 import { applyClippingMode, normalizeClippingMode } from './clipping-mode.js';
+import { normalizeRasterBounds } from './raster-bounds.js';
 
 export const LAYER_SCHEMA = {
     id: { type: 'string', required: true, editable: false },
@@ -28,7 +29,8 @@ export const LAYER_SCHEMA = {
     clipping: { type: 'boolean', default: false, editable: true },
     clippingMode: { type: 'string', default: 'none', editable: true },
     blendMode: { type: 'string', default: 'normal', editable: true },
-    locked: { type: 'boolean', default: false, editable: true }
+    locked: { type: 'boolean', default: false, editable: true },
+    rasterBounds: { type: 'object', default: null, editable: false }
 };
 
 export class LayerModel {
@@ -49,6 +51,9 @@ export class LayerModel {
         );
         this.blendMode = data.blendMode || 'normal';
         this.locked = data.locked || false;
+        this.rasterBounds = data.rasterBounds
+            ? normalizeRasterBounds(data.rasterBounds)
+            : null;
         this.paths = data.paths || [];
         
         this.maskTexture = null;
@@ -158,6 +163,8 @@ export class LayerModel {
 
             this.layerSprite = new Sprite(this.renderTexture);
             this.layerSprite.label = 'layer_raster_sprite';
+            this.rasterBounds = normalizeRasterBounds(this.rasterBounds, { width, height });
+            this.layerSprite.position.set(this.rasterBounds.x, this.rasterBounds.y);
             
             this._textureInitialized = true;
             return true;
@@ -196,7 +203,8 @@ export class LayerModel {
             clipping: this.clipping,
             clippingMode: this.clippingMode,
             blendMode: this.blendMode,
-            locked: this.locked
+            locked: this.locked,
+            rasterBounds: this.rasterBounds ? { ...this.rasterBounds } : null
         };
     }
 

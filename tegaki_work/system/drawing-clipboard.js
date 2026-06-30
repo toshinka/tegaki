@@ -16,6 +16,7 @@ import { Graphics, Matrix } from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { historyManager } from './history.js';
+import { getClippingMode } from './clipping-mode.js';
 
 export class DrawingClipboard {
     constructor() {
@@ -71,34 +72,8 @@ export class DrawingClipboard {
     }
 
     _setupKeyboardEvents() {
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.code === 'KeyC' && !e.altKey && !e.metaKey) {
-                if (this._shouldBlockNormalLayerClipboardOperation()) {
-                    e.preventDefault();
-                    return;
-                }
-                this.copyActiveLayer();
-                e.preventDefault();
-            }
-            
-            if (e.ctrlKey && e.code === 'KeyV' && !e.altKey && !e.metaKey) {
-                if (this._shouldBlockNormalLayerClipboardOperation()) {
-                    e.preventDefault();
-                    return;
-                }
-                this.pasteToActiveLayer();
-                e.preventDefault();
-            }
-            
-            if (e.ctrlKey && e.code === 'KeyX' && !e.altKey && !e.metaKey) {
-                if (this._shouldBlockNormalLayerClipboardOperation()) {
-                    e.preventDefault();
-                    return;
-                }
-                this.cutActiveLayer();
-                e.preventDefault();
-            }
-        });
+        // Keyboard routing is centralized in ui/keyboard-handler.js.
+        // Keeping a second document listener here causes Ctrl+C/V to fire twice.
     }
 
     _shouldBlockNormalLayerClipboardOperation() {
@@ -308,67 +283,119 @@ export class DrawingClipboard {
         }
 
         try {
-            const layerId = activeLayer.layerData.id;
-            const currentTransform = this.layerManager.transform?.getTransform?.(layerId);
-            
-            let pathsToStore;
-            
-            if (this.layerManager.transform?._isTransformNonDefault?.(currentTransform)) {
-                pathsToStore = this.getTransformedPaths(activeLayer, currentTransform);
-            } else {
-                pathsToStore = activeLayer.layerData.paths || [];
+            const payload = this._createLayerBlockClipboardPayload(activeLayer);
+            if (!payload) {
+                this.eventBus?.emit('clipboard:copy-failed', { error: 'Clipboard payload unavailable' });
+                return false;
             }
-            
-            const layerData = activeLayer.layerData;
-            
-            let backgroundData = null;
-            if (layerData.isBackground) {
-                backgroundData = {
-                    isBackground: true,
-                    color: this.config.background.color
-                };
-            }
-
-            this.clipboardData = {
-                layerData: {
-                    name: layerData.name.includes('_copy') ? 
-                          layerData.name : layerData.name + '_copy',
-                    visible: layerData.visible,
-                    opacity: layerData.opacity,
-                    paths: this.deepCopyPaths(pathsToStore),
-                    backgroundData: backgroundData
-                },
-                transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
-                metadata: {
-                    originalId: layerId,
-                    copiedAt: Date.now(),
-                    pathCount: pathsToStore.length,
-                    isNonDestructive: true,
-                    hasTransforms: this.layerManager.transform?._isTransformNonDefault?.(currentTransform) || false,
-                    systemVersion: 'v8.13_Phase1_Cut_Fix'
-                },
-                timestamp: Date.now()
-            };
+            this.clipboardData = payload;
             
             if (this.eventBus) {
                 this.eventBus.emit('clipboard:copy-success', {
-                    pathCount: pathsToStore.length,
-                    hasTransforms: this.layerManager.transform?._isTransformNonDefault?.(currentTransform) || false
+                    layerCount: payload.layers.length,
+                    rootType: payload.rootType,
+                    hasTransforms: payload.layers.some(entry => entry.hasTransform)
                 });
             }
             
             if (window.popupManager) {
-                window.popupManager.show('レイヤーコピー', 1500);
+                window.popupManager.show(payload.rootType === 'folder' ? 'フォルダコピー' : 'レイヤーコピー', 1500);
             }
+            return true;
             
         } catch (error) {
             if (this.eventBus) {
                 this.eventBus.emit('clipboard:copy-failed', { error: error.message });
             }
+            return false;
         }
     }
 
+    _createLayerBlockClipboardPayload(rootLayer) {
+        const rootData = rootLayer?.layerData;
+        if (!rootData || rootData.isBackground) return null;
+
+        const layers = [...(this.layerManager?.getLayers?.() || [])];
+        const byId = new Map(layers.map(layer => [layer.layerData?.id, layer]).filter(([id]) => !!id));
+        const sourceLayers = rootData.isFolder
+            ? layers.filter(layer => {
+                const id = layer.layerData?.id;
+                return id === rootData.id || this._isLayerDescendantOf(layer, rootData.id, byId);
+            })
+            : [rootLayer];
+
+        const copiedAt = Date.now();
+        const entries = sourceLayers
+            .map(layer => this._createLayerBlockClipboardEntry(layer, layers.indexOf(layer)))
+            .filter(Boolean);
+
+        if (entries.length === 0) return null;
+        return {
+            kind: 'layer-block',
+            version: 1,
+            rootSourceId: rootData.id,
+            rootType: rootData.isFolder ? 'folder' : 'raster',
+            copiedAt,
+            layers: entries
+        };
+    }
+
+    _isLayerDescendantOf(layer, rootFolderId, byId) {
+        let parentId = layer?.layerData?.parentId || null;
+        const visited = new Set();
+        while (parentId && !visited.has(parentId)) {
+            if (parentId === rootFolderId) return true;
+            visited.add(parentId);
+            parentId = byId.get(parentId)?.layerData?.parentId || null;
+        }
+        return false;
+    }
+
+    _createLayerBlockClipboardEntry(layer, order) {
+        const data = layer?.layerData;
+        if (!data) return null;
+        const transform = this.layerManager?.transform?.getTransform?.(data.id) || {
+            x: 0,
+            y: 0,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1
+        };
+        return {
+            sourceId: data.id,
+            parentSourceId: data.parentId || null,
+            order: Number.isInteger(order) ? order : 0,
+            type: data.isFolder ? 'folder' : 'raster',
+            name: data.name || (data.isFolder ? 'フォルダ' : 'レイヤー'),
+            visible: data.visible !== false,
+            opacity: Number.isFinite(data.opacity) ? data.opacity : 1,
+            blendMode: data.blendMode || 'normal',
+            clippingMode: getClippingMode(data),
+            clipping: getClippingMode(data) !== 'none',
+            folderExpanded: data.folderExpanded !== false,
+            transform: { ...transform },
+            hasTransform: this.layerManager?.transform?._isTransformNonDefault?.(transform) === true,
+            rasterSnapshot: data.isFolder
+                ? null
+                : this._cloneRasterSnapshot(this.layerManager?.createLayerRasterSnapshot?.(layer))
+        };
+    }
+
+    _cloneRasterSnapshot(snapshot) {
+        if (!snapshot) return null;
+        return {
+            ...snapshot,
+            rasterBounds: snapshot.rasterBounds ? { ...snapshot.rasterBounds } : null,
+            pixels: snapshot.pixels ? new Uint8ClampedArray(snapshot.pixels) : null,
+            paths: Array.isArray(snapshot.paths) ? this.deepCopyPaths(snapshot.paths) : [],
+            pathsData: Array.isArray(snapshot.pathsData) ? structuredClone(snapshot.pathsData) : []
+        };
+    }
+
     pasteToActiveLayer() {
+        if (this.clipboardData?.kind === 'layer-block') {
+            return this.pasteLayer();
+        }
         if (!this.layerManager) {
             if (this.eventBus) {
                 this.eventBus.emit('clipboard:paste-failed', { error: 'LayerManager not available' });
@@ -712,6 +739,20 @@ export class DrawingClipboard {
             return;
         }
 
+        if (this.clipboardData?.kind === 'layer-block') {
+            const result = this.layerManager.pasteLayerBlockPayload?.(this.clipboardData);
+            if (result) {
+                this.eventBus?.emit('clipboard:paste-success', {
+                    layerName: result.rootLayer?.layerData?.name || this.clipboardData.layers?.[0]?.name || 'Layer',
+                    layerCount: result.createdRecords?.length || this.clipboardData.layers.length,
+                    mode: 'layer-block'
+                });
+                return result;
+            }
+            this.eventBus?.emit('clipboard:paste-failed', { error: 'Layer block paste unavailable' });
+            return false;
+        }
+
         try {
             const clipData = this.clipboardData;
             const layerName = this.generateUniqueLayerName(clipData.layerData.name);
@@ -778,9 +819,19 @@ export class DrawingClipboard {
         }
 
         const data = this.clipboardData;
+        if (data.kind === 'layer-block') {
+            return {
+                kind: data.kind,
+                rootType: data.rootType,
+                layerCount: data.layers?.length || 0,
+                rasterCount: (data.layers || []).filter(entry => entry.type === 'raster').length,
+                copiedAt: data.copiedAt || data.timestamp,
+                systemVersion: 'layer-block-v1'
+            };
+        }
         return {
             layerName: data.layerData.name,
-            pathCount: data.layerData.paths.length,
+            pathCount: data.layerData.paths?.length || 0,
             hasBackground: Boolean(data.layerData.backgroundData),
             hasTransforms: data.metadata?.hasTransforms || false,
             copiedAt: data.metadata?.copiedAt || data.timestamp,
@@ -800,6 +851,10 @@ export class DrawingClipboard {
     }
     
     get() {
+        return this.clipboardData;
+    }
+
+    getClipboardPayload() {
         return this.clipboardData;
     }
     

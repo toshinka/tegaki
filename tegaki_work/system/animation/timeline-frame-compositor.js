@@ -6,6 +6,7 @@ import {
     CLIPPING_MODES,
     getClippingMode
 } from '../clipping-mode.js';
+import { normalizeRasterBounds } from '../raster-bounds.js';
 
 export class TimelineFrameCompositor {
     constructor(model, layerSystem = null) {
@@ -87,26 +88,11 @@ export class TimelineFrameCompositor {
         const renderedLaneIds = new Set();
         const layers = this.layerSystem?.getLayers?.() || [];
 
-        // LayerSystemも配列先頭が前面。通常Layerの位置へ対応CAFを差し込む。
-        for (let index = layers.length - 1; index >= 0; index--) {
-            const layer = layers[index];
-            const layerData = layer?.layerData;
-            if (!layerData || layerData.isBackground || layerData.isFolder) continue;
-            // CAF編集用working Layerは選択CAFの最新内容を一時表示するミラー。
-            // Timeline Snapshotと重ねると、そのCAFが全Frameへ焼き付くためexport対象外。
-            if (layerData.isAnimationWorkingLayer === true) continue;
-
-            const track = trackBySourceLayerId.get(layerData.id);
-            if (track) {
-                const clipEntry = clipByLaneId.get(track.id);
-                if (clipEntry) {
-                    this._renderClipEntry(ctx, clipEntry, width, height);
-                    renderedLaneIds.add(track.id);
-                }
-                continue;
-            }
-            this._renderStaticLayer(ctx, layer, width, height);
-        }
+        this._renderNormalLayerGroup(ctx, layers, null, width, height, {
+            trackBySourceLayerId,
+            clipByLaneId,
+            renderedLaneIds
+        });
 
         // source Layerが既に存在しないLane等もTimeline順で合成する。
         for (let index = frameTree.clips.length - 1; index >= 0; index--) {
@@ -114,6 +100,63 @@ export class TimelineFrameCompositor {
             if (renderedLaneIds.has(clipEntry.laneId)) continue;
             this._renderClipEntry(ctx, clipEntry, width, height);
         }
+    }
+
+    _renderNormalLayerGroup(ctx, layers, parentId, width, height, context) {
+        const siblings = (layers || []).filter(layer => {
+            const data = layer?.layerData;
+            if (!data || data.isBackground) return false;
+            return (data.parentId || null) === (parentId || null);
+        });
+        let rendered = false;
+
+        for (let index = siblings.length - 1; index >= 0; index--) {
+            const layer = siblings[index];
+            const layerData = layer.layerData;
+            if (layerData.visible === false) continue;
+
+            if (layerData.isFolder) {
+                const folderCanvas = this._createCanvas(width, height);
+                const folderCtx = folderCanvas.getContext('2d');
+                if (!folderCtx) continue;
+                const hasFolderContent = this._renderNormalLayerGroup(
+                    folderCtx,
+                    layers,
+                    layerData.id,
+                    width,
+                    height,
+                    context
+                );
+                const opacity = this._getOwnOpacity(layerData);
+                if (!hasFolderContent || opacity <= 0) continue;
+
+                ctx.save();
+                ctx.globalAlpha = opacity;
+                ctx.globalCompositeOperation = this._compositeMode(layerData.blendMode);
+                ctx.drawImage(folderCanvas, 0, 0);
+                ctx.restore();
+                rendered = true;
+                continue;
+            }
+
+            if (layerData.isAnimationWorkingLayer === true) continue;
+
+            const track = context.trackBySourceLayerId.get(layerData.id);
+            if (track) {
+                const clipEntry = context.clipByLaneId.get(track.id);
+                if (clipEntry) {
+                    this._renderClipEntry(ctx, clipEntry, width, height);
+                    context.renderedLaneIds.add(track.id);
+                    rendered = true;
+                }
+                continue;
+            }
+
+            const layerRendered = this._renderStaticLayer(ctx, layer, width, height);
+            rendered = layerRendered || rendered;
+        }
+
+        return rendered;
     }
 
     _renderClipEntry(ctx, clipEntry, width, height) {
@@ -144,8 +187,10 @@ export class TimelineFrameCompositor {
         ctx.translate(layer.x || 0, layer.y || 0);
         ctx.rotate(layer.rotation || 0);
         ctx.scale(layer.scale?.x ?? 1, layer.scale?.y ?? 1);
-        ctx.drawImage(canvas, 0, 0);
+        const rasterBounds = this._getSnapshotRasterBounds(snapshot);
+        ctx.drawImage(canvas, rasterBounds.x, rasterBounds.y);
         ctx.restore();
+        return true;
     }
 
     _isNormalLayerEffectivelyVisible(layerData) {
@@ -167,12 +212,37 @@ export class TimelineFrameCompositor {
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
 
+        const rendered = this._renderAssetLayerGroup(ctx, asset, null, width, height);
+        return rendered ? canvas : null;
+    }
+
+    _renderAssetLayerGroup(ctx, asset, parentId, width, height) {
         const layers = asset.internalLayers || [];
+        const siblings = layers.filter(layer => (layer.parentLayerId || null) === (parentId || null));
         let rendered = false;
-        for (let index = layers.length - 1; index >= 0; index--) {
-            const layer = layers[index];
-            if (layer.type === 'folder' || !this._isEffectivelyVisible(asset, layer)) continue;
-            const opacity = Number.isFinite(layer.opacity) ? layer.opacity : 1;
+
+        for (let index = siblings.length - 1; index >= 0; index--) {
+            const layer = siblings[index];
+            if (!layer || layer.visible === false) continue;
+
+            if (layer.type === 'folder') {
+                const folderCanvas = this._createCanvas(width, height);
+                const folderCtx = folderCanvas.getContext('2d');
+                if (!folderCtx) continue;
+                const hasFolderContent = this._renderAssetLayerGroup(folderCtx, asset, layer.id, width, height);
+                const opacity = this._getOwnOpacity(layer);
+                if (!hasFolderContent || opacity <= 0) continue;
+
+                ctx.save();
+                ctx.globalAlpha = opacity;
+                ctx.globalCompositeOperation = this._compositeMode(layer.blendMode);
+                ctx.drawImage(folderCanvas, 0, 0);
+                ctx.restore();
+                rendered = true;
+                continue;
+            }
+
+            const opacity = this._getOwnOpacity(layer);
             if (opacity <= 0) continue;
 
             const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
@@ -181,7 +251,9 @@ export class TimelineFrameCompositor {
 
             const layerCanvas = this._createCanvas(width, height);
             const layerCtx = layerCanvas.getContext('2d');
-            layerCtx.drawImage(snapshotCanvas, 0, 0);
+            if (!layerCtx) continue;
+            const rasterBounds = this._getSnapshotRasterBounds(snapshot);
+            layerCtx.drawImage(snapshotCanvas, rasterBounds.x, rasterBounds.y);
             this._applyClippingMask(asset, layer, layerCtx, width, height);
 
             ctx.save();
@@ -191,7 +263,8 @@ export class TimelineFrameCompositor {
             ctx.restore();
             rendered = true;
         }
-        return rendered ? canvas : null;
+
+        return rendered;
     }
 
     _applyClippingMask(asset, layer, ctx, width, height) {
@@ -215,7 +288,8 @@ export class TimelineFrameCompositor {
             const snapshot = this.model.getDrawingSnapshot(sourceLayer.drawingSnapshotId);
             const sourceCanvas = this._getSnapshotCanvas(snapshot);
             if (!sourceCanvas) return;
-            maskCtx.drawImage(sourceCanvas, 0, 0);
+            const rasterBounds = this._getSnapshotRasterBounds(snapshot);
+            maskCtx.drawImage(sourceCanvas, rasterBounds.x, rasterBounds.y);
             hasMask = true;
         });
         if (!hasMask) {
@@ -282,6 +356,15 @@ export class TimelineFrameCompositor {
         return canvas;
     }
 
+    _getSnapshotRasterBounds(snapshot) {
+        return normalizeRasterBounds(snapshot?.rasterBounds, {
+            x: 0,
+            y: 0,
+            width: snapshot?.width || 1,
+            height: snapshot?.height || 1
+        });
+    }
+
     _isEffectivelyVisible(asset, layer) {
         if (!layer || layer.visible === false) return false;
         const byId = new Map((asset.internalLayers || []).map(item => [item.id, item]));
@@ -293,6 +376,41 @@ export class TimelineFrameCompositor {
             if (!current || current.visible === false) return false;
         }
         return true;
+    }
+
+    _getEffectiveOpacity(asset, layer) {
+        if (!layer) return 1;
+        const byId = new Map((asset?.internalLayers || []).map(item => [item.id, item]));
+        let opacity = Number.isFinite(layer.opacity) ? layer.opacity : 1;
+        let current = layer;
+        const visited = new Set();
+        while (current?.parentLayerId && !visited.has(current.id)) {
+            visited.add(current.id);
+            current = byId.get(current.parentLayerId);
+            if (!current) break;
+            const parentOpacity = Number.isFinite(current.opacity) ? current.opacity : 1;
+            opacity *= parentOpacity;
+        }
+        return Math.max(0, Math.min(1, opacity));
+    }
+
+    _getOwnOpacity(layer) {
+        return Math.max(0, Math.min(1, Number.isFinite(layer?.opacity) ? layer.opacity : 1));
+    }
+
+    _getEffectiveBlendMode(asset, layer) {
+        if (!layer) return 'normal';
+        if (layer.blendMode && layer.blendMode !== 'normal') return layer.blendMode;
+        const byId = new Map((asset?.internalLayers || []).map(item => [item.id, item]));
+        let current = layer;
+        const visited = new Set();
+        while (current?.parentLayerId && !visited.has(current.id)) {
+            visited.add(current.id);
+            current = byId.get(current.parentLayerId);
+            if (!current) break;
+            if (current.blendMode && current.blendMode !== 'normal') return current.blendMode;
+        }
+        return 'normal';
     }
 
     _findClippingOwner(asset, layer) {
@@ -333,6 +451,7 @@ export class TimelineFrameCompositor {
     }
 
     _compositeMode(blendMode) {
+        if (blendMode === 'add') return 'lighter';
         const supported = new Set([
             'multiply', 'screen', 'overlay', 'darken', 'lighten',
             'color-dodge', 'color-burn', 'hard-light', 'soft-light',

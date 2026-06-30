@@ -105,11 +105,11 @@ export class PointerHandler {
             // 筆圧カーブ
             const curve = mgr?.get?.('pressureCurve') ?? 'linear';
             if (curve === 'ease-in') {
-                // 軽め：弱い押しで細くなる（二乗で感度を下げる）
-                pressure = pressure * pressure;
-            } else if (curve === 'ease-out') {
-                // 重め：強く押さないと太くならない（逆二乗）
+                // 軽め：弱い押しでも反応しやすくする
                 pressure = 1 - (1 - pressure) * (1 - pressure);
+            } else if (curve === 'ease-out') {
+                // 重め：強く押さないと太くならない
+                pressure = pressure * pressure;
             }
             // 'linear' はそのまま
 
@@ -124,15 +124,94 @@ export class PointerHandler {
             return {
                 pointerId: e.pointerId,
                 pointerType: e.pointerType,
+                eventType: e.type,
                 clientX: e.clientX,
                 clientY: e.clientY,
+                rawClientX: e.clientX,
+                rawClientY: e.clientY,
+                rawPressure: e.pressure,
                 pressure: applyPressureSettings(e.pressure, e.pointerType),
                 tiltX: e.tiltX ?? 0,
                 tiltY: e.tiltY ?? 0,
                 twist: e.twist ?? 0,
                 button: e.button,
                 buttons: e.buttons,
+                timeStamp: e.timeStamp,
+                inputProfile: window.TEGAKI_CONFIG?.debug
+                    ? createInputProfile(e)
+                    : null,
                 originalEvent: e
+            };
+        }
+
+        function summarizeNumbers(values) {
+            const numeric = values
+                .map(value => Number(value))
+                .filter(value => Number.isFinite(value));
+
+            if (numeric.length === 0) {
+                return { min: null, max: null, delta: null };
+            }
+
+            const min = Math.min(...numeric);
+            const max = Math.max(...numeric);
+            return {
+                min: Number(min.toFixed(4)),
+                max: Number(max.toFixed(4)),
+                delta: Number((max - min).toFixed(4))
+            };
+        }
+
+        function createInputProfile(e) {
+            const coalescedSupported = typeof e.getCoalescedEvents === 'function';
+            let coalesced = [];
+            if (coalescedSupported) {
+                try {
+                    coalesced = e.getCoalescedEvents() || [];
+                } catch (err) {
+                    coalesced = [];
+                }
+            }
+
+            const coalescedPoints = coalesced.map(item => ({
+                clientX: Number(item.clientX?.toFixed?.(3) ?? item.clientX),
+                clientY: Number(item.clientY?.toFixed?.(3) ?? item.clientY),
+                pressure: Number(item.pressure?.toFixed?.(4) ?? item.pressure),
+                timeStamp: Number(item.timeStamp?.toFixed?.(3) ?? item.timeStamp)
+            }));
+
+            return {
+                eventType: e.type,
+                pointerId: e.pointerId,
+                pointerType: e.pointerType || 'unknown',
+                button: e.button,
+                buttons: e.buttons,
+                client: {
+                    x: Number(e.clientX.toFixed(3)),
+                    y: Number(e.clientY.toFixed(3))
+                },
+                pressure: {
+                    raw: e.pressure,
+                    adjusted: applyPressureSettings(e.pressure, e.pointerType),
+                    correction: window.TegakiSettingsManager?.get?.('pressureCorrection') ?? 1.0,
+                    curve: window.TegakiSettingsManager?.get?.('pressureCurve') ?? 'linear'
+                },
+                timeStamp: Number(e.timeStamp?.toFixed?.(3) ?? e.timeStamp),
+                coalesced: {
+                    supported: coalescedSupported,
+                    count: coalesced.length,
+                    clientX: summarizeNumbers(coalesced.map(item => item.clientX)),
+                    clientY: summarizeNumbers(coalesced.map(item => item.clientY)),
+                    pressure: summarizeNumbers(coalesced.map(item => item.pressure)),
+                    samples: coalescedPoints.length <= 4
+                        ? coalescedPoints
+                        : [
+                            coalescedPoints[0],
+                            coalescedPoints[1],
+                            coalescedPoints[coalescedPoints.length - 2],
+                            coalescedPoints[coalescedPoints.length - 1]
+                        ]
+                }
             };
         }
 
@@ -204,6 +283,14 @@ export class PointerHandler {
             // LazyBrush 補正済み座標で上書き
             info.clientX = filtered.x;
             info.clientY = filtered.y;
+            if (info.inputProfile) {
+                info.inputProfile.lazyClient = {
+                    x: Number(filtered.x.toFixed(3)),
+                    y: Number(filtered.y.toFixed(3)),
+                    offsetX: Number((filtered.x - e.clientX).toFixed(3)),
+                    offsetY: Number((filtered.y - e.clientY).toFixed(3))
+                };
+            }
 
             activePointers.set(e.pointerId, info);
 

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MP4 to GIF Converter</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>MP4 to GIF Converter</h1>
+        <p>動画をドロップして特定の区間をGIFに変換します。</p>
+      </header>
+
+      <main>
+        <div id="drop-zone" class="drop-zone">
+          <p>ここに動画ファイルをドラッグ＆ドロップ<br>または <span>ファイルを選択</span></p>
+          <input type="file" id="file-input" accept="video/*, image/gif, image/apng, image/webp" style="display: none;" />
+        </div>
+
+        <div id="player-container" class="hidden">
+          <div class="video-wrapper">
+            <video id="video-preview" playsinline></video>
+          </div>
+          
+          <div class="controls">
+            <button id="btn-play" title="Spaceキーでも操作可能">Play (Space)</button>
+            <div class="time-display"><span id="current-time">0.00</span> / <span id="duration">0.00</span></div>
+            <div class="shortcut-hints">コマ送り: ← →</div>
+          </div>
+          
+          <div class="timeline-container">
+            <input type="range" id="seek-bar" min="0" max="100" value="0" step="0.01" />
+            <div class="range-sliders">
+              <div class="range-controls">
+                <label>Start: <input type="number" id="start-time" step="0.01" min="0" value="0"/></label>
+                <button id="btn-set-start" title="[ キーでも操作可能">[ 始点に設定</button>
+              </div>
+              <div class="range-controls">
+                <button id="btn-set-end" title="] キーでも操作可能">] 終点に設定</button>
+                <label>End: <input type="number" id="end-time" step="0.01" min="0" value="0"/></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-panel">
+            <h3>エクスポート設定</h3>
+            <div class="settings-row">
+              <div class="setting-group">
+                <label for="fps-select">FPS:</label>
+                <select id="fps-select">
+                  <option value="10">10 fps</option>
+                  <option value="15" selected>15 fps</option>
+                  <option value="20">20 fps</option>
+                  <option value="30">30 fps</option>
+                </select>
+              </div>
+              <div class="setting-group">
+                <label for="height-input">縦幅 (px):</label>
+                <input type="number" id="height-input" value="400" step="10" />
+                <span class="hint">※横幅は自動計算されます</span>
+              </div>
+              <div class="setting-group checkbox-group">
+                <label><input type="checkbox" id="reverse-checkbox" /> 逆再生にする</label>
+                <label style="margin-left: 1rem;"><input type="checkbox" id="hflip-checkbox" /> 左右反転</label>
+              </div>
+            </div>
+            <div class="settings-row" style="margin-top: 1rem;">
+              <div class="setting-group">
+                <label for="format-select">出力形式:</label>
+                <select id="format-select">
+                  <option value="gif" selected>GIF</option>
+                  <option value="apng">APNG (動くPNG)</option>
+                  <option value="webp">WebP (動くWebP)</option>
+                  <option value="webm">WebM</option>
+                  <option value="mp4">MP4</option>
+                </select>
+              </div>
+              <div class="setting-group checkbox-group">
+                <label><input type="checkbox" id="audio-checkbox" /> 音声を含める (MP4/WebMのみ)</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="export-panel">
+            <button id="btn-export" class="primary-btn">動画・GIFを生成</button>
+            <div id="status-message"></div>
+            <progress id="progress-bar" value="0" max="100" style="display: none;"></progress>
+          </div>
+        </div>
+
+        <div id="result-container" class="hidden">
+          <h3>生成結果</h3>
+          <img id="result-gif" src="" alt="Result" />
+          <a id="btn-download" class="primary-btn" download="output.gif">GIFをダウンロード</a>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

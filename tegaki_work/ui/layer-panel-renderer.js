@@ -154,11 +154,10 @@ export class LayerPanelRenderer {
         }
         if (action === 'folder') {
             if (variant.name === 'clip-layer-mirror') {
-                adapter.select?.({
-                    ...payload,
-                    row,
-                    options: { syncWorkingLayer: false, renderAnimationTable: true }
-                });
+                adapter.toggleFolder(payload);
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                return true;
             } else {
                 this._finishFolderDrag();
             }
@@ -364,8 +363,13 @@ export class LayerPanelRenderer {
         return {
             dragKind: variant.name,
             rowSelector: variant.rowSelector,
-            skipDrag: (event, targetRow) => targetRow.classList.contains('is-folder')
-                && event.target.closest(variant.thumbSelector),
+            skipDrag: (event, targetRow) => {
+                const target = event.target;
+                const isFolderRow = targetRow.dataset.isFolder === 'true'
+                    || targetRow.classList.contains('is-folder');
+                if (isFolderRow && target?.closest?.(variant.thumbSelector)) return true;
+                return this._isClipLayerMirrorCardInteractiveTarget(target);
+            },
             onSelect: (targetRow) => {
                 this._selectClipLayerMirrorRow(targetRow, {
                     syncWorkingLayer: false,
@@ -387,6 +391,9 @@ export class LayerPanelRenderer {
             dragKind: variant.name,
             rowSelector: variant.rowSelector,
             skipDrag: (event, targetRow) => {
+                if (targetRow.dataset.isFolder === 'true' && event.target.closest(variant.thumbSelector)) {
+                    return true;
+                }
                 if (this._isLegacyLayerCardInteractiveTarget(event.target)) {
                     return true;
                 }
@@ -566,6 +573,20 @@ export class LayerPanelRenderer {
 
     _isLayerPanelCardNativeInteractiveTarget(target) {
         return Boolean(target?.closest?.('button, input, textarea, select'));
+    }
+
+    _isClipLayerMirrorCardInteractiveTarget(target) {
+        const variant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
+        return Boolean(target?.closest?.([
+            variant.visibilityButtonSelector,
+            variant.clipButtonSelector,
+            variant.nameSelector,
+            '.layer-panel-card-action',
+            'button',
+            'input',
+            'textarea',
+            'select'
+        ].join(',')));
     }
 
     _selectClipLayerMirrorRow(row, options = {}) {
@@ -922,6 +943,7 @@ export class LayerPanelRenderer {
                 img.classList.add('layer-panel-card-thumb-image', 'layer-thumbnail-image');
             }
             img.src = data.dataURL;
+            this._syncLayerThumbnailOffFrameBadge(thumbnailContainer, data);
         });
 
         this.eventBus.on('ui:background-color-change-requested', ({ layerIndex, layerId }) => {
@@ -984,6 +1006,7 @@ export class LayerPanelRenderer {
 
         // Phase 4z15: CAF読み取り専用ヘッダーの描画
         const cafHeader = this.createCafReadonlyHeader();
+        this.container.closest?.('.layer-panel-container')?.classList.toggle('layer-panel-container--caf', !!cafHeader);
         if (cafHeader) {
             this._appendLayerPanelCardParts(this.container, cafHeader);
         }
@@ -1097,7 +1120,8 @@ export class LayerPanelRenderer {
         const depth = this._calculateIndentLevel(layer, allLayers);
         const isExpanded = layer?.layerData?.folderExpanded;
         const leftOffset = depth * 12;
-        const rowWidth = isActive ? 160 : Math.max(120, 160 - depth * 14);
+        const baseRowWidth = 160;
+        const rowWidth = Math.max(120, baseRowWidth - leftOffset);
         const rowStyleState = this._createLegacyLayerCardRowStyleState({
             depth,
             rowWidth,
@@ -1934,19 +1958,19 @@ export class LayerPanelRenderer {
                 <input class="layer-attribute-opacity-slider" type="range" min="0" max="100" step="1" value="${opacity}" aria-label="透明度">
                 <span class="layer-attribute-opacity-label" title="ダブルクリックで数値入力">${opacity}%</span>
             </div>
-            ${isFolder ? '' : `
-                <div class="layer-attribute-popup__attribute-row">
-                    <label class="layer-attribute-blend-field">
-                        <span class="layer-attribute-blend-label">合成</span>
-                        <select class="layer-attribute-blend-select" aria-label="合成モード">
-                            ${blendModes.map(mode => `<option value="${mode.value}"${mode.value === blendMode ? ' selected' : ''}>${mode.label}</option>`).join('')}
-                        </select>
-                    </label>
+            <div class="layer-attribute-popup__attribute-row">
+                <label class="layer-attribute-blend-field">
+                    <span class="layer-attribute-blend-label">合成</span>
+                    <select class="layer-attribute-blend-select" aria-label="合成モード">
+                        ${blendModes.map(mode => `<option value="${mode.value}"${mode.value === blendMode ? ' selected' : ''}>${mode.label}</option>`).join('')}
+                    </select>
+                </label>
+                ${isFolder ? '' : `
                     <button type="button" class="layer-attribute-clip-toggle${clipping ? ' active' : ''}${inverseClipping ? ' is-inverse-clipping' : ''}" data-action="toggle-clipping" title="${inverseClipping ? '逆クリッピングON' : (clipping ? 'クリッピングON' : 'クリッピング未使用')}">
                         ${UI_ICONS.paperclip}
                     </button>
-                </div>
-            `}
+                `}
+            </div>
         `;
 
         popup.querySelector('[data-action="close-popup"]')?.addEventListener('click', (e) => {
@@ -2566,9 +2590,12 @@ export class LayerPanelRenderer {
                 const img = this._createLayerThumbnailImage();
                 img.src = cachedUrl;
                 this._appendLayerPanelCardParts(thumbnailContainer, img);
+                this._syncLayerThumbnailOffFrameBadge(thumbnailContainer, { layer });
                 return thumbnailContainer;
             }
         }
+
+        this._syncLayerThumbnailOffFrameBadge(thumbnailContainer, { layer });
 
         // キャッシュがない場合は非同期で生成
         return thumbnailContainer;
@@ -2598,8 +2625,9 @@ export class LayerPanelRenderer {
         isCollapsed = false
     } = {}) {
         const stateClasses = this._createLayerPanelCardThumbnailStateClasses({ isFolder, isCollapsed });
+        const thumbnailClasses = isFolder ? [] : ['layer-thumbnail'];
         return this._createLayerPanelCardPartElement(variant, 'thumb', {
-            extraClasses: [...extraClasses, ...stateClasses],
+            extraClasses: [...thumbnailClasses, ...extraClasses, ...stateClasses],
             attributes,
             styleVars: this._createLayerPanelCardThumbnailStyleVars(size, { includeLegacyVars })
         });
@@ -2612,6 +2640,78 @@ export class LayerPanelRenderer {
             img.src = src;
         }
         return img;
+    }
+
+    _syncLayerThumbnailOffFrameBadge(thumbnailContainer, data = {}) {
+        if (!thumbnailContainer) return;
+
+        const layer = data.layer
+            || this.layerSystem?.getLayerById?.(data.layerId)
+            || null;
+        const hasOffFramePixels = typeof data.hasOffFramePixels === 'boolean'
+            ? data.hasOffFramePixels
+            : layer?._thumbnailDebug?.hasOffFramePixels === true;
+
+        thumbnailContainer.classList.toggle('layer-thumbnail--off-frame', hasOffFramePixels);
+        thumbnailContainer.title = hasOffFramePixels
+            ? 'Project frame外に保持中のラスターがあります'
+            : '';
+
+        let badge = thumbnailContainer.querySelector('.layer-thumbnail-off-frame-badge');
+        if (!hasOffFramePixels) {
+            badge?.remove();
+            return;
+        }
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'layer-thumbnail-off-frame-badge';
+            badge.textContent = '外';
+            thumbnailContainer.appendChild(badge);
+        }
+        badge.title = '欄外の内容をキャンバス中央へ戻す';
+        badge.setAttribute('role', 'button');
+        badge.setAttribute('tabindex', '0');
+        if (badge.dataset.recenterBound !== 'true') {
+            badge.dataset.recenterBound = 'true';
+            const activate = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this._recenterOffFrameRasterFromBadge(thumbnailContainer);
+            };
+            badge.addEventListener('pointerdown', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            badge.addEventListener('click', activate);
+            badge.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                activate(event);
+            });
+        }
+    }
+
+    _recenterOffFrameRasterFromBadge(thumbnailContainer) {
+        if (!thumbnailContainer || !this.layerSystem?.centerActiveLayerRasterInProjectFrame) return false;
+
+        const clipRow = thumbnailContainer.closest?.('.clip-layer-mirror-row');
+        if (clipRow) {
+            const selected = this._selectClipLayerMirrorRowDirect(clipRow, {
+                syncWorkingLayer: true,
+                visualOnly: true
+            });
+            if (!selected) return false;
+            return this.layerSystem.centerActiveLayerRasterInProjectFrame({
+                source: 'clip-layer-off-frame-badge'
+            });
+        }
+
+        const layerIndex = Number(thumbnailContainer.dataset.layerIndex);
+        if (Number.isInteger(layerIndex) && layerIndex >= 0) {
+            this.layerSystem.setActiveLayer?.(layerIndex);
+        }
+        return this.layerSystem.centerActiveLayerRasterInProjectFrame({
+            source: 'layer-off-frame-badge'
+        });
     }
 
     _createLayerThumbnailImageHtml(src = '', { className = '', alt = '' } = {}) {
@@ -3083,6 +3183,7 @@ export class LayerPanelRenderer {
             if (!this.container) return;
             const isScrollable = this.container.scrollHeight > this.container.clientHeight + 1;
             this.container.classList.toggle('layer-panel-items--scrollable', isScrollable);
+            this.container.closest?.('.layer-panel-container')?.classList.toggle('layer-panel-container--scrollable', isScrollable);
         });
     }
 
@@ -3269,30 +3370,115 @@ export class LayerPanelRenderer {
         return {};
     }
 
-    _snapshotToDataUrl(snapshot) {
-        if (!snapshot?.pixels || !snapshot.width || !snapshot.height) return '';
-        if (snapshot.isBlank === true) return '';
-        const cacheKey = `${snapshot.id || 'snapshot'}:${snapshot.updatedAt || 0}:${snapshot.width}x${snapshot.height}`;
+    _snapshotToThumbnailData(snapshot) {
+        if (!snapshot?.pixels || !snapshot.width || !snapshot.height) {
+            return { dataUrl: '', hasOffFramePixels: false };
+        }
+        if (snapshot.isBlank === true) {
+            return { dataUrl: '', hasOffFramePixels: false };
+        }
+        const rasterBounds = this._normalizeSnapshotRasterBounds(snapshot);
+        const cacheKey = [
+            snapshot.id || 'snapshot',
+            snapshot.updatedAt || 0,
+            `${snapshot.width}x${snapshot.height}`,
+            `${rasterBounds.x},${rasterBounds.y},${rasterBounds.width},${rasterBounds.height}`
+        ].join(':');
         const cachedUrl = this._clipSnapshotThumbCache.get(cacheKey);
-        if (cachedUrl) return cachedUrl;
+        if (cachedUrl) {
+            return typeof cachedUrl === 'string'
+                ? { dataUrl: cachedUrl, hasOffFramePixels: false }
+                : cachedUrl;
+        }
 
         try {
-            const canvas = document.createElement('canvas');
-            canvas.width = snapshot.width;
-            canvas.height = snapshot.height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return '';
-            ctx.putImageData(new ImageData(new Uint8ClampedArray(snapshot.pixels), snapshot.width, snapshot.height), 0, 0);
-            const dataUrl = canvas.toDataURL('image/png');
-            this._clipSnapshotThumbCache.set(cacheKey, dataUrl);
+            const sourceCanvas = document.createElement('canvas');
+            sourceCanvas.width = snapshot.width;
+            sourceCanvas.height = snapshot.height;
+            const sourceCtx = sourceCanvas.getContext('2d');
+            if (!sourceCtx) return { dataUrl: '', hasOffFramePixels: false };
+            sourceCtx.putImageData(new ImageData(new Uint8ClampedArray(snapshot.pixels), snapshot.width, snapshot.height), 0, 0);
+
+            const projectFrame = this._getProjectFrameForThumbnail();
+            const projectCanvas = document.createElement('canvas');
+            projectCanvas.width = projectFrame.width;
+            projectCanvas.height = projectFrame.height;
+            const projectCtx = projectCanvas.getContext('2d');
+            if (!projectCtx) return { dataUrl: '', hasOffFramePixels: false };
+            projectCtx.clearRect(0, 0, projectFrame.width, projectFrame.height);
+            projectCtx.drawImage(
+                sourceCanvas,
+                rasterBounds.x - projectFrame.x,
+                rasterBounds.y - projectFrame.y
+            );
+
+            const result = {
+                dataUrl: projectCanvas.toDataURL('image/png'),
+                hasOffFramePixels: this._snapshotHasOffFramePixels(snapshot, rasterBounds, projectFrame)
+            };
+            this._clipSnapshotThumbCache.set(cacheKey, result);
             if (this._clipSnapshotThumbCache.size > 240) {
                 const oldestKey = this._clipSnapshotThumbCache.keys().next().value;
                 if (oldestKey) this._clipSnapshotThumbCache.delete(oldestKey);
             }
-            return dataUrl;
+            return result;
         } catch (e) {
-            return '';
+            return { dataUrl: '', hasOffFramePixels: false };
         }
+    }
+
+    _snapshotToDataUrl(snapshot) {
+        return this._snapshotToThumbnailData(snapshot).dataUrl;
+    }
+
+    _normalizeSnapshotRasterBounds(snapshot) {
+        const width = Math.max(1, Math.round(Number(snapshot?.width || 1)));
+        const height = Math.max(1, Math.round(Number(snapshot?.height || 1)));
+        const bounds = snapshot?.rasterBounds || {};
+        return {
+            x: Math.round(Number.isFinite(Number(bounds.x)) ? Number(bounds.x) : 0),
+            y: Math.round(Number.isFinite(Number(bounds.y)) ? Number(bounds.y) : 0),
+            width: Math.max(1, Math.round(Number(bounds.width || width))),
+            height: Math.max(1, Math.round(Number(bounds.height || height)))
+        };
+    }
+
+    _getProjectFrameForThumbnail() {
+        const canvasConfig = this.layerSystem?.config?.canvas || window.TEGAKI_CONFIG?.canvas || {};
+        return {
+            x: 0,
+            y: 0,
+            width: Math.max(1, Math.round(Number(canvasConfig.width || 800))),
+            height: Math.max(1, Math.round(Number(canvasConfig.height || 600)))
+        };
+    }
+
+    _snapshotHasOffFramePixels(snapshot, rasterBounds = null, projectFrame = null) {
+        if (!snapshot?.pixels || !snapshot.width || !snapshot.height) return false;
+        const bounds = rasterBounds || this._normalizeSnapshotRasterBounds(snapshot);
+        const frame = projectFrame || this._getProjectFrameForThumbnail();
+        const width = Math.max(1, Math.round(Number(snapshot.width)));
+        const height = Math.max(1, Math.round(Number(snapshot.height)));
+        const pixels = snapshot.pixels;
+
+        for (let row = 0; row < height; row++) {
+            const projectY = bounds.y + row;
+            const rowOutsideFrame = projectY < frame.y || projectY >= frame.y + frame.height;
+            const rowOffset = row * width * 4;
+            for (let col = 0, alphaIndex = rowOffset + 3; col < width; col++, alphaIndex += 4) {
+                const alpha = Number(pixels[alphaIndex] || 0);
+                if (alpha <= 0) continue;
+                const projectX = bounds.x + col;
+                if (
+                    rowOutsideFrame
+                    || projectX < frame.x
+                    || projectX >= frame.x + frame.width
+                ) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -3369,7 +3555,7 @@ export class LayerPanelRenderer {
         const isFolder = layer?.type === 'folder';
         const isCollapsed = isFolder && this._isClipInternalFolderCollapsed(asset?.id, layer?.id);
         const snapshot = isFolder ? null : animationTable?.model?.getDrawingSnapshot?.(layer?.drawingSnapshotId);
-        const thumbUrl = this._snapshotToDataUrl(snapshot);
+        const thumbnailData = this._snapshotToThumbnailData(snapshot);
         return {
             variant: 'clip-layer-mirror',
             assetId: asset?.id || '',
@@ -3380,10 +3566,11 @@ export class LayerPanelRenderer {
             thumbnailSize,
             thumbnailHtml: isFolder
                 ? (isCollapsed ? UI_ICONS.folder : UI_ICONS.folderOpen)
-                : this._createLayerThumbnailImageHtml(thumbUrl),
+                : this._createLayerThumbnailImageHtml(thumbnailData.dataUrl),
             isSelected,
             isHidden: !this._isClipAssetInternalLayerEffectivelyVisible(asset, layer),
             isFolder,
+            hasOffFramePixels: thumbnailData.hasOffFramePixels,
             hasParent: !!layer?.parentLayerId,
             isCollapsed,
             isClipping: getClippingMode(layer) !== 'none',
@@ -3413,6 +3600,11 @@ export class LayerPanelRenderer {
             isCollapsed: options.isCollapsed
         });
         thumbnail.innerHTML = options.thumbnailHtml || '';
+        if (!options.isFolder) {
+            this._syncLayerThumbnailOffFrameBadge(thumbnail, {
+                hasOffFramePixels: options.hasOffFramePixels === true
+            });
+        }
 
         const meta = this._createLayerPanelCardPartElement(variant, 'meta', {
             extraClasses: [`${variant}-opacity`]

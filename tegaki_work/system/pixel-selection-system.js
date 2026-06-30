@@ -5,6 +5,11 @@
  * 依存: coordinate-system.js, system/event-bus.js, system/history.js
  * 被依存: core-engine.js, core-runtime.js, ui/*
  * 公開API: PixelSelectionSystem
+ *
+ * Phase 5p共通契約:
+ * - selection boundsはProject座標として扱う。
+ * - constrainLayerToSelection() はbefore/after snapshotのrasterBounds差をProject座標で吸収する。
+ * - 通常Layer / CAF working Layerのstroke/fillは、履歴経路が違ってもこのAPIで選択外をbefore pixelsへ戻す。
  * ============================================================================
  */
 
@@ -14,6 +19,7 @@ import { historyManager } from './history.js';
 import { Sprite, Texture } from 'pixi.js';
 import { applyTransformMatrix, createCenteredTransformMatrix } from './transform-math.js';
 import { resolveIntegerTranslation, translateRgbaPixels } from './raster-translation.js';
+import { normalizeRasterBounds } from './raster-bounds.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MIN_SELECTION_SIZE = 1;
@@ -27,6 +33,7 @@ export class PixelSelectionSystem {
         this.cameraSystem = null;
         this.eventBus = TegakiEventBus;
         this.history = historyManager;
+        this.imageImporter = null;
         this.coordSystem = coordinateSystem;
         this.toolActive = false;
         this.state = null;
@@ -40,11 +47,12 @@ export class PixelSelectionSystem {
         this._detachCallbacks = [];
     }
 
-    init({ app, layerSystem, cameraSystem, eventBus = TegakiEventBus } = {}) {
+    init({ app, layerSystem, cameraSystem, eventBus = TegakiEventBus, imageImporter = null } = {}) {
         this.app = app;
         this.layerSystem = layerSystem;
         this.cameraSystem = cameraSystem;
         this.eventBus = eventBus;
+        this.imageImporter = imageImporter;
         this.canvas = app?.canvas || app?.view || null;
         this._createOverlay();
         this._bindCanvasEvents();
@@ -86,38 +94,54 @@ export class PixelSelectionSystem {
         const bounds = this.getBoundsForLayer(layerId);
         if (!bounds || this.transformSession || !beforeSnapshot) return false;
         const afterSnapshot = this.layerSystem?.createLayerRasterSnapshot?.(layer);
-        if (!afterSnapshot || afterSnapshot.width !== beforeSnapshot.width
-            || afterSnapshot.height !== beforeSnapshot.height) {
+        if (!afterSnapshot?.pixels || !beforeSnapshot?.pixels) {
             return false;
         }
 
-        const x0 = Math.max(0, Math.floor(bounds.x));
-        const y0 = Math.max(0, Math.floor(bounds.y));
-        const x1 = Math.min(afterSnapshot.width, Math.ceil(bounds.x + bounds.width));
-        const y1 = Math.min(afterSnapshot.height, Math.ceil(bounds.y + bounds.height));
+        const beforeBounds = normalizeRasterBounds(beforeSnapshot.rasterBounds, {
+            width: beforeSnapshot.width,
+            height: beforeSnapshot.height
+        });
+        beforeBounds.width = beforeSnapshot.width;
+        beforeBounds.height = beforeSnapshot.height;
+        const afterBounds = normalizeRasterBounds(afterSnapshot.rasterBounds, {
+            width: afterSnapshot.width,
+            height: afterSnapshot.height
+        });
+        afterBounds.width = afterSnapshot.width;
+        afterBounds.height = afterSnapshot.height;
+        const x0 = Math.floor(bounds.x);
+        const y0 = Math.floor(bounds.y);
+        const x1 = Math.ceil(bounds.x + bounds.width);
+        const y1 = Math.ceil(bounds.y + bounds.height);
+
         for (let y = 0; y < afterSnapshot.height; y++) {
-            if (y >= y0 && y < y1) {
-                const rowStart = y * afterSnapshot.width * 4;
-                afterSnapshot.pixels.set(
-                    beforeSnapshot.pixels.subarray(rowStart, rowStart + (x0 * 4)),
-                    rowStart
-                );
-                afterSnapshot.pixels.set(
-                    beforeSnapshot.pixels.subarray(
-                        rowStart + (x1 * 4),
-                        rowStart + (afterSnapshot.width * 4)
-                    ),
-                    rowStart + (x1 * 4)
-                );
-            } else {
-                const rowStart = y * afterSnapshot.width * 4;
-                afterSnapshot.pixels.set(
-                    beforeSnapshot.pixels.subarray(
-                        rowStart,
-                        rowStart + (afterSnapshot.width * 4)
-                    ),
-                    rowStart
-                );
+            const projectY = afterBounds.y + y;
+            const insideY = projectY >= y0 && projectY < y1;
+            for (let x = 0; x < afterSnapshot.width; x++) {
+                const projectX = afterBounds.x + x;
+                if (insideY && projectX >= x0 && projectX < x1) continue;
+
+                const targetIndex = (y * afterSnapshot.width + x) * 4;
+                const beforeX = projectX - beforeBounds.x;
+                const beforeY = projectY - beforeBounds.y;
+                if (
+                    beforeX >= 0
+                    && beforeY >= 0
+                    && beforeX < beforeSnapshot.width
+                    && beforeY < beforeSnapshot.height
+                ) {
+                    const sourceIndex = (beforeY * beforeSnapshot.width + beforeX) * 4;
+                    afterSnapshot.pixels[targetIndex] = beforeSnapshot.pixels[sourceIndex];
+                    afterSnapshot.pixels[targetIndex + 1] = beforeSnapshot.pixels[sourceIndex + 1];
+                    afterSnapshot.pixels[targetIndex + 2] = beforeSnapshot.pixels[sourceIndex + 2];
+                    afterSnapshot.pixels[targetIndex + 3] = beforeSnapshot.pixels[sourceIndex + 3];
+                } else {
+                    afterSnapshot.pixels[targetIndex] = 0;
+                    afterSnapshot.pixels[targetIndex + 1] = 0;
+                    afterSnapshot.pixels[targetIndex + 2] = 0;
+                    afterSnapshot.pixels[targetIndex + 3] = 0;
+                }
             }
         }
         afterSnapshot.paths = [];
@@ -253,32 +277,39 @@ export class PixelSelectionSystem {
 
         const layer = this._getEligibleActiveLayer();
         if (!layer) return false;
-        const width = Math.max(1, Math.round(layer.layerData.renderTexture.width));
-        const height = Math.max(1, Math.round(layer.layerData.renderTexture.height));
         const sourceBounds = this.clipboard.sourceBounds || {};
-        const x = Math.max(0, Math.min(width - this.clipboard.width, Math.round(sourceBounds.x || 0)));
-        const y = Math.max(0, Math.min(height - this.clipboard.height, Math.round(sourceBounds.y || 0)));
+        const x = Number.isFinite(sourceBounds.x) ? Math.round(sourceBounds.x) : 0;
+        const y = Number.isFinite(sourceBounds.y) ? Math.round(sourceBounds.y) : 0;
+        const pasteBounds = {
+            x,
+            y,
+            width: this.clipboard.width,
+            height: this.clipboard.height
+        };
+        const historyBeforeSnapshot = this.layerSystem?.createLayerRasterSnapshot?.(layer) || null;
+        const expanded = this.layerSystem?.ensureLayerRasterBoundsForRect?.(layer, pasteBounds, { padding: 0 });
+        if (expanded && expanded.ok === false) return false;
 
         this.state = {
             active: true,
             layerId: layer.layerData.id,
-            bounds: {
-                x,
-                y,
-                width: this.clipboard.width,
-                height: this.clipboard.height
-            },
+            bounds: pasteBounds,
             mode: 'rectangle',
             transformSessionActive: false
         };
         this.setToolActive(true);
-        return this._startFloatingSession({
+        const started = this._startFloatingSession({
             kind: 'paste',
             pixels: new Uint8ClampedArray(this.clipboard.pixels),
             width: this.clipboard.width,
             height: this.clipboard.height,
-            cutSource: false
+            cutSource: false,
+            historyBeforeSnapshot
         });
+        if (!started && historyBeforeSnapshot) {
+            this.layerSystem?.restoreLayerRasterSnapshot?.(historyBeforeSnapshot);
+        }
+        return started;
     }
 
     pasteSelectionAsNewLayer() {
@@ -312,32 +343,24 @@ export class PixelSelectionSystem {
         }
         if (this.transformSession && !this.confirmTransform()) return false;
 
-        const canvasWidth = Math.max(1, Math.round(this.layerSystem.config?.canvas?.width || clipboard.width));
-        const canvasHeight = Math.max(1, Math.round(this.layerSystem.config?.canvas?.height || clipboard.height));
-        const pixels = new Uint8ClampedArray(canvasWidth * canvasHeight * 4);
-        const x = Math.max(0, Math.min(canvasWidth - clipboard.width, Math.round(clipboard.sourceBounds?.x || 0)));
-        const y = Math.max(0, Math.min(canvasHeight - clipboard.height, Math.round(clipboard.sourceBounds?.y || 0)));
-        this._blendRegion(
-            pixels,
-            canvasWidth,
-            canvasHeight,
-            clipboard.pixels,
-            clipboard.width,
-            clipboard.height,
-            x,
-            y
-        );
+        const sourceBounds = clipboard.sourceBounds || {};
+        const x = Number.isFinite(sourceBounds.x) ? Math.round(sourceBounds.x) : 0;
+        const y = Number.isFinite(sourceBounds.y) ? Math.round(sourceBounds.y) : 0;
+        const width = Math.max(1, Math.round(clipboard.width));
+        const height = Math.max(1, Math.round(clipboard.height));
+        const pixels = new Uint8ClampedArray(clipboard.pixels);
 
         const created = this.layerSystem.createLayer('選択範囲のコピー');
         const layer = created?.layer;
         if (!layer?.layerData) return false;
         if (!this.layerSystem.restoreLayerRasterSnapshot({
             layerId: layer.layerData.id,
-            width: canvasWidth,
-            height: canvasHeight,
+            width,
+            height,
             pixels,
             paths: [],
-            pathsData: []
+            pathsData: [],
+            rasterBounds: { x, y, width, height }
         })) {
             return false;
         }
@@ -514,6 +537,12 @@ export class PixelSelectionSystem {
         return true;
     }
 
+    _deactivateSelectionToolForExternalTool(tool) {
+        if (!tool || tool === 'selection' || !this.toolActive) return;
+        if (this.transformSession && !this.confirmTransform()) return;
+        this.setToolActive(false);
+    }
+
     copySelection() {
         if (this.state?.scope?.kind === 'folder') {
             return this._copyFolderSelection();
@@ -652,7 +681,7 @@ export class PixelSelectionSystem {
             paths: [],
             pathsData: []
         };
-        this._clearRegion(after.pixels, after.width, context.bounds);
+        this._clearRegion(after.pixels, after.width, context.bounds, after.rasterBounds);
         if (!this.layerSystem.restoreLayerRasterSnapshot(after)) return false;
 
         const layerId = before.layerId;
@@ -919,14 +948,14 @@ export class PixelSelectionSystem {
                 }
             }],
             ['tool:changed', ({ tool } = {}) => {
-                if (tool && tool !== 'selection' && this.toolActive) this.setToolActive(false);
+                this._deactivateSelectionToolForExternalTool(tool);
             }],
             ['brush:mode-changed', (payload = {}) => {
                 const tool = payload.tool || payload.mode || payload.data?.tool || payload.data?.mode;
-                if (tool && tool !== 'selection' && this.toolActive) this.setToolActive(false);
+                this._deactivateSelectionToolForExternalTool(tool);
             }],
             ['ui:sidebar:sync-tool', ({ tool } = {}) => {
-                if (tool && tool !== 'selection' && this.toolActive) this.setToolActive(false);
+                this._deactivateSelectionToolForExternalTool(tool);
             }]
         ];
         subscriptions.forEach(([name, handler]) => {
@@ -1218,7 +1247,7 @@ export class PixelSelectionSystem {
         };
         const cutSource = options.cutSource !== false && options.kind !== 'paste';
         if (cutSource) {
-            this._clearRegion(baseSnapshot.pixels, baseSnapshot.width, context.bounds);
+            this._clearRegion(baseSnapshot.pixels, baseSnapshot.width, context.bounds, baseSnapshot.rasterBounds);
             baseSnapshot.paths = [];
             baseSnapshot.pathsData = [];
         }
@@ -1237,7 +1266,7 @@ export class PixelSelectionSystem {
         this.transformSession = {
             kind: options.kind || 'move-selection',
             layer: context.layer,
-            beforeSnapshot,
+            beforeSnapshot: options.historyBeforeSnapshot || beforeSnapshot,
             baseSnapshot,
             initialBounds: { ...context.bounds },
             pixels: region.pixels,
@@ -1245,6 +1274,9 @@ export class PixelSelectionSystem {
             height: region.height,
             canvasWidth: beforeSnapshot.width,
             canvasHeight: beforeSnapshot.height,
+            rasterBounds: beforeSnapshot.rasterBounds
+                ? { ...beforeSnapshot.rasterBounds }
+                : { x: 0, y: 0, width: beforeSnapshot.width, height: beforeSnapshot.height },
             originX: x,
             originY: y,
             transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
@@ -1353,9 +1385,13 @@ export class PixelSelectionSystem {
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
         const transform = session.transform;
+        const rasterBounds = normalizeRasterBounds(session.rasterBounds, {
+            width: session.canvasWidth,
+            height: session.canvasHeight
+        });
         ctx.translate(
-            session.originX + (session.width / 2) + transform.x,
-            session.originY + (session.height / 2) + transform.y
+            session.originX - rasterBounds.x + (session.width / 2) + transform.x,
+            session.originY - rasterBounds.y + (session.height / 2) + transform.y
         );
         ctx.rotate(transform.rotation);
         ctx.scale(transform.scaleX, transform.scaleY);
@@ -1371,12 +1407,18 @@ export class PixelSelectionSystem {
         const canvasPixels = new Uint8ClampedArray(
             session.canvasWidth * session.canvasHeight * 4
         );
+        const rasterBounds = normalizeRasterBounds(session.rasterBounds, {
+            width: session.canvasWidth,
+            height: session.canvasHeight
+        });
+        const originRasterX = session.originX - rasterBounds.x;
+        const originRasterY = session.originY - rasterBounds.y;
         for (let row = 0; row < session.height; row++) {
-            const targetY = session.originY + row;
+            const targetY = originRasterY + row;
             if (targetY < 0 || targetY >= session.canvasHeight) continue;
             const sourceStart = row * session.width * 4;
-            const sourceX = Math.max(0, -session.originX);
-            const targetX = Math.max(0, session.originX);
+            const sourceX = Math.max(0, -originRasterX);
+            const targetX = Math.max(0, originRasterX);
             const copyWidth = Math.min(
                 session.width - sourceX,
                 session.canvasWidth - targetX
@@ -1498,10 +1540,14 @@ export class PixelSelectionSystem {
     }
 
     _extractRegion(snapshot, bounds) {
-        const x0 = Math.max(0, Math.floor(bounds.x));
-        const y0 = Math.max(0, Math.floor(bounds.y));
-        const x1 = Math.min(snapshot.width, Math.ceil(bounds.x + bounds.width));
-        const y1 = Math.min(snapshot.height, Math.ceil(bounds.y + bounds.height));
+        const rasterBounds = normalizeRasterBounds(snapshot.rasterBounds, {
+            width: snapshot.width,
+            height: snapshot.height
+        });
+        const x0 = Math.max(0, Math.floor(bounds.x - rasterBounds.x));
+        const y0 = Math.max(0, Math.floor(bounds.y - rasterBounds.y));
+        const x1 = Math.min(snapshot.width, Math.ceil(bounds.x + bounds.width - rasterBounds.x));
+        const y1 = Math.min(snapshot.height, Math.ceil(bounds.y + bounds.height - rasterBounds.y));
         const width = x1 - x0;
         const height = y1 - y0;
         if (width < 1 || height < 1) return null;
@@ -1527,10 +1573,14 @@ export class PixelSelectionSystem {
         })) {
             return null;
         }
-        const minX = Math.max(0, Math.floor(Math.min(...corners.map(point => point.localX))));
-        const minY = Math.max(0, Math.floor(Math.min(...corners.map(point => point.localY))));
-        const maxX = Math.min(snapshot.width, Math.ceil(Math.max(...corners.map(point => point.localX))));
-        const maxY = Math.min(snapshot.height, Math.ceil(Math.max(...corners.map(point => point.localY))));
+        const rasterBounds = normalizeRasterBounds(snapshot.rasterBounds, {
+            width: snapshot.width,
+            height: snapshot.height
+        });
+        const minX = Math.max(rasterBounds.x, Math.floor(Math.min(...corners.map(point => point.localX))));
+        const minY = Math.max(rasterBounds.y, Math.floor(Math.min(...corners.map(point => point.localY))));
+        const maxX = Math.min(rasterBounds.x + snapshot.width, Math.ceil(Math.max(...corners.map(point => point.localX))));
+        const maxY = Math.min(rasterBounds.y + snapshot.height, Math.ceil(Math.max(...corners.map(point => point.localY))));
         if (maxX <= minX || maxY <= minY) return null;
         return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
     }
@@ -1563,13 +1613,17 @@ export class PixelSelectionSystem {
 
     _clearCanvasBoundsFromLayerSnapshot(snapshot, localBounds, canvasBounds, layer) {
         let changed = false;
-        const x0 = Math.max(0, Math.floor(localBounds.x));
-        const y0 = Math.max(0, Math.floor(localBounds.y));
-        const x1 = Math.min(snapshot.width, Math.ceil(localBounds.x + localBounds.width));
-        const y1 = Math.min(snapshot.height, Math.ceil(localBounds.y + localBounds.height));
+        const rasterBounds = normalizeRasterBounds(snapshot.rasterBounds, {
+            width: snapshot.width,
+            height: snapshot.height
+        });
+        const x0 = Math.max(0, Math.floor(localBounds.x - rasterBounds.x));
+        const y0 = Math.max(0, Math.floor(localBounds.y - rasterBounds.y));
+        const x1 = Math.min(snapshot.width, Math.ceil(localBounds.x + localBounds.width - rasterBounds.x));
+        const y1 = Math.min(snapshot.height, Math.ceil(localBounds.y + localBounds.height - rasterBounds.y));
         for (let y = y0; y < y1; y++) {
             for (let x = x0; x < x1; x++) {
-                const world = this._layerLocalToWorld(x + 0.5, y + 0.5, layer);
+                const world = this._layerLocalToWorld(rasterBounds.x + x + 0.5, rasterBounds.y + y + 0.5, layer);
                 if (!world || !this._pointInBounds(world, canvasBounds)) continue;
                 const index = (y * snapshot.width + x) * 4;
                 if (
@@ -1622,12 +1676,16 @@ export class PixelSelectionSystem {
         return { x, y };
     }
 
-    _clearRegion(pixels, snapshotWidth, bounds) {
-        const x0 = Math.max(0, Math.floor(bounds.x));
-        const y0 = Math.max(0, Math.floor(bounds.y));
-        const x1 = Math.min(snapshotWidth, Math.ceil(bounds.x + bounds.width));
+    _clearRegion(pixels, snapshotWidth, bounds, rasterBoundsInput = null) {
+        const rasterBounds = normalizeRasterBounds(rasterBoundsInput, {
+            width: snapshotWidth,
+            height: Math.floor(pixels.length / 4 / snapshotWidth)
+        });
+        const x0 = Math.max(0, Math.floor(bounds.x - rasterBounds.x));
+        const y0 = Math.max(0, Math.floor(bounds.y - rasterBounds.y));
+        const x1 = Math.min(snapshotWidth, Math.ceil(bounds.x + bounds.width - rasterBounds.x));
         const snapshotHeight = Math.floor(pixels.length / 4 / snapshotWidth);
-        const y1 = Math.min(snapshotHeight, Math.ceil(bounds.y + bounds.height));
+        const y1 = Math.min(snapshotHeight, Math.ceil(bounds.y + bounds.height - rasterBounds.y));
         for (let y = y0; y < y1; y++) {
             pixels.fill(0, (y * snapshotWidth + x0) * 4, (y * snapshotWidth + x1) * 4);
         }

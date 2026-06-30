@@ -63,6 +63,7 @@ export const DOMBuilder = (function() {
 
         const tools = [
             { id: 'library-tool', icon: 'library', title: 'アルバム保管' },
+            { id: 'image-import-tool', icon: 'load', title: '画像をアクティブレイヤーへ読み込み' },
             { id: 'export-tool', icon: 'export', title: '画像・アニメ出力' },
             { separator: true },
             { id: 'resize-tool', icon: 'resize', title: 'リサイズ' },

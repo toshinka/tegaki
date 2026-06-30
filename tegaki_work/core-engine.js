@@ -54,6 +54,8 @@ import './system/checker-utils.js';
 import { LayerPanelRenderer } from './ui/layer-panel-renderer.js';
 import { emergencyRecoveryStore } from './system/emergency-recovery-store.js';
 import { PixelSelectionSystem } from './system/pixel-selection-system.js';
+import { ImageImporter } from './system/image-importer.js';
+import { PsdImporter } from './system/psd-importer.js';
 
 // ポップアップのインポート
 import { SettingsPopup } from './ui/settings-popup.js';
@@ -93,6 +95,14 @@ export class CoreEngine {
         
         this.drawingEngine = null;
         this.pixelSelectionSystem = new PixelSelectionSystem();
+        this.imageImporter = new ImageImporter({
+            layerSystem: this.layerSystem,
+            eventBus: this.eventBus,
+            history: this.history
+        });
+        this.psdImporter = new PsdImporter({
+            eventBus: this.eventBus
+        });
         this.layerPanelRenderer = null;
         
         // WebGL2 コンポーネント
@@ -125,6 +135,8 @@ export class CoreEngine {
         window.cameraSystem = this.cameraSystem;
         window.ThumbnailSystem = this.thumbnailSystem;
         window.History = this.history;
+        window.imageImporter = this.imageImporter;
+        window.psdImporter = this.psdImporter;
     }
 
     _applyHistorySettings() {
@@ -260,9 +272,17 @@ export class CoreEngine {
             app: this.app,
             layerSystem: this.layerSystem,
             cameraSystem: this.cameraSystem,
-            eventBus: this.eventBus
+            eventBus: this.eventBus,
+            imageImporter: this.imageImporter
         });
         window.pixelSelectionSystem = this.pixelSelectionSystem;
+
+        this.imageImporter.init({
+            layerSystem: this.layerSystem,
+            eventBus: this.eventBus,
+            history: this.history
+        });
+        window.imageImporter = this.imageImporter;
         
         // 12. 描画エンジンの初期化
         this.drawingEngine = new DrawingEngine(
