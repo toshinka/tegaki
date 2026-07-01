@@ -40,6 +40,7 @@ export const TEGAKI_CONFIG = {
             baselineCalibration: true,
             baselineSampleCount: 5,
             minPhysicalWidth: 1.0,
+            minStrokePressure: 0.08,
             enableDevicePixelRatio: true
         }
     },

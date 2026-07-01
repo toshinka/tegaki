@@ -4359,6 +4359,276 @@ export class LayerSystem {
         return { layer: newLayer, index: finalIndex };
     }
 
+    _createRasterLayerContainer(name) {
+        const layerModel = new LayerModel({
+            name: name || this._generateNextLayerName()
+        });
+        const layer = new Container();
+        layer.label = layerModel.id;
+        layer.layerData = layerModel;
+        layer.id = layerModel.id;
+
+        if (this.app?.renderer) {
+            layerModel.initializeTexture(this.config.canvas.width, this.config.canvas.height);
+            if (layerModel.layerSprite) {
+                layer.addChild(layerModel.layerSprite);
+            }
+            const success = layerModel.initializeMask(
+                this.config.canvas.width,
+                this.config.canvas.height,
+                this.app.renderer
+            );
+            if (success && layerModel.maskSprite) {
+                layer.addChild(layerModel.maskSprite);
+            }
+        }
+
+        if (this.transform) {
+            this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+        }
+
+        return layer;
+    }
+
+    _getLayerSubtreeIds(folderId) {
+        const layers = this.getLayers();
+        const ids = new Set([folderId]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            layers.forEach(layer => {
+                const data = layer?.layerData;
+                if (data?.parentId && ids.has(data.parentId) && !ids.has(data.id)) {
+                    ids.add(data.id);
+                    changed = true;
+                }
+            });
+        }
+        return ids;
+    }
+
+    _getFolderSubtreeLayers(folderId) {
+        const ids = this._getLayerSubtreeIds(folderId);
+        return this.getLayers().filter(layer => ids.has(layer.layerData?.id));
+    }
+
+    _isLayerEffectivelyVisible(layer) {
+        const data = layer?.layerData;
+        if (!data || layer.visible === false || data.visible === false) return false;
+
+        const byId = new Map(this.getLayers().map(item => [item.layerData?.id, item]));
+        const visited = new Set();
+        let parentId = data.parentId || null;
+        while (parentId && !visited.has(parentId)) {
+            visited.add(parentId);
+            const parent = byId.get(parentId);
+            if (!parent) break;
+            if (parent.visible === false || parent.layerData?.visible === false) return false;
+            parentId = parent.layerData?.parentId || null;
+        }
+        return true;
+    }
+
+    canMergeFolderToLayer(layerIndex) {
+        const folderLayer = this.getLayers()[layerIndex];
+        if (!folderLayer?.layerData?.isFolder || !this.app?.renderer || !this.currentFrameContainer) return false;
+        if (!this._isLayerEffectivelyVisible(folderLayer)) return false;
+        return this._getFolderSubtreeLayers(folderLayer.layerData.id)
+            .some(layer => layer?.layerData?.renderTexture && !layer.layerData.isBackground && !layer.layerData.isFolder);
+    }
+
+    _createFolderCompositeSnapshot(folderLayer, targetLayerId) {
+        if (!folderLayer?.layerData?.isFolder || !targetLayerId || !this.app?.renderer || !this.currentFrameContainer) {
+            return null;
+        }
+
+        const width = Math.max(1, Math.round(this.config?.canvas?.width || 1));
+        const height = Math.max(1, Math.round(this.config?.canvas?.height || 1));
+        const maxTextureSize = this._getMaxRenderTextureSize();
+        if (width > maxTextureSize || height > maxTextureSize || !this._isRasterBakeSizeAllowed({ width, height })) {
+            console.warn('[LayerSystem] Folder merge skipped: composite target is too large', { width, height, maxTextureSize });
+            return null;
+        }
+
+        const subtreeIds = this._getLayerSubtreeIds(folderLayer.layerData.id);
+        const visibilityState = this.getLayers().map(layer => ({ layer, visible: layer.visible }));
+        const visibleById = new Map(visibilityState.map(({ layer, visible }) => [layer.layerData?.id, visible]));
+        const dataVisibleById = new Map(this.getLayers().map(layer => [layer.layerData?.id, layer.layerData?.visible !== false]));
+        const byId = new Map(this.getLayers().map(layer => [layer.layerData?.id, layer]));
+        const wasEffectivelyVisible = (layer) => {
+            const data = layer?.layerData;
+            if (!data || visibleById.get(data.id) === false || dataVisibleById.get(data.id) === false) return false;
+            const visited = new Set();
+            let parentId = data.parentId || null;
+            while (parentId && !visited.has(parentId)) {
+                visited.add(parentId);
+                const parent = byId.get(parentId);
+                if (!parent) break;
+                const parentIdValue = parent.layerData?.id;
+                if (visibleById.get(parentIdValue) === false || dataVisibleById.get(parentIdValue) === false) return false;
+                parentId = parent.layerData?.parentId || null;
+            }
+            return true;
+        };
+        const checkerVisible = this.checkerPattern ? this.checkerPattern.visible : null;
+        const tempRT = RenderTexture.create({ width, height, antialias: true });
+
+        try {
+            if (this.checkerPattern) this.checkerPattern.visible = false;
+            this.getLayers().forEach(layer => {
+                const id = layer.layerData?.id;
+                layer.visible = subtreeIds.has(id) && wasEffectivelyVisible(layer);
+            });
+
+            this.app.renderer.render({
+                container: this.currentFrameContainer,
+                target: tempRT,
+                clear: true,
+                clearColor: [0, 0, 0, 0]
+            });
+
+            const result = this.app.renderer.extract.pixels({ target: tempRT });
+            const sourcePixels = result?.pixels || (result instanceof Uint8ClampedArray ? result : new Uint8ClampedArray(result?.buffer || result));
+            const pixels = new Uint8ClampedArray(sourcePixels);
+            this._unpremultiplyPixelBuffer(pixels);
+            const hasPixels = pixels.some((value, index) => index % 4 === 3 && value > 0);
+            if (!hasPixels) return null;
+
+            return {
+                layerId: targetLayerId,
+                width,
+                height,
+                rasterBounds: { x: 0, y: 0, width, height },
+                pixels,
+                pathsData: [],
+                paths: []
+            };
+        } finally {
+            visibilityState.forEach(({ layer, visible }) => {
+                layer.visible = visible;
+            });
+            if (this.checkerPattern && checkerVisible !== null) {
+                this.checkerPattern.visible = checkerVisible;
+            }
+            tempRT.destroy(true);
+        }
+    }
+
+    _replaceLayerInParentFolder(parentId, oldLayerId, newLayerId) {
+        if (!parentId || !oldLayerId || !newLayerId) return;
+        const parent = this.getLayers().find(layer => layer.layerData?.id === parentId);
+        const children = parent?.layerData?.children;
+        if (!Array.isArray(children)) return;
+        const index = children.indexOf(oldLayerId);
+        if (index >= 0) {
+            children.splice(index, 1, newLayerId);
+        } else if (!children.includes(newLayerId)) {
+            children.push(newLayerId);
+        }
+    }
+
+    _executeFolderMergeToLayer({ folderId, mergedLayer, snapshot, subtreeLayers, insertIndex, parentId }) {
+        if (!folderId || !mergedLayer?.layerData || !snapshot || !this.currentFrameContainer) return false;
+        const subtreeIds = new Set((subtreeLayers || []).map(layer => layer.layerData?.id).filter(Boolean));
+        if (!subtreeIds.has(folderId)) return false;
+
+        (subtreeLayers || []).forEach(layer => {
+            if (layer?.parent) {
+                this.currentFrameContainer.removeChild(layer);
+            }
+        });
+
+        if (mergedLayer.parent) {
+            this.currentFrameContainer.removeChild(mergedLayer);
+        }
+        mergedLayer.layerData.parentId = parentId || null;
+        mergedLayer.layerData.opacity = 1;
+        mergedLayer.alpha = 1;
+        this.currentFrameContainer.addChildAt(mergedLayer, Math.min(insertIndex, this.currentFrameContainer.children.length));
+        this._replaceLayerInParentFolder(parentId, folderId, mergedLayer.layerData.id);
+
+        if (!this.restoreLayerRasterSnapshot(snapshot)) return false;
+
+        const mergedIndex = this.getLayerIndex(mergedLayer);
+        this.setActiveLayer(mergedIndex);
+        this.refreshClippingMasks();
+        this.requestThumbnailUpdate(mergedIndex, true);
+        this._emitPanelUpdateRequest();
+        if (this.eventBus) {
+            this.eventBus.emit('layer:folder-merged', {
+                folderId,
+                layerId: mergedLayer.layerData.id,
+                layerIndex: mergedIndex
+            });
+        }
+        return true;
+    }
+
+    _restoreFolderMergeState({ beforeState, mergedLayer, subtreeLayers }) {
+        if (!beforeState || !this.currentFrameContainer) return false;
+        if (mergedLayer?.parent) {
+            this.currentFrameContainer.removeChild(mergedLayer);
+        }
+        (subtreeLayers || []).forEach(layer => {
+            if (!layer?.parent) {
+                this.currentFrameContainer.addChild(layer);
+            }
+        });
+        const restored = this._restoreLayerPlacementState(beforeState);
+        this._emitPanelUpdateRequest();
+        return restored;
+    }
+
+    mergeFolderToLayer(layerIndex) {
+        const layers = this.getLayers();
+        const folderLayer = layers[layerIndex];
+        if (!folderLayer?.layerData?.isFolder) return false;
+        if (!this.canMergeFolderToLayer(layerIndex)) {
+            console.warn('[LayerSystem] Folder merge requires a visible raster layer inside the folder');
+            return false;
+        }
+
+        const folderId = folderLayer.layerData.id;
+        const beforeState = this._captureLayerPlacementState();
+        const subtreeLayers = this._getFolderSubtreeLayers(folderId);
+        const parentId = folderLayer.layerData.parentId || null;
+        const insertIndex = layerIndex;
+        const mergedLayer = this._createRasterLayerContainer(`${folderLayer.layerData.name || 'Folder'} 結合`);
+        const snapshot = this._createFolderCompositeSnapshot(folderLayer, mergedLayer.layerData.id);
+        if (!mergedLayer || !snapshot) return false;
+
+        const applyMerge = () => this._executeFolderMergeToLayer({
+            folderId,
+            mergedLayer,
+            snapshot,
+            subtreeLayers,
+            insertIndex,
+            parentId
+        });
+        const undoMerge = () => this._restoreFolderMergeState({
+            beforeState,
+            mergedLayer,
+            subtreeLayers
+        });
+
+        if (historyManager && !historyManager.isApplying) {
+            historyManager.push({
+                name: 'folder-merge-to-layer',
+                do: applyMerge,
+                undo: undoMerge,
+                meta: {
+                    folderId,
+                    layerId: mergedLayer.layerData.id,
+                    layerCount: subtreeLayers.length
+                },
+                byteSize: snapshot.pixels?.byteLength || 0
+            });
+            return true;
+        }
+
+        return applyMerge();
+    }
+
     /**
      * 🆕 下のレイヤーと結合
      */
@@ -4371,7 +4641,13 @@ export class LayerSystem {
         const topLayer = layers[layerIndex];
         const bottomLayer = layers[layerIndex - 1];
 
-        if (!topLayer?.layerData || !bottomLayer?.layerData) return false;
+        if (!topLayer?.layerData) return false;
+
+        if (topLayer.layerData?.isFolder) {
+            return this.mergeFolderToLayer(layerIndex);
+        }
+
+        if (!bottomLayer?.layerData) return false;
 
         if (topLayer.layerData?.isFolder || bottomLayer.layerData?.isFolder || bottomLayer.layerData?.isBackground) {
             console.warn('[LayerSystem] Merge down requires a normal layer below');

@@ -303,7 +303,7 @@ export class BrushCore {
         });
     }
 
-    updateStroke(clientX, clientY, pressure, pointerType = 'unknown', inputProfile = null) {
+    updateStroke(clientX, clientY, pressure, pointerType = 'unknown', inputProfile = null, options = {}) {
         if (!this.isDrawing) return;
 
         const activeLayer = this.layerManager.getActiveLayer();
@@ -323,12 +323,16 @@ export class BrushCore {
         // 描き始めの 0.0 と合わせるため、最小値を 0.1 -> 0.0 に変更。
         // これにより点描時の突然の肥大化を防ぐ。
         const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
-        const processedPressure = pressureEnabled ? Math.max(0.0, pressure ?? 0.0) : 1.0;
+        const processedPressure = pressureEnabled
+            ? this._stabilizeMovePressure(pressure, currentMode, pointerType)
+            : 1.0;
 
         // カメラ縮小時は1つの画面移動が大きなlocal距離になるため、記録とライブ表示の両方を細かく補間する。
         const interpolationStep = currentMode === 'lasso-fill' ? 5 : 1; // 投げ縄は少し粗めで良い
         const steps = Math.max(1, Math.floor(distance / interpolationStep));
         const pointsBeforeEvent = this.strokeRecorder.getCurrentPoints().length;
+        const realtimeLineBatch = options.realtimeLineBatch
+            || ((currentMode === 'pen' || currentMode === 'eraser') ? [] : null);
         let generatedPoints = 0;
 
         for (let i = 1; i <= steps; i++) {
@@ -337,14 +341,17 @@ export class BrushCore {
             const interpY = this.lastLocalY + dy * t;
             const interpPressure = this.lastPressure + (processedPressure - this.lastPressure) * t;
 
-            this._renderRealtimeSegmentIfNeeded(currentMode, interpX, interpY, interpPressure);
+            this._renderRealtimeStrokePoint(currentMode, interpX, interpY, interpPressure, realtimeLineBatch);
             this.strokeRecorder.addPoint(interpX, interpY, interpPressure);
             generatedPoints++;
         }
 
-        this._renderRealtimeSegmentIfNeeded(currentMode, localX, localY, processedPressure);
+        this._renderRealtimeStrokePoint(currentMode, localX, localY, processedPressure, realtimeLineBatch);
         this.strokeRecorder.addPoint(localX, localY, processedPressure);
         generatedPoints++;
+        if (options.flushRealtimeLineBatch !== false) {
+            this._flushRealtimeLineBatch(currentMode, realtimeLineBatch);
+        }
 
         // [指示書] ライブ焼き込み中は previewGraphics を使用しない（二重描画防止）
         if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen' && currentMode !== 'airbrush' && currentMode !== 'airbrush-erase' && currentMode !== 'blur') {
@@ -394,6 +401,51 @@ export class BrushCore {
         });
     }
 
+    updateStrokeBatch(infos, inputProfile = null) {
+        if (!this.isDrawing || !Array.isArray(infos) || infos.length === 0) return;
+
+        const mode = this.getMode();
+        const realtimeLineBatch = (mode === 'pen' || mode === 'eraser') ? [] : null;
+        infos.forEach((info, index) => {
+            if (!info) return;
+            const isLast = index === infos.length - 1;
+            this.updateStroke(
+                info.clientX,
+                info.clientY,
+                info.pressure,
+                info.pointerType,
+                isLast ? (inputProfile || info.inputProfile) : null,
+                {
+                    realtimeLineBatch,
+                    flushRealtimeLineBatch: false
+                }
+            );
+        });
+        this._flushRealtimeLineBatch(mode, realtimeLineBatch);
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.coalescedBatches = (this.strokeInputProfile.coalescedBatches || 0) + 1;
+        }
+    }
+
+    _stabilizeMovePressure(pressure, mode, pointerType = 'unknown') {
+        const rawPressure = Number(pressure ?? 0.0);
+        const clampedPressure = Math.max(0.0, Math.min(1.0, Number.isFinite(rawPressure) ? rawPressure : 0.0));
+        const isPenStrokeMode = mode === 'pen' || mode === 'eraser';
+        if (pointerType !== 'pen' || !isPenStrokeMode || clampedPressure > 0.001) {
+            return clampedPressure;
+        }
+
+        const minStrokePressure = Math.max(
+            0,
+            Math.min(1, Number(window.TEGAKI_CONFIG?.pen?.pressure?.minStrokePressure ?? 0.08))
+        );
+        const stabilizedPressure = Math.max(minStrokePressure, Math.min(1, Number(this.lastPressure || 0)));
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.zeroMovePressureSamples = (this.strokeInputProfile.zeroMovePressureSamples || 0) + 1;
+        }
+        return stabilizedPressure;
+    }
+
     _renderLassoPreview(points, settings) {
         if (!this.previewGraphics || points.length < 2) return;
 
@@ -422,6 +474,10 @@ export class BrushCore {
     }
 
     _renderRealtimeSegmentIfNeeded(mode, localX, localY, pressure, force = false) {
+        return this._renderRealtimeStrokePoint(mode, localX, localY, pressure, null, force);
+    }
+
+    _renderRealtimeStrokePoint(mode, localX, localY, pressure, realtimeLineBatch = null, force = false) {
         const dx = localX - this.lastRenderedLocalX;
         const dy = localY - this.lastRenderedLocalY;
         const distance = Math.sqrt(dx * dx + dy * dy);
@@ -435,6 +491,21 @@ export class BrushCore {
                 { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
                 { x: localX, y: localY, pressure: renderPressure }
               ];
+
+        if (realtimeLineBatch && (mode === 'pen' || mode === 'eraser')) {
+            if (distance <= 0) return;
+            if (realtimeLineBatch.length === 0) {
+                realtimeLineBatch.push(segmentPoints[0]);
+            }
+            realtimeLineBatch.push(segmentPoints[1]);
+            this.lastRenderedLocalX = localX;
+            this.lastRenderedLocalY = localY;
+            this.lastRenderedPressure = renderPressure;
+            if (this.strokeInputProfile) {
+                this.strokeInputProfile.realtimeSegments++;
+            }
+            return;
+        }
 
         if (mode === 'eraser') {
             if (distance <= 0) return;
@@ -462,6 +533,24 @@ export class BrushCore {
         this.lastRenderedPressure = renderPressure;
         if (this.strokeInputProfile) {
             this.strokeInputProfile.realtimeSegments++;
+        }
+    }
+
+    _flushRealtimeLineBatch(mode, points) {
+        if (!points || points.length < 2) return;
+
+        if (mode === 'eraser') {
+            this._renderRealtimeEraserSegment(points);
+            this.realtimeEraserApplied = true;
+        } else if (mode === 'pen') {
+            this._renderRealtimePenSegment(points);
+            this.realtimePenApplied = true;
+        } else {
+            return;
+        }
+
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.realtimeBatches = (this.strokeInputProfile.realtimeBatches || 0) + 1;
         }
     }
 
@@ -911,13 +1000,63 @@ export class BrushCore {
         this.blurState = null;
     }
 
-    async finalizeStroke(inputProfile = null) {
+    _appendFinalPointerSample(finalPointer = null, inputProfile = null) {
+        if (!this.isDrawing || !finalPointer) {
+            return false;
+        }
+
+        const clientX = Number(finalPointer.clientX);
+        const clientY = Number(finalPointer.clientY);
+        if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+            return false;
+        }
+
+        const activeLayer = this.airbrushState?.targetLayer
+            || this.penOpacityState?.targetLayer
+            || this.layerManager.getActiveLayer();
+        if (!activeLayer) {
+            return false;
+        }
+
+        const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
+        const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
+        const distance = Math.hypot(localX - this.lastLocalX, localY - this.lastLocalY);
+        const rawPressure = Number(finalPointer.pressure ?? this.lastPressure);
+        const pressure = Number.isFinite(rawPressure) ? rawPressure : this.lastPressure;
+        const pressureDelta = Math.abs(pressure - this.lastPressure);
+
+        if (distance <= 0.01 && pressureDelta <= 0.001) {
+            return false;
+        }
+
+        this.updateStroke(
+            clientX,
+            clientY,
+            pressure,
+            finalPointer.pointerType || inputProfile?.pointerType || 'unknown',
+            finalPointer.inputProfile || inputProfile
+        );
+
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.finalPointerSample = {
+                distance: Number(distance.toFixed(3)),
+                pressureDelta: Number(pressureDelta.toFixed(4))
+            };
+        }
+
+        return true;
+    }
+
+    async finalizeStroke(inputProfile = null, finalPointer = null) {
         if (!this.isDrawing) return;
 
         const activeLayer = this.airbrushState?.targetLayer
             || this.penOpacityState?.targetLayer
             || this.layerManager.getActiveLayer();
         if (!activeLayer) return;
+
+        this._appendFinalPointerSample(finalPointer, inputProfile);
 
         let strokeData = this.strokeRecorder.endStroke();
         this._logInputProfile('up', inputProfile, {

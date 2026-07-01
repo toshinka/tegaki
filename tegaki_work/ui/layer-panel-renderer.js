@@ -2551,14 +2551,18 @@ export class LayerPanelRenderer {
 
     _createMergeDownButton(index) {
         const layers = this.layerSystem?.getLayers?.() || [];
+        const activeLayer = layers[index];
         const bottomLayer = layers[index - 1];
-        const canMergeDown = index > 1 && !bottomLayer?.layerData?.isBackground && !bottomLayer?.layerData?.isFolder;
+        const isFolder = activeLayer?.layerData?.isFolder === true;
+        const canMergeDown = isFolder
+            ? this.layerSystem?.canMergeFolderToLayer?.(index) === true
+            : index > 1 && !bottomLayer?.layerData?.isBackground && !bottomLayer?.layerData?.isFolder;
 
         return this._createLegacyLayerOperationButton({
             index,
             className: 'layer-merge-down-button',
             iconName: 'mergeDown',
-            title: '下のレイヤーと結合',
+            title: isFolder ? 'フォルダ内を1枚のレイヤーに結合' : '下のレイヤーと結合',
             isDisabled: !canMergeDown,
             onActivate: () => this._mergeLegacyLayerDownFromClick(index)
         });

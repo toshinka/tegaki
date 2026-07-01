@@ -126,6 +126,25 @@ export const KeyboardHandler = (function() {
             return;
         }
 
+        if (
+            shortcutContext === 'canvas'
+            && !vKeyPressed
+            && e.shiftKey
+            && !e.ctrlKey
+            && !e.altKey
+            && !e.metaKey
+            && (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+        ) {
+            const animationTable = window.PopupManager?.get?.('animationTable')
+                || window.coreEngine?.popupManager?.get?.('animationTable');
+            const direction = e.key === 'ArrowUp' ? 'up' : 'down';
+            if (animationTable?.selectAdjacentInternalLayerByDirection?.(direction)) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+            }
+        }
+
         if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && (e.key === 'Delete' || e.key === 'Backspace')) {
             const animationTable = window.PopupManager?.get?.('animationTable')
                 || window.coreEngine?.popupManager?.get?.('animationTable');

@@ -22,6 +22,7 @@ export const ThumbnailSystem = {
     thumbnails: new Map(),
     dirtyLayers: new Set(),
     isProcessing: false,
+    isDrawingSuspended: false,
 
     init(eventBus) {
         this.eventBus = eventBus || TegakiEventBus;
@@ -36,6 +37,10 @@ export const ThumbnailSystem = {
             const layer = layerMgr?.getLayerById(data.layerId);
             if (!layer) return;
             if (layer.layerData?.isAnimationWorkingLayer) return;
+            if (this._isDrawingActive()) {
+                this.markLayerDirty(data.layerId);
+                return;
+            }
 
             if (data.immediate) {
                 this.generateLayerThumbnail(layer, data.layerIndex);
@@ -43,6 +48,18 @@ export const ThumbnailSystem = {
                 this.markLayerDirty(data.layerId);
             }
         });
+
+        this.eventBus.on('drawing:stroke-started', () => {
+            this.isDrawingSuspended = true;
+        });
+        const resume = () => {
+            this.isDrawingSuspended = false;
+            if (this.dirtyLayers.size > 0) {
+                this._requestProcessing();
+            }
+        };
+        this.eventBus.on('drawing:stroke-completed', resume);
+        this.eventBus.on('drawing:stroke-cancelled', resume);
     },
 
     markLayerDirty(layerId) {
@@ -51,13 +68,17 @@ export const ThumbnailSystem = {
     },
 
     _requestProcessing() {
-        if (this.isProcessing) return;
+        if (this.isProcessing || this._isDrawingActive()) return;
         this.isProcessing = true;
         
         requestAnimationFrame(() => this._processDirtyLayers());
     },
 
     _processDirtyLayers() {
+        if (this._isDrawingActive()) {
+            this.isProcessing = false;
+            return;
+        }
         if (this.dirtyLayers.size === 0) {
             this.isProcessing = false;
             return;
@@ -78,6 +99,12 @@ export const ThumbnailSystem = {
         requestAnimationFrame(() => this._processDirtyLayers());
     },
 
+    _isDrawingActive() {
+        return this.isDrawingSuspended === true
+            || window.drawingEngine?.isDrawing === true
+            || window.BrushCore?.isDrawing === true;
+    },
+
     async generateLayerThumbnail(layer, layerIndex, maxWidth = 64, maxHeight = 44) {
         if (!this.app?.renderer) {
             console.warn('[ThumbnailSystem] Renderer not available');
@@ -90,6 +117,11 @@ export const ThumbnailSystem = {
 
         // [指示書 v6] Vキー変形中はスキップ（重さ防止）
         if (window.layerManager?.isLayerMoveMode) {
+            return null;
+        }
+        if (this._isDrawingActive()) {
+            const layerId = layer.layerData?.id || layer.label;
+            if (layerId) this.markLayerDirty(layerId);
             return null;
         }
 

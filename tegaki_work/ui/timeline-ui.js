@@ -685,6 +685,8 @@
         }
         
         goToPreviousFrameSafe() {
+            if (this.goToAnimationTableFrameByDelta(-1)) return;
+
             const animData = this.animationSystem.getAnimationData();
             if (animData.frames.length === 0) return;
             
@@ -703,6 +705,8 @@
         }
         
         goToNextFrameSafe() {
+            if (this.goToAnimationTableFrameByDelta(1)) return;
+
             const animData = this.animationSystem.getAnimationData();
             if (animData.frames.length === 0) return;
             
@@ -718,6 +722,34 @@
             if (this.eventBus) {
                 this.eventBus.emit('animation:frame-changed', { frameIndex: newIndex, direction: 'next' });
             }
+        }
+
+        goToAnimationTableFrameByDelta(delta) {
+            const popupManager = window.coreEngine?.popupManager || window.PopupManager;
+            const animTable = popupManager?.get?.('animationTable');
+            if (!animTable?.model || typeof animTable.model.playback?.currentFrame !== 'number') return false;
+
+            const totalFrames = Math.max(1, animTable.model.totalFrames || 1);
+            const currentFrame = animTable.model.playback.currentFrame;
+            const nextFrame = Math.max(0, Math.min(totalFrames - 1, currentFrame + delta));
+            if (nextFrame === currentFrame) return true;
+
+            if (animTable.isClipEditModeActive) animTable.exitClipEditMode?.();
+            animTable._saveSelectedClipFromWorkingLayers?.();
+            animTable.model.setCurrentFrame(nextFrame);
+            animTable._syncWorkingLayersForCurrentFrame?.();
+            animTable.render?.();
+            animTable._scheduleLaneReferencePreviewUpdate?.();
+            this.currentFrameIndex = nextFrame;
+            this.updateLayerPanelIndicator();
+
+            if (this.eventBus) {
+                this.eventBus.emit('animation:frame-changed', {
+                    frameIndex: nextFrame,
+                    direction: delta < 0 ? 'previous' : 'next'
+                });
+            }
+            return true;
         }
         
         setupAnimationEvents() {
@@ -767,6 +799,10 @@
                 this.updateLayerPanelIndicator();
             });
         }
+
+        getOnionSkinIconHtml() {
+            return window.UI_ICONS?.onionSkin || '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/></svg>';
+        }
         
         createLayerPanelFrameIndicator() {
             const layerContainer = document.getElementById('layer-panel-container');
@@ -781,12 +817,21 @@
                 <button class="frame-nav-btn" id="frame-prev-btn">◀</button>
                 <span class="frame-display" id="frame-display">FRAME1</span>
                 <button class="frame-nav-btn" id="frame-next-btn">▶</button>
+                <button class="frame-lane-reference-btn" id="frame-lane-reference-btn" title="Lane onion">
+                    ${this.getOnionSkinIconHtml()}
+                </button>
             `;
             
             layerContainer.insertBefore(frameIndicator, layerContainer.firstChild);
             
             document.getElementById('frame-prev-btn')?.addEventListener('click', () => this.goToPreviousFrameSafe());
             document.getElementById('frame-next-btn')?.addEventListener('click', () => this.goToNextFrameSafe());
+            document.getElementById('frame-lane-reference-btn')?.addEventListener('click', () => {
+                const popupManager = window.coreEngine?.popupManager || window.PopupManager;
+                const animTable = popupManager?.get?.('animationTable');
+                animTable?.toggleLaneReferenceMode?.();
+                this.updateLayerPanelIndicator();
+            });
             
             this.updateLayerPanelIndicator();
         }
@@ -800,9 +845,21 @@
             const popupManager = window.coreEngine?.popupManager || window.PopupManager;
             const animTable = popupManager?.get?.('animationTable');
             const isAnimationTableVisible = animTable?.isVisible === true;
-            frameIndicator.classList.toggle('is-visible', isAnimationTableVisible);
-            frameIndicator.setAttribute('aria-hidden', isAnimationTableVisible ? 'false' : 'true');
-            if (!isAnimationTableVisible) return;
+            const hasAnimationContext = !!(
+                animTable?.model &&
+                ((animTable.model.tracks?.length || 0) > 0 || (animTable.model.clipAssets?.length || 0) > 0)
+            );
+            const shouldShowIndicator = isAnimationTableVisible || hasAnimationContext;
+            const laneReferenceBtn = document.getElementById('frame-lane-reference-btn');
+            frameIndicator.classList.toggle('is-visible', shouldShowIndicator);
+            frameIndicator.classList.toggle('is-table-closed', !isAnimationTableVisible && hasAnimationContext);
+            frameIndicator.setAttribute('aria-hidden', shouldShowIndicator ? 'false' : 'true');
+            if (laneReferenceBtn) {
+                const isLaneReferenceActive = animTable?.isLaneReferenceActive?.() === true;
+                laneReferenceBtn.classList.toggle('is-active', isLaneReferenceActive);
+                laneReferenceBtn.setAttribute('aria-pressed', isLaneReferenceActive ? 'true' : 'false');
+            }
+            if (!shouldShowIndicator) return;
 
             if (animTable.model && typeof animTable.model.playback?.currentFrame === 'number') {
                 if (animTable.isLaneOnlySelected) {
