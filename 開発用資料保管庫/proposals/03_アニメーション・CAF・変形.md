@@ -1,6 +1,6 @@
 # アニメーション・CAF・変形計画
 
-更新日: 2026-06-28
+更新日: 2026-07-01
 
 ## 現在の到達点
 
@@ -57,7 +57,7 @@
 - WebGPUはメモリ上限の直接解決策ではないため、Phase 5kへ混ぜない。まずWebGL / PixiJS v8.17経路で常駐copyを減らす。
 - 完了記録は `開発用資料保管庫/Archive/phase5k.md`。
 
-### Animation Tableを閉じた時のLane表示モード `候補`
+### Phase 5q: Animation Tableを閉じた時のLane表示モード `現行`
 
 - 現在Frameの表示を「アクティブCAFのみ」「対象Laneを通常合成」「非アクティブLaneをonion表示」から選べるようにする。
 - 時間方向の前後Frame onion skinと、同一Frameの別Laneを薄く表示するLane onionを別概念・別stateにする。
