@@ -57,14 +57,15 @@
 - WebGPUはメモリ上限の直接解決策ではないため、Phase 5kへ混ぜない。まずWebGL / PixiJS v8.17経路で常駐copyを減らす。
 - 完了記録は `開発用資料保管庫/Archive/phase5k.md`。
 
-### Phase 5q: Animation Tableを閉じた時のLane表示モード `現行`
+### Phase 5q: Animation Tableを閉じた時のLane表示モード `完了`
 
 - 現在Frameの表示を「アクティブCAFのみ」「対象Laneを通常合成」「非アクティブLaneをonion表示」から選べるようにする。
 - 時間方向の前後Frame onion skinと、同一Frameの別Laneを薄く表示するLane onionを別概念・別stateにする。
 - 初期候補はLane onion。選択中CAFを主表示し、関連Laneを低opacityで確認できる状態とする。
-- Layer PanelのFrame切替領域に小型buttonを置く案を優先し、`square-stack` 相当のLucide iconを候補とする。
+- Layer PanelのFrame切替領域に小型buttonを置く案を優先し、共有 `onionSkin` ghost iconを使う。
 - Animation Tableを閉じても表示モードを維持するが、保存画像・export・Layer visibility正本は変更しない。
 - `ALL / LANE / SET` のPlayback Scopeと責務を重複させず、表示だけのmodeとして設計する。
+- 完了: Lane onionはTable閉状態のdisplay-only参照として実装した。Timeline onionも同じ `onionSkin` ghost iconを使うbuttonへ揃え、ふたばカラーの単一countで前後4フレームまで順送り表示できる。
 
 ## 出力と編集
 
@@ -113,7 +114,7 @@
 - 通常Layerに加え、Animation Table / CAF working Layer上でも `V` 単独でLayer全体変形へ入り、確定結果をCAF raster Historyへ記録する。
 - 完了記録は `開発用資料保管庫/Archive/phase5n.md`。
 
-### Phase 5p: 無限キャンバス / 欄外ラスター保持 `現行`
+### Phase 5p: 無限キャンバス / 欄外ラスター保持 `完了`
 
 - 詳細設計は `開発用資料保管庫/proposals/06_無限キャンバス.md`。
 - Phase 5nのLayer全体移動とPhase 5oの画像importにより、アニメ素材をProject frame外へ逃がす操作が現実的になった。

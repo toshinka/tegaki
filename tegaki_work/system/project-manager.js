@@ -672,6 +672,7 @@ export class ProjectManager {
 
         animationTable.stop?.();
         animationTable._restoreVisibility?.();
+        animationTable.resetLaneReferenceMode?.();
         animationTable.model = new TimelineModel();
         this._restoreAnimationUiState(animationTable);
         animationTable.initialClipAssetSeeded = false;
@@ -702,6 +703,7 @@ export class ProjectManager {
 
         animationTable.stop?.();
         animationTable._restoreVisibility?.();
+        animationTable.resetLaneReferenceMode?.();
         animationTable.model = new TimelineModel(animationData || {});
         this._restoreAnimationUiState(animationTable, animationState);
         animationTable.initialClipAssetSeeded = animationTable.model.clipAssets.length > 0;

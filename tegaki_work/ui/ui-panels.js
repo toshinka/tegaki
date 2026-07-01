@@ -443,9 +443,14 @@ export class UIController {
         }
 
         if (action === 'mergeDown') {
+            if (activeData.isFolder) {
+                if (this.layerManager.canMergeFolderToLayer?.(activeIndex)) {
+                    this.layerManager.mergeLayerDown?.(activeIndex);
+                }
+                return stop();
+            }
             const bottomData = layers[activeIndex - 1]?.layerData;
             if (
-                activeData.isFolder ||
                 !activeData.renderTexture ||
                 !bottomData ||
                 bottomData.isFolder ||
@@ -559,17 +564,19 @@ export class UIController {
             return;
         }
 
-        const { layer } = this._getAnimationSelectedInternalLayer();
+        const { table, asset, layer } = this._getAnimationSelectedInternalLayer();
         const hasClip = animationContext.hasSelectedClip;
         const hasLayer = !!layer;
         const isFolder = layer?.type === 'folder' || layer?.isFolder === true;
+        const canMergeInternalFolder = isFolder
+            && table?.canMergeInternalFolderToLayer?.(layer?.id, asset) === true;
 
         this._setLayerPanelControlDisabled(controls.addLayer, !hasClip);
         this._setLayerPanelControlDisabled(controls.addFolder, !hasClip);
         this._setLayerPanelControlDisabled(controls.attribute, !hasLayer);
         this._setLayerPanelControlDisabled(controls.duplicate, !hasLayer);
         this._setLayerPanelControlDisabled(controls.delete, !hasLayer);
-        this._setLayerPanelControlDisabled(controls.mergeDown, !hasLayer || isFolder);
+        this._setLayerPanelControlDisabled(controls.mergeDown, !hasLayer || (isFolder && !canMergeInternalFolder));
         const canTransformActiveWorkingLayer = this.layerManager?.getActiveLayer?.()?.layerData?.isAnimationWorkingLayer === true;
         this._setLayerPanelControlDisabled(controls.flipHorizontal, !canTransformActiveWorkingLayer);
         this._setLayerPanelControlDisabled(controls.flipVertical, !canTransformActiveWorkingLayer);

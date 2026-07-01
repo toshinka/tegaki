@@ -71,6 +71,7 @@ export class DrawingEngine {
         this.pointerDetach = window.PointerHandler.attach(canvas, {
             down: this._handlePointerDown.bind(this),
             move: this._handlePointerMove.bind(this),
+            moveBatch: this._handlePointerMoveBatch.bind(this),
             up: this._handlePointerUp.bind(this),
             cancel: this._handlePointerCancel.bind(this)
         }, {
@@ -250,6 +251,33 @@ export class DrawingEngine {
         }
     }
 
+    _handlePointerMoveBatch(infos, e) {
+        if (!Array.isArray(infos) || infos.length === 0) return;
+
+        const lastInfo = infos[infos.length - 1];
+        const pointerInfo = this.activePointers.get(lastInfo.pointerId);
+        if (!pointerInfo || !pointerInfo.isDrawing) {
+            return;
+        }
+
+        if (!this.brushCore || !this.brushCore.isActive || !this.brushCore.isActive()) {
+            return;
+        }
+
+        if (window.TEGAKI_CONFIG?.debug) {
+            const local = this._screenToLocal(lastInfo.clientX, lastInfo.clientY);
+            this._attachInputProfileLocal(lastInfo, local);
+            lastInfo.inputProfile.coalescedBatchCount = infos.length;
+        }
+
+        if (this.brushCore.updateStrokeBatch) {
+            this.brushCore.updateStrokeBatch(infos, lastInfo.inputProfile);
+            return;
+        }
+
+        infos.forEach(info => this._handlePointerMove(info, e));
+    }
+
     _handlePointerUp(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo) {
@@ -261,7 +289,7 @@ export class DrawingEngine {
                 if (window.TEGAKI_CONFIG?.debug) {
                     this._attachInputProfileLocal(info, this._screenToLocal(info.clientX, info.clientY));
                 }
-                this.brushCore.finalizeStroke(info.inputProfile);
+                this.brushCore.finalizeStroke(info.inputProfile, info);
             }
         }
 

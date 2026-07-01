@@ -956,6 +956,35 @@ canvas {
     cursor: not-allowed; 
 }
 
+.frame-lane-reference-btn {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 238, 0.55);
+    border: none;
+    border-radius: 6px;
+    color: var(--futaba-maroon);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.frame-lane-reference-btn:hover {
+    background: rgba(207, 156, 151, 0.55);
+    transform: scale(1.08);
+}
+
+.frame-lane-reference-btn.is-active {
+    background: rgba(255, 102, 0, 0.18);
+    color: var(--futaba-maroon);
+}
+
+.frame-lane-reference-btn svg {
+    width: 13px;
+    height: 13px;
+}
+
 .frame-display { 
     color: var(--futaba-maroon); 
     font-weight: bold; 

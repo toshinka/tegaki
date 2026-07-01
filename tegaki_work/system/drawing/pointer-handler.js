@@ -120,28 +120,61 @@ export class PointerHandler {
          * PointerEvent を正規化して内部 info オブジェクトを作る。
          * clientX/Y は LazyBrush 適用後に上書きされるため、ここでは生値を使う。
          */
-        function normalizeEvent(e) {
+        function normalizeEvent(e, options = {}) {
+            const baseEvent = options.baseEvent || e;
+            const profileEvent = options.profileEvent === undefined ? e : options.profileEvent;
+            const pointerType = e.pointerType || baseEvent.pointerType || 'unknown';
+            const rawPressure = e.pressure ?? baseEvent.pressure;
             return {
-                pointerId: e.pointerId,
-                pointerType: e.pointerType,
-                eventType: e.type,
-                clientX: e.clientX,
-                clientY: e.clientY,
+                pointerId: e.pointerId ?? baseEvent.pointerId,
+                pointerType,
+                eventType: e.type || baseEvent.type,
+                clientX: e.clientX ?? baseEvent.clientX,
+                clientY: e.clientY ?? baseEvent.clientY,
                 rawClientX: e.clientX,
                 rawClientY: e.clientY,
-                rawPressure: e.pressure,
-                pressure: applyPressureSettings(e.pressure, e.pointerType),
-                tiltX: e.tiltX ?? 0,
-                tiltY: e.tiltY ?? 0,
-                twist: e.twist ?? 0,
-                button: e.button,
-                buttons: e.buttons,
-                timeStamp: e.timeStamp,
-                inputProfile: window.TEGAKI_CONFIG?.debug
-                    ? createInputProfile(e)
+                rawPressure,
+                pressure: applyPressureSettings(rawPressure, pointerType),
+                tiltX: e.tiltX ?? baseEvent.tiltX ?? 0,
+                tiltY: e.tiltY ?? baseEvent.tiltY ?? 0,
+                twist: e.twist ?? baseEvent.twist ?? 0,
+                button: e.button ?? baseEvent.button,
+                buttons: e.buttons ?? baseEvent.buttons,
+                timeStamp: e.timeStamp ?? baseEvent.timeStamp,
+                inputProfile: window.TEGAKI_CONFIG?.debug && profileEvent
+                    ? createInputProfile(profileEvent)
                     : null,
-                originalEvent: e
+                originalEvent: baseEvent
             };
+        }
+
+        function getCoalescedMoveEvents(e) {
+            let events = [];
+            if (typeof e.getCoalescedEvents === 'function') {
+                try {
+                    events = e.getCoalescedEvents() || [];
+                } catch (err) {
+                    events = [];
+                }
+            }
+
+            if (!Array.isArray(events) || events.length === 0) {
+                return [e];
+            }
+
+            const samePointerEvents = events.filter(item => (item.pointerId ?? e.pointerId) === e.pointerId);
+            const result = samePointerEvents.length > 0 ? [...samePointerEvents] : [...events];
+            const last = result[result.length - 1];
+            const lastMatchesCurrent = last
+                && last.clientX === e.clientX
+                && last.clientY === e.clientY
+                && last.pressure === e.pressure
+                && last.timeStamp === e.timeStamp;
+
+            if (!lastMatchesCurrent) {
+                result.push(e);
+            }
+            return result;
         }
 
         function summarizeNumbers(values) {
@@ -274,28 +307,47 @@ export class PointerHandler {
                 brush.radius = smoothing * 16;
             }
 
-            // LazyBrush で座標をフィルタリング
-            const filtered = brush
-                ? brush.update(e.clientX, e.clientY)
-                : { x: e.clientX, y: e.clientY };
+            const moveEvents = getCoalescedMoveEvents(e);
+            const moveInfos = [];
 
-            const info = normalizeEvent(e);
-            // LazyBrush 補正済み座標で上書き
-            info.clientX = filtered.x;
-            info.clientY = filtered.y;
-            if (info.inputProfile) {
-                info.inputProfile.lazyClient = {
-                    x: Number(filtered.x.toFixed(3)),
-                    y: Number(filtered.y.toFixed(3)),
-                    offsetX: Number((filtered.x - e.clientX).toFixed(3)),
-                    offsetY: Number((filtered.y - e.clientY).toFixed(3))
-                };
+            for (let index = 0; index < moveEvents.length; index++) {
+                const sourceEvent = moveEvents[index];
+                const isLast = index === moveEvents.length - 1;
+                const rawClientX = sourceEvent.clientX ?? e.clientX;
+                const rawClientY = sourceEvent.clientY ?? e.clientY;
+
+                // LazyBrush で座標をフィルタリング。coalesced点も古い順に通す。
+                const filtered = brush
+                    ? brush.update(rawClientX, rawClientY)
+                    : { x: rawClientX, y: rawClientY };
+
+                const info = normalizeEvent(sourceEvent, {
+                    baseEvent: e,
+                    profileEvent: isLast ? e : null
+                });
+                // LazyBrush 補正済み座標で上書き
+                info.clientX = filtered.x;
+                info.clientY = filtered.y;
+                info.rawClientX = rawClientX;
+                info.rawClientY = rawClientY;
+
+                if (info.inputProfile) {
+                    info.inputProfile.lazyClient = {
+                        x: Number(filtered.x.toFixed(3)),
+                        y: Number(filtered.y.toFixed(3)),
+                        offsetX: Number((filtered.x - rawClientX).toFixed(3)),
+                        offsetY: Number((filtered.y - rawClientY).toFixed(3))
+                    };
+                }
+
+                activePointers.set(e.pointerId, info);
+                moveInfos.push(info);
             }
 
-            activePointers.set(e.pointerId, info);
-
-            if (handlers.move) {
-                handlers.move(info, e);
+            if (moveInfos.length > 1 && handlers.moveBatch) {
+                handlers.moveBatch(moveInfos, e);
+            } else if (handlers.move) {
+                moveInfos.forEach(info => handlers.move(info, e));
             }
 
             if (preventDefault) {
@@ -305,6 +357,26 @@ export class PointerHandler {
 
         function onPointerUp(e) {
             const info = normalizeEvent(e);
+            const brush = lazyBrushes.get(e.pointerId);
+            const rawClientX = e.clientX;
+            const rawClientY = e.clientY;
+            const filtered = brush
+                ? brush.update(rawClientX, rawClientY)
+                : { x: rawClientX, y: rawClientY };
+
+            info.clientX = filtered.x;
+            info.clientY = filtered.y;
+            info.rawClientX = rawClientX;
+            info.rawClientY = rawClientY;
+
+            if (info.inputProfile) {
+                info.inputProfile.lazyClient = {
+                    x: Number(filtered.x.toFixed(3)),
+                    y: Number(filtered.y.toFixed(3)),
+                    offsetX: Number((filtered.x - rawClientX).toFixed(3)),
+                    offsetY: Number((filtered.y - rawClientY).toFixed(3))
+                };
+            }
 
             try {
                 e.target.releasePointerCapture(e.pointerId);

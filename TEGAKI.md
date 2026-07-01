@@ -187,6 +187,9 @@ popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 - Phase 5oではPSD読み込みや複数Layer importを棚上げし、外部画像をアクティブRaster Layerへ貼り付ける入口だけを実装した。既存のLayer / CAF / Folder clipboard契約を優先する。
 - Phase 5pの無限キャンバス / 欄外ラスター保持は完了。
 - Phase 5pではProject frame、背景Layer、通常export範囲は固定し、通常Raster Layer / CAF internal Raster Layerの保存矩形を可変化した。WebGPU、DPR 2倍化、tiled canvas本格導入は混ぜていない。
+- Phase 5qのAnimation Tableを閉じた時のLane表示モードは完了。
+- Phase 5qではLane onionをdisplay-only表示として実装し、Timeline onionを前後4フレームまで拡張した。保存画像、export、Layer visibility、ClipAsset / DrawingSnapshot正本へ混ぜていない。
+- Phase 5q後続で、PREVIEW toggleをcheckboxからふたばカラーbuttonへ変更し、キャンバス文脈のShift+上下でCAF内部Layer / Folderを選択移動できるようにした。通常Folder / CAF内部Folder選択時の既存結合buttonは、配下表示Rasterを1枚へ合成する。
 - PixiJS v8.19.0でもrenderer既定はWebGL。依存更新とWebGPU採用を分離し、
   WebGPU凍結方針は維持する。
 - Phase 5gの完了記録は `開発用資料保管庫/Archive/phase5g.md`。
