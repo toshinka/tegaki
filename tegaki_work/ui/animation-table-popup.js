@@ -48,6 +48,8 @@ export class AnimationTablePopup {
         this._snapshotTextureCache = new Map();
         this._snapshotTextureCacheProfile = this._createSnapshotTextureCacheProfile();
         this._snapshotTextureCachePendingDestroy = [];
+        this._snapshotTextureCacheDestroyFrame = null;
+        this._snapshotTextureCacheGcPending = false;
         
         // オニオンスキン関連
         this.isOnionSkinActive = false;
@@ -109,6 +111,7 @@ export class AnimationTablePopup {
         this.selectedAssetId = null;
         this.selectedAssetFolderId = null; // null = Uncategorized
         this.selectedInternalLayerId = null; // Phase 4z7
+        this._internalFolderTransformContext = null;
         this._internalLayerClipboard = null;
         
         // 初期シード関連 (Phase 4z5)
@@ -416,11 +419,15 @@ export class AnimationTablePopup {
     }
 
     _exitTransformEditPreviewMode() {
-        if (!this.isTransformPreviewSuspended) return;
+        if (!this.isTransformPreviewSuspended) {
+            this._clearInternalFolderTransformContext();
+            return;
+        }
 
         this.isTransformPreviewSuspended = false;
         this._transformHistoryBeforeState = null;
         this._transformWorkingLayerBeforeSignature = null;
+        this._clearInternalFolderTransformContext();
         if (this._previewBeforeTransform !== null) {
             this.isPreviewActive = this._previewBeforeTransform;
             this._previewBeforeTransform = null;
@@ -946,9 +953,12 @@ export class AnimationTablePopup {
     }
 
     _getSelectedInternalFolderTransformTargets(asset = this._getSelectedAssetForInspector()) {
-        if (!asset || !this.selectedInternalLayerId || !this.layerSystem) return null;
-        const selectedLayer = (asset.internalLayers || [])
+        if (!asset || !this.layerSystem) return null;
+        let selectedLayer = (asset.internalLayers || [])
             .find(layer => layer.id === this.selectedInternalLayerId);
+        if (selectedLayer?.type !== 'folder') {
+            selectedLayer = this._getInternalFolderTransformSessionLayer(asset);
+        }
         if (selectedLayer?.type !== 'folder') return null;
 
         const drawableInternalLayers = this._getDrawableInternalLayers(asset);
@@ -973,6 +983,25 @@ export class AnimationTablePopup {
             : null;
     }
 
+    _getInternalFolderTransformSessionLayer(asset = this._getSelectedAssetForInspector()) {
+        const context = this._internalFolderTransformContext;
+        if (!asset || !context || context.assetId !== asset.id || !context.folderLayerId) return null;
+        const folderLayer = (asset.internalLayers || [])
+            .find(layer => layer.id === context.folderLayerId);
+        return folderLayer?.type === 'folder' ? folderLayer : null;
+    }
+
+    _isInternalFolderTransformWorkingLayer(activeLayer, asset = this._getSelectedAssetForInspector()) {
+        const folderLayer = this._getInternalFolderTransformSessionLayer(asset);
+        const workingLayerId = activeLayer?.layerData?.id || null;
+        const targetWorkingLayerIds = this._internalFolderTransformContext?.targetWorkingLayerIds || [];
+        return Boolean(folderLayer && workingLayerId && targetWorkingLayerIds.includes(workingLayerId));
+    }
+
+    _clearInternalFolderTransformContext() {
+        this._internalFolderTransformContext = null;
+    }
+
     prepareInternalFolderTransform() {
         const context = this._getSelectedInternalFolderTransformTargets();
         const firstTarget = context?.targets?.[0]?.workingLayer || null;
@@ -983,7 +1012,17 @@ export class AnimationTablePopup {
             : (this.layerSystem.getLayers?.() || []).indexOf(firstTarget);
         if (layerIndex < 0) return false;
 
-        this.layerSystem.setActiveLayer(layerIndex);
+        this._internalFolderTransformContext = {
+            assetId: context.asset.id,
+            folderLayerId: context.folderLayer.id,
+            targetWorkingLayerIds: context.targets
+                .map(entry => entry.workingLayer?.layerData?.id)
+                .filter(Boolean)
+        };
+        this.selectedInternalLayerId = context.folderLayer.id;
+        this.layerSystem.setActiveLayer(layerIndex, { preserveSelection: true });
+        this.selectedInternalLayerId = context.folderLayer.id;
+        this._requestLayerPanelSync({ skipRender: true });
         return true;
     }
 
@@ -1009,21 +1048,63 @@ export class AnimationTablePopup {
     }
 
     _confirmInternalFolderPeerTransforms(sourceLayerId) {
-        if (!sourceLayerId || !this.layerSystem?.confirmLayerTransform) return false;
+        if (!sourceLayerId || !this.layerSystem?.confirmLayerTransform) {
+            return { ok: true, confirmedAny: false, failedLayerIds: [] };
+        }
         const context = this._getSelectedInternalFolderTransformTargets();
-        if (!context) return false;
+        if (!context) return { ok: true, confirmedAny: false, failedLayerIds: [] };
 
         let confirmedAny = false;
+        const failedLayerIds = [];
         context.targets.forEach(({ workingLayer }) => {
             const layerId = workingLayer?.layerData?.id;
             if (!layerId || layerId === sourceLayerId) return;
+            const transform = this.layerSystem.transform?.getTransform?.(layerId);
+            if (!this.layerSystem.transform?._isTransformNonDefault?.(transform)) return;
             const confirmed = this.layerSystem.confirmLayerTransform(workingLayer);
             confirmedAny = confirmedAny || confirmed;
             if (confirmed) {
                 workingLayer.layerData.animationSnapshotId = null;
+            } else {
+                failedLayerIds.push(layerId);
             }
         });
-        return confirmedAny;
+        return {
+            ok: failedLayerIds.length === 0,
+            confirmedAny,
+            failedLayerIds
+        };
+    }
+
+    canConfirmInternalFolderTransform() {
+        const context = this._getSelectedInternalFolderTransformTargets();
+        if (!context || context.targets.length <= 1) return true;
+        if (!this.layerSystem?.canBakeLayerTransform) return true;
+
+        const failed = [];
+        context.targets.forEach(({ workingLayer }) => {
+            const layerId = workingLayer?.layerData?.id;
+            if (!layerId) return;
+            const transform = this.layerSystem.transform?.getTransform?.(layerId);
+            if (!this.layerSystem.transform?._isTransformNonDefault?.(transform)) return;
+            const result = this.layerSystem.canBakeLayerTransform(workingLayer, transform);
+            if (result?.ok === false) {
+                failed.push({
+                    layerId,
+                    name: workingLayer.layerData?.name || layerId,
+                    reason: result.reason,
+                    targetBounds: result.targetBounds || null
+                });
+            }
+        });
+
+        if (failed.length === 0) return true;
+        console.warn('[AnimationTablePopup] CAF folder transform blocked by safety preflight', {
+            folderLayerId: context.folderLayer?.id,
+            failed
+        });
+        window.projectManager?._showSaveToast?.('CAFフォルダ変形が大きすぎるため確定を止めました。縮小量を下げるか、個別Layerで変形してください。');
+        return false;
     }
 
     _renderCelPreview(track, cel, layers, options = {}) {
@@ -1151,12 +1232,30 @@ export class AnimationTablePopup {
         sprite.position.set(bounds.x, bounds.y);
     }
 
-    _invalidateSnapshotTextureCache() {
+    _invalidateSnapshotTextureCache(options = {}) {
+        const immediate = options.immediate === true;
         this._snapshotTextureCache.forEach((entry, key) => {
-            this._evictSnapshotTextureCacheEntry(key, 'invalidate');
+            this._evictSnapshotTextureCacheEntry(key, 'invalidate', {
+                immediate: false,
+                defer: immediate
+            });
         });
         this._snapshotTextureCache.clear();
+        if (immediate) {
+            this._scheduleSnapshotTextureCacheDestroyFlush(true);
+        }
         this._snapshotTextureCacheProfile.invalidations++;
+    }
+
+    _resetCafPreviewRuntime(reason = 'reset') {
+        this._clearAnimationPreviewContainer();
+        this._invalidateSnapshotTextureCache({ immediate: true });
+        if (window.TEGAKI_CONFIG?.debug === true) {
+            console.debug('[AnimationTable] CAF preview runtime reset', {
+                reason,
+                cache: this._getSnapshotTextureCacheProfile()
+            });
+        }
     }
 
     _createSnapshotTextureCacheProfile() {
@@ -1272,17 +1371,36 @@ export class AnimationTablePopup {
         }
     }
 
-    _scheduleSnapshotTextureCacheEntryDestroy(entry, reason = 'evict') {
+    _scheduleSnapshotTextureCacheEntryDestroy(entry, reason = 'evict', options = {}) {
         if (!entry || entry.destroyQueued === true) return;
         entry.destroyQueued = true;
         this._snapshotTextureCacheProfile.evictions++;
         this._snapshotTextureCacheProfile.evictionsByReason[reason] =
             (this._snapshotTextureCacheProfile.evictionsByReason[reason] || 0) + 1;
-        if (this._getDisplayedSnapshotTextures().has(entry.texture)) {
+        if (options.defer === true || (options.immediate !== true && this._getDisplayedSnapshotTextures().has(entry.texture))) {
             this._snapshotTextureCachePendingDestroy.push(entry);
+            if (options.defer === true) {
+                this._scheduleSnapshotTextureCacheDestroyFlush(options.runGc === true);
+            }
             return;
         }
         this._destroySnapshotTextureCacheEntryNow(entry);
+    }
+
+    _scheduleSnapshotTextureCacheDestroyFlush(runGc = false) {
+        this._snapshotTextureCacheGcPending = this._snapshotTextureCacheGcPending || runGc;
+        if (this._snapshotTextureCacheDestroyFrame !== null) return;
+
+        this._snapshotTextureCacheDestroyFrame = requestAnimationFrame(() => {
+            this._snapshotTextureCacheDestroyFrame = requestAnimationFrame(() => {
+                this._snapshotTextureCacheDestroyFrame = null;
+                this._flushPendingSnapshotTextureCacheDestroy();
+                if (this._snapshotTextureCacheGcPending) {
+                    this._snapshotTextureCacheGcPending = false;
+                    this._runSnapshotTextureGc();
+                }
+            });
+        });
     }
 
     _flushPendingSnapshotTextureCacheDestroy() {
@@ -1299,12 +1417,26 @@ export class AnimationTablePopup {
         this._snapshotTextureCachePendingDestroy = stillPending;
     }
 
-    _evictSnapshotTextureCacheEntry(cacheKey, reason = 'evict') {
+    _evictSnapshotTextureCacheEntry(cacheKey, reason = 'evict', options = {}) {
         const entry = this._snapshotTextureCache.get(cacheKey);
         if (!entry) return false;
         this._snapshotTextureCache.delete(cacheKey);
-        this._scheduleSnapshotTextureCacheEntryDestroy(entry, reason);
+        this._scheduleSnapshotTextureCacheEntryDestroy(entry, reason, options);
         return true;
+    }
+
+    _runSnapshotTextureGc() {
+        const renderer = this.layerSystem?.app?.renderer || this.app?.renderer || window.coreEngine?.app?.renderer;
+        try {
+            if (renderer?.gc?.run) {
+                renderer.gc.run();
+                return;
+            }
+            renderer?.textureGC?.run?.();
+            renderer?.texture?.GC?.run?.();
+        } catch (error) {
+            console.warn('[AnimationTable] Snapshot texture GC failed', error);
+        }
     }
 
     _getProtectedSnapshotTextureCacheKeys() {
@@ -3688,31 +3820,23 @@ export class AnimationTablePopup {
 
     _captureInternalLayerHistoryState(asset) {
         if (!asset) return null;
-        return {
-            assetId: asset.id,
-            selectedCelId: this.selectedCelId || null,
-            selectedInternalLayerId: this.selectedInternalLayerId || null,
-            clipAssets: (this.model.clipAssets || []).map(clipAsset => {
-                return clipAsset.serialize ? clipAsset.serialize() : { ...clipAsset };
-            }),
-            internalLayers: (asset.internalLayers || []).map(layer => {
-                return layer.serialize ? layer.serialize() : { ...layer };
-            }),
-            drawingSnapshots: (this.model.drawingSnapshots || []).map(snapshot => {
-                return this._cloneDrawingSnapshotForRuntime(snapshot);
-            })
-        };
+        return this._captureActiveCafAssetHistoryState(asset);
     }
 
     _recordInternalLayerHistory(asset, beforeState, name, meta = {}) {
         if (!asset || !beforeState || !historyManager || historyManager.isApplying) return false;
         const afterState = this._captureInternalLayerHistoryState(asset);
+        const byteSize = this._estimateActiveCafAssetHistoryBytes(beforeState)
+            + this._estimateActiveCafAssetHistoryBytes(afterState);
         historyManager.record({
             name,
             do: () => this._restoreInternalLayerHistoryState(asset.id, afterState),
             undo: () => this._restoreInternalLayerHistoryState(asset.id, beforeState),
+            byteSize,
             meta: {
                 assetId: asset.id,
+                historyKind: 'caf-asset',
+                byteSize,
                 ...meta
             }
         });
@@ -3721,12 +3845,140 @@ export class AnimationTablePopup {
 
     _recordInternalLayerHistoryFromStates(asset, beforeState, afterState, name, meta = {}) {
         if (!asset || !beforeState || !afterState || !historyManager || historyManager.isApplying) return false;
+        const byteSize = this._estimateActiveCafAssetHistoryBytes(beforeState)
+            + this._estimateActiveCafAssetHistoryBytes(afterState);
         historyManager.record({
             name,
             do: () => this._restoreInternalLayerHistoryState(asset.id, afterState),
             undo: () => this._restoreInternalLayerHistoryState(asset.id, beforeState),
+            byteSize,
             meta: {
                 assetId: asset.id,
+                historyKind: 'caf-asset',
+                byteSize,
+                ...meta
+            }
+        });
+        return true;
+    }
+
+    _getClipAssetSnapshotRefs(asset) {
+        const refs = new Set();
+        if (asset?.drawingSnapshotId) refs.add(asset.drawingSnapshotId);
+        (asset?.internalLayers || []).forEach(layer => {
+            if (layer?.drawingSnapshotId) refs.add(layer.drawingSnapshotId);
+        });
+        return refs;
+    }
+
+    _captureActiveCafAssetHistoryState(asset) {
+        if (!asset) return null;
+        const snapshotRefs = this._getClipAssetSnapshotRefs(asset);
+        return {
+            assetId: asset.id,
+            selectedCelId: this.selectedCelId || null,
+            selectedAssetId: this.selectedAssetId || null,
+            selectedAssetFolderId: this.selectedAssetFolderId || null,
+            selectedInternalLayerId: this.selectedInternalLayerId || null,
+            activeLaneId: this.activeLaneId || null,
+            asset: asset.serialize ? asset.serialize() : { ...asset },
+            drawingSnapshots: (this.model.drawingSnapshots || [])
+                .filter(snapshot => snapshotRefs.has(snapshot.id))
+                .map(snapshot => this._cloneDrawingSnapshotForRuntime(snapshot))
+        };
+    }
+
+    _estimateActiveCafAssetHistoryBytes(state) {
+        if (!state) return 0;
+        return (state.drawingSnapshots || []).reduce((total, snapshot) => {
+            return total + this._getTimelineSnapshotByteSize(snapshot);
+        }, 0);
+    }
+
+    _restoreActiveCafAssetHistoryState(assetId, state) {
+        if (!assetId || !state?.asset) return false;
+        const targetIndex = (this.model.clipAssets || []).findIndex(asset => asset.id === assetId);
+        if (targetIndex < 0) return false;
+
+        this._resetCafPreviewRuntime('caf-asset-history-restore');
+        const currentAsset = this.model.clipAssets[targetIndex];
+        const currentRefs = this._getClipAssetSnapshotRefs(currentAsset);
+        const nextAsset = new ClipAssetModel(state.asset);
+        const nextRefs = this._getClipAssetSnapshotRefs(nextAsset);
+        const refsFromOtherAssets = new Set();
+        (this.model.clipAssets || []).forEach(asset => {
+            if (!asset || asset.id === assetId) return;
+            this._getClipAssetSnapshotRefs(asset).forEach(id => refsFromOtherAssets.add(id));
+        });
+
+        this.model.drawingSnapshots = (this.model.drawingSnapshots || []).filter(snapshot => {
+            if (!snapshot?.id) return false;
+            if (nextRefs.has(snapshot.id)) return true;
+            return !currentRefs.has(snapshot.id) || refsFromOtherAssets.has(snapshot.id);
+        });
+
+        (state.drawingSnapshots || []).forEach(snapshot => {
+            if (!snapshot?.id) return;
+            const restored = new DrawingSnapshotModel({
+                ...snapshot,
+                pixels: this._clonePixelBufferForRuntime(snapshot.pixels)
+            });
+            const index = this.model.drawingSnapshots.findIndex(candidate => candidate.id === restored.id);
+            if (index >= 0) {
+                this.model.drawingSnapshots[index] = restored;
+            } else {
+                this.model.drawingSnapshots.push(restored);
+            }
+        });
+
+        this.model.clipAssets[targetIndex] = nextAsset;
+        const stateEntry = state.selectedCelId
+            ? this.model.findClipEntry(state.selectedCelId)
+            : null;
+        const assetEntry = this._findClipEntryByAssetId(nextAsset.id);
+        const restoreEntry = stateEntry?.clip?.assetId === nextAsset.id
+            ? stateEntry
+            : assetEntry;
+        this.selectedCelId = restoreEntry?.clip?.id || state.selectedCelId || this.selectedCelId;
+        this.selectedAssetId = state.selectedAssetId === nextAsset.id ? state.selectedAssetId : nextAsset.id;
+        this.selectedAssetFolderId = state.selectedAssetFolderId || nextAsset.folderId || null;
+        this.selectedInternalLayerId = state.selectedInternalLayerId
+            || this._getDrawableInternalLayers(nextAsset)[0]?.id
+            || null;
+        this.activeLaneId = restoreEntry?.lane?.id || state.activeLaneId || this.activeLaneId;
+        if (Number.isInteger(restoreEntry?.clip?.startFrame)) {
+            this.model.setCurrentFrame(restoreEntry.clip.startFrame);
+        }
+        if (this.activeLaneId) {
+            this.model.tracks.forEach(track => {
+                track.active = track.id === this.activeLaneId;
+            });
+        }
+
+        this._ensureWorkingLayerCapacity(this._getDrawableInternalLayers(nextAsset).length);
+        const clipToSync = restoreEntry?.clip || this._findClipEntryByAssetId(nextAsset.id)?.clip;
+        let syncOk = true;
+        if (clipToSync) {
+            syncOk = this._syncClipAssetToWorkingLayers(clipToSync, { forceRestore: true }) !== false;
+        }
+        this.render();
+        this._flushLayerPanelSync();
+        return syncOk;
+    }
+
+    _recordActiveCafAssetHistoryFromStates(asset, beforeState, afterState, name, meta = {}) {
+        if (!asset || !beforeState || !afterState || !historyManager || historyManager.isApplying) return false;
+        const byteSize = this._estimateActiveCafAssetHistoryBytes(beforeState)
+            + this._estimateActiveCafAssetHistoryBytes(afterState);
+        historyManager.record({
+            name,
+            do: () => this._restoreActiveCafAssetHistoryState(asset.id, afterState),
+            undo: () => this._restoreActiveCafAssetHistoryState(asset.id, beforeState),
+            byteSize,
+            meta: {
+                assetId: asset.id,
+                historyKind: 'caf-asset',
+                byteSize,
                 ...meta
             }
         });
@@ -3940,6 +4192,12 @@ export class AnimationTablePopup {
 
     _restoreInternalLayerHistoryState(assetId, state) {
         if (!assetId || !state) return false;
+        if (state.asset) {
+            return this._restoreActiveCafAssetHistoryState(assetId, state);
+        }
+
+        // Legacy fallback for history entries created before internal-layer
+        // history became asset-scoped. New commands must not capture all CAFs.
         if (Array.isArray(state.clipAssets)) {
             this.model.clipAssets = state.clipAssets.map(clipAsset => new ClipAssetModel(clipAsset));
         }
@@ -4444,6 +4702,9 @@ export class AnimationTablePopup {
         }
         this.selectedCelId = entry.clip.id;
         this.activeLaneId = entry.lane?.id || this.activeLaneId;
+        const asset = entry.clip.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
+        this.selectedAssetId = asset?.id || entry.clip.assetId || null;
+        this.selectedAssetFolderId = asset?.folderId || null;
         if (Number.isInteger(entry.clip.startFrame)) {
             this.model.setCurrentFrame(entry.clip.startFrame);
         }
@@ -4682,6 +4943,7 @@ export class AnimationTablePopup {
         this._ensureWorkingLayerCapacity(drawableInternalLayers.length);
         const targetLayers = this._getRasterWorkingLayers();
         if (targetLayers.length === 0) return false;
+        let restoreFailed = false;
         if (!drawableInternalLayers.some(layer => layer.id === this.selectedInternalLayerId)) {
             this.selectedInternalLayerId = drawableInternalLayers[0]?.id || null;
         }
@@ -4692,6 +4954,18 @@ export class AnimationTablePopup {
 
             const snapshot = this.model.getDrawingSnapshot(internalLayer.drawingSnapshotId);
             const snapshotId = internalLayer.drawingSnapshotId || null;
+            if (snapshotId && !snapshot) {
+                restoreFailed = true;
+                console.warn('[AnimationTablePopup] Missing DrawingSnapshot for working layer restore', {
+                    assetId: asset.id,
+                    internalLayerId: internalLayer.id,
+                    snapshotId
+                });
+                targetLayer.layerData.animationSnapshotId = null;
+                targetLayer.visible = false;
+                targetLayer.layerData.visible = false;
+                return;
+            }
             if (forceRestore || targetLayer.layerData.animationSnapshotId !== snapshotId) {
                 const restoreSnapshot = snapshot
                     ? {
@@ -4702,7 +4976,21 @@ export class AnimationTablePopup {
                     }
                     : this._createBlankRasterSnapshot(targetLayer.layerData.id);
 
-                this.layerSystem.restoreLayerRasterSnapshot(restoreSnapshot);
+                const restored = this.layerSystem.restoreLayerRasterSnapshot(restoreSnapshot);
+                if (!restored) {
+                    console.warn('[AnimationTablePopup] Working layer restore skipped for oversized snapshot', {
+                        internalLayerId: internalLayer.id,
+                        snapshotId,
+                        width: restoreSnapshot.width,
+                        height: restoreSnapshot.height
+                    });
+                    this.layerSystem.restoreLayerRasterSnapshot(this._createBlankRasterSnapshot(targetLayer.layerData.id));
+                    targetLayer.layerData.animationSnapshotId = null;
+                    targetLayer.visible = false;
+                    targetLayer.layerData.visible = false;
+                    restoreFailed = true;
+                    return;
+                }
                 targetLayer.layerData.animationSnapshotId = snapshotId;
             }
             targetLayer.layerData.isAnimationWorkingLayer = true;
@@ -4730,13 +5018,19 @@ export class AnimationTablePopup {
             const targetLayer = targetLayers[index];
             if (!targetLayer?.layerData) continue;
             if (forceRestore || targetLayer.layerData.animationSnapshotId !== null) {
-                this.layerSystem.restoreLayerRasterSnapshot(this._createBlankRasterSnapshot(targetLayer.layerData.id));
+                const restored = this.layerSystem.restoreLayerRasterSnapshot(this._createBlankRasterSnapshot(targetLayer.layerData.id));
+                restoreFailed = !restored || restoreFailed;
                 targetLayer.layerData.animationSnapshotId = null;
             }
             targetLayer.layerData.isAnimationWorkingLayer = true;
             targetLayer.layerData.parentId = null;
             targetLayer.visible = false;
             targetLayer.layerData.visible = false;
+        }
+
+        if (restoreFailed) {
+            this._requestLayerPanelSync();
+            return false;
         }
 
         this.layerSystem.refreshClippingMasks?.();
@@ -4797,6 +5091,15 @@ export class AnimationTablePopup {
             : (this.layerSystem.activeLayerIndex ?? this.layerSystem.currentLayerIndex);
         const activeLayer = layers[activeIndex];
         if (!activeLayer?.layerData?.isAnimationWorkingLayer) return false;
+
+        if (this._isInternalFolderTransformWorkingLayer(activeLayer, asset)) {
+            const folderLayer = this._getInternalFolderTransformSessionLayer(asset);
+            if (folderLayer && this.selectedInternalLayerId !== folderLayer.id) {
+                this.selectedInternalLayerId = folderLayer.id;
+                this._requestLayerPanelSync();
+            }
+            return false;
+        }
 
         const selectedInternalLayer = asset.internalLayers
             .find(layer => layer.id === this.selectedInternalLayerId);
@@ -8184,7 +8487,10 @@ export class AnimationTablePopup {
                 this._enterTransformEditPreviewMode();
                 return;
             }
-            if (!this.isTransformPreviewSuspended) return;
+            if (!this.isTransformPreviewSuspended) {
+                this._clearInternalFolderTransformContext();
+                return;
+            }
             requestAnimationFrame(() => {
                 const beforeState = this._transformHistoryBeforeState;
                 const beforeSignature = this._transformWorkingLayerBeforeSignature;
@@ -8229,26 +8535,45 @@ export class AnimationTablePopup {
             }
             requestAnimationFrame(() => {
                 if (shouldSave) {
-                    const beforeState = !cancelled && confirmed
-                        ? this._transformHistoryBeforeState
-                        : null;
-                    if (!cancelled && confirmed) {
-                        this._confirmInternalFolderPeerTransforms(layerId);
-                    }
-                    this._invalidateWorkingLayerSnapshotId(layerId);
-                    const saved = this._saveSelectedClipFromWorkingLayers({ force: true });
-                    if (saved && beforeState) {
+                    const shouldCommit = !cancelled && confirmed;
+                    const beforeState = shouldCommit ? this._transformHistoryBeforeState : null;
+                    if (!shouldCommit) {
                         const asset = this._getSelectedAssetForInspector();
-                        const afterState = asset ? this._captureInternalLayerHistoryState(asset) : null;
-                        if (asset && afterState && JSON.stringify(beforeState) !== JSON.stringify(afterState)) {
-                            this._recordInternalLayerHistoryFromStates(asset, beforeState, afterState, 'caf-internal-layer-transform', {
-                                type: 'caf-internal-layer-transform',
-                                clipId: this.selectedCelId,
-                                internalLayerId: this.selectedInternalLayerId || null
-                            });
+                        if (asset && this._transformHistoryBeforeState) {
+                            this._restoreInternalLayerHistoryState(asset.id, this._transformHistoryBeforeState);
+                        } else {
+                            this._syncSelectedClipToWorkingLayers({ forceRestore: true });
+                        }
+                        this._requestLayerPanelSync();
+                    } else {
+                        const peerResult = this._confirmInternalFolderPeerTransforms(layerId);
+                        if (peerResult?.ok === false) {
+                            const asset = this._getSelectedAssetForInspector();
+                            if (asset && beforeState) {
+                                this._restoreInternalLayerHistoryState(asset.id, beforeState);
+                            } else {
+                                this._syncSelectedClipToWorkingLayers({ forceRestore: true });
+                            }
+                            console.warn('[AnimationTablePopup] CAF folder transform rolled back after peer confirm failure', peerResult);
+                            window.projectManager?._showSaveToast?.('CAFフォルダ変形の確定に失敗したため、変形前へ戻しました。');
+                            this._requestLayerPanelSync();
+                        } else {
+                            this._invalidateWorkingLayerSnapshotId(layerId);
+                            const saved = this._saveSelectedClipFromWorkingLayers({ force: true });
+                            if (saved && beforeState) {
+                                const asset = this._getSelectedAssetForInspector();
+                                const afterState = asset ? this._captureInternalLayerHistoryState(asset) : null;
+                                if (asset && afterState && JSON.stringify(beforeState) !== JSON.stringify(afterState)) {
+                                    this._recordInternalLayerHistoryFromStates(asset, beforeState, afterState, 'caf-internal-layer-transform', {
+                                        type: 'caf-internal-layer-transform',
+                                        clipId: this.selectedCelId,
+                                        internalLayerId: this.selectedInternalLayerId || null
+                                    });
+                                }
+                            }
+                            this._requestLayerPanelSync();
                         }
                     }
-                    this._requestLayerPanelSync();
                 }
                 this.layerSystem?._hideOperationIndicator?.();
                 this._exitTransformEditPreviewMode();

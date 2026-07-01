@@ -680,7 +680,7 @@ export class BrushCore {
             state.previewSprite.parent.removeChild(state.previewSprite);
         }
         state.previewSprite.mask = null;
-        state.previewSprite.setMask({ inverse: false });
+        state.previewSprite.setMask({ mask: null, inverse: false });
 
         const commitSprite = new Sprite(state.texture);
         commitSprite.alpha = state.opacity;
@@ -699,7 +699,7 @@ export class BrushCore {
         const state = this.penOpacityState;
         if (state?.previewSprite) {
             state.previewSprite.mask = null;
-            state.previewSprite.setMask({ inverse: false });
+            state.previewSprite.setMask({ mask: null, inverse: false });
             if (state.previewSprite.parent) {
                 state.previewSprite.parent.removeChild(state.previewSprite);
             }
@@ -762,6 +762,14 @@ export class BrushCore {
             height,
             resolution: 1
         });
+        const empty = new Container();
+        this.layerManager.app.renderer.render({
+            container: empty,
+            target: maskTexture,
+            clear: true,
+            clearColor: [0, 0, 0, 0]
+        });
+        empty.destroy();
         const previewSprite = new Sprite(maskTexture);
         previewSprite.label = 'airbrushStrokePreview';
         previewSprite.tint = settings.mode === 'airbrush-erase'
@@ -803,7 +811,7 @@ export class BrushCore {
             state.previewSprite.parent.removeChild(state.previewSprite);
         }
         state.previewSprite.mask = null;
-        state.previewSprite.setMask({ inverse: false });
+        state.previewSprite.setMask({ mask: null, inverse: false });
         const commitSprite = new Sprite(state.maskTexture);
         commitSprite.tint = state.mode === 'airbrush-erase'
             ? 0xffffff
@@ -823,7 +831,7 @@ export class BrushCore {
         const state = this.airbrushState;
         if (state?.previewSprite) {
             state.previewSprite.mask = null;
-            state.previewSprite.setMask({ inverse: false });
+            state.previewSprite.setMask({ mask: null, inverse: false });
             if (state.previewSprite.parent) {
                 state.previewSprite.parent.removeChild(state.previewSprite);
             }

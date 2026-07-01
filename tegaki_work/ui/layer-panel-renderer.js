@@ -40,6 +40,7 @@ export class LayerPanelRenderer {
         this._clipSnapshotThumbCache = new Map();
         this._cardDrag = null;
         this._cardDragSuppressClick = false;
+        this._legacyNamePointerTap = null;
         this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
         this._handleAttributePopupKeydown = this._handleAttributePopupKeydown.bind(this);
         this._handleAttributePopupDragMove = this._handleAttributePopupDragMove.bind(this);
@@ -327,10 +328,54 @@ export class LayerPanelRenderer {
     }
 
     _handleLayerPanelCardPointerDown(e) {
+        if (this._tryStartLegacyLayerNameEditFromPointer(e)) {
+            return;
+        }
         const target = this._resolveLayerPanelCardPointerTarget(e);
         if (!target) return;
 
         this._startLayerPanelCardDrag(e, target.row, target.options);
+    }
+
+    _tryStartLegacyLayerNameEditFromPointer(e) {
+        const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card');
+        const nameElement = e.target?.closest?.(variant.nameSelector);
+        if (!nameElement) return false;
+
+        const row = nameElement.closest(variant.rowSelector);
+        if (!row || row.dataset.isBackground === 'true') return false;
+
+        const layerIndex = Number.parseInt(row.dataset.layerIndex, 10);
+        const layer = this.layerSystem?.getLayers?.()?.[layerIndex];
+        if (!layer || layer.layerData?.isBackground) return false;
+
+        const now = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now()
+            : Date.now();
+        const layerId = row.dataset.layerId || '';
+        const previous = this._legacyNamePointerTap;
+        const isSameTarget = previous
+            && previous.layerId === layerId
+            && previous.pointerType === e.pointerType
+            && now - previous.time <= 460
+            && Math.hypot(e.clientX - previous.clientX, e.clientY - previous.clientY) <= 10;
+        const isDoubleActivation = e.detail >= 2 || isSameTarget;
+
+        this._legacyNamePointerTap = {
+            layerId,
+            pointerType: e.pointerType,
+            time: now,
+            clientX: e.clientX,
+            clientY: e.clientY
+        };
+
+        if (!isDoubleActivation) return false;
+
+        e.preventDefault();
+        e.stopPropagation();
+        this._legacyNamePointerTap = null;
+        this._editLayerName(nameElement, layer, layerIndex);
+        return true;
     }
 
     _resolveLayerPanelCardPointerTarget(e) {
@@ -429,7 +474,6 @@ export class LayerPanelRenderer {
                     '.layer-panel-card-action',
                     '.layer-delete-button',
                     '.layer-visibility',
-                    '.layer-opacity-control',
                     '.layer-clip-status',
                     '.layer-background-color-button',
                     '.layer-duplicate-button',
@@ -638,7 +682,7 @@ export class LayerPanelRenderer {
 
         const dx = e.clientX - drag.startX;
         const dy = e.clientY - drag.startY;
-        if (!drag.active && Math.hypot(dx, dy) < 5) return;
+        if (!drag.active && Math.hypot(dx, dy) < 3) return;
 
         e.preventDefault();
         if (!drag.active) {

@@ -70,7 +70,9 @@ export class ImageImporter {
 
     async importFile(file, options = {}) {
         if (this._isSupportedPsdFile(file)) {
-            const imported = await window.psdImporter?.importFileToActiveCaf?.(file);
+            const imported = await window.psdImporter?.importFileToActiveCaf?.(file, {
+                placementMode: options.placementMode || this.importMode || 'fit-canvas'
+            });
             if (!imported) this._emitFailure('PSDをアクティブCAFへ取り込めませんでした');
             return imported === true;
         }

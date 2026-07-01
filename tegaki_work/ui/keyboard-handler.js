@@ -158,10 +158,14 @@ export const KeyboardHandler = (function() {
                     window.CoreRuntime.api.selection.requestTransform?.();
                 } else {
                     const nextVKeyState = !vKeyPressed;
+                    const animationTable = window.PopupManager?.get?.('animationTable')
+                        || window.coreEngine?.popupManager?.get?.('animationTable');
                     if (nextVKeyState) {
-                        const animationTable = window.PopupManager?.get?.('animationTable')
-                            || window.coreEngine?.popupManager?.get?.('animationTable');
                         animationTable?.prepareInternalFolderTransform?.();
+                    } else if (animationTable?.canConfirmInternalFolderTransform?.() === false) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        return;
                     }
                     if (nextVKeyState && !canStartLayerTransform()) {
                         vKeyPressed = false;

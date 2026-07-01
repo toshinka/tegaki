@@ -858,15 +858,38 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
 
     _createSnapshotCanvas(snapshot) {
         if (!snapshot?.pixels || !snapshot.width || !snapshot.height) return null;
+        const width = Math.max(1, Math.round(Number(snapshot.width) || 1));
+        const height = Math.max(1, Math.round(Number(snapshot.height) || 1));
+        const expectedPixelBytes = width * height * 4;
         const canvas = document.createElement('canvas');
-        canvas.width = snapshot.width;
-        canvas.height = snapshot.height;
+        canvas.width = width;
+        canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
         const pixels = snapshot.pixels instanceof Uint8ClampedArray
             ? snapshot.pixels
             : new Uint8ClampedArray(snapshot.pixels);
-        ctx.putImageData(new ImageData(pixels, snapshot.width, snapshot.height), 0, 0);
+        if (pixels.length !== expectedPixelBytes) {
+            console.warn('[AlbumPopup] snapshot canvas skipped: invalid pixel length', {
+                snapshotId: snapshot.id,
+                width,
+                height,
+                expectedPixelBytes,
+                actualPixelBytes: pixels.length
+            });
+            return null;
+        }
+        try {
+            ctx.putImageData(new ImageData(pixels, width, height), 0, 0);
+        } catch (error) {
+            console.warn('[AlbumPopup] snapshot canvas skipped: ImageData creation failed', {
+                snapshotId: snapshot.id,
+                width,
+                height,
+                error
+            });
+            return null;
+        }
         return canvas;
     }
 
@@ -1421,11 +1444,31 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
     _importActiveCafDataToSelectedCaf(activeCafData) {
         const table = this._getAnimationTable();
         const model = table?.model;
-        const targetAsset = table?.selectedAssetId ? model?.getClipAsset?.(table.selectedAssetId) : null;
+        const selectedEntry = table?.selectedCelId ? model?.findClipEntry?.(table.selectedCelId) : null;
+        const selectedAssetId = table?.selectedAssetId || null;
+        const selectedAssetEntry = selectedAssetId
+            ? table?._findClipEntryByAssetId?.(selectedAssetId)
+            : null;
+        const targetEntry = selectedEntry?.clip?.assetId
+            ? selectedEntry
+            : (selectedAssetEntry || null);
+        const targetAssetId = targetEntry?.clip?.assetId || selectedAssetId || null;
+        const targetAsset = targetAssetId ? model?.getClipAsset?.(targetAssetId) : null;
         if (!table || !model || !targetAsset) {
             alert('取り込み先のアクティブCAFを選択してください。');
             return false;
         }
+        if (targetEntry?.clip && table.selectedCelId !== targetEntry.clip.id) {
+            table._activateClipEntry?.(targetEntry, { saveCurrent: true });
+        }
+        if (targetEntry?.lane?.id) {
+            table.activeLaneId = targetEntry.lane.id;
+        }
+        if (targetEntry?.clip?.id) {
+            table.selectedCelId = targetEntry.clip.id;
+        }
+        table.selectedAssetId = targetAsset.id;
+        table.selectedAssetFolderId = targetAsset.folderId || null;
 
         const sourceAsset = activeCafData?.asset;
         const sourceLayers = sourceAsset?.internalLayers || [];
@@ -1435,8 +1478,10 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             return false;
         }
 
-        table._saveSelectedClipFromWorkingLayers?.({ force: true });
-        const beforeState = table._captureTimelineHistoryState?.();
+        table._saveSelectedClipFromWorkingLayers?.();
+        const beforeState = table._captureActiveCafAssetHistoryState?.(targetAsset)
+            || table._captureTimelineHistoryState?.();
+        table._resetCafPreviewRuntime?.('album-active-caf-import-before-apply');
         const snapshotIdMap = new Map();
 
         sourceSnapshots.forEach(snapshotData => {
@@ -1479,17 +1524,41 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         targetAsset.updatedAt = Date.now();
 
         table.selectedInternalLayerId = nextLayers.find(layer => layer.type !== 'folder')?.id || nextLayers[0]?.id || null;
-        table._invalidateSnapshotTextureCache?.();
-        table._syncSelectedClipToWorkingLayers?.({ forceRestore: true });
+        table.selectedAssetId = targetAsset.id;
+        table.selectedAssetFolderId = targetAsset.folderId || null;
+        if (table._resetCafPreviewRuntime) {
+            table._resetCafPreviewRuntime('album-active-caf-import-after-apply');
+        } else {
+            table._invalidateSnapshotTextureCache?.({ immediate: true });
+        }
+        const syncOk = targetEntry?.clip
+            ? table._syncClipAssetToWorkingLayers?.(targetEntry.clip, { forceRestore: true }) !== false
+            : table._syncSelectedClipToWorkingLayers?.({ forceRestore: true }) !== false;
+        if (!syncOk) {
+            if (beforeState?.asset && table._restoreActiveCafAssetHistoryState) {
+                table._restoreActiveCafAssetHistoryState(targetAsset.id, beforeState);
+            }
+            alert('AlbumからのアクティブCAF取り込み後にキャンバス表示へ同期できませんでした。');
+            return false;
+        }
         table.render?.();
         table._flushLayerPanelSync?.();
 
-        const afterState = table._captureTimelineHistoryState?.();
-        table._recordTimelineHistory?.(beforeState, afterState, 'caf-import-album-active-caf', {
-            type: 'caf-import-album-active-caf',
-            source: 'album',
-            assetId: targetAsset.id
-        });
+        const afterState = table._captureActiveCafAssetHistoryState?.(targetAsset)
+            || table._captureTimelineHistoryState?.();
+        if (table._recordActiveCafAssetHistoryFromStates && beforeState?.asset && afterState?.asset) {
+            table._recordActiveCafAssetHistoryFromStates(targetAsset, beforeState, afterState, 'caf-import-album-active-caf', {
+                type: 'caf-import-album-active-caf',
+                source: 'album',
+                assetId: targetAsset.id
+            });
+        } else {
+            table._recordTimelineHistory?.(beforeState, afterState, 'caf-import-album-active-caf', {
+                type: 'caf-import-album-active-caf',
+                source: 'album',
+                assetId: targetAsset.id
+            });
+        }
 
         return true;
     }

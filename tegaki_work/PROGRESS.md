@@ -1,6 +1,6 @@
 # PROGRESS — 現在状態
 
-更新日: 2026-06-30
+更新日: 2026-07-01
 
 > 現在状態、既知残存、次の入口だけを記録する。
 > 詳細計画は `開発用資料保管庫/proposals/00_計画索引.md`、
@@ -32,6 +32,7 @@ Phase 5oの画像import / 外部クリップボード画像貼り付けも完了
 完了記録は `開発用資料保管庫/Archive/phase5o.md`。
 Phase 5pの無限キャンバス / 欄外ラスター保持も完了。
 指示書と引き継ぎは `開発用資料保管庫/Archive/` へ移動した。
+Phase 5qは `task-codex/phase5q.md` として立ち上げた。Animation Tableを閉じた時のLane表示モードを、保存正本へ混ぜないdisplay-only改善として扱う。
 
 ## アニメ画像import追記
 
@@ -55,6 +56,9 @@ Phase 5pの無限キャンバス / 欄外ラスター保持も完了。
 - CAF内部フォルダもopacityを配下Rasterへ累積反映する。animation preview / onion / export compositor / working Layer表示のalphaを同じeffective opacityで同期する。
 - CAF内部フォルダ選択時、Vキー前に最初の配下working Rasterを代表Layerとしてactive化し、preview中のtransformを他の配下working Rasterへ同期する。V確定時は代表以外の配下working Rasterも同じLayer transform確定経路で焼き込み、CAF assetへ保存する。
 - CAF内部フォルダ選択時に代表working Rasterをactive化しても、選択正本はCAF内部フォルダのまま維持する。これにより、CAF内部フォルダのVキー変形で子Layer選択へ落ちず、通常フォルダと同じ「フォルダ選択のまま一括変形」契約になる。
+- CAF内部フォルダのV変形中は、開始時のCAF asset / folder / working Layer群を一時セッションとして保持する。active working Layer同期が子Layerへ寄っても内部フォルダ選択へ戻し、フォルダ一括変形対象を維持する。
+- CAF内部フォルダのV変形確定前に、対象working Layer群の変形後boundsがRenderTexture上限・安全ピクセル数を超えないか事前検査する。危険な場合は確定を止め、壊れたpreview状態をCAFへ保存しない。
+- CAF working Layer変形の確定が失敗 / cancel扱いになった場合は、`_saveSelectedClipFromWorkingLayers(force)` へ流さずCAF正本からworking Layerを復元する。
 - CAF文脈でV変形パネルの反転 / リセットボタンがdisabledになる問題を修正した。activeがanimation working Layerの場合はボタン操作もショートカットと同じtransform経路へ通す。
 - Vキー回転 / 拡縮 / flip確定は、プレビューと同じ中心変換行列で変形後AABBを計算し、Raster boundsを拡張して焼き込む。通常Layer / 通常フォルダ / CAF内部フォルダで、枠外へ出た部分を旧RenderTextureサイズで欠けさせない。
 - V変形パネルのスライダーは慣性なしにし、回転値がpointer up後に流れ続けないようにする。
@@ -77,7 +81,24 @@ Phase 5pの無限キャンバス / 欄外ラスター保持も完了。
 - Album上の `active-caf` snapshotを開くと、現在選択中のCAFへ内部Layer / FolderとDrawingSnapshotを取り込み、Timeline Historyへ `caf-import-album-active-caf` として記録する。
 - Album toolbarは通常Project保存 / アクティブCAF保存、通常Projectロード / アクティブCAFロードを本アイコンの色違いで分ける。`active-caf` snapshotはアクティブCAFへ取り込むだけでなく、通常ProjectのLayer / Folder構造として開くこともできる。
 - 画像読み込みボタンでPSDファイルも選べるようにし、`.psd` の場合は選択中のアクティブCAFへPSD Layer / Folder構造を取り込む。PSD childrenはTegaki内部Layer順へ反転し、Layer `left/top` はDrawingSnapshot `rasterBounds.x/y` として保持する。
+- PSD importの取り込み先は `selectedAssetId` を優先し、未同期の場合は選択中セルの `clip.assetId` をフォールバックする。初回CAF1選択直後でもアクティブCAFへ取り込みやすくする。
+- PSD import時に `selectedAssetId` と `selectedCelId` がずれている場合は、対象assetを参照するclip/celへ明示的に切り替えてから同期する。CAF1へPSD取り込み後にCAF2へ再取り込みしても、working Layer復元が別CAFを参照しない契約にする。
 - PSD import時はLayer imageDataの透明余白をalpha boundsで刈り込んでDrawingSnapshot化する。読み込み中は処理中indicatorを表示し、重いPSDでも操作不能に見えにくくする。
+- PSD importは画像import popupのキャンバス内フィット / 原寸 / 画像サイズへキャンバス変更を反映する。巨大PSDはWebGL context loss回避のため、Tegaki最大キャンバスサイズ・RenderTexture上限・安全ピクセル数を超えないscaleへ縮小して取り込む。
+- アクティブCAFへのPSD import履歴はTimeline全体ではなく、対象CAF assetと参照DrawingSnapshotだけを保存する。Undo / Redoで全Timeline snapshot配列を丸ごと差し替えず、PSD再読み込み時のメモリ圧迫とworking Layer再同期の不安定さを抑える。
+- Working Layer復元時、RenderTexture上限や安全ピクセル数を超えるsnapshotは復元を拒否し、CAF working Layerを同期済み扱いにしない。これにより巨大PSD由来の表示不能状態を避ける。
+- PSD import前のCAF保存はdirty時だけ行い、履歴復元後のworking Layerを無条件に再キャプチャしない。PSD再読み込み / Undo / RedoではCAF preview containerとSnapshot texture cacheを即時破棄してからCAF assetを復元する。
+- PSDをCAF1へ取り込み後、CAF2へ同PSDを再取り込み、またはPSD由来CAF内部フォルダをV変形した時のCanvas表示欠落対策として、CAF内部Layer操作履歴を対象CAF asset scopedへ寄せ、全Timeline snapshot配列の丸ごと差し替えを避ける。
+- Working Layer / Album active-caf / PSD importの復元でsnapshot pixel length不一致やRenderTexture復元失敗を検出した場合、同期済み扱いにせず取り込み前assetへ戻す。サムネイルだけ生きてCanvas表示が死ぬ状態へ進みにくくする。
+- CAFセル選択時に `selectedCelId` だけでなく `selectedAssetId` / `selectedAssetFolderId` も同期する。PSD import / Album active-caf importは選択中セルのassetを第一候補にし、CAF1選択のassetが残ったままCAF2へ連続importするズレを避ける。
+- 通常Project / Albumロード時のLayer画像復元は、PNGを直接Pixi Texture化せずCanvas2Dへ正規化してからRenderTextureへアップロードする。保存rasterBoundsより復元PNGが小さい場合は警告を出す。
+- エアブラシの一時mask RenderTextureを開始時に透明クリアする。未初期化RenderTextureを `clear:false` で加筆して大面積欠落・消し込みに見える経路を塞ぐ。
+- Pixi mask解除は `target.mask = null` だけでなく `setMask({ mask: null, inverse: false })` で `_maskOptions.mask` も消す。PSDをCAF1→CAF2へ連続importした後に、破棄済みclipping mask参照がAlphaMaskPipeへ残ってCanvas描画が停止する経路を塞ぐ。
+- PSD importではPSD由来のクリッピングをCAF内部Layer属性として残さず、取り込み時に対象DrawingSnapshotのalphaへ焼き込んで `clipping=false` にする。完全互換よりTegaki内部ラスター化を優先し、連続CAF import時にPixi alpha mask経路へ戻る余地を減らす。
+- CAF previewのSnapshot texture cacheは、即時invalidate指定でもTexture破棄を2フレーム遅延させてからGCする。Containerから外した直後のPixi render instructionsが破棄済みTexture / mask参照を踏む経路を避ける。
+- オーナー実機で `TEST.psd` のCAF1→CAF2連続import、PSD由来CAF内部フォルダのV拡縮 / 回転、PSD再読み込みがCanvas表示を破壊しないことを確認した。初回PSD import時だけ既存working Layer初期化由来と思われるHistory増加が残るが、二回目以降は対象CAF asset単位の1履歴へ収まる。
+- Album active-caf importもPSD importと同じく、選択中セル / assetのズレを補正して対象clipを固定し、適用前後でCAF preview runtimeをresetしてからworking Layerへ同期する。
+- PSD再取込 / Album端欠け / エアブラシ欠落の調査記録は `開発用資料保管庫/proposals/psd_caf_import_failure_investigation_2026-07-01.md` を入口にする。現状は破壊再発時の再調査資料として残し、通常導線は継続する。
 - CAF全体PSD export、通常LayerへのPSD import、CAFモードからアクティブCAF以外を破棄して通常モードへ戻す操作は後続候補として残す。
 
 ## Clipboard / CAF table追記
@@ -92,6 +113,7 @@ Phase 5pの無限キャンバス / 欄外ラスター保持も完了。
 - CAF Layer panel mirrorの内部フォルダサムネクリックは、選択同期やAnimation Table再描画を挟まず、mirrorの開閉状態だけを反転するようにした。
 - CAF内部フォルダの表示/非表示をLayer panelから切り替えた場合、選択中の子Layerが別でもworking Layerの表示属性を同期する。
 - Animation preview中の選択CAFは、他CAFと同じ合成previewへ二重に出さず、working Layer側を表示してフォルダ表示/非表示と編集対象表示を一致させる。フォルダblendの本番的なgroup表示はpreview / onion / export compositor側を正本にする。
+- 通常Layerカードの `100%` 表示は旧opacityドラッグ部品ではなく単なるmeta表示として扱い、カードD&D開始を阻害しない。通常Layer名はDOM再描画でブラウザdblclickが途切れても、同一Layerへの短時間2回pointer入力として名前編集へ入る。
 
 ## Phase 5p完了状態
 
@@ -682,6 +704,7 @@ Phase 5b指示書は `開発用資料保管庫/Archive/phase5b.md` へ移動し�
 
 ## 次の入口
 
+- Phase 5qは、Animation Table preview / onionの既存描画経路を監査し、Tableを閉じた状態でも現在Frameの別Lane / 別CAFを薄く参照できるLane onion表示をMVPにする。保存画像、export、Layer visibility、ClipAsset / DrawingSnapshot正本は変更しない。
 - Phase 5pの既知残存なし。Project frame自体の無限化、全bounds export、tiled canvas、欄外表示モードは後続候補。
 - GIF選択時の出力は `.gif` filenameへ修正した。アニメフレームがない場合も現在Project frameを1フレームGIFとして生成する。
 - Phase 5kのクラッシュ対策後に再発が出た場合だけ、cold frame退避やHistory state delta化を再検討する。

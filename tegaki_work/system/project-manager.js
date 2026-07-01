@@ -821,6 +821,15 @@ export class ProjectManager {
                     const requestedHeight = Math.max(1, Math.round(rasterBounds?.height || imageHeight));
                     const targetWidth = Math.max(imageWidth, requestedWidth);
                     const targetHeight = Math.max(imageHeight, requestedHeight);
+                    if (imageWidth < requestedWidth || imageHeight < requestedHeight) {
+                        console.warn('[ProjectManager] layer image restore size is smaller than saved raster bounds', {
+                            imageWidth,
+                            imageHeight,
+                            requestedWidth,
+                            requestedHeight,
+                            rasterBounds
+                        });
+                    }
 
                     if (layerData && (!renderTexture || renderTexture.width !== targetWidth || renderTexture.height !== targetHeight)) {
                         if (renderTexture) {
@@ -852,14 +861,25 @@ export class ProjectManager {
                         layerData.layerSprite?.position.set(nextBounds.x, nextBounds.y);
                     }
 
-                    // PixiJS v8 の基盤テクスチャを作成
-                    const texture = PIXI.Texture.from(img);
+                    const restoreCanvas = document.createElement('canvas');
+                    restoreCanvas.width = targetWidth;
+                    restoreCanvas.height = targetHeight;
+                    const restoreCtx = restoreCanvas.getContext('2d');
+                    if (!restoreCtx) {
+                        throw new Error('2D canvas context is not available for layer image restore.');
+                    }
+                    restoreCtx.clearRect(0, 0, targetWidth, targetHeight);
+                    restoreCtx.drawImage(img, 0, 0, imageWidth, imageHeight);
+
+                    // Decode result is normalized through Canvas2D before uploading to Pixi.
+                    const texture = PIXI.Texture.from(restoreCanvas);
                     const sprite = new PIXI.Sprite(texture);
                     
                     this.app.renderer.render({
                         container: sprite,
                         target: renderTexture,
-                        clear: true
+                        clear: true,
+                        clearColor: [0, 0, 0, 0]
                     });
 
                     sprite.destroy({ texture: true, baseTexture: true });

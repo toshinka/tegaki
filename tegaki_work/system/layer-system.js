@@ -233,6 +233,49 @@ export class LayerSystem {
         return restored;
     }
 
+    canBakeLayerTransform(layer, transformOverride = null, sourceSnapshotOverride = null) {
+        if (!this.app?.renderer || !layer?.layerData?.renderTexture) {
+            return { ok: false, reason: 'missing-render-texture', targetBounds: null };
+        }
+
+        const layerData = layer.layerData;
+        const rawTransformState = structuredClone(
+            transformOverride
+                || this.transform?.getTransform?.(layerData.id)
+                || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }
+        );
+        const transformState = this._normalizeTransformStateForBake(rawTransformState);
+        if (!transformState) {
+            return { ok: false, reason: 'invalid-transform', transform: rawTransformState, targetBounds: null };
+        }
+
+        const sourceSnapshot = sourceSnapshotOverride || this.createLayerRasterSnapshot(layer);
+        if (!sourceSnapshot?.pixels) {
+            return { ok: false, reason: 'missing-source-snapshot', transform: transformState, targetBounds: null };
+        }
+
+        const sourceBounds = normalizeRasterBounds(sourceSnapshot.rasterBounds, {
+            width: sourceSnapshot.width,
+            height: sourceSnapshot.height
+        });
+        sourceBounds.width = Math.max(1, Math.round(sourceSnapshot.width || sourceBounds.width));
+        sourceBounds.height = Math.max(1, Math.round(sourceSnapshot.height || sourceBounds.height));
+
+        const targetBounds = this._calculateTransformedRasterBounds(sourceBounds, transformState);
+        const maxTextureSize = this._getMaxRenderTextureSize();
+        if (!targetBounds) {
+            return { ok: false, reason: 'invalid-target-bounds', sourceBounds, transform: transformState, targetBounds };
+        }
+        if (targetBounds.width > maxTextureSize || targetBounds.height > maxTextureSize) {
+            return { ok: false, reason: 'exceeds-max-texture-size', sourceBounds, transform: transformState, targetBounds, maxTextureSize };
+        }
+        if (!this._isRasterBakeSizeAllowed(targetBounds)) {
+            return { ok: false, reason: 'exceeds-safe-pixel-count', sourceBounds, transform: transformState, targetBounds, maxTextureSize };
+        }
+
+        return { ok: true, sourceBounds, transform: transformState, targetBounds, maxTextureSize };
+    }
+
     _calculateTransformedRasterBounds(sourceBounds, transformState) {
         const centerX = this.config.canvas.width / 2;
         const centerY = this.config.canvas.height / 2;
@@ -1830,7 +1873,7 @@ export class LayerSystem {
         if (!maskSprite) {
             target.mask = null;
             if (typeof target.setMask === 'function') {
-                target.setMask({ inverse: false });
+                target.setMask({ mask: null, inverse: false });
             }
             return;
         }
@@ -2116,6 +2159,20 @@ export class LayerSystem {
         const width = normalizedSnapshot.width;
         const height = normalizedSnapshot.height;
         const rasterBounds = normalizedSnapshot.rasterBounds;
+        const maxTextureSize = this._getMaxRenderTextureSize();
+        if (
+            width > maxTextureSize
+            || height > maxTextureSize
+            || !this._isRasterBakeSizeAllowed({ width, height })
+        ) {
+            console.warn('[LayerSystem] raster snapshot restore skipped: exceeds safe texture size', {
+                layerId: layerData.id,
+                width,
+                height,
+                maxTextureSize
+            });
+            return false;
+        }
         this._debugValidateRasterSnapshot({
             source: 'restore',
             layerId: layerData.id,
@@ -2124,6 +2181,38 @@ export class LayerSystem {
             pixels: normalizedSnapshot.pixels,
             rasterBounds
         });
+
+        const expectedPixelBytes = width * height * 4;
+        const pixels = new Uint8ClampedArray(normalizedSnapshot.pixels || []);
+        if (pixels.length !== expectedPixelBytes) {
+            console.warn('[LayerSystem] raster snapshot restore skipped: invalid pixel length', {
+                layerId: layerData.id,
+                width,
+                height,
+                expectedPixelBytes,
+                actualPixelBytes: pixels.length
+            });
+            return false;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+
+        try {
+            const imageData = new ImageData(pixels, width, height);
+            ctx.putImageData(imageData, 0, 0);
+        } catch (error) {
+            console.warn('[LayerSystem] raster snapshot restore skipped: failed to prepare ImageData', {
+                layerId: layerData.id,
+                width,
+                height,
+                error
+            });
+            return false;
+        }
 
         if (!layerData.renderTexture || layerData.renderTexture.width !== width || layerData.renderTexture.height !== height) {
             if (layerData.renderTexture) {
@@ -2148,26 +2237,28 @@ export class LayerSystem {
             layerData.layerSprite.position.set(rasterBounds.x, rasterBounds.y);
         }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return false;
+        let sprite = null;
+        try {
+            const texture = Texture.from(canvas);
+            sprite = new Sprite(texture);
 
-        const imageData = new ImageData(new Uint8ClampedArray(normalizedSnapshot.pixels), width, height);
-        ctx.putImageData(imageData, 0, 0);
-
-        const texture = Texture.from(canvas);
-        const sprite = new Sprite(texture);
-
-        this.app.renderer.render({
-            container: sprite,
-            target: layerData.renderTexture,
-            clear: true,
-            clearColor: [0, 0, 0, 0]
-        });
-
-        sprite.destroy({ texture: true, baseTexture: true });
+            this.app.renderer.render({
+                container: sprite,
+                target: layerData.renderTexture,
+                clear: true,
+                clearColor: [0, 0, 0, 0]
+            });
+        } catch (error) {
+            console.error('[LayerSystem] raster snapshot restore failed during render', {
+                layerId: layerData.id,
+                width,
+                height,
+                error
+            });
+            return false;
+        } finally {
+            sprite?.destroy({ texture: true, baseTexture: true });
+        }
 
         layerData.pathsData = structuredClone(normalizedSnapshot.pathsData || []);
         layerData.paths = structuredClone(normalizedSnapshot.paths || []);
