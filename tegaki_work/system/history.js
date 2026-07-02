@@ -19,6 +19,7 @@ export class HistoryManager {
         this.stack = [];
         this.index = -1;
         this.isApplying = false;
+        this.recordingSuppressionDepth = 0;
         this.maxSize = 250;
         this.maxMemoryBytes = 256 * 1024 * 1024;
         
@@ -27,7 +28,7 @@ export class HistoryManager {
     }
 
     push(command) {
-        if (this.isApplying) {
+        if (this.isApplying || this.isRecordingSuppressed()) {
             return;
         }
         
@@ -66,7 +67,7 @@ export class HistoryManager {
     }
 
     record(command) {
-        if (this.isApplying) {
+        if (this.isApplying || this.isRecordingSuppressed()) {
             return;
         }
 
@@ -89,7 +90,7 @@ export class HistoryManager {
     }
 
     undo() {
-        if (!this.canUndo() || this.isApplying) {
+        if (!this.canUndo() || this.isApplying || this.isRecordingSuppressed()) {
             return;
         }
         
@@ -115,7 +116,7 @@ export class HistoryManager {
     }
 
     redo() {
-        if (!this.canRedo() || this.isApplying) {
+        if (!this.canRedo() || this.isApplying || this.isRecordingSuppressed()) {
             return;
         }
         
@@ -160,6 +161,30 @@ export class HistoryManager {
         this.stack = [];
         this.index = -1;
         this._notifyHistoryChanged(null, 'clear');
+    }
+
+    beginRecordingSuppression(reason = 'suppressed') {
+        this.recordingSuppressionDepth++;
+        if (window.TEGAKI_CONFIG?.debug) {
+            console.debug('[History] Recording suppressed', {
+                reason,
+                depth: this.recordingSuppressionDepth
+            });
+        }
+    }
+
+    endRecordingSuppression(reason = 'suppressed') {
+        this.recordingSuppressionDepth = Math.max(0, this.recordingSuppressionDepth - 1);
+        if (window.TEGAKI_CONFIG?.debug) {
+            console.debug('[History] Recording suppression ended', {
+                reason,
+                depth: this.recordingSuppressionDepth
+            });
+        }
+    }
+
+    isRecordingSuppressed() {
+        return this.recordingSuppressionDepth > 0;
     }
 
     configureLimits(options = {}) {
@@ -244,6 +269,7 @@ export class HistoryManager {
                 stackSize: this.stack.length,
                 currentIndex: this.index,
                 usage: this.getUsage(),
+                recordingSuppressed: this.isRecordingSuppressed(),
                 action,
                 commandName: command?.name || null,
                 meta: command?.meta || null

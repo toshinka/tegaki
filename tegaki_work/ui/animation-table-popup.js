@@ -48,6 +48,9 @@ export class AnimationTablePopup {
         this.animationPreviewContainer = null;
         this.animationPreviewBackContainer = null;
         this.animationPreviewBackgroundContainer = null;
+        this._animationPreviewMode = null;
+        this._animationPreviewKey = null;
+        this._drawingPreviewCompositeKey = null;
         this._snapshotTextureCache = new Map();
         this._snapshotTextureCacheProfile = this._createSnapshotTextureCacheProfile();
         this._snapshotTextureCachePendingDestroy = [];
@@ -59,8 +62,8 @@ export class AnimationTablePopup {
         this.onionSkinFrameCount = 1;
         this.onionSkinPrevAlpha = 0.30;
         this.onionSkinNextAlpha = 0.25;
-        this.onionSkinPrevTint = 0x800000;
-        this.onionSkinNextTint = 0x800000;
+        this.onionSkinPrevTint = 0xd64a3a;
+        this.onionSkinNextTint = 0x3a86c8;
         this.laneReferenceMode = 'active-only'; // 'active-only' | 'lane-onion'
         this.laneReferenceAlpha = 0.24;
         this._laneReferencePreviewFrame = null;
@@ -490,6 +493,12 @@ export class AnimationTablePopup {
         return null; // ALL
     }
 
+    _getTimelineOnionLaneFilterIds() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const laneId = entry?.lane?.id || this.activeLaneId || null;
+        return laneId ? new Set([laneId]) : this._getPreviewLaneFilterIds();
+    }
+
     _getPlaybackRangeOptions() {
         if (this.activePlaybackLaneIds) {
             return {
@@ -509,108 +518,158 @@ export class AnimationTablePopup {
     _applyVisibilityPreview() {
         if (!this.isVisible || !this.isPreviewActive || !this.layerSystem) return;
         
-        this._ensurePreviewContainer();
-        if (this.animationPreviewContainer) {
-            this._clearAnimationPreviewContainer();
-        }
-
         const layers = this.layerSystem.getLayers() || [];
         const currentFrame = this.model.playback.currentFrame;
 
-        // Phase 4z2: LaneフィルタIDセットの取得
         const filterIds = this._getPreviewLaneFilterIds();
 
-        // 1. まず、タイムラインで管理されている全実レイヤーとCAF作業レイヤーを一時的に非表示にする
-        layers.forEach(layer => {
-            const layerData = layer.layerData;
-            if (!layerData || layerData.isFolder) return;
-
-            if (layerData.isBackground) {
-                this._setPreviewBackgroundSubstitute(true, layer);
-                layer.visible = false;
-                return;
-            }
-
-            const isTracked = this.model.tracks.some(t => (t.sourceLayerId || t.layerId) === layerData.id);
-            if (isTracked || layerData.isAnimationWorkingLayer === true) {
-                layer.visible = false;
-            }
+        const selectedEntry = this._getSelectedEntryForPreview(currentFrame);
+        const showSelectedWorkingLayer = selectedEntry && this.isDrawingPreviewSuspended === true;
+        const selectedWorkingLayerIds = showSelectedWorkingLayer && selectedEntry?.clip?.assetId
+            ? this._getWorkingLayerIdsForClipAsset(selectedEntry.clip.assetId)
+            : null;
+        const selectedEditClipIds = selectedEntry?.clip?.id
+            ? new Set([selectedEntry.clip.id])
+            : null;
+        const onionFilterIds = this._getTimelineOnionLaneFilterIds();
+        const previewKey = this._buildAnimationPreviewStateKey('preview', currentFrame, {
+            filterIds,
+            onionFilterIds,
+            selectedEntry,
+            showSelectedWorkingLayer
         });
 
-        // 2. オニオンスキンの描画 (再生中・OFF時はスキップ)
-        const selectedEditClipIds = (!this.isPlaying && this.selectedCelId)
-            ? new Set([this.selectedCelId])
-            : null;
+        if (this._visibilityPreviewApplied && this._animationPreviewMode === 'preview' && this._animationPreviewKey === previewKey) {
+            this._hideTimelineLayersForPreview(layers, {
+                preserveWorkingLayerIds: selectedWorkingLayerIds
+            });
+            if (showSelectedWorkingLayer) {
+                this._showSelectedClipWorkingLayers();
+            }
+            return;
+        }
+
+        this._ensurePreviewContainer();
+        const staging = this._createAnimationPreviewStagingContainers();
+
+        // 1. previewを先に構築する。実Layerを先に隠すと、背面previewだけが見えるフレームが挟まる。
+        let onionRenderedCount = 0;
         if (this.isOnionSkinActive && !this.isPlaying) {
-            this._renderOnionSkins(currentFrame, layers, {
-                filterIds,
-                excludeClipIds: selectedEditClipIds
+            onionRenderedCount = this._renderOnionSkins(currentFrame, layers, {
+                filterIds: onionFilterIds,
+                excludeClipIds: selectedEditClipIds,
+                previewContainer: staging.back
             });
         }
 
-        // 3. メインプレビュー（現在フレーム）の描画
-        // 選択Clipは編集対象のworking Layerを表示し、他CAFだけ合成previewに任せる。
-        if (selectedEditClipIds) {
-            const selectedEntry = this.model.findClipEntry(this.selectedCelId);
-            this._renderFrameCompositeAroundSelectedClip(currentFrame, layers, selectedEntry, {
-                filterIds,
-                excludeClipIds: selectedEditClipIds
-            });
+        // 現在Frameは一枚のdisplay-only合成として扱う。
+        // front/back/workingにLane順を分割すると、選択Lane位置に応じた欠落状態が見えるため避ける。
+        const renderedCount = this._renderFrameComposite(currentFrame, layers, {
+            filterIds,
+            excludeClipIds: showSelectedWorkingLayer ? selectedEditClipIds : null,
+            previewContainer: staging.back
+        });
+        if (renderedCount === 0 && onionRenderedCount === 0) {
+            this._destroyAnimationPreviewStagingContainers(staging);
+            this._restoreVisibility();
+            return;
+        }
+
+        this._replacePreviewContainerChildren(this.animationPreviewBackContainer, staging.back);
+        this._replacePreviewContainerChildren(this.animationPreviewContainer, staging.front);
+        this._hideTimelineLayersForPreview(layers, {
+            preserveWorkingLayerIds: selectedWorkingLayerIds
+        });
+        if (showSelectedWorkingLayer) {
             this._showSelectedClipWorkingLayers();
-        } else {
-            this._renderFrameComposite(currentFrame, layers, {
-                filterIds
-            });
         }
-
+        this._animationPreviewMode = 'preview';
+        this._animationPreviewKey = previewKey;
+        this._drawingPreviewCompositeKey = null;
         this._visibilityPreviewApplied = true;
     }
 
     _applyDrawingVisibilityPreview() {
         if (!this.isVisible || !this.isPreviewActive || !this.selectedCelId || !this.layerSystem) return;
 
-        this._ensurePreviewContainer();
-        if (this.animationPreviewContainer) {
-            this._clearAnimationPreviewContainer();
-        }
-
         const layers = this.layerSystem.getLayers() || [];
         const currentFrame = this.model.playback.currentFrame;
+        const selectedEntry = this._getSelectedEntryForPreview(currentFrame);
+        if (!selectedEntry?.clip) {
+            this.isDrawingPreviewSuspended = false;
+            this._restoreVisibility();
+            return;
+        }
         const filterIds = this._getPreviewLaneFilterIds();
+        const selectedWorkingLayerIds = selectedEntry.clip.assetId
+            ? this._getWorkingLayerIdsForClipAsset(selectedEntry.clip.assetId)
+            : null;
+        const drawingPreviewKey = this._buildDrawingPreviewCompositeKey(currentFrame, selectedEntry, filterIds);
 
-        layers.forEach(layer => {
-            const layerData = layer.layerData;
-            if (!layerData || layerData.isFolder) return;
+        if (this._drawingPreviewCompositeKey === drawingPreviewKey) {
+            this._showSelectedClipWorkingLayers();
+            this._visibilityPreviewApplied = true;
+            return;
+        }
 
-            if (layerData.isBackground) {
-                this._setPreviewBackgroundSubstitute(true, layer);
-                layer.visible = false;
-                return;
-            }
-
-            const isTracked = this.model.tracks.some(t => (t.sourceLayerId || t.layerId) === layerData.id);
-            if (isTracked || layerData.isAnimationWorkingLayer === true) {
-                layer.visible = false;
-            }
-        });
+        this._ensurePreviewContainer();
+        const staging = this._createAnimationPreviewStagingContainers();
 
         if (this.isOnionSkinActive && !this.isPlaying) {
             this._renderOnionSkins(currentFrame, layers, {
-                filterIds,
-                excludeClipIds: new Set([this.selectedCelId])
+                filterIds: this._getTimelineOnionLaneFilterIds(),
+                excludeClipIds: new Set([this.selectedCelId]),
+                previewContainer: staging.front
             });
         }
+        this._replacePreviewContainerChildren(this.animationPreviewBackContainer, staging.back);
+        this._replacePreviewContainerChildren(this.animationPreviewContainer, staging.front);
 
-        this._renderFrameCompositeAroundSelectedClip(
-            currentFrame,
-            layers,
-            this.model.findClipEntry(this.selectedCelId),
-            {
-                filterIds,
-                excludeClipIds: new Set([this.selectedCelId])
-            }
-        );
+        // Live stroke keeps only the selected CAF working layer visible.
+        // Rebuilding same-frame CAF preview while the pen is down can flash as each CAF texture updates.
+        this._hideTimelineLayersForPreview(layers, {
+            preserveWorkingLayerIds: selectedWorkingLayerIds
+        });
         this._showSelectedClipWorkingLayers();
+        this._drawingPreviewCompositeKey = drawingPreviewKey;
+        this._visibilityPreviewApplied = true;
+    }
+
+    _applyTimelineOnionOnlyPreview() {
+        if (!this.isVisible || !this.isOnionSkinActive || this.isPlaying || !this.layerSystem) return;
+
+        const layers = this.layerSystem.getLayers() || [];
+        const currentFrame = this.model.playback.currentFrame;
+        const onionFilterIds = this._getTimelineOnionLaneFilterIds();
+        const onionKey = this._buildAnimationPreviewStateKey('onion-only', currentFrame, {
+            filterIds: null,
+            onionFilterIds,
+            selectedEntry: this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null
+        });
+        if (this._visibilityPreviewApplied && this._animationPreviewMode === 'onion-only' && this._animationPreviewKey === onionKey) {
+            return;
+        }
+
+        // PREVIEW OFF + onion は実Layer表示を正とする。直前のPREVIEWが隠した実Layerを先に戻す。
+        if (this._visibilityPreviewApplied && this._animationPreviewMode !== 'onion-only') {
+            this._restoreVisibility();
+        }
+        this._ensurePreviewContainer();
+        const staging = this._createAnimationPreviewStagingContainers();
+
+        const renderedCount = this._renderOnionSkins(currentFrame, layers, {
+            filterIds: onionFilterIds,
+            previewContainer: staging.front
+        });
+        if (renderedCount === 0) {
+            this._destroyAnimationPreviewStagingContainers(staging);
+            this._clearAnimationPreviewContainer();
+            return;
+        }
+        this._replacePreviewContainerChildren(this.animationPreviewBackContainer, staging.back);
+        this._replacePreviewContainerChildren(this.animationPreviewContainer, staging.front);
+        this._animationPreviewMode = 'onion-only';
+        this._animationPreviewKey = onionKey;
         this._visibilityPreviewApplied = true;
     }
 
@@ -718,28 +777,194 @@ export class AnimationTablePopup {
 
         const drawableInternalLayers = this._getDrawableInternalLayers(asset);
         const workingLayers = this._getRasterWorkingLayers();
+        const visibleWorkingLayers = [];
         drawableInternalLayers.forEach((internalLayer, index) => {
             const workingLayer = workingLayers[index];
             if (!workingLayer?.layerData) return;
             const isVisible = entry.clip.visible !== false
                 && this._isInternalLayerEffectivelyVisible(asset, internalLayer);
             workingLayer.visible = isVisible;
-            workingLayer.layerData.visible = isVisible;
+            if (isVisible) {
+                visibleWorkingLayers.push(workingLayer);
+            }
         });
         for (let index = drawableInternalLayers.length; index < workingLayers.length; index++) {
             if (workingLayers[index]) {
                 workingLayers[index].visible = false;
-                if (workingLayers[index].layerData) workingLayers[index].layerData.visible = false;
             }
         }
         this.layerSystem.refreshClippingMasks?.();
+        visibleWorkingLayers.forEach(layer => this._ensureWorkingLayerDisplaySurface(layer));
         return true;
+    }
+
+    _ensureWorkingLayerDisplaySurface(layer) {
+        if (!layer?.layerData || layer.layerData.isAnimationWorkingLayer !== true) return false;
+        layer.visible = true;
+        if ('renderable' in layer) {
+            layer.renderable = true;
+        }
+        if ('culled' in layer) {
+            layer.culled = false;
+        }
+
+        const sprite = layer.layerData.layerSprite;
+        if (sprite) {
+            if (layer.layerData.clipping !== true) {
+                sprite.visible = true;
+            }
+            if ('renderable' in sprite) {
+                sprite.renderable = true;
+            }
+            if ('culled' in sprite) {
+                sprite.culled = false;
+            }
+        }
+        return true;
+    }
+
+    _getWorkingLayerIdsForClipAsset(assetId) {
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        if (!asset) return null;
+        const workingLayerIds = new Set();
+        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
+        const workingLayers = this._getRasterWorkingLayers();
+        drawableInternalLayers.forEach((internalLayer, index) => {
+            if (!internalLayer) return;
+            const workingLayerId = workingLayers[index]?.layerData?.id;
+            if (workingLayerId) workingLayerIds.add(workingLayerId);
+        });
+        return workingLayerIds;
+    }
+
+    _hideTimelineLayersForPreview(layers, options = {}) {
+        const preserveWorkingLayerIds = options.preserveWorkingLayerIds || null;
+        layers.forEach(layer => {
+            const layerData = layer.layerData;
+            if (!layerData || layerData.isFolder) return;
+
+            if (layerData.isBackground) {
+                this._setPreviewBackgroundSubstitute(true, layer);
+                layer.visible = false;
+                return;
+            }
+
+            if (layerData.isAnimationWorkingLayer === true) {
+                if (preserveWorkingLayerIds?.has(layerData.id)) return;
+                layer.visible = false;
+                return;
+            }
+
+            const isTracked = this.model.tracks.some(t => (t.sourceLayerId || t.layerId) === layerData.id);
+            if (isTracked) {
+                layer.visible = false;
+            }
+        });
+    }
+
+    _buildPreviewCompositeKey(frameIndex, filterIds) {
+        const frame = Math.max(0, Math.round(Number(frameIndex) || 0));
+        const filterKey = filterIds
+            ? [...filterIds].sort().join(',')
+            : 'all';
+        return `frame:${frame}|filter:${filterKey}`;
+    }
+
+    _buildDrawingPreviewCompositeKey(frameIndex, selectedEntry, filterIds) {
+        const clipId = selectedEntry?.clip?.id || 'none';
+        const onionKey = this.isOnionSkinActive
+            ? `${Math.max(1, Math.min(4, Math.round(this.onionSkinFrameCount || 1)))}`
+            : 'off';
+        return `${this._buildPreviewCompositeKey(frameIndex, filterIds)}|selected:${clipId}|onion:${onionKey}`;
+    }
+
+    _buildAnimationPreviewStateKey(mode, frameIndex, options = {}) {
+        const frame = Math.max(0, Math.round(Number(frameIndex) || 0));
+        const filterKey = this._buildPreviewFilterKey(options.filterIds || null);
+        const onionFilterKey = this._buildPreviewFilterKey(options.onionFilterIds || null);
+        const selectedClipId = options.selectedEntry?.clip?.id || this.selectedCelId || 'none';
+        const selectedLaneId = options.selectedEntry?.lane?.id || this.activeLaneId || 'none';
+        const liveSelected = options.showSelectedWorkingLayer === true ? '1' : '0';
+        const onionCount = this.isOnionSkinActive
+            ? Math.max(1, Math.min(4, Math.round(this.onionSkinFrameCount || 1)))
+            : 0;
+        const currentFrameKey = this._buildFrameCellsKey([frame], options.filterIds || null);
+        const onionFrames = [];
+        if (this.isOnionSkinActive && !this.isPlaying && onionCount > 0) {
+            for (let offset = 1; offset <= onionCount; offset++) {
+                const prevFrame = frame - offset;
+                const nextFrame = frame + offset;
+                if (prevFrame >= 0) onionFrames.push(prevFrame);
+                if (nextFrame < this.model.totalFrames) onionFrames.push(nextFrame);
+            }
+        }
+        const onionFrameKey = onionFrames.length > 0
+            ? this._buildFrameCellsKey(onionFrames, options.onionFilterIds || null)
+            : 'off';
+        return [
+            mode,
+            `frame:${frame}`,
+            `filter:${filterKey}`,
+            `onionFilter:${onionFilterKey}`,
+            `selected:${selectedClipId}`,
+            `lane:${selectedLaneId}`,
+            `live:${liveSelected}`,
+            `onion:${onionCount}`,
+            `current:${currentFrameKey}`,
+            `onionFrames:${onionFrameKey}`
+        ].join('|');
+    }
+
+    _buildPreviewFilterKey(filterIds) {
+        return filterIds ? [...filterIds].sort().join(',') : 'all';
+    }
+
+    _buildFrameCellsKey(frameIndexes, filterIds) {
+        const tracks = this.model.tracks || [];
+        const frames = [...new Set(frameIndexes.map(frame => Math.max(0, Math.round(Number(frame) || 0))))].sort((a, b) => a - b);
+        const parts = [];
+        tracks.forEach((track, trackIndex) => {
+            if (!track || track.isBackground || track.type === 'folder') return;
+            if (filterIds && !filterIds.has(track.id)) return;
+            frames.forEach(frame => {
+                const cel = track.getCelAtFrame?.(frame) || null;
+                if (!cel || cel.visible === false) return;
+                const snapshot = this.model.getSnapshotForCel?.(cel) || null;
+                parts.push([
+                    trackIndex,
+                    track.id,
+                    frame,
+                    cel.id,
+                    cel.assetId || '',
+                    cel.startFrame ?? '',
+                    cel.duration ?? '',
+                    snapshot?.id || '',
+                    snapshot?.updatedAt || ''
+                ].join(':'));
+            });
+        });
+        return parts.join(';') || 'empty';
+    }
+
+    _tagPreviewNode(node, track, cel, options = {}) {
+        if (!node || !track || !cel) return;
+        node._tegakiAnimationPreview = {
+            celId: cel.id || null,
+            trackId: track.id || null,
+            frameIndex: Math.max(0, Math.round(Number(options.frameIndex) || 0)),
+            trackIndex: Number.isInteger(options.trackIndex) ? options.trackIndex : -1,
+            isOnion: options.isOnion === true || options.tint !== undefined
+        };
+        if (!node.label) {
+            node.label = `animation_preview_${node._tegakiAnimationPreview.celId || 'cel'}`;
+        }
     }
 
     _renderFrameComposite(frameIndex, layers, options = {}) {
         const tracks = this.model.tracks;
         const filterIds = options.filterIds || null;
         const excludeClipIds = options.excludeClipIds || null;
+        let renderedCount = 0;
 
         // データの tracks[0] は UI の一番上（＝レイヤーの前面）なので、逆順で addChild する
         for (let i = tracks.length - 1; i >= 0; i--) {
@@ -751,12 +976,17 @@ export class AnimationTablePopup {
 
             const cel = track.getCelAtFrame(frameIndex);
             if (cel && cel.visible !== false && !excludeClipIds?.has(cel.id)) {
-                this._renderCelPreview(track, cel, layers, {
+                if (this._renderCelPreview(track, cel, layers, {
                     ...options,
+                    frameIndex,
+                    trackIndex: i,
                     allowSourceLayerFallback: false
-                });
+                })) {
+                    renderedCount++;
+                }
             }
         }
+        return renderedCount;
     }
 
     _renderFrameCompositeAroundSelectedClip(frameIndex, layers, selectedEntry, options = {}) {
@@ -767,10 +997,10 @@ export class AnimationTablePopup {
             : -1;
 
         if (selectedIndex < 0) {
-            this._renderFrameComposite(frameIndex, layers, options);
-            return;
+            return this._renderFrameComposite(frameIndex, layers, options);
         }
 
+        let renderedCount = 0;
         const renderTrack = (track, targetContainer) => {
             if (!track || track.isBackground || track.type === 'folder') return;
             if (options.filterIds && !options.filterIds.has(track.id)) return;
@@ -778,15 +1008,19 @@ export class AnimationTablePopup {
             const cel = track.getCelAtFrame(frameIndex);
             if (!cel || cel.visible === false || options.excludeClipIds?.has(cel.id)) return;
 
-            this._renderCelPreview(track, cel, layers, {
+            if (this._renderCelPreview(track, cel, layers, {
                 ...options,
+                frameIndex,
+                trackIndex: tracks.findIndex(candidate => candidate.id === track.id),
                 allowSourceLayerFallback: false,
                 previewContainer: targetContainer
-            });
+            })) {
+                renderedCount++;
+            }
         };
 
-        const backContainer = this.animationPreviewBackContainer || this.animationPreviewContainer;
-        const frontContainer = this.animationPreviewContainer;
+        const backContainer = options.backPreviewContainer || this.animationPreviewBackContainer || this.animationPreviewContainer;
+        const frontContainer = options.previewContainer || this.animationPreviewContainer;
 
         for (let i = tracks.length - 1; i > selectedIndex; i--) {
             renderTrack(tracks[i], backContainer);
@@ -794,15 +1028,17 @@ export class AnimationTablePopup {
         for (let i = selectedIndex - 1; i >= 0; i--) {
             renderTrack(tracks[i], frontContainer);
         }
+        return renderedCount;
     }
 
     _renderOnionSkins(currentFrame, layers, options = {}) {
         const frameCount = Math.max(1, Math.min(4, Math.round(this.onionSkinFrameCount || 1)));
+        let renderedCount = 0;
         for (let offset = frameCount; offset >= 1; offset--) {
             const alphaScale = (frameCount - offset + 1) / frameCount;
             const prevFrame = currentFrame - offset;
             if (prevFrame >= 0) {
-                this._renderOnionFrame(prevFrame, layers, {
+                renderedCount += this._renderOnionFrame(prevFrame, layers, {
                     ...options,
                     alpha: this.onionSkinPrevAlpha * alphaScale,
                     tint: this.onionSkinPrevTint
@@ -810,21 +1046,31 @@ export class AnimationTablePopup {
             }
             const nextFrame = currentFrame + offset;
             if (nextFrame < this.model.totalFrames) {
-                this._renderOnionFrame(nextFrame, layers, {
+                renderedCount += this._renderOnionFrame(nextFrame, layers, {
                     ...options,
                     alpha: this.onionSkinNextAlpha * alphaScale,
                     tint: this.onionSkinNextTint
                 });
             }
         }
+        return renderedCount;
     }
 
     _renderOnionFrame(frameIndex, layers, options) {
-        this._renderFrameComposite(frameIndex, layers, options);
+        return this._renderFrameComposite(frameIndex, layers, options);
     }
 
     _findSelectedCelEntry() {
         return this.model.findClipEntry(this.selectedCelId);
+    }
+
+    _getSelectedEntryForPreview(frameIndex) {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.clip) return null;
+        const start = Math.max(0, Math.round(Number(entry.clip.startFrame) || 0));
+        const duration = Math.max(1, Math.round(Number(entry.clip.duration) || 1));
+        const frame = Math.max(0, Math.round(Number(frameIndex) || 0));
+        return frame >= start && frame < start + duration ? entry : null;
     }
 
     _findClipEntryByAssetId(assetId) {
@@ -866,6 +1112,7 @@ export class AnimationTablePopup {
             return false;
         }
 
+        this._tagPreviewNode(root, track, cel, options);
         targetContainer.addChild(root);
         return true;
     }
@@ -1277,11 +1524,11 @@ export class AnimationTablePopup {
     }
 
     _renderCelPreview(track, cel, layers, options = {}) {
-        if (!track || !cel) return;
+        if (!track || !cel) return false;
 
         // Phase 4z10: 内部レイヤー合成プレビューを試行
         if (this._renderClipAssetInternalLayerPreview(track, cel, layers, options)) {
-            return;
+            return true;
         }
 
         // --- 以下、従来の単一Snapshotプレビュー (Fallback用) ---
@@ -1309,15 +1556,19 @@ export class AnimationTablePopup {
                     sprite.tint = options.tint;
                 }
 
+                this._tagPreviewNode(sprite, track, cel, options);
                 targetContainer.addChild(sprite);
+                return true;
             }
-            return;
+            return false;
         }
 
         // Snapshot未取得の選択セルは、編集対象が見えるようにソース実レイヤーだけを暫定表示する。
         if (options.allowSourceLayerFallback && sourceLayer?.layerData) {
             sourceLayer.visible = sourceLayer.layerData.visible !== false;
+            return true;
         }
+        return false;
     }
 
     _restoreVisibility() {
@@ -1494,7 +1745,9 @@ export class AnimationTablePopup {
     }
 
     _resetCafPreviewRuntime(reason = 'reset') {
-        this._clearAnimationPreviewContainer();
+        this.isDrawingPreviewSuspended = false;
+        this._restoreVisibility();
+        this._clearAnimationPreviewContainer({ includeBackground: true });
         this._invalidateSnapshotTextureCache({ immediate: true });
         if (window.TEGAKI_CONFIG?.debug === true) {
             console.debug('[AnimationTable] CAF preview runtime reset', {
@@ -1565,8 +1818,12 @@ export class AnimationTablePopup {
         });
     }
 
-    _clearAnimationPreviewContainer() {
+    _clearAnimationPreviewContainer(options = {}) {
+        this._animationPreviewMode = null;
+        this._animationPreviewKey = null;
+        this._drawingPreviewCompositeKey = null;
         const containers = [
+            options.includeBackground === true ? this.animationPreviewBackgroundContainer : null,
             this.animationPreviewBackContainer,
             this.animationPreviewContainer
         ].filter(Boolean);
@@ -1576,17 +1833,70 @@ export class AnimationTablePopup {
             return;
         }
 
+        if (options.includeBackground === true && this.animationPreviewBackgroundContainer) {
+            this.animationPreviewBackgroundContainer.visible = false;
+        }
+
         containers.forEach(container => {
             const removedChildren = container.removeChildren();
-            removedChildren.forEach(child => {
-                try {
-                    child.destroy?.({ children: true, texture: false, baseTexture: false });
-                } catch (error) {
-                    console.warn('[AnimationTable] Failed to destroy preview child', error);
-                }
-            });
+            this._destroyPreviewChildren(removedChildren);
         });
         this._flushPendingSnapshotTextureCacheDestroy();
+    }
+
+    _createAnimationPreviewStagingContainers() {
+        const front = new Container();
+        const back = new Container();
+        front.eventMode = 'none';
+        back.eventMode = 'none';
+        front.label = 'animation_preview_front_staging';
+        back.label = 'animation_preview_back_staging';
+        return { front, back };
+    }
+
+    _destroyAnimationPreviewStagingContainers(staging) {
+        if (!staging) return;
+        [staging.front, staging.back].forEach(container => {
+            if (!container) return;
+            try {
+                this._destroyPreviewChildren(container.removeChildren());
+                container.destroy?.({ children: false, texture: false, baseTexture: false });
+            } catch (error) {
+                console.warn('[AnimationTable] Failed to destroy preview staging container', error);
+            }
+        });
+        this._flushPendingSnapshotTextureCacheDestroy();
+    }
+
+    _replacePreviewContainerChildren(targetContainer, stagingContainer) {
+        if (!targetContainer || !stagingContainer) {
+            this._destroyAnimationPreviewStagingContainers({
+                front: stagingContainer,
+                back: null
+            });
+            return;
+        }
+
+        const oldChildren = targetContainer.removeChildren();
+        const newChildren = stagingContainer.removeChildren();
+        newChildren.forEach(child => targetContainer.addChild(child));
+        this._destroyPreviewChildren(oldChildren);
+        try {
+            stagingContainer.destroy?.({ children: false, texture: false, baseTexture: false });
+        } catch (error) {
+            console.warn('[AnimationTable] Failed to destroy preview staging container', error);
+        }
+        this._flushPendingSnapshotTextureCacheDestroy();
+    }
+
+    _destroyPreviewChildren(children = []) {
+        children.forEach(child => {
+            try {
+                child.destroy?.({ children: true, texture: false, baseTexture: false });
+            } catch (error) {
+                console.warn('[AnimationTable] Failed to destroy preview child', error);
+            }
+        });
     }
 
     _getDisplayedSnapshotTextureCacheKeys() {
@@ -1864,7 +2174,7 @@ export class AnimationTablePopup {
         this.selectedAssetId = clip.assetId;
         this.selectedAssetFolderId = existingAsset?.folderId ?? captured.asset.folderId ?? null;
         this._invalidateSnapshotTextureCache();
-        this._markWorkingLayerSnapshotIds(existingAsset || captured.asset);
+        this._syncClipAssetToWorkingLayers(clip, { forceRestore: true });
 
         if (renderAfter) {
             this.render();
@@ -1951,6 +2261,7 @@ export class AnimationTablePopup {
             || null;
         const captured = this._captureDrawingLayerToSelectedClip(layerId, selectedInternalLayerId);
         this.isDrawingPreviewSuspended = false;
+        this._drawingPreviewCompositeKey = null;
         this.render();
         this._scheduleLaneReferencePreviewUpdate();
         this._requestLayerPanelSync();
@@ -1973,9 +2284,35 @@ export class AnimationTablePopup {
     _handleDrawingCancelled() {
         if (!this.isDrawingPreviewSuspended) return;
         this.isDrawingPreviewSuspended = false;
+        this._drawingPreviewCompositeKey = null;
         this._drawingHistoryBeforeStates.clear();
         this.render();
         this._scheduleLaneReferencePreviewUpdate();
+    }
+
+    _handleBeforeStrokeStart() {
+        if (!this.selectedCelId || !this.layerSystem) return false;
+
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
+        if (!entry?.clip || !asset) return false;
+
+        this._syncActiveWorkingLayerToSelectedInternalLayer(asset);
+        const activeLayer = this.layerSystem.getActiveLayer?.();
+        if (!activeLayer?.layerData?.isAnimationWorkingLayer) return false;
+
+        if (this.isVisible && this.isPreviewActive) {
+            this.isDrawingPreviewSuspended = true;
+            this._animationPreviewKey = null;
+            this._applyVisibilityPreview();
+            this._showSelectedClipWorkingLayers();
+            activeLayer.visible = true;
+            if ('renderable' in activeLayer) {
+                activeLayer.renderable = true;
+            }
+            this.layerSystem.refreshClippingMasks?.();
+        }
+        return true;
     }
 
     _handleDrawingStarted(data = {}) {
@@ -1994,11 +2331,29 @@ export class AnimationTablePopup {
         }
         this._invalidateWorkingLayerSnapshotId(layerId);
         if (this.isVisible && this.isPreviewActive) {
+            const previewAlreadyPrepared = this.isDrawingPreviewSuspended === true
+                && this._visibilityPreviewApplied === true
+                && this._animationPreviewMode === 'preview';
             this.isDrawingPreviewSuspended = true;
-            this._applyDrawingVisibilityPreview();
+            if (!previewAlreadyPrepared) {
+                this._applyVisibilityPreview();
+            }
+            this._showSelectedClipWorkingLayers();
+            this._forceAnimationWorkingLayerVisible(layerId);
         } else {
             this._scheduleLaneReferencePreviewUpdate();
         }
+    }
+
+    _forceAnimationWorkingLayerVisible(layerId) {
+        if (!layerId || !this.layerSystem) return false;
+        const layer = (this.layerSystem.getLayers?.() || [])
+            .find(candidate => candidate.layerData?.id === layerId);
+        if (!layer?.layerData || layer.layerData.isAnimationWorkingLayer !== true) return false;
+
+        this.layerSystem.refreshClippingMasks?.();
+        this._ensureWorkingLayerDisplaySurface(layer);
+        return true;
     }
 
     _resolveInternalLayerIdForWorkingLayer(asset, workingLayerId) {
@@ -2327,7 +2682,7 @@ export class AnimationTablePopup {
         this.selectedAssetId = asset.id;
         this.selectedAssetFolderId = asset.folderId || null;
         this.selectedInternalLayerId = asset.internalLayers[0].id;
-        this._syncClipAssetToWorkingLayers(newClip);
+        this._syncClipAssetToWorkingLayers(newClip, { forceRestore: true });
         this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-paste-selection', {
             type: 'caf-clip-paste-selection',
             clipId: newClip.id,
@@ -2459,7 +2814,7 @@ export class AnimationTablePopup {
         this.model.tracks.forEach(track => {
             track.active = track.id === lane.id;
         });
-        this._syncClipAssetToWorkingLayers(newClip);
+        this._syncClipAssetToWorkingLayers(newClip, { forceRestore: true });
         this._recordTimelineHistory(
             beforeState,
             this._captureTimelineHistoryState(),
@@ -2652,7 +3007,7 @@ export class AnimationTablePopup {
         this.model.tracks.forEach(track => {
             track.active = track.id === lane.id;
         });
-        this._syncClipAssetToWorkingLayers(newClip);
+        this._syncClipAssetToWorkingLayers(newClip, { forceRestore: true });
         this._recordTimelineHistory(
             beforeState,
             this._captureTimelineHistoryState(),
@@ -2779,6 +3134,7 @@ export class AnimationTablePopup {
 
         this._invalidateSnapshotTextureCache();
         this._syncClipAssetToWorkingLayers(first.clip, { forceRestore: true });
+        this._resetCafPreviewRuntime('caf-image-sequence-import');
         this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-import-image-sequence', {
             type: 'caf-import-image-sequence',
             source: options.source || 'unknown',
@@ -3044,7 +3400,7 @@ export class AnimationTablePopup {
 
         this.selectedCelId = newClip.id;
         this.activeLaneId = lane.id;
-        this._syncClipAssetToWorkingLayers(newClip);
+        this._syncClipAssetToWorkingLayers(newClip, { forceRestore: true });
         this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-paste', {
             type: 'caf-clip-paste',
             clipId: newClip.id,
@@ -5074,7 +5430,14 @@ export class AnimationTablePopup {
     _activateClipEntry(entry, options = {}) {
         if (!entry?.clip) return false;
         this.isLaneOnlySelected = false;
-        if (this.selectedCelId !== entry.clip.id && options.saveCurrent !== false) {
+        const changedClip = this.selectedCelId !== entry.clip.id;
+        if (changedClip && (this._visibilityPreviewApplied || this.isDrawingPreviewSuspended)) {
+            this.isDrawingPreviewSuspended = false;
+            this._drawingPreviewCompositeKey = null;
+            this._animationPreviewKey = null;
+            this._restoreVisibility();
+        }
+        if (changedClip && options.saveCurrent !== false) {
             this._saveSelectedClipFromWorkingLayers();
         }
         this.selectedCelId = entry.clip.id;
@@ -5088,7 +5451,9 @@ export class AnimationTablePopup {
         this.model.tracks.forEach(track => {
             track.active = track.id === this.activeLaneId;
         });
-        this._syncClipAssetToWorkingLayers(entry.clip);
+        this._syncClipAssetToWorkingLayers(entry.clip, {
+            forceRestore: changedClip || options.forceRestore === true
+        });
         return true;
     }
 
@@ -5325,6 +5690,7 @@ export class AnimationTablePopup {
             this.selectedInternalLayerId = drawableInternalLayers[0]?.id || null;
         }
 
+        const visibleTargetLayers = [];
         drawableInternalLayers.forEach((internalLayer, index) => {
             const targetLayer = targetLayers[index];
             if (!targetLayer?.layerData) return;
@@ -5389,6 +5755,9 @@ export class AnimationTablePopup {
                 && this._isInternalLayerEffectivelyVisible(asset, internalLayer);
             targetLayer.visible = isEffectivelyVisible;
             targetLayer.layerData.visible = isEffectivelyVisible;
+            if (isEffectivelyVisible) {
+                visibleTargetLayers.push(targetLayer);
+            }
         });
 
         for (let index = drawableInternalLayers.length; index < targetLayers.length; index++) {
@@ -5411,6 +5780,7 @@ export class AnimationTablePopup {
         }
 
         this.layerSystem.refreshClippingMasks?.();
+        visibleTargetLayers.forEach(layer => this._ensureWorkingLayerDisplaySurface(layer));
         this._syncActiveWorkingLayerToSelectedInternalLayer(asset);
         this._requestLayerPanelSync();
         return true;
@@ -6079,14 +6449,15 @@ export class AnimationTablePopup {
         // プレビューの適用判定
         if (this.isLaneOnlySelected) {
             this._restoreVisibility();
-        } else if (this.isDrawingPreviewSuspended) {
-            // 描画対象CAFだけworking Layerへ切り替え、同一Frameの他CAFは合成previewへ残す。
+        } else if (this.isDrawingPreviewSuspended && !this.isPreviewActive) {
             this._applyDrawingVisibilityPreview();
         } else if (this.isClipEditModeActive || this.isTransformPreviewSuspended) {
             // EDIT/変形中は合成を停止し、実レイヤー表示を優先する。
             this._restoreVisibility();
         } else if (this.isPreviewActive) {
             this._applyVisibilityPreview();
+        } else if (this.isOnionSkinActive && !this.isPlaying) {
+            this._applyTimelineOnionOnlyPreview();
         } else {
             this._restoreVisibility();
         }
@@ -6354,7 +6725,10 @@ export class AnimationTablePopup {
             // 自動作成されたクリップを選択状態にする
             this.selectedCelId = newClip.id;
             this.activeLaneId = targetLane.id;
-            this._syncClipAssetToWorkingLayers(newClip);
+            this.selectedAssetId = asset.id;
+            this.selectedAssetFolderId = asset.folderId || null;
+            this.selectedInternalLayerId = this._getDrawableInternalLayers(asset)[0]?.id || null;
+            this._syncClipAssetToWorkingLayers(newClip, { forceRestore: true });
         }
 
         this.initialClipAssetSeeded = true;
@@ -6501,6 +6875,11 @@ export class AnimationTablePopup {
         if (previewToggleBtn) {
             previewToggleBtn.addEventListener('click', (e) => {
                 this.isPreviewActive = !this.isPreviewActive;
+                if (!this.isPreviewActive) {
+                    this.isDrawingPreviewSuspended = false;
+                    this._drawingPreviewCompositeKey = null;
+                    this._restoreVisibility();
+                }
                 e.currentTarget.blur();
                 this.render();
             });
@@ -7156,7 +7535,7 @@ export class AnimationTablePopup {
                         this.model.tracks.forEach(track => {
                             track.active = track.id === result.lane.id;
                         });
-                        this._syncClipAssetToWorkingLayers(result.clip);
+                        this._syncClipAssetToWorkingLayers(result.clip, { forceRestore: true });
                         if (movedToNewSlot) {
                             this._recordTimelineHistory(this._clipMoveData.beforeState, this._captureTimelineHistoryState(), 'caf-clip-move', {
                                 type: 'caf-clip-move',
@@ -9056,6 +9435,9 @@ export class AnimationTablePopup {
         });
 
         // 自動キャプチャ
+        this.eventBus.on('drawing:before-stroke-start', () => {
+            this._handleBeforeStrokeStart();
+        });
         this.eventBus.on('drawing:stroke-started', (data = {}) => {
             this._handleDrawingStarted(data);
         });
@@ -9067,9 +9449,8 @@ export class AnimationTablePopup {
         });
         this.eventBus.on('selection:tool-changed', ({ active } = {}) => {
             if (!this.isVisible || !this.selectedCelId) return;
-            if (active === true) {
-                this.isDrawingPreviewSuspended = true;
-                this._applyDrawingVisibilityPreview();
+            if (active === true && this.isPreviewActive) {
+                this._showSelectedClipWorkingLayers();
             } else if (this.isDrawingPreviewSuspended) {
                 this.isDrawingPreviewSuspended = false;
                 this.render();

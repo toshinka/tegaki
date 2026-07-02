@@ -248,6 +248,30 @@ export class PointerHandler {
             };
         }
 
+        function warnPointerPerf(label, start, extra = {}) {
+            if (!window.TEGAKI_CONFIG?.debug || !Number.isFinite(start)) return;
+
+            const now = performance?.now?.() || Date.now();
+            const duration = now - start;
+            const level = duration >= 250 ? 'FREEZE'
+                : duration >= 100 ? 'SEVERE'
+                : duration >= 50 ? 'LAG'
+                : duration >= 33 ? 'DROP'
+                : duration >= 16 ? 'FRAME'
+                : null;
+            if (!level) return;
+
+            const entry = {
+                label,
+                level,
+                durationMs: Number(duration.toFixed(2)),
+                isDrawing: window.BrushCore?.isDrawing === true,
+                extra
+            };
+            console.warn(`[TegakiPerf:${level}] ${label}: ${entry.durationMs}ms`, entry);
+            window.TegakiStrokeInputProfiler?.recordPerf?.(entry);
+        }
+
         function onPointerDown(e) {
             if (window.TEGAKI_CONFIG?.debug) {
                 console.log('[PointerHandler] raw pointerdown', JSON.stringify({
@@ -294,6 +318,10 @@ export class PointerHandler {
         }
 
         function onPointerMove(e) {
+            const perfStart = window.TEGAKI_CONFIG?.debug
+                ? (performance?.now?.() || Date.now())
+                : NaN;
+            let perfCoalescedCount = 0;
             if (!activePointers.has(e.pointerId)) {
                 if (preventDefault) e.preventDefault();
                 return;
@@ -308,6 +336,7 @@ export class PointerHandler {
             }
 
             const moveEvents = getCoalescedMoveEvents(e);
+            perfCoalescedCount = moveEvents.length;
             const moveInfos = [];
 
             for (let index = 0; index < moveEvents.length; index++) {
@@ -353,6 +382,11 @@ export class PointerHandler {
             if (preventDefault) {
                 e.preventDefault();
             }
+            warnPointerPerf('pointer.move.total', perfStart, {
+                pointerType: e.pointerType || 'unknown',
+                coalescedCount: perfCoalescedCount,
+                moveInfoCount: moveInfos.length
+            });
         }
 
         function onPointerUp(e) {

@@ -1,6 +1,6 @@
 # PROGRESS — 現在状態
 
-更新日: 2026-07-02
+更新日: 2026-07-03
 
 > 現在状態、既知残存、次の入口だけを記録する。
 > 詳細計画は `開発用資料保管庫/proposals/00_計画索引.md`、
@@ -55,9 +55,32 @@ Phase 5qのAnimation Tableを閉じた時のLane表示モードも完了。
 - pointer moveはcoalesced eventsを古い順に処理し、LazyBrushへ通してからBrushCoreへ渡す。
 - pointer up時もLazyBrush後の最終座標をBrushCoreへ渡し、直前moveから進んでいる場合は確定前に通常のstroke更新経路へ追加する。低頻度のストローク終端欠落 / 飛び対策。
 - import後などに残ったLayer thumbnail生成がペンstroke中へ割り込まないよう、`drawing:stroke-started` から完了 / cancelまでThumbnailSystemの重い `extract.pixels()` / `toDataURL()` 処理をdirty queueへ延期する。
-- Animation Table編集中のCAF表示は、選択中Laneの前後でpreview containerを背面 / 前面に分け、Laneのアクティブ変更で合成順が変わらないようにする。背面previewは実背景に隠れないよう、preview中だけ背景代替containerを置き、表示順はTimelineのLane順とCAF内部Layer順を正本にする。
+- Animation Table編集中の非描画previewは、現在FrameをTimelineのLane順とCAF内部Layer順で一括合成する。preview中だけ背景代替containerを置き、Layer / CAF visibility正本や保存/exportへ混ぜない。
 - ペン移動中にpen deviceからpressure 0が混ざった場合だけ、直前筆圧または `TEGAKI_CONFIG.pen.pressure.minStrokePressure` へ丸める。開始点pressure 0は大ドット対策として維持する。
-- ペン / 消しゴムのリアルタイム描画は補間点ごとにGPUへ焼かず、pointer event / coalesced batch単位でまとめてRenderTextureへ焼き込む。長い密なストロークで表示が遅れて追いつく症状の低減を狙う。
+- coalesced eventは古い順に取り込むが、ペン / 消しゴムのリアルタイム焼き込みは短線分ごとの幅・濃度計算へ戻した。batch単位で1本の線として焼くと周期的な濃淡が出て筆致を損なうため採用しない。
+- CAF working Layerでは通常History用snapshotを持たないため、選択範囲が無いstroke開始時はselection制限用before snapshotも取らない。不要なGPU readbackを避ける。
+- `TEGAKI_CONFIG.debug` 有効時だけ、`pointer.move.total`、stroke更新、リアルタイム焼き込み、stroke開始/終了snapshot、History recordの16ms超過を `[TegakiPerf:*]` として警告し、`TegakiStrokeInputProfiler.getPerf()` で直近記録を確認できる。
+- Project / Album load中は既存Layer削除や復元用Layer作成をHistoryへ積まない。ロード終了時のHistory clear前に一時履歴が増え、2回目以降のAlbum loadで旧Layer参照を抱えて固まる経路を塞ぐ。
+- DELによるアクティブLayer内容消去は、消去後の空snapshotをGPU readbackせずbefore snapshot寸法から生成する。thumbnail更新も即時ではなくdirty queueへ回す。
+- HistoryManagerに記録抑止depthを追加し、Project / Album load中に内部処理が一時的に `isApplying` を戻してもHistoryへ積まないようにした。
+- Project / Album load前とGIF/APNG連番CAF import後は、CAF preview runtimeを実Layer visibility復元、前面/背面/背景preview掃除、Snapshot texture cache破棄まで含めてresetする。
+- Animation Table previewは、現Frameに合成できるCAFが無い場合は通常Layerを隠したままにせず実表示へ戻す。選択CAFが現Frameに存在する場合は、PREVIEW中は常に選択CAF working Layer + 他CAF previewで表示する。
+- 単枚画像などをCAF化する `captureSelectedCel()` は、Snapshot IDだけを同期済みにせず、作成したCAF assetをworking Layerへforce restoreする。初回CAF自動作成やCAF貼り付けも同じくforce restoreへ揃える。
+- Animation Table通常previewは選択CAFも含めて現在Frame全体を合成表示する。非描画時の合成順はTimelineのLane順とCAF内部Layer順を正本にし、active Lane変更で表示順が混線しないようにする。
+- Animation Table展開中のlive stroke / selection開始時はpreview表示契約を切り替えず、選択CAF working Layer表示を維持する。pointerdownごとに全CAF preview / 選択CAF単独表示が交互に出る点滅を避ける。
+- PREVIEW OFFでもTimeline onionがONなら、実Layer表示を維持したまま前後Frame onionだけをoverlay表示する。表示用working Layer切替は `layerData.visible` を変更せず、Layer / CAF visibility正本へ混ぜない。
+- Timeline onionは選択CAFのLaneだけを時間方向参照する。SCOPE ALL中でも別Laneの同Frame / 前後FrameをTimeline onionへ混ぜず、別Lane参照はLane onion側へ分ける。
+- PREVIEW ONからOFFへ切り替える時は実Layer visibilityを即時復元してからTimeline onion only表示へ入る。Timeline onion色は過去Frameを赤系、未来Frameを青系の標準ghost色へ戻す。
+- Animation Table preview / Timeline onion onlyは表示modeと対象CAF構成のkeyを保持し、セルクリックなどで同じ表示内容のままならpreview containerを消して作り直さない。Lane onion同様にdisplay-only overlayとして維持し、正本Layerとして実体化しない。
+- Animation Table preview再構築は実表示containerを先に空にせず、非表示staging containerへ複数CAFのpreviewを組み立ててからfront / backのchildrenを差し替える。複数CAF時のclear -> 順次addによる点滅を避ける。
+- Animation Table PREVIEW ONの現在Frameは、選択CAFを境にfront / back / working Layerへ分割せず、全CAFをback側の単一display-only合成へ描く。選択Lane位置で上側Laneと選択CAFだけ欠落する経路を避け、stroke中だけ選択CAF working Layerを重ねてライブ入力を見せる。
+- animation working Layerへのstroke開始イベントはpreview描画より前に出し、Animation Table PREVIEW中でもpointerdown直後からworking Layerを表示対象へ戻す。通常Layerのstrokeイベント順は維持する。
+- PREVIEW中のstrokeでは、選択CAFを現在Frame preview合成から一時除外してworking Layerだけを表示する。同じCAFのsnapshot previewとworking Layerが重なり、既存線が太って見える二重表示を避ける。
+- PREVIEW中のstroke開始時は、`drawing:before-stroke-start` でpreviewを描画中モードへ切り替え済みなら、直後の `drawing:stroke-started` ではpreview containerを再構築せず、選択CAF working Layerの表示固定だけ行う。
+- CAF working Layerを選択 / stroke表示へ戻す時は、Layer visibility正本を変更せず、`refreshClippingMasks()` 後にPixi Container / 非clipping layerSpriteの `visible` / `renderable` / `culled` だけを表示可能状態へ正規化する。選択時点で当たり回 / ハズレ回が固定される差を減らす。
+- Animation TableでCAFセル間を直接移動する時は、previewで隠した実working Layerを復元してから旧CAFを保存し、新CAFをforce restoreする。空セル経由だけリアルタイム描画が安定するCAF切替状態差を潰す。
+- DrawingEngineは通常stroke開始前に `drawing:before-stroke-start` を発火し、Animation Table側で選択CAFのactive working Layerを先に固定する。BrushCoreが古いactive Layerを掴み、stroke中だけ選択CAF描画物が消える経路を抑える。
+- BrushCoreはstroke開始時のLayerを `strokeTargetLayer` として保持し、move / realtime焼き込み / finalizeまで同じLayerへ描く。Animation Table preview更新やLayer panel同期でactive Layerが途中変化しても、stroke中の描画先を揺らさない。
 
 ## アニメ画像import追記
 

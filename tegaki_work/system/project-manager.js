@@ -473,6 +473,17 @@ export class ProjectManager {
         if (!projectData || projectData.app !== 'tegaki') {
             throw new Error('Invalid project data');
         }
+        const history = window.History || null;
+        const wasHistoryApplying = history?.isApplying === true;
+        const hasRecordingSuppression = typeof history?.beginRecordingSuppression === 'function'
+            && typeof history?.endRecordingSuppression === 'function';
+        if (hasRecordingSuppression) {
+            history.beginRecordingSuppression('project-load');
+        }
+        if (history) history.isApplying = true;
+
+        try {
+        this._getAnimationTable()?._resetCafPreviewRuntime?.('project-load-before');
         window.CoreRuntime?.api?.selection?.clear?.();
 
         // 1. キャンバスサイズ復元
@@ -610,6 +621,12 @@ export class ProjectManager {
         }
 
         this.refreshLoadedProjectUI();
+        } finally {
+            if (hasRecordingSuppression) {
+                history.endRecordingSuppression('project-load');
+            }
+            if (history) history.isApplying = wasHistoryApplying;
+        }
     }
 
     _createLegacyFolderParentMap(layerInfos = []) {

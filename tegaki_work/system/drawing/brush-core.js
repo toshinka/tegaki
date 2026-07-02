@@ -55,6 +55,7 @@ export class BrushCore {
         this.strokeHistoryBefore = null;
         this.strokeSelectionBefore = null;
         this.strokeInputProfile = null;
+        this.strokeTargetLayer = null;
         this.strokeInputProfiler = this._ensureStrokeInputProfiler();
     }
     
@@ -170,10 +171,19 @@ export class BrushCore {
 
         const activeLayer = this.layerManager.getActiveLayer();
         if (!activeLayer || activeLayer.locked) return;
-        const beforeSnapshot = this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null;
-        this.strokeHistoryBefore = activeLayer.layerData?.isAnimationWorkingLayer === true
-            ? null
-            : beforeSnapshot;
+        this.strokeTargetLayer = activeLayer;
+        const needsHistorySnapshot = activeLayer.layerData?.isAnimationWorkingLayer !== true;
+        const needsSelectionSnapshot = this._needsSelectionSnapshotForLayer(activeLayer);
+        let beforeSnapshot = null;
+        if (needsHistorySnapshot || needsSelectionSnapshot) {
+            const snapshotStart = this._perfNow();
+            beforeSnapshot = this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null;
+            this._warnPerf('brush.startStroke.beforeSnapshot', snapshotStart, {
+                needsHistorySnapshot,
+                needsSelectionSnapshot
+            });
+        }
+        this.strokeHistoryBefore = needsHistorySnapshot ? beforeSnapshot : null;
         this.strokeSelectionBefore = beforeSnapshot;
 
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
@@ -242,6 +252,22 @@ export class BrushCore {
         this.lastRenderedLocalY = localY;
         this.lastRenderedPressure = processedPressure;
 
+        const strokeStartedPayload = {
+            component: 'drawing',
+            action: 'stroke-started',
+            data: {
+                mode: currentMode,
+                layerId: activeLayer.layerData?.id,
+                localX,
+                localY,
+                pressure: processedPressure
+            }
+        };
+        const emitStrokeStartedBeforePreview = activeLayer.layerData?.isAnimationWorkingLayer === true;
+        if (emitStrokeStartedBeforePreview) {
+            this.eventBus?.emit('drawing:stroke-started', strokeStartedPayload);
+        }
+
         this.previewGraphics = new Graphics();
         this.previewGraphics.label = 'strokePreview';
         activeLayer.addChild(this.previewGraphics);
@@ -271,18 +297,8 @@ export class BrushCore {
             this.realtimeBlurApplied = true;
         }
 
-        if (this.eventBus) {
-            this.eventBus.emit('drawing:stroke-started', {
-                component: 'drawing',
-                action: 'stroke-started',
-                data: {
-                    mode: currentMode,
-                    layerId: activeLayer.layerData?.id,
-                    localX,
-                    localY,
-                    pressure: processedPressure
-                }
-            });
+        if (this.eventBus && !emitStrokeStartedBeforePreview) {
+            this.eventBus.emit('drawing:stroke-started', strokeStartedPayload);
         }
 
         this._logInputProfile('down', inputProfile, {
@@ -303,10 +319,11 @@ export class BrushCore {
         });
     }
 
-    updateStroke(clientX, clientY, pressure, pointerType = 'unknown', inputProfile = null, options = {}) {
+    updateStroke(clientX, clientY, pressure, pointerType = 'unknown', inputProfile = null) {
         if (!this.isDrawing) return;
 
-        const activeLayer = this.layerManager.getActiveLayer();
+        const perfStart = this._perfNow();
+        const activeLayer = this.strokeTargetLayer || this.layerManager.getActiveLayer();
         if (!activeLayer) return;
 
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
@@ -331,8 +348,6 @@ export class BrushCore {
         const interpolationStep = currentMode === 'lasso-fill' ? 5 : 1; // 投げ縄は少し粗めで良い
         const steps = Math.max(1, Math.floor(distance / interpolationStep));
         const pointsBeforeEvent = this.strokeRecorder.getCurrentPoints().length;
-        const realtimeLineBatch = options.realtimeLineBatch
-            || ((currentMode === 'pen' || currentMode === 'eraser') ? [] : null);
         let generatedPoints = 0;
 
         for (let i = 1; i <= steps; i++) {
@@ -341,17 +356,14 @@ export class BrushCore {
             const interpY = this.lastLocalY + dy * t;
             const interpPressure = this.lastPressure + (processedPressure - this.lastPressure) * t;
 
-            this._renderRealtimeStrokePoint(currentMode, interpX, interpY, interpPressure, realtimeLineBatch);
+            this._renderRealtimeStrokePoint(currentMode, interpX, interpY, interpPressure);
             this.strokeRecorder.addPoint(interpX, interpY, interpPressure);
             generatedPoints++;
         }
 
-        this._renderRealtimeStrokePoint(currentMode, localX, localY, processedPressure, realtimeLineBatch);
+        this._renderRealtimeStrokePoint(currentMode, localX, localY, processedPressure);
         this.strokeRecorder.addPoint(localX, localY, processedPressure);
         generatedPoints++;
-        if (options.flushRealtimeLineBatch !== false) {
-            this._flushRealtimeLineBatch(currentMode, realtimeLineBatch);
-        }
 
         // [指示書] ライブ焼き込み中は previewGraphics を使用しない（二重描画防止）
         if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen' && currentMode !== 'airbrush' && currentMode !== 'airbrush-erase' && currentMode !== 'blur') {
@@ -378,6 +390,13 @@ export class BrushCore {
             this.strokeInputProfile.events++;
             this.strokeInputProfile.interpolatedPoints += Math.max(0, generatedPoints - 1);
         }
+        this._warnPerf('brush.updateStroke', perfStart, {
+            mode: currentMode,
+            pointerType,
+            distance: Number(distance.toFixed(3)),
+            generatedPoints,
+            pointCount: this.strokeRecorder.getCurrentPoints().length
+        });
 
         this._logInputProfile('move', inputProfile, {
             mode: currentMode,
@@ -404,8 +423,8 @@ export class BrushCore {
     updateStrokeBatch(infos, inputProfile = null) {
         if (!this.isDrawing || !Array.isArray(infos) || infos.length === 0) return;
 
+        const perfStart = this._perfNow();
         const mode = this.getMode();
-        const realtimeLineBatch = (mode === 'pen' || mode === 'eraser') ? [] : null;
         infos.forEach((info, index) => {
             if (!info) return;
             const isLast = index === infos.length - 1;
@@ -414,17 +433,16 @@ export class BrushCore {
                 info.clientY,
                 info.pressure,
                 info.pointerType,
-                isLast ? (inputProfile || info.inputProfile) : null,
-                {
-                    realtimeLineBatch,
-                    flushRealtimeLineBatch: false
-                }
+                isLast ? (inputProfile || info.inputProfile) : null
             );
         });
-        this._flushRealtimeLineBatch(mode, realtimeLineBatch);
         if (this.strokeInputProfile) {
             this.strokeInputProfile.coalescedBatches = (this.strokeInputProfile.coalescedBatches || 0) + 1;
         }
+        this._warnPerf('brush.updateStrokeBatch', perfStart, {
+            mode,
+            samples: infos.length
+        });
     }
 
     _stabilizeMovePressure(pressure, mode, pointerType = 'unknown') {
@@ -474,10 +492,10 @@ export class BrushCore {
     }
 
     _renderRealtimeSegmentIfNeeded(mode, localX, localY, pressure, force = false) {
-        return this._renderRealtimeStrokePoint(mode, localX, localY, pressure, null, force);
+        return this._renderRealtimeStrokePoint(mode, localX, localY, pressure, force);
     }
 
-    _renderRealtimeStrokePoint(mode, localX, localY, pressure, realtimeLineBatch = null, force = false) {
+    _renderRealtimeStrokePoint(mode, localX, localY, pressure, force = false) {
         const dx = localX - this.lastRenderedLocalX;
         const dy = localY - this.lastRenderedLocalY;
         const distance = Math.sqrt(dx * dx + dy * dy);
@@ -491,21 +509,6 @@ export class BrushCore {
                 { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
                 { x: localX, y: localY, pressure: renderPressure }
               ];
-
-        if (realtimeLineBatch && (mode === 'pen' || mode === 'eraser')) {
-            if (distance <= 0) return;
-            if (realtimeLineBatch.length === 0) {
-                realtimeLineBatch.push(segmentPoints[0]);
-            }
-            realtimeLineBatch.push(segmentPoints[1]);
-            this.lastRenderedLocalX = localX;
-            this.lastRenderedLocalY = localY;
-            this.lastRenderedPressure = renderPressure;
-            if (this.strokeInputProfile) {
-                this.strokeInputProfile.realtimeSegments++;
-            }
-            return;
-        }
 
         if (mode === 'eraser') {
             if (distance <= 0) return;
@@ -533,24 +536,6 @@ export class BrushCore {
         this.lastRenderedPressure = renderPressure;
         if (this.strokeInputProfile) {
             this.strokeInputProfile.realtimeSegments++;
-        }
-    }
-
-    _flushRealtimeLineBatch(mode, points) {
-        if (!points || points.length < 2) return;
-
-        if (mode === 'eraser') {
-            this._renderRealtimeEraserSegment(points);
-            this.realtimeEraserApplied = true;
-        } else if (mode === 'pen') {
-            this._renderRealtimePenSegment(points);
-            this.realtimePenApplied = true;
-        } else {
-            return;
-        }
-
-        if (this.strokeInputProfile) {
-            this.strokeInputProfile.realtimeBatches = (this.strokeInputProfile.realtimeBatches || 0) + 1;
         }
     }
 
@@ -638,10 +623,11 @@ export class BrushCore {
      * [指示書] 消しゴムのリアルタイム反映用：短いセグメントを直接 RenderTexture に焼き込む
      */
     _renderRealtimeEraserSegment(points) {
-        const activeLayer = this.layerManager.getActiveLayer();
+        const activeLayer = this.strokeTargetLayer || this.layerManager.getActiveLayer();
         if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
 
         const settings = this._getCurrentSettings();
+        const perfStart = this._perfNow();
 
         // [指示書] 消しゴム用の実描画 Graphics を作る API を使用
         const graphics = this.strokeRenderer.renderEraserSegment(points, settings);
@@ -660,13 +646,16 @@ export class BrushCore {
 
             renderContainer.destroy({ children: true, texture: true, baseTexture: true });
         }
+        this._warnPerf('brush.renderRealtimeEraserSegment', perfStart, {
+            points: points?.length || 0
+        });
     }
 
     /**
      * [指示書] ペンのリアルタイム反映用：短いセグメントを直接 RenderTexture に焼き込む
      */
     _renderRealtimePenSegment(points) {
-        const activeLayer = this.penOpacityState?.targetLayer || this.layerManager.getActiveLayer();
+        const activeLayer = this.penOpacityState?.targetLayer || this.strokeTargetLayer || this.layerManager.getActiveLayer();
         if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
 
         const settings = this._getCurrentSettings();
@@ -674,6 +663,7 @@ export class BrushCore {
         const renderSettings = this.penOpacityState
             ? { ...settings, opacity: 1.0 }
             : settings;
+        const perfStart = this._perfNow();
 
         // [指示書] ペン用の実描画 Graphics を作る API を使用
         const graphics = this.strokeRenderer.renderPenSegment(points, renderSettings);
@@ -691,6 +681,10 @@ export class BrushCore {
 
             renderContainer.destroy({ children: true, texture: true, baseTexture: true });
         }
+        this._warnPerf('brush.renderRealtimePenSegment', perfStart, {
+            points: points?.length || 0,
+            penOpacityIsolation: this.penOpacityState !== null
+        });
     }
 
     _shouldUsePenOpacityIsolation(mode, settings) {
@@ -805,6 +799,7 @@ export class BrushCore {
     _renderRealtimeAirbrushSegment(points) {
         if (!this.airbrushState?.targetLayer || !this.airbrushState?.maskTexture) return;
 
+        const perfStart = this._perfNow();
         const settings = this._getCurrentSettings();
         const maskSettings = {
             ...settings,
@@ -828,6 +823,9 @@ export class BrushCore {
             // cached texture を破棄しないため texture/baseTexture は指定しない。
             renderContainer.destroy({ children: true });
         }
+        this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
+            points: points?.length || 0
+        });
     }
 
     _beginAirbrushStroke(activeLayer, settings) {
@@ -974,7 +972,7 @@ export class BrushCore {
      * ストローク開始時点の複製テクスチャにBlurFilterをかけ、マスク領域だけ焼き込む。
      */
     _renderRealtimeBlurSegment(points) {
-        const activeLayer = this.layerManager.getActiveLayer();
+        const activeLayer = this.strokeTargetLayer || this.layerManager.getActiveLayer();
         if (!activeLayer || !activeLayer.layerData?.renderTexture || !this.blurState?.sourceTexture) return;
 
         const settings = this._getCurrentSettings();
@@ -1013,6 +1011,7 @@ export class BrushCore {
 
         const activeLayer = this.airbrushState?.targetLayer
             || this.penOpacityState?.targetLayer
+            || this.strokeTargetLayer
             || this.layerManager.getActiveLayer();
         if (!activeLayer) {
             return false;
@@ -1053,6 +1052,7 @@ export class BrushCore {
 
         const activeLayer = this.airbrushState?.targetLayer
             || this.penOpacityState?.targetLayer
+            || this.strokeTargetLayer
             || this.layerManager.getActiveLayer();
         if (!activeLayer) return;
 
@@ -1103,6 +1103,7 @@ export class BrushCore {
             this.strokeHistoryBefore = null;
             this.strokeSelectionBefore = null;
             this.strokeInputProfile = null;
+            this.strokeTargetLayer = null;
             if (this.eventBus) {
                 this.eventBus.emit('drawing:stroke-completed', {
                     component: 'drawing',
@@ -1252,6 +1253,7 @@ export class BrushCore {
         this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
         this.strokeSelectionBefore = null;
+        this.strokeTargetLayer = null;
         this._logStrokeFinalizeProfile({
             mode,
             pointCount: strokeData.points.length,
@@ -1353,12 +1355,17 @@ export class BrushCore {
         if (!this.layerManager?.createLayerRasterSnapshot || !this.layerManager?.restoreLayerRasterSnapshot) return;
         if (layer?.layerData?.isAnimationWorkingLayer === true) return;
 
+        const snapshotStart = this._perfNow();
         const afterSnapshot = this.layerManager.createLayerRasterSnapshot(layer);
+        this._warnPerf('brush.recordStrokeHistory.afterSnapshot', snapshotStart, {
+            mode
+        });
         if (!afterSnapshot) return;
 
         const layerId = layer.layerData?.id;
         const layerIndex = this.layerManager.getLayerIndex(layer);
 
+        const recordStart = this._perfNow();
         historyManager.record({
             name: `draw-${mode}`,
             do: () => {
@@ -1377,6 +1384,99 @@ export class BrushCore {
             byteSize: (beforeSnapshot.pixels?.byteLength || 0)
                 + (afterSnapshot.pixels?.byteLength || 0)
         });
+        this._warnPerf('brush.recordStrokeHistory.record', recordStart, {
+            mode,
+            byteSize: (beforeSnapshot.pixels?.byteLength || 0)
+                + (afterSnapshot.pixels?.byteLength || 0)
+        });
+    }
+
+    _needsSelectionSnapshotForLayer(layer) {
+        const layerId = layer?.layerData?.id;
+        if (!layerId) return false;
+
+        const api = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
+        try {
+            return !!api?.getBoundsForLayer?.(layerId);
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    _perfNow() {
+        return performance?.now?.() || Date.now();
+    }
+
+    _warnPerf(label, start, extra = {}) {
+        if (!window.TEGAKI_CONFIG?.debug || !Number.isFinite(start)) return;
+
+        const duration = this._perfNow() - start;
+        const thresholds = {
+            frame: 16,
+            drop: 33,
+            lag: 50,
+            severe: 100,
+            freeze: 250
+        };
+        const level = duration >= thresholds.freeze ? 'FREEZE'
+            : duration >= thresholds.severe ? 'SEVERE'
+            : duration >= thresholds.lag ? 'LAG'
+            : duration >= thresholds.drop ? 'DROP'
+            : duration >= thresholds.frame ? 'FRAME'
+            : null;
+        if (!level) return;
+
+        const entry = {
+            label,
+            level,
+            durationMs: Number(duration.toFixed(2)),
+            ...this._getPerfContext(extra)
+        };
+        console.warn(`[TegakiPerf:${level}] ${label}: ${entry.durationMs}ms`, entry);
+        this._getStrokeInputProfiler()?.recordPerf?.(entry);
+    }
+
+    _getPerfContext(extra = {}) {
+        const layers = this.layerManager?.getLayers?.() || [];
+        const activeLayer = this.layerManager?.getActiveLayer?.() || null;
+        const activeData = activeLayer?.layerData || {};
+        const renderTexture = activeData.renderTexture || null;
+        const rasterBounds = activeData.rasterBounds || null;
+        return {
+            mode: extra.mode || this.getMode?.() || 'unknown',
+            isDrawing: this.isDrawing === true,
+            layerCount: layers.length,
+            visibleLayerCount: layers.filter(layer => layer?.visible !== false).length,
+            activeLayer: {
+                id: activeData.id ?? null,
+                name: activeData.name ?? null,
+                isAnimationWorkingLayer: activeData.isAnimationWorkingLayer === true,
+                isFolder: activeData.isFolder === true,
+                renderTexture: renderTexture
+                    ? {
+                        width: Math.round(renderTexture.width || 0),
+                        height: Math.round(renderTexture.height || 0)
+                    }
+                    : null,
+                rasterBounds: rasterBounds
+                    ? {
+                        x: rasterBounds.x ?? 0,
+                        y: rasterBounds.y ?? 0,
+                        width: rasterBounds.width ?? renderTexture?.width ?? null,
+                        height: rasterBounds.height ?? renderTexture?.height ?? null
+                    }
+                    : null
+            },
+            stroke: this.strokeInputProfile
+                ? {
+                    id: this.strokeInputProfile.id,
+                    events: this.strokeInputProfile.events || 0,
+                    interpolatedPoints: this.strokeInputProfile.interpolatedPoints || 0,
+                    realtimeSegments: this.strokeInputProfile.realtimeSegments || 0
+                }
+                : null,
+            extra
+        };
     }
 
     _hasRealtimeApplied(mode) {
@@ -1435,9 +1535,11 @@ export class BrushCore {
         const store = {
             events: [],
             strokes: [],
+            perf: [],
             label: null,
             maxEvents: 2000,
             maxStrokes: 200,
+            maxPerf: 500,
             setEnabled(enabled = true) {
                 if (window.TEGAKI_CONFIG) {
                     window.TEGAKI_CONFIG.debug = enabled === true;
@@ -1454,6 +1556,7 @@ export class BrushCore {
             clear() {
                 this.events = [];
                 this.strokes = [];
+                this.perf = [];
                 return this.summary();
             },
             recordEvent(entry) {
@@ -1476,11 +1579,25 @@ export class BrushCore {
                     this.strokes.splice(0, this.strokes.length - this.maxStrokes);
                 }
             },
+            recordPerf(entry) {
+                if (!this.isEnabled()) return;
+                this.perf.push({
+                    profilerLabel: this.label,
+                    at: Date.now(),
+                    ...entry
+                });
+                if (this.perf.length > this.maxPerf) {
+                    this.perf.splice(0, this.perf.length - this.maxPerf);
+                }
+            },
             getEvents() {
                 return this.events.map(entry => ({ ...entry }));
             },
             getStrokes() {
                 return this.strokes.map(entry => ({ ...entry }));
+            },
+            getPerf() {
+                return this.perf.map(entry => ({ ...entry }));
             },
             lastStroke() {
                 return this.strokes[this.strokes.length - 1] || null;
@@ -1532,6 +1649,7 @@ export class BrushCore {
                     label: this.label,
                     eventCount: this.events.length,
                     strokeCount: this.strokes.length,
+                    perfCount: this.perf.length,
                     byLabel
                 };
             }
@@ -1560,6 +1678,7 @@ export class BrushCore {
         this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
         this.strokeSelectionBefore = null;
+        this.strokeTargetLayer = null;
         
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-cancelled', {
