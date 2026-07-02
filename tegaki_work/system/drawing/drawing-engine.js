@@ -164,6 +164,16 @@ export class DrawingEngine {
 
         this._attachInputProfileLocal(info, localCoords);
 
+        if (currentMode !== 'fill' && currentMode !== 'eraser-fill' && currentMode !== 'lasso-fill') {
+            this.eventBus?.emit('drawing:before-stroke-start', {
+                clientX: info.clientX,
+                clientY: info.clientY,
+                pressure: info.pressure,
+                pointerType: info.pointerType,
+                mode: currentMode
+            });
+        }
+
         const activeLayer = this.layerSystem?.getActiveLayer?.();
         const activeData = activeLayer?.layerData;
         if (!activeData || activeData.isBackground || activeData.isFolder || !activeData.renderTexture) {

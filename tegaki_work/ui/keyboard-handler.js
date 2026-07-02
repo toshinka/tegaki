@@ -879,13 +879,22 @@ export const KeyboardHandler = (function() {
         const history = window.History || historyManager;
         const layerIndex = layerSystem.getLayerIndex(activeLayer);
         const layerId = activeLayer.layerData.id;
+        const beforeSnapshotStart = keyboardPerfNow();
         const beforeSnapshot = layerSystem.createLayerRasterSnapshot?.(activeLayer) || null;
+        warnKeyboardPerf('keyboard.deleteLayerDrawings.beforeSnapshot', beforeSnapshotStart, {
+            layerId,
+            layerIndex
+        });
 
+        const clearStart = keyboardPerfNow();
         clearLayerDrawings(layerSystem, activeLayer);
+        warnKeyboardPerf('keyboard.deleteLayerDrawings.clear', clearStart, {
+            layerId,
+            layerIndex
+        });
 
         if (history && !history.isApplying && beforeSnapshot && layerSystem.restoreLayerRasterSnapshot) {
-            const afterSnapshot = layerSystem.createLayerRasterSnapshot?.(activeLayer) || null;
-            if (!afterSnapshot) return;
+            const afterSnapshot = createBlankSnapshotFrom(beforeSnapshot);
 
             const entry = {
                 name: 'layer-clear-raster',
@@ -895,9 +904,12 @@ export const KeyboardHandler = (function() {
                 undo: () => {
                     layerSystem.restoreLayerRasterSnapshot(beforeSnapshot);
                 },
-                meta: { layerId, layerIndex }
+                meta: { layerId, layerIndex },
+                byteSize: (beforeSnapshot.pixels?.byteLength || 0)
+                    + (afterSnapshot.pixels?.byteLength || 0)
             };
             
+            const recordStart = keyboardPerfNow();
             if (typeof history.record === 'function') {
                 history.record(entry);
             } else {
@@ -906,6 +918,11 @@ export const KeyboardHandler = (function() {
                 history.index++;
                 history._notifyHistoryChanged?.();
             }
+            warnKeyboardPerf('keyboard.deleteLayerDrawings.historyRecord', recordStart, {
+                layerId,
+                layerIndex,
+                byteSize: entry.byteSize
+            });
         }
     }
 
@@ -948,7 +965,7 @@ export const KeyboardHandler = (function() {
         layer.layerData.pathsData = [];
         
         const layerIndex = layerSystem.getLayerIndex(layer);
-        layerSystem.requestThumbnailUpdate(layerIndex, true);
+        layerSystem.requestThumbnailUpdate(layerIndex, false);
         
         if (TegakiEventBus) {
             TegakiEventBus.emit('layer:drawings-deleted', {
@@ -956,6 +973,51 @@ export const KeyboardHandler = (function() {
                 layerIndex: layerIndex
             });
         }
+    }
+
+    function createBlankSnapshotFrom(snapshot) {
+        const width = Math.max(1, Math.round(Number(snapshot?.width || 1)));
+        const height = Math.max(1, Math.round(Number(snapshot?.height || 1)));
+        return {
+            ...snapshot,
+            width,
+            height,
+            rasterBounds: snapshot?.rasterBounds ? { ...snapshot.rasterBounds } : {
+                x: 0,
+                y: 0,
+                width,
+                height
+            },
+            pixels: new Uint8ClampedArray(width * height * 4),
+            pathsData: [],
+            paths: []
+        };
+    }
+
+    function keyboardPerfNow() {
+        return performance?.now?.() || Date.now();
+    }
+
+    function warnKeyboardPerf(label, start, extra = {}) {
+        if (!window.TEGAKI_CONFIG?.debug || !Number.isFinite(start)) return;
+
+        const duration = keyboardPerfNow() - start;
+        const level = duration >= 250 ? 'FREEZE'
+            : duration >= 100 ? 'SEVERE'
+            : duration >= 50 ? 'LAG'
+            : duration >= 33 ? 'DROP'
+            : duration >= 16 ? 'FRAME'
+            : null;
+        if (!level) return;
+
+        const entry = {
+            label,
+            level,
+            durationMs: Number(duration.toFixed(2)),
+            extra
+        };
+        console.warn(`[TegakiPerf:${level}] ${label}: ${entry.durationMs}ms`, entry);
+        window.TegakiStrokeInputProfiler?.recordPerf?.(entry);
     }
 
     function restoreLayerDrawings(layerSystem, layer, pathsBackup, childrenBackup, layerIndex) {
