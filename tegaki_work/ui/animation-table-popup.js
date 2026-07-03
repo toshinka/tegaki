@@ -569,7 +569,7 @@ export class AnimationTablePopup {
             excludeClipIds: showSelectedWorkingLayer ? selectedEditClipIds : null,
             previewContainer: staging.back
         });
-        if (renderedCount === 0 && onionRenderedCount === 0) {
+        if (renderedCount === 0 && onionRenderedCount === 0 && !showSelectedWorkingLayer) {
             this._destroyAnimationPreviewStagingContainers(staging);
             this._restoreVisibility();
             return;
@@ -798,6 +798,14 @@ export class AnimationTablePopup {
         return true;
     }
 
+    _keepDrawingPreviewWorkingLayerVisible(layerId = null) {
+        if (!this.layerSystem) return false;
+        this._showSelectedClipWorkingLayers();
+        const targetLayerId = layerId || this.layerSystem.getActiveLayer?.()?.layerData?.id || null;
+        if (!targetLayerId || !this._isAnimationWorkingLayerId(targetLayerId)) return false;
+        return this._forceAnimationWorkingLayerVisible(targetLayerId);
+    }
+
     _ensureWorkingLayerDisplaySurface(layer) {
         if (!layer?.layerData || layer.layerData.isAnimationWorkingLayer !== true) return false;
         layer.visible = true;
@@ -818,6 +826,16 @@ export class AnimationTablePopup {
             }
             if ('culled' in sprite) {
                 sprite.culled = false;
+            }
+        }
+        for (const child of layer.children || []) {
+            if (!child || (child.label !== 'strokePreview' && child.label !== 'penOpacityStrokePreview')) continue;
+            child.visible = true;
+            if ('renderable' in child) {
+                child.renderable = true;
+            }
+            if ('culled' in child) {
+                child.culled = false;
             }
         }
         return true;
@@ -2305,12 +2323,7 @@ export class AnimationTablePopup {
             this.isDrawingPreviewSuspended = true;
             this._animationPreviewKey = null;
             this._applyVisibilityPreview();
-            this._showSelectedClipWorkingLayers();
-            activeLayer.visible = true;
-            if ('renderable' in activeLayer) {
-                activeLayer.renderable = true;
-            }
-            this.layerSystem.refreshClippingMasks?.();
+            this._keepDrawingPreviewWorkingLayerVisible(activeLayer.layerData?.id || null);
         }
         return true;
     }
@@ -2338,8 +2351,7 @@ export class AnimationTablePopup {
             if (!previewAlreadyPrepared) {
                 this._applyVisibilityPreview();
             }
-            this._showSelectedClipWorkingLayers();
-            this._forceAnimationWorkingLayerVisible(layerId);
+            this._keepDrawingPreviewWorkingLayerVisible(layerId);
         } else {
             this._scheduleLaneReferencePreviewUpdate();
         }
@@ -6451,6 +6463,8 @@ export class AnimationTablePopup {
             this._restoreVisibility();
         } else if (this.isDrawingPreviewSuspended && !this.isPreviewActive) {
             this._applyDrawingVisibilityPreview();
+        } else if (this.isDrawingPreviewSuspended && this.isPreviewActive) {
+            this._keepDrawingPreviewWorkingLayerVisible();
         } else if (this.isClipEditModeActive || this.isTransformPreviewSuspended) {
             // EDIT/変形中は合成を停止し、実レイヤー表示を優先する。
             this._restoreVisibility();

@@ -1,0 +1,54 @@
+Tegaki Phase 5q 外部AI診断用 GitHub URL一覧
+
+Repository:
+https://github.com/toshinka/tegaki
+
+Branch:
+main
+
+Current local HEAD:
+418f72913ece74db342380ef0058f8bb05a6f146
+
+Stable commit URL base:
+https://github.com/toshinka/tegaki/blob/418f72913ece74db342380ef0058f8bb05a6f146/
+
+Main branch URL base:
+https://github.com/toshinka/tegaki/blob/main/
+
+最初に読む方針文書:
+https://github.com/toshinka/tegaki/blob/main/AGENTS.md
+https://github.com/toshinka/tegaki/blob/main/TEGAKI.md
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/PROGRESS.md
+https://github.com/toshinka/tegaki/blob/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase5q.md
+https://github.com/toshinka/tegaki/blob/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/03_%E3%82%A2%E3%83%8B%E3%83%A1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%83%BBCAF%E3%83%BB%E5%A4%89%E5%BD%A2.md
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/PHASE4Z_BOUNDARY.md
+
+最重要コード:
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/ui/animation-table-popup.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/system/drawing/drawing-engine.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/system/drawing/brush-core.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/system/layer-system.js
+
+関連コード:
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/ui/timeline-ui.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/ui/layer-panel-renderer.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/system/animation/animation-data-model.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/system/drawing/pointer-handler.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/system/history.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/system/project-manager.js
+https://github.com/toshinka/tegaki/blob/main/tegaki_work/ui/keyboard-handler.js
+
+参考レポート:
+https://github.com/toshinka/tegaki/blob/main/task-codex/Tegaki_stroke_lag_report_for_codex.md
+
+安定commit版の重要コード:
+https://github.com/toshinka/tegaki/blob/418f72913ece74db342380ef0058f8bb05a6f146/tegaki_work/ui/animation-table-popup.js
+https://github.com/toshinka/tegaki/blob/418f72913ece74db342380ef0058f8bb05a6f146/tegaki_work/system/drawing/drawing-engine.js
+https://github.com/toshinka/tegaki/blob/418f72913ece74db342380ef0058f8bb05a6f146/tegaki_work/system/drawing/brush-core.js
+https://github.com/toshinka/tegaki/blob/418f72913ece74db342380ef0058f8bb05a6f146/tegaki_work/system/layer-system.js
+
+外部AIへの指示:
+- まず `phase5q_external_ai_diagnostic_request.md` の本文を読ませる。
+- その後、このURL一覧から必要ファイルを読むよう指示する。
+- 最後に `tegaki_phase5q_caf_preview_diagnosis.md` としてダウンロード可能なMarkdown報告書を出させる。
+
