@@ -84,6 +84,11 @@ Phase 5qのAnimation Tableを閉じた時のLane表示モードも完了。
 - Animation TableでCAFセル間を直接移動する時は、previewで隠した実working Layerを復元してから旧CAFを保存し、新CAFをforce restoreする。空セル経由だけリアルタイム描画が安定するCAF切替状態差を潰す。
 - DrawingEngineは通常stroke開始前に `drawing:before-stroke-start` を発火し、Animation Table側で選択CAFのactive working Layerを先に固定する。BrushCoreが古いactive Layerを掴み、stroke中だけ選択CAF描画物が消える経路を抑える。
 - BrushCoreはstroke開始時のLayerを `strokeTargetLayer` として保持し、move / realtime焼き込み / finalizeまで同じLayerへ描く。Animation Table preview更新やLayer panel同期でactive Layerが途中変化しても、stroke中の描画先を揺らさない。
+- CAF preview中の当たり/外れ調査として、BrushCoreの開始local座標は描画枠拡張後に確定する順序へ直した。`TEGAKI_CONFIG.debug` 有効時は、ペンstrokeごとに realtime焼き込み回数 / distance skip / final-bake fallbackを `[TegakiRealtimeStroke:*]` と `TegakiStrokeInputProfiler.lastStroke()` へ記録する。
+- `TegakiConsole.txt` では外れstrokeもfinal-bakeではなくrealtime焼き込み済みだったため、BrushCoreはRenderTexture更新後にPixi stage再描画を1フレーム単位で予約する。`[TegakiRealtimeStroke:*]` には `liveRenderRequests` / `liveRenderExecuted` / `liveRenderMethod` も記録し、焼き込み済みだが画面repaintが遅れる経路を切り分ける。
+- animation working Layerのstroke中は `drawing:stroke-updated` を発火し、Animation Table PREVIEW中なら対象working LayerのContainer / layerSprite / stroke preview childをmoveごとに再可視化する。`drawing:stroke-started` がpreview child生成前に出るため、開始時だけの表示固定で外れ回が残る経路を潰す。
+- Console上は外れ回でもRenderTexture焼き込みと `app.render()` が成功していたため、PREVIEW中のlive strokeは選択CAF working Layer本体を直接見せず、同じRenderTextureを参照するdisplay-only overlay Spriteへ逃がす。元working Layerはstroke中だけ表示面から隠し、正本 / History / exportへ混ぜない。
+- live stroke overlay確立後は、`drawing:stroke-updated` でworking Layer本体の可視化 / 非表示やpreview containerの並べ替えを繰り返さず、overlay Spriteの参照更新だけにする。安定化後のstroke中点滅を避ける。
 
 ## アニメ画像import追記
 
