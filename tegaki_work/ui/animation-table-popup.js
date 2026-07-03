@@ -48,6 +48,10 @@ export class AnimationTablePopup {
         this.animationPreviewContainer = null;
         this.animationPreviewBackContainer = null;
         this.animationPreviewBackgroundContainer = null;
+        this.animationPreviewLiveStrokeContainer = null;
+        this._liveStrokeOverlaySprites = new Map();
+        this._liveStrokeOverlayKey = null;
+        this._liveStrokeOverlayHiddenLayerIds = new Set();
         this._animationPreviewMode = null;
         this._animationPreviewKey = null;
         this._drawingPreviewCompositeKey = null;
@@ -517,6 +521,9 @@ export class AnimationTablePopup {
 
     _applyVisibilityPreview() {
         if (!this.isVisible || !this.isPreviewActive || !this.layerSystem) return;
+        if (this.isDrawingPreviewSuspended !== true) {
+            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
+        }
         
         const layers = this.layerSystem.getLayers() || [];
         const currentFrame = this.model.playback.currentFrame;
@@ -800,10 +807,130 @@ export class AnimationTablePopup {
 
     _keepDrawingPreviewWorkingLayerVisible(layerId = null) {
         if (!this.layerSystem) return false;
-        this._showSelectedClipWorkingLayers();
+        const shown = this._showSelectedClipWorkingLayers();
         const targetLayerId = layerId || this.layerSystem.getActiveLayer?.()?.layerData?.id || null;
         if (!targetLayerId || !this._isAnimationWorkingLayerId(targetLayerId)) return false;
-        return this._forceAnimationWorkingLayerVisible(targetLayerId);
+        const forced = this._forceAnimationWorkingLayerVisible(targetLayerId);
+        if (this.isDrawingPreviewSuspended === true && this.isPreviewActive === true) {
+            return this._syncDrawingLiveStrokeOverlay(targetLayerId) || forced || shown;
+        }
+        return forced || shown;
+    }
+
+    _syncDrawingLiveStrokeOverlay(layerId = null) {
+        if (!this.isVisible || !this.isPreviewActive || !this.isDrawingPreviewSuspended || !this.layerSystem) {
+            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
+            return false;
+        }
+
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
+        if (!entry?.clip || !asset) {
+            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
+            return false;
+        }
+
+        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
+        const workingLayers = this._getRasterWorkingLayers();
+        const overlayEntries = [];
+        drawableInternalLayers.forEach((internalLayer, index) => {
+            const workingLayer = workingLayers[index];
+            const layerData = workingLayer?.layerData;
+            if (!internalLayer || !workingLayer || !layerData?.renderTexture) return;
+            if (entry.clip.visible === false || !this._isInternalLayerEffectivelyVisible(asset, internalLayer)) return;
+            overlayEntries.push({ internalLayer, workingLayer, layerData, index });
+        });
+
+        if (overlayEntries.length === 0) {
+            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
+            return false;
+        }
+
+        if (!this.animationPreviewLiveStrokeContainer?.parent) {
+            this._ensurePreviewContainer();
+        }
+        const overlayContainer = this.animationPreviewLiveStrokeContainer;
+        if (!overlayContainer) return false;
+
+        const overlayKey = [
+            entry.clip.id || '',
+            asset.id || '',
+            overlayEntries.map(({ layerData }) => layerData.id || '').join('|')
+        ].join(':');
+        if (this._liveStrokeOverlayKey !== overlayKey) {
+            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: false });
+            this._liveStrokeOverlayKey = overlayKey;
+        }
+
+        overlayContainer.visible = true;
+        const activeIds = new Set();
+        for (let i = overlayEntries.length - 1; i >= 0; i--) {
+            const { workingLayer, layerData, internalLayer } = overlayEntries[i];
+            const id = layerData.id || `working-${i}`;
+            activeIds.add(id);
+
+            let sprite = this._liveStrokeOverlaySprites.get(id);
+            if (!sprite) {
+                sprite = new Sprite(layerData.renderTexture);
+                sprite.label = 'animation_live_stroke_overlay_sprite';
+                sprite.eventMode = 'none';
+                this._liveStrokeOverlaySprites.set(id, sprite);
+                overlayContainer.addChild(sprite);
+            }
+            if (sprite.texture !== layerData.renderTexture) {
+                sprite.texture = layerData.renderTexture;
+            }
+            const bounds = normalizeRasterBounds(layerData.rasterBounds, {
+                x: 0,
+                y: 0,
+                width: layerData.renderTexture.width || 1,
+                height: layerData.renderTexture.height || 1
+            });
+            sprite.position.set(bounds.x, bounds.y);
+            sprite.alpha = Number.isFinite(workingLayer.alpha)
+                ? workingLayer.alpha
+                : this._getInternalLayerEffectiveOpacity(asset, internalLayer);
+            sprite.blendMode = layerData.blendMode || workingLayer.blendMode || internalLayer.blendMode || 'normal';
+            sprite.visible = true;
+            if ('renderable' in sprite) sprite.renderable = true;
+            if ('culled' in sprite) sprite.culled = false;
+
+            if (workingLayer.visible !== false) {
+                workingLayer.visible = false;
+            }
+            this._liveStrokeOverlayHiddenLayerIds.add(id);
+        }
+
+        this._liveStrokeOverlaySprites.forEach((sprite, id) => {
+            if (!activeIds.has(id)) {
+                sprite.visible = false;
+            }
+        });
+        return true;
+    }
+
+    _clearDrawingLiveStrokeOverlay(options = {}) {
+        const restoreSourceLayers = options.restoreSourceLayers === true;
+        if (this.animationPreviewLiveStrokeContainer) {
+            const removed = this.animationPreviewLiveStrokeContainer.removeChildren();
+            removed.forEach(child => {
+                try {
+                    child.destroy?.({ children: true, texture: false, baseTexture: false });
+                } catch (error) {
+                    console.warn('[AnimationTable] Failed to destroy live stroke overlay child', error);
+                }
+            });
+            this.animationPreviewLiveStrokeContainer.visible = false;
+        }
+        this._liveStrokeOverlaySprites.clear();
+        this._liveStrokeOverlayKey = null;
+
+        if (restoreSourceLayers) {
+            this._liveStrokeOverlayHiddenLayerIds.forEach(layerId => {
+                this._forceAnimationWorkingLayerVisible(layerId);
+            });
+        }
+        this._liveStrokeOverlayHiddenLayerIds.clear();
     }
 
     _ensureWorkingLayerDisplaySurface(layer) {
@@ -1590,6 +1717,7 @@ export class AnimationTablePopup {
     }
 
     _restoreVisibility() {
+        this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
         if (this.animationPreviewContainer) {
             this._clearAnimationPreviewContainer();
         }
@@ -1635,6 +1763,12 @@ export class AnimationTablePopup {
             this.animationPreviewContainer.label = 'animation_preview_front_container';
             this.animationPreviewContainer.eventMode = 'none';
         }
+        if (!this.animationPreviewLiveStrokeContainer) {
+            this.animationPreviewLiveStrokeContainer = new Container();
+            this.animationPreviewLiveStrokeContainer.label = 'animation_preview_live_stroke_container';
+            this.animationPreviewLiveStrokeContainer.eventMode = 'none';
+            this.animationPreviewLiveStrokeContainer.visible = false;
+        }
 
         const ensureCanvasChild = (child) => {
             if (child.parent !== canvasContainer) {
@@ -1658,6 +1792,7 @@ export class AnimationTablePopup {
         ensureCanvasChild(this.animationPreviewBackgroundContainer);
         ensureCanvasChild(this.animationPreviewBackContainer);
         ensureCanvasChild(this.animationPreviewContainer);
+        ensureCanvasChild(this.animationPreviewLiveStrokeContainer);
 
         if (currentFrameContainer.parent === canvasContainer) {
             moveBefore(this.animationPreviewBackgroundContainer, currentFrameContainer);
@@ -1671,6 +1806,7 @@ export class AnimationTablePopup {
                 );
             }
             moveAfter(this.animationPreviewContainer, currentFrameContainer);
+            moveAfter(this.animationPreviewLiveStrokeContainer, this.animationPreviewContainer);
         }
     }
 
@@ -1837,13 +1973,15 @@ export class AnimationTablePopup {
     }
 
     _clearAnimationPreviewContainer(options = {}) {
+        this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: options.restoreSourceLayers === true });
         this._animationPreviewMode = null;
         this._animationPreviewKey = null;
         this._drawingPreviewCompositeKey = null;
         const containers = [
             options.includeBackground === true ? this.animationPreviewBackgroundContainer : null,
             this.animationPreviewBackContainer,
-            this.animationPreviewContainer
+            this.animationPreviewContainer,
+            options.includeLiveStroke === true ? this.animationPreviewLiveStrokeContainer : null
         ].filter(Boolean);
 
         if (containers.length === 0) {
@@ -2278,6 +2416,7 @@ export class AnimationTablePopup {
             || this.selectedInternalLayerId
             || null;
         const captured = this._captureDrawingLayerToSelectedClip(layerId, selectedInternalLayerId);
+        this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
         this.isDrawingPreviewSuspended = false;
         this._drawingPreviewCompositeKey = null;
         this.render();
@@ -2301,6 +2440,7 @@ export class AnimationTablePopup {
 
     _handleDrawingCancelled() {
         if (!this.isDrawingPreviewSuspended) return;
+        this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
         this.isDrawingPreviewSuspended = false;
         this._drawingPreviewCompositeKey = null;
         this._drawingHistoryBeforeStates.clear();
@@ -2355,6 +2495,17 @@ export class AnimationTablePopup {
         } else {
             this._scheduleLaneReferencePreviewUpdate();
         }
+    }
+
+    _handleDrawingUpdated(data = {}) {
+        if (!this.selectedCelId || !this.isVisible || !this.isPreviewActive || !this.isDrawingPreviewSuspended) {
+            return;
+        }
+
+        const layerId = data.layerId || data.data?.layerId;
+        if (!layerId || !this._isAnimationWorkingLayerId(layerId)) return;
+
+        this._syncDrawingLiveStrokeOverlay(layerId);
     }
 
     _forceAnimationWorkingLayerVisible(layerId) {
@@ -6461,10 +6612,13 @@ export class AnimationTablePopup {
         // プレビューの適用判定
         if (this.isLaneOnlySelected) {
             this._restoreVisibility();
-        } else if (this.isDrawingPreviewSuspended && !this.isPreviewActive) {
-            this._applyDrawingVisibilityPreview();
-        } else if (this.isDrawingPreviewSuspended && this.isPreviewActive) {
-            this._keepDrawingPreviewWorkingLayerVisible();
+        } else if (this.isDrawingPreviewSuspended) {
+            if (this.isPreviewActive) {
+                this._keepDrawingPreviewWorkingLayerVisible();
+            } else {
+                this.isDrawingPreviewSuspended = false;
+                this._restoreVisibility();
+            }
         } else if (this.isClipEditModeActive || this.isTransformPreviewSuspended) {
             // EDIT/変形中は合成を停止し、実レイヤー表示を優先する。
             this._restoreVisibility();
@@ -9454,6 +9608,9 @@ export class AnimationTablePopup {
         });
         this.eventBus.on('drawing:stroke-started', (data = {}) => {
             this._handleDrawingStarted(data);
+        });
+        this.eventBus.on('drawing:stroke-updated', (data = {}) => {
+            this._handleDrawingUpdated(data);
         });
         this.eventBus.on('drawing:stroke-completed', (data = {}) => {
             this._handleDrawingCompleted(data);

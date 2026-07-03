@@ -5,7 +5,7 @@
  * 依存: event-bus.js, coordinate-system.js, stroke-recorder.js, stroke-renderer.js, layer-system.js, brush-settings.js, pixi.js
  * 被依存: core-engine.js, core-runtime.js等
  * 公開API: BrushCore, brushCore
- * イベント発火: drawing:stroke-started, drawing:stroke-completed, drawing:stroke-cancelled, layer:path-added, thumbnail:layer-updated
+ * イベント発火: drawing:stroke-started, drawing:stroke-updated, drawing:stroke-completed, drawing:stroke-cancelled, layer:path-added, thumbnail:layer-updated
  * イベント受信: brush:mode-changed
  * グローバル登録: window.BrushCore
  * 実装状態: ✅完成/整備
@@ -57,6 +57,7 @@ export class BrushCore {
         this.strokeInputProfile = null;
         this.strokeTargetLayer = null;
         this.strokeInputProfiler = this._ensureStrokeInputProfiler();
+        this.liveRenderFrameRequest = null;
     }
     
     init() {
@@ -186,12 +187,12 @@ export class BrushCore {
         this.strokeHistoryBefore = needsHistorySnapshot ? beforeSnapshot : null;
         this.strokeSelectionBefore = beforeSnapshot;
 
+        const settings = this._getCurrentSettings();
+        this._ensureLayerRasterFrameForStroke(activeLayer, settings, currentMode);
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
 
-        const settings = this._getCurrentSettings();
-        this._ensureLayerRasterFrameForStroke(activeLayer, settings, currentMode);
         if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
             this._beginAirbrushStroke(activeLayer, settings);
         } else {
@@ -240,7 +241,31 @@ export class BrushCore {
                 startTime: Date.now(),
                 events: 0,
                 interpolatedPoints: 0,
-                realtimeSegments: 0
+                realtimeSegments: 0,
+                realtime: {
+                    updateCalls: 0,
+                    batchCalls: 0,
+                    realtimePointCalls: 0,
+                    penPointCalls: 0,
+                    distanceSkips: 0,
+                    zeroDistanceSkips: 0,
+                    penRenderCalls: 0,
+                    penRenderMissingTarget: 0,
+                    penRenderMissingGraphics: 0,
+                    maxDistance: 0,
+                    lastDistances: [],
+                    finalPointerUpdates: 0,
+                    liveRenderRequests: 0,
+                    liveRenderCoalesced: 0,
+                    liveRenderExecuted: 0,
+                    liveRenderFailures: 0,
+                    liveRenderMethod: null
+                },
+                startLocal: {
+                    x: Number(localX.toFixed(3)),
+                    y: Number(localY.toFixed(3))
+                },
+                rasterBoundsAtStart: this._getLayerRasterBounds(activeLayer)
             }
             : null;
 
@@ -321,6 +346,9 @@ export class BrushCore {
 
     updateStroke(clientX, clientY, pressure, pointerType = 'unknown', inputProfile = null) {
         if (!this.isDrawing) return;
+        if (this.strokeInputProfile?.realtime) {
+            this.strokeInputProfile.realtime.updateCalls++;
+        }
 
         const perfStart = this._perfNow();
         const activeLayer = this.strokeTargetLayer || this.layerManager.getActiveLayer();
@@ -398,6 +426,19 @@ export class BrushCore {
             pointCount: this.strokeRecorder.getCurrentPoints().length
         });
 
+        if (this.eventBus && activeLayer.layerData?.isAnimationWorkingLayer === true) {
+            this.eventBus.emit('drawing:stroke-updated', {
+                component: 'drawing',
+                action: 'stroke-updated',
+                data: {
+                    mode: currentMode,
+                    layerId: activeLayer.layerData?.id,
+                    realtimeApplied: this._hasRealtimeApplied(currentMode),
+                    pointCount: this.strokeRecorder.getCurrentPoints().length
+                }
+            });
+        }
+
         this._logInputProfile('move', inputProfile, {
             mode: currentMode,
             pointerType,
@@ -422,6 +463,9 @@ export class BrushCore {
 
     updateStrokeBatch(infos, inputProfile = null) {
         if (!this.isDrawing || !Array.isArray(infos) || infos.length === 0) return;
+        if (this.strokeInputProfile?.realtime) {
+            this.strokeInputProfile.realtime.batchCalls++;
+        }
 
         const perfStart = this._perfNow();
         const mode = this.getMode();
@@ -500,7 +544,17 @@ export class BrushCore {
         const dy = localY - this.lastRenderedLocalY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (!force && distance <= 0.5) return;
+        const distanceSkipped = !force && distance <= 0.5;
+        this._recordRealtimeStrokePointDebug(mode, {
+            distance,
+            dx,
+            dy,
+            localX,
+            localY,
+            force,
+            skipped: distanceSkipped
+        });
+        if (distanceSkipped) return;
 
         const renderPressure = this._stabilizeInitialPenRealtimePressure(mode, pressure, distance);
         const segmentPoints = distance <= 0
@@ -619,6 +673,54 @@ export class BrushCore {
         return settings.pressureEnabled === true;
     }
 
+    _requestLiveCanvasRender(reason = 'stroke') {
+        const app = this.layerManager?.app || window.app;
+        if (!app?.renderer || !app?.stage || typeof requestAnimationFrame !== 'function') {
+            return;
+        }
+
+        const realtime = this.strokeInputProfile?.realtime || null;
+        if (realtime) {
+            realtime.liveRenderRequests++;
+            realtime.liveRenderReason = reason;
+        }
+
+        if (this.liveRenderFrameRequest !== null) {
+            if (realtime) {
+                realtime.liveRenderCoalesced++;
+            }
+            return;
+        }
+
+        this.liveRenderFrameRequest = requestAnimationFrame(() => {
+            this.liveRenderFrameRequest = null;
+
+            try {
+                if (typeof app.render === 'function') {
+                    app.render();
+                    if (realtime) {
+                        realtime.liveRenderMethod = 'app.render';
+                    }
+                } else {
+                    app.renderer.render({ container: app.stage });
+                    if (realtime) {
+                        realtime.liveRenderMethod = 'renderer.stage';
+                    }
+                }
+                if (realtime) {
+                    realtime.liveRenderExecuted++;
+                }
+            } catch (error) {
+                if (realtime) {
+                    realtime.liveRenderFailures++;
+                }
+                if (window.TEGAKI_CONFIG?.debug) {
+                    console.warn('[BrushCore] live canvas render failed', { reason, error });
+                }
+            }
+        });
+    }
+
     /**
      * [指示書] 消しゴムのリアルタイム反映用：短いセグメントを直接 RenderTexture に焼き込む
      */
@@ -645,6 +747,7 @@ export class BrushCore {
             });
 
             renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+            this._requestLiveCanvasRender('realtime-eraser');
         }
         this._warnPerf('brush.renderRealtimeEraserSegment', perfStart, {
             points: points?.length || 0
@@ -656,7 +759,10 @@ export class BrushCore {
      */
     _renderRealtimePenSegment(points) {
         const activeLayer = this.penOpacityState?.targetLayer || this.strokeTargetLayer || this.layerManager.getActiveLayer();
-        if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
+        if (!activeLayer || !activeLayer.layerData?.renderTexture) {
+            this._recordRealtimePenRenderDebug('missing-target');
+            return;
+        }
 
         const settings = this._getCurrentSettings();
         const renderTarget = this.penOpacityState?.texture || activeLayer.layerData.renderTexture;
@@ -680,6 +786,10 @@ export class BrushCore {
             });
 
             renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+            this._recordRealtimePenRenderDebug('rendered');
+            this._requestLiveCanvasRender(this.penOpacityState ? 'realtime-pen-preview' : 'realtime-pen');
+        } else {
+            this._recordRealtimePenRenderDebug('missing-graphics');
         }
         this._warnPerf('brush.renderRealtimePenSegment', perfStart, {
             points: points?.length || 0,
@@ -751,6 +861,7 @@ export class BrushCore {
             previewSprite,
             opacity: previewSprite.alpha
         };
+        this._requestLiveCanvasRender('pen-opacity-preview-start');
     }
 
     _commitPenOpacityStroke(activeLayer) {
@@ -775,6 +886,7 @@ export class BrushCore {
             clear: false
         });
         commitSprite.destroy({ texture: false, baseTexture: false });
+        this._requestLiveCanvasRender('pen-opacity-commit');
         return true;
     }
 
@@ -822,6 +934,7 @@ export class BrushCore {
 
             // cached texture を破棄しないため texture/baseTexture は指定しない。
             renderContainer.destroy({ children: true });
+            this._requestLiveCanvasRender('realtime-airbrush');
         }
         this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
             points: points?.length || 0
@@ -886,6 +999,7 @@ export class BrushCore {
             mode: settings.mode,
             color: settings.color ?? 0x800000
         };
+        this._requestLiveCanvasRender('airbrush-preview-start');
     }
 
     _commitAirbrushStroke(activeLayer) {
@@ -911,6 +1025,7 @@ export class BrushCore {
             clear: false
         });
         commitSprite.destroy({ texture: false, baseTexture: false });
+        this._requestLiveCanvasRender('airbrush-commit');
         return true;
     }
 
@@ -988,6 +1103,7 @@ export class BrushCore {
 
             renderContainer.__tegakiDestroyFilters?.();
             renderContainer.destroy({ children: true });
+            this._requestLiveCanvasRender('realtime-blur');
         }
     }
 
@@ -1042,6 +1158,9 @@ export class BrushCore {
                 distance: Number(distance.toFixed(3)),
                 pressureDelta: Number(pressureDelta.toFixed(4))
             };
+            if (this.strokeInputProfile.realtime) {
+                this.strokeInputProfile.realtime.finalPointerUpdates++;
+            }
         }
 
         return true;
@@ -1177,6 +1296,7 @@ export class BrushCore {
                     });
 
                     renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+                    this._requestLiveCanvasRender('final-eraser');
                 } else {
                     graphics.blendMode = 'normal';
                     const renderContainer = new Container();
@@ -1190,10 +1310,12 @@ export class BrushCore {
                     });
 
                     renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+                    this._requestLiveCanvasRender('final-stroke');
                 }
             } else if (!layerData?.renderTexture) {
                 // フォールバック: 従来通り子要素として追加
                 activeLayer.addChild(graphics);
+                this._requestLiveCanvasRender('fallback-child-stroke');
             } else if (graphics.destroy) {
                 // 既にライブ焼き込み済みの場合は、生成した graphics を破棄するだけにする
                 graphics.destroy({ children: true, texture: true, baseTexture: true });
@@ -1262,7 +1384,8 @@ export class BrushCore {
             finalBakeRendered: shouldBakeFinal,
             penOpacityIsolation: penOpacityIsolationUsed,
             shortStrokeStabilized: this.strokeInputProfile?.shortStrokeStabilized || null,
-            recorder: this.strokeRecorder._summarizePoints?.(strokeData.points) || null
+            recorder: this.strokeRecorder._summarizePoints?.(strokeData.points) || null,
+            realtime: this._getRealtimeDebugSummary(mode, alreadyApplied, shouldBakeFinal)
         });
         this.strokeInputProfile = null;
 
@@ -1488,17 +1611,104 @@ export class BrushCore {
         );
     }
 
+    _recordRealtimeStrokePointDebug(mode, sample = {}) {
+        const realtime = this.strokeInputProfile?.realtime;
+        if (!realtime) return;
+
+        realtime.realtimePointCalls++;
+        if (mode === 'pen') {
+            realtime.penPointCalls++;
+        }
+
+        const distance = Number(sample.distance);
+        if (Number.isFinite(distance)) {
+            realtime.maxDistance = Math.max(Number(realtime.maxDistance || 0), distance);
+        }
+
+        if (sample.skipped) {
+            realtime.distanceSkips++;
+            if (Number.isFinite(distance) && distance <= 0.001) {
+                realtime.zeroDistanceSkips++;
+            }
+        }
+
+        const lastDistances = realtime.lastDistances || [];
+        lastDistances.push({
+            mode,
+            distance: Number.isFinite(distance) ? Number(distance.toFixed(3)) : null,
+            dx: Number.isFinite(sample.dx) ? Number(sample.dx.toFixed(3)) : null,
+            dy: Number.isFinite(sample.dy) ? Number(sample.dy.toFixed(3)) : null,
+            localX: Number.isFinite(sample.localX) ? Number(sample.localX.toFixed(3)) : null,
+            localY: Number.isFinite(sample.localY) ? Number(sample.localY.toFixed(3)) : null,
+            force: sample.force === true,
+            skipped: sample.skipped === true
+        });
+        if (lastDistances.length > 12) {
+            lastDistances.splice(0, lastDistances.length - 12);
+        }
+        realtime.lastDistances = lastDistances;
+    }
+
+    _recordRealtimePenRenderDebug(result) {
+        const realtime = this.strokeInputProfile?.realtime;
+        if (!realtime) return;
+
+        if (result === 'rendered') {
+            realtime.penRenderCalls++;
+        } else if (result === 'missing-target') {
+            realtime.penRenderMissingTarget++;
+        } else if (result === 'missing-graphics') {
+            realtime.penRenderMissingGraphics++;
+        }
+    }
+
+    _getRealtimeDebugSummary(mode, hasRealtimeApplied, finalBakeRendered) {
+        const realtime = this.strokeInputProfile?.realtime;
+        if (!realtime) return null;
+
+        const summary = {
+            mode,
+            outcome: finalBakeRendered ? 'final-bake' : 'realtime',
+            hasRealtimeApplied: hasRealtimeApplied === true,
+            updateCalls: realtime.updateCalls || 0,
+            batchCalls: realtime.batchCalls || 0,
+            realtimePointCalls: realtime.realtimePointCalls || 0,
+            penPointCalls: realtime.penPointCalls || 0,
+            distanceSkips: realtime.distanceSkips || 0,
+            zeroDistanceSkips: realtime.zeroDistanceSkips || 0,
+            penRenderCalls: realtime.penRenderCalls || 0,
+            penRenderMissingTarget: realtime.penRenderMissingTarget || 0,
+            penRenderMissingGraphics: realtime.penRenderMissingGraphics || 0,
+            maxDistance: Number((Number(realtime.maxDistance || 0)).toFixed(3)),
+            finalPointerUpdates: realtime.finalPointerUpdates || 0,
+            liveRenderRequests: realtime.liveRenderRequests || 0,
+            liveRenderCoalesced: realtime.liveRenderCoalesced || 0,
+            liveRenderExecuted: realtime.liveRenderExecuted || 0,
+            liveRenderFailures: realtime.liveRenderFailures || 0,
+            liveRenderMethod: realtime.liveRenderMethod || null,
+            liveRenderReason: realtime.liveRenderReason || null,
+            lastDistances: [...(realtime.lastDistances || [])]
+        };
+
+        if (window.TEGAKI_CONFIG?.debug && mode === 'pen') {
+            console.info(`[TegakiRealtimeStroke:${summary.outcome}] ${JSON.stringify(summary)}`);
+        }
+        return summary;
+    }
+
     _logInputProfile(stage, inputProfile, details = {}) {
         if (!window.TEGAKI_CONFIG?.debug || !inputProfile) {
             return;
         }
 
-        console.info('[StrokeInputProfile] event', {
-            strokeId: this.strokeInputProfile?.id ?? null,
-            stage,
-            input: inputProfile,
-            details
-        });
+        if (stage !== 'move' || window.TEGAKI_CONFIG?.debugVerboseInput === true) {
+            console.info('[StrokeInputProfile] event', {
+                strokeId: this.strokeInputProfile?.id ?? null,
+                stage,
+                input: inputProfile,
+                details
+            });
+        }
         this._getStrokeInputProfiler()?.recordEvent?.({
             strokeId: this.strokeInputProfile?.id ?? null,
             stage,
@@ -1679,6 +1889,7 @@ export class BrushCore {
         this.strokeHistoryBefore = null;
         this.strokeSelectionBefore = null;
         this.strokeTargetLayer = null;
+        this.strokeInputProfile = null;
         
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-cancelled', {
