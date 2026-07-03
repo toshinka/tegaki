@@ -78,6 +78,9 @@ Phase 5qのAnimation Tableを閉じた時のLane表示モードも完了。
 - PREVIEW中のstrokeでは、選択CAFを現在Frame preview合成から一時除外してworking Layerだけを表示する。同じCAFのsnapshot previewとworking Layerが重なり、既存線が太って見える二重表示を避ける。
 - PREVIEW中のstroke開始時は、`drawing:before-stroke-start` でpreviewを描画中モードへ切り替え済みなら、直後の `drawing:stroke-started` ではpreview containerを再構築せず、選択CAF working Layerの表示固定だけ行う。
 - CAF working Layerを選択 / stroke表示へ戻す時は、Layer visibility正本を変更せず、`refreshClippingMasks()` 後にPixi Container / 非clipping layerSpriteの `visible` / `renderable` / `culled` だけを表示可能状態へ正規化する。選択時点で当たり回 / ハズレ回が固定される差を減らす。
+- PREVIEW中のstrokeで選択CAFを合成から除外した結果、他CAF / onionが0件でも `_restoreVisibility()` へ戻らず、空preview + 選択CAF working Layer表示として成立させる。stroke開始時に実Layer visibilityを巻き戻す非対称stateを避ける。
+- PREVIEW中のstrokeでは、Table再描画が入ってもpreview合成を再構築せず、選択CAF working Layerの表示固定だけを行う。stroke途中でactive CAFのリアルタイム表示が当たり/ハズレ化する経路を狭める。
+- PREVIEW中のCAF working Layer表示固定では、opacity 100%未満のペンが使う `penOpacityStrokePreview` と通常 `strokePreview` childも可視化対象に含める。stroke終了後だけ出る経路を切り分ける。
 - Animation TableでCAFセル間を直接移動する時は、previewで隠した実working Layerを復元してから旧CAFを保存し、新CAFをforce restoreする。空セル経由だけリアルタイム描画が安定するCAF切替状態差を潰す。
 - DrawingEngineは通常stroke開始前に `drawing:before-stroke-start` を発火し、Animation Table側で選択CAFのactive working Layerを先に固定する。BrushCoreが古いactive Layerを掴み、stroke中だけ選択CAF描画物が消える経路を抑える。
 - BrushCoreはstroke開始時のLayerを `strokeTargetLayer` として保持し、move / realtime焼き込み / finalizeまで同じLayerへ描く。Animation Table preview更新やLayer panel同期でactive Layerが途中変化しても、stroke中の描画先を揺らさない。
