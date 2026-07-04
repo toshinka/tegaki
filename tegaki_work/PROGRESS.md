@@ -89,6 +89,7 @@ Phase 5qのAnimation Tableを閉じた時のLane表示モードも完了。
 - animation working Layerのstroke中は `drawing:stroke-updated` を発火し、Animation Table PREVIEW中なら対象working LayerのContainer / layerSprite / stroke preview childをmoveごとに再可視化する。`drawing:stroke-started` がpreview child生成前に出るため、開始時だけの表示固定で外れ回が残る経路を潰す。
 - Console上は外れ回でもRenderTexture焼き込みと `app.render()` が成功していたため、PREVIEW中のlive strokeは選択CAF working Layer本体を直接見せず、同じRenderTextureを参照するdisplay-only overlay Spriteへ逃がす。元working Layerはstroke中だけ表示面から隠し、正本 / History / exportへ混ぜない。
 - live stroke overlay確立後は、`drawing:stroke-updated` でworking Layer本体の可視化 / 非表示やpreview containerの並べ替えを繰り返さず、overlay Spriteの参照更新だけにする。安定化後のstroke中点滅を避ける。
+- 外部診断を踏まえ、`drawing:before-stroke-start` ではlive stroke overlayを生成せず、BrushCoreのRaster bounds拡張と一時stroke Sprite生成後の `drawing:stroke-started` で初回同期する。overlayはbase RenderTextureに加えて `penOpacityStrokePreview` / `airbrushStrokePreview` もdisplay-only Spriteとして複製し、stroke中の実working Layer visibility更新を繰り返さない。
 
 ## アニメ画像import追記
 

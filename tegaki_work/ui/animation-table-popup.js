@@ -52,6 +52,9 @@ export class AnimationTablePopup {
         this._liveStrokeOverlaySprites = new Map();
         this._liveStrokeOverlayKey = null;
         this._liveStrokeOverlayHiddenLayerIds = new Set();
+        this._liveStrokeOverlayRenderFrame = null;
+        this._liveStrokeTextureIds = new WeakMap();
+        this._liveStrokeNextTextureId = 1;
         this._animationPreviewMode = null;
         this._animationPreviewKey = null;
         this._drawingPreviewCompositeKey = null;
@@ -807,14 +810,113 @@ export class AnimationTablePopup {
 
     _keepDrawingPreviewWorkingLayerVisible(layerId = null) {
         if (!this.layerSystem) return false;
-        const shown = this._showSelectedClipWorkingLayers();
         const targetLayerId = layerId || this.layerSystem.getActiveLayer?.()?.layerData?.id || null;
         if (!targetLayerId || !this._isAnimationWorkingLayerId(targetLayerId)) return false;
-        const forced = this._forceAnimationWorkingLayerVisible(targetLayerId);
         if (this.isDrawingPreviewSuspended === true && this.isPreviewActive === true) {
-            return this._syncDrawingLiveStrokeOverlay(targetLayerId) || forced || shown;
+            const synced = this._syncDrawingLiveStrokeOverlay(targetLayerId);
+            if (synced) return true;
         }
+
+        const shown = this._showSelectedClipWorkingLayers();
+        const forced = this._forceAnimationWorkingLayerVisible(targetLayerId);
         return forced || shown;
+    }
+
+    _getLiveStrokeTextureId(texture) {
+        if (!texture || (typeof texture !== 'object' && typeof texture !== 'function')) return 'none';
+        let id = this._liveStrokeTextureIds.get(texture);
+        if (!id) {
+            id = this._liveStrokeNextTextureId++;
+            this._liveStrokeTextureIds.set(texture, id);
+        }
+        return id;
+    }
+
+    _getLiveStrokeOverlaySprite(key, overlayContainer, label) {
+        let sprite = this._liveStrokeOverlaySprites.get(key);
+        if (!sprite) {
+            sprite = new Sprite(Texture.EMPTY);
+            sprite.label = label;
+            sprite.eventMode = 'none';
+            this._liveStrokeOverlaySprites.set(key, sprite);
+            overlayContainer.addChild(sprite);
+        } else if (sprite.parent !== overlayContainer) {
+            overlayContainer.addChild(sprite);
+        }
+        return sprite;
+    }
+
+    _copyLiveStrokeSpriteTransform(target, source) {
+        if (!target || !source) return;
+        target.position?.copyFrom?.(source.position);
+        target.scale?.copyFrom?.(source.scale);
+        target.pivot?.copyFrom?.(source.pivot);
+        target.skew?.copyFrom?.(source.skew);
+        target.rotation = source.rotation || 0;
+        if (target.anchor && source.anchor) {
+            target.anchor.copyFrom(source.anchor);
+        }
+    }
+
+    _syncLiveStrokeOverlayTextureSprite(sprite, texture) {
+        if (!sprite || !texture) return false;
+        if (sprite.texture !== texture) {
+            sprite.texture = texture;
+            return true;
+        }
+        return false;
+    }
+
+    _syncLiveStrokeTransientChildren(overlayContainer, activeIds, entry, opacityMultiplier = 1) {
+        const { workingLayer, layerData } = entry || {};
+        const layerId = layerData?.id;
+        if (!overlayContainer || !activeIds || !workingLayer || !layerId) return false;
+
+        const liveLabels = new Set(['penOpacityStrokePreview', 'airbrushStrokePreview']);
+        let textureChanged = false;
+        let transientIndex = 0;
+        for (const child of workingLayer.children || []) {
+            if (!child || !liveLabels.has(child.label) || !child.texture) continue;
+            const key = `transient:${layerId}:${child.label}:${transientIndex++}`;
+            activeIds.add(key);
+            const sprite = this._getLiveStrokeOverlaySprite(
+                key,
+                overlayContainer,
+                `animation_live_stroke_overlay_${child.label}`
+            );
+            textureChanged = this._syncLiveStrokeOverlayTextureSprite(sprite, child.texture) || textureChanged;
+            this._copyLiveStrokeSpriteTransform(sprite, child);
+            sprite.alpha = Math.max(0, Math.min(1, opacityMultiplier * (Number.isFinite(child.alpha) ? child.alpha : 1)));
+            sprite.blendMode = child.blendMode || 'normal';
+            if ('tint' in sprite && 'tint' in child) {
+                sprite.tint = child.tint;
+            }
+            sprite.visible = child.visible !== false;
+            if ('renderable' in sprite) sprite.renderable = child.renderable !== false;
+            if ('culled' in sprite) sprite.culled = false;
+        }
+        return textureChanged;
+    }
+
+    _requestLiveStrokeOverlayRender(reason = 'live-stroke-overlay') {
+        if (this._liveStrokeOverlayRenderFrame !== null) return;
+        const app = this.layerSystem?.app || window.coreEngine?.app || window.app;
+        if (!app) return;
+
+        this._liveStrokeOverlayRenderFrame = requestAnimationFrame(() => {
+            this._liveStrokeOverlayRenderFrame = null;
+            try {
+                if (typeof app.render === 'function') {
+                    app.render();
+                } else if (app.renderer?.render && app.stage) {
+                    app.renderer.render({ container: app.stage });
+                }
+            } catch (error) {
+                if (window.TEGAKI_CONFIG?.debug === true) {
+                    console.warn('[AnimationTable] live stroke overlay render failed', { reason, error });
+                }
+            }
+        });
     }
 
     _syncDrawingLiveStrokeOverlay(layerId = null) {
@@ -855,7 +957,9 @@ export class AnimationTablePopup {
         const overlayKey = [
             entry.clip.id || '',
             asset.id || '',
-            overlayEntries.map(({ layerData }) => layerData.id || '').join('|')
+            overlayEntries
+                .map(({ layerData }) => `${layerData.id || ''}@${this._getLiveStrokeTextureId(layerData.renderTexture)}`)
+                .join('|')
         ].join(':');
         if (this._liveStrokeOverlayKey !== overlayKey) {
             this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: false });
@@ -863,23 +967,20 @@ export class AnimationTablePopup {
         }
 
         overlayContainer.visible = true;
+        let textureChanged = false;
         const activeIds = new Set();
         for (let i = overlayEntries.length - 1; i >= 0; i--) {
             const { workingLayer, layerData, internalLayer } = overlayEntries[i];
             const id = layerData.id || `working-${i}`;
-            activeIds.add(id);
+            const baseKey = `base:${id}`;
+            activeIds.add(baseKey);
 
-            let sprite = this._liveStrokeOverlaySprites.get(id);
-            if (!sprite) {
-                sprite = new Sprite(layerData.renderTexture);
-                sprite.label = 'animation_live_stroke_overlay_sprite';
-                sprite.eventMode = 'none';
-                this._liveStrokeOverlaySprites.set(id, sprite);
-                overlayContainer.addChild(sprite);
-            }
-            if (sprite.texture !== layerData.renderTexture) {
-                sprite.texture = layerData.renderTexture;
-            }
+            const sprite = this._getLiveStrokeOverlaySprite(
+                baseKey,
+                overlayContainer,
+                'animation_live_stroke_overlay_sprite'
+            );
+            textureChanged = this._syncLiveStrokeOverlayTextureSprite(sprite, layerData.renderTexture) || textureChanged;
             const bounds = normalizeRasterBounds(layerData.rasterBounds, {
                 x: 0,
                 y: 0,
@@ -895,6 +996,13 @@ export class AnimationTablePopup {
             if ('renderable' in sprite) sprite.renderable = true;
             if ('culled' in sprite) sprite.culled = false;
 
+            textureChanged = this._syncLiveStrokeTransientChildren(
+                overlayContainer,
+                activeIds,
+                { workingLayer, layerData, internalLayer },
+                sprite.alpha
+            ) || textureChanged;
+
             if (workingLayer.visible !== false) {
                 workingLayer.visible = false;
             }
@@ -906,6 +1014,9 @@ export class AnimationTablePopup {
                 sprite.visible = false;
             }
         });
+        if (textureChanged) {
+            this._requestLiveStrokeOverlayRender('texture-changed');
+        }
         return true;
     }
 
@@ -924,6 +1035,10 @@ export class AnimationTablePopup {
         }
         this._liveStrokeOverlaySprites.clear();
         this._liveStrokeOverlayKey = null;
+        if (this._liveStrokeOverlayRenderFrame !== null) {
+            cancelAnimationFrame(this._liveStrokeOverlayRenderFrame);
+            this._liveStrokeOverlayRenderFrame = null;
+        }
 
         if (restoreSourceLayers) {
             this._liveStrokeOverlayHiddenLayerIds.forEach(layerId => {
@@ -956,7 +1071,7 @@ export class AnimationTablePopup {
             }
         }
         for (const child of layer.children || []) {
-            if (!child || (child.label !== 'strokePreview' && child.label !== 'penOpacityStrokePreview')) continue;
+            if (!child || (child.label !== 'strokePreview' && child.label !== 'penOpacityStrokePreview' && child.label !== 'airbrushStrokePreview')) continue;
             child.visible = true;
             if ('renderable' in child) {
                 child.renderable = true;
@@ -2463,7 +2578,6 @@ export class AnimationTablePopup {
             this.isDrawingPreviewSuspended = true;
             this._animationPreviewKey = null;
             this._applyVisibilityPreview();
-            this._keepDrawingPreviewWorkingLayerVisible(activeLayer.layerData?.id || null);
         }
         return true;
     }
