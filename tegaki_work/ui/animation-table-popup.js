@@ -48,13 +48,6 @@ export class AnimationTablePopup {
         this.animationPreviewContainer = null;
         this.animationPreviewBackContainer = null;
         this.animationPreviewBackgroundContainer = null;
-        this.animationPreviewLiveStrokeContainer = null;
-        this._liveStrokeOverlaySprites = new Map();
-        this._liveStrokeOverlayKey = null;
-        this._liveStrokeOverlayHiddenLayerIds = new Set();
-        this._liveStrokeOverlayRenderFrame = null;
-        this._liveStrokeTextureIds = new WeakMap();
-        this._liveStrokeNextTextureId = 1;
         this._animationPreviewMode = null;
         this._animationPreviewKey = null;
         this._drawingPreviewCompositeKey = null;
@@ -534,7 +527,7 @@ export class AnimationTablePopup {
         const filterIds = this._getPreviewLaneFilterIds();
 
         const selectedEntry = this._getSelectedEntryForPreview(currentFrame);
-        const showSelectedWorkingLayer = selectedEntry && this.isDrawingPreviewSuspended === true;
+        const showSelectedWorkingLayer = !!selectedEntry;
         const selectedWorkingLayerIds = showSelectedWorkingLayer && selectedEntry?.clip?.assetId
             ? this._getWorkingLayerIdsForClipAsset(selectedEntry.clip.assetId)
             : null;
@@ -572,13 +565,15 @@ export class AnimationTablePopup {
             });
         }
 
-        // 現在Frameは一枚のdisplay-only合成として扱う。
-        // front/back/workingにLane順を分割すると、選択Lane位置に応じた欠落状態が見えるため避ける。
-        const renderedCount = this._renderFrameComposite(currentFrame, layers, {
+        const framePreviewOptions = {
             filterIds,
             excludeClipIds: showSelectedWorkingLayer ? selectedEditClipIds : null,
-            previewContainer: staging.back
-        });
+            backPreviewContainer: staging.back,
+            previewContainer: showSelectedWorkingLayer ? staging.front : staging.back
+        };
+        const renderedCount = showSelectedWorkingLayer
+            ? this._renderFrameCompositeAroundSelectedClip(currentFrame, layers, selectedEntry, framePreviewOptions)
+            : this._renderFrameComposite(currentFrame, layers, framePreviewOptions);
         if (renderedCount === 0 && onionRenderedCount === 0 && !showSelectedWorkingLayer) {
             this._destroyAnimationPreviewStagingContainers(staging);
             this._restoreVisibility();
@@ -632,11 +627,15 @@ export class AnimationTablePopup {
                 previewContainer: staging.front
             });
         }
+        this._renderFrameCompositeAroundSelectedClip(currentFrame, layers, selectedEntry, {
+            filterIds,
+            excludeClipIds: new Set([this.selectedCelId]),
+            backPreviewContainer: staging.back,
+            previewContainer: staging.front
+        });
         this._replacePreviewContainerChildren(this.animationPreviewBackContainer, staging.back);
         this._replacePreviewContainerChildren(this.animationPreviewContainer, staging.front);
 
-        // Live stroke keeps only the selected CAF working layer visible.
-        // Rebuilding same-frame CAF preview while the pen is down can flash as each CAF texture updates.
         this._hideTimelineLayersForPreview(layers, {
             preserveWorkingLayerIds: selectedWorkingLayerIds
         });
@@ -794,6 +793,7 @@ export class AnimationTablePopup {
             const isVisible = entry.clip.visible !== false
                 && this._isInternalLayerEffectivelyVisible(asset, internalLayer);
             workingLayer.visible = isVisible;
+            workingLayer.layerData.visible = isVisible;
             if (isVisible) {
                 visibleWorkingLayers.push(workingLayer);
             }
@@ -801,6 +801,7 @@ export class AnimationTablePopup {
         for (let index = drawableInternalLayers.length; index < workingLayers.length; index++) {
             if (workingLayers[index]) {
                 workingLayers[index].visible = false;
+                if (workingLayers[index].layerData) workingLayers[index].layerData.visible = false;
             }
         }
         this.layerSystem.refreshClippingMasks?.();
@@ -812,240 +813,15 @@ export class AnimationTablePopup {
         if (!this.layerSystem) return false;
         const targetLayerId = layerId || this.layerSystem.getActiveLayer?.()?.layerData?.id || null;
         if (!targetLayerId || !this._isAnimationWorkingLayerId(targetLayerId)) return false;
-        if (this.isDrawingPreviewSuspended === true && this.isPreviewActive === true) {
-            const synced = this._syncDrawingLiveStrokeOverlay(targetLayerId);
-            if (synced) return true;
-        }
 
         const shown = this._showSelectedClipWorkingLayers();
         const forced = this._forceAnimationWorkingLayerVisible(targetLayerId);
         return forced || shown;
     }
 
-    _getLiveStrokeTextureId(texture) {
-        if (!texture || (typeof texture !== 'object' && typeof texture !== 'function')) return 'none';
-        let id = this._liveStrokeTextureIds.get(texture);
-        if (!id) {
-            id = this._liveStrokeNextTextureId++;
-            this._liveStrokeTextureIds.set(texture, id);
-        }
-        return id;
-    }
-
-    _getLiveStrokeOverlaySprite(key, overlayContainer, label) {
-        let sprite = this._liveStrokeOverlaySprites.get(key);
-        if (!sprite) {
-            sprite = new Sprite(Texture.EMPTY);
-            sprite.label = label;
-            sprite.eventMode = 'none';
-            this._liveStrokeOverlaySprites.set(key, sprite);
-            overlayContainer.addChild(sprite);
-        } else if (sprite.parent !== overlayContainer) {
-            overlayContainer.addChild(sprite);
-        }
-        return sprite;
-    }
-
-    _copyLiveStrokeSpriteTransform(target, source) {
-        if (!target || !source) return;
-        target.position?.copyFrom?.(source.position);
-        target.scale?.copyFrom?.(source.scale);
-        target.pivot?.copyFrom?.(source.pivot);
-        target.skew?.copyFrom?.(source.skew);
-        target.rotation = source.rotation || 0;
-        if (target.anchor && source.anchor) {
-            target.anchor.copyFrom(source.anchor);
-        }
-    }
-
-    _syncLiveStrokeOverlayTextureSprite(sprite, texture) {
-        if (!sprite || !texture) return false;
-        if (sprite.texture !== texture) {
-            sprite.texture = texture;
-            return true;
-        }
-        return false;
-    }
-
-    _syncLiveStrokeTransientChildren(overlayContainer, activeIds, entry, opacityMultiplier = 1) {
-        const { workingLayer, layerData } = entry || {};
-        const layerId = layerData?.id;
-        if (!overlayContainer || !activeIds || !workingLayer || !layerId) return false;
-
-        const liveLabels = new Set(['penOpacityStrokePreview', 'airbrushStrokePreview']);
-        let textureChanged = false;
-        let transientIndex = 0;
-        for (const child of workingLayer.children || []) {
-            if (!child || !liveLabels.has(child.label) || !child.texture) continue;
-            const key = `transient:${layerId}:${child.label}:${transientIndex++}`;
-            activeIds.add(key);
-            const sprite = this._getLiveStrokeOverlaySprite(
-                key,
-                overlayContainer,
-                `animation_live_stroke_overlay_${child.label}`
-            );
-            textureChanged = this._syncLiveStrokeOverlayTextureSprite(sprite, child.texture) || textureChanged;
-            this._copyLiveStrokeSpriteTransform(sprite, child);
-            sprite.alpha = Math.max(0, Math.min(1, opacityMultiplier * (Number.isFinite(child.alpha) ? child.alpha : 1)));
-            sprite.blendMode = child.blendMode || 'normal';
-            if ('tint' in sprite && 'tint' in child) {
-                sprite.tint = child.tint;
-            }
-            sprite.visible = child.visible !== false;
-            if ('renderable' in sprite) sprite.renderable = child.renderable !== false;
-            if ('culled' in sprite) sprite.culled = false;
-        }
-        return textureChanged;
-    }
-
-    _requestLiveStrokeOverlayRender(reason = 'live-stroke-overlay') {
-        if (this._liveStrokeOverlayRenderFrame !== null) return;
-        const app = this.layerSystem?.app || window.coreEngine?.app || window.app;
-        if (!app) return;
-
-        this._liveStrokeOverlayRenderFrame = requestAnimationFrame(() => {
-            this._liveStrokeOverlayRenderFrame = null;
-            try {
-                if (typeof app.render === 'function') {
-                    app.render();
-                } else if (app.renderer?.render && app.stage) {
-                    app.renderer.render({ container: app.stage });
-                }
-            } catch (error) {
-                if (window.TEGAKI_CONFIG?.debug === true) {
-                    console.warn('[AnimationTable] live stroke overlay render failed', { reason, error });
-                }
-            }
-        });
-    }
-
-    _syncDrawingLiveStrokeOverlay(layerId = null) {
-        if (!this.isVisible || !this.isPreviewActive || !this.isDrawingPreviewSuspended || !this.layerSystem) {
-            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
-            return false;
-        }
-
-        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
-        const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
-        if (!entry?.clip || !asset) {
-            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
-            return false;
-        }
-
-        const drawableInternalLayers = this._getDrawableInternalLayers(asset);
-        const workingLayers = this._getRasterWorkingLayers();
-        const overlayEntries = [];
-        drawableInternalLayers.forEach((internalLayer, index) => {
-            const workingLayer = workingLayers[index];
-            const layerData = workingLayer?.layerData;
-            if (!internalLayer || !workingLayer || !layerData?.renderTexture) return;
-            if (entry.clip.visible === false || !this._isInternalLayerEffectivelyVisible(asset, internalLayer)) return;
-            overlayEntries.push({ internalLayer, workingLayer, layerData, index });
-        });
-
-        if (overlayEntries.length === 0) {
-            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
-            return false;
-        }
-
-        if (!this.animationPreviewLiveStrokeContainer?.parent) {
-            this._ensurePreviewContainer();
-        }
-        const overlayContainer = this.animationPreviewLiveStrokeContainer;
-        if (!overlayContainer) return false;
-
-        const overlayKey = [
-            entry.clip.id || '',
-            asset.id || '',
-            overlayEntries
-                .map(({ layerData }) => `${layerData.id || ''}@${this._getLiveStrokeTextureId(layerData.renderTexture)}`)
-                .join('|')
-        ].join(':');
-        if (this._liveStrokeOverlayKey !== overlayKey) {
-            this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: false });
-            this._liveStrokeOverlayKey = overlayKey;
-        }
-
-        overlayContainer.visible = true;
-        let textureChanged = false;
-        const activeIds = new Set();
-        for (let i = overlayEntries.length - 1; i >= 0; i--) {
-            const { workingLayer, layerData, internalLayer } = overlayEntries[i];
-            const id = layerData.id || `working-${i}`;
-            const baseKey = `base:${id}`;
-            activeIds.add(baseKey);
-
-            const sprite = this._getLiveStrokeOverlaySprite(
-                baseKey,
-                overlayContainer,
-                'animation_live_stroke_overlay_sprite'
-            );
-            textureChanged = this._syncLiveStrokeOverlayTextureSprite(sprite, layerData.renderTexture) || textureChanged;
-            const bounds = normalizeRasterBounds(layerData.rasterBounds, {
-                x: 0,
-                y: 0,
-                width: layerData.renderTexture.width || 1,
-                height: layerData.renderTexture.height || 1
-            });
-            sprite.position.set(bounds.x, bounds.y);
-            sprite.alpha = Number.isFinite(workingLayer.alpha)
-                ? workingLayer.alpha
-                : this._getInternalLayerEffectiveOpacity(asset, internalLayer);
-            sprite.blendMode = layerData.blendMode || workingLayer.blendMode || internalLayer.blendMode || 'normal';
-            sprite.visible = true;
-            if ('renderable' in sprite) sprite.renderable = true;
-            if ('culled' in sprite) sprite.culled = false;
-
-            textureChanged = this._syncLiveStrokeTransientChildren(
-                overlayContainer,
-                activeIds,
-                { workingLayer, layerData, internalLayer },
-                sprite.alpha
-            ) || textureChanged;
-
-            if (workingLayer.visible !== false) {
-                workingLayer.visible = false;
-            }
-            this._liveStrokeOverlayHiddenLayerIds.add(id);
-        }
-
-        this._liveStrokeOverlaySprites.forEach((sprite, id) => {
-            if (!activeIds.has(id)) {
-                sprite.visible = false;
-            }
-        });
-        if (textureChanged) {
-            this._requestLiveStrokeOverlayRender('texture-changed');
-        }
-        return true;
-    }
-
-    _clearDrawingLiveStrokeOverlay(options = {}) {
-        const restoreSourceLayers = options.restoreSourceLayers === true;
-        if (this.animationPreviewLiveStrokeContainer) {
-            const removed = this.animationPreviewLiveStrokeContainer.removeChildren();
-            removed.forEach(child => {
-                try {
-                    child.destroy?.({ children: true, texture: false, baseTexture: false });
-                } catch (error) {
-                    console.warn('[AnimationTable] Failed to destroy live stroke overlay child', error);
-                }
-            });
-            this.animationPreviewLiveStrokeContainer.visible = false;
-        }
-        this._liveStrokeOverlaySprites.clear();
-        this._liveStrokeOverlayKey = null;
-        if (this._liveStrokeOverlayRenderFrame !== null) {
-            cancelAnimationFrame(this._liveStrokeOverlayRenderFrame);
-            this._liveStrokeOverlayRenderFrame = null;
-        }
-
-        if (restoreSourceLayers) {
-            this._liveStrokeOverlayHiddenLayerIds.forEach(layerId => {
-                this._forceAnimationWorkingLayerVisible(layerId);
-            });
-        }
-        this._liveStrokeOverlayHiddenLayerIds.clear();
+    _clearDrawingLiveStrokeOverlay() {
+        // PREVIEW中のstrokeは本物のanimation working Layerを表示する。
+        // 旧live-stroke overlayは当たり外れの原因になったため互換no-opだけ残す。
     }
 
     _ensureWorkingLayerDisplaySurface(layer) {
@@ -1878,13 +1654,6 @@ export class AnimationTablePopup {
             this.animationPreviewContainer.label = 'animation_preview_front_container';
             this.animationPreviewContainer.eventMode = 'none';
         }
-        if (!this.animationPreviewLiveStrokeContainer) {
-            this.animationPreviewLiveStrokeContainer = new Container();
-            this.animationPreviewLiveStrokeContainer.label = 'animation_preview_live_stroke_container';
-            this.animationPreviewLiveStrokeContainer.eventMode = 'none';
-            this.animationPreviewLiveStrokeContainer.visible = false;
-        }
-
         const ensureCanvasChild = (child) => {
             if (child.parent !== canvasContainer) {
                 if (child.parent) {
@@ -1907,7 +1676,6 @@ export class AnimationTablePopup {
         ensureCanvasChild(this.animationPreviewBackgroundContainer);
         ensureCanvasChild(this.animationPreviewBackContainer);
         ensureCanvasChild(this.animationPreviewContainer);
-        ensureCanvasChild(this.animationPreviewLiveStrokeContainer);
 
         if (currentFrameContainer.parent === canvasContainer) {
             moveBefore(this.animationPreviewBackgroundContainer, currentFrameContainer);
@@ -1921,7 +1689,6 @@ export class AnimationTablePopup {
                 );
             }
             moveAfter(this.animationPreviewContainer, currentFrameContainer);
-            moveAfter(this.animationPreviewLiveStrokeContainer, this.animationPreviewContainer);
         }
     }
 
@@ -2095,8 +1862,7 @@ export class AnimationTablePopup {
         const containers = [
             options.includeBackground === true ? this.animationPreviewBackgroundContainer : null,
             this.animationPreviewBackContainer,
-            this.animationPreviewContainer,
-            options.includeLiveStroke === true ? this.animationPreviewLiveStrokeContainer : null
+            this.animationPreviewContainer
         ].filter(Boolean);
 
         if (containers.length === 0) {
@@ -2563,25 +2329,6 @@ export class AnimationTablePopup {
         this._scheduleLaneReferencePreviewUpdate();
     }
 
-    _handleBeforeStrokeStart() {
-        if (!this.selectedCelId || !this.layerSystem) return false;
-
-        const entry = this.model.findClipEntry(this.selectedCelId);
-        const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
-        if (!entry?.clip || !asset) return false;
-
-        this._syncActiveWorkingLayerToSelectedInternalLayer(asset);
-        const activeLayer = this.layerSystem.getActiveLayer?.();
-        if (!activeLayer?.layerData?.isAnimationWorkingLayer) return false;
-
-        if (this.isVisible && this.isPreviewActive) {
-            this.isDrawingPreviewSuspended = true;
-            this._animationPreviewKey = null;
-            this._applyVisibilityPreview();
-        }
-        return true;
-    }
-
     _handleDrawingStarted(data = {}) {
         if (!this.selectedCelId) return;
 
@@ -2598,28 +2345,12 @@ export class AnimationTablePopup {
         }
         this._invalidateWorkingLayerSnapshotId(layerId);
         if (this.isVisible && this.isPreviewActive) {
-            const previewAlreadyPrepared = this.isDrawingPreviewSuspended === true
-                && this._visibilityPreviewApplied === true
-                && this._animationPreviewMode === 'preview';
             this.isDrawingPreviewSuspended = true;
-            if (!previewAlreadyPrepared) {
-                this._applyVisibilityPreview();
-            }
-            this._keepDrawingPreviewWorkingLayerVisible(layerId);
+            this._drawingPreviewCompositeKey = null;
+            this._applyDrawingVisibilityPreview();
         } else {
             this._scheduleLaneReferencePreviewUpdate();
         }
-    }
-
-    _handleDrawingUpdated(data = {}) {
-        if (!this.selectedCelId || !this.isVisible || !this.isPreviewActive || !this.isDrawingPreviewSuspended) {
-            return;
-        }
-
-        const layerId = data.layerId || data.data?.layerId;
-        if (!layerId || !this._isAnimationWorkingLayerId(layerId)) return;
-
-        this._syncDrawingLiveStrokeOverlay(layerId);
     }
 
     _forceAnimationWorkingLayerVisible(layerId) {
@@ -6728,7 +6459,7 @@ export class AnimationTablePopup {
             this._restoreVisibility();
         } else if (this.isDrawingPreviewSuspended) {
             if (this.isPreviewActive) {
-                this._keepDrawingPreviewWorkingLayerVisible();
+                this._applyDrawingVisibilityPreview();
             } else {
                 this.isDrawingPreviewSuspended = false;
                 this._restoreVisibility();
@@ -9717,14 +9448,8 @@ export class AnimationTablePopup {
         });
 
         // 自動キャプチャ
-        this.eventBus.on('drawing:before-stroke-start', () => {
-            this._handleBeforeStrokeStart();
-        });
         this.eventBus.on('drawing:stroke-started', (data = {}) => {
             this._handleDrawingStarted(data);
-        });
-        this.eventBus.on('drawing:stroke-updated', (data = {}) => {
-            this._handleDrawingUpdated(data);
         });
         this.eventBus.on('drawing:stroke-completed', (data = {}) => {
             this._handleDrawingCompleted(data);
