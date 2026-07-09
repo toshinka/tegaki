@@ -5,7 +5,7 @@
  * 依存: event-bus.js, coordinate-system.js, stroke-recorder.js, stroke-renderer.js, layer-system.js, brush-settings.js, pixi.js
  * 被依存: core-engine.js, core-runtime.js等
  * 公開API: BrushCore, brushCore
- * イベント発火: drawing:stroke-started, drawing:stroke-updated, drawing:stroke-completed, drawing:stroke-cancelled, layer:path-added, thumbnail:layer-updated
+ * イベント発火: drawing:stroke-started, drawing:stroke-completed, drawing:stroke-cancelled, layer:path-added, thumbnail:layer-updated
  * イベント受信: brush:mode-changed
  * グローバル登録: window.BrushCore
  * 実装状態: ✅完成/整備
@@ -288,11 +288,6 @@ export class BrushCore {
                 pressure: processedPressure
             }
         };
-        const emitStrokeStartedBeforePreview = activeLayer.layerData?.isAnimationWorkingLayer === true;
-        if (emitStrokeStartedBeforePreview) {
-            this.eventBus?.emit('drawing:stroke-started', strokeStartedPayload);
-        }
-
         this.previewGraphics = new Graphics();
         this.previewGraphics.label = 'strokePreview';
         activeLayer.addChild(this.previewGraphics);
@@ -322,7 +317,7 @@ export class BrushCore {
             this.realtimeBlurApplied = true;
         }
 
-        if (this.eventBus && !emitStrokeStartedBeforePreview) {
+        if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-started', strokeStartedPayload);
         }
 
@@ -425,19 +420,6 @@ export class BrushCore {
             generatedPoints,
             pointCount: this.strokeRecorder.getCurrentPoints().length
         });
-
-        if (this.eventBus && activeLayer.layerData?.isAnimationWorkingLayer === true) {
-            this.eventBus.emit('drawing:stroke-updated', {
-                component: 'drawing',
-                action: 'stroke-updated',
-                data: {
-                    mode: currentMode,
-                    layerId: activeLayer.layerData?.id,
-                    realtimeApplied: this._hasRealtimeApplied(currentMode),
-                    pointCount: this.strokeRecorder.getCurrentPoints().length
-                }
-            });
-        }
 
         this._logInputProfile('move', inputProfile, {
             mode: currentMode,
