@@ -258,6 +258,30 @@ export class ClipInstanceModel {
 }
 
 /**
+ * Timeline上のCAFを移動・複製単位として束ねるGroup。
+ * ClipAsset内部Folder、Lane Folderとは別概念。
+ */
+export class ClipGroupModel {
+    constructor(options = {}) {
+        this.id = options.id || createId();
+        this.name = options.name || 'CAF Group';
+        this.clipIds = [...new Set(Array.isArray(options.clipIds) ? options.clipIds.filter(Boolean) : [])];
+        this.createdAt = options.createdAt || Date.now();
+        this.updatedAt = options.updatedAt || Date.now();
+    }
+
+    serialize() {
+        return {
+            id: this.id,
+            name: this.name,
+            clipIds: [...this.clipIds],
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt
+        };
+    }
+}
+
+/**
  * 互換エイリアス
  */
 export class CelModel extends ClipInstanceModel {}
@@ -283,6 +307,8 @@ export class LaneModel {
         this.isBackground = options.isBackground === true;
         this.type = options.type || 'raster'; // 'raster' | 'folder'
         this.active = options.active === true;
+        // Playback ScopeやCAF内部Layerとは独立した、Lane単位の保存済み表示状態。
+        this.visible = options.visible !== false;
         
         // 内部リスト名はまだ cels を維持（大規模置換回避）
         this.cels = (options.cels || options.clips || []).map(clip => new ClipInstanceModel(clip));
@@ -386,6 +412,7 @@ export class LaneModel {
             isBackground: this.isBackground,
             type: this.type,
             active: this.active,
+            visible: this.visible,
             cels: this.cels.map(cel => cel.serialize())
         };
     }
@@ -401,7 +428,7 @@ export class TrackModel extends LaneModel {}
  */
 export class TimelineModel {
     constructor(options = {}) {
-        this.fps = options.fps || 12;
+        this.fps = options.fps || 8;
         this.totalFrames = options.totalFrames || 24;
         
         // 内部リスト名はまだ tracks を維持
@@ -409,12 +436,13 @@ export class TimelineModel {
         this.layerSyncInitialized = this.tracks.length > 0;
         
         this.clipAssetFolders = (options.clipAssetFolders || []).map(folder => new ClipAssetFolderModel(folder));
+        this.clipGroups = (options.clipGroups || []).map(group => new ClipGroupModel(group));
         this.clipAssets = (options.clipAssets || []).map(asset => new ClipAssetModel(asset));
         this.drawingSnapshots = (options.drawingSnapshots || []).map(snap => new DrawingSnapshotModel(snap));
         this.playback = {
             currentFrame: options.playback?.currentFrame || 0,
             loop: options.playback?.loop !== false,
-            endMode: options.playback?.endMode || 'timeline', // 'timeline' | 'last-clip' | 'out-marker'
+            endMode: options.playback?.endMode || 'last-clip', // 'timeline' | 'last-clip' | 'out-marker'
             inFrame: (options.playback?.inFrame !== undefined && options.playback?.inFrame !== null) ? Number(options.playback.inFrame) : null,
             outFrame: (options.playback?.outFrame !== undefined && options.playback?.outFrame !== null) ? Number(options.playback.outFrame) : null
         };
@@ -494,6 +522,95 @@ export class TimelineModel {
             }
         }
         return null;
+    }
+
+    getClipGroup(groupId) {
+        return this.clipGroups.find(group => group.id === groupId) || null;
+    }
+
+    getClipGroupForClip(clipId) {
+        if (!clipId) return null;
+        return this.clipGroups.find(group => group.clipIds.includes(clipId)) || null;
+    }
+
+    canCreateClipGroup(clipIds = []) {
+        const uniqueIds = [...new Set(Array.isArray(clipIds) ? clipIds.filter(Boolean) : [])];
+        if (uniqueIds.length < 2) return { ok: false, reason: 'selection-too-small' };
+        if (uniqueIds.some(clipId => this.getClipGroupForClip(clipId))) {
+            return { ok: false, reason: 'already-grouped' };
+        }
+        return this.checkClipGroupConnectivity(uniqueIds);
+    }
+
+    checkClipGroupConnectivity(clipIds = []) {
+        const uniqueIds = [...new Set(Array.isArray(clipIds) ? clipIds.filter(Boolean) : [])];
+        if (uniqueIds.length < 2) return { ok: false, reason: 'selection-too-small' };
+        const movableLanes = this.tracks.filter(lane => lane.type !== 'folder' && !lane.isBackground);
+        const entries = uniqueIds.map(clipId => this.findClipEntry(clipId));
+        if (entries.some(entry => !entry)) return { ok: false, reason: 'clip-not-found' };
+        const nodes = entries.map(entry => ({
+            clipId: entry.clip.id,
+            laneIndex: movableLanes.findIndex(lane => lane.id === entry.lane.id),
+            startFrame: entry.clip.startFrame,
+            endFrame: entry.clip.startFrame + Math.max(1, entry.clip.duration || 1)
+        }));
+        if (nodes.some(node => node.laneIndex < 0)) return { ok: false, reason: 'invalid-lane' };
+
+        const isAdjacent = (a, b) => {
+            const laneDistance = Math.abs(a.laneIndex - b.laneIndex);
+            if (laneDistance === 0) {
+                return a.endFrame === b.startFrame || b.endFrame === a.startFrame;
+            }
+            if (laneDistance === 1) {
+                return a.startFrame < b.endFrame && b.startFrame < a.endFrame;
+            }
+            return false;
+        };
+
+        const visited = new Set([nodes[0].clipId]);
+        const queue = [nodes[0]];
+        while (queue.length > 0) {
+            const current = queue.shift();
+            nodes.forEach(candidate => {
+                if (visited.has(candidate.clipId) || !isAdjacent(current, candidate)) return;
+                visited.add(candidate.clipId);
+                queue.push(candidate);
+            });
+        }
+        if (visited.size !== nodes.length) return { ok: false, reason: 'selection-not-contiguous' };
+        return { ok: true, clipIds: uniqueIds };
+    }
+
+    createClipGroup(clipIds = [], options = {}) {
+        const check = this.canCreateClipGroup(clipIds);
+        if (!check.ok) return check;
+        const group = new ClipGroupModel({
+            name: options.name || `CAF Group ${this.clipGroups.length + 1}`,
+            clipIds: check.clipIds
+        });
+        this.clipGroups.push(group);
+        return { ok: true, group };
+    }
+
+    removeClipGroup(groupId) {
+        const index = this.clipGroups.findIndex(group => group.id === groupId);
+        if (index < 0) return { ok: false, reason: 'group-not-found' };
+        const [group] = this.clipGroups.splice(index, 1);
+        return { ok: true, group };
+    }
+
+    reconcileClipGroups() {
+        const existingClipIds = new Set();
+        this.tracks.forEach(lane => (lane.cels || []).forEach(clip => existingClipIds.add(clip.id)));
+        const removedGroupIds = [];
+        this.clipGroups = this.clipGroups.filter(group => {
+            group.clipIds = group.clipIds.filter(clipId => existingClipIds.has(clipId));
+            group.updatedAt = Date.now();
+            if (this.checkClipGroupConnectivity(group.clipIds).ok) return true;
+            removedGroupIds.push(group.id);
+            return false;
+        });
+        return { removedGroupIds };
     }
 
     setClipTransform(clipId, transform = {}) {
@@ -995,6 +1112,7 @@ export class TimelineModel {
         let visibleLaneIndex = 0;
         this.tracks.forEach(lane => {
             if (lane.type === 'folder' || lane.isBackground) return;
+            if (lane.visible === false) return;
             const laneIndex = visibleLaneIndex++;
             if (laneIdFilter && !laneIdFilter.has(lane.id)) return;
             const clip = lane.getCelAtFrame(frameIndex);
@@ -1292,6 +1410,136 @@ export class TimelineModel {
         return { ok: true, lane: targetLane, clip };
     }
 
+    /**
+     * 複数クリップを相対配置のまま移動できるか、変更前に一括検証する。
+     * 単体moveClipの押し出し契約とは分離し、複数移動では部分移動も押し出しもしない。
+     */
+    canMoveClips(moves = []) {
+        if (!Array.isArray(moves) || moves.length < 2) {
+            return { ok: false, reason: 'group-required' };
+        }
+
+        const clipIds = new Set();
+        const placements = [];
+        for (const move of moves) {
+            const clipId = move?.clipId;
+            const targetLaneId = move?.targetLaneId;
+            const targetStartFrame = move?.targetStartFrame;
+            if (!clipId || clipIds.has(clipId) || !Number.isInteger(targetStartFrame)) {
+                return { ok: false, reason: 'invalid-move' };
+            }
+
+            const entry = this.findClipEntry(clipId);
+            const targetLane = this.getLaneById(targetLaneId);
+            if (!entry || !targetLane) return { ok: false, reason: 'not-found' };
+            if (targetLane.type === 'folder' || targetLane.isBackground) {
+                return { ok: false, reason: 'invalid-lane' };
+            }
+
+            const duration = Math.max(1, entry.clip.duration || 1);
+            if (targetStartFrame < 0 || targetStartFrame + duration > this.totalFrames) {
+                return { ok: false, reason: 'out-of-range' };
+            }
+
+            clipIds.add(clipId);
+            placements.push({
+                clip: entry.clip,
+                sourceLane: entry.lane,
+                targetLane,
+                targetStartFrame,
+                duration
+            });
+        }
+
+        const rangesByLane = new Map();
+        for (const lane of this.tracks) {
+            const stationary = (lane.cels || [])
+                .filter(clip => !clipIds.has(clip.id))
+                .map(clip => ({
+                    clipId: clip.id,
+                    startFrame: clip.startFrame,
+                    endFrame: clip.startFrame + Math.max(1, clip.duration || 1)
+                }));
+            rangesByLane.set(lane.id, stationary);
+        }
+
+        for (const placement of placements) {
+            const ranges = rangesByLane.get(placement.targetLane.id) || [];
+            const startFrame = placement.targetStartFrame;
+            const endFrame = startFrame + placement.duration;
+            const overlaps = ranges.some(range => startFrame < range.endFrame && endFrame > range.startFrame);
+            if (overlaps) return { ok: false, reason: 'collision' };
+            ranges.push({ clipId: placement.clip.id, startFrame, endFrame });
+        }
+
+        return { ok: true, placements };
+    }
+
+    /**
+     * 新規クリップ群の配置を、モデル変更前に一括検証する。
+     * copy/paste用。部分配置と暗黙の押し出しは行わない。
+     */
+    canPlaceClips(placements = []) {
+        if (!Array.isArray(placements) || placements.length === 0) {
+            return { ok: false, reason: 'placements-required' };
+        }
+
+        const checked = [];
+        const rangesByLane = new Map();
+        for (const lane of this.tracks) {
+            rangesByLane.set(lane.id, (lane.cels || []).map(clip => ({
+                startFrame: clip.startFrame,
+                endFrame: clip.startFrame + Math.max(1, clip.duration || 1)
+            })));
+        }
+
+        for (const placement of placements) {
+            const targetLane = this.getLaneById(placement?.targetLaneId);
+            const startFrame = placement?.targetStartFrame;
+            const duration = Math.max(1, placement?.duration || 1);
+            if (!targetLane) return { ok: false, reason: 'lane-not-found' };
+            if (targetLane.type === 'folder' || targetLane.isBackground) {
+                return { ok: false, reason: 'invalid-lane' };
+            }
+            if (!Number.isInteger(startFrame) || startFrame < 0 || startFrame + duration > this.totalFrames) {
+                return { ok: false, reason: 'out-of-range' };
+            }
+
+            const ranges = rangesByLane.get(targetLane.id) || [];
+            const endFrame = startFrame + duration;
+            if (ranges.some(range => startFrame < range.endFrame && endFrame > range.startFrame)) {
+                return { ok: false, reason: 'collision' };
+            }
+            ranges.push({ startFrame, endFrame });
+            checked.push({ ...placement, targetLane, targetStartFrame: startFrame, duration });
+        }
+
+        return { ok: true, placements: checked };
+    }
+
+    /**
+     * 検証済みの複数クリップを一括確定する。
+     */
+    moveClips(moves = []) {
+        const check = this.canMoveClips(moves);
+        if (!check.ok) return check;
+
+        const movingIds = new Set(check.placements.map(item => item.clip.id));
+        this.tracks.forEach(lane => {
+            lane.cels = (lane.cels || []).filter(clip => !movingIds.has(clip.id));
+        });
+
+        check.placements.forEach(placement => {
+            const { clip, targetLane, targetStartFrame } = placement;
+            clip.startFrame = targetStartFrame;
+            clip.sourceLayerId = targetLane.sourceLayerId || null;
+            clip.layerId = targetLane.layerId || null;
+            targetLane.cels.push(clip);
+        });
+
+        return { ok: true, placements: check.placements };
+    }
+
     _planClipMoveWithPush(entry, targetLane, targetStartFrame) {
         const { clip, lane: sourceLane } = entry;
         const duration = Math.max(1, clip.duration || 1);
@@ -1497,7 +1745,7 @@ export class TimelineModel {
             const includedLaneIds = options.includedLaneIds || new Set();
 
             this.tracks.forEach(track => {
-                if (track.isBackground || track.type === 'folder') return;
+                if (track.isBackground || track.type === 'folder' || track.visible === false) return;
 
                 // フィルタの適用
                 if (scope === 'activeLane' && track.id !== activeLaneId) return;
@@ -1593,6 +1841,7 @@ export class TimelineModel {
             totalFrames: this.totalFrames,
             tracks: this.tracks.map(track => track.serialize()),
             clipAssetFolders: this.clipAssetFolders.map(folder => folder.serialize()),
+            clipGroups: this.clipGroups.map(group => group.serialize()),
             clipAssets: this.clipAssets.map(asset => asset.serialize()),
             drawingSnapshots: this.drawingSnapshots.map(snap => snap.serialize()),
             playback: { ...this.playback }
@@ -1609,4 +1858,5 @@ window.TimelineModel = TimelineModel;
 window.DrawingSnapshotModel = DrawingSnapshotModel;
 window.ClipAssetModel = ClipAssetModel;
 window.ClipAssetFolderModel = ClipAssetFolderModel;
+window.ClipGroupModel = ClipGroupModel;
 window.ClipAssetInternalLayerModel = ClipAssetInternalLayerModel;

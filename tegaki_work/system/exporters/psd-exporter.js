@@ -143,9 +143,10 @@ window.PSDExporter = (function() {
                 return (data.parentId || null) === (parentId || null);
             });
 
+            // LayerSystemはPixi描画順と同じく背面 -> 前面で保持する。
+            // Clip Studio実機とTegaki PSD importerが扱うPSD record順も
+            // 背面 -> 前面なので、ここでは反転しない。
             return siblings
-                .slice()
-                .reverse()
                 .map(layer => this._createPsdLayer(layer, layers))
                 .filter(Boolean);
         }
@@ -201,10 +202,11 @@ window.PSDExporter = (function() {
                 return (layer.parentLayerId || null) === (parentId || null);
             });
 
-            // ClipAsset.internalLayers はLayer Panelと同じく上から前面順。
-            // ag-psdのchildrenもPhotoshop上の上から下の順を要求するため、
-            // 通常LayerSystem用のreverseをCAFへ適用しない。
+            // ClipAsset.internalLayersはLayer Panel順（前面 -> 背面）。
+            // 通常Layer exportと同じPSD record順（背面 -> 前面）へ揃える。
             return siblings
+                .slice()
+                .reverse()
                 .map(layer => this._createCafPsdLayer(asset, model, layer))
                 .filter(Boolean);
         }

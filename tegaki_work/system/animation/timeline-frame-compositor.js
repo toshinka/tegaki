@@ -20,6 +20,7 @@ export class TimelineFrameCompositor {
         const hasClips = (this.model.tracks || []).some(track => {
             return track.type !== 'folder'
                 && track.isBackground !== true
+                && track.visible !== false
                 && Array.isArray(track.cels)
                 && track.cels.length > 0;
         });
@@ -82,7 +83,7 @@ export class TimelineFrameCompositor {
         const clipByLaneId = new Map(frameTree.clips.map(clip => [clip.laneId, clip]));
         const trackBySourceLayerId = new Map(
             (this.model.tracks || [])
-                .filter(track => track.type !== 'folder' && track.isBackground !== true)
+                .filter(track => track.type !== 'folder' && track.isBackground !== true && track.visible !== false)
                 .map(track => [track.sourceLayerId || track.layerId, track])
         );
         const renderedLaneIds = new Set();

@@ -1,6 +1,7 @@
 // ===== ui/timeline-ui.js - Timeline UI / Layer Panel Frame Indicator =====
 // 旧Timeline UIと新Animation TableのFrame表示を橋渡しする。
 // Layer PanelのFrame indicatorはAnimation Table表示中だけ有効化する。
+// 閉TableのFrame buttonは AnimationTablePopup.moveTimelineFrameByDelta() へ委譲する。
 
 (function() {
     'use strict';
@@ -729,27 +730,7 @@
             const animTable = popupManager?.get?.('animationTable');
             if (!animTable?.model || typeof animTable.model.playback?.currentFrame !== 'number') return false;
 
-            const totalFrames = Math.max(1, animTable.model.totalFrames || 1);
-            const currentFrame = animTable.model.playback.currentFrame;
-            const nextFrame = Math.max(0, Math.min(totalFrames - 1, currentFrame + delta));
-            if (nextFrame === currentFrame) return true;
-
-            if (animTable.isClipEditModeActive) animTable.exitClipEditMode?.();
-            animTable._saveSelectedClipFromWorkingLayers?.();
-            animTable.model.setCurrentFrame(nextFrame);
-            animTable._syncWorkingLayersForCurrentFrame?.();
-            animTable.render?.();
-            animTable._scheduleLaneReferencePreviewUpdate?.();
-            this.currentFrameIndex = nextFrame;
-            this.updateLayerPanelIndicator();
-
-            if (this.eventBus) {
-                this.eventBus.emit('animation:frame-changed', {
-                    frameIndex: nextFrame,
-                    direction: delta < 0 ? 'previous' : 'next'
-                });
-            }
-            return true;
+            return animTable.moveTimelineFrameByDelta?.(delta) === true;
         }
         
         setupAnimationEvents() {
@@ -814,9 +795,14 @@
             const frameIndicator = document.createElement('div');
             frameIndicator.className = 'frame-indicator';
             frameIndicator.innerHTML = `
-                <button class="frame-nav-btn" id="frame-prev-btn">◀</button>
-                <span class="frame-display" id="frame-display">FRAME1</span>
-                <button class="frame-nav-btn" id="frame-next-btn">▶</button>
+                <button class="frame-nav-btn" id="frame-prev-btn" title="前Frame">&lt;</button>
+                <span class="frame-display" id="frame-display">F1</span>
+                <button class="frame-nav-btn" id="frame-next-btn" title="次Frame">&gt;</button>
+                <button class="frame-play-toggle-btn" id="frame-play-toggle-btn" title="再生">▶</button>
+                <button class="frame-timeline-onion-btn" id="frame-timeline-onion-btn" title="Timeline onion">
+                    <span class="frame-onion-icon">${this.getOnionSkinIconHtml()}</span>
+                    <span class="frame-onion-count" aria-hidden="true"></span>
+                </button>
                 <button class="frame-lane-reference-btn" id="frame-lane-reference-btn" title="Lane onion">
                     ${this.getOnionSkinIconHtml()}
                 </button>
@@ -826,10 +812,21 @@
             
             document.getElementById('frame-prev-btn')?.addEventListener('click', () => this.goToPreviousFrameSafe());
             document.getElementById('frame-next-btn')?.addEventListener('click', () => this.goToNextFrameSafe());
+            document.getElementById('frame-play-toggle-btn')?.addEventListener('click', () => {
+                const animTable = (window.coreEngine?.popupManager || window.PopupManager)?.get?.('animationTable');
+                animTable?.togglePlayback?.();
+                this.updateLayerPanelIndicator();
+            });
             document.getElementById('frame-lane-reference-btn')?.addEventListener('click', () => {
                 const popupManager = window.coreEngine?.popupManager || window.PopupManager;
                 const animTable = popupManager?.get?.('animationTable');
                 animTable?.toggleLaneReferenceMode?.();
+                this.updateLayerPanelIndicator();
+            });
+            document.getElementById('frame-timeline-onion-btn')?.addEventListener('click', () => {
+                const popupManager = window.coreEngine?.popupManager || window.PopupManager;
+                const animTable = popupManager?.get?.('animationTable');
+                animTable?.cycleTimelineOnionSkin?.();
                 this.updateLayerPanelIndicator();
             });
             
@@ -851,6 +848,8 @@
             );
             const shouldShowIndicator = isAnimationTableVisible || hasAnimationContext;
             const laneReferenceBtn = document.getElementById('frame-lane-reference-btn');
+            const timelineOnionBtn = document.getElementById('frame-timeline-onion-btn');
+            const playToggleBtn = document.getElementById('frame-play-toggle-btn');
             frameIndicator.classList.toggle('is-visible', shouldShowIndicator);
             frameIndicator.classList.toggle('is-table-closed', !isAnimationTableVisible && hasAnimationContext);
             frameIndicator.setAttribute('aria-hidden', shouldShowIndicator ? 'false' : 'true');
@@ -858,6 +857,21 @@
                 const isLaneReferenceActive = animTable?.isLaneReferenceActive?.() === true;
                 laneReferenceBtn.classList.toggle('is-active', isLaneReferenceActive);
                 laneReferenceBtn.setAttribute('aria-pressed', isLaneReferenceActive ? 'true' : 'false');
+            }
+            if (timelineOnionBtn) {
+                const count = animTable?.isOnionSkinActive ? Math.max(1, Math.min(4, Math.round(animTable.onionSkinFrameCount || 1))) : 0;
+                timelineOnionBtn.classList.toggle('is-active', count > 0);
+                timelineOnionBtn.classList.toggle('has-count', count > 0);
+                timelineOnionBtn.setAttribute('aria-pressed', count > 0 ? 'true' : 'false');
+                timelineOnionBtn.title = count > 0 ? `Timeline onion: 前後${count}フレーム` : 'Timeline onion: off';
+                const countNode = timelineOnionBtn.querySelector('.frame-onion-count');
+                if (countNode) countNode.textContent = count > 0 ? String(count) : '';
+            }
+            if (playToggleBtn) {
+                const playing = animTable?.isPlaying === true;
+                playToggleBtn.textContent = playing ? '■' : '▶';
+                playToggleBtn.title = playing ? '停止' : '再生';
+                playToggleBtn.classList.toggle('is-playing', playing);
             }
             if (!shouldShowIndicator) return;
 
@@ -869,7 +883,7 @@
                     return;
                 }
                 const currentFrame = animTable.model.playback.currentFrame;
-                frameDisplay.textContent = `Frame ${currentFrame + 1}`;
+                frameDisplay.textContent = `F${currentFrame + 1}`;
                 document.getElementById('frame-prev-btn')?.removeAttribute('disabled');
                 document.getElementById('frame-next-btn')?.removeAttribute('disabled');
                 return;

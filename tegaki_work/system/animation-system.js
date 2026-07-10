@@ -1167,7 +1167,9 @@ export class AnimationSystem {
             clearInterval(this.playbackTimer);
         }
         
-        const frameTime = 1000 / 12;
+        // 旧通常Frame再生はAnimation TableのTimelineModelと別正本。
+        // FPS同期は行わず、通常時はアマチュア向けの8 FPS固定として保つ。
+        const frameTime = 1000 / 8;
         
         this.playbackTimer = setInterval(() => {
             this.updatePlayback();

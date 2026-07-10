@@ -4,6 +4,8 @@
  * 責務: 動画ツール風アニメーションテーブル（ToonSquid風）のUI、CAF合成preview、Timeline操作を提供する
  * 依存: system/event-bus.js, system/animation/animation-data-model.js
  * 被依存: core-engine.js, system/popup-manager.js
+ * 操作導線: Frame移動は timeline-ui.js（閉Table button）と本file（Table内Arrow）から
+ *   moveTimelineFrameByDelta() へ集約する。空き右FrameのCAF作成もこの入口だけで行う。
  * ============================================================================
  */
 
@@ -34,6 +36,7 @@ export class AnimationTablePopup {
         
         this.model = new TimelineModel();
         this.selectedCelId = null;
+        this.selectedCelIds = new Set();
         this.activeLaneId = null;
         this.isLaneOnlySelected = false;
         
@@ -60,9 +63,10 @@ export class AnimationTablePopup {
         // オニオンスキン関連
         this.isOnionSkinActive = false;
         this.onionSkinFrameCount = 1;
-        this.onionSkinPrevAlpha = 0.30;
+        this.onionSkinPrevAlpha = 0.24;
         this.onionSkinNextAlpha = 0.25;
-        this.onionSkinPrevTint = 0xd64a3a;
+        // 主線を潰さない、茶寄りの落ち着いた橙。次Frameの青系とは明確に区別する。
+        this.onionSkinPrevTint = 0xd68a55;
         this.onionSkinNextTint = 0x3a86c8;
         this.laneReferenceMode = 'active-only'; // 'active-only' | 'lane-onion'
         this.laneReferenceAlpha = 0.24;
@@ -259,6 +263,7 @@ export class AnimationTablePopup {
             this.activePlaybackLaneIds = null;
         }
         this.selectedCelId = null;
+        this.selectedCelIds.clear();
 
         const rangeOptions = this._getPlaybackRangeOptions();
         const { start, end } = this.model.getPlaybackRange(rangeOptions);
@@ -274,13 +279,21 @@ export class AnimationTablePopup {
         }
 
         this.isPlaying = true;
+        this._applyVisibilityPreview();
         this._updatePlayButtonUI();
 
-        const interval = 1000 / this.model.fps;
+        // Table展開中はTimeline設定値、閉Tableの標準再生は8 FPS固定。
+        // 旧AnimationSystemとの双方向同期は行わず、入口の契約を明示する。
+        const playbackFps = this.isVisible
+            ? Math.max(1, Number(this.model.fps) || 8)
+            : 8;
+        const interval = 1000 / playbackFps;
         this._playTimer = setInterval(() => {
             if (!this.model.advanceFrame(this._getPlaybackRangeOptions())) {
                 this.stop();
             } else {
+                // 閉TableでもCanvasへ現Frameを反映する。再生はsnapshot previewのみで、正本を変更しない。
+                this._applyVisibilityPreview();
                 this.render();
                 if (this.eventBus) {
                     this.eventBus.emit('animation:frame-changed', {
@@ -300,7 +313,8 @@ export class AnimationTablePopup {
             this._playTimer = null;
         }
         this._updatePlayButtonUI();
-        this.render();
+        if (this.isVisible) this.render();
+        else this._restoreVisibility();
     }
 
     togglePlayback() {
@@ -499,6 +513,24 @@ export class AnimationTablePopup {
         return laneId ? new Set([laneId]) : this._getPreviewLaneFilterIds();
     }
 
+    _isLaneVisible(lane) {
+        return lane?.visible !== false;
+    }
+
+    toggleLaneVisibility(laneId) {
+        const lane = this.model.getLaneById?.(laneId);
+        if (!lane || lane.type === 'folder' || lane.isBackground) return false;
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        lane.visible = lane.visible === false;
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-lane-visibility', {
+            type: 'caf-lane-visibility', laneId: lane.id, visible: lane.visible
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
     _getPlaybackRangeOptions() {
         if (this.activePlaybackLaneIds) {
             return {
@@ -516,7 +548,7 @@ export class AnimationTablePopup {
     }
 
     _applyVisibilityPreview() {
-        if (!this.isVisible || !this.isPreviewActive || !this.layerSystem) return;
+        if ((!this.isVisible && !this.isPlaying) || !this.isPreviewActive || !this.layerSystem) return;
         if (this.isDrawingPreviewSuspended !== true) {
             this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
         }
@@ -701,7 +733,9 @@ export class AnimationTablePopup {
         } else {
             this.onionSkinFrameCount += 1;
         }
-        this.render();
+        if (this.isVisible) this.render();
+        else this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        this._requestLayerPanelSync({ skipRender: true });
     }
 
     _scheduleLaneReferencePreviewUpdate(options = {}) {
@@ -725,7 +759,7 @@ export class AnimationTablePopup {
             return;
         }
 
-        if (this.laneReferenceMode !== 'lane-onion' || !this.layerSystem) {
+        if ((this.laneReferenceMode !== 'lane-onion' && !this.isOnionSkinActive) || !this.layerSystem) {
             this._clearAnimationPreviewContainer();
             return;
         }
@@ -739,12 +773,22 @@ export class AnimationTablePopup {
         const selectedEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         const activeLaneId = selectedEntry?.lane?.id || this.activeLaneId || null;
 
-        this._renderLaneReferenceFrame(currentFrame, layers, {
-            alpha: this.laneReferenceAlpha,
-            excludeClipIds: selectedClipIds,
-            excludeLaneIds: activeLaneId ? new Set([activeLaneId]) : null,
-            allowSourceLayerFallback: false
-        });
+        if (this.laneReferenceMode === 'lane-onion') {
+            this._renderLaneReferenceFrame(currentFrame, layers, {
+                alpha: this.laneReferenceAlpha,
+                excludeClipIds: selectedClipIds,
+                excludeLaneIds: activeLaneId ? new Set([activeLaneId]) : null,
+                allowSourceLayerFallback: false
+            });
+        }
+        if (this.isOnionSkinActive) {
+            this._renderOnionSkins(currentFrame, layers, {
+                filterIds: this._getTimelineOnionLaneFilterIds(),
+                excludeClipIds: selectedClipIds,
+                previewContainer: this.animationPreviewContainer,
+                allowSourceLayerFallback: false
+            });
+        }
     }
 
     _renderLaneReferenceFrame(frameIndex, layers, options = {}) {
@@ -754,7 +798,7 @@ export class AnimationTablePopup {
 
         for (let i = tracks.length - 1; i >= 0; i--) {
             const track = tracks[i];
-            if (track.isBackground || track.type === 'folder') continue;
+            if (track.isBackground || track.type === 'folder' || !this._isLaneVisible(track)) continue;
             if (excludeLaneIds?.has(track.id)) continue;
 
             const cel = track.getCelAtFrame(frameIndex);
@@ -950,7 +994,7 @@ export class AnimationTablePopup {
         const frames = [...new Set(frameIndexes.map(frame => Math.max(0, Math.round(Number(frame) || 0))))].sort((a, b) => a - b);
         const parts = [];
         tracks.forEach((track, trackIndex) => {
-            if (!track || track.isBackground || track.type === 'folder') return;
+            if (!track || track.isBackground || track.type === 'folder' || !this._isLaneVisible(track)) return;
             if (filterIds && !filterIds.has(track.id)) return;
             frames.forEach(frame => {
                 const cel = track.getCelAtFrame?.(frame) || null;
@@ -997,7 +1041,7 @@ export class AnimationTablePopup {
             const track = tracks[i];
             
             // Phase 4z2: フィルタがある場合は対象外Laneをスキップ
-            if (track.isBackground) continue;
+            if (track.isBackground || track.type === 'folder' || !this._isLaneVisible(track)) continue;
             if (filterIds && !filterIds.has(track.id)) continue;
 
             const cel = track.getCelAtFrame(frameIndex);
@@ -1900,7 +1944,11 @@ export class AnimationTablePopup {
         }
 
         const oldChildren = targetContainer.removeChildren();
-        const newChildren = stagingContainer.removeChildren();
+        // PixiJS v8 の removeChildren() は末尾から削除した配列を返す。
+        // 戻り値をそのまま再追加すると、stagingで正しく組んだLane順が反転するため、
+        // 削除前のchildren順を正本として移す。
+        const newChildren = stagingContainer.children.slice();
+        stagingContainer.removeChildren();
         newChildren.forEach(child => targetContainer.addChild(child));
         this._destroyPreviewChildren(oldChildren);
         try {
@@ -2560,18 +2608,55 @@ export class AnimationTablePopup {
         if (!this.selectedCelId) return false;
 
         this._saveSelectedClipFromWorkingLayers();
-        const entry = this.model.findClipEntry(this.selectedCelId);
-        if (entry) {
-            const clip = entry.clip;
+        const anchorEntry = this.model.findClipEntry(this.selectedCelId);
+        if (anchorEntry) {
+            const movableLanes = (this.model.tracks || []).filter(lane => {
+                return lane && lane.type !== 'folder' && lane.isBackground !== true;
+            });
+            const anchorLaneIndex = movableLanes.findIndex(lane => lane.id === anchorEntry.lane.id);
+            const selectedCelIds = this._getSelectedCelIds();
+            const entries = selectedCelIds.size > 1
+                ? [...selectedCelIds].map(clipId => this.model.findClipEntry(clipId)).filter(Boolean)
+                : [anchorEntry];
+            if (anchorLaneIndex < 0 || entries.length === 0) return false;
+
+            const items = entries.map(entry => {
+                const clip = entry.clip;
+                const laneIndex = movableLanes.findIndex(lane => lane.id === entry.lane.id);
+                return {
+                    sourceClipId: clip.id,
+                    assetId: clip.assetId,
+                    rasterSnapshot: this._cloneRasterSnapshotForRuntime(clip.rasterSnapshot, {
+                        includePixels: !clip.assetId
+                    }),
+                    duration: clip.duration,
+                    transform: this._cloneClipInstanceMetadata(clip.transform),
+                    transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
+                    physics: this._cloneClipInstanceMetadata(clip.physics),
+                    laneOffset: laneIndex - anchorLaneIndex,
+                    frameOffset: clip.startFrame - anchorEntry.clip.startFrame
+                };
+            });
+            if (items.some(item => !Number.isInteger(item.laneOffset))) return false;
+            const anchorItem = items.find(item => item.sourceClipId === anchorEntry.clip.id) || items[0];
+            const sourceGroup = this.model.getClipGroupForClip?.(anchorEntry.clip.id) || null;
+            const copiesWholeGroup = !!sourceGroup
+                && sourceGroup.clipIds.length === entries.length
+                && sourceGroup.clipIds.every(clipId => entries.some(entry => entry.clip.id === clipId));
+
             this._copiedCelRef = {
-                assetId: clip.assetId,
-                rasterSnapshot: this._cloneRasterSnapshotForRuntime(clip.rasterSnapshot, {
-                    includePixels: !clip.assetId
-                }), // 互換用
-                duration: clip.duration,
-                transform: this._cloneClipInstanceMetadata(clip.transform),
-                transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
-                physics: this._cloneClipInstanceMetadata(clip.physics),
+                kind: 'caf-clip-selection',
+                version: 1,
+                anchorSourceClipId: anchorEntry.clip.id,
+                sourceGroupId: copiesWholeGroup ? sourceGroup.id : null,
+                items,
+                // 単体clipboardを読む旧経路との互換用。
+                assetId: anchorItem.assetId,
+                rasterSnapshot: anchorItem.rasterSnapshot,
+                duration: anchorEntry.clip.duration,
+                transform: anchorItem.transform,
+                transformKeyframes: anchorItem.transformKeyframes,
+                physics: anchorItem.physics,
                 copiedAt: Date.now()
             };
             this.render();
@@ -3330,6 +3415,7 @@ export class AnimationTablePopup {
                 cels: (track.cels || []).map(clip => this._cloneClipForTimelineHistory(clip))
             })),
             clipAssetFolders: (this.model.clipAssetFolders || []).map(folder => folder.serialize ? folder.serialize() : { ...folder }),
+            clipGroups: (this.model.clipGroups || []).map(group => group.serialize ? group.serialize() : { ...group, clipIds: [...(group.clipIds || [])] }),
             clipAssets: (this.model.clipAssets || []).map(asset => asset.serialize ? asset.serialize() : { ...asset }),
             drawingSnapshots: (this.model.drawingSnapshots || []).map(snapshot => {
                 return this._cloneDrawingSnapshotForRuntime(snapshot, { sharePixels: true });
@@ -3338,87 +3424,143 @@ export class AnimationTablePopup {
         };
     }
 
+    _getCopiedCelPastePlan() {
+        if (!this._copiedCelRef || !this.layerSystem) return { ok: false, reason: 'clipboard-empty' };
+        const currentFrame = this.model.playback.currentFrame;
+        const movableLanes = (this.model.tracks || []).filter(lane => {
+            return lane && lane.type !== 'folder' && lane.isBackground !== true;
+        });
+        const anchorLaneIndex = movableLanes.findIndex(lane => lane.id === this.activeLaneId);
+        if (anchorLaneIndex < 0) return { ok: false, reason: 'invalid-anchor-lane' };
+
+        const items = Array.isArray(this._copiedCelRef.items) && this._copiedCelRef.items.length > 0
+            ? this._copiedCelRef.items
+            : [{
+                sourceClipId: this._copiedCelRef.anchorSourceClipId || null,
+                assetId: this._copiedCelRef.assetId || null,
+                rasterSnapshot: this._copiedCelRef.rasterSnapshot || null,
+                duration: this._copiedCelRef.duration || 1,
+                transform: this._copiedCelRef.transform,
+                transformKeyframes: this._copiedCelRef.transformKeyframes,
+                physics: this._copiedCelRef.physics,
+                laneOffset: 0,
+                frameOffset: 0
+            }];
+        const placements = items.map((item, index) => {
+            const targetLane = movableLanes[anchorLaneIndex + (item.laneOffset || 0)] || null;
+            return {
+                itemIndex: index,
+                targetLaneId: targetLane?.id || null,
+                targetStartFrame: currentFrame + (item.frameOffset || 0),
+                duration: Math.max(1, item.duration || 1)
+            };
+        });
+        if (placements.some(placement => !placement.targetLaneId)) {
+            return { ok: false, reason: 'lane-out-of-range', items, placements };
+        }
+        const check = this.model.canPlaceClips?.(placements);
+        return check?.ok
+            ? { ok: true, items, placements: check.placements, currentFrame }
+            : { ok: false, reason: check?.reason || 'placement-blocked', items, placements };
+    }
+
     pasteCopiedCel() {
-        if (!this._copiedCelRef || !this.layerSystem) return false;
+        const pastePlan = this._getCopiedCelPastePlan();
+        if (!pastePlan.ok) return false;
 
         this._saveSelectedClipFromWorkingLayers();
         const beforeState = this._captureTimelineHistoryState();
-        const currentFrame = this.model.playback.currentFrame;
-        const lane = this.activeLaneId
-            ? this.model.getLaneById(this.activeLaneId)
-            : null;
-        if (!lane || lane.type === 'folder' || lane.isBackground) return false;
+        const duplicatedAssetsBySourceId = new Map();
+        const pasted = [];
 
-        // 重なりチェック
-        if (!lane.canPlaceCel(currentFrame, this._copiedCelRef.duration)) {
-            console.warn('[AnimationTable] Cannot paste: Space occupied');
-            return false;
-        }
-
-        const duplicateAssetResult = this._copiedCelRef.assetId && this.model.duplicateClipAsset
-            ? this.model.duplicateClipAsset(this._copiedCelRef.assetId)
-            : null;
-        if (this._copiedCelRef.assetId && duplicateAssetResult && !duplicateAssetResult.ok) {
-            console.warn('[AnimationTable] Cannot paste: Failed to duplicate clip asset', duplicateAssetResult.reason);
-            return false;
-        }
-        const pastedAsset = duplicateAssetResult?.ok ? duplicateAssetResult.asset : null;
-        const pastedAssetId = pastedAsset?.id || this._copiedCelRef.assetId || null;
-        const primarySnapshot = pastedAsset?.drawingSnapshotId
-            ? this.model.getDrawingSnapshot(pastedAsset.drawingSnapshotId)
-            : null;
-        const pastedRasterSnapshot = primarySnapshot
-            ? this._createRasterSnapshotCompat(primarySnapshot, {
-                drawingSnapshotId: primarySnapshot.id,
-                includePixels: false
-            })
-            : this._cloneRasterSnapshotForRuntime(this._copiedCelRef.rasterSnapshot, { includePixels: true });
-
-        // 新規セル作成 (ClipInstanceModel)
-        const newClip = lane.addCel({
-            assetId: pastedAssetId,
-            rasterSnapshot: pastedRasterSnapshot, // 互換用
-            startFrame: currentFrame,
-            duration: this._copiedCelRef.duration,
-            transform: this._cloneClipInstanceMetadata(this._copiedCelRef.transform),
-            transformKeyframes: this._cloneClipInstanceMetadata(this._copiedCelRef.transformKeyframes, []),
-            physics: this._cloneClipInstanceMetadata(this._copiedCelRef.physics)
-        });
-
-        if (!newClip) {
-            if (pastedAsset) {
-                this._restoreTimelineHistoryState(beforeState);
+        for (const placement of pastePlan.placements) {
+            const item = pastePlan.items[placement.itemIndex];
+            let pastedAsset = null;
+            if (item.assetId) {
+                pastedAsset = duplicatedAssetsBySourceId.get(item.assetId) || null;
+                if (!pastedAsset) {
+                    const duplicateResult = this.model.duplicateClipAsset?.(item.assetId);
+                    if (!duplicateResult?.ok) {
+                        this._restoreTimelineHistoryState(beforeState);
+                        return false;
+                    }
+                    pastedAsset = duplicateResult.asset;
+                    duplicatedAssetsBySourceId.set(item.assetId, pastedAsset);
+                }
             }
+
+            const primarySnapshot = pastedAsset?.drawingSnapshotId
+                ? this.model.getDrawingSnapshot(pastedAsset.drawingSnapshotId)
+                : null;
+            const rasterSnapshot = primarySnapshot
+                ? this._createRasterSnapshotCompat(primarySnapshot, {
+                    drawingSnapshotId: primarySnapshot.id,
+                    includePixels: false
+                })
+                : this._cloneRasterSnapshotForRuntime(item.rasterSnapshot, { includePixels: true });
+            const newClip = placement.targetLane.addCel({
+                assetId: pastedAsset?.id || null,
+                rasterSnapshot,
+                startFrame: placement.targetStartFrame,
+                duration: placement.duration,
+                transform: this._cloneClipInstanceMetadata(item.transform),
+                transformKeyframes: this._cloneClipInstanceMetadata(item.transformKeyframes, []),
+                physics: this._cloneClipInstanceMetadata(item.physics)
+            });
+            if (!newClip) {
+                this._restoreTimelineHistoryState(beforeState);
+                return false;
+            }
+            pasted.push({ item, placement, clip: newClip, lane: placement.targetLane });
+        }
+
+        const anchorSourceClipId = this._copiedCelRef.anchorSourceClipId || pastePlan.items[0]?.sourceClipId || null;
+        const anchor = pasted.find(entry => entry.item.sourceClipId === anchorSourceClipId) || pasted[0];
+        if (!anchor) {
+            this._restoreTimelineHistoryState(beforeState);
             return false;
         }
 
-        this.selectedCelId = newClip.id;
-        this.activeLaneId = lane.id;
-        this._syncClipAssetToWorkingLayers(newClip, { forceRestore: true });
-        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-paste', {
-            type: 'caf-clip-paste',
-            clipId: newClip.id,
-            assetId: newClip.assetId || null,
-            sourceAssetId: this._copiedCelRef.assetId || null,
-            duplicatedAssetId: pastedAsset?.id || null,
-            laneId: lane.id,
-            frameIndex: currentFrame
-        });
+        let pastedGroup = null;
+        if (this._copiedCelRef.sourceGroupId && pasted.length > 1) {
+            const groupResult = this.model.createClipGroup?.(pasted.map(entry => entry.clip.id));
+            if (!groupResult?.ok) {
+                this._restoreTimelineHistoryState(beforeState);
+                return false;
+            }
+            pastedGroup = groupResult.group;
+        }
+
+        this.selectedCelIds = new Set(pasted.map(entry => entry.clip.id));
+        this.selectedCelId = anchor.clip.id;
+        this.activeLaneId = anchor.lane.id;
+        this.model.tracks.forEach(track => { track.active = track.id === anchor.lane.id; });
+        this.model.setCurrentFrame(anchor.clip.startFrame);
+        this._syncClipAssetToWorkingLayers(anchor.clip, { forceRestore: true });
+
+        const isMultiPaste = pasted.length > 1;
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            isMultiPaste ? 'caf-clips-paste' : 'caf-clip-paste',
+            {
+                type: isMultiPaste ? 'caf-clips-paste' : 'caf-clip-paste',
+                clipIds: pasted.map(entry => entry.clip.id),
+                sourceClipIds: pasted.map(entry => entry.item.sourceClipId).filter(Boolean),
+                duplicatedAssetIds: [...duplicatedAssetsBySourceId.values()].map(asset => asset.id),
+                sourceGroupId: this._copiedCelRef.sourceGroupId || null,
+                pastedGroupId: pastedGroup?.id || null,
+                laneId: anchor.lane.id,
+                frameIndex: anchor.clip.startFrame
+            }
+        );
         this.render();
         this._requestLayerPanelSync();
         return true;
     }
 
     canPasteCopiedCel() {
-        if (!this._copiedCelRef || !this.layerSystem) return false;
-        const currentFrame = this.model.playback.currentFrame;
-        const lane = this.activeLaneId
-            ? this.model.getLaneById(this.activeLaneId)
-            : null;
-        return !!lane
-            && lane.type !== 'folder'
-            && !lane.isBackground
-            && lane.canPlaceCel(currentFrame, this._copiedCelRef.duration || 1);
+        return this._getCopiedCelPastePlan().ok;
     }
 
     canPasteCanvasSelection(clipboard = null) {
@@ -3770,6 +3912,43 @@ export class AnimationTablePopup {
         return lane;
     }
 
+    reorderLaneTo(laneId, targetLaneId, placeAfter = false) {
+        if (!laneId || !targetLaneId || laneId === targetLaneId) return false;
+
+        const lanes = this.model.tracks.filter(track => track.type !== 'folder' && !track.isBackground);
+        const sourceLaneIndex = lanes.findIndex(lane => lane.id === laneId);
+        const targetLaneIndex = lanes.findIndex(lane => lane.id === targetLaneId);
+        if (sourceLaneIndex < 0 || targetLaneIndex < 0) return false;
+
+        const sourceModelIndex = this.model.tracks.findIndex(track => track.id === laneId);
+        if (sourceModelIndex < 0) return false;
+
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const [movingLane] = this.model.tracks.splice(sourceModelIndex, 1);
+        const targetModelIndex = this.model.tracks.findIndex(track => track.id === targetLaneId);
+        if (targetModelIndex < 0) {
+            this.model.tracks.splice(sourceModelIndex, 0, movingLane);
+            return false;
+        }
+        this.model.tracks.splice(targetModelIndex + (placeAfter ? 1 : 0), 0, movingLane);
+        this.model.tracks.forEach((track, index) => { track.orderIndex = index; });
+        const nextLaneIndex = this.model.tracks
+            .filter(track => track.type !== 'folder' && !track.isBackground)
+            .findIndex(track => track.id === laneId);
+        this._animationPreviewKey = null;
+        this._drawingPreviewCompositeKey = null;
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-lane-reorder', {
+            type: 'caf-lane-reorder',
+            laneId,
+            fromIndex: sourceLaneIndex,
+            toIndex: nextLaneIndex
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
     deleteActiveLane() {
         const lanes = this.model.tracks.filter(track => track.type !== 'folder' && !track.isBackground);
         if (lanes.length <= 1) return false;
@@ -3786,6 +3965,7 @@ export class AnimationTablePopup {
         if (modelIndex < 0) return false;
 
         this.model.tracks.splice(modelIndex, 1);
+        this.model.reconcileClipGroups?.();
         this.includedLaneIds.delete(removedLaneId);
         const nextLane = lanes[targetIndex + 1] || lanes[targetIndex - 1] || null;
         this.selectedCelId = null;
@@ -4717,6 +4897,7 @@ export class AnimationTablePopup {
         return {
             ...state,
             selectedCelId: this.selectedCelId || null,
+            selectedCelIds: [...this._getSelectedCelIds()],
             selectedAssetId: this.selectedAssetId || null,
             selectedAssetFolderId: this.selectedAssetFolderId || null,
             selectedInternalLayerId: this.selectedInternalLayerId || null,
@@ -4837,6 +5018,7 @@ export class AnimationTablePopup {
 
         if (this.isClipEditModeActive) this.exitClipEditMode();
         entry.lane.removeCelAtFrame(removedFrame);
+        this.model.reconcileClipGroups?.();
         this.selectedCelId = null;
         this.selectedAssetId = null;
         this.selectedAssetFolderId = null;
@@ -4871,6 +5053,7 @@ export class AnimationTablePopup {
         this.model.totalFrames = restoredModel.totalFrames;
         this.model.tracks = restoredModel.tracks;
         this.model.clipAssetFolders = restoredModel.clipAssetFolders;
+        this.model.clipGroups = restoredModel.clipGroups;
         this.model.clipAssets = restoredModel.clipAssets;
         this.model.drawingSnapshots = restoredModel.drawingSnapshots;
         this.model.playback = { ...restoredModel.playback };
@@ -4891,6 +5074,11 @@ export class AnimationTablePopup {
         }
 
         this.selectedCelId = state.selectedCelId || null;
+        this.selectedCelIds = new Set(
+            (Array.isArray(state.selectedCelIds) ? state.selectedCelIds : [])
+                .filter(clipId => !!this.model.findClipEntry(clipId))
+        );
+        if (this.selectedCelId) this.selectedCelIds.add(this.selectedCelId);
         this.selectedAssetId = state.selectedAssetId || null;
         this.selectedAssetFolderId = state.selectedAssetFolderId || null;
         this.selectedInternalLayerId = state.selectedInternalLayerId || null;
@@ -4905,7 +5093,7 @@ export class AnimationTablePopup {
             this.model.tracks.forEach(track => {
                 track.active = track.id === this.activeLaneId;
             });
-            this._activateClipEntry(selectedEntry, { saveCurrent: false });
+            this._activateClipEntry(selectedEntry, { saveCurrent: false, preserveMultiSelection: true });
         } else if (this.isLaneOnlySelected) {
             this._clearWorkingLayersForEmptyFrame();
         } else {
@@ -5421,8 +5609,86 @@ export class AnimationTablePopup {
         return { ok: true, clip, assetId: clip.assetId };
     }
 
+    _getSelectedCelIds() {
+        if (!(this.selectedCelIds instanceof Set)) {
+            this.selectedCelIds = new Set();
+        }
+        if (!this.selectedCelId) {
+            this.selectedCelIds.clear();
+            return this.selectedCelIds;
+        }
+        if (!this.selectedCelIds.has(this.selectedCelId)) {
+            this.selectedCelIds = new Set([this.selectedCelId]);
+        }
+        return this.selectedCelIds;
+    }
+
+    _setSelectedCelId(celId, options = {}) {
+        const nextCelId = celId || null;
+        if (options.preserveMultiSelection !== true) {
+            this.selectedCelIds.clear();
+        }
+        this.selectedCelId = nextCelId;
+        if (nextCelId) {
+            this.selectedCelIds.add(nextCelId);
+        }
+    }
+
+    _toggleCelMultiSelection(entry) {
+        if (!entry?.clip) return false;
+        const selectedCelIds = this._getSelectedCelIds();
+        const clipId = entry.clip.id;
+        const group = this.model.getClipGroupForClip?.(clipId) || null;
+        if (group) {
+            const groupClipIds = group.clipIds.filter(id => !!this.model.findClipEntry(id));
+            const isWholeGroupSelected = groupClipIds.every(id => selectedCelIds.has(id));
+            if (isWholeGroupSelected) {
+                groupClipIds.forEach(id => selectedCelIds.delete(id));
+                const nextClipId = [...selectedCelIds].at(-1) || null;
+                const nextEntry = nextClipId ? this.model.findClipEntry(nextClipId) : null;
+                if (nextEntry?.clip) return this._activateClipEntry(nextEntry, { preserveMultiSelection: true });
+                this._saveSelectedClipFromWorkingLayers();
+                this._setSelectedCelId(null);
+                this.selectedInternalLayerId = null;
+                this.isClipEditModeActive = false;
+                this._clearWorkingLayersForEmptyFrame();
+                return true;
+            }
+            groupClipIds.forEach(id => selectedCelIds.add(id));
+            return this._activateClipEntry(entry, { preserveMultiSelection: true, expandGroup: false });
+        }
+        if (!selectedCelIds.has(clipId)) {
+            return this._activateClipEntry(entry, { preserveMultiSelection: true });
+        }
+
+        selectedCelIds.delete(clipId);
+        if (this.selectedCelId !== clipId) return true;
+
+        const nextClipId = [...selectedCelIds].at(-1) || null;
+        const nextEntry = nextClipId ? this.model.findClipEntry(nextClipId) : null;
+        if (nextEntry?.clip) {
+            return this._activateClipEntry(nextEntry, { preserveMultiSelection: true });
+        }
+
+        this._saveSelectedClipFromWorkingLayers();
+        this._setSelectedCelId(null);
+        this.selectedInternalLayerId = null;
+        this.isClipEditModeActive = false;
+        this._clearWorkingLayersForEmptyFrame();
+        this._drawingPreviewCompositeKey = null;
+        this._animationPreviewKey = null;
+        return true;
+    }
+
     _activateClipEntry(entry, options = {}) {
         if (!entry?.clip) return false;
+        const group = options.expandGroup === false
+            ? null
+            : this.model.getClipGroupForClip?.(entry.clip.id);
+        if (group) {
+            this.selectedCelIds = new Set(group.clipIds.filter(clipId => !!this.model.findClipEntry(clipId)));
+            options = { ...options, preserveMultiSelection: true };
+        }
         this.isLaneOnlySelected = false;
         const changedClip = this.selectedCelId !== entry.clip.id;
         if (changedClip && (this._visibilityPreviewApplied || this.isDrawingPreviewSuspended)) {
@@ -5434,7 +5700,7 @@ export class AnimationTablePopup {
         if (changedClip && options.saveCurrent !== false) {
             this._saveSelectedClipFromWorkingLayers();
         }
-        this.selectedCelId = entry.clip.id;
+        this._setSelectedCelId(entry.clip.id, options);
         this.activeLaneId = entry.lane?.id || this.activeLaneId;
         const asset = entry.clip.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
         this.selectedAssetId = asset?.id || entry.clip.assetId || null;
@@ -5453,6 +5719,36 @@ export class AnimationTablePopup {
         return true;
     }
 
+    toggleSelectedClipGroup() {
+        if (!this.selectedCelId) return false;
+        const selectedCelIds = [...this._getSelectedCelIds()];
+        const activeGroup = this.model.getClipGroupForClip?.(this.selectedCelId) || null;
+        const beforeState = this._captureTimelineHistoryState();
+
+        if (activeGroup && activeGroup.clipIds.every(clipId => this.selectedCelIds.has(clipId))) {
+            const result = this.model.removeClipGroup(activeGroup.id);
+            if (!result.ok) return false;
+            this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-group-remove', {
+                type: 'caf-group-remove',
+                groupId: activeGroup.id,
+                clipIds: [...activeGroup.clipIds]
+            });
+            this.render();
+            return true;
+        }
+
+        const result = this.model.createClipGroup?.(selectedCelIds);
+        if (!result?.ok) return false;
+        this.selectedCelIds = new Set(result.group.clipIds);
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-group-create', {
+            type: 'caf-group-create',
+            groupId: result.group.id,
+            clipIds: [...result.group.clipIds]
+        });
+        this.render();
+        return true;
+    }
+
     _createNextClipAssetFolder() {
         const usedNumbers = new Set();
         this.model.clipAssetFolders.forEach(folder => {
@@ -5463,6 +5759,59 @@ export class AnimationTablePopup {
         while (usedNumbers.has(nextNumber)) nextNumber += 1;
         const result = this.model.createClipAssetFolder({ name: `CAF${nextNumber}` });
         return result.ok ? result.folder : null;
+    }
+
+    _createBlankClipAtLaneFrame(lane, frameIndex) {
+        if (!lane || lane.type === 'folder' || lane.isBackground || lane.getCelAtFrame(frameIndex)) return null;
+        const beforeState = this._captureTimelineHistoryState();
+        const size = this._getCanvasSnapshotSize();
+        const cafFolder = this._createNextClipAssetFolder();
+        const { asset, snapshot } = this.model.createBlankClipAsset({
+            width: size.width,
+            height: size.height,
+            name: `Asset for ${this.model.getLaneDisplayName?.(lane) || lane.name}`,
+            folderId: cafFolder?.id || null
+        });
+        const clip = lane.addCel({
+            assetId: asset.id,
+            startFrame: frameIndex,
+            duration: 1,
+            rasterSnapshot: this._createRasterSnapshotCompat(snapshot, {
+                drawingSnapshotId: snapshot.id,
+                includePixels: false
+            })
+        });
+        if (!clip) return null;
+        this._activateClipEntry({ lane, track: lane, clip }, { saveCurrent: false });
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-clip-create', {
+            type: 'caf-clip-create', clipId: clip.id, assetId: asset.id, laneId: lane.id, frameIndex
+        });
+        return clip;
+    }
+
+    moveTimelineFrameByDelta(delta) {
+        const current = this.model.playback.currentFrame;
+        const nextFrame = Math.max(0, Math.min(this.model.totalFrames - 1, current + delta));
+        if (nextFrame === current) return false;
+
+        if (this.isClipEditModeActive) this.exitClipEditMode();
+        this._saveSelectedClipFromWorkingLayers();
+        this.model.setCurrentFrame(nextFrame);
+        const selectedEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const lane = this.model.getLaneById(this.activeLaneId) || selectedEntry?.lane || null;
+        if (delta > 0 && lane && !lane.getCelAtFrame(nextFrame)) {
+            this._createBlankClipAtLaneFrame(lane, nextFrame);
+        } else {
+            this._syncWorkingLayersForCurrentFrame();
+        }
+        this.render();
+        this._scheduleLaneReferencePreviewUpdate();
+        this._requestLayerPanelSync();
+        this.eventBus?.emit('animation:frame-changed', {
+            frameIndex: this.model.playback.currentFrame,
+            direction: delta < 0 ? 'previous' : 'next'
+        });
+        return true;
     }
 
     _isRasterSnapshotBlank(snapshot) {
@@ -5833,7 +6182,23 @@ export class AnimationTablePopup {
         const baseIndex = currentIndex >= 0 ? currentIndex : fallbackIndex;
         const nextIndex = direction === 'up' ? baseIndex - 1 : baseIndex + 1;
         const nextLayer = layers[nextIndex];
-        if (!nextLayer || nextLayer.id === this.selectedInternalLayerId) return false;
+        if (!nextLayer || nextLayer.id === this.selectedInternalLayerId) {
+            // 端では、同じFrameにCAFがある隣Laneだけへ越境する。空Laneを新設・選択しない。
+            const currentEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+            const currentLaneId = currentEntry?.lane?.id || this.activeLaneId;
+            const lanes = this.model.tracks.filter(lane => lane.type !== 'folder' && !lane.isBackground);
+            const laneIndex = lanes.findIndex(lane => lane.id === currentLaneId);
+            const laneStep = direction === 'up' ? -1 : 1;
+            for (let index = laneIndex + laneStep; index >= 0 && index < lanes.length; index += laneStep) {
+                const clip = lanes[index].getCelAtFrame(this.model.playback.currentFrame);
+                if (!clip) continue;
+                this._activateClipEntry({ lane: lanes[index], track: lanes[index], clip });
+                this.render();
+                this._flushLayerPanelSync();
+                return true;
+            }
+            return false;
+        }
 
         this.selectedAssetId = asset.id;
         this.selectedAssetFolderId = asset.folderId || null;
@@ -6297,8 +6662,9 @@ export class AnimationTablePopup {
         const copyBtn = this.panel.querySelector('#anim-copy-btn');
         if (copyBtn) {
             copyBtn.disabled = !this.selectedCelId;
-            copyBtn.title = this.selectedCelId
-                ? '選択CAFをコピー (Ctrl+C)'
+            const selectedCount = this.selectedCelId ? this._getSelectedCelIds().size : 0;
+            copyBtn.title = selectedCount > 0
+                ? `${selectedCount > 1 ? `選択中の${selectedCount}件のCAF` : '選択CAF'}をコピー (Ctrl+C)`
                 : 'コピーするCAFを選択してください';
         }
 
@@ -6314,6 +6680,31 @@ export class AnimationTablePopup {
             pasteBtn.title = canPaste
                 ? '最新のCAF/選択範囲/レイヤー/フォルダを現在Frame/Laneへ貼り付け (Ctrl+V)'
                 : '貼り付け可能なコピー元または空きセルがありません';
+        }
+
+        const groupBtn = this.panel.querySelector('#anim-group-btn');
+        if (groupBtn) {
+            const selectedIds = this.selectedCelId ? [...this._getSelectedCelIds()] : [];
+            const activeGroup = this.selectedCelId
+                ? this.model.getClipGroupForClip?.(this.selectedCelId)
+                : null;
+            const canUngroup = !!activeGroup
+                && activeGroup.clipIds.every(clipId => this.selectedCelIds.has(clipId));
+            const eligibility = canUngroup
+                ? { ok: true }
+                : this.model.canCreateClipGroup?.(selectedIds) || { ok: false, reason: 'unavailable' };
+            groupBtn.hidden = selectedIds.length < 2 && !canUngroup;
+            groupBtn.disabled = !eligibility.ok;
+            groupBtn.classList.toggle('active', canUngroup);
+            const disabledTitles = {
+                'selection-too-small': '2件以上のCAFを選択してください',
+                'already-grouped': '既にCAF Groupへ含まれているCAFがあります',
+                'selection-not-contiguous': '隣接していないCAFはGroup化できません'
+            };
+            groupBtn.title = canUngroup
+                ? '選択中のCAF Groupを解除'
+                : (eligibility.ok ? '選択CAFをGroup化' : (disabledTitles[eligibility.reason] || 'この選択はGroup化できません'));
+            groupBtn.setAttribute('aria-label', canUngroup ? 'Ungroup selected CAFs' : 'Group selected CAFs');
         }
 
         const zoomOutBtn = this.panel.querySelector('#anim-zoom-out-btn');
@@ -6362,15 +6753,18 @@ export class AnimationTablePopup {
                 const includeTitle = isIncluded ? 'このLaneをSET再生対象から外す' : 'このLaneをSET再生対象に含める';
                 const includeBtn = (track.type === 'folder' || track.isBackground) ? '' :
                     `<button class="anim-lane-include-btn${includeActive}" data-lane-id="${track.id}" title="${includeTitle}">${isIncluded ? '✓' : ''}</button>`;
-
+                const laneVisible = this._isLaneVisible(track);
+                const visibilityTitle = laneVisible ? 'Laneを非表示にする' : 'Laneを表示する';
+                const visibilityBtn = `<button class="anim-lane-visibility-btn${laneVisible ? ' is-visible' : ''}" data-lane-id="${track.id}" title="${visibilityTitle}" aria-label="${visibilityTitle}" aria-pressed="${laneVisible ? 'true' : 'false'}">${laneVisible ? UI_ICONS.eye : UI_ICONS.eyeOff}</button>`;
                 const displayIndex = (track.type === 'folder' || track.isBackground) ? null : visibleLaneIndex++;
                 const displayName = this.model.getLaneDisplayName
                     ? this.model.getLaneDisplayName(track, displayIndex)
                     : (track.name || `Lane ${trackIndex + 1}`);
 
                 trackHtml += `
-                    <div class="anim-track-item${activeClass}${typeClass}" data-track-id="${track.id}">
+                    <div class="anim-track-item${activeClass}${typeClass}${laneVisible ? '' : ' is-hidden'}" data-track-id="${track.id}">
                         <span class="anim-track-name">${this._escapeHtml(displayName)}</span>
+                        ${visibilityBtn}
                         ${includeBtn}
                     </div>`;
             });
@@ -6383,6 +6777,7 @@ export class AnimationTablePopup {
             const showCurrentFrame = !this.isLaneOnlySelected;
             const inFrame = this.model.playback.inFrame;
             const outFrame = this.model.playback.outFrame;
+            const fps = Math.max(1, Math.round(Number(this.model.fps) || 8));
 
             let headerHtml = `<div class="anim-timeline-header">`;
             for (let i = 0; i < totalFrames; i++) {
@@ -6391,11 +6786,34 @@ export class AnimationTablePopup {
                 const isOutMarker = (outFrame === i) ? ' out-marker' : '';
                 const markerLabel = (inFrame === i && outFrame === i) ? 'IN/OUT' : ((inFrame === i) ? 'IN' : ((outFrame === i) ? 'OUT' : ''));
                 const markerBadge = markerLabel ? `<span class="anim-marker-badge">${markerLabel}</span>` : '';
-                headerHtml += `<div class="anim-frame-num${isCurrent}${isInMarker}${isOutMarker}" data-frame-index="${i}">${i + 1}${markerBadge}</div>`;
+                const secondBadge = i % fps === 0
+                    ? `<span class="anim-second-badge">${Math.floor(i / fps)}s</span>`
+                    : '';
+                headerHtml += `<div class="anim-frame-num${isCurrent}${isInMarker}${isOutMarker}" data-frame-index="${i}">${i + 1}${markerBadge}${secondBadge}</div>`;
             }
             headerHtml += `</div>`;
 
             let gridHtml = headerHtml;
+            const selectedCelIds = this._getSelectedCelIds();
+            const hasMultiSelection = selectedCelIds.size > 1;
+            const horizontalGroupClasses = new Map();
+            (this.model.clipGroups || []).forEach(group => {
+                const entries = group.clipIds.map(clipId => this.model.findClipEntry(clipId)).filter(Boolean);
+                if (entries.length < 2 || entries.some(entry => entry.lane.id !== entries[0].lane.id)) return;
+                entries.sort((a, b) => a.clip.startFrame - b.clip.startFrame);
+                const isContiguous = entries.every((entry, index) => {
+                    if (index === 0) return true;
+                    const previous = entries[index - 1].clip;
+                    return previous.startFrame + Math.max(1, previous.duration || 1) === entry.clip.startFrame;
+                });
+                if (!isContiguous) return;
+                entries.forEach((entry, index) => {
+                    const position = index === 0
+                        ? 'grouped-chain-start'
+                        : (index === entries.length - 1 ? 'grouped-chain-end' : 'grouped-chain-middle');
+                    horizontalGroupClasses.set(entry.clip.id, ` grouped-chain ${position}`);
+                });
+            });
             this.model.tracks.forEach(track => {
                 if (track.isBackground || track.type === 'folder') return;
                 const activeClass = (track.active || track.id === this.activeLaneId) ? ' active' : '';
@@ -6407,9 +6825,15 @@ export class AnimationTablePopup {
                     const isCurrent = (showCurrentFrame && i === currentFrame) ? ' current-col' : '';
                     const cel = track.getCelAtFrame(i);
                     const hasCelClass = cel ? ' has-cel' : '';
-                    const isSelected = cel && cel.id === this.selectedCelId;
-                    const selectedClass = isSelected ? ' selected' : '';
-                    const editingClass = (isSelected && this.isClipEditModeActive) ? ' editing' : '';
+                    const isSelected = cel && selectedCelIds.has(cel.id);
+                    const isPrimarySelected = cel && cel.id === this.selectedCelId;
+                    const selectedClass = (hasMultiSelection && isSelected) ? ' selected' : '';
+                    const primarySelectedClass = isPrimarySelected ? ' primary-selected' : '';
+                    const multiSelectedClass = (hasMultiSelection && isSelected && !isPrimarySelected) ? ' multi-selected' : '';
+                    const editingClass = (isPrimarySelected && this.isClipEditModeActive) ? ' editing' : '';
+                    const groupedClass = cel && this.model.getClipGroupForClip?.(cel.id)
+                        ? ` grouped${horizontalGroupClasses.get(cel.id) || ''}`
+                        : '';
 
                     const isShared = cel && cel.assetId && this.model.isAssetShared(cel.assetId);
                     const sharedClass = isShared ? ' shared-asset' : '';
@@ -6430,7 +6854,7 @@ export class AnimationTablePopup {
                     gridHtml += `<div class="anim-cell-slot${isCurrent}${hasCelClass}${selectedClass}" 
                                      data-track-id="${track.id}" 
                                      data-frame-index="${i}">
-                                     ${isStart ? `<div class="anim-cel-block${selectedClass}${editingClass}${hasSnapshotClass}${sharedClass}${durationClass}${retimingClass}" data-cel-id="${cel.id}">
+                                     ${isStart ? `<div class="anim-cel-block${selectedClass}${primarySelectedClass}${multiSelectedClass}${editingClass}${groupedClass}${hasSnapshotClass}${sharedClass}${durationClass}${retimingClass}" data-cel-id="${cel.id}">
                                          <div class="anim-cel-handle anim-cel-handle--left" data-cel-id="${cel.id}" data-edge="left"></div>
                                          <div class="anim-cel-handle anim-cel-handle--right" data-cel-id="${cel.id}" data-edge="right"></div>
                                          ${duration === 1 ? `<div class="anim-cel-resize-grip" aria-hidden="true">
@@ -6536,6 +6960,9 @@ export class AnimationTablePopup {
                         </button>
                         <button class="anim-tool-btn anim-paste-btn anim-icon-btn" id="anim-paste-btn" title="コピーした内容を貼り付け" aria-label="Paste copied clip">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                        </button>
+                        <button class="anim-tool-btn anim-group-btn anim-icon-btn" id="anim-group-btn" title="選択CAFをGroup化" aria-label="Group selected CAFs" hidden>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 6v13"/></svg>
                         </button>
                         <button class="anim-tool-btn anim-delete-btn anim-icon-btn" id="anim-delete-active-btn" title="選択CAFを削除 (Alt+Delete / Alt+Backspace)" aria-label="Delete selected CAF">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M9 11v6"/><path d="M15 11v6"/></svg>
@@ -6965,6 +7392,11 @@ export class AnimationTablePopup {
             pasteBtn.addEventListener('click', () => this.pasteBestClipboardAtCurrentCell());
         }
 
+        const groupBtn = this.panel.querySelector('#anim-group-btn');
+        if (groupBtn) {
+            groupBtn.addEventListener('click', () => this.toggleSelectedClipGroup());
+        }
+
         const deleteActiveBtn = this.panel.querySelector('#anim-delete-active-btn');
         if (deleteActiveBtn) {
             deleteActiveBtn.addEventListener('click', () => this.deleteActiveSelection());
@@ -7087,7 +7519,10 @@ export class AnimationTablePopup {
         const trackList = this.panel.querySelector('.anim-track-list');
         if (trackList) {
             trackList.addEventListener('click', (e) => {
-                if (this._timelineGestureMoved) return;
+                if (this._timelineGestureMoved || this._laneReorderMoved) {
+                    this._laneReorderMoved = false;
+                    return;
+                }
                 if (e.target.closest('.anim-lane-add-btn')) {
                     this.addIndependentLane();
                     e.stopPropagation();
@@ -7107,11 +7542,77 @@ export class AnimationTablePopup {
                     return;
                 }
 
+                const visibilityBtn = e.target.closest('.anim-lane-visibility-btn');
+                if (visibilityBtn) {
+                    this.toggleLaneVisibility(visibilityBtn.dataset.laneId);
+                    e.stopPropagation();
+                    return;
+                }
+
                 const laneItem = e.target.closest('.anim-track-item');
                 if (laneItem) {
                     this._selectLaneOnly(laneItem.dataset.trackId);
                     e.stopPropagation();
                 }
+            });
+
+            trackList.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                if (e.target.closest('button, input, label')) return;
+                const sourceItem = e.target.closest('.anim-track-item');
+                if (!sourceItem) return;
+
+                const gesture = {
+                    pointerId: e.pointerId,
+                    laneId: sourceItem.dataset.trackId,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    sourceItem,
+                    started: false,
+                    targetLaneId: null,
+                    placeAfter: false
+                };
+                this._laneReorderGesture = gesture;
+
+                const clearDropIndicators = () => {
+                    trackList.querySelectorAll('.is-lane-drag-source, .lane-drop-before, .lane-drop-after')
+                        .forEach(item => item.classList.remove('is-lane-drag-source', 'lane-drop-before', 'lane-drop-after'));
+                };
+                const onMove = (moveEvent) => {
+                    if (moveEvent.pointerId !== gesture.pointerId) return;
+                    const dx = moveEvent.clientX - gesture.startX;
+                    const dy = moveEvent.clientY - gesture.startY;
+                    if (!gesture.started && Math.hypot(dx, dy) < 5) return;
+                    gesture.started = true;
+                    gesture.sourceItem.classList.add('is-lane-drag-source');
+                    const hoveredItem = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('.anim-track-item');
+                    clearDropIndicators();
+                    gesture.sourceItem.classList.add('is-lane-drag-source');
+                    if (!hoveredItem || hoveredItem === gesture.sourceItem) {
+                        gesture.targetLaneId = null;
+                        return;
+                    }
+                    gesture.targetLaneId = hoveredItem.dataset.trackId;
+                    const hoveredRect = hoveredItem.getBoundingClientRect();
+                    gesture.placeAfter = moveEvent.clientY >= hoveredRect.top + hoveredRect.height / 2;
+                    hoveredItem.classList.add(gesture.placeAfter ? 'lane-drop-after' : 'lane-drop-before');
+                    moveEvent.preventDefault();
+                };
+                const onUp = (upEvent) => {
+                    if (upEvent.pointerId !== gesture.pointerId) return;
+                    document.removeEventListener('pointermove', onMove);
+                    document.removeEventListener('pointerup', onUp);
+                    clearDropIndicators();
+                    this._laneReorderGesture = null;
+                    if (!gesture.started) return;
+                    this._laneReorderMoved = true;
+                    if (gesture.targetLaneId) {
+                        this.reorderLaneTo(gesture.laneId, gesture.targetLaneId, gesture.placeAfter);
+                    }
+                    setTimeout(() => { this._laneReorderMoved = false; }, 0);
+                };
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
             });
 
         }
@@ -7124,6 +7625,13 @@ export class AnimationTablePopup {
             });
 
             timelineGrid.addEventListener('click', (e) => {
+                // Ctrl/Cmd+clickした既存CAFはpointerdownで一度だけ確定する。
+                // click側でも処理すると、修飾キー押しっぱなしの連続選択が二重反転する。
+                if (this._clipSelectionClickSuppressed) {
+                    this._clipSelectionClickSuppressed = false;
+                    return;
+                }
+
                 // ドラッグ・伸縮・移動中なら無視
                 if (this._dragMoved || this._retimingMoved || this._clipMoveMoved || this._timelineGestureMoved) {
                     this._dragMoved = false;
@@ -7160,11 +7668,10 @@ export class AnimationTablePopup {
 
                 const existingCel = track.getCelAtFrame(frameIndex);
 
-                // Ctrl+Click でClipを作成/削除する。通常クリックは選択/Frame移動のみ。
+                // Ctrl/Cmd+clickは既存CAFを複数選択し、空セルには新規Clipを作成する。
                 if (e.ctrlKey || e.metaKey) {
                     if (existingCel) {
-                        this._activateClipEntry({ lane: track, track, clip: existingCel }, { saveCurrent: true });
-                        this.deleteSelectedClip();
+                        this._toggleCelMultiSelection({ lane: track, track, clip: existingCel });
                     } else {
                         this._saveSelectedClipFromWorkingLayers();
                         const beforeState = this._captureTimelineHistoryState();
@@ -7217,13 +7724,31 @@ export class AnimationTablePopup {
             // ポインター操作：リタイミング または クリップ移動
             timelineGrid.addEventListener('pointerdown', (e) => {
                 if (e.button !== undefined && e.button !== 0) return;
+                // 前回clickが発火しなかった場合も、次の操作へ抑止を持ち越さない。
+                this._clipSelectionClickSuppressed = false;
+                // Ctrl/Cmd選択はハンドル判定より先に扱う。細いCAFでは中央付近にも
+                // 伸縮ハンドルが重なるため、後段に置くとクリック位置で判定が揺れる。
+                const selectionBlock = (e.ctrlKey || e.metaKey)
+                    ? e.target.closest('.anim-cel-block')
+                    : null;
+                if (selectionBlock) {
+                    const entry = this.model.findClipEntry(selectionBlock.dataset.celId);
+                    if (!entry) return;
+                    this._toggleCelMultiSelection(entry);
+                    this._clipSelectionClickSuppressed = true;
+                    this.render();
+                    this._requestLayerPanelSync();
+                    e.stopPropagation();
+                    e.preventDefault();
+                    return;
+                }
                 // 1. リタイミング（左右端ハンドル）
                 const handle = e.target.closest('.anim-cel-handle');
                 if (handle) {
                     const celId = handle.dataset.celId;
                     const entry = this.model.findClipEntry(celId);
 
-                    let shouldStartRetiming = !!entry;
+                    let shouldStartRetiming = !!entry && !this.model.getClipGroupForClip?.(celId);
                     if (shouldStartRetiming && e.pointerType === 'pen' && (entry.clip?.duration || 1) <= 1) {
                         const blockRect = handle.closest('.anim-cel-block')?.getBoundingClientRect();
                         const edge = handle.dataset.edge === 'left' ? 'left' : 'right';
@@ -7273,6 +7798,27 @@ export class AnimationTablePopup {
                     const entry = this.model.findClipEntry(clipId);
                     if (!entry) return;
 
+                    const clipGroup = this.model.getClipGroupForClip?.(clipId) || null;
+                    if (clipGroup && !clipGroup.clipIds.every(id => this._getSelectedCelIds().has(id))) {
+                        this._activateClipEntry(entry);
+                    }
+                    const selectedCelIds = this._getSelectedCelIds();
+                    const isGroupMove = selectedCelIds.size > 1 && selectedCelIds.has(clipId);
+                    const movableLanes = (this.model.tracks || []).filter(lane => {
+                        return lane && lane.type !== 'folder' && lane.isBackground !== true;
+                    });
+                    const movingEntries = isGroupMove
+                        ? [...selectedCelIds].map(id => this.model.findClipEntry(id)).filter(Boolean)
+                        : [entry];
+                    const moveItems = movingEntries.map(item => ({
+                        clipId: item.clip.id,
+                        sourceLaneId: item.lane.id,
+                        sourceLaneIndex: movableLanes.findIndex(lane => lane.id === item.lane.id),
+                        sourceStartFrame: item.clip.startFrame
+                    }));
+                    const anchorLaneIndex = movableLanes.findIndex(lane => lane.id === entry.lane.id);
+                    if (anchorLaneIndex < 0 || moveItems.some(item => item.sourceLaneIndex < 0)) return;
+
                     this._saveSelectedClipFromWorkingLayers();
                     this._isClipMoving = true;
                     this._clipMoveMoved = false;
@@ -7282,12 +7828,18 @@ export class AnimationTablePopup {
                         startY: e.clientY,
                         sourceLaneId: entry.lane.id,
                         sourceStartFrame: entry.clip.startFrame,
+                        sourceLaneIndex: anchorLaneIndex,
+                        movableLaneIds: movableLanes.map(lane => lane.id),
+                        moveItems,
+                        isGroupMove,
                         beforeState: this._captureTimelineHistoryState()
                     };
                     
-                    this._activateClipEntry(entry);
+                    this._activateClipEntry(entry, { preserveMultiSelection: isGroupMove });
                     // ドラッグ中は少し透明にするなどのフィードバック
-                    block.classList.add('moving');
+                    moveItems.forEach(item => {
+                        this.panel.querySelector(`.anim-cel-block[data-cel-id="${item.clipId}"]`)?.classList.add('moving');
+                    });
 
                     document.addEventListener('pointermove', this._onClipMoveMouseMove, { passive: false });
                     document.addEventListener('pointerup', this._onClipMoveMouseUp);
@@ -7513,8 +8065,9 @@ export class AnimationTablePopup {
             if (!this._clipMoveMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
                 this._clipMoveMoved = true;
                 // 移動開始のフィードバック
-                const block = this.panel.querySelector(`.anim-cel-block[data-cel-id="${this._clipMoveData.clipId}"]`);
-                if (block) block.classList.add('moving');
+                this._clipMoveData.moveItems.forEach(item => {
+                    this.panel.querySelector(`.anim-cel-block[data-cel-id="${item.clipId}"]`)?.classList.add('moving');
+                });
             }
 
             this._updateClipMovePreview(e.clientX, e.clientY);
@@ -7530,28 +8083,58 @@ export class AnimationTablePopup {
                 if (slot) {
                     const targetLaneId = slot.dataset.trackId;
                     const targetFrame = parseInt(slot.dataset.frameIndex, 10);
-                    
-                    const movedToNewSlot = targetLaneId !== this._clipMoveData.sourceLaneId
-                        || targetFrame !== this._clipMoveData.sourceStartFrame;
-                    const result = this.model.moveClip(this._clipMoveData.clipId, targetLaneId, targetFrame);
+                    const movePlan = this._getClipMovePlan(targetLaneId, targetFrame);
+                    const movedToNewSlot = movePlan.ok && movePlan.moves.some(move => {
+                        const source = this._clipMoveData.moveItems.find(item => item.clipId === move.clipId);
+                        return source && (
+                            move.targetLaneId !== source.sourceLaneId
+                            || move.targetStartFrame !== source.sourceStartFrame
+                        );
+                    });
+                    const result = movePlan.ok
+                        ? (this._clipMoveData.isGroupMove
+                            ? this.model.moveClips(movePlan.moves)
+                            : this.model.moveClip(this._clipMoveData.clipId, targetLaneId, targetFrame))
+                        : { ok: false, reason: movePlan.reason || 'invalid-target' };
                     if (result.ok) {
-                        this.selectedCelId = result.clip.id;
-                        this.activeLaneId = result.lane.id;
-                        this.model.setCurrentFrame(result.clip.startFrame);
+                        const anchorEntry = this.model.findClipEntry(this._clipMoveData.clipId);
+                        if (!anchorEntry) return;
+                        this.selectedCelId = anchorEntry.clip.id;
+                        this.activeLaneId = anchorEntry.lane.id;
+                        this.model.setCurrentFrame(anchorEntry.clip.startFrame);
                         this.model.tracks.forEach(track => {
-                            track.active = track.id === result.lane.id;
+                            track.active = track.id === anchorEntry.lane.id;
                         });
-                        this._syncClipAssetToWorkingLayers(result.clip, { forceRestore: true });
+                        this._syncClipAssetToWorkingLayers(anchorEntry.clip, { forceRestore: true });
                         if (movedToNewSlot) {
-                            this._recordTimelineHistory(this._clipMoveData.beforeState, this._captureTimelineHistoryState(), 'caf-clip-move', {
-                                type: 'caf-clip-move',
-                                clipId: result.clip.id,
-                                assetId: result.clip.assetId || null,
-                                fromLaneId: this._clipMoveData.sourceLaneId,
-                                toLaneId: result.lane.id,
-                                fromFrame: this._clipMoveData.sourceStartFrame,
-                                toFrame: result.clip.startFrame
+                            const historyMoves = movePlan.moves.map(move => {
+                                const source = this._clipMoveData.moveItems.find(item => item.clipId === move.clipId);
+                                return {
+                                    clipId: move.clipId,
+                                    fromLaneId: source?.sourceLaneId || null,
+                                    toLaneId: move.targetLaneId,
+                                    fromFrame: source?.sourceStartFrame ?? null,
+                                    toFrame: move.targetStartFrame
+                                };
                             });
+                            const isGroupMove = this._clipMoveData.isGroupMove;
+                            this._recordTimelineHistory(
+                                this._clipMoveData.beforeState,
+                                this._captureTimelineHistoryState(),
+                                isGroupMove ? 'caf-clips-move' : 'caf-clip-move',
+                                isGroupMove
+                                    ? {
+                                        type: 'caf-clips-move',
+                                        clipIds: historyMoves.map(move => move.clipId),
+                                        moves: historyMoves
+                                    }
+                                    : {
+                                        type: 'caf-clip-move',
+                                        clipId: anchorEntry.clip.id,
+                                        assetId: anchorEntry.clip.assetId || null,
+                                        ...historyMoves[0]
+                                    }
+                            );
                         }
                     }
                 }
@@ -7595,6 +8178,7 @@ export class AnimationTablePopup {
 
     _adjustSelectedCelDuration(delta) {
         if (!this.selectedCelId) return;
+        if (this.model.getClipGroupForClip?.(this.selectedCelId)) return;
 
         const entry = this.model.findClipEntry(this.selectedCelId);
         if (entry) {
@@ -7635,6 +8219,7 @@ export class AnimationTablePopup {
 
     _canAdjustSelectedCelDuration(delta) {
         if (!this.selectedCelId) return false;
+        if (this.model.getClipGroupForClip?.(this.selectedCelId)) return false;
         const entry = this.model.findClipEntry(this.selectedCelId);
         if (!entry?.lane || !entry.clip) return false;
 
@@ -8737,6 +9322,20 @@ export class AnimationTablePopup {
                 flex: 1;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                cursor: grab;
+            }
+
+            .anim-track-item.is-lane-drag-source {
+                opacity: 0.5;
+                cursor: grabbing;
+            }
+
+            .anim-track-item.lane-drop-before {
+                box-shadow: inset 0 3px 0 #ff6600;
+            }
+
+            .anim-track-item.lane-drop-after {
+                box-shadow: inset 0 -3px 0 #ff6600;
             }
 
             .anim-track-name-input {
@@ -8791,6 +9390,25 @@ export class AnimationTablePopup {
                 font-weight: bold;
                 opacity: 1;
             }
+
+            .anim-lane-visibility-btn {
+                width: 18px;
+                height: 18px;
+                padding: 2px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border: 1px solid rgba(128, 0, 0, 0.34);
+                border-radius: 4px;
+                background: rgba(255, 255, 238, 0.72);
+                color: var(--futaba-maroon);
+                cursor: pointer;
+                flex-shrink: 0;
+            }
+
+            .anim-lane-visibility-btn:hover { background: rgba(212, 168, 160, 0.6); }
+            .anim-lane-visibility-btn:not(.is-visible), .anim-track-item.is-hidden .anim-track-name { opacity: 0.46; }
+            .anim-lane-visibility-btn svg { width: 12px; height: 12px; }
 
             .anim-track-item.is-folder {
                 background: rgba(128, 0, 0, 0.05);
@@ -8895,6 +9513,23 @@ export class AnimationTablePopup {
                 color: var(--futaba-background);
                 background: rgba(128, 0, 0, 0.48);
                 border-color: rgba(255, 255, 238, 0.42);
+            }
+
+            .anim-second-badge {
+                position: absolute;
+                left: 1px;
+                bottom: 1px;
+                max-width: calc(var(--anim-cell-width) - 2px);
+                overflow: hidden;
+                font-size: 6px;
+                line-height: 1;
+                color: var(--text-secondary);
+                opacity: 0.8;
+                pointer-events: none;
+            }
+
+            .anim-frame-num.current .anim-second-badge {
+                color: var(--futaba-background);
             }
 
             .anim-timeline-row {
@@ -9162,6 +9797,70 @@ export class AnimationTablePopup {
                 border: 2px solid white;
             }
 
+            .anim-cel-block.grouped {
+                outline: 1px dashed var(--futaba-light-maroon);
+                outline-offset: 1px;
+            }
+
+            .anim-cel-block.grouped .anim-cel-handle {
+                pointer-events: none;
+            }
+
+            .anim-cel-block.grouped .anim-cel-resize-grip {
+                display: none;
+            }
+
+            .anim-cel-block.grouped-chain {
+                outline: none;
+            }
+
+            .anim-cel-block.grouped-chain::after {
+                content: '';
+                position: absolute;
+                top: -3px;
+                bottom: -3px;
+                left: -5px;
+                right: -5px;
+                border-top: 1px dashed var(--futaba-light-maroon);
+                border-bottom: 1px dashed var(--futaba-light-maroon);
+                box-sizing: border-box;
+                pointer-events: none;
+                z-index: 8;
+            }
+
+            .anim-cel-block.grouped-chain-start::after {
+                left: -3px;
+                border-left: 1px dashed var(--futaba-light-maroon);
+                border-radius: 6px 0 0 6px;
+            }
+
+            .anim-cel-block.grouped-chain-end::after {
+                right: -3px;
+                border-right: 1px dashed var(--futaba-light-maroon);
+                border-radius: 0 6px 6px 0;
+            }
+
+            .anim-cel-block.grouped.selected {
+                outline-color: var(--futaba-background);
+            }
+
+            .anim-cel-block.grouped-chain.selected::after {
+                border-color: var(--futaba-background);
+            }
+
+            .anim-cel-block.multi-selected {
+                background: var(--futaba-light-medium);
+                border-color: var(--futaba-light-maroon);
+                box-shadow: 0 0 0 1px var(--futaba-light-maroon);
+            }
+
+            .anim-cel-block.primary-selected {
+                z-index: 4;
+                box-shadow:
+                    0 0 0 2px var(--futaba-background),
+                    0 0 0 4px var(--futaba-maroon);
+            }
+
             .anim-cel-block.editing {
                 background: #00e5ff !important;
                 border: 2px solid white;
@@ -9174,8 +9873,13 @@ export class AnimationTablePopup {
             }
 
             .anim-timeline-row.active .anim-cel-block.selected {
-                background: #ff8c42;
-                border-color: white;
+                background: var(--futaba-medium);
+                border-color: var(--futaba-background);
+            }
+
+            .anim-timeline-row.active .anim-cel-block.multi-selected {
+                background: var(--futaba-medium);
+                border-color: var(--futaba-light-maroon);
             }
         `;
         document.head.appendChild(style);
@@ -9261,13 +9965,46 @@ export class AnimationTablePopup {
         this._clipMovePreviewSlot = null;
     }
 
+    _getClipMovePlan(targetLaneId, targetFrame) {
+        const data = this._clipMoveData;
+        if (!data || !Number.isInteger(targetFrame)) {
+            return { ok: false, reason: 'invalid-target' };
+        }
+
+        const targetLaneIndex = data.movableLaneIds.indexOf(targetLaneId);
+        if (targetLaneIndex < 0) return { ok: false, reason: 'invalid-lane' };
+
+        const laneDelta = targetLaneIndex - data.sourceLaneIndex;
+        const frameDelta = targetFrame - data.sourceStartFrame;
+        const moves = data.moveItems.map(item => {
+            const nextLaneIndex = item.sourceLaneIndex + laneDelta;
+            return {
+                clipId: item.clipId,
+                targetLaneId: data.movableLaneIds[nextLaneIndex] || null,
+                targetStartFrame: item.sourceStartFrame + frameDelta
+            };
+        });
+        if (moves.some(move => !move.targetLaneId)) {
+            return { ok: false, reason: 'lane-out-of-range', moves };
+        }
+
+        const check = data.isGroupMove
+            ? this.model.canMoveClips(moves)
+            : this.model.canMoveClip(data.clipId, targetLaneId, targetFrame);
+        return check.ok ? { ok: true, moves, check } : { ...check, moves };
+    }
+
     _getClipMoveTargetSlot(clientX, clientY) {
         if (!this._clipMoveData || !this.panel) return null;
-        const movingBlock = this.panel?.querySelector(`.anim-cel-block[data-cel-id="${this._clipMoveData.clipId}"]`);
-        const previousPointerEvents = movingBlock?.style.pointerEvents;
-        if (movingBlock) movingBlock.style.pointerEvents = 'none';
+        const movingBlocks = (this._clipMoveData.moveItems || [])
+            .map(item => this.panel.querySelector(`.anim-cel-block[data-cel-id="${item.clipId}"]`))
+            .filter(Boolean);
+        const previousPointerEvents = movingBlocks.map(block => block.style.pointerEvents);
+        movingBlocks.forEach(block => { block.style.pointerEvents = 'none'; });
         const targetEl = document.elementFromPoint(clientX, clientY);
-        if (movingBlock) movingBlock.style.pointerEvents = previousPointerEvents || '';
+        movingBlocks.forEach((block, index) => {
+            block.style.pointerEvents = previousPointerEvents[index] || '';
+        });
 
         const grid = this.panel.querySelector('.anim-timeline-grid');
         if (!grid) return null;
@@ -9298,8 +10035,7 @@ export class AnimationTablePopup {
 
         const targetLaneId = slot.dataset.trackId;
         const targetFrame = parseInt(slot.dataset.frameIndex, 10);
-        const canMove = Number.isInteger(targetFrame)
-            && this.model.canMoveClip(this._clipMoveData.clipId, targetLaneId, targetFrame).ok;
+        const canMove = this._getClipMovePlan(targetLaneId, targetFrame).ok;
         slot.classList.add(canMove ? 'move-target' : 'move-target-blocked');
         this._clipMovePreviewSlot = slot;
     }
@@ -9442,6 +10178,7 @@ export class AnimationTablePopup {
 
         // 自動キャプチャ
         this.eventBus.on('drawing:stroke-started', (data = {}) => {
+            if (this.isPlaying) this.stop();
             this._handleDrawingStarted(data);
         });
         this.eventBus.on('drawing:stroke-completed', (data = {}) => {
@@ -9462,7 +10199,8 @@ export class AnimationTablePopup {
 
         // キーボードショートカット
         document.addEventListener('keydown', (e) => {
-            if (!this.isVisible) return;
+            const hasAnimationContext = (this.model.tracks?.length || 0) > 0 || (this.model.clipAssets?.length || 0) > 0;
+            if (!this.isVisible && !hasAnimationContext) return;
             
             // 入力欄編集中は無視
             const isInput = e.target.tagName === 'INPUT' ||
@@ -9483,6 +10221,23 @@ export class AnimationTablePopup {
                 this.deleteActiveSelection();
                 e.preventDefault();
                 e.stopImmediatePropagation();
+            } else if (!this.isVisible) {
+                // 閉TableはCAF内部Layerを上下で選択し、左右だけTimelineへ委譲する。
+                if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'ArrowUp') {
+                    this.selectAdjacentInternalLayerByDirection('up');
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                } else if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'ArrowDown') {
+                    this.selectAdjacentInternalLayerByDirection('down');
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                } else if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'ArrowLeft') {
+                    this.moveTimelineFrameByDelta(-1);
+                    e.preventDefault();
+                } else if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'ArrowRight') {
+                    this.moveTimelineFrameByDelta(1);
+                    e.preventDefault();
+                }
             } else if (e.altKey && e.key === 'ArrowUp') {
                 this._moveActiveLaneBy(-1);
                 e.preventDefault();
@@ -9498,34 +10253,10 @@ export class AnimationTablePopup {
                 e.preventDefault();
                 e.stopImmediatePropagation();
             } else if (e.key === 'ArrowLeft') {
-                const current = this.model.playback.currentFrame;
-                if (current > 0) {
-                    if (this.isClipEditModeActive) this.exitClipEditMode();
-                    this._saveSelectedClipFromWorkingLayers();
-                    this.model.setCurrentFrame(current - 1);
-                    this._syncWorkingLayersForCurrentFrame();
-                    this.render();
-                    if (this.eventBus) {
-                        this.eventBus.emit('animation:frame-changed', {
-                            frameIndex: this.model.playback.currentFrame
-                        });
-                    }
-                }
+                this.moveTimelineFrameByDelta(-1);
                 e.preventDefault();
             } else if (e.key === 'ArrowRight') {
-                const current = this.model.playback.currentFrame;
-                if (current < this.model.totalFrames - 1) {
-                    if (this.isClipEditModeActive) this.exitClipEditMode();
-                    this._saveSelectedClipFromWorkingLayers();
-                    this.model.setCurrentFrame(current + 1);
-                    this._syncWorkingLayersForCurrentFrame();
-                    this.render();
-                    if (this.eventBus) {
-                        this.eventBus.emit('animation:frame-changed', {
-                            frameIndex: this.model.playback.currentFrame
-                        });
-                    }
-                }
+                this.moveTimelineFrameByDelta(1);
                 e.preventDefault();
             }
         });

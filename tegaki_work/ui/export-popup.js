@@ -164,6 +164,11 @@ export class ExportPopup {
     
     selectFormat(format) {
         this.selectedFormat = format;
+        // PSDを開く時は、選択済みCAFがあれば誤解の少ないCAF出力を初期選択にする。
+        // 通常Layerへ切替えた後は selectPsdScope() がその選択を保持する。
+        if (format === 'psd' && this.getActiveCafForExport()) {
+            this.psdScope = 'active-caf';
+        }
         
         const formatBtns = this.popup.querySelectorAll('.format-btn');
         formatBtns.forEach(btn => {
