@@ -1900,7 +1900,11 @@ export class AnimationTablePopup {
         }
 
         const oldChildren = targetContainer.removeChildren();
-        const newChildren = stagingContainer.removeChildren();
+        // PixiJS v8 の removeChildren() は末尾から削除した配列を返す。
+        // 戻り値をそのまま再追加すると、stagingで正しく組んだLane順が反転するため、
+        // 削除前のchildren順を正本として移す。
+        const newChildren = stagingContainer.children.slice();
+        stagingContainer.removeChildren();
         newChildren.forEach(child => targetContainer.addChild(child));
         this._destroyPreviewChildren(oldChildren);
         try {
