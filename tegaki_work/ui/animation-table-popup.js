@@ -527,7 +527,9 @@ export class AnimationTablePopup {
         const filterIds = this._getPreviewLaneFilterIds();
 
         const selectedEntry = this._getSelectedEntryForPreview(currentFrame);
-        const showSelectedWorkingLayer = !!selectedEntry;
+        // 非描画PREVIEWは全CAFをdisplay-only snapshotで合成する。
+        // 選択CAFの実working Layerはstroke中だけ使い、セル選択時の可視状態ガチャを避ける。
+        const showSelectedWorkingLayer = false;
         const selectedWorkingLayerIds = showSelectedWorkingLayer && selectedEntry?.clip?.assetId
             ? this._getWorkingLayerIdsForClipAsset(selectedEntry.clip.assetId)
             : null;
@@ -546,9 +548,6 @@ export class AnimationTablePopup {
             this._hideTimelineLayersForPreview(layers, {
                 preserveWorkingLayerIds: selectedWorkingLayerIds
             });
-            if (showSelectedWorkingLayer) {
-                this._showSelectedClipWorkingLayers();
-            }
             return;
         }
 
@@ -585,9 +584,6 @@ export class AnimationTablePopup {
         this._hideTimelineLayersForPreview(layers, {
             preserveWorkingLayerIds: selectedWorkingLayerIds
         });
-        if (showSelectedWorkingLayer) {
-            this._showSelectedClipWorkingLayers();
-        }
         this._animationPreviewMode = 'preview';
         this._animationPreviewKey = previewKey;
         this._drawingPreviewCompositeKey = null;
@@ -606,20 +602,13 @@ export class AnimationTablePopup {
             return;
         }
         const filterIds = this._getPreviewLaneFilterIds();
-        const selectedWorkingLayerIds = selectedEntry.clip.assetId
-            ? this._getWorkingLayerIdsForClipAsset(selectedEntry.clip.assetId)
-            : null;
-        const drawingPreviewKey = this._buildDrawingPreviewCompositeKey(currentFrame, selectedEntry, filterIds);
-
-        if (this._drawingPreviewCompositeKey === drawingPreviewKey) {
-            this._showSelectedClipWorkingLayers();
-            this._visibilityPreviewApplied = true;
-            return;
-        }
 
         this._ensurePreviewContainer();
         const staging = this._createAnimationPreviewStagingContainers();
 
+        // 描画中はPhase5m同様、毎回実Layerを隠して単一previewを組み直す。
+        // key再利用や選択working Layer温存が入ると、stroke開始時の可視状態が
+        // 当たり/外れとして固定されるため、この経路だけは単純化する。
         if (this.isOnionSkinActive && !this.isPlaying) {
             this._renderOnionSkins(currentFrame, layers, {
                 filterIds: this._getTimelineOnionLaneFilterIds(),
@@ -627,6 +616,9 @@ export class AnimationTablePopup {
                 previewContainer: staging.front
             });
         }
+        // 選択Laneより下はback、上はfrontへ分け、実working Layerを
+        // Timeline UI上のLane順へ挟む。preview container自体の安定順序は
+        // _ensurePreviewContainer() が保証するため、stroke契約は変えない。
         this._renderFrameCompositeAroundSelectedClip(currentFrame, layers, selectedEntry, {
             filterIds,
             excludeClipIds: new Set([this.selectedCelId]),
@@ -636,11 +628,9 @@ export class AnimationTablePopup {
         this._replacePreviewContainerChildren(this.animationPreviewBackContainer, staging.back);
         this._replacePreviewContainerChildren(this.animationPreviewContainer, staging.front);
 
-        this._hideTimelineLayersForPreview(layers, {
-            preserveWorkingLayerIds: selectedWorkingLayerIds
-        });
+        this._hideTimelineLayersForPreview(layers);
         this._showSelectedClipWorkingLayers();
-        this._drawingPreviewCompositeKey = drawingPreviewKey;
+        this._drawingPreviewCompositeKey = null;
         this._visibilityPreviewApplied = true;
     }
 
@@ -1654,41 +1644,36 @@ export class AnimationTablePopup {
             this.animationPreviewContainer.label = 'animation_preview_front_container';
             this.animationPreviewContainer.eventMode = 'none';
         }
-        const ensureCanvasChild = (child) => {
-            if (child.parent !== canvasContainer) {
+        const previewContainers = [
+            this.animationPreviewBackgroundContainer,
+            this.animationPreviewBackContainer,
+            this.animationPreviewContainer
+        ];
+        const detachPreviewContainers = () => {
+            previewContainers.forEach(child => {
                 if (child.parent) {
                     child.parent.removeChild(child);
                 }
-                canvasContainer.addChild(child);
-            }
-        };
-        const moveBefore = (child, reference) => {
-            if (child.parent !== canvasContainer || reference.parent !== canvasContainer) return;
-            const refIndex = canvasContainer.getChildIndex(reference);
-            canvasContainer.setChildIndex(child, Math.max(0, refIndex));
-        };
-        const moveAfter = (child, reference) => {
-            if (child.parent !== canvasContainer || reference.parent !== canvasContainer) return;
-            const refIndex = canvasContainer.getChildIndex(reference);
-            canvasContainer.setChildIndex(child, Math.min(refIndex + 1, canvasContainer.children.length - 1));
+            });
         };
 
-        ensureCanvasChild(this.animationPreviewBackgroundContainer);
-        ensureCanvasChild(this.animationPreviewBackContainer);
-        ensureCanvasChild(this.animationPreviewContainer);
+        // Pixi setChildIndex は同じ親のchildを一度抜いて指定indexへ挿すため、
+        // 「currentの前へ移動」を連続すると呼び出しごとに順序が反転し得る。
+        // preview群を一度外してから currentFrameContainer を基準に挿し直し、
+        // background -> back -> current -> front を冪等に保つ。
+        detachPreviewContainers();
 
         if (currentFrameContainer.parent === canvasContainer) {
-            moveBefore(this.animationPreviewBackgroundContainer, currentFrameContainer);
-            moveBefore(this.animationPreviewBackContainer, currentFrameContainer);
-            const backgroundIndex = canvasContainer.getChildIndex(this.animationPreviewBackgroundContainer);
-            const backIndex = canvasContainer.getChildIndex(this.animationPreviewBackContainer);
-            if (backIndex < backgroundIndex) {
-                canvasContainer.setChildIndex(
-                    this.animationPreviewBackContainer,
-                    Math.min(backgroundIndex + 1, canvasContainer.children.length - 1)
-                );
-            }
-            moveAfter(this.animationPreviewContainer, currentFrameContainer);
+            const currentIndex = canvasContainer.getChildIndex(currentFrameContainer);
+            canvasContainer.addChildAt(this.animationPreviewBackgroundContainer, currentIndex);
+            canvasContainer.addChildAt(this.animationPreviewBackContainer, currentIndex + 1);
+            const updatedCurrentIndex = canvasContainer.getChildIndex(currentFrameContainer);
+            canvasContainer.addChildAt(
+                this.animationPreviewContainer,
+                Math.min(updatedCurrentIndex + 1, canvasContainer.children.length)
+            );
+        } else {
+            previewContainers.forEach(child => canvasContainer.addChild(child));
         }
     }
 
@@ -2300,6 +2285,7 @@ export class AnimationTablePopup {
         this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
         this.isDrawingPreviewSuspended = false;
         this._drawingPreviewCompositeKey = null;
+        this._animationPreviewKey = null;
         this.render();
         this._scheduleLaneReferencePreviewUpdate();
         this._requestLayerPanelSync();
@@ -5462,6 +5448,8 @@ export class AnimationTablePopup {
         this._syncClipAssetToWorkingLayers(entry.clip, {
             forceRestore: changedClip || options.forceRestore === true
         });
+        this._drawingPreviewCompositeKey = null;
+        this._animationPreviewKey = null;
         return true;
     }
 
@@ -6017,13 +6005,16 @@ export class AnimationTablePopup {
         const clip = lane?.getCelAtFrame ? lane.getCelAtFrame(frameIndex) : null;
 
         if (clip) {
+            const changedClip = this.selectedCelId !== clip.id;
             this.isLaneOnlySelected = false;
             this.selectedCelId = clip.id;
             this.selectedAssetId = clip.assetId || null;
             const asset = clip.assetId ? this.model.getClipAsset(clip.assetId) : null;
             this.selectedAssetFolderId = asset?.folderId || null;
             this.selectedInternalLayerId = null;
-            this._syncClipAssetToWorkingLayers(clip);
+            this._syncClipAssetToWorkingLayers(clip, { forceRestore: changedClip });
+            this._drawingPreviewCompositeKey = null;
+            this._animationPreviewKey = null;
             return true;
         }
 
@@ -6032,6 +6023,8 @@ export class AnimationTablePopup {
         this.selectedAssetId = null;
         this.selectedInternalLayerId = null;
         this._clearWorkingLayersForEmptyFrame();
+        this._drawingPreviewCompositeKey = null;
+        this._animationPreviewKey = null;
         return false;
     }
 

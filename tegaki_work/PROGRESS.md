@@ -73,8 +73,8 @@ Phase 5qのAnimation Tableを閉じた時のLane表示モードも完了。
 - PREVIEW ONからOFFへ切り替える時は実Layer visibilityを即時復元してからTimeline onion only表示へ入る。Timeline onion色は過去Frameを赤系、未来Frameを青系の標準ghost色へ戻す。
 - Animation Table preview / Timeline onion onlyは表示modeと対象CAF構成のkeyを保持し、セルクリックなどで同じ表示内容のままならpreview containerを消して作り直さない。Lane onion同様にdisplay-only overlayとして維持し、正本Layerとして実体化しない。
 - Animation Table preview再構築は実表示containerを先に空にせず、非表示staging containerへ複数CAFのpreviewを組み立ててからfront / backのchildrenを差し替える。複数CAF時のclear -> 順次addによる点滅を避ける。
-- Lane表示順はTimeline UIの上にあるLaneほど前面とする。PREVIEW中に選択CAFのworking Layerを表示する場合も、選択Laneより下のLaneはback preview、上のLaneはfront previewへ分け、active Laneだから前面へ出る状態にしない。
-- Animation Table PREVIEW ONでは、非描画時もstroke中も選択CAFを本物のanimation working Layerとして表示し、他CAFをsnapshot previewへ回す。選択CAFの上下Laneをfront / backへ分割し、選択CAF working Layerを正しいLane順の中間へ置く。
+- Lane表示順はTimeline UIの上にあるLaneほど前面とする。ただしstroke中だけはPhase5m寄せの安定表示を優先し、他CAF / Timeline onionを単一previewへ回して、選択CAFのanimation working Layerを表示する。
+- Animation Table PREVIEW ONでは、非描画時は全CAFをsnapshot合成表示、stroke中は毎回実Layerを隠して他CAF / onionを単一snapshot previewへ合成し、選択CAFだけを本物のanimation working Layerとして表示する。stroke中のfront / back分割、preview key再利用、選択working Layer温存は当たり外れを固定するため使わない。
 - animation working Layerへのstroke開始イベントは、phase5mと同じくBrushCoreが `strokePreview` childを作った後に出す。PREVIEW中のstroke開始前 / move中にAnimation Table側からpreview契約を差し込まない。
 - PREVIEW中のstrokeでは、選択CAFを現在Frame preview合成から除外し、他CAF / onionはsnapshot preview、選択CAFは本物のanimation working Layerで表示する。同じCAFのsnapshot previewとworking Layerが重なる二重表示を避ける。
 - PREVIEW中のstroke開始時は、他CAF合成preview + 選択CAF working Layerを一度だけ組む。`drawing:before-stroke-start` / `drawing:stroke-updated` による先回り再構築・move中再可視化は当たり外れの原因になったため使わない。
@@ -88,6 +88,11 @@ Phase 5qのAnimation Tableを閉じた時のLane表示モードも完了。
 - `TegakiConsole.txt` では外れstrokeもfinal-bakeではなくrealtime焼き込み済みだったため、BrushCoreはRenderTexture更新後にPixi stage再描画を1フレーム単位で予約する。`[TegakiRealtimeStroke:*]` には `liveRenderRequests` / `liveRenderExecuted` / `liveRenderMethod` も記録し、焼き込み済みだが画面repaintが遅れる経路を切り分ける。
 - Console上は外れ回でもRenderTexture焼き込みと `app.render()` が成功していたため、PREVIEW中のlive stroke overlay方針を撤回した。stroke中はphase5mに近い本物のanimation working Layer表示へ戻し、他CAF / onionはsnapshotベースpreviewのまま扱う。稼働中RenderTextureを別Spriteから読む二重表示経路と、AnimationTable側の独自 `app.render()` 要求は使わない。
 - 当たり時にstroke中だけLane順が変わり、stroke後に通常preview順へ戻って外れ化する観測を受け、Table再描画中もphase5m同様に `_applyDrawingVisibilityPreview()` を入口にする。CAF working Layer表示時は `layer.visible` と `layerData.visible` を同期し、描画中 / 確定後で可視判定の正本が割れないようにする。
+- 選択CAFだけが非描画PREVIEWで消え、stroke中だけ見える経路が残ったため、非描画PREVIEWは選択CAFも含めて全CAFをsnapshot合成表示へ戻す。実working LayerをPREVIEWへ混ぜるのはstroke中だけに限定し、CAF選択 / 空セル移動 / stroke完了時はpreview keyを破棄して古いdisplay-only合成を再利用しない。
+- Animation Table preview containerの順序は、既存childを `setChildIndex` で前後移動せず、preview群を一度外して `background -> back -> currentFrame -> front` へ挿し直す。Pixiの同親child移動で呼び出しごとに順序が反転し、stroke中の当たり外れ / 背景被りが起きる経路を避ける。
+- preview container順序反転の原因、再発防止、Lane表示順とPSD/PDF階層逆転の考察は `task-codex/phase5q_preview_order_notes.md` に記録した。stroke中安定を優先し、CAF切替時の一瞬の点滅だけを追ってpreview container契約を崩さない。
+- stroke中のLane順は安定済みpreview container契約を維持したまま、選択Laneより下をback preview、上をfront previewへ分ける。Animation Table上側Laneほどキャンバス前面とし、選択CAFの実working Layerをその中間へ置く。
+- PSD active CAF exportは `ClipAsset.internalLayers` の上から前面順をそのままag-psd childrenへ渡す。通常LayerSystemの背面から前面配列に必要なreverseをCAF内部Layerへ流用しない。
 
 ## アニメ画像import追記
 

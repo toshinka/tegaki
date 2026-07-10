@@ -201,9 +201,10 @@ window.PSDExporter = (function() {
                 return (layer.parentLayerId || null) === (parentId || null);
             });
 
+            // ClipAsset.internalLayers はLayer Panelと同じく上から前面順。
+            // ag-psdのchildrenもPhotoshop上の上から下の順を要求するため、
+            // 通常LayerSystem用のreverseをCAFへ適用しない。
             return siblings
-                .slice()
-                .reverse()
                 .map(layer => this._createCafPsdLayer(asset, model, layer))
                 .filter(Boolean);
         }
