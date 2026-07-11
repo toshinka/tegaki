@@ -8,6 +8,11 @@
  */
 
 import { normalizeRasterBounds } from '../raster-bounds.js';
+import {
+    applyClippingMode,
+    cycleClippingMode,
+    normalizeClippingMode
+} from '../clipping-mode.js';
 
 /**
  * ID生成ユーティリティ
@@ -129,7 +134,8 @@ export class ClipAssetInternalLayerModel {
         this.visible = options.visible !== false;
         this.opacity = options.opacity ?? 1;
         this.blendMode = options.blendMode || 'normal';
-        this.clipping = options.clipping === true;
+        this.clippingMode = normalizeClippingMode(options.clippingMode, options.clipping === true);
+        this.clipping = this.clippingMode !== 'none';
         this.drawingSnapshotId = options.drawingSnapshotId || null;
         this.parentLayerId = options.parentLayerId || null;
         this.isBackground = options.isBackground === true;
@@ -146,6 +152,7 @@ export class ClipAssetInternalLayerModel {
             opacity: this.opacity,
             blendMode: this.blendMode,
             clipping: this.clipping,
+            clippingMode: this.clippingMode,
             drawingSnapshotId: this.drawingSnapshotId,
             parentLayerId: this.parentLayerId,
             isBackground: this.isBackground,
@@ -826,6 +833,7 @@ export class TimelineModel {
             opacity: options.opacity ?? 1,
             blendMode: options.blendMode || 'normal',
             clipping: options.clipping === true,
+            clippingMode: options.clippingMode,
             drawingSnapshotId: options.drawingSnapshotId || null,
             parentLayerId: options.parentLayerId || null
         });
@@ -846,7 +854,9 @@ export class TimelineModel {
             type: 'folder',
             visible: options.visible !== false,
             opacity: options.opacity ?? 1,
-            blendMode: 'normal',
+            blendMode: options.blendMode || 'normal',
+            clipping: options.clipping === true,
+            clippingMode: options.clippingMode,
             parentLayerId: options.parentLayerId || null
         });
 
@@ -975,6 +985,7 @@ export class TimelineModel {
                 opacity: layer.opacity ?? 1,
                 blendMode: layer.blendMode || 'normal',
                 clipping: layer.clipping === true,
+                clippingMode: layer.clippingMode,
                 drawingSnapshotId: nextSnapshotId,
                 parentLayerId: layer.parentLayerId,
                 isBackground: layer.isBackground === true
@@ -1053,7 +1064,7 @@ export class TimelineModel {
         const layer = asset.internalLayers.find(l => l.id === layerId);
         if (!layer) return { ok: false, reason: 'layer-not-found' };
 
-        layer.clipping = layer.clipping !== true;
+        applyClippingMode(layer, cycleClippingMode(layer.clippingMode, layer.clipping === true));
         layer.updatedAt = Date.now();
         asset.updatedAt = Date.now();
         return { ok: true, asset, layer };
@@ -1297,6 +1308,7 @@ export class TimelineModel {
                 opacity: layer.opacity ?? 1,
                 blendMode: layer.blendMode || 'normal',
                 clipping: layer.clipping === true,
+                clippingMode: layer.clippingMode,
                 drawingSnapshotId: snapshotId,
                 parentLayerId: layer.parentLayerId,
                 isBackground: layer.isBackground === true

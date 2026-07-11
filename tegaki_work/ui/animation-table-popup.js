@@ -15,7 +15,19 @@ import { historyManager } from '../system/history.js';
 import { TimelineModel, ClipAssetModel, DrawingSnapshotModel } from '../system/animation/animation-data-model.js';
 import { createCenteredTransformMatrix } from '../system/transform-math.js';
 import { collectCafMemoryProfile } from '../system/animation/caf-memory-profiler.js';
+import {
+    findInternalClippingOwner,
+    findInternalClippingSource,
+    getInternalFolderRasterDescendants,
+    resolveInternalClippingContract
+} from '../system/animation/internal-layer-clipping-contract.js';
 import { normalizeRasterBounds } from '../system/raster-bounds.js';
+import {
+    CLIPPING_MODES,
+    applyClippingAlpha,
+    applyClippingMode,
+    getClippingMode
+} from '../system/clipping-mode.js';
 import { UI_ICONS } from './ui-icons.js';
 
 const ANIMATION_TABLE_UI_STORAGE_KEY = 'tegaki_animation_table_ui_v1';
@@ -59,6 +71,8 @@ export class AnimationTablePopup {
         this._snapshotTextureCachePendingDestroy = [];
         this._snapshotTextureCacheDestroyFrame = null;
         this._snapshotTextureCacheGcPending = false;
+        this._workingClippingMasksDirty = false;
+        this._workingClippingMaskIdleHandle = null;
         
         // オニオンスキン関連
         this.isOnionSkinActive = false;
@@ -838,7 +852,8 @@ export class AnimationTablePopup {
                 if (workingLayers[index].layerData) workingLayers[index].layerData.visible = false;
             }
         }
-        this.layerSystem.refreshClippingMasks?.();
+        this._workingClippingMasksDirty = true;
+        this._flushDeferredWorkingClippingMasks();
         visibleWorkingLayers.forEach(layer => this._ensureWorkingLayerDisplaySurface(layer));
         return true;
     }
@@ -870,7 +885,7 @@ export class AnimationTablePopup {
 
         const sprite = layer.layerData.layerSprite;
         if (sprite) {
-            if (layer.layerData.clipping !== true) {
+            if (getClippingMode(layer.layerData) === CLIPPING_MODES.NONE) {
                 sprite.visible = true;
             }
             if ('renderable' in sprite) {
@@ -1247,14 +1262,15 @@ export class AnimationTablePopup {
 
     _createInternalClippedSnapshot(asset, layer, snapshot) {
         const clippingOwner = this._findInternalClippingOwner(asset, layer);
+        if (!clippingOwner || !snapshot?.pixels) return null;
+
         const sourceItem = clippingOwner
             ? this._findInternalClippingSourceItem(asset, clippingOwner)
             : null;
-        if (!snapshot?.pixels || !sourceItem) return null;
 
-        const sourceItems = sourceItem.type === 'folder'
+        const sourceItems = sourceItem?.type === 'folder'
             ? this._getInternalFolderDescendantRasterLayers(asset, sourceItem.id)
-            : [sourceItem];
+            : (sourceItem ? [sourceItem] : []);
         const visibleSourceSnapshots = sourceItems.map(item => {
             if (!this._isInternalLayerEffectivelyVisible(asset, item)) return null;
             return this.model.getDrawingSnapshot(item.drawingSnapshotId);
@@ -1264,16 +1280,42 @@ export class AnimationTablePopup {
                 && sourceSnapshot.width > 0
                 && sourceSnapshot.height > 0;
         });
-        if (visibleSourceSnapshots.length === 0) return null;
-
-        const maskedPixels = new Uint8ClampedArray(snapshot.pixels);
-        const maskAlpha = new Uint8ClampedArray(snapshot.width * snapshot.height);
         const targetBounds = normalizeRasterBounds(snapshot.rasterBounds, {
             x: 0,
             y: 0,
             width: snapshot.width,
             height: snapshot.height
         });
+        const clippingMode = getClippingMode(clippingOwner);
+        const sourceSignature = visibleSourceSnapshots
+            .map(sourceSnapshot => `${sourceSnapshot.id || 'unknown'}@${sourceSnapshot.updatedAt || 0}`)
+            .join('|');
+        const clippedCacheKey = [
+            'clipped',
+            asset.id || 'asset',
+            layer.id || 'layer',
+            snapshot.id || 'snapshot',
+            snapshot.updatedAt || 0,
+            clippingMode,
+            sourceSignature
+        ].join(':');
+        const cachedEntry = this._snapshotTextureCache.get(clippedCacheKey);
+        const cachedDescriptor = {
+            id: clippedCacheKey,
+            width: snapshot.width,
+            height: snapshot.height,
+            rasterBounds: { ...targetBounds, width: snapshot.width, height: snapshot.height },
+            pixels: null,
+            updatedAt: clippedCacheKey
+        };
+        if (cachedEntry?.texture
+            && !cachedEntry.texture.destroyed
+            && this._isSnapshotTextureCacheEntryFresh(cachedEntry, cachedDescriptor)) {
+            return cachedDescriptor;
+        }
+
+        const maskedPixels = new Uint8ClampedArray(snapshot.pixels);
+        const maskAlpha = new Uint8ClampedArray(snapshot.width * snapshot.height);
         visibleSourceSnapshots.forEach(sourceSnapshot => {
             const sourcePixels = sourceSnapshot.pixels;
             const sourceBounds = normalizeRasterBounds(sourceSnapshot.rasterBounds, {
@@ -1297,22 +1339,14 @@ export class AnimationTablePopup {
             }
         });
 
-        const maskThreshold = 128;
+        const hasUsableSource = visibleSourceSnapshots.some(sourceSnapshot => {
+            return !this._isRasterSnapshotBlank(sourceSnapshot);
+        });
         for (let targetIndex = 3, maskIndex = 0; targetIndex < maskedPixels.length; targetIndex += 4, maskIndex++) {
-            maskedPixels[targetIndex] = maskAlpha[maskIndex] >= maskThreshold ? maskedPixels[targetIndex] : 0;
+            maskedPixels[targetIndex] = hasUsableSource
+                ? applyClippingAlpha(maskedPixels[targetIndex], maskAlpha[maskIndex], clippingMode)
+                : 0;
         }
-
-        const sourceSignature = visibleSourceSnapshots
-            .map(sourceSnapshot => `${sourceSnapshot.id || 'unknown'}@${sourceSnapshot.updatedAt || 0}`)
-            .join('|');
-        const clippedCacheKey = [
-            'clipped',
-            asset.id || 'asset',
-            layer.id || 'layer',
-            snapshot.id || 'snapshot',
-            snapshot.updatedAt || 0,
-            sourceSignature
-        ].join(':');
 
         return {
             id: clippedCacheKey,
@@ -1368,38 +1402,15 @@ export class AnimationTablePopup {
     }
 
     _findInternalClippingOwner(asset, layer) {
-        if (!asset || !layer) return null;
-
-        const byId = new Map((asset.internalLayers || []).map(item => [item.id, item]));
-        let current = layer;
-        const visited = new Set();
-
-        while (current && !visited.has(current.id)) {
-            visited.add(current.id);
-            if (current.clipping === true) return current;
-            current = current.parentLayerId ? byId.get(current.parentLayerId) : null;
-        }
-
-        return null;
+        return findInternalClippingOwner(asset, layer);
     }
 
     _findInternalClippingSourceItem(asset, clippingOwner) {
-        if (!asset || !clippingOwner) return null;
-
-        const layers = asset.internalLayers || [];
-        const layerIndex = layers.findIndex(item => item.id === clippingOwner.id);
-        if (layerIndex < 0) return null;
-
-        const parentId = clippingOwner.parentLayerId || null;
-        for (let index = layerIndex + 1; index < layers.length; index++) {
-            const candidate = layers[index];
-            if (!candidate) continue;
-            if ((candidate.parentLayerId || null) !== parentId) continue;
-            if (!this._isInternalLayerEffectivelyVisible(asset, candidate)) return null;
-            return candidate;
-        }
-
-        return null;
+        return findInternalClippingSource(
+            asset,
+            clippingOwner,
+            candidate => this._isInternalLayerEffectivelyVisible(asset, candidate)
+        );
     }
 
     _createInternalMaskSprites(asset, sourceItem) {
@@ -1422,20 +1433,7 @@ export class AnimationTablePopup {
     }
 
     _getInternalFolderDescendantRasterLayers(asset, folderId) {
-        const layers = asset?.internalLayers || [];
-        const result = [];
-        const collect = (parentId) => {
-            layers.forEach(layer => {
-                if ((layer.parentLayerId || null) !== parentId) return;
-                if (layer.type === 'folder') {
-                    collect(layer.id);
-                    return;
-                }
-                result.push(layer);
-            });
-        };
-        collect(folderId);
-        return result;
+        return getInternalFolderRasterDescendants(asset, folderId);
     }
 
     _getSelectedInternalFolderTransformTargets(asset = this._getSelectedAssetForInspector()) {
@@ -1647,6 +1645,7 @@ export class AnimationTablePopup {
             this._clearAnimationPreviewContainer();
         }
         this._setPreviewBackgroundSubstitute(false);
+        this._flushDeferredWorkingClippingMasks();
 
         if (!this._visibilityPreviewApplied || !this.layerSystem) return;
         
@@ -1750,7 +1749,7 @@ export class AnimationTablePopup {
     }
 
     _getTextureFromSnapshot(snapshot) {
-        if (!snapshot || !snapshot.pixels) return null;
+        if (!snapshot) return null;
 
         const cacheKey = this._getSnapshotTextureCacheKey(snapshot);
         const cachedEntry = cacheKey ? this._snapshotTextureCache.get(cacheKey) : null;
@@ -1761,6 +1760,7 @@ export class AnimationTablePopup {
         if (cacheKey && cachedEntry) {
             this._evictSnapshotTextureCacheEntry(cacheKey, 'stale');
         }
+        if (!snapshot.pixels) return null;
 
         try {
             this._snapshotTextureCacheProfile.misses++;
@@ -2271,7 +2271,7 @@ export class AnimationTablePopup {
             existingLayer.visible = capturedLayer.visible;
             existingLayer.opacity = capturedLayer.opacity;
             existingLayer.blendMode = capturedLayer.blendMode;
-            existingLayer.clipping = capturedLayer.clipping;
+            applyClippingMode(existingLayer, getClippingMode(capturedLayer));
             existingLayer.drawingSnapshotId = capturedLayer.drawingSnapshotId;
             existingLayer.updatedAt = Date.now();
             nextInternalLayers.push(existingLayer);
@@ -2808,7 +2808,9 @@ export class AnimationTablePopup {
             type: 'folder',
             visible: source.rootFolder.visible !== false,
             opacity: Number.isFinite(source.rootFolder.opacity) ? source.rootFolder.opacity : 1,
-            blendMode: 'normal'
+            blendMode: source.rootFolder.blendMode || 'normal',
+            clipping: source.rootFolder.clipping === true,
+            clippingMode: source.rootFolder.clippingMode
         });
         const internalBySourceKey = new Map([['root', internalRoot]]);
         const createdEntries = [];
@@ -2838,6 +2840,7 @@ export class AnimationTablePopup {
                 opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
                 blendMode: entry.blendMode || 'normal',
                 clipping: entry.clipping === true,
+                clippingMode: entry.clippingMode,
                 drawingSnapshotId: drawingSnapshot?.id || null
             });
             internalBySourceKey.set(entry.sourceKey, internalLayer);
@@ -2940,6 +2943,7 @@ export class AnimationTablePopup {
             opacity: entry.opacity,
             blendMode: entry.blendMode,
             clipping: entry.clipping === true,
+            clippingMode: entry.clippingMode,
             snapshot: entry.rasterSnapshot
         }));
         const rootEntry = source.layers.find(entry => entry.sourceId === source.rootSourceId) || source.layers[0];
@@ -2968,6 +2972,7 @@ export class AnimationTablePopup {
                 opacity: layer.opacity ?? 1,
                 blendMode: layer.blendMode || 'normal',
                 clipping: layer.clipping === true,
+                clippingMode: layer.clippingMode,
                 snapshot: entry.snapshot || null
             };
         });
@@ -3034,6 +3039,7 @@ export class AnimationTablePopup {
                 opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
                 blendMode: entry.blendMode || 'normal',
                 clipping: entry.clipping === true,
+                clippingMode: entry.clippingMode,
                 drawingSnapshotId: drawingSnapshot?.id || null
             });
             internalBySourceId.set(entry.sourceId, internalLayer);
@@ -4501,6 +4507,7 @@ export class AnimationTablePopup {
                 opacity: sourceLayer.opacity ?? 1,
                 blendMode: sourceLayer.blendMode || 'normal',
                 clipping: sourceLayer.clipping === true,
+                clippingMode: sourceLayer.clippingMode,
                 drawingSnapshotId,
                 parentLayerId: sourceLayer.parentLayerId,
                 isBackground: sourceLayer.isBackground === true
@@ -4644,7 +4651,8 @@ export class AnimationTablePopup {
             visible: folderLayer.visible !== false,
             opacity: 1,
             blendMode: 'normal',
-            clipping: false,
+            clipping: folderLayer.clipping === true,
+            clippingMode: getClippingMode(folderLayer),
             drawingSnapshotId: mergedSnapshot.id,
             parentLayerId: folderLayer.parentLayerId || null
         });
@@ -4696,8 +4704,11 @@ export class AnimationTablePopup {
             if (!sourceCtx) return;
             this._putSnapshotPixels(sourceCtx, snapshot, width, height);
 
-            if (layer.clipping === true) {
-                sourceCtx.globalCompositeOperation = 'destination-in';
+            const clippingMode = getClippingMode(layer);
+            if (clippingMode !== CLIPPING_MODES.NONE) {
+                sourceCtx.globalCompositeOperation = clippingMode === CLIPPING_MODES.INVERSE
+                    ? 'destination-out'
+                    : 'destination-in';
                 sourceCtx.drawImage(canvas, 0, 0);
                 sourceCtx.globalCompositeOperation = 'source-over';
             }
@@ -5178,10 +5189,17 @@ export class AnimationTablePopup {
         if (!sourceCtx) return null;
         this._putSnapshotPixels(sourceCtx, sourceSnapshot, width, height);
 
-        if (sourceLayer?.clipping === true && targetSnapshot?.pixels) {
-            sourceCtx.globalCompositeOperation = 'destination-in';
-            this._putSnapshotPixels(sourceCtx, targetSnapshot, width, height);
-            sourceCtx.globalCompositeOperation = 'source-over';
+        const sourceClippingMode = getClippingMode(sourceLayer);
+        if (sourceClippingMode !== CLIPPING_MODES.NONE && targetSnapshot?.pixels) {
+            if (this._isRasterSnapshotBlank(targetSnapshot)) {
+                sourceCtx.clearRect(0, 0, width, height);
+            } else {
+                sourceCtx.globalCompositeOperation = sourceClippingMode === CLIPPING_MODES.INVERSE
+                    ? 'destination-out'
+                    : 'destination-in';
+                this._putSnapshotPixels(sourceCtx, targetSnapshot, width, height);
+                sourceCtx.globalCompositeOperation = 'source-over';
+            }
         }
 
         ctx.globalAlpha = sourceLayer?.opacity ?? 1;
@@ -5406,6 +5424,9 @@ export class AnimationTablePopup {
             }
             if (result.layer?.type === 'folder') {
                 this._invalidateSnapshotTextureCache();
+                this._syncWorkingLayerDisplayAttributesFromAsset(asset, {
+                    deferClippingMasks: this.isVisible && this.isPreviewActive
+                });
             } else if (!preserveSelection || (previousSelection.assetId === asset.id && previousSelection.internalLayerId === layerId)) {
                 this._syncSelectedClipToWorkingLayers();
             }
@@ -5414,7 +5435,8 @@ export class AnimationTablePopup {
             this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-clipping', {
                 type: 'caf-internal-layer-clipping',
                 layerId,
-                clipping: result.layer?.clipping === true
+                clipping: result.layer?.clipping === true,
+                clippingMode: getClippingMode(result.layer)
             });
         }
         return result;
@@ -5448,11 +5470,14 @@ export class AnimationTablePopup {
             }
         }
 
-        if (typeof attributes.clipping === 'boolean' && layer.type !== 'folder') {
-            if (layer.clipping !== attributes.clipping) {
-                layer.clipping = attributes.clipping;
-                changed = true;
-            }
+        const requestedClippingMode = typeof attributes.clippingMode === 'string'
+            ? attributes.clippingMode
+            : (typeof attributes.clipping === 'boolean'
+                ? (attributes.clipping ? CLIPPING_MODES.NORMAL : CLIPPING_MODES.NONE)
+                : null);
+        if (requestedClippingMode !== null && getClippingMode(layer) !== requestedClippingMode) {
+            applyClippingMode(layer, requestedClippingMode);
+            changed = true;
         }
 
         if (!changed && !(options.forceHistory === true && options.beforeState)) {
@@ -5467,7 +5492,9 @@ export class AnimationTablePopup {
 
         if (layer.type === 'folder') {
             this._invalidateSnapshotTextureCache();
-            this._syncWorkingLayerDisplayAttributesFromAsset(asset);
+            this._syncWorkingLayerDisplayAttributesFromAsset(asset, {
+                deferClippingMasks: this.isVisible && this.isPreviewActive
+            });
         } else {
             this._syncSelectedClipToWorkingLayers();
         }
@@ -5481,7 +5508,8 @@ export class AnimationTablePopup {
                 layerId,
                 opacity: layer.opacity,
                 blendMode: layer.blendMode,
-                clipping: layer.clipping === true
+                clipping: layer.clipping === true,
+                clippingMode: getClippingMode(layer)
             });
         }
         return { ok: true, asset, layer, changed: true };
@@ -5920,7 +5948,9 @@ export class AnimationTablePopup {
                     type: 'folder',
                     visible: layerData.visible !== false,
                     opacity: layerData.opacity ?? 1,
-                    blendMode: 'normal',
+                    blendMode: layerData.blendMode || 'normal',
+                    clipping: layerData.clipping === true,
+                    clippingMode: getClippingMode(layerData),
                     parentLayerId: layerData.parentId ? importedLayerIdMap.get(layerData.parentId) || null : null
                 });
                 importedLayerIdMap.set(layerData.id, folderLayer.id);
@@ -5948,6 +5978,7 @@ export class AnimationTablePopup {
                 opacity: layerData.opacity ?? 1,
                 blendMode: layerData.blendMode || 'normal',
                 clipping: layerData.clipping === true,
+                clippingMode: getClippingMode(layerData),
                 parentLayerId: layerData.parentId ? importedLayerIdMap.get(layerData.parentId) || null : null,
                 drawingSnapshotId: drawingSnapshot.id
             });
@@ -6094,7 +6125,7 @@ export class AnimationTablePopup {
             targetLayer.layerData.opacity = opacity;
             targetLayer.layerData.effectiveOpacity = effectiveOpacity;
             targetLayer.layerData.blendMode = blendMode;
-            targetLayer.layerData.clipping = internalLayer.clipping === true;
+            applyClippingMode(targetLayer.layerData, getClippingMode(internalLayer));
             targetLayer.layerData.parentId = internalLayer.parentLayerId || null;
             const isEffectivelyVisible = clip.visible !== false
                 && this._isInternalLayerEffectivelyVisible(asset, internalLayer);
@@ -6104,6 +6135,8 @@ export class AnimationTablePopup {
                 visibleTargetLayers.push(targetLayer);
             }
         });
+
+        this._applyWorkingLayerClippingContracts(asset, drawableInternalLayers, targetLayers);
 
         for (let index = drawableInternalLayers.length; index < targetLayers.length; index++) {
             const targetLayer = targetLayers[index];
@@ -6115,6 +6148,8 @@ export class AnimationTablePopup {
             }
             targetLayer.layerData.isAnimationWorkingLayer = true;
             targetLayer.layerData.parentId = null;
+            targetLayer.layerData.animationDisplayClippingMode = CLIPPING_MODES.NONE;
+            targetLayer.layerData.animationClippingSourceLayerIds = null;
             targetLayer.visible = false;
             targetLayer.layerData.visible = false;
         }
@@ -6124,7 +6159,8 @@ export class AnimationTablePopup {
             return false;
         }
 
-        this.layerSystem.refreshClippingMasks?.();
+        this._workingClippingMasksDirty = true;
+        this._flushDeferredWorkingClippingMasks();
         visibleTargetLayers.forEach(layer => this._ensureWorkingLayerDisplaySurface(layer));
         this._syncActiveWorkingLayerToSelectedInternalLayer(asset);
         this._requestLayerPanelSync();
@@ -6273,7 +6309,7 @@ export class AnimationTablePopup {
 
         internalLayer.opacity = activeLayer.layerData.opacity ?? 1;
         internalLayer.blendMode = activeLayer.layerData.blendMode || 'normal';
-        internalLayer.clipping = activeLayer.layerData.clipping === true;
+        applyClippingMode(internalLayer, getClippingMode(activeLayer.layerData));
         internalLayer.updatedAt = Date.now();
         asset.updatedAt = Date.now();
 
@@ -6284,7 +6320,7 @@ export class AnimationTablePopup {
         return true;
     }
 
-    _syncWorkingLayerDisplayAttributesFromAsset(asset) {
+    _syncWorkingLayerDisplayAttributesFromAsset(asset, options = {}) {
         if (!asset || !this.layerSystem) return false;
         const drawableInternalLayers = this._getDrawableInternalLayers(asset);
         const targetLayers = this._getRasterWorkingLayers();
@@ -6307,18 +6343,68 @@ export class AnimationTablePopup {
             targetLayer.layerData.opacity = opacity;
             targetLayer.layerData.effectiveOpacity = effectiveOpacity;
             targetLayer.layerData.blendMode = blendMode;
-            targetLayer.layerData.clipping = internalLayer.clipping === true;
+            applyClippingMode(targetLayer.layerData, getClippingMode(internalLayer));
             targetLayer.layerData.parentId = internalLayer.parentLayerId || null;
             targetLayer.visible = isEffectivelyVisible;
             targetLayer.layerData.visible = isEffectivelyVisible;
             changed = true;
         });
 
+        this._applyWorkingLayerClippingContracts(asset, drawableInternalLayers, targetLayers);
+
         if (changed) {
-            this.layerSystem.refreshClippingMasks?.();
+            this._workingClippingMasksDirty = true;
+            if (options.deferClippingMasks === true) {
+                this._scheduleDeferredWorkingClippingMaskRefresh();
+            } else {
+                this._flushDeferredWorkingClippingMasks();
+            }
             this._requestLayerPanelSync();
         }
         return changed;
+    }
+
+    _applyWorkingLayerClippingContracts(asset, drawableInternalLayers, targetLayers) {
+        const workingLayerByInternalLayerId = new Map();
+        drawableInternalLayers.forEach((internalLayer, index) => {
+            const targetLayer = targetLayers[index];
+            if (targetLayer?.layerData) workingLayerByInternalLayerId.set(internalLayer.id, targetLayer);
+        });
+        drawableInternalLayers.forEach((internalLayer, index) => {
+            const targetLayer = targetLayers[index];
+            if (!targetLayer?.layerData) return;
+            const contract = resolveInternalClippingContract(
+                asset,
+                internalLayer,
+                candidate => this._isInternalLayerEffectivelyVisible(asset, candidate)
+            );
+            targetLayer.layerData.animationDisplayClippingMode = contract?.mode || CLIPPING_MODES.NONE;
+            targetLayer.layerData.animationClippingSourceLayerIds = contract
+                ? contract.sourceLayers
+                    .map(sourceLayer => workingLayerByInternalLayerId.get(sourceLayer.id)?.layerData?.id || null)
+                    .filter(Boolean)
+                : null;
+        });
+    }
+
+    _scheduleDeferredWorkingClippingMaskRefresh() {
+        if (this._workingClippingMaskIdleHandle !== null) return;
+        const run = () => {
+            this._workingClippingMaskIdleHandle = null;
+            if (!this.isPlaying) this._flushDeferredWorkingClippingMasks();
+        };
+        if (typeof requestIdleCallback === 'function') {
+            this._workingClippingMaskIdleHandle = requestIdleCallback(run, { timeout: 500 });
+        } else {
+            this._workingClippingMaskIdleHandle = setTimeout(run, 32);
+        }
+    }
+
+    _flushDeferredWorkingClippingMasks() {
+        if (!this._workingClippingMasksDirty) return false;
+        this._workingClippingMasksDirty = false;
+        this.layerSystem?.refreshClippingMasks?.();
+        return true;
     }
 
     _scheduleInternalLayerAttributePreviewSync() {
@@ -6353,6 +6439,8 @@ export class AnimationTablePopup {
             targetLayer.layerData.effectiveOpacity = 1;
             targetLayer.layerData.blendMode = 'normal';
             targetLayer.layerData.parentId = null;
+            targetLayer.layerData.animationDisplayClippingMode = CLIPPING_MODES.NONE;
+            targetLayer.layerData.animationClippingSourceLayerIds = null;
             targetLayer.alpha = 1;
             targetLayer.visible = false;
             targetLayer.layerData.visible = false;
@@ -10155,7 +10243,15 @@ export class AnimationTablePopup {
                             this._requestLayerPanelSync();
                         } else {
                             this._invalidateWorkingLayerSnapshotId(layerId);
-                            const saved = this._saveSelectedClipFromWorkingLayers({ force: true });
+                            const isFolderBatchTransform = (folderTransformContext?.targets?.length || 0) > 1;
+                            let saved = false;
+                            if (isFolderBatchTransform) {
+                                saved = this._saveSelectedClipFromWorkingLayers({ force: true });
+                            } else {
+                                const asset = this._getSelectedAssetForInspector();
+                                const internalLayerId = this._resolveInternalLayerIdForWorkingLayer(asset, layerId);
+                                saved = this._captureDrawingLayerToSelectedClip(layerId, internalLayerId);
+                            }
                             if (saved && beforeState) {
                                 const asset = this._getSelectedAssetForInspector();
                                 const afterState = asset ? this._captureInternalLayerHistoryState(asset) : null;

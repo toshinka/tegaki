@@ -7,6 +7,11 @@ import {
     getClippingMode
 } from '../clipping-mode.js';
 import { normalizeRasterBounds } from '../raster-bounds.js';
+import {
+    findInternalClippingOwner,
+    findInternalClippingSource,
+    getInternalFolderRasterDescendants
+} from './internal-layer-clipping-contract.js';
 
 export class TimelineFrameCompositor {
     constructor(model, layerSystem = null) {
@@ -297,6 +302,15 @@ export class TimelineFrameCompositor {
             ctx.clearRect(0, 0, width, height);
             return;
         }
+        const maskImage = maskCtx.getImageData(0, 0, width, height);
+        for (let offset = 0; offset < maskImage.data.length; offset += 4) {
+            const alpha = maskImage.data[offset + 3] > 0 ? 255 : 0;
+            maskImage.data[offset] = 255;
+            maskImage.data[offset + 1] = 255;
+            maskImage.data[offset + 2] = 255;
+            maskImage.data[offset + 3] = alpha;
+        }
+        maskCtx.putImageData(maskImage, 0, 0);
 
         ctx.save();
         ctx.globalCompositeOperation = getClippingMode(owner) === CLIPPING_MODES.INVERSE
@@ -415,40 +429,19 @@ export class TimelineFrameCompositor {
     }
 
     _findClippingOwner(asset, layer) {
-        const byId = new Map((asset.internalLayers || []).map(item => [item.id, item]));
-        let current = layer;
-        const visited = new Set();
-        while (current && !visited.has(current.id)) {
-            visited.add(current.id);
-            if (getClippingMode(current) !== CLIPPING_MODES.NONE) return current;
-            current = current.parentLayerId ? byId.get(current.parentLayerId) : null;
-        }
-        return null;
+        return findInternalClippingOwner(asset, layer);
     }
 
     _findClippingSource(asset, owner) {
-        const layers = asset.internalLayers || [];
-        const ownerIndex = layers.findIndex(item => item.id === owner.id);
-        const parentId = owner.parentLayerId || null;
-        for (let index = ownerIndex + 1; index < layers.length; index++) {
-            const candidate = layers[index];
-            if ((candidate.parentLayerId || null) !== parentId) continue;
-            return this._isEffectivelyVisible(asset, candidate) ? candidate : null;
-        }
-        return null;
+        return findInternalClippingSource(
+            asset,
+            owner,
+            candidate => this._isEffectivelyVisible(asset, candidate)
+        );
     }
 
     _getFolderRasterDescendants(asset, folderId) {
-        const result = [];
-        const collect = parentId => {
-            (asset.internalLayers || []).forEach(layer => {
-                if ((layer.parentLayerId || null) !== parentId) return;
-                if (layer.type === 'folder') collect(layer.id);
-                else result.push(layer);
-            });
-        };
-        collect(folderId);
-        return result;
+        return getInternalFolderRasterDescendants(asset, folderId);
     }
 
     _compositeMode(blendMode) {

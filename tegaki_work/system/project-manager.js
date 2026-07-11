@@ -96,6 +96,9 @@ export class ProjectManager {
                     name: data.name,
                     visible: data.visible !== false,
                     opacity: data.opacity !== undefined ? data.opacity : 1.0,
+                    blendMode: data.blendMode || 'normal',
+                    clipping: data.clipping === true,
+                    clippingMode: getClippingMode(data),
                     isFolder: true,
                     folderExpanded: data.folderExpanded !== false,
                     children: Array.isArray(data.children) ? [...data.children] : [],
@@ -375,6 +378,10 @@ export class ProjectManager {
             fps: model.fps,
             totalFrames: model.totalFrames,
             tracks: (model.tracks || []).map(track => track.serialize ? track.serialize() : { ...track }),
+            clipGroups: (model.clipGroups || []).map(group => group.serialize ? group.serialize() : {
+                ...group,
+                clipIds: [...(group.clipIds || [])]
+            }),
             clipAssetFolders: (model.clipAssetFolders || []).map(folder => folder.serialize ? folder.serialize() : { ...folder }),
             clipAssets: (model.clipAssets || []).map(asset => asset.serialize ? asset.serialize() : { ...asset }),
             drawingSnapshots: serializedSnapshots,

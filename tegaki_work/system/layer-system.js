@@ -26,9 +26,7 @@ import {
     CLIPPING_MODES,
     applyClippingMode,
     cycleClippingMode,
-    getClippingMode,
-    isClippingEnabled,
-    isInverseClipping
+    getClippingMode
 } from './clipping-mode.js';
 
 export class LayerSystem {
@@ -50,6 +48,8 @@ export class LayerSystem {
         this.checkerPattern = null;
         this._checkerTileScale = null;
         this._layerTransformSession = null;
+        this._clippingMaskSpritePool = [];
+        this._clippingMaskTexturePool = [];
     }
 
     init(canvasContainer, eventBus, config) {
@@ -118,6 +118,8 @@ export class LayerSystem {
         this._setupAnimationSystemIntegration();
         this._setupVKeyEvents();
         this._setupResizeEvents();
+        this.eventBus.on('drawing:stroke-completed', () => this.refreshClippingMasks());
+        this.eventBus.on('layer:content-changed', () => this.refreshClippingMasks());
 
         this.isInitialized = true;
 
@@ -1739,7 +1741,7 @@ export class LayerSystem {
         if (layerIndex < 0 || layerIndex >= layers.length) return false;
 
         const layer = layers[layerIndex];
-        if (layer.layerData?.isBackground || layer.layerData?.isFolder) return false;
+        if (layer.layerData?.isBackground) return false;
 
         const layerId = layer.layerData.id;
         const previousMode = getClippingMode(layer.layerData);
@@ -1807,36 +1809,57 @@ export class LayerSystem {
 
         for (const layer of layers) {
             const data = layer.layerData;
-            if (!data || data.isBackground || data.isFolder || !isClippingEnabled(data)) continue;
-            if (!data.layerSprite || !data.renderTexture) continue;
+            const displayClippingMode = data?.animationDisplayClippingMode
+                || getClippingMode(data);
+            if (!data || data.isBackground || displayClippingMode === CLIPPING_MODES.NONE) continue;
+            if (!data.isFolder && (!data.layerSprite || !data.renderTexture)) continue;
 
-            const sourceLayer = this._findClippingSourceLayer(layer, layers);
-            if (!sourceLayer?.layerData?.renderTexture) {
-                data.layerSprite.visible = false;
+            const sourceLayers = this._resolveClippingSourceLayers(layer, layers);
+            if (sourceLayers.length === 0) {
+                if (data.isFolder) {
+                    data.folderClippingSuppressedTargets = this._getFolderClippingSourceLayers(layer);
+                    data.folderClippingSuppressedTargets.forEach(target => { target.visible = false; });
+                } else if (data.layerSprite) {
+                    data.layerSprite.visible = false;
+                }
                 data.effectiveClippingSourceId = null;
                 continue;
             }
 
-            const maskSprite = new Sprite(sourceLayer.layerData.renderTexture);
-            maskSprite.label = 'clipping_mask_sprite';
-            maskSprite.renderable = false;
-            maskSprite.eventMode = 'none';
-            const sourceBounds = normalizeRasterBounds(sourceLayer.layerData.rasterBounds, {
-                width: sourceLayer.layerData.renderTexture.width,
-                height: sourceLayer.layerData.renderTexture.height
-            });
-            sourceBounds.width = sourceLayer.layerData.renderTexture.width;
-            sourceBounds.height = sourceLayer.layerData.renderTexture.height;
-            maskSprite.position.set(sourceBounds.x, sourceBounds.y);
-            layer.addChildAt(maskSprite, 0);
+            const maskTexture = this._createBinaryClippingMaskTexture(sourceLayers);
+            if (!maskTexture) {
+                if (data.isFolder) {
+                    data.folderClippingSuppressedTargets = this._getFolderClippingSourceLayers(layer);
+                    data.folderClippingSuppressedTargets.forEach(target => { target.visible = false; });
+                } else if (data.layerSprite) {
+                    data.layerSprite.visible = false;
+                }
+                data.effectiveClippingSourceId = null;
+                continue;
+            }
 
-            const inverse = isInverseClipping(data);
-            this._setClippingMask(data.layerSprite, maskSprite, inverse);
-            this._applyClippingMaskToLayerChildren(layer, maskSprite, inverse);
-            data.layerSprite.visible = true;
-            data.clippingMaskSprite = maskSprite;
+            const inverse = displayClippingMode === CLIPPING_MODES.INVERSE;
+            if (data.isFolder) {
+                const targets = this._getFolderClippingSourceLayers(layer);
+                data.folderClippingMaskSprites = targets.map(targetLayer => {
+                    const maskSprite = this._createClippingMaskSprite(maskTexture);
+                    // Folder maskはLayer一覧の正本であるcurrentFrameContainerへ入れない。
+                    // owner Folder配下へ隔離し、内部maskを実Layerとして露出させない。
+                    layer.addChild(maskSprite);
+                    this._setClippingMask(targetLayer, maskSprite, inverse);
+                    return { target: targetLayer, maskSprite };
+                });
+            } else {
+                const maskSprite = this._createClippingMaskSprite(maskTexture);
+                layer.addChildAt(maskSprite, 0);
+                this._setClippingMask(data.layerSprite, maskSprite, inverse);
+                this._applyClippingMaskToLayerChildren(layer, maskSprite, inverse);
+                data.layerSprite.visible = true;
+                data.clippingMaskSprite = maskSprite;
+            }
+            data.clippingMaskTexture = maskTexture;
             data.clippingMaskInverse = inverse;
-            data.effectiveClippingSourceId = sourceLayer.layerData.id;
+            data.effectiveClippingSourceId = sourceLayers.map(source => source.layerData?.id).filter(Boolean).join(',') || null;
         }
     }
 
@@ -1844,16 +1867,15 @@ export class LayerSystem {
         const data = layer?.layerData;
         if (!data) return;
 
-        if (data.layerSprite && data.clippingMaskSprite && data.layerSprite.mask === data.clippingMaskSprite) {
+        if (data.layerSprite && data.clippingMaskSprite) {
             this._setClippingMask(data.layerSprite, null, false);
         }
         if (data.clippingMaskSprite) {
-            for (const child of layer.children || []) {
-                if (child && child.mask === data.clippingMaskSprite) {
-                    this._setClippingMask(child, null, false);
-                }
+            for (const child of data.clippingMaskedChildren || []) {
+                if (child) this._setClippingMask(child, null, false);
             }
         }
+        data.clippingMaskedChildren = null;
         if (data.layerSprite && !data.isFolder && !data.isBackground) {
             data.layerSprite.visible = true;
         }
@@ -1861,8 +1883,28 @@ export class LayerSystem {
             if (data.clippingMaskSprite.parent) {
                 data.clippingMaskSprite.parent.removeChild(data.clippingMaskSprite);
             }
-            data.clippingMaskSprite.destroy({ children: true, texture: false, baseTexture: false });
+            data.clippingMaskSprite.renderable = false;
+            this._clippingMaskSpritePool.push(data.clippingMaskSprite);
             data.clippingMaskSprite = null;
+        }
+        for (const entry of data.folderClippingMaskSprites || []) {
+            if (entry?.target) {
+                this._setClippingMask(entry.target, null, false);
+            }
+            if (entry?.maskSprite?.parent) entry.maskSprite.parent.removeChild(entry.maskSprite);
+            if (entry?.maskSprite) {
+                entry.maskSprite.renderable = false;
+                this._clippingMaskSpritePool.push(entry.maskSprite);
+            }
+        }
+        data.folderClippingMaskSprites = null;
+        for (const target of data.folderClippingSuppressedTargets || []) {
+            target.visible = this._isLayerEffectivelyVisible(target);
+        }
+        data.folderClippingSuppressedTargets = null;
+        if (data.clippingMaskTexture) {
+            this._clippingMaskTexturePool.push(data.clippingMaskTexture);
+            data.clippingMaskTexture = null;
         }
         data.clippingMaskInverse = false;
         data.effectiveClippingSourceId = null;
@@ -1871,10 +1913,10 @@ export class LayerSystem {
     _setClippingMask(target, maskSprite, inverse = false) {
         if (!target) return;
         if (!maskSprite) {
+            // Pixi v8のmask setter自体がeffectを破棄する。
+            // setMask({ mask: null })を重ねるとresource=nullのAlphaMaskEffectが
+            // 再生成され、別targetへの描画時にAlphaMaskPipeが例外化する。
             target.mask = null;
-            if (typeof target.setMask === 'function') {
-                target.setMask({ mask: null, inverse: false });
-            }
             return;
         }
         if (typeof target.setMask === 'function') {
@@ -1894,10 +1936,122 @@ export class LayerSystem {
         const data = layer?.layerData;
         if (!data || !maskSprite) return;
 
+        data.clippingMaskedChildren = [];
         for (const child of layer.children || []) {
             if (!child || child === maskSprite || child === data.maskSprite || child === data.backgroundGraphics) continue;
             this._setClippingMask(child, maskSprite, inverse);
+            data.clippingMaskedChildren.push(child);
         }
+    }
+
+    _createClippingMaskSprite(texture) {
+        const sprite = this._clippingMaskSpritePool.pop() || new Sprite(texture);
+        sprite.texture = texture;
+        sprite.label = 'clipping_mask_sprite';
+        sprite.renderable = false;
+        sprite.eventMode = 'none';
+        sprite.position.set(0, 0);
+        return sprite;
+    }
+
+    _createBinaryClippingMaskTexture(sourceLayers) {
+        if (!Array.isArray(sourceLayers) || !this.app?.renderer) return null;
+        if (sourceLayers.length === 0) return null;
+
+        const width = Math.max(1, Math.round(this.config?.canvas?.width || 1));
+        const height = Math.max(1, Math.round(this.config?.canvas?.height || 1));
+        const pixels = new Uint8ClampedArray(width * height * 4);
+        let hasMaskPixel = false;
+
+        for (const rasterLayer of sourceLayers) {
+            const snapshot = this.createLayerRasterSnapshot(rasterLayer);
+            if (!snapshot?.pixels) continue;
+            const bounds = normalizeRasterBounds(snapshot.rasterBounds, {
+                width: snapshot.width,
+                height: snapshot.height
+            });
+            for (let y = 0; y < snapshot.height; y++) {
+                const targetY = bounds.y + y;
+                if (targetY < 0 || targetY >= height) continue;
+                for (let x = 0; x < snapshot.width; x++) {
+                    if (snapshot.pixels[(y * snapshot.width + x) * 4 + 3] === 0) continue;
+                    const targetX = bounds.x + x;
+                    if (targetX < 0 || targetX >= width) continue;
+                    const offset = (targetY * width + targetX) * 4;
+                    pixels[offset] = 255;
+                    pixels[offset + 1] = 255;
+                    pixels[offset + 2] = 255;
+                    pixels[offset + 3] = 255;
+                    hasMaskPixel = true;
+                }
+            }
+        }
+        if (!hasMaskPixel) return null;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        context.putImageData(new ImageData(pixels, width, height), 0, 0);
+
+        // CanvasSourceをAlphaMaskへ直結すると、Album/exportの別RenderTargetで
+        // BindGroup resourceがnullになる場合がある。既存Raster maskと同じ
+        // RenderTextureへ一度焼き込み、描画targetが変わっても再利用可能にする。
+        const sourceTexture = Texture.from(canvas);
+        const sourceSprite = new Sprite(sourceTexture);
+        let maskTexture = this._clippingMaskTexturePool.pop() || null;
+        if (maskTexture && (maskTexture.width !== width || maskTexture.height !== height)) {
+            maskTexture.destroy(true);
+            maskTexture = null;
+        }
+        maskTexture ||= RenderTexture.create({ width, height });
+        try {
+            this.app.renderer.render({
+                container: sourceSprite,
+                target: maskTexture,
+                clear: true,
+                clearColor: [0, 0, 0, 0]
+            });
+        } finally {
+            sourceSprite.destroy({ texture: true, baseTexture: true });
+        }
+        return maskTexture;
+    }
+
+    _resolveClippingSourceLayers(layer, layers = this.getLayers()) {
+        const requestedIds = layer?.layerData?.animationClippingSourceLayerIds;
+        if (Array.isArray(requestedIds)) {
+            const requestedIdSet = new Set(requestedIds);
+            return layers.filter(candidate => {
+                const data = candidate?.layerData;
+                return data
+                    && requestedIdSet.has(data.id)
+                    && !data.isFolder
+                    && !data.isBackground
+                    && !!data.renderTexture
+                    && this._isLayerEffectivelyVisible(candidate);
+            });
+        }
+
+        const sourceLayer = this._findClippingSourceLayer(layer, layers);
+        if (!sourceLayer?.layerData) return [];
+        return sourceLayer.layerData.isFolder
+            ? this._getFolderClippingSourceLayers(sourceLayer)
+            : [sourceLayer];
+    }
+
+    _getFolderClippingSourceLayers(folderLayer) {
+        const folderId = folderLayer?.layerData?.id;
+        if (!folderId || !folderLayer.layerData.isFolder) return [];
+
+        return this._getFolderSubtreeLayers(folderId).filter(sourceLayer => {
+            const data = sourceLayer?.layerData;
+            return data
+                && !data.isFolder
+                && !data.isBackground
+                && !!data.renderTexture
+                && this._isLayerEffectivelyVisible(sourceLayer);
+        });
     }
 
     _findClippingSourceLayer(layer, layers = this.getLayers()) {
@@ -1912,8 +2066,11 @@ export class LayerSystem {
             const data = candidate?.layerData;
             if (!data) continue;
             if ((data.parentId || null) !== parentId) continue;
-            if (data.isBackground || data.isFolder) return null;
             if (data.visible === false || candidate.visible === false) return null;
+            if (data.isBackground) return null;
+            if (data.isFolder) {
+                return this._getFolderClippingSourceLayers(candidate).length > 0 ? candidate : null;
+            }
             if (!data.renderTexture) return null;
             return candidate;
         }
@@ -2511,6 +2668,27 @@ export class LayerSystem {
                 .map(layer => [layer.layerData.id, layer])
         );
         const effectiveAlphaById = new Map();
+        const effectiveVisibilityById = new Map();
+
+        const resolveVisibility = (layer) => {
+            const data = layer?.layerData;
+            if (!data) return false;
+            if (effectiveVisibilityById.has(data.id)) return effectiveVisibilityById.get(data.id);
+
+            let visible = data.visible !== false;
+            const visited = new Set([data.id]);
+            let parentId = data.parentId || null;
+            while (visible && parentId && !visited.has(parentId)) {
+                visited.add(parentId);
+                const parent = byId.get(parentId);
+                const parentData = parent?.layerData;
+                if (!parentData?.isFolder) break;
+                visible = parentData.visible !== false;
+                parentId = parentData.parentId || null;
+            }
+            effectiveVisibilityById.set(data.id, visible);
+            return visible;
+        };
 
         const resolveAlpha = (layer) => {
             const data = layer?.layerData;
@@ -2546,6 +2724,7 @@ export class LayerSystem {
             const data = layer?.layerData;
             if (!data || data.isBackground) continue;
             layer.alpha = resolveAlpha(layer);
+            layer.visible = resolveVisibility(layer);
         }
     }
 
