@@ -52,8 +52,7 @@ export function applyClippingAlpha(targetAlpha, maskAlpha, mode) {
     const mask = Math.max(0, Math.min(255, Number(maskAlpha) || 0));
     const normalized = normalizeClippingMode(mode);
     if (normalized === CLIPPING_MODES.NONE) return Math.round(target);
-    const maskRatio = normalized === CLIPPING_MODES.INVERSE
-        ? (255 - mask) / 255
-        : mask / 255;
-    return Math.round(target * maskRatio);
+    const insideMask = mask > 0;
+    const visible = normalized === CLIPPING_MODES.INVERSE ? !insideMask : insideMask;
+    return visible ? Math.round(target) : 0;
 }

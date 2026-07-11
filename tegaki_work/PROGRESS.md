@@ -11,7 +11,7 @@
 - Lane順変更はドラッグ＆ドロップ専用とし、余分な▲▼buttonを撤去した。`reorderLaneTo()` はLane D&Dの単一経路として維持する。
 - Phase 5tを完了。Ctrl/Cmd複数選択、通常activeと選択集合の表示分離、相対Lane/frameを維持した原子的一括移動、衝突全体拒否、単一History Undo/Redoを実装した。
 - オーナー実機で複数Laneを跨ぐ一括移動と、障害CAFがある場合に全件移動しないことを確認済み。
-- Phase 5uを開始。複数CAF copy/pasteとCAF Groupを同じ相対配置payload・原子的一括配置へ載せる。最初に既存単体CAF clipboardのasset参照、History、save/load契約を監査する。
+- Phase 5uを完了。複数CAF copy/pasteとCAF Groupを同じ相対配置payload・原子的一括配置へ載せた。
 - Phase 5u Slice 0を完了。単体pasteはClipAsset/DrawingSnapshotを複製する独立コピーで、clipboardはruntime UI state、貼付け結果だけがproject保存対象となる契約を確認した。
 - Slice 1で複数payload、相対Lane/frame paste、選択内Asset共有関係の維持、衝突/Lane不足の全体拒否、単一History Undo/Redoを実装した。単体paste回帰とproject round-trip確認が残る。
 - Slice 2でTimeline直下のCAF Group、隣接連結判定、folder button、作成/解除、member click全体選択、History、保存復元を実装した。非連結選択はdisabled理由を表示する。
@@ -19,6 +19,20 @@
 - オーナー実機でGroup移動・copy/pasteを確認済み。同一Lane連続Groupは外周破線へ統合し、Group中の個別retiming handle、↔、Duration ±を無効化した。
 - Browserで中央memberからの一括D&D、Duration不変、中央member削除時の自動解除、Undo復元を確認した。Project保存は既存 `TimelineModel.serialize()` / constructor経路で `clipGroups` をround-tripする。
 - CAF Groupの時間比率伸縮はTegaki側では原則実装しない。将来の別動画WEBUI側でkeyframe/retimingを正本にし、整数FrameへbakeしたCAF列を戻す長期案としてロードマップへ記録した。
+- Phase 5vを開始。Folder blend完全合成は低優先度で棚上げし、Folder clippingを優先する。Slice 0でCAF `clippingMode` 3状態契約の回帰と通常Folder属性のProject保存欠落を修復する。
+- Phase 5v Slice 0を実装。CAF `clippingMode` のモデル/serialize/toggle/clipboard/working Layer/preview alpha契約を復元し、通常Folderの `blendMode / clippingMode` をProject保存へ追加した。BrowserでCAF Folderの通常/逆、Undo/Redo、console errorなしを確認済み。実Project round-tripが残る。
+- Phase 5v Slice 1でCAF Folder target/sourceの半透明alpha、inverse、source不在/空/非表示時の透明化、Folder merge後mode維持を実装した。Phase 5u `clipGroups` のProject serialize欠落も修復した。
+- 後続はFolder visibility、Layerの直下Folderをclip sourceにする経路を優先する。Folder add/multiply/overlayは子へ伝播せずgroup全体へ適用する要望として監査し、完全group RenderTextureが必要なら低優先度の別Sliceへ送る。
+- 通常Folder visibilityを配下Pixi Layerへ反映し、Folder直上Rasterのclip sourceとして配下可視Raster alphaを束ねるmask Container経路を追加した。固定入力、BrowserのFolder D&D/eye往復/clipping ON、node check、build、console errorなしを確認済み。
+- オーナー実機報告から、mask ContainerではFolder配下Rasterが実maskへ反映されず、alpha乗算で半透明化する問題を確認した。通常/CAFのclip alphaを二値シルエットへ統一し、Folder sourceを単一textureへ合成する経路へ置換した。通常Folder card/属性popupのclip buttonと、Folder配下全Rasterを下位きょうだいsourceで切り抜くtarget経路も追加した。
+- node check、build、二値alpha固定入力、BrowserでFolder clip buttonのnormal切替とconsole errorなしまで確認済み。Folder内複数Rasterのsource/target、inverse、Project round-tripはオーナー実機確認待ち。
+- Folder target内部maskが通常Layer一覧へ混入する回帰を修正し、内部maskをowner Folder配下へ隔離した。mask resourceは専用poolで再利用し、OFF後の再ON、Album保存、Layer数不変、console errorなしを確認した。
+- CAF化後のTable展開中/閉後でFolder clipping契約が変わる問題を修正した。CAF owner/source/Folder子孫解決を共有helperへ集約し、working Layerへ表示用mode/source ID群を橋渡しする。Frame compositorも二値maskへ統一した。
+- Browserで通常Folder target構成をCAF化し、Table展開中と閉後の表示一致、Folder階層/clip ON維持、console errorなしを確認済み。上位LayerからFolder sourceを使う複合構成は固定入力済みで、オーナー実機確認が残る。
+- CAF Folder clip切替時の遅延を調査し、working Layer契約の再計算漏れと、previewでcache確認前に全Canvasを再走査する重複を修正した。PREVIEW中のworking mask生成はidleへ送り、通常表示へ戻す前にflushする。
+- 単一CAF LayerのV変形確定は対象Layerだけをsnapshot更新する。Browserの400×400複合CAFでclip切替、clip状態の再生、単一Layer V変形、console errorなしを確認した。
+- Folder一括V変形は原子的rollbackのため全対象焼込みを維持する。巨大Canvas×多数Layerでは高コストになり得るため、既存size preflightを維持し、非同期分割は中規模History改修候補として棚上げする。
+- Overlay高度blend自体は登録済み。通常Folderが空Containerのため配下groupへ作用しないことが原因で、完全group effectはdirty group RenderTextureを要する低優先度Sliceとして残す。
 
 ## 維持する契約
 
@@ -42,5 +56,6 @@
 - Phase 5q完了: `開発用資料保管庫/Archive/PHASE5Q_CLOSEOUT_2026-07-10.md`
 - Phase 5q表示順の技術記録: `開発用資料保管庫/Archive/PHASE5Q_PREVIEW_ORDER_NOTES.md`
 - Phase 5t完了: `開発用資料保管庫/Archive/PHASE5T_CLOSEOUT_2026-07-11.md`
+- Phase 5u完了: `開発用資料保管庫/Archive/PHASE5U_CLOSEOUT_2026-07-11.md`
 - 旧Progress全文: `開発用資料保管庫/Archive/PROGRESS_ARCHIVE_2026-07-10.md`
 - 現行ロードマップ: `開発用資料保管庫/proposals/00_計画索引.md`

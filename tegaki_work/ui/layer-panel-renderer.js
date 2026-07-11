@@ -1673,7 +1673,7 @@ export class LayerPanelRenderer {
         const clippingMode = getClippingMode(layer.layerData);
         const isClipping = clippingMode !== 'none';
         const isInverse = clippingMode === 'inverse';
-        const canToggle = !layer.layerData?.isBackground && !layer.layerData?.isFolder;
+        const canToggle = !layer.layerData?.isBackground;
         const createButton = options.variant && options.actionRole
             ? () => this._createLayerPanelCardActionButtonElement(options.variant, options.actionRole, {
                 extraClasses: ['layer-clip-status', ...this._normalizeLayerPanelClassList(options.extraClasses)],
@@ -1979,6 +1979,7 @@ export class LayerPanelRenderer {
         const clipping = viewState.clipping;
         const inverseClipping = viewState.inverseClipping;
         const isFolder = viewState.isFolder;
+        const canToggleClipping = true;
         const rawLayerName = viewState.name;
         const layerName = this._escapeHtml(rawLayerName);
         const presets = [0, 25, 50, 75, 100];
@@ -2009,11 +2010,11 @@ export class LayerPanelRenderer {
                         ${blendModes.map(mode => `<option value="${mode.value}"${mode.value === blendMode ? ' selected' : ''}>${mode.label}</option>`).join('')}
                     </select>
                 </label>
-                ${isFolder ? '' : `
+                ${canToggleClipping ? `
                     <button type="button" class="layer-attribute-clip-toggle${clipping ? ' active' : ''}${inverseClipping ? ' is-inverse-clipping' : ''}" data-action="toggle-clipping" title="${inverseClipping ? '逆クリッピングON' : (clipping ? 'クリッピングON' : 'クリッピング未使用')}">
                         ${UI_ICONS.paperclip}
                     </button>
-                `}
+                ` : ''}
             </div>
         `;
 
