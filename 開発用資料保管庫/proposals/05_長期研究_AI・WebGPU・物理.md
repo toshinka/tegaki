@@ -1,6 +1,6 @@
 # 長期研究: AI・WebGPU・物理
 
-更新日: 2026-07-10
+更新日: 2026-07-13
 
 ## 境界
 
@@ -14,6 +14,8 @@
 - StrokeQualityFilterは、実機で再現する入力欠落やジッターを計測できた場合だけ、筆圧平滑化と極小ジッター除去から試す。
 - ライブ描画と確定描画の見た目を分けない。
 - GPU brush候補は大量dab、高度なairbrush texture、混色、高品質AA。通常pen全面置換から始めない。
+- airbrushは現行のradial texture dab、spacing補正flow、normal alpha蓄積を固定入力で測り、WebGPU prototypeは大径soft dab 1 workloadから始める。
+- 水彩・油彩はrenderer切替だけでは成立しない。pigment / water / wetness / height等の永続状態と、History/CAF保存時のbake境界を先に設計する。
 
 ## WebGPU / Pixi更新
 
@@ -33,6 +35,9 @@
 - Perform記録は操作sampling、簡略化、Undo単位を定義してから行う。
 - mesh / warp / physicsはCAF画像正本と配置transformを分離する。
 - AI補間、physics、meshを同一Phaseで実装しない。
+- meshは密な手打ちを既定にせず、少数点cage / 粗いlattice / 自動weightを比較する。
+- boneとphysicsはdeformer parameterを駆動し、必要時にkeyframeへbakeする。画像正本へ直接演算結果を書き続けない。
+- 詳細な段階と採否gateは `09_変形アニメーション・メッシュ・GPU画材ロードマップ.md` を参照する。
 
 ## 無限領域
 
