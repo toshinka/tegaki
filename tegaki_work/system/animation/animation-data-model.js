@@ -531,6 +531,39 @@ export class TimelineModel {
         return null;
     }
 
+    removeClips(clipIds = []) {
+        const uniqueIds = [...new Set(
+            (Array.isArray(clipIds) ? clipIds : []).filter(Boolean)
+        )];
+        if (uniqueIds.length === 0) {
+            return { ok: false, reason: 'selection-empty' };
+        }
+
+        const entries = uniqueIds.map(clipId => this.findClipEntry(clipId));
+        if (entries.some(entry => !entry?.lane || !entry?.clip)) {
+            return { ok: false, reason: 'clip-not-found' };
+        }
+
+        const idSet = new Set(uniqueIds);
+        const removedClips = entries.map(entry => ({
+            clipId: entry.clip.id,
+            assetId: entry.clip.assetId || null,
+            laneId: entry.lane.id,
+            frameIndex: entry.clip.startFrame,
+            duration: entry.clip.duration
+        }));
+        this.tracks.forEach(lane => {
+            lane.cels = (lane.cels || []).filter(clip => !idSet.has(clip.id));
+        });
+        const groupResult = this.reconcileClipGroups();
+        return {
+            ok: true,
+            clipIds: uniqueIds,
+            removedClips,
+            removedGroupIds: groupResult.removedGroupIds || []
+        };
+    }
+
     getClipGroup(groupId) {
         return this.clipGroups.find(group => group.id === groupId) || null;
     }
@@ -1054,6 +1087,7 @@ export class TimelineModel {
 
         layer.visible = layer.visible === false ? true : false;
         layer.updatedAt = Date.now();
+        asset.updatedAt = Date.now();
         return { ok: true, asset, layer };
     }
 
@@ -1343,12 +1377,18 @@ export class TimelineModel {
             this.ensureClipAssetInternalLayer(asset.id);
         }
 
-        // Preview対象レイヤーの抽出 (raster かつ実Snapshotあり)
-        const layers = asset.internalLayers.filter(l => {
-            return l.type === 'raster' && this.getDrawingSnapshot(l.drawingSnapshotId);
+        // Folderも階層正本の一部として返す。
+        // rasterだけに絞ると parentLayerId の参照先が消え、Folder配下が
+        // root previewへ到達できず、旧単一Snapshotへ誤ってfallbackする。
+        const hasDrawableRaster = asset.internalLayers.some(layer => {
+            return layer.type === 'raster' && this.getDrawingSnapshot(layer.drawingSnapshotId);
         });
+        if (!hasDrawableRaster) return null;
 
-        if (layers.length === 0) return null;
+        const layers = asset.internalLayers.filter(layer => {
+            return layer.type === 'folder'
+                || (layer.type === 'raster' && this.getDrawingSnapshot(layer.drawingSnapshotId));
+        });
 
         return {
             ok: true,

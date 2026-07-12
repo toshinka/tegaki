@@ -1,6 +1,6 @@
 # Tegaki Progress
 
-更新日: 2026-07-11
+更新日: 2026-07-13
 
 ## 現在地
 
@@ -32,7 +32,23 @@
 - CAF Folder clip切替時の遅延を調査し、working Layer契約の再計算漏れと、previewでcache確認前に全Canvasを再走査する重複を修正した。PREVIEW中のworking mask生成はidleへ送り、通常表示へ戻す前にflushする。
 - 単一CAF LayerのV変形確定は対象Layerだけをsnapshot更新する。Browserの400×400複合CAFでclip切替、clip状態の再生、単一Layer V変形、console errorなしを確認した。
 - Folder一括V変形は原子的rollbackのため全対象焼込みを維持する。巨大Canvas×多数Layerでは高コストになり得るため、既存size preflightを維持し、非同期分割は中規模History改修候補として棚上げする。
+- Table previewのFolder node欠落、全非表示時の旧snapshot fallback、working実効visibilityのCAF正本への逆流を修正した。internal構造revisionをpreview keyへ含め、D&D/eye変更はFrame切替なしで反映する。
+- Tableの一時runtime visibilityをclipping source正本から分離し、Folder target抑制解除時は元の表示を復元する。stroke開始時の不要な全mask再生成も除去した。
+- Vドラッグ中はPixi transformを毎入力へ反映し、DOM/イベント/thumbnail副作用だけを1 animation frameへ集約した。CAF名single click選択とdouble-click renameも両立した。
+- BrowserでTable展開中stroke反復、CAF名single/double click、console errorなしを確認済み。オーナー実機でVキー保持中のXY/回転/拡縮の体感再確認が残る。
+- 高Hz penのcoalesced sample処理は全入力点と筆圧を維持し、RenderTextureへの同期描画だけを1 pointermove 1回へ集約した。Animation Table全面のbackdrop blurも撤去した。
+- オーナー実機ではPC再起動後に通常/Table展開時のpen描画とVキー移動が滑らかへ復帰した。長時間ブラウザ/GPU状態またはHUION Kamvas 22 Gen 3ドライバの一時状態が関与した可能性があり、アプリ変更単独の効果とは断定しない。
+- Ctrl/Cmd複数選択とCAF Group選択を原子的な一括削除へ接続した。BrowserでGroup/未Group各3件の一括削除、ボタンとAlt+Delete、Undo/RedoによるGroup・選択集合復元、console errorなしを確認済み。
+- オーナー実機で複数選択CAFとCAF Groupの一括削除を確認済み。
+- ProjectManagerの固定入力で通常Folderのparent/children、visibility、blend、normal/inverse clippingをexport/load往復確認し、CAF内部Folderもanimation serialize/TimelineModel復元を確認した。
+- CAF inverse Folder sourceの複数Raster子孫、source非表示・削除・D&D順変更後の再探索を固定入力で確認した。Browserでは2 Frame描画のTimeline onion暖色表示、8 FPS再生/停止、GIF 1–2 Frameの400×400プレビューBlob生成、console errorなしを確認済み。
+- オーナー実機で、実描画を持つ複合Folder構成の保存・再読込と出力に問題がないことを確認した。
+- 大量Frame時にTimeline zoom controlが水平scrollbarを覆う問題を修正し、controlをheader rightへ移した。Timeline縮小は33%まで拡張し、60%未満ではFrame番号だけを隠して秒境界を維持する。Browserで240 Frame、通常幅/543px狭幅、33%/40%/47%/60%、scrollbar非重複、console errorなしを確認済み。
+- Phase 5vを完了。Folder group blend完全合成はdirty group RenderTextureを要する別Phase候補として棚上げする。
 - Overlay高度blend自体は登録済み。通常Folderが空Containerのため配下groupへ作用しないことが原因で、完全group effectはdirty group RenderTextureを要する低優先度Sliceとして残す。
+- Phase 5wを開始する。既存ClipInstanceの静的transform、未定義形のtransformKeyframes保存枠、compositorの静的描画経路を監査済み。最初はkeyframe schemaとhold / linear samplingを固定し、position / scale / rotationを同一Frame契約へ載せる。
+- Phase 5w Slice 0でClip-local 0-based Frame、同一Frame後勝ち、範囲外無視、欠損parameter継承、rotation radian最短角、左keyのhold / linear契約を純粋sampling helperへ実装し、TimelineFrameCompositorへ接続した。固定入力とbuildは完了し、Browser実操作が残る。
+- opacity、色補間、easing、Perform、簡易warp / morph、bone、WebGPU brush、水彩・油彩はPhase 5wへ混ぜず、`proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md` で段階管理する。
 
 ## 維持する契約
 
@@ -57,5 +73,6 @@
 - Phase 5q表示順の技術記録: `開発用資料保管庫/Archive/PHASE5Q_PREVIEW_ORDER_NOTES.md`
 - Phase 5t完了: `開発用資料保管庫/Archive/PHASE5T_CLOSEOUT_2026-07-11.md`
 - Phase 5u完了: `開発用資料保管庫/Archive/PHASE5U_CLOSEOUT_2026-07-11.md`
+- Phase 5v完了: `開発用資料保管庫/Archive/PHASE5V_CLOSEOUT_2026-07-13.md`
 - 旧Progress全文: `開発用資料保管庫/Archive/PROGRESS_ARCHIVE_2026-07-10.md`
 - 現行ロードマップ: `開発用資料保管庫/proposals/00_計画索引.md`

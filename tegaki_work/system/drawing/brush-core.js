@@ -58,6 +58,7 @@ export class BrushCore {
         this.strokeTargetLayer = null;
         this.strokeInputProfiler = this._ensureStrokeInputProfiler();
         this.liveRenderFrameRequest = null;
+        this.realtimePenBatchGraphics = null;
     }
     
     init() {
@@ -250,6 +251,8 @@ export class BrushCore {
                     distanceSkips: 0,
                     zeroDistanceSkips: 0,
                     penRenderCalls: 0,
+                    penBatchSegments: 0,
+                    penBatchFlushes: 0,
                     penRenderMissingTarget: 0,
                     penRenderMissingGraphics: 0,
                     maxDistance: 0,
@@ -451,17 +454,27 @@ export class BrushCore {
 
         const perfStart = this._perfNow();
         const mode = this.getMode();
-        infos.forEach((info, index) => {
-            if (!info) return;
-            const isLast = index === infos.length - 1;
-            this.updateStroke(
-                info.clientX,
-                info.clientY,
-                info.pressure,
-                info.pointerType,
-                isLast ? (inputProfile || info.inputProfile) : null
-            );
-        });
+        const shouldBatchPenRender = mode === 'pen' && infos.length > 1;
+        if (shouldBatchPenRender) {
+            this.realtimePenBatchGraphics = [];
+        }
+        try {
+            infos.forEach((info, index) => {
+                if (!info) return;
+                const isLast = index === infos.length - 1;
+                this.updateStroke(
+                    info.clientX,
+                    info.clientY,
+                    info.pressure,
+                    info.pointerType,
+                    isLast ? (inputProfile || info.inputProfile) : null
+                );
+            });
+        } finally {
+            if (shouldBatchPenRender) {
+                this._flushRealtimePenBatch();
+            }
+        }
         if (this.strokeInputProfile) {
             this.strokeInputProfile.coalescedBatches = (this.strokeInputProfile.coalescedBatches || 0) + 1;
         }
@@ -757,6 +770,13 @@ export class BrushCore {
         const graphics = this.strokeRenderer.renderPenSegment(points, renderSettings);
 
         if (graphics && this.layerManager.app?.renderer) {
+            if (Array.isArray(this.realtimePenBatchGraphics)) {
+                this.realtimePenBatchGraphics.push(graphics);
+                if (this.strokeInputProfile?.realtime) {
+                    this.strokeInputProfile.realtime.penBatchSegments++;
+                }
+                return;
+            }
             const renderContainer = new Container();
             renderContainer.addChild(graphics);
             this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
@@ -777,6 +797,41 @@ export class BrushCore {
             points: points?.length || 0,
             penOpacityIsolation: this.penOpacityState !== null
         });
+    }
+
+    _flushRealtimePenBatch() {
+        const graphicsBatch = this.realtimePenBatchGraphics;
+        this.realtimePenBatchGraphics = null;
+        if (!Array.isArray(graphicsBatch) || graphicsBatch.length === 0) return;
+
+        const activeLayer = this.penOpacityState?.targetLayer
+            || this.strokeTargetLayer
+            || this.layerManager.getActiveLayer();
+        const renderer = this.layerManager.app?.renderer;
+        const renderTarget = this.penOpacityState?.texture || activeLayer?.layerData?.renderTexture;
+        if (!activeLayer || !renderer || !renderTarget) {
+            graphicsBatch.forEach(graphics => graphics?.destroy?.({ children: true, texture: true, baseTexture: true }));
+            this._recordRealtimePenRenderDebug('missing-target');
+            return;
+        }
+
+        const renderContainer = new Container();
+        graphicsBatch.forEach(graphics => renderContainer.addChild(graphics));
+        this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
+        try {
+            renderer.render({
+                container: renderContainer,
+                target: renderTarget,
+                clear: false
+            });
+            this._recordRealtimePenRenderDebug('rendered');
+            if (this.strokeInputProfile?.realtime) {
+                this.strokeInputProfile.realtime.penBatchFlushes++;
+            }
+            this._requestLiveCanvasRender(this.penOpacityState ? 'realtime-pen-preview-batch' : 'realtime-pen-batch');
+        } finally {
+            renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+        }
     }
 
     _shouldUsePenOpacityIsolation(mode, settings) {
@@ -1659,6 +1714,8 @@ export class BrushCore {
             distanceSkips: realtime.distanceSkips || 0,
             zeroDistanceSkips: realtime.zeroDistanceSkips || 0,
             penRenderCalls: realtime.penRenderCalls || 0,
+            penBatchSegments: realtime.penBatchSegments || 0,
+            penBatchFlushes: realtime.penBatchFlushes || 0,
             penRenderMissingTarget: realtime.penRenderMissingTarget || 0,
             penRenderMissingGraphics: realtime.penRenderMissingGraphics || 0,
             maxDistance: Number((Number(realtime.maxDistance || 0)).toFixed(3)),

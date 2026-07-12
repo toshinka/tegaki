@@ -7,6 +7,7 @@ import {
     getClippingMode
 } from '../clipping-mode.js';
 import { normalizeRasterBounds } from '../raster-bounds.js';
+import { sampleClipTransform } from './clip-transform-sampler.js';
 import {
     findInternalClippingOwner,
     findInternalClippingSource,
@@ -78,13 +79,13 @@ export class TimelineFrameCompositor {
         const frameTree = this.model.getFrameAssetTree(frameIndex, {
             laneIds: options.laneIds
         });
-        this._renderLayerStack(ctx, frameTree, sourceWidth, sourceHeight);
+        this._renderLayerStack(ctx, frameTree, sourceWidth, sourceHeight, frameIndex);
 
         ctx.restore();
         return canvas;
     }
 
-    _renderLayerStack(ctx, frameTree, width, height) {
+    _renderLayerStack(ctx, frameTree, width, height, frameIndex) {
         const clipByLaneId = new Map(frameTree.clips.map(clip => [clip.laneId, clip]));
         const trackBySourceLayerId = new Map(
             (this.model.tracks || [])
@@ -97,14 +98,15 @@ export class TimelineFrameCompositor {
         this._renderNormalLayerGroup(ctx, layers, null, width, height, {
             trackBySourceLayerId,
             clipByLaneId,
-            renderedLaneIds
+            renderedLaneIds,
+            frameIndex
         });
 
         // source Layerが既に存在しないLane等もTimeline順で合成する。
         for (let index = frameTree.clips.length - 1; index >= 0; index--) {
             const clipEntry = frameTree.clips[index];
             if (renderedLaneIds.has(clipEntry.laneId)) continue;
-            this._renderClipEntry(ctx, clipEntry, width, height);
+            this._renderClipEntry(ctx, clipEntry, width, height, frameIndex);
         }
     }
 
@@ -151,7 +153,7 @@ export class TimelineFrameCompositor {
             if (track) {
                 const clipEntry = context.clipByLaneId.get(track.id);
                 if (clipEntry) {
-                    this._renderClipEntry(ctx, clipEntry, width, height);
+                    this._renderClipEntry(ctx, clipEntry, width, height, context.frameIndex);
                     context.renderedLaneIds.add(track.id);
                     rendered = true;
                 }
@@ -165,13 +167,19 @@ export class TimelineFrameCompositor {
         return rendered;
     }
 
-    _renderClipEntry(ctx, clipEntry, width, height) {
+    _renderClipEntry(ctx, clipEntry, width, height, frameIndex) {
         if (clipEntry.visible === false) return;
         const asset = this.model.getClipAsset(clipEntry.assetId);
         if (!asset) return;
         const assetCanvas = this._renderAsset(asset, width, height);
         if (!assetCanvas) return;
-        this._drawTransformedClip(ctx, assetCanvas, clipEntry.transform, width, height);
+        this._drawTransformedClip(
+            ctx,
+            assetCanvas,
+            sampleClipTransform(clipEntry, frameIndex),
+            width,
+            height
+        );
     }
 
     _renderStaticLayer(ctx, layer, width, height) {

@@ -41,6 +41,7 @@ export class LayerPanelRenderer {
         this._cardDrag = null;
         this._cardDragSuppressClick = false;
         this._legacyNamePointerTap = null;
+        this._clipMirrorNameClickTimer = null;
         this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
         this._handleAttributePopupKeydown = this._handleAttributePopupKeydown.bind(this);
         this._handleAttributePopupDragMove = this._handleAttributePopupDragMove.bind(this);
@@ -149,9 +150,48 @@ export class LayerPanelRenderer {
             return true;
         }
         if (action === 'rename') {
-            if (e.detail < 2 || e.shiftKey || e.ctrlKey || e.metaKey) return true;
-            this._editLayerPanelCardNameFromDelegatedClick(e, variant.name, row, target.actionElement);
-            return true;
+            if (e.detail >= 2 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                if (this._clipMirrorNameClickTimer !== null) {
+                    clearTimeout(this._clipMirrorNameClickTimer);
+                    this._clipMirrorNameClickTimer = null;
+                }
+                this._editLayerPanelCardNameFromDelegatedClick(e, variant.name, row, target.actionElement);
+                return true;
+            }
+            if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                adapter.select({
+                    ...payload,
+                    row,
+                    options: {
+                        syncWorkingLayer: false,
+                        renderAnimationTable: false,
+                        requestLayerPanelUpdate: false,
+                        visualOnly: true
+                    }
+                });
+                if (this._clipMirrorNameClickTimer !== null) {
+                    clearTimeout(this._clipMirrorNameClickTimer);
+                }
+                const assetId = row.dataset.assetId || '';
+                const internalLayerId = row.dataset.internalLayerId || '';
+                this._clipMirrorNameClickTimer = setTimeout(() => {
+                    this._clipMirrorNameClickTimer = null;
+                    const currentRow = [...this.container.querySelectorAll(variant.rowSelector)]
+                        .find(candidate => candidate.dataset.assetId === assetId
+                            && candidate.dataset.internalLayerId === internalLayerId);
+                    if (!currentRow) return;
+                    adapter.select({
+                        ...payload,
+                        row: currentRow,
+                        options: {
+                            syncWorkingLayer: true,
+                            renderAnimationTable: true,
+                            requestLayerPanelUpdate: true
+                        }
+                    });
+                }, 240);
+                return true;
+            }
         }
         if (action === 'folder') {
             if (variant.name === 'clip-layer-mirror') {
@@ -165,7 +205,7 @@ export class LayerPanelRenderer {
             adapter.toggleFolder(payload);
             return true;
         }
-        if (action === 'select') {
+        if (action === 'select' || action === 'rename') {
             if (this._editingLayerIndex >= 0) return true;
             if (window.stateManager) {
                 window.stateManager.setLastActivePanel('layer');

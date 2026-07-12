@@ -48,6 +48,8 @@ export class LayerSystem {
         this.checkerPattern = null;
         this._checkerTileScale = null;
         this._layerTransformSession = null;
+        this._transformInteractionFrame = null;
+        this._pendingTransformInteraction = null;
         this._clippingMaskSpritePool = [];
         this._clippingMaskTexturePool = [];
     }
@@ -1816,9 +1818,9 @@ export class LayerSystem {
 
             const sourceLayers = this._resolveClippingSourceLayers(layer, layers);
             if (sourceLayers.length === 0) {
+                data.clippingDisplaySuppressed = true;
                 if (data.isFolder) {
-                    data.folderClippingSuppressedTargets = this._getFolderClippingSourceLayers(layer);
-                    data.folderClippingSuppressedTargets.forEach(target => { target.visible = false; });
+                    this._suppressFolderClippingTargets(layer);
                 } else if (data.layerSprite) {
                     data.layerSprite.visible = false;
                 }
@@ -1828,9 +1830,9 @@ export class LayerSystem {
 
             const maskTexture = this._createBinaryClippingMaskTexture(sourceLayers);
             if (!maskTexture) {
+                data.clippingDisplaySuppressed = true;
                 if (data.isFolder) {
-                    data.folderClippingSuppressedTargets = this._getFolderClippingSourceLayers(layer);
-                    data.folderClippingSuppressedTargets.forEach(target => { target.visible = false; });
+                    this._suppressFolderClippingTargets(layer);
                 } else if (data.layerSprite) {
                     data.layerSprite.visible = false;
                 }
@@ -1839,6 +1841,7 @@ export class LayerSystem {
             }
 
             const inverse = displayClippingMode === CLIPPING_MODES.INVERSE;
+            data.clippingDisplaySuppressed = false;
             if (data.isFolder) {
                 const targets = this._getFolderClippingSourceLayers(layer);
                 data.folderClippingMaskSprites = targets.map(targetLayer => {
@@ -1863,6 +1866,17 @@ export class LayerSystem {
         }
     }
 
+    _suppressFolderClippingTargets(folderLayer) {
+        const data = folderLayer?.layerData;
+        if (!data?.isFolder) return;
+
+        data.folderClippingSuppressedTargets = this._getFolderClippingSourceLayers(folderLayer)
+            .map(target => ({ target, previousVisible: target.visible }));
+        for (const entry of data.folderClippingSuppressedTargets) {
+            entry.target.visible = false;
+        }
+    }
+
     _clearLayerClippingMask(layer) {
         const data = layer?.layerData;
         if (!data) return;
@@ -1876,6 +1890,7 @@ export class LayerSystem {
             }
         }
         data.clippingMaskedChildren = null;
+        data.clippingDisplaySuppressed = false;
         if (data.layerSprite && !data.isFolder && !data.isBackground) {
             data.layerSprite.visible = true;
         }
@@ -1898,8 +1913,8 @@ export class LayerSystem {
             }
         }
         data.folderClippingMaskSprites = null;
-        for (const target of data.folderClippingSuppressedTargets || []) {
-            target.visible = this._isLayerEffectivelyVisible(target);
+        for (const entry of data.folderClippingSuppressedTargets || []) {
+            if (entry?.target) entry.target.visible = entry.previousVisible !== false;
         }
         data.folderClippingSuppressedTargets = null;
         if (data.clippingMaskTexture) {
@@ -2029,7 +2044,7 @@ export class LayerSystem {
                     && !data.isFolder
                     && !data.isBackground
                     && !!data.renderTexture
-                    && this._isLayerEffectivelyVisible(candidate);
+                    && this._isLayerPersistentlyVisible(candidate, layers);
             });
         }
 
@@ -2050,7 +2065,7 @@ export class LayerSystem {
                 && !data.isFolder
                 && !data.isBackground
                 && !!data.renderTexture
-                && this._isLayerEffectivelyVisible(sourceLayer);
+                && this._isLayerPersistentlyVisible(sourceLayer);
         });
     }
 
@@ -2066,7 +2081,7 @@ export class LayerSystem {
             const data = candidate?.layerData;
             if (!data) continue;
             if ((data.parentId || null) !== parentId) continue;
-            if (data.visible === false || candidate.visible === false) return null;
+            if (!this._isLayerPersistentlyVisible(candidate, layers)) return null;
             if (data.isBackground) return null;
             if (data.isFolder) {
                 return this._getFolderClippingSourceLayers(candidate).length > 0 ? candidate : null;
@@ -3586,13 +3601,46 @@ export class LayerSystem {
             this._applyFolderPreviewTransform(activeLayer, transform);
         } else {
             this.transform.applyTransform(activeLayer, transform, centerX, centerY);
-            this.transform.updateTransformPanelValues(activeLayer);
+            this._scheduleTransformInteractionUpdate(layerId, transform);
         }
+    }
 
-        if (this.eventBus) {
-            this.eventBus.emit('layer:updated', { layerId, transform });
-            this.requestThumbnailUpdate(this.activeLayerIndex);
-        }
+    _scheduleTransformInteractionUpdate(layerId, transform) {
+        this._pendingTransformInteraction = {
+            layerId,
+            transform: {
+                x: Number(transform?.x) || 0,
+                y: Number(transform?.y) || 0,
+                rotation: Number(transform?.rotation) || 0,
+                scaleX: Number(transform?.scaleX) || 1,
+                scaleY: Number(transform?.scaleY) || 1
+            }
+        };
+        if (this._transformInteractionFrame !== null) return;
+
+        this._transformInteractionFrame = requestAnimationFrame(() => {
+            this._transformInteractionFrame = null;
+            const pending = this._pendingTransformInteraction;
+            this._pendingTransformInteraction = null;
+            if (!pending) return;
+
+            const layer = this.getLayerById?.(pending.layerId) || null;
+            if (!layer) return;
+            const currentTransform = this.transform?.getTransform?.(pending.layerId)
+                || pending.transform;
+            this.transform?.updateTransformPanelValues?.(layer);
+            this.eventBus?.emit('layer:updated', {
+                layerId: pending.layerId,
+                transform: {
+                    x: Number(currentTransform?.x) || 0,
+                    y: Number(currentTransform?.y) || 0,
+                    rotation: Number(currentTransform?.rotation) || 0,
+                    scaleX: Number(currentTransform?.scaleX) || 1,
+                    scaleY: Number(currentTransform?.scaleY) || 1
+                }
+            });
+            this.requestThumbnailUpdate(this.getLayerIndex(layer));
+        });
     }
 
     safeRebuildLayer(layer, newPaths) {
@@ -4603,6 +4651,23 @@ export class LayerSystem {
             const parent = byId.get(parentId);
             if (!parent) break;
             if (parent.visible === false || parent.layerData?.visible === false) return false;
+            parentId = parent.layerData?.parentId || null;
+        }
+        return true;
+    }
+
+    _isLayerPersistentlyVisible(layer, layers = this.getLayers()) {
+        const data = layer?.layerData;
+        if (!data || data.visible === false) return false;
+
+        const byId = new Map(layers.map(item => [item.layerData?.id, item]));
+        const visited = new Set();
+        let parentId = data.parentId || null;
+        while (parentId && !visited.has(parentId)) {
+            visited.add(parentId);
+            const parent = byId.get(parentId);
+            if (!parent) break;
+            if (parent.layerData?.visible === false) return false;
             parentId = parent.layerData?.parentId || null;
         }
         return true;
