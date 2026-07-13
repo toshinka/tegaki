@@ -235,6 +235,12 @@ export const TEGAKI_KEYMAP = {
             shift: false,
             description: 'レイヤー切り取り'
         },
+        CLIP_MOTION_TOGGLE: {
+            key: 'KeyV',
+            ctrl: false,
+            shift: true,
+            description: 'Clip Motionウィンドウ ON/OFF'
+        },
         SELECTION_CLEAR: {
             key: 'KeyD',
             ctrl: true,

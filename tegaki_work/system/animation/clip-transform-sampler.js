@@ -4,7 +4,6 @@
  */
 
 const ANIMATED_PARAMETERS = ['x', 'y', 'scaleX', 'scaleY', 'rotation'];
-const TAU = Math.PI * 2;
 
 function finiteOr(value, fallback) {
     return Number.isFinite(value) ? value : fallback;
@@ -22,13 +21,6 @@ function normalizeBaseTransform(transform = {}) {
     };
 }
 
-function shortestAngleDelta(from, to) {
-    let delta = (to - from) % TAU;
-    if (delta > Math.PI) delta -= TAU;
-    if (delta < -Math.PI) delta += TAU;
-    return delta;
-}
-
 /**
  * Schema: { frame, interpolation?: 'hold'|'linear', x?, y?, scaleX?, scaleY?, rotation? }.
  * 範囲外keyは無視し、同一Frameは配列末尾を優先する。欠損parameterは直前状態を継承する。
@@ -43,6 +35,12 @@ export function sampleClipTransform(clip, timelineFrame) {
         if (!key || !Number.isInteger(key.frame) || key.frame < 0 || key.frame >= duration) return;
         byFrame.set(key.frame, key);
     });
+    // Clipの静的transformを暗黙の始点/終点とする。
+    // 中間keyだけ置いた場合は終点へ向けて静的状態へ戻る。
+    if (!byFrame.has(0)) byFrame.set(0, { frame: 0, ...base, interpolation: 'linear' });
+    if (duration > 1 && !byFrame.has(duration - 1)) {
+        byFrame.set(duration - 1, { frame: duration - 1, ...base, interpolation: 'linear' });
+    }
     const keys = [...byFrame.values()].sort((a, b) => a.frame - b.frame);
     if (keys.length === 0 || localFrame < keys[0].frame) return base;
 
@@ -64,9 +62,7 @@ export function sampleClipTransform(clip, timelineFrame) {
             const ratio = (localFrame - left.frame) / (right.frame - left.frame);
             const sampled = { ...leftState };
             ANIMATED_PARAMETERS.forEach(parameter => {
-                const delta = parameter === 'rotation'
-                    ? shortestAngleDelta(leftState[parameter], rightState[parameter])
-                    : rightState[parameter] - leftState[parameter];
+                const delta = rightState[parameter] - leftState[parameter];
                 sampled[parameter] = leftState[parameter] + delta * ratio;
             });
             return sampled;

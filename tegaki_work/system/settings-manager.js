@@ -52,6 +52,7 @@ export class SettingsManager {
             bucketGapClose: 0,
             bucketUnderpaint: 1,
             bucketReferenceAllLayers: true,
+            animationAutoCreateOnNext: true,
             historyAutoAdjust: true,
             historyMaxEntries: historyDefaults.maxEntries,
             historyMaxMemoryMB: historyDefaults.maxMemoryMB
@@ -167,6 +168,9 @@ export class SettingsManager {
             bucketReferenceAllLayers: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
+            animationAutoCreateOnNext: (v) => {
+                return typeof v === 'boolean' ? v : undefined;
+            },
             historyAutoAdjust: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
@@ -239,6 +243,7 @@ export class SettingsManager {
             'bucketGapClose',
             'bucketUnderpaint',
             'bucketReferenceAllLayers',
+            'animationAutoCreateOnNext',
             'historyAutoAdjust',
             'historyMaxEntries',
             'historyMaxMemoryMB'

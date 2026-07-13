@@ -170,6 +170,29 @@ export const KeyboardHandler = (function() {
             }
         }
 
+        // Shift+V: Clip Motion。V変形とは同時に開かない。
+        if (e.code === 'KeyV' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            const animationTable = window.PopupManager?.get?.('animationTable')
+                || window.coreEngine?.popupManager?.get?.('animationTable');
+            if (hasAnimationLayerContext(animationTable)) {
+                if (vKeyPressed) {
+                    if (animationTable?.canConfirmInternalFolderTransform?.() === false) {
+                        e.preventDefault();
+                        return;
+                    }
+                    vKeyPressed = false;
+                    eventBus.emit('keyboard:vkey-state-changed', {
+                        pressed: false,
+                        source: 'clip-motion-shortcut'
+                    });
+                }
+                animationTable.toggleMotionWindow?.();
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+            }
+        }
+
         // VキーでLayer / selection変形モードをトグルする。
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             if (!e.repeat) {
@@ -180,6 +203,7 @@ export const KeyboardHandler = (function() {
                     const animationTable = window.PopupManager?.get?.('animationTable')
                         || window.coreEngine?.popupManager?.get?.('animationTable');
                     if (nextVKeyState) {
+                        animationTable?.setMotionWindowOpen?.(false);
                         animationTable?.prepareInternalFolderTransform?.();
                     } else if (animationTable?.canConfirmInternalFolderTransform?.() === false) {
                         e.preventDefault();

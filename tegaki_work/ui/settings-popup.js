@@ -139,6 +139,14 @@ export class SettingsPopup {
                     </div>
                 </div>
                 <div class="setting-group">
+                    <div class="setting-label">Animation Table</div>
+                    <label class="history-setting-auto">
+                        <input id="animation-auto-create-next" type="checkbox" checked>
+                        右方向キーで空Frameへ進む時にCAFを自動作成
+                    </label>
+                    <div class="setting-description">OFFではFrameだけを移動し、既存CAFの編集に専念できます。</div>
+                </div>
+                <div class="setting-group">
                     <div class="setting-label">History</div>
                     <label class="history-setting-auto">
                         <input id="history-auto-adjust" type="checkbox" checked>
@@ -391,6 +399,7 @@ export class SettingsPopup {
             historyMaxEntries: document.getElementById('history-max-entries'),
             historyMaxMemory: document.getElementById('history-max-memory'),
             historyUsage: document.getElementById('history-usage-display'),
+            animationAutoCreateNext: document.getElementById('animation-auto-create-next'),
 
             bucketRefToggle: document.getElementById('bucket-ref-all-toggle'),
             bucketRefState: document.getElementById('bucket-ref-all-state')
@@ -596,6 +605,12 @@ export class SettingsPopup {
             this.settingsManager?.set('historyMaxMemoryMB', Number(this.elements.historyMaxMemory.value));
             this._updateHistoryUsageDisplay();
         });
+        this.elements.animationAutoCreateNext?.addEventListener('change', () => {
+            this.settingsManager?.set(
+                'animationAutoCreateOnNext',
+                this.elements.animationAutoCreateNext.checked
+            );
+        });
         this.elements.bucketGapButtons?.forEach((btn) => {
             btn.addEventListener('pointerdown', (e) => {
                 e.preventDefault(); e.stopPropagation();
@@ -643,6 +658,7 @@ export class SettingsPopup {
             bucketGapClose: 0,
             bucketUnderpaint: 1,
             bucketReferenceAllLayers: true,
+            animationAutoCreateOnNext: true,
             historyAutoAdjust: true,
             historyMaxEntries: 250,
             historyMaxMemoryMB: 512
@@ -668,6 +684,9 @@ export class SettingsPopup {
         this._applyPressureCurveUI(settings.pressureCurve ?? defaults.pressureCurve);
         this._setPressureOpacityEnabled(settings.pressureOpacityEnabled ?? defaults.pressureOpacityEnabled);
         this._setStatusPanelVisibility(settings.statusPanelVisible ?? defaults.statusPanelVisible);
+        if (this.elements.animationAutoCreateNext) {
+            this.elements.animationAutoCreateNext.checked = settings.animationAutoCreateOnNext !== false;
+        }
         this._applyHistorySettingsUI(settings);
     }
 

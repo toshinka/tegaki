@@ -855,47 +855,6 @@ export class UIController {
     setupPanelStyles() {
         const style = document.createElement('style');
         style.textContent = `
-            .flip-section {
-                gap: 2px !important;
-                height: 82px;
-                display: flex !important;
-                flex-direction: column !important;
-                justify-content: space-between !important;
-            }
-            
-            .flip-button {
-                padding: 4px 8px !important;
-                font-size: 10px !important;
-                white-space: nowrap !important;
-                height: 26px !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                cursor: pointer;
-                background-color: var(--futaba-cream);
-                border: 1px solid var(--futaba-medium);
-            }
-            
-            .flip-button.active {
-                background-color: var(--futaba-light-maroon) !important;
-                border-color: var(--futaba-maroon) !important;
-                color: white;
-            }
-
-            .flip-button.is-disabled,
-            .flip-button[aria-disabled="true"] {
-                opacity: 0.32 !important;
-                cursor: default !important;
-                transform: none !important;
-            }
-
-            .flip-button.is-disabled:hover,
-            .flip-button[aria-disabled="true"]:hover {
-                background-color: var(--futaba-cream) !important;
-                border-color: var(--futaba-medium) !important;
-                transform: none !important;
-            }
-            
             .tool-button.active {
                 background-color: rgba(255, 255, 238, 0.9) !important;
                 border: 3px solid #ff8c42 !important;

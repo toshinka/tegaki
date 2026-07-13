@@ -16,7 +16,13 @@ import * as PIXI from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { coordinateSystem } from '../coordinate-system.js';
-import { createCenteredTransformMatrix } from './transform-math.js';
+import {
+    applyTransformMatrix,
+    createCenteredTransformMatrix,
+    invertTransformMatrixPoint,
+    rebaseTransformAnchor
+} from './transform-math.js';
+import { transformAnchorSite } from '../ui/transform-anchor-site.js';
 
 export class LayerTransform {
     constructor(config, coordAPI) {
@@ -84,6 +90,8 @@ export class LayerTransform {
         
         this.eventBus.on('layer:reset-transform', () => {
             if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
+            transformAnchorSite.setEditable('layer-transform', false);
+            document.getElementById('layer-transform-anchor-btn')?.classList.remove('active');
             const selectionApi = this._getSelectionTransformApi();
             if (selectionApi?.getState?.()?.transformSessionActive) {
                 selectionApi.resetTransform?.();
@@ -92,6 +100,7 @@ export class LayerTransform {
             }
             if (this.isVKeyPressed) {
                 this.resetTransform();
+                this._showAnchorSite(false);
             }
         });
 
@@ -136,7 +145,7 @@ export class LayerTransform {
         
         if (this.cameraSystem?.setVKeyPressed) {
             this.cameraSystem.setVKeyPressed(true);
-            this.cameraSystem.showGuideLines();
+            this.cameraSystem.hideGuideLines();
         }
         
         if (this.transformPanel) {
@@ -145,6 +154,11 @@ export class LayerTransform {
         
         this._updateCursor();
         this._initializeTransformForActiveLayer();
+        this._showAnchorSite(false);
+        document.getElementById('layer-transform-context-note')?.classList.toggle(
+            'show',
+            this._hasAnimationLayerContext() && this._canTransformActiveAnimationWorkingLayer()
+        );
     }
     
     exitMoveMode(activeLayer) {
@@ -161,6 +175,9 @@ export class LayerTransform {
         if (this.transformPanel) {
             this.transformPanel.classList.remove('show');
         }
+        transformAnchorSite.deactivate('layer-transform');
+        document.getElementById('layer-transform-anchor-btn')?.classList.remove('active');
+        document.getElementById('layer-transform-context-note')?.classList.remove('show');
         
         this._updateCursor();
     }
@@ -261,7 +278,13 @@ export class LayerTransform {
     }
     
     applyTransform(layer, transform, centerX, centerY) {
-        this._applyTransformDirect(layer, transform, centerX, centerY);
+        const pivotX = Number.isFinite(transform?.anchorX)
+            ? transform.anchorX * this.config.canvas.width
+            : centerX;
+        const pivotY = Number.isFinite(transform?.anchorY)
+            ? transform.anchorY * this.config.canvas.height
+            : centerY;
+        this._applyTransformDirect(layer, transform, pivotX, pivotY);
     }
     
     _applyTransformDirect(layer, transform, centerX, centerY) {
@@ -566,8 +589,6 @@ export class LayerTransform {
         
         if (!this.transformPanel) return;
         
-        this.transformPanel.querySelector('.panel-header')?.remove();
-        
         if (!window.TegakiUI?.SliderUtils) {
             return;
         }
@@ -590,6 +611,7 @@ export class LayerTransform {
         
         const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
         const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+        const anchorBtn = document.getElementById('layer-transform-anchor-btn');
         
         if (flipHorizontalBtn) {
             flipHorizontalBtn.removeAttribute('disabled');
@@ -598,8 +620,83 @@ export class LayerTransform {
         if (flipVerticalBtn) {
             flipVerticalBtn.removeAttribute('disabled');
         }
+        anchorBtn?.addEventListener('click', () => this._toggleAnchorSite());
         
         this._setupPanelDrag();
+    }
+
+    _toggleAnchorSite() {
+        const button = document.getElementById('layer-transform-anchor-btn');
+        if (transformAnchorSite.isActive('layer-transform')) {
+            const editable = !transformAnchorSite.isEditable('layer-transform');
+            transformAnchorSite.setEditable('layer-transform', editable);
+            button?.classList.toggle('active', editable);
+            return editable;
+        }
+        return this._showAnchorSite(true);
+    }
+
+    _showAnchorSite(editable = false) {
+        const button = document.getElementById('layer-transform-anchor-btn');
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!this.isVKeyPressed || !activeLayer?.layerData) return false;
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transforms.get(layerId) || {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5
+        };
+        if (!Number.isFinite(transform.anchorX)) transform.anchorX = 0.5;
+        if (!Number.isFinite(transform.anchorY)) transform.anchorY = 0.5;
+        this.transforms.set(layerId, transform);
+        const activated = transformAnchorSite.activate('layer-transform', {
+            editable: editable === true,
+            hint: '中心をドラッグ / ボタン再押下で終了',
+            coordinateSystem: this.coordinateSystem,
+            width: this.config.canvas.width,
+            height: this.config.canvas.height,
+            getAnchor: () => ({ x: transform.anchorX, y: transform.anchorY }),
+            getWorldPosition: anchor => {
+                const matrix = createCenteredTransformMatrix(
+                    transform,
+                    this.config.canvas.width / 2,
+                    this.config.canvas.height / 2
+                );
+                return applyTransformMatrix(
+                    matrix,
+                    anchor.x * this.config.canvas.width,
+                    anchor.y * this.config.canvas.height
+                );
+            },
+            worldToAnchor: point => {
+                const matrix = createCenteredTransformMatrix(
+                    transform,
+                    this.config.canvas.width / 2,
+                    this.config.canvas.height / 2
+                );
+                const local = invertTransformMatrixPoint(matrix, point.worldX, point.worldY);
+                return local ? {
+                    x: local.x / this.config.canvas.width,
+                    y: local.y / this.config.canvas.height
+                } : { x: transform.anchorX, y: transform.anchorY };
+            },
+            onChange: anchor => {
+                Object.assign(transform, rebaseTransformAnchor(
+                    transform,
+                    anchor.x,
+                    anchor.y,
+                    this.config.canvas.width,
+                    this.config.canvas.height
+                ));
+                this.applyTransform(activeLayer, transform, this.config.canvas.width / 2, this.config.canvas.height / 2);
+                this._emitTransformUpdated(layerId, activeLayer);
+                this.onTransformUpdate?.(activeLayer, transform);
+            }
+        });
+        if (activated) {
+            this.cameraSystem?.hideGuideLines?.();
+            transformAnchorSite.setEditable('layer-transform', editable);
+        }
+        button?.classList.toggle('active', activated && editable);
+        return activated;
     }
 
     _setupSlider(sliderId, property, min, max, initial, formatCallback) {

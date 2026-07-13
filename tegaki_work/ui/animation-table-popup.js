@@ -13,7 +13,15 @@ import { Container, Graphics, RenderTexture, Sprite, Texture } from 'pixi.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { TimelineModel, ClipAssetModel, DrawingSnapshotModel } from '../system/animation/animation-data-model.js';
-import { createCenteredTransformMatrix } from '../system/transform-math.js';
+import {
+    applyTransformMatrix,
+    createCenteredTransformMatrix,
+    invertTransformMatrixPoint,
+    rebaseTransformAnchor
+} from '../system/transform-math.js';
+import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
+import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
+import { transformAnchorSite } from './transform-anchor-site.js';
 import { collectCafMemoryProfile } from '../system/animation/caf-memory-profiler.js';
 import {
     findInternalClippingOwner,
@@ -42,6 +50,14 @@ export class AnimationTablePopup {
         this.animationSystem = dependencies.animationSystem;
         
         this.panel = null;
+        this.motionPanel = null;
+        this.motionPanelDragCleanup = null;
+        this._motionAnchorClip = null;
+        this._motionCanvas = null;
+        this._motionCanvasGesture = null;
+        this._motionWheelHistory = null;
+        this._motionWheelTimer = null;
+        this._motionAnchorBeforeState = null;
         this.isVisible = false;
         this.initialized = false;
         this._updateTimeout = null;
@@ -154,6 +170,7 @@ export class AnimationTablePopup {
         
         this._injectStyles();
         this._setupEventListeners();
+        this._setupMotionCanvasGestures();
         
         this.initialized = true;
     }
@@ -189,6 +206,7 @@ export class AnimationTablePopup {
         this._restoreVisibility();
         this._invalidateSnapshotTextureCache();
         this.panel.style.display = 'none';
+        this.setMotionWindowOpen(false);
         this.isVisible = false;
         this._requestLayerPanelSync({ force: true });
         this._scheduleLaneReferencePreviewUpdate();
@@ -819,6 +837,7 @@ export class AnimationTablePopup {
             if (cel && cel.visible !== false && !excludeClipIds?.has(cel.id)) {
                 this._renderCelPreview(track, cel, layers, {
                     ...options,
+                    frameIndex,
                     allowSourceLayerFallback: false
                 });
             }
@@ -1053,6 +1072,8 @@ export class AnimationTablePopup {
                     getAssetRevision(cel.assetId),
                     cel.startFrame ?? '',
                     cel.duration ?? '',
+                    JSON.stringify(cel.transform || {}),
+                    JSON.stringify(cel.transformKeyframes || []),
                     snapshot?.id || '',
                     snapshot?.updatedAt || ''
                 ].join(':'));
@@ -1228,6 +1249,8 @@ export class AnimationTablePopup {
             // fallbackすると、非表示の先頭Rasterだけが強制表示されてしまう。
             return true;
         }
+
+        this._applyClipMotionToPreviewNode(root, cel, options.frameIndex);
 
         this._tagPreviewNode(root, track, cel, options);
         targetContainer.addChild(root);
@@ -1639,6 +1662,8 @@ export class AnimationTablePopup {
         if (snapshot && targetContainer) {
             const texture = this._getTextureFromSnapshot(snapshot);
             if (texture) {
+                const root = new Container();
+                root.eventMode = 'none';
                 const sprite = new Sprite(texture);
                 this._positionSnapshotSprite(sprite, snapshot);
                 
@@ -1656,8 +1681,10 @@ export class AnimationTablePopup {
                     sprite.tint = options.tint;
                 }
 
-                this._tagPreviewNode(sprite, track, cel, options);
-                targetContainer.addChild(sprite);
+                root.addChild(sprite);
+                this._applyClipMotionToPreviewNode(root, cel, options.frameIndex);
+                this._tagPreviewNode(root, track, cel, options);
+                targetContainer.addChild(root);
                 return true;
             }
             return false;
@@ -1669,6 +1696,21 @@ export class AnimationTablePopup {
             return true;
         }
         return false;
+    }
+
+    _applyClipMotionToPreviewNode(node, clip, frameIndex) {
+        if (!node || !clip) return;
+        const frame = Number.isInteger(frameIndex) ? frameIndex : this.model.playback.currentFrame;
+        const transform = sampleClipTransform(clip, frame);
+        const canvasConfig = window.TEGAKI_CONFIG?.canvas || {};
+        const width = Math.max(1, Number(canvasConfig.width) || 400);
+        const height = Math.max(1, Number(canvasConfig.height) || 400);
+        const pivotX = width * transform.anchorX;
+        const pivotY = height * transform.anchorY;
+        node.pivot.set(pivotX, pivotY);
+        node.position.set(pivotX + transform.x, pivotY + transform.y);
+        node.scale.set(transform.scaleX, transform.scaleY);
+        node.rotation = transform.rotation;
     }
 
     _restoreVisibility() {
@@ -5585,6 +5627,333 @@ export class AnimationTablePopup {
         return this._updateClipMotionMetadataFromExternal('transformKeyframes', clipId, keyframes, options);
     }
 
+    _getSelectedClipMotionFrame() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.clip || entry.clip.duration <= 1) return null;
+        const localFrame = this.model.playback.currentFrame - entry.clip.startFrame;
+        if (localFrame < 0 || localFrame >= entry.clip.duration) return null;
+        const keyIndex = (entry.clip.transformKeyframes || []).findLastIndex(key => key?.frame === localFrame);
+        return {
+            entry,
+            localFrame,
+            keyIndex,
+            key: keyIndex >= 0 ? entry.clip.transformKeyframes[keyIndex] : null,
+            sampled: sampleClipTransform(entry.clip, this.model.playback.currentFrame)
+        };
+    }
+
+    _setSelectedClipMotionKeyFromControls() {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state || !this.motionPanel) return false;
+        const read = (name, fallback) => {
+            const value = Number(this.motionPanel.querySelector(`[data-motion-param="${name}"]`)?.value);
+            return Number.isFinite(value) ? value : fallback;
+        };
+        const key = {
+            frame: state.localFrame,
+            interpolation: this.motionPanel.querySelector('#anim-motion-interpolation')?.value === 'hold' ? 'hold' : 'linear',
+            x: read('x', state.sampled.x),
+            y: read('y', state.sampled.y),
+            scaleX: read('scaleX', state.sampled.scaleX),
+            scaleY: read('scaleY', state.sampled.scaleY),
+            rotation: read('rotation', state.sampled.rotation * 180 / Math.PI) * Math.PI / 180
+        };
+        const next = (state.entry.clip.transformKeyframes || []).filter(item => item?.frame !== state.localFrame);
+        next.push(key);
+        next.sort((a, b) => a.frame - b.frame);
+        return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, next, {
+            source: 'animation-motion-controls'
+        }).ok;
+    }
+
+    _removeSelectedClipMotionKey() {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state?.key) return false;
+        const next = state.entry.clip.transformKeyframes.filter(item => item?.frame !== state.localFrame);
+        return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, next, {
+            source: 'animation-motion-controls'
+        }).ok;
+    }
+
+    setMotionWindowOpen(open) {
+        if (!this.motionPanel || !this.panel) return false;
+        this._setupMotionCanvasGestures();
+        const button = this.panel.querySelector('#anim-motion-open-btn');
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const canOpen = (entry?.clip?.duration || 0) > 1;
+        if (open === true && canOpen && this.layerSystem?.isLayerMoveMode) {
+            if (this.layerSystem.exitLayerMoveMode?.() === false) return false;
+        }
+        const nextOpen = open === true && canOpen;
+        this.motionPanel.style.display = nextOpen ? 'block' : 'none';
+        button?.setAttribute('aria-expanded', String(nextOpen));
+        button?.classList.toggle('active', nextOpen);
+        if (!nextOpen) {
+            transformAnchorSite.deactivate('clip-motion');
+            this._motionAnchorClip = null;
+            this.motionPanel?.querySelector('#anim-motion-anchor-btn')?.classList.remove('active');
+        } else {
+            this._showMotionAnchorSite(false);
+        }
+        this._updateMotionCanvasCursor();
+        return nextOpen;
+    }
+
+    toggleMotionWindow() {
+        return this.setMotionWindowOpen(this.motionPanel?.style.display === 'none');
+    }
+
+    _toggleMotionAnchorMode() {
+        if (transformAnchorSite.isActive('clip-motion')) {
+            const editable = !transformAnchorSite.isEditable('clip-motion');
+            transformAnchorSite.setEditable('clip-motion', editable);
+            this.motionPanel?.querySelector('#anim-motion-anchor-btn')?.classList.toggle('active', editable);
+            return editable;
+        }
+        return this._showMotionAnchorSite(true);
+    }
+
+    _showMotionAnchorSite(editable = false) {
+        const state = this._getSelectedClipMotionFrame();
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        if (!state || !coordinateSystem) return false;
+        const config = window.TEGAKI_CONFIG?.canvas || {};
+        const button = this.motionPanel?.querySelector('#anim-motion-anchor-btn');
+        this._motionAnchorClip = state.entry.clip;
+        const activated = transformAnchorSite.activate('clip-motion', {
+            editable: editable === true,
+            hint: '中心をドラッグ / ボタン再押下で終了',
+            coordinateSystem,
+            width: config.width || 400,
+            height: config.height || 400,
+            getAnchor: () => ({
+                x: state.entry.clip.transform?.anchorX ?? 0.5,
+                y: state.entry.clip.transform?.anchorY ?? 0.5
+            }),
+            getWorldPosition: anchor => {
+                const transform = sampleClipTransform(
+                    state.entry.clip,
+                    this.model.playback.currentFrame
+                );
+                const matrix = createCenteredTransformMatrix(
+                    transform,
+                    (config.width || 400) / 2,
+                    (config.height || 400) / 2
+                );
+                return applyTransformMatrix(
+                    matrix,
+                    anchor.x * (config.width || 400),
+                    anchor.y * (config.height || 400)
+                );
+            },
+            worldToAnchor: point => {
+                const transform = sampleClipTransform(
+                    state.entry.clip,
+                    this.model.playback.currentFrame
+                );
+                const matrix = createCenteredTransformMatrix(
+                    transform,
+                    (config.width || 400) / 2,
+                    (config.height || 400) / 2
+                );
+                const local = invertTransformMatrixPoint(matrix, point.worldX, point.worldY);
+                return local ? {
+                    x: local.x / (config.width || 400),
+                    y: local.y / (config.height || 400)
+                } : {
+                    x: state.entry.clip.transform?.anchorX ?? 0.5,
+                    y: state.entry.clip.transform?.anchorY ?? 0.5
+                };
+            },
+            onDragStart: () => {
+                this._motionAnchorBeforeState = this._captureTimelineHistoryState();
+            },
+            onChange: anchor => {
+                const clip = state.entry.clip;
+                const resolvedKeys = (clip.transformKeyframes || []).map(key => ({
+                    frame: key.frame,
+                    interpolation: key.interpolation === 'hold' ? 'hold' : 'linear',
+                    transform: sampleClipTransform(clip, clip.startFrame + key.frame)
+                }));
+                clip.transform = rebaseTransformAnchor(
+                    clip.transform,
+                    anchor.x,
+                    anchor.y,
+                    config.width || 400,
+                    config.height || 400
+                );
+                clip.transformKeyframes = resolvedKeys.map(item => {
+                    const rebased = rebaseTransformAnchor(
+                        item.transform,
+                        anchor.x,
+                        anchor.y,
+                        config.width || 400,
+                        config.height || 400
+                    );
+                    return {
+                        frame: item.frame,
+                        interpolation: item.interpolation,
+                        x: rebased.x,
+                        y: rebased.y,
+                        scaleX: rebased.scaleX,
+                        scaleY: rebased.scaleY,
+                        rotation: rebased.rotation
+                    };
+                });
+                this._animationPreviewKey = null;
+                this._applyVisibilityPreview();
+            },
+            onCommit: () => {
+                this._finishMotionGestureHistory(this._motionAnchorBeforeState, 'caf-clip-motion-anchor');
+                this._motionAnchorBeforeState = null;
+                this.render();
+            }
+        });
+        if (activated) transformAnchorSite.setEditable('clip-motion', editable);
+        button?.classList.toggle('active', activated && editable);
+        return activated;
+    }
+
+    _isMotionCanvasModeActive() {
+        return this.motionPanel?.style.display !== 'none'
+            && !!this._getSelectedClipMotionFrame()
+            && !this.isPlaying;
+    }
+
+    _getMotionCanvas() {
+        return this.layerSystem?.transform?._getSafeCanvas?.()
+            || this.layerSystem?.cameraSystem?._getSafeCanvas?.()
+            || document.querySelector('canvas');
+    }
+
+    _updateMotionCanvasCursor() {
+        const canvas = this._motionCanvas || this._getMotionCanvas();
+        if (!canvas) return;
+        if (this._isMotionCanvasModeActive()) {
+            canvas.style.cursor = this._motionCanvasGesture ? 'grabbing' : 'move';
+        } else {
+            canvas.style.cursor = '';
+            this.layerSystem?.transform?._updateCursor?.();
+        }
+    }
+
+    _upsertSelectedMotionKey(transform) {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state) return false;
+        const previous = state.key || {};
+        const key = {
+            frame: state.localFrame,
+            interpolation: previous.interpolation === 'hold' ? 'hold' : 'linear',
+            x: transform.x,
+            y: transform.y,
+            scaleX: transform.scaleX,
+            scaleY: transform.scaleY,
+            rotation: transform.rotation
+        };
+        state.entry.clip.transformKeyframes = (state.entry.clip.transformKeyframes || [])
+            .filter(item => item?.frame !== state.localFrame);
+        state.entry.clip.transformKeyframes.push(key);
+        state.entry.clip.transformKeyframes.sort((a, b) => a.frame - b.frame);
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this.render();
+        return true;
+    }
+
+    _finishMotionGestureHistory(beforeState, name) {
+        if (!beforeState) return;
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), name, {
+            type: name,
+            clipId: this.selectedCelId,
+            frameIndex: this.model.playback.currentFrame
+        });
+    }
+
+    _setupMotionCanvasGestures() {
+        const canvas = this._getMotionCanvas();
+        if (!canvas || canvas === this._motionCanvas) return;
+        this._motionCanvas = canvas;
+        const toWorld = (event) => {
+            const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+            const point = coordinateSystem?.screenClientToWorld?.(event.clientX, event.clientY);
+            return point && Number.isFinite(point.worldX) && Number.isFinite(point.worldY)
+                ? { x: point.worldX, y: point.worldY }
+                : { x: event.clientX, y: event.clientY };
+        };
+        canvas.addEventListener('pointerdown', (event) => {
+            if (!this._isMotionCanvasModeActive() || event.button !== 0) return;
+            const state = this._getSelectedClipMotionFrame();
+            if (!state) return;
+            const point = toWorld(event);
+            this._motionCanvasGesture = {
+                pointerId: event.pointerId,
+                lastPoint: point,
+                transform: { ...state.sampled },
+                beforeState: this._captureTimelineHistoryState()
+            };
+            canvas.setPointerCapture?.(event.pointerId);
+            this._updateMotionCanvasCursor();
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+        canvas.addEventListener('pointermove', (event) => {
+            const gesture = this._motionCanvasGesture;
+            if (!gesture || gesture.pointerId !== event.pointerId) return;
+            const point = toWorld(event);
+            gesture.transform.x += point.x - gesture.lastPoint.x;
+            gesture.transform.y += point.y - gesture.lastPoint.y;
+            gesture.lastPoint = point;
+            this._upsertSelectedMotionKey(gesture.transform);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+        const finishPointer = (event) => {
+            const gesture = this._motionCanvasGesture;
+            if (!gesture || gesture.pointerId !== event.pointerId) return;
+            canvas.releasePointerCapture?.(event.pointerId);
+            this._motionCanvasGesture = null;
+            this._updateMotionCanvasCursor();
+            this._finishMotionGestureHistory(gesture.beforeState, 'caf-clip-motion-drag');
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        };
+        canvas.addEventListener('pointerup', finishPointer, true);
+        canvas.addEventListener('pointercancel', finishPointer, true);
+        canvas.addEventListener('wheel', (event) => {
+            if (!this._isMotionCanvasModeActive()) return;
+            const state = this._getSelectedClipMotionFrame();
+            if (!state) return;
+            if (!this._motionWheelHistory) {
+                this._motionWheelHistory = this._captureTimelineHistoryState();
+            }
+            const transform = { ...state.sampled };
+            if (event.shiftKey) {
+                transform.rotation += (event.deltaY > 0 ? 5 : -5) * Math.PI / 180;
+            } else {
+                const factor = event.deltaY > 0 ? 0.95 : 1.05;
+                const minScale = this.layerSystem?.config?.layer?.minScale ?? 0.1;
+                const maxScale = this.layerSystem?.config?.layer?.maxScale ?? 30;
+                const clampScale = value => {
+                    const sign = value < 0 ? -1 : 1;
+                    return sign * Math.max(minScale, Math.min(maxScale, Math.abs(value * factor)));
+                };
+                transform.scaleX = clampScale(transform.scaleX);
+                transform.scaleY = clampScale(transform.scaleY);
+            }
+            this._upsertSelectedMotionKey(transform);
+            clearTimeout(this._motionWheelTimer);
+            this._motionWheelTimer = setTimeout(() => {
+                const beforeState = this._motionWheelHistory;
+                this._motionWheelHistory = null;
+                this._motionWheelTimer = null;
+                this._finishMotionGestureHistory(beforeState, 'caf-clip-motion-wheel');
+            }, 220);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, { passive: false, capture: true });
+        this._updateMotionCanvasCursor();
+    }
+
     updateClipPhysicsFromExternal(clipId, physics = {}, options = {}) {
         return this._updateClipMotionMetadataFromExternal('physics', clipId, physics, options);
     }
@@ -5609,7 +5978,7 @@ export class AnimationTablePopup {
 
         if (!result.ok) return result;
 
-        this._activateClipEntry(result, { saveCurrent: false });
+        this._activateClipEntry(result, { saveCurrent: false, preserveCurrentFrame: true });
         this.render();
         this._flushLayerPanelSync();
         this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), `caf-clip-${kind}`, {
@@ -5780,7 +6149,7 @@ export class AnimationTablePopup {
         const asset = entry.clip.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
         this.selectedAssetId = asset?.id || entry.clip.assetId || null;
         this.selectedAssetFolderId = asset?.folderId || null;
-        if (Number.isInteger(entry.clip.startFrame)) {
+        if (options.preserveCurrentFrame !== true && Number.isInteger(entry.clip.startFrame)) {
             this.model.setCurrentFrame(entry.clip.startFrame);
         }
         this.model.tracks.forEach(track => {
@@ -5874,7 +6243,8 @@ export class AnimationTablePopup {
         this.model.setCurrentFrame(nextFrame);
         const selectedEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         const lane = this.model.getLaneById(this.activeLaneId) || selectedEntry?.lane || null;
-        if (delta > 0 && lane && !lane.getCelAtFrame(nextFrame)) {
+        const autoCreateOnNext = window.TegakiSettingsManager?.get?.('animationAutoCreateOnNext') !== false;
+        if (delta > 0 && autoCreateOnNext && lane && !lane.getCelAtFrame(nextFrame)) {
             this._createBlankClipAtLaneFrame(lane, nextFrame);
         } else {
             this._syncWorkingLayersForCurrentFrame();
@@ -6982,6 +7352,12 @@ export class AnimationTablePopup {
                     
                     const duration = isStart ? Math.max(1, Math.min(cel.duration, totalFrames)) : 0;
                     const durationClass = isStart ? ` duration-${duration}` : '';
+                    const motionMarkers = isStart && duration > 1 && this.timelineCellWidth >= 18
+                        ? (cel.transformKeyframes || [])
+                            .filter(key => Number.isInteger(key?.frame) && key.frame >= 0 && key.frame < duration)
+                            .map(key => `<span class="anim-motion-key-marker" style="--motion-key-position:${(key.frame / (duration - 1)) * 100}%" title="Motion key: Frame ${cel.startFrame + key.frame + 1}"></span>`)
+                            .join('')
+                        : '';
                     const retimingEdge = (isStart && this._isRetiming && this._retimingData?.cel?.id === cel.id)
                         ? (this._retimingData.edge === 'left' ? 'left' : 'right')
                         : '';
@@ -6997,7 +7373,7 @@ export class AnimationTablePopup {
                                              <div class="anim-cel-handle anim-cel-handle--bottom-left" data-cel-id="${cel.id}" data-edge="left"></div>
                                              <div class="anim-cel-handle anim-cel-handle--bottom-right" data-cel-id="${cel.id}" data-edge="right"></div>
                                          </div>` : ''}
-                                         ${hasSnapshot ? '<div class="anim-snapshot-icon"></div>' : ''}
+                                         ${motionMarkers}
                                          ${isShared ? '<div class="anim-shared-icon" title="Shared Asset"></div>' : ''}
                                      </div>` : ''}
                                  </div>`;
@@ -7028,6 +7404,53 @@ export class AnimationTablePopup {
             this._restoreVisibility();
         }
         this._scheduleLaneReferencePreviewUpdate();
+
+        const motionState = this._getSelectedClipMotionFrame();
+        const motionControls = this.motionPanel;
+        if (motionControls) {
+            motionControls.classList.toggle('has-key', !!motionState?.key);
+            const motionOpenButton = this.panel.querySelector('#anim-motion-open-btn');
+            const selectedMotionEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+            const canEditMotion = (selectedMotionEntry?.clip?.duration || 0) > 1;
+            if (motionOpenButton) {
+                motionOpenButton.classList.toggle('has-key', !!motionState?.key);
+                motionOpenButton.disabled = !canEditMotion;
+                motionOpenButton.title = canEditMotion
+                    ? 'Clip Motion: position / scale / rotation keyを編集 (Shift+V)'
+                    : '2 Frame以上のCAFを選択してください';
+            }
+            motionControls.querySelectorAll('.anim-motion-fields input, .anim-motion-fields select, #anim-motion-key-btn, #anim-motion-anchor-btn').forEach(control => {
+                control.disabled = !motionState;
+            });
+            if (motionControls.style.display !== 'none' && motionState && this._motionAnchorClip !== motionState.entry.clip) {
+                this._showMotionAnchorSite(transformAnchorSite.isEditable('clip-motion'));
+            }
+            if (motionState) {
+                const values = {
+                    x: motionState.key?.x ?? motionState.sampled.x,
+                    y: motionState.key?.y ?? motionState.sampled.y,
+                    scaleX: motionState.key?.scaleX ?? motionState.sampled.scaleX,
+                    scaleY: motionState.key?.scaleY ?? motionState.sampled.scaleY,
+                    rotation: (motionState.key?.rotation ?? motionState.sampled.rotation) * 180 / Math.PI
+                };
+                Object.entries(values).forEach(([name, value]) => {
+                    const input = motionControls.querySelector(`[data-motion-param="${name}"]`);
+                    if (input && document.activeElement !== input) input.value = Number(value.toFixed(4));
+                });
+                const interpolation = motionControls.querySelector('#anim-motion-interpolation');
+                if (interpolation && document.activeElement !== interpolation) {
+                    interpolation.value = motionState.key?.interpolation === 'hold' ? 'hold' : 'linear';
+                }
+                const keyButton = motionControls.querySelector('#anim-motion-key-btn');
+                if (keyButton) {
+                    keyButton.classList.toggle('active', !!motionState.key);
+                    keyButton.setAttribute('aria-pressed', String(!!motionState.key));
+                    keyButton.title = motionState.key
+                        ? `Local Frame ${motionState.localFrame} のkeyを削除`
+                        : `Local Frame ${motionState.localFrame} にkeyを追加`;
+                }
+            }
+        }
 
         const deleteActiveBtn = this.panel.querySelector('#anim-delete-active-btn');
         if (deleteActiveBtn) {
@@ -7094,6 +7517,11 @@ export class AnimationTablePopup {
                         <button class="anim-tool-btn" id="anim-duration-dec" title="Decrease Duration">-</button>
                         <button class="anim-tool-btn" id="anim-duration-inc" title="Increase Duration">+</button>
                     </div>
+                    <div class="anim-motion-controls">
+                        <button class="anim-tool-btn anim-icon-btn anim-motion-open-btn" id="anim-motion-open-btn" type="button" aria-expanded="false" title="Clip Motion: position / scale / rotation keyを編集 (Shift+V)" aria-label="Open Clip Motion controls">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg>
+                        </button>
+                    </div>
                     <div class="anim-copy-paste-controls">
                         <button class="anim-tool-btn anim-copy-btn anim-icon-btn" id="anim-copy-btn" title="選択セルをコピー" aria-label="Copy selected clip">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg>
@@ -7134,6 +7562,7 @@ export class AnimationTablePopup {
         `;
         
         document.body.appendChild(this.panel);
+        this._ensureMotionPanel();
         this.panel.addEventListener('contextmenu', (e) => {
             if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
             e.preventDefault();
@@ -7141,6 +7570,42 @@ export class AnimationTablePopup {
         });
         
         this._setupPanelEvents();
+    }
+
+    _ensureMotionPanel() {
+        this.motionPanel = document.getElementById('animation-motion-window');
+        if (this.motionPanel) {
+            this.motionPanel.remove();
+            this.motionPanel = null;
+        }
+        this.motionPanel = document.createElement('div');
+        this.motionPanel.id = 'animation-motion-window';
+        this.motionPanel.className = 'anim-motion-window popup-panel--translucent transform-popup-shell';
+        this.motionPanel.removeAttribute('hidden');
+        this.motionPanel.style.display = 'none';
+        this.motionPanel.innerHTML = `
+            <div class="anim-motion-window-header transform-popup-header" title="Canvas drag: move / Wheel: scale / Shift+Wheel: rotate">
+                <span class="transform-popup-title">CLIP MOTION</span>
+                <div class="transform-popup-actions anim-motion-header-actions">
+                    <button class="anim-tool-btn anim-icon-btn anim-motion-key-btn flip-button flip-button--icon" id="anim-motion-key-btn" type="button" title="現在Frameのmotion keyを追加/削除" aria-label="Toggle motion key at current Frame"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg></button>
+                    <button class="anim-tool-btn anim-icon-btn anim-motion-anchor-btn transform-anchor-toggle flip-button flip-button--icon" id="anim-motion-anchor-btn" type="button" title="クリップ共通の回転・拡縮中心（将来Boneのroot候補）を移動。ON中だけ楔形siteをドラッグできます" aria-label="Toggle rotation center editing"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><path d="M12 7.5 16 11 13 20 12 22 11 20 8 11Z"/></svg></button>
+                </div>
+                <button class="ui-close-button ui-close-button--small" id="anim-motion-close-btn" type="button" aria-label="Close motion controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+            </div>
+            <div class="anim-motion-fields" title="選択CAFの現在Frame transform key">
+                <label>X<input type="number" step="1" data-motion-param="x"></label>
+                <label>Y<input type="number" step="1" data-motion-param="y"></label>
+                <label title="横方向の拡大縮小。負値は左右反転">Scale X<input type="number" step="0.01" data-motion-param="scaleX"></label>
+                <label title="縦方向の拡大縮小。負値は上下反転">Scale Y<input type="number" step="0.01" data-motion-param="scaleY"></label>
+                <label class="anim-motion-rotation-field" title="回転角度。負値・360°を超える連続回転に対応"><span>Rotation°</span><input type="number" step="1" data-motion-param="rotation"></label>
+                <select id="anim-motion-interpolation" aria-label="Transform key interpolation" title="LINEAR: 次のkeyまで連続的に変化 / HOLD: 次のkeyまで現在値を維持">
+                    <option value="linear">LINEAR</option>
+                    <option value="hold">HOLD</option>
+                </select>
+            </div>`;
+        mountPopupAtOverlayRoot(this.motionPanel);
+        this.motionPanelDragCleanup?.();
+        this.motionPanelDragCleanup = attachPopupDrag(this.motionPanel);
     }
 
     _renderAssetLibrary(container) {
@@ -7492,6 +7957,24 @@ export class AnimationTablePopup {
         }
         if (incBtn) {
             incBtn.addEventListener('click', () => this._adjustSelectedCelDuration(1));
+        }
+
+        const motionControls = this.motionPanel;
+        const motionOpenButton = this.panel.querySelector('#anim-motion-open-btn');
+        if (motionControls && motionOpenButton) {
+            motionControls.addEventListener('keydown', (e) => e.stopPropagation());
+            motionControls.addEventListener('change', (e) => {
+                if (e.target.closest('#anim-motion-key-btn')) return;
+                this._setSelectedClipMotionKeyFromControls();
+            });
+            motionControls.querySelector('#anim-motion-key-btn')?.addEventListener('click', () => {
+                const state = this._getSelectedClipMotionFrame();
+                if (state?.key) this._removeSelectedClipMotionKey();
+                else this._setSelectedClipMotionKeyFromControls();
+            });
+            motionControls.querySelector('#anim-motion-anchor-btn')?.addEventListener('click', () => this._toggleMotionAnchorMode());
+            motionOpenButton.addEventListener('click', () => this.toggleMotionWindow());
+            motionControls.querySelector('#anim-motion-close-btn')?.addEventListener('click', () => this.setMotionWindowOpen(false));
         }
 
         const fpsInput = this.panel.querySelector('#anim-fps-input');
@@ -7914,7 +8397,8 @@ export class AnimationTablePopup {
                             laneSnapshot: (lane.cels || []).map(cel => ({
                                 id: cel.id,
                                 startFrame: cel.startFrame,
-                                duration: cel.duration
+                                duration: cel.duration,
+                                transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, [])
                             })),
                             beforeState: this._captureTimelineHistoryState()
                         };
@@ -8338,7 +8822,8 @@ export class AnimationTablePopup {
                 laneSnapshot: (lane.cels || []).map(cel => ({
                     id: cel.id,
                     startFrame: cel.startFrame,
-                    duration: cel.duration
+                    duration: cel.duration,
+                    transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, [])
                 }))
             };
             if (this._applyRetimingWithPush(retimingData, newDuration - previousDuration)) {
@@ -8371,7 +8856,8 @@ export class AnimationTablePopup {
         const laneSnapshot = (lane.cels || []).map(cel => ({
             id: cel.id,
             startFrame: cel.startFrame,
-            duration: cel.duration
+            duration: cel.duration,
+            transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, [])
         }));
         const ok = this._applyRetimingWithPush({
             cel: clip,
@@ -10033,6 +10519,9 @@ export class AnimationTablePopup {
             if (!original) return;
             cel.startFrame = original.startFrame;
             cel.duration = original.duration;
+            if (Array.isArray(original.transformKeyframes)) {
+                cel.transformKeyframes = this._cloneClipInstanceMetadata(original.transformKeyframes, []);
+            }
         });
     }
 
@@ -10096,6 +10585,17 @@ export class AnimationTablePopup {
 
         cel.startFrame = startFrame;
         cel.duration = targetDuration;
+        const oldTerminalFrame = startDuration - 1;
+        const newTerminalFrame = targetDuration - 1;
+        const motionKeys = cel.transformKeyframes || [];
+        const terminalKey = motionKeys.findLast(key => key?.frame === oldTerminalFrame) || null;
+        cel.transformKeyframes = motionKeys
+            .filter(key => Number.isInteger(key?.frame)
+                && key.frame < targetDuration
+                && key.frame !== oldTerminalFrame
+                && (!terminalKey || key.frame !== newTerminalFrame));
+        if (terminalKey) cel.transformKeyframes.push({ ...terminalKey, frame: newTerminalFrame });
+        cel.transformKeyframes.sort((a, b) => a.frame - b.frame);
         return true;
     }
 

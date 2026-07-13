@@ -47,7 +47,22 @@
 - Phase 5vを完了。Folder group blend完全合成はdirty group RenderTextureを要する別Phase候補として棚上げする。
 - Overlay高度blend自体は登録済み。通常Folderが空Containerのため配下groupへ作用しないことが原因で、完全group effectはdirty group RenderTextureを要する低優先度Sliceとして残す。
 - Phase 5wを開始する。既存ClipInstanceの静的transform、未定義形のtransformKeyframes保存枠、compositorの静的描画経路を監査済み。最初はkeyframe schemaとhold / linear samplingを固定し、position / scale / rotationを同一Frame契約へ載せる。
-- Phase 5w Slice 0でClip-local 0-based Frame、同一Frame後勝ち、範囲外無視、欠損parameter継承、rotation radian最短角、左keyのhold / linear契約を純粋sampling helperへ実装し、TimelineFrameCompositorへ接続した。固定入力とbuildは完了し、Browser実操作が残る。
+- Phase 5w Slice 0でClip-local 0-based Frame、同一Frame後勝ち、範囲外無視、欠損parameter継承、rotation radian、左keyのhold / linear契約を純粋sampling helperへ実装し、TimelineFrameCompositorへ接続した。rotationは負値と360°超の連続回転を保持する。固定入力とbuildは完了し、Browser実操作が残る。
+- Phase 5w Slice 1の保存経路を監査。Project serialize/constructor、単体・複数CAF copy/paste、CAF Group paste、Timeline History snapshotは既存の `transformKeyframes` clone経路でround-tripする。固定入力でProject JSON、Group、旧Projectのkeyframe無し互換を確認済み。Browserでcopy/paste・Undo/Redo・保存再読込の実操作確認が残る。
+- Phase 5w Slice 2で選択CAF・現在Frameへtransform keyを追加/削除する独立MOTION windowを追加した。position、scale、rotation（UI degree / 正本radian）、hold / linearだけを既存Timeline History経路で編集し、Clip範囲外では無効化する。Table headerはsquare-activity iconの入口buttonだけとし、編集面をbody直下へ分離した。開閉は共通popup CSSと競合しない明示display制御を使う。Browserで入力・補間・Undo/Redoの実操作確認が残る。
+- MOTION windowは共通 `attachPopupDrag()` を使う移動可能popupへ揃え、closeを1個へ正規化、数値色をふたばmaroonへ統一した。key入口はmap-pin icon、Timeline上は明示motion keyを小markerで表示し、旧snapshot白丸は撤去した。60%未満ではmarkerを省略し、単Frame CAFではmotion編集を無効化する。
+- 静的transformを暗黙のClip始点/終点とし、中間key後は終点へ戻るsamplingへ更新。Table preview、閉Table再生、Timeline onionのPixi previewにも同じsample結果を適用した。固定入力で最終Frame X=26/R=10°への補間と、中間Y=20から終点0への復帰を確認済み。
+- MOTION数値変更後もcurrent Frameを維持し、再生・Timeline移動中は選択CAFのsample値をwindowへ追従表示する。pin active色、form focus/selection色、native number spinner撤去、Scale X/Yの説明を追加した。回転中心のVキー十字site共用と、MOTION外の灰色/黒form control全体監査はproposal 09の後続項目へ記録した。
+- 右端retimingでは旧終端の明示motion keyだけを新終端へ追従し、中間keyはFrame位置を維持する。preview用retiming snapshotにもkeyframeを含め、キャンセル/可否判定でmotion正本を変えない。Clip Motion shortcutはV変形との意味対応を優先してShift+Vとし、両modeは同時表示しない。
+- MOTION window active中のCanvas直接操作を追加。dragはscreen→world差分によるposition、wheelは縦横scale、Shift+wheelは5°単位rotationとして現在Frame keyへ入る。Canvas eventをcaptureして操作中だけ描画/Camera入力を止め、1 drag / 1 wheel burstを各1 Historyへまとめる。V変形のgesture量・scale上限を踏襲し、raster transform stateは共有しない。
+- 共通 `transform-anchor-site` を追加し、MOTION locate buttonはClipInstance.transform.anchorX/Y、V locate buttonはLayer transform anchorへ同じCanvas十字dragを接続した。V panelの左右/上下反転はcenterline SVG、resetはrotate-ccw SVGへ変更。MOTION windowは共通popup自動close追加の対象外としてclose重複を防ぐ。
+- anchor変更時は `(I - rotationScale) * pivot差分` をX/Yへ補正し、変更前後の表示matrixを不変にする。site表示は現在transform後のpivot、pointer位置はinverse matrixでlocal anchorへ戻す。V bake正規化でもanchorX/Yを保持し、preview/確定座標を一致させた。anchor mode中はCamera全面guideを隠して短い十字siteだけを表示する。Vの4 SVG操作は横一列・共通active配色へ整理した。
+- 回転中心siteはV / CLIP MOTIONを開いた時点からpassive表示し、locate button ON中だけdrag可能にした。全面の縦横guideは表示せず、centerはLayerまたはClip単位で1つ、Canvas外座標も許可し、Frame keyを自動作成しない。MOTION fieldsは1行配置へ整理し、LINEAR / HOLDのhover説明を追加。CAFのV変形中は「原画編集・合成モーション一時非表示」を明示する。
+- V panelの旧縦配置を起動時注入していた `ui-panels.js` の重複CSSを撤去し、4 SVG buttonを `main.css` の横一列へ統一した。Browserでpassive/active site、MOTION 720px一列、Vとの排他表示、console errorなしを確認済み。Canvas外anchorは固定入力でmatrix不変を確認した。
+- V panelを `LAYER TRANSFORM` ヘッダー付きのcompact構成へ整理し、CLIP MOTIONと変形系popupの外観classを共用した。中心編集時は共通site横へ終了方法を示す追従hintを表示する。BrowserでV / MOTIONの排他、compact寸法、hint非重複、LINEAR / HOLD説明、console errorなしを確認済み。
+- CLIP MOTIONのFrame key / 回転中心buttonをheaderへ移し、入力列を約488pxへ詰めた。Frame keyは丸marker対応のcircle、Clip単位anchorは将来Bone rootを想起できるhead付き楔形siteとし、Vキー十字siteとは表示だけを分けた。
+- Phase 5wを完了。position / scale / rotation、hold / linear、anchor、Canvas操作、preview/playback/onion、copy/paste、Undo/Redo、旧Project互換を同じClipInstance正本へ接続した。Project JSON round-tripは固定入力済み。大容量Albumへの追加実操作は既存約105MBデータで長時間化したため再試行しない。
+- Phase 5xを開始。Animation Tableの右方向キーによる空Frame CAF自動生成を設定checkboxで無効化できるようにし、既定ONを維持した。BrowserでOFF時はF3へ移動してもCAF 1件、ON時はF4に2件目を生成、Undoで1件へ復帰、設定再表示でOFF保持を確認した。後続は共通form/controlのふたばカラー監査とする。
 - opacity、色補間、easing、Perform、簡易warp / morph、bone、WebGPU brush、水彩・油彩はPhase 5wへ混ぜず、`proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md` で段階管理する。
 
 ## 維持する契約

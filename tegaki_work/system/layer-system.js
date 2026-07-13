@@ -331,7 +331,11 @@ export class LayerSystem {
         ) {
             return null;
         }
-        return { x, y, rotation, scaleX, scaleY };
+        return {
+            x, y, rotation, scaleX, scaleY,
+            anchorX: Number.isFinite(transform?.anchorX) ? transform.anchorX : undefined,
+            anchorY: Number.isFinite(transform?.anchorY) ? transform.anchorY : undefined
+        };
     }
 
     _isRasterBakeSizeAllowed(bounds) {

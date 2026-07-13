@@ -345,9 +345,30 @@ export const DOMBuilder = (function() {
 
     function buildLayerTransformPanel() {
         const panel = createElement('div', {
-            className: 'layer-transform-panel',
+            className: 'layer-transform-panel transform-popup-shell',
             id: 'layer-transform-panel'
         });
+
+        const header = createElement('div', { className: 'transform-popup-header' });
+        const heading = createElement('div', { className: 'transform-popup-heading' });
+        heading.appendChild(createElement('span', {
+            className: 'transform-popup-title',
+            textContent: 'LAYER TRANSFORM'
+        }));
+        heading.appendChild(createElement('span', {
+            className: 'layer-transform-context-note',
+            id: 'layer-transform-context-note',
+            textContent: 'CAF原画編集 / Motion非表示'
+        }));
+
+        const flipGroup = createElement('div', { className: 'flip-section transform-popup-actions' });
+        flipGroup.appendChild(createElement('div', { className: 'flip-button flip-button--icon', id: 'flip-horizontal-btn', title: '左右反転', innerHTML: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h3"/><path d="M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3"/><path d="M12 20v2"/><path d="M12 14v2"/><path d="M12 8v2"/><path d="M12 2v2"/></svg>' }));
+        flipGroup.appendChild(createElement('div', { className: 'flip-button flip-button--icon', id: 'flip-vertical-btn', title: '上下反転', innerHTML: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/></svg>' }));
+        flipGroup.appendChild(createElement('div', { className: 'flip-button flip-button--icon transform-anchor-toggle', id: 'layer-transform-anchor-btn', title: '回転・拡縮中心を移動。中心マークは常時表示され、ON中だけドラッグできます', innerHTML: '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/></svg>' }));
+        flipGroup.appendChild(createElement('div', { className: 'flip-button flip-button--icon', id: 'layer-transform-reset-btn', title: '変形をリセット', innerHTML: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>' }));
+        header.appendChild(heading);
+        header.appendChild(flipGroup);
+        panel.appendChild(header);
 
         const sections = createElement('div', { className: 'panel-sections' });
 
@@ -398,14 +419,6 @@ export const DOMBuilder = (function() {
 
         transSection.appendChild(transGroup);
         sections.appendChild(transSection);
-
-        const flipSection = createElement('div', { className: 'panel-section' });
-        const flipGroup = createElement('div', { className: 'flip-section' });
-        flipGroup.appendChild(createElement('div', { className: 'flip-button', id: 'flip-horizontal-btn', textContent: '水平反転' }));
-        flipGroup.appendChild(createElement('div', { className: 'flip-button', id: 'flip-vertical-btn', textContent: '垂直反転' }));
-        flipGroup.appendChild(createElement('div', { className: 'flip-button', id: 'layer-transform-reset-btn', textContent: 'リセット' }));
-        flipSection.appendChild(flipGroup);
-        sections.appendChild(flipSection);
 
         panel.appendChild(sections);
         return panel;
