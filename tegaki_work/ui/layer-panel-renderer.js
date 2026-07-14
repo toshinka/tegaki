@@ -1879,8 +1879,14 @@ export class LayerPanelRenderer {
         const opacityValue = this._createLayerPanelMetaElement({
             text: `${Math.round(currentOpacity * 100)}%`,
             className: 'layer-opacity-value',
-            title: '右サイドバーのスライダーアイコンでレイヤー属性'
+            title: 'ホイールで1%刻み調整 / 右サイドバーでレイヤー属性'
         });
+        opacityValue.addEventListener('wheel', (event) => {
+            if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this._adjustLayerOpacity(index, event.deltaY < 0 ? 0.01 : -0.01);
+        }, { passive: false });
 
         const blendMode = layer.layerData?.blendMode || 'normal';
         const blendLabel = this._createLayerPanelMetaElement({
@@ -2962,6 +2968,7 @@ export class LayerPanelRenderer {
         const currentOpacity = layer.alpha !== undefined ? layer.alpha : 1.0;
         const newOpacity = Math.max(0, Math.min(1, currentOpacity + delta));
         this._setLayerOpacity(layerIndex, newOpacity);
+        return newOpacity;
     }
 
     _beginLayerAttributeOpacityEdit(layerIndex) {

@@ -21,7 +21,11 @@ import { coordinateSystem } from '../coordinate-system.js';
 import { LayerTransform } from './layer-transform.js';
 import { resolveIntegerTranslation } from './raster-translation.js';
 import { normalizeRasterBounds, normalizeRasterSnapshot, translateRasterBounds } from './raster-bounds.js';
-import { applyTransformMatrix, createCenteredTransformMatrix } from './transform-math.js';
+import {
+    applyDirectionalTransformDrag,
+    applyTransformMatrix,
+    createCenteredTransformMatrix
+} from './transform-math.js';
 import {
     CLIPPING_MODES,
     applyClippingMode,
@@ -3586,17 +3590,11 @@ export class LayerSystem {
         const centerX = this.config.canvas.width / 2;
         const centerY = this.config.canvas.height / 2;
         if (shiftKey) {
-            if (dragTransformMode === 'scale') {
-                const scaleFactor = 1 + (dy * -0.01);
-                const currentScale = Math.abs(transform.scaleX);
-                const newScale = Math.max(this.config.layer.minScale, Math.min(this.config.layer.maxScale, currentScale * scaleFactor));
-                transform.scaleX = transform.scaleX < 0 ? -newScale : newScale;
-                transform.scaleY = transform.scaleY < 0 ? -newScale : newScale;
-            } else if (dragTransformMode === 'rotate') {
-                transform.rotation += (dx * 0.02);
-            } else {
-                return;
-            }
+            if (!dragTransformMode) return;
+            Object.assign(transform, applyDirectionalTransformDrag(transform, dx, dy, dragTransformMode, {
+                minScale: this.config.layer.minScale,
+                maxScale: this.config.layer.maxScale
+            }));
         } else {
             transform.x += dx;
             transform.y += dy;

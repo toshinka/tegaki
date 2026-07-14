@@ -17,6 +17,7 @@ import {
     getClippingMode
 } from './clipping-mode.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
+import { showFeedbackToast } from '../ui/feedback-toast.js';
 import * as PIXI from 'pixi.js';
 
 export class ProjectManager {
@@ -345,19 +346,7 @@ export class ProjectManager {
     }
 
     _showSaveToast(message) {
-        let toast = document.getElementById('project-save-toast');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'project-save-toast';
-            toast.className = 'project-save-toast';
-            document.body.appendChild(toast);
-        }
-        toast.textContent = message;
-        toast.classList.add('show');
-        clearTimeout(this._saveToastTimer);
-        this._saveToastTimer = setTimeout(() => {
-            toast.classList.remove('show');
-        }, 1600);
+        showFeedbackToast(message);
     }
 
     async _serializeAnimationForProject(model, profile = null) {

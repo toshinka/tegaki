@@ -20,7 +20,8 @@ import {
     applyTransformMatrix,
     createCenteredTransformMatrix,
     invertTransformMatrixPoint,
-    rebaseTransformAnchor
+    rebaseTransformAnchor,
+    resolveDirectionalTransformDragMode
 } from './transform-math.js';
 import { transformAnchorSite } from '../ui/transform-anchor-site.js';
 
@@ -756,10 +757,36 @@ export class LayerTransform {
         input.value = currentVal;
         input.step = property === 'scale' ? '0.01' : '1';
         input.className = 'layer-transform-value-input';
+        const inputShell = document.createElement('span');
+        inputShell.className = 'layer-transform-value-input-shell';
+        const stepper = document.createElement('span');
+        stepper.className = 'layer-transform-value-stepper';
+        const createStepButton = (label, direction) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'layer-transform-value-step-btn';
+            button.textContent = label;
+            button.title = direction > 0 ? '値を増やす' : '値を減らす';
+            button.addEventListener('pointerdown', event => event.preventDefault());
+            button.addEventListener('click', () => {
+                try {
+                    if (direction > 0) input.stepUp();
+                    else input.stepDown();
+                } catch (_error) {}
+                input.focus();
+                input.select();
+            });
+            return button;
+        };
+        stepper.append(
+            createStepButton('▲', 1),
+            createStepButton('▼', -1)
+        );
+        inputShell.append(input, stepper);
         
         const originalDisplay = displayEl.textContent;
         displayEl.textContent = '';
-        displayEl.appendChild(input);
+        displayEl.appendChild(inputShell);
         input.focus();
         input.select();
 
@@ -768,8 +795,8 @@ export class LayerTransform {
             if (isFinished) return;
             isFinished = true;
             const val = parseFloat(input.value);
-            if (input.parentNode === displayEl) {
-                displayEl.removeChild(input);
+            if (inputShell.parentNode === displayEl) {
+                displayEl.removeChild(inputShell);
             }
             if (!isNaN(val)) {
                 const clamped = Math.max(min, Math.min(max, val));
@@ -787,8 +814,8 @@ export class LayerTransform {
             if (e.key === 'Escape') {
                 if (isFinished) return;
                 isFinished = true;
-                if (input.parentNode === displayEl) {
-                    displayEl.removeChild(input);
+                if (inputShell.parentNode === displayEl) {
+                    displayEl.removeChild(inputShell);
                 }
                 displayEl.textContent = originalDisplay;
                 slider.updateDisplay?.();
@@ -957,12 +984,11 @@ export class LayerTransform {
 
         if (e.shiftKey) {
             if (!this.dragTransformMode) {
-                const totalDx = world.worldX - this.dragStartPoint.x;
-                const totalDy = world.worldY - this.dragStartPoint.y;
-                if (Math.max(Math.abs(totalDx), Math.abs(totalDy)) < 1) {
-                    return;
-                }
-                this.dragTransformMode = Math.abs(totalDy) >= Math.abs(totalDx) ? 'scale' : 'rotate';
+                this.dragTransformMode = resolveDirectionalTransformDragMode(
+                    this.dragStartPoint,
+                    { x: world.worldX, y: world.worldY }
+                );
+                if (!this.dragTransformMode) return;
             }
             dragTransformMode = this.dragTransformMode;
         } else {

@@ -14,12 +14,29 @@ import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { TimelineModel, ClipAssetModel, DrawingSnapshotModel } from '../system/animation/animation-data-model.js';
 import {
+    applyDirectionalTransformDrag,
     applyTransformMatrix,
     createCenteredTransformMatrix,
     invertTransformMatrixPoint,
-    rebaseTransformAnchor
+    rebaseTransformAnchor,
+    resolveDirectionalTransformDragMode
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
+import {
+    applyMotionKeyClipboardPayload,
+    createMotionKeyClipboardPayload
+} from '../system/animation/motion-key-clipboard.js';
+import {
+    identifyMotionEasingPreset,
+    resolveMotionEasingPreset
+} from '../system/animation/motion-easing-presets.js';
+import {
+    curvePointToGraphPoint,
+    getEasingCurveEditAvailability,
+    graphPointToCurvePoint,
+    resolveEditableEasingCurve
+} from '../system/animation/easing-curve-editor-model.js';
+import { formatCopyFeedback, showFeedbackToast } from './feedback-toast.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { transformAnchorSite } from './transform-anchor-site.js';
 import { collectCafMemoryProfile } from '../system/animation/caf-memory-profiler.js';
@@ -52,12 +69,17 @@ export class AnimationTablePopup {
         this.panel = null;
         this.motionPanel = null;
         this.motionPanelDragCleanup = null;
+        this.motionCurvePanel = null;
+        this.motionCurvePanelDragCleanup = null;
+        this._motionCurveGesture = null;
+        this._motionPlaybackClipId = null;
         this._motionAnchorClip = null;
         this._motionCanvas = null;
         this._motionCanvasGesture = null;
         this._motionWheelHistory = null;
         this._motionWheelTimer = null;
         this._motionAnchorBeforeState = null;
+        this._motionKeyClipboard = null;
         this.isVisible = false;
         this.initialized = false;
         this._updateTimeout = null;
@@ -294,6 +316,9 @@ export class AnimationTablePopup {
         } else {
             this.activePlaybackLaneIds = null;
         }
+        this._motionPlaybackClipId = this.motionPanel?.style.display !== 'none'
+            ? this.selectedCelId
+            : null;
         this.selectedCelId = null;
         this.selectedCelIds.clear();
 
@@ -332,6 +357,8 @@ export class AnimationTablePopup {
                         frameIndex: this.model.playback.currentFrame
                     });
                 }
+                // frame-changed listener側のUI更新後にも、開いているMotion表示を現Frame sampleへ確定する。
+                this._syncMotionPanelFrameValues(this._getSelectedClipMotionFrame(), { force: true });
             }
         }, interval);
     }
@@ -768,6 +795,23 @@ export class AnimationTablePopup {
         if (this.isVisible) this.render();
         else this._scheduleLaneReferencePreviewUpdate({ immediate: true });
         this._requestLayerPanelSync({ skipRender: true });
+    }
+
+    adjustTimelineOnionSkin(delta) {
+        const direction = Math.sign(Number(delta) || 0);
+        if (direction === 0) return false;
+        const current = this.isOnionSkinActive
+            ? Math.max(1, Math.min(4, Math.round(this.onionSkinFrameCount || 1)))
+            : 0;
+        const next = Math.max(0, Math.min(4, current + direction));
+        if (next === current) return false;
+
+        this.isOnionSkinActive = next > 0;
+        if (next > 0) this.onionSkinFrameCount = next;
+        if (this.isVisible) this.render();
+        else this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        this._requestLayerPanelSync({ skipRender: true });
+        return true;
     }
 
     _scheduleLaneReferencePreviewUpdate(options = {}) {
@@ -1711,6 +1755,15 @@ export class AnimationTablePopup {
         node.position.set(pivotX + transform.x, pivotY + transform.y);
         node.scale.set(transform.scaleX, transform.scaleY);
         node.rotation = transform.rotation;
+        node.alpha *= transform.opacity;
+        if (transform.blendMode !== 'normal') {
+            node.alpha *= transform.blendStrength;
+            if (transform.blendStrength > 0) {
+                // CAF内部Layerを先に一枚化し、Clip単位で下側Laneへ合成する。
+                node.cacheAsTexture();
+                node.blendMode = transform.blendMode;
+            }
+        }
     }
 
     _restoreVisibility() {
@@ -2036,6 +2089,9 @@ export class AnimationTablePopup {
     _destroyPreviewChildren(children = []) {
         children.forEach(child => {
             try {
+                if (child.isCachedAsTexture) {
+                    child.cacheAsTexture(false);
+                }
                 child.destroy?.({ children: true, texture: false, baseTexture: false });
             } catch (error) {
                 console.warn('[AnimationTable] Failed to destroy preview child', error);
@@ -2732,6 +2788,7 @@ export class AnimationTablePopup {
                 physics: anchorItem.physics,
                 copiedAt: Date.now()
             };
+            showFeedbackToast(formatCopyFeedback('caf', items.length));
             this.render();
             return true;
         }
@@ -4552,6 +4609,7 @@ export class AnimationTablePopup {
             layers,
             copiedAt: Date.now()
         };
+        showFeedbackToast(formatCopyFeedback('layer', layers.length));
         return { ok: true, count: layers.length };
     }
 
@@ -5628,7 +5686,8 @@ export class AnimationTablePopup {
     }
 
     _getSelectedClipMotionFrame() {
-        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const motionClipId = this.selectedCelId || (this.isPlaying ? this._motionPlaybackClipId : null);
+        const entry = motionClipId ? this.model.findClipEntry(motionClipId) : null;
         if (!entry?.clip || entry.clip.duration <= 1) return null;
         const localFrame = this.model.playback.currentFrame - entry.clip.startFrame;
         if (localFrame < 0 || localFrame >= entry.clip.duration) return null;
@@ -5642,28 +5701,199 @@ export class AnimationTablePopup {
         };
     }
 
-    _setSelectedClipMotionKeyFromControls() {
+    _syncMotionPanelFrameValues(motionState = this._getSelectedClipMotionFrame(), options = {}) {
+        const motionControls = this.motionPanel;
+        if (!motionControls || !motionState) return false;
+        const force = options.force === true;
+        const values = {
+            x: motionState.key?.x ?? motionState.sampled.x,
+            y: motionState.key?.y ?? motionState.sampled.y,
+            scaleX: motionState.key?.scaleX ?? motionState.sampled.scaleX,
+            scaleY: motionState.key?.scaleY ?? motionState.sampled.scaleY,
+            opacity: (motionState.key?.opacity ?? motionState.sampled.opacity) * 100,
+            blendMode: motionState.key?.blendMode ?? motionState.sampled.blendMode,
+            blendStrength: (motionState.key?.blendStrength ?? motionState.sampled.blendStrength) * 100,
+            rotation: (motionState.key?.rotation ?? motionState.sampled.rotation) * 180 / Math.PI
+        };
+        Object.entries(values).forEach(([name, value]) => {
+            const input = motionControls.querySelector(`[data-motion-param="${name}"]`);
+            if (input && (force || document.activeElement !== input)) {
+                input.value = typeof value === 'number' ? Number(value.toFixed(4)) : value;
+            }
+        });
+        const interpolation = motionControls.querySelector('#anim-motion-interpolation');
+        if (interpolation && (force || document.activeElement !== interpolation)) {
+            interpolation.value = identifyMotionEasingPreset(motionState.key);
+        }
+        this._syncMotionCurvePanel(motionState);
+        return true;
+    }
+
+    _getMotionCurveEditState(motionState = this._getSelectedClipMotionFrame()) {
+        if (!motionState) {
+            return {
+                motionState: null,
+                editable: false,
+                reason: '2 Frame以上のCAFを選択してください',
+                curve: resolveEditableEasingCurve(null)
+            };
+        }
+        const displayKey = motionState.key || (this.isPlaying
+            ? (motionState.entry.clip.transformKeyframes || []).findLast(key => key?.frame <= motionState.localFrame)
+            : null);
+        const availability = getEasingCurveEditAvailability({
+            key: displayKey,
+            localFrame: displayKey?.frame ?? motionState.localFrame,
+            duration: motionState.entry.clip.duration,
+            isPlaying: this.isPlaying
+        });
+        return {
+            motionState,
+            displayKey,
+            ...availability,
+            curve: resolveEditableEasingCurve(displayKey?.easing)
+        };
+    }
+
+    _syncMotionCurvePanel(motionState = this._getSelectedClipMotionFrame()) {
+        const panel = this.motionCurvePanel;
+        if (!panel) return false;
+        const state = this._getMotionCurveEditState(motionState);
+        const button = this.motionPanel?.querySelector('#anim-motion-curve-btn');
+        if (button) {
+            button.disabled = !state.editable;
+            button.title = state.reason;
+            button.classList.toggle('active', panel.style.display !== 'none');
+            button.setAttribute('aria-expanded', String(panel.style.display !== 'none'));
+        }
+
+        const graph = panel.querySelector('.anim-motion-curve-graph');
+        const path = panel.querySelector('.anim-motion-curve-path');
+        const controlLines = panel.querySelectorAll('.anim-motion-curve-control-line');
+        const handles = panel.querySelectorAll('.anim-motion-curve-handle');
+        const status = panel.querySelector('.anim-motion-curve-status');
+        const bounds = { width: 220, height: 220, padding: 14 };
+        const start = curvePointToGraphPoint({ x: 0, y: 0 }, bounds);
+        const end = curvePointToGraphPoint({ x: 1, y: 1 }, bounds);
+        const first = curvePointToGraphPoint({ x: state.curve.x1, y: state.curve.y1 }, bounds);
+        const second = curvePointToGraphPoint({ x: state.curve.x2, y: state.curve.y2 }, bounds);
+        path?.setAttribute('d', `M ${start.x} ${start.y} C ${first.x} ${first.y} ${second.x} ${second.y} ${end.x} ${end.y}`);
+        if (controlLines[0]) {
+            controlLines[0].setAttribute('x1', start.x);
+            controlLines[0].setAttribute('y1', start.y);
+            controlLines[0].setAttribute('x2', first.x);
+            controlLines[0].setAttribute('y2', first.y);
+        }
+        if (controlLines[1]) {
+            controlLines[1].setAttribute('x1', end.x);
+            controlLines[1].setAttribute('y1', end.y);
+            controlLines[1].setAttribute('x2', second.x);
+            controlLines[1].setAttribute('y2', second.y);
+        }
+        [first, second].forEach((point, index) => {
+            handles[index]?.setAttribute('cx', point.x);
+            handles[index]?.setAttribute('cy', point.y);
+            handles[index]?.classList.toggle('is-disabled', !state.editable);
+        });
+        graph?.classList.toggle('is-readonly', !state.editable);
+        if (status) {
+            status.textContent = state.editable
+                ? `Local F${state.motionState.localFrame + 1} → 右区間`
+                : state.reason;
+        }
+        ['x1', 'y1', 'x2', 'y2'].forEach(name => {
+            const input = panel.querySelector(`[data-motion-curve-param="${name}"]`);
+            if (!input) return;
+            if (document.activeElement !== input) input.value = Number(state.curve[name].toFixed(3));
+            input.disabled = !state.editable;
+        });
+        return true;
+    }
+
+    _applySelectedMotionCurve(curve, options = {}) {
         const state = this._getSelectedClipMotionFrame();
-        if (!state || !this.motionPanel) return false;
+        const availability = this._getMotionCurveEditState(state);
+        if (!state?.key || (!availability.editable && options.allowPlayback !== true)) return false;
+        const normalized = resolveEditableEasingCurve(curve);
+        const next = (state.entry.clip.transformKeyframes || []).map(key => key?.frame === state.localFrame
+            ? { ...key, interpolation: 'linear', easing: normalized }
+            : key);
+        const result = this.model.setClipTransformKeyframes(state.entry.clip.id, next);
+        if (!result?.ok) return false;
+        this._animationPreviewKey = null;
+        this._drawingPreviewCompositeKey = null;
+        if (options.render !== false) {
+            this.render();
+            this._flushLayerPanelSync();
+        } else {
+            this._applyVisibilityPreview();
+        }
+        return true;
+    }
+
+    _setMotionCurveWindowOpen(open) {
+        if (!this.motionCurvePanel) return false;
+        const state = this._getMotionCurveEditState();
+        const nextOpen = open === true && state.editable;
+        this.motionCurvePanel.style.display = nextOpen ? 'block' : 'none';
+        this._syncMotionCurvePanel();
+        return nextOpen;
+    }
+
+    _readSelectedClipMotionKeyFromControls(state = this._getSelectedClipMotionFrame()) {
+        if (!state || !this.motionPanel) return null;
         const read = (name, fallback) => {
             const value = Number(this.motionPanel.querySelector(`[data-motion-param="${name}"]`)?.value);
             return Number.isFinite(value) ? value : fallback;
         };
-        const key = {
+        const easingPreset = resolveMotionEasingPreset(
+            this.motionPanel.querySelector('#anim-motion-interpolation')?.value,
+            state.key?.easing
+        );
+        return {
             frame: state.localFrame,
-            interpolation: this.motionPanel.querySelector('#anim-motion-interpolation')?.value === 'hold' ? 'hold' : 'linear',
+            ...easingPreset,
             x: read('x', state.sampled.x),
             y: read('y', state.sampled.y),
             scaleX: read('scaleX', state.sampled.scaleX),
             scaleY: read('scaleY', state.sampled.scaleY),
+            opacity: Math.max(0, Math.min(1, read('opacity', state.sampled.opacity * 100) / 100)),
+            blendMode: this.motionPanel.querySelector('[data-motion-param="blendMode"]')?.value
+                || state.sampled.blendMode,
+            blendStrength: Math.max(0, Math.min(1,
+                read('blendStrength', state.sampled.blendStrength * 100) / 100
+            )),
             rotation: read('rotation', state.sampled.rotation * 180 / Math.PI) * Math.PI / 180
         };
+    }
+
+    _setSelectedClipMotionKeyFromControls() {
+        const state = this._getSelectedClipMotionFrame();
+        const key = this._readSelectedClipMotionKeyFromControls(state);
+        if (!state || !key) return false;
         const next = (state.entry.clip.transformKeyframes || []).filter(item => item?.frame !== state.localFrame);
         next.push(key);
         next.sort((a, b) => a.frame - b.frame);
         return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, next, {
             source: 'animation-motion-controls'
         }).ok;
+    }
+
+    _snapMotionRotationTo45(direction) {
+        const input = this.motionPanel?.querySelector('[data-motion-param="rotation"]');
+        const stepDirection = Math.sign(Number(direction) || 0);
+        const current = Number(input?.value);
+        if (!(input instanceof HTMLInputElement) || input.disabled || !Number.isFinite(current) || stepDirection === 0) {
+            return false;
+        }
+
+        const unit = 45;
+        const epsilon = 1e-9;
+        const next = stepDirection > 0
+            ? (Math.floor(current / unit + epsilon) + 1) * unit
+            : (Math.ceil(current / unit - epsilon) - 1) * unit;
+        input.value = String(next);
+        return this._setSelectedClipMotionKeyFromControls();
     }
 
     _removeSelectedClipMotionKey() {
@@ -5673,6 +5903,53 @@ export class AnimationTablePopup {
         return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, next, {
             source: 'animation-motion-controls'
         }).ok;
+    }
+
+    _clearSelectedClipMotionKeys() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const keyCount = entry?.clip?.transformKeyframes?.length || 0;
+        if (!entry?.clip || keyCount < 2 || this.isPlaying) return false;
+        return this.updateClipTransformKeyframesFromExternal(entry.clip.id, [], {
+            source: 'animation-motion-clear-all-keys'
+        }).ok;
+    }
+
+    _copySelectedClipMotionKey() {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state?.key || this.isPlaying) return false;
+        const payload = createMotionKeyClipboardPayload({
+            ...state.key,
+            opacity: state.sampled.opacity,
+            blendMode: state.sampled.blendMode,
+            blendStrength: state.sampled.blendStrength
+        });
+        if (!payload) return false;
+        this._motionKeyClipboard = payload;
+        showFeedbackToast(formatCopyFeedback('motion-key'));
+        this.render();
+        return true;
+    }
+
+    _pasteSelectedClipMotionKey() {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state || !this._motionKeyClipboard || this.isPlaying) return false;
+        const next = applyMotionKeyClipboardPayload(
+            state.entry.clip.transformKeyframes,
+            state.localFrame,
+            this._motionKeyClipboard
+        );
+        if (!next) return false;
+        return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, next, {
+            source: 'animation-motion-key-clipboard'
+        }).ok;
+    }
+
+    copySelectedMotionKey() {
+        return this._copySelectedClipMotionKey();
+    }
+
+    pasteSelectedMotionKey() {
+        return this._pasteSelectedClipMotionKey();
     }
 
     setMotionWindowOpen(open) {
@@ -5689,11 +5966,14 @@ export class AnimationTablePopup {
         button?.setAttribute('aria-expanded', String(nextOpen));
         button?.classList.toggle('active', nextOpen);
         if (!nextOpen) {
+            this._setMotionCurveWindowOpen(false);
             transformAnchorSite.deactivate('clip-motion');
             this._motionAnchorClip = null;
+            this._motionPlaybackClipId = null;
             this.motionPanel?.querySelector('#anim-motion-anchor-btn')?.classList.remove('active');
         } else {
             this._showMotionAnchorSite(false);
+            this.motionPanel.querySelector('#anim-motion-key-btn')?.focus({ preventScroll: true });
         }
         this._updateMotionCanvasCursor();
         return nextOpen;
@@ -5730,6 +6010,10 @@ export class AnimationTablePopup {
                 x: state.entry.clip.transform?.anchorX ?? 0.5,
                 y: state.entry.clip.transform?.anchorY ?? 0.5
             }),
+            getRotation: () => sampleClipTransform(
+                state.entry.clip,
+                this.model.playback.currentFrame
+            ).rotation,
             getWorldPosition: anchor => {
                 const transform = sampleClipTransform(
                     state.entry.clip,
@@ -5773,6 +6057,7 @@ export class AnimationTablePopup {
                 const resolvedKeys = (clip.transformKeyframes || []).map(key => ({
                     frame: key.frame,
                     interpolation: key.interpolation === 'hold' ? 'hold' : 'linear',
+                    ...(key.easing ? { easing: { ...key.easing } } : {}),
                     transform: sampleClipTransform(clip, clip.startFrame + key.frame)
                 }));
                 clip.transform = rebaseTransformAnchor(
@@ -5793,10 +6078,14 @@ export class AnimationTablePopup {
                     return {
                         frame: item.frame,
                         interpolation: item.interpolation,
+                        ...(item.easing ? { easing: { ...item.easing } } : {}),
                         x: rebased.x,
                         y: rebased.y,
                         scaleX: rebased.scaleX,
                         scaleY: rebased.scaleY,
+                        opacity: item.transform.opacity,
+                        blendMode: item.transform.blendMode,
+                        blendStrength: item.transform.blendStrength,
                         rotation: rebased.rotation
                     };
                 });
@@ -5837,17 +6126,21 @@ export class AnimationTablePopup {
         }
     }
 
-    _upsertSelectedMotionKey(transform) {
+    _upsertSelectedMotionKey(transform, options = {}) {
         const state = this._getSelectedClipMotionFrame();
         if (!state) return false;
         const previous = state.key || {};
         const key = {
             frame: state.localFrame,
             interpolation: previous.interpolation === 'hold' ? 'hold' : 'linear',
+            ...(previous.easing ? { easing: { ...previous.easing } } : {}),
             x: transform.x,
             y: transform.y,
             scaleX: transform.scaleX,
             scaleY: transform.scaleY,
+            opacity: transform.opacity,
+            blendMode: transform.blendMode,
+            blendStrength: transform.blendStrength,
             rotation: transform.rotation
         };
         state.entry.clip.transformKeyframes = (state.entry.clip.transformKeyframes || [])
@@ -5856,7 +6149,7 @@ export class AnimationTablePopup {
         state.entry.clip.transformKeyframes.sort((a, b) => a.frame - b.frame);
         this._animationPreviewKey = null;
         this._applyVisibilityPreview();
-        this.render();
+        if (options.render !== false) this.render();
         return true;
     }
 
@@ -5887,7 +6180,9 @@ export class AnimationTablePopup {
             const point = toWorld(event);
             this._motionCanvasGesture = {
                 pointerId: event.pointerId,
+                startPoint: point,
                 lastPoint: point,
+                mode: null,
                 transform: { ...state.sampled },
                 beforeState: this._captureTimelineHistoryState()
             };
@@ -5900,8 +6195,28 @@ export class AnimationTablePopup {
             const gesture = this._motionCanvasGesture;
             if (!gesture || gesture.pointerId !== event.pointerId) return;
             const point = toWorld(event);
-            gesture.transform.x += point.x - gesture.lastPoint.x;
-            gesture.transform.y += point.y - gesture.lastPoint.y;
+            const dx = point.x - gesture.lastPoint.x;
+            const dy = point.y - gesture.lastPoint.y;
+            if (event.shiftKey) {
+                if (!gesture.mode) {
+                    gesture.mode = resolveDirectionalTransformDragMode(gesture.startPoint, point);
+                    if (!gesture.mode) return;
+                }
+                gesture.transform = applyDirectionalTransformDrag(
+                    gesture.transform,
+                    dx,
+                    dy,
+                    gesture.mode,
+                    {
+                        minScale: this.layerSystem?.config?.layer?.minScale ?? 0.1,
+                        maxScale: this.layerSystem?.config?.layer?.maxScale ?? 30
+                    }
+                );
+            } else {
+                gesture.mode = null;
+                gesture.transform.x += dx;
+                gesture.transform.y += dy;
+            }
             gesture.lastPoint = point;
             this._upsertSelectedMotionKey(gesture.transform);
             event.preventDefault();
@@ -5979,6 +6294,10 @@ export class AnimationTablePopup {
         if (!result.ok) return result;
 
         this._activateClipEntry(result, { saveCurrent: false, preserveCurrentFrame: true });
+        // 同一FrameのMotion値変更でもsnapshot previewを再構成する。
+        // Frame/Laneだけのcache keyを残すと、直前のNORMAL/Strength表示が再利用される。
+        this._animationPreviewKey = null;
+        this._drawingPreviewCompositeKey = null;
         this.render();
         this._flushLayerPanelSync();
         this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), `caf-clip-${kind}`, {
@@ -7419,31 +7738,41 @@ export class AnimationTablePopup {
                     ? 'Clip Motion: position / scale / rotation keyを編集 (Shift+V)'
                     : '2 Frame以上のCAFを選択してください';
             }
-            motionControls.querySelectorAll('.anim-motion-fields input, .anim-motion-fields select, #anim-motion-key-btn, #anim-motion-anchor-btn').forEach(control => {
+            motionControls.querySelectorAll('.anim-motion-fields input, .anim-motion-fields select, .anim-motion-rotation-step-btn, #anim-motion-key-btn, #anim-motion-anchor-btn').forEach(control => {
                 control.disabled = !motionState;
             });
+            this._syncMotionCurvePanel(motionState);
+            const copyMotionKeyButton = motionControls.querySelector('#anim-motion-copy-btn');
+            const pasteMotionKeyButton = motionControls.querySelector('#anim-motion-paste-btn');
+            const clearMotionKeysButton = motionControls.querySelector('#anim-motion-clear-btn');
+            if (copyMotionKeyButton) {
+                copyMotionKeyButton.disabled = !motionState?.key || this.isPlaying;
+                copyMotionKeyButton.title = motionState?.key
+                    ? `Local Frame ${motionState.localFrame} のkeyをコピー`
+                    : '現在Frameにコピーできるmotion keyがありません';
+            }
+            if (pasteMotionKeyButton) {
+                pasteMotionKeyButton.disabled = !motionState || !this._motionKeyClipboard || this.isPlaying;
+                pasteMotionKeyButton.title = this._motionKeyClipboard
+                    ? `Local Frame ${motionState?.localFrame ?? '-'} へmotion keyを貼り付け`
+                    : '先にmotion keyをコピーしてください';
+            }
+            if (clearMotionKeysButton) {
+                const keyCount = motionState?.entry?.clip?.transformKeyframes?.length || 0;
+                clearMotionKeysButton.disabled = keyCount < 2 || this.isPlaying;
+                clearMotionKeysButton.title = keyCount >= 2
+                    ? `このClipのmotion key ${keyCount}件をすべて削除`
+                    : '一括削除には2件以上のmotion keyが必要です';
+            }
             if (motionControls.style.display !== 'none' && motionState && this._motionAnchorClip !== motionState.entry.clip) {
                 this._showMotionAnchorSite(transformAnchorSite.isEditable('clip-motion'));
             }
             if (motionState) {
-                const values = {
-                    x: motionState.key?.x ?? motionState.sampled.x,
-                    y: motionState.key?.y ?? motionState.sampled.y,
-                    scaleX: motionState.key?.scaleX ?? motionState.sampled.scaleX,
-                    scaleY: motionState.key?.scaleY ?? motionState.sampled.scaleY,
-                    rotation: (motionState.key?.rotation ?? motionState.sampled.rotation) * 180 / Math.PI
-                };
-                Object.entries(values).forEach(([name, value]) => {
-                    const input = motionControls.querySelector(`[data-motion-param="${name}"]`);
-                    if (input && document.activeElement !== input) input.value = Number(value.toFixed(4));
-                });
-                const interpolation = motionControls.querySelector('#anim-motion-interpolation');
-                if (interpolation && document.activeElement !== interpolation) {
-                    interpolation.value = motionState.key?.interpolation === 'hold' ? 'hold' : 'linear';
-                }
+                this._syncMotionPanelFrameValues(motionState, { force: this.isPlaying });
                 const keyButton = motionControls.querySelector('#anim-motion-key-btn');
                 if (keyButton) {
                     keyButton.classList.toggle('active', !!motionState.key);
+                    keyButton.classList.toggle('has-key', !!motionState.key);
                     keyButton.setAttribute('aria-pressed', String(!!motionState.key));
                     keyButton.title = motionState.key
                         ? `Local Frame ${motionState.localFrame} のkeyを削除`
@@ -7582,30 +7911,172 @@ export class AnimationTablePopup {
         this.motionPanel.id = 'animation-motion-window';
         this.motionPanel.className = 'anim-motion-window popup-panel--translucent transform-popup-shell';
         this.motionPanel.removeAttribute('hidden');
+        this.motionPanel.tabIndex = -1;
         this.motionPanel.style.display = 'none';
         this.motionPanel.innerHTML = `
-            <div class="anim-motion-window-header transform-popup-header" title="Canvas drag: move / Wheel: scale / Shift+Wheel: rotate">
+            <div class="anim-motion-window-header transform-popup-header" title="Canvas drag: move / Shift+horizontal drag: rotate / Shift+vertical drag: scale / Wheel: scale / Shift+Wheel: rotate">
                 <span class="transform-popup-title">CLIP MOTION</span>
-                <div class="transform-popup-actions anim-motion-header-actions">
-                    <button class="anim-tool-btn anim-icon-btn anim-motion-key-btn flip-button flip-button--icon" id="anim-motion-key-btn" type="button" title="現在Frameのmotion keyを追加/削除" aria-label="Toggle motion key at current Frame"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg></button>
-                    <button class="anim-tool-btn anim-icon-btn anim-motion-anchor-btn transform-anchor-toggle flip-button flip-button--icon" id="anim-motion-anchor-btn" type="button" title="クリップ共通の回転・拡縮中心（将来Boneのroot候補）を移動。ON中だけ楔形siteをドラッグできます" aria-label="Toggle rotation center editing"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><path d="M12 7.5 16 11 13 20 12 22 11 20 8 11Z"/></svg></button>
+                <div class="flip-section transform-popup-actions anim-motion-header-actions">
+                    <button class="anim-motion-key-btn flip-button flip-button--icon" id="anim-motion-key-btn" type="button" title="現在Frameのmotion keyを追加/削除" aria-label="Toggle motion key at current Frame"><svg class="anim-motion-key-icon anim-motion-key-icon--add" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg><svg class="anim-motion-key-icon anim-motion-key-icon--delete" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button>
+                    <button class="anim-motion-curve-btn flip-button flip-button--icon" id="anim-motion-curve-btn" type="button" title="左keyから次keyまでのEasing Curveを編集" aria-label="Open easing curve editor" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 17c2-7 5-10 10-10"/><circle cx="7" cy="17" r="1.4"/><circle cx="17" cy="7" r="1.4"/></svg></button>
+                    <button class="anim-motion-anchor-btn transform-anchor-toggle flip-button flip-button--icon" id="anim-motion-anchor-btn" type="button" title="クリップ共通pivot。0°は上向きで、楔形tailは現在Rotationへ追従します。ON中だけheadをドラッグできます" aria-label="Toggle rotation center editing"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="19" r="2.5"/><path d="M12 16.5 8 13 11 4 12 2 13 4 16 13Z"/></svg></button>
+                    <button class="anim-motion-copy-btn flip-button flip-button--icon" id="anim-motion-copy-btn" type="button" title="現在Frameのmotion keyをコピー" aria-label="Copy motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+                    <button class="anim-motion-paste-btn flip-button flip-button--icon" id="anim-motion-paste-btn" type="button" title="motion keyを現在Frameへ貼り付け" aria-label="Paste motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H9a1 1 0 0 0-1 1v2h8V3a1 1 0 0 0-1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 14 2 2 4-4"/></svg></button>
+                    <button class="anim-motion-clear-btn flip-button flip-button--icon" id="anim-motion-clear-btn" type="button" title="このClipのmotion keyをすべて削除" aria-label="Clear all motion keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
                 </div>
                 <button class="ui-close-button ui-close-button--small" id="anim-motion-close-btn" type="button" aria-label="Close motion controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
             </div>
             <div class="anim-motion-fields" title="選択CAFの現在Frame transform key">
-                <label>X<input type="number" step="1" data-motion-param="x"></label>
-                <label>Y<input type="number" step="1" data-motion-param="y"></label>
-                <label title="横方向の拡大縮小。負値は左右反転">Scale X<input type="number" step="0.01" data-motion-param="scaleX"></label>
-                <label title="縦方向の拡大縮小。負値は上下反転">Scale Y<input type="number" step="0.01" data-motion-param="scaleY"></label>
-                <label class="anim-motion-rotation-field" title="回転角度。負値・360°を超える連続回転に対応"><span>Rotation°</span><input type="number" step="1" data-motion-param="rotation"></label>
-                <select id="anim-motion-interpolation" aria-label="Transform key interpolation" title="LINEAR: 次のkeyまで連続的に変化 / HOLD: 次のkeyまで現在値を維持">
-                    <option value="linear">LINEAR</option>
-                    <option value="hold">HOLD</option>
-                </select>
+                <div class="anim-motion-fields-row">
+                    <label>X<input type="number" step="1" data-motion-param="x"></label>
+                    <label>Y<input type="number" step="1" data-motion-param="y"></label>
+                    <label title="横方向の拡大縮小。負値は左右反転">Scale X<input type="number" step="0.01" data-motion-param="scaleX"></label>
+                    <label title="縦方向の拡大縮小。負値は上下反転">Scale Y<input type="number" step="0.01" data-motion-param="scaleY"></label>
+                    <label class="anim-motion-rotation-field" title="回転角度。負値・360°を超える連続回転に対応"><span>Rotation°</span><input type="number" step="1" data-motion-param="rotation"><span class="anim-motion-rotation-stepper" aria-label="45度単位へ揃える"><button class="anim-motion-rotation-step-btn" type="button" data-motion-rotation-step="1" title="次の45°倍数へ揃える" aria-label="次の45度倍数">▲</button><button class="anim-motion-rotation-step-btn" type="button" data-motion-rotation-step="-1" title="前の45°倍数へ揃える" aria-label="前の45度倍数">▼</button></span></label>
+                    <label title="Clip全体の透明度。0%で透明、100%で不透明">Opacity %<input type="number" min="0" max="100" step="1" data-motion-param="opacity"></label>
+                </div>
+                <div class="anim-motion-fields-row">
+                    <label title="CAF内部Layerを合成した後、完成Clipを下側Laneへ合成。modeは次のkeyまで維持">Blend<select data-motion-param="blendMode" aria-label="Clip blend mode"><option value="normal">NORMAL</option><option value="add">ADD</option><option value="subtract">SUBTRACT</option><option value="multiply">MULTIPLY</option><option value="overlay">OVERLAY</option></select></label>
+                    <label title="指定Blendで合成するClipの強さ。0%は合成なし、100%は指定Blendを完全適用。LINEAR / EASEでは次のkeyまで連続変化">Strength %<input type="number" min="0" max="100" step="1" data-motion-param="blendStrength"></label>
+                    <select id="anim-motion-interpolation" aria-label="Transform key interpolation" title="左keyから次keyまでの速度変化。HOLDは現在値を維持">
+                        <option value="linear">LINEAR</option>
+                        <option value="ease-in">EASE IN</option>
+                        <option value="ease-out">EASE OUT</option>
+                        <option value="ease-in-out">EASE IN-OUT</option>
+                        <option value="hold">HOLD</option>
+                        <option value="custom" disabled>CUSTOM</option>
+                    </select>
+                </div>
             </div>`;
         mountPopupAtOverlayRoot(this.motionPanel);
         this.motionPanelDragCleanup?.();
         this.motionPanelDragCleanup = attachPopupDrag(this.motionPanel);
+        this._ensureMotionCurvePanel();
+    }
+
+    _ensureMotionCurvePanel() {
+        this.motionCurvePanel = document.getElementById('animation-motion-curve-window');
+        if (this.motionCurvePanel) this.motionCurvePanel.remove();
+        this.motionCurvePanel = document.createElement('div');
+        this.motionCurvePanel.id = 'animation-motion-curve-window';
+        this.motionCurvePanel.className = 'anim-motion-curve-window popup-panel--translucent transform-popup-shell';
+        this.motionCurvePanel.tabIndex = -1;
+        this.motionCurvePanel.style.display = 'none';
+        this.motionCurvePanel.innerHTML = `
+            <div class="anim-motion-curve-header transform-popup-header">
+                <span class="transform-popup-title">EASING CURVE</span>
+                <span class="anim-motion-curve-status"></span>
+                <button class="ui-close-button ui-close-button--small" id="anim-motion-curve-close-btn" type="button" aria-label="Close easing curve editor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+            </div>
+            <svg class="anim-motion-curve-graph" viewBox="0 0 220 220" role="img" aria-label="Cubic Bezier easing curve editor">
+                <rect class="anim-motion-curve-grid" x="14" y="14" width="192" height="192" rx="3"/>
+                <path class="anim-motion-curve-diagonal" d="M14 206 206 14"/>
+                <line class="anim-motion-curve-control-line"/>
+                <line class="anim-motion-curve-control-line"/>
+                <path class="anim-motion-curve-path"/>
+                <circle class="anim-motion-curve-endpoint" cx="14" cy="206" r="3"/>
+                <circle class="anim-motion-curve-endpoint" cx="206" cy="14" r="3"/>
+                <circle class="anim-motion-curve-handle" data-motion-curve-handle="1" r="8"/>
+                <circle class="anim-motion-curve-handle" data-motion-curve-handle="2" r="8"/>
+            </svg>
+            <div class="anim-motion-curve-fields">
+                <label>X1<input type="number" min="0" max="1" step="0.01" data-motion-curve-param="x1"></label>
+                <label>Y1<input type="number" min="0" max="1" step="0.01" data-motion-curve-param="y1"></label>
+                <label>X2<input type="number" min="0" max="1" step="0.01" data-motion-curve-param="x2"></label>
+                <label>Y2<input type="number" min="0" max="1" step="0.01" data-motion-curve-param="y2"></label>
+            </div>`;
+        mountPopupAtOverlayRoot(this.motionCurvePanel);
+        this.motionCurvePanelDragCleanup?.();
+        this.motionCurvePanelDragCleanup = attachPopupDrag(this.motionCurvePanel, {
+            interactiveSelector: 'button, input, .anim-motion-curve-graph'
+        });
+    }
+
+    _setupMotionCurveEvents() {
+        const panel = this.motionCurvePanel;
+        const graph = panel?.querySelector('.anim-motion-curve-graph');
+        if (!panel || !graph) return;
+        const readCurveInputs = () => resolveEditableEasingCurve({
+            type: 'cubic-bezier',
+            x1: panel.querySelector('[data-motion-curve-param="x1"]')?.value,
+            y1: panel.querySelector('[data-motion-curve-param="y1"]')?.value,
+            x2: panel.querySelector('[data-motion-curve-param="x2"]')?.value,
+            y2: panel.querySelector('[data-motion-curve-param="y2"]')?.value
+        });
+        const commitCurveInputs = source => {
+                const beforeState = this._captureTimelineHistoryState();
+                if (!this._applySelectedMotionCurve(readCurveInputs())) return false;
+                this._recordTimelineHistory(
+                    beforeState,
+                    this._captureTimelineHistoryState(),
+                    'caf-clip-motion-easing',
+                    { type: 'caf-clip-motion-easing', source }
+                );
+                return true;
+        };
+        panel.querySelectorAll('[data-motion-curve-param]').forEach(input => {
+            input.addEventListener('change', () => commitCurveInputs('curve-input'));
+            this._bindNumberInputWheel(input, () => commitCurveInputs('curve-wheel'));
+            this._bindMotionNumberInputScrub(input, {
+                historyName: 'caf-clip-motion-easing',
+                onPreview: () => this._applySelectedMotionCurve(readCurveInputs(), { render: false })
+            });
+        });
+        graph.addEventListener('pointerdown', event => {
+            const handle = event.target.closest?.('[data-motion-curve-handle]');
+            const state = this._getMotionCurveEditState();
+            if (!handle || !state.editable || (event.pointerType === 'mouse' && event.button !== 0)) return;
+            this._motionCurveGesture = {
+                pointerId: event.pointerId,
+                handle: Number(handle.dataset.motionCurveHandle),
+                curve: { ...state.curve },
+                beforeState: this._captureTimelineHistoryState()
+            };
+            handle.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        graph.addEventListener('pointermove', event => {
+            const gesture = this._motionCurveGesture;
+            if (!gesture || gesture.pointerId !== event.pointerId) return;
+            const rect = graph.getBoundingClientRect();
+            const point = graphPointToCurvePoint({
+                x: (event.clientX - rect.left) * 220 / Math.max(1, rect.width),
+                y: (event.clientY - rect.top) * 220 / Math.max(1, rect.height)
+            }, { width: 220, height: 220, padding: 14 });
+            if (gesture.handle === 1) {
+                gesture.curve.x1 = point.x;
+                gesture.curve.y1 = point.y;
+            } else {
+                gesture.curve.x2 = point.x;
+                gesture.curve.y2 = point.y;
+            }
+            this._applySelectedMotionCurve(gesture.curve);
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        const finishGesture = (event, cancelled = false) => {
+            const gesture = this._motionCurveGesture;
+            if (!gesture || gesture.pointerId !== event.pointerId) return;
+            this._motionCurveGesture = null;
+            if (cancelled) {
+                this._restoreTimelineHistoryState(gesture.beforeState);
+            } else {
+                this._recordTimelineHistory(
+                    gesture.beforeState,
+                    this._captureTimelineHistoryState(),
+                    'caf-clip-motion-easing',
+                    { type: 'caf-clip-motion-easing', source: 'curve-drag' }
+                );
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        graph.addEventListener('pointerup', event => finishGesture(event));
+        graph.addEventListener('pointercancel', event => finishGesture(event, true));
+        panel.querySelector('#anim-motion-curve-close-btn')?.addEventListener('click', () => {
+            this._setMotionCurveWindowOpen(false);
+        });
     }
 
     _renderAssetLibrary(container) {
@@ -7929,6 +8400,12 @@ export class AnimationTablePopup {
                 this.cycleTimelineOnionSkin();
                 e.currentTarget.blur();
             });
+            onionToggleBtn.addEventListener('wheel', (e) => {
+                if (e.ctrlKey || e.metaKey || e.altKey || e.deltaY === 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                this.adjustTimelineOnionSkin(e.deltaY < 0 ? 1 : -1);
+            }, { passive: false });
         }
 
         const autoCaptureChk = this.panel.querySelector('#anim-auto-capture-chk');
@@ -7962,7 +8439,15 @@ export class AnimationTablePopup {
         const motionControls = this.motionPanel;
         const motionOpenButton = this.panel.querySelector('#anim-motion-open-btn');
         if (motionControls && motionOpenButton) {
-            motionControls.addEventListener('keydown', (e) => e.stopPropagation());
+            motionControls.querySelectorAll('.anim-motion-fields input[type="number"]').forEach(input => {
+                this._bindNumberInputWheel(input, () => this._setSelectedClipMotionKeyFromControls());
+                this._bindMotionNumberInputScrub(input);
+            });
+            motionControls.querySelectorAll('.anim-motion-rotation-step-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    this._snapMotionRotationTo45(Number(button.dataset.motionRotationStep));
+                });
+            });
             motionControls.addEventListener('change', (e) => {
                 if (e.target.closest('#anim-motion-key-btn')) return;
                 this._setSelectedClipMotionKeyFromControls();
@@ -7972,14 +8457,28 @@ export class AnimationTablePopup {
                 if (state?.key) this._removeSelectedClipMotionKey();
                 else this._setSelectedClipMotionKeyFromControls();
             });
+            motionControls.querySelector('#anim-motion-copy-btn')?.addEventListener('click', () => {
+                this._copySelectedClipMotionKey();
+            });
+            motionControls.querySelector('#anim-motion-paste-btn')?.addEventListener('click', () => {
+                this._pasteSelectedClipMotionKey();
+            });
+            motionControls.querySelector('#anim-motion-clear-btn')?.addEventListener('click', () => {
+                this._clearSelectedClipMotionKeys();
+            });
             motionControls.querySelector('#anim-motion-anchor-btn')?.addEventListener('click', () => this._toggleMotionAnchorMode());
+            motionControls.querySelector('#anim-motion-curve-btn')?.addEventListener('click', () => {
+                this._setMotionCurveWindowOpen(this.motionCurvePanel?.style.display === 'none');
+            });
             motionOpenButton.addEventListener('click', () => this.toggleMotionWindow());
             motionControls.querySelector('#anim-motion-close-btn')?.addEventListener('click', () => this.setMotionWindowOpen(false));
+            this._setupMotionCurveEvents();
         }
 
         const fpsInput = this.panel.querySelector('#anim-fps-input');
         const totalFramesInput = this.panel.querySelector('#anim-total-frames-input');
         if (fpsInput) {
+            this._bindNumberInputWheel(fpsInput, () => this._updateTimelineSettingsFromInputs());
             fpsInput.addEventListener('change', () => this._updateTimelineSettingsFromInputs());
             fpsInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
@@ -7990,6 +8489,7 @@ export class AnimationTablePopup {
             });
         }
         if (totalFramesInput) {
+            this._bindNumberInputWheel(totalFramesInput, () => this._updateTimelineSettingsFromInputs());
             totalFramesInput.addEventListener('change', () => this._updateTimelineSettingsFromInputs());
             totalFramesInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
@@ -8037,28 +8537,7 @@ export class AnimationTablePopup {
         const timelineViewport = this.panel.querySelector('.anim-table-viewport');
         if (timelineViewport) {
             timelineViewport.addEventListener('wheel', (e) => {
-                if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
-
-                if (e.ctrlKey) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (e.deltaY === 0) return;
-                    this._adjustTimelineZoom(e.deltaY < 0 ? 1 : -1);
-                    return;
-                }
-
-                if (e.shiftKey) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    timelineViewport.scrollLeft += e.deltaX || e.deltaY;
-                    return;
-                }
-
-                if (e.deltaY !== 0) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    timelineViewport.scrollTop += e.deltaY;
-                }
+                this._handleTimelineViewportWheel(e, timelineViewport);
             }, { passive: false });
 
             timelineViewport.addEventListener('pointerdown', (e) => {
@@ -8881,6 +9360,137 @@ export class AnimationTablePopup {
         return Math.max(minFrames, (this.model.playback?.currentFrame || 0) + 1);
     }
 
+    _handleTimelineViewportWheel(event, timelineViewport) {
+        if (!timelineViewport || event.target.closest('input, textarea, select, [contenteditable="true"]')) {
+            return false;
+        }
+
+        const primaryDelta = event.deltaY || event.deltaX;
+        if (primaryDelta === 0) return false;
+        if (event.ctrlKey || event.metaKey) {
+            event.preventDefault();
+            event.stopPropagation();
+            this._adjustTimelineZoom(primaryDelta < 0 ? 1 : -1);
+            return true;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.shiftKey || event.target.closest('.anim-track-list')) {
+            timelineViewport.scrollTop += primaryDelta;
+        } else {
+            timelineViewport.scrollLeft += event.deltaX || event.deltaY;
+        }
+        return true;
+    }
+
+    _bindNumberInputWheel(input, onCommit) {
+        if (!(input instanceof HTMLInputElement) || input.type !== 'number') return;
+        const wheelHint = 'ホイールで1刻み調整';
+        input.title = input.title ? `${input.title} / ${wheelHint}` : wheelHint;
+        input.addEventListener('wheel', (event) => {
+            if (input.disabled || input.readOnly) return;
+            if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            const before = input.value;
+            try {
+                if (event.deltaY < 0) input.stepUp();
+                else input.stepDown();
+            } catch (_error) {
+                return;
+            }
+            if (input.value === before) return;
+            onCommit?.(input.value, input);
+        }, { passive: false });
+    }
+
+    _bindMotionNumberInputScrub(input, options = {}) {
+        if (!(input instanceof HTMLInputElement) || input.type !== 'number') return;
+        const scrubHint = '横ドラッグで調整';
+        input.title = input.title ? `${input.title} / ${scrubHint}` : scrubHint;
+
+        let gesture = null;
+        let suppressClick = false;
+        const removeDocumentListeners = () => {
+            document.removeEventListener('pointermove', onPointerMove, true);
+            document.removeEventListener('pointerup', finishPointer, true);
+            document.removeEventListener('pointercancel', finishPointer, true);
+        };
+        const onPointerMove = (event) => {
+            if (!gesture || event.pointerId !== gesture.pointerId) return;
+            const deltaX = event.clientX - gesture.startX;
+            if (!gesture.moved && Math.abs(deltaX) < 4) return;
+            if (!gesture.moved) {
+                gesture.moved = true;
+                gesture.beforeState = this._captureTimelineHistoryState();
+                input.classList.add('is-scrubbing');
+                input.blur();
+            }
+
+            const stepCount = Math.trunc(deltaX / 6);
+            if (stepCount === gesture.stepCount) return;
+            gesture.stepCount = stepCount;
+            input.value = gesture.startValue;
+            try {
+                if (stepCount > 0) input.stepUp(stepCount);
+                else if (stepCount < 0) input.stepDown(-stepCount);
+            } catch (_error) {
+                return;
+            }
+
+            if (typeof options.onPreview === 'function') {
+                options.onPreview(input.value, input);
+            } else {
+                const key = this._readSelectedClipMotionKeyFromControls();
+                if (key) this._upsertSelectedMotionKey(key, { render: false });
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        const finishPointer = (event) => {
+            if (!gesture || event.pointerId !== gesture.pointerId) return;
+            const finishedGesture = gesture;
+            gesture = null;
+            removeDocumentListeners();
+            input.classList.remove('is-scrubbing');
+            if (!finishedGesture.moved) return;
+
+            suppressClick = true;
+            setTimeout(() => { suppressClick = false; }, 0);
+            this.render();
+            this._flushLayerPanelSync();
+            this._finishMotionGestureHistory(
+                finishedGesture.beforeState,
+                options.historyName || 'caf-clip-motion-number-scrub'
+            );
+            event.preventDefault();
+            event.stopPropagation();
+        };
+
+        input.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0 || input.disabled || input.readOnly) return;
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+            gesture = {
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startValue: input.value,
+                stepCount: 0,
+                moved: false,
+                beforeState: null
+            };
+            document.addEventListener('pointermove', onPointerMove, { passive: false, capture: true });
+            document.addEventListener('pointerup', finishPointer, { passive: false, capture: true });
+            document.addEventListener('pointercancel', finishPointer, { passive: false, capture: true });
+        });
+        input.addEventListener('click', (event) => {
+            if (!suppressClick) return;
+            event.preventDefault();
+            event.stopPropagation();
+        }, true);
+    }
+
     _updateTimelineSettingsFromInputs() {
         const fpsInput = this.panel?.querySelector('#anim-fps-input');
         const totalFramesInput = this.panel?.querySelector('#anim-total-frames-input');
@@ -9098,8 +9708,8 @@ export class AnimationTablePopup {
             }
 
             .anim-tool-btn {
-                background: rgba(255,255,255,0.55);
-                border: 1px solid rgba(128, 0, 0, 0.28);
+                background: color-mix(in srgb, var(--futaba-background) 72%, transparent);
+                border: 1px solid color-mix(in srgb, var(--futaba-maroon) 28%, transparent);
                 color: var(--futaba-maroon);
                 width: 20px;
                 height: 20px;
@@ -9113,19 +9723,26 @@ export class AnimationTablePopup {
             }
 
             .anim-tool-btn:hover {
-                background: rgba(255,255,255,0.9);
-                border-color: rgba(255, 102, 0, 0.8);
+                background: var(--futaba-background);
+                border-color: var(--active-border);
             }
 
             .anim-tool-btn:active {
-                background: #ff6600;
-                border-color: #ff6600;
+                background: var(--active-border);
+                border-color: var(--active-border);
             }
 
             .anim-tool-btn:disabled {
                 opacity: 0.3;
                 cursor: not-allowed;
-                background: rgba(255,255,255,0.25);
+                background: color-mix(in srgb, var(--futaba-background) 38%, transparent);
+            }
+
+            .anim-tool-btn:focus-visible,
+            .anim-zoom-btn:focus-visible {
+                outline: none;
+                border-color: var(--active-border);
+                box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 24%, transparent);
             }
 
             .anim-play-btn {
@@ -9244,19 +9861,29 @@ export class AnimationTablePopup {
                 box-sizing: border-box;
                 border: 1px solid rgba(128, 0, 0, 0.22);
                 border-radius: 4px;
-                background: rgba(255, 255, 255, 0.62);
+                background: color-mix(in srgb, var(--futaba-background) 78%, transparent);
                 color: var(--futaba-maroon);
                 font-size: 10px;
                 font-weight: 700;
                 text-align: center;
                 padding: 0 2px;
                 outline: none;
+                appearance: textfield;
+                -moz-appearance: textfield;
             }
 
-            .anim-setting-field input:focus {
-                border-color: rgba(255, 102, 0, 0.9);
-                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
-                background: rgba(255, 255, 255, 0.92);
+            .anim-setting-field input::-webkit-inner-spin-button,
+            .anim-setting-field input::-webkit-outer-spin-button {
+                margin: 0;
+                appearance: none;
+                -webkit-appearance: none;
+            }
+
+            .anim-setting-field input:focus,
+            .anim-setting-field input:focus-visible {
+                border-color: var(--active-border);
+                box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 18%, transparent);
+                background: var(--futaba-background);
             }
 
             .anim-capture-controls {
@@ -9430,8 +10057,8 @@ export class AnimationTablePopup {
                 width: 18px;
                 height: 18px;
                 border-radius: 4px;
-                border: 1px solid rgba(128, 0, 0, 0.28);
-                background: rgba(255, 255, 255, 0.65);
+                border: 1px solid color-mix(in srgb, var(--futaba-maroon) 28%, transparent);
+                background: color-mix(in srgb, var(--futaba-background) 78%, transparent);
                 color: var(--futaba-maroon);
                 font-size: 12px;
                 font-weight: 700;
@@ -9441,8 +10068,8 @@ export class AnimationTablePopup {
             }
 
             .anim-zoom-btn:hover:not(:disabled) {
-                border-color: rgba(255, 102, 0, 0.85);
-                background: rgba(255, 255, 255, 0.95);
+                border-color: var(--active-border);
+                background: var(--futaba-background);
             }
 
             .anim-zoom-btn:disabled {
@@ -9579,15 +10206,15 @@ export class AnimationTablePopup {
                 min-width: 0;
                 height: 20px;
                 box-sizing: border-box;
-                border: 1px solid rgba(207, 156, 151, 0.85);
+                border: 1px solid var(--futaba-light-medium);
                 border-radius: 4px;
-                background: rgba(255, 255, 238, 0.96);
+                background: var(--futaba-background);
                 color: var(--futaba-maroon);
                 font-size: 10px;
                 font-weight: 700;
                 outline: none;
                 padding: 1px 4px;
-                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
+                box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 20%, transparent);
             }
 
             .anim-layer-row-actions {
@@ -9642,17 +10269,17 @@ export class AnimationTablePopup {
             .anim-layer-add-btn {
                 width: 14px;
                 height: 14px;
-                background: rgba(255, 255, 255, 0.5);
-                border: 1px solid rgba(128, 0, 0, 0.2);
+                background: color-mix(in srgb, var(--futaba-background) 82%, transparent);
+                border: 1px solid var(--futaba-light-medium);
                 border-radius: 2px;
                 font-size: 12px;
                 line-height: 1;
             }
 
             .anim-layer-add-btn:hover {
-                background: white;
-                border-color: #ff6600;
-                color: #ff6600;
+                background: var(--futaba-background);
+                border-color: var(--active-border);
+                color: var(--active-border);
             }
 
             .anim-internal-layer-meta {
@@ -9713,15 +10340,15 @@ export class AnimationTablePopup {
                 min-width: 0;
                 height: 18px;
                 box-sizing: border-box;
-                border: 1px solid rgba(207, 156, 151, 0.85);
+                border: 1px solid var(--futaba-light-medium);
                 border-radius: 4px;
-                background: rgba(255, 255, 238, 0.96);
+                background: var(--futaba-background);
                 color: var(--futaba-maroon);
                 font-size: 10px;
                 font-weight: 700;
                 outline: none;
                 padding: 1px 4px;
-                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
+                box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 20%, transparent);
             }
 
             .anim-lib-asset-name-input {
@@ -9729,15 +10356,15 @@ export class AnimationTablePopup {
                 min-width: 0;
                 height: 18px;
                 box-sizing: border-box;
-                border: 1px solid rgba(207, 156, 151, 0.85);
+                border: 1px solid var(--futaba-light-medium);
                 border-radius: 4px;
-                background: rgba(255, 255, 238, 0.96);
+                background: var(--futaba-background);
                 color: var(--futaba-maroon);
                 font-size: 10px;
                 font-weight: 700;
                 outline: none;
                 padding: 1px 4px;
-                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.14);
+                box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 20%, transparent);
             }
 
             .anim-lib-asset-item {
@@ -9760,7 +10387,8 @@ export class AnimationTablePopup {
             }
 
             .blank-tag {
-                background: rgba(128, 128, 128, 0.2);
+                background: color-mix(in srgb, var(--futaba-light-medium) 38%, transparent);
+                color: var(--text-secondary);
                 padding: 0 4px;
                 border-radius: 2px;
             }
@@ -9776,8 +10404,8 @@ export class AnimationTablePopup {
             }
 
             .anim-folder-add-btn, .anim-folder-rename-btn, .anim-folder-delete-btn, .anim-asset-move-btn, .anim-asset-delete-btn {
-                background: rgba(255, 255, 255, 0.3);
-                border: 1px solid rgba(128, 0, 0, 0.1);
+                background: color-mix(in srgb, var(--futaba-background) 74%, transparent);
+                border: 1px solid var(--futaba-light-medium);
                 border-radius: 2px;
                 color: var(--futaba-maroon);
                 cursor: pointer;
@@ -9795,13 +10423,16 @@ export class AnimationTablePopup {
             .anim-folder-delete-btn:hover:not(:disabled),
             .anim-asset-move-btn:hover:not(:disabled),
             .anim-asset-delete-btn:hover:not(:disabled) {
-                background: white;
-                border-color: #ff6600;
-                color: #ff6600;
+                background: var(--futaba-background);
+                border-color: var(--active-border);
+                color: var(--active-border);
             }
 
             .anim-folder-rename-btn:disabled, .anim-folder-delete-btn:disabled, .anim-asset-move-btn:disabled, .anim-asset-delete-btn:disabled {
-                opacity: 0.2;
+                color: var(--text-secondary);
+                background: color-mix(in srgb, var(--futaba-light-medium) 24%, transparent);
+                border-color: var(--futaba-light-medium);
+                opacity: 0.45;
                 cursor: default;
             }
 
@@ -9905,8 +10536,8 @@ export class AnimationTablePopup {
                 width: 16px;
                 height: 16px;
                 border-radius: 50%;
-                border: 1px solid rgba(128, 0, 0, 0.3);
-                background: rgba(255, 255, 255, 0.5);
+                border: 1px solid var(--futaba-light-medium);
+                background: color-mix(in srgb, var(--futaba-background) 82%, transparent);
                 color: var(--futaba-maroon);
                 font-size: 12px;
                 line-height: 1;
@@ -9919,8 +10550,8 @@ export class AnimationTablePopup {
             }
 
             .anim-lane-add-btn:hover {
-                background: white;
-                border-color: #ff6600;
+                background: var(--futaba-background);
+                border-color: var(--active-border);
             }
 
             .anim-track-item {
@@ -9965,7 +10596,7 @@ export class AnimationTablePopup {
                 min-width: 0;
                 height: 22px;
                 box-sizing: border-box;
-                border: 1px solid rgba(207, 156, 151, 0.85);
+                border: 1px solid var(--futaba-light-medium);
                 border-radius: 4px;
                 background: rgba(255, 255, 238, 0.9);
                 color: var(--futaba-maroon);
@@ -9973,15 +10604,15 @@ export class AnimationTablePopup {
                 font-weight: 700;
                 outline: none;
                 padding: 1px 4px;
-                box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.16);
+                box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 22%, transparent);
             }
 
             .anim-lane-include-btn {
                 width: 14px;
                 height: 14px;
                 border-radius: 3px;
-                border: 1px solid rgba(128, 0, 0, 0.3);
-                background: rgba(255, 255, 255, 0.25);
+                border: 1px solid var(--futaba-light-medium);
+                background: color-mix(in srgb, var(--futaba-background) 68%, transparent);
                 color: var(--futaba-maroon);
                 font-size: 10px;
                 line-height: 1;
@@ -10001,14 +10632,14 @@ export class AnimationTablePopup {
             }
 
             .set-scope-active .anim-lane-include-btn:hover {
-                background: white;
-                border-color: #ff6600;
+                background: var(--futaba-background);
+                border-color: var(--active-border);
             }
 
             .anim-lane-include-btn.active {
-                background: #4caf50;
-                color: white;
-                border-color: #4caf50;
+                background: var(--active-border);
+                color: var(--futaba-cream);
+                border-color: var(--active-border);
                 font-weight: bold;
                 opacity: 1;
             }
@@ -10085,7 +10716,7 @@ export class AnimationTablePopup {
                 font-family: monospace;
                 border-right: 1px solid rgba(128, 0, 0, 0.1);
                 color: var(--futaba-maroon);
-                background: rgba(255, 255, 238, 0.9);
+                background: var(--futaba-background);
             }
 
             .anim-frame-num:hover {

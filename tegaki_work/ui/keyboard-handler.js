@@ -68,7 +68,6 @@ export const KeyboardHandler = (function() {
             e.preventDefault();
             return;
         }
-
         const primaryModifier = e.ctrlKey || e.metaKey;
         if (
             primaryModifier

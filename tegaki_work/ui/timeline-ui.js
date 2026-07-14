@@ -812,6 +812,13 @@
             
             document.getElementById('frame-prev-btn')?.addEventListener('click', () => this.goToPreviousFrameSafe());
             document.getElementById('frame-next-btn')?.addEventListener('click', () => this.goToNextFrameSafe());
+            document.getElementById('frame-display')?.addEventListener('wheel', (event) => {
+                if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.deltaY < 0) this.goToPreviousFrameSafe();
+                else this.goToNextFrameSafe();
+            }, { passive: false });
             document.getElementById('frame-play-toggle-btn')?.addEventListener('click', () => {
                 const animTable = (window.coreEngine?.popupManager || window.PopupManager)?.get?.('animationTable');
                 animTable?.togglePlayback?.();
@@ -823,12 +830,33 @@
                 animTable?.toggleLaneReferenceMode?.();
                 this.updateLayerPanelIndicator();
             });
+            document.getElementById('frame-lane-reference-btn')?.addEventListener('wheel', (event) => {
+                if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const popupManager = window.coreEngine?.popupManager || window.PopupManager;
+                const animTable = popupManager?.get?.('animationTable');
+                const shouldEnable = event.deltaY < 0;
+                if (animTable?.isLaneReferenceActive?.() !== shouldEnable) {
+                    animTable?.toggleLaneReferenceMode?.();
+                }
+                this.updateLayerPanelIndicator();
+            }, { passive: false });
             document.getElementById('frame-timeline-onion-btn')?.addEventListener('click', () => {
                 const popupManager = window.coreEngine?.popupManager || window.PopupManager;
                 const animTable = popupManager?.get?.('animationTable');
                 animTable?.cycleTimelineOnionSkin?.();
                 this.updateLayerPanelIndicator();
             });
+            document.getElementById('frame-timeline-onion-btn')?.addEventListener('wheel', (event) => {
+                if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const popupManager = window.coreEngine?.popupManager || window.PopupManager;
+                const animTable = popupManager?.get?.('animationTable');
+                animTable?.adjustTimelineOnionSkin?.(event.deltaY < 0 ? 1 : -1);
+                this.updateLayerPanelIndicator();
+            }, { passive: false });
             
             this.updateLayerPanelIndicator();
         }
@@ -857,6 +885,7 @@
                 const isLaneReferenceActive = animTable?.isLaneReferenceActive?.() === true;
                 laneReferenceBtn.classList.toggle('is-active', isLaneReferenceActive);
                 laneReferenceBtn.setAttribute('aria-pressed', isLaneReferenceActive ? 'true' : 'false');
+                laneReferenceBtn.title = isLaneReferenceActive ? 'Lane onion: on' : 'Lane onion: off';
             }
             if (timelineOnionBtn) {
                 const count = animTable?.isOnionSkinActive ? Math.max(1, Math.min(4, Math.round(animTable.onionSkinFrameCount || 1))) : 0;

@@ -1623,6 +1623,32 @@ export class QuickAccessPopup {
         this._bindPointerAction(this.elements.opacityIncrease, () => {
             this._updateOpacitySlider(this.currentOpacity + 5, { persistPreset: true, emit: true });
         });
+
+        this._bindWheelAdjustment(
+            this.elements.sizeSlider?.closest('.qa-slider-card'),
+            (direction) => this._updateSizeSlider(
+                this.currentSize + direction * 0.5,
+                { persistPreset: true, emit: true }
+            )
+        );
+        this._bindWheelAdjustment(
+            this.elements.opacitySlider?.closest('.qa-slider-card'),
+            (direction) => this._updateOpacitySlider(
+                this.currentOpacity + direction,
+                { persistPreset: true, emit: true }
+            )
+        );
+    }
+
+    _bindWheelAdjustment(element, onStep) {
+        if (!element || typeof onStep !== 'function') return;
+        element.addEventListener('wheel', (event) => {
+            if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+            if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onStep(event.deltaY < 0 ? 1 : -1);
+        }, { passive: false });
     }
 
     _setupDirectValueInputs() {
