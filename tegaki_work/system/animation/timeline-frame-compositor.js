@@ -8,6 +8,7 @@ import {
 } from '../clipping-mode.js';
 import { normalizeRasterBounds } from '../raster-bounds.js';
 import { sampleClipTransform } from './clip-transform-sampler.js';
+import { compositeClipPixel } from './clip-blend-strength.js';
 import {
     findInternalClippingOwner,
     findInternalClippingSource,
@@ -329,9 +330,30 @@ export class TimelineFrameCompositor {
     }
 
     _drawTransformedClip(ctx, canvas, transform = {}, width, height) {
+        if (transform.blendMode && transform.blendMode !== 'normal') {
+            const transformedCanvas = this._createCanvas(width, height);
+            const transformedCtx = transformedCanvas.getContext('2d');
+            this._drawTransformedClip(
+                transformedCtx,
+                canvas,
+                { ...transform, blendMode: 'normal' },
+                width,
+                height
+            );
+            this._drawBlendClip(
+                ctx,
+                transformedCanvas,
+                width,
+                height,
+                transform.blendMode,
+                transform.blendStrength
+            );
+            return;
+        }
         const scaleX = Number.isFinite(transform.scaleX) ? transform.scaleX : 1;
         const scaleY = Number.isFinite(transform.scaleY) ? transform.scaleY : 1;
         const rotation = Number.isFinite(transform.rotation) ? transform.rotation : 0;
+        const opacity = Math.max(0, Math.min(1, Number.isFinite(transform.opacity) ? transform.opacity : 1));
         const x = Number.isFinite(transform.x) ? transform.x : 0;
         const y = Number.isFinite(transform.y) ? transform.y : 0;
         const anchorX = Number.isFinite(transform.anchorX) ? transform.anchorX : 0.5;
@@ -340,11 +362,33 @@ export class TimelineFrameCompositor {
         const pivotY = height * anchorY;
 
         ctx.save();
+        ctx.globalAlpha *= opacity;
+        ctx.globalCompositeOperation = this._compositeMode(transform.blendMode);
         ctx.translate(pivotX + x, pivotY + y);
         ctx.rotate(rotation);
         ctx.scale(scaleX, scaleY);
         ctx.drawImage(canvas, -pivotX, -pivotY);
         ctx.restore();
+    }
+
+    _drawBlendClip(ctx, sourceCanvas, width, height, blendMode, blendStrength = 1) {
+        const sourceCtx = sourceCanvas.getContext('2d');
+        const sourceImage = sourceCtx.getImageData(0, 0, width, height);
+        const destinationImage = ctx.getImageData(0, 0, width, height);
+        const source = sourceImage.data;
+        const destination = destinationImage.data;
+
+        for (let index = 0; index < destination.length; index += 4) {
+            if (source[index + 3] <= 0) continue;
+            const result = compositeClipPixel(
+                destination.subarray(index, index + 4),
+                source.subarray(index, index + 4),
+                blendMode,
+                blendStrength
+            );
+            destination.set(result, index);
+        }
+        ctx.putImageData(destinationImage, 0, 0);
     }
 
     _renderBackground(ctx, width, height, options) {

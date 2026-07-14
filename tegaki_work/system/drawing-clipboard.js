@@ -17,6 +17,7 @@ import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { historyManager } from './history.js';
 import { getClippingMode } from './clipping-mode.js';
+import { formatCopyFeedback, showFeedbackToast } from '../ui/feedback-toast.js';
 
 export class DrawingClipboard {
     constructor() {
@@ -112,7 +113,7 @@ export class DrawingClipboard {
         }
 
         try {
-            this.copyActiveLayer();
+            this.copyActiveLayer({ showFeedback: false });
             
             if (this.clipboardData) {
                 this.clearLayerDrawings(activeLayer);
@@ -266,7 +267,7 @@ export class DrawingClipboard {
         }
     }
 
-    copyActiveLayer() {
+    copyActiveLayer(options = {}) {
         if (!this.layerManager) {
             if (this.eventBus) {
                 this.eventBus.emit('clipboard:copy-failed', { error: 'LayerManager not available' });
@@ -298,8 +299,8 @@ export class DrawingClipboard {
                 });
             }
             
-            if (window.popupManager) {
-                window.popupManager.show(payload.rootType === 'folder' ? 'フォルダコピー' : 'レイヤーコピー', 1500);
+            if (options.showFeedback !== false) {
+                showFeedbackToast(formatCopyFeedback('layer', payload.layers.length));
             }
             return true;
             

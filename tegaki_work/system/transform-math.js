@@ -62,3 +62,33 @@ export function rebaseTransformAnchor(transform, anchorX, anchorY, width, height
         anchorY
     };
 }
+
+/** Shift+dragの主方向をV変形とClip Motionで共用する。 */
+export function resolveDirectionalTransformDragMode(start, current, threshold = 1) {
+    const dx = (Number(current?.x) || 0) - (Number(start?.x) || 0);
+    const dy = (Number(current?.y) || 0) - (Number(start?.y) || 0);
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < threshold) return null;
+    return Math.abs(dy) >= Math.abs(dx) ? 'scale' : 'rotate';
+}
+
+/** 横drag=回転、縦drag=等倍拡縮。入力transformは変更しない。 */
+export function applyDirectionalTransformDrag(transform, dx, dy, mode, options = {}) {
+    const next = { ...transform };
+    if (mode === 'rotate') {
+        next.rotation = (Number(next.rotation) || 0) + dx * (options.rotationSpeed ?? 0.02);
+        return next;
+    }
+    if (mode !== 'scale') return next;
+
+    const minScale = options.minScale ?? 0.1;
+    const maxScale = options.maxScale ?? 30;
+    const factor = Math.max(0.01, 1 - dy * (options.scaleSpeed ?? 0.01));
+    const scale = value => {
+        const current = Number.isFinite(value) ? value : 1;
+        const sign = current < 0 ? -1 : 1;
+        return sign * Math.max(minScale, Math.min(maxScale, Math.abs(current) * factor));
+    };
+    next.scaleX = scale(next.scaleX);
+    next.scaleY = scale(next.scaleY);
+    return next;
+}

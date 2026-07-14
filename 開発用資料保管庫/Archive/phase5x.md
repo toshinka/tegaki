@@ -17,11 +17,18 @@ Phase 5wで安定したMotion正本へ機能追加を混ぜず、Animation Table
 
 ## Slice 1: 共通control配色監査
 
-状態: 次の入口
+状態: 完了（2026-07-13）
 
 - number input、select、option、slider、native spinner、▲▼buttonのfocus / selection / disabled色を検索する。
 - `styles/main.css` の既存変数と共通classを優先し、component固有の近似色を増やさない。
 - Motion、V panel、Animation Table、Settingsを先行し、全UI一括renameは行わない。
+- 第一段階でMotion / V header actionを同じ `flip-button` 外観へ揃え、key存在時はゴミ箱へ切り替える。Animation Tableのtool / zoom / FPS / FRAMESとSettingsのfocus-visible、selection、disabled、spinnerを既存paletteへ寄せる。
+- Animation Library内のrename input、Folder action、blank tag、Lane actionを実画面単位で確認し、native white / grayを既存paletteへ統一した。
+
+## Phase 5w後の操作整合修正
+
+- Clip MotionのShift+dragをV変形と同じ主方向判定へ統一する。横はrotation、縦はuniform scaleとし、共通純粋helperを使う。
+- Clip pivotの楔形tailは0°で上向き、現在Frameのsampled rotationへ追従する。Boneのrest axisやtail長は本Phaseで正本化しない。
 
 ## 対象外
 

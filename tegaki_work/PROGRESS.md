@@ -1,6 +1,6 @@
 # Tegaki Progress
 
-更新日: 2026-07-13
+更新日: 2026-07-14
 
 ## 現在地
 
@@ -63,6 +63,36 @@
 - CLIP MOTIONのFrame key / 回転中心buttonをheaderへ移し、入力列を約488pxへ詰めた。Frame keyは丸marker対応のcircle、Clip単位anchorは将来Bone rootを想起できるhead付き楔形siteとし、Vキー十字siteとは表示だけを分けた。
 - Phase 5wを完了。position / scale / rotation、hold / linear、anchor、Canvas操作、preview/playback/onion、copy/paste、Undo/Redo、旧Project互換を同じClipInstance正本へ接続した。Project JSON round-tripは固定入力済み。大容量Albumへの追加実操作は既存約105MBデータで長時間化したため再試行しない。
 - Phase 5xを開始。Animation Tableの右方向キーによる空Frame CAF自動生成を設定checkboxで無効化できるようにし、既定ONを維持した。BrowserでOFF時はF3へ移動してもCAF 1件、ON時はF4に2件目を生成、Undoで1件へ復帰、設定再表示でOFF保持を確認した。後続は共通form/controlのふたばカラー監査とする。
+- Phase 5x Slice 1を開始。CLIP MOTION header actionをLAYER TRANSFORMと同じ `flip-button` 外観へ揃え、現在Frameにkeyがある時はcircleからtrashへ切り替える。Clip pivotのheadを中心、0°tailを上向きとし、tailはsampled rotationへ追従する。
+- Motion / VのShift+drag主方向判定と適用計算を `transform-math.js` の純粋helperへ共用化した。横dragはrotation、縦dragはuniform scaleで、通常dragのpositionとwheel契約は維持する。Boneのrest axis / tail長と個別Motion key clipboardはproposal 09へ送り、既存Rotation入力やClipInstance正本へ混ぜない。
+- BrowserでMotion / Layer Transform header actionが同じ28×24px・同じふたば配色、0°tail上向き、90°tail右向き、key有りtrash / 削除後circle、FPS inputのspinnerなし・橙focus枠を確認した。Shift+dragは共通helper固定入力で横60→+1.2rad、縦-40→scale 1.4、反転scale符号維持を確認した。
+- Phase 5xを完了。Clip pivotは楔形SVGだけをsampled rotationへ追従させ、中心編集hintは回転の影響を受けず水平表示する。Animation Libraryのrename、Folder / Asset action、blank、disabled、Lane追加controlを既存ふたばpaletteへ統一し、Browserでcomputed styleとconsole errorなしを確認した。
+- Phase 5yを開始する。最初はCAF clipboardと分離したruntime Motion-key clipboardを監査し、単一keyの値だけをcurrent Clip-local Frameへ1 Historyでcopy / pasteする。複数key、Bake、subframe、opacity / easing、Bone / meshは混ぜない。
+- Phase 5y Slice 0-1を実装。Motion key clipboardはruntime UI stateだけに `position / scale / rotation / interpolation` を保持し、source Clip ID / FrameやProject JSONへ混ぜない。CLIP MOTION headerのcopy / paste、current Clip-local Frameでの同Frame置換、既存Timeline Historyの1操作Undo / Redoへ接続した。Browserとオーナー実機でbutton経路、HOLD、720°、disabled条件を確認済み。shortcutはCAF / Layer clipboardのdocument captureと数値input focusが競合するため採用せず、明示buttonを正式入口とする。
+- Phase 5yを完了し、Phase 5z1を開始。選択Clipに2件以上あるMotion keyを一括消去するheader buttonを追加し、静的transform / anchorを維持したまま1 Timeline Historyで空配列へ置換する。Browserで3 key作成、一括消去、Undo / Redo、再生中disabled、console errorなしを確認済み。次はMotion / CAF / Layer共通のcopy feedback経路を監査する。
+- Phase 5z1を完了。Motion / CAF / Layer copyを種別・件数だけ表示する共通toastへ接続し、Project保存通知も同じhelperへ統合した。BrowserでCAF / Motion表示、自動消去、ARIA status、console errorなしを確認し、Layer複数件文言は固定入力済み。Phase 5z2ではopacityをClip Motionの最初の表現parameterとして監査する。
+- Phase 5z2を完了。Clip Motion opacityを既存transform samplerへ追加し、静的既定1、0..1 clamp、欠損継承、hold / linearをTimelineFrameCompositorとTable previewの既存alphaへ乗算する。UIは0-100%、Motion clipboardはv2へ更新し、v1貼付けはopacityを変更しない。固定入力・Project round-trip・build、実描画CAFの100/50/0%、HOLD、再生、Timeline onion、Project保存download、console errorなしを確認した。
+- Phase 5z3を完了。「OL」はOVERLAYへ統一し、Clip MotionへNORMAL / ADD / SUBTRACT / MULTIPLY / OVERLAYを追加した。modeは左key HOLDの離散値、`blendStrength` は0..1（UI 0–100%）のhold / linear連続scalarで、指定blendで合成するClipのopacityとする。CAF内部Layer合成後の完成Clipへ適用し、Layer blendとClip blendは順番に両方作用する。Motion windowは二段化し、Rotationを幾何変形の上段へ、pivot/BORNをkey button直後へ移動した。Motion metadata変更時のpreview cache無効化とcached texture解除を追加し、旧NORMAL/Strength表示が残る回帰を修正した。clipboardはv4。animation exportとの見た目一致は実制作中の継続確認へ移す。
+- Phase 5z4を開始する。Animation TableのFPS / FRAMESをkeyboardなしでも変更できるnumber入力wheel操作と、Table上のwheelによるTimeline移動を対象にする。既存のnumber入力、縦Lane scroll、Shift+wheel横scroll、Ctrl/Cmd+wheel zoomを壊さず、操作契約を先に監査する。
+- Phase 5z4 Slice 1でFPS / FRAMESとCLIP MOTIONのnumber inputへhover / focus中のwheel 1 step調整を共通bindingで追加した。field上ではTable scrollへ伝播せず、Ctrl/Cmd/Alt、disabled、read-onlyは奪わない。custom▲▼ / slider popupは重複実装せずpen実機で不足が出た場合へ送り、独自sliderのLAYER TRANSFORMは`SliderUtils`監査後の候補とする。
+- Phase 5z4 Slice 2-3でTable Timeline領域の通常wheelを横scrollへ変更し、Lane名側だけ縦scrollを維持した。Quick SIZE / OPACITY、Layer Panel Frame表示、Table / Layer Panel Timeline onion数、Layer card opacityも既存更新正本へwheel操作を接続した。Lane onionはON/OFFのまま、LAYER TRANSFORM独自sliderは未変更。
+- BrowserでQuick SIZE 10.0→10.5px、OPACITY 100→99%、Layer Panel Frame F1→F2、Timeline onion前後数1→2のTable / Layer Panel同期、Timeline通常wheelの横scroll 0→約240px・縦位置不変、console errorなしを確認した。Layer card opacityは表示時だけ有効な既存card経路へ限定し、compact表示を増やさない。
+- Phase 5z4 Slice 4でTable viewportの通常wheelを全域横scroll、Shift+wheelをLane縦scrollへ整理した。Timeline onionは0=非表示、1～4=前後数の既存正本をwheelでも往復する。
+- Transform popupは外観とactionだけを揃え、入力密度は用途別に維持する。CLIP MOTION number inputへ横drag scrubを追加し、6pxごとにfield固有stepをライブ反映、pointer終了時に1 Historyへまとめる。LAYER TRANSFORMはpen向け可視sliderを維持する。BrowserでX 0→10、Undo 1回でkey無しへ復帰、onion 0→1→0、console errorなしを確認した。
+- Lane panel上の通常wheel縦scrollを復活し、Timeline側通常wheel横 / Shift+wheel全域縦を維持した。Lane onionはwheel上=ON / 下=OFF。LAYER TRANSFORM直接入力はnative灰色spinnerを茶系▲▼へ置換し、CLIP MOTION Rotationには次 / 前の45°倍数へ揃える常設▲▼を追加した。BrowserでLane縦scroll、331→360 / 315、Lane onion往復、Transform 0→1、console errorなしを確認済み。
+- Phase 5z4を完了。FPS / FRAMES、Motion / Quick / Layer数値wheel、Timeline横 / Lane縦scroll、Timeline / Lane onion、Motion number scrub、Rotation 45°snap、Transform茶系stepperまでBrowser確認済み。記録は `開発用資料保管庫/Archive/phase5z4.md`。
+- Phase 5z5を開始する。最初は既存transform key全read / write経路を監査し、左key区間のcubic-bezier easing schema、欠損linear互換、hold無視、純粋samplingを固定する。preset / graph UIはsamplingとround-trip確認後、mesh / morphはPhase 6へ分離する。
+- Phase 5z5 Slice 0-1でcubic-bezier easingの純粋helperを追加した。左keyがlinear区間を所有し、holdは無視、欠損 / 不正値は旧linear、control pointは0..1とする。Newton法に二分探索fallbackを持ち、同じratioをposition / scale / rotation / opacity / blendStrengthへ適用する。
+- Project / History / CAF・Group copy / retimingは既存の汎用key cloneでmetadataを保持する。数値編集、Canvas gesture、anchor rebaseの明示key再構築もeasing保持へ修正し、Motion clipboardはv5へ更新した。旧v1〜v4貼付けは貼付先easingを維持する。固定入力とnode checkは完了し、round-trip補強と最小preset UIが残る。
+- Phase 5z5 Slice 2-3でProject / History相当復元、CAF / Group clone、retiming終端key、preset / customの固定入力を補強した。CLIP MOTIONへ `LINEAR / EASE IN / EASE OUT / EASE IN-OUT / HOLD` を追加し、未知curveはCUSTOM表示で保持する。
+- BrowserでEASE IN-OUT始点とX=120終点の中間Frame X=50.6449、preset変更Undo、curve付きMotion key copy / paste、panel横幅内、console errorなしを確認した。
+- 再生開始時にTimeline選択を解除する既存契約でMotion表示対象も失っていたため、windowが開いている場合だけ開始時Clip IDをdisplay-onlyに退避した。F6 X=50.6449から再生し、F11 X=118.0511への数値追従とconsole errorなしをBrowser確認した。Phase 5z5の実装残件は解消し、graph / waveform editorは後続とする。
+- Phase 5z5を完了し、記録を `開発用資料保管庫/Archive/phase5z5.md` へ移した。Phase 5z6は同じcubic-bezier正本を小型別windowで編集するcurve editorとし、単一区間・0..1・pointerup 1 Historyへ限定する。
+- Phase 5z6 Slice 0-1を実装。CLIP MOTIONの現在keyが所有する右区間を、独立した移動可能な `EASING CURVE` windowで編集する。0..1 graph、2 control handle、X1/Y1/X2/Y2入力は既存 `key.easing` だけを更新し、画面Y反転とclampは純粋helperへ集約した。
+- preset選択はhandleへ同期し、custom値は既存selectのCUSTOM表示へ戻る。明示keyなし、HOLD、Clip終端keyは理由付きdisabled。再生中は区間を所有する左keyのcurveをread-only表示し、途中Frameで空表示になる回帰を修正した。
+- drag中は既存previewをlive更新し、pointerupで1 Timeline History、pointercancelで開始状態へ復元する。固定入力、Project相当save/restore、Motion clipboard、build、Browserのpreset/HOLD/終端/Undo/Redo/再生read-only/copy-paste/配置を確認し、ペン・マウスのhandle dragとCUSTOM切替もオーナー実機確認済み。Phase 5z6を完了し、記録を `開発用資料保管庫/Archive/phase5z6.md` へ移した。
+- Ultra監査でAnimation Table欄外Raster欠落を、初回CAF capture前の未確定V変形、TimelineFrameCompositorのtransform前crop、CAF mergeのunion bounds欠落へ分離した。現行Phase 5z7はcapture / composite順を修正し、live preview / playback / exportを一致させる。
+- Canvas ResizeではProject frame変更がRenderTextureを破壊的cropする経路、CAF正本とworking adapterの分裂、Cameraの無条件再中心化を確認した。これはPhase 5z8の非破壊Resize transaction / Camera分離へ送る。Motion Graphは別proposalで段階管理する。
 - opacity、色補間、easing、Perform、簡易warp / morph、bone、WebGPU brush、水彩・油彩はPhase 5wへ混ぜず、`proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md` で段階管理する。
 
 ## 維持する契約
@@ -81,6 +111,7 @@
 - CAF切替時に0.1秒未満の表示再構成が見える場合がある。stroke中の安定を崩してまで追わない。
 - StrokeQualityFilter、墨・水彩的な蓄積、WebGPU brushは実機必要性と計測結果が出るまで保留。
 - PSD全CAF一括export、通常LayerへのPSD import、CAF編集状態から通常モードへ戻す明示操作は未実装。
+- Phase 5z7は初回CAF capture、compositorの最終crop、CAF merge union bounds、oversized working restore guardを扱う。Canvas Resize / CameraはPhase 5z8、Motion Graph / Motion Pathは後続proposalへ分離する。
 
 ## 資料
 
@@ -89,5 +120,9 @@
 - Phase 5t完了: `開発用資料保管庫/Archive/PHASE5T_CLOSEOUT_2026-07-11.md`
 - Phase 5u完了: `開発用資料保管庫/Archive/PHASE5U_CLOSEOUT_2026-07-11.md`
 - Phase 5v完了: `開発用資料保管庫/Archive/PHASE5V_CLOSEOUT_2026-07-13.md`
+- Phase 5z6完了: `開発用資料保管庫/Archive/phase5z6.md`
+- Motion Graph設計: `開発用資料保管庫/proposals/10_Motion_Graph・Easing・Motion_Path設計.md`
+- 欄外Raster / Resize監査: `開発用資料保管庫/proposals/11_Animation_Table欄外Raster・Canvas_Resize整合性監査.md`
+- 現行Phase: `task-codex/phase5z7.md`
 - 旧Progress全文: `開発用資料保管庫/Archive/PROGRESS_ARCHIVE_2026-07-10.md`
 - 現行ロードマップ: `開発用資料保管庫/proposals/00_計画索引.md`

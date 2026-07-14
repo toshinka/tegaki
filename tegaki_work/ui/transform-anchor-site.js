@@ -106,6 +106,13 @@ export class TransformAnchorSite {
         const screen = this.options.coordinateSystem.worldToScreen(world.x, world.y);
         this.element.style.left = `${screen.clientX}px`;
         this.element.style.top = `${screen.clientY}px`;
+        if (this.owner === 'clip-motion') {
+            const rotation = Number(this.options.getRotation?.());
+            const degrees = Number.isFinite(rotation) ? rotation * 180 / Math.PI : 0;
+            this.element.style.setProperty('--transform-anchor-angle', `${degrees + 180}deg`);
+        } else {
+            this.element.style.removeProperty('--transform-anchor-angle');
+        }
         this.element.classList.toggle('hint-left', screen.clientX > window.innerWidth - 210);
         this.element.classList.toggle('hint-below', screen.clientY < 72);
         this._frame = requestAnimationFrame(() => this._updatePosition());

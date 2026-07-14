@@ -366,6 +366,7 @@ window.PSDExporter = (function() {
                 'screen': 'screen',
                 'overlay': 'overlay',
                 'add': 'linear dodge',
+                'subtract': 'subtract',
                 'lighten': 'lighten',
                 'darken': 'darken',
                 'color-dodge': 'color dodge',

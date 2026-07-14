@@ -2020,8 +2020,8 @@ canvas {
 
 .value-input:focus {
     border-color: var(--futaba-maroon);
-    box-shadow: 0 0 0 2px rgba(128, 0, 0, 0.1);
-    background: #fffdf8;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--futaba-maroon) 10%, transparent);
+    background: var(--futaba-background);
 }
 
 .value-input::selection {
@@ -2666,7 +2666,7 @@ canvas {
 }
 
 .layer-transform-value-input {
-    width: 50px;
+    width: 38px;
     color: var(--futaba-maroon);
     background: var(--futaba-background);
     border: 1px solid var(--futaba-maroon);
@@ -2674,6 +2674,58 @@ canvas {
     outline: none;
     padding: 0 2px;
     font-size: 10px;
+}
+
+.layer-transform-value-input::-webkit-inner-spin-button,
+.layer-transform-value-input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.layer-transform-value-input-shell,
+.layer-transform-value-stepper,
+.anim-motion-rotation-stepper {
+    display: inline-flex;
+}
+
+.layer-transform-value-input-shell {
+    align-items: stretch;
+}
+
+.layer-transform-value-stepper,
+.anim-motion-rotation-stepper {
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+}
+
+.layer-transform-value-step-btn,
+.anim-motion-rotation-step-btn {
+    width: 13px;
+    min-width: 13px;
+    height: 9px;
+    min-height: 9px;
+    padding: 0;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 2px;
+    background: var(--futaba-cream);
+    color: var(--futaba-maroon);
+    font-size: 6px;
+    line-height: 7px;
+}
+
+.layer-transform-value-step-btn:hover,
+.anim-motion-rotation-step-btn:hover {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-background));
+}
+
+.layer-transform-value-step-btn:active,
+.anim-motion-rotation-step-btn:active {
+    color: var(--futaba-background);
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
 }
 
 .layer-transform-value-input:focus {
@@ -3010,16 +3062,26 @@ canvas {
     background: rgba(255, 255, 238, 0.82);
     border: 1px solid rgba(207, 156, 151, 0.78);
     border-radius: 5px;
-    outline: none;
     padding: 3px 22px 3px 6px;
     font: inherit;
     font-weight: 700;
+    outline: none;
 }
 
 .history-setting-row select:hover,
 .history-setting-row select:focus {
-    border-color: var(--futaba-medium);
+    border-color: var(--active-border);
     background: rgba(255, 255, 238, 0.94);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 24%, transparent);
+}
+
+#settings-popup input:focus-visible,
+#settings-popup select:focus-visible,
+#settings-popup button:focus-visible,
+.flip-button:focus-visible {
+    outline: none;
+    border-color: var(--active-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 24%, transparent);
 }
 
 .history-setting-row select:disabled {
@@ -3342,7 +3404,8 @@ canvas {
     height: 15px;
 }
 
-.project-save-toast {
+.project-save-toast,
+.tegaki-feedback-toast {
     position: fixed;
     left: 50%;
     bottom: 42px;
@@ -3360,7 +3423,8 @@ canvas {
     transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
-.project-save-toast.show {
+.project-save-toast.show,
+.tegaki-feedback-toast.show {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
@@ -3632,7 +3696,7 @@ canvas {
 }
 
 .anim-motion-window-header,
-.anim-motion-fields {
+.anim-motion-fields-row {
     display: flex;
     align-items: center;
 }
@@ -3655,6 +3719,13 @@ canvas {
 }
 
 .anim-motion-fields {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+}
+
+.anim-motion-fields-row {
     gap: 7px;
     flex-wrap: nowrap;
 }
@@ -3694,6 +3765,14 @@ canvas {
 .anim-motion-fields input[type="number"] {
     appearance: textfield;
     -moz-appearance: textfield;
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+.anim-motion-fields input[type="number"].is-scrubbing {
+    border-color: var(--active-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 24%, transparent);
+    user-select: none;
 }
 
 .anim-motion-fields input[type="number"]::-webkit-inner-spin-button,
@@ -3708,7 +3787,7 @@ canvas {
 }
 
 .anim-motion-fields select {
-    max-width: 70px;
+    max-width: 82px;
 }
 
 .anim-motion-key-btn {
@@ -3728,16 +3807,32 @@ canvas {
     stroke-linejoin: round;
 }
 
+.anim-motion-key-icon--delete {
+    display: none;
+}
+
+.anim-motion-key-btn.has-key .anim-motion-key-icon--add {
+    display: none;
+}
+
+.anim-motion-key-btn.has-key .anim-motion-key-icon--delete {
+    display: block;
+}
+
 .anim-motion-key-btn.active,
 .anim-motion-key-btn.active:hover {
-    color: var(--futaba-maroon);
-    border-color: var(--active-border);
-    background: color-mix(in srgb, var(--active-border) 42%, var(--futaba-background));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 20%, transparent);
+    color: var(--futaba-background);
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 48%, transparent);
 }
 
 .anim-motion-rotation-field {
     white-space: nowrap;
+}
+
+.anim-motion-rotation-stepper {
+    height: 20px;
 }
 
 .anim-motion-anchor-btn {
@@ -3745,6 +3840,163 @@ canvas {
     min-width: 28px;
     height: 24px;
     padding: 3px;
+}
+
+.anim-motion-curve-btn {
+    width: 28px;
+    min-width: 28px;
+    height: 24px;
+    padding: 3px;
+}
+
+.anim-motion-curve-btn svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.anim-motion-curve-btn.active,
+.anim-motion-curve-btn.active:hover {
+    color: var(--futaba-background);
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 48%, transparent);
+}
+
+.anim-motion-curve-window {
+    position: fixed;
+    left: calc(50% - 126px);
+    top: 36%;
+    z-index: 2650;
+    width: 252px;
+    max-width: calc(100vw - 16px);
+    padding: 0 8px 8px;
+    cursor: grab;
+    touch-action: none;
+}
+
+.anim-motion-curve-header {
+    margin: 0 -8px 5px;
+    padding-right: 26px;
+}
+
+.anim-motion-curve-status {
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+#anim-motion-curve-close-btn {
+    top: 5px;
+    right: 7px;
+}
+
+.anim-motion-curve-graph {
+    display: block;
+    width: 220px;
+    height: 220px;
+    margin: 0 auto;
+    overflow: visible;
+    cursor: default;
+    touch-action: none;
+}
+
+.anim-motion-curve-grid {
+    fill: color-mix(in srgb, var(--futaba-background) 84%, transparent);
+    stroke: var(--futaba-light-medium);
+    stroke-width: 1.5;
+}
+
+.anim-motion-curve-diagonal {
+    fill: none;
+    stroke: var(--futaba-light-medium);
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+}
+
+.anim-motion-curve-control-line {
+    stroke: var(--text-secondary);
+    stroke-width: 1.5;
+}
+
+.anim-motion-curve-path {
+    fill: none;
+    stroke: var(--futaba-maroon);
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.anim-motion-curve-endpoint {
+    fill: var(--futaba-maroon);
+}
+
+.anim-motion-curve-handle {
+    fill: var(--active-border);
+    stroke: var(--futaba-background);
+    stroke-width: 2;
+    cursor: grab;
+}
+
+.anim-motion-curve-handle:active {
+    cursor: grabbing;
+}
+
+.anim-motion-curve-handle.is-disabled {
+    fill: var(--futaba-light-medium);
+    cursor: not-allowed;
+}
+
+.anim-motion-curve-fields {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.anim-motion-curve-fields label {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 600;
+}
+
+.anim-motion-curve-fields input {
+    width: 42px;
+    min-width: 0;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    outline: none;
+    color: var(--futaba-maroon);
+    background: var(--futaba-background);
+    font-weight: 600;
+    appearance: textfield;
+    -moz-appearance: textfield;
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+.anim-motion-curve-fields input::-webkit-inner-spin-button,
+.anim-motion-curve-fields input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.anim-motion-curve-fields input::selection {
+    color: var(--futaba-background);
+    background: var(--futaba-medium);
+}
+
+.anim-motion-curve-fields input:focus,
+.anim-motion-curve-fields input:focus-visible {
+    border-color: var(--active-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 24%, transparent);
 }
 
 .anim-motion-anchor-btn svg {
@@ -3834,6 +4086,8 @@ canvas {
     stroke-linejoin: round;
     pointer-events: none;
     filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--futaba-maroon) 25%, transparent));
+    transform: rotate(var(--transform-anchor-angle, 180deg));
+    transform-origin: 50% 8px;
 }
 
 .transform-anchor-site.is-clip-pivot .transform-anchor-bone-head {

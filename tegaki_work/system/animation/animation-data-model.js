@@ -27,6 +27,14 @@ function numberOrDefault(value, fallback) {
     return Number.isFinite(value) ? value : fallback;
 }
 
+function normalizedOpacity(value, fallback = 1) {
+    return Math.max(0, Math.min(1, numberOrDefault(value, fallback)));
+}
+
+function normalizedClipBlendMode(value, fallback = 'normal') {
+    return new Set(['normal', 'add', 'subtract', 'overlay']).has(value) ? value : fallback;
+}
+
 function clonePlainObject(value, fallback = {}) {
     const cloneFallback = () => Array.isArray(fallback) ? [...fallback] : { ...fallback };
     if (!value || typeof value !== 'object') return cloneFallback();
@@ -44,6 +52,9 @@ function createDefaultClipTransform() {
         scaleX: 1,
         scaleY: 1,
         rotation: 0,
+        opacity: 1,
+        blendMode: 'normal',
+        blendStrength: 1,
         anchorX: 0.5,
         anchorY: 0.5
     };
@@ -57,6 +68,9 @@ function normalizeClipTransform(transform = {}) {
         scaleX: numberOrDefault(transform.scaleX, defaults.scaleX),
         scaleY: numberOrDefault(transform.scaleY, defaults.scaleY),
         rotation: numberOrDefault(transform.rotation, defaults.rotation),
+        opacity: normalizedOpacity(transform.opacity, defaults.opacity),
+        blendMode: normalizedClipBlendMode(transform.blendMode, defaults.blendMode),
+        blendStrength: normalizedOpacity(transform.blendStrength, defaults.blendStrength),
         anchorX: numberOrDefault(transform.anchorX, defaults.anchorX),
         anchorY: numberOrDefault(transform.anchorY, defaults.anchorY)
     };
