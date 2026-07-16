@@ -128,10 +128,13 @@ export class AlbumStorage {
             const metaStore = tx.objectStore(this.metaStoreName);
             const summary = this._createSnapshotSummary(snapshot, snapshot?.order);
 
-            store.put(snapshot);
-            metaStore.put(summary);
+            const snapshotRequest = store.put(snapshot);
+            const metadataRequest = metaStore.put(summary);
+            snapshotRequest.onerror = () => reject(snapshotRequest.error || new Error('Snapshot save failed'));
+            metadataRequest.onerror = () => reject(metadataRequest.error || new Error('Snapshot metadata save failed'));
             tx.oncomplete = () => resolve(summary);
-            tx.onerror = () => reject(new Error('Snapshot save failed'));
+            tx.onerror = () => reject(tx.error || new Error('Snapshot save failed'));
+            tx.onabort = () => reject(tx.error || new Error('Snapshot save aborted'));
         });
     }
 

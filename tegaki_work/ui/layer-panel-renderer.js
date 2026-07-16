@@ -163,8 +163,8 @@ export class LayerPanelRenderer {
                     ...payload,
                     row,
                     options: {
-                        syncWorkingLayer: false,
-                        renderAnimationTable: false,
+                        syncWorkingLayer: true,
+                        renderAnimationTable: true,
                         requestLayerPanelUpdate: false,
                         visualOnly: true
                     }
@@ -172,23 +172,9 @@ export class LayerPanelRenderer {
                 if (this._clipMirrorNameClickTimer !== null) {
                     clearTimeout(this._clipMirrorNameClickTimer);
                 }
-                const assetId = row.dataset.assetId || '';
-                const internalLayerId = row.dataset.internalLayerId || '';
                 this._clipMirrorNameClickTimer = setTimeout(() => {
                     this._clipMirrorNameClickTimer = null;
-                    const currentRow = [...this.container.querySelectorAll(variant.rowSelector)]
-                        .find(candidate => candidate.dataset.assetId === assetId
-                            && candidate.dataset.internalLayerId === internalLayerId);
-                    if (!currentRow) return;
-                    adapter.select({
-                        ...payload,
-                        row: currentRow,
-                        options: {
-                            syncWorkingLayer: true,
-                            renderAnimationTable: true,
-                            requestLayerPanelUpdate: true
-                        }
-                    });
+                    this.requestUpdate({ force: true });
                 }, 240);
                 return true;
             }
@@ -681,8 +667,21 @@ export class LayerPanelRenderer {
         if (!row) return false;
         const layerId = row.dataset.internalLayerId;
         const assetId = row.dataset.assetId;
+        const clipId = row.dataset.clipId;
         const animationTable = window.PopupManager?.get?.('animationTable');
         if (!animationTable || !layerId) return false;
+        const selectionChanged = animationTable.selectedCelId !== clipId
+            || animationTable.selectedAssetId !== assetId
+            || animationTable.selectedInternalLayerId !== layerId;
+
+        if (options.syncWorkingLayer && selectionChanged) {
+            const targetEntry = clipId
+                ? animationTable.model?.findClipEntry?.(clipId)
+                : animationTable._findClipEntryByAssetId?.(assetId);
+            if (targetEntry?.clip && targetEntry.clip.id !== animationTable.selectedCelId) {
+                animationTable._activateClipEntry?.(targetEntry);
+            }
+        }
 
         const asset = assetId && animationTable.model
             ? animationTable.model.getClipAsset(assetId)
@@ -699,7 +698,7 @@ export class LayerPanelRenderer {
             row.classList.add('is-selected');
         }
 
-        if (options.syncWorkingLayer) {
+        if (options.syncWorkingLayer && selectionChanged) {
             animationTable._syncActiveWorkingLayerToSelectedInternalLayer?.(asset);
         }
         this.eventBus?.emit?.('layer:status-update-requested', {
@@ -707,10 +706,10 @@ export class LayerPanelRenderer {
             source: 'layer-panel-clip-layer-mirror'
         });
         this._syncOpenLayerAttributePopupToCurrentTarget();
-        if (options.renderAnimationTable) {
+        if (options.renderAnimationTable && selectionChanged) {
             animationTable.render?.();
         }
-        if (options.requestLayerPanelUpdate) {
+        if (options.requestLayerPanelUpdate && selectionChanged) {
             this.requestUpdate({ force: true });
         }
         return true;
@@ -760,14 +759,16 @@ export class LayerPanelRenderer {
         ghost.style.left = '0px';
         ghost.style.top = '0px';
         document.body.appendChild(ghost);
+        const style = getComputedStyle(ghost);
+        drag.ghostRotation = style.getPropertyValue('--layer-card-drag-ghost-rotation').trim() || '2deg';
+        drag.ghostScale = style.getPropertyValue('--layer-card-drag-ghost-scale').trim() || '1.02';
         return ghost;
     }
 
     _positionLayerPanelCardDragGhost(drag, clientX, clientY) {
         if (!drag?.ghost) return;
-        const style = getComputedStyle(drag.ghost);
-        const rotation = style.getPropertyValue('--layer-card-drag-ghost-rotation').trim() || '2deg';
-        const scale = style.getPropertyValue('--layer-card-drag-ghost-scale').trim() || '1.02';
+        const rotation = drag.ghostRotation || '2deg';
+        const scale = drag.ghostScale || '1.02';
         drag.ghost.style.transform = `translate3d(${clientX - drag.offsetX}px, ${clientY - drag.offsetY}px, 0) rotate(${rotation}) scale(${scale})`;
     }
 
@@ -1053,18 +1054,22 @@ export class LayerPanelRenderer {
 
     requestUpdate(options = {}) {
         const force = options.force === true;
-        if (force) {
-            this._resetDragState();
-        }
-
-        if (this._cardDrag?.active) {
+        if (this._cardDrag) {
             this._pendingUpdateAfterDrag = true;
             return;
+        }
+
+        if (force) {
+            this._resetDragState();
         }
 
         if (this._updateTimeout) return;
         this._updateTimeout = setTimeout(() => {
             this._updateTimeout = null;
+            if (this._cardDrag) {
+                this._pendingUpdateAfterDrag = true;
+                return;
+            }
             const layers = this.layerSystem?.getLayers() || [];
             const activeIndex = this.layerSystem?.getActiveLayerIndex() || 0;
             const animationSystem = window.animationSystem || null;
@@ -1366,6 +1371,7 @@ export class LayerPanelRenderer {
     _createLayerPanelCardDataAttributeMap(options = {}) {
         return {
             'data-card-kind': options.cardKind,
+            'data-clip-id': options.clipId,
             'data-asset-id': options.assetId,
             'data-layer-id': options.layerId,
             'data-internal-layer-id': options.internalLayerId,
@@ -3369,7 +3375,11 @@ export class LayerPanelRenderer {
             groupElement.innerHTML = groupContent;
             if (isExpanded && mirrorAsset) {
                 groupElement.appendChild(
-                    this._createClipAssetLayerMirrorElement(mirrorAsset, animationTable)
+                    this._createClipAssetLayerMirrorElement(
+                        mirrorAsset,
+                        animationTable,
+                        primaryClipEntry?.clipId || ''
+                    )
                 );
             }
             header.appendChild(groupElement);
@@ -3595,7 +3605,7 @@ export class LayerPanelRenderer {
         return null;
     }
 
-    _createClipAssetLayerMirrorElement(asset, animationTable) {
+    _createClipAssetLayerMirrorElement(asset, animationTable, clipId = '') {
         const selectedInternalLayerId = animationTable.selectedInternalLayerId;
         const thumbnailBounds = this._getLayerPanelCardThumbnailBounds();
         const mirrorThumbSize = this._calculateLayerThumbnailSize(
@@ -3626,6 +3636,7 @@ export class LayerPanelRenderer {
                         asset,
                         layer,
                         animationTable,
+                        clipId,
                         selectedInternalLayerId,
                         internalLayerDepths,
                         thumbnailSize: mirrorThumbSize
@@ -3642,6 +3653,7 @@ export class LayerPanelRenderer {
         asset,
         layer,
         animationTable,
+        clipId = '',
         selectedInternalLayerId = '',
         internalLayerDepths = new Map(),
         thumbnailSize = this._getLayerPanelCardThumbnailBounds()
@@ -3654,6 +3666,7 @@ export class LayerPanelRenderer {
         const thumbnailData = this._snapshotToThumbnailData(snapshot);
         return {
             variant: 'clip-layer-mirror',
+            clipId,
             assetId: asset?.id || '',
             layerId: layer?.id || '',
             depth: internalLayerDepths.get(layer?.id) || 0,
@@ -3785,6 +3798,7 @@ export class LayerPanelRenderer {
     _createClipLayerMirrorCardDataOptions(variant, options = {}, depth = 0) {
         return this._createLayerPanelCardBaseDataOptions({
             cardKind: variant,
+            clipId: options.clipId || '',
             assetId: options.assetId || '',
             layerId: options.layerId || '',
             internalLayerId: options.layerId || '',
@@ -3815,6 +3829,7 @@ export class LayerPanelRenderer {
 
     _createLayerPanelCardBaseDataOptions({
         cardKind = '',
+        clipId = '',
         assetId = '',
         layerId = '',
         internalLayerId = '',
@@ -3825,6 +3840,7 @@ export class LayerPanelRenderer {
     } = {}) {
         return {
             cardKind,
+            clipId,
             assetId,
             layerId,
             internalLayerId,
@@ -3983,7 +3999,11 @@ export class LayerPanelRenderer {
         const animationTable = window.PopupManager?.get?.('animationTable');
         if (!animationTable || !animationTable.model) return null;
 
-        return this._createClipAssetLayerMirrorElement(asset, animationTable);
+        return this._createClipAssetLayerMirrorElement(
+            asset,
+            animationTable,
+            animationTable.selectedCelId || ''
+        );
     }
 
     destroy() {

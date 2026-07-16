@@ -49,6 +49,21 @@ export function translateRasterBounds(bounds = null, dx = 0, dy = 0, fallback = 
     };
 }
 
+export function resolveCanvasResizeOffset(oldSize, newSize, alignment = 'center') {
+    const difference = Math.round(finiteNumberOr(newSize, 1))
+        - Math.round(finiteNumberOr(oldSize, 1));
+    if (alignment === 'right' || alignment === 'bottom') return difference;
+    if (alignment === 'center') return Math.trunc(difference / 2);
+    return 0;
+}
+
+export function rebaseNormalizedAnchorForCanvasResize(oldSize, newSize, anchor, offset) {
+    const sourceSize = Math.max(1, Math.round(finiteNumberOr(oldSize, 1)));
+    const targetSize = Math.max(1, Math.round(finiteNumberOr(newSize, 1)));
+    const normalizedAnchor = finiteNumberOr(anchor, 0.5);
+    return ((sourceSize * normalizedAnchor) + Math.round(finiteNumberOr(offset, 0))) / targetSize;
+}
+
 export function normalizeRasterSnapshot(snapshot = null, fallback = {}) {
     if (!snapshot || typeof snapshot !== 'object') return null;
 
@@ -105,4 +120,42 @@ export function rasterBoundsExtendsProjectFrame(bounds = null, projectFrame = {}
         || normalized.y < frame.y
         || normalized.x + normalized.width > frame.x + frame.width
         || normalized.y + normalized.height > frame.y + frame.height;
+}
+
+export function unionRasterBounds(boundsList = []) {
+    const normalized = (Array.isArray(boundsList) ? boundsList : [])
+        .filter(bounds => bounds && typeof bounds === 'object')
+        .map(bounds => normalizeRasterBounds(bounds, bounds));
+    if (normalized.length === 0) return null;
+
+    const minX = Math.min(...normalized.map(bounds => bounds.x));
+    const minY = Math.min(...normalized.map(bounds => bounds.y));
+    const maxX = Math.max(...normalized.map(bounds => bounds.x + bounds.width));
+    const maxY = Math.max(...normalized.map(bounds => bounds.y + bounds.height));
+    return {
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY)
+    };
+}
+
+export function validateRasterSurfaceSize(bounds, options = {}) {
+    if (!bounds || typeof bounds !== 'object') {
+        return { ok: false, reason: 'missing-bounds', bounds: null };
+    }
+    const normalized = normalizeRasterBounds(bounds, bounds);
+    const maxAxis = Math.max(1, Math.round(Number(options.maxAxis) || 8192));
+    const maxPixels = Math.max(1, Math.round(Number(options.maxPixels) || (16 * 1024 * 1024)));
+    const pixelCount = normalized.width * normalized.height;
+    if (!Number.isSafeInteger(pixelCount)) {
+        return { ok: false, reason: 'unsafe-pixel-count', bounds: normalized, pixelCount };
+    }
+    if (normalized.width > maxAxis || normalized.height > maxAxis) {
+        return { ok: false, reason: 'axis-limit', bounds: normalized, pixelCount, maxAxis, maxPixels };
+    }
+    if (pixelCount > maxPixels) {
+        return { ok: false, reason: 'pixel-limit', bounds: normalized, pixelCount, maxAxis, maxPixels };
+    }
+    return { ok: true, reason: null, bounds: normalized, pixelCount, maxAxis, maxPixels };
 }

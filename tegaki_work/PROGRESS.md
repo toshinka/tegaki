@@ -1,6 +1,6 @@
 # Tegaki Progress
 
-更新日: 2026-07-14
+更新日: 2026-07-17
 
 ## 現在地
 
@@ -92,6 +92,15 @@
 - preset選択はhandleへ同期し、custom値は既存selectのCUSTOM表示へ戻る。明示keyなし、HOLD、Clip終端keyは理由付きdisabled。再生中は区間を所有する左keyのcurveをread-only表示し、途中Frameで空表示になる回帰を修正した。
 - drag中は既存previewをlive更新し、pointerupで1 Timeline History、pointercancelで開始状態へ復元する。固定入力、Project相当save/restore、Motion clipboard、build、Browserのpreset/HOLD/終端/Undo/Redo/再生read-only/copy-paste/配置を確認し、ペン・マウスのhandle dragとCUSTOM切替もオーナー実機確認済み。Phase 5z6を完了し、記録を `開発用資料保管庫/Archive/phase5z6.md` へ移した。
 - Ultra監査でAnimation Table欄外Raster欠落を、初回CAF capture前の未確定V変形、TimelineFrameCompositorのtransform前crop、CAF mergeのunion bounds欠落へ分離した。現行Phase 5z7はcapture / composite順を修正し、live preview / playback / exportを一致させる。
+- Phase 5z7 Slice 0でAnimation Table初回表示前のV変形確定gateを追加した。実変形ありは `layer:transform-exit` の確定成功を待ち、Vを開いただけの既定値は焼込み不要として従来どおり開く。失敗・cancel時は初回CAFを生成しない。Browserで通常LayerのV移動からCAF1を一度だけ生成、V無変更互換、console errorなしを確認した。複数Layer Folderの遅延確定実操作は後続Folder変形確認へ継続する。
+- Phase 5z7 Slice 1でTimelineFrameCompositorのClipAsset合成をProject寸法の早期cropから、可視DrawingSnapshotのProject座標tight union surfaceへ変更した。MotionはProject anchorを維持してbounds origin付きsurfaceへ適用し、Project frame cropは最終出力だけで行う。Folder opacity / blend / clipping順とClip blend用transform後中間は維持する。union / 16MP・axis上限判定をpure helper化し、上限超過はCanvas確保前に理由付きで中止する。固定入力で右欄外→左、負origin→右の40px復帰、9000×1のaxis拒否、build、通常CAF生成、console errorなしを確認した。
+- Phase 5z7 Slice 2でCAF Layer結合とFolder結合もDrawingSnapshotのProject座標tight unionへ統一した。負origin・左右欄外を維持し、16MP / 8192px上限超過はCanvas確保と正本変更の前に全体拒否する。clipping結合は`putImageData()`では合成modeが効かない問題を修正し、normal / inverseを一時surfaceの`drawImage()`経路へ通した。固定入力で非重複normal透明化、inverse維持、union bounds、上限拒否を確認した。
+- 通常Layer PanelのD&D不調は、選択更新が予約したpanel再描画がドラッグ開始後にrow DOMを差し替える競合を修正した。active drag中はforceを含む更新を終了後へ送り、pointermove毎の`getComputedStyle()`も開始時1回へ削減した。Browserで直前選択されていないLayerをFolderへ即dragし、depth 1への移動とconsole errorなしを確認した。50 Frame × 3 Lane自体をGPU不足とは見なさず、animation更新が競合発生率を上げるsoftware側hot pathとして扱う。
+- D&D再監査でpointerdownから3px threshold到達までの約16msにもpanel再描画がrowを差し替える残存競合を確認した。active判定前を含むpointerdown～pointerup全期間で更新を遅延し、BrowserでLayer thumbnailからFolder中心への移動とdepth 1を確認した。
+- 別CAFの内部Layer card選択は、`assetId / internalLayerId`だけを更新してClip working adapterを切り替えていなかった。mirror rowへ対応Clip IDを持たせ、Clip activate、working restore、内部Layer activeを1 clickへ統合した。BrowserでCAF1選択中からCAF2 Layerを1回クリックし、F2 / CAF2 / Layer選択が同時に切り替わることを確認した。CAFを跨ぐLayer直接移動はcopy/pasteの原子的move化を先に監査する低優先度候補とする。
+- Phase 5z7 Slice 3でoversized / missing DrawingSnapshotのworking restore失敗をClip単位のruntime blockへ変更した。blocked ClipではTable開閉、Clip切替、stroke、V変形、自動capture、Project exportからworking blankを正本へ戻さず、正常restoreした別Clipへ移った時だけblockを解除する。固定入力で強制capture拒否、同Clip維持、別Clip解除を確認した。
+- Animation ProjectのAlbum保存はProject外部保存とFile System Handle参照カード保存の二段経路であり、Motion key数は直接の分岐条件ではない。IndexedDBのQuota / DataClone / permission / invalid-stateを理由付き表示へ分離し、snapshot生成例外も捕捉した。旧Album実データでの失敗理由確認はオーナー実機へ継続する。
+- 通常Folder / CAF内部FolderのLAYER TRANSFORMは全子孫Rasterを同じpreview transformへ載せ、全件成功時だけ1 Historyで確定する既存契約を確認した。一番上だけ動く報告はCAF / working adapter不一致との複合を優先し、変形正本を重複実装しない。
 - Canvas ResizeではProject frame変更がRenderTextureを破壊的cropする経路、CAF正本とworking adapterの分裂、Cameraの無条件再中心化を確認した。これはPhase 5z8の非破壊Resize transaction / Camera分離へ送る。Motion Graphは別proposalで段階管理する。
 - opacity、色補間、easing、Perform、簡易warp / morph、bone、WebGPU brush、水彩・油彩はPhase 5wへ混ぜず、`proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md` で段階管理する。
 
@@ -111,7 +120,50 @@
 - CAF切替時に0.1秒未満の表示再構成が見える場合がある。stroke中の安定を崩してまで追わない。
 - StrokeQualityFilter、墨・水彩的な蓄積、WebGPU brushは実機必要性と計測結果が出るまで保留。
 - PSD全CAF一括export、通常LayerへのPSD import、CAF編集状態から通常モードへ戻す明示操作は未実装。
-- Phase 5z7は初回CAF capture、compositorの最終crop、CAF merge union bounds、oversized working restore guardを扱う。Canvas Resize / CameraはPhase 5z8、Motion Graph / Motion Pathは後続proposalへ分離する。
+- Phase 5z7を完了した。別CAF内部Layerの1 click選択、通常Layer D&D、通常 / CAF内部Folderの全子孫TransformをBrowserで再確認し、記録を `開発用資料保管庫/Archive/phase5z7.md` へ移した。D&Dの残る瞬間移動感は機能契約ではなくdrag ghost / transitionの視覚改善候補とする。旧Album由来の保存失敗理由はオーナー実データ確認を継続する。
+- Phase 5z8 Slice 0でCanvas-only Resizeを非破壊化した。通常Raster RenderTextureは再確保せず整数alignment offsetをboundsへ適用し、DrawingSnapshot / legacy snapshotも同じoffsetで移動、Clip anchorは絶対pivot維持でrebaseする。選択CAF working adapterは更新後正本から強制復元する。
+- clipping maskの再構築時、旧RenderTextureをPixiのAlphaMask instruction参照中に即destroyしていたため `BindGroup.getResource(null)` が発生していた。旧mask GPU resourceを描画更新後へ遅延destroyし、400x400→344x135縮小、縮小後stroke、400x400再拡大、clipping、通常 / CAF Folder Transformでconsole errorなしをBrowser確認した。content / bothの単一source transaction、Resize History / rollback、Camera view分離はPhase 5z8後続Sliceとする。
+- 実制作でAnimation Table preview上のClip ADD blendがanimation exportでは失われる報告がある。Clip Motion sampling、TimelineFrameCompositorのtransform後合成、GIF / APNG等のframe取得を固定入力で比較する別系統の既知回帰として記録し、Resize transaction完了後に扱う。
+- Phase 5z8 Slice 1でcontent / both Resizeを操作前immutable planへ変更した。未保存CAF working内容をDrawingSnapshotへ確定後、working adapterをsourceから除外し、通常Raster / DrawingSnapshot / pixel正本を持つlegacy Clipだけを一度ずつ変換する。全出力surfaceを確保前に上限検査し、vector path / brush sizeとClip anchorも同じtransformへ追従、途中失敗はbefore stateへrollbackする。
+- 空Animation modelをResize Historyへ含めて通常Layer表示をblank化するUndo回帰をBrowser中に検出し、実CAF正本がある場合だけtimeline capture / restore / adapter同期を行う境界へ修正した。通常Layerの内容50% Undo / Redo、両方400x400→344x135とUndo、未保存CAF strokeを含む内容75%とUndo、固定入力、console errorなしを確認した。次はResize Historyのpixel dedupe / memory preflightとCamera view分離。
+- Phase 5z8 Slice 2でCanvas-only Historyをframe / bounds / Clip anchorだけのmetadataへ軽量化した。content / bothは同一pixel buffer+boundsを一度だけ変換し、before / afterの共有bufferを重複計上しない。入力+出力の推定値がHistory上限を超える場合はCanvas確保前に理由付きで中止する。
+- CameraはView Camera、Project Frame / Resize、Animation Camera Trackの三正本へ分離する将来案とし、Phase 6 mesh / morphを優先してPhase 7以降へ棚上げした。Resize直接操作UIと専用Camera Lane案は `proposals/12_Camera_Frame・Resize_UI将来設計.md` を正本とし、Phase 5z8へ先行実装しない。
+- Slice 2の固定入力で同一buffer alias `[2,1]`、共有History pixel 16 bytesの一回計上、metadata History 316 bytes、History上限超過の確保前中止を確認した。Browserで通常LayerのCanvas-only 400x400→344x135、Undo / Redo、内容75%縮小とUndo / Redo、描画維持、console errorなしを再確認した。
+- オーナー実機で外部保存Animation ProjectをAlbumから開き、Resize後に描画してもCanvasが破壊されないことを確認した。Phase 5z8の実装残件は解消し、次はPhase 6 mesh / morphの正本設計を開始できる。
+- Folder Transformの追確認で、通常FolderのXY dragだけは子孫preview経路を通る一方、slider / wheelによるrotation / scaleが空Folder Containerだけを更新し、確定時に子孫結果が突然現れる分岐を修正した。LayerTransformの全入力を既存Folder previewへ接続し、panel / thumbnail通知は1 animation frameへ集約した。
+- CAF化後の閉Table標準表示ではTransform preview開始が`isVisible`で止まり、代表working Layerだけへ縮退していた。閉Tableでも開Tableと同じCAF working adapter / History境界を開始し、Folderカード選択と全子孫previewを維持する。Browserで通常Folder 2 Layerのscale / rotation、CAF化→閉Table Folderの全体scale、確定後Folder選択維持、console errorなしを確認した。
+- 旧Animation JSONで現行Folder階層正本を持たないデータはFolder一括Transform対象外となり得る。現行データを壊す推測移行は行わず、旧Projectの描画・再生を維持する許容互換とする。
+- Phase 5z8を完了した。非破壊Canvas Resize、single-source content / both transaction、History pixel dedupe / memory preflight、Folder Transform追確認を `開発用資料保管庫/Archive/phase5z8.md` へ移した。
+- Phase 6を開始した。Slice 0ではClipAsset / DrawingSnapshotを変えず、ClipInstance任意property `deformer` に固定4×4 Warp Grid version 1を保存する。Bind Bounds基準の正規化16点、clip-local Frame、duplicate末尾優先、範囲外無視、左key所有のhold / linear、static endpointを `warp-grid-deformer.js` の純粋関数へ固定した。
+- deformerはTimeline serialize / History / CAF copy-paste / Duration終端key移動へ接続した。固定入力で16点、linear / hold、duplicate / 範囲外、static endpoint、Clip / Timeline round-trip、clone独立性、終端key移動を確認した。Browserで通常stroke→CAF生成、従来表示、console errorなしを確認した。Slice 0では描画へ接続せず、次はCPU reference rendererでalpha、負origin、欄外Raster、oversized guardを固定入力評価する。
+- Phase 6 Slice 1のCPU reference rendererを追加した。固定4×4を18 triangleへ分割し、premultiplied-alpha bilinear、負origin / 欄外bounds、degenerate skip、surface事前guardを純粋評価する。TimelineFrameCompositor / animation exportは `ClipAsset合成 -> Warp -> Clip Motion` へ接続済み。Animation Table preview / 閉Table再生のPixi adapter、Bind / Animate UI、Browserでの実deformer確認が残る。非破壊WarpのUI入口はCLIP MOTION、Layer TransformはRaster確定編集として分離する。
+- WebGPUはオーナー判断でPhase 6から採用再検討可能になった。現SliceはCPU oracleを先行したため `TEGAKI.md` の凍結はまだ変更しない。計測優位、固定入力一致、device loss、WebGL fallback、export境界を満たす正式Slice開始時にルール文書も同時変更する。
+- Phase 6 previewへPixi Mesh adapterを導入したため、`TEGAKI.md` / `AGENTS.md` を「CPU一致とfallback / export境界を守る現行Phase限定adapterは許可」へ更新した。renderer既定はWebGLのままで、WebGPU renderer / brushは未採用。Animation Table preview / 閉Table再生は内部Layer完成ClipをRenderTextureへ一枚化し、CPU正本と同じ16点 / 18 triangleへ接続した。
+- CLIP MOTIONへ `grid-3x3` buttonを追加し、2 Frame以上・停止中の選択CAFで固定Warp Gridを作成 / 削除できる。bindBoundsは可視Asset Raster union、操作はTimeline History 1件。Browserで作成、identity preview、再生、Undo / Redo、console errorなしを確認した。次はCanvas上のBind / Animate overlay、16点drag、pose key、export実像確認。
+- Phase 6 Slice 2でWarp Gridの最小Animate UIを追加した。Clip Motionは完成ClipのX/Y/Scale/Rotation、Warpは別`deformer.keyframes`の16点poseとし、評価順`Warp -> Clip Motion`を維持する。Grid編集ON中はCanvasを点drag専用にしてMotion数値・key・pivot・gestureを無効化し、GRID内外で暗黙にmodeを切り替えない。
+- display-only overlayは16点 / 24線を表示し、点dragは現在Clip-local Frameの全16点poseを置換してpointerup 1 Historyとする。BrowserでGrid作成、overlay表示、Motion controls排他、console errorなしを確認した。点drag / Undo・Redoのペン・マウス実機確認、Grid全削除 / Bind再設定の明示UI、animation exportの変形実像確認が残る。
+- オーナー実機で点dragの操作感を確認した。編集終了・Table閉鎖後もGridが残る問題はoverlay側にもTable / Motion / CAF / 再生状態のlifecycle guardを持たせて修正し、zoom / pan追従はPixiの描画済みtransform待ちではなくcamera現在値の即時計算へ変更した。ブラウザ自動確認はローカルURL policyに阻止されたため、開閉と急な縮小への追従はオーナー実機確認を継続する。
+- 残留Gridの実機再報告を受け、overlay終了を`hidden`ではなくDOM削除へ強化し、module再読込時も旧overlayを清掃する。Warp編集は現在Frameに明示Warp keyがある時だけactiveとし、初回作成 / keyなしFrameからの開始操作はsample poseのkeyを先に1 Historyで追加する。TimelineにはMotion丸markerと別の菱形Warp markerを表示する。
+- 外部参考3資料を現行契約へ照合し、常設toolbar増設ではなく選択Warp用context actionを採用した。`WARP · ANIMATE`と`KEY / SAMPLED`を明示し、前後key移動、Bind pose reset、現在key削除、Warp全削除を追加した。Frame移動は空きCAF生成 / Historyなし、変更は各1 Timeline History。BrowserでkeyなしFrameへの編集停止、2 key前後移動、点変形→Reset、全削除、Undo / Redo、console errorなしを確認し、Bind編集・複数点・任意Meshは後続gateへ残す。
+- Figma Motion / After Effects UI資料をPhase 6へ照合した。Canvas直接操作と選択WarpだけのContextual Inspectorは採用し、DRAW / ANIMATE / DEFORM全体Shell、Auto Key、Property全track、Preset、Text、Property Link、Value / Speed Graphは後続へ分離した。現在の明示Warp keyが所有する次区間へ`LINEAR / HOLD`を追加し、SAMPLED Frameは`NO KEY`表示でdisabled、暗黙keyなし、変更はTimeline History 1件とする。BrowserでMotion補間と独立したHOLD変更、F2 SAMPLEDへの移動でoverlay 0・History不変、console errorなしを確認した。次はanimation exportの変形実像とProject復元を実制作確認し、結果に応じてBind編集または非破壊Bakeへ進む。
+- Phase 6のProject / export gateを確認した。Timeline JSON round-tripでWarp key、HOLD、clone独立性を維持し、Project reset / restoreは旧Warp編集runtimeを明示終了する。実Warp付き4 Frame CAFから200×200 APNG previewを生成し、変形を既存`TimelineFrameCompositor`経路へ通してconsole errorなしを確認した。次はBind変更が既存poseを跳ねさせないrebase契約を固定し、その後に非破壊Bakeへ進む。
+- Phase 6 Bind rebase契約を純粋関数化した。Bind変更後もstatic pose / 全keyの「旧Bindからの変形量」をProject座標pxで維持し、bounds比率で変形量を伸縮させない。Context actionのBind refitは現在Raster範囲が作成時boundsと異なる時だけ有効で、1 Timeline Historyとして全poseへ適用する。固定入力、作成直後の理由付きdisabled、console errorなしを確認した。任意Bind点dragはtexture基準三角形を変えるため、専用Bind modeの警告・Undo境界を次の入口とする。
+- Phase 6専用Bind modeを実装した。`WARP · ANIMATE / WARP · BIND`を明示切替し、Bind点dragは全Warp poseをpx差分契約で再基準化してpointerup 1 Historyとする。SAMPLED FrameでもBind編集を維持するが暗黙keyは作らず、Animate key操作はBind中disabled。Canvas外pointerup / pointer capture喪失でもgestureを閉じ、Canvas再接続時は旧window listenerを解除する。Browserで16点drag、History 5→6、Frame移動History不変・key数1維持、終了時overlay 0、console errorなしを確認した。次は非破壊Bakeの出力単位とAsset共有解除契約を固定する。
+- Phase 6非破壊Bakeを実装した。選択Clip単体をexport compositorの`Warp -> Clip Motion`で整数Frameごとのtight Rasterへ評価し、新Snapshot / 新Asset / duration 1 CAF列へmaterializeする。元Clipは削除せず非表示で保持し、blend mode / strengthはbaked Clipへ引き継ぐ。総pixel量はHistory上限で事前中止し、途中失敗はTimelineへ書かない。固定bounds入力とBrowserで4 Frame→元1＋baked4、History 1件、Undo / Redo、console errorなしを確認した。次はProject round-trip / animation export一致を確認してPhase 6 closeoutを判断する。
+- CLIP MOTION表示中のTimelineをkey時刻編集優先へ変更した。Motion丸 / Warp菱形はheader iconで対象を切り替え、選択種類だけをClip範囲内で横dragする。同一Frame衝突は拒否、1 drag 1 Historyとし、window表示中はCAF本体の移動 / retimingを抑制する。専用Property LaneはMotion Graphと同時設計する後続候補へ残す。
+- オーナー実機でMotion / Warpそれぞれのkey横dragを確認した。Phase 6は固定Warp v1、Bind / Animate、Project / export、非破壊Bakeまでを完了として `開発用資料保管庫/Archive/phase6.md` へ移した。
+- Phase 6bを開始する。最初はBake列のProject / export回帰と固定`4×4 / 16点 / 18 triangle / 24線`前提を監査し、可変密度矩形Gridのpure topologyを任意Triangle Meshより先に切り出す。v1自動変換、任意Topology UI、Bone、physics、deform brush、WebGPU renderer既定化は最初のSliceへ混ぜない。
+- 初回検索で、v1 schema定数は`warp-grid-deformer.js`、triangle生成は`warp-grid-rasterizer.js`、16点literalはoverlayとUI mutation / labelに限定できた。Compositorの16MP guardはGrid前提ではないため対象外。次はBake round-trip固定入力を閉じてからtopology helperを抽出する。
+- Phase 6bのpure topology入口として`warp-grid-topology.js`を追加した。4×4のnormalized 16点、24 edge、edge adjacency、18 triangleを一度だけ生成し、deformer既定点、CPU / Pixi indices、DOM overlayへ共有する。v1 schemaと表示結果は変更しない。将来の変形 / 膨張 / 整形brushは同じpoints / adjacencyへ重み付きdeltaを与えるruntime controllerとし、ToonSquid型の直接point dragと明示modeで共存させる。
+- CLIP MOTIONへMotion / Warpの明示tabを追加した。選択中だけ詳細を表示し、inactive側はkey件数を残す。表示focusとTimeline marker drag対象は既存`_motionTimelineKeyKind`を共有し、新しい編集正本は作らない。
+- Motion / Warp tabを同寸法icon付きへ揃え、inactive / disabled / hover説明をふたばpaletteの共通tooltipへ変更した。WARP tabはGrid未作成なら作成、作成済みなら現在Frame keyを保証して即point editへ入る。Grid全体の初期位置・大きさ・回転は将来のBind全点選択変換、4 corner cageは内部点へのbilinear操作として計画し、Motion正本を重複させない。
+- CLIP MOTION headerを両tab共通のkey操作順へ整理した。重複Grid toggleを廃止し、Motion / Warp双方へ現在key、前後移動、基準reset、copy / paste、全key削除を配置する。矢印上wheelも前後key移動へ接続し、WarpのBind範囲調整 / Bake / Grid全削除は下段へ分離した。Browserで約595pxのMotion headerと540pxのWarp panelに横溢れなし、Motion / Warp key作成・前後移動、Warp copy / paste、矢印上wheel、tab切替 / close時overlay DOM削除、console errorなしを確認した。
+- GRID RANGE / CAGEは実機評価で描画制限のように見え、可変密度や自由点Meshへの入口にならないため撤回した。WARPは現在keyがあるFrameのオレンジPOINTS編集だけへ戻し、旧Warp v1の保存 / sampling / exportは変更しない。四隅操作が必要なら後続のPOINTS multi-select / cage gestureとして再設計する。
+- ToonSquidの固定16点Warpと自由control point Meshの分離に合わせ、可変密度をWarp v2へ混ぜない方針へ変更した。`control-mesh-topology.js`を保存・描画未接続の純粋基盤として追加し、4×8 / 8×8等の矩形presetと自由点の決定的Delaunayを同じ新規Control Meshへ接続する。旧Warp Projectは自動変換しない。
+- Control Mesh作成値は`横点数 × 縦点数`の自由入力を主操作とし、各2〜32・総点数256以下へ固定した。正方形presetの列挙は増やさず、初期8×8と軽量互換の4×4 Warpを明示的に選ぶ。`control-mesh-deformer.js`に矩形 / 自由点共通の独立schemaと純粋samplingを追加し、ClipInstance round-trip、CPU reference、Animation TableのPixi preview adapterへ接続した。
+- WARP tabの未作成状態へPOINTS自由入力UIを追加し、4×8で32点・42 triangle・73 overlay edgeを同じTopologyから生成する。既存のkey追加/削除、hold / linear、copy/paste、Timeline key移動、point dragはWarp / Mesh共通dispatcherへ寄せ、Topology不一致pasteを拒否する。Browserで4×8作成、32点/73辺表示、popup close時のoverlay消去、console errorなしを確認した。自由点の追加/削除と複数点操作は後続。
+- Warp Brushは未実装。後続はControl Mesh schema / rendererを固定した後、直接point、multi-select、Live2D型変形 / 膨張 / 絞り / 整形、`B`保持dragのbrush sizeを同じMesh pose正本へ接続する。
+- 描画の軽量操作としてペン / 消しゴムの`Shift+drag`直線を追加した。pointerdownで直線modeを固定し、drag中はdisplay-only guideだけ、pointerupで既存BrushCoreの補間・Raster焼込み・1 Stroke Historyへ一度だけ確定する。通常freehand、筆圧、CAF working adapter、Undo / Redo正本は分岐させない。Browserでペン直線、通常折れ線、消しゴム直線、History 0↔1 Undo / Redo、console errorなしを確認した。Airbrush / lassoへは暗黙適用しない。
 
 ## 資料
 
@@ -121,8 +173,11 @@
 - Phase 5u完了: `開発用資料保管庫/Archive/PHASE5U_CLOSEOUT_2026-07-11.md`
 - Phase 5v完了: `開発用資料保管庫/Archive/PHASE5V_CLOSEOUT_2026-07-13.md`
 - Phase 5z6完了: `開発用資料保管庫/Archive/phase5z6.md`
+- Phase 5z7完了: `開発用資料保管庫/Archive/phase5z7.md`
 - Motion Graph設計: `開発用資料保管庫/proposals/10_Motion_Graph・Easing・Motion_Path設計.md`
 - 欄外Raster / Resize監査: `開発用資料保管庫/proposals/11_Animation_Table欄外Raster・Canvas_Resize整合性監査.md`
-- 現行Phase: `task-codex/phase5z7.md`
+- Camera Frame / Resize UI将来設計: `開発用資料保管庫/proposals/12_Camera_Frame・Resize_UI将来設計.md`
+- Phase 5z8完了: `開発用資料保管庫/Archive/phase5z8.md`
+- 現行Phase: `task-codex/phase6b.md`
 - 旧Progress全文: `開発用資料保管庫/Archive/PROGRESS_ARCHIVE_2026-07-10.md`
 - 現行ロードマップ: `開発用資料保管庫/proposals/00_計画索引.md`

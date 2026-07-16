@@ -44,7 +44,7 @@
 - 通常LayerとCAF内部LayerはUIを共有しても、データ正本とHistoryを混同しない。
 - CAF編集は animation working Layerを表示・入力アダプターとして使う。TimelineModel / ClipAsset / DrawingSnapshotが保存正本。
 - Layer Panel / CAFの共有方針は「1つのUI engine、2つのdata adapter」。
-- WebGPU、SDF/MSDF、WebGL2 Meshは正式Phaseまで凍結。
+- SDF/MSDFとWebGPU brushは正式Phaseまで凍結。WebGPU / WebGL2 Meshは、現行Phase指示と `TEGAKI.md` が明示的に許可し、CPU一致・fallback・export境界を維持する限定adapterだけ採用できる。
 
 ## 5. UI・CSS
 

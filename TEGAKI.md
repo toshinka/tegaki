@@ -135,7 +135,8 @@ popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 
 ## 10. 凍結・禁止事項
 
-- WebGPU、SDF/MSDF、WebGL2 Meshの新規採用・復活。
+- SDF/MSDF、WebGPU brush、現行Phase契約を持たないWebGPU / WebGL2 Meshの新規採用・復活。
+- Phase 6の固定Warp Gridは、CPU referenceとの固定入力一致、WebGL fallback、preview / exportの同一samplingを維持する範囲でPixi Mesh adapterを採用してよい。WebGPU renderer既定化はdevice loss、readback、export、実測優位を別途確認してから行う。
 - Canvas2Dを本番stroke描画へ混入。
 - `import { BlendMode } from 'pixi.js'`。
 - 背景色で塗る消しゴム。
@@ -190,8 +191,7 @@ popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 - Phase 5qのAnimation Tableを閉じた時のLane表示モードは完了。
 - Phase 5qではLane onionをdisplay-only表示として実装し、Timeline onionを前後4フレームまで拡張した。保存画像、export、Layer visibility、ClipAsset / DrawingSnapshot正本へ混ぜていない。
 - Phase 5q後続で、PREVIEW toggleをcheckboxからふたばカラーbuttonへ変更し、キャンバス文脈のShift+上下でCAF内部Layer / Folderを選択移動できるようにした。通常Folder / CAF内部Folder選択時の既存結合buttonは、配下表示Rasterを1枚へ合成する。
-- PixiJS v8.19.0でもrenderer既定はWebGL。依存更新とWebGPU採用を分離し、
-  WebGPU凍結方針は維持する。
+- PixiJS v8.19.0でもrenderer既定はWebGL。依存更新とWebGPU renderer採用は分離する。Phase 6 Warp GridのPixi MeshはWebGL既定の限定adapterとして開始し、WebGPU renderer既定化を意味しない。
 - Phase 5gの完了記録は `開発用資料保管庫/Archive/phase5g.md`。
 - Phase 5eの監査結果は `開発用資料保管庫/Archive/PHASE5E_AUDIT.md` を参照する。
 

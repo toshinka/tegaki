@@ -36,7 +36,9 @@ export function formatCopyFeedback(kind, count = 1) {
     const normalizedCount = Math.max(1, Math.floor(Number(count) || 1));
     const label = kind === 'motion-key'
         ? 'Motion key'
-        : (kind === 'caf' ? 'CAF' : 'Layer');
+        : (kind === 'warp-key'
+            ? 'Warp key'
+            : (kind === 'caf' ? 'CAF' : 'Layer'));
     return normalizedCount > 1
         ? `${label} ${normalizedCount}件をコピー`
         : `${label}をコピー`;

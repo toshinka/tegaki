@@ -1,6 +1,6 @@
 # Tegaki UI / CSS スタイルガイド
 
-更新日: 2026-06-20
+更新日: 2026-07-17
 
 ## 役割
 
@@ -126,7 +126,14 @@ JSが扱ってよい:
 - runtime state: `.is-active`, `.is-disabled`。
 - `button`, `input`, `select`, `option` は文字色と背景色を明示する。
 - native disabledの既定色へ任せず、palette内の色とopacityを設定する。
+- Chromium / WebKitがdisabled formへ独自色を再適用する箇所は、`color`だけでなく必要に応じて`-webkit-text-fill-color`もpalette値で指定する。
 - focus-visibleは `--active-border` 等で判別できるようにする。
+
+### hover説明
+
+- 新規controlで視覚説明が必要な場合、配色できないnative `title`だけを正式表示にしない。`aria-label`を維持しつつ、palette準拠の共通tooltip classと`data-tooltip`を使う。
+- tooltipは`--futaba-background`、`--futaba-maroon`、`--futaba-light-medium`を基準とし、黒背景・白文字・neutral grayを新設しない。
+- 既存`title`の一括置換は専用UI監査で行う。機能Sliceでは変更対象controlと新設controlだけを移行する。
 
 ## 9. Layer Panel / CAF
 
@@ -164,6 +171,7 @@ UI変更時:
 - runtime stateがvariantへ混ざっていないか。
 - 旧class互換が必要か。
 - browserでhover、disabled、drag、closeを確認したか。
+- deformer overlayは役割を色で分ける。現在Frameのpose / point編集は`--deformer-pose-line / --deformer-pose-point`（ふたば橙・maroon）、全keyの基準範囲を再基準化するBind / `GRID RANGE`だけ`--deformer-bind-line / --deformer-bind-point`（青系）を使う。青緑を全Warp編集へ常用しない。青系はCanvas上の基準範囲編集中に限定し、popup、tooltip、disabled formを白黒灰へ戻す理由にはしない。
 
 ## 関連文書
 

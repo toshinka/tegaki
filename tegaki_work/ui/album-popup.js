@@ -614,7 +614,14 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             return;
         }
 
-        const snapshot = await this._captureSnapshot();
+        let snapshot = null;
+        try {
+            snapshot = await this._captureSnapshot();
+        } catch (error) {
+            console.error('[AlbumPopup] Snapshot capture failed', error);
+            alert(this._formatAlbumSaveFailure(error, '保存用データの作成に失敗しました。'));
+            return;
+        }
         if (snapshot?.thumbnail) {
             let pushedToMemory = false;
             try {
@@ -638,9 +645,27 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             } catch (e) {
                 if (pushedToMemory) this.snapshots.pop();
                 console.error('[AlbumPopup] Save snapshot failed', e);
-                alert('保存に失敗しました。');
+                alert(this._formatAlbumSaveFailure(e, '保存に失敗しました。'));
             }
         }
+    }
+
+    _formatAlbumSaveFailure(error, fallbackMessage) {
+        const name = error?.name || error?.cause?.name || '';
+        if (name === 'QuotaExceededError') {
+            return 'Albumの保存容量が不足しています。既存項目を減らすか、Projectファイルとして保存してください。';
+        }
+        if (name === 'DataCloneError') {
+            return 'Projectファイルは保存されましたが、ブラウザが保存先の参照情報をAlbumへ保持できませんでした。';
+        }
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+            return '保存先またはAlbumへのアクセスが許可されていません。ブラウザの権限を確認してください。';
+        }
+        if (name === 'InvalidStateError' || name === 'TransactionInactiveError') {
+            return 'Albumデータベースを利用できませんでした。画面を再読み込みしてから再試行してください。';
+        }
+        const detail = name || error?.message || error?.cause?.message || '';
+        return detail ? `${fallbackMessage} (${detail})` : fallbackMessage;
     }
 
     async _saveAnimationReferenceSnapshot() {
@@ -657,13 +682,16 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             });
         } catch (error) {
             console.error('[AlbumPopup] Animation external save failed:', error);
-            alert('外部ファイル保存に失敗しました。');
+            alert(this._formatAlbumSaveFailure(error, '外部ファイル保存に失敗しました。'));
             return;
         }
 
         if (!saved?.ok) {
             if (saved?.cancelled) return;
-            alert('外部ファイル保存に失敗しました。');
+            alert(this._formatAlbumSaveFailure(
+                saved?.error || (saved?.reason ? new Error(saved.reason) : null),
+                '外部ファイル保存に失敗しました。'
+            ));
             return;
         }
         if (!saved.native || !projectManager.currentFileHandle) {
@@ -713,7 +741,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             this._updateProjectSaveTargetStatus();
         } catch (error) {
             console.error('[AlbumPopup] Animation reference save failed:', error);
-            alert('参照カードの保存に失敗しました。');
+            alert(this._formatAlbumSaveFailure(error, '参照カードの保存に失敗しました。'));
         }
     }
 

@@ -1,6 +1,6 @@
 # Motion Graph・Easing・Motion Path設計
 
-更新日: 2026-07-14
+更新日: 2026-07-16
 
 ## 結論
 
@@ -40,6 +40,13 @@ Phase 5z6の `EASING CURVE` は完成扱いとし、置換しない。これはT
    - Clip全体のparameter実値とFrame cursorを表示し、後続で既存keyの値を編集する。
 5. Motion Path
    - Canvas上のXY軌跡を扱う。時間easing handleやGraphの接線を流用しない。
+
+### CLIP MOTION中の簡易key編集
+
+- CLIP MOTIONを開いている間はTimelineをCAF配置よりkey時刻編集へ優先し、CAF本体のLane / Frame移動と左右retimingを抑制する。windowを閉じれば従来のCAF配置操作へ戻す。
+- Motion丸markerとWarp菱形markerは別配列のまま扱う。Motion key button / Warp Grid buttonを編集対象selectorとして使い、選択中の種類だけを横drag可能にする。
+- key dragはClip-local範囲へclampし、既存keyと同一Frameへ衝突するdropはmergeせず拒否する。1 dragは1 Timeline Historyとする。
+- Scale / Rotation / Warp等を常設の専用Property Laneへ分解する案は、現行の複合Motion key schemaとWarp deformer key schemaをUIだけで同一trackに見せないため、Motion Graph Viewer / property selection設計と同時に判断する。Phase 6の固定Warp closeout条件にはしない。
 
 ## parameter表示
 
@@ -89,6 +96,7 @@ Phase 5z6の `EASING CURVE` は完成扱いとし、置換しない。これはT
 - 初期の複数選択はpreset適用とdeleteに限定する。
 - keyの時間移動は隣接keyを越えない。衝突merge、box scale、順序反転は別gateとする。
 - selection、visible channel、zoom / panはruntime UI stateとし、Project / Historyへ入れない。
+- 前段として、CLIP MOTION表示中のTimeline marker横dragを実装済み。Motion / Warpの対象切替、Clip範囲clamp、衝突拒否、CAF配置抑制をGraph Editorの共通time-move契約の試験台とする。
 
 ### P4: Graph上の途中点追加 — 優先度B / 難度 高
 

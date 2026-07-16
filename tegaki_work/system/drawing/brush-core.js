@@ -446,6 +446,39 @@ export class BrushCore {
         });
     }
 
+    /** Shift+drag直線のdisplay-only guide。Raster確定はpointerup時のupdateStrokeへ任せる。 */
+    previewStraightStroke(clientX, clientY, pressure, pointerType = 'unknown') {
+        if (!this.isDrawing || !this.previewGraphics || !this.strokeTargetLayer) return false;
+        const mode = this.getMode();
+        if (mode !== 'pen' && mode !== 'eraser') return false;
+
+        const start = this.strokeRecorder.getCurrentPoints()[0];
+        if (!start) return false;
+        const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
+        const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, this.strokeTargetLayer);
+        if (![localX, localY].every(Number.isFinite)) return false;
+
+        const settings = this._getCurrentSettings();
+        const pressureEnabled = this._isPressureEnabledForMode(mode, settings, pointerType);
+        const guidePressure = pressureEnabled
+            ? Math.max(0.08, Math.min(1, Number(pressure) || 0))
+            : 1;
+        const guideWidth = Math.max(1, this.strokeRenderer.calculateWidth(guidePressure, settings.size));
+        this.previewGraphics.clear();
+        this.previewGraphics.blendMode = 'normal';
+        this.previewGraphics.moveTo(start.x, start.y);
+        this.previewGraphics.lineTo(localX, localY);
+        this.previewGraphics.stroke({
+            width: guideWidth,
+            color: settings.color,
+            alpha: Math.max(0.28, Math.min(0.72, Number(settings.opacity) || 1)),
+            cap: 'round',
+            join: 'round'
+        });
+        return true;
+    }
+
     updateStrokeBatch(infos, inputProfile = null) {
         if (!this.isDrawing || !Array.isArray(infos) || infos.length === 0) return;
         if (this.strokeInputProfile?.realtime) {

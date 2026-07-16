@@ -13,6 +13,7 @@ import {
     cycleClippingMode,
     normalizeClippingMode
 } from '../clipping-mode.js';
+import { normalizeClipDeformer } from './clip-deformer.js';
 
 /**
  * ID生成ユーティリティ
@@ -233,6 +234,8 @@ export class ClipInstanceModel {
         this.transformKeyframes = Array.isArray(options.transformKeyframes)
             ? options.transformKeyframes.map(keyframe => clonePlainObject(keyframe))
             : [];
+        // Phase 6: ClipAssetのRaster正本を変えない、ClipInstance単位の非破壊deformer。
+        this.deformer = normalizeClipDeformer(options.deformer);
         this.physics = clonePlainObject(options.physics, {
             enabled: false,
             rigId: null,
@@ -263,6 +266,7 @@ export class ClipInstanceModel {
             visible: this.visible,
             transform: normalizeClipTransform(this.transform),
             transformKeyframes: this.transformKeyframes.map(keyframe => clonePlainObject(keyframe)),
+            deformer: normalizeClipDeformer(this.deformer),
             physics: clonePlainObject(this.physics, {
                 enabled: false,
                 rigId: null,
@@ -685,6 +689,14 @@ export class TimelineModel {
         entry.clip.transformKeyframes = Array.isArray(keyframes)
             ? keyframes.map(keyframe => clonePlainObject(keyframe))
             : [];
+        return { ok: true, lane: entry.lane, clip: entry.clip };
+    }
+
+    setClipDeformer(clipId, deformer = null) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry) return { ok: false, reason: 'clip-not-found' };
+
+        entry.clip.deformer = normalizeClipDeformer(deformer);
         return { ok: true, lane: entry.lane, clip: entry.clip };
     }
 
@@ -1221,6 +1233,7 @@ export class TimelineModel {
                 duration: clip.duration,
                 transform: normalizeClipTransform(clip.transform || {}),
                 transformKeyframes: (clip.transformKeyframes || []).map(keyframe => clonePlainObject(keyframe)),
+                deformer: normalizeClipDeformer(clip.deformer),
                 physics: clonePlainObject(clip.physics, {
                     enabled: false,
                     rigId: null,

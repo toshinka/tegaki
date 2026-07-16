@@ -12,6 +12,10 @@
     --text-secondary: #5d4037; 
     --text-inverse: #ffffff;
     --active-border: #ff8c42;
+    --deformer-pose-line: var(--active-border);
+    --deformer-pose-point: var(--futaba-maroon);
+    --deformer-bind-line: #527fbd;
+    --deformer-bind-point: #315c96;
 }
 
 body { 
@@ -2811,8 +2815,50 @@ canvas {
 }
 
 .flip-button[disabled] {
-    opacity: 0.4;
+    color: var(--futaba-medium);
+    -webkit-text-fill-color: var(--futaba-medium);
+    border-color: color-mix(in srgb, var(--futaba-light-medium) 72%, transparent);
+    background: color-mix(in srgb, var(--futaba-cream) 48%, var(--futaba-background));
+    opacity: 0.72;
     cursor: not-allowed;
+}
+
+.ui-help-tooltip {
+    position: relative;
+}
+
+.ui-help-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    z-index: 3000;
+    top: calc(100% + 6px);
+    left: 50%;
+    width: max-content;
+    max-width: min(260px, calc(100vw - 24px));
+    padding: 5px 7px;
+    transform: translate(-50%, -2px);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    color: var(--futaba-maroon);
+    background: var(--futaba-background);
+    box-shadow: 0 3px 10px color-mix(in srgb, var(--futaba-maroon) 18%, transparent);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1.45;
+    letter-spacing: 0;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease, visibility 0s linear 0.12s;
+}
+
+.ui-help-tooltip:hover::after,
+.ui-help-tooltip:focus-visible::after {
+    transform: translate(-50%, 0);
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0.3s;
 }
 
 .flip-button--icon {
@@ -3686,7 +3732,7 @@ canvas {
     left: calc(50% - 195px);
     top: 18%;
     z-index: 2600;
-    min-width: min(480px, calc(100vw - 16px));
+    min-width: min(540px, calc(100vw - 16px));
     width: max-content;
     max-width: calc(100vw - 16px);
     padding: 0 8px 7px;
@@ -3704,6 +3750,85 @@ canvas {
 .anim-motion-window-header {
     margin: 0 -8px 3px;
     padding-right: 25px;
+}
+
+.anim-motion-mode-switch {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid color-mix(in srgb, var(--futaba-light-medium) 78%, transparent);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--futaba-background) 72%, transparent);
+}
+
+.anim-motion-mode-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    appearance: none;
+    min-height: 21px;
+    padding: 2px 7px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    color: var(--futaba-light-maroon);
+    background: color-mix(in srgb, var(--futaba-cream) 72%, transparent);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+}
+
+.anim-motion-mode-tab svg {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.anim-motion-mode-tab.active {
+    color: var(--futaba-maroon);
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-background));
+}
+
+.anim-motion-mode-tab:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 32%, transparent);
+}
+
+.anim-motion-mode-tab:disabled {
+    color: var(--futaba-medium);
+    -webkit-text-fill-color: var(--futaba-medium);
+    border-color: color-mix(in srgb, var(--futaba-light-medium) 72%, transparent);
+    background: color-mix(in srgb, var(--futaba-cream) 48%, var(--futaba-background));
+    opacity: 1;
+    cursor: default;
+}
+
+.anim-motion-mode-count {
+    display: inline-flex;
+    min-width: 14px;
+    justify-content: center;
+    padding: 0 3px;
+    border-radius: 8px;
+    color: inherit;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    font-size: 8px;
+}
+
+.anim-motion-window.is-warp-focus .anim-motion-fields {
+    display: none;
+}
+
+.anim-motion-window.is-motion-focus .anim-motion-action--warp,
+.anim-motion-window.is-warp-focus .anim-motion-action--motion {
+    display: none;
 }
 
 .anim-motion-header-actions {
@@ -3790,14 +3915,16 @@ canvas {
     max-width: 82px;
 }
 
-.anim-motion-key-btn {
+.anim-motion-key-btn,
+.anim-warp-key-btn {
     width: 28px;
     min-width: 28px;
     height: 24px;
     padding: 3px;
 }
 
-.anim-motion-key-btn svg {
+.anim-motion-key-btn svg,
+.anim-warp-key-btn svg {
     width: 17px;
     height: 17px;
     fill: none;
@@ -3811,16 +3938,20 @@ canvas {
     display: none;
 }
 
-.anim-motion-key-btn.has-key .anim-motion-key-icon--add {
+.anim-motion-key-btn.has-key .anim-motion-key-icon--add,
+.anim-warp-key-btn.has-key .anim-motion-key-icon--add {
     display: none;
 }
 
-.anim-motion-key-btn.has-key .anim-motion-key-icon--delete {
+.anim-motion-key-btn.has-key .anim-motion-key-icon--delete,
+.anim-warp-key-btn.has-key .anim-motion-key-icon--delete {
     display: block;
 }
 
 .anim-motion-key-btn.active,
-.anim-motion-key-btn.active:hover {
+.anim-motion-key-btn.active:hover,
+.anim-warp-key-btn.active,
+.anim-warp-key-btn.active:hover {
     color: var(--futaba-background);
     border-color: var(--futaba-maroon);
     background: var(--futaba-maroon);
@@ -4034,6 +4165,57 @@ canvas {
     pointer-events: none;
     transform: translate(-50%, -50%);
 }
+
+.anim-warp-key-marker {
+    position: absolute;
+    left: var(--warp-key-position);
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--futaba-background);
+    background: var(--active-border);
+    pointer-events: none;
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.animation-table-panel.motion-key-edit-active .anim-cel-handle,
+.animation-table-panel.motion-key-edit-active .anim-cel-resize-grip {
+    opacity: 0.22;
+    pointer-events: none;
+}
+
+.animation-table-panel.motion-key-edit-active .anim-cel-block.primary-selected {
+    cursor: default;
+}
+
+.animation-table-panel.motion-key-edit-active[data-motion-key-kind="motion"]
+    .anim-cel-block.primary-selected .anim-motion-key-marker,
+.animation-table-panel.motion-key-edit-active[data-motion-key-kind="warp"]
+    .anim-cel-block.primary-selected .anim-warp-key-marker {
+    width: 11px;
+    height: 11px;
+    z-index: 8;
+    cursor: ew-resize;
+    pointer-events: auto;
+    touch-action: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 45%, transparent);
+}
+
+.animation-table-panel.motion-key-edit-active[data-motion-key-kind="motion"] .anim-warp-key-marker,
+.animation-table-panel.motion-key-edit-active[data-motion-key-kind="warp"] .anim-motion-key-marker {
+    opacity: 0.3;
+}
+
+.anim-motion-key-marker.key-drop-blocked,
+.anim-warp-key-marker.key-drop-blocked {
+    background: var(--futaba-light-medium);
+    border-color: var(--futaba-maroon);
+}
+
+.anim-motion-key-btn.timeline-key-target,
+.anim-warp-key-btn.timeline-key-target {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 52%, transparent);
+}
 .transform-anchor-site {
     position: fixed;
     z-index: 2700;
@@ -4157,4 +4339,211 @@ canvas {
 .transform-anchor-site.hint-below .transform-anchor-hint {
     top: 32px;
     transform: none;
+}
+
+.warp-grid-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2690;
+    width: 100vw;
+    height: 100vh;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.warp-grid-overlay[hidden] {
+    display: none;
+}
+
+.warp-grid-overlay-line {
+    fill: none;
+    stroke: var(--deformer-pose-line);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--deformer-pose-point) 28%, transparent));
+}
+
+.warp-grid-overlay-point {
+    fill: color-mix(in srgb, var(--futaba-cream) 88%, transparent);
+    stroke: var(--deformer-pose-point);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+
+.anim-motion-window.is-warp-editing .anim-motion-fields input,
+.anim-motion-window.is-warp-editing .anim-motion-fields select {
+    opacity: 0.48;
+}
+
+.anim-warp-context {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 27px;
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 1px solid color-mix(in srgb, var(--futaba-light-medium) 72%, transparent);
+}
+
+.anim-warp-context[hidden] {
+    display: none;
+}
+
+.anim-control-mesh-create {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.anim-control-mesh-create[hidden],
+[data-deformer-existing][hidden] {
+    display: none;
+}
+
+.anim-control-mesh-create-label {
+    color: var(--futaba-maroon);
+    letter-spacing: 0.04em;
+}
+
+.anim-control-mesh-create label {
+    display: inline-flex;
+}
+
+.anim-control-mesh-create input {
+    width: 42px;
+    height: 22px;
+    padding: 1px 4px;
+    color: var(--futaba-maroon);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: var(--futaba-background);
+    font: inherit;
+    text-align: center;
+}
+
+.anim-control-mesh-create input:focus {
+    border-color: var(--futaba-orange);
+    outline: 2px solid color-mix(in srgb, var(--futaba-orange) 36%, transparent);
+}
+
+.anim-control-mesh-create-times {
+    color: var(--futaba-medium);
+    font-size: 12px;
+}
+
+.anim-control-mesh-create-count {
+    min-width: 78px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.anim-control-mesh-create-count.is-invalid {
+    color: var(--futaba-maroon);
+}
+
+.anim-control-mesh-create-btn,
+.anim-control-mesh-legacy-btn {
+    height: 24px;
+    padding: 2px 8px;
+    color: var(--futaba-maroon);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 6px;
+    background: var(--futaba-cream);
+    font: inherit;
+    white-space: nowrap;
+}
+
+.anim-control-mesh-create-btn:not(:disabled) {
+    border-color: var(--futaba-orange);
+    background: color-mix(in srgb, var(--futaba-orange) 14%, var(--futaba-cream));
+}
+
+.anim-control-mesh-create-btn:disabled {
+    color: var(--text-secondary);
+    border-color: var(--futaba-light-medium);
+    background: var(--futaba-background);
+    opacity: 0.58;
+}
+
+.anim-warp-context-identity,
+.anim-warp-context-interpolation,
+.anim-warp-context-actions {
+    display: flex;
+    align-items: center;
+}
+
+.anim-warp-context-identity {
+    min-width: 0;
+    gap: 7px;
+}
+
+.anim-warp-context-status {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.anim-warp-context.has-current-key .anim-warp-context-status {
+    color: var(--futaba-maroon);
+}
+
+.anim-warp-context-interpolation {
+    gap: 4px;
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.anim-warp-context-interpolation select {
+    min-width: 66px;
+    height: 22px;
+    padding: 1px 20px 1px 6px;
+    color: var(--futaba-maroon);
+    border-color: var(--futaba-light-medium);
+    background-color: var(--futaba-background);
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.anim-warp-context-interpolation select:disabled {
+    color: var(--text-secondary);
+    opacity: 0.55;
+}
+
+.anim-warp-context-actions {
+    gap: 3px;
+}
+
+.anim-warp-context-actions .flip-button {
+    width: 26px;
+    min-width: 26px;
+    height: 22px;
+    padding: 3px;
+}
+
+.anim-warp-context-actions svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.anim-warp-remove-grid-btn:not(:disabled) {
+    border-color: var(--futaba-medium);
 }

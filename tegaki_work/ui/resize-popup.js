@@ -13,6 +13,11 @@
  */
 
 import { TegakiEventBus } from '../system/event-bus.js';
+import {
+    rebaseNormalizedAnchorForCanvasResize,
+    resolveCanvasResizeOffset,
+    validateRasterSurfaceSize
+} from '../system/raster-bounds.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 
 export class ResizePopup {
@@ -730,28 +735,66 @@ export class ResizePopup {
             return;
         }
 
-        const beforeState = this._captureResizeHistoryState();
+        const animationTable = this._getAnimationTable();
+        if (shouldScaleContent) {
+            // animation working Layerは保存正本ではなくadapterである。未保存strokeだけを
+            // DrawingSnapshotへ戻してから、以降は正本snapshotだけをresize sourceにする。
+            animationTable?._saveSelectedClipFromWorkingLayers?.();
+        }
+
+        const contentPlan = shouldScaleContent
+            ? this._prepareContentResizePlan({
+                targetWidth: newWidth,
+                targetHeight: newHeight,
+                frameWidth: shouldResizeCanvas ? newWidth : oldWidth,
+                frameHeight: shouldResizeCanvas ? newHeight : oldHeight,
+                oldFrameWidth: oldWidth,
+                oldFrameHeight: oldHeight,
+                fitMode: this.contentFitMode,
+                horizontalAlign: this.horizontalAlign,
+                verticalAlign: this.verticalAlign
+            })
+            : null;
+        if (shouldScaleContent && !contentPlan?.ok) {
+            this._showResizeFailure(contentPlan?.reason || '内容を変換できませんでした');
+            return;
+        }
+
+        const metadataOnlyHistory = !shouldScaleContent;
+        const beforeState = this._captureResizeHistoryState({ metadataOnly: metadataOnlyHistory });
         const applyOperation = () => {
             if (shouldResizeCanvas) {
                 this.coreEngine.getCameraSystem().resizeCanvas(newWidth, newHeight, alignOptions);
-            }
-            if (shouldScaleContent) {
-                this._scaleProjectContent({
-                    targetWidth: newWidth,
-                    targetHeight: newHeight,
-                    frameWidth: shouldResizeCanvas ? newWidth : oldWidth,
-                    frameHeight: shouldResizeCanvas ? newHeight : oldHeight,
-                    fitMode: this.contentFitMode,
-                    horizontalAlign: this.horizontalAlign,
-                    verticalAlign: this.verticalAlign
+                this._translateAnimationRasterBoundsForCanvasResize({
+                    oldWidth,
+                    oldHeight,
+                    newWidth,
+                    newHeight,
+                    alignOptions
                 });
             }
+            if (shouldScaleContent) {
+                if (!this._applyContentResizePlan(contentPlan)) return false;
+            }
             this._updateCanvasInfo();
+            return true;
         };
 
-        applyOperation();
-        const afterState = this._captureResizeHistoryState();
-        const byteSize = this._estimateResizeHistoryBytes(beforeState) + this._estimateResizeHistoryBytes(afterState);
+        let applied = false;
+        try {
+            applied = applyOperation();
+        } catch (error) {
+            console.error('[ResizePopup] resize transaction failed', error);
+        }
+        if (!applied) {
+            this._restoreResizeHistoryState(beforeState, alignOptions);
+            this._showResizeFailure('変換処理を完了できなかったため元の状態へ戻しました');
+            return;
+        }
+        const afterState = this._captureResizeHistoryState({ metadataOnly: metadataOnlyHistory });
+        const seenHistoryBuffers = new Set();
+        const byteSize = this._estimateResizeHistoryBytes(beforeState, seenHistoryBuffers)
+            + this._estimateResizeHistoryBytes(afterState, seenHistoryBuffers);
         
         const command = {
             name: shouldScaleContent ? (shouldResizeCanvas ? 'resize-canvas-and-content' : 'resize-content') : 'resize-canvas',
@@ -764,7 +807,8 @@ export class ResizePopup {
                 to: { width: shouldResizeCanvas ? newWidth : oldWidth, height: shouldResizeCanvas ? newHeight : oldHeight },
                 align: alignOptions,
                 target: this.resizeTarget,
-                contentFitMode: shouldScaleContent ? this.contentFitMode : null
+                contentFitMode: shouldScaleContent ? this.contentFitMode : null,
+                estimatedHistoryBytes: contentPlan?.estimatedHistoryBytes || byteSize
             }
         };
         
@@ -773,20 +817,142 @@ export class ResizePopup {
         this.hide();
     }
 
-    _captureResizeHistoryState() {
+    _showResizeFailure(reason) {
+        const message = `リサイズを中止しました: ${reason}`;
+        if (window.projectManager?._showSaveToast) {
+            window.projectManager._showSaveToast(message);
+        } else {
+            console.warn(`[ResizePopup] ${message}`);
+        }
+    }
+
+    _translateAnimationRasterBoundsForCanvasResize(options = {}) {
+        const animationTable = this._getAnimationTable();
+        if (!animationTable?.model) return false;
+        const snapshots = animationTable?.model?.drawingSnapshots || [];
+
+        const horizontal = options.alignOptions?.horizontal || 'center';
+        const vertical = options.alignOptions?.vertical || 'center';
+        const offsetX = resolveCanvasResizeOffset(options.oldWidth, options.newWidth, horizontal);
+        const offsetY = resolveCanvasResizeOffset(options.oldHeight, options.newHeight, vertical);
+
+        snapshots.forEach(snapshot => {
+            if (!snapshot) return;
+            const width = Math.max(1, Math.round(snapshot.width || snapshot.rasterBounds?.width || 1));
+            const height = Math.max(1, Math.round(snapshot.height || snapshot.rasterBounds?.height || 1));
+            const bounds = snapshot.rasterBounds || { x: 0, y: 0, width, height };
+            snapshot.rasterBounds = {
+                x: (Number(bounds.x) || 0) + offsetX,
+                y: (Number(bounds.y) || 0) + offsetY,
+                width,
+                height
+            };
+            snapshot.updatedAt = Date.now();
+        });
+        (animationTable.model.tracks || []).forEach(lane => {
+            (lane?.cels || []).forEach(clip => {
+                const transform = clip?.transform;
+                if (transform) {
+                    transform.anchorX = rebaseNormalizedAnchorForCanvasResize(
+                        options.oldWidth,
+                        options.newWidth,
+                        transform.anchorX,
+                        offsetX
+                    );
+                    transform.anchorY = rebaseNormalizedAnchorForCanvasResize(
+                        options.oldHeight,
+                        options.newHeight,
+                        transform.anchorY,
+                        offsetY
+                    );
+                }
+                if (clip?.rasterSnapshot) {
+                    const snapshot = clip.rasterSnapshot;
+                    const width = Math.max(1, Math.round(snapshot.width || snapshot.rasterBounds?.width || 1));
+                    const height = Math.max(1, Math.round(snapshot.height || snapshot.rasterBounds?.height || 1));
+                    const bounds = snapshot.rasterBounds || { x: 0, y: 0, width, height };
+                    snapshot.rasterBounds = {
+                        x: (Number(bounds.x) || 0) + offsetX,
+                        y: (Number(bounds.y) || 0) + offsetY,
+                        width,
+                        height
+                    };
+                }
+            });
+        });
+        animationTable._invalidateSnapshotTextureCache?.();
+        animationTable._syncSelectedClipToWorkingLayers?.({ forceRestore: true });
+        return true;
+    }
+
+    _captureResizeHistoryState(options = {}) {
         const layerSystem = this.coreEngine?.getLayerSystem?.() || window.layerManager;
         const animationTable = this._getAnimationTable();
+        const hasAnimationState = this._hasAnimationResizeState(animationTable);
         const layers = layerSystem?.getLayers?.() || [];
+        if (options.metadataOnly === true) {
+            return {
+                kind: 'metadata',
+                width: window.TEGAKI_CONFIG?.canvas?.width || 1,
+                height: window.TEGAKI_CONFIG?.canvas?.height || 1,
+                layerMetadata: layers
+                    .filter(layer => this._isResizableRasterLayer(layer))
+                    .filter(layer => layer.layerData?.isAnimationWorkingLayer !== true)
+                    .map(layer => ({
+                        layerId: layer.layerData.id,
+                        rasterBounds: { ...layer.layerData.rasterBounds }
+                    })),
+                animationMetadata: hasAnimationState
+                    ? this._captureAnimationResizeMetadataState(animationTable)
+                    : null
+            };
+        }
         const layerSnapshots = layers
             .filter(layer => this._isResizableRasterLayer(layer))
+            .filter(layer => layer.layerData?.isAnimationWorkingLayer !== true)
             .map(layer => layerSystem.createLayerRasterSnapshot(layer))
             .filter(Boolean);
         return {
+            kind: 'full',
             width: window.TEGAKI_CONFIG?.canvas?.width || 1,
             height: window.TEGAKI_CONFIG?.canvas?.height || 1,
             layerSnapshots,
-            animationState: animationTable?._captureTimelineHistoryState?.() || null
+            animationState: hasAnimationState
+                ? animationTable?._captureTimelineHistoryState?.() || null
+                : null
         };
+    }
+
+    _captureAnimationResizeMetadataState(animationTable = this._getAnimationTable()) {
+        const model = animationTable?.model;
+        if (!model) return null;
+        return {
+            drawingSnapshots: (model.drawingSnapshots || []).map(snapshot => ({
+                id: snapshot.id || null,
+                rasterBounds: snapshot.rasterBounds ? { ...snapshot.rasterBounds } : null,
+                updatedAt: snapshot.updatedAt || null
+            })),
+            clips: (model.tracks || []).flatMap(lane => (lane?.cels || []).map(clip => ({
+                id: clip.id || null,
+                transform: clip.transform ? structuredClone(clip.transform) : null,
+                rasterSnapshot: clip.rasterSnapshot ? {
+                    width: clip.rasterSnapshot.width || 1,
+                    height: clip.rasterSnapshot.height || 1,
+                    rasterBounds: clip.rasterSnapshot.rasterBounds
+                        ? { ...clip.rasterSnapshot.rasterBounds }
+                        : null,
+                    updatedAt: clip.rasterSnapshot.updatedAt || null
+                } : null
+            })))
+        };
+    }
+
+    _hasAnimationResizeState(animationTable = this._getAnimationTable()) {
+        const model = animationTable?.model;
+        if (!model) return false;
+        return (model.drawingSnapshots?.length || 0) > 0
+            || (model.clipAssets?.length || 0) > 0
+            || (model.tracks || []).some(lane => (lane?.cels?.length || 0) > 0);
     }
 
     _restoreResizeHistoryState(state, alignOptions = null) {
@@ -797,6 +963,13 @@ export class ResizePopup {
         const currentHeight = window.TEGAKI_CONFIG?.canvas?.height || 1;
         if (camera && (currentWidth !== state.width || currentHeight !== state.height)) {
             camera.resizeCanvas(state.width, state.height, alignOptions || this._getResizeAlignOptions());
+        }
+        if (state.kind === 'metadata') {
+            this._restoreLayerResizeMetadataState(state.layerMetadata, layerSystem);
+            this._restoreAnimationResizeMetadataState(state.animationMetadata);
+            layerSystem?.refreshClippingMasks?.();
+            this._updateCanvasInfo();
+            return true;
         }
         (state.layerSnapshots || []).forEach(snapshot => {
             layerSystem?.restoreLayerRasterSnapshot?.(snapshot);
@@ -813,13 +986,95 @@ export class ResizePopup {
         return true;
     }
 
-    _estimateResizeHistoryBytes(state) {
+    _restoreLayerResizeMetadataState(layerMetadata = [], layerSystem = null) {
+        const byId = new Map(
+            (layerSystem?.getLayers?.() || [])
+                .filter(layer => layer?.layerData?.id)
+                .map(layer => [layer.layerData.id, layer])
+        );
+        (layerMetadata || []).forEach(metadata => {
+            const layer = byId.get(metadata?.layerId);
+            if (!layer?.layerData || !metadata?.rasterBounds) return;
+            layer.layerData.rasterBounds = { ...metadata.rasterBounds };
+            layer.layerData.layerSprite?.position.set(
+                metadata.rasterBounds.x || 0,
+                metadata.rasterBounds.y || 0
+            );
+            const layerIndex = layerSystem?.getLayerIndex?.(layer);
+            if (Number.isInteger(layerIndex) && layerIndex >= 0) {
+                layerSystem?.requestThumbnailUpdate?.(layerIndex, true);
+            }
+        });
+    }
+
+    _restoreAnimationResizeMetadataState(metadata) {
+        if (!metadata) return false;
+        const animationTable = this._getAnimationTable();
+        const model = animationTable?.model;
+        if (!model) return false;
+        const snapshotById = new Map(
+            (model.drawingSnapshots || [])
+                .filter(snapshot => snapshot?.id)
+                .map(snapshot => [snapshot.id, snapshot])
+        );
+        (metadata.drawingSnapshots || []).forEach(entry => {
+            const snapshot = snapshotById.get(entry?.id);
+            if (!snapshot || !entry?.rasterBounds) return;
+            snapshot.rasterBounds = { ...entry.rasterBounds };
+            snapshot.updatedAt = entry.updatedAt || null;
+        });
+        const clipById = new Map();
+        (model.tracks || []).forEach(lane => {
+            (lane?.cels || []).forEach(clip => {
+                if (clip?.id) clipById.set(clip.id, clip);
+            });
+        });
+        (metadata.clips || []).forEach(entry => {
+            const clip = clipById.get(entry?.id);
+            if (!clip) return;
+            if (entry.transform) {
+                clip.transform = structuredClone(entry.transform);
+            }
+            if (entry.rasterSnapshot && clip.rasterSnapshot) {
+                clip.rasterSnapshot.width = entry.rasterSnapshot.width;
+                clip.rasterSnapshot.height = entry.rasterSnapshot.height;
+                clip.rasterSnapshot.rasterBounds = entry.rasterSnapshot.rasterBounds
+                    ? { ...entry.rasterSnapshot.rasterBounds }
+                    : null;
+                clip.rasterSnapshot.updatedAt = entry.rasterSnapshot.updatedAt || null;
+            }
+        });
+        animationTable._invalidateSnapshotTextureCache?.();
+        animationTable._syncSelectedClipToWorkingLayers?.({ forceRestore: true });
+        animationTable.render?.();
+        animationTable._flushLayerPanelSync?.();
+        return true;
+    }
+
+    _estimateResizeHistoryBytes(state, seenBuffers = new Set()) {
+        if (state?.kind === 'metadata') {
+            try {
+                return JSON.stringify(state).length * 2;
+            } catch {
+                return 0;
+            }
+        }
         let bytes = 0;
+        const addPixels = pixels => {
+            if (!pixels) return;
+            const identity = pixels.buffer || pixels;
+            if (seenBuffers.has(identity)) return;
+            seenBuffers.add(identity);
+            bytes += pixels.byteLength || pixels.length || 0;
+        };
         (state?.layerSnapshots || []).forEach(snapshot => {
-            bytes += snapshot?.pixels?.byteLength || snapshot?.pixels?.length || 0;
+            addPixels(snapshot?.pixels);
         });
         (state?.animationState?.drawingSnapshots || []).forEach(snapshot => {
-            bytes += snapshot?.pixels?.byteLength || snapshot?.pixels?.length || 0;
+            addPixels(snapshot?.pixels);
+        });
+        (state?.animationState?.tracks || []).forEach(lane => {
+            (lane?.cels || []).forEach(clip => addPixels(clip?.rasterSnapshot?.pixels));
         });
         return bytes;
     }
@@ -911,8 +1166,17 @@ export class ResizePopup {
     }
 
     _scaleProjectContent(options = {}) {
+        const plan = this._prepareContentResizePlan(options);
+        if (!plan?.ok) {
+            this._showResizeFailure(plan?.reason || '内容を変換できませんでした');
+            return false;
+        }
+        return this._applyContentResizePlan(plan);
+    }
+
+    _prepareContentResizePlan(options = {}) {
         const layerSystem = this.coreEngine?.getLayerSystem?.() || window.layerManager;
-        if (!layerSystem) return false;
+        if (!layerSystem) return { ok: false, reason: 'Layer Systemを利用できません' };
 
         const targetSize = {
             width: Math.max(1, Math.round(options.targetWidth || window.TEGAKI_CONFIG?.canvas?.width || 1)),
@@ -922,35 +1186,134 @@ export class ResizePopup {
             width: Math.max(1, Math.round(options.frameWidth || window.TEGAKI_CONFIG?.canvas?.width || targetSize.width)),
             height: Math.max(1, Math.round(options.frameHeight || window.TEGAKI_CONFIG?.canvas?.height || targetSize.height))
         };
-        const entries = this._collectContentResizeEntries({ includePixels: true });
+        const entries = this._dedupeContentResizeEntries(
+            this._collectContentResizeEntries({ includePixels: true })
+        );
         const sourceBounds = this._unionContentBounds(entries);
-        if (!sourceBounds) return false;
+        if (!sourceBounds) return { ok: false, reason: '変換対象のRasterがありません' };
 
         const transform = this._resolveContentTransform(sourceBounds, targetSize, {
             ...options,
             frameSize
         });
-        entries.forEach(entry => {
-            if (entry.kind === 'layer') {
-                const scaled = this._scaleRasterSnapshot(entry.snapshot, sourceBounds, transform, targetSize);
-                layerSystem.restoreLayerRasterSnapshot(scaled);
-                return;
+        const maxAxis = Math.min(
+            8192,
+            Math.max(1, Math.round(layerSystem._getMaxRenderTextureSize?.() || 8192))
+        );
+        const preflightEntries = [];
+        const sourcePixelBuffers = new Set();
+        let sourcePixelBytes = 0;
+        let outputPixelBytes = 0;
+        for (const entry of entries) {
+            const output = this._resolveScaledSnapshotOutput(entry.snapshot, sourceBounds, transform);
+            const validation = validateRasterSurfaceSize(output?.bounds || { width: 1, height: 1 }, {
+                maxAxis,
+                maxPixels: 16 * 1024 * 1024
+            });
+            if (!validation.ok) {
+                return {
+                    ok: false,
+                    reason: `変換後Rasterが安全上限を超えます (${validation.reason})`
+                };
             }
-            if (entry.kind === 'animation-snapshot') {
-                const scaled = this._scaleRasterSnapshot(entry.snapshot, sourceBounds, transform, targetSize);
-                Object.assign(entry.snapshot, {
-                    width: scaled.width,
-                    height: scaled.height,
-                    rasterBounds: scaled.rasterBounds,
-                    pixels: scaled.pixels,
-                    isBlank: scaled.isBlank === true,
-                    updatedAt: Date.now()
-                });
+            const sourcePixels = entry.snapshot?.pixels;
+            const sourceIdentity = sourcePixels?.buffer || sourcePixels;
+            if (sourceIdentity && !sourcePixelBuffers.has(sourceIdentity)) {
+                sourcePixelBuffers.add(sourceIdentity);
+                sourcePixelBytes += sourcePixels.byteLength || sourcePixels.length || 0;
             }
-        });
+            outputPixelBytes += validation.pixelCount * 4;
+            preflightEntries.push({
+                ...entry,
+                output
+            });
+        }
+        const estimatedHistoryBytes = sourcePixelBytes + outputPixelBytes;
+        const historyUsage = this.history?.getUsage?.() || null;
+        if (
+            Number.isFinite(historyUsage?.maxBytes)
+            && historyUsage.maxBytes > 0
+            && estimatedHistoryBytes > historyUsage.maxBytes
+        ) {
+            const requiredMB = Math.ceil(estimatedHistoryBytes / (1024 * 1024));
+            const limitMB = Math.floor(historyUsage.maxBytes / (1024 * 1024));
+            return {
+                ok: false,
+                reason: `Undo用Rasterが履歴上限を超えます (${requiredMB}MB / ${limitMB}MB)`
+            };
+        }
+        const preparedEntries = preflightEntries.map(entry => ({
+            ...entry,
+            scaled: this._scaleRasterSnapshot(
+                    entry.snapshot,
+                    sourceBounds,
+                    transform,
+                    targetSize,
+                    entry.output
+                )
+        }));
+        return {
+            ok: true,
+            entries: preparedEntries,
+            sourceBounds,
+            transform,
+            targetSize,
+            frameSize,
+            oldFrameSize: {
+                width: Math.max(1, Math.round(options.oldFrameWidth || window.TEGAKI_CONFIG?.canvas?.width || 1)),
+                height: Math.max(1, Math.round(options.oldFrameHeight || window.TEGAKI_CONFIG?.canvas?.height || 1))
+            },
+            estimatedHistoryBytes
+        };
+    }
+
+    _applyContentResizePlan(plan) {
+        if (!plan?.ok) return false;
+        const layerSystem = this.coreEngine?.getLayerSystem?.() || window.layerManager;
+        if (!layerSystem) return false;
+
+        for (const entry of plan.entries || []) {
+            const scaled = entry.scaled;
+            const targets = entry.aliases?.length ? entry.aliases : [entry];
+            for (const target of targets) {
+                if (target.kind === 'layer') {
+                    if (!layerSystem.restoreLayerRasterSnapshot({
+                        ...scaled,
+                        layerId: target.snapshot?.layerId || scaled.layerId,
+                        pathsData: this._scaleSnapshotPaths(
+                            target.snapshot?.pathsData,
+                            plan.sourceBounds,
+                            plan.transform
+                        ),
+                        paths: this._scaleSnapshotPaths(
+                            target.snapshot?.paths,
+                            plan.sourceBounds,
+                            plan.transform
+                        )
+                    })) return false;
+                    continue;
+                }
+                if (target.kind === 'animation-snapshot' || target.kind === 'legacy-clip-snapshot') {
+                    Object.assign(target.snapshot, {
+                        width: scaled.width,
+                        height: scaled.height,
+                        rasterBounds: { ...scaled.rasterBounds },
+                        pixels: scaled.pixels,
+                        isBlank: scaled.isBlank === true,
+                        updatedAt: Date.now()
+                    });
+                }
+            }
+        }
+
+        this._rebaseClipAnchorsForContentResize(plan);
 
         const animationTable = this._getAnimationTable();
-        if (animationTable?.model) {
+        const hasAnimationEntries = (plan.entries || []).some(entry =>
+            (entry.aliases?.length ? entry.aliases : [entry])
+                .some(target => target.kind !== 'layer')
+        );
+        if (animationTable?.model && hasAnimationEntries) {
             animationTable._invalidateSnapshotTextureCache?.();
             animationTable._syncSelectedClipToWorkingLayers?.({ forceRestore: true });
             animationTable.render?.();
@@ -964,6 +1327,7 @@ export class ResizePopup {
         const entries = [];
         (layerSystem?.getLayers?.() || []).forEach(layer => {
             if (!this._isResizableRasterLayer(layer)) return;
+            if (layer.layerData?.isAnimationWorkingLayer === true) return;
             const snapshot = layerSystem.createLayerRasterSnapshot(layer);
             if (!snapshot?.pixels) return;
             entries.push({
@@ -980,7 +1344,57 @@ export class ResizePopup {
                 snapshot: options.includePixels ? snapshot : this._withoutPixels(snapshot)
             });
         });
+        (animationTable?.model?.tracks || []).forEach(lane => {
+            (lane?.cels || []).forEach(clip => {
+                // asset-backed Clipの互換snapshotはDrawingSnapshotから再生成できるため、
+                // pixel正本を持つ旧Clipだけを独立sourceとして扱う。
+                const snapshot = clip?.assetId ? null : clip?.rasterSnapshot;
+                if (!snapshot?.pixels) return;
+                entries.push({
+                    kind: 'legacy-clip-snapshot',
+                    clipId: clip.id || null,
+                    snapshot: options.includePixels ? snapshot : this._withoutPixels(snapshot)
+                });
+            });
+        });
         return entries;
+    }
+
+    _dedupeContentResizeEntries(entries = []) {
+        const byPixelBuffer = new Map();
+        const result = [];
+        (entries || []).forEach(entry => {
+            const snapshot = entry?.snapshot;
+            const pixels = snapshot?.pixels;
+            const identity = pixels?.buffer || pixels;
+            if (!identity) {
+                result.push({ ...entry, aliases: [entry] });
+                return;
+            }
+            const bounds = snapshot.rasterBounds || {};
+            const signature = [
+                snapshot.width || 1,
+                snapshot.height || 1,
+                bounds.x || 0,
+                bounds.y || 0,
+                bounds.width || snapshot.width || 1,
+                bounds.height || snapshot.height || 1
+            ].join(':');
+            let signatures = byPixelBuffer.get(identity);
+            if (!signatures) {
+                signatures = new Map();
+                byPixelBuffer.set(identity, signatures);
+            }
+            const existing = signatures.get(signature);
+            if (existing) {
+                existing.aliases.push(entry);
+                return;
+            }
+            const grouped = { ...entry, aliases: [entry] };
+            signatures.set(signature, grouped);
+            result.push(grouped);
+        });
+        return result;
     }
 
     _withoutPixels(snapshot) {
@@ -1087,12 +1501,52 @@ export class ResizePopup {
         return { x, y, width, height, scale };
     }
 
-    _scaleRasterSnapshot(snapshot, sourceBounds, transform, targetSize) {
+    _resolveScaledSnapshotOutput(snapshot, sourceBounds, transform) {
+        const width = Math.max(1, Math.round(snapshot?.width || 1));
+        const height = Math.max(1, Math.round(snapshot?.height || 1));
+        const projectAlphaBounds = this._getSnapshotProjectAlphaBounds({
+            ...snapshot,
+            width,
+            height
+        });
+        if (!snapshot?.pixels || !projectAlphaBounds) {
+            return {
+                blank: true,
+                bounds: { x: 0, y: 0, width: 1, height: 1 },
+                projectAlphaBounds: null
+            };
+        }
+
+        const destX = transform.x + (projectAlphaBounds.x - sourceBounds.x) * transform.scale;
+        const destY = transform.y + (projectAlphaBounds.y - sourceBounds.y) * transform.scale;
+        const destWidth = Math.max(1, projectAlphaBounds.width * transform.scale);
+        const destHeight = Math.max(1, projectAlphaBounds.height * transform.scale);
+        const outX = Math.floor(destX);
+        const outY = Math.floor(destY);
+        const outRight = Math.ceil(destX + destWidth);
+        const outBottom = Math.ceil(destY + destHeight);
+        return {
+            blank: false,
+            projectAlphaBounds,
+            destX,
+            destY,
+            destWidth,
+            destHeight,
+            bounds: {
+                x: outX,
+                y: outY,
+                width: Math.max(1, outRight - outX),
+                height: Math.max(1, outBottom - outY)
+            }
+        };
+    }
+
+    _scaleRasterSnapshot(snapshot, sourceBounds, transform, targetSize, output = null) {
         const width = Math.max(1, Math.round(snapshot?.width || 1));
         const height = Math.max(1, Math.round(snapshot?.height || 1));
         const pixels = snapshot?.pixels ? new Uint8ClampedArray(snapshot.pixels) : null;
-        const projectAlphaBounds = this._getSnapshotProjectAlphaBounds({ ...snapshot, pixels, width, height });
-        if (!pixels || !projectAlphaBounds) {
+        const resolved = output || this._resolveScaledSnapshotOutput(snapshot, sourceBounds, transform);
+        if (!pixels || resolved.blank) {
             return {
                 ...snapshot,
                 width: 1,
@@ -1103,17 +1557,12 @@ export class ResizePopup {
             };
         }
 
-        const localAlpha = projectAlphaBounds.localAlphaBounds;
-        const destX = transform.x + (projectAlphaBounds.x - sourceBounds.x) * transform.scale;
-        const destY = transform.y + (projectAlphaBounds.y - sourceBounds.y) * transform.scale;
-        const destWidth = Math.max(1, projectAlphaBounds.width * transform.scale);
-        const destHeight = Math.max(1, projectAlphaBounds.height * transform.scale);
-        const outX = Math.floor(destX);
-        const outY = Math.floor(destY);
-        const outRight = Math.ceil(destX + destWidth);
-        const outBottom = Math.ceil(destY + destHeight);
-        const outWidth = Math.max(1, outRight - outX);
-        const outHeight = Math.max(1, outBottom - outY);
+        const localAlpha = resolved.projectAlphaBounds.localAlphaBounds;
+        const { destX, destY, destWidth, destHeight } = resolved;
+        const outX = resolved.bounds.x;
+        const outY = resolved.bounds.y;
+        const outWidth = resolved.bounds.width;
+        const outHeight = resolved.bounds.height;
 
         const sourceCanvas = document.createElement('canvas');
         sourceCanvas.width = width;
@@ -1149,8 +1598,63 @@ export class ResizePopup {
             height: outHeight,
             rasterBounds: { x: outX, y: outY, width: outWidth, height: outHeight },
             pixels: new Uint8ClampedArray(imageData.data),
+            pathsData: this._scaleSnapshotPaths(snapshot.pathsData, sourceBounds, transform),
+            paths: this._scaleSnapshotPaths(snapshot.paths, sourceBounds, transform),
             isBlank: false
         };
+    }
+
+    _scaleSnapshotPaths(paths, sourceBounds, transform) {
+        if (!Array.isArray(paths)) return [];
+        return paths.map(path => {
+            const next = structuredClone(path || {});
+            if (Array.isArray(next.points)) {
+                next.points = next.points.map(point => {
+                    const sourceX = Number.isFinite(Number(point?.localX))
+                        ? Number(point.localX)
+                        : Number(point?.x) || 0;
+                    const sourceY = Number.isFinite(Number(point?.localY))
+                        ? Number(point.localY)
+                        : Number(point?.y) || 0;
+                    const x = transform.x + (sourceX - sourceBounds.x) * transform.scale;
+                    const y = transform.y + (sourceY - sourceBounds.y) * transform.scale;
+                    return {
+                        ...point,
+                        ...(Object.hasOwn(point || {}, 'x') ? { x } : {}),
+                        ...(Object.hasOwn(point || {}, 'y') ? { y } : {}),
+                        localX: x,
+                        localY: y
+                    };
+                });
+            }
+            if (Number.isFinite(Number(next.size))) next.size = Number(next.size) * transform.scale;
+            if (Number.isFinite(Number(next.settings?.size))) {
+                next.settings.size = Number(next.settings.size) * transform.scale;
+            }
+            return next;
+        });
+    }
+
+    _rebaseClipAnchorsForContentResize(plan) {
+        const animationTable = this._getAnimationTable();
+        if (!animationTable?.model || !plan?.sourceBounds || !plan?.transform) return false;
+        const sourceBounds = plan.sourceBounds;
+        const transform = plan.transform;
+        const oldFrame = plan.oldFrameSize || plan.frameSize;
+        const newFrame = plan.frameSize || oldFrame;
+        (animationTable.model.tracks || []).forEach(lane => {
+            (lane?.cels || []).forEach(clip => {
+                const clipTransform = clip?.transform;
+                if (!clipTransform) return;
+                const oldPivotX = oldFrame.width * (Number(clipTransform.anchorX) || 0);
+                const oldPivotY = oldFrame.height * (Number(clipTransform.anchorY) || 0);
+                const nextPivotX = transform.x + (oldPivotX - sourceBounds.x) * transform.scale;
+                const nextPivotY = transform.y + (oldPivotY - sourceBounds.y) * transform.scale;
+                clipTransform.anchorX = nextPivotX / Math.max(1, newFrame.width);
+                clipTransform.anchorY = nextPivotY / Math.max(1, newFrame.height);
+            });
+        });
+        return true;
     }
 
     _getContentPreviewCache() {
@@ -1212,15 +1716,11 @@ export class ResizePopup {
     _resolveCanvasResizePreviewTransform(bounds, frameSize) {
         const oldWidth = window.TEGAKI_CONFIG?.canvas?.width || frameSize.width;
         const oldHeight = window.TEGAKI_CONFIG?.canvas?.height || frameSize.height;
-        const widthDiff = frameSize.width - oldWidth;
-        const heightDiff = frameSize.height - oldHeight;
         const alignOptions = this._getResizeAlignOptions();
         let offsetX = 0;
         let offsetY = 0;
-        if (alignOptions.horizontal === 'center') offsetX = widthDiff / 2;
-        else if (alignOptions.horizontal === 'right') offsetX = widthDiff;
-        if (alignOptions.vertical === 'center') offsetY = heightDiff / 2;
-        else if (alignOptions.vertical === 'bottom') offsetY = heightDiff;
+        offsetX = resolveCanvasResizeOffset(oldWidth, frameSize.width, alignOptions.horizontal);
+        offsetY = resolveCanvasResizeOffset(oldHeight, frameSize.height, alignOptions.vertical);
         return {
             x: bounds.x + offsetX,
             y: bounds.y + offsetY,
