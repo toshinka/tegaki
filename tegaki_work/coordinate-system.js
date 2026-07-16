@@ -307,6 +307,29 @@ export class CoordinateSystem {
         const canvas = this.worldToCanvas(worldX, worldY);
         return this.canvasToScreen(canvas.canvasX, canvas.canvasY);
     }
+
+    // DOM overlayはPixi render前にもcameraの現在値へ追従する必要がある。
+    // worldTransform cacheを介さず、現在のposition / scale / pivot / rotationを直接評価する。
+    worldToScreenImmediate(worldX, worldY) {
+        const worldContainer = this._getWorldContainer();
+        if (!worldContainer) return this.canvasToScreen(worldX, worldY);
+
+        const pos = worldContainer.position || { x: 0, y: 0 };
+        const scale = worldContainer.scale || { x: 1, y: 1 };
+        const pivot = worldContainer.pivot || { x: 0, y: 0 };
+        const rotation = worldContainer.rotation || 0;
+        let x = (worldX - pivot.x) * scale.x;
+        let y = (worldY - pivot.y) * scale.y;
+        if (Math.abs(rotation) > 1e-6) {
+            const cos = Math.cos(rotation);
+            const sin = Math.sin(rotation);
+            const rotatedX = x * cos - y * sin;
+            const rotatedY = x * sin + y * cos;
+            x = rotatedX;
+            y = rotatedY;
+        }
+        return this.canvasToScreen(x + pos.x, y + pos.y);
+    }
     
     localToWorld(localX, localY, container) {
         if (!container) {

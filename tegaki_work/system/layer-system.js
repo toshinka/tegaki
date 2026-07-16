@@ -20,7 +20,13 @@ import { historyManager } from './history.js';
 import { coordinateSystem } from '../coordinate-system.js';
 import { LayerTransform } from './layer-transform.js';
 import { resolveIntegerTranslation } from './raster-translation.js';
-import { normalizeRasterBounds, normalizeRasterSnapshot, translateRasterBounds } from './raster-bounds.js';
+import {
+    normalizeRasterBounds,
+    normalizeRasterSnapshot,
+    resolveCanvasResizeOffset,
+    translateRasterBounds,
+    validateRasterSurfaceSize
+} from './raster-bounds.js';
 import {
     applyDirectionalTransformDrag,
     applyTransformMatrix,
@@ -343,11 +349,10 @@ export class LayerSystem {
     }
 
     _isRasterBakeSizeAllowed(bounds) {
-        const width = Math.round(bounds?.width || 0);
-        const height = Math.round(bounds?.height || 0);
-        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false;
-        const maxPixels = 16 * 1024 * 1024;
-        return width * height <= maxPixels;
+        return validateRasterSurfaceSize(bounds, {
+            maxAxis: Number.MAX_SAFE_INTEGER,
+            maxPixels: 16 * 1024 * 1024
+        }).ok;
     }
 
     createFolder(name) {
@@ -1579,30 +1584,57 @@ export class LayerSystem {
      * [指示書] キャンバスリサイズに合わせて全レイヤーのテクスチャサイズを更新する
      */
     resizeLayerTextures(newWidth, newHeight, oldWidth, oldHeight, alignOptions) {
-        const widthDiff = newWidth - oldWidth;
-        const heightDiff = newHeight - oldHeight;
-
         let offsetX = 0;
         let offsetY = 0;
 
         const hAlign = alignOptions?.horizontal || 'center';
         const vAlign = alignOptions?.vertical || 'center';
 
-        if (hAlign === 'center') offsetX = widthDiff / 2;
-        else if (hAlign === 'right') offsetX = widthDiff;
+        offsetX = resolveCanvasResizeOffset(oldWidth, newWidth, hAlign);
 
-        if (vAlign === 'center') offsetY = heightDiff / 2;
-        else if (vAlign === 'bottom') offsetY = heightDiff;
+        offsetY = resolveCanvasResizeOffset(oldHeight, newHeight, vAlign);
 
         if (this.config?.debug) {
             console.log('[LayerSystem] Starting resizeLayerTextures', { newWidth, newHeight, offsetX, offsetY });
         }
 
+        // Canvas resizeはProject frameの変更であり、可変rasterBoundsの正本を
+        // 新frame寸法へcropする操作ではない。旧実装はRenderTextureを作り直して
+        // frame外pixelを破棄し、さらに旧Textureを参照するAlphaMaskを残していた。
+        this.clearClippingMasks();
         for (const layer of this.getLayers()) {
-            // [指示書] 背景レイヤーとフォルダはスキップ（背景は別途 backgroundGraphics で処理済み）
+            // 背景とFolderは別経路。Rasterはsurfaceを維持してProject座標だけ移す。
             if (!layer.layerData || layer.layerData.isFolder || layer.layerData.isBackground) continue;
-            this._resizeSingleLayerTexture(layer, newWidth, newHeight, offsetX, offsetY);
+            this._translateLayerRasterBoundsForCanvasResize(layer, offsetX, offsetY);
         }
+        this.refreshClippingMasks();
+    }
+
+    _translateLayerRasterBoundsForCanvasResize(layer, offsetX, offsetY) {
+        const layerData = layer?.layerData;
+        const renderTexture = layerData?.renderTexture;
+        if (!layerData || !renderTexture) return false;
+
+        const bounds = normalizeRasterBounds(layerData.rasterBounds, {
+            width: renderTexture.width,
+            height: renderTexture.height
+        });
+        bounds.x += Number(offsetX) || 0;
+        bounds.y += Number(offsetY) || 0;
+        bounds.width = Math.max(1, Math.round(renderTexture.width || bounds.width));
+        bounds.height = Math.max(1, Math.round(renderTexture.height || bounds.height));
+        layerData.rasterBounds = bounds;
+        layerData.layerSprite?.position.set(bounds.x, bounds.y);
+        if (Array.isArray(layerData.paths) && layerData.paths.length > 0) {
+            this.transform?.applyTransformToPaths?.(layer, {
+                x: Number(offsetX) || 0,
+                y: Number(offsetY) || 0,
+                rotation: 0,
+                scaleX: 1,
+                scaleY: 1
+            });
+        }
+        return true;
     }
 
     /**
@@ -2024,7 +2056,7 @@ export class LayerSystem {
         const sourceSprite = new Sprite(sourceTexture);
         let maskTexture = this._clippingMaskTexturePool.pop() || null;
         if (maskTexture && (maskTexture.width !== width || maskTexture.height !== height)) {
-            maskTexture.destroy(true);
+            this._deferClippingMaskTextureDestroy(maskTexture);
             maskTexture = null;
         }
         maskTexture ||= RenderTexture.create({ width, height });
@@ -2039,6 +2071,26 @@ export class LayerSystem {
             sourceSprite.destroy({ texture: true, baseTexture: true });
         }
         return maskTexture;
+    }
+
+    _deferClippingMaskTextureDestroy(texture) {
+        if (!texture) return;
+        const destroy = () => {
+            try {
+                texture.destroy(true);
+            } catch (error) {
+                if (this.config?.debug) {
+                    console.warn('[LayerSystem] deferred clipping mask destroy failed', error);
+                }
+            }
+        };
+        if (typeof requestAnimationFrame !== 'function') {
+            setTimeout(destroy, 32);
+            return;
+        }
+        // Pixi v8のRenderGroupがmask解除を反映するframeと、次の描画命令生成を
+        // 一度ずつ通してから旧GPU resourceを破棄する。
+        requestAnimationFrame(() => requestAnimationFrame(destroy));
     }
 
     _resolveClippingSourceLayers(layer, layers = this.getLayers()) {
@@ -2790,6 +2842,10 @@ export class LayerSystem {
             }
         };
         this.transform.onTransformUpdate = (layer, transform) => {
+            if (layer?.layerData?.isFolder) {
+                this._applyFolderPreviewTransform(layer, transform);
+                return;
+            }
             this.requestThumbnailUpdate(this.getLayerIndex(layer));
             this.eventBus.emit('layer:updated', {layerId: layer.layerData.id, transform});
         };
@@ -3004,10 +3060,8 @@ export class LayerSystem {
             this.transform.setTransform(targetLayer.layerData.id, structuredClone(nextTransform));
             this.transform.applyTransform(targetLayer, nextTransform, centerX, centerY);
         }
-        this.transform.updateTransformPanelValues(folderLayer);
-        this.transform.updateFlipButtons(folderLayer);
         this.coordAPI?.clearCache?.();
-        this.eventBus?.emit('layer:updated', { layerId, transform: structuredClone(nextTransform) });
+        this._scheduleTransformInteractionUpdate(layerId, nextTransform);
         return true;
     }
 
@@ -3147,6 +3201,24 @@ export class LayerSystem {
 
     get vKeyPressed() {
         return this.transform?.isVKeyPressed || false;
+    }
+
+    getLayerMoveCommitState() {
+        const active = this.isLayerMoveMode;
+        const sessionLayerId = this._layerTransformSession?.layerId || null;
+        const activeLayer = sessionLayerId
+            ? this.getLayers().find(layer => layer.layerData?.id === sessionLayerId)
+            : this.getActiveLayer();
+        const layerId = activeLayer?.layerData?.id || null;
+        const transform = layerId ? this.transform?.getTransform?.(layerId) : null;
+
+        return {
+            active,
+            layerId,
+            hasPendingTransform: Boolean(
+                active && transform && this.transform?._isTransformNonDefault?.(transform)
+            )
+        };
     }
 
     updateActiveLayerTransform(property, value) {
@@ -3631,6 +3703,9 @@ export class LayerSystem {
             const currentTransform = this.transform?.getTransform?.(pending.layerId)
                 || pending.transform;
             this.transform?.updateTransformPanelValues?.(layer);
+            if (layer.layerData?.isFolder) {
+                this.transform?.updateFlipButtons?.(layer);
+            }
             this.eventBus?.emit('layer:updated', {
                 layerId: pending.layerId,
                 transform: {

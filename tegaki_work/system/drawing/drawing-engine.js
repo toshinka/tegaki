@@ -186,7 +186,9 @@ export class DrawingEngine {
 
         this.activePointers.set(info.pointerId, {
             type: info.pointerType || 'unknown',
-            isDrawing: true
+            isDrawing: true,
+            straightLine: e.shiftKey === true && this._supportsStraightStroke(currentMode),
+            lastInfo: info
         });
 
         if (this.brushCore && this.brushCore.startStroke) {
@@ -216,6 +218,10 @@ export class DrawingEngine {
         return this.brushCore?.getMode?.() || window.brushSettings?.getMode?.() || this.currentToolOverride || 'pen';
     }
 
+    _supportsStraightStroke(mode) {
+        return mode === 'pen' || mode === 'eraser';
+    }
+
     _handlePointerMove(info, e) {
         // [指示書 v5 一時診断] pointerup後のmove検知
         /*
@@ -234,6 +240,17 @@ export class DrawingEngine {
         }
 
         if (!this.brushCore || !this.brushCore.isActive || !this.brushCore.isActive()) {
+            return;
+        }
+
+        pointerInfo.lastInfo = info;
+        if (pointerInfo.straightLine) {
+            this.brushCore.previewStraightStroke?.(
+                info.rawClientX ?? info.clientX,
+                info.rawClientY ?? info.clientY,
+                info.pressure,
+                info.pointerType
+            );
             return;
         }
 
@@ -264,6 +281,11 @@ export class DrawingEngine {
             return;
         }
 
+        if (pointerInfo.straightLine) {
+            this._handlePointerMove(lastInfo, e);
+            return;
+        }
+
         if (window.TEGAKI_CONFIG?.debug) {
             const local = this._screenToLocal(lastInfo.clientX, lastInfo.clientY);
             this._attachInputProfileLocal(lastInfo, local);
@@ -285,11 +307,33 @@ export class DrawingEngine {
         }
 
         if (this.brushCore && this.brushCore.isActive && this.brushCore.isActive()) {
+            let finalInfo = info;
+            if (pointerInfo.straightLine && this.brushCore.updateStroke) {
+                const lastInfo = pointerInfo.lastInfo || info;
+                const endX = info.rawClientX ?? info.clientX;
+                const endY = info.rawClientY ?? info.clientY;
+                const endPressure = Number(lastInfo.pressure) > 0
+                    ? lastInfo.pressure
+                    : info.pressure;
+                this.brushCore.updateStroke(
+                    endX,
+                    endY,
+                    endPressure,
+                    info.pointerType,
+                    info.inputProfile
+                );
+                finalInfo = {
+                    ...info,
+                    clientX: endX,
+                    clientY: endY,
+                    pressure: endPressure
+                };
+            }
             if (this.brushCore.finalizeStroke) {
                 if (window.TEGAKI_CONFIG?.debug) {
-                    this._attachInputProfileLocal(info, this._screenToLocal(info.clientX, info.clientY));
+                    this._attachInputProfileLocal(finalInfo, this._screenToLocal(finalInfo.clientX, finalInfo.clientY));
                 }
-                this.brushCore.finalizeStroke(info.inputProfile, info);
+                this.brushCore.finalizeStroke(finalInfo.inputProfile, finalInfo);
             }
         }
 

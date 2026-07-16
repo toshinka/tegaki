@@ -6,14 +6,62 @@ import {
     CLIPPING_MODES,
     getClippingMode
 } from '../clipping-mode.js';
-import { normalizeRasterBounds } from '../raster-bounds.js';
+import {
+    normalizeRasterBounds,
+    unionRasterBounds,
+    validateRasterSurfaceSize
+} from '../raster-bounds.js';
 import { sampleClipTransform } from './clip-transform-sampler.js';
+import { sampleClipDeformer } from './clip-deformer.js';
+import { warpRgbaWithControlMesh } from './control-mesh-rasterizer.js';
+import { warpRgbaWithGrid } from './warp-grid-rasterizer.js';
 import { compositeClipPixel } from './clip-blend-strength.js';
 import {
     findInternalClippingOwner,
     findInternalClippingSource,
     getInternalFolderRasterDescendants
 } from './internal-layer-clipping-contract.js';
+
+function finiteOr(value, fallback) {
+    return Number.isFinite(value) ? value : fallback;
+}
+
+/** Clip Motion適用後のProject座標tight boundsを返す純粋helper。 */
+export function calculateTransformedClipBounds(surfaceBounds, transform, frameWidth, frameHeight) {
+    const bounds = normalizeRasterBounds(surfaceBounds, { width: 1, height: 1 });
+    const width = Math.max(1, finiteOr(frameWidth, 1));
+    const height = Math.max(1, finiteOr(frameHeight, 1));
+    const scaleX = finiteOr(transform?.scaleX, 1);
+    const scaleY = finiteOr(transform?.scaleY, 1);
+    const rotation = finiteOr(transform?.rotation, 0);
+    const anchorX = finiteOr(transform?.anchorX, 0.5);
+    const anchorY = finiteOr(transform?.anchorY, 0.5);
+    const translateX = width * anchorX + finiteOr(transform?.x, 0);
+    const translateY = height * anchorY + finiteOr(transform?.y, 0);
+    const pivotX = width * anchorX;
+    const pivotY = height * anchorY;
+    const cosine = Math.cos(rotation);
+    const sine = Math.sin(rotation);
+    const mapPoint = (x, y) => {
+        const localX = (x - pivotX) * scaleX;
+        const localY = (y - pivotY) * scaleY;
+        return {
+            x: translateX + localX * cosine - localY * sine,
+            y: translateY + localX * sine + localY * cosine
+        };
+    };
+    const corners = [
+        mapPoint(bounds.x, bounds.y),
+        mapPoint(bounds.x + bounds.width, bounds.y),
+        mapPoint(bounds.x + bounds.width, bounds.y + bounds.height),
+        mapPoint(bounds.x, bounds.y + bounds.height)
+    ];
+    const left = Math.floor(Math.min(...corners.map(point => point.x)));
+    const top = Math.floor(Math.min(...corners.map(point => point.y)));
+    const right = Math.ceil(Math.max(...corners.map(point => point.x)));
+    const bottom = Math.ceil(Math.max(...corners.map(point => point.y)));
+    return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+}
 
 export class TimelineFrameCompositor {
     constructor(model, layerSystem = null) {
@@ -84,6 +132,55 @@ export class TimelineFrameCompositor {
 
         ctx.restore();
         return canvas;
+    }
+
+    /**
+     * 選択ClipだけをWarp -> Clip Motion順でtight surfaceへ評価する。
+     * 背景、通常Layer、他Laneを混ぜず、Bakeはこのexport共通評価を再利用する。
+     */
+    renderClipFrameSurface(clipId, frameIndex, options = {}) {
+        const entry = this.model.findClipEntry?.(clipId);
+        if (!entry?.clip || frameIndex < entry.clip.startFrame
+            || frameIndex >= entry.clip.startFrame + entry.clip.duration) {
+            return null;
+        }
+        const asset = this.model.getClipAsset(entry.clip.assetId);
+        if (!asset) return null;
+        let surface = this._renderAsset(asset);
+        if (!surface) return null;
+
+        const deformer = sampleClipDeformer(
+            entry.clip.deformer,
+            frameIndex - entry.clip.startFrame,
+            entry.clip.duration
+        );
+        if (deformer) surface = this._deformAssetSurface(surface, deformer, asset.id);
+
+        const configSize = window.TEGAKI_CONFIG?.canvas || {};
+        const frameWidth = options.sourceWidth || configSize.width || 400;
+        const frameHeight = options.sourceHeight || configSize.height || 400;
+        const transform = sampleClipTransform(entry.clip, frameIndex);
+        const bounds = this._assertSurfaceSizeAllowed(
+            calculateTransformedClipBounds(surface.bounds, transform, frameWidth, frameHeight),
+            `Clip ${entry.clip.id} baked frame`
+        );
+        const canvas = this._createCanvas(bounds.width, bounds.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error(`Clip ${entry.clip.id} baked frame context is unavailable`);
+        ctx.translate(-bounds.x, -bounds.y);
+        this._drawTransformedClip(ctx, surface, {
+            ...transform,
+            blendMode: 'normal',
+            blendStrength: 1
+        }, frameWidth, frameHeight);
+        return {
+            canvas,
+            bounds,
+            blendMode: transform.blendMode || 'normal',
+            blendStrength: Number.isFinite(transform.blendStrength) ? transform.blendStrength : 1,
+            clipId: entry.clip.id,
+            frameIndex
+        };
     }
 
     _renderLayerStack(ctx, frameTree, width, height, frameIndex) {
@@ -172,15 +269,46 @@ export class TimelineFrameCompositor {
         if (clipEntry.visible === false) return;
         const asset = this.model.getClipAsset(clipEntry.assetId);
         if (!asset) return;
-        const assetCanvas = this._renderAsset(asset, width, height);
-        if (!assetCanvas) return;
+        let assetSurface = this._renderAsset(asset);
+        if (!assetSurface) return;
+        const deformer = sampleClipDeformer(
+            clipEntry.deformer,
+            frameIndex - clipEntry.startFrame,
+            clipEntry.duration
+        );
+        if (deformer) {
+            assetSurface = this._deformAssetSurface(assetSurface, deformer, asset.id);
+        }
         this._drawTransformedClip(
             ctx,
-            assetCanvas,
+            assetSurface,
             sampleClipTransform(clipEntry, frameIndex),
             width,
             height
         );
+    }
+
+    _deformAssetSurface(surface, deformer, assetId) {
+        const sourceCtx = surface.canvas.getContext('2d');
+        if (!sourceCtx) return surface;
+        const maxAxis = this.layerSystem?._getMaxRenderTextureSize?.() || 8192;
+        const renderDeformer = deformer.type === 'control-mesh'
+            ? warpRgbaWithControlMesh
+            : warpRgbaWithGrid;
+        const result = renderDeformer({
+            pixels: sourceCtx.getImageData(0, 0, surface.canvas.width, surface.canvas.height).data,
+            width: surface.canvas.width,
+            height: surface.canvas.height,
+            sourceBounds: surface.bounds,
+            deformer,
+            maxAxis,
+            maxPixels: 16 * 1024 * 1024
+        });
+        const canvas = this._createCanvas(result.width, result.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error(`ClipAsset ${assetId || '(unknown)'} Warp Grid context is unavailable`);
+        ctx.putImageData(new ImageData(result.pixels, result.width, result.height), 0, 0);
+        return { canvas, bounds: result.bounds };
     }
 
     _renderStaticLayer(ctx, layer, width, height) {
@@ -222,16 +350,20 @@ export class TimelineFrameCompositor {
         return true;
     }
 
-    _renderAsset(asset, width, height) {
-        const canvas = this._createCanvas(width, height);
+    _renderAsset(asset) {
+        const bounds = this._getAssetRasterBounds(asset);
+        if (!bounds) return null;
+        this._assertSurfaceSizeAllowed(bounds, `ClipAsset ${asset.id || '(unknown)'}`);
+
+        const canvas = this._createCanvas(bounds.width, bounds.height);
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
 
-        const rendered = this._renderAssetLayerGroup(ctx, asset, null, width, height);
-        return rendered ? canvas : null;
+        const rendered = this._renderAssetLayerGroup(ctx, asset, null, bounds);
+        return rendered ? { canvas, bounds } : null;
     }
 
-    _renderAssetLayerGroup(ctx, asset, parentId, width, height) {
+    _renderAssetLayerGroup(ctx, asset, parentId, surfaceBounds) {
         const layers = asset.internalLayers || [];
         const siblings = layers.filter(layer => (layer.parentLayerId || null) === (parentId || null));
         let rendered = false;
@@ -241,10 +373,10 @@ export class TimelineFrameCompositor {
             if (!layer || layer.visible === false) continue;
 
             if (layer.type === 'folder') {
-                const folderCanvas = this._createCanvas(width, height);
+                const folderCanvas = this._createCanvas(surfaceBounds.width, surfaceBounds.height);
                 const folderCtx = folderCanvas.getContext('2d');
                 if (!folderCtx) continue;
-                const hasFolderContent = this._renderAssetLayerGroup(folderCtx, asset, layer.id, width, height);
+                const hasFolderContent = this._renderAssetLayerGroup(folderCtx, asset, layer.id, surfaceBounds);
                 const opacity = this._getOwnOpacity(layer);
                 if (!hasFolderContent || opacity <= 0) continue;
 
@@ -264,12 +396,16 @@ export class TimelineFrameCompositor {
             const snapshotCanvas = this._getSnapshotCanvas(snapshot);
             if (!snapshotCanvas) continue;
 
-            const layerCanvas = this._createCanvas(width, height);
+            const layerCanvas = this._createCanvas(surfaceBounds.width, surfaceBounds.height);
             const layerCtx = layerCanvas.getContext('2d');
             if (!layerCtx) continue;
             const rasterBounds = this._getSnapshotRasterBounds(snapshot);
-            layerCtx.drawImage(snapshotCanvas, rasterBounds.x, rasterBounds.y);
-            this._applyClippingMask(asset, layer, layerCtx, width, height);
+            layerCtx.drawImage(
+                snapshotCanvas,
+                rasterBounds.x - surfaceBounds.x,
+                rasterBounds.y - surfaceBounds.y
+            );
+            this._applyClippingMask(asset, layer, layerCtx, surfaceBounds);
 
             ctx.save();
             ctx.globalAlpha = opacity;
@@ -282,16 +418,16 @@ export class TimelineFrameCompositor {
         return rendered;
     }
 
-    _applyClippingMask(asset, layer, ctx, width, height) {
+    _applyClippingMask(asset, layer, ctx, surfaceBounds) {
         const owner = this._findClippingOwner(asset, layer);
         if (!owner) return;
         const source = owner ? this._findClippingSource(asset, owner) : null;
         if (!source) {
-            ctx.clearRect(0, 0, width, height);
+            ctx.clearRect(0, 0, surfaceBounds.width, surfaceBounds.height);
             return;
         }
 
-        const maskCanvas = this._createCanvas(width, height);
+        const maskCanvas = this._createCanvas(surfaceBounds.width, surfaceBounds.height);
         const maskCtx = maskCanvas.getContext('2d');
         const sourceLayers = source.type === 'folder'
             ? this._getFolderRasterDescendants(asset, source.id)
@@ -304,14 +440,18 @@ export class TimelineFrameCompositor {
             const sourceCanvas = this._getSnapshotCanvas(snapshot);
             if (!sourceCanvas) return;
             const rasterBounds = this._getSnapshotRasterBounds(snapshot);
-            maskCtx.drawImage(sourceCanvas, rasterBounds.x, rasterBounds.y);
+            maskCtx.drawImage(
+                sourceCanvas,
+                rasterBounds.x - surfaceBounds.x,
+                rasterBounds.y - surfaceBounds.y
+            );
             hasMask = true;
         });
         if (!hasMask) {
-            ctx.clearRect(0, 0, width, height);
+            ctx.clearRect(0, 0, surfaceBounds.width, surfaceBounds.height);
             return;
         }
-        const maskImage = maskCtx.getImageData(0, 0, width, height);
+        const maskImage = maskCtx.getImageData(0, 0, surfaceBounds.width, surfaceBounds.height);
         for (let offset = 0; offset < maskImage.data.length; offset += 4) {
             const alpha = maskImage.data[offset + 3] > 0 ? 255 : 0;
             maskImage.data[offset] = 255;
@@ -329,13 +469,15 @@ export class TimelineFrameCompositor {
         ctx.restore();
     }
 
-    _drawTransformedClip(ctx, canvas, transform = {}, width, height) {
+    _drawTransformedClip(ctx, surface, transform = {}, width, height) {
+        const canvas = surface?.canvas || surface;
+        const bounds = surface?.bounds || { x: 0, y: 0, width: canvas.width, height: canvas.height };
         if (transform.blendMode && transform.blendMode !== 'normal') {
             const transformedCanvas = this._createCanvas(width, height);
             const transformedCtx = transformedCanvas.getContext('2d');
             this._drawTransformedClip(
                 transformedCtx,
-                canvas,
+                { canvas, bounds },
                 { ...transform, blendMode: 'normal' },
                 width,
                 height
@@ -367,8 +509,34 @@ export class TimelineFrameCompositor {
         ctx.translate(pivotX + x, pivotY + y);
         ctx.rotate(rotation);
         ctx.scale(scaleX, scaleY);
-        ctx.drawImage(canvas, -pivotX, -pivotY);
+        ctx.drawImage(canvas, bounds.x - pivotX, bounds.y - pivotY);
         ctx.restore();
+    }
+
+    _getAssetRasterBounds(asset) {
+        const bounds = [];
+        for (const layer of asset?.internalLayers || []) {
+            if (!layer || layer.type === 'folder' || !this._isEffectivelyVisible(asset, layer)) continue;
+            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+            if (!snapshot?.pixels || !snapshot.width || !snapshot.height) continue;
+            bounds.push(this._getSnapshotRasterBounds(snapshot));
+        }
+        return unionRasterBounds(bounds);
+    }
+
+    _assertSurfaceSizeAllowed(bounds, label = 'Raster surface') {
+        const maxAxis = this.layerSystem?._getMaxRenderTextureSize?.() || 8192;
+        const result = validateRasterSurfaceSize(bounds, {
+            maxAxis,
+            maxPixels: 16 * 1024 * 1024
+        });
+        if (!result.ok) {
+            throw new Error(
+                `${label} union surface exceeds the safe raster limit `
+                + `(${result.bounds?.width || 0}x${result.bounds?.height || 0}, ${result.reason})`
+            );
+        }
+        return result.bounds;
     }
 
     _drawBlendClip(ctx, sourceCanvas, width, height, blendMode, blendStrength = 1) {

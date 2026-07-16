@@ -684,6 +684,7 @@ export class ProjectManager {
         if (!animationTable) return false;
 
         animationTable.stop?.();
+        animationTable._exitWarpGridEditMode?.();
         animationTable._restoreVisibility?.();
         animationTable.resetLaneReferenceMode?.();
         animationTable.model = new TimelineModel();
@@ -715,6 +716,7 @@ export class ProjectManager {
         if (!animationTable) return false;
 
         animationTable.stop?.();
+        animationTable._exitWarpGridEditMode?.();
         animationTable._restoreVisibility?.();
         animationTable.resetLaneReferenceMode?.();
         animationTable.model = new TimelineModel(animationData || {});

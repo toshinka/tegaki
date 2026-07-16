@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-import { Container, Graphics, RenderTexture, Sprite, Texture } from 'pixi.js';
+import { Container, Graphics, Matrix, Mesh, MeshGeometry, RenderTexture, Sprite, Texture } from 'pixi.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { TimelineModel, ClipAssetModel, DrawingSnapshotModel } from '../system/animation/animation-data-model.js';
@@ -22,6 +22,26 @@ import {
     resolveDirectionalTransformDragMode
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
+import {
+    findAdjacentClipDeformerKeyFrame,
+    getClipDeformerKeyAtFrame,
+    listClipDeformerKeyframes,
+    normalizeClipDeformer,
+    sampleClipDeformer
+} from '../system/animation/clip-deformer.js';
+import { createRectControlMeshDeformer } from '../system/animation/control-mesh-deformer.js';
+import {
+    createControlMeshEdges,
+    normalizeControlMeshGridDimensions
+} from '../system/animation/control-mesh-topology.js';
+import { createControlMeshRenderData } from '../system/animation/control-mesh-rasterizer.js';
+import {
+    areWarpGridPointArraysEqual,
+    createWarpGridDeformer,
+    rebaseWarpGridBind
+} from '../system/animation/warp-grid-deformer.js';
+import { createWarpGridMeshData } from '../system/animation/warp-grid-rasterizer.js';
+import { TimelineFrameCompositor } from '../system/animation/timeline-frame-compositor.js';
 import {
     applyMotionKeyClipboardPayload,
     createMotionKeyClipboardPayload
@@ -39,6 +59,7 @@ import {
 import { formatCopyFeedback, showFeedbackToast } from './feedback-toast.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { transformAnchorSite } from './transform-anchor-site.js';
+import { warpGridOverlay } from './warp-grid-overlay.js';
 import { collectCafMemoryProfile } from '../system/animation/caf-memory-profiler.js';
 import {
     findInternalClippingOwner,
@@ -46,7 +67,11 @@ import {
     getInternalFolderRasterDescendants,
     resolveInternalClippingContract
 } from '../system/animation/internal-layer-clipping-contract.js';
-import { normalizeRasterBounds } from '../system/raster-bounds.js';
+import {
+    normalizeRasterBounds,
+    unionRasterBounds,
+    validateRasterSurfaceSize
+} from '../system/raster-bounds.js';
 import {
     CLIPPING_MODES,
     applyClippingAlpha,
@@ -76,10 +101,15 @@ export class AnimationTablePopup {
         this._motionAnchorClip = null;
         this._motionCanvas = null;
         this._motionCanvasGesture = null;
+        this._motionWindowFinishPointer = null;
+        this._warpGridEditingClipId = null;
+        this._warpGridGesture = null;
         this._motionWheelHistory = null;
         this._motionWheelTimer = null;
         this._motionAnchorBeforeState = null;
         this._motionKeyClipboard = null;
+        this._warpKeyClipboard = null;
+        this._pendingShowTransformGate = null;
         this.isVisible = false;
         this.initialized = false;
         this._updateTimeout = null;
@@ -147,6 +177,11 @@ export class AnimationTablePopup {
         this._isClipMoving = false;
         this._clipMovePreviewSlot = null;
 
+        // CLIP MOTION表示中のTimelineは、CAF配置ではなくkey位置編集を優先する。
+        this._motionTimelineKeyKind = 'motion';
+        this._motionKeyDrag = null;
+        this._motionKeyClickSuppressed = false;
+
         // Timeline viewportの修飾ドラッグ操作
         this._timelineViewportGesture = null;
         this._timelineGestureMoved = false;
@@ -165,6 +200,7 @@ export class AnimationTablePopup {
         this.isDrawingPreviewSuspended = false;
         this._attributePreviewSyncFrame = null;
         this._drawingHistoryBeforeStates = new Map();
+        this._workingRestoreBlock = null;
 
         // 再生スコープ関連
         this.playbackScope = 'all'; // 'all' | 'activeLane' | 'includedLanes'
@@ -199,7 +235,8 @@ export class AnimationTablePopup {
 
     show() {
         if (!this.initialized) this.initialize();
-        if (this.isVisible) return;
+        if (this.isVisible || this._pendingShowTransformGate) return;
+        if (this._deferShowUntilLayerTransformCommitted()) return;
 
         this._saveSelectedClipFromWorkingLayers();
         
@@ -218,6 +255,48 @@ export class AnimationTablePopup {
         this._requestLayerPanelSync();
     }
 
+    _deferShowUntilLayerTransformCommitted() {
+        const commitState = this.layerSystem?.getLayerMoveCommitState?.();
+        if (!commitState?.active) return false;
+
+        if (!commitState.layerId) {
+            showFeedbackToast('変形対象を確認できないため、アニメテーブルを開けません。', { duration: 2600 });
+            return true;
+        }
+
+        const gate = {
+            layerId: commitState.layerId,
+            requiresCommit: commitState.hasPendingTransform === true,
+            handler: null
+        };
+        gate.handler = (payload = {}) => {
+            if (this._pendingShowTransformGate !== gate || payload.layerId !== gate.layerId) return;
+
+            this.eventBus.off('layer:transform-exit', gate.handler);
+            this._pendingShowTransformGate = null;
+            const canOpen = payload.cancelled !== true
+                && (!gate.requiresCommit || payload.confirmed === true);
+            if (!canOpen) {
+                showFeedbackToast('レイヤー変形を確定できないため、アニメテーブルを開けません。', { duration: 2600 });
+                return;
+            }
+
+            queueMicrotask(() => this.show());
+        };
+
+        this._pendingShowTransformGate = gate;
+        this.eventBus.on('layer:transform-exit', gate.handler);
+        try {
+            this.layerSystem.exitLayerMoveMode();
+        } catch (error) {
+            this.eventBus.off('layer:transform-exit', gate.handler);
+            this._pendingShowTransformGate = null;
+            console.error('[AnimationTablePopup] Failed to commit layer transform before opening:', error);
+            showFeedbackToast('レイヤー変形を確定できないため、アニメテーブルを開けません。', { duration: 2600 });
+        }
+        return true;
+    }
+
     hide() {
         if (!this.panel) return;
         this.stop();
@@ -229,6 +308,7 @@ export class AnimationTablePopup {
         this._invalidateSnapshotTextureCache();
         this.panel.style.display = 'none';
         this.setMotionWindowOpen(false);
+        this._exitWarpGridEditMode();
         this.isVisible = false;
         this._requestLayerPanelSync({ force: true });
         this._scheduleLaneReferencePreviewUpdate();
@@ -492,7 +572,9 @@ export class AnimationTablePopup {
     }
 
     _enterTransformEditPreviewMode() {
-        if (!this.isVisible || !this.selectedCelId || this.isTransformPreviewSuspended) return;
+        // Tableを閉じた標準表示でもCAF working Layerは編集adapterとして生きている。
+        // Folder代表Layerだけへ縮退させず、開Table時と同じpreview / History境界を使う。
+        if (!this.selectedCelId || this.isTransformPreviewSuspended) return;
 
         const asset = this._getSelectedAssetForInspector();
         this._transformHistoryBeforeState = asset
@@ -1118,6 +1200,7 @@ export class AnimationTablePopup {
                     cel.duration ?? '',
                     JSON.stringify(cel.transform || {}),
                     JSON.stringify(cel.transformKeyframes || []),
+                    JSON.stringify(cel.deformer || null),
                     snapshot?.id || '',
                     snapshot?.updatedAt || ''
                 ].join(':'));
@@ -1294,11 +1377,82 @@ export class AnimationTablePopup {
             return true;
         }
 
-        this._applyClipMotionToPreviewNode(root, cel, options.frameIndex);
+        let previewNode = root;
+        const frame = Number.isInteger(options.frameIndex)
+            ? options.frameIndex
+            : this.model.playback.currentFrame;
+        const deformer = sampleClipDeformer(
+            cel.deformer,
+            frame - cel.startFrame,
+            cel.duration
+        );
+        if (deformer) {
+            previewNode = this._createDeformerPreviewNode(
+                root,
+                asset,
+                internalLayers,
+                deformer,
+                options
+            );
+            if (!previewNode) {
+                root.destroy({ children: true, texture: false, baseTexture: false });
+                console.warn('[AnimationTable] Deformer preview surface could not be created', {
+                    clipId: cel.id,
+                    assetId: asset.id
+                });
+                return true;
+            }
+        }
 
-        this._tagPreviewNode(root, track, cel, options);
-        targetContainer.addChild(root);
+        this._applyClipMotionToPreviewNode(previewNode, cel, options.frameIndex);
+
+        this._tagPreviewNode(previewNode, track, cel, options);
+        targetContainer.addChild(previewNode);
         return true;
+    }
+
+    _createDeformerPreviewNode(root, asset, internalLayers, deformer, options = {}) {
+        const renderer = this.layerSystem?.app?.renderer || this.app?.renderer || window.coreEngine?.app?.renderer;
+        if (!renderer) return null;
+        const bounds = unionRasterBounds((internalLayers || []).map(layer => {
+            if (!layer || layer.type === 'folder' || !this._isInternalLayerEffectivelyVisible(asset, layer)) {
+                return null;
+            }
+            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+            return snapshot?.pixels ? this._getDrawingSnapshotRasterBounds(snapshot) : null;
+        }));
+        const surface = this._validateInternalMergeSurface(bounds);
+        if (!surface.ok) return null;
+        const sourceBounds = surface.bounds;
+        const meshData = deformer.type === 'control-mesh'
+            ? createControlMeshRenderData(deformer, sourceBounds)
+            : createWarpGridMeshData(deformer, sourceBounds);
+        if (!meshData) return null;
+
+        const renderTexture = RenderTexture.create({
+            width: sourceBounds.width,
+            height: sourceBounds.height
+        });
+        const alpha = root.alpha;
+        root.alpha = 1;
+        renderer.render({
+            container: root,
+            target: renderTexture,
+            transform: new Matrix().translate(-sourceBounds.x, -sourceBounds.y),
+            clear: true,
+            clearColor: [0, 0, 0, 0]
+        });
+        root.destroy({ children: true, texture: false, baseTexture: false });
+
+        const mesh = new Mesh({
+            geometry: new MeshGeometry(meshData),
+            texture: renderTexture
+        });
+        mesh.eventMode = 'none';
+        mesh.alpha = alpha;
+        mesh._tegakiOwnedPreviewTexture = renderTexture;
+        mesh._tegakiWarpGridPreview = true;
+        return mesh;
     }
 
     _renderInternalLayerPreviewGroup(container, asset, internalLayers, parentId, options = {}) {
@@ -1611,21 +1765,27 @@ export class AnimationTablePopup {
 
     _syncInternalFolderWorkingLayerTransform(sourceLayerId, transform) {
         if (!sourceLayerId || !transform || !this.layerSystem?.transform) return false;
-        const context = this._getSelectedInternalFolderTransformTargets();
-        if (!context) return false;
-        const sourceTarget = context.targets.find(entry => {
-            return entry.workingLayer?.layerData?.id === sourceLayerId;
-        });
-        if (!sourceTarget) return false;
+        const targetIds = this._internalFolderTransformContext?.targetWorkingLayerIds || [];
+        if (!targetIds.includes(sourceLayerId)) return false;
+        const workingLayerById = new Map(
+            (this.layerSystem.getLayers?.() || [])
+                .filter(layer => layer?.layerData?.id)
+                .map(layer => [layer.layerData.id, layer])
+        );
 
         const centerX = this.layerSystem.config?.canvas?.width / 2 || 0;
         const centerY = this.layerSystem.config?.canvas?.height / 2 || 0;
-        context.targets.forEach(({ workingLayer }) => {
-            const layerId = workingLayer?.layerData?.id;
+        targetIds.forEach(layerId => {
             if (!layerId || layerId === sourceLayerId) return;
+            const workingLayer = workingLayerById.get(layerId);
+            if (!workingLayer?.layerData?.isAnimationWorkingLayer) return;
             const nextTransform = structuredClone(transform);
             this.layerSystem.transform.setTransform(layerId, nextTransform);
             this.layerSystem.transform.applyTransform(workingLayer, nextTransform, centerX, centerY);
+            this.layerSystem.requestThumbnailUpdate?.(
+                this.layerSystem.getLayerIndex?.(workingLayer),
+                true
+            );
         });
         return true;
     }
@@ -2092,7 +2252,11 @@ export class AnimationTablePopup {
                 if (child.isCachedAsTexture) {
                     child.cacheAsTexture(false);
                 }
+                const ownedTexture = child._tegakiOwnedPreviewTexture;
                 child.destroy?.({ children: true, texture: false, baseTexture: false });
+                if (ownedTexture && !ownedTexture.destroyed) {
+                    ownedTexture.destroy(true);
+                }
             } catch (error) {
                 console.warn('[AnimationTable] Failed to destroy preview child', error);
             }
@@ -2326,6 +2490,10 @@ export class AnimationTablePopup {
 
         const entry = this.model.findClipEntry(this.selectedCelId);
         if (!entry) return;
+        if (this._isWorkingRestoreBlocked(entry.clip?.id)) {
+            this._showWorkingRestoreBlockedReason();
+            return false;
+        }
 
         const { lane, clip } = entry;
         const sourceLayerId = lane.sourceLayerId || lane.layerId;
@@ -2417,9 +2585,46 @@ export class AnimationTablePopup {
         if (!this.selectedCelId || !this.layerSystem) return false;
         const entry = this.model.findClipEntry(this.selectedCelId);
         if (!entry?.clip) return false;
+        if (this._isWorkingRestoreBlocked(entry.clip.id)) {
+            this._showWorkingRestoreBlockedReason();
+            return false;
+        }
         if (options.force !== true && !this._hasDirtyWorkingLayersForClip(entry.clip)) return false;
         this._captureSelectedClip({ silent: true, renderAfter: false });
         return true;
+    }
+
+    _isWorkingRestoreBlocked(clipId = this.selectedCelId) {
+        return Boolean(clipId && this._workingRestoreBlock?.clipId === clipId);
+    }
+
+    isSelectedWorkingRestoreBlocked() {
+        return this._isWorkingRestoreBlocked();
+    }
+
+    _setWorkingRestoreBlocked({ clip, asset, failures = [] } = {}) {
+        if (!clip?.id) return false;
+        const wasSameClip = this._workingRestoreBlock?.clipId === clip.id;
+        this._workingRestoreBlock = {
+            clipId: clip.id,
+            assetId: asset?.id || clip.assetId || null,
+            failures: failures.map(failure => ({ ...failure })),
+            blockedAt: Date.now()
+        };
+        if (!wasSameClip) this._showWorkingRestoreBlockedReason();
+        return true;
+    }
+
+    _clearWorkingRestoreBlockedAfterSuccessfulSwitch(clipId) {
+        if (!this._workingRestoreBlock || !clipId || this._workingRestoreBlock.clipId === clipId) return false;
+        this._workingRestoreBlock = null;
+        return true;
+    }
+
+    _showWorkingRestoreBlockedReason() {
+        window.projectManager?._showSaveToast?.(
+            'このCAFはRasterが大きすぎるか破損しているため原画編集を停止しています。別CAFへ移動しても保存正本は維持されます。'
+        );
     }
 
     _hasDirtyWorkingLayersForClip(clip) {
@@ -2497,6 +2702,11 @@ export class AnimationTablePopup {
 
         const layerId = data.layerId || data.data?.layerId;
         if (!layerId || !this._isAnimationWorkingLayerId(layerId)) return;
+        if (this._isWorkingRestoreBlocked()) {
+            window.BrushCore?.cancelStroke?.();
+            this._showWorkingRestoreBlockedReason();
+            return;
+        }
 
         const asset = this._getSelectedAssetForInspector();
         if (asset) {
@@ -2540,6 +2750,10 @@ export class AnimationTablePopup {
     _captureDrawingLayerToSelectedClip(workingLayerId, internalLayerId) {
         if (!workingLayerId || !internalLayerId || !this.layerSystem) return false;
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (entry?.clip && this._isWorkingRestoreBlocked(entry.clip.id)) {
+            this._showWorkingRestoreBlockedReason();
+            return false;
+        }
         const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
         const internalLayer = asset?.internalLayers?.find(layer => layer.id === internalLayerId);
         const workingLayer = (this.layerSystem.getLayers?.() || [])
@@ -2761,6 +2975,7 @@ export class AnimationTablePopup {
                     duration: clip.duration,
                     transform: this._cloneClipInstanceMetadata(clip.transform),
                     transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
+                    deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
                     physics: this._cloneClipInstanceMetadata(clip.physics),
                     laneOffset: laneIndex - anchorLaneIndex,
                     frameOffset: clip.startFrame - anchorEntry.clip.startFrame
@@ -2785,6 +3000,7 @@ export class AnimationTablePopup {
                 duration: anchorEntry.clip.duration,
                 transform: anchorItem.transform,
                 transformKeyframes: anchorItem.transformKeyframes,
+                deformer: anchorItem.deformer,
                 physics: anchorItem.physics,
                 copiedAt: Date.now()
             };
@@ -3290,11 +3506,17 @@ export class AnimationTablePopup {
 
         for (let index = 0; index < frameCount; index++) {
             const frame = frames[index] || {};
-            const pixels = this._normalizeImportedFramePixels(frame, size);
+            const frameSize = options.preserveFrameBounds === true
+                ? {
+                    width: Math.max(1, Math.round(frame.width || frame.rasterBounds?.width || 1)),
+                    height: Math.max(1, Math.round(frame.height || frame.rasterBounds?.height || 1))
+                }
+                : size;
+            const pixels = this._normalizeImportedFramePixels(frame, frameSize);
             const snapshot = new DrawingSnapshotModel({
-                width: size.width,
-                height: size.height,
-                rasterBounds: frame.rasterBounds || { x: 0, y: 0, width: size.width, height: size.height },
+                width: frameSize.width,
+                height: frameSize.height,
+                rasterBounds: frame.rasterBounds || { x: 0, y: 0, width: frameSize.width, height: frameSize.height },
                 pixels,
                 isBlank: this._isRasterSnapshotBlank({ pixels })
             });
@@ -3319,6 +3541,7 @@ export class AnimationTablePopup {
                 assetId: asset.id,
                 startFrame: startFrame + index,
                 duration: 1,
+                transform: options.clipTransforms?.[index] || undefined,
                 rasterSnapshot: this._createRasterSnapshotCompat(snapshot, {
                     drawingSnapshotId: snapshot.id,
                     includePixels: false
@@ -3330,6 +3553,11 @@ export class AnimationTablePopup {
             }
 
             created.push({ clip, asset, internalLayer, snapshot });
+        }
+
+        if (options.hideSourceClipId) {
+            const sourceEntry = this.model.findClipEntry(options.hideSourceClipId);
+            if (sourceEntry?.clip) sourceEntry.clip.visible = false;
         }
 
         const first = created[0];
@@ -3524,6 +3752,7 @@ export class AnimationTablePopup {
             visible: clip.visible,
             transform: this._cloneClipInstanceMetadata(clip.transform, {}),
             transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
+            deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
             physics: this._cloneClipInstanceMetadata(clip.physics, {}),
             rasterSnapshot: this._cloneRasterSnapshotForRuntime(clip.rasterSnapshot, {
                 includePixels: !assetId
@@ -3578,6 +3807,7 @@ export class AnimationTablePopup {
                 duration: this._copiedCelRef.duration || 1,
                 transform: this._copiedCelRef.transform,
                 transformKeyframes: this._copiedCelRef.transformKeyframes,
+                deformer: this._copiedCelRef.deformer,
                 physics: this._copiedCelRef.physics,
                 laneOffset: 0,
                 frameOffset: 0
@@ -3641,6 +3871,7 @@ export class AnimationTablePopup {
                 duration: placement.duration,
                 transform: this._cloneClipInstanceMetadata(item.transform),
                 transformKeyframes: this._cloneClipInstanceMetadata(item.transformKeyframes, []),
+                deformer: this._cloneClipInstanceMetadata(item.deformer, null),
                 physics: this._cloneClipInstanceMetadata(item.physics)
             });
             if (!newClip) {
@@ -4700,6 +4931,13 @@ export class AnimationTablePopup {
                 layerId,
                 targetLayerId: result.layer?.id || null
             });
+        } else if (result.reason === 'surface-limit') {
+            const width = result.bounds?.width || 0;
+            const height = result.bounds?.height || 0;
+            showFeedbackToast(
+                `結合範囲 ${width}×${height}px が安全上限を超えるため、元のLayerを維持しました。`,
+                { duration: 3200 }
+            );
         }
         return result;
     }
@@ -4741,18 +4979,14 @@ export class AnimationTablePopup {
 
         const sourceSnapshot = this.model.getDrawingSnapshot(sourceLayer.drawingSnapshotId);
         const targetSnapshot = this.model.getDrawingSnapshot(targetLayer.drawingSnapshotId);
-        const size = this._getCanvasSnapshotSize();
-        const width = Math.max(sourceSnapshot?.width || 0, targetSnapshot?.width || 0, size.width || 1);
-        const height = Math.max(sourceSnapshot?.height || 0, targetSnapshot?.height || 0, size.height || 1);
-        const mergedSnapshot = this._mergeInternalLayerSnapshots({
-            width,
-            height,
+        const mergeResult = this._mergeInternalLayerSnapshots({
             sourceSnapshot,
             targetSnapshot,
             sourceLayer,
             targetLayer
         });
-        if (!mergedSnapshot) return { ok: false, reason: 'snapshot-merge-failed' };
+        if (!mergeResult.ok) return mergeResult;
+        const mergedSnapshot = mergeResult.snapshot;
 
         this.model.drawingSnapshots.push(mergedSnapshot);
         targetLayer.drawingSnapshotId = mergedSnapshot.id;
@@ -4778,8 +5012,9 @@ export class AnimationTablePopup {
         }
 
         const subtreeIds = this._getInternalLayerSubtreeIds(asset, folderLayerId);
-        const mergedSnapshot = this._createInternalFolderCompositeSnapshot(asset, folderLayer);
-        if (!mergedSnapshot) return { ok: false, reason: 'snapshot-merge-failed' };
+        const mergeResult = this._createInternalFolderCompositeSnapshot(asset, folderLayer);
+        if (!mergeResult.ok) return mergeResult;
+        const mergedSnapshot = mergeResult.snapshot;
 
         this.model.drawingSnapshots.push(mergedSnapshot);
         const mergedLayer = this.model.createClipAssetInternalLayer({
@@ -4809,9 +5044,6 @@ export class AnimationTablePopup {
     }
 
     _createInternalFolderCompositeSnapshot(asset, folderLayer) {
-        const size = this._getCanvasSnapshotSize();
-        const width = Math.max(1, Math.round(size.width || 1));
-        const height = Math.max(1, Math.round(size.height || 1));
         const subtreeIds = this._getInternalLayerSubtreeIds(asset, folderLayer.id);
         const layersToDraw = (asset.internalLayers || [])
             .filter(layer => {
@@ -4821,25 +5053,36 @@ export class AnimationTablePopup {
                     && this._isInternalLayerEffectivelyVisible(asset, layer);
             })
             .reverse();
-        if (layersToDraw.length === 0) return null;
+        if (layersToDraw.length === 0) return { ok: false, reason: 'empty-folder' };
+
+        const snapshotsByLayerId = new Map();
+        const bounds = unionRasterBounds(layersToDraw.map(layer => {
+            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+            if (!snapshot?.pixels) return null;
+            snapshotsByLayerId.set(layer.id, snapshot);
+            return this._getDrawingSnapshotRasterBounds(snapshot);
+        }));
+        const surfaceCheck = this._validateInternalMergeSurface(bounds);
+        if (!surfaceCheck.ok) return surfaceCheck;
+        const surfaceBounds = surfaceCheck.bounds;
 
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = surfaceBounds.width;
+        canvas.height = surfaceBounds.height;
         const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
+        if (!ctx) return { ok: false, reason: 'canvas-context-unavailable' };
 
         let rendered = false;
         layersToDraw.forEach(layer => {
-            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+            const snapshot = snapshotsByLayerId.get(layer.id);
             if (!snapshot?.pixels) return;
 
             const sourceCanvas = document.createElement('canvas');
-            sourceCanvas.width = width;
-            sourceCanvas.height = height;
+            sourceCanvas.width = surfaceBounds.width;
+            sourceCanvas.height = surfaceBounds.height;
             const sourceCtx = sourceCanvas.getContext('2d');
             if (!sourceCtx) return;
-            this._putSnapshotPixels(sourceCtx, snapshot, width, height);
+            this._putSnapshotPixels(sourceCtx, snapshot, surfaceBounds);
 
             const clippingMode = getClippingMode(layer);
             if (clippingMode !== CLIPPING_MODES.NONE) {
@@ -4858,19 +5101,22 @@ export class AnimationTablePopup {
             rendered = true;
         });
 
-        if (!rendered) return null;
-        const imageData = ctx.getImageData(0, 0, width, height);
+        if (!rendered) return { ok: false, reason: 'snapshot-merge-failed' };
+        const imageData = ctx.getImageData(0, 0, surfaceBounds.width, surfaceBounds.height);
         const pixels = new Uint8ClampedArray(imageData.data);
         const hasPixels = pixels.some((value, index) => index % 4 === 3 && value > 0);
-        if (!hasPixels) return null;
+        if (!hasPixels) return { ok: false, reason: 'blank-result' };
 
-        return new DrawingSnapshotModel({
-            width,
-            height,
-            rasterBounds: { x: 0, y: 0, width, height },
-            pixels,
-            isBlank: false
-        });
+        return {
+            ok: true,
+            snapshot: new DrawingSnapshotModel({
+                width: surfaceBounds.width,
+                height: surfaceBounds.height,
+                rasterBounds: surfaceBounds,
+                pixels,
+                isBlank: false
+            })
+        };
     }
 
     _captureInternalLayerHistoryState(asset) {
@@ -5321,21 +5567,28 @@ export class AnimationTablePopup {
         return true;
     }
 
-    _mergeInternalLayerSnapshots({ width, height, sourceSnapshot, targetSnapshot, sourceLayer, targetLayer }) {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
+    _mergeInternalLayerSnapshots({ sourceSnapshot, targetSnapshot, sourceLayer, targetLayer }) {
+        const bounds = unionRasterBounds([sourceSnapshot, targetSnapshot].map(snapshot => {
+            return snapshot?.pixels ? this._getDrawingSnapshotRasterBounds(snapshot) : null;
+        }));
+        const surfaceCheck = this._validateInternalMergeSurface(bounds);
+        if (!surfaceCheck.ok) return surfaceCheck;
+        const surfaceBounds = surfaceCheck.bounds;
 
-        this._putSnapshotPixels(ctx, targetSnapshot, width, height);
+        const canvas = document.createElement('canvas');
+        canvas.width = surfaceBounds.width;
+        canvas.height = surfaceBounds.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return { ok: false, reason: 'canvas-context-unavailable' };
+
+        this._putSnapshotPixels(ctx, targetSnapshot, surfaceBounds);
 
         const sourceCanvas = document.createElement('canvas');
-        sourceCanvas.width = width;
-        sourceCanvas.height = height;
+        sourceCanvas.width = surfaceBounds.width;
+        sourceCanvas.height = surfaceBounds.height;
         const sourceCtx = sourceCanvas.getContext('2d');
-        if (!sourceCtx) return null;
-        this._putSnapshotPixels(sourceCtx, sourceSnapshot, width, height);
+        if (!sourceCtx) return { ok: false, reason: 'canvas-context-unavailable' };
+        this._putSnapshotPixels(sourceCtx, sourceSnapshot, surfaceBounds);
 
         const sourceClippingMode = getClippingMode(sourceLayer);
         if (sourceClippingMode !== CLIPPING_MODES.NONE && targetSnapshot?.pixels) {
@@ -5345,7 +5598,7 @@ export class AnimationTablePopup {
                 sourceCtx.globalCompositeOperation = sourceClippingMode === CLIPPING_MODES.INVERSE
                     ? 'destination-out'
                     : 'destination-in';
-                this._putSnapshotPixels(sourceCtx, targetSnapshot, width, height);
+                this._drawSnapshotPixels(sourceCtx, targetSnapshot, surfaceBounds);
                 sourceCtx.globalCompositeOperation = 'source-over';
             }
         }
@@ -5356,28 +5609,79 @@ export class AnimationTablePopup {
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = 'source-over';
 
-        const imageData = ctx.getImageData(0, 0, width, height);
-        return new DrawingSnapshotModel({
-            width,
-            height,
-            rasterBounds: { x: 0, y: 0, width, height },
-            pixels: new Uint8ClampedArray(imageData.data),
-            isBlank: false
+        const imageData = ctx.getImageData(0, 0, surfaceBounds.width, surfaceBounds.height);
+        return {
+            ok: true,
+            snapshot: new DrawingSnapshotModel({
+                width: surfaceBounds.width,
+                height: surfaceBounds.height,
+                rasterBounds: surfaceBounds,
+                pixels: new Uint8ClampedArray(imageData.data),
+                isBlank: false
+            })
+        };
+    }
+
+    _getDrawingSnapshotRasterBounds(snapshot) {
+        return normalizeRasterBounds(snapshot?.rasterBounds, {
+            x: 0,
+            y: 0,
+            width: snapshot?.width || 1,
+            height: snapshot?.height || 1
         });
     }
 
-    _putSnapshotPixels(ctx, snapshot, width, height) {
-        if (!snapshot?.pixels) return false;
-        const snapshotWidth = Math.max(1, Math.round(snapshot.width || width));
-        const snapshotHeight = Math.max(1, Math.round(snapshot.height || height));
-        const imageData = new ImageData(new Uint8ClampedArray(snapshot.pixels), snapshotWidth, snapshotHeight);
-        const bounds = normalizeRasterBounds(snapshot.rasterBounds, {
-            x: 0,
-            y: 0,
-            width: snapshotWidth,
-            height: snapshotHeight
+    _validateInternalMergeSurface(bounds) {
+        const maxAxis = this.layerSystem?._getMaxRenderTextureSize?.() || 8192;
+        const result = validateRasterSurfaceSize(bounds, {
+            maxAxis,
+            maxPixels: 16 * 1024 * 1024
         });
-        ctx.putImageData(imageData, bounds.x, bounds.y);
+        if (!result.ok) {
+            return {
+                ok: false,
+                reason: 'surface-limit',
+                detail: result.reason,
+                bounds: result.bounds
+            };
+        }
+        return { ok: true, bounds: result.bounds };
+    }
+
+    _putSnapshotPixels(ctx, snapshot, surfaceBounds) {
+        if (!snapshot?.pixels) return false;
+        const snapshotWidth = Math.max(1, Math.round(snapshot.width || surfaceBounds?.width || 1));
+        const snapshotHeight = Math.max(1, Math.round(snapshot.height || surfaceBounds?.height || 1));
+        const imageData = new ImageData(new Uint8ClampedArray(snapshot.pixels), snapshotWidth, snapshotHeight);
+        const bounds = this._getDrawingSnapshotRasterBounds(snapshot);
+        ctx.putImageData(
+            imageData,
+            bounds.x - (surfaceBounds?.x || 0),
+            bounds.y - (surfaceBounds?.y || 0)
+        );
+        return true;
+    }
+
+    _drawSnapshotPixels(ctx, snapshot, surfaceBounds) {
+        if (!snapshot?.pixels) return false;
+        const snapshotWidth = Math.max(1, Math.round(snapshot.width || surfaceBounds?.width || 1));
+        const snapshotHeight = Math.max(1, Math.round(snapshot.height || surfaceBounds?.height || 1));
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = snapshotWidth;
+        sourceCanvas.height = snapshotHeight;
+        const sourceCtx = sourceCanvas.getContext('2d');
+        if (!sourceCtx) return false;
+        sourceCtx.putImageData(
+            new ImageData(new Uint8ClampedArray(snapshot.pixels), snapshotWidth, snapshotHeight),
+            0,
+            0
+        );
+        const bounds = this._getDrawingSnapshotRasterBounds(snapshot);
+        ctx.drawImage(
+            sourceCanvas,
+            bounds.x - (surfaceBounds?.x || 0),
+            bounds.y - (surfaceBounds?.y || 0)
+        );
         return true;
     }
 
@@ -5685,6 +5989,10 @@ export class AnimationTablePopup {
         return this._updateClipMotionMetadataFromExternal('transformKeyframes', clipId, keyframes, options);
     }
 
+    updateClipDeformerFromExternal(clipId, deformer = null, options = {}) {
+        return this._updateClipMotionMetadataFromExternal('deformer', clipId, deformer, options);
+    }
+
     _getSelectedClipMotionFrame() {
         const motionClipId = this.selectedCelId || (this.isPlaying ? this._motionPlaybackClipId : null);
         const entry = motionClipId ? this.model.findClipEntry(motionClipId) : null;
@@ -5699,6 +6007,576 @@ export class AnimationTablePopup {
             key: keyIndex >= 0 ? entry.clip.transformKeyframes[keyIndex] : null,
             sampled: sampleClipTransform(entry.clip, this.model.playback.currentFrame)
         };
+    }
+
+    _getWarpGridEditState() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.clip || entry.clip.duration <= 1) return null;
+        const localFrame = this.model.playback.currentFrame - entry.clip.startFrame;
+        if (localFrame < 0 || localFrame >= entry.clip.duration) return null;
+        const deformer = normalizeClipDeformer(entry.clip.deformer);
+        if (!deformer) return null;
+        const sampled = sampleClipDeformer(deformer, localFrame, entry.clip.duration);
+        if (!sampled?.bindBounds) return null;
+        const key = getClipDeformerKeyAtFrame(deformer, localFrame, entry.clip.duration);
+        return { entry, localFrame, deformer, sampled, key };
+    }
+
+    _getWarpGridWorldPoints(state = this._getWarpGridEditState()) {
+        if (!state) return [];
+        const bounds = state.sampled.bindBounds;
+        const config = window.TEGAKI_CONFIG?.canvas || {};
+        const transform = sampleClipTransform(state.entry.clip, this.model.playback.currentFrame);
+        const matrix = createCenteredTransformMatrix(
+            transform,
+            (config.width || 400) / 2,
+            (config.height || 400) / 2
+        );
+        return state.sampled.points.map(point => applyTransformMatrix(
+            matrix,
+            bounds.x + point.x * bounds.width,
+            bounds.y + point.y * bounds.height
+        ));
+    }
+
+    _isWarpGridEditModeActive() {
+        const state = this._getWarpGridEditState();
+        return !this.isPlaying
+            && !!state
+            && !!state.key
+            && state.entry.clip.id === this._warpGridEditingClipId
+            && warpGridOverlay.isActive();
+    }
+
+    _enterWarpGridEditMode(entry) {
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        if (!entry?.clip || !coordinateSystem
+            || !['warp-grid', 'control-mesh'].includes(entry.clip.deformer?.type)) return false;
+        const state = this._getWarpGridEditState();
+        if (!state?.key || state.entry.clip.id !== entry.clip.id) return false;
+        transformAnchorSite.deactivate('clip-motion');
+        this._motionAnchorClip = null;
+        this._warpGridEditingClipId = entry.clip.id;
+        const activated = warpGridOverlay.activate({
+            coordinateSystem,
+            columns: state.deformer.columns,
+            rows: state.deformer.rows,
+            edges: state.deformer.type === 'control-mesh'
+                ? createControlMeshEdges(state.deformer.triangles)
+                : undefined,
+            pointCount: state.deformer.type === 'control-mesh'
+                ? state.deformer.bindPoints.length
+                : undefined,
+            getWorldPoints: () => this._getWarpGridWorldPoints(),
+            shouldDisplay: () => this.isVisible
+                && this.motionPanel?.style.display !== 'none'
+                && !this.isPlaying
+                && this._warpGridEditingClipId === entry.clip.id
+                && this.selectedCelId === entry.clip.id
+                && !!this._getWarpGridEditState()?.key
+        });
+        if (!activated) {
+            this._warpGridEditingClipId = null;
+            return false;
+        }
+        this._updateMotionCanvasCursor();
+        return true;
+    }
+
+    _exitWarpGridEditMode(options = {}) {
+        const wasActive = !!this._warpGridEditingClipId || warpGridOverlay.isActive();
+        this._warpGridEditingClipId = null;
+        this._warpGridGesture = null;
+        warpGridOverlay.deactivate();
+        this._updateMotionCanvasCursor();
+        if (wasActive && options.render === true) this.render();
+        return wasActive;
+    }
+
+    _getWarpGridAssetBounds(entry) {
+        const asset = entry?.clip ? this.model.getClipAsset(entry.clip.assetId) : null;
+        const bounds = unionRasterBounds((asset?.internalLayers || []).map(layer => {
+            if (!layer || layer.type === 'folder' || !this._isInternalLayerEffectivelyVisible(asset, layer)) {
+                return null;
+            }
+            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+            return snapshot?.pixels ? this._getDrawingSnapshotRasterBounds(snapshot) : null;
+        }));
+        const surface = this._validateInternalMergeSurface(bounds);
+        return surface.ok ? surface.bounds : null;
+    }
+
+    _activateSelectedClipWarpGrid() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.clip || entry.clip.duration <= 1 || this.isPlaying) return false;
+        if (['warp-grid', 'control-mesh'].includes(entry.clip.deformer?.type)) {
+            if (this._isWarpGridEditModeActive()) return true;
+            const state = this._getWarpGridEditState();
+            if (!state) return false;
+            if (!state.key) {
+                const beforeState = this._captureTimelineHistoryState();
+                if (!this._upsertSelectedWarpGridKey(state.sampled.points)) return false;
+                this._recordTimelineHistory(
+                    beforeState,
+                    this._captureTimelineHistoryState(),
+                    'caf-clip-warp-grid-key',
+                    { type: 'caf-clip-warp-grid-key', clipId: entry.clip.id, frame: state.localFrame }
+                );
+            }
+            this._enterWarpGridEditMode(entry);
+            this.render();
+            return true;
+        }
+        const beforeState = this._captureTimelineHistoryState();
+        const bindBounds = this._getWarpGridAssetBounds(entry);
+        if (!bindBounds) {
+            showFeedbackToast('Warp Gridを作成できるRaster範囲がありません');
+            return false;
+        }
+        const localFrame = this.model.playback.currentFrame - entry.clip.startFrame;
+        const deformer = createWarpGridDeformer({
+            bindBounds
+        });
+        deformer.keyframes = [{
+            frame: localFrame,
+            interpolation: 'linear',
+            points: deformer.points.map(point => ({ ...point }))
+        }];
+        this.model.setClipDeformer(entry.clip.id, deformer);
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            'caf-clip-warp-grid',
+            { type: 'caf-clip-warp-grid', clipId: entry.clip.id }
+        );
+        this._enterWarpGridEditMode(entry);
+        this.render();
+        return true;
+    }
+
+    _createSelectedControlMesh(columns, rows) {
+        const dimensions = normalizeControlMeshGridDimensions(columns, rows);
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!dimensions || !entry?.clip || entry.clip.duration <= 1 || this.isPlaying) return false;
+        if (entry.clip.deformer) {
+            showFeedbackToast('既存Deformerを削除してから新しいControl Meshを作成してください');
+            return false;
+        }
+        const bindBounds = this._getWarpGridAssetBounds(entry);
+        if (!bindBounds) {
+            showFeedbackToast('Control Meshを作成できるRaster範囲がありません');
+            return false;
+        }
+        const beforeState = this._captureTimelineHistoryState();
+        const localFrame = this.model.playback.currentFrame - entry.clip.startFrame;
+        const deformer = createRectControlMeshDeformer({
+            columns: dimensions.columns,
+            rows: dimensions.rows,
+            bindBounds
+        });
+        if (!deformer) return false;
+        deformer.keyframes = [{
+            frame: localFrame,
+            interpolation: 'linear',
+            points: deformer.points.map(point => ({ ...point }))
+        }];
+        const result = this.model.setClipDeformer(entry.clip.id, deformer);
+        if (!result?.ok) return false;
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            'caf-clip-control-mesh-create',
+            {
+                type: 'caf-clip-control-mesh-create',
+                clipId: entry.clip.id,
+                columns: dimensions.columns,
+                rows: dimensions.rows,
+                pointCount: dimensions.pointCount
+            }
+        );
+        this._enterWarpGridEditMode(entry);
+        this.render();
+        showFeedbackToast(`Control Mesh ${dimensions.columns}×${dimensions.rows}（${dimensions.pointCount} points）を作成しました`);
+        return true;
+    }
+
+    _syncControlMeshCreationControls() {
+        const panel = this.motionPanel;
+        const columnsInput = panel?.querySelector('#anim-control-mesh-columns');
+        const rowsInput = panel?.querySelector('#anim-control-mesh-rows');
+        const count = panel?.querySelector('#anim-control-mesh-point-count');
+        const createButton = panel?.querySelector('#anim-control-mesh-create-btn');
+        if (!columnsInput || !rowsInput || !count || !createButton) return null;
+        const dimensions = normalizeControlMeshGridDimensions(
+            Number(columnsInput.value),
+            Number(rowsInput.value)
+        );
+        const rawColumns = Number(columnsInput.value);
+        const rawRows = Number(rowsInput.value);
+        const rawCount = Number.isFinite(rawColumns) && Number.isFinite(rawRows)
+            ? rawColumns * rawRows
+            : null;
+        count.textContent = dimensions
+            ? `${dimensions.pointCount} / 256 points`
+            : `${Number.isFinite(rawCount) && rawCount >= 0 ? rawCount : '—'} / 256 points`;
+        count.classList.toggle('is-invalid', !dimensions);
+        createButton.disabled = !dimensions;
+        createButton.title = dimensions
+            ? `${dimensions.columns}×${dimensions.rows}、${dimensions.pointCount}点のControl Meshを作成`
+            : '各軸2〜32、総点数256以下の整数を入力してください';
+        return dimensions;
+    }
+
+    _toggleSelectedClipWarpGrid() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (entry?.clip?.id && this._isWarpGridEditModeActive()) {
+            this._exitWarpGridEditMode();
+            this.render();
+            return true;
+        }
+        return this._activateSelectedClipWarpGrid();
+    }
+
+    _refitSelectedWarpGridBounds() {
+        const state = this._getWarpGridEditState();
+        if (!state || this.isPlaying) return false;
+        const bindBounds = this._getWarpGridAssetBounds(state.entry);
+        if (!bindBounds) {
+            showFeedbackToast('Bind範囲へ使えるRasterがありません');
+            return false;
+        }
+        const current = state.deformer.bindBounds;
+        if (current && ['x', 'y', 'width', 'height'].every(name => (
+            Math.abs(current[name] - bindBounds[name]) <= 1e-6
+        ))) return false;
+
+        const nextDeformer = rebaseWarpGridBind(state.deformer, { bindBounds });
+        if (!nextDeformer) return false;
+        return this._commitSelectedWarpGridDeformer(
+            nextDeformer,
+            'caf-clip-warp-grid-bind-refit',
+            { previousBounds: current ? { ...current } : null, bindBounds: { ...bindBounds } }
+        );
+    }
+
+    async _bakeSelectedWarpGridToCafs() {
+        const state = this._getWarpGridEditState();
+        if (!state || this.isPlaying) return false;
+        const sourceClip = state.entry.clip;
+        const sourceAsset = this.model.getClipAsset(sourceClip.assetId);
+        if (!sourceAsset) return false;
+
+        this._exitWarpGridEditMode();
+        this._saveSelectedClipFromWorkingLayers();
+        const size = this._getCanvasSnapshotSize();
+        const compositor = new TimelineFrameCompositor(this.model, this.layerSystem);
+        const frames = [];
+        const clipTransforms = [];
+        const maxHistoryBytes = historyManager.getUsage?.().maxBytes || (512 * 1024 * 1024);
+        let totalPixelBytes = 0;
+
+        try {
+            for (let localFrame = 0; localFrame < sourceClip.duration; localFrame++) {
+                const frameIndex = sourceClip.startFrame + localFrame;
+                const surface = compositor.renderClipFrameSurface(sourceClip.id, frameIndex, {
+                    sourceWidth: size.width,
+                    sourceHeight: size.height
+                });
+                const ctx = surface?.canvas?.getContext?.('2d');
+                if (!surface || !ctx) throw new Error(`Local F${localFrame + 1}をBakeできません`);
+                const pixels = new Uint8ClampedArray(
+                    ctx.getImageData(0, 0, surface.canvas.width, surface.canvas.height).data
+                );
+                totalPixelBytes += pixels.byteLength;
+                if (totalPixelBytes > maxHistoryBytes) {
+                    throw new Error(`Bake結果がHistory上限を超えます (${Math.ceil(totalPixelBytes / 1048576)}MB)`);
+                }
+                frames.push({
+                    width: surface.canvas.width,
+                    height: surface.canvas.height,
+                    rasterBounds: { ...surface.bounds },
+                    pixels
+                });
+                clipTransforms.push({
+                    blendMode: surface.blendMode,
+                    blendStrength: surface.blendStrength
+                });
+                await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+        } catch (error) {
+            showFeedbackToast(error?.message || 'Warp Bakeに失敗しました');
+            this.render();
+            return false;
+        }
+
+        const imported = this.importImageSequenceAsCafs(frames, {
+            startFrame: sourceClip.startFrame,
+            name: `${sourceAsset.name || 'Warp'} Bake`,
+            kind: 'warp-bake',
+            source: 'warp-grid-bake',
+            preserveFrameBounds: true,
+            clipTransforms,
+            hideSourceClipId: sourceClip.id
+        });
+        if (!imported) return false;
+        showFeedbackToast(`Warpを${frames.length} FrameのCAF列へBakeしました（元Clipは非表示で保持）`);
+        return true;
+    }
+
+    _upsertSelectedWarpGridKey(points) {
+        const state = this._getWarpGridEditState();
+        if (!state || !Array.isArray(points)
+            || points.length !== state.deformer.bindPoints.length) return false;
+        const previous = state.deformer.keyframes.findLast(key => key?.frame === state.localFrame);
+        const key = {
+            frame: state.localFrame,
+            interpolation: previous?.interpolation === 'hold' ? 'hold' : 'linear',
+            points: points.map(point => ({ x: point.x, y: point.y }))
+        };
+        state.entry.clip.deformer = normalizeClipDeformer({
+            ...state.deformer,
+            keyframes: state.deformer.keyframes
+                .filter(item => item?.frame !== state.localFrame)
+                .concat(key)
+                .sort((left, right) => left.frame - right.frame)
+        });
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        return true;
+    }
+
+    _navigateSelectedWarpGridKey(direction) {
+        const state = this._getWarpGridEditState();
+        if (!state || this.isPlaying) return false;
+        const targetLocalFrame = findAdjacentClipDeformerKeyFrame(
+            state.deformer,
+            state.localFrame,
+            direction,
+            state.entry.clip.duration
+        );
+        if (!Number.isInteger(targetLocalFrame)) return false;
+
+        this.model.setCurrentFrame(state.entry.clip.startFrame + targetLocalFrame);
+        this._syncWorkingLayersForCurrentFrame();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this.render();
+        this._requestLayerPanelSync();
+        this.eventBus?.emit('animation:frame-changed', {
+            frameIndex: this.model.playback.currentFrame,
+            direction: direction < 0 ? 'previous-warp-key' : 'next-warp-key'
+        });
+        return true;
+    }
+
+    _findAdjacentMotionKeyFrame(state, direction) {
+        if (!state || !Number.isFinite(direction) || direction === 0) return null;
+        const frames = (state.entry.clip.transformKeyframes || [])
+            .map(key => Number(key?.frame))
+            .filter(frame => Number.isInteger(frame)
+                && frame >= 0
+                && frame < state.entry.clip.duration)
+            .sort((left, right) => left - right);
+        if (direction < 0) return frames.findLast(frame => frame < state.localFrame) ?? null;
+        return frames.find(frame => frame > state.localFrame) ?? null;
+    }
+
+    _navigateSelectedMotionKey(direction) {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state || this.isPlaying) return false;
+        const targetLocalFrame = this._findAdjacentMotionKeyFrame(state, direction);
+        if (!Number.isInteger(targetLocalFrame)) return false;
+        this.model.setCurrentFrame(state.entry.clip.startFrame + targetLocalFrame);
+        this._syncWorkingLayersForCurrentFrame();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this.render();
+        this._requestLayerPanelSync();
+        this.eventBus?.emit('animation:frame-changed', {
+            frameIndex: this.model.playback.currentFrame,
+            direction: direction < 0 ? 'previous-motion-key' : 'next-motion-key'
+        });
+        return true;
+    }
+
+    _commitSelectedWarpGridDeformer(nextDeformer, historyName, meta = {}, options = {}) {
+        const state = this._getWarpGridEditState();
+        if (!state || this.isPlaying) return false;
+        const beforeState = this._captureTimelineHistoryState();
+        const result = this.model.setClipDeformer(state.entry.clip.id, nextDeformer);
+        if (!result?.ok) return false;
+
+        if (options.exitEditMode === true) this._exitWarpGridEditMode();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            historyName,
+            {
+                type: historyName,
+                clipId: state.entry.clip.id,
+                frame: state.localFrame,
+                ...meta
+            }
+        );
+        this.render();
+        return true;
+    }
+
+    _resetSelectedWarpGridKey() {
+        const state = this._getWarpGridEditState();
+        if (!state?.key || this.isPlaying) return false;
+        if (areWarpGridPointArraysEqual(state.key.points, state.deformer.bindPoints)) return false;
+        const resetKey = {
+            ...state.key,
+            points: state.deformer.bindPoints.map(point => ({ ...point }))
+        };
+        const nextDeformer = normalizeClipDeformer({
+            ...state.deformer,
+            keyframes: state.deformer.keyframes
+                .filter(key => key?.frame !== state.localFrame)
+                .concat(resetKey)
+                .sort((left, right) => left.frame - right.frame)
+        });
+        return this._commitSelectedWarpGridDeformer(
+            nextDeformer,
+            'caf-clip-warp-grid-key-reset'
+        );
+    }
+
+    _copySelectedWarpGridKey() {
+        const state = this._getWarpGridEditState();
+        if (!state?.key || this.isPlaying) return false;
+        this._warpKeyClipboard = {
+            topologySignature: this._getDeformerTopologySignature(state.deformer),
+            interpolation: state.key.interpolation === 'hold' ? 'hold' : 'linear',
+            points: state.key.points.map(point => ({ x: point.x, y: point.y }))
+        };
+        showFeedbackToast(formatCopyFeedback('warp-key'));
+        this.render();
+        return true;
+    }
+
+    _pasteSelectedWarpGridKey() {
+        const state = this._getWarpGridEditState();
+        if (!state || !this._warpKeyClipboard || this.isPlaying) return false;
+        if (this._warpKeyClipboard.topologySignature !== this._getDeformerTopologySignature(state.deformer)) {
+            showFeedbackToast('コピー元と現在のDeformerでTopologyが異なります');
+            return false;
+        }
+        const key = {
+            frame: state.localFrame,
+            interpolation: this._warpKeyClipboard.interpolation,
+            points: this._warpKeyClipboard.points.map(point => ({ ...point }))
+        };
+        const nextDeformer = normalizeClipDeformer({
+            ...state.deformer,
+            keyframes: state.deformer.keyframes
+                .filter(item => item?.frame !== state.localFrame)
+                .concat(key)
+                .sort((left, right) => left.frame - right.frame)
+        });
+        return this._commitSelectedWarpGridDeformer(
+            nextDeformer,
+            'caf-clip-warp-grid-key-paste',
+            { frame: state.localFrame }
+        );
+    }
+
+    _getDeformerTopologySignature(deformer) {
+        if (deformer?.type === 'control-mesh') {
+            return `control-mesh:${deformer.bindPoints?.length || 0}:${(deformer.triangles || [])
+                .map(triangle => triangle.join(','))
+                .join('|')}`;
+        }
+        return 'warp-grid:4x4';
+    }
+
+    _setSelectedWarpGridInterpolation(value) {
+        const state = this._getWarpGridEditState();
+        if (!state?.key || this.isPlaying) return false;
+        const interpolation = value === 'hold' ? 'hold' : 'linear';
+        if (state.key.interpolation === interpolation) return false;
+        const updatedKey = {
+            ...state.key,
+            interpolation,
+            points: state.key.points.map(point => ({ ...point }))
+        };
+        const nextDeformer = normalizeClipDeformer({
+            ...state.deformer,
+            keyframes: state.deformer.keyframes
+                .filter(key => key?.frame !== state.localFrame)
+                .concat(updatedKey)
+                .sort((left, right) => left.frame - right.frame)
+        });
+        return this._commitSelectedWarpGridDeformer(
+            nextDeformer,
+            'caf-clip-warp-grid-key-interpolation',
+            { interpolation }
+        );
+    }
+
+    _deleteSelectedWarpGridKey() {
+        const state = this._getWarpGridEditState();
+        if (!state?.key || this.isPlaying) return false;
+        const nextDeformer = normalizeClipDeformer({
+            ...state.deformer,
+            keyframes: state.deformer.keyframes.filter(key => key?.frame !== state.localFrame)
+        });
+        return this._commitSelectedWarpGridDeformer(
+            nextDeformer,
+            'caf-clip-warp-grid-key-delete',
+            {},
+            { exitEditMode: true }
+        );
+    }
+
+    _toggleSelectedWarpGridKey() {
+        const state = this._getWarpGridEditState();
+        if (!state || this.isPlaying) return this._activateSelectedClipWarpGrid();
+        if (state.key) return this._deleteSelectedWarpGridKey();
+        const beforeState = this._captureTimelineHistoryState();
+        if (!this._upsertSelectedWarpGridKey(state.sampled.points)) return false;
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            'caf-clip-warp-grid-key',
+            { type: 'caf-clip-warp-grid-key', clipId: state.entry.clip.id, frame: state.localFrame }
+        );
+        this._enterWarpGridEditMode(state.entry);
+        this.render();
+        return true;
+    }
+
+    _clearSelectedWarpGridKeys() {
+        const state = this._getWarpGridEditState();
+        if (!state || state.deformer.keyframes.length < 2 || this.isPlaying) return false;
+        const nextDeformer = normalizeClipDeformer({
+            ...state.deformer,
+            keyframes: []
+        });
+        return this._commitSelectedWarpGridDeformer(
+            nextDeformer,
+            'caf-clip-warp-grid-keys-clear',
+            { keyCount: state.deformer.keyframes.length },
+            { exitEditMode: true }
+        );
+    }
+
+    _removeSelectedWarpGrid() {
+        const state = this._getWarpGridEditState();
+        if (!state || this.isPlaying) return false;
+        const previousKind = this._motionTimelineKeyKind;
+        this._motionTimelineKeyKind = 'motion';
+        const removed = this._commitSelectedWarpGridDeformer(
+            null,
+            'caf-clip-warp-grid-remove',
+            { keyCount: state.deformer.keyframes.length },
+            { exitEditMode: true }
+        );
+        if (!removed) this._motionTimelineKeyKind = previousKind;
+        return removed;
     }
 
     _syncMotionPanelFrameValues(motionState = this._getSelectedClipMotionFrame(), options = {}) {
@@ -5905,6 +6783,32 @@ export class AnimationTablePopup {
         }).ok;
     }
 
+    _resetSelectedClipMotionKey() {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state?.key || this.isPlaying) return false;
+        const base = state.entry.clip.transform || {};
+        const resetKey = {
+            frame: state.localFrame,
+            interpolation: state.key.interpolation === 'hold' ? 'hold' : 'linear',
+            ...(state.key.easing ? { easing: { ...state.key.easing } } : {}),
+            x: Number.isFinite(base.x) ? base.x : 0,
+            y: Number.isFinite(base.y) ? base.y : 0,
+            scaleX: Number.isFinite(base.scaleX) ? base.scaleX : 1,
+            scaleY: Number.isFinite(base.scaleY) ? base.scaleY : 1,
+            rotation: Number.isFinite(base.rotation) ? base.rotation : 0,
+            opacity: Number.isFinite(base.opacity) ? base.opacity : 1,
+            blendMode: base.blendMode || 'normal',
+            blendStrength: Number.isFinite(base.blendStrength) ? base.blendStrength : 1
+        };
+        const next = state.entry.clip.transformKeyframes
+            .filter(item => item?.frame !== state.localFrame)
+            .concat(resetKey)
+            .sort((left, right) => left.frame - right.frame);
+        return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, next, {
+            source: 'animation-motion-key-reset'
+        }).ok;
+    }
+
     _clearSelectedClipMotionKeys() {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         const keyCount = entry?.clip?.transformKeyframes?.length || 0;
@@ -5967,16 +6871,76 @@ export class AnimationTablePopup {
         button?.classList.toggle('active', nextOpen);
         if (!nextOpen) {
             this._setMotionCurveWindowOpen(false);
+            this._exitWarpGridEditMode();
             transformAnchorSite.deactivate('clip-motion');
             this._motionAnchorClip = null;
             this._motionPlaybackClipId = null;
             this.motionPanel?.querySelector('#anim-motion-anchor-btn')?.classList.remove('active');
         } else {
+            this._motionTimelineKeyKind = 'motion';
             this._showMotionAnchorSite(false);
             this.motionPanel.querySelector('#anim-motion-key-btn')?.focus({ preventScroll: true });
         }
         this._updateMotionCanvasCursor();
+        if (this.isVisible) this.render();
         return nextOpen;
+    }
+
+    _isMotionTimelineKeyEditing() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        return this.motionPanel?.style.display !== 'none'
+            && !this.isPlaying
+            && !!entry?.clip
+            && entry.clip.duration > 1;
+    }
+
+    _setMotionTimelineKeyKind(kind) {
+        const nextKind = kind === 'warp' ? 'warp' : 'motion';
+        const changed = this._motionTimelineKeyKind !== nextKind;
+        if (changed && nextKind === 'motion' && this._isWarpGridEditModeActive()) {
+            this._exitWarpGridEditMode();
+        }
+        if (changed && nextKind === 'warp') {
+            transformAnchorSite.deactivate('clip-motion');
+            this._motionAnchorClip = null;
+        }
+        this._motionTimelineKeyKind = nextKind;
+        if (this.isVisible) this.render();
+        return changed;
+    }
+
+    _moveTimelineKey(clipId, kind, sourceFrame, targetFrame, beforeState) {
+        const entry = this.model.findClipEntry(clipId);
+        if (!entry?.clip || sourceFrame === targetFrame) return false;
+        const duration = Math.max(1, entry.clip.duration || 1);
+        const nextFrame = Math.max(0, Math.min(duration - 1, Math.round(targetFrame)));
+        if (kind === 'warp') {
+            const deformer = normalizeClipDeformer(entry.clip.deformer);
+            if (!deformer) return false;
+            const sourceIndex = deformer.keyframes.findIndex(key => key?.frame === sourceFrame);
+            if (sourceIndex < 0 || deformer.keyframes.some((key, index) => index !== sourceIndex && key?.frame === nextFrame)) return false;
+            deformer.keyframes[sourceIndex].frame = nextFrame;
+            deformer.keyframes.sort((a, b) => a.frame - b.frame);
+            this.model.setClipDeformer(clipId, deformer);
+        } else {
+            const keyframes = (entry.clip.transformKeyframes || []).map(key => this._cloneClipInstanceMetadata(key, {}));
+            const sourceIndex = keyframes.findIndex(key => key?.frame === sourceFrame);
+            if (sourceIndex < 0 || keyframes.some((key, index) => index !== sourceIndex && key?.frame === nextFrame)) return false;
+            keyframes[sourceIndex].frame = nextFrame;
+            keyframes.sort((a, b) => a.frame - b.frame);
+            this.model.setClipTransformKeyframes(clipId, keyframes);
+        }
+        this.model.setCurrentFrame(entry.clip.startFrame + nextFrame);
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), `caf-clip-${kind}-key-move`, {
+            type: `caf-clip-${kind}-key-move`,
+            clipId,
+            beforeFrame: sourceFrame,
+            afterFrame: nextFrame
+        });
+        this._syncWorkingLayersForCurrentFrame();
+        this.render();
+        this._requestLayerPanelSync();
+        return true;
     }
 
     toggleMotionWindow() {
@@ -6106,7 +7070,8 @@ export class AnimationTablePopup {
     _isMotionCanvasModeActive() {
         return this.motionPanel?.style.display !== 'none'
             && !!this._getSelectedClipMotionFrame()
-            && !this.isPlaying;
+            && !this.isPlaying
+            && !this._isWarpGridEditModeActive();
     }
 
     _getMotionCanvas() {
@@ -6118,7 +7083,9 @@ export class AnimationTablePopup {
     _updateMotionCanvasCursor() {
         const canvas = this._motionCanvas || this._getMotionCanvas();
         if (!canvas) return;
-        if (this._isMotionCanvasModeActive()) {
+        if (this._isWarpGridEditModeActive()) {
+            canvas.style.cursor = this._warpGridGesture ? 'grabbing' : 'crosshair';
+        } else if (this._isMotionCanvasModeActive()) {
             canvas.style.cursor = this._motionCanvasGesture ? 'grabbing' : 'move';
         } else {
             canvas.style.cursor = '';
@@ -6173,7 +7140,38 @@ export class AnimationTablePopup {
                 ? { x: point.worldX, y: point.worldY }
                 : { x: event.clientX, y: event.clientY };
         };
+        const findWarpPoint = (event, state) => {
+            const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+            const points = this._getWarpGridWorldPoints(state);
+            let nearest = null;
+            points.forEach((point, index) => {
+                const screen = coordinateSystem?.worldToScreenImmediate?.(point.x, point.y)
+                    || coordinateSystem?.worldToScreen?.(point.x, point.y);
+                if (!screen) return;
+                const distance = Math.hypot(screen.clientX - event.clientX, screen.clientY - event.clientY);
+                if (distance <= 14 && (!nearest || distance < nearest.distance)) {
+                    nearest = { index, distance };
+                }
+            });
+            return nearest;
+        };
         canvas.addEventListener('pointerdown', (event) => {
+            if (this._isWarpGridEditModeActive() && event.button === 0) {
+                const state = this._getWarpGridEditState();
+                const hit = state ? findWarpPoint(event, state) : null;
+                if (state && hit) {
+                    this._warpGridGesture = {
+                        pointerId: event.pointerId,
+                        pointIndex: hit.index,
+                        beforeState: this._captureTimelineHistoryState()
+                    };
+                    canvas.setPointerCapture?.(event.pointerId);
+                    this._updateMotionCanvasCursor();
+                }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             if (!this._isMotionCanvasModeActive() || event.button !== 0) return;
             const state = this._getSelectedClipMotionFrame();
             if (!state) return;
@@ -6192,6 +7190,34 @@ export class AnimationTablePopup {
             event.stopImmediatePropagation();
         }, true);
         canvas.addEventListener('pointermove', (event) => {
+            const warpGesture = this._warpGridGesture;
+            if (warpGesture?.pointerId === event.pointerId) {
+                const state = this._getWarpGridEditState();
+                const world = toWorld(event);
+                const config = window.TEGAKI_CONFIG?.canvas || {};
+                const transform = state
+                    ? sampleClipTransform(state.entry.clip, this.model.playback.currentFrame)
+                    : null;
+                const matrix = transform ? createCenteredTransformMatrix(
+                    transform,
+                    (config.width || 400) / 2,
+                    (config.height || 400) / 2
+                ) : null;
+                const local = matrix ? invertTransformMatrixPoint(matrix, world.x, world.y) : null;
+                const bounds = state?.sampled?.bindBounds;
+                if (state && local && bounds) {
+                    const point = {
+                        x: (local.x - bounds.x) / bounds.width,
+                        y: (local.y - bounds.y) / bounds.height
+                    };
+                    const points = state.sampled.points.map(item => ({ ...item }));
+                    points[warpGesture.pointIndex] = point;
+                    this._upsertSelectedWarpGridKey(points);
+                }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             const gesture = this._motionCanvasGesture;
             if (!gesture || gesture.pointerId !== event.pointerId) return;
             const point = toWorld(event);
@@ -6223,6 +7249,20 @@ export class AnimationTablePopup {
             event.stopImmediatePropagation();
         }, true);
         const finishPointer = (event) => {
+            const warpGesture = this._warpGridGesture;
+            if (warpGesture?.pointerId === event.pointerId) {
+                canvas.releasePointerCapture?.(event.pointerId);
+                this._warpGridGesture = null;
+                this._updateMotionCanvasCursor();
+                this._finishMotionGestureHistory(
+                    warpGesture.beforeState,
+                    'caf-clip-warp-grid-point'
+                );
+                this.render();
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             const gesture = this._motionCanvasGesture;
             if (!gesture || gesture.pointerId !== event.pointerId) return;
             canvas.releasePointerCapture?.(event.pointerId);
@@ -6234,7 +7274,20 @@ export class AnimationTablePopup {
         };
         canvas.addEventListener('pointerup', finishPointer, true);
         canvas.addEventListener('pointercancel', finishPointer, true);
+        canvas.addEventListener('lostpointercapture', finishPointer, true);
+        if (this._motionWindowFinishPointer) {
+            window.removeEventListener('pointerup', this._motionWindowFinishPointer, true);
+            window.removeEventListener('pointercancel', this._motionWindowFinishPointer, true);
+        }
+        this._motionWindowFinishPointer = finishPointer;
+        window.addEventListener('pointerup', finishPointer, true);
+        window.addEventListener('pointercancel', finishPointer, true);
         canvas.addEventListener('wheel', (event) => {
+            if (this._isWarpGridEditModeActive()) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             if (!this._isMotionCanvasModeActive()) return;
             const state = this._getSelectedClipMotionFrame();
             if (!state) return;
@@ -6287,6 +7340,8 @@ export class AnimationTablePopup {
             result = this.model.setClipTransform(clipId, value);
         } else if (kind === 'transformKeyframes') {
             result = this.model.setClipTransformKeyframes(clipId, value);
+        } else if (kind === 'deformer') {
+            result = this.model.setClipDeformer(clipId, value);
         } else if (kind === 'physics') {
             result = this.model.setClipPhysics(clipId, value);
         }
@@ -6798,6 +7853,7 @@ export class AnimationTablePopup {
         const targetLayers = this._getRasterWorkingLayers();
         if (targetLayers.length === 0) return false;
         let restoreFailed = false;
+        const restoreFailures = [];
         if (!drawableInternalLayers.some(layer => layer.id === this.selectedInternalLayerId)) {
             this.selectedInternalLayerId = drawableInternalLayers[0]?.id || null;
         }
@@ -6819,6 +7875,11 @@ export class AnimationTablePopup {
                 targetLayer.layerData.animationSnapshotId = null;
                 targetLayer.visible = false;
                 targetLayer.layerData.visible = false;
+                restoreFailures.push({
+                    internalLayerId: internalLayer.id,
+                    snapshotId,
+                    reason: 'missing-snapshot'
+                });
                 return;
             }
             if (forceRestore || targetLayer.layerData.animationSnapshotId !== snapshotId) {
@@ -6844,6 +7905,13 @@ export class AnimationTablePopup {
                     targetLayer.visible = false;
                     targetLayer.layerData.visible = false;
                     restoreFailed = true;
+                    restoreFailures.push({
+                        internalLayerId: internalLayer.id,
+                        snapshotId,
+                        width: restoreSnapshot.width,
+                        height: restoreSnapshot.height,
+                        reason: 'restore-rejected'
+                    });
                     return;
                 }
                 targetLayer.layerData.animationSnapshotId = snapshotId;
@@ -6891,9 +7959,12 @@ export class AnimationTablePopup {
         }
 
         if (restoreFailed) {
+            this._setWorkingRestoreBlocked({ clip, asset, failures: restoreFailures });
             this._requestLayerPanelSync();
             return false;
         }
+
+        this._clearWorkingRestoreBlockedAfterSuccessfulSwitch(clip.id);
 
         this._workingClippingMasksDirty = true;
         this._flushDeferredWorkingClippingMasks();
@@ -7367,6 +8438,9 @@ export class AnimationTablePopup {
         this.panel.classList.toggle('clip-edit-active', this.isClipEditModeActive);
         this.panel.classList.toggle('set-scope-active', this.playbackScope === 'includedLanes');
         this.panel.classList.toggle('lane-only-selected', this.isLaneOnlySelected === true);
+        const motionKeyEditing = this._isMotionTimelineKeyEditing();
+        this.panel.classList.toggle('motion-key-edit-active', motionKeyEditing);
+        this.panel.dataset.motionKeyKind = motionKeyEditing ? this._motionTimelineKeyKind : '';
         
         // UI上のチェック状態同期
         const editChk = this.panel.querySelector('#anim-clip-edit-chk');
@@ -7674,7 +8748,13 @@ export class AnimationTablePopup {
                     const motionMarkers = isStart && duration > 1 && this.timelineCellWidth >= 18
                         ? (cel.transformKeyframes || [])
                             .filter(key => Number.isInteger(key?.frame) && key.frame >= 0 && key.frame < duration)
-                            .map(key => `<span class="anim-motion-key-marker" style="--motion-key-position:${(key.frame / (duration - 1)) * 100}%" title="Motion key: Frame ${cel.startFrame + key.frame + 1}"></span>`)
+                            .map(key => `<span class="anim-motion-key-marker" data-key-kind="motion" data-key-frame="${key.frame}" data-cel-id="${cel.id}" style="--motion-key-position:${(key.frame / (duration - 1)) * 100}%" title="Motion key: Frame ${cel.startFrame + key.frame + 1}"></span>`)
+                            .join('')
+                        : '';
+                    const warpMarkers = isStart && duration > 1 && this.timelineCellWidth >= 18
+                        ? (cel.deformer?.keyframes || [])
+                            .filter(key => Number.isInteger(key?.frame) && key.frame >= 0 && key.frame < duration)
+                            .map(key => `<span class="anim-warp-key-marker" data-key-kind="warp" data-key-frame="${key.frame}" data-cel-id="${cel.id}" style="--warp-key-position:${(key.frame / (duration - 1)) * 100}%" title="Warp key: Frame ${cel.startFrame + key.frame + 1}"></span>`)
                             .join('')
                         : '';
                     const retimingEdge = (isStart && this._isRetiming && this._retimingData?.cel?.id === cel.id)
@@ -7692,7 +8772,7 @@ export class AnimationTablePopup {
                                              <div class="anim-cel-handle anim-cel-handle--bottom-left" data-cel-id="${cel.id}" data-edge="left"></div>
                                              <div class="anim-cel-handle anim-cel-handle--bottom-right" data-cel-id="${cel.id}" data-edge="right"></div>
                                          </div>` : ''}
-                                         ${motionMarkers}
+                                         ${motionMarkers}${warpMarkers}
                                          ${isShared ? '<div class="anim-shared-icon" title="Shared Asset"></div>' : ''}
                                      </div>` : ''}
                                  </div>`;
@@ -7738,13 +8818,83 @@ export class AnimationTablePopup {
                     ? 'Clip Motion: position / scale / rotation keyを編集 (Shift+V)'
                     : '2 Frame以上のCAFを選択してください';
             }
+            const selectedWarpEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+            const hasSelectedWarpGrid = ['warp-grid', 'control-mesh'].includes(selectedWarpEntry?.clip?.deformer?.type);
+            const isWarpFocus = this._motionTimelineKeyKind === 'warp';
+            motionControls.classList.toggle('is-motion-focus', !isWarpFocus);
+            motionControls.classList.toggle('is-warp-focus', isWarpFocus);
+            const motionFields = motionControls.querySelector('#anim-motion-fields');
+            if (motionFields) motionFields.hidden = isWarpFocus;
+            const motionFocusButton = motionControls.querySelector('#anim-motion-focus-btn');
+            const warpFocusButton = motionControls.querySelector('#anim-warp-focus-btn');
+            const motionKeyCount = selectedWarpEntry?.clip?.transformKeyframes?.length || 0;
+            const warpKeyCount = hasSelectedWarpGrid
+                ? listClipDeformerKeyframes(selectedWarpEntry.clip.deformer, selectedWarpEntry.clip.duration).length
+                : 0;
+            if (motionFocusButton) {
+                motionFocusButton.classList.toggle('active', !isWarpFocus);
+                motionFocusButton.setAttribute('aria-selected', String(!isWarpFocus));
+                motionFocusButton.querySelector('[data-motion-key-count]').textContent = String(motionKeyCount);
+                motionFocusButton.dataset.tooltip = `Motion編集へ切り替え · ${motionKeyCount} keys`;
+            }
+            if (warpFocusButton) {
+                const canFocusWarp = !!selectedWarpEntry?.clip
+                    && selectedWarpEntry.clip.duration > 1
+                    && !this.isPlaying;
+                warpFocusButton.disabled = !canFocusWarp;
+                warpFocusButton.classList.toggle('active', isWarpFocus);
+                warpFocusButton.setAttribute('aria-selected', String(isWarpFocus));
+                warpFocusButton.querySelector('[data-warp-key-count]').textContent = String(warpKeyCount);
+                warpFocusButton.dataset.tooltip = !canFocusWarp
+                    ? '2 Frame以上のCAFを停止中に選択してください'
+                    : hasSelectedWarpGrid
+                        ? `Warpへ切り替えて点編集を開始 · ${warpKeyCount} keys`
+                        : 'Control Meshの点数または軽量4×4 Warpを選んで作成';
+            }
+            if (this._warpGridEditingClipId && (
+                this.isPlaying
+                || selectedWarpEntry?.clip?.id !== this._warpGridEditingClipId
+                || !['warp-grid', 'control-mesh'].includes(selectedWarpEntry.clip.deformer?.type)
+                || !this._getWarpGridEditState()?.key
+            )) {
+                this._exitWarpGridEditMode();
+            }
+            const isWarpEditing = this._isWarpGridEditModeActive();
+            const warpState = this._getWarpGridEditState();
+            if (!isWarpEditing && warpGridOverlay.isActive()) {
+                warpGridOverlay.deactivate();
+            }
+            motionControls.classList.toggle('is-warp-editing', isWarpEditing);
             motionControls.querySelectorAll('.anim-motion-fields input, .anim-motion-fields select, .anim-motion-rotation-step-btn, #anim-motion-key-btn, #anim-motion-anchor-btn').forEach(control => {
-                control.disabled = !motionState;
+                control.disabled = !motionState || isWarpEditing;
             });
             this._syncMotionCurvePanel(motionState);
             const copyMotionKeyButton = motionControls.querySelector('#anim-motion-copy-btn');
             const pasteMotionKeyButton = motionControls.querySelector('#anim-motion-paste-btn');
             const clearMotionKeysButton = motionControls.querySelector('#anim-motion-clear-btn');
+            const previousMotionFrame = this._findAdjacentMotionKeyFrame(motionState, -1);
+            const nextMotionFrame = this._findAdjacentMotionKeyFrame(motionState, 1);
+            const previousMotionButton = motionControls.querySelector('#anim-motion-prev-key-btn');
+            const nextMotionButton = motionControls.querySelector('#anim-motion-next-key-btn');
+            const resetMotionButton = motionControls.querySelector('#anim-motion-reset-key-btn');
+            if (previousMotionButton) {
+                previousMotionButton.disabled = !Number.isInteger(previousMotionFrame) || this.isPlaying;
+                previousMotionButton.title = Number.isInteger(previousMotionFrame)
+                    ? `前のMotion key: Local F${previousMotionFrame + 1} / ホイールで前後移動`
+                    : '前のMotion keyはありません';
+            }
+            if (nextMotionButton) {
+                nextMotionButton.disabled = !Number.isInteger(nextMotionFrame) || this.isPlaying;
+                nextMotionButton.title = Number.isInteger(nextMotionFrame)
+                    ? `次のMotion key: Local F${nextMotionFrame + 1} / ホイールで前後移動`
+                    : '次のMotion keyはありません';
+            }
+            if (resetMotionButton) {
+                resetMotionButton.disabled = !motionState?.key || this.isPlaying;
+                resetMotionButton.title = motionState?.key
+                    ? '現在Motion keyをClipの基準transformへ戻す'
+                    : '現在FrameにMotion keyがありません';
+            }
             if (copyMotionKeyButton) {
                 copyMotionKeyButton.disabled = !motionState?.key || this.isPlaying;
                 copyMotionKeyButton.title = motionState?.key
@@ -7764,19 +8914,179 @@ export class AnimationTablePopup {
                     ? `このClipのmotion key ${keyCount}件をすべて削除`
                     : '一括削除には2件以上のmotion keyが必要です';
             }
-            if (motionControls.style.display !== 'none' && motionState && this._motionAnchorClip !== motionState.entry.clip) {
+            if (!isWarpEditing && motionControls.style.display !== 'none' && motionState && this._motionAnchorClip !== motionState.entry.clip) {
                 this._showMotionAnchorSite(transformAnchorSite.isEditable('clip-motion'));
             }
             if (motionState) {
                 this._syncMotionPanelFrameValues(motionState, { force: this.isPlaying });
                 const keyButton = motionControls.querySelector('#anim-motion-key-btn');
                 if (keyButton) {
+                    keyButton.classList.toggle('timeline-key-target', this._motionTimelineKeyKind === 'motion');
                     keyButton.classList.toggle('active', !!motionState.key);
                     keyButton.classList.toggle('has-key', !!motionState.key);
                     keyButton.setAttribute('aria-pressed', String(!!motionState.key));
-                    keyButton.title = motionState.key
-                        ? `Local Frame ${motionState.localFrame} のkeyを削除`
-                        : `Local Frame ${motionState.localFrame} にkeyを追加`;
+                    keyButton.title = this._motionTimelineKeyKind !== 'motion'
+                        ? 'Motion keyのTimeline編集へ切り替え'
+                        : (motionState.key
+                            ? `Local Frame ${motionState.localFrame} のkeyを削除`
+                            : `Local Frame ${motionState.localFrame} にkeyを追加`);
+                }
+            }
+            const warpContext = motionControls.querySelector('#anim-warp-context');
+            if (warpContext) {
+                const hasWarpContext = !!warpState;
+                const canCreateDeformer = !!selectedWarpEntry?.clip
+                    && selectedWarpEntry.clip.duration > 1
+                    && !this.isPlaying;
+                warpContext.hidden = !isWarpFocus || (!hasWarpContext && !canCreateDeformer);
+                warpContext.classList.toggle('is-editing', isWarpEditing);
+                warpContext.classList.toggle('has-current-key', !!warpState?.key);
+                const createControls = warpContext.querySelector('#anim-control-mesh-create');
+                if (createControls) createControls.hidden = hasWarpContext;
+                warpContext.querySelectorAll('[data-deformer-existing]').forEach(element => {
+                    element.hidden = !hasWarpContext;
+                });
+                motionControls.querySelectorAll('.anim-motion-action--warp').forEach(button => {
+                    button.disabled = !hasWarpContext || this.isPlaying;
+                });
+                if (!hasWarpContext) this._syncControlMeshCreationControls();
+                if (hasWarpContext) {
+                    const keyCount = listClipDeformerKeyframes(
+                        warpState.deformer,
+                        warpState.entry.clip.duration
+                    ).length;
+                    const status = warpContext.querySelector('.anim-warp-context-status');
+                    if (status) {
+                        const topologyLabel = warpState.deformer.type === 'control-mesh'
+                            ? (Number.isInteger(warpState.deformer.columns) && Number.isInteger(warpState.deformer.rows)
+                                ? `MESH ${warpState.deformer.columns}×${warpState.deformer.rows} · ${warpState.deformer.bindPoints.length} points`
+                                : `MESH FREE · ${warpState.deformer.bindPoints.length} points`)
+                            : 'WARP 4×4 · 16 points';
+                        status.textContent = `${topologyLabel} · Local F${warpState.localFrame + 1} · ${warpState.key ? 'KEY' : 'SAMPLED'} · ${keyCount} keys`;
+                    }
+                    const previousFrame = findAdjacentClipDeformerKeyFrame(
+                        warpState.deformer,
+                        warpState.localFrame,
+                        -1,
+                        warpState.entry.clip.duration
+                    );
+                    const nextFrame = findAdjacentClipDeformerKeyFrame(
+                        warpState.deformer,
+                        warpState.localFrame,
+                        1,
+                        warpState.entry.clip.duration
+                    );
+                    const keyButton = motionControls.querySelector('#anim-warp-key-btn');
+                    const previousButton = motionControls.querySelector('#anim-warp-prev-key-btn');
+                    const nextButton = motionControls.querySelector('#anim-warp-next-key-btn');
+                    const resetButton = motionControls.querySelector('#anim-warp-reset-key-btn');
+                    const copyButton = motionControls.querySelector('#anim-warp-copy-btn');
+                    const pasteButton = motionControls.querySelector('#anim-warp-paste-btn');
+                    const clearButton = motionControls.querySelector('#anim-warp-clear-btn');
+                    const refitButton = warpContext.querySelector('#anim-warp-refit-bind-btn');
+                    const bakeButton = warpContext.querySelector('#anim-warp-bake-btn');
+                    const removeButton = warpContext.querySelector('#anim-warp-remove-grid-btn');
+                    const interpolation = warpContext.querySelector('#anim-warp-interpolation');
+                    if (keyButton) {
+                        const deformerName = warpState.deformer.type === 'control-mesh' ? 'Mesh' : 'Warp';
+                        keyButton.disabled = this.isPlaying;
+                        keyButton.classList.toggle('active', !!warpState.key);
+                        keyButton.classList.toggle('has-key', !!warpState.key);
+                        keyButton.classList.toggle('timeline-key-target', isWarpFocus);
+                        keyButton.setAttribute('aria-pressed', String(!!warpState.key));
+                        keyButton.title = warpState.key
+                            ? `Local Frame ${warpState.localFrame} の${deformerName} keyを削除`
+                            : `Local Frame ${warpState.localFrame} に${deformerName} keyを追加`;
+                    }
+                    if (previousButton) {
+                        previousButton.disabled = !Number.isInteger(previousFrame) || this.isPlaying;
+                        previousButton.title = Number.isInteger(previousFrame)
+                            ? `前のWarp key: Local F${previousFrame + 1}`
+                            : '前のWarp keyはありません';
+                    }
+                    if (nextButton) {
+                        nextButton.disabled = !Number.isInteger(nextFrame) || this.isPlaying;
+                        nextButton.title = Number.isInteger(nextFrame)
+                            ? `次のWarp key: Local F${nextFrame + 1}`
+                            : '次のWarp keyはありません';
+                    }
+                    if (resetButton) {
+                        const isAtBindPose = !!warpState.key && areWarpGridPointArraysEqual(
+                            warpState.key.points,
+                            warpState.deformer.bindPoints
+                        );
+                        resetButton.disabled = !warpState.key || isAtBindPose || this.isPlaying;
+                        resetButton.title = isAtBindPose
+                            ? '現在Warp keyはBind poseです'
+                            : '現在Warp keyをBind poseへ戻す';
+                    }
+                    if (copyButton) {
+                        copyButton.disabled = !warpState.key || this.isPlaying;
+                        copyButton.title = warpState.key
+                            ? `Local Frame ${warpState.localFrame} のWarp keyをコピー`
+                            : '現在FrameにコピーできるWarp keyがありません';
+                    }
+                    if (pasteButton) {
+                        const topologyMatches = this._warpKeyClipboard?.topologySignature
+                            === this._getDeformerTopologySignature(warpState.deformer);
+                        pasteButton.disabled = !topologyMatches || this.isPlaying;
+                        pasteButton.title = !this._warpKeyClipboard
+                            ? '先にDeformer keyをコピーしてください'
+                            : topologyMatches
+                                ? `Local Frame ${warpState.localFrame} へDeformer keyを貼り付け`
+                                : 'コピー元と現在のDeformerでTopologyが異なります';
+                    }
+                    if (clearButton) {
+                        clearButton.disabled = keyCount < 2 || this.isPlaying;
+                        clearButton.title = keyCount >= 2
+                            ? `このClipのWarp key ${keyCount}件をすべて削除`
+                            : '一括削除には2件以上のWarp keyが必要です';
+                    }
+                    if (refitButton) {
+                        const isControlMesh = warpState.deformer.type === 'control-mesh';
+                        const assetBounds = this._getWarpGridAssetBounds(warpState.entry);
+                        const bindBounds = warpState.deformer.bindBounds;
+                        const isCurrent = !!assetBounds && !!bindBounds
+                            && ['x', 'y', 'width', 'height'].every(name => (
+                                Math.abs(assetBounds[name] - bindBounds[name]) <= 1e-6
+                            ));
+                        refitButton.disabled = isControlMesh || !assetBounds || isCurrent || this.isPlaying;
+                        refitButton.title = isControlMesh
+                            ? 'Control MeshのBind範囲再構築はTopology編集Sliceで提供します'
+                            : !assetBounds
+                            ? 'Bind範囲へ使えるRasterがありません'
+                            : isCurrent
+                                ? 'Bind範囲は現在のRaster範囲と一致しています'
+                                : '現在のRaster範囲へBindを合わせ、全Warp keyの変形量をpx維持';
+                    }
+                    if (bakeButton) {
+                        bakeButton.disabled = this.isPlaying || isWarpEditing;
+                        bakeButton.title = isWarpEditing
+                            ? '点編集を終了してからBakeしてください'
+                            : `Warp / Motion結果を${warpState.entry.clip.duration}個の1 Frame CAFへBake。元Clipは非表示で保持`;
+                    }
+                    if (removeButton) {
+                        const isControlMesh = warpState.deformer.type === 'control-mesh';
+                        removeButton.disabled = this.isPlaying;
+                        removeButton.title = isControlMesh
+                            ? 'このClipのControl Meshと全Mesh keyを削除'
+                            : 'このClipの4×4 Warpと全Warp keyを削除';
+                        removeButton.setAttribute(
+                            'aria-label',
+                            isControlMesh
+                                ? 'Remove Control Mesh and all Mesh keys'
+                                : 'Remove Warp Grid and all Warp keys'
+                        );
+                    }
+                    if (interpolation) {
+                        interpolation.disabled = !warpState.key || this.isPlaying;
+                        interpolation.value = warpState.key
+                            ? (warpState.key.interpolation === 'hold' ? 'hold' : 'linear')
+                            : '';
+                        interpolation.title = warpState.key
+                            ? '現在Warp keyから次keyまでの補間。HOLDは現在poseを維持'
+                            : 'SAMPLED Frameでは区間補間を変更できません。先にWarp keyを追加してください';
+                    }
                 }
             }
         }
@@ -7916,17 +9226,31 @@ export class AnimationTablePopup {
         this.motionPanel.innerHTML = `
             <div class="anim-motion-window-header transform-popup-header" title="Canvas drag: move / Shift+horizontal drag: rotate / Shift+vertical drag: scale / Wheel: scale / Shift+Wheel: rotate">
                 <span class="transform-popup-title">CLIP MOTION</span>
+                <div class="anim-motion-mode-switch" role="tablist" aria-label="Clip Motion editor mode">
+                    <button class="anim-motion-mode-tab ui-help-tooltip active" id="anim-motion-focus-btn" type="button" role="tab" aria-selected="true" aria-controls="anim-motion-fields" aria-label="Motion編集へ切り替え" data-tooltip="位置・拡縮・回転・透明度・合成のMotion keyを編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg><span>MOTION</span><span class="anim-motion-mode-count" data-motion-key-count>0</span></button>
+                    <button class="anim-motion-mode-tab ui-help-tooltip" id="anim-warp-focus-btn" type="button" role="tab" aria-selected="false" aria-controls="anim-warp-context" aria-label="Warp編集へ切り替え" data-tooltip="Control Meshの点数または軽量4×4 Warpを選んで作成"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>WARP</span><span class="anim-motion-mode-count" data-warp-key-count>0</span></button>
+                </div>
                 <div class="flip-section transform-popup-actions anim-motion-header-actions">
-                    <button class="anim-motion-key-btn flip-button flip-button--icon" id="anim-motion-key-btn" type="button" title="現在Frameのmotion keyを追加/削除" aria-label="Toggle motion key at current Frame"><svg class="anim-motion-key-icon anim-motion-key-icon--add" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg><svg class="anim-motion-key-icon anim-motion-key-icon--delete" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button>
-                    <button class="anim-motion-curve-btn flip-button flip-button--icon" id="anim-motion-curve-btn" type="button" title="左keyから次keyまでのEasing Curveを編集" aria-label="Open easing curve editor" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 17c2-7 5-10 10-10"/><circle cx="7" cy="17" r="1.4"/><circle cx="17" cy="7" r="1.4"/></svg></button>
-                    <button class="anim-motion-anchor-btn transform-anchor-toggle flip-button flip-button--icon" id="anim-motion-anchor-btn" type="button" title="クリップ共通pivot。0°は上向きで、楔形tailは現在Rotationへ追従します。ON中だけheadをドラッグできます" aria-label="Toggle rotation center editing"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="19" r="2.5"/><path d="M12 16.5 8 13 11 4 12 2 13 4 16 13Z"/></svg></button>
-                    <button class="anim-motion-copy-btn flip-button flip-button--icon" id="anim-motion-copy-btn" type="button" title="現在Frameのmotion keyをコピー" aria-label="Copy motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
-                    <button class="anim-motion-paste-btn flip-button flip-button--icon" id="anim-motion-paste-btn" type="button" title="motion keyを現在Frameへ貼り付け" aria-label="Paste motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H9a1 1 0 0 0-1 1v2h8V3a1 1 0 0 0-1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 14 2 2 4-4"/></svg></button>
-                    <button class="anim-motion-clear-btn flip-button flip-button--icon" id="anim-motion-clear-btn" type="button" title="このClipのmotion keyをすべて削除" aria-label="Clear all motion keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion anim-motion-key-btn flip-button flip-button--icon" id="anim-motion-key-btn" type="button" title="現在Frameのmotion keyを追加/削除" aria-label="Toggle motion key at current Frame"><svg class="anim-motion-key-icon anim-motion-key-icon--add" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg><svg class="anim-motion-key-icon anim-motion-key-icon--delete" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--warp anim-warp-key-btn flip-button flip-button--icon" id="anim-warp-key-btn" type="button" title="現在FrameのWarp keyを追加/削除" aria-label="Toggle Warp key at current Frame"><svg class="anim-motion-key-icon anim-motion-key-icon--add" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 9-7 9-7-9Z"/></svg><svg class="anim-motion-key-icon anim-motion-key-icon--delete" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion flip-button flip-button--icon" id="anim-motion-prev-key-btn" type="button" data-key-nav-wheel="motion" title="前のMotion keyへ移動 / ホイールで前後移動" aria-label="Go to previous Motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-prev-key-btn" type="button" data-key-nav-wheel="warp" title="前のWarp keyへ移動 / ホイールで前後移動" aria-label="Go to previous Warp key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion flip-button flip-button--icon" id="anim-motion-next-key-btn" type="button" data-key-nav-wheel="motion" title="次のMotion keyへ移動 / ホイールで前後移動" aria-label="Go to next Motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-next-key-btn" type="button" data-key-nav-wheel="warp" title="次のWarp keyへ移動 / ホイールで前後移動" aria-label="Go to next Warp key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion flip-button flip-button--icon" id="anim-motion-reset-key-btn" type="button" title="現在Motion keyをClip基準値へ戻す" aria-label="Reset current Motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-reset-key-btn" type="button" title="現在Warp keyをBind poseへ戻す" aria-label="Reset current Warp key to bind pose"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion anim-motion-copy-btn flip-button flip-button--icon" id="anim-motion-copy-btn" type="button" title="現在Frameのmotion keyをコピー" aria-label="Copy motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-copy-btn" type="button" title="現在FrameのWarp keyをコピー" aria-label="Copy Warp key"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion anim-motion-paste-btn flip-button flip-button--icon" id="anim-motion-paste-btn" type="button" title="motion keyを現在Frameへ貼り付け" aria-label="Paste motion key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H9a1 1 0 0 0-1 1v2h8V3a1 1 0 0 0-1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 14 2 2 4-4"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-paste-btn" type="button" title="Warp keyを現在Frameへ貼り付け" aria-label="Paste Warp key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H9a1 1 0 0 0-1 1v2h8V3a1 1 0 0 0-1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 14 2 2 4-4"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion anim-motion-clear-btn flip-button flip-button--icon" id="anim-motion-clear-btn" type="button" title="このClipのmotion keyをすべて削除" aria-label="Clear all motion keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-clear-btn" type="button" title="このClipのWarp keyをすべて削除" aria-label="Clear all Warp keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion anim-motion-curve-btn flip-button flip-button--icon" id="anim-motion-curve-btn" type="button" title="左keyから次keyまでのEasing Curveを編集" aria-label="Open easing curve editor" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 17c2-7 5-10 10-10"/><circle cx="7" cy="17" r="1.4"/><circle cx="17" cy="7" r="1.4"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion anim-motion-anchor-btn transform-anchor-toggle flip-button flip-button--icon" id="anim-motion-anchor-btn" type="button" title="クリップ共通pivot。0°は上向きで、楔形tailは現在Rotationへ追従します。ON中だけheadをドラッグできます" aria-label="Toggle rotation center editing"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="19" r="2.5"/><path d="M12 16.5 8 13 11 4 12 2 13 4 16 13Z"/></svg></button>
                 </div>
                 <button class="ui-close-button ui-close-button--small" id="anim-motion-close-btn" type="button" aria-label="Close motion controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
             </div>
-            <div class="anim-motion-fields" title="選択CAFの現在Frame transform key">
+            <div class="anim-motion-fields" id="anim-motion-fields" role="tabpanel" aria-labelledby="anim-motion-focus-btn" title="選択CAFの現在Frame transform key">
                 <div class="anim-motion-fields-row">
                     <label>X<input type="number" step="1" data-motion-param="x"></label>
                     <label>Y<input type="number" step="1" data-motion-param="y"></label>
@@ -7946,6 +9270,33 @@ export class AnimationTablePopup {
                         <option value="hold">HOLD</option>
                         <option value="custom" disabled>CUSTOM</option>
                     </select>
+                </div>
+            </div>
+            <div class="anim-warp-context" id="anim-warp-context" role="tabpanel" aria-labelledby="anim-warp-focus-btn" hidden>
+                <div class="anim-control-mesh-create" id="anim-control-mesh-create" hidden>
+                    <span class="anim-control-mesh-create-label">POINTS</span>
+                    <label title="横方向のcontrol point数（cell数ではありません）"><input type="number" id="anim-control-mesh-columns" min="2" max="32" step="1" value="8" aria-label="Control Mesh horizontal point count"></label>
+                    <span class="anim-control-mesh-create-times" aria-hidden="true">×</span>
+                    <label title="縦方向のcontrol point数（cell数ではありません）"><input type="number" id="anim-control-mesh-rows" min="2" max="32" step="1" value="8" aria-label="Control Mesh vertical point count"></label>
+                    <span class="anim-control-mesh-create-count" id="anim-control-mesh-point-count" aria-live="polite">64 / 256 points</span>
+                    <button class="anim-control-mesh-create-btn" id="anim-control-mesh-create-btn" type="button" title="入力した横点数×縦点数でControl Meshを作成">MESHを作成</button>
+                    <button class="anim-control-mesh-legacy-btn" id="anim-warp-create-legacy-btn" type="button" title="軽量互換の固定16点Warpを作成">4×4 WARP</button>
+                </div>
+                <div class="anim-warp-context-identity" data-deformer-existing>
+                    <span class="anim-warp-context-status" aria-live="polite"></span>
+                </div>
+                <label class="anim-warp-context-interpolation" data-deformer-existing title="左の現在Warp keyが次keyまでの区間補間を所有します">
+                    <span>TO NEXT</span>
+                    <select id="anim-warp-interpolation" aria-label="Warp key interpolation">
+                        <option value="" disabled>NO KEY</option>
+                        <option value="linear">LINEAR</option>
+                        <option value="hold">HOLD</option>
+                    </select>
+                </label>
+                <div class="anim-warp-context-actions" data-deformer-existing aria-label="Warp key actions">
+                    <button class="flip-button flip-button--icon" id="anim-warp-refit-bind-btn" type="button" title="現在のRaster範囲へBindを合わせる" aria-label="Refit Warp Bind bounds to current Raster"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="m9 12 2 2 4-4"/></svg></button>
+                    <button class="flip-button flip-button--icon" id="anim-warp-bake-btn" type="button" title="Warp / Motion結果を1 Frame CAF列へBake" aria-label="Bake Warp Clip to frame CAF sequence"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="13" height="13" rx="2"/><path d="M8 8h13v13H8z"/><path d="m12 14 2 2 4-5"/></svg></button>
+                    <button class="flip-button flip-button--icon anim-warp-remove-grid-btn" id="anim-warp-remove-grid-btn" type="button" title="このClipのWarp Gridと全Warp keyを削除" aria-label="Remove Warp Grid and all Warp keys"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2"/><path d="M4 10h16M10 4v16"/><path d="m14 14 5 5m0-5-5 5"/></svg></button>
                 </div>
             </div>`;
         mountPopupAtOverlayRoot(this.motionPanel);
@@ -8439,6 +9790,26 @@ export class AnimationTablePopup {
         const motionControls = this.motionPanel;
         const motionOpenButton = this.panel.querySelector('#anim-motion-open-btn');
         if (motionControls && motionOpenButton) {
+            motionControls.querySelector('#anim-motion-focus-btn')?.addEventListener('click', () => {
+                this._setMotionTimelineKeyKind('motion');
+            });
+            motionControls.querySelector('#anim-warp-focus-btn')?.addEventListener('click', () => {
+                const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+                if (!entry?.clip || entry.clip.duration <= 1 || this.isPlaying) return;
+                this._setMotionTimelineKeyKind('warp');
+                if (entry.clip.deformer) this._activateSelectedClipWarpGrid();
+            });
+            motionControls.querySelectorAll('#anim-control-mesh-columns, #anim-control-mesh-rows').forEach(input => {
+                this._bindNumberInputWheel(input, () => this._syncControlMeshCreationControls());
+                input.addEventListener('input', () => this._syncControlMeshCreationControls());
+            });
+            motionControls.querySelector('#anim-control-mesh-create-btn')?.addEventListener('click', () => {
+                const dimensions = this._syncControlMeshCreationControls();
+                if (dimensions) this._createSelectedControlMesh(dimensions.columns, dimensions.rows);
+            });
+            motionControls.querySelector('#anim-warp-create-legacy-btn')?.addEventListener('click', () => {
+                this._activateSelectedClipWarpGrid();
+            });
             motionControls.querySelectorAll('.anim-motion-fields input[type="number"]').forEach(input => {
                 this._bindNumberInputWheel(input, () => this._setSelectedClipMotionKeyFromControls());
                 this._bindMotionNumberInputScrub(input);
@@ -8449,14 +9820,69 @@ export class AnimationTablePopup {
                 });
             });
             motionControls.addEventListener('change', (e) => {
-                if (e.target.closest('#anim-motion-key-btn')) return;
+                if (e.target.closest('#anim-motion-key-btn, #anim-warp-interpolation, .anim-control-mesh-create')) return;
                 this._setSelectedClipMotionKeyFromControls();
             });
             motionControls.querySelector('#anim-motion-key-btn')?.addEventListener('click', () => {
+                if (this._setMotionTimelineKeyKind('motion')) return;
                 const state = this._getSelectedClipMotionFrame();
                 if (state?.key) this._removeSelectedClipMotionKey();
                 else this._setSelectedClipMotionKeyFromControls();
             });
+            motionControls.querySelector('#anim-motion-prev-key-btn')?.addEventListener('click', () => {
+                this._navigateSelectedMotionKey(-1);
+            });
+            motionControls.querySelector('#anim-motion-next-key-btn')?.addEventListener('click', () => {
+                this._navigateSelectedMotionKey(1);
+            });
+            motionControls.querySelector('#anim-motion-reset-key-btn')?.addEventListener('click', () => {
+                this._resetSelectedClipMotionKey();
+            });
+            motionControls.querySelector('#anim-warp-key-btn')?.addEventListener('click', () => {
+                this._toggleSelectedWarpGridKey();
+            });
+            motionControls.querySelector('#anim-warp-prev-key-btn')?.addEventListener('click', () => {
+                this._navigateSelectedWarpGridKey(-1);
+            });
+            motionControls.querySelector('#anim-warp-next-key-btn')?.addEventListener('click', () => {
+                this._navigateSelectedWarpGridKey(1);
+            });
+            motionControls.querySelector('#anim-warp-reset-key-btn')?.addEventListener('click', () => {
+                this._resetSelectedWarpGridKey();
+            });
+            motionControls.querySelector('#anim-warp-copy-btn')?.addEventListener('click', () => {
+                this._copySelectedWarpGridKey();
+            });
+            motionControls.querySelector('#anim-warp-paste-btn')?.addEventListener('click', () => {
+                this._pasteSelectedWarpGridKey();
+            });
+            motionControls.querySelector('#anim-warp-clear-btn')?.addEventListener('click', () => {
+                this._clearSelectedWarpGridKeys();
+            });
+            motionControls.querySelector('#anim-warp-refit-bind-btn')?.addEventListener('click', () => {
+                this._refitSelectedWarpGridBounds();
+            });
+            motionControls.querySelector('#anim-warp-bake-btn')?.addEventListener('click', async () => {
+                await this._bakeSelectedWarpGridToCafs();
+            });
+            motionControls.querySelector('#anim-warp-interpolation')?.addEventListener('change', (event) => {
+                this._setSelectedWarpGridInterpolation(event.currentTarget.value);
+            });
+            motionControls.querySelector('#anim-warp-remove-grid-btn')?.addEventListener('click', () => {
+                this._removeSelectedWarpGrid();
+            });
+            motionControls.addEventListener('wheel', event => {
+                const navigationTarget = event.target.closest?.('[data-key-nav-wheel]');
+                if (!navigationTarget || event.ctrlKey || event.metaKey || event.altKey) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const direction = event.deltaY < 0 ? -1 : 1;
+                if (navigationTarget.dataset.keyNavWheel === 'warp') {
+                    this._navigateSelectedWarpGridKey(direction);
+                } else {
+                    this._navigateSelectedMotionKey(direction);
+                }
+            }, { passive: false });
             motionControls.querySelector('#anim-motion-copy-btn')?.addEventListener('click', () => {
                 this._copySelectedClipMotionKey();
             });
@@ -8734,6 +10160,25 @@ export class AnimationTablePopup {
                     return;
                 }
 
+                if (this._motionKeyClickSuppressed) {
+                    this._motionKeyClickSuppressed = false;
+                    return;
+                }
+
+                const keyMarker = e.target.closest('.anim-motion-key-marker, .anim-warp-key-marker');
+                if (keyMarker && this._isMotionTimelineKeyEditing()) {
+                    const entry = this.model.findClipEntry(keyMarker.dataset.celId);
+                    const localFrame = Number(keyMarker.dataset.keyFrame);
+                    if (entry?.clip && Number.isInteger(localFrame)) {
+                        this.model.setCurrentFrame(entry.clip.startFrame + localFrame);
+                        this._syncWorkingLayersForCurrentFrame();
+                        this.render();
+                        this._requestLayerPanelSync();
+                    }
+                    e.preventDefault();
+                    return;
+                }
+
                 // ドラッグ・伸縮・移動中なら無視
                 if (this._dragMoved || this._retimingMoved || this._clipMoveMoved || this._timelineGestureMoved) {
                     this._dragMoved = false;
@@ -8828,6 +10273,70 @@ export class AnimationTablePopup {
                 if (e.button !== undefined && e.button !== 0) return;
                 // 前回clickが発火しなかった場合も、次の操作へ抑止を持ち越さない。
                 this._clipSelectionClickSuppressed = false;
+                this._motionKeyClickSuppressed = false;
+
+                const keyMarker = e.target.closest('.anim-motion-key-marker, .anim-warp-key-marker');
+                if (keyMarker && this._isMotionTimelineKeyEditing()) {
+                    const kind = keyMarker.dataset.keyKind;
+                    const clipId = keyMarker.dataset.celId;
+                    const sourceFrame = Number(keyMarker.dataset.keyFrame);
+                    const entry = this.model.findClipEntry(clipId);
+                    const block = keyMarker.closest('.anim-cel-block');
+                    if (!entry?.clip || clipId !== this.selectedCelId || kind !== this._motionTimelineKeyKind || !Number.isInteger(sourceFrame) || !block) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
+                    const rect = block.getBoundingClientRect();
+                    const gesture = {
+                        pointerId: e.pointerId,
+                        clipId,
+                        kind,
+                        sourceFrame,
+                        targetFrame: sourceFrame,
+                        startX: e.clientX,
+                        duration: Math.max(2, entry.clip.duration || 2),
+                        rect,
+                        marker: keyMarker,
+                        moved: false,
+                        beforeState: this._captureTimelineHistoryState()
+                    };
+                    this._motionKeyDrag = gesture;
+                    const onMove = (moveEvent) => {
+                        if (moveEvent.pointerId !== gesture.pointerId) return;
+                        if (Math.abs(moveEvent.clientX - gesture.startX) >= 3) gesture.moved = true;
+                        if (!gesture.moved) return;
+                        const ratio = Math.max(0, Math.min(1, (moveEvent.clientX - gesture.rect.left) / Math.max(1, gesture.rect.width)));
+                        gesture.targetFrame = Math.round(ratio * (gesture.duration - 1));
+                        const keyframes = gesture.kind === 'warp'
+                            ? (normalizeClipDeformer(entry.clip.deformer)?.keyframes || [])
+                            : (entry.clip.transformKeyframes || []);
+                        const collides = keyframes.some(key => key?.frame === gesture.targetFrame && key?.frame !== gesture.sourceFrame);
+                        gesture.marker.classList.toggle('key-drop-blocked', collides);
+                        gesture.marker.style.setProperty(
+                            gesture.kind === 'warp' ? '--warp-key-position' : '--motion-key-position',
+                            `${(gesture.targetFrame / (gesture.duration - 1)) * 100}%`
+                        );
+                        moveEvent.preventDefault();
+                    };
+                    const onUp = (upEvent) => {
+                        if (upEvent.pointerId !== gesture.pointerId) return;
+                        document.removeEventListener('pointermove', onMove);
+                        document.removeEventListener('pointerup', onUp);
+                        document.removeEventListener('pointercancel', onUp);
+                        this._motionKeyDrag = null;
+                        this._motionKeyClickSuppressed = gesture.moved;
+                        if (gesture.moved) {
+                            this._moveTimelineKey(gesture.clipId, gesture.kind, gesture.sourceFrame, gesture.targetFrame, gesture.beforeState);
+                        }
+                    };
+                    document.addEventListener('pointermove', onMove, { passive: false });
+                    document.addEventListener('pointerup', onUp);
+                    document.addEventListener('pointercancel', onUp);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
                 // Ctrl/Cmd選択はハンドル判定より先に扱う。細いCAFでは中央付近にも
                 // 伸縮ハンドルが重なるため、後段に置くとクリック位置で判定が揺れる。
                 const selectionBlock = (e.ctrlKey || e.metaKey)
@@ -8847,6 +10356,11 @@ export class AnimationTablePopup {
                 // 1. リタイミング（左右端ハンドル）
                 const handle = e.target.closest('.anim-cel-handle');
                 if (handle) {
+                    if (this._isMotionTimelineKeyEditing()) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
                     const celId = handle.dataset.celId;
                     const entry = this.model.findClipEntry(celId);
 
@@ -8877,7 +10391,8 @@ export class AnimationTablePopup {
                                 id: cel.id,
                                 startFrame: cel.startFrame,
                                 duration: cel.duration,
-                                transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, [])
+                                transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
+                                deformer: this._cloneClipInstanceMetadata(cel.deformer, null)
                             })),
                             beforeState: this._captureTimelineHistoryState()
                         };
@@ -8897,6 +10412,11 @@ export class AnimationTablePopup {
                 // 2. クリップ移動（ブロック本体）
                 const block = e.target.closest('.anim-cel-block');
                 if (block) {
+                    if (this._isMotionTimelineKeyEditing()) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
                     const clipId = block.dataset.celId;
                     const entry = this.model.findClipEntry(clipId);
                     if (!entry) return;
@@ -9302,7 +10822,8 @@ export class AnimationTablePopup {
                     id: cel.id,
                     startFrame: cel.startFrame,
                     duration: cel.duration,
-                    transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, [])
+                    transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
+                    deformer: this._cloneClipInstanceMetadata(cel.deformer, null)
                 }))
             };
             if (this._applyRetimingWithPush(retimingData, newDuration - previousDuration)) {
@@ -9336,7 +10857,8 @@ export class AnimationTablePopup {
             id: cel.id,
             startFrame: cel.startFrame,
             duration: cel.duration,
-            transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, [])
+            transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
+            deformer: this._cloneClipInstanceMetadata(cel.deformer, null)
         }));
         const ok = this._applyRetimingWithPush({
             cel: clip,
@@ -11153,7 +12675,26 @@ export class AnimationTablePopup {
             if (Array.isArray(original.transformKeyframes)) {
                 cel.transformKeyframes = this._cloneClipInstanceMetadata(original.transformKeyframes, []);
             }
+            cel.deformer = this._cloneClipInstanceMetadata(original.deformer, null);
         });
+    }
+
+    _retimeTerminalKeyframes(keyframes, oldTerminalFrame, newTerminalFrame, targetDuration) {
+        const sourceKeys = Array.isArray(keyframes) ? keyframes : [];
+        const terminalKey = sourceKeys.findLast(key => key?.frame === oldTerminalFrame) || null;
+        const nextKeys = sourceKeys
+            .filter(key => Number.isInteger(key?.frame)
+                && key.frame < targetDuration
+                && key.frame !== oldTerminalFrame
+                && (!terminalKey || key.frame !== newTerminalFrame))
+            .map(key => this._cloneClipInstanceMetadata(key, {}));
+        if (terminalKey) {
+            nextKeys.push({
+                ...this._cloneClipInstanceMetadata(terminalKey, {}),
+                frame: newTerminalFrame
+            });
+        }
+        return nextKeys.sort((left, right) => left.frame - right.frame);
     }
 
     _applyRetimingWithPush(retimingData, deltaFrames) {
@@ -11218,15 +12759,23 @@ export class AnimationTablePopup {
         cel.duration = targetDuration;
         const oldTerminalFrame = startDuration - 1;
         const newTerminalFrame = targetDuration - 1;
-        const motionKeys = cel.transformKeyframes || [];
-        const terminalKey = motionKeys.findLast(key => key?.frame === oldTerminalFrame) || null;
-        cel.transformKeyframes = motionKeys
-            .filter(key => Number.isInteger(key?.frame)
-                && key.frame < targetDuration
-                && key.frame !== oldTerminalFrame
-                && (!terminalKey || key.frame !== newTerminalFrame));
-        if (terminalKey) cel.transformKeyframes.push({ ...terminalKey, frame: newTerminalFrame });
-        cel.transformKeyframes.sort((a, b) => a.frame - b.frame);
+        cel.transformKeyframes = this._retimeTerminalKeyframes(
+            cel.transformKeyframes,
+            oldTerminalFrame,
+            newTerminalFrame,
+            targetDuration
+        );
+        if (['warp-grid', 'control-mesh'].includes(cel.deformer?.type)) {
+            cel.deformer = {
+                ...cel.deformer,
+                keyframes: this._retimeTerminalKeyframes(
+                    cel.deformer.keyframes,
+                    oldTerminalFrame,
+                    newTerminalFrame,
+                    targetDuration
+                )
+            };
+        }
         return true;
     }
 

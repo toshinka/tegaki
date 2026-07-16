@@ -203,6 +203,12 @@ export const KeyboardHandler = (function() {
                         || window.coreEngine?.popupManager?.get?.('animationTable');
                     if (nextVKeyState) {
                         animationTable?.setMotionWindowOpen?.(false);
+                        if (animationTable?.isSelectedWorkingRestoreBlocked?.()) {
+                            animationTable?._showWorkingRestoreBlockedReason?.();
+                            e.preventDefault();
+                            e.stopImmediatePropagation();
+                            return;
+                        }
                         animationTable?.prepareInternalFolderTransform?.();
                     } else if (animationTable?.canConfirmInternalFolderTransform?.() === false) {
                         e.preventDefault();
