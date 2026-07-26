@@ -257,12 +257,16 @@ function summarizeEstimatedBytes(report) {
     addBytes(estimated, 'history', report.history.bytes);
     addBytes(estimated, 'cafRasterHistory', report.history.cafRaster.bytes);
     addBytes(estimated, 'textureCache', report.textureCache?.bytes || 0);
+    addBytes(estimated, 'snapshotTexturePendingDestroy', report.textureCache?.pendingDestroyBytes || 0);
+    addBytes(estimated, 'previewRenderTextures', report.previewRuntime?.ownedRenderTextures?.bytes || 0);
     addBytes(estimated, 'renderTextures', report.layerSystem.rasterRenderTextures.bytes);
     addBytes(estimated, 'animationWorkingRenderTextures', report.layerSystem.animationWorkingLayers.bytes);
     estimated.hotRuntimeApprox = estimated.drawingSnapshots
         + estimated.clipRasterSnapshots
         + estimated.history
         + estimated.textureCache
+        + estimated.snapshotTexturePendingDestroy
+        + estimated.previewRenderTextures
         + estimated.renderTextures;
     return estimated;
 }
@@ -301,6 +305,7 @@ export async function collectCafMemoryProfile({
         clipRasterSnapshots: collectClipRasterSnapshotProfile(model),
         history: collectHistoryProfile(history),
         textureCache: animationTable?._getSnapshotTextureCacheProfile?.() || null,
+        previewRuntime: animationTable?._getCafPreviewRuntimeProfile?.() || null,
         layerSystem: collectLayerSystemProfile(layerSystem),
         browser: await collectBrowserMemoryProfile({ includeUserAgentSpecificMemory })
     };

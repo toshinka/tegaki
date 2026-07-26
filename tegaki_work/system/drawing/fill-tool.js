@@ -20,6 +20,7 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
 import { normalizeRasterBounds } from '../raster-bounds.js';
+import { estimateRasterHistoryPairBytes } from '../raster-snapshot-memory.js';
 
 // 塗りつぶしのしきい値定数 (Phase 3e 以降は設定UI化を検討)
 const FILL_ALPHA_THRESHOLD = 24;  // これ以上の不透明度は「壁」とみなす
@@ -658,6 +659,7 @@ export class FillTool {
 
         const layerIndex = layerManager.getLayerIndex(layer);
         const layerId = layer.layerData?.id;
+        const retainedMemory = estimateRasterHistoryPairBytes(beforeSnapshot, afterSnapshot);
 
         history.record({
             name: `fill-layer-${method}`,
@@ -667,9 +669,8 @@ export class FillTool {
             undo: () => {
                 layerManager.restoreLayerRasterSnapshot(beforeSnapshot);
             },
-            meta: { layerId, layerIndex, fillColor, fillAlpha, method },
-            byteSize: (beforeSnapshot.pixels?.byteLength || 0)
-                + (afterSnapshot.pixels?.byteLength || 0)
+            meta: { layerId, layerIndex, fillColor, fillAlpha, method, retainedMemory },
+            byteSize: retainedMemory.estimatedBytes
         });
     }
 

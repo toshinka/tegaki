@@ -195,6 +195,16 @@ export class PointerHandler {
             };
         }
 
+        function getEventQueueDelayMs(e, now = performance?.now?.() || Date.now()) {
+            const eventTime = Number(e?.timeStamp);
+            if (!Number.isFinite(eventTime) || !Number.isFinite(now)) return null;
+
+            const delay = now - eventTime;
+            // ChromiumのPointerEventはperformance.timeOrigin基準。異なる時刻基準は診断値に混ぜない。
+            if (delay < 0 || delay > 60000) return null;
+            return Number(delay.toFixed(2));
+        }
+
         function createInputProfile(e) {
             const coalescedSupported = typeof e.getCoalescedEvents === 'function';
             let coalesced = [];
@@ -230,6 +240,7 @@ export class PointerHandler {
                     curve: window.TegakiSettingsManager?.get?.('pressureCurve') ?? 'linear'
                 },
                 timeStamp: Number(e.timeStamp?.toFixed?.(3) ?? e.timeStamp),
+                queueDelayMs: getEventQueueDelayMs(e),
                 coalesced: {
                     supported: coalescedSupported,
                     count: coalesced.length,
@@ -253,11 +264,19 @@ export class PointerHandler {
 
             const now = performance?.now?.() || Date.now();
             const duration = now - start;
-            const level = duration >= 250 ? 'FREEZE'
-                : duration >= 100 ? 'SEVERE'
-                : duration >= 50 ? 'LAG'
-                : duration >= 33 ? 'DROP'
-                : duration >= 16 ? 'FRAME'
+            const rawQueueDelay = extra.eventQueueDelayMs;
+            const queueDelay = rawQueueDelay === null || rawQueueDelay === undefined
+                ? NaN
+                : Number(rawQueueDelay);
+            const observed = Math.max(
+                duration,
+                Number.isFinite(queueDelay) ? queueDelay : 0
+            );
+            const level = observed >= 250 ? 'FREEZE'
+                : observed >= 100 ? 'SEVERE'
+                : observed >= 50 ? 'LAG'
+                : observed >= 33 ? 'DROP'
+                : observed >= 16 ? 'FRAME'
                 : null;
             if (!level) return;
 
@@ -265,14 +284,28 @@ export class PointerHandler {
                 label,
                 level,
                 durationMs: Number(duration.toFixed(2)),
+                queueDelayMs: Number.isFinite(queueDelay) ? queueDelay : null,
+                observedMs: Number(observed.toFixed(2)),
+                bottleneck: Number.isFinite(queueDelay) && queueDelay > duration
+                    ? 'event-queue'
+                    : 'handler',
                 isDrawing: window.BrushCore?.isDrawing === true,
                 extra
             };
-            console.warn(`[TegakiPerf:${level}] ${label}: ${entry.durationMs}ms`, entry);
-            window.TegakiStrokeInputProfiler?.recordPerf?.(entry);
+            const profiler = window.TegakiStrokeInputProfiler;
+            entry.recentLongTasks = profiler?.getRecentLongTasks?.(
+                Math.max(2000, observed + 250),
+                now
+            ) || [];
+            console.warn(`[TegakiPerf:${level}] ${label}: ${entry.observedMs}ms (${entry.bottleneck})`, entry);
+            profiler?.recordPerf?.(entry);
         }
 
         function onPointerDown(e) {
+            const perfStart = window.TEGAKI_CONFIG?.debug
+                ? (performance?.now?.() || Date.now())
+                : NaN;
+            const eventQueueDelayMs = getEventQueueDelayMs(e, perfStart);
             if (window.TEGAKI_CONFIG?.debug) {
                 console.log('[PointerHandler] raw pointerdown', JSON.stringify({
                     pointerType: e.pointerType,
@@ -315,12 +348,17 @@ export class PointerHandler {
             if (preventDefault) {
                 e.preventDefault();
             }
+            warnPointerPerf('pointer.down.total', perfStart, {
+                pointerType: e.pointerType || 'unknown',
+                eventQueueDelayMs
+            });
         }
 
         function onPointerMove(e) {
             const perfStart = window.TEGAKI_CONFIG?.debug
                 ? (performance?.now?.() || Date.now())
                 : NaN;
+            const eventQueueDelayMs = getEventQueueDelayMs(e, perfStart);
             let perfCoalescedCount = 0;
             if (!activePointers.has(e.pointerId)) {
                 if (preventDefault) e.preventDefault();
@@ -385,7 +423,8 @@ export class PointerHandler {
             warnPointerPerf('pointer.move.total', perfStart, {
                 pointerType: e.pointerType || 'unknown',
                 coalescedCount: perfCoalescedCount,
-                moveInfoCount: moveInfos.length
+                moveInfoCount: moveInfos.length,
+                eventQueueDelayMs
             });
         }
 

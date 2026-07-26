@@ -5,6 +5,12 @@ import {
     createRectControlMeshPreset,
     normalizeControlMeshGridDimensions
 } from './control-mesh-topology.js';
+import {
+    cloneOptionalWarpPlacement,
+    interpolateWarpPlacement,
+    normalizeOptionalWarpPlacement,
+    normalizeWarpPlacement
+} from './warp-placement.js';
 
 /**
  * 自由点Control Meshの保存・sampling契約。
@@ -33,6 +39,20 @@ function normalizeBounds(bounds) {
         y: finiteOr(bounds.y, 0),
         width,
         height
+    };
+}
+
+function pointToProject(point, bounds) {
+    return {
+        x: bounds.x + point.x * bounds.width,
+        y: bounds.y + point.y * bounds.height
+    };
+}
+
+function pointFromProject(point, bounds) {
+    return {
+        x: (point.x - bounds.x) / bounds.width,
+        y: (point.y - bounds.y) / bounds.height
     };
 }
 
@@ -87,7 +107,7 @@ function normalizeGridMetadata(columns, rows, pointCount) {
  * Schema:
  * { type:'control-mesh', version:1, columns?:number|null, rows?:number|null,
  *   bindBounds, bindPoints, triangles, points,
- *   keyframes:[{ frame, interpolation:'hold'|'linear', points }] }
+ *   keyframes:[{ frame, interpolation:'hold'|'linear', points, placement? }] }
  */
 export function normalizeControlMeshDeformer(value) {
     if (!value || typeof value !== 'object' || value.type !== CONTROL_MESH_TYPE) return null;
@@ -105,10 +125,12 @@ export function normalizeControlMeshDeformer(value) {
         .filter(key => key && Number.isInteger(key.frame))
         .map(key => {
             const keyPoints = clonePoints(key.points, bindPoints.length);
+            const placement = normalizeOptionalWarpPlacement(key.placement);
             return keyPoints ? {
                 frame: key.frame,
                 interpolation: normalizeInterpolation(key.interpolation),
-                points: keyPoints
+                points: keyPoints,
+                ...(placement ? { placement } : {})
             } : null;
         })
         .filter(Boolean);
@@ -160,6 +182,42 @@ export function createFreeControlMeshDeformer(options = {}) {
     });
 }
 
+/**
+ * GRIDのBind範囲／Bind点を変更しつつ、static poseと全keyが旧Bindから
+ * 持つ変形量をProject座標pxで維持する。入力valueは変更しない。
+ */
+export function rebaseControlMeshBind(value, options = {}) {
+    const deformer = normalizeControlMeshDeformer(value);
+    if (!deformer?.bindBounds) return null;
+
+    const nextBounds = normalizeBounds(options.bindBounds ?? deformer.bindBounds);
+    const nextBindPoints = options.bindPoints === undefined
+        ? deformer.bindPoints.map(point => ({ ...point }))
+        : clonePoints(options.bindPoints, deformer.bindPoints.length);
+    if (!nextBounds || !nextBindPoints) return null;
+
+    const oldBindProject = deformer.bindPoints.map(point => pointToProject(point, deformer.bindBounds));
+    const nextBindProject = nextBindPoints.map(point => pointToProject(point, nextBounds));
+    const rebasePose = points => points.map((point, index) => {
+        const project = pointToProject(point, deformer.bindBounds);
+        return pointFromProject({
+            x: nextBindProject[index].x + project.x - oldBindProject[index].x,
+            y: nextBindProject[index].y + project.y - oldBindProject[index].y
+        }, nextBounds);
+    });
+
+    return normalizeControlMeshDeformer({
+        ...deformer,
+        bindBounds: nextBounds,
+        bindPoints: nextBindPoints,
+        points: rebasePose(deformer.points),
+        keyframes: deformer.keyframes.map(key => ({
+            ...key,
+            points: rebasePose(key.points)
+        }))
+    });
+}
+
 /** Clip範囲内keyをFrame昇順で返し、同一Frameは保存配列末尾を優先する。 */
 export function listControlMeshKeyframes(value, duration = 1) {
     const deformer = normalizeControlMeshDeformer(value);
@@ -172,11 +230,15 @@ export function listControlMeshKeyframes(value, duration = 1) {
     });
     return [...byFrame.values()]
         .sort((left, right) => left.frame - right.frame)
-        .map(key => ({
-            frame: key.frame,
-            interpolation: key.interpolation,
-            points: key.points.map(point => ({ ...point }))
-        }));
+        .map(key => {
+            const placement = cloneOptionalWarpPlacement(key.placement);
+            return {
+                frame: key.frame,
+                interpolation: key.interpolation,
+                points: key.points.map(point => ({ ...point })),
+                ...(placement ? { placement } : {})
+            };
+        });
 }
 
 /** localFrameはClip-local 0-based Frame。左keyが補間区間を所有する。 */
@@ -199,11 +261,13 @@ export function sampleControlMeshDeformer(value, localFrame, duration = 1) {
 
     const keys = [...byFrame.values()].sort((left, right) => left.frame - right.frame);
     let sampledPoints = deformer.points.map(point => ({ ...point }));
+    let sampledPlacement = normalizeWarpPlacement();
     for (let index = 0; index < keys.length; index++) {
         const left = keys[index];
         const right = keys[index + 1];
         if (frame < left.frame) break;
         sampledPoints = left.points.map(point => ({ ...point }));
+        sampledPlacement = normalizeWarpPlacement(left.placement);
         if (!right || frame < right.frame) {
             if (!right || left.interpolation === 'hold') break;
             const ratio = Math.max(0, Math.min(1, (frame - left.frame) / (right.frame - left.frame)));
@@ -211,6 +275,11 @@ export function sampleControlMeshDeformer(value, localFrame, duration = 1) {
                 x: point.x + (right.points[pointIndex].x - point.x) * ratio,
                 y: point.y + (right.points[pointIndex].y - point.y) * ratio
             }));
+            sampledPlacement = interpolateWarpPlacement(
+                left.placement,
+                right.placement,
+                ratio
+            );
             break;
         }
     }
@@ -223,6 +292,7 @@ export function sampleControlMeshDeformer(value, localFrame, duration = 1) {
         bindBounds: deformer.bindBounds ? { ...deformer.bindBounds } : null,
         bindPoints: deformer.bindPoints.map(point => ({ ...point })),
         triangles: deformer.triangles.map(triangle => [...triangle]),
-        points: sampledPoints
+        points: sampledPoints,
+        placement: sampledPlacement
     };
 }

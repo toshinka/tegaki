@@ -4,9 +4,9 @@ import {
 } from './warp-grid-rasterizer.js';
 
 /** Control Mesh用Pixi adapter data。Topologyは保存正本のtriangleをそのまま使う。 */
-export function createControlMeshRenderData(deformer, sourceBounds) {
+export function createControlMeshRenderData(deformer, sourceBounds, textureBounds = sourceBounds) {
     if (deformer?.type !== 'control-mesh') return null;
-    return createTriangleMeshData(deformer, sourceBounds, deformer.triangles);
+    return createTriangleMeshData(deformer, sourceBounds, deformer.triangles, textureBounds);
 }
 
 /** Control Mesh用CPU reference renderer。 */

@@ -1,8 +1,31 @@
 # Tegaki Progress
 
-更新日: 2026-07-17
+更新日: 2026-07-26
 
 ## 現在地
+
+- Phase 6cを完了した。部分WARPは元Rasterを維持してBind triangleだけをsource-over差替えし、GRID Setupでは絵を動かさず、POINT / BRUSH poseだけが変形する。座標ずれ、白mask、透明境界、Raster外、部分重複、preview / playback / Bake / GIF / APNG、B / N、4 brush modeを固定入力・Browser・オーナー実機で受入れた。完了記録は`開発用資料保管庫/Archive/phase6c.md`。
+- Phase 6cでAnimation Table単押し`A`、最後に閉じたMotion / WARP tab復帰、再生中overlay eye、途中Frame自動key、最上段LaneへのBake、drag preview coalesce、cancel共通rollback、遅延preview nodeとtexture cacheの寿命同期を実装した。24 WARP CAF / 8 Lane、72回Frame切替はcrashなし。大Canvas・多数内部Layerの上限はLayer構造保持Bakeと合わせて独立容量gateへ残す。
+- Phase 6dを完了した。新規固定4×4 / 可変GRIDの初期BindをProject Canvas枠へ合わせ、Warp key内のoptional LENS placement、CPU / Pixi / inverse pose編集、Project / Bake / GIF / APNG一致を実装した。既存Project、既存／再設定GRIDには遡及しない。外部Project実再読込とpen境界はオーナー実機で受入れた。完了記録は`開発用資料保管庫/Archive/phase6d.md`。
+- Phase 6d Slice 1でWarp keyへ省略可能な`placement { x, y, scale, rotation }`を追加した。旧key欠損は保存上そのまま、sampling時だけidentity。固定4×4 / 可変GRID、HOLD / LINEAR、rotation scalar、Bind点重心affine、Project round-trip、copy / paste、terminal retiming相当の固定入力を通過した。
+- Phase 6d Slice 2でCPU reference rasterizerへplacementを接続した。source Bind eraseとdestination Poseは共通geometry helperで同じ変換を使う。identityの旧経路byte一致、移動だけでは絵を動かさないこと、pose併用、透明境界、Raster外、部分重複、固定4×4 / 可変GRID一致を固定入力で確認した。
+- Phase 6d Slice 3でPixi previewのsource texture bounds、erase mesh、source UV、destination meshを同じ配置済みsampleへ接続した。identityと固定4×4 / 同Topology可変GRID一致、WARP再生中のGRID表示、Animation TableのA開閉、初期化時warning / console errorなしを確認した。次はCanvas placement gestureとPOINT / BRUSHのinverse placement編集を接続する。
+- Phase 6d Slice 4でWARPへ`LENS` toolを追加した。現在Frame keyのplacementだけを移動・uniform拡縮・回転し、POINT / BRUSHは配置後Canvas座標を純粋逆変換して既存pose keyへ戻す。空Frame操作時の自動key、cancel復元、1 gesture / wheel burst 1 Historyを既存deformer経路へ接続した。Browserで移動、wheel拡縮、handle回転、移動後POINT、Undo / Redo、再生中overlay、横溢れなし、console errorなしを確認した。次はProject再読込とBake / GIF / APNG実像一致。
+- Phase 6d Slice 5でProject全体の`TimelineModel.serialize() -> JSON -> constructor`復元を固定し、placement / pose / interpolation保持を確認した。BrowserではLENS移動＋POINT変形した5 Frame ClipのBake前後400×400 cropがPNG byte一致し、最上段Lane生成、元Clip非表示保持、APNG / GIF各5 Frame preview Blob、console warning / errorなしを確認した。
+- Phase 6eを開始した。History 499 / 500 / 501とbyte上限の固定入力を追加し、上限hit・破棄件数／理由、`byteSize`未宣言entry数を診断可能にした。既存stroke profilerはdebug時にsnapshot / History record / finalize時間、active Raster、累積`pathsData`、History使用量、利用可能なJS heapを開始／終了sampleと一行`LongDrawingProfile`へ保持する。通常stroke履歴が累積`pathsData`を複製する一方、その量が宣言`byteSize`に未計上な経路を第一候補として計測する。
+- Phase 6e Slice 1でRaster snapshot共通estimatorを追加した。pixel実byteと累積`pathsData` / legacy `paths`のpath・point推定byteを分離し、stroke / fill / selection / Layer・Folder transform / recenter / mergeのHistory上限へ反映する。History usageはtype別件数・byte・未計上件数を返し、Airbrush mask / pen opacity / blur sourceの一時textureはdebug sampleで終了後残留を確認できる。500件直後の一律crashとは扱わず、実制作の操作密度・ツール・変形・長時間GPU状態を比較する。
+- オーナー実機では重めのアニメProjectに新規CAFを作ってAirbrushを重ねると、History約10件／約100件の双方で、時折遅延後に入力結果が一気に表示された。History件数との単純相関はない。Pointer handler時間に加えてevent queue待ち、stroke開始時のRaster枠保証／Airbrush mask準備、stroke内render回数・dab数をdebug診断へ追加し、他tab・GC等のブラウザ停滞とTegaki内同期描画を次の再現時に分離する。描画batch化は画素一致を固定するまで行わない。
+- 最初の遅延sampleはPointer downがqueue 1185.2ms / handler 26.8ms、moveがqueue 906ms / handler 1.4msで、当該handler処理よりイベント受領前の停滞が支配的だった。debug時のLong Tasks APIを同じprofilerへ追加し、`TegakiPerf`警告に直前の同一tab内50ms超taskを添える。該当taskがなければ別tab・共有GPU process・OS／driver側を残し、まだAirbrush batch化やHistory既定値変更を行わない。
+- Browserの通常Layerへmouse penを1 stroke入力し、History 1 / 500、before / after snapshot 5.3 / 4.0ms、History record 0.3ms、finalize 6.5ms、440×440 Raster、`pathsData` 1件 / 192点、console warning / errorなしをbaseline採取した。次は同じ実stroke経路で上限直前／超過、eraser / airbrush、CAF working Layerを比較する。
+- Phase 6e Slice 2で、History変更後の緊急復旧checkpointをidle開始へ変更し、stroke中はpendingを維持して延期する。重いAnimation CAF実測ではAirbrush開始／確定は各1ms未満だが、自動退避はProject export 0.46〜2.01秒、復元に未使用のthumbnail 2.51〜2.73秒、全体4.38〜5.70秒、heap約2.4GBまで達した。新規checkpointはthumbnailを生成せず`null`で互換shapeを維持する。実エラーはfavicon 404だけで、`TegakiPerf`は診断警告。Airbrush画素処理の最適化は保留し、Project exportの一時複製量とcrash相関を容量gateへ残す。
+- Phase 6eを完了し、記録を`開発用資料保管庫/Archive/phase6e.md`へ移した。実crashまたは同時刻のqueue停滞が再現するまでAirbrush画素処理とHistory既定値は変えない。Phase 6fでは現行flatten Bakeを維持し、Layer構造保持Bakeの一致範囲、明示fallback、全Frame一括常駐を避ける逐次生成とpeak memory preflightを先に監査する。
+- thumbnail廃止後も重いCAFの緊急復旧はProject export 0.48〜0.83秒、全体1.90〜3.77秒で、pointer queue待ち0.64〜0.95秒と重なった。pen / Airbrush確定は1ms未満、一時texture残留0件のため描画tool問題として追わず、Project serialization / IndexedDB退避を凍結する。Phase 6fの容量見積りへexport中間複製を含める。
+- Phase 6f Slice 0で現行flatten Bakeを監査した。呼出側`frames[]`全件保持とimport時RGBA再コピーにより生成中は出力約2組、commit後の緊急復旧はtyped array→通常配列展開による別peakを持つ。Frame数、Raster Layer tight byte、既存Snapshot / History / preview、working copy、export展開係数から両peakとbudget適否を返す純粋estimatorを追加した。まだUI制限やLayer複製は行わない。
+- Phase 6f Slice 1でLayer構造保持Bakeを追加した。内部Layerを個別に変形せず、各Frameの既存Motion / WARP sampleを1 Frame Clipの静的transformとFrame 0 deformer keyへ畳み込み、`内部Layer合成 → clipping / blend → WARP → Motion`の既存順を維持する。各Frameは独立Snapshot / Asset、専用最上段Lane、元Clip非表示、1 Historyで、失敗時はTimeline全体をrollbackする。heap / History preflight、Motion・LENS placement・Control Mesh、Folder親子・Layer属性・Project round-tripを固定入力化し、Browserで4 Frame Bake、Undo / Redo、再生、console errorなしを確認した。残りは複合Folder実像、flatten回帰、export一致、cancel、24 / 240 Frame容量実測。
+- Phase 6fを完了した。複合Folder構造保持Bake Projectを実file chooserから再読込し、Layer / Folder / Snapshot / Motion / WARP keyを復元した。400×400・1 Raster Layer・固定4×4 WARP・240 Frame構造保持Bakeは、推定peak 1381MB、実測230.7秒、観測heap増加144MBで完走したが、直後の同期checkpoint serializationでOS全体の強いmemory pressureを観測した。校正済み安全上限を1GiBへ固定し、同構成は今後開始前拒否する。最上段Lane、元Clip非表示、History 1件、console warning / error 0件を維持した。記録は`開発用資料保管庫/Archive/phase6f.md`。
+- Phase 6gを開始する。QTP開閉用Qと既存Layer Transform入口を左sidebarへ先に追加し、tool復帰・shortcut・touch・popup lifecycleを確認してからQTPと重複する描画tool iconを段階整理する。Text、Deformer SELECT、階層Motionは後続Phaseへ分離する。
+- 初期化途中のAnimation Table status参照を副作用なしにし、正常な遅延登録をwarning扱いしない。GIF exporterはCanvasを依存側で反復readbackさせず、`willReadFrequently`付きで取得した各Frameの`ImageData`を`gif.js`へ渡す。
+- 選択形状、左sidebar / QTP整理、Text、CAF内部階層Motionの案はproposal 14へ分離した。Phase 6cのmask / brush受入前には実装せず、selection maskや再帰Timeline正本を新設しない段階計画とする。
 
 - Phase 5aから5rまで完了。
 - Phase 5rではLane visibilityの保存・preview/playback/export除外、閉Table Timeline onion、閉Table再生、Frame/Lane/CAF内部Layerの操作契約、PSDアクティブCAF初期選択を完了した。
@@ -159,11 +182,27 @@
 - Motion / Warp tabを同寸法icon付きへ揃え、inactive / disabled / hover説明をふたばpaletteの共通tooltipへ変更した。WARP tabはGrid未作成なら作成、作成済みなら現在Frame keyを保証して即point editへ入る。Grid全体の初期位置・大きさ・回転は将来のBind全点選択変換、4 corner cageは内部点へのbilinear操作として計画し、Motion正本を重複させない。
 - CLIP MOTION headerを両tab共通のkey操作順へ整理した。重複Grid toggleを廃止し、Motion / Warp双方へ現在key、前後移動、基準reset、copy / paste、全key削除を配置する。矢印上wheelも前後key移動へ接続し、WarpのBind範囲調整 / Bake / Grid全削除は下段へ分離した。Browserで約595pxのMotion headerと540pxのWarp panelに横溢れなし、Motion / Warp key作成・前後移動、Warp copy / paste、矢印上wheel、tab切替 / close時overlay DOM削除、console errorなしを確認した。
 - GRID RANGE / CAGEは実機評価で描画制限のように見え、可変密度や自由点Meshへの入口にならないため撤回した。WARPは現在keyがあるFrameのオレンジPOINTS編集だけへ戻し、旧Warp v1の保存 / sampling / exportは変更しない。四隅操作が必要なら後続のPOINTS multi-select / cage gestureとして再設計する。
-- ToonSquidの固定16点Warpと自由control point Meshの分離に合わせ、可変密度をWarp v2へ混ぜない方針へ変更した。`control-mesh-topology.js`を保存・描画未接続の純粋基盤として追加し、4×8 / 8×8等の矩形presetと自由点の決定的Delaunayを同じ新規Control Meshへ接続する。旧Warp Projectは自動変換しない。
-- Control Mesh作成値は`横点数 × 縦点数`の自由入力を主操作とし、各2〜32・総点数256以下へ固定した。正方形presetの列挙は増やさず、初期8×8と軽量互換の4×4 Warpを明示的に選ぶ。`control-mesh-deformer.js`に矩形 / 自由点共通の独立schemaと純粋samplingを追加し、ClipInstance round-trip、CPU reference、Animation TableのPixi preview adapterへ接続した。
-- WARP tabの未作成状態へPOINTS自由入力UIを追加し、4×8で32点・42 triangle・73 overlay edgeを同じTopologyから生成する。既存のkey追加/削除、hold / linear、copy/paste、Timeline key移動、point dragはWarp / Mesh共通dispatcherへ寄せ、Topology不一致pasteを拒否する。Browserで4×8作成、32点/73辺表示、popup close時のoverlay消去、console errorなしを確認した。自由点の追加/削除と複数点操作は後続。
-- Warp Brushは未実装。後続はControl Mesh schema / rendererを固定した後、直接point、multi-select、Live2D型変形 / 膨張 / 絞り / 整形、`B`保持dragのbrush sizeを同じMesh pose正本へ接続する。
+- 等間隔の可変密度機能は三角Meshではなく、Live2D系Warp Deformerに相当する`Warp GRID`と再定義した。内部`control-mesh` schemaのtriangleは各四角cellを描画するrenderer詳細として維持するが、UI overlayには縦横edgeだけを表示する。描画物の輪郭・塗りを解析して三角形を自動配置するMeshは、Bone前提の別Phaseへ分離する。
+- Warp GRID作成値は`横点数 × 縦点数`の自由入力を主操作とし、各2〜32・総点数256以下へ固定した。正方形presetの列挙は増やさず、初期8×8と軽量互換の4×4 Warpを明示的に選ぶ。旧Warp Projectは自動変換しない。
+- WARP tabの未作成状態へGRID POINTS入力UIを追加した。既存のkey追加/削除、hold / linear、copy/paste、Timeline key移動、point dragは共通dispatcherへ寄せ、Topology不一致pasteを拒否する。全key削除は1件から可能とし、可変GRIDが0 keyになると現在の横×縦を初期値に再設定UIを開く。再設定は1 Historyで新しいBind GRIDと現在Frame keyを作る。
+- Browserで4×8 GRIDの32点・52本の縦横線、1 key全削除、4×8値を維持した再設定UI、6×6再設定後の36点・60線、popup close後overlay消去、console errorなしを確認した。`TO NEXT`と補間selectはふたばbrown / orange focusへ揃え、browser既定の黒outlineを使わない。
+- 将来の自動MeshはToonSquid同様、Layer内容をcustom triangle meshへ写像し、点追加時に自動再triangulateする独立effectとする。理想は線への輪郭traceと塗り領域へのtriangle充填を自動化し、後からAdd / Cut / Transform、Bind / Animate、変形brush、Boneを接続する。Warp GRIDの自由点modeへ代理実装しない。
+- Warp Brushは未実装。次Phase候補ではWarp GRIDの直接point / multi-selectと同じ四角格子poseへ、Live2D型変形 / 膨張 / 絞り / 整形、`B`保持dragのbrush sizeを接続する。将来自動Meshへの適用は別adapterとし、保存正本を混同しない。
 - 描画の軽量操作としてペン / 消しゴムの`Shift+drag`直線を追加した。pointerdownで直線modeを固定し、drag中はdisplay-only guideだけ、pointerupで既存BrushCoreの補間・Raster焼込み・1 Stroke Historyへ一度だけ確定する。通常freehand、筆圧、CAF working adapter、Undo / Redo正本は分岐させない。Browserでペン直線、通常折れ線、消しゴム直線、History 0↔1 Undo / Redo、console errorなしを確認した。Airbrush / lassoへは暗黙適用しない。
+- Phase 6bを完了した。4×8可変GRIDのProject JSON round-tripで32点、42内部triangle、3 key、HOLD、負origin、Clip非表示、ADD強度を保持した。Browserでは変形GRIDを2 Frame CAF列へBakeし、元Clip非表示、2 CAF、overlay終了、Undo復元を確認した。WARP tabの即POINTS編集によりBakeが常時disabledになる競合を修正し、元GRID / Bake列双方のAPNG preview（1〜2 Frame、200×200）、console errorなしを確認した。次はPhase 6cの変形brush純粋基盤。
+- Phase 6c Slice 0を開始した。Warp GRID poseだけを確定正本とし、screen-spaceのradius / hardnessからのweight、gesture開始pose基準の移動、加重重心、膨張 / 絞り、Grid adjacencyによる整形を`warp-grid-brush.js`の純粋関数へ分離した。4×8、負origin、radius境界、hardness 0 / 1、weight 0、pivot上の点を固定入力確認済み。次はPOINT / BRUSH明示切替、preview、cancel復元、pointerup 1 History。
+- Phase 6c Slice 1でWARP contextへ`POINT / BRUSH`を追加した。BRUSHはscreen-space円形範囲と80px既定半径を表示し、pointerdown時のpose / weightから複数点移動を再計算する。pointerupだけを1 History、cancel / capture喪失は開始poseへ復元する。可変GRID key全削除後は再設定UIだけを残す540px compact表示へ修正した。Browserで8×8、tool切替、cursor、key削除 / 再追加と64点overlay復帰を確認済み。実drag Undo / Redo、cancelの実機確認後にinflate / pinch / smooth UIへ進む。
+- Phase 6c Slice 1後半でBRUSHへMOVE / INFLATE / PINCH / SMOOTH、SIZE、POWERを追加した。WARP BRUSH中だけB保持dragをSIZE、N保持dragをPOWERへ一時割当し、通常描画shortcutを維持する。POINT曲線handleはBezier / cage handle付きdeformerの後続Phaseへ分離した。次は4 modeの固定入力、Browser UI、実drag Undo / Redo / cancelを確認する。
+- Phase 6c Slice 2でブラシcursorを塗り潰しから橙ring＋中心点へ変更し、影響点ごとにweight比例の半透明maroon表示を加えた。MOVEはpointer経路へ追従する増分変形、Shift+横dragは開始中心を固定して右で膨張・左で収縮とし、PはPOINT、MはBRUSH/MOVEおよびBRUSH中のmode巡回へWARP編集中だけ割り当てる。固定入力、8×8 Browser実drag、終了時overlay消去、console errorなしを確認済み。残りはINFLATE / PINCH / SMOOTH各modeのオーナー実機感触、hardness / brush shapeのUI採否、POINT曲線handleを後続Phaseへ送る判断。
+- 高密度GRIDのpointを点数に応じて縮小する縁なし橙点へ変更し、格子線も淡色化した。weightの大きな円群は廃止し、brush範囲全体の連続した薄い赤fieldと小点の濃淡へ置換した。MOVE / INFLATE / PINCH / SMOOTHは選択中modeごとのふたば配色tooltipとARIA説明を持つ。
+- WARP編集後のstrokeでCanvasが消える回帰は、表示sceneへ残したPixi Meshの専用RenderTextureをpreview交換時に破棄し、GlMeshAdaptorがnull resourceを参照する寿命競合だった。Warp Meshは同期render内で通常Sprite用RenderTextureへ焼き、source Mesh / Textureを二描画周期後に破棄する。Browserで8×8変形後にMOTIONを閉じてstrokeし、旧線・新線維持、overlay 0件、操作開始後console errorなしを確認した。
+- 4 modeの純粋固定入力と8×8 GRIDのBrowser実dragを確認した。各dragはHistoryを1件だけ増やし、MOVEのUndo / Redo、key全削除後のoverlay終了とcompact再設定表示も維持する。B / N保持dragとpointercancelはペン実機確認待ち。後続はhardness / brush shapeを増やす前に操作感を評価する。
+- 局所CAFへGRID密度を集中できる`GRID / POINT / BRUSH`切替を追加した。GRID枠編集は青系表示とし、枠内drag移動、四隅handle等比拡縮、上部handle回転、wheel拡縮、Shift＋wheel 5°回転を全Warp keyのpx変形量維持rebaseへ接続する。描画は元Rasterを維持し、Bind mesh領域だけを消去してWarp結果へ差し替える部分effect契約へ変更したため、GRID枠の再配置だけでは絵を動かさない。4×8固定入力で入力不変・HOLD・20px差分維持、10×10局所GRID移動後の全画素一致、Browserで描画境界不変、handle操作各1 History、青表示、終了時overlay 0、console errorなしを確認した。
+- Motion / Warp設定後にAnimation Tableを閉じるとCanvas表示だけ消える回帰を修正した。`hide()`が実Layer復元後、まだTable表示中のままMotion window cleanupでrenderしてPREVIEWを再適用していたため、Table非表示stateを先に確定してからsub-windowとpreviewを片付ける。BrowserでMotion X設定後とWarp GRID枠移動後の双方を閉じ、描画維持を確認した。
+- CLIP Motion / Warp GRID変形時の座標系ズレ（キャンバス上PixiJSプレビューでの`Sprite` pivot/position上書きによる`outputBounds`オフセット相殺漏れ、および動画出力とDOMガイド線で不一致が発生するメカニズム）の点検調査を完了。報告書を `開発用資料保管庫/proposals/13_WarpGRID_CLIPMotion_座標系ズレ原因調査報告書.md` へ提出した。
+- エアブラシ描画の筆圧反映を「サイズ極小化」から「濃度/不透明度（アルファ）」へ反映する案B改修を完了。液タブの弱圧時にスタンプサイズが小さくなりすぎて点々に分裂する現象（カエルの卵状の斑点）を解消し、広がりを保ったままフワッとした薄い雲状グラデーションが重ね塗りできるように改善した。`node --check` および `npm.cmd run build` 通過を確認。
+- Phase 6d Slice 0-2で新規GRIDのProject Canvas初期Bind、Warp key内のoptional `placement`、共通geometry helper、CPU reference rasterizerを実装した。欠損identity、固定4×4 / 可変GRID、Project / clipboard / retiming、移動・拡縮・回転、pose併用、透明境界、Raster外、部分重複を固定入力で確認した。
+- Phase 6d Slice 3でPixi previewのsource texture bounds、erase mesh、source UV、destination meshを同じ配置済みsampleへ接続した。identityと固定4×4 / 同Topology可変GRID一致、WARP再生中のGRID表示、Animation TableのA開閉、初期化時warning / console errorなしを確認した。次はCanvas placement gestureとPOINT / BRUSHのinverse placement編集を接続する。
 
 ## 資料
 
@@ -177,7 +216,8 @@
 - Motion Graph設計: `開発用資料保管庫/proposals/10_Motion_Graph・Easing・Motion_Path設計.md`
 - 欄外Raster / Resize監査: `開発用資料保管庫/proposals/11_Animation_Table欄外Raster・Canvas_Resize整合性監査.md`
 - Camera Frame / Resize UI将来設計: `開発用資料保管庫/proposals/12_Camera_Frame・Resize_UI将来設計.md`
+- Warp GRID / CLIP Motion 座標ズレ原因調査報告書: `開発用資料保管庫/proposals/13_WarpGRID_CLIPMotion_座標系ズレ原因調査報告書.md`
 - Phase 5z8完了: `開発用資料保管庫/Archive/phase5z8.md`
-- 現行Phase: `task-codex/phase6b.md`
+- 現行Phase: `task-codex/phase6g.md`
 - 旧Progress全文: `開発用資料保管庫/Archive/PROGRESS_ARCHIVE_2026-07-10.md`
 - 現行ロードマップ: `開発用資料保管庫/proposals/00_計画索引.md`

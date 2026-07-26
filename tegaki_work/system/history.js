@@ -22,6 +22,14 @@ export class HistoryManager {
         this.recordingSuppressionDepth = 0;
         this.maxSize = 250;
         this.maxMemoryBytes = 256 * 1024 * 1024;
+        this.limitDiagnostics = {
+            enforcementCount: 0,
+            countLimitHits: 0,
+            byteLimitHits: 0,
+            evictedEntries: 0,
+            evictedBytes: 0,
+            last: null
+        };
         
         // 後方互換性
         this._manager = this;
@@ -201,11 +209,34 @@ export class HistoryManager {
     }
 
     getUsage() {
+        const byType = {};
+        for (const command of this.stack) {
+            const type = String(command?.meta?.type || command?.name || 'unknown');
+            const byteSize = this._getCommandByteSize(command);
+            byType[type] ||= { entries: 0, bytes: 0, unaccountedEntries: 0 };
+            byType[type].entries++;
+            byType[type].bytes += byteSize;
+            if (byteSize === 0) byType[type].unaccountedEntries++;
+        }
         return {
             entries: this.stack.length,
             maxEntries: this.maxSize,
             bytes: this._getTotalByteSize(),
-            maxBytes: this.maxMemoryBytes
+            maxBytes: this.maxMemoryBytes,
+            unaccountedEntries: this.stack.reduce((count, command) => {
+                return count + (this._getCommandByteSize(command) > 0 ? 0 : 1);
+            }, 0),
+            byType,
+            limitDiagnostics: this.getLimitDiagnostics()
+        };
+    }
+
+    getLimitDiagnostics() {
+        return {
+            ...this.limitDiagnostics,
+            last: this.limitDiagnostics.last
+                ? { ...this.limitDiagnostics.last, reasons: [...this.limitDiagnostics.last.reasons] }
+                : null
         };
     }
 
@@ -222,6 +253,12 @@ export class HistoryManager {
 
     _enforceLimits() {
         let totalBytes = this._getTotalByteSize();
+        const beforeEntries = this.stack.length;
+        const beforeBytes = totalBytes;
+        const hitCountLimit = beforeEntries > this.maxSize;
+        const hitByteLimit = beforeEntries > 1 && beforeBytes > this.maxMemoryBytes;
+        let removedEntries = 0;
+        let removedBytes = 0;
         while (
             this.stack.length > 0
             && (
@@ -230,10 +267,36 @@ export class HistoryManager {
             )
         ) {
             const removed = this.stack.shift();
-            totalBytes -= this._getCommandByteSize(removed);
+            const removedByteSize = this._getCommandByteSize(removed);
+            totalBytes -= removedByteSize;
+            removedEntries++;
+            removedBytes += removedByteSize;
             this.index--;
         }
         this.index = Math.max(-1, Math.min(this.index, this.stack.length - 1));
+
+        if (removedEntries > 0) {
+            const reasons = [];
+            if (hitCountLimit) reasons.push('count');
+            if (hitByteLimit) reasons.push('bytes');
+            this.limitDiagnostics.enforcementCount++;
+            if (hitCountLimit) this.limitDiagnostics.countLimitHits++;
+            if (hitByteLimit) this.limitDiagnostics.byteLimitHits++;
+            this.limitDiagnostics.evictedEntries += removedEntries;
+            this.limitDiagnostics.evictedBytes += removedBytes;
+            this.limitDiagnostics.last = {
+                at: Date.now(),
+                reasons,
+                beforeEntries,
+                afterEntries: this.stack.length,
+                beforeBytes,
+                afterBytes: Math.max(0, totalBytes),
+                removedEntries,
+                removedBytes,
+                maxEntries: this.maxSize,
+                maxBytes: this.maxMemoryBytes
+            };
+        }
     }
 
     createComposite(commands, name = 'composite') {

@@ -515,12 +515,17 @@ export class TimelineModel {
             type: options.type || 'raster',
             orderIndex: Number.isInteger(options.orderIndex) ? options.orderIndex : this.tracks.length
         });
-        const backgroundIndex = this.tracks.findIndex(t => t.isBackground);
-        if (backgroundIndex >= 0) {
-            this.tracks.splice(backgroundIndex, 0, lane);
+        if (options.placement === 'top') {
+            this.tracks.unshift(lane);
         } else {
-            this.tracks.push(lane);
+            const backgroundIndex = this.tracks.findIndex(t => t.isBackground);
+            if (backgroundIndex >= 0) {
+                this.tracks.splice(backgroundIndex, 0, lane);
+            } else {
+                this.tracks.push(lane);
+            }
         }
+        this.tracks.forEach((track, index) => { track.orderIndex = index; });
         return lane;
     }
 

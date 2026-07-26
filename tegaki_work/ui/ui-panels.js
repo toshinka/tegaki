@@ -69,6 +69,24 @@ export class UIController {
             this.togglePopup('quickAccess');
         }
     }
+
+    toggleAnimationTable() {
+        // Animation Tableを唯一の現行Timeline UIとして扱い、旧Timelineとの二重表示を避ける。
+        const timelineUI = window.timelineUI;
+        if (timelineUI?.isVisible) {
+            timelineUI.hide();
+        }
+
+        this.togglePopup('animationTable');
+
+        const animationTable = this.popupManager?.get?.('animationTable');
+        if (animationTable?.isVisible) {
+            this.updateToolUI('gif-animation');
+        } else {
+            const currentTool = window.brushSettings?.getMode?.() || 'pen';
+            this.updateToolUI(currentTool);
+        }
+    }
     
     closeAllPopups(exceptName = null) {
         if (this.popupManager) {
@@ -107,6 +125,10 @@ export class UIController {
         
         this.eventBus.on('ui:toggle-export', () => {
             this.togglePopup('export');
+        });
+
+        this.eventBus.on('ui:toggle-animation-table', () => {
+            this.toggleAnimationTable();
         });
         
         this.eventBus.on('tool:select', ({ tool }) => {
@@ -702,23 +724,7 @@ export class UIController {
                 this.togglePopup('resize');
             },
             'gif-animation-tool': () => {
-                // 旧タイムラインが表示中なら閉じる
-                const timelineUI = window.timelineUI;
-                if (timelineUI?.isVisible) {
-                    timelineUI.hide();
-                }
-
-                this.togglePopup('animationTable');
-                
-                // 表示状態に合わせてサイドバーの選択状態を更新
-                const animTable = this.popupManager?.get('animationTable');
-                if (animTable?.isVisible) {
-                    this.updateToolUI('gif-animation');
-                } else {
-                    // 閉じた場合は、現在のブラシなどのツール表示に戻す
-                    const currentTool = window.brushSettings?.getMode?.() || 'pen';
-                    this.updateToolUI(currentTool);
-                }
+                this.toggleAnimationTable();
             },
             'library-tool': () => {
                 this.togglePopup('album');

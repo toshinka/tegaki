@@ -397,11 +397,13 @@ export const TEGAKI_KEYMAP = {
             shift: false,
             description: '再生/停止'
         },
-        GIF_TOGGLE_TIMELINE: {
+        ANIMATION_TABLE_TOGGLE: {
             key: 'KeyA',
             ctrl: false,
-            shift: true,
-            description: 'タイムライン表示切替'
+            shift: false,
+            alt: false,
+            repeat: false,
+            description: 'アニメテーブル表示切替'
         },
         GIF_CREATE_FRAME: {
             key: 'KeyN',

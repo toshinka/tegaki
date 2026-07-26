@@ -491,10 +491,11 @@ export class ExportPopup {
     }
 
     getActiveCafForExport() {
-        const table = window.PopupManager?.get?.('animationTable')
-            || window.PopupManager?.popups?.get?.('animationTable')?.instance
-            || window.coreEngine?.popupManager?.get?.('animationTable')
-            || null;
+        const popupManager = window.PopupManager || window.coreEngine?.popupManager || null;
+        const popupEntry = popupManager?.popups?.get?.('animationTable');
+        const table = popupEntry
+            ? popupEntry.instance
+            : popupManager?.get?.('animationTable') || null;
         if (!table?.selectedAssetId || !table.model?.getClipAsset) return null;
         return table.model.getClipAsset(table.selectedAssetId) || null;
     }
