@@ -20,6 +20,7 @@ import { Sprite, Texture } from 'pixi.js';
 import { applyTransformMatrix, createCenteredTransformMatrix } from './transform-math.js';
 import { resolveIntegerTranslation, translateRgbaPixels } from './raster-translation.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
+import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MIN_SELECTION_SIZE = 1;
@@ -494,6 +495,7 @@ export class PixelSelectionSystem {
         const layerId = before.layerId;
         const initialBounds = { ...session.initialBounds };
         const finalBounds = { ...this.state.bounds };
+        const retainedMemory = estimateRasterHistoryPairBytes(before, after);
         const restore = (snapshot, bounds) => {
             const restored = this.layerSystem.restoreLayerRasterSnapshot(snapshot);
             if (restored && this.state?.layerId === layerId) {
@@ -505,13 +507,14 @@ export class PixelSelectionSystem {
             name: session.kind === 'paste' ? 'selection-paste' : 'selection-move',
             do: () => restore(after, finalBounds),
             undo: () => restore(before, initialBounds),
-            byteSize: (before.pixels?.byteLength || 0) + (after.pixels?.byteLength || 0),
+            byteSize: retainedMemory.estimatedBytes,
             meta: {
                 type: 'pixel-selection',
                 action: session.kind === 'paste' ? 'paste' : 'move',
                 layerId,
                 bounds: finalBounds,
-                transform: { ...session.transform }
+                transform: { ...session.transform },
+                retainedMemory
             }
         });
         this._finishTransformSession(true);
@@ -685,6 +688,7 @@ export class PixelSelectionSystem {
         if (!this.layerSystem.restoreLayerRasterSnapshot(after)) return false;
 
         const layerId = before.layerId;
+        const retainedMemory = estimateRasterHistoryPairBytes(before, after);
         const restore = snapshot => {
             const restored = this.layerSystem.restoreLayerRasterSnapshot(snapshot);
             if (restored && this.state?.layerId === layerId) this._updateOverlay();
@@ -693,12 +697,13 @@ export class PixelSelectionSystem {
             name: 'selection-delete',
             do: () => restore(after),
             undo: () => restore(before),
-            byteSize: (before.pixels?.byteLength || 0) + (after.pixels?.byteLength || 0),
+            byteSize: retainedMemory.estimatedBytes,
             meta: {
                 type: 'pixel-selection',
                 action: 'delete',
                 layerId,
-                bounds: { ...context.bounds }
+                bounds: { ...context.bounds },
+                retainedMemory
             }
         });
         this.eventBus?.emit('selection:changed', {
@@ -767,21 +772,21 @@ export class PixelSelectionSystem {
             restoreChanges('before');
             return false;
         }
+        const retainedMemory = changes.map(change => {
+            return estimateRasterHistoryPairBytes(change.before, change.after);
+        });
         this.history.record({
             name: action === 'cut' ? 'folder-selection-cut' : 'folder-selection-delete',
             do: () => restoreChanges('after'),
             undo: () => restoreChanges('before'),
-            byteSize: changes.reduce((total, change) => {
-                return total
-                    + (change.before.pixels?.byteLength || 0)
-                    + (change.after.pixels?.byteLength || 0);
-            }, 0),
+            byteSize: retainedMemory.reduce((total, entry) => total + entry.estimatedBytes, 0),
             meta: {
                 type: FOLDER_CLIPBOARD_KIND,
                 action,
                 folderId: context.folder.layerData.id,
                 layerIds: changes.map(change => change.layerId),
-                bounds: { ...context.bounds }
+                bounds: { ...context.bounds },
+                retainedMemory
             }
         });
         this.eventBus?.emit('selection:changed', {

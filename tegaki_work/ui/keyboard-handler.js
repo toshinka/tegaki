@@ -61,6 +61,14 @@ export const KeyboardHandler = (function() {
         
         if (!eventBus || !keymap) return;
         if (isInputFocused()) return;
+
+        const animationTable = window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable');
+        if (animationTable?.handleWarpBrushShortcutKeyDown?.(e)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
+        }
         
         if (e.key === 'F2') return;
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
@@ -263,7 +271,12 @@ export const KeyboardHandler = (function() {
     }
 
     function handleKeyUp(e) {
-        // 変形モードはVのトグル式なので、keyupでは何もしない
+        const animationTable = window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable');
+        if (animationTable?.handleWarpBrushShortcutKeyUp?.(e)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
     }
 
     function getQuickAccessPresetShortcutDelta(event) {
@@ -688,8 +701,8 @@ export const KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            case 'GIF_TOGGLE_TIMELINE':
-                eventBus.emit('ui:toggle-timeline');
+            case 'ANIMATION_TABLE_TOGGLE':
+                eventBus.emit('ui:toggle-animation-table');
                 event.preventDefault();
                 break;
             
@@ -1118,6 +1131,9 @@ export const KeyboardHandler = (function() {
         });
         
         window.addEventListener('blur', () => {
+            const animationTable = window.PopupManager?.get?.('animationTable')
+                || window.coreEngine?.popupManager?.get?.('animationTable');
+            animationTable?.cancelWarpBrushShortcutControl?.();
             if (vKeyPressed) {
                 vKeyPressed = false;
                 if (TegakiEventBus) {

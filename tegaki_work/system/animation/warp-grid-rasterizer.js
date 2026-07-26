@@ -3,6 +3,7 @@ import {
     WARP_GRID_COLUMNS,
     WARP_GRID_ROWS
 } from './warp-grid-deformer.js';
+import { resolveWarpPlacementGeometry } from './warp-placement.js';
 import { createRectGridTopology } from './warp-grid-topology.js';
 
 const TRIANGLE_EPSILON = 1e-8;
@@ -20,7 +21,7 @@ const WARP_GRID_TOPOLOGY = createRectGridTopology({
 });
 const WARP_GRID_TRIANGLES = WARP_GRID_TOPOLOGY.triangles;
 
-export function createTriangleMeshData(deformer, sourceBounds, triangles) {
+export function createTriangleMeshData(deformer, sourceBounds, triangles, textureBounds = sourceBounds) {
     if (!deformer || !sourceBounds
         || !Array.isArray(deformer.bindPoints)
         || !Array.isArray(deformer.points)
@@ -35,22 +36,23 @@ export function createTriangleMeshData(deformer, sourceBounds, triangles) {
     return {
         positions: new Float32Array(destinationPoints.flatMap(point => [point.x, point.y])),
         uvs: new Float32Array(sourcePoints.flatMap(point => [
-            (point.x - sourceBounds.x) / sourceBounds.width,
-            (point.y - sourceBounds.y) / sourceBounds.height
+            (point.x - textureBounds.x) / textureBounds.width,
+            (point.y - textureBounds.y) / textureBounds.height
         ])),
         indices: new Uint32Array(triangles.flat())
     };
 }
 
-export function createWarpGridMeshData(deformer, sourceBounds) {
+export function createWarpGridMeshData(deformer, sourceBounds, textureBounds = sourceBounds) {
     if (deformer?.bindPoints?.length !== WARP_GRID_TOPOLOGY.pointCount) return null;
-    return createTriangleMeshData(deformer, sourceBounds, WARP_GRID_TRIANGLES);
+    return createTriangleMeshData(deformer, sourceBounds, WARP_GRID_TRIANGLES, textureBounds);
 }
 
 function readPremultipliedPixel(pixels, width, height, x, y) {
-    const clampedX = Math.max(0, Math.min(width - 1, x));
-    const clampedY = Math.max(0, Math.min(height - 1, y));
-    const offset = (clampedY * width + clampedX) * 4;
+    // BindがRaster外へ出た部分は透明として扱う。端pixelへclampすると、
+    // GRID枠の移動だけでRaster端色が外側へ引き伸ばされてしまう。
+    if (x < 0 || x >= width || y < 0 || y >= height) return [0, 0, 0, 0];
+    const offset = (y * width + x) * 4;
     const alpha = pixels[offset + 3] / 255;
     return [
         pixels[offset] * alpha,
@@ -99,6 +101,28 @@ function sampleBilinearPremultiplied(pixels, width, height, sourceX, sourceY) {
     ];
 }
 
+function compositeSourceOverPixel(output, offset, source) {
+    const sourceAlpha = source[3];
+    if (sourceAlpha <= 0) return;
+    if (sourceAlpha >= 255) {
+        output.set(source, offset);
+        return;
+    }
+    const destinationAlpha = output[offset + 3];
+    if (destinationAlpha <= 0) {
+        output.set(source, offset);
+        return;
+    }
+    const inverseSourceAlpha = 255 - sourceAlpha;
+    const outputAlpha = sourceAlpha + destinationAlpha * inverseSourceAlpha / 255;
+    for (let channel = 0; channel < 3; channel++) {
+        const premultiplied = source[channel] * sourceAlpha
+            + output[offset + channel] * destinationAlpha * inverseSourceAlpha / 255;
+        output[offset + channel] = Math.round(premultiplied / outputAlpha);
+    }
+    output[offset + 3] = Math.round(outputAlpha);
+}
+
 function getBarycentric(point, first, second, third) {
     const denominator = (second.y - third.y) * (first.x - third.x)
         + (third.x - second.x) * (first.y - third.y);
@@ -108,6 +132,72 @@ function getBarycentric(point, first, second, third) {
     const secondWeight = ((third.y - first.y) * (point.x - third.x)
         + (first.x - third.x) * (point.y - third.y)) / denominator;
     return [firstWeight, secondWeight, 1 - firstWeight - secondWeight];
+}
+
+function unionBounds(first, second) {
+    const minX = Math.min(first.x, second.x);
+    const minY = Math.min(first.y, second.y);
+    const maxX = Math.max(first.x + first.width, second.x + second.width);
+    const maxY = Math.max(first.y + first.height, second.y + second.height);
+    return {
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY)
+    };
+}
+
+function ownsDirectedBoundaryEdge(first, second) {
+    const deltaY = second.y - first.y;
+    const deltaX = second.x - first.x;
+    return deltaY > TRIANGLE_EPSILON
+        || (Math.abs(deltaY) <= TRIANGLE_EPSILON && deltaX > TRIANGLE_EPSILON);
+}
+
+function forEachTrianglePixel(points, bounds, callback) {
+    const orientation = (points[1].x - points[0].x) * (points[2].y - points[0].y)
+        - (points[1].y - points[0].y) * (points[2].x - points[0].x);
+    if (Math.abs(orientation) < TRIANGLE_EPSILON) return;
+    const boundaryEdges = orientation > 0
+        ? [
+            [points[1], points[2]],
+            [points[2], points[0]],
+            [points[0], points[1]]
+        ]
+        : [
+            [points[2], points[1]],
+            [points[0], points[2]],
+            [points[1], points[0]]
+        ];
+    const startX = Math.max(bounds.x, Math.floor(Math.min(...points.map(point => point.x))));
+    const startY = Math.max(bounds.y, Math.floor(Math.min(...points.map(point => point.y))));
+    const endX = Math.min(
+        bounds.x + bounds.width - 1,
+        Math.ceil(Math.max(...points.map(point => point.x))) - 1
+    );
+    const endY = Math.min(
+        bounds.y + bounds.height - 1,
+        Math.ceil(Math.max(...points.map(point => point.y))) - 1
+    );
+    for (let projectY = startY; projectY <= endY; projectY++) {
+        for (let projectX = startX; projectX <= endX; projectX++) {
+            const weights = getBarycentric(
+                { x: projectX + 0.5, y: projectY + 0.5 },
+                points[0],
+                points[1],
+                points[2]
+            );
+            if (!weights || weights.some(weight => weight < -TRIANGLE_EPSILON)) continue;
+            // 共有edge上のpixel centerは、向きが反対になる片側triangleだけが所有する。
+            // triangle内部の本当の重なりは抑止せず、self-overlap時もPixi Meshと同じ
+            // fragment順のsource-over合成へ残す。
+            if (weights.some((weight, index) => (
+                Math.abs(weight) <= TRIANGLE_EPSILON
+                && !ownsDirectedBoundaryEdge(boundaryEdges[index][0], boundaryEdges[index][1])
+            ))) continue;
+            callback(projectX, projectY, weights);
+        }
+    }
 }
 
 function assertRasterInput(options, triangles) {
@@ -140,24 +230,35 @@ function assertRasterInput(options, triangles) {
 /**
  * 任意triangle MeshのCPU reference renderer。
  * source / output boundsはProject座標、pointはbindBounds基準の正規化座標。
+ * sampled placementはsource Bind / destination Poseへ同じ重心affineとして適用する。
  */
 export function warpRgbaWithTriangles(options = {}) {
     const triangles = options.triangles;
     assertRasterInput(options, triangles);
     const sourceBounds = { ...options.sourceBounds };
     const bindBounds = options.deformer.bindBounds || sourceBounds;
-    const sourcePoints = options.deformer.bindPoints.map(point => toProjectPoint(point, bindBounds));
-    const destinationPoints = options.deformer.points.map(point => toProjectPoint(point, bindBounds));
+    const geometry = resolveWarpPlacementGeometry(
+        options.deformer.bindPoints,
+        options.deformer.points,
+        bindBounds,
+        options.deformer.placement
+    );
+    if (!geometry) throw new Error('Warp Grid placement geometry is invalid');
+    const sourcePoints = geometry.bindPoints.map(point => toProjectPoint(point, bindBounds));
+    const destinationPoints = geometry.points.map(point => toProjectPoint(point, bindBounds));
     const minX = Math.floor(Math.min(...destinationPoints.map(point => point.x)));
     const minY = Math.floor(Math.min(...destinationPoints.map(point => point.y)));
     const maxX = Math.ceil(Math.max(...destinationPoints.map(point => point.x)));
     const maxY = Math.ceil(Math.max(...destinationPoints.map(point => point.y)));
-    const validation = validateRasterSurfaceSize({
+    const destinationBounds = {
         x: minX,
         y: minY,
         width: Math.max(1, maxX - minX),
         height: Math.max(1, maxY - minY)
-    }, {
+    };
+    // WARPはRaster全体の置換ではなく、Bind mesh領域だけを差し替える。
+    // 元Rasterを出力面へ残すことで、GRID枠の再配置だけでは絵が動かない。
+    const validation = validateRasterSurfaceSize(unionBounds(sourceBounds, destinationBounds), {
         maxAxis: options.maxAxis,
         maxPixels: options.maxPixels
     });
@@ -170,50 +271,56 @@ export function warpRgbaWithTriangles(options = {}) {
 
     const outputBounds = validation.bounds;
     const output = new Uint8ClampedArray(outputBounds.width * outputBounds.height * 4);
+    for (let sourceY = 0; sourceY < options.height; sourceY++) {
+        const outputY = sourceBounds.y + sourceY - outputBounds.y;
+        if (outputY < 0 || outputY >= outputBounds.height) continue;
+        const sourceOffset = sourceY * options.width * 4;
+        const outputOffset = (outputY * outputBounds.width + sourceBounds.x - outputBounds.x) * 4;
+        output.set(options.pixels.subarray(sourceOffset, sourceOffset + options.width * 4), outputOffset);
+    }
+
+    // 先に元のBind領域だけを抜き、その場所へ変形meshを描く。
+    // これを行わず上描きすると、移動・回転時に元画像が二重化する。
+    for (const indices of triangles) {
+        const source = indices.map(index => sourcePoints[index]);
+        forEachTrianglePixel(source, outputBounds, (projectX, projectY) => {
+            const outputOffset = (
+                (projectY - outputBounds.y) * outputBounds.width
+                + projectX - outputBounds.x
+            ) * 4;
+            output.fill(0, outputOffset, outputOffset + 4);
+        });
+    }
+    // Pixi previewのMeshは、Bind外に残した元Rasterへsource-overで描かれる。
+    // CPU/Bakeも同じ合成にし、透明・半透明sourceがdestination側の元Rasterを
+    // 矩形で上書き消去しないようにする。共有edgeはforEachTrianglePixel()の
+    // 半開coverageで片側だけへ帰属させ、半透明の継ぎ目が濃くなるのを防ぐ。
     for (const indices of triangles) {
         const destination = indices.map(index => destinationPoints[index]);
         const source = indices.map(index => sourcePoints[index]);
-        const startX = Math.max(outputBounds.x, Math.floor(Math.min(...destination.map(point => point.x))));
-        const startY = Math.max(outputBounds.y, Math.floor(Math.min(...destination.map(point => point.y))));
-        const endX = Math.min(
-            outputBounds.x + outputBounds.width - 1,
-            Math.ceil(Math.max(...destination.map(point => point.x))) - 1
-        );
-        const endY = Math.min(
-            outputBounds.y + outputBounds.height - 1,
-            Math.ceil(Math.max(...destination.map(point => point.y))) - 1
-        );
-        for (let projectY = startY; projectY <= endY; projectY++) {
-            for (let projectX = startX; projectX <= endX; projectX++) {
-                const weights = getBarycentric(
-                    { x: projectX + 0.5, y: projectY + 0.5 },
-                    destination[0],
-                    destination[1],
-                    destination[2]
-                );
-                if (!weights || weights.some(weight => weight < -TRIANGLE_EPSILON)) continue;
-                const sourceProjectX = source.reduce(
-                    (sum, point, index) => sum + point.x * weights[index],
-                    0
-                );
-                const sourceProjectY = source.reduce(
-                    (sum, point, index) => sum + point.y * weights[index],
-                    0
-                );
-                const color = sampleBilinearPremultiplied(
-                    options.pixels,
-                    options.width,
-                    options.height,
-                    sourceProjectX - sourceBounds.x,
-                    sourceProjectY - sourceBounds.y
-                );
-                const outputOffset = (
-                    (projectY - outputBounds.y) * outputBounds.width
-                    + projectX - outputBounds.x
-                ) * 4;
-                output.set(color, outputOffset);
-            }
-        }
+        forEachTrianglePixel(destination, outputBounds, (projectX, projectY, weights) => {
+            const outputPixelIndex = (
+                (projectY - outputBounds.y) * outputBounds.width
+                + projectX - outputBounds.x
+            );
+            const sourceProjectX = source.reduce(
+                (sum, point, index) => sum + point.x * weights[index],
+                0
+            );
+            const sourceProjectY = source.reduce(
+                (sum, point, index) => sum + point.y * weights[index],
+                0
+            );
+            const color = sampleBilinearPremultiplied(
+                options.pixels,
+                options.width,
+                options.height,
+                sourceProjectX - sourceBounds.x,
+                sourceProjectY - sourceBounds.y
+            );
+            const outputOffset = outputPixelIndex * 4;
+            compositeSourceOverPixel(output, outputOffset, color);
+        });
     }
     return {
         pixels: output,

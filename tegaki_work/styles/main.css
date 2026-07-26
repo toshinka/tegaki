@@ -3826,6 +3826,10 @@ canvas {
     display: none;
 }
 
+.anim-motion-window.is-warp-focus {
+    max-width: min(600px, calc(100vw - 16px));
+}
+
 .anim-motion-window.is-motion-focus .anim-motion-action--warp,
 .anim-motion-window.is-warp-focus .anim-motion-action--motion {
     display: none;
@@ -4357,17 +4361,95 @@ canvas {
 
 .warp-grid-overlay-line {
     fill: none;
-    stroke: var(--deformer-pose-line);
-    stroke-width: 1.5;
+    stroke: color-mix(in srgb, var(--deformer-pose-line) 58%, transparent);
+    stroke-width: 1.2;
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
-    filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--deformer-pose-point) 28%, transparent));
 }
 
 .warp-grid-overlay-point {
-    fill: color-mix(in srgb, var(--futaba-cream) 88%, transparent);
-    stroke: var(--deformer-pose-point);
+    fill: color-mix(in srgb, var(--active-border) 74%, transparent);
+    stroke: none;
+    vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay-secondary-line {
+    fill: none;
+    stroke: color-mix(in srgb, var(--deformer-pose-line) 58%, transparent);
+    stroke-width: 1.15;
+    stroke-linecap: round;
+    stroke-dasharray: 3 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay-secondary-point {
+    fill: color-mix(in srgb, var(--active-border) 68%, transparent);
+    stroke: none;
+    vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay.is-bind-editing .warp-grid-overlay-line {
+    stroke: color-mix(in srgb, var(--deformer-bind-line) 78%, transparent);
+    stroke-width: 1.45;
+}
+
+.warp-grid-overlay.is-bind-editing .warp-grid-overlay-point {
+    fill: color-mix(in srgb, var(--deformer-bind-point) 82%, transparent);
+}
+
+.warp-grid-overlay.is-lens-editing .warp-grid-overlay-line {
+    stroke: color-mix(in srgb, var(--active-border) 76%, transparent);
+    stroke-width: 1.45;
+}
+
+.warp-grid-overlay.is-lens-editing .warp-grid-overlay-frame-handle,
+.warp-grid-overlay.is-lens-editing .warp-grid-overlay-rotation-handle {
+    stroke: var(--active-border);
+}
+
+.warp-grid-overlay.is-lens-editing .warp-grid-overlay-rotation-stem {
+    stroke: var(--active-border);
+}
+
+.warp-grid-overlay-frame-handle,
+.warp-grid-overlay-rotation-handle {
+    fill: var(--futaba-cream);
+    stroke: var(--deformer-bind-point);
     stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay-rotation-handle {
+    fill: color-mix(in srgb, var(--deformer-bind-point) 18%, var(--futaba-cream));
+}
+
+.warp-grid-overlay-rotation-stem {
+    stroke: var(--deformer-bind-line);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+    vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay-point.is-brush-influenced {
+    fill: var(--futaba-maroon);
+}
+
+.warp-grid-overlay-brush-weight {
+    pointer-events: none;
+}
+
+.warp-grid-overlay-brush {
+    fill: none;
+    stroke: var(--active-border);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 4;
+    vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay-brush-center {
+    fill: var(--futaba-cream);
+    stroke: var(--active-border);
+    stroke-width: 1.5;
     vector-effect: non-scaling-stroke;
 }
 
@@ -4381,6 +4463,7 @@ canvas {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 10px;
     min-height: 27px;
     margin-top: 5px;
@@ -4403,6 +4486,7 @@ canvas {
 }
 
 .anim-control-mesh-create[hidden],
+.anim-control-mesh-legacy-btn[hidden],
 [data-deformer-existing][hidden] {
     display: none;
 }
@@ -4479,7 +4563,101 @@ canvas {
     align-items: center;
 }
 
+.anim-warp-tool-controls {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.anim-warp-tool-btn {
+    height: 22px;
+    padding: 2px 6px;
+    color: var(--futaba-light-maroon);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: var(--futaba-cream);
+    font-size: 8px;
+    font-weight: 700;
+}
+
+.anim-warp-tool-btn.active {
+    color: var(--futaba-background);
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+}
+
+.anim-warp-overlay-toggle-btn {
+    width: 24px;
+    padding: 2px 4px;
+}
+
+.anim-warp-overlay-toggle-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.anim-warp-tool-btn:disabled {
+    color: var(--text-secondary);
+    border-color: var(--futaba-light-medium);
+    background: var(--futaba-background);
+    opacity: 0.5;
+}
+
+.anim-warp-brush-control {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--futaba-light-maroon);
+    font-size: 8px;
+    font-weight: 700;
+}
+
+.anim-warp-brush-control[data-brush-mode-help]::after {
+    top: 50%;
+    left: calc(100% + 8px);
+    transform: translate(-2px, -50%);
+}
+
+.anim-warp-brush-control[data-brush-mode-help]:hover::after,
+.anim-warp-brush-control[data-brush-mode-help]:focus-visible::after {
+    transform: translate(0, -50%);
+}
+
+.anim-warp-tool-controls:not(.is-brush-tool) [data-brush-control] {
+    display: none;
+}
+
+.anim-warp-brush-control input,
+.anim-warp-brush-control select {
+    width: 38px;
+    height: 22px;
+    padding: 1px 3px;
+    color: var(--futaba-maroon);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: var(--futaba-background);
+    font: inherit;
+    text-align: center;
+}
+
+.anim-warp-brush-control select {
+    width: 66px;
+    text-align: left;
+}
+
+.anim-warp-brush-control input:focus,
+.anim-warp-brush-control select:focus {
+    border-color: var(--futaba-orange);
+    outline: 2px solid color-mix(in srgb, var(--futaba-orange) 36%, transparent);
+}
+
 .anim-warp-context-identity {
+    flex: 1 1 120px;
     min-width: 0;
     gap: 7px;
 }
@@ -4500,7 +4678,7 @@ canvas {
 .anim-warp-context-interpolation {
     gap: 4px;
     margin-left: auto;
-    color: var(--text-secondary);
+    color: var(--futaba-medium);
     font-size: 8px;
     font-weight: 700;
     letter-spacing: 0.03em;
@@ -4512,10 +4690,17 @@ canvas {
     height: 22px;
     padding: 1px 20px 1px 6px;
     color: var(--futaba-maroon);
-    border-color: var(--futaba-light-medium);
+    border: 1px solid var(--futaba-light-medium);
     background-color: var(--futaba-background);
     font-size: 9px;
     font-weight: 700;
+}
+
+.anim-warp-context-interpolation select:focus,
+.anim-warp-context-interpolation select:focus-visible {
+    border-color: var(--futaba-orange);
+    outline: 2px solid color-mix(in srgb, var(--futaba-orange) 36%, transparent);
+    box-shadow: none;
 }
 
 .anim-warp-context-interpolation select:disabled {

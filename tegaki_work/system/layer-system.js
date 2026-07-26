@@ -21,6 +21,10 @@ import { coordinateSystem } from '../coordinate-system.js';
 import { LayerTransform } from './layer-transform.js';
 import { resolveIntegerTranslation } from './raster-translation.js';
 import {
+    estimateRasterHistoryPairBytes,
+    summarizeRasterSnapshotMemory
+} from './raster-snapshot-memory.js';
+import {
     normalizeRasterBounds,
     normalizeRasterSnapshot,
     resolveCanvasResizeOffset,
@@ -2676,6 +2680,7 @@ export class LayerSystem {
         }
 
         if (historyManager && !historyManager.isApplying) {
+            const retainedMemory = estimateRasterHistoryPairBytes(beforeSnapshot, afterSnapshot);
             const restoreSnapshot = (snapshot) => {
                 this.restoreLayerRasterSnapshot(snapshot);
                 this.eventBus?.emit('layer:content-changed', {
@@ -2691,10 +2696,10 @@ export class LayerSystem {
                     layerId,
                     source: options.source || 'off-frame-badge',
                     beforeBounds: beforeSnapshot.rasterBounds,
-                    afterBounds: afterSnapshot.rasterBounds
+                    afterBounds: afterSnapshot.rasterBounds,
+                    retainedMemory
                 },
-                byteSize: (beforeSnapshot.pixels?.byteLength || 0)
-                    + (afterSnapshot.pixels?.byteLength || 0)
+                byteSize: retainedMemory.estimatedBytes
             });
         }
 
@@ -3445,6 +3450,7 @@ export class LayerSystem {
                 const transformAfter = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
 
                 if (afterSnapshot) {
+                    const retainedMemory = estimateRasterHistoryPairBytes(beforeSnapshot, afterSnapshot);
                     const applyTransformSnapshot = (snapshot, transformState) => {
                         const targetLayer = this.getLayers().find(layer => layer.layerData?.id === layerId);
                         if (!targetLayer?.layerData) return;
@@ -3475,10 +3481,10 @@ export class LayerSystem {
                             type: 'transform',
                             requestedTransform: transformBefore,
                             transformBefore: transformAfter,
-                            transformAfter
+                            transformAfter,
+                            retainedMemory
                         },
-                        byteSize: (beforeSnapshot.pixels?.byteLength || 0)
-                            + (afterSnapshot.pixels?.byteLength || 0)
+                        byteSize: retainedMemory.estimatedBytes
                     };
                     historyManager.record(entry);
                 }
@@ -3598,20 +3604,20 @@ export class LayerSystem {
         };
 
         if (afterSnapshots.length === targets.length && historyManager && !historyManager.isApplying) {
+            const retainedMemory = beforeSnapshots.map((snapshot, index) => {
+                return estimateRasterHistoryPairBytes(snapshot, afterSnapshots[index]);
+            });
             historyManager.record({
                 name: 'folder-transform',
                 do: () => restoreSnapshots(afterSnapshots),
                 undo: () => restoreSnapshots(beforeSnapshots),
-                byteSize: beforeSnapshots.reduce((total, snapshot, index) => {
-                    return total
-                        + (snapshot.pixels?.byteLength || 0)
-                        + (afterSnapshots[index]?.pixels?.byteLength || 0);
-                }, 0),
+                byteSize: retainedMemory.reduce((total, entry) => total + entry.estimatedBytes, 0),
                 meta: {
                     type: 'folder-transform',
                     folderId,
                     layerIds: affectedLayerIds,
-                    requestedTransform: transformBefore
+                    requestedTransform: transformBefore,
+                    retainedMemory
                 }
             });
         }
@@ -4933,6 +4939,7 @@ export class LayerSystem {
         });
 
         if (historyManager && !historyManager.isApplying) {
+            const retainedMemory = summarizeRasterSnapshotMemory(snapshot);
             historyManager.push({
                 name: 'folder-merge-to-layer',
                 do: applyMerge,
@@ -4940,9 +4947,10 @@ export class LayerSystem {
                 meta: {
                     folderId,
                     layerId: mergedLayer.layerData.id,
-                    layerCount: subtreeLayers.length
+                    layerCount: subtreeLayers.length,
+                    retainedMemory
                 },
-                byteSize: snapshot.pixels?.byteLength || 0
+                byteSize: retainedMemory.estimatedBytes
             });
             return true;
         }
@@ -4990,6 +4998,8 @@ export class LayerSystem {
         const topOriginalIndex = layerIndex;
 
         if (historyManager && !historyManager.isApplying) {
+            const topRetainedMemory = summarizeRasterSnapshotMemory(topSnapshot);
+            const bottomRetainedMemory = summarizeRasterSnapshotMemory(bottomSnapshotBefore);
             const entry = {
                 name: 'layer-merge-down',
                 do: () => {
@@ -5006,9 +5016,15 @@ export class LayerSystem {
                     this.setActiveLayer(this.getLayerIndex(topLayer));
                     this._emitPanelUpdateRequest();
                 },
-                meta: { topId: topLayer.layerData.id, bottomId: bottomLayer.layerData.id },
-                byteSize: (topSnapshot.pixels?.byteLength || 0)
-                    + (bottomSnapshotBefore.pixels?.byteLength || 0)
+                meta: {
+                    topId: topLayer.layerData.id,
+                    bottomId: bottomLayer.layerData.id,
+                    retainedMemory: {
+                        top: topRetainedMemory,
+                        bottom: bottomRetainedMemory
+                    }
+                },
+                byteSize: topRetainedMemory.estimatedBytes + bottomRetainedMemory.estimatedBytes
             };
 
             historyManager.push(entry);

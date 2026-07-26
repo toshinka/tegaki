@@ -22,6 +22,8 @@ import {
     resolveDirectionalTransformDragMode
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
+import { sampleClipBakeState } from '../system/animation/clip-bake-sampler.js';
+import { estimateStructuredBakeCapacity } from '../system/animation/bake-capacity-estimator.js';
 import {
     findAdjacentClipDeformerKeyFrame,
     getClipDeformerKeyAtFrame,
@@ -29,17 +31,32 @@ import {
     normalizeClipDeformer,
     sampleClipDeformer
 } from '../system/animation/clip-deformer.js';
-import { createRectControlMeshDeformer } from '../system/animation/control-mesh-deformer.js';
+import {
+    createRectControlMeshDeformer,
+    rebaseControlMeshBind
+} from '../system/animation/control-mesh-deformer.js';
 import {
     createControlMeshEdges,
     normalizeControlMeshGridDimensions
 } from '../system/animation/control-mesh-topology.js';
+import { createRectGridTopology } from '../system/animation/warp-grid-topology.js';
+import {
+    calculateWarpGridBrushWeights,
+    inflateWarpGridBrushPoints,
+    smoothWarpGridBrushPoints,
+    translateWarpGridBrushPoints
+} from '../system/animation/warp-grid-brush.js';
 import { createControlMeshRenderData } from '../system/animation/control-mesh-rasterizer.js';
 import {
     areWarpGridPointArraysEqual,
     createWarpGridDeformer,
     rebaseWarpGridBind
 } from '../system/animation/warp-grid-deformer.js';
+import {
+    invertWarpPlacementPoint,
+    normalizeWarpPlacement,
+    resolveWarpPlacementSample
+} from '../system/animation/warp-placement.js';
 import { createWarpGridMeshData } from '../system/animation/warp-grid-rasterizer.js';
 import { TimelineFrameCompositor } from '../system/animation/timeline-frame-compositor.js';
 import {
@@ -84,6 +101,15 @@ const ANIMATION_TABLE_UI_STORAGE_KEY = 'tegaki_animation_table_ui_v1';
 const TIMELINE_ZOOM_STEPS = [10, 12, 14, 18, 22, 26, 30, 36, 44];
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_ENTRIES = 96;
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_BYTES = 512 * 1024 * 1024;
+// 240 Frame実測でcheckpoint推定1.38GBがOS全体の強いmemory pressureを起こしたため、
+// 同期Project serializationへ入る構造化Bakeはdevice heap上限より先にこの校正値で止める。
+const STRUCTURED_BAKE_CHECKPOINT_SAFE_BYTES = 1024 * 1024 * 1024;
+const WARP_BRUSH_MODE_DESCRIPTIONS = Object.freeze({
+    move: 'MOVE: ブラシ中心を動かし、重みに応じて周囲の点を同じ方向へ移動します。Shift+横dragは中心を固定し、右で膨張・左で収縮します。',
+    inflate: 'INFLATE: 操作開始位置を中心に、範囲内の点を外側へ膨らませます。',
+    pinch: 'PINCH: 操作開始位置を中心に、範囲内の点を内側へ絞ります。',
+    smooth: 'SMOOTH: 周囲の格子点との偏りをならし、崩れたGRIDを滑らかに整えます。'
+});
 
 export class AnimationTablePopup {
     constructor(dependencies = {}) {
@@ -104,6 +130,15 @@ export class AnimationTablePopup {
         this._motionWindowFinishPointer = null;
         this._warpGridEditingClipId = null;
         this._warpGridGesture = null;
+        this._warpGridTool = 'point';
+        this._warpBrushMode = 'move';
+        this._warpBrushRadius = 80;
+        this._warpBrushStrength = 0.5;
+        this._warpGridOverlayVisible = true;
+        this._warpBrushShortcutControl = null;
+        this._warpBrushPointer = null;
+        this._structuredBakeOperation = null;
+        this._lastStructuredBakeProfile = null;
         this._motionWheelHistory = null;
         this._motionWheelTimer = null;
         this._motionAnchorBeforeState = null;
@@ -139,6 +174,10 @@ export class AnimationTablePopup {
         this._snapshotTextureCachePendingDestroy = [];
         this._snapshotTextureCacheDestroyFrame = null;
         this._snapshotTextureCacheGcPending = false;
+        this._previewNodeDestroyQueue = new Set();
+        this._previewNodeDestroyFrame = null;
+        this._previewRuntimeProfile = this._createCafPreviewRuntimeProfile();
+        this._motionEditPreviewFrame = null;
         this._workingClippingMasksDirty = false;
         this._workingClippingMaskIdleHandle = null;
         
@@ -299,17 +338,21 @@ export class AnimationTablePopup {
 
     hide() {
         if (!this.panel) return;
+        this._cancelMotionEditPreviewRefresh();
         this.stop();
         if (this.isClipEditModeActive) {
             this.exitClipEditMode();
         }
         this._saveSelectedClipFromWorkingLayers();
+        // close途中でMotion windowを閉じるとrender()がPREVIEWを再適用し、
+        // 復元済みworking Layerを再び隠したままTableが閉じる。先に非表示へ
+        // 遷移して、以降のsub-window cleanupを描画なしで行う。
+        this.isVisible = false;
         this._restoreVisibility();
         this._invalidateSnapshotTextureCache();
         this.panel.style.display = 'none';
         this.setMotionWindowOpen(false);
         this._exitWarpGridEditMode();
-        this.isVisible = false;
         this._requestLayerPanelSync({ force: true });
         this._scheduleLaneReferencePreviewUpdate();
     }
@@ -688,6 +731,20 @@ export class AnimationTablePopup {
         };
     }
 
+    _scheduleMotionEditPreviewRefresh() {
+        if (this._motionEditPreviewFrame !== null) return;
+        this._motionEditPreviewFrame = requestAnimationFrame(() => {
+            this._motionEditPreviewFrame = null;
+            this._applyVisibilityPreview();
+        });
+    }
+
+    _cancelMotionEditPreviewRefresh() {
+        if (this._motionEditPreviewFrame === null) return;
+        cancelAnimationFrame(this._motionEditPreviewFrame);
+        this._motionEditPreviewFrame = null;
+    }
+
     _applyVisibilityPreview() {
         if ((!this.isVisible && !this.isPlaying) || !this.isPreviewActive || !this.layerSystem) return;
         if (this.isDrawingPreviewSuspended !== true) {
@@ -718,12 +775,14 @@ export class AnimationTablePopup {
         });
 
         if (this._visibilityPreviewApplied && this._animationPreviewMode === 'preview' && this._animationPreviewKey === previewKey) {
+            this._previewRuntimeProfile.stateKeySkips++;
             this._hideTimelineLayersForPreview(layers, {
                 preserveWorkingLayerIds: selectedWorkingLayerIds
             });
             return;
         }
 
+        const previewBuildStartedAt = performance.now();
         this._ensurePreviewContainer();
         const staging = this._createAnimationPreviewStagingContainers();
 
@@ -749,6 +808,10 @@ export class AnimationTablePopup {
         if (renderedCount === 0 && onionRenderedCount === 0 && !showSelectedWorkingLayer) {
             this._destroyAnimationPreviewStagingContainers(staging);
             this._restoreVisibility();
+            this._recordCafPreviewBuild(previewBuildStartedAt, {
+                renderedCount,
+                onionRenderedCount
+            });
             return;
         }
 
@@ -761,6 +824,10 @@ export class AnimationTablePopup {
         this._animationPreviewKey = previewKey;
         this._drawingPreviewCompositeKey = null;
         this._visibilityPreviewApplied = true;
+        this._recordCafPreviewBuild(previewBuildStartedAt, {
+            renderedCount,
+            onionRenderedCount
+        });
     }
 
     _applyDrawingVisibilityPreview() {
@@ -1424,35 +1491,171 @@ export class AnimationTablePopup {
         const surface = this._validateInternalMergeSurface(bounds);
         if (!surface.ok) return null;
         const sourceBounds = surface.bounds;
-        const meshData = deformer.type === 'control-mesh'
-            ? createControlMeshRenderData(deformer, sourceBounds)
-            : createWarpGridMeshData(deformer, sourceBounds);
+        const bindBounds = deformer.bindBounds || sourceBounds;
+        const renderDeformer = resolveWarpPlacementSample(deformer, sourceBounds);
+        if (!renderDeformer) return null;
+        const bindProjectPoints = renderDeformer.bindPoints.map(point => ({
+            x: bindBounds.x + point.x * bindBounds.width,
+            y: bindBounds.y + point.y * bindBounds.height
+        }));
+        const bindMinX = Math.floor(Math.min(...bindProjectPoints.map(point => point.x))) - 1;
+        const bindMinY = Math.floor(Math.min(...bindProjectPoints.map(point => point.y))) - 1;
+        const bindMaxX = Math.ceil(Math.max(...bindProjectPoints.map(point => point.x))) + 1;
+        const bindMaxY = Math.ceil(Math.max(...bindProjectPoints.map(point => point.y))) + 1;
+        // RenderTexture端はclamp-to-edgeになるため、Raster外を参照するBindには
+        // 透明1pxを含むsampling面を用意し、CPU側の範囲外透明samplingと揃える。
+        const textureSurface = this._validateInternalMergeSurface(normalizeRasterBounds({
+            x: Math.min(sourceBounds.x, bindMinX),
+            y: Math.min(sourceBounds.y, bindMinY),
+            width: Math.max(sourceBounds.x + sourceBounds.width, bindMaxX)
+                - Math.min(sourceBounds.x, bindMinX),
+            height: Math.max(sourceBounds.y + sourceBounds.height, bindMaxY)
+                - Math.min(sourceBounds.y, bindMinY)
+        }));
+        if (!textureSurface.ok) return null;
+        const textureBounds = textureSurface.bounds;
+        const meshData = renderDeformer.type === 'control-mesh'
+            ? createControlMeshRenderData(renderDeformer, sourceBounds, textureBounds)
+            : createWarpGridMeshData(renderDeformer, sourceBounds, textureBounds);
         if (!meshData) return null;
 
-        const renderTexture = RenderTexture.create({
-            width: sourceBounds.width,
-            height: sourceBounds.height
+        const sourceTexture = RenderTexture.create({
+            width: textureBounds.width,
+            height: textureBounds.height
         });
         const alpha = root.alpha;
         root.alpha = 1;
         renderer.render({
             container: root,
-            target: renderTexture,
-            transform: new Matrix().translate(-sourceBounds.x, -sourceBounds.y),
+            target: sourceTexture,
+            transform: new Matrix().translate(-textureBounds.x, -textureBounds.y),
             clear: true,
             clearColor: [0, 0, 0, 0]
         });
         root.destroy({ children: true, texture: false, baseTexture: false });
 
+        const positions = meshData.positions || [];
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (let index = 0; index + 1 < positions.length; index += 2) {
+            minX = Math.min(minX, positions[index]);
+            minY = Math.min(minY, positions[index + 1]);
+            maxX = Math.max(maxX, positions[index]);
+            maxY = Math.max(maxY, positions[index + 1]);
+        }
+        const destinationBounds = normalizeRasterBounds({
+            x: Math.floor(minX),
+            y: Math.floor(minY),
+            width: Math.max(1, Math.ceil(maxX) - Math.floor(minX)),
+            height: Math.max(1, Math.ceil(maxY) - Math.floor(minY))
+        });
+        const outputUnion = normalizeRasterBounds({
+            x: Math.min(sourceBounds.x, destinationBounds.x),
+            y: Math.min(sourceBounds.y, destinationBounds.y),
+            width: Math.max(
+                sourceBounds.x + sourceBounds.width,
+                destinationBounds.x + destinationBounds.width
+            ) - Math.min(sourceBounds.x, destinationBounds.x),
+            height: Math.max(
+                sourceBounds.y + sourceBounds.height,
+                destinationBounds.y + destinationBounds.height
+            ) - Math.min(sourceBounds.y, destinationBounds.y)
+        });
+        const destinationSurface = this._validateInternalMergeSurface(outputUnion);
+        if (!destinationSurface.ok) {
+            sourceTexture.destroy(true);
+            return null;
+        }
+        const outputBounds = destinationSurface.bounds;
+        const outputTexture = RenderTexture.create({
+            width: outputBounds.width,
+            height: outputBounds.height
+        });
         const mesh = new Mesh({
             geometry: new MeshGeometry(meshData),
-            texture: renderTexture
+            texture: sourceTexture
         });
         mesh.eventMode = 'none';
-        mesh.alpha = alpha;
-        mesh._tegakiOwnedPreviewTexture = renderTexture;
-        mesh._tegakiWarpGridPreview = true;
-        return mesh;
+        const meshStage = new Container();
+        meshStage.addChild(mesh);
+        const sourceSprite = new Sprite(sourceTexture);
+        sourceSprite.position.set(textureBounds.x, textureBounds.y);
+        sourceSprite.eventMode = 'none';
+        const sourceStage = new Container();
+        sourceStage.addChild(sourceSprite);
+        const eraseBind = new Graphics();
+        eraseBind.eventMode = 'none';
+        eraseBind.blendMode = 'erase';
+        const eraseStage = new Container();
+        eraseStage.addChild(eraseBind);
+        const meshIndices = Array.from(meshData.indices || []);
+        for (let index = 0; index + 2 < meshIndices.length; index += 3) {
+            eraseBind.poly([
+                bindProjectPoints[meshIndices[index]],
+                bindProjectPoints[meshIndices[index + 1]],
+                bindProjectPoints[meshIndices[index + 2]]
+            ]);
+            eraseBind.fill({ color: 0xffffff, alpha: 1 });
+        }
+        try {
+            // renderer.render()へ渡したroot自身のposition / blendModeは通常の
+            // scene childと同じ形では評価されない。各passをstage childとして描き、
+            // 元Raster copy・Bind erase・Warp meshのProject座標基準を揃える。
+            renderer.render({
+                container: sourceStage,
+                target: outputTexture,
+                transform: new Matrix().translate(-outputBounds.x, -outputBounds.y),
+                clear: true,
+                clearColor: [0, 0, 0, 0]
+            });
+            renderer.render({
+                container: eraseStage,
+                target: outputTexture,
+                transform: new Matrix().translate(-outputBounds.x, -outputBounds.y),
+                clear: false
+            });
+            // WebGL Meshは表示sceneへ残さず、この同期render内だけでWarpを焼く。
+            // scene交換後にMeshのtexture resourceが先に破棄されるPixiJS v8の
+            // GlMeshAdaptor競合を避け、通常Spriteへ寿命を閉じ込める。
+            renderer.render({
+                container: meshStage,
+                target: outputTexture,
+                transform: new Matrix().translate(-outputBounds.x, -outputBounds.y),
+                clear: false
+            });
+        } catch (error) {
+            sourceStage.destroy?.({ children: true, texture: false, baseTexture: false });
+            eraseStage.destroy?.({ children: true, texture: false, baseTexture: false });
+            meshStage.destroy?.({ children: true, texture: false, baseTexture: false });
+            sourceTexture.destroy(true);
+            outputTexture.destroy(true);
+            console.warn('[AnimationTable] Failed to bake deformer preview mesh', error);
+            return null;
+        }
+        sourceStage.destroy?.({ children: true, texture: false, baseTexture: false });
+        eraseStage.destroy?.({ children: true, texture: false, baseTexture: false });
+        // renderer.render()のbatch flush後までsourceを保持する。ここで即破棄すると
+        // 出力Textureが透明になる実装差があるため、通常preview nodeと同じ二周期
+        // 遅延破棄へ載せる。mesh自体は表示sceneへ追加していない。
+        meshStage._tegakiOwnedPreviewTexture = sourceTexture;
+        this._destroyPreviewChildren([meshStage]);
+
+        const sprite = new Sprite(outputTexture);
+        sprite.eventMode = 'none';
+        sprite.position.set(outputBounds.x, outputBounds.y);
+        // 通常previewと同じく、Motion transformを受けるnodeのlocal原点は
+        // Project (0, 0) に固定する。cropped Spriteを直接返すと、直後の
+        // _applyClipMotionToPreviewNode() がoutputBounds位置を上書きし、
+        // Canvas previewだけがGRID / exportからずれる。
+        const previewRoot = new Container();
+        previewRoot.eventMode = 'none';
+        previewRoot.alpha = alpha;
+        previewRoot.addChild(sprite);
+        previewRoot._tegakiOwnedPreviewTexture = outputTexture;
+        previewRoot._tegakiWarpGridPreview = true;
+        return previewRoot;
     }
 
     _renderInternalLayerPreviewGroup(container, asset, internalLayers, parentId, options = {}) {
@@ -2120,6 +2323,32 @@ export class AnimationTablePopup {
         };
     }
 
+    _createCafPreviewRuntimeProfile() {
+        return {
+            builds: 0,
+            stateKeySkips: 0,
+            totalBuildMs: 0,
+            lastBuildMs: 0,
+            maxBuildMs: 0,
+            lastRenderedCount: 0,
+            lastOnionRenderedCount: 0,
+            maxPendingDestroyNodes: 0,
+            lastBuildAt: null
+        };
+    }
+
+    _recordCafPreviewBuild(startedAt, options = {}) {
+        const elapsed = Math.max(0, performance.now() - startedAt);
+        const profile = this._previewRuntimeProfile;
+        profile.builds++;
+        profile.totalBuildMs += elapsed;
+        profile.lastBuildMs = elapsed;
+        profile.maxBuildMs = Math.max(profile.maxBuildMs, elapsed);
+        profile.lastRenderedCount = Math.max(0, Number(options.renderedCount) || 0);
+        profile.lastOnionRenderedCount = Math.max(0, Number(options.onionRenderedCount) || 0);
+        profile.lastBuildAt = Date.now();
+    }
+
     _getSnapshotTextureCacheKey(snapshot) {
         if (!snapshot?.id) return null;
         return String(snapshot.id);
@@ -2248,19 +2477,52 @@ export class AnimationTablePopup {
 
     _destroyPreviewChildren(children = []) {
         children.forEach(child => {
-            try {
-                if (child.isCachedAsTexture) {
-                    child.cacheAsTexture(false);
-                }
-                const ownedTexture = child._tegakiOwnedPreviewTexture;
-                child.destroy?.({ children: true, texture: false, baseTexture: false });
-                if (ownedTexture && !ownedTexture.destroyed) {
-                    ownedTexture.destroy(true);
-                }
-            } catch (error) {
-                console.warn('[AnimationTable] Failed to destroy preview child', error);
-            }
+            if (!child || child.destroyed || this._previewNodeDestroyQueue.has(child)) return;
+            // PixiJS v8のRenderGroupはremoveChildren直後の同一tickでは旧Mesh命令を
+            // 保持することがある。専用RenderTextureを即破棄するとGlMeshAdaptorが
+            // null resourceをbindしてCanvas全体のtickerを停止するため、sceneから
+            // 外したnodeは二描画周期待ってからまとめて破棄する。
+            child.visible = false;
+            child.renderable = false;
+            this._previewNodeDestroyQueue.add(child);
         });
+        this._previewRuntimeProfile.maxPendingDestroyNodes = Math.max(
+            this._previewRuntimeProfile.maxPendingDestroyNodes,
+            this._previewNodeDestroyQueue.size
+        );
+        this._schedulePreviewNodeDestroyFlush();
+    }
+
+    _schedulePreviewNodeDestroyFlush() {
+        if (this._previewNodeDestroyQueue.size === 0 || this._previewNodeDestroyFrame !== null) return;
+        this._previewNodeDestroyFrame = requestAnimationFrame(() => {
+            this._previewNodeDestroyFrame = requestAnimationFrame(() => {
+                this._previewNodeDestroyFrame = null;
+                const pending = [...this._previewNodeDestroyQueue];
+                this._previewNodeDestroyQueue.clear();
+                pending.forEach(child => this._destroyPreviewChildNow(child));
+                // cache textureは旧preview nodeがsceneから外れた後も二描画周期だけ
+                // 参照され得る。node破棄後に保留cacheを再判定し、置換を重ねても
+                // pendingDestroyを常駐させない。
+                this._flushPendingSnapshotTextureCacheDestroy();
+            });
+        });
+    }
+
+    _destroyPreviewChildNow(child) {
+        if (!child || child.destroyed) return;
+        try {
+            if (child.isCachedAsTexture) {
+                child.cacheAsTexture(false);
+            }
+            const ownedTexture = child._tegakiOwnedPreviewTexture;
+            child.destroy?.({ children: true, texture: false, baseTexture: false });
+            if (ownedTexture && !ownedTexture.destroyed) {
+                ownedTexture.destroy(true);
+            }
+        } catch (error) {
+            console.warn('[AnimationTable] Failed to destroy preview child', error);
+        }
     }
 
     _getDisplayedSnapshotTextureCacheKeys() {
@@ -2285,6 +2547,9 @@ export class AnimationTablePopup {
         };
         visit(this.animationPreviewBackContainer);
         visit(this.animationPreviewContainer);
+        // removeChildren()済みでも二描画周期の遅延破棄中はRenderGroupが旧Spriteを
+        // 参照する可能性がある。表示treeだけでなく破棄待ちnodeも保護対象にする。
+        this._previewNodeDestroyQueue.forEach(child => visit(child));
         return textures;
     }
 
@@ -2308,9 +2573,7 @@ export class AnimationTablePopup {
             (this._snapshotTextureCacheProfile.evictionsByReason[reason] || 0) + 1;
         if (options.defer === true || (options.immediate !== true && this._getDisplayedSnapshotTextures().has(entry.texture))) {
             this._snapshotTextureCachePendingDestroy.push(entry);
-            if (options.defer === true) {
-                this._scheduleSnapshotTextureCacheDestroyFlush(options.runGc === true);
-            }
+            this._scheduleSnapshotTextureCacheDestroyFlush(options.runGc === true);
             return;
         }
         this._destroySnapshotTextureCacheEntryNow(entry);
@@ -2440,6 +2703,10 @@ export class AnimationTablePopup {
             }
         });
         const limits = this._getSnapshotTextureCacheLimits();
+        const pendingDestroyBytes = this._snapshotTextureCachePendingDestroy.reduce(
+            (total, entry) => total + (Number(entry?.byteSize) || 0),
+            0
+        );
 
         return {
             count: this._snapshotTextureCache.size,
@@ -2454,7 +2721,77 @@ export class AnimationTablePopup {
             invalidations: this._snapshotTextureCacheProfile.invalidations,
             evictions: this._snapshotTextureCacheProfile.evictions,
             pendingDestroy: this._snapshotTextureCachePendingDestroy.length,
+            pendingDestroyBytes,
             evictionsByReason: { ...this._snapshotTextureCacheProfile.evictionsByReason }
+        };
+    }
+
+    _getCafPreviewRuntimeProfile() {
+        const liveTextures = new Set();
+        const pendingTextures = new Set();
+        const visit = (node, textureSet) => {
+            if (!node) return 0;
+            const ownedTexture = node._tegakiOwnedPreviewTexture;
+            if (ownedTexture && !ownedTexture.destroyed) textureSet.add(ownedTexture);
+            let count = 1;
+            (node.children || []).forEach(child => {
+                count += visit(child, textureSet);
+            });
+            return count;
+        };
+        let liveNodes = 0;
+        [this.animationPreviewBackgroundContainer, this.animationPreviewBackContainer, this.animationPreviewContainer]
+            .filter(Boolean)
+            .forEach(container => {
+                (container.children || []).forEach(child => {
+                    liveNodes += visit(child, liveTextures);
+                });
+            });
+        let pendingNodes = 0;
+        this._previewNodeDestroyQueue.forEach(child => {
+            pendingNodes += visit(child, pendingTextures);
+        });
+
+        const textureBytes = (texture) => {
+            const source = texture?.source;
+            const width = Math.max(0, Math.round(Number(
+                source?.pixelWidth ?? source?.width ?? texture?.width
+            ) || 0));
+            const height = Math.max(0, Math.round(Number(
+                source?.pixelHeight ?? source?.height ?? texture?.height
+            ) || 0));
+            return width * height * 4;
+        };
+        const sumTextureBytes = (textures) => [...textures]
+            .reduce((total, texture) => total + textureBytes(texture), 0);
+        const allTextures = new Set([...liveTextures, ...pendingTextures]);
+        const performanceProfile = this._previewRuntimeProfile;
+
+        return {
+            liveNodes,
+            pendingDestroyNodes: this._previewNodeDestroyQueue.size,
+            pendingDestroyTreeNodes: pendingNodes,
+            ownedRenderTextures: {
+                count: allTextures.size,
+                bytes: sumTextureBytes(allTextures),
+                liveCount: liveTextures.size,
+                liveBytes: sumTextureBytes(liveTextures),
+                pendingCount: pendingTextures.size,
+                pendingBytes: sumTextureBytes(pendingTextures)
+            },
+            performance: {
+                builds: performanceProfile.builds,
+                stateKeySkips: performanceProfile.stateKeySkips,
+                averageBuildMs: performanceProfile.builds > 0
+                    ? performanceProfile.totalBuildMs / performanceProfile.builds
+                    : 0,
+                lastBuildMs: performanceProfile.lastBuildMs,
+                maxBuildMs: performanceProfile.maxBuildMs,
+                lastRenderedCount: performanceProfile.lastRenderedCount,
+                lastOnionRenderedCount: performanceProfile.lastOnionRenderedCount,
+                maxPendingDestroyNodes: performanceProfile.maxPendingDestroyNodes,
+                lastBuildAt: performanceProfile.lastBuildAt
+            }
         };
     }
 
@@ -3487,7 +3824,12 @@ export class AnimationTablePopup {
         const size = this._getCanvasSnapshotSize();
         const startFrame = Math.max(0, Math.round(Number(options.startFrame ?? this.model.playback.currentFrame) || 0));
         const frameCount = frames.length;
-        const target = this._resolveImageSequenceImportTarget(startFrame, frameCount);
+        const target = options.createNewLane === true
+            ? {
+                lane: this.model.createIndependentLane({ placement: options.lanePlacement }),
+                created: true
+            }
+            : this._resolveImageSequenceImportTarget(startFrame, frameCount);
         const lane = target?.lane || null;
         if (!lane) {
             this._restoreTimelineHistoryState(beforeState);
@@ -6010,7 +6352,8 @@ export class AnimationTablePopup {
     }
 
     _getWarpGridEditState() {
-        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const clipId = this.selectedCelId || (this.isPlaying ? this._motionPlaybackClipId : null);
+        const entry = clipId ? this.model.findClipEntry(clipId) : null;
         if (!entry?.clip || entry.clip.duration <= 1) return null;
         const localFrame = this.model.playback.currentFrame - entry.clip.startFrame;
         if (localFrame < 0 || localFrame >= entry.clip.duration) return null;
@@ -6022,7 +6365,14 @@ export class AnimationTablePopup {
         return { entry, localFrame, deformer, sampled, key };
     }
 
-    _getWarpGridWorldPoints(state = this._getWarpGridEditState()) {
+    _canEditWarpGridPose(state = this._getWarpGridEditState()) {
+        return !!state && listClipDeformerKeyframes(
+            state.deformer,
+            state.entry.clip.duration
+        ).length > 0;
+    }
+
+    _getWarpGridWorldPoints(state = this._getWarpGridEditState(), pointKind = null) {
         if (!state) return [];
         const bounds = state.sampled.bindBounds;
         const config = window.TEGAKI_CONFIG?.canvas || {};
@@ -6032,7 +6382,17 @@ export class AnimationTablePopup {
             (config.width || 400) / 2,
             (config.height || 400) / 2
         );
-        return state.sampled.points.map(point => applyTransformMatrix(
+        const placedSample = resolveWarpPlacementSample(state.sampled, bounds);
+        const resolvedPointKind = pointKind || (this._warpGridTool === 'grid'
+            ? 'bind'
+            : (this._warpGridTool === 'lens' ? 'placed-bind' : 'placed-pose'));
+        const points = resolvedPointKind === 'bind'
+            ? state.deformer.bindPoints
+            : (resolvedPointKind === 'placed-bind'
+                ? placedSample?.bindPoints
+                : placedSample?.points);
+        if (!Array.isArray(points)) return [];
+        return points.map(point => applyTransformMatrix(
             matrix,
             bounds.x + point.x * bounds.width,
             bounds.y + point.y * bounds.height
@@ -6043,7 +6403,8 @@ export class AnimationTablePopup {
         const state = this._getWarpGridEditState();
         return !this.isPlaying
             && !!state
-            && !!state.key
+            && this._warpGridOverlayVisible
+            && (this._warpGridTool === 'grid' || this._canEditWarpGridPose(state))
             && state.entry.clip.id === this._warpGridEditingClipId
             && warpGridOverlay.isActive();
     }
@@ -6053,27 +6414,56 @@ export class AnimationTablePopup {
         if (!entry?.clip || !coordinateSystem
             || !['warp-grid', 'control-mesh'].includes(entry.clip.deformer?.type)) return false;
         const state = this._getWarpGridEditState();
-        if (!state?.key || state.entry.clip.id !== entry.clip.id) return false;
+        if (!state || state.entry.clip.id !== entry.clip.id
+            || !this._warpGridOverlayVisible
+            || (this._warpGridTool !== 'grid' && !this._canEditWarpGridPose(state))) return false;
         transformAnchorSite.deactivate('clip-motion');
         this._motionAnchorClip = null;
         this._warpGridEditingClipId = entry.clip.id;
+        const rectTopology = state.deformer.type === 'control-mesh'
+            && Number.isInteger(state.deformer.columns)
+            && Number.isInteger(state.deformer.rows)
+            ? createRectGridTopology({
+                columns: state.deformer.columns,
+                rows: state.deformer.rows
+            })
+            : null;
         const activated = warpGridOverlay.activate({
             coordinateSystem,
             columns: state.deformer.columns,
             rows: state.deformer.rows,
             edges: state.deformer.type === 'control-mesh'
-                ? createControlMeshEdges(state.deformer.triangles)
+                ? (rectTopology?.edges || createControlMeshEdges(state.deformer.triangles))
                 : undefined,
             pointCount: state.deformer.type === 'control-mesh'
                 ? state.deformer.bindPoints.length
                 : undefined,
-            getWorldPoints: () => this._getWarpGridWorldPoints(),
+            getWorldPoints: () => this._getWarpGridWorldPoints(undefined, this._warpGridTool === 'grid'
+                ? 'bind'
+                : (this._warpGridTool === 'lens' ? 'placed-bind' : 'placed-pose')),
+            getSecondaryWorldPoints: ['grid', 'lens'].includes(this._warpGridTool)
+                ? () => this._getWarpGridWorldPoints(undefined, 'placed-pose')
+                : undefined,
+            getBrushPreview: () => ({
+                ...(this._warpBrushPointer || {}),
+                radius: this._warpBrushRadius,
+                strength: this._warpBrushStrength,
+                visible: this._warpGridTool === 'brush' && !!this._warpBrushPointer?.visible
+            }),
+            mode: this._warpGridTool === 'grid'
+                ? 'bind'
+                : (this._warpGridTool === 'lens' ? 'lens' : 'pose'),
             shouldDisplay: () => this.isVisible
                 && this.motionPanel?.style.display !== 'none'
-                && !this.isPlaying
+                && this._warpGridOverlayVisible
                 && this._warpGridEditingClipId === entry.clip.id
-                && this.selectedCelId === entry.clip.id
-                && !!this._getWarpGridEditState()?.key
+                && (this.selectedCelId === entry.clip.id
+                    || (this.isPlaying && this._motionPlaybackClipId === entry.clip.id))
+                && (() => {
+                    const current = this._getWarpGridEditState();
+                    return !!current && (this._warpGridTool === 'grid'
+                        || this._canEditWarpGridPose(current));
+                })()
         });
         if (!activated) {
             this._warpGridEditingClipId = null;
@@ -6085,12 +6475,111 @@ export class AnimationTablePopup {
 
     _exitWarpGridEditMode(options = {}) {
         const wasActive = !!this._warpGridEditingClipId || warpGridOverlay.isActive();
+        if (this._warpGridGesture) {
+            this._cancelWarpGridGesture(this._warpGridGesture, {
+                refreshPreview: true,
+                releasePointerCapture: true
+            });
+        }
         this._warpGridEditingClipId = null;
         this._warpGridGesture = null;
+        this._warpBrushShortcutControl = null;
+        this._warpBrushPointer = null;
         warpGridOverlay.deactivate();
         this._updateMotionCanvasCursor();
         if (wasActive && options.render === true) this.render();
         return wasActive;
+    }
+
+    _cancelWarpGridGesture(gesture = this._warpGridGesture, options = {}) {
+        if (!gesture) return false;
+        this._cancelMotionEditPreviewRefresh();
+        if (gesture === this._warpGridGesture) this._warpGridGesture = null;
+
+        if (gesture.tool === 'brush-control') {
+            if (gesture.control === 'size') {
+                this._setWarpBrushRadius(gesture.startValue);
+            } else if (gesture.control === 'strength') {
+                this._setWarpBrushStrength(gesture.startValue * 100);
+            }
+        } else if (gesture.startDeformer) {
+            const clipId = gesture.clipId || this._warpGridEditingClipId || this.selectedCelId;
+            const entry = clipId ? this.model.findClipEntry(clipId) : null;
+            if (entry?.clip) {
+                entry.clip.deformer = normalizeClipDeformer(gesture.startDeformer);
+                this._animationPreviewKey = null;
+                if (options.refreshPreview !== false) this._applyVisibilityPreview();
+            }
+        }
+
+        if (gesture.tool === 'brush' && this._warpBrushPointer) {
+            this._warpBrushPointer = {
+                ...this._warpBrushPointer,
+                weights: null
+            };
+        }
+        if (options.releasePointerCapture === true && Number.isFinite(gesture.pointerId)) {
+            const canvas = this._motionCanvas || this._getMotionCanvas();
+            if (canvas?.hasPointerCapture?.(gesture.pointerId)) {
+                canvas.releasePointerCapture(gesture.pointerId);
+            }
+        }
+        this._updateMotionCanvasCursor();
+        return true;
+    }
+
+    _toggleWarpGridOverlayVisibility() {
+        this._warpGridOverlayVisible = !this._warpGridOverlayVisible;
+        if (!this._warpGridOverlayVisible) {
+            warpGridOverlay.deactivate();
+        } else {
+            const state = this._getWarpGridEditState();
+            if (state?.entry) this._enterWarpGridEditMode(state.entry);
+        }
+        this._updateMotionCanvasCursor();
+        if (this.isVisible) this.render();
+        return this._warpGridOverlayVisible;
+    }
+
+    _rebaseWarpGridBindForGesture(deformer, bindPoints) {
+        if (!deformer || !Array.isArray(bindPoints)) return null;
+        return deformer.type === 'control-mesh'
+            ? rebaseControlMeshBind(deformer, { bindPoints })
+            : rebaseWarpGridBind(deformer, { bindPoints });
+    }
+
+    _setWarpGridTool(tool, options = {}) {
+        const nextTool = ['grid', 'lens', 'point', 'brush'].includes(tool) ? tool : 'point';
+        const state = this._getWarpGridEditState();
+        if (nextTool !== 'grid' && state && !this._canEditWarpGridPose(state)) {
+            if (options.notify === true) {
+                showFeedbackToast('POINT / BRUSH変形には現在FrameのWarp keyを追加してください', {
+                    duration: 2600
+                });
+            }
+            return false;
+        }
+        const changed = this._warpGridTool !== nextTool;
+        this._warpGridTool = nextTool;
+        this._warpBrushShortcutControl = null;
+        this._warpBrushPointer = null;
+        if (changed && state?.entry && this._motionTimelineKeyKind === 'warp') {
+            this._exitWarpGridEditMode();
+            this._enterWarpGridEditMode(state.entry);
+        }
+        if (options.notify === true) {
+            const message = nextTool === 'grid'
+                ? 'GRID枠編集中: 枠内dragで移動 / 四隅で拡縮 / 上のhandleで回転 / wheelで拡縮 / Shift＋wheelで回転'
+                : (nextTool === 'lens'
+                    ? 'LENS配置編集中: 現在FrameのWarp keyへ移動 / 拡縮 / 回転を記録します'
+                    : (nextTool === 'brush'
+                    ? '変形ブラシ編集中: 描画shortcutは一時的に無効です'
+                    : 'GRIDポイント編集中: 点をdragして変形します'));
+            showFeedbackToast(message, { duration: 2600 });
+        }
+        this._updateMotionCanvasCursor();
+        if (options.render !== false && this.isVisible) this.render();
+        return changed;
     }
 
     _getWarpGridAssetBounds(entry) {
@@ -6106,6 +6595,20 @@ export class AnimationTablePopup {
         return surface.ok ? surface.bounds : null;
     }
 
+    _getWarpGridInitialBounds(entry) {
+        const assetBounds = this._getWarpGridAssetBounds(entry);
+        if (!assetBounds) return null;
+        const canvasSize = this._getCanvasSnapshotSize();
+        const canvasBounds = {
+            x: 0,
+            y: 0,
+            width: canvasSize.width,
+            height: canvasSize.height
+        };
+        const surface = this._validateInternalMergeSurface(canvasBounds);
+        return surface.ok ? surface.bounds : assetBounds;
+    }
+
     _activateSelectedClipWarpGrid() {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         if (!entry?.clip || entry.clip.duration <= 1 || this.isPlaying) return false;
@@ -6114,21 +6617,24 @@ export class AnimationTablePopup {
             const state = this._getWarpGridEditState();
             if (!state) return false;
             if (!state.key) {
-                const beforeState = this._captureTimelineHistoryState();
-                if (!this._upsertSelectedWarpGridKey(state.sampled.points)) return false;
-                this._recordTimelineHistory(
-                    beforeState,
-                    this._captureTimelineHistoryState(),
-                    'caf-clip-warp-grid-key',
-                    { type: 'caf-clip-warp-grid-key', clipId: entry.clip.id, frame: state.localFrame }
-                );
+                const keyCount = listClipDeformerKeyframes(
+                    state.deformer,
+                    state.entry.clip.duration
+                ).length;
+                if (state.deformer.type === 'control-mesh' && keyCount === 0) {
+                    this._setWarpGridTool('grid', { render: false });
+                    this._enterWarpGridEditMode(entry);
+                    this.render();
+                    return true;
+                }
+                if (keyCount === 0) return false;
             }
             this._enterWarpGridEditMode(entry);
             this.render();
             return true;
         }
         const beforeState = this._captureTimelineHistoryState();
-        const bindBounds = this._getWarpGridAssetBounds(entry);
+        const bindBounds = this._getWarpGridInitialBounds(entry);
         if (!bindBounds) {
             showFeedbackToast('Warp Gridを作成できるRaster範囲がありません');
             return false;
@@ -6158,13 +6664,21 @@ export class AnimationTablePopup {
         const dimensions = normalizeControlMeshGridDimensions(columns, rows);
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         if (!dimensions || !entry?.clip || entry.clip.duration <= 1 || this.isPlaying) return false;
-        if (entry.clip.deformer) {
-            showFeedbackToast('既存Deformerを削除してから新しいControl Meshを作成してください');
+        const currentDeformer = normalizeClipDeformer(entry.clip.deformer);
+        const currentKeys = currentDeformer
+            ? listClipDeformerKeyframes(currentDeformer, entry.clip.duration)
+            : [];
+        const canRebuildGrid = currentDeformer?.type === 'control-mesh'
+            && Number.isInteger(currentDeformer.columns)
+            && Number.isInteger(currentDeformer.rows)
+            && currentKeys.length === 0;
+        if (currentDeformer && !canRebuildGrid) {
+            showFeedbackToast('GRID keyをすべて削除してから点数を再設定してください');
             return false;
         }
-        const bindBounds = this._getWarpGridAssetBounds(entry);
+        const bindBounds = currentDeformer?.bindBounds || this._getWarpGridInitialBounds(entry);
         if (!bindBounds) {
-            showFeedbackToast('Control Meshを作成できるRaster範囲がありません');
+            showFeedbackToast('Warp GRIDを作成できるRaster範囲がありません');
             return false;
         }
         const beforeState = this._captureTimelineHistoryState();
@@ -6185,9 +6699,9 @@ export class AnimationTablePopup {
         this._recordTimelineHistory(
             beforeState,
             this._captureTimelineHistoryState(),
-            'caf-clip-control-mesh-create',
+            canRebuildGrid ? 'caf-clip-control-grid-rebuild' : 'caf-clip-control-grid-create',
             {
-                type: 'caf-clip-control-mesh-create',
+                type: canRebuildGrid ? 'caf-clip-control-grid-rebuild' : 'caf-clip-control-grid-create',
                 clipId: entry.clip.id,
                 columns: dimensions.columns,
                 rows: dimensions.rows,
@@ -6196,7 +6710,7 @@ export class AnimationTablePopup {
         );
         this._enterWarpGridEditMode(entry);
         this.render();
-        showFeedbackToast(`Control Mesh ${dimensions.columns}×${dimensions.rows}（${dimensions.pointCount} points）を作成しました`);
+        showFeedbackToast(`Warp GRID ${dimensions.columns}×${dimensions.rows}（${dimensions.pointCount} points）を${canRebuildGrid ? '再設定' : '作成'}しました`);
         return true;
     }
 
@@ -6206,6 +6720,7 @@ export class AnimationTablePopup {
         const rowsInput = panel?.querySelector('#anim-control-mesh-rows');
         const count = panel?.querySelector('#anim-control-mesh-point-count');
         const createButton = panel?.querySelector('#anim-control-mesh-create-btn');
+        const legacyButton = panel?.querySelector('#anim-warp-create-legacy-btn');
         if (!columnsInput || !rowsInput || !count || !createButton) return null;
         const dimensions = normalizeControlMeshGridDimensions(
             Number(columnsInput.value),
@@ -6221,9 +6736,14 @@ export class AnimationTablePopup {
             : `${Number.isFinite(rawCount) && rawCount >= 0 ? rawCount : '—'} / 256 points`;
         count.classList.toggle('is-invalid', !dimensions);
         createButton.disabled = !dimensions;
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const currentDeformer = normalizeClipDeformer(entry?.clip?.deformer);
+        const isRebuild = currentDeformer?.type === 'control-mesh';
+        createButton.textContent = isRebuild ? 'GRIDを再設定' : 'GRIDを作成';
         createButton.title = dimensions
-            ? `${dimensions.columns}×${dimensions.rows}、${dimensions.pointCount}点のControl Meshを作成`
+            ? `${dimensions.columns}×${dimensions.rows}、${dimensions.pointCount}点のWarp GRIDを${isRebuild ? '再設定' : '作成'}`
             : '各軸2〜32、総点数256以下の整数を入力してください';
+        if (legacyButton) legacyButton.hidden = isRebuild;
         return dimensions;
     }
 
@@ -6316,22 +6836,339 @@ export class AnimationTablePopup {
             source: 'warp-grid-bake',
             preserveFrameBounds: true,
             clipTransforms,
+            createNewLane: true,
+            lanePlacement: 'top',
             hideSourceClipId: sourceClip.id
         });
         if (!imported) return false;
-        showFeedbackToast(`Warpを${frames.length} FrameのCAF列へBakeしました（元Clipは非表示で保持）`);
+        showFeedbackToast(`Warpを${frames.length} FrameのCAF列として最上段LaneへBakeしました（元Clipは非表示で保持）`);
         return true;
     }
 
-    _upsertSelectedWarpGridKey(points) {
+    _getStructuredBakeSourceLayers(asset) {
+        if (!asset) return { ok: false, reason: '元CAFがありません', layers: [] };
+        const layers = [];
+        let hasDrawableRaster = false;
+        let primaryIncluded = false;
+        for (const layer of asset.internalLayers || []) {
+            if (layer.type === 'folder') {
+                layers.push({ type: 'folder' });
+                continue;
+            }
+            if (layer.type !== 'raster' || !layer.drawingSnapshotId) {
+                return { ok: false, reason: `Layer「${layer.name || '名称未設定'}」のRaster正本がありません`, layers: [] };
+            }
+            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+            if (!snapshot) {
+                return { ok: false, reason: `Layer「${layer.name || '名称未設定'}」のSnapshotが見つかりません`, layers: [] };
+            }
+            hasDrawableRaster = true;
+            primaryIncluded ||= layer.drawingSnapshotId === asset.drawingSnapshotId;
+            layers.push({
+                type: 'raster',
+                width: snapshot.width,
+                height: snapshot.height,
+                rasterBounds: snapshot.rasterBounds,
+                pixelBytes: snapshot.pixels?.byteLength || snapshot.pixels?.length || 0
+            });
+        }
+        if (asset.drawingSnapshotId && !primaryIncluded) {
+            const primarySnapshot = this.model.getDrawingSnapshot(asset.drawingSnapshotId);
+            if (!primarySnapshot) {
+                return { ok: false, reason: 'CAFの主Snapshotが見つかりません', layers: [] };
+            }
+            layers.push({
+                type: 'raster',
+                width: primarySnapshot.width,
+                height: primarySnapshot.height,
+                rasterBounds: primarySnapshot.rasterBounds,
+                pixelBytes: primarySnapshot.pixels?.byteLength || primarySnapshot.pixels?.length || 0
+            });
+            hasDrawableRaster = true;
+        }
+        return hasDrawableRaster
+            ? { ok: true, layers }
+            : { ok: false, reason: '複製できるRaster Layerがありません', layers: [] };
+    }
+
+    _estimateStructuredBakeForClip(sourceClip, sourceAsset) {
+        const source = this._getStructuredBakeSourceLayers(sourceAsset);
+        if (!source.ok) return { ok: false, reason: source.reason, estimate: null };
+
+        const existingSnapshotBytes = (this.model.drawingSnapshots || []).reduce((total, snapshot) => (
+            total + (snapshot?.pixels?.byteLength || snapshot?.pixels?.length || 0)
+        ), 0);
+        const historyUsage = historyManager.getUsage?.() || {};
+        const runtimeMemory = globalThis.performance?.memory;
+        const heapLimit = Number(runtimeMemory?.jsHeapSizeLimit);
+        const usedHeap = Number(runtimeMemory?.usedJSHeapSize);
+        const heapBudgetBytes = Number.isFinite(heapLimit) && heapLimit > 0
+            ? Math.floor(heapLimit * 0.8)
+            : STRUCTURED_BAKE_CHECKPOINT_SAFE_BYTES;
+        const memoryBudgetBytes = Math.min(
+            heapBudgetBytes,
+            STRUCTURED_BAKE_CHECKPOINT_SAFE_BYTES
+        );
+        const otherResidentBytes = Number.isFinite(usedHeap) && usedHeap > existingSnapshotBytes
+            ? usedHeap - existingSnapshotBytes
+            : 0;
+        const estimate = estimateStructuredBakeCapacity({
+            frameCount: sourceClip.duration,
+            layers: source.layers,
+            existingSnapshotBytes,
+            existingHistoryBytes: historyUsage.currentBytes || 0,
+            otherResidentBytes,
+            memoryBudgetBytes
+        });
+        const historyBudget = Number(historyUsage.maxBytes) || (512 * 1024 * 1024);
+        const fitsKnownHeap = estimate.fitsBudget !== false;
+        const fitsHistory = estimate.outputPixelBytes <= historyBudget;
+        return {
+            ok: fitsKnownHeap && fitsHistory,
+            reason: !fitsKnownHeap
+                ? `推定peak ${Math.ceil(estimate.peakBytes / 1048576)}MBが校正済み安全上限 ${Math.floor(memoryBudgetBytes / 1048576)}MBを超えます`
+                : !fitsHistory
+                    ? `複製Snapshot ${Math.ceil(estimate.outputPixelBytes / 1048576)}MBがHistory上限を超えます`
+                    : null,
+            estimate
+        };
+    }
+
+    _syncStructuredBakeButton(operation = this._structuredBakeOperation) {
+        const button = this.motionPanel?.querySelector?.('#anim-warp-structured-bake-btn');
+        if (!button) return;
+        const isActive = !!operation && this._structuredBakeOperation === operation;
+        if (!button.dataset.structuredBakeIdleMarkup) {
+            button.dataset.structuredBakeIdleMarkup = button.innerHTML;
+        }
+        button.classList.toggle('active', isActive);
+        button.toggleAttribute('data-bake-active', isActive);
+        if (!isActive) {
+            button.innerHTML = button.dataset.structuredBakeIdleMarkup;
+            button.removeAttribute('aria-pressed');
+            return;
+        }
+
+        const completed = Math.max(0, Number(operation.completedFrames) || 0);
+        const total = Math.max(1, Number(operation.totalFrames) || 1);
+        button.innerHTML = UI_ICONS.close;
+        button.disabled = operation.cancelled === true;
+        button.setAttribute('aria-pressed', 'true');
+        button.setAttribute('aria-label', 'Cancel Layer structure Bake');
+        button.title = operation.cancelled
+            ? `Layer構造Bakeを中止しています (${completed}/${total})`
+            : `Layer構造Bakeを中止 (${completed}/${total})`;
+    }
+
+    _sampleStructuredBakeRuntime(operation) {
+        if (!operation) return;
+        const usedHeapBytes = Number(globalThis.performance?.memory?.usedJSHeapSize);
+        if (!Number.isFinite(usedHeapBytes) || usedHeapBytes <= 0) return;
+        if (!Number.isFinite(operation.heapStartBytes)) {
+            operation.heapStartBytes = usedHeapBytes;
+        }
+        operation.heapPeakBytes = Math.max(
+            Number(operation.heapPeakBytes) || 0,
+            usedHeapBytes
+        );
+    }
+
+    _finalizeStructuredBakeProfile(operation, outcome) {
+        this._sampleStructuredBakeRuntime(operation);
+        const startedAt = Number(operation?.startedAt);
+        const endedAt = globalThis.performance?.now?.() || Date.now();
+        const heapStartBytes = Number(operation?.heapStartBytes);
+        const heapPeakBytes = Number(operation?.heapPeakBytes);
+        const profile = {
+            outcome,
+            completedFrames: Math.max(0, Number(operation?.completedFrames) || 0),
+            totalFrames: Math.max(1, Number(operation?.totalFrames) || 1),
+            durationMs: Number.isFinite(startedAt) ? Math.max(0, endedAt - startedAt) : null,
+            heapStartBytes: Number.isFinite(heapStartBytes) ? heapStartBytes : null,
+            heapPeakBytes: Number.isFinite(heapPeakBytes) ? heapPeakBytes : null,
+            heapGrowthBytes: Number.isFinite(heapStartBytes) && Number.isFinite(heapPeakBytes)
+                ? Math.max(0, heapPeakBytes - heapStartBytes)
+                : null
+        };
+        this._lastStructuredBakeProfile = profile;
+        return profile;
+    }
+
+    async _bakeSelectedWarpGridToStructuredCafs() {
+        const state = this._getWarpGridEditState();
+        if (!state || this.isPlaying) return false;
+        const sourceClip = state.entry.clip;
+        const sourceAsset = this.model.getClipAsset(sourceClip.assetId);
+        if (!sourceAsset) return false;
+        if (sourceClip.physics?.enabled) {
+            showFeedbackToast('Physics有効ClipはLayer構造を静止化できないため、Raster Bakeを使用してください');
+            return false;
+        }
+
+        this._exitWarpGridEditMode();
+        this._saveSelectedClipFromWorkingLayers();
+        const capacity = this._estimateStructuredBakeForClip(sourceClip, sourceAsset);
+        if (!capacity.ok) {
+            showFeedbackToast(`Layer構造Bakeを開始できません: ${capacity.reason}`);
+            this.render();
+            return false;
+        }
+
+        const beforeState = this._captureTimelineHistoryState();
+        const operation = {
+            cancelled: false,
+            completedFrames: 0,
+            totalFrames: sourceClip.duration,
+            startedAt: globalThis.performance?.now?.() || Date.now(),
+            heapStartBytes: null,
+            heapPeakBytes: null
+        };
+        this._structuredBakeOperation = operation;
+        this._sampleStructuredBakeRuntime(operation);
+        this._syncStructuredBakeButton(operation);
+        const created = [];
+
+        try {
+            const lane = this.model.createIndependentLane({ placement: 'top' });
+            const assetFolder = this._createNextClipAssetFolder();
+            if (!lane || !assetFolder) {
+                throw new Error('Layer構造Bakeの出力先を作成できません');
+            }
+
+            for (let localFrame = 0; localFrame < sourceClip.duration; localFrame++) {
+                if (operation.cancelled) {
+                    const error = new Error('Layer構造Bakeを中止しました');
+                    error.name = 'AbortError';
+                    throw error;
+                }
+                const frameIndex = sourceClip.startFrame + localFrame;
+                const sampled = sampleClipBakeState(sourceClip, frameIndex);
+                if (!sampled) throw new Error(`Local F${localFrame + 1}を静止化できません`);
+                const duplicate = this.model.duplicateClipAsset(sourceAsset.id, {
+                    name: `${sourceAsset.name || 'Warp'} Bake ${localFrame + 1}`,
+                    folderId: assetFolder.id
+                });
+                if (!duplicate?.ok || !duplicate.asset) {
+                    throw new Error(`Local F${localFrame + 1}のLayer構造を複製できません`);
+                }
+                const primarySnapshot = duplicate.asset.drawingSnapshotId
+                    ? this.model.getDrawingSnapshot(duplicate.asset.drawingSnapshotId)
+                    : null;
+                const clip = lane.addCel({
+                    assetId: duplicate.asset.id,
+                    startFrame: frameIndex,
+                    duration: 1,
+                    transform: sampled.transform,
+                    transformKeyframes: sampled.transformKeyframes,
+                    deformer: sampled.deformer,
+                    rasterSnapshot: primarySnapshot
+                        ? this._createRasterSnapshotCompat(primarySnapshot, {
+                            drawingSnapshotId: primarySnapshot.id,
+                            includePixels: false
+                        })
+                        : null
+                });
+                if (!clip) throw new Error(`Local F${localFrame + 1}をLaneへ配置できません`);
+                created.push({ clip, asset: duplicate.asset });
+                operation.completedFrames = created.length;
+                this._sampleStructuredBakeRuntime(operation);
+                this._syncStructuredBakeButton(operation);
+                await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+            if (operation.cancelled) {
+                const error = new Error('Layer構造Bakeを中止しました');
+                error.name = 'AbortError';
+                throw error;
+            }
+
+            sourceClip.visible = false;
+            const first = created[0];
+            const firstLayer = first.asset.internalLayers.find(layer => layer.type === 'raster')
+                || first.asset.internalLayers[0]
+                || null;
+            this.model.totalFrames = Math.max(
+                this.model.totalFrames || 1,
+                sourceClip.startFrame + sourceClip.duration
+            );
+            this.model.setCurrentFrame?.(sourceClip.startFrame);
+            this.model.clampPlaybackSettings?.();
+            this.selectedCelId = first.clip.id;
+            this.selectedCelIds = new Set([first.clip.id]);
+            this.activeLaneId = lane.id;
+            this.isLaneOnlySelected = false;
+            this.selectedAssetId = first.asset.id;
+            this.selectedAssetFolderId = assetFolder.id;
+            this.selectedInternalLayerId = firstLayer?.id || null;
+            this.initialClipAssetSeeded = true;
+            this.model.tracks.forEach(track => { track.active = track.id === lane.id; });
+
+            this._invalidateSnapshotTextureCache();
+            this._syncClipAssetToWorkingLayers(first.clip, { forceRestore: true });
+            this._resetCafPreviewRuntime('caf-structured-bake');
+            const runtimeProfile = this._finalizeStructuredBakeProfile(operation, 'completed');
+            this._recordTimelineHistory(
+                beforeState,
+                this._captureTimelineHistoryState(),
+                'caf-structured-warp-bake',
+                {
+                    type: 'caf-structured-warp-bake',
+                    source: 'warp-grid-structured-bake',
+                    sourceClipId: sourceClip.id,
+                    frameCount: created.length,
+                    laneId: lane.id,
+                    createdLaneId: lane.id,
+                    assetFolderId: assetFolder.id,
+                    byteSize: capacity.estimate.outputPixelBytes,
+                    estimatedPeakBytes: capacity.estimate.peakBytes,
+                    runtimeDurationMs: runtimeProfile.durationMs,
+                    runtimeHeapPeakBytes: runtimeProfile.heapPeakBytes,
+                    runtimeHeapGrowthBytes: runtimeProfile.heapGrowthBytes
+                }
+            );
+            this._structuredBakeOperation = null;
+            this.render();
+            this._flushLayerPanelSync();
+            const estimateNote = Number.isFinite(capacity.estimate.peakBytes)
+                ? `／推定peak ${Math.ceil(capacity.estimate.peakBytes / 1048576)}MB`
+                : '';
+            const durationNote = Number.isFinite(runtimeProfile.durationMs)
+                ? `／実測 ${(runtimeProfile.durationMs / 1000).toFixed(1)}秒`
+                : '';
+            const heapNote = Number.isFinite(runtimeProfile.heapGrowthBytes)
+                ? `／観測heap増加 ${Math.ceil(runtimeProfile.heapGrowthBytes / 1048576)}MB`
+                : '';
+            showFeedbackToast(`Layer構造を維持して${created.length} Frameを最上段LaneへBakeしました（元Clipは非表示で保持${estimateNote}${durationNote}${heapNote}）`);
+            return true;
+        } catch (error) {
+            const wasCancelled = operation.cancelled || error?.name === 'AbortError';
+            this._finalizeStructuredBakeProfile(operation, wasCancelled ? 'cancelled' : 'failed');
+            this._structuredBakeOperation = null;
+            this._restoreTimelineHistoryState(beforeState);
+            showFeedbackToast(wasCancelled
+                ? 'Layer構造Bakeを中止しました（変更は残していません）'
+                : (error?.message || 'Layer構造Bakeに失敗しました'));
+            return false;
+        } finally {
+            if (this._structuredBakeOperation === operation) {
+                this._structuredBakeOperation = null;
+            }
+            this._syncStructuredBakeButton(null);
+        }
+    }
+
+    _upsertSelectedWarpGridKey(points, options = {}) {
         const state = this._getWarpGridEditState();
         if (!state || !Array.isArray(points)
             || points.length !== state.deformer.bindPoints.length) return false;
         const previous = state.deformer.keyframes.findLast(key => key?.frame === state.localFrame);
+        const placement = options.placement !== undefined
+            ? normalizeWarpPlacement(options.placement)
+            : (previous?.placement ?? state.sampled?.placement);
         const key = {
             frame: state.localFrame,
             interpolation: previous?.interpolation === 'hold' ? 'hold' : 'linear',
-            points: points.map(point => ({ x: point.x, y: point.y }))
+            points: points.map(point => ({ x: point.x, y: point.y })),
+            ...(placement ? { placement: { ...placement } } : {})
         };
         state.entry.clip.deformer = normalizeClipDeformer({
             ...state.deformer,
@@ -6341,8 +7178,21 @@ export class AnimationTablePopup {
                 .sort((left, right) => left.frame - right.frame)
         });
         this._animationPreviewKey = null;
-        this._applyVisibilityPreview();
+        if (options.deferPreview === true) {
+            this._scheduleMotionEditPreviewRefresh();
+        } else {
+            this._applyVisibilityPreview();
+        }
         return true;
+    }
+
+    _upsertSelectedWarpPlacement(placement, options = {}) {
+        const state = this._getWarpGridEditState();
+        if (!state) return false;
+        return this._upsertSelectedWarpGridKey(state.sampled.points, {
+            ...options,
+            placement: normalizeWarpPlacement(placement)
+        });
     }
 
     _navigateSelectedWarpGridKey(direction) {
@@ -6420,6 +7270,19 @@ export class AnimationTablePopup {
                 ...meta
             }
         );
+        if (options.enterGridSetupWhenKeyless === true) {
+            const updatedState = this._getWarpGridEditState();
+            const keyCount = updatedState
+                ? listClipDeformerKeyframes(
+                    updatedState.deformer,
+                    updatedState.entry.clip.duration
+                ).length
+                : 0;
+            if (updatedState?.deformer?.type === 'control-mesh' && keyCount === 0) {
+                this._setWarpGridTool('grid', { render: false });
+                this._enterWarpGridEditMode(updatedState.entry);
+            }
+        }
         this.render();
         return true;
     }
@@ -6451,7 +7314,8 @@ export class AnimationTablePopup {
         this._warpKeyClipboard = {
             topologySignature: this._getDeformerTopologySignature(state.deformer),
             interpolation: state.key.interpolation === 'hold' ? 'hold' : 'linear',
-            points: state.key.points.map(point => ({ x: point.x, y: point.y }))
+            points: state.key.points.map(point => ({ x: point.x, y: point.y })),
+            ...(state.key.placement ? { placement: { ...state.key.placement } } : {})
         };
         showFeedbackToast(formatCopyFeedback('warp-key'));
         this.render();
@@ -6468,7 +7332,10 @@ export class AnimationTablePopup {
         const key = {
             frame: state.localFrame,
             interpolation: this._warpKeyClipboard.interpolation,
-            points: this._warpKeyClipboard.points.map(point => ({ ...point }))
+            points: this._warpKeyClipboard.points.map(point => ({ ...point })),
+            ...(this._warpKeyClipboard.placement
+                ? { placement: { ...this._warpKeyClipboard.placement } }
+                : {})
         };
         const nextDeformer = normalizeClipDeformer({
             ...state.deformer,
@@ -6528,7 +7395,7 @@ export class AnimationTablePopup {
             nextDeformer,
             'caf-clip-warp-grid-key-delete',
             {},
-            { exitEditMode: true }
+            { exitEditMode: true, enterGridSetupWhenKeyless: true }
         );
     }
 
@@ -6551,7 +7418,7 @@ export class AnimationTablePopup {
 
     _clearSelectedWarpGridKeys() {
         const state = this._getWarpGridEditState();
-        if (!state || state.deformer.keyframes.length < 2 || this.isPlaying) return false;
+        if (!state || state.deformer.keyframes.length < 1 || this.isPlaying) return false;
         const nextDeformer = normalizeClipDeformer({
             ...state.deformer,
             keyframes: []
@@ -6560,7 +7427,7 @@ export class AnimationTablePopup {
             nextDeformer,
             'caf-clip-warp-grid-keys-clear',
             { keyCount: state.deformer.keyframes.length },
-            { exitEditMode: true }
+            { exitEditMode: true, enterGridSetupWhenKeyless: true }
         );
     }
 
@@ -6877,9 +7744,17 @@ export class AnimationTablePopup {
             this._motionPlaybackClipId = null;
             this.motionPanel?.querySelector('#anim-motion-anchor-btn')?.classList.remove('active');
         } else {
-            this._motionTimelineKeyKind = 'motion';
-            this._showMotionAnchorSite(false);
-            this.motionPanel.querySelector('#anim-motion-key-btn')?.focus({ preventScroll: true });
+            if (this._motionTimelineKeyKind === 'warp') {
+                transformAnchorSite.deactivate('clip-motion');
+                this._motionAnchorClip = null;
+                if (['warp-grid', 'control-mesh'].includes(entry?.clip?.deformer?.type)) {
+                    this._enterWarpGridEditMode(entry);
+                }
+                this.motionPanel.querySelector('#anim-warp-key-btn')?.focus({ preventScroll: true });
+            } else {
+                this._showMotionAnchorSite(false);
+                this.motionPanel.querySelector('#anim-motion-key-btn')?.focus({ preventScroll: true });
+            }
         }
         this._updateMotionCanvasCursor();
         if (this.isVisible) this.render();
@@ -7069,6 +7944,7 @@ export class AnimationTablePopup {
 
     _isMotionCanvasModeActive() {
         return this.motionPanel?.style.display !== 'none'
+            && this._motionTimelineKeyKind === 'motion'
             && !!this._getSelectedClipMotionFrame()
             && !this.isPlaying
             && !this._isWarpGridEditModeActive();
@@ -7084,13 +7960,116 @@ export class AnimationTablePopup {
         const canvas = this._motionCanvas || this._getMotionCanvas();
         if (!canvas) return;
         if (this._isWarpGridEditModeActive()) {
-            canvas.style.cursor = this._warpGridGesture ? 'grabbing' : 'crosshair';
+            canvas.style.cursor = this._warpBrushShortcutControl
+                ? 'ew-resize'
+                : this._warpGridGesture
+                ? 'grabbing'
+                : (this._warpGridTool === 'brush'
+                    ? 'none'
+                    : (['grid', 'lens'].includes(this._warpGridTool) ? 'move' : 'crosshair'));
         } else if (this._isMotionCanvasModeActive()) {
             canvas.style.cursor = this._motionCanvasGesture ? 'grabbing' : 'move';
         } else {
             canvas.style.cursor = '';
             this.layerSystem?.transform?._updateCursor?.();
         }
+    }
+
+    handleWarpBrushShortcutKeyDown(event) {
+        if (!event || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
+            || !this._isWarpGridEditModeActive()) {
+            return false;
+        }
+        if (!this._canEditWarpGridPose()) return false;
+        if (event.code === 'KeyP') {
+            if (!event.repeat) {
+                this._setWarpGridTool('point', { notify: true });
+            }
+            return true;
+        }
+        if (event.code === 'KeyM') {
+            if (!event.repeat) {
+                const modes = ['move', 'inflate', 'pinch', 'smooth'];
+                this._warpBrushMode = this._warpGridTool === 'brush'
+                    ? modes[(modes.indexOf(this._warpBrushMode) + 1) % modes.length]
+                    : 'move';
+                this._setWarpGridTool('brush', { notify: true });
+            }
+            return true;
+        }
+        if (event.code === 'KeyB') {
+            if (!event.repeat) {
+                this._setWarpGridTool('brush', { notify: true });
+                this._warpBrushShortcutControl = 'size';
+            }
+            this._updateMotionCanvasCursor();
+            return true;
+        }
+        if (this._warpGridTool !== 'brush') return false;
+        const control = event.code === 'KeyN' ? 'strength' : null;
+        if (!control) return false;
+        if (!event.repeat) this._warpBrushShortcutControl = control;
+        this._updateMotionCanvasCursor();
+        return true;
+    }
+
+    handleWarpBrushShortcutKeyUp(event) {
+        const control = event?.code === 'KeyB'
+            ? 'size'
+            : (event?.code === 'KeyN' ? 'strength' : null);
+        if (!control || this._warpBrushShortcutControl !== control) return false;
+        this._warpBrushShortcutControl = null;
+        this._updateMotionCanvasCursor();
+        return true;
+    }
+
+    cancelWarpBrushShortcutControl() {
+        const wasActive = !!this._warpBrushShortcutControl;
+        if (this._warpGridGesture?.tool === 'brush-control') {
+            this._cancelWarpGridGesture(this._warpGridGesture, {
+                refreshPreview: false,
+                releasePointerCapture: true
+            });
+        }
+        this._warpBrushShortcutControl = null;
+        this._updateMotionCanvasCursor();
+        return wasActive;
+    }
+
+    _syncWarpBrushModeDescription(select = null) {
+        const modeSelect = select || this.motionPanel?.querySelector('#anim-warp-brush-mode');
+        const mode = ['move', 'inflate', 'pinch', 'smooth'].includes(modeSelect?.value)
+            ? modeSelect.value
+            : this._warpBrushMode;
+        const description = WARP_BRUSH_MODE_DESCRIPTIONS[mode]
+            || WARP_BRUSH_MODE_DESCRIPTIONS.move;
+        const help = modeSelect?.closest?.('[data-brush-mode-help]');
+        if (help) {
+            help.dataset.tooltip = description;
+            help.removeAttribute('title');
+        }
+        if (modeSelect) {
+            modeSelect.setAttribute('aria-description', description);
+        }
+    }
+
+    _setWarpBrushRadius(value) {
+        const nextValue = Math.max(12, Math.min(240, Number(value) || 80));
+        this._warpBrushRadius = Math.round(nextValue);
+        const input = this.motionPanel?.querySelector('#anim-warp-brush-radius');
+        if (input && document.activeElement !== input) input.value = String(this._warpBrushRadius);
+        return this._warpBrushRadius;
+    }
+
+    _setWarpBrushStrength(value) {
+        const numericValue = Number(value);
+        const nextValue = Math.max(0, Math.min(100, Number.isFinite(numericValue) ? numericValue : 50));
+        this._warpBrushStrength = Math.round(nextValue) / 100;
+        const input = this.motionPanel?.querySelector('#anim-warp-brush-strength');
+        if (input && document.activeElement !== input) {
+            input.value = String(Math.round(this._warpBrushStrength * 100));
+        }
+        return this._warpBrushStrength;
     }
 
     _upsertSelectedMotionKey(transform, options = {}) {
@@ -7115,8 +8094,12 @@ export class AnimationTablePopup {
         state.entry.clip.transformKeyframes.push(key);
         state.entry.clip.transformKeyframes.sort((a, b) => a.frame - b.frame);
         this._animationPreviewKey = null;
-        this._applyVisibilityPreview();
-        if (options.render !== false) this.render();
+        if (options.deferPreview === true) {
+            this._scheduleMotionEditPreviewRefresh();
+        } else {
+            this._applyVisibilityPreview();
+        }
+        if (options.render !== false && options.deferPreview !== true) this.render();
         return true;
     }
 
@@ -7155,15 +8138,236 @@ export class AnimationTablePopup {
             });
             return nearest;
         };
+        const getWarpGridFrameGeometry = (state) => {
+            const columns = state?.deformer?.columns;
+            const rows = state?.deformer?.rows;
+            if (!Number.isInteger(columns) || !Number.isInteger(rows)) return null;
+            const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+            const points = this._getWarpGridWorldPoints(state).map(point => {
+                const screen = coordinateSystem?.worldToScreenImmediate?.(point.x, point.y)
+                    || coordinateSystem?.worldToScreen?.(point.x, point.y);
+                return screen ? { x: screen.clientX, y: screen.clientY } : null;
+            });
+            const corners = [
+                points[0],
+                points[columns - 1],
+                points[rows * columns - 1],
+                points[(rows - 1) * columns]
+            ];
+            if (corners.some(point => !point)) return null;
+            const center = {
+                x: corners.reduce((sum, point) => sum + point.x, 0) / 4,
+                y: corners.reduce((sum, point) => sum + point.y, 0) / 4
+            };
+            const topMid = {
+                x: (corners[0].x + corners[1].x) / 2,
+                y: (corners[0].y + corners[1].y) / 2
+            };
+            const topLength = Math.hypot(topMid.x - center.x, topMid.y - center.y) || 1;
+            const rotationHandle = {
+                x: topMid.x + (topMid.x - center.x) / topLength * 34,
+                y: topMid.y + (topMid.y - center.y) / topLength * 34
+            };
+            return { corners, center, rotationHandle };
+        };
+        const pointInWarpGridFrame = (point, corners) => {
+            let inside = false;
+            for (let index = 0, previous = corners.length - 1; index < corners.length; previous = index++) {
+                const currentPoint = corners[index];
+                const previousPoint = corners[previous];
+                if ((currentPoint.y > point.y) !== (previousPoint.y > point.y)
+                    && point.x < (previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)
+                        / (previousPoint.y - currentPoint.y) + currentPoint.x) {
+                    inside = !inside;
+                }
+            }
+            return inside;
+        };
+        const toWarpProject = (event, state) => {
+            const world = toWorld(event);
+            const config = window.TEGAKI_CONFIG?.canvas || {};
+            const transform = state
+                ? sampleClipTransform(state.entry.clip, this.model.playback.currentFrame)
+                : null;
+            const matrix = transform ? createCenteredTransformMatrix(
+                transform,
+                (config.width || 400) / 2,
+                (config.height || 400) / 2
+            ) : null;
+            const local = matrix ? invertTransformMatrixPoint(matrix, world.x, world.y) : null;
+            return local && Number.isFinite(local.x) && Number.isFinite(local.y) ? local : null;
+        };
+        const toWarpNormalized = (event, state) => {
+            const local = toWarpProject(event, state);
+            const bounds = state?.sampled?.bindBounds;
+            if (!local || !bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)
+                || bounds.width === 0 || bounds.height === 0) return null;
+            const normalized = {
+                x: (local.x - bounds.x) / bounds.width,
+                y: (local.y - bounds.y) / bounds.height
+            };
+            if (!['point', 'brush'].includes(this._warpGridTool)) return normalized;
+            return invertWarpPlacementPoint(
+                normalized,
+                state.sampled.bindPoints,
+                bounds,
+                state.sampled.placement
+            );
+        };
         canvas.addEventListener('pointerdown', (event) => {
             if (this._isWarpGridEditModeActive() && event.button === 0) {
-                const state = this._getWarpGridEditState();
-                const hit = state ? findWarpPoint(event, state) : null;
-                if (state && hit) {
+                let state = this._getWarpGridEditState();
+                const hit = state && this._warpGridTool === 'point' ? findWarpPoint(event, state) : null;
+                if (state && ['grid', 'lens'].includes(this._warpGridTool)) {
+                    const beforeState = this._captureTimelineHistoryState();
+                    const startDeformer = normalizeClipDeformer(state.deformer);
+                    const startPointer = this._warpGridTool === 'lens'
+                        ? toWarpProject(event, state)
+                        : toWarpNormalized(event, state);
+                    const frame = getWarpGridFrameGeometry(state);
+                    const pointerScreen = { x: event.clientX, y: event.clientY };
+                    const rotationHit = frame
+                        && Math.hypot(
+                            frame.rotationHandle.x - pointerScreen.x,
+                            frame.rotationHandle.y - pointerScreen.y
+                        ) <= 18;
+                    const cornerHit = frame?.corners.findIndex(corner => (
+                        Math.hypot(corner.x - pointerScreen.x, corner.y - pointerScreen.y) <= 18
+                    )) ?? -1;
+                    const insideFrame = frame && pointInWarpGridFrame(pointerScreen, frame.corners);
+                    if (startPointer && frame && (rotationHit || cornerHit >= 0 || insideFrame)) {
+                        const startPlacement = normalizeWarpPlacement(state.sampled.placement);
+                        const bounds = state.sampled.bindBounds;
+                        const bindCenter = state.sampled.bindPoints.reduce((result, item) => ({
+                            x: result.x + (bounds.x + item.x * bounds.width) / state.sampled.bindPoints.length,
+                            y: result.y + (bounds.y + item.y * bounds.height) / state.sampled.bindPoints.length
+                        }), { x: 0, y: 0 });
+                        const projectCenter = {
+                            x: bindCenter.x + startPlacement.x,
+                            y: bindCenter.y + startPlacement.y
+                        };
+                        const startDistance = Math.hypot(
+                            pointerScreen.x - frame.center.x,
+                            pointerScreen.y - frame.center.y
+                        ) || 1;
+                        this._warpGridGesture = {
+                            pointerId: event.pointerId,
+                            clipId: state.entry.clip.id,
+                            tool: this._warpGridTool,
+                            mode: rotationHit ? 'rotate-handle' : (cornerHit >= 0 ? 'scale-handle' : null),
+                            startPointer,
+                            startClientX: event.clientX,
+                            startClientY: event.clientY,
+                            startScreenCenter: frame.center,
+                            startScreenAngle: Math.atan2(
+                                pointerScreen.y - frame.center.y,
+                                pointerScreen.x - frame.center.x
+                            ),
+                            startScreenDistance: startDistance,
+                            startProjectCenter: projectCenter,
+                            startProjectAngle: Math.atan2(
+                                startPointer.y - projectCenter.y,
+                                startPointer.x - projectCenter.x
+                            ),
+                            startProjectDistance: Math.hypot(
+                                startPointer.x - projectCenter.x,
+                                startPointer.y - projectCenter.y
+                            ) || 1,
+                            startPlacement,
+                            startDeformer,
+                            startBindPoints: state.deformer.bindPoints.map(point => ({ ...point })),
+                            beforeState
+                        };
+                        canvas.setPointerCapture?.(event.pointerId);
+                        this._updateMotionCanvasCursor();
+                    }
+                } else if (state && this._warpGridTool === 'brush') {
+                    if (this._warpBrushShortcutControl) {
+                        this._warpGridGesture = {
+                            pointerId: event.pointerId,
+                            clipId: state.entry.clip.id,
+                            tool: 'brush-control',
+                            control: this._warpBrushShortcutControl,
+                            startClientX: event.clientX,
+                            startValue: this._warpBrushShortcutControl === 'size'
+                                ? this._warpBrushRadius
+                                : this._warpBrushStrength
+                        };
+                        canvas.setPointerCapture?.(event.pointerId);
+                        this._updateMotionCanvasCursor();
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        return;
+                    }
+                    const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+                    const screenPoints = this._getWarpGridWorldPoints(state).map(point => {
+                        const screen = coordinateSystem?.worldToScreenImmediate?.(point.x, point.y)
+                            || coordinateSystem?.worldToScreen?.(point.x, point.y);
+                        return screen ? { x: screen.clientX, y: screen.clientY } : { x: NaN, y: NaN };
+                    });
+                    const weights = calculateWarpGridBrushWeights(screenPoints, {
+                        center: { x: event.clientX, y: event.clientY },
+                        radius: this._warpBrushRadius,
+                        hardness: this._warpBrushStrength
+                    });
+                    const startPointer = toWarpNormalized(event, state);
+                    if (weights?.some(weight => weight > 0) && startPointer) {
+                        const beforeState = this._captureTimelineHistoryState();
+                        const startDeformer = normalizeClipDeformer(state.deformer);
+                        if (!state.key) {
+                            if (!this._upsertSelectedWarpGridKey(state.sampled.points)) return;
+                            state = this._getWarpGridEditState();
+                            if (!state?.key) return;
+                        }
+                        const columns = Number.isInteger(state.deformer.columns)
+                            ? state.deformer.columns
+                            : 4;
+                        const rows = Number.isInteger(state.deformer.rows)
+                            ? state.deformer.rows
+                            : 4;
+                        const topology = createRectGridTopology({ columns, rows });
+                        this._warpGridGesture = {
+                            pointerId: event.pointerId,
+                            clipId: state.entry.clip.id,
+                            tool: 'brush',
+                            mode: event.shiftKey ? 'shift-inflate' : this._warpBrushMode,
+                            startPointer,
+                            startClientX: event.clientX,
+                            startClientY: event.clientY,
+                            startPoints: state.sampled.points.map(point => ({ ...point })),
+                            currentPoints: state.sampled.points.map(point => ({ ...point })),
+                            lastPointer: startPointer,
+                            weights,
+                            neighbors: topology?.pointCount === state.sampled.points.length
+                                ? topology.neighbors
+                                : null,
+                            startDeformer,
+                            beforeState
+                        };
+                        this._warpBrushPointer = {
+                            x: event.clientX,
+                            y: event.clientY,
+                            visible: true,
+                            weights
+                        };
+                        canvas.setPointerCapture?.(event.pointerId);
+                        this._updateMotionCanvasCursor();
+                    }
+                } else if (state && hit) {
+                    const beforeState = this._captureTimelineHistoryState();
+                    const startDeformer = normalizeClipDeformer(state.deformer);
+                    if (!state.key) {
+                        if (!this._upsertSelectedWarpGridKey(state.sampled.points)) return;
+                        state = this._getWarpGridEditState();
+                        if (!state?.key) return;
+                    }
                     this._warpGridGesture = {
                         pointerId: event.pointerId,
+                        clipId: state.entry.clip.id,
+                        tool: 'point',
                         pointIndex: hit.index,
-                        beforeState: this._captureTimelineHistoryState()
+                        startDeformer,
+                        beforeState
                     };
                     canvas.setPointerCapture?.(event.pointerId);
                     this._updateMotionCanvasCursor();
@@ -7192,27 +8396,187 @@ export class AnimationTablePopup {
         canvas.addEventListener('pointermove', (event) => {
             const warpGesture = this._warpGridGesture;
             if (warpGesture?.pointerId === event.pointerId) {
+                if (warpGesture.tool === 'brush-control') {
+                    const deltaX = event.clientX - warpGesture.startClientX;
+                    if (warpGesture.control === 'size') {
+                        this._setWarpBrushRadius(warpGesture.startValue + deltaX);
+                    } else {
+                        this._setWarpBrushStrength((warpGesture.startValue + deltaX / 200) * 100);
+                    }
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
                 const state = this._getWarpGridEditState();
-                const world = toWorld(event);
-                const config = window.TEGAKI_CONFIG?.canvas || {};
-                const transform = state
-                    ? sampleClipTransform(state.entry.clip, this.model.playback.currentFrame)
+                const point = state
+                    ? (warpGesture.tool === 'lens'
+                        ? toWarpProject(event, state)
+                        : toWarpNormalized(event, state))
                     : null;
-                const matrix = transform ? createCenteredTransformMatrix(
-                    transform,
-                    (config.width || 400) / 2,
-                    (config.height || 400) / 2
-                ) : null;
-                const local = matrix ? invertTransformMatrixPoint(matrix, world.x, world.y) : null;
-                const bounds = state?.sampled?.bindBounds;
-                if (state && local && bounds) {
-                    const point = {
-                        x: (local.x - bounds.x) / bounds.width,
-                        y: (local.y - bounds.y) / bounds.height
-                    };
-                    const points = state.sampled.points.map(item => ({ ...item }));
-                    points[warpGesture.pointIndex] = point;
-                    this._upsertSelectedWarpGridKey(points);
+                if (state && point) {
+                    if (warpGesture.tool === 'lens') {
+                        if (event.shiftKey && !warpGesture.mode) {
+                            const clientDx = event.clientX - warpGesture.startClientX;
+                            const clientDy = event.clientY - warpGesture.startClientY;
+                            if (Math.hypot(clientDx, clientDy) >= 5) {
+                                warpGesture.mode = Math.abs(clientDx) >= Math.abs(clientDy)
+                                    ? 'rotate'
+                                    : 'scale';
+                            }
+                        } else if (!event.shiftKey && !warpGesture.mode) {
+                            warpGesture.mode = 'move';
+                        }
+                        const placement = { ...warpGesture.startPlacement };
+                        if (warpGesture.mode === 'rotate' || warpGesture.mode === 'rotate-handle') {
+                            const angle = warpGesture.mode === 'rotate-handle'
+                                ? Math.atan2(
+                                    point.y - warpGesture.startProjectCenter.y,
+                                    point.x - warpGesture.startProjectCenter.x
+                                ) - warpGesture.startProjectAngle
+                                : (event.clientX - warpGesture.startClientX) / 120;
+                            placement.rotation = warpGesture.startPlacement.rotation + angle;
+                        } else if (warpGesture.mode === 'scale' || warpGesture.mode === 'scale-handle') {
+                            const factor = Math.max(0.08, Math.min(12,
+                                warpGesture.mode === 'scale-handle'
+                                    ? Math.hypot(
+                                        point.x - warpGesture.startProjectCenter.x,
+                                        point.y - warpGesture.startProjectCenter.y
+                                    ) / warpGesture.startProjectDistance
+                                    : Math.exp((warpGesture.startClientY - event.clientY) / 180)));
+                            placement.scale = Math.max(0.01, warpGesture.startPlacement.scale * factor);
+                        } else if (warpGesture.mode === 'move') {
+                            placement.x = warpGesture.startPlacement.x + point.x - warpGesture.startPointer.x;
+                            placement.y = warpGesture.startPlacement.y + point.y - warpGesture.startPointer.y;
+                        }
+                        this._upsertSelectedWarpPlacement(placement, { deferPreview: true });
+                    } else if (warpGesture.tool === 'grid') {
+                        const dx = point.x - warpGesture.startPointer.x;
+                        const dy = point.y - warpGesture.startPointer.y;
+                        if (event.shiftKey && !warpGesture.mode) {
+                            const clientDx = event.clientX - warpGesture.startClientX;
+                            const clientDy = event.clientY - warpGesture.startClientY;
+                            if (Math.hypot(clientDx, clientDy) >= 5) {
+                                warpGesture.mode = Math.abs(clientDx) >= Math.abs(clientDy)
+                                    ? 'rotate'
+                                    : 'scale';
+                            }
+                        } else if (!event.shiftKey && !warpGesture.mode) {
+                            warpGesture.mode = 'move';
+                        }
+                        const source = warpGesture.startBindPoints;
+                        const center = source.reduce((result, item) => ({
+                            x: result.x + item.x / source.length,
+                            y: result.y + item.y / source.length
+                        }), { x: 0, y: 0 });
+                        let bindPoints = null;
+                        if (warpGesture.mode === 'rotate' || warpGesture.mode === 'rotate-handle') {
+                            const angle = warpGesture.mode === 'rotate-handle'
+                                ? Math.atan2(
+                                    event.clientY - warpGesture.startScreenCenter.y,
+                                    event.clientX - warpGesture.startScreenCenter.x
+                                ) - warpGesture.startScreenAngle
+                                : (event.clientX - warpGesture.startClientX) / 120;
+                            const cos = Math.cos(angle);
+                            const sin = Math.sin(angle);
+                            bindPoints = source.map(item => ({
+                                x: center.x + (item.x - center.x) * cos - (item.y - center.y) * sin,
+                                y: center.y + (item.x - center.x) * sin + (item.y - center.y) * cos
+                            }));
+                        } else if (warpGesture.mode === 'scale' || warpGesture.mode === 'scale-handle') {
+                            const factor = Math.max(0.08, Math.min(12,
+                                warpGesture.mode === 'scale-handle'
+                                    ? Math.hypot(
+                                        event.clientX - warpGesture.startScreenCenter.x,
+                                        event.clientY - warpGesture.startScreenCenter.y
+                                    ) / warpGesture.startScreenDistance
+                                    : Math.exp((warpGesture.startClientY - event.clientY) / 180)));
+                            bindPoints = source.map(item => ({
+                                x: center.x + (item.x - center.x) * factor,
+                                y: center.y + (item.y - center.y) * factor
+                            }));
+                        } else if (warpGesture.mode === 'move') {
+                            bindPoints = source.map(item => ({ x: item.x + dx, y: item.y + dy }));
+                        }
+                        const rebased = bindPoints
+                            ? this._rebaseWarpGridBindForGesture(warpGesture.startDeformer, bindPoints)
+                            : null;
+                        if (rebased) {
+                            state.entry.clip.deformer = rebased;
+                            this._animationPreviewKey = null;
+                            this._scheduleMotionEditPreviewRefresh();
+                        }
+                    } else if (warpGesture.tool === 'brush') {
+                        const delta = {
+                            x: point.x - warpGesture.startPointer.x,
+                            y: point.y - warpGesture.startPointer.y
+                        };
+                        let points = null;
+                        if (warpGesture.mode === 'inflate' || warpGesture.mode === 'pinch'
+                            || warpGesture.mode === 'shift-inflate') {
+                            const distance = warpGesture.mode === 'shift-inflate'
+                                ? Math.sign(event.clientX - warpGesture.startClientX)
+                                    * Math.hypot(delta.x, delta.y)
+                                : Math.hypot(delta.x, delta.y);
+                            points = inflateWarpGridBrushPoints(
+                                warpGesture.startPoints,
+                                warpGesture.weights,
+                                {
+                                    pivot: warpGesture.startPointer,
+                                    amount: distance * (warpGesture.mode === 'pinch' ? -1 : 1)
+                                }
+                            );
+                        } else if (warpGesture.mode === 'smooth') {
+                            const dragDistance = Math.hypot(
+                                event.clientX - warpGesture.startClientX,
+                                event.clientY - warpGesture.startClientY
+                            );
+                            points = warpGesture.neighbors
+                                ? smoothWarpGridBrushPoints(
+                                    warpGesture.startPoints,
+                                    warpGesture.weights,
+                                    warpGesture.neighbors,
+                                    Math.min(1, dragDistance / 120)
+                                )
+                                : null;
+                        } else {
+                            const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+                            const currentScreenPoints = this._getWarpGridWorldPoints(state).map(item => {
+                                const screen = coordinateSystem?.worldToScreenImmediate?.(item.x, item.y)
+                                    || coordinateSystem?.worldToScreen?.(item.x, item.y);
+                                return screen ? { x: screen.clientX, y: screen.clientY } : { x: NaN, y: NaN };
+                            });
+                            const movingWeights = calculateWarpGridBrushWeights(currentScreenPoints, {
+                                center: { x: event.clientX, y: event.clientY },
+                                radius: this._warpBrushRadius,
+                                hardness: this._warpBrushStrength
+                            });
+                            const incrementalDelta = {
+                                x: point.x - warpGesture.lastPointer.x,
+                                y: point.y - warpGesture.lastPointer.y
+                            };
+                            points = translateWarpGridBrushPoints(
+                                warpGesture.currentPoints,
+                                movingWeights,
+                                incrementalDelta
+                            );
+                            warpGesture.currentPoints = points;
+                            warpGesture.lastPointer = point;
+                            warpGesture.weights = movingWeights;
+                        }
+                        if (points) {
+                            this._upsertSelectedWarpGridKey(points, { deferPreview: true });
+                            this._warpBrushPointer = {
+                                x: warpGesture.mode === 'move' ? event.clientX : warpGesture.startClientX,
+                                y: warpGesture.mode === 'move' ? event.clientY : warpGesture.startClientY,
+                                visible: true,
+                                weights: warpGesture.weights
+                            };
+                        }
+                    } else {
+                        const points = state.sampled.points.map(item => ({ ...item }));
+                        points[warpGesture.pointIndex] = point;
+                        this._upsertSelectedWarpGridKey(points, { deferPreview: true });
+                    }
                 }
                 event.preventDefault();
                 event.stopImmediatePropagation();
@@ -7244,20 +8608,48 @@ export class AnimationTablePopup {
                 gesture.transform.y += dy;
             }
             gesture.lastPoint = point;
-            this._upsertSelectedMotionKey(gesture.transform);
+            this._upsertSelectedMotionKey(gesture.transform, {
+                deferPreview: true,
+                render: false
+            });
             event.preventDefault();
             event.stopImmediatePropagation();
         }, true);
         const finishPointer = (event) => {
             const warpGesture = this._warpGridGesture;
             if (warpGesture?.pointerId === event.pointerId) {
-                canvas.releasePointerCapture?.(event.pointerId);
+                const cancelled = event.type === 'pointercancel' || event.type === 'lostpointercapture';
                 this._warpGridGesture = null;
+                if (canvas.hasPointerCapture?.(event.pointerId)) {
+                    canvas.releasePointerCapture(event.pointerId);
+                }
+                if (cancelled) {
+                    this._cancelWarpGridGesture(warpGesture, {
+                        refreshPreview: true,
+                        releasePointerCapture: false
+                    });
+                } else {
+                    this._cancelMotionEditPreviewRefresh();
+                }
+                if (!cancelled && warpGesture.tool === 'brush' && this._warpBrushPointer) {
+                    this._warpBrushPointer = {
+                        ...this._warpBrushPointer,
+                        weights: null
+                    };
+                }
                 this._updateMotionCanvasCursor();
-                this._finishMotionGestureHistory(
-                    warpGesture.beforeState,
-                    'caf-clip-warp-grid-point'
-                );
+                if (!cancelled && warpGesture.tool !== 'brush-control') {
+                    this._finishMotionGestureHistory(
+                        warpGesture.beforeState,
+                        warpGesture.tool === 'brush'
+                            ? 'caf-clip-warp-grid-brush'
+                            : (warpGesture.tool === 'lens'
+                                ? 'caf-clip-warp-placement-transform'
+                                : (warpGesture.tool === 'grid'
+                                ? 'caf-clip-warp-grid-bind-transform'
+                                : 'caf-clip-warp-grid-point'))
+                    );
+                }
                 this.render();
                 event.preventDefault();
                 event.stopImmediatePropagation();
@@ -7265,10 +8657,12 @@ export class AnimationTablePopup {
             }
             const gesture = this._motionCanvasGesture;
             if (!gesture || gesture.pointerId !== event.pointerId) return;
+            this._cancelMotionEditPreviewRefresh();
             canvas.releasePointerCapture?.(event.pointerId);
             this._motionCanvasGesture = null;
             this._updateMotionCanvasCursor();
             this._finishMotionGestureHistory(gesture.beforeState, 'caf-clip-motion-drag');
+            this.render();
             event.preventDefault();
             event.stopImmediatePropagation();
         };
@@ -7282,8 +8676,96 @@ export class AnimationTablePopup {
         this._motionWindowFinishPointer = finishPointer;
         window.addEventListener('pointerup', finishPointer, true);
         window.addEventListener('pointercancel', finishPointer, true);
+        canvas.addEventListener('pointerenter', event => {
+            if (this._isWarpGridEditModeActive() && this._warpGridTool === 'brush') {
+                const fixedGesture = this._warpGridGesture?.tool === 'brush'
+                    && this._warpGridGesture.mode !== 'move';
+                if (!fixedGesture) {
+                    this._warpBrushPointer = { x: event.clientX, y: event.clientY, visible: true };
+                }
+            }
+        }, true);
+        canvas.addEventListener('pointerleave', () => {
+            if (!this._warpGridGesture) this._warpBrushPointer = null;
+        }, true);
+        canvas.addEventListener('pointermove', event => {
+            if (this._isWarpGridEditModeActive() && this._warpGridTool === 'brush') {
+                this._warpBrushPointer = { x: event.clientX, y: event.clientY, visible: true };
+            }
+        }, true);
         canvas.addEventListener('wheel', (event) => {
             if (this._isWarpGridEditModeActive()) {
+                if (this._warpGridTool === 'grid') {
+                    const state = this._getWarpGridEditState();
+                    if (state?.deformer?.bindPoints?.length) {
+                        if (!this._warpGridWheelHistory) {
+                            this._warpGridWheelHistory = this._captureTimelineHistoryState();
+                        }
+                        const source = state.deformer.bindPoints;
+                        const center = source.reduce((result, point) => ({
+                            x: result.x + point.x / source.length,
+                            y: result.y + point.y / source.length
+                        }), { x: 0, y: 0 });
+                        let bindPoints;
+                        if (event.shiftKey) {
+                            const angle = (event.deltaY > 0 ? 5 : -5) * Math.PI / 180;
+                            const cos = Math.cos(angle);
+                            const sin = Math.sin(angle);
+                            bindPoints = source.map(point => ({
+                                x: center.x + (point.x - center.x) * cos - (point.y - center.y) * sin,
+                                y: center.y + (point.x - center.x) * sin + (point.y - center.y) * cos
+                            }));
+                        } else {
+                            const factor = event.deltaY > 0 ? 0.95 : 1.05;
+                            bindPoints = source.map(point => ({
+                                x: center.x + (point.x - center.x) * factor,
+                                y: center.y + (point.y - center.y) * factor
+                            }));
+                        }
+                        const rebased = this._rebaseWarpGridBindForGesture(state.deformer, bindPoints);
+                        if (rebased) {
+                            state.entry.clip.deformer = rebased;
+                            this._animationPreviewKey = null;
+                            this._scheduleMotionEditPreviewRefresh();
+                        }
+                        clearTimeout(this._warpGridWheelTimer);
+                        this._warpGridWheelTimer = setTimeout(() => {
+                            const beforeState = this._warpGridWheelHistory;
+                            this._warpGridWheelHistory = null;
+                            this._warpGridWheelTimer = null;
+                            this._finishMotionGestureHistory(beforeState, 'caf-clip-warp-grid-bind-wheel');
+                            this.render();
+                        }, 220);
+                    }
+                } else if (this._warpGridTool === 'lens') {
+                    let state = this._getWarpGridEditState();
+                    if (state) {
+                        if (!this._warpGridWheelHistory) {
+                            this._warpGridWheelHistory = this._captureTimelineHistoryState();
+                        }
+                        if (!state.key) {
+                            if (!this._upsertSelectedWarpPlacement(state.sampled.placement)) return;
+                            state = this._getWarpGridEditState();
+                        }
+                        if (state?.key) {
+                            const placement = normalizeWarpPlacement(state.sampled.placement);
+                            if (event.shiftKey) {
+                                placement.rotation += (event.deltaY > 0 ? 5 : -5) * Math.PI / 180;
+                            } else {
+                                placement.scale = Math.max(0.01, placement.scale * (event.deltaY > 0 ? 0.95 : 1.05));
+                            }
+                            this._upsertSelectedWarpPlacement(placement, { deferPreview: true });
+                            clearTimeout(this._warpGridWheelTimer);
+                            this._warpGridWheelTimer = setTimeout(() => {
+                                const beforeState = this._warpGridWheelHistory;
+                                this._warpGridWheelHistory = null;
+                                this._warpGridWheelTimer = null;
+                                this._finishMotionGestureHistory(beforeState, 'caf-clip-warp-placement-wheel');
+                                this.render();
+                            }, 220);
+                        }
+                    }
+                }
                 event.preventDefault();
                 event.stopImmediatePropagation();
                 return;
@@ -7308,13 +8790,18 @@ export class AnimationTablePopup {
                 transform.scaleX = clampScale(transform.scaleX);
                 transform.scaleY = clampScale(transform.scaleY);
             }
-            this._upsertSelectedMotionKey(transform);
+            this._upsertSelectedMotionKey(transform, {
+                deferPreview: true,
+                render: false
+            });
             clearTimeout(this._motionWheelTimer);
             this._motionWheelTimer = setTimeout(() => {
                 const beforeState = this._motionWheelHistory;
                 this._motionWheelHistory = null;
                 this._motionWheelTimer = null;
                 this._finishMotionGestureHistory(beforeState, 'caf-clip-motion-wheel');
+                this._cancelMotionEditPreviewRefresh();
+                this.render();
             }, 220);
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -8818,7 +10305,11 @@ export class AnimationTablePopup {
                     ? 'Clip Motion: position / scale / rotation keyを編集 (Shift+V)'
                     : '2 Frame以上のCAFを選択してください';
             }
-            const selectedWarpEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+            const selectedWarpClipId = this.selectedCelId
+                || (this.isPlaying ? this._motionPlaybackClipId : null);
+            const selectedWarpEntry = selectedWarpClipId
+                ? this.model.findClipEntry(selectedWarpClipId)
+                : null;
             const hasSelectedWarpGrid = ['warp-grid', 'control-mesh'].includes(selectedWarpEntry?.clip?.deformer?.type);
             const isWarpFocus = this._motionTimelineKeyKind === 'warp';
             motionControls.classList.toggle('is-motion-focus', !isWarpFocus);
@@ -8849,19 +10340,38 @@ export class AnimationTablePopup {
                     ? '2 Frame以上のCAFを停止中に選択してください'
                     : hasSelectedWarpGrid
                         ? `Warpへ切り替えて点編集を開始 · ${warpKeyCount} keys`
-                        : 'Control Meshの点数または軽量4×4 Warpを選んで作成';
+                        : '可変Warp GRIDの点数、または軽量4×4 Warpを選んで作成';
             }
             if (this._warpGridEditingClipId && (
-                this.isPlaying
-                || selectedWarpEntry?.clip?.id !== this._warpGridEditingClipId
+                selectedWarpEntry?.clip?.id !== this._warpGridEditingClipId
                 || !['warp-grid', 'control-mesh'].includes(selectedWarpEntry.clip.deformer?.type)
-                || !this._getWarpGridEditState()?.key
+                || (() => {
+                    const current = this._getWarpGridEditState();
+                    return !current || (this._warpGridTool !== 'grid'
+                        && !this._canEditWarpGridPose(current));
+                })()
             )) {
                 this._exitWarpGridEditMode();
             }
-            const isWarpEditing = this._isWarpGridEditModeActive();
             const warpState = this._getWarpGridEditState();
-            if (!isWarpEditing && warpGridOverlay.isActive()) {
+            const shouldRestoreWarpOverlay = isWarpFocus
+                && motionControls.style.display !== 'none'
+                && !this.isPlaying
+                && this._warpGridOverlayVisible
+                && hasSelectedWarpGrid
+                && !!warpState
+                && (this._warpGridTool === 'grid' || this._canEditWarpGridPose(warpState));
+            if (shouldRestoreWarpOverlay
+                && !this._warpGridEditingClipId
+                && !warpGridOverlay.isActive()) {
+                this._enterWarpGridEditMode(selectedWarpEntry);
+            }
+            const isWarpEditing = this._isWarpGridEditModeActive();
+            const isWarpPlaybackOverlay = this.isPlaying
+                && this._warpGridOverlayVisible
+                && warpGridOverlay.isActive()
+                && warpState?.entry?.clip?.id === this._warpGridEditingClipId;
+            if (!isWarpEditing && !isWarpPlaybackOverlay && warpGridOverlay.isActive()) {
                 warpGridOverlay.deactivate();
             }
             motionControls.classList.toggle('is-warp-editing', isWarpEditing);
@@ -8941,28 +10451,88 @@ export class AnimationTablePopup {
                 warpContext.hidden = !isWarpFocus || (!hasWarpContext && !canCreateDeformer);
                 warpContext.classList.toggle('is-editing', isWarpEditing);
                 warpContext.classList.toggle('has-current-key', !!warpState?.key);
+                const existingKeyCount = warpState
+                    ? listClipDeformerKeyframes(
+                        warpState.deformer,
+                        warpState.entry.clip.duration
+                    ).length
+                    : 0;
+                const canReconfigureGrid = warpState?.deformer?.type === 'control-mesh'
+                    && Number.isInteger(warpState.deformer.columns)
+                    && Number.isInteger(warpState.deformer.rows)
+                    && existingKeyCount === 0;
                 const createControls = warpContext.querySelector('#anim-control-mesh-create');
-                if (createControls) createControls.hidden = hasWarpContext;
+                if (createControls) {
+                    const wasHidden = createControls.hidden;
+                    createControls.hidden = hasWarpContext && !canReconfigureGrid;
+                    if (canReconfigureGrid && wasHidden) {
+                        const columnsInput = createControls.querySelector('#anim-control-mesh-columns');
+                        const rowsInput = createControls.querySelector('#anim-control-mesh-rows');
+                        if (columnsInput) columnsInput.value = String(warpState.deformer.columns);
+                        if (rowsInput) rowsInput.value = String(warpState.deformer.rows);
+                    }
+                }
                 warpContext.querySelectorAll('[data-deformer-existing]').forEach(element => {
                     element.hidden = !hasWarpContext;
                 });
+                const gridTool = warpContext.querySelector('#anim-warp-grid-tool-btn');
+                const lensTool = warpContext.querySelector('#anim-warp-lens-tool-btn');
+                const pointTool = warpContext.querySelector('#anim-warp-point-tool-btn');
+                const brushTool = warpContext.querySelector('#anim-warp-brush-tool-btn');
+                const overlayToggle = warpContext.querySelector('#anim-warp-overlay-toggle-btn');
+                gridTool?.classList.toggle('active', this._warpGridTool === 'grid');
+                lensTool?.classList.toggle('active', this._warpGridTool === 'lens');
+                pointTool?.classList.toggle('active', this._warpGridTool === 'point');
+                brushTool?.classList.toggle('active', this._warpGridTool === 'brush');
+                gridTool?.setAttribute('aria-pressed', String(this._warpGridTool === 'grid'));
+                lensTool?.setAttribute('aria-pressed', String(this._warpGridTool === 'lens'));
+                pointTool?.setAttribute('aria-pressed', String(this._warpGridTool === 'point'));
+                brushTool?.setAttribute('aria-pressed', String(this._warpGridTool === 'brush'));
+                if (gridTool) gridTool.disabled = !hasWarpContext || this.isPlaying;
+                const canEditPose = this._canEditWarpGridPose(warpState);
+                if (lensTool) lensTool.disabled = !canEditPose || this.isPlaying;
+                if (pointTool) pointTool.disabled = !canEditPose || this.isPlaying;
+                if (brushTool) brushTool.disabled = !canEditPose || this.isPlaying;
+                if (overlayToggle) {
+                    overlayToggle.classList.toggle('active', this._warpGridOverlayVisible);
+                    overlayToggle.setAttribute('aria-pressed', String(this._warpGridOverlayVisible));
+                    overlayToggle.disabled = !hasWarpContext;
+                    overlayToggle.title = this._warpGridOverlayVisible
+                        ? 'Warp GRIDガイドを非表示'
+                        : 'Warp GRIDガイドを表示';
+                }
+                const toolControls = warpContext.querySelector('.anim-warp-tool-controls');
+                toolControls?.classList.toggle('is-brush-tool', this._warpGridTool === 'brush');
+                const brushMode = warpContext.querySelector('#anim-warp-brush-mode');
+                if (brushMode && document.activeElement !== brushMode) {
+                    brushMode.value = this._warpBrushMode;
+                }
+                this._syncWarpBrushModeDescription(brushMode);
+                const brushRadius = warpContext.querySelector('#anim-warp-brush-radius');
+                if (brushRadius && document.activeElement !== brushRadius) {
+                    brushRadius.value = String(this._warpBrushRadius);
+                }
+                const brushStrength = warpContext.querySelector('#anim-warp-brush-strength');
+                if (brushStrength && document.activeElement !== brushStrength) {
+                    brushStrength.value = String(Math.round(this._warpBrushStrength * 100));
+                }
                 motionControls.querySelectorAll('.anim-motion-action--warp').forEach(button => {
                     button.disabled = !hasWarpContext || this.isPlaying;
                 });
-                if (!hasWarpContext) this._syncControlMeshCreationControls();
+                if (!hasWarpContext || canReconfigureGrid) this._syncControlMeshCreationControls();
                 if (hasWarpContext) {
-                    const keyCount = listClipDeformerKeyframes(
-                        warpState.deformer,
-                        warpState.entry.clip.duration
-                    ).length;
+                    const keyCount = existingKeyCount;
                     const status = warpContext.querySelector('.anim-warp-context-status');
                     if (status) {
                         const topologyLabel = warpState.deformer.type === 'control-mesh'
                             ? (Number.isInteger(warpState.deformer.columns) && Number.isInteger(warpState.deformer.rows)
-                                ? `MESH ${warpState.deformer.columns}×${warpState.deformer.rows} · ${warpState.deformer.bindPoints.length} points`
-                                : `MESH FREE · ${warpState.deformer.bindPoints.length} points`)
+                                ? `GRID ${warpState.deformer.columns}×${warpState.deformer.rows} · ${warpState.deformer.bindPoints.length} points`
+                                : `GRID FREE · ${warpState.deformer.bindPoints.length} points`)
                             : 'WARP 4×4 · 16 points';
-                        status.textContent = `${topologyLabel} · Local F${warpState.localFrame + 1} · ${warpState.key ? 'KEY' : 'SAMPLED'} · ${keyCount} keys`;
+                        const frameStateLabel = warpState.key
+                            ? 'KEY'
+                            : (keyCount === 0 ? 'SETUP' : 'SAMPLED');
+                        status.textContent = `${topologyLabel} · Local F${warpState.localFrame + 1} · ${frameStateLabel} · ${keyCount} keys`;
                     }
                     const previousFrame = findAdjacentClipDeformerKeyFrame(
                         warpState.deformer,
@@ -8985,10 +10555,14 @@ export class AnimationTablePopup {
                     const clearButton = motionControls.querySelector('#anim-warp-clear-btn');
                     const refitButton = warpContext.querySelector('#anim-warp-refit-bind-btn');
                     const bakeButton = warpContext.querySelector('#anim-warp-bake-btn');
+                    const structuredBakeButton = warpContext.querySelector('#anim-warp-structured-bake-btn');
                     const removeButton = warpContext.querySelector('#anim-warp-remove-grid-btn');
                     const interpolation = warpContext.querySelector('#anim-warp-interpolation');
                     if (keyButton) {
-                        const deformerName = warpState.deformer.type === 'control-mesh' ? 'Mesh' : 'Warp';
+                        const deformerName = warpState.deformer.type === 'control-mesh'
+                            && Number.isInteger(warpState.deformer.columns)
+                            ? 'GRID'
+                            : 'Warp';
                         keyButton.disabled = this.isPlaying;
                         keyButton.classList.toggle('active', !!warpState.key);
                         keyButton.classList.toggle('has-key', !!warpState.key);
@@ -9037,10 +10611,10 @@ export class AnimationTablePopup {
                                 : 'コピー元と現在のDeformerでTopologyが異なります';
                     }
                     if (clearButton) {
-                        clearButton.disabled = keyCount < 2 || this.isPlaying;
-                        clearButton.title = keyCount >= 2
+                        clearButton.disabled = keyCount < 1 || this.isPlaying;
+                        clearButton.title = keyCount >= 1
                             ? `このClipのWarp key ${keyCount}件をすべて削除`
-                            : '一括削除には2件以上のWarp keyが必要です';
+                            : '削除できるWarp keyがありません';
                     }
                     if (refitButton) {
                         const isControlMesh = warpState.deformer.type === 'control-mesh';
@@ -9052,7 +10626,7 @@ export class AnimationTablePopup {
                             ));
                         refitButton.disabled = isControlMesh || !assetBounds || isCurrent || this.isPlaying;
                         refitButton.title = isControlMesh
-                            ? 'Control MeshのBind範囲再構築はTopology編集Sliceで提供します'
+                            ? '可変GRIDのBind範囲変更は、keyを全削除してGRIDを再設定します'
                             : !assetBounds
                             ? 'Bind範囲へ使えるRasterがありません'
                             : isCurrent
@@ -9060,21 +10634,33 @@ export class AnimationTablePopup {
                                 : '現在のRaster範囲へBindを合わせ、全Warp keyの変形量をpx維持';
                     }
                     if (bakeButton) {
-                        bakeButton.disabled = this.isPlaying || isWarpEditing;
-                        bakeButton.title = isWarpEditing
-                            ? '点編集を終了してからBakeしてください'
-                            : `Warp / Motion結果を${warpState.entry.clip.duration}個の1 Frame CAFへBake。元Clipは非表示で保持`;
+                        // WARP tabはPOINTS編集へ即時に入る。Bake側がoverlay gestureを
+                        // 先に終了するため、編集中を理由に無効化すると到達不能になる。
+                        bakeButton.disabled = this.isPlaying;
+                        bakeButton.title = `Warp / Motion結果を${warpState.entry.clip.duration}個の1 Frame CAFとして最上段LaneへBake。元Clipは非表示で保持`;
+                    }
+                    if (structuredBakeButton) {
+                        if (this._structuredBakeOperation) {
+                            this._syncStructuredBakeButton(this._structuredBakeOperation);
+                        } else {
+                            structuredBakeButton.disabled = this.isPlaying;
+                            structuredBakeButton.title = `内部Layer / Folder構造を維持し、Warp / Motion結果を${warpState.entry.clip.duration}個の独立した1 Frame CAFとして最上段LaneへBake`;
+                            structuredBakeButton.setAttribute(
+                                'aria-label',
+                                'Bake Warp Clip while preserving internal Layer structure'
+                            );
+                        }
                     }
                     if (removeButton) {
                         const isControlMesh = warpState.deformer.type === 'control-mesh';
                         removeButton.disabled = this.isPlaying;
                         removeButton.title = isControlMesh
-                            ? 'このClipのControl Meshと全Mesh keyを削除'
+                            ? 'このClipの可変Warp GRIDと全GRID keyを削除'
                             : 'このClipの4×4 Warpと全Warp keyを削除';
                         removeButton.setAttribute(
                             'aria-label',
                             isControlMesh
-                                ? 'Remove Control Mesh and all Mesh keys'
+                                ? 'Remove variable Warp Grid and all Grid keys'
                                 : 'Remove Warp Grid and all Warp keys'
                         );
                     }
@@ -9085,7 +10671,9 @@ export class AnimationTablePopup {
                             : '';
                         interpolation.title = warpState.key
                             ? '現在Warp keyから次keyまでの補間。HOLDは現在poseを維持'
-                            : 'SAMPLED Frameでは区間補間を変更できません。先にWarp keyを追加してください';
+                            : (keyCount === 0
+                                ? 'SETUPには区間補間がありません。POINT / BRUSH変形を始めるにはWarp keyを追加してください'
+                                : 'SAMPLED Frameでは区間補間を変更できません。先にWarp keyを追加してください');
                     }
                 }
             }
@@ -9228,7 +10816,7 @@ export class AnimationTablePopup {
                 <span class="transform-popup-title">CLIP MOTION</span>
                 <div class="anim-motion-mode-switch" role="tablist" aria-label="Clip Motion editor mode">
                     <button class="anim-motion-mode-tab ui-help-tooltip active" id="anim-motion-focus-btn" type="button" role="tab" aria-selected="true" aria-controls="anim-motion-fields" aria-label="Motion編集へ切り替え" data-tooltip="位置・拡縮・回転・透明度・合成のMotion keyを編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg><span>MOTION</span><span class="anim-motion-mode-count" data-motion-key-count>0</span></button>
-                    <button class="anim-motion-mode-tab ui-help-tooltip" id="anim-warp-focus-btn" type="button" role="tab" aria-selected="false" aria-controls="anim-warp-context" aria-label="Warp編集へ切り替え" data-tooltip="Control Meshの点数または軽量4×4 Warpを選んで作成"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>WARP</span><span class="anim-motion-mode-count" data-warp-key-count>0</span></button>
+                    <button class="anim-motion-mode-tab ui-help-tooltip" id="anim-warp-focus-btn" type="button" role="tab" aria-selected="false" aria-controls="anim-warp-context" aria-label="Warp編集へ切り替え" data-tooltip="可変Warp GRIDの点数、または軽量4×4 Warpを選んで作成"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>WARP</span><span class="anim-motion-mode-count" data-warp-key-count>0</span></button>
                 </div>
                 <div class="flip-section transform-popup-actions anim-motion-header-actions">
                     <button class="anim-motion-action anim-motion-action--motion anim-motion-key-btn flip-button flip-button--icon" id="anim-motion-key-btn" type="button" title="現在Frameのmotion keyを追加/削除" aria-label="Toggle motion key at current Frame"><svg class="anim-motion-key-icon anim-motion-key-icon--add" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg><svg class="anim-motion-key-icon anim-motion-key-icon--delete" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button>
@@ -9274,13 +10862,37 @@ export class AnimationTablePopup {
             </div>
             <div class="anim-warp-context" id="anim-warp-context" role="tabpanel" aria-labelledby="anim-warp-focus-btn" hidden>
                 <div class="anim-control-mesh-create" id="anim-control-mesh-create" hidden>
-                    <span class="anim-control-mesh-create-label">POINTS</span>
-                    <label title="横方向のcontrol point数（cell数ではありません）"><input type="number" id="anim-control-mesh-columns" min="2" max="32" step="1" value="8" aria-label="Control Mesh horizontal point count"></label>
+                    <span class="anim-control-mesh-create-label">GRID POINTS</span>
+                    <label title="横方向のWarp GRID point数（cell数ではありません）"><input type="number" id="anim-control-mesh-columns" min="2" max="32" step="1" value="8" aria-label="Warp Grid horizontal point count"></label>
                     <span class="anim-control-mesh-create-times" aria-hidden="true">×</span>
-                    <label title="縦方向のcontrol point数（cell数ではありません）"><input type="number" id="anim-control-mesh-rows" min="2" max="32" step="1" value="8" aria-label="Control Mesh vertical point count"></label>
+                    <label title="縦方向のWarp GRID point数（cell数ではありません）"><input type="number" id="anim-control-mesh-rows" min="2" max="32" step="1" value="8" aria-label="Warp Grid vertical point count"></label>
                     <span class="anim-control-mesh-create-count" id="anim-control-mesh-point-count" aria-live="polite">64 / 256 points</span>
-                    <button class="anim-control-mesh-create-btn" id="anim-control-mesh-create-btn" type="button" title="入力した横点数×縦点数でControl Meshを作成">MESHを作成</button>
+                    <button class="anim-control-mesh-create-btn" id="anim-control-mesh-create-btn" type="button" title="入力した横点数×縦点数でWarp GRIDを作成">GRIDを作成</button>
                     <button class="anim-control-mesh-legacy-btn" id="anim-warp-create-legacy-btn" type="button" title="軽量互換の固定16点Warpを作成">4×4 WARP</button>
+                </div>
+                <div class="anim-warp-tool-controls" data-deformer-existing aria-label="Warp edit tool">
+                    <button class="anim-warp-tool-btn" id="anim-warp-grid-tool-btn" type="button" aria-pressed="false" title="GRID枠を編集。枠内dragで移動、四隅で拡縮、上のhandleで回転。wheelで拡縮、Shift＋wheelで5°回転">GRID</button>
+                    <button class="anim-warp-tool-btn" id="anim-warp-lens-tool-btn" type="button" aria-pressed="false" title="現在FrameのWarp keyへLensの移動・拡縮・回転を記録">LENS</button>
+                    <button class="anim-warp-tool-btn" id="anim-warp-point-tool-btn" type="button" aria-pressed="true" title="1点ずつ直接移動">POINT</button>
+                    <button class="anim-warp-tool-btn" id="anim-warp-brush-tool-btn" type="button" aria-pressed="false" title="円形範囲の複数点を滑らかに移動">BRUSH</button>
+                    <button class="anim-warp-tool-btn anim-warp-overlay-toggle-btn active" id="anim-warp-overlay-toggle-btn" type="button" aria-pressed="true" title="Warp GRIDガイドを非表示" aria-label="Toggle Warp Grid guide visibility"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    <label class="anim-warp-brush-control ui-help-tooltip" data-brush-control data-brush-mode-help data-tooltip="${WARP_BRUSH_MODE_DESCRIPTIONS.move}">
+                        MODE
+                        <select id="anim-warp-brush-mode" aria-label="Warp brush mode">
+                            <option value="move" title="${WARP_BRUSH_MODE_DESCRIPTIONS.move}">MOVE</option>
+                            <option value="inflate" title="${WARP_BRUSH_MODE_DESCRIPTIONS.inflate}">INFLATE</option>
+                            <option value="pinch" title="${WARP_BRUSH_MODE_DESCRIPTIONS.pinch}">PINCH</option>
+                            <option value="smooth" title="${WARP_BRUSH_MODE_DESCRIPTIONS.smooth}">SMOOTH</option>
+                        </select>
+                    </label>
+                    <label class="anim-warp-brush-control" data-brush-control title="Brush半径。数値上ホイール、またはCanvas上でBを押しながら横ドラッグ">
+                        SIZE
+                        <input type="number" id="anim-warp-brush-radius" min="12" max="240" step="4" value="80" aria-label="Warp brush radius">
+                    </label>
+                    <label class="anim-warp-brush-control" data-brush-control title="Brush範囲の硬さ。0は中心から滑らかに減衰、100は範囲内をほぼ一様。数値上ホイール、またはCanvas上でNを押しながら横ドラッグ">
+                        POWER
+                        <input type="number" id="anim-warp-brush-strength" min="0" max="100" step="5" value="50" aria-label="Warp brush hardness percent">
+                    </label>
                 </div>
                 <div class="anim-warp-context-identity" data-deformer-existing>
                     <span class="anim-warp-context-status" aria-live="polite"></span>
@@ -9295,7 +10907,8 @@ export class AnimationTablePopup {
                 </label>
                 <div class="anim-warp-context-actions" data-deformer-existing aria-label="Warp key actions">
                     <button class="flip-button flip-button--icon" id="anim-warp-refit-bind-btn" type="button" title="現在のRaster範囲へBindを合わせる" aria-label="Refit Warp Bind bounds to current Raster"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="m9 12 2 2 4-4"/></svg></button>
-                    <button class="flip-button flip-button--icon" id="anim-warp-bake-btn" type="button" title="Warp / Motion結果を1 Frame CAF列へBake" aria-label="Bake Warp Clip to frame CAF sequence"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="13" height="13" rx="2"/><path d="M8 8h13v13H8z"/><path d="m12 14 2 2 4-5"/></svg></button>
+                    <button class="flip-button flip-button--icon" id="anim-warp-bake-btn" type="button" title="Warp / Motion結果を最上段Laneの1 Frame CAF列へBake" aria-label="Bake Warp Clip to top lane frame CAF sequence"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="13" height="13" rx="2"/><path d="M8 8h13v13H8z"/><path d="m12 14 2 2 4-5"/></svg></button>
+                    <button class="flip-button flip-button--icon" id="anim-warp-structured-bake-btn" type="button" title="内部Layer構造を維持してWarp / Motion結果を最上段LaneへBake" aria-label="Bake Warp Clip while preserving internal Layer structure"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/><path d="m9 7 2 2 4-4"/></svg></button>
                     <button class="flip-button flip-button--icon anim-warp-remove-grid-btn" id="anim-warp-remove-grid-btn" type="button" title="このClipのWarp Gridと全Warp keyを削除" aria-label="Remove Warp Grid and all Warp keys"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2"/><path d="M4 10h16M10 4v16"/><path d="m14 14 5 5m0-5-5 5"/></svg></button>
                 </div>
             </div>`;
@@ -9810,6 +11423,46 @@ export class AnimationTablePopup {
             motionControls.querySelector('#anim-warp-create-legacy-btn')?.addEventListener('click', () => {
                 this._activateSelectedClipWarpGrid();
             });
+            motionControls.querySelector('#anim-warp-grid-tool-btn')?.addEventListener('click', () => {
+                this._setWarpGridTool('grid', { notify: true });
+            });
+            motionControls.querySelector('#anim-warp-lens-tool-btn')?.addEventListener('click', () => {
+                this._setWarpGridTool('lens', { notify: true });
+            });
+            motionControls.querySelector('#anim-warp-point-tool-btn')?.addEventListener('click', () => {
+                this._setWarpGridTool('point', { notify: true });
+            });
+            motionControls.querySelector('#anim-warp-brush-tool-btn')?.addEventListener('click', () => {
+                this._setWarpGridTool('brush', { notify: true });
+            });
+            motionControls.querySelector('#anim-warp-overlay-toggle-btn')?.addEventListener('click', () => {
+                this._toggleWarpGridOverlayVisibility();
+            });
+            motionControls.querySelector('#anim-warp-brush-mode')?.addEventListener('change', event => {
+                const mode = event.target.value;
+                this._warpBrushMode = ['move', 'inflate', 'pinch', 'smooth'].includes(mode)
+                    ? mode
+                    : 'move';
+                this._syncWarpBrushModeDescription(event.target);
+            });
+            const warpBrushRadius = motionControls.querySelector('#anim-warp-brush-radius');
+            if (warpBrushRadius) {
+                const commitRadius = () => {
+                    this._setWarpBrushRadius(warpBrushRadius.value);
+                    warpBrushRadius.value = String(this._warpBrushRadius);
+                };
+                this._bindNumberInputWheel(warpBrushRadius, commitRadius);
+                warpBrushRadius.addEventListener('change', commitRadius);
+            }
+            const warpBrushStrength = motionControls.querySelector('#anim-warp-brush-strength');
+            if (warpBrushStrength) {
+                const commitStrength = () => {
+                    this._setWarpBrushStrength(warpBrushStrength.value);
+                    warpBrushStrength.value = String(Math.round(this._warpBrushStrength * 100));
+                };
+                this._bindNumberInputWheel(warpBrushStrength, commitStrength);
+                warpBrushStrength.addEventListener('change', commitStrength);
+            }
             motionControls.querySelectorAll('.anim-motion-fields input[type="number"]').forEach(input => {
                 this._bindNumberInputWheel(input, () => this._setSelectedClipMotionKeyFromControls());
                 this._bindMotionNumberInputScrub(input);
@@ -9820,7 +11473,7 @@ export class AnimationTablePopup {
                 });
             });
             motionControls.addEventListener('change', (e) => {
-                if (e.target.closest('#anim-motion-key-btn, #anim-warp-interpolation, .anim-control-mesh-create')) return;
+                if (e.target.closest('#anim-motion-key-btn, #anim-warp-interpolation, .anim-control-mesh-create, .anim-warp-tool-controls')) return;
                 this._setSelectedClipMotionKeyFromControls();
             });
             motionControls.querySelector('#anim-motion-key-btn')?.addEventListener('click', () => {
@@ -9864,6 +11517,14 @@ export class AnimationTablePopup {
             });
             motionControls.querySelector('#anim-warp-bake-btn')?.addEventListener('click', async () => {
                 await this._bakeSelectedWarpGridToCafs();
+            });
+            motionControls.querySelector('#anim-warp-structured-bake-btn')?.addEventListener('click', async () => {
+                if (this._structuredBakeOperation) {
+                    this._structuredBakeOperation.cancelled = true;
+                    this._syncStructuredBakeButton(this._structuredBakeOperation);
+                    return;
+                }
+                await this._bakeSelectedWarpGridToStructuredCafs();
             });
             motionControls.querySelector('#anim-warp-interpolation')?.addEventListener('change', (event) => {
                 this._setSelectedWarpGridInterpolation(event.currentTarget.value);

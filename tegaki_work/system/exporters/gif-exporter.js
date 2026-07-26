@@ -39,6 +39,14 @@ window.GIFExporter = (function() {
             this.isExporting = false;
             this.workerBlobURL = gifWorkerUrl;
         }
+
+        _getFrameImageData(canvas) {
+            const context = canvas?.getContext?.('2d', { willReadFrequently: true });
+            if (!context) {
+                throw new Error('GIF frame canvas context is unavailable');
+            }
+            return context.getImageData(0, 0, canvas.width, canvas.height);
+        }
         
         async generateBlob(options = {}) {
             if (this.isExporting) {
@@ -97,7 +105,7 @@ window.GIFExporter = (function() {
 
                 if (timelineFrames && timelineFrames.length > 0) {
                     timelineFrames.forEach((frame, index) => {
-                        gif.addFrame(frame.canvas, { delay: frame.delayMs });
+                        gif.addFrame(this._getFrameImageData(frame.canvas), { delay: frame.delayMs });
                         window.TegakiEventBus?.emit('export:frame-rendered', {
                             frame: index + 1,
                             total: timelineFrames.length
@@ -110,7 +118,7 @@ window.GIFExporter = (function() {
                         resolution: 1,
                         transparent: options.transparent === true
                     });
-                    gif.addFrame(canvas, { delay: 100 });
+                    gif.addFrame(this._getFrameImageData(canvas), { delay: 100 });
                     window.TegakiEventBus?.emit('export:frame-rendered', {
                         frame: 1,
                         total: 1
@@ -131,7 +139,7 @@ window.GIFExporter = (function() {
                                 const delayMs = frame.duration !== undefined && frame.duration !== null
                                     ? Math.round(frame.duration * 1000)
                                     : 100;
-                                gif.addFrame(canvas, { delay: delayMs });
+                                gif.addFrame(this._getFrameImageData(canvas), { delay: delayMs });
                             }
                             window.TegakiEventBus?.emit('export:frame-rendered', {
                                 frame: i + 1,

@@ -22,6 +22,10 @@ import { TegakiEventBus } from '../event-bus.js';
 import { coordinateSystem } from '../../coordinate-system.js';
 import { historyManager } from '../history.js';
 import { isInverseClipping } from '../clipping-mode.js';
+import {
+    estimateRasterHistoryPairBytes,
+    summarizePathCollectionMemory
+} from '../raster-snapshot-memory.js';
 
 export class BrushCore {
     constructor() {
@@ -177,9 +181,13 @@ export class BrushCore {
         const needsHistorySnapshot = activeLayer.layerData?.isAnimationWorkingLayer !== true;
         const needsSelectionSnapshot = this._needsSelectionSnapshotForLayer(activeLayer);
         let beforeSnapshot = null;
+        let beforeSnapshotMs = null;
+        let ensureRasterFrameMs = null;
+        let airbrushBeginMs = null;
         if (needsHistorySnapshot || needsSelectionSnapshot) {
             const snapshotStart = this._perfNow();
             beforeSnapshot = this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null;
+            beforeSnapshotMs = this._perfNow() - snapshotStart;
             this._warnPerf('brush.startStroke.beforeSnapshot', snapshotStart, {
                 needsHistorySnapshot,
                 needsSelectionSnapshot
@@ -189,13 +197,27 @@ export class BrushCore {
         this.strokeSelectionBefore = beforeSnapshot;
 
         const settings = this._getCurrentSettings();
+        const ensureRasterStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
         this._ensureLayerRasterFrameForStroke(activeLayer, settings, currentMode);
+        if (Number.isFinite(ensureRasterStart)) {
+            ensureRasterFrameMs = this._perfNow() - ensureRasterStart;
+            this._warnPerf('brush.startStroke.ensureRasterFrame', ensureRasterStart, {
+                mode: currentMode
+            });
+        }
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
 
         if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
+            const airbrushBeginStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
             this._beginAirbrushStroke(activeLayer, settings);
+            if (Number.isFinite(airbrushBeginStart)) {
+                airbrushBeginMs = this._perfNow() - airbrushBeginStart;
+                this._warnPerf('brush.startStroke.airbrushMask', airbrushBeginStart, {
+                    mode: currentMode
+                });
+            }
         } else {
             this._cleanupAirbrushStroke();
         }
@@ -240,6 +262,18 @@ export class BrushCore {
                     isAnimationWorkingLayer: activeLayer.layerData?.isAnimationWorkingLayer === true
                 },
                 startTime: Date.now(),
+                timings: {
+                    beforeSnapshotMs: Number.isFinite(beforeSnapshotMs)
+                        ? Number(beforeSnapshotMs.toFixed(2))
+                        : null,
+                    ensureRasterFrameMs: Number.isFinite(ensureRasterFrameMs)
+                        ? Number(ensureRasterFrameMs.toFixed(2))
+                        : null,
+                    airbrushBeginMs: Number.isFinite(airbrushBeginMs)
+                        ? Number(airbrushBeginMs.toFixed(2))
+                        : null
+                },
+                retainedAtStart: this._getLongDrawingDiagnosticSample(activeLayer),
                 events: 0,
                 interpolatedPoints: 0,
                 realtimeSegments: 0,
@@ -255,6 +289,9 @@ export class BrushCore {
                     penBatchFlushes: 0,
                     penRenderMissingTarget: 0,
                     penRenderMissingGraphics: 0,
+                    airbrushRenderCalls: 0,
+                    airbrushDabs: 0,
+                    airbrushMaxDabsPerRender: 0,
                     maxDistance: 0,
                     lastDistances: [],
                     finalPointerUpdates: 0,
@@ -993,6 +1030,16 @@ export class BrushCore {
             maskSettings,
             this.airbrushState.spacingState
         );
+        const dabCount = renderContainer?.children?.length || 0;
+        const realtime = this.strokeInputProfile?.realtime;
+        if (realtime) {
+            realtime.airbrushRenderCalls++;
+            realtime.airbrushDabs += dabCount;
+            realtime.airbrushMaxDabsPerRender = Math.max(
+                realtime.airbrushMaxDabsPerRender || 0,
+                dabCount
+            );
+        }
 
         if (renderContainer && this.layerManager.app?.renderer) {
             this._applyLayerRasterRenderOffset(this.airbrushState.targetLayer, renderContainer);
@@ -1239,6 +1286,8 @@ export class BrushCore {
     async finalizeStroke(inputProfile = null, finalPointer = null) {
         if (!this.isDrawing) return;
 
+        const finalizeStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
+
         const activeLayer = this.airbrushState?.targetLayer
             || this.penOpacityState?.targetLayer
             || this.strokeTargetLayer
@@ -1450,12 +1499,16 @@ export class BrushCore {
             mode,
             pointCount: strokeData.points.length,
             duration: strokeData.duration,
+            finalizeMs: Number.isFinite(finalizeStart)
+                ? Number((this._perfNow() - finalizeStart).toFixed(2))
+                : null,
             realtimeApplied: alreadyApplied,
             finalBakeRendered: shouldBakeFinal,
             penOpacityIsolation: penOpacityIsolationUsed,
             shortStrokeStabilized: this.strokeInputProfile?.shortStrokeStabilized || null,
             recorder: this.strokeRecorder._summarizePoints?.(strokeData.points) || null,
-            realtime: this._getRealtimeDebugSummary(mode, alreadyApplied, shouldBakeFinal)
+            realtime: this._getRealtimeDebugSummary(mode, alreadyApplied, shouldBakeFinal),
+            retainedAtEnd: this._getLongDrawingDiagnosticSample(activeLayer)
         });
         this.strokeInputProfile = null;
 
@@ -1550,6 +1603,10 @@ export class BrushCore {
 
         const snapshotStart = this._perfNow();
         const afterSnapshot = this.layerManager.createLayerRasterSnapshot(layer);
+        const afterSnapshotMs = this._perfNow() - snapshotStart;
+        if (this.strokeInputProfile?.timings) {
+            this.strokeInputProfile.timings.afterSnapshotMs = Number(afterSnapshotMs.toFixed(2));
+        }
         this._warnPerf('brush.recordStrokeHistory.afterSnapshot', snapshotStart, {
             mode
         });
@@ -1557,6 +1614,7 @@ export class BrushCore {
 
         const layerId = layer.layerData?.id;
         const layerIndex = this.layerManager.getLayerIndex(layer);
+        const retainedMemory = estimateRasterHistoryPairBytes(beforeSnapshot, afterSnapshot);
 
         const recordStart = this._perfNow();
         historyManager.record({
@@ -1572,15 +1630,21 @@ export class BrushCore {
                 mode,
                 layerId,
                 layerIndex,
-                pointCount: afterSnapshot.pathsData?.length || 0
+                pathCount: retainedMemory.after.pathsData.pathCount,
+                pointCount: retainedMemory.after.pathsData.pointCount,
+                retainedMemory
             },
-            byteSize: (beforeSnapshot.pixels?.byteLength || 0)
-                + (afterSnapshot.pixels?.byteLength || 0)
+            byteSize: retainedMemory.estimatedBytes
         });
+        const recordMs = this._perfNow() - recordStart;
+        if (this.strokeInputProfile?.timings) {
+            this.strokeInputProfile.timings.historyRecordMs = Number(recordMs.toFixed(2));
+        }
         this._warnPerf('brush.recordStrokeHistory.record', recordStart, {
             mode,
-            byteSize: (beforeSnapshot.pixels?.byteLength || 0)
-                + (afterSnapshot.pixels?.byteLength || 0)
+            byteSize: retainedMemory.estimatedBytes,
+            pixelBytes: retainedMemory.before.pixelBytes + retainedMemory.after.pixelBytes,
+            metadataBytes: retainedMemory.before.metadataBytes + retainedMemory.after.metadataBytes
         });
     }
 
@@ -1672,6 +1736,62 @@ export class BrushCore {
         };
     }
 
+    _getLongDrawingDiagnosticSample(layer) {
+        if (!window.TEGAKI_CONFIG?.debug) return null;
+
+        const layerData = layer?.layerData || {};
+        const paths = Array.isArray(layerData.pathsData) ? layerData.pathsData : [];
+        const pathMemory = summarizePathCollectionMemory(paths);
+
+        const renderTexture = layerData.renderTexture || null;
+        const width = Math.max(0, Math.round(renderTexture?.width || layerData.width || 0));
+        const height = Math.max(0, Math.round(renderTexture?.height || layerData.height || 0));
+        const memory = globalThis.performance?.memory;
+        const temporaryTextures = [
+            ['airbrushMask', this.airbrushState?.maskTexture],
+            ['penOpacity', this.penOpacityState?.texture],
+            ['blurSource', this.blurState?.sourceTexture]
+        ].map(([name, texture]) => {
+            const textureWidth = Math.max(0, Math.round(texture?.width || 0));
+            const textureHeight = Math.max(0, Math.round(texture?.height || 0));
+            return {
+                name,
+                active: !!texture,
+                width: textureWidth,
+                height: textureHeight,
+                estimatedBytes: textureWidth * textureHeight * 4
+            };
+        });
+
+        return {
+            history: historyManager?.getUsage?.() || null,
+            layer: {
+                id: layerData.id ?? null,
+                isAnimationWorkingLayer: layerData.isAnimationWorkingLayer === true,
+                pathCount: pathMemory.pathCount,
+                pointCount: pathMemory.pointCount,
+                estimatedPathMetadataBytes: pathMemory.estimatedBytes,
+                rasterWidth: width,
+                rasterHeight: height,
+                estimatedRasterBytes: width * height * 4
+            },
+            temporaryStrokeResources: {
+                activeCount: temporaryTextures.filter(entry => entry.active).length,
+                estimatedBytes: temporaryTextures.reduce((total, entry) => {
+                    return total + entry.estimatedBytes;
+                }, 0),
+                textures: temporaryTextures
+            },
+            heap: memory
+                ? {
+                    usedJSHeapSize: Number(memory.usedJSHeapSize) || 0,
+                    totalJSHeapSize: Number(memory.totalJSHeapSize) || 0,
+                    jsHeapSizeLimit: Number(memory.jsHeapSizeLimit) || 0
+                }
+                : null
+        };
+    }
+
     _hasRealtimeApplied(mode) {
         return (
             (mode === 'eraser' && this.realtimeEraserApplied) ||
@@ -1751,6 +1871,9 @@ export class BrushCore {
             penBatchFlushes: realtime.penBatchFlushes || 0,
             penRenderMissingTarget: realtime.penRenderMissingTarget || 0,
             penRenderMissingGraphics: realtime.penRenderMissingGraphics || 0,
+            airbrushRenderCalls: realtime.airbrushRenderCalls || 0,
+            airbrushDabs: realtime.airbrushDabs || 0,
+            airbrushMaxDabsPerRender: realtime.airbrushMaxDabsPerRender || 0,
             maxDistance: Number((Number(realtime.maxDistance || 0)).toFixed(3)),
             finalPointerUpdates: realtime.finalPointerUpdates || 0,
             liveRenderRequests: realtime.liveRenderRequests || 0,
@@ -1802,6 +1925,18 @@ export class BrushCore {
             details
         };
         console.info('[StrokeInputProfile] finalize', entry);
+        const retained = details.retainedAtEnd || null;
+        console.info(`[LongDrawingProfile] ${JSON.stringify({
+            strokeId: entry.id,
+            mode: entry.mode,
+            pointerType: entry.pointerType,
+            timings: entry.timings || null,
+            finalizeMs: details.finalizeMs ?? null,
+            history: retained?.history || null,
+            layer: retained?.layer || null,
+            temporaryStrokeResources: retained?.temporaryStrokeResources || null,
+            heap: retained?.heap || null
+        })}`);
         this._getStrokeInputProfiler()?.recordFinalize?.(entry);
     }
 
@@ -1818,13 +1953,21 @@ export class BrushCore {
             events: [],
             strokes: [],
             perf: [],
+            longTasks: [],
+            longTaskObserver: null,
             label: null,
             maxEvents: 2000,
             maxStrokes: 200,
             maxPerf: 500,
+            maxLongTasks: 200,
             setEnabled(enabled = true) {
                 if (window.TEGAKI_CONFIG) {
                     window.TEGAKI_CONFIG.debug = enabled === true;
+                }
+                if (enabled === true) {
+                    this.startLongTaskObserver();
+                } else {
+                    this.stopLongTaskObserver();
                 }
                 return this.isEnabled();
             },
@@ -1839,7 +1982,57 @@ export class BrushCore {
                 this.events = [];
                 this.strokes = [];
                 this.perf = [];
+                this.longTasks = [];
                 return this.summary();
+            },
+            startLongTaskObserver() {
+                if (this.longTaskObserver || typeof PerformanceObserver === 'undefined') return false;
+                const supported = PerformanceObserver.supportedEntryTypes;
+                if (Array.isArray(supported) && !supported.includes('longtask')) return false;
+
+                try {
+                    this.longTaskObserver = new PerformanceObserver(list => {
+                        for (const entry of list.getEntries()) {
+                            const startTime = Number(entry.startTime) || 0;
+                            const duration = Number(entry.duration) || 0;
+                            this.longTasks.push({
+                                name: entry.name || 'self',
+                                startTime: Number(startTime.toFixed(2)),
+                                durationMs: Number(duration.toFixed(2)),
+                                endTime: Number((startTime + duration).toFixed(2)),
+                                attribution: Array.from(entry.attribution || []).map(item => ({
+                                    name: item.name || null,
+                                    containerType: item.containerType || null,
+                                    containerSrc: item.containerSrc || null,
+                                    containerId: item.containerId || null,
+                                    containerName: item.containerName || null
+                                }))
+                            });
+                        }
+                        if (this.longTasks.length > this.maxLongTasks) {
+                            this.longTasks.splice(0, this.longTasks.length - this.maxLongTasks);
+                        }
+                    });
+                    this.longTaskObserver.observe({ type: 'longtask', buffered: true });
+                    return true;
+                } catch (error) {
+                    this.longTaskObserver = null;
+                    return false;
+                }
+            },
+            stopLongTaskObserver() {
+                this.longTaskObserver?.disconnect?.();
+                this.longTaskObserver = null;
+            },
+            getRecentLongTasks(windowMs = 2000, now = performance?.now?.() || Date.now()) {
+                const numericWindow = Math.max(0, Number(windowMs) || 0);
+                const cutoff = Number(now) - numericWindow;
+                return this.longTasks
+                    .filter(entry => entry.endTime >= cutoff)
+                    .map(entry => ({
+                        ...entry,
+                        attribution: entry.attribution.map(item => ({ ...item }))
+                    }));
             },
             recordEvent(entry) {
                 if (!this.isEnabled()) return;
@@ -1932,12 +2125,17 @@ export class BrushCore {
                     eventCount: this.events.length,
                     strokeCount: this.strokes.length,
                     perfCount: this.perf.length,
+                    longTaskCount: this.longTasks.length,
+                    recentLongTasks: this.getRecentLongTasks(),
                     byLabel
                 };
             }
         };
 
         window.TegakiStrokeInputProfiler = store;
+        if (store.isEnabled()) {
+            store.startLongTaskObserver();
+        }
         return store;
     }
     

@@ -4,6 +4,12 @@
  */
 
 import { createRectGridTopology } from './warp-grid-topology.js';
+import {
+    cloneOptionalWarpPlacement,
+    interpolateWarpPlacement,
+    normalizeOptionalWarpPlacement,
+    normalizeWarpPlacement
+} from './warp-placement.js';
 
 export const WARP_GRID_TYPE = 'warp-grid';
 export const WARP_GRID_VERSION = 1;
@@ -55,7 +61,7 @@ export function createDefaultWarpGridPoints() {
 /**
  * Schema:
  * { type:'warp-grid', version:1, columns:4, rows:4, bindBounds?, bindPoints,
- *   points, keyframes:[{ frame, interpolation:'hold'|'linear', points }] }
+ *   points, keyframes:[{ frame, interpolation:'hold'|'linear', points, placement? }] }
  * keyframeは全16点poseを持つ。範囲外Frameと同一Frame末尾優先はsamplerで扱う。
  */
 export function normalizeWarpGridDeformer(value) {
@@ -71,11 +77,15 @@ export function normalizeWarpGridDeformer(value) {
     const points = normalizePointArray(value.points, bindPoints);
     const keyframes = (Array.isArray(value.keyframes) ? value.keyframes : [])
         .filter(key => key && Number.isInteger(key.frame))
-        .map(key => ({
-            frame: key.frame,
-            interpolation: normalizeInterpolation(key.interpolation),
-            points: normalizePointArray(key.points, points)
-        }));
+        .map(key => {
+            const placement = normalizeOptionalWarpPlacement(key.placement);
+            return {
+                frame: key.frame,
+                interpolation: normalizeInterpolation(key.interpolation),
+                points: normalizePointArray(key.points, points),
+                ...(placement ? { placement } : {})
+            };
+        });
 
     return {
         type: WARP_GRID_TYPE,
@@ -115,11 +125,15 @@ export function listWarpGridKeyframes(value, duration = 1) {
     });
     return [...byFrame.values()]
         .sort((left, right) => left.frame - right.frame)
-        .map(key => ({
-            frame: key.frame,
-            interpolation: key.interpolation,
-            points: key.points.map(point => ({ ...point }))
-        }));
+        .map(key => {
+            const placement = cloneOptionalWarpPlacement(key.placement);
+            return {
+                frame: key.frame,
+                interpolation: key.interpolation,
+                points: key.points.map(point => ({ ...point })),
+                ...(placement ? { placement } : {})
+            };
+        });
 }
 
 export function getWarpGridKeyAtFrame(value, localFrame, duration = 1) {
@@ -233,11 +247,13 @@ export function sampleWarpGridDeformer(value, localFrame, duration = 1) {
 
     const keys = [...byFrame.values()].sort((left, right) => left.frame - right.frame);
     let sampledPoints = deformer.points.map(point => ({ ...point }));
+    let sampledPlacement = normalizeWarpPlacement();
     for (let index = 0; index < keys.length; index++) {
         const left = keys[index];
         const right = keys[index + 1];
         if (frame < left.frame) break;
         sampledPoints = left.points.map(point => ({ ...point }));
+        sampledPlacement = normalizeWarpPlacement(left.placement);
         if (!right || frame < right.frame) {
             if (!right || left.interpolation === 'hold') break;
             const ratio = Math.max(0, Math.min(1, (frame - left.frame) / (right.frame - left.frame)));
@@ -245,6 +261,11 @@ export function sampleWarpGridDeformer(value, localFrame, duration = 1) {
                 x: point.x + (right.points[pointIndex].x - point.x) * ratio,
                 y: point.y + (right.points[pointIndex].y - point.y) * ratio
             }));
+            sampledPlacement = interpolateWarpPlacement(
+                left.placement,
+                right.placement,
+                ratio
+            );
             break;
         }
     }
@@ -256,6 +277,7 @@ export function sampleWarpGridDeformer(value, localFrame, duration = 1) {
         rows: deformer.rows,
         bindBounds: deformer.bindBounds ? { ...deformer.bindBounds } : null,
         bindPoints: deformer.bindPoints.map(point => ({ ...point })),
-        points: sampledPoints
+        points: sampledPoints,
+        placement: sampledPlacement
     };
 }

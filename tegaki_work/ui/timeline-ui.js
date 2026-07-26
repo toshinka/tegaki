@@ -868,7 +868,10 @@
             
             // Phase 4z20: 新アニメテーブルのFrameに同期する
             const popupManager = window.coreEngine?.popupManager || window.PopupManager;
-            const animTable = popupManager?.get?.('animationTable');
+            const hasPopupRegistry = popupManager?.popups instanceof Map;
+            const animTable = hasPopupRegistry
+                ? popupManager.popups.get('animationTable')?.instance || null
+                : popupManager?.get?.('animationTable');
             const isAnimationTableVisible = animTable?.isVisible === true;
             const hasAnimationContext = !!(
                 animTable?.model &&

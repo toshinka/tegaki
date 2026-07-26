@@ -73,15 +73,20 @@ export class AirbrushDabRenderer {
     }
 
     _addDab(container, texture, x, y, pressure, settings) {
+        const rawPressure = Math.max(MIN_PRESSURE_DAB, Math.min(1, pressure ?? 1));
         if (settings.pressureEnabled === true && (pressure ?? 0) <= MIN_PRESSURE_DAB) {
             return;
         }
 
-        const flow = this._getSpacingAdjustedFlow(settings);
+        const baseFlow = this._getSpacingAdjustedFlow(settings);
+        const pressureFactor = settings.pressureEnabled === true ? rawPressure : 1.0;
+
+        // エアブラシ案B: 筆圧を濃度(flow/alpha)へ反映し、サイズ極小化を防止する。
+        // サイズ変化は 75%~100% の穏やかな範囲に抑え、フワッとしたグラデーションの重なりを維持する。
+        const sizeScale = settings.pressureEnabled === true ? (0.75 + 0.25 * pressureFactor) : 1.0;
+        const baseSize = settings.size * sizeScale;
+
         const scatter = settings.airbrushScatter ?? 0;
-        const baseSize = settings.pressureEnabled === true
-            ? this.calculateWidth(Math.max(MIN_PRESSURE_DAB, pressure ?? 1), settings.size)
-            : settings.size;
         const isErase = settings.mode === 'airbrush-erase' || settings.mode === 'eraser';
         const sprite = new Sprite(texture);
         sprite.anchor.set(0.5);
@@ -99,7 +104,8 @@ export class AirbrushDabRenderer {
         sprite.width = baseSize;
         sprite.height = baseSize;
         sprite.tint = isErase ? 0xffffff : (settings.color ?? 0x800000);
-        sprite.alpha = Math.max(0.001, (settings.opacity ?? 1) * flow);
+        // 筆圧を濃度(アルファ)に直接反映
+        sprite.alpha = Math.max(0.001, (settings.opacity ?? 1) * baseFlow * pressureFactor);
         sprite.blendMode = isErase ? 'erase' : 'normal';
         container.addChild(sprite);
     }

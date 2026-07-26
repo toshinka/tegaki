@@ -74,7 +74,7 @@ export const DOMBuilder = (function() {
             { id: 'fill-tool', icon: 'fill', title: '塗りつぶし (G)' },
             { id: 'selection-tool', icon: 'rectangleSelect', title: '矩形選択 (M)' },
             { separator: true },
-            { id: 'gif-animation-tool', icon: 'animation', title: 'GIFアニメーション (Alt+A)' },
+            { id: 'gif-animation-tool', icon: 'animation', title: 'アニメテーブル (A)' },
             { separator: true },
             { id: 'settings-tool', icon: 'settings', title: '設定 (S)' }
         ];

@@ -192,8 +192,8 @@ window.TegakiUI.StatusDisplayRenderer = class StatusDisplayRenderer {
     }
 
     _getAnimationLayerStatusName() {
-        const animationTable = window.PopupManager?.get?.('animationTable')
-            || window.coreEngine?.popupManager?.get?.('animationTable');
+        const popupManager = window.PopupManager || window.coreEngine?.popupManager;
+        const animationTable = popupManager?.popups?.get?.('animationTable')?.instance || null;
         const hasAnimationContext = !!(
             animationTable?.model &&
             (
