@@ -1,4 +1,9 @@
-import { sampleClipDeformer, normalizeClipDeformer } from './clip-deformer.js';
+import {
+    sampleClipDeformer,
+    normalizeClipDeformer,
+    sampleClipFolderDeformers,
+    normalizeClipFolderDeformers
+} from './clip-deformer.js';
 import { sampleClipTransform } from './clip-transform-sampler.js';
 import { sampleRigMotionForBake } from './part-rig.js';
 
@@ -8,6 +13,22 @@ function clonePoints(points) {
 
 function clonePlacement(placement) {
     return placement && typeof placement === 'object' ? { ...placement } : undefined;
+}
+
+function freezeSampledDeformer(sampledDeformer) {
+    if (!sampledDeformer) return null;
+    const points = clonePoints(sampledDeformer.points);
+    const placement = clonePlacement(sampledDeformer.placement);
+    return normalizeClipDeformer({
+        ...sampledDeformer,
+        points,
+        keyframes: [{
+            frame: 0,
+            interpolation: 'hold',
+            points: clonePoints(points),
+            ...(placement ? { placement } : {})
+        }]
+    });
 }
 
 /**
@@ -27,26 +48,28 @@ export function sampleClipBakeState(clip, timelineFrame) {
     const sampledDeformer = sampleClipDeformer(clip.deformer, localFrame, duration);
     const rigMotion = sampleRigMotionForBake(clip, Number.isFinite(timelineFrame) ? timelineFrame : startFrame);
 
-    let deformer = null;
-    if (sampledDeformer) {
-        const points = clonePoints(sampledDeformer.points);
-        const placement = clonePlacement(sampledDeformer.placement);
-        deformer = normalizeClipDeformer({
-            ...sampledDeformer,
-            points,
-            keyframes: [{
-                frame: 0,
-                interpolation: 'hold',
-                points: clonePoints(points),
-                ...(placement ? { placement } : {})
-            }]
-        });
-    }
+    const deformer = freezeSampledDeformer(sampledDeformer);
+    const sampledFolderDeformers = sampleClipFolderDeformers(
+        clip.folderDeformers,
+        localFrame,
+        duration
+    );
+    const folderTargets = [...sampledFolderDeformers.entries()]
+        .map(([folderLayerId, sampled]) => ({
+            folderLayerId,
+            deformer: freezeSampledDeformer(sampled)
+        }))
+        .filter(target => target.deformer);
+    const folderDeformers = normalizeClipFolderDeformers({
+        version: 1,
+        targets: folderTargets
+    });
 
     return {
         transform: { ...transform },
         transformKeyframes: [],
         deformer,
+        ...(folderDeformers ? { folderDeformers } : {}),
         ...(rigMotion ? { rigMotion } : {})
     };
 }

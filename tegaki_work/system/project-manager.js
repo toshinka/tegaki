@@ -838,6 +838,13 @@ export class ProjectManager {
                 rigValidation.errors
             );
         }
+        const folderDeformerValidation = animationTable.model.validateFolderDeformers?.();
+        if (folderDeformerValidation?.ok === false) {
+            console.warn(
+                '[ProjectManager] Optional Folder WARP data is invalid; Raster / CAF data was loaded and Folder WARP evaluation remains disabled.',
+                folderDeformerValidation.errors
+            );
+        }
         this._restoreAnimationUiState(animationTable, animationState);
         animationTable.initialClipAssetSeeded = animationTable.model.clipAssets.length > 0;
         animationTable._copiedCelRef = null;

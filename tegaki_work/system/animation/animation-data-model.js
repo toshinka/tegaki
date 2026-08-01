@@ -4,6 +4,8 @@
  * 責務: 新アニメーションテーブル（ToonSquid風）の純粋データ構造を定義する
  * 依存: system/raster-bounds.js
  * 被依存: animation-system.js, animation-table-popup.js
+ * Folder WARP境界: ClipInstance.folderDeformersだけを保存正本とし、既存root deformerの
+ * normalize / sampleを再利用する。RenderIsland合成はfolder-part-render-plan.jsのStage Bへ委譲する。
  * ============================================================================
  */
 
@@ -13,7 +15,15 @@ import {
     cycleClippingMode,
     normalizeClippingMode
 } from '../clipping-mode.js';
-import { normalizeClipDeformer } from './clip-deformer.js';
+import {
+    normalizeClipDeformer,
+    normalizeClipFolderDeformers,
+    serializeClipFolderDeformers,
+    validateClipFolderDeformers,
+    removeClipFolderDeformerTarget,
+    remapClipFolderDeformers,
+    setClipFolderDeformerTarget
+} from './clip-deformer.js';
 import {
     decodeRasterPixels,
     serializeRasterPixels
@@ -270,6 +280,12 @@ export class ClipInstanceModel {
             : [];
         // Phase 6: ClipAssetのRaster正本を変えない、ClipInstance単位の非破壊deformer。
         this.deformer = normalizeClipDeformer(options.deformer);
+        // Phase 6s: Folder単位の非破壊deformer。描画・保存の正本は引き続きClipInstance。
+        // raw validationはProject復元時の警告用runtime診断であり、serializeしない。
+        this._folderDeformerSourceErrors = options.folderDeformers == null
+            ? []
+            : validateClipFolderDeformers(options.folderDeformers).errors;
+        this.folderDeformers = normalizeClipFolderDeformers(options.folderDeformers);
         this.rigMotion = options.rigMotion == null
             ? null
             : normalizeRigMotion(options.rigMotion);
@@ -308,6 +324,9 @@ export class ClipInstanceModel {
             transform: normalizeClipTransform(this.transform),
             transformKeyframes: this.transformKeyframes.map(keyframe => clonePlainObject(keyframe)),
             deformer: normalizeClipDeformer(this.deformer),
+            ...(this.folderDeformers == null
+                ? {}
+                : { folderDeformers: serializeClipFolderDeformers(this.folderDeformers) }),
             ...(this.rigMotion == null
                 ? {}
                 : { rigMotion: serializeRigMotion(this.rigMotion) }),
@@ -980,6 +999,38 @@ export class TimelineModel {
         return { ok: true, lane: entry.lane, clip: entry.clip };
     }
 
+    /**
+     * ClipInstance内のFolderを対象にしたWARPを検証済みcollectionとして設定する。
+     * Folder単位のWARPも既存ClipInstance.deformerと同じ保存正本を共有する。
+     */
+    setClipFolderDeformer(clipId, folderLayerId, deformer = null) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const folder = asset.internalLayers?.find(layer => layer?.id === folderLayerId) || null;
+        if (!folder) return { ok: false, reason: 'folder-not-found' };
+        if (folder.type !== 'folder') return { ok: false, reason: 'folder-required' };
+
+        if (deformer !== null && deformer !== undefined && !normalizeClipDeformer(deformer)) {
+            return { ok: false, reason: 'invalid-folder-deformer' };
+        }
+        const next = deformer === null || deformer === undefined
+            ? removeClipFolderDeformerTarget(entry.clip.folderDeformers, folderLayerId)
+            : setClipFolderDeformerTarget(entry.clip.folderDeformers, folderLayerId, deformer);
+        const validation = validateClipFolderDeformers(next, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-folder-deformers', errors: validation.errors };
+        }
+        entry.clip.folderDeformers = validation.value;
+        entry.clip._folderDeformerSourceErrors = [];
+        return { ok: true, lane: entry.lane, clip: entry.clip, asset };
+    }
+
+    removeClipFolderDeformer(clipId, folderLayerId) {
+        return this.setClipFolderDeformer(clipId, folderLayerId, null);
+    }
+
     setClipPhysics(clipId, physics = {}) {
         const entry = this.findClipEntry(clipId);
         if (!entry) return { ok: false, reason: 'clip-not-found' };
@@ -1261,6 +1312,22 @@ export class TimelineModel {
         if (rigPartIds.length > 0) {
             return { ok: false, reason: 'rig-part-subtree-unsupported', rigPartIds };
         }
+        const folderDeformerRefs = [];
+        this.tracks.forEach(track => {
+            (track.cels || []).forEach(clip => {
+                if (clip.assetId !== asset.id) return;
+                (normalizeClipFolderDeformers(clip.folderDeformers)?.targets || [])
+                    .filter(target => deleteIds.has(target.folderLayerId))
+                    .forEach(target => folderDeformerRefs.push({ clipId: clip.id, target }));
+            });
+        });
+        if (folderDeformerRefs.length > 0) {
+            return {
+                ok: false,
+                reason: 'folder-deformer-target-subtree-unsupported',
+                references: folderDeformerRefs
+            };
+        }
 
         const deletingDrawableCount = asset.internalLayers.filter(layer => {
             return deleteIds.has(layer.id) && layer.type !== 'folder' && layer.isBackground !== true;
@@ -1351,8 +1418,33 @@ export class TimelineModel {
 
         const insertIndex = Math.max(...sourceLayers.map(layer => asset.internalLayers.findIndex(item => item.id === layer.id))) + 1;
         asset.internalLayers.splice(insertIndex, 0, ...duplicatedLayers);
+        this.tracks.forEach(track => {
+            (track.cels || []).forEach(clip => {
+                if (clip.assetId !== asset.id || !clip.folderDeformers) return;
+                const sourceTargets = normalizeClipFolderDeformers(clip.folderDeformers)?.targets
+                    ?.filter(target => sourceIds.has(target.folderLayerId)) || [];
+                if (sourceTargets.length === 0) return;
+                const remapped = remapClipFolderDeformers(
+                    { version: 1, targets: sourceTargets },
+                    idMap
+                );
+                clip.folderDeformers = normalizeClipFolderDeformers({
+                    version: 1,
+                    targets: [
+                        ...(normalizeClipFolderDeformers(clip.folderDeformers)?.targets || []),
+                        ...(remapped?.targets || [])
+                    ]
+                });
+            });
+        });
         asset.updatedAt = Date.now();
-        return { ok: true, asset, layer: duplicatedLayers[0], duplicatedLayers };
+        return {
+            ok: true,
+            asset,
+            layer: duplicatedLayers[0],
+            duplicatedLayers,
+            internalLayerIdMap: idMap
+        };
     }
 
     _duplicateDrawingSnapshot(snapshotId) {
@@ -1524,6 +1616,9 @@ export class TimelineModel {
                 transform: normalizeClipTransform(clip.transform || {}),
                 transformKeyframes: (clip.transformKeyframes || []).map(keyframe => clonePlainObject(keyframe)),
                 deformer: normalizeClipDeformer(clip.deformer),
+                ...(clip.folderDeformers == null
+                    ? {}
+                    : { folderDeformers: serializeClipFolderDeformers(clip.folderDeformers) }),
                 ...(clip.rigMotion == null ? {} : { rigMotion: serializeRigMotion(clip.rigMotion) }),
                 physics: clonePlainObject(clip.physics, {
                     enabled: false,
@@ -1694,6 +1789,46 @@ export class TimelineModel {
             });
         });
         return { ok: errors.length === 0, assetResults, clipResults, errors };
+    }
+
+    validateFolderDeformers() {
+        const clipResults = [];
+        const errors = [];
+        this.tracks.forEach(track => {
+            (track.cels || []).forEach(clip => {
+                const sourceErrors = Array.isArray(clip._folderDeformerSourceErrors)
+                    ? clip._folderDeformerSourceErrors
+                    : [];
+                if (clip.folderDeformers == null && sourceErrors.length === 0) return;
+                const asset = clip.assetId ? this.getClipAsset(clip.assetId) : null;
+                const validation = validateClipFolderDeformers(
+                    clip.folderDeformers,
+                    asset?.internalLayers || null
+                );
+                const resultErrors = [
+                    ...sourceErrors,
+                    ...validation.errors,
+                    ...(!asset ? [{ code: 'folder-deformer-asset-missing' }] : [])
+                ];
+                const result = {
+                    ok: resultErrors.length === 0,
+                    value: validation.value,
+                    errors: resultErrors
+                };
+                clipResults.push({
+                    clipId: clip.id,
+                    assetId: clip.assetId || null,
+                    ...result
+                });
+                result.errors.forEach(error => errors.push({
+                    scope: 'clip',
+                    clipId: clip.id,
+                    assetId: clip.assetId || null,
+                    ...error
+                }));
+            });
+        });
+        return { ok: errors.length === 0, clipResults, errors };
     }
 
     duplicateClipAsset(assetId, options = {}) {

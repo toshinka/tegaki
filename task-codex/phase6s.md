@@ -307,8 +307,11 @@ Gate 0がGOになるまで開始しない。各StageはLUNA MAXが実装し、SO
 
 - 対象: `clip-deformer.js`、`animation-data-model.js`、`clip-bake-sampler.js`、Clip / Asset copy-remap、
   `verify-folder-deformer-model.mjs`。
-- UI、Pixi、compositorは変更しない。
-- 完了: 7.2〜7.3、7.6の純粋APIと、7.7 Stage A fixtureが通る。
+- UI authoring、Pixi、compositorは変更しない。ただし保存正本を落とさないため、
+  `animation-table-popup.js`のTimeline History、Clip clipboard、paste、structured Bake、retime snapshotと、
+  Internal Folder duplicateのTimeline Historyへ`folderDeformers`を追加する最小metadata transportは許可する。
+- 完了（2026-08-01）: 7.2〜7.3、7.6の純粋API、Project restore validation、Folder duplicate ID clone、
+  Folder target付き削除拒否、Frame 0 HOLD Bake、`verify-folder-deformer-model.mjs`が通過。
 - 停止: public APIやroot deformer shapeの破壊的変更、既存test期待値変更、第二のWARP samplerが必要になった時。
 - 推奨: LUNA MAX。完了後にSOL review 1を必須とする。
 
