@@ -2031,6 +2031,11 @@ export class LayerPanelRenderer {
         const clipping = viewState.clipping;
         const inverseClipping = viewState.inverseClipping;
         const isFolder = viewState.isFolder;
+        const isAnimationFolder = viewState.isAnimationFolder;
+        const isRigPart = viewState.isRigPart;
+        const canRegisterRigPart = viewState.canRegisterRigPart;
+        const hasRootBoneBinding = viewState.hasRootBoneBinding;
+        const canRegisterRootBone = viewState.canRegisterRootBone;
         const canToggleClipping = true;
         const rawLayerName = viewState.name;
         const layerName = this._escapeHtml(rawLayerName);
@@ -2068,6 +2073,34 @@ export class LayerPanelRenderer {
                     </button>
                 ` : ''}
             </div>
+            ${isAnimationFolder ? `
+                <div class="layer-attribute-popup__part-row">
+                    <button type="button"
+                        class="layer-attribute-part-register${isRigPart ? ' active' : ''}"
+                        data-action="register-folder-part"
+                        title="${isRigPart
+                            ? 'このCAF内部FolderはFolder Partとして登録済みです'
+                            : (canRegisterRigPart
+                                ? 'このCAF内部FolderをFolder Partとして登録'
+                                : 'nested Folder Partは次Sliceで対応します')}"
+                        ${isRigPart || !canRegisterRigPart ? 'disabled' : ''}>
+                        ${isRigPart ? 'PART 登録済み' : 'PARTとして登録'}
+                    </button>
+                    ${isRigPart ? `
+                        <button type="button"
+                            class="layer-attribute-bone-register${hasRootBoneBinding ? ' active' : ''}"
+                            data-action="register-root-bone"
+                            title="${hasRootBoneBinding
+                                ? 'このFolder Partはroot BONEへbinding済みです'
+                                : (canRegisterRootBone
+                                ? 'このFolder Partへroot BONEを作成してbinding'
+                                    : 'このFolderはPIVOT設定済みです')}"
+                            ${hasRootBoneBinding || !canRegisterRootBone ? 'disabled' : ''}>
+                            ${hasRootBoneBinding ? 'BONE 接続済み' : 'ROOT BONEを作成'}
+                        </button>
+                    ` : ''}
+                </div>
+            ` : ''}
         `;
 
         popup.querySelector('[data-action="close-popup"]')?.addEventListener('click', (e) => {
@@ -2154,6 +2187,53 @@ export class LayerPanelRenderer {
             }
             this._syncOpenLayerAttributePopupToCurrentTarget();
         });
+
+        popup.querySelector('[data-action="register-folder-part"]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const animationTarget = this._getAnimationAttributeTarget();
+            const animationTable = animationTarget?.animationTable || window.PopupManager?.get?.('animationTable');
+            const result = animationTable?.registerInternalFolderPartFromExternal?.(
+                viewState.animationAssetId || animationTarget?.asset?.id,
+                viewState.animationInternalLayerId || animationTarget?.internalLayer?.id,
+                { source: 'layer-attribute-popup' }
+            );
+            if (result?.ok) {
+                this._renderLayerAttributePopupContent(popup, layerIndex);
+                this._syncOpenLayerAttributePopupToCurrentTarget();
+                return;
+            }
+            const labels = {
+                'nested-part-unsupported': 'nested PARTは次Slice',
+                'clipping-boundary-split': 'clip境界を確認',
+                'folder-required': 'Folderを選択'
+            };
+            e.currentTarget.textContent = labels[result?.reason] || '登録できません';
+            e.currentTarget.title = result?.reason || 'Folder Part登録に失敗しました';
+            e.currentTarget.disabled = true;
+        });
+
+        popup.querySelector('[data-action="register-root-bone"]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const animationTarget = this._getAnimationAttributeTarget();
+            const animationTable = animationTarget?.animationTable || window.PopupManager?.get?.('animationTable');
+            const result = animationTable?.registerInternalRootBoneFromExternal?.(
+                viewState.animationAssetId || animationTarget?.asset?.id,
+                viewState.animationInternalLayerId || animationTarget?.internalLayer?.id,
+                { source: 'layer-attribute-popup' }
+            );
+            if (result?.ok) {
+                this._renderLayerAttributePopupContent(popup, layerIndex);
+                this._syncOpenLayerAttributePopupToCurrentTarget();
+                return;
+            }
+            const labels = {
+                'part-not-found': '先にPART登録',
+                'empty-part': '描画のあるPARTが必要'
+            };
+            e.currentTarget.textContent = labels[result?.reason] || '作成できません';
+            e.currentTarget.title = result?.reason || 'root BONE作成に失敗しました';
+            e.currentTarget.disabled = true;
+        });
     }
 
     _syncLayerAttributePopup(popup, layerIndex) {
@@ -2215,13 +2295,38 @@ export class LayerPanelRenderer {
         const opacity = typeof source.opacity === 'number'
             ? source.opacity
             : (typeof layer?.alpha === 'number' ? layer.alpha : 1);
+        const rigParts = Array.isArray(animationTarget?.asset?.rigDefinition?.parts)
+            ? animationTarget.asset.rigDefinition.parts
+            : [];
+        const isAnimationFolder = !!animationTarget
+            && (source.type === 'folder' || source.isFolder === true);
+        const isRigPart = isAnimationFolder && rigParts.some(part => part?.partId === source.id);
+        const rigBones = Array.isArray(animationTarget?.asset?.rigDefinition?.bones)
+            ? animationTarget.asset.rigDefinition.bones
+            : [];
+        const rigidBindings = Array.isArray(animationTarget?.asset?.rigDefinition?.rigidBindings)
+            ? animationTarget.asset.rigDefinition.rigidBindings
+            : [];
+        const hasRootBoneBinding = isRigPart && rigidBindings.some(binding => (
+            binding?.partId === source.id
+            && rigBones.some(bone => bone?.boneId === binding.boneId && bone.parentBoneId == null)
+        ));
         return {
+            animationAssetId: animationTarget?.asset?.id || null,
+            animationInternalLayerId: animationTarget?.internalLayer?.id || null,
             name: source.name || layer?.layerData?.name || 'レイヤー',
             opacity: Math.round(opacity * 100),
             blendMode: source.blendMode || 'normal',
             clipping: clippingMode !== 'none',
             inverseClipping: isInverseClipping(source),
-            isFolder: source.type === 'folder' || source.isFolder === true
+            isFolder: source.type === 'folder' || source.isFolder === true,
+            isAnimationFolder,
+            isRigPart,
+            canRegisterRigPart: isAnimationFolder,
+            rigPartCount: rigParts.length,
+            hasRootBoneBinding,
+            canRegisterRootBone: isRigPart
+                && !hasRootBoneBinding
         };
     }
 

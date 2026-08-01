@@ -26,6 +26,95 @@ export function applyTransformMatrix(matrix, x, y) {
     };
 }
 
+/** Project座標のaxis-aligned boundsをaffine適用後のtight integer boundsへ変換する。 */
+export function calculateAffineTransformedBounds(bounds, matrix) {
+    const x = Number(bounds?.x) || 0;
+    const y = Number(bounds?.y) || 0;
+    const width = Math.max(0, Number(bounds?.width) || 0);
+    const height = Math.max(0, Number(bounds?.height) || 0);
+    const safeMatrix = matrix && [
+        matrix.a,
+        matrix.b,
+        matrix.c,
+        matrix.d,
+        matrix.tx,
+        matrix.ty
+    ].every(Number.isFinite)
+        ? matrix
+        : { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+    const corners = [
+        applyTransformMatrix(safeMatrix, x, y),
+        applyTransformMatrix(safeMatrix, x + width, y),
+        applyTransformMatrix(safeMatrix, x + width, y + height),
+        applyTransformMatrix(safeMatrix, x, y + height)
+    ];
+    const left = Math.floor(Math.min(...corners.map(point => point.x)));
+    const top = Math.floor(Math.min(...corners.map(point => point.y)));
+    const right = Math.ceil(Math.max(...corners.map(point => point.x)));
+    const bottom = Math.ceil(Math.max(...corners.map(point => point.y)));
+    return {
+        x: left,
+        y: top,
+        width: Math.max(1, right - left),
+        height: Math.max(1, bottom - top)
+    };
+}
+
+export function createAffineTransformMatrix(transform = {}) {
+    const x = Number(transform.x) || 0;
+    const y = Number(transform.y) || 0;
+    const rotation = Number(transform.rotation) || 0;
+    const scaleX = Number.isFinite(transform.scaleX) ? transform.scaleX : 1;
+    const scaleY = Number.isFinite(transform.scaleY) ? transform.scaleY : 1;
+    const pivotX = Number(transform.pivotX) || 0;
+    const pivotY = Number(transform.pivotY) || 0;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const a = scaleX * cos;
+    const b = scaleX * sin;
+    const c = -scaleY * sin;
+    const d = scaleY * cos;
+    return {
+        a,
+        b,
+        c,
+        d,
+        tx: x + pivotX - a * pivotX - c * pivotY,
+        ty: y + pivotY - b * pivotX - d * pivotY
+    };
+}
+
+/** parentとlocalのaffineを合成し、local pointをworldへ写すmatrixを返す。 */
+export function multiplyTransformMatrices(parent, local) {
+    return {
+        a: parent.a * local.a + parent.c * local.b,
+        b: parent.b * local.a + parent.d * local.b,
+        c: parent.a * local.c + parent.c * local.d,
+        d: parent.b * local.c + parent.d * local.d,
+        tx: parent.a * local.tx + parent.c * local.ty + parent.tx,
+        ty: parent.b * local.tx + parent.d * local.ty + parent.ty
+    };
+}
+
+/** affine matrix全体を反転する。非可逆matrixはnullを返し、呼出側でfallbackする。 */
+export function invertTransformMatrix(matrix) {
+    const determinant = matrix.a * matrix.d - matrix.b * matrix.c;
+    if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-8) return null;
+    const inverseDeterminant = 1 / determinant;
+    const a = matrix.d * inverseDeterminant;
+    const b = -matrix.b * inverseDeterminant;
+    const c = -matrix.c * inverseDeterminant;
+    const d = matrix.a * inverseDeterminant;
+    return {
+        a,
+        b,
+        c,
+        d,
+        tx: -(a * matrix.tx + c * matrix.ty),
+        ty: -(b * matrix.tx + d * matrix.ty)
+    };
+}
+
 export function invertTransformMatrixPoint(matrix, x, y) {
     const determinant = matrix.a * matrix.d - matrix.b * matrix.c;
     if (Math.abs(determinant) < 1e-8) return null;

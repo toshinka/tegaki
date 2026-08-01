@@ -5,6 +5,8 @@
  * 依存: system/event-bus.js, system/camera-system.js, system/history.js, ui/popup-drag-helper.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: ResizePopup
+ * UI密度契約: preview上限はmain.cssの--ui-resize-preview-max-*を正本とし、
+ *   JS側へ別の固定寸法を増やさない。Canvas / Raster座標計算には流用しない。
  * イベント発火: なし
  * イベント受信: なし
  * グローバル登録: window.ResizePopup, window.TegakiUI.ResizePopup
@@ -430,8 +432,11 @@ export class ResizePopup {
     _setupDirectValueInputs() {
         this._setupDirectValueInputTarget(this.elements.widthDisplay, 'width');
         this._setupDirectValueInputTarget(this.elements.heightDisplay, 'height');
-        this.elements.widthDisplay?.setAttribute('title', 'ダブルクリックで数値入力');
-        this.elements.heightDisplay?.setAttribute('title', 'ダブルクリックで数値入力');
+        [this.elements.widthDisplay, this.elements.heightDisplay].forEach(display => {
+            if (!display) return;
+            display.dataset.tooltip = 'ダブルクリックで数値入力';
+            display.classList.add('ui-help-tooltip');
+        });
     }
 
     _setupDirectValueInputTarget(display, axis) {
@@ -1743,8 +1748,13 @@ export class ResizePopup {
         const frame = this.elements.preview?.querySelector?.('.resize-preview-frame');
         const safeFrameWidth = Math.max(1, frameSize.width);
         const safeFrameHeight = Math.max(1, frameSize.height);
-        const maxPreviewWidth = 240;
-        const maxPreviewHeight = 110;
+        const rootStyle = getComputedStyle(document.documentElement);
+        const maxPreviewWidth = Number.parseFloat(
+            rootStyle.getPropertyValue('--ui-resize-preview-max-width')
+        ) || 192;
+        const maxPreviewHeight = Number.parseFloat(
+            rootStyle.getPropertyValue('--ui-resize-preview-max-height')
+        ) || 88;
         const previewScale = Math.min(maxPreviewWidth / safeFrameWidth, maxPreviewHeight / safeFrameHeight);
         if (frame) {
             frame.style.width = `${Math.max(20, Math.round(safeFrameWidth * previewScale))}px`;

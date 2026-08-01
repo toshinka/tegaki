@@ -203,36 +203,7 @@ export const KeyboardHandler = (function() {
         // VキーでLayer / selection変形モードをトグルする。
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             if (!e.repeat) {
-                if (window.CoreRuntime?.api?.selection?.hasSelection?.()) {
-                    window.CoreRuntime.api.selection.requestTransform?.();
-                } else {
-                    const nextVKeyState = !vKeyPressed;
-                    const animationTable = window.PopupManager?.get?.('animationTable')
-                        || window.coreEngine?.popupManager?.get?.('animationTable');
-                    if (nextVKeyState) {
-                        animationTable?.setMotionWindowOpen?.(false);
-                        if (animationTable?.isSelectedWorkingRestoreBlocked?.()) {
-                            animationTable?._showWorkingRestoreBlockedReason?.();
-                            e.preventDefault();
-                            e.stopImmediatePropagation();
-                            return;
-                        }
-                        animationTable?.prepareInternalFolderTransform?.();
-                    } else if (animationTable?.canConfirmInternalFolderTransform?.() === false) {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        return;
-                    }
-                    if (nextVKeyState && !canStartLayerTransform()) {
-                        vKeyPressed = false;
-                    } else {
-                        vKeyPressed = nextVKeyState;
-                        eventBus.emit('keyboard:vkey-state-changed', {
-                            pressed: vKeyPressed,
-                            source: 'transform-shortcut'
-                        });
-                    }
-                }
+                toggleLayerTransform('transform-shortcut');
             }
             e.preventDefault();
             return;
@@ -825,6 +796,41 @@ export const KeyboardHandler = (function() {
         return true;
     }
 
+    function toggleLayerTransform(source = 'transform-control') {
+        const eventBus = TegakiEventBus;
+        if (!eventBus) return false;
+
+        if (window.CoreRuntime?.api?.selection?.hasSelection?.()) {
+            return window.CoreRuntime.api.selection.requestTransform?.() === true;
+        }
+
+        const nextVKeyState = !vKeyPressed;
+        const animationTable = window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable');
+        if (nextVKeyState) {
+            animationTable?.setMotionWindowOpen?.(false);
+            if (animationTable?.isSelectedWorkingRestoreBlocked?.()) {
+                animationTable?._showWorkingRestoreBlockedReason?.();
+                return false;
+            }
+            animationTable?.prepareInternalFolderTransform?.();
+        } else if (animationTable?.canConfirmInternalFolderTransform?.() === false) {
+            return false;
+        }
+
+        if (nextVKeyState && !canStartLayerTransform()) {
+            vKeyPressed = false;
+            return false;
+        }
+
+        vKeyPressed = nextVKeyState;
+        eventBus.emit('keyboard:vkey-state-changed', {
+            pressed: vKeyPressed,
+            source
+        });
+        return true;
+    }
+
     function handleAnimationTableLayerShortcut(action) {
         const animationTable = window.PopupManager?.get?.('animationTable')
             || window.coreEngine?.popupManager?.get?.('animationTable');
@@ -1169,6 +1175,7 @@ export const KeyboardHandler = (function() {
         getShortcutContext: () => shortcutContext,
         isVKeyPressed,
         setVKeyPressed,
+        toggleLayerTransform,
         deleteActiveLayerDrawings
     };
 })();

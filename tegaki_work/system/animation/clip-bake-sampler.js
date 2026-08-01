@@ -1,5 +1,6 @@
 import { sampleClipDeformer, normalizeClipDeformer } from './clip-deformer.js';
 import { sampleClipTransform } from './clip-transform-sampler.js';
+import { sampleRigMotionForBake } from './part-rig.js';
 
 function clonePoints(points) {
     return Array.isArray(points) ? points.map(point => ({ x: point.x, y: point.y })) : [];
@@ -24,6 +25,7 @@ export function sampleClipBakeState(clip, timelineFrame) {
     const localFrame = Number.isFinite(timelineFrame) ? timelineFrame - startFrame : 0;
     const transform = sampleClipTransform(clip, Number.isFinite(timelineFrame) ? timelineFrame : startFrame);
     const sampledDeformer = sampleClipDeformer(clip.deformer, localFrame, duration);
+    const rigMotion = sampleRigMotionForBake(clip, Number.isFinite(timelineFrame) ? timelineFrame : startFrame);
 
     let deformer = null;
     if (sampledDeformer) {
@@ -44,6 +46,7 @@ export function sampleClipBakeState(clip, timelineFrame) {
     return {
         transform: { ...transform },
         transformKeyframes: [],
-        deformer
+        deformer,
+        ...(rigMotion ? { rigMotion } : {})
     };
 }

@@ -49,7 +49,9 @@
 ## 5. UI・CSS
 
 - カラーは `TEGAKI.md` のパレットと `styles/main.css` のCSS変数を使う。
-- 安易な黒・白・グレーの直書きを行わない。
+- icon、記号、文字、背景へ黒・白・neutral grayを安易に使うことを禁止する。`black` / `white` / `gray`、`#000` / `#fff`系の直書きだけでなく、未指定でbrowser既定の黒へ落ちるcontrolも残さない。
+- 基本はふたば茶系。active / currentは橙を第一候補とし、Setupの青、成功・接続の緑、警告・破壊の赤は役割が明確な場合だけ、既存semantic変数または共通変数を追加して使う。
+- Unicode記号やSVGも親要素任せにせず、componentの通常・hover・active・disabledすべてでpalette内の`color` / `stroke` / `fill`を確認する。
 - 色、スクロールバー、button、form、popupの見た目を追加する前に、`styles/main.css` の既存変数・共通classを `rg` で検索する。
 - 共通定義がある場合は必ず参照し、その場で近似色やcomponent専用scrollbarを新設しない。
 - 命名とスタイル判断は `開発用資料保管庫/proposals/UI_CSSスタイルガイド.md` を参照する。

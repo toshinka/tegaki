@@ -68,11 +68,8 @@ export const DOMBuilder = (function() {
             { separator: true },
             { id: 'resize-tool', icon: 'resize', title: 'リサイズ' },
             { separator: true },
-            { id: 'pen-tool', icon: 'pen', title: 'ペン (P / Shift+Pで筆圧切替 / Shift+ドラッグで直線)', active: true },
-            { id: 'eraser-tool', icon: 'eraser', title: '消しゴム (E / Shift+ドラッグで直線)' },
-            { id: 'airbrush-tool', icon: 'airbrush', title: 'スプレー / 透明スプレー (B)' },
-            { id: 'fill-tool', icon: 'fill', title: '塗りつぶし (G)' },
-            { id: 'selection-tool', icon: 'rectangleSelect', title: '矩形選択 (M)' },
+            { id: 'quick-access-tool', textIcon: 'Q', title: 'Quick Tool Panel (Q)', action: true },
+            { id: 'layer-transform-tool', textIcon: 'V', title: 'レイヤー変形 (V)', action: true },
             { separator: true },
             { id: 'gif-animation-tool', icon: 'animation', title: 'アニメテーブル (A)' },
             { separator: true },
@@ -87,11 +84,21 @@ export const DOMBuilder = (function() {
                     ? `<span class="tool-button-text-icon">${tool.textIcon}</span>`
                     : ICONS[tool.icon];
 
-                const btn = createElement('div', {
-                    className: tool.active ? 'tool-button active' : 'tool-button',
+                const btn = createElement(tool.action ? 'button' : 'div', {
+                    className: [
+                        'tool-button',
+                        tool.active ? 'active' : '',
+                        tool.action ? 'sidebar-action-button' : ''
+                    ].filter(Boolean).join(' '),
                     id: tool.id,
-                    title: tool.title,
-                    innerHTML: iconHtml || ''
+                    innerHTML: iconHtml || '',
+                    attributes: {
+                        'aria-label': tool.title,
+                        ...(tool.action ? {
+                            type: 'button',
+                            'aria-pressed': 'false'
+                        } : {})
+                    }
                 });
                 sidebar.appendChild(btn);
             }

@@ -6,6 +6,11 @@
  * 被依存: core-engine.js, ui/sidebar等
  * 公開API: ProjectManager
  * 実装状態: ✅完成/整備
+ * Animation保存境界: Runtime / HistoryのRGBAはTypedArrayのまま維持し、base64化と
+ *   asset-backed celの互換Raster省略はProject JSON serialize時だけ行う。旧Array Projectは読込維持する。
+ * V変形保存境界: Project採取前に既存Layer Transform確定経路を通し、表示中だけの
+ *   sprite transformではなく焼き込み後のRenderTexture / rasterBoundsを保存する。
+ * 外部保存境界: Albumは軽量参照、外部Project JSONが再編集正本。FileHandleがあれば既存保存先を維持する。
  * ============================================================================
  */
 
@@ -17,6 +22,10 @@ import {
     getClippingMode
 } from './clipping-mode.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
+import {
+    RASTER_PIXEL_ENCODING_BASE64,
+    serializeRasterPixels
+} from './animation/raster-pixel-codec.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
 import * as PIXI from 'pixi.js';
 
@@ -37,8 +46,11 @@ export class ProjectManager {
         const profileEnabled = options.profile === true || TEGAKI_CONFIG.debug === true;
         const profile = profileEnabled ? this._createExportProfile() : null;
         const exportStartedAt = this._now();
+        const selectionCommitStartedAt = this._now();
         this._commitFloatingSelection();
-        if (profile) profile.timings.commitFloatingSelectionMs = this._elapsed(exportStartedAt);
+        if (profile) profile.timings.commitFloatingSelectionMs = this._elapsed(selectionCommitStartedAt);
+        const transformCommit = await this._commitActiveLayerTransform();
+        if (profile) profile.timings.commitLayerTransformMs = transformCommit?.elapsedMs || 0;
 
         const layers = this.layerSystem.getLayers();
         const canvasWidth = TEGAKI_CONFIG.canvas.width;
@@ -66,7 +78,15 @@ export class ProjectManager {
             this._hasAnimationProjectData(animationTable.model)
         ) {
             const saveClipStartedAt = this._now();
+            const beforeSaveCollection = animationTable.model.collectUnreferencedDrawingSnapshots?.() || null;
             animationTable._saveSelectedClipFromWorkingLayers?.({ force: true });
+            const afterSaveCollection = animationTable.model.collectUnreferencedDrawingSnapshots?.() || null;
+            if (profile) {
+                profile.animation.snapshotCollection = {
+                    beforeSave: beforeSaveCollection,
+                    afterSave: afterSaveCollection
+                };
+            }
             if (profile) profile.timings.saveSelectedClipMs = this._elapsed(saveClipStartedAt);
 
             if (profile) {
@@ -173,7 +193,20 @@ export class ProjectManager {
     async saveProjectDataToFile(projectData, options = {}) {
         if (!projectData) return { ok: false, reason: 'empty-project' };
         const stringifyStartedAt = this._now();
-        const json = JSON.stringify(projectData);
+        let json = null;
+        try {
+            json = JSON.stringify(projectData);
+        } catch (error) {
+            console.error('[ProjectManager] Project JSON serialization failed.', error);
+            if (options.showToast === true) {
+                this._showSaveToast('Projectが大きすぎて保存用JSONを作成できませんでした');
+            }
+            return {
+                ok: false,
+                reason: 'project-json-serialization-failed',
+                error
+            };
+        }
         this._finalizeExportProfile(projectData, {
             stringifyMs: this._elapsed(stringifyStartedAt),
             jsonLength: json.length
@@ -285,6 +318,7 @@ export class ProjectManager {
             collectedAt: new Date().toISOString(),
             timings: {
                 commitFloatingSelectionMs: 0,
+                commitLayerTransformMs: 0,
                 saveSelectedClipMs: 0,
                 animationSerializeMs: 0,
                 layersSerializeMs: 0,
@@ -294,7 +328,8 @@ export class ProjectManager {
             },
             animation: {
                 beforeSerialize: null,
-                afterSerialize: null
+                afterSerialize: null,
+                snapshotCollection: null
             },
             layers: null,
             jsonLength: null,
@@ -315,6 +350,7 @@ export class ProjectManager {
             const suggestedName = options.suggestedName || this.currentFileName || `tegaki_project_${this._timestampForFile()}.json`;
             const handle = await globalThis.showSaveFilePicker({
                 suggestedName,
+                startIn: options.startIn || 'downloads',
                 types: [{
                     description: 'Tegaki Project JSON',
                     accept: {
@@ -355,7 +391,11 @@ export class ProjectManager {
         const snapshots = model?.drawingSnapshots || [];
 
         for (let index = 0; index < snapshots.length; index++) {
-            serializedSnapshots.push(snapshots[index]?.serialize ? snapshots[index].serialize() : { ...snapshots[index] });
+            serializedSnapshots.push(
+                snapshots[index]?.serialize
+                    ? snapshots[index].serialize({ pixelEncoding: RASTER_PIXEL_ENCODING_BASE64 })
+                    : this._serializeDrawingSnapshotForProject(snapshots[index])
+            );
             if (this._elapsed(sliceStartedAt) > 12 || index % 4 === 3) {
                 if (profile) profile.timings.animationSerializeYields++;
                 await this._yieldToBrowser();
@@ -366,7 +406,7 @@ export class ProjectManager {
         return {
             fps: model.fps,
             totalFrames: model.totalFrames,
-            tracks: (model.tracks || []).map(track => track.serialize ? track.serialize() : { ...track }),
+            tracks: (model.tracks || []).map(track => this._serializeTrackForProject(model, track)),
             clipGroups: (model.clipGroups || []).map(group => group.serialize ? group.serialize() : {
                 ...group,
                 clipIds: [...(group.clipIds || [])]
@@ -376,6 +416,49 @@ export class ProjectManager {
             drawingSnapshots: serializedSnapshots,
             playback: { ...(model.playback || {}) }
         };
+    }
+
+    _serializeDrawingSnapshotForProject(snapshot = {}) {
+        const serializedPixels = serializeRasterPixels(
+            snapshot?.pixels,
+            RASTER_PIXEL_ENCODING_BASE64
+        );
+        return {
+            ...snapshot,
+            pixels: serializedPixels.pixels,
+            pixelEncoding: serializedPixels.pixelEncoding
+        };
+    }
+
+    _serializeTrackForProject(model, track) {
+        const serializedTrack = track?.serialize ? track.serialize() : { ...track };
+        if (!Array.isArray(serializedTrack.cels)) return serializedTrack;
+
+        serializedTrack.cels = serializedTrack.cels.map(cel => {
+            if (!cel?.rasterSnapshot) return cel;
+
+            const asset = cel.assetId ? model?.getClipAsset?.(cel.assetId) : null;
+            const authoritativeSnapshot = asset?.drawingSnapshotId
+                ? model?.getDrawingSnapshot?.(asset.drawingSnapshotId)
+                : null;
+            if (authoritativeSnapshot) {
+                return { ...cel, rasterSnapshot: null };
+            }
+
+            const serializedPixels = serializeRasterPixels(
+                cel.rasterSnapshot.pixels,
+                RASTER_PIXEL_ENCODING_BASE64
+            );
+            return {
+                ...cel,
+                rasterSnapshot: {
+                    ...cel.rasterSnapshot,
+                    pixels: serializedPixels.pixels,
+                    pixelEncoding: serializedPixels.pixelEncoding
+                }
+            };
+        });
+        return serializedTrack;
     }
 
     _yieldToBrowser() {
@@ -434,7 +517,13 @@ export class ProjectManager {
     _getSerializedAnimationStats(animationData) {
         const snapshots = animationData?.drawingSnapshots || [];
         let serializedPixelElements = 0;
+        let encodedPixelChars = 0;
         snapshots.forEach(snapshot => {
+            if (snapshot?.pixelEncoding === RASTER_PIXEL_ENCODING_BASE64
+                && typeof snapshot.pixels === 'string') {
+                encodedPixelChars += snapshot.pixels.length;
+                return;
+            }
             serializedPixelElements += Number(snapshot?.pixels?.length) || 0;
         });
         return {
@@ -442,6 +531,8 @@ export class ProjectManager {
             clipAssets: animationData?.clipAssets?.length || 0,
             drawingSnapshots: snapshots.length,
             serializedPixelElements,
+            encodedPixelChars,
+            estimatedDecodedPixelBytes: Math.floor(encodedPixelChars * 3 / 4),
             estimatedArrayNumberBytes: serializedPixelElements * 8
         };
     }
@@ -617,6 +708,7 @@ export class ProjectManager {
         }
 
         this.refreshLoadedProjectUI();
+        this._getAnimationTable()?._scheduleLaneReferencePreviewUpdate?.({ immediate: true });
         } finally {
             if (hasRecordingSuppression) {
                 history.endRecordingSuppression('project-load');
@@ -667,6 +759,25 @@ export class ProjectManager {
         const selectionApi = window.CoreRuntime?.api?.selection;
         if (!selectionApi?.getState?.()?.transformSessionActive) return false;
         return selectionApi.confirmTransform?.() === true;
+    }
+
+    async _commitActiveLayerTransform() {
+        const state = this.layerSystem?.getLayerMoveCommitState?.();
+        if (!state?.active) return false;
+        const startedAt = this._now();
+        this.layerSystem.exitLayerMoveMode?.({
+            deferredForBusyIndicator: true,
+            source: 'project-save'
+        });
+        // animation working Layerはtransform-exit受信後の次FrameでClipAsset正本へcaptureする。
+        // Project serializeはそのcaptureより後に開始し、画面だけ変形済みの状態を保存しない。
+        if (typeof requestAnimationFrame === 'function') {
+            await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+        return {
+            committed: this.layerSystem?.getLayerMoveCommitState?.()?.active !== true,
+            elapsedMs: this._elapsed(startedAt)
+        };
     }
 
     _hasAnimationProjectData(animationData) {
@@ -720,6 +831,13 @@ export class ProjectManager {
         animationTable._restoreVisibility?.();
         animationTable.resetLaneReferenceMode?.();
         animationTable.model = new TimelineModel(animationData || {});
+        const rigValidation = animationTable.model.validatePartRigs?.();
+        if (rigValidation?.ok === false) {
+            console.warn(
+                '[ProjectManager] Optional Rig data is invalid; Raster / CAF data was loaded and Rig evaluation remains disabled.',
+                rigValidation.errors
+            );
+        }
         this._restoreAnimationUiState(animationTable, animationState);
         animationTable.initialClipAssetSeeded = animationTable.model.clipAssets.length > 0;
         animationTable._copiedCelRef = null;

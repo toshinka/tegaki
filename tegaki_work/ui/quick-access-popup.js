@@ -145,19 +145,19 @@ export class QuickAccessPopup {
             #quick-access-popup.qa-popup {
                 position: fixed;
                 z-index: 2600;
-                width: 170px;
-                min-width: 170px !important;
+                width: var(--ui-qa-popup-width);
+                min-width: var(--ui-qa-popup-width) !important;
                 max-width: calc(100vw - 24px);
-                padding: 7px !important;
+                padding: var(--ui-qa-popup-padding) !important;
                 box-sizing: border-box;
                 border: 1px solid rgba(128, 0, 0, 0.28);
-                border-radius: 14px;
+                border-radius: 11px;
                 background:
                     linear-gradient(180deg, rgba(255, 255, 238, 0.74), rgba(240, 224, 214, 0.62)),
                     rgba(255, 255, 238, 0.52);
-                box-shadow: 0 14px 34px rgba(80, 32, 24, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.55);
-                backdrop-filter: blur(12px) saturate(1.12);
-                -webkit-backdrop-filter: blur(12px) saturate(1.12);
+                box-shadow: 0 11px 27px rgba(80, 32, 24, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+                backdrop-filter: blur(10px) saturate(1.12);
+                -webkit-backdrop-filter: blur(10px) saturate(1.12);
                 color: var(--futaba-maroon);
                 user-select: none;
                 touch-action: none;
@@ -174,21 +174,26 @@ export class QuickAccessPopup {
 
             .qa-close {
                 position: absolute;
-                top: 7px;
-                right: 7px;
+                top: 6px;
+                right: 6px;
                 z-index: 2;
-                width: 20px;
-                height: 20px;
-                border-radius: 6px;
+                width: 16px;
+                height: 16px;
+                border-radius: 5px;
+            }
+
+            .qa-close svg {
+                width: 10px;
+                height: 10px;
             }
 
             .qa-header {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                gap: 8px;
-                min-height: 21px;
-                padding: 0 25px 5px 2px;
+                gap: 6px;
+                min-height: 17px;
+                padding: 0 20px 4px 2px;
                 border-bottom: 1px solid rgba(128, 0, 0, 0.14);
                 cursor: grab;
             }
@@ -201,7 +206,7 @@ export class QuickAccessPopup {
             }
 
             .qa-header-main {
-                font-size: 12px;
+                font-size: 10px;
                 font-weight: 700;
                 line-height: 1.1;
                 color: var(--futaba-maroon);
@@ -209,22 +214,22 @@ export class QuickAccessPopup {
             }
 
             .qa-header-sub {
-                font-size: 10px;
+                font-size: 8px;
                 line-height: 1.1;
                 color: rgba(128, 0, 0, 0.58);
                 white-space: nowrap;
             }
 
             .qa-section {
-                margin-top: 4px;
+                margin-top: 3px;
             }
 
             .qa-section-label-row {
                 display: flex;
                 align-items: center;
                 justify-content: flex-start;
-                gap: 6px;
-                width: 154px;
+                gap: 5px;
+                width: var(--ui-qa-inner-width);
                 margin-left: auto;
                 margin-right: auto;
                 margin-bottom: 2px;
@@ -232,21 +237,21 @@ export class QuickAccessPopup {
 
             .qa-section-label {
                 display: none;
-                font-size: 9px;
+                font-size: 8px;
                 font-weight: 700;
                 color: rgba(128, 0, 0, 0.62);
                 letter-spacing: 0.04em;
             }
 
             .qa-section-value {
-                font-size: 9px;
+                font-size: 8px;
                 font-weight: 700;
                 color: rgba(128, 0, 0, 0.58);
             }
 
             .qa-slider-card .qa-section-label {
                 display: block;
-                font-size: 10px;
+                font-size: 8px;
                 color: rgba(128, 0, 0, 0.72);
             }
 
@@ -260,30 +265,30 @@ export class QuickAccessPopup {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                gap: 8px;
-                margin-bottom: 3px;
+                gap: 6px;
+                margin-bottom: 2px;
             }
 
             .qa-palette-header-left {
                 display: flex;
                 align-items: center;
-                gap: 4px;
+                gap: 3px;
             }
 
             .qa-palette-header-right {
                 display: flex;
                 align-items: center;
-                gap: 5px;
-                margin-left: 8px;
+                gap: 4px;
+                margin-left: 6px;
             }
 
             .qa-color-slot-btn {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                width: 20px;
-                height: 16px;
-                border-radius: 5px;
+                width: 16px;
+                height: 13px;
+                border-radius: 4px;
                 border: 1px solid rgba(128, 0, 0, 0.22);
                 background: rgba(255, 255, 238, 0.64);
                 color: var(--futaba-maroon);
@@ -294,8 +299,8 @@ export class QuickAccessPopup {
             }
 
             .qa-color-slot-btn svg {
-                width: 12px;
-                height: 12px;
+                width: 10px;
+                height: 10px;
                 stroke: currentColor !important;
                 pointer-events: none;
             }
@@ -315,9 +320,9 @@ export class QuickAccessPopup {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                width: 18px;
-                height: 16px;
-                border-radius: 5px;
+                width: 14px;
+                height: 13px;
+                border-radius: 4px;
                 border: 1px solid rgba(128, 0, 0, 0.22);
                 background: rgba(255, 255, 238, 0.64);
                 color: var(--futaba-maroon);
@@ -327,8 +332,8 @@ export class QuickAccessPopup {
             }
 
             .qa-eyedropper-btn svg {
-                width: 12px;
-                height: 12px;
+                width: 10px;
+                height: 10px;
                 stroke: currentColor !important;
                 pointer-events: none;
             }
@@ -346,8 +351,8 @@ export class QuickAccessPopup {
             }
 
             .qa-current-color-dot {
-                width: 14px;
-                height: 14px;
+                width: 11px;
+                height: 11px;
                 border-radius: 50%;
                 border: 1px solid rgba(128, 0, 0, 0.28);
                 box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
@@ -360,14 +365,14 @@ export class QuickAccessPopup {
                 display: flex;
                 align-items: center;
                 position: relative;
-                width: 20px;
-                height: 17px;
+                width: 16px;
+                height: 14px;
                 flex: 0 0 auto;
             }
 
             .qa-swatch {
-                width: 12px;
-                height: 12px;
+                width: 10px;
+                height: 10px;
                 border: 1px solid rgba(128, 0, 0, 0.32);
                 border-radius: 3px;
                 position: absolute;
@@ -397,8 +402,8 @@ export class QuickAccessPopup {
 
             .qa-color-circle-container {
                 display: none;
-                margin: 3px auto 7px;
-                width: 104px;
+                margin: 2px auto 6px;
+                width: 83px;
                 max-width: 72%;
                 aspect-ratio: 1;
                 background: rgba(128, 0, 0, 0.04);
@@ -419,14 +424,14 @@ export class QuickAccessPopup {
 
             .qa-palette-grid {
                 display: grid;
-                grid-template-columns: repeat(6, 24px);
+                grid-template-columns: repeat(6, var(--ui-qa-grid-size));
                 gap: 2px;
                 justify-content: center;
             }
 
             .qa-color-button {
-                width: 24px;
-                height: 24px;
+                width: var(--ui-qa-grid-size);
+                height: var(--ui-qa-grid-size);
                 aspect-ratio: 1;
                 min-height: 0;
                 border-radius: 4px;
@@ -455,16 +460,16 @@ export class QuickAccessPopup {
             /* ─── カラースロット サブポップアップ ─── */
             .qa-color-subpopup {
                 position: absolute;
-                top: calc(100% + 4px);
+                top: calc(100% + 3px);
                 left: 0;
                 z-index: 100;
                 background:
                     linear-gradient(180deg, rgba(255, 255, 238, 0.96), rgba(240, 224, 214, 0.92));
                 border: 1px solid rgba(128, 0, 0, 0.28);
-                border-radius: 10px;
+                border-radius: 8px;
                 box-shadow: 0 8px 20px rgba(80, 32, 24, 0.22);
-                padding: 8px;
-                min-width: 120px;
+                padding: 6px;
+                min-width: 96px;
                 display: none;
             }
 
@@ -473,26 +478,26 @@ export class QuickAccessPopup {
             }
 
             .qa-color-subpopup-title {
-                font-size: 9px;
+                font-size: 8px;
                 font-weight: 700;
                 color: rgba(128, 0, 0, 0.54);
                 letter-spacing: 0.06em;
-                margin-bottom: 6px;
+                margin-bottom: 5px;
                 text-align: center;
             }
 
             .qa-color-slot-item {
                 display: flex;
                 align-items: center;
-                gap: 6px;
+                gap: 5px;
                 width: 100%;
-                padding: 4px 6px;
-                border-radius: 7px;
+                padding: 3px 5px;
+                border-radius: 6px;
                 border: 1px solid transparent;
                 background: transparent;
                 cursor: pointer;
                 text-align: left;
-                font-size: 10px;
+                font-size: 8px;
                 font-weight: 700;
                 color: var(--futaba-maroon);
                 transition: background 0.12s ease, border-color 0.12s ease;
@@ -515,8 +520,8 @@ export class QuickAccessPopup {
             }
 
             .qa-color-slot-preview-dot {
-                width: 7px;
-                height: 7px;
+                width: 6px;
+                height: 6px;
                 border-radius: 2px;
                 border: 1px solid rgba(128, 0, 0, 0.18);
             }
@@ -526,13 +531,13 @@ export class QuickAccessPopup {
                 align-items: center;
                 justify-content: center;
                 width: 100%;
-                margin-top: 6px;
-                padding: 4px 6px;
-                border-radius: 7px;
+                margin-top: 5px;
+                padding: 3px 5px;
+                border-radius: 6px;
                 border: 1px solid rgba(128, 0, 0, 0.22);
                 background: rgba(255, 255, 238, 0.64);
                 cursor: pointer;
-                font-size: 9px;
+                font-size: 8px;
                 font-weight: 700;
                 color: rgba(128, 0, 0, 0.7);
                 transition: background 0.12s ease, transform 0.12s ease;
@@ -546,16 +551,16 @@ export class QuickAccessPopup {
             /* ─── ツールボタン ─── */
             .qa-tool-grid {
                 display: grid;
-                grid-template-columns: repeat(6, 24px);
+                grid-template-columns: repeat(6, var(--ui-qa-grid-size));
                 gap: 2px;
                 justify-content: center;
             }
 
             .qa-tool-button {
                 position: relative;
-                width: 24px;
-                height: 24px;
-                border-radius: 6px;
+                width: var(--ui-qa-grid-size);
+                height: var(--ui-qa-grid-size);
+                border-radius: 5px;
                 border: 1px solid rgba(128, 0, 0, 0.22);
                 background: rgba(255, 255, 238, 0.62);
                 cursor: pointer;
@@ -568,18 +573,18 @@ export class QuickAccessPopup {
             }
 
             .qa-tool-button svg {
-                width: 14px;
-                height: 14px;
+                width: var(--ui-qa-tool-icon-size);
+                height: var(--ui-qa-tool-icon-size);
                 stroke: currentColor !important;
                 pointer-events: none;
             }
 
             .qa-fill-ref-strip {
                 position: absolute;
-                top: -10px;
+                top: -8px;
                 left: 50%;
-                width: 16px;
-                height: 3px;
+                width: 13px;
+                height: 2px;
                 border-radius: 999px;
                 transform: translateX(-50%);
                 background: rgba(128, 0, 0, 0.22);
@@ -623,8 +628,8 @@ export class QuickAccessPopup {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                width: 22px;
-                height: 18px;
+                width: 18px;
+                height: 14px;
                 padding: 0;
                 border-radius: 4px;
                 border: 1px solid rgba(128, 0, 0, 0.14);
@@ -636,8 +641,8 @@ export class QuickAccessPopup {
             }
 
             .qa-mini-toggle-btn svg {
-                width: 13px;
-                height: 13px;
+                width: 10px;
+                height: 10px;
                 stroke-width: 1.8 !important;
             }
 
@@ -656,7 +661,7 @@ export class QuickAccessPopup {
             }
 
             .qa-tool-text-icon {
-                font-size: 13px;
+                font-size: 10px;
                 font-weight: 800;
                 line-height: 1;
                 color: currentColor;
@@ -666,7 +671,7 @@ export class QuickAccessPopup {
             /* ─── プリセットスロット ─── */
             .qa-preset-grid {
                 display: grid;
-                grid-template-columns: repeat(6, 24px);
+                grid-template-columns: repeat(6, var(--ui-qa-grid-size));
                 gap: 2px;
                 margin-top: 1px;
                 justify-content: center;
@@ -674,9 +679,9 @@ export class QuickAccessPopup {
 
             .qa-preset-slot {
                 position: relative;
-                width: 24px;
-                height: 40px;
-                border-radius: 6px;
+                width: var(--ui-qa-grid-size);
+                height: var(--ui-qa-preset-height);
+                border-radius: 5px;
                 border: 1px solid rgba(128, 0, 0, 0.2);
                 background: rgba(255, 255, 238, 0.54);
                 cursor: pointer;
@@ -686,7 +691,7 @@ export class QuickAccessPopup {
                 justify-content: center;
                 gap: 1px;
                 transition: transform 0.12s ease, border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
-                padding: 3px 1px 2px;
+                padding: 2px 1px;
                 overflow: hidden;
             }
 
@@ -703,8 +708,8 @@ export class QuickAccessPopup {
             }
 
             .qa-preset-ring {
-                width: 17px;
-                height: 17px;
+                width: 14px;
+                height: 14px;
                 border-radius: 50%;
                 border: 1.5px solid rgba(128, 0, 0, 0.44);
                 display: flex;
@@ -715,10 +720,10 @@ export class QuickAccessPopup {
             }
 
             .qa-preset-dot {
-                width: 4px;
-                height: 4px;
-                max-width: 11px;
-                max-height: 11px;
+                width: 3px;
+                height: 3px;
+                max-width: 9px;
+                max-height: 9px;
                 border-radius: 50%;
                 background: var(--futaba-maroon);
                 opacity: 0.88;
@@ -735,14 +740,14 @@ export class QuickAccessPopup {
             }
 
             .qa-preset-size-val {
-                font-size: 8px;
+                font-size: 7px;
                 font-weight: 700;
                 color: rgba(128, 0, 0, 0.75);
                 white-space: nowrap;
             }
 
             .qa-preset-opacity-val {
-                font-size: 7px;
+                font-size: 6px;
                 font-weight: 600;
                 color: rgba(128, 0, 0, 0.50);
                 white-space: nowrap;
@@ -752,44 +757,44 @@ export class QuickAccessPopup {
             .qa-slider-card {
                 display: grid;
                 gap: 1px;
-                padding: 3px 5px;
-                width: 156px;
+                padding: 2px 4px;
+                width: var(--ui-qa-inner-width);
                 box-sizing: border-box;
                 justify-self: center;
-                border-radius: 8px;
+                border-radius: 6px;
                 border: 1px solid rgba(128, 0, 0, 0.14);
                 background: rgba(255, 255, 238, 0.42);
             }
 
             .qa-slider-row {
                 display: grid;
-                grid-template-columns: 18px 1fr 18px;
+                grid-template-columns: var(--ui-qa-slider-button-size) 1fr var(--ui-qa-slider-button-size);
                 align-items: center;
-                gap: 3px;
+                gap: 2px;
             }
 
             .qa-value-input {
-                width: 42px;
-                height: 16px;
-                padding: 0 3px;
+                width: 34px;
+                height: 13px;
+                padding: 0 2px;
                 border: 1px solid rgba(128, 0, 0, 0.24);
                 border-radius: 4px;
                 background: rgba(255, 255, 238, 0.9);
                 color: var(--futaba-maroon);
-                font-size: 9px;
+                font-size: 8px;
                 font-weight: 700;
                 text-align: right;
                 box-sizing: border-box;
             }
 
             .qa-arrow-btn {
-                width: 18px;
-                height: 17px;
-                border-radius: 5px;
+                width: var(--ui-qa-slider-button-size);
+                height: var(--ui-qa-slider-button-size);
+                border-radius: 4px;
                 border: 1px solid rgba(128, 0, 0, 0.22);
                 background: rgba(255, 255, 238, 0.64);
                 color: var(--futaba-maroon);
-                font-size: 11px;
+                font-size: 9px;
                 font-weight: 700;
                 cursor: pointer;
                 transition: background 0.14s ease, transform 0.12s ease;
@@ -803,7 +808,7 @@ export class QuickAccessPopup {
 
             .qa-slider {
                 position: relative;
-                height: 9px;
+                height: 7px;
                 border-radius: 999px;
                 background: rgba(128, 0, 0, 0.12);
                 box-shadow: inset 0 1px 2px rgba(80, 32, 24, 0.14);
@@ -826,8 +831,8 @@ export class QuickAccessPopup {
                 position: absolute;
                 top: 50%;
                 left: 0%;
-                width: 12px;
-                height: 12px;
+                width: 10px;
+                height: 10px;
                 border-radius: 50%;
                 transform: translate(-50%, -50%);
                 border: 1px solid rgba(128, 0, 0, 0.48);
@@ -842,8 +847,8 @@ export class QuickAccessPopup {
             }
 
             .qa-footer-hint {
-                margin-top: 8px;
-                font-size: 9px;
+                margin-top: 6px;
+                font-size: 8px;
                 line-height: 1.35;
                 color: rgba(128, 0, 0, 0.5);
                 text-align: center;
@@ -852,6 +857,38 @@ export class QuickAccessPopup {
             /* ─── カラースロットボタン親要素 (相対位置でサブポップアップを配置) ─── */
             .qa-color-slot-btn-wrapper {
                 position: relative;
+            }
+
+            @media (pointer: coarse) {
+                .qa-close {
+                    width: 20px;
+                    height: 20px;
+                }
+
+                .qa-close svg {
+                    width: 13px;
+                    height: 13px;
+                }
+
+                .qa-color-slot-btn {
+                    width: 20px;
+                    height: 16px;
+                }
+
+                .qa-eyedropper-btn {
+                    width: 18px;
+                    height: 16px;
+                }
+
+                .qa-mini-toggle-btn {
+                    width: 22px;
+                    height: 18px;
+                }
+
+                .qa-slider-handle {
+                    width: 18px;
+                    height: 18px;
+                }
             }
         `;
         document.head.appendChild(style);
@@ -1873,6 +1910,17 @@ export class QuickAccessPopup {
             if (tool) this._setCurrentToolFromExternal(tool);
         });
 
+        this.eventBus.on('selection:tool-changed', ({ active } = {}) => {
+            if (active === true) {
+                this._setCurrentToolFromExternal('selection');
+                return;
+            }
+
+            if (this.currentTool === 'selection') {
+                this._setCurrentToolFromExternal(this.brushSettings?.getMode?.() || 'pen');
+            }
+        });
+
         this.eventBus.on('brush:size-changed', (payload = {}) => {
             const size = payload.size ?? payload.data?.size;
             if (typeof size !== 'number' || this.isDraggingSize) return;
@@ -2083,7 +2131,10 @@ export class QuickAccessPopup {
             this.currentOpacity = this._clampOpacity(this.brushSettings.getOpacity() * 100);
         }
 
-        if (this.brushSettings.getMode) {
+        const selectionApi = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
+        if (selectionApi?.isToolActive?.() === true) {
+            this.currentTool = 'selection';
+        } else if (this.brushSettings.getMode) {
             this.currentTool = this._normalizeTool(this.brushSettings.getMode());
         }
     }

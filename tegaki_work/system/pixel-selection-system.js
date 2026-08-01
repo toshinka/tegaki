@@ -10,6 +10,8 @@
  * - selection boundsはProject座標として扱う。
  * - constrainLayerToSelection() はbefore/after snapshotのrasterBounds差をProject座標で吸収する。
  * - 通常Layer / CAF working Layerのstroke/fillは、履歴経路が違ってもこのAPIで選択外をbefore pixelsへ戻す。
+ * - CAF working Layerの選択可否はAnimation Tableの表示状態ではなく、選択中Clipとのadapter対応で決める。
+ *   Popup開閉を選択・座標の正本にしないこと。
  * ============================================================================
  */
 
@@ -1143,7 +1145,7 @@ export class PixelSelectionSystem {
         const data = layer?.layerData;
         if (!layer || !data?.renderTexture) return null;
         if (data.isBackground || data.isFolder) return null;
-        if (data.isAnimationWorkingLayer === true && !this._canSelectAnimationWorkingLayer()) {
+        if (data.isAnimationWorkingLayer === true && !this._canSelectAnimationWorkingLayer(data.id)) {
             return null;
         }
         return layer;
@@ -1153,7 +1155,7 @@ export class PixelSelectionSystem {
         const layer = this.layerSystem?.getActiveLayer?.();
         const data = layer?.layerData;
         if (!layer || !data || data.isBackground) return null;
-        if (data.isAnimationWorkingLayer === true && !this._canSelectAnimationWorkingLayer()) {
+        if (data.isAnimationWorkingLayer === true && !this._canSelectAnimationWorkingLayer(data.id)) {
             return null;
         }
         if (data.isFolder) {
@@ -1165,10 +1167,10 @@ export class PixelSelectionSystem {
         return { kind: 'layer', layer };
     }
 
-    _canSelectAnimationWorkingLayer() {
+    _canSelectAnimationWorkingLayer(layerId) {
         const animationTable = window.PopupManager?.get?.('animationTable')
             || window.coreEngine?.popupManager?.get?.('animationTable');
-        return animationTable?.isVisible === true && !!animationTable.selectedCelId;
+        return animationTable?.canEditSelectedWorkingLayer?.(layerId) === true;
     }
 
     _getSelectionContext() {

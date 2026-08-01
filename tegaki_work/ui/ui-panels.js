@@ -8,6 +8,8 @@
  * イベント発火: ui:*, tool:select, layer:panel-update-requested等
  * イベント受信: tool:*, layer:*, camera:*, keyboard:*等
  * グローバル登録: window.TegakiUI.UIController, window.uiController
+ * Tool表示契約: Animation Tableの開閉後はBrushSettingsだけへ戻さず、Pixel Selectionのactive状態を
+ *   先に参照する。status表示をtool状態の正本として逆利用しない。
  * 実装状態: ✅完成/整備
  * ============================================================================
  */
@@ -83,8 +85,7 @@ export class UIController {
         if (animationTable?.isVisible) {
             this.updateToolUI('gif-animation');
         } else {
-            const currentTool = window.brushSettings?.getMode?.() || 'pen';
-            this.updateToolUI(currentTool);
+            this.updateToolUI(this.getCurrentCanvasTool());
         }
     }
     
@@ -98,8 +99,7 @@ export class UIController {
     initializeStatusPanel() {
         const statusPanel = document.querySelector('.status-panel');
         if (statusPanel) {
-            const currentTool = window.brushSettings?.getMode?.() || window.CoreRuntime?.api?.tool?.get?.() || 'pen';
-            this.updateToolUI(currentTool);
+            this.updateToolUI(this.getCurrentCanvasTool());
             this.updateHistoryUI();
         }
     }
@@ -117,6 +117,30 @@ export class UIController {
         
         this.eventBus.on('ui:toggle-quick-access', () => {
             this.toggleQuickAccessPopup();
+        });
+
+        this.eventBus.on('popup:shown', ({ name } = {}) => {
+            if (name === 'quickAccess') {
+                this.setSidebarActionActive('quick-access-tool', true);
+            }
+        });
+
+        this.eventBus.on('popup:hidden', ({ name } = {}) => {
+            if (name === 'quickAccess') {
+                this.setSidebarActionActive('quick-access-tool', false);
+            }
+        });
+
+        this.eventBus.on('keyboard:vkey-state-changed', ({ pressed } = {}) => {
+            this.setSidebarActionActive('layer-transform-tool', pressed === true);
+        });
+
+        this.eventBus.on('selection:transform-started', () => {
+            this.setSidebarActionActive('layer-transform-tool', true);
+        });
+
+        this.eventBus.on('selection:transform-ended', () => {
+            this.setSidebarActionActive('layer-transform-tool', false);
         });
         
         this.eventBus.on('ui:toggle-album', () => {
@@ -151,13 +175,11 @@ export class UIController {
         });
 
         this.eventBus.on('brush:pressure-enabled-changed', () => {
-            const currentTool = window.brushSettings?.getMode?.() || window.CoreRuntime?.api?.tool?.get?.() || 'pen';
-            this.updateToolUI(currentTool);
+            this.updateToolUI(this.getCurrentCanvasTool());
         });
 
         this.eventBus.on('brush:eraser-pressure-enabled-changed', () => {
-            const currentTool = window.brushSettings?.getMode?.() || window.CoreRuntime?.api?.tool?.get?.() || 'pen';
-            this.updateToolUI(currentTool);
+            this.updateToolUI(this.getCurrentCanvasTool());
         });
 
         this.eventBus.on('layer:status-update-requested', (data) => {
@@ -634,91 +656,14 @@ export class UIController {
             .sort((a, b) => b - a);
     }
 
-    _confirmActiveTransformsForToolSwitch(nextTool) {
-        const selectionApi = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
-        if (nextTool !== 'selection' && selectionApi?.getState?.()?.transformSessionActive) {
-            if (selectionApi.confirmTransform?.() !== true) return false;
-        }
-
-        const layerApi = window.CoreRuntime?.api?.layer;
-        const layerManager = this.layerManager || window.layerManager || window.drawingApp?.layerManager;
-        if (nextTool !== 'layer-move' && (layerManager?.isLayerMoveMode || layerManager?.vKeyPressed)) {
-            const result = layerApi?.exitMoveMode
-                ? layerApi.exitMoveMode()
-                : layerManager?.exitLayerMoveMode?.();
-            if (result === false) return false;
-        }
-
-        return true;
-    }
-    
     handleToolClick(button) {
         const toolId = button.id;
-        const transformExitTool = {
-            'pen-tool': 'pen',
-            'eraser-tool': 'eraser',
-            'fill-tool': 'fill',
-            'selection-tool': 'selection',
-            'airbrush-tool': 'airbrush'
-        }[toolId];
-        if (transformExitTool && !this._confirmActiveTransformsForToolSwitch(transformExitTool)) {
-            return;
-        }
         const toolMap = {
-            'pen-tool': () => {
-                if (window.CoreRuntime?.api?.tool?.set) {
-                    window.CoreRuntime.api.tool.set('pen');
-                    window.CoreRuntime.api.layer.exitMoveMode();
-                } else if (this.drawingEngine?.brushCore) {
-                    this.drawingEngine.brushCore.setMode('pen');
-                }
+            'quick-access-tool': () => {
                 this.toggleQuickAccessPopup();
-                this.updateToolUI('pen');
             },
-            'eraser-tool': () => {
-                if (window.CoreRuntime?.api?.tool?.set) {
-                    window.CoreRuntime.api.tool.set('eraser');
-                    window.CoreRuntime.api.layer.exitMoveMode();
-                } else if (this.drawingEngine?.brushCore) {
-                    this.drawingEngine.brushCore.setMode('eraser');
-                }
-                this.closeAllPopups();
-                this.updateToolUI('eraser');
-            },
-            'fill-tool': () => {
-                const currentMode = window.brushSettings?.getMode();
-                const nextMode = currentMode === 'fill' ? 'eraser-fill' : 'fill';
-
-                if (window.CoreRuntime?.api?.tool?.set) {
-                    window.CoreRuntime.api.tool.set(nextMode);
-                    window.CoreRuntime.api.layer.exitMoveMode();
-                } else if (this.drawingEngine?.brushCore) {
-                    this.drawingEngine.brushCore.setMode(nextMode);
-                }
-                this.closeAllPopups();
-                this.updateToolUI(nextMode);
-            },
-            'selection-tool': () => {
-                window.CoreRuntime?.api?.selection?.setToolActive?.(true);
-                window.CoreRuntime?.api?.layer?.exitMoveMode?.();
-                const animationTable = this.popupManager?.get?.('animationTable');
-                if (!animationTable?.isVisible) {
-                    this.closeAllPopups();
-                }
-                this.updateToolUI('selection');
-            },
-            'airbrush-tool': () => {
-                let currentMode = window.brushSettings?.getMode();
-                let nextMode = currentMode === 'airbrush' ? 'airbrush-erase' : 'airbrush';
-                
-                if (window.CoreRuntime?.api?.tool?.set) {
-                    window.CoreRuntime.api.tool.set(nextMode);
-                    window.CoreRuntime.api.layer.exitMoveMode();
-                } else if (this.drawingEngine?.brushCore) {
-                    this.drawingEngine.brushCore.setMode(nextMode);
-                }
-                this.closeAllPopups();
-                this.updateToolUI(nextMode);
+            'layer-transform-tool': () => {
+                window.KeyboardHandler?.toggleLayerTransform?.('sidebar-button');
             },
             'resize-tool': () => {
                 this.togglePopup('resize');
@@ -742,6 +687,22 @@ export class UIController {
         
         const handler = toolMap[toolId];
         if (handler) handler();
+    }
+
+    setSidebarActionActive(buttonId, active) {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+        button.classList.toggle('is-active', active === true);
+        button.setAttribute('aria-pressed', active === true ? 'true' : 'false');
+    }
+
+    getCurrentCanvasTool() {
+        if (window.CoreRuntime?.api?.selection?.isToolActive?.() === true) {
+            return 'selection';
+        }
+        return window.brushSettings?.getMode?.()
+            || window.CoreRuntime?.api?.tool?.get?.()
+            || 'pen';
     }
 
     updateToolUI(tool) {
