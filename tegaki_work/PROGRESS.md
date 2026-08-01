@@ -19,7 +19,7 @@
 - Phase 6pでは一つのroot BONE + binding、Bone key、Canvas tip rotation、全Folder候補Lane、`RIG → MOTION → WARP`のRIG-first導線、CAF / Folder対象tab、単一Inspectorを実装しcloseした。
 - Phase 6qではCAF + 全Folder PIVOT、遅延Rig登録、青Setup / 橙Motion、親BONE接続、nested剛体FKを共通render planへ接続し、オーナー実機でRigと親子Motionを受入れた。親dropdownを維持したまま、Canvas上のPIVOT長押し接続、接続線dragによる付け替え、空drop解除も同じ`parentBoneId` setterへ接続した。保存Bone長は維持し、表示stemだけを短縮した。
 - Phase 6rは保存容量・KEY選択・tab復帰・通常Layer選択の安定化Sliceとしてcloseした。多数Folder / Layer / Motion keyで旧`Invalid string length` crashが再現しない状態を維持し、Motion / WARP / Bone / legacy Part KEYのCtrl/Cmd複数選択と一括drag、通常押下だけの一時表示、再Ctrl/Cmd click解除、設定済みLaneのlast-used tab復帰、PIVOT設定済み`✓`、Project採取前のV Layer Transform確定、同一Assetの内部Layer選択保持を完了した。CLIP MOTION内のnative `title` tooltipはFutaba paletteの`data-tooltip`へ統一し、pointerupでもKEY選択toggleをcommitしてCtrl/Cmd OFF後の◆表示を通常へ戻す。外部paste / Canvas resizeを含むV save / reopenは既知残存として後続検査へ引き継ぐ。
-- 現行はPhase 6s Stage A着手待ち。SOL Gate 0監査で既存root `ClipInstance.deformer`を維持し、optional `ClipInstance.folderDeformers`へstable internal Folder IDと既存deformerを保持する契約をGOとした。Folder-local WARPはexclusive RenderIsland合成後、Bone / Part matrix前に適用し、root WARP、root Motionへ続ける。normalize / sample / remap API、Project / History / duration / duplicate / delete境界、固定fixture、LUNA MAX停止条件を`task-codex/phase6s.md`へ確定した。
+- 現行はPhase 6s Stage A完了・SOL review 1待ち。SOL Gate 0監査で既存root `ClipInstance.deformer`を維持し、optional `ClipInstance.folderDeformers`へstable internal Folder IDと既存deformerを保持する契約をGOとした。Stage Aではnormalize / serialize / validate / sample / remap API、ClipInstance / Timeline setter、Project restore validation、Clip / Asset copy-remap、Frame 0 HOLD Bake、Timeline History / clipboard / retime transport、Folder target付き削除拒否を実装し、`build/verify-folder-deformer-model.mjs`と既存Rig / Part / WARP / Bake / Project verifier、buildを通過した。Folder-local WARPのRenderIsland合成はStage Bへ残し、normalize / sampleの二重正本は作っていない。評価順、座標、nested unsupported境界、LUNA MAX停止条件は`task-codex/phase6s.md`へ確定した。
 - proposalは現行10文書へ整理した。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。外部AI原案、レビュー、整理前長文、解決済み監査は`proposals/過去計画（アイデアのサルベージ時に使う。基本読み込まない）/`へ原文保存している。
 
 ## 完了基盤の要約
@@ -86,7 +86,7 @@
 9. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
 10. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
 
-Phase 6rは上記の安定化Sliceとしてcloseした。Phase 6s Gate 0はGO。次の入口は`task-codex/phase6s.md`のStage Aで、LUNA MAXが保存shapeと純粋APIを限定実装し、完了後にSOL review 1へ戻す。IK / Stretch / Meshはそれより後とする。
+Phase 6rは上記の安定化Sliceとしてcloseした。Phase 6s Gate 0はGO、Stage Aは完了。次の入口は`task-codex/phase6s.md`のSOL review 1で、Stage BのRenderIsland plan実装へ進む前に保存shape・ID remap・履歴境界を差分監査する。IK / Stretch / Meshはそれより後とする。
 
 ## 資料
 

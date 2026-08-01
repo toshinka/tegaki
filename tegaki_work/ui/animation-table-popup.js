@@ -65,6 +65,8 @@ import {
     getClipDeformerKeyAtFrame,
     listClipDeformerKeyframes,
     normalizeClipDeformer,
+    normalizeClipFolderDeformers,
+    remapClipFolderDeformers,
     sampleClipDeformer
 } from '../system/animation/clip-deformer.js';
 import {
@@ -5191,6 +5193,7 @@ export class AnimationTablePopup {
                     transform: this._cloneClipInstanceMetadata(clip.transform),
                     transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
                     deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
+                    folderDeformers: this._cloneClipInstanceMetadata(clip.folderDeformers, null),
                     rigMotion: this._cloneClipInstanceMetadata(clip.rigMotion, null),
                     physics: this._cloneClipInstanceMetadata(clip.physics),
                     laneOffset: laneIndex - anchorLaneIndex,
@@ -5217,6 +5220,7 @@ export class AnimationTablePopup {
                 transform: anchorItem.transform,
                 transformKeyframes: anchorItem.transformKeyframes,
                 deformer: anchorItem.deformer,
+                folderDeformers: anchorItem.folderDeformers,
                 rigMotion: anchorItem.rigMotion,
                 physics: anchorItem.physics,
                 copiedAt: Date.now()
@@ -5975,6 +5979,7 @@ export class AnimationTablePopup {
             transform: this._cloneClipInstanceMetadata(clip.transform, {}),
             transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
             deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
+            folderDeformers: this._cloneClipInstanceMetadata(clip.folderDeformers, null),
             rigMotion: this._cloneClipInstanceMetadata(clip.rigMotion, null),
             physics: this._cloneClipInstanceMetadata(clip.physics, {}),
             rasterSnapshot: this._cloneRasterSnapshotForRuntime(clip.rasterSnapshot, {
@@ -6031,6 +6036,7 @@ export class AnimationTablePopup {
                 transform: this._copiedCelRef.transform,
                 transformKeyframes: this._copiedCelRef.transformKeyframes,
                 deformer: this._copiedCelRef.deformer,
+                folderDeformers: this._copiedCelRef.folderDeformers,
                 rigMotion: this._copiedCelRef.rigMotion,
                 physics: this._copiedCelRef.physics,
                 laneOffset: 0,
@@ -6102,6 +6108,9 @@ export class AnimationTablePopup {
                 transform: this._cloneClipInstanceMetadata(item.transform),
                 transformKeyframes: this._cloneClipInstanceMetadata(item.transformKeyframes, []),
                 deformer: this._cloneClipInstanceMetadata(item.deformer, null),
+                folderDeformers: pastedAssetCopy
+                    ? remapClipFolderDeformers(item.folderDeformers, pastedAssetCopy.internalLayerIdMap)
+                    : this._cloneClipInstanceMetadata(item.folderDeformers, null),
                 rigMotion: pastedAssetCopy
                     ? remapRigMotion(item.rigMotion, pastedAssetCopy.rigIdMap)
                     : this._cloneClipInstanceMetadata(item.rigMotion, null),
@@ -7018,7 +7027,7 @@ export class AnimationTablePopup {
         const asset = this._getSelectedAssetForInspector();
         if (!asset || !layerId || !this.model.duplicateClipAssetInternalLayer) return { ok: false, reason: 'unavailable' };
 
-        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const beforeState = this._captureTimelineHistoryState();
         const result = this.model.duplicateClipAssetInternalLayer(asset.id, layerId);
         if (result.ok) {
             this.selectedInternalLayerId = result.layer?.id || null;
@@ -7026,7 +7035,7 @@ export class AnimationTablePopup {
             this._syncSelectedClipToWorkingLayers();
             this.render();
             this._flushLayerPanelSync();
-            this._recordInternalLayerHistory(asset, beforeState, 'caf-internal-layer-duplicate', {
+            this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-internal-layer-duplicate', {
                 type: 'caf-internal-layer-duplicate',
                 layerId,
                 duplicatedLayerId: result.layer?.id || null
@@ -8965,6 +8974,10 @@ export class AnimationTablePopup {
                     transform: sampled.transform,
                     transformKeyframes: sampled.transformKeyframes,
                     deformer: sampled.deformer,
+                    folderDeformers: remapClipFolderDeformers(
+                        sampled.folderDeformers,
+                        duplicate.internalLayerIdMap
+                    ),
                     rigMotion: remapRigMotion(sampled.rigMotion, duplicate.rigIdMap || duplicate.internalLayerIdMap),
                     rasterSnapshot: primarySnapshot
                         ? this._createRasterSnapshotCompat(primarySnapshot, {
@@ -15071,6 +15084,7 @@ export class AnimationTablePopup {
                                 duration: cel.duration,
                                 transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
                                 deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
+                                folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
                                 rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
                             })),
                             beforeState: this._captureTimelineHistoryState()
@@ -15503,6 +15517,7 @@ export class AnimationTablePopup {
                     duration: cel.duration,
                     transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
                     deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
+                    folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
                     rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
                 }))
             };
@@ -15539,6 +15554,7 @@ export class AnimationTablePopup {
             duration: cel.duration,
             transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
             deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
+            folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
             rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
         }));
         const ok = this._applyRetimingWithPush({
@@ -17363,6 +17379,7 @@ export class AnimationTablePopup {
                 cel.transformKeyframes = this._cloneClipInstanceMetadata(original.transformKeyframes, []);
             }
             cel.deformer = this._cloneClipInstanceMetadata(original.deformer, null);
+            cel.folderDeformers = this._cloneClipInstanceMetadata(original.folderDeformers, null);
             cel.rigMotion = this._cloneClipInstanceMetadata(original.rigMotion, null);
         });
     }
@@ -17463,6 +17480,25 @@ export class AnimationTablePopup {
                     targetDuration
                 )
             };
+        }
+        if (cel.folderDeformers?.targets) {
+            cel.folderDeformers = normalizeClipFolderDeformers({
+                version: 1,
+                targets: cel.folderDeformers.targets.map(target => ({
+                    folderLayerId: target.folderLayerId,
+                    deformer: ['warp-grid', 'control-mesh'].includes(target.deformer?.type)
+                        ? {
+                            ...target.deformer,
+                            keyframes: this._retimeTerminalKeyframes(
+                                target.deformer.keyframes,
+                                oldTerminalFrame,
+                                newTerminalFrame,
+                                targetDuration
+                            )
+                        }
+                        : target.deformer
+                }))
+            });
         }
         if (Array.isArray(cel.rigMotion?.partTracks)) {
             cel.rigMotion = {
