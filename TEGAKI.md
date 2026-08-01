@@ -102,7 +102,7 @@ PointerEvent
 キャンバスを主役にし、大きな常設windowを増やさない。
 popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 
-安易な黒・白・グレーの直書きを避け、原則として次のCSS変数を使う。
+icon、記号、文字、背景へ黒・白・neutral grayを安易に使うことを禁止し、原則として次のCSS変数を使う。色未指定のbuttonやUnicode記号がbrowser既定の黒へ戻る状態も不適合とする。
 
 ```text
 --futaba-maroon:       #800000
@@ -117,6 +117,8 @@ popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 ```
 
 - 通常文字、disabled文字、input/select/optionもパレット範囲へ揃える。
+- 基本色はふたば茶系、active / currentは橙。Setupを示す青、成功・接続を示す緑、警告・破壊を示す赤は、橙と調和する彩度で意味を限定し、再利用するsemantic変数として定義する。
+- SVGの`stroke` / `fill`、Unicode記号、hover、disabled、`-webkit-text-fill-color`まで確認し、黒・白・grayへのfallbackを残さない。
 - 色やscrollbarを実装する前に、CSS変数と `.ui-scrollbar` 等の共通classを検索して再利用する。
 - 共通定義が存在する場合、同じ役割の色値・scrollbar装飾をcomponent内へ再定義しない。
 - 静的装飾はCSS classで管理する。

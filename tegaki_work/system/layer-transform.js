@@ -742,7 +742,8 @@ export class LayerTransform {
             // [指示書] 数値部分のダブルクリックで直接入力
             const valueDisplay = container.parentNode?.querySelector('.slider-value');
             if (valueDisplay) {
-                valueDisplay.title = 'ダブルクリックで数値を直接入力';
+                valueDisplay.dataset.tooltip = 'ダブルクリックで数値を直接入力';
+                valueDisplay.classList.add('ui-help-tooltip');
                 valueDisplay.addEventListener('dblclick', (e) => {
                     this._showDirectInput(valueDisplay, sliderInstance, property, min, max);
                 });

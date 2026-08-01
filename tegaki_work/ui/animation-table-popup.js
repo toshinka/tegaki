@@ -6,6 +6,22 @@
  * 被依存: core-engine.js, system/popup-manager.js
  * 操作導線: Frame移動は timeline-ui.js（閉Table button）と本file（Table内Arrow）から
  *   moveTimelineFrameByDelta() へ集約する。空き右FrameのCAF作成もこの入口だけで行う。
+ * CAF編集境界: animation working Layerは選択中Clipの表示・入力adapterであり、Tableを閉じても
+ *   同じClipを編集中なら有効。Popup visibilityをselection可否や座標変換の条件にしない。
+ * Folder Part / root Bone編集境界: Canvas overlayとpointer gestureはdisplay/runtime adapterだけを所有し、
+ *   static定義はClipAsset.rigDefinition、Frame PoseはClipInstance.rigMotionへ集約する。
+ *   Folder Part trackは既存Project互換の保存schemaとして残すが、現行RIG/Motionの主操作はBoneへ一本化する。
+ *   PIVOT長押し / 接続線dragもInspector親BONE dropdownと同じparentBoneId setterへ委譲する。
+ * Motion KEY操作境界: Ctrl/Cmd選択はruntime UI状態だけを持ち、一括移動は同じFrame差分を
+ *   既存transformKeyframes / deformer / rigMotionへ原子的に反映する。選択状態をProjectへ保存しない。
+ * 設定済みFolder / BoneのLane選択はlast-used RIG / MOTION / WARP tabを変更しない。
+ *   RIGへ強制遷移するのは未設定Folderの初回Setupと明示的なRIG操作だけに限定する。
+ * CAF内部Folderの選択はUI正本であり、代表animation working Layerのactive同期で上書きしない。
+ *   working LayerはFolder変形・描画入力のadapterなので、明示的なRaster行選択時だけRasterへ切り替える。
+ * Frame / Table表示同期では、同じAsset内に残るselectedInternalLayerIdを維持してからworking Layerへ写像する。
+ *   Table表示有無で先頭Rasterへ戻す分岐を作らず、選択・V変形対象・保存captureを同じadapter IDで揃える。
+ * Raster保存境界: capture後はClipAsset / internal Layerが参照するDrawingSnapshotだけを残し、
+ *   JSON符号化はProjectManagerへ委譲する。working Layerや本UIへ第2の保存正本を作らない。
  * ============================================================================
  */
 
@@ -23,6 +39,26 @@ import {
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
 import { sampleClipBakeState } from '../system/animation/clip-bake-sampler.js';
+import {
+    evaluateRigidBones,
+    getRigBoneKeyAtFrame,
+    getRigPartIdsForInternalLayers,
+    getRigPartKeyAtFrame,
+    normalizeRigMotion,
+    remapRigMotion,
+    resolveBoneRootHandleDrag,
+    resolveBoneRotationHandleDrag,
+    resolvePartTransformHandleDrag,
+    sampleBoneInstanceMotion,
+    sampleRigInstanceMotion
+} from '../system/animation/part-rig.js';
+import {
+    calculateFolderPartAssetBounds,
+    collectInternalLayerSubtreeIds,
+    createFolderPartRenderPlan,
+    getFolderPartRenderIsland,
+    validateFolderPartClippingBoundary
+} from '../system/animation/folder-part-render-plan.js';
 import { estimateStructuredBakeCapacity } from '../system/animation/bake-capacity-estimator.js';
 import {
     findAdjacentClipDeformerKeyFrame,
@@ -76,6 +112,9 @@ import {
 import { formatCopyFeedback, showFeedbackToast } from './feedback-toast.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { transformAnchorSite } from './transform-anchor-site.js';
+import { partTransformOverlay } from './part-transform-overlay.js';
+import { boneTransformOverlay } from './bone-transform-overlay.js';
+import { rigPivotOverlay } from './rig-pivot-overlay.js';
 import { warpGridOverlay } from './warp-grid-overlay.js';
 import { collectCafMemoryProfile } from '../system/animation/caf-memory-profiler.js';
 import {
@@ -85,6 +124,7 @@ import {
     resolveInternalClippingContract
 } from '../system/animation/internal-layer-clipping-contract.js';
 import {
+    calculateOpaqueRasterBounds,
     normalizeRasterBounds,
     unionRasterBounds,
     validateRasterSurfaceSize
@@ -98,7 +138,8 @@ import {
 import { UI_ICONS } from './ui-icons.js';
 
 const ANIMATION_TABLE_UI_STORAGE_KEY = 'tegaki_animation_table_ui_v1';
-const TIMELINE_ZOOM_STEPS = [10, 12, 14, 18, 22, 26, 30, 36, 44];
+const ANIMATION_TABLE_UI_DENSITY_VERSION = 1;
+const TIMELINE_ZOOM_STEPS = [10, 12, 14, 18, 22, 24, 26, 30, 36, 44];
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_ENTRIES = 96;
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_BYTES = 512 * 1024 * 1024;
 // 240 Frame実測でcheckpoint推定1.38GBがOS全体の強いmemory pressureを起こしたため、
@@ -110,6 +151,20 @@ const WARP_BRUSH_MODE_DESCRIPTIONS = Object.freeze({
     pinch: 'PINCH: 操作開始位置を中心に、範囲内の点を内側へ絞ります。',
     smooth: 'SMOOTH: 周囲の格子点との偏りをならし、崩れたGRIDを滑らかに整えます。'
 });
+
+function pointInPolygon(point, corners) {
+    let inside = false;
+    for (let index = 0, previous = corners.length - 1; index < corners.length; previous = index++) {
+        const currentPoint = corners[index];
+        const previousPoint = corners[previous];
+        if ((currentPoint.y > point.y) !== (previousPoint.y > point.y)
+            && point.x < (previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)
+                / (previousPoint.y - currentPoint.y) + currentPoint.x) {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
 
 export class AnimationTablePopup {
     constructor(dependencies = {}) {
@@ -127,6 +182,12 @@ export class AnimationTablePopup {
         this._motionAnchorClip = null;
         this._motionCanvas = null;
         this._motionCanvasGesture = null;
+        this._partCanvasGesture = null;
+        this._boneCanvasGesture = null;
+        this._rigPivotGesture = null;
+        this._rigPivotWheelHistory = null;
+        this._rigPivotWheelTimer = null;
+        this._partGestureKeydownHandler = null;
         this._motionWindowFinishPointer = null;
         this._warpGridEditingClipId = null;
         this._warpGridGesture = null;
@@ -141,6 +202,7 @@ export class AnimationTablePopup {
         this._lastStructuredBakeProfile = null;
         this._motionWheelHistory = null;
         this._motionWheelTimer = null;
+        this._rigInputCommitTimer = null;
         this._motionAnchorBeforeState = null;
         this._motionKeyClipboard = null;
         this._warpKeyClipboard = null;
@@ -151,6 +213,7 @@ export class AnimationTablePopup {
         
         this.model = new TimelineModel();
         this.selectedCelId = null;
+        this.selectedRigBoneId = null;
         this.selectedCelIds = new Set();
         this.activeLaneId = null;
         this.isLaneOnlySelected = false;
@@ -170,6 +233,7 @@ export class AnimationTablePopup {
         this._animationPreviewKey = null;
         this._drawingPreviewCompositeKey = null;
         this._snapshotTextureCache = new Map();
+        this._snapshotContentBoundsCache = new Map();
         this._snapshotTextureCacheProfile = this._createSnapshotTextureCacheProfile();
         this._snapshotTextureCachePendingDestroy = [];
         this._snapshotTextureCacheDestroyFrame = null;
@@ -201,7 +265,7 @@ export class AnimationTablePopup {
         this._isResizing = false;
         this._resizePointerId = null;
         this._resizeStart = null;
-        this._panelSize = { width: null, height: 260 };
+        this._panelSize = { width: null, height: 240 };
 
         // リタイミング（セル伸縮）関連
         this._isRetiming = false;
@@ -216,10 +280,19 @@ export class AnimationTablePopup {
         this._isClipMoving = false;
         this._clipMovePreviewSlot = null;
 
-        // CLIP MOTION表示中のTimelineは、CAF配置ではなくkey位置編集を優先する。
+        // CLIP MOTIONはstatic Setup(RIG)とFrame-local編集(MOTION / WARP)を分離する。
+        // editorModeは表示だけ、timelineKeyKindは既存key正本の選択だけを担う。
+        this._motionEditorMode = 'motion';
+        this._lastMotionEditorMode = 'motion';
+        this._motionInspectorScope = 'caf';
+        this._motionOpenedAssetIds = new Set();
         this._motionTimelineKeyKind = 'motion';
         this._motionKeyDrag = null;
         this._motionKeyClickSuppressed = false;
+        this._motionKeyPendingClick = null;
+        // Ctrl/Cmd複数KEY選択はruntime UI状態。保存正本は各ClipInstanceの
+        // transformKeyframes / deformer / rigMotionだけとし、第2のMotion正本を作らない。
+        this._motionTimelineKeySelection = new Map();
 
         // Timeline viewportの修飾ドラッグ操作
         this._timelineViewportGesture = null;
@@ -245,7 +318,7 @@ export class AnimationTablePopup {
         this.playbackScope = 'all'; // 'all' | 'activeLane' | 'includedLanes'
         this.activePlaybackLaneIds = null; // Set<string> | null
         this.includedLaneIds = new Set();
-        this.timelineCellWidth = 30;
+        this.timelineCellWidth = 24;
 
         // アセットライブラリ関連 (Phase 4z4)
         this.isAssetLibraryVisible = false;
@@ -353,8 +426,10 @@ export class AnimationTablePopup {
         this.panel.style.display = 'none';
         this.setMotionWindowOpen(false);
         this._exitWarpGridEditMode();
+        partTransformOverlay.deactivate();
+        boneTransformOverlay.deactivate();
         this._requestLayerPanelSync({ force: true });
-        this._scheduleLaneReferencePreviewUpdate();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
     }
 
     _loadUiPreferences() {
@@ -364,6 +439,7 @@ export class AnimationTablePopup {
             if (!raw) return;
             const prefs = JSON.parse(raw);
             if (!prefs || typeof prefs !== 'object') return;
+            const densityVersion = Math.max(0, Number(prefs.densityVersion) || 0);
 
             const pos = prefs.panelPos || {};
             if (Number.isFinite(pos.x)) {
@@ -374,15 +450,31 @@ export class AnimationTablePopup {
             }
 
             const size = prefs.panelSize || {};
+            let migratedDefaultHeight = false;
             if (Number.isFinite(size.width)) {
                 this._panelSize.width = Math.max(460, size.width);
             }
             if (Number.isFinite(size.height)) {
-                this._panelSize.height = Math.max(180, size.height);
+                migratedDefaultHeight = densityVersion < ANIMATION_TABLE_UI_DENSITY_VERSION
+                    && Math.abs(size.height - 260) < 0.5;
+                this._panelSize.height = migratedDefaultHeight
+                    ? 240
+                    : Math.max(180, size.height);
+            }
+            if (migratedDefaultHeight && Number.isFinite(this._panelPos.y)) {
+                this._panelPos.y += 20;
             }
 
             if (TIMELINE_ZOOM_STEPS.includes(prefs.timelineCellWidth)) {
-                this.timelineCellWidth = prefs.timelineCellWidth;
+                this.timelineCellWidth = densityVersion < ANIMATION_TABLE_UI_DENSITY_VERSION
+                    && prefs.timelineCellWidth === 30
+                    ? 24
+                    : prefs.timelineCellWidth;
+            }
+            if (['motion', 'warp', 'rig'].includes(prefs.lastMotionEditorMode)) {
+                this._lastMotionEditorMode = prefs.lastMotionEditorMode;
+                this._motionEditorMode = prefs.lastMotionEditorMode;
+                this._motionTimelineKeyKind = prefs.lastMotionEditorMode;
             }
         } catch (error) {}
     }
@@ -391,15 +483,17 @@ export class AnimationTablePopup {
         if (typeof localStorage === 'undefined') return;
         try {
             localStorage.setItem(ANIMATION_TABLE_UI_STORAGE_KEY, JSON.stringify({
+                densityVersion: ANIMATION_TABLE_UI_DENSITY_VERSION,
                 panelPos: {
                     x: Number.isFinite(this._panelPos.x) ? this._panelPos.x : 70,
                     y: Number.isFinite(this._panelPos.y) ? this._panelPos.y : null
                 },
                 panelSize: {
                     width: Number.isFinite(this._panelSize.width) ? this._panelSize.width : null,
-                    height: Number.isFinite(this._panelSize.height) ? this._panelSize.height : 260
+                    height: Number.isFinite(this._panelSize.height) ? this._panelSize.height : 240
                 },
-                timelineCellWidth: this.timelineCellWidth
+                timelineCellWidth: this.timelineCellWidth,
+                lastMotionEditorMode: this._lastMotionEditorMode
             }));
         } catch (error) {}
     }
@@ -415,7 +509,7 @@ export class AnimationTablePopup {
         }
 
         const width = this._panelSize.width || this.panel?.getBoundingClientRect?.().width || 760;
-        const height = this._panelSize.height || this.panel?.getBoundingClientRect?.().height || 260;
+        const height = this._panelSize.height || this.panel?.getBoundingClientRect?.().height || 240;
         this._panelPos.x = Math.max(0, Math.min(Math.max(0, window.innerWidth - Math.min(width, window.innerWidth)), this._panelPos.x));
         this._panelPos.y = Math.max(0, Math.min(Math.max(0, window.innerHeight - Math.min(height, window.innerHeight)), this._panelPos.y ?? 0));
     }
@@ -791,7 +885,10 @@ export class AnimationTablePopup {
         if (this.isOnionSkinActive && !this.isPlaying) {
             onionRenderedCount = this._renderOnionSkins(currentFrame, layers, {
                 filterIds: onionFilterIds,
-                excludeClipIds: selectedEditClipIds,
+                // 非描画PREVIEWは選択CAFもsnapshot合成が正本なので、同じClip内の
+                // Part / Bone Motionをonion対象から外さない。working Layerを見せる
+                // stroke経路だけは従来どおり選択CAFを除外する。
+                excludeClipIds: showSelectedWorkingLayer ? selectedEditClipIds : null,
                 previewContainer: staging.back
             });
         }
@@ -964,7 +1061,11 @@ export class AnimationTablePopup {
     }
 
     _scheduleLaneReferencePreviewUpdate(options = {}) {
-        if (this._laneReferencePreviewFrame !== null) return;
+        if (this._laneReferencePreviewFrame !== null) {
+            if (options.immediate !== true) return;
+            cancelAnimationFrame(this._laneReferencePreviewFrame);
+            this._laneReferencePreviewFrame = null;
+        }
         const run = () => {
             this._laneReferencePreviewFrame = null;
             this._updateLaneReferencePreview();
@@ -984,8 +1085,17 @@ export class AnimationTablePopup {
             return;
         }
 
-        if ((this.laneReferenceMode !== 'lane-onion' && !this.isOnionSkinActive) || !this.layerSystem) {
-            this._clearAnimationPreviewContainer();
+        const currentFrame = this.model.playback.currentFrame;
+        const closedFolderPart = this.laneReferenceMode !== 'lane-onion' && !this.isOnionSkinActive
+            ? this._getSelectedFolderPartPreviewContext(currentFrame)
+            : null;
+        if ((this.laneReferenceMode !== 'lane-onion' && !this.isOnionSkinActive && !closedFolderPart)
+            || !this.layerSystem) {
+            if (this._visibilityPreviewApplied && this._animationPreviewMode === 'closed-folder-part') {
+                this._restoreVisibility();
+            } else {
+                this._clearAnimationPreviewContainer();
+            }
             return;
         }
 
@@ -993,10 +1103,36 @@ export class AnimationTablePopup {
         this._clearAnimationPreviewContainer();
 
         const layers = this.layerSystem.getLayers?.() || [];
-        const currentFrame = this.model.playback.currentFrame;
         const selectedClipIds = this.selectedCelId ? new Set([this.selectedCelId]) : null;
         const selectedEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         const activeLaneId = selectedEntry?.lane?.id || this.activeLaneId || null;
+
+        // Table閉鎖中の標準表示はworking Layerを正としてきたが、Folder Part poseは
+        // 保存Rasterへ焼かない。Lane / Timeline onionを使わないactive-only時だけ
+        // 同じpreview adapterへ差し替え、stroke / transform開始時は既存working Layerへ戻す。
+        if (closedFolderPart) {
+            const previewKey = this._buildAnimationPreviewStateKey('closed-folder-part', currentFrame, {
+                filterIds: activeLaneId ? new Set([activeLaneId]) : null,
+                selectedEntry: closedFolderPart.entry,
+                showSelectedWorkingLayer: false
+            });
+            this._renderCelPreview(
+                closedFolderPart.entry.lane,
+                closedFolderPart.entry.clip,
+                layers,
+                {
+                    frameIndex: currentFrame,
+                    trackIndex: this.model.tracks.indexOf(closedFolderPart.entry.lane),
+                    previewContainer: this.animationPreviewContainer,
+                    allowSourceLayerFallback: false
+                }
+            );
+            this._hideTimelineLayersForPreview(layers);
+            this._animationPreviewMode = 'closed-folder-part';
+            this._animationPreviewKey = previewKey;
+            this._visibilityPreviewApplied = true;
+            return;
+        }
 
         if (this.laneReferenceMode === 'lane-onion') {
             this._renderLaneReferenceFrame(currentFrame, layers, {
@@ -1139,6 +1275,13 @@ export class AnimationTablePopup {
         return workingLayerIds;
     }
 
+    canEditSelectedWorkingLayer(layerId) {
+        if (!layerId || !this.selectedCelId) return false;
+        const entry = this.model?.findClipEntry?.(this.selectedCelId);
+        if (!entry?.clip?.assetId) return false;
+        return this._getWorkingLayerIdsForClipAsset(entry.clip.assetId)?.has(layerId) === true;
+    }
+
     _hideTimelineLayersForPreview(layers, options = {}) {
         const preserveWorkingLayerIds = options.preserveWorkingLayerIds || null;
         layers.forEach(layer => {
@@ -1233,6 +1376,7 @@ export class AnimationTablePopup {
             const revision = asset
                 ? [
                     asset.updatedAt || 0,
+                    JSON.stringify(asset.rigDefinition || null),
                     ...(asset.internalLayers || []).map(layer => [
                         layer.id || '',
                         layer.type || 'raster',
@@ -1268,6 +1412,7 @@ export class AnimationTablePopup {
                     JSON.stringify(cel.transform || {}),
                     JSON.stringify(cel.transformKeyframes || []),
                     JSON.stringify(cel.deformer || null),
+                    JSON.stringify(cel.rigMotion || null),
                     snapshot?.id || '',
                     snapshot?.updatedAt || ''
                 ].join(':'));
@@ -1403,6 +1548,1713 @@ export class AnimationTablePopup {
         return frame >= start && frame < start + duration ? entry : null;
     }
 
+    /**
+     * 選択CAFの内部FolderをAnimation Tableの子Laneへ投影するための共有adapter。
+     * Folder / Part / Boneの保存正本は増やさず、ClipAssetとClipInstanceから毎回導出する。
+     * 兄弟Folder Partは個別RenderIslandとして扱い、未登録Folderも候補Laneとして表示する。
+     */
+    _getSelectedCafRigProjection(frameIndex = this.model.playback.currentFrame) {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.clip?.assetId) return null;
+        const asset = this.model.getClipAsset(entry.clip.assetId);
+        if (!asset) return null;
+        const layers = Array.isArray(asset.internalLayers) ? asset.internalLayers : [];
+        const parts = Array.isArray(asset.rigDefinition?.parts) ? asset.rigDefinition.parts : [];
+        const bones = Array.isArray(asset.rigDefinition?.bones) ? asset.rigDefinition.bones : [];
+        const bindings = Array.isArray(asset.rigDefinition?.rigidBindings)
+            ? asset.rigDefinition.rigidBindings
+            : [];
+        const layerById = new Map(layers.map(layer => [layer?.id, layer]));
+        const localFrame = Number.isFinite(frameIndex) ? frameIndex - entry.clip.startFrame : -1;
+        const isFrameInClip = Number.isInteger(localFrame)
+            && localFrame >= 0
+            && localFrame < Math.max(1, entry.clip.duration || 1);
+        const sampledParts = isFrameInClip
+            ? sampleRigInstanceMotion(entry.clip, frameIndex)
+            : new Map();
+        const sampledBones = isFrameInClip
+            ? sampleBoneInstanceMotion(entry.clip, frameIndex)
+            : new Map();
+        const getDepth = layer => {
+            let depth = 0;
+            let parentId = layer?.parentLayerId || null;
+            const visited = new Set();
+            while (parentId && !visited.has(parentId)) {
+                visited.add(parentId);
+                const parent = layerById.get(parentId);
+                if (!parent) break;
+                depth++;
+                parentId = parent.parentLayerId || null;
+            }
+            return depth;
+        };
+        const folders = layers
+            .filter(layer => layer?.type === 'folder')
+            .map(layer => {
+                const part = parts.find(candidate => candidate?.partId === layer.id) || null;
+                const binding = part
+                    ? bindings.find(candidate => candidate?.partId === part.partId) || null
+                    : null;
+                const bone = binding
+                    ? bones.find(candidate => candidate?.boneId === binding.boneId) || null
+                    : null;
+                return {
+                    entry,
+                    asset,
+                    layer,
+                    depth: getDepth(layer),
+                    part,
+                    binding,
+                    bone,
+                    localFrame,
+                    isFrameInClip,
+                    partKey: part && isFrameInClip
+                        ? getRigPartKeyAtFrame(entry.clip.rigMotion, part.partId, localFrame)
+                        : null,
+                    partSampled: part && isFrameInClip
+                        ? sampledParts.get(part.partId) || { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+                        : null,
+                    boneKey: bone && isFrameInClip
+                        ? getRigBoneKeyAtFrame(entry.clip.rigMotion, bone.boneId, localFrame)
+                        : null,
+                    boneSampled: bone && isFrameInClip
+                        ? sampledBones.get(bone.boneId) || { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+                        : null
+                };
+            });
+        return { entry, asset, parts, bones, bindings, folders, localFrame, isFrameInClip };
+    }
+
+    _getSelectedRigInspectorContext(frameIndex = this.model.playback.currentFrame) {
+        const projection = this._getSelectedCafRigProjection(frameIndex);
+        if (!projection || projection.folders.length === 0) return null;
+        let folder = this.selectedRigBoneId
+            ? projection.folders.find(candidate => candidate.bone?.boneId === this.selectedRigBoneId) || null
+            : projection.folders.find(candidate => candidate.layer.id === this.selectedInternalLayerId) || null;
+        if (!folder && this.selectedInternalLayerId) {
+            const byId = new Map((projection.asset.internalLayers || []).map(layer => [layer?.id, layer]));
+            let parentId = byId.get(this.selectedInternalLayerId)?.parentLayerId || null;
+            const visited = new Set();
+            while (parentId && !visited.has(parentId) && !folder) {
+                visited.add(parentId);
+                folder = projection.folders.find(candidate => candidate.layer.id === parentId) || null;
+                parentId = byId.get(parentId)?.parentLayerId || null;
+            }
+        }
+        if (!folder) {
+            folder = projection.folders.find(candidate => candidate.part) || projection.folders[0];
+        }
+        const targetType = this.selectedRigBoneId && folder.bone?.boneId === this.selectedRigBoneId
+            ? 'bone'
+            : 'folder';
+        return { projection, folder, targetType };
+    }
+
+    _getSelectedFolderPartPreviewContext(frameIndex = this.model.playback.currentFrame) {
+        const entry = this._getSelectedEntryForPreview(frameIndex);
+        if (!entry?.clip?.assetId) return null;
+        const asset = this.model.getClipAsset(entry.clip.assetId);
+        if (!asset) return null;
+        const renderPlan = createFolderPartRenderPlan(asset, entry.clip, frameIndex);
+        return renderPlan.status === 'ready' ? { entry, asset, renderPlan } : null;
+    }
+
+    _getSelectedFolderPartTimelineContext(frameIndex = this.model.playback.currentFrame) {
+        const projection = this._getSelectedCafRigProjection(frameIndex);
+        if (!projection) return null;
+        const selectedFolder = this.selectedInternalLayerId
+            ? projection.folders.find(candidate => candidate.layer.id === this.selectedInternalLayerId) || null
+            : null;
+        const folder = selectedFolder?.part
+            ? selectedFolder
+            : projection.folders.find(candidate => candidate.part) || null;
+        if (!folder) return null;
+        return {
+            entry: projection.entry,
+            asset: projection.asset,
+            part: folder.part,
+            layer: folder.layer,
+            localFrame: projection.localFrame,
+            isFrameInClip: projection.isFrameInClip,
+            key: folder.partKey,
+            sampled: folder.partSampled
+        };
+    }
+
+    _renderSelectedFolderPartTimelineRow(context, totalFrames, currentFrame, showCurrentFrame) {
+        if (!context?.entry?.clip || !context.part?.partId) return '';
+        const clip = context.entry.clip;
+        const selectedClass = !this.selectedRigBoneId
+            && this.selectedInternalLayerId === context.part.partId
+            ? ' is-selected'
+            : '';
+        let html = `<div class="anim-timeline-row anim-part-timeline-row${selectedClass}" data-clip-id="${clip.id}" data-part-id="${context.part.partId}">`;
+        for (let frame = 0; frame < totalFrames; frame++) {
+            const localFrame = frame - clip.startFrame;
+            const isInside = localFrame >= 0 && localFrame < Math.max(1, clip.duration || 1);
+            const isCurrent = showCurrentFrame && frame === currentFrame ? ' current-col' : '';
+            const key = isInside
+                ? getRigPartKeyAtFrame(clip.rigMotion, context.part.partId, localFrame)
+                : null;
+            const keySelected = key && this._isMotionTimelineKeySelected({
+                clipId: clip.id,
+                kind: 'part',
+                targetId: context.part.partId,
+                frame: localFrame
+            });
+            html += `<div class="anim-cell-slot anim-part-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}${key ? ' has-part-key' : ''}${keySelected ? ' is-key-selected' : ''}"
+                data-track-id="${context.entry.lane.id}"
+                data-clip-id="${clip.id}"
+                data-part-id="${context.part.partId}"
+                data-frame-index="${frame}">
+                ${key ? '<span class="anim-part-key-dot" aria-hidden="true"></span>' : ''}
+            </div>`;
+        }
+        return `${html}</div>`;
+    }
+
+    _renderSelectedCafFolderTimelineRow(context, totalFrames, currentFrame, showCurrentFrame) {
+        if (!context?.entry?.clip || !context.layer?.id) return '';
+        if (context.part) {
+            return this._renderSelectedFolderPartTimelineRow({
+                entry: context.entry,
+                asset: context.asset,
+                part: context.part,
+                layer: context.layer,
+                localFrame: context.localFrame,
+                isFrameInClip: context.isFrameInClip,
+                key: context.partKey,
+                sampled: context.partSampled
+            }, totalFrames, currentFrame, showCurrentFrame);
+        }
+        const clip = context.entry.clip;
+        const selectedClass = !this.selectedRigBoneId
+            && this.selectedInternalLayerId === context.layer.id
+            ? ' is-selected'
+            : '';
+        let html = `<div class="anim-timeline-row anim-rig-folder-timeline-row${selectedClass}"
+            data-clip-id="${clip.id}" data-folder-id="${context.layer.id}">`;
+        for (let frame = 0; frame < totalFrames; frame++) {
+            const localFrame = frame - clip.startFrame;
+            const isInside = localFrame >= 0 && localFrame < Math.max(1, clip.duration || 1);
+            const isCurrent = showCurrentFrame && frame === currentFrame ? ' current-col' : '';
+            html += `<div class="anim-cell-slot anim-rig-folder-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}"
+                data-track-id="${context.entry.lane.id}"
+                data-clip-id="${clip.id}"
+                data-folder-id="${context.layer.id}"
+                data-frame-index="${frame}"></div>`;
+        }
+        return `${html}</div>`;
+    }
+
+    _getSelectedRootBoneTimelineContext(frameIndex = this.model.playback.currentFrame) {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.clip?.assetId) return null;
+        const asset = this.model.getClipAsset(entry.clip.assetId);
+        const parts = Array.isArray(asset?.rigDefinition?.parts) ? asset.rigDefinition.parts : [];
+        const bones = Array.isArray(asset?.rigDefinition?.bones) ? asset.rigDefinition.bones : [];
+        const bindings = Array.isArray(asset?.rigDefinition?.rigidBindings)
+            ? asset.rigDefinition.rigidBindings
+            : [];
+        if (!asset || parts.length === 0 || bones.length === 0 || bindings.length === 0) return null;
+        const binding = this.selectedRigBoneId
+            ? bindings.find(candidate => candidate?.boneId === this.selectedRigBoneId) || null
+            : bindings.find(candidate => candidate?.partId === this.selectedInternalLayerId) || bindings[0];
+        const bone = binding
+            ? bones.find(candidate => candidate?.boneId === binding.boneId) || null
+            : null;
+        const part = binding
+            ? parts.find(candidate => candidate?.partId === binding.partId) || null
+            : null;
+        if (!bone || !part) return null;
+        const layer = asset.internalLayers?.find(candidate => candidate?.id === part.partId) || null;
+        if (!layer || layer.type !== 'folder') return null;
+        const localFrame = Number.isFinite(frameIndex) ? frameIndex - entry.clip.startFrame : -1;
+        const isFrameInClip = Number.isInteger(localFrame)
+            && localFrame >= 0
+            && localFrame < Math.max(1, entry.clip.duration || 1);
+        const key = isFrameInClip
+            ? getRigBoneKeyAtFrame(entry.clip.rigMotion, bone.boneId, localFrame)
+            : null;
+        const sampled = isFrameInClip
+            ? sampleBoneInstanceMotion(entry.clip, frameIndex).get(bone.boneId) || {
+                x: 0,
+                y: 0,
+                scaleX: 1,
+                scaleY: 1,
+                rotation: 0
+            }
+            : null;
+        return {
+            entry,
+            asset,
+            part,
+            layer,
+            bone,
+            binding,
+            localFrame,
+            isFrameInClip,
+            key,
+            sampled
+        };
+    }
+
+    _renderSelectedRootBoneTimelineRow(context, totalFrames, currentFrame, showCurrentFrame) {
+        if (!context?.entry?.clip || !context.bone?.boneId) return '';
+        const clip = context.entry.clip;
+        const selectedClass = this.selectedRigBoneId === context.bone.boneId ? ' is-selected' : '';
+        let html = `<div class="anim-timeline-row anim-bone-timeline-row${selectedClass}" data-clip-id="${clip.id}" data-bone-id="${context.bone.boneId}">`;
+        for (let frame = 0; frame < totalFrames; frame++) {
+            const localFrame = frame - clip.startFrame;
+            const isInside = localFrame >= 0 && localFrame < Math.max(1, clip.duration || 1);
+            const isCurrent = showCurrentFrame && frame === currentFrame ? ' current-col' : '';
+            const key = isInside
+                ? getRigBoneKeyAtFrame(clip.rigMotion, context.bone.boneId, localFrame)
+                : null;
+            const keySelected = key && this._isMotionTimelineKeySelected({
+                clipId: clip.id,
+                kind: 'bone',
+                targetId: context.bone.boneId,
+                frame: localFrame
+            });
+            html += `<div class="anim-cell-slot anim-bone-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}${key ? ' has-part-key' : ''}${keySelected ? ' is-key-selected' : ''}"
+                data-track-id="${context.entry.lane.id}"
+                data-clip-id="${clip.id}"
+                data-bone-id="${context.bone.boneId}"
+                data-frame-index="${frame}">
+                ${key ? '<span class="anim-part-key-dot" aria-hidden="true"></span>' : ''}
+            </div>`;
+        }
+        return `${html}</div>`;
+    }
+
+    _selectFolderPartTimelineTarget(context, options = {}) {
+        if (!context?.part?.partId || !context.asset) return false;
+        this.selectedAssetId = context.asset.id;
+        this.selectedAssetFolderId = context.asset.folderId || null;
+        this.selectedInternalLayerId = context.part.partId;
+        this.selectedRigBoneId = null;
+        if (options.syncWorkingLayer === true) {
+            this._syncActiveWorkingLayerToSelectedInternalLayer?.(context.asset);
+        }
+        this._requestLayerPanelSync();
+        if (options.render !== false) this.render();
+        return true;
+    }
+
+    _selectRigFolderProjectionTarget(context, options = {}) {
+        if (!context?.layer?.id || !context.asset) return false;
+        this.selectedAssetId = context.asset.id;
+        this.selectedAssetFolderId = context.asset.folderId || null;
+        this.selectedInternalLayerId = context.layer.id;
+        // Folderはidentity / render target、主操作対象は対応Boneとする。
+        // 明示的なlegacy Part row選択だけがselectedRigBoneIdをnullへ戻す。
+        this.selectedRigBoneId = context.bone?.boneId || null;
+        this._motionInspectorScope = 'internal';
+        this._requestLayerPanelSync();
+        if (options.focusRig === true) this._setMotionTimelineKeyKind('rig');
+        if (options.openInspector === true) this.setMotionWindowOpen(true);
+        if (options.render !== false) this.render();
+        return true;
+    }
+
+    _openSelectedRigInspector(context) {
+        if (!context) return false;
+        if (context.bone && this.selectedRigBoneId === context.bone.boneId) {
+            this._selectRootBoneTimelineTarget({
+                ...context,
+                key: context.boneKey,
+                sampled: context.boneSampled
+            }, { render: false });
+        } else {
+            this._selectRigFolderProjectionTarget(context, { render: false });
+        }
+        this._setMotionTimelineKeyKind('rig');
+        return this.setMotionWindowOpen(true);
+    }
+
+    _selectRootBoneTimelineTarget(context, options = {}) {
+        if (!context?.bone?.boneId || !context.asset) return false;
+        this.selectedAssetId = context.asset.id;
+        this.selectedAssetFolderId = context.asset.folderId || null;
+        this.selectedInternalLayerId = context.part.partId;
+        this.selectedRigBoneId = context.bone.boneId;
+        this._motionInspectorScope = 'internal';
+        this._requestLayerPanelSync();
+        if (options.render !== false) this.render();
+        return true;
+    }
+
+    registerInternalFolderPartFromExternal(assetId, layerId, options = {}) {
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        if (!layer || layer.type !== 'folder') return { ok: false, reason: 'folder-required' };
+
+        const islandLayerIds = collectInternalLayerSubtreeIds(asset.internalLayers, layer.id);
+        const clipping = validateFolderPartClippingBoundary(asset, islandLayerIds);
+        if (!clipping.ok) {
+            return { ok: false, reason: 'clipping-boundary-split', errors: clipping.errors };
+        }
+
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this.model.registerClipAssetFolderPart(asset.id, layer.id);
+        if (!result.ok) return result;
+        this.selectedAssetId = asset.id;
+        this.selectedAssetFolderId = asset.folderId || null;
+        this.selectedInternalLayerId = layer.id;
+        this._invalidateSnapshotTextureCache();
+        if (options.deferUi !== true) {
+            this.render();
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        if (result.changed && options.recordHistory !== false) {
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-folder-part-register', {
+                type: 'caf-folder-part-register',
+                assetId: asset.id,
+                partId: layer.id,
+                source: options.source || 'unknown'
+            });
+        }
+        return result;
+    }
+
+    registerInternalRootBoneFromExternal(assetId, partId, options = {}) {
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        const part = asset?.rigDefinition?.parts?.find(candidate => candidate?.partId === partId) || null;
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === partId) || null;
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        if (!part) return { ok: false, reason: 'part-not-found' };
+        if (!layer || layer.type !== 'folder') return { ok: false, reason: 'folder-required' };
+
+        const existingBones = Array.isArray(asset.rigDefinition?.bones) ? asset.rigDefinition.bones : [];
+        const existingBindings = Array.isArray(asset.rigDefinition?.rigidBindings)
+            ? asset.rigDefinition.rigidBindings
+            : [];
+        const existingBinding = existingBindings.find(binding => binding?.partId === partId) || null;
+        const existingBone = existingBinding
+            ? existingBones.find(bone => bone?.boneId === existingBinding.boneId) || null
+            : null;
+        if (existingBone) {
+            this.selectedRigBoneId = existingBone.boneId;
+            this.render();
+            return { ok: true, changed: false, asset, layer, part, bone: existingBone, binding: existingBinding };
+        }
+        const sourceBounds = this._getFolderPartSourceBounds({ asset, part });
+        if (!sourceBounds) return { ok: false, reason: 'empty-part' };
+        const centerX = sourceBounds.x + sourceBounds.width / 2;
+        const centerY = sourceBounds.y + sourceBounds.height / 2;
+        const requestedLength = Number(options.length);
+        const length = Number.isFinite(requestedLength) && requestedLength > 0
+            ? Math.max(24, Math.min(160, requestedLength))
+            : Math.max(24, Math.min(160, Math.max(sourceBounds.width, sourceBounds.height) * 0.45));
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this.model.registerClipAssetRootBoneBinding(asset.id, partId, {
+            name: layer.name || `PIVOT ${existingBones.length + 1}`,
+            bindTransform: {
+                x: centerX,
+                y: centerY,
+                scaleX: 1,
+                scaleY: 1,
+                rotation: -Math.PI / 2,
+                pivotX: 0,
+                pivotY: 0
+            },
+            length
+        });
+        if (!result.ok) return result;
+        this.selectedRigBoneId = result.bone.boneId;
+        this.selectedInternalLayerId = partId;
+        this._invalidateSnapshotTextureCache();
+        if (options.deferUi !== true) {
+            this.render();
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        if (result.changed && options.recordHistory !== false) {
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-root-bone-register', {
+                type: 'caf-root-bone-register',
+                assetId: asset.id,
+                partId,
+                boneId: result.bone.boneId,
+                source: options.source || 'unknown'
+            });
+        }
+        return result;
+    }
+
+    _toggleSelectedFolderPartKey() {
+        if (this.isPlaying) return { ok: false, reason: 'playback-active' };
+        const context = this._getSelectedFolderPartTimelineContext();
+        if (!context?.isFrameInClip) return { ok: false, reason: 'frame-outside-clip' };
+        this._selectFolderPartTimelineTarget(context, { render: false });
+        const beforeState = this._captureTimelineHistoryState();
+        const result = context.key
+            ? this.model.removeClipRigPartKey(
+                context.entry.clip.id,
+                context.part.partId,
+                context.localFrame
+            )
+            : this.model.setClipRigPartKey(
+                context.entry.clip.id,
+                context.part.partId,
+                context.localFrame,
+                context.sampled,
+                { interpolation: 'linear' }
+            );
+        if (!result.ok) return result;
+        this._invalidateSnapshotTextureCache();
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            context.key ? 'caf-part-key-delete' : 'caf-part-key-add',
+            {
+                type: context.key ? 'caf-part-key-delete' : 'caf-part-key-add',
+                clipId: context.entry.clip.id,
+                partId: context.part.partId,
+                localFrame: context.localFrame
+            }
+        );
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return result;
+    }
+
+    _toggleSelectedRootBoneKey() {
+        if (this.isPlaying) return { ok: false, reason: 'playback-active' };
+        const context = this._getSelectedRootBoneTimelineContext();
+        if (!context?.isFrameInClip) return { ok: false, reason: 'frame-outside-clip' };
+        this._selectRootBoneTimelineTarget(context, { render: false });
+        const beforeState = this._captureTimelineHistoryState();
+        const result = context.key
+            ? this.model.removeClipRigBoneKey(
+                context.entry.clip.id,
+                context.bone.boneId,
+                context.localFrame
+            )
+            : this.model.setClipRigBoneKey(
+                context.entry.clip.id,
+                context.bone.boneId,
+                context.localFrame,
+                context.sampled,
+                { interpolation: 'linear' }
+            );
+        if (!result.ok) return result;
+        this._invalidateSnapshotTextureCache();
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            context.key ? 'caf-bone-key-delete' : 'caf-bone-key-add',
+            {
+                type: context.key ? 'caf-bone-key-delete' : 'caf-bone-key-add',
+                clipId: context.entry.clip.id,
+                boneId: context.bone.boneId,
+                localFrame: context.localFrame
+            }
+        );
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return result;
+    }
+
+    _setMotionInspectorScope(scope, folder = null, options = {}) {
+        const nextScope = scope === 'internal' ? 'internal' : 'caf';
+        if (nextScope === 'internal') {
+            const context = folder || this._getSelectedRigInspectorContext()?.folder || null;
+            if (!context) return false;
+            this._selectRigFolderProjectionTarget(context, { render: false });
+        } else {
+            this._motionInspectorScope = 'caf';
+            this.selectedRigBoneId = null;
+        }
+        this._motionTimelineKeyKind = this._motionEditorMode === 'motion' && nextScope === 'internal'
+            ? 'rig'
+            : this._motionEditorMode;
+        if (options.render !== false && this.isVisible) this.render();
+        return true;
+    }
+
+    _syncMotionTargetStrip() {
+        const strip = this.motionPanel?.querySelector('[data-motion-target-strip]');
+        const targets = strip?.querySelector('[data-motion-targets]');
+        const hint = strip?.querySelector('[data-motion-target-hint]');
+        if (!strip || !targets) return false;
+        const projection = this._getSelectedCafRigProjection();
+        const context = this._getSelectedRigInspectorContext();
+        const effectiveScope = this._motionEditorMode === 'warp' ? 'caf' : this._motionInspectorScope;
+        const buttons = [];
+        const addButton = (label, scope, folder = null) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'anim-motion-target-tab';
+            button.textContent = label;
+            button.setAttribute('aria-label', label);
+            button.dataset.motionTarget = scope === 'caf' ? 'caf' : folder.layer.id;
+            const active = scope === 'caf'
+                ? effectiveScope === 'caf'
+                : effectiveScope === 'internal' && context?.folder?.layer.id === folder.layer.id;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', String(active));
+            if (folder) {
+                button.classList.toggle('is-configured', !!folder.bone);
+                button.disabled = this._motionEditorMode === 'warp';
+                button.title = this._motionEditorMode === 'warp'
+                    ? '現行WARPはCAF全体が対象です。Folder別WARP正本はまだ作りません'
+                    : `${folder.layer.name || 'Folder'}${folder.bone ? ' · BONE設定済み' : ' · RIG未設定'}`;
+            } else {
+                button.title = 'CAF全体';
+            }
+            targets.appendChild(button);
+            buttons.push(button);
+        };
+        targets.replaceChildren();
+        addButton('CAF', 'caf');
+        projection?.folders?.forEach(folder => addButton(folder.layer.name || 'Folder', 'internal', folder));
+        strip.hidden = !projection?.entry?.clip;
+        if (hint) {
+            hint.textContent = this._motionEditorMode === 'rig'
+                ? 'SETUP · PIVOT / BONE'
+                : this._motionEditorMode === 'warp'
+                    ? 'WARP · CAF全体'
+                    : effectiveScope === 'internal'
+                        ? 'MOTION · 選択BONE'
+                        : 'MOTION · CAF全体';
+        }
+        return buttons.length > 0;
+    }
+
+    _syncRigSetupContext() {
+        const panel = this.motionPanel?.querySelector('#anim-rig-context');
+        if (!panel) return false;
+        const cafSetup = panel.querySelector('[data-rig-caf-setup]');
+        const folderSetup = panel.querySelector('[data-rig-folder-setup-context]');
+        const isCaf = this._motionInspectorScope === 'caf';
+        if (cafSetup) cafSetup.hidden = !isCaf;
+        if (folderSetup) folderSetup.hidden = isCaf;
+        if (isCaf) {
+            const state = this._getSelectedClipMotionFrame();
+            const size = this._getCanvasSnapshotSize();
+            const anchorX = state?.entry?.clip?.transform?.anchorX ?? 0.5;
+            const anchorY = state?.entry?.clip?.transform?.anchorY ?? 0.5;
+            const pivotX = cafSetup?.querySelector('[data-rig-caf-pivot="x"]');
+            const pivotY = cafSetup?.querySelector('[data-rig-caf-pivot="y"]');
+            if (pivotX) pivotX.textContent = Number((anchorX * size.width).toFixed(1));
+            if (pivotY) pivotY.textContent = Number((anchorY * size.height).toFixed(1));
+            const anchorButton = cafSetup?.querySelector('#anim-motion-anchor-btn');
+            if (anchorButton) {
+                anchorButton.disabled = !state || this.isPlaying;
+                anchorButton.classList.toggle('active', transformAnchorSite.isEditable('clip-motion'));
+            }
+            cafSetup?.querySelectorAll('[data-rig-bind-param]').forEach(input => {
+                const name = input.dataset.rigBindParam;
+                const value = name === 'x'
+                    ? anchorX * size.width
+                    : (name === 'y' ? anchorY * size.height : 0);
+                if (document.activeElement !== input) input.value = String(Number(value.toFixed(2)));
+                input.disabled = name === 'rotation' || !state || this.isPlaying;
+            });
+            return !!state;
+        }
+
+        const context = this._getSelectedRigInspectorContext();
+        const targetName = folderSetup?.querySelector('[data-rig-setup-target-name]');
+        const targetKind = folderSetup?.querySelector('[data-rig-setup-target-kind]');
+        const status = folderSetup?.querySelector('[data-rig-setup-status]');
+        const parentSelect = folderSetup?.querySelector('[data-rig-parent-bone]');
+        if (!context) {
+            if (targetName) targetName.textContent = 'CAF内にFolderがありません';
+            if (targetKind) targetKind.textContent = 'NO TARGET';
+            if (status) status.textContent = 'Layer PanelでCAF内部Folderを作成してください';
+            if (parentSelect) parentSelect.disabled = true;
+            return false;
+        }
+        const { projection, folder } = context;
+        const isBone = !!folder.bone;
+        if (targetName) targetName.textContent = folder.layer.name || 'Folder';
+        if (targetKind) targetKind.textContent = isBone ? 'BONE SETUP' : 'BONE CANDIDATE';
+        if (parentSelect) {
+            const folderByBoneId = new Map(projection.folders
+                .filter(candidate => candidate.bone)
+                .map(candidate => [candidate.bone.boneId, candidate]));
+            const currentParentId = folder.bone?.parentBoneId || '';
+            const options = [{ value: '', label: 'なし（ROOT）' }];
+            projection.bones.forEach(candidate => {
+                if (!candidate?.boneId || candidate.boneId === folder.bone?.boneId) return;
+                const owner = folderByBoneId.get(candidate.boneId);
+                options.push({
+                    value: candidate.boneId,
+                    label: owner?.layer?.name || candidate.name || 'BONE'
+                });
+            });
+            parentSelect.replaceChildren(...options.map(option => {
+                const element = document.createElement('option');
+                element.value = option.value;
+                element.textContent = option.label;
+                return element;
+            }));
+            parentSelect.value = currentParentId;
+            parentSelect.disabled = !folder.bone || this.isPlaying;
+        }
+        const sourceBounds = this._getFolderPartSourceBounds({
+            asset: projection.asset,
+            part: { partId: folder.layer.id }
+        });
+        const pivot = isBone
+            ? { x: folder.bone.bindTransform?.x ?? 0, y: folder.bone.bindTransform?.y ?? 0 }
+            : (sourceBounds ? {
+                x: sourceBounds.x + sourceBounds.width / 2,
+                y: sourceBounds.y + sourceBounds.height / 2
+            } : null);
+        const pivotX = folderSetup?.querySelector('[data-rig-setup-pivot="x"]');
+        const pivotY = folderSetup?.querySelector('[data-rig-setup-pivot="y"]');
+        if (pivotX) pivotX.textContent = pivot ? Number(pivot.x.toFixed(1)) : '–';
+        if (pivotY) pivotY.textContent = pivot ? Number(pivot.y.toFixed(1)) : '–';
+        folderSetup?.querySelectorAll('[data-rig-bind-param]').forEach(input => {
+            const name = input.dataset.rigBindParam;
+            const value = name === 'rotation'
+                ? (folder.bone?.bindTransform?.rotation ?? -Math.PI / 2) * 180 / Math.PI
+                : (name === 'x' ? pivot?.x : pivot?.y);
+            if (document.activeElement !== input) {
+                input.value = Number.isFinite(value) ? String(Number(value.toFixed(2))) : '';
+            }
+            input.disabled = !pivot || this.isPlaying;
+        });
+        if (status) {
+            status.textContent = isBone
+                ? `${folder.bone.name || 'BONE 1'} · bind root / tailはstatic Setup`
+                : 'PIVOTを直接操作するとBONEへ登録します';
+        }
+        return true;
+    }
+
+    _setSelectedRigBoneParent(parentBoneId = null) {
+        const context = this._getSelectedRigInspectorContext();
+        if (!context?.folder?.bone || this.isPlaying) return false;
+        const asset = context.projection.asset;
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this.model.setClipAssetRigBoneParent(
+            asset.id,
+            context.folder.bone.boneId,
+            parentBoneId || null
+        );
+        if (!result.ok) {
+            showFeedbackToast('親BONEへ接続できません');
+            this._syncRigInspectorContext();
+            return false;
+        }
+        if (result.changed) {
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-rig-bone-parent', {
+                type: 'caf-rig-bone-parent',
+                assetId: asset.id,
+                boneId: result.bone.boneId,
+                parentBoneId: result.bone.parentBoneId || null
+            });
+        }
+        this.selectedRigBoneId = result.bone.boneId;
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return true;
+    }
+
+    _syncRigInspectorContext() {
+        const panel = this.motionPanel?.querySelector('#anim-part-motion-context');
+        if (!panel) return false;
+        const context = this._getSelectedRigInspectorContext();
+        const targetName = panel.querySelector('[data-rig-target-name]');
+        const targetKind = panel.querySelector('[data-rig-target-kind]');
+        const status = panel.querySelector('[data-rig-status]');
+        const keyButton = panel.querySelector('#anim-rig-key-btn');
+        const controls = [...panel.querySelectorAll('[data-rig-param]')];
+        if (!context) {
+            if (targetName) targetName.textContent = 'CAF内にFolderがありません';
+            if (targetKind) targetKind.textContent = 'NO TARGET';
+            if (status) status.textContent = 'Layer PanelでCAF内部Folderを作成してください';
+            [keyButton, ...controls]
+                .forEach(control => { if (control) control.disabled = true; });
+            return false;
+        }
+
+        const { projection, folder } = context;
+        const isBone = !!folder.bone;
+        const key = folder.boneKey;
+        const sampled = folder.boneSampled;
+        const canEditKey = isBone && !!sampled && folder.isFrameInClip && !this.isPlaying;
+        if (targetName) targetName.textContent = folder.layer.name || 'Folder';
+        if (targetKind) targetKind.textContent = isBone ? 'BONE' : 'RIG REQUIRED';
+        if (keyButton) {
+            keyButton.disabled = !canEditKey;
+            keyButton.classList.toggle('active', !!key);
+            keyButton.setAttribute('aria-pressed', String(!!key));
+            keyButton.textContent = key ? '◆ KEY削除' : '◇ KEY追加';
+        }
+
+        const sourceBounds = this._getFolderPartSourceBounds({
+            asset: projection.asset,
+            part: { partId: folder.layer.id }
+        });
+        const pivot = isBone
+            ? {
+                x: folder.bone.bindTransform?.x ?? 0,
+                y: folder.bone.bindTransform?.y ?? 0
+            }
+            : (sourceBounds
+                ? {
+                    x: sourceBounds.x + sourceBounds.width / 2,
+                    y: sourceBounds.y + sourceBounds.height / 2
+                }
+                : null);
+        const pivotX = panel.querySelector('[data-rig-pivot="x"]');
+        const pivotY = panel.querySelector('[data-rig-pivot="y"]');
+        if (pivotX) pivotX.textContent = pivot ? Number(pivot.x.toFixed(1)) : '–';
+        if (pivotY) pivotY.textContent = pivot ? Number(pivot.y.toFixed(1)) : '–';
+
+        const values = sampled ? {
+            x: sampled.x,
+            y: sampled.y,
+            scaleX: sampled.scaleX,
+            scaleY: sampled.scaleY,
+            rotation: sampled.rotation * 180 / Math.PI
+        } : { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+        controls.forEach(input => {
+            const name = input.dataset.rigParam;
+            if (document.activeElement !== input) input.value = Number((values[name] ?? 0).toFixed(4));
+            input.disabled = !canEditKey;
+        });
+        if (status) {
+            status.textContent = isBone
+                ? `${folder.bone.name || 'BONE 1'} · Bone Pose · Local F${folder.localFrame + 1}`
+                : 'RIGでPIVOT / BONEを設定するとMotion keyを記録できます';
+        }
+        return true;
+    }
+
+    _setSelectedRigInspectorKeyFromControls() {
+        const panel = this.motionPanel?.querySelector('#anim-part-motion-context');
+        const context = this._getSelectedRigInspectorContext();
+        if (!panel || !context || this.isPlaying) return false;
+        const { folder, targetType } = context;
+        const sampled = targetType === 'bone' ? folder.boneSampled : folder.partSampled;
+        if (!sampled || !folder.isFrameInClip) return false;
+        const read = (name, fallback) => {
+            const value = Number(panel.querySelector(`[data-rig-param="${name}"]`)?.value);
+            return Number.isFinite(value) ? value : fallback;
+        };
+        const transform = {
+            x: read('x', sampled.x),
+            y: read('y', sampled.y),
+            scaleX: read('scaleX', sampled.scaleX),
+            scaleY: read('scaleY', sampled.scaleY),
+            rotation: read('rotation', sampled.rotation * 180 / Math.PI) * Math.PI / 180
+        };
+        const existingKey = targetType === 'bone' ? folder.boneKey : folder.partKey;
+        if (existingKey && ['x', 'y', 'scaleX', 'scaleY', 'rotation']
+            .every(name => Math.abs(Number(existingKey[name]) - Number(transform[name])) < 1e-9)) {
+            this._syncRigInspectorContext();
+            return true;
+        }
+        const beforeState = this._captureTimelineHistoryState();
+        const result = targetType === 'bone'
+            ? this.model.setClipRigBoneKey(
+                folder.entry.clip.id,
+                folder.bone.boneId,
+                folder.localFrame,
+                transform,
+                { interpolation: folder.boneKey?.interpolation === 'hold' ? 'hold' : 'linear' }
+            )
+            : this.model.setClipRigPartKey(
+                folder.entry.clip.id,
+                folder.part.partId,
+                folder.localFrame,
+                transform,
+                { interpolation: folder.partKey?.interpolation === 'hold' ? 'hold' : 'linear' }
+            );
+        if (!result.ok) return false;
+        if (result.changed === false) {
+            this._syncRigInspectorContext();
+            return true;
+        }
+        this._invalidateSnapshotTextureCache();
+        this._finishMotionGestureHistory(
+            beforeState,
+            targetType === 'bone' ? 'caf-rig-inspector-bone-key' : 'caf-rig-inspector-part-key'
+        );
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return true;
+    }
+
+    _scheduleRigInspectorKeyCommit(delay = 180) {
+        if (this._rigInputCommitTimer !== null) clearTimeout(this._rigInputCommitTimer);
+        this._rigInputCommitTimer = setTimeout(() => {
+            this._rigInputCommitTimer = null;
+            this._setSelectedRigInspectorKeyFromControls();
+        }, delay);
+    }
+
+    _getFolderPartSourceBounds(context) {
+        if (!context?.asset || !context.part?.partId) return null;
+        const layerIds = collectInternalLayerSubtreeIds(
+            context.asset.internalLayers,
+            context.part.partId
+        );
+        return unionRasterBounds((context.asset.internalLayers || []).map(layer => {
+            if (!layerIds.has(layer?.id)
+                || layer.type === 'folder'
+                || !this._isInternalLayerEffectivelyVisible(context.asset, layer)) {
+                return null;
+            }
+            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+            return snapshot?.pixels ? this._getDrawingSnapshotContentBounds(snapshot) : null;
+        }));
+    }
+
+    _getDrawingSnapshotContentBounds(snapshot) {
+        if (!snapshot?.pixels) return null;
+        const key = [
+            snapshot.id || 'snapshot',
+            snapshot.updatedAt || 0,
+            snapshot.width || 0,
+            snapshot.height || 0
+        ].join(':');
+        if (this._snapshotContentBoundsCache.has(key)) {
+            const cached = this._snapshotContentBoundsCache.get(key);
+            return cached ? { ...cached } : null;
+        }
+        const bounds = calculateOpaqueRasterBounds(snapshot);
+        this._snapshotContentBoundsCache.set(key, bounds ? { ...bounds } : null);
+        return bounds ? { ...bounds } : null;
+    }
+
+    _getFolderPartCanvasGeometry(frameIndex = this.model.playback.currentFrame) {
+        const context = this._getSelectedFolderPartTimelineContext(frameIndex);
+        if (!context?.isFrameInClip
+            || this.selectedInternalLayerId !== context.part.partId) return null;
+        const sourceBounds = this._getFolderPartSourceBounds(context);
+        if (!sourceBounds) return null;
+        const renderPlan = createFolderPartRenderPlan(context.asset, context.entry.clip, frameIndex);
+        const island = getFolderPartRenderIsland(renderPlan, context.part.partId);
+        if (!island?.worldMatrix) return null;
+        const canvasSize = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(context.entry.clip, frameIndex),
+            canvasSize.width / 2,
+            canvasSize.height / 2
+        );
+        const sourceCorners = [
+            { x: sourceBounds.x, y: sourceBounds.y },
+            { x: sourceBounds.x + sourceBounds.width, y: sourceBounds.y },
+            { x: sourceBounds.x + sourceBounds.width, y: sourceBounds.y + sourceBounds.height },
+            { x: sourceBounds.x, y: sourceBounds.y + sourceBounds.height }
+        ];
+        const partProjectCorners = sourceCorners.map(point => (
+            applyTransformMatrix(island.worldMatrix, point.x, point.y)
+        ));
+        return {
+            context,
+            sourceBounds,
+            sourceCenter: {
+                x: sourceBounds.x + sourceBounds.width / 2,
+                y: sourceBounds.y + sourceBounds.height / 2
+            },
+            partMatrix: island.worldMatrix,
+            clipMatrix,
+            partProjectCorners,
+            worldCorners: partProjectCorners.map(point => (
+                applyTransformMatrix(clipMatrix, point.x, point.y)
+            ))
+        };
+    }
+
+    _isFolderPartCanvasModeActive() {
+        return this.isVisible
+            && !this.isPlaying
+            && this.motionPanel?.style.display !== 'none'
+            && this._motionEditorMode === 'motion'
+            && this._motionInspectorScope === 'internal'
+            && !this._isWarpGridEditModeActive()
+            && !this.selectedRigBoneId
+            && !!this._getFolderPartCanvasGeometry();
+    }
+
+    _getRootBoneCanvasGeometry(frameIndex = this.model.playback.currentFrame) {
+        const context = this._getSelectedRootBoneTimelineContext(frameIndex);
+        if (!context?.isFrameInClip
+            || this.selectedRigBoneId !== context.bone.boneId) return null;
+        // CAF working LayerはFolder内Rasterへ戻り得る。Bone IDから解決済みのbinding / Partを
+        // overlay表示条件でも正本とし、Folder IDとの厳密一致を重ねて要求しない。
+        const evaluated = evaluateRigidBones(context.asset, context.entry.clip, frameIndex);
+        const pose = evaluated.ok ? evaluated.poseByBoneId.get(context.bone.boneId) : null;
+        if (!pose?.worldMatrix) return null;
+        const rootProject = applyTransformMatrix(pose.worldMatrix, 0, 0);
+        const tipProject = applyTransformMatrix(pose.worldMatrix, Math.max(0, context.bone.length || 0), 0);
+        const canvasSize = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(context.entry.clip, frameIndex),
+            canvasSize.width / 2,
+            canvasSize.height / 2
+        );
+        return {
+            context,
+            pose,
+            clipMatrix,
+            rootProject,
+            tipProject,
+            worldSegment: {
+                root: applyTransformMatrix(clipMatrix, rootProject.x, rootProject.y),
+                tip: applyTransformMatrix(clipMatrix, tipProject.x, tipProject.y)
+            }
+        };
+    }
+
+    _isRootBoneCanvasModeActive() {
+        return this.isVisible
+            && !this.isPlaying
+            && this.motionPanel?.style.display !== 'none'
+            && this._motionEditorMode === 'motion'
+            && this._motionInspectorScope === 'internal'
+            && !this._isWarpGridEditModeActive()
+            && !!this.selectedRigBoneId
+            && !!this._getRootBoneCanvasGeometry();
+    }
+
+    _syncFolderPartTransformOverlay() {
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        if (!coordinateSystem) {
+            partTransformOverlay.deactivate();
+            boneTransformOverlay.deactivate();
+            return false;
+        }
+        if (this._isRootBoneCanvasModeActive()) {
+            partTransformOverlay.deactivate();
+            boneTransformOverlay.deactivate();
+            return false;
+        }
+        boneTransformOverlay.deactivate();
+        if (!this._isFolderPartCanvasModeActive()) {
+            partTransformOverlay.deactivate();
+            return false;
+        }
+        return partTransformOverlay.activate({
+            coordinateSystem,
+            getWorldCorners: () => this._getFolderPartCanvasGeometry()?.worldCorners || [],
+            shouldDisplay: () => this._isFolderPartCanvasModeActive()
+        });
+    }
+
+    _isRigPivotSetupActive() {
+        return this.isVisible
+            && !this.isPlaying
+            && this.motionPanel?.style.display !== 'none'
+            && this._motionEditorMode === 'rig'
+            && !!this._getSelectedClipMotionFrame();
+    }
+
+    _getRigPivotOverlayItems(frameIndex = this.model.playback.currentFrame) {
+        if (!this._isRigPivotSetupActive()) return [];
+        const projection = this._getSelectedCafRigProjection(frameIndex);
+        if (!projection?.entry?.clip) return [];
+        const canvasSize = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(projection.entry.clip, frameIndex),
+            canvasSize.width / 2,
+            canvasSize.height / 2
+        );
+        const toWorld = point => applyTransformMatrix(clipMatrix, point.x, point.y);
+        const clip = projection.entry.clip;
+        const anchorRoot = {
+            x: (clip.transform?.anchorX ?? 0.5) * canvasSize.width,
+            y: (clip.transform?.anchorY ?? 0.5) * canvasSize.height
+        };
+        const items = [{
+            id: 'caf',
+            kind: 'caf',
+            label: 'CAF',
+            root: toWorld(anchorRoot),
+            tail: toWorld({ x: anchorRoot.x, y: anchorRoot.y - 24 }),
+            active: this._motionInspectorScope === 'caf',
+            configured: true,
+            canMove: true,
+            canRotate: false
+        }];
+        // Layer Panel同期後はselectedInternalLayerIdがFolder内working Layerへ戻ることがある。
+        // 対象strip / Inspectorと同じancestor解決を使い、Canvas上のactive表示だけが消えないようにする。
+        const activeFolderId = this._motionInspectorScope === 'internal'
+            ? this._getSelectedRigInspectorContext(frameIndex)?.folder?.layer?.id || null
+            : null;
+        const bindBones = evaluateRigidBones(projection.asset, null, frameIndex);
+        const folderByBoneId = new Map(projection.folders
+            .filter(folder => folder.bone)
+            .map(folder => [folder.bone.boneId, folder]));
+        projection.folders.forEach(folder => {
+            const sourceBounds = this._getFolderPartSourceBounds({
+                asset: projection.asset,
+                part: { partId: folder.layer.id }
+            });
+            if (!sourceBounds) return;
+            const derivedRoot = {
+                x: sourceBounds.x + sourceBounds.width / 2,
+                y: sourceBounds.y + sourceBounds.height / 2
+            };
+            const pose = folder.bone && bindBones.ok
+                ? bindBones.poseByBoneId.get(folder.bone.boneId) || null
+                : null;
+            const root = pose?.worldMatrix
+                ? applyTransformMatrix(pose.worldMatrix, 0, 0)
+                : derivedRoot;
+            const overlayLength = folder.bone
+                ? Math.max(16, Math.min(24, Number(folder.bone.length) || 24))
+                : 24;
+            const tail = pose?.worldMatrix
+                ? applyTransformMatrix(pose.worldMatrix, overlayLength, 0)
+                : { x: derivedRoot.x, y: derivedRoot.y - overlayLength };
+            items.push({
+                id: folder.layer.id,
+                kind: 'folder',
+                label: folder.layer.name || 'Folder',
+                root: toWorld(root),
+                tail: toWorld(tail),
+                active: folder.layer.id === activeFolderId,
+                configured: !!folder.bone,
+                parentId: folder.bone?.parentBoneId
+                    ? folderByBoneId.get(folder.bone.parentBoneId)?.layer?.id || null
+                    : null,
+                canMove: true,
+                canRotate: true
+            });
+        });
+        return items;
+    }
+
+    _isMotionBonePivotActive() {
+        return this.isVisible
+            && !this.isPlaying
+            && this.motionPanel?.style.display !== 'none'
+            && this._motionEditorMode === 'motion'
+            && this._motionInspectorScope === 'internal'
+            && !this._isWarpGridEditModeActive()
+            && !!this._getSelectedCafRigProjection()?.folders?.some(folder => folder.bone);
+    }
+
+    _getMotionBoneOverlayItems(frameIndex = this.model.playback.currentFrame) {
+        if (!this._isMotionBonePivotActive()) return [];
+        const projection = this._getSelectedCafRigProjection(frameIndex);
+        if (!projection?.entry?.clip) return [];
+        const evaluated = evaluateRigidBones(projection.asset, projection.entry.clip, frameIndex);
+        if (!evaluated.ok) return [];
+        const canvasSize = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(projection.entry.clip, frameIndex),
+            canvasSize.width / 2,
+            canvasSize.height / 2
+        );
+        const toWorld = point => applyTransformMatrix(clipMatrix, point.x, point.y);
+        const folderByBoneId = new Map(projection.folders
+            .filter(folder => folder.bone)
+            .map(folder => [folder.bone.boneId, folder]));
+        return projection.folders.flatMap(folder => {
+            if (!folder.bone) return [];
+            const pose = evaluated.poseByBoneId.get(folder.bone.boneId);
+            if (!pose?.worldMatrix) return [];
+            const root = applyTransformMatrix(pose.worldMatrix, 0, 0);
+            const tail = applyTransformMatrix(
+                pose.worldMatrix,
+                Math.max(16, Math.min(24, Number(folder.bone.length) || 24)),
+                0
+            );
+            return [{
+                id: folder.layer.id,
+                kind: 'bone',
+                label: folder.layer.name || folder.bone.name || 'BONE',
+                root: toWorld(root),
+                tail: toWorld(tail),
+                active: folder.bone.boneId === this.selectedRigBoneId,
+                configured: true,
+                parentId: folder.bone.parentBoneId
+                    ? folderByBoneId.get(folder.bone.parentBoneId)?.layer?.id || null
+                    : null,
+                showLabel: folder.bone.boneId === this.selectedRigBoneId,
+                canMove: true,
+                canRotate: true
+            }];
+        });
+    }
+
+    _syncRigPivotOverlay() {
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        const setupActive = this._isRigPivotSetupActive();
+        const motionActive = this._isMotionBonePivotActive();
+        if (!coordinateSystem || (!setupActive && !motionActive)) {
+            rigPivotOverlay.deactivate();
+            return false;
+        }
+        transformAnchorSite.deactivate('clip-motion');
+        return rigPivotOverlay.activate({
+            mode: motionActive ? 'motion' : 'rig',
+            enableLinkGesture: setupActive,
+            coordinateSystem,
+            getItems: () => motionActive
+                ? this._getMotionBoneOverlayItems()
+                : this._getRigPivotOverlayItems(),
+            shouldDisplay: () => motionActive
+                ? this._isMotionBonePivotActive()
+                : this._isRigPivotSetupActive(),
+            onSelect: itemId => this._selectRigPivotTarget(itemId),
+            onGestureStart: (itemId, mode, event) => this._startRigPivotGesture(itemId, mode, event),
+            onGestureMove: (itemId, mode, event) => this._moveRigPivotGesture(itemId, mode, event),
+            onGestureEnd: (itemId, mode, result) => this._finishRigPivotGesture(itemId, mode, result),
+            onLinkEnd: (childItemId, parentItemId, result) => {
+                if (result.cancelled) return false;
+                return this._setRigPivotParentFromCanvas(childItemId, parentItemId);
+            },
+            onWheel: (itemId, event) => this._wheelRigPivot(itemId, event)
+        });
+    }
+
+    _selectRigPivotTarget(itemId, options = {}) {
+        if (itemId === 'caf') {
+            this._setMotionInspectorScope('caf', null, { render: options.render !== false });
+            return true;
+        }
+        const projection = this._getSelectedCafRigProjection();
+        const folder = projection?.folders.find(candidate => candidate.layer.id === itemId) || null;
+        if (!folder) return false;
+        this._setMotionInspectorScope('internal', folder, { render: options.render !== false });
+        return true;
+    }
+
+    _setRigPivotParentFromCanvas(childItemId, parentItemId = null) {
+        if (!this._isRigPivotSetupActive() || childItemId === 'caf') return false;
+        if (!this._selectRigPivotTarget(childItemId, { render: false })) return false;
+        const context = this._getSelectedRigInspectorContext();
+        if (!context?.folder?.bone) return false;
+
+        let parentBoneId = null;
+        if (parentItemId) {
+            const parentFolder = context.projection.folders
+                .find(candidate => candidate.layer.id === parentItemId) || null;
+            if (!parentFolder?.bone) {
+                showFeedbackToast('接続先のPIVOTへ先にRIGを設定してください');
+                return false;
+            }
+            parentBoneId = parentFolder.bone.boneId;
+        }
+        return this._setSelectedRigBoneParent(parentBoneId);
+    }
+
+    _ensureFolderRigPivot(folder, beforeState) {
+        if (!folder?.asset || !folder.layer) return null;
+        if (folder.bone) return folder;
+        let part = folder.part;
+        if (!part) {
+            const partResult = this.registerInternalFolderPartFromExternal(
+                folder.asset.id,
+                folder.layer.id,
+                { source: 'rig-pivot-direct', recordHistory: false, deferUi: true }
+            );
+            if (!partResult.ok) return null;
+            part = partResult.part;
+        }
+        const boneResult = this.registerInternalRootBoneFromExternal(
+            folder.asset.id,
+            part.partId,
+            { source: 'rig-pivot-direct', recordHistory: false, deferUi: true, length: 38 }
+        );
+        if (!boneResult.ok) {
+            if (beforeState) this._restoreInternalLayerHistoryState(folder.asset.id, beforeState);
+            return null;
+        }
+        return this._getSelectedCafRigProjection()?.folders
+            .find(candidate => candidate.layer.id === folder.layer.id) || null;
+    }
+
+    _startRigPivotGesture(itemId, mode, event) {
+        if (!this._isRigPivotSetupActive() && !this._isMotionBonePivotActive()) return false;
+        this._selectRigPivotTarget(itemId, { render: false });
+        if (itemId === 'caf') {
+            this._rigPivotGesture = {
+                itemId,
+                mode,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                beforeState: this._captureTimelineHistoryState(),
+                historyKind: 'timeline',
+                changed: false
+            };
+            return true;
+        }
+        const projection = this._getSelectedCafRigProjection();
+        const folder = projection?.folders.find(candidate => candidate.layer.id === itemId) || null;
+        if (!folder) return false;
+        if (this._motionEditorMode === 'motion') {
+            if (!folder.bone || !folder.boneSampled || !folder.isFrameInClip) return false;
+            const project = this._screenToRigProject(event, projection.entry);
+            const localPointer = this._projectToBoneParentLocal(project, projection, folder.bone);
+            if (!localPointer) return false;
+            const root = {
+                x: (folder.bone.bindTransform?.x || 0) + (folder.boneSampled.x || 0),
+                y: (folder.bone.bindTransform?.y || 0) + (folder.boneSampled.y || 0)
+            };
+            this._rigPivotGesture = {
+                itemId,
+                mode,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                startPointer: localPointer,
+                startTransform: { ...folder.boneSampled },
+                root,
+                startAngle: Math.atan2(localPointer.y - root.y, localPointer.x - root.x),
+                beforeState: this._captureTimelineHistoryState(),
+                historyKind: 'motion-bone',
+                boneId: folder.bone.boneId,
+                changed: false
+            };
+            return true;
+        }
+        this._rigPivotGesture = {
+            itemId,
+            mode,
+            assetId: projection.asset.id,
+            startClientX: event.clientX,
+            startClientY: event.clientY,
+            beforeState: this._captureInternalLayerHistoryState(projection.asset),
+            historyKind: 'asset',
+            boneId: folder.bone?.boneId || null,
+            changed: false
+        };
+        return true;
+    }
+
+    _screenToRigProject(event, entry) {
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        const world = coordinateSystem?.screenClientToWorld?.(event.clientX, event.clientY);
+        if (!world || !entry?.clip) return null;
+        const canvasSize = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(entry.clip, this.model.playback.currentFrame),
+            canvasSize.width / 2,
+            canvasSize.height / 2
+        );
+        return invertTransformMatrixPoint(clipMatrix, world.worldX, world.worldY);
+    }
+
+    _projectToBoneParentLocal(projectPoint, projection, bone, options = {}) {
+        if (!projectPoint || !projection || !bone) return null;
+        if (!bone.parentBoneId) return { ...projectPoint };
+        const evaluated = evaluateRigidBones(
+            projection.asset,
+            options.bindPose === true ? null : projection.entry.clip,
+            this.model.playback.currentFrame
+        );
+        const parentPose = evaluated.ok
+            ? evaluated.poseByBoneId.get(bone.parentBoneId) || null
+            : null;
+        return parentPose?.worldMatrix
+            ? invertTransformMatrixPoint(parentPose.worldMatrix, projectPoint.x, projectPoint.y)
+            : null;
+    }
+
+    _applyClipMotionAnchor(anchor) {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state?.entry?.clip) return false;
+        const clip = state.entry.clip;
+        const size = this._getCanvasSnapshotSize();
+        const resolvedKeys = (clip.transformKeyframes || []).map(key => ({
+            frame: key.frame,
+            interpolation: key.interpolation === 'hold' ? 'hold' : 'linear',
+            ...(key.easing ? { easing: { ...key.easing } } : {}),
+            transform: sampleClipTransform(clip, clip.startFrame + key.frame)
+        }));
+        clip.transform = rebaseTransformAnchor(clip.transform, anchor.x, anchor.y, size.width, size.height);
+        clip.transformKeyframes = resolvedKeys.map(item => {
+            const rebased = rebaseTransformAnchor(
+                item.transform,
+                anchor.x,
+                anchor.y,
+                size.width,
+                size.height
+            );
+            return {
+                frame: item.frame,
+                interpolation: item.interpolation,
+                ...(item.easing ? { easing: { ...item.easing } } : {}),
+                x: rebased.x,
+                y: rebased.y,
+                scaleX: rebased.scaleX,
+                scaleY: rebased.scaleY,
+                opacity: item.transform.opacity,
+                blendMode: item.transform.blendMode,
+                blendStrength: item.transform.blendStrength,
+                rotation: rebased.rotation
+            };
+        });
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        return true;
+    }
+
+    _moveRigPivotGesture(itemId, mode, event) {
+        const gesture = this._rigPivotGesture;
+        if (!gesture || gesture.itemId !== itemId || gesture.mode !== mode) return false;
+        if (!gesture.changed && Math.hypot(
+            event.clientX - gesture.startClientX,
+            event.clientY - gesture.startClientY
+        ) < 2) return true;
+        const projection = this._getSelectedCafRigProjection();
+        if (!projection) return false;
+        if (itemId === 'caf') {
+            const project = this._screenToRigProject(event, projection.entry);
+            const size = this._getCanvasSnapshotSize();
+            if (!project || mode !== 'move') return false;
+            gesture.changed = this._applyClipMotionAnchor({
+                x: project.x / Math.max(1, size.width),
+                y: project.y / Math.max(1, size.height)
+            }) || gesture.changed;
+            this._syncRigSetupContext();
+            return true;
+        }
+        let folder = projection.folders.find(candidate => candidate.layer.id === itemId) || null;
+        if (!folder) return false;
+        if (gesture.historyKind === 'motion-bone') {
+            const project = this._screenToRigProject(event, projection.entry);
+            const localPointer = this._projectToBoneParentLocal(project, projection, folder.bone);
+            if (!localPointer) return false;
+            const transform = mode === 'rotate'
+                ? resolveBoneRotationHandleDrag({
+                    startTransform: gesture.startTransform,
+                    root: gesture.root,
+                    startAngle: gesture.startAngle,
+                    currentPointer: localPointer
+                })
+                : resolveBoneRootHandleDrag({
+                    startTransform: gesture.startTransform,
+                    startPointer: gesture.startPointer,
+                    currentPointer: localPointer
+                });
+            const result = this._upsertSelectedRootBoneTransform(transform, {
+                deferPreview: true,
+                render: false
+            });
+            gesture.changed = result.ok === true || gesture.changed;
+            return result.ok === true;
+        }
+        if (!folder.bone) {
+            folder = this._ensureFolderRigPivot(folder, gesture.beforeState);
+            if (!folder?.bone) return false;
+            gesture.boneId = folder.bone.boneId;
+        }
+        const project = this._screenToRigProject(event, projection.entry);
+        const localProject = this._projectToBoneParentLocal(project, projection, folder.bone, {
+            bindPose: true
+        });
+        if (!localProject) return false;
+        const bind = folder.bone.bindTransform || {};
+        const transform = mode === 'rotate'
+            ? { rotation: Math.atan2(localProject.y - bind.y, localProject.x - bind.x) }
+            : { x: localProject.x, y: localProject.y };
+        const result = this.model.setClipAssetRigBoneBindTransform(
+            projection.asset.id,
+            folder.bone.boneId,
+            transform
+        );
+        if (!result.ok) return false;
+        gesture.changed = result.changed || gesture.changed;
+        this.selectedRigBoneId = result.bone.boneId;
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this._syncRigSetupContext();
+        return true;
+    }
+
+    _finishRigPivotGesture(itemId, mode, result = {}) {
+        const gesture = this._rigPivotGesture;
+        if (!gesture || gesture.itemId !== itemId || gesture.mode !== mode) return false;
+        this._rigPivotGesture = null;
+        if (result.cancelled === true && gesture.changed) {
+            if (gesture.historyKind === 'asset') {
+                this._restoreInternalLayerHistoryState(gesture.assetId, gesture.beforeState);
+            } else {
+                this._restoreTimelineHistoryState(gesture.beforeState);
+            }
+            return true;
+        }
+        if (gesture.historyKind === 'motion-bone') {
+            if (gesture.changed) {
+                this._finishMotionGestureHistory(gesture.beforeState, 'caf-rig-bone-pose-gesture');
+                this._flushLayerPanelSync();
+                this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+            }
+            this.render();
+            return true;
+        }
+        if (gesture.changed) {
+            if (gesture.historyKind === 'asset') {
+                const asset = this.model.getClipAsset(gesture.assetId);
+                this._recordInternalLayerHistory(asset, gesture.beforeState, 'caf-rig-pivot-bind', {
+                    type: 'caf-rig-pivot-bind',
+                    assetId: gesture.assetId,
+                    folderId: itemId,
+                    boneId: gesture.boneId
+                });
+            } else {
+                this._recordTimelineHistory(
+                    gesture.beforeState,
+                    this._captureTimelineHistoryState(),
+                    'caf-clip-motion-anchor',
+                    { type: 'caf-clip-motion-anchor', clipId: this.selectedCelId }
+                );
+            }
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        this.render();
+        return true;
+    }
+
+    _wheelRigPivot(itemId, event) {
+        if (itemId === 'caf' || (!this._isRigPivotSetupActive() && !this._isMotionBonePivotActive())) {
+            this._selectRigPivotTarget(itemId);
+            return false;
+        }
+        this._selectRigPivotTarget(itemId, { render: false });
+        let projection = this._getSelectedCafRigProjection();
+        let folder = projection?.folders.find(candidate => candidate.layer.id === itemId) || null;
+        if (!folder) return false;
+        if (this._motionEditorMode === 'motion') {
+            if (!folder.bone || !folder.boneSampled || !folder.isFrameInClip) return false;
+            if (!this._motionWheelHistory) {
+                this._motionWheelHistory = this._captureTimelineHistoryState();
+            }
+            const transform = { ...folder.boneSampled };
+            if (event.shiftKey) {
+                transform.rotation += (event.deltaY > 0 ? 5 : -5) * Math.PI / 180;
+            } else {
+                const factor = event.deltaY > 0 ? 0.95 : 1.05;
+                const clamp = value => Math.max(0.1, Math.min(30, value * factor));
+                transform.scaleX = clamp(transform.scaleX);
+                transform.scaleY = clamp(transform.scaleY);
+            }
+            const motionResult = this._upsertSelectedRootBoneTransform(transform, {
+                deferPreview: true,
+                render: false
+            });
+            if (!motionResult.ok) return false;
+            clearTimeout(this._motionWheelTimer);
+            this._motionWheelTimer = setTimeout(() => {
+                const beforeState = this._motionWheelHistory;
+                this._motionWheelHistory = null;
+                this._motionWheelTimer = null;
+                this._finishMotionGestureHistory(beforeState, 'caf-rig-bone-pose-wheel');
+                this.render();
+            }, 220);
+            return true;
+        }
+        if (!this._rigPivotWheelHistory) {
+            this._rigPivotWheelHistory = {
+                assetId: projection.asset.id,
+                beforeState: this._captureInternalLayerHistoryState(projection.asset)
+            };
+        }
+        if (!folder.bone) {
+            folder = this._ensureFolderRigPivot(folder, this._rigPivotWheelHistory.beforeState);
+            projection = this._getSelectedCafRigProjection();
+        }
+        if (!folder?.bone) {
+            this._rigPivotWheelHistory = null;
+            return false;
+        }
+        const step = event.deltaY > 0 ? 5 : -5;
+        const result = this.model.setClipAssetRigBoneBindTransform(
+            projection.asset.id,
+            folder.bone.boneId,
+            { rotation: (folder.bone.bindTransform?.rotation || 0) + step * Math.PI / 180 }
+        );
+        if (!result.ok) return false;
+        this.selectedRigBoneId = result.bone.boneId;
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        clearTimeout(this._rigPivotWheelTimer);
+        this._rigPivotWheelTimer = setTimeout(() => {
+            const history = this._rigPivotWheelHistory;
+            this._rigPivotWheelHistory = null;
+            this._rigPivotWheelTimer = null;
+            const asset = history ? this.model.getClipAsset(history.assetId) : null;
+            if (asset) {
+                this._recordInternalLayerHistory(asset, history.beforeState, 'caf-rig-pivot-angle-wheel', {
+                    type: 'caf-rig-pivot-angle-wheel',
+                    assetId: asset.id,
+                    folderId: itemId,
+                    boneId: result.bone.boneId
+                });
+            }
+            this.render();
+            this._flushLayerPanelSync();
+        }, 220);
+        this._syncRigSetupContext();
+        return true;
+    }
+
+    _setSelectedRigBindFromControls() {
+        const panel = this.motionPanel?.querySelector('#anim-rig-context');
+        if (!panel || this._motionEditorMode !== 'rig' || this.isPlaying) return false;
+        const row = this._motionInspectorScope === 'caf'
+            ? panel.querySelector('[data-rig-caf-setup]')
+            : panel.querySelector('[data-rig-folder-setup-context]');
+        const read = name => Number(row?.querySelector(`[data-rig-bind-param="${name}"]`)?.value);
+        const x = read('x');
+        const y = read('y');
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+        if (this._motionInspectorScope === 'caf') {
+            const size = this._getCanvasSnapshotSize();
+            const beforeState = this._captureTimelineHistoryState();
+            if (!this._applyClipMotionAnchor({
+                x: x / Math.max(1, size.width),
+                y: y / Math.max(1, size.height)
+            })) return false;
+            this._recordTimelineHistory(
+                beforeState,
+                this._captureTimelineHistoryState(),
+                'caf-clip-motion-anchor-input',
+                { type: 'caf-clip-motion-anchor-input', clipId: this.selectedCelId }
+            );
+            this.render();
+            return true;
+        }
+        let context = this._getSelectedRigInspectorContext();
+        if (!context?.folder) return false;
+        const asset = context.projection.asset;
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        if (!context.folder.bone) {
+            const folder = this._ensureFolderRigPivot(context.folder, beforeState);
+            if (!folder?.bone) return false;
+            context = this._getSelectedRigInspectorContext();
+        }
+        const rotation = read('rotation');
+        const result = this.model.setClipAssetRigBoneBindTransform(
+            asset.id,
+            context.folder.bone.boneId,
+            {
+                x,
+                y,
+                rotation: Number.isFinite(rotation)
+                    ? rotation * Math.PI / 180
+                    : context.folder.bone.bindTransform.rotation
+            }
+        );
+        if (!result.ok) return false;
+        this.selectedRigBoneId = result.bone.boneId;
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this._recordInternalLayerHistory(asset, beforeState, 'caf-rig-pivot-bind-input', {
+            type: 'caf-rig-pivot-bind-input',
+            assetId: asset.id,
+            folderId: context.folder.layer.id,
+            boneId: result.bone.boneId
+        });
+        this.render();
+        this._flushLayerPanelSync();
+        return true;
+    }
+
+    _upsertSelectedRootBoneTransform(transform, options = {}) {
+        const context = this._getSelectedRootBoneTimelineContext();
+        if (!context?.isFrameInClip) return { ok: false, reason: 'frame-outside-clip' };
+        const result = this.model.setClipRigBoneKey(
+            context.entry.clip.id,
+            context.bone.boneId,
+            context.localFrame,
+            transform,
+            { interpolation: context.key?.interpolation === 'hold' ? 'hold' : 'linear' }
+        );
+        if (!result.ok) return result;
+        this._invalidateSnapshotTextureCache();
+        if (options.deferPreview === true) {
+            this._scheduleMotionEditPreviewRefresh();
+        } else {
+            this._applyVisibilityPreview();
+        }
+        if (options.render !== false && options.deferPreview !== true) this.render();
+        return result;
+    }
+
+    _finishRootBoneCanvasGesture(gesture, options = {}) {
+        if (!gesture || this._boneCanvasGesture !== gesture) return false;
+        const canvas = this._motionCanvas || this._getMotionCanvas();
+        this._boneCanvasGesture = null;
+        this._cancelMotionEditPreviewRefresh();
+        if (options.releasePointerCapture !== false
+            && canvas?.hasPointerCapture?.(gesture.pointerId)) {
+            canvas.releasePointerCapture(gesture.pointerId);
+        }
+        if (options.cancelled === true && gesture.changed) {
+            this._restoreTimelineHistoryState(gesture.beforeState);
+        } else if (gesture.changed) {
+            this._finishMotionGestureHistory(
+                gesture.beforeState,
+                gesture.mode === 'move' ? 'caf-root-bone-move' : 'caf-root-bone-rotate'
+            );
+            this.render();
+            this._flushLayerPanelSync();
+        } else {
+            this.render();
+        }
+        this._updateMotionCanvasCursor();
+        return true;
+    }
+
+    _upsertSelectedFolderPartTransform(transform, options = {}) {
+        const context = this._getSelectedFolderPartTimelineContext();
+        if (!context?.isFrameInClip) return { ok: false, reason: 'frame-outside-clip' };
+        const result = this.model.setClipRigPartKey(
+            context.entry.clip.id,
+            context.part.partId,
+            context.localFrame,
+            transform,
+            { interpolation: context.key?.interpolation === 'hold' ? 'hold' : 'linear' }
+        );
+        if (!result.ok) return result;
+        this._invalidateSnapshotTextureCache();
+        if (options.deferPreview === true) {
+            this._scheduleMotionEditPreviewRefresh();
+        } else {
+            this._applyVisibilityPreview();
+        }
+        if (options.render !== false && options.deferPreview !== true) this.render();
+        return result;
+    }
+
+    _finishFolderPartCanvasGesture(gesture, options = {}) {
+        if (!gesture || this._partCanvasGesture !== gesture) return false;
+        const canvas = this._motionCanvas || this._getMotionCanvas();
+        this._partCanvasGesture = null;
+        this._cancelMotionEditPreviewRefresh();
+        if (options.releasePointerCapture !== false
+            && canvas?.hasPointerCapture?.(gesture.pointerId)) {
+            canvas.releasePointerCapture(gesture.pointerId);
+        }
+        if (options.cancelled === true && gesture.changed) {
+            this._restoreTimelineHistoryState(gesture.beforeState);
+        } else if (gesture.changed) {
+            this._finishMotionGestureHistory(gesture.beforeState, 'caf-folder-part-transform');
+            this.render();
+            this._flushLayerPanelSync();
+        } else {
+            this.render();
+        }
+        this._updateMotionCanvasCursor();
+        return true;
+    }
+
     _findClipEntryByAssetId(assetId) {
         if (!assetId) return null;
         for (const lane of this.model.tracks || []) {
@@ -1432,11 +3284,22 @@ export class AnimationTablePopup {
         if (!result || !result.ok) return false;
 
         const { asset, layers: internalLayers } = result;
+        const frame = Number.isInteger(options.frameIndex)
+            ? options.frameIndex
+            : this.model.playback.currentFrame;
+        const rigRenderPlan = createFolderPartRenderPlan(asset, cel, frame);
+        const renderOptions = { ...options, rigRenderPlan };
         const root = new Container();
         root.eventMode = 'none';
         root.alpha = Math.max(0, Math.min(1, options.alpha ?? 1.0));
 
-        const rendered = this._renderInternalLayerPreviewGroup(root, asset, internalLayers, null, options);
+        const rendered = this._renderInternalLayerPreviewGroup(
+            root,
+            asset,
+            internalLayers,
+            null,
+            renderOptions
+        );
         if (!rendered) {
             root.destroy({ children: true, texture: false, baseTexture: false });
             // 有効なClipAssetが全非表示ならblankが正解。旧primary snapshotへ
@@ -1445,9 +3308,6 @@ export class AnimationTablePopup {
         }
 
         let previewNode = root;
-        const frame = Number.isInteger(options.frameIndex)
-            ? options.frameIndex
-            : this.model.playback.currentFrame;
         const deformer = sampleClipDeformer(
             cel.deformer,
             frame - cel.startFrame,
@@ -1459,7 +3319,7 @@ export class AnimationTablePopup {
                 asset,
                 internalLayers,
                 deformer,
-                options
+                renderOptions
             );
             if (!previewNode) {
                 root.destroy({ children: true, texture: false, baseTexture: false });
@@ -1481,13 +3341,15 @@ export class AnimationTablePopup {
     _createDeformerPreviewNode(root, asset, internalLayers, deformer, options = {}) {
         const renderer = this.layerSystem?.app?.renderer || this.app?.renderer || window.coreEngine?.app?.renderer;
         if (!renderer) return null;
-        const bounds = unionRasterBounds((internalLayers || []).map(layer => {
-            if (!layer || layer.type === 'folder' || !this._isInternalLayerEffectivelyVisible(asset, layer)) {
-                return null;
-            }
-            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
-            return snapshot?.pixels ? this._getDrawingSnapshotRasterBounds(snapshot) : null;
-        }));
+        const bounds = calculateFolderPartAssetBounds(
+            asset,
+            options.rigRenderPlan,
+            layer => {
+                const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+                return snapshot?.pixels ? this._getDrawingSnapshotRasterBounds(snapshot) : null;
+            },
+            layer => this._isInternalLayerEffectivelyVisible(asset, layer)
+        );
         const surface = this._validateInternalMergeSurface(bounds);
         if (!surface.ok) return null;
         const sourceBounds = surface.bounds;
@@ -1709,7 +3571,26 @@ export class AnimationTablePopup {
                 sprite.tint = options.tint;
             }
 
-            container.addChild(sprite);
+            const renderIsland = options.rigRenderPlan?.status === 'ready'
+                ? options.rigRenderPlan.islandByLayerId?.get(internalLayer.id) || null
+                : null;
+            if (renderIsland?.worldMatrix) {
+                const transformed = new Container();
+                const matrix = renderIsland.worldMatrix;
+                transformed.eventMode = 'none';
+                transformed.setFromMatrix(new Matrix(
+                    matrix.a,
+                    matrix.b,
+                    matrix.c,
+                    matrix.d,
+                    matrix.tx,
+                    matrix.ty
+                ));
+                transformed.addChild(sprite);
+                container.addChild(transformed);
+            } else {
+                container.addChild(sprite);
+            }
             rendered = true;
         }
 
@@ -2293,6 +4174,7 @@ export class AnimationTablePopup {
             });
         });
         this._snapshotTextureCache.clear();
+        this._snapshotContentBoundsCache.clear();
         if (immediate) {
             this._scheduleSnapshotTextureCacheDestroyFlush(true);
         }
@@ -2880,6 +4762,7 @@ export class AnimationTablePopup {
         this.selectedAssetFolderId = existingAsset?.folderId ?? captured.asset.folderId ?? null;
         this._invalidateSnapshotTextureCache();
         this._syncClipAssetToWorkingLayers(clip, { forceRestore: true });
+        this._collectUnreferencedDrawingSnapshots();
 
         if (renderAfter) {
             this.render();
@@ -3006,7 +4889,7 @@ export class AnimationTablePopup {
         this._drawingPreviewCompositeKey = null;
         this._animationPreviewKey = null;
         this.render();
-        this._scheduleLaneReferencePreviewUpdate();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: !this.isVisible });
         this._requestLayerPanelSync();
 
         const afterAsset = asset?.id ? this.model.getClipAsset(asset.id) : null;
@@ -3058,6 +4941,9 @@ export class AnimationTablePopup {
             this.isDrawingPreviewSuspended = true;
             this._drawingPreviewCompositeKey = null;
             this._applyDrawingVisibilityPreview();
+        } else if (!this.isVisible && this._getSelectedFolderPartPreviewContext()) {
+            this.isDrawingPreviewSuspended = true;
+            this._restoreVisibility();
         } else {
             this._scheduleLaneReferencePreviewUpdate();
         }
@@ -3238,15 +5124,7 @@ export class AnimationTablePopup {
     }
 
     _collectUnreferencedDrawingSnapshots() {
-        const referencedIds = new Set();
-        (this.model.clipAssets || []).forEach(asset => {
-            if (asset.drawingSnapshotId) referencedIds.add(asset.drawingSnapshotId);
-            (asset.internalLayers || []).forEach(layer => {
-                if (layer.drawingSnapshotId) referencedIds.add(layer.drawingSnapshotId);
-            });
-        });
-        this.model.drawingSnapshots = (this.model.drawingSnapshots || [])
-            .filter(snapshot => referencedIds.has(snapshot.id));
+        return this.model.collectUnreferencedDrawingSnapshots?.() || null;
     }
 
     _handleHistoryChanged(data = {}) {
@@ -3313,6 +5191,7 @@ export class AnimationTablePopup {
                     transform: this._cloneClipInstanceMetadata(clip.transform),
                     transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
                     deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
+                    rigMotion: this._cloneClipInstanceMetadata(clip.rigMotion, null),
                     physics: this._cloneClipInstanceMetadata(clip.physics),
                     laneOffset: laneIndex - anchorLaneIndex,
                     frameOffset: clip.startFrame - anchorEntry.clip.startFrame
@@ -3338,6 +5217,7 @@ export class AnimationTablePopup {
                 transform: anchorItem.transform,
                 transformKeyframes: anchorItem.transformKeyframes,
                 deformer: anchorItem.deformer,
+                rigMotion: anchorItem.rigMotion,
                 physics: anchorItem.physics,
                 copiedAt: Date.now()
             };
@@ -4095,6 +5975,7 @@ export class AnimationTablePopup {
             transform: this._cloneClipInstanceMetadata(clip.transform, {}),
             transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
             deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
+            rigMotion: this._cloneClipInstanceMetadata(clip.rigMotion, null),
             physics: this._cloneClipInstanceMetadata(clip.physics, {}),
             rasterSnapshot: this._cloneRasterSnapshotForRuntime(clip.rasterSnapshot, {
                 includePixels: !assetId
@@ -4150,6 +6031,7 @@ export class AnimationTablePopup {
                 transform: this._copiedCelRef.transform,
                 transformKeyframes: this._copiedCelRef.transformKeyframes,
                 deformer: this._copiedCelRef.deformer,
+                rigMotion: this._copiedCelRef.rigMotion,
                 physics: this._copiedCelRef.physics,
                 laneOffset: 0,
                 frameOffset: 0
@@ -4183,18 +6065,24 @@ export class AnimationTablePopup {
 
         for (const placement of pastePlan.placements) {
             const item = pastePlan.items[placement.itemIndex];
+            let pastedAssetCopy = null;
             let pastedAsset = null;
             if (item.assetId) {
-                pastedAsset = duplicatedAssetsBySourceId.get(item.assetId) || null;
-                if (!pastedAsset) {
+                pastedAssetCopy = duplicatedAssetsBySourceId.get(item.assetId) || null;
+                if (!pastedAssetCopy) {
                     const duplicateResult = this.model.duplicateClipAsset?.(item.assetId);
                     if (!duplicateResult?.ok) {
                         this._restoreTimelineHistoryState(beforeState);
                         return false;
                     }
-                    pastedAsset = duplicateResult.asset;
-                    duplicatedAssetsBySourceId.set(item.assetId, pastedAsset);
+                    pastedAssetCopy = {
+                        asset: duplicateResult.asset,
+                        internalLayerIdMap: duplicateResult.internalLayerIdMap || new Map(),
+                        rigIdMap: duplicateResult.rigIdMap || duplicateResult.internalLayerIdMap || new Map()
+                    };
+                    duplicatedAssetsBySourceId.set(item.assetId, pastedAssetCopy);
                 }
+                pastedAsset = pastedAssetCopy.asset;
             }
 
             const primarySnapshot = pastedAsset?.drawingSnapshotId
@@ -4214,6 +6102,9 @@ export class AnimationTablePopup {
                 transform: this._cloneClipInstanceMetadata(item.transform),
                 transformKeyframes: this._cloneClipInstanceMetadata(item.transformKeyframes, []),
                 deformer: this._cloneClipInstanceMetadata(item.deformer, null),
+                rigMotion: pastedAssetCopy
+                    ? remapRigMotion(item.rigMotion, pastedAssetCopy.rigIdMap)
+                    : this._cloneClipInstanceMetadata(item.rigMotion, null),
                 physics: this._cloneClipInstanceMetadata(item.physics)
             });
             if (!newClip) {
@@ -4256,7 +6147,7 @@ export class AnimationTablePopup {
                 type: isMultiPaste ? 'caf-clips-paste' : 'caf-clip-paste',
                 clipIds: pasted.map(entry => entry.clip.id),
                 sourceClipIds: pasted.map(entry => entry.item.sourceClipId).filter(Boolean),
-                duplicatedAssetIds: [...duplicatedAssetsBySourceId.values()].map(asset => asset.id),
+                duplicatedAssetIds: [...duplicatedAssetsBySourceId.values()].map(copy => copy.asset.id),
                 sourceGroupId: this._copiedCelRef.sourceGroupId || null,
                 pastedGroupId: pastedGroup?.id || null,
                 laneId: anchor.lane.id,
@@ -5165,6 +7056,12 @@ export class AnimationTablePopup {
             }
         }
 
+        const rigPartIds = getRigPartIdsForInternalLayers(asset.rigDefinition, sourceIds);
+        if (rigPartIds.length > 0) {
+            showFeedbackToast('Part設定済みの内部Layerは、Rig対応前のためコピーできません');
+            return { ok: false, reason: 'rig-part-subtree-unsupported', rigPartIds };
+        }
+
         const layers = asset.internalLayers
             .filter(layer => sourceIds.has(layer.id))
             .map(layer => {
@@ -5303,6 +7200,13 @@ export class AnimationTablePopup {
         const sourceIndex = layers.findIndex(layer => layer.id === layerId);
         const sourceLayer = layers[sourceIndex];
         if (!sourceLayer) return { ok: false, reason: 'layer-not-found' };
+        const removedLayerIds = sourceLayer.type === 'folder'
+            ? this._getInternalLayerSubtreeIds(asset, layerId)
+            : new Set([layerId]);
+        const rigPartIds = getRigPartIdsForInternalLayers(asset.rigDefinition, removedLayerIds);
+        if (rigPartIds.length > 0) {
+            return { ok: false, reason: 'rig-part-subtree-unsupported', rigPartIds };
+        }
         if (sourceLayer.type === 'folder') {
             return this._applyInternalFolderMergeToLayer(asset, layerId);
         }
@@ -7061,6 +8965,7 @@ export class AnimationTablePopup {
                     transform: sampled.transform,
                     transformKeyframes: sampled.transformKeyframes,
                     deformer: sampled.deformer,
+                    rigMotion: remapRigMotion(sampled.rigMotion, duplicate.rigIdMap || duplicate.internalLayerIdMap),
                     rasterSnapshot: primarySnapshot
                         ? this._createRasterSnapshotCompat(primarySnapshot, {
                             drawingSnapshotId: primarySnapshot.id,
@@ -7729,14 +9634,33 @@ export class AnimationTablePopup {
         const button = this.panel.querySelector('#anim-motion-open-btn');
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         const canOpen = (entry?.clip?.duration || 0) > 1;
+        const wasOpen = this.motionPanel.style.display !== 'none';
         if (open === true && canOpen && this.layerSystem?.isLayerMoveMode) {
             if (this.layerSystem.exitLayerMoveMode?.() === false) return false;
+        }
+        if (open === true && !wasOpen && canOpen && entry?.clip?.assetId) {
+            this._motionOpenedAssetIds.add(entry.clip.assetId);
+            const projection = this._getSelectedCafRigProjection();
+            const needsInitialRigSetup = (projection?.folders?.length || 0) > 0
+                && (projection?.parts?.length || 0) === 0
+                && (projection?.bones?.length || 0) === 0;
+            if (needsInitialRigSetup) {
+                this._setMotionTimelineKeyKind('rig', { render: false, remember: false });
+                const initialFolder = this._getSelectedRigInspectorContext()?.folder || projection.folders[0];
+                this._setMotionInspectorScope('internal', initialFolder, { render: false });
+            } else {
+                this._setMotionTimelineKeyKind(this._lastMotionEditorMode, {
+                    render: false,
+                    remember: false
+                });
+            }
         }
         const nextOpen = open === true && canOpen;
         this.motionPanel.style.display = nextOpen ? 'block' : 'none';
         button?.setAttribute('aria-expanded', String(nextOpen));
         button?.classList.toggle('active', nextOpen);
         if (!nextOpen) {
+            this._setMotionHelpOpen(false);
             this._setMotionCurveWindowOpen(false);
             this._exitWarpGridEditMode();
             transformAnchorSite.deactivate('clip-motion');
@@ -7744,16 +9668,30 @@ export class AnimationTablePopup {
             this._motionPlaybackClipId = null;
             this.motionPanel?.querySelector('#anim-motion-anchor-btn')?.classList.remove('active');
         } else {
-            if (this._motionTimelineKeyKind === 'warp') {
+            if (this._motionEditorMode === 'warp') {
                 transformAnchorSite.deactivate('clip-motion');
                 this._motionAnchorClip = null;
                 if (['warp-grid', 'control-mesh'].includes(entry?.clip?.deformer?.type)) {
                     this._enterWarpGridEditMode(entry);
                 }
                 this.motionPanel.querySelector('#anim-warp-key-btn')?.focus({ preventScroll: true });
+            } else if (this._motionEditorMode === 'rig') {
+                this._exitWarpGridEditMode();
+                if (this._motionInspectorScope === 'caf') {
+                    this._showMotionAnchorSite(false);
+                    this.motionPanel.querySelector('#anim-motion-anchor-btn')?.focus({ preventScroll: true });
+                } else {
+                    transformAnchorSite.deactivate('clip-motion');
+                    this._motionAnchorClip = null;
+                    this.motionPanel.querySelector('[data-rig-bind-param]:not([disabled])')?.focus({ preventScroll: true });
+                }
             } else {
-                this._showMotionAnchorSite(false);
-                this.motionPanel.querySelector('#anim-motion-key-btn')?.focus({ preventScroll: true });
+                transformAnchorSite.deactivate('clip-motion');
+                this._motionAnchorClip = null;
+                const focusTarget = this._motionInspectorScope === 'internal'
+                    ? '#anim-rig-key-btn'
+                    : '#anim-motion-key-btn';
+                this.motionPanel.querySelector(focusTarget)?.focus({ preventScroll: true });
             }
         }
         this._updateMotionCanvasCursor();
@@ -7769,48 +9707,306 @@ export class AnimationTablePopup {
             && entry.clip.duration > 1;
     }
 
-    _setMotionTimelineKeyKind(kind) {
-        const nextKind = kind === 'warp' ? 'warp' : 'motion';
-        const changed = this._motionTimelineKeyKind !== nextKind;
-        if (changed && nextKind === 'motion' && this._isWarpGridEditModeActive()) {
+    _isClipMotionCanvasInputLocked() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        return this.isVisible
+            && this.motionPanel?.style.display !== 'none'
+            && !!entry?.clip
+            && entry.clip.duration > 1;
+    }
+
+    _setMotionHelpOpen(open) {
+        const help = this.motionPanel?.querySelector('#anim-motion-help-popover');
+        const button = this.motionPanel?.querySelector('#anim-motion-help-btn');
+        if (!help || !button) return false;
+        const nextOpen = open === true && this.motionPanel.style.display !== 'none';
+        help.hidden = !nextOpen;
+        button.classList.toggle('active', nextOpen);
+        button.setAttribute('aria-expanded', String(nextOpen));
+        return nextOpen;
+    }
+
+    _setMotionTimelineKeyKind(kind, options = {}) {
+        const nextKind = ['warp', 'rig'].includes(kind) ? kind : 'motion';
+        const changed = this._motionEditorMode !== nextKind;
+        if (changed && nextKind !== 'warp' && this._isWarpGridEditModeActive()) {
             this._exitWarpGridEditMode();
         }
-        if (changed && nextKind === 'warp') {
+        if (changed && !(nextKind === 'rig' && this._motionInspectorScope === 'caf')) {
             transformAnchorSite.deactivate('clip-motion');
             this._motionAnchorClip = null;
         }
-        this._motionTimelineKeyKind = nextKind;
-        if (this.isVisible) this.render();
+        this._motionEditorMode = nextKind;
+        this._motionTimelineKeyKind = nextKind === 'motion' && this._motionInspectorScope === 'internal'
+            ? 'rig'
+            : nextKind;
+        if (changed) this._clearMotionTimelineKeySelection();
+        if (options.remember === true) {
+            this._lastMotionEditorMode = nextKind;
+            this._saveUiPreferences();
+        }
+        if (options.render !== false && this.isVisible) this.render();
         return changed;
     }
 
-    _moveTimelineKey(clipId, kind, sourceFrame, targetFrame, beforeState) {
-        const entry = this.model.findClipEntry(clipId);
-        if (!entry?.clip || sourceFrame === targetFrame) return false;
-        const duration = Math.max(1, entry.clip.duration || 1);
-        const nextFrame = Math.max(0, Math.min(duration - 1, Math.round(targetFrame)));
-        if (kind === 'warp') {
-            const deformer = normalizeClipDeformer(entry.clip.deformer);
-            if (!deformer) return false;
-            const sourceIndex = deformer.keyframes.findIndex(key => key?.frame === sourceFrame);
-            if (sourceIndex < 0 || deformer.keyframes.some((key, index) => index !== sourceIndex && key?.frame === nextFrame)) return false;
-            deformer.keyframes[sourceIndex].frame = nextFrame;
-            deformer.keyframes.sort((a, b) => a.frame - b.frame);
-            this.model.setClipDeformer(clipId, deformer);
-        } else {
-            const keyframes = (entry.clip.transformKeyframes || []).map(key => this._cloneClipInstanceMetadata(key, {}));
-            const sourceIndex = keyframes.findIndex(key => key?.frame === sourceFrame);
-            if (sourceIndex < 0 || keyframes.some((key, index) => index !== sourceIndex && key?.frame === nextFrame)) return false;
-            keyframes[sourceIndex].frame = nextFrame;
-            keyframes.sort((a, b) => a.frame - b.frame);
-            this.model.setClipTransformKeyframes(clipId, keyframes);
+    _getMotionTimelineKeyId(descriptor) {
+        if (!descriptor) return '';
+        return JSON.stringify([
+            descriptor.clipId || '',
+            descriptor.kind || '',
+            descriptor.targetId || '',
+            Number(descriptor.frame)
+        ]);
+    }
+
+    _normalizeMotionTimelineKeyDescriptor(descriptor) {
+        const clipId = typeof descriptor?.clipId === 'string' ? descriptor.clipId : '';
+        const kind = ['motion', 'warp', 'bone', 'part'].includes(descriptor?.kind)
+            ? descriptor.kind
+            : '';
+        const targetId = ['bone', 'part'].includes(kind) && typeof descriptor?.targetId === 'string'
+            ? descriptor.targetId
+            : null;
+        const frame = Number(descriptor?.frame);
+        if (!clipId || !kind || !Number.isInteger(frame) || frame < 0) return null;
+        if (['bone', 'part'].includes(kind) && !targetId) return null;
+        return { clipId, kind, targetId, frame };
+    }
+
+    _clearMotionTimelineKeySelection() {
+        this._motionKeyPendingClick = null;
+        if (!(this._motionTimelineKeySelection instanceof Map)) {
+            this._motionTimelineKeySelection = new Map();
+            return;
         }
-        this.model.setCurrentFrame(entry.clip.startFrame + nextFrame);
-        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), `caf-clip-${kind}-key-move`, {
-            type: `caf-clip-${kind}-key-move`,
-            clipId,
-            beforeFrame: sourceFrame,
-            afterFrame: nextFrame
+        this._motionTimelineKeySelection.clear();
+    }
+
+    _isMotionTimelineKeySelected(descriptor) {
+        const normalized = this._normalizeMotionTimelineKeyDescriptor(descriptor);
+        return !!normalized && this._motionTimelineKeySelection?.has(this._getMotionTimelineKeyId(normalized));
+    }
+
+    _setMotionTimelineKeySelected(descriptor, selected = true, options = {}) {
+        const normalized = this._normalizeMotionTimelineKeyDescriptor(descriptor);
+        if (!normalized) return false;
+        if (!(this._motionTimelineKeySelection instanceof Map)) {
+            this._motionTimelineKeySelection = new Map();
+        }
+        if (options.additive !== true) this._motionTimelineKeySelection.clear();
+        const id = this._getMotionTimelineKeyId(normalized);
+        if (selected) this._motionTimelineKeySelection.set(id, normalized);
+        else this._motionTimelineKeySelection.delete(id);
+        return selected;
+    }
+
+    _prepareMotionTimelineKeyPointerSelection(descriptor, event) {
+        const normalized = this._normalizeMotionTimelineKeyDescriptor(descriptor);
+        if (!normalized) return null;
+        const additive = event?.ctrlKey === true || event?.metaKey === true;
+        const wasSelected = this._isMotionTimelineKeySelected(normalized);
+        const addedForDrag = additive && !wasSelected;
+        if (addedForDrag) {
+            this._setMotionTimelineKeySelected(normalized, true, { additive });
+        }
+        this._motionKeyPendingClick = {
+            id: this._getMotionTimelineKeyId(normalized),
+            descriptor: normalized,
+            additive,
+            wasSelected,
+            addedForDrag
+        };
+        return this._motionKeyPendingClick;
+    }
+
+    _applyMotionTimelineKeyClickSelection(descriptor, event) {
+        const normalized = this._normalizeMotionTimelineKeyDescriptor(descriptor);
+        if (!normalized) return false;
+        const id = this._getMotionTimelineKeyId(normalized);
+        const pending = this._motionKeyPendingClick?.id === id
+            ? this._motionKeyPendingClick
+            : null;
+        const additive = pending?.additive ?? (event?.ctrlKey === true || event?.metaKey === true);
+        const wasSelected = pending?.wasSelected ?? this._isMotionTimelineKeySelected(normalized);
+        this._motionKeyPendingClick = null;
+        // 通常clickはpointerdown中の操作予告だけで、固定選択正本を変更しない。
+        // Ctrl/Cmd+clickだけを複数KEYの待機状態としてtoggleする。
+        if (!additive) return this._isMotionTimelineKeySelected(normalized);
+        if (wasSelected) {
+            this._setMotionTimelineKeySelected(normalized, false, { additive: true });
+            return false;
+        }
+        this._setMotionTimelineKeySelected(normalized, true, { additive: true });
+        return true;
+    }
+
+    _commitMotionTimelineKeyPointerClick(gesture, event) {
+        if (!gesture || event?.type !== 'pointerup' || gesture.moved) return false;
+        const descriptor = gesture.anchorDescriptor;
+        const entry = this.model.findClipEntry(gesture.clipId);
+        if (!entry?.clip || !descriptor) return false;
+
+        // pointerdownではpreventDefaultしているため、ブラウザやペン実装によって
+        // clickが生成されない場合がある。選択toggleと通常のframe/target同期を
+        // pointerupにも寄せ、二重反転はclick側の抑止で防ぐ。
+        this._applyMotionTimelineKeyClickSelection(descriptor, event);
+        const timelineFrame = entry.clip.startFrame + descriptor.frame;
+        this.model.setCurrentFrame(timelineFrame);
+        this._syncWorkingLayersForCurrentFrame();
+        if (descriptor.kind === 'bone') {
+            const context = this._getSelectedRootBoneTimelineContext(timelineFrame);
+            this._selectRootBoneTimelineTarget(context, { render: false });
+        } else if (descriptor.kind === 'part') {
+            const context = this._getSelectedFolderPartTimelineContext(timelineFrame);
+            this._selectFolderPartTimelineTarget(context, { render: false });
+        }
+        this.render();
+        this._requestLayerPanelSync();
+        this._motionKeyPendingClick = null;
+        return true;
+    }
+
+    _getMotionTimelineTrackKeyframes(entry, descriptor) {
+        if (!entry?.clip || !descriptor) return [];
+        if (descriptor.kind === 'motion') return entry.clip.transformKeyframes || [];
+        if (descriptor.kind === 'warp') return normalizeClipDeformer(entry.clip.deformer)?.keyframes || [];
+        const rigMotion = normalizeRigMotion(entry.clip.rigMotion);
+        const field = descriptor.kind === 'bone' ? 'boneTracks' : 'partTracks';
+        const idField = descriptor.kind === 'bone' ? 'boneId' : 'partId';
+        return rigMotion?.[field]?.find(track => track?.[idField] === descriptor.targetId)?.keyframes || [];
+    }
+
+    _getSelectedMotionTimelineKeys(clipId = this.selectedCelId) {
+        if (!(this._motionTimelineKeySelection instanceof Map)) return [];
+        const valid = [];
+        for (const [id, descriptor] of this._motionTimelineKeySelection) {
+            const entry = this.model.findClipEntry(descriptor.clipId);
+            const exists = descriptor.clipId === clipId
+                && this._getMotionTimelineTrackKeyframes(entry, descriptor)
+                    .some(key => key?.frame === descriptor.frame);
+            if (exists) valid.push(descriptor);
+            else this._motionTimelineKeySelection.delete(id);
+        }
+        return valid;
+    }
+
+    _planMotionTimelineKeyMove(anchorDescriptor, targetFrame) {
+        const anchor = this._normalizeMotionTimelineKeyDescriptor(anchorDescriptor);
+        const entry = anchor ? this.model.findClipEntry(anchor.clipId) : null;
+        if (!anchor || !entry?.clip) return { ok: false, reason: 'key-not-found' };
+        const duration = Math.max(1, entry.clip.duration || 1);
+        const selected = this._isMotionTimelineKeySelected(anchor)
+            ? this._getSelectedMotionTimelineKeys(anchor.clipId)
+            : [anchor];
+        if (selected.length === 0) return { ok: false, reason: 'key-not-found' };
+
+        const requestedDelta = Math.round(Number(targetFrame)) - anchor.frame;
+        const minimumDelta = Math.max(...selected.map(key => -key.frame));
+        const maximumDelta = Math.min(...selected.map(key => duration - 1 - key.frame));
+        const delta = Math.max(minimumDelta, Math.min(maximumDelta, requestedDelta));
+        if (delta === 0) return { ok: true, changed: false, delta: 0, moves: [] };
+
+        const trackGroups = new Map();
+        selected.forEach(descriptor => {
+            const trackId = `${descriptor.kind}:${descriptor.targetId || ''}`;
+            if (!trackGroups.has(trackId)) trackGroups.set(trackId, []);
+            trackGroups.get(trackId).push(descriptor);
+        });
+        for (const descriptors of trackGroups.values()) {
+            const sourceFrames = new Set(descriptors.map(descriptor => descriptor.frame));
+            const occupiedFrames = new Set(
+                this._getMotionTimelineTrackKeyframes(entry, descriptors[0])
+                    .map(key => key?.frame)
+                    .filter(Number.isInteger)
+            );
+            if (descriptors.some(descriptor => (
+                occupiedFrames.has(descriptor.frame + delta)
+                && !sourceFrames.has(descriptor.frame + delta)
+            ))) {
+                return { ok: false, reason: 'key-frame-occupied', delta, moves: [] };
+            }
+        }
+        return {
+            ok: true,
+            changed: true,
+            delta,
+            moves: selected.map(descriptor => ({
+                ...descriptor,
+                targetFrame: descriptor.frame + delta
+            }))
+        };
+    }
+
+    _moveMotionTimelineKeySelection(anchorDescriptor, targetFrame, beforeState) {
+        const anchor = this._normalizeMotionTimelineKeyDescriptor(anchorDescriptor);
+        const entry = anchor ? this.model.findClipEntry(anchor.clipId) : null;
+        const preserveMovedSelection = anchor ? this._isMotionTimelineKeySelected(anchor) : false;
+        const plan = this._planMotionTimelineKeyMove(anchor, targetFrame);
+        if (!entry?.clip || !plan.ok || plan.changed === false) return false;
+
+        const motionMoves = plan.moves.filter(move => move.kind === 'motion');
+        const warpMoves = plan.moves.filter(move => move.kind === 'warp');
+        const rigMoves = plan.moves.filter(move => move.kind === 'bone' || move.kind === 'part');
+        if (motionMoves.length > 0) {
+            const sourceFrames = new Set(motionMoves.map(move => move.frame));
+            const keyframes = (entry.clip.transformKeyframes || [])
+                .map(key => this._cloneClipInstanceMetadata(key, {}))
+                .map(key => sourceFrames.has(key.frame) ? { ...key, frame: key.frame + plan.delta } : key)
+                .sort((left, right) => left.frame - right.frame);
+            this.model.setClipTransformKeyframes(anchor.clipId, keyframes);
+        }
+        if (warpMoves.length > 0) {
+            const deformer = normalizeClipDeformer(entry.clip.deformer);
+            const sourceFrames = new Set(warpMoves.map(move => move.frame));
+            deformer.keyframes = deformer.keyframes
+                .map(key => sourceFrames.has(key.frame) ? { ...key, frame: key.frame + plan.delta } : key)
+                .sort((left, right) => left.frame - right.frame);
+            this.model.setClipDeformer(anchor.clipId, deformer);
+        }
+        if (rigMoves.length > 0) {
+            const rigMotion = normalizeRigMotion(entry.clip.rigMotion);
+            const moveGroups = new Map();
+            rigMoves.forEach(move => {
+                const id = `${move.kind}:${move.targetId}`;
+                if (!moveGroups.has(id)) moveGroups.set(id, new Set());
+                moveGroups.get(id).add(move.frame);
+            });
+            [
+                ['bone', 'boneTracks', 'boneId'],
+                ['part', 'partTracks', 'partId']
+            ].forEach(([kind, field, idField]) => {
+                rigMotion[field] = (rigMotion[field] || []).map(track => {
+                    const sourceFrames = moveGroups.get(`${kind}:${track?.[idField]}`);
+                    if (!sourceFrames) return track;
+                    return {
+                        ...track,
+                        keyframes: track.keyframes
+                            .map(key => sourceFrames.has(key.frame) ? { ...key, frame: key.frame + plan.delta } : key)
+                            .sort((left, right) => left.frame - right.frame)
+                    };
+                });
+            });
+            const result = this.model.setClipRigMotion(anchor.clipId, rigMotion);
+            if (!result?.ok) return false;
+        }
+
+        if (preserveMovedSelection) {
+            this._motionTimelineKeySelection.clear();
+            plan.moves.forEach(move => {
+                const descriptor = { ...move, frame: move.targetFrame };
+                delete descriptor.targetFrame;
+                this._motionTimelineKeySelection.set(this._getMotionTimelineKeyId(descriptor), descriptor);
+            });
+        }
+        const anchorAfterFrame = anchor.frame + plan.delta;
+        this.model.setCurrentFrame(entry.clip.startFrame + anchorAfterFrame);
+        this._invalidateSnapshotTextureCache();
+        this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), 'caf-motion-key-selection-move', {
+            type: 'caf-motion-key-selection-move',
+            clipId: anchor.clipId,
+            keyCount: plan.moves.length,
+            beforeFrame: anchor.frame,
+            afterFrame: anchorAfterFrame
         });
         this._syncWorkingLayersForCurrentFrame();
         this.render();
@@ -7944,10 +10140,13 @@ export class AnimationTablePopup {
 
     _isMotionCanvasModeActive() {
         return this.motionPanel?.style.display !== 'none'
-            && this._motionTimelineKeyKind === 'motion'
+            && this._motionEditorMode === 'motion'
+            && this._motionInspectorScope === 'caf'
             && !!this._getSelectedClipMotionFrame()
             && !this.isPlaying
-            && !this._isWarpGridEditModeActive();
+            && !this._isWarpGridEditModeActive()
+            && !this._isFolderPartCanvasModeActive()
+            && !this._isRootBoneCanvasModeActive();
     }
 
     _getMotionCanvas() {
@@ -7967,8 +10166,18 @@ export class AnimationTablePopup {
                 : (this._warpGridTool === 'brush'
                     ? 'none'
                     : (['grid', 'lens'].includes(this._warpGridTool) ? 'move' : 'crosshair'));
+        } else if (this._isRootBoneCanvasModeActive()) {
+            canvas.style.cursor = this._boneCanvasGesture ? 'grabbing' : 'crosshair';
+        } else if (this._isFolderPartCanvasModeActive()) {
+            canvas.style.cursor = this._partCanvasGesture
+                ? (this._partCanvasGesture.mode === 'rotate'
+                    ? 'crosshair'
+                    : (this._partCanvasGesture.mode === 'scale' ? 'nwse-resize' : 'grabbing'))
+                : 'move';
         } else if (this._isMotionCanvasModeActive()) {
             canvas.style.cursor = this._motionCanvasGesture ? 'grabbing' : 'move';
+        } else if (this._isClipMotionCanvasInputLocked()) {
+            canvas.style.cursor = 'default';
         } else {
             canvas.style.cursor = '';
             this.layerSystem?.transform?._updateCursor?.();
@@ -8123,6 +10332,13 @@ export class AnimationTablePopup {
                 ? { x: point.worldX, y: point.worldY }
                 : { x: event.clientX, y: event.clientY };
         };
+        const toPartProject = (event, geometry) => {
+            const world = toWorld(event);
+            const point = geometry?.clipMatrix
+                ? invertTransformMatrixPoint(geometry.clipMatrix, world.x, world.y)
+                : null;
+            return point && Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null;
+        };
         const findWarpPoint = (event, state) => {
             const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
             const points = this._getWarpGridWorldPoints(state);
@@ -8169,19 +10385,6 @@ export class AnimationTablePopup {
                 y: topMid.y + (topMid.y - center.y) / topLength * 34
             };
             return { corners, center, rotationHandle };
-        };
-        const pointInWarpGridFrame = (point, corners) => {
-            let inside = false;
-            for (let index = 0, previous = corners.length - 1; index < corners.length; previous = index++) {
-                const currentPoint = corners[index];
-                const previousPoint = corners[previous];
-                if ((currentPoint.y > point.y) !== (previousPoint.y > point.y)
-                    && point.x < (previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)
-                        / (previousPoint.y - currentPoint.y) + currentPoint.x) {
-                    inside = !inside;
-                }
-            }
-            return inside;
         };
         const toWarpProject = (event, state) => {
             const world = toWorld(event);
@@ -8234,7 +10437,7 @@ export class AnimationTablePopup {
                     const cornerHit = frame?.corners.findIndex(corner => (
                         Math.hypot(corner.x - pointerScreen.x, corner.y - pointerScreen.y) <= 18
                     )) ?? -1;
-                    const insideFrame = frame && pointInWarpGridFrame(pointerScreen, frame.corners);
+                    const insideFrame = frame && pointInPolygon(pointerScreen, frame.corners);
                     if (startPointer && frame && (rotationHit || cornerHit >= 0 || insideFrame)) {
                         const startPlacement = normalizeWarpPlacement(state.sampled.placement);
                         const bounds = state.sampled.bindBounds;
@@ -8376,22 +10579,111 @@ export class AnimationTablePopup {
                 event.stopImmediatePropagation();
                 return;
             }
-            if (!this._isMotionCanvasModeActive() || event.button !== 0) return;
-            const state = this._getSelectedClipMotionFrame();
-            if (!state) return;
-            const point = toWorld(event);
-            this._motionCanvasGesture = {
-                pointerId: event.pointerId,
-                startPoint: point,
-                lastPoint: point,
-                mode: null,
-                transform: { ...state.sampled },
-                beforeState: this._captureTimelineHistoryState()
-            };
-            canvas.setPointerCapture?.(event.pointerId);
-            this._updateMotionCanvasCursor();
-            event.preventDefault();
-            event.stopImmediatePropagation();
+            if (this._isRootBoneCanvasModeActive() && event.button === 0) {
+                const geometry = this._getRootBoneCanvasGeometry();
+                const screen = boneTransformOverlay.getScreenGeometry();
+                const pointerScreen = { x: event.clientX, y: event.clientY };
+                const tipHit = screen
+                    && Math.hypot(screen.tip.x - pointerScreen.x, screen.tip.y - pointerScreen.y) <= 20;
+                const rootHit = screen
+                    && Math.hypot(screen.root.x - pointerScreen.x, screen.root.y - pointerScreen.y) <= 20;
+                const startPoint = geometry ? toPartProject(event, geometry) : null;
+                if (geometry && screen && startPoint && (rootHit || tipHit)) {
+                    this._boneCanvasGesture = {
+                        pointerId: event.pointerId,
+                        clipId: geometry.context.entry.clip.id,
+                        boneId: geometry.context.bone.boneId,
+                        startClientX: event.clientX,
+                        startClientY: event.clientY,
+                        mode: rootHit ? 'move' : 'rotate',
+                        startPoint,
+                        rootProject: geometry.rootProject,
+                        startAngle: Math.atan2(
+                            startPoint.y - geometry.rootProject.y,
+                            startPoint.x - geometry.rootProject.x
+                        ),
+                        startTransform: { ...geometry.context.sampled },
+                        beforeState: this._captureTimelineHistoryState(),
+                        changed: false
+                    };
+                    canvas.setPointerCapture?.(event.pointerId);
+                    this._updateMotionCanvasCursor();
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+            }
+            if (this._isFolderPartCanvasModeActive() && event.button === 0) {
+                const geometry = this._getFolderPartCanvasGeometry();
+                const screen = partTransformOverlay.getScreenGeometry();
+                const pointerScreen = { x: event.clientX, y: event.clientY };
+                const rotationHit = screen
+                    && Math.hypot(
+                        screen.rotationHandle.x - pointerScreen.x,
+                        screen.rotationHandle.y - pointerScreen.y
+                    ) <= 18;
+                const cornerHit = screen?.corners.findIndex(corner => (
+                    Math.hypot(corner.x - pointerScreen.x, corner.y - pointerScreen.y) <= 18
+                )) ?? -1;
+                const insideFrame = screen && pointInPolygon(pointerScreen, screen.corners);
+                const startPoint = geometry ? toPartProject(event, geometry) : null;
+                if (geometry && screen && startPoint && (rotationHit || cornerHit >= 0 || insideFrame)) {
+                    const partProjectCenter = applyTransformMatrix(
+                        geometry.partMatrix,
+                        geometry.sourceCenter.x,
+                        geometry.sourceCenter.y
+                    );
+                    this._partCanvasGesture = {
+                        pointerId: event.pointerId,
+                        clipId: geometry.context.entry.clip.id,
+                        partId: geometry.context.part.partId,
+                        mode: rotationHit ? 'rotate' : (cornerHit >= 0 ? 'scale' : 'move'),
+                        startClientX: event.clientX,
+                        startClientY: event.clientY,
+                        startPoint,
+                        startCenter: partProjectCenter,
+                        sourceCenter: geometry.sourceCenter,
+                        startAngle: Math.atan2(
+                            startPoint.y - partProjectCenter.y,
+                            startPoint.x - partProjectCenter.x
+                        ),
+                        startDistance: Math.hypot(
+                            startPoint.x - partProjectCenter.x,
+                            startPoint.y - partProjectCenter.y
+                        ) || 1,
+                        startTransform: { ...geometry.context.sampled },
+                        beforeState: this._captureTimelineHistoryState(),
+                        changed: false
+                    };
+                    canvas.setPointerCapture?.(event.pointerId);
+                    this._updateMotionCanvasCursor();
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+            }
+            if (this._isMotionCanvasModeActive() && event.button === 0) {
+                const state = this._getSelectedClipMotionFrame();
+                if (!state) return;
+                const point = toWorld(event);
+                this._motionCanvasGesture = {
+                    pointerId: event.pointerId,
+                    startPoint: point,
+                    lastPoint: point,
+                    mode: null,
+                    transform: { ...state.sampled },
+                    beforeState: this._captureTimelineHistoryState()
+                };
+                canvas.setPointerCapture?.(event.pointerId);
+                this._updateMotionCanvasCursor();
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+            if (event.button === 0 && this._isClipMotionCanvasInputLocked()) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
         }, true);
         canvas.addEventListener('pointermove', (event) => {
             const warpGesture = this._warpGridGesture;
@@ -8582,6 +10874,81 @@ export class AnimationTablePopup {
                 event.stopImmediatePropagation();
                 return;
             }
+            const boneGesture = this._boneCanvasGesture;
+            if (boneGesture?.pointerId === event.pointerId) {
+                const geometry = this._getRootBoneCanvasGeometry();
+                const point = geometry
+                    && geometry.context.entry.clip.id === boneGesture.clipId
+                    && geometry.context.bone.boneId === boneGesture.boneId
+                    ? toPartProject(event, geometry)
+                    : null;
+                if (point) {
+                    const moved = Math.hypot(
+                        event.clientX - boneGesture.startClientX,
+                        event.clientY - boneGesture.startClientY
+                    ) >= 2;
+                    if (moved) {
+                        const transform = boneGesture.mode === 'move'
+                            ? resolveBoneRootHandleDrag({
+                                startTransform: boneGesture.startTransform,
+                                startPointer: boneGesture.startPoint,
+                                currentPointer: point
+                            })
+                            : resolveBoneRotationHandleDrag({
+                                startTransform: boneGesture.startTransform,
+                                root: boneGesture.rootProject,
+                                currentPointer: point,
+                                startAngle: boneGesture.startAngle
+                            });
+                        const result = this._upsertSelectedRootBoneTransform(transform, {
+                            deferPreview: true,
+                            render: false
+                        });
+                        boneGesture.changed = boneGesture.changed || result.ok === true;
+                    }
+                }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+            const partGesture = this._partCanvasGesture;
+            if (partGesture?.pointerId === event.pointerId) {
+                const geometry = this._getFolderPartCanvasGeometry();
+                const point = geometry
+                    && geometry.context.entry.clip.id === partGesture.clipId
+                    && geometry.context.part.partId === partGesture.partId
+                    ? toPartProject(event, geometry)
+                    : null;
+                if (point) {
+                    const moved = Math.hypot(
+                        event.clientX - partGesture.startClientX,
+                        event.clientY - partGesture.startClientY
+                    ) >= 2;
+                    if (moved) {
+                        const transform = resolvePartTransformHandleDrag({
+                            mode: partGesture.mode,
+                            bindTransform: geometry.context.part.bindTransform,
+                            startTransform: partGesture.startTransform,
+                            startPointer: partGesture.startPoint,
+                            currentPointer: point,
+                            sourceCenter: partGesture.sourceCenter,
+                            fixedCenter: partGesture.startCenter,
+                            startAngle: partGesture.startAngle,
+                            startDistance: partGesture.startDistance,
+                            minScale: this.layerSystem?.config?.layer?.minScale ?? 0.1,
+                            maxScale: this.layerSystem?.config?.layer?.maxScale ?? 30
+                        });
+                        const result = this._upsertSelectedFolderPartTransform(transform, {
+                            deferPreview: true,
+                            render: false
+                        });
+                        partGesture.changed = partGesture.changed || result.ok === true;
+                    }
+                }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             const gesture = this._motionCanvasGesture;
             if (!gesture || gesture.pointerId !== event.pointerId) return;
             const point = toWorld(event);
@@ -8655,6 +11022,28 @@ export class AnimationTablePopup {
                 event.stopImmediatePropagation();
                 return;
             }
+            const boneGesture = this._boneCanvasGesture;
+            if (boneGesture?.pointerId === event.pointerId) {
+                const cancelled = event.type === 'pointercancel' || event.type === 'lostpointercapture';
+                this._finishRootBoneCanvasGesture(boneGesture, {
+                    cancelled,
+                    releasePointerCapture: event.type !== 'lostpointercapture'
+                });
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+            const partGesture = this._partCanvasGesture;
+            if (partGesture?.pointerId === event.pointerId) {
+                const cancelled = event.type === 'pointercancel' || event.type === 'lostpointercapture';
+                this._finishFolderPartCanvasGesture(partGesture, {
+                    cancelled,
+                    releasePointerCapture: event.type !== 'lostpointercapture'
+                });
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             const gesture = this._motionCanvasGesture;
             if (!gesture || gesture.pointerId !== event.pointerId) return;
             this._cancelMotionEditPreviewRefresh();
@@ -8676,6 +11065,28 @@ export class AnimationTablePopup {
         this._motionWindowFinishPointer = finishPointer;
         window.addEventListener('pointerup', finishPointer, true);
         window.addEventListener('pointercancel', finishPointer, true);
+        if (this._partGestureKeydownHandler) {
+            document.removeEventListener('keydown', this._partGestureKeydownHandler, true);
+        }
+        this._partGestureKeydownHandler = event => {
+            if (event.key !== 'Escape') return;
+            if (this._boneCanvasGesture) {
+                this._finishRootBoneCanvasGesture(this._boneCanvasGesture, {
+                    cancelled: true,
+                    releasePointerCapture: true
+                });
+            } else if (this._partCanvasGesture) {
+                this._finishFolderPartCanvasGesture(this._partCanvasGesture, {
+                    cancelled: true,
+                    releasePointerCapture: true
+                });
+            } else {
+                return;
+            }
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        };
+        document.addEventListener('keydown', this._partGestureKeydownHandler, true);
         canvas.addEventListener('pointerenter', event => {
             if (this._isWarpGridEditModeActive() && this._warpGridTool === 'brush') {
                 const fixedGesture = this._warpGridGesture?.tool === 'brush'
@@ -9111,7 +11522,7 @@ export class AnimationTablePopup {
             this._syncWorkingLayersForCurrentFrame();
         }
         this.render();
-        this._scheduleLaneReferencePreviewUpdate();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: !this.isVisible });
         this._requestLayerPanelSync();
         this.eventBus?.emit('animation:frame-changed', {
             frameIndex: this.model.playback.currentFrame,
@@ -9341,7 +11752,12 @@ export class AnimationTablePopup {
         if (targetLayers.length === 0) return false;
         let restoreFailed = false;
         const restoreFailures = [];
-        if (!drawableInternalLayers.some(layer => layer.id === this.selectedInternalLayerId)) {
+        const selectedInternalLayer = (asset.internalLayers || [])
+            .find(layer => layer.id === this.selectedInternalLayerId) || null;
+        if (selectedInternalLayer?.type !== 'folder'
+            && !drawableInternalLayers.some(layer => layer.id === this.selectedInternalLayerId)) {
+            // working Layer capacity / raster restoreの都合でUIのFolder選択を失わない。
+            // Folder自体はPixi Layerを持たず、active Rasterは表示・入力adapterに過ぎない。
             this.selectedInternalLayerId = drawableInternalLayers[0]?.id || null;
         }
 
@@ -9563,11 +11979,10 @@ export class AnimationTablePopup {
         const selectedInternalLayer = asset.internalLayers
             .find(layer => layer.id === this.selectedInternalLayerId);
         if (selectedInternalLayer?.type === 'folder') {
-            // CAFフォルダ変形中は、代表working layerをactiveにしても選択正本は内部フォルダに保つ。
-            const folderTransformContext = this._getSelectedInternalFolderTransformTargets(asset);
-            if (folderTransformContext?.targets?.some(entry => entry.workingLayer === activeLayer)) {
-                return false;
-            }
+            // FolderはPixi working Layerを持たない。子Rasterを代表active adapterにしても、
+            // Folder選択までRasterへ飛ばすとV変形の対象が兄弟/親へずれるため常に維持する。
+            // Raster行を明示的に選んだ場合は、そのclick handlerが先にselectedInternalLayerIdを更新する。
+            return false;
         }
 
         const workingLayers = this._getRasterWorkingLayers();
@@ -9752,13 +12167,16 @@ export class AnimationTablePopup {
         const clip = lane?.getCelAtFrame ? lane.getCelAtFrame(frameIndex) : null;
 
         if (clip) {
+            const previousSelectedInternalLayerId = this.selectedInternalLayerId || null;
             const changedClip = this.selectedCelId !== clip.id;
             this.isLaneOnlySelected = false;
             this.selectedCelId = clip.id;
             this.selectedAssetId = clip.assetId || null;
             const asset = clip.assetId ? this.model.getClipAsset(clip.assetId) : null;
             this.selectedAssetFolderId = asset?.folderId || null;
-            this.selectedInternalLayerId = null;
+            this.selectedInternalLayerId = asset?.internalLayers?.some(
+                layer => layer.id === previousSelectedInternalLayerId
+            ) ? previousSelectedInternalLayerId : null;
             this._syncClipAssetToWorkingLayers(clip, { forceRestore: changedClip });
             this._drawingPreviewCompositeKey = null;
             this._animationPreviewKey = null;
@@ -9904,7 +12322,7 @@ export class AnimationTablePopup {
     render() {
         if (!this.panel || !this.isVisible) return;
         this.panel.style.setProperty('--anim-cell-width', `${this.timelineCellWidth}px`);
-        this.panel.style.setProperty('--anim-cel-inset', '8px');
+        this.panel.style.setProperty('--anim-cel-inset', '6px');
         this.panel.classList.toggle('timeline-compact-labels', this.timelineCellWidth < 18);
         
         // 【重要】モデルを LayerSystem と同期（暫定接続）
@@ -10118,6 +12536,8 @@ export class AnimationTablePopup {
             }
         }
 
+        const selectedCafRigProjection = this._getSelectedCafRigProjection();
+
         if (trackList) {
             let trackHtml = `
                 <div class="anim-track-header">
@@ -10153,6 +12573,41 @@ export class AnimationTablePopup {
                         ${visibilityBtn}
                         ${includeBtn}
                     </div>`;
+                if (selectedCafRigProjection?.entry?.lane?.id === track.id) {
+                    selectedCafRigProjection.folders.forEach(rigFolder => {
+                        const boneSelected = !!rigFolder.bone
+                            && this.selectedRigBoneId === rigFolder.bone.boneId
+                            && this.selectedInternalLayerId === rigFolder.layer.id;
+                        const boneKeyTitle = !rigFolder.isFrameInClip
+                            ? '現在Frameは選択CAFの範囲外です'
+                            : (rigFolder.boneKey
+                                ? `Local Frame ${rigFolder.localFrame + 1} のMotion keyを削除`
+                                : `Local Frame ${rigFolder.localFrame + 1} にMotion keyを追加`);
+                        const rowClasses = rigFolder.bone
+                            ? ' anim-bone-track-item'
+                            : ' anim-rig-folder-candidate';
+                        const action = rigFolder.bone
+                            ? `<button class="anim-bone-key-toggle${rigFolder.boneKey ? ' active' : ''}"
+                                type="button" aria-pressed="${rigFolder.boneKey ? 'true' : 'false'}"
+                                title="${boneKeyTitle}"
+                                ${rigFolder.isFrameInClip && !this.isPlaying ? '' : 'disabled'}>◆</button>`
+                            : `<button class="anim-rig-folder-setup" type="button"
+                                title="このFolderへPIVOTとBONEを設定"
+                                ${this.isPlaying ? 'disabled' : ''}>+RIG</button>`;
+                        trackHtml += `
+                            <div class="anim-track-item anim-rig-folder-track-item${rowClasses}${boneSelected ? ' is-selected' : ''}"
+                                data-track-id="${track.id}"
+                                data-clip-id="${rigFolder.entry.clip.id}"
+                                data-folder-id="${rigFolder.layer.id}"
+                                ${rigFolder.bone ? `data-bone-id="${rigFolder.bone.boneId}"` : ''}
+                                style="--rig-tree-depth:${Math.min(4, rigFolder.depth)}">
+                                <span class="anim-part-track-prefix" aria-hidden="true">↳</span>
+                                <span class="anim-track-name anim-part-track-name" title="Rig target: ${this._escapeHtml(rigFolder.layer.name)}">${this._escapeHtml(rigFolder.layer.name)}</span>
+                                <span class="anim-rig-pivot-indicator" title="このFolderのBONE PIVOT設定">${rigFolder.bone ? '✓' : '○'}</span>
+                                ${action}
+                            </div>`;
+                    });
+                }
             });
             trackList.innerHTML = trackHtml;
         }
@@ -10235,13 +12690,13 @@ export class AnimationTablePopup {
                     const motionMarkers = isStart && duration > 1 && this.timelineCellWidth >= 18
                         ? (cel.transformKeyframes || [])
                             .filter(key => Number.isInteger(key?.frame) && key.frame >= 0 && key.frame < duration)
-                            .map(key => `<span class="anim-motion-key-marker" data-key-kind="motion" data-key-frame="${key.frame}" data-cel-id="${cel.id}" style="--motion-key-position:${(key.frame / (duration - 1)) * 100}%" title="Motion key: Frame ${cel.startFrame + key.frame + 1}"></span>`)
+                            .map(key => `<span class="anim-motion-key-marker${this._isMotionTimelineKeySelected({ clipId: cel.id, kind: 'motion', frame: key.frame }) ? ' is-key-selected' : ''}" data-key-kind="motion" data-key-frame="${key.frame}" data-cel-id="${cel.id}" style="--motion-key-position:${(key.frame / (duration - 1)) * 100}%" title="Motion key: Frame ${cel.startFrame + key.frame + 1}"></span>`)
                             .join('')
                         : '';
                     const warpMarkers = isStart && duration > 1 && this.timelineCellWidth >= 18
                         ? (cel.deformer?.keyframes || [])
                             .filter(key => Number.isInteger(key?.frame) && key.frame >= 0 && key.frame < duration)
-                            .map(key => `<span class="anim-warp-key-marker" data-key-kind="warp" data-key-frame="${key.frame}" data-cel-id="${cel.id}" style="--warp-key-position:${(key.frame / (duration - 1)) * 100}%" title="Warp key: Frame ${cel.startFrame + key.frame + 1}"></span>`)
+                            .map(key => `<span class="anim-warp-key-marker${this._isMotionTimelineKeySelected({ clipId: cel.id, kind: 'warp', frame: key.frame }) ? ' is-key-selected' : ''}" data-key-kind="warp" data-key-frame="${key.frame}" data-cel-id="${cel.id}" style="--warp-key-position:${(key.frame / (duration - 1)) * 100}%" title="Warp key: Frame ${cel.startFrame + key.frame + 1}"></span>`)
                             .join('')
                         : '';
                     const retimingEdge = (isStart && this._isRetiming && this._retimingData?.cel?.id === cel.id)
@@ -10265,6 +12720,31 @@ export class AnimationTablePopup {
                                  </div>`;
                 }
                 gridHtml += `</div>`;
+                if (selectedCafRigProjection?.entry?.lane?.id === track.id) {
+                    selectedCafRigProjection.folders.forEach(rigFolder => {
+                        if (rigFolder.bone) {
+                            gridHtml += this._renderSelectedRootBoneTimelineRow({
+                                entry: rigFolder.entry,
+                                asset: rigFolder.asset,
+                                part: rigFolder.part,
+                                layer: rigFolder.layer,
+                                bone: rigFolder.bone,
+                                binding: rigFolder.binding,
+                                localFrame: rigFolder.localFrame,
+                                isFrameInClip: rigFolder.isFrameInClip,
+                                key: rigFolder.boneKey,
+                                sampled: rigFolder.boneSampled
+                            }, totalFrames, currentFrame, showCurrentFrame);
+                        } else {
+                            gridHtml += this._renderSelectedCafFolderTimelineRow(
+                                { ...rigFolder, part: null },
+                                totalFrames,
+                                currentFrame,
+                                showCurrentFrame
+                            );
+                        }
+                    });
+                }
             });
             timelineGrid.innerHTML = gridHtml;
         }
@@ -10311,20 +12791,26 @@ export class AnimationTablePopup {
                 ? this.model.findClipEntry(selectedWarpClipId)
                 : null;
             const hasSelectedWarpGrid = ['warp-grid', 'control-mesh'].includes(selectedWarpEntry?.clip?.deformer?.type);
-            const isWarpFocus = this._motionTimelineKeyKind === 'warp';
-            motionControls.classList.toggle('is-motion-focus', !isWarpFocus);
+            const isWarpFocus = this._motionEditorMode === 'warp';
+            const isRigFocus = this._motionEditorMode === 'rig';
+            const isMotionFocus = !isWarpFocus && !isRigFocus;
+            const isPartMotionTarget = isMotionFocus && this._motionInspectorScope === 'internal';
+            motionControls.classList.toggle('is-motion-focus', isMotionFocus);
             motionControls.classList.toggle('is-warp-focus', isWarpFocus);
+            motionControls.classList.toggle('is-rig-focus', isRigFocus);
+            motionControls.classList.toggle('is-part-motion-target', isPartMotionTarget);
             const motionFields = motionControls.querySelector('#anim-motion-fields');
-            if (motionFields) motionFields.hidden = isWarpFocus;
+            if (motionFields) motionFields.hidden = !isMotionFocus || isPartMotionTarget;
             const motionFocusButton = motionControls.querySelector('#anim-motion-focus-btn');
             const warpFocusButton = motionControls.querySelector('#anim-warp-focus-btn');
+            const rigFocusButton = motionControls.querySelector('#anim-rig-focus-btn');
             const motionKeyCount = selectedWarpEntry?.clip?.transformKeyframes?.length || 0;
             const warpKeyCount = hasSelectedWarpGrid
                 ? listClipDeformerKeyframes(selectedWarpEntry.clip.deformer, selectedWarpEntry.clip.duration).length
                 : 0;
             if (motionFocusButton) {
-                motionFocusButton.classList.toggle('active', !isWarpFocus);
-                motionFocusButton.setAttribute('aria-selected', String(!isWarpFocus));
+                motionFocusButton.classList.toggle('active', isMotionFocus);
+                motionFocusButton.setAttribute('aria-selected', String(isMotionFocus));
                 motionFocusButton.querySelector('[data-motion-key-count]').textContent = String(motionKeyCount);
                 motionFocusButton.dataset.tooltip = `Motion編集へ切り替え · ${motionKeyCount} keys`;
             }
@@ -10342,6 +12828,17 @@ export class AnimationTablePopup {
                         ? `Warpへ切り替えて点編集を開始 · ${warpKeyCount} keys`
                         : '可変Warp GRIDの点数、または軽量4×4 Warpを選んで作成';
             }
+            if (rigFocusButton) {
+                const folderCount = selectedCafRigProjection?.folders?.length || 0;
+                rigFocusButton.disabled = !selectedWarpEntry?.clip || folderCount === 0 || this.isPlaying;
+                rigFocusButton.classList.toggle('active', isRigFocus);
+                rigFocusButton.setAttribute('aria-selected', String(isRigFocus));
+                rigFocusButton.querySelector('[data-rig-folder-count]').textContent = String(folderCount);
+                rigFocusButton.dataset.tooltip = folderCount > 0
+                    ? `CAF内部Folder ${folderCount}件を子Laneとして選択`
+                    : 'CAF内部Folderを作成するとRig対象にできます';
+            }
+            this._syncMotionTargetStrip();
             if (this._warpGridEditingClipId && (
                 selectedWarpEntry?.clip?.id !== this._warpGridEditingClipId
                 || !['warp-grid', 'control-mesh'].includes(selectedWarpEntry.clip.deformer?.type)
@@ -10424,7 +12921,12 @@ export class AnimationTablePopup {
                     ? `このClipのmotion key ${keyCount}件をすべて削除`
                     : '一括削除には2件以上のmotion keyが必要です';
             }
-            if (!isWarpEditing && motionControls.style.display !== 'none' && motionState && this._motionAnchorClip !== motionState.entry.clip) {
+            if (isRigFocus
+                && this._motionInspectorScope === 'caf'
+                && !isWarpEditing
+                && motionControls.style.display !== 'none'
+                && motionState
+                && this._motionAnchorClip !== motionState.entry.clip) {
                 this._showMotionAnchorSite(transformAnchorSite.isEditable('clip-motion'));
             }
             if (motionState) {
@@ -10677,6 +13179,16 @@ export class AnimationTablePopup {
                     }
                 }
             }
+            const rigContext = motionControls.querySelector('#anim-rig-context');
+            if (rigContext) {
+                rigContext.hidden = !isRigFocus;
+                if (isRigFocus) this._syncRigSetupContext();
+            }
+            const partMotionContext = motionControls.querySelector('#anim-part-motion-context');
+            if (partMotionContext) {
+                partMotionContext.hidden = !isPartMotionTarget;
+                if (isPartMotionTarget) this._syncRigInspectorContext();
+            }
         }
 
         const deleteActiveBtn = this.panel.querySelector('#anim-delete-active-btn');
@@ -10696,7 +13208,24 @@ export class AnimationTablePopup {
             );
         }
 
+        this._syncFolderPartTransformOverlay();
+        this._syncRigPivotOverlay();
+        this._syncMotionPanelPaletteTooltips();
         window.timelineUI?.updateLayerPanelIndicator?.();
+    }
+
+    _syncMotionPanelPaletteTooltips() {
+        const root = this.motionPanel;
+        if (!root) return;
+        // render() が状態に応じて title を更新するため、初回mount時だけでなく
+        // 毎回ここでnative tooltipを共通のFutaba paletteへ寄せる。
+        root.querySelectorAll('[title]').forEach(element => {
+            const title = element.getAttribute('title')?.trim();
+            if (!title) return;
+            if (!element.dataset.tooltip) element.dataset.tooltip = title;
+            element.classList.add('ui-help-tooltip');
+            element.removeAttribute('title');
+        });
     }
 
     _ensurePanelElement() {
@@ -10812,11 +13341,12 @@ export class AnimationTablePopup {
         this.motionPanel.tabIndex = -1;
         this.motionPanel.style.display = 'none';
         this.motionPanel.innerHTML = `
-            <div class="anim-motion-window-header transform-popup-header" title="Canvas drag: move / Shift+horizontal drag: rotate / Shift+vertical drag: scale / Wheel: scale / Shift+Wheel: rotate">
+            <div class="anim-motion-window-header transform-popup-header">
                 <span class="transform-popup-title">CLIP MOTION</span>
                 <div class="anim-motion-mode-switch" role="tablist" aria-label="Clip Motion editor mode">
-                    <button class="anim-motion-mode-tab ui-help-tooltip active" id="anim-motion-focus-btn" type="button" role="tab" aria-selected="true" aria-controls="anim-motion-fields" aria-label="Motion編集へ切り替え" data-tooltip="位置・拡縮・回転・透明度・合成のMotion keyを編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg><span>MOTION</span><span class="anim-motion-mode-count" data-motion-key-count>0</span></button>
-                    <button class="anim-motion-mode-tab ui-help-tooltip" id="anim-warp-focus-btn" type="button" role="tab" aria-selected="false" aria-controls="anim-warp-context" aria-label="Warp編集へ切り替え" data-tooltip="可変Warp GRIDの点数、または軽量4×4 Warpを選んで作成"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>WARP</span><span class="anim-motion-mode-count" data-warp-key-count>0</span></button>
+                    <button class="anim-motion-mode-tab ui-help-tooltip" id="anim-rig-focus-btn" type="button" role="tab" aria-selected="false" aria-controls="anim-rig-context" aria-label="Rig Setupへ切り替え" data-tooltip="最初にPIVOT・PART・BONEのstatic Setupを行います"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="17" r="2"/><circle cx="17" cy="7" r="2"/><path d="m8.5 15.5 7-7"/><path d="M5 5h6v6"/></svg><span>RIG</span><span class="anim-motion-mode-count" data-rig-folder-count>0</span></button>
+                    <button class="anim-motion-mode-tab ui-help-tooltip active" id="anim-motion-focus-btn" type="button" role="tab" aria-selected="true" aria-controls="anim-motion-fields" aria-label="Motion編集へ切り替え" data-tooltip="RIG後にCAFまたは選択FolderのFrame-local Motion keyを編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg><span>MOTION</span><span class="anim-motion-mode-count" data-motion-key-count>0</span></button>
+                    <button class="anim-motion-mode-tab ui-help-tooltip" id="anim-warp-focus-btn" type="button" role="tab" aria-selected="false" aria-controls="anim-warp-context" aria-label="Warp編集へ切り替え" data-tooltip="現行はCAF全体へWarp GRIDを作成してFrame Poseを編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>WARP</span><span class="anim-motion-mode-count" data-warp-key-count>0</span></button>
                 </div>
                 <div class="flip-section transform-popup-actions anim-motion-header-actions">
                     <button class="anim-motion-action anim-motion-action--motion anim-motion-key-btn flip-button flip-button--icon" id="anim-motion-key-btn" type="button" title="現在Frameのmotion keyを追加/削除" aria-label="Toggle motion key at current Frame"><svg class="anim-motion-key-icon anim-motion-key-icon--add" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg><svg class="anim-motion-key-icon anim-motion-key-icon--delete" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button>
@@ -10834,9 +13364,20 @@ export class AnimationTablePopup {
                     <button class="anim-motion-action anim-motion-action--motion anim-motion-clear-btn flip-button flip-button--icon" id="anim-motion-clear-btn" type="button" title="このClipのmotion keyをすべて削除" aria-label="Clear all motion keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
                     <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-clear-btn" type="button" title="このClipのWarp keyをすべて削除" aria-label="Clear all Warp keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
                     <button class="anim-motion-action anim-motion-action--motion anim-motion-curve-btn flip-button flip-button--icon" id="anim-motion-curve-btn" type="button" title="左keyから次keyまでのEasing Curveを編集" aria-label="Open easing curve editor" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 17c2-7 5-10 10-10"/><circle cx="7" cy="17" r="1.4"/><circle cx="17" cy="7" r="1.4"/></svg></button>
-                    <button class="anim-motion-action anim-motion-action--motion anim-motion-anchor-btn transform-anchor-toggle flip-button flip-button--icon" id="anim-motion-anchor-btn" type="button" title="クリップ共通pivot。0°は上向きで、楔形tailは現在Rotationへ追従します。ON中だけheadをドラッグできます" aria-label="Toggle rotation center editing"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="19" r="2.5"/><path d="M12 16.5 8 13 11 4 12 2 13 4 16 13Z"/></svg></button>
+                    <button class="anim-motion-help-btn flip-button" id="anim-motion-help-btn" type="button" aria-label="CLIP MOTION 操作ヘルプ" aria-controls="anim-motion-help-popover" aria-expanded="false">?</button>
                 </div>
                 <button class="ui-close-button ui-close-button--small" id="anim-motion-close-btn" type="button" aria-label="Close motion controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+            </div>
+            <div class="anim-motion-help-popover" id="anim-motion-help-popover" role="note" hidden>
+                <div class="anim-motion-help-section anim-motion-help-section--rig"><strong>RIG</strong><span>中心drag: PIVOT配置</span><span>中心長押し→別PIVOT: 親子接続 / 空所: 解除</span><span>接続線drag: 親の付け替え</span><span>楔drag / 楔上wheel: 初期角度</span></div>
+                <div class="anim-motion-help-section anim-motion-help-section--motion"><strong>MOTION</strong><span>CAF drag: 移動 / Shift+横: 回転 / Shift+縦: 拡縮</span><span>BONE中心drag: 移動 / 楔drag: 回転</span><span>wheel: 拡縮 / Shift+wheel: 回転</span></div>
+                <div class="anim-motion-help-section anim-motion-help-section--warp"><strong>WARP</strong><span>GRID / LENS / POINT / BRUSHを選び、Canvas上で編集</span><span>B: Brush幅 / N: 強さ</span></div>
+                <span class="anim-motion-help-note">CLIP MOTIONを閉じるまでCanvasへの描画入力は無効です。</span>
+            </div>
+            <div class="anim-motion-target-strip" data-motion-target-strip aria-label="CLIP MOTION target">
+                <span class="anim-motion-target-label">対象</span>
+                <div class="anim-motion-target-tabs" data-motion-targets role="tablist"></div>
+                <span class="anim-motion-target-hint" data-motion-target-hint></span>
             </div>
             <div class="anim-motion-fields" id="anim-motion-fields" role="tabpanel" aria-labelledby="anim-motion-focus-btn" title="選択CAFの現在Frame transform key">
                 <div class="anim-motion-fields-row">
@@ -10858,6 +13399,46 @@ export class AnimationTablePopup {
                         <option value="hold">HOLD</option>
                         <option value="custom" disabled>CUSTOM</option>
                     </select>
+                </div>
+            </div>
+            <div class="anim-rig-context" id="anim-rig-context" role="tabpanel" aria-labelledby="anim-rig-focus-btn" hidden>
+                <div class="anim-rig-target-row anim-rig-caf-setup" data-rig-caf-setup>
+                    <span class="anim-rig-target-name">CAF</span>
+                    <span class="anim-rig-target-kind">ROOT SETUP</span>
+                    <div class="anim-rig-bind-fields" aria-label="CAF pivot setup">
+                        <label>X<input type="number" step="1" data-rig-bind-param="x"></label>
+                        <label>Y<input type="number" step="1" data-rig-bind-param="y"></label>
+                        <label title="CAF全体の回転はMOTIONで設定します">Rotation°<input type="number" value="0" disabled data-rig-bind-param="rotation"></label>
+                    </div>
+                    <span class="anim-rig-status">Canvas上のCAF PIVOTを直接ドラッグ</span>
+                </div>
+                <div class="anim-rig-folder-setup-context" data-rig-folder-setup-context hidden>
+                  <div class="anim-rig-target-row">
+                    <span class="anim-rig-target-name" data-rig-setup-target-name>Folder</span>
+                    <span class="anim-rig-target-kind" data-rig-setup-target-kind>FOLDER</span>
+                    <div class="anim-rig-bind-fields" aria-label="Folder pivot setup">
+                        <label>X<input type="number" step="1" data-rig-bind-param="x"></label>
+                        <label>Y<input type="number" step="1" data-rig-bind-param="y"></label>
+                        <label>Rotation°<input type="number" step="1" data-rig-bind-param="rotation"></label>
+                    </div>
+                    <label class="anim-rig-parent-field">親<select data-rig-parent-bone aria-label="Parent Bone"><option value="">なし（ROOT）</option></select></label>
+                    <span class="anim-rig-status" data-rig-setup-status></span>
+                  </div>
+                </div>
+            </div>
+            <div class="anim-part-motion-context" id="anim-part-motion-context" role="tabpanel" aria-labelledby="anim-motion-focus-btn" hidden>
+                <div class="anim-rig-target-row">
+                    <span class="anim-rig-target-name" data-rig-target-name>Folder</span>
+                    <span class="anim-rig-target-kind" data-rig-target-kind>FOLDER MOTION</span>
+                    <button class="anim-rig-key-btn" id="anim-rig-key-btn" type="button" aria-pressed="false">◇ KEY追加</button>
+                </div>
+                <div class="anim-rig-fields anim-motion-fields-row" aria-label="Selected Rig target transform">
+                    <label>X<input type="number" step="1" data-rig-param="x"></label>
+                    <label>Y<input type="number" step="1" data-rig-param="y"></label>
+                    <label>Scale X<input type="number" step="0.01" data-rig-param="scaleX"></label>
+                    <label>Scale Y<input type="number" step="0.01" data-rig-param="scaleY"></label>
+                    <label>Rotation°<input type="number" step="1" data-rig-param="rotation"></label>
+                    <span class="anim-rig-status" data-rig-status></span>
                 </div>
             </div>
             <div class="anim-warp-context" id="anim-warp-context" role="tabpanel" aria-labelledby="anim-warp-focus-btn" hidden>
@@ -10912,6 +13493,15 @@ export class AnimationTablePopup {
                     <button class="flip-button flip-button--icon anim-warp-remove-grid-btn" id="anim-warp-remove-grid-btn" type="button" title="このClipのWarp Gridと全Warp keyを削除" aria-label="Remove Warp Grid and all Warp keys"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2"/><path d="M4 10h16M10 4v16"/><path d="m14 14 5 5m0-5-5 5"/></svg></button>
                 </div>
             </div>`;
+        // Native title tooltipはブラウザ既定の白黒配色になるため、CLIP MOTION
+        // 内の操作説明を既存のFutaba palette tooltipへ統一する。
+        this.motionPanel.querySelectorAll('[title]').forEach(element => {
+            const tooltip = element.getAttribute('title')?.trim();
+            if (!tooltip) return;
+            element.dataset.tooltip = tooltip;
+            element.classList.add('ui-help-tooltip');
+            element.removeAttribute('title');
+        });
         mountPopupAtOverlayRoot(this.motionPanel);
         this.motionPanelDragCleanup?.();
         this.motionPanelDragCleanup = attachPopupDrag(this.motionPanel);
@@ -11404,13 +13994,100 @@ export class AnimationTablePopup {
         const motionOpenButton = this.panel.querySelector('#anim-motion-open-btn');
         if (motionControls && motionOpenButton) {
             motionControls.querySelector('#anim-motion-focus-btn')?.addEventListener('click', () => {
-                this._setMotionTimelineKeyKind('motion');
+                this._setMotionTimelineKeyKind('motion', { remember: true });
             });
             motionControls.querySelector('#anim-warp-focus-btn')?.addEventListener('click', () => {
                 const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
                 if (!entry?.clip || entry.clip.duration <= 1 || this.isPlaying) return;
-                this._setMotionTimelineKeyKind('warp');
+                this._setMotionTimelineKeyKind('warp', { remember: true });
                 if (entry.clip.deformer) this._activateSelectedClipWarpGrid();
+            });
+            motionControls.querySelector('#anim-rig-focus-btn')?.addEventListener('click', () => {
+                const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+                if (!entry?.clip || this.isPlaying) return;
+                this._setMotionTimelineKeyKind('rig', { remember: true });
+            });
+            motionControls.querySelectorAll('[data-rig-target="folder"]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const context = this._getSelectedRigInspectorContext();
+                    if (!context?.folder) return;
+                    this._selectRigFolderProjectionTarget(context.folder, { render: false });
+                    if (this._motionEditorMode === 'motion') this._motionTimelineKeyKind = 'rig';
+                    this.render();
+                });
+            });
+            motionControls.querySelectorAll('[data-rig-target="bone"]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const context = this._getSelectedRigInspectorContext();
+                    if (!context?.folder?.bone) return;
+                    this._selectRootBoneTimelineTarget({
+                        ...context.folder,
+                        key: context.folder.boneKey,
+                        sampled: context.folder.boneSampled
+                    }, { render: false });
+                    if (this._motionEditorMode === 'motion') this._motionTimelineKeyKind = 'rig';
+                    this.render();
+                });
+            });
+            const targetStrip = motionControls.querySelector('[data-motion-target-strip]');
+            targetStrip?.addEventListener('click', event => {
+                const button = event.target.closest?.('[data-motion-target]');
+                if (!button || button.disabled) return;
+                if (button.dataset.motionTarget === 'caf') {
+                    this._setMotionInspectorScope('caf');
+                    return;
+                }
+                const projection = this._getSelectedCafRigProjection();
+                const folder = projection?.folders.find(candidate => candidate.layer.id === button.dataset.motionTarget);
+                if (folder) this._setMotionInspectorScope('internal', folder);
+            });
+            targetStrip?.addEventListener('wheel', event => {
+                if (event.ctrlKey || event.metaKey || event.altKey || this._motionEditorMode === 'warp') return;
+                const projection = this._getSelectedCafRigProjection();
+                const folders = projection?.folders || [];
+                if (folders.length === 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const context = this._getSelectedRigInspectorContext();
+                const targets = [null, ...folders];
+                const currentIndex = this._motionInspectorScope === 'caf'
+                    ? 0
+                    : Math.max(1, folders.findIndex(folder => folder.layer.id === context?.folder?.layer.id) + 1);
+                const direction = event.deltaY < 0 ? -1 : 1;
+                const next = targets[(currentIndex + direction + targets.length) % targets.length];
+                if (next) this._setMotionInspectorScope('internal', next);
+                else this._setMotionInspectorScope('caf');
+            }, { passive: false });
+            motionControls.querySelector('#anim-rig-key-btn')?.addEventListener('click', () => {
+                const context = this._getSelectedRigInspectorContext();
+                if (!context?.folder?.bone) return;
+                this._toggleSelectedRootBoneKey();
+            });
+            motionControls.querySelectorAll('[data-rig-bind-param]').forEach(input => {
+                if (input.disabled) return;
+                this._bindNumberInputWheel(input, () => this._setSelectedRigBindFromControls());
+                input.addEventListener('change', () => this._setSelectedRigBindFromControls());
+                input.addEventListener('keydown', event => {
+                    if (event.key === 'Enter') this._setSelectedRigBindFromControls();
+                });
+            });
+            motionControls.querySelector('[data-rig-parent-bone]')?.addEventListener('change', event => {
+                this._setSelectedRigBoneParent(event.currentTarget.value || null);
+            });
+            motionControls.querySelectorAll('[data-rig-param]').forEach(input => {
+                this._bindNumberInputWheel(input, () => this._setSelectedRigInspectorKeyFromControls());
+                input.addEventListener('input', () => this._scheduleRigInspectorKeyCommit());
+                input.addEventListener('change', () => {
+                    if (this._rigInputCommitTimer !== null) clearTimeout(this._rigInputCommitTimer);
+                    this._rigInputCommitTimer = null;
+                    this._setSelectedRigInspectorKeyFromControls();
+                });
+                input.addEventListener('keydown', event => {
+                    if (event.key !== 'Enter') return;
+                    if (this._rigInputCommitTimer !== null) clearTimeout(this._rigInputCommitTimer);
+                    this._rigInputCommitTimer = null;
+                    this._setSelectedRigInspectorKeyFromControls();
+                });
             });
             motionControls.querySelectorAll('#anim-control-mesh-columns, #anim-control-mesh-rows').forEach(input => {
                 this._bindNumberInputWheel(input, () => this._syncControlMeshCreationControls());
@@ -11556,6 +14233,10 @@ export class AnimationTablePopup {
             motionControls.querySelector('#anim-motion-anchor-btn')?.addEventListener('click', () => this._toggleMotionAnchorMode());
             motionControls.querySelector('#anim-motion-curve-btn')?.addEventListener('click', () => {
                 this._setMotionCurveWindowOpen(this.motionCurvePanel?.style.display === 'none');
+            });
+            motionControls.querySelector('#anim-motion-help-btn')?.addEventListener('click', () => {
+                const help = motionControls.querySelector('#anim-motion-help-popover');
+                this._setMotionHelpOpen(help?.hidden !== false);
             });
             motionOpenButton.addEventListener('click', () => this.toggleMotionWindow());
             motionControls.querySelector('#anim-motion-close-btn')?.addEventListener('click', () => this.setMotionWindowOpen(false));
@@ -11718,6 +14399,109 @@ export class AnimationTablePopup {
                     return;
                 }
 
+                const rigFolderSetup = e.target.closest('.anim-rig-folder-setup');
+                if (rigFolderSetup) {
+                    const row = rigFolderSetup.closest('.anim-rig-folder-track-item');
+                    const projection = this._getSelectedCafRigProjection();
+                    const context = projection?.folders.find(candidate => candidate.layer.id === row?.dataset.folderId);
+                    if (context && !rigFolderSetup.disabled) {
+                        const beforeState = this._captureInternalLayerHistoryState(context.asset);
+                        const configured = this._ensureFolderRigPivot(context, beforeState);
+                        if (configured?.bone) {
+                            this._recordInternalLayerHistory(
+                                configured.asset,
+                                beforeState,
+                                'caf-rig-folder-register',
+                                {
+                                    type: 'caf-rig-folder-register',
+                                    assetId: configured.asset.id,
+                                    folderId: configured.layer.id,
+                                    boneId: configured.bone.boneId
+                                }
+                            );
+                            const active = this._getSelectedCafRigProjection()?.folders
+                                .find(candidate => candidate.layer.id === context.layer.id);
+                            this._openSelectedRigInspector(active);
+                        } else {
+                            showFeedbackToast('このFolderへRIGを設定できません');
+                        }
+                    }
+                    e.stopPropagation();
+                    return;
+                }
+
+                const boneKeyToggle = e.target.closest('.anim-bone-key-toggle');
+                if (boneKeyToggle) {
+                    const row = boneKeyToggle.closest('.anim-bone-track-item');
+                    const projection = this._getSelectedCafRigProjection();
+                    const folder = projection?.folders.find(candidate => (
+                        candidate.bone?.boneId === row?.dataset.boneId
+                    )) || null;
+                    if (folder?.bone) {
+                        this._selectRootBoneTimelineTarget({
+                            ...folder,
+                            key: folder.boneKey,
+                            sampled: folder.boneSampled
+                        }, { render: false });
+                        this._toggleSelectedRootBoneKey();
+                    }
+                    e.stopPropagation();
+                    return;
+                }
+
+                const partKeyToggle = e.target.closest('.anim-part-key-toggle');
+                if (partKeyToggle) {
+                    this._toggleSelectedFolderPartKey();
+                    e.stopPropagation();
+                    return;
+                }
+
+                const boneItem = e.target.closest('.anim-bone-track-item');
+                if (boneItem) {
+                    const projection = this._getSelectedCafRigProjection();
+                    const folder = projection?.folders.find(candidate => (
+                        candidate.bone?.boneId === boneItem.dataset.boneId
+                    )) || null;
+                    if (folder?.bone) {
+                        this._selectRootBoneTimelineTarget({
+                            ...folder,
+                            key: folder.boneKey,
+                            sampled: folder.boneSampled
+                        }, { render: false });
+                        if (e.detail >= 2) this.setMotionWindowOpen(true);
+                        else this.render();
+                    }
+                    e.stopPropagation();
+                    return;
+                }
+
+                const partItem = e.target.closest('.anim-part-track-item');
+                if (partItem) {
+                    const context = this._getSelectedFolderPartTimelineContext();
+                    if (context?.part?.partId === partItem.dataset.partId) {
+                        this._selectFolderPartTimelineTarget(context, { render: false });
+                        if (e.detail >= 2) this.setMotionWindowOpen(true);
+                        else this.render();
+                    }
+                    e.stopPropagation();
+                    return;
+                }
+
+                const rigFolderItem = e.target.closest('.anim-rig-folder-track-item');
+                if (rigFolderItem) {
+                    const projection = this._getSelectedCafRigProjection();
+                    const context = projection?.folders.find(candidate => candidate.layer.id === rigFolderItem.dataset.folderId);
+                    if (context) {
+                        this._selectRigFolderProjectionTarget(context, {
+                            focusRig: !context.bone,
+                            openInspector: e.detail >= 2,
+                            render: e.detail < 2
+                        });
+                    }
+                    e.stopPropagation();
+                    return;
+                }
+
                 const includeBtn = e.target.closest('.anim-lane-include-btn');
                 if (includeBtn && this.playbackScope === 'includedLanes') {
                     const laneId = includeBtn.dataset.laneId;
@@ -11750,6 +14534,9 @@ export class AnimationTablePopup {
                 if (e.target.closest('button, input, label')) return;
                 const sourceItem = e.target.closest('.anim-track-item');
                 if (!sourceItem) return;
+                if (sourceItem.classList.contains('anim-part-track-item')
+                    || sourceItem.classList.contains('anim-bone-track-item')
+                    || sourceItem.classList.contains('anim-rig-folder-track-item')) return;
 
                 const gesture = {
                     pointerId: e.pointerId,
@@ -11831,6 +14618,11 @@ export class AnimationTablePopup {
                     const entry = this.model.findClipEntry(keyMarker.dataset.celId);
                     const localFrame = Number(keyMarker.dataset.keyFrame);
                     if (entry?.clip && Number.isInteger(localFrame)) {
+                        this._applyMotionTimelineKeyClickSelection({
+                            clipId: entry.clip.id,
+                            kind: keyMarker.dataset.keyKind,
+                            frame: localFrame
+                        }, e);
                         this.model.setCurrentFrame(entry.clip.startFrame + localFrame);
                         this._syncWorkingLayersForCurrentFrame();
                         this.render();
@@ -11864,6 +14656,91 @@ export class AnimationTablePopup {
                 // セルスロットクリック
                 const slot = e.target.closest('.anim-cell-slot');
                 if (!slot) return;
+
+                if (slot.classList.contains('anim-rig-folder-cell-slot')) {
+                    const frameIndex = parseInt(slot.dataset.frameIndex, 10);
+                    const projection = this._getSelectedCafRigProjection(frameIndex);
+                    const context = projection?.folders.find(candidate => candidate.layer.id === slot.dataset.folderId);
+                    if (!context || !context.isFrameInClip) {
+                        e.preventDefault();
+                        return;
+                    }
+                    this._saveSelectedClipFromWorkingLayers();
+                    this.model.setCurrentFrame(frameIndex);
+                    this._syncWorkingLayersForCurrentFrame();
+                    const activeProjection = this._getSelectedCafRigProjection(frameIndex);
+                    const active = activeProjection?.folders.find(candidate => candidate.layer.id === slot.dataset.folderId);
+                    this._selectRigFolderProjectionTarget(active, {
+                        focusRig: !active?.bone,
+                        openInspector: e.detail >= 2,
+                        render: e.detail < 2
+                    });
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
+                if (slot.classList.contains('anim-bone-cell-slot')) {
+                    const frameIndex = parseInt(slot.dataset.frameIndex, 10);
+                    const context = this._getSelectedRootBoneTimelineContext(frameIndex);
+                    if (!context || context.bone.boneId !== slot.dataset.boneId || !context.isFrameInClip) {
+                        e.preventDefault();
+                        return;
+                    }
+                    this._saveSelectedClipFromWorkingLayers();
+                    if (slot.classList.contains('has-part-key')) {
+                        this._applyMotionTimelineKeyClickSelection({
+                            clipId: context.entry.clip.id,
+                            kind: 'bone',
+                            targetId: context.bone.boneId,
+                            frame: context.localFrame
+                        }, e);
+                    }
+                    this.model.setCurrentFrame(frameIndex);
+                    this._syncWorkingLayersForCurrentFrame();
+                    const activeContext = this._getSelectedRootBoneTimelineContext(frameIndex);
+                    this._selectRootBoneTimelineTarget(activeContext, { render: false });
+                    if (e.detail >= 2) {
+                        this._toggleSelectedRootBoneKey();
+                    } else {
+                        this.render();
+                        this._requestLayerPanelSync();
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
+                if (slot.classList.contains('anim-part-cell-slot')) {
+                    const frameIndex = parseInt(slot.dataset.frameIndex, 10);
+                    const context = this._getSelectedFolderPartTimelineContext(frameIndex);
+                    if (!context || context.part.partId !== slot.dataset.partId || !context.isFrameInClip) {
+                        e.preventDefault();
+                        return;
+                    }
+                    this._saveSelectedClipFromWorkingLayers();
+                    if (slot.classList.contains('has-part-key')) {
+                        this._applyMotionTimelineKeyClickSelection({
+                            clipId: context.entry.clip.id,
+                            kind: 'part',
+                            targetId: context.part.partId,
+                            frame: context.localFrame
+                        }, e);
+                    }
+                    this.model.setCurrentFrame(frameIndex);
+                    this._syncWorkingLayersForCurrentFrame();
+                    const activeContext = this._getSelectedFolderPartTimelineContext(frameIndex);
+                    this._selectFolderPartTimelineTarget(activeContext, { render: false });
+                    if (e.detail >= 2) {
+                        this._toggleSelectedFolderPartKey();
+                    } else {
+                        this.render();
+                        this._requestLayerPanelSync();
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
 
                 const trackId = slot.dataset.trackId;
                 const frameIndex = parseInt(slot.dataset.frameIndex, 10);
@@ -11936,6 +14813,121 @@ export class AnimationTablePopup {
                 this._clipSelectionClickSuppressed = false;
                 this._motionKeyClickSuppressed = false;
 
+                const rigKeySlot = e.target.closest(
+                    '.anim-bone-cell-slot.has-part-key, .anim-part-cell-slot.has-part-key'
+                );
+                if (rigKeySlot && this._isMotionTimelineKeyEditing() && this._motionEditorMode === 'motion') {
+                    const kind = rigKeySlot.classList.contains('anim-bone-cell-slot') ? 'bone' : 'part';
+                    const clipId = rigKeySlot.dataset.clipId;
+                    const targetId = kind === 'bone' ? rigKeySlot.dataset.boneId : rigKeySlot.dataset.partId;
+                    const timelineFrame = Number(rigKeySlot.dataset.frameIndex);
+                    const entry = this.model.findClipEntry(clipId);
+                    const row = rigKeySlot.closest('.anim-bone-timeline-row, .anim-part-timeline-row');
+                    const sourceFrame = entry?.clip ? timelineFrame - entry.clip.startFrame : -1;
+                    if (
+                        !entry?.clip
+                        || clipId !== this.selectedCelId
+                        || !targetId
+                        || !Number.isInteger(sourceFrame)
+                        || sourceFrame < 0
+                        || !row
+                    ) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
+                    const anchorDescriptor = {
+                        clipId,
+                        kind,
+                        targetId,
+                        frame: sourceFrame
+                    };
+                    const pendingSelection = this._prepareMotionTimelineKeyPointerSelection(anchorDescriptor, e);
+                    rigKeySlot.classList.add('is-key-pressed');
+                    const gesture = {
+                        pointerId: e.pointerId,
+                        clipId,
+                        kind,
+                        targetId,
+                        sourceFrame,
+                        targetFrame: sourceFrame,
+                        startX: e.clientX,
+                        duration: Math.max(1, entry.clip.duration || 1),
+                        row,
+                        sourceSlot: rigKeySlot,
+                        targetSlot: rigKeySlot,
+                        anchorDescriptor,
+                        moved: false,
+                        beforeState: this._captureTimelineHistoryState()
+                    };
+                    this._motionKeyDrag = gesture;
+                    rigKeySlot.classList.add('key-dragging');
+                    const clearTargetStyle = () => {
+                        gesture.targetSlot?.classList.remove('key-drop-target', 'key-drop-blocked');
+                    };
+                    const onMove = moveEvent => {
+                        if (moveEvent.pointerId !== gesture.pointerId) return;
+                        if (Math.abs(moveEvent.clientX - gesture.startX) >= 3) gesture.moved = true;
+                        if (!gesture.moved) return;
+                        const deltaFrames = Math.round(
+                            (moveEvent.clientX - gesture.startX) / Math.max(1, this.timelineCellWidth)
+                        );
+                        gesture.targetFrame = Math.max(
+                            0,
+                            Math.min(gesture.duration - 1, gesture.sourceFrame + deltaFrames)
+                        );
+                        const targetTimelineFrame = entry.clip.startFrame + gesture.targetFrame;
+                        clearTargetStyle();
+                        gesture.targetSlot = [...gesture.row.querySelectorAll('.anim-cell-slot')]
+                            .find(slot => Number(slot.dataset.frameIndex) === targetTimelineFrame) || null;
+                        const movePlan = this._planMotionTimelineKeyMove(
+                            gesture.anchorDescriptor,
+                            gesture.targetFrame
+                        );
+                        const collides = !movePlan.ok;
+                        gesture.targetSlot?.classList.add(collides ? 'key-drop-blocked' : 'key-drop-target');
+                        moveEvent.preventDefault();
+                    };
+                    const onUp = upEvent => {
+                        if (upEvent.pointerId !== gesture.pointerId) return;
+                        document.removeEventListener('pointermove', onMove);
+                        document.removeEventListener('pointerup', onUp);
+                        document.removeEventListener('pointercancel', onUp);
+                        clearTargetStyle();
+                        gesture.sourceSlot.classList.remove('key-dragging', 'is-key-pressed');
+                        this._motionKeyDrag = null;
+                        let clickCommitted = false;
+                        if (gesture.moved) {
+                            this._motionKeyPendingClick = null;
+                            const moved = this._moveMotionTimelineKeySelection(
+                                gesture.anchorDescriptor,
+                                gesture.targetFrame,
+                                gesture.beforeState
+                            );
+                            if (!moved) this.render();
+                        } else if (upEvent.type === 'pointerup') {
+                            clickCommitted = this._commitMotionTimelineKeyPointerClick(gesture, upEvent);
+                        } else if (upEvent.type === 'pointercancel') {
+                            if (pendingSelection?.addedForDrag) {
+                                this._setMotionTimelineKeySelected(
+                                    pendingSelection.descriptor,
+                                    false,
+                                    { additive: true }
+                                );
+                            }
+                            this._motionKeyPendingClick = null;
+                            this.render();
+                        }
+                        this._motionKeyClickSuppressed = gesture.moved || clickCommitted;
+                    };
+                    document.addEventListener('pointermove', onMove, { passive: false });
+                    document.addEventListener('pointerup', onUp);
+                    document.addEventListener('pointercancel', onUp);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
                 const keyMarker = e.target.closest('.anim-motion-key-marker, .anim-warp-key-marker');
                 if (keyMarker && this._isMotionTimelineKeyEditing()) {
                     const kind = keyMarker.dataset.keyKind;
@@ -11948,6 +14940,9 @@ export class AnimationTablePopup {
                         e.stopPropagation();
                         return;
                     }
+                    const anchorDescriptor = { clipId, kind, frame: sourceFrame };
+                    const pendingSelection = this._prepareMotionTimelineKeyPointerSelection(anchorDescriptor, e);
+                    keyMarker.classList.add('is-key-pressed');
                     const rect = block.getBoundingClientRect();
                     const gesture = {
                         pointerId: e.pointerId,
@@ -11959,6 +14954,7 @@ export class AnimationTablePopup {
                         duration: Math.max(2, entry.clip.duration || 2),
                         rect,
                         marker: keyMarker,
+                        anchorDescriptor,
                         moved: false,
                         beforeState: this._captureTimelineHistoryState()
                     };
@@ -11969,10 +14965,11 @@ export class AnimationTablePopup {
                         if (!gesture.moved) return;
                         const ratio = Math.max(0, Math.min(1, (moveEvent.clientX - gesture.rect.left) / Math.max(1, gesture.rect.width)));
                         gesture.targetFrame = Math.round(ratio * (gesture.duration - 1));
-                        const keyframes = gesture.kind === 'warp'
-                            ? (normalizeClipDeformer(entry.clip.deformer)?.keyframes || [])
-                            : (entry.clip.transformKeyframes || []);
-                        const collides = keyframes.some(key => key?.frame === gesture.targetFrame && key?.frame !== gesture.sourceFrame);
+                        const movePlan = this._planMotionTimelineKeyMove(
+                            gesture.anchorDescriptor,
+                            gesture.targetFrame
+                        );
+                        const collides = !movePlan.ok;
                         gesture.marker.classList.toggle('key-drop-blocked', collides);
                         gesture.marker.style.setProperty(
                             gesture.kind === 'warp' ? '--warp-key-position' : '--motion-key-position',
@@ -11985,11 +14982,31 @@ export class AnimationTablePopup {
                         document.removeEventListener('pointermove', onMove);
                         document.removeEventListener('pointerup', onUp);
                         document.removeEventListener('pointercancel', onUp);
+                        gesture.marker.classList.remove('is-key-pressed');
                         this._motionKeyDrag = null;
-                        this._motionKeyClickSuppressed = gesture.moved;
+                        let clickCommitted = false;
                         if (gesture.moved) {
-                            this._moveTimelineKey(gesture.clipId, gesture.kind, gesture.sourceFrame, gesture.targetFrame, gesture.beforeState);
+                            this._motionKeyPendingClick = null;
+                            const moved = this._moveMotionTimelineKeySelection(
+                                gesture.anchorDescriptor,
+                                gesture.targetFrame,
+                                gesture.beforeState
+                            );
+                            if (!moved) this.render();
+                        } else if (upEvent.type === 'pointerup') {
+                            clickCommitted = this._commitMotionTimelineKeyPointerClick(gesture, upEvent);
+                        } else if (upEvent.type === 'pointercancel') {
+                            if (pendingSelection?.addedForDrag) {
+                                this._setMotionTimelineKeySelected(
+                                    pendingSelection.descriptor,
+                                    false,
+                                    { additive: true }
+                                );
+                            }
+                            this._motionKeyPendingClick = null;
+                            this.render();
                         }
+                        this._motionKeyClickSuppressed = gesture.moved || clickCommitted;
                     };
                     document.addEventListener('pointermove', onMove, { passive: false });
                     document.addEventListener('pointerup', onUp);
@@ -12053,7 +15070,8 @@ export class AnimationTablePopup {
                                 startFrame: cel.startFrame,
                                 duration: cel.duration,
                                 transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
-                                deformer: this._cloneClipInstanceMetadata(cel.deformer, null)
+                                deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
+                                rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
                             })),
                             beforeState: this._captureTimelineHistoryState()
                         };
@@ -12484,7 +15502,8 @@ export class AnimationTablePopup {
                     startFrame: cel.startFrame,
                     duration: cel.duration,
                     transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
-                    deformer: this._cloneClipInstanceMetadata(cel.deformer, null)
+                    deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
+                    rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
                 }))
             };
             if (this._applyRetimingWithPush(retimingData, newDuration - previousDuration)) {
@@ -12519,7 +15538,8 @@ export class AnimationTablePopup {
             startFrame: cel.startFrame,
             duration: cel.duration,
             transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
-            deformer: this._cloneClipInstanceMetadata(cel.deformer, null)
+            deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
+            rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
         }));
         const ok = this._applyRetimingWithPush({
             cel: clip,
@@ -12570,7 +15590,10 @@ export class AnimationTablePopup {
     _bindNumberInputWheel(input, onCommit) {
         if (!(input instanceof HTMLInputElement) || input.type !== 'number') return;
         const wheelHint = 'ホイールで1刻み調整';
-        input.title = input.title ? `${input.title} / ${wheelHint}` : wheelHint;
+        input.dataset.tooltip = input.dataset.tooltip
+            ? `${input.dataset.tooltip} / ${wheelHint}`
+            : wheelHint;
+        input.classList.add('ui-help-tooltip');
         input.addEventListener('wheel', (event) => {
             if (input.disabled || input.readOnly) return;
             if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
@@ -12592,7 +15615,10 @@ export class AnimationTablePopup {
     _bindMotionNumberInputScrub(input, options = {}) {
         if (!(input instanceof HTMLInputElement) || input.type !== 'number') return;
         const scrubHint = '横ドラッグで調整';
-        input.title = input.title ? `${input.title} / ${scrubHint}` : scrubHint;
+        input.dataset.tooltip = input.dataset.tooltip
+            ? `${input.dataset.tooltip} / ${scrubHint}`
+            : scrubHint;
+        input.classList.add('ui-help-tooltip');
 
         let gesture = null;
         let suppressClick = false;
@@ -12800,12 +15826,12 @@ export class AnimationTablePopup {
         style.textContent = `
             .animation-table-panel {
                 position: fixed;
-                --anim-cell-width: 30px;
-                --anim-cel-inset: 8px;
+                --anim-cell-width: 24px;
+                --anim-cel-inset: 6px;
                 bottom: 20px;
                 left: 70px;
                 width: calc(100vw - 320px);
-                height: 260px;
+                height: var(--ui-anim-panel-height);
                 min-width: 460px;
                 z-index: 2000;
                 display: flex;
@@ -12818,7 +15844,7 @@ export class AnimationTablePopup {
             }
 
             .anim-table-header {
-                padding: 6px 12px;
+                padding: 5px 10px;
                 background: rgba(255, 251, 230, 0.96);
                 color: var(--futaba-maroon);
                 display: flex;
@@ -12826,12 +15852,12 @@ export class AnimationTablePopup {
                 justify-content: space-between;
                 align-items: center;
                 position: relative;
-                font-size: 11px;
+                font-size: 9px;
                 font-weight: bold;
                 cursor: move;
                 flex-shrink: 0;
                 border-bottom: 1px solid rgba(128, 0, 0, 0.2);
-                gap: 6px 10px;
+                gap: 4px 8px;
                 touch-action: none;
             }
 
@@ -12850,17 +15876,17 @@ export class AnimationTablePopup {
             .anim-table-header-right {
                 display: flex;
                 align-items: center;
-                gap: 6px;
+                gap: 5px;
                 min-width: 0;
             }
 
             .anim-table-header-left {
-                flex: 1 1 380px;
+                flex: 1 1 320px;
                 flex-wrap: wrap;
             }
 
             .anim-table-header-center {
-                flex: 1 1 220px;
+                flex: 1 1 180px;
                 justify-content: center;
             }
 
@@ -12878,10 +15904,10 @@ export class AnimationTablePopup {
             .anim-duration-controls {
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 6px;
                 background: rgba(128, 0, 0, 0.08);
-                padding: 2px 8px;
-                border-radius: 20px;
+                padding: 2px 6px;
+                border-radius: 16px;
             }
 
             .anim-control-label {
@@ -12894,8 +15920,8 @@ export class AnimationTablePopup {
                 background: color-mix(in srgb, var(--futaba-background) 72%, transparent);
                 border: 1px solid color-mix(in srgb, var(--futaba-maroon) 28%, transparent);
                 color: var(--futaba-maroon);
-                width: 20px;
-                height: 20px;
+                width: 18px;
+                height: 18px;
                 border-radius: 4px;
                 display: flex;
                 align-items: center;
@@ -12929,10 +15955,10 @@ export class AnimationTablePopup {
             }
 
             .anim-play-btn {
-                margin-right: 4px;
-                width: 24px;
-                height: 24px;
-                font-size: 12px;
+                margin-right: 3px;
+                width: 20px;
+                height: 20px;
+                font-size: 10px;
             }
 
             .anim-play-btn.playing {
@@ -12942,10 +15968,10 @@ export class AnimationTablePopup {
             }
 
             .anim-preview-toggle {
-                margin-left: 6px;
-                height: 22px;
-                min-width: 58px;
-                padding: 0 7px;
+                margin-left: 3px;
+                height: 19px;
+                min-width: 50px;
+                padding: 0 6px;
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
@@ -12953,7 +15979,7 @@ export class AnimationTablePopup {
                 border-radius: 5px;
                 background: transparent;
                 color: var(--futaba-maroon);
-                font-size: 10px;
+                font-size: 8px;
                 font-weight: 700;
                 cursor: pointer;
                 opacity: 0.72;
@@ -12974,14 +16000,14 @@ export class AnimationTablePopup {
             }
 
             .anim-onion-toggle {
-                margin-left: 6px;
-                height: 22px;
-                min-width: 42px;
+                margin-left: 4px;
+                height: 19px;
+                min-width: 36px;
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                gap: 3px;
-                padding: 0 5px;
+                gap: 2px;
+                padding: 0 4px;
                 background: transparent;
                 border: 1px solid var(--futaba-light-medium);
                 border-radius: 5px;
@@ -13002,14 +16028,14 @@ export class AnimationTablePopup {
 
             .anim-onion-toggle .anim-onion-icon,
             .anim-onion-toggle .anim-onion-icon svg {
-                width: 13px;
-                height: 13px;
+                width: 11px;
+                height: 11px;
                 display: inline-flex;
             }
 
             .anim-onion-count {
                 min-width: 8px;
-                font-size: 10px;
+                font-size: 8px;
                 font-weight: 700;
                 line-height: 1;
                 text-align: center;
@@ -13019,9 +16045,9 @@ export class AnimationTablePopup {
             .anim-timeline-settings {
                 display: flex;
                 align-items: center;
-                gap: 5px;
-                margin-left: 2px;
-                padding: 2px 6px;
+                gap: 4px;
+                margin-left: 1px;
+                padding: 1px 5px;
                 border-radius: 6px;
                 background: rgba(128, 0, 0, 0.06);
                 cursor: default;
@@ -13030,8 +16056,8 @@ export class AnimationTablePopup {
             .anim-setting-field {
                 display: flex;
                 align-items: center;
-                gap: 3px;
-                font-size: 9px;
+                gap: 2px;
+                font-size: 8px;
                 color: var(--futaba-maroon);
                 opacity: 0.82;
                 cursor: default;
@@ -13039,14 +16065,14 @@ export class AnimationTablePopup {
             }
 
             .anim-setting-field input {
-                width: 34px;
-                height: 18px;
+                width: 28px;
+                height: 16px;
                 box-sizing: border-box;
                 border: 1px solid rgba(128, 0, 0, 0.22);
                 border-radius: 4px;
                 background: color-mix(in srgb, var(--futaba-background) 78%, transparent);
                 color: var(--futaba-maroon);
-                font-size: 10px;
+                font-size: 9px;
                 font-weight: 700;
                 text-align: center;
                 padding: 0 2px;
@@ -13070,7 +16096,7 @@ export class AnimationTablePopup {
             }
 
             .anim-capture-controls {
-                margin-left: 12px;
+                margin-left: 9px;
                 display: flex;
                 align-items: center;
             }
@@ -13651,7 +16677,7 @@ export class AnimationTablePopup {
             }
 
             .anim-track-list {
-                width: 140px;
+                width: var(--ui-anim-track-width);
                 border-right: 1px solid var(--futaba-light-medium);
                 display: flex;
                 flex-direction: column;
@@ -13663,9 +16689,9 @@ export class AnimationTablePopup {
             }
 
             .anim-track-header {
-                height: 24px;
-                padding: 0 8px;
-                font-size: 9px;
+                height: var(--ui-anim-timeline-header-height);
+                padding: 0 6px;
+                font-size: 8px;
                 color: var(--futaba-maroon);
                 background: rgba(128, 0, 0, 0.05);
                 border-bottom: 1px solid var(--futaba-light-medium);
@@ -13675,18 +16701,18 @@ export class AnimationTablePopup {
                 z-index: 21;
                 overflow: hidden;
                 display: grid;
-                grid-template-columns: 78px 1fr;
+                grid-template-columns: 62px 1fr;
                 align-items: center;
-                column-gap: 10px;
+                column-gap: 8px;
             }
 
             .anim-track-header::before {
                 content: '';
                 position: absolute;
-                left: 84px;
+                left: 68px;
                 top: 2px;
                 width: 1px;
-                height: 26px;
+                height: 20px;
                 background: rgba(128, 0, 0, 0.32);
                 transform: rotate(-10deg);
                 transform-origin: top center;
@@ -13705,24 +16731,24 @@ export class AnimationTablePopup {
 
             .anim-axis-label--timeline {
                 justify-self: start;
-                font-size: 10px;
+                font-size: 8px;
                 opacity: 0.8;
             }
 
             .anim-axis-label--lanes {
                 justify-self: start;
-                font-size: 10px;
+                font-size: 8px;
                 font-weight: bold;
             }
 
             .anim-lane-add-btn {
-                width: 16px;
-                height: 16px;
+                width: 14px;
+                height: 14px;
                 border-radius: 50%;
                 border: 1px solid var(--futaba-light-medium);
                 background: color-mix(in srgb, var(--futaba-background) 82%, transparent);
                 color: var(--futaba-maroon);
-                font-size: 12px;
+                font-size: 10px;
                 line-height: 1;
                 display: flex;
                 align-items: center;
@@ -13738,18 +16764,18 @@ export class AnimationTablePopup {
             }
 
             .anim-track-item {
-                padding: 0 8px;
-                font-size: 11px;
+                padding: 0 6px;
+                font-size: 9px;
                 border-bottom: 1px solid rgba(128, 0, 0, 0.1);
                 color: var(--futaba-maroon);
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                height: 32px;
+                height: var(--ui-anim-lane-row-height);
                 box-sizing: border-box;
                 display: flex;
                 align-items: center;
-                gap: 6px;
+                gap: 4px;
                 background: rgba(255, 255, 238, 0.6);
                 cursor: pointer;
             }
@@ -13777,16 +16803,16 @@ export class AnimationTablePopup {
             .anim-track-name-input {
                 flex: 1;
                 min-width: 0;
-                height: 22px;
+                height: 18px;
                 box-sizing: border-box;
                 border: 1px solid var(--futaba-light-medium);
                 border-radius: 4px;
                 background: rgba(255, 255, 238, 0.9);
                 color: var(--futaba-maroon);
-                font-size: 11px;
+                font-size: 9px;
                 font-weight: 700;
                 outline: none;
-                padding: 1px 4px;
+                padding: 1px 3px;
                 box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 22%, transparent);
             }
 
@@ -13828,9 +16854,9 @@ export class AnimationTablePopup {
             }
 
             .anim-lane-visibility-btn {
-                width: 18px;
-                height: 18px;
-                padding: 2px;
+                width: 15px;
+                height: 15px;
+                padding: 1px;
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
@@ -13844,19 +16870,19 @@ export class AnimationTablePopup {
 
             .anim-lane-visibility-btn:hover { background: rgba(212, 168, 160, 0.6); }
             .anim-lane-visibility-btn:not(.is-visible), .anim-track-item.is-hidden .anim-track-name { opacity: 0.46; }
-            .anim-lane-visibility-btn svg { width: 12px; height: 12px; }
+            .anim-lane-visibility-btn svg { width: 10px; height: 10px; }
 
             .anim-track-item.is-folder {
                 background: rgba(128, 0, 0, 0.05);
                 font-weight: bold;
-                font-size: 10px;
+                font-size: 9px;
             }
 
             .anim-track-item.active {
                 background: rgba(255, 102, 0, 0.15);
                 font-weight: bold;
                 border-left: 3px solid #ff6600;
-                padding-left: 5px;
+                padding-left: 4px;
             }
 
             .animation-table-panel.lane-only-selected .anim-track-item.active {
@@ -13880,7 +16906,7 @@ export class AnimationTablePopup {
 
             .anim-timeline-header {
                 display: flex;
-                height: 24px;
+                height: var(--ui-anim-timeline-header-height);
                 background: rgba(128, 0, 0, 0.05);
                 border-bottom: 1px solid var(--futaba-light-medium);
                 position: sticky;
@@ -13895,7 +16921,7 @@ export class AnimationTablePopup {
                 align-items: center;
                 justify-content: center;
                 position: relative;
-                font-size: 9px;
+                font-size: 8px;
                 font-family: monospace;
                 border-right: 1px solid rgba(128, 0, 0, 0.1);
                 color: var(--futaba-maroon);
@@ -13974,7 +17000,7 @@ export class AnimationTablePopup {
 
             .anim-timeline-row {
                 display: flex;
-                height: 32px;
+                height: var(--ui-anim-lane-row-height);
                 border-bottom: 1px solid rgba(128, 0, 0, 0.1);
                 box-sizing: border-box;
             }
@@ -14024,13 +17050,13 @@ export class AnimationTablePopup {
             }
 
             .anim-cel-block {
-                height: 22px;
+                height: var(--ui-anim-cel-height);
                 background: var(--futaba-maroon);
-                border-radius: 4px;
+                border-radius: 3px;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 transition: transform 0.1s ease;
                 z-index: 5;
-                margin-left: 4px;
+                margin-left: 3px;
                 flex-shrink: 0;
                 position: relative;
                 pointer-events: auto;
@@ -14337,6 +17363,7 @@ export class AnimationTablePopup {
                 cel.transformKeyframes = this._cloneClipInstanceMetadata(original.transformKeyframes, []);
             }
             cel.deformer = this._cloneClipInstanceMetadata(original.deformer, null);
+            cel.rigMotion = this._cloneClipInstanceMetadata(original.rigMotion, null);
         });
     }
 
@@ -14435,6 +17462,20 @@ export class AnimationTablePopup {
                     newTerminalFrame,
                     targetDuration
                 )
+            };
+        }
+        if (Array.isArray(cel.rigMotion?.partTracks)) {
+            cel.rigMotion = {
+                ...cel.rigMotion,
+                partTracks: cel.rigMotion.partTracks.map(track => ({
+                    ...track,
+                    keyframes: this._retimeTerminalKeyframes(
+                        track?.keyframes,
+                        oldTerminalFrame,
+                        newTerminalFrame,
+                        targetDuration
+                    )
+                }))
             };
         }
         return true;
@@ -14605,6 +17646,7 @@ export class AnimationTablePopup {
             const folderTransformContext = shouldSave && confirmed && !cancelled
                 ? this._getSelectedInternalFolderTransformTargets()
                 : null;
+            const folderSelectionId = folderTransformContext?.folderLayer?.id || null;
             if (folderTransformContext?.targets?.length > 1) {
                 this.layerSystem?._showOperationIndicator?.(
                     `CAFフォルダ変形を確定中... ${folderTransformContext.targets.length} layers`
@@ -14645,6 +17687,11 @@ export class AnimationTablePopup {
                                 const internalLayerId = this._resolveInternalLayerIdForWorkingLayer(asset, layerId);
                                 saved = this._captureDrawingLayerToSelectedClip(layerId, internalLayerId);
                             }
+                            if (folderSelectionId) {
+                                // Raster captureはworking adapterの内部Layerを一時選択する。
+                                // Folder V変形のUI正本とHistory selectionは元Folderへ戻す。
+                                this.selectedInternalLayerId = folderSelectionId;
+                            }
                             if (saved && beforeState) {
                                 const asset = this._getSelectedAssetForInspector();
                                 const afterState = asset ? this._captureInternalLayerHistoryState(asset) : null;
@@ -14675,6 +17722,21 @@ export class AnimationTablePopup {
         });
         this.eventBus.on('drawing:stroke-cancelled', () => {
             this._handleDrawingCancelled();
+        });
+        this.eventBus.on('selection:transform-started', ({ layerId } = {}) => {
+            if (!this._isAnimationWorkingLayerId(layerId)) return;
+            this._enterTransformEditPreviewMode();
+        });
+        this.eventBus.on('selection:transform-ended', ({ layerId, confirmed = false } = {}) => {
+            if (!this.isTransformPreviewSuspended || !this._isAnimationWorkingLayerId(layerId)) return;
+            requestAnimationFrame(() => {
+                if (confirmed) {
+                    this._invalidateWorkingLayerSnapshotId(layerId);
+                    this._saveSelectedClipFromWorkingLayers();
+                    this._requestLayerPanelSync();
+                }
+                this._exitTransformEditPreviewMode();
+            });
         });
         this.eventBus.on('selection:tool-changed', ({ active } = {}) => {
             if (!this.isVisible || !this.selectedCelId) return;

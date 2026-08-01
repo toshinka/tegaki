@@ -1,46 +1,83 @@
-# 長期研究: AI・WebGPU・物理
+# 長期研究: AI・WebGPU・高度物理
 
-更新日: 2026-07-13
+更新日: 2026-07-28
 
 ## 境界
 
-- この文書の項目は通常Phaseへ混ぜない。
-- 現行PixiJS / WebGL RenderTexture経路で解決できる問題を先に直す。
-- WebGPU、SDF/MSDF、WebGL2 Mesh、DPR 2倍化、tiled canvasは固定計測と独立prototypeなしに採用しない。
+本書は、通常の機能Phaseへ混ぜない研究項目の隔離場所である。直近のUI、Motion、WARP、保存、Bakeの修正を止めて先行実装しない。
 
-## 描画研究
+研究を開く条件:
 
-- 現行入力はcoalesced events、筆圧補正、LazyBrushを実装済み。
-- StrokeQualityFilterは、実機で再現する入力欠落やジッターを計測できた場合だけ、筆圧平滑化と極小ジッター除去から試す。
-- ライブ描画と確定描画の見た目を分けない。
-- GPU brush候補は大量dab、高度なairbrush texture、混色、高品質AA。通常pen全面置換から始めない。
-- airbrushは現行のradial texture dab、spacing補正flow、normal alpha蓄積を固定入力で測り、WebGPU prototypeは大径soft dab 1 workloadから始める。
-- 水彩・油彩はrenderer切替だけでは成立しない。pigment / water / wetness / height等の永続状態と、History/CAF保存時のbake境界を先に設計する。
+- 現行CPU / WebGL / Pixi経路に再現可能な性能限界がある。
+- 入出力、fallback、保存正本、History、メモリ解放を説明できる。
+- 小さなadapterまたはprototypeで比較できる。
+- 未対応環境でもProjectを開け、結果を失わない。
 
-## WebGPU / Pixi更新
+## WebGPU / GPU画材
 
-- PixiJS更新とWebGPU採用を同時に行わない。
-- Pixi更新時はrendererをWebGLに固定し、RenderTexture、extract、mask、blend、保存復元を比較する。
-- WebGPU prototypeは本体正本から分離し、WebGL fallbackと二重保守コストを測る。
+候補:
 
-## AI・ロトスコープ
+- WebGPU brush pipeline
+- 水彩の拡散 / 乾燥
+- 油彩の厚み / 混色
+- 大きなblur、smudge、wet map
+- Mesh / physicsの計算adapter
 
-- 最初はMP4/GIFを分解し、編集lockした参考Laneへ置くロトスコープ支援。
-- AI連携はNode.js local adapter越しとし、本体を特定APIへ直接依存させない。
-- 生成結果は参考Laneであり、手描き正本へ自動混入させない。
+採用gate:
 
-## Keyframe後の研究
+1. 同じ固定入力でCPU / 現行WebGLとの画素差を測る。
+2. WebGPU未対応、device loss、shader compile失敗時のfallbackを持つ。
+3. save / reload / exportはGPU runtime stateへ依存しない。
+4. RenderTexture、GPUBuffer、cacheの上限とdisposeを測る。
+5. pen latency、battery、mobile、複数CAFで実測優位がある。
 
-- ClipInstance transform、keyframe、easingを先に完成させる。
-- Perform記録は操作sampling、簡略化、Undo単位を定義してから行う。
-- mesh / warp / physicsはCAF画像正本と配置transformを分離する。
-- AI補間、physics、meshを同一Phaseで実装しない。
-- meshは密な手打ちを既定にせず、少数点cage / 粗いlattice / 自動weightを比較する。
-- boneとphysicsはdeformer parameterを駆動し、必要時にkeyframeへbakeする。画像正本へ直接演算結果を書き続けない。
-- 詳細な段階と採否gateは `09_変形アニメーション・メッシュ・GPU画材ロードマップ.md` を参照する。
+SDF / MSDFは線品質研究として維持するが、正式Phaseまで本番brushへ接続しない。
 
-## 無限領域
+## AI・ロトスコープ・外部engine
 
-- Phase 5pでProject frame固定 + 可変Raster boundsを実装済み。
-- 真の無限canvasを検討する場合だけ、chunk/tile、viewport合成、差分History、CAF snapshot互換を独立研究する。
-- 現行の可変Raster boundsを壊して見かけだけ無限化しない。
+候補:
+
+- 参考動画のFrame分解とdisplay-only reference Lane
+- pose / inbetween / color候補の生成
+- ComfyUI等への明示export / import adapter
+- prompt補助とlocal engine bridge
+
+原則:
+
+- AI出力を自動で既存Layerへ上書きしない。
+- 生成結果は新規asset / Laneへ取り込み、元データを保持する。
+- Project JSONに外部engine固有runtimeを埋め込まない。
+- offline、権限拒否、engine未導入でも通常制作を続行できる。
+- adapterのversion、入力manifest、結果のprovenanceを記録できるようにする。
+
+長大な外部AI連携案は過去計画の`外部AI参考資料/`へ保存した。正式研究Phaseでは現行コードとAPI状況を再調査する。
+
+## 高度物理
+
+BONE Dynamicsと単純Colliderまでの統合計画は`15_キャラクターRig・Mesh・Perform統合ロードマップ.md`を正本とする。
+
+本書へ残す研究項目:
+
+- Part単位Rigid Body
+- friction / restitution / sleeping
+- broad phase / narrow phase
+- continuous collision detection
+- soft body / Position Based Dynamics
+- 接触点の局所Mesh変形
+- fluid / cloth相当
+
+これらはSecondary Motionと同じPhaseへ入れない。決定的random seek、fixed timestep、export一致、Bake、solver versionが成立してから独立prototypeを作る。
+
+## 真の無限Canvas
+
+現行のRaster bounds拡張と欄外Rasterは維持する。真の無限領域はtile / chunk、cache eviction、History、save、thumbnail、export範囲を別設計にする必要があるため研究扱いとする。
+
+採用前に確認すること:
+
+- tile IDと座標の正本
+- strokeが跨ぐtileの原子性
+- Undo / Redo容量
+- CAF captureとAnimation frame bounds
+- Project保存と部分load
+- PSD / image export範囲
+- GPU texture上限とeviction

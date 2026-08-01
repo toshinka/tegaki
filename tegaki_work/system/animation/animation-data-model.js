@@ -14,6 +14,30 @@ import {
     normalizeClippingMode
 } from '../clipping-mode.js';
 import { normalizeClipDeformer } from './clip-deformer.js';
+import {
+    decodeRasterPixels,
+    serializeRasterPixels
+} from './raster-pixel-codec.js';
+import {
+    getRigPartIdsForInternalLayers,
+    moveRigBoneKey,
+    moveRigPartKey,
+    registerRootBoneRigidBinding,
+    registerRigPartDefinition,
+    removeRigBoneKey,
+    removeRigPartKey,
+    normalizeRigDefinition,
+    normalizeRigMotion,
+    remapRigDefinition,
+    serializeRigDefinition,
+    serializeRigMotion,
+    updateRigBoneBindTransform,
+    updateRigBoneParent,
+    upsertRigBoneKey,
+    upsertRigPartKey,
+    validateRigDefinition,
+    validateRigMotion
+} from './part-rig.js';
 
 /**
  * ID生成ユーティリティ
@@ -91,19 +115,23 @@ export class DrawingSnapshotModel {
         });
         if (this.width > 0) this.rasterBounds.width = this.width;
         if (this.height > 0) this.rasterBounds.height = this.height;
-        this.pixels = options.pixels || null; // Uint8ClampedArray or Array
+        this.pixels = decodeRasterPixels(options.pixels, options.pixelEncoding); // Uint8ClampedArray or Array
         this.isBlank = options.isBlank === true;
         this.createdAt = options.createdAt || Date.now();
         this.updatedAt = options.updatedAt || Date.now();
     }
 
-    serialize() {
+    serialize(options = {}) {
+        const serializedPixels = serializeRasterPixels(this.pixels, options.pixelEncoding);
         return {
             id: this.id,
             width: this.width,
             height: this.height,
             rasterBounds: { ...this.rasterBounds },
-            pixels: this.pixels && typeof this.pixels.length === 'number' ? Array.from(this.pixels) : this.pixels,
+            pixels: serializedPixels.pixels,
+            ...(serializedPixels.pixelEncoding
+                ? { pixelEncoding: serializedPixels.pixelEncoding }
+                : {}),
             isBlank: this.isBlank,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
@@ -191,6 +219,9 @@ export class ClipAssetModel {
         
         // Phase 4z6: モデル化
         this.internalLayers = (options.internalLayers || []).map(layer => new ClipAssetInternalLayerModel(layer));
+        this.rigDefinition = options.rigDefinition == null
+            ? null
+            : normalizeRigDefinition(options.rigDefinition);
         
         this.createdAt = options.createdAt || Date.now();
         this.updatedAt = options.updatedAt || Date.now();
@@ -204,6 +235,9 @@ export class ClipAssetModel {
             folderId: this.folderId,
             drawingSnapshotId: this.drawingSnapshotId,
             internalLayers: this.internalLayers.map(l => l.serialize()),
+            ...(this.rigDefinition == null
+                ? {}
+                : { rigDefinition: serializeRigDefinition(this.rigDefinition) }),
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
@@ -236,6 +270,9 @@ export class ClipInstanceModel {
             : [];
         // Phase 6: ClipAssetのRaster正本を変えない、ClipInstance単位の非破壊deformer。
         this.deformer = normalizeClipDeformer(options.deformer);
+        this.rigMotion = options.rigMotion == null
+            ? null
+            : normalizeRigMotion(options.rigMotion);
         this.physics = clonePlainObject(options.physics, {
             enabled: false,
             rigId: null,
@@ -246,6 +283,10 @@ export class ClipInstanceModel {
         this.rasterSnapshot = options.rasterSnapshot
             ? {
                 ...options.rasterSnapshot,
+                pixels: decodeRasterPixels(
+                    options.rasterSnapshot.pixels,
+                    options.rasterSnapshot.pixelEncoding
+                ),
                 rasterBounds: normalizeRasterBounds(options.rasterSnapshot.rasterBounds, {
                     width: options.rasterSnapshot.width || 1,
                     height: options.rasterSnapshot.height || 1
@@ -267,6 +308,9 @@ export class ClipInstanceModel {
             transform: normalizeClipTransform(this.transform),
             transformKeyframes: this.transformKeyframes.map(keyframe => clonePlainObject(keyframe)),
             deformer: normalizeClipDeformer(this.deformer),
+            ...(this.rigMotion == null
+                ? {}
+                : { rigMotion: serializeRigMotion(this.rigMotion) }),
             physics: clonePlainObject(this.physics, {
                 enabled: false,
                 rigId: null,
@@ -697,6 +741,237 @@ export class TimelineModel {
         return { ok: true, lane: entry.lane, clip: entry.clip };
     }
 
+    registerClipAssetFolderPart(assetId, layerId, options = {}) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const layer = asset.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+        if (layer.type !== 'folder') return { ok: false, reason: 'folder-required' };
+
+        const registration = registerRigPartDefinition(asset.rigDefinition, layer.id, {
+            maxParts: options.maxParts ?? Number.POSITIVE_INFINITY
+        });
+        if (!registration.ok) return registration;
+        const validation = validateRigDefinition(registration.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        asset.rigDefinition = validation.value;
+        asset.updatedAt = Date.now();
+        return { ...registration, asset, layer, part: registration.part };
+    }
+
+    registerClipAssetRootBoneBinding(assetId, partId, options = {}) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const part = asset.rigDefinition?.parts?.find(candidate => candidate?.partId === partId) || null;
+        if (!part) return { ok: false, reason: 'part-not-found' };
+        const layer = asset.internalLayers?.find(candidate => candidate?.id === partId) || null;
+        if (!layer || layer.type !== 'folder') return { ok: false, reason: 'folder-required' };
+
+        const registration = registerRootBoneRigidBinding(
+            asset.rigDefinition,
+            options.boneId || createId(),
+            partId,
+            options
+        );
+        if (!registration.ok) return registration;
+        const validation = validateRigDefinition(registration.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        asset.rigDefinition = validation.value;
+        asset.updatedAt = Date.now();
+        return { ...registration, asset, layer, part };
+    }
+
+    setClipAssetRigBoneBindTransform(assetId, boneId, transform = {}) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const update = updateRigBoneBindTransform(asset.rigDefinition, boneId, transform);
+        if (!update.ok) return update;
+        const validation = validateRigDefinition(update.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        asset.rigDefinition = validation.value;
+        asset.updatedAt = Date.now();
+        return { ...update, asset, bone: validation.value.bones.find(bone => bone.boneId === boneId) };
+    }
+
+    setClipAssetRigBoneParent(assetId, boneId, parentBoneId = null) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const update = updateRigBoneParent(asset.rigDefinition, boneId, parentBoneId);
+        if (!update.ok) return update;
+        const validation = validateRigDefinition(update.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        asset.rigDefinition = validation.value;
+        asset.updatedAt = Date.now();
+        return { ...update, asset, bone: validation.value.bones.find(bone => bone.boneId === boneId) };
+    }
+
+    setClipRigPartKey(clipId, partId, localFrame, transform = {}, options = {}) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        const definition = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+        if (!definition.ok || !definition.value?.parts?.some(part => part?.partId === partId)) {
+            return { ok: false, reason: 'part-not-found', errors: definition.errors };
+        }
+        const duration = Math.max(1, Number.isInteger(entry.clip.duration) ? entry.clip.duration : 1);
+        if (!Number.isInteger(localFrame) || localFrame < 0 || localFrame >= duration) {
+            return { ok: false, reason: 'part-key-out-of-range' };
+        }
+        const update = upsertRigPartKey(entry.clip.rigMotion, partId, localFrame, transform, options);
+        if (!update.ok) return update;
+        const validation = validateRigMotion(update.value, definition.value, duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-motion', errors: validation.errors };
+        }
+        entry.clip.rigMotion = validation.value;
+        return { ...update, lane: entry.lane, clip: entry.clip, asset };
+    }
+
+    removeClipRigPartKey(clipId, partId, localFrame) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        const definition = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+        if (!definition.ok || !definition.value?.parts?.some(part => part?.partId === partId)) {
+            return { ok: false, reason: 'part-not-found', errors: definition.errors };
+        }
+        const update = removeRigPartKey(entry.clip.rigMotion, partId, localFrame);
+        if (!update.ok) return update;
+        const validation = validateRigMotion(update.value, definition.value, entry.clip.duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-motion', errors: validation.errors };
+        }
+        entry.clip.rigMotion = validation.value;
+        return { ...update, lane: entry.lane, clip: entry.clip, asset };
+    }
+
+    moveClipRigPartKey(clipId, partId, sourceFrame, targetFrame) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        const definition = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+        if (!definition.ok || !definition.value?.parts?.some(part => part?.partId === partId)) {
+            return { ok: false, reason: 'part-not-found', errors: definition.errors };
+        }
+        const duration = Math.max(1, Number.isInteger(entry.clip.duration) ? entry.clip.duration : 1);
+        if (
+            !Number.isInteger(sourceFrame)
+            || sourceFrame < 0
+            || sourceFrame >= duration
+            || !Number.isInteger(targetFrame)
+            || targetFrame < 0
+            || targetFrame >= duration
+        ) {
+            return { ok: false, reason: 'part-key-out-of-range' };
+        }
+        const update = moveRigPartKey(entry.clip.rigMotion, partId, sourceFrame, targetFrame);
+        if (!update.ok) return update;
+        const validation = validateRigMotion(update.value, definition.value, duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-motion', errors: validation.errors };
+        }
+        entry.clip.rigMotion = validation.value;
+        return { ...update, lane: entry.lane, clip: entry.clip, asset };
+    }
+
+    setClipRigBoneKey(clipId, boneId, localFrame, transform = {}, options = {}) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        const definition = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+        if (!definition.ok || !definition.value?.bones?.some(bone => bone?.boneId === boneId)) {
+            return { ok: false, reason: 'bone-not-found', errors: definition.errors };
+        }
+        const duration = Math.max(1, Number.isInteger(entry.clip.duration) ? entry.clip.duration : 1);
+        if (!Number.isInteger(localFrame) || localFrame < 0 || localFrame >= duration) {
+            return { ok: false, reason: 'bone-key-out-of-range' };
+        }
+        const update = upsertRigBoneKey(entry.clip.rigMotion, boneId, localFrame, transform, options);
+        if (!update.ok) return update;
+        const validation = validateRigMotion(update.value, definition.value, duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-motion', errors: validation.errors };
+        }
+        entry.clip.rigMotion = validation.value;
+        return { ...update, lane: entry.lane, clip: entry.clip, asset };
+    }
+
+    removeClipRigBoneKey(clipId, boneId, localFrame) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        const definition = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+        if (!definition.ok || !definition.value?.bones?.some(bone => bone?.boneId === boneId)) {
+            return { ok: false, reason: 'bone-not-found', errors: definition.errors };
+        }
+        const update = removeRigBoneKey(entry.clip.rigMotion, boneId, localFrame);
+        if (!update.ok) return update;
+        const validation = validateRigMotion(update.value, definition.value, entry.clip.duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-motion', errors: validation.errors };
+        }
+        entry.clip.rigMotion = validation.value;
+        return { ...update, lane: entry.lane, clip: entry.clip, asset };
+    }
+
+    moveClipRigBoneKey(clipId, boneId, sourceFrame, targetFrame) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        const definition = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+        if (!definition.ok || !definition.value?.bones?.some(bone => bone?.boneId === boneId)) {
+            return { ok: false, reason: 'bone-not-found', errors: definition.errors };
+        }
+        const duration = Math.max(1, Number.isInteger(entry.clip.duration) ? entry.clip.duration : 1);
+        if (
+            !Number.isInteger(sourceFrame)
+            || sourceFrame < 0
+            || sourceFrame >= duration
+            || !Number.isInteger(targetFrame)
+            || targetFrame < 0
+            || targetFrame >= duration
+        ) {
+            return { ok: false, reason: 'bone-key-out-of-range' };
+        }
+        const update = moveRigBoneKey(entry.clip.rigMotion, boneId, sourceFrame, targetFrame);
+        if (!update.ok) return update;
+        const validation = validateRigMotion(update.value, definition.value, duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-motion', errors: validation.errors };
+        }
+        entry.clip.rigMotion = validation.value;
+        return { ...update, lane: entry.lane, clip: entry.clip, asset };
+    }
+
+    /**
+     * 複数trackのFrame移動など、呼び出し側で一括編集したRig Motionを検証して反映する。
+     * 保存正本は引き続きClipInstance.rigMotionだけとし、UI選択状態は受け取らない。
+     */
+    setClipRigMotion(clipId, rigMotion = null) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        const definition = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+        if (!definition.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: definition.errors };
+        }
+        const duration = Math.max(1, Number.isInteger(entry.clip.duration) ? entry.clip.duration : 1);
+        const validation = validateRigMotion(rigMotion, definition.value, duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-motion', errors: validation.errors };
+        }
+        entry.clip.rigMotion = validation.value;
+        return { ok: true, lane: entry.lane, clip: entry.clip, asset };
+    }
+
     setClipDeformer(clipId, deformer = null) {
         const entry = this.findClipEntry(clipId);
         if (!entry) return { ok: false, reason: 'clip-not-found' };
@@ -982,6 +1257,11 @@ export class TimelineModel {
             }
         }
 
+        const rigPartIds = getRigPartIdsForInternalLayers(asset.rigDefinition, deleteIds);
+        if (rigPartIds.length > 0) {
+            return { ok: false, reason: 'rig-part-subtree-unsupported', rigPartIds };
+        }
+
         const deletingDrawableCount = asset.internalLayers.filter(layer => {
             return deleteIds.has(layer.id) && layer.type !== 'folder' && layer.isBackground !== true;
         }).length;
@@ -1034,6 +1314,11 @@ export class TimelineModel {
                     }
                 });
             }
+        }
+
+        const rigPartIds = getRigPartIdsForInternalLayers(asset.rigDefinition, sourceIds);
+        if (rigPartIds.length > 0) {
+            return { ok: false, reason: 'rig-part-subtree-unsupported', rigPartIds };
         }
 
         const sourceLayers = asset.internalLayers.filter(layer => sourceIds.has(layer.id));
@@ -1239,6 +1524,7 @@ export class TimelineModel {
                 transform: normalizeClipTransform(clip.transform || {}),
                 transformKeyframes: (clip.transformKeyframes || []).map(keyframe => clonePlainObject(keyframe)),
                 deformer: normalizeClipDeformer(clip.deformer),
+                ...(clip.rigMotion == null ? {} : { rigMotion: serializeRigMotion(clip.rigMotion) }),
                 physics: clonePlainObject(clip.physics, {
                     enabled: false,
                     rigId: null,
@@ -1289,6 +1575,37 @@ export class TimelineModel {
     getDrawingSnapshot(snapshotId) {
         if (!snapshotId) return null;
         return this.drawingSnapshots.find(s => s.id === snapshotId) || null;
+    }
+
+    /**
+     * ClipAsset / internal Layerから参照されない旧Raster世代を回収する。
+     * Undo / Redoは各History stateが画素を所有して復元するため、Project正本には
+     * 現在参照中のDrawingSnapshotだけを残す。
+     */
+    collectUnreferencedDrawingSnapshots() {
+        const referencedIds = new Set();
+        (this.clipAssets || []).forEach(asset => {
+            if (asset?.drawingSnapshotId) referencedIds.add(asset.drawingSnapshotId);
+            (asset?.internalLayers || []).forEach(layer => {
+                if (layer?.drawingSnapshotId) referencedIds.add(layer.drawingSnapshotId);
+            });
+        });
+
+        const beforeCount = this.drawingSnapshots?.length || 0;
+        let removedPixelBytes = 0;
+        this.drawingSnapshots = (this.drawingSnapshots || []).filter(snapshot => {
+            if (referencedIds.has(snapshot?.id)) return true;
+            removedPixelBytes += Number(snapshot?.pixels?.byteLength)
+                || Number(snapshot?.pixels?.length)
+                || 0;
+            return false;
+        });
+        return {
+            beforeCount,
+            afterCount: this.drawingSnapshots.length,
+            removedCount: beforeCount - this.drawingSnapshots.length,
+            removedPixelBytes
+        };
     }
 
     /**
@@ -1345,6 +1662,40 @@ export class TimelineModel {
         return this.countAssetReferences(assetId) > 1;
     }
 
+    validatePartRigs() {
+        const assetResults = [];
+        const clipResults = [];
+        const definitionByAssetId = new Map();
+        const errors = [];
+
+        this.clipAssets.forEach(asset => {
+            if (asset.rigDefinition == null) return;
+            const result = validateRigDefinition(asset.rigDefinition, asset.internalLayers);
+            definitionByAssetId.set(asset.id, result);
+            assetResults.push({ assetId: asset.id, ...result });
+            result.errors.forEach(error => errors.push({ scope: 'asset', assetId: asset.id, ...error }));
+        });
+        this.tracks.forEach(track => {
+            (track.cels || []).forEach(clip => {
+                if (clip.rigMotion == null) return;
+                const asset = clip.assetId ? this.getClipAsset(clip.assetId) : null;
+                const definitionResult = asset
+                    ? (definitionByAssetId.get(asset.id)
+                        || validateRigDefinition(asset.rigDefinition, asset.internalLayers))
+                    : { value: null };
+                const result = validateRigMotion(clip.rigMotion, definitionResult.value, clip.duration);
+                clipResults.push({ clipId: clip.id, assetId: clip.assetId || null, ...result });
+                result.errors.forEach(error => errors.push({
+                    scope: 'clip',
+                    clipId: clip.id,
+                    assetId: clip.assetId || null,
+                    ...error
+                }));
+            });
+        });
+        return { ok: errors.length === 0, assetResults, clipResults, errors };
+    }
+
     duplicateClipAsset(assetId, options = {}) {
         const sourceAsset = this.getClipAsset(assetId);
         if (!sourceAsset) return { ok: false, reason: 'asset-not-found' };
@@ -1388,12 +1739,27 @@ export class TimelineModel {
                 layer.parentLayerId = layerIdMap.get(layer.parentLayerId) || null;
             }
         });
+        const rigIdMap = new Map(layerIdMap);
+        if (Array.isArray(sourceAsset.rigDefinition?.bones)) {
+            sourceAsset.rigDefinition.bones.forEach(bone => {
+                if (typeof bone?.boneId === 'string' && bone.boneId.length > 0) {
+                    rigIdMap.set(bone.boneId, createId());
+                }
+            });
+        }
+        duplicateAsset.rigDefinition = remapRigDefinition(sourceAsset.rigDefinition, rigIdMap);
 
         const now = Date.now();
         duplicateAsset.createdAt = now;
         duplicateAsset.updatedAt = now;
         this.clipAssets.push(duplicateAsset);
-        return { ok: true, sourceAsset, asset: duplicateAsset };
+        return {
+            ok: true,
+            sourceAsset,
+            asset: duplicateAsset,
+            internalLayerIdMap: layerIdMap,
+            rigIdMap
+        };
     }
 
     /**

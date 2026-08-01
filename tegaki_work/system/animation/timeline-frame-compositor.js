@@ -13,6 +13,11 @@ import {
 } from '../raster-bounds.js';
 import { sampleClipTransform } from './clip-transform-sampler.js';
 import { sampleClipDeformer } from './clip-deformer.js';
+import {
+    calculateFolderPartAssetBounds,
+    createFolderPartRenderPlan,
+    getFolderPartRenderIsland
+} from './folder-part-render-plan.js';
 import { warpRgbaWithControlMesh } from './control-mesh-rasterizer.js';
 import { warpRgbaWithGrid } from './warp-grid-rasterizer.js';
 import { compositeClipPixel } from './clip-blend-strength.js';
@@ -146,7 +151,8 @@ export class TimelineFrameCompositor {
         }
         const asset = this.model.getClipAsset(entry.clip.assetId);
         if (!asset) return null;
-        let surface = this._renderAsset(asset);
+        const renderPlan = createFolderPartRenderPlan(asset, entry.clip, frameIndex);
+        let surface = this._renderAsset(asset, renderPlan);
         if (!surface) return null;
 
         const deformer = sampleClipDeformer(
@@ -269,7 +275,8 @@ export class TimelineFrameCompositor {
         if (clipEntry.visible === false) return;
         const asset = this.model.getClipAsset(clipEntry.assetId);
         if (!asset) return;
-        let assetSurface = this._renderAsset(asset);
+        const renderPlan = createFolderPartRenderPlan(asset, clipEntry, frameIndex);
+        let assetSurface = this._renderAsset(asset, renderPlan);
         if (!assetSurface) return;
         const deformer = sampleClipDeformer(
             clipEntry.deformer,
@@ -350,8 +357,8 @@ export class TimelineFrameCompositor {
         return true;
     }
 
-    _renderAsset(asset) {
-        const bounds = this._getAssetRasterBounds(asset);
+    _renderAsset(asset, renderPlan = null) {
+        const bounds = this._getAssetRasterBounds(asset, renderPlan);
         if (!bounds) return null;
         this._assertSurfaceSizeAllowed(bounds, `ClipAsset ${asset.id || '(unknown)'}`);
 
@@ -359,11 +366,11 @@ export class TimelineFrameCompositor {
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
 
-        const rendered = this._renderAssetLayerGroup(ctx, asset, null, bounds);
+        const rendered = this._renderAssetLayerGroup(ctx, asset, null, bounds, renderPlan);
         return rendered ? { canvas, bounds } : null;
     }
 
-    _renderAssetLayerGroup(ctx, asset, parentId, surfaceBounds) {
+    _renderAssetLayerGroup(ctx, asset, parentId, surfaceBounds, renderPlan = null) {
         const layers = asset.internalLayers || [];
         const siblings = layers.filter(layer => (layer.parentLayerId || null) === (parentId || null));
         let rendered = false;
@@ -376,7 +383,13 @@ export class TimelineFrameCompositor {
                 const folderCanvas = this._createCanvas(surfaceBounds.width, surfaceBounds.height);
                 const folderCtx = folderCanvas.getContext('2d');
                 if (!folderCtx) continue;
-                const hasFolderContent = this._renderAssetLayerGroup(folderCtx, asset, layer.id, surfaceBounds);
+                const hasFolderContent = this._renderAssetLayerGroup(
+                    folderCtx,
+                    asset,
+                    layer.id,
+                    surfaceBounds,
+                    renderPlan
+                );
                 const opacity = this._getOwnOpacity(layer);
                 if (!hasFolderContent || opacity <= 0) continue;
 
@@ -410,6 +423,16 @@ export class TimelineFrameCompositor {
             ctx.save();
             ctx.globalAlpha = opacity;
             ctx.globalCompositeOperation = this._compositeMode(layer.blendMode);
+            const renderIsland = renderPlan?.status === 'ready'
+                ? renderPlan.islandByLayerId?.get(layer.id) || null
+                : null;
+            if (renderIsland?.worldMatrix) {
+                const matrix = renderIsland.worldMatrix;
+                // Folder階層はopacity / blendだけを所有し、rigid matrixは各Rasterへ一度だけ適用する。
+                ctx.translate(-surfaceBounds.x, -surfaceBounds.y);
+                ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.tx, matrix.ty);
+                ctx.translate(surfaceBounds.x, surfaceBounds.y);
+            }
             ctx.drawImage(layerCanvas, 0, 0);
             ctx.restore();
             rendered = true;
@@ -513,15 +536,30 @@ export class TimelineFrameCompositor {
         ctx.restore();
     }
 
-    _getAssetRasterBounds(asset) {
+    _getInternalLayerRasterBounds(asset, layerIds = null) {
         const bounds = [];
         for (const layer of asset?.internalLayers || []) {
             if (!layer || layer.type === 'folder' || !this._isEffectivelyVisible(asset, layer)) continue;
+            if (layerIds && !layerIds.has(layer.id)) continue;
             const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
             if (!snapshot?.pixels || !snapshot.width || !snapshot.height) continue;
             bounds.push(this._getSnapshotRasterBounds(snapshot));
         }
         return unionRasterBounds(bounds);
+    }
+
+    _getAssetRasterBounds(asset, renderPlan = null) {
+        return calculateFolderPartAssetBounds(
+            asset,
+            renderPlan,
+            layer => {
+                const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+                return snapshot?.pixels && snapshot.width && snapshot.height
+                    ? this._getSnapshotRasterBounds(snapshot)
+                    : null;
+            },
+            layer => this._isEffectivelyVisible(asset, layer)
+        );
     }
 
     _assertSurfaceSizeAllowed(bounds, label = 'Raster surface') {

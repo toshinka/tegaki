@@ -47,21 +47,24 @@ function normalizeBaseTransform(transform = {}) {
  * blendModeは連続補間せず、次のkeyまで左keyの値を維持する。blendStrengthは0..1で補間する。
  * easingは左keyが次区間を所有し、hold区間では参照しない。欠損・不正値はlinearとする。
  */
-export function sampleClipTransform(clip, timelineFrame) {
-    const base = normalizeBaseTransform(clip?.transform);
-    const duration = Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1);
-    const localFrame = timelineFrame - (Number.isInteger(clip?.startFrame) ? clip.startFrame : 0);
+export function sampleTransformTrack(baseTransform, keyframes, localFrame, duration = 1) {
+    const base = normalizeBaseTransform(baseTransform);
+    const normalizedDuration = Math.max(1, Number.isInteger(duration) ? duration : 1);
     const byFrame = new Map();
 
-    (Array.isArray(clip?.transformKeyframes) ? clip.transformKeyframes : []).forEach(key => {
-        if (!key || !Number.isInteger(key.frame) || key.frame < 0 || key.frame >= duration) return;
+    (Array.isArray(keyframes) ? keyframes : []).forEach(key => {
+        if (!key || !Number.isInteger(key.frame) || key.frame < 0 || key.frame >= normalizedDuration) return;
         byFrame.set(key.frame, key);
     });
     // Clipの静的transformを暗黙の始点/終点とする。
     // 中間keyだけ置いた場合は終点へ向けて静的状態へ戻る。
     if (!byFrame.has(0)) byFrame.set(0, { frame: 0, ...base, interpolation: 'linear' });
-    if (duration > 1 && !byFrame.has(duration - 1)) {
-        byFrame.set(duration - 1, { frame: duration - 1, ...base, interpolation: 'linear' });
+    if (normalizedDuration > 1 && !byFrame.has(normalizedDuration - 1)) {
+        byFrame.set(normalizedDuration - 1, {
+            frame: normalizedDuration - 1,
+            ...base,
+            interpolation: 'linear'
+        });
     }
     const keys = [...byFrame.values()].sort((a, b) => a.frame - b.frame);
     if (keys.length === 0 || localFrame < keys[0].frame) return base;
@@ -101,4 +104,15 @@ export function sampleClipTransform(clip, timelineFrame) {
         }
     }
     return leftState;
+}
+
+export function sampleClipTransform(clip, timelineFrame) {
+    const duration = Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1);
+    const localFrame = timelineFrame - (Number.isInteger(clip?.startFrame) ? clip.startFrame : 0);
+    return sampleTransformTrack(
+        clip?.transform,
+        clip?.transformKeyframes,
+        localFrame,
+        duration
+    );
 }

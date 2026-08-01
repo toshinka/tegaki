@@ -1,12 +1,13 @@
 # UIツール導線・Text・階層Motion将来設計
 
-更新日: 2026-07-22
+更新日: 2026-07-28
 
 ## 位置づけ
 
-- 本書は未実装proposalであり、Phase 6cのWARP mask・brush・preview / Bake一致へ機能を混ぜない。
-- 変形選択、左sidebar / Quick Tool Panel再編、Text、CAF内部階層Motionは、UIが近くても保存正本と検証範囲が異なるため別Sliceで進める。
+- 本書はUI案の現行正本である。左sidebar / Quick Tool Panel再編だけはPhase 6gで着手し、変形選択、Text、CAF内部階層Motionは後続Phaseへ分ける。
+- 各案はUIが近くても保存正本と検証範囲が異なるため、同じPhaseへまとめない。
 - 既存のRaster、ClipAsset / DrawingSnapshot、ClipInstance Motion / WARP、Layer Transform、Historyを置換せず、それぞれの正本へ接続する。
+- CAF Part、BONE、任意Mesh、Perform、Draw Order、Dynamicsのデータと評価順は`15_キャラクターRig・Mesh・Perform統合ロードマップ.md`を正本とする。本書は入口と画面構成だけを扱う。
 
 ## 1. 変形control pointの範囲選択
 
@@ -38,6 +39,44 @@
 - Layer Transformは独立した破壊的Raster確定操作なので、QTP内の描画toolへ埋めず、sidebarへ専用iconを置く候補とする。既存V shortcut、panel、transform正本をそのまま呼び、新しいtransform stateを持たせない。
 - Text入口は下記Text Phaseの初期実装ではQTP候補とする。使用頻度とpen導線を実測し、常設T iconが必要な場合だけsidebarへ昇格する。
 
+### モダンUIの第一候補と代替
+
+Plan AはCanvas優先の細いrailとcontextual panelである。
+
+- sidebarにはLibrary / import / resize等の大分類、QTP用Q、Layer Transform、Animation Table、Settings等の入口だけを残す。
+- pen / eraser / airbrush / fill / selection等の高頻度描画toolはQTPへまとめる。
+- 選択toolのoptionはCanvas上部または近接するContextual Inspectorへ出し、全toolの設定を同時常設しない。
+- desktopはhover説明とshortcut、touchは長押し説明と十分なhit areaを持つ。
+- 狭幅ではQTPをsidebar横popupではなくbottom sheetへ切り替えられる構造にする。
+
+Plan Bは「QTP集約後も常用toolだけsidebarへ残す」方式である。次の場合に採用する。
+
+- QTPを開く1操作がpen / eraser往復で明確な負担になる。
+- touchでQTPがCanvasを隠す。
+- toolの現在状態がQ buttonだけでは判別しにくい。
+- 初心者が基本toolを発見できない。
+
+Plan Cのユーザー自由カスタムrailは、Plan A / Bの実制作検証後まで導入しない。並び順保存、旧設定、touch編集、reset UIという新しい責務が増えるためである。
+
+Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる余地を残す。常時文字Qだけで分かりにくい場合のPlan Bであり、別のtool正本は作らない。
+
+### UI密度の後続監査
+
+- オーナーは現在Browser 80%表示を常用している。後続UI整理では、Browser 100%のままsidebar icon、Layer Panel、popup、文字、余白を現状80%相当の視覚密度へ縮小することを目標にする。
+- `body`やapp全体への一括`transform: scale(0.8)`は採用しない。Canvas / pointer座標、popup配置、D&D hit test、devicePixelRatio境界を巻き込むため、component共通tokenとCSS変数で段階調整する。
+- 視覚寸法と操作hit areaを分離する。pen / touch向け最小hit areaを確保したままiconと文字を縮小できる構造を優先する。
+- sidebar、Layer Panel、Animation Table、QTP、各popup、status、tooltip、formの順に現行px値と文字倍率を監査し、Browser 100%、OS表示倍率、狭幅、pen / touchで比較する。
+- Phase 6gの局所icon調整とは分離し、Phase 6hで固定入力監査、共通token、component単位のBrowser受入を行う。
+
+### Pixel Selection / CAF状態共通化（後続候補）
+
+- 通常Layer、Animation Table表示中のCAF working Layer、CAF選択を維持したTable close後の3状態を同じ固定入力matrixで比較する。Popup visibilityを選択可否、座標変換、保存、Historyの正本にしない。
+- 正本は`PixelSelectionSystem.toolActive / state / transformSession`、CAF側は`selectedCelId`とClipAssetに対応するworking Layer adapterである。status、QTP、sidebar active表示はこの状態から派生させ、逆向きに状態を復元しない。
+- Phase 6hでは、Table close後の矩形overlay欠落だけを、選択中Clipとworking Layerの既存対応を返すpredicateへ接続して修正した。確定時の追加の下ずれは固定入力で再現せず、preview / confirm / close後の位置は一致した。
+- 後続リファクタリングを開く場合は、tool表示resolver、CAF編集context resolver、preview停止 / 復帰、selection event購読を監査し、共通化できる判定と座標変換だけを小さいhelperへ集約する。主要class再構成や一括DOM置換は行わない。
+- 各関連fileのheaderへ、Popup開閉非依存、working Layerはadapter、selection boundsはProject / Layer座標のどちらか、確定時だけ既存Historyへ書く、という注意を残す。
+- 次のRig Gate 0を止める条件は、同じ固定入力でRasterまたはDrawingSnapshotの確定位置がpreviewと不一致になる、Undo / Redoで位置が変わる、保存 / 再openで座標が変わる場合に限定する。表示上の低頻度不整合だけなら再現手順を保持して後続UI品質Phaseへ回す。
+
 ## 3. PC優先Text
 
 ### 段階案
@@ -55,6 +94,8 @@
 
 ## 4. CAF内部Folderの階層Motion
 
+データ所有、BONE、Mesh、Perform、Draw Order、Dynamicsの詳細は`15_キャラクターRig・Mesh・Perform統合ロードマップ.md`へ統合した。本節は最初のUI投影だけを定める。
+
 ### 正本境界
 
 - CAF内部Folderへ`TimelineModel`を再帰的に持たせる「mini CAF」は採用しない。再生範囲、Frame、History、export評価器が階層ごとに分裂するためである。
@@ -68,6 +109,10 @@
 - 通常Folderへ`Motion part`属性を明示付与する方式を第一候補とし、別種類のFolderを増やさない。属性を外してもRaster階層は失わず、Motion trackの保持／削除を確認する。
 - 親Folder Motionは子・孫の評価済みtransformへ継承する。循環禁止DAG、親欠損時、channel別inherit、anchor / rest poseを明示し、暗黙にLane縦順へ依存しない。
 
+第一候補はAnimation Tableの親CAF行を開閉し、Part trackを子行として表示する方式。小規模RigでMotion keyと構造を同じ場所に見せやすい。
+
+Plan Bは専用Rig Inspector / treeへ構造編集を分離し、Timelineには選択trackだけを表示する方式。子行が増えてTimelineが狭くなる、SetupとAnimateが混同される、BONE / Weight / Collider設定が行内に収まらない場合に切り替える。どちらも同じ正本から投影し、UI方式をProject schemaへ保存しない。
+
 ### 導入順
 
 1. 1 CAF内の親Folder -> 子Folderのposition / scale / rotation継承だけをpreview / playback / Bake / exportで一致させる。
@@ -78,9 +123,18 @@
 
 ## 5. Phase順と受入gate
 
-1. Phase 6cのWARP brush感触、B / N保持drag、pointercancel、preview / playback / Bake / export一致を閉じる。
-2. Phase 6d候補のSetup / Lens placementと境界判定を閉じる。
-3. UI導線PhaseでQTP開閉、sidebar段階縮小、Layer Transform入口を行う。
-4. Deformer SELECT Phaseで3 shapeとM context shortcutを追加する。
-5. Text to RasterをPC-firstで追加し、local font permission / fallbackを検証する。
-6. 階層Motionは親子transformだけを独立Phase化し、Bone / weight / physicsを同時実装しない。
+1. Phase 6gでQTP開閉、sidebar段階縮小、Layer Transform入口を完了した。
+2. Phase 6hでBrowser 100%のUI密度を従来80%相当へ段階調整する。
+3. Phase 6h後は`15`のGate 0を独立して行い、CAF内部Part / Folderの所有とAnimation Table子行投影を固定する。
+4. 階層Motionは親子Part transformだけを独立Phase化し、その後に少数BONEのrigid FKへ進む。BONE Skinning / weight / physicsを同時実装しない。
+5. Deformer SELECTとText to Rasterは、Rig系列へ入る前後で優先度を再判定する。
+
+各UI Phaseは次を確認する。
+
+- keyboard / mouse / pen / touch
+- popup reopenと最後のtool復帰
+- 狭幅とCanvas遮蔽
+- hover / focus / disabled理由
+- shortcutのinput / contenteditable除外
+- Project / Historyへruntime UI stateを混ぜないこと
+- Browser実操作とconsole error

@@ -58,7 +58,10 @@ runtime behavior: .is-dragging
 ```
 
 - body text、label、button、select、option、disabled、placeholderもpalette対象。
-- 安易な `black`、`#000`、`white`、neutral grayを追加しない。
+- icon、記号、文字、背景へ `black` / `white` / `gray`、`#000` / `#fff`系、neutral grayを安易に追加することを禁止する。色未指定のnative buttonやUnicode記号がbrowser既定の黒へ戻る状態も修正対象。
+- 基本はふたば茶系、active / currentは`--active-border`の橙。Setupの青、成功・接続の緑、警告・破壊の赤は意味が明確な場合だけ許可し、componentへの直書きではなく既存semantic変数または共通変数として追加する。
+- `--text-inverse`は既存互換の限定token。新規icon / 記号の通常色には使わず、まず`--futaba-background` / `--futaba-cream`と栗茶の組み合わせを使う。
+- SVGの`stroke` / `fill`、Unicode記号、hover / active / disabled、Chromiumの`-webkit-text-fill-color`までpalette内で明示する。
 - 半透明色は既存paletteのRGBを基準にする。
 - canvas / Pixiへ数値色が必要な場合だけJSでCSS変数を読む。DOM装飾のためだけに `getComputedStyle()` を増やさない。
 
