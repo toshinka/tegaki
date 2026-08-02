@@ -1,6 +1,8 @@
 /**
  * TimelineModel / ClipAsset から exporter 共通の Canvas フレーム列を生成する。
  * UI の preview DOM や現在選択中の Frame / CAF / Layer 状態には依存しない。
+ * Folder別WARPは対象subtree合成後・所有Part/Bone行列前に評価し、その後にroot WARP、
+ * root Motion、Lane合成を一度だけ適用する。unsupported境界ではFolder別WARPだけを外す。
  */
 import {
     CLIPPING_MODES,
@@ -14,13 +16,17 @@ import {
 import { sampleClipTransform } from './clip-transform-sampler.js';
 import { sampleClipDeformer } from './clip-deformer.js';
 import {
-    calculateFolderPartAssetBounds,
-    createFolderPartRenderPlan,
-    getFolderPartRenderIsland
+    calculateFolderEffectAssetBounds,
+    createFolderEffectRenderPlan
 } from './folder-part-render-plan.js';
 import { warpRgbaWithControlMesh } from './control-mesh-rasterizer.js';
 import { warpRgbaWithGrid } from './warp-grid-rasterizer.js';
 import { compositeClipPixel } from './clip-blend-strength.js';
+import {
+    calculateRasterSkinPlanBounds,
+    createRasterSkinRenderPlan,
+    deformRasterSnapshotWithSkin
+} from './raster-skin-render-plan.js';
 import {
     findInternalClippingOwner,
     findInternalClippingSource,
@@ -151,8 +157,12 @@ export class TimelineFrameCompositor {
         }
         const asset = this.model.getClipAsset(entry.clip.assetId);
         if (!asset) return null;
-        const renderPlan = createFolderPartRenderPlan(asset, entry.clip, frameIndex);
-        let surface = this._renderAsset(asset, renderPlan);
+        const renderPlan = createFolderEffectRenderPlan(asset, entry.clip, frameIndex);
+        const rasterSkinPlan = createRasterSkinRenderPlan(asset, entry.clip, frameIndex, {
+            folderEffectPlan: renderPlan
+        });
+        this._assertRasterSkinPlanReady(rasterSkinPlan, asset.id);
+        let surface = this._renderAsset(asset, renderPlan, rasterSkinPlan);
         if (!surface) return null;
 
         const deformer = sampleClipDeformer(
@@ -275,8 +285,12 @@ export class TimelineFrameCompositor {
         if (clipEntry.visible === false) return;
         const asset = this.model.getClipAsset(clipEntry.assetId);
         if (!asset) return;
-        const renderPlan = createFolderPartRenderPlan(asset, clipEntry, frameIndex);
-        let assetSurface = this._renderAsset(asset, renderPlan);
+        const renderPlan = createFolderEffectRenderPlan(asset, clipEntry, frameIndex);
+        const rasterSkinPlan = createRasterSkinRenderPlan(asset, clipEntry, frameIndex, {
+            folderEffectPlan: renderPlan
+        });
+        this._assertRasterSkinPlanReady(rasterSkinPlan, asset.id);
+        let assetSurface = this._renderAsset(asset, renderPlan, rasterSkinPlan);
         if (!assetSurface) return;
         const deformer = sampleClipDeformer(
             clipEntry.deformer,
@@ -357,8 +371,8 @@ export class TimelineFrameCompositor {
         return true;
     }
 
-    _renderAsset(asset, renderPlan = null) {
-        const bounds = this._getAssetRasterBounds(asset, renderPlan);
+    _renderAsset(asset, renderPlan = null, rasterSkinPlan = null) {
+        const bounds = this._getAssetRasterBounds(asset, renderPlan, rasterSkinPlan);
         if (!bounds) return null;
         this._assertSurfaceSizeAllowed(bounds, `ClipAsset ${asset.id || '(unknown)'}`);
 
@@ -366,11 +380,25 @@ export class TimelineFrameCompositor {
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
 
-        const rendered = this._renderAssetLayerGroup(ctx, asset, null, bounds, renderPlan);
+        const rendered = this._renderAssetLayerGroup(
+            ctx,
+            asset,
+            null,
+            bounds,
+            renderPlan,
+            rasterSkinPlan
+        );
         return rendered ? { canvas, bounds } : null;
     }
 
-    _renderAssetLayerGroup(ctx, asset, parentId, surfaceBounds, renderPlan = null) {
+    _renderAssetLayerGroup(
+        ctx,
+        asset,
+        parentId,
+        surfaceBounds,
+        renderPlan = null,
+        rasterSkinPlan = null
+    ) {
         const layers = asset.internalLayers || [];
         const siblings = layers.filter(layer => (layer.parentLayerId || null) === (parentId || null));
         let rendered = false;
@@ -380,6 +408,39 @@ export class TimelineFrameCompositor {
             if (!layer || layer.visible === false) continue;
 
             if (layer.type === 'folder') {
+                const effectIsland = renderPlan?.kind === 'folder-effect'
+                    && renderPlan.status === 'ready'
+                    ? renderPlan.islandByFolderId?.get(layer.id) || null
+                    : null;
+                if (effectIsland) {
+                    const effectSurface = this._renderFolderEffectSurface(
+                        asset,
+                        layer,
+                        effectIsland,
+                        rasterSkinPlan
+                    );
+                    const opacity = this._getOwnOpacity(layer);
+                    if (!effectSurface || opacity <= 0) continue;
+                    const deformedSurface = this._deformAssetSurface(
+                        effectSurface,
+                        effectIsland.sampledDeformer,
+                        `${asset.id || '(unknown)'}/${layer.id}`
+                    );
+                    const matrix = effectIsland.worldMatrix;
+                    ctx.save();
+                    ctx.globalAlpha = opacity;
+                    ctx.globalCompositeOperation = this._compositeMode(layer.blendMode);
+                    ctx.translate(-surfaceBounds.x, -surfaceBounds.y);
+                    ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.tx, matrix.ty);
+                    ctx.drawImage(
+                        deformedSurface.canvas,
+                        deformedSurface.bounds.x,
+                        deformedSurface.bounds.y
+                    );
+                    ctx.restore();
+                    rendered = true;
+                    continue;
+                }
                 const folderCanvas = this._createCanvas(surfaceBounds.width, surfaceBounds.height);
                 const folderCtx = folderCanvas.getContext('2d');
                 if (!folderCtx) continue;
@@ -388,7 +449,8 @@ export class TimelineFrameCompositor {
                     asset,
                     layer.id,
                     surfaceBounds,
-                    renderPlan
+                    renderPlan,
+                    rasterSkinPlan
                 );
                 const opacity = this._getOwnOpacity(layer);
                 if (!hasFolderContent || opacity <= 0) continue;
@@ -413,18 +475,49 @@ export class TimelineFrameCompositor {
             const layerCtx = layerCanvas.getContext('2d');
             if (!layerCtx) continue;
             const rasterBounds = this._getSnapshotRasterBounds(snapshot);
-            layerCtx.drawImage(
-                snapshotCanvas,
-                rasterBounds.x - surfaceBounds.x,
-                rasterBounds.y - surfaceBounds.y
-            );
+            const skinResult = rasterSkinPlan?.status === 'ready'
+                ? rasterSkinPlan.resultByLayerId.get(layer.id) || null
+                : null;
+            if (skinResult) {
+                const deformed = deformRasterSnapshotWithSkin(snapshot, skinResult, {
+                    maxAxis: this.layerSystem?._getMaxRenderTextureSize?.() || 8192,
+                    maxPixels: 16 * 1024 * 1024
+                });
+                if (!deformed) {
+                    throw new Error(`ClipAsset ${asset.id || '(unknown)'} Raster Skin surface could not be created`);
+                }
+                const deformedCanvas = this._createCanvas(deformed.width, deformed.height);
+                const deformedCtx = deformedCanvas.getContext('2d');
+                if (!deformedCtx) {
+                    throw new Error(`ClipAsset ${asset.id || '(unknown)'} Raster Skin context is unavailable`);
+                }
+                deformedCtx.putImageData(
+                    new ImageData(deformed.pixels, deformed.width, deformed.height),
+                    0,
+                    0
+                );
+                layerCtx.drawImage(
+                    deformedCanvas,
+                    deformed.bounds.x - surfaceBounds.x,
+                    deformed.bounds.y - surfaceBounds.y
+                );
+            } else {
+                layerCtx.drawImage(
+                    snapshotCanvas,
+                    rasterBounds.x - surfaceBounds.x,
+                    rasterBounds.y - surfaceBounds.y
+                );
+            }
             this._applyClippingMask(asset, layer, layerCtx, surfaceBounds);
 
             ctx.save();
             ctx.globalAlpha = opacity;
             ctx.globalCompositeOperation = this._compositeMode(layer.blendMode);
-            const renderIsland = renderPlan?.status === 'ready'
-                ? renderPlan.islandByLayerId?.get(layer.id) || null
+            const rigRenderPlan = renderPlan?.kind === 'folder-effect'
+                ? renderPlan.rigRenderPlan
+                : renderPlan;
+            const renderIsland = rigRenderPlan?.status === 'ready'
+                ? rigRenderPlan.islandByLayerId?.get(layer.id) || null
                 : null;
             if (renderIsland?.worldMatrix) {
                 const matrix = renderIsland.worldMatrix;
@@ -439,6 +532,27 @@ export class TimelineFrameCompositor {
         }
 
         return rendered;
+    }
+
+    _renderFolderEffectSurface(asset, folderLayer, effectIsland, rasterSkinPlan = null) {
+        const sourceBounds = this._getInternalLayerRasterBounds(asset, effectIsland.layerIds);
+        if (!sourceBounds) return null;
+        this._assertSurfaceSizeAllowed(
+            sourceBounds,
+            `ClipAsset ${asset.id || '(unknown)'} Folder ${folderLayer.id}`
+        );
+        const canvas = this._createCanvas(sourceBounds.width, sourceBounds.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        const rendered = this._renderAssetLayerGroup(
+            ctx,
+            asset,
+            folderLayer.id,
+            sourceBounds,
+            null,
+            rasterSkinPlan
+        );
+        return rendered ? { canvas, bounds: sourceBounds } : null;
     }
 
     _applyClippingMask(asset, layer, ctx, surfaceBounds) {
@@ -548,8 +662,8 @@ export class TimelineFrameCompositor {
         return unionRasterBounds(bounds);
     }
 
-    _getAssetRasterBounds(asset, renderPlan = null) {
-        return calculateFolderPartAssetBounds(
+    _getAssetRasterBounds(asset, renderPlan = null, rasterSkinPlan = null) {
+        const baseBounds = calculateFolderEffectAssetBounds(
             asset,
             renderPlan,
             layer => {
@@ -560,6 +674,18 @@ export class TimelineFrameCompositor {
             },
             layer => this._isEffectivelyVisible(asset, layer)
         );
+        const skinBounds = calculateRasterSkinPlanBounds(rasterSkinPlan, layerId => {
+            const layer = asset?.internalLayers?.find(item => item?.id === layerId) || null;
+            const snapshot = layer ? this.model.getDrawingSnapshot(layer.drawingSnapshotId) : null;
+            return snapshot?.pixels ? this._getSnapshotRasterBounds(snapshot) : null;
+        });
+        return unionRasterBounds([baseBounds, skinBounds]);
+    }
+
+    _assertRasterSkinPlanReady(plan, assetId) {
+        if (!plan || plan.status === 'none' || plan.status === 'ready') return;
+        const message = plan.errors?.map(error => error.code).join(', ') || plan.status;
+        throw new Error(`ClipAsset ${assetId || '(unknown)'} Raster Skin render is ${plan.status}: ${message}`);
     }
 
     _assertSurfaceSizeAllowed(bounds, label = 'Raster surface') {

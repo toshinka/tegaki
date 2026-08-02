@@ -3,10 +3,12 @@ import {
     WARP_GRID_COLUMNS,
     WARP_GRID_ROWS
 } from './warp-grid-deformer.js';
+import {
+    getBarycentricWeights,
+    TRIANGLE_EPSILON
+} from './warp-triangle-point-map.js';
 import { resolveWarpPlacementGeometry } from './warp-placement.js';
 import { createRectGridTopology } from './warp-grid-topology.js';
-
-const TRIANGLE_EPSILON = 1e-8;
 
 function toProjectPoint(point, bounds) {
     return {
@@ -123,17 +125,6 @@ function compositeSourceOverPixel(output, offset, source) {
     output[offset + 3] = Math.round(outputAlpha);
 }
 
-function getBarycentric(point, first, second, third) {
-    const denominator = (second.y - third.y) * (first.x - third.x)
-        + (third.x - second.x) * (first.y - third.y);
-    if (Math.abs(denominator) < TRIANGLE_EPSILON) return null;
-    const firstWeight = ((second.y - third.y) * (point.x - third.x)
-        + (third.x - second.x) * (point.y - third.y)) / denominator;
-    const secondWeight = ((third.y - first.y) * (point.x - third.x)
-        + (first.x - third.x) * (point.y - third.y)) / denominator;
-    return [firstWeight, secondWeight, 1 - firstWeight - secondWeight];
-}
-
 function unionBounds(first, second) {
     const minX = Math.min(first.x, second.x);
     const minY = Math.min(first.y, second.y);
@@ -181,7 +172,7 @@ function forEachTrianglePixel(points, bounds, callback) {
     );
     for (let projectY = startY; projectY <= endY; projectY++) {
         for (let projectX = startX; projectX <= endX; projectX++) {
-            const weights = getBarycentric(
+            const weights = getBarycentricWeights(
                 { x: projectX + 0.5, y: projectY + 0.5 },
                 points[0],
                 points[1],

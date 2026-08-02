@@ -86,6 +86,15 @@ PointerEvent
 - History commandの現行契約は `{ name, do, undo, byteSize?, meta? }`。
 - 件数上限と推定メモリ上限の両方を適用し、線形Undo順を壊さず古い履歴から破棄する。
 - class階層の導入は目的ではない。既存command契約で表現できない具体的問題がある場合だけ再設計する。
+- Raster Bone Skinningのstatic Mesh / SkinWeightは`ClipAsset.meshDefinitions / skinBindings`、Bind Boneは
+  `ClipAsset.rigDefinition`、Frame Poseは既存`ClipInstance.rigMotion`を正本とする。Control Mesh、WARP、
+  rigid bindingへ同じtopology / weight / Poseを重複保存しない。
+- preview / playback / onionとCPU compositor / Bake / exportは同じinverse-bind LBS評価済み頂点を使う。
+  Frame頂点、GPU buffer、UI selection、alpha scan cacheをProjectへ保存しない。
+- Alpha-fit Gridは明示生成後にstatic Setupとして固定する。Raster更新時は`STALE`表示だけを行い、
+  `GRID再生成`までtopology / weightを自動上書きしない。
+- 初期Raster Skin proofではinternal clipping参加Rasterとactive Folder WARP / rigid RenderIslandの重複を
+  明示unsupportedとする。無言で未変形Rasterへfallbackしない。
 
 ## 7. EventBus・グローバル
 

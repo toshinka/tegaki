@@ -427,10 +427,10 @@ Rigid Bodyの反射、摩擦、回転、sleeping、broad / narrow phaseは独立
 - advanced項目は折りたたむが、現在有効なconstraint / physicsは隠さずchip等で示す。
 - CLIP MOTIONは`RIG → MOTION → WARP`を標準順とする。未設定CAFの初回だけRIGへ案内し、再openでは最後の作業tabを尊重する。
 - `CAF / Folder`対象は横tabとホイールに加えてCanvas上のPIVOT選択で切り替える。RIGでは位置関係を読むため全PIVOTとFolder名tagを同時表示するが、parameter行は選択対象一件だけをContextual Inspectorへ表示する。
-- CAF共通PIVOT、Folder / BONEのBind SetupはRIG、時間変化するClip / Part / Bone keyはMOTIONへ分離する。RIG PIVOTはactiveを青 / 水色、inactiveを薄いクリーム内側 + 栗茶輪郭としてSetup modeを示し、中心dragで位置、尻尾drag / wheelで初期角度を操作する。MOTIONの選択BONEは橙の中心 + 楔を維持し、中心dragで移動、楔dragで回転する。WARPはFolder正本が正式化するまでCAF全体だけを対象とする。
+- CAF共通PIVOT、Folder / BONEのBind SetupはRIG、時間変化するClip / Part / Bone keyはMOTIONへ分離する。RIG PIVOTはactiveを青 / 水色、inactiveを薄いクリーム内側 + 栗茶輪郭としてSetup modeを示し、中心dragで位置、尻尾drag / wheelで初期角度を操作する。MOTIONの選択BONEは橙の中心 + 楔を維持し、中心dragで移動、楔dragで回転する。WARPはPhase 6sでCAF全体とstable Folder targetを同じdeformer契約へ接続済み。
 - PIVOT接続線は装飾ではなく`parentBoneId`の表示・編集結果とする。rigid FKでは親の移動・回転が子孫へ伝播し、子操作は親へ逆流しない。「手を動かして腕を追従」「腕を伸縮」「先端だけ変形」はIK / Stretch / Meshへ分離する。
 
-### Folder別WARP GRID候補（Owner memo 2026-08-01）
+### Folder別WARP GRID実装境界（Phase 6s完了）
 
 - 現行`ClipInstance.deformer`はCAF全体一件の正本であり、対象tabをFolderへ切り替えるだけでは複数Folderの同時WARPを保持できない。単一deformerへ一個の`targetInternalLayerId`を足す案は、髪と衣服等を同時に揺らせないため採用しない。
 - 第一候補は、root互換の`deformer`を維持しつつ、optionalなFolder target collectionから既存`clip-deformer` / GRID topology / sampler / rasterizerを再利用する。collection自体へ別の変形アルゴリズムを作らない。
@@ -502,7 +502,41 @@ Gate成果物:
 - 初期Part境界はclipping owner / sourceを分断しない。RenderIsland自動化とDraw Orderは後続へ送る。
 - UIは選択CAFだけをAnimation Table子行へ投影するPlan Aを先行し、縦占有、名称幅、Setup操作、touch誤操作の実測でPlan Bへ切り替える。
 
-Phase 6jでoptional Part schema / validation / ID remap / pure rigid FK、Phase 6kで一つのFolder Partのpreview / compositor / Bake / export接続、Phase 6lでPlan A子行、Folder Part登録、既存Part trackへのkey入力、Canvas handle、Phase 6mでFolder枠とLane縦密度、Phase 6nでoptional Bone schema、共有Rig ID remap、3段の純粋FK、Phase 6oで一つのroot BONE → 一つのFolder Partの明示bindingとinverse bind delta接続、Phase 6pでroot BONE作成・Pose key・RIG-first・対象tab・Setup / Animate分離、Phase 6qでCAF + 全Folder PIVOT、Canvas選択、遅延Rig登録、nested Folderの排他的RenderIsland、child Bone binding、parent Bone接続、剛体FK authoringを完了した。Phase 6rでは保存容量、KEY複数選択、tab復帰、通常Layer選択を安定化した。Motion主UIはBONEへ一本化し、Folder Part trackは旧Project互換schemaとしてのみ維持する。現行Phase 6sはFolder別WARP GRIDのGate 0であり、Mesh、IK、Stretchは後続Phaseとする。詳細は`開発用資料保管庫/Archive/phase6i.md`〜`phase6r.md`および`task-codex/phase6s.md`を正本とする。
+Phase 6jでoptional Part schema / validation / ID remap / pure rigid FK、Phase 6kで一つのFolder Partのpreview / compositor / Bake / export接続、Phase 6lでPlan A子行、Folder Part登録、既存Part trackへのkey入力、Canvas handle、Phase 6mでFolder枠とLane縦密度、Phase 6nでoptional Bone schema、共有Rig ID remap、3段の純粋FK、Phase 6oで一つのroot BONE → 一つのFolder Partの明示bindingとinverse bind delta接続、Phase 6pでroot BONE作成・Pose key・RIG-first・対象tab・Setup / Animate分離、Phase 6qでCAF + 全Folder PIVOT、Canvas選択、遅延Rig登録、nested Folderの排他的RenderIsland、child Bone binding、parent Bone接続、剛体FK authoringを完了した。Phase 6rでは保存容量、KEY複数選択、tab復帰、通常Layer選択を安定化し、Phase 6sではFolder別WARP GRIDを共通RenderIsland / Project / Bake / exportへ接続した。Phase 6tでは保存targetを増やさず既存Bone Poseへ確定する固定長2-Bone IKを完了した。Phase 6uではWARP GRID初期auto-fitとRaster共有point-mapを完了し、保存anchor ConstraintはGate 1 `HOLD`で後続候補へ送った。Motion主UIはBONEへ一本化し、Folder Part trackは旧Project互換schemaとしてのみ維持する。詳細は`開発用資料保管庫/Archive/phase6i.md`〜`phase6u.md`を正本とする。
+
+### Phase 6v Gate 0結果 — 一枚Raster / 複数BONE / Skin Mesh
+
+制作要望は、一枚の腕Rasterへ肩・肘・手首等の任意数PIVOTを置き、親子Boneの回転へTriangle Meshを追従させ、
+三枚の剛体Folderへ分割しなくてもゴム状に曲げられること。Gate 0判定は`GO`とする。
+
+- `ClipAsset.internalLayers[]` / DrawingSnapshotはRaster正本、`rigDefinition.bones[]`はstatic Bind Bone、
+  `ClipInstance.rigMotion.boneTracks[]`はFrame Poseとして維持する。
+- 新しいMesh topology / SkinWeightはClipAssetのoptional static Setup正本とし、`rigidBindings`、
+  `ClipInstance.deformer` / `folderDeformers`、Control Mesh Poseへ重複保存しない。
+- Boneごとに`currentWorld * inverse(bindWorld)`を一度求め、bind vertexをweight付きで合成するpure evaluatorを一つ持つ。
+  Frameごとの頂点、UI selection、GPU buffer、alpha scan cacheをProjectへ保存しない。
+- 既存`control-mesh-topology.js`のrect / Delaunayと`warp-grid-rasterizer.js`のtriangle adapterは再利用候補だが、
+  static Skin Meshの正本にはしない。
+- Raster Meshは後続描画proofで各Rasterへclipping前に適用する候補。最初はclipping owner / sourceへ参加しない
+  一Rasterに限定し、unsupportedを無言fallbackしない。
+- 自動Meshの第一候補は既存alpha content boundsへfitするdeterministic `Alpha-fit Grid`。
+  これはAuto Contourではなく、輪郭 / hole / islandとLINE向け3列Ribbonは別generatorへ分離する。
+- 自動weightの第一候補はBone segment距離による最大2 influence。生成確定後はstatic Setupとして固定し、
+  Raster変更時は`STALE`表示だけを行い、明示操作なしにtopology / weightを再生成しない。
+
+Plan Bの「既存Control Mesh PoseをBoneから書き換える」は、Asset SetupとInstance Pose、手動WARP keyを二重所有するため
+採用しない。ToonSquidのBone / MeshもBind PoseとAnimate Poseを分け、Mesh control pointをBoneへbindする構成であり、
+Tegakiでは現行正本へ合わせて同じ概念分離だけを採る。
+
+Phase分割は、6v static schema / pure LBS、6w fixed Raster render proof、6x one Raster / multi-PIVOT authoring、
+6y Alpha-fit Grid / auto distance weightの順で実施し、2026-08-02にSOL最終判定`A`でcloseした。
+
+- static Mesh / SkinWeightは`ClipAsset.meshDefinitions / skinBindings`、Bind Boneは既存`rigDefinition.bones`、
+  Frame Poseは既存`ClipInstance.rigMotion.boneTracks`だけが所有する。
+- preview / playback / onionとCPU compositor / Bake / exportは同じinverse-bind LBS評価済み頂点を使う。
+- RIG / MOTIONのRaster targetはPart / rigid bindingを増やさず、複数Mesh BONE、既存parent接続、既存Bone keyへ接続した。
+- Alpha-fit Gridはwide 8×4、tall 4×8、square 6×6、最大2 distance influence。Raster変更時は`STALE`表示のみで、明示再生成までstatic Setupを維持する。
+- clipping参加Rasterとactive Folder WARP / rigid RenderIslandの同時適用、manual weight、Auto Contour、LINE Ribbon、Mesh Bone IKは後続Gateへ残した。
 
 ## 16. Phase候補
 
@@ -538,14 +572,52 @@ Phase 6jでoptional Part schema / validation / ID remap / pure rigid FK、Phase 
 - distributed follow
 - fixed / limited stretch
 
+#### Phase 6t第一境界（Gate 0 2026-08-01）
+
+- 第一実装はproposal上の`A Pose Bake`。末端Bone rootをtargetとし、直上のparent / grandparent二本のrotation結果だけを既存`rigMotion.boneTracks`へ保存する。
+- segment長は現在評価した`root -> joint -> effector`のBone root間距離。PIVOT表示用`bone.length`を親子距離の正本へ変更しない。
+- CanvasからCAF Project座標への変換、Bone key setter、Timeline History、Motion PIVOT、`evaluateRigidBones()`と共通RenderIslandを再利用する。
+- IK authoring toggleがoffの時は現行FK操作を維持する。unreachable targetは固定長clampし、scaleやFolder Part trackを変更しない。
+- Effector target track、runtime Constraint、rotation limit、chain参加、stretch、Mesh / weightはPose Bakeの実制作評価後に独立Gateで判断する。
+
 #### ToonSquid公式仕様から採る境界（調査 2026-08-01）
 
 - [Bones handbook](https://toonsquid.com/handbook/effects/bones/)は、親から子へ伝える通常操作をFK、末端のIK targetからchainの位置・回転を解く操作をIKとして明確に分離している。Tegakiも現在のrigid FKを壊さず、末端PIVOTを動かす`IK target mode`を別constraintとして追加する。
-- 最初の実装候補はMesh不要のrotation-only 2-Bone IK。手targetのX / Yから前腕・上腕の角度だけを解き、長さはBind時Bone lengthへ固定する。肩より上をchainへ含めるかは`chain length`またはancestor参加toggleで明示し、分岐Boneを無言で巻き込まない。
+- 最初の実装候補はMesh不要のrotation-only 2-Bone IK。手targetのX / Yから前腕・上腕の角度だけを解き、segment長は評価済みBone root間距離へ固定する。表示用`bone.length`は使わない。肩より上をchainへ含めるかは`chain length`またはancestor参加toggleで明示し、分岐Boneを無言で巻き込まない。
 - [ToonSquidのIK](https://toonsquid.com/handbook/effects/bones/#inverse-kinematics-ik)にあるrotation limit、Ignored by IK、Max IK Stretching相当は一つのcheckboxへ混ぜない。Tegakiでは`FK / IK`、回転範囲、ancestor参加、`fixed / limited stretch`を独立parameterとし、stretch 0を既定とする。
 - rigid Folderだけでも2-Bone IKの回転追従は実装可能。腕の伸縮や周辺画素の滑らかな曲げは別段階であり、[Mesh handbook](https://toonsquid.com/handbook/effects/mesh/)のようなtriangle control点とBone binding / weightの正本が確定してから有効化する。自動MeshをIK開始条件にはしない。
 - UI第一候補はMotion tabで末端Boneへ`IK target`chipを付け、Canvas上の末端PIVOT dragをtarget X / Y keyへ記録する。RIG tabはchain、親、Bone length、rotation limit、stretch上限のstatic Setupだけを所有する。
 - 評価順は`sample FK key → IK target keyをsample → rotation limit付き2-Bone solve → optional limited scale → Bone world matrix → rigid Folder / 将来Skinning`。preview / random seek / Bake / exportは同じ純粋solverを使う。
+
+#### WARP GRID初期bounds auto-fit（Phase 6u Gate 0 2026-08-01）
+
+- 新規GRIDの初期中心と大きさはCanvas全体ではなく、選択CAFまたはFolder subtreeのeffective-visible Rasterについてalpha実内容をunionしたProject boundsから決める。
+- tight boundsへ各軸5%または4 Project pxの大きい方を余白として足す。negative boundsはCanvasへclampせず、空対象だけ保存Raster bounds、最後にCanvas boundsへfallbackする。
+- fixed 4x4 WARPと可変Control Mesh、新規作成と明示refitは同じpure helperを使う。既存GRIDを開いただけでBindやkeyを変更しない。
+- alpha scanは既存`calculateOpaqueRasterBounds()`とsnapshot bounds cacheを再利用する。Folder / ClipAssetへauto-fit boundsを保存せず、別cacheや第二正本を作らない。
+- Stage Bでは既存topology / placement / triangle判定を共有するpure point-mapを固定し、次のanchor ConstraintがRaster pathと異なる近似式を持たないようにする。
+- Phase 6uはSOL review 2判定`A`でStage A / Bをcloseした（2026-08-01）。`fitWarpGridBindBoundsToContent()`、新規作成 / 明示refit接続、fixed / Control Mesh共通verifier、surface上限超過拒否、AnimationTablePopup adapter経由のCAF / Folder分離・hidden・clipping fixtureを受入れた。`warp-triangle-point-map.js`へRasterと共有するbarycentric / epsilonとBind Project点→Pose Project点のpure mapを置き、既存topology / placement、保存triangle順、明示失敗理由を固定した。`warp-grid-rasterizer.js`のpixel coverage / premultiplied合成は変更していない。全26 verifier、node --check、build、Stage A Browser smoke、生成物清掃を通過した。
+- WARP anchor ConstraintのSOL Gate 1は`HOLD`。source deformerがClipInstance、static RigがClipAssetに分かれる所有、Folder WARP後にchild Bone worldへ渡す評価pass、cycle、copy / paste ID remap、削除・validationが未確定であり、Phase 6uへ保存shapeを追加しない。後続Phaseではこれらを先にGate化し、Stage B point-mapだけを座標代数として再利用する。
+
+#### WARP anchorから子PIVOTを追従させる案（制作要望 2026-08-01）
+
+- 例: 前腕Folderの手首をFolder WARPで曲げた時、HANDのPIVOTとHAND配下も変形後の手首位置へ追従させる。
+- これはPIVOT overlayだけを動かす表示optionではない。playback / onion / Bake / export / reloadで同じ結果が必要なため、将来は保存可能な`WARP anchor constraint`として扱う。
+- sourceはstable Folder IDと、そのFolder WARPのBind領域内に置く一つのanchor点。destinationは子BONE / Partとし、単なる`parentBoneId`や静的Bind Poseへ混ぜない。
+- anchor点は既存WARP / Control MeshのBind triangleを一つ特定し、Bind時のbarycentric weightを保持する。各Frameは既存deformer samplingとplacementを使って同じtriangle上のPose点を求める。Raster用とは別の近似式や第二WARP正本を作らない。
+- 第一評価候補は`Folder WARPをsample → anchorのdeformed local point → source側の既存Part/Bone world → downstream child PIVOT constraint → child Bone/FK → RenderIsland`。sourceとdestinationが相互依存するcycle、子孫WARPから祖先PIVOTへ戻る参照、unsupported nested targetは明示拒否する。
+- UI第一候補はWARP tabの選択Folderで`子PIVOT追従`を有効にし、Canvas上でanchorと対象PIVOTを接続する導線。checkboxだけで暗黙に最寄りPIVOTへ接続せず、対象名と接続線を表示する。
+- Gate 0では既存`resolveWarpPlacementGeometry()`、rect / Control Mesh topology、CPU / Pixi経路から共有できるpure point-mapを特定する。既存private barycentric代数を別moduleへ複製しない。
+- Phase 6tのPose Bake IKへ混ぜない。最初のproofは一つのFolder WARP anchorから直下の一つの子PIVOTへ限定し、History、copy / paste ID remap、random seek、save / reload、Bake / export一致を固定する。
+
+#### Attachment / Space Switchと「手放す」Frame（制作要望 2026-08-01）
+
+- 腕を回すIKと、ボールが手へ付いてくる関係は別責務。IKは腕chainを解き、ボールはHAND BONE / PIVOTをtargetにしたAttachment / Follow constraintで追従させる。
+- 長期的にスマートな方式は、ボールを最初から別CAF / 別Laneへ置き、`targetId + maintain-world offset + weight / enabled track`を一つのConstraint正本として持つSpace Switch。キャラクターCAF全体をrelease地点で複製しない。
+- release Frameでは、直前までのattached world poseを同FrameのボールMotion keyへ一度確定してからweightを`1 → 0`へ切り替える`手放す`commandを用意する。これにより位置跳びを防ぎ、そのFrame以後はボール独自の軌道・回転・伸縮を編集できる。
+- 最初のMVPは一target、HOLD型`attached / free`、maintain-worldだけでよい。複数target間のblend、連続weight、軌道生成、物理投球は後続Gateへ分離する。
+- 現行Phase 6tの`IK追従`はruntime authoring toggleで、結果はBone Pose keyへBake済みである。したがって現行方式では「release FrameでIK toggleをoffにする」保存操作は不要。将来Effector Target方式を採用した場合だけ、IK constraint weightのkey化を別に検討する。
+- 現機能での制作回避策は、ボールだけを別CAF / Laneにし、release FrameでボールClipをsplitまたは複製して後半を独立Motionにする方法。短編では成立するが、release前の追従修正、retime、再利用で二重編集になるため恒久仕様にはしない。
 
 ### Candidate E — Quick Rig
 
