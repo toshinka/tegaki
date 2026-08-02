@@ -627,7 +627,15 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             try {
                 const shouldUseAlbum = await this._confirmLargeSnapshotAlbumSave(snapshot);
                 if (!shouldUseAlbum) {
-                    await window.projectManager?.saveProjectDataToFile?.(snapshot.projectData);
+                    const saved = await window.projectManager?.saveProjectDataToFile?.(snapshot.projectData, {
+                        showToast: true
+                    });
+                    if (!saved?.ok && !saved?.cancelled) {
+                        alert(this._formatAlbumSaveFailure(
+                            saved?.error || (saved?.reason ? new Error(saved.reason) : null),
+                            '外部ファイル保存に失敗しました。'
+                        ));
+                    }
                     return;
                 }
                 snapshot.order = this.snapshots.length;

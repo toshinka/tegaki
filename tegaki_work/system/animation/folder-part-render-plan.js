@@ -1,14 +1,21 @@
 /**
- * CAF内部Folder Partを重複しないRenderIslandとして解決する純粋adapter契約。
+ * CAF内部Folder PartとFolder別WARPを重複しないRenderIslandとして解決する純粋adapter契約。
  * evaluateRigidParts()とoptional Bone bindingのworld matrixだけを利用し、
  * Pixi / Canvas / UI stateを所有しない。
+ * Folder別WARPはCAF Project座標でsubtreeへ先に適用し、所有Part / Bone matrixを一度だけ重ねる。
+ * root WARP / root Motion / Laneは呼出側がこのplanの後段へ適用する。
  * clipping owner/sourceがRenderIsland境界を跨ぐ場合はRig適用を拒否し、呼出側は
  * 既存のRigなしRaster合成へfallbackする。
  */
 
 import { evaluateRigidBones, evaluateRigidParts } from './part-rig.js';
+import {
+    sampleClipFolderDeformers,
+    validateClipFolderDeformers
+} from './clip-deformer.js';
 import { resolveInternalClippingContract } from './internal-layer-clipping-contract.js';
 import { unionRasterBounds } from '../raster-bounds.js';
+import { resolveWarpPlacementSample } from './warp-placement.js';
 import {
     calculateAffineTransformedBounds,
     invertTransformMatrix,
@@ -29,6 +36,24 @@ function createEmptyPlan(status = 'none', errors = []) {
 
 function addPlanError(code, message, details = {}) {
     return { code, message, ...details };
+}
+
+function createIdentityMatrix() {
+    return { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+}
+
+function createEmptyEffectPlan(status = 'none', rigRenderPlan = createEmptyPlan('none'), errors = []) {
+    return {
+        kind: 'folder-effect',
+        ok: status === 'none' || status === 'ready',
+        status,
+        fallbackToRaster: status === 'invalid' || status === 'unsupported',
+        errors,
+        rigRenderPlan,
+        islands: [],
+        islandByFolderId: new Map(),
+        islandByLayerId: new Map()
+    };
 }
 
 export function collectInternalLayerSubtreeIds(internalLayers, rootLayerId) {
@@ -196,6 +221,205 @@ export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
         islandByFolderId,
         islandByLayerId
     };
+}
+
+/**
+ * Folder別WARPを既存Folder Part / Bone評価へ重ねる共有RenderIsland plan。
+ * sampled deformerはPart / Bone matrix前のCAF Project座標で評価し、root WARPと
+ * root Motionは呼出側がこのplanの後に一度だけ適用する。
+ */
+export function createFolderEffectRenderPlan(asset, clip, timelineFrame) {
+    const rigRenderPlan = createFolderPartRenderPlan(asset, clip, timelineFrame);
+    const validation = validateClipFolderDeformers(
+        clip?.folderDeformers,
+        asset?.internalLayers || null
+    );
+    if (!validation.ok) {
+        return createEmptyEffectPlan('invalid', rigRenderPlan, validation.errors);
+    }
+    const sampledByFolderId = sampleClipFolderDeformers(
+        validation.value,
+        timelineFrame - (Number.isInteger(clip?.startFrame) ? clip.startFrame : 0),
+        Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1)
+    );
+    if (sampledByFolderId.size === 0) {
+        return createEmptyEffectPlan('none', rigRenderPlan);
+    }
+    if (rigRenderPlan.status === 'invalid' || rigRenderPlan.status === 'unsupported') {
+        return createEmptyEffectPlan(rigRenderPlan.status, rigRenderPlan, rigRenderPlan.errors);
+    }
+
+    const layers = Array.isArray(asset?.internalLayers) ? asset.internalLayers : [];
+    const layerById = new Map(layers.map(layer => [layer?.id, layer]));
+    const targetIds = new Set(sampledByFolderId.keys());
+    const registeredPartIds = new Set(
+        (asset?.rigDefinition?.parts || []).map(part => part?.partId).filter(Boolean)
+    );
+    const errors = [];
+    const islands = [];
+
+    sampledByFolderId.forEach((sampledDeformer, folderId) => {
+        const targetLayer = layerById.get(folderId) || null;
+        const layerIds = collectInternalLayerSubtreeIds(layers, folderId);
+        const nestedTargetId = [...layerIds]
+            .find(layerId => layerId !== folderId && targetIds.has(layerId)) || null;
+        if (nestedTargetId) {
+            errors.push(addPlanError(
+                'folder-deformer-nested-target-unsupported',
+                'A Folder WARP target cannot contain another Folder WARP target in the initial slice',
+                { folderId, nestedTargetId }
+            ));
+            return;
+        }
+        const nestedPartId = [...layerIds]
+            .find(layerId => layerId !== folderId && registeredPartIds.has(layerId)) || null;
+        if (nestedPartId) {
+            errors.push(addPlanError(
+                'folder-deformer-nested-part-unsupported',
+                'A Folder WARP target cannot contain another registered Folder Part in the initial slice',
+                { folderId, nestedPartId }
+            ));
+            return;
+        }
+        const clippingValidation = validateFolderPartClippingBoundary(asset, layerIds);
+        if (!clippingValidation.ok) {
+            errors.push(...clippingValidation.errors.map(error => ({ ...error, folderId })));
+            return;
+        }
+        const rigIsland = rigRenderPlan.status === 'ready'
+            ? rigRenderPlan.islandByLayerId?.get(folderId) || null
+            : null;
+        islands.push({
+            folderId,
+            targetLayer,
+            layerIds,
+            sampledDeformer,
+            partId: rigIsland?.partId || null,
+            partWorldMatrix: rigIsland?.partWorldMatrix
+                ? { ...rigIsland.partWorldMatrix }
+                : null,
+            boneDeltaMatrix: rigIsland?.boneDeltaMatrix
+                ? { ...rigIsland.boneDeltaMatrix }
+                : null,
+            worldMatrix: rigIsland?.worldMatrix
+                ? { ...rigIsland.worldMatrix }
+                : createIdentityMatrix()
+        });
+    });
+
+    if (errors.length > 0) {
+        return createEmptyEffectPlan('unsupported', rigRenderPlan, errors);
+    }
+    const islandByFolderId = new Map(islands.map(island => [island.folderId, island]));
+    const islandByLayerId = new Map();
+    islands.forEach(island => {
+        island.layerIds.forEach(layerId => islandByLayerId.set(layerId, island));
+    });
+    return {
+        kind: 'folder-effect',
+        ok: true,
+        status: 'ready',
+        fallbackToRaster: false,
+        errors: [],
+        rigRenderPlan,
+        islands,
+        islandByFolderId,
+        islandByLayerId
+    };
+}
+
+/** Folder WARPの部分置換後surface boundsをProject座標で求める。 */
+export function calculateFolderDeformerSurfaceBounds(sourceBounds, sampledDeformer) {
+    if (!sourceBounds || !sampledDeformer) return sourceBounds || null;
+    const renderDeformer = resolveWarpPlacementSample(sampledDeformer, sourceBounds);
+    const bindBounds = sampledDeformer.bindBounds || sourceBounds;
+    if (!renderDeformer || !Array.isArray(renderDeformer.points) || renderDeformer.points.length === 0) {
+        return sourceBounds;
+    }
+    const destinationPoints = renderDeformer.points.map(point => ({
+        x: bindBounds.x + point.x * bindBounds.width,
+        y: bindBounds.y + point.y * bindBounds.height
+    }));
+    const minX = Math.floor(Math.min(...destinationPoints.map(point => point.x)));
+    const minY = Math.floor(Math.min(...destinationPoints.map(point => point.y)));
+    const maxX = Math.ceil(Math.max(...destinationPoints.map(point => point.x)));
+    const maxY = Math.ceil(Math.max(...destinationPoints.map(point => point.y)));
+    return unionRasterBounds([
+        sourceBounds,
+        {
+            x: minX,
+            y: minY,
+            width: Math.max(1, maxX - minX),
+            height: Math.max(1, maxY - minY)
+        }
+    ]);
+}
+
+/** Folder WARP、Part / Bone適用後のCAF内部Raster union boundsを共有計算する。 */
+export function calculateFolderEffectAssetBounds(
+    asset,
+    effectPlan,
+    getLayerBounds,
+    isLayerVisible = () => true
+) {
+    if (effectPlan?.kind !== 'folder-effect') {
+        return calculateFolderPartAssetBounds(
+            asset,
+            effectPlan,
+            getLayerBounds,
+            isLayerVisible
+        );
+    }
+    if (effectPlan?.status !== 'ready') {
+        return calculateFolderPartAssetBounds(
+            asset,
+            effectPlan?.rigRenderPlan || effectPlan,
+            getLayerBounds,
+            isLayerVisible
+        );
+    }
+
+    const rigPlan = effectPlan.rigRenderPlan;
+    const outsideBounds = [];
+    const boundsByRigIsland = new Map((rigPlan?.islands || []).map(island => [island, []]));
+    const boundsByEffectIsland = new Map(effectPlan.islands.map(island => [island, []]));
+    (asset?.internalLayers || []).forEach(layer => {
+        if (!layer || layer.type === 'folder' || !isLayerVisible(layer)) return;
+        const bounds = getLayerBounds(layer);
+        if (!bounds) return;
+        const effectIsland = effectPlan.islandByLayerId.get(layer.id) || null;
+        if (effectIsland) {
+            boundsByEffectIsland.get(effectIsland)?.push(bounds);
+            return;
+        }
+        const rigIsland = rigPlan?.status === 'ready'
+            ? rigPlan.islandByLayerId?.get(layer.id) || null
+            : null;
+        if (rigIsland) boundsByRigIsland.get(rigIsland)?.push(bounds);
+        else outsideBounds.push(bounds);
+    });
+
+    const transformedRigBounds = [...boundsByRigIsland].map(([island, bounds]) => {
+        const sourceBounds = unionRasterBounds(bounds);
+        return sourceBounds
+            ? calculateAffineTransformedBounds(sourceBounds, island.worldMatrix)
+            : null;
+    });
+    const transformedEffectBounds = [...boundsByEffectIsland].map(([island, bounds]) => {
+        const sourceBounds = unionRasterBounds(bounds);
+        const deformedBounds = calculateFolderDeformerSurfaceBounds(
+            sourceBounds,
+            island.sampledDeformer
+        );
+        return deformedBounds
+            ? calculateAffineTransformedBounds(deformedBounds, island.worldMatrix)
+            : null;
+    });
+    return unionRasterBounds([
+        ...outsideBounds,
+        ...transformedRigBounds,
+        ...transformedEffectBounds
+    ]);
 }
 
 export function getFolderPartRenderIsland(plan, folderId) {

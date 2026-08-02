@@ -341,6 +341,50 @@ export function registerRigPartDefinition(rigDefinition, partId, options = {}) {
     };
 }
 
+/**
+ * 既存RigへBoneだけを追加する。Raster Skinning用BoneはPart / rigid bindingを持たず、
+ * Bind Poseと階層は既存rigDefinition.bonesだけを正本とする。
+ */
+export function registerRigBoneDefinition(rigDefinition, boneId, options = {}) {
+    if (typeof boneId !== 'string' || boneId.length === 0) {
+        return { ok: false, reason: 'invalid-bone-id', value: rigDefinition, bone: null };
+    }
+    const normalized = rigDefinition == null
+        ? { version: PART_RIG_SCHEMA_VERSION, parts: [], bones: [] }
+        : normalizeRigDefinition(rigDefinition);
+    if (!normalized || !Array.isArray(normalized.parts)) {
+        return { ok: false, reason: 'invalid-rig-definition', value: normalized, bone: null };
+    }
+    const bones = Array.isArray(normalized.bones) ? normalized.bones : [];
+    const existing = bones.find(bone => bone?.boneId === boneId) || null;
+    if (existing) {
+        return { ok: true, changed: false, value: normalized, bone: existing };
+    }
+    const maxBones = Number.isInteger(options.maxBones) && options.maxBones >= 0
+        ? options.maxBones
+        : Number.POSITIVE_INFINITY;
+    if (bones.length >= maxBones) {
+        return { ok: false, reason: 'bone-limit', value: normalized, bone: null };
+    }
+    const parentBoneId = options.parentBoneId || null;
+    if (parentBoneId && !bones.some(bone => bone?.boneId === parentBoneId)) {
+        return { ok: false, reason: 'parent-bone-not-found', value: normalized, bone: null };
+    }
+    const bone = {
+        ...createRootBoneDefinition(boneId, options),
+        parentBoneId
+    };
+    return {
+        ok: true,
+        changed: true,
+        value: {
+            ...normalized,
+            bones: [...bones, bone]
+        },
+        bone
+    };
+}
+
 /** 一つのroot Boneと一つの既存Folder Partを同じstatic Setup更新として登録する。 */
 export function registerRootBoneRigidBinding(rigDefinition, boneId, partId, options = {}) {
     if (typeof boneId !== 'string' || boneId.length === 0) {

@@ -51,6 +51,48 @@ function normalizeBindBounds(bounds) {
     };
 }
 
+function normalizeFitBounds(bounds) {
+    if (!bounds || typeof bounds !== 'object') return null;
+    const x = Number(bounds.x);
+    const y = Number(bounds.y);
+    const width = Number(bounds.width);
+    const height = Number(bounds.height);
+    if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+        return null;
+    }
+    return { x, y, width, height };
+}
+
+/**
+ * alpha実内容へ新規WARP GRIDのBind範囲を合わせるpure helper。
+ * Canvas / DOM / modelには依存せず、空内容ではfallbackをそのまま返す。
+ * paddingはProject pxで適用し、negative boundsをclampしない。
+ */
+export function fitWarpGridBindBoundsToContent(contentBounds, fallbackBounds = null, options = {}) {
+    const content = normalizeFitBounds(contentBounds);
+    const fallback = normalizeFitBounds(fallbackBounds);
+    if (!content) return fallback ? { ...fallback } : null;
+
+    const paddingRatio = Number.isFinite(Number(options.paddingRatio))
+        ? Math.max(0, Number(options.paddingRatio))
+        : 0.05;
+    const minimumPadding = Number.isFinite(Number(options.minimumPadding))
+        ? Math.max(0, Number(options.minimumPadding))
+        : 4;
+    const paddingX = Math.max(minimumPadding, Math.ceil(content.width * paddingRatio));
+    const paddingY = Math.max(minimumPadding, Math.ceil(content.height * paddingRatio));
+    const left = Math.floor(content.x - paddingX);
+    const top = Math.floor(content.y - paddingY);
+    const right = Math.ceil(content.x + content.width + paddingX);
+    const bottom = Math.ceil(content.y + content.height + paddingY);
+    return {
+        x: left,
+        y: top,
+        width: Math.max(1, right - left),
+        height: Math.max(1, bottom - top)
+    };
+}
+
 export function createDefaultWarpGridPoints() {
     return createRectGridTopology({
         columns: WARP_GRID_COLUMNS,

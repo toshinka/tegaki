@@ -1,10 +1,10 @@
 # Tegaki Progress
 
-更新日: 2026-08-01
+更新日: 2026-08-02
 
 ## 現在地
 
-- Phase 5a〜6qを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。
+- Phase 5a〜6yを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -19,7 +19,10 @@
 - Phase 6pでは一つのroot BONE + binding、Bone key、Canvas tip rotation、全Folder候補Lane、`RIG → MOTION → WARP`のRIG-first導線、CAF / Folder対象tab、単一Inspectorを実装しcloseした。
 - Phase 6qではCAF + 全Folder PIVOT、遅延Rig登録、青Setup / 橙Motion、親BONE接続、nested剛体FKを共通render planへ接続し、オーナー実機でRigと親子Motionを受入れた。親dropdownを維持したまま、Canvas上のPIVOT長押し接続、接続線dragによる付け替え、空drop解除も同じ`parentBoneId` setterへ接続した。保存Bone長は維持し、表示stemだけを短縮した。
 - Phase 6rは保存容量・KEY選択・tab復帰・通常Layer選択の安定化Sliceとしてcloseした。多数Folder / Layer / Motion keyで旧`Invalid string length` crashが再現しない状態を維持し、Motion / WARP / Bone / legacy Part KEYのCtrl/Cmd複数選択と一括drag、通常押下だけの一時表示、再Ctrl/Cmd click解除、設定済みLaneのlast-used tab復帰、PIVOT設定済み`✓`、Project採取前のV Layer Transform確定、同一Assetの内部Layer選択保持を完了した。CLIP MOTION内のnative `title` tooltipはFutaba paletteの`data-tooltip`へ統一し、pointerupでもKEY選択toggleをcommitしてCtrl/Cmd OFF後の◆表示を通常へ戻す。外部paste / Canvas resizeを含むV save / reopenは既知残存として後続検査へ引き継ぐ。
-- 現行はPhase 6s Stage A完了・SOL review 1待ち。SOL Gate 0監査で既存root `ClipInstance.deformer`を維持し、optional `ClipInstance.folderDeformers`へstable internal Folder IDと既存deformerを保持する契約をGOとした。Stage Aではnormalize / serialize / validate / sample / remap API、ClipInstance / Timeline setter、Project restore validation、Clip / Asset copy-remap、Frame 0 HOLD Bake、Timeline History / clipboard / retime transport、Folder target付き削除拒否を実装し、`build/verify-folder-deformer-model.mjs`と既存Rig / Part / WARP / Bake / Project verifier、buildを通過した。Folder-local WARPのRenderIsland合成はStage Bへ残し、normalize / sampleの二重正本は作っていない。評価順、座標、nested unsupported境界、LUNA MAX停止条件は`task-codex/phase6s.md`へ確定した。
+- Phase 6sはFolder別WARP GRID、Project / Album round-trip、容量、Bake / export共有経路をSOL review 4とOwner実機で受入れcloseした。`Folder subtree合成 → Folder WARP → Part/Bone matrix → Folder opacity/blend → root WARP → root Motion → Lane`を維持する。
+- Phase 6tは固定長2-Bone IKを既存Bone Pose keyへ確定するPose Bake方式で実装し、SOL review 3判定`A`とOwner実機受入によりcloseした。pure solver、root / joint rotationだけの書込み、1 gesture 1 History、cancel rollback、固定segment、通常FK、random seek、Project / Bake / Folder RenderPlanを固定した。target track、Constraint、stretch、Mesh、weightは追加していない。
+- Phase 6uはSOL review 2判定`A`でStage A / Bを受入れcloseした。新規WARP GRIDはCAF / Folderのeffective-visible alpha実内容へauto-fitし、巨大boundsをCanvasへfallbackせず拒否する。Raster privateのbarycentric / epsilonは`warp-triangle-point-map.js`へ抽出し、既存topology / placementだけでBind Project点をPose Project点へ写すpure helperを固定した。全26 verifier、node --check、build、Stage A Browser smoke、生成物清掃を通過した。Gate 1は、Asset static RigとInstance Folder WARPを跨ぐConstraint所有、Bone評価後の再pass、cycle、ID remap / validationが未確定のため`HOLD`とし、子PIVOT追従は後続Phase候補へ送った。
+- Phase 6v〜6yでは、一つのCAF内部Rasterへ複数Mesh BONEを置く限定Skinning系列を完了した。`ClipAsset.meshDefinitions / skinBindings`をoptional static Setup、既存`rigDefinition.bones`をBind、`ClipInstance.rigMotion.boneTracks`をFrame Poseとして分離し、inverse-bind LBSをCPU / Pixi共通render planへ接続した。RIG / MOTIONのRaster target、`＋ BONE`、既存親接続、Bone key、Alpha-fit `AUTO GRID` / `GRID再生成`、最大2 distance weight、Raster更新時`STALE`を実装した。全29 verifier、変更JS / mjsの`node --check`、build、Browser軽量確認、console errorなし、生成物清掃を通過した。
 - proposalは現行10文書へ整理した。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。外部AI原案、レビュー、整理前長文、解決済み監査は`proposals/過去計画（アイデアのサルベージ時に使う。基本読み込まない）/`へ原文保存している。
 
 ## 完了基盤の要約
@@ -38,6 +41,13 @@
 - 元Rasterを保持し、Bind triangle領域だけをWarp結果へ差し替える部分合成をCPU / Pixiで共有する。
 - 白mask、座標ずれ、透明境界、Raster外、部分重複、GRID / POINT / BRUSH、B / N、preview / playback / Bake / GIF / APNGは固定入力、Browser、オーナー実機で受入済み。
 - 旧Project、key無しCAF、固定4×4 WARP、既存可変GRIDはoptional field欠損をidentityとして維持する。
+
+### Raster Mesh / Bone Skinning
+
+- Raster画素はClipAsset内部Layer / DrawingSnapshot、static Mesh / SkinWeightはClipAsset、Bone Poseは既存ClipInstance rigMotionを正本とする。
+- Frame頂点は`evaluateRasterBoneSkinning()`でstatelessに導出し、preview / playback / onionとCPU compositor / Bake / exportへ同じ結果を渡す。
+- Alpha-fit Gridはwide 8×4、tall 4×8、square 6×6のdeterministic初期値。生成後は固定し、Raster更新時は`STALE`表示だけを行う。
+- clipping owner / sourceへ参加するRaster、active Folder WARP / rigid RenderIsland内Rasterは初期proofでは明示unsupported。自動fallbackしない。
 
 ### Bake / 容量
 
@@ -62,13 +72,14 @@
 
 - sidebar / Layer Panel / QTP / CAF / Animation Tableのcompact表示はBrowser固定入力とオーナー実機で成立した。実pen / touchのcoarse hit areaは継続監視する。
 - 重いAnimation Projectでは、緊急復旧Project serialization / IndexedDB checkpointとpointer event queue待ちが重なる場合がある。pen / Airbrush確定自体は実測1ms未満だったため、描画結果やHistory上限を変更せず凍結監視する。
-- 複数Motion / WARP Projectの`JSON.stringify`失敗は、保存先への書き込み前に発生する。OneDriveだけを原因とせず、Phase 6rでSnapshot参照数、decoded pixel bytes、JSON長、serialize時間を採取した。初回native pickerはDownloadsを開始位置のhintとするが、既存handleとOS / browserのfolder選択を上書きしない。
+- 複数Motion / WARP Projectの`JSON.stringify`失敗は、保存先への書き込み前に発生する。OneDriveだけを原因とせず、Phase 6rでSnapshot参照数、decoded pixel bytes、JSON長、serialize時間を採取した。Stage DではFolder WARPを含むProject JSON round-tripと、循環JSONを例外化しないsave結果を固定検証した。初回native pickerはDownloadsを開始位置のhintとするが、既存handleとOS / browserのfolder選択を上書きしない。
 - 通常modeでLayer Panel選択とV変形Rasterが食い違う例、Table表示有無でFolder / Layer card順が揺れる例はPhase 6rで限定修正した。外部paste / Canvas resizeを含むV save / reopenだけは後続の固定入力へ残し、保存round-trip受入れ前に横断リファクタリングへ広げない。
 - Browserで再現したTable閉鎖後のCAF内部Layer selection / working adapterずれは、同じAssetに存在する`selectedInternalLayerId`をFrame同期で保持して修正した。通常 / Table表示 / Table閉鎖後のV確定・EscapeとPanel順は一致した。
-- Folder別WARPは未実装。Gate 0はGOだが、最初はLUNA MAX Stage Aの保存shape・純粋API・ID remap・model verifierだけに限定する。UI / Pixi / compositorはSOL review 1まで変更しない。target配下に別Part / 別Folder WARP targetがあるnested非線形境界とcross-boundary clippingは初期Sliceで明示unsupportedとする。
+- Folder別WARPはPhase 6sでcloseした。target配下に別Part / 別Folder WARP targetがあるnested非線形境界とcross-boundary clippingは明示unsupportedを維持し、制作中に必要性が出た時だけ別Gateで再開する。
 - V保存ずれは全Layer一律ではなく、Canvas resizeを挟んだ外部clipboard貼付Rasterが候補。配置を保持する貼付例もあるため、Slice 3で`外部paste → resize → V → save/reopen`を固定入力にしてから限定修正する。
 - 添付画像のBrowser file chooser投入はネイティブchooser待ちで完了しなかったため、実機のOS clipboard / file chooser入力へ委譲する。`ImageImporter`のresize前後snapshot、working Layer capture、ProjectManagerのtransform commit待ちはコード監査済みで、現時点では追加修正を入れない。
-- 末端の手から前腕・上腕を追従させる操作は、現行FKの逆流ではなくIK targetとして計画する。第一段はrigid Folderのrotation-only 2-Bone IK、伸縮と周辺画素の曲げはrotation limit / chain参加 / Mesh・weightと分離し、Folder別WARPより後のPhase候補とする。
+- 末端の手から前腕・上腕を追従させるrotation-only 2-Bone IKはPhase 6tでcloseした。伸縮と周辺画素の曲げはrotation limit / chain参加 / Mesh・weightと分離したまま維持する。
+- Raster Skinningは一Raster / 一Meshの初期proofまで。manual weight、weight brush、Auto Contour、LINE Ribbon、Mesh Bone IK、SkinとFolder WARP / clippingの同時適用は未実装で、次Goalが明示的に開くまで広げない。
 - 遅延またはcrashが再現した場合は、`TegakiPerf`のevent queue / handler、Long Task、Project export時間、heap、texture残留を同時採取し、AirbrushやHistory件数を先に原因と決めない。詳細は`開発用資料保管庫/Archive/phase6e.md`。
 - WebGPU brush、SDF / MSDF、水彩・油彩、本格物理、真の無限Canvasは正式な研究Phaseまで凍結する。
 - PSD全CAF一括export、通常LayerへのPSD import、再編集可能Text、Camera Track、Folder group完全合成は未実装proposalとして維持する。
@@ -78,15 +89,11 @@
 1. `AGENTS.md`
 2. `TEGAKI.md`
 3. 本書
-4. `task-codex/phase6s.md`
-5. `開発用資料保管庫/Archive/phase6q.md`
-6. `開発用資料保管庫/Archive/phase6p.md`
-7. `開発用資料保管庫/proposals/00_計画索引.md`
-8. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
-9. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
-10. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
+4. `開発用資料保管庫/proposals/00_計画索引.md`
+5. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
+6. 次GoalでOwnerが指定するproposal / 指示書
 
-Phase 6rは上記の安定化Sliceとしてcloseした。Phase 6s Gate 0はGO、Stage Aは完了。次の入口は`task-codex/phase6s.md`のSOL review 1で、Stage BのRenderIsland plan実装へ進む前に保存shape・ID remap・履歴境界を差分監査する。IK / Stretch / Meshはそれより後とする。
+現行Phaseなし。Phase 6v〜6y close後は新しいGoal指示待ちとし、次責務のGateや実装を先行しない。
 
 ## 資料
 
@@ -106,6 +113,13 @@ Phase 6rは上記の安定化Sliceとしてcloseした。Phase 6s Gate 0はGO、
 - Phase 6p完了: `開発用資料保管庫/Archive/phase6p.md`
 - Phase 6q完了: `開発用資料保管庫/Archive/phase6q.md`
 - Phase 6r完了: `開発用資料保管庫/Archive/phase6r.md`
+- Phase 6s完了: `開発用資料保管庫/Archive/phase6s.md`
+- Phase 6t完了: `開発用資料保管庫/Archive/phase6t.md`
+- Phase 6u完了: `開発用資料保管庫/Archive/phase6u.md`
+- Phase 6v完了: `開発用資料保管庫/Archive/phase6v.md`
+- Phase 6w完了: `開発用資料保管庫/Archive/phase6w.md`
+- Phase 6x完了: `開発用資料保管庫/Archive/phase6x.md`
+- Phase 6y完了: `開発用資料保管庫/Archive/phase6y.md`
 - 整理前Progress全文: `開発用資料保管庫/Archive/PROGRESS_ARCHIVE_2026-07-28.md`
 - 現行proposal索引: `開発用資料保管庫/proposals/00_計画索引.md`
-- 現行Phase: `task-codex/phase6s.md`
+- 現行Phase: なし（次GoalのOwner指示待ち）

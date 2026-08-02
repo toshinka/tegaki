@@ -225,7 +225,12 @@ export class ProjectManager {
                 if (options.showToast === true) {
                     this._showSaveToast(`保存しました${this.currentFileName ? `: ${this.currentFileName}` : ''}`);
                 }
-                return { ok: true, native: true, fileName: this.currentFileName };
+                return {
+                    ok: true,
+                    native: true,
+                    fileName: this.currentFileName,
+                    jsonLength: json.length
+                };
             } catch (error) {
                 if (error?.name === 'AbortError') {
                     return { ok: false, cancelled: true };
@@ -247,7 +252,7 @@ export class ProjectManager {
         if (options.showToast === true) {
             this._showSaveToast('保存ファイルをダウンロードしました');
         }
-        return { ok: true, native: false };
+        return { ok: true, native: false, jsonLength: json.length };
     }
 
     async quickSave(options = {}) {
@@ -836,6 +841,13 @@ export class ProjectManager {
             console.warn(
                 '[ProjectManager] Optional Rig data is invalid; Raster / CAF data was loaded and Rig evaluation remains disabled.',
                 rigValidation.errors
+            );
+        }
+        const rasterSkinValidation = animationTable.model.validateRasterBoneSkins?.();
+        if (rasterSkinValidation?.ok === false) {
+            console.warn(
+                '[ProjectManager] Optional Raster Mesh / SkinWeight data is invalid; Raster data was loaded and Bone Skinning remains disabled.',
+                rasterSkinValidation.errors
             );
         }
         const folderDeformerValidation = animationTable.model.validateFolderDeformers?.();

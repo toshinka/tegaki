@@ -4241,6 +4241,60 @@ canvas {
     font-weight: 700;
 }
 
+.anim-rig-mesh-bone-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.anim-rig-mesh-bone-controls[hidden] {
+    display: none;
+}
+
+.anim-rig-mesh-bone-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--text-secondary);
+    font-size: 8px;
+    font-weight: 700;
+}
+
+.anim-rig-mesh-bone-controls select {
+    min-width: 96px;
+    max-width: 152px;
+    min-height: 20px;
+    padding: 2px 5px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    color: var(--futaba-maroon);
+    background: var(--futaba-cream);
+    font: inherit;
+}
+
+.anim-rig-mesh-status {
+    padding: 2px 5px;
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    color: var(--futaba-medium);
+    background: color-mix(in srgb, var(--futaba-cream) 76%, transparent);
+    font-size: 8px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.anim-rig-mesh-status.is-current {
+    color: var(--futaba-maroon);
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 12%, var(--futaba-background));
+}
+
+.anim-rig-mesh-status.is-stale {
+    color: var(--futaba-light-maroon);
+    border-color: var(--futaba-light-maroon);
+    background: color-mix(in srgb, var(--futaba-light-maroon) 10%, var(--futaba-background));
+}
+
 .anim-rig-parent-field select {
     min-width: 78px;
     max-width: 130px;
@@ -4255,7 +4309,8 @@ canvas {
 
 .anim-rig-target-switch button,
 .anim-rig-setup-btn,
-.anim-rig-key-btn {
+.anim-rig-key-btn,
+.anim-rig-ik-btn {
     min-height: 20px;
     padding: 2px 6px;
     border: 1px solid var(--futaba-light-medium);
@@ -4264,6 +4319,21 @@ canvas {
     background: color-mix(in srgb, var(--futaba-cream) 76%, transparent);
     font-size: 8px;
     font-weight: 700;
+}
+
+.anim-rig-ik-btn {
+    cursor: pointer;
+}
+
+.anim-rig-ik-btn.active {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-background));
+}
+
+.anim-rig-ik-btn:disabled {
+    color: var(--futaba-medium);
+    opacity: 0.55;
+    cursor: default;
 }
 
 .anim-rig-target-switch button.active,
