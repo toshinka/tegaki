@@ -1,8 +1,24 @@
 # GitHubURL — Tegaki プロジェクト読解用 Raw URL ナビゲーション
 
+更新日: 2026-08-10
+
 > **外部AI (Web版Claude / ChatGPT等) 向けガイド**
 > 本ファイルはローカルファイルシステムにアクセスできない外部AIが、GitHubから主要ファイルを直接読み込んで Tegaki プロジェクトを理解・調査するためのURL集です。
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
+> URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
+
+## 0. 現在地（Phase 7i / LUNA引き継ぎ時点）
+
+- Phase 7h Auto Shape FILLはOwner受入でclose済み。
+- 現行Phase 7i Auto Shape LINE / RibbonはStage A〜C、SOL review 1〜3=`A`まで完了。
+- pure実装は、単一holeなしalpha islandのopen centerline、`left / center / right`三列Ribbon、2〜3 direct-chain BONEのlongitudinal weight、既存inverse-bind LBSによる0° / 45° / 90°品質Gateまで。
+- 保存Mesh / Skinの新schema、別Pose正本、WARP共有は追加していない。Model / History / UI / rendererへのLINE接続もまだ未実装。
+- 次のStage DはLUNA / MAX限定。既存Modelの明示`auto-shape-line` dispatch、status / duplicate rebase、Setup青RIGの`AUTO LINE`、一操作一History、既存rollback、Browser確認だけを実装する。
+- LINE / FILLを自動分類しない。失敗時にFILLへ自動fallbackしない。pure Stage A〜Cの閾値、manual topology / weight、WARP、別LBS evaluatorへ広げない。
+- Stage D後のaccept / closeはSOL / XHighで行う。
+
+このナビゲーション自身:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
 
 ---
 
@@ -12,6 +28,8 @@
 - **AI共通ガイド**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 - **技術方針・禁止事項（正本）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 - **最新開発進捗・現在地**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
+- **現行Phase 7i実装契約・LUNA Stage D境界**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7i.md
+- **直前Phase 7h完了記録（Auto Shape FILL）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7h.md
 - **全体アーキテクチャマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ARCHITECTURE.md
 - **Layer / CAF 境界設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_BOUNDARY.md
 
@@ -22,10 +40,24 @@
 - **未実装計画索引**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/00_%E8%A8%88%E7%94%BB%E7%B4%A2%E5%BC%95.md
 - **短中期ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/01_%E7%9F%AD%E4%B8%AD%E6%9C%9F%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
 - **UI/CSS スタイルガイド**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/UI_CSS%E3%82%B9%E3%82%BF%E3%82%A4%E3%83%AB%E3%82%AC%E3%82%A4%E3%83%89.md
-- **ボーン・CAF階層パーツ・Zインデックス動的制御設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/15_%E3%83%9C%E3%83%BC%E3%83%B3%E3%83%BBCAF%E9%9A%8E%E5%B1%A4%E3%83%91%E3%83%BC%E3%83%84%E3%83%BBZ%E3%82%A4%E3%83%B3%E3%83%87%E3%83%83%E3%82%AF%E3%82%B9%E5%8B%95%E7%9A%84%E5%88%B6%E5%BE%A1%E8%A8%AD%E8%A8%88.md
-- **モーションパフォーム記録・タイムストローク再生設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/16_%E3%83%A2%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%83%91%E3%83%95%E3%82%A9%E3%83%BC%E3%83%A0%E8%A8%98%E9%8C%B2%E3%83%BB%E3%82%BF%E3%82%A4%E3%83%A0%E3%82%B9%E3%83%88%E3%83%AD%E3%83%BC%E3%82%AF%E5%86%8D%E7%94%9F%E8%A8%AD%E8%A8%88.md
-- **自動メッシュ・自由コントロールポイント・ストロークメッシュ設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/17_%E8%87%AA%E5%8B%95%E3%83%A1%E3%83%83%E3%82%B7%E3%83%A5%E3%83%BB%E8%87%AA%E7%94%B1%E3%82%B3%E3%83%B3%E3%83%88%E3%83%AD%E3%83%BC%E3%83%AB%E3%83%9D%E3%82%A4%E3%83%B3%E3%83%88%E3%83%BB%E3%82%B9%E3%83%88%E3%83%AD%E3%83%BC%E3%82%AF%E3%83%A1%E3%83%83%E3%82%B7%E3%83%A5%E8%A8%AD%E8%A8%88.md
+- **変形・Mesh・WARPロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/09_%E5%A4%89%E5%BD%A2%E3%82%A2%E3%83%8B%E3%83%A1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%83%BB%E3%83%A1%E3%83%83%E3%82%B7%E3%83%A5%E3%83%BBGPU%E7%94%BB%E6%9D%90%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
+- **Motion Graph / Easing / Motion Path**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/10_Motion_Graph%E3%83%BBEasing%E3%83%BBMotion_Path%E8%A8%AD%E8%A8%88.md
+- **UI導線・Text・階層Motion将来設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/14_UI%E3%83%84%E3%83%BC%E3%83%AB%E5%B0%8E%E7%B7%9A%E3%83%BBText%E3%83%BB%E9%9A%8E%E5%B1%A4Motion%E5%B0%86%E6%9D%A5%E8%A8%AD%E8%A8%88.md
+- **Rig・Mesh・Perform統合ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/15_%E3%82%AD%E3%83%A3%E3%83%A9%E3%82%AF%E3%82%BF%E3%83%BCRig%E3%83%BBMesh%E3%83%BBPerform%E7%B5%B1%E5%90%88%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
 - **実装したいことメモ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/%E5%AE%9F%E8%A3%85%E3%81%97%E3%81%9F%E3%81%84%E3%81%93%E3%81%A8%E3%83%A1%E3%83%A2.txt
+
+### 2.1 Phase 7iまでの直接経緯
+
+- **Phase 6v — static Raster Mesh / Skin schema**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase6v.md
+- **Phase 6w — CPU / Pixi描画proof**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase6w.md
+- **Phase 6x — 複数Mesh BONE authoring**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase6x.md
+- **Phase 6y — Alpha-fit Grid / auto weight / STALE**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase6y.md
+- **Phase 7c — Folder WARP anchor → child PIVOT**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7c.md
+- **Phase 7d — 表示階層とRigグラフ分離 / reparent Gate**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7d.md
+- **Phase 7e — WARP GRID回転不変**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7e.md
+- **Phase 7f — FRAME / CORNER / EDGE**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7f.md
+- **Phase 7g — WARP RADIAL topology**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7g.md
+- **Phase 7h — Auto Shape FILL production接続**: 上記「1. 最優先必読ドキュメント」の完了記録を参照。
 
 ---
 
@@ -80,7 +112,6 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 
 ### アニメーション・CAF・メッシュ (system/animation/ & system/animation-system.js)
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation-system.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/animation-data-model.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/timeline-frame-compositor.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/internal-layer-clipping-contract.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-deformer.js
@@ -92,6 +123,32 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/control-mesh-topology.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/caf-memory-profiler.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/bake-capacity-estimator.js
+
+### 現行Rig / Mesh / Auto Shape LINE実装（Phase 6v〜7i）
+
+- **Rig / Bone / Motion正本**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/part-rig.js
+- **TimelineModel adapter（Stage D接続先）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/animation-data-model.js
+- **Raster Mesh / Skin schema・inverse-bind LBS**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-bone-skinning.js
+- **Alpha-fit Grid / Bone segment / source signature**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-bone-auto-setup.js
+- **CPU / Pixi共通Raster Skin render plan**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-skin-render-plan.js
+- **Phase 7h alpha contour**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-alpha-contours.js
+- **Phase 7h contour budget / guard**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/auto-shape-contour-budget.js
+- **Phase 7h FILL topology**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/auto-shape-fill-topology.js
+- **Phase 7h FILL pure factory**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/auto-shape-raster-bone-setup.js
+- **Phase 7i Stage A centerline**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-line-centerline.js
+- **Phase 7i Stage B three-rail topology / deformation Gate**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-line-ribbon-topology.js
+- **Phase 7i Stage C longitudinal weight pure factory**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/line-ribbon-raster-bone-setup.js
+- **Setup青RIG UI（Stage D接続先）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/animation-table-popup.js
+
+### Phase 7h / 7i verifier
+
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-alpha-contours.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-auto-shape-contour-budget.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-auto-shape-fill-topology.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-auto-shape-raster-bone-setup.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-line-centerline.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-line-ribbon-topology.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-line-ribbon-raster-bone-setup.mjs
 
 ### プロジェクト保存・ストレージ・画像インポート
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/project-manager.js
@@ -117,7 +174,6 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/dom-builder.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/ui-panels.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-panel-renderer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/animation-table-popup.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/timeline-ui.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/timeline-thumbnail-utils.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/album-popup.js

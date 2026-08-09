@@ -66,7 +66,7 @@ WARPの枠操作と内部Pose編集を分ける。最初に現行GRID回転がPr
 - 旧fixed 4×4 / rect Control Meshはそのまま読み、既存ProjectをCircleへ遡及変換しない。RECT / RADIAL間の変更はTopology変更として既存keyの破棄preview、confirm、Undoを必須にする。
 - Auto Shape Meshとcontent-fit WARPは同じ輪郭解析を再利用できるが、Skin MeshとWARP Poseを暗黙共有しない。まずgenerator出力を共通pure dataとして比較し、所有、stable ID、再生成、二重変形を説明できた場合だけstatic topology参照共有をGate化する。
 
-推奨Phase順は、`回転不変性の固定fixture → FRAME / CORNER / EDGE操作 → RADIAL topology → Auto Shape foundation`。一度にschema、UI、rasterizerを変更しない。Phase 7e / 7f / 7gはOwner受入でcloseした。Phase 7hもalpha island / outer / hole、interior-support FILL、topology検査付き輪郭削減、透明側guard、256 vertex budgetを既存Mesh / SkinとSetup青RIGの`AUTO SHAPE`へ限定接続し、SOL review 1〜5=`A`とOwner軽量実機受入でcloseした。現行Phase 7iはLINE / Ribbonのpure centerlineと`left / center / right`三列topologyを固定し、幅急変、自己交差、最小角、coverage、最大255 vertexをGate化した。次の長手方向weight / 曲げ比較前に保存Meshへ接続せず、WARP PoseとBone Poseも統合しない。
+推奨Phase順は、`回転不変性の固定fixture → FRAME / CORNER / EDGE操作 → RADIAL topology → Auto Shape foundation`。一度にschema、UI、rasterizerを変更しない。Phase 7e / 7f / 7gはOwner受入でcloseした。Phase 7hもalpha island / outer / hole、interior-support FILL、topology検査付き輪郭削減、透明側guard、256 vertex budgetを既存Mesh / SkinとSetup青RIGの`AUTO SHAPE`へ限定接続し、SOL review 1〜5=`A`とOwner軽量実機受入でcloseした。現行Phase 7iはLINE / Ribbonのpure centerline、`left / center / right`三列topology、2〜3 direct-chain BONEのlongitudinal weight / LBS proofをStage A〜C、SOL review 1〜3=`A`で固定した。次は既存Model / Setup青RIGへの明示`AUTO LINE`限定adapterで、WARP PoseとBone Poseは統合しない。
 
 ## 追加候補とPlan B
 

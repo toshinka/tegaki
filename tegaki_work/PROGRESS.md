@@ -33,7 +33,8 @@
 - Phase 7gはWARP `RADIAL` topologyとしてOwner受入でcloseした。center + 16 segments × 3 ringsの決定的な49点／80 triangleを既存free Control Meshへ保存し、新規作成だけの青い`RADIAL`入口、POINT / SELECT、1 Historyへ接続した。free topologyではFRAME / CORNER / EDGEをdisabledにし、新しい保存flag、renderer分岐、既存key変換を追加していない。変更34 JS / mjsのnode check、全39 verifier、build、Browser実操作、Owner実機確認を通過した。
 - Phase 7hはAuto Shape alpha contour foundationから限定production接続までStage A〜E、SOL review 1〜5=`A`、Owner軽量実機受入を完了してcloseした。4-connected contour、hole / island FILL、topology検査付き輪郭削減、透明guard、256 vertex budgetを既存Mesh / Skinへ接続した。Setup青RIG内で`AUTO GRID`と`AUTO SHAPE`が並存し、最大2 weight、CURRENT / STALE、明示再生成、CAF asset一操作一History、CAF / Raster複製、Project round-tripを既存正本で維持する。Browserで`SHAPE → GRID → Undo / Redo`、Raster追記STALE、再生成、Mesh Bone key、playback、onion、console error 0件を確認した。LINE、manual weight / topology、WARP共有は未実装。完了記録は`開発用資料保管庫/Archive/phase7h.md`。
 - Phase 7h close前後のPhase横断小改修として、通常Folderの「複製」を子孫Folder / Raster込みの既存`layer-block`コピー正本へ統合した。Animation Table上部headerの通常wheelはTimeline zoom、Lane列wheelは上下、Timeline grid wheelは左右を維持する。CanvasのH / Shift+H反転はcanvas全体中心ではなく、現在viewport中心下のProject座標を固定する。入れ子Folder複製とUndo / Redo、header wheel `87% → 100%`、拡大後H反転、console error 0件をBrowserで確認し、全45 verifier / buildを通過した。
-- 現行Phase 7iはAuto Shape LINE / Ribbon foundation。SOL Gate 0=`GO`、Stage A / B、SOL review 1 / 2=`A`まで完了した。Phase 7hのalpha contour判定を再利用したdeterministic open centerlineと、均等station、cap延長、alpha境界rayによる`left / center / right`三列support、4 triangle / 区間のpure topologyを固定した。幅急変、outline自己交差、最小角、Project面積coverageを理由付きで拒否し、長い線も最大85 station / 255 vertexへ収める。既存Mesh schema互換だが、保存Mesh、SkinWeight、Model、History、UI、rendererは未変更。全52 JS / mjs node check、全47 verifier、buildを通過し生成差分は清掃済み。次は同一stationの三列へ同じ長手方向weightを与え、2〜3 BONE bend後の線幅・triangleをFILLと比較するStage Cで、成立前にproduction接続しない。
+- 現行Phase 7iはAuto Shape LINE / Ribbon foundation。Stage A〜C、SOL review 1〜3=`A`まで完了した。deterministic open centerline、均等station / cap / alpha境界rayの`left / center / right`三列topologyに続き、2〜3 direct-chain BONE midpointを長手距離へ射影するpure factoryを固定した。同一station三列は同じ最大2 linear influenceを共有し、既存Mesh / Skin / inverse-bind LBS / Project shapeで0° / 45° / 90°、random seek、CURRENT / STALE、複製source rebaseを通過する。幅collapse / ratio、triangle degenerate / inversion、outline交差を理由付きで拒否する。通常LBSの90°中央縮小は最小幅ratio `0.65`の明示Gateとし、別evaluatorへ広げない。Stage C関連node check、全48 verifier、buildを通過し生成差分は清掃済み。Model、History、UI、rendererは未変更。次はLUNA / MAX限定Stage Dで明示`AUTO LINE`を既存Setup青RIGへ接続し、SOLが受入reviewする。
+- Web外部AI向け`tegaki_work/GitHubURL.txt`を現行正本へ同期した。main push後に、必読順、Phase 7i / Stage D境界、Phase 6v〜7h経緯、現行proposal、LINE pure実装、接続先、verifierをRaw URLで辿れる。全137 URLはローカル存在照合で欠損0・重複0。navigationであり、`TEGAKI.md` / PROGRESS / 現行Phase指示書より上位の正本にはしない。
 - proposalは現行10文書へ整理した。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。外部AI原案、レビュー、整理前長文、解決済み監査は`proposals/過去計画（アイデアのサルベージ時に使う。基本読み込まない）/`へ原文保存している。
 
 ## 完了基盤の要約
@@ -109,7 +110,7 @@
 8. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
 9. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
 
-Phase 7i Stage A / Bはpure centerlineと三列Ribbon topologyまで。次はStage Cで三列同一の長手方向weight、2〜3 BONE、0° / 45° / 90° bend後の線幅、outline交差、triangle反転をFILLと比較する。LINE / FILLを自動分類せず、Stage C review前は保存Mesh / Skin、STALE、UIへ接続しない。
+Phase 7i Stage A〜CとSOL review 1〜3=`A`まで完了した。次は`task-codex/phase7i.md`のStage DだけをLUNA / MAXで実装する。既存Modelの明示`auto-shape-line` dispatch、status / duplicate rebase、Setup青RIGの`AUTO LINE`、一操作一History、rollback、Browser一致に限定し、pure geometry、保存schema、WARP、manual weightへ広げない。実装後のaccept / closeはSOL / XHighで行う。
 
 ## 資料
 
