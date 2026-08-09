@@ -2,7 +2,7 @@
 
 更新日: 2026-08-10
 担当: SOL / XHigh（Gate 0・pure geometry・review）、LUNA / MAX（GO後の限定Model / UI adapter候補）
-状態: OPEN（SOL Gate 0=`GO`、Stage A / B完了、SOL review 1 / 2=`A`）
+状態: OPEN（Stage A〜C完了、SOL review 1〜3=`A`、Stage D LUNA限定adapter準備済み）
 
 ## 1. Goal
 
@@ -16,16 +16,20 @@ Phase 7iはRaster alphaからLINEを無言自動分類しない。`LINE`は将�
 2. `TEGAKI.md`
 3. `tegaki_work/PROGRESS.md`
 4. 本書
-5. `開発用資料保管庫/Archive/phase7h.md`
-6. `開発用資料保管庫/proposals/00_計画索引.md`
-7. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
-8. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
-9. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
-10. `tegaki_work/system/animation/raster-alpha-contours.js`
-11. `tegaki_work/system/animation/auto-shape-fill-topology.js`
-12. `tegaki_work/system/animation/auto-shape-raster-bone-setup.js`
-13. `tegaki_work/system/animation/raster-bone-auto-setup.js`
-14. `tegaki_work/system/animation/raster-bone-skinning.js`
+5. `tegaki_work/GitHubURL.txt`（Web外部AIの入口。仕様正本ではない）
+6. `開発用資料保管庫/Archive/phase7h.md`
+7. `開発用資料保管庫/proposals/00_計画索引.md`
+8. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
+9. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
+10. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
+11. `tegaki_work/system/animation/raster-alpha-contours.js`
+12. `tegaki_work/system/animation/auto-shape-fill-topology.js`
+13. `tegaki_work/system/animation/auto-shape-raster-bone-setup.js`
+14. `tegaki_work/system/animation/raster-bone-auto-setup.js`
+15. `tegaki_work/system/animation/raster-bone-skinning.js`
+16. `tegaki_work/system/animation/raster-line-centerline.js`
+17. `tegaki_work/system/animation/raster-line-ribbon-topology.js`
+18. `tegaki_work/system/animation/line-ribbon-raster-bone-setup.js`
 
 通常作業では`Backup/`、`PastFiles/`、`開発用資料保管庫/Backup-tegaki_work/`、proposalの`過去計画（アイデアのサルベージ時に使う。基本読み込まない）/`を読まない。
 
@@ -99,14 +103,57 @@ SOL review 1=`A`。Stage Bの三列Ribbon比較へ進める。ただし短く太
 
 SOL review 2=`A`。hard bendはrail自己交差、急な太さ変化は幅Gateとして理由付き拒否する。Stage B topologyだけでは曲げ後の線幅保持を受入れず、Stage CのRibbon専用weight / LBS比較前にproduction接続しない。
 
-## 6. Stage C Gate
+## 6. Stage C — longitudinal weight / LBS proof
 
-- 一つの太い直線 / bent Raster、2〜3 BONEで、同じstationのleft / center / rightへ同じ長手方向weightを与えるpure factoryを比較する。
-- 0° / 45° / 90° bendでstation幅、triangle反転、outline交差をFILL / LINE固定fixtureで比較する。
-- 最大2 influence、既存inverse-bind LBS、random seek、Project round-trip用shapeを維持し、新しいPose正本を作らない。
-- Stage C review `A`まではgenerator metadata、STALE、Model setter、History、Setup UIへ接続しない。
+### 対象
 
-## 7. 非対象
+- 新規`tegaki_work/system/animation/line-ribbon-raster-bone-setup.js`
+- 新規`tegaki_work/build/verify-line-ribbon-raster-bone-setup.mjs`
+- 追補`analyzeRasterLineRibbonDeformation()`
+
+### 契約と結果
+
+- 2〜3本のdirect-chain BONEだけを受理し、branch、欠損、順序不明、centerlineから離れたBindを理由付きで拒否する。
+- 各Bone segment midpointをRibbon centerlineの長手距離へ射影し、隣接anchor間をlinear blendする。各stationの`left / center / right`は同じ最大2 influenceを共有する。
+- `AUTO_SHAPE_LINE_RIBBON_GENERATOR`候補を既存`MeshDefinition / SkinBinding`shapeへ写し、generator source、CURRENT / STALE、複製source rebaseもpure helperに留める。Modelへは未接続。
+- 既存inverse-bind LBSで0° / 45° / 90°、2 / 3 BONE、random seekを固定した。45°は線幅誤差10%未満、90°は通常LBSの均一縮小を明示して最小幅ratio `0.65`をGateとする。
+- 変形後のwidth collapse / 許容外ratio、triangle degenerate / inversion、outline自己交差をpure検査する。失敗時にFILLへ自動fallbackしない。
+- FILL / LINEは同じ既存LBS evaluatorとProject保存shapeを使い、新しいPose、weight、Frame vertex正本を作らない。
+- Stage C関連JS / mjsの`node --check`、全48 `verify-*.mjs`、`npm.cmd run build`を通過し、`dist/`生成差分を清掃した。UI未接続のためBrowser対象外。
+
+SOL review 3=`A`。Stage Cはpure factory / evaluator proofまでで、`animation-data-model.js`、History、UI、rendererは未変更。通常LBSの90°中央縮小は既知の明示Gateであり、別evaluatorや補正Poseへ広げない。
+
+## 7. Stage D — LUNA / MAX限定Model / UI adapter
+
+### 対象候補
+
+- `tegaki_work/system/animation/animation-data-model.js`
+- `tegaki_work/ui/animation-table-popup.js`
+- 関連verifier。pure Stage A〜Cファイルは原則変更しない。
+
+### 実装契約
+
+1. 既存`generateClipAssetRasterBoneSetup()`へ明示mode `auto-shape-line`を追加し、`createLineRibbonRasterBoneSetup()`だけを選ぶ。LINE / FILLを自動分類しない。
+2. status / duplicate rebaseの既存dispatchへLINE generatorを追加する。新しい保存field、`isRigged`、第二Mesh / Skin collectionを作らない。
+3. Setup青RIGの既存`AUTO GRID` / `AUTO SHAPE`を維持し、同じcontrols内へ明示`AUTO LINE`を追加する。LINEを単独tabやWARP modeにしない。
+4. 2〜3 direct-chain BONE必須、branch / hole / multiple island / hard bend等のpure失敗理由をtoastへ限定表示する。失敗時は既存Meshを変更しない。
+5. 生成 / 再生成は既存render-boundary rollback、一操作一History、CURRENT / STALE、CAF / Raster複製、Project round-tripを維持する。
+6. preview / playback / onion / random seek / Table close-reopen、Undo / Redo、GRID / SHAPE / LINE相互再生成、console errorをBrowser確認する。
+
+### 禁止
+
+- pure閾値の調整、manual topology / weight、weight brush、Mesh専用tab、WARP共有、orientation補正、別LBS evaluator。
+- UI都合でLINE失敗をFILL成功として扱うこと。
+
+Stage DはLUNA / MAX向け限定adapter。実装後のaccept / close reviewはSOL / XHighで行う。
+
+### Web外部AI向けhandoff
+
+- `tegaki_work/GitHubURL.txt`を2026-08-10時点へ更新し、現行Phase、Stage D境界、Phase 6v〜7h経緯、Phase 7i pure実装 / verifier / 接続先をRaw URLで辿れるようにした。
+- 全137 URLをローカル正本へ照合し、欠損0、重複0を確認した。URLは`main`を指すため、Webから新規Phase 7i fileを読むにはOwnerのcommit / push後であることを明記した。
+- `GitHubURL.txt`はnavigationであり、判断が衝突する場合は`TEGAKI.md`、`PROGRESS.md`、本書、実コードを優先する。
+
+## 8. 非対象
 
 - LINE / FILL自動分類、人物全身・分岐骨格の自動解釈。
 - branch graph、closed loop、複数islandを一つのRibbonへ結合する処理。
@@ -114,7 +161,7 @@ SOL review 2=`A`。hard bendはrail自己交差、急な太さ変化は幅Gate�
 - WARP topology保存、WARP Pose / Bone Pose共有。
 - physics、Text、Attachment、orientation / weightの新UI。
 
-## 8. 停止条件
+## 9. 停止条件
 
 - simple open strokeでもdeterministicな単一路を得られない。
 - 線幅保持にRaster解析とは別の保存正本がStage Aから必要になる。
@@ -123,7 +170,7 @@ SOL review 2=`A`。hard bendはrail自己交差、急な太さ変化は幅Gate�
 
 該当時はStage Aを止め、LINE Ribbonを`HOLD`として別候補へ戻る。
 
-## 9. 共通検証
+## 10. 共通検証
 
 ```powershell
 node --check tegaki_work/system/animation/raster-line-centerline.js
@@ -132,6 +179,9 @@ node tegaki_work/build/verify-raster-line-centerline.mjs
 node --check tegaki_work/system/animation/raster-line-ribbon-topology.js
 node --check tegaki_work/build/verify-raster-line-ribbon-topology.mjs
 node tegaki_work/build/verify-raster-line-ribbon-topology.mjs
+node --check tegaki_work/system/animation/line-ribbon-raster-bone-setup.js
+node --check tegaki_work/build/verify-line-ribbon-raster-bone-setup.mjs
+node tegaki_work/build/verify-line-ribbon-raster-bone-setup.mjs
 Set-Location tegaki_work
 npm.cmd run build
 ```

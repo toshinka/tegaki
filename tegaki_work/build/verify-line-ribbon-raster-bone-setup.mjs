@@ -191,6 +191,22 @@ const strictWidth = analyzeRasterLineRibbonDeformation(
     { minimumDeformedWidthRatio: 0.9 }
 );
 assert.equal(strictWidth.reason, 'deformed-width-ratio-out-of-range');
+const collapsed = bend45.result.vertices.map(vertex => ({ ...vertex }));
+collapsed[1] = { ...collapsed[0] };
+assert.equal(
+    analyzeRasterLineRibbonDeformation(generated.topology, collapsed).reason,
+    'deformed-triangle-degenerate'
+);
+const inverted = identity.result.vertices.map(vertex => ({ ...vertex }));
+inverted[1] = {
+    ...inverted[1],
+    x: generated.topology.vertices[0].x * 2 - generated.topology.vertices[1].x,
+    y: generated.topology.vertices[0].y * 2 - generated.topology.vertices[1].y
+};
+assert.equal(
+    analyzeRasterLineRibbonDeformation(generated.topology, inverted).reason,
+    'deformed-triangle-inverted'
+);
 
 const fillGenerated = createAutoShapeRasterBoneSetup(asset, 'stroke-raster', snapshot, {
     boneIds: ['upper', 'lower'],
@@ -226,6 +242,37 @@ assert.deepEqual(rebased.vertices, generated.meshDefinition.vertices, 'source re
 const deterministicA = createLineRibbonRasterBoneSetup(asset, 'stroke-raster', snapshot, options);
 const deterministicB = createLineRibbonRasterBoneSetup(asset, 'stroke-raster', snapshot, options);
 assert.deepEqual(deterministicA, deterministicB, 'fixed idFactory makes complete LINE setup deterministic');
+
+const threeBoneAsset = {
+    ...asset,
+    rigDefinition: {
+        version: 1,
+        parts: [],
+        bones: [{
+            ...rigDefinition.bones[0],
+            length: 5.5
+        }, {
+            ...rigDefinition.bones[1],
+            bindTransform: { ...rigDefinition.bones[1].bindTransform, x: 5.5 },
+            length: 5.5
+        }, {
+            boneId: 'tip',
+            parentBoneId: 'lower',
+            name: 'Tip',
+            bindTransform: { x: 5.5, y: 0, scaleX: 1, scaleY: 1, rotation: 0, pivotX: 0, pivotY: 0 },
+            length: 5.5
+        }]
+    }
+};
+const threeBone = createLineRibbonRasterBoneSetup(
+    threeBoneAsset,
+    'stroke-raster',
+    snapshot,
+    { ...options, boneIds: ['upper', 'lower', 'tip'] }
+);
+assert.equal(threeBone.ok, true, `three direct-chain Bones remain supported: ${threeBone.reason}`);
+assert.equal(threeBone.boneCount, 3);
+assert.ok(threeBone.skinBinding.vertexWeights.every(vertexWeight => vertexWeight.influences.length <= 2));
 
 assert.equal(createLineRibbonRasterBoneSetup({ internalLayers: [] }, 'missing', snapshot).reason, 'layer-not-found');
 assert.equal(createLineRibbonRasterBoneSetup({
