@@ -16,6 +16,28 @@ globalThis.window = {
 
 const { EmergencyRecoveryStore } = await import('../system/emergency-recovery-store.js');
 
+const configuredStore = new EmergencyRecoveryStore();
+assert.deepEqual(configuredStore.getStatus(), {
+    periodicEnabled: true,
+    saveOnHide: true,
+    intervalSeconds: 60,
+    lastSaveTime: null,
+    lastSaveReason: null,
+    isSaving: false,
+    pending: false
+});
+assert.equal(configuredStore.scheduleCheckpoint(), true);
+assert.notEqual(configuredStore._debounceTimer, null);
+configuredStore.configure({ periodicEnabled: false, intervalSeconds: 30, saveOnHide: false });
+assert.equal(configuredStore._debounceTimer, null);
+assert.equal(configuredStore._pendingSave, false);
+assert.equal(configuredStore.scheduleCheckpoint(), false);
+assert.equal(configuredStore.getStatus().intervalSeconds, 30);
+configuredStore.configure({ intervalSeconds: 17 });
+assert.equal(configuredStore.getStatus().intervalSeconds, 30);
+assert.equal(await configuredStore._trySave(), false);
+assert.equal(await configuredStore.performSave(), false);
+
 const idleStore = new EmergencyRecoveryStore();
 let idleAttempts = 0;
 idleStore._trySave = async () => {
@@ -60,13 +82,25 @@ forceStore.performSave = async options => {
     forceOptions = options;
 };
 window.BrushCore.isDrawing = true;
-forceStore.forceCheckpointSoon();
+forceStore.configure({ saveOnHide: false });
+assert.equal(forceStore.forceCheckpointSoon({ reason: 'visibility-hidden' }), false);
+assert.equal(forceOptions, null);
+forceStore.configure({ saveOnHide: true });
+assert.equal(forceStore.forceCheckpointSoon({ reason: 'visibility-hidden' }), true);
 await Promise.resolve();
-assert.deepEqual(forceOptions, { force: true });
+assert.deepEqual(forceOptions, { force: true, reason: 'visibility-hidden' });
 
 const saveStore = new EmergencyRecoveryStore();
 let savedCheckpoint = null;
 let previewCalls = 0;
+let savedEvent = null;
+saveStore.configure({
+    eventBus: {
+        emit(name, payload) {
+            if (name === 'emergency-recovery:saved') savedEvent = payload;
+        }
+    }
+});
 window.BrushCore.isDrawing = false;
 window.projectManager = {
     async exportProject() {
@@ -97,9 +131,12 @@ saveStore.init = async () => {
         }
     };
 };
-await saveStore.performSave({ force: true });
+assert.equal(await saveStore.performSave({ force: true }), true);
 assert.equal(previewCalls, 0);
 assert.equal(savedCheckpoint?.thumbnail, null);
 assert.deepEqual(savedCheckpoint?.projectData, { app: 'tegaki', animation: { lanes: [] } });
+assert.equal(savedEvent?.timestamp, savedCheckpoint?.timestamp);
+assert.equal(savedEvent?.reason, 'forced');
+assert.equal(saveStore.getStatus().lastSaveReason, 'forced');
 
-console.log('verify-emergency-recovery-scheduling: idle start, drawing defer, forced checkpoint bypass, project-only checkpoint OK');
+console.log('verify-emergency-recovery-scheduling: settings, idle start, drawing defer, hide gate, project-only checkpoint OK');

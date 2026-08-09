@@ -949,6 +949,37 @@ canvas {
     line-height: 16px;
 }
 
+.clip-layer-mirror-meta.has-rig-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.clip-layer-mirror-rig-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    height: 12px;
+    box-sizing: border-box;
+    padding: 0 3px 0 2px;
+    border: 1px solid var(--deformer-bind-line);
+    border-radius: 6px;
+    color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 14%, var(--futaba-cream));
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 10px;
+    cursor: help;
+}
+
+.clip-layer-mirror-rig-badge svg {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 auto;
+    stroke: currentColor;
+}
+
 .layer-panel-inline-name-input {
     min-width: 0;
     width: 100%;
@@ -4244,6 +4275,7 @@ canvas {
 .anim-rig-mesh-bone-controls {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
 }
 
@@ -5391,6 +5423,20 @@ canvas {
     fill: color-mix(in srgb, var(--active-border) 18%, var(--futaba-cream));
 }
 
+/* WARPの子PIVOT追従はガイド専用。GRIDのpointer入力を遮らず、接続元だけを橙で示す。 */
+.rig-pivot-overlay.is-warp-anchor {
+    pointer-events: none;
+}
+
+.rig-pivot-overlay.is-warp-anchor .rig-pivot-overlay__pivot.is-active {
+    color: var(--active-border);
+}
+
+.rig-pivot-overlay.is-warp-anchor .rig-pivot-overlay__pivot.is-active .rig-pivot-overlay__root,
+.rig-pivot-overlay.is-warp-anchor .rig-pivot-overlay__pivot.is-active .rig-pivot-overlay__tail {
+    fill: color-mix(in srgb, var(--active-border) 18%, var(--futaba-cream));
+}
+
 .rig-pivot-overlay__pivot.is-active .rig-pivot-overlay__root,
 .rig-pivot-overlay__pivot.is-active .rig-pivot-overlay__tail {
     fill: color-mix(in srgb, var(--deformer-bind-line) 20%, var(--futaba-cream));
@@ -5502,11 +5548,23 @@ canvas {
 }
 
 .warp-grid-overlay-frame-handle,
+.warp-grid-overlay-edge-handle,
 .warp-grid-overlay-rotation-handle {
     fill: var(--futaba-cream);
     stroke: var(--deformer-bind-point);
     stroke-width: 2;
     vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay-edge-handle {
+    fill: color-mix(in srgb, var(--deformer-bind-line) 28%, var(--futaba-cream));
+}
+
+.warp-grid-overlay-frame-handle[hidden],
+.warp-grid-overlay-edge-handle[hidden],
+.warp-grid-overlay-rotation-handle[hidden],
+.warp-grid-overlay-rotation-stem[hidden] {
+    display: none;
 }
 
 .warp-grid-overlay-rotation-handle {
@@ -5522,6 +5580,26 @@ canvas {
 
 .warp-grid-overlay-point.is-brush-influenced {
     fill: var(--futaba-maroon);
+}
+
+.warp-grid-overlay-point.is-selected {
+    fill: var(--futaba-cream);
+    stroke: var(--active-border);
+    stroke-width: 1.6;
+    vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay-selection-marquee {
+    fill: color-mix(in srgb, var(--active-border) 12%, transparent);
+    stroke: var(--active-border);
+    stroke-width: 1.4;
+    stroke-dasharray: 5 4;
+    pointer-events: none;
+    vector-effect: non-scaling-stroke;
+}
+
+.warp-grid-overlay-selection-marquee[hidden] {
+    display: none;
 }
 
 .warp-grid-overlay-brush-weight {
@@ -5563,6 +5641,87 @@ canvas {
 
 .anim-warp-context[hidden] {
     display: none;
+}
+
+.anim-warp-anchor-context {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    width: 100%;
+    min-height: 25px;
+    padding: 4px 0 2px;
+    color: var(--futaba-light-maroon);
+    border-top: 1px solid color-mix(in srgb, var(--futaba-light-medium) 72%, transparent);
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.anim-warp-anchor-context[hidden] {
+    display: none;
+}
+
+.anim-warp-anchor-label {
+    color: var(--futaba-maroon);
+    letter-spacing: 0.04em;
+}
+
+.anim-warp-anchor-target-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--futaba-medium);
+}
+
+.anim-warp-anchor-context select {
+    min-width: 92px;
+    height: 22px;
+    padding: 1px 18px 1px 5px;
+    color: var(--futaba-maroon);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: var(--futaba-background);
+    font: inherit;
+}
+
+.anim-warp-anchor-context select:focus,
+.anim-warp-anchor-context select:focus-visible {
+    border-color: var(--active-border);
+    outline: 2px solid color-mix(in srgb, var(--active-border) 34%, transparent);
+}
+
+.anim-warp-anchor-toggle {
+    height: 22px;
+    padding: 2px 8px;
+    color: var(--futaba-maroon);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: var(--futaba-cream);
+    font: inherit;
+    white-space: nowrap;
+}
+
+.anim-warp-anchor-toggle.is-enabled {
+    color: var(--futaba-background);
+    border-color: var(--active-border);
+    background: var(--active-border);
+}
+
+.anim-warp-anchor-toggle:disabled,
+.anim-warp-anchor-context select:disabled {
+    opacity: 0.55;
+}
+
+.anim-warp-anchor-status {
+    overflow: hidden;
+    min-width: 110px;
+    color: var(--text-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.anim-warp-anchor-status.is-enabled {
+    color: var(--futaba-maroon);
 }
 
 .anim-control-mesh-create {
@@ -5623,6 +5782,7 @@ canvas {
 }
 
 .anim-control-mesh-create-btn,
+.anim-control-mesh-radial-btn,
 .anim-control-mesh-legacy-btn {
     height: 24px;
     padding: 2px 8px;
@@ -5634,12 +5794,19 @@ canvas {
     white-space: nowrap;
 }
 
+.anim-control-mesh-radial-btn:not(:disabled) {
+    color: var(--deformer-bind-point);
+    border-color: var(--deformer-bind-line);
+    background: color-mix(in srgb, var(--deformer-bind-line) 14%, var(--futaba-cream));
+}
+
 .anim-control-mesh-create-btn:not(:disabled) {
     border-color: var(--futaba-orange);
     background: color-mix(in srgb, var(--futaba-orange) 14%, var(--futaba-cream));
 }
 
-.anim-control-mesh-create-btn:disabled {
+.anim-control-mesh-create-btn:disabled,
+.anim-control-mesh-radial-btn:disabled {
     color: var(--text-secondary);
     border-color: var(--futaba-light-medium);
     background: var(--futaba-background);
@@ -5676,6 +5843,74 @@ canvas {
     background: var(--futaba-maroon);
 }
 
+#anim-warp-grid-tool-btn {
+    color: var(--deformer-bind-point);
+    border-color: var(--deformer-bind-line);
+    background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-cream));
+}
+
+#anim-warp-grid-tool-btn:hover,
+#anim-warp-grid-tool-btn:focus-visible {
+    border-color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 20%, var(--futaba-cream));
+}
+
+#anim-warp-grid-tool-btn.active {
+    color: var(--futaba-cream);
+    border-color: var(--deformer-bind-point);
+    background: var(--deformer-bind-point);
+}
+
+#anim-warp-grid-tool-btn:disabled {
+    color: var(--text-secondary);
+    border-color: var(--futaba-light-medium);
+    background: var(--futaba-background);
+}
+
+.anim-warp-bind-frame-modes {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--deformer-bind-line);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--deformer-bind-line) 10%, var(--futaba-cream));
+}
+
+.anim-warp-bind-frame-modes[hidden] {
+    display: none;
+}
+
+.anim-warp-bind-frame-btn {
+    height: 18px;
+    padding: 1px 4px;
+    color: var(--deformer-bind-point);
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    font-size: 7px;
+    font-weight: 700;
+}
+
+.anim-warp-bind-frame-btn:hover,
+.anim-warp-bind-frame-btn:focus-visible {
+    border-color: var(--deformer-bind-line);
+    background: color-mix(in srgb, var(--deformer-bind-line) 18%, var(--futaba-cream));
+}
+
+.anim-warp-bind-frame-btn.active {
+    color: var(--futaba-cream);
+    border-color: var(--deformer-bind-point);
+    background: var(--deformer-bind-point);
+}
+
+.anim-warp-bind-frame-btn:disabled {
+    color: var(--text-secondary);
+    border-color: transparent;
+    background: transparent;
+    opacity: 0.5;
+}
+
 .anim-warp-overlay-toggle-btn {
     width: 24px;
     padding: 2px 4px;
@@ -5696,6 +5931,22 @@ canvas {
     border-color: var(--futaba-light-medium);
     background: var(--futaba-background);
     opacity: 0.5;
+}
+
+.anim-warp-select-tool-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.anim-warp-select-tool-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .anim-warp-brush-control {

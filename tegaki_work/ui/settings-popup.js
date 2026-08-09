@@ -1,12 +1,12 @@
 /**
  * ============================================================================
  * ファイル名: ui/settings-popup.js
- * 責務: アプリケーションのグローバル設定（筆圧補正、スムーズ度等）のUIを提供する
+ * 責務: アプリケーションのグローバル設定（筆圧補正、緊急復旧、History等）のUIを提供する
  * 依存: system/event-bus.js, system/settings-manager.js, ui/popup-drag-helper.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: SettingsPopup
  * イベント発火: settings:pressure-correction, settings:smoothing, settings:pressure-curve
- * イベント受信: ui:open-settings
+ * イベント受信: ui:open-settings, emergency-recovery:saved
  * グローバル登録: window.SettingsPopup
  * 実装状態: ♻️移植
  * ============================================================================
@@ -20,6 +20,7 @@ export class SettingsPopup {
         this.drawingEngine = dependencies.drawingEngine;
         this.eventBus = TegakiEventBus;
         this.settingsManager = this._getSettingsManager();
+        this.emergencyRecoveryStore = dependencies.emergencyRecoveryStore || null;
 
         this.popup = null;
         this.isVisible = false;
@@ -145,6 +146,31 @@ export class SettingsPopup {
                         右方向キーで空Frameへ進む時にCAFを自動作成
                     </label>
                     <div class="setting-description">OFFではFrameだけを移動し、既存CAFの編集に専念できます。</div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-label">緊急復旧</div>
+                    <label class="history-setting-auto">
+                        <input id="emergency-recovery-enabled" type="checkbox" checked>
+                        操作中に定期記録
+                    </label>
+                    <div class="history-setting-row">
+                        <label>最短間隔
+                            <select id="emergency-recovery-interval">
+                                <option value="5">5秒（高負荷）</option>
+                                <option value="10">10秒（高負荷）</option>
+                                <option value="30">30秒（注意）</option>
+                                <option value="60">1分（推奨）</option>
+                                <option value="180">3分</option>
+                                <option value="300">5分</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="history-setting-auto">
+                        <input id="emergency-recovery-on-hide" type="checkbox" checked>
+                        タブ非表示・終了時にも記録
+                    </label>
+                    <div id="emergency-recovery-status" class="setting-description">最終記録: まだありません</div>
+                    <div class="setting-description">Ctrl+SのProject保存とは別です。Project全体を記録するため、重い制作では1分以上を推奨します。</div>
                 </div>
                 <div class="setting-group">
                     <div class="setting-label">History</div>
@@ -400,6 +426,10 @@ export class SettingsPopup {
             historyMaxMemory: document.getElementById('history-max-memory'),
             historyUsage: document.getElementById('history-usage-display'),
             animationAutoCreateNext: document.getElementById('animation-auto-create-next'),
+            emergencyRecoveryEnabled: document.getElementById('emergency-recovery-enabled'),
+            emergencyRecoveryInterval: document.getElementById('emergency-recovery-interval'),
+            emergencyRecoveryOnHide: document.getElementById('emergency-recovery-on-hide'),
+            emergencyRecoveryStatus: document.getElementById('emergency-recovery-status'),
 
             bucketRefToggle: document.getElementById('bucket-ref-all-toggle'),
             bucketRefState: document.getElementById('bucket-ref-all-state')
@@ -414,6 +444,9 @@ export class SettingsPopup {
         this._setupButtons();
         this._loadSettings();
         this.eventBus?.on('history:changed', () => this._updateHistoryUsageDisplay());
+        this.eventBus?.on('emergency-recovery:saved', (payload = {}) => {
+            this._updateEmergencyRecoveryStatusDisplay(payload);
+        });
         this.initialized = true;
     }
 
@@ -611,6 +644,28 @@ export class SettingsPopup {
                 this.elements.animationAutoCreateNext.checked
             );
         });
+        this.elements.emergencyRecoveryEnabled?.addEventListener('change', () => {
+            this.settingsManager?.set(
+                'emergencyRecoveryEnabled',
+                this.elements.emergencyRecoveryEnabled.checked
+            );
+            this._syncEmergencyRecoveryControlState();
+            this._updateEmergencyRecoveryStatusDisplay();
+        });
+        this.elements.emergencyRecoveryInterval?.addEventListener('change', () => {
+            this.settingsManager?.set(
+                'emergencyRecoveryIntervalSeconds',
+                Number(this.elements.emergencyRecoveryInterval.value)
+            );
+            this._updateEmergencyRecoveryStatusDisplay();
+        });
+        this.elements.emergencyRecoveryOnHide?.addEventListener('change', () => {
+            this.settingsManager?.set(
+                'emergencyRecoveryOnHide',
+                this.elements.emergencyRecoveryOnHide.checked
+            );
+            this._updateEmergencyRecoveryStatusDisplay();
+        });
         this.elements.bucketGapButtons?.forEach((btn) => {
             btn.addEventListener('pointerdown', (e) => {
                 e.preventDefault(); e.stopPropagation();
@@ -659,6 +714,9 @@ export class SettingsPopup {
             bucketUnderpaint: 1,
             bucketReferenceAllLayers: true,
             animationAutoCreateOnNext: true,
+            emergencyRecoveryEnabled: true,
+            emergencyRecoveryIntervalSeconds: 60,
+            emergencyRecoveryOnHide: true,
             historyAutoAdjust: true,
             historyMaxEntries: 250,
             historyMaxMemoryMB: 512
@@ -687,7 +745,53 @@ export class SettingsPopup {
         if (this.elements.animationAutoCreateNext) {
             this.elements.animationAutoCreateNext.checked = settings.animationAutoCreateOnNext !== false;
         }
+        this._applyEmergencyRecoverySettingsUI(settings);
         this._applyHistorySettingsUI(settings);
+    }
+
+    _applyEmergencyRecoverySettingsUI(settings) {
+        const allowedIntervals = [5, 10, 30, 60, 180, 300];
+        const interval = Number(settings.emergencyRecoveryIntervalSeconds);
+        if (this.elements.emergencyRecoveryEnabled) {
+            this.elements.emergencyRecoveryEnabled.checked = settings.emergencyRecoveryEnabled !== false;
+        }
+        if (this.elements.emergencyRecoveryInterval) {
+            this.elements.emergencyRecoveryInterval.value = String(
+                allowedIntervals.includes(interval) ? interval : 60
+            );
+        }
+        if (this.elements.emergencyRecoveryOnHide) {
+            this.elements.emergencyRecoveryOnHide.checked = settings.emergencyRecoveryOnHide !== false;
+        }
+        this._syncEmergencyRecoveryControlState();
+        this._updateEmergencyRecoveryStatusDisplay();
+    }
+
+    _syncEmergencyRecoveryControlState() {
+        if (this.elements.emergencyRecoveryInterval) {
+            this.elements.emergencyRecoveryInterval.disabled =
+                this.elements.emergencyRecoveryEnabled?.checked !== true;
+        }
+    }
+
+    _updateEmergencyRecoveryStatusDisplay(payload = null) {
+        if (!this.elements.emergencyRecoveryStatus) return;
+        const status = this.emergencyRecoveryStore?.getStatus?.() || {};
+        const periodicEnabled = this.elements.emergencyRecoveryEnabled?.checked === true;
+        const saveOnHide = this.elements.emergencyRecoveryOnHide?.checked === true;
+        if (!periodicEnabled && !saveOnHide) {
+            this.elements.emergencyRecoveryStatus.textContent = '自動記録: OFF';
+            return;
+        }
+
+        const timestamp = Number(payload?.timestamp || status.lastSaveTime);
+        if (!Number.isFinite(timestamp) || timestamp <= 0) {
+            const mode = periodicEnabled ? '操作中' : '非表示時のみ';
+            this.elements.emergencyRecoveryStatus.textContent = `最終記録: まだありません（${mode}）`;
+            return;
+        }
+        this.elements.emergencyRecoveryStatus.textContent =
+            `最終記録: ${new Date(timestamp).toLocaleTimeString()}`;
     }
 
     _setPressureOpacityEnabled(enabled) {

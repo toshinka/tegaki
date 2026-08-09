@@ -1,10 +1,10 @@
 # Tegaki Progress
 
-更新日: 2026-08-02
+更新日: 2026-08-10
 
 ## 現在地
 
-- Phase 5a〜6yを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。
+- Phase 5a〜7hを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -23,6 +23,17 @@
 - Phase 6tは固定長2-Bone IKを既存Bone Pose keyへ確定するPose Bake方式で実装し、SOL review 3判定`A`とOwner実機受入によりcloseした。pure solver、root / joint rotationだけの書込み、1 gesture 1 History、cancel rollback、固定segment、通常FK、random seek、Project / Bake / Folder RenderPlanを固定した。target track、Constraint、stretch、Mesh、weightは追加していない。
 - Phase 6uはSOL review 2判定`A`でStage A / Bを受入れcloseした。新規WARP GRIDはCAF / Folderのeffective-visible alpha実内容へauto-fitし、巨大boundsをCanvasへfallbackせず拒否する。Raster privateのbarycentric / epsilonは`warp-triangle-point-map.js`へ抽出し、既存topology / placementだけでBind Project点をPose Project点へ写すpure helperを固定した。全26 verifier、node --check、build、Stage A Browser smoke、生成物清掃を通過した。Gate 1は、Asset static RigとInstance Folder WARPを跨ぐConstraint所有、Bone評価後の再pass、cycle、ID remap / validationが未確定のため`HOLD`とし、子PIVOT追従は後続Phase候補へ送った。
 - Phase 6v〜6yでは、一つのCAF内部Rasterへ複数Mesh BONEを置く限定Skinning系列を完了した。`ClipAsset.meshDefinitions / skinBindings`をoptional static Setup、既存`rigDefinition.bones`をBind、`ClipInstance.rigMotion.boneTracks`をFrame Poseとして分離し、inverse-bind LBSをCPU / Pixi共通render planへ接続した。RIG / MOTIONのRaster target、`＋ BONE`、既存親接続、Bone key、Alpha-fit `AUTO GRID` / `GRID再生成`、最大2 distance weight、Raster更新時`STALE`を実装した。全29 verifier、変更JS / mjsの`node --check`、build、Browser軽量確認、console errorなし、生成物清掃を通過した。
+- Phase 6zでは重いProjectの緊急復旧checkpointをOwner設定へ接続した。操作中の定期記録、5秒〜5分の最短間隔、tab非表示・終了時の記録を独立設定でき、OFF切替は未開始のdebounce / idle / retryをcancelする。通常Ctrl+S保存とは別機能であることをUIへ明示し、Project / checkpoint shapeは変更していない。Owner制作Projectでは5秒設定でAnimation Table操作の周期的遅延が継続し、1分で解消したため、新規既定を1分へ変更して短周期を高負荷設定と明示した。定期Ctrl+Sは重複serializeを避けるsingle-flight Gateまで未実装とする。
+- Phase 7aはcloseした。通常Layer／Table表示中CAF／Table閉鎖後CAFのrow順・depth、active / selected / working ID、Panel全DOM再構築、clipping全走査をdebug限定で計測し、軽量三状態の階層一致を確認した。CAF内部Layer追加時のPanel由来clipping refreshはmicrotask集約で6回からdirect 1 + Panel 1の2回へ削減した。制作Projectの継続遅延は5秒周期の全Project緊急復旧serializeと判定した。
+- Phase 7bはSOL最終判定`A`とOwner実機受入によりcloseした。WARP `SELECT`（square-dashed）の矩形replace、Ctrl/Cmd toggle、選択点一括dragを既存key / 1 gesture 1 Historyへ接続し、selectionはClip / Folder / topology単位のruntimeだけに限定した。通常click／3px未満のpointer揺れはkey・Historyを増やさず、Undo / Redo後も別topologyへ選択indexを持ち越さない。
+- Phase 7cはSOL review 5=`A`とOwnerの軽量確認後close許可によりcloseした。Folder WARP anchor → direct-child PIVOT追従は、static relationを`ClipAsset.rigDefinition`、Frame poseを既存`ClipInstance.folderDeformers` / `rigMotion`へ分離し、実deformer / triangle内だけON保存、dormant / stale時の通常FK fallback、display-only成立表示を固定した。軽量BrowserでWARP未作成 / GRID外拒否、BRUSH変形時のanchorと子PIVOT同量追従、OFF復帰、Undo / Redo、Table再開、onion / playback、console error 0件を確認した。深い制作Project、GIF / APNG、source / target削除、pen / touchは継続監視とする。20件のJS / mjs node check、全33 verifier、buildを通過し、生成物は清掃済み。
+- Phase 7dはSOL review 1 / 2 / final=`A`とOwner受入によりcloseした。表示階層、Rigグラフ、描画所属を分離し、Folder PartとCAF直下Root Raster Partを保存field追加なしのgeneric RenderIsland planへ統合した。pure reparent Gateは描画所属・Folder WARP・clipping contractが変わる移動をmutation前に拒否し、同一親reorderとdisplay-only移動だけを許可する。Folder無し`+RIG`、Setup青の連結node + `RIG` chip、CLIP Motion中のplain Space + dragを完了した。全36 verifier、build、限定Browserを通過し、深い制作Project、GIF / APNG、pen / touchは継続監視とする。
+- Phase 7eはWARP `GRID` Bind回転のProject座標補正としてcloseした。GRID rotation / rotation-handleだけを既存`applyWarpPlacementToPoints()`へ接続し、非正方形boundsでもProject辺長・角度・中心を維持する。全37 verifier、node check、build、SOL review 1=`A`を通過し、Browserでは横長4×4を約45°／90°へ連続回転して長短比と平行辺、1 gesture 1 History、Undo / Redo、Table close / reopen、console error 0件を確認した。OwnerがGRID回転で形状が崩れないことを実機受入した。Folder / Control Mesh深部、Project reload、playback / onion、Bake / GIF / APNG、pen / touchは継続監視とする。
+- Phase 7fはWARP Bind Setupの`FRAME / CORNER / EDGE`操作分離としてcloseした。一corner／一edgeのProject deltaをtopology比率で配るpure helper、既存rebase、runtime segmented control、edge midpoint handleを接続し、GRID toolとBind submodeだけを既存deformer Bind青へ変更した。全38 verifier、Browserの横長8×8、Owner実機で回転不変、青semantic、FRAME / CORNER / EDGEを受入れた。fixed 4×4、Folder、Project reload、playback / onion、Bake / GIF / APNG、Shift + wheel実modifier、pen / touchは継続監視とする。
+- Phase 7gはWARP `RADIAL` topologyとしてOwner受入でcloseした。center + 16 segments × 3 ringsの決定的な49点／80 triangleを既存free Control Meshへ保存し、新規作成だけの青い`RADIAL`入口、POINT / SELECT、1 Historyへ接続した。free topologyではFRAME / CORNER / EDGEをdisabledにし、新しい保存flag、renderer分岐、既存key変換を追加していない。変更34 JS / mjsのnode check、全39 verifier、build、Browser実操作、Owner実機確認を通過した。
+- Phase 7hはAuto Shape alpha contour foundationから限定production接続までStage A〜E、SOL review 1〜5=`A`、Owner軽量実機受入を完了してcloseした。4-connected contour、hole / island FILL、topology検査付き輪郭削減、透明guard、256 vertex budgetを既存Mesh / Skinへ接続した。Setup青RIG内で`AUTO GRID`と`AUTO SHAPE`が並存し、最大2 weight、CURRENT / STALE、明示再生成、CAF asset一操作一History、CAF / Raster複製、Project round-tripを既存正本で維持する。Browserで`SHAPE → GRID → Undo / Redo`、Raster追記STALE、再生成、Mesh Bone key、playback、onion、console error 0件を確認した。LINE、manual weight / topology、WARP共有は未実装。完了記録は`開発用資料保管庫/Archive/phase7h.md`。
+- Phase 7h close前後のPhase横断小改修として、通常Folderの「複製」を子孫Folder / Raster込みの既存`layer-block`コピー正本へ統合した。Animation Table上部headerの通常wheelはTimeline zoom、Lane列wheelは上下、Timeline grid wheelは左右を維持する。CanvasのH / Shift+H反転はcanvas全体中心ではなく、現在viewport中心下のProject座標を固定する。入れ子Folder複製とUndo / Redo、header wheel `87% → 100%`、拡大後H反転、console error 0件をBrowserで確認し、全45 verifier / buildを通過した。
+- 現行Phase 7iはAuto Shape LINE / Ribbon foundation。SOL Gate 0=`GO`、Stage A / B、SOL review 1 / 2=`A`まで完了した。Phase 7hのalpha contour判定を再利用したdeterministic open centerlineと、均等station、cap延長、alpha境界rayによる`left / center / right`三列support、4 triangle / 区間のpure topologyを固定した。幅急変、outline自己交差、最小角、Project面積coverageを理由付きで拒否し、長い線も最大85 station / 255 vertexへ収める。既存Mesh schema互換だが、保存Mesh、SkinWeight、Model、History、UI、rendererは未変更。全52 JS / mjs node check、全47 verifier、buildを通過し生成差分は清掃済み。次は同一stationの三列へ同じ長手方向weightを与え、2〜3 BONE bend後の線幅・triangleをFILLと比較するStage Cで、成立前にproduction接続しない。
 - proposalは現行10文書へ整理した。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。外部AI原案、レビュー、整理前長文、解決済み監査は`proposals/過去計画（アイデアのサルベージ時に使う。基本読み込まない）/`へ原文保存している。
 
 ## 完了基盤の要約
@@ -79,8 +90,10 @@
 - V保存ずれは全Layer一律ではなく、Canvas resizeを挟んだ外部clipboard貼付Rasterが候補。配置を保持する貼付例もあるため、Slice 3で`外部paste → resize → V → save/reopen`を固定入力にしてから限定修正する。
 - 添付画像のBrowser file chooser投入はネイティブchooser待ちで完了しなかったため、実機のOS clipboard / file chooser入力へ委譲する。`ImageImporter`のresize前後snapshot、working Layer capture、ProjectManagerのtransform commit待ちはコード監査済みで、現時点では追加修正を入れない。
 - 末端の手から前腕・上腕を追従させるrotation-only 2-Bone IKはPhase 6tでcloseした。伸縮と周辺画素の曲げはrotation limit / chain参加 / Mesh・weightと分離したまま維持する。
-- Raster Skinningは一Raster / 一Meshの初期proofまで。manual weight、weight brush、Auto Contour、LINE Ribbon、Mesh Bone IK、SkinとFolder WARP / clippingの同時適用は未実装で、次Goalが明示的に開くまで広げない。
+- Raster Skinningは一Raster / 一Meshの初期proofまで。manual weight、weight brush、Auto Contour、LINE Ribbon、Mesh Bone IK、SkinとFolder WARP / clippingの同時適用は未実装。Phase 7cはrigid child PIVOTのtranslation追従だけで、Skin / Mesh同時変形へ広げない。
 - 遅延またはcrashが再現した場合は、`TegakiPerf`のevent queue / handler、Long Task、Project export時間、heap、texture残留を同時採取し、AirbrushやHistory件数を先に原因と決めない。詳細は`開発用資料保管庫/Archive/phase6e.md`。
+- Layer Panelは通常Layerのflat合成順＋`parentId`と、CAF内部Layerの`parentLayerId` mirrorを別adapterとして維持する。軽量Browserでは通常→Table表示→Table閉鎖後CAF→内部Folder＋子Layerの順序・深度は一致した。多階層時の再現では全DOM再構築時間、active / selected / working ID、`refreshClippingMasks()`全走査時間を三状態で採取し、Lane常時同期や正本統合へ進まない。
+- CAF内部Layerの表示親`parentLayerId`とRig親`parentPartId` / `parentBoneId`を同期しない。Folder Partはsubtree、Root Raster PartはCAF直下一枚だけを描画所属とし、reparent前後で有効Part / WARP / clipping ownerが同じなら表示移動を許可する。所属が変わる時だけ理由付きで拒否し、Rigリンクを自動解除・暗黙再接続しない。Setup青の連結node + `RIG`表示は明示登録したFolder / Root Rasterだけへ既存正本から導出する。
 - WebGPU brush、SDF / MSDF、水彩・油彩、本格物理、真の無限Canvasは正式な研究Phaseまで凍結する。
 - PSD全CAF一括export、通常LayerへのPSD import、再編集可能Text、Camera Track、Folder group完全合成は未実装proposalとして維持する。
 
@@ -89,11 +102,14 @@
 1. `AGENTS.md`
 2. `TEGAKI.md`
 3. 本書
-4. `開発用資料保管庫/proposals/00_計画索引.md`
-5. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
-6. 次GoalでOwnerが指定するproposal / 指示書
+4. `task-codex/phase7i.md`
+5. `開発用資料保管庫/Archive/phase7h.md`
+6. `開発用資料保管庫/proposals/00_計画索引.md`
+7. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
+8. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
+9. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
 
-現行Phaseなし。Phase 6v〜6y close後は新しいGoal指示待ちとし、次責務のGateや実装を先行しない。
+Phase 7i Stage A / Bはpure centerlineと三列Ribbon topologyまで。次はStage Cで三列同一の長手方向weight、2〜3 BONE、0° / 45° / 90° bend後の線幅、outline交差、triangle反転をFILLと比較する。LINE / FILLを自動分類せず、Stage C review前は保存Mesh / Skin、STALE、UIへ接続しない。
 
 ## 資料
 
@@ -120,6 +136,16 @@
 - Phase 6w完了: `開発用資料保管庫/Archive/phase6w.md`
 - Phase 6x完了: `開発用資料保管庫/Archive/phase6x.md`
 - Phase 6y完了: `開発用資料保管庫/Archive/phase6y.md`
+- Phase 6z完了: `開発用資料保管庫/Archive/phase6z.md`
+- Phase 7a完了: `開発用資料保管庫/Archive/phase7a.md`
+- Phase 7b完了: `開発用資料保管庫/Archive/phase7b.md`
+- Phase 7c完了: `開発用資料保管庫/Archive/phase7c.md`
+- Phase 7d完了: `開発用資料保管庫/Archive/phase7d.md`
+- Phase 7e完了: `開発用資料保管庫/Archive/phase7e.md`
+- Phase 7f完了: `開発用資料保管庫/Archive/phase7f.md`
+- Phase 7g完了: `開発用資料保管庫/Archive/phase7g.md`
+- Phase 7h完了: `開発用資料保管庫/Archive/phase7h.md`
+- Phase 7c移行記録: `開発用資料保管庫/Archive/PHASE7C_HANDOFF.md`
 - 整理前Progress全文: `開発用資料保管庫/Archive/PROGRESS_ARCHIVE_2026-07-28.md`
 - 現行proposal索引: `開発用資料保管庫/proposals/00_計画索引.md`
-- 現行Phase: なし（次GoalのOwner指示待ち）
+- 現行Phase: `task-codex/phase7i.md`

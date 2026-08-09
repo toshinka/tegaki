@@ -1,6 +1,6 @@
 # キャラクターRig・Mesh・Perform統合ロードマップ
 
-更新日: 2026-08-01  
+更新日: 2026-08-09
 区分: 未実装統合proposal / Phase化前の判断正本
 
 ## 0. 位置づけ
@@ -151,6 +151,21 @@ UI別、export別のsolver / Mesh evaluatorを作らない。
 - Motion親子順と表示順を同一視しない。
 - Part削除、parent欠損、属性解除時にtrackを無言削除しない。
 
+### Phase 7d完了 — 表示階層とRIGの分離・Rig Part安全Gate（制作要望 2026-08-09）
+
+Owner相談後にGate 0を改訂し`GO`とした。表示階層、Rigグラフ、描画所属を分離し、Folder Partに加えてCAF直下Raster一枚をRoot Raster Partとして扱う。唯一のgeneric Rig Part plan、pure reparent Gate、D&D / 上下移動接続、Folder無し`+RIG`、Setup青のderived chipまで実装し、SOL review 1 / 2 / finalはいずれも`A`。Owner受入後にcloseし、実装契約と結果は`開発用資料保管庫/Archive/phase7d.md`へ移した。
+
+- 表示親`parentLayerId`とRig親`parentPartId` / `parentBoneId`は別正本である。表示階層移動を理由にRig親子リンクを自動削除、暗黙再接続、表示親へ同期しない。
+- Folder Partは最も近い登録Partへ排他的に割り当てたsubtree、Root Raster Partは`parentLayerId == null`のRaster一枚だけを描画所属とする。`partId`は既存internal Layer IDを使い、target kindを保存しない。
+- Folder内の通常RasterはFolder Partの描画内容であり個別Rigノードへ自動登録しない。初期PhaseではFolder内Rasterの独立Rigid Partと、同じRasterへのRigid + Mesh / Skin同時適用を拒否する。
+- 同じ表示親の前後並べ替えは許可する。reparentは移動前後の有効Part owner、Folder WARP owner、clipping contractを比較し、同じならdisplay-only移動として許可、変わる場合だけ理由付きで拒否する。
+- 後続で必要性が確認できた場合だけ、明示操作として`表示階層だけ移動`、`RIGを解除して移動`、`移動後にRig親を再指定`を比較する。各操作は参照先、Motion key、Mesh / WARP bindingへの影響をpreviewし、1 Historyで確定／cancelできることをGateにする。
+- Layer Panelの所属表示は単独の`R`を避ける。Rotation、Raster、Resize等と区別できる、Setup青の連結node icon + 小型`RIG` chipを第一案とし、色だけに依存せず`data-tooltip`で`RIG設定済み: Part / Bone / Anchor`等の内訳を示す。black / white / neutral grayとnative `title`は使わない。
+- Folder Part、Root Raster Part、内部Raster Mesh、WARP anchorで保存正本を統合しない。badgeは既存正本から導出する表示であり、新しい`isRigged` flag、`rigGroupId`、自動Folder wrapperを保存しない。
+- Folder / Root Raster共通RenderPlan、pure reparent Gate、限定UIをSOL final review=`A`とOwner受入でcloseした。詳細は`開発用資料保管庫/Archive/phase7d.md`。
+
+受入れ固定入力は、Folder無しのCAF直下Raster RIG、Folder / Root Rasterの独立root tree、同一親内の上下移動、owner不変のdisplay-only reparent、owner変更の理由付き拒否、Undo / Redo、save / reload、CAF copy、通常／Animation Table表示／Table閉鎖後のPanel順とactive対象、preview / playback / onion / Bake / export一致とする。
+
 ### UI Plan A — Animation Table子行
 
 - 親CAF行を開閉し、選択ClipのPart / BONE trackを子行として投影する。
@@ -242,6 +257,25 @@ Stretch候補:
 - 自動生成後は`VALID / STALE / INVALID`を維持し、source変更で手動topology / weightを無言上書きしない。
 - 静的な影響範囲とSkinWeightの正本はRIGへ置く。MOTIONはFrame Poseと必要ならconstraint strengthだけ、WARPはPose変形だけを扱い、同じ「重さ」を三箇所へ重複保存しない。
 - 自動Mesh、SkinWeight、関節周辺の曲げ伝播は将来Phase。現行の剛体PIVOT / FK proofへ暗黙実装しない。
+
+### 一枚RasterのAuto Shape Mesh追補（Owner memo 2026-08-09）
+
+今回の「一枚の人物・髪・手足をLayer分割せず、複数PIVOTで簡易Animationする」要望は、上記`AUTO / LINE / FILL`案とPhase 6v〜6yの一Raster・複数Mesh BONE基盤を発展させるものとする。別種のLive2D風deformer配列を新設せず、static Setupは既存`ClipAsset.meshDefinitions / skinBindings / rigDefinition.bones`、Frame Poseは既存`ClipInstance.rigMotion.boneTracks`を正本とする。
+
+- 第一入口はRaster対象の`AUTO SHAPE`。alpha実内容から外周guard、silhouette / 主線support、内部supportを生成し、manual頂点編集は失敗箇所を直すadvanced fallbackとする。
+- 塗り形状は、透明側のguard ring、alpha輪郭ring、内部点を基本とし、hole / 複数islandを保持する。細長い腕・脚・髪・線画は既存LINE案の中心線 + 内外輪郭、または線幅を挟むpaired edgeを比較する。
+- 一枚Rasterのalphaだけでは「主線」と「塗り境界」を常に判別できない。自動分類を保存決定にせず、`AUTO / LINE / FILL`候補を提示し、誤判定時は切替・局所修正できることを受入条件にする。
+- 主線上の一点列だけでは曲げ時の線幅を保証できない。線痩せ / 膨張を抑えるには線の両側support、幅方向weight、細長すぎるtriangleの抑止を固定入力で比較する。
+- generatorはdeterministicとし、最大vertex / triangle、最小角、重複点、self-intersection、triangle反転、透明paddingを検査する。source描画変更後は`STALE`とし、手動Topology / Weightを無言再生成しない。
+- UI第一候補はCLIP MOTION内のSetup青`MESH` tab。`RIG`と同じSetup群として、`AUTO SHAPE`、`LINE / FILL`、粗さ、再生成、advanced頂点編集を置く。狭幅 / touchで4 tabが過密なら、RIG対象Inspector内の青い`MESH Setup` submodeをPlan Bとする。
+- 多数PIVOTは既存複数Mesh BONEとauto weightを使い、最初から自由ControlHandleとBoneを混在させない。BONEだけでは足りない局所変形が実制作で確認された後にSparse ControlHandleを開く。
+- content-fit MeshによりWARP品質が上がる可能性はあるが、Skin MeshをWARPが暗黙共有して二重変形させない。まず同じAuto Shape generatorから各正本向けtopology候補を生成し、将来共有する場合もstatic topology参照とWARP Pose / Bone Poseを分離する。
+
+最初の正式Phaseは、人物全身より先に「一枚の太い腕または髪束、2〜3 BONE、LINE / FILL各一fixture」でAuto Shape生成、auto weight、曲げ時の輪郭・線幅、手動修正、STALE、CPU / Pixi / Bake一致を比較する。
+
+Phase 7gのWARP RADIALはOwner受入でcloseした。Phase 7hはAuto ShapeのSOL Gate 0として、Stage AでRaster alphaを4-connected island、outer / hole loop、Project座標へ変換し、Stage Bでcontour-only Earcut、contour + interior support、rect Gridを比較した。Stage Cはtopology検査付き輪郭削減、outer / hole透明側guard、boundary / guard / interiorの256 vertex budget、Stage Dは既存Mesh / Skin shape、最大2 distance weight、generator metadata、STALEを返すpure factoryを固定した。Stage Eは既存Model setter / validator / render boundary rollbackとSetup青RIGへ`AUTO SHAPE`を限定接続し、`AUTO GRID`共存、CURRENT / STALE、明示再生成、一操作一History、CAF / Raster複製、Project round-trip、Mesh Bone Motionを通過した。SOL review 1〜5=`A`とOwner軽量実機受入でcloseした。WARP Pose / Skin Bone Pose、Mesh topology / weightを共有しない。
+
+現行Phase 7iはLINE / Ribbonを選定し、Stage A / BとSOL review 1 / 2=`A`で、一つのholeなしalpha islandからdeterministic open centerline、均等station、cap、alpha境界rayによる`left / center / right`三列topologyをpure生成した。幅急変、outline自己交差、triangle反転 / 最小角、Project面積coverage、最大85 station / 255 vertexを保存前Gateとする。まだ保存Mesh / SkinWeight / Model / History / UI / rendererへ接続せず、Stage Cで三列同一の長手方向weightと2〜3 BONE bend後の線幅をFILLと比較する。LINE / FILLは自動分類しない。
 
 ### 第一候補
 
@@ -429,6 +463,7 @@ Rigid Bodyの反射、摩擦、回転、sleeping、broad / narrow phaseは独立
 - `CAF / Folder`対象は横tabとホイールに加えてCanvas上のPIVOT選択で切り替える。RIGでは位置関係を読むため全PIVOTとFolder名tagを同時表示するが、parameter行は選択対象一件だけをContextual Inspectorへ表示する。
 - CAF共通PIVOT、Folder / BONEのBind SetupはRIG、時間変化するClip / Part / Bone keyはMOTIONへ分離する。RIG PIVOTはactiveを青 / 水色、inactiveを薄いクリーム内側 + 栗茶輪郭としてSetup modeを示し、中心dragで位置、尻尾drag / wheelで初期角度を操作する。MOTIONの選択BONEは橙の中心 + 楔を維持し、中心dragで移動、楔dragで回転する。WARPはPhase 6sでCAF全体とstable Folder targetを同じdeformer契約へ接続済み。
 - PIVOT接続線は装飾ではなく`parentBoneId`の表示・編集結果とする。rigid FKでは親の移動・回転が子孫へ伝播し、子操作は親へ逆流しない。「手を動かして腕を追従」「腕を伸縮」「先端だけ変形」はIK / Stretch / Meshへ分離する。
+- PIVOTからkey併用dragで破線previewを伸ばし、別PIVOTへdropして親子接続する操作をshortcut候補とする。既存の長押し接続と接続線dragを置換せず、同じ`parentBoneId` setter、cycle検査、1 Historyへ接続する。使用keyはWARP / selection / Camera shortcut監査後に決め、touchは長押し、Escape / pointercancelはnon-mutationとする。
 
 ### Folder別WARP GRID実装境界（Phase 6s完了）
 
@@ -597,18 +632,18 @@ Phase分割は、6v static schema / pure LBS、6w fixed Raster render proof、6x
 - alpha scanは既存`calculateOpaqueRasterBounds()`とsnapshot bounds cacheを再利用する。Folder / ClipAssetへauto-fit boundsを保存せず、別cacheや第二正本を作らない。
 - Stage Bでは既存topology / placement / triangle判定を共有するpure point-mapを固定し、次のanchor ConstraintがRaster pathと異なる近似式を持たないようにする。
 - Phase 6uはSOL review 2判定`A`でStage A / Bをcloseした（2026-08-01）。`fitWarpGridBindBoundsToContent()`、新規作成 / 明示refit接続、fixed / Control Mesh共通verifier、surface上限超過拒否、AnimationTablePopup adapter経由のCAF / Folder分離・hidden・clipping fixtureを受入れた。`warp-triangle-point-map.js`へRasterと共有するbarycentric / epsilonとBind Project点→Pose Project点のpure mapを置き、既存topology / placement、保存triangle順、明示失敗理由を固定した。`warp-grid-rasterizer.js`のpixel coverage / premultiplied合成は変更していない。全26 verifier、node --check、build、Stage A Browser smoke、生成物清掃を通過した。
-- WARP anchor ConstraintのSOL Gate 1は`HOLD`。source deformerがClipInstance、static RigがClipAssetに分かれる所有、Folder WARP後にchild Bone worldへ渡す評価pass、cycle、copy / paste ID remap、削除・validationが未確定であり、Phase 6uへ保存shapeを追加しない。後続Phaseではこれらを先にGate化し、Stage B point-mapだけを座標代数として再利用する。
+- WARP anchor ConstraintのSOL Gate 1はPhase 6uでは`HOLD`とし、保存shapeを追加せずcloseした。Phase 7cでstatic relationを`ClipAsset.rigDefinition`、Frame poseを既存`ClipInstance.folderDeformers`へ分離し、direct-child限定の一方向評価と共通ID remapを実装した。Stage A / B、LUNA限定修正、SOL review 5=`A`、Owner軽量実機受入を完了し、2026-08-09にcloseした。
 
 #### WARP anchorから子PIVOTを追従させる案（制作要望 2026-08-01）
 
 - 例: 前腕Folderの手首をFolder WARPで曲げた時、HANDのPIVOTとHAND配下も変形後の手首位置へ追従させる。
 - これはPIVOT overlayだけを動かす表示optionではない。playback / onion / Bake / export / reloadで同じ結果が必要なため、将来は保存可能な`WARP anchor constraint`として扱う。
-- sourceはstable Folder IDと、そのFolder WARPのBind領域内に置く一つのanchor点。destinationは子BONE / Partとし、単なる`parentBoneId`や静的Bind Poseへ混ぜない。
-- anchor点は既存WARP / Control MeshのBind triangleを一つ特定し、Bind時のbarycentric weightを保持する。各Frameは既存deformer samplingとplacementを使って同じtriangle上のPose点を求める。Raster用とは別の近似式や第二WARP正本を作らない。
+- sourceはstable Folder IDと、そのFolder WARPのBind領域内に置く一つのProject座標anchor。destinationはsource Folder Partのrigid binding Boneに対するdirect-child BONEとし、単なる`parentBoneId`や静的Bind Poseへ混ぜない。
+- ClipごとにFolder deformer topologyが異なり得るため、triangle index / barycentric weightはAssetへ保存しない。各Frameは既存deformer sampling、placement、`warp-triangle-point-map.js`から決定的に派生し、Raster用とは別の近似式や第二WARP正本を作らない。
 - 第一評価候補は`Folder WARPをsample → anchorのdeformed local point → source側の既存Part/Bone world → downstream child PIVOT constraint → child Bone/FK → RenderIsland`。sourceとdestinationが相互依存するcycle、子孫WARPから祖先PIVOTへ戻る参照、unsupported nested targetは明示拒否する。
 - UI第一候補はWARP tabの選択Folderで`子PIVOT追従`を有効にし、Canvas上でanchorと対象PIVOTを接続する導線。checkboxだけで暗黙に最寄りPIVOTへ接続せず、対象名と接続線を表示する。
 - Gate 0では既存`resolveWarpPlacementGeometry()`、rect / Control Mesh topology、CPU / Pixi経路から共有できるpure point-mapを特定する。既存private barycentric代数を別moduleへ複製しない。
-- Phase 6tのPose Bake IKへ混ぜない。最初のproofは一つのFolder WARP anchorから直下の一つの子PIVOTへ限定し、History、copy / paste ID remap、random seek、save / reload、Bake / export一致を固定する。
+- Phase 6tのPose Bake IKへ混ぜない。Phase 7cのproofは一つのFolder WARP anchorから直下の一つの子PIVOTへ限定し、History、copy / paste ID remap、random seek、save / reload、Bake / export一致を固定した。詳細は`開発用資料保管庫/Archive/phase7c.md`。
 
 #### Attachment / Space Switchと「手放す」Frame（制作要望 2026-08-01）
 

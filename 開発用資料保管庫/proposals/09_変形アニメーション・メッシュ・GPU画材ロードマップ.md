@@ -1,6 +1,6 @@
 # 変形アニメーション・メッシュ・GPU画材ロードマップ
 
-更新日: 2026-07-28
+更新日: 2026-08-10
 
 ## 本書の役割
 
@@ -55,11 +55,24 @@
 
 `05_長期研究_AI・WebGPU・物理.md`へ隔離する。WARPや任意Meshの導入を理由にrenderer全体をWebGPU化しない。
 
+### WARP Bind Frame / topology操作追補（Owner memo 2026-08-09）
+
+WARPの枠操作と内部Pose編集を分ける。最初に現行GRID回転がProject座標で剛体回転になっているか監査し、正方形 / 長方形の辺長、対角長、中心、角度だけが変わりshearしないことを固定する。aspect比やnormalized座標の混在で形が歪む場合は新機能ではなく限定bug fixとして先に直す。
+
+- `FRAME`の通常操作は中心移動、uniform scale、shape-preserving rotation。回転handleはBind枠全体を一つのaffine matrixで動かし、control pointを順次回転して誤差を蓄積しない。
+- 変形枠の追加modeは、`CORNER`一頂点、`EDGE`二頂点、`SHEAR`平行四辺形を分ける。一頂点だけ動かす一般quadと、二点を連動させる台形 / 平行四辺形を同じ名前で曖昧にしない。
+- Shift / Ctrlはdesktopのaccelerator候補に留め、handle選択時の状態表示またはmode切替を正本にする。現行Shift drag / Shift wheel、複数選択、Camera操作との競合を監査し、touchでも同じ操作へ到達できることをGateにする。
+- `RECT`に加えて`RADIAL` topology generatorを候補とする。Circle / ellipseの境界ring、必要な中間ring、center / interior点をtriangle接続し、円外は元Rasterを維持する。これはSELECTの円形marqueeや保存maskとは別物で、WARP Bind topologyの種類である。
+- 旧fixed 4×4 / rect Control Meshはそのまま読み、既存ProjectをCircleへ遡及変換しない。RECT / RADIAL間の変更はTopology変更として既存keyの破棄preview、confirm、Undoを必須にする。
+- Auto Shape Meshとcontent-fit WARPは同じ輪郭解析を再利用できるが、Skin MeshとWARP Poseを暗黙共有しない。まずgenerator出力を共通pure dataとして比較し、所有、stable ID、再生成、二重変形を説明できた場合だけstatic topology参照共有をGate化する。
+
+推奨Phase順は、`回転不変性の固定fixture → FRAME / CORNER / EDGE操作 → RADIAL topology → Auto Shape foundation`。一度にschema、UI、rasterizerを変更しない。Phase 7e / 7f / 7gはOwner受入でcloseした。Phase 7hもalpha island / outer / hole、interior-support FILL、topology検査付き輪郭削減、透明側guard、256 vertex budgetを既存Mesh / SkinとSetup青RIGの`AUTO SHAPE`へ限定接続し、SOL review 1〜5=`A`とOwner軽量実機受入でcloseした。現行Phase 7iはLINE / Ribbonのpure centerlineと`left / center / right`三列topologyを固定し、幅急変、自己交差、最小角、coverage、最大255 vertexをGate化した。次の長手方向weight / 曲げ比較前に保存Meshへ接続せず、WARP PoseとBone Poseも統合しない。
+
 ## 追加候補とPlan B
 
 | 論点 | 第一候補 | Plan Bと切替条件 |
 |---|---|---|
-| WARP初期Bind | 新規GRIDはProject Canvas枠 | content tight boundsが実制作で多数必要なら明示`Fit to Content`を追加。既存GRIDへ遡及しない |
+| WARP初期Bind | Phase 6uで新規GRIDをcontent tight boundsへauto-fit済み | Canvas全体が必要な場合は明示選択とし、既存GRIDへ遡及しない |
 | WARP境界 | 現行triangle境界と透明samplingを維持 | 境界の視覚破綻が固定入力で再現した場合だけedge lock / guard ringを検討。保存maskは増やさない |
 | 任意Mesh開始点 | 固定Triangle proof | 既存Control MeshがCPU / exportまで十分なら、そのmodelを最小拡張する |
 | Mesh操作 | sparse ControlHandle + BONEを目標 | 精密編集が必要ならDirect Vertexを併設。どちらも同じMesh Definitionを操作する |

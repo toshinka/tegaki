@@ -13,8 +13,10 @@ export class WarpGridOverlay {
         this._brushWeightField = null;
         this._brushCursor = null;
         this._brushCenter = null;
+        this._selectionMarquee = null;
         this._topology = null;
         this._frameHandles = [];
+        this._edgeHandles = [];
         this._rotationHandle = null;
         this._rotationStem = null;
     }
@@ -55,8 +57,10 @@ export class WarpGridOverlay {
         this._brushWeightField = null;
         this._brushCursor = null;
         this._brushCenter = null;
+        this._selectionMarquee = null;
         this._topology = null;
         this._frameHandles = [];
+        this._edgeHandles = [];
         this._rotationHandle = null;
         this._rotationStem = null;
     }
@@ -101,6 +105,12 @@ export class WarpGridOverlay {
         weightField.hidden = true;
         this.element.appendChild(weightField);
         this._brushWeightField = weightField;
+
+        const selectionMarquee = document.createElementNS(svgNamespace, 'rect');
+        selectionMarquee.classList.add('warp-grid-overlay-selection-marquee');
+        selectionMarquee.setAttribute('hidden', '');
+        this.element.appendChild(selectionMarquee);
+        this._selectionMarquee = selectionMarquee;
 
         if (typeof this.options?.getSecondaryWorldPoints === 'function') {
             this._topology.edges.forEach(([from, to]) => {
@@ -150,6 +160,12 @@ export class WarpGridOverlay {
                 handle.setAttribute('r', '7');
                 this.element.appendChild(handle);
                 this._frameHandles.push(handle);
+
+                const edgeHandle = document.createElementNS(svgNamespace, 'circle');
+                edgeHandle.classList.add('warp-grid-overlay-edge-handle');
+                edgeHandle.setAttribute('r', '6');
+                this.element.appendChild(edgeHandle);
+                this._edgeHandles.push(edgeHandle);
             }
             const rotationHandle = document.createElementNS(svgNamespace, 'circle');
             rotationHandle.classList.add('warp-grid-overlay-rotation-handle');
@@ -215,31 +231,64 @@ export class WarpGridOverlay {
             line.element.setAttribute('x2', String(to.x));
             line.element.setAttribute('y2', String(to.y));
         });
+        const selectedIndices = this.options.getSelectedPointIndices?.() || [];
+        const selectedSet = new Set(selectedIndices);
         this._points.forEach((point, index) => {
             const screen = screenPoints[index];
             point.hidden = !screen;
             if (!screen) return;
             point.setAttribute('cx', String(screen.x));
             point.setAttribute('cy', String(screen.y));
+            point.classList.toggle('is-selected', selectedSet.has(index));
         });
-        if (this._frameHandles.length === 4 && this._rotationHandle && this._rotationStem) {
+        if (this._selectionMarquee) {
+            const marquee = this.options.getSelectionMarquee?.();
+            const visible = !!marquee
+                && Number.isFinite(marquee.x)
+                && Number.isFinite(marquee.y)
+                && Number.isFinite(marquee.width)
+                && Number.isFinite(marquee.height);
+            this._selectionMarquee.toggleAttribute('hidden', !visible);
+            if (visible) {
+                this._selectionMarquee.setAttribute('x', String(marquee.x));
+                this._selectionMarquee.setAttribute('y', String(marquee.y));
+                this._selectionMarquee.setAttribute('width', String(marquee.width));
+                this._selectionMarquee.setAttribute('height', String(marquee.height));
+            }
+        }
+        if (this._frameHandles.length === 4
+            && this._edgeHandles.length === 4
+            && this._rotationHandle
+            && this._rotationStem) {
             const columns = this.options.columns;
             const rows = this.options.rows;
             const corners = [
                 screenPoints[0],
                 screenPoints[columns - 1],
-                screenPoints[(rows - 1) * columns],
-                screenPoints[rows * columns - 1]
+                screenPoints[rows * columns - 1],
+                screenPoints[(rows - 1) * columns]
             ];
             const valid = corners.every(Boolean);
+            const handleMode = this.options.getFrameHandleMode?.() || 'frame';
+            const showCorners = valid && ['frame', 'corner'].includes(handleMode);
+            const showEdges = valid && handleMode === 'edge';
+            const showRotation = valid && handleMode === 'frame';
             this._frameHandles.forEach((handle, index) => {
-                handle.hidden = !valid;
-                if (!valid) return;
+                handle.toggleAttribute('hidden', !showCorners);
+                if (!showCorners) return;
                 handle.setAttribute('cx', String(corners[index].x));
                 handle.setAttribute('cy', String(corners[index].y));
             });
-            this._rotationHandle.hidden = !valid;
-            this._rotationStem.hidden = !valid;
+            this._edgeHandles.forEach((handle, index) => {
+                const from = corners[index];
+                const to = corners[(index + 1) % corners.length];
+                handle.toggleAttribute('hidden', !showEdges);
+                if (!showEdges) return;
+                handle.setAttribute('cx', String((from.x + to.x) / 2));
+                handle.setAttribute('cy', String((from.y + to.y) / 2));
+            });
+            this._rotationHandle.toggleAttribute('hidden', !showRotation);
+            this._rotationStem.toggleAttribute('hidden', !showRotation);
             if (valid) {
                 const topMid = {
                     x: (corners[0].x + corners[1].x) / 2,

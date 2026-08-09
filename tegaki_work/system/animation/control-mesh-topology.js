@@ -12,6 +12,10 @@ export const CONTROL_MESH_MIN_POINTS = 3;
 export const CONTROL_MESH_MAX_POINTS = 256;
 export const CONTROL_MESH_GRID_MIN_AXIS = RECT_GRID_MIN_AXIS;
 export const CONTROL_MESH_GRID_MAX_AXIS = RECT_GRID_MAX_AXIS;
+export const CONTROL_MESH_RADIAL_MIN_SEGMENTS = 8;
+export const CONTROL_MESH_RADIAL_MAX_SEGMENTS = 64;
+export const CONTROL_MESH_RADIAL_MIN_RINGS = 1;
+export const CONTROL_MESH_RADIAL_MAX_RINGS = 16;
 
 const POINT_EPSILON = 1e-9;
 const AREA_EPSILON = 1e-12;
@@ -128,6 +132,69 @@ export function createRectControlMeshPreset(options = {}) {
         rows: dimensions.rows,
         points: topology.points.map(point => ({ x: point.x, y: point.y })),
         triangles: topology.triangles.map(triangle => [...triangle])
+    };
+}
+
+/**
+ * center + 同心ringの決定的なRADIAL topologyを生成する。
+ * point順はcenter、内側から外側のring-major、各ringはtopからclockwise。
+ * rendererや保存schemaへtopology kindを追加せず、明示point / triangleだけを返す。
+ */
+export function createRadialControlMeshPreset(options = {}) {
+    const segments = Number(options.segments);
+    const rings = Number(options.rings);
+    const pointCount = 1 + segments * rings;
+    if (!Number.isInteger(segments)
+        || segments < CONTROL_MESH_RADIAL_MIN_SEGMENTS
+        || segments > CONTROL_MESH_RADIAL_MAX_SEGMENTS
+        || !Number.isInteger(rings)
+        || rings < CONTROL_MESH_RADIAL_MIN_RINGS
+        || rings > CONTROL_MESH_RADIAL_MAX_RINGS
+        || pointCount > CONTROL_MESH_MAX_POINTS) {
+        return null;
+    }
+
+    const points = [{ x: 0.5, y: 0.5 }];
+    for (let ring = 1; ring <= rings; ring++) {
+        const radius = 0.5 * ring / rings;
+        for (let segment = 0; segment < segments; segment++) {
+            const angle = -Math.PI / 2 + Math.PI * 2 * segment / segments;
+            points.push({
+                x: 0.5 + Math.cos(angle) * radius,
+                y: 0.5 + Math.sin(angle) * radius
+            });
+        }
+    }
+
+    const triangles = [];
+    const firstRingStart = 1;
+    for (let segment = 0; segment < segments; segment++) {
+        const next = (segment + 1) % segments;
+        triangles.push([0, firstRingStart + segment, firstRingStart + next]);
+    }
+    for (let ring = 2; ring <= rings; ring++) {
+        const innerStart = 1 + (ring - 2) * segments;
+        const outerStart = 1 + (ring - 1) * segments;
+        for (let segment = 0; segment < segments; segment++) {
+            const next = (segment + 1) % segments;
+            triangles.push([
+                innerStart + segment,
+                outerStart + segment,
+                outerStart + next
+            ]);
+            triangles.push([
+                innerStart + segment,
+                outerStart + next,
+                innerStart + next
+            ]);
+        }
+    }
+
+    return {
+        columns: null,
+        rows: null,
+        points,
+        triangles
     };
 }
 

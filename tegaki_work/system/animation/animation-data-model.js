@@ -40,6 +40,8 @@ import {
     normalizeRigDefinition,
     normalizeRigMotion,
     remapRigDefinition,
+    registerWarpAnchorConstraint,
+    removeWarpAnchorConstraint,
     serializeRigDefinition,
     serializeRigMotion,
     updateRigBoneBindTransform,
@@ -49,6 +51,7 @@ import {
     validateRigDefinition,
     validateRigMotion
 } from './part-rig.js';
+import { resolveRigPartTarget } from './rig-part-target.js';
 import {
     getRasterMeshIdsForInternalLayers,
     normalizeRasterMeshDefinitions,
@@ -60,11 +63,18 @@ import {
     serializeRasterSkinBindings,
     validateRasterBoneSkinning
 } from './raster-bone-skinning.js';
+import { preflightInternalLayerReparent } from './internal-layer-reparent-gate.js';
 import {
     createAlphaFitRasterBoneSetup,
     getAlphaFitRasterMeshStatus,
     rebaseAlphaFitRasterMeshSource
 } from './raster-bone-auto-setup.js';
+import {
+    AUTO_SHAPE_FILL_GENERATOR,
+    createAutoShapeRasterBoneSetup,
+    getAutoShapeRasterMeshStatus,
+    rebaseAutoShapeRasterMeshSource
+} from './auto-shape-raster-bone-setup.js';
 
 /**
  * ID生成ユーティリティ
@@ -791,14 +801,13 @@ export class TimelineModel {
         return { ok: true, lane: entry.lane, clip: entry.clip };
     }
 
-    registerClipAssetFolderPart(assetId, layerId, options = {}) {
+    registerClipAssetRigPart(assetId, layerId, options = {}) {
         const asset = this.getClipAsset(assetId);
         if (!asset) return { ok: false, reason: 'asset-not-found' };
-        const layer = asset.internalLayers?.find(candidate => candidate?.id === layerId) || null;
-        if (!layer) return { ok: false, reason: 'layer-not-found' };
-        if (layer.type !== 'folder') return { ok: false, reason: 'folder-required' };
+        const target = resolveRigPartTarget(asset, layerId);
+        if (!target.ok) return target;
 
-        const registration = registerRigPartDefinition(asset.rigDefinition, layer.id, {
+        const registration = registerRigPartDefinition(asset.rigDefinition, target.layer.id, {
             maxParts: options.maxParts ?? Number.POSITIVE_INFINITY
         });
         if (!registration.ok) return registration;
@@ -808,7 +817,22 @@ export class TimelineModel {
         }
         asset.rigDefinition = validation.value;
         asset.updatedAt = Date.now();
-        return { ...registration, asset, layer, part: registration.part };
+        return {
+            ...registration,
+            asset,
+            layer: target.layer,
+            targetKind: target.targetKind,
+            part: registration.part
+        };
+    }
+
+    registerClipAssetFolderPart(assetId, layerId, options = {}) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const layer = asset.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+        if (layer.type !== 'folder') return { ok: false, reason: 'folder-required' };
+        return this.registerClipAssetRigPart(assetId, layerId, options);
     }
 
     registerClipAssetRootBoneBinding(assetId, partId, options = {}) {
@@ -816,8 +840,8 @@ export class TimelineModel {
         if (!asset) return { ok: false, reason: 'asset-not-found' };
         const part = asset.rigDefinition?.parts?.find(candidate => candidate?.partId === partId) || null;
         if (!part) return { ok: false, reason: 'part-not-found' };
-        const layer = asset.internalLayers?.find(candidate => candidate?.id === partId) || null;
-        if (!layer || layer.type !== 'folder') return { ok: false, reason: 'folder-required' };
+        const target = resolveRigPartTarget(asset, partId);
+        if (!target.ok) return target;
 
         const registration = registerRootBoneRigidBinding(
             asset.rigDefinition,
@@ -832,7 +856,13 @@ export class TimelineModel {
         }
         asset.rigDefinition = validation.value;
         asset.updatedAt = Date.now();
-        return { ...registration, asset, layer, part };
+        return {
+            ...registration,
+            asset,
+            layer: target.layer,
+            targetKind: target.targetKind,
+            part
+        };
     }
 
     /**
@@ -845,6 +875,9 @@ export class TimelineModel {
         const layer = asset.internalLayers?.find(candidate => candidate?.id === layerId) || null;
         if (!layer) return { ok: false, reason: 'layer-not-found' };
         if (layer.type !== 'raster') return { ok: false, reason: 'raster-required' };
+        if (asset.rigDefinition?.parts?.some(part => part?.partId === layer.id)) {
+            return { ok: false, reason: 'rig-mode-conflict', layer };
+        }
 
         const registration = registerRigBoneDefinition(
             asset.rigDefinition,
@@ -867,6 +900,9 @@ export class TimelineModel {
         const layer = asset.internalLayers?.find(candidate => candidate?.id === layerId) || null;
         if (!layer) return { ok: false, reason: 'layer-not-found' };
         if (layer.type !== 'raster') return { ok: false, reason: 'raster-required' };
+        if (asset.rigDefinition?.parts?.some(part => part?.partId === layer.id)) {
+            return { ok: false, reason: 'rig-mode-conflict', layer };
+        }
         const snapshot = this.getDrawingSnapshot(layer.drawingSnapshotId);
         if (!snapshot?.pixels) return { ok: false, reason: 'snapshot-not-found' };
 
@@ -881,7 +917,13 @@ export class TimelineModel {
             : availableBoneIds;
         if (requestedBoneIds.length === 0) return { ok: false, reason: 'mesh-bone-required' };
 
-        const generated = createAlphaFitRasterBoneSetup(asset, layer.id, snapshot, {
+        const generatorMode = options.generatorMode === 'auto-shape'
+            ? 'auto-shape'
+            : 'alpha-fit-grid';
+        const factory = generatorMode === 'auto-shape'
+            ? createAutoShapeRasterBoneSetup
+            : createAlphaFitRasterBoneSetup;
+        const generated = factory(asset, layer.id, snapshot, {
             ...options,
             boneIds: requestedBoneIds,
             idFactory: () => createId()
@@ -912,7 +954,14 @@ export class TimelineModel {
         asset.meshDefinitions = validation.meshDefinitions;
         asset.skinBindings = validation.skinBindings;
         asset.updatedAt = Date.now();
-        return { ...generated, asset, layer, previousMesh };
+        return { ...generated, asset, layer, previousMesh, generatorMode };
+    }
+
+    generateClipAssetAutoShapeBoneSetup(assetId, layerId, options = {}) {
+        return this.generateClipAssetRasterBoneSetup(assetId, layerId, {
+            ...options,
+            generatorMode: 'auto-shape'
+        });
     }
 
     getClipAssetRasterMeshStatus(assetId, layerId) {
@@ -922,7 +971,32 @@ export class TimelineModel {
         const mesh = (asset.meshDefinitions || [])
             .find(candidate => candidate?.targetInternalLayerId === layer.id) || null;
         const snapshot = this.getDrawingSnapshot(layer.drawingSnapshotId);
-        return { ...getAlphaFitRasterMeshStatus(mesh, snapshot), mesh, snapshot };
+        const status = mesh?.generator?.type === AUTO_SHAPE_FILL_GENERATOR
+            ? getAutoShapeRasterMeshStatus(mesh, snapshot)
+            : getAlphaFitRasterMeshStatus(mesh, snapshot);
+        return { ...status, mesh, snapshot };
+    }
+
+    /** History / duplicate adapterが既存generator sourceだけを現Snapshotへrebaseする。 */
+    rebaseClipAssetRasterMeshSource(assetId, layerId) {
+        const asset = this.getClipAsset(assetId);
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        if (!asset || !layer || layer.type !== 'raster' || !Array.isArray(asset.meshDefinitions)) {
+            return { ok: false, changed: false };
+        }
+        const snapshot = this.getDrawingSnapshot(layer.drawingSnapshotId);
+        if (!snapshot) return { ok: false, changed: false };
+        let changed = false;
+        asset.meshDefinitions = asset.meshDefinitions.map(mesh => {
+            if (mesh?.targetInternalLayerId !== layer.id) return mesh;
+            const rebased = rebaseAutoShapeRasterMeshSource(
+                rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+                snapshot
+            );
+            changed = changed || rebased !== mesh;
+            return rebased;
+        });
+        return { ok: true, changed };
     }
 
     setClipAssetRigBoneBindTransform(assetId, boneId, transform = {}) {
@@ -951,6 +1025,38 @@ export class TimelineModel {
         asset.rigDefinition = validation.value;
         asset.updatedAt = Date.now();
         return { ...update, asset, bone: validation.value.bones.find(bone => bone.boneId === boneId) };
+    }
+
+    registerClipAssetWarpAnchorConstraint(assetId, constraint) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const registration = registerWarpAnchorConstraint(asset.rigDefinition, constraint);
+        if (!registration.ok) return registration;
+        const validation = validateRigDefinition(registration.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        asset.rigDefinition = validation.value;
+        asset.updatedAt = Date.now();
+        return { ...registration, asset, constraint: validation.value.warpAnchorConstraints?.at(-1) || null };
+    }
+
+    removeClipAssetWarpAnchorConstraint(assetId, sourceFolderLayerId, targetBoneId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const update = removeWarpAnchorConstraint(
+            asset.rigDefinition,
+            sourceFolderLayerId,
+            targetBoneId
+        );
+        if (!update.ok) return update;
+        const validation = validateRigDefinition(update.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        asset.rigDefinition = validation.value;
+        asset.updatedAt = Date.now();
+        return { ...update, asset };
     }
 
     setClipRigPartKey(clipId, partId, localFrame, transform = {}, options = {}) {
@@ -1173,6 +1279,24 @@ export class TimelineModel {
     getClipAsset(assetId) {
         if (!assetId) return null;
         return this.clipAssets.find(a => a.id === assetId) || null;
+    }
+
+    getClipInstancesForAsset(assetId) {
+        if (!assetId) return [];
+        return this.tracks.flatMap(track => (track.cels || [])
+            .filter(clip => clip?.assetId === assetId));
+    }
+
+    preflightClipAssetInternalLayerReparent(assetId, layerId, targetLayerId, placement = 'after') {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        return preflightInternalLayerReparent({
+            asset,
+            clips: this.getClipInstancesForAsset(assetId),
+            layerId,
+            targetLayerId,
+            placement
+        });
     }
 
     /**
@@ -1574,7 +1698,10 @@ export class TimelineModel {
                     const snapshot = layer?.drawingSnapshotId
                         ? this.getDrawingSnapshot(layer.drawingSnapshotId)
                         : null;
-                    return rebaseAlphaFitRasterMeshSource(mesh, snapshot);
+                    return rebaseAutoShapeRasterMeshSource(
+                        rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+                        snapshot
+                    );
                 });
             asset.meshDefinitions = [
                 ...(Array.isArray(asset.meshDefinitions) ? asset.meshDefinitions : []),
@@ -2096,7 +2223,10 @@ export class TimelineModel {
                 const snapshot = layer?.drawingSnapshotId
                     ? this.getDrawingSnapshot(layer.drawingSnapshotId)
                     : null;
-                return rebaseAlphaFitRasterMeshSource(mesh, snapshot);
+                return rebaseAutoShapeRasterMeshSource(
+                    rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+                    snapshot
+                );
             });
         duplicateAsset.skinBindings = remapRasterSkinBindings(sourceAsset.skinBindings, rigIdMap);
 

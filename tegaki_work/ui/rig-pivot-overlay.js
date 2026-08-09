@@ -21,6 +21,7 @@ export class RigPivotOverlay {
         this.options = options;
         this._ensureElement();
         this.element.classList.toggle('is-motion', options.mode === 'motion');
+        this.element.classList.toggle('is-warp-anchor', options.mode === 'warp-anchor');
         this.element.hidden = false;
         if (this.frameRequest === null) this._update();
         return true;

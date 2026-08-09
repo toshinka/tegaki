@@ -53,6 +53,10 @@ export class SettingsManager {
             bucketUnderpaint: 1,
             bucketReferenceAllLayers: true,
             animationAutoCreateOnNext: true,
+            emergencyRecoveryEnabled: this.config?.userSettings?.emergencyRecoveryEnabled !== false,
+            emergencyRecoveryIntervalSeconds:
+                this.config?.userSettings?.emergencyRecoveryIntervalSeconds ?? 60,
+            emergencyRecoveryOnHide: this.config?.userSettings?.emergencyRecoveryOnHide !== false,
             historyAutoAdjust: true,
             historyMaxEntries: historyDefaults.maxEntries,
             historyMaxMemoryMB: historyDefaults.maxMemoryMB
@@ -171,6 +175,16 @@ export class SettingsManager {
             animationAutoCreateOnNext: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
+            emergencyRecoveryEnabled: (v) => {
+                return typeof v === 'boolean' ? v : undefined;
+            },
+            emergencyRecoveryIntervalSeconds: (v) => {
+                const num = parseInt(v, 10);
+                return [5, 10, 30, 60, 180, 300].includes(num) ? num : undefined;
+            },
+            emergencyRecoveryOnHide: (v) => {
+                return typeof v === 'boolean' ? v : undefined;
+            },
             historyAutoAdjust: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
@@ -244,6 +258,9 @@ export class SettingsManager {
             'bucketUnderpaint',
             'bucketReferenceAllLayers',
             'animationAutoCreateOnNext',
+            'emergencyRecoveryEnabled',
+            'emergencyRecoveryIntervalSeconds',
+            'emergencyRecoveryOnHide',
             'historyAutoAdjust',
             'historyMaxEntries',
             'historyMaxMemoryMB'

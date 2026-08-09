@@ -42,6 +42,10 @@ import {
     cycleClippingMode,
     getClippingMode
 } from './clipping-mode.js';
+import {
+    isLayerPanelDiagnosticsEnabled,
+    recordLayerClippingRefresh
+} from './layer-panel-diagnostics.js';
 
 export class LayerSystem {
     constructor() {
@@ -66,6 +70,7 @@ export class LayerSystem {
         this._pendingTransformInteraction = null;
         this._clippingMaskSpritePool = [];
         this._clippingMaskTexturePool = [];
+        this._panelClippingRefreshScheduled = false;
     }
 
     init(canvasContainer, eventBus, config) {
@@ -134,8 +139,12 @@ export class LayerSystem {
         this._setupAnimationSystemIntegration();
         this._setupVKeyEvents();
         this._setupResizeEvents();
-        this.eventBus.on('drawing:stroke-completed', () => this.refreshClippingMasks());
-        this.eventBus.on('layer:content-changed', () => this.refreshClippingMasks());
+        this.eventBus.on('drawing:stroke-completed', () => {
+            this.refreshClippingMasks({ source: 'drawing:stroke-completed' });
+        });
+        this.eventBus.on('layer:content-changed', () => {
+            this.refreshClippingMasks({ source: 'layer:content-changed' });
+        });
 
         this.isInitialized = true;
 
@@ -1127,6 +1136,55 @@ export class LayerSystem {
         }
     }
 
+    createLayerBlockPayload(rootLayer, options = {}) {
+        const rootData = rootLayer?.layerData;
+        if (!rootData || rootData.isBackground) return null;
+
+        const layers = this.getLayers();
+        const subtreeIds = rootData.isFolder
+            ? this._getLayerSubtreeIds(rootData.id)
+            : new Set([rootData.id]);
+        const entries = layers
+            .filter(layer => subtreeIds.has(layer?.layerData?.id))
+            .map(layer => {
+                const data = layer.layerData;
+                const transform = this.transform?.getTransform?.(data.id) || {
+                    x: 0,
+                    y: 0,
+                    rotation: 0,
+                    scaleX: 1,
+                    scaleY: 1
+                };
+                return {
+                    sourceId: data.id,
+                    parentSourceId: data.parentId || null,
+                    order: layers.indexOf(layer),
+                    type: data.isFolder ? 'folder' : 'raster',
+                    name: data.name || (data.isFolder ? 'フォルダ' : 'レイヤー'),
+                    visible: data.visible !== false,
+                    opacity: Number.isFinite(data.opacity) ? data.opacity : 1,
+                    blendMode: data.blendMode || 'normal',
+                    clippingMode: getClippingMode(data),
+                    clipping: getClippingMode(data) !== CLIPPING_MODES.NONE,
+                    folderExpanded: data.folderExpanded !== false,
+                    transform: { ...transform },
+                    hasTransform: this.transform?._isTransformNonDefault?.(transform) === true,
+                    rasterSnapshot: data.isFolder ? null : this.createLayerRasterSnapshot(layer)
+                };
+            });
+
+        if (entries.length === 0) return null;
+        return {
+            kind: 'layer-block',
+            version: 1,
+            rootSourceId: rootData.id,
+            rootType: rootData.isFolder ? 'folder' : 'raster',
+            copiedAt: Date.now(),
+            layers: entries,
+            ...(options.placement ? { placement: { ...options.placement } } : {})
+        };
+    }
+
     pasteLayerBlockPayload(payload) {
         if (
             payload?.kind !== 'layer-block'
@@ -1245,7 +1303,13 @@ export class LayerSystem {
                 entry.clippingMode || (entry.clipping === true ? CLIPPING_MODES.NORMAL : CLIPPING_MODES.NONE)
             );
 
-            const parentLayer = createdBySourceId.get(entry.parentSourceId);
+            const parentLayer = createdBySourceId.get(entry.parentSourceId)
+                || (isRoot && payload.placement?.parentLayerId
+                    ? this.getLayers().find(candidate => (
+                        candidate.layerData?.id === payload.placement.parentLayerId
+                        && candidate.layerData?.isFolder
+                    ))
+                    : null);
             if (parentLayer?.layerData?.isFolder) {
                 data.parentId = parentLayer.layerData.id;
                 parentLayer.layerData.addChild(data.id);
@@ -1285,6 +1349,16 @@ export class LayerSystem {
                 this.config.canvas.height / 2
             );
             this.requestThumbnailUpdate(this.getLayerIndex(layer), true);
+        }
+
+        const afterLayerId = payload.placement?.afterLayerId || null;
+        const afterLayerIndex = afterLayerId
+            ? this.getLayers().findIndex(candidate => candidate.layerData?.id === afterLayerId)
+            : -1;
+        if (afterLayerIndex >= 0) {
+            orderedRecords.forEach(({ layer }, offset) => {
+                this._moveLayerObjectToIndex(layer, afterLayerIndex + 1 + offset);
+            });
         }
 
         const rootLayer = createdBySourceId.get(payload.rootSourceId) || orderedRecords[0]?.layer || null;
@@ -1847,9 +1921,33 @@ export class LayerSystem {
         );
     }
 
-    refreshClippingMasks() {
+    refreshClippingMasks(options = {}) {
+        const diagnosticsEnabled = isLayerPanelDiagnosticsEnabled(this.config || TEGAKI_CONFIG);
+        const startedAt = diagnosticsEnabled
+            ? (globalThis.performance?.now?.() ?? Date.now())
+            : 0;
+        const diagnosticSample = diagnosticsEnabled
+            ? {
+                timestamp: Date.now(),
+                source: options.source || 'direct',
+                layerCount: 0,
+                clippingOwnerCount: 0,
+                sourceLayerCount: 0,
+                maskTextureCount: 0,
+                targetMaskCount: 0
+            }
+            : null;
         const layers = this.getLayers();
-        if (!layers.length) return;
+        if (diagnosticSample) diagnosticSample.layerCount = layers.length;
+        if (!layers.length) {
+            if (diagnosticsEnabled) {
+                recordLayerClippingRefresh({
+                    ...diagnosticSample,
+                    durationMs: (globalThis.performance?.now?.() ?? Date.now()) - startedAt
+                });
+            }
+            return;
+        }
 
         this.clearClippingMasks();
 
@@ -1859,8 +1957,10 @@ export class LayerSystem {
                 || getClippingMode(data);
             if (!data || data.isBackground || displayClippingMode === CLIPPING_MODES.NONE) continue;
             if (!data.isFolder && (!data.layerSprite || !data.renderTexture)) continue;
+            if (diagnosticSample) diagnosticSample.clippingOwnerCount += 1;
 
             const sourceLayers = this._resolveClippingSourceLayers(layer, layers);
+            if (diagnosticSample) diagnosticSample.sourceLayerCount += sourceLayers.length;
             if (sourceLayers.length === 0) {
                 data.clippingDisplaySuppressed = true;
                 if (data.isFolder) {
@@ -1883,6 +1983,7 @@ export class LayerSystem {
                 data.effectiveClippingSourceId = null;
                 continue;
             }
+            if (diagnosticSample) diagnosticSample.maskTextureCount += 1;
 
             const inverse = displayClippingMode === CLIPPING_MODES.INVERSE;
             data.clippingDisplaySuppressed = false;
@@ -1896,6 +1997,7 @@ export class LayerSystem {
                     this._setClippingMask(targetLayer, maskSprite, inverse);
                     return { target: targetLayer, maskSprite };
                 });
+                if (diagnosticSample) diagnosticSample.targetMaskCount += targets.length;
             } else {
                 const maskSprite = this._createClippingMaskSprite(maskTexture);
                 layer.addChildAt(maskSprite, 0);
@@ -1903,10 +2005,17 @@ export class LayerSystem {
                 this._applyClippingMaskToLayerChildren(layer, maskSprite, inverse);
                 data.layerSprite.visible = true;
                 data.clippingMaskSprite = maskSprite;
+                if (diagnosticSample) diagnosticSample.targetMaskCount += 1;
             }
             data.clippingMaskTexture = maskTexture;
             data.clippingMaskInverse = inverse;
             data.effectiveClippingSourceId = sourceLayers.map(source => source.layerData?.id).filter(Boolean).join(',') || null;
+        }
+        if (diagnosticsEnabled) {
+            recordLayerClippingRefresh({
+                ...diagnosticSample,
+                durationMs: (globalThis.performance?.now?.() ?? Date.now()) - startedAt
+            });
         }
     }
 
@@ -4336,7 +4445,7 @@ export class LayerSystem {
 
     _emitPanelUpdateRequest() {
         this._refreshLayerEffectiveAlpha();
-        this.refreshClippingMasks();
+        this._schedulePanelClippingRefresh();
         if (this.eventBus) {
             this.eventBus.emit('layer:panel-update-requested', {
                 timestamp: Date.now(),
@@ -4562,17 +4671,20 @@ export class LayerSystem {
         const sourceLayer = layers[layerIndex];
         if (sourceLayer.layerData?.isBackground) return null;
         if (sourceLayer.layerData?.isFolder) {
-            const wasApplying = historyManager?.isApplying === true;
-            if (historyManager) historyManager.isApplying = true;
-            const result = this.createFolder(`${sourceLayer.layerData.name} のコピー`);
-            if (historyManager) historyManager.isApplying = wasApplying;
-            if (result?.layer?.layerData) {
-                result.layer.layerData.folderExpanded = sourceLayer.layerData.folderExpanded;
-                result.index = this._placeDuplicatedLayer(result.layer, sourceLayer, layerIndex);
-                this.setActiveLayer(result.index);
-                this._emitPanelUpdateRequest();
-            }
-            return result;
+            const payload = this.createLayerBlockPayload(sourceLayer, {
+                placement: {
+                    parentLayerId: sourceLayer.layerData.parentId || null,
+                    afterLayerId: sourceLayer.layerData.id
+                }
+            });
+            const result = payload ? this.pasteLayerBlockPayload(payload) : null;
+            return result
+                ? {
+                    layer: result.rootLayer,
+                    index: result.rootIndex,
+                    createdRecords: result.createdRecords
+                }
+                : null;
         }
 
         const sourceData = sourceLayer.layerData;
@@ -4839,6 +4951,17 @@ export class LayerSystem {
             }
             tempRT.destroy(true);
         }
+    }
+
+    _schedulePanelClippingRefresh() {
+        // Layer Panel DOMは16ms単位でcoalesceされるため、同一task内のPanel要求も
+        // 最終stateで一度だけmaskを再構築する。描画・working Layer側の直接refreshは同期のまま維持する。
+        if (this._panelClippingRefreshScheduled) return;
+        this._panelClippingRefreshScheduled = true;
+        queueMicrotask(() => {
+            this._panelClippingRefreshScheduled = false;
+            this.refreshClippingMasks({ source: 'panel-update-request' });
+        });
     }
 
     _replaceLayerInParentFolder(parentId, oldLayerId, newLayerId) {

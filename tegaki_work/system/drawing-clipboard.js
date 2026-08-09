@@ -313,6 +313,9 @@ export class DrawingClipboard {
     }
 
     _createLayerBlockClipboardPayload(rootLayer) {
+        const layerSystemPayload = this.layerManager?.createLayerBlockPayload?.(rootLayer);
+        if (layerSystemPayload) return layerSystemPayload;
+
         const rootData = rootLayer?.layerData;
         if (!rootData || rootData.isBackground) return null;
 

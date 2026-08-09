@@ -4,6 +4,7 @@
  * 目的:
  * 長時間描画中の突然のクラッシュや誤操作に備え、最新の描画状態を1件だけ退避する。
  * localStorage の制限を避けるため IndexedDB を使用し、パフォーマンスのために保存頻度を強く制限する。
+ * SettingsManagerを設定正本とし、本classは操作中記録・間隔・非表示時記録のruntime派生状態だけを持つ。
  */
 export class EmergencyRecoveryStore {
     constructor() {
@@ -14,7 +15,13 @@ export class EmergencyRecoveryStore {
         this._isSaving = false;
         this._pendingSave = false;
         this._lastSaveTime = 0;
-        this._saveInterval = 5000; // 最低保存間隔 (5秒)
+        this._lastSaveReason = null;
+        this._periodicEnabled = true;
+        this._saveOnHide = true;
+        this._eventBus = null;
+        // Project全体のserializeを伴うため、重いCAFでも操作を周期的に塞ぎにくい
+        // 1分を安全な既定値とする。短周期はSettingsで明示選択した場合だけ使う。
+        this._saveInterval = 60000;
         this._debounceDelay = 1000; // 変更後の遅延 (1秒)
         this._drawingRetryDelay = 500;
         this._idleTimeout = 2000;
@@ -55,9 +62,10 @@ export class EmergencyRecoveryStore {
      * 自動チェックポイントを予約
      */
     scheduleCheckpoint() {
+        if (!this._periodicEnabled) return false;
         if (this._isSaving) {
             this._pendingSave = true;
-            return;
+            return true;
         }
 
         this._pendingSave = true;
@@ -68,15 +76,20 @@ export class EmergencyRecoveryStore {
             this._debounceTimer = null;
             this._scheduleIdleAttempt();
         }, this._debounceDelay);
+        return true;
     }
 
     /**
      * 通常の流量制限を無視して可能な限り早く保存を試みる（ページ離脱時など）
      */
-    forceCheckpointSoon() {
-        if (this._isSaving) return;
+    forceCheckpointSoon(options = {}) {
+        const reason = options.reason || 'forced';
+        const isHideReason = reason === 'pagehide' || reason === 'visibility-hidden';
+        if (isHideReason && !this._saveOnHide) return false;
+        if (this._isSaving) return false;
         this._cancelScheduledAttempt();
-        this.performSave({ force: true }).catch(() => {});
+        this.performSave({ force: true, reason }).catch(() => {});
+        return true;
     }
 
     /**
@@ -84,6 +97,10 @@ export class EmergencyRecoveryStore {
      */
     async _trySave(options = {}) {
         const force = options.force === true;
+        if (!force && !this._periodicEnabled) {
+            this._pendingSave = false;
+            return false;
+        }
         const now = Date.now();
 
         if (!force && this._isDrawingActive()) {
@@ -106,15 +123,20 @@ export class EmergencyRecoveryStore {
             return;
         }
 
-        await this.performSave({ force });
+        return this.performSave({ force });
     }
 
     /**
      * 描画状態のキャプチャと保存を実行
      */
     async performSave(options = {}) {
-        if (!window.projectManager) return;
         const force = options.force === true;
+        if (!force && !this._periodicEnabled) {
+            this._pendingSave = false;
+            return false;
+        }
+        if (!window.projectManager) return false;
+        const reason = options.reason || (force ? 'forced' : 'periodic');
         if (!force && this._isDrawingActive()) {
             this._pendingSave = true;
             this._scheduleRetry(this._drawingRetryDelay);
@@ -135,9 +157,10 @@ export class EmergencyRecoveryStore {
 
             await this.init();
             
+            const savedAt = Date.now();
             const data = {
                 id: 'latest',
-                timestamp: Date.now(),
+                timestamp: savedAt,
                 // Hospital復元はprojectDataだけを使う。旧checkpointとのshape互換だけ維持する。
                 thumbnail: null,
                 projectData,
@@ -153,11 +176,18 @@ export class EmergencyRecoveryStore {
                 req.onerror = reject;
             });
 
-            this._lastSaveTime = Date.now();
-            this._recordPerf('emergency-recovery.total', saveStartedAt, { force });
+            this._lastSaveTime = savedAt;
+            this._lastSaveReason = reason;
+            this._recordPerf('emergency-recovery.total', saveStartedAt, { force, reason });
+            this._eventBus?.emit?.('emergency-recovery:saved', {
+                timestamp: savedAt,
+                reason
+            });
             // console.log('[EmergencyRecovery] Checkpoint saved successfully.');
+            return true;
         } catch (e) {
             console.warn('[EmergencyRecovery] Background save failed:', e);
+            return false;
         } finally {
             this._isSaving = false;
             
@@ -215,6 +245,55 @@ export class EmergencyRecoveryStore {
         }
         this._idleHandle = null;
         this._idleFallbackTimer = null;
+    }
+
+    /**
+     * SettingsManagerの値をruntime schedulingへ反映する。
+     * Project保存shapeやIndexedDB checkpointの正本は変更しない。
+     */
+    configure(options = {}) {
+        const previousInterval = this._saveInterval;
+        const previousPeriodicEnabled = this._periodicEnabled;
+
+        if (options.eventBus) this._eventBus = options.eventBus;
+        if (typeof options.periodicEnabled === 'boolean') {
+            this._periodicEnabled = options.periodicEnabled;
+        }
+        if (typeof options.saveOnHide === 'boolean') {
+            this._saveOnHide = options.saveOnHide;
+        }
+
+        const intervalSeconds = Number(options.intervalSeconds);
+        if ([5, 10, 30, 60, 180, 300].includes(intervalSeconds)) {
+            this._saveInterval = intervalSeconds * 1000;
+        }
+
+        if (!this._periodicEnabled) {
+            this._pendingSave = false;
+            this._cancelScheduledAttempt();
+        } else if (
+            previousPeriodicEnabled &&
+            previousInterval !== this._saveInterval &&
+            this._pendingSave &&
+            !this._isSaving
+        ) {
+            const elapsed = Date.now() - this._lastSaveTime;
+            this._scheduleRetry(Math.max(0, this._saveInterval - elapsed));
+        }
+
+        return this.getStatus();
+    }
+
+    getStatus() {
+        return {
+            periodicEnabled: this._periodicEnabled,
+            saveOnHide: this._saveOnHide,
+            intervalSeconds: this._saveInterval / 1000,
+            lastSaveTime: this._lastSaveTime || null,
+            lastSaveReason: this._lastSaveReason,
+            isSaving: this._isSaving,
+            pending: this._pendingSave
+        };
     }
 
     _isDrawingActive() {

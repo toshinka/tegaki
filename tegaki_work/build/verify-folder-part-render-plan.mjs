@@ -156,7 +156,9 @@ const rasterPartAsset = {
     internalLayers: [outside],
     rigDefinition: rigDefinition([outside.id])
 };
-assert.equal(createFolderPartRenderPlan(rasterPartAsset, clipFor(outside.id, {}), 0).status, 'unsupported');
+const rasterPartPlan = createFolderPartRenderPlan(rasterPartAsset, clipFor(outside.id, {}), 0);
+assert.equal(rasterPartPlan.status, 'ready', 'CAF root Raster is a one-layer Rig Part');
+assert.deepEqual([...rasterPartPlan.islands[0].layerIds], [outside.id]);
 
 const multipleAsset = {
     ...containedAsset,
