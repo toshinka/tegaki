@@ -43,11 +43,14 @@ function collectClippingRasterIds(asset) {
 
 function getActiveEffectLayerIds(folderEffectPlan) {
     const ids = new Set();
-    if (folderEffectPlan?.status !== 'ready') return ids;
-    (folderEffectPlan.islands || []).forEach(island => {
-        island?.layerIds?.forEach?.(layerId => ids.add(layerId));
-    });
-    const rigPlan = folderEffectPlan.rigRenderPlan;
+    if (folderEffectPlan?.status === 'ready') {
+        (folderEffectPlan.islands || []).forEach(island => {
+            island?.layerIds?.forEach?.(layerId => ids.add(layerId));
+        });
+    }
+    const rigPlan = folderEffectPlan?.kind === 'folder-effect'
+        ? folderEffectPlan.rigRenderPlan
+        : folderEffectPlan;
     if (rigPlan?.status === 'ready') {
         (rigPlan.islands || []).forEach(island => {
             island?.layerIds?.forEach?.(layerId => ids.add(layerId));
@@ -59,6 +62,13 @@ function getActiveEffectLayerIds(folderEffectPlan) {
 export function createRasterSkinRenderPlan(asset, clip, timelineFrame, options = {}) {
     if (!Array.isArray(asset?.meshDefinitions) || asset.meshDefinitions.length === 0) {
         return createEmptyPlan();
+    }
+    const rigErrors = options.folderEffectPlan?.kind === 'folder-effect'
+        ? options.folderEffectPlan.rigRenderPlan?.errors || []
+        : options.folderEffectPlan?.errors || [];
+    const rigModeConflictErrors = rigErrors.filter(error => error?.code === 'rig-mode-conflict');
+    if (rigModeConflictErrors.length > 0) {
+        return createEmptyPlan('unsupported', rigModeConflictErrors);
     }
     const evaluation = evaluateRasterBoneSkinning(asset, clip, timelineFrame);
     if (!evaluation.ok) return createEmptyPlan('invalid', evaluation.errors);

@@ -1,5 +1,5 @@
 /**
- * CAF内部Folder PartとFolder別WARPを重複しないRenderIslandとして解決する純粋adapter契約。
+ * CAF内部Folder / Root Raster PartとFolder別WARPを重複しないRenderIslandとして解決する純粋adapter契約。
  * evaluateRigidParts()とoptional Bone bindingのworld matrixだけを利用し、
  * Pixi / Canvas / UI stateを所有しない。
  * Folder別WARPはCAF Project座標でsubtreeへ先に適用し、所有Part / Bone matrixを一度だけ重ねる。
@@ -8,18 +8,21 @@
  * 既存のRigなしRaster合成へfallbackする。
  */
 
-import { evaluateRigidBones, evaluateRigidParts } from './part-rig.js';
+import {
+    evaluateRigidBones,
+    evaluateRigidParts,
+    resolveRigidBindingWorldMatrix
+} from './part-rig.js';
 import {
     sampleClipFolderDeformers,
     validateClipFolderDeformers
 } from './clip-deformer.js';
 import { resolveInternalClippingContract } from './internal-layer-clipping-contract.js';
+import { resolveRigPartTarget } from './rig-part-target.js';
 import { unionRasterBounds } from '../raster-bounds.js';
 import { resolveWarpPlacementSample } from './warp-placement.js';
 import {
-    calculateAffineTransformedBounds,
-    invertTransformMatrix,
-    multiplyTransformMatrices
+    calculateAffineTransformedBounds
 } from '../transform-math.js';
 
 function createEmptyPlan(status = 'none', errors = []) {
@@ -29,6 +32,7 @@ function createEmptyPlan(status = 'none', errors = []) {
         fallbackToRaster: status === 'invalid' || status === 'unsupported',
         errors,
         islands: [],
+        islandByPartId: new Map(),
         islandByFolderId: new Map(),
         islandByLayerId: new Map()
     };
@@ -76,7 +80,7 @@ export function collectInternalLayerSubtreeIds(internalLayers, rootLayerId) {
 }
 
 /** RenderIsland境界を跨ぐclipping target/sourceを列挙する。 */
-export function validateFolderPartClippingBoundary(asset, islandLayerIds) {
+export function validateRigPartClippingBoundary(asset, islandLayerIds) {
     const ids = islandLayerIds instanceof Set ? islandLayerIds : new Set(islandLayerIds || []);
     const errors = [];
     (asset?.internalLayers || []).forEach(layer => {
@@ -93,7 +97,7 @@ export function validateFolderPartClippingBoundary(asset, islandLayerIds) {
         if (!crossesBoundary) return;
         errors.push(addPlanError(
             'clipping-boundary-split',
-            'clipping owner/source crosses the Folder Part RenderIsland boundary',
+            'clipping owner/source crosses the Rig Part RenderIsland boundary',
             {
                 targetLayerId: layer.id,
                 ownerLayerId: contract.owner.id,
@@ -104,12 +108,16 @@ export function validateFolderPartClippingBoundary(asset, islandLayerIds) {
     return { ok: errors.length === 0, errors };
 }
 
+export function validateFolderPartClippingBoundary(asset, islandLayerIds) {
+    return validateRigPartClippingBoundary(asset, islandLayerIds);
+}
+
 /**
- * Folder Part render planを返す。nested Partでは各Rasterを最も近い登録Folderへ
- * 排他的に割り当て、親子RenderIslandの二重変換を防ぐ。
+ * Rig Part render planを返す。Folder Partは各Rasterを最も近い登録Folderへ
+ * 排他的に割り当て、Root Raster Partは一枚だけを所有する。
  * Rigなしはstatus=none、invalid/unsupportedはfallbackToRaster=trueとなる。
  */
-export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
+export function createRigPartRenderPlan(asset, clip, timelineFrame) {
     if (asset?.rigDefinition == null) return createEmptyPlan('none');
 
     const evaluated = evaluateRigidParts(asset, clip, timelineFrame);
@@ -130,22 +138,25 @@ export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
         return null;
     };
     const targets = evaluated.orderedPoses.map(pose => {
-        const targetLayer = layerById.get(pose.partId) || null;
-        if (!targetLayer || targetLayer.type !== 'folder') {
+        const target = resolveRigPartTarget(asset, pose.partId);
+        if (!target.ok) {
             errors.push(addPlanError(
-                'folder-part-required',
-                'Part target must be an internal Folder',
-                { partId: pose.partId }
+                target.reason,
+                target.reason === 'rig-mode-conflict'
+                    ? 'Raster cannot be both a rigid Part and a Mesh / Skin target'
+                    : 'Part target must be an internal Folder or a CAF root Raster',
+                { partId: pose.partId, targetLayerId: target.layer?.id || null }
             ));
             return null;
         }
-        const subtreeIds = collectInternalLayerSubtreeIds(layers, targetLayer.id);
-        const layerIds = new Set([...subtreeIds].filter(layerId => (
-            findOwningPartId(layerById.get(layerId)) === pose.partId
-        )));
-        const clippingValidation = validateFolderPartClippingBoundary(asset, layerIds);
+        const layerIds = target.targetKind === 'folder'
+            ? new Set([...collectInternalLayerSubtreeIds(layers, target.layer.id)].filter(layerId => (
+                findOwningPartId(layerById.get(layerId)) === pose.partId
+            )))
+            : new Set([target.layer.id]);
+        const clippingValidation = validateRigPartClippingBoundary(asset, layerIds);
         if (!clippingValidation.ok) errors.push(...clippingValidation.errors);
-        return { pose, targetLayer, layerIds };
+        return { pose, targetLayer: target.layer, targetKind: target.targetKind, layerIds };
     }).filter(Boolean);
     if (errors.length > 0) {
         const status = errors.some(error => error.code === 'clipping-boundary-split')
@@ -165,7 +176,7 @@ export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
         : null;
     if (evaluatedBones && !evaluatedBones.ok) return createEmptyPlan('invalid', evaluatedBones.errors);
     if (bindBones && !bindBones.ok) return createEmptyPlan('invalid', bindBones.errors);
-    const islands = targets.map(({ pose, targetLayer, layerIds }) => {
+    const islands = targets.map(({ pose, targetLayer, targetKind, layerIds }) => {
         let worldMatrix = { ...pose.worldMatrix };
         let rigidBinding = null;
         let boneDeltaMatrix = null;
@@ -181,23 +192,27 @@ export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
                 ));
                 return null;
             }
-            const inverseBindMatrix = bindPose ? invertTransformMatrix(bindPose.worldMatrix) : null;
-            if (!inverseBindMatrix) {
+            const resolvedBinding = resolveRigidBindingWorldMatrix(pose, bonePose, bindPose);
+            if (!resolvedBinding.ok) {
                 errors.push(addPlanError(
-                    'non-invertible-bone-bind',
-                    'Bone Bind Pose matrix is not invertible',
-                    { boneId: binding.boneId }
+                    resolvedBinding.reason,
+                    resolvedBinding.reason === 'non-invertible-bone-bind'
+                        ? 'Bone Bind Pose matrix is not invertible'
+                        : 'Rigid binding Bone pose is unavailable',
+                    { boneId: binding.boneId, partId: binding.partId }
                 ));
                 return null;
             }
-            boneDeltaMatrix = multiplyTransformMatrices(bonePose.worldMatrix, inverseBindMatrix);
+            boneDeltaMatrix = resolvedBinding.boneDeltaMatrix;
             // 評価順はBone delta → Part rigid。source pointへ右からBone、左からPartを適用する。
-            worldMatrix = multiplyTransformMatrices(pose.worldMatrix, boneDeltaMatrix);
+            worldMatrix = resolvedBinding.worldMatrix;
             rigidBinding = { boneId: binding.boneId, partId: binding.partId };
         }
         return {
             partId: pose.partId,
-            folderId: targetLayer.id,
+            targetLayerId: targetLayer.id,
+            targetKind,
+            folderId: targetKind === 'folder' ? targetLayer.id : null,
             parentPartId: pose.parentPartId,
             layerIds,
             partWorldMatrix: { ...pose.worldMatrix },
@@ -207,7 +222,10 @@ export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
         };
     }).filter(Boolean);
     if (errors.length > 0) return createEmptyPlan('invalid', errors);
-    const islandByFolderId = new Map(islands.map(island => [island.folderId, island]));
+    const islandByPartId = new Map(islands.map(island => [island.partId, island]));
+    const islandByFolderId = new Map(islands
+        .filter(island => island.folderId)
+        .map(island => [island.folderId, island]));
     const islandByLayerId = new Map();
     islands.forEach(island => {
         island.layerIds.forEach(layerId => islandByLayerId.set(layerId, island));
@@ -218,9 +236,15 @@ export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
         fallbackToRaster: false,
         errors: [],
         islands,
+        islandByPartId,
         islandByFolderId,
         islandByLayerId
     };
+}
+
+/** 既存Folder Part consumer向け互換export。plan正本はcreateRigPartRenderPlan()。 */
+export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
+    return createRigPartRenderPlan(asset, clip, timelineFrame);
 }
 
 /**
@@ -229,7 +253,7 @@ export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
  * root Motionは呼出側がこのplanの後に一度だけ適用する。
  */
 export function createFolderEffectRenderPlan(asset, clip, timelineFrame) {
-    const rigRenderPlan = createFolderPartRenderPlan(asset, clip, timelineFrame);
+    const rigRenderPlan = createRigPartRenderPlan(asset, clip, timelineFrame);
     const validation = validateClipFolderDeformers(
         clip?.folderDeformers,
         asset?.internalLayers || null
@@ -242,11 +266,11 @@ export function createFolderEffectRenderPlan(asset, clip, timelineFrame) {
         timelineFrame - (Number.isInteger(clip?.startFrame) ? clip.startFrame : 0),
         Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1)
     );
-    if (sampledByFolderId.size === 0) {
-        return createEmptyEffectPlan('none', rigRenderPlan);
-    }
     if (rigRenderPlan.status === 'invalid' || rigRenderPlan.status === 'unsupported') {
         return createEmptyEffectPlan(rigRenderPlan.status, rigRenderPlan, rigRenderPlan.errors);
+    }
+    if (sampledByFolderId.size === 0) {
+        return createEmptyEffectPlan('none', rigRenderPlan);
     }
 
     const layers = Array.isArray(asset?.internalLayers) ? asset.internalLayers : [];
@@ -363,7 +387,7 @@ export function calculateFolderEffectAssetBounds(
     isLayerVisible = () => true
 ) {
     if (effectPlan?.kind !== 'folder-effect') {
-        return calculateFolderPartAssetBounds(
+        return calculateRigPartAssetBounds(
             asset,
             effectPlan,
             getLayerBounds,
@@ -371,7 +395,7 @@ export function calculateFolderEffectAssetBounds(
         );
     }
     if (effectPlan?.status !== 'ready') {
-        return calculateFolderPartAssetBounds(
+        return calculateRigPartAssetBounds(
             asset,
             effectPlan?.rigRenderPlan || effectPlan,
             getLayerBounds,
@@ -422,12 +446,16 @@ export function calculateFolderEffectAssetBounds(
     ]);
 }
 
+export function getRigPartRenderIsland(plan, partId) {
+    return plan?.status === 'ready' ? plan.islandByPartId?.get(partId) || null : null;
+}
+
 export function getFolderPartRenderIsland(plan, folderId) {
     return plan?.status === 'ready' ? plan.islandByFolderId?.get(folderId) || null : null;
 }
 
 /** Snapshot取得方法に依存せず、Rig適用後のCAF内部Raster union boundsを共有計算する。 */
-export function calculateFolderPartAssetBounds(
+export function calculateRigPartAssetBounds(
     asset,
     renderPlan,
     getLayerBounds,
@@ -455,4 +483,14 @@ export function calculateFolderPartAssetBounds(
         ...outsideBounds,
         ...transformedIslandBounds
     ]);
+}
+
+/** 既存Folder Part consumer向け互換export。 */
+export function calculateFolderPartAssetBounds(
+    asset,
+    renderPlan,
+    getLayerBounds,
+    isLayerVisible = () => true
+) {
+    return calculateRigPartAssetBounds(asset, renderPlan, getLayerBounds, isLayerVisible);
 }

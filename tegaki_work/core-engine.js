@@ -78,10 +78,16 @@ export class CoreEngine {
         this.history = historyManager;
         this.settingsManager = new SettingsManager(this.eventBus, this.config);
         this._applyHistorySettings();
+        this.emergencyRecoveryStore = emergencyRecoveryStore;
+        this._applyEmergencyRecoverySettings();
         this.eventBus.on('settings:updated', () => this._applyHistorySettings());
         this.eventBus.on('settings:history-auto-adjust', () => this._applyHistorySettings());
         this.eventBus.on('settings:history-max-entries', () => this._applyHistorySettings());
         this.eventBus.on('settings:history-max-memory-mb', () => this._applyHistorySettings());
+        this.eventBus.on('settings:updated', () => this._applyEmergencyRecoverySettings());
+        this.eventBus.on('settings:emergency-recovery-enabled', () => this._applyEmergencyRecoverySettings());
+        this.eventBus.on('settings:emergency-recovery-interval-seconds', () => this._applyEmergencyRecoverySettings());
+        this.eventBus.on('settings:emergency-recovery-on-hide', () => this._applyEmergencyRecoverySettings());
         this.pressureHandler = new PressureHandler();
         this.strokeRenderer = null;
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler);
@@ -149,6 +155,15 @@ export class CoreEngine {
             maxMemoryMB: autoAdjust
                 ? automatic.maxMemoryMB
                 : this.settingsManager.get('historyMaxMemoryMB')
+        });
+    }
+
+    _applyEmergencyRecoverySettings() {
+        this.emergencyRecoveryStore?.configure?.({
+            eventBus: this.eventBus,
+            periodicEnabled: this.settingsManager.get('emergencyRecoveryEnabled') !== false,
+            intervalSeconds: this.settingsManager.get('emergencyRecoveryIntervalSeconds'),
+            saveOnHide: this.settingsManager.get('emergencyRecoveryOnHide') !== false
         });
     }
 
@@ -317,7 +332,8 @@ export class CoreEngine {
 
         // 14. ポップアップの登録
         this.popupManager.register('settings', SettingsPopup, {
-            drawingEngine: this.drawingEngine
+            drawingEngine: this.drawingEngine,
+            emergencyRecoveryStore: this.emergencyRecoveryStore
         });
         this.popupManager.register('quickAccess', QuickAccessPopup, {
             brushSettings: this.brushSettings
@@ -374,11 +390,11 @@ export class CoreEngine {
 
             // ページ離脱時の最終保存試行（補助策）
             window.addEventListener('pagehide', () => {
-                emergencyRecoveryStore.forceCheckpointSoon();
+                emergencyRecoveryStore.forceCheckpointSoon({ reason: 'pagehide' });
             });
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden') {
-                    emergencyRecoveryStore.forceCheckpointSoon();
+                    emergencyRecoveryStore.forceCheckpointSoon({ reason: 'visibility-hidden' });
                 }
             });
         }

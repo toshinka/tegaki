@@ -36,6 +36,11 @@ function sourceSignature(snapshot) {
     };
 }
 
+/** Alpha-fit GridとAuto Shapeが共有する保存用source signature。 */
+export function createRasterMeshSourceSignature(snapshot) {
+    return sourceSignature(snapshot);
+}
+
 function signaturesEqual(left, right) {
     return !!left && !!right
         && left.snapshotId === right.snapshotId
@@ -45,6 +50,10 @@ function signaturesEqual(left, right) {
         && ['x', 'y', 'width', 'height'].every(field => (
             Number(left.rasterBounds?.[field]) === Number(right.rasterBounds?.[field])
         ));
+}
+
+export function rasterMeshSourceSignaturesEqual(left, right) {
+    return signaturesEqual(left, right);
 }
 
 export function chooseAlphaFitGridDimensions(bounds, options = {}) {
@@ -108,6 +117,11 @@ function createBindSegments(asset, boneIds) {
     return { ok: true, errors: [], segments };
 }
 
+/** 既存Bind BoneをProject座標segmentへ評価するpure adapter。 */
+export function createRasterBoneBindSegments(asset, boneIds) {
+    return createBindSegments(asset, boneIds);
+}
+
 function createDistanceInfluences(point, segments) {
     if (!Array.isArray(segments) || segments.length === 0) return [];
     const nearest = segments
@@ -126,6 +140,11 @@ function createDistanceInfluences(point, segments) {
         boneId: item.boneId,
         weight: scores[index] / total
     }));
+}
+
+/** Project座標pointへ既存最大2 distance influenceを作る。 */
+export function createRasterBoneDistanceInfluences(point, segments) {
+    return createDistanceInfluences(point, segments);
 }
 
 export function createAlphaFitRasterBoneSetup(asset, targetInternalLayerId, snapshot, options = {}) {

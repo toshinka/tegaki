@@ -2,6 +2,7 @@ import {
     CONTROL_MESH_MAX_POINTS,
     CONTROL_MESH_MIN_POINTS,
     createFreeControlMesh,
+    createRadialControlMeshPreset,
     createRectControlMeshPreset,
     normalizeControlMeshGridDimensions
 } from './control-mesh-topology.js';
@@ -157,6 +158,23 @@ export function createRectControlMeshDeformer(options = {}) {
         version: CONTROL_MESH_VERSION,
         columns: topology.columns,
         rows: topology.rows,
+        bindBounds: options.bindBounds ?? null,
+        bindPoints: topology.points,
+        triangles: topology.triangles,
+        points: topology.points,
+        keyframes: []
+    });
+}
+
+/** RADIAL presetから既存free Control Mesh保存shapeを作る。topology kindは保存しない。 */
+export function createRadialControlMeshDeformer(options = {}) {
+    const topology = createRadialControlMeshPreset(options);
+    if (!topology) return null;
+    return normalizeControlMeshDeformer({
+        type: CONTROL_MESH_TYPE,
+        version: CONTROL_MESH_VERSION,
+        columns: null,
+        rows: null,
         bindBounds: options.bindBounds ?? null,
         bindPoints: topology.points,
         triangles: topology.triangles,

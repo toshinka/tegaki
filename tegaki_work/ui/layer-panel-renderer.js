@@ -4,20 +4,35 @@
  * 責務: レイヤーパネルのUI（レイヤー一覧、選択、可視性、透明度、合成モード、クリッピング状態、並び替え）を描画する
  * 依存: layer-system.js, thumbnail-system.js, event-bus.js, config.js
  * 被依存: ui-panels.js, core-engine.js
- * 公開API: LayerPanelRenderer
+ * 公開API: LayerPanelRenderer, getDiagnosticsSnapshot(), resetDiagnostics()
  * イベント発火: ui:layer-selected, ui:background-color-change-requested
  * イベント受信: layer:*, folder:*, thumbnail:updated, animation:frame-changed, camera:resized, ui:layer-attribute-panel-requested
  * グローバル登録: window.LayerPanelRenderer
  * 実装状態: ✅完成/整備
+ * Authority境界:
+ * - 通常表示はLayerSystemのflat合成順 + layerData.parentIdを投影する。
+ * - CAF表示はClipAsset.internalLayers + parentLayerIdをmirror adapterで投影する。
+ * - Animation Tableを閉じてもCAF編集contextは継続する。Table visibilityを正本切替に使わない。
+ * - animation working Layerは表示・入力adapterであり、Panel順や保存階層の正本にしない。
  * ============================================================================
  */
 
 import { UI_ICONS } from './ui-icons.js';
+import { TEGAKI_CONFIG } from '../config.js';
 import {
     cycleClippingMode,
     getClippingMode,
     isInverseClipping
 } from '../system/clipping-mode.js';
+import {
+    getLayerPanelDiagnosticsSnapshot,
+    getLayerPanelDiagnosticsSummary,
+    isLayerPanelDiagnosticsEnabled,
+    recordLayerPanelRender,
+    recordLayerPanelRequest,
+    resetLayerPanelDiagnostics,
+    resolveLayerPanelDiagnosticState
+} from '../system/layer-panel-diagnostics.js';
 
 export class LayerPanelRenderer {
     constructor(container, layerSystem, eventBus) {
@@ -1054,6 +1069,13 @@ export class LayerPanelRenderer {
 
     requestUpdate(options = {}) {
         const force = options.force === true;
+        if (isLayerPanelDiagnosticsEnabled(this.layerSystem?.config || TEGAKI_CONFIG)) {
+            recordLayerPanelRequest({
+                force,
+                coalesced: !!this._updateTimeout,
+                dragDeferred: !!this._cardDrag
+            });
+        }
         if (this._cardDrag) {
             this._pendingUpdateAfterDrag = true;
             return;
@@ -1087,6 +1109,13 @@ export class LayerPanelRenderer {
         if (!this.container) return;
         if (!layers || layers.length === 0) return;
 
+        const diagnosticsEnabled = isLayerPanelDiagnosticsEnabled(
+            this.layerSystem?.config || TEGAKI_CONFIG
+        );
+        const renderStartedAt = diagnosticsEnabled ? this._getDiagnosticsNow() : 0;
+        const animationTable = window.PopupManager?.get?.('animationTable');
+        const hasAnimationContext = this._hasAnimationContext(animationTable);
+
         this.container.innerHTML = '';
         this.container.classList.remove('layer-panel-items--folder-dragging');
 
@@ -1103,8 +1132,6 @@ export class LayerPanelRenderer {
         const reversedLayers = [...layers].reverse();
         const reversedActiveIndex = layers.length - 1 - activeIndex;
         const selectedLayerIds = new Set(this.layerSystem?.getSelectedLayerIds?.() || []);
-        const animationTable = window.PopupManager?.get?.('animationTable');
-        const hasAnimationContext = this._hasAnimationContext(animationTable);
         const hideAnimationWorkingLayers = true;
         const hideNormalLayersForAnimationContext = hasAnimationContext;
 
@@ -1133,6 +1160,118 @@ export class LayerPanelRenderer {
         });
 
         this._updateScrollState();
+        if (diagnosticsEnabled) {
+            this._recordLayerPanelDiagnostics({
+                layers,
+                activeIndex,
+                animationTable,
+                hasAnimationContext,
+                renderStartedAt
+            });
+        }
+    }
+
+    getDiagnosticsSnapshot() {
+        return getLayerPanelDiagnosticsSnapshot();
+    }
+
+    resetDiagnostics() {
+        resetLayerPanelDiagnostics();
+        if (this.container?.dataset) {
+            delete this.container.dataset.layerPanelDiagnostics;
+        }
+    }
+
+    _getDiagnosticsNow() {
+        return globalThis.performance?.now?.() ?? Date.now();
+    }
+
+    _recordLayerPanelDiagnostics({
+        layers = [],
+        activeIndex = -1,
+        animationTable = null,
+        hasAnimationContext = false,
+        renderStartedAt = 0
+    } = {}) {
+        const domRows = [...this.container.querySelectorAll('.layer-panel-card-row')].map(row => ({
+            cardKind: row.dataset.cardKind || '',
+            assetId: row.dataset.assetId || null,
+            id: row.dataset.internalLayerId || row.dataset.layerId || null,
+            depth: Number.parseInt(row.dataset.depth || '0', 10) || 0,
+            isFolder: row.dataset.isFolder === 'true'
+        }));
+        const authority = this._captureLayerPanelDiagnosticAuthority({
+            layers,
+            animationTable,
+            hasAnimationContext
+        });
+        const relevantDomRows = hasAnimationContext
+            ? domRows.filter(row => row.cardKind === 'clip-layer-mirror' && row.assetId === authority.assetId)
+            : domRows.filter(row => row.cardKind === 'legacy-layer');
+        const hierarchyMatches = authority.rows.length === relevantDomRows.length
+            && authority.rows.every((row, index) => {
+                const rendered = relevantDomRows[index];
+                return rendered?.id === row.id && rendered.depth === row.depth;
+            });
+
+        recordLayerPanelRender({
+            timestamp: Date.now(),
+            state: resolveLayerPanelDiagnosticState({
+                hasAnimationContext,
+                tableVisible: animationTable?.isVisible === true
+            }),
+            durationMs: this._getDiagnosticsNow() - renderStartedAt,
+            sourceLayerCount: layers.length,
+            displayedRowCount: domRows.length,
+            activeLayerId: layers[activeIndex]?.layerData?.id || null,
+            selectedInternalLayerId: animationTable?.selectedInternalLayerId || null,
+            workingLayerIds: layers
+                .filter(layer => layer?.layerData?.isAnimationWorkingLayer === true)
+                .map(layer => layer.layerData.id),
+            hierarchyMatches,
+            authorityRows: authority.rows,
+            rows: domRows
+        });
+        this.container.dataset.layerPanelDiagnostics = JSON.stringify(
+            getLayerPanelDiagnosticsSummary()
+        );
+    }
+
+    _captureLayerPanelDiagnosticAuthority({
+        layers = [],
+        animationTable = null,
+        hasAnimationContext = false
+    } = {}) {
+        if (!hasAnimationContext) {
+            const rows = [...layers].reverse()
+                .filter(layer => !this._isLayerHiddenByClosedFolder(layer, layers))
+                .filter(layer => layer?.layerData?.isAnimationWorkingLayer !== true || layer.layerData.isBackground)
+                .map(layer => ({
+                    id: layer?.layerData?.id || null,
+                    depth: this._calculateIndentLevel(layer, layers),
+                    parentId: layer?.layerData?.parentId || null
+                }));
+            return { assetId: null, rows };
+        }
+
+        const asset = this._getSelectedClipAssetForLayerPanel();
+        if (!asset) return { assetId: null, rows: [] };
+        const selectedEntry = animationTable?.selectedCelId
+            ? animationTable.model?.findClipEntry?.(animationTable.selectedCelId)
+            : null;
+        if (selectedEntry?.clip?.id && this._collapsedCafClipIds.has(selectedEntry.clip.id)) {
+            return { assetId: asset.id, rows: [] };
+        }
+        const depths = this._getClipAssetInternalLayerDepths(asset);
+        const hiddenIds = this._getHiddenClipAssetInternalLayerIds(asset);
+        const rows = (asset.internalLayers || [])
+            .filter(layer => !hiddenIds.has(layer.id))
+            .map(layer => ({
+                id: layer.id,
+                depth: depths.get(layer.id) || 0,
+                parentId: layer.parentLayerId || null
+            }));
+        return { assetId: asset.id, rows };
     }
 
     _hasAnimationContext(animationTable = window.PopupManager?.get?.('animationTable')) {
@@ -2031,7 +2170,8 @@ export class LayerPanelRenderer {
         const clipping = viewState.clipping;
         const inverseClipping = viewState.inverseClipping;
         const isFolder = viewState.isFolder;
-        const isAnimationFolder = viewState.isAnimationFolder;
+        const isAnimationRigTarget = viewState.isAnimationRigTarget;
+        const rigTargetLabel = viewState.rigTargetKind === 'raster' ? 'Raster Part' : 'Folder Part';
         const isRigPart = viewState.isRigPart;
         const canRegisterRigPart = viewState.canRegisterRigPart;
         const hasRootBoneBinding = viewState.hasRootBoneBinding;
@@ -2073,28 +2213,28 @@ export class LayerPanelRenderer {
                     </button>
                 ` : ''}
             </div>
-            ${isAnimationFolder ? `
+            ${isAnimationRigTarget ? `
                 <div class="layer-attribute-popup__part-row">
                     <button type="button"
                         class="layer-attribute-part-register${isRigPart ? ' active' : ''}"
-                        data-action="register-folder-part"
+                        data-action="register-rig-part"
                         title="${isRigPart
-                            ? 'このCAF内部FolderはFolder Partとして登録済みです'
+                            ? `このCAF内部${rigTargetLabel}はRIG登録済みです`
                             : (canRegisterRigPart
-                                ? 'このCAF内部FolderをFolder Partとして登録'
-                                : 'nested Folder Partは次Sliceで対応します')}"
+                                ? `このCAF内部Layerを${rigTargetLabel}として登録`
+                                : 'このLayerはRigid Part対象にできません')}"
                         ${isRigPart || !canRegisterRigPart ? 'disabled' : ''}>
-                        ${isRigPart ? 'PART 登録済み' : 'PARTとして登録'}
+                        ${isRigPart ? 'RIG 登録済み' : '+RIG'}
                     </button>
                     ${isRigPart ? `
                         <button type="button"
                             class="layer-attribute-bone-register${hasRootBoneBinding ? ' active' : ''}"
                             data-action="register-root-bone"
                             title="${hasRootBoneBinding
-                                ? 'このFolder Partはroot BONEへbinding済みです'
+                                ? `この${rigTargetLabel}はroot BONEへbinding済みです`
                                 : (canRegisterRootBone
-                                ? 'このFolder Partへroot BONEを作成してbinding'
-                                    : 'このFolderはPIVOT設定済みです')}"
+                                ? `この${rigTargetLabel}へroot BONEを作成してbinding`
+                                    : 'このPartはPIVOT設定済みです')}"
                             ${hasRootBoneBinding || !canRegisterRootBone ? 'disabled' : ''}>
                             ${hasRootBoneBinding ? 'BONE 接続済み' : 'ROOT BONEを作成'}
                         </button>
@@ -2188,11 +2328,11 @@ export class LayerPanelRenderer {
             this._syncOpenLayerAttributePopupToCurrentTarget();
         });
 
-        popup.querySelector('[data-action="register-folder-part"]')?.addEventListener('click', (e) => {
+        popup.querySelector('[data-action="register-rig-part"]')?.addEventListener('click', (e) => {
             e.stopPropagation();
             const animationTarget = this._getAnimationAttributeTarget();
             const animationTable = animationTarget?.animationTable || window.PopupManager?.get?.('animationTable');
-            const result = animationTable?.registerInternalFolderPartFromExternal?.(
+            const result = animationTable?.registerInternalRigPartFromExternal?.(
                 viewState.animationAssetId || animationTarget?.asset?.id,
                 viewState.animationInternalLayerId || animationTarget?.internalLayer?.id,
                 { source: 'layer-attribute-popup' }
@@ -2203,12 +2343,13 @@ export class LayerPanelRenderer {
                 return;
             }
             const labels = {
-                'nested-part-unsupported': 'nested PARTは次Slice',
                 'clipping-boundary-split': 'clip境界を確認',
-                'folder-required': 'Folderを選択'
+                'raster-part-root-required': 'CAF直下Rasterのみ',
+                'rig-mode-conflict': 'Mesh Rigと同時使用不可',
+                'part-target-background-unsupported': '背景はRIG対象外'
             };
             e.currentTarget.textContent = labels[result?.reason] || '登録できません';
-            e.currentTarget.title = result?.reason || 'Folder Part登録に失敗しました';
+            e.currentTarget.title = result?.reason || 'Rig Part登録に失敗しました';
             e.currentTarget.disabled = true;
         });
 
@@ -2300,7 +2441,15 @@ export class LayerPanelRenderer {
             : [];
         const isAnimationFolder = !!animationTarget
             && (source.type === 'folder' || source.isFolder === true);
-        const isRigPart = isAnimationFolder && rigParts.some(part => part?.partId === source.id);
+        const isAnimationRootRaster = !!animationTarget
+            && source.type === 'raster'
+            && source.parentLayerId == null
+            && source.isBackground !== true;
+        const isAnimationRigTarget = isAnimationFolder || isAnimationRootRaster;
+        const isRigPart = isAnimationRigTarget && rigParts.some(part => part?.partId === source.id);
+        const hasRasterMesh = isAnimationRootRaster
+            && (animationTarget?.asset?.meshDefinitions || [])
+                .some(mesh => mesh?.targetInternalLayerId === source.id);
         const rigBones = Array.isArray(animationTarget?.asset?.rigDefinition?.bones)
             ? animationTarget.asset.rigDefinition.bones
             : [];
@@ -2321,8 +2470,11 @@ export class LayerPanelRenderer {
             inverseClipping: isInverseClipping(source),
             isFolder: source.type === 'folder' || source.isFolder === true,
             isAnimationFolder,
+            isAnimationRootRaster,
+            isAnimationRigTarget,
+            rigTargetKind: isAnimationRootRaster ? 'raster' : 'folder',
             isRigPart,
-            canRegisterRigPart: isAnimationFolder,
+            canRegisterRigPart: isAnimationRigTarget && !hasRasterMesh,
             rigPartCount: rigParts.length,
             hasRootBoneBinding,
             canRegisterRootBone: isRigPart
@@ -3769,6 +3921,11 @@ export class LayerPanelRenderer {
         const isCollapsed = isFolder && this._isClipInternalFolderCollapsed(asset?.id, layer?.id);
         const snapshot = isFolder ? null : animationTable?.model?.getDrawingSnapshot?.(layer?.drawingSnapshotId);
         const thumbnailData = this._snapshotToThumbnailData(snapshot);
+        const isRigPart = (asset?.rigDefinition?.parts || [])
+            .some(part => part?.partId === layer?.id);
+        const rigTargetKind = isRigPart
+            ? (isFolder ? 'folder' : 'raster')
+            : null;
         return {
             variant: 'clip-layer-mirror',
             clipId,
@@ -3793,7 +3950,11 @@ export class LayerPanelRenderer {
             clipTitle: isInverseClipping(layer)
                 ? '逆クリッピングON'
                 : (getClippingMode(layer) !== 'none' ? 'クリッピングON' : 'クリッピング未使用'),
-            visibilityTitle: '内部レイヤーの表示/非表示'
+            visibilityTitle: '内部レイヤーの表示/非表示',
+            rigTargetKind,
+            rigTooltip: rigTargetKind === 'folder'
+                ? 'Folder Part · Setup RIG'
+                : (rigTargetKind === 'raster' ? 'Raster Part · Setup RIG' : '')
         };
     }
 
@@ -3824,6 +3985,17 @@ export class LayerPanelRenderer {
             extraClasses: [`${variant}-opacity`]
         });
         meta.textContent = options.metaLabel || '';
+        if (options.rigTargetKind) {
+            meta.classList.add('has-rig-badge');
+            const rigBadge = this._createLayerPanelCardPart(
+                'span',
+                'clip-layer-mirror-rig-badge ui-help-tooltip'
+            );
+            rigBadge.dataset.tooltip = options.rigTooltip || 'Setup RIG';
+            rigBadge.setAttribute('aria-label', options.rigTooltip || 'Setup RIG');
+            rigBadge.innerHTML = `${UI_ICONS.rigNode}<span>RIG</span>`;
+            meta.appendChild(rigBadge);
+        }
         const name = this._createLayerPanelCardNameElement(variant, {
             text: options.name || ''
         });

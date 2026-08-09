@@ -13,6 +13,16 @@ import {
     invertTransformMatrix,
     multiplyTransformMatrices
 } from '../transform-math.js';
+import {
+    normalizeWarpAnchorConstraints,
+    serializeWarpAnchorConstraints,
+    remapWarpAnchorConstraints,
+    registerWarpAnchorConstraint,
+    removeWarpAnchorConstraint,
+    validateWarpAnchorConstraints,
+    resolveRigidBindingWorldMatrix,
+    resolveWarpAnchorTranslationOffsets
+} from './warp-anchor-constraint.js';
 
 export const PART_RIG_SCHEMA_VERSION = 1;
 
@@ -131,6 +141,11 @@ export function normalizeRigDefinition(value) {
                     ? value.rigidBindings.map(normalizeRigidBinding)
                     : clonePlainValue(value.rigidBindings)
             }
+            : {}),
+        ...(hasOwn(value, 'warpAnchorConstraints')
+            ? {
+                warpAnchorConstraints: normalizeWarpAnchorConstraints(value.warpAnchorConstraints)
+            }
             : {})
     };
 }
@@ -155,12 +170,30 @@ export function normalizeRigMotion(value) {
 }
 
 export function serializeRigDefinition(value) {
-    return normalizeRigDefinition(value);
+    const normalized = normalizeRigDefinition(value);
+    if (!normalized || typeof normalized !== 'object') return normalized;
+    return {
+        ...normalized,
+        ...(normalized.warpAnchorConstraints == null
+            ? {}
+            : { warpAnchorConstraints: serializeWarpAnchorConstraints(normalized.warpAnchorConstraints) })
+    };
 }
 
 export function serializeRigMotion(value) {
     return normalizeRigMotion(value);
 }
+
+export {
+    normalizeWarpAnchorConstraints,
+    serializeWarpAnchorConstraints,
+    remapWarpAnchorConstraints,
+    registerWarpAnchorConstraint,
+    removeWarpAnchorConstraint,
+    validateWarpAnchorConstraints,
+    resolveRigidBindingWorldMatrix,
+    resolveWarpAnchorTranslationOffsets
+};
 
 export function createIdentityPartDefinition(partId) {
     return {
@@ -962,6 +995,29 @@ export function validateRigDefinition(value, internalLayers = []) {
         }
     }
 
+    const anchorValidation = validateWarpAnchorConstraints(
+        rigDefinition.warpAnchorConstraints,
+        {
+            internalLayers,
+            partsById,
+            bonesById,
+            parts: rigDefinition.parts,
+            bones: Array.isArray(rigDefinition.bones) ? rigDefinition.bones : [],
+            rigidBindings: Array.isArray(rigDefinition.rigidBindings)
+                ? rigDefinition.rigidBindings
+                : []
+        }
+    );
+    anchorValidation.errors.forEach(error => {
+        addError(
+            errors,
+            error.code || 'invalid-warp-anchor-constraint',
+            error.path || 'rigDefinition.warpAnchorConstraints',
+            error.message || 'invalid WARP anchor constraint',
+            error
+        );
+    });
+
     return { ok: errors.length === 0, errors, value: rigDefinition };
 }
 
@@ -1127,6 +1183,14 @@ export function remapRigDefinition(value, internalLayerIdMap) {
                     })
                     : clonePlainValue(rigDefinition.rigidBindings)
             }
+            : {}),
+        ...(hasOwn(rigDefinition, 'warpAnchorConstraints')
+            ? {
+                warpAnchorConstraints: remapWarpAnchorConstraints(
+                    rigDefinition.warpAnchorConstraints,
+                    internalLayerIdMap
+                )
+            }
             : {})
     };
 }
@@ -1288,19 +1352,9 @@ export function evaluateRigidParts(asset, clip, timelineFrame) {
     return { ok: true, errors: [], orderedPoses, poseByPartId };
 }
 
-export function evaluateRigidBones(asset, clip, timelineFrame) {
-    const definitionValidation = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
-    const motionValidation = validateRigMotion(
-        clip?.rigMotion,
-        definitionValidation.value,
-        clip?.duration
-    );
-    const errors = [...definitionValidation.errors, ...motionValidation.errors];
-    if (errors.length > 0) {
-        return { ok: false, errors, orderedPoses: [], poseByBoneId: new Map() };
-    }
-    const bones = Array.isArray(definitionValidation.value?.bones)
-        ? definitionValidation.value.bones
+function evaluateRigidBonePoses(asset, clip, timelineFrame, translationOffsets = null) {
+    const bones = Array.isArray(asset?.rigDefinition?.bones)
+        ? asset.rigDefinition.bones
         : [];
     if (bones.length === 0) {
         return { ok: true, errors: [], orderedPoses: [], poseByBoneId: new Map() };
@@ -1315,9 +1369,17 @@ export function evaluateRigidBones(asset, clip, timelineFrame) {
         const localTransform = composeRigLocalTransform(bone.bindTransform, motionTransform);
         const localMatrix = createAffineTransformMatrix(localTransform);
         const parentPose = bone.parentBoneId ? poseByBoneId.get(bone.parentBoneId) : null;
-        const worldMatrix = parentPose
+        const baseWorldMatrix = parentPose
             ? multiplyTransformMatrices(parentPose.worldMatrix, localMatrix)
             : localMatrix;
+        const offset = translationOffsets?.get(bone.boneId) || null;
+        const worldMatrix = offset
+            ? {
+                ...baseWorldMatrix,
+                tx: baseWorldMatrix.tx + offset.x,
+                ty: baseWorldMatrix.ty + offset.y
+            }
+            : baseWorldMatrix;
         const pose = {
             boneId: bone.boneId,
             parentBoneId: bone.parentBoneId || null,
@@ -1332,6 +1394,60 @@ export function evaluateRigidBones(asset, clip, timelineFrame) {
         return pose;
     });
     return { ok: true, errors: [], orderedPoses, poseByBoneId };
+}
+
+export function evaluateRigidBones(asset, clip, timelineFrame) {
+    const definitionValidation = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+    const motionValidation = validateRigMotion(
+        clip?.rigMotion,
+        definitionValidation.value,
+        clip?.duration
+    );
+    const errors = [...definitionValidation.errors, ...motionValidation.errors];
+    if (errors.length > 0) {
+        return { ok: false, errors, orderedPoses: [], poseByBoneId: new Map() };
+    }
+    const evaluatedAsset = {
+        ...(asset && typeof asset === 'object' ? asset : {}),
+        rigDefinition: definitionValidation.value
+    };
+    const base = evaluateRigidBonePoses(evaluatedAsset, clip, timelineFrame);
+    const constraints = definitionValidation.value?.warpAnchorConstraints;
+    if (!clip || !Array.isArray(constraints) || constraints.length === 0 || !base.ok) {
+        return base;
+    }
+
+    const partEvaluation = evaluateRigidParts(evaluatedAsset, clip, timelineFrame);
+    if (!partEvaluation.ok) {
+        return {
+            ...base,
+            anchorDiagnostics: [{ code: 'warp-anchor-part-evaluation-invalid' }]
+        };
+    }
+    const bindBones = evaluateRigidBonePoses(evaluatedAsset, null, timelineFrame);
+    const anchorResult = resolveWarpAnchorTranslationOffsets({
+        constraints,
+        asset: evaluatedAsset,
+        clip,
+        timelineFrame,
+        partPoseById: partEvaluation.poseByPartId,
+        bonePoseById: base.poseByBoneId,
+        bindBonePoseById: bindBones.poseByBoneId,
+        rigidBindings: definitionValidation.value.rigidBindings || []
+    });
+    if (anchorResult.offsets.size === 0) {
+        return { ...base, anchorDiagnostics: anchorResult.diagnostics };
+    }
+    const evaluated = evaluateRigidBonePoses(
+        evaluatedAsset,
+        clip,
+        timelineFrame,
+        anchorResult.offsets
+    );
+    return {
+        ...evaluated,
+        anchorDiagnostics: anchorResult.diagnostics
+    };
 }
 
 export function sampleRigMotionForBake(clip, timelineFrame) {

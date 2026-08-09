@@ -16,6 +16,10 @@ import { Container, Graphics } from 'pixi.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { coordinateSystem } from '../coordinate-system.js';
+import {
+    mapCameraStagePointToLocal,
+    resolveCameraPositionForAnchoredPoint
+} from './camera-view-anchor.js';
 
 export class CameraSystem {
     constructor() {
@@ -223,12 +227,48 @@ export class CameraSystem {
         };
     }
 
+    _getViewportCenterStagePoint() {
+        const width = Number(globalThis.innerWidth) || Number(this.app?.stage?.width) || this.config.canvas.width;
+        const height = Number(globalThis.innerHeight) || Number(this.app?.stage?.height) || this.config.canvas.height;
+        return { x: width / 2, y: height / 2 };
+    }
+
     _preserveCanvasCenter(updateTransform) {
         const before = this._getCanvasCenterStagePoint();
         updateTransform();
         const after = this._getCanvasCenterStagePoint();
         this.worldContainer.x += before.x - after.x;
         this.worldContainer.y += before.y - after.y;
+    }
+
+    _getWorldTransformSnapshot() {
+        return {
+            position: { x: this.worldContainer.x, y: this.worldContainer.y },
+            pivot: {
+                x: this.worldContainer.pivot?.x || 0,
+                y: this.worldContainer.pivot?.y || 0
+            },
+            scale: {
+                x: this.worldContainer.scale?.x ?? 1,
+                y: this.worldContainer.scale?.y ?? 1
+            },
+            rotation: this.worldContainer.rotation || 0
+        };
+    }
+
+    _preserveViewportCenter(updateTransform) {
+        const viewportCenter = this._getViewportCenterStagePoint();
+        const localAnchor = mapCameraStagePointToLocal(
+            viewportCenter,
+            this._getWorldTransformSnapshot()
+        );
+        updateTransform();
+        const position = resolveCameraPositionForAnchoredPoint(
+            viewportCenter,
+            localAnchor,
+            this._getWorldTransformSnapshot()
+        );
+        this.worldContainer.position.set(position.x, position.y);
     }
 
     _getScaleMagnitude() {
@@ -245,7 +285,7 @@ export class CameraSystem {
     }
 
     _toggleViewFlip(direction) {
-        this._preserveCanvasCenter(() => {
+        this._preserveViewportCenter(() => {
             if (direction === 'horizontal') {
                 this.horizontalFlipped = !this.horizontalFlipped;
             } else if (direction === 'vertical') {
