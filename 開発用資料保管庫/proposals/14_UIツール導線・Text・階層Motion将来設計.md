@@ -1,6 +1,6 @@
 # UIツール導線・Text・階層Motion将来設計
 
-更新日: 2026-07-28
+更新日: 2026-08-11
 
 ## 位置づけ
 
@@ -13,11 +13,13 @@
 
 ### 操作案
 
-- WARP / 将来Meshの`SELECT`入口はLucide `square-dashed`を主iconとする。選択shapeは`M`で`RECTANGLE -> CIRCLE -> POLYLINE`を巡回する。
-- `CIRCLE`は`circle-dashed`、折れ線／多角形範囲は`trending-down`を候補iconとする。Polylineはclickで頂点追加、Enterまたは始点clickで閉じ、Escapeでcancelする。
+- WARPの`SELECT`入口はLucide `square-dashed`を主iconとする。選択shapeは`M`またはactive button再clickで`RECTANGLE -> CIRCLE -> POLYLINE`を巡回する。将来Meshへの転用は別Gateとする。
+- Phase 7jの`POLYLINE`はpointer pathを2px間隔で間引くdrag式lassoとして実装した。clickで頂点追加しEnter / 始点clickで閉じるpolygon方式は、pen / touch一括確認でdrag式が不適合な場合だけPlan Bとして再検討する。
 - 現行WARPでは`M`がBRUSH mode巡回に使われているため、shortcutはactive tool内で解決する。`SELECT`中のMはshape巡回、`BRUSH`中のMはMOVE / INFLATE / PINCH / SMOOTH巡回とし、通常描画やPixel Selectionへ漏らさない。
 - rectangle / circle / polylineはcontrol pointのmulti-selectと一時weightを作るUIであり、WARPのeffect mask、Bind bounds、topology、Raster選択範囲にはしない。
 - 選択shape、選択中point、soft weightはruntime UI stateとし、Project正本へ保存しない。確定gestureだけを既存`deformer.keyframes`のposeへ1 Historyで書く。
+
+Phase 7bはRECT、Phase 7jはCIRCLE / drag式POLYまで既存Warp key / selection move / Historyへ接続した。Phase 7jはSOL review 1=`A`、Owner一括確認待ちでOPEN。soft weight、回転 / 拡縮handle、Mesh vertex選択、effect maskは未実装のまま維持する。
 
 ### icon path候補
 
@@ -68,6 +70,15 @@ Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる
 - sidebar、Layer Panel、Animation Table、QTP、各popup、status、tooltip、formの順に現行px値と文字倍率を監査し、Browser 100%、OS表示倍率、狭幅、pen / touchで比較する。
 - Phase 6gの局所icon調整とは分離し、Phase 6hで固定入力監査、共通token、component単位のBrowser受入を行う。
 
+### Animation Table / CLIP MOTION導線監査（現行Phase 7l）
+
+- 2026-08-11の軽量監査では、Table既定高をLane一行分だけ拡張した。CLIP MOTIONは`RIG`をSetup青、`MOTION / WARP`のactiveを橙とし、WARP内でもGRID / RADIAL / 4×4作成とGRID / FRAME Bind編集だけを明るいSetup青へ統一した。POINT / SELECT / BRUSH、key、Bake等のFrame作業は橙系を維持する。
+- 現行の大分類は`RIG → MOTION → WARP`、対象選択、mode固有設定、key操作の順で左から右に読めるため維持する。青は濃い全面塗りを避け、濃い青文字・borderと淡い青背景を第一候補とする。
+- Phase 7lでは幅依存の偶発的な折返しをやめ、上段を`FPS / FRAMES → SCOPE → LOOP / END / IN / OUT → PREVIEW / onion → Play`、下段を`Timeline zoom / LIB → DURATION → CLIP MOTION → copy / paste / group / delete → close`の明示二段へ限定整理した。
+- wrapperはruntime stateを持たず、既存ID / event / shortcut / History / model正本を維持する。header通常wheelのTimeline zoom、Lane列wheelの上下、Timeline grid wheelの左右、header空白dragも既存listenerを共有する。
+- Browser 1280px相当ではpanel `960×266px`、viewport約202px、狭幅実操作では`460×266px`、row内wrap、controlはみ出し0件。実wheel `80% → 87%`、close / reopen、favicon取得を除くconsole warning / error 0件、全51 verifier、buildを通過した。
+- Setup青 / Frame作業橙とTable高266pxは維持した。coarse pointer、制作Projectでのpopup重なり、pen / touchはOwner一括確認で継続監視し、明示受入前にPhase 7lをcloseしない。
+
 ### Pixel Selection / CAF状態共通化（後続候補）
 
 - 通常Layer、Animation Table表示中のCAF working Layer、CAF選択を維持したTable close後の3状態を同じ固定入力matrixで比較する。Popup visibilityを選択可否、座標変換、保存、Historyの正本にしない。
@@ -91,6 +102,13 @@ Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる
 - API非対応、権限拒否、mobileではbundled font / generic familyとfont file明示importへfallbackする。font file bytesは容量とlicenseの問題があるためProjectへ既定埋め込みしない。
 - local fontの存在を保存の前提にせず、Raster確定結果は再open時にも同じpixelを保つ。編集可能Text Layerでは使用font名とfallback状態を明示する。
 - 参考: [Local Font Access API draft](https://wicg.github.io/local-font-access/)、[Chrome for Developers: Local Font Access](https://developer.chrome.com/docs/capabilities/web-apis/local-fonts)
+
+### Phase 7k実装状態
+
+- 初版はQTPの既存6-tool gridを維持し、その下へone-shot `T / TEXT TO RASTER`と小さい入力panelを追加した。active drawing tool、sidebar常設icon、新しいshortcutにはしていない。
+- generic Sans / Serif / Mono、8〜256px、bold、現在のmain color、日本語 / ASCII / 複数行だけを受け、確定後は文字列 / optionを保存しない。通常Raster pixelが唯一の正本である。
+- viewport中心を既存CameraでProject座標へ戻し、tight raster boundsの新規通常LayerへLayer作成 + pixelを1 Historyで確定する。Animation Tableのworking Layerでは理由付き拒否する。
+- local font access / file import、再編集可能Text、CAF内Text、outline / shadow / vertical textはPhase 7kへ含めない。Owner一括確認前にcloseしない。
 
 ## 4. CAF内部Folderの階層Motion
 
@@ -127,7 +145,8 @@ Plan Bは専用Rig Inspector / treeへ構造編集を分離し、Timelineには�
 2. Phase 6hでBrowser 100%のUI密度を従来80%相当へ段階調整する。
 3. Phase 6h後は`15`のGate 0を独立して行い、CAF内部Part / Folderの所有とAnimation Table子行投影を固定する。
 4. 階層Motionは親子Part transformだけを独立Phase化し、その後に少数BONEのrigid FKへ進む。BONE Skinning / weight / physicsを同時実装しない。
-5. Deformer SELECTとText to Rasterは、Rig系列へ入る前後で優先度を再判定する。
+5. Deformer SELECTはPhase 7b / 7jでRECT / CIRCLE / POLYまで実装しOwner一括確認待ち。
+6. Text to RasterはPhase 7kで通常Rasterへのone-shot確定まで実装しOwner一括確認待ち。次候補はMotion Graph / Motion Path以降から再選定する。
 
 各UI Phaseは次を確認する。
 

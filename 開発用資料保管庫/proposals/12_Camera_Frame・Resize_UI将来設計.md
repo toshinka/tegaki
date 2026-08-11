@@ -1,6 +1,6 @@
 # Camera Frame・Resize直接操作UI・Animation Camera Track将来設計
 
-更新日: 2026-07-15
+更新日: 2026-08-12
 
 ## 位置づけ
 
@@ -28,6 +28,14 @@ Phase 5z8では保存Raster、Project frame geometry、Camera viewを分離で�
 - width / height / scaleのnumber表示には既存の共通wheel number bindingを使う。横drag scrubを加える場合も同じ正規化・History commitへ接続する。
 - tab切替を廃止できるかは実機prototypeで比較する。Canvas / 内容 / 両方の意味が直接操作とcheckだけで明確にならない場合は、現行modeを補助表示として残す。
 - pen操作時のedge hit area、minimum frame size、preview外drag、zoom上限、aspect lock中の基準辺を先に固定する。
+
+### Phase 7nで実装した限定入口
+
+- 「内容」modeだけで、preview中央dragをruntime Project offset、wheelを既存5〜800% scaleへ接続した。
+- fit / align / offsetのtransform、preview delta、wheel clampをpure helperへ分離し、Applyは既存content resize transactionを共有する。
+- offset / pointer sessionは保存せず、align、`キャンバス` / `両方`へのmode離脱、popup reopenで破棄する。
+- Canvas frame、`両方`mode、edge / corner、aspect lock、Animation Camera Trackは未実装のまま維持する。
+- SOL review 1=`A`、全55 verifier、build、Browserのdrag / wheel / Apply / Undo / Redo / close-reopen、console warning / error 0件を通過し、Owner軽量確認待ちでOPEN。
 
 ## Animation Camera Track案
 

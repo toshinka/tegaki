@@ -1,6 +1,6 @@
 # Motion Graph・Easing・Motion Path設計
 
-更新日: 2026-07-16
+更新日: 2026-08-12
 
 ## 結論
 
@@ -81,6 +81,8 @@ Phase 5z6の `EASING CURVE` は完成扱いとし、置換しない。これはT
 - 選択segmentのEasing Editorを開く導線を置く。
 - compositor、export、onionの評価経路は変更しない。
 
+Phase 7m Gate 0=`GO`。Stage Aでは既存`sampleClipTransform()`だけを呼ぶpure view modelを実装し、POSITION / SCALE / ROTATION / OPACITY / BLEND、単位別range、explicit key / implicit boundary / left-key segment、Frame cursor、BLEND mode runをruntime導出した。Stage BではCLIP MOTIONから開くread-only SVG adapterを接続し、5 group、key / boundary marker、cursor、current valueを表示する。再生中のGraph close → reopen fallback、共有tooltip、狭幅時の左右余白とpopup内scrollをruntime UIだけで安定化し、SOL review 2で無効target時のstale Graphを自動close、Clip外cursorを`OUT`表示へ修正した。Graph専用保存stateは追加せず、720°rotationもwrapしない。SOL review 2=`A`、全53 verifier、build、Browser reviewを通過し、次はOwner一括確認とする。編集・Motion Path・保存stateは非対象を維持する。
+
 ### P2: ToonSquid型preset拡張 — 優先度A / 難度 中
 
 - 固定cubicで表現できるSoft / Strong Ease、Sine相当、Circular相当から追加する。
@@ -88,6 +90,8 @@ Phase 5z6の `EASING CURVE` は完成扱いとし、置換しない。これはT
 - selected keyまたは複数選択keyへの適用を1 Timeline Historyにする。
 - Easing copy / pasteはMotion値clipboardと分け、値を上書きしないtagged payloadにする。
 - Bounce / Elastic / Loopを単一cubicとして偽装しない。
+
+Phase 7o Gate 0=`GO`。現行3 EASEをSoft familyとして維持し、Strong / Sine / CircularのIN / OUT / IN-OUTを追加した。preset名を保存せず既存4値へ確定し、現在keyを含むCtrl/Cmd複数選択Motion keyへ1 Timeline Historyで原子的に適用する。terminal / 再生中 / 未知presetは拒否し、LINEAR / HOLDは古いcurveを除去する。Easing copy / paste、Bounce / Elastic / Loop、overshootは非対象。SOL review 1=`A`、全56 verifier、build、Browser実操作を通過し、Owner一括確認待ちでOPENを維持する。
 
 ### P3: 既存keyのGraph編集 — 優先度A / 難度 高
 

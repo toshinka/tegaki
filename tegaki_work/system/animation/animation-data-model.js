@@ -75,6 +75,12 @@ import {
     getAutoShapeRasterMeshStatus,
     rebaseAutoShapeRasterMeshSource
 } from './auto-shape-raster-bone-setup.js';
+import {
+    AUTO_SHAPE_LINE_RIBBON_GENERATOR,
+    createLineRibbonRasterBoneSetup,
+    getLineRibbonRasterMeshStatus,
+    rebaseLineRibbonRasterMeshSource
+} from './line-ribbon-raster-bone-setup.js';
 
 /**
  * ID生成ユーティリティ
@@ -917,12 +923,16 @@ export class TimelineModel {
             : availableBoneIds;
         if (requestedBoneIds.length === 0) return { ok: false, reason: 'mesh-bone-required' };
 
-        const generatorMode = options.generatorMode === 'auto-shape'
-            ? 'auto-shape'
-            : 'alpha-fit-grid';
-        const factory = generatorMode === 'auto-shape'
-            ? createAutoShapeRasterBoneSetup
-            : createAlphaFitRasterBoneSetup;
+        const generatorMode = options.generatorMode === 'auto-shape-line'
+            ? 'auto-shape-line'
+            : options.generatorMode === 'auto-shape'
+                ? 'auto-shape'
+                : 'alpha-fit-grid';
+        const factory = generatorMode === 'auto-shape-line'
+            ? createLineRibbonRasterBoneSetup
+            : generatorMode === 'auto-shape'
+                ? createAutoShapeRasterBoneSetup
+                : createAlphaFitRasterBoneSetup;
         const generated = factory(asset, layer.id, snapshot, {
             ...options,
             boneIds: requestedBoneIds,
@@ -964,6 +974,13 @@ export class TimelineModel {
         });
     }
 
+    generateClipAssetLineRibbonBoneSetup(assetId, layerId, options = {}) {
+        return this.generateClipAssetRasterBoneSetup(assetId, layerId, {
+            ...options,
+            generatorMode: 'auto-shape-line'
+        });
+    }
+
     getClipAssetRasterMeshStatus(assetId, layerId) {
         const asset = this.getClipAsset(assetId);
         const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
@@ -971,9 +988,11 @@ export class TimelineModel {
         const mesh = (asset.meshDefinitions || [])
             .find(candidate => candidate?.targetInternalLayerId === layer.id) || null;
         const snapshot = this.getDrawingSnapshot(layer.drawingSnapshotId);
-        const status = mesh?.generator?.type === AUTO_SHAPE_FILL_GENERATOR
-            ? getAutoShapeRasterMeshStatus(mesh, snapshot)
-            : getAlphaFitRasterMeshStatus(mesh, snapshot);
+        const status = mesh?.generator?.type === AUTO_SHAPE_LINE_RIBBON_GENERATOR
+            ? getLineRibbonRasterMeshStatus(mesh, snapshot)
+            : mesh?.generator?.type === AUTO_SHAPE_FILL_GENERATOR
+                ? getAutoShapeRasterMeshStatus(mesh, snapshot)
+                : getAlphaFitRasterMeshStatus(mesh, snapshot);
         return { ...status, mesh, snapshot };
     }
 
@@ -989,8 +1008,11 @@ export class TimelineModel {
         let changed = false;
         asset.meshDefinitions = asset.meshDefinitions.map(mesh => {
             if (mesh?.targetInternalLayerId !== layer.id) return mesh;
-            const rebased = rebaseAutoShapeRasterMeshSource(
-                rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+            const rebased = rebaseLineRibbonRasterMeshSource(
+                rebaseAutoShapeRasterMeshSource(
+                    rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+                    snapshot
+                ),
                 snapshot
             );
             changed = changed || rebased !== mesh;
@@ -1698,8 +1720,11 @@ export class TimelineModel {
                     const snapshot = layer?.drawingSnapshotId
                         ? this.getDrawingSnapshot(layer.drawingSnapshotId)
                         : null;
-                    return rebaseAutoShapeRasterMeshSource(
-                        rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+                    return rebaseLineRibbonRasterMeshSource(
+                        rebaseAutoShapeRasterMeshSource(
+                            rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+                            snapshot
+                        ),
                         snapshot
                     );
                 });
@@ -2223,8 +2248,11 @@ export class TimelineModel {
                 const snapshot = layer?.drawingSnapshotId
                     ? this.getDrawingSnapshot(layer.drawingSnapshotId)
                     : null;
-                return rebaseAutoShapeRasterMeshSource(
-                    rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+                return rebaseLineRibbonRasterMeshSource(
+                    rebaseAutoShapeRasterMeshSource(
+                        rebaseAlphaFitRasterMeshSource(mesh, snapshot),
+                        snapshot
+                    ),
                     snapshot
                 );
             });

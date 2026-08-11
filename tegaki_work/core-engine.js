@@ -56,6 +56,7 @@ import { emergencyRecoveryStore } from './system/emergency-recovery-store.js';
 import { PixelSelectionSystem } from './system/pixel-selection-system.js';
 import { ImageImporter } from './system/image-importer.js';
 import { PsdImporter } from './system/psd-importer.js';
+import { TextRasterService } from './system/text-rasterizer.js';
 
 // ポップアップのインポート
 import { SettingsPopup } from './ui/settings-popup.js';
@@ -336,7 +337,12 @@ export class CoreEngine {
             emergencyRecoveryStore: this.emergencyRecoveryStore
         });
         this.popupManager.register('quickAccess', QuickAccessPopup, {
-            brushSettings: this.brushSettings
+            brushSettings: this.brushSettings,
+            textRasterService: new TextRasterService({
+                layerSystem: this.layerSystem,
+                cameraSystem: this.cameraSystem,
+                eventBus: this.eventBus
+            })
         });
         this.popupManager.register('resize', ResizePopup, {
             coreEngine: this,

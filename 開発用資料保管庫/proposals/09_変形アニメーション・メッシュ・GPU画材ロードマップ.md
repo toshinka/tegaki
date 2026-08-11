@@ -1,6 +1,6 @@
 # 変形アニメーション・メッシュ・GPU画材ロードマップ
 
-更新日: 2026-08-10
+更新日: 2026-08-11
 
 ## 本書の役割
 
@@ -41,6 +41,8 @@
 
 `14_UIツール導線・Text・階層Motion将来設計.md`へ集約する。selection shapeはruntime UIであり、WARP maskやMesh topologyにはしない。
 
+Phase 7jではPhase 7bのRECTをCIRCLE / drag式POLY lassoへ拡張し、shape / path / indexをruntime UIだけに維持した。形状別分岐はscreen marquee / hitに限定し、既存Warp key / selection move / Historyを共有する。SELECT中`M` / active button再clickのshape巡回とBRUSH中`M`維持をSOL review 1=`A`で確認し、Owner一括確認待ちでOPENを維持する。soft weight、Mesh vertex選択、mask転用は未実装。
+
 ### 任意Triangle Mesh / BONE / Perform
 
 `15_キャラクターRig・Mesh・Perform統合ロードマップ.md`を唯一の統合正本とする。
@@ -66,7 +68,7 @@ WARPの枠操作と内部Pose編集を分ける。最初に現行GRID回転がPr
 - 旧fixed 4×4 / rect Control Meshはそのまま読み、既存ProjectをCircleへ遡及変換しない。RECT / RADIAL間の変更はTopology変更として既存keyの破棄preview、confirm、Undoを必須にする。
 - Auto Shape Meshとcontent-fit WARPは同じ輪郭解析を再利用できるが、Skin MeshとWARP Poseを暗黙共有しない。まずgenerator出力を共通pure dataとして比較し、所有、stable ID、再生成、二重変形を説明できた場合だけstatic topology参照共有をGate化する。
 
-推奨Phase順は、`回転不変性の固定fixture → FRAME / CORNER / EDGE操作 → RADIAL topology → Auto Shape foundation`。一度にschema、UI、rasterizerを変更しない。Phase 7e / 7f / 7gはOwner受入でcloseした。Phase 7hもalpha island / outer / hole、interior-support FILL、topology検査付き輪郭削減、透明側guard、256 vertex budgetを既存Mesh / SkinとSetup青RIGの`AUTO SHAPE`へ限定接続し、SOL review 1〜5=`A`とOwner軽量実機受入でcloseした。現行Phase 7iはLINE / Ribbonのpure centerline、`left / center / right`三列topology、2〜3 direct-chain BONEのlongitudinal weight / LBS proofをStage A〜C、SOL review 1〜3=`A`で固定した。次は既存Model / Setup青RIGへの明示`AUTO LINE`限定adapterで、WARP PoseとBone Poseは統合しない。
+推奨Phase順は、`回転不変性の固定fixture → FRAME / CORNER / EDGE操作 → RADIAL topology → Auto Shape foundation`。一度にschema、UI、rasterizerを変更しない。Phase 7e / 7f / 7gはOwner受入でcloseした。Phase 7hもalpha island / outer / hole、interior-support FILL、topology検査付き輪郭削減、透明側guard、256 vertex budgetを既存Mesh / SkinとSetup青RIGの`AUTO SHAPE`へ限定接続し、SOL review 1〜5=`A`とOwner軽量実機受入でcloseした。Phase 7iはLINE / Ribbonのpure centerline、`left / center / right`三列topology、2〜3 direct-chain BONEのlongitudinal weight / LBS proofをStage A〜Cで固定し、Stage Dで既存Model / Setup青RIGへ明示`AUTO LINE`を限定接続してSOL review 1〜4=`A`を通過した。外部UI reviewの限定採用と100頂点超の一時preview Mesh batch固定を含め、全49 verifier、build、Browserの切替 / Undo / Redo / 拒否非mutation / console warning・error 0件を確認した。WARP PoseとBone Poseは統合せず、Owner一括確認待ちでOPENを維持する。独立するPhase 7jはruntime Deformer SELECT shapeだけを拡張し、Mesh / Skin正本へ接続していない。
 
 ## 追加候補とPlan B
 

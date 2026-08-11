@@ -1,8 +1,8 @@
 # Phase 7i — Auto Shape LINE / Ribbon foundation
 
-更新日: 2026-08-10
+更新日: 2026-08-11
 担当: SOL / XHigh（Gate 0・pure geometry・review）、LUNA / MAX（GO後の限定Model / UI adapter候補）
-状態: OPEN（Stage A〜C完了、SOL review 1〜3=`A`、Stage D LUNA限定adapter準備済み）
+状態: OPEN（Stage A〜D完了、SOL review 1〜4=`A`、Owner一括確認待ち）
 
 ## 1. Goal
 
@@ -145,12 +145,21 @@ SOL review 3=`A`。Stage Cはpure factory / evaluator proofまでで、`animatio
 - pure閾値の調整、manual topology / weight、weight brush、Mesh専用tab、WARP共有、orientation補正、別LBS evaluator。
 - UI都合でLINE失敗をFILL成功として扱うこと。
 
-Stage DはLUNA / MAX向け限定adapter。実装後のaccept / close reviewはSOL / XHighで行う。
+Stage DはLUNA / MAX向け限定adapter。`auto-shape-line` dispatch、LINE status / duplicate rebase、Setup青RIGの`AUTO LINE`、理由付き失敗toast、一操作一Historyを実装し、関連Model verifier・全49 verifier・node check・build・Browser DOM / console確認を通過した。実装後のaccept / close reviewはSOL / XHighで行う。
+
+### Stage D結果 / SOL review 4
+
+- SOL review 4=`A`。Modelは既存Mesh / Skin collectionだけを明示`GRID / SHAPE / LINE` dispatchで置換し、失敗時非mutation、render-boundary rollback、History 1件、CURRENT / STALE、duplicate rebase、Project round-tripを維持する。新規schema、Pose正本、WARP共有はない。
+- Claude外部レビューは実コードへ照合した。AUTO系controlsの安定group化、Setup青semantic、mode / status / message辞書化、BONE select optionの不要な再構築抑制を採用した。全`querySelector` cache化、同名BONEのpath表示、Rig tree文字サイズ変更は計測根拠または別UX契約が不足するため後続へ送った。
+- review中に、LINE専用失敗messageをGRID / SHAPEへ誤適用し得るscope漏れを修正した。mode別辞書から理由を解決し、LINE拒否時も既存MeshとHistoryを変更しない。
+- 100頂点超の一時preview MeshがPixiJS共有`GlMeshAdaptor`へ入り、破棄済みTextureSourceを共有BindGroupが保持する寿命競合をBrowserで検出した。同期bake専用Meshだけを頂点数にかかわらずbatch経路へ固定し、既存の二描画周期遅延破棄を維持した。保存 / CPU / export経路は変更していない。
+- BrowserではSetup青の3 generatorが一群で折返されないこと、`GRID 8×4 → SHAPE FILL`、生成のUndo / Redo、LINE理由付き拒否時の既存SHAPE / GRIDとHistory非変更を確認した。修正後のSHAPE / GRID再生成、BONE追加、Undo / Redo後はconsole warning / error 0件。Browser用の単純な角端strokeは幅変化GateでLINEを設計どおり拒否したため、成功LINEの0° / 45° / 90°、random seek、STALE / rebase、GRID / SHAPE / LINE置換はpure / Model verifierで固定し、Owner受入では適合する細長いalpha fixtureでpreview / playback / onion / Table再開を確認する。
+- 変更JS / mjsの`node --check`、全49 `verify-*.mjs`、`npm.cmd run build`を再通過し、`dist/` / `node_modules/.vite/`の列挙済み生成差分だけを清掃した。PhaseはOwnerの明示受入前にcloseしない。
 
 ### Web外部AI向けhandoff
 
-- `tegaki_work/GitHubURL.txt`を2026-08-10時点へ更新し、現行Phase、Stage D境界、Phase 6v〜7h経緯、Phase 7i pure実装 / verifier / 接続先をRaw URLで辿れるようにした。
-- 全137 URLをローカル正本へ照合し、欠損0、重複0を確認した。URLは`main`を指すため、Webから新規Phase 7i fileを読むにはOwnerのcommit / push後であることを明記した。
+- `tegaki_work/GitHubURL.txt`を2026-08-11時点へ更新し、Phase 7i / 7j、Stage D境界、Phase 6v〜7h経緯、Phase 7i pure実装 / Model verifier / 接続先 / 外部レビュー、Phase 7j SELECT helper / verifierをRaw URLで辿れるようにした。
+- 全142 URLをローカル正本へ照合し、欠損0、重複0を確認した。URLは`main`を指すため、Webから新規Phase fileを読むにはOwnerのcommit / push後であることを明記した。
 - `GitHubURL.txt`はnavigationであり、判断が衝突する場合は`TEGAKI.md`、`PROGRESS.md`、本書、実コードを優先する。
 
 ## 8. 非対象
@@ -182,6 +191,10 @@ node tegaki_work/build/verify-raster-line-ribbon-topology.mjs
 node --check tegaki_work/system/animation/line-ribbon-raster-bone-setup.js
 node --check tegaki_work/build/verify-line-ribbon-raster-bone-setup.mjs
 node tegaki_work/build/verify-line-ribbon-raster-bone-setup.mjs
+node --check tegaki_work/system/animation/animation-data-model.js
+node --check tegaki_work/ui/animation-table-popup.js
+node --check tegaki_work/build/verify-line-ribbon-raster-bone-model.mjs
+node tegaki_work/build/verify-line-ribbon-raster-bone-model.mjs
 Set-Location tegaki_work
 npm.cmd run build
 ```

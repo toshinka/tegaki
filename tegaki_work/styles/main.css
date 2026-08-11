@@ -49,7 +49,7 @@
     --ui-frame-control-size: 20px;
     --ui-frame-play-size: 18px;
     --ui-frame-icon-size: 11px;
-    --ui-anim-panel-height: 240px;
+    --ui-anim-panel-height: 266px;
     --ui-anim-track-width: 112px;
     --ui-anim-timeline-header-height: 20px;
     --ui-anim-lane-row-height: 26px;
@@ -2462,6 +2462,15 @@ canvas {
     background-position: 0 0, 0 5px, 5px -5px, -5px 0;
 }
 
+.resize-preview.is-direct .resize-preview-frame {
+    cursor: grab;
+    touch-action: none;
+}
+
+.resize-preview.is-direct .resize-preview-frame.is-dragging {
+    cursor: grabbing;
+}
+
 .resize-preview-image {
     position: absolute;
     object-fit: fill;
@@ -4274,6 +4283,7 @@ canvas {
 
 .anim-rig-mesh-bone-controls {
     display: inline-flex;
+    flex: 1 1 100%;
     align-items: center;
     flex-wrap: wrap;
     gap: 4px;
@@ -4281,6 +4291,17 @@ canvas {
 
 .anim-rig-mesh-bone-controls[hidden] {
     display: none;
+}
+
+.anim-rig-mesh-bone-source,
+.anim-rig-mesh-generate-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.anim-rig-mesh-generate-group {
+    flex-wrap: nowrap;
 }
 
 .anim-rig-mesh-bone-controls label {
@@ -4325,6 +4346,24 @@ canvas {
     color: var(--futaba-light-maroon);
     border-color: var(--futaba-light-maroon);
     background: color-mix(in srgb, var(--futaba-light-maroon) 10%, var(--futaba-background));
+}
+
+.anim-rig-mesh-generate-btn:not(:disabled) {
+    color: var(--deformer-bind-point);
+    border-color: var(--deformer-bind-line);
+    background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-cream));
+}
+
+.anim-rig-mesh-generate-btn:not(:disabled):hover,
+.anim-rig-mesh-generate-btn:not(:disabled):focus-visible {
+    border-color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 20%, var(--futaba-cream));
+}
+
+.anim-rig-mesh-generate-btn:not(:disabled):active {
+    color: var(--futaba-cream);
+    border-color: var(--deformer-bind-point);
+    background: var(--deformer-bind-point);
 }
 
 .anim-rig-parent-field select {
@@ -4711,6 +4750,31 @@ canvas {
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 48%, transparent);
 }
 
+.anim-motion-graph-btn {
+    width: 28px;
+    min-width: 28px;
+    height: 24px;
+    padding: 3px;
+}
+
+.anim-motion-graph-btn svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.anim-motion-graph-btn.active,
+.anim-motion-graph-btn.active:hover {
+    color: var(--futaba-background);
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 48%, transparent);
+}
+
 .anim-motion-curve-window {
     position: fixed;
     left: calc(50% - 126px);
@@ -4793,6 +4857,148 @@ canvas {
 .anim-motion-curve-handle.is-disabled {
     fill: var(--futaba-light-medium);
     cursor: not-allowed;
+}
+
+.anim-motion-graph-window {
+    position: fixed;
+    left: max(8px, calc(50% - 270px));
+    top: 24%;
+    z-index: 2650;
+    width: min(540px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+    max-height: calc(76vh - 8px);
+    padding: 0 8px 8px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    cursor: grab;
+    touch-action: none;
+}
+
+.anim-motion-graph-header {
+    margin: 0 -8px 5px;
+    padding-right: 26px;
+}
+
+.anim-motion-graph-status {
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+#anim-motion-graph-close-btn {
+    top: 5px;
+    right: 7px;
+}
+
+.anim-motion-graph-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 5px;
+}
+
+.anim-motion-graph-group-btn {
+    min-height: 22px;
+    padding: 2px 8px;
+    border: 1px solid var(--futaba-light-maroon);
+    border-radius: 5px;
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-background) 88%, var(--futaba-light) 12%);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+
+.anim-motion-graph-group-btn:hover,
+.anim-motion-graph-group-btn:focus-visible {
+    border-color: var(--active-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 20%, transparent);
+}
+
+.anim-motion-graph-group-btn.active,
+.anim-motion-graph-group-btn.active:hover {
+    color: var(--futaba-background);
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 28%, transparent);
+}
+
+.anim-motion-graph-plot {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 210px;
+    overflow: visible;
+    background: color-mix(in srgb, var(--futaba-background) 86%, var(--futaba-light) 14%);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    touch-action: none;
+}
+
+.anim-motion-graph-grid-line {
+    stroke: var(--futaba-light-medium);
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+}
+
+.anim-motion-graph-axis-label {
+    fill: var(--text-secondary);
+    font-size: 9px;
+}
+
+.anim-motion-graph-path {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.anim-motion-graph-path.is-primary {
+    stroke: var(--active-border);
+}
+
+.anim-motion-graph-path.is-secondary {
+    stroke: var(--futaba-maroon);
+    stroke-dasharray: 5 3;
+}
+
+.anim-motion-graph-key {
+    fill: var(--active-border);
+    stroke: var(--futaba-background);
+    stroke-width: 1.5;
+}
+
+.anim-motion-graph-boundary {
+    fill: var(--futaba-background);
+    stroke: var(--futaba-light-maroon);
+    stroke-width: 1.5;
+}
+
+.anim-motion-graph-cursor {
+    stroke: var(--futaba-light-maroon);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+}
+
+.anim-motion-graph-legend,
+.anim-motion-graph-values,
+.anim-motion-graph-mode {
+    display: flex;
+    gap: 7px;
+    min-height: 13px;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 600;
+}
+
+.anim-motion-graph-legend-item.is-primary {
+    color: var(--active-border);
+}
+
+.anim-motion-graph-legend-item.is-secondary {
+    color: var(--futaba-maroon);
 }
 
 .animation-table-panel .anim-track-item.anim-part-track-item,
@@ -5762,8 +5968,8 @@ canvas {
 }
 
 .anim-control-mesh-create input:focus {
-    border-color: var(--futaba-orange);
-    outline: 2px solid color-mix(in srgb, var(--futaba-orange) 36%, transparent);
+    border-color: var(--deformer-bind-point);
+    outline: 2px solid color-mix(in srgb, var(--deformer-bind-line) 36%, transparent);
 }
 
 .anim-control-mesh-create-times {
@@ -5794,19 +6000,27 @@ canvas {
     white-space: nowrap;
 }
 
-.anim-control-mesh-radial-btn:not(:disabled) {
+.anim-control-mesh-create-btn:not(:disabled),
+.anim-control-mesh-radial-btn:not(:disabled),
+.anim-control-mesh-legacy-btn:not(:disabled) {
     color: var(--deformer-bind-point);
     border-color: var(--deformer-bind-line);
     background: color-mix(in srgb, var(--deformer-bind-line) 14%, var(--futaba-cream));
 }
 
-.anim-control-mesh-create-btn:not(:disabled) {
-    border-color: var(--futaba-orange);
-    background: color-mix(in srgb, var(--futaba-orange) 14%, var(--futaba-cream));
+.anim-control-mesh-create-btn:not(:disabled):hover,
+.anim-control-mesh-create-btn:not(:disabled):focus-visible,
+.anim-control-mesh-radial-btn:not(:disabled):hover,
+.anim-control-mesh-radial-btn:not(:disabled):focus-visible,
+.anim-control-mesh-legacy-btn:not(:disabled):hover,
+.anim-control-mesh-legacy-btn:not(:disabled):focus-visible {
+    border-color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 22%, var(--futaba-cream));
 }
 
 .anim-control-mesh-create-btn:disabled,
-.anim-control-mesh-radial-btn:disabled {
+.anim-control-mesh-radial-btn:disabled,
+.anim-control-mesh-legacy-btn:disabled {
     color: var(--text-secondary);
     border-color: var(--futaba-light-medium);
     background: var(--futaba-background);
@@ -5838,9 +6052,9 @@ canvas {
 }
 
 .anim-warp-tool-btn.active {
-    color: var(--futaba-background);
-    border-color: var(--futaba-maroon);
-    background: var(--futaba-maroon);
+    color: var(--futaba-maroon);
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 26%, var(--futaba-background));
 }
 
 #anim-warp-grid-tool-btn {
@@ -5856,9 +6070,9 @@ canvas {
 }
 
 #anim-warp-grid-tool-btn.active {
-    color: var(--futaba-cream);
+    color: var(--deformer-bind-point);
     border-color: var(--deformer-bind-point);
-    background: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 26%, var(--futaba-background));
 }
 
 #anim-warp-grid-tool-btn:disabled {
@@ -5899,9 +6113,9 @@ canvas {
 }
 
 .anim-warp-bind-frame-btn.active {
-    color: var(--futaba-cream);
+    color: var(--deformer-bind-point);
     border-color: var(--deformer-bind-point);
-    background: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 26%, var(--futaba-background));
 }
 
 .anim-warp-bind-frame-btn:disabled {
@@ -5947,6 +6161,16 @@ canvas {
     stroke-width: 1.5;
     stroke-linecap: round;
     stroke-linejoin: round;
+}
+
+.anim-warp-select-shape {
+    min-width: 38px;
+    padding-left: 3px;
+    border-left: 1px solid currentColor;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-align: center;
 }
 
 .anim-warp-brush-control {
@@ -6117,4 +6341,170 @@ canvas {
     .layer-transform-panel .flip-section { gap: 4px; }
     .layer-transform-panel .flip-button { height: 24px; padding: 4px 8px; font-size: 10px; }
     .layer-transform-panel .flip-button--icon { padding: 3px; }
+}
+/* Phase 7k: QTP Text to Raster one-shot editor */
+.qa-text-raster-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: var(--ui-qa-inner-width);
+    min-height: 22px;
+    margin: 3px auto 0;
+    padding: 2px 6px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 6px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+}
+
+.qa-text-raster-toggle:hover,
+.qa-text-raster-toggle.active {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-cream);
+}
+
+.qa-text-raster-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    font-size: 10px;
+    line-height: 1;
+}
+
+.qa-text-raster-panel {
+    width: var(--ui-qa-inner-width);
+    margin: 3px auto 0;
+    padding: 5px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 7px;
+    background: var(--futaba-cream);
+    color: var(--futaba-maroon);
+    box-sizing: border-box;
+}
+
+.qa-text-raster-panel[hidden] {
+    display: none;
+}
+
+.qa-text-raster-content {
+    display: block;
+    width: 100%;
+    min-height: 46px;
+    resize: vertical;
+    box-sizing: border-box;
+    padding: 4px 5px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font: 10px/1.35 sans-serif;
+    user-select: text;
+    touch-action: pan-y;
+}
+
+.qa-text-raster-options {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 52px auto 18px;
+    align-items: end;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.qa-text-raster-field {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    color: var(--futaba-maroon);
+    font-size: 7px;
+    font-weight: 700;
+}
+
+.qa-text-raster-field select,
+.qa-text-raster-field input {
+    width: 100%;
+    min-width: 0;
+    height: 20px;
+    box-sizing: border-box;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font-size: 9px;
+}
+
+.qa-text-raster-bold {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 20px;
+    color: var(--futaba-maroon);
+    font-size: 7px;
+    font-weight: 700;
+}
+
+.qa-text-raster-bold input {
+    accent-color: var(--futaba-maroon);
+}
+
+.qa-text-raster-color {
+    width: 16px;
+    height: 16px;
+    margin-bottom: 2px;
+    border: 1px solid var(--futaba-maroon);
+    border-radius: 50%;
+    box-sizing: border-box;
+}
+
+.qa-text-raster-status {
+    min-height: 10px;
+    margin-top: 2px;
+    color: var(--futaba-light-maroon);
+    font-size: 7px;
+    line-height: 1.25;
+}
+
+.qa-text-raster-status.is-error {
+    color: var(--futaba-maroon);
+    font-weight: 700;
+}
+
+.qa-text-raster-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+}
+
+.qa-text-raster-actions button {
+    min-height: 21px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font-size: 8px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.qa-text-raster-actions button:last-child {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+    color: var(--futaba-background);
+}
+
+.qa-text-raster-content:focus-visible,
+.qa-text-raster-field select:focus-visible,
+.qa-text-raster-field input:focus-visible,
+.qa-text-raster-actions button:focus-visible,
+.qa-text-raster-toggle:focus-visible {
+    outline: 2px solid var(--futaba-medium);
+    outline-offset: 1px;
 }

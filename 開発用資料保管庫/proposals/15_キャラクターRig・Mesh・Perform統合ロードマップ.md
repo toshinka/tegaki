@@ -1,6 +1,6 @@
 # キャラクターRig・Mesh・Perform統合ロードマップ
 
-更新日: 2026-08-09
+更新日: 2026-08-11
 区分: 未実装統合proposal / Phase化前の判断正本
 
 ## 0. 位置づけ
@@ -275,7 +275,9 @@ Stretch候補:
 
 Phase 7gのWARP RADIALはOwner受入でcloseした。Phase 7hはAuto ShapeのSOL Gate 0として、Stage AでRaster alphaを4-connected island、outer / hole loop、Project座標へ変換し、Stage Bでcontour-only Earcut、contour + interior support、rect Gridを比較した。Stage Cはtopology検査付き輪郭削減、outer / hole透明側guard、boundary / guard / interiorの256 vertex budget、Stage Dは既存Mesh / Skin shape、最大2 distance weight、generator metadata、STALEを返すpure factoryを固定した。Stage Eは既存Model setter / validator / render boundary rollbackとSetup青RIGへ`AUTO SHAPE`を限定接続し、`AUTO GRID`共存、CURRENT / STALE、明示再生成、一操作一History、CAF / Raster複製、Project round-trip、Mesh Bone Motionを通過した。SOL review 1〜5=`A`とOwner軽量実機受入でcloseした。WARP Pose / Skin Bone Pose、Mesh topology / weightを共有しない。
 
-現行Phase 7iはLINE / Ribbonを選定し、Stage A〜CとSOL review 1〜3=`A`で、一つのholeなしalpha islandからdeterministic open centerline、均等station、cap、alpha境界rayによる`left / center / right`三列topologyをpure生成した。2〜3 direct-chain BONE midpointをcenterline長手距離へ射影し、同一station三列へ同じ最大2 linear influenceを与える。既存inverse-bind LBSで0° / 45° / 90°、幅ratio、triangle / outline、random seek、Project shape、CURRENT / STALE、複製source rebaseを固定した。次はLUNA / MAX限定で既存Model / Setup青RIGへ明示`AUTO LINE`を接続し、SOLが受入reviewする。LINE / FILLは自動分類せず、WARP / Skin Poseを共有しない。
+現行Phase 7iはLINE / Ribbonを選定し、Stage A〜DとSOL review 1〜4=`A`で、一つのholeなしalpha islandからdeterministic open centerline、均等station、cap、alpha境界rayによる`left / center / right`三列topologyをpure生成し、既存Model / Setup青RIGへ明示`AUTO LINE`だけを限定接続した。2〜3 direct-chain BONE midpointをcenterline長手距離へ射影し、同一station三列へ同じ最大2 linear influenceを与える。既存inverse-bind LBSで0° / 45° / 90°、幅ratio、triangle / outline、random seek、Project shape、CURRENT / STALE、複製source rebaseを固定した。外部Claude案から安定group、Setup青、表示辞書、option再構築抑制を採用し、mode別message scopeと100頂点超の一時preview MeshのPixiJS resource寿命競合を限定修正した。全49 verifier、build、BrowserのGRID / SHAPE切替、Undo / Redo、LINE拒否非mutation、console warning / error 0件を通過した。LINE / FILLは自動分類せず、WARP / Skin Poseを共有しない。次はOwnerが成功LINEを軽量実機受入し、明示受入後にcloseする。
+
+並行Phase 7jのRECT / CIRCLE / POLYはWARP control pointのruntime selectionだけを拡張する。Mesh vertex、SkinWeight、ControlHandleの選択UIへ暗黙転用せず、本書のmanual Mesh編集とは別Gateを維持する。Phase 7i / 7jともOwnerの一括確認前にcloseしない。
 
 ### 第一候補
 

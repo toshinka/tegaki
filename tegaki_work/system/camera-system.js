@@ -719,6 +719,11 @@ export class CameraSystem {
         return this.screenToLayer(screenX, screenY);
     }
 
+    getViewportCenterCanvasPoint() {
+        const viewportCenter = this._getViewportCenterStagePoint();
+        return this.screenToCanvas(viewportCenter.x, viewportCenter.y);
+    }
+
     setZoom(level) {
         const clampedLevel = Math.max(this.config.camera.minScale, Math.min(this.config.camera.maxScale, level));
         this._preserveCanvasCenter(() => this._applyScaleMagnitude(clampedLevel));
