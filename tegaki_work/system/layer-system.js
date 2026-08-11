@@ -4390,6 +4390,103 @@ export class LayerSystem {
         return { layer, index: layers.length - 1 };
     }
 
+    createRasterLayerFromSnapshot(snapshot, options = {}) {
+        if (!snapshot || !this.currentFrameContainer || !this.app?.renderer) return null;
+
+        const width = Math.max(1, Math.round(Number(snapshot.width) || 1));
+        const height = Math.max(1, Math.round(Number(snapshot.height) || 1));
+        const pixels = new Uint8ClampedArray(snapshot.pixels || []);
+        const maxTextureSize = this._getMaxRenderTextureSize();
+        if (
+            pixels.length !== width * height * 4
+            || width > maxTextureSize
+            || height > maxTextureSize
+            || !this._isRasterBakeSizeAllowed({ width, height })
+        ) {
+            return null;
+        }
+
+        const previousActiveLayerId = this.getActiveLayer()?.layerData?.id || null;
+        const wasApplying = historyManager?.isApplying === true;
+        let created = null;
+        try {
+            if (historyManager) historyManager.isApplying = true;
+            created = this.createLayer(options.name || this._generateNextLayerName(), false);
+        } finally {
+            if (historyManager) historyManager.isApplying = wasApplying;
+        }
+        const layer = created?.layer;
+        if (!layer?.layerData) return null;
+
+        const committedSnapshot = {
+            layerId: layer.layerData.id,
+            width,
+            height,
+            pixels,
+            rasterBounds: snapshot.rasterBounds || { x: 0, y: 0, width, height },
+            paths: structuredClone(snapshot.paths || []),
+            pathsData: structuredClone(snapshot.pathsData || [])
+        };
+        if (!this.restoreLayerRasterSnapshot(committedSnapshot)) {
+            this.currentFrameContainer.removeChild(layer);
+            layer.layerData.destroyMask?.();
+            layer.layerData.renderTexture?.destroy?.(true);
+            this.transform?.clearTransform?.(layer.layerData.id);
+            const previousIndex = this.getLayers().findIndex(candidate => candidate.layerData?.id === previousActiveLayerId);
+            if (previousIndex >= 0) this.setActiveLayer(previousIndex);
+            return null;
+        }
+
+        const finalIndex = this.getLayerIndex(layer);
+        this.setActiveLayer(finalIndex);
+        this.requestThumbnailUpdate(finalIndex, true);
+
+        if (historyManager && !historyManager.isApplying) {
+            const restorePreviousActive = () => {
+                const previousIndex = this.getLayers().findIndex(candidate => candidate.layerData?.id === previousActiveLayerId);
+                if (previousIndex >= 0) {
+                    this.setActiveLayer(previousIndex);
+                } else {
+                    const remaining = this.getLayers();
+                    this.activeLayerIndex = Math.min(this.activeLayerIndex, remaining.length - 1);
+                }
+            };
+            historyManager.record({
+                name: options.historyName || 'raster-layer-create',
+                do: () => {
+                    if (!layer.parent) {
+                        this.currentFrameContainer.addChildAt(
+                            layer,
+                            Math.min(finalIndex, this.currentFrameContainer.children.length)
+                        );
+                    }
+                    if (!this.restoreLayerRasterSnapshot(committedSnapshot)) {
+                        throw new Error('Failed to restore created Raster Layer');
+                    }
+                    this.setActiveLayer(this.getLayerIndex(layer));
+                    this.requestThumbnailUpdate(this.getLayerIndex(layer), true);
+                    this._emitPanelUpdateRequest();
+                    this._emitStatusUpdateRequest();
+                },
+                undo: () => {
+                    if (layer.parent) this.currentFrameContainer.removeChild(layer);
+                    restorePreviousActive();
+                    this._emitPanelUpdateRequest();
+                    this._emitStatusUpdateRequest();
+                },
+                byteSize: pixels.byteLength,
+                meta: {
+                    type: 'raster-layer-create',
+                    layerId: layer.layerData.id,
+                    layerIndex: finalIndex,
+                    source: options.source || 'unknown'
+                }
+            });
+        }
+
+        return { layer, index: finalIndex };
+    }
+
     setActiveLayer(index, options = {}) {
         const layers = this.getLayers();
         if (index >= 0 && index < layers.length) {

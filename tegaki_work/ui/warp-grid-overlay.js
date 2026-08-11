@@ -106,7 +106,7 @@ export class WarpGridOverlay {
         this.element.appendChild(weightField);
         this._brushWeightField = weightField;
 
-        const selectionMarquee = document.createElementNS(svgNamespace, 'rect');
+        const selectionMarquee = document.createElementNS(svgNamespace, 'path');
         selectionMarquee.classList.add('warp-grid-overlay-selection-marquee');
         selectionMarquee.setAttribute('hidden', '');
         this.element.appendChild(selectionMarquee);
@@ -243,18 +243,31 @@ export class WarpGridOverlay {
         });
         if (this._selectionMarquee) {
             const marquee = this.options.getSelectionMarquee?.();
-            const visible = !!marquee
+            let path = '';
+            if (marquee?.type === 'circle'
+                && Number.isFinite(marquee.cx)
+                && Number.isFinite(marquee.cy)
+                && Number.isFinite(marquee.radius)) {
+                const left = marquee.cx - marquee.radius;
+                const right = marquee.cx + marquee.radius;
+                path = `M ${left} ${marquee.cy} A ${marquee.radius} ${marquee.radius} 0 1 0 ${right} ${marquee.cy} A ${marquee.radius} ${marquee.radius} 0 1 0 ${left} ${marquee.cy}`;
+            } else if (marquee?.type === 'polyline' && Array.isArray(marquee.points)) {
+                const points = marquee.points.filter(point => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+                if (points.length >= 2) {
+                    path = `M ${points.map(point => `${point.x} ${point.y}`).join(' L ')} Z`;
+                }
+            } else if (marquee
                 && Number.isFinite(marquee.x)
                 && Number.isFinite(marquee.y)
                 && Number.isFinite(marquee.width)
-                && Number.isFinite(marquee.height);
-            this._selectionMarquee.toggleAttribute('hidden', !visible);
-            if (visible) {
-                this._selectionMarquee.setAttribute('x', String(marquee.x));
-                this._selectionMarquee.setAttribute('y', String(marquee.y));
-                this._selectionMarquee.setAttribute('width', String(marquee.width));
-                this._selectionMarquee.setAttribute('height', String(marquee.height));
+                && Number.isFinite(marquee.height)) {
+                const right = marquee.x + marquee.width;
+                const bottom = marquee.y + marquee.height;
+                path = `M ${marquee.x} ${marquee.y} H ${right} V ${bottom} H ${marquee.x} Z`;
             }
+            const visible = path.length > 0;
+            this._selectionMarquee.toggleAttribute('hidden', !visible);
+            if (visible) this._selectionMarquee.setAttribute('d', path);
         }
         if (this._frameHandles.length === 4
             && this._edgeHandles.length === 4

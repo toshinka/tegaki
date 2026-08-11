@@ -1,21 +1,27 @@
 # GitHubURL — Tegaki プロジェクト読解用 Raw URL ナビゲーション
 
-更新日: 2026-08-10
+更新日: 2026-08-12
 
 > **外部AI (Web版Claude / ChatGPT等) 向けガイド**
 > 本ファイルはローカルファイルシステムにアクセスできない外部AIが、GitHubから主要ファイルを直接読み込んで Tegaki プロジェクトを理解・調査するためのURL集です。
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
 > URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
 
-## 0. 現在地（Phase 7i / LUNA引き継ぎ時点）
+## 0. 現在地（Phase 7i〜7o・SOL review=`A`、Owner一括確認待ち）
 
 - Phase 7h Auto Shape FILLはOwner受入でclose済み。
-- 現行Phase 7i Auto Shape LINE / RibbonはStage A〜C、SOL review 1〜3=`A`まで完了。
+- 現行Phase 7i Auto Shape LINE / RibbonはStage A〜D、SOL review 1〜4=`A`まで完了。
 - pure実装は、単一holeなしalpha islandのopen centerline、`left / center / right`三列Ribbon、2〜3 direct-chain BONEのlongitudinal weight、既存inverse-bind LBSによる0° / 45° / 90°品質Gateまで。
-- 保存Mesh / Skinの新schema、別Pose正本、WARP共有は追加していない。Model / History / UI / rendererへのLINE接続もまだ未実装。
-- 次のStage DはLUNA / MAX限定。既存Modelの明示`auto-shape-line` dispatch、status / duplicate rebase、Setup青RIGの`AUTO LINE`、一操作一History、既存rollback、Browser確認だけを実装する。
+- 保存Mesh / Skinの新schema、別Pose正本、WARP共有は追加していない。既存Model / History / UI adapterへLINEを限定接続した。
+- Stage DはLUNA / MAX限定実装後にSOL受入review 4=`A`。既存Modelの明示`auto-shape-line` dispatch、status / duplicate rebase、Setup青RIGの`AUTO LINE`、理由付き失敗toast、一操作一History、既存rollbackを確認済み。外部Claude案から安定group / Setup青 / 表示辞書 / option再構築抑制を採用し、mode別message scopeと一時preview MeshのPixiJS resource寿命競合を限定修正した。全49 verifier・node check・build・BrowserのGRID / SHAPE切替、Undo / Redo、拒否非mutation、console warning / error 0件を通過した。
 - LINE / FILLを自動分類しない。失敗時にFILLへ自動fallbackしない。pure Stage A〜Cの閾値、manual topology / weight、WARP、別LBS evaluatorへ広げない。
-- Stage D後のaccept / closeはSOL / XHighで行う。
+- SOL accept reviewは完了。Ownerが適合する細長いalpha fixtureで成功LINEのpreview / playback / onion / Table再開を軽量確認し、明示受入前にPhaseをcloseしない。
+- Phase 7iをOPEN維持したまま、独立するPhase 7j Deformer SELECT Stage 2を開始した。RECT互換にCIRCLE / drag式POLY lassoを追加し、shape / pointer path / selected indexはruntime UIだけに限定する。SELECT中`M` / active button再clickのshape巡回、BRUSH中`M`維持、既存Warp key / selection move / 1 gesture 1 History共有をStage A / Bで実装し、SOL review 1=`A`、全49 verifier、build、4×4 WARPの三形状Browser実操作、Undo / Redo、close / reopen、console warning / error 0件を通過した。Owner一括確認前にcloseしない。
+- 独立するPhase 7k Text to RasterはQTPのone-shot T、generic font / size / bold / 現在色、日本語 / ASCII / 複数行を通常Raster Layerへviewport中心・1 Historyで確定する。Text schema / local font列挙を追加せず、CAF working Layerは非mutation拒否する。SOL review 1=`A`、全50 verifier、build、BrowserのUndo / Redo、horizontal flip、CAF拒否、console warning / error 0件を通過し、Owner一括確認前にcloseしない。
+- 独立するPhase 7l Animation Table / CLIP MOTION UI品質は、既存ID / event / wheel三領域 / header drag / model / History / saveを維持したままheaderを明示二段化した。SOL review 1=`A`、全51 verifier、build、1280px相当 / 460px狭幅、実wheel、close / reopen、console warning / error 0件を通過し、Owner一括確認前にcloseしない。
+- 独立するPhase 7m Motion Graph Viewerは既存`sampleClipTransform()`だけを評価正本とするpure Stage A / read-only SVG Stage Bを完了した。POSITION / SCALE / ROTATION / OPACITY / BLEND、range、key / boundary / segment、cursor、blend mode runをruntime導出し、CLIP MOTIONから5 group、current value、cursorを表示する。再生中のclose → reopen fallback、共有tooltip、狭幅scroll、無効target時の自動close、Clip外cursorの`OUT`表示までruntime UIだけで安定化し、Graph専用保存stateや編集経路は追加していない。SOL review 2=`A`、全53 verifier、build、Browser reviewを通過し、Owner一括確認待ち。
+- 独立するPhase 7n Resize Preview Direct Framingは、View Camera / Project Frame / Animation Cameraを分離したまま「内容」modeのpreview drag / wheelをruntime offsetと既存scaleへ限定接続した。Applyは既存content resize transactionを使い、Canvas / 両方mode、保存field、Camera Trackへ広げていない。SOL review 1=`A`、全55 verifier、build、Browserのdrag / wheel / Apply / Undo / Redo / close-reopen、console 0件を通過し、Owner一括確認待ち。
+- 独立するPhase 7o Motion Easing Preset Paletteは、既存cubic-bezier正本のままSoft / Strong / Sine / Circular計12 presetを追加した。現在keyを含むCtrl/Cmd複数選択Motion keyへ1 Historyで原子的に適用し、terminal / 再生中 / 未知presetは拒否、LINEAR / HOLDは古いcurveを除去する。SOL review 1=`A`、全56 verifier、build、Browserの複数適用 / Undo / Redo / terminal拒否 / console 0件を通過し、Owner一括確認待ち。
 
 このナビゲーション自身:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
@@ -29,6 +35,12 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **技術方針・禁止事項（正本）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 - **最新開発進捗・現在地**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
 - **現行Phase 7i実装契約・LUNA Stage D境界**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7i.md
+- **現行Phase 7j実装契約・Deformer SELECT Stage 2**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7j.md
+- **現行Phase 7k実装契約・Text to Raster**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7k.md
+- **現行Phase 7l実装契約・Animation Table二段header**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7l.md
+- **現行Phase 7m実装契約・Motion Graph Viewer**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7m.md
+- **現行Phase 7n実装契約・Resize Preview Direct Framing**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7n.md
+- **現行Phase 7o実装契約・Motion Easing Preset Palette**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7o.md
 - **直前Phase 7h完了記録（Auto Shape FILL）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7h.md
 - **全体アーキテクチャマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ARCHITECTURE.md
 - **Layer / CAF 境界設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_BOUNDARY.md
@@ -42,6 +54,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **UI/CSS スタイルガイド**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/UI_CSS%E3%82%B9%E3%82%BF%E3%82%A4%E3%83%AB%E3%82%AC%E3%82%A4%E3%83%89.md
 - **変形・Mesh・WARPロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/09_%E5%A4%89%E5%BD%A2%E3%82%A2%E3%83%8B%E3%83%A1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%83%BB%E3%83%A1%E3%83%83%E3%82%B7%E3%83%A5%E3%83%BBGPU%E7%94%BB%E6%9D%90%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
 - **Motion Graph / Easing / Motion Path**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/10_Motion_Graph%E3%83%BBEasing%E3%83%BBMotion_Path%E8%A8%AD%E8%A8%88.md
+- **Camera Frame / Resize / Animation Camera**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/12_Camera_Frame%E3%83%BBResize_UI%E5%B0%86%E6%9D%A5%E8%A8%AD%E8%A8%88.md
 - **UI導線・Text・階層Motion将来設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/14_UI%E3%83%84%E3%83%BC%E3%83%AB%E5%B0%8E%E7%B7%9A%E3%83%BBText%E3%83%BB%E9%9A%8E%E5%B1%A4Motion%E5%B0%86%E6%9D%A5%E8%A8%AD%E8%A8%88.md
 - **Rig・Mesh・Perform統合ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/15_%E3%82%AD%E3%83%A3%E3%83%A9%E3%82%AF%E3%82%BF%E3%83%BCRig%E3%83%BBMesh%E3%83%BBPerform%E7%B5%B1%E5%90%88%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
 - **実装したいことメモ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/%E5%AE%9F%E8%A3%85%E3%81%97%E3%81%9F%E3%81%84%E3%81%93%E3%81%A8%E3%83%A1%E3%83%A2.txt
@@ -80,6 +93,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/settings-manager.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/popup-manager.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/camera-system.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/text-rasterizer.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/debug-utils.js
 
 ### レイヤー・キャンバス・変形・選択系
@@ -92,6 +106,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/raster-bounds.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/raster-snapshot-memory.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/raster-translation.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/resize-direct-framing.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/transform-math.js
 
 ### 描画エンジン・ブラシ (system/drawing/)
@@ -118,6 +133,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-rasterizer.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-topology.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-brush.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-point-selection.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-placement.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/control-mesh-deformer.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/control-mesh-topology.js
@@ -139,8 +155,10 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 - **Phase 7i Stage B three-rail topology / deformation Gate**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-line-ribbon-topology.js
 - **Phase 7i Stage C longitudinal weight pure factory**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/line-ribbon-raster-bone-setup.js
 - **Setup青RIG UI（Stage D接続先）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/animation-table-popup.js
+- **Phase 7m read-only Motion Graph pure view model**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-graph-view-model.js
+- **Phase 7o Motion Easing preset catalog / atomic apply**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-easing-presets.js
 
-### Phase 7h / 7i verifier
+### Phase 7h / 7i / 7j / 7k / 7l / 7m / 7n / 7o verifier
 
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-alpha-contours.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-auto-shape-contour-budget.mjs
@@ -149,6 +167,19 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/bu
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-line-centerline.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-line-ribbon-topology.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-line-ribbon-raster-bone-setup.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-line-ribbon-raster-bone-model.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-warp-point-selection.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-text-to-raster.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-header-layout.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-view-model.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-ui-adapter.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-resize-direct-framing.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-resize-direct-ui-adapter.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-easing-presets.mjs
+
+### Stage D review / handoff
+
+- **Rig / Mesh Setup UI外部レビュー（提案・未検証）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/rig-mesh-setup-ui-review.md
 
 ### プロジェクト保存・ストレージ・画像インポート
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/project-manager.js

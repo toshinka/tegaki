@@ -20,6 +20,11 @@ import {
     resolveCanvasResizeOffset,
     validateRasterSurfaceSize
 } from '../system/raster-bounds.js';
+import {
+    resolveResizeContentTransform,
+    resolveResizePreviewDragOffset,
+    resolveResizeWheelScalePercent
+} from '../system/resize-direct-framing.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 
 export class ResizePopup {
@@ -46,7 +51,10 @@ export class ResizePopup {
         this.resizeTarget = 'canvas';
         this.contentFitMode = 'fit';
         this.contentScalePercent = 100;
+        this.contentOffset = { x: 0, y: 0 };
         this._contentPreviewCache = null;
+        this._previewDirectSession = null;
+        this._resizePreviewScale = 1;
         this._directValueTapState = null;
         this.CONTENT_SCALE_MIN = 5;
         this.CONTENT_SCALE_MAX = 800;
@@ -246,6 +254,7 @@ export class ResizePopup {
             contentFitButtons: Array.from(this.popup?.querySelectorAll('[data-content-fit]') || []),
             contentFitGroup: document.getElementById('resize-content-fit-group'),
             preview: document.getElementById('resize-content-preview'),
+            previewFrame: this.popup?.querySelector('.resize-preview-frame') || null,
             previewImage: document.getElementById('resize-preview-image'),
             previewContentBox: document.getElementById('resize-preview-content-box'),
             previewNote: document.getElementById('resize-preview-note'),
@@ -269,6 +278,7 @@ export class ResizePopup {
         this._setupPopupDrag();
         this._setupAlignmentButtons();
         this._setupTargetModeButtons();
+        this._setupPreviewDirectManipulation();
         this._setupPresetButtons();
         this._setupDirectValueInputs();
         this._setupApplyButton();
@@ -290,12 +300,80 @@ export class ResizePopup {
             this.popupDragCleanup();
             this.popupDragCleanup = null;
         }
+        this._previewDirectSession = null;
+        this.elements?.previewFrame?.classList.remove('is-dragging');
     }
 
     _setupPopupDrag() {
         if (!this.popup) return;
 
         this.popupDragCleanup = attachPopupDrag(this.popup);
+    }
+
+    _setupPreviewDirectManipulation() {
+        const frame = this.elements.previewFrame;
+        if (!frame) return;
+
+        frame.addEventListener('pointerdown', (event) => {
+            if (
+                this.resizeTarget !== 'content'
+                || !event.isPrimary
+                || event.button !== 0
+                || !this._getContentPreviewCache().bounds
+            ) return;
+            this._previewDirectSession = {
+                pointerId: event.pointerId,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                startOffset: { ...this.contentOffset }
+            };
+            frame.classList.add('is-dragging');
+            try {
+                frame.setPointerCapture(event.pointerId);
+            } catch (_) {
+                // pointer capture非対応環境でもframe内dragは継続できる。
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        });
+
+        frame.addEventListener('pointermove', (event) => {
+            const session = this._previewDirectSession;
+            if (!session || session.pointerId !== event.pointerId) return;
+            this.contentOffset = resolveResizePreviewDragOffset(session.startOffset, {
+                x: event.clientX - session.clientX,
+                y: event.clientY - session.clientY
+            }, this._resizePreviewScale);
+            this._updateResizePreview();
+            event.preventDefault();
+        });
+
+        const endDrag = (event) => {
+            const session = this._previewDirectSession;
+            if (!session || session.pointerId !== event.pointerId) return;
+            this._previewDirectSession = null;
+            frame.classList.remove('is-dragging');
+            event.preventDefault();
+        };
+        frame.addEventListener('pointerup', endDrag);
+        frame.addEventListener('pointercancel', endDrag);
+        frame.addEventListener('lostpointercapture', endDrag);
+
+        frame.addEventListener('wheel', (event) => {
+            if (this.resizeTarget !== 'content' || !this._getContentPreviewCache().bounds) return;
+            const nextPercent = resolveResizeWheelScalePercent(
+                this.contentScalePercent,
+                event.deltaY,
+                {
+                    min: this.CONTENT_SCALE_MIN,
+                    max: this.CONTENT_SCALE_MAX,
+                    step: 5
+                }
+            );
+            this._updateWidthSlider(nextPercent);
+            event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false });
     }
 
     _isContentScaleMode() {
@@ -611,10 +689,12 @@ export class ResizePopup {
         if (contentScaleMode) {
             if (previousTarget !== 'content') {
                 this.contentScalePercent = 100;
+                this.contentOffset = { x: 0, y: 0 };
             }
             this._updateWidthSlider(this.contentScalePercent);
         } else {
             if (previousTarget === 'content') {
+                this.contentOffset = { x: 0, y: 0 };
                 const config = window.TEGAKI_CONFIG;
                 this.currentWidth = config?.canvas?.width || this.currentWidth || 344;
                 this.currentHeight = config?.canvas?.height || this.currentHeight || 135;
@@ -671,6 +751,7 @@ export class ResizePopup {
     
     _setHorizontalAlign(align) {
         this.horizontalAlign = align;
+        this.contentOffset.x = 0;
         
         document.querySelectorAll('#horizontal-align-left, #horizontal-align-center, #horizontal-align-right').forEach(btn => {
             btn.classList.remove('active');
@@ -683,6 +764,7 @@ export class ResizePopup {
     
     _setVerticalAlign(align) {
         this.verticalAlign = align;
+        this.contentOffset.y = 0;
         
         document.querySelectorAll('#vertical-align-top, #vertical-align-center, #vertical-align-bottom').forEach(btn => {
             btn.classList.remove('active');
@@ -757,7 +839,9 @@ export class ResizePopup {
                 oldFrameHeight: oldHeight,
                 fitMode: this.contentFitMode,
                 horizontalAlign: this.horizontalAlign,
-                verticalAlign: this.verticalAlign
+                verticalAlign: this.verticalAlign,
+                offsetX: this.contentOffset.x,
+                offsetY: this.contentOffset.y
             })
             : null;
         if (shouldScaleContent && !contentPlan?.ok) {
@@ -1146,6 +1230,9 @@ export class ResizePopup {
             if (this.resizeTarget === 'content') {
                 this.contentScalePercent = 100;
             }
+            this.contentOffset = { x: 0, y: 0 };
+            this._previewDirectSession = null;
+            this.elements?.previewFrame?.classList.remove('is-dragging');
             this._contentPreviewCache = null;
             
             if (!this.initialized) {
@@ -1478,32 +1565,14 @@ export class ResizePopup {
     }
 
     _resolveContentTransform(sourceBounds, targetSize, options = {}) {
-        const frameSize = options.frameSize || targetSize;
-        const fitMode = options.fitMode || this.contentFitMode;
-        const widthScale = targetSize.width / Math.max(1, sourceBounds.width);
-        const heightScale = targetSize.height / Math.max(1, sourceBounds.height);
-        let scale = Math.min(widthScale, heightScale);
-        if (fitMode === 'width') scale = widthScale;
-        else if (fitMode === 'height') scale = heightScale;
-        else if (fitMode === 'cover') scale = Math.max(widthScale, heightScale);
-        scale = Math.max(0.01, Math.min(100, scale));
-
-        const width = sourceBounds.width * scale;
-        const height = sourceBounds.height * scale;
-        const horizontal = options.horizontalAlign || this.horizontalAlign;
-        const vertical = options.verticalAlign || this.verticalAlign;
-        const x = horizontal === 'left'
-            ? 0
-            : horizontal === 'right'
-                ? frameSize.width - width
-                : (frameSize.width - width) / 2;
-        const y = vertical === 'top'
-            ? 0
-            : vertical === 'bottom'
-                ? frameSize.height - height
-                : (frameSize.height - height) / 2;
-
-        return { x, y, width, height, scale };
+        return resolveResizeContentTransform(sourceBounds, targetSize, {
+            fitMode: options.fitMode || this.contentFitMode,
+            horizontalAlign: options.horizontalAlign || this.horizontalAlign,
+            verticalAlign: options.verticalAlign || this.verticalAlign,
+            frameSize: options.frameSize || targetSize,
+            offsetX: options.offsetX,
+            offsetY: options.offsetY
+        });
     }
 
     _resolveScaledSnapshotOutput(snapshot, sourceBounds, transform) {
@@ -1756,10 +1825,12 @@ export class ResizePopup {
             rootStyle.getPropertyValue('--ui-resize-preview-max-height')
         ) || 88;
         const previewScale = Math.min(maxPreviewWidth / safeFrameWidth, maxPreviewHeight / safeFrameHeight);
+        this._resizePreviewScale = Math.max(0.0001, previewScale);
         if (frame) {
             frame.style.width = `${Math.max(20, Math.round(safeFrameWidth * previewScale))}px`;
             frame.style.height = `${Math.max(20, Math.round(safeFrameHeight * previewScale))}px`;
         }
+        this.elements.preview?.classList.toggle('is-direct', this.resizeTarget === 'content');
 
         const cache = this._getContentPreviewCache();
         const bounds = cache.bounds;
@@ -1787,6 +1858,8 @@ export class ResizePopup {
                 fitMode: this.contentFitMode,
                 horizontalAlign: this.horizontalAlign,
                 verticalAlign: this.verticalAlign,
+                offsetX: this.contentOffset.x,
+                offsetY: this.contentOffset.y,
                 frameSize
             });
         const clipped = transform.x < 0
@@ -1814,9 +1887,10 @@ export class ResizePopup {
         if (this.elements.previewNote) {
             const percent = Math.round(transform.scale * 100);
             const modeLabel = this.resizeTarget === 'canvas' ? 'キャンバス' : '内容';
-            this.elements.previewNote.textContent = clipped
+            const directHint = this.resizeTarget === 'content' ? ' / drag移動・wheel拡縮' : '';
+            this.elements.previewNote.textContent = (clipped
                 ? `${modeLabel} ${percent}% / 見切れあり`
-                : `${modeLabel} ${percent}% / 全体表示`;
+                : `${modeLabel} ${percent}% / 全体表示`) + directHint;
         }
     }
     
@@ -1825,6 +1899,8 @@ export class ResizePopup {
         
         this.popup.classList.remove('show');
         this.isVisible = false;
+        this._previewDirectSession = null;
+        this.elements?.previewFrame?.classList.remove('is-dragging');
     }
     
     toggle() {

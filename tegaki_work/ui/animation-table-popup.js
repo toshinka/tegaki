@@ -45,6 +45,11 @@ import {
     resolveDirectionalTransformDragMode
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
+import {
+    createMotionGraphViewModel,
+    MOTION_GRAPH_GROUPS,
+    normalizeMotionGraphGroup
+} from '../system/animation/motion-graph-view-model.js';
 import { sampleClipBakeState } from '../system/animation/clip-bake-sampler.js';
 import {
     evaluateRigidBones,
@@ -104,6 +109,7 @@ import {
 } from '../system/animation/raster-skin-render-plan.js';
 import { ALPHA_FIT_GRID_GENERATOR } from '../system/animation/raster-bone-auto-setup.js';
 import { AUTO_SHAPE_FILL_GENERATOR } from '../system/animation/auto-shape-raster-bone-setup.js';
+import { AUTO_SHAPE_LINE_RIBBON_GENERATOR } from '../system/animation/line-ribbon-raster-bone-setup.js';
 import {
     calculateWarpGridBrushWeights,
     inflateWarpGridBrushPoints,
@@ -111,10 +117,13 @@ import {
     translateWarpGridBrushPoints
 } from '../system/animation/warp-grid-brush.js';
 import {
-    findWarpPointIndicesInRect,
+    findWarpPointIndicesInShape,
     mergeWarpPointSelection,
+    normalizeWarpPointSelectionCircle,
+    normalizeWarpPointSelectionPolyline,
     normalizeWarpPointSelectionRect,
-    translateWarpPointSelection
+    translateWarpPointSelection,
+    WARP_POINT_SELECTION_SHAPES
 } from '../system/animation/warp-point-selection.js';
 import {
     WARP_BIND_FRAME_MODE_CORNER,
@@ -141,7 +150,9 @@ import {
     createMotionKeyClipboardPayload
 } from '../system/animation/motion-key-clipboard.js';
 import {
+    applyMotionEasingPresetToKeyframes,
     identifyMotionEasingPreset,
+    MOTION_EASING_PRESET_GROUPS,
     resolveMotionEasingPreset
 } from '../system/animation/motion-easing-presets.js';
 import {
@@ -179,7 +190,8 @@ import {
 import { UI_ICONS } from './ui-icons.js';
 
 const ANIMATION_TABLE_UI_STORAGE_KEY = 'tegaki_animation_table_ui_v1';
-const ANIMATION_TABLE_UI_DENSITY_VERSION = 1;
+const ANIMATION_TABLE_UI_DENSITY_VERSION = 2;
+const ANIMATION_TABLE_DEFAULT_HEIGHT = 266;
 const TIMELINE_ZOOM_STEPS = [10, 12, 14, 18, 22, 24, 26, 30, 36, 44];
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_ENTRIES = 96;
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_BYTES = 512 * 1024 * 1024;
@@ -193,6 +205,103 @@ const WARP_BRUSH_MODE_DESCRIPTIONS = Object.freeze({
     pinch: 'PINCH: 操作開始位置を中心に、範囲内の点を内側へ絞ります。',
     smooth: 'SMOOTH: 周囲の格子点との偏りをならし、崩れたGRIDを滑らかに整えます。'
 });
+const WARP_POINT_SELECTION_SHAPE_META = Object.freeze({
+    rectangle: Object.freeze({
+        label: 'RECT',
+        ariaLabel: 'Warp pointを矩形選択',
+        description: 'RECT選択: 空Canvasをdragして矩形内の点を選択 / 選択点をdragして一括移動'
+    }),
+    circle: Object.freeze({
+        label: 'CIRCLE',
+        ariaLabel: 'Warp pointを円形選択',
+        description: 'CIRCLE選択: 空Canvasの中心から外へdragして円内の点を選択 / 選択点をdragして一括移動'
+    }),
+    polyline: Object.freeze({
+        label: 'POLY',
+        ariaLabel: 'Warp pointを投げ縄選択',
+        description: 'POLY選択: 空Canvasを囲むようにdragして内側の点を選択 / 選択点をdragして一括移動'
+    })
+});
+const RASTER_MESH_SETUP_MODES = Object.freeze({
+    'alpha-fit-grid': Object.freeze({
+        generatorMode: 'alpha-fit-grid',
+        actionLabel: 'AUTO GRID',
+        historyType: 'caf-raster-bone-auto-grid'
+    }),
+    'auto-shape': Object.freeze({
+        generatorMode: 'auto-shape',
+        actionLabel: 'AUTO SHAPE',
+        historyType: 'caf-raster-bone-auto-shape'
+    }),
+    'auto-shape-line': Object.freeze({
+        generatorMode: 'auto-shape-line',
+        actionLabel: 'AUTO LINE',
+        historyType: 'caf-raster-bone-auto-line'
+    })
+});
+const RASTER_MESH_GENERATOR_UI = Object.freeze({
+    [ALPHA_FIT_GRID_GENERATOR]: Object.freeze({
+        label: 'GRID',
+        currentLabel: generator => `GRID ${generator?.columns || '?'}×${generator?.rows || '?'}`
+    }),
+    [AUTO_SHAPE_FILL_GENERATOR]: Object.freeze({
+        label: 'SHAPE',
+        currentLabel: () => 'SHAPE FILL'
+    }),
+    [AUTO_SHAPE_LINE_RIBBON_GENERATOR]: Object.freeze({
+        label: 'LINE',
+        currentLabel: () => 'LINE RIBBON'
+    })
+});
+const AUTO_LINE_FAILURE_MESSAGES = Object.freeze({
+    'line-ribbon-bone-count': 'AUTO LINEには2〜3本のMesh BONEが必要です',
+    'line-ribbon-bone-not-found': 'AUTO LINEの指定BONEが見つかりません',
+    'line-ribbon-bone-chain-required': 'AUTO LINEには親子が連結した2〜3本のMesh BONEが必要です',
+    'line-ribbon-bone-too-far': 'AUTO LINEのBONEがRaster中心線から離れすぎています',
+    'line-ribbon-bone-order-ambiguous': 'AUTO LINEのBONE順を判定できません',
+    'line-ribbon-centerline-too-short': 'AUTO LINEの中心線が短すぎます',
+    'single-component-required': 'AUTO LINEは一つの連結Rasterだけに対応します',
+    'holes-unsupported': 'AUTO LINEは穴のあるRasterに対応しません',
+    'branching-centerline': 'AUTO LINEは分岐のない中心線だけに対応します',
+    'disconnected-centerline': 'AUTO LINEの中心線が連結していません',
+    'closed-centerline': 'AUTO LINEは閉じた中心線に対応しません',
+    'self-intersecting-ribbon': 'AUTO LINEのRibbonが自己交差するため作成できません',
+    'rail-boundary-not-found': 'AUTO LINEの左右境界を判定できません',
+    'abrupt-width-change': 'AUTO LINEの線幅変化が大きすぎます',
+    'degenerate-ribbon-triangle': 'AUTO LINEの三角形が退化するため作成できません',
+    'minimum-triangle-angle': 'AUTO LINEの三角形角度が小さすぎます',
+    'coverage-ratio-out-of-range': 'AUTO LINEのRaster被覆率が許容外です',
+    'line-ribbon-bind-segment-missing': 'AUTO LINEのBONE Bind情報が不足しています',
+    'invalid-rig': 'AUTO LINEのRigを検証できません'
+});
+
+function getRasterMeshSetupFailureMessage(mode, reason) {
+    if (mode.generatorMode === 'auto-shape-line' && AUTO_LINE_FAILURE_MESSAGES[reason]) {
+        return AUTO_LINE_FAILURE_MESSAGES[reason];
+    }
+    if (reason === 'mesh-bone-required') return '先にMesh BONEを追加してください';
+    if (reason === 'guard-padding-required') {
+        return 'Raster端に透明余白がないためAUTO SHAPEを作成できません';
+    }
+    if (reason === 'guard-overlap') {
+        return '形状間の透明guardが重なるためAUTO SHAPEを作成できません';
+    }
+    return `Raster内容から${mode.actionLabel}を作成できません`;
+}
+
+function syncSelectOptions(select, options) {
+    if (!select) return false;
+    const signature = JSON.stringify(options);
+    if (select.dataset.optionSignature === signature) return false;
+    select.replaceChildren(...options.map(option => {
+        const element = document.createElement('option');
+        element.value = option.value;
+        element.textContent = option.label;
+        return element;
+    }));
+    select.dataset.optionSignature = signature;
+    return true;
+}
 
 function pointInPolygon(point, corners) {
     let inside = false;
@@ -219,6 +328,9 @@ export class AnimationTablePopup {
         this.motionPanelDragCleanup = null;
         this.motionCurvePanel = null;
         this.motionCurvePanelDragCleanup = null;
+        this.motionGraphPanel = null;
+        this.motionGraphPanelDragCleanup = null;
+        this._motionGraphGroup = 'position';
         this._motionCurveGesture = null;
         this._motionPlaybackClipId = null;
         this._motionAnchorClip = null;
@@ -236,6 +348,7 @@ export class AnimationTablePopup {
         this._warpGridGesture = null;
         this._warpPointSelection = null;
         this._warpSelectionMarquee = null;
+        this._warpPointSelectionShape = 'rectangle';
         this._warpGridTool = 'point';
         this._warpGridBindFrameMode = 'frame';
         this._warpBrushMode = 'move';
@@ -313,7 +426,7 @@ export class AnimationTablePopup {
         this._isResizing = false;
         this._resizePointerId = null;
         this._resizeStart = null;
-        this._panelSize = { width: null, height: 240 };
+        this._panelSize = { width: null, height: ANIMATION_TABLE_DEFAULT_HEIGHT };
 
         // リタイミング（セル伸縮）関連
         this._isRetiming = false;
@@ -508,19 +621,23 @@ export class AnimationTablePopup {
             }
 
             const size = prefs.panelSize || {};
-            let migratedDefaultHeight = false;
+            let migratedDefaultHeightFrom = null;
             if (Number.isFinite(size.width)) {
                 this._panelSize.width = Math.max(460, size.width);
             }
             if (Number.isFinite(size.height)) {
-                migratedDefaultHeight = densityVersion < ANIMATION_TABLE_UI_DENSITY_VERSION
-                    && Math.abs(size.height - 260) < 0.5;
-                this._panelSize.height = migratedDefaultHeight
-                    ? 240
+                if (densityVersion < 1 && Math.abs(size.height - 260) < 0.5) {
+                    migratedDefaultHeightFrom = 260;
+                } else if (densityVersion < ANIMATION_TABLE_UI_DENSITY_VERSION
+                    && Math.abs(size.height - 240) < 0.5) {
+                    migratedDefaultHeightFrom = 240;
+                }
+                this._panelSize.height = migratedDefaultHeightFrom !== null
+                    ? ANIMATION_TABLE_DEFAULT_HEIGHT
                     : Math.max(180, size.height);
             }
-            if (migratedDefaultHeight && Number.isFinite(this._panelPos.y)) {
-                this._panelPos.y += 20;
+            if (migratedDefaultHeightFrom !== null && Number.isFinite(this._panelPos.y)) {
+                this._panelPos.y -= ANIMATION_TABLE_DEFAULT_HEIGHT - migratedDefaultHeightFrom;
             }
 
             if (TIMELINE_ZOOM_STEPS.includes(prefs.timelineCellWidth)) {
@@ -548,7 +665,7 @@ export class AnimationTablePopup {
                 },
                 panelSize: {
                     width: Number.isFinite(this._panelSize.width) ? this._panelSize.width : null,
-                    height: Number.isFinite(this._panelSize.height) ? this._panelSize.height : 240
+                    height: Number.isFinite(this._panelSize.height) ? this._panelSize.height : ANIMATION_TABLE_DEFAULT_HEIGHT
                 },
                 timelineCellWidth: this.timelineCellWidth,
                 lastMotionEditorMode: this._lastMotionEditorMode
@@ -567,7 +684,7 @@ export class AnimationTablePopup {
         }
 
         const width = this._panelSize.width || this.panel?.getBoundingClientRect?.().width || 760;
-        const height = this._panelSize.height || this.panel?.getBoundingClientRect?.().height || 240;
+        const height = this._panelSize.height || this.panel?.getBoundingClientRect?.().height || ANIMATION_TABLE_DEFAULT_HEIGHT;
         this._panelPos.x = Math.max(0, Math.min(Math.max(0, window.innerWidth - Math.min(width, window.innerWidth)), this._panelPos.x));
         this._panelPos.y = Math.max(0, Math.min(Math.max(0, window.innerHeight - Math.min(height, window.innerHeight)), this._panelPos.y ?? 0));
     }
@@ -2488,19 +2605,13 @@ export class AnimationTablePopup {
         const asset = context.projection.asset;
         const layer = context.folder.layer;
         const beforeState = this._captureInternalLayerHistoryState(asset);
-        const isAutoShape = generatorMode === 'auto-shape';
-        const result = isAutoShape
-            ? this.model.generateClipAssetAutoShapeBoneSetup(asset.id, layer.id)
-            : this.model.generateClipAssetRasterBoneSetup(asset.id, layer.id);
+        const mode = RASTER_MESH_SETUP_MODES[generatorMode]
+            || RASTER_MESH_SETUP_MODES['alpha-fit-grid'];
+        const result = this.model.generateClipAssetRasterBoneSetup(asset.id, layer.id, {
+            generatorMode: mode.generatorMode
+        });
         if (!result.ok) {
-            const message = result.reason === 'mesh-bone-required'
-                ? '先にMesh BONEを1本以上追加してください'
-                : result.reason === 'guard-padding-required'
-                    ? 'Raster端に透明余白がないためAUTO SHAPEを作成できません'
-                    : result.reason === 'guard-overlap'
-                        ? '形状間の透明guardが重なるためAUTO SHAPEを作成できません'
-                        : `Raster内容から${isAutoShape ? 'AUTO SHAPE' : 'AUTO GRID'}を作成できません`;
-            showFeedbackToast(message);
+            showFeedbackToast(getRasterMeshSetupFailureMessage(mode, result.reason));
             return result;
         }
         const folderEffectPlan = createFolderPartRenderPlan(
@@ -2519,9 +2630,7 @@ export class AnimationTablePopup {
             showFeedbackToast('ClippingまたはFolder WARP / rigid対象のRasterにはMeshを作成できません');
             return { ok: false, reason: 'unsupported-render-boundary' };
         }
-        const historyType = isAutoShape
-            ? 'caf-raster-bone-auto-shape'
-            : 'caf-raster-bone-auto-grid';
+        const historyType = mode.historyType;
         this._recordInternalLayerHistory(asset, beforeState, historyType, {
             type: historyType,
             assetId: asset.id,
@@ -2792,6 +2901,7 @@ export class AnimationTablePopup {
         const meshBoneAdd = folderSetup?.querySelector('[data-rig-mesh-bone-add]');
         const meshGenerate = folderSetup?.querySelector('[data-rig-mesh-generate]');
         const meshGenerateShape = folderSetup?.querySelector('[data-rig-mesh-generate-shape]');
+        const meshGenerateLine = folderSetup?.querySelector('[data-rig-mesh-generate-line]');
         const meshStatus = folderSetup?.querySelector('[data-rig-mesh-status]');
         if (!context) {
             if (targetName) targetName.textContent = 'CAF内にFolderがありません';
@@ -2835,13 +2945,19 @@ export class AnimationTablePopup {
                 ? 'SHAPE再生成'
                 : 'AUTO SHAPE';
         }
+        if (meshGenerateLine) {
+            meshGenerateLine.disabled = meshGenerateDisabled;
+            meshGenerateLine.textContent = generatorType === AUTO_SHAPE_LINE_RIBBON_GENERATOR
+                ? 'LINE再生成'
+                : 'AUTO LINE';
+        }
         if (meshStatus) {
+            const generatorUi = RASTER_MESH_GENERATOR_UI[generatorType]
+                || RASTER_MESH_GENERATOR_UI[ALPHA_FIT_GRID_GENERATOR];
             meshStatus.textContent = rasterMeshStatus.state === 'stale'
-                ? `${generatorType === AUTO_SHAPE_FILL_GENERATOR ? 'SHAPE' : 'GRID'} STALE`
+                ? `${generatorUi.label} STALE`
                 : rasterMeshStatus.state === 'current'
-                    ? generatorType === AUTO_SHAPE_FILL_GENERATOR
-                        ? 'SHAPE FILL'
-                        : `GRID ${generator?.columns || '?'}×${generator?.rows || '?'}`
+                    ? generatorUi.currentLabel(generator)
                     : rasterMeshStatus.state === 'manual'
                         ? 'MANUAL MESH'
                         : 'MESH未生成';
@@ -2853,12 +2969,7 @@ export class AnimationTablePopup {
                 value: bone.boneId,
                 label: bone.name || `MESH BONE ${index + 1}`
             }))];
-            meshBoneSelect.replaceChildren(...options.map(option => {
-                const element = document.createElement('option');
-                element.value = option.value;
-                element.textContent = option.label;
-                return element;
-            }));
+            syncSelectOptions(meshBoneSelect, options);
             meshBoneSelect.value = isRasterTarget && folder.bone ? folder.bone.boneId : '';
             meshBoneSelect.disabled = !isMeshRasterTarget || (projection.meshBones?.length || 0) === 0;
         }
@@ -2876,12 +2987,7 @@ export class AnimationTablePopup {
                     label: owner?.layer?.name || candidate.name || 'BONE'
                 });
             });
-            parentSelect.replaceChildren(...options.map(option => {
-                const element = document.createElement('option');
-                element.value = option.value;
-                element.textContent = option.label;
-                return element;
-            }));
+            syncSelectOptions(parentSelect, options);
             parentSelect.value = currentParentId;
             parentSelect.disabled = !folder.bone || this.isPlaying;
         }
@@ -4435,8 +4541,14 @@ export class AnimationTablePopup {
             width: outputBounds.width,
             height: outputBounds.height
         });
+        const meshGeometry = new MeshGeometry(meshData);
+        // このMeshは同期bakeだけに使い、sourceTextureは二描画周期後に破棄する。
+        // 100頂点超でGlMeshAdaptorへ切り替わると共有shaderのBindGroupが
+        // 破棄済みTextureSourceを保持するため、preview交換後の再生成で失敗する。
+        // 一時Meshは頂点数にかかわらずbatch経路へ固定して寿命をinstruction内へ閉じる。
+        meshGeometry.batchMode = 'batch';
         const mesh = new Mesh({
-            geometry: new MeshGeometry(meshData),
+            geometry: meshGeometry,
             texture: sourceTexture
         });
         mesh.eventMode = 'none';
@@ -10116,15 +10228,59 @@ export class AnimationTablePopup {
         });
     }
 
-    _setWarpSelectionMarquee(rect) {
-        this._warpSelectionMarquee = rect ? { ...rect } : null;
+    _setWarpSelectionMarquee(shape) {
+        this._warpSelectionMarquee = shape
+            ? {
+                ...shape,
+                ...(Array.isArray(shape.points)
+                    ? { points: shape.points.map(point => ({ ...point })) }
+                    : {})
+            }
+            : null;
         return this._warpSelectionMarquee;
     }
 
-    _commitWarpPointSelectionMarquee(state, rect, mode = 'replace') {
+    _createWarpPointSelectionMarquee(start, shape = this._warpPointSelectionShape) {
+        if (shape === 'circle') return normalizeWarpPointSelectionCircle(start, start);
+        if (shape === 'polyline') return normalizeWarpPointSelectionPolyline([start]);
+        return normalizeWarpPointSelectionRect(start, start);
+    }
+
+    _updateWarpPointSelectionMarquee(gesture, end) {
+        if (!gesture || !end) return this._warpSelectionMarquee;
+        let shape = null;
+        if (gesture.selectionShape === 'circle') {
+            shape = normalizeWarpPointSelectionCircle(gesture.startScreen, end);
+        } else if (gesture.selectionShape === 'polyline') {
+            const points = Array.isArray(this._warpSelectionMarquee?.points)
+                ? this._warpSelectionMarquee.points
+                : [gesture.startScreen];
+            shape = normalizeWarpPointSelectionPolyline([...points, end]);
+        } else {
+            shape = normalizeWarpPointSelectionRect(gesture.startScreen, end);
+        }
+        return this._setWarpSelectionMarquee(shape);
+    }
+
+    _commitWarpPointSelectionMarquee(state, shape, mode = 'replace') {
         const points = this._getWarpGridScreenPoints(state);
-        const hits = findWarpPointIndicesInRect(points, rect);
+        const hits = findWarpPointIndicesInShape(points, shape);
         return this._setWarpPointSelection(state, hits, mode);
+    }
+
+    _cycleWarpPointSelectionShape(options = {}) {
+        const currentIndex = WARP_POINT_SELECTION_SHAPES.indexOf(this._warpPointSelectionShape);
+        this._warpPointSelectionShape = WARP_POINT_SELECTION_SHAPES[
+            currentIndex >= 0
+                ? (currentIndex + 1) % WARP_POINT_SELECTION_SHAPES.length
+                : 0
+        ];
+        this._setWarpSelectionMarquee(null);
+        const meta = WARP_POINT_SELECTION_SHAPE_META[this._warpPointSelectionShape]
+            || WARP_POINT_SELECTION_SHAPE_META.rectangle;
+        if (options.notify === true) showFeedbackToast(meta.description, { duration: 2600 });
+        if (options.render !== false && this.isVisible) this.render();
+        return this._warpPointSelectionShape;
     }
 
     _setWarpGridTool(tool, options = {}) {
@@ -10149,6 +10305,8 @@ export class AnimationTablePopup {
             this._enterWarpGridEditMode(state.entry);
         }
         if (options.notify === true) {
+            const selectionMeta = WARP_POINT_SELECTION_SHAPE_META[this._warpPointSelectionShape]
+                || WARP_POINT_SELECTION_SHAPE_META.rectangle;
             const message = nextTool === 'grid'
                 ? 'GRID枠編集中: 枠内dragで移動 / 四隅で拡縮 / 上のhandleで回転 / wheelで拡縮 / Shift＋wheelで回転'
                 : (nextTool === 'lens'
@@ -10156,7 +10314,7 @@ export class AnimationTablePopup {
                     : (nextTool === 'brush'
                     ? '変形ブラシ編集中: 描画shortcutは一時的に無効です'
                     : (nextTool === 'select'
-                    ? 'RECT選択編集中: 空Canvasをdragして点を選択 / 選択点をdragして一括移動'
+                    ? selectionMeta.description
                     : 'GRIDポイント編集中: 点をdragして変形します')));
             showFeedbackToast(message, { duration: 2600 });
         }
@@ -11254,6 +11412,7 @@ export class AnimationTablePopup {
             interpolation.value = identifyMotionEasingPreset(motionState.key);
         }
         this._syncMotionCurvePanel(motionState);
+        this._syncMotionGraphPanel(motionState);
         return true;
     }
 
@@ -11359,6 +11518,184 @@ export class AnimationTablePopup {
         return true;
     }
 
+    _getMotionGraphViewModel(motionState = this._getSelectedClipMotionFrame()) {
+        const fallbackClipId = this.selectedCelId || (this.isPlaying ? this._motionPlaybackClipId : null);
+        const fallbackEntry = fallbackClipId ? this.model.findClipEntry(fallbackClipId) : null;
+        const clip = motionState?.entry?.clip || fallbackEntry?.clip;
+        if (!clip || clip.duration <= 1) return null;
+        return createMotionGraphViewModel(
+            clip,
+            this.model.playback?.currentFrame ?? motionState.timelineFrame,
+            { group: this._motionGraphGroup }
+        );
+    }
+
+    _syncMotionGraphPanel(motionState = this._getSelectedClipMotionFrame()) {
+        const panel = this.motionGraphPanel;
+        if (!panel) return false;
+        const view = this._getMotionGraphViewModel(motionState);
+        const canOpen = !!view;
+        const button = this.motionPanel?.querySelector('#anim-motion-graph-btn');
+        const wasOpen = panel.style.display !== 'none';
+        if (!canOpen && wasOpen) panel.style.display = 'none';
+        const isOpen = panel.style.display !== 'none';
+        if (button) {
+            button.disabled = !canOpen;
+            button.classList.toggle('active', isOpen);
+            button.setAttribute('aria-expanded', String(isOpen));
+            button.dataset.tooltip = canOpen
+                ? 'Clip全体のMotion Graphを表示'
+                : '2 Frame以上のCAFを選択してください';
+            button.removeAttribute('title');
+        }
+        if (!isOpen || !canOpen) return true;
+        panel.querySelectorAll('[data-motion-graph-group]').forEach(groupButton => {
+            const active = groupButton.dataset.motionGraphGroup === view.group.id;
+            groupButton.classList.toggle('active', active);
+            groupButton.setAttribute('aria-pressed', String(active));
+        });
+        const plot = panel.querySelector('[data-motion-graph-plot]');
+        if (!plot) return true;
+        const width = 520;
+        const height = 250;
+        const padding = { left: 44, right: 18, top: 16, bottom: 34 };
+        const innerWidth = width - padding.left - padding.right;
+        const innerHeight = height - padding.top - padding.bottom;
+        const frameDenominator = Math.max(1, view.duration - 1);
+        const rangeSpan = Math.max(1e-9, view.range.max - view.range.min);
+        const xForFrame = frame => padding.left + (frame / frameDenominator) * innerWidth;
+        const yForValue = value => padding.top + (1 - (value - view.range.min) / rangeSpan) * innerHeight;
+        const createSvgElement = (tag, attributes = {}) => {
+            const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+            Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, String(value)));
+            return element;
+        };
+        plot.replaceChildren();
+        for (let index = 0; index <= 4; index += 1) {
+            const ratio = index / 4;
+            const value = view.range.max - ratio * rangeSpan;
+            const y = padding.top + ratio * innerHeight;
+            plot.append(createSvgElement('line', {
+                class: 'anim-motion-graph-grid-line',
+                x1: padding.left,
+                y1: y,
+                x2: width - padding.right,
+                y2: y
+            }));
+            const rangeLabel = createSvgElement('text', {
+                class: 'anim-motion-graph-axis-label',
+                x: padding.left - 6,
+                y: y + 3,
+                'text-anchor': 'end'
+            });
+            rangeLabel.textContent = Number(value.toFixed(2));
+            plot.append(rangeLabel);
+        }
+        view.channels.forEach((channel, channelIndex) => {
+            const path = channel.values.map((value, index) => {
+                const command = index === 0 ? 'M' : 'L';
+                return `${command} ${xForFrame(index).toFixed(2)} ${yForValue(value).toFixed(2)}`;
+            }).join(' ');
+            plot.append(createSvgElement('path', {
+                class: `anim-motion-graph-path ${channelIndex === 0 ? 'is-primary' : 'is-secondary'}`,
+                'data-channel': channel.id,
+                d: path
+            }));
+        });
+        view.keyPoints.forEach(keyPoint => {
+            view.channels.forEach(channel => {
+                plot.append(createSvgElement('circle', {
+                    class: 'anim-motion-graph-key',
+                    'data-channel': channel.id,
+                    cx: xForFrame(keyPoint.localFrame),
+                    cy: yForValue(keyPoint.values[channel.id]),
+                    r: 3.5
+                }));
+            });
+        });
+        view.implicitBoundaryFrames.forEach(boundary => {
+            view.channels.forEach(channel => {
+                plot.append(createSvgElement('circle', {
+                    class: 'anim-motion-graph-boundary',
+                    'data-channel': channel.id,
+                    cx: xForFrame(boundary.localFrame),
+                    cy: yForValue(channel.values[boundary.localFrame]),
+                    r: 2.5
+                }));
+            });
+        });
+        if (view.cursor.inRange) {
+            plot.append(createSvgElement('line', {
+                class: 'anim-motion-graph-cursor',
+                'data-motion-graph-cursor': 'true',
+                x1: xForFrame(view.cursor.localFrame),
+                y1: padding.top,
+                x2: xForFrame(view.cursor.localFrame),
+                y2: height - padding.bottom
+            }));
+        }
+        const firstProjectFrame = view.samples[0]?.projectFrame ?? view.startFrame + 1;
+        const lastProjectFrame = view.samples.at(-1)?.projectFrame ?? firstProjectFrame;
+        const firstFrameLabel = createSvgElement('text', {
+            class: 'anim-motion-graph-axis-label',
+            x: padding.left,
+            y: height - 10,
+            'text-anchor': 'start'
+        });
+        firstFrameLabel.textContent = `F${firstProjectFrame}`;
+        plot.append(firstFrameLabel);
+        const lastFrameLabel = createSvgElement('text', {
+            class: 'anim-motion-graph-axis-label',
+            x: width - padding.right,
+            y: height - 10,
+            'text-anchor': 'end'
+        });
+        lastFrameLabel.textContent = `F${lastProjectFrame}`;
+        plot.append(lastFrameLabel);
+
+        const status = panel.querySelector('[data-motion-graph-status]');
+        if (status) {
+            status.textContent = view.cursor.inRange
+                ? `${view.group.label} · F${view.cursor.projectFrame} · ${view.group.unit}`
+                : `${view.group.label} · F${view.cursor.requestedTimelineFrame + 1} OUT · ${view.group.unit}`;
+        }
+        const legend = panel.querySelector('[data-motion-graph-legend]');
+        if (legend) {
+            legend.replaceChildren();
+            view.channels.forEach((channel, channelIndex) => {
+                const item = document.createElement('span');
+                item.className = `anim-motion-graph-legend-item ${channelIndex === 0 ? 'is-primary' : 'is-secondary'}`;
+                item.textContent = channel.label;
+                legend.append(item);
+            });
+        }
+        const values = panel.querySelector('[data-motion-graph-values]');
+        if (values) {
+            values.textContent = view.cursor.inRange
+                ? view.channels
+                    .map(channel => `${channel.label} ${Number(view.cursor.values[channel.id].toFixed(2))}${view.group.unit}`)
+                    .join('  ·  ')
+                : 'OUT OF CLIP';
+        }
+        const mode = panel.querySelector('[data-motion-graph-mode]');
+        if (mode) {
+            mode.textContent = view.cursor.inRange && view.group.id === 'blend'
+                ? `Mode: ${view.cursor.blendMode}`
+                : '';
+        }
+        return true;
+    }
+
+    _setMotionGraphWindowOpen(open) {
+        if (!this.motionGraphPanel) return false;
+        const state = this._getSelectedClipMotionFrame();
+        const canOpen = !!this._getMotionGraphViewModel(state);
+        const nextOpen = open === true && canOpen;
+        this.motionGraphPanel.style.display = nextOpen ? 'block' : 'none';
+        this._syncMotionGraphPanel(state);
+        return nextOpen;
+    }
+
     _setMotionCurveWindowOpen(open) {
         if (!this.motionCurvePanel) return false;
         const state = this._getMotionCurveEditState();
@@ -11404,6 +11741,33 @@ export class AnimationTablePopup {
         next.sort((a, b) => a.frame - b.frame);
         return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, next, {
             source: 'animation-motion-controls'
+        }).ok;
+    }
+
+    _applySelectedMotionEasingPreset(preset) {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state?.key || this.isPlaying) {
+            this._syncMotionPanelFrameValues(state, { force: true });
+            return false;
+        }
+        const selected = this._getSelectedMotionTimelineKeys(state.entry.clip.id)
+            .filter(key => key.kind === 'motion');
+        const currentIsSelected = selected.some(key => key.frame === state.localFrame);
+        const frames = currentIsSelected
+            ? selected.map(key => key.frame)
+            : [state.localFrame];
+        const plan = applyMotionEasingPresetToKeyframes({
+            keyframes: state.entry.clip.transformKeyframes,
+            frames,
+            preset,
+            duration: state.entry.clip.duration
+        });
+        if (!plan.ok || !plan.changed) {
+            this._syncMotionPanelFrameValues(state, { force: true });
+            return false;
+        }
+        return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, plan.keyframes, {
+            source: 'animation-motion-easing-preset'
         }).ok;
     }
 
@@ -11548,6 +11912,7 @@ export class AnimationTablePopup {
         if (!nextOpen) {
             this._setMotionHelpOpen(false);
             this._setMotionCurveWindowOpen(false);
+            this._setMotionGraphWindowOpen(false);
             this._exitWarpGridEditMode();
             transformAnchorSite.deactivate('clip-motion');
             this._motionAnchorClip = null;
@@ -12134,11 +12499,15 @@ export class AnimationTablePopup {
         }
         if (event.code === 'KeyM') {
             if (!event.repeat) {
-                const modes = ['move', 'inflate', 'pinch', 'smooth'];
-                this._warpBrushMode = this._warpGridTool === 'brush'
-                    ? modes[(modes.indexOf(this._warpBrushMode) + 1) % modes.length]
-                    : 'move';
-                this._setWarpGridTool('brush', { notify: true });
+                if (this._warpGridTool === 'select') {
+                    this._cycleWarpPointSelectionShape({ notify: true });
+                } else {
+                    const modes = ['move', 'inflate', 'pinch', 'smooth'];
+                    this._warpBrushMode = this._warpGridTool === 'brush'
+                        ? modes[(modes.indexOf(this._warpBrushMode) + 1) % modes.length]
+                        : 'move';
+                    this._setWarpGridTool('brush', { notify: true });
+                }
             }
             return true;
         }
@@ -12405,12 +12774,19 @@ export class AnimationTablePopup {
                         }
                     } else {
                         const start = { x: event.clientX, y: event.clientY };
-                        this._setWarpSelectionMarquee(normalizeWarpPointSelectionRect(start, start));
+                        const selectionShape = WARP_POINT_SELECTION_SHAPES.includes(this._warpPointSelectionShape)
+                            ? this._warpPointSelectionShape
+                            : 'rectangle';
+                        this._setWarpSelectionMarquee(this._createWarpPointSelectionMarquee(
+                            start,
+                            selectionShape
+                        ));
                         this._warpGridGesture = {
                             pointerId: event.pointerId,
                             clipId: state.entry.clip.id,
                             folderLayerId: state.folderLayerId || null,
                             tool: 'select-marquee',
+                            selectionShape,
                             selectionMode: additive ? 'toggle' : 'replace',
                             startScreen: start,
                             beforeState: null
@@ -12753,10 +13129,10 @@ export class AnimationTablePopup {
                             if (points) this._upsertSelectedWarpGridKey(points, { deferPreview: true });
                         }
                     } else if (warpGesture.tool === 'select-marquee') {
-                        this._setWarpSelectionMarquee(normalizeWarpPointSelectionRect(
-                            warpGesture.startScreen,
+                        this._updateWarpPointSelectionMarquee(
+                            warpGesture,
                             { x: event.clientX, y: event.clientY }
-                        ));
+                        );
                     } else if (warpGesture.tool === 'lens') {
                         if (event.shiftKey && !warpGesture.mode) {
                             const clientDx = event.clientX - warpGesture.startClientX;
@@ -13064,7 +13440,13 @@ export class AnimationTablePopup {
             const warpGesture = this._warpGridGesture;
             if (warpGesture?.pointerId === event.pointerId) {
                 const cancelled = event.type === 'pointercancel' || event.type === 'lostpointercapture';
-                const selectionRect = this._warpSelectionMarquee;
+                if (!cancelled && warpGesture.tool === 'select-marquee') {
+                    this._updateWarpPointSelectionMarquee(
+                        warpGesture,
+                        { x: event.clientX, y: event.clientY }
+                    );
+                }
+                const selectionShape = this._warpSelectionMarquee;
                 this._warpGridGesture = null;
                 if (canvas.hasPointerCapture?.(event.pointerId)) {
                     canvas.releasePointerCapture(event.pointerId);
@@ -13078,10 +13460,10 @@ export class AnimationTablePopup {
                 } else {
                     if (warpGesture.tool === 'select-marquee') {
                         const state = this._getWarpGridEditState();
-                        if (state && selectionRect) {
+                        if (state && selectionShape) {
                             this._commitWarpPointSelectionMarquee(
                                 state,
-                                selectionRect,
+                                selectionShape,
                                 warpGesture.selectionMode
                             );
                         }
@@ -15066,6 +15448,7 @@ export class AnimationTablePopup {
                 control.disabled = !motionState || isWarpEditing;
             });
             this._syncMotionCurvePanel(motionState);
+            this._syncMotionGraphPanel(motionState);
             const copyMotionKeyButton = motionControls.querySelector('#anim-motion-copy-btn');
             const pasteMotionKeyButton = motionControls.querySelector('#anim-motion-paste-btn');
             const clearMotionKeysButton = motionControls.querySelector('#anim-motion-clear-btn');
@@ -15231,6 +15614,14 @@ export class AnimationTablePopup {
                 pointTool?.setAttribute('aria-pressed', String(this._warpGridTool === 'point'));
                 selectTool?.setAttribute('aria-pressed', String(this._warpGridTool === 'select'));
                 brushTool?.setAttribute('aria-pressed', String(this._warpGridTool === 'brush'));
+                if (selectTool) {
+                    const selectionMeta = WARP_POINT_SELECTION_SHAPE_META[this._warpPointSelectionShape]
+                        || WARP_POINT_SELECTION_SHAPE_META.rectangle;
+                    const shapeLabel = selectTool.querySelector('[data-warp-select-shape]');
+                    if (shapeLabel) shapeLabel.textContent = selectionMeta.label;
+                    selectTool.setAttribute('aria-label', selectionMeta.ariaLabel);
+                    selectTool.dataset.tooltip = `${selectionMeta.description} / SELECT中はMまたは再clickで形状切替`;
+                }
                 if (gridTool) gridTool.disabled = !hasWarpContext || !targetEditAllowed || this.isPlaying;
                 const canEditPose = this._canEditWarpGridPose(warpState);
                 if (lensTool) lensTool.disabled = !canEditPose || !targetEditAllowed || this.isPlaying;
@@ -15503,68 +15894,72 @@ export class AnimationTablePopup {
         
         this.panel.innerHTML = `
             <div class="anim-table-header">
-                <div class="anim-table-header-left">
-                    <button class="anim-tool-btn anim-play-btn" id="anim-play-toggle-btn" title="Play">▶</button>
-                    <div class="anim-scope-controls" title="プレビュー/再生対象を切り替え">
-                        <span class="anim-control-label">SCOPE:</span>
-                        <button class="anim-scope-btn" id="anim-scope-all-btn" title="全Laneをプレビュー/再生">ALL</button>
-                        <button class="anim-scope-btn" id="anim-scope-lane-btn" title="アクティブLaneのみプレビュー/再生">LANE</button>
-                        <button class="anim-scope-btn" id="anim-scope-set-btn" title="チェックしたLaneのみプレビュー/再生">SET</button>
-                    </div>
-                    <div class="anim-playback-controls" title="再生範囲・終端・ループ">
-                        <button class="anim-playback-btn" id="anim-loop-toggle-btn" title="Loop ON/OFF">LOOP</button>
-                        <button class="anim-playback-btn" id="anim-end-mode-btn" title="終端基準を切り替え">END:T</button>
-                        <button class="anim-playback-btn" id="anim-set-in-btn" title="現在FrameをIN markerに設定">IN</button>
-                        <button class="anim-playback-btn" id="anim-set-out-btn" title="現在FrameをOUT markerに設定">OUT</button>
-                    </div>
-                    <button class="anim-preview-toggle" id="anim-preview-toggle-btn" title="PREVIEW OFF: 通常Layer表示を優先" aria-pressed="false">PREVIEW</button>
-                    <button class="anim-onion-toggle" id="anim-onion-toggle-btn" title="Timeline onion: off">
-                        <span class="anim-onion-icon">${UI_ICONS.onionSkin}</span>
-                        <span class="anim-onion-count">0</span>
-                    </button>
-                    <div class="anim-timeline-settings" title="Timeline settings">
-                        <label class="anim-setting-field">FPS
-                            <input type="number" id="anim-fps-input" min="1" max="60" step="1" value="${this.model.fps}">
-                        </label>
-                        <label class="anim-setting-field">FRAMES
-                            <input type="number" id="anim-total-frames-input" min="1" max="240" step="1" value="${this.model.totalFrames}">
-                        </label>
+                <div class="anim-table-header-row anim-table-header-row--playback">
+                    <div class="anim-table-header-left">
+                        <div class="anim-timeline-settings" title="Timeline settings">
+                            <label class="anim-setting-field">FPS
+                                <input type="number" id="anim-fps-input" min="1" max="60" step="1" value="${this.model.fps}">
+                            </label>
+                            <label class="anim-setting-field">FRAMES
+                                <input type="number" id="anim-total-frames-input" min="1" max="240" step="1" value="${this.model.totalFrames}">
+                            </label>
+                        </div>
+                        <div class="anim-scope-controls" title="プレビュー/再生対象を切り替え">
+                            <span class="anim-control-label">SCOPE:</span>
+                            <button class="anim-scope-btn" id="anim-scope-all-btn" title="全Laneをプレビュー/再生">ALL</button>
+                            <button class="anim-scope-btn" id="anim-scope-lane-btn" title="アクティブLaneのみプレビュー/再生">LANE</button>
+                            <button class="anim-scope-btn" id="anim-scope-set-btn" title="チェックしたLaneのみプレビュー/再生">SET</button>
+                        </div>
+                        <div class="anim-playback-controls" title="再生範囲・終端・ループ">
+                            <button class="anim-playback-btn" id="anim-loop-toggle-btn" title="Loop ON/OFF">LOOP</button>
+                            <button class="anim-playback-btn" id="anim-end-mode-btn" title="終端基準を切り替え">END:T</button>
+                            <button class="anim-playback-btn" id="anim-set-in-btn" title="現在FrameをIN markerに設定">IN</button>
+                            <button class="anim-playback-btn" id="anim-set-out-btn" title="現在FrameをOUT markerに設定">OUT</button>
+                        </div>
+                        <button class="anim-preview-toggle" id="anim-preview-toggle-btn" title="PREVIEW OFF: 通常Layer表示を優先" aria-pressed="false">PREVIEW</button>
+                        <button class="anim-onion-toggle" id="anim-onion-toggle-btn" title="Timeline onion: off">
+                            <span class="anim-onion-icon">${UI_ICONS.onionSkin}</span>
+                            <span class="anim-onion-count">0</span>
+                        </button>
+                        <button class="anim-tool-btn anim-play-btn" id="anim-play-toggle-btn" title="Play">▶</button>
                     </div>
                 </div>
-                <div class="anim-table-header-center">
-                    <div class="anim-duration-controls">
-                        <span class="anim-control-label">DURATION:</span>
-                        <button class="anim-tool-btn" id="anim-duration-dec" title="Decrease Duration">-</button>
-                        <button class="anim-tool-btn" id="anim-duration-inc" title="Increase Duration">+</button>
+                <div class="anim-table-header-row anim-table-header-row--clip">
+                    <div class="anim-table-header-center">
+                        <div class="anim-zoom-controls" title="Timeline zoom">
+                            <button class="anim-zoom-btn" id="anim-zoom-out-btn" aria-label="Zoom out timeline">-</button>
+                            <span class="anim-zoom-value" id="anim-zoom-value">100%</span>
+                            <button class="anim-zoom-btn" id="anim-zoom-in-btn" aria-label="Zoom in timeline">+</button>
+                        </div>
+                        <button class="anim-tool-btn anim-assets-toggle-btn" id="anim-assets-toggle-btn" title="Asset Libraryを表示/非表示">LIB</button>
+                        <div class="anim-duration-controls">
+                            <span class="anim-control-label">DURATION:</span>
+                            <button class="anim-tool-btn" id="anim-duration-dec" title="Decrease Duration">-</button>
+                            <button class="anim-tool-btn" id="anim-duration-inc" title="Increase Duration">+</button>
+                        </div>
+                        <div class="anim-motion-controls">
+                            <button class="anim-tool-btn anim-icon-btn anim-motion-open-btn" id="anim-motion-open-btn" type="button" aria-expanded="false" title="Clip Motion: position / scale / rotation keyを編集 (Shift+V)" aria-label="Open Clip Motion controls">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg>
+                            </button>
+                        </div>
+                        <div class="anim-copy-paste-controls">
+                            <button class="anim-tool-btn anim-copy-btn anim-icon-btn" id="anim-copy-btn" title="選択セルをコピー" aria-label="Copy selected clip">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg>
+                            </button>
+                            <button class="anim-tool-btn anim-paste-btn anim-icon-btn" id="anim-paste-btn" title="コピーした内容を貼り付け" aria-label="Paste copied clip">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                            </button>
+                            <button class="anim-tool-btn anim-group-btn anim-icon-btn" id="anim-group-btn" title="選択CAFをGroup化" aria-label="Group selected CAFs" hidden>
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 6v13"/></svg>
+                            </button>
+                            <button class="anim-tool-btn anim-delete-btn anim-icon-btn" id="anim-delete-active-btn" title="選択CAFを削除 (Alt+Delete / Alt+Backspace)" aria-label="Delete selected CAF">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M9 11v6"/><path d="M15 11v6"/></svg>
+                            </button>
+                        </div>
                     </div>
-                    <div class="anim-motion-controls">
-                        <button class="anim-tool-btn anim-icon-btn anim-motion-open-btn" id="anim-motion-open-btn" type="button" aria-expanded="false" title="Clip Motion: position / scale / rotation keyを編集 (Shift+V)" aria-label="Open Clip Motion controls">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg>
-                        </button>
+                    <div class="anim-table-header-right">
+                        <button class="ui-close-button ui-close-button--small" id="anim-table-close-btn" title="閉じる">×</button>
                     </div>
-                    <div class="anim-copy-paste-controls">
-                        <button class="anim-tool-btn anim-copy-btn anim-icon-btn" id="anim-copy-btn" title="選択セルをコピー" aria-label="Copy selected clip">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg>
-                        </button>
-                        <button class="anim-tool-btn anim-paste-btn anim-icon-btn" id="anim-paste-btn" title="コピーした内容を貼り付け" aria-label="Paste copied clip">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
-                        </button>
-                        <button class="anim-tool-btn anim-group-btn anim-icon-btn" id="anim-group-btn" title="選択CAFをGroup化" aria-label="Group selected CAFs" hidden>
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 6v13"/></svg>
-                        </button>
-                        <button class="anim-tool-btn anim-delete-btn anim-icon-btn" id="anim-delete-active-btn" title="選択CAFを削除 (Alt+Delete / Alt+Backspace)" aria-label="Delete selected CAF">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M9 11v6"/><path d="M15 11v6"/></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="anim-table-header-right">
-                    <div class="anim-zoom-controls" title="Timeline zoom">
-                        <button class="anim-zoom-btn" id="anim-zoom-out-btn" aria-label="Zoom out timeline">-</button>
-                        <span class="anim-zoom-value" id="anim-zoom-value">100%</span>
-                        <button class="anim-zoom-btn" id="anim-zoom-in-btn" aria-label="Zoom in timeline">+</button>
-                    </div>
-                    <button class="anim-tool-btn anim-assets-toggle-btn" id="anim-assets-toggle-btn" title="Asset Libraryを表示/非表示">LIB</button>
-                    <button class="ui-close-button ui-close-button--small" id="anim-table-close-btn" title="閉じる">×</button>
                 </div>
             </div>
             <div class="anim-table-viewport ui-scrollbar">
@@ -15604,6 +15999,10 @@ export class AnimationTablePopup {
         this.motionPanel.removeAttribute('hidden');
         this.motionPanel.tabIndex = -1;
         this.motionPanel.style.display = 'none';
+        const motionEasingOptions = MOTION_EASING_PRESET_GROUPS.map(group => `
+            <optgroup label="${this._escapeHtml(group.label)}">
+                ${group.entries.map(entry => `<option value="${this._escapeHtml(entry.value)}">${this._escapeHtml(entry.label)}</option>`).join('')}
+            </optgroup>`).join('');
         this.motionPanel.innerHTML = `
             <div class="anim-motion-window-header transform-popup-header">
                 <span class="transform-popup-title">CLIP MOTION</span>
@@ -15628,6 +16027,7 @@ export class AnimationTablePopup {
                     <button class="anim-motion-action anim-motion-action--motion anim-motion-clear-btn flip-button flip-button--icon" id="anim-motion-clear-btn" type="button" title="このClipのmotion keyをすべて削除" aria-label="Clear all motion keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
                     <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-clear-btn" type="button" title="このClipのWarp keyをすべて削除" aria-label="Clear all Warp keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
                     <button class="anim-motion-action anim-motion-action--motion anim-motion-curve-btn flip-button flip-button--icon" id="anim-motion-curve-btn" type="button" title="左keyから次keyまでのEasing Curveを編集" aria-label="Open easing curve editor" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 17c2-7 5-10 10-10"/><circle cx="7" cy="17" r="1.4"/><circle cx="17" cy="7" r="1.4"/></svg></button>
+                    <button class="anim-motion-action anim-motion-action--motion anim-motion-graph-btn flip-button flip-button--icon" id="anim-motion-graph-btn" type="button" title="Clip全体のMotion Graphを表示" aria-label="Open Motion Graph" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h17"/><path d="m6 15 4-5 3 3 6-7"/></svg></button>
                     <button class="anim-motion-help-btn flip-button" id="anim-motion-help-btn" type="button" aria-label="CLIP MOTION 操作ヘルプ" aria-controls="anim-motion-help-popover" aria-expanded="false">?</button>
                 </div>
                 <button class="ui-close-button ui-close-button--small" id="anim-motion-close-btn" type="button" aria-label="Close motion controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -15655,11 +16055,9 @@ export class AnimationTablePopup {
                 <div class="anim-motion-fields-row">
                     <label title="CAF内部Layerを合成した後、完成Clipを下側Laneへ合成。modeは次のkeyまで維持">Blend<select data-motion-param="blendMode" aria-label="Clip blend mode"><option value="normal">NORMAL</option><option value="add">ADD</option><option value="subtract">SUBTRACT</option><option value="multiply">MULTIPLY</option><option value="overlay">OVERLAY</option></select></label>
                     <label title="指定Blendで合成するClipの強さ。0%は合成なし、100%は指定Blendを完全適用。LINEAR / EASEでは次のkeyまで連続変化">Strength %<input type="number" min="0" max="100" step="1" data-motion-param="blendStrength"></label>
-                    <select id="anim-motion-interpolation" aria-label="Transform key interpolation" title="左keyから次keyまでの速度変化。HOLDは現在値を維持">
+                    <select id="anim-motion-interpolation" aria-label="Transform key interpolation" title="左keyから次keyまでの速度変化。Ctrl/Cmdで複数選択したMotion keyへ一括適用。HOLDは現在値を維持">
                         <option value="linear">LINEAR</option>
-                        <option value="ease-in">EASE IN</option>
-                        <option value="ease-out">EASE OUT</option>
-                        <option value="ease-in-out">EASE IN-OUT</option>
+                        ${motionEasingOptions}
                         <option value="hold">HOLD</option>
                         <option value="custom" disabled>CUSTOM</option>
                     </select>
@@ -15686,10 +16084,15 @@ export class AnimationTablePopup {
                         <label>Rotation°<input type="number" step="1" data-rig-bind-param="rotation"></label>
                     </div>
                     <div class="anim-rig-mesh-bone-controls" data-rig-mesh-bone-controls hidden>
-                        <label>BONE<select data-rig-mesh-bone-select aria-label="Raster Mesh Bone"></select></label>
-                        <button class="anim-rig-key-btn" type="button" data-rig-mesh-bone-add>＋ BONE</button>
-                        <button class="anim-rig-key-btn" type="button" data-rig-mesh-generate>AUTO GRID</button>
-                        <button class="anim-rig-key-btn" type="button" data-rig-mesh-generate-shape>AUTO SHAPE</button>
+                        <div class="anim-rig-mesh-bone-source">
+                            <label>BONE<select data-rig-mesh-bone-select aria-label="Raster Mesh Bone"></select></label>
+                            <button class="anim-rig-key-btn" type="button" data-rig-mesh-bone-add>＋ BONE</button>
+                        </div>
+                        <div class="anim-rig-mesh-generate-group" role="group" aria-label="Raster Mesh自動生成">
+                            <button class="anim-rig-key-btn anim-rig-mesh-generate-btn" type="button" data-rig-mesh-generate>AUTO GRID</button>
+                            <button class="anim-rig-key-btn anim-rig-mesh-generate-btn" type="button" data-rig-mesh-generate-shape>AUTO SHAPE</button>
+                            <button class="anim-rig-key-btn anim-rig-mesh-generate-btn" type="button" data-rig-mesh-generate-line>AUTO LINE</button>
+                        </div>
                         <span class="anim-rig-mesh-status" data-rig-mesh-status>MESH未生成</span>
                     </div>
                     <label class="anim-rig-parent-field">親<select data-rig-parent-bone aria-label="Parent Bone"><option value="">なし（ROOT）</option></select></label>
@@ -15743,7 +16146,7 @@ export class AnimationTablePopup {
                     </div>
                     <button class="anim-warp-tool-btn" id="anim-warp-lens-tool-btn" type="button" aria-pressed="false" title="現在FrameのWarp keyへLensの移動・拡縮・回転を記録">LENS</button>
                     <button class="anim-warp-tool-btn" id="anim-warp-point-tool-btn" type="button" aria-pressed="true" title="1点ずつ直接移動">POINT</button>
-                    <button class="anim-warp-tool-btn anim-warp-select-tool-btn ui-help-tooltip" id="anim-warp-select-tool-btn" type="button" aria-pressed="false" aria-label="Warp pointを矩形選択" data-tooltip="矩形選択: 空Canvasをdragして点を選択 / 選択点をdragして一括移動"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></svg><span>SELECT</span></button>
+                    <button class="anim-warp-tool-btn anim-warp-select-tool-btn ui-help-tooltip" id="anim-warp-select-tool-btn" type="button" aria-pressed="false" aria-label="Warp pointを矩形選択" data-tooltip="RECT選択: 空Canvasをdragして矩形内の点を選択 / 選択点をdragして一括移動 / SELECT中はMまたは再clickで形状切替"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></svg><span>SELECT</span><span class="anim-warp-select-shape" data-warp-select-shape>RECT</span></button>
                     <button class="anim-warp-tool-btn" id="anim-warp-brush-tool-btn" type="button" aria-pressed="false" title="円形範囲の複数点を滑らかに移動">BRUSH</button>
                     <button class="anim-warp-tool-btn anim-warp-overlay-toggle-btn active" id="anim-warp-overlay-toggle-btn" type="button" aria-pressed="true" title="Warp GRIDガイドを非表示" aria-label="Toggle Warp Grid guide visibility"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
                     <label class="anim-warp-brush-control ui-help-tooltip" data-brush-control data-brush-mode-help data-tooltip="${WARP_BRUSH_MODE_DESCRIPTIONS.move}">
@@ -15795,6 +16198,7 @@ export class AnimationTablePopup {
         this.motionPanelDragCleanup?.();
         this.motionPanelDragCleanup = attachPopupDrag(this.motionPanel);
         this._ensureMotionCurvePanel();
+        this._ensureMotionGraphPanel();
     }
 
     _ensureMotionCurvePanel() {
@@ -15832,6 +16236,49 @@ export class AnimationTablePopup {
         this.motionCurvePanelDragCleanup?.();
         this.motionCurvePanelDragCleanup = attachPopupDrag(this.motionCurvePanel, {
             interactiveSelector: 'button, input, .anim-motion-curve-graph'
+        });
+    }
+
+    _ensureMotionGraphPanel() {
+        this.motionGraphPanel = document.getElementById('animation-motion-graph-window');
+        if (this.motionGraphPanel) this.motionGraphPanel.remove();
+        this.motionGraphPanel = document.createElement('div');
+        this.motionGraphPanel.id = 'animation-motion-graph-window';
+        this.motionGraphPanel.className = 'anim-motion-graph-window popup-panel--translucent transform-popup-shell ui-scrollbar';
+        this.motionGraphPanel.tabIndex = -1;
+        this.motionGraphPanel.style.display = 'none';
+        const groupButtons = Object.values(MOTION_GRAPH_GROUPS).map(group => `
+            <button class="anim-motion-graph-group-btn${group.id === this._motionGraphGroup ? ' active' : ''}" type="button" data-motion-graph-group="${group.id}" aria-pressed="${group.id === this._motionGraphGroup}">${group.label}</button>
+        `).join('');
+        this.motionGraphPanel.innerHTML = `
+            <div class="anim-motion-graph-header transform-popup-header">
+                <span class="transform-popup-title">MOTION GRAPH</span>
+                <span class="anim-motion-graph-status" data-motion-graph-status></span>
+                <button class="ui-close-button ui-close-button--small" id="anim-motion-graph-close-btn" type="button" aria-label="Close Motion Graph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+            </div>
+            <div class="anim-motion-graph-groups" role="group" aria-label="Motion Graph group">${groupButtons}</div>
+            <svg class="anim-motion-graph-plot" data-motion-graph-plot viewBox="0 0 520 250" role="img" aria-label="Read-only Motion Graph"></svg>
+            <div class="anim-motion-graph-legend" data-motion-graph-legend></div>
+            <div class="anim-motion-graph-values" data-motion-graph-values></div>
+            <div class="anim-motion-graph-mode" data-motion-graph-mode></div>`;
+        mountPopupAtOverlayRoot(this.motionGraphPanel);
+        this.motionGraphPanelDragCleanup?.();
+        this.motionGraphPanelDragCleanup = attachPopupDrag(this.motionGraphPanel, {
+            interactiveSelector: 'button, .anim-motion-graph-plot'
+        });
+    }
+
+    _setupMotionGraphEvents() {
+        const panel = this.motionGraphPanel;
+        if (!panel) return;
+        panel.querySelectorAll('[data-motion-graph-group]').forEach(button => {
+            button.addEventListener('click', () => {
+                this._motionGraphGroup = normalizeMotionGraphGroup(button.dataset.motionGraphGroup);
+                this._syncMotionGraphPanel();
+            });
+        });
+        panel.querySelector('#anim-motion-graph-close-btn')?.addEventListener('click', () => {
+            this._setMotionGraphWindowOpen(false);
         });
     }
 
@@ -16406,6 +16853,9 @@ export class AnimationTablePopup {
             motionControls.querySelector('[data-rig-mesh-generate-shape]')?.addEventListener('click', () => {
                 this._generateSelectedRasterBoneSetup('auto-shape');
             });
+            motionControls.querySelector('[data-rig-mesh-generate-line]')?.addEventListener('click', () => {
+                this._generateSelectedRasterBoneSetup('auto-shape-line');
+            });
             motionControls.querySelector('[data-rig-mesh-bone-select]')?.addEventListener('change', event => {
                 const context = this._getSelectedRigInspectorContext();
                 const boneId = event.currentTarget.value || null;
@@ -16463,7 +16913,11 @@ export class AnimationTablePopup {
                 this._setWarpGridTool('point', { notify: true });
             });
             motionControls.querySelector('#anim-warp-select-tool-btn')?.addEventListener('click', () => {
-                this._setWarpGridTool('select', { notify: true });
+                if (this._warpGridTool === 'select') {
+                    this._cycleWarpPointSelectionShape({ notify: true });
+                } else {
+                    this._setWarpGridTool('select', { notify: true });
+                }
             });
             motionControls.querySelector('#anim-warp-brush-tool-btn')?.addEventListener('click', () => {
                 this._setWarpGridTool('brush', { notify: true });
@@ -16507,6 +16961,10 @@ export class AnimationTablePopup {
             });
             motionControls.addEventListener('change', (e) => {
                 if (e.target.closest('#anim-motion-key-btn, #anim-warp-interpolation, .anim-control-mesh-create, .anim-warp-tool-controls')) return;
+                if (e.target.closest('#anim-motion-interpolation')) {
+                    this._applySelectedMotionEasingPreset(e.target.value);
+                    return;
+                }
                 this._setSelectedClipMotionKeyFromControls();
             });
             motionControls.querySelector('#anim-motion-key-btn')?.addEventListener('click', () => {
@@ -16590,6 +17048,9 @@ export class AnimationTablePopup {
             motionControls.querySelector('#anim-motion-curve-btn')?.addEventListener('click', () => {
                 this._setMotionCurveWindowOpen(this.motionCurvePanel?.style.display === 'none');
             });
+            motionControls.querySelector('#anim-motion-graph-btn')?.addEventListener('click', () => {
+                this._setMotionGraphWindowOpen(this.motionGraphPanel?.style.display === 'none');
+            });
             motionControls.querySelector('#anim-motion-help-btn')?.addEventListener('click', () => {
                 const help = motionControls.querySelector('#anim-motion-help-popover');
                 this._setMotionHelpOpen(help?.hidden !== false);
@@ -16597,6 +17058,7 @@ export class AnimationTablePopup {
             motionOpenButton.addEventListener('click', () => this.toggleMotionWindow());
             motionControls.querySelector('#anim-motion-close-btn')?.addEventListener('click', () => this.setMotionWindowOpen(false));
             this._setupMotionCurveEvents();
+            this._setupMotionGraphEvents();
         }
 
         const fpsInput = this.panel.querySelector('#anim-fps-input');
@@ -18248,16 +18710,15 @@ export class AnimationTablePopup {
                 background: rgba(255, 251, 230, 0.96);
                 color: var(--futaba-maroon);
                 display: flex;
-                flex-wrap: wrap;
-                justify-content: space-between;
-                align-items: center;
+                flex-direction: column;
+                align-items: stretch;
                 position: relative;
                 font-size: 9px;
                 font-weight: bold;
                 cursor: move;
                 flex-shrink: 0;
                 border-bottom: 1px solid rgba(128, 0, 0, 0.2);
-                gap: 4px 8px;
+                gap: 4px;
                 touch-action: none;
             }
 
@@ -18271,6 +18732,20 @@ export class AnimationTablePopup {
                 opacity: 0.72;
             }
 
+            .anim-table-header-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                width: 100%;
+                min-width: 0;
+                gap: 5px;
+            }
+
+            .anim-table-header-row--clip {
+                padding-top: 4px;
+                border-top: 1px solid color-mix(in srgb, var(--futaba-light-medium) 42%, transparent);
+            }
+
             .anim-table-header-left,
             .anim-table-header-center,
             .anim-table-header-right {
@@ -18281,13 +18756,14 @@ export class AnimationTablePopup {
             }
 
             .anim-table-header-left {
-                flex: 1 1 320px;
+                flex: 1 1 auto;
                 flex-wrap: wrap;
             }
 
             .anim-table-header-center {
-                flex: 1 1 180px;
-                justify-content: center;
+                flex: 1 1 auto;
+                flex-wrap: wrap;
+                justify-content: flex-start;
             }
 
             .anim-table-header-right {
@@ -18355,7 +18831,7 @@ export class AnimationTablePopup {
             }
 
             .anim-play-btn {
-                margin-right: 3px;
+                margin-left: 3px;
                 width: 20px;
                 height: 20px;
                 font-size: 10px;
@@ -18516,9 +18992,13 @@ export class AnimationTablePopup {
             }
 
             .animation-table-panel.is-narrow .anim-table-header {
-                align-items: center;
-                justify-content: flex-start;
                 padding: 5px 34px 5px 10px;
+                gap: 5px;
+            }
+
+            .animation-table-panel.is-narrow .anim-table-header-row {
+                flex-wrap: wrap;
+                justify-content: flex-start;
                 gap: 6px 8px;
             }
 
