@@ -50,6 +50,10 @@ import {
     MOTION_GRAPH_GROUPS,
     normalizeMotionGraphGroup
 } from '../system/animation/motion-graph-view-model.js';
+import {
+    normalizeMotionGraphEditChannel,
+    patchMotionGraphTransformChannel
+} from '../system/animation/motion-graph-key-edit.js';
 import { sampleClipBakeState } from '../system/animation/clip-bake-sampler.js';
 import {
     evaluateRigidBones,
@@ -149,6 +153,10 @@ import {
     applyMotionKeyClipboardPayload,
     createMotionKeyClipboardPayload
 } from '../system/animation/motion-key-clipboard.js';
+import {
+    applyMotionEasingClipboardPayload,
+    createMotionEasingClipboardPayload
+} from '../system/animation/motion-easing-clipboard.js';
 import {
     applyMotionEasingPresetToKeyframes,
     identifyMotionEasingPreset,
@@ -259,15 +267,15 @@ const AUTO_LINE_FAILURE_MESSAGES = Object.freeze({
     'line-ribbon-bone-chain-required': 'AUTO LINEには親子が連結した2〜3本のMesh BONEが必要です',
     'line-ribbon-bone-too-far': 'AUTO LINEのBONEがRaster中心線から離れすぎています',
     'line-ribbon-bone-order-ambiguous': 'AUTO LINEのBONE順を判定できません',
-    'line-ribbon-centerline-too-short': 'AUTO LINEの中心線が短すぎます',
-    'single-component-required': 'AUTO LINEは一つの連結Rasterだけに対応します',
-    'holes-unsupported': 'AUTO LINEは穴のあるRasterに対応しません',
-    'branching-centerline': 'AUTO LINEは分岐のない中心線だけに対応します',
-    'disconnected-centerline': 'AUTO LINEの中心線が連結していません',
-    'closed-centerline': 'AUTO LINEは閉じた中心線に対応しません',
-    'self-intersecting-ribbon': 'AUTO LINEのRibbonが自己交差するため作成できません',
-    'rail-boundary-not-found': 'AUTO LINEの左右境界を判定できません',
-    'abrupt-width-change': 'AUTO LINEの線幅変化が大きすぎます',
+    'line-ribbon-centerline-too-short': 'AUTO LINEの中心線が短すぎます。細長い対象にするかAUTO SHAPEを使ってください',
+    'single-component-required': 'AUTO LINEは一つの連結Rasterだけに対応します。離れた線は別Rasterへ分けてください',
+    'holes-unsupported': 'AUTO LINEは穴のあるRasterに対応しません。穴を閉じるかAUTO SHAPEを使ってください',
+    'branching-centerline': 'AUTO LINEは分岐のない中心線だけに対応します。枝ごとに別Rasterへ分けるかAUTO SHAPEを使ってください',
+    'disconnected-centerline': 'AUTO LINEの中心線が連結していません。線をつなぐか別Rasterへ分けてください',
+    'closed-centerline': 'AUTO LINEは閉じた中心線に対応しません。輪を開くかAUTO SHAPEを使ってください',
+    'self-intersecting-ribbon': 'AUTO LINEのRibbonが自己交差します。曲がりを緩くするかAUTO SHAPEを使ってください',
+    'rail-boundary-not-found': 'AUTO LINEの左右境界を判定できません。線幅を整理するかAUTO SHAPEを使ってください',
+    'abrupt-width-change': 'AUTO LINEの線幅変化が大きすぎます。太さを滑らかにするかAUTO SHAPEを使ってください',
     'degenerate-ribbon-triangle': 'AUTO LINEの三角形が退化するため作成できません',
     'minimum-triangle-angle': 'AUTO LINEの三角形角度が小さすぎます',
     'coverage-ratio-out-of-range': 'AUTO LINEのRaster被覆率が許容外です',
@@ -331,6 +339,9 @@ export class AnimationTablePopup {
         this.motionGraphPanel = null;
         this.motionGraphPanelDragCleanup = null;
         this._motionGraphGroup = 'position';
+        this._motionGraphChannelByGroup = Object.create(null);
+        this._motionGraphGesture = null;
+        this._motionGraphSuppressClick = false;
         this._motionCurveGesture = null;
         this._motionPlaybackClipId = null;
         this._motionAnchorClip = null;
@@ -366,6 +377,7 @@ export class AnimationTablePopup {
         this._rigInputCommitTimer = null;
         this._motionAnchorBeforeState = null;
         this._motionKeyClipboard = null;
+        this._motionEasingClipboard = null;
         this._warpKeyClipboard = null;
         this._pendingShowTransformGate = null;
         this.isVisible = false;
@@ -11177,6 +11189,29 @@ export class AnimationTablePopup {
         return true;
     }
 
+    _seekMotionGraphKey(localFrame) {
+        if (this.isPlaying || !Number.isInteger(localFrame)) return false;
+        const motionClipId = this.selectedCelId;
+        const entry = motionClipId ? this.model.findClipEntry(motionClipId) : null;
+        const clip = entry?.clip;
+        if (!clip || clip.duration <= 1 || localFrame < 0 || localFrame >= clip.duration) return false;
+        const key = (clip.transformKeyframes || []).findLast(item => item?.frame === localFrame);
+        if (!key) return false;
+
+        this.model.setCurrentFrame(clip.startFrame + localFrame);
+        this._syncWorkingLayersForCurrentFrame();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this.render();
+        this._syncMotionPanelFrameValues(this._getSelectedClipMotionFrame(), { force: true });
+        this._requestLayerPanelSync();
+        this.eventBus?.emit('animation:frame-changed', {
+            frameIndex: this.model.playback.currentFrame,
+            direction: 'motion-graph-key'
+        });
+        return true;
+    }
+
     _commitSelectedWarpGridDeformer(nextDeformer, historyName, meta = {}, options = {}) {
         const state = this._getWarpGridEditState();
         const removingUnsupportedTarget = nextDeformer == null && state?.folderLayerId;
@@ -11446,10 +11481,15 @@ export class AnimationTablePopup {
         const panel = this.motionCurvePanel;
         if (!panel) return false;
         const state = this._getMotionCurveEditState(motionState);
+        const canUseClipboard = !!state.motionState?.key
+            && state.motionState.localFrame < state.motionState.entry.clip.duration - 1
+            && !this.isPlaying;
         const button = this.motionPanel?.querySelector('#anim-motion-curve-btn');
         if (button) {
-            button.disabled = !state.editable;
-            button.title = state.reason;
+            button.disabled = !state.editable && !canUseClipboard;
+            button.title = canUseClipboard && !state.editable
+                ? `${state.reason}。EasingのCOPY / PASTEは使用できます`
+                : state.reason;
             button.classList.toggle('active', panel.style.display !== 'none');
             button.setAttribute('aria-expanded', String(panel.style.display !== 'none'));
         }
@@ -11459,6 +11499,8 @@ export class AnimationTablePopup {
         const controlLines = panel.querySelectorAll('.anim-motion-curve-control-line');
         const handles = panel.querySelectorAll('.anim-motion-curve-handle');
         const status = panel.querySelector('.anim-motion-curve-status');
+        const copyButton = panel.querySelector('#anim-motion-easing-copy-btn');
+        const pasteButton = panel.querySelector('#anim-motion-easing-paste-btn');
         const bounds = { width: 220, height: 220, padding: 14 };
         const start = curvePointToGraphPoint({ x: 0, y: 0 }, bounds);
         const end = curvePointToGraphPoint({ x: 1, y: 1 }, bounds);
@@ -11487,6 +11529,18 @@ export class AnimationTablePopup {
             status.textContent = state.editable
                 ? `Local F${state.motionState.localFrame + 1} → 右区間`
                 : state.reason;
+        }
+        if (copyButton) {
+            copyButton.disabled = !canUseClipboard;
+            copyButton.dataset.tooltip = canUseClipboard
+                ? '現在segmentのEasingだけをコピー'
+                : state.reason;
+        }
+        if (pasteButton) {
+            pasteButton.disabled = !canUseClipboard || !this._motionEasingClipboard;
+            pasteButton.dataset.tooltip = this._motionEasingClipboard
+                ? '現在または選択中のMotion keyへEasingだけを貼り付け'
+                : '先にEasingをコピーしてください';
         }
         ['x1', 'y1', 'x2', 'y2'].forEach(name => {
             const input = panel.querySelector(`[data-motion-curve-param="${name}"]`);
@@ -11530,6 +11584,43 @@ export class AnimationTablePopup {
         );
     }
 
+    _getMotionGraphActiveChannel(view) {
+        const groupId = view?.group?.id || normalizeMotionGraphGroup(this._motionGraphGroup);
+        const channel = normalizeMotionGraphEditChannel(
+            groupId,
+            this._motionGraphChannelByGroup[groupId]
+        );
+        if (channel) this._motionGraphChannelByGroup[groupId] = channel;
+        return channel;
+    }
+
+    _previewMotionGraphKeyValue(gesture, displayValue) {
+        if (!gesture || this.isPlaying) return false;
+        const state = this._getSelectedClipMotionFrame();
+        if (!state?.key
+            || state.entry.clip.id !== gesture.clipId
+            || state.localFrame !== gesture.localFrame) {
+            return false;
+        }
+        const patch = patchMotionGraphTransformChannel({
+            transform: gesture.startTransform,
+            group: gesture.group,
+            channel: gesture.channel,
+            displayValue
+        });
+        if (!patch.ok) return false;
+        const updated = this._upsertSelectedMotionKey(patch.transform, {
+            deferPreview: true,
+            render: false
+        });
+        if (!updated) return false;
+        gesture.mutated = true;
+        gesture.changed = patch.changed;
+        gesture.displayValue = patch.displayValue;
+        this._syncMotionPanelFrameValues(this._getSelectedClipMotionFrame(), { force: true });
+        return true;
+    }
+
     _syncMotionGraphPanel(motionState = this._getSelectedClipMotionFrame()) {
         const panel = this.motionGraphPanel;
         if (!panel) return false;
@@ -11548,6 +11639,20 @@ export class AnimationTablePopup {
                 : '2 Frame以上のCAFを選択してください';
             button.removeAttribute('title');
         }
+        const easingButton = panel.querySelector('#anim-motion-graph-easing-btn');
+        const curveState = this._getMotionCurveEditState(motionState);
+        const canOpenEasing = !!curveState.motionState?.key
+            && curveState.motionState.localFrame < curveState.motionState.entry.clip.duration - 1
+            && !this.isPlaying;
+        if (easingButton) {
+            easingButton.disabled = !canOpenEasing;
+            easingButton.dataset.tooltip = canOpenEasing
+                ? '現在のMotion keyからEASING CURVEを開く'
+                : (curveState.reason || 'explicit Motion keyを選択してください');
+            easingButton.setAttribute('aria-expanded', String(
+                !!this.motionCurvePanel && this.motionCurvePanel.style.display !== 'none'
+            ));
+        }
         if (!isOpen || !canOpen) return true;
         panel.querySelectorAll('[data-motion-graph-group]').forEach(groupButton => {
             const active = groupButton.dataset.motionGraphGroup === view.group.id;
@@ -11563,6 +11668,10 @@ export class AnimationTablePopup {
         const innerHeight = height - padding.top - padding.bottom;
         const frameDenominator = Math.max(1, view.duration - 1);
         const rangeSpan = Math.max(1e-9, view.range.max - view.range.min);
+        const activeChannel = this._getMotionGraphActiveChannel(view);
+        const plotChannels = [...view.channels].sort((left, right) => (
+            Number(left.id === activeChannel) - Number(right.id === activeChannel)
+        ));
         const xForFrame = frame => padding.left + (frame / frameDenominator) * innerWidth;
         const yForValue = value => padding.top + (1 - (value - view.range.min) / rangeSpan) * innerHeight;
         const createSvgElement = (tag, attributes = {}) => {
@@ -11591,25 +11700,32 @@ export class AnimationTablePopup {
             rangeLabel.textContent = Number(value.toFixed(2));
             plot.append(rangeLabel);
         }
-        view.channels.forEach((channel, channelIndex) => {
+        plotChannels.forEach(channel => {
+            const isActive = channel.id === activeChannel;
             const path = channel.values.map((value, index) => {
                 const command = index === 0 ? 'M' : 'L';
                 return `${command} ${xForFrame(index).toFixed(2)} ${yForValue(value).toFixed(2)}`;
             }).join(' ');
             plot.append(createSvgElement('path', {
-                class: `anim-motion-graph-path ${channelIndex === 0 ? 'is-primary' : 'is-secondary'}`,
+                class: `anim-motion-graph-path ${isActive ? 'is-primary' : 'is-secondary'}`,
                 'data-channel': channel.id,
                 d: path
             }));
         });
         view.keyPoints.forEach(keyPoint => {
-            view.channels.forEach(channel => {
+            plotChannels.forEach(channel => {
+                const isActive = channel.id === activeChannel;
                 plot.append(createSvgElement('circle', {
-                    class: 'anim-motion-graph-key',
+                    class: `anim-motion-graph-key ${isActive ? 'is-primary' : 'is-secondary'}`,
                     'data-channel': channel.id,
+                    'data-motion-graph-key-frame': keyPoint.localFrame,
+                    'data-motion-graph-key-project-frame': keyPoint.projectFrame,
                     cx: xForFrame(keyPoint.localFrame),
                     cy: yForValue(keyPoint.values[channel.id]),
-                    r: 3.5
+                    r: isActive ? 4.5 : 3.5,
+                    role: 'button',
+                    tabindex: '0',
+                    'aria-label': `${channel.label} Motion key F${keyPoint.projectFrame}へ移動、縦ドラッグで値編集`
                 }));
             });
         });
@@ -11662,9 +11778,13 @@ export class AnimationTablePopup {
         const legend = panel.querySelector('[data-motion-graph-legend]');
         if (legend) {
             legend.replaceChildren();
-            view.channels.forEach((channel, channelIndex) => {
-                const item = document.createElement('span');
-                item.className = `anim-motion-graph-legend-item ${channelIndex === 0 ? 'is-primary' : 'is-secondary'}`;
+            view.channels.forEach(channel => {
+                const isActive = channel.id === activeChannel;
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.dataset.motionGraphChannel = channel.id;
+                item.className = `anim-motion-graph-legend-item ${isActive ? 'is-primary' : 'is-secondary'}`;
+                item.setAttribute('aria-pressed', String(isActive));
                 item.textContent = channel.label;
                 legend.append(item);
             });
@@ -11679,9 +11799,10 @@ export class AnimationTablePopup {
         }
         const mode = panel.querySelector('[data-motion-graph-mode]');
         if (mode) {
+            const activeLabel = view.channels.find(channel => channel.id === activeChannel)?.label || activeChannel;
             mode.textContent = view.cursor.inRange && view.group.id === 'blend'
-                ? `Mode: ${view.cursor.blendMode}`
-                : '';
+                ? `Mode: ${view.cursor.blendMode} · ${activeLabel}を縦dragで編集`
+                : `${activeLabel}を縦dragで編集`;
         }
         return true;
     }
@@ -11699,7 +11820,10 @@ export class AnimationTablePopup {
     _setMotionCurveWindowOpen(open) {
         if (!this.motionCurvePanel) return false;
         const state = this._getMotionCurveEditState();
-        const nextOpen = open === true && state.editable;
+        const canUseClipboard = !!state.motionState?.key
+            && state.motionState.localFrame < state.motionState.entry.clip.duration - 1
+            && !this.isPlaying;
+        const nextOpen = open === true && (state.editable || canUseClipboard);
         this.motionCurvePanel.style.display = nextOpen ? 'block' : 'none';
         this._syncMotionCurvePanel();
         return nextOpen;
@@ -11768,6 +11892,44 @@ export class AnimationTablePopup {
         }
         return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, plan.keyframes, {
             source: 'animation-motion-easing-preset'
+        }).ok;
+    }
+
+    _copySelectedMotionEasing() {
+        const state = this._getMotionCurveEditState();
+        const key = state.motionState?.key;
+        if (!key
+            || state.motionState.localFrame >= state.motionState.entry.clip.duration - 1
+            || this.isPlaying) return false;
+        const payload = createMotionEasingClipboardPayload(key);
+        if (!payload) return false;
+        this._motionEasingClipboard = payload;
+        showFeedbackToast('Easingをコピー');
+        this._syncMotionCurvePanel(state.motionState);
+        return true;
+    }
+
+    _pasteSelectedMotionEasing() {
+        const state = this._getSelectedClipMotionFrame();
+        if (!state?.key || !this._motionEasingClipboard || this.isPlaying) return false;
+        const selected = this._getSelectedMotionTimelineKeys(state.entry.clip.id)
+            .filter(key => key.kind === 'motion');
+        const currentIsSelected = selected.some(key => key.frame === state.localFrame);
+        const frames = currentIsSelected
+            ? selected.map(key => key.frame)
+            : [state.localFrame];
+        const plan = applyMotionEasingClipboardPayload({
+            keyframes: state.entry.clip.transformKeyframes,
+            frames,
+            payload: this._motionEasingClipboard,
+            duration: state.entry.clip.duration
+        });
+        if (!plan.ok || !plan.changed) {
+            this._syncMotionCurvePanel(state);
+            return false;
+        }
+        return this.updateClipTransformKeyframesFromExternal(state.entry.clip.id, plan.keyframes, {
+            source: 'animation-motion-easing-clipboard'
         }).ok;
     }
 
@@ -16213,6 +16375,10 @@ export class AnimationTablePopup {
             <div class="anim-motion-curve-header transform-popup-header">
                 <span class="transform-popup-title">EASING CURVE</span>
                 <span class="anim-motion-curve-status"></span>
+                <span class="anim-motion-curve-clipboard-actions">
+                    <button class="flip-button ui-help-tooltip" id="anim-motion-easing-copy-btn" type="button" aria-label="Copy motion easing" data-tooltip="現在segmentのEasingだけをコピー">COPY</button>
+                    <button class="flip-button ui-help-tooltip" id="anim-motion-easing-paste-btn" type="button" aria-label="Paste motion easing" data-tooltip="先にEasingをコピーしてください">PASTE</button>
+                </span>
                 <button class="ui-close-button ui-close-button--small" id="anim-motion-curve-close-btn" type="button" aria-label="Close easing curve editor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
             </div>
             <svg class="anim-motion-curve-graph" viewBox="0 0 220 220" role="img" aria-label="Cubic Bezier easing curve editor">
@@ -16254,10 +16420,11 @@ export class AnimationTablePopup {
             <div class="anim-motion-graph-header transform-popup-header">
                 <span class="transform-popup-title">MOTION GRAPH</span>
                 <span class="anim-motion-graph-status" data-motion-graph-status></span>
+                <button class="anim-motion-graph-easing-btn ui-help-tooltip" id="anim-motion-graph-easing-btn" type="button" aria-label="Open easing curve editor">EASING</button>
                 <button class="ui-close-button ui-close-button--small" id="anim-motion-graph-close-btn" type="button" aria-label="Close Motion Graph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
             </div>
             <div class="anim-motion-graph-groups" role="group" aria-label="Motion Graph group">${groupButtons}</div>
-            <svg class="anim-motion-graph-plot" data-motion-graph-plot viewBox="0 0 520 250" role="img" aria-label="Read-only Motion Graph"></svg>
+            <svg class="anim-motion-graph-plot" data-motion-graph-plot viewBox="0 0 520 250" role="img" aria-label="Motion Graph existing-key value editor"></svg>
             <div class="anim-motion-graph-legend" data-motion-graph-legend></div>
             <div class="anim-motion-graph-values" data-motion-graph-values></div>
             <div class="anim-motion-graph-mode" data-motion-graph-mode></div>`;
@@ -16271,14 +16438,169 @@ export class AnimationTablePopup {
     _setupMotionGraphEvents() {
         const panel = this.motionGraphPanel;
         if (!panel) return;
+        const plot = panel.querySelector('[data-motion-graph-plot]');
+        const finishGesture = (event = null, cancelled = false) => {
+            const gesture = this._motionGraphGesture;
+            if (!gesture || (event && event.pointerId !== gesture.pointerId)) return false;
+            this._motionGraphGesture = null;
+            document.removeEventListener('keydown', onGestureKeyDown, true);
+            document.removeEventListener('pointermove', onGesturePointerMove, true);
+            document.removeEventListener('pointerup', onGesturePointerUp, true);
+            document.removeEventListener('pointercancel', onGesturePointerCancel, true);
+            this._cancelMotionEditPreviewRefresh();
+            plot?.classList.remove('is-value-dragging');
+            if (plot?.hasPointerCapture?.(gesture.pointerId)) {
+                plot.releasePointerCapture(gesture.pointerId);
+            }
+
+            if (cancelled || !gesture.changed) {
+                if (gesture.mutated) this._restoreTimelineHistoryState(gesture.beforeState);
+                else this._syncMotionGraphPanel();
+            } else {
+                this._finishMotionGestureHistory(
+                    gesture.beforeState,
+                    'caf-clip-motion-graph-value-drag'
+                );
+                this.render();
+                this._flushLayerPanelSync();
+            }
+            if (gesture.moved) {
+                this._motionGraphSuppressClick = true;
+                setTimeout(() => { this._motionGraphSuppressClick = false; }, 0);
+            }
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            return true;
+        };
+        const onGestureKeyDown = event => {
+            if (event.key !== 'Escape' || !this._motionGraphGesture) return;
+            finishGesture(null, true);
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        const onGesturePointerMove = event => {
+            const gesture = this._motionGraphGesture;
+            if (!gesture || event.pointerId !== gesture.pointerId) return;
+            const deltaY = event.clientY - gesture.startClientY;
+            if (!gesture.moved && Math.abs(deltaY) < 2) return;
+            gesture.moved = true;
+            const displayValue = gesture.startDisplayValue
+                - (deltaY / gesture.innerHeight) * gesture.rangeSpan;
+            this._previewMotionGraphKeyValue(gesture, displayValue);
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        const onGesturePointerUp = event => finishGesture(event);
+        const onGesturePointerCancel = event => finishGesture(event, true);
+        const activateMarker = marker => {
+            const localFrame = Number(marker?.dataset.motionGraphKeyFrame);
+            const channel = marker?.dataset.channel;
+            const view = this._getMotionGraphViewModel();
+            if (!view || !Number.isInteger(localFrame)) return false;
+            const activeChannel = normalizeMotionGraphEditChannel(view.group.id, channel);
+            if (activeChannel !== channel) return false;
+            this._motionGraphChannelByGroup[view.group.id] = activeChannel;
+            return this._seekMotionGraphKey(localFrame);
+        };
         panel.querySelectorAll('[data-motion-graph-group]').forEach(button => {
             button.addEventListener('click', () => {
+                if (this._motionGraphGesture) finishGesture(null, true);
                 this._motionGraphGroup = normalizeMotionGraphGroup(button.dataset.motionGraphGroup);
                 this._syncMotionGraphPanel();
             });
         });
+        panel.querySelector('[data-motion-graph-legend]')?.addEventListener('click', event => {
+            const button = event.target.closest?.('[data-motion-graph-channel]');
+            const view = this._getMotionGraphViewModel();
+            if (!button || !view) return;
+            const channel = normalizeMotionGraphEditChannel(view.group.id, button.dataset.motionGraphChannel);
+            if (channel !== button.dataset.motionGraphChannel) return;
+            this._motionGraphChannelByGroup[view.group.id] = channel;
+            this._syncMotionGraphPanel();
+        });
         panel.querySelector('#anim-motion-graph-close-btn')?.addEventListener('click', () => {
+            if (this._motionGraphGesture) finishGesture(null, true);
             this._setMotionGraphWindowOpen(false);
+        });
+        panel.querySelector('#anim-motion-graph-easing-btn')?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            this._setMotionCurveWindowOpen(true);
+        });
+        plot?.addEventListener('click', event => {
+            if (this._motionGraphSuppressClick) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            const marker = event.target.closest?.('[data-motion-graph-key-frame]');
+            if (!marker) return;
+            event.preventDefault();
+            event.stopPropagation();
+            activateMarker(marker);
+        });
+        plot?.addEventListener('pointerdown', event => {
+            const marker = event.target.closest?.('[data-motion-graph-key-frame]');
+            if (!marker
+                || this.isPlaying
+                || (event.pointerType === 'mouse' && event.button !== 0)
+                || this._motionGraphGesture) {
+                return;
+            }
+            const localFrame = Number(marker.dataset.motionGraphKeyFrame);
+            const channel = marker.dataset.channel;
+            const initialView = this._getMotionGraphViewModel();
+            if (!initialView || !Number.isInteger(localFrame)) return;
+            const activeChannel = normalizeMotionGraphEditChannel(initialView.group.id, channel);
+            if (activeChannel !== channel || !activateMarker(marker)) return;
+            const state = this._getSelectedClipMotionFrame();
+            const view = this._getMotionGraphViewModel(state);
+            const keyPoint = view?.keyPoints?.find(point => point.localFrame === localFrame);
+            const startDisplayValue = keyPoint?.values?.[channel];
+            if (!state?.key || !Number.isFinite(startDisplayValue)) return;
+            const rect = plot.getBoundingClientRect();
+            this._motionGraphGesture = {
+                pointerId: event.pointerId,
+                clipId: state.entry.clip.id,
+                localFrame,
+                group: view.group.id,
+                channel,
+                startClientY: event.clientY,
+                startDisplayValue,
+                displayValue: startDisplayValue,
+                rangeSpan: Math.max(1e-9, view.range.max - view.range.min),
+                innerHeight: Math.max(1, rect.height * 200 / 250),
+                startTransform: { ...state.sampled },
+                beforeState: this._captureTimelineHistoryState(),
+                moved: false,
+                mutated: false,
+                changed: false
+            };
+            plot.setPointerCapture?.(event.pointerId);
+            plot.classList.add('is-value-dragging');
+            document.addEventListener('keydown', onGestureKeyDown, true);
+            document.addEventListener('pointermove', onGesturePointerMove, { passive: false, capture: true });
+            document.addEventListener('pointerup', onGesturePointerUp, true);
+            document.addEventListener('pointercancel', onGesturePointerCancel, true);
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        plot?.addEventListener('pointerup', event => finishGesture(event));
+        plot?.addEventListener('pointercancel', event => finishGesture(event, true));
+        plot?.addEventListener('lostpointercapture', event => finishGesture(event, true));
+        plot?.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && this._motionGraphGesture) {
+                finishGesture(null, true);
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const marker = event.target.closest?.('[data-motion-graph-key-frame]');
+            if (!marker) return;
+            event.preventDefault();
+            event.stopPropagation();
+            activateMarker(marker);
         });
     }
 
@@ -16311,6 +16633,12 @@ export class AnimationTablePopup {
                 historyName: 'caf-clip-motion-easing',
                 onPreview: () => this._applySelectedMotionCurve(readCurveInputs(), { render: false })
             });
+        });
+        panel.querySelector('#anim-motion-easing-copy-btn')?.addEventListener('click', () => {
+            this._copySelectedMotionEasing();
+        });
+        panel.querySelector('#anim-motion-easing-paste-btn')?.addEventListener('click', () => {
+            this._pasteSelectedMotionEasing();
         });
         graph.addEventListener('pointerdown', event => {
             const handle = event.target.closest?.('[data-motion-curve-handle]');
