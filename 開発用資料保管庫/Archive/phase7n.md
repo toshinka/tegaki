@@ -1,7 +1,7 @@
 # Phase 7n — Resize Preview Direct Framing
 
 更新日: 2026-08-12  
-状態: OPEN — Gate 0 `GO`、Stage A / B、SOL review 1=`A`、Owner確認待ち
+状態: CLOSED — Gate 0 `GO`、Stage A / B、SOL review 1=`A`、2026-08-12 SOL技術close。Owner制作確認は別紙で追跡
 
 ## 1. 目的
 
@@ -63,4 +63,8 @@
 - 必要ならCAF snapshotを含むProjectでUndo / Redoとreloadを確認する。
 - mouseでの受入後もpen / touchは継続監視とし、Phase内でpinchや専用gestureへ広げない。
 
-Owner明示受入前にcloseしない。
+当初はOwner明示受入をclose条件としていたが、2026-08-12のOwner指示でSOL技術確認によるcloseへ改訂した。
+
+## 8. Close判定
+
+2026-08-12、SOLは「内容」mode限定、runtime offset、既存Resize transaction、mode離脱 / reopen reset、Browser結果を再監査し、追加修正なしでclose可能と判定した。CAF snapshotを含む制作Project、reload、pen / touchは`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`で追跡する。

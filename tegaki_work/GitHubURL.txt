@@ -7,21 +7,15 @@
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
 > URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
 
-## 0. 現在地（Phase 7i〜7o・SOL review=`A`、Owner一括確認待ち）
+## 0. 現在地（Phase 7i〜7q SOL技術close、Phase 7r OPEN）
 
-- Phase 7h Auto Shape FILLはOwner受入でclose済み。
-- 現行Phase 7i Auto Shape LINE / RibbonはStage A〜D、SOL review 1〜4=`A`まで完了。
-- pure実装は、単一holeなしalpha islandのopen centerline、`left / center / right`三列Ribbon、2〜3 direct-chain BONEのlongitudinal weight、既存inverse-bind LBSによる0° / 45° / 90°品質Gateまで。
-- 保存Mesh / Skinの新schema、別Pose正本、WARP共有は追加していない。既存Model / History / UI adapterへLINEを限定接続した。
-- Stage DはLUNA / MAX限定実装後にSOL受入review 4=`A`。既存Modelの明示`auto-shape-line` dispatch、status / duplicate rebase、Setup青RIGの`AUTO LINE`、理由付き失敗toast、一操作一History、既存rollbackを確認済み。外部Claude案から安定group / Setup青 / 表示辞書 / option再構築抑制を採用し、mode別message scopeと一時preview MeshのPixiJS resource寿命競合を限定修正した。全49 verifier・node check・build・BrowserのGRID / SHAPE切替、Undo / Redo、拒否非mutation、console warning / error 0件を通過した。
-- LINE / FILLを自動分類しない。失敗時にFILLへ自動fallbackしない。pure Stage A〜Cの閾値、manual topology / weight、WARP、別LBS evaluatorへ広げない。
-- SOL accept reviewは完了。Ownerが適合する細長いalpha fixtureで成功LINEのpreview / playback / onion / Table再開を軽量確認し、明示受入前にPhaseをcloseしない。
-- Phase 7iをOPEN維持したまま、独立するPhase 7j Deformer SELECT Stage 2を開始した。RECT互換にCIRCLE / drag式POLY lassoを追加し、shape / pointer path / selected indexはruntime UIだけに限定する。SELECT中`M` / active button再clickのshape巡回、BRUSH中`M`維持、既存Warp key / selection move / 1 gesture 1 History共有をStage A / Bで実装し、SOL review 1=`A`、全49 verifier、build、4×4 WARPの三形状Browser実操作、Undo / Redo、close / reopen、console warning / error 0件を通過した。Owner一括確認前にcloseしない。
-- 独立するPhase 7k Text to RasterはQTPのone-shot T、generic font / size / bold / 現在色、日本語 / ASCII / 複数行を通常Raster Layerへviewport中心・1 Historyで確定する。Text schema / local font列挙を追加せず、CAF working Layerは非mutation拒否する。SOL review 1=`A`、全50 verifier、build、BrowserのUndo / Redo、horizontal flip、CAF拒否、console warning / error 0件を通過し、Owner一括確認前にcloseしない。
-- 独立するPhase 7l Animation Table / CLIP MOTION UI品質は、既存ID / event / wheel三領域 / header drag / model / History / saveを維持したままheaderを明示二段化した。SOL review 1=`A`、全51 verifier、build、1280px相当 / 460px狭幅、実wheel、close / reopen、console warning / error 0件を通過し、Owner一括確認前にcloseしない。
-- 独立するPhase 7m Motion Graph Viewerは既存`sampleClipTransform()`だけを評価正本とするpure Stage A / read-only SVG Stage Bを完了した。POSITION / SCALE / ROTATION / OPACITY / BLEND、range、key / boundary / segment、cursor、blend mode runをruntime導出し、CLIP MOTIONから5 group、current value、cursorを表示する。再生中のclose → reopen fallback、共有tooltip、狭幅scroll、無効target時の自動close、Clip外cursorの`OUT`表示までruntime UIだけで安定化し、Graph専用保存stateや編集経路は追加していない。SOL review 2=`A`、全53 verifier、build、Browser reviewを通過し、Owner一括確認待ち。
-- 独立するPhase 7n Resize Preview Direct Framingは、View Camera / Project Frame / Animation Cameraを分離したまま「内容」modeのpreview drag / wheelをruntime offsetと既存scaleへ限定接続した。Applyは既存content resize transactionを使い、Canvas / 両方mode、保存field、Camera Trackへ広げていない。SOL review 1=`A`、全55 verifier、build、Browserのdrag / wheel / Apply / Undo / Redo / close-reopen、console 0件を通過し、Owner一括確認待ち。
-- 独立するPhase 7o Motion Easing Preset Paletteは、既存cubic-bezier正本のままSoft / Strong / Sine / Circular計12 presetを追加した。現在keyを含むCtrl/Cmd複数選択Motion keyへ1 Historyで原子的に適用し、terminal / 再生中 / 未知presetは拒否、LINEAR / HOLDは古いcurveを除去する。SOL review 1=`A`、全56 verifier、build、Browserの複数適用 / Undo / Redo / terminal拒否 / console 0件を通過し、Owner一括確認待ち。
+- Phase 7i〜7qは各Gate=`GO`、実装Stage、最終SOL review=`A`、関連Browser確認を通過し、2026-08-12のOwner指示に基づきSOL技術closeした。完了記録は`Archive/phase7i.md`〜`phase7q.md`。
+- Phase 7i LINE / Ribbon、7j Deformer三形状SELECT、7k Text to Raster、7l Table二段header、7m read-only Motion Graph、7n Resize直接framing、7o Motion Easing 12 presetの保存・History境界を維持する。
+- Phase 7pはMotion値clipboardと分離した`tegaki-motion-easing` runtime payload、HOLD / LINEAR / custom cubic、複数key atomic paste、terminal混在拒否、EASING CURVE内のSetup青COPY / PASTEを追加した。SOL review 1=`A`、全57 verifier、build、BrowserのHOLD copy / paste、Undo / Redo、console 0件を通過した。
+- 制作Project、長尺CAF、reload / export、Clip間copy、pen / touch等のOwner未確認項目は`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`で追跡する。未確認はPhase未完了や既知不具合を意味しない。
+- Phase 7qはGraph値編集 / Motion Path / manual Meshを後送し、既存read-only Motion Graphのexplicit key marker seekと既存EASING CURVEへの明示bridgeを実装した。全57 verifier、build、Browserの5 group / mouse・keyboard seek / HOLD / terminal / playback / close-reopen / console 0件を通過して技術closeした。Project / History schema、Graph独自selection、sampler / preview / exportは変更していない。
+- Phase 7rはproposal 10 P3の最小Sliceとして、既存explicit Motion keyのactive一channel値drag、runtime channel selector、既存複合key mutation、1 gesture 1 History、cancel rollback、再生中拒否を実装した。SOL review=`A`、全58 verifier、build、Browserの5 group / Undo・Redo / playback / close-reopen / console確認まで完了している。追跡済みbuild基準は復元済みだが、最終buildのuntracked asset 5件とBrowser確認用Vite log 2件の清掃待ちのため現行PhaseはOPEN。
+- Phase 7r close後の第一比較候補は、数値scrub / Canvas root Motionのcancel・no-move History不一致を揃える限定bug fix Gate。P4途中点追加、Motion Path、manual Meshへ自動で広げない。Claude Rig / Mesh follow-upの実測項目と将来Gateはproposal 15とOwner確認台帳へ統合済み。
 
 このナビゲーション自身:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
@@ -34,13 +28,17 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **AI共通ガイド**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 - **技術方針・禁止事項（正本）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 - **最新開発進捗・現在地**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
-- **現行Phase 7i実装契約・LUNA Stage D境界**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7i.md
-- **現行Phase 7j実装契約・Deformer SELECT Stage 2**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7j.md
-- **現行Phase 7k実装契約・Text to Raster**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7k.md
-- **現行Phase 7l実装契約・Animation Table二段header**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7l.md
-- **現行Phase 7m実装契約・Motion Graph Viewer**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7m.md
-- **現行Phase 7n実装契約・Resize Preview Direct Framing**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7n.md
-- **現行Phase 7o実装契約・Motion Easing Preset Palette**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7o.md
+- **現行Phase 7r（既存Motion key値drag。build生成差分の清掃待ち）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7r.md
+- **Phase 7i完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7i.md
+- **Phase 7j完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7j.md
+- **Phase 7k完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7k.md
+- **Phase 7l完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7l.md
+- **Phase 7m完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7m.md
+- **Phase 7n完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7n.md
+- **Phase 7o完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7o.md
+- **Phase 7p完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7p.md
+- **Phase 7q完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7q.md
+- **Owner制作確認台帳**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/OWNER_VERIFICATION_BACKLOG.md
 - **直前Phase 7h完了記録（Auto Shape FILL）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7h.md
 - **全体アーキテクチャマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ARCHITECTURE.md
 - **Layer / CAF 境界設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PHASE4Z_BOUNDARY.md
@@ -157,8 +155,10 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 - **Setup青RIG UI（Stage D接続先）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/animation-table-popup.js
 - **Phase 7m read-only Motion Graph pure view model**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-graph-view-model.js
 - **Phase 7o Motion Easing preset catalog / atomic apply**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-easing-presets.js
+- **Phase 7p Motion Easing tagged clipboard / atomic paste**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-easing-clipboard.js
+- **Phase 7r Motion Graph値編集pure adapter**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-graph-key-edit.js
 
-### Phase 7h / 7i / 7j / 7k / 7l / 7m / 7n / 7o verifier
+### Phase 7h / 7i / 7j / 7k / 7l / 7m / 7n / 7o / 7p / 7q / 7r verifier
 
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-alpha-contours.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-auto-shape-contour-budget.mjs
@@ -173,13 +173,16 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/bu
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-header-layout.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-view-model.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-ui-adapter.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-key-edit.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-resize-direct-framing.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-resize-direct-ui-adapter.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-easing-presets.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-easing-clipboard.mjs
 
 ### Stage D review / handoff
 
 - **Rig / Mesh Setup UI外部レビュー（提案・未検証）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/rig-mesh-setup-ui-review.md
+- **Rig / Mesh反映評価・follow-up（提案。現行採否はproposal 15参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/rig-mesh-evaluation-and-followup.md
 
 ### プロジェクト保存・ストレージ・画像インポート
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/project-manager.js

@@ -2,9 +2,9 @@
 
 更新日: 2026-08-12
 担当: SOL / XHigh（Gate・pure契約・review）、限定UI adapterはLUNA / MAXまたはSOL
-状態: OPEN（Gate 0=`GO`、Stage A / B完了、SOL review 2=`A`、Owner一括確認待ち）
+状態: CLOSED（Gate 0=`GO`、Stage A / B完了、SOL review 2=`A`、2026-08-12 SOL技術close。Owner制作確認は別紙で追跡）
 
-> Phase 7i / 7j / 7k / 7lはOwner一括確認待ちのままOPENを維持する。本Phaseは各Phaseの保存正本とclose条件を変更しない。
+> 立案時点ではPhase 7i / 7j / 7k / 7lをOwner一括確認待ちとしていた。本Phaseは各Phaseの保存正本を変更せず、技術close後もOwner制作確認は別紙で追跡する。
 
 ## 1. 目的
 
@@ -92,4 +92,8 @@ LUNA実装と固定検証、SOL review 2=`A`まで完了。次はOwner一括確�
 - 狭幅・低いviewportでは初期`top: 24%`を含めて縦方向が収まる`max-height`へ補正し、共通`ui-scrollbar`を適用した。Graph runtime stateとdrag正本は増やしていない。
 - 全53 verifier、変更JS / mjsの`node --check`、`npm.cmd run build`を通過した。Browserではduration 2 Frame CAF、5 group、無効target時の自動close、Graphの表示領域、共有tooltip、console error / warning 0件を確認した。
 
-判定は`A`。Phase 7mはOwner一括確認待ちでOPENを維持する。
+判定は`A`。当時はOwner一括確認待ちでOPENを維持したが、2026-08-12のOwner指示でSOL技術確認によるcloseへ改訂した。
+
+## Close判定
+
+2026-08-12、SOLはpure sampler一致、read-only UI、無効target / Clip外cursor、保存・History非接続を再監査し、追加修正なしでclose可能と判定した。Owner制作Projectでの長尺CAF / random seek / playback視認は`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`で追跡する。

@@ -4790,6 +4790,7 @@ canvas {
 .anim-motion-curve-header {
     margin: 0 -8px 5px;
     padding-right: 26px;
+    flex-wrap: wrap;
 }
 
 .anim-motion-curve-status {
@@ -4797,6 +4798,36 @@ canvas {
     color: var(--text-secondary);
     font-size: 10px;
     font-weight: 600;
+}
+
+.anim-motion-curve-clipboard-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: 4px;
+}
+
+.anim-motion-curve-clipboard-actions .flip-button {
+    min-height: 22px;
+    padding: 2px 6px;
+    color: var(--deformer-bind-point);
+    border-color: var(--deformer-bind-line);
+    background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-background));
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.anim-motion-curve-clipboard-actions .flip-button:hover:not(:disabled) {
+    color: var(--futaba-background);
+    border-color: var(--deformer-bind-point);
+    background: var(--deformer-bind-line);
+}
+
+.anim-motion-curve-clipboard-actions .flip-button:disabled {
+    color: var(--futaba-medium);
+    -webkit-text-fill-color: var(--futaba-medium);
+    border-color: var(--futaba-light-medium);
+    background: var(--futaba-cream);
+    opacity: 0.55;
 }
 
 #anim-motion-curve-close-btn {
@@ -4886,6 +4917,32 @@ canvas {
     font-weight: 600;
 }
 
+.anim-motion-graph-easing-btn {
+    min-height: 22px;
+    padding: 2px 7px;
+    border: 1px solid var(--futaba-light-maroon);
+    border-radius: 5px;
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-background) 88%, var(--futaba-light) 12%);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+
+.anim-motion-graph-easing-btn:hover:not(:disabled),
+.anim-motion-graph-easing-btn:focus-visible {
+    border-color: var(--active-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 20%, transparent);
+}
+
+.anim-motion-graph-easing-btn:disabled {
+    color: var(--futaba-medium);
+    -webkit-text-fill-color: var(--futaba-medium);
+    border-color: var(--futaba-light-medium);
+    background: var(--futaba-cream);
+    opacity: .55;
+}
+
 #anim-motion-graph-close-btn {
     top: 5px;
     right: 7px;
@@ -4967,6 +5024,23 @@ canvas {
     fill: var(--active-border);
     stroke: var(--futaba-background);
     stroke-width: 1.5;
+    cursor: ns-resize;
+}
+
+.anim-motion-graph-key.is-secondary {
+    fill: var(--futaba-maroon);
+}
+
+.anim-motion-graph-key:hover,
+.anim-motion-graph-key:focus,
+.anim-motion-graph-plot.is-value-dragging .anim-motion-graph-key.is-primary {
+    stroke: var(--futaba-maroon);
+    stroke-width: 2.5;
+}
+
+.anim-motion-graph-key:focus {
+    stroke: var(--futaba-maroon);
+    stroke-width: 2.5;
 }
 
 .anim-motion-graph-boundary {
@@ -4979,6 +5053,7 @@ canvas {
     stroke: var(--futaba-light-maroon);
     stroke-width: 1.5;
     stroke-dasharray: 4 3;
+    pointer-events: none;
 }
 
 .anim-motion-graph-legend,
@@ -4999,6 +5074,28 @@ canvas {
 
 .anim-motion-graph-legend-item.is-secondary {
     color: var(--futaba-maroon);
+}
+
+button.anim-motion-graph-legend-item {
+    min-height: 20px;
+    padding: 1px 7px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--futaba-background) 90%, var(--futaba-light) 10%);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+button.anim-motion-graph-legend-item:hover,
+button.anim-motion-graph-legend-item:focus-visible {
+    border-color: var(--active-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 18%, transparent);
+}
+
+button.anim-motion-graph-legend-item.is-primary {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 12%, var(--futaba-background));
 }
 
 .animation-table-panel .anim-track-item.anim-part-track-item,

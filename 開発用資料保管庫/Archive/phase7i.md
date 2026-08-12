@@ -2,7 +2,7 @@
 
 更新日: 2026-08-11
 担当: SOL / XHigh（Gate 0・pure geometry・review）、LUNA / MAX（GO後の限定Model / UI adapter候補）
-状態: OPEN（Stage A〜D完了、SOL review 1〜4=`A`、Owner一括確認待ち）
+状態: CLOSED（Stage A〜D完了、SOL review 1〜4=`A`、2026-08-12 SOL技術close。Owner制作確認は別紙で追跡）
 
 ## 1. Goal
 
@@ -154,7 +154,11 @@ Stage DはLUNA / MAX向け限定adapter。`auto-shape-line` dispatch、LINE stat
 - review中に、LINE専用失敗messageをGRID / SHAPEへ誤適用し得るscope漏れを修正した。mode別辞書から理由を解決し、LINE拒否時も既存MeshとHistoryを変更しない。
 - 100頂点超の一時preview MeshがPixiJS共有`GlMeshAdaptor`へ入り、破棄済みTextureSourceを共有BindGroupが保持する寿命競合をBrowserで検出した。同期bake専用Meshだけを頂点数にかかわらずbatch経路へ固定し、既存の二描画周期遅延破棄を維持した。保存 / CPU / export経路は変更していない。
 - BrowserではSetup青の3 generatorが一群で折返されないこと、`GRID 8×4 → SHAPE FILL`、生成のUndo / Redo、LINE理由付き拒否時の既存SHAPE / GRIDとHistory非変更を確認した。修正後のSHAPE / GRID再生成、BONE追加、Undo / Redo後はconsole warning / error 0件。Browser用の単純な角端strokeは幅変化GateでLINEを設計どおり拒否したため、成功LINEの0° / 45° / 90°、random seek、STALE / rebase、GRID / SHAPE / LINE置換はpure / Model verifierで固定し、Owner受入では適合する細長いalpha fixtureでpreview / playback / onion / Table再開を確認する。
-- 変更JS / mjsの`node --check`、全49 `verify-*.mjs`、`npm.cmd run build`を再通過し、`dist/` / `node_modules/.vite/`の列挙済み生成差分だけを清掃した。PhaseはOwnerの明示受入前にcloseしない。
+- 変更JS / mjsの`node --check`、全49 `verify-*.mjs`、`npm.cmd run build`を再通過し、`dist/` / `node_modules/.vite/`の列挙済み生成差分だけを清掃した。当時はOwner明示受入をclose条件としていたが、2026-08-12のOwner指示でSOL技術確認によるcloseへ改訂した。
+
+## Close判定
+
+2026-08-12、SOLはStage A〜D、review 1〜4=`A`、固定verifier、Browser結果、保存境界を再監査し、追加修正なしでclose可能と判定した。適合alpha fixtureを含むOwner制作Project、pen / touch等の未確認項目は`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`へ移し、本Phaseを再OPENする条件にはしない。
 
 ### Web外部AI向けhandoff
 
@@ -203,3 +207,9 @@ npm.cmd run build
 - UI接続後だけBrowser実操作とconsole error。
 - build後に`git status --short --untracked-files=all`。
 - `dist/`と`node_modules/.vite/`の生成差分を残さない。
+
+## 11. post-close外部review追補（2026-08-12）
+
+- `ClaudeReview/rig-mesh-evaluation-and-followup.md`を現行コードへ再照合した。Auto Lineの実制作受理率、generator置換のpen / touch誤操作、再生成を重ねたHistory挙動はOwner確認台帳へ送り、確認前のmodal追加やschema変更は行わない。
+- 理由付き拒否を非エンジニアの次操作へつなげるため、分岐 / 非連結 / hole / closed loop / 線幅等のtoastへ「別Rasterへ分ける」「線を整理する」「AUTO SHAPEを使う」を追加した。拒否時非mutation、既存Mesh維持、History非増加は変更していない。
+- Setup青をpopup内のRIG / MESH static Setup actionへ使える境界をUI/CSSガイドへ明記した。weight補正sliderと分岐Ribbon自動分割は第二正本・複数Mesh境界を先に決める別Gateとしてproposal 15へ記録した。

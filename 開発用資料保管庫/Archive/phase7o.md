@@ -2,9 +2,9 @@
 
 更新日: 2026-08-12  
 担当: SOL / XHigh（契約・pure helper・review）、限定UI adapterはLUNA / MAXまたはSOL  
-状態: OPEN — Gate 0 `GO`、Stage A / B、SOL review 1=`A`、Owner一括確認待ち
+状態: CLOSED — Gate 0 `GO`、Stage A / B、SOL review 1=`A`、2026-08-12 SOL技術close。Owner制作確認は別紙で追跡
 
-> Phase 7i〜7nはOwner一括確認待ちのままOPENを維持する。本Phaseは各Phaseの保存正本とclose条件を変更しない。
+> 立案時点ではPhase 7i〜7nをOwner一括確認待ちとしていた。本Phaseは各Phaseの保存正本を変更せず、技術close後もOwner制作確認は別紙で追跡する。
 
 ## 1. 目的
 
@@ -58,4 +58,8 @@
 - Browserで12 preset表示、F1 / F3複数適用がHistory 1件、非選択F5維持、Undo / Redo、terminal F6拒否とHistory不増加、console warning / error 0件を確認した。
 - 変更JS / mjsの`node --check`、全56 verifier、`npm.cmd run build`を通過した。build warningは既存のag-psd `util` externalizationとchunk sizeだけで、生成差分は清掃した。
 
-Owner明示受入前にcloseしない。
+当初はOwner明示受入をclose条件としていたが、2026-08-12のOwner指示でSOL技術確認によるcloseへ改訂した。
+
+## 7. Close判定
+
+2026-08-12、SOLはpreset 4値、atomic multi-key apply、terminal / playback拒否、History、Browser結果を再監査し、追加修正なしでclose可能と判定した。制作Projectでのreload / CUSTOM往復 /長尺CAFは`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`で追跡する。

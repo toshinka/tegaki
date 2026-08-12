@@ -2,9 +2,9 @@
 
 更新日: 2026-08-11
 担当: SOL / XHigh（Gate・review）、限定DOM / CSS実装はLUNA / MAXまたはSOL
-状態: OPEN（Gate 0=`GO`、Stage A完了、SOL review 1=`A`、Owner一括確認待ち）
+状態: CLOSED（Gate 0=`GO`、Stage A完了、SOL review 1=`A`、2026-08-12 SOL技術close。Owner制作確認は別紙で追跡）
 
-> Phase 7i / 7j / 7kは実装済み・Owner一括確認待ちのままOPENを維持する。本Phaseは各機能の保存正本や受入状態を変更しない。
+> 立案時点ではPhase 7i / 7j / 7kをOwner一括確認待ちとしていた。本Phaseは各機能の保存正本を変更せず、各Phaseの技術close後もOwner制作確認は別紙で追跡する。
 
 ## 1. 目的
 
@@ -61,4 +61,8 @@ Animation Table headerの幅依存な自動折返しを、意味の明確な二�
 - `verify-animation-table-header-layout.mjs`を追加し、二段順序、主要ID一意性、狭幅wrap、header wheel listener、既定高266pxと旧260 / 240px設定移行を固定した。
 - 変更JS / verifierの`node --check`、全51 verifier、`npm.cmd run build`を通過し、`dist/`と`node_modules/.vite/`の生成差分を残していない。
 
-SOL review 1は`A`。Phase 7i / 7j / 7kと同じOwner一括確認待ちとしてOPENを維持し、Owner明示受入前にcloseしない。
+SOL review 1は`A`。当時はPhase 7i / 7j / 7kと同じOwner一括確認待ちとしてOPENを維持したが、2026-08-12のOwner指示でSOL技術確認によるcloseへ改訂した。
+
+## Close判定
+
+2026-08-12、SOLは二段headerの意味順、既存ID / event / wheel / drag / preference境界、狭幅Browser結果を再監査し、追加修正なしでclose可能と判定した。Ownerの液タブ制作環境での配置感は`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`で追跡する。

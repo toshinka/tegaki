@@ -275,9 +275,21 @@ Stretch候補:
 
 Phase 7gのWARP RADIALはOwner受入でcloseした。Phase 7hはAuto ShapeのSOL Gate 0として、Stage AでRaster alphaを4-connected island、outer / hole loop、Project座標へ変換し、Stage Bでcontour-only Earcut、contour + interior support、rect Gridを比較した。Stage Cはtopology検査付き輪郭削減、outer / hole透明側guard、boundary / guard / interiorの256 vertex budget、Stage Dは既存Mesh / Skin shape、最大2 distance weight、generator metadata、STALEを返すpure factoryを固定した。Stage Eは既存Model setter / validator / render boundary rollbackとSetup青RIGへ`AUTO SHAPE`を限定接続し、`AUTO GRID`共存、CURRENT / STALE、明示再生成、一操作一History、CAF / Raster複製、Project round-trip、Mesh Bone Motionを通過した。SOL review 1〜5=`A`とOwner軽量実機受入でcloseした。WARP Pose / Skin Bone Pose、Mesh topology / weightを共有しない。
 
-現行Phase 7iはLINE / Ribbonを選定し、Stage A〜DとSOL review 1〜4=`A`で、一つのholeなしalpha islandからdeterministic open centerline、均等station、cap、alpha境界rayによる`left / center / right`三列topologyをpure生成し、既存Model / Setup青RIGへ明示`AUTO LINE`だけを限定接続した。2〜3 direct-chain BONE midpointをcenterline長手距離へ射影し、同一station三列へ同じ最大2 linear influenceを与える。既存inverse-bind LBSで0° / 45° / 90°、幅ratio、triangle / outline、random seek、Project shape、CURRENT / STALE、複製source rebaseを固定した。外部Claude案から安定group、Setup青、表示辞書、option再構築抑制を採用し、mode別message scopeと100頂点超の一時preview MeshのPixiJS resource寿命競合を限定修正した。全49 verifier、build、BrowserのGRID / SHAPE切替、Undo / Redo、LINE拒否非mutation、console warning / error 0件を通過した。LINE / FILLは自動分類せず、WARP / Skin Poseを共有しない。次はOwnerが成功LINEを軽量実機受入し、明示受入後にcloseする。
+Phase 7iはLINE / Ribbonを選定し、Stage A〜DとSOL review 1〜4=`A`で、一つのholeなしalpha islandからdeterministic open centerline、均等station、cap、alpha境界rayによる`left / center / right`三列topologyをpure生成し、既存Model / Setup青RIGへ明示`AUTO LINE`だけを限定接続した。2〜3 direct-chain BONE midpointをcenterline長手距離へ射影し、同一station三列へ同じ最大2 linear influenceを与える。既存inverse-bind LBSで0° / 45° / 90°、幅ratio、triangle / outline、random seek、Project shape、CURRENT / STALE、複製source rebaseを固定した。外部Claude案から安定group、Setup青、表示辞書、option再構築抑制を採用し、mode別message scopeと100頂点超の一時preview MeshのPixiJS resource寿命競合を限定修正した。全49 verifier、build、BrowserのGRID / SHAPE切替、Undo / Redo、LINE拒否非mutation、console warning / error 0件を通過し、2026-08-12にSOL技術closeした。LINE / FILLは自動分類せず、WARP / Skin Poseを共有しない。Owner成功LINE確認は別紙で追跡する。
 
-並行Phase 7jのRECT / CIRCLE / POLYはWARP control pointのruntime selectionだけを拡張する。Mesh vertex、SkinWeight、ControlHandleの選択UIへ暗黙転用せず、本書のmanual Mesh編集とは別Gateを維持する。Phase 7i / 7jともOwnerの一括確認前にcloseしない。
+Phase 7jのRECT / CIRCLE / POLYはWARP control pointのruntime selectionだけを拡張する。Mesh vertex、SkinWeight、ControlHandleの選択UIへ暗黙転用せず、本書のmanual Mesh編集とは別Gateを維持する。Phase 7i / 7jはSOL技術close済みで、Owner制作確認は別紙で追跡する。
+
+### 外部Claude follow-upの照合結果（2026-08-12）
+
+`ClaudeReview/rig-mesh-evaluation-and-followup.md`はGitHub mainの時点差を基にした提案であり、現行ローカルのPhase close状態と実コードへ再照合して次のように扱う。
+
+- Auto Lineの実制作受理率は未計測である。成功fixtureだけで機能全体を評価せず、腕・髪束・交差線・閉輪郭等で成功 / 拒否理由を記録するOwner確認を`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`へ置く。受理率が低い時もFILLへ無言fallbackせず、generatorのGateを改訂する。
+- LINE拒否messageは理由だけで終わらせず、別Rasterへの分離、線の連結、穴 / 輪の整理、`AUTO SHAPE`利用等の次操作を示す。ただし失敗時の既存Mesh / Skin / History非mutationは変えない。
+- 異なるgeneratorによる置換は、現行の`GRID / SHAPE / LINE再生成`表示、Mesh status、1 History / Undoで回復可能である。pen / touchで誤置換が再現する前にmodal確認を常設しない。必要になった場合も「現在と異なるgeneratorへ置換する時だけ」の限定Gateとし、同mode再生成を阻害しない。
+- Setup青はCanvas Bindだけの色ではなく、popup内の`RIG` / `MESH` static Setup入口・生成actionにも使えることをUI/CSSガイドへ明記した。runtime Poseや一般実行まで青へ広げない。
+- 将来のweight補正は、生成weightの上に第二のdelta / override正本を追加する軽量改修として扱わない。既存`skinBindings`を唯一のstatic正本としたまま、明示編集後のgenerator lineage、`STALE`、再生成時の破棄確認、normalize、1 gesture 1 HistoryをGate 0で同時に決める。補正slider / brush / manual topologyはその後のUI候補である。
+- LINE分岐の自動分割は、現行の一Raster・一Mesh前提と保存shapeを跨ぐため別Phase相当とする。最初から自動置換せず、pure層が複数Ribbon候補と拒否理由を返し、preview後に明示採用する設計を比較する。
+- 深いRig treeの識別性は色だけの小点を追加して解決しない。既存の連結node + `RIG` chip、Mesh status、名前 / path表示を優先し、階層深度とpen / touchの実測後にfont、icon、pathのどれを変えるか決める。
 
 ### 第一候補
 

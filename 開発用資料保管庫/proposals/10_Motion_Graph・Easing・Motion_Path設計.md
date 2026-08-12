@@ -81,7 +81,7 @@ Phase 5z6の `EASING CURVE` は完成扱いとし、置換しない。これはT
 - 選択segmentのEasing Editorを開く導線を置く。
 - compositor、export、onionの評価経路は変更しない。
 
-Phase 7m Gate 0=`GO`。Stage Aでは既存`sampleClipTransform()`だけを呼ぶpure view modelを実装し、POSITION / SCALE / ROTATION / OPACITY / BLEND、単位別range、explicit key / implicit boundary / left-key segment、Frame cursor、BLEND mode runをruntime導出した。Stage BではCLIP MOTIONから開くread-only SVG adapterを接続し、5 group、key / boundary marker、cursor、current valueを表示する。再生中のGraph close → reopen fallback、共有tooltip、狭幅時の左右余白とpopup内scrollをruntime UIだけで安定化し、SOL review 2で無効target時のstale Graphを自動close、Clip外cursorを`OUT`表示へ修正した。Graph専用保存stateは追加せず、720°rotationもwrapしない。SOL review 2=`A`、全53 verifier、build、Browser reviewを通過し、次はOwner一括確認とする。編集・Motion Path・保存stateは非対象を維持する。
+Phase 7m Gate 0=`GO`。Stage Aでは既存`sampleClipTransform()`だけを呼ぶpure view modelを実装し、POSITION / SCALE / ROTATION / OPACITY / BLEND、単位別range、explicit key / implicit boundary / left-key segment、Frame cursor、BLEND mode runをruntime導出した。Stage BではCLIP MOTIONから開くread-only SVG adapterを接続し、5 group、key / boundary marker、cursor、current valueを表示する。再生中のGraph close → reopen fallback、共有tooltip、狭幅時の左右余白とpopup内scrollをruntime UIだけで安定化し、SOL review 2で無効target時のstale Graphを自動close、Clip外cursorを`OUT`表示へ修正した。Graph専用保存stateは追加せず、720°rotationもwrapしない。SOL review 2=`A`、全53 verifier、build、Browser reviewを通過し、2026-08-12にSOL技術closeした。Owner制作確認は別紙で追跡し、編集・Motion Path・保存stateは非対象を維持する。
 
 ### P2: ToonSquid型preset拡張 — 優先度A / 難度 中
 
@@ -91,7 +91,11 @@ Phase 7m Gate 0=`GO`。Stage Aでは既存`sampleClipTransform()`だけを呼ぶ
 - Easing copy / pasteはMotion値clipboardと分け、値を上書きしないtagged payloadにする。
 - Bounce / Elastic / Loopを単一cubicとして偽装しない。
 
-Phase 7o Gate 0=`GO`。現行3 EASEをSoft familyとして維持し、Strong / Sine / CircularのIN / OUT / IN-OUTを追加した。preset名を保存せず既存4値へ確定し、現在keyを含むCtrl/Cmd複数選択Motion keyへ1 Timeline Historyで原子的に適用する。terminal / 再生中 / 未知presetは拒否し、LINEAR / HOLDは古いcurveを除去する。Easing copy / paste、Bounce / Elastic / Loop、overshootは非対象。SOL review 1=`A`、全56 verifier、build、Browser実操作を通過し、Owner一括確認待ちでOPENを維持する。
+Phase 7o Gate 0=`GO`。現行3 EASEをSoft familyとして維持し、Strong / Sine / CircularのIN / OUT / IN-OUTを追加した。preset名を保存せず既存4値へ確定し、現在keyを含むCtrl/Cmd複数選択Motion keyへ1 Timeline Historyで原子的に適用する。terminal / 再生中 / 未知presetは拒否し、LINEAR / HOLDは古いcurveを除去する。Easing copy / paste、Bounce / Elastic / Loop、overshootは非対象。SOL review 1=`A`、全56 verifier、build、Browser実操作を通過し、2026-08-12にSOL技術closeした。Owner制作確認は別紙で追跡する。
+
+Phase 7p Gate 0=`GO`。Motion値clipboardとは別の`tegaki-motion-easing` runtime payloadを追加し、HOLD / LINEAR / custom cubicだけを現在またはCtrl / Cmd複数選択Motion keyへ1 Historyで原子的に貼り付ける。terminal混在は全体拒否し、EASING CURVE popup内のSetup青COPY / PASTEへ限定した。SOL review 1=`A`、全57 verifier、build、BrowserのHOLD copy / paste、Undo / Redo、terminal拒否、console 0件を通過して技術closeした。
+
+Phase 7q Gate 0=`GO`。P3のGraph値編集へ進む前に、Phase 7mのexplicit key marker clickを既存Frame seekへ接続し、Graph popup内の明示`EASING`から既存EASING CURVEを開く限定bridgeを先行した。Graph独自selection / History / 保存stateを作らず、implicit boundary / path / gridは非interactiveのまま維持する。LUNA限定UI adapterのStage A / B、SOL review=`A`、全57 verifier、build、Browserの5 group / mouse・keyboard seek / History非増加 / HOLD / terminal / playback / close-reopen / console 0件を通過し、2026-08-12に技術closeした。
 
 ### P3: 既存keyのGraph編集 — 優先度A / 難度 高
 
@@ -101,6 +105,15 @@ Phase 7o Gate 0=`GO`。現行3 EASEをSoft familyとして維持し、Strong / S
 - keyの時間移動は隣接keyを越えない。衝突merge、box scale、順序反転は別gateとする。
 - selection、visible channel、zoom / panはruntime UI stateとし、Project / Historyへ入れない。
 - 前段として、CLIP MOTION表示中のTimeline marker横dragを実装済み。Motion / Warpの対象切替、Clip範囲clamp、衝突拒否、CAF配置抑制をGraph Editorの共通time-move契約の試験台とする。
+
+Phase 7r Gate 0=`GO`。初期Sliceを既存explicit key / active一channelの値dragへ限定し、Graph固有key / selection保存を作らず既存`_upsertSelectedMotionKey()`へ接続した。
+
+- POSITION / SCALEはruntime channel selectorでX / Yを明示し、active path / markerを最後に描画する。重なるkeyでもactive channelをpointer前面へ固定する。
+- ROTATIONはdegree表示からradian保存、OPACITY / BLEND Strengthはpercent表示から0..1保存へpure変換し、他channelとmetadataを維持する。
+- pointerdown後のlive preview、document captureの外release、pointerup 1 History、cancel / lost capture / Escape rollback、再生中拒否を固定した。現在Frame cursorはdisplay-onlyでmarker hitを奪わない。
+- SOL review=`A`、全58 verifier、build、Browserの5 group / tap・drag History / Undo・Redo / playback / close-reopen / console確認を通過した。build生成差分の清掃後に技術closeする。
+
+残るP3拡張のうちtime moveは既存Timeline契約、複数key value dragはselection / clamp契約を別Gateで比較する。数値scrub / Canvas root Motionのcancel・no-move History不一致は、P4より先の限定bug fix候補とする。
 
 ### P4: Graph上の途中点追加 — 優先度B / 難度 高
 

@@ -174,7 +174,7 @@ UI変更時:
 - runtime stateがvariantへ混ざっていないか。
 - 旧class互換が必要か。
 - browserでhover、disabled、drag、closeを確認したか。
-- deformer overlayは役割を色で分ける。現在Frameのpose / point編集は`--deformer-pose-line / --deformer-pose-point`（ふたば橙・maroon）、全keyの基準範囲を再基準化するBind / `GRID RANGE`だけ`--deformer-bind-line / --deformer-bind-point`（青系）を使う。青緑を全Warp編集へ常用しない。青系はCanvas上の基準範囲編集中に限定し、popup、tooltip、disabled formを白黒灰へ戻す理由にはしない。
+- deformer overlayは役割を色で分ける。現在Frameのpose / point編集は`--deformer-pose-line / --deformer-pose-point`（ふたば橙・maroon）、全keyの基準範囲を再基準化するBind / `GRID RANGE`だけ`--deformer-bind-line / --deformer-bind-point`（青系）を使う。青緑を全Warp編集へ常用しない。Canvas overlayの青は基準範囲編集へ限定する一方、popup内では`RIG` / `MESH`のstatic Setup専用入口・生成actionに同じSetup青semanticを使ってよい。runtime Pose、一般操作、実行結果まで青へ広げず、popup、tooltip、disabled formを白黒灰へ戻す理由にも使わない。
 
 ## 関連文書
 

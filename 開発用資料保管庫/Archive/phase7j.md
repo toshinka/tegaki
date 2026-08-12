@@ -2,9 +2,9 @@
 
 更新日: 2026-08-11
 担当: SOL / XHigh（Gate・review）、限定実装はLUNA / MAXまたはSOL
-状態: OPEN（Gate 0=`GO`、Stage A / B完了、SOL review 1=`A`、Owner一括確認待ち）
+状態: CLOSED（Gate 0=`GO`、Stage A / B完了、SOL review 1=`A`、2026-08-12 SOL技術close。Owner制作確認は別紙で追跡）
 
-> Phase 7iはSOL review 4=`A`、Ownerまとめ確認待ちのままOPENを維持する。本PhaseはPhase 7iのMesh / Skin / 保存schemaへ依存せず、7iをcloseした扱いにしない。
+> 立案時点ではPhase 7iをOwnerまとめ確認待ちとしていた。本PhaseはPhase 7iのMesh / Skin / 保存schemaへ依存せず、両Phaseの技術close後もOwner制作確認は別紙で追跡する。
 
 ## 1. 目的
 
@@ -72,4 +72,8 @@ Phase 7bで受入れたWARP `SELECT`のRECT runtime選択を、`RECT / CIRCLE / 
 - display-only `WarpGridOverlay`のmarqueeを単一SVG pathへ一般化した。Warp key、Project、History、topology、Mesh / Skin、rasterizerは変更していない。
 - SOL review 1判定は`A`。選択形状ごとの分岐はmarquee生成 / hitだけで、選択点moveと1 gesture 1 HistoryはPhase 7bの既存経路を共有する。
 - 全49 verifier、変更JS / mjsの`node --check`、`npm.cmd run build`を通過した。Browserの4×4 WARPでRECT / CIRCLE / POLY実選択、選択点move、Undo / Redo、BRUSH中`M`、Motion close / reopen時の選択破棄、console warning / error 0件を確認した。
-- Phase 7iと本PhaseはOwnerが後日まとめて確認するためOPENを維持する。Control Mesh、Folder target、制作Project、pen / touchはOwner一括確認へ残す。
+- Phase 7iと本PhaseはOwnerが後日まとめて確認するためOPENを維持していたが、2026-08-12のOwner指示でSOL技術確認によるcloseへ改訂した。Control Mesh、Folder target、制作Project、pen / touchは`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`で追跡する。
+
+## Close判定
+
+2026-08-12、SOLはGate 0=`GO`、Stage A / B、review 1=`A`、三形状のpure / Browser境界、既存Warp key / History共有を再監査し、追加修正なしでclose可能と判定した。

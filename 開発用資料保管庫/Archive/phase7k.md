@@ -2,9 +2,9 @@
 
 更新日: 2026-08-11
 担当: SOL / XHigh（Gate・review）、限定実装はLUNA / MAXまたはSOL
-状態: OPEN（Gate 0=`GO`、Stage A / B完了、SOL review 1=`A`、Owner一括確認待ち）
+状態: CLOSED（Gate 0=`GO`、Stage A / B完了、SOL review 1=`A`、2026-08-12 SOL技術close。Owner制作確認は別紙で追跡）
 
-> Phase 7i / 7jはOwner一括確認待ちのままOPENを維持する。本PhaseはMesh / Skin / WARP selectionへ依存せず、両Phaseをcloseした扱いにしない。
+> 立案時点ではPhase 7i / 7jをOwner一括確認待ちとしていた。本PhaseはMesh / Skin / WARP selectionへ依存せず、各Phaseの技術close後もOwner制作確認は別紙で追跡する。
 
 ## 1. 目的
 
@@ -72,4 +72,8 @@ PC優先の最小Text入口として、QTPから入力した文字を既存の�
 - QTPの6-tool gridを維持し、その下へone-shot T、textarea、Sans / Serif / Mono、8〜256px、bold、現在色、Ctrl / Cmd + Enter、cancel / reason表示を追加した。既存toolを切り替えない。
 - Browserで日本語 + ASCIIの2行、Serif / Bold、画面中央配置、horizontal flip、Undo一回でLayer消去、Redo一回で復帰を確認した。Animation TableでCAF editing contextへ入った後は理由表示、History不変、Layer追加なしで拒否した。console warning / errorは0件。
 - 全50 verifier、変更JS / mjsのnode check、`npm.cmd run build`を通過し、build / Vite生成差分は清掃した。SOL review 1判定は`A`。
-- Ownerが後日まとめて確認するためOPENを維持する。通常制作Project、zoom / pan、Project reload / PSD / PNG、狭幅、pen / touchはOwner一括確認へ残す。
+- Ownerが後日まとめて確認するためOPENを維持していたが、2026-08-12のOwner指示でSOL技術確認によるcloseへ改訂した。通常制作Project、zoom / pan、Project reload / PSD / PNG、狭幅、pen / touchは`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`で追跡する。
+
+## Close判定
+
+2026-08-12、SOLはGate 0=`GO`、Stage A / B、review 1=`A`、Raster-only確定、CAF非mutation拒否、History / Browser結果を再監査し、追加修正なしでclose可能と判定した。

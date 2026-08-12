@@ -35,7 +35,7 @@ Phase 5z8では保存Raster、Project frame geometry、Camera viewを分離で�
 - fit / align / offsetのtransform、preview delta、wheel clampをpure helperへ分離し、Applyは既存content resize transactionを共有する。
 - offset / pointer sessionは保存せず、align、`キャンバス` / `両方`へのmode離脱、popup reopenで破棄する。
 - Canvas frame、`両方`mode、edge / corner、aspect lock、Animation Camera Trackは未実装のまま維持する。
-- SOL review 1=`A`、全55 verifier、build、Browserのdrag / wheel / Apply / Undo / Redo / close-reopen、console warning / error 0件を通過し、Owner軽量確認待ちでOPEN。
+- SOL review 1=`A`、全55 verifier、build、Browserのdrag / wheel / Apply / Undo / Redo / close-reopen、console warning / error 0件を通過し、2026-08-12にSOL技術closeした。Owner制作確認は別紙で追跡する。
 
 ## Animation Camera Track案
 

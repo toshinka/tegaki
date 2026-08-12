@@ -19,7 +19,7 @@
 - rectangle / circle / polylineはcontrol pointのmulti-selectと一時weightを作るUIであり、WARPのeffect mask、Bind bounds、topology、Raster選択範囲にはしない。
 - 選択shape、選択中point、soft weightはruntime UI stateとし、Project正本へ保存しない。確定gestureだけを既存`deformer.keyframes`のposeへ1 Historyで書く。
 
-Phase 7bはRECT、Phase 7jはCIRCLE / drag式POLYまで既存Warp key / selection move / Historyへ接続した。Phase 7jはSOL review 1=`A`、Owner一括確認待ちでOPEN。soft weight、回転 / 拡縮handle、Mesh vertex選択、effect maskは未実装のまま維持する。
+Phase 7bはRECT、Phase 7jはCIRCLE / drag式POLYまで既存Warp key / selection move / Historyへ接続した。Phase 7jはSOL review 1=`A`で2026-08-12にSOL技術closeし、Owner制作確認は別紙で追跡する。soft weight、回転 / 拡縮handle、Mesh vertex選択、effect maskは未実装のまま維持する。
 
 ### icon path候補
 
@@ -70,14 +70,14 @@ Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる
 - sidebar、Layer Panel、Animation Table、QTP、各popup、status、tooltip、formの順に現行px値と文字倍率を監査し、Browser 100%、OS表示倍率、狭幅、pen / touchで比較する。
 - Phase 6gの局所icon調整とは分離し、Phase 6hで固定入力監査、共通token、component単位のBrowser受入を行う。
 
-### Animation Table / CLIP MOTION導線監査（現行Phase 7l）
+### Animation Table / CLIP MOTION導線監査（Phase 7l完了）
 
 - 2026-08-11の軽量監査では、Table既定高をLane一行分だけ拡張した。CLIP MOTIONは`RIG`をSetup青、`MOTION / WARP`のactiveを橙とし、WARP内でもGRID / RADIAL / 4×4作成とGRID / FRAME Bind編集だけを明るいSetup青へ統一した。POINT / SELECT / BRUSH、key、Bake等のFrame作業は橙系を維持する。
 - 現行の大分類は`RIG → MOTION → WARP`、対象選択、mode固有設定、key操作の順で左から右に読めるため維持する。青は濃い全面塗りを避け、濃い青文字・borderと淡い青背景を第一候補とする。
 - Phase 7lでは幅依存の偶発的な折返しをやめ、上段を`FPS / FRAMES → SCOPE → LOOP / END / IN / OUT → PREVIEW / onion → Play`、下段を`Timeline zoom / LIB → DURATION → CLIP MOTION → copy / paste / group / delete → close`の明示二段へ限定整理した。
 - wrapperはruntime stateを持たず、既存ID / event / shortcut / History / model正本を維持する。header通常wheelのTimeline zoom、Lane列wheelの上下、Timeline grid wheelの左右、header空白dragも既存listenerを共有する。
 - Browser 1280px相当ではpanel `960×266px`、viewport約202px、狭幅実操作では`460×266px`、row内wrap、controlはみ出し0件。実wheel `80% → 87%`、close / reopen、favicon取得を除くconsole warning / error 0件、全51 verifier、buildを通過した。
-- Setup青 / Frame作業橙とTable高266pxは維持した。coarse pointer、制作Projectでのpopup重なり、pen / touchはOwner一括確認で継続監視し、明示受入前にPhase 7lをcloseしない。
+- Setup青 / Frame作業橙とTable高266pxは維持した。Phase 7lは2026-08-12にSOL技術closeし、coarse pointer、制作Projectでのpopup重なり、pen / touchはOwner確認台帳で継続監視する。
 
 ### Pixel Selection / CAF状態共通化（後続候補）
 
@@ -108,7 +108,7 @@ Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる
 - 初版はQTPの既存6-tool gridを維持し、その下へone-shot `T / TEXT TO RASTER`と小さい入力panelを追加した。active drawing tool、sidebar常設icon、新しいshortcutにはしていない。
 - generic Sans / Serif / Mono、8〜256px、bold、現在のmain color、日本語 / ASCII / 複数行だけを受け、確定後は文字列 / optionを保存しない。通常Raster pixelが唯一の正本である。
 - viewport中心を既存CameraでProject座標へ戻し、tight raster boundsの新規通常LayerへLayer作成 + pixelを1 Historyで確定する。Animation Tableのworking Layerでは理由付き拒否する。
-- local font access / file import、再編集可能Text、CAF内Text、outline / shadow / vertical textはPhase 7kへ含めない。Owner一括確認前にcloseしない。
+- local font access / file import、再編集可能Text、CAF内Text、outline / shadow / vertical textはPhase 7kへ含めない。Phase 7kは2026-08-12にSOL技術closeし、Owner制作確認は別紙で追跡する。
 
 ## 4. CAF内部Folderの階層Motion
 
@@ -145,8 +145,8 @@ Plan Bは専用Rig Inspector / treeへ構造編集を分離し、Timelineには�
 2. Phase 6hでBrowser 100%のUI密度を従来80%相当へ段階調整する。
 3. Phase 6h後は`15`のGate 0を独立して行い、CAF内部Part / Folderの所有とAnimation Table子行投影を固定する。
 4. 階層Motionは親子Part transformだけを独立Phase化し、その後に少数BONEのrigid FKへ進む。BONE Skinning / weight / physicsを同時実装しない。
-5. Deformer SELECTはPhase 7b / 7jでRECT / CIRCLE / POLYまで実装しOwner一括確認待ち。
-6. Text to RasterはPhase 7kで通常Rasterへのone-shot確定まで実装しOwner一括確認待ち。次候補はMotion Graph / Motion Path以降から再選定する。
+5. Deformer SELECTはPhase 7b / 7jでRECT / CIRCLE / POLYまで実装し、Phase 7jをSOL技術closeした。
+6. Text to RasterはPhase 7kで通常Rasterへのone-shot確定まで実装し、SOL技術closeした。次候補はMotion / Mesh系列から再選定する。
 
 各UI Phaseは次を確認する。
 
