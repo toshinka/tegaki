@@ -6,8 +6,11 @@
 import { createGuardedAutoShapeFillTopology } from './auto-shape-fill-topology.js';
 import { analyzeRasterAlphaContours } from './raster-alpha-contours.js';
 import {
+    CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE,
+    createChainLocalJointSkinWeights
+} from './chain-local-joint-skin.js';
+import {
     createRasterBoneBindSegments,
-    createRasterBoneDistanceInfluences,
     createRasterMeshSourceSignature,
     rasterMeshSourceSignaturesEqual
 } from './raster-bone-auto-setup.js';
@@ -56,6 +59,12 @@ export function createAutoShapeRasterBoneSetup(asset, targetInternalLayerId, sna
         x: vertex.x,
         y: vertex.y
     }));
+    const weightResult = createChainLocalJointSkinWeights(
+        vertices,
+        asset?.rigDefinition?.bones || [],
+        segmentResult.segments
+    );
+    if (!weightResult.ok) return weightResult;
     const triangles = topology.triangles.map(triangle => triangle.map(index => vertices[index].vertexId));
     const contentBounds = unionBounds(analysis.components.flatMap(component => (
         component.outerContours.map(contour => contour.bounds)
@@ -69,6 +78,7 @@ export function createAutoShapeRasterBoneSetup(asset, targetInternalLayerId, sna
         generator: {
             type: AUTO_SHAPE_FILL_GENERATOR,
             mode: 'fill',
+            weightMode: CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE,
             source: createRasterMeshSourceSignature(snapshot),
             contentBounds: cloneBounds(contentBounds),
             alphaThreshold: analysis.alphaThreshold,
@@ -84,10 +94,7 @@ export function createAutoShapeRasterBoneSetup(asset, targetInternalLayerId, sna
     const skinBinding = {
         version: RASTER_MESH_SCHEMA_VERSION,
         meshId,
-        vertexWeights: vertices.map(vertex => ({
-            vertexId: vertex.vertexId,
-            influences: createRasterBoneDistanceInfluences(vertex, segmentResult.segments)
-        }))
+        vertexWeights: weightResult.vertexWeights
     };
     return {
         ok: true,
@@ -97,7 +104,8 @@ export function createAutoShapeRasterBoneSetup(asset, targetInternalLayerId, sna
         topology,
         analysis,
         contentBounds,
-        boneCount: segmentResult.segments.length
+        boneCount: segmentResult.segments.length,
+        weightDiagnostics: weightResult.diagnostics
     };
 }
 

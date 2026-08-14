@@ -35,7 +35,7 @@ Tegakiはブラウザで動作するラスターお絵かき・アニメーシ�
 モジュール: ESM
 ビルド:     Vite
 対象:       Chrome 最新
-描画:       PixiJS v8.17.0
+描画:       PixiJS v8.19.0
 Layer:      Container + Sprite(RenderTexture)
 UI:         DOM + PixiJS + lucide-static
 UI animation: GSAP

@@ -3,15 +3,12 @@
  * source Clip / Frameはpayloadへ含めず、Project保存正本も持たない。
  */
 
+import { normalizeCubicBezierEasing } from './cubic-bezier-easing.js';
+
 const MOTION_KEY_CLIPBOARD_KIND = 'tegaki-motion-key';
 
 function normalizeEasing(source) {
-    const easing = source?.easing;
-    if (easing?.type !== 'cubic-bezier') return null;
-    const values = ['x1', 'y1', 'x2', 'y2'].map(name => Number(easing[name]));
-    if (!values.every(Number.isFinite)) return null;
-    const [x1, y1, x2, y2] = values.map(value => Math.max(0, Math.min(1, value)));
-    return { type: 'cubic-bezier', x1, y1, x2, y2 };
+    return normalizeCubicBezierEasing(source?.easing);
 }
 
 function normalizeMotionKeyValues(source) {

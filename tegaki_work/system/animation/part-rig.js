@@ -475,6 +475,118 @@ export function registerRootBoneRigidBinding(rigDefinition, boneId, partId, opti
     };
 }
 
+/**
+ * internal Layer削除に伴うPart / Boneを、一つのstatic Rig更新として除去する。
+ * 削除対象外Boneが対象Boneを親にしている場合は暗黙reparentせず拒否する。
+ */
+export function removeRigDefinitionTargets(rigDefinition, options = {}) {
+    const partIds = new Set(options.partIds || []);
+    const requestedBoneIds = new Set(options.boneIds || []);
+    if (rigDefinition == null && partIds.size === 0 && requestedBoneIds.size === 0) {
+        return {
+            ok: true,
+            changed: false,
+            value: null,
+            partIds: [],
+            boneIds: []
+        };
+    }
+    const normalized = normalizeRigDefinition(rigDefinition);
+    if (!normalized || !Array.isArray(normalized.parts)) {
+        return { ok: false, reason: 'invalid-rig-definition', value: normalized };
+    }
+    const externalPartChildren = normalized.parts.filter(part => (
+        part?.partId
+        && !partIds.has(part.partId)
+        && partIds.has(part.parentPartId)
+    ));
+    if (externalPartChildren.length > 0) {
+        return {
+            ok: false,
+            reason: 'rig-part-external-child',
+            value: normalized,
+            partIds: [...partIds],
+            externalChildPartIds: externalPartChildren.map(part => part.partId)
+        };
+    }
+    const rigidBindings = Array.isArray(normalized.rigidBindings)
+        ? normalized.rigidBindings
+        : [];
+    rigidBindings.forEach(binding => {
+        if (partIds.has(binding?.partId) && binding?.boneId) {
+            requestedBoneIds.add(binding.boneId);
+        }
+    });
+    const bones = Array.isArray(normalized.bones) ? normalized.bones : [];
+    const externalChildren = bones.filter(bone => (
+        bone?.boneId
+        && !requestedBoneIds.has(bone.boneId)
+        && requestedBoneIds.has(bone.parentBoneId)
+    ));
+    if (externalChildren.length > 0) {
+        return {
+            ok: false,
+            reason: 'rig-bone-external-child',
+            value: normalized,
+            boneIds: [...requestedBoneIds],
+            externalChildBoneIds: externalChildren.map(bone => bone.boneId)
+        };
+    }
+
+    const warpAnchorConstraints = Array.isArray(normalized.warpAnchorConstraints)
+        ? normalized.warpAnchorConstraints.filter(constraint => (
+            !partIds.has(constraint?.sourceFolderLayerId)
+            && !requestedBoneIds.has(constraint?.targetBoneId)
+        ))
+        : normalized.warpAnchorConstraints;
+    const value = {
+        ...normalized,
+        parts: normalized.parts.filter(part => !partIds.has(part?.partId)),
+        ...(Array.isArray(normalized.bones)
+            ? { bones: normalized.bones.filter(bone => !requestedBoneIds.has(bone?.boneId)) }
+            : {}),
+        ...(Array.isArray(normalized.rigidBindings)
+            ? {
+                rigidBindings: normalized.rigidBindings.filter(binding => (
+                    !partIds.has(binding?.partId)
+                    && !requestedBoneIds.has(binding?.boneId)
+                ))
+            }
+            : {}),
+        ...(Array.isArray(normalized.warpAnchorConstraints)
+            ? { warpAnchorConstraints }
+            : {})
+    };
+    return {
+        ok: true,
+        changed: partIds.size > 0 || requestedBoneIds.size > 0,
+        value,
+        partIds: [...partIds],
+        boneIds: [...requestedBoneIds]
+    };
+}
+
+/** static Rig削除と同じidentity集合をClip-local Motionから除去する。 */
+export function removeRigMotionTargets(rigMotion, options = {}) {
+    const normalized = normalizeRigMotion(rigMotion);
+    if (normalized == null) return null;
+    if (!normalized || !Array.isArray(normalized.partTracks)) return normalized;
+    const partIds = new Set(options.partIds || []);
+    const boneIds = new Set(options.boneIds || []);
+    const partTracks = normalized.partTracks.filter(track => !partIds.has(track?.partId));
+    const boneTracks = Array.isArray(normalized.boneTracks)
+        ? normalized.boneTracks.filter(track => !boneIds.has(track?.boneId))
+        : normalized.boneTracks;
+    if (partTracks.length === 0 && (!Array.isArray(boneTracks) || boneTracks.length === 0)) {
+        return null;
+    }
+    return {
+        ...normalized,
+        partTracks,
+        ...(Array.isArray(normalized.boneTracks) ? { boneTracks } : {})
+    };
+}
+
 /** static SetupのBone Bind Transformだけをimmutableに更新する。Frame Pose正本は触らない。 */
 export function updateRigBoneBindTransform(rigDefinition, boneId, transform = {}) {
     const normalized = normalizeRigDefinition(rigDefinition);

@@ -4225,6 +4225,42 @@ canvas {
     max-width: calc(100vw - 32px);
 }
 
+.anim-rig-view-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+    margin-bottom: 3px;
+    color: var(--text-secondary);
+    font-size: 8px;
+    font-weight: 700;
+}
+
+.anim-rig-weight-label {
+    margin-left: 3px;
+}
+
+.anim-rig-weight-toggle:not(:disabled),
+.anim-rig-key-btn.anim-rig-weight-toggle.active {
+    border-color: var(--deformer-bind-line);
+    color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 13%, var(--futaba-cream));
+}
+
+.anim-rig-key-btn.anim-rig-weight-toggle.active {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--deformer-bind-line) 34%, transparent);
+}
+
+.anim-rig-weight-summary {
+    padding: 2px 4px;
+    border: 1px solid color-mix(in srgb, var(--deformer-bind-line) 64%, var(--futaba-light-medium));
+    border-radius: 4px;
+    color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 10%, var(--futaba-cream));
+    font-size: 7px;
+    letter-spacing: 0.04em;
+}
+
 .anim-rig-folder-setup-context {
     width: 100%;
 }
@@ -4851,6 +4887,12 @@ canvas {
     stroke-width: 1.5;
 }
 
+.anim-motion-curve-standard-range {
+    fill: color-mix(in srgb, var(--deformer-bind-line) 8%, transparent);
+    stroke: none;
+    pointer-events: none;
+}
+
 .anim-motion-curve-diagonal {
     fill: none;
     stroke: var(--futaba-light-medium);
@@ -4888,6 +4930,46 @@ canvas {
 .anim-motion-curve-handle.is-disabled {
     fill: var(--futaba-light-medium);
     cursor: not-allowed;
+}
+
+.anim-motion-curve-mode-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin: 4px 0;
+}
+
+.anim-motion-curve-overshoot-btn {
+    min-height: 24px;
+    padding: 3px 8px;
+    color: var(--deformer-bind-point);
+    border: 1px solid var(--deformer-bind-line);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-background));
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.anim-motion-curve-overshoot-btn:hover:not(:disabled),
+.anim-motion-curve-overshoot-btn.active {
+    color: var(--futaba-background);
+    border-color: var(--deformer-bind-point);
+    background: var(--deformer-bind-line);
+}
+
+.anim-motion-curve-overshoot-btn:disabled {
+    color: var(--futaba-medium);
+    -webkit-text-fill-color: var(--futaba-medium);
+    border-color: var(--futaba-light-medium);
+    background: var(--futaba-cream);
+    opacity: 0.55;
+}
+
+.anim-motion-curve-range {
+    color: var(--deformer-bind-point);
+    font-size: 9px;
+    font-weight: 700;
 }
 
 .anim-motion-graph-window {
@@ -4929,13 +5011,36 @@ canvas {
     letter-spacing: .04em;
 }
 
+.anim-motion-graph-add-point-btn {
+    min-height: 22px;
+    padding: 2px 7px;
+    border: 1px solid var(--deformer-bind-line);
+    border-radius: 5px;
+    color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-cream));
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+
 .anim-motion-graph-easing-btn:hover:not(:disabled),
-.anim-motion-graph-easing-btn:focus-visible {
+.anim-motion-graph-easing-btn:focus-visible,
+.anim-motion-graph-add-point-btn:hover:not(:disabled),
+.anim-motion-graph-add-point-btn:focus-visible {
     border-color: var(--active-border);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 20%, transparent);
 }
 
-.anim-motion-graph-easing-btn:disabled {
+.anim-motion-graph-add-point-btn.active,
+.anim-motion-graph-add-point-btn.active:hover {
+    color: var(--futaba-cream);
+    border-color: var(--deformer-bind-point);
+    background: var(--deformer-bind-point);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--deformer-bind-line) 30%, transparent);
+}
+
+.anim-motion-graph-easing-btn:disabled,
+.anim-motion-graph-add-point-btn:disabled {
     color: var(--futaba-medium);
     -webkit-text-fill-color: var(--futaba-medium);
     border-color: var(--futaba-light-medium);
@@ -4993,6 +5098,12 @@ canvas {
     touch-action: none;
 }
 
+.anim-motion-graph-plot.is-add-point-mode {
+    cursor: crosshair;
+    border-color: var(--deformer-bind-line);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--deformer-bind-line) 25%, transparent);
+}
+
 .anim-motion-graph-grid-line {
     stroke: var(--futaba-light-medium);
     stroke-width: 1;
@@ -5029,6 +5140,13 @@ canvas {
 
 .anim-motion-graph-key.is-secondary {
     fill: var(--futaba-maroon);
+}
+
+.anim-motion-graph-key-selection {
+    fill: none;
+    stroke: var(--active-border);
+    stroke-width: 2;
+    pointer-events: none;
 }
 
 .anim-motion-graph-key:hover,
@@ -5300,6 +5418,96 @@ button.anim-motion-graph-legend-item.is-primary {
 
 .animation-table-panel .anim-bone-timeline-row.is-selected .anim-bone-cell-slot.is-clip-range {
     background: color-mix(in srgb, var(--futaba-light) 24%, transparent);
+}
+
+.animation-table-panel .anim-rig-bone-group-row,
+.animation-table-panel .anim-rig-bone-group-timeline-row {
+    height: calc(var(--ui-anim-lane-row-height) - 4px);
+    min-height: 16px;
+    box-sizing: border-box;
+    border-bottom: 1px solid color-mix(in srgb, var(--futaba-light-medium) 68%, transparent);
+    background: color-mix(in srgb, var(--futaba-light) 18%, var(--futaba-background));
+}
+
+.animation-table-panel .anim-rig-bone-group-row {
+    display: flex;
+    align-items: stretch;
+}
+
+.animation-table-panel .anim-rig-bone-group-toggle {
+    width: 100%;
+    min-width: 0;
+    padding: 0 6px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border: 0;
+    color: var(--futaba-maroon);
+    background: transparent;
+    font-size: 8px;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.animation-table-panel .anim-rig-bone-group-toggle:hover,
+.animation-table-panel .anim-rig-bone-group-toggle:focus-visible {
+    background: color-mix(in srgb, var(--futaba-light-medium) 28%, transparent);
+    outline: 1px solid color-mix(in srgb, var(--active-border) 55%, transparent);
+    outline-offset: -1px;
+}
+
+.anim-rig-bone-group-chevron,
+.anim-rig-bone-group-count,
+.anim-rig-bone-group-indicator {
+    flex: 0 0 auto;
+    color: var(--futaba-maroon);
+}
+
+.anim-rig-bone-group-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.anim-rig-bone-group-count {
+    min-width: 14px;
+    padding: 0 3px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 7px;
+    background: var(--futaba-cream);
+    text-align: center;
+}
+
+.anim-rig-bone-group-indicator {
+    font-size: 7px;
+}
+
+.anim-rig-bone-group-indicator.is-active,
+.animation-table-panel .anim-rig-bone-group-row.has-active-bone .anim-rig-bone-group-chevron {
+    color: var(--active-border);
+}
+
+.animation-table-panel .anim-rig-bone-group-timeline-row {
+    pointer-events: none;
+}
+
+.anim-rig-bone-group-timeline-fill {
+    height: 100%;
+    flex: 0 0 auto;
+    background: repeating-linear-gradient(
+        to right,
+        color-mix(in srgb, var(--futaba-light) 20%, transparent) 0,
+        color-mix(in srgb, var(--futaba-light) 20%, transparent) calc(var(--anim-cell-width) - 1px),
+        color-mix(in srgb, var(--futaba-light-medium) 30%, transparent) calc(var(--anim-cell-width) - 1px),
+        color-mix(in srgb, var(--futaba-light-medium) 30%, transparent) var(--anim-cell-width)
+    );
+}
+
+.animation-table-panel .anim-rig-bone-group-timeline-row.has-active-bone {
+    box-shadow: inset 3px 0 0 var(--active-border);
 }
 
 .anim-motion-curve-fields {
@@ -5662,6 +5870,57 @@ button.anim-motion-graph-legend-item.is-primary {
     touch-action: none;
 }
 
+.rig-skin-weight-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2691;
+    width: 100vw;
+    height: 100vh;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.rig-skin-weight-overlay[hidden] {
+    display: none;
+}
+
+.rig-skin-weight-overlay path {
+    pointer-events: none;
+    vector-effect: non-scaling-stroke;
+}
+
+.rig-skin-weight-overlay__low {
+    fill: color-mix(in srgb, var(--deformer-bind-line) 14%, transparent);
+}
+
+.rig-skin-weight-overlay__mid {
+    fill: color-mix(in srgb, var(--deformer-bind-line) 28%, transparent);
+}
+
+.rig-skin-weight-overlay__high {
+    fill: color-mix(in srgb, var(--deformer-bind-point) 42%, transparent);
+}
+
+.rig-skin-weight-overlay__rigid {
+    fill: color-mix(in srgb, var(--deformer-bind-point) 58%, transparent);
+}
+
+.rig-skin-weight-overlay__outline-underlay,
+.rig-skin-weight-overlay__outline {
+    fill: none;
+    stroke-linejoin: round;
+}
+
+.rig-skin-weight-overlay__outline-underlay {
+    stroke: color-mix(in srgb, var(--futaba-cream) 90%, transparent);
+    stroke-width: 3.5;
+}
+
+.rig-skin-weight-overlay__outline {
+    stroke: color-mix(in srgb, var(--deformer-bind-point) 78%, transparent);
+    stroke-width: 1.2;
+}
+
 .rig-pivot-overlay[hidden] {
     display: none;
 }
@@ -5675,6 +5934,22 @@ button.anim-motion-graph-legend-item.is-primary {
     stroke-width: 2;
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
+}
+
+.rig-pivot-overlay__stem-outline {
+    stroke: color-mix(in srgb, var(--futaba-cream) 92%, transparent);
+    stroke-width: 5;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+.rig-pivot-overlay__connection-outline {
+    stroke: color-mix(in srgb, var(--futaba-cream) 88%, transparent);
+    stroke-width: 4.5;
+    stroke-dasharray: 5 4;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
 }
 
 .rig-pivot-overlay__connection {
@@ -5768,6 +6043,14 @@ button.anim-motion-graph-legend-item.is-primary {
 
 .rig-pivot-overlay__tag {
     pointer-events: none;
+}
+
+.rig-pivot-overlay__pivot.is-label-hidden .rig-pivot-overlay__tag {
+    display: none;
+}
+
+.rig-pivot-overlay__pivot.is-label-hidden:hover .rig-pivot-overlay__tag {
+    display: block;
 }
 
 .rig-pivot-overlay__tag rect {

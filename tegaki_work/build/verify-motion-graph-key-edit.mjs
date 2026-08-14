@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 
 import {
     normalizeMotionGraphEditChannel,
-    patchMotionGraphTransformChannel
+    patchMotionGraphTransformChannel,
+    readMotionGraphTransformChannel
 } from '../system/animation/motion-graph-key-edit.js';
 
 const base = Object.freeze({
@@ -19,6 +20,11 @@ const base = Object.freeze({
 assert.equal(normalizeMotionGraphEditChannel('position', 'y'), 'y');
 assert.equal(normalizeMotionGraphEditChannel('scale', 'missing'), 'scaleX');
 assert.equal(normalizeMotionGraphEditChannel('rotation'), 'rotation');
+
+assert.deepEqual(
+    readMotionGraphTransformChannel({ transform: base, group: 'rotation', channel: 'rotation' }),
+    { ok: true, group: 'rotation', channel: 'rotation', displayValue: 180 }
+);
 
 const position = patchMotionGraphTransformChannel({
     transform: base,

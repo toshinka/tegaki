@@ -58,7 +58,7 @@ export const CoreInitializer = {
             
             if (TegakiEventBus) {
                 TegakiEventBus.emit('core:ready', {
-                    version: 'v8.17.0-esm',
+                    version: `v${PIXI.VERSION}-esm`,
                     timestamp: Date.now()
                 });
             }

@@ -1,21 +1,31 @@
 # GitHubURL — Tegaki プロジェクト読解用 Raw URL ナビゲーション
 
-更新日: 2026-08-12
+更新日: 2026-08-14
 
 > **外部AI (Web版Claude / ChatGPT等) 向けガイド**
 > 本ファイルはローカルファイルシステムにアクセスできない外部AIが、GitHubから主要ファイルを直接読み込んで Tegaki プロジェクトを理解・調査するためのURL集です。
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
 > URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
 
-## 0. 現在地（Phase 7i〜7q SOL技術close、Phase 7r OPEN）
+## 0. 現在地（Phase 7i〜8a SOL技術close、Phase 8b OPEN）
 
 - Phase 7i〜7qは各Gate=`GO`、実装Stage、最終SOL review=`A`、関連Browser確認を通過し、2026-08-12のOwner指示に基づきSOL技術closeした。完了記録は`Archive/phase7i.md`〜`phase7q.md`。
 - Phase 7i LINE / Ribbon、7j Deformer三形状SELECT、7k Text to Raster、7l Table二段header、7m read-only Motion Graph、7n Resize直接framing、7o Motion Easing 12 presetの保存・History境界を維持する。
 - Phase 7pはMotion値clipboardと分離した`tegaki-motion-easing` runtime payload、HOLD / LINEAR / custom cubic、複数key atomic paste、terminal混在拒否、EASING CURVE内のSetup青COPY / PASTEを追加した。SOL review 1=`A`、全57 verifier、build、BrowserのHOLD copy / paste、Undo / Redo、console 0件を通過した。
 - 制作Project、長尺CAF、reload / export、Clip間copy、pen / touch等のOwner未確認項目は`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`で追跡する。未確認はPhase未完了や既知不具合を意味しない。
 - Phase 7qはGraph値編集 / Motion Path / manual Meshを後送し、既存read-only Motion Graphのexplicit key marker seekと既存EASING CURVEへの明示bridgeを実装した。全57 verifier、build、Browserの5 group / mouse・keyboard seek / HOLD / terminal / playback / close-reopen / console 0件を通過して技術closeした。Project / History schema、Graph独自selection、sampler / preview / exportは変更していない。
-- Phase 7rはproposal 10 P3の最小Sliceとして、既存explicit Motion keyのactive一channel値drag、runtime channel selector、既存複合key mutation、1 gesture 1 History、cancel rollback、再生中拒否を実装した。SOL review=`A`、全58 verifier、build、Browserの5 group / Undo・Redo / playback / close-reopen / console確認まで完了している。追跡済みbuild基準は復元済みだが、最終buildのuntracked asset 5件とBrowser確認用Vite log 2件の清掃待ちのため現行PhaseはOPEN。
-- Phase 7r close後の第一比較候補は、数値scrub / Canvas root Motionのcancel・no-move History不一致を揃える限定bug fix Gate。P4途中点追加、Motion Path、manual Meshへ自動で広げない。Claude Rig / Mesh follow-upの実測項目と将来Gateはproposal 15とOwner確認台帳へ統合済み。
+- Phase 7rはproposal 10 P3の最小Sliceとして、既存explicit Motion keyのactive一channel値drag、runtime channel selector、既存複合key mutation、1 gesture 1 History、cancel rollback、再生中拒否を実装した。SOL review=`A`、全58 verifier、build、Browserの5 group / Undo・Redo / playback / close-reopen / console確認、追跡済みbuild基準の復元、生成asset / Vite logの清掃を完了し、2026-08-13に技術closeした。完了記録は`Archive/phase7r.md`。
+- Phase 7y開始前のOwner制作操作で、一枚の人物Raster + `AUTO SHAPE` + 11 Mesh BONEによる肘曲げと手足の独立操作を確認した。顔へのweight漏れ、腕幅／長さ変化はproposal 15の`Chain-local Joint Skin`候補とOwner確認台帳へ統合し、Phase 7yへは混ぜなかった。
+- Phase 7sはPixiJS 8.17.0→8.19.0の限定互換更新。package / lock / runtime固定、公式Agent Skills参照境界、affected API Gate、全59 verifier / production build / dev配信 / 生成物清掃を完了し、SOL review=`A`で技術closeした。Browser制御環境のblockerで未通過の実操作はOwner確認台帳へ分離した。WebGPU / Canvas renderer、新しいv8.19機能採用、保存schema変更は非対象。
+- Phase 7tはSOL主taskからproject-scoped LUNA workerへ明確な限定Sliceだけを委譲し、外部Web GPT reviewの準備・採否を半自動化するworkflowを導入した。LUNA / MAXのread-only probe、限定write pilot、全60 verifier、build、SOL最終review=`A`で技術closeした。主task modelの自動変更、複数write agent、外部report自動採用は行わない。
+- Phase 7uはVite 8.0.16 exact、PostCSS 8.5.26、Nanoid 3.3.18へ限定更新し、`npm audit` high 3 / total 3を0件へした。全61 verifier、build、dev HTTP smoke、SOL review=`A`で技術closeした。PixiJS 8.19.0とapplication sourceは維持した。
+- Phase 7vはMotion数値scrubとCanvas root Motionを、tap/no-op History 0、実変更pointerup History 1、cancel / lost capture / Escape rollbackへ揃えた。全62 verifier、build、SOL review=`A`で技術closeし、Browser未確認はOwner台帳へ分離した。
+- Phase 7wはMotion Graph途中点追加をguarded `ADD POINT` Modeとして実装した。Bezier split、implicit boundary / HOLD / blendMode、active以外の複合key sample不変性を固定し、現行X control 0..1で正確に表せない分割はmutation前に理由付き拒否する。全63 verifier、build、SOL review=`A`で技術closeした。
+- Phase 7xは既存runtime Timeline selectionをGraphへ投影し、選択済みanchorだけ同一Clip Motion keyのactive一channelをdisplay deltaでatomic編集する。partial key / clamp / no-op / duplicate Frame / old Project、Ctrl / Cmd toggle、橙ring、History 1、cancel rollbackを固定し、全64 verifier、build、SOL review=`A`で技術closeした。Browser未確認はOwner台帳へ分離した。
+- Phase 7yはX=0..1 / Y=-1..2、Clip Motion raw ratio、opacity / blendStrength最終clamp、Part / Bone従来clamp、Back三preset、clipboard / Project round-trip、Setup青`ALLOW OVERSHOOT`、ADD POINT exact split / 理由付き拒否を実装した。全65 verifier、build、SOL review=`A`で技術closeし、Browser未確認はOwner台帳へ分離した。
+- Phase 7zは一枚Raster人体の`Chain-local Joint Skin`安全Gateを完了した。明示AUTO SHAPEへ`chain-local-joint-v1`を限定接続し、rigid primary、直結親子の短いjoint band、曖昧branch / joint拒否、旧保存weight維持、clean checkpointのCURRENT維持を固定した。全69 verifier / build、Browserの生成・Undo / Redo・checkpoint・Timeline wheel・console、SOL review=`A`で技術closeした。Owner制作確認は台帳へ分離する。
+- Phase 8aは`Raster Skin Weight Diagnostics`を技術closeした。Setup青`WEIGHT`、一つの選択Raster / Mesh / Bone、既存Skin weight / Frame evaluator、固定6 SVG path、runtime-only / pointer非参加、target消失時解除を固定した。全71 verifier / build / Browser、SOL review=`A`を通過し、Owner制作確認は台帳へ分離した。
+- 現行Phase 8bは`Animation Table Bone Group / Dense Rig Focus` Gate。Stage Aで一意target / `SHARED / CONNECTION` / `UNASSIGNED`のpure projectionを固定し、Gate 1=`GO — 同一target 2 Bone以上だけ明示collapse group`とした。singletonは従来行、selection非破壊、Canvas Bone自動非表示、保存group / Bone色、Timeline modelを増やさない。
 
 このナビゲーション自身:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
@@ -28,7 +38,43 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **AI共通ガイド**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 - **技術方針・禁止事項（正本）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 - **最新開発進捗・現在地**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
-- **現行Phase 7r（既存Motion key値drag。build生成差分の清掃待ち）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase7r.md
+- **現行Phase 8b（Animation Table Bone Group / Dense Rig Focus Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase8b.md
+- **Phase 8b Bone group pure projection**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/animation-table-bone-group-projection.js
+- **Phase 8b Bone group projection verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-bone-group-projection.mjs
+- **Phase 8a完了記録（Raster Skin Weight Diagnostics）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8a.md
+- **Phase 8a weight diagnostic pure projection**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-skin-weight-diagnostic.js
+- **Phase 8a weight diagnostic verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-skin-weight-diagnostic.mjs
+- **Phase 8a read-only SVG overlay**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/rig-skin-weight-overlay.js
+- **Phase 8a overlay verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-skin-weight-overlay.mjs
+- **Phase 7z完了記録（Chain-local Joint Skin Safety Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7z.md
+- **Phase 7z Stage A cross-branch leakage baseline verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-chain-local-joint-skin-baseline.mjs
+- **Phase 7z Chain-local Joint Skin pure helper**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/chain-local-joint-skin.js
+- **Phase 7z Chain-local / distance quality verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-chain-local-joint-skin.mjs
+- **Phase 7y完了記録（Motion Easing Overshoot / Back）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7y.md
+- **Phase 7x完了記録（Motion Graph Multi-Key Value Drag）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7x.md
+- **Phase 7w完了記録（Motion Graph Guarded ADD POINT）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7w.md
+- **Phase 7v完了記録（Motion Gesture Cancel / No-Move History）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7v.md
+- **Phase 7u完了記録（Vite / Build Tool Security Patch）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7u.md
+- **Phase 7t完了記録（Codex Multi-Model / External Web Review Workflow）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7t.md
+- **Phase 7t採用計画・実装済み記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7t_Codex%E3%83%9E%E3%83%AB%E3%83%81%E3%83%A2%E3%83%87%E3%83%AB%E3%83%BB%E5%A4%96%E9%83%A8Web%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E9%81%8B%E7%94%A8.md
+- **Codex Multi-Model詳細workflow**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md
+- **project-scoped LUNA worker設定**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/.codex/agents/tegaki-luna-worker.toml
+- **GitHubURL local鮮度verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-github-url-index.mjs
+- **Vite security patch verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-vite-security-patch.mjs
+- **Motion gesture History verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-gesture-history.mjs
+- **Motion Graph key insertion pure plan**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-graph-key-insert.js
+- **Motion Graph key insertion verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-key-insert.mjs
+- **Motion Graph multi-key value delta pure plan**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-graph-key-batch-edit.js
+- **Motion Graph multi-key value delta verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-key-batch-edit.mjs
+- **Motion Easing cubic / raw sampler**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/cubic-bezier-easing.js
+- **Clip Motion transform sampler**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-transform-sampler.js
+- **Easing Curve editor pure model**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/easing-curve-editor-model.js
+- **Motion key clipboard**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-key-clipboard.js
+- **Motion Easing Overshoot verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-easing-overshoot.mjs
+- **External Web Review依頼template**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/EXTERNAL_WEB_REVIEW_REQUEST_TEMPLATE.md
+- **Phase 7s完了記録（PixiJS v8.19 compatibility / Agent context）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7s.md
+- **依存version正本**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/package.json
+- **Phase 7r完了記録（既存Motion key値drag）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7r.md
 - **Phase 7i完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7i.md
 - **Phase 7j完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7j.md
 - **Phase 7k完了記録**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase7k.md
@@ -158,7 +204,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 - **Phase 7p Motion Easing tagged clipboard / atomic paste**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-easing-clipboard.js
 - **Phase 7r Motion Graph値編集pure adapter**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/motion-graph-key-edit.js
 
-### Phase 7h / 7i / 7j / 7k / 7l / 7m / 7n / 7o / 7p / 7q / 7r verifier
+### Phase 7h〜7x verifier
 
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-alpha-contours.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-auto-shape-contour-budget.mjs
@@ -174,6 +220,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/bu
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-view-model.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-ui-adapter.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-graph-key-edit.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-pixijs-8-19.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-resize-direct-framing.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-resize-direct-ui-adapter.mjs
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-motion-easing-presets.mjs
@@ -181,8 +228,22 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/bu
 
 ### Stage D review / handoff
 
-- **Rig / Mesh Setup UI外部レビュー（提案・未検証）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/rig-mesh-setup-ui-review.md
+- **Rig / Mesh Setup UI外部レビュー（提案・未検証）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/rig-mesh-setup-ui-review.md
 - **Rig / Mesh反映評価・follow-up（提案。現行採否はproposal 15参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/rig-mesh-evaluation-and-followup.md
+- **Codex Multi-Model / External Web Review長文原案（採用判断はproposal 16 / Phase 7t参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/Tegaki_Codex_%E3%83%9E%E3%83%AB%E3%83%81%E3%83%A2%E3%83%87%E3%83%AB%E9%96%8B%E7%99%BA%E3%83%BB%E5%A4%96%E9%83%A8Web%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E5%8D%8A%E8%87%AA%E5%8B%95%E5%8C%96_%E5%8E%9F%E6%A1%88_2026-08-13.md
+
+### PixiJS v8.19公式資料 / AI context
+
+- **v8.19.0 release note**: https://github.com/pixijs/pixijs/releases/tag/v8.19.0
+- **v8.18.0 release note**: https://github.com/pixijs/pixijs/releases/tag/v8.18.0
+- **公式Agent Skills**: https://github.com/pixijs/pixijs-skills
+- **PixiJS AI向けdocs / Skills入口**: https://pixijs.com/llms
+
+### Codex Multi-Model / External Review公式資料
+
+- **Codex Subagents / Custom agents**: https://learn.chatgpt.com/docs/agent-configuration/subagents
+- **Codex AGENTS.md discovery**: https://learn.chatgpt.com/docs/agent-configuration/agents-md
+- **OpenAI model catalog**: https://developers.openai.com/api/docs/models
 
 ### プロジェクト保存・ストレージ・画像インポート
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/project-manager.js

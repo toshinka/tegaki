@@ -6,6 +6,7 @@ import {
     getAutoShapeRasterMeshStatus,
     rebaseAutoShapeRasterMeshSource
 } from '../system/animation/auto-shape-raster-bone-setup.js';
+import { CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE } from '../system/animation/chain-local-joint-skin.js';
 import {
     evaluateRasterBoneSkinning,
     normalizeRasterMeshDefinitions,
@@ -84,6 +85,11 @@ const generated = createAutoShapeRasterBoneSetup(asset, 'arm-raster', snapshot, 
 assert.equal(generated.ok, true, generated.reason);
 assert.equal(generated.meshDefinition.generator.type, AUTO_SHAPE_FILL_GENERATOR);
 assert.equal(generated.meshDefinition.generator.mode, 'fill');
+assert.equal(
+    generated.meshDefinition.generator.weightMode,
+    CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE,
+    'new explicit AUTO SHAPE uses Chain-local Joint Skin'
+);
 assert.equal(generated.meshDefinition.vertices.length, generated.topology.vertices.length);
 assert.equal(generated.meshDefinition.triangles.length, generated.topology.triangles.length);
 assert.ok(generated.meshDefinition.vertices.length <= 64);
@@ -93,10 +99,15 @@ assert.ok(generated.meshDefinition.generator.guardVertexCount > 0);
 assert.ok(generated.meshDefinition.generator.interiorVertexCount > 0);
 assert.deepEqual(generated.contentBounds, { x: 2, y: 1, width: 8, height: 5 });
 assert.equal(generated.boneCount, 2);
+assert.equal(
+    generated.weightDiagnostics.vertexCount,
+    generated.meshDefinition.vertices.length,
+    'weight diagnostics cover every generated vertex'
+);
 generated.skinBinding.vertexWeights.forEach(vertexWeight => {
     assert.ok(vertexWeight.influences.length >= 1 && vertexWeight.influences.length <= 2);
     const total = vertexWeight.influences.reduce((sum, influence) => sum + influence.weight, 0);
-    assert.ok(Math.abs(total - 1) < 1e-10, 'distance weights normalize to one');
+    assert.ok(Math.abs(total - 1) < 1e-10, 'chain-local weights normalize to one');
 });
 assert.equal(validateRasterBoneSkinning(
     [generated.meshDefinition],
@@ -131,6 +142,21 @@ identity.meshResults[0].vertices.forEach((vertex, index) => {
 });
 
 assert.equal(getAutoShapeRasterMeshStatus(generated.meshDefinition, snapshot).state, 'current');
+const legacyDistanceMesh = structuredClone(generated.meshDefinition);
+delete legacyDistanceMesh.generator.weightMode;
+assert.equal(
+    getAutoShapeRasterMeshStatus(legacyDistanceMesh, snapshot).state,
+    'current',
+    'saved legacy AUTO SHAPE remains current and is not regenerated implicitly'
+);
+assert.equal(
+    Object.hasOwn(
+        serializeRasterMeshDefinitions(normalizeRasterMeshDefinitions([legacyDistanceMesh]))[0].generator,
+        'weightMode'
+    ),
+    false,
+    'legacy generator metadata round-trips without inventing a weight mode'
+);
 assert.equal(
     getAutoShapeRasterMeshStatus(generated.meshDefinition, { ...snapshot, updatedAt: 101 }).state,
     'stale'
@@ -157,6 +183,17 @@ const deterministicB = createAutoShapeRasterBoneSetup(asset, 'arm-raster', snaps
     idFactory: kind => `fixed-${kind}`
 });
 assert.deepEqual(deterministicA, deterministicB, 'fixed idFactory makes complete setup deterministic');
+const ignoredRuntimeOverride = createAutoShapeRasterBoneSetup(asset, 'arm-raster', snapshot, {
+    ...options,
+    jointBandRatio: 0.5,
+    branchAmbiguityRatio: 0.25,
+    idFactory: kind => `fixed-${kind}`
+});
+assert.deepEqual(
+    ignoredRuntimeOverride,
+    deterministicA,
+    'production AUTO SHAPE keeps v1 ratios fixed instead of creating unsaved per-Project overrides'
+);
 
 assert.equal(createAutoShapeRasterBoneSetup({ internalLayers: [] }, 'missing', snapshot).reason, 'layer-not-found');
 assert.equal(createAutoShapeRasterBoneSetup({

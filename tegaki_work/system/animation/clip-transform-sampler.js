@@ -3,9 +3,20 @@
  * keyframe.frame は Clip-local の 0-based Frame。rotation は radian。
  */
 
-import { sampleEasingRatio } from './cubic-bezier-easing.js';
+import {
+    sampleEasingRatio,
+    sampleRawEasingRatio
+} from './cubic-bezier-easing.js';
 
-const ANIMATED_PARAMETERS = ['x', 'y', 'scaleX', 'scaleY', 'rotation', 'opacity', 'blendStrength'];
+export const MOTION_ANIMATED_PARAMETERS = Object.freeze([
+    'x',
+    'y',
+    'scaleX',
+    'scaleY',
+    'rotation',
+    'opacity',
+    'blendStrength'
+]);
 const CLIP_BLEND_MODES = new Set(['normal', 'add', 'subtract', 'multiply', 'overlay']);
 
 function finiteOr(value, fallback) {
@@ -47,7 +58,7 @@ function normalizeBaseTransform(transform = {}) {
  * blendModeは連続補間せず、次のkeyまで左keyの値を維持する。blendStrengthは0..1で補間する。
  * easingは左keyが次区間を所有し、hold区間では参照しない。欠損・不正値はlinearとする。
  */
-export function sampleTransformTrack(baseTransform, keyframes, localFrame, duration = 1) {
+export function sampleTransformTrack(baseTransform, keyframes, localFrame, duration = 1, options = {}) {
     const base = normalizeBaseTransform(baseTransform);
     const normalizedDuration = Math.max(1, Number.isInteger(duration) ? duration : 1);
     const byFrame = new Map();
@@ -73,7 +84,7 @@ export function sampleTransformTrack(baseTransform, keyframes, localFrame, durat
     let leftState = { ...base };
     for (let index = 0; index < keys.length; index++) {
         const left = keys[index];
-        ANIMATED_PARAMETERS.forEach(parameter => {
+        MOTION_ANIMATED_PARAMETERS.forEach(parameter => {
             if (Number.isFinite(left[parameter])) {
                 state[parameter] = normalizeAnimatedValue(parameter, left[parameter], state[parameter]);
             }
@@ -84,7 +95,7 @@ export function sampleTransformTrack(baseTransform, keyframes, localFrame, durat
         if (!right || localFrame < right.frame) {
             if (!right || left.interpolation === 'hold') return leftState;
             const rightState = { ...leftState };
-            ANIMATED_PARAMETERS.forEach(parameter => {
+            MOTION_ANIMATED_PARAMETERS.forEach(parameter => {
                 if (Number.isFinite(right[parameter])) {
                     rightState[parameter] = normalizeAnimatedValue(
                         parameter,
@@ -94,11 +105,17 @@ export function sampleTransformTrack(baseTransform, keyframes, localFrame, durat
                 }
             });
             const linearRatio = (localFrame - left.frame) / (right.frame - left.frame);
-            const ratio = sampleEasingRatio(linearRatio, left.easing);
+            const ratio = options.allowOvershoot === true
+                ? sampleRawEasingRatio(linearRatio, left.easing)
+                : sampleEasingRatio(linearRatio, left.easing);
             const sampled = { ...leftState };
-            ANIMATED_PARAMETERS.forEach(parameter => {
+            MOTION_ANIMATED_PARAMETERS.forEach(parameter => {
                 const delta = rightState[parameter] - leftState[parameter];
-                sampled[parameter] = leftState[parameter] + delta * ratio;
+                sampled[parameter] = normalizeAnimatedValue(
+                    parameter,
+                    leftState[parameter] + delta * ratio,
+                    leftState[parameter]
+                );
             });
             return sampled;
         }
@@ -113,6 +130,7 @@ export function sampleClipTransform(clip, timelineFrame) {
         clip?.transform,
         clip?.transformKeyframes,
         localFrame,
-        duration
+        duration,
+        { allowOvershoot: true }
     );
 }

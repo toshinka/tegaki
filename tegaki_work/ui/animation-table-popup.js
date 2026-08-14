@@ -13,7 +13,9 @@
  *   Folder Part trackは既存Project互換の保存schemaとして残すが、現行RIG/Motionの主操作はBoneへ一本化する。
  *   PIVOT長押し / 接続線dragもInspector親BONE dropdownと同じparentBoneId setterへ委譲する。
  * Motion KEY操作境界: Ctrl/Cmd選択はruntime UI状態だけを持ち、一括移動は同じFrame差分を
- *   既存transformKeyframes / deformer / rigMotionへ原子的に反映する。選択状態をProjectへ保存しない。
+ *   既存transformKeyframes / deformer / rigMotionへ原子的に反映する。Graph値dragも同じ選択を
+ *   同一ClipのMotion keyへだけ投影し、active一channelのdisplay deltaを原子的に反映する。
+ *   選択状態をProjectへ保存しない。
  * 設定済みFolder / BoneのLane選択はlast-used RIG / MOTION / WARP tabを変更しない。
  *   RIGへ強制遷移するのは未設定Folderの初回Setupと明示的なRIG操作だけに限定する。
  * CAF内部Folderの選択はUI正本であり、代表animation working Layerのactive同期で上書きしない。
@@ -54,6 +56,9 @@ import {
     normalizeMotionGraphEditChannel,
     patchMotionGraphTransformChannel
 } from '../system/animation/motion-graph-key-edit.js';
+import { planMotionGraphKeyValueDelta } from '../system/animation/motion-graph-key-batch-edit.js';
+import { planMotionGraphKeyInsertion } from '../system/animation/motion-graph-key-insert.js';
+import { areMotionTransformsEquivalent } from '../system/animation/motion-gesture-state.js';
 import { sampleClipBakeState } from '../system/animation/clip-bake-sampler.js';
 import {
     evaluateRigidBones,
@@ -111,8 +116,12 @@ import {
     createRasterSkinDeformer,
     createRasterSkinRenderPlan
 } from '../system/animation/raster-skin-render-plan.js';
+import { evaluateRasterBoneSkinning } from '../system/animation/raster-bone-skinning.js';
+import { createRasterSkinWeightDiagnosticProjection } from '../system/animation/raster-skin-weight-diagnostic.js';
+import { createAnimationTableBoneGroupProjection } from '../system/animation/animation-table-bone-group-projection.js';
 import { ALPHA_FIT_GRID_GENERATOR } from '../system/animation/raster-bone-auto-setup.js';
 import { AUTO_SHAPE_FILL_GENERATOR } from '../system/animation/auto-shape-raster-bone-setup.js';
+import { CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE } from '../system/animation/chain-local-joint-skin.js';
 import { AUTO_SHAPE_LINE_RIBBON_GENERATOR } from '../system/animation/line-ribbon-raster-bone-setup.js';
 import {
     calculateWarpGridBrushWeights,
@@ -166,15 +175,23 @@ import {
 import {
     curvePointToGraphPoint,
     getEasingCurveEditAvailability,
+    getEasingCurveYRange,
     graphPointToCurvePoint,
+    isEasingCurveOvershoot,
+    normalizeEditableEasingCurve,
     resolveEditableEasingCurve
 } from '../system/animation/easing-curve-editor-model.js';
 import { formatCopyFeedback, showFeedbackToast } from './feedback-toast.js';
+import {
+    getDominantTimelineWheelDelta,
+    resolveTimelineViewportWheelAction
+} from '../system/animation/timeline-wheel-routing.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { transformAnchorSite } from './transform-anchor-site.js';
 import { partTransformOverlay } from './part-transform-overlay.js';
 import { boneTransformOverlay } from './bone-transform-overlay.js';
 import { rigPivotOverlay } from './rig-pivot-overlay.js';
+import { rigSkinWeightOverlay } from './rig-skin-weight-overlay.js';
 import { warpGridOverlay } from './warp-grid-overlay.js';
 import { collectCafMemoryProfile } from '../system/animation/caf-memory-profiler.js';
 import {
@@ -254,7 +271,9 @@ const RASTER_MESH_GENERATOR_UI = Object.freeze({
     }),
     [AUTO_SHAPE_FILL_GENERATOR]: Object.freeze({
         label: 'SHAPE',
-        currentLabel: () => 'SHAPE FILL'
+        currentLabel: generator => generator?.weightMode === CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE
+            ? 'SHAPE JOINT'
+            : 'SHAPE FILL'
     }),
     [AUTO_SHAPE_LINE_RIBBON_GENERATOR]: Object.freeze({
         label: 'LINE',
@@ -282,10 +301,21 @@ const AUTO_LINE_FAILURE_MESSAGES = Object.freeze({
     'line-ribbon-bind-segment-missing': 'AUTO LINEのBONE Bind情報が不足しています',
     'invalid-rig': 'AUTO LINEのRigを検証できません'
 });
+const CHAIN_LOCAL_SKIN_FAILURE_MESSAGES = Object.freeze({
+    'chain-local-ambiguous-branch': 'AUTO SHAPEのBONE branch領域が重なり判定できません。PIVOT間隔を広げるかRasterを分けてください',
+    'chain-local-ambiguous-joint': 'AUTO SHAPEのjoint候補が重なり判定できません。PIVOT間隔を広げるか親子接続を整理してください',
+    'chain-local-zero-length-segment': '長さ0のMesh BONEがあるためAUTO SHAPEを作成できません',
+    'chain-local-bone-cycle': 'Mesh BONEの親子関係が循環しているためAUTO SHAPEを作成できません',
+    'chain-local-invalid-vertex': 'AUTO SHAPE頂点をBONEへ安全に割り当てできません',
+    'chain-local-invalid-segment': 'Mesh BONEのBind位置を検証できません'
+});
 
 function getRasterMeshSetupFailureMessage(mode, reason) {
     if (mode.generatorMode === 'auto-shape-line' && AUTO_LINE_FAILURE_MESSAGES[reason]) {
         return AUTO_LINE_FAILURE_MESSAGES[reason];
+    }
+    if (mode.generatorMode === 'auto-shape' && CHAIN_LOCAL_SKIN_FAILURE_MESSAGES[reason]) {
+        return CHAIN_LOCAL_SKIN_FAILURE_MESSAGES[reason];
     }
     if (reason === 'mesh-bone-required') return '先にMesh BONEを追加してください';
     if (reason === 'guard-padding-required') {
@@ -342,7 +372,9 @@ export class AnimationTablePopup {
         this._motionGraphChannelByGroup = Object.create(null);
         this._motionGraphGesture = null;
         this._motionGraphSuppressClick = false;
+        this._motionGraphAddPointMode = false;
         this._motionCurveGesture = null;
+        this._motionCurveAllowOvershoot = false;
         this._motionPlaybackClipId = null;
         this._motionAnchorClip = null;
         this._motionCanvas = null;
@@ -461,6 +493,12 @@ export class AnimationTablePopup {
         // `selectedInternalLayerId`はworking Raster同期でも変わるため、CLIP MOTION内の
         // Folder / Raster target種別だけをruntime UI状態として別に保持する。
         this._motionInspectorTargetKind = 'caf';
+        // Bone名は密集時に選択対象だけ表示する。全表示はruntime UI toggleでのみ切り替える。
+        this._rigBoneLabelsExpanded = false;
+        // 選択Raster / Mesh / Boneのweight診断はruntime表示だけを持ち、Projectへ保存しない。
+        this._rigSkinWeightDiagnosticVisible = false;
+        // 多Bone Table groupのcollapseはruntimeだけを持ち、Rig / Timelineへ保存しない。
+        this._rigBoneGroupCollapsed = new Set();
         this._motionOpenedAssetIds = new Set();
         this._motionTimelineKeyKind = 'motion';
         this._motionKeyDrag = null;
@@ -595,6 +633,7 @@ export class AnimationTablePopup {
         // PIVOT gesture中のTable closeは、次のoverlay RAFを待たず同期的にcancelする。
         // preview用Bone keyがclose直後の保存・復元処理へ一瞬でも残らないようにする。
         rigPivotOverlay.deactivate();
+        rigSkinWeightOverlay.deactivate();
         this.stop();
         if (this.isClipEditModeActive) {
             this.exitClipEditMode();
@@ -1862,6 +1901,56 @@ export class AnimationTablePopup {
         };
     }
 
+    _getRigBoneTableDisplayPlan(projection = this._getSelectedCafRigProjection()) {
+        if (!projection?.asset || !projection?.entry?.clip) return { ok: false, items: [] };
+        const grouped = createAnimationTableBoneGroupProjection(projection.asset);
+        if (!grouped.ok) return { ok: false, items: [] };
+        const meshBoneById = new Map((projection.meshBones || []).map((bone, index) => [bone.boneId, {
+            bone,
+            boneIndex: index
+        }]));
+        const selectedKeyCountByBoneId = new Map();
+        for (const descriptor of this._getSelectedMotionTimelineKeys(projection.entry.clip.id)) {
+            if (descriptor?.clipId === projection.entry.clip.id
+                && descriptor.kind === 'bone'
+                && descriptor.targetId) {
+                selectedKeyCountByBoneId.set(
+                    descriptor.targetId,
+                    (selectedKeyCountByBoneId.get(descriptor.targetId) || 0) + 1
+                );
+            }
+        }
+        const items = [];
+        grouped.groups.forEach(group => {
+            const bones = (group.bones || [])
+                .map(entry => ({ entry, ...meshBoneById.get(entry.boneId) }))
+                .filter(item => item.bone);
+            if (bones.length === 0) return;
+            const showHeader = group.groupKind !== 'target' || bones.length >= 2;
+            if (!showHeader) {
+                items.push({ type: 'bone', ...bones[0], group });
+                return;
+            }
+            const collapseKey = `${projection.asset.id}:${group.groupId}`;
+            const collapsed = this._rigBoneGroupCollapsed.has(collapseKey);
+            const activeBoneCount = bones.filter(item => item.bone.boneId === this.selectedRigBoneId).length;
+            const selectedKeyCount = bones.reduce((sum, item) => (
+                sum + (selectedKeyCountByBoneId.get(item.bone.boneId) || 0)
+            ), 0);
+            items.push({
+                type: 'group',
+                group,
+                collapseKey,
+                collapsed,
+                boneCount: bones.length,
+                activeBoneCount,
+                selectedKeyCount
+            });
+            if (!collapsed) bones.forEach(item => items.push({ type: 'bone', ...item, group }));
+        });
+        return { ok: true, items, stats: grouped.stats };
+    }
+
     _getRasterRigProjectionContext(projection, layerId = this.selectedInternalLayerId, boneId = this.selectedRigBoneId) {
         if (!projection) return null;
         const raster = projection.rasters?.find(candidate => candidate.layer.id === layerId)
@@ -2504,7 +2593,12 @@ export class AnimationTablePopup {
             layer,
             part,
             targetKind: layer.type === 'raster' ? 'raster' : 'folder'
-        });
+        }) || (options.allowEmptyTarget === true
+            ? (() => {
+                const size = this._getCanvasSnapshotSize();
+                return { x: 0, y: 0, width: size.width, height: size.height };
+            })()
+            : null);
         if (!sourceBounds) return { ok: false, reason: 'empty-part' };
         const centerX = sourceBounds.x + sourceBounds.width / 2;
         const centerY = sourceBounds.y + sourceBounds.height / 2;
@@ -2649,6 +2743,9 @@ export class AnimationTablePopup {
             layerId: layer.id,
             meshId: result.meshDefinition.meshId,
             generatorMode: result.generatorMode,
+            ...(result.meshDefinition.generator?.weightMode
+                ? { weightMode: result.meshDefinition.generator.weightMode }
+                : {}),
             ...(result.dimensions ? {
                 columns: result.dimensions.columns,
                 rows: result.dimensions.rows
@@ -2870,9 +2967,112 @@ export class AnimationTablePopup {
         return buttons.length > 0;
     }
 
+    _getRigSkinWeightDiagnosticTarget(frameIndex = this.model.playback.currentFrame) {
+        if (this._motionEditorMode !== 'rig'
+            || this._motionInspectorScope !== 'internal'
+            || this._motionInspectorTargetKind !== 'raster'
+            || !this.selectedInternalLayerId
+            || !this.selectedRigBoneId) return null;
+        const projection = this._getSelectedCafRigProjection(frameIndex);
+        if (!projection?.entry?.clip || !projection.isFrameInClip) return null;
+        const raster = projection.rasters?.find(candidate => (
+            candidate.layer.id === this.selectedInternalLayerId
+        )) || null;
+        const bone = projection.meshBones?.find(candidate => (
+            candidate.boneId === this.selectedRigBoneId
+        )) || null;
+        if (!raster?.mesh || !raster.skinBinding || !bone || !raster.isFrameInClip) return null;
+        return { projection, raster, bone, frameIndex };
+    }
+
+    _createRigSkinWeightDiagnostic(frameIndex = this.model.playback.currentFrame) {
+        const target = this._getRigSkinWeightDiagnosticTarget(frameIndex);
+        if (!target) return null;
+        const { projection, raster, bone } = target;
+        const evaluation = evaluateRasterBoneSkinning(
+            projection.asset,
+            projection.entry.clip,
+            frameIndex
+        );
+        if (!evaluation.ok) return null;
+        const diagnostic = createRasterSkinWeightDiagnosticProjection(
+            projection.asset,
+            raster.layer.id,
+            bone.boneId,
+            { meshResult: evaluation.resultByMeshId.get(raster.mesh.meshId) || null }
+        );
+        if (!diagnostic.ok) return null;
+        const canvasSize = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(projection.entry.clip, frameIndex),
+            canvasSize.width / 2,
+            canvasSize.height / 2
+        );
+        return {
+            ...diagnostic,
+            vertices: diagnostic.vertices.map(vertex => {
+                const point = applyTransformMatrix(clipMatrix, vertex.x, vertex.y);
+                return { ...vertex, x: point.x, y: point.y };
+            })
+        };
+    }
+
+    _syncRigSkinWeightToggle(panel) {
+        const toggle = panel?.querySelector('#anim-rig-weight-toggle');
+        const summary = panel?.querySelector('[data-rig-weight-summary]');
+        const available = !!this._getRigSkinWeightDiagnosticTarget();
+        if (!available && this._rigSkinWeightDiagnosticVisible) {
+            this._rigSkinWeightDiagnosticVisible = false;
+            rigSkinWeightOverlay.deactivate();
+        }
+        if (toggle) {
+            const active = available && this._rigSkinWeightDiagnosticVisible;
+            toggle.disabled = !available;
+            toggle.classList.toggle('active', active);
+            toggle.setAttribute('aria-pressed', String(active));
+            toggle.textContent = active ? 'WEIGHT ON' : 'WEIGHT';
+            toggle.dataset.tooltip = available
+                ? (active
+                    ? '選択Boneのweight診断を閉じる'
+                    : '選択Raster / Mesh / Boneのweight 0・blend・1をCanvasへ表示')
+                : 'Raster MeshとBONEを選択すると使用できます';
+        }
+        if (summary) summary.hidden = !(available && this._rigSkinWeightDiagnosticVisible);
+        rigSkinWeightOverlay.invalidate();
+        return available;
+    }
+
+    _isRigSkinWeightDiagnosticActive() {
+        return this._rigSkinWeightDiagnosticVisible
+            && this._isRigPivotSetupActive()
+            && !!this._getRigSkinWeightDiagnosticTarget();
+    }
+
+    _syncRigSkinWeightOverlay(coordinateSystem = this.layerSystem?.transform?.coordinateSystem) {
+        if (!coordinateSystem || !this._isRigSkinWeightDiagnosticActive()) {
+            rigSkinWeightOverlay.deactivate();
+            return false;
+        }
+        return rigSkinWeightOverlay.activate({
+            coordinateSystem,
+            getDiagnostic: () => this._createRigSkinWeightDiagnostic(),
+            shouldDisplay: () => this._isRigSkinWeightDiagnosticActive()
+        });
+    }
+
     _syncRigSetupContext() {
         const panel = this.motionPanel?.querySelector('#anim-rig-context');
         if (!panel) return false;
+        const labelsToggle = panel.querySelector('#anim-rig-labels-toggle');
+        if (labelsToggle) {
+            labelsToggle.classList.toggle('active', this._rigBoneLabelsExpanded);
+            labelsToggle.setAttribute('aria-pressed', String(this._rigBoneLabelsExpanded));
+            labelsToggle.textContent = this._rigBoneLabelsExpanded ? 'NAMES ON' : 'NAMES AUTO';
+            labelsToggle.dataset.tooltip = this._rigBoneLabelsExpanded
+                ? '全Bone名を常時表示。押すと選択／hover時だけ表示'
+                : '選択／hover時だけBone名を表示。押すと全表示';
+        }
+        this._syncRigSkinWeightToggle(panel);
         const cafSetup = panel.querySelector('[data-rig-caf-setup]');
         const folderSetup = panel.querySelector('[data-rig-folder-setup-context]');
         const isCaf = this._motionInspectorScope === 'caf';
@@ -3551,6 +3751,7 @@ export class AnimationTablePopup {
             root: toWorld(anchorRoot),
             tail: toWorld({ x: anchorRoot.x, y: anchorRoot.y - 24 }),
             active: this._motionInspectorScope === 'caf',
+            showLabel: this._rigBoneLabelsExpanded || this._motionInspectorScope === 'caf',
             configured: true,
             canMove: true,
             canRotate: false
@@ -3596,6 +3797,7 @@ export class AnimationTablePopup {
                 root: toWorld(root),
                 tail: toWorld(tail),
                 active: folder.layer.id === activeFolderId,
+                showLabel: this._rigBoneLabelsExpanded || folder.layer.id === activeFolderId,
                 configured: !!folder.bone,
                 parentId: folder.bone?.parentBoneId
                     ? itemIdByBoneId.get(folder.bone.parentBoneId) || null
@@ -3620,6 +3822,7 @@ export class AnimationTablePopup {
                 root: toWorld(root),
                 tail: toWorld(tail),
                 active: bone.boneId === this.selectedRigBoneId,
+                showLabel: this._rigBoneLabelsExpanded || bone.boneId === this.selectedRigBoneId,
                 configured: true,
                 parentId: bone.parentBoneId ? itemIdByBoneId.get(bone.parentBoneId) || null : null,
                 canMove: true,
@@ -3718,6 +3921,7 @@ export class AnimationTablePopup {
 
     _syncRigPivotOverlay() {
         const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        this._syncRigSkinWeightOverlay(coordinateSystem);
         const setupActive = this._isRigPivotSetupActive();
         const motionActive = this._isMotionBonePivotActive();
         const warpAnchorActive = this._isWarpAnchorOverlayActive();
@@ -7660,6 +7864,45 @@ export class AnimationTablePopup {
         return selectedLayer.parentLayerId || null;
     }
 
+    _shouldInitializeNewRigidRasterLayer(asset) {
+        if (!asset || !this.motionPanel || this.motionPanel.style.display === 'none') return false;
+        const layerById = new Map((asset.internalLayers || []).map(layer => [layer?.id, layer]));
+        return (asset.rigDefinition?.rigidBindings || []).some(binding => {
+            const part = asset.rigDefinition?.parts?.find(candidate => candidate?.partId === binding?.partId);
+            const target = part ? layerById.get(part.partId) : null;
+            return target?.type === 'raster';
+        });
+    }
+
+    _initializeNewRigidRasterLayer(asset, layer) {
+        if (!asset
+            || layer?.type !== 'raster'
+            || layer.parentLayerId != null
+            || !this._shouldInitializeNewRigidRasterLayer(asset)) {
+            return { ok: true, changed: false };
+        }
+        const partResult = this.registerInternalRigPartFromExternal(asset.id, layer.id, {
+            source: 'caf-new-raster-rig-refresh',
+            recordHistory: false,
+            deferUi: true
+        });
+        if (!partResult.ok) return partResult;
+        const boneResult = this.registerInternalRootBoneFromExternal(asset.id, layer.id, {
+            source: 'caf-new-raster-rig-refresh',
+            recordHistory: false,
+            deferUi: true,
+            allowEmptyTarget: true,
+            length: 38
+        });
+        if (!boneResult.ok) return boneResult;
+        return {
+            ok: true,
+            changed: partResult.changed === true || boneResult.changed === true,
+            part: partResult.part,
+            bone: boneResult.bone
+        };
+    }
+
     addInternalLayer() {
         const asset = this._getSelectedAssetForInspector();
         if (!asset) return { ok: false, reason: 'asset-not-found' };
@@ -7672,6 +7915,7 @@ export class AnimationTablePopup {
         });
         if (result.ok) {
             this.selectedInternalLayerId = result.layer.id;
+            result.rigInitialization = this._initializeNewRigidRasterLayer(asset, result.layer);
             this._ensureWorkingLayerCapacity(this._getDrawableInternalLayers(asset).length);
             this._syncSelectedClipToWorkingLayers();
             this.render();
@@ -9291,8 +9535,11 @@ export class AnimationTablePopup {
         const asset = this._getSelectedAssetForInspector();
         if (!asset || !layerId) return { ok: false, reason: 'asset-not-found' };
 
-        const beforeState = this._captureInternalLayerHistoryState(asset);
-        const result = this.model.removeClipAssetInternalLayer(asset.id, layerId);
+        this._saveSelectedClipFromWorkingLayers();
+        const beforeState = this._captureTimelineHistoryState();
+        const result = this.model.removeClipAssetInternalLayer(asset.id, layerId, {
+            removeRigDependencies: true
+        });
         if (result.ok) {
             const removedIds = new Set((result.removedLayers || [result.layer]).map(layer => layer?.id).filter(Boolean));
             if (removedIds.has(this.selectedInternalLayerId)) {
@@ -9302,13 +9549,18 @@ export class AnimationTablePopup {
             this.render();
             this._flushLayerPanelSync();
             const historyName = options.historyName || 'caf-internal-layer-delete';
-            this._recordInternalLayerHistory(asset, beforeState, historyName, {
+            this._recordTimelineHistory(beforeState, this._captureTimelineHistoryState(), historyName, {
                 type: historyName,
                 layerId,
-                removedLayerIds: Array.from(removedIds)
+                removedLayerIds: Array.from(removedIds),
+                removedRigPartIds: result.removedRigPartIds || [],
+                removedRigBoneIds: result.removedRigBoneIds || []
             });
         } else if (result.reason === 'last-layer') {
             alert('Cannot delete the last layer of an asset.');
+        } else if (result.reason === 'rig-bone-external-child'
+            || result.reason === 'rig-part-external-child') {
+            showFeedbackToast('別対象の子RIGが接続中です。親子接続を整理してからLayerを削除してください');
         }
         return result;
     }
@@ -11473,6 +11725,7 @@ export class AnimationTablePopup {
             motionState,
             displayKey,
             ...availability,
+            hasOvershoot: isEasingCurveOvershoot(displayKey?.easing),
             curve: resolveEditableEasingCurve(displayKey?.easing)
         };
     }
@@ -11501,11 +11754,33 @@ export class AnimationTablePopup {
         const status = panel.querySelector('.anim-motion-curve-status');
         const copyButton = panel.querySelector('#anim-motion-easing-copy-btn');
         const pasteButton = panel.querySelector('#anim-motion-easing-paste-btn');
-        const bounds = { width: 220, height: 220, padding: 14 };
+        const overshootButton = panel.querySelector('#anim-motion-curve-overshoot-btn');
+        const overshootRange = panel.querySelector('.anim-motion-curve-range');
+        const standardRange = panel.querySelector('.anim-motion-curve-standard-range');
+        const diagonal = panel.querySelector('.anim-motion-curve-diagonal');
+        const endpoints = panel.querySelectorAll('.anim-motion-curve-endpoint');
+        if (state.hasOvershoot) this._motionCurveAllowOvershoot = true;
+        const yRange = getEasingCurveYRange(this._motionCurveAllowOvershoot);
+        const bounds = { width: 220, height: 220, padding: 14, ...yRange };
         const start = curvePointToGraphPoint({ x: 0, y: 0 }, bounds);
         const end = curvePointToGraphPoint({ x: 1, y: 1 }, bounds);
         const first = curvePointToGraphPoint({ x: state.curve.x1, y: state.curve.y1 }, bounds);
         const second = curvePointToGraphPoint({ x: state.curve.x2, y: state.curve.y2 }, bounds);
+        const standardTop = curvePointToGraphPoint({ x: 0, y: 1 }, bounds);
+        const standardBottom = curvePointToGraphPoint({ x: 0, y: 0 }, bounds);
+        if (standardRange) {
+            standardRange.setAttribute('y', standardTop.y);
+            standardRange.setAttribute('height', Math.max(0, standardBottom.y - standardTop.y));
+        }
+        diagonal?.setAttribute('d', `M ${start.x} ${start.y} ${end.x} ${end.y}`);
+        if (endpoints[0]) {
+            endpoints[0].setAttribute('cx', start.x);
+            endpoints[0].setAttribute('cy', start.y);
+        }
+        if (endpoints[1]) {
+            endpoints[1].setAttribute('cx', end.x);
+            endpoints[1].setAttribute('cy', end.y);
+        }
         path?.setAttribute('d', `M ${start.x} ${start.y} C ${first.x} ${first.y} ${second.x} ${second.y} ${end.x} ${end.y}`);
         if (controlLines[0]) {
             controlLines[0].setAttribute('x1', start.x);
@@ -11542,10 +11817,24 @@ export class AnimationTablePopup {
                 ? '現在または選択中のMotion keyへEasingだけを貼り付け'
                 : '先にEasingをコピーしてください';
         }
+        if (overshootButton) {
+            overshootButton.disabled = !state.editable;
+            overshootButton.classList.toggle('active', this._motionCurveAllowOvershoot);
+            overshootButton.setAttribute('aria-pressed', String(this._motionCurveAllowOvershoot));
+            overshootButton.dataset.tooltip = this._motionCurveAllowOvershoot
+                ? 'Overshoot編集を終了（Y1 / Y2が0..1の時だけ）'
+                : 'Y controlの編集範囲を-1..2へ拡張';
+        }
+        if (overshootRange) {
+            overshootRange.textContent = this._motionCurveAllowOvershoot ? 'Y -1..2' : 'Y 0..1';
+        }
         ['x1', 'y1', 'x2', 'y2'].forEach(name => {
             const input = panel.querySelector(`[data-motion-curve-param="${name}"]`);
             if (!input) return;
             if (document.activeElement !== input) input.value = Number(state.curve[name].toFixed(3));
+            const isY = name.startsWith('y');
+            input.min = String(isY ? yRange.yMin : 0);
+            input.max = String(isY ? yRange.yMax : 1);
             input.disabled = !state.editable;
         });
         return true;
@@ -11555,7 +11844,10 @@ export class AnimationTablePopup {
         const state = this._getSelectedClipMotionFrame();
         const availability = this._getMotionCurveEditState(state);
         if (!state?.key || (!availability.editable && options.allowPlayback !== true)) return false;
-        const normalized = resolveEditableEasingCurve(curve);
+        const normalized = normalizeEditableEasingCurve(curve, {
+            allowOvershoot: this._motionCurveAllowOvershoot
+        });
+        if (!normalized) return false;
         const next = (state.entry.clip.transformKeyframes || []).map(key => key?.frame === state.localFrame
             ? { ...key, interpolation: 'linear', easing: normalized }
             : key);
@@ -11602,22 +11894,92 @@ export class AnimationTablePopup {
             || state.localFrame !== gesture.localFrame) {
             return false;
         }
-        const patch = patchMotionGraphTransformChannel({
-            transform: gesture.startTransform,
+        const plan = planMotionGraphKeyValueDelta({
+            baseTransform: state.entry.clip.transform,
+            keyframes: gesture.startKeyframes,
+            frames: gesture.targetFrames,
+            duration: state.entry.clip.duration,
             group: gesture.group,
             channel: gesture.channel,
+            displayDelta: displayValue - gesture.startDisplayValue
+        });
+        if (!plan.ok) return false;
+        if (plan.changed || gesture.mutated) {
+            state.entry.clip.transformKeyframes = plan.keyframes;
+            this._animationPreviewKey = null;
+            this._scheduleMotionEditPreviewRefresh();
+        }
+        gesture.mutated = gesture.mutated || plan.changed;
+        gesture.changed = plan.changed;
+        gesture.displayValue = displayValue;
+        this._syncMotionPanelFrameValues(this._getSelectedClipMotionFrame(), { force: true });
+        return true;
+    }
+
+    _setMotionGraphAddPointMode(active) {
+        const next = active === true && !this.isPlaying;
+        if (this._motionGraphAddPointMode === next) return next;
+        this._motionGraphAddPointMode = next;
+        this._syncMotionGraphPanel();
+        return next;
+    }
+
+    _insertMotionGraphKeyAtPoint({ localFrame, displayValue, view } = {}) {
+        if (this.isPlaying || !view || !Number.isInteger(localFrame) || !Number.isFinite(displayValue)) {
+            return false;
+        }
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!entry?.clip || entry.clip.duration !== view.duration) return false;
+        const channel = this._getMotionGraphActiveChannel(view);
+        const patch = patchMotionGraphTransformChannel({
+            transform: view.samples?.[localFrame]?.transform,
+            group: view.group.id,
+            channel,
             displayValue
         });
         if (!patch.ok) return false;
-        const updated = this._upsertSelectedMotionKey(patch.transform, {
-            deferPreview: true,
-            render: false
+        const plan = planMotionGraphKeyInsertion({
+            baseTransform: entry.clip.transform,
+            keyframes: entry.clip.transformKeyframes,
+            frame: localFrame,
+            duration: entry.clip.duration,
+            channel,
+            storedValue: patch.storedValue
         });
-        if (!updated) return false;
-        gesture.mutated = true;
-        gesture.changed = patch.changed;
-        gesture.displayValue = patch.displayValue;
+        if (!plan.ok) {
+            const messages = {
+                'frame-occupied': 'そのFrameには既にMotion keyがあります',
+                'split-control-out-of-range': 'このEasing位置は形を保って分割できません。別FrameまたはLINEARを選んでください',
+                'split-bounded-channel-clamp': 'Opacity / Blendを保ったままこのOvershoot位置は分割できません。別FrameまたはLINEARを選んでください',
+                'split-span-too-small': 'このEasing端には途中点を追加できません。内側のFrameを選んでください'
+            };
+            showFeedbackToast(messages[plan.reason] || 'この位置にはMotion keyを追加できません');
+            return false;
+        }
+
+        this._saveSelectedClipFromWorkingLayers();
+        const previousFrame = this.model.playback.currentFrame;
+        this.model.setCurrentFrame(entry.clip.startFrame + localFrame);
+        this._syncWorkingLayersForCurrentFrame();
+        const result = this.updateClipTransformKeyframesFromExternal(entry.clip.id, plan.keyframes, {
+            source: 'animation-motion-graph-add-point',
+            saveCurrent: false
+        });
+        if (!result.ok) {
+            this.model.setCurrentFrame(previousFrame);
+            this._syncWorkingLayersForCurrentFrame();
+            this.render();
+            return false;
+        }
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
         this._syncMotionPanelFrameValues(this._getSelectedClipMotionFrame(), { force: true });
+        this._requestLayerPanelSync();
+        this.eventBus?.emit('animation:frame-changed', {
+            frameIndex: this.model.playback.currentFrame,
+            direction: 'motion-graph-key-insert'
+        });
+        showFeedbackToast(`Motion keyをF${entry.clip.startFrame + localFrame + 1}へ追加`);
         return true;
     }
 
@@ -11640,6 +12002,7 @@ export class AnimationTablePopup {
             button.removeAttribute('title');
         }
         const easingButton = panel.querySelector('#anim-motion-graph-easing-btn');
+        const addPointButton = panel.querySelector('#anim-motion-graph-add-point-btn');
         const curveState = this._getMotionCurveEditState(motionState);
         const canOpenEasing = !!curveState.motionState?.key
             && curveState.motionState.localFrame < curveState.motionState.entry.clip.duration - 1
@@ -11653,6 +12016,15 @@ export class AnimationTablePopup {
                 !!this.motionCurvePanel && this.motionCurvePanel.style.display !== 'none'
             ));
         }
+        if (this.isPlaying || !canOpen) this._motionGraphAddPointMode = false;
+        if (addPointButton) {
+            addPointButton.disabled = !canOpen || this.isPlaying || (view?.duration || 0) < 3;
+            addPointButton.classList.toggle('active', this._motionGraphAddPointMode);
+            addPointButton.setAttribute('aria-pressed', String(this._motionGraphAddPointMode));
+            addPointButton.dataset.tooltip = this._motionGraphAddPointMode
+                ? 'Graph空白を押してactive channelの途中点を追加。Escで終了'
+                : 'Graph空白へ途中点を安全に追加するMode';
+        }
         if (!isOpen || !canOpen) return true;
         panel.querySelectorAll('[data-motion-graph-group]').forEach(groupButton => {
             const active = groupButton.dataset.motionGraphGroup === view.group.id;
@@ -11661,6 +12033,7 @@ export class AnimationTablePopup {
         });
         const plot = panel.querySelector('[data-motion-graph-plot]');
         if (!plot) return true;
+        plot.classList.toggle('is-add-point-mode', this._motionGraphAddPointMode);
         const width = 520;
         const height = 250;
         const padding = { left: 44, right: 18, top: 16, bottom: 34 };
@@ -11669,6 +12042,11 @@ export class AnimationTablePopup {
         const frameDenominator = Math.max(1, view.duration - 1);
         const rangeSpan = Math.max(1e-9, view.range.max - view.range.min);
         const activeChannel = this._getMotionGraphActiveChannel(view);
+        const graphClipId = motionState?.entry?.clip?.id || this.selectedCelId || null;
+        const selectedMotionCount = graphClipId
+            ? this._getSelectedMotionTimelineKeys(graphClipId)
+                .filter(descriptor => descriptor.kind === 'motion').length
+            : 0;
         const plotChannels = [...view.channels].sort((left, right) => (
             Number(left.id === activeChannel) - Number(right.id === activeChannel)
         ));
@@ -11715,8 +12093,23 @@ export class AnimationTablePopup {
         view.keyPoints.forEach(keyPoint => {
             plotChannels.forEach(channel => {
                 const isActive = channel.id === activeChannel;
+                const descriptor = {
+                    clipId: graphClipId,
+                    kind: 'motion',
+                    targetId: null,
+                    frame: keyPoint.localFrame
+                };
+                const isSelected = this._isMotionTimelineKeySelected(descriptor);
+                if (isActive && isSelected) {
+                    plot.append(createSvgElement('circle', {
+                        class: 'anim-motion-graph-key-selection',
+                        cx: xForFrame(keyPoint.localFrame),
+                        cy: yForValue(keyPoint.values[channel.id]),
+                        r: 8
+                    }));
+                }
                 plot.append(createSvgElement('circle', {
-                    class: `anim-motion-graph-key ${isActive ? 'is-primary' : 'is-secondary'}`,
+                    class: `anim-motion-graph-key ${isActive ? 'is-primary' : 'is-secondary'}${isSelected ? ' is-key-selected' : ''}`,
                     'data-channel': channel.id,
                     'data-motion-graph-key-frame': keyPoint.localFrame,
                     'data-motion-graph-key-project-frame': keyPoint.projectFrame,
@@ -11725,7 +12118,8 @@ export class AnimationTablePopup {
                     r: isActive ? 4.5 : 3.5,
                     role: 'button',
                     tabindex: '0',
-                    'aria-label': `${channel.label} Motion key F${keyPoint.projectFrame}へ移動、縦ドラッグで値編集`
+                    'aria-pressed': String(isSelected),
+                    'aria-label': `${channel.label} Motion key F${keyPoint.projectFrame}へ移動、CtrlまたはCmdで複数選択、縦ドラッグで値編集`
                 }));
             });
         });
@@ -11800,9 +12194,13 @@ export class AnimationTablePopup {
         const mode = panel.querySelector('[data-motion-graph-mode]');
         if (mode) {
             const activeLabel = view.channels.find(channel => channel.id === activeChannel)?.label || activeChannel;
-            mode.textContent = view.cursor.inRange && view.group.id === 'blend'
-                ? `Mode: ${view.cursor.blendMode} · ${activeLabel}を縦dragで編集`
-                : `${activeLabel}を縦dragで編集`;
+            mode.textContent = this._motionGraphAddPointMode
+                ? `${activeLabel}の空白位置をclickで追加 · Escで終了`
+                : (selectedMotionCount > 1
+                    ? `${activeLabel} · 選択済み点のdragで${selectedMotionCount} key編集`
+                    : (view.cursor.inRange && view.group.id === 'blend'
+                    ? `Mode: ${view.cursor.blendMode} · ${activeLabel}を縦dragで編集`
+                    : `${activeLabel}を縦dragで編集 · Ctrl/Cmdで複数選択`));
         }
         return true;
     }
@@ -11813,6 +12211,7 @@ export class AnimationTablePopup {
         const canOpen = !!this._getMotionGraphViewModel(state);
         const nextOpen = open === true && canOpen;
         this.motionGraphPanel.style.display = nextOpen ? 'block' : 'none';
+        if (!nextOpen) this._motionGraphAddPointMode = false;
         this._syncMotionGraphPanel(state);
         return nextOpen;
     }
@@ -11824,6 +12223,11 @@ export class AnimationTablePopup {
             && state.motionState.localFrame < state.motionState.entry.clip.duration - 1
             && !this.isPlaying;
         const nextOpen = open === true && (state.editable || canUseClipboard);
+        if (nextOpen && this.motionCurvePanel.style.display === 'none') {
+            this._motionCurveAllowOvershoot = state.hasOvershoot;
+        } else if (!nextOpen) {
+            this._motionCurveAllowOvershoot = false;
+        }
         this.motionCurvePanel.style.display = nextOpen ? 'block' : 'none';
         this._syncMotionCurvePanel();
         return nextOpen;
@@ -13235,11 +13639,17 @@ export class AnimationTablePopup {
                 const point = toWorld(event);
                 this._motionCanvasGesture = {
                     pointerId: event.pointerId,
+                    startClientX: event.clientX,
+                    startClientY: event.clientY,
                     startPoint: point,
                     lastPoint: point,
                     mode: null,
+                    startTransform: { ...state.sampled },
                     transform: { ...state.sampled },
-                    beforeState: this._captureTimelineHistoryState()
+                    beforeState: this._captureTimelineHistoryState(),
+                    moved: false,
+                    mutated: false,
+                    changed: false
                 };
                 canvas.setPointerCapture?.(event.pointerId);
                 this._updateMotionCanvasCursor();
@@ -13567,6 +13977,11 @@ export class AnimationTablePopup {
             }
             const gesture = this._motionCanvasGesture;
             if (!gesture || gesture.pointerId !== event.pointerId) return;
+            if (!gesture.moved && Math.hypot(
+                event.clientX - gesture.startClientX,
+                event.clientY - gesture.startClientY
+            ) < 2) return;
+            gesture.moved = true;
             const point = toWorld(event);
             const dx = point.x - gesture.lastPoint.x;
             const dy = point.y - gesture.lastPoint.y;
@@ -13591,13 +14006,39 @@ export class AnimationTablePopup {
                 gesture.transform.y += dy;
             }
             gesture.lastPoint = point;
-            this._upsertSelectedMotionKey(gesture.transform, {
+            const updated = this._upsertSelectedMotionKey(gesture.transform, {
                 deferPreview: true,
                 render: false
             });
+            if (updated) {
+                gesture.mutated = true;
+                gesture.changed = !areMotionTransformsEquivalent(
+                    gesture.startTransform,
+                    gesture.transform
+                );
+            }
             event.preventDefault();
             event.stopImmediatePropagation();
         }, true);
+        const finishRootMotionGesture = (gesture, options = {}) => {
+            if (!gesture || this._motionCanvasGesture !== gesture) return false;
+            this._cancelMotionEditPreviewRefresh();
+            this._motionCanvasGesture = null;
+            if (options.releasePointerCapture !== false
+                && canvas.hasPointerCapture?.(gesture.pointerId)) {
+                canvas.releasePointerCapture(gesture.pointerId);
+            }
+            this._updateMotionCanvasCursor();
+            if (options.cancelled === true || !gesture.changed) {
+                if (gesture.mutated) this._restoreTimelineHistoryState(gesture.beforeState);
+                else this.render();
+            } else {
+                this._finishMotionGestureHistory(gesture.beforeState, 'caf-clip-motion-drag');
+                this.render();
+                this._flushLayerPanelSync();
+            }
+            return true;
+        };
         const finishPointer = (event) => {
             const warpGesture = this._warpGridGesture;
             if (warpGesture?.pointerId === event.pointerId) {
@@ -13686,12 +14127,10 @@ export class AnimationTablePopup {
             }
             const gesture = this._motionCanvasGesture;
             if (!gesture || gesture.pointerId !== event.pointerId) return;
-            this._cancelMotionEditPreviewRefresh();
-            canvas.releasePointerCapture?.(event.pointerId);
-            this._motionCanvasGesture = null;
-            this._updateMotionCanvasCursor();
-            this._finishMotionGestureHistory(gesture.beforeState, 'caf-clip-motion-drag');
-            this.render();
+            finishRootMotionGesture(gesture, {
+                cancelled: event.type === 'pointercancel' || event.type === 'lostpointercapture',
+                releasePointerCapture: event.type !== 'lostpointercapture'
+            });
             event.preventDefault();
             event.stopImmediatePropagation();
         };
@@ -13728,6 +14167,11 @@ export class AnimationTablePopup {
                 });
             } else if (this._partCanvasGesture) {
                 this._finishFolderPartCanvasGesture(this._partCanvasGesture, {
+                    cancelled: true,
+                    releasePointerCapture: true
+                });
+            } else if (this._motionCanvasGesture) {
+                finishRootMotionGesture(this._motionCanvasGesture, {
                     cancelled: true,
                     releasePointerCapture: true
                 });
@@ -15192,6 +15636,7 @@ export class AnimationTablePopup {
         }
 
         const selectedCafRigProjection = this._getSelectedCafRigProjection();
+        const selectedCafRigBoneDisplayPlan = this._getRigBoneTableDisplayPlan(selectedCafRigProjection);
 
         if (trackList) {
             let trackHtml = `
@@ -15262,10 +15707,33 @@ export class AnimationTablePopup {
                                 ${action}
                             </div>`;
                     });
-                    selectedCafRigProjection.meshBones.forEach((bone, boneIndex) => {
+                    selectedCafRigBoneDisplayPlan.items.forEach(item => {
+                        if (item.type === 'group') {
+                            const activeIndicator = item.activeBoneCount > 0
+                                ? '<span class="anim-rig-bone-group-indicator is-active" aria-label="Active Bone">●</span>'
+                                : '';
+                            const selectedKeyIndicator = item.selectedKeyCount > 0
+                                ? `<span class="anim-rig-bone-group-indicator" aria-label="${item.selectedKeyCount} selected keys">◆${item.selectedKeyCount}</span>`
+                                : '';
+                            trackHtml += `
+                                <div class="anim-rig-bone-group-row${item.collapsed ? ' is-collapsed' : ''}${item.activeBoneCount > 0 ? ' has-active-bone' : ''}"
+                                    data-rig-bone-group-id="${this._escapeHtml(item.collapseKey)}">
+                                    <button class="anim-rig-bone-group-toggle ui-help-tooltip" type="button"
+                                        aria-expanded="${item.collapsed ? 'false' : 'true'}"
+                                        data-rig-bone-group-toggle="${this._escapeHtml(item.collapseKey)}"
+                                        data-tooltip="${item.collapsed ? 'Bone groupを展開' : 'Bone groupを折りたたむ'}">
+                                        <span class="anim-rig-bone-group-chevron" aria-hidden="true">${item.collapsed ? '›' : '⌄'}</span>
+                                        <span class="anim-rig-bone-group-name">${this._escapeHtml(item.group.label)}</span>
+                                        <span class="anim-rig-bone-group-count">${item.boneCount}</span>
+                                        ${activeIndicator}${selectedKeyIndicator}
+                                    </button>
+                                </div>`;
+                            return;
+                        }
+                        const { bone, boneIndex } = item;
                         const rigRaster = this._getRasterRigProjectionContext(
                             selectedCafRigProjection,
-                            this._motionInspectorTargetKind === 'raster' ? this.selectedInternalLayerId : null,
+                            item.group.targetLayerId,
                             bone.boneId
                         );
                         if (!rigRaster) return;
@@ -15434,10 +15902,19 @@ export class AnimationTablePopup {
                             );
                         }
                     });
-                    selectedCafRigProjection.meshBones.forEach(bone => {
+                    selectedCafRigBoneDisplayPlan.items.forEach(item => {
+                        if (item.type === 'group') {
+                            gridHtml += `
+                                <div class="anim-timeline-row anim-rig-bone-group-timeline-row${item.collapsed ? ' is-collapsed' : ''}${item.activeBoneCount > 0 ? ' has-active-bone' : ''}"
+                                    data-rig-bone-group-id="${this._escapeHtml(item.collapseKey)}">
+                                    <div class="anim-rig-bone-group-timeline-fill" style="width:${totalFrames * this.timelineCellWidth}px"></div>
+                                </div>`;
+                            return;
+                        }
+                        const { bone } = item;
                         const rigRaster = this._getRasterRigProjectionContext(
                             selectedCafRigProjection,
-                            this._motionInspectorTargetKind === 'raster' ? this.selectedInternalLayerId : null,
+                            item.group.targetLayerId,
                             bone.boneId
                         );
                         if (!rigRaster) return;
@@ -16226,6 +16703,13 @@ export class AnimationTablePopup {
                 </div>
             </div>
             <div class="anim-rig-context" id="anim-rig-context" role="tabpanel" aria-labelledby="anim-rig-focus-btn" hidden>
+                <div class="anim-rig-view-controls">
+                    <span>CANVAS LABEL</span>
+                    <button class="anim-rig-key-btn ui-help-tooltip" id="anim-rig-labels-toggle" type="button" aria-pressed="false">NAMES AUTO</button>
+                    <span class="anim-rig-weight-label">DIAGNOSTIC</span>
+                    <button class="anim-rig-key-btn anim-rig-weight-toggle ui-help-tooltip" id="anim-rig-weight-toggle" type="button" aria-pressed="false" disabled>WEIGHT</button>
+                    <span class="anim-rig-weight-summary" data-rig-weight-summary hidden>0 · BLEND · 1</span>
+                </div>
                 <div class="anim-rig-target-row anim-rig-caf-setup" data-rig-caf-setup>
                     <span class="anim-rig-target-name">CAF</span>
                     <span class="anim-rig-target-kind">ROOT SETUP</span>
@@ -16383,6 +16867,7 @@ export class AnimationTablePopup {
             </div>
             <svg class="anim-motion-curve-graph" viewBox="0 0 220 220" role="img" aria-label="Cubic Bezier easing curve editor">
                 <rect class="anim-motion-curve-grid" x="14" y="14" width="192" height="192" rx="3"/>
+                <rect class="anim-motion-curve-standard-range" x="14" y="14" width="192" height="192" rx="3"/>
                 <path class="anim-motion-curve-diagonal" d="M14 206 206 14"/>
                 <line class="anim-motion-curve-control-line"/>
                 <line class="anim-motion-curve-control-line"/>
@@ -16392,6 +16877,10 @@ export class AnimationTablePopup {
                 <circle class="anim-motion-curve-handle" data-motion-curve-handle="1" r="8"/>
                 <circle class="anim-motion-curve-handle" data-motion-curve-handle="2" r="8"/>
             </svg>
+            <div class="anim-motion-curve-mode-row">
+                <button class="anim-motion-curve-overshoot-btn ui-help-tooltip" id="anim-motion-curve-overshoot-btn" type="button" aria-label="Allow easing overshoot" aria-pressed="false" data-tooltip="Y controlの編集範囲を-1..2へ拡張">ALLOW OVERSHOOT</button>
+                <span class="anim-motion-curve-range">Y 0..1</span>
+            </div>
             <div class="anim-motion-curve-fields">
                 <label>X1<input type="number" min="0" max="1" step="0.01" data-motion-curve-param="x1"></label>
                 <label>Y1<input type="number" min="0" max="1" step="0.01" data-motion-curve-param="y1"></label>
@@ -16423,7 +16912,10 @@ export class AnimationTablePopup {
                 <button class="anim-motion-graph-easing-btn ui-help-tooltip" id="anim-motion-graph-easing-btn" type="button" aria-label="Open easing curve editor">EASING</button>
                 <button class="ui-close-button ui-close-button--small" id="anim-motion-graph-close-btn" type="button" aria-label="Close Motion Graph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
             </div>
-            <div class="anim-motion-graph-groups" role="group" aria-label="Motion Graph group">${groupButtons}</div>
+            <div class="anim-motion-graph-groups" role="group" aria-label="Motion Graph group and edit mode">
+                ${groupButtons}
+                <button class="anim-motion-graph-add-point-btn ui-help-tooltip" id="anim-motion-graph-add-point-btn" type="button" aria-label="Toggle Motion Graph add point mode" aria-pressed="false">ADD POINT</button>
+            </div>
             <svg class="anim-motion-graph-plot" data-motion-graph-plot viewBox="0 0 520 250" role="img" aria-label="Motion Graph existing-key value editor"></svg>
             <div class="anim-motion-graph-legend" data-motion-graph-legend></div>
             <div class="anim-motion-graph-values" data-motion-graph-values></div>
@@ -16453,6 +16945,12 @@ export class AnimationTablePopup {
                 plot.releasePointerCapture(gesture.pointerId);
             }
 
+            let clickCommitted = false;
+            if (!gesture.moved && !cancelled && event?.type === 'pointerup') {
+                clickCommitted = this._commitMotionTimelineKeyPointerClick(gesture, event);
+            } else {
+                this._motionKeyPendingClick = null;
+            }
             if (cancelled || !gesture.changed) {
                 if (gesture.mutated) this._restoreTimelineHistoryState(gesture.beforeState);
                 else this._syncMotionGraphPanel();
@@ -16464,7 +16962,15 @@ export class AnimationTablePopup {
                 this.render();
                 this._flushLayerPanelSync();
             }
-            if (gesture.moved) {
+            if (cancelled && gesture.pendingSelection?.addedForDrag) {
+                this._setMotionTimelineKeySelected(
+                    gesture.pendingSelection.descriptor,
+                    false,
+                    { additive: true }
+                );
+                this.render();
+            }
+            if (gesture.moved || clickCommitted) {
                 this._motionGraphSuppressClick = true;
                 setTimeout(() => { this._motionGraphSuppressClick = false; }, 0);
             }
@@ -16527,6 +17033,18 @@ export class AnimationTablePopup {
             event.stopPropagation();
             this._setMotionCurveWindowOpen(true);
         });
+        panel.querySelector('#anim-motion-graph-add-point-btn')?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (this._motionGraphGesture) finishGesture(null, true);
+            this._setMotionGraphAddPointMode(!this._motionGraphAddPointMode);
+        });
+        panel.addEventListener('keydown', event => {
+            if (event.key !== 'Escape' || this._motionGraphGesture || !this._motionGraphAddPointMode) return;
+            this._setMotionGraphAddPointMode(false);
+            event.preventDefault();
+            event.stopPropagation();
+        });
         plot?.addEventListener('click', event => {
             if (this._motionGraphSuppressClick) {
                 event.preventDefault();
@@ -16534,6 +17052,29 @@ export class AnimationTablePopup {
                 return;
             }
             const marker = event.target.closest?.('[data-motion-graph-key-frame]');
+            if (!marker && this._motionGraphAddPointMode && !this.isPlaying) {
+                const view = this._getMotionGraphViewModel();
+                const matrix = plot.getScreenCTM?.();
+                if (!view || !matrix) return;
+                const svgPoint = plot.createSVGPoint();
+                svgPoint.x = event.clientX;
+                svgPoint.y = event.clientY;
+                const point = svgPoint.matrixTransform(matrix.inverse());
+                const padding = { left: 44, right: 18, top: 16, bottom: 34 };
+                const innerWidth = 520 - padding.left - padding.right;
+                const innerHeight = 250 - padding.top - padding.bottom;
+                if (point.x < padding.left || point.x > 520 - padding.right
+                    || point.y < padding.top || point.y > 250 - padding.bottom) return;
+                const localFrame = Math.round(
+                    (point.x - padding.left) / innerWidth * Math.max(1, view.duration - 1)
+                );
+                const displayValue = view.range.max
+                    - (point.y - padding.top) / innerHeight * (view.range.max - view.range.min);
+                event.preventDefault();
+                event.stopPropagation();
+                this._insertMotionGraphKeyAtPoint({ localFrame, displayValue, view });
+                return;
+            }
             if (!marker) return;
             event.preventDefault();
             event.stopPropagation();
@@ -16558,6 +17099,19 @@ export class AnimationTablePopup {
             const keyPoint = view?.keyPoints?.find(point => point.localFrame === localFrame);
             const startDisplayValue = keyPoint?.values?.[channel];
             if (!state?.key || !Number.isFinite(startDisplayValue)) return;
+            const anchorDescriptor = {
+                clipId: state.entry.clip.id,
+                kind: 'motion',
+                targetId: null,
+                frame: localFrame
+            };
+            const pendingSelection = this._prepareMotionTimelineKeyPointerSelection(anchorDescriptor, event);
+            const targetFrames = this._isMotionTimelineKeySelected(anchorDescriptor)
+                ? this._getSelectedMotionTimelineKeys(state.entry.clip.id)
+                    .filter(descriptor => descriptor.kind === 'motion')
+                    .map(descriptor => descriptor.frame)
+                : [localFrame];
+            if (targetFrames.length === 0) return;
             const rect = plot.getBoundingClientRect();
             this._motionGraphGesture = {
                 pointerId: event.pointerId,
@@ -16570,7 +17124,13 @@ export class AnimationTablePopup {
                 displayValue: startDisplayValue,
                 rangeSpan: Math.max(1e-9, view.range.max - view.range.min),
                 innerHeight: Math.max(1, rect.height * 200 / 250),
-                startTransform: { ...state.sampled },
+                anchorDescriptor,
+                pendingSelection,
+                targetFrames,
+                startKeyframes: (state.entry.clip.transformKeyframes || []).map(key => ({
+                    ...key,
+                    ...(key?.easing ? { easing: { ...key.easing } } : {})
+                })),
                 beforeState: this._captureTimelineHistoryState(),
                 moved: false,
                 mutated: false,
@@ -16589,8 +17149,9 @@ export class AnimationTablePopup {
         plot?.addEventListener('pointercancel', event => finishGesture(event, true));
         plot?.addEventListener('lostpointercapture', event => finishGesture(event, true));
         plot?.addEventListener('keydown', event => {
-            if (event.key === 'Escape' && this._motionGraphGesture) {
-                finishGesture(null, true);
+            if (event.key === 'Escape' && (this._motionGraphGesture || this._motionGraphAddPointMode)) {
+                if (this._motionGraphGesture) finishGesture(null, true);
+                else this._setMotionGraphAddPointMode(false);
                 event.preventDefault();
                 event.stopPropagation();
                 return;
@@ -16600,7 +17161,15 @@ export class AnimationTablePopup {
             if (!marker) return;
             event.preventDefault();
             event.stopPropagation();
-            activateMarker(marker);
+            if (!activateMarker(marker)) return;
+            const descriptor = {
+                clipId: this.selectedCelId,
+                kind: 'motion',
+                targetId: null,
+                frame: Number(marker.dataset.motionGraphKeyFrame)
+            };
+            this._applyMotionTimelineKeyClickSelection(descriptor, event);
+            this._syncMotionGraphPanel();
         });
     }
 
@@ -16608,7 +17177,7 @@ export class AnimationTablePopup {
         const panel = this.motionCurvePanel;
         const graph = panel?.querySelector('.anim-motion-curve-graph');
         if (!panel || !graph) return;
-        const readCurveInputs = () => resolveEditableEasingCurve({
+        const readCurveInputs = () => ({
             type: 'cubic-bezier',
             x1: panel.querySelector('[data-motion-curve-param="x1"]')?.value,
             y1: panel.querySelector('[data-motion-curve-param="y1"]')?.value,
@@ -16617,7 +17186,13 @@ export class AnimationTablePopup {
         });
         const commitCurveInputs = source => {
                 const beforeState = this._captureTimelineHistoryState();
-                if (!this._applySelectedMotionCurve(readCurveInputs())) return false;
+                if (!this._applySelectedMotionCurve(readCurveInputs())) {
+                    showFeedbackToast(this._motionCurveAllowOvershoot
+                        ? 'Xは0..1、Yは-1..2で入力してください'
+                        : 'X / Yは0..1で入力してください');
+                    this._syncMotionCurvePanel();
+                    return false;
+                }
                 this._recordTimelineHistory(
                     beforeState,
                     this._captureTimelineHistoryState(),
@@ -16640,6 +17215,16 @@ export class AnimationTablePopup {
         panel.querySelector('#anim-motion-easing-paste-btn')?.addEventListener('click', () => {
             this._pasteSelectedMotionEasing();
         });
+        panel.querySelector('#anim-motion-curve-overshoot-btn')?.addEventListener('click', () => {
+            const state = this._getMotionCurveEditState();
+            if (!state.editable) return;
+            if (this._motionCurveAllowOvershoot && state.hasOvershoot) {
+                showFeedbackToast('Y1 / Y2を0..1へ戻してからOvershootを終了してください');
+                return;
+            }
+            this._motionCurveAllowOvershoot = !this._motionCurveAllowOvershoot;
+            this._syncMotionCurvePanel(state.motionState);
+        });
         graph.addEventListener('pointerdown', event => {
             const handle = event.target.closest?.('[data-motion-curve-handle]');
             const state = this._getMotionCurveEditState();
@@ -16661,7 +17246,12 @@ export class AnimationTablePopup {
             const point = graphPointToCurvePoint({
                 x: (event.clientX - rect.left) * 220 / Math.max(1, rect.width),
                 y: (event.clientY - rect.top) * 220 / Math.max(1, rect.height)
-            }, { width: 220, height: 220, padding: 14 });
+            }, {
+                width: 220,
+                height: 220,
+                padding: 14,
+                ...getEasingCurveYRange(this._motionCurveAllowOvershoot)
+            });
             if (gesture.handle === 1) {
                 gesture.curve.x1 = point.x;
                 gesture.curve.y1 = point.y;
@@ -17165,6 +17755,16 @@ export class AnimationTablePopup {
             motionControls.querySelector('[data-rig-parent-bone]')?.addEventListener('change', event => {
                 this._setSelectedRigBoneParent(event.currentTarget.value || null);
             });
+            motionControls.querySelector('#anim-rig-labels-toggle')?.addEventListener('click', () => {
+                this._rigBoneLabelsExpanded = !this._rigBoneLabelsExpanded;
+                this._syncRigSetupContext();
+            });
+            motionControls.querySelector('#anim-rig-weight-toggle')?.addEventListener('click', () => {
+                if (!this._getRigSkinWeightDiagnosticTarget()) return;
+                this._rigSkinWeightDiagnosticVisible = !this._rigSkinWeightDiagnosticVisible;
+                this._syncRigSetupContext();
+                this._syncRigSkinWeightOverlay();
+            });
             motionControls.querySelector('[data-rig-mesh-bone-add]')?.addEventListener('click', () => {
                 const context = this._getSelectedRigInspectorContext();
                 if (context?.targetKind !== 'raster' || this.isPlaying) return;
@@ -17546,6 +18146,18 @@ export class AnimationTablePopup {
                 }
                 if (e.target.closest('.anim-lane-add-btn')) {
                     this.addIndependentLane();
+                    e.stopPropagation();
+                    return;
+                }
+
+                const rigBoneGroupToggle = e.target.closest('[data-rig-bone-group-toggle]');
+                if (rigBoneGroupToggle) {
+                    const groupKey = rigBoneGroupToggle.dataset.rigBoneGroupToggle;
+                    if (groupKey) {
+                        if (this._rigBoneGroupCollapsed.has(groupKey)) this._rigBoneGroupCollapsed.delete(groupKey);
+                        else this._rigBoneGroupCollapsed.add(groupKey);
+                        this.render();
+                    }
                     e.stopPropagation();
                     return;
                 }
@@ -18742,9 +19354,7 @@ export class AnimationTablePopup {
         if (event.target.closest('input, select, textarea, [contenteditable="true"], [data-key-nav-wheel]')) {
             return false;
         }
-        const primaryDelta = Math.abs(event.deltaY) >= Math.abs(event.deltaX)
-            ? event.deltaY
-            : event.deltaX;
+        const primaryDelta = getDominantTimelineWheelDelta(event.deltaX, event.deltaY);
         if (!primaryDelta) return false;
 
         event.preventDefault();
@@ -18758,21 +19368,28 @@ export class AnimationTablePopup {
             return false;
         }
 
-        const primaryDelta = event.deltaY || event.deltaX;
-        if (primaryDelta === 0) return false;
-        if (event.ctrlKey || event.metaKey) {
+        const action = resolveTimelineViewportWheelAction({
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            shiftKey: event.shiftKey,
+            overTrackList: !!event.target.closest('.anim-track-list')
+        });
+        if (action.type === 'none') return false;
+        if (action.type === 'zoom') {
             event.preventDefault();
             event.stopPropagation();
-            this._adjustTimelineZoom(primaryDelta < 0 ? 1 : -1);
+            this._adjustTimelineZoom(action.delta < 0 ? 1 : -1);
             return true;
         }
 
         event.preventDefault();
         event.stopPropagation();
-        if (event.shiftKey || event.target.closest('.anim-track-list')) {
-            timelineViewport.scrollTop += primaryDelta;
-        } else {
-            timelineViewport.scrollLeft += event.deltaX || event.deltaY;
+        if (action.type === 'vertical-scroll') {
+            timelineViewport.scrollTop += action.delta;
+        } else if (action.type === 'frame-step') {
+            this.moveTimelineFrameByDelta(action.delta < 0 ? -1 : 1);
         }
         return true;
     }
@@ -18839,11 +19456,16 @@ export class AnimationTablePopup {
                 return;
             }
 
+            let updated = false;
             if (typeof options.onPreview === 'function') {
-                options.onPreview(input.value, input);
+                updated = options.onPreview(input.value, input) !== false;
             } else {
                 const key = this._readSelectedClipMotionKeyFromControls();
-                if (key) this._upsertSelectedMotionKey(key, { render: false });
+                updated = !!key && this._upsertSelectedMotionKey(key, { render: false });
+            }
+            if (updated) {
+                gesture.mutated = true;
+                gesture.changed = input.value !== gesture.startValue;
             }
             event.preventDefault();
             event.stopPropagation();
@@ -18851,19 +19473,29 @@ export class AnimationTablePopup {
         const finishPointer = (event) => {
             if (!gesture || event.pointerId !== gesture.pointerId) return;
             const finishedGesture = gesture;
+            const cancelled = event.type === 'pointercancel';
             gesture = null;
             removeDocumentListeners();
             input.classList.remove('is-scrubbing');
             if (!finishedGesture.moved) return;
 
-            suppressClick = true;
-            setTimeout(() => { suppressClick = false; }, 0);
-            this.render();
-            this._flushLayerPanelSync();
-            this._finishMotionGestureHistory(
-                finishedGesture.beforeState,
-                options.historyName || 'caf-clip-motion-number-scrub'
-            );
+            if (finishedGesture.mutated) {
+                suppressClick = true;
+                setTimeout(() => { suppressClick = false; }, 0);
+            }
+            if (cancelled || !finishedGesture.changed) {
+                input.value = finishedGesture.startValue;
+                if (finishedGesture.mutated) {
+                    this._restoreTimelineHistoryState(finishedGesture.beforeState);
+                }
+            } else {
+                this.render();
+                this._flushLayerPanelSync();
+                this._finishMotionGestureHistory(
+                    finishedGesture.beforeState,
+                    options.historyName || 'caf-clip-motion-number-scrub'
+                );
+            }
             event.preventDefault();
             event.stopPropagation();
         };
@@ -18877,6 +19509,8 @@ export class AnimationTablePopup {
                 startValue: input.value,
                 stepCount: 0,
                 moved: false,
+                mutated: false,
+                changed: false,
                 beforeState: null
             };
             document.addEventListener('pointermove', onPointerMove, { passive: false, capture: true });
