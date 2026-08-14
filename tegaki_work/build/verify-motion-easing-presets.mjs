@@ -6,21 +6,39 @@ import {
     MOTION_EASING_PRESET_GROUPS,
     resolveMotionEasingPreset
 } from '../system/animation/motion-easing-presets.js';
+import {
+    CUBIC_BEZIER_OVERSHOOT_Y_MAX,
+    CUBIC_BEZIER_OVERSHOOT_Y_MIN
+} from '../system/animation/cubic-bezier-easing.js';
 
 const groupLabels = MOTION_EASING_PRESET_GROUPS.map(group => group.label);
-assert.deepEqual(groupLabels, ['SOFT EASE', 'STRONG EASE', 'SINE', 'CIRCULAR']);
-assert.equal(MOTION_EASING_PRESET_GROUPS.flatMap(group => group.entries).length, 12);
+assert.deepEqual(groupLabels, ['SOFT EASE', 'STRONG EASE', 'SINE', 'CIRCULAR', 'BACK']);
+assert.equal(MOTION_EASING_PRESET_GROUPS.flatMap(group => group.entries).length, 15);
 
 for (const group of MOTION_EASING_PRESET_GROUPS) {
     for (const entry of group.entries) {
         const resolved = resolveMotionEasingPreset(entry.value);
         assert.equal(resolved.interpolation, 'linear');
         assert.equal(identifyMotionEasingPreset(resolved), entry.value);
-        for (const coordinate of ['x1', 'y1', 'x2', 'y2']) {
+        for (const coordinate of ['x1', 'x2']) {
             assert.ok(resolved.easing[coordinate] >= 0 && resolved.easing[coordinate] <= 1);
+        }
+        for (const coordinate of ['y1', 'y2']) {
+            assert.ok(resolved.easing[coordinate] >= CUBIC_BEZIER_OVERSHOOT_Y_MIN);
+            assert.ok(resolved.easing[coordinate] <= CUBIC_BEZIER_OVERSHOOT_Y_MAX);
+            if (group.label !== 'BACK') {
+                assert.ok(resolved.easing[coordinate] >= 0 && resolved.easing[coordinate] <= 1);
+            }
         }
     }
 }
+
+assert.deepEqual(resolveMotionEasingPreset('back-in').easing,
+    { type: 'cubic-bezier', x1: 0.36, y1: 0, x2: 0.66, y2: -0.56 });
+assert.deepEqual(resolveMotionEasingPreset('back-out').easing,
+    { type: 'cubic-bezier', x1: 0.34, y1: 1.56, x2: 0.64, y2: 1 });
+assert.deepEqual(resolveMotionEasingPreset('back-in-out').easing,
+    { type: 'cubic-bezier', x1: 0.68, y1: -0.6, x2: 0.32, y2: 1.6 });
 
 const source = [
     { frame: 0, x: 0, interpolation: 'hold', note: 'keep' },

@@ -99,7 +99,8 @@ model.drawingSnapshots.push(new DrawingSnapshotModel({
 const exportManager = new ProjectManager({ getLayers: () => [] }, {});
 exportManager._getAnimationTable = () => ({
     model,
-    _saveSelectedClipFromWorkingLayers: () => {
+    _saveSelectedClipFromWorkingLayers: options => {
+        assert.equal(options, undefined, 'Project export does not force recapture a clean CAF Raster');
         model.drawingSnapshots.push(new DrawingSnapshotModel({
             id: 'snapshot-stale-after-capture',
             width: 2,

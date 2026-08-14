@@ -87,3 +87,17 @@ npm.cmd run build
 - オーナー: 優先順位、実機確認、バックアップ、Git操作、最終決定。
 
 外部AIの計画書はそのまま実装契約にせず、存在するfile・event・classと照合してから `task-codex/` へPhase化する。
+
+### Codex Multi-Model委譲
+
+- 主taskはSOLが設計・境界判断・監査・Phase closeを担当する。LUNAへは、対象file、既存契約、Acceptance Criteria、検証、停止条件が確定した一つの限定Sliceだけを委譲する。
+- project workerは`.codex/agents/tegaki-luna-worker.toml`を使う。LUNAが新しいArchitecture、保存schema、History、Layer / CAF / Rig / Mesh境界の判断を必要とした場合は変更せず`BLOCKED`でSOLへ返す。
+- LUNAの報告だけで採用・closeしない。SOLが全diff、対象外変更、verifier / build、生成物、文書整合を再監査する。利用不能時に別modelへ暗黙fallbackしない。
+- 初期導入ではread-only probeを先行し、SOL判定後だけwrite pilotへ昇格する。現在の権限と詳細手順は`tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`および現行Phase Gateに従う。
+
+### PixiJS公式Agent Skills
+
+- PixiJSを調査・変更する時は、`TEGAKI.md`と現行Phase指示書の後に`tegaki_work/node_modules/pixi.js/skills/pixijs/SKILL.md`を入口として読み、routerが示す関連skillだけを追加で読む。
+- 公式skillはPixiJS v8 APIの参照資料であり、Tegakiの描画・保存・History境界を上書きしない。特にWebGPU / Canvas renderer、HTML source、mask channel、transient MSAA等をskillの一般推奨だけで有効化しない。
+- v7形式の`Application(options)`、`app.view`、`BaseTexture`、`@pixi/*`分割package等を新規導入しない。既存互換コードを触る場合は実importとv8.19 APIを照合する。
+- `node_modules`が未導入でskillを読めない場合は推測で補完せず、`npm.cmd install`が許可された作業か確認する。Web外部AIはPixiJS公式Skills / docs URLを参照する。

@@ -1,6 +1,6 @@
 # キャラクターRig・Mesh・Perform統合ロードマップ
 
-更新日: 2026-08-11
+更新日: 2026-08-14
 区分: 未実装統合proposal / Phase化前の判断正本
 
 ## 0. 位置づけ
@@ -182,6 +182,19 @@ Owner相談後にGate 0を改訂し`GO`とした。表示階層、Rigグラフ�
 
 UIはデータ正本から投影するため、Plan AからPlan Bへ切り替えても保存schemaを変えない。
 
+### 多Bone制作時の所有・表示・Layer同期Gate（Owner memo 2026-08-14）
+
+実制作では二つの正当な構成を同じUIで扱う。`複数Raster × 各一Rigid Bone`はLayer分割した手足を剛体で動かす構成、`一Raster × 多Mesh Bone`は一枚人物をSkin変形する構成である。前者のBoneは`rigidBindings[].partId`によりLayer所有を一意に導出できるが、後者のBoneはMesh生成前にはLayer所有を持たず、生成後も`skinBindings`を介して複数Boneが一Meshへ影響する。この差を無視して「Layer追加時は常にBone追加」「Layer削除時は同名Bone削除」としない。
+
+- CLIP MOTIONを開いたCAFで既にRoot Raster Part方式が成立している場合、新規CAF直下Rasterは同じ方式の初期Part / Boneを一History内で作る。空LayerはCanvas中心へ暫定Bindし、描画後も自動re-fitしない。Folder内部Raster、Mesh方式だけのCAF、Rig未設定CAFへは暗黙追加しない。
+- Layer削除は明示的な破壊操作なので、そのLayer専有のPart、rigid binding、Bone、Motion track、Mesh / Skin、WARP anchor参照を同じHistoryで除去してよい。ただし残存Meshが使うBone、削除対象外Boneの親、別対象の共有参照まで暗黙切断しない。該当時は理由付きで拒否し、先に親子／共有を整理させる。
+- Mesh BoneのLayer別groupは、Mesh生成後なら`meshDefinitions[].targetInternalLayerId`とSkin influenceから表示上導出する。Mesh未生成Boneを恒久groupへ入れるためだけに`boneGroupId`、`targetInternalLayerId`複製、`isRigged`等の保存flagを増やさない。pre-Meshの識別が制作上不足する場合は、明示Mesh対象選択またはauthoring-only groupの保存要否を別Gateで比較する。
+- CanvasはBone／接続線を維持し、名前は既定でactive対象だけ常時表示、非activeはhoverで表示する。明示`NAMES ON`で全表示へ切り替え、touch / penはtap選択後に名前を出す。線は明るいpalette内underlay + semantic色の二重線とし、濃い描画上でも読めるようにする。
+- 色はSetup activeの青、Motion activeの橙を第一意味とし、色だけでBone体系を識別しない。branch / targetの違いは連結線、選択、path／名前、折りたたみgroupを併用する。複数palette色を保存identityとして持たせない。
+- Animation Tableは小規模では現行CAF子行を維持する。多Bone時は`CAF > target Layer / Folder > Bone`の表示group、選択targetだけ展開、active branch優先を第一候補とし、全Bone行を常時展開しない。CAF全体BoneはCAF scopeで表示し、個別target編集中は非active表示へ落とす。これはUI projectionであり、TimelineやRig保存schemaを増やさない。
+
+2026-08-14の入口修正では、優勢軸wheel routing、既存Root Raster方式への新規Layer初期Bone継承、専有Rig削除cascade、Canvas名の`AUTO / ON`切替、hover名、明色underlayまでを限定導入した。Layer別Mesh Bone group、Table折りたたみ、branch色辞書、pre-Mesh所有は実制作fixtureとPhase 7zのweight可視化要件を合わせて別Phase化する。
+
 ## 7. BONEとConstraint
 
 ### 最初の範囲
@@ -290,6 +303,58 @@ Phase 7jのRECT / CIRCLE / POLYはWARP control pointのruntime selectionだけ�
 - 将来のweight補正は、生成weightの上に第二のdelta / override正本を追加する軽量改修として扱わない。既存`skinBindings`を唯一のstatic正本としたまま、明示編集後のgenerator lineage、`STALE`、再生成時の破棄確認、normalize、1 gesture 1 HistoryをGate 0で同時に決める。補正slider / brush / manual topologyはその後のUI候補である。
 - LINE分岐の自動分割は、現行の一Raster・一Mesh前提と保存shapeを跨ぐため別Phase相当とする。最初から自動置換せず、pure層が複数Ribbon候補と拒否理由を返し、preview後に明示採用する設計を比較する。
 - 深いRig treeの識別性は色だけの小点を追加して解決しない。既存の連結node + `RIG` chip、Mesh status、名前 / path表示を優先し、階層深度とpen / touchの実測後にfont、icon、pathのどれを変えるか決める。
+
+### 一枚Raster人体の制作検証 — Bone影響領域と関節剛性（Owner memo 2026-08-13）
+
+Ownerが一枚の人物Rasterへ`AUTO SHAPE`と11本のMesh BONEを設定し、Layer分割なしでも片腕を肘から曲げ、他の手足を個別に動かせるところまで確認した。これはPhase 6v〜7iの一Raster・複数BONE、Auto Shape、Motion keyが簡易character animationの入口として成立する実制作証拠である。一方、曲げ角と移動量によって顔まで引かれる、前腕や手先が細く／太くなる、長さが意図以上に変わる現象も確認した。Phase 7yのEasing Gateへ混ぜず、Phase 7zのSkinWeight生成と関節変形Gateへ送った。
+
+#### 現行実装から見た原因
+
+- FILL / GRIDの`createRasterBoneDistanceInfluences()`は各MeshVertexから全Bone segmentまでの距離を比較し、距離上位2本を必ず正規化して割り当てる。alpha island、Rig branch、腕／胴／顔の意味領域、有限cutoffを持たないため、腕Boneから遠い顔頂点にも非0 weightが残り得る。今回の顔引きはまずこの影響漏れとして扱う。
+- LINE / Ribbonは2〜3本のdirect chainだけを候補にし、長手方向へ最大2 influenceを割り当てるためbranch漏れは小さい。ただし隣接anchor間を全域linear blendするので、「前腕の大半を剛体、肘近傍だけ柔らかくする」局所関節にはまだ広すぎる。
+- runtimeは既存inverse-bind Linear Blend Skinning（LBS）で、二つの回転matrixをweight合成する。大角度の関節で合成結果は剛体変換にならず、幅の収縮、膨張、shearが起こり得る。Mesh密度やtriangle方向も見た目へ影響するが、頂点を増やすだけでは広い誤weightを解決しない。
+- BONEの`scaleX / scaleY`を含むPoseは伸縮を表現できるが、通常の肢曲げと意図的なstretchを同じ自動挙動にしない。既定は固定長とし、必要時だけ明示的に許可する。
+
+#### 外部製品から採る境界
+
+- [ToonSquid Bones handbook](https://toonsquid.com/handbook/effects/bones/)はPixel LayerをBoneへbindすると自動warpし、細部を制御する場合はMesh control pointへbindする。影響量は距離、Bone長、strengthで決まり、BoneとLayerのcustom bindingで無関係な部位を対象外にできる。TegakiではLayer分割を必須にしない代わりに、この「対象外を明示できる」性質をMeshVertex / Shape領域へ移す。
+- [ToonSquid Animate with Bones](https://toonsquid.com/handbook/guides/animate_with_bones/)は強い変形部へ小さいtriangleを置き、変形しない単色部は大きいtriangleでよいとしている。関節bandの局所細分と、肢内部の粗い剛体領域を分ける根拠として採る。
+- [Live2D Cubism Skinning](https://docs.live2d.com/en/cubism-editor-manual/skinning/)の簡易Skinningは、一つの細長いArtMeshを複数Rotation Deformerの中間で自動分割し、分割片をGlueする。Deform Pathは根元から先端へ置く。この「segmentを分け、境界だけを柔らかく接続する」考えを採り、Live2D固有のPart / parameter / Glue正本は導入しない。
+- [Live2D Cubism Automatic Mesh generator](https://docs.live2d.com/en/cubism-editor-manual/mesh-edit/)は自動生成後のMesh形状調整を許す一方、keyform後の再生成で変形がresetし得ると注意している。Tegakiは既存`CURRENT / STALE`、明示再生成、Undo / Redoを維持し、手動weightを無言上書きしない。
+- [KavanほかのDual Quaternion Skinning解説](https://users.cs.utah.edu/~ladislav/dq/index.html)はLBSのskin collapseを改善する候補だが、scale / shearは別処理となる。今回の第一原因はbranchを跨ぐweight漏れなので、solver置換を先行せず、同じLBSのまま影響領域と関節bandを直してから固定fixtureで再評価する。
+
+#### 第一候補 — Chain-local Joint Skin
+
+topology、影響資格、weight、Pose挙動を分離する。
+
+1. `Mesh topology`: alpha内容を覆う既存FILL / LINE Mesh。関節周辺だけ十分なtriangle ringを持ち、胴・顔・肢の境界を跨ぐ細長いtriangleを避ける。
+2. `Influence eligibility`: Boneごとに「この頂点へ影響してよいか」を先に決める。`parent -> child`の各chain edgeへcapsule / ribbon状の領域を作り、対象alpha islandと交差させる。他branch、頭、反対側の手足はweight計算候補から除外する。
+3. `Rigid segment`: 上腕・前腕等の中央部は原則1 Bone、weight 1とし、形と幅を維持して回転・平行移動させる。
+4. `Soft joint band`: 肘、膝、肩等の短い帯だけ親子2 Boneをsmoothstep等でblendする。band幅はBone間距離と局所Shape幅から自動候補を出し、遠位へ行くほど子Bone 1へ収束させる。
+5. `Stretch policy`: 既定`off`。後続で必要性を固定fixtureにより確認した場合だけ`limited`を別Gateで比較し、Bone軸方向の上限ratioを明示する。関節を曲げるだけで長さや太さを自動変更しない。
+
+最初のGateでは新しい保存schemaやweight overrideを作らず、上記の自動生成結果を既存`skinBindings[].vertexWeights`へ確定するpure generatorとして比較する。自動領域を毎Frame再計算せず、Setup確定後は現行static正本、source変更時は`STALE`とする。結果が不足する場合だけ、領域／weightの明示編集を同じ`skinBindings`へ確定する次Stageを開く。
+
+Phase 7zはこの第一GateをGate 1=`GO`、SOL review=`A`で技術closeした。Auto Shape FILL、一Raster、一Mesh、肩→肘→手首direct chainと別branchを含むpure人体fixtureで、最寄りBoneをrigid primary、直結親子だけを短いjoint band、兄弟／別rootが同距離圏なら全生成拒否とする`chain-local-joint-v1`を固定した。45° / 90° / 135°の前腕stripでは現行distanceの幅誤差`0.1260 / 0.4359 / 0.7543px`、長さ誤差`0.7875 / 1.7647 / 2.3653px`に対し、候補のrigid区間は両方0でtriangle windingを維持した。明示`AUTO SHAPE` / `SHAPE再生成`だけ既存`skinBindings[].vertexWeights`へ接続し、generator metadataの`weightMode`で新生成を識別する。旧保存weightはload時に再生成せず、cleanなProject / 緊急checkpointもRasterを再captureせずCURRENTを維持する。全69 verifier / build、Browserの生成・Undo / Redo・checkpoint・Timeline wheel・consoleを通過した。新しいzone / override / stretch field、DQS、manual weight brushは追加していない。
+
+Phase 8aはread-only診断Gateとして、選択Boneのweight heatmap、active Raster target focus、Table Bone group / collapseを比較し、Gate 1=`GO — 選択Bone weight heatmap`とした。`meshDefinitions` / `skinBindings` / Rig treeと既存Frame Skin evaluatorからruntime projectionを導出し、保存group、Bone色辞書、History、第二Skin evaluatorを増やさない。Stage BではSetup青RIG内の一Raster / Mesh / Bone、weight 0は無塗り、微小漏れ / blend / rigidを段階化した固定6 SVG path、Futaba cream二重outline、pointer非参加、target消失時解除を接続した。全71 verifier / build / Browser、SOL review=`A`で技術closeし、Owner制作確認は台帳へ分離した。
+
+Phase 8bは後送したTable Bone group / collapseを独立Gateとする。Stage Aで既存rigid binding / 正weight Skin influenceから一意target、複数target `SHARED / CONNECTION`、targetなし`UNASSIGNED`を返すpure projectionを固定し、Inspector用Raster fallbackをgroup権威から除外した。Gate 1=`GO — A: 同一target 2 Bone以上だけ明示collapse group`。singletonは従来行、既定展開、collapse時もselectionをclearせずheaderへactive / 選択key indicatorを出す。`B: 選択targetだけ自動展開`と`C: active branch優先`は棄却 / 後送する。CanvasのBone / connectionを自動で隠すtarget focusは混ぜず、保存`boneGroupId`、Bone色辞書、Timeline selection / Historyの第二正本が必要なら`HOLD / REPLAN`とする。
+
+#### 可視化と編集候補
+
+- Setup青のRIG内にadvanced `WEIGHT` submodeを置く案を第一候補とし、直ちに4つ目の常設top-level tabを増やさない。
+- 選択Boneのweightを0〜1 heatmap、影響資格外を無着色、親子blend bandを輪郭、rigid regionを単色でCanvas上へ表示する。Mesh triangle / vertex表示と切替でき、顔等への微小な漏れも発見できることを必須にする。
+- 初期編集は自由paintより、`このchainへ含める / 除外`、joint band幅、選択頂点を`Boneのみ / 親子blend / 影響なし`へ確定する限定操作を比較する。manual brushを採る場合もnormalize、lock、1 gesture 1 History、generator lineage、再生成時の破棄確認を同時に固定する。
+- Shape zoneを第二のruntime変形正本にしない。保存する必要が生じた場合もweight生成mask / authoring情報に限定し、描画評価は既存Mesh + `skinBindings`だけを読む。
+
+#### 固定fixtureと合格条件
+
+- 一枚Raster人体: 頭、胴、左右の腕・脚がalphaで連結し、肩→肘→手首のdirect chainと別branchを含む。
+- 比較Pose: Bind、肘45° / 90° / 135°、手先の平行移動、反対方向、通常FK復帰。意図的stretchは別fixtureにする。
+- 未選択の顔・反対肢はepsilon内で不動。前腕中央の幅ratio、手先の長さ、関節輪郭、triangle反転、透明割れを計測し、current distance weightとchain-local weightを同じ入力で比較する。
+- preview / playback / onion / random seek / Bake / GIF / APNG / Project reload、Undo / Redo、CAF複製、source更新STALE、CPU / Pixiを既存一つのSkin正本で一致させる。
+- DQS、physics、自由ControlHandle、複数Meshへの自動分割、Attachment、WARPとの二重変形はこのGateへ含めない。
 
 ### 第一候補
 
@@ -474,7 +539,7 @@ Rigid Bodyの反射、摩擦、回転、sleeping、broad / narrow phaseは独立
 - overlayはdisplay-only。通常描画、export、Projectへ混ぜない。
 - advanced項目は折りたたむが、現在有効なconstraint / physicsは隠さずchip等で示す。
 - CLIP MOTIONは`RIG → MOTION → WARP`を標準順とする。未設定CAFの初回だけRIGへ案内し、再openでは最後の作業tabを尊重する。
-- `CAF / Folder`対象は横tabとホイールに加えてCanvas上のPIVOT選択で切り替える。RIGでは位置関係を読むため全PIVOTとFolder名tagを同時表示するが、parameter行は選択対象一件だけをContextual Inspectorへ表示する。
+- `CAF / Folder`対象は横tabとホイールに加えてCanvas上のPIVOT選択で切り替える。RIGでは位置関係を読むため全PIVOTを表示するが、名前tagは既定でactive常時／非active hoverとし、明示toggle時だけ全表示する。parameter行は選択対象一件だけをContextual Inspectorへ表示する。
 - CAF共通PIVOT、Folder / BONEのBind SetupはRIG、時間変化するClip / Part / Bone keyはMOTIONへ分離する。RIG PIVOTはactiveを青 / 水色、inactiveを薄いクリーム内側 + 栗茶輪郭としてSetup modeを示し、中心dragで位置、尻尾drag / wheelで初期角度を操作する。MOTIONの選択BONEは橙の中心 + 楔を維持し、中心dragで移動、楔dragで回転する。WARPはPhase 6sでCAF全体とstable Folder targetを同じdeformer契約へ接続済み。
 - PIVOT接続線は装飾ではなく`parentBoneId`の表示・編集結果とする。rigid FKでは親の移動・回転が子孫へ伝播し、子操作は親へ逆流しない。「手を動かして腕を追従」「腕を伸縮」「先端だけ変形」はIK / Stretch / Meshへ分離する。
 - PIVOTからkey併用dragで破線previewを伸ばし、別PIVOTへdropして親子接続する操作をshortcut候補とする。既存の長押し接続と接続線dragを置換せず、同じ`parentBoneId` setter、cycle検査、1 Historyへ接続する。使用keyはWARP / selection / Camera shortcut監査後に決め、touchは長押し、Escape / pointercancelはnon-mutationとする。

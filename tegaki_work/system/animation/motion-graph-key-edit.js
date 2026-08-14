@@ -16,6 +16,24 @@ export function normalizeMotionGraphEditChannel(group, channel) {
         : (channels[0]?.id || null);
 }
 
+export function readMotionGraphTransformChannel({ transform, group, channel } = {}) {
+    if (!transform || typeof transform !== 'object') {
+        return { ok: false, reason: 'transform-required' };
+    }
+    const groupId = normalizeMotionGraphGroup(group);
+    const channelId = normalizeMotionGraphEditChannel(groupId, channel);
+    if (!channelId || channelId !== channel) {
+        return { ok: false, reason: 'channel-invalid' };
+    }
+    const definition = MOTION_GRAPH_GROUPS[groupId]?.channels
+        ?.find(candidate => candidate.id === channelId);
+    const displayValue = definition?.read?.(transform);
+    if (!Number.isFinite(displayValue)) {
+        return { ok: false, reason: 'value-invalid' };
+    }
+    return { ok: true, group: groupId, channel: channelId, displayValue };
+}
+
 export function patchMotionGraphTransformChannel({
     transform,
     group,

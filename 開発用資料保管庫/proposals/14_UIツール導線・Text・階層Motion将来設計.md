@@ -75,7 +75,7 @@ Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる
 - 2026-08-11の軽量監査では、Table既定高をLane一行分だけ拡張した。CLIP MOTIONは`RIG`をSetup青、`MOTION / WARP`のactiveを橙とし、WARP内でもGRID / RADIAL / 4×4作成とGRID / FRAME Bind編集だけを明るいSetup青へ統一した。POINT / SELECT / BRUSH、key、Bake等のFrame作業は橙系を維持する。
 - 現行の大分類は`RIG → MOTION → WARP`、対象選択、mode固有設定、key操作の順で左から右に読めるため維持する。青は濃い全面塗りを避け、濃い青文字・borderと淡い青背景を第一候補とする。
 - Phase 7lでは幅依存の偶発的な折返しをやめ、上段を`FPS / FRAMES → SCOPE → LOOP / END / IN / OUT → PREVIEW / onion → Play`、下段を`Timeline zoom / LIB → DURATION → CLIP MOTION → copy / paste / group / delete → close`の明示二段へ限定整理した。
-- wrapperはruntime stateを持たず、既存ID / event / shortcut / History / model正本を維持する。header通常wheelのTimeline zoom、Lane列wheelの上下、Timeline grid wheelの左右、header空白dragも既存listenerを共有する。
+- wrapperはruntime stateを持たず、既存ID / event / shortcut / History / model正本を維持する。header通常wheelのTimeline zoom、Lane列wheelの上下、Timeline grid wheelの左右キー相当Frame±1、header空白dragも既存listenerを共有する。Timeline gridの横位置調整はSpace + dragを使う。
 - Browser 1280px相当ではpanel `960×266px`、viewport約202px、狭幅実操作では`460×266px`、row内wrap、controlはみ出し0件。実wheel `80% → 87%`、close / reopen、favicon取得を除くconsole warning / error 0件、全51 verifier、buildを通過した。
 - Setup青 / Frame作業橙とTable高266pxは維持した。Phase 7lは2026-08-12にSOL技術closeし、coarse pointer、制作Projectでのpopup重なり、pen / touchはOwner確認台帳で継続監視する。
 

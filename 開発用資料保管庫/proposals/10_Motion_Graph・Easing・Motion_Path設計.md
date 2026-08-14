@@ -1,6 +1,6 @@
 # Motion Graph・Easing・Motion Path設計
 
-更新日: 2026-08-12
+更新日: 2026-08-13
 
 ## 結論
 
@@ -111,9 +111,9 @@ Phase 7r Gate 0=`GO`。初期Sliceを既存explicit key / active一channelの値
 - POSITION / SCALEはruntime channel selectorでX / Yを明示し、active path / markerを最後に描画する。重なるkeyでもactive channelをpointer前面へ固定する。
 - ROTATIONはdegree表示からradian保存、OPACITY / BLEND Strengthはpercent表示から0..1保存へpure変換し、他channelとmetadataを維持する。
 - pointerdown後のlive preview、document captureの外release、pointerup 1 History、cancel / lost capture / Escape rollback、再生中拒否を固定した。現在Frame cursorはdisplay-onlyでmarker hitを奪わない。
-- SOL review=`A`、全58 verifier、build、Browserの5 group / tap・drag History / Undo・Redo / playback / close-reopen / console確認を通過した。build生成差分の清掃後に技術closeする。
+- SOL review=`A`、全58 verifier、build、Browserの5 group / tap・drag History / Undo・Redo / playback / close-reopen / console確認、生成物清掃を通過し、2026-08-13に技術closeした。完了記録は`Archive/phase7r.md`。
 
-残るP3拡張のうちtime moveは既存Timeline契約、複数key value dragはselection / clamp契約を別Gateで比較する。数値scrub / Canvas root Motionのcancel・no-move History不一致は、P4より先の限定bug fix候補とする。
+残るP3拡張のうちtime moveは既存Timeline契約、複数key value dragはselection / clamp契約を別Gateで比較する。数値scrub / Canvas root Motionのcancel・no-move History不一致はPhase 7vで既存Graph契約へ統一し、全62 verifier / build、SOL review=`A`で技術closeした。
 
 ### P4: Graph上の途中点追加 — 優先度B / 難度 高
 
@@ -132,12 +132,22 @@ Phase 7r Gate 0=`GO`。初期Sliceを既存explicit key / active一channelの値
 
 ペン主体では空白tap即追加より明示 `ADD POINT` modeを優先する。通常tapは選択、通常空白dragはpanまたはbox selectとする。
 
+Phase 7wはP4をguarded `ADD POINT` Modeとして実装した。現行`sampleEasingRatio()`のNewton法＋二分探索をparameter solveへ共有し、De Casteljau分割、implicit boundary materialize、HOLD / blendMode、active以外の複合parameter sample不変を非破壊planで固定した。既存12 preset×6位置のfixtureは72件中68件を正確に分割し、現行X control 0..1では正確に表せない`STRONG IN-OUT` / `CIRCULAR IN-OUT`の0.4 / 0.6位置4件を`split-control-out-of-range`でmutation前に拒否した。全63 verifier / build、SOL review=`A`で技術closeし、完了記録は`Archive/phase7w.md`。X control範囲拡張、parameter別easing、schema追加は行わない。
+
+Phase 7xはP3残件の複数key value dragをGate 0=`GO`で実装した。Timeline既存runtime selectionをGraphへ投影し、anchor選択済み時だけ同一Clip Motion keyへactive channelのdisplay deltaをatomic適用する。未選択anchorは単独、異種key selectionは維持してfilterし、partial key / clamp / no-op / duplicate Frame / 旧Project、History 1、cancel rollbackをpure planとUI adapterで固定した。全64 verifier / build、SOL review=`A`で技術closeし、完了記録は`Archive/phase7x.md`。Graph専用selection、time move、複数channel、Motion Pathは追加していない。
+
 ### P5: Overshoot / Back — 優先度B / 難度 中〜高
 
 - `x1 / x2` は0..1を維持し、`y1 / y2` だけ範囲外を許可する。
 - UIには `ALLOW OVERSHOOT` を明示する。
 - position / scale / rotationはraw eased ratio、opacity / blendStrengthは最終値をclampする。
 - 現行0..1 Projectは完全一致させる。
+
+Phase 7y Gate 0=`GO`。Y controlの安全範囲を`-1..2`へ固定し、既存clamped APIを維持したままClip Motionだけraw easing ratioを明示使用する。position / scale / rotationはOvershootし、opacity / blendStrengthは補間後の最終値を0..1へclampする。Part / Bone samplerは従来clampを維持する。
+
+`BACK IN / OUT / IN-OUT`を保存名なしの固定cubic presetへ追加し、Motion値 / Easing専用clipboardとProject round-tripで既存4値を保持する。EASING CURVEはSetup青の`ALLOW OVERSHOOT`を明示し、OFF Y=0..1 / ON Y=-1..2、Xは常に0..1。保存flagや別curve正本は追加しない。
+
+Phase 7w ADD POINTはraw比で正確に分割でき、左右local controlがX=0..1 / Y=-1..2へ収まる位置だけ成功する。表せない位置、または非active opacity / blendStrengthのclampで区間同値を失う位置はmutation前に理由付き拒否する。全65 verifier / build、SOL review=`A`で技術closeし、Browser未確認はOwner台帳へ分離した。完了記録は`Archive/phase7y.md`。Bounce / Elastic / Loop、parameter別easing、Motion Pathは未実装を維持する。
 
 ### P6: parameter別segment easing — 優先度C / 難度 非常に高
 

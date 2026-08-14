@@ -6,6 +6,7 @@ import {
 } from '../system/animation/motion-easing-clipboard.js';
 
 const custom = { type: 'cubic-bezier', x1: 0.2, y1: 0.4, x2: 0.7, y2: 0.9 };
+const backOut = { type: 'cubic-bezier', x1: 0.34, y1: 1.56, x2: 0.64, y2: 1 };
 const payload = createMotionEasingClipboardPayload({ interpolation: 'linear', easing: custom, x: 99 });
 assert.deepEqual(payload, {
     kind: 'tegaki-motion-easing',
@@ -14,6 +15,11 @@ assert.deepEqual(payload, {
     easing: custom
 });
 assert.equal('x' in payload, false, 'Motion values never enter the easing clipboard');
+assert.deepEqual(
+    createMotionEasingClipboardPayload({ interpolation: 'linear', easing: backOut }).easing,
+    backOut,
+    'Back easing stays raw in the dedicated clipboard'
+);
 
 const source = [
     { frame: 0, x: 10, interpolation: 'hold' },

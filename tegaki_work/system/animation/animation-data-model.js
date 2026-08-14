@@ -35,6 +35,8 @@ import {
     registerRigBoneDefinition,
     registerRootBoneRigidBinding,
     registerRigPartDefinition,
+    removeRigDefinitionTargets,
+    removeRigMotionTargets,
     removeRigBoneKey,
     removeRigPartKey,
     normalizeRigDefinition,
@@ -1554,7 +1556,7 @@ export class TimelineModel {
     /**
      * アセットの内部レイヤーを削除
      */
-    removeClipAssetInternalLayer(assetId, layerId) {
+    removeClipAssetInternalLayer(assetId, layerId, options = {}) {
         const asset = this.getClipAsset(assetId);
         if (!asset) return { ok: false, reason: 'asset-not-found' };
 
@@ -1576,7 +1578,7 @@ export class TimelineModel {
         }
 
         const rigPartIds = getRigPartIdsForInternalLayers(asset.rigDefinition, deleteIds);
-        if (rigPartIds.length > 0) {
+        if (rigPartIds.length > 0 && options.removeRigDependencies !== true) {
             return { ok: false, reason: 'rig-part-subtree-unsupported', rigPartIds };
         }
         const folderDeformerRefs = [];
@@ -1606,6 +1608,56 @@ export class TimelineModel {
         const index = asset.internalLayers.findIndex(l => l.id === layerId);
         if (index === -1) return { ok: false, reason: 'layer-not-found' };
 
+        const removedMeshIds = new Set(getRasterMeshIdsForInternalLayers(asset.meshDefinitions, deleteIds));
+        const getBindingBoneIds = binding => new Set((binding?.vertexWeights || [])
+            .flatMap(weight => weight?.influences || [])
+            .map(influence => influence?.boneId)
+            .filter(Boolean));
+        const removedSkinBoneIds = new Set((asset.skinBindings || [])
+            .filter(binding => removedMeshIds.has(binding?.meshId))
+            .flatMap(binding => [...getBindingBoneIds(binding)]));
+        const remainingSkinBoneIds = new Set((asset.skinBindings || [])
+            .filter(binding => !removedMeshIds.has(binding?.meshId))
+            .flatMap(binding => [...getBindingBoneIds(binding)]));
+        const rigidBoneIds = new Set((asset.rigDefinition?.rigidBindings || [])
+            .map(binding => binding?.boneId)
+            .filter(Boolean));
+        const requestedMeshBoneIds = new Set([...removedSkinBoneIds].filter(boneId => (
+            !remainingSkinBoneIds.has(boneId) && !rigidBoneIds.has(boneId)
+        )));
+        // 削除対象外Boneの祖先として残るMesh Boneは共有構造なので保持する。
+        let narrowed = true;
+        while (narrowed) {
+            narrowed = false;
+            (asset.rigDefinition?.bones || []).forEach(bone => {
+                if (!bone?.parentBoneId
+                    || requestedMeshBoneIds.has(bone.boneId)
+                    || !requestedMeshBoneIds.has(bone.parentBoneId)) return;
+                requestedMeshBoneIds.delete(bone.parentBoneId);
+                narrowed = true;
+            });
+        }
+        const rigidRemovalBoneIds = new Set((asset.rigDefinition?.rigidBindings || [])
+            .filter(binding => rigPartIds.includes(binding?.partId))
+            .map(binding => binding?.boneId)
+            .filter(Boolean));
+        const sharedRigidBoneIds = [...rigidRemovalBoneIds]
+            .filter(boneId => remainingSkinBoneIds.has(boneId));
+        if (sharedRigidBoneIds.length > 0) {
+            return {
+                ok: false,
+                reason: 'rig-bone-used-by-remaining-skin',
+                boneIds: sharedRigidBoneIds
+            };
+        }
+        const rigRemoval = options.removeRigDependencies === true
+            ? removeRigDefinitionTargets(asset.rigDefinition, {
+                partIds: rigPartIds,
+                boneIds: [...requestedMeshBoneIds]
+            })
+            : { ok: true, changed: false, value: asset.rigDefinition, partIds: [], boneIds: [] };
+        if (!rigRemoval.ok) return rigRemoval;
+
         const removedLayers = asset.internalLayers.filter(layer => deleteIds.has(layer.id));
         asset.internalLayers = asset.internalLayers.filter(layer => !deleteIds.has(layer.id));
         const removedSkinning = removeRasterSkinningTargets(
@@ -1615,6 +1667,18 @@ export class TimelineModel {
         );
         asset.meshDefinitions = removedSkinning.meshDefinitions;
         asset.skinBindings = removedSkinning.skinBindings;
+        asset.rigDefinition = rigRemoval.value;
+        if (rigRemoval.changed) {
+            this.tracks.forEach(track => {
+                (track.cels || []).forEach(clip => {
+                    if (clip.assetId !== asset.id) return;
+                    clip.rigMotion = removeRigMotionTargets(clip.rigMotion, {
+                        partIds: rigRemoval.partIds,
+                        boneIds: rigRemoval.boneIds
+                    });
+                });
+            });
+        }
         asset.internalLayers.forEach(layer => {
             if (layer.parentLayerId && deleteIds.has(layer.parentLayerId)) {
                 layer.parentLayerId = null;
@@ -1633,7 +1697,16 @@ export class TimelineModel {
             asset.internalLayers.push(fallbackLayer);
         }
         asset.updatedAt = Date.now();
-        return { ok: true, asset, layer: removedLayers[0], removedLayers, fallbackLayer };
+        return {
+            ok: true,
+            asset,
+            layer: removedLayers[0],
+            removedLayers,
+            fallbackLayer,
+            removedRigPartIds: rigRemoval.partIds,
+            removedRigBoneIds: rigRemoval.boneIds,
+            removedMeshIds: removedSkinning.removedMeshIds
+        };
     }
 
     duplicateClipAssetInternalLayer(assetId, layerId) {

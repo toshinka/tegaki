@@ -79,7 +79,10 @@ export class ProjectManager {
         ) {
             const saveClipStartedAt = this._now();
             const beforeSaveCollection = animationTable.model.collectUnreferencedDrawingSnapshots?.() || null;
-            animationTable._saveSelectedClipFromWorkingLayers?.({ force: true });
+            // Project / emergency checkpointで表示adapterを無条件再captureすると、
+            // 内容が同じでもDrawingSnapshot IDが変わり、自動Meshのsourceだけが
+            // STALEになる。通常のdirty判定を通し、未確定Rasterがある時だけ保存する。
+            animationTable._saveSelectedClipFromWorkingLayers?.();
             const afterSaveCollection = animationTable.model.collectUnreferencedDrawingSnapshots?.() || null;
             if (profile) {
                 profile.animation.snapshotCollection = {

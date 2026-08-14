@@ -342,6 +342,10 @@ export class RigPivotOverlay {
         connections.classList.add('rig-pivot-overlay__connections');
         items.forEach(item => {
             if (!item.parentId) return;
+            const outline = document.createElementNS(namespace, 'line');
+            outline.classList.add('rig-pivot-overlay__connection-outline');
+            outline.dataset.rigChildId = item.id;
+            connections.appendChild(outline);
             const line = document.createElementNS(namespace, 'line');
             line.classList.add('rig-pivot-overlay__connection');
             line.dataset.rigChildId = item.id;
@@ -361,6 +365,7 @@ export class RigPivotOverlay {
             group.classList.add('rig-pivot-overlay__pivot');
             group.dataset.rigPivotId = item.id;
             group.innerHTML = `
+                <line class="rig-pivot-overlay__stem-outline"></line>
                 <line class="rig-pivot-overlay__stem"></line>
                 <path class="rig-pivot-overlay__tail" d="M 0 -9 L 6 5 L 0 10 L -6 5 Z"></path>
                 <circle class="rig-pivot-overlay__root-hit" r="18"></circle>
@@ -384,15 +389,18 @@ export class RigPivotOverlay {
         group.classList.toggle('is-active', item.active === true);
         group.classList.toggle('is-candidate', item.configured !== true);
         group.classList.toggle('is-caf', item.kind === 'caf');
+        group.classList.toggle('is-label-hidden', item.showLabel === false);
         // 重なったPIVOTではtarget tabで選んだactive要素をhit-testの最前面にする。
         if (item.active === true && group !== this.element.lastElementChild) {
             this.element.appendChild(group);
         }
-        const stem = group.querySelector('.rig-pivot-overlay__stem');
-        stem.setAttribute('x1', String(item.root.x));
-        stem.setAttribute('y1', String(item.root.y));
-        stem.setAttribute('x2', String(item.tail.x));
-        stem.setAttribute('y2', String(item.tail.y));
+        const stems = group.querySelectorAll('.rig-pivot-overlay__stem, .rig-pivot-overlay__stem-outline');
+        stems.forEach(stem => {
+            stem.setAttribute('x1', String(item.root.x));
+            stem.setAttribute('y1', String(item.root.y));
+            stem.setAttribute('x2', String(item.tail.x));
+            stem.setAttribute('y2', String(item.tail.y));
+        });
         const tail = group.querySelector('.rig-pivot-overlay__tail');
         tail.setAttribute('transform', `translate(${item.tail.x} ${item.tail.y}) rotate(${angle})`);
         const root = group.querySelector('.rig-pivot-overlay__root');
@@ -407,7 +415,6 @@ export class RigPivotOverlay {
         const text = group.querySelector('.rig-pivot-overlay__tag text');
         const rect = group.querySelector('.rig-pivot-overlay__tag rect');
         const tag = group.querySelector('.rig-pivot-overlay__tag');
-        tag.style.display = item.showLabel === false ? 'none' : '';
         text.textContent = item.label || 'PIVOT';
         text.setAttribute('x', String(item.root.x + 13));
         text.setAttribute('y', String(item.root.y - 11));

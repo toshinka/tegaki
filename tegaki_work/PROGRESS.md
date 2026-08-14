@@ -1,10 +1,10 @@
 # Tegaki Progress
 
-更新日: 2026-08-12
+更新日: 2026-08-14
 
 ## 現在地
 
-- Phase 5a〜7pを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。
+- Phase 5a〜8aを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -32,15 +32,28 @@
 - Phase 7fはWARP Bind Setupの`FRAME / CORNER / EDGE`操作分離としてcloseした。一corner／一edgeのProject deltaをtopology比率で配るpure helper、既存rebase、runtime segmented control、edge midpoint handleを接続し、GRID toolとBind submodeだけを既存deformer Bind青へ変更した。全38 verifier、Browserの横長8×8、Owner実機で回転不変、青semantic、FRAME / CORNER / EDGEを受入れた。fixed 4×4、Folder、Project reload、playback / onion、Bake / GIF / APNG、Shift + wheel実modifier、pen / touchは継続監視とする。
 - Phase 7gはWARP `RADIAL` topologyとしてOwner受入でcloseした。center + 16 segments × 3 ringsの決定的な49点／80 triangleを既存free Control Meshへ保存し、新規作成だけの青い`RADIAL`入口、POINT / SELECT、1 Historyへ接続した。free topologyではFRAME / CORNER / EDGEをdisabledにし、新しい保存flag、renderer分岐、既存key変換を追加していない。変更34 JS / mjsのnode check、全39 verifier、build、Browser実操作、Owner実機確認を通過した。
 - Phase 7hはAuto Shape alpha contour foundationから限定production接続までStage A〜E、SOL review 1〜5=`A`、Owner軽量実機受入を完了してcloseした。4-connected contour、hole / island FILL、topology検査付き輪郭削減、透明guard、256 vertex budgetを既存Mesh / Skinへ接続した。Setup青RIG内で`AUTO GRID`と`AUTO SHAPE`が並存し、最大2 weight、CURRENT / STALE、明示再生成、CAF asset一操作一History、CAF / Raster複製、Project round-tripを既存正本で維持する。Browserで`SHAPE → GRID → Undo / Redo`、Raster追記STALE、再生成、Mesh Bone key、playback、onion、console error 0件を確認した。LINE、manual weight / topology、WARP共有は未実装。完了記録は`開発用資料保管庫/Archive/phase7h.md`。
-- Phase 7h close前後のPhase横断小改修として、通常Folderの「複製」を子孫Folder / Raster込みの既存`layer-block`コピー正本へ統合した。Animation Table上部headerの通常wheelはTimeline zoom、Lane列wheelは上下、Timeline grid wheelは左右を維持する。CanvasのH / Shift+H反転はcanvas全体中心ではなく、現在viewport中心下のProject座標を固定する。入れ子Folder複製とUndo / Redo、header wheel `87% → 100%`、拡大後H反転、console error 0件をBrowserで確認し、全45 verifier / buildを通過した。
+- Phase 7h close前後のPhase横断小改修として、通常Folderの「複製」を子孫Folder / Raster込みの既存`layer-block`コピー正本へ統合した。Animation Table上部headerの通常wheelはTimeline zoom、Lane列wheelは上下を維持し、Timeline grid wheelはPhase 8a入口で左右キー正本と同じFrame±1へ変更した。CanvasのH / Shift+H反転はcanvas全体中心ではなく、現在viewport中心下のProject座標を固定する。入れ子Folder複製とUndo / Redo、header wheel `87% → 100%`、拡大後H反転、console error 0件をBrowserで確認し、全45 verifier / buildを通過した。
 - Animation Table / CLIP MOTIONの軽量導線監査では、Table既定高をLane一行分だけ拡張し、WARPのGRID / RADIAL / 4×4作成、GRID / FRAME Bind編集を明るいSetup青へ統一した。続くPhase 7lでheaderを明示二段へ限定整理し、上段`FPS / FRAMES → SCOPE → LOOP / END / IN / OUT → PREVIEW / onion → Play`、下段`Timeline zoom / LIB → DURATION → CLIP MOTION → copy / paste / group / delete → close`へ固定した。既存ID / event / wheel三領域 / drag / model / History / saveは変更していない。
 - Phase 7i〜7oは各Gate=`GO`、実装Stage、最終SOL review=`A`、関連verifier / node check / build / Browser確認を再監査し、2026-08-12のOwner指示に基づきSOL技術closeした。LINE / Ribbon、Deformer三形状SELECT、Text to Raster、Table二段header、read-only Motion Graph、Resize直接framing、Motion Easing 12 presetの保存・History境界は変更していない。制作Project、長尺CAF、reload / export、pen / touch等のOwner未確認項目は`tegaki_work/OWNER_VERIFICATION_BACKLOG.md`へ分離し、不具合が見つかった場合は閉じたPhaseを暗黙に再OPENせず限定bug fixまたは新Phaseで扱う。完了記録は`開発用資料保管庫/Archive/phase7i.md`〜`phase7o.md`。
 - Phase 7p Motion Easing Clipboardは、Motion値clipboardと分離したruntime tagged payloadでHOLD / LINEAR / custom cubicだけをCOPYし、現在またはCtrl / Cmd複数選択Motion keyへ1 Historyで原子的に貼り付ける。HOLDはCurve入力read-onlyのままclipboard操作を許可し、terminal混在は全体を拒否する。SOL review 1=`A`、全57 verifier、build、BrowserのHOLD copy / paste、Undo / Redo、terminal拒否、console 0件で技術closeした。完了記録は`開発用資料保管庫/Archive/phase7p.md`。
 - Phase 7q Motion Graph Key Navigation / Easing Bridgeは、explicit Motion key markerのmouse / keyboard seekと既存EASING CURVEへの明示導線を追加し、SOL review=`A`で技術closeした。Graph値編集、Motion Path、manual Mesh、Project / History schema、Graph専用selection、sampler / preview / exportは変更していない。全57 verifier、build、Browserの5 group、History非増加、HOLD read-only、terminal / playback無効、Graph / Curve再開、console 0件を通過した。完了記録は`開発用資料保管庫/Archive/phase7q.md`。
-- Phase 7rはGate 0=`GO`で、既存explicit Motion keyのactive一channel値dragを既存複合key mutationへ接続した。POSITION / SCALE channel selector、degree / percent単位変換、live preview、pointerup 1 History、cancel rollback、再生中拒否を固定し、Motion time move、key追加、複数key、Motion Path、保存schemaは変更していない。SOL review=`A`、全58 verifier、build、Browserの5 group / Undo・Redo / playback / close-reopen / console確認まで完了した。追跡済みbuild基準は復元済みだが、新規生成`dist/assets` 5件とBrowser確認用Vite log 2件の清掃が実行環境の承認制限で残るため、PhaseはOPENのまま`task-codex/phase7r.md`に保持する。
+- Phase 7rはGate 0=`GO`で、既存explicit Motion keyのactive一channel値dragを既存複合key mutationへ接続した。POSITION / SCALE channel selector、degree / percent単位変換、live preview、pointerup 1 History、cancel rollback、再生中拒否を固定し、Motion time move、key追加、複数key、Motion Path、保存schemaは変更していない。SOL review=`A`、全58 verifier、build、Browserの5 group / Undo・Redo / playback / close-reopen / console確認まで完了した。build/.viteの追跡済み基準を復元し、生成asset 5件とVite log 2件を清掃したため、2026-08-13に技術closeして`Archive/phase7r.md`へ移した。Owner制作確認は台帳へ分離する。
+- Phase 7sはPixiJS 8.17.0→8.19.0互換更新をWebGPU採用と分離し、package / lock / runtime固定、公式Agent Skills参照境界、affected API自動Gateを追加した。全59 verifier、production build、Vite devのESM import graph 151 module / HTTP失敗0 / runtime 8.19.0、生成物清掃を通過し、SOL review=`A`で2026-08-13に技術closeした。Codex側Browser制御transportがTegaki起動前に閉じたため、WebGL / 描画 / mask / WARP / exportのBrowser実操作は通過済みとせずOwner確認台帳へ明示分離した。完了記録は`開発用資料保管庫/Archive/phase7s.md`。
+- Phase 7t Codex Multi-Model / External Web Review WorkflowはStage 0〜2、project-scoped `tegaki_luna_worker`、AGENTS規則、詳細workflow、External Review templateを完了した。LUNA / MAXのread-only probe=`A`、workspace-write限定pilot、GitHubURL鮮度verifier、全60 verifier、build、生成物清掃を通過し、SOL最終review=`A`で技術closeした。nested CLIはtoken / 待ち時間が重いため導入・再現検査へ限定し、新runのapp直接spawnを優先する。主task model自動変更、複数write agent、外部report自動採用は行わない。完了記録は`開発用資料保管庫/Archive/phase7t.md`。
+- Phase 7u Vite / Build Tool Security PatchはVite 8.0.16 exact、PostCSS 8.5.26、Nanoid 3.3.18へ限定更新し、`npm audit` high 3 / total 3を0件へした。PixiJS 8.19.0、Vite script、application production sourceを維持し、全61 verifier、build、dev serverの`/` / Vite client / core initializer HTTP 200、生成物清掃を通過してSOL review=`A`で技術closeした。完了記録は`開発用資料保管庫/Archive/phase7u.md`。
+- Phase 7vはMotion数値scrubとCanvas root Motionを既存Motion Graphの`changed / mutated / rollback`契約へ揃えた。tap / step 0 / micro moveはHistory 0、実変更pointerupはHistory 1、pointercancel / lost capture / Escapeと元値復帰はrollbackする。pure同値比較、限定verifier、全62 verifier、build、生成物清掃を通過し、SOL review=`A`で技術closeした。Browser制御transportがpage操作前に閉じたためgesture実操作はOwner確認台帳へ分離した。完了記録は`開発用資料保管庫/Archive/phase7v.md`。
+- Phase 7wはMotion Graph途中点追加をguarded `ADD POINT` Modeとして実装した。既存Bezier solverを共有し、De Casteljau分割、implicit boundary materialize、HOLD / blendMode、active以外の全parameter sample不変をpure planで固定した。既存12 preset×6位置は72件中68件成功、現行X control 0..1で正確に表せない`STRONG IN-OUT` / `CIRCULAR IN-OUT`中央4件はmutation前に理由付き拒否する。全63 verifier、build、SOL review=`A`で技術closeし、Browser未確認はOwner台帳へ分離した。完了記録は`Archive/phase7w.md`。
+- Phase 7xはGate 0=`GO`で、既存runtime Timeline selectionをGraphへ投影し、選択済みanchorだけ同一Clip Motion keyのactive一channelをdisplay deltaでatomic編集する。未選択anchorは従来どおり単独、異種key選択は維持してfilterする。partial key / clamp / no-op / duplicate Frame / old Projectをpure planで固定し、Ctrl / Cmd toggle、橙ring、History 1、cancel rollbackへ接続した。全64 verifier、build、SOL review=`A`で技術closeし、Browser未確認はOwner台帳へ分離した。完了記録は`Archive/phase7x.md`。
+- Phase 7yはGate 0=`GO`でMotion Easing Overshoot / Backを実装した。X controlは0..1、Y controlは-1..2、Clip Motionだけraw ratio、opacity / blendStrengthは補間後clamp、Part / Boneは従来clampを維持する。Back三preset、clipboard / Project round-trip、Setup青`ALLOW OVERSHOOT`、標準0..1帯、ADD POINT exact split / 理由付き拒否を固定し、全65 verifier、build、SOL review=`A`で技術closeした。Browser制御transportで未通過の実操作はOwner台帳へ分離した。完了記録は`Archive/phase7y.md`。
+- Phase 7zは一枚Raster人体の`Chain-local Joint Skin`安全Gateを技術closeした。最寄りBoneのrigid領域、直結親子だけの短いjoint band、曖昧branch / jointの非mutation拒否をpure helperへ固定し、明示`AUTO SHAPE`だけ`weightMode: chain-local-joint-v1`へ接続した。45° / 90° / 135°stripで現行distanceより幅・長さ誤差を改善し、branch外weight 0、triangle winding、最大2 normalized weightを通過した。cleanな緊急checkpointがRasterを強制再captureしてMeshをSTALE化する既存不整合も通常dirty判定へ戻した。全69 verifier、build、Browserの`SHAPE JOINT`、Undo / Redo、checkpoint後CURRENT、Timeline grid wheel、console 0件を通過し、SOL review=`A`。Owner制作確認は台帳へ分離し、完了記録は`Archive/phase7z.md`。
+- Phase 7z入口でAnimation Tableのdominant-axis wheel routingを固定し、Root Raster方式が成立済みのCAFへ追加した直下Rasterだけ初期Part / Boneを継承するようにした。Layer削除は専有Rig / Motion / Mesh / Skinを明示cascadeし、共有Boneと外部子Rigは理由付き拒否する。多Bone Canvasは名前AUTO / ON、hover名、明色underlayへ限定改善し、Layer別Mesh Bone groupとTable折りたたみはproposal 15の後続Gateへ分離した。Stage A baselineでは現行global distanceがhead頂点にも別branchの第2weightを配ることをpure fixtureで再現した。
+- Phase 8aは選択Raster / Mesh / Boneのread-only weight診断をSetup青RIG内へ接続し、SOL review=`A`で技術closeした。既存`skinBindings`とFrame Skin evaluatorだけからweight 0 / 微小漏れ / blend / rigidを導出し、固定6 SVG path、Futaba cream二重outline、pan / zoom時group matrix、pointer非参加、target消失時解除を固定した。全71 verifier、変更JSの`node --check`、build、Browserの生成前disabled、ON / OFF、target / tab切替、Table close、console 0件を通過した。Owner制作確認は台帳へ分離し、active Raster focusとTable group / collapseはPhase 8bへ送った。
+- Phase 8bはAnimation Tableの多Bone表示密度Gateを技術closeした。rigid binding / 正weight Skin influenceから一意target、複数target `SHARED / CONNECTION`、targetなし`UNASSIGNED`をpure分類し、同一target 2 Bone以上だけruntime collapse見出しを左右Tableへ接続した。singletonは従来行、既定展開、active Bone / Ctrl・Cmd選択KEYを同時通知し、selection / History / Project / Timeline modelを変更しない。全73 verifier、変更JSの`node --check`、build、Browserのcollapse / 再展開 / selection保持 / History不変を通過し、SOL review=`A`。Owner制作確認は台帳へ分離した。
+- 現行Phase 8cは`Limited Skin Influence Correction Gate`。既存`skinBindings[].vertexWeights`を唯一の評価正本とし、`chainへ含める / 除外`、joint band幅の限定再生成、選択頂点の離散補正を比較する。Stage A / Gate前はproduction編集を行わず、自由paint brush、第二Shape zone正本、multiple Mesh、DQS、stretch、WARP共有へ広げない。
 - `ClaudeReview/rig-mesh-evaluation-and-followup.md`を現行コードへ照合した。Auto Line拒否toastへ別Raster分離 / 線整理 / AUTO SHAPE等の次操作を追加し、Setup青をpopup内RIG / MESH static Setup actionへ使える境界をUI/CSSガイドへ明記した。実受理率、異種generator誤置換、再生成HistoryはOwner確認台帳へ置き、manual weight補正と分岐Ribbon自動分割は第二正本・複数Mesh境界を先に決める別Gateとしてproposal 15へ積んだ。
-- Web外部AI向け`tegaki_work/GitHubURL.txt`を現行正本へ同期した。main push後に、必読順、Phase 7i〜7qの完了記録、現行Phase 7rとOwner確認台帳、Phase 6v〜7h経緯、現行proposal、Rig / Mesh外部follow-up、LINE / SELECT / Text / Table二段header / Motion Graph / Resize Direct Framing / Motion Easing preset・clipboard・Graph値編集のpure・UI adapterとverifierをRaw URLで辿れる。全168 URLはローカル存在照合で欠損0・重複0。navigationであり、`TEGAKI.md` / PROGRESS / 現行Phase指示書より上位の正本にはしない。
-- proposalは現行10文書へ整理した。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。外部AI原案、レビュー、整理前長文、解決済み監査は`proposals/過去計画（アイデアのサルベージ時に使う。基本読み込まない）/`へ原文保存している。
+- Owner制作操作で、一枚の人物Raster + `AUTO SHAPE` + 11 Mesh BONEでも肘から腕を曲げ、手足を独立操作できることを確認した。一方、全Bone距離上位2本weightによる顔への影響漏れと、LBS関節blendによる腕幅／長さの変化を確認した。既存`skinBindings`を唯一の正本とする`Chain-local Joint Skin`（branch別影響資格、肢内部weight 1、短い関節band、既定stretch off）をproposal 15へ積み、Phase 7yへは混ぜない。
+- Web外部AI向け`tegaki_work/GitHubURL.txt`を現行正本へ同期した。main push後に、Phase 7i〜8bの完了記録、現行Phase 8cとOwner確認台帳、Motion / Rig / Mesh proposal、外部follow-up、PixiJS 8.19 / Codex公式資料、multi-model workflow / worker / verifier / review templateを辿れる。local欠損0・重複0をverifierで固定する。navigationであり、`TEGAKI.md` / PROGRESS / 現行Phase指示書より上位の正本にはしない。
+- proposalは現行13文書。Phase 7tで実装済みのproposal 16はArchiveへ移し、運用正本を`tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`とした。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。
 
 ## 完了基盤の要約
 
@@ -108,19 +121,25 @@
 1. `AGENTS.md`
 2. `TEGAKI.md`
 3. 本書
-4. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
-5. `開発用資料保管庫/Archive/phase7q.md`
-6. `開発用資料保管庫/Archive/phase7p.md`
-7. `開発用資料保管庫/Archive/phase7o.md`
-8. `開発用資料保管庫/Archive/phase7i.md`
-9. `開発用資料保管庫/proposals/00_計画索引.md`
-10. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
-11. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
-12. `開発用資料保管庫/proposals/10_Motion_Graph・Easing・Motion_Path設計.md`
-13. `開発用資料保管庫/proposals/12_Camera_Frame・Resize_UI将来設計.md`
-14. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
+4. `task-codex/phase8c.md`
+5. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
+6. `開発用資料保管庫/Archive/phase8b.md`
+7. `開発用資料保管庫/Archive/phase8a.md`
+7. `開発用資料保管庫/Archive/phase7z.md`
+8. `開発用資料保管庫/Archive/phase7y.md`
+9. `開発用資料保管庫/Archive/phase7x.md`
+10. `開発用資料保管庫/Archive/phase7w.md`
+11. `開発用資料保管庫/Archive/phase7v.md`
+12. `開発用資料保管庫/proposals/00_計画索引.md`
+13. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
+14. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
+15. `開発用資料保管庫/proposals/10_Motion_Graph・Easing・Motion_Path設計.md`
+16. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
+17. `開発用資料保管庫/proposals/12_Camera_Frame・Resize_UI将来設計.md`
+18. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
+19. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
 
-Phase 7i〜7qはSOL技術close済み。Phase 7rは実装・review・Browser確認まで完了し、untracked生成物7件（asset 5 / log 2）の清掃後に技術closeする。次候補は、今回の監査で見つかった数値scrub / Canvas root Motionのcancel・no-move History統一を小さなbug fix GateとしてP4より先に比較する。P4の途中点追加、Motion Path、manual Meshへ自動で広げない。
+Phase 7i〜8bはSOL技術close済み。Phase 7s / 7v / 7w / 7x / 7y / 7z / 8a / 8bのOwner制作実操作は確認台帳へ分離した。現行Phase 8cは既存Skinへの限定補正候補を比較するGateであり、Gate前にproduction編集、自由weight brush、第二weight正本、multiple Mesh、DQS、stretch、WARP共有へ広げない。
 
 ## 資料
 
@@ -169,4 +188,14 @@ Phase 7i〜7qはSOL技術close済み。Phase 7rは実装・review・Browser確�
 - Phase 7c移行記録: `開発用資料保管庫/Archive/PHASE7C_HANDOFF.md`
 - 整理前Progress全文: `開発用資料保管庫/Archive/PROGRESS_ARCHIVE_2026-07-28.md`
 - 現行proposal索引: `開発用資料保管庫/proposals/00_計画索引.md`
-- 現行Phase: `task-codex/phase7r.md`（Stage A / B、SOL review=`A`、Browser完了。build生成差分の清掃待ち）
+- Phase 7t完了: `開発用資料保管庫/Archive/phase7t.md`
+- Phase 7u完了: `開発用資料保管庫/Archive/phase7u.md`
+- Phase 7v完了: `開発用資料保管庫/Archive/phase7v.md`
+- Phase 7w完了: `開発用資料保管庫/Archive/phase7w.md`
+- Phase 7x完了: `開発用資料保管庫/Archive/phase7x.md`
+- Phase 7y完了: `開発用資料保管庫/Archive/phase7y.md`
+- Phase 7z完了: `開発用資料保管庫/Archive/phase7z.md`
+- Phase 8a完了: `開発用資料保管庫/Archive/phase8a.md`
+- Phase 8b完了: `開発用資料保管庫/Archive/phase8b.md`
+- Multi-Model運用正本: `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
+- 現行Phase: `task-codex/phase8c.md`（Limited Skin Influence Correction Gate）

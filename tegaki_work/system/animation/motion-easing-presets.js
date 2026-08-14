@@ -12,7 +12,10 @@ const PRESETS = Object.freeze({
     'sine-in-out': Object.freeze({ type: 'cubic-bezier', x1: 0.37, y1: 0, x2: 0.63, y2: 1 }),
     'circular-in': Object.freeze({ type: 'cubic-bezier', x1: 0.55, y1: 0, x2: 1, y2: 0.45 }),
     'circular-out': Object.freeze({ type: 'cubic-bezier', x1: 0, y1: 0.55, x2: 0.45, y2: 1 }),
-    'circular-in-out': Object.freeze({ type: 'cubic-bezier', x1: 0.85, y1: 0, x2: 0.15, y2: 1 })
+    'circular-in-out': Object.freeze({ type: 'cubic-bezier', x1: 0.85, y1: 0, x2: 0.15, y2: 1 }),
+    'back-in': Object.freeze({ type: 'cubic-bezier', x1: 0.36, y1: 0, x2: 0.66, y2: -0.56 }),
+    'back-out': Object.freeze({ type: 'cubic-bezier', x1: 0.34, y1: 1.56, x2: 0.64, y2: 1 }),
+    'back-in-out': Object.freeze({ type: 'cubic-bezier', x1: 0.68, y1: -0.6, x2: 0.32, y2: 1.6 })
 });
 
 function freezePresetGroup(label, entries) {
@@ -42,6 +45,11 @@ export const MOTION_EASING_PRESET_GROUPS = Object.freeze([
         { value: 'circular-in', label: 'CIRCULAR IN' },
         { value: 'circular-out', label: 'CIRCULAR OUT' },
         { value: 'circular-in-out', label: 'CIRCULAR IN-OUT' }
+    ]),
+    freezePresetGroup('BACK', [
+        { value: 'back-in', label: 'BACK IN' },
+        { value: 'back-out', label: 'BACK OUT' },
+        { value: 'back-in-out', label: 'BACK IN-OUT' }
     ])
 ]);
 

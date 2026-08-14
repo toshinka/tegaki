@@ -397,6 +397,25 @@ assert.equal(
 );
 assert.equal(rigAsset.internalLayers.length, internalLayerCount, 'blocked operations do not mutate asset');
 
+const cascadeModel = new TimelineModel(rigModel.serialize());
+const cascadeRemoved = cascadeModel.removeClipAssetInternalLayer(
+    rigAsset.id,
+    'line-layer',
+    { removeRigDependencies: true }
+);
+assert.equal(cascadeRemoved.ok, true, 'explicit Layer delete cascade succeeds');
+assert.deepEqual(cascadeRemoved.removedRigPartIds, ['line-layer'], 'deleted Layer Part is reported');
+assert.equal(
+    cascadeModel.getClipAsset(rigAsset.id).rigDefinition.parts.some(part => part.partId === 'line-layer'),
+    false,
+    'explicit cascade removes static Part'
+);
+assert.equal(
+    cascadeModel.getClipById(rigClip.id).rigMotion.partTracks.some(track => track.partId === 'line-layer'),
+    false,
+    'explicit cascade removes Clip-local Part track'
+);
+
 const frozenRig = sampleClipBakeState(rigClip, 7);
 assert.equal(frozenRig.rigMotion.partTracks.length, 2, 'Bake retains Part tracks');
 frozenRig.rigMotion.partTracks.forEach(track => {
