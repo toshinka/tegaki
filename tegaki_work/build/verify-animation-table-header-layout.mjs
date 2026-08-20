@@ -64,4 +64,15 @@ assert.match(source, /const ANIMATION_TABLE_DEFAULT_HEIGHT = 266;/);
 assert.match(source, /Math\.abs\(size\.height - 260\)/);
 assert.match(source, /Math\.abs\(size\.height - 240\)/);
 
-console.log('verify-animation-table-header-layout: explicit rows, semantic order, narrow wrap, wheel and height migration OK');
+const scopeStyle = source.match(/\.anim-scope-btn\s*\{[\s\S]*?\}/)?.[0] || '';
+assert.ok(scopeStyle, 'SCOPE control style exists');
+assert.match(scopeStyle, /opacity:\s*0\.68;/,
+    'actionable inactive SCOPE controls remain above the normal text contrast gate');
+const scopeFocusStyle = source.match(/\.anim-scope-btn:focus-visible\s*\{[\s\S]*?\}/)?.[0] || '';
+assert.ok(scopeFocusStyle, 'SCOPE focus-visible style exists');
+assert.match(scopeFocusStyle, /outline:\s*2px solid var\(--futaba-maroon\);/,
+    'SCOPE keyboard focus uses the Futaba palette instead of the browser default');
+assert.match(scopeFocusStyle, /opacity:\s*1;/,
+    'focused SCOPE control is not presented as disabled');
+
+console.log('verify-animation-table-header-layout: explicit rows, semantic order, narrow wrap, contrast, wheel and height migration OK');
