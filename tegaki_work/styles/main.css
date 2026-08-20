@@ -8,8 +8,8 @@
     --futaba-medium: #b8706b;
     --futaba-light-medium: #d4a8a0;    --futaba-cream: #f0e0d6; 
     --futaba-background: #ffffee;
-    --text-primary: #2c1810; 
-    --text-secondary: #5d4037; 
+    --text-primary: #800000;
+    --text-secondary: #9c3835;
     --text-inverse: #ffffff;
     --active-border: #ff8c42;
     --deformer-pose-line: var(--active-border);
@@ -4227,6 +4227,7 @@ canvas {
 
 .anim-rig-view-controls {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
     gap: 5px;
@@ -4249,6 +4250,58 @@ canvas {
 
 .anim-rig-key-btn.anim-rig-weight-toggle.active {
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--deformer-bind-line) 34%, transparent);
+}
+
+.anim-rig-weight-correction-toggle:not(:disabled),
+.anim-rig-key-btn.anim-rig-weight-correction-toggle.active {
+    border-color: var(--deformer-bind-line);
+    color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 13%, var(--futaba-cream));
+}
+
+.anim-rig-weight-brush-toggle:not(:disabled),
+.anim-rig-key-btn.anim-rig-weight-brush-toggle.active {
+    border-color: var(--deformer-bind-line);
+    color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 13%, var(--futaba-cream));
+}
+
+.anim-rig-weight-correction-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--deformer-bind-point);
+}
+
+.anim-rig-weight-correction-actions[hidden] {
+    display: none;
+}
+
+.anim-rig-weight-brush-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--deformer-bind-point);
+}
+
+.anim-rig-weight-brush-controls[hidden] {
+    display: none;
+}
+
+.anim-rig-weight-brush-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 7px;
+}
+
+.anim-rig-weight-brush-controls input {
+    width: 38px;
+    min-width: 38px;
+    height: 20px;
+    color: var(--deformer-bind-point);
+    border-color: var(--deformer-bind-line);
+    background: var(--futaba-background);
 }
 
 .anim-rig-weight-summary {
@@ -4400,6 +4453,31 @@ canvas {
     color: var(--futaba-cream);
     border-color: var(--deformer-bind-point);
     background: var(--deformer-bind-point);
+}
+
+.anim-rig-setup-action:not(:disabled),
+.anim-rig-raster-mode-btn:not(:disabled),
+.anim-rig-connect-art-btn:not(:disabled) {
+    color: var(--deformer-bind-point);
+    border-color: var(--deformer-bind-line);
+    background: color-mix(in srgb, var(--deformer-bind-line) 14%, var(--futaba-cream));
+}
+
+.anim-rig-mesh-generate-btn.is-primary:not(:disabled),
+.anim-rig-connect-art-btn:not(:disabled) {
+    border-width: 2px;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--deformer-bind-line) 42%, transparent);
+    background: color-mix(in srgb, var(--deformer-bind-line) 22%, var(--futaba-cream));
+}
+
+.anim-rig-setup-action:not(:disabled):hover,
+.anim-rig-raster-mode-btn:not(:disabled):hover,
+.anim-rig-connect-art-btn:not(:disabled):hover,
+.anim-rig-setup-action:not(:disabled):focus-visible,
+.anim-rig-raster-mode-btn:not(:disabled):focus-visible,
+.anim-rig-connect-art-btn:not(:disabled):focus-visible {
+    border-color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 22%, var(--futaba-cream));
 }
 
 .anim-rig-parent-field select {
@@ -4554,6 +4632,48 @@ canvas {
     align-items: center;
     gap: 4px;
     margin-left: auto;
+}
+
+.anim-motion-shell-toggle {
+    min-width: 48px;
+    height: 22px;
+    padding: 0 6px;
+    color: var(--futaba-maroon);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.anim-motion-shell-toggle.active {
+    color: var(--futaba-maroon);
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 16%, var(--futaba-background));
+}
+
+.anim-motion-shell-toggle:disabled {
+    color: var(--futaba-medium);
+    border-color: color-mix(in srgb, var(--futaba-light-medium) 72%, transparent);
+    background: color-mix(in srgb, var(--futaba-cream) 56%, var(--futaba-background));
+    opacity: 0.72;
+}
+
+.anim-motion-window.is-focus-shell .anim-motion-fields,
+.anim-motion-window.is-focus-shell .anim-rig-bind-fields,
+.anim-motion-window.is-focus-shell .anim-rig-parent-field,
+.anim-motion-window.is-focus-shell .anim-part-motion-context .anim-rig-fields {
+    display: none;
+}
+
+.anim-motion-window.is-focus-shell .anim-rig-mesh-bone-controls {
+    flex-basis: auto;
+}
+
+.anim-motion-window.is-focus-shell .anim-rig-target-kind {
+    display: none;
+}
+
+.anim-motion-window.is-focus-shell .anim-rig-status {
+    flex-basis: auto;
 }
 
 .anim-motion-help-btn {
@@ -5274,6 +5394,13 @@ button.anim-motion-graph-legend-item.is-primary {
     opacity: 0.48;
 }
 
+.anim-rig-folder-setup.is-raster-entry {
+    min-width: 33px;
+    color: var(--deformer-bind-point);
+    border-color: var(--deformer-bind-line);
+    background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-background));
+}
+
 .anim-rig-folder-cell-slot.is-outside-clip {
     cursor: default !important;
     opacity: 0.32;
@@ -5919,6 +6046,34 @@ button.anim-motion-graph-legend-item.is-primary {
 .rig-skin-weight-overlay__outline {
     stroke: color-mix(in srgb, var(--deformer-bind-point) 78%, transparent);
     stroke-width: 1.2;
+}
+
+.rig-skin-weight-overlay__vertex {
+    fill: color-mix(in srgb, var(--deformer-bind-point) 22%, var(--futaba-cream));
+    stroke: var(--deformer-bind-point);
+    stroke-width: 1.8;
+    vector-effect: non-scaling-stroke;
+    pointer-events: all;
+    cursor: crosshair;
+}
+
+.rig-skin-weight-overlay__vertex.is-selected {
+    fill: var(--active-border);
+    stroke: var(--futaba-cream);
+    stroke-width: 2.4;
+}
+
+.rig-skin-weight-overlay__brush-cursor {
+    fill: color-mix(in srgb, var(--deformer-bind-line) 8%, transparent);
+    stroke: var(--deformer-bind-point);
+    stroke-width: 1.4;
+    stroke-dasharray: 4 3;
+    pointer-events: none;
+}
+
+.rig-skin-weight-overlay__brush-cursor.is-subtract {
+    fill: color-mix(in srgb, var(--futaba-maroon) 8%, transparent);
+    stroke: var(--futaba-maroon);
 }
 
 .rig-pivot-overlay[hidden] {

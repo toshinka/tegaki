@@ -1,6 +1,6 @@
 /**
- * 選択Raster / Mesh / BoneのSkin weightを表示するread-only SVG overlay。
- * Project、History、Skin evaluatorへ書き戻さず、pointer入力にも参加しない。
+ * 選択Raster / Mesh / BoneのSkin weightを表示するSVG overlay。
+ * 通常はread-only。明示補正mode時だけvertex hitへpointer入力を限定する。
  */
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
@@ -68,6 +68,8 @@ export class RigSkinWeightOverlay {
     constructor() {
         this.element = null;
         this.group = null;
+        this.vertexGroup = null;
+        this.brushCursor = null;
         this.options = null;
         this.frameRequest = null;
         this.dirty = true;
@@ -78,6 +80,7 @@ export class RigSkinWeightOverlay {
         if (!options.coordinateSystem || typeof options.getDiagnostic !== 'function') return false;
         this.options = options;
         this._ensureElement();
+        this.element.classList.toggle('is-editing', options.editing === true);
         this.element.hidden = false;
         this.dirty = true;
         if (this.frameRequest === null) this._update();
@@ -96,6 +99,8 @@ export class RigSkinWeightOverlay {
         this.element?.remove();
         this.element = null;
         this.group = null;
+        this.vertexGroup = null;
+        this.brushCursor = null;
     }
 
     isActive() {
@@ -104,6 +109,22 @@ export class RigSkinWeightOverlay {
 
     getLastPlan() {
         return this.lastPlan;
+    }
+
+    setBrushCursor(cursor = null) {
+        if (!this.brushCursor) return false;
+        const visible = cursor?.visible === true
+            && Number.isFinite(cursor.clientX)
+            && Number.isFinite(cursor.clientY)
+            && Number.isFinite(cursor.radius)
+            && cursor.radius > 0;
+        this.brushCursor.hidden = !visible;
+        if (!visible) return false;
+        this.brushCursor.setAttribute('cx', formatPathNumber(cursor.clientX));
+        this.brushCursor.setAttribute('cy', formatPathNumber(cursor.clientY));
+        this.brushCursor.setAttribute('r', formatPathNumber(cursor.radius));
+        this.brushCursor.classList.toggle('is-subtract', cursor.direction === -1);
+        return true;
     }
 
     _ensureElement() {
@@ -127,10 +148,19 @@ export class RigSkinWeightOverlay {
             path.dataset.weightPath = pathKey;
             group.appendChild(path);
         });
+        const vertexGroup = document.createElementNS(SVG_NAMESPACE, 'g');
+        vertexGroup.classList.add('rig-skin-weight-overlay__vertices');
+        group.appendChild(vertexGroup);
         svg.appendChild(group);
+        const brushCursor = document.createElementNS(SVG_NAMESPACE, 'circle');
+        brushCursor.classList.add('rig-skin-weight-overlay__brush-cursor');
+        brushCursor.hidden = true;
+        svg.appendChild(brushCursor);
         document.body.appendChild(svg);
         this.element = svg;
         this.group = group;
+        this.vertexGroup = vertexGroup;
+        this.brushCursor = brushCursor;
     }
 
     _toScreen(x, y) {
@@ -170,6 +200,30 @@ export class RigSkinWeightOverlay {
         this.group.querySelectorAll('[data-weight-path]').forEach(path => {
             path.setAttribute('d', plan.paths[path.dataset.weightPath] || '');
         });
+        if (this.vertexGroup) {
+            this.vertexGroup.replaceChildren();
+            if (this.options?.editing === true) {
+                const selectedVertexIds = this.options.selectedVertexIds instanceof Set
+                    ? this.options.selectedVertexIds
+                    : new Set(this.options.selectedVertexIds || []);
+                diagnostic.vertices.forEach(vertex => {
+                    if (!vertex?.vertexId || !Number.isFinite(vertex.x) || !Number.isFinite(vertex.y)) return;
+                    const circle = document.createElementNS(SVG_NAMESPACE, 'circle');
+                    circle.classList.add('rig-skin-weight-overlay__vertex');
+                    circle.classList.toggle('is-selected', selectedVertexIds.has(vertex.vertexId));
+                    circle.dataset.vertexId = vertex.vertexId;
+                    circle.setAttribute('cx', formatPathNumber(vertex.x));
+                    circle.setAttribute('cy', formatPathNumber(vertex.y));
+                    circle.setAttribute('r', '4.5');
+                    circle.addEventListener('pointerdown', event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this.options?.onVertexToggle?.(vertex.vertexId, event);
+                    });
+                    this.vertexGroup.appendChild(circle);
+                });
+            }
+        }
         this.element.hidden = false;
         return true;
     }

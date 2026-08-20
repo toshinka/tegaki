@@ -114,4 +114,87 @@ assert.deepEqual(asset.rigDefinition.bones.map(bone => bone.boneId), ['bone-rast
 assert.deepEqual(clip.rigMotion.boneTracks.map(track => track.boneId), ['bone-raster-b']);
 assert.equal(validateRigDefinition(asset.rigDefinition, asset.internalLayers).ok, true);
 
-console.log('verify-rig-target-removal: explicit cascade, motion cleanup and external-child refusal OK');
+const switchModel = new TimelineModel({ fps: 8, totalFrames: 8 });
+const switchAsset = new ClipAssetModel({
+    id: 'rigid-to-mesh-asset',
+    internalLayers: [{ id: 'raster-target', name: 'One Picture', type: 'raster' }]
+});
+switchModel.clipAssets.push(switchAsset);
+const switchLane = switchModel.createIndependentLane({ name: 'Switch' });
+const switchClip = switchLane.addCel({
+    id: 'rigid-to-mesh-clip',
+    assetId: switchAsset.id,
+    startFrame: 0,
+    duration: 4
+});
+assert.equal(switchModel.registerClipAssetRasterBone(switchAsset.id, 'raster-target', {
+    boneId: 'mesh-bone-keep',
+    bindTransform: { ...identity, x: 30 },
+    length: 24
+}).ok, true);
+assert.equal(switchModel.registerClipAssetRigPart(switchAsset.id, 'raster-target').ok, true);
+assert.equal(switchModel.registerClipAssetRootBoneBinding(switchAsset.id, 'raster-target', {
+    boneId: 'rigid-bone-remove',
+    bindTransform: { ...identity, x: 60 },
+    length: 24
+}).ok, true);
+assert.equal(switchModel.setClipRigPartKey(
+    switchClip.id,
+    'raster-target',
+    1,
+    { ...identity, x: 4 }
+).ok, true);
+assert.equal(switchModel.setClipRigBoneKey(
+    switchClip.id,
+    'rigid-bone-remove',
+    1,
+    { ...identity, rotation: 0.25 }
+).ok, true);
+assert.equal(switchModel.setClipRigBoneKey(
+    switchClip.id,
+    'mesh-bone-keep',
+    1,
+    { ...identity, rotation: -0.2 }
+).ok, true);
+
+const switched = switchModel.removeClipAssetRigidRasterTarget(switchAsset.id, 'raster-target');
+assert.equal(switched.ok, true);
+assert.equal(switched.changed, true);
+assert.deepEqual(switched.removedPartIds, ['raster-target']);
+assert.deepEqual(switched.removedBoneIds, ['rigid-bone-remove']);
+assert.deepEqual(switchAsset.rigDefinition.parts, []);
+assert.deepEqual(switchAsset.rigDefinition.rigidBindings, []);
+assert.deepEqual(switchAsset.rigDefinition.bones.map(bone => bone.boneId), ['mesh-bone-keep']);
+assert.deepEqual(switchClip.rigMotion.partTracks, []);
+assert.deepEqual(switchClip.rigMotion.boneTracks.map(track => track.boneId), ['mesh-bone-keep']);
+assert.equal(validateRigDefinition(switchAsset.rigDefinition, switchAsset.internalLayers).ok, true);
+
+const refusalModel = new TimelineModel({ fps: 8, totalFrames: 8 });
+const refusalAsset = new ClipAssetModel({
+    id: 'rigid-to-mesh-refusal',
+    internalLayers: [{ id: 'raster-target', name: 'One Picture', type: 'raster' }]
+});
+refusalModel.clipAssets.push(refusalAsset);
+assert.equal(refusalModel.registerClipAssetRasterBone(refusalAsset.id, 'raster-target', {
+    boneId: 'mesh-child',
+    bindTransform: { ...identity, x: 20 },
+    length: 24
+}).ok, true);
+assert.equal(refusalModel.registerClipAssetRigPart(refusalAsset.id, 'raster-target').ok, true);
+assert.equal(refusalModel.registerClipAssetRootBoneBinding(refusalAsset.id, 'raster-target', {
+    boneId: 'rigid-parent',
+    bindTransform: { ...identity, x: 40 },
+    length: 24
+}).ok, true);
+assert.equal(refusalModel.setClipAssetRigBoneParent(
+    refusalAsset.id,
+    'mesh-child',
+    'rigid-parent'
+).ok, true);
+const refusalBefore = structuredClone(refusalAsset.rigDefinition);
+const refusedSwitch = refusalModel.removeClipAssetRigidRasterTarget(refusalAsset.id, 'raster-target');
+assert.equal(refusedSwitch.ok, false);
+assert.equal(refusedSwitch.reason, 'rig-bone-external-child');
+assert.deepEqual(refusalAsset.rigDefinition, refusalBefore, '外部child拒否時は正本を変更しない');
+
+console.log('verify-rig-target-removal: cascade, rigid-to-mesh cleanup and external-child refusal OK');

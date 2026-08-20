@@ -118,10 +118,29 @@ import {
 } from '../system/animation/raster-skin-render-plan.js';
 import { evaluateRasterBoneSkinning } from '../system/animation/raster-bone-skinning.js';
 import { createRasterSkinWeightDiagnosticProjection } from '../system/animation/raster-skin-weight-diagnostic.js';
+import { resolveRigSkinWeightVisibility } from '../system/animation/rig-skin-weight-visibility.js';
+import { createRigWorkspaceFocusShellPlan } from '../system/animation/rig-workspace-focus-shell.js';
 import { createAnimationTableBoneGroupProjection } from '../system/animation/animation-table-bone-group-projection.js';
+import {
+    createRigMotionArtFocusProjection,
+    RIG_MOTION_UNFOCUSED_ART_ALPHA
+} from '../system/animation/rig-motion-art-focus.js';
 import { ALPHA_FIT_GRID_GENERATOR } from '../system/animation/raster-bone-auto-setup.js';
 import { AUTO_SHAPE_FILL_GENERATOR } from '../system/animation/auto-shape-raster-bone-setup.js';
 import { CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE } from '../system/animation/chain-local-joint-skin.js';
+import {
+    LIMITED_SKIN_CORRECTION_MODE,
+    SKIN_INFLUENCE_CORRECTION_ACTIONS
+} from '../system/animation/skin-influence-correction.js';
+import {
+    createSkinWeightBrushPlan,
+    FIXED_TOPOLOGY_SKIN_WEIGHT_BRUSH_MODE
+} from '../system/animation/skin-weight-brush.js';
+import {
+    createSkinWeightBrushSample,
+    mergeSkinWeightBrushSamples
+} from '../system/animation/skin-weight-brush-gesture.js';
+import { FIXED_VERTEX_POSITION_EDIT_MODE } from '../system/animation/raster-mesh-vertex-position-edit.js';
 import { AUTO_SHAPE_LINE_RIBBON_GENERATOR } from '../system/animation/line-ribbon-raster-bone-setup.js';
 import {
     calculateWarpGridBrushWeights,
@@ -267,19 +286,37 @@ const RASTER_MESH_SETUP_MODES = Object.freeze({
 const RASTER_MESH_GENERATOR_UI = Object.freeze({
     [ALPHA_FIT_GRID_GENERATOR]: Object.freeze({
         label: 'GRID',
-        currentLabel: generator => `GRID ${generator?.columns || '?'}×${generator?.rows || '?'}`
+        currentLabel: generator => `GRID ${generator?.columns || '?'}×${generator?.rows || '?'}${
+            generator?.topologyEditMode === FIXED_VERTEX_POSITION_EDIT_MODE
+                ? ' · EDITED'
+                : ''
+        }${
+            generator?.weightCorrectionMode === FIXED_TOPOLOGY_SKIN_WEIGHT_BRUSH_MODE
+                ? ' · WEIGHT'
+                : ''
+        }`
     }),
     [AUTO_SHAPE_FILL_GENERATOR]: Object.freeze({
         label: 'SHAPE',
-        currentLabel: generator => generator?.weightMode === CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE
-            ? 'SHAPE JOINT'
-            : 'SHAPE FILL'
+        currentLabel: generator => `${generator?.weightMode === CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE
+            ? (generator?.weightCorrectionMode === LIMITED_SKIN_CORRECTION_MODE
+                ? 'SHAPE JOINT · CORRECTED'
+                : (generator?.weightCorrectionMode === FIXED_TOPOLOGY_SKIN_WEIGHT_BRUSH_MODE
+                    ? 'SHAPE JOINT · WEIGHT'
+                    : 'SHAPE JOINT'))
+            : 'SHAPE FILL'}${generator?.topologyEditMode === FIXED_VERTEX_POSITION_EDIT_MODE
+            ? ' · EDITED'
+            : ''}`
     }),
     [AUTO_SHAPE_LINE_RIBBON_GENERATOR]: Object.freeze({
         label: 'LINE',
         currentLabel: () => 'LINE RIBBON'
     })
 });
+const SKIN_WEIGHT_BRUSH_MIN_RADIUS = 8;
+const SKIN_WEIGHT_BRUSH_MAX_RADIUS = 160;
+const SKIN_WEIGHT_BRUSH_MIN_STRENGTH = 0.01;
+const SKIN_WEIGHT_BRUSH_MAX_STRENGTH = 0.25;
 const AUTO_LINE_FAILURE_MESSAGES = Object.freeze({
     'line-ribbon-bone-count': 'AUTO LINEには2〜3本のMesh BONEが必要です',
     'line-ribbon-bone-not-found': 'AUTO LINEの指定BONEが見つかりません',
@@ -364,6 +401,7 @@ export class AnimationTablePopup {
         this.panel = null;
         this.motionPanel = null;
         this.motionPanelDragCleanup = null;
+        this.motionPanelViewportCleanup = null;
         this.motionCurvePanel = null;
         this.motionCurvePanelDragCleanup = null;
         this.motionGraphPanel = null;
@@ -497,8 +535,20 @@ export class AnimationTablePopup {
         this._rigBoneLabelsExpanded = false;
         // 選択Raster / Mesh / Boneのweight診断はruntime表示だけを持ち、Projectへ保存しない。
         this._rigSkinWeightDiagnosticVisible = false;
+        // Limited Skin補正modeとvertex選択もruntimeだけを持つ。確定後は既存vertexWeightsが正本。
+        this._rigSkinWeightCorrectionActive = false;
+        this._rigSkinWeightCorrectionTargetKey = null;
+        this._rigSkinWeightSelectedVertexIds = new Set();
+        this._rigSkinWeightBrushActive = false;
+        this._rigSkinWeightBrushTargetKey = null;
+        this._rigSkinWeightBrushRadius = 32;
+        this._rigSkinWeightBrushStrength = 0.08;
+        this._rigSkinWeightBrushDirection = 1;
+        this._rigSkinWeightBrushGesture = null;
         // 多Bone Table groupのcollapseはruntimeだけを持ち、Rig / Timelineへ保存しない。
         this._rigBoneGroupCollapsed = new Set();
+        // Canvas-first Focus shellはruntime表示だけを持つ。popup位置、Project、Historyへ保存しない。
+        this._motionDetailCollapsed = false;
         this._motionOpenedAssetIds = new Set();
         this._motionTimelineKeyKind = 'motion';
         this._motionKeyDrag = null;
@@ -630,10 +680,22 @@ export class AnimationTablePopup {
     hide() {
         if (!this.panel) return;
         this._cancelMotionEditPreviewRefresh();
+        if (this._rigSkinWeightBrushGesture) {
+            this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
+                cancelled: true,
+                releasePointerCapture: true,
+                render: false
+            });
+        }
         // PIVOT gesture中のTable closeは、次のoverlay RAFを待たず同期的にcancelする。
         // preview用Bone keyがclose直後の保存・復元処理へ一瞬でも残らないようにする。
         rigPivotOverlay.deactivate();
         rigSkinWeightOverlay.deactivate();
+        this._rigSkinWeightCorrectionActive = false;
+        this._rigSkinWeightCorrectionTargetKey = null;
+        this._rigSkinWeightSelectedVertexIds.clear();
+        this._rigSkinWeightBrushActive = false;
+        this._rigSkinWeightBrushTargetKey = null;
         this.stop();
         if (this.isClipEditModeActive) {
             this.exitClipEditMode();
@@ -1055,6 +1117,7 @@ export class AnimationTablePopup {
         if (this._motionEditPreviewFrame !== null) return;
         this._motionEditPreviewFrame = requestAnimationFrame(() => {
             this._motionEditPreviewFrame = null;
+            rigSkinWeightOverlay.invalidate();
             this._applyVisibilityPreview();
         });
     }
@@ -1572,6 +1635,16 @@ export class AnimationTablePopup {
         const onionFrameKey = onionFrames.length > 0
             ? this._buildFrameCellsKey(onionFrames, options.onionFilterIds || null)
             : 'off';
+        const rigFocusKey = this.motionPanel?.style.display !== 'none'
+            && !this.isPlaying
+            && ['rig', 'motion'].includes(this._motionEditorMode)
+            ? [
+                this._motionEditorMode,
+                this._motionInspectorScope,
+                this.selectedInternalLayerId || 'none',
+                this.selectedRigBoneId || 'none'
+            ].join(':')
+            : 'off';
         return [
             mode,
             `frame:${frame}`,
@@ -1581,6 +1654,7 @@ export class AnimationTablePopup {
             `lane:${selectedLaneId}`,
             `live:${liveSelected}`,
             `onion:${onionCount}`,
+            `rigFocus:${rigFocusKey}`,
             `current:${currentFrameKey}`,
             `onionFrames:${onionFrameKey}`
         ].join('|');
@@ -1880,9 +1954,9 @@ export class AnimationTablePopup {
                     depth: getDepth(layer),
                     mesh,
                     skinBinding,
-                    bones: referencedBoneIds.size > 0
-                        ? meshBones.filter(bone => referencedBoneIds.has(bone.boneId))
-                        : meshBones,
+                    // Rasterへ実際にSkin接続されたBoneだけを返す。未生成Rasterへ
+                    // 全Mesh Boneをfallbackすると、別Rasterの空BONEまで設定済みに見える。
+                    bones: meshBones.filter(bone => referencedBoneIds.has(bone.boneId)),
                     localFrame,
                     isFrameInClip
                 };
@@ -1899,6 +1973,15 @@ export class AnimationTablePopup {
             localFrame,
             isFrameInClip
         };
+    }
+
+    _getSelectedRigMotionArtFocusProjection(asset) {
+        return createRigMotionArtFocusProjection(asset, {
+            editorMode: this._motionEditorMode,
+            scope: this._motionInspectorScope,
+            targetLayerId: this.selectedInternalLayerId,
+            boneId: this.selectedRigBoneId
+        });
     }
 
     _getRigBoneTableDisplayPlan(projection = this._getSelectedCafRigProjection()) {
@@ -2474,8 +2557,20 @@ export class AnimationTablePopup {
         this.selectedAssetId = context.asset.id;
         this.selectedAssetFolderId = context.asset.folderId || null;
         this.selectedInternalLayerId = context.layer.id;
-        const meshBoneIds = new Set((context.bones || []).map(bone => bone?.boneId).filter(Boolean));
-        if (!meshBoneIds.has(this.selectedRigBoneId)) this.selectedRigBoneId = null;
+        const connectedBoneIds = new Set((context.bones || []).map(bone => bone?.boneId).filter(Boolean));
+        const projection = this._getSelectedCafRigProjection();
+        // Mesh生成前はBoneの保存ownerがまだSkinに存在しないため、現在のunassigned
+        // Mesh BoneをSetup候補として維持する。Mesh生成後は当該SkinのBoneだけを使う。
+        const meshBoneIds = connectedBoneIds.size > 0 || context.mesh
+            ? connectedBoneIds
+            : new Set((projection?.meshBones || []).map(bone => bone?.boneId).filter(Boolean));
+        if (!meshBoneIds.has(this.selectedRigBoneId)) {
+            // Skin接続が一意なら、target再選択だけで対応Boneへ復帰する。
+            // 未生成時も一意なら復帰し、複数Bone時は明示選択を要求する。
+            this.selectedRigBoneId = meshBoneIds.size === 1
+                ? [...meshBoneIds][0]
+                : null;
+        }
         this._motionInspectorScope = 'internal';
         this._motionInspectorTargetKind = 'raster';
         this._requestLayerPanelSync();
@@ -2703,6 +2798,90 @@ export class AnimationTablePopup {
         return result;
     }
 
+    _createSelectedRasterRigidPivot() {
+        const context = this._getSelectedRigInspectorContext();
+        if (context?.targetKind !== 'raster' || context.folder?.layer?.type !== 'raster' || this.isPlaying) {
+            return { ok: false, reason: 'raster-required' };
+        }
+        if (context.folder.part) {
+            return { ok: true, changed: false, reason: 'already-rigid', context };
+        }
+        const asset = context.projection.asset;
+        const layer = context.folder.layer;
+        const meshStatus = this.model.getClipAssetRasterMeshStatus(asset.id, layer.id);
+        if ((context.projection.meshBones?.length || 0) > 0 || meshStatus.state !== 'missing') {
+            showFeedbackToast('曲げBONEまたはMeshが存在します。全体PIVOTとは併用できません');
+            return { ok: false, reason: 'rig-mode-conflict' };
+        }
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const configured = this._ensureFolderRigPivot(context.folder, beforeState);
+        if (!configured?.bone) {
+            showFeedbackToast('このRasterへ全体PIVOTを設定できません');
+            return { ok: false, reason: 'rigid-pivot-register-failed' };
+        }
+        this._recordInternalLayerHistory(configured.asset, beforeState, 'caf-raster-rigid-pivot-register', {
+            type: 'caf-raster-rigid-pivot-register',
+            assetId: configured.asset.id,
+            layerId: configured.layer.id,
+            boneId: configured.bone.boneId
+        });
+        this._openSelectedRigInspector(configured);
+        return { ok: true, changed: true, context: configured };
+    }
+
+    _switchSelectedRasterPartToMesh() {
+        const context = this._getSelectedRigInspectorContext();
+        if (context?.targetKind !== 'raster' || context.folder?.layer?.type !== 'raster' || this.isPlaying) {
+            return { ok: false, reason: 'raster-required' };
+        }
+        if (!context.folder.part) {
+            return { ok: true, changed: false, reason: 'already-mesh', context };
+        }
+        if (!window.confirm('絵全体PIVOTとそのMotion keyを削除し、曲げBONE Setupへ切り替えますか？')) {
+            return { ok: false, changed: false, reason: 'cancelled' };
+        }
+        const asset = context.projection.asset;
+        const layer = context.folder.layer;
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this.model.removeClipAssetRigidRasterTarget(asset.id, layer.id);
+        if (!result.ok) {
+            const hasExternalChild = result.reason === 'rig-bone-external-child'
+                || result.reason === 'rig-part-external-child';
+            showFeedbackToast(hasExternalChild
+                ? 'このPIVOTへ別対象の子RIGが接続中です。先に親子接続を整理してください'
+                : '全体PIVOTを曲げBONE Setupへ切り替えられません');
+            return result;
+        }
+        if (!result.changed) return result;
+        this.selectedRigBoneId = null;
+        this.selectedInternalLayerId = layer.id;
+        this._motionInspectorScope = 'internal';
+        this._motionInspectorTargetKind = 'raster';
+        this._recordInternalLayerHistory(asset, beforeState, 'caf-raster-rigid-to-mesh', {
+            type: 'caf-raster-rigid-to-mesh',
+            assetId: asset.id,
+            layerId: layer.id,
+            removedPartIds: result.removedPartIds || [],
+            removedBoneIds: result.removedBoneIds || []
+        });
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        const projection = this._getSelectedCafRigProjection();
+        const raster = this._getRasterRigProjectionContext(projection, layer.id, null);
+        if (raster) {
+            this._selectRigRasterProjectionTarget(raster, {
+                focusRig: true,
+                openInspector: true,
+                render: false
+            });
+        }
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return result;
+    }
+
     _generateSelectedRasterBoneSetup(generatorMode = 'alpha-fit-grid') {
         const context = this._getSelectedRigInspectorContext();
         if (context?.targetKind !== 'raster' || this.isPlaying) {
@@ -2710,6 +2889,21 @@ export class AnimationTablePopup {
         }
         const asset = context.projection.asset;
         const layer = context.folder.layer;
+        const existingMesh = (asset.meshDefinitions || [])
+            .find(mesh => mesh?.targetInternalLayerId === layer.id) || null;
+        const hasWeightCorrection = [LIMITED_SKIN_CORRECTION_MODE, FIXED_TOPOLOGY_SKIN_WEIGHT_BRUSH_MODE]
+            .includes(existingMesh?.generator?.weightCorrectionMode);
+        const hasVertexPositionEdit = existingMesh?.generator?.topologyEditMode
+            === FIXED_VERTEX_POSITION_EDIT_MODE;
+        const confirmedRegeneration = hasVertexPositionEdit
+            ? window.confirm(hasWeightCorrection
+                ? 'Mesh位置編集とweight補正は再生成で破棄されます。Mesh / Skinを再生成しますか？'
+                : 'Mesh位置編集は再生成で破棄されます。Mesh / Skinを再生成しますか？')
+            : !hasWeightCorrection
+                || window.confirm('weight補正は再生成で破棄されます。Mesh / Skinを再生成しますか？');
+        if (!confirmedRegeneration) {
+            return { ok: false, changed: false, reason: 'correction-regeneration-cancelled' };
+        }
         const beforeState = this._captureInternalLayerHistoryState(asset);
         const mode = RASTER_MESH_SETUP_MODES[generatorMode]
             || RASTER_MESH_SETUP_MODES['alpha-fit-grid'];
@@ -2720,6 +2914,9 @@ export class AnimationTablePopup {
             showFeedbackToast(getRasterMeshSetupFailureMessage(mode, result.reason));
             return result;
         }
+        this._rigSkinWeightCorrectionActive = false;
+        this._rigSkinWeightSelectedVertexIds.clear();
+        this._rigSkinWeightBrushActive = false;
         const folderEffectPlan = createFolderPartRenderPlan(
             asset,
             context.projection.entry.clip,
@@ -2806,6 +3003,12 @@ export class AnimationTablePopup {
         if (this.isPlaying) return { ok: false, reason: 'playback-active' };
         const context = this._getSelectedRootBoneTimelineContext();
         if (!context?.isFrameInClip) return { ok: false, reason: 'frame-outside-clip' };
+        if (context.targetKind === 'raster'
+            && !context.part
+            && !this._getSelectedRigMotionArtFocusProjection(context.asset).targetConnected) {
+            showFeedbackToast('先にRIGでAUTO GRIDを作成してください');
+            return { ok: false, reason: 'raster-bone-unconnected' };
+        }
         this._selectRootBoneTimelineTarget(context, { render: false });
         const beforeState = this._captureTimelineHistoryState();
         const result = context.key
@@ -2896,11 +3099,13 @@ export class AnimationTablePopup {
                 const isRasterTarget = targetKind === 'raster';
                 const isRigidRasterTarget = isRasterTarget && !!folder.part;
                 const rasterBoneCount = isRasterTarget && !isRigidRasterTarget
-                    ? (projection?.meshBones?.length || 0)
+                    ? (folder.bones?.length || 0)
                     : 0;
                 button.classList.toggle(
                     'is-configured',
-                    isRigidRasterTarget ? !!folder.bone : (isRasterTarget ? rasterBoneCount > 0 : !!folder.bone)
+                    isRigidRasterTarget
+                        ? !!folder.bone
+                        : (isRasterTarget ? !!folder.mesh && !!folder.skinBinding && rasterBoneCount > 0 : !!folder.bone)
                 );
                 const support = this._motionEditorMode === 'warp'
                     ? this._getWarpGridTargetSupport(projection?.entry, folder.layer.id)
@@ -2917,7 +3122,9 @@ export class AnimationTablePopup {
                 button.dataset.tooltip = isRasterTarget
                     ? (isRigidRasterTarget
                         ? `${folder.layer.name || 'Raster'} · Raster Part${folder.bone ? ' · BONE設定済み' : ''}`
-                        : `${folder.layer.name || 'Raster'} · Mesh BONE ${rasterBoneCount}`)
+                        : rasterBoneCount > 0
+                            ? `${folder.layer.name || 'Raster'} · Skin接続 BONE ${rasterBoneCount}`
+                            : `${folder.layer.name || 'Raster'} · MESH未設定`)
                     : this._motionEditorMode === 'warp'
                     ? `${this._getWarpGridTargetSupportTooltip(support, folder.layer.name || 'Folder')}${
                         !support.ok && hasExistingFolderDeformer ? ' · 削除のみ可能' : ''
@@ -2968,7 +3175,7 @@ export class AnimationTablePopup {
     }
 
     _getRigSkinWeightDiagnosticTarget(frameIndex = this.model.playback.currentFrame) {
-        if (this._motionEditorMode !== 'rig'
+        if (!['rig', 'motion'].includes(this._motionEditorMode)
             || this._motionInspectorScope !== 'internal'
             || this._motionInspectorTargetKind !== 'raster'
             || !this.selectedInternalLayerId
@@ -3017,13 +3224,305 @@ export class AnimationTablePopup {
         };
     }
 
+    _getRigSkinWeightBrushTarget(frameIndex = this.model.playback.currentFrame) {
+        if (this._motionEditorMode !== 'rig' || this.isPlaying) return null;
+        const target = this._getRigSkinWeightDiagnosticTarget(frameIndex);
+        const generatorType = target?.raster?.mesh?.generator?.type;
+        if (!target || ![ALPHA_FIT_GRID_GENERATOR, AUTO_SHAPE_FILL_GENERATOR].includes(generatorType)) {
+            return null;
+        }
+        const status = this.model.getClipAssetRasterMeshStatus(
+            target.projection.asset.id,
+            target.raster.layer.id
+        );
+        if (status.state !== 'current') return null;
+        const folderEffectPlan = createFolderPartRenderPlan(
+            target.projection.asset,
+            target.projection.entry.clip,
+            frameIndex
+        );
+        const rasterSkinPlan = createRasterSkinRenderPlan(
+            target.projection.asset,
+            target.projection.entry.clip,
+            frameIndex,
+            { folderEffectPlan }
+        );
+        return ['unsupported', 'invalid'].includes(rasterSkinPlan.status) ? null : target;
+    }
+
+    _isRigSkinWeightBrushModeActive() {
+        return this._rigSkinWeightBrushActive
+            && this._rigSkinWeightDiagnosticVisible
+            && !!this._getRigSkinWeightBrushTarget();
+    }
+
+    _setRigSkinWeightBrushRadius(value) {
+        const numeric = Number(value);
+        this._rigSkinWeightBrushRadius = Math.round(Math.max(
+            SKIN_WEIGHT_BRUSH_MIN_RADIUS,
+            Math.min(SKIN_WEIGHT_BRUSH_MAX_RADIUS, Number.isFinite(numeric) ? numeric : 32)
+        ));
+        const input = this.motionPanel?.querySelector('#anim-rig-weight-brush-radius');
+        if (input && document.activeElement !== input) input.value = String(this._rigSkinWeightBrushRadius);
+        return this._rigSkinWeightBrushRadius;
+    }
+
+    _setRigSkinWeightBrushStrength(value) {
+        const numeric = Number(value) / 100;
+        this._rigSkinWeightBrushStrength = Math.max(
+            SKIN_WEIGHT_BRUSH_MIN_STRENGTH,
+            Math.min(SKIN_WEIGHT_BRUSH_MAX_STRENGTH, Number.isFinite(numeric) ? numeric : 0.08)
+        );
+        const input = this.motionPanel?.querySelector('#anim-rig-weight-brush-strength');
+        if (input && document.activeElement !== input) {
+            input.value = String(Math.round(this._rigSkinWeightBrushStrength * 100));
+        }
+        return this._rigSkinWeightBrushStrength;
+    }
+
+    _setRigSkinWeightBrushDirection(value) {
+        this._rigSkinWeightBrushDirection = Number(value) === -1 ? -1 : 1;
+        this._syncRigSkinWeightToggle(this.motionPanel?.querySelector('#anim-rig-context'));
+        return this._rigSkinWeightBrushDirection;
+    }
+
+    _createRigSkinWeightBrushScreenVertices(diagnostic) {
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        if (!coordinateSystem || !Array.isArray(diagnostic?.vertices)) return [];
+        return diagnostic.vertices.flatMap(vertex => {
+            const screen = coordinateSystem.worldToScreenImmediate?.(vertex.x, vertex.y)
+                || coordinateSystem.worldToScreen?.(vertex.x, vertex.y);
+            return screen && Number.isFinite(screen.clientX) && Number.isFinite(screen.clientY)
+                ? [{ vertexId: vertex.vertexId, screenX: screen.clientX, screenY: screen.clientY }]
+                : [];
+        });
+    }
+
+    _applyRigSkinWeightBrushSample(gesture, clientX, clientY) {
+        if (!gesture || gesture !== this._rigSkinWeightBrushGesture) return false;
+        const sample = createSkinWeightBrushSample(gesture.screenVertices, {
+            center: { x: clientX, y: clientY },
+            radius: gesture.radius,
+            strength: gesture.strength,
+            direction: gesture.direction
+        });
+        if (sample.length === 0) return false;
+        gesture.vertexDeltas = mergeSkinWeightBrushSamples(gesture.vertexDeltas, sample);
+        const plan = createSkinWeightBrushPlan(
+            gesture.baselineAsset,
+            gesture.layerId,
+            gesture.boneId,
+            [...gesture.vertexDeltas.entries()].map(([vertexId, delta]) => ({ vertexId, delta }))
+        );
+        if (!plan.ok) {
+            gesture.failureReason = plan.reason;
+            gesture.cancelledByFailure = true;
+            return false;
+        }
+        const asset = this.model.getClipAsset(gesture.assetId);
+        if (!asset) {
+            gesture.failureReason = 'asset-not-found';
+            gesture.cancelledByFailure = true;
+            return false;
+        }
+        asset.meshDefinitions = plan.meshDefinitions;
+        asset.skinBindings = plan.skinBindings;
+        asset.updatedAt = Date.now();
+        gesture.changed = plan.changed;
+        gesture.lastPlan = plan;
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._scheduleMotionEditPreviewRefresh();
+        rigSkinWeightOverlay.invalidate();
+        return true;
+    }
+
+    _beginRigSkinWeightBrushGesture(event) {
+        if (this._rigSkinWeightBrushGesture || event?.button !== 0) return false;
+        const target = this._getRigSkinWeightBrushTarget();
+        const diagnostic = target ? this._createRigSkinWeightDiagnostic() : null;
+        const screenVertices = this._createRigSkinWeightBrushScreenVertices(diagnostic);
+        if (!target || screenVertices.length === 0) return false;
+        const asset = target.projection.asset;
+        const gesture = {
+            pointerId: event.pointerId,
+            assetId: asset.id,
+            layerId: target.raster.layer.id,
+            boneId: target.bone.boneId,
+            radius: this._rigSkinWeightBrushRadius,
+            strength: this._rigSkinWeightBrushStrength,
+            direction: this._rigSkinWeightBrushDirection,
+            screenVertices,
+            baselineAsset: asset.serialize(),
+            beforeState: this._captureInternalLayerHistoryState(asset),
+            vertexDeltas: new Map(),
+            changed: false,
+            lastPlan: null,
+            failureReason: null,
+            cancelledByFailure: false
+        };
+        this._rigSkinWeightBrushGesture = gesture;
+        this._applyRigSkinWeightBrushSample(gesture, event.clientX, event.clientY);
+        return true;
+    }
+
+    _restoreRigSkinWeightBrushBaseline(gesture) {
+        const asset = gesture ? this.model.getClipAsset(gesture.assetId) : null;
+        if (!asset || !gesture?.baselineAsset) return false;
+        asset.meshDefinitions = structuredClone(gesture.baselineAsset.meshDefinitions);
+        asset.skinBindings = structuredClone(gesture.baselineAsset.skinBindings);
+        asset.updatedAt = gesture.baselineAsset.updatedAt;
+        return true;
+    }
+
+    _finishRigSkinWeightBrushGesture(gesture, options = {}) {
+        if (!gesture || gesture !== this._rigSkinWeightBrushGesture) return false;
+        this._rigSkinWeightBrushGesture = null;
+        this._cancelMotionEditPreviewRefresh();
+        const canvas = this._motionCanvas || this._getMotionCanvas();
+        if (options.releasePointerCapture !== false
+            && canvas?.hasPointerCapture?.(gesture.pointerId)) {
+            canvas.releasePointerCapture(gesture.pointerId);
+        }
+        const asset = this.model.getClipAsset(gesture.assetId);
+        if (options.cancelled === true || gesture.cancelledByFailure || !gesture.changed || !asset) {
+            this._restoreRigSkinWeightBrushBaseline(gesture);
+        } else {
+            this._recordInternalLayerHistory(asset, gesture.beforeState, 'caf-raster-skin-weight-brush', {
+                type: 'caf-raster-skin-weight-brush',
+                assetId: gesture.assetId,
+                layerId: gesture.layerId,
+                boneId: gesture.boneId,
+                direction: gesture.direction,
+                vertexCount: gesture.lastPlan?.changedVertexIds?.length || 0
+            });
+        }
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        rigSkinWeightOverlay.invalidate();
+        this._updateMotionCanvasCursor();
+        if (options.render !== false) {
+            this._applyVisibilityPreview();
+            this.render();
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        return true;
+    }
+
+    _getRigSkinWeightCorrectionTarget(frameIndex = this.model.playback.currentFrame) {
+        if (this._motionEditorMode !== 'rig') return null;
+        const target = this._getRigSkinWeightDiagnosticTarget(frameIndex);
+        const generator = target?.raster?.mesh?.generator;
+        if (!target
+            || generator?.type !== AUTO_SHAPE_FILL_GENERATOR
+            || generator?.weightMode !== CHAIN_LOCAL_JOINT_SKIN_WEIGHT_MODE) return null;
+        return target;
+    }
+
+    _toggleRigSkinWeightCorrectionVertex(vertexId) {
+        if (!this._rigSkinWeightCorrectionActive || !vertexId) return false;
+        if (this._rigSkinWeightSelectedVertexIds.has(vertexId)) {
+            this._rigSkinWeightSelectedVertexIds.delete(vertexId);
+        } else {
+            this._rigSkinWeightSelectedVertexIds.add(vertexId);
+        }
+        rigSkinWeightOverlay.invalidate();
+        this._syncRigSkinWeightToggle(this.motionPanel?.querySelector('#anim-rig-context'));
+        return true;
+    }
+
+    _applyRigSkinWeightCorrection(action) {
+        if (!this._rigSkinWeightCorrectionActive || this.isPlaying) {
+            return { ok: false, changed: false, reason: 'correction-mode-required' };
+        }
+        const target = this._getRigSkinWeightCorrectionTarget();
+        if (!target) return { ok: false, changed: false, reason: 'correction-target-required' };
+        const vertexIds = [...this._rigSkinWeightSelectedVertexIds];
+        const asset = target.projection.asset;
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this.model.applyClipAssetRasterSkinInfluenceCorrection(
+            asset.id,
+            target.raster.layer.id,
+            target.bone.boneId,
+            vertexIds,
+            action
+        );
+        if (!result.ok) {
+            const message = result.reason === 'vertex-selection-required'
+                ? 'Canvas上のMesh頂点を選択してください'
+                : result.reason === 'parent-bone-required'
+                    ? '親BONEがあるBONEでPARENT BLENDを使用してください'
+                    : '選択頂点のweightを補正できません';
+            showFeedbackToast(message);
+            return result;
+        }
+        if (!result.changed) {
+            showFeedbackToast('選択頂点のweightは既に同じです');
+            return result;
+        }
+        this._recordInternalLayerHistory(asset, beforeState, 'caf-raster-skin-weight-correction', {
+            type: 'caf-raster-skin-weight-correction',
+            assetId: asset.id,
+            layerId: target.raster.layer.id,
+            boneId: target.bone.boneId,
+            action,
+            vertexCount: result.changedVertexIds.length
+        });
+        this._rigSkinWeightSelectedVertexIds.clear();
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        rigSkinWeightOverlay.invalidate();
+        return result;
+    }
+
     _syncRigSkinWeightToggle(panel) {
         const toggle = panel?.querySelector('#anim-rig-weight-toggle');
+        const correctionToggle = panel?.querySelector('#anim-rig-weight-correction-toggle');
+        const correctionActions = panel?.querySelector('[data-rig-weight-correction-actions]');
+        const brushToggle = panel?.querySelector('#anim-rig-weight-brush-toggle');
+        const brushControls = panel?.querySelector('[data-rig-weight-brush-controls]');
         const summary = panel?.querySelector('[data-rig-weight-summary]');
         const available = !!this._getRigSkinWeightDiagnosticTarget();
-        if (!available && this._rigSkinWeightDiagnosticVisible) {
+        const visibility = this._getRigSkinWeightVisibilityPlan({ available });
+        const correctionTarget = this._getRigSkinWeightCorrectionTarget();
+        const correctionTargetKey = correctionTarget
+            ? `${correctionTarget.projection.asset.id}:${correctionTarget.raster.layer.id}:${correctionTarget.bone.boneId}`
+            : null;
+        const brushTarget = this._getRigSkinWeightBrushTarget();
+        const brushTargetKey = brushTarget
+            ? `${brushTarget.projection.asset.id}:${brushTarget.raster.layer.id}:${brushTarget.bone.boneId}`
+            : null;
+        if (correctionTargetKey !== this._rigSkinWeightCorrectionTargetKey) {
+            this._rigSkinWeightCorrectionTargetKey = correctionTargetKey;
+            this._rigSkinWeightCorrectionActive = false;
+            this._rigSkinWeightSelectedVertexIds.clear();
+        }
+        if (brushTargetKey !== this._rigSkinWeightBrushTargetKey) {
+            if (this._rigSkinWeightBrushGesture) {
+                this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
+                    cancelled: true,
+                    releasePointerCapture: true,
+                    render: false
+                });
+            }
+            this._rigSkinWeightBrushTargetKey = brushTargetKey;
+            this._rigSkinWeightBrushActive = false;
+        }
+        if (!visibility.visible && this._rigSkinWeightDiagnosticVisible) {
             this._rigSkinWeightDiagnosticVisible = false;
             rigSkinWeightOverlay.deactivate();
+        }
+        if (!correctionTarget && this._rigSkinWeightCorrectionActive) {
+            this._rigSkinWeightCorrectionActive = false;
+            this._rigSkinWeightSelectedVertexIds.clear();
+        }
+        if (!brushTarget && this._rigSkinWeightBrushActive) {
+            this._rigSkinWeightBrushActive = false;
         }
         if (toggle) {
             const active = available && this._rigSkinWeightDiagnosticVisible;
@@ -3037,15 +3536,79 @@ export class AnimationTablePopup {
                     : '選択Raster / Mesh / Boneのweight 0・blend・1をCanvasへ表示')
                 : 'Raster MeshとBONEを選択すると使用できます';
         }
+        if (correctionToggle) {
+            correctionToggle.disabled = !correctionTarget || this.isPlaying;
+            correctionToggle.classList.toggle('active', this._rigSkinWeightCorrectionActive);
+            correctionToggle.setAttribute('aria-pressed', String(this._rigSkinWeightCorrectionActive));
+            correctionToggle.textContent = this._rigSkinWeightCorrectionActive ? 'CORRECT ON' : 'CORRECT';
+            correctionToggle.dataset.tooltip = correctionTarget
+                ? (this._rigSkinWeightCorrectionActive
+                    ? '補正modeを閉じ、未確定の頂点選択を破棄'
+                    : 'AUTO SHAPEの頂点を選び、離散weight補正を確定')
+                : 'SHAPE JOINTのRaster / BONEを選択すると使用できます';
+        }
+        if (correctionActions) {
+            correctionActions.hidden = !this._rigSkinWeightCorrectionActive;
+            const hasSelection = this._rigSkinWeightSelectedVertexIds.size > 0;
+            correctionActions.querySelectorAll('[data-rig-weight-correction]').forEach(button => {
+                const needsParent = button.dataset.rigWeightCorrection
+                    === SKIN_INFLUENCE_CORRECTION_ACTIONS.PARENT_BLEND;
+                button.disabled = !hasSelection
+                    || (needsParent && !correctionTarget?.bone?.parentBoneId)
+                    || this.isPlaying;
+            });
+            const count = correctionActions.querySelector('[data-rig-weight-selection-count]');
+            if (count) count.textContent = `${this._rigSkinWeightSelectedVertexIds.size} selected`;
+        }
+        if (brushToggle) {
+            brushToggle.disabled = !brushTarget || this.isPlaying;
+            brushToggle.classList.toggle('active', this._rigSkinWeightBrushActive);
+            brushToggle.setAttribute('aria-pressed', String(this._rigSkinWeightBrushActive));
+            brushToggle.textContent = this._rigSkinWeightBrushActive ? 'BRUSH ON' : 'BRUSH';
+            brushToggle.dataset.tooltip = brushTarget
+                ? (this._rigSkinWeightBrushActive
+                    ? 'Weight brushを閉じる。未確定strokeはcancelします'
+                    : 'CURRENTのAUTO GRID / AUTO SHAPEへ連続weight補正')
+                : 'CURRENTのAUTO GRID / AUTO SHAPEとBONEを選択すると使用できます';
+        }
+        if (brushControls) {
+            brushControls.hidden = !this._rigSkinWeightBrushActive;
+            brushControls.querySelectorAll('[data-rig-weight-brush-direction]').forEach(button => {
+                const direction = Number(button.dataset.rigWeightBrushDirection) === -1 ? -1 : 1;
+                button.classList.toggle('active', direction === this._rigSkinWeightBrushDirection);
+                button.setAttribute('aria-pressed', String(direction === this._rigSkinWeightBrushDirection));
+                button.disabled = this.isPlaying;
+            });
+            const radius = brushControls.querySelector('#anim-rig-weight-brush-radius');
+            const strength = brushControls.querySelector('#anim-rig-weight-brush-strength');
+            if (radius && document.activeElement !== radius) radius.value = String(this._rigSkinWeightBrushRadius);
+            if (strength && document.activeElement !== strength) {
+                strength.value = String(Math.round(this._rigSkinWeightBrushStrength * 100));
+            }
+        }
         if (summary) summary.hidden = !(available && this._rigSkinWeightDiagnosticVisible);
         rigSkinWeightOverlay.invalidate();
         return available;
     }
 
     _isRigSkinWeightDiagnosticActive() {
-        return this._rigSkinWeightDiagnosticVisible
-            && this._isRigPivotSetupActive()
-            && !!this._getRigSkinWeightDiagnosticTarget();
+        return this._getRigSkinWeightVisibilityPlan().overlayActive;
+    }
+
+    _getRigSkinWeightVisibilityPlan(options = {}) {
+        const available = typeof options.available === 'boolean'
+            ? options.available
+            : !!this._getRigSkinWeightDiagnosticTarget();
+        return resolveRigSkinWeightVisibility({
+            editorMode: this._motionEditorMode,
+            available,
+            requestedVisible: this._rigSkinWeightDiagnosticVisible,
+            rigSetupActive: this._isRigPivotSetupActive(),
+            motionBoneActive: this._isMotionBonePivotActive(),
+            playing: this.isPlaying,
+            correctionRequested: this._rigSkinWeightCorrectionActive,
+            brushRequested: this._rigSkinWeightBrushActive
+        });
     }
 
     _syncRigSkinWeightOverlay(coordinateSystem = this.layerSystem?.transform?.coordinateSystem) {
@@ -3053,10 +3616,14 @@ export class AnimationTablePopup {
             rigSkinWeightOverlay.deactivate();
             return false;
         }
+        const visibility = this._getRigSkinWeightVisibilityPlan();
         return rigSkinWeightOverlay.activate({
             coordinateSystem,
             getDiagnostic: () => this._createRigSkinWeightDiagnostic(),
-            shouldDisplay: () => this._isRigSkinWeightDiagnosticActive()
+            shouldDisplay: () => this._isRigSkinWeightDiagnosticActive(),
+            editing: visibility.correctionActive,
+            selectedVertexIds: this._rigSkinWeightSelectedVertexIds,
+            onVertexToggle: vertexId => this._toggleRigSkinWeightCorrectionVertex(vertexId)
         });
     }
 
@@ -3115,6 +3682,8 @@ export class AnimationTablePopup {
         const meshGenerateShape = folderSetup?.querySelector('[data-rig-mesh-generate-shape]');
         const meshGenerateLine = folderSetup?.querySelector('[data-rig-mesh-generate-line]');
         const meshStatus = folderSetup?.querySelector('[data-rig-mesh-status]');
+        const rasterPartAdd = folderSetup?.querySelector('[data-rig-raster-part-add]');
+        const rasterToMesh = folderSetup?.querySelector('[data-rig-raster-to-mesh]');
         if (!context) {
             if (targetName) targetName.textContent = 'CAF内にFolderがありません';
             if (targetKind) targetKind.textContent = 'NO TARGET';
@@ -3127,6 +3696,8 @@ export class AnimationTablePopup {
         const isRasterTarget = context.targetKind === 'raster';
         const isRigidRasterTarget = isRasterTarget && !!folder.part;
         const isMeshRasterTarget = isRasterTarget && !isRigidRasterTarget;
+        const artFocus = this._getSelectedRigMotionArtFocusProjection(projection.asset);
+        const isArtConnected = isBone && artFocus.targetConnected;
         if (targetName) targetName.textContent = folder.layer.name || (isRasterTarget ? 'Raster' : 'Folder');
         if (targetKind) {
             targetKind.textContent = isRasterTarget
@@ -3149,13 +3720,15 @@ export class AnimationTablePopup {
             meshGenerate.disabled = meshGenerateDisabled;
             meshGenerate.textContent = generatorType === ALPHA_FIT_GRID_GENERATOR
                 ? 'GRID再生成'
-                : 'AUTO GRID';
+                : '2. AUTO GRID';
+            meshGenerate.classList.toggle('is-primary', rasterMeshStatus.state === 'missing');
         }
         if (meshGenerateShape) {
             meshGenerateShape.disabled = meshGenerateDisabled;
             meshGenerateShape.textContent = generatorType === AUTO_SHAPE_FILL_GENERATOR
                 ? 'SHAPE再生成'
                 : 'AUTO SHAPE';
+            meshGenerateShape.classList.remove('is-primary');
         }
         if (meshGenerateLine) {
             meshGenerateLine.disabled = meshGenerateDisabled;
@@ -3175,6 +3748,19 @@ export class AnimationTablePopup {
                         : 'MESH未生成';
             meshStatus.classList.toggle('is-current', ['current', 'manual'].includes(rasterMeshStatus.state));
             meshStatus.classList.toggle('is-stale', rasterMeshStatus.state === 'stale');
+        }
+        if (rasterPartAdd) {
+            const hasMeshSetup = rasterMeshStatus.state !== 'missing';
+            const hasMeshBones = (projection.meshBones?.length || 0) > 0;
+            rasterPartAdd.hidden = !isMeshRasterTarget;
+            rasterPartAdd.disabled = !isMeshRasterTarget || this.isPlaying || hasMeshSetup || hasMeshBones;
+            rasterPartAdd.dataset.tooltip = hasMeshSetup || hasMeshBones
+                ? '曲げBONE / Meshとは併用できません'
+                : '絵を曲げず、一枚全体を一つのPIVOTで動かす';
+        }
+        if (rasterToMesh) {
+            rasterToMesh.hidden = !isRigidRasterTarget;
+            rasterToMesh.disabled = !isRigidRasterTarget || this.isPlaying;
         }
         if (meshBoneSelect) {
             const options = [{ value: '', label: 'BONEを選択' }, ...(projection.meshBones || []).map((bone, index) => ({
@@ -3228,11 +3814,13 @@ export class AnimationTablePopup {
             status.textContent = isRasterTarget
                 ? (isRigidRasterTarget
                     ? (isBone
-                        ? `${folder.bone.name || 'BONE 1'} · Raster Partのrigid PIVOT`
+                        ? `${folder.bone.name || 'BONE 1'} · 絵全体PIVOT方式。曲げる場合は「曲げBONEへ切替」`
                         : 'Raster PartへPIVOT / BONEを設定します')
                     : (isBone
-                        ? `${folder.bone.name || 'MESH BONE'} · Raster「${folder.layer.name || 'Raster'}」のSkin候補`
-                        : '＋BONEでPIVOTを追加し、Canvas上で配置・親子接続します'))
+                        ? (isArtConnected
+                            ? `${folder.bone.name || 'MESH BONE'} · MESH設定済み · Motion可能`
+                            : 'BONEの配置・親子関係を確認し、強調された「2. AUTO GRID」を実行')
+                        : '1. BONEを追加・配置し、次に「2. AUTO GRID」を実行'))
                 : (isBone
                     ? `${folder.bone.name || 'BONE 1'} · bind root / tailはstatic Setup`
                     : 'PIVOTを直接操作するとBONEへ登録します');
@@ -3281,6 +3869,8 @@ export class AnimationTablePopup {
         const targetKind = panel.querySelector('[data-rig-target-kind]');
         const status = panel.querySelector('[data-rig-status]');
         const keyButton = panel.querySelector('#anim-rig-key-btn');
+        const connectArtButton = panel.querySelector('[data-rig-connect-art]');
+        const openWeightButton = panel.querySelector('[data-rig-open-weight]');
         const ikButton = panel.querySelector('#anim-rig-ik-toggle-btn');
         const ikFlipButton = panel.querySelector('#anim-rig-ik-flip-btn');
         const ikStatus = panel.querySelector('[data-rig-ik-status]');
@@ -3289,8 +3879,10 @@ export class AnimationTablePopup {
             if (targetName) targetName.textContent = 'CAF内にFolderがありません';
             if (targetKind) targetKind.textContent = 'NO TARGET';
             if (status) status.textContent = 'Layer PanelでCAF内部Folderを作成してください';
-            [keyButton, ikButton, ikFlipButton, ...controls]
+            [keyButton, connectArtButton, openWeightButton, ikButton, ikFlipButton, ...controls]
                 .forEach(control => { if (control) control.disabled = true; });
+            if (connectArtButton) connectArtButton.hidden = true;
+            if (openWeightButton) openWeightButton.hidden = true;
             if (ikStatus) ikStatus.textContent = 'IK対象なし';
             return false;
         }
@@ -3300,13 +3892,20 @@ export class AnimationTablePopup {
         const isRigidRasterTarget = context.targetKind === 'raster' && !!folder.part;
         const key = folder.boneKey;
         const sampled = folder.boneSampled;
-        const canEditKey = isBone && !!sampled && folder.isFrameInClip && !this.isPlaying;
+        const artFocus = this._getSelectedRigMotionArtFocusProjection(projection.asset);
+        const canEditKey = isBone
+            && artFocus.targetConnected
+            && !!sampled
+            && folder.isFrameInClip
+            && !this.isPlaying;
         if (targetName) targetName.textContent = folder.layer.name || 'Folder';
         if (targetKind) {
             targetKind.textContent = context.targetKind === 'raster'
                 ? (isRigidRasterTarget
                     ? (isBone ? 'RASTER PART BONE' : 'RIG REQUIRED')
-                    : (isBone ? 'MESH BONE' : 'MESH BONE REQUIRED'))
+                    : (isBone
+                        ? (artFocus.targetConnected ? 'MESH BONE · CONNECTED' : 'MESH BONE · UNCONNECTED')
+                        : 'MESH BONE REQUIRED'))
                 : (isBone ? 'BONE' : 'RIG REQUIRED');
         }
         if (keyButton) {
@@ -3314,6 +3913,40 @@ export class AnimationTablePopup {
             keyButton.classList.toggle('active', !!key);
             keyButton.setAttribute('aria-pressed', String(!!key));
             keyButton.textContent = key ? '◆ KEY削除' : '◇ KEY追加';
+        }
+        if (connectArtButton) {
+            const showConnect = context.targetKind === 'raster'
+                && !isRigidRasterTarget
+                && isBone
+                && !artFocus.targetConnected;
+            connectArtButton.hidden = !showConnect;
+            connectArtButton.disabled = !showConnect || this.isPlaying;
+        }
+        if (openWeightButton) {
+            const showWeight = context.targetKind === 'raster'
+                && !isRigidRasterTarget
+                && isBone
+                && artFocus.targetConnected;
+            const weightAvailable = showWeight && !!this._getRigSkinWeightDiagnosticTarget();
+            const weightVisibility = this._getRigSkinWeightVisibilityPlan({
+                available: weightAvailable
+            });
+            if (!weightVisibility.visible && this._rigSkinWeightDiagnosticVisible) {
+                this._rigSkinWeightDiagnosticVisible = false;
+                rigSkinWeightOverlay.deactivate();
+            }
+            openWeightButton.hidden = !showWeight;
+            openWeightButton.disabled = !weightAvailable || this.isPlaying;
+            openWeightButton.classList.toggle('active', weightVisibility.visible);
+            openWeightButton.setAttribute('aria-pressed', String(weightVisibility.visible));
+            openWeightButton.textContent = weightVisibility.visible ? 'WEIGHT ON' : 'WEIGHT表示';
+            openWeightButton.dataset.tooltip = weightAvailable
+                ? (this.isPlaying
+                    ? '再生中は一時非表示。停止後に同じBoneの診断を再表示'
+                    : (weightVisibility.visible
+                        ? 'Motion上のread-only weight診断を閉じる'
+                        : 'Motionを維持したまま選択BoneのweightをCanvasへ表示'))
+                : 'Raster MeshとSkin接続済みBONEを選択すると使用できます';
         }
         const ikChain = isBone
             ? this._getMotionIkChainContext(folder, projection)
@@ -3371,7 +4004,9 @@ export class AnimationTablePopup {
             input.disabled = !canEditKey;
         });
         if (status) {
-            status.textContent = isBone
+            status.textContent = isBone && !artFocus.targetConnected
+                ? `${folder.bone.name || 'BONE 1'} · AUTO GRID未作成。作成するとMotionできます`
+                : isBone
                 ? `${folder.bone.name || 'BONE 1'} · ${context.targetKind === 'raster'
                     ? (isRigidRasterTarget ? 'Raster Part Bone' : 'Mesh Bone')
                     : 'Bone'} Pose · Local F${folder.localFrame + 1}`
@@ -3769,6 +4404,9 @@ export class AnimationTablePopup {
             itemIdByBoneId.set(bone.boneId, this._getMeshBoneOverlayItemId(bone.boneId));
         });
         projection.folders.forEach(folder => {
+            // Root Rasterの未設定targetは保存BONEではない。Canvasへ仮PIVOTを出すと
+            // 初期BONEに見えるため、明示BONE / PartができるまではInspector入口だけを使う。
+            if (folder.targetKind === 'raster' && !folder.part && !folder.bone) return;
             const sourceBounds = this._getFolderPartSourceBounds({
                 asset: projection.asset,
                 part: { partId: folder.layer.id }
@@ -4454,6 +5092,11 @@ export class AnimationTablePopup {
     _upsertSelectedRootBoneTransform(transform, options = {}) {
         const context = this._getSelectedRootBoneTimelineContext();
         if (!context?.isFrameInClip) return { ok: false, reason: 'frame-outside-clip' };
+        if (context.targetKind === 'raster'
+            && !context.part
+            && !this._getSelectedRigMotionArtFocusProjection(context.asset).targetConnected) {
+            return { ok: false, reason: 'raster-bone-unconnected' };
+        }
         const result = this.model.setClipRigBoneKey(
             context.entry.clip.id,
             context.bone.boneId,
@@ -4600,7 +5243,14 @@ export class AnimationTablePopup {
             folderEffectPlan,
             rigRenderPlan,
             rasterSkinPlan,
-            sourceBounds
+            sourceBounds,
+            rigMotionArtFocus: options.isOnion === true || options.tint !== undefined
+                || this.isPlaying
+                || this.motionPanel?.style.display === 'none'
+                || cel.id !== this.selectedCelId
+                || !['rig', 'motion'].includes(this._motionEditorMode)
+                ? null
+                : this._getSelectedRigMotionArtFocusProjection(asset)
         };
         const root = new Container();
         root.eventMode = 'none';
@@ -4939,6 +5589,11 @@ export class AnimationTablePopup {
 
             const opacity = this._getInternalLayerOwnOpacity(internalLayer);
             if (opacity <= 0) continue;
+            const rigFocus = options.rigMotionArtFocus;
+            const focusAlpha = rigFocus?.active
+                && !rigFocus.rasterLayerIds?.includes(internalLayer.id)
+                ? RIG_MOTION_UNFOCUSED_ART_ALPHA
+                : 1;
 
             const snapshot = this.model.getDrawingSnapshot(internalLayer.drawingSnapshotId);
             if (!snapshot) continue;
@@ -4978,7 +5633,7 @@ export class AnimationTablePopup {
                     });
                     continue;
                 }
-                skinNode.alpha = opacity;
+                skinNode.alpha = opacity * focusAlpha;
                 skinNode.blendMode = internalLayer.blendMode || 'normal';
                 skinNode._tegakiRasterSkinPreview = true;
                 container.addChild(skinNode);
@@ -4992,7 +5647,7 @@ export class AnimationTablePopup {
 
             const sprite = new Sprite(texture);
             this._positionSnapshotSprite(sprite, displaySnapshot);
-            sprite.alpha = opacity;
+            sprite.alpha = opacity * focusAlpha;
             sprite.blendMode = internalLayer.blendMode || 'normal';
             sprite.eventMode = 'none';
 
@@ -12441,7 +13096,11 @@ export class AnimationTablePopup {
         this._setupMotionCanvasGestures();
         const button = this.panel.querySelector('#anim-motion-open-btn');
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
-        const canOpen = (entry?.clip?.duration || 0) > 1;
+        const clipDuration = entry?.clip?.duration || 0;
+        // Static RIG Setupは1 Frame CAFでも成立する。明示RIG入口だけは開き、
+        // MotionのためにDurationを暗黙延長しない。
+        const canOpen = clipDuration > 1
+            || (clipDuration === 1 && this._motionEditorMode === 'rig');
         const wasOpen = this.motionPanel.style.display !== 'none';
         if (open === true && canOpen && this.layerSystem?.isLayerMoveMode) {
             if (this.layerSystem.exitLayerMoveMode?.() === false) return false;
@@ -12520,6 +13179,54 @@ export class AnimationTablePopup {
         return nextOpen;
     }
 
+    _getMotionWorkspaceShellPlan() {
+        return createRigWorkspaceFocusShellPlan({
+            editorMode: this._motionEditorMode,
+            compactRequested: this._motionDetailCollapsed
+        });
+    }
+
+    _clampMotionPanelPlacement() {
+        if (!this.motionPanel || this.motionPanel.style.display === 'none') return false;
+        const rect = this.motionPanel.getBoundingClientRect();
+        const margin = 4;
+        const maximumLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+        const maximumTop = Math.max(margin, window.innerHeight - rect.height - margin);
+        const left = Math.max(margin, Math.min(maximumLeft, rect.left));
+        const top = Math.max(margin, Math.min(maximumTop, rect.top));
+        const changed = Math.abs(left - rect.left) > 0.5 || Math.abs(top - rect.top) > 0.5;
+        if (changed) {
+            this.motionPanel.style.left = `${left}px`;
+            this.motionPanel.style.top = `${top}px`;
+        }
+        return changed;
+    }
+
+    _syncMotionWorkspaceShell() {
+        const plan = this._getMotionWorkspaceShellPlan();
+        const button = this.motionPanel?.querySelector('[data-motion-shell-toggle]');
+        this.motionPanel?.classList.toggle('is-focus-shell', plan.compactApplied);
+        if (button) {
+            button.disabled = !plan.compactSupported;
+            button.classList.toggle('active', plan.compactApplied);
+            button.setAttribute('aria-expanded', String(plan.detailExpanded));
+            button.setAttribute('aria-pressed', String(plan.compactApplied));
+            button.textContent = plan.buttonLabel;
+            button.dataset.tooltip = plan.buttonTooltip;
+        }
+        this._clampMotionPanelPlacement();
+        return plan;
+    }
+
+    _toggleMotionDetailCollapsed() {
+        const plan = this._getMotionWorkspaceShellPlan();
+        if (!plan.compactSupported) return false;
+        this._motionDetailCollapsed = !this._motionDetailCollapsed;
+        if (this.isVisible) this.render();
+        else this._syncMotionWorkspaceShell();
+        return this._motionDetailCollapsed;
+    }
+
     _isMotionTimelineKeyEditing() {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         return this.motionPanel?.style.display !== 'none'
@@ -12558,6 +13265,20 @@ export class AnimationTablePopup {
             this._motionAnchorClip = null;
         }
         this._motionEditorMode = nextKind;
+        if (nextKind !== 'rig' && this._rigSkinWeightCorrectionActive) {
+            this._rigSkinWeightCorrectionActive = false;
+            this._rigSkinWeightSelectedVertexIds.clear();
+        }
+        if (nextKind !== 'rig' && this._rigSkinWeightBrushActive) {
+            if (this._rigSkinWeightBrushGesture) {
+                this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
+                    cancelled: true,
+                    releasePointerCapture: true,
+                    render: false
+                });
+            }
+            this._rigSkinWeightBrushActive = false;
+        }
         this._motionTimelineKeyKind = nextKind === 'motion' && this._motionInspectorScope === 'internal'
             ? 'rig'
             : nextKind;
@@ -13016,6 +13737,7 @@ export class AnimationTablePopup {
         return !this._motionCanvasGesture
             && !this._partCanvasGesture
             && !this._boneCanvasGesture
+            && !this._rigSkinWeightBrushGesture
             && !this._warpGridGesture
             && !this._warpBrushShortcutControl;
     }
@@ -13023,7 +13745,11 @@ export class AnimationTablePopup {
     _updateMotionCanvasCursor() {
         const canvas = this._motionCanvas || this._getMotionCanvas();
         if (!canvas) return;
-        if (this._isWarpGridEditModeActive()) {
+        if (this._isRigSkinWeightBrushModeActive()) {
+            canvas.style.cursor = 'none';
+        } else {
+            rigSkinWeightOverlay.setBrushCursor(null);
+            if (this._isWarpGridEditModeActive()) {
             canvas.style.cursor = this._warpBrushShortcutControl
                 ? 'ew-resize'
                 : this._warpGridGesture
@@ -13033,21 +13759,22 @@ export class AnimationTablePopup {
                     : (this._warpGridTool === 'select'
                     ? 'crosshair'
                     : (['grid', 'lens'].includes(this._warpGridTool) ? 'move' : 'crosshair')));
-        } else if (this._isRootBoneCanvasModeActive()) {
-            canvas.style.cursor = this._boneCanvasGesture ? 'grabbing' : 'crosshair';
-        } else if (this._isFolderPartCanvasModeActive()) {
-            canvas.style.cursor = this._partCanvasGesture
+            } else if (this._isRootBoneCanvasModeActive()) {
+                canvas.style.cursor = this._boneCanvasGesture ? 'grabbing' : 'crosshair';
+            } else if (this._isFolderPartCanvasModeActive()) {
+                canvas.style.cursor = this._partCanvasGesture
                 ? (this._partCanvasGesture.mode === 'rotate'
                     ? 'crosshair'
                     : (this._partCanvasGesture.mode === 'scale' ? 'nwse-resize' : 'grabbing'))
                 : 'move';
-        } else if (this._isMotionCanvasModeActive()) {
-            canvas.style.cursor = this._motionCanvasGesture ? 'grabbing' : 'move';
-        } else if (this._isClipMotionCanvasInputLocked()) {
-            canvas.style.cursor = 'default';
-        } else {
-            canvas.style.cursor = '';
-            this.layerSystem?.transform?._updateCursor?.();
+            } else if (this._isMotionCanvasModeActive()) {
+                canvas.style.cursor = this._motionCanvasGesture ? 'grabbing' : 'move';
+            } else if (this._isClipMotionCanvasInputLocked()) {
+                canvas.style.cursor = 'default';
+            } else {
+                canvas.style.cursor = '';
+                this.layerSystem?.transform?._updateCursor?.();
+            }
         }
     }
 
@@ -13304,6 +14031,22 @@ export class AnimationTablePopup {
             // CLIP Motion側でcaptureすると後段の既存pan handlerへ届かないため、
             // gesture未開始時だけ何も消費せず通常event pathを維持する。
             if (this._shouldYieldMotionCanvasPointerToCamera(event)) return;
+            if (this._isRigSkinWeightBrushModeActive() && event.button === 0) {
+                if (this._beginRigSkinWeightBrushGesture(event)) {
+                    canvas.setPointerCapture?.(event.pointerId);
+                }
+                rigSkinWeightOverlay.setBrushCursor({
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    radius: this._rigSkinWeightBrushRadius,
+                    direction: this._rigSkinWeightBrushDirection,
+                    visible: true
+                });
+                this._updateMotionCanvasCursor();
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             if (this._isWarpGridEditModeActive() && event.button === 0) {
                 let state = this._getWarpGridEditState();
                 const hit = state && ['point', 'select'].includes(this._warpGridTool)
@@ -13663,6 +14406,20 @@ export class AnimationTablePopup {
             }
         }, true);
         canvas.addEventListener('pointermove', (event) => {
+            const weightBrushGesture = this._rigSkinWeightBrushGesture;
+            if (weightBrushGesture?.pointerId === event.pointerId) {
+                this._applyRigSkinWeightBrushSample(weightBrushGesture, event.clientX, event.clientY);
+                rigSkinWeightOverlay.setBrushCursor({
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    radius: weightBrushGesture.radius,
+                    direction: weightBrushGesture.direction,
+                    visible: true
+                });
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             const warpGesture = this._warpGridGesture;
             if (warpGesture?.pointerId === event.pointerId) {
                 if (warpGesture.tool === 'brush-control') {
@@ -14040,6 +14797,16 @@ export class AnimationTablePopup {
             return true;
         };
         const finishPointer = (event) => {
+            const weightBrushGesture = this._rigSkinWeightBrushGesture;
+            if (weightBrushGesture?.pointerId === event.pointerId) {
+                this._finishRigSkinWeightBrushGesture(weightBrushGesture, {
+                    cancelled: event.type === 'pointercancel' || event.type === 'lostpointercapture',
+                    releasePointerCapture: event.type !== 'lostpointercapture'
+                });
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             const warpGesture = this._warpGridGesture;
             if (warpGesture?.pointerId === event.pointerId) {
                 const cancelled = event.type === 'pointercancel' || event.type === 'lostpointercapture';
@@ -14149,7 +14916,12 @@ export class AnimationTablePopup {
         }
         this._partGestureKeydownHandler = event => {
             if (event.key !== 'Escape') return;
-            if (this._warpGridGesture) {
+            if (this._rigSkinWeightBrushGesture) {
+                this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
+                    cancelled: true,
+                    releasePointerCapture: true
+                });
+            } else if (this._warpGridGesture) {
                 const gesture = this._warpGridGesture;
                 this._warpGridGesture = null;
                 this._cancelWarpGridGesture(gesture, {
@@ -14183,7 +14955,15 @@ export class AnimationTablePopup {
         };
         document.addEventListener('keydown', this._partGestureKeydownHandler, true);
         canvas.addEventListener('pointerenter', event => {
-            if (this._isWarpGridEditModeActive() && this._warpGridTool === 'brush') {
+            if (this._isRigSkinWeightBrushModeActive()) {
+                rigSkinWeightOverlay.setBrushCursor({
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    radius: this._rigSkinWeightBrushRadius,
+                    direction: this._rigSkinWeightBrushDirection,
+                    visible: true
+                });
+            } else if (this._isWarpGridEditModeActive() && this._warpGridTool === 'brush') {
                 const fixedGesture = this._warpGridGesture?.tool === 'brush'
                     && this._warpGridGesture.mode !== 'move';
                 if (!fixedGesture) {
@@ -14192,10 +14972,19 @@ export class AnimationTablePopup {
             }
         }, true);
         canvas.addEventListener('pointerleave', () => {
+            if (!this._rigSkinWeightBrushGesture) rigSkinWeightOverlay.setBrushCursor(null);
             if (!this._warpGridGesture) this._warpBrushPointer = null;
         }, true);
         canvas.addEventListener('pointermove', event => {
-            if (this._isWarpGridEditModeActive() && this._warpGridTool === 'brush') {
+            if (this._isRigSkinWeightBrushModeActive()) {
+                rigSkinWeightOverlay.setBrushCursor({
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    radius: this._rigSkinWeightBrushRadius,
+                    direction: this._rigSkinWeightBrushDirection,
+                    visible: true
+                });
+            } else if (this._isWarpGridEditModeActive() && this._warpGridTool === 'brush') {
                 this._warpBrushPointer = { x: event.clientX, y: event.clientY, visible: true };
             }
         }, true);
@@ -15691,9 +16480,9 @@ export class AnimationTablePopup {
                                 type="button" aria-pressed="${rigFolder.boneKey ? 'true' : 'false'}"
                                 title="${boneKeyTitle}"
                                 ${rigFolder.isFrameInClip && !this.isPlaying ? '' : 'disabled'}>◆</button>`
-                            : `<button class="anim-rig-folder-setup" type="button"
-                                aria-label="${rigFolder.targetKind === 'raster' ? 'このRoot Raster' : 'このFolder'}へPIVOTとBONEを設定"
-                                ${this.isPlaying ? 'disabled' : ''}>+RIG</button>`;
+                            : `<button class="anim-rig-folder-setup${rigFolder.targetKind === 'raster' ? ' is-raster-entry' : ''}" type="button"
+                                aria-label="${rigFolder.targetKind === 'raster' ? 'このRasterのRIG設定を開く' : 'このFolderへPIVOTとBONEを設定'}"
+                                ${this.isPlaying ? 'disabled' : ''}>${rigFolder.targetKind === 'raster' ? 'RIG設定' : '+RIG'}</button>`;
                         trackHtml += `
                             <div class="anim-track-item anim-rig-folder-track-item${rowClasses}${boneSelected ? ' is-selected' : ''}"
                                 data-track-id="${track.id}"
@@ -15992,12 +16781,20 @@ export class AnimationTablePopup {
             motionControls.classList.toggle('is-warp-focus', isWarpFocus);
             motionControls.classList.toggle('is-rig-focus', isRigFocus);
             motionControls.classList.toggle('is-part-motion-target', isPartMotionTarget);
+            this._syncMotionWorkspaceShell();
             const motionFields = motionControls.querySelector('#anim-motion-fields');
             if (motionFields) motionFields.hidden = !isMotionFocus || isPartMotionTarget;
             const motionFocusButton = motionControls.querySelector('#anim-motion-focus-btn');
             const warpFocusButton = motionControls.querySelector('#anim-warp-focus-btn');
             const rigFocusButton = motionControls.querySelector('#anim-rig-focus-btn');
-            const motionKeyCount = selectedWarpEntry?.clip?.transformKeyframes?.length || 0;
+            const rigMotion = normalizeRigMotion(selectedWarpEntry?.clip?.rigMotion);
+            const internalMotionKeyCount = [
+                ...(rigMotion?.partTracks || []),
+                ...(rigMotion?.boneTracks || [])
+            ].reduce((sum, track) => sum + (track?.keyframes?.length || 0), 0);
+            const motionKeyCount = this._motionInspectorScope === 'internal'
+                ? internalMotionKeyCount
+                : (selectedWarpEntry?.clip?.transformKeyframes?.length || 0);
             const warpKeyCount = hasSelectedWarpGrid
                 ? listClipDeformerKeyframes(selectedWarpDeformer, selectedWarpEntry.clip.duration).length
                 : 0;
@@ -16667,6 +17464,7 @@ export class AnimationTablePopup {
                     <button class="anim-motion-action anim-motion-action--warp flip-button flip-button--icon" id="anim-warp-clear-btn" type="button" title="このClipのWarp keyをすべて削除" aria-label="Clear all Warp keys in selected clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M9 11h6"/><path d="M9 15h6"/></svg></button>
                     <button class="anim-motion-action anim-motion-action--motion anim-motion-curve-btn flip-button flip-button--icon" id="anim-motion-curve-btn" type="button" title="左keyから次keyまでのEasing Curveを編集" aria-label="Open easing curve editor" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 17c2-7 5-10 10-10"/><circle cx="7" cy="17" r="1.4"/><circle cx="17" cy="7" r="1.4"/></svg></button>
                     <button class="anim-motion-action anim-motion-action--motion anim-motion-graph-btn flip-button flip-button--icon" id="anim-motion-graph-btn" type="button" title="Clip全体のMotion Graphを表示" aria-label="Open Motion Graph" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h17"/><path d="m6 15 4-5 3 3 6-7"/></svg></button>
+                    <button class="anim-motion-shell-toggle flip-button" type="button" data-motion-shell-toggle aria-controls="anim-motion-fields anim-rig-context anim-part-motion-context" aria-expanded="true" aria-pressed="false" title="CLIP MOTIONをCanvas優先表示へ折りたたむ">CANVAS</button>
                     <button class="anim-motion-help-btn flip-button" id="anim-motion-help-btn" type="button" aria-label="CLIP MOTION 操作ヘルプ" aria-controls="anim-motion-help-popover" aria-expanded="false">?</button>
                 </div>
                 <button class="ui-close-button ui-close-button--small" id="anim-motion-close-btn" type="button" aria-label="Close motion controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -16709,6 +17507,20 @@ export class AnimationTablePopup {
                     <span class="anim-rig-weight-label">DIAGNOSTIC</span>
                     <button class="anim-rig-key-btn anim-rig-weight-toggle ui-help-tooltip" id="anim-rig-weight-toggle" type="button" aria-pressed="false" disabled>WEIGHT</button>
                     <span class="anim-rig-weight-summary" data-rig-weight-summary hidden>0 · BLEND · 1</span>
+                    <button class="anim-rig-key-btn anim-rig-weight-correction-toggle ui-help-tooltip" id="anim-rig-weight-correction-toggle" type="button" aria-pressed="false" disabled>CORRECT</button>
+                    <span class="anim-rig-weight-correction-actions" data-rig-weight-correction-actions hidden>
+                        <span data-rig-weight-selection-count>0 selected</span>
+                        <button class="anim-rig-key-btn" type="button" data-rig-weight-correction="bone-only">BONE ONLY</button>
+                        <button class="anim-rig-key-btn" type="button" data-rig-weight-correction="parent-blend">PARENT BLEND</button>
+                        <button class="anim-rig-key-btn" type="button" data-rig-weight-correction="none">NO INFLUENCE</button>
+                    </span>
+                    <button class="anim-rig-key-btn anim-rig-weight-brush-toggle ui-help-tooltip" id="anim-rig-weight-brush-toggle" type="button" aria-pressed="false" disabled>BRUSH</button>
+                    <span class="anim-rig-weight-brush-controls" data-rig-weight-brush-controls hidden>
+                        <button class="anim-rig-key-btn active" type="button" data-rig-weight-brush-direction="1" aria-pressed="true">ADD</button>
+                        <button class="anim-rig-key-btn" type="button" data-rig-weight-brush-direction="-1" aria-pressed="false">SUB</button>
+                        <label>R<input id="anim-rig-weight-brush-radius" type="number" min="8" max="160" step="4" value="32" aria-label="Weight brush radius"></label>
+                        <label>S%<input id="anim-rig-weight-brush-strength" type="number" min="1" max="25" step="1" value="8" aria-label="Weight brush strength"></label>
+                    </span>
                 </div>
                 <div class="anim-rig-target-row anim-rig-caf-setup" data-rig-caf-setup>
                     <span class="anim-rig-target-name">CAF</span>
@@ -16732,15 +17544,17 @@ export class AnimationTablePopup {
                     <div class="anim-rig-mesh-bone-controls" data-rig-mesh-bone-controls hidden>
                         <div class="anim-rig-mesh-bone-source">
                             <label>BONE<select data-rig-mesh-bone-select aria-label="Raster Mesh Bone"></select></label>
-                            <button class="anim-rig-key-btn" type="button" data-rig-mesh-bone-add>＋ BONE</button>
+                            <button class="anim-rig-key-btn anim-rig-setup-action" type="button" data-rig-mesh-bone-add>1. BONE追加</button>
                         </div>
                         <div class="anim-rig-mesh-generate-group" role="group" aria-label="Raster Mesh自動生成">
-                            <button class="anim-rig-key-btn anim-rig-mesh-generate-btn" type="button" data-rig-mesh-generate>AUTO GRID</button>
+                            <button class="anim-rig-key-btn anim-rig-mesh-generate-btn" type="button" data-rig-mesh-generate>2. AUTO GRID</button>
                             <button class="anim-rig-key-btn anim-rig-mesh-generate-btn" type="button" data-rig-mesh-generate-shape>AUTO SHAPE</button>
                             <button class="anim-rig-key-btn anim-rig-mesh-generate-btn" type="button" data-rig-mesh-generate-line>AUTO LINE</button>
                         </div>
+                        <button class="anim-rig-key-btn anim-rig-raster-mode-btn ui-help-tooltip" type="button" data-rig-raster-part-add data-tooltip="絵を曲げず、一枚全体を一つのPIVOTで動かす">全体PIVOT</button>
                         <span class="anim-rig-mesh-status" data-rig-mesh-status>MESH未生成</span>
                     </div>
+                    <button class="anim-rig-key-btn anim-rig-raster-mode-btn" type="button" data-rig-raster-to-mesh hidden>曲げBONEへ切替</button>
                     <label class="anim-rig-parent-field">親<select data-rig-parent-bone aria-label="Parent Bone"><option value="">なし（ROOT）</option></select></label>
                     <span class="anim-rig-status" data-rig-setup-status></span>
                   </div>
@@ -16750,6 +17564,8 @@ export class AnimationTablePopup {
                 <div class="anim-rig-target-row">
                     <span class="anim-rig-target-name" data-rig-target-name>Folder</span>
                     <span class="anim-rig-target-kind" data-rig-target-kind>FOLDER MOTION</span>
+                    <button class="anim-rig-key-btn anim-rig-connect-art-btn" type="button" data-rig-connect-art hidden>AUTO GRIDを作成</button>
+                    <button class="anim-rig-key-btn anim-rig-setup-action anim-rig-weight-toggle ui-help-tooltip" type="button" data-rig-open-weight aria-pressed="false" hidden>WEIGHT表示</button>
                     <button class="anim-rig-key-btn" id="anim-rig-key-btn" type="button" aria-pressed="false">◇ KEY追加</button>
                     <button class="anim-rig-target-switch anim-rig-ik-btn ui-help-tooltip" id="anim-rig-ik-toggle-btn" type="button" aria-pressed="false">IK追従</button>
                     <button class="anim-rig-target-switch anim-rig-ik-btn ui-help-tooltip" id="anim-rig-ik-flip-btn" type="button">曲げ反転</button>
@@ -16843,6 +17659,10 @@ export class AnimationTablePopup {
         mountPopupAtOverlayRoot(this.motionPanel);
         this.motionPanelDragCleanup?.();
         this.motionPanelDragCleanup = attachPopupDrag(this.motionPanel);
+        this.motionPanelViewportCleanup?.();
+        const clampMotionPanel = () => this._clampMotionPanelPlacement();
+        window.addEventListener('resize', clampMotionPanel);
+        this.motionPanelViewportCleanup = () => window.removeEventListener('resize', clampMotionPanel);
         this._ensureMotionCurvePanel();
         this._ensureMotionGraphPanel();
     }
@@ -17762,9 +18582,77 @@ export class AnimationTablePopup {
             motionControls.querySelector('#anim-rig-weight-toggle')?.addEventListener('click', () => {
                 if (!this._getRigSkinWeightDiagnosticTarget()) return;
                 this._rigSkinWeightDiagnosticVisible = !this._rigSkinWeightDiagnosticVisible;
+                if (!this._rigSkinWeightDiagnosticVisible) {
+                    this._rigSkinWeightCorrectionActive = false;
+                    this._rigSkinWeightSelectedVertexIds.clear();
+                    this._rigSkinWeightBrushActive = false;
+                }
                 this._syncRigSetupContext();
                 this._syncRigSkinWeightOverlay();
             });
+            motionControls.querySelector('#anim-rig-weight-correction-toggle')?.addEventListener('click', () => {
+                if (!this._getRigSkinWeightCorrectionTarget()) return;
+                this._rigSkinWeightCorrectionActive = !this._rigSkinWeightCorrectionActive;
+                this._rigSkinWeightSelectedVertexIds.clear();
+                if (this._rigSkinWeightCorrectionActive) {
+                    if (this._rigSkinWeightBrushGesture) {
+                        this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
+                            cancelled: true,
+                            releasePointerCapture: true,
+                            render: false
+                        });
+                    }
+                    this._rigSkinWeightBrushActive = false;
+                    this._rigSkinWeightDiagnosticVisible = true;
+                }
+                this._syncRigSetupContext();
+                this._syncRigSkinWeightOverlay();
+            });
+            motionControls.querySelectorAll('[data-rig-weight-correction]').forEach(button => {
+                button.addEventListener('click', () => {
+                    this._applyRigSkinWeightCorrection(button.dataset.rigWeightCorrection);
+                });
+            });
+            motionControls.querySelector('#anim-rig-weight-brush-toggle')?.addEventListener('click', () => {
+                if (!this._getRigSkinWeightBrushTarget()) return;
+                if (this._rigSkinWeightBrushGesture) {
+                    this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
+                        cancelled: true,
+                        releasePointerCapture: true,
+                        render: false
+                    });
+                }
+                this._rigSkinWeightBrushActive = !this._rigSkinWeightBrushActive;
+                this._rigSkinWeightCorrectionActive = false;
+                this._rigSkinWeightSelectedVertexIds.clear();
+                if (this._rigSkinWeightBrushActive) this._rigSkinWeightDiagnosticVisible = true;
+                this._syncRigSetupContext();
+                this._syncRigSkinWeightOverlay();
+                this._updateMotionCanvasCursor();
+            });
+            motionControls.querySelectorAll('[data-rig-weight-brush-direction]').forEach(button => {
+                button.addEventListener('click', () => {
+                    this._setRigSkinWeightBrushDirection(button.dataset.rigWeightBrushDirection);
+                });
+            });
+            const weightBrushRadius = motionControls.querySelector('#anim-rig-weight-brush-radius');
+            if (weightBrushRadius) {
+                this._bindNumberInputWheel(weightBrushRadius, () => {
+                    this._setRigSkinWeightBrushRadius(weightBrushRadius.value);
+                });
+                weightBrushRadius.addEventListener('input', () => {
+                    this._setRigSkinWeightBrushRadius(weightBrushRadius.value);
+                });
+            }
+            const weightBrushStrength = motionControls.querySelector('#anim-rig-weight-brush-strength');
+            if (weightBrushStrength) {
+                this._bindNumberInputWheel(weightBrushStrength, () => {
+                    this._setRigSkinWeightBrushStrength(weightBrushStrength.value);
+                });
+                weightBrushStrength.addEventListener('input', () => {
+                    this._setRigSkinWeightBrushStrength(weightBrushStrength.value);
+                });
+            }
             motionControls.querySelector('[data-rig-mesh-bone-add]')?.addEventListener('click', () => {
                 const context = this._getSelectedRigInspectorContext();
                 if (context?.targetKind !== 'raster' || this.isPlaying) return;
@@ -17774,6 +18662,29 @@ export class AnimationTablePopup {
                     { source: 'rig-raster-bone-add' }
                 );
                 if (!result.ok) showFeedbackToast('RasterへMesh BONEを追加できません');
+            });
+            motionControls.querySelector('[data-rig-raster-part-add]')?.addEventListener('click', () => {
+                this._createSelectedRasterRigidPivot();
+            });
+            motionControls.querySelector('[data-rig-raster-to-mesh]')?.addEventListener('click', () => {
+                this._switchSelectedRasterPartToMesh();
+            });
+            motionControls.querySelector('[data-rig-connect-art]')?.addEventListener('click', () => {
+                this._generateSelectedRasterBoneSetup('alpha-fit-grid');
+            });
+            motionControls.querySelector('[data-rig-open-weight]')?.addEventListener('click', () => {
+                if (this.isPlaying) return;
+                if (!this._getRigSkinWeightDiagnosticTarget()) {
+                    this.render();
+                    showFeedbackToast('選択BONEのweightを表示できません');
+                    return;
+                }
+                this._rigSkinWeightDiagnosticVisible = !this._rigSkinWeightDiagnosticVisible;
+                this._rigSkinWeightCorrectionActive = false;
+                this._rigSkinWeightSelectedVertexIds.clear();
+                this._rigSkinWeightBrushActive = false;
+                this._syncRigInspectorContext();
+                this._syncRigSkinWeightOverlay();
             });
             motionControls.querySelector('[data-rig-mesh-generate]')?.addEventListener('click', () => {
                 this._generateSelectedRasterBoneSetup('alpha-fit-grid');
@@ -17983,6 +18894,9 @@ export class AnimationTablePopup {
                 const help = motionControls.querySelector('#anim-motion-help-popover');
                 this._setMotionHelpOpen(help?.hidden !== false);
             });
+            motionControls.querySelector('[data-motion-shell-toggle]')?.addEventListener('click', () => {
+                this._toggleMotionDetailCollapsed();
+            });
             motionOpenButton.addEventListener('click', () => this.toggleMotionWindow());
             motionControls.querySelector('#anim-motion-close-btn')?.addEventListener('click', () => this.setMotionWindowOpen(false));
             this._setupMotionCurveEvents();
@@ -18168,6 +19082,21 @@ export class AnimationTablePopup {
                     const projection = this._getSelectedCafRigProjection();
                     const context = projection?.folders.find(candidate => candidate.layer.id === row?.dataset.folderId);
                     if (context && !rigFolderSetup.disabled) {
+                        if (context.targetKind === 'raster') {
+                            if (context.part) {
+                                this._selectRigFolderProjectionTarget(context, {
+                                    focusRig: true,
+                                    openInspector: true
+                                });
+                            } else {
+                                this._selectRigRasterProjectionTarget(context, {
+                                    focusRig: true,
+                                    openInspector: true
+                                });
+                            }
+                            e.stopPropagation();
+                            return;
+                        }
                         const beforeState = this._captureInternalLayerHistoryState(context.asset);
                         const configured = this._ensureFolderRigPivot(context, beforeState);
                         if (configured?.bone) {
@@ -20018,7 +20947,7 @@ export class AnimationTablePopup {
                 padding: 2px 6px;
                 border-radius: 3px;
                 cursor: pointer;
-                opacity: 0.6;
+                opacity: 0.68;
             }
 
             .anim-scope-btn:hover {
@@ -20031,6 +20960,12 @@ export class AnimationTablePopup {
                 background: rgba(255, 102, 0, 0.18);
                 font-weight: bold;
                 color: var(--futaba-maroon);
+            }
+
+            .anim-scope-btn:focus-visible {
+                outline: 2px solid var(--futaba-maroon);
+                outline-offset: 1px;
+                opacity: 1;
             }
 
             .anim-playback-controls {

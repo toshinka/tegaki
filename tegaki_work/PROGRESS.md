@@ -1,10 +1,10 @@
 # Tegaki Progress
 
-更新日: 2026-08-14
+更新日: 2026-08-20
 
 ## 現在地
 
-- Phase 5a〜8aを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。
+- Phase 5a〜8jを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。現行Phase 8kはManual Raster Mesh Topology Boundary Gateで、Gate 1=`GO — A: 既存vertex位置だけを編集`、Stage B pure / Model adapterまで完了した。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -49,11 +49,19 @@
 - Phase 7z入口でAnimation Tableのdominant-axis wheel routingを固定し、Root Raster方式が成立済みのCAFへ追加した直下Rasterだけ初期Part / Boneを継承するようにした。Layer削除は専有Rig / Motion / Mesh / Skinを明示cascadeし、共有Boneと外部子Rigは理由付き拒否する。多Bone Canvasは名前AUTO / ON、hover名、明色underlayへ限定改善し、Layer別Mesh Bone groupとTable折りたたみはproposal 15の後続Gateへ分離した。Stage A baselineでは現行global distanceがhead頂点にも別branchの第2weightを配ることをpure fixtureで再現した。
 - Phase 8aは選択Raster / Mesh / Boneのread-only weight診断をSetup青RIG内へ接続し、SOL review=`A`で技術closeした。既存`skinBindings`とFrame Skin evaluatorだけからweight 0 / 微小漏れ / blend / rigidを導出し、固定6 SVG path、Futaba cream二重outline、pan / zoom時group matrix、pointer非参加、target消失時解除を固定した。全71 verifier、変更JSの`node --check`、build、Browserの生成前disabled、ON / OFF、target / tab切替、Table close、console 0件を通過した。Owner制作確認は台帳へ分離し、active Raster focusとTable group / collapseはPhase 8bへ送った。
 - Phase 8bはAnimation Tableの多Bone表示密度Gateを技術closeした。rigid binding / 正weight Skin influenceから一意target、複数target `SHARED / CONNECTION`、targetなし`UNASSIGNED`をpure分類し、同一target 2 Bone以上だけruntime collapse見出しを左右Tableへ接続した。singletonは従来行、既定展開、active Bone / Ctrl・Cmd選択KEYを同時通知し、selection / History / Project / Timeline modelを変更しない。全73 verifier、変更JSの`node --check`、build、Browserのcollapse / 再展開 / selection保持 / History不変を通過し、SOL review=`A`。Owner制作確認は台帳へ分離した。
-- 現行Phase 8cは`Limited Skin Influence Correction Gate`。既存`skinBindings[].vertexWeights`を唯一の評価正本とし、`chainへ含める / 除外`、joint band幅の限定再生成、選択頂点の離散補正を比較する。Stage A / Gate前はproduction編集を行わず、自由paint brush、第二Shape zone正本、multiple Mesh、DQS、stretch、WARP共有へ広げない。
+- Phase 8cはGate 1=`GO — 選択頂点の離散補正`、SOL final review=`A`で技術closeした。Setup青RIGの`CORRECT` modeからstable vertexへ`BONE ONLY / PARENT BLEND / NO INFLUENCE`を既存`skinBindings[].vertexWeights`へ直接確定し、補正済み再生成の明示確認、no-op History 0、実変更1 History、Undo / Redoを固定した。前提導線としてRIG / Motion対象Rasterを既存binding / 正weight Skinから投影し、非対象の絵を半透明、未接続BoneのMotion入力を拒否する。全77 verifier、build、Browser、console 0件を通過し、Owner制作確認は台帳へ分離した。
+- Phase 8dは一枚Rasterの`RIG設定 → BONE追加 → AUTO GRID → Motion`、別の`全体PIVOT`、未接続Gate、対象art focus、`WEIGHT確認`復帰を固定した。全78 verifier、build、BrowserのGRID接続 / Bone key / WEIGHT復帰、console 0件とOwner初期制作確認を受入れ、Architecture Gateは`B: Canvas-first Workspaceの段階導入`を選定してcloseした。形状追従Mesh / Topology / 自由Weight paintは別Gate、Owner深部確認は台帳へ残す。
+- Phase 8eはRIG / Motionで一つのread-only WEIGHT runtime request / diagnostic / overlayを共有し、Motionのまま`WEIGHT表示 / WEIGHT ON`を切り替えられるようにした。Motion数値変形へoverlay geometryを追従し、CORRECTはRIGだけ、再生中は一時非表示として出力へ混ぜない。全79 verifier、build、Browserの一枚Raster → BONE → AUTO GRID → Motion → WEIGHT → X変形 → playback / F1復帰、console 0件を通過し、SOL final review=`A`で技術closeした。Owner深部確認は台帳へ分離する。
+- Phase 8fはCLIP MOTIONの可逆Focus shellを技術closeした。通常茶`CANVAS / DETAIL`でRIG / Motionの数値詳細だけを畳み、mode / target / BONE / AUTO GRID系 / Motion key / WEIGHTを維持する。WARPは詳細固定、runtime compact要求は往復復帰し、viewport内clamp以外のpopup位置、保存 / History / evaluatorを変更しない。全80 verifier、build、1280×720 / 720×720 Browser、Table close→通常ペン→再open、console 0件、SOL final review=`A`を通過した。Owner制作確認は台帳へ分離する。
+- Phase 8gはUI semantic contrast / workflow density Gateを技術closeした。通常描画、Animation Table、CLIP MOTIONのcomputed stateを実測し、淡い橙背景へ白文字を継承していた`DETAIL` activeだけを既存茶文字へ限定補正した。1.15:1→9.36:1、全80 verifier、build、expanded / compact / RIG / focus-visible Browser、SOL final review=`A`を通過した。Tableの押せるinactive `LANE` 3.91:1は別componentとしてPhase 8hへ分離した。
+- Phase 8hはAnimation Table inactive controlのcontrast Gateを技術closeした。常に操作可能な`SCOPE` inactiveのopacityを0.6から既存playback群と同じ0.68へ揃えて3.91:1→4.81:1とし、browser既定黒focusをFutaba茶outlineへ限定補正した。全80 verifier、build、Browser、SOL final review=`A`を通過し、header DOM、wheel三領域、playback群は変更していない。
+- Phase 8iはMesh / Skin正本、stable vertexId、History、STALE / regenerate、CPU / Pixi / exportをread-only監査し、Gate 1=`GO — B: 固定topology Weight brush`、SOL final review=`A`で技術closeした。既存離散補正はfallbackとして維持し、Manual Topologyは別PhaseへHOLDした。
+- Phase 8jはAUTO GRID / AUTO SHAPEのCURRENT Meshへ限定したFixed-topology Skin Weight Brushを技術closeした。stable vertexIdへのsigned deltaを既存`skinBindings[].vertexWeights`へ最大2 normalized influenceとして確定し、ADD / SUB、radius / strength、SVG vertex hit、1 gesture 1 History、cancel / failure rollback、Undo / Redoを固定した。全83 verifier / build、BrowserのADD / SUB / Undo / Redo、SOL final review=`A`を通過した。Owner制作確認は台帳へ分離する。
+- 現行Phase 8kはRaster Mesh形状編集をWeight brushから分離した。Stage Aでvertex x / yがBind位置とsource sampling位置を兼ねること、WARP Control Meshとは保存正本を共有できないことを監査し、Gate 1=`GO — A: AUTO GRID / AUTO SHAPEの既存vertex位置だけを編集`とした。Stage Bはstable ID / triangle / weight / generator sourceを維持し、source bounds外、winding反転、degenerate、triangle重なりを非mutationで拒否するpure planとCURRENT限定Model adapterを実装済み。point追加・triangle分割・AUTO LINE・production UIはGate 2前に追加しない。
 - `ClaudeReview/rig-mesh-evaluation-and-followup.md`を現行コードへ照合した。Auto Line拒否toastへ別Raster分離 / 線整理 / AUTO SHAPE等の次操作を追加し、Setup青をpopup内RIG / MESH static Setup actionへ使える境界をUI/CSSガイドへ明記した。実受理率、異種generator誤置換、再生成HistoryはOwner確認台帳へ置き、manual weight補正と分岐Ribbon自動分割は第二正本・複数Mesh境界を先に決める別Gateとしてproposal 15へ積んだ。
 - Owner制作操作で、一枚の人物Raster + `AUTO SHAPE` + 11 Mesh BONEでも肘から腕を曲げ、手足を独立操作できることを確認した。一方、全Bone距離上位2本weightによる顔への影響漏れと、LBS関節blendによる腕幅／長さの変化を確認した。既存`skinBindings`を唯一の正本とする`Chain-local Joint Skin`（branch別影響資格、肢内部weight 1、短い関節band、既定stretch off）をproposal 15へ積み、Phase 7yへは混ぜない。
-- Web外部AI向け`tegaki_work/GitHubURL.txt`を現行正本へ同期した。main push後に、Phase 7i〜8bの完了記録、現行Phase 8cとOwner確認台帳、Motion / Rig / Mesh proposal、外部follow-up、PixiJS 8.19 / Codex公式資料、multi-model workflow / worker / verifier / review templateを辿れる。local欠損0・重複0をverifierで固定する。navigationであり、`TEGAKI.md` / PROGRESS / 現行Phase指示書より上位の正本にはしない。
-- proposalは現行13文書。Phase 7tで実装済みのproposal 16はArchiveへ移し、運用正本を`tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`とした。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。
+- Web外部AI向け`tegaki_work/GitHubURL.txt`を現行正本へ同期した。main push後にPhase 8j完了記録、現行Phase 8k、Owner確認台帳、Mesh / Weight / Topology関連のpure helperとverifier、統合proposal 15 / 16を辿れる。local欠損0・重複0をverifierで固定するnavigationであり、`TEGAKI.md` / PROGRESS / 現行Phase指示書より上位の正本にはしない。
+- proposalは現行14文書。Phase 7tの旧proposal 16はArchive済みで、今回の`16_制作Workspace・UI・外部Handoff構造ロードマップ.md`は外部原案とClaudeReviewを統合した別の現行Architecture Gate正本である。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。
 
 ## 完了基盤の要約
 
@@ -109,7 +117,7 @@
 - V保存ずれは全Layer一律ではなく、Canvas resizeを挟んだ外部clipboard貼付Rasterが候補。配置を保持する貼付例もあるため、Slice 3で`外部paste → resize → V → save/reopen`を固定入力にしてから限定修正する。
 - 添付画像のBrowser file chooser投入はネイティブchooser待ちで完了しなかったため、実機のOS clipboard / file chooser入力へ委譲する。`ImageImporter`のresize前後snapshot、working Layer capture、ProjectManagerのtransform commit待ちはコード監査済みで、現時点では追加修正を入れない。
 - 末端の手から前腕・上腕を追従させるrotation-only 2-Bone IKはPhase 6tでcloseした。伸縮と周辺画素の曲げはrotation limit / chain参加 / Mesh・weightと分離したまま維持する。
-- Raster Skinningは一Raster / 一Meshの初期proofまで。Auto Shape FILLとLINE Ribbonは既存Mesh / Skinへの明示生成まで接続したが、manual weight、weight brush、manual topology、Mesh Bone IK、SkinとFolder WARP / clippingの同時適用は未実装。Phase 7cはrigid child PIVOTのtranslation追従だけで、Skin / Mesh同時変形へ広げない。
+- Raster Skinningは一Raster / 一Meshの初期proofまで。Auto Shape FILLとLINE Ribbonは既存Mesh / Skinへの明示生成まで接続し、AUTO GRID / AUTO SHAPEの固定topology Weight brushはPhase 8jで実装した。既存vertex位置編集はPhase 8kのpure / Model Gateまでで、production UI、point追加・triangle分割、Mesh Bone IK、SkinとFolder WARP / clippingの同時適用は未実装。Phase 7cはrigid child PIVOTのtranslation追従だけで、Skin / Mesh同時変形へ広げない。
 - 遅延またはcrashが再現した場合は、`TegakiPerf`のevent queue / handler、Long Task、Project export時間、heap、texture残留を同時採取し、AirbrushやHistory件数を先に原因と決めない。詳細は`開発用資料保管庫/Archive/phase6e.md`。
 - Layer Panelは通常Layerのflat合成順＋`parentId`と、CAF内部Layerの`parentLayerId` mirrorを別adapterとして維持する。軽量Browserでは通常→Table表示→Table閉鎖後CAF→内部Folder＋子Layerの順序・深度は一致した。多階層時の再現では全DOM再構築時間、active / selected / working ID、`refreshClippingMasks()`全走査時間を三状態で採取し、Lane常時同期や正本統合へ進まない。
 - CAF内部Layerの表示親`parentLayerId`とRig親`parentPartId` / `parentBoneId`を同期しない。Folder Partはsubtree、Root Raster PartはCAF直下一枚だけを描画所属とし、reparent前後で有効Part / WARP / clipping ownerが同じなら表示移動を許可する。所属が変わる時だけ理由付きで拒否し、Rigリンクを自動解除・暗黙再接続しない。Setup青の連結node + `RIG`表示は明示登録したFolder / Root Rasterだけへ既存正本から導出する。
@@ -121,25 +129,34 @@
 1. `AGENTS.md`
 2. `TEGAKI.md`
 3. 本書
-4. `task-codex/phase8c.md`
+4. `task-codex/phase8k.md`
 5. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
-6. `開発用資料保管庫/Archive/phase8b.md`
-7. `開発用資料保管庫/Archive/phase8a.md`
-7. `開発用資料保管庫/Archive/phase7z.md`
-8. `開発用資料保管庫/Archive/phase7y.md`
-9. `開発用資料保管庫/Archive/phase7x.md`
-10. `開発用資料保管庫/Archive/phase7w.md`
-11. `開発用資料保管庫/Archive/phase7v.md`
-12. `開発用資料保管庫/proposals/00_計画索引.md`
-13. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
-14. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
-15. `開発用資料保管庫/proposals/10_Motion_Graph・Easing・Motion_Path設計.md`
-16. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
-17. `開発用資料保管庫/proposals/12_Camera_Frame・Resize_UI将来設計.md`
-18. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
-19. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
+6. `開発用資料保管庫/Archive/phase8j.md`
+7. `開発用資料保管庫/Archive/phase8i.md`
+8. `開発用資料保管庫/Archive/phase8h.md`
+9. `開発用資料保管庫/Archive/phase8g.md`
+10. `開発用資料保管庫/Archive/phase8f.md`
+11. `開発用資料保管庫/Archive/phase8e.md`
+12. `開発用資料保管庫/Archive/phase8d.md`
+13. `開発用資料保管庫/Archive/phase8c.md`
+14. `開発用資料保管庫/Archive/phase8b.md`
+15. `開発用資料保管庫/Archive/phase8a.md`
+16. `開発用資料保管庫/Archive/phase7z.md`
+17. `開発用資料保管庫/Archive/phase7y.md`
+18. `開発用資料保管庫/Archive/phase7x.md`
+19. `開発用資料保管庫/Archive/phase7w.md`
+20. `開発用資料保管庫/Archive/phase7v.md`
+21. `開発用資料保管庫/proposals/00_計画索引.md`
+22. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
+23. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
+24. `開発用資料保管庫/proposals/16_制作Workspace・UI・外部Handoff構造ロードマップ.md`
+25. `開発用資料保管庫/proposals/10_Motion_Graph・Easing・Motion_Path設計.md`
+26. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
+27. `開発用資料保管庫/proposals/12_Camera_Frame・Resize_UI将来設計.md`
+28. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
+29. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
 
-Phase 7i〜8bはSOL技術close済み。Phase 7s / 7v / 7w / 7x / 7y / 7z / 8a / 8bのOwner制作実操作は確認台帳へ分離した。現行Phase 8cは既存Skinへの限定補正候補を比較するGateであり、Gate前にproduction編集、自由weight brush、第二weight正本、multiple Mesh、DQS、stretch、WARP共有へ広げない。
+Phase 7i〜8jはSOL技術close済み。Owner制作実操作の未確認項目は確認台帳へ分離した。現行Phase 8kは固定ID / triangle / weightを維持する既存vertex位置編集だけを先行し、Gate 2前にproduction UI、point追加、triangle切断、AUTO LINE、第二Topology正本を追加しない。
 
 ## 資料
 
@@ -197,5 +214,13 @@ Phase 7i〜8bはSOL技術close済み。Phase 7s / 7v / 7w / 7x / 7y / 7z / 8a / 
 - Phase 7z完了: `開発用資料保管庫/Archive/phase7z.md`
 - Phase 8a完了: `開発用資料保管庫/Archive/phase8a.md`
 - Phase 8b完了: `開発用資料保管庫/Archive/phase8b.md`
+- Phase 8c完了: `開発用資料保管庫/Archive/phase8c.md`
+- Phase 8d完了: `開発用資料保管庫/Archive/phase8d.md`
+- Phase 8e完了: `開発用資料保管庫/Archive/phase8e.md`
+- Phase 8f完了: `開発用資料保管庫/Archive/phase8f.md`
+- Phase 8g完了: `開発用資料保管庫/Archive/phase8g.md`
+- Phase 8h完了: `開発用資料保管庫/Archive/phase8h.md`
+- Phase 8i完了: `開発用資料保管庫/Archive/phase8i.md`
+- Phase 8j完了: `開発用資料保管庫/Archive/phase8j.md`
 - Multi-Model運用正本: `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
-- 現行Phase: `task-codex/phase8c.md`（Limited Skin Influence Correction Gate）
+- 現行Phase: `task-codex/phase8k.md`（Manual Raster Mesh Topology Boundary Gate）

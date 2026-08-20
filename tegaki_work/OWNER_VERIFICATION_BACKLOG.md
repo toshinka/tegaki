@@ -1,7 +1,7 @@
 # Owner実機確認バックログ
 
-更新日: 2026-08-14
-状態: ACTIVE — Phase 7i〜8aはSOL技術close済み、Owner制作環境では未確認項目あり
+更新日: 2026-08-20
+状態: ACTIVE — Phase 7i〜8jはSOL技術close済み、Owner制作環境では未確認項目あり
 
 ## 目的
 
@@ -56,6 +56,78 @@ Owner制作環境で追加確認すること:
 - Layer追加 / 削除、Rig cascade、CAF複製、Undo / Redo、Table close / reopen、Project reload後にstale groupを残さないこと。長尺Table、狭いwindow、pen / touch、console errorも確認する。
 
 本項はPhase 8bのOwner制作確認であり、Phase未完了を意味しない。問題が見つかった場合はPhase 8bを暗黙に再OPENせず、Asset / group / Bone / keyを固定した限定bug fix Gateを立てる。Canvas Bone自動非表示や保存Bone色へ直接広げない。
+
+### Phase 8c — RIG / Motion対象focusと限定Skin補正
+
+- 一枚人物Rasterで、Boneだけ作成した未接続状態ではMotion入力がdisabledになり、AUTO GRID / SHAPE / LINEの案内が理解できること。Skin接続後はMotionで絵が追従すること。
+- RIG / Motion停止編集中は対象Rasterが通常表示、非対象Raster / Folderが半透明になり、対象tab / Bone切替、複数Raster、Folder target、CAF scopeで誤った絵を対象に見せないこと。preview / playback / onion / Bake / GIF / APNGの出力へ半透明focusが混ざらないこと。
+- Setup青`CORRECT`でWEIGHTが同時に見え、stable vertexだけを選択できること。`BONE ONLY / PARENT BLEND / NO INFLUENCE`で顔への漏れ、肘／膝のblend、前腕等のrigid区間を制作上直せること。
+- 同値補正History 0、実補正1 History、Undo / Redo、mode cancel、CAF複製、Project reload、source更新STALE、Table close / reopenを確認すること。
+- 補正済みMeshのGRID / SHAPE / LINE再生成で確認が出て、cancelは非mutation、acceptは補正を明示的に置換すること。console error、可能ならpen / touchも確認すること。
+
+本項はPhase 8cのOwner制作確認であり、Phase未完了を意味しない。問題が見つかった場合はPhase 8cを暗黙に再OPENせず、Raster / Mesh / Skin / Bone / vertex / Frameを固定した限定bug fix Gateを立てる。自由weight brush、第二Shape zone正本、multiple Mesh、DQS、stretchへ直接広げない。
+
+### Phase 8d Stage B — 一枚Raster RIG onboarding
+
+- 1 Frame CAFと伸ばしたCAFの両方で、Laneの`RIG設定`が正本やHistoryを増やさずSetupを開くこと。
+- 曲げる場合は`1. BONE追加 → 2. AUTO GRID → MOTION`だけで絵が追従し、未接続中は対象絵が通常濃度、key / Canvas dragは拒否、非対象絵だけが半透明になること。AUTO SHAPE / LINEで接続済みの場合もMotion可能であること。
+- 絵を曲げない場合だけ`全体PIVOT`を使え、曲げBONE / Meshがある時は併用できないこと。
+- 既存mixed stateを複製Projectで開き、`曲げBONEへ切替`の確認acceptで対象Raster Part / rigid Bone / 対応Motionだけが消え、未接続Mesh Boneが残ること。cancel、外部child接続中の拒否も確認する。
+- Bone drag後にMOTION件数が1以上になり、絵全体の点線矩形ではなくBone overlayが操作対象になること。Undo / Redo、Table close / reopen、Project reload、console error、可能ならpen / touchを確認する。
+
+本項はPhase 8d Stage BのOwner制作確認であり、macro Workspace shell選定の完了を意味しない。AUTO SHAPEを第一導線とする旧表示はStage CでAUTO GRID基準へ改訂した。
+
+### Phase 8d Stage C — AUTO GRID基準導線 / WEIGHT復帰
+
+- Mesh未生成のRasterで、仮の青いLayer名PIVOTがCanvasへ出ず、`1. BONE追加`で作成した明示BONEだけが表示されること。自動初期BONEやHistoryが増えないこと。
+- BONE追加後は`2. AUTO GRID`だけが太いSetup青境界で強調され、`2. 絵へ接続`という別actionに見える文言がないこと。AUTO SHAPE / LINEは選択肢として残ること。
+- 未接続Motionの`AUTO GRIDを作成`からSkin接続でき、Bone dragで絵が追従すること。Shape / Lineで接続済みの場合もMotionが阻害されないこと。
+- 接続済みMotionの`WEIGHT確認`で、選択Boneを維持してRIGのWEIGHT診断へ戻れること。GRID人体fixtureで脚Boneが手へ与える微小weightを発見できること。
+- Undo / Redo、Table close / reopen、Project reload、console error、可能ならpen / touchを確認すること。自由Weight brushとMesh point編集は本項の受入条件にしない。
+
+2026-08-20 Owner初期確認では、一枚Raster、6 Bone、AUTO GRID 6×6、Motion key、WEIGHT可視化までを制作操作し、Phase 8d closeに十分な初期受入とした。深い制作Project、reload / export、pen / touch、branch漏れの補正品質は継続確認とし、close済みPhaseを未完了扱いにはしない。
+
+### Phase 8e Stage 1 — Motion中のread-only WEIGHT
+
+- Skin接続済みBoneをMotionで選択し、RIGへtab移動せず`WEIGHT表示`をON / OFFできること。
+- Bone drag、数値scrub、Frame±1 / random seekで、選択Boneを維持したheatmapがcurrent pose上で追従すること。Motion key値やHistory件数をWEIGHT表示が変えないこと。
+- WEIGHT ONでもBone操作、Space + drag、Timeline wheelを妨げず、`CORRECT`や頂点mutationはMotionへ露出しないこと。
+- playback開始 / 停止、Table close / reopen、source / target削除、Project reload runtime OFF、console error、1280×720 / narrow、可能ならpen / touchを確認すること。
+- 形状追従Mesh最適化、point追加・triangle切断、自由Weight paintはPhase 8e Stage 1の受入条件にしない。
+
+2026-08-20のSOL Browser fixtureでは、一枚Raster → 2 Frame CAF → BONE → AUTO GRID 4×8 → Motion → `WEIGHT表示` → X数値変形を通し、Motion tab維持、current pose追従、再生中一時非表示、F1復帰後の`WEIGHT ON`復帰、console error / warning 0件を確認して技術closeした。本台帳の深い制作Project、Bone drag / random seek、close / reopen、reload、narrow、pen / touchは継続確認であり、Phase未完了を意味しない。
+
+### Phase 8j — Fixed-topology Skin Weight Brush
+
+- 一枚人物Raster + 複数BoneのAUTO GRID / AUTO SHAPE CURRENT Meshで、Setup青RIGの`WEIGHT → BRUSH`を使い、ADD / SUB、radius、strengthで顔・反対肢への漏れと肘／膝の勾配を制作上直せること。Motion側にmutation操作が出ないこと。
+- 長いstrokeでもHistory一件、no-opは0件、Escape / pointercancel / 外release / target変更 / Table closeは開始前へ戻ること。ADD / SUBのclamp、Undo / Redo、CORRECTとの排他、Space + dragを確認すること。
+- STALE、AUTO LINE、playback、active Folder WARP / rigid競合ではmutationせず、次操作が理解できること。補正済みGRID / SHAPE再生成では確認が出て、cancelはweightを維持すること。
+- CAF / Raster複製、source / target / Bone削除、Project reload、preview / playback / onion / random seek / Bake / GIF / APNGで同じ既存Skin weightが使われること。長尺／多Bone、console error、可能ならpen / touchも確認すること。
+
+2026-08-20のSOL Browserでは、空の一枚Rasterから2 Bone + AUTO GRID 6×6を作成し、BRUSH ADD / SUBが各一件のHistoryとなり、Undo / Redoと`GRID 6×6 · WEIGHT`表示が一致することを確認した。全83 verifier / build、SOL final review=`A`で技術closeした。深い制作Projectと上記横断項目は未確認であり、問題時はPhase 8jを暗黙に再OPENせず限定bug fix Gateを立てる。Manual Topology、AUTO LINE brush、Motion中authoring、DQS、stretchへ同時に広げない。
+
+### Phase 8h — Animation Table SCOPE inactive / focus
+
+- ALL / LANE / SETの押せるinactiveがdisabled風に薄く見えず、active橙、hover、keyboard focusのFutaba茶outlineを識別できること。
+- narrow、Table resize、header wrap、mouse / pen / touch、wheel三領域でheader寸法や操作が変わらないこと。
+
+2026-08-20のSOL Browserではinactiveを3.91:1から4.81:1へ補正し、ALL / LANE / SET選択、inactive SET focus、ALL復帰、全80 verifier、buildを通過して技術closeした。
+
+### Phase 8g — UI Semantic Contrast / Focus shell active
+
+- CLIP MOTION expandedの`DETAIL`が淡い橙背景＋茶文字、compactの`CANVAS`がcream背景＋茶文字となり、active / compact / focus-visibleを見失わないこと。
+- 1280×720 / narrow、長いLayer名、RIG / Motion / WARP往復、popup drag後、pen / touchで文字・橙border・focus ringが視認できること。
+
+2026-08-20のSOL Browserでは`DETAIL` activeを1.15:1から9.36:1へ限定補正し、expanded / compact / RIG切替 / keyboard focus-visible、全80 verifier、buildを通過して技術closeした。Table inactive controlは同時変更せずPhase 8hへ分離した。
+
+### Phase 8f Stage 2 — CLIP MOTION Canvas-first Focus shell
+
+- 一枚人物Raster / 6〜11 BoneでRIG / Motionの`CANVAS`を押し、mode、target、BONE追加、AUTO GRID / SHAPE / LINE、Motion key、WEIGHTを残したままCanvas可視面が増えること。
+- `DETAIL`でbind数値、親select、Motion secondary数値が戻り、selected CAF / Layer / Bone、Frame、Motion key、WEIGHT ON、Table zoom / scroll、Canvas pan / zoomが変わらないこと。
+- compact要求中にWARPへ切り替えると詳細固定になり、RIG / Motionへ戻るとcompactが復帰すること。CLIP MOTION close / reopen、Table close→通常描画→reopen、Project reload runtime初期値も確認する。
+- 1280×720 / narrow、長いLayer名、11 Bone密集、popup drag後のviewport resize、Q / V / H、Space + drag、wheel三領域、console error、可能ならpen / touchを確認する。
+
+2026-08-20のSOL BrowserではRIG約180.9px→134.9px、Motion約95.3px、720×720の4px margin内clamp、WARP往復、close / reopen、通常ペン復帰、console 0件を確認して技術closeした。Ownerの制作Project確認は未実施であり、問題時はPhase 8fを暗黙に再OPENせず限定bug fixを立てる。
 
 ### Phase 7i — Auto Shape LINE / Ribbon
 

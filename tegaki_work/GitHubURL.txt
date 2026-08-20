@@ -1,13 +1,13 @@
 # GitHubURL — Tegaki プロジェクト読解用 Raw URL ナビゲーション
 
-更新日: 2026-08-14
+更新日: 2026-08-20
 
 > **外部AI (Web版Claude / ChatGPT等) 向けガイド**
 > 本ファイルはローカルファイルシステムにアクセスできない外部AIが、GitHubから主要ファイルを直接読み込んで Tegaki プロジェクトを理解・調査するためのURL集です。
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
 > URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
 
-## 0. 現在地（Phase 7i〜8a SOL技術close、Phase 8b OPEN）
+## 0. 現在地（Phase 7i〜8j SOL技術close、Phase 8k OPEN）
 
 - Phase 7i〜7qは各Gate=`GO`、実装Stage、最終SOL review=`A`、関連Browser確認を通過し、2026-08-12のOwner指示に基づきSOL技術closeした。完了記録は`Archive/phase7i.md`〜`phase7q.md`。
 - Phase 7i LINE / Ribbon、7j Deformer三形状SELECT、7k Text to Raster、7l Table二段header、7m read-only Motion Graph、7n Resize直接framing、7o Motion Easing 12 presetの保存・History境界を維持する。
@@ -25,7 +25,16 @@
 - Phase 7yはX=0..1 / Y=-1..2、Clip Motion raw ratio、opacity / blendStrength最終clamp、Part / Bone従来clamp、Back三preset、clipboard / Project round-trip、Setup青`ALLOW OVERSHOOT`、ADD POINT exact split / 理由付き拒否を実装した。全65 verifier、build、SOL review=`A`で技術closeし、Browser未確認はOwner台帳へ分離した。
 - Phase 7zは一枚Raster人体の`Chain-local Joint Skin`安全Gateを完了した。明示AUTO SHAPEへ`chain-local-joint-v1`を限定接続し、rigid primary、直結親子の短いjoint band、曖昧branch / joint拒否、旧保存weight維持、clean checkpointのCURRENT維持を固定した。全69 verifier / build、Browserの生成・Undo / Redo・checkpoint・Timeline wheel・console、SOL review=`A`で技術closeした。Owner制作確認は台帳へ分離する。
 - Phase 8aは`Raster Skin Weight Diagnostics`を技術closeした。Setup青`WEIGHT`、一つの選択Raster / Mesh / Bone、既存Skin weight / Frame evaluator、固定6 SVG path、runtime-only / pointer非参加、target消失時解除を固定した。全71 verifier / build / Browser、SOL review=`A`を通過し、Owner制作確認は台帳へ分離した。
-- 現行Phase 8bは`Animation Table Bone Group / Dense Rig Focus` Gate。Stage Aで一意target / `SHARED / CONNECTION` / `UNASSIGNED`のpure projectionを固定し、Gate 1=`GO — 同一target 2 Bone以上だけ明示collapse group`とした。singletonは従来行、selection非破壊、Canvas Bone自動非表示、保存group / Bone色、Timeline modelを増やさない。
+- Phase 8bは`Animation Table Bone Group / Dense Rig Focus`をruntime表示だけで接続し、全73 verifier / build / Browser、SOL review=`A`で技術closeした。
+- Phase 8cは`Limited Skin Influence Correction`で選択stable vertexの`BONE ONLY / PARENT BLEND / NO INFLUENCE`を既存`skinBindings[].vertexWeights`へ直接確定した。補正済み再生成の明示確認、no-op History 0、実変更1 History、Undo / Redoを固定した。前提導線としてRIG / Motion対象Rasterをruntime投影し、非対象の絵を半透明、Skin未接続BoneのMotion入力を拒否する。全77 verifier / build / Browser / console 0件、SOL final review=`A`で技術closeした。Owner制作確認は台帳へ分離する。
+- Phase 8dは一枚Rasterの`RIG設定 → BONE追加 → AUTO GRID → Motion`、別の`全体PIVOT`、未接続Gate、対象art focus、WEIGHT復帰を固定した。全78 verifier / build / Browser / console 0件とOwner初期制作確認を受入れ、Architecture Gateは`B: Canvas-first Workspaceの段階導入`を選定して技術closeした。
+- Phase 8eはRIG / Motion共有のread-only WEIGHT visibility policyを実装し、Motionのまま`WEIGHT表示 / WEIGHT ON`、current pose追従、再生中一時非表示を固定した。全79 verifier / build / Browser / console 0件、SOL final review=`A`で技術closeした。
+- Phase 8fは既存CLIP MOTION内の可逆`CANVAS / DETAIL` Focus shellを実装した。RIG / Motion主要actionを残して数値詳細を畳み、WARP詳細固定、compact要求復帰、narrow clamp、normal drawing往復を全80 verifier / build / Browser / console 0件、SOL final review=`A`で技術closeした。
+- Phase 8gは`UI Semantic Contrast / Workflow Density Gate`を技術closeした。computed styleで`DETAIL` activeの淡橙背景＋白文字1.15:1を検出し、既存茶文字9.36:1へcomponent-local一行補正した。全80 verifier / build / Browser、SOL final review=`A`を通過した。
+- Phase 8hは`Animation Table Inactive Control Contrast Gate`を技術closeした。SCOPE inactiveを3.91:1→4.81:1、browser既定黒focusをFutaba茶outlineへ限定補正し、全80 verifier / build / Browser、SOL final review=`A`を通過した。
+- Phase 8iは`Raster Mesh Topology / Weight Authoring Boundary Gate`を完了した。stable vertexId、History、STALE / regenerate、CPU / Pixi / exportを監査し、Gate 1=`GO — B: 固定topology Weight brush`、SOL final review=`A`で技術closeした。離散補正はfallback、Manual Topologyは別PhaseへHOLDした。
+- Phase 8jは`Fixed-topology Skin Weight Brush`を技術closeした。AUTO GRID / AUTO SHAPEのCURRENT Meshへ限定し、stable vertexIdへのsigned delta、最大2 normalized influence、ADD / SUB、SVG vertex hit、1 gesture 1 History、cancel / failure rollbackを固定した。全83 verifier / build、BrowserのADD / SUB / Undo / Redo、SOL final review=`A`を通過した。Owner制作確認は台帳へ分離する。
+- 現行Phase 8kは`Manual Raster Mesh Topology Boundary Gate`。Gate 1=`GO — A: 既存vertex位置だけを編集`とし、stable ID / triangle / weight / generator sourceを維持しながらsource bounds外、winding反転、degenerate、triangle重なりを拒否するpure / Model Stageまで完了した。point追加・triangle分割・AUTO LINE・production UIはGate 2前に追加しない。
 
 このナビゲーション自身:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
@@ -38,7 +47,35 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **AI共通ガイド**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 - **技術方針・禁止事項（正本）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 - **最新開発進捗・現在地**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
-- **現行Phase 8b（Animation Table Bone Group / Dense Rig Focus Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase8b.md
+- **現行Phase 8k**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase8k.md
+- **Phase 8j完了記録（Fixed-topology Skin Weight Brush）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8j.md
+- **Phase 8j weight brush pure plan**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/skin-weight-brush.js
+- **Phase 8j gesture helper**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/skin-weight-brush-gesture.js
+- **Phase 8j pure verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-skin-weight-brush.mjs
+- **Phase 8j gesture verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-skin-weight-brush-gesture.mjs
+- **Phase 8j UI verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-skin-weight-brush-ui.mjs
+- **Phase 8k fixed vertex position pure plan**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-mesh-vertex-position-edit.js
+- **Phase 8k fixed vertex position verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-mesh-vertex-position-edit.mjs
+- **Phase 8k regeneration lineage UI verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-mesh-vertex-position-edit-ui.mjs
+- **Phase 8i完了記録（Mesh Topology / Weight authoring Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8i.md
+- **Phase 8h完了記録（Animation Table inactive / focus contrast）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8h.md
+- **Phase 8g完了記録（UI Semantic Contrast / Focus shell active）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8g.md
+- **Phase 8f完了記録（Canvas-first Focus shell）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8f.md
+- **Phase 8f Focus shell pure projection**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/rig-workspace-focus-shell.js
+- **Phase 8f Focus shell verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-workspace-focus-shell.mjs
+- **Phase 8e完了記録（Motion WEIGHT Projection）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8e.md
+- **Phase 8e shared WEIGHT visibility policy**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/rig-skin-weight-visibility.js
+- **Phase 8e visibility verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-skin-weight-visibility.mjs
+- **Phase 8d完了記録（Canvas-first Architecture Gate / RIG onboarding）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8d.md
+- **Phase 8c完了記録（Limited Skin Influence Correction）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8c.md
+- **Phase 8c RIG / Motion対象focus pure projection**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/rig-motion-art-focus.js
+- **Phase 8c Skin influence correction pure plan**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/skin-influence-correction.js
+- **Phase 8c correction verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-skin-influence-correction.mjs
+- **Phase 8c focus verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-motion-art-focus.mjs
+- **Phase 8c correction UI verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-skin-influence-correction-ui.mjs
+- **Phase 8c focus UI verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-motion-art-focus-ui.mjs
+- **Phase 8d RIG onboarding UI verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-onboarding-flow-ui.mjs
+- **Rig target削除 / rigid-to-mesh復旧 verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-target-removal.mjs
 - **Phase 8b Bone group pure projection**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/animation-table-bone-group-projection.js
 - **Phase 8b Bone group projection verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-bone-group-projection.mjs
 - **Phase 8a完了記録（Raster Skin Weight Diagnostics）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8a.md
@@ -101,6 +138,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **Camera Frame / Resize / Animation Camera**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/12_Camera_Frame%E3%83%BBResize_UI%E5%B0%86%E6%9D%A5%E8%A8%AD%E8%A8%88.md
 - **UI導線・Text・階層Motion将来設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/14_UI%E3%83%84%E3%83%BC%E3%83%AB%E5%B0%8E%E7%B7%9A%E3%83%BBText%E3%83%BB%E9%9A%8E%E5%B1%A4Motion%E5%B0%86%E6%9D%A5%E8%A8%AD%E8%A8%88.md
 - **Rig・Mesh・Perform統合ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/15_%E3%82%AD%E3%83%A3%E3%83%A9%E3%82%AF%E3%82%BF%E3%83%BCRig%E3%83%BBMesh%E3%83%BBPerform%E7%B5%B1%E5%90%88%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
+- **制作Workspace・UI・外部Handoff構造ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/16_%E5%88%B6%E4%BD%9CWorkspace%E3%83%BBUI%E3%83%BB%E5%A4%96%E9%83%A8Handoff%E6%A7%8B%E9%80%A0%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
 - **実装したいことメモ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/%E5%AE%9F%E8%A3%85%E3%81%97%E3%81%9F%E3%81%84%E3%81%93%E3%81%A8%E3%83%A1%E3%83%A2.txt
 
 ### 2.1 Phase 7iまでの直接経緯
@@ -230,6 +268,11 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/bu
 
 - **Rig / Mesh Setup UI外部レビュー（提案・未検証）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/rig-mesh-setup-ui-review.md
 - **Rig / Mesh反映評価・follow-up（提案。現行採否はproposal 15参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/rig-mesh-evaluation-and-followup.md
+- **Code redundancy / file organization外部診断（採否はproposal 16参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/tegaki-code-redundancy-file-organization-report.md
+- **WebGPU / PixiJS resource外部診断（未計測仮説。採否はproposal 16参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/tegaki-webgpu-pixijs-resource-diagnostic.md
+- **次期構造再設計 外部原案**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/Tegaki_%E6%AC%A1%E6%9C%9F%E6%A7%8B%E9%80%A0%E5%86%8D%E8%A8%AD%E8%A8%88%E6%8F%90%E6%A1%88%E6%9B%B8_%E5%A4%96%E9%83%A8%E5%8E%9F%E6%A1%88_2026-08-20.md
+- **UI-UX・アニメーション基盤 外部原案**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/UI-UX%E3%83%BB%E3%82%A2%E3%83%8B%E3%83%A1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E5%9F%BA%E7%9B%A4_%E5%86%8D%E8%A8%AD%E8%A8%88%E6%8F%90%E6%A1%88%E6%9B%B8_%E5%A4%96%E9%83%A8%E5%8E%9F%E6%A1%88_2026-08-20.md
+- **UI-UX再設計 外部原案**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/UI-UX%E5%86%8D%E8%A8%AD%E8%A8%88%E6%8F%90%E6%A1%88%E6%9B%B8_%E5%A4%96%E9%83%A8%E5%8E%9F%E6%A1%88_2026-08-20.md
 - **Codex Multi-Model / External Web Review長文原案（採用判断はproposal 16 / Phase 7t参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/Tegaki_Codex_%E3%83%9E%E3%83%AB%E3%83%81%E3%83%A2%E3%83%87%E3%83%AB%E9%96%8B%E7%99%BA%E3%83%BB%E5%A4%96%E9%83%A8Web%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E5%8D%8A%E8%87%AA%E5%8B%95%E5%8C%96_%E5%8E%9F%E6%A1%88_2026-08-13.md
 
 ### PixiJS v8.19公式資料 / AI context

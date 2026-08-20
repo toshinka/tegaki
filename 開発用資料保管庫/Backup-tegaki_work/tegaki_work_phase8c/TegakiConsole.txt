@@ -1,0 +1,92 @@
+ [vite] connecting...
+ [vite] connected.
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ png-exporter.js v8.29.0 loaded
+    🔧 generatePreview()メソッド追加
+    🔧 エラーハンドリング強化
+    🔧 Blob生成の確実性向上
+ ✅ apng-exporter.js v8.31.0 loaded
+gif-exporter.js:367 ✅ gif-exporter.js v8.17.1 loaded
+gif-exporter.js:368    🎨 antialias:true でジャギー除去
+gif-exporter.js:369    ✓ CDNフォールバックで file:// 対応
+webp-exporter.js:251 ✅ webp-exporter.js v8.33.0 loaded (静止画WEBP専用)
+webp-exporter.js:252    ⚠️ 複数フレーム時はWebM推奨（アルファ値維持・軽量）
+psd-exporter.js:383 ✅ psd-exporter.js loaded
+timeline-ui.js:1073 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+webgl2-drawing-layer.js:311 ✅ webgl2-drawing-layer.js Phase 1 完全修正版 loaded
+webgl2-drawing-layer.js:312    📌 window.WebGLContext (主要)
+webgl2-drawing-layer.js:313    📌 window.WebGL2DrawingLayer (互換)
+gl-stroke-processor.js:420 ✅ gl-stroke-processor.js (ESM版) loaded
+gl-stroke-processor.js:421    🔧 カメラフレーム外への描画を完全防止
+gl-stroke-processor.js:422    🔧 ポイント座標検証追加
+gl-stroke-processor.js:423    🎯 デバッグ: TegakiDebug.glStroke.*
+gl-msdf-pipeline.js:670 ✅ gl-msdf-pipeline.js Phase 3.2 アスペクト比保持改善版 loaded
+gl-msdf-pipeline.js:671    🔧 テクスチャサイズ計算でアスペクト比を厳密保持
+gl-msdf-pipeline.js:672    🔧 2の累乗丸めによるストローク変形を防止
+gl-texture-bridge.js:167 ✅ gl-texture-bridge.js Phase 5完全版 (PixiJS v8対応) loaded
+gl-texture-bridge.js:168    ✅ WebGLTexture → PIXI.Sprite変換実装完了
+gl-texture-bridge.js:169    ✅ PixiJS v8: Texture.from()直接使用
+gl-mask-layer.js:461 ✅ gl-mask-layer.js Phase 6完全版 loaded
+gl-mask-layer.js:462    ✅ Circle mask rendering実装
+gl-mask-layer.js:463    ✅ Additive blend対応
+core-initializer.js:29 🚀 Tegaki Initializing...
+popup-manager.js:26 ✅ PopupManager initialized
+core-engine.js:156 [CoreEngine] Initializing sub-systems...
+webgl2-drawing-layer.js:77 [WebGL2DrawingLayer] ✅ Initialized Object
+gl-texture-bridge.js:39 [GLTextureBridge] ✅ Initialized (PixiJS v8)
+gl-mask-layer.js:68 [GLMaskLayer] ✅ Initialized Object
+popup-manager.js:174 ⚠️ Popup "animationTable" not registered
+(anonymous) @ popup-manager.js:174
+popup-manager.js:52 📋 Popup "settings" registered (priority: 99)
+popup-manager.js:52 📋 Popup "quickAccess" registered (priority: 99)
+popup-manager.js:52 📋 Popup "resize" registered (priority: 99)
+popup-manager.js:52 📋 Popup "export" registered (priority: 99)
+popup-manager.js:52 📋 Popup "album" registered (priority: 99)
+popup-manager.js:52 📋 Popup "animationTable" registered (priority: 99)
+popup-manager.js:112 🔧 Initializing all popups...
+popup-manager.js:97 ✅ Popup "settings" initialized successfully
+popup-manager.js:97 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:97 ✅ Popup "resize" initialized successfully
+popup-manager.js:179 ⚠️ Popup "animationTable" not ready (status: registered)
+(anonymous) @ popup-manager.js:179
+popup-manager.js:97 ✅ Popup "animationTable" initialized successfully
+popup-manager.js:97 ✅ Popup "export" initialized successfully
+popup-manager.js:97 ✅ Popup "album" initialized successfully
+popup-manager.js:66 ✅ Popup "animationTable" already initialized
+popup-manager.js:128 📊 Popup initialization: 6 ready, 0 deferred
+core-engine.js:390 [CoreEngine] All sub-systems initialized.
+core-initializer.js:57 ✅ Tegaki Initialized Successfully
+popup-manager.js:202 👁️ Popup "animationTable" shown
+window.TEGAKI_CONFIG.debug = true
+true
+pointer-handler.js:277 [PointerHandler] raw pointerdown {"pointerType":"mouse","button":0,"buttons":1,"pressure":0.5,"pointerId":1,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:103 [DrawingEngine] down gate {"pointerType":"mouse","button":0,"buttons":1,"pressure":0.5,"canvasMove":false,"vKey":false,"selectionTransform":false}
+brush-core.js:1705 [StrokeInputProfile] event {strokeId: 'stroke_1783060604716_34mci', stage: 'down', input: {…}, details: {…}}
+brush-core.js:1705 [StrokeInputProfile] event {strokeId: 'stroke_1783060604716_34mci', stage: 'up', input: {…}, details: {…}}
+brush-core.js:1694 [TegakiRealtimeStroke:realtime] {"mode":"pen","outcome":"realtime","hasRealtimeApplied":true,"updateCalls":44,"batchCalls":1,"realtimePointCalls":89,"penPointCalls":89,"distanceSkips":26,"zeroDistanceSkips":0,"penRenderCalls":63,"penRenderMissingTarget":0,"penRenderMissingGraphics":0,"maxDistance":0.984,"finalPointerUpdates":1,"liveRenderRequests":63,"liveRenderCoalesced":51,"liveRenderExecuted":11,"liveRenderFailures":0,"liveRenderMethod":"app.render","liveRenderReason":"realtime-pen","lastDistances":[{"mode":"pen","distance":0.514,"dx":0.509,"dy":-0.077,"localX":55.627,"localY":41.691,"force":false,"skipped":false},{"mode":"pen","distance":0.372,"dx":0.369,"dy":-0.047,"localX":55.996,"localY":41.644,"force":false,"skipped":true},{"mode":"pen","distance":0.744,"dx":0.738,"dy":-0.094,"localX":56.365,"localY":41.597,"force":false,"skipped":false},{"mode":"pen","distance":0.306,"dx":0.304,"dy":-0.032,"localX":56.669,"localY":41.566,"force":false,"skipped":true},{"mode":"pen","distance":0.611,"dx":0.608,"dy":-0.064,"localX":56.973,"localY":41.534,"force":false,"skipped":false},{"mode":"pen","distance":0.271,"dx":0.27,"dy":-0.023,"localX":57.243,"localY":41.511,"force":false,"skipped":true},{"mode":"pen","distance":0.541,"dx":0.539,"dy":-0.046,"localX":57.512,"localY":41.488,"force":false,"skipped":false},{"mode":"pen","distance":0.251,"dx":0.25,"dy":-0.017,"localX":57.763,"localY":41.471,"force":false,"skipped":true},{"mode":"pen","distance":0.502,"dx":0.501,"dy":-0.034,"localX":58.013,"localY":41.454,"force":false,"skipped":false},{"mode":"pen","distance":0.16,"dx":0.16,"dy":-0.011,"localX":58.173,"localY":41.443,"force":false,"skipped":true},{"mode":"pen","distance":0.32,"dx":0.32,"dy":-0.022,"localX":58.333,"localY":41.432,"force":false,"skipped":true},{"mode":"pen","distance":0.32,"dx":0.32,"dy":-0.022,"localX":58.333,"localY":41.432,"force":true,"skipped":false}]}
+brush-core.js:1732 [StrokeInputProfile] finalize {id: 'stroke_1783060604716_34mci', mode: 'pen', pointerType: 'mouse', size: 10, opacity: 1, …}
+history.js:86 [History] Record applied: caf-internal-layer-draw {historyKind: 'raster', assetId: 'b9e5f17b-b3c7-4a02-bc81-d6823400b717', type: 'caf-internal-layer-draw', clipId: 'ad3b69ac-98bd-4251-bfdf-bb9d3962f5b4', layerId: 'temp_layer_1_1783060117560', …}
+popup-manager.js:202 👁️ Popup "animationTable" shown
+pointer-handler.js:277 [PointerHandler] raw pointerdown {"pointerType":"mouse","button":0,"buttons":1,"pressure":0.5,"pointerId":1,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:103 [DrawingEngine] down gate {"pointerType":"mouse","button":0,"buttons":1,"pressure":0.5,"canvasMove":false,"vKey":false,"selectionTransform":false}
+brush-core.js:1705 [StrokeInputProfile] event {strokeId: 'stroke_1783060607735_7xeqm', stage: 'down', input: {…}, details: {…}}
+brush-core.js:1705 [StrokeInputProfile] event {strokeId: 'stroke_1783060607735_7xeqm', stage: 'up', input: {…}, details: {…}}
+brush-core.js:1694 [TegakiRealtimeStroke:realtime] {"mode":"pen","outcome":"realtime","hasRealtimeApplied":true,"updateCalls":99,"batchCalls":0,"realtimePointCalls":199,"penPointCalls":199,"distanceSkips":96,"zeroDistanceSkips":0,"penRenderCalls":102,"penRenderMissingTarget":0,"penRenderMissingGraphics":0,"maxDistance":1.118,"finalPointerUpdates":1,"liveRenderRequests":102,"liveRenderCoalesced":74,"liveRenderExecuted":27,"liveRenderFailures":0,"liveRenderMethod":"app.render","liveRenderReason":"realtime-pen","lastDistances":[{"mode":"pen","distance":0.639,"dx":-0.63,"dy":0.109,"localX":48.824,"localY":33.442,"force":false,"skipped":false},{"mode":"pen","distance":0.278,"dx":-0.275,"dy":0.039,"localX":48.549,"localY":33.481,"force":false,"skipped":true},{"mode":"pen","distance":0.555,"dx":-0.55,"dy":0.077,"localX":48.275,"localY":33.52,"force":false,"skipped":false},{"mode":"pen","distance":0.273,"dx":-0.261,"dy":0.081,"localX":48.014,"localY":33.6,"force":false,"skipped":true},{"mode":"pen","distance":0.546,"dx":-0.522,"dy":0.161,"localX":47.753,"localY":33.681,"force":false,"skipped":false},{"mode":"pen","distance":0.25,"dx":-0.242,"dy":0.06,"localX":47.511,"localY":33.741,"force":false,"skipped":true},{"mode":"pen","distance":0.499,"dx":-0.485,"dy":0.119,"localX":47.268,"localY":33.8,"force":false,"skipped":true},{"mode":"pen","distance":0.736,"dx":-0.717,"dy":0.165,"localX":47.036,"localY":33.846,"force":false,"skipped":false},{"mode":"pen","distance":0.237,"dx":-0.232,"dy":0.045,"localX":46.803,"localY":33.891,"force":false,"skipped":true},{"mode":"pen","distance":0.39,"dx":-0.383,"dy":0.075,"localX":46.653,"localY":33.921,"force":false,"skipped":true},{"mode":"pen","distance":0.543,"dx":-0.533,"dy":0.104,"localX":46.503,"localY":33.95,"force":false,"skipped":false},{"mode":"pen","distance":0,"dx":0,"dy":0,"localX":46.503,"localY":33.95,"force":true,"skipped":false}]}
+brush-core.js:1732 [StrokeInputProfile] finalize {id: 'stroke_1783060607735_7xeqm', mode: 'pen', pointerType: 'mouse', size: 10, opacity: 1, …}
+history.js:86 [History] Record applied: caf-internal-layer-draw {historyKind: 'raster', assetId: 'b9e5f17b-b3c7-4a02-bc81-d6823400b717', type: 'caf-internal-layer-draw', clipId: 'ad3b69ac-98bd-4251-bfdf-bb9d3962f5b4', layerId: 'temp_layer_1_1783060117560', …}
+pointer-handler.js:277 [PointerHandler] raw pointerdown {"pointerType":"mouse","button":0,"buttons":1,"pressure":0.5,"pointerId":1,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:103 [DrawingEngine] down gate {"pointerType":"mouse","button":0,"buttons":1,"pressure":0.5,"canvasMove":false,"vKey":false,"selectionTransform":false}
+brush-core.js:1705 [StrokeInputProfile] event {strokeId: 'stroke_1783060612195_x8idw', stage: 'down', input: {…}, details: {…}}
+brush-core.js:1705 [StrokeInputProfile] event {strokeId: 'stroke_1783060612195_x8idw', stage: 'up', input: {…}, details: {…}}
+brush-core.js:1694 [TegakiRealtimeStroke:realtime] {"mode":"pen","outcome":"realtime","hasRealtimeApplied":true,"updateCalls":86,"batchCalls":0,"realtimePointCalls":173,"penPointCalls":173,"distanceSkips":87,"zeroDistanceSkips":0,"penRenderCalls":86,"penRenderMissingTarget":0,"penRenderMissingGraphics":0,"maxDistance":0.998,"finalPointerUpdates":1,"liveRenderRequests":86,"liveRenderCoalesced":62,"liveRenderExecuted":23,"liveRenderFailures":0,"liveRenderMethod":"app.render","liveRenderReason":"realtime-pen","lastDistances":[{"mode":"pen","distance":0.215,"dx":-0.208,"dy":0.053,"localX":31.157,"localY":29.372,"force":false,"skipped":true},{"mode":"pen","distance":0.517,"dx":-0.507,"dy":0.101,"localX":30.858,"localY":29.421,"force":false,"skipped":false},{"mode":"pen","distance":0.302,"dx":-0.298,"dy":0.049,"localX":30.56,"localY":29.469,"force":false,"skipped":true},{"mode":"pen","distance":0.571,"dx":-0.565,"dy":0.084,"localX":30.294,"localY":29.504,"force":false,"skipped":false},{"mode":"pen","distance":0.268,"dx":-0.266,"dy":0.035,"localX":30.028,"localY":29.539,"force":false,"skipped":true},{"mode":"pen","distance":0.518,"dx":-0.514,"dy":0.061,"localX":29.78,"localY":29.566,"force":false,"skipped":false},{"mode":"pen","distance":0.249,"dx":-0.248,"dy":0.026,"localX":29.532,"localY":29.592,"force":false,"skipped":true},{"mode":"pen","distance":0.488,"dx":-0.486,"dy":0.046,"localX":29.294,"localY":29.612,"force":false,"skipped":true},{"mode":"pen","distance":0.726,"dx":-0.723,"dy":0.066,"localX":29.056,"localY":29.632,"force":false,"skipped":false},{"mode":"pen","distance":0.154,"dx":-0.153,"dy":0.013,"localX":28.903,"localY":29.645,"force":false,"skipped":true},{"mode":"pen","distance":0.307,"dx":-0.306,"dy":0.026,"localX":28.75,"localY":29.658,"force":false,"skipped":true},{"mode":"pen","distance":0.307,"dx":-0.306,"dy":0.026,"localX":28.75,"localY":29.658,"force":true,"skipped":false}]}
+brush-core.js:1732 [StrokeInputProfile] finalize {id: 'stroke_1783060612195_x8idw', mode: 'pen', pointerType: 'mouse', size: 10, opacity: 1, …}
+history.js:86 [History] Record applied: caf-internal-layer-draw {historyKind: 'raster', assetId: 'f3321482-294c-4d0f-b4a0-91a77464d478', type: 'caf-internal-layer-draw', clipId: '61846a91-949c-4d07-8d64-5601929ce3ee', layerId: 'temp_layer_1_1783060117560', …}
+pointer-handler.js:277 [PointerHandler] raw pointerdown {"pointerType":"mouse","button":0,"buttons":1,"pressure":0.5,"pointerId":1,"isPrimary":true,"target":"CANVAS","id":"","className":""}
+drawing-engine.js:103 [DrawingEngine] down gate {"pointerType":"mouse","button":0,"buttons":1,"pressure":0.5,"canvasMove":false,"vKey":false,"selectionTransform":false}
+brush-core.js:1705 [StrokeInputProfile] event {strokeId: 'stroke_1783060615925_uzd8f', stage: 'down', input: {…}, details: {…}}
+brush-core.js:1705 [StrokeInputProfile] event {strokeId: 'stroke_1783060615925_uzd8f', stage: 'up', input: {…}, details: {…}}
+brush-core.js:1694 [TegakiRealtimeStroke:realtime] {"mode":"pen","outcome":"realtime","hasRealtimeApplied":true,"updateCalls":67,"batchCalls":0,"realtimePointCalls":135,"penPointCalls":135,"distanceSkips":77,"zeroDistanceSkips":0,"penRenderCalls":58,"penRenderMissingTarget":0,"penRenderMissingGraphics":0,"maxDistance":0.819,"finalPointerUpdates":1,"liveRenderRequests":58,"liveRenderCoalesced":38,"liveRenderExecuted":19,"liveRenderFailures":0,"liveRenderMethod":"app.render","liveRenderReason":"realtime-pen","lastDistances":[{"mode":"pen","distance":0.719,"dx":0.004,"dy":0.719,"localX":64.658,"localY":40.054,"force":false,"skipped":false},{"mode":"pen","distance":0.231,"dx":0.001,"dy":0.231,"localX":64.659,"localY":40.285,"force":false,"skipped":true},{"mode":"pen","distance":0.462,"dx":0.002,"dy":0.462,"localX":64.66,"localY":40.517,"force":false,"skipped":true},{"mode":"pen","distance":0.69,"dx":0.002,"dy":0.69,"localX":64.661,"localY":40.744,"force":false,"skipped":false},{"mode":"pen","distance":0.228,"dx":0.001,"dy":0.228,"localX":64.661,"localY":40.972,"force":false,"skipped":true},{"mode":"pen","distance":0.453,"dx":0.001,"dy":0.453,"localX":64.662,"localY":41.198,"force":false,"skipped":true},{"mode":"pen","distance":0.679,"dx":0.002,"dy":0.679,"localX":64.663,"localY":41.423,"force":false,"skipped":false},{"mode":"pen","distance":0.224,"dx":0,"dy":0.224,"localX":64.663,"localY":41.648,"force":false,"skipped":true},{"mode":"pen","distance":0.449,"dx":0.001,"dy":0.449,"localX":64.663,"localY":41.872,"force":false,"skipped":true},{"mode":"pen","distance":0.595,"dx":0.001,"dy":0.595,"localX":64.664,"localY":42.018,"force":false,"skipped":false},{"mode":"pen","distance":0.146,"dx":0,"dy":0.146,"localX":64.664,"localY":42.165,"force":false,"skipped":true},{"mode":"pen","distance":0.146,"dx":0,"dy":0.146,"localX":64.664,"localY":42.165,"force":true,"skipped":false}]}
+brush-core.js:1732 [StrokeInputProfile] finalize {id: 'stroke_1783060615925_uzd8f', mode: 'pen', pointerType: 'mouse', size: 10, opacity: 1, …}
+history.js:86 [History] Record applied: caf-internal-layer-draw {historyKind: 'raster', assetId: 'f3321482-294c-4d0f-b4a0-91a77464d478', type: 'caf-internal-layer-draw', clipId: '61846a91-949c-4d07-8d64-5601929ce3ee', layerId: 'temp_layer_1_1783060117560', …}

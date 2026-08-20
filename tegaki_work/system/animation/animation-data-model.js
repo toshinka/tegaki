@@ -83,6 +83,9 @@ import {
     getLineRibbonRasterMeshStatus,
     rebaseLineRibbonRasterMeshSource
 } from './line-ribbon-raster-bone-setup.js';
+import { createSkinInfluenceCorrectionPlan } from './skin-influence-correction.js';
+import { createSkinWeightBrushPlan } from './skin-weight-brush.js';
+import { createRasterMeshVertexPositionEditPlan } from './raster-mesh-vertex-position-edit.js';
 
 /**
  * ID生成ユーティリティ
@@ -874,6 +877,63 @@ export class TimelineModel {
     }
 
     /**
+     * 一枚Rasterをrigid Part方式からMesh Bone Setupへ明示的に戻す。
+     * 対象Part / rigid Boneと対応Motion trackだけを除去し、未接続Mesh Boneは維持する。
+     */
+    removeClipAssetRigidRasterTarget(assetId, layerId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, changed: false, reason: 'asset-not-found' };
+        const layer = asset.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        if (!layer) return { ok: false, changed: false, reason: 'layer-not-found' };
+        if (layer.type !== 'raster') return { ok: false, changed: false, reason: 'raster-required' };
+        const part = asset.rigDefinition?.parts?.find(candidate => candidate?.partId === layer.id) || null;
+        if (!part) return { ok: true, changed: false, asset, layer, removedPartIds: [], removedBoneIds: [] };
+
+        const rigidBoneIds = new Set((asset.rigDefinition?.rigidBindings || [])
+            .filter(binding => binding?.partId === part.partId)
+            .map(binding => binding?.boneId)
+            .filter(Boolean));
+        const skinUsesRigidBone = (asset.skinBindings || []).some(binding => (
+            (binding?.vertexWeights || []).some(vertexWeight => (
+                (vertexWeight?.influences || []).some(influence => (
+                    Number(influence?.weight) > 0 && rigidBoneIds.has(influence?.boneId)
+                ))
+            ))
+        ));
+        if (skinUsesRigidBone) {
+            return { ok: false, changed: false, reason: 'rig-bone-used-by-skin' };
+        }
+
+        const removal = removeRigDefinitionTargets(asset.rigDefinition, { partIds: [part.partId] });
+        if (!removal.ok) return { ...removal, changed: false };
+        const validation = validateRigDefinition(removal.value, asset.internalLayers);
+        if (!validation.ok) {
+            return {
+                ok: false,
+                changed: false,
+                reason: 'invalid-rig-definition',
+                errors: validation.errors
+            };
+        }
+        asset.rigDefinition = validation.value;
+        this.tracks.forEach(track => {
+            (track.cels || []).forEach(clip => {
+                if (clip.assetId !== asset.id) return;
+                clip.rigMotion = removeRigMotionTargets(clip.rigMotion, removal);
+            });
+        });
+        asset.updatedAt = Date.now();
+        return {
+            ok: true,
+            changed: removal.changed === true,
+            asset,
+            layer,
+            removedPartIds: removal.partIds,
+            removedBoneIds: removal.boneIds
+        };
+    }
+
+    /**
      * Raster Skinning用のBoneだけを既存Rigへ追加する。
      * Raster / Meshへのweight対応はskinBindingsが所有し、Part rigid bindingは作らない。
      */
@@ -981,6 +1041,58 @@ export class TimelineModel {
             ...options,
             generatorMode: 'auto-shape-line'
         });
+    }
+
+    applyClipAssetRasterSkinInfluenceCorrection(assetId, layerId, boneId, vertexIds, action) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, changed: false, reason: 'asset-not-found' };
+        const plan = createSkinInfluenceCorrectionPlan(asset, layerId, boneId, vertexIds, action);
+        if (!plan.ok || !plan.changed) return { ...plan, asset };
+        asset.meshDefinitions = plan.meshDefinitions;
+        asset.skinBindings = plan.skinBindings;
+        asset.updatedAt = Date.now();
+        return { ...plan, asset };
+    }
+
+    applyClipAssetRasterSkinWeightBrush(assetId, layerId, boneId, vertexDeltas) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, changed: false, reason: 'asset-not-found' };
+        const status = this.getClipAssetRasterMeshStatus(assetId, layerId);
+        if (status.state === 'stale') {
+            return { ok: false, changed: false, reason: 'mesh-stale', asset };
+        }
+        if (status.state !== 'current') {
+            return { ok: false, changed: false, reason: 'fixed-topology-generator-required', asset };
+        }
+        const plan = createSkinWeightBrushPlan(asset, layerId, boneId, vertexDeltas);
+        if (!plan.ok || !plan.changed) return { ...plan, asset };
+        asset.meshDefinitions = plan.meshDefinitions;
+        asset.skinBindings = plan.skinBindings;
+        asset.updatedAt = Date.now();
+        return { ...plan, asset };
+    }
+
+    applyClipAssetRasterMeshVertexPositionEdit(assetId, layerId, vertexPositions) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, changed: false, reason: 'asset-not-found' };
+        const status = this.getClipAssetRasterMeshStatus(assetId, layerId);
+        if (status.state === 'stale') {
+            return { ok: false, changed: false, reason: 'mesh-stale', asset };
+        }
+        if (status.state !== 'current') {
+            return { ok: false, changed: false, reason: 'fixed-topology-generator-required', asset };
+        }
+        const plan = createRasterMeshVertexPositionEditPlan(
+            asset,
+            layerId,
+            vertexPositions,
+            status.snapshot?.rasterBounds
+        );
+        if (!plan.ok || !plan.changed) return { ...plan, asset };
+        asset.meshDefinitions = plan.meshDefinitions;
+        asset.skinBindings = plan.skinBindings;
+        asset.updatedAt = Date.now();
+        return { ...plan, asset };
     }
 
     getClipAssetRasterMeshStatus(assetId, layerId) {

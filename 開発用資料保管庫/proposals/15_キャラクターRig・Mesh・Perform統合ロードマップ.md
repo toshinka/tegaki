@@ -1,6 +1,6 @@
 # キャラクターRig・Mesh・Perform統合ロードマップ
 
-更新日: 2026-08-14
+更新日: 2026-08-20
 区分: 未実装統合proposal / Phase化前の判断正本
 
 ## 0. 位置づけ
@@ -341,12 +341,32 @@ Phase 8aはread-only診断Gateとして、選択Boneのweight heatmap、active R
 
 Phase 8bは後送したTable Bone group / collapseを独立Gateとする。Stage Aで既存rigid binding / 正weight Skin influenceから一意target、複数target `SHARED / CONNECTION`、targetなし`UNASSIGNED`を返すpure projectionを固定し、Inspector用Raster fallbackをgroup権威から除外した。Gate 1=`GO — A: 同一target 2 Bone以上だけ明示collapse group`。singletonは従来行、既定展開、collapse時もselectionをclearせずheaderへactive / 選択key indicatorを出す。`B: 選択targetだけ自動展開`と`C: active branch優先`は棄却 / 後送する。CanvasのBone / connectionを自動で隠すtarget focusは混ぜず、保存`boneGroupId`、Bone色辞書、Timeline selection / Historyの第二正本が必要なら`HOLD / REPLAN`とする。
 
+Phase 8cは限定補正Gateで`C: 選択頂点をBoneのみ / 親子blend / 影響なしへ確定`を採用し、SOL final review=`A`で技術closeした。Aのchain include / excludeは別zone正本へ発展しやすく、Bのjoint band限定再生成は個別例外を安全に直せないため`HOLD`とした。Setup青RIGの明示`CORRECT` modeでstable vertexだけを選び、`BONE ONLY / PARENT BLEND / NO INFLUENCE`を既存`skinBindings[].vertexWeights`へ直接確定する。`weightCorrectionMode: limited-discrete-v1`は補正済み再生成を警告するlineage markerだけで、評価正本を増やさない。no-op History 0、実変更1 History、Undo / Redo、再生成confirm cancel、全77 verifier / build / Browser / console 0件を通過した。自由brush、第二Shape zone正本、multiple Mesh、DQS、stretchは未実装を維持する。
+
+Phase 8d Stage Bでは一枚Rasterの二方式を導線上で分離した。Stage CでOwner制作fixtureを反映し、曲げる方式の基準を`RIG設定 → BONE追加 → AUTO GRID → Motion`、曲げないrigid方式を別の`全体PIVOT`とした。未接続Motionは対象絵を見せつつkeyを拒否し、同じAUTO GRID actionを直接出す。AUTO SHAPE / LINEは高度generatorとして維持し、既にSkin接続済みならMotionを阻害しない。新しいRig mode保存flag、第二Mesh / Skin正本、自動解除、自動初期BONEは追加しない。
+
+Phase 8d〜8hはCanvas-first導線、Motion中WEIGHT、可逆Focus shell、限定contrast補正までをMesh / Skin仕様変更なしで技術closeした。Phase 8iは下記Topology / Weight編集Gateを実コードへ切り出し、stable vertexId、History、STALE / regenerate、CPU / Pixi / exportを監査した。Gate 1は`GO — B: 固定topology Weight brush`、SOL final review=`A`。既存離散補正はfallbackとして維持し、point追加・triangle切断はWeight brushと分けて`HOLD`した。
+
+Phase 8jはAUTO GRID / AUTO SHAPEのCURRENT Meshへ限定したFixed-topology Skin Weight Brushを技術closeした。stable vertexIdごとのsigned deltaを、選択Boneと既存最強companionの最大2 normalized influenceへ既存`skinBindings`上で確定する。ADD / SUB、radius / strength、SVG vertex hit、1 gesture 1 History、cancel / failure rollback、Undo / Redoを固定し、全83 verifier / build、Browser、SOL final review=`A`を通過した。Motion側mutation、AUTO LINE、第二Weight正本は追加していない。
+
+現行Phase 8kはMesh形状編集をWeight brushから分離した。Raster Meshのvertex x / yは独立UVではなくBind位置とsource sampling位置を兼ねるため、Gate 1=`GO — A: AUTO GRID / AUTO SHAPEの既存vertex位置だけを編集`とした。固定ID / triangle / weight / generator sourceを維持し、snapshot rasterBounds外、winding反転、degenerate、triangle重なりをpure planで拒否する。Stage BはCURRENT限定Model adapterと固定fixtureまで完了した。point追加＋局所triangle分割は新規stable IDとbarycentric weight補間を要する次Gate、edge切断／全面editorはHOLDとする。
+
+同Phaseの前提導線修正として、RIG / Motion対象Rasterを既存rigid bindingと正weight Skinからruntime投影し、停止編集中の非対象の絵を半透明にした。BoneだけでSkin未接続の場合はMotion入力を拒否し、AUTO GRID / SHAPE / LINEを案内する。Raster tabの候補は実Skin influenceだけとし、global Mesh Bone fallbackによる接続済み誤表示を除去した。このfocusはdisplay-onlyで、preview / playback / onion / Bake / exportの出力へ混ぜない。
+
 #### 可視化と編集候補
 
 - Setup青のRIG内にadvanced `WEIGHT` submodeを置く案を第一候補とし、直ちに4つ目の常設top-level tabを増やさない。
 - 選択Boneのweightを0〜1 heatmap、影響資格外を無着色、親子blend bandを輪郭、rigid regionを単色でCanvas上へ表示する。Mesh triangle / vertex表示と切替でき、顔等への微小な漏れも発見できることを必須にする。
 - 初期編集は自由paintより、`このchainへ含める / 除外`、joint band幅、選択頂点を`Boneのみ / 親子blend / 影響なし`へ確定する限定操作を比較する。manual brushを採る場合もnormalize、lock、1 gesture 1 History、generator lineage、再生成時の破棄確認を同時に固定する。
 - Shape zoneを第二のruntime変形正本にしない。保存する必要が生じた場合もweight生成mask / authoring情報に限定し、描画評価は既存Mesh + `skinBindings`だけを読む。
+
+#### ToonSquid照合後のTopology / Weight編集Gate（2026-08-20）
+
+- ToonSquidのCustom Meshはcontrol point追加、triangle / control pointの切断、point移動を分け、BoneはLayerまたはMesh / Warp control pointへ明示bindできる。Tegakiも「Mesh形状を直す操作」と「既存頂点のWeightを直す操作」を一つのbrushへ混ぜない。
+- Phase 8d Stage CはMotionから既存WEIGHT診断へ戻すところまで、Phase 8eはMotion中のread-only表示を完了した。次の補正候補は既存vertex選択によるPhase 8c離散補正の制作検証とする。自由brushより先に`BONE ONLY / PARENT BLEND / NO INFLUENCE`でGRIDのbranch漏れを直せるか測る。
+- 自由Weight brushを開く場合も、結果は既存`skinBindings[].vertexWeights`へ直接確定し、最大2 influence、非負、normalize、1 gesture 1 History、cancel非mutation、補正済み再生成確認を維持する。Bone別Strengthやweight overrideを第二正本として追加しない。
+- point追加・移動・triangle切断はTopologyを変えるため別Gateとする。Phase 8kはまず既存vertex位置だけを固定ID / triangle / weightのまま扱い、point追加・triangle切断はstable vertex ID新設、SkinWeight再map、STALE、Undo / Redo、Project round-trip、CPU / Pixi / Bake一致を先に固定してから開く。Weight brushの便利機能として暗黙実装しない。
+- GRIDのglobal distanceとSHAPE JOINTのchain-localには用途差がある。基準導線をGRIDにしても品質の最終正解とはしない。GRIDで素早く成功し、WEIGHT診断で漏れを発見し、必要時に離散補正またはSHAPE JOINTへ進む段階導線を比較する。
 
 #### 固定fixtureと合格条件
 
