@@ -16,6 +16,25 @@
     --deformer-pose-point: var(--futaba-maroon);
     --deformer-bind-line: #527fbd;
     --deformer-bind-point: #315c96;
+    /* Phase 8l: existing Futaba values exposed as semantic surface aliases. */
+    --ui-surface-rail: rgba(240, 224, 214, 0.42);
+    --ui-surface-float: linear-gradient(180deg, rgba(255, 255, 238, 0.78), rgba(240, 224, 214, 0.66)), rgba(255, 255, 238, 0.56);
+    --ui-surface-control: rgba(255, 255, 238, 0.12);
+    --ui-surface-control-hover: rgba(255, 255, 238, 0.72);
+    --ui-surface-control-active: rgba(255, 245, 222, 0.92);
+    --ui-border-subtle: transparent;
+    --ui-border-hover: rgba(128, 0, 0, 0.16);
+    --ui-border-active: rgba(255, 140, 66, 0.9);
+    --ui-border-float: rgba(128, 0, 0, 0.18);
+    --ui-shadow-rail: 0 2px 8px rgba(128, 0, 0, 0.08);
+    --ui-shadow-float: 0 8px 20px rgba(80, 32, 24, 0.16), inset 0 1px 0 rgba(255, 255, 238, 0.38);
+    --ui-shadow-control-active: 0 0 0 1px rgba(255, 140, 66, 0.2), 0 2px 5px rgba(80, 32, 24, 0.12);
+    --ui-radius-rail: 6px;
+    --ui-radius-panel: 11px;
+    --ui-radius-control: 5px;
+    --ui-backdrop-rail: blur(6px);
+    --ui-backdrop-float: blur(10px) saturate(1.12);
+    --ui-opacity-disabled: 0.5;
     --ui-rail-width: 35px;
     --ui-rail-control-size: 30px;
     --ui-rail-icon-size: 19px;
@@ -59,7 +78,7 @@
     --ui-qa-inner-width: 124px;
     --ui-qa-grid-size: 19px;
     --ui-qa-tool-icon-size: 11px;
-    --ui-qa-preset-height: 32px;
+    --ui-qa-preset-height: 26px;
     --ui-qa-slider-button-size: 14px;
     --ui-status-font-size: 10px;
     --ui-status-gap: 14px;
@@ -106,7 +125,7 @@ body {
     top: 50%;
     transform: translateY(-50%);
     width: var(--ui-rail-width);
-    background: rgba(240, 224, 214, 0.42); 
+    background: var(--ui-surface-rail);
     border-right: none; 
     display: flex; 
     flex-direction: column; 
@@ -120,33 +139,28 @@ body {
 
 .sidebar,
 .layer-controls-row {
-    border-radius: 6px;
+    border-radius: var(--ui-radius-rail);
 }
 
 .sidebar {
-    backdrop-filter: blur(6px);
-    box-shadow: 0 2px 8px rgba(128, 0, 0, 0.08);
+    backdrop-filter: var(--ui-backdrop-rail);
+    box-shadow: var(--ui-shadow-rail);
 }
 
 .tool-button { 
     width: var(--ui-rail-control-size);
     height: var(--ui-rail-control-size);
     flex: 0 0 var(--ui-rail-control-size);
-    border: 1px solid var(--futaba-light-medium); 
-    background: rgba(255, 255, 238, 0.82); 
-    border-radius: 6px; 
     display: flex; 
     align-items: center; 
     justify-content: center; 
     cursor: pointer; 
-    transition: all 0.2s; 
     user-select: none; 
 }
 
 .tool-button svg { 
     width: var(--ui-rail-icon-size);
     height: var(--ui-rail-icon-size);
-    stroke: var(--futaba-maroon); 
 }
 
 .sidebar-action-button {
@@ -161,31 +175,6 @@ body {
     font-weight: 800;
     line-height: 1;
     pointer-events: none;
-}
-
-.tool-button:hover:not(.active) { 
-    background: rgba(233, 194, 186, 0.72);
-    border-color: var(--futaba-medium);
-    transform: scale(1.05); 
-}
-
-.tool-button.active,
-.tool-button.is-active {
-    background: rgba(255, 255, 238, 0.9);
-    border: 3px solid var(--active-border);
-}
-
-.tool-button.active svg { 
-    stroke: var(--futaba-maroon);
-}
-
-.tool-button.active.erase-mode {
-    background: rgba(184, 112, 107, 0.22);
-    border: 3px solid #b8706b;
-}
-
-.tool-button.active.erase-mode svg {
-    stroke: #8f3f3a;
 }
 
 .tool-separator { 
@@ -1354,7 +1343,7 @@ canvas {
         --ui-qa-inner-width: 154px;
         --ui-qa-grid-size: 24px;
         --ui-qa-tool-icon-size: 14px;
-        --ui-qa-preset-height: 40px;
+        --ui-qa-preset-height: 32px;
         --ui-qa-slider-button-size: 18px;
         --ui-status-font-size: 12px;
         --ui-status-gap: 18px;
@@ -2327,9 +2316,9 @@ canvas {
 .qa-tool-button {
     width: 36px;
     height: 36px;
-    border: 2px solid var(--futaba-light-medium);
-    background: var(--futaba-background);
-    border-radius: 6px;
+    border: 1px solid var(--ui-border-subtle);
+    background: var(--ui-surface-control);
+    border-radius: var(--ui-radius-control);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2346,14 +2335,15 @@ canvas {
 }
 
 .qa-tool-button:hover:not(.active) {
-    background: var(--futaba-light-medium);
-    border-color: var(--futaba-medium);
+    background: var(--ui-surface-control-hover);
+    border-color: var(--ui-border-hover);
     transform: scale(1.05);
 }
 
 .qa-tool-button.active {
-    background: var(--futaba-background);
-    border: 3px solid var(--active-border);
+    background: var(--ui-surface-control-active);
+    border-color: var(--ui-border-active);
+    box-shadow: var(--ui-shadow-control-active);
 }
 
 .qa-tool-button.active svg {
@@ -2361,12 +2351,11 @@ canvas {
 }
 
 .qa-tool-button.active.erase-mode {
-    background: rgba(184, 112, 107, 0.22);
-    border: 3px solid #b8706b;
+    border-color: var(--ui-border-active);
 }
 
 .qa-tool-button.active.erase-mode svg {
-    stroke: #8f3f3a;
+    stroke: var(--futaba-maroon);
 }
 
 .resize-compact-group {
@@ -4266,6 +4255,17 @@ canvas {
     background: color-mix(in srgb, var(--deformer-bind-line) 13%, var(--futaba-cream));
 }
 
+.anim-rig-mesh-edit-toggle:not(:disabled),
+.anim-rig-key-btn.anim-rig-mesh-edit-toggle.active {
+    border-color: var(--deformer-bind-line);
+    color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 13%, var(--futaba-cream));
+}
+
+.anim-rig-key-btn.anim-rig-mesh-edit-toggle.active {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--deformer-bind-line) 42%, transparent);
+}
+
 .anim-rig-weight-correction-actions {
     display: inline-flex;
     align-items: center;
@@ -6053,6 +6053,14 @@ button.anim-motion-graph-legend-item.is-primary {
     stroke: var(--deformer-bind-point);
     stroke-width: 1.8;
     vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+.rig-skin-weight-overlay__vertex-hit {
+    fill: transparent;
+    stroke: transparent;
+    stroke-width: 12;
+    vector-effect: non-scaling-stroke;
     pointer-events: all;
     cursor: crosshair;
 }
@@ -6061,6 +6069,14 @@ button.anim-motion-graph-legend-item.is-primary {
     fill: var(--active-border);
     stroke: var(--futaba-cream);
     stroke-width: 2.4;
+}
+
+.rig-skin-weight-overlay.is-topology-editing .rig-skin-weight-overlay__vertex-hit {
+    cursor: move;
+}
+
+.rig-skin-weight-overlay.is-topology-editing.is-dragging .rig-skin-weight-overlay__vertex-hit {
+    cursor: grabbing;
 }
 
 .rig-skin-weight-overlay__brush-cursor {
@@ -6883,13 +6899,14 @@ button.anim-motion-graph-legend-item.is-primary {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    width: var(--ui-qa-inner-width);
+    width: auto;
+    min-width: 62px;
     min-height: 22px;
-    margin: 3px auto 0;
+    margin: 0 0 0 auto;
     padding: 2px 6px;
-    border: 1px solid var(--futaba-light-medium);
-    border-radius: 6px;
-    background: var(--futaba-background);
+    border: 1px solid var(--ui-border-subtle);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-surface-control);
     color: var(--futaba-maroon);
     font-size: 8px;
     font-weight: 700;
@@ -6899,8 +6916,14 @@ button.anim-motion-graph-legend-item.is-primary {
 
 .qa-text-raster-toggle:hover,
 .qa-text-raster-toggle.active {
-    border-color: var(--futaba-maroon);
-    background: var(--futaba-cream);
+    border-color: var(--ui-border-hover);
+    background: var(--ui-surface-control-hover);
+}
+
+.qa-text-raster-toggle.active {
+    border-color: var(--ui-border-active);
+    background: var(--ui-surface-control-active);
+    box-shadow: var(--ui-shadow-control-active);
 }
 
 .qa-text-raster-icon {
@@ -6926,6 +6949,14 @@ button.anim-motion-graph-legend-item.is-primary {
     box-sizing: border-box;
 }
 
+.qa-text-raster-utility {
+    display: grid;
+    width: var(--ui-qa-inner-width);
+    margin-left: auto;
+    margin-right: auto;
+    justify-items: stretch;
+}
+
 .qa-text-raster-panel[hidden] {
     display: none;
 }
@@ -6948,10 +6979,16 @@ button.anim-motion-graph-legend-item.is-primary {
 
 .qa-text-raster-options {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 52px auto 18px;
-    align-items: end;
+    grid-template-columns: minmax(0, 1fr);
     gap: 4px;
     margin-top: 4px;
+}
+
+.qa-text-raster-secondary-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 18px;
+    align-items: end;
+    gap: 4px;
 }
 
 .qa-text-raster-field {

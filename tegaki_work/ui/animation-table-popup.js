@@ -545,6 +545,11 @@ export class AnimationTablePopup {
         this._rigSkinWeightBrushStrength = 0.08;
         this._rigSkinWeightBrushDirection = 1;
         this._rigSkinWeightBrushGesture = null;
+        // 固定topologyのvertex位置編集もruntime mode / gestureだけを持つ。
+        // 確定結果は既存ClipAsset.meshDefinitions、Historyは既存CAF asset commandが正本。
+        this._rigMeshVertexEditActive = false;
+        this._rigMeshVertexEditTargetKey = null;
+        this._rigMeshVertexEditGesture = null;
         // 多Bone Table groupのcollapseはruntimeだけを持ち、Rig / Timelineへ保存しない。
         this._rigBoneGroupCollapsed = new Set();
         // Canvas-first Focus shellはruntime表示だけを持つ。popup位置、Project、Historyへ保存しない。
@@ -586,6 +591,8 @@ export class AnimationTablePopup {
         this.playbackScope = 'all'; // 'all' | 'activeLane' | 'includedLanes'
         this.activePlaybackLaneIds = null; // Set<string> | null
         this.includedLaneIds = new Set();
+        this._scopeFocusDeckOpen = false;
+        this._playbackRangeFocusDeckOpen = false;
         this.timelineCellWidth = 24;
 
         // アセットライブラリ関連 (Phase 4z4)
@@ -633,6 +640,7 @@ export class AnimationTablePopup {
 
         this.render();
         this._requestLayerPanelSync();
+        this.eventBus.emit('popup:shown', { name: 'animationTable' });
     }
 
     _deferShowUntilLayerTransformCommitted() {
@@ -679,7 +687,18 @@ export class AnimationTablePopup {
 
     hide() {
         if (!this.panel) return;
+        const wasVisible = this.isVisible === true;
+        this._setScopeFocusDeckOpen(false);
+        this._setPlaybackRangeFocusDeckOpen(false);
         this._cancelMotionEditPreviewRefresh();
+        if (this._rigMeshVertexEditGesture) {
+            if (!rigSkinWeightOverlay.cancelVertexDrag('table-close')) {
+                this._finishRigMeshVertexEditGesture(this._rigMeshVertexEditGesture, {
+                    cancelled: true,
+                    render: false
+                });
+            }
+        }
         if (this._rigSkinWeightBrushGesture) {
             this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
                 cancelled: true,
@@ -696,6 +715,8 @@ export class AnimationTablePopup {
         this._rigSkinWeightSelectedVertexIds.clear();
         this._rigSkinWeightBrushActive = false;
         this._rigSkinWeightBrushTargetKey = null;
+        this._rigMeshVertexEditActive = false;
+        this._rigMeshVertexEditTargetKey = null;
         this.stop();
         if (this.isClipEditModeActive) {
             this.exitClipEditMode();
@@ -714,6 +735,9 @@ export class AnimationTablePopup {
         boneTransformOverlay.deactivate();
         this._requestLayerPanelSync({ force: true });
         this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        if (wasVisible) {
+            this.eventBus.emit('popup:hidden', { name: 'animationTable' });
+        }
     }
 
     _loadUiPreferences() {
@@ -894,10 +918,14 @@ export class AnimationTablePopup {
                 playBtn.textContent = '■';
                 playBtn.classList.add('playing');
                 playBtn.title = 'Stop';
+                playBtn.setAttribute('aria-label', 'Stop');
+                playBtn.setAttribute('aria-pressed', 'true');
             } else {
                 playBtn.textContent = '▶';
                 playBtn.classList.remove('playing');
                 playBtn.title = 'Play';
+                playBtn.setAttribute('aria-label', 'Play');
+                playBtn.setAttribute('aria-pressed', 'false');
             }
         }
     }
@@ -3410,6 +3438,178 @@ export class AnimationTablePopup {
         return true;
     }
 
+    _getRigMeshVertexEditTarget(frameIndex = this.model.playback.currentFrame) {
+        if (this._motionEditorMode !== 'rig' || this.isPlaying) return null;
+        const target = this._getRigSkinWeightDiagnosticTarget(frameIndex);
+        const generatorType = target?.raster?.mesh?.generator?.type;
+        if (!target || ![ALPHA_FIT_GRID_GENERATOR, AUTO_SHAPE_FILL_GENERATOR].includes(generatorType)) {
+            return null;
+        }
+        const status = this.model.getClipAssetRasterMeshStatus(
+            target.projection.asset.id,
+            target.raster.layer.id
+        );
+        if (status.state !== 'current' || !status.snapshot?.rasterBounds) return null;
+        const folderEffectPlan = createFolderPartRenderPlan(
+            target.projection.asset,
+            target.projection.entry.clip,
+            frameIndex
+        );
+        const rasterSkinPlan = createRasterSkinRenderPlan(
+            target.projection.asset,
+            target.projection.entry.clip,
+            frameIndex,
+            { folderEffectPlan }
+        );
+        if (rasterSkinPlan.status !== 'ready') return null;
+        return { ...target, meshStatus: status };
+    }
+
+    _createRigMeshVertexEditDiagnostic(frameIndex = this.model.playback.currentFrame) {
+        const target = this._getRigMeshVertexEditTarget(frameIndex);
+        if (!target) return null;
+        const diagnostic = createRasterSkinWeightDiagnosticProjection(
+            target.projection.asset,
+            target.raster.layer.id,
+            target.bone.boneId
+        );
+        if (!diagnostic.ok) return null;
+        const canvasSize = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(target.projection.entry.clip, frameIndex),
+            canvasSize.width / 2,
+            canvasSize.height / 2
+        );
+        return {
+            ...diagnostic,
+            vertices: diagnostic.vertices.map(vertex => {
+                const point = applyTransformMatrix(clipMatrix, vertex.x, vertex.y);
+                return { ...vertex, x: point.x, y: point.y };
+            })
+        };
+    }
+
+    _isRigMeshVertexEditModeActive() {
+        return this._rigMeshVertexEditActive
+            && this._rigSkinWeightDiagnosticVisible
+            && !!this._getRigMeshVertexEditTarget();
+    }
+
+    _beginRigMeshVertexEditGesture(vertexId, event) {
+        if (this._rigMeshVertexEditGesture || event?.button !== 0) return false;
+        const target = this._getRigMeshVertexEditTarget();
+        const vertex = target?.raster?.mesh?.vertices?.find(candidate => candidate?.vertexId === vertexId);
+        const startPointer = target
+            ? this._screenToRigProject(event, target.projection.entry)
+            : null;
+        if (!target || !vertex || !startPointer) return false;
+        const asset = target.projection.asset;
+        this._rigMeshVertexEditGesture = {
+            pointerId: event.pointerId,
+            assetId: asset.id,
+            layerId: target.raster.layer.id,
+            vertexId,
+            startPointer,
+            startVertex: { x: vertex.x, y: vertex.y },
+            baselineAsset: asset.serialize(),
+            beforeState: this._captureInternalLayerHistoryState(asset),
+            changed: false,
+            lastPlan: null,
+            failureReason: null,
+            cancelledByFailure: false
+        };
+        return true;
+    }
+
+    _moveRigMeshVertexEditGesture(event) {
+        const gesture = this._rigMeshVertexEditGesture;
+        if (!gesture || gesture.pointerId !== event?.pointerId) return false;
+        const target = this._getRigMeshVertexEditTarget();
+        if (!target
+            || target.projection.asset.id !== gesture.assetId
+            || target.raster.layer.id !== gesture.layerId) {
+            gesture.failureReason = 'mesh-edit-target-changed';
+            gesture.cancelledByFailure = true;
+            return false;
+        }
+        const pointer = this._screenToRigProject(event, target.projection.entry);
+        if (!pointer) {
+            gesture.failureReason = 'mesh-edit-coordinate-unavailable';
+            gesture.cancelledByFailure = true;
+            return false;
+        }
+        const position = {
+            vertexId: gesture.vertexId,
+            x: gesture.startVertex.x + pointer.x - gesture.startPointer.x,
+            y: gesture.startVertex.y + pointer.y - gesture.startPointer.y
+        };
+        const result = this.model.applyClipAssetRasterMeshVertexPositionEdit(
+            gesture.assetId,
+            gesture.layerId,
+            [position]
+        );
+        if (!result.ok) {
+            gesture.failureReason = result.reason;
+            gesture.cancelledByFailure = true;
+            return false;
+        }
+        gesture.failureReason = null;
+        gesture.cancelledByFailure = false;
+        gesture.changed = Math.abs(position.x - gesture.startVertex.x) > 1e-9
+            || Math.abs(position.y - gesture.startVertex.y) > 1e-9;
+        gesture.lastPlan = result;
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._scheduleMotionEditPreviewRefresh();
+        rigSkinWeightOverlay.invalidate();
+        return true;
+    }
+
+    _restoreRigMeshVertexEditBaseline(gesture) {
+        const asset = gesture ? this.model.getClipAsset(gesture.assetId) : null;
+        if (!asset || !gesture?.baselineAsset) return false;
+        asset.meshDefinitions = structuredClone(gesture.baselineAsset.meshDefinitions);
+        asset.skinBindings = structuredClone(gesture.baselineAsset.skinBindings);
+        asset.updatedAt = gesture.baselineAsset.updatedAt;
+        return true;
+    }
+
+    _finishRigMeshVertexEditGesture(gesture, options = {}) {
+        if (!gesture || gesture !== this._rigMeshVertexEditGesture) return false;
+        this._rigMeshVertexEditGesture = null;
+        this._cancelMotionEditPreviewRefresh();
+        const asset = this.model.getClipAsset(gesture.assetId);
+        const cancelled = options.cancelled === true
+            || gesture.cancelledByFailure
+            || !gesture.changed
+            || !asset;
+        if (cancelled) {
+            this._restoreRigMeshVertexEditBaseline(gesture);
+        } else {
+            this._recordInternalLayerHistory(asset, gesture.beforeState, 'caf-raster-mesh-vertex-position', {
+                type: 'caf-raster-mesh-vertex-position',
+                assetId: gesture.assetId,
+                layerId: gesture.layerId,
+                vertexId: gesture.vertexId
+            });
+        }
+        if (gesture.cancelledByFailure && options.silent !== true) {
+            showFeedbackToast('Mesh頂点を移動できません。輪郭外・交差・反転を確認してください', {
+                duration: 2600
+            });
+        }
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        rigSkinWeightOverlay.invalidate();
+        if (options.render !== false) {
+            this._applyVisibilityPreview();
+            this.render();
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        return true;
+    }
+
     _getRigSkinWeightCorrectionTarget(frameIndex = this.model.playback.currentFrame) {
         if (this._motionEditorMode !== 'rig') return null;
         const target = this._getRigSkinWeightDiagnosticTarget(frameIndex);
@@ -3486,6 +3686,7 @@ export class AnimationTablePopup {
         const correctionActions = panel?.querySelector('[data-rig-weight-correction-actions]');
         const brushToggle = panel?.querySelector('#anim-rig-weight-brush-toggle');
         const brushControls = panel?.querySelector('[data-rig-weight-brush-controls]');
+        const meshEditToggle = panel?.querySelector('#anim-rig-mesh-edit-toggle');
         const summary = panel?.querySelector('[data-rig-weight-summary]');
         const available = !!this._getRigSkinWeightDiagnosticTarget();
         const visibility = this._getRigSkinWeightVisibilityPlan({ available });
@@ -3496,6 +3697,10 @@ export class AnimationTablePopup {
         const brushTarget = this._getRigSkinWeightBrushTarget();
         const brushTargetKey = brushTarget
             ? `${brushTarget.projection.asset.id}:${brushTarget.raster.layer.id}:${brushTarget.bone.boneId}`
+            : null;
+        const meshEditTarget = this._getRigMeshVertexEditTarget();
+        const meshEditTargetKey = meshEditTarget
+            ? `${meshEditTarget.projection.asset.id}:${meshEditTarget.raster.layer.id}`
             : null;
         if (correctionTargetKey !== this._rigSkinWeightCorrectionTargetKey) {
             this._rigSkinWeightCorrectionTargetKey = correctionTargetKey;
@@ -3513,6 +3718,19 @@ export class AnimationTablePopup {
             this._rigSkinWeightBrushTargetKey = brushTargetKey;
             this._rigSkinWeightBrushActive = false;
         }
+        if (meshEditTargetKey !== this._rigMeshVertexEditTargetKey) {
+            if (this._rigMeshVertexEditGesture) {
+                if (!rigSkinWeightOverlay.cancelVertexDrag('mesh-edit-target-change')) {
+                    this._finishRigMeshVertexEditGesture(this._rigMeshVertexEditGesture, {
+                        cancelled: true,
+                        render: false,
+                        silent: true
+                    });
+                }
+            }
+            this._rigMeshVertexEditTargetKey = meshEditTargetKey;
+            this._rigMeshVertexEditActive = false;
+        }
         if (!visibility.visible && this._rigSkinWeightDiagnosticVisible) {
             this._rigSkinWeightDiagnosticVisible = false;
             rigSkinWeightOverlay.deactivate();
@@ -3523,6 +3741,9 @@ export class AnimationTablePopup {
         }
         if (!brushTarget && this._rigSkinWeightBrushActive) {
             this._rigSkinWeightBrushActive = false;
+        }
+        if (!meshEditTarget && this._rigMeshVertexEditActive) {
+            this._rigMeshVertexEditActive = false;
         }
         if (toggle) {
             const active = available && this._rigSkinWeightDiagnosticVisible;
@@ -3586,6 +3807,17 @@ export class AnimationTablePopup {
                 strength.value = String(Math.round(this._rigSkinWeightBrushStrength * 100));
             }
         }
+        if (meshEditToggle) {
+            meshEditToggle.disabled = !meshEditTarget || this.isPlaying;
+            meshEditToggle.classList.toggle('active', this._rigMeshVertexEditActive);
+            meshEditToggle.setAttribute('aria-pressed', String(this._rigMeshVertexEditActive));
+            meshEditToggle.textContent = this._rigMeshVertexEditActive ? 'MESH EDIT ON' : 'MESH EDIT';
+            meshEditToggle.dataset.tooltip = meshEditTarget
+                ? (this._rigMeshVertexEditActive
+                    ? '固定topology編集を閉じる。未確定dragはcancelします'
+                    : 'CURRENTのAUTO GRID / AUTO SHAPE頂点を一つずつ移動')
+                : 'CURRENTのAUTO GRID / AUTO SHAPEを選択すると使用できます';
+        }
         if (summary) summary.hidden = !(available && this._rigSkinWeightDiagnosticVisible);
         rigSkinWeightOverlay.invalidate();
         return available;
@@ -3607,7 +3839,8 @@ export class AnimationTablePopup {
             motionBoneActive: this._isMotionBonePivotActive(),
             playing: this.isPlaying,
             correctionRequested: this._rigSkinWeightCorrectionActive,
-            brushRequested: this._rigSkinWeightBrushActive
+            brushRequested: this._rigSkinWeightBrushActive,
+            topologyEditRequested: this._rigMeshVertexEditActive
         });
     }
 
@@ -3619,11 +3852,34 @@ export class AnimationTablePopup {
         const visibility = this._getRigSkinWeightVisibilityPlan();
         return rigSkinWeightOverlay.activate({
             coordinateSystem,
-            getDiagnostic: () => this._createRigSkinWeightDiagnostic(),
+            getDiagnostic: () => visibility.topologyEditActive
+                ? this._createRigMeshVertexEditDiagnostic()
+                : this._createRigSkinWeightDiagnostic(),
             shouldDisplay: () => this._isRigSkinWeightDiagnosticActive(),
-            editing: visibility.correctionActive,
+            editing: visibility.correctionActive || visibility.topologyEditActive,
+            vertexInteraction: visibility.topologyEditActive ? 'drag' : 'toggle',
             selectedVertexIds: this._rigSkinWeightSelectedVertexIds,
-            onVertexToggle: vertexId => this._toggleRigSkinWeightCorrectionVertex(vertexId)
+            onVertexToggle: vertexId => this._toggleRigSkinWeightCorrectionVertex(vertexId),
+            onVertexDragStart: (vertexId, event) => this._beginRigMeshVertexEditGesture(vertexId, event),
+            onVertexDragMove: event => this._moveRigMeshVertexEditGesture(event),
+            onVertexDragEnd: result => this._finishRigMeshVertexEditGesture(
+                this._rigMeshVertexEditGesture,
+                {
+                    cancelled: result.cancelled === true,
+                    render: ![
+                        'deactivate',
+                        'table-close',
+                        'editor-mode-change',
+                        'mesh-edit-target-change',
+                        'mesh-edit-toggle',
+                        'weight-overlay-close',
+                        'weight-correction-mode',
+                        'weight-brush-mode'
+                    ]
+                        .includes(result.reason),
+                    silent: result.reason === 'mesh-edit-target-change'
+                }
+            )
         });
     }
 
@@ -4560,6 +4816,11 @@ export class AnimationTablePopup {
     _syncRigPivotOverlay() {
         const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
         this._syncRigSkinWeightOverlay(coordinateSystem);
+        if (this._isRigMeshVertexEditModeActive()) {
+            rigPivotOverlay.deactivate();
+            transformAnchorSite.deactivate('clip-motion');
+            return true;
+        }
         const setupActive = this._isRigPivotSetupActive();
         const motionActive = this._isMotionBonePivotActive();
         const warpAnchorActive = this._isWarpAnchorOverlayActive();
@@ -13279,6 +13540,17 @@ export class AnimationTablePopup {
             }
             this._rigSkinWeightBrushActive = false;
         }
+        if (nextKind !== 'rig' && this._rigMeshVertexEditActive) {
+            if (this._rigMeshVertexEditGesture) {
+                if (!rigSkinWeightOverlay.cancelVertexDrag('editor-mode-change')) {
+                    this._finishRigMeshVertexEditGesture(this._rigMeshVertexEditGesture, {
+                        cancelled: true,
+                        render: false
+                    });
+                }
+            }
+            this._rigMeshVertexEditActive = false;
+        }
         this._motionTimelineKeyKind = nextKind === 'motion' && this._motionInspectorScope === 'internal'
             ? 'rig'
             : nextKind;
@@ -14916,7 +15188,13 @@ export class AnimationTablePopup {
         }
         this._partGestureKeydownHandler = event => {
             if (event.key !== 'Escape') return;
-            if (this._rigSkinWeightBrushGesture) {
+            if (this._rigMeshVertexEditGesture) {
+                if (!rigSkinWeightOverlay.cancelVertexDrag('escape')) {
+                    this._finishRigMeshVertexEditGesture(this._rigMeshVertexEditGesture, {
+                        cancelled: true
+                    });
+                }
+            } else if (this._rigSkinWeightBrushGesture) {
                 this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
                     cancelled: true,
                     releasePointerCapture: true
@@ -16246,11 +16524,31 @@ export class AnimationTablePopup {
         const allBtn = this.panel.querySelector('#anim-scope-all-btn');
         const laneBtn = this.panel.querySelector('#anim-scope-lane-btn');
         const setBtn = this.panel.querySelector('#anim-scope-set-btn');
+        const currentBtn = this.panel.querySelector('#anim-scope-current-btn');
+        const currentValue = currentBtn?.querySelector('.anim-scope-current-value');
+        const scopeLabels = {
+            all: 'ALL',
+            activeLane: 'LANE',
+            includedLanes: 'SET'
+        };
         if (allBtn && laneBtn && setBtn) {
-            allBtn.classList.toggle('active', this.playbackScope === 'all');
-            laneBtn.classList.toggle('active', this.playbackScope === 'activeLane');
-            setBtn.classList.toggle('active', this.playbackScope === 'includedLanes');
+            for (const [button, scope] of [
+                [allBtn, 'all'],
+                [laneBtn, 'activeLane'],
+                [setBtn, 'includedLanes']
+            ]) {
+                const active = this.playbackScope === scope;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-checked', active ? 'true' : 'false');
+                button.tabIndex = active ? 0 : -1;
+            }
         }
+        if (currentBtn && currentValue) {
+            const currentLabel = scopeLabels[this.playbackScope] || scopeLabels.all;
+            currentValue.textContent = currentLabel;
+            currentBtn.setAttribute('aria-label', `SCOPE: ${currentLabel}。再生対象を選択`);
+        }
+        this._syncScopeFocusDeckState();
 
         const onionToggleBtn = this.panel.querySelector('#anim-onion-toggle-btn');
         if (onionToggleBtn) {
@@ -16279,7 +16577,10 @@ export class AnimationTablePopup {
         if (loopBtn) {
             const isLoop = this.model.playback.loop !== false;
             loopBtn.classList.toggle('active', isLoop);
-            loopBtn.textContent = isLoop ? 'LOOP' : 'STOP';
+            loopBtn.classList.toggle('is-loop-off', !isLoop);
+            loopBtn.innerHTML = isLoop ? UI_ICONS.repeat : UI_ICONS.repeatOff;
+            loopBtn.setAttribute('aria-pressed', isLoop ? 'true' : 'false');
+            loopBtn.setAttribute('aria-label', isLoop ? 'Loop ON' : 'Loop OFF');
             loopBtn.title = isLoop
                 ? 'Loop ON: 終端後にIN/先頭へ戻る'
                 : 'Loop OFF: 終端Frameで停止する';
@@ -16289,51 +16590,111 @@ export class AnimationTablePopup {
         if (endModeBtn) {
             const endMode = this.model.playback.endMode || 'timeline';
             const labelMap = {
-                timeline: 'END:T',
-                'last-clip': 'END:C',
-                'out-marker': 'END:O'
+                timeline: 'TIMELINE',
+                'last-clip': 'LAST CLIP',
+                'out-marker': 'OUT MARKER'
             };
             const titleMap = {
                 timeline: '終端: Timeline末尾',
                 'last-clip': '終端: 再生Scope内の最後のCAF',
                 'out-marker': '終端: OUT marker'
             };
-            endModeBtn.textContent = labelMap[endMode] || labelMap.timeline;
-            endModeBtn.title = `${titleMap[endMode] || titleMap.timeline}。クリックで切り替え`;
+            const inFrame = this.model.playback.inFrame;
+            const outFrame = this.model.playback.outFrame;
+            const summary = endModeBtn.querySelector('.anim-playback-range-summary');
+            if (summary) {
+                summary.textContent = labelMap[endMode] || labelMap.timeline;
+            }
+            const outMissing = endMode === 'out-marker' && !(Number.isInteger(outFrame) && outFrame >= 0);
+            endModeBtn.classList.toggle('needs-out-marker', outMissing);
+            endModeBtn.setAttribute('aria-label', `再生範囲。${titleMap[endMode] || titleMap.timeline}。IN ${Number.isInteger(inFrame) ? `F${inFrame + 1}` : '未設定'}、OUT ${Number.isInteger(outFrame) ? `F${outFrame + 1}` : '未設定'}。設定を開く`);
+            endModeBtn.title = outMissing
+                ? '終端はOUT markerですが、OUTが未設定です。再生範囲設定を開く'
+                : `${titleMap[endMode] || titleMap.timeline}。再生範囲設定を開く`;
+
+            for (const option of this.panel.querySelectorAll('.anim-playback-end-option')) {
+                const active = option.dataset.playbackEndMode === endMode;
+                option.classList.toggle('active', active);
+                option.setAttribute('aria-checked', active ? 'true' : 'false');
+                option.tabIndex = active ? 0 : -1;
+            }
+
+            const currentFrame = this.model.playback.currentFrame;
+            const deckCurrent = this.panel.querySelector('.anim-playback-range-current-frame');
+            if (deckCurrent) deckCurrent.textContent = `現在 F${currentFrame + 1}`;
         }
 
         const inBtn = this.panel.querySelector('#anim-set-in-btn');
         const outBtn = this.panel.querySelector('#anim-set-out-btn');
         if (inBtn) {
+            const inFrame = this.model.playback.inFrame;
+            const hasInMarker = Number.isInteger(inFrame) && inFrame >= 0;
             const isCurrentIn = this.model.playback.inFrame === this.model.playback.currentFrame;
+            const value = inBtn.querySelector('.anim-playback-marker-chip-value');
+            if (value) {
+                value.textContent = hasInMarker ? `F${inFrame + 1}` : '';
+                value.hidden = !hasInMarker;
+            }
+            inBtn.classList.toggle('has-marker', hasInMarker);
             inBtn.classList.toggle('active', isCurrentIn);
+            inBtn.setAttribute('aria-pressed', isCurrentIn ? 'true' : 'false');
+            inBtn.setAttribute('aria-label', hasInMarker
+                ? `IN marker: F${inFrame + 1}。現在Frame${isCurrentIn ? 'から解除' : 'へ設定'}`
+                : 'IN marker未設定。現在Frameへ設定');
             inBtn.title = isCurrentIn
                 ? '現在FrameのIN markerを解除'
-                : '現在FrameをIN markerに設定';
+                : (hasInMarker
+                    ? `IN marker: F${inFrame + 1}。現在Frameへ変更`
+                    : '現在FrameをIN markerに設定');
         }
         if (outBtn) {
+            const outFrame = this.model.playback.outFrame;
+            const hasOutMarker = Number.isInteger(outFrame) && outFrame >= 0;
             const isCurrentOut = this.model.playback.outFrame === this.model.playback.currentFrame;
+            const value = outBtn.querySelector('.anim-playback-marker-chip-value');
+            if (value) {
+                value.textContent = hasOutMarker ? `F${outFrame + 1}` : '';
+                value.hidden = !hasOutMarker;
+            }
+            outBtn.classList.toggle('has-marker', hasOutMarker);
             outBtn.classList.toggle('active', isCurrentOut);
+            outBtn.setAttribute('aria-pressed', isCurrentOut ? 'true' : 'false');
+            outBtn.setAttribute('aria-label', hasOutMarker
+                ? `OUT marker: F${outFrame + 1}。現在Frame${isCurrentOut ? 'から解除' : 'へ設定'}`
+                : 'OUT marker未設定。現在Frameへ設定');
             outBtn.title = isCurrentOut
                 ? '現在FrameのOUT markerを解除'
-                : '現在FrameをOUT markerに設定';
+                : (hasOutMarker
+                    ? `OUT marker: F${outFrame + 1}。現在Frameへ変更`
+                    : '現在FrameをOUT markerに設定');
         }
+        this._syncPlaybackRangeFocusDeckState();
 
         // ASSETSボタンの状態
         const assetsBtn = this.panel.querySelector('#anim-assets-toggle-btn');
         if (assetsBtn) {
             assetsBtn.classList.toggle('active', this.isAssetLibraryVisible);
+            assetsBtn.setAttribute('aria-expanded', String(this.isAssetLibraryVisible));
+            assetsBtn.title = this.isAssetLibraryVisible
+                ? 'Asset Libraryを閉じる'
+                : 'Asset Libraryを開く';
         }
 
         const durationDecBtn = this.panel.querySelector('#anim-duration-dec');
         const durationIncBtn = this.panel.querySelector('#anim-duration-inc');
-        if (durationDecBtn || durationIncBtn) {
+        const durationProjection = this.panel.querySelector('#anim-selected-clip-duration');
+        const durationValue = this.panel.querySelector('#anim-selected-clip-duration-value');
+        if (durationProjection || durationDecBtn || durationIncBtn) {
             const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
             const clip = entry?.clip || null;
             const lane = entry?.lane || null;
-            const canDecrease = !!clip && clip.duration > 1;
+            const selectedIds = this.selectedCelId ? this._getSelectedCelIds() : new Set();
+            const isSingleUngroupedClip = !!clip
+                && selectedIds.size === 1
+                && !this.model.getClipGroupForClip?.(clip.id);
+            const canDecrease = isSingleUngroupedClip && clip.duration > 1;
             const maxDuration = clip ? Math.max(1, this.model.totalFrames - clip.startFrame) : 1;
-            const canIncrease = !!clip
+            const canIncrease = isSingleUngroupedClip
                 && !!lane
                 && clip.duration < maxDuration
                 && this._canAdjustSelectedCelDuration(1);
@@ -16348,6 +16709,11 @@ export class AnimationTablePopup {
                 durationIncBtn.title = canIncrease
                     ? '選択CAFのDurationを1長くする'
                     : 'Durationを長くできる空きがありません';
+            }
+            if (durationProjection) durationProjection.hidden = !isSingleUngroupedClip;
+            if (durationValue) {
+                durationValue.textContent = clip ? `${clip.duration}F` : '—';
+                durationValue.title = clip ? `Duration: ${clip.duration} Frames` : 'Duration';
             }
         }
 
@@ -17299,6 +17665,55 @@ export class AnimationTablePopup {
             );
         }
 
+        const selectedClipActions = this.panel.querySelector('#anim-selected-clip-actions');
+        const legacyClipActions = this.panel.querySelector('.anim-copy-paste-controls');
+        const hasSelectedClip = !!this.selectedCelId;
+        legacyClipActions?.classList.toggle('has-selected-clip-context', hasSelectedClip);
+        if (selectedClipActions) {
+            selectedClipActions.hidden = !hasSelectedClip;
+            if (hasSelectedClip) {
+                const selectedIds = [...this._getSelectedCelIds()];
+                const selectedEntry = this.model.findClipEntry(this.selectedCelId);
+                const selectedAsset = selectedEntry?.clip?.assetId
+                    ? this.model.getClipAsset?.(selectedEntry.clip.assetId)
+                    : null;
+                const selectedName = selectedAsset?.name || selectedEntry?.clip?.name || 'CAF';
+                const targetText = selectedIds.length > 1
+                    ? `${selectedIds.length} CAF`
+                    : `${selectedName} · F${(selectedEntry?.clip?.startFrame ?? 0) + 1}`;
+                const target = selectedClipActions.querySelector('#anim-selected-clip-target');
+                if (target) {
+                    target.textContent = targetText;
+                    target.title = targetText;
+                }
+                selectedClipActions.setAttribute('aria-label', `${targetText} actions`);
+
+                const projectedCopyBtn = selectedClipActions.querySelector('#anim-selected-clip-copy-btn');
+                if (projectedCopyBtn) {
+                    projectedCopyBtn.disabled = copyBtn?.disabled ?? true;
+                    projectedCopyBtn.title = copyBtn?.title || '選択CAFをコピー (Ctrl+C)';
+                }
+                const projectedGroupBtn = selectedClipActions.querySelector('#anim-selected-clip-group-btn');
+                if (projectedGroupBtn) {
+                    projectedGroupBtn.hidden = groupBtn?.hidden ?? true;
+                    projectedGroupBtn.disabled = groupBtn?.disabled ?? true;
+                    projectedGroupBtn.classList.toggle('active', groupBtn?.classList.contains('active') === true);
+                    projectedGroupBtn.textContent = groupBtn?.classList.contains('active') ? 'UNGROUP' : 'GROUP';
+                    projectedGroupBtn.title = groupBtn?.title || '選択CAFをGroup化';
+                    projectedGroupBtn.setAttribute('aria-label', groupBtn?.getAttribute('aria-label') || 'Group selected CAFs');
+                }
+                const projectedDeleteBtn = selectedClipActions.querySelector('#anim-selected-clip-delete-btn');
+                if (projectedDeleteBtn) {
+                    projectedDeleteBtn.disabled = false;
+                    projectedDeleteBtn.title = `${selectedIds.length > 1 ? `選択中の${selectedIds.length}件のCAF` : '選択CAF'}を削除 (Alt+Delete / Alt+Backspace)`;
+                    projectedDeleteBtn.setAttribute(
+                        'aria-label',
+                        `Delete ${selectedIds.length} selected CAF${selectedIds.length === 1 ? '' : 's'}`
+                    );
+                }
+            }
+        }
+
         this._syncFolderPartTransformOverlay();
         this._syncRigPivotOverlay();
         this._syncMotionPanelPaletteTooltips();
@@ -17340,24 +17755,76 @@ export class AnimationTablePopup {
                                 <input type="number" id="anim-total-frames-input" min="1" max="240" step="1" value="${this.model.totalFrames}">
                             </label>
                         </div>
-                        <div class="anim-scope-controls" title="プレビュー/再生対象を切り替え">
-                            <span class="anim-control-label">SCOPE:</span>
-                            <button class="anim-scope-btn" id="anim-scope-all-btn" title="全Laneをプレビュー/再生">ALL</button>
-                            <button class="anim-scope-btn" id="anim-scope-lane-btn" title="アクティブLaneのみプレビュー/再生">LANE</button>
-                            <button class="anim-scope-btn" id="anim-scope-set-btn" title="チェックしたLaneのみプレビュー/再生">SET</button>
+                        <div class="anim-scope-controls">
+                            <button class="anim-scope-current-btn" id="anim-scope-current-btn" type="button"
+                                aria-haspopup="menu" aria-expanded="false" aria-controls="anim-scope-focus-deck">
+                                <span class="anim-scope-current-icon" aria-hidden="true">${UI_ICONS.monitor}</span>
+                                <span class="anim-scope-current-label">SCOPE:</span>
+                                <span class="anim-scope-current-value">ALL</span>
+                                <span class="anim-scope-chevron" aria-hidden="true">▾</span>
+                            </button>
+                            <div class="anim-scope-focus-deck" id="anim-scope-focus-deck" role="menu"
+                                aria-label="プレビューと再生の対象Lane" hidden>
+                                <span class="anim-scope-deck-title">再生するLane</span>
+                                <button class="anim-scope-btn" id="anim-scope-all-btn" type="button"
+                                    role="menuitemradio" aria-checked="true" data-playback-scope="all">
+                                    <span class="anim-scope-option-label">ALL</span>
+                                    <span class="anim-scope-option-description">すべてのLane</span>
+                                </button>
+                                <button class="anim-scope-btn" id="anim-scope-lane-btn" type="button"
+                                    role="menuitemradio" aria-checked="false" data-playback-scope="activeLane">
+                                    <span class="anim-scope-option-label">LANE</span>
+                                    <span class="anim-scope-option-description">アクティブLaneのみ</span>
+                                </button>
+                                <button class="anim-scope-btn" id="anim-scope-set-btn" type="button"
+                                    role="menuitemradio" aria-checked="false" data-playback-scope="includedLanes">
+                                    <span class="anim-scope-option-label">SET</span>
+                                    <span class="anim-scope-option-description">チェックLane（空なら全Lane）</span>
+                                </button>
+                            </div>
                         </div>
                         <div class="anim-playback-controls" title="再生範囲・終端・ループ">
-                            <button class="anim-playback-btn" id="anim-loop-toggle-btn" title="Loop ON/OFF">LOOP</button>
-                            <button class="anim-playback-btn" id="anim-end-mode-btn" title="終端基準を切り替え">END:T</button>
-                            <button class="anim-playback-btn" id="anim-set-in-btn" title="現在FrameをIN markerに設定">IN</button>
-                            <button class="anim-playback-btn" id="anim-set-out-btn" title="現在FrameをOUT markerに設定">OUT</button>
+                            <button class="anim-playback-btn anim-playback-icon-btn" id="anim-loop-toggle-btn" type="button" title="Loop ON/OFF" aria-label="Loop ON" aria-pressed="true">${UI_ICONS.repeat}</button>
+                            <div class="anim-playback-range-controls">
+                                <button class="anim-playback-btn anim-playback-range-current-btn" id="anim-end-mode-btn" type="button"
+                                    aria-haspopup="dialog" aria-expanded="false" aria-controls="anim-playback-range-focus-deck">
+                                    <span class="anim-playback-range-summary">LAST CLIP</span>
+                                    <span class="anim-playback-range-chevron" aria-hidden="true">▾</span>
+                                </button>
+                                <button class="anim-playback-btn anim-playback-marker-btn anim-playback-marker-btn--in" id="anim-set-in-btn" type="button" title="現在FrameをIN markerに設定" aria-label="IN marker未設定。現在Frameへ設定" aria-pressed="false">
+                                    <span class="anim-playback-marker-chip-label">I</span><span class="anim-playback-marker-chip-value" hidden></span>
+                                </button>
+                                <button class="anim-playback-btn anim-playback-marker-btn anim-playback-marker-btn--out" id="anim-set-out-btn" type="button" title="現在FrameをOUT markerに設定" aria-label="OUT marker未設定。現在Frameへ設定" aria-pressed="false">
+                                    <span class="anim-playback-marker-chip-label">O</span><span class="anim-playback-marker-chip-value" hidden></span>
+                                </button>
+                                <div class="anim-playback-range-focus-deck" id="anim-playback-range-focus-deck" role="dialog"
+                                    aria-label="再生範囲設定" hidden>
+                                    <div class="anim-playback-range-deck-title">
+                                        <span>再生終端</span>
+                                        <span class="anim-playback-range-current-frame">現在 F1</span>
+                                    </div>
+                                    <div class="anim-playback-end-options" role="radiogroup" aria-label="再生終端">
+                                        <button class="anim-playback-end-option" type="button" role="radio" aria-checked="false" data-playback-end-mode="timeline">
+                                            <span>TIMELINE</span><small>Timeline末尾</small>
+                                        </button>
+                                        <button class="anim-playback-end-option" type="button" role="radio" aria-checked="true" data-playback-end-mode="last-clip">
+                                            <span>LAST CLIP</span><small>Scope内の最後のCAF</small>
+                                        </button>
+                                        <button class="anim-playback-end-option" type="button" role="radio" aria-checked="false" data-playback-end-mode="out-marker">
+                                            <span>OUT MARKER</span><small>設定したOUTまで</small>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <button class="anim-preview-toggle" id="anim-preview-toggle-btn" title="PREVIEW OFF: 通常Layer表示を優先" aria-pressed="false">PREVIEW</button>
                         <button class="anim-onion-toggle" id="anim-onion-toggle-btn" title="Timeline onion: off">
                             <span class="anim-onion-icon">${UI_ICONS.onionSkin}</span>
                             <span class="anim-onion-count">0</span>
                         </button>
-                        <button class="anim-tool-btn anim-play-btn" id="anim-play-toggle-btn" title="Play">▶</button>
+                        <div class="anim-playback-primary-slot" role="group" aria-label="Playback">
+                            <button class="anim-tool-btn anim-play-btn" id="anim-play-toggle-btn" title="Play" aria-label="Play" aria-pressed="false">▶</button>
+                        </div>
                     </div>
                 </div>
                 <div class="anim-table-header-row anim-table-header-row--clip">
@@ -17367,12 +17834,7 @@ export class AnimationTablePopup {
                             <span class="anim-zoom-value" id="anim-zoom-value">100%</span>
                             <button class="anim-zoom-btn" id="anim-zoom-in-btn" aria-label="Zoom in timeline">+</button>
                         </div>
-                        <button class="anim-tool-btn anim-assets-toggle-btn" id="anim-assets-toggle-btn" title="Asset Libraryを表示/非表示">LIB</button>
-                        <div class="anim-duration-controls">
-                            <span class="anim-control-label">DURATION:</span>
-                            <button class="anim-tool-btn" id="anim-duration-dec" title="Decrease Duration">-</button>
-                            <button class="anim-tool-btn" id="anim-duration-inc" title="Increase Duration">+</button>
-                        </div>
+                        <button class="anim-tool-btn anim-icon-btn anim-assets-toggle-btn" id="anim-assets-toggle-btn" type="button" title="Asset Libraryを開く" aria-label="Asset Library" aria-controls="anim-asset-library" aria-expanded="false">${UI_ICONS.library}</button>
                         <div class="anim-motion-controls">
                             <button class="anim-tool-btn anim-icon-btn anim-motion-open-btn" id="anim-motion-open-btn" type="button" aria-expanded="false" title="Clip Motion: position / scale / rotation keyを編集 (Shift+V)" aria-label="Open Clip Motion controls">
                                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg>
@@ -17391,6 +17853,17 @@ export class AnimationTablePopup {
                             <button class="anim-tool-btn anim-delete-btn anim-icon-btn" id="anim-delete-active-btn" title="選択CAFを削除 (Alt+Delete / Alt+Backspace)" aria-label="Delete selected CAF">
                                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M9 11v6"/><path d="M15 11v6"/></svg>
                             </button>
+                        </div>
+                        <div class="anim-selected-clip-actions" id="anim-selected-clip-actions" role="group" aria-label="Selected Clip actions" hidden>
+                            <span class="anim-selected-clip-target" id="anim-selected-clip-target">CAF</span>
+                            <span class="anim-selected-clip-duration" id="anim-selected-clip-duration" role="group" aria-label="Selected Clip Duration">
+                                <button class="anim-tool-btn anim-selected-clip-duration-btn" id="anim-duration-dec" type="button" title="Decrease Duration" aria-label="Decrease selected Clip Duration">-</button>
+                                <span class="anim-selected-clip-duration-value" id="anim-selected-clip-duration-value">1F</span>
+                                <button class="anim-tool-btn anim-selected-clip-duration-btn" id="anim-duration-inc" type="button" title="Increase Duration" aria-label="Increase selected Clip Duration">+</button>
+                            </span>
+                            <button class="anim-tool-btn anim-selected-clip-action-btn" id="anim-selected-clip-copy-btn" type="button">COPY</button>
+                            <button class="anim-tool-btn anim-selected-clip-action-btn" id="anim-selected-clip-group-btn" type="button" hidden>GROUP</button>
+                            <button class="anim-tool-btn anim-selected-clip-action-btn anim-selected-clip-action-btn--delete" id="anim-selected-clip-delete-btn" type="button">DELETE</button>
                         </div>
                     </div>
                     <div class="anim-table-header-right">
@@ -17515,6 +17988,7 @@ export class AnimationTablePopup {
                         <button class="anim-rig-key-btn" type="button" data-rig-weight-correction="none">NO INFLUENCE</button>
                     </span>
                     <button class="anim-rig-key-btn anim-rig-weight-brush-toggle ui-help-tooltip" id="anim-rig-weight-brush-toggle" type="button" aria-pressed="false" disabled>BRUSH</button>
+                    <button class="anim-rig-key-btn anim-rig-mesh-edit-toggle ui-help-tooltip" id="anim-rig-mesh-edit-toggle" type="button" aria-pressed="false" disabled>MESH EDIT</button>
                     <span class="anim-rig-weight-brush-controls" data-rig-weight-brush-controls hidden>
                         <button class="anim-rig-key-btn active" type="button" data-rig-weight-brush-direction="1" aria-pressed="true">ADD</button>
                         <button class="anim-rig-key-btn" type="button" data-rig-weight-brush-direction="-1" aria-pressed="false">SUB</button>
@@ -18583,9 +19057,13 @@ export class AnimationTablePopup {
                 if (!this._getRigSkinWeightDiagnosticTarget()) return;
                 this._rigSkinWeightDiagnosticVisible = !this._rigSkinWeightDiagnosticVisible;
                 if (!this._rigSkinWeightDiagnosticVisible) {
+                    if (this._rigMeshVertexEditGesture) {
+                        rigSkinWeightOverlay.cancelVertexDrag('weight-overlay-close');
+                    }
                     this._rigSkinWeightCorrectionActive = false;
                     this._rigSkinWeightSelectedVertexIds.clear();
                     this._rigSkinWeightBrushActive = false;
+                    this._rigMeshVertexEditActive = false;
                 }
                 this._syncRigSetupContext();
                 this._syncRigSkinWeightOverlay();
@@ -18595,6 +19073,10 @@ export class AnimationTablePopup {
                 this._rigSkinWeightCorrectionActive = !this._rigSkinWeightCorrectionActive;
                 this._rigSkinWeightSelectedVertexIds.clear();
                 if (this._rigSkinWeightCorrectionActive) {
+                    if (this._rigMeshVertexEditGesture) {
+                        rigSkinWeightOverlay.cancelVertexDrag('weight-correction-mode');
+                    }
+                    this._rigMeshVertexEditActive = false;
                     if (this._rigSkinWeightBrushGesture) {
                         this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
                             cancelled: true,
@@ -18623,11 +19105,36 @@ export class AnimationTablePopup {
                     });
                 }
                 this._rigSkinWeightBrushActive = !this._rigSkinWeightBrushActive;
+                if (this._rigSkinWeightBrushActive && this._rigMeshVertexEditGesture) {
+                    rigSkinWeightOverlay.cancelVertexDrag('weight-brush-mode');
+                }
+                if (this._rigSkinWeightBrushActive) this._rigMeshVertexEditActive = false;
                 this._rigSkinWeightCorrectionActive = false;
                 this._rigSkinWeightSelectedVertexIds.clear();
                 if (this._rigSkinWeightBrushActive) this._rigSkinWeightDiagnosticVisible = true;
                 this._syncRigSetupContext();
                 this._syncRigSkinWeightOverlay();
+                this._updateMotionCanvasCursor();
+            });
+            motionControls.querySelector('#anim-rig-mesh-edit-toggle')?.addEventListener('click', () => {
+                if (!this._getRigMeshVertexEditTarget()) return;
+                if (this._rigMeshVertexEditGesture) {
+                    rigSkinWeightOverlay.cancelVertexDrag('mesh-edit-toggle');
+                }
+                this._rigMeshVertexEditActive = !this._rigMeshVertexEditActive;
+                this._rigSkinWeightCorrectionActive = false;
+                this._rigSkinWeightSelectedVertexIds.clear();
+                if (this._rigSkinWeightBrushGesture) {
+                    this._finishRigSkinWeightBrushGesture(this._rigSkinWeightBrushGesture, {
+                        cancelled: true,
+                        releasePointerCapture: true,
+                        render: false
+                    });
+                }
+                this._rigSkinWeightBrushActive = false;
+                if (this._rigMeshVertexEditActive) this._rigSkinWeightDiagnosticVisible = true;
+                this._syncRigSetupContext();
+                this._syncRigPivotOverlay();
                 this._updateMotionCanvasCursor();
             });
             motionControls.querySelectorAll('[data-rig-weight-brush-direction]').forEach(button => {
@@ -18953,6 +19460,13 @@ export class AnimationTablePopup {
             deleteActiveBtn.addEventListener('click', () => this.deleteActiveSelection());
         }
 
+        this.panel.querySelector('#anim-selected-clip-copy-btn')
+            ?.addEventListener('click', () => this.copySelectedCel());
+        this.panel.querySelector('#anim-selected-clip-group-btn')
+            ?.addEventListener('click', () => this.toggleSelectedClipGroup());
+        this.panel.querySelector('#anim-selected-clip-delete-btn')
+            ?.addEventListener('click', () => this.deleteSelectedClips());
+
         const zoomOutBtn = this.panel.querySelector('#anim-zoom-out-btn');
         const zoomInBtn = this.panel.querySelector('#anim-zoom-in-btn');
         if (zoomOutBtn) {
@@ -19008,27 +19522,44 @@ export class AnimationTablePopup {
             });
         }
 
-        const scopeAllBtn = this.panel.querySelector('#anim-scope-all-btn');
-        const scopeLaneBtn = this.panel.querySelector('#anim-scope-lane-btn');
-        const scopeSetBtn = this.panel.querySelector('#anim-scope-set-btn');
-        if (scopeAllBtn) {
-            scopeAllBtn.addEventListener('click', () => {
-                this.playbackScope = 'all';
+        const scopeControls = this.panel.querySelector('.anim-scope-controls');
+        const scopeCurrentBtn = this.panel.querySelector('#anim-scope-current-btn');
+        const scopeDeck = this.panel.querySelector('#anim-scope-focus-deck');
+        const scopeOptions = [...(scopeDeck?.querySelectorAll('.anim-scope-btn') || [])];
+        scopeCurrentBtn?.addEventListener('click', () => {
+            this._setPlaybackRangeFocusDeckOpen(false);
+            this._setScopeFocusDeckOpen(!this._scopeFocusDeckOpen, { focusSelected: true });
+        });
+        scopeCurrentBtn?.addEventListener('keydown', event => {
+            if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) return;
+            const nextOpen = event.key === 'Enter' || event.key === ' '
+                ? !this._scopeFocusDeckOpen
+                : true;
+            this._setScopeFocusDeckOpen(nextOpen, { focusSelected: nextOpen });
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        for (const option of scopeOptions) {
+            option.addEventListener('click', () => {
+                const scope = option.dataset.playbackScope;
+                if (!['all', 'activeLane', 'includedLanes'].includes(scope)) return;
+                this.playbackScope = scope;
+                this._setScopeFocusDeckOpen(false);
                 this.render();
+                scopeCurrentBtn?.focus({ preventScroll: true });
             });
         }
-        if (scopeLaneBtn) {
-            scopeLaneBtn.addEventListener('click', () => {
-                this.playbackScope = 'activeLane';
-                this.render();
+        scopeControls?.addEventListener('focusout', () => {
+            queueMicrotask(() => {
+                if (this._scopeFocusDeckOpen && !scopeControls.contains(document.activeElement)) {
+                    this._setScopeFocusDeckOpen(false);
+                }
             });
-        }
-        if (scopeSetBtn) {
-            scopeSetBtn.addEventListener('click', () => {
-                this.playbackScope = 'includedLanes';
-                this.render();
-            });
-        }
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!this._scopeFocusDeckOpen || scopeControls?.contains(event.target)) return;
+            this._setScopeFocusDeckOpen(false);
+        }, true);
 
         const loopBtn = this.panel.querySelector('#anim-loop-toggle-btn');
         if (loopBtn) {
@@ -19037,8 +19568,42 @@ export class AnimationTablePopup {
 
         const endModeBtn = this.panel.querySelector('#anim-end-mode-btn');
         if (endModeBtn) {
-            endModeBtn.addEventListener('click', () => this._cyclePlaybackEndMode());
+            endModeBtn.addEventListener('click', () => {
+                this._setScopeFocusDeckOpen(false);
+                this._setPlaybackRangeFocusDeckOpen(!this._playbackRangeFocusDeckOpen, { focusSelected: true });
+            });
+            endModeBtn.addEventListener('keydown', event => {
+                if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) return;
+                const nextOpen = event.key === 'Enter' || event.key === ' '
+                    ? !this._playbackRangeFocusDeckOpen
+                    : true;
+                this._setScopeFocusDeckOpen(false);
+                this._setPlaybackRangeFocusDeckOpen(nextOpen, { focusSelected: nextOpen });
+                event.preventDefault();
+                event.stopPropagation();
+            });
         }
+
+        const rangeControls = this.panel.querySelector('.anim-playback-range-controls');
+        const rangeDeck = this.panel.querySelector('#anim-playback-range-focus-deck');
+        for (const option of rangeDeck?.querySelectorAll('.anim-playback-end-option') || []) {
+            option.addEventListener('click', () => {
+                const endMode = option.dataset.playbackEndMode;
+                if (!['timeline', 'last-clip', 'out-marker'].includes(endMode)) return;
+                this._setPlaybackEndMode(endMode);
+            });
+        }
+        rangeControls?.addEventListener('focusout', () => {
+            queueMicrotask(() => {
+                if (this._playbackRangeFocusDeckOpen && !rangeControls.contains(document.activeElement)) {
+                    this._setPlaybackRangeFocusDeckOpen(false);
+                }
+            });
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!this._playbackRangeFocusDeckOpen || rangeControls?.contains(event.target)) return;
+            this._setPlaybackRangeFocusDeckOpen(false);
+        }, true);
 
         const setInBtn = this.panel.querySelector('#anim-set-in-btn');
         if (setInBtn) {
@@ -19870,7 +20435,7 @@ export class AnimationTablePopup {
         const header = this.panel.querySelector('.anim-table-header');
         header.addEventListener('pointerdown', (e) => {
             if (e.button !== undefined && e.button !== 0) return;
-            if (e.target.closest('button, input, label, .anim-scope-controls, .anim-playback-controls, .anim-duration-controls, .anim-capture-controls, .anim-copy-paste-controls, .anim-timeline-settings')) return;
+            if (e.target.closest('button, input, label, .anim-scope-controls, .anim-playback-controls, .anim-capture-controls, .anim-copy-paste-controls, .anim-selected-clip-actions, .anim-timeline-settings')) return;
             
             this._isDragging = true;
             this._dragMoved = false;
@@ -20185,9 +20750,134 @@ export class AnimationTablePopup {
         this._updateHeaderNarrowState();
     }
 
+    _syncScopeFocusDeckState() {
+        if (!this.panel) return;
+        const controls = this.panel.querySelector('.anim-scope-controls');
+        const currentBtn = this.panel.querySelector('#anim-scope-current-btn');
+        const deck = this.panel.querySelector('#anim-scope-focus-deck');
+        const chevron = currentBtn?.querySelector('.anim-scope-chevron');
+        const open = this._scopeFocusDeckOpen === true && this.isVisible === true;
+        controls?.classList.toggle('is-open', open);
+        if (currentBtn) currentBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (deck) deck.hidden = !open;
+        if (chevron) chevron.textContent = open ? '▴' : '▾';
+    }
+
+    _setScopeFocusDeckOpen(open, { focusSelected = false, restoreFocus = false } = {}) {
+        const nextOpen = open === true && this.isVisible === true;
+        this._scopeFocusDeckOpen = nextOpen;
+        this._syncScopeFocusDeckState();
+
+        if (nextOpen && focusSelected) {
+            queueMicrotask(() => {
+                this.panel?.querySelector('#anim-scope-focus-deck .anim-scope-btn.active')?.focus({ preventScroll: true });
+            });
+        } else if (!nextOpen && restoreFocus) {
+            this.panel?.querySelector('#anim-scope-current-btn')?.focus({ preventScroll: true });
+        }
+    }
+
+    _syncPlaybackRangeFocusDeckState() {
+        if (!this.panel) return;
+        const controls = this.panel.querySelector('.anim-playback-range-controls');
+        const currentBtn = this.panel.querySelector('#anim-end-mode-btn');
+        const deck = this.panel.querySelector('#anim-playback-range-focus-deck');
+        const chevron = currentBtn?.querySelector('.anim-playback-range-chevron');
+        const open = this._playbackRangeFocusDeckOpen === true && this.isVisible === true;
+        controls?.classList.toggle('is-open', open);
+        if (currentBtn) currentBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (deck) deck.hidden = !open;
+        if (chevron) chevron.textContent = open ? '▴' : '▾';
+    }
+
+    _setPlaybackRangeFocusDeckOpen(open, { focusSelected = false, restoreFocus = false } = {}) {
+        const nextOpen = open === true && this.isVisible === true;
+        this._playbackRangeFocusDeckOpen = nextOpen;
+        this._syncPlaybackRangeFocusDeckState();
+
+        if (nextOpen && focusSelected) {
+            queueMicrotask(() => {
+                this.panel?.querySelector('#anim-playback-range-focus-deck .anim-playback-end-option.active')?.focus({ preventScroll: true });
+            });
+        } else if (!nextOpen && restoreFocus) {
+            this.panel?.querySelector('#anim-end-mode-btn')?.focus({ preventScroll: true });
+        }
+    }
+
+    _handlePlaybackRangeFocusDeckKeyDown(event) {
+        if (!this.isVisible || !this._playbackRangeFocusDeckOpen || !this.panel) return false;
+        const deck = this.panel.querySelector('#anim-playback-range-focus-deck');
+        if (!deck) return false;
+        const options = [...deck.querySelectorAll('.anim-playback-end-option:not(:disabled)')];
+
+        if (event.key === 'Escape') {
+            this._setPlaybackRangeFocusDeckOpen(false, { restoreFocus: true });
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+        }
+        if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
+            || !options.includes(document.activeElement)) {
+            return false;
+        }
+
+        const focusedIndex = options.indexOf(document.activeElement);
+        let nextIndex = focusedIndex;
+        if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = options.length - 1;
+        else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = (focusedIndex + 1) % options.length;
+        else nextIndex = focusedIndex <= 0 ? options.length - 1 : focusedIndex - 1;
+        options[nextIndex]?.focus({ preventScroll: true });
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return true;
+    }
+
+    _handleScopeFocusDeckKeyDown(event) {
+        if (!this.isVisible || !this._scopeFocusDeckOpen || !this.panel) return false;
+        const deck = this.panel.querySelector('#anim-scope-focus-deck');
+        if (!deck) return false;
+        const options = [...deck.querySelectorAll('.anim-scope-btn:not(:disabled)')];
+
+        if (event.key === 'Escape') {
+            this._setScopeFocusDeckOpen(false, { restoreFocus: true });
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+        }
+        if (event.key === 'Tab') {
+            this._setScopeFocusDeckOpen(false);
+            return false;
+        }
+        if ((event.key === 'Enter' || event.key === ' ') && options.includes(document.activeElement)) {
+            document.activeElement.click();
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+        }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || options.length === 0) {
+            return false;
+        }
+
+        const focusedIndex = options.indexOf(document.activeElement);
+        let nextIndex = focusedIndex;
+        if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = options.length - 1;
+        else if (event.key === 'ArrowDown') nextIndex = (Math.max(-1, focusedIndex) + 1) % options.length;
+        else nextIndex = focusedIndex <= 0 ? options.length - 1 : focusedIndex - 1;
+        options[nextIndex]?.focus({ preventScroll: true });
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return true;
+    }
+
     _updateHeaderNarrowState() {
         if (!this.panel) return;
-        const width = this._panelSize.width || this.panel.getBoundingClientRect().width || 0;
+        const preferredWidth = Number(this._panelSize.width) || 0;
+        const renderedWidth = this.panel.getBoundingClientRect().width || 0;
+        const width = renderedWidth > 0
+            ? (preferredWidth > 0 ? Math.min(preferredWidth, renderedWidth) : renderedWidth)
+            : preferredWidth;
         this.panel.classList.toggle('is-narrow', width > 0 && width <= 760);
     }
 
@@ -20542,6 +21232,16 @@ export class AnimationTablePopup {
         });
     }
 
+    _setPlaybackEndMode(endMode) {
+        if (!['timeline', 'last-clip', 'out-marker'].includes(endMode)) return false;
+        return this._applyPlaybackSetting((playback) => {
+            playback.endMode = endMode;
+        }, 'caf-playback-end-mode', {
+            type: 'caf-playback-end-mode',
+            endMode
+        });
+    }
+
     _togglePlaybackMarker(markerKey) {
         if (markerKey !== 'inFrame' && markerKey !== 'outFrame') return false;
         const historyName = markerKey === 'inFrame' ? 'caf-playback-in-marker' : 'caf-playback-out-marker';
@@ -20668,15 +21368,6 @@ export class AnimationTablePopup {
                 flex-shrink: 0;
             }
 
-            .anim-duration-controls {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                background: rgba(128, 0, 0, 0.08);
-                padding: 2px 6px;
-                border-radius: 16px;
-            }
-
             .anim-control-label {
                 font-size: 9px;
                 opacity: 0.75;
@@ -20719,19 +21410,6 @@ export class AnimationTablePopup {
                 outline: none;
                 border-color: var(--active-border);
                 box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 24%, transparent);
-            }
-
-            .anim-play-btn {
-                margin-left: 3px;
-                width: 20px;
-                height: 20px;
-                font-size: 10px;
-            }
-
-            .anim-play-btn.playing {
-                background: #ff6600;
-                border-color: #ff6600;
-                color: white;
             }
 
             .anim-preview-toggle {
@@ -20882,6 +21560,88 @@ export class AnimationTablePopup {
                 gap: 3px;
             }
 
+            .anim-copy-paste-controls.has-selected-clip-context #anim-copy-btn,
+            .anim-copy-paste-controls.has-selected-clip-context #anim-group-btn,
+            .anim-copy-paste-controls.has-selected-clip-context #anim-delete-active-btn {
+                display: none;
+            }
+
+            .anim-selected-clip-actions {
+                min-width: 0;
+                display: flex;
+                align-items: center;
+                gap: 3px;
+                padding: 2px 3px;
+                border: 1px solid var(--ui-border-active);
+                border-radius: var(--ui-radius-control);
+                background: var(--ui-surface-control-active);
+                box-shadow: var(--ui-shadow-control-active);
+            }
+
+            .anim-selected-clip-actions[hidden] {
+                display: none;
+            }
+
+            .anim-copy-paste-controls .anim-group-btn[hidden],
+            .anim-selected-clip-action-btn[hidden] {
+                display: none;
+            }
+
+            .anim-selected-clip-target {
+                max-width: 94px;
+                padding: 0 2px;
+                overflow: hidden;
+                color: var(--futaba-maroon);
+                font-size: 8px;
+                font-weight: 700;
+                line-height: 1;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .anim-selected-clip-duration {
+                display: flex;
+                align-items: center;
+                gap: 2px;
+                padding-left: 3px;
+                border-left: 1px solid var(--ui-border-active);
+            }
+
+            .anim-selected-clip-duration[hidden] {
+                display: none;
+            }
+
+            .anim-selected-clip-duration-btn {
+                width: 18px;
+                min-width: 18px;
+            }
+
+            .anim-selected-clip-duration-value {
+                min-width: 20px;
+                color: var(--futaba-maroon);
+                font-size: 8px;
+                font-weight: 700;
+                line-height: 1;
+                text-align: center;
+                white-space: nowrap;
+            }
+
+            .anim-selected-clip-action-btn {
+                width: auto;
+                min-width: 34px;
+                padding: 0 5px;
+                font-size: 7px;
+            }
+
+            .anim-selected-clip-action-btn.active {
+                border-color: var(--ui-border-active);
+                background: var(--ui-surface-control-hover);
+            }
+
+            .anim-selected-clip-action-btn--delete {
+                border-color: var(--futaba-medium);
+            }
+
             .animation-table-panel.is-narrow .anim-table-header {
                 padding: 5px 34px 5px 10px;
                 gap: 5px;
@@ -20905,14 +21665,10 @@ export class AnimationTablePopup {
             .animation-table-panel.is-narrow .anim-onion-toggle,
             .animation-table-panel.is-narrow .anim-timeline-settings,
             .animation-table-panel.is-narrow .anim-copy-paste-controls,
+            .animation-table-panel.is-narrow .anim-selected-clip-actions,
             .animation-table-panel.is-narrow #anim-assets-toggle-btn {
                 margin-left: 0;
                 margin-right: 0;
-            }
-
-            .animation-table-panel.is-narrow .anim-duration-controls {
-                gap: 5px;
-                padding: 2px 6px;
             }
 
             .animation-table-panel.is-narrow #anim-table-close-btn {
@@ -20931,84 +21687,144 @@ export class AnimationTablePopup {
 
             .anim-scope-controls {
                 margin-left: 6px;
-                display: flex;
-                align-items: center;
-                gap: 2px;
-                background: rgba(128,0,0,0.06);
-                padding: 2px;
-                border-radius: 4px;
+                position: relative;
+                display: block;
             }
 
-            .anim-scope-btn {
-                background: transparent;
-                border: none;
-                color: var(--futaba-maroon);
-                font-size: 8px;
+            .anim-scope-current-btn {
+                min-width: 66px;
+                min-height: 22px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 4px;
                 padding: 2px 6px;
-                border-radius: 3px;
-                cursor: pointer;
-                opacity: 0.68;
-            }
-
-            .anim-scope-btn:hover {
-                opacity: 0.9;
-                background: rgba(128,0,0,0.08);
-            }
-
-            .anim-scope-btn.active {
-                opacity: 1;
-                background: rgba(255, 102, 0, 0.18);
-                font-weight: bold;
-                color: var(--futaba-maroon);
-            }
-
-            .anim-scope-btn:focus-visible {
-                outline: 2px solid var(--futaba-maroon);
-                outline-offset: 1px;
-                opacity: 1;
-            }
-
-            .anim-playback-controls {
-                margin-left: 4px;
-                display: flex;
-                align-items: center;
-                gap: 2px;
-                background: rgba(128, 0, 0, 0.06);
-                padding: 2px;
-                border-radius: 4px;
-            }
-
-            .anim-playback-btn {
-                min-width: 22px;
-                height: 18px;
-                border: none;
-                border-radius: 3px;
-                padding: 1px 5px;
-                background: transparent;
+                border: 1px solid var(--ui-border-active);
+                border-radius: var(--ui-radius-control);
+                background: var(--ui-surface-control-active);
                 color: var(--futaba-maroon);
                 font-size: 8px;
                 font-weight: 700;
                 cursor: pointer;
-                opacity: 0.68;
             }
 
-            .anim-playback-btn:hover {
-                opacity: 0.95;
-                background: rgba(128, 0, 0, 0.08);
+            .anim-scope-current-btn:hover,
+            .anim-scope-controls.is-open .anim-scope-current-btn {
+                background: var(--ui-surface-control-hover);
+                box-shadow: var(--ui-shadow-control-active);
             }
 
-            .anim-playback-btn.active {
-                opacity: 1;
-                background: rgba(255, 102, 0, 0.18);
+            .anim-scope-current-btn:focus-visible,
+            .anim-scope-btn:focus-visible {
+                outline: 2px solid var(--futaba-maroon);
+                outline-offset: 1px;
+            }
+
+            .anim-scope-current-label {
+                font-weight: 600;
+                opacity: 0.82;
+            }
+
+            .anim-scope-current-icon,
+            .anim-scope-current-icon svg {
+                width: 12px;
+                height: 12px;
+                display: inline-flex;
+                flex: 0 0 auto;
+                stroke: currentColor;
+            }
+
+            .anim-scope-current-value,
+            .anim-scope-chevron {
                 color: var(--futaba-maroon);
             }
 
-            .anim-assets-toggle-btn {
-                width: auto;
-                min-width: 30px;
-                padding: 0 6px;
+            .anim-scope-focus-deck {
+                position: absolute;
+                z-index: 120;
+                top: calc(100% + 4px);
+                left: 0;
+                min-width: 184px;
+                padding: 6px;
+                border: 1px solid var(--ui-border-float);
+                border-radius: var(--ui-radius-panel);
+                background: var(--futaba-background);
+                color: var(--futaba-maroon);
+                box-shadow: var(--ui-shadow-float);
+            }
+
+            .anim-scope-focus-deck[hidden] {
+                display: none;
+            }
+
+            .anim-scope-deck-title {
+                display: block;
+                padding: 1px 5px 4px;
+                color: var(--futaba-light-maroon);
                 font-size: 8px;
-                line-height: 1;
+                font-weight: 600;
+            }
+
+            .anim-scope-btn {
+                width: 100%;
+                min-height: 28px;
+                display: grid;
+                grid-template-columns: 38px minmax(0, 1fr);
+                align-items: center;
+                gap: 6px;
+                padding: 4px 6px;
+                border: 1px solid var(--ui-border-subtle);
+                border-radius: var(--ui-radius-control);
+                background: var(--ui-surface-control);
+                color: var(--futaba-maroon);
+                font-size: 8px;
+                text-align: left;
+                cursor: pointer;
+            }
+
+            .anim-scope-btn + .anim-scope-btn {
+                margin-top: 2px;
+            }
+
+            .anim-scope-btn:hover {
+                border-color: var(--ui-border-hover);
+                background: var(--ui-surface-control-hover);
+            }
+
+            .anim-scope-btn.active {
+                border-color: var(--ui-border-active);
+                background: var(--ui-surface-control-active);
+                box-shadow: var(--ui-shadow-control-active);
+            }
+
+            .anim-scope-option-label {
+                font-weight: 700;
+            }
+
+            .anim-scope-option-description {
+                color: var(--futaba-light-maroon);
+                font-size: 8px;
+                font-weight: 500;
+                white-space: nowrap;
+            }
+
+            .animation-table-panel.is-narrow .anim-scope-focus-deck {
+                min-width: 196px;
+            }
+
+            .animation-table-panel.is-narrow .anim-scope-current-label {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                overflow: hidden;
+                clip-path: inset(50%);
+                white-space: nowrap;
+            }
+
+            .anim-assets-toggle-btn {
+                width: 22px;
+                min-width: 22px;
+                padding: 1px 4px;
             }
 
             .anim-table-viewport {
@@ -22549,6 +23365,8 @@ export class AnimationTablePopup {
         document.addEventListener('keydown', (e) => {
             const hasAnimationContext = (this.model.tracks?.length || 0) > 0 || (this.model.clipAssets?.length || 0) > 0;
             if (!this.isVisible && !hasAnimationContext) return;
+            if (this._handleScopeFocusDeckKeyDown(e)) return;
+            if (this._handlePlaybackRangeFocusDeckKeyDown(e)) return;
             
             // 入力欄編集中は無視
             const isInput = e.target.tagName === 'INPUT' ||

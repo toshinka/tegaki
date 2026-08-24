@@ -1,7 +1,7 @@
 # Owner実機確認バックログ
 
-更新日: 2026-08-20
-状態: ACTIVE — Phase 7i〜8jはSOL技術close済み、Owner制作環境では未確認項目あり
+更新日: 2026-08-24
+状態: ACTIVE — Phase 7i〜9hはclose済み、Owner制作環境では未確認項目あり
 
 ## 目的
 
@@ -12,6 +12,115 @@ SOLの実装監査・固定verifier・Browser確認でcloseした機能につい
 - 既存Projectを破壊し得る確認は複製Projectで行う。
 
 ## 未確認項目
+
+### Phase 9h — Sidebar Quiet Resting / Active Ring（技術close後）
+
+- 制作環境の明色 / 暗色Canvas周辺、OS表示倍率、wide / narrowで、resting iconがCanvasより静かでも入口を見失わず、hover / keyboard focus / Q・V・A active / disabledがsurfaceと輪郭で読めることを確認する。
+- normal 30×30px / coarse 38×38pxのhit area、Q / V / A / Settings、Album / Import / Export / Resizeをmouse / pen / touchで確認する。Phase 9hではtool順、icon、shortcut、popup内部skinを変更していない。
+- Animation Table内部×後のA stale activeと、Settings等のgeneric element / ARIA差はPhase 9iへ既知課題として分離済み。Phase 9hのskinを戻して隠さず、問題時はvisual hierarchyとaction semanticsのどちらかへ再現条件を分ける。
+- 全107 verifier / build / Browser 1280×720・700×720 / console error 0件、SOL final review=`A`で技術closeした。
+
+### Phase 9g — QTP Palette / Tool / Preset selected ring（技術close後）
+
+- 制作環境の明色 / 暗色Canvas周辺で、resting Palette / tool / preset cellが静かになっても現在色・現在tool・現在presetの橙ringを即座に読めることを確認する。cream / `#ffffee` / whiteの色chipがQTP背景へ消えないこと。
+- hover / keyboard focus / selected / editing、Eraser系mode、Preset非対応tool、Main / Sub、slider、Text / Help / Position deckを見失わないこと。
+- mouse / pen / touchで色、tool、preset、slider、QTP drag、close / reopenを確認する。問題時はPhase 9gを再OPENせずQTP cell hierarchy限定bug fixへ分離する。
+- 全106 verifier / build / Browser fixture・production / console error・warning 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
+
+### Phase 9f — Animation Table quiet resting hierarchy（技術close後）
+
+- 制作環境のwide / narrow / low-height / OS表示倍率で、通常28×24px / coarse 44×38pxの主playが最上位に見え、休止中SCOPE / PREVIEW / Onion / zoom / Asset / Motion / Copy / PasteがCanvasやClipより前へ出すぎないことを確認する。
+- hover / keyboard focus / SCOPE・Range open / PREVIEW・Onion active / Motion keyがborderとsurfaceで復帰し、Selected Clip / Delete / closeの文脈を見失わないことを確認する。
+- mouse / pen / touchでPlay / Stop、Table resize、header空白drag、header wheel、Lane wheel、grid wheel、close / reopenを確認する。問題時はPhase 9fを再OPENせずAttention Hierarchy限定bug fixへ分離する。
+- 全105 verifier / build / Browser fixture・wide・700px narrow / console error・warning 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
+
+### Phase 9e — Animation Table compact primary playback（技術close後）
+
+- 制作環境のwide / narrow / low-height / OS表示倍率で、主playが専用行を作らず第一header row中央付近にあり、FPS / FRAMES・SCOPEとRange / PREVIEW / Onionへ重ならないことを確認する。
+- resting栗色面＋Futaba背景色抜き、hover / focus、playing橙、disabledが識別でき、Phase 9f後のnormal 28×24px / coarse 44×38pxの操作面をmouse / pen / touchで失わないことを確認する。
+- Play / Stop、Loop、Range / I / O、SCOPE、PREVIEW、Onion、header空白drag、header wheel zoom、Lane wheel、grid wheel Frame±1、close / reopenを確認する。問題時はPhase 9eを再OPENせずPlayback first-row layout限定bug fixへ分離する。
+- 全104 verifier / build / Browser wide・700px narrow / console error・warning 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
+
+### Phase 9d — QTP root / header component style boundary（技術close後）
+
+- 制作環境のwide / narrow / low-height / OS表示倍率で、QTP外殻のrestrained border / radius / shadowとheader下のtransparent edgeがCanvas上で境界を失わず、過剰な横線競争だけを減らしていることを確認する。
+- QTP自由drag、四隅Position、viewport resize、Q close / reopen、Help / Text排他、tool / 6 preset / Size / Opacity、mouse / pen / touchで寸法・位置・hit areaがPhase 9d前と同じことを確認する。
+- 全104 verifier / build / Browser 1280×720・480×800、close / reopen 3回drift 0、console error / warning 0件、生成物清掃、SOL final review=`A`で技術closeした。問題時はPhase 9dを再OPENせず、QTP root/header skinまたはposition clampの該当surfaceだけに限定したbug fix Gateへ分離する。
+
+### Phase 9c — Warm Canvas-first / Animation Table Playback skin（技術close後）
+
+- wide / narrow / pen・touch環境で、通常32×28px / coarse 44×38pxの再生 / 停止がTable幅の中央主actionとして見え、Scope / Range / Preview / Onionと競合しすぎないことを確認する。
+- Playback / Range groupの枠を弱めても、LAST CLIP等のsource、未設定I / O、設定済み`I F<n>` / `O F<n>`、Focus Deckのまとまりを見失わないこと。橙背景＋Futaba茶の再生中Play / OUT markerを暗色Canvas周辺でも読み分けられること。
+- 長尺CAF、低height、Panel重なり、Table resize / close / reopen、Project reload、mouse / pen / touchでPlay / Stop、Range deck、I / O、wheel三領域が従来どおり動くこと。
+- 全103 verifier / build / Browser 1280×720・480×800、console error / warning 0件、生成物清掃、SOL final review=`A`で技術closeした。QTP / Layer Panel skinは未適用であり、問題時はPhase 9cを再OPENせずPlayback skin限定bug fix Gateへ分離する。
+
+### Phase 9a — Animation Table Playback Priority Hierarchy（技術close後）
+
+- wide / narrow / pen・touch環境で再生 / 停止がAnimation Table幅の中央に見え、他のheader操作より主actionとして一操作到達できることを確認する。
+- LAST CLIP / TIMELINE / OUT MARKERが通常のふたば系surfaceで読め、Setup青の設定actionに見えないこと。未設定I / Oは淡い独立panelで文字だけ、設定後は`I F<n>` / `O F<n>`として値との間隔が読めることを確認する。
+- Scope、Loop、Preview、Onion、Zoom wheel、Timeline grid wheel、DURATION、LIB、Clip Copy / Delete、resize、close / reopenが従来どおり動くことを確認する。
+- 全101 verifier / build / wide・narrow Browser、console error / warning 0件、SOL final review=`A`で技術closeした。問題時はPhase 9aを暗黙に再OPENせず、Playback header visual hierarchy限定bug fix Gateへ分離する。
+
+### Phase 8y — QTP Canonical Shortcut Hint Coverage
+
+- QTPのEyedropper / Pen / Eraser / Airbrush / Fill / Lasso Fill / Rect Selectionをmouse hover / keyboard focusした時、I / P / E / B / G / L / Mと説明が一致し、平常button面へkeyが増えていないことを確認する。
+- mouse / pen / touchの通常tap、Q開閉、QTP drag / Position、Preset、Fill参照strip、Text、Colorが従来どおり一操作で使えることを確認する。
+- Touch専用説明入口はPhase 8yへ含めていない。Phase 8zの明示read-only shortcut deckで扱い、Phase 8yを再OPENしない。
+- 全99 verifier / build / Browser、SOL final review=`A`で技術closeした。問題時はQTP 7-tool canonical hint限定bug fixへ分離する。
+
+### Phase 8z — QTP Touch Shortcut Help Reachability（技術close後）
+
+- QTPを開いた状態でheaderの`?`へmouse / pen / touchで一操作到達し、Eyedropper / Pen / Eraser / Airbrush / Fill / Lasso Fill / Rect Selectionの7行と`I / P / E / B / G / L / M`がwide / narrow / coarseで読めることを確認する。
+- deckはread-onlyの一時表示であり、開閉、再click、outside pointer、Escape、QTP close / reopenで閉じ、Position deckと同時表示されないこと。shortcutの実行、tool切替、History、Project保存が増えないことを確認する。
+- deck表示中はその領域が一時的な説明面として入力を占有するため、背後の通常toolを使う場合は`?`を閉じてから従来どおり一操作で切り替わることを確認する。これはStage Bの意図したfocus境界であり、遮蔽が制作上問題ならclose前に限定UI修正へ戻す。
+- QTP drag / Position、Preset、Text、Color、Canvas描画、QTP close / reopen、Project reload、mouse / pen / touch、console error / warning 0件を確認する。問題があればPhase 8zを暗黙に再OPENせず、deckの配置・閉じる境界・7行の正本投影を固定した限定bug fix Gateを立てる。
+- SOL reviewでcompact幅のlabel clipを補正し、198px viewport clamp、coarse 24px hit、deck内drag遮断、全100 verifier / build / Browser、console 0件を通過してfinal review=`A`で技術closeした。本項はOwner制作確認の残りであり、問題時はPhase 8zを暗黙に再OPENせず限定bug fix Gateを立てる。
+
+### Phase 8x — Canonical Shortcut Learning proof
+
+- Settingsの「ショートカット」でPenが`P`と表示され、tool / edit / layer / animation / panelのglobal action一覧がscrollして読めることを確認する。
+- QTP Pen buttonは平常面へkeyを常設せず、mouse hover / keyboard focusで`ペンツール · P`へ到達し、click / pen / touchの通常tool切替とQ開閉を妨げないことを確認する。
+- Touch専用long-press説明は未実装である。通常tap二段化やCanvas gestureと競合させずに到達性が必要な場合はPhase 8xを再OPENせず、別のtouch help Gateで扱う。
+- 全99 verifier / build / Browser、SOL final review=`A`で技術closeした。問題時はcanonical descriptor / Settings projection / QTP Pen hintの限定bug fixへ分離する。
+
+### Phase 8w — QTP Progressive Density
+
+- Pen / Eraser / Airbrushで6 presetが直接選択のまま表示され、Fill / Lasso Fill / Selectionでは非対応Preset sectionだけが退避することを確認する。
+- Pen系へ戻した時に使用中slotとSIZE / OPACITYが維持され、COLOR / tool / Text / Position deck / Q開閉 / 自由dragの到達性が悪化しないことをwide / narrow / coarseで確認する。
+- 全98 verifier / build / Browser、SOL final review=`A`で技術closeした。問題時はPhase 8wを暗黙に再OPENせず、QTP Progressive Density限定bug fixへ分離する。
+
+### Phase 8v — QTP Position Preset
+
+- QTP headerの四隅入口が位置commandとして読め、左上 / 右上 / 左下 / 右下へ移動後も自由dragで微調整できることを確認する。
+- 1280×720 / 720×720、normal / coarse、Animation Table開閉、Q close / reopen、Project reload、mouse / pen / touchでCanvas遮蔽とviewport clampを確認する。
+- 保存は従来のx / yだけで、Preset IDや利き手設定が増えていない。全97 verifier / build / Browser、SOL final review=`A`で技術closeした。問題時はPhase 8vを暗黙に再OPENせず、QTP Position Preset限定bug fixへ分離する。
+
+### Phase 8u — Asset Library icon exposure
+
+- Animation Table下段のAsset Library iconが「再利用Assetの入口」と読め、mouse / pen / touchで一操作開閉できることを確認する。
+- wide / narrow、Clip未選択 / 選択、Asset 0件 / 複数件、Table close / reopen、Project reloadで開閉stateと内容が破綻しないことを確認する。
+- 全96 verifier / build / Browser、SOL final review=`A`で技術closeした。問題時はPhase 8uを暗黙に再OPENせず、Asset Library Exposure限定bug fixへ分離する。
+
+### Phase 8t — Selected Clip Duration context
+
+- 単一かつ非Grouped Clip選択時にSelected Clip Action strip内へ`- / <n>F / +`が表示され、未選択、複数選択、Groupedで退避することを確認する。
+- Clip edgeのright retimeと±の結果が一致し、1 Frame Clip、隣接Clip push、terminal key、Undo / Redo、Table close / reopen、Project reload、mouse / pen / touchで破綻しないことを確認する。
+- `LIB`はPhase 8tで移動していない。後続Phase 8uで既存共通Asset Library iconの一操作入口へ限定変更した。
+- 全95 verifier / build / Browser、SOL final review=`A`で技術closeした。問題時はPhase 8tを暗黙に再OPENせず、Duration Context限定bug fixへ分離する。
+
+### Phase 8s — Playback Range full label / inline I / O
+
+- Repeatの隣で`TIMELINE / LAST CLIP / OUT MARKER`が全称表示され、I / Oを現在Frameへ直接設定し、同Frameでもう一度押すと解除できることを確認する。
+- wide / narrow、長尺Timeline、IN / OUT別Frame、OUT未設定警告、Focus Deckのkeyboard / outside close、Table close / reopen、Project reload、playback中変更、mouse / pen / touchを確認する。
+- `DURATION` / `LIB`はPhase 8sで移動していなかった。後続Phase 8tでDURATIONだけをSelected Clip contextへ送り、LIBはPhase 8uへ分離した。
+- 全94 verifier / build / wide・701px narrow Browser、SOL final review=`A`で技術closeした。問題時はPhase 8sを暗黙に再OPENせず、Playback Range Inline限定bug fixへ分離する。
+
+### Phase 8r — QTP Pen Preset / Density（技術close後）
+
+- Pen / Eraser / Airbrushで6 presetの直接click、tool別active slot、SIZE / OPACITY同期、adjacent循環を確認する。
+- compact 136px / coarse 170px、QTP open / close / drag / reopen、Project reload、mouse / pen / touchでslot番号・size ring・active summaryが読め、非active focus previewがmutationなしでblur復帰することを確認する。
+- Fill / Lasso Fill / Selectionではslotがdisabledかつ`not used`となり、clickしてもBrush値・History・保存が変わらないことを確認する。Phase 8qの`T / TEXT`、COLOR、tool grid、slider wheel / click、Q shortcutの順序とhit areaも回帰確認する。
+- SOL final review=`A`、全93 verifier / build / Browserで技術closeした。問題時はPhase 8rを暗黙に再OPENせず、preset表示・focus・tool切替を固定した限定bug fix Gateへ分離する。
 
 ### 横断制作知見 — 一枚Raster / Mesh BONE / Auto Shape（2026-08-13）
 
@@ -105,6 +214,45 @@ Owner制作環境で追加確認すること:
 - CAF / Raster複製、source / target / Bone削除、Project reload、preview / playback / onion / random seek / Bake / GIF / APNGで同じ既存Skin weightが使われること。長尺／多Bone、console error、可能ならpen / touchも確認すること。
 
 2026-08-20のSOL Browserでは、空の一枚Rasterから2 Bone + AUTO GRID 6×6を作成し、BRUSH ADD / SUBが各一件のHistoryとなり、Undo / Redoと`GRID 6×6 · WEIGHT`表示が一致することを確認した。全83 verifier / build、SOL final review=`A`で技術closeした。深い制作Projectと上記横断項目は未確認であり、問題時はPhase 8jを暗黙に再OPENせず限定bug fix Gateを立てる。Manual Topology、AUTO LINE brush、Motion中authoring、DQS、stretchへ同時に広げない。
+
+### Phase 8k — Existing Raster Mesh Vertex Position Edit
+
+- 一枚人物RasterのAUTO GRID / AUTO SHAPE CURRENT Meshで、Setup青RIGの`MESH EDIT`から既存頂点を一つずつ輪郭・関節へ合わせられること。stable vertex ID、triangle、Skin weightが維持され、Motion側やAUTO LINEへ編集入口が出ないこと。
+- source bounds外、triangle反転 / degenerate / overlapになるdragがHistoryを増やさず開始前へ全rollbackし、理由が制作上理解できること。no-op、Escape、pointercancel、外release、target / tab / mode切替、Table closeも同じcancel境界になること。
+- CORRECT / BRUSH / PIVOTとの排他、Space + drag、Undo / Redo、GRID / SHAPE再生成の明示確認、STALE、clipping / Folder WARP / rigid競合の拒否を確認すること。
+- CAF / Raster複製、source / target / Bone削除、Project reload、preview / playback / onion / random seek / Bake / GIF / APNGで既存Skin evaluatorと同じ編集Meshが使われること。256 vertex級、多Bone、console error、可能ならpen / touchも確認すること。
+
+2026-08-21のSOL BrowserではAUTO GRID 6×6の36頂点表示、1頂点dragのHistory一件、`EDITED`表示、Undo / Redo座標一致、bounds外dragのHistory 0 / 全rollback、PIVOT復帰、Table close / reopen、console error / warning 0件を確認した。全86 verifier / build、SOL final review=`A`。Owner制作確認はPhase未完了を意味せず、問題時はPhase 8kを暗黙に再OPENせずRaster / generator / vertex / triangleを固定した限定bug fix Gateを立てる。point追加、triangle split / delete、edge編集、全面manual topologyへ同時に広げない。
+
+### Phase 8l — QTP restrained-depth / semantic surface
+
+- OwnerはQTPのrestrained-depth外観を実機で受入済み。full-width `TEXT TO RASTER`の占有、FONT / SIZE label、縦書き、Windows local font導線はPhase 8lの未完了ではなくproposal 14の別Text Gateで扱う。
+- 残る確認は狭幅 / 低height、QTP drag / close / reopen、mouse / pen / touchで19px / coarse 24px hit areaを維持し、淡い絵／暗い絵でも外殻、hover / active / focusを識別できること。問題時はPhase 8lを再OPENせずcomponent限定bug fixを立てる。
+
+### Phase 8m — Animation Table SCOPE Focus Deck
+
+- SOL Browserでは1280×720 / 720×720でSCOPE現在値一button、anchored Focus Deck、keyboard、再click / focusout / outside pointer close、History 0、console error 0件を確認し、全88 verifier / buildとSOL final review=`A`で技術closeした。
+- Owner制作確認では長尺CAF、Panel重なり、低height、mouse / pen / touch、close / reopen後の`ALL / LANE / SET`復帰を確認する。Monitor / Repeat / `I / O`等の省スペース案はPhase 8mの不具合ではなくPhase 8nの比較Gateとして扱う。
+
+### Phase 8n — Playback Glance icon / marker semantics
+
+- SOL BrowserではSCOPE Focus DeckのkeyboardとHistory不変、Loop ON / OFF、IN / OUT設定・解除、onion `0..4`循環、1280×720 / 720×720、狭幅overflowなし、console error / warning 0件を確認し、全89 verifier / build、SOL final review=`A`で技術closeした。
+- Owner制作確認では長尺CAF、低height、Panel重なり、Project close / reopen、mouse / pen / touchでMonitor＋現在値、Repeat Off、設定済み`I / O`、onion countが誤読されないことを確認する。問題時はPhase 8nを再OPENせずPlayback header限定bug fixを立てる。onion過去 / 未来の別設定やPlayback Rangeは未実装の別Gateである。
+
+### Phase 8o — Selected Clip Context Action strip
+
+- SOL Browserでは単一 / 複数選択、Group / Ungroup、選択解除、空Frame Paste、Clip限定Delete、Undo、Table close / reopen、narrow resize、console error / warning 0件を確認し、全90 verifier / build、SOL final review=`A`で技術closeした。
+- Owner制作確認では長いAsset / Layer名、多数Lane、長尺CAF、Clip move / retime直後、Lane-only delete、Project close / reopen、mouse / pen / touchでstripがstaleにならず、Pasteが選択なしでも到達できることを確認する。問題時はPhase 8oを再OPENせずSelected Clip Action限定bug fixを立てる。long press専用化や旧button削除は未実装の別Gateである。
+
+### Phase 8p — Animation Table Playback Range Focus Deck
+
+- SOL Browserでは閉状態summary、Timeline / Last Clip / OUT marker、IN F1 / OUT F4、OUT未設定警告、Arrow / Escape / focus復帰、outside close、narrow resize、console error / warning 0件を確認し、全91 verifier / build、SOL final review=`A`で技術closeした。
+- Owner制作確認では長尺CAF、低height、Panel重なり、Project close / reopen、playback中の変更、IN > OUT補正、totalFrames短縮、scope別Last Clip、mouse / pen / touchでsummaryと実再生終端が一致することを確認する。問題時はPhase 8pを再OPENせずPlayback Range限定bug fixを立てる。Timeline直接range handleは未実装の別Gateである。
+
+### Phase 8q — QTP Text Entry / Panel Density
+
+- SOL BrowserではOPACITY後の62px `T / TEXT`、open panel 124px内、FONT / SIZE label overlapなし、Rasterize / Ctrl+Enter / Cancel、History / Undo / Redo、Q close / reopen、console error / warning 0件を確認し、全92 verifier / build、SOL final review=`A`で技術closeした。
+- Owner制作確認では長文 / 複数行、日本語 / ASCII、Sans / Serif / Mono、8〜256px、BOLD / current color、QTP drag、低height / 狭幅、Project close / reopen、PNG / PSD、mouse / pen / touchを確認する。問題時はPhase 8qを再OPENせずQTP Text Entry限定bug fixを立てる。vertical text、local font、再編集可能Textは未実装の別Gateである。
 
 ### Phase 8h — Animation Table SCOPE inactive / focus
 

@@ -490,29 +490,37 @@ export const TEGAKI_KEYMAP = {
             'ArrowLeft': '←', 'ArrowRight': '→',
             'Space': 'Space', 'Delete': 'Delete', 'Backspace': 'Backspace'
         };
+        if (/^Key[A-Z]$/.test(keyCode)) return keyCode.slice(3);
+        if (/^Digit\d$/.test(keyCode)) return keyCode.slice(5);
         return displayNames[keyCode] || keyCode;
+    },
+
+    getShortcutDescriptor(actionName) {
+        const config = this.actions[actionName];
+        if (!config) return null;
+
+        const configs = Array.isArray(config) ? config : [config];
+        const keys = configs.map(cfg => {
+            const parts = [];
+            if (cfg.vMode) parts.push('変形中');
+            if (cfg.ctrl) parts.push('Ctrl');
+            if (cfg.shift) parts.push('Shift');
+            if (cfg.alt) parts.push('Alt');
+            parts.push(this.getKeyDisplayName(cfg.key));
+            return parts.join('+');
+        });
+
+        return {
+            action: actionName,
+            keys,
+            description: configs[0].description
+        };
     },
     
     getShortcutList() {
-        const list = [];
-        for (const [actionName, config] of Object.entries(this.actions)) {
-            const configs = Array.isArray(config) ? config : [config];
-            const keys = configs.map(cfg => {
-                const parts = [];
-                if (cfg.ctrl) parts.push('Ctrl');
-                if (cfg.shift) parts.push('Shift');
-                if (cfg.alt) parts.push('Alt');
-                if (cfg.vMode) parts.push('変形中 +');
-                parts.push(this.getKeyDisplayName(cfg.key));
-                return parts.join('+');
-            });
-            list.push({
-                action: actionName,
-                keys: keys,
-                description: configs[0].description
-            });
-        }
-        return list;
+        return Object.keys(this.actions)
+            .map(actionName => this.getShortcutDescriptor(actionName))
+            .filter(Boolean);
     }
 };
 

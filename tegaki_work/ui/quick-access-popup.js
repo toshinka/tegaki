@@ -2,7 +2,7 @@
  * ============================================================================
  * ファイル名: ui/quick-access-popup.js
  * 責務: ペン設定（サイズ、不透明度、色、ツール切替、ツール別プリセット）への素早いアクセスを提供するUI
- * 依存: system/event-bus.js, system/drawing/brush-settings.js, ui/ui-icons.js
+ * 依存: config.js, system/event-bus.js, system/drawing/brush-settings.js, ui/ui-icons.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: QuickAccessPopup
  * イベント発火: tool:changed, brush:color-changed, brush:size-changed, brush:opacity-changed, popup:*
@@ -12,6 +12,7 @@
  * ============================================================================
  */
 
+import { TEGAKI_KEYMAP } from '../config.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { UI_ICONS } from './ui-icons.js';
 
@@ -25,6 +26,15 @@ const QA_STORAGE_KEYS = {
 const QA_PRESET_TOOLS = ['pen', 'eraser', 'airbrush'];
 const QA_PRESET_SLOT_COUNT = 6;
 const QA_COLOR_SLOT_COUNT = 5;
+const QA_SHORTCUT_ACTIONS = Object.freeze({
+    eyedropper: 'TOOL_EYEDROPPER',
+    pen: 'TOOL_PEN',
+    eraser: 'TOOL_ERASER',
+    airbrush: 'TOOL_AIRBRUSH_BLUR_TOGGLE',
+    fill: 'TOOL_FILL',
+    lassoFill: 'TOOL_LASSO_FILL',
+    selection: 'TOOL_RECT_SELECTION'
+});
 const QA_DEFAULT_MAIN_COLOR = 0x800000;
 const QA_DEFAULT_SUB_COLOR = 0xf0e0d6;
 const QA_LEGACY_SUB_COLOR = 0xffffff;
@@ -102,6 +112,10 @@ export class QuickAccessPopup {
         this.sliderUpHandler = null;
         this.dragMoveHandler = null;
         this.dragUpHandler = null;
+        this.outsidePointerHandler = null;
+        this.positionKeydownHandler = null;
+        this.shortcutHelpKeydownHandler = null;
+        this.shortcutHelpResizeHandler = null;
 
         this.activeSliderElement = null;
         this.activeSliderPointerId = null;
@@ -151,15 +165,6 @@ export class QuickAccessPopup {
                 max-width: calc(100vw - 24px);
                 padding: var(--ui-qa-popup-padding) !important;
                 box-sizing: border-box;
-                border: 1px solid rgba(128, 0, 0, 0.28);
-                border-radius: 11px;
-                background:
-                    linear-gradient(180deg, rgba(255, 255, 238, 0.74), rgba(240, 224, 214, 0.62)),
-                    rgba(255, 255, 238, 0.52);
-                box-shadow: 0 11px 27px rgba(80, 32, 24, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.55);
-                backdrop-filter: blur(10px) saturate(1.12);
-                -webkit-backdrop-filter: blur(10px) saturate(1.12);
-                color: var(--futaba-maroon);
                 user-select: none;
                 touch-action: none;
                 cursor: default;
@@ -189,13 +194,13 @@ export class QuickAccessPopup {
             }
 
             .qa-header {
+                position: relative;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
                 gap: 6px;
                 min-height: 17px;
                 padding: 0 20px 4px 2px;
-                border-bottom: 1px solid rgba(128, 0, 0, 0.14);
                 cursor: grab;
             }
 
@@ -206,19 +211,218 @@ export class QuickAccessPopup {
                 min-width: 0;
             }
 
-            .qa-header-main {
-                font-size: 10px;
-                font-weight: 700;
-                line-height: 1.1;
-                color: var(--futaba-maroon);
-                letter-spacing: 0.02em;
+            .qa-header-sub {
+                white-space: nowrap;
             }
 
-            .qa-header-sub {
+            .qa-position-toggle {
+                display: inline-grid;
+                place-items: center;
+                width: 18px;
+                height: 18px;
+                margin-left: 0;
+                padding: 2px;
+                border: 1px solid transparent;
+                border-radius: 5px;
+                color: var(--deformer-bind-point);
+                background: transparent;
+                cursor: pointer;
+            }
+
+            .qa-position-toggle:hover,
+            .qa-position-toggle:focus-visible,
+            .qa-position-toggle.is-open {
+                border-color: var(--deformer-bind-line);
+                background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-background));
+                outline: none;
+            }
+
+            .qa-position-toggle svg {
+                width: 12px;
+                height: 12px;
+                stroke: currentColor;
+            }
+
+            .qa-shortcut-help-toggle {
+                display: inline-grid;
+                place-items: center;
+                width: 18px;
+                height: 18px;
+                margin-left: auto;
+                padding: 0;
+                border: 1px solid transparent;
+                border-radius: 5px;
+                color: var(--futaba-maroon);
+                background: transparent;
+                font-size: 11px;
+                font-weight: 800;
+                line-height: 1;
+                cursor: pointer;
+            }
+
+            .qa-shortcut-help-toggle:hover,
+            .qa-shortcut-help-toggle:focus-visible,
+            .qa-shortcut-help-toggle.is-open {
+                border-color: var(--deformer-bind-line);
+                color: var(--deformer-bind-point);
+                background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-background));
+                outline: none;
+            }
+
+            .qa-shortcut-help-deck {
+                position: absolute;
+                z-index: 9;
+                top: calc(100% + 3px);
+                left: 0;
+                width: min(198px, calc(100vw - 24px));
+                max-width: none;
+                padding: 7px;
+                border: 1px solid var(--deformer-bind-line);
+                border-radius: var(--ui-radius-control);
+                background: var(--ui-surface-float);
+                box-shadow: var(--ui-shadow-float);
+                cursor: default;
+            }
+
+            .qa-shortcut-help-deck[hidden] {
+                display: none;
+            }
+
+            .qa-shortcut-help-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 6px;
+                padding: 1px 2px 5px;
+                border-bottom: 1px solid var(--ui-border-subtle);
+                color: var(--deformer-bind-point);
                 font-size: 8px;
-                line-height: 1.1;
-                color: rgba(128, 0, 0, 0.58);
+                font-weight: 800;
+                letter-spacing: 0.04em;
+            }
+
+            .qa-shortcut-help-count {
+                min-width: 16px;
+                padding: 1px 4px;
+                border-radius: 999px;
+                color: var(--deformer-bind-point);
+                background: color-mix(in srgb, var(--deformer-bind-line) 14%, var(--futaba-background));
+                text-align: center;
+                font-size: 7px;
+            }
+
+            .qa-shortcut-help-list {
+                display: grid;
+                gap: 2px;
+                padding-top: 4px;
+            }
+
+            .qa-shortcut-help-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 7px;
+                min-height: 22px;
+                padding: 2px 3px;
+                border-radius: 4px;
+                color: var(--futaba-maroon);
+                font-size: 8px;
+                font-weight: 700;
+            }
+
+            .qa-shortcut-help-row:nth-child(even) {
+                background: color-mix(in srgb, var(--futaba-background) 72%, transparent);
+            }
+
+            .qa-shortcut-help-label {
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
                 white-space: nowrap;
+            }
+
+            .qa-shortcut-help-key {
+                display: inline-grid;
+                place-items: center;
+                min-width: 22px;
+                min-height: 18px;
+                padding: 1px 4px;
+                border: 1px solid var(--ui-border-subtle);
+                border-radius: 4px;
+                color: var(--deformer-bind-point);
+                background: var(--ui-surface-control);
+                font-size: 8px;
+                font-weight: 800;
+                line-height: 1;
+            }
+
+            .qa-position-deck {
+                position: absolute;
+                z-index: 8;
+                top: calc(100% + 3px);
+                right: 16px;
+                width: 84px;
+                padding: 6px;
+                border: 1px solid var(--deformer-bind-line);
+                border-radius: var(--ui-radius-control);
+                background: var(--ui-surface-float);
+                box-shadow: var(--ui-shadow-float);
+                cursor: default;
+            }
+
+            .qa-position-deck[hidden] {
+                display: none;
+            }
+
+            .qa-position-deck-title {
+                display: block;
+                margin-bottom: 4px;
+                color: var(--deformer-bind-point);
+                font-size: 7px;
+                line-height: 1.1;
+                letter-spacing: 0.03em;
+            }
+
+            .qa-position-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 4px;
+            }
+
+            .qa-position-choice {
+                display: grid;
+                width: 32px;
+                min-width: 0;
+                height: 25px;
+                padding: 3px;
+                border: 1px solid var(--deformer-bind-line);
+                border-radius: 5px;
+                color: var(--deformer-bind-point);
+                background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-background));
+                cursor: pointer;
+            }
+
+            .qa-position-choice:hover,
+            .qa-position-choice:focus-visible {
+                border-color: var(--deformer-bind-point);
+                box-shadow: 0 0 0 1px var(--deformer-bind-line);
+                outline: none;
+            }
+
+            .qa-position-choice-mark {
+                display: block;
+                width: 11px;
+                height: 8px;
+                border: 1px solid currentColor;
+                border-radius: 2px;
+            }
+
+            .qa-position-choice[data-qa-position$="right"] .qa-position-choice-mark {
+                justify-self: end;
+            }
+
+            .qa-position-choice[data-qa-position^="bottom"] .qa-position-choice-mark {
+                align-self: end;
             }
 
             .qa-section {
@@ -248,6 +452,10 @@ export class QuickAccessPopup {
                 font-size: 8px;
                 font-weight: 700;
                 color: rgba(128, 0, 0, 0.58);
+                max-width: 100%;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
 
             .qa-slider-card .qa-section-label {
@@ -561,9 +769,9 @@ export class QuickAccessPopup {
                 position: relative;
                 width: var(--ui-qa-grid-size);
                 height: var(--ui-qa-grid-size);
-                border-radius: 5px;
-                border: 1px solid rgba(128, 0, 0, 0.22);
-                background: rgba(255, 255, 238, 0.62);
+                border-radius: var(--ui-radius-control);
+                border: 1px solid var(--ui-border-subtle);
+                background: var(--ui-surface-control);
                 cursor: pointer;
                 transition: transform 0.12s ease, background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
                 display: inline-flex;
@@ -607,15 +815,15 @@ export class QuickAccessPopup {
             }
 
             .qa-tool-button:hover {
-                background: rgba(240, 224, 214, 0.84);
-                border-color: rgba(128, 0, 0, 0.36);
+                background: var(--ui-surface-control-hover);
+                border-color: var(--ui-border-hover);
                 transform: translateY(-1px);
             }
 
             .qa-tool-button.active {
-                border-color: rgba(255, 140, 66, 0.9);
-                background: rgba(255, 245, 222, 0.92);
-                box-shadow: 0 0 0 2px rgba(255, 140, 66, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.62);
+                border-color: var(--ui-border-active);
+                background: var(--ui-surface-control-active);
+                box-shadow: var(--ui-shadow-control-active);
             }
 
             .qa-tool-button.erase-mode {
@@ -696,6 +904,17 @@ export class QuickAccessPopup {
                 overflow: hidden;
             }
 
+            .qa-preset-slot-index {
+                position: absolute;
+                top: 1px;
+                left: 2px;
+                font-size: 6px;
+                line-height: 1;
+                font-weight: 700;
+                color: rgba(128, 0, 0, 0.52);
+                pointer-events: none;
+            }
+
             .qa-preset-slot:hover {
                 transform: translateY(-1px);
                 background: rgba(240, 224, 214, 0.78);
@@ -709,8 +928,8 @@ export class QuickAccessPopup {
             }
 
             .qa-preset-ring {
-                width: 14px;
-                height: 14px;
+                width: 12px;
+                height: 12px;
                 border-radius: 50%;
                 border: 1.5px solid rgba(128, 0, 0, 0.44);
                 display: flex;
@@ -723,8 +942,8 @@ export class QuickAccessPopup {
             .qa-preset-dot {
                 width: 3px;
                 height: 3px;
-                max-width: 9px;
-                max-height: 9px;
+                max-width: 7px;
+                max-height: 7px;
                 border-radius: 50%;
                 background: var(--futaba-maroon);
                 opacity: 0.88;
@@ -752,6 +971,7 @@ export class QuickAccessPopup {
                 font-weight: 600;
                 color: rgba(128, 0, 0, 0.50);
                 white-space: nowrap;
+                display: none;
             }
 
             /* ─── スライダー ─── */
@@ -866,6 +1086,17 @@ export class QuickAccessPopup {
                     height: 20px;
                 }
 
+                .qa-shortcut-help-toggle,
+                .qa-position-toggle {
+                    width: 24px;
+                    height: 24px;
+                }
+
+                .qa-position-choice {
+                    width: 34px;
+                    height: 30px;
+                }
+
                 .qa-close svg {
                     width: 13px;
                     height: 13px;
@@ -927,6 +1158,10 @@ export class QuickAccessPopup {
 
         // 現在のカラースロットの12色でパレットHTMLを生成
         const paletteHtml = this._buildPaletteHtml(this.activeColorSlotIndex);
+        const shortcutHints = Object.fromEntries(
+            Object.entries(QA_SHORTCUT_ACTIONS)
+                .map(([control, action]) => [control, this._buildShortcutHintAttributes(action)])
+        );
 
         this.panel.innerHTML = `
             <button class="ui-close-button ui-close-button--medium qa-close quick-access-close-btn" id="quick-access-close-btn" title="閉じる" aria-label="閉じる" type="button">
@@ -938,6 +1173,41 @@ export class QuickAccessPopup {
                     <span class="qa-header-main">Quick</span>
                     <span class="qa-header-sub">tool presets</span>
                 </div>
+                <button class="qa-shortcut-help-toggle" id="qa-shortcut-help-toggle" type="button"
+                    title="ショートカットヘルプ" aria-label="ショートカットヘルプ"
+                    aria-controls="qa-shortcut-help-deck" aria-expanded="false" aria-haspopup="dialog">?</button>
+                <div class="qa-shortcut-help-deck" id="qa-shortcut-help-deck" role="dialog"
+                    aria-label="QTPショートカット" hidden>
+                    <div class="qa-shortcut-help-head">
+                        <span>TOOL SHORTCUTS</span>
+                        <span class="qa-shortcut-help-count">7</span>
+                    </div>
+                    <div class="qa-shortcut-help-list" id="qa-shortcut-help-list" role="list">
+                        ${this._buildShortcutHelpDeckHtml()}
+                    </div>
+                </div>
+                <button class="qa-position-toggle" id="qa-position-toggle" type="button"
+                    title="パレット位置を選択" aria-label="パレット位置を選択"
+                    aria-controls="qa-position-deck" aria-expanded="false" aria-haspopup="true">
+                    ${UI_ICONS.positionCorners}
+                </button>
+                <div class="qa-position-deck" id="qa-position-deck" hidden>
+                    <span class="qa-position-deck-title">PALETTE POSITION</span>
+                    <div class="qa-position-grid" role="group" aria-label="パレット位置Preset">
+                        <button class="qa-position-choice" type="button" data-qa-position="top-left" title="左上">
+                            <span class="qa-position-choice-mark"></span>
+                        </button>
+                        <button class="qa-position-choice" type="button" data-qa-position="top-right" title="右上">
+                            <span class="qa-position-choice-mark"></span>
+                        </button>
+                        <button class="qa-position-choice" type="button" data-qa-position="bottom-left" title="左下">
+                            <span class="qa-position-choice-mark"></span>
+                        </button>
+                        <button class="qa-position-choice" type="button" data-qa-position="bottom-right" title="右下">
+                            <span class="qa-position-choice-mark"></span>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <!-- 1. カラーパレット (カラースロット付き) -->
@@ -947,7 +1217,8 @@ export class QuickAccessPopup {
                         <button class="qa-mini-toggle-btn" id="qa-color-circle-toggle-btn" title="カラーサークルを表示" type="button">
                             ${UI_ICONS.palette}
                         </button>
-                        <button class="qa-eyedropper-btn" id="qa-eyedropper-btn" title="スポイト (I)" aria-label="スポイト" type="button">
+                        <button class="qa-eyedropper-btn ui-help-tooltip" id="qa-eyedropper-btn"
+                            aria-label="スポイト" ${shortcutHints.eyedropper} type="button">
                             ${UI_ICONS.eyedropper}
                         </button>
                         <div class="qa-color-swatches" id="qa-color-swatches" title="メイン/サブカラー (Xで入替)">
@@ -994,70 +1265,43 @@ export class QuickAccessPopup {
                     <div class="qa-section-value" id="qa-current-tool-label">pen</div>
                 </div>
                 <div class="qa-tool-grid">
-                    <button class="qa-tool-button" id="qa-pen-tool" title="ペン" type="button" aria-label="ペン">
+                    <button class="qa-tool-button ui-help-tooltip" id="qa-pen-tool" type="button"
+                        aria-label="ペン" ${shortcutHints.pen}>
                         ${UI_ICONS.pen}
                     </button>
-                    <button class="qa-tool-button" id="qa-eraser-tool" title="消しゴム" type="button" aria-label="消しゴム">
+                    <button class="qa-tool-button ui-help-tooltip" id="qa-eraser-tool" type="button"
+                        aria-label="消しゴム" ${shortcutHints.eraser}>
                         ${UI_ICONS.eraser}
                     </button>
-                    <button class="qa-tool-button" id="qa-airbrush-tool" title="スプレー / 透明スプレー (B)" type="button" aria-label="スプレー / 透明スプレー">
+                    <button class="qa-tool-button ui-help-tooltip" id="qa-airbrush-tool" type="button"
+                        aria-label="スプレー / 透明スプレー" ${shortcutHints.airbrush}>
                         ${UI_ICONS.airbrush || '<span class="qa-tool-text-icon">霧</span>'}
                     </button>
-                    <button class="qa-tool-button" id="qa-fill-tool" title="塗りつぶし (G)" type="button" aria-label="塗りつぶし">
+                    <button class="qa-tool-button ui-help-tooltip" id="qa-fill-tool" type="button"
+                        aria-label="塗りつぶし" ${shortcutHints.fill}>
                         <span class="qa-fill-ref-strip" id="qa-fill-ref-all-toggle" title="表示中レイヤーをすべて参照して塗りつぶす"></span>
                         ${UI_ICONS.fill}
                     </button>
-                    <button class="qa-tool-button" id="qa-lasso-fill-tool" title="投げ縄塗り (L)" type="button" aria-label="投げ縄塗り">
+                    <button class="qa-tool-button ui-help-tooltip" id="qa-lasso-fill-tool" type="button"
+                        aria-label="投げ縄塗り" ${shortcutHints.lassoFill}>
                         ${UI_ICONS.lasso || '<span class="qa-tool-text-icon">縄</span>'}
                     </button>
-                    <button class="qa-tool-button" id="qa-selection-tool" title="矩形選択 (M)" type="button" aria-label="矩形選択">
+                    <button class="qa-tool-button ui-help-tooltip" id="qa-selection-tool" type="button"
+                        aria-label="矩形選択" ${shortcutHints.selection}>
                         ${UI_ICONS.rectangleSelect || '<span class="qa-tool-text-icon">選</span>'}
                     </button>
-                </div>
-                <button class="qa-text-raster-toggle" id="qa-text-raster-toggle" type="button"
-                    aria-expanded="false" aria-controls="qa-text-raster-panel" title="文字をRaster Layerへ確定">
-                    <span class="qa-text-raster-icon" aria-hidden="true">T</span>
-                    <span>TEXT TO RASTER</span>
-                </button>
-                <div class="qa-text-raster-panel" id="qa-text-raster-panel" hidden>
-                    <textarea class="qa-text-raster-content" id="qa-text-raster-content" rows="3"
-                        maxlength="2000" placeholder="文字を入力" aria-label="Raster化する文字"></textarea>
-                    <div class="qa-text-raster-options">
-                        <label class="qa-text-raster-field">
-                            <span>FONT</span>
-                            <select id="qa-text-raster-family" aria-label="フォント種別">
-                                <option value="sans-serif">Sans</option>
-                                <option value="serif">Serif</option>
-                                <option value="monospace">Mono</option>
-                            </select>
-                        </label>
-                        <label class="qa-text-raster-field qa-text-raster-size-field">
-                            <span>SIZE</span>
-                            <input id="qa-text-raster-size" type="number" min="8" max="256" step="1" value="48"
-                                inputmode="numeric" aria-label="文字サイズ">
-                        </label>
-                        <label class="qa-text-raster-bold">
-                            <input id="qa-text-raster-bold" type="checkbox">
-                            <span>BOLD</span>
-                        </label>
-                        <span class="qa-text-raster-color" id="qa-text-raster-color" title="現在のメインカラー"></span>
-                    </div>
-                    <div class="qa-text-raster-status" id="qa-text-raster-status" role="status" aria-live="polite"></div>
-                    <div class="qa-text-raster-actions">
-                        <button id="qa-text-raster-cancel" type="button">CANCEL</button>
-                        <button id="qa-text-raster-confirm" type="button">RASTERIZE</button>
-                    </div>
                 </div>
             </section>
 
             <!-- 3. プリセットスロット -->
-            <section class="qa-section" aria-label="プリセットスロット">
+            <section class="qa-section" id="qa-preset-section" aria-label="プリセットスロット">
                 <div class="qa-section-label-row">
                     <div class="qa-section-value" id="qa-preset-status">tool independent</div>
                 </div>
                 <div class="qa-preset-grid" id="qa-preset-grid">
                     ${Array.from({ length: QA_PRESET_SLOT_COUNT }, (_, index) => `
-                        <button class="qa-preset-slot" data-slot="${index}" type="button" title="スロット${index + 1}">
+                        <button class="qa-preset-slot" data-slot="${index}" type="button" title="スロット${index + 1}" aria-label="スロット${index + 1}">
+                            <span class="qa-preset-slot-index" aria-hidden="true">${index + 1}</span>
                             <span class="qa-preset-ring">
                                 <span class="qa-preset-dot"></span>
                             </span>
@@ -1100,6 +1344,46 @@ export class QuickAccessPopup {
                     <button class="qa-arrow-btn" id="pen-opacity-increase" type="button" aria-label="不透明度を上げる">▶</button>
                 </div>
             </section>
+
+            <!-- 5. one-shot Text utility: drawing tool / pen settingsの後に必要時だけ展開 -->
+            <section class="qa-section qa-text-raster-utility" aria-label="テキストをRaster Layerへ確定">
+                <button class="qa-text-raster-toggle" id="qa-text-raster-toggle" type="button"
+                    aria-expanded="false" aria-controls="qa-text-raster-panel" title="文字をRaster Layerへ確定">
+                    <span class="qa-text-raster-icon" aria-hidden="true">T</span>
+                    <span>TEXT</span>
+                </button>
+                <div class="qa-text-raster-panel" id="qa-text-raster-panel" hidden>
+                    <textarea class="qa-text-raster-content" id="qa-text-raster-content" rows="3"
+                        maxlength="2000" placeholder="文字を入力" aria-label="Raster化する文字"></textarea>
+                    <div class="qa-text-raster-options">
+                        <label class="qa-text-raster-field qa-text-raster-family-field">
+                            <span>FONT</span>
+                            <select id="qa-text-raster-family" aria-label="フォント種別">
+                                <option value="sans-serif">Sans</option>
+                                <option value="serif">Serif</option>
+                                <option value="monospace">Mono</option>
+                            </select>
+                        </label>
+                        <div class="qa-text-raster-secondary-row">
+                            <label class="qa-text-raster-field qa-text-raster-size-field">
+                                <span>SIZE</span>
+                                <input id="qa-text-raster-size" type="number" min="8" max="256" step="1" value="48"
+                                    inputmode="numeric" aria-label="文字サイズ">
+                            </label>
+                            <label class="qa-text-raster-bold">
+                                <input id="qa-text-raster-bold" type="checkbox">
+                                <span>BOLD</span>
+                            </label>
+                            <span class="qa-text-raster-color" id="qa-text-raster-color" title="現在のメインカラー"></span>
+                        </div>
+                    </div>
+                    <div class="qa-text-raster-status" id="qa-text-raster-status" role="status" aria-live="polite"></div>
+                    <div class="qa-text-raster-actions">
+                        <button id="qa-text-raster-cancel" type="button">CANCEL</button>
+                        <button id="qa-text-raster-confirm" type="button">RASTERIZE</button>
+                    </div>
+                </div>
+            </section>
         `;
     }
 
@@ -1122,12 +1406,51 @@ export class QuickAccessPopup {
         }).join('');
     }
 
+    _escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    _buildShortcutHintAttributes(actionName) {
+        const descriptor = TEGAKI_KEYMAP.getShortcutDescriptor(actionName);
+        if (!descriptor?.keys?.length) return '';
+
+        const keyLabel = descriptor.keys.join(' / ');
+        const tooltip = `${descriptor.description} · ${keyLabel}`;
+        return `aria-keyshortcuts="${this._escapeHtml(descriptor.keys.join(' '))}" data-tooltip="${this._escapeHtml(tooltip)}"`;
+    }
+
+    _buildShortcutHelpDeckHtml() {
+        return Object.entries(QA_SHORTCUT_ACTIONS).map(([control, action]) => {
+            const descriptor = TEGAKI_KEYMAP.getShortcutDescriptor(action);
+            if (!descriptor?.keys?.length) return '';
+
+            return `
+                <div class="qa-shortcut-help-row" role="listitem" data-shortcut-control="${this._escapeHtml(control)}">
+                    <span class="qa-shortcut-help-label">${this._escapeHtml(descriptor.description)}</span>
+                    <span class="qa-shortcut-help-key">${this._escapeHtml(descriptor.keys.join(' / '))}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
     _cacheElements() {
         this.elements = {
             closeBtn: document.getElementById('quick-access-close-btn'),
             dragArea: document.getElementById('quick-access-drag-area'),
+            positionToggleBtn: document.getElementById('qa-position-toggle'),
+            positionDeck: document.getElementById('qa-position-deck'),
+            positionChoices: Array.from(this.panel?.querySelectorAll('[data-qa-position]') || []),
+            shortcutHelpToggleBtn: document.getElementById('qa-shortcut-help-toggle'),
+            shortcutHelpDeck: document.getElementById('qa-shortcut-help-deck'),
+            shortcutHelpList: document.getElementById('qa-shortcut-help-list'),
             currentToolLabel: document.getElementById('qa-current-tool-label'),
             presetStatus: document.getElementById('qa-preset-status'),
+            presetSection: document.getElementById('qa-preset-section'),
             presetGrid: document.getElementById('qa-preset-grid'),
             presetSlots: Array.from(this.panel?.querySelectorAll('.qa-preset-slot') || []),
             penToolBtn: document.getElementById('qa-pen-tool'),
@@ -1186,6 +1509,8 @@ export class QuickAccessPopup {
 
         this._cacheElements();
         this._setupCloseButton();
+        this._setupShortcutHelpControls();
+        this._setupPositionPresetControls();
         this._setupToolButtons();
         this._setupTextRasterControls();
         this._setupPresetSlots();
@@ -1214,6 +1539,124 @@ export class QuickAccessPopup {
         };
 
         this.elements.closeBtn.addEventListener('pointerdown', handleClose);
+    }
+
+    _setupShortcutHelpControls() {
+        const { shortcutHelpToggleBtn, shortcutHelpDeck } = this.elements;
+        if (!shortcutHelpToggleBtn || !shortcutHelpDeck) return;
+
+        shortcutHelpToggleBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const isOpen = shortcutHelpToggleBtn.getAttribute('aria-expanded') === 'true';
+            this._setShortcutHelpOpen(!isOpen);
+        });
+
+        this.shortcutHelpKeydownHandler = (event) => {
+            if (event.key !== 'Escape') return;
+            if (shortcutHelpToggleBtn.getAttribute('aria-expanded') !== 'true') return;
+            event.preventDefault();
+            event.stopPropagation();
+            this._setShortcutHelpOpen(false);
+            shortcutHelpToggleBtn.focus();
+        };
+        document.addEventListener('keydown', this.shortcutHelpKeydownHandler);
+
+        this.shortcutHelpResizeHandler = () => this._setShortcutHelpOpen(false);
+        window.addEventListener('resize', this.shortcutHelpResizeHandler);
+    }
+
+    _positionShortcutHelpDeck() {
+        const { shortcutHelpToggleBtn, shortcutHelpDeck, dragArea } = this.elements;
+        if (!shortcutHelpToggleBtn || !shortcutHelpDeck || !dragArea) return;
+
+        const viewportPadding = 12;
+        const toggleRect = shortcutHelpToggleBtn.getBoundingClientRect();
+        const dragAreaRect = dragArea.getBoundingClientRect();
+        const deckRect = shortcutHelpDeck.getBoundingClientRect();
+        const maxLeft = Math.max(viewportPadding, window.innerWidth - viewportPadding - deckRect.width);
+        const viewportLeft = Math.min(
+            Math.max(viewportPadding, toggleRect.right - deckRect.width),
+            maxLeft
+        );
+        const belowTop = toggleRect.bottom + 3;
+        const viewportTop = belowTop + deckRect.height <= window.innerHeight - viewportPadding
+            ? belowTop
+            : Math.max(viewportPadding, toggleRect.top - deckRect.height - 3);
+
+        shortcutHelpDeck.style.left = `${viewportLeft - dragAreaRect.left}px`;
+        shortcutHelpDeck.style.top = `${viewportTop - dragAreaRect.top}px`;
+    }
+
+    _setShortcutHelpOpen(isOpen) {
+        const { shortcutHelpToggleBtn, shortcutHelpDeck } = this.elements;
+        if (!shortcutHelpToggleBtn || !shortcutHelpDeck) return;
+
+        const nextOpen = !!isOpen;
+        if (nextOpen) this._setPositionDeckOpen(false);
+        shortcutHelpDeck.hidden = !nextOpen;
+        if (nextOpen) this._positionShortcutHelpDeck();
+        shortcutHelpToggleBtn.classList.toggle('is-open', nextOpen);
+        shortcutHelpToggleBtn.setAttribute('aria-expanded', String(nextOpen));
+        shortcutHelpToggleBtn.title = nextOpen ? 'ショートカットヘルプを閉じる' : 'ショートカットヘルプ';
+    }
+
+    _setupPositionPresetControls() {
+        const { positionToggleBtn, positionChoices } = this.elements;
+        if (!positionToggleBtn) return;
+
+        positionToggleBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const isOpen = positionToggleBtn.getAttribute('aria-expanded') === 'true';
+            this._setPositionDeckOpen(!isOpen);
+        });
+
+        positionChoices.forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this._moveToPositionPreset(button.dataset.qaPosition);
+                this._setPositionDeckOpen(false);
+            });
+        });
+
+        this.positionKeydownHandler = (event) => {
+            if (event.key !== 'Escape') return;
+            if (positionToggleBtn.getAttribute('aria-expanded') !== 'true') return;
+            event.preventDefault();
+            this._setPositionDeckOpen(false);
+            positionToggleBtn.focus();
+        };
+        document.addEventListener('keydown', this.positionKeydownHandler);
+    }
+
+    _setPositionDeckOpen(isOpen) {
+        const { positionToggleBtn, positionDeck } = this.elements;
+        if (!positionToggleBtn || !positionDeck) return;
+
+        const nextOpen = !!isOpen;
+        if (nextOpen) this._setShortcutHelpOpen(false);
+        positionDeck.hidden = !nextOpen;
+        positionToggleBtn.classList.toggle('is-open', nextOpen);
+        positionToggleBtn.setAttribute('aria-expanded', String(nextOpen));
+        positionToggleBtn.title = nextOpen ? 'パレット位置を閉じる' : 'パレット位置を選択';
+    }
+
+    _moveToPositionPreset(preset) {
+        if (!this.panel) return;
+
+        const panelRect = this.panel.getBoundingClientRect();
+        const inset = 12;
+        const maxX = Math.max(0, window.innerWidth - panelRect.width);
+        const maxY = Math.max(0, window.innerHeight - panelRect.height);
+        const x = preset?.endsWith('right') ? Math.max(0, maxX - inset) : Math.min(inset, maxX);
+        const y = preset?.startsWith('bottom') ? Math.max(0, maxY - inset) : Math.min(inset, maxY);
+        const clamped = this._clampPanelPosition(x, y, panelRect);
+
+        this.panel.style.left = `${clamped.x}px`;
+        this.panel.style.top = `${clamped.y}px`;
+        this._savePosition(clamped.x, clamped.y);
     }
 
     _setupToolButtons() {
@@ -1550,6 +1993,12 @@ export class QuickAccessPopup {
 
     _setupPresetSlots() {
         this.elements.presetSlots.forEach((slot) => {
+            slot.addEventListener('focus', () => {
+                this._previewPresetSlotSummary(slot);
+            });
+            slot.addEventListener('blur', () => {
+                this._restorePresetSummary();
+            });
             this._bindPointerAction(slot, () => {
                 const index = Number(slot.dataset.slot);
                 this._selectPresetSlot(index);
@@ -1704,14 +2153,38 @@ export class QuickAccessPopup {
     }
 
     _setupOutsideClickHandler() {
-        document.addEventListener('pointerdown', (e) => {
-            if (!this.isColorSubPopupOpen) return;
-            const subPopup = this.elements.colorSubPopup;
-            const toggleBtn = this.elements.colorSlotToggleBtn;
-            if (subPopup && !subPopup.contains(e.target) && toggleBtn && !toggleBtn.contains(e.target)) {
-                this._closeColorSubPopup();
+        this.outsidePointerHandler = (event) => {
+            if (this.isColorSubPopupOpen) {
+                const subPopup = this.elements.colorSubPopup;
+                const toggleBtn = this.elements.colorSlotToggleBtn;
+                if (subPopup && !subPopup.contains(event.target) && toggleBtn && !toggleBtn.contains(event.target)) {
+                    this._closeColorSubPopup();
+                }
             }
-        }, { capture: true, passive: true });
+
+            const positionDeck = this.elements.positionDeck;
+            const positionToggleBtn = this.elements.positionToggleBtn;
+            if (
+                positionToggleBtn?.getAttribute('aria-expanded') === 'true'
+                && positionDeck
+                && !positionDeck.contains(event.target)
+                && !positionToggleBtn.contains(event.target)
+            ) {
+                this._setPositionDeckOpen(false);
+            }
+
+            const shortcutHelpDeck = this.elements.shortcutHelpDeck;
+            const shortcutHelpToggleBtn = this.elements.shortcutHelpToggleBtn;
+            if (
+                shortcutHelpToggleBtn?.getAttribute('aria-expanded') === 'true'
+                && shortcutHelpDeck
+                && !shortcutHelpDeck.contains(event.target)
+                && !shortcutHelpToggleBtn.contains(event.target)
+            ) {
+                this._setShortcutHelpOpen(false);
+            }
+        };
+        document.addEventListener('pointerdown', this.outsidePointerHandler, { capture: true, passive: true });
     }
 
     // ─── スライダー ───────────────────────────────────────────────────
@@ -1943,6 +2416,7 @@ export class QuickAccessPopup {
             const isInteractive =
                 target.closest('button') ||
                 target.closest('input') ||
+                target.closest('.qa-shortcut-help-deck') ||
                 target.closest('.qa-slider') ||
                 target.closest('.qa-preset-slot') ||
                 target.closest('.qa-palette-grid') ||
@@ -1950,6 +2424,7 @@ export class QuickAccessPopup {
 
             if (isInteractive) return;
 
+            this._setShortcutHelpOpen(false);
             this.isDraggingPanel = true;
             this.activeDragPointerId = e.pointerId;
 
@@ -1983,12 +2458,10 @@ export class QuickAccessPopup {
             let newX = this.panelStartX + deltaX;
             let newY = this.panelStartY + deltaY;
 
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
             const panelRect = this.panel.getBoundingClientRect();
-
-            newX = Math.max(0, Math.min(newX, viewportWidth - panelRect.width));
-            newY = Math.max(0, Math.min(newY, viewportHeight - panelRect.height));
+            const clamped = this._clampPanelPosition(newX, newY, panelRect);
+            newX = clamped.x;
+            newY = clamped.y;
 
             this.panel.style.left = `${newX}px`;
             this.panel.style.top = `${newY}px`;
@@ -2333,13 +2806,27 @@ export class QuickAccessPopup {
         const presetKey = this._getPresetToolKey();
         const isPresetEnabled = Boolean(presetKey);
         const presetSlots = Array.isArray(this.elements?.presetSlots) ? this.elements.presetSlots : [];
+        const activeIndex = isPresetEnabled
+            ? this._clampSlotIndex(this.activePresetSlots[presetKey] ?? 0)
+            : -1;
+        const activePreset = isPresetEnabled ? this.toolPresets[presetKey]?.[activeIndex] : null;
+
+        if (this.elements.presetSection) {
+            this.elements.presetSection.hidden = !isPresetEnabled;
+            this.elements.presetSection.setAttribute('aria-hidden', String(!isPresetEnabled));
+        }
 
         if (this.elements.presetStatus) {
-            this.elements.presetStatus.textContent = isPresetEnabled ? `${presetKey} slots` : 'not used';
+            this.elements.presetStatus.textContent = activePreset
+                ? `${presetKey.toUpperCase()} · S${activeIndex + 1} · ${this._roundSize(activePreset.size)}px / ${Math.round(activePreset.opacity)}%`
+                : 'not used';
+            this.elements.presetStatus.title = activePreset
+                ? `${presetKey} preset slot ${activeIndex + 1}: ${this._roundSize(activePreset.size)}px / ${Math.round(activePreset.opacity)}%`
+                : 'プリセット非対応ツール';
         }
 
         presetSlots.forEach((slot, index) => {
-            slot.classList.toggle('active', isPresetEnabled && (this.activePresetSlots[presetKey] ?? 0) === index);
+            slot.classList.toggle('active', isPresetEnabled && activeIndex === index);
             slot.disabled = !isPresetEnabled;
 
             const dot = slot.querySelector('.qa-preset-dot');
@@ -2369,10 +2856,28 @@ export class QuickAccessPopup {
 
             if (preset) {
                 slot.title = `スロット${index + 1}: ${this._roundSize(size)}px / ${Math.round(opacity)}%`;
+                slot.setAttribute('aria-label', `${presetKey} preset slot ${index + 1}: ${this._roundSize(size)}px / ${Math.round(opacity)}%`);
             } else {
                 slot.title = '塗りつぶしではサイズスロットを使用しません';
+                slot.setAttribute('aria-label', 'プリセット非対応ツール');
             }
         });
+    }
+
+    _previewPresetSlotSummary(slot) {
+        const presetKey = this._getPresetToolKey();
+        if (!presetKey || !this.elements.presetStatus) return;
+
+        const index = this._clampSlotIndex(slot?.dataset?.slot);
+        const preset = this.toolPresets[presetKey]?.[index];
+        if (!preset) return;
+
+        this.elements.presetStatus.textContent = `${presetKey.toUpperCase()} · S${index + 1} · ${this._roundSize(preset.size)}px / ${Math.round(preset.opacity)}%`;
+        this.elements.presetStatus.title = `${presetKey} preset slot ${index + 1}: ${this._roundSize(preset.size)}px / ${Math.round(preset.opacity)}%`;
+    }
+
+    _restorePresetSummary() {
+        this._updatePresetSlots();
     }
 
     _updateColorButtons() {
@@ -2643,6 +3148,40 @@ export class QuickAccessPopup {
     }
 
     // ─── 位置 ロード/セーブ ────────────────────────────────────────────
+    _clampPanelPosition(x, y, panelRect = this.panel?.getBoundingClientRect()) {
+        // popup-panel.showのfadeInはtransform: scale()を使う。表示直後の
+        // getBoundingClientRect()は縮小中なので、最終layout寸法でclampする。
+        const layoutWidth = Number(this.panel?.offsetWidth);
+        const layoutHeight = Number(this.panel?.offsetHeight);
+        const width = layoutWidth > 0
+            ? layoutWidth
+            : (Number.isFinite(panelRect?.width) ? panelRect.width : 0);
+        const height = layoutHeight > 0
+            ? layoutHeight
+            : (Number.isFinite(panelRect?.height) ? panelRect.height : 0);
+        const maxX = Math.max(0, window.innerWidth - width);
+        const maxY = Math.max(0, window.innerHeight - height);
+        return {
+            x: Math.max(0, Math.min(Number.isFinite(x) ? x : 0, maxX)),
+            y: Math.max(0, Math.min(Number.isFinite(y) ? y : 0, maxY))
+        };
+    }
+
+    _clampCurrentPanelPosition({ save = false } = {}) {
+        if (!this.panel) return;
+        const rect = this.panel.getBoundingClientRect();
+        const layoutLeft = Number(this.panel.offsetLeft);
+        const layoutTop = Number(this.panel.offsetTop);
+        const currentX = Number.isFinite(layoutLeft) ? layoutLeft : rect.left;
+        const currentY = Number.isFinite(layoutTop) ? layoutTop : rect.top;
+        const clamped = this._clampPanelPosition(currentX, currentY, rect);
+        this.panel.style.left = `${clamped.x}px`;
+        this.panel.style.top = `${clamped.y}px`;
+        if (save && (clamped.x !== currentX || clamped.y !== currentY)) {
+            this._savePosition(clamped.x, clamped.y);
+        }
+    }
+
     _savePosition(x, y) {
         try {
             localStorage.setItem(QA_STORAGE_KEYS.position, JSON.stringify({ x, y }));
@@ -2679,6 +3218,7 @@ export class QuickAccessPopup {
         } else {
             this._updateUI();
         }
+        this._clampCurrentPanelPosition({ save: true });
 
         if (this.eventBus) {
             this.eventBus.emit('popup:shown', { name: 'quickAccess' });
@@ -2689,6 +3229,8 @@ export class QuickAccessPopup {
         if (!this.panel) return;
 
         this._closeColorSubPopup();
+        this._setShortcutHelpOpen(false);
+        this._setPositionDeckOpen(false);
         this._setTextRasterPanelOpen(false);
         this.panel.classList.remove('show');
         this.isVisible = false;
@@ -2721,6 +3263,26 @@ export class QuickAccessPopup {
             document.removeEventListener('pointercancel', this.dragUpHandler);
             this.dragMoveHandler = null;
             this.dragUpHandler = null;
+        }
+
+        if (this.outsidePointerHandler) {
+            document.removeEventListener('pointerdown', this.outsidePointerHandler, { capture: true });
+            this.outsidePointerHandler = null;
+        }
+
+        if (this.positionKeydownHandler) {
+            document.removeEventListener('keydown', this.positionKeydownHandler);
+            this.positionKeydownHandler = null;
+        }
+
+        if (this.shortcutHelpKeydownHandler) {
+            document.removeEventListener('keydown', this.shortcutHelpKeydownHandler);
+            this.shortcutHelpKeydownHandler = null;
+        }
+
+        if (this.shortcutHelpResizeHandler) {
+            window.removeEventListener('resize', this.shortcutHelpResizeHandler);
+            this.shortcutHelpResizeHandler = null;
         }
 
         this.elements = {};

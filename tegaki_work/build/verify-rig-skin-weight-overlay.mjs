@@ -35,7 +35,7 @@ const overlaySource = readFileSync(new URL('../ui/rig-skin-weight-overlay.js', i
 const popupSource = readFileSync(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8');
 const cssSource = readFileSync(new URL('../styles/main.css', import.meta.url), 'utf8');
 
-assert.match(overlaySource, /通常はread-only。明示補正mode時だけvertex hitへpointer入力を限定する/);
+assert.match(overlaySource, /通常はread-only。明示補正／固定topology編集mode時だけvertex hitへpointer入力を限定する/);
 assert.doesNotMatch(overlaySource, /historyManager|ProjectManager|serialize\s*\(/);
 assert.match(popupSource, /id="anim-rig-weight-toggle"/);
 assert.match(popupSource, /data-rig-open-weight aria-pressed="false" hidden>WEIGHT表示</);
@@ -54,7 +54,7 @@ assert.match(popupSource, /candidate\.layer\.id === this\.selectedInternalLayerI
 assert.match(popupSource, /candidate\.boneId === this\.selectedRigBoneId/);
 assert.match(popupSource, /rigSkinWeightOverlay\.deactivate\(\)/, 'Table closeまたはtarget消失で同期消去する');
 assert.match(cssSource, /\.rig-skin-weight-overlay[\s\S]*?pointer-events:\s*none/);
-assert.match(cssSource, /\.rig-skin-weight-overlay__vertex[\s\S]*?pointer-events:\s*all/);
+assert.match(cssSource, /\.rig-skin-weight-overlay__vertex-hit[\s\S]*?pointer-events:\s*all/);
 assert.match(cssSource, /z-index:\s*2691/);
 
 console.log('verify-rig-skin-weight-overlay: fixed SVG paths / exact target / default read-only and explicit vertex hit boundary OK');

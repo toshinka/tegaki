@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 9c Canvas-first Visual Language Baseline</title>
+<style>
+  :root {
+    --paper:#ffffee;
+    --cream:#f0e0d6;
+    --cream-soft:#f8ece3;
+    --peach:#fff5de;
+    --line:#d4a8a0;
+    --ink:#800000;
+    --orange:#ff8c42;
+    --setup:#315c96;
+    --setup-soft:#e7f0fb;
+    --shadow:rgba(80,32,24,.14);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.45 system-ui,sans-serif; }
+  button { color:inherit; font:inherit; }
+  main { width:min(1500px,100%); margin:auto; padding:24px; }
+  h1 { margin:0; font-size:22px; letter-spacing:.01em; }
+  .lead { max-width:920px; margin:4px 0 18px; opacity:.76; }
+  .variants { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; align-items:start; }
+  .variant { min-width:0; border:1px solid rgba(128,0,0,.2); border-radius:14px; background:rgba(240,224,214,.24); overflow:hidden; }
+  .variant-title { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:13px 16px; border-bottom:1px solid rgba(128,0,0,.16); }
+  .variant-title h2 { margin:0; font-size:17px; }
+  .variant-title span { font-size:11px; font-weight:750; opacity:.68; }
+  .surface-list { display:grid; gap:14px; padding:14px; }
+  .surface-label { display:flex; align-items:center; gap:8px; margin:0 0 6px; font-size:12px; font-weight:850; letter-spacing:.04em; }
+  .surface-label::before { content:""; width:14px; height:3px; border-radius:99px; background:var(--orange); }
+  .surface { min-width:0; }
+  .ui-button { min-height:28px; padding:4px 9px; border:1px solid var(--line); border-radius:6px; background:rgba(255,255,238,.36); font-weight:760; }
+  .low-frequency { font-size:12px; font-weight:700; }
+  .play-priority { display:grid; place-items:center; min-width:38px; min-height:34px; padding:0; border:2px solid var(--ink); font-size:17px; font-weight:900; }
+  .setup-chip { padding:2px 7px; border:1px solid var(--setup); border-radius:99px; background:var(--setup-soft); color:var(--setup); font-size:11px; font-weight:850; }
+
+  .table-shell { overflow:hidden; border:1px solid rgba(128,0,0,.34); border-radius:9px; background:var(--paper); }
+  .table-head { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:8px; border-bottom:1px solid var(--line); }
+  .range-control { display:flex; align-items:stretch; overflow:hidden; border:1px solid rgba(128,0,0,.18); border-radius:6px; background:rgba(255,255,238,.18); }
+  .range-control .ui-button { border:0; border-radius:0; }
+  .range-control .ui-button + .ui-button { border-left:1px solid rgba(128,0,0,.16); }
+  .marker { min-width:34px; background:rgba(240,224,214,.52); }
+  .marker.is-set { gap:5px; background:var(--orange); color:var(--ink); }
+  .play-row { flex:1 0 100%; display:flex; justify-content:center; }
+  .timeline-ruler { display:grid; grid-template-columns:76px repeat(7,1fr); height:27px; border-bottom:1px solid var(--line); }
+  .timeline-ruler span { display:grid; place-items:center; border-right:1px solid rgba(212,168,160,.62); font-size:10px; }
+  .timeline-body { height:52px; background:repeating-linear-gradient(90deg,transparent 0 calc(100%/7 - 1px),rgba(212,168,160,.34) calc(100%/7 - 1px) calc(100%/7)); }
+
+  .qtp { width:min(278px,100%); padding:10px; border:1px solid rgba(128,0,0,.24); border-radius:11px; background:rgba(255,255,238,.72); }
+  .qtp-head { display:flex; justify-content:space-between; align-items:center; padding-bottom:7px; border-bottom:1px solid rgba(128,0,0,.14); }
+  .qtp-head strong { font-size:15px; }
+  .palette { display:grid; grid-template-columns:repeat(6,1fr); gap:5px; margin-top:9px; }
+  .swatch { aspect-ratio:1; border:1px solid var(--line); border-radius:6px; }
+  .swatch:nth-child(1){background:#a00000}.swatch:nth-child(2){background:#b84c4c}.swatch:nth-child(3){background:#cb7a70}
+  .swatch:nth-child(4){background:#dfaaa0}.swatch:nth-child(5){background:var(--cream)}.swatch:nth-child(6){background:var(--paper)}
+  .tools { display:grid; grid-template-columns:repeat(6,1fr); gap:5px; margin-top:8px; }
+  .tool { aspect-ratio:1; padding:0; border:1px solid transparent; border-radius:6px; background:rgba(255,255,238,.26); font-weight:850; }
+  .tool.active { border-color:var(--orange); background:var(--peach); box-shadow:0 0 0 1px rgba(255,140,66,.2); }
+  .pen-slots { display:grid; grid-template-columns:repeat(6,1fr); gap:5px; margin-top:9px; }
+  .pen-slot { display:grid; place-items:center; min-height:38px; padding:2px; border:1px solid var(--line); border-radius:7px; background:rgba(255,255,238,.3); font-size:11px; font-weight:800; }
+  .pen-slot::before { content:""; width:13px; height:13px; border:3px solid #b84c4c; border-radius:50%; }
+  .qtp-control { display:flex; align-items:center; gap:8px; margin-top:8px; padding:6px 8px; border-radius:7px; background:rgba(240,224,214,.38); }
+  .qtp-control strong { min-width:58px; font-size:11px; letter-spacing:.04em; }
+  .slider { flex:1; height:6px; border-radius:99px; background:linear-gradient(90deg,#b84c4c 0 66%,var(--line) 66%); }
+  .text-utility { width:100%; margin-top:8px; text-align:left; }
+
+  .layer-panel { width:min(300px,100%); padding:10px; border:1px solid rgba(128,0,0,.24); border-radius:10px; background:rgba(255,255,238,.68); }
+  .layer-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .layer-card { display:grid; grid-template-columns:38px 1fr auto; align-items:center; gap:8px; min-height:54px; padding:6px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,238,.42); }
+  .layer-card + .layer-card { margin-top:6px; }
+  .layer-card.current { border:2px solid var(--orange); background:var(--peach); }
+  .thumb { width:38px; height:38px; border-radius:5px; background:linear-gradient(135deg,var(--cream) 0 42%,#b84c4c 43% 50%,var(--paper) 51%); }
+  .layer-copy { min-width:0; }
+  .layer-copy strong,.layer-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .layer-copy small { opacity:.7; }
+
+  .proposal-b { border-color:rgba(128,0,0,.14); background:linear-gradient(180deg,rgba(255,255,238,.72),rgba(240,224,214,.34)); box-shadow:0 10px 26px var(--shadow); }
+  .proposal-b .variant-title { padding-block:15px; }
+  .proposal-b .surface-list { gap:18px; padding:16px; }
+  .proposal-b .surface-label { margin-bottom:8px; font-size:11px; opacity:.74; }
+  .proposal-b .table-shell,.proposal-b .qtp,.proposal-b .layer-panel { border-color:rgba(128,0,0,.14); border-radius:12px; box-shadow:0 6px 16px rgba(80,32,24,.1); }
+  .proposal-b .table-head { position:relative; padding:10px; gap:7px; }
+  .proposal-b .ui-button { border-color:transparent; background:rgba(240,224,214,.44); }
+  .proposal-b .range-control { border-color:transparent; background:rgba(240,224,214,.4); }
+  .proposal-b .range-control .ui-button + .ui-button { border-left-color:rgba(128,0,0,.11); }
+  .proposal-b .play-row { justify-content:center; padding-top:3px; }
+  .proposal-b .play-priority { min-width:44px; min-height:38px; border-color:var(--ink); border-radius:10px; background:var(--paper); box-shadow:0 4px 10px rgba(80,32,24,.14); }
+  .proposal-b .low-frequency { opacity:.78; }
+  .proposal-b .qtp { padding:12px; }
+  .proposal-b .qtp-head { border-bottom-color:transparent; }
+  .proposal-b .palette,.proposal-b .tools,.proposal-b .pen-slots { gap:6px; }
+  .proposal-b .qtp-control { padding:7px 9px; background:rgba(240,224,214,.3); }
+  .proposal-b .text-utility { border-color:rgba(128,0,0,.14); background:rgba(255,255,238,.54); }
+  .proposal-b .layer-panel { padding:12px; }
+  .proposal-b .layer-card { border-color:transparent; background:rgba(240,224,214,.32); }
+  .proposal-b .layer-card.current { border:1px solid var(--orange); background:var(--peach); box-shadow:inset 4px 0 0 var(--orange); }
+  .proposal-b .setup-chip { border-color:color-mix(in srgb,var(--setup) 62%,transparent); }
+
+  .concepts { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-top:18px; }
+  .concept { min-height:72px; padding:10px 11px; border-left:4px solid var(--orange); border-radius:0 7px 7px 0; background:rgba(240,224,214,.36); }
+  .concept strong { display:block; margin-bottom:2px; }
+  @media (max-width:900px) { .variants{grid-template-columns:1fr}.concepts{grid-template-columns:1fr}.qtp,.layer-panel{width:100%} }
+  @media (max-width:520px) { main{padding:12px}.variant-title{align-items:flex-start;flex-direction:column}.table-head{gap:5px}.range-control{order:3}.play-row{order:4}.ui-button{font-size:12px}.surface-list{padding:10px}.tools,.pen-slots{gap:3px} }
+  @media (pointer:coarse) { .ui-button{min-height:38px}.play-priority{min-width:44px;min-height:38px}.tool,.pen-slot{min-height:38px} }
+</style>
+</head>
+<body>
+<main>
+  <h1>Phase 9c — Canvas-first Visual Language Baseline</h1>
+  <p class="lead">同じ操作conceptを二つのskinで比較する。Bは枠を減らすこと自体を目的にせず、主操作、作業surface、低頻度設定の視界深度を三componentで揃える。</p>
+  <div class="variants">
+    <section class="variant proposal-a" data-variant="current" aria-label="Current Futaba restrained-depth">
+      <header class="variant-title"><h2>A · Current Futaba</h2><span>RESTRAINED-DEPTH BASELINE</span></header>
+      <div class="surface-list">
+        <section class="surface" data-surface="animation-table">
+          <h3 class="surface-label">ANIMATION TABLE</h3>
+          <div class="table-shell">
+            <div class="table-head">
+              <button class="ui-button low-frequency">▣ ALL</button><button class="ui-button low-frequency">↻</button>
+              <span class="range-control"><button class="ui-button low-frequency">LAST CLIP⌄</button><button class="ui-button marker">I</button><button class="ui-button marker is-set">O <span>F13</span></button></span>
+              <button class="ui-button low-frequency">PREVIEW</button><button class="ui-button low-frequency">ONION 0</button>
+              <span class="play-row"><button class="ui-button play-priority" aria-label="Play">▶</button></span>
+            </div>
+            <div class="timeline-ruler"><span>Lane</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="timeline-body"></div>
+          </div>
+        </section>
+        <section class="surface" data-surface="qtp">
+          <h3 class="surface-label">QTP PAINTER'S PALETTE</h3>
+          <div class="qtp">
+            <div class="qtp-head"><strong>Quick</strong><button class="ui-button" aria-label="Help">?</button></div>
+            <div class="palette" aria-label="Palette"><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span></div>
+            <div class="tools"><button class="tool active">P</button><button class="tool">E</button><button class="tool">B</button><button class="tool">G</button><button class="tool">L</button><button class="tool">M</button></div>
+            <div class="pen-slots"><button class="pen-slot">3</button><button class="pen-slot">5</button><button class="pen-slot">9</button><button class="pen-slot">20</button><button class="pen-slot">49</button><button class="pen-slot">2</button></div>
+            <div class="qtp-control"><strong>SIZE 10</strong><span class="slider"></span></div><div class="qtp-control"><strong>OPACITY</strong><span class="slider"></span></div>
+            <button class="ui-button text-utility">T &nbsp; TEXT</button>
+          </div>
+        </section>
+        <section class="surface" data-surface="layer-panel">
+          <h3 class="surface-label">LAYER PANEL</h3>
+          <div class="layer-panel"><div class="layer-head"><strong>CAF1</strong><button class="ui-button">＋</button></div>
+            <div class="layer-card current"><span class="thumb"></span><span class="layer-copy"><strong>レイヤー1</strong><small>100% · current</small></span><span class="setup-chip">RIG</span></div>
+            <div class="layer-card"><span class="thumb"></span><span class="layer-copy"><strong>レイヤー2</strong><small>100%</small></span><button class="ui-button">◉</button></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="variant proposal-b" data-variant="warm-canvas-first" aria-label="Warm Canvas-first studio">
+      <header class="variant-title"><h2>B · Warm Canvas-first</h2><span>FIRST CANDIDATE</span></header>
+      <div class="surface-list">
+        <section class="surface" data-surface="animation-table">
+          <h3 class="surface-label">ANIMATION TABLE</h3>
+          <div class="table-shell">
+            <div class="table-head">
+              <button class="ui-button low-frequency">▣ ALL</button><button class="ui-button low-frequency">↻</button>
+              <span class="range-control"><button class="ui-button low-frequency">LAST CLIP⌄</button><button class="ui-button marker">I</button><button class="ui-button marker is-set">O <span>F13</span></button></span>
+              <button class="ui-button low-frequency">PREVIEW</button><button class="ui-button low-frequency">ONION 0</button>
+              <span class="play-row"><button class="ui-button play-priority" aria-label="Play">▶</button></span>
+            </div>
+            <div class="timeline-ruler"><span>Lane</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div><div class="timeline-body"></div>
+          </div>
+        </section>
+        <section class="surface" data-surface="qtp">
+          <h3 class="surface-label">QTP PAINTER'S PALETTE</h3>
+          <div class="qtp">
+            <div class="qtp-head"><strong>Quick</strong><button class="ui-button" aria-label="Help">?</button></div>
+            <div class="palette" aria-label="Palette"><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span><span class="swatch"></span></div>
+            <div class="tools"><button class="tool active">P</button><button class="tool">E</button><button class="tool">B</button><button class="tool">G</button><button class="tool">L</button><button class="tool">M</button></div>
+            <div class="pen-slots"><button class="pen-slot">3</button><button class="pen-slot">5</button><button class="pen-slot">9</button><button class="pen-slot">20</button><button class="pen-slot">49</button><button class="pen-slot">2</button></div>
+            <div class="qtp-control"><strong>SIZE 10</strong><span class="slider"></span></div><div class="qtp-control"><strong>OPACITY</strong><span class="slider"></span></div>
+            <button class="ui-button text-utility">T &nbsp; TEXT</button>
+          </div>
+        </section>
+        <section class="surface" data-surface="layer-panel">
+          <h3 class="surface-label">LAYER PANEL</h3>
+          <div class="layer-panel"><div class="layer-head"><strong>CAF1</strong><button class="ui-button">＋</button></div>
+            <div class="layer-card current"><span class="thumb"></span><span class="layer-copy"><strong>レイヤー1</strong><small>100% · current</small></span><span class="setup-chip">RIG</span></div>
+            <div class="layer-card"><span class="thumb"></span><span class="layer-copy"><strong>レイヤー2</strong><small>100%</small></span><button class="ui-button">◉</button></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+  <div class="concepts" data-concept="skin-independent-hierarchy">
+    <div class="concept"><strong>Primary action</strong>再生 / 停止は幅に対して中央。周辺skinが変わっても主役を維持する。</div>
+    <div class="concept"><strong>Progressive exposure</strong>Scope、Range、Onion等は状態を読めるが、常時同じ強さで競争させない。</div>
+    <div class="concept"><strong>Semantic color</strong>橙はcurrent / action、青はSetup。外観の統一だけを理由に役割色を混ぜない。</div>
+  </div>
+</main>
+</body>
+</html>

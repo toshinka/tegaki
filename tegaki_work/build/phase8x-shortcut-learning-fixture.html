@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 8x Shortcut Learning Gate</title>
+  <style>
+    :root {
+      --bg:#fffdf0; --panel:#fff9e8; --soft:#f2e2d7; --border:#d4a8a0;
+      --text:#800000; --muted:#a35d57; --active:#ff8c42; --active-soft:#fff0d9;
+      --blue:#315c96; --blue-soft:#e7f0fb; --shadow:rgb(96 40 32 / 15%);
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:720px; color:var(--text); background:var(--bg); font:600 13px/1.4 system-ui,sans-serif; }
+    button { color:inherit; font:inherit; }
+    main { width:min(1180px,calc(100vw - 28px)); margin:20px auto; }
+    header { display:flex; align-items:end; justify-content:space-between; gap:18px; padding:0 4px 14px; border-bottom:2px solid var(--border); }
+    h1 { margin:0; font-size:21px; }
+    header p { max-width:730px; margin:3px 0 0; color:var(--muted); font-weight:500; }
+    .switches { display:grid; gap:6px; }
+    .switch-row { display:flex; justify-content:flex-end; gap:5px; }
+    .switch-row button { min-height:32px; padding:0 10px; border:1px solid var(--border); border-radius:8px; background:var(--panel); }
+    .switch-row button.active { border-color:var(--active); background:var(--active-soft); }
+    .variants { display:grid; grid-template-columns:repeat(3,minmax(270px,1fr)); gap:16px; padding-top:18px; }
+    .variant { min-width:0; padding:13px; border:1px solid var(--border); border-radius:14px; background:rgb(255 249 232 / 82%); }
+    .variant.recommended { border:2px solid var(--active); }
+    h2 { margin:0; font-size:15px; }
+    .verdict { min-height:62px; margin:4px 0 12px; color:var(--muted); font-size:11px; font-weight:500; }
+    .stage { position:relative; min-height:328px; padding:18px; border:1px solid var(--border); border-radius:11px; background:linear-gradient(145deg,#f5dfd2 0 44%,#fffdf0 44%); overflow:hidden; }
+    .surface { padding:12px; border:1px solid var(--border); border-radius:11px; background:rgb(255 253 240 / 96%); box-shadow:0 7px 17px var(--shadow); }
+    .surface-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; font-size:11px; }
+    .context-chip { padding:2px 6px; border-radius:999px; color:var(--blue); background:var(--blue-soft); font-size:9px; }
+    .control-row { display:flex; align-items:center; gap:8px; }
+    .action { min-height:42px; padding:0 14px; border:1px solid var(--border); border-radius:9px; background:var(--panel); }
+    .action.current { border-color:var(--active); background:var(--active-soft); }
+    .action:focus-visible { outline:3px solid rgb(49 92 150 / 28%); outline-offset:2px; }
+    .kbd { display:inline-flex; align-items:center; justify-content:center; min-width:24px; min-height:22px; padding:2px 7px; border:1px solid var(--border); border-radius:6px; color:var(--text); background:var(--panel); box-shadow:0 1px 0 rgb(128 0 0 / 10%); font:700 11px/1 ui-monospace,monospace; }
+    .settings-list { display:grid; gap:5px; }
+    .settings-item { display:flex; justify-content:space-between; gap:10px; padding:7px 8px; border:1px solid rgb(212 168 160 / 42%); border-radius:7px; background:rgb(255 253 240 / 66%); font-size:10px; }
+    .settings-item.drift { border-color:var(--active); background:var(--active-soft); }
+    .drift-note { margin-top:10px; padding:8px; border-left:3px solid var(--active); color:var(--muted); background:var(--soft); font-size:10px; font-weight:500; }
+    .hint { position:absolute; left:28px; top:94px; width:240px; padding:11px; border:1px solid var(--border); border-radius:9px; background:var(--panel); box-shadow:0 8px 20px var(--shadow); }
+    .hint::before { content:""; position:absolute; top:-7px; left:28px; width:12px; height:12px; border-left:1px solid var(--border); border-top:1px solid var(--border); background:var(--panel); transform:rotate(45deg); }
+    .hint-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .hint p { margin:6px 0 0; color:var(--muted); font-size:10px; font-weight:500; }
+    .input-note { position:absolute; left:28px; right:28px; bottom:20px; padding:8px 10px; border-radius:8px; color:var(--blue); background:var(--blue-soft); font-size:10px; font-weight:600; }
+    .deck { padding:11px; border:1px solid var(--border); border-radius:11px; background:var(--panel); box-shadow:0 8px 20px var(--shadow); }
+    .deck-head { display:flex; align-items:center; justify-content:space-between; padding-bottom:8px; border-bottom:1px solid var(--border); font-size:11px; }
+    .deck-list { display:grid; gap:6px; padding-top:8px; }
+    .deck-item { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:38px; padding:7px 9px; border:1px solid rgb(212 168 160 / 48%); border-radius:8px; background:var(--bg); font-size:10px; }
+    .note { margin:10px 0 0; padding:8px; border-radius:8px; color:var(--muted); background:var(--soft); font-size:10px; font-weight:500; }
+    @media (max-width:880px) {
+      header { align-items:start; flex-direction:column; }
+      .switch-row { justify-content:flex-start; flex-wrap:wrap; }
+      .variants { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Phase 8x · Shortcut Learning / Command Discoverability Gate</h1>
+      <p>実行shortcutは固定。Settings-only、操作位置のcanonical hint、current context deckの情報深度だけを比較する。</p>
+    </div>
+    <div class="switches" aria-label="Fixture controls">
+      <div class="switch-row" aria-label="Shortcut context">
+        <button class="active" data-context="canvas">CANVAS</button>
+        <button data-context="qtp">QTP</button>
+        <button data-context="animation">ANIMATION</button>
+      </div>
+      <div class="switch-row" aria-label="Input route">
+        <button class="active" data-input="hover">HOVER</button>
+        <button data-input="focus">FOCUS</button>
+        <button data-input="touch">TOUCH HELP</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="variants">
+    <article class="variant" data-variant="a">
+      <h2>A · Current Settings-only list</h2>
+      <p class="verdict">平常UIは増えないが、操作場所から離れたstatic複製。実装正本とのdriftを利用者が判別できない。</p>
+      <div class="stage">
+        <div class="surface">
+          <div class="surface-title"><span>設定・ヘルプ / ショートカット</span><span class="context-chip" data-context-label>CANVAS</span></div>
+          <div class="settings-list">
+            <div class="settings-item drift"><span>ペンツール</span><span class="kbd">B</span></div>
+            <div class="settings-item"><span>消しゴムツール</span><span class="kbd">E</span></div>
+            <div class="settings-item"><span>クイックアクセス</span><span class="kbd">Q</span></div>
+            <div class="settings-item"><span>アニメ再生 / 停止</span><span class="kbd">Ctrl Space</span></div>
+          </div>
+          <div class="drift-note">実行正本はPen = P。表示文字列を別管理すると、学習したkeyと実際の操作がずれる。</div>
+        </div>
+      </div>
+      <p class="note">Rollback案。Settingsまで移動して探す必要があり、current contextも読めない。</p>
+    </article>
+
+    <article class="variant recommended" data-variant="b">
+      <h2>B · Canonical contextual hint</h2>
+      <p class="verdict">第一候補。既存controlのhover / focus / touch説明だけに正本由来のkeyを添え、Settingsも同じdescriptorから生成する。</p>
+      <div class="stage">
+        <div class="surface">
+          <div class="surface-title"><span data-surface-title>Canvas tools</span><span class="context-chip" data-context-label>CANVAS</span></div>
+          <div class="control-row"><button class="action current" data-action-button type="button">PEN</button><span>従来buttonは一操作のまま</span></div>
+        </div>
+        <div class="hint" role="tooltip" data-hint>
+          <div class="hint-title"><strong data-action-label>ペンツール</strong><span class="kbd" data-action-key>P</span></div>
+          <p data-action-description>現在の描画toolをPenへ切り替えます。</p>
+        </div>
+        <div class="input-note" data-input-note>Mouse hoverで0.3秒後に表示。button面へkeyを常設しない。</div>
+      </div>
+      <p class="note">新command / 保存stateなし。操作文脈と学習情報の距離が最短。</p>
+    </article>
+
+    <article class="variant" data-variant="c">
+      <h2>C · Current-context shortcut deck</h2>
+      <p class="verdict">一覧比較に強いが、deck入口、Popup stack、閉じ方と「まずdeckを開く」記憶を増やす。B不足時の候補。</p>
+      <div class="stage">
+        <div class="deck" role="dialog" aria-label="Current context shortcuts">
+          <div class="deck-head"><span><span data-deck-context>CANVAS</span> SHORTCUTS</span><button type="button" aria-label="Close">×</button></div>
+          <div class="deck-list" data-deck-list></div>
+        </div>
+      </div>
+      <p class="note">検索・実行paletteへ広げない限り補助にはなるが、最初のSliceには重い。</p>
+    </article>
+  </section>
+</main>
+<script>
+  const contexts = {
+    canvas: {
+      name:'CANVAS', title:'Canvas tools', action:'PEN', label:'ペンツール', key:'P', description:'現在の描画toolをPenへ切り替えます。',
+      commands:[['ペンツール','P'],['クイックアクセス','Q'],['画面移動','Space + drag']]
+    },
+    qtp: {
+      name:'QTP', title:"Painter's Palette", action:'NEXT PRESET', label:'次のPreset', key:']', description:'現在toolの次のbrush preset slotへ切り替えます。',
+      commands:[['前のPreset','['],['次のPreset',']'],['QTPを閉じる','Q']]
+    },
+    animation: {
+      name:'ANIMATION', title:'Animation Table', action:'NEXT FRAME', label:'次のFrame', key:'→', description:'Animation contextのcurrent Frameを1つ進めます。',
+      commands:[['前のFrame','←'],['次のFrame','→'],['再生 / 停止','Ctrl + Space']]
+    }
+  };
+  const inputNotes = {
+    hover:'Mouse hoverで0.3秒後に表示。button面へkeyを常設しない。',
+    focus:'Keyboard focus-visibleで即表示。Tab操作中も同じ説明を読む。',
+    touch:'明示help gestureで一時表示。通常tapの実行を二段化しない。'
+  };
+  let currentContext = 'canvas';
+  let currentInput = 'hover';
+  function render() {
+    const data = contexts[currentContext];
+    document.querySelectorAll('[data-context-label]').forEach((node)=>{ node.textContent=data.name; });
+    document.querySelector('[data-surface-title]').textContent=data.title;
+    document.querySelector('[data-action-button]').textContent=data.action;
+    document.querySelector('[data-action-label]').textContent=data.label;
+    document.querySelector('[data-action-key]').textContent=data.key;
+    document.querySelector('[data-action-description]').textContent=data.description;
+    document.querySelector('[data-input-note]').textContent=inputNotes[currentInput];
+    document.querySelector('[data-deck-context]').textContent=data.name;
+    document.querySelector('[data-deck-list]').innerHTML=data.commands.map(([label,key])=>`<div class="deck-item"><span>${label}</span><span class="kbd">${key}</span></div>`).join('');
+    document.querySelector('[data-action-button]').focus({preventScroll:true});
+  }
+  document.querySelectorAll('[data-context]').forEach((button)=>button.addEventListener('click',()=>{
+    currentContext=button.dataset.context;
+    document.querySelectorAll('[data-context]').forEach((item)=>item.classList.toggle('active',item===button));
+    render();
+  }));
+  document.querySelectorAll('[data-input]').forEach((button)=>button.addEventListener('click',()=>{
+    currentInput=button.dataset.input;
+    document.querySelectorAll('[data-input]').forEach((item)=>item.classList.toggle('active',item===button));
+    render();
+  }));
+  render();
+</script>
+</body>
+</html>

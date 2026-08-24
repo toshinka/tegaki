@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 8m SCOPE Progressive Exposure Fixture</title>
+<style>
+:root{--maroon:#800000;--light:#9c3835;--medium:#b8706b;--line:#d4a8a0;--cream:#f0e0d6;--bg:#ffffee;--active:#ff8c42;--setup:#2d64a8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--maroon);font:600 14px/1.4 system-ui,sans-serif}
+main{max-width:1180px;margin:24px auto;padding:0 18px}h1{font-size:20px;margin:0 0 6px}.lead{margin:0 0 18px;color:var(--light);font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.case{border:2px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--cream) 76%,var(--bg));padding:12px;min-width:0}
+.case h2{font-size:14px;margin:0 0 8px}.note{font-size:11px;color:var(--light);font-weight:500;margin:8px 2px 0}
+.header{position:relative;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--bg) 75%,var(--cream));padding:8px;min-height:120px;box-shadow:0 4px 12px color-mix(in srgb,var(--maroon) 10%,transparent)}
+.row{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.row+.row{border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent);margin-top:7px;padding-top:7px}
+.group{display:flex;align-items:center;gap:3px;padding:2px 4px;border-radius:5px;background:color-mix(in srgb,var(--maroon) 6%,transparent)}
+.label{font-size:9px}.btn{border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--maroon);font:700 10px system-ui;padding:4px 7px;min-height:25px}.btn.active{border-color:var(--active);background:color-mix(in srgb,var(--active) 18%,var(--bg))}.btn.play{font-size:13px}.grow{margin-left:auto}
+.current .scope .btn{border:0;background:transparent;opacity:.68;padding-inline:5px}.current .scope .btn.active{opacity:1;background:color-mix(in srgb,var(--active) 18%,transparent)}
+.compact .scope-current,.focus .scope-current{display:inline-flex;align-items:center;gap:6px;border-color:var(--active);min-width:98px;justify-content:space-between}
+.deck{position:absolute;z-index:2;top:46px;left:126px;width:224px;padding:7px;border:2px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:0 10px 24px color-mix(in srgb,var(--maroon) 18%,transparent)}
+.choice{display:grid;grid-template-columns:52px 1fr;gap:2px 8px;width:100%;padding:8px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--maroon);text-align:left}.choice strong{font-size:12px}.choice span{font-size:10px;color:var(--light);font-weight:500}.choice.active{border-color:var(--active);background:color-mix(in srgb,var(--active) 14%,var(--bg))}.choice+.choice{margin-top:3px}
+.focus .header{min-height:250px}.focus .deck-title{font-size:10px;margin:0 3px 5px;color:var(--light)}
+.narrow-label{display:none;margin-top:18px;font-size:16px}.narrow{max-width:720px;margin-top:8px}.narrow .grid{grid-template-columns:1fr}.narrow .header{min-height:136px}.narrow .focus .header{min-height:250px}.narrow .deck{left:96px;top:72px;width:min(250px,calc(100% - 110px))}
+@media(max-width:820px){.grid{grid-template-columns:1fr}.deck{left:96px;top:72px;width:min(250px,calc(100% - 110px))}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Phase 8m — Animation Table SCOPE比較</h1>
+  <p class="lead">同じstate・機能を、常時露出量だけ変えて比較する。Focus Deckは開いた状態。</p>
+  <section class="grid">
+    <article class="case current"><h2>A. Current — 三択を常時露出</h2><div class="header">
+      <div class="row"><div class="group"><span class="label">FPS</span><button class="btn">8</button><span class="label">FRAMES</span><button class="btn">24</button></div><div class="group scope"><span class="label">SCOPE:</span><button class="btn active">ALL</button><button class="btn">LANE</button><button class="btn">SET</button></div><div class="group"><button class="btn active">LOOP</button><button class="btn">END:C</button><button class="btn">IN</button><button class="btn">OUT</button></div><button class="btn active">PREVIEW</button><button class="btn play">▶</button></div>
+      <div class="row"><button class="btn">− 87% ＋</button><button class="btn">LIB</button><div class="group"><span class="label">DURATION:</span><button class="btn">−</button><button class="btn">＋</button></div><button class="btn grow">CLIP ACTIONS</button></div>
+    </div><p class="note">状態比較は速いが、非選択候補も常に読む対象になる。</p></article>
+    <article class="case compact"><h2>B. Compact — 現在値のみ</h2><div class="header">
+      <div class="row"><div class="group"><span class="label">FPS</span><button class="btn">8</button><span class="label">FRAMES</span><button class="btn">24</button></div><button class="btn scope-current">SCOPE: ALL <span>▾</span></button><div class="group"><button class="btn active">LOOP</button><button class="btn">END:C</button><button class="btn">IN</button><button class="btn">OUT</button></div><button class="btn active">PREVIEW</button><button class="btn play">▶</button></div>
+      <div class="row"><button class="btn">− 87% ＋</button><button class="btn">LIB</button><div class="group"><span class="label">DURATION:</span><button class="btn">−</button><button class="btn">＋</button></div><button class="btn grow">CLIP ACTIONS</button></div>
+    </div><p class="note">Glanceは明快。開いた時の候補説明とkeyboard規則が別途必要。</p></article>
+    <article class="case focus"><h2>C. Focus Deck — 現在値＋比較可能なChoice</h2><div class="header">
+      <div class="row"><div class="group"><span class="label">FPS</span><button class="btn">8</button><span class="label">FRAMES</span><button class="btn">24</button></div><button class="btn scope-current">SCOPE: ALL <span>▴</span></button><div class="group"><button class="btn active">LOOP</button><button class="btn">END:C</button><button class="btn">IN</button><button class="btn">OUT</button></div><button class="btn active">PREVIEW</button><button class="btn play">▶</button></div>
+      <div class="deck"><p class="deck-title">再生するLane</p><button class="choice active"><strong>ALL</strong><span>すべてのLane</span></button><button class="choice"><strong>LANE</strong><span>アクティブLaneのみ</span></button><button class="choice"><strong>SET</strong><span>チェックしたLaneのみ</span></button></div>
+      <div class="row"><button class="btn">− 87% ＋</button><button class="btn">LIB</button><div class="group"><span class="label">DURATION:</span><button class="btn">−</button><button class="btn">＋</button></div><button class="btn grow">CLIP ACTIONS</button></div>
+    </div><p class="note">通常時はBと同じ。選択時だけ比較・説明を焦点近くへ届ける。</p></article>
+  </section>
+  <h2 class="narrow-label">Narrow fixture</h2>
+  <section class="narrow"></section>
+</main>
+</body>
+</html>

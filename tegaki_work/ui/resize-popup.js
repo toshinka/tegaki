@@ -7,7 +7,7 @@
  * 公開API: ResizePopup
  * UI密度契約: preview上限はmain.cssの--ui-resize-preview-max-*を正本とし、
  *   JS側へ別の固定寸法を増やさない。Canvas / Raster座標計算には流用しない。
- * イベント発火: なし
+ * イベント発火: popup:shown, popup:hidden
  * イベント受信: なし
  * グローバル登録: window.ResizePopup, window.TegakiUI.ResizePopup
  * 実装状態: ♻️移植
@@ -1210,6 +1210,7 @@ export class ResizePopup {
     }
     
     show() {
+        const wasVisible = this.isVisible === true;
         if (!this.popup) {
             this._ensurePopupElement();
         }
@@ -1241,6 +1242,9 @@ export class ResizePopup {
                 this._updateUI();
             }
         });
+        if (!wasVisible) {
+            this.eventBus.emit('popup:shown', { name: 'resize' });
+        }
     }
 
     _getAnimationTable() {
@@ -1896,11 +1900,15 @@ export class ResizePopup {
     
     hide() {
         if (!this.popup) return;
+        const wasVisible = this.isVisible === true;
         
         this.popup.classList.remove('show');
         this.isVisible = false;
         this._previewDirectSession = null;
         this.elements?.previewFrame?.classList.remove('is-dragging');
+        if (wasVisible) {
+            this.eventBus.emit('popup:hidden', { name: 'resize' });
+        }
     }
     
     toggle() {

@@ -1,0 +1,76 @@
+/*
+ * Quick Tool Palette root and header static appearance.
+ * Runtime geometry, drag/clamp, events, ARIA, storage and control states remain
+ * in quick-access-popup.js. Phase 9g adds static resting / selected / focus
+ * appearance for palette color cells, tool cells and preset cells only.
+ * Slider, utility, Text and deck skins remain outside this component boundary.
+ */
+
+#quick-access-popup.qa-popup {
+    border: 1px solid var(--ui-border-float);
+    border-radius: var(--ui-radius-panel);
+    background: var(--ui-surface-float);
+    box-shadow: var(--ui-shadow-float);
+    backdrop-filter: var(--ui-backdrop-float);
+    -webkit-backdrop-filter: var(--ui-backdrop-float);
+    color: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-header {
+    border-bottom: 1px solid transparent;
+}
+
+#quick-access-popup.qa-popup .qa-header-main {
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: 0.02em;
+}
+
+#quick-access-popup.qa-popup .qa-header-sub {
+    color: color-mix(in srgb, var(--futaba-maroon) 58%, transparent);
+    font-size: 8px;
+    line-height: 1.1;
+}
+
+/* Phase 9g: quiet resting cells, explicit selected / focus state. */
+#quick-access-popup.qa-popup .qa-color-button {
+    border-color: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--futaba-maroon) 14%, transparent);
+}
+
+#quick-access-popup.qa-popup .qa-color-button:hover {
+    border-color: var(--ui-border-hover);
+}
+
+#quick-access-popup.qa-popup .qa-color-button.active {
+    border-color: var(--ui-border-active);
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--active-border) 24%, transparent),
+        inset 0 0 0 1px color-mix(in srgb, var(--futaba-background) 42%, transparent);
+}
+
+#quick-access-popup.qa-popup .qa-tool-button,
+#quick-access-popup.qa-popup .qa-preset-slot {
+    border-color: transparent;
+}
+
+#quick-access-popup.qa-popup .qa-tool-button:hover,
+#quick-access-popup.qa-popup .qa-preset-slot:hover {
+    border-color: var(--ui-border-hover);
+}
+
+#quick-access-popup.qa-popup .qa-tool-button.active,
+#quick-access-popup.qa-popup .qa-preset-slot.active {
+    border-color: var(--ui-border-active);
+    box-shadow: var(--ui-shadow-control-active);
+}
+
+#quick-access-popup.qa-popup .qa-color-button:focus-visible,
+#quick-access-popup.qa-popup .qa-tool-button:focus-visible,
+#quick-access-popup.qa-popup .qa-preset-slot:focus-visible {
+    border-color: var(--active-border);
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}

@@ -1,13 +1,13 @@
 # GitHubURL — Tegaki プロジェクト読解用 Raw URL ナビゲーション
 
-更新日: 2026-08-20
+更新日: 2026-08-24
 
 > **外部AI (Web版Claude / ChatGPT等) 向けガイド**
 > 本ファイルはローカルファイルシステムにアクセスできない外部AIが、GitHubから主要ファイルを直接読み込んで Tegaki プロジェクトを理解・調査するためのURL集です。
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
 > URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
 
-## 0. 現在地（Phase 7i〜8j SOL技術close、Phase 8k OPEN）
+## 0. 現在地（Phase 5a〜9h close、Phase 9i Sidebar Action Semantics / Close Sync Stage A前）
 
 - Phase 7i〜7qは各Gate=`GO`、実装Stage、最終SOL review=`A`、関連Browser確認を通過し、2026-08-12のOwner指示に基づきSOL技術closeした。完了記録は`Archive/phase7i.md`〜`phase7q.md`。
 - Phase 7i LINE / Ribbon、7j Deformer三形状SELECT、7k Text to Raster、7l Table二段header、7m read-only Motion Graph、7n Resize直接framing、7o Motion Easing 12 presetの保存・History境界を維持する。
@@ -34,7 +34,10 @@
 - Phase 8hは`Animation Table Inactive Control Contrast Gate`を技術closeした。SCOPE inactiveを3.91:1→4.81:1、browser既定黒focusをFutaba茶outlineへ限定補正し、全80 verifier / build / Browser、SOL final review=`A`を通過した。
 - Phase 8iは`Raster Mesh Topology / Weight Authoring Boundary Gate`を完了した。stable vertexId、History、STALE / regenerate、CPU / Pixi / exportを監査し、Gate 1=`GO — B: 固定topology Weight brush`、SOL final review=`A`で技術closeした。離散補正はfallback、Manual Topologyは別PhaseへHOLDした。
 - Phase 8jは`Fixed-topology Skin Weight Brush`を技術closeした。AUTO GRID / AUTO SHAPEのCURRENT Meshへ限定し、stable vertexIdへのsigned delta、最大2 normalized influence、ADD / SUB、SVG vertex hit、1 gesture 1 History、cancel / failure rollbackを固定した。全83 verifier / build、BrowserのADD / SUB / Undo / Redo、SOL final review=`A`を通過した。Owner制作確認は台帳へ分離する。
-- 現行Phase 8kは`Manual Raster Mesh Topology Boundary Gate`。Gate 1=`GO — A: 既存vertex位置だけを編集`とし、stable ID / triangle / weight / generator sourceを維持しながらsource bounds外、winding反転、degenerate、triangle重なりを拒否するpure / Model Stageまで完了した。point追加・triangle分割・AUTO LINE・production UIはGate 2前に追加しない。
+- Phase 8kは`Manual Raster Mesh Topology Boundary Gate`を技術closeした。Gate 1=`GO — A: 既存vertex位置だけを編集`とし、stable ID / triangle / weight / generator sourceを維持しながらsource bounds外、winding反転、degenerate、triangle重なりを拒否するpure / Model / production `MESH EDIT` gestureを完了した。1 gesture 1 CAF History、cancel / failure rollback、Undo / Redo、close / reopen、全86 verifier / build、Browser console errorなし、SOL final review=`A`を通過した。point追加・triangle分割・AUTO LINEは別GateへHOLDする。
+- Phase 8lは`UI Surface Constitution / Semantic Token Boundary Gate`を完了した。Stage Bのsemantic token bridge後、Stage CでCurrent / borderless / restrained-depthを比較し、QTPへrestrained-depthを限定反映した。全87 verifier / build / Browser、SOL review 1 / 2=`A`、Owner visual受入でcloseした。Text入口 / vertical text / local font、Preset、density、Layer Panelは別Gateへ分離する。
+- Phase 8mは`Animation Table Progressive Exposure Architecture Gate`としてSCOPE一button＋anchored Focus Deckをproductionへ限定接続した。既存三ID / `playbackScope` setter、History / save、wheel / Clip gestureを維持し、keyboard / outside pointer / narrow、全88 verifier / build / Browser / console 0件、SOL final review=`A`でcloseした。Owner制作確認は台帳へ分離する。
+- Phase 8rはQTP Pen Preset / Density、Phase 8sはPlayback Range Inline Controlをproductionへ限定接続した。Phase 8tは常設`DURATION:`をSelected Clip contextへ移し、Phase 8uは`LIB`をAsset Library iconへ置き換えた。Phase 8vはQTP Position Preset、Phase 8wはQTP Progressive Density、Phase 8x / 8yはcanonical shortcut学習導線、Phase 8zは明示`?`からのread-only shortcut deckを限定接続した。Phase 9a〜9fでAnimation TableのPlayback / Range / UI authority / Warm Canvas-first / compact play / quiet restingを段階整理した。Phase 9gはQTP Palette / tool / preset cellをborderless resting＋selected ringへ整理した。Phase 9hはGate 0=`GO — B: Quiet Resting＋Hover Surface＋Active Ring`としてSidebar static appearanceを`styles/components/sidebar-rail.css`へ一正本化し、30 / 38px hitを維持した。全107 verifier / build / Browser / console 0件、生成物清掃、SOL final review=`A`で技術closeした。現行Phase 9iはAnimation Table内部×後のA stale activeとSidebar 8入口のrole / ARIA / close pathをStage Aで監査する。
 
 このナビゲーション自身:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
@@ -47,7 +50,75 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **AI共通ガイド**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 - **技術方針・禁止事項（正本）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 - **最新開発進捗・現在地**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
-- **現行Phase 8k**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase8k.md
+- **次チャット引き継ぎ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/NEXT_CHAT_HANDOFF.md
+- **現行Phase 9i（Sidebar Action Semantics / Close Sync Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase9i.md
+- **Phase 9h完了記録（Sidebar Rail Attention Hierarchy / Active Surface）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9h.md
+- **Phase 9g完了記録（QTP Palette / Tool Slot Attention Hierarchy）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9g.md
+- **Phase 9f完了記録（Animation Table Attention Hierarchy / Inactive Border）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9f.md
+- **Phase 9e完了記録（Animation Table Primary Playback / Header Attention）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9e.md
+- **Phase 9d完了記録（QTP Canvas-first Surface / Component Style Boundary）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9d.md
+- **Phase 9c完了記録（Canvas-first Visual Language / Skin Baseline Comparison）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9c.md
+- **Phase 9b完了記録（UI Design Authority / Animation Table Style Boundary）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9b.md
+- **UI Design Authority Map**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/UI_DESIGN_AUTHORITY_MAP.md
+- **Animation Table Playback component stylesheet**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/styles/components/animation-table-playback.css
+- **Phase 9f Animation Table Attention Hierarchy比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9f-animation-table-attention-hierarchy-fixture.html
+- **Phase 9f Animation Table Attention Hierarchy verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-attention-hierarchy.mjs
+- **QTP root / header component stylesheet**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/styles/components/quick-access-popup.css
+- **Sidebar rail component stylesheet**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/styles/components/sidebar-rail.css
+- **Phase 9h Sidebar Attention Hierarchy比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9h-sidebar-rail-attention-hierarchy-fixture.html
+- **Phase 9h Sidebar Attention Hierarchy verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-sidebar-rail-attention-hierarchy.mjs
+- **Phase 9g QTP Attention Hierarchy比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9g-qtp-attention-hierarchy-fixture.html
+- **Phase 9g QTP Attention Hierarchy verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-qtp-attention-hierarchy.mjs
+- **UI Design Authority boundary verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-ui-design-authority-boundary.mjs
+- **QTP static style boundary verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-qtp-static-style-boundary.mjs
+- **Phase 9c Canvas-first Skin A / B比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9c-canvas-first-skin-baseline-fixture.html
+- **Phase 9c Canvas-first Skin verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9c-canvas-first-skin-baseline.mjs
+- **Phase 9a完了記録（Animation Table Playback Priority Hierarchy）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9a.md
+- **Phase 9a Playback Priority比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9a-animation-table-playback-priority-fixture.html
+- **Phase 9a Playback Priority verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-playback-priority.mjs
+- **Phase 8z完了記録（QTP Touch Shortcut Help Reachability）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8z.md
+- **Phase 8y完了記録（QTP Canonical Shortcut Hint Coverage）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8y.md
+- **Phase 8z Touch Shortcut Help比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8z-touch-shortcut-help-fixture.html
+- **Phase 8z Touch Shortcut Help Gate verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-touch-shortcut-help-gate.mjs
+- **Phase 8x完了記録（Shortcut Learning / Canonical Hint）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8x.md
+- **Phase 8x Shortcut Learning比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8x-shortcut-learning-fixture.html
+- **Phase 8x Canonical Shortcut verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-shortcut-learning-boundary.mjs
+- **Phase 8w完了記録（QTP Progressive Density）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8w.md
+- **Phase 8w QTP Progressive Density比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8w-qtp-progressive-density-fixture.html
+- **Phase 8w QTP Progressive Density verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-qtp-progressive-density.mjs
+- **Phase 8v完了記録（QTP Position Preset）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8v.md
+- **Phase 8v QTP Position Preset比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8v-qtp-position-preset-fixture.html
+- **Phase 8v QTP Position Preset verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-qtp-position-preset.mjs
+- **Phase 8u完了記録（Animation Table Asset Library Exposure）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8u.md
+- **Phase 8u Asset Library Exposure比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8u-animation-table-asset-library-exposure-fixture.html
+- **Phase 8u Asset Library Exposure verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-asset-library-exposure.mjs
+- **Phase 8t完了記録（Selected Clip Duration context）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8t.md
+- **Phase 8t Advanced / Contextual Controls比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8t-animation-table-advanced-controls-fixture.html
+- **Phase 8t Duration Context verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-duration-context.mjs
+- **Phase 8s完了記録（Playback Range Inline Control）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8s.md
+- **Phase 8s Playback Range Inline比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8s-playback-range-inline-fixture.html
+- **Phase 8s Playback Range Inline verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-playback-range-inline.mjs
+- **Phase 8r完了記録（QTP Pen Preset / Density）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8r.md
+- **Phase 8r QTP Pen Preset Density比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8r-qtp-preset-density-fixture.html
+- **Phase 8r QTP Pen Preset Density verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-qtp-preset-density.mjs
+- **Phase 8q完了記録（QTP Text Entry / Panel Density）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8q.md
+- **Phase 8q QTP Text Entry比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8q-qtp-text-entry-fixture.html
+- **Phase 8q QTP Text Entry verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-qtp-text-entry-layout.mjs
+- **Phase 8p完了記録（Playback Range Focus Deck）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8p.md
+- **Phase 8p Playback Range Choice比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8p-playback-range-choice-fixture.html
+- **Phase 8p Playback Range Focus Deck verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-playback-range-focus-deck.mjs
+- **Phase 8o完了記録（Selected Clip Context Action strip）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8o.md
+- **Phase 8o Selected Clip Action比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8o-selected-clip-action-fixture.html
+- **Phase 8o Selected Clip Action verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-selected-clip-actions.mjs
+- **Phase 8n完了記録（Playback Glance Hybrid semantic）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8n.md
+- **Phase 8n Playback Glance icon / marker比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8n-playback-glance-icon-fixture.html
+- **Phase 8n Playback Glance verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-playback-glance.mjs
+- **Phase 8m完了記録（Animation Table SCOPE Focus Deck）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8m.md
+- **Phase 8m SCOPE三案比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase8m-scope-focus-deck-fixture.html
+- **Phase 8m SCOPE Focus Deck verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-table-scope-focus-deck.mjs
+- **Phase 8l完了記録（UI Surface Constitution）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8l.md
+- **Phase 8l token bridge verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-ui-surface-token-bridge.mjs
+- **Phase 8k完了記録（Existing Raster Mesh Vertex Position Edit）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8k.md
 - **Phase 8j完了記録（Fixed-topology Skin Weight Brush）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8j.md
 - **Phase 8j weight brush pure plan**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/skin-weight-brush.js
 - **Phase 8j gesture helper**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/skin-weight-brush-gesture.js
@@ -57,6 +128,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **Phase 8k fixed vertex position pure plan**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/raster-mesh-vertex-position-edit.js
 - **Phase 8k fixed vertex position verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-mesh-vertex-position-edit.mjs
 - **Phase 8k regeneration lineage UI verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-mesh-vertex-position-edit-ui.mjs
+- **Phase 8k production gesture UI verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-raster-mesh-vertex-position-edit-gesture-ui.mjs
 - **Phase 8i完了記録（Mesh Topology / Weight authoring Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8i.md
 - **Phase 8h完了記録（Animation Table inactive / focus contrast）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8h.md
 - **Phase 8g完了記録（UI Semantic Contrast / Focus shell active）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase8g.md
@@ -139,6 +211,8 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **UI導線・Text・階層Motion将来設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/14_UI%E3%83%84%E3%83%BC%E3%83%AB%E5%B0%8E%E7%B7%9A%E3%83%BBText%E3%83%BB%E9%9A%8E%E5%B1%A4Motion%E5%B0%86%E6%9D%A5%E8%A8%AD%E8%A8%88.md
 - **Rig・Mesh・Perform統合ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/15_%E3%82%AD%E3%83%A3%E3%83%A9%E3%82%AF%E3%82%BF%E3%83%BCRig%E3%83%BBMesh%E3%83%BBPerform%E7%B5%B1%E5%90%88%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
 - **制作Workspace・UI・外部Handoff構造ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/16_%E5%88%B6%E4%BD%9CWorkspace%E3%83%BBUI%E3%83%BB%E5%A4%96%E9%83%A8Handoff%E6%A7%8B%E9%80%A0%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
+- **GUI skin具体化 ClaudeReview（外部原案）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/gui-skin-redesign-concretization-proposal.md
+- **UI操作文法・QTP Painter's Palette・Surface階層（外部原案Archive）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/17_UI%E6%93%8D%E4%BD%9C%E6%96%87%E6%B3%95%E3%83%BBQTP_PainterPalette%E3%83%BBSurface%E9%9A%8E%E5%B1%A4_%E5%A4%96%E9%83%A8%E6%8F%90%E6%A1%88.md
 - **実装したいことメモ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/%E5%AE%9F%E8%A3%85%E3%81%97%E3%81%9F%E3%81%84%E3%81%93%E3%81%A8%E3%83%A1%E3%83%A2.txt
 
 ### 2.1 Phase 7iまでの直接経緯

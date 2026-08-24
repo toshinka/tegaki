@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 8u Animation Table Asset Library exposure comparison</title>
+<style>
+  :root{--bg:#ffffee;--panel:#f5dfd3;--soft:#fff8e9;--line:#dca99d;--maroon:#800000;--orange:#ff6600;--setup:#2f66a6;--setup-soft:#d9e9fb}
+  *{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--maroon);font:14px/1.45 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:22px}h1{margin:0 0 4px;font-size:22px}.lead{margin:0 0 16px;opacity:.78}.variants{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.variant{padding:12px;border:2px solid var(--line);border-radius:14px;background:rgba(245,223,211,.68)}.recommended{border-color:var(--setup);box-shadow:0 0 0 3px var(--setup-soft)}.title{display:flex;align-items:center;gap:8px;margin-bottom:9px;font-weight:800}.badge{padding:2px 7px;border:1px solid var(--line);border-radius:999px;background:var(--soft);font-size:11px}.recommended .badge{border-color:var(--setup);background:var(--setup-soft);color:var(--setup)}.table{min-height:194px;overflow:hidden;border:2px solid var(--maroon);border-radius:11px;background:var(--soft)}.row{display:flex;align-items:center;gap:5px;min-height:39px;padding:5px 7px;border-bottom:1px solid var(--line)}button,.chip{min-height:28px;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--maroon);font:inherit;font-size:12px;font-weight:750}.icon{width:29px;padding:4px}.icon svg{width:18px;height:18px;display:block;fill:none;stroke:currentColor}.spacer{flex:1}.timeline{height:86px;background:repeating-linear-gradient(90deg,transparent 0 43px,rgba(220,169,157,.45) 43px 44px)}.library{height:66px;display:flex;align-items:center;gap:8px;padding:8px;border-top:2px solid var(--maroon);background:var(--panel)}.library span{padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--soft)}.notes{margin:10px 2px 0;padding-left:18px;font-size:12px}.decision{margin-top:16px;padding:10px 12px;border-left:5px solid var(--setup);background:var(--setup-soft)}@media(max-width:880px){main{padding:12px}.variants{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+  <h1>Phase 8u — Asset Library Exposure</h1>
+  <p class="lead">Asset reuseへの一操作到達と、初心者の平常視界の静けさを比較する固定fixture。</p>
+  <section class="variants">
+    <article class="variant"><div class="title"><span class="badge">A · CURRENT</span>compact `LIB`</div><div class="table"><div class="row"><button>−</button><span>87%</span><button>＋</button><button>LIB</button><span class="spacer"></span><span class="chip">CAF1 · 1F · COPY</span></div><div class="timeline"></div><div class="library"><span>ASSETS</span><span>CAF1</span></div></div><ul class="notes"><li>一操作だが`LIB`略号を解読する。</li><li>未利用時も文字が常設される。</li></ul></article>
+    <article class="variant recommended"><div class="title"><span class="badge">B · GO</span>Library icon直接入口</div><div class="table"><div class="row"><button>−</button><span>87%</span><button>＋</button><button class="icon" aria-label="Asset Library"><svg viewBox="0 0 24 24"><rect width="8" height="18" x="3" y="3" rx="1"/><path d="M7 3v18"/><path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z"/></svg></button><span class="spacer"></span><span class="chip">CAF1 · 1F · COPY</span></div><div class="timeline"></div><div class="library"><span>ASSETS</span><span>CAF1</span></div></div><ul class="notes"><li>一操作到達と開状態を維持する。</li><li>既存共通icon・tooltip・aria-labelを使う。</li></ul></article>
+    <article class="variant"><div class="title"><span class="badge">C · NO GO</span>Advancedへ退避</div><div class="table"><div class="row"><button>−</button><span>87%</span><button>＋</button><span class="spacer"></span><button>⋯</button></div><div class="timeline"></div><div class="library"><span>ADVANCED › ASSET LIBRARY</span></div></div><ul class="notes"><li>平常視界は静かだが二段到達。</li><li>Settings / overflowと誤認しやすい。</li></ul></article>
+  </section>
+  <div class="decision"><strong>Gate 1: GO — B。</strong>`UI_ICONS.library`と既存toggleを使う一component Sliceとし、Asset Library内容・ClipAsset・Historyは変えない。</div>
+</main></body></html>

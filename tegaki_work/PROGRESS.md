@@ -1,10 +1,18 @@
 # Tegaki Progress
 
-更新日: 2026-08-20
+更新日: 2026-08-24
 
 ## 現在地
 
-- Phase 5a〜8jを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存している。現行Phase 8kはManual Raster Mesh Topology Boundary Gateで、Gate 1=`GO — A: 既存vertex位置だけを編集`、Stage B pure / Model adapterまで完了した。
+- Phase 5a〜9hを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存し、Owner制作確認の残りは`OWNER_VERIFICATION_BACKLOG.md`へ分離している。
+- Phase 9bはUI Design Authority / Animation Table Style Boundary Gate。palette / semantic token / component static style / runtime geometry / behavior正本を`UI_DESIGN_AUTHORITY_MAP.md`へ固定し、Phase 9a Playback headerの静的appearanceだけを`styles/components/animation-table-playback.css`へ限定抽出した。DOM / event / ARIA / model / History / save / runtime geometryを維持し、全102 verifier / build / Browser narrow実表示 / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
+- Phase 9cはCanvas-first Visual Language / Skin Baseline Comparison Gate。Gate 1=`GO — B: Warm Canvas-first`とし、最初のproduction componentをAnimation Table Playbackだけへ限定した。中央playを通常32×28px / coarse 44×38pxへ強め、Playback / Range群の枠競争を抑え、設定済みOUTと再生中Playを橙背景＋Futaba茶へ補正した。DOM / event / ARIA / History / save / wheel / runtime geometryを維持し、全103 verifier / build / Browser 1280×720・480×800 / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。QTP / Layer Panelのproduction skinは別Phaseへ分離する。
+- Phase 9dはQTP Canvas-first Surface / Component Style Boundary Gate。narrow再表示のfadeIn scale不整合をlayout寸法 / 座標へ限定補修し、QTP root / header static appearanceだけを`styles/components/quick-access-popup.css`へ一正本化した。geometry / DOM / event / ARIA / storageとPalette / tool / preset / slider / Text / Help / Positionを維持し、全104 verifier / build / Browser 1280×720・480×800 / Q・Position・Help・Text・tool・preset / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
+- Phase 9eはAnimation Table Primary Playback / Header Attention Gate。CSS order＋左右auto marginだけで主playを第一header rowへ戻し、栗色面＋Futaba背景色抜き、playing橙、coarse 44×38pxを固定した。Phase 9fのOwner follow-upで通常時だけ28×24pxへ一回り縮小した。
+- Phase 9fはAnimation Table Attention Hierarchy / Inactive Border Gate。Gate 0=`GO — B: Quiet Resting`として、休止中のSCOPE / PREVIEW / Onion / zoom / 非破壊補助actionだけをtransparent border＋淡いsurfaceへ下げ、hover / open / focus / activeでsemantic borderを戻した。Selected Clip / Delete / close、hit area、DOM / event / ARIA / model / History / save / wheel / dragは維持した。全105 verifier / build / Browser fixture・wide・700px narrow / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
+- Phase 9gはQTP Palette / Tool Slot Attention Hierarchy Gate。Gate 0=`GO — B: Borderless Resting＋Selected Ring`としてPalette color / tool / preset cellだけをtransparent borderへ下げ、cream色は14%内側contrast、selectedは橙ring、focus-visibleは2px橙outlineとした。Main / Sub、slider、Text、event / storage / Canvas inputは維持した。全106 verifier / build / Browser fixture・production / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
+- Phase 9hはSidebar Rail Attention Hierarchy / Active Surface Gate。Gate 0=`GO — B: Quiet Resting＋Hover Surface＋Active Ring`として休止中borderをtransparentへ下げ、hover / focus / active / disabledのsurfaceを`styles/components/sidebar-rail.css`へ一正本化した。30 / 38px hit、tool順、icon、event / shortcutを維持し、全107 verifier / build / Browser wide・700px narrow / console 0件、SOL final review=`A`で技術closeした。
+- 現行Phase 9iはSidebar Action Semantics / Close Sync Gate。Phase 9hで再現したAnimation Table内部×後のA stale activeと、Q / Vだけbutton＋ARIA、他入口はgeneric elementである役割差をread-only監査する。command / popup launcher / temporary modeを一括toggleにせず、既存eventからの投影をGate 0で比較する。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -57,10 +65,10 @@
 - Phase 8hはAnimation Table inactive controlのcontrast Gateを技術closeした。常に操作可能な`SCOPE` inactiveのopacityを0.6から既存playback群と同じ0.68へ揃えて3.91:1→4.81:1とし、browser既定黒focusをFutaba茶outlineへ限定補正した。全80 verifier、build、Browser、SOL final review=`A`を通過し、header DOM、wheel三領域、playback群は変更していない。
 - Phase 8iはMesh / Skin正本、stable vertexId、History、STALE / regenerate、CPU / Pixi / exportをread-only監査し、Gate 1=`GO — B: 固定topology Weight brush`、SOL final review=`A`で技術closeした。既存離散補正はfallbackとして維持し、Manual Topologyは別PhaseへHOLDした。
 - Phase 8jはAUTO GRID / AUTO SHAPEのCURRENT Meshへ限定したFixed-topology Skin Weight Brushを技術closeした。stable vertexIdへのsigned deltaを既存`skinBindings[].vertexWeights`へ最大2 normalized influenceとして確定し、ADD / SUB、radius / strength、SVG vertex hit、1 gesture 1 History、cancel / failure rollback、Undo / Redoを固定した。全83 verifier / build、BrowserのADD / SUB / Undo / Redo、SOL final review=`A`を通過した。Owner制作確認は台帳へ分離する。
-- 現行Phase 8kはRaster Mesh形状編集をWeight brushから分離した。Stage Aでvertex x / yがBind位置とsource sampling位置を兼ねること、WARP Control Meshとは保存正本を共有できないことを監査し、Gate 1=`GO — A: AUTO GRID / AUTO SHAPEの既存vertex位置だけを編集`とした。Stage Bはstable ID / triangle / weight / generator sourceを維持し、source bounds外、winding反転、degenerate、triangle重なりを非mutationで拒否するpure planとCURRENT限定Model adapterを実装済み。point追加・triangle分割・AUTO LINE・production UIはGate 2前に追加しない。
+- Phase 8kはRaster Mesh形状編集をWeight brushから分離した。vertex x / yがBind位置とsource sampling位置を兼ねることを監査し、stable ID / triangle / weight / generator sourceを維持、source bounds外、winding反転、degenerate、triangle重なりを非mutationで拒否するpure / Model planと、Setup青の明示`MESH EDIT`、12px vertex hit、1 gesture 1 History / cancel rollbackをproduction UIへ接続して技術closeした。point追加・triangle分割・AUTO LINE・Motion中authoringは後続Gateへ分離する。
 - `ClaudeReview/rig-mesh-evaluation-and-followup.md`を現行コードへ照合した。Auto Line拒否toastへ別Raster分離 / 線整理 / AUTO SHAPE等の次操作を追加し、Setup青をpopup内RIG / MESH static Setup actionへ使える境界をUI/CSSガイドへ明記した。実受理率、異種generator誤置換、再生成HistoryはOwner確認台帳へ置き、manual weight補正と分岐Ribbon自動分割は第二正本・複数Mesh境界を先に決める別Gateとしてproposal 15へ積んだ。
 - Owner制作操作で、一枚の人物Raster + `AUTO SHAPE` + 11 Mesh BONEでも肘から腕を曲げ、手足を独立操作できることを確認した。一方、全Bone距離上位2本weightによる顔への影響漏れと、LBS関節blendによる腕幅／長さの変化を確認した。既存`skinBindings`を唯一の正本とする`Chain-local Joint Skin`（branch別影響資格、肢内部weight 1、短い関節band、既定stretch off）をproposal 15へ積み、Phase 7yへは混ぜない。
-- Web外部AI向け`tegaki_work/GitHubURL.txt`を現行正本へ同期した。main push後にPhase 8j完了記録、現行Phase 8k、Owner確認台帳、Mesh / Weight / Topology関連のpure helperとverifier、統合proposal 15 / 16を辿れる。local欠損0・重複0をverifierで固定するnavigationであり、`TEGAKI.md` / PROGRESS / 現行Phase指示書より上位の正本にはしない。
+- Web外部AI向け`tegaki_work/GitHubURL.txt`を現行正本へ同期した。main push後にPhase 8k完了記録、Owner確認台帳、Mesh / Weight / Topology関連のpure helperとverifier、統合proposal 15 / 16を辿れる。local欠損0・重複0をverifierで固定するnavigationであり、`TEGAKI.md` / PROGRESS / 現行Phase指示書より上位の正本にはしない。
 - proposalは現行14文書。Phase 7tの旧proposal 16はArchive済みで、今回の`16_制作Workspace・UI・外部Handoff構造ロードマップ.md`は外部原案とClaudeReviewを統合した別の現行Architecture Gate正本である。標準入口は`開発用資料保管庫/proposals/00_計画索引.md`。
 
 ## 完了基盤の要約
@@ -117,7 +125,7 @@
 - V保存ずれは全Layer一律ではなく、Canvas resizeを挟んだ外部clipboard貼付Rasterが候補。配置を保持する貼付例もあるため、Slice 3で`外部paste → resize → V → save/reopen`を固定入力にしてから限定修正する。
 - 添付画像のBrowser file chooser投入はネイティブchooser待ちで完了しなかったため、実機のOS clipboard / file chooser入力へ委譲する。`ImageImporter`のresize前後snapshot、working Layer capture、ProjectManagerのtransform commit待ちはコード監査済みで、現時点では追加修正を入れない。
 - 末端の手から前腕・上腕を追従させるrotation-only 2-Bone IKはPhase 6tでcloseした。伸縮と周辺画素の曲げはrotation limit / chain参加 / Mesh・weightと分離したまま維持する。
-- Raster Skinningは一Raster / 一Meshの初期proofまで。Auto Shape FILLとLINE Ribbonは既存Mesh / Skinへの明示生成まで接続し、AUTO GRID / AUTO SHAPEの固定topology Weight brushはPhase 8jで実装した。既存vertex位置編集はPhase 8kのpure / Model Gateまでで、production UI、point追加・triangle分割、Mesh Bone IK、SkinとFolder WARP / clippingの同時適用は未実装。Phase 7cはrigid child PIVOTのtranslation追従だけで、Skin / Mesh同時変形へ広げない。
+- Raster Skinningは一Raster / 一Meshの初期proofまで。Auto Shape FILLとLINE Ribbonは既存Mesh / Skinへの明示生成まで接続し、AUTO GRID / AUTO SHAPEの固定topology Weight brushはPhase 8j、既存vertex位置のproduction `MESH EDIT`はPhase 8kで実装した。point追加・triangle分割、AUTO LINE topology編集、Mesh Bone IK、SkinとFolder WARP / clippingの同時適用は未実装。Phase 7cはrigid child PIVOTのtranslation追従だけで、Skin / Mesh同時変形へ広げない。
 - 遅延またはcrashが再現した場合は、`TegakiPerf`のevent queue / handler、Long Task、Project export時間、heap、texture残留を同時採取し、AirbrushやHistory件数を先に原因と決めない。詳細は`開発用資料保管庫/Archive/phase6e.md`。
 - Layer Panelは通常Layerのflat合成順＋`parentId`と、CAF内部Layerの`parentLayerId` mirrorを別adapterとして維持する。軽量Browserでは通常→Table表示→Table閉鎖後CAF→内部Folder＋子Layerの順序・深度は一致した。多階層時の再現では全DOM再構築時間、active / selected / working ID、`refreshClippingMasks()`全走査時間を三状態で採取し、Lane常時同期や正本統合へ進まない。
 - CAF内部Layerの表示親`parentLayerId`とRig親`parentPartId` / `parentBoneId`を同期しない。Folder Partはsubtree、Root Raster PartはCAF直下一枚だけを描画所属とし、reparent前後で有効Part / WARP / clipping ownerが同じなら表示移動を許可する。所属が変わる時だけ理由付きで拒否し、Rigリンクを自動解除・暗黙再接続しない。Setup青の連結node + `RIG`表示は明示登録したFolder / Root Rasterだけへ既存正本から導出する。
@@ -129,34 +137,19 @@
 1. `AGENTS.md`
 2. `TEGAKI.md`
 3. 本書
-4. `task-codex/phase8k.md`
-5. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
-6. `開発用資料保管庫/Archive/phase8j.md`
-7. `開発用資料保管庫/Archive/phase8i.md`
-8. `開発用資料保管庫/Archive/phase8h.md`
-9. `開発用資料保管庫/Archive/phase8g.md`
-10. `開発用資料保管庫/Archive/phase8f.md`
-11. `開発用資料保管庫/Archive/phase8e.md`
-12. `開発用資料保管庫/Archive/phase8d.md`
-13. `開発用資料保管庫/Archive/phase8c.md`
-14. `開発用資料保管庫/Archive/phase8b.md`
-15. `開発用資料保管庫/Archive/phase8a.md`
-16. `開発用資料保管庫/Archive/phase7z.md`
-17. `開発用資料保管庫/Archive/phase7y.md`
-18. `開発用資料保管庫/Archive/phase7x.md`
-19. `開発用資料保管庫/Archive/phase7w.md`
-20. `開発用資料保管庫/Archive/phase7v.md`
-21. `開発用資料保管庫/proposals/00_計画索引.md`
-22. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
-23. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
-24. `開発用資料保管庫/proposals/16_制作Workspace・UI・外部Handoff構造ロードマップ.md`
-25. `開発用資料保管庫/proposals/10_Motion_Graph・Easing・Motion_Path設計.md`
-26. `開発用資料保管庫/proposals/09_変形アニメーション・メッシュ・GPU画材ロードマップ.md`
-27. `開発用資料保管庫/proposals/12_Camera_Frame・Resize_UI将来設計.md`
-28. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
-29. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
+4. `tegaki_work/NEXT_CHAT_HANDOFF.md`
+5. `task-codex/phase9i.md`
+6. `開発用資料保管庫/Archive/phase9h.md`
+7. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
+8. `開発用資料保管庫/proposals/00_計画索引.md`
+9. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
+10. `開発用資料保管庫/proposals/16_制作Workspace・UI・外部Handoff構造ロードマップ.md`
+11. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
+12. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
+13. `開発用資料保管庫/proposals/UI_CSSスタイルガイド.md`
+14. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
 
-Phase 7i〜8jはSOL技術close済み。Owner制作実操作の未確認項目は確認台帳へ分離した。現行Phase 8kは固定ID / triangle / weightを維持する既存vertex位置編集だけを先行し、Gate 2前にproduction UI、point追加、triangle切断、AUTO LINE、第二Topology正本を追加しない。
+Phase 7i〜9hはclose済み。Owner制作実操作の未確認項目は確認台帳へ分離した。Phase 9iはStage A inventory前で、最初にSidebar 8入口のrole、全close path、ARIA / state投影を固定する。
 
 ## 資料
 
@@ -222,5 +215,29 @@ Phase 7i〜8jはSOL技術close済み。Owner制作実操作の未確認項目は
 - Phase 8h完了: `開発用資料保管庫/Archive/phase8h.md`
 - Phase 8i完了: `開発用資料保管庫/Archive/phase8i.md`
 - Phase 8j完了: `開発用資料保管庫/Archive/phase8j.md`
+- Phase 8l完了: `開発用資料保管庫/Archive/phase8l.md`
+- Phase 8m完了: `開発用資料保管庫/Archive/phase8m.md`
+- Phase 8n完了: `開発用資料保管庫/Archive/phase8n.md`
+- Phase 8o完了: `開発用資料保管庫/Archive/phase8o.md`
+- Phase 8p完了: `開発用資料保管庫/Archive/phase8p.md`
+- Phase 8q完了: `開発用資料保管庫/Archive/phase8q.md`
+- Phase 8r完了: `開発用資料保管庫/Archive/phase8r.md`
+- Phase 8s完了: `開発用資料保管庫/Archive/phase8s.md`
 - Multi-Model運用正本: `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
-- 現行Phase: `task-codex/phase8k.md`（Manual Raster Mesh Topology Boundary Gate）
+- Phase 8t完了: `開発用資料保管庫/Archive/phase8t.md`
+- Phase 8u完了: `開発用資料保管庫/Archive/phase8u.md`
+- Phase 8v完了: `開発用資料保管庫/Archive/phase8v.md`
+- Phase 8w完了: `開発用資料保管庫/Archive/phase8w.md`
+- Phase 8x完了: `開発用資料保管庫/Archive/phase8x.md`
+- Phase 8y完了: `開発用資料保管庫/Archive/phase8y.md`
+- Phase 8z完了: `開発用資料保管庫/Archive/phase8z.md`
+- Phase 9a完了: `開発用資料保管庫/Archive/phase9a.md`
+- Phase 9b完了: `開発用資料保管庫/Archive/phase9b.md`
+- Phase 9c完了: `開発用資料保管庫/Archive/phase9c.md`
+- Phase 9d完了: `開発用資料保管庫/Archive/phase9d.md`
+- Phase 9e完了: `開発用資料保管庫/Archive/phase9e.md`
+- Phase 9f完了: `開発用資料保管庫/Archive/phase9f.md`
+- Phase 9g完了: `開発用資料保管庫/Archive/phase9g.md`
+- Phase 9h完了: `開発用資料保管庫/Archive/phase9h.md`
+- 次チャット引き継ぎ: `tegaki_work/NEXT_CHAT_HANDOFF.md`
+- 現行Phase: `task-codex/phase9i.md`（Sidebar Action Semantics / Close Sync Gate / Stage A前）

@@ -18,6 +18,15 @@ import { DOMBuilder } from './dom-builder.js';
 import { SliderUtils } from './slider-utils.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 
+const SIDEBAR_POPUP_BUTTONS = Object.freeze({
+    album: 'library-tool',
+    export: 'export-tool',
+    resize: 'resize-tool',
+    quickAccess: 'quick-access-tool',
+    animationTable: 'gif-animation-tool',
+    settings: 'settings-tool'
+});
+
 export class UIController {
     constructor(drawingEngine, layerManager, app, popupManager) {
         this.drawingEngine = drawingEngine;
@@ -31,7 +40,6 @@ export class UIController {
         this.setupCanvasResize();
         this.setupFlipButtons();
         this.initializeStatusPanel();
-        this.setupPanelStyles();
         this.ensurePopupCloseButtons();
         this.syncLayerPanelActionButtons();
     }
@@ -120,27 +128,23 @@ export class UIController {
         });
 
         this.eventBus.on('popup:shown', ({ name } = {}) => {
-            if (name === 'quickAccess') {
-                this.setSidebarActionActive('quick-access-tool', true);
-            }
+            this.setSidebarPopupExpanded(name, true);
         });
 
         this.eventBus.on('popup:hidden', ({ name } = {}) => {
-            if (name === 'quickAccess') {
-                this.setSidebarActionActive('quick-access-tool', false);
-            }
+            this.setSidebarPopupExpanded(name, false);
         });
 
         this.eventBus.on('keyboard:vkey-state-changed', ({ pressed } = {}) => {
-            this.setSidebarActionActive('layer-transform-tool', pressed === true);
+            this.setSidebarModePressed('layer-transform-tool', pressed === true);
         });
 
         this.eventBus.on('selection:transform-started', () => {
-            this.setSidebarActionActive('layer-transform-tool', true);
+            this.setSidebarModePressed('layer-transform-tool', true);
         });
 
         this.eventBus.on('selection:transform-ended', () => {
-            this.setSidebarActionActive('layer-transform-tool', false);
+            this.setSidebarModePressed('layer-transform-tool', false);
         });
         
         this.eventBus.on('ui:toggle-album', () => {
@@ -689,11 +693,25 @@ export class UIController {
         if (handler) handler();
     }
 
-    setSidebarActionActive(buttonId, active) {
+    setSidebarPopupExpanded(popupName, expanded) {
+        const buttonId = SIDEBAR_POPUP_BUTTONS[popupName];
+        if (!buttonId) return;
         const button = document.getElementById(buttonId);
         if (!button) return;
-        button.classList.toggle('is-active', active === true);
-        button.setAttribute('aria-pressed', active === true ? 'true' : 'false');
+        const isExpanded = expanded === true;
+        button.classList.toggle('is-active', isExpanded);
+        button.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        if (!isExpanded) {
+            button.classList.remove('active');
+        }
+    }
+
+    setSidebarModePressed(buttonId, pressed) {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+        const isPressed = pressed === true;
+        button.classList.toggle('is-active', isPressed);
+        button.setAttribute('aria-pressed', isPressed ? 'true' : 'false');
     }
 
     getCurrentCanvasTool() {
@@ -819,37 +837,6 @@ export class UIController {
         resetTransformBtn?.removeAttribute('disabled');
     }
 
-    setupPanelStyles() {
-        const style = document.createElement('style');
-        style.textContent = `
-            .tool-button.active {
-                background-color: rgba(255, 255, 238, 0.9) !important;
-                border: 3px solid #ff8c42 !important;
-            }
-            
-            .tool-button.active svg {
-                stroke: var(--futaba-maroon) !important;
-            }
-
-            .tool-button.active.erase-mode {
-                background-color: rgba(184, 112, 107, 0.22) !important;
-                border: 3px solid #b8706b !important;
-            }
-
-            .tool-button.active.erase-mode svg {
-                stroke: #8f3f3a !important;
-            }
-            
-            .tool-button:hover:not(.active) {
-                background-color: rgba(233, 194, 186, 0.72) !important;
-            }
-        `;
-        
-        if (!document.querySelector('style[data-tegaki-panels]')) {
-            style.setAttribute('data-tegaki-panels', 'true');
-            document.head.appendChild(style);
-        }
-    }
 }
 
 // 下位互換性のためにグローバルに登録
