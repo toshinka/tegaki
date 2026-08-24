@@ -1,6 +1,6 @@
 # Tegaki UI / CSS スタイルガイド
 
-更新日: 2026-07-17
+更新日: 2026-08-24
 
 ## 役割
 
@@ -78,6 +78,32 @@ rg -n "対象component|--futaba-|ui-scrollbar|ui-icon-button|popup-panel" tegaki
 - 新しい共通値が必要な場合は、既存値で表現できない理由と使用予定componentを確認してから `:root` または共通classへ追加する。
 - component固有値を追加する場合も、palette変数または既存共通値から組み立てる。
 
+### 4A. Semantic Surface Token
+
+既存`--futaba-*`はpalette正本、既存`--ui-*-size`等はcomponent寸法正本として維持する。その上へ、複数componentが同じ役割で使う場合だけ意味aliasを置く。
+
+```text
+--ui-surface-rail
+--ui-surface-float
+--ui-surface-control
+--ui-surface-control-hover
+--ui-surface-control-active
+--ui-border-subtle
+--ui-border-focus
+--ui-shadow-float
+--ui-radius-panel
+--ui-radius-control
+--ui-opacity-disabled
+```
+
+- token名は色名でなく役割を表す。`blue-button`、`orange-action`等を作らない。
+- Setup青 / Motion橙は既存semanticから派生させ、一般surfaceへ広げない。
+- 最初は現行computed valueを変えないalias bridgeとしてsidebar / QTPへ接続し、visual redesignとtoken導入を同じ差分にしない。
+- Phase 8l Stage Cの比較では完全borderlessを棄却し、QTP floating surfaceだけに弱い境界・gradient・shadowを残すrestrained-depthを採用した。通常controlはほぼ透明、hover / activeで面差を出し、sidebar railは現行restrained surfaceを維持する。この値を全popupへ一括横展開しない。
+- QTPの静的CSSは現在JS注入と`main.css`に重複がある。全面移動は行わず、Phaseで触るruleだけ正本を一つへ寄せ、selector / injection順 / coarse media queryを固定verifierで確認する。
+- Phase 9hではSidebar railのresting / hover / focus / active / disabledだけを`styles/components/sidebar-rail.css`へ抽出し、旧`ui-panels.js`注入styleを除去した。geometryとnormal 30px / coarse 38px hitは`main.css` token、state class / ARIAはJavaScriptを正本とする。panel close同期やelement roleをskin CSSへ持ち込まない。
+- 個別panelのヘッダーへ準拠宣言を書かない。共通class / tokenを使っていることを実コードとverifierで確認する。
+
 ## 5. scrollbar
 
 - scroll可能領域は原則 `.ui-scrollbar` を付ける。
@@ -132,6 +158,15 @@ JSが扱ってよい:
 - Chromium / WebKitがdisabled formへ独自色を再適用する箇所は、`color`だけでなく必要に応じて`-webkit-text-fill-color`もpalette値で指定する。
 - focus-visibleは `--active-border` 等で判別できるようにする。
 
+### Surfaceとhit area
+
+- interactive hit areaとvisible icon / borderを分離する。borderlessはhit areaを消す意味ではない。
+- 通常時はpanel surfaceとspacingでgroupを示し、hover / active / selected / focus時だけcontrol surfaceを強める。
+- Animation Tableのような常設headerでは、休止中の非破壊controlをtransparent border＋淡いsurface、hover / open / focus / activeをsemantic borderとする段階整理を許可する。ただしSelected Clip / Delete / close等のcontextual / destructive actionまで機械的にflat化せず、一componentのfixtureとhit area確認を通してから横展開する。
+- desktopの最小targetは24×24 CSS pxを監査線とし、coarse pointerは既存38px rail / 24px QTPを下限として実pen / touchで比較する。見えるicon自体をtarget寸法へ拡大する必要はない。
+- disabledはopacityだけへ依存せず、必要ならpalette tooltip / statusで理由を返す。
+- 半透明はfloating palette / railへ限定し、input / tooltip / warning / modalは背景art上でも文字・iconが読める不透明度を持つ。
+
 ### hover説明
 
 - 新規controlで視覚説明が必要な場合、配色できないnative `title`だけを正式表示にしない。`aria-label`を維持しつつ、palette準拠の共通tooltip classと`data-tooltip`を使う。
@@ -160,6 +195,10 @@ JSが扱ってよい:
 ```
 
 既存classを置換する際は、cell click、duration handle、Space drag、zoom、CAF D&Dのselectorを同時に確認する。
+
+- Playback headerを省スペース化する場合も、category iconだけで現在値を隠さない。SCOPEは`Monitor＋ALL / LANE / SET`、LOOPはRepeat / Repeat Off＋surface / ARIA、三mode ENDは`END:T / C / O`等の現在値を残す。
+- IN / OUT等のrange markerは文字、左右位置、設定済みsurface、現在Frame ring、title / ARIAを併用する。onion等の参照Frame設定と色semanticを混同せず、palette外の白直書きで文字抜きを作らない。
+- 保存済みpopup希望幅とviewport制約後の実表示幅が異なる場合、responsive classは実表示幅も含めて判定する。視覚的に畳むlabelはARIAの現在値を失わせない。
 
 ## 11. 監査チェック
 

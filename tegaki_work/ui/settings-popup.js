@@ -2,16 +2,17 @@
  * ============================================================================
  * ファイル名: ui/settings-popup.js
  * 責務: アプリケーションのグローバル設定（筆圧補正、緊急復旧、History等）のUIを提供する
- * 依存: system/event-bus.js, system/settings-manager.js, ui/popup-drag-helper.js
+ * 依存: config.js, system/event-bus.js, system/settings-manager.js, ui/popup-drag-helper.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: SettingsPopup
- * イベント発火: settings:pressure-correction, settings:smoothing, settings:pressure-curve
+ * イベント発火: settings:pressure-correction, settings:smoothing, settings:pressure-curve, popup:shown, popup:hidden
  * イベント受信: ui:open-settings, emergency-recovery:saved
  * グローバル登録: window.SettingsPopup
  * 実装状態: ♻️移植
  * ============================================================================
  */
 
+import { TEGAKI_KEYMAP } from '../config.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 
@@ -118,6 +119,7 @@ export class SettingsPopup {
             : `<button class="ui-close-button ui-close-button--medium popup-close-btn" data-action="close-popup" data-target="settings-popup">
                 ${window.UI_ICONS?.close || '×'}
                </button>`;
+        const shortcutHelpHtml = this._buildShortcutHelpHtml();
 
         this.popup.innerHTML = `
             ${closeBtnHtml}
@@ -329,31 +331,7 @@ export class SettingsPopup {
             </div>
 
             <div id="tab-help" class="ui-tab-content settings-help-tab ui-scrollbar">
-                <div class="help-list">
-                    <div class="help-section-title">ツール</div>
-                    <div class="help-item"><span class="help-label">ペンツール</span><span class="help-key">B</span></div>
-                    <div class="help-item"><span class="help-label">消しゴムツール</span><span class="help-key">E</span></div>
-                    <div class="help-item"><span class="help-label">塗りつぶしツール</span><span class="help-key">G</span></div>
-                    <div class="help-item"><span class="help-label">投げ縄塗りツール</span><span class="help-key">L</span></div>
-                    <div class="help-item"><span class="help-label">変形モード（トグル）</span><span class="help-key">V</span></div>
-
-                    <div class="help-section-title">編集・履歴</div>
-                    <div class="help-item"><span class="help-label">元に戻す (Undo)</span><span class="help-key">Z / Ctrl+Z</span></div>
-                    <div class="help-item"><span class="help-label">やり直し (Redo)</span><span class="help-key">Y / Ctrl+Y</span></div>
-                    <div class="help-item"><span class="help-label">レイヤー描画消去</span><span class="help-key">Del / BackSpace</span></div>
-
-                    <div class="help-section-title">表示・操作</div>
-                    <div class="help-item"><span class="help-label">手のひら（画面移動）</span><span class="help-key">Space + ドラッグ</span></div>
-                    <div class="help-item"><span class="help-label">ペン筆圧 ON/OFF</span><span class="help-key">Shift + P</span></div>
-                    <div class="help-item"><span class="help-label">消しゴム筆圧 ON/OFF</span><span class="help-key">Shift + E</span></div>
-                    <div class="help-item"><span class="help-label">アニメ再生/停止</span><span class="help-key">Ctrl + Space</span></div>
-                    <div class="help-item"><span class="help-label">フォルダー開閉</span><span class="help-key">Enter</span></div>
-
-                    <div class="help-section-title">パネル開閉</div>
-                    <div class="help-item"><span class="help-label">設定・ヘルプ</span><span class="help-key">Ctrl + K</span></div>
-                    <div class="help-item"><span class="help-label">画像・動画出力</span><span class="help-key">Ctrl + E</span></div>
-                    <div class="help-item"><span class="help-label">クイックアクセス</span><span class="help-key">Q</span></div>
-                </div>
+                <div class="help-list">${shortcutHelpHtml}</div>
             </div>
         `;
 
@@ -363,6 +341,59 @@ export class SettingsPopup {
         }
 
         this._setupTabs();
+    }
+
+    _buildShortcutHelpHtml() {
+        const sections = [
+            { title: 'ツール・色', matches: action => action.startsWith('TOOL_') || action.startsWith('COLOR_') },
+            {
+                title: '編集・履歴・レイヤー',
+                matches: action => action === 'UNDO'
+                    || action === 'REDO'
+                    || action.startsWith('SELECT_')
+                    || action.startsWith('SELECTION_')
+                    || action.startsWith('LAYER_')
+            },
+            { title: '表示・操作', matches: action => action.startsWith('CAMERA_') },
+            {
+                title: 'アニメーション',
+                matches: action => action.startsWith('CLIP_')
+                    || action.startsWith('FRAME_')
+                    || action.startsWith('GIF_')
+                    || action.startsWith('ANIMATION_')
+            },
+            {
+                title: 'パネル・保存',
+                matches: action => action.startsWith('SETTINGS_')
+                    || action.startsWith('EXPORT_')
+                    || action.startsWith('ALBUM_')
+                    || action.startsWith('QUICK_ACCESS_')
+            }
+        ];
+        const shortcuts = TEGAKI_KEYMAP.getShortcutList();
+
+        return sections.map(section => {
+            const items = shortcuts.filter(shortcut => section.matches(shortcut.action));
+            if (!items.length) return '';
+            return `
+                <div class="help-section-title">${this._escapeHtml(section.title)}</div>
+                ${items.map(shortcut => `
+                    <div class="help-item" data-shortcut-action="${this._escapeHtml(shortcut.action)}">
+                        <span class="help-label">${this._escapeHtml(shortcut.description)}</span>
+                        <span class="help-key">${this._escapeHtml(shortcut.keys.join(' / '))}</span>
+                    </div>
+                `).join('')}
+            `;
+        }).join('');
+    }
+
+    _escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
     }
 
     _setupTabs() {
@@ -883,18 +914,26 @@ export class SettingsPopup {
     }
 
     show() {
+        const wasVisible = this.isVisible === true;
         if (!this.popup) this._ensurePopupElement();
         if (!this.popup) return;
         if (!this.initialized) this.initialize();
         this.popup.classList.add('show');
         this.isVisible = true;
         this._loadSettings();
+        if (!wasVisible) {
+            this.eventBus.emit('popup:shown', { name: 'settings' });
+        }
     }
 
     hide() {
         if (!this.popup) return;
+        const wasVisible = this.isVisible === true;
         this.popup.classList.remove('show');
         this.isVisible = false;
+        if (wasVisible) {
+            this.eventBus.emit('popup:hidden', { name: 'settings' });
+        }
     }
 
     toggle() {

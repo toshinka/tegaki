@@ -1,6 +1,6 @@
 /**
  * RIG / Motion間で共有するSkin weight診断overlayのruntime visibility policy。
- * 保存state、History、Skin値を持たず、CORRECT / BRUSHはRIG Setupだけへ限定する。
+ * 保存state、History、Skin値を持たず、CORRECT / BRUSH / MESH EDITはRIG Setupだけへ限定する。
  */
 
 export function resolveRigSkinWeightVisibility(options = {}) {
@@ -23,6 +23,9 @@ export function resolveRigSkinWeightVisibility(options = {}) {
     const brushActive = overlayActive
         && editorMode === 'rig'
         && options.brushRequested === true;
+    const topologyEditActive = overlayActive
+        && editorMode === 'rig'
+        && options.topologyEditRequested === true;
 
     return {
         editorMode,
@@ -31,6 +34,7 @@ export function resolveRigSkinWeightVisibility(options = {}) {
         overlayActive,
         correctionActive,
         brushActive,
-        editing: correctionActive || brushActive
+        topologyEditActive,
+        editing: correctionActive || brushActive || topologyEditActive
     };
 }

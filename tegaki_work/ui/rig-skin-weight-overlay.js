@@ -1,6 +1,6 @@
 /**
  * 選択Raster / Mesh / BoneのSkin weightを表示するSVG overlay。
- * 通常はread-only。明示補正mode時だけvertex hitへpointer入力を限定する。
+ * 通常はread-only。明示補正／固定topology編集mode時だけvertex hitへpointer入力を限定する。
  */
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
@@ -74,6 +74,7 @@ export class RigSkinWeightOverlay {
         this.frameRequest = null;
         this.dirty = true;
         this.lastPlan = null;
+        this.activeVertexPointerId = null;
     }
 
     activate(options = {}) {
@@ -81,6 +82,7 @@ export class RigSkinWeightOverlay {
         this.options = options;
         this._ensureElement();
         this.element.classList.toggle('is-editing', options.editing === true);
+        this.element.classList.toggle('is-topology-editing', options.vertexInteraction === 'drag');
         this.element.hidden = false;
         this.dirty = true;
         if (this.frameRequest === null) this._update();
@@ -92,6 +94,9 @@ export class RigSkinWeightOverlay {
     }
 
     deactivate() {
+        if (this.activeVertexPointerId !== null) {
+            this._finishVertexDrag(null, { cancelled: true, reason: 'deactivate' });
+        }
         if (this.frameRequest !== null) cancelAnimationFrame(this.frameRequest);
         this.frameRequest = null;
         this.options = null;
@@ -101,6 +106,7 @@ export class RigSkinWeightOverlay {
         this.group = null;
         this.vertexGroup = null;
         this.brushCursor = null;
+        this.activeVertexPointerId = null;
     }
 
     isActive() {
@@ -109,6 +115,10 @@ export class RigSkinWeightOverlay {
 
     getLastPlan() {
         return this.lastPlan;
+    }
+
+    cancelVertexDrag(reason = 'cancelled') {
+        return this._finishVertexDrag(null, { cancelled: true, reason });
     }
 
     setBrushCursor(cursor = null) {
@@ -156,11 +166,56 @@ export class RigSkinWeightOverlay {
         brushCursor.classList.add('rig-skin-weight-overlay__brush-cursor');
         brushCursor.hidden = true;
         svg.appendChild(brushCursor);
+        svg.addEventListener('pointermove', event => {
+            if (event.pointerId !== this.activeVertexPointerId) return;
+            this.options?.onVertexDragMove?.(event);
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        const finishPointer = event => {
+            if (event.pointerId !== this.activeVertexPointerId) return;
+            this._finishVertexDrag(event, {
+                cancelled: event.type === 'pointercancel' || event.type === 'lostpointercapture',
+                reason: event.type
+            });
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        svg.addEventListener('pointerup', finishPointer);
+        svg.addEventListener('pointercancel', finishPointer);
+        svg.addEventListener('lostpointercapture', finishPointer);
         document.body.appendChild(svg);
         this.element = svg;
         this.group = group;
         this.vertexGroup = vertexGroup;
         this.brushCursor = brushCursor;
+    }
+
+    _beginVertexDrag(vertexId, event) {
+        if (this.activeVertexPointerId !== null || event?.button !== 0) return false;
+        if (this.options?.vertexInteraction !== 'drag') return false;
+        if (this.options?.onVertexDragStart?.(vertexId, event) !== true) return false;
+        this.activeVertexPointerId = event.pointerId;
+        this.element?.classList.add('is-dragging');
+        this.element?.setPointerCapture?.(event.pointerId);
+        return true;
+    }
+
+    _finishVertexDrag(event, options = {}) {
+        const pointerId = this.activeVertexPointerId;
+        if (pointerId === null) return false;
+        this.activeVertexPointerId = null;
+        this.element?.classList.remove('is-dragging');
+        if (event && this.element?.hasPointerCapture?.(pointerId)) {
+            this.element.releasePointerCapture(pointerId);
+        }
+        this.options?.onVertexDragEnd?.({
+            cancelled: options.cancelled === true,
+            reason: options.reason || null,
+            event: event || null,
+            pointerId
+        });
+        return true;
     }
 
     _toScreen(x, y) {
@@ -208,6 +263,23 @@ export class RigSkinWeightOverlay {
                     : new Set(this.options.selectedVertexIds || []);
                 diagnostic.vertices.forEach(vertex => {
                     if (!vertex?.vertexId || !Number.isFinite(vertex.x) || !Number.isFinite(vertex.y)) return;
+                    const handlePointerDown = event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (this.options?.vertexInteraction === 'drag') {
+                            this._beginVertexDrag(vertex.vertexId, event);
+                        } else {
+                            this.options?.onVertexToggle?.(vertex.vertexId, event);
+                        }
+                    };
+                    const hit = document.createElementNS(SVG_NAMESPACE, 'circle');
+                    hit.classList.add('rig-skin-weight-overlay__vertex-hit');
+                    hit.dataset.vertexId = vertex.vertexId;
+                    hit.setAttribute('cx', formatPathNumber(vertex.x));
+                    hit.setAttribute('cy', formatPathNumber(vertex.y));
+                    hit.setAttribute('r', '4.5');
+                    hit.addEventListener('pointerdown', handlePointerDown);
+                    this.vertexGroup.appendChild(hit);
                     const circle = document.createElementNS(SVG_NAMESPACE, 'circle');
                     circle.classList.add('rig-skin-weight-overlay__vertex');
                     circle.classList.toggle('is-selected', selectedVertexIds.has(vertex.vertexId));
@@ -215,11 +287,6 @@ export class RigSkinWeightOverlay {
                     circle.setAttribute('cx', formatPathNumber(vertex.x));
                     circle.setAttribute('cy', formatPathNumber(vertex.y));
                     circle.setAttribute('r', '4.5');
-                    circle.addEventListener('pointerdown', event => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        this.options?.onVertexToggle?.(vertex.vertexId, event);
-                    });
                     this.vertexGroup.appendChild(circle);
                 });
             }

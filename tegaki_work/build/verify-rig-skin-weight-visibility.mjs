@@ -15,6 +15,7 @@ assert.deepEqual(rig, {
     overlayActive: true,
     correctionActive: true,
     brushActive: false,
+    topologyEditActive: false,
     editing: true
 });
 
@@ -28,6 +29,16 @@ const brush = resolveRigSkinWeightVisibility({
 assert.equal(brush.brushActive, true);
 assert.equal(brush.editing, true);
 
+const topologyEdit = resolveRigSkinWeightVisibility({
+    editorMode: 'rig',
+    available: true,
+    requestedVisible: true,
+    rigSetupActive: true,
+    topologyEditRequested: true
+});
+assert.equal(topologyEdit.topologyEditActive, true);
+assert.equal(topologyEdit.editing, true);
+
 const motion = resolveRigSkinWeightVisibility({
     editorMode: 'motion',
     available: true,
@@ -38,6 +49,7 @@ const motion = resolveRigSkinWeightVisibility({
 assert.equal(motion.overlayActive, true, 'Motion停止中も同じread-only overlayを表示する');
 assert.equal(motion.correctionActive, false, 'MotionへCORRECTを持ち込まない');
 assert.equal(motion.brushActive, false, 'MotionへBRUSHを持ち込まない');
+assert.equal(motion.topologyEditActive, false, 'MotionへMESH EDITを持ち込まない');
 assert.equal(motion.editing, false);
 
 const playing = resolveRigSkinWeightVisibility({
@@ -62,4 +74,4 @@ assert.equal(resolveRigSkinWeightVisibility({
     requestedVisible: true
 }).overlayActive, false, 'WARPへ診断overlayを持ち込まない');
 
-console.log('verify-rig-skin-weight-visibility: shared RIG/Motion read-only visibility and RIG-only correction / brush OK');
+console.log('verify-rig-skin-weight-visibility: shared RIG/Motion read-only visibility and RIG-only correction / brush / topology edit OK');

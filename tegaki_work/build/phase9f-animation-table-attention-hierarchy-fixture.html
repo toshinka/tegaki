@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 9f Animation Table Attention Hierarchy</title>
+<style>
+  :root {
+    --paper:#ffffee;
+    --cream:#f0e0d6;
+    --peach:#fff5de;
+    --line:#d4a8a1;
+    --ink:#800000;
+    --orange:#ff8c42;
+    --soft-ink:rgba(128,0,0,.28);
+    --hover:rgba(128,0,0,.08);
+    --active:rgba(255,140,66,.18);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:13px/1.4 system-ui,sans-serif; }
+  button { color:inherit; font:inherit; }
+  main { width:min(1500px,100%); margin:auto; padding:20px; }
+  h1 { margin:0; font-size:21px; }
+  .lead { margin:4px 0 16px; opacity:.76; }
+  .variants { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; align-items:start; }
+  .variant { min-width:0; border:1px solid var(--soft-ink); border-radius:12px; overflow:hidden; background:color-mix(in srgb,var(--cream) 28%,var(--paper)); }
+  .variant.recommended { box-shadow:0 9px 24px rgba(80,32,24,.14); }
+  .variant-title { display:flex; justify-content:space-between; gap:8px; padding:11px 12px; border-bottom:1px solid var(--soft-ink); }
+  .variant-title h2 { margin:0; font-size:15px; }
+  .variant-title span { font-size:9px; font-weight:800; opacity:.72; }
+  .samples { display:grid; gap:12px; padding:12px; }
+  .sample-label { display:flex; justify-content:space-between; margin-bottom:4px; font-size:9px; font-weight:800; opacity:.7; }
+  .table { border:1px solid var(--soft-ink); border-radius:8px; overflow:hidden; background:var(--paper); }
+  .header { padding:6px 8px; background:color-mix(in srgb,var(--peach) 70%,var(--paper)); }
+  .row { display:flex; align-items:center; gap:5px; min-width:0; }
+  .row + .row { margin-top:5px; padding-top:5px; border-top:1px solid color-mix(in srgb,var(--line) 42%,transparent); }
+  .group { display:flex; align-items:center; gap:3px; padding:2px; border:1px solid var(--soft-ink); border-radius:6px; }
+  .control { min-height:22px; padding:2px 6px; border:1px solid var(--line); border-radius:5px; background:color-mix(in srgb,var(--paper) 74%,transparent); font-size:9px; font-weight:750; white-space:nowrap; }
+  .icon { min-width:22px; padding-inline:4px; }
+  .play-slot { flex:1; display:flex; justify-content:center; min-width:28px; }
+  .play { width:28px; height:24px; padding:0; border:2px solid var(--ink); border-radius:6px; background:var(--ink); color:var(--paper); font-size:11px; font-weight:900; }
+  .active { border-color:var(--orange); background:var(--active); }
+  .focus { outline:2px solid var(--ink); outline-offset:1px; }
+  .disabled { opacity:.3; }
+  .timeline { height:44px; border-top:1px solid var(--line); background:repeating-linear-gradient(90deg,transparent 0 31px,color-mix(in srgb,var(--line) 32%,transparent) 31px 32px); }
+  .narrow .row { flex-wrap:wrap; }
+  .narrow .play-slot { flex:1 1 80px; }
+
+  .quiet .group,
+  .quiet .control:not(.play):not(.active):not(.focus) { border-color:transparent; }
+  .quiet .group { background:color-mix(in srgb,var(--cream) 38%,transparent); }
+  .quiet .control:not(.play) { background:color-mix(in srgb,var(--cream) 24%,transparent); }
+  .quiet .active { border-color:var(--orange); background:var(--active); }
+  .quiet .focus { border-color:var(--orange); background:var(--hover); }
+
+  .dark .header { background:var(--ink); color:var(--paper); }
+  .dark .row + .row { border-top-color:color-mix(in srgb,var(--paper) 24%,transparent); }
+  .dark .group,.dark .control { border-color:color-mix(in srgb,var(--paper) 34%,transparent); background:color-mix(in srgb,var(--paper) 9%,transparent); color:var(--paper); }
+  .dark .play { border-color:var(--orange); background:var(--orange); color:var(--ink); }
+  .dark .active { border-color:var(--orange); background:color-mix(in srgb,var(--orange) 34%,transparent); }
+  .dark .focus { outline-color:var(--paper); }
+
+  .notes { margin:0; padding:0 12px 13px 28px; font-size:10px; opacity:.78; }
+  .notes li + li { margin-top:3px; }
+  @media (max-width:1000px) { .variants { grid-template-columns:1fr; } }
+  @media (pointer:coarse) { .control { min-height:38px; }.play { width:44px;height:38px }.play-slot{min-width:44px} }
+</style>
+</head>
+<body>
+<main>
+  <h1>Phase 9f — Animation Table Attention Hierarchy</h1>
+  <p class="lead">同じ第一行compact playbackと操作面で、resting borderの水位だけを比較する。状態・hit area・DOMは変えない。</p>
+  <div class="variants">
+    <section class="variant current" data-variant="current">
+      <header class="variant-title"><h2>A · Current</h2><span>BASELINE</span></header>
+      <div class="samples">
+        <div><div class="sample-label"><span>WIDE · RESTING</span><span>all borders visible</span></div><div class="table"><div class="header"><div class="row"><button class="control">FPS 8</button><button class="control">SCOPE ALL</button><span class="play-slot"><button class="play">▶</button></span><span class="group"><button class="control icon">↻</button><button class="control">LAST CLIP</button><button class="control icon">I</button><button class="control icon">O</button></span><button class="control">PREVIEW</button><button class="control icon">◌ 0</button></div><div class="row"><span class="group"><button class="control icon">−</button><b>87%</b><button class="control icon">＋</button></span><button class="control icon">▥</button><button class="control icon disabled">↪</button><button class="control">COPY</button><button class="control">DELETE</button></div></div><div class="timeline"></div></div></div>
+        <div class="narrow"><div class="sample-label"><span>700px · ACTIVE / FOCUS</span><span>state comparison</span></div><div class="table"><div class="header"><div class="row"><button class="control focus">SCOPE ALL</button><span class="play-slot"><button class="play">▶</button></span><span class="group"><button class="control icon">↻</button><button class="control">LAST CLIP</button></span><button class="control active">PREVIEW</button><button class="control icon active">◌ 2</button></div></div><div class="timeline"></div></div></div>
+      </div>
+      <ul class="notes"><li>押せる場所は明確。</li><li>低頻度controlと主playが枠で競争する。</li></ul>
+    </section>
+
+    <section class="variant quiet recommended" data-variant="quiet-resting">
+      <header class="variant-title"><h2>B · Quiet Resting</h2><span>FIRST CANDIDATE</span></header>
+      <div class="samples">
+        <div><div class="sample-label"><span>WIDE · RESTING</span><span>surface preserves hit</span></div><div class="table"><div class="header"><div class="row"><button class="control">FPS 8</button><button class="control">SCOPE ALL</button><span class="play-slot"><button class="play">▶</button></span><span class="group"><button class="control icon">↻</button><button class="control">LAST CLIP</button><button class="control icon">I</button><button class="control icon">O</button></span><button class="control">PREVIEW</button><button class="control icon">◌ 0</button></div><div class="row"><span class="group"><button class="control icon">−</button><b>87%</b><button class="control icon">＋</button></span><button class="control icon">▥</button><button class="control icon disabled">↪</button><button class="control">COPY</button><button class="control">DELETE</button></div></div><div class="timeline"></div></div></div>
+        <div class="narrow"><div class="sample-label"><span>700px · ACTIVE / FOCUS</span><span>borders return on state</span></div><div class="table"><div class="header"><div class="row"><button class="control focus">SCOPE ALL</button><span class="play-slot"><button class="play">▶</button></span><span class="group"><button class="control icon">↻</button><button class="control">LAST CLIP</button></span><button class="control active">PREVIEW</button><button class="control icon active">◌ 2</button></div></div><div class="timeline"></div></div></div>
+      </div>
+      <ul class="notes"><li>主play、active、focusだけ輪郭が立つ。</li><li>透明borderでlayoutとhit areaを維持できる。</li></ul>
+    </section>
+
+    <section class="variant dark" data-variant="dark-header">
+      <header class="variant-title"><h2>C · Dark Header</h2><span>HOLD</span></header>
+      <div class="samples">
+        <div><div class="sample-label"><span>WIDE · RESTING</span><span>inverted header field</span></div><div class="table"><div class="header"><div class="row"><button class="control">FPS 8</button><button class="control">SCOPE ALL</button><span class="play-slot"><button class="play">▶</button></span><span class="group"><button class="control icon">↻</button><button class="control">LAST CLIP</button><button class="control icon">I</button><button class="control icon">O</button></span><button class="control">PREVIEW</button><button class="control icon">◌ 0</button></div><div class="row"><span class="group"><button class="control icon">−</button><b>87%</b><button class="control icon">＋</button></span><button class="control icon">▥</button><button class="control icon disabled">↪</button><button class="control">COPY</button><button class="control">DELETE</button></div></div><div class="timeline"></div></div></div>
+        <div class="narrow"><div class="sample-label"><span>700px · ACTIVE / FOCUS</span><span>whole header stays dominant</span></div><div class="table"><div class="header"><div class="row"><button class="control focus">SCOPE ALL</button><span class="play-slot"><button class="play">▶</button></span><span class="group"><button class="control icon">↻</button><button class="control">LAST CLIP</button></span><button class="control active">PREVIEW</button><button class="control icon active">◌ 2</button></div></div><div class="timeline"></div></div></div>
+      </div>
+      <ul class="notes"><li>header全体がCanvasより強く見える。</li><li>Setup青・警告・Clip activeとの役割競争が増えるためHOLD。</li></ul>
+    </section>
+  </div>
+</main>
+</body>
+</html>

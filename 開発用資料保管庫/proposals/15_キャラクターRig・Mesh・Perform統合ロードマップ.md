@@ -349,7 +349,7 @@ Phase 8d〜8hはCanvas-first導線、Motion中WEIGHT、可逆Focus shell、限�
 
 Phase 8jはAUTO GRID / AUTO SHAPEのCURRENT Meshへ限定したFixed-topology Skin Weight Brushを技術closeした。stable vertexIdごとのsigned deltaを、選択Boneと既存最強companionの最大2 normalized influenceへ既存`skinBindings`上で確定する。ADD / SUB、radius / strength、SVG vertex hit、1 gesture 1 History、cancel / failure rollback、Undo / Redoを固定し、全83 verifier / build、Browser、SOL final review=`A`を通過した。Motion側mutation、AUTO LINE、第二Weight正本は追加していない。
 
-現行Phase 8kはMesh形状編集をWeight brushから分離した。Raster Meshのvertex x / yは独立UVではなくBind位置とsource sampling位置を兼ねるため、Gate 1=`GO — A: AUTO GRID / AUTO SHAPEの既存vertex位置だけを編集`とした。固定ID / triangle / weight / generator sourceを維持し、snapshot rasterBounds外、winding反転、degenerate、triangle重なりをpure planで拒否する。Stage BはCURRENT限定Model adapterと固定fixtureまで完了した。point追加＋局所triangle分割は新規stable IDとbarycentric weight補間を要する次Gate、edge切断／全面editorはHOLDとする。
+Phase 8kはMesh形状編集をWeight brushから分離して技術closeした。Raster Meshのvertex x / yは独立UVではなくBind位置とsource sampling位置を兼ねるため、Gate 1=`GO — A: AUTO GRID / AUTO SHAPEの既存vertex位置だけを編集`とした。固定ID / triangle / weight / generator sourceを維持し、snapshot rasterBounds外、winding反転、degenerate、triangle重なりをpure planで拒否する。CURRENT限定Model adapterに加え、Setup青RIGの`MESH EDIT`、既存WEIGHT SVG上の明示vertex hit、1 gesture 1 History / cancel rollbackまでproduction接続し、全86 verifier / build / Browser、SOL final review=`A`を通過した。完了記録は`Archive/phase8k.md`。point追加＋局所triangle分割は新規stable IDとbarycentric weight補間を要する次Gate、edge切断／全面editorはHOLDとする。
 
 同Phaseの前提導線修正として、RIG / Motion対象Rasterを既存rigid bindingと正weight Skinからruntime投影し、停止編集中の非対象の絵を半透明にした。BoneだけでSkin未接続の場合はMotion入力を拒否し、AUTO GRID / SHAPE / LINEを案内する。Raster tabの候補は実Skin influenceだけとし、global Mesh Bone fallbackによる接続済み誤表示を除去した。このfocusはdisplay-onlyで、preview / playback / onion / Bake / exportの出力へ混ぜない。
 

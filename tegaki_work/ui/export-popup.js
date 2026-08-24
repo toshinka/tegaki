@@ -5,7 +5,7 @@
  * 依存: system/export-manager.js, system/event-bus.js, ui/popup-drag-helper.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: ExportPopup
- * イベント発火: なし
+ * イベント発火: popup:shown, popup:hidden
  * イベント受信: export:*
  * グローバル登録: window.ExportPopup, window.TegakiExportPopup
  * 実装状態: ♻️移植
@@ -574,6 +574,7 @@ export class ExportPopup {
     }
     
     show() {
+        const wasVisible = this.isVisible === true;
         if (!this.popup) {
             this._ensurePopupElement();
         }
@@ -584,16 +585,23 @@ export class ExportPopup {
         this.isVisible = true;
         this.selectFormat(this.selectedFormat);
         this.hideStatus();
+        if (!wasVisible) {
+            this.eventBus.emit('popup:shown', { name: 'export' });
+        }
     }
     
     hide() {
         if (!this.popup) return;
+        const wasVisible = this.isVisible === true;
         
         this.popup.classList.remove('show');
         this.isVisible = false;
         this.resetProgress();
         this.hideStatus();
         this.hidePreview();
+        if (wasVisible) {
+            this.eventBus.emit('popup:hidden', { name: 'export' });
+        }
     }
     
     toggle() {

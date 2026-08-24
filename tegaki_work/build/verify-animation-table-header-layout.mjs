@@ -36,12 +36,13 @@ assertOrdered(playbackRow, [
 assertOrdered(clipRow, [
     'id="anim-zoom-out-btn"',
     'id="anim-assets-toggle-btn"',
-    'id="anim-duration-dec"',
     'id="anim-motion-open-btn"',
     'id="anim-copy-btn"',
     'id="anim-paste-btn"',
     'id="anim-group-btn"',
     'id="anim-delete-active-btn"',
+    'id="anim-selected-clip-actions"',
+    'id="anim-duration-dec"',
     'id="anim-table-close-btn"'
 ], 'clip row');
 
@@ -64,15 +65,17 @@ assert.match(source, /const ANIMATION_TABLE_DEFAULT_HEIGHT = 266;/);
 assert.match(source, /Math\.abs\(size\.height - 260\)/);
 assert.match(source, /Math\.abs\(size\.height - 240\)/);
 
-const scopeStyle = source.match(/\.anim-scope-btn\s*\{[\s\S]*?\}/)?.[0] || '';
-assert.ok(scopeStyle, 'SCOPE control style exists');
-assert.match(scopeStyle, /opacity:\s*0\.68;/,
-    'actionable inactive SCOPE controls remain above the normal text contrast gate');
-const scopeFocusStyle = source.match(/\.anim-scope-btn:focus-visible\s*\{[\s\S]*?\}/)?.[0] || '';
+const scopeCurrentStyle = source.match(/\.anim-scope-current-btn\s*\{[\s\S]*?\}/)?.[0] || '';
+assert.ok(scopeCurrentStyle, 'current SCOPE control style exists');
+assert.match(scopeCurrentStyle, /min-height:\s*22px;/,
+    'current SCOPE control keeps a clear pointer target');
+assert.match(scopeCurrentStyle, /border:\s*1px solid var\(--ui-border-active\);/,
+    'current SCOPE state uses the semantic active boundary');
+const scopeFocusStyle = source.match(/\.anim-scope-current-btn:focus-visible,[\s\S]*?\{[\s\S]*?\}/)?.[0] || '';
 assert.ok(scopeFocusStyle, 'SCOPE focus-visible style exists');
 assert.match(scopeFocusStyle, /outline:\s*2px solid var\(--futaba-maroon\);/,
     'SCOPE keyboard focus uses the Futaba palette instead of the browser default');
-assert.match(scopeFocusStyle, /opacity:\s*1;/,
-    'focused SCOPE control is not presented as disabled');
+assert.match(source, /\.anim-scope-focus-deck\s*\{[\s\S]*?background:\s*var\(--futaba-background\);/,
+    'SCOPE choice surface remains opaque and palette-bound');
 
-console.log('verify-animation-table-header-layout: explicit rows, semantic order, narrow wrap, contrast, wheel and height migration OK');
+console.log('verify-animation-table-header-layout: explicit rows, semantic order, progressive SCOPE, narrow wrap, wheel and height migration OK');

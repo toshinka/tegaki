@@ -2,10 +2,10 @@
  * ============================================================================
  * ファイル名: ui/album-popup.js
  * 責務: 作品のスナップショット（アルバム）の保存、表示、復元、管理（並べ替え・選択）UIを提供する
- * 依存: pixi.js, sortablejs, ui/ui-icons.js, system/project-manager.js
+ * 依存: pixi.js, sortablejs, ui/ui-icons.js, system/event-bus.js, system/project-manager.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: AlbumPopup
- * イベント発火: なし
+ * イベント発火: popup:shown, popup:hidden
  * イベント受信: なし
  * グローバル登録: window.AlbumPopup, window.TegakiUI.AlbumPopup
  * 実装状態: ✅完成/整備
@@ -17,6 +17,7 @@ import Sortable from 'sortablejs';
 
 import { UI_ICONS } from './ui-icons.js';
 import { albumStorage } from '../system/album-storage.js';
+import { TegakiEventBus } from '../system/event-bus.js';
 import { mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import {
     ClipAssetInternalLayerModel,
@@ -28,6 +29,7 @@ export class AlbumPopup {
         this.app = dependencies.app;
         this.layerSystem = dependencies.layerSystem;
         this.animationSystem = dependencies.animationSystem;
+        this.eventBus = TegakiEventBus;
         
         this.popup = null;
         this.isVisible = false;
@@ -1600,6 +1602,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
     }
 
     async show() {
+        const wasVisible = this.isVisible === true;
         if (!this.popup) {
             this._ensurePopupElement();
         }
@@ -1618,10 +1621,14 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         this._renderGallery();
         this._updateStorageStatus();
         this._updateProjectSaveTargetStatus();
+        if (!wasVisible) {
+            this.eventBus.emit('popup:shown', { name: 'album' });
+        }
     }
 
     hide() {
         if (!this.popup) return;
+        const wasVisible = this.isVisible === true;
         
         this._setSelectionMode(false);
         this.selectedSnapshotIds.clear();
@@ -1630,6 +1637,9 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         this.popup.classList.remove('show');
         this.popup.style.display = 'none';
         this.isVisible = false;
+        if (wasVisible) {
+            this.eventBus.emit('popup:hidden', { name: 'album' });
+        }
     }
 
     toggle() {

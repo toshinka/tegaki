@@ -62,18 +62,18 @@ export const DOMBuilder = (function() {
         const sidebar = createElement('div', { className: 'sidebar' });
 
         const tools = [
-            { id: 'library-tool', icon: 'library', title: 'アルバム保管' },
-            { id: 'image-import-tool', icon: 'load', title: '画像をアクティブレイヤーへ読み込み' },
-            { id: 'export-tool', icon: 'export', title: '画像・アニメ出力' },
+            { id: 'library-tool', icon: 'library', title: 'アルバム保管', role: 'popup-launcher', popupName: 'album', controls: 'album-popup' },
+            { id: 'image-import-tool', icon: 'load', title: '画像をアクティブレイヤーへ読み込み', role: 'command' },
+            { id: 'export-tool', icon: 'export', title: '画像・アニメ出力', role: 'popup-launcher', popupName: 'export', controls: 'export-popup' },
             { separator: true },
-            { id: 'resize-tool', icon: 'resize', title: 'リサイズ' },
+            { id: 'resize-tool', icon: 'resize', title: 'リサイズ', role: 'popup-launcher', popupName: 'resize', controls: 'resize-settings' },
             { separator: true },
-            { id: 'quick-access-tool', textIcon: 'Q', title: 'Quick Tool Panel (Q)', action: true },
-            { id: 'layer-transform-tool', textIcon: 'V', title: 'レイヤー変形 (V)', action: true },
+            { id: 'quick-access-tool', textIcon: 'Q', title: 'Quick Tool Panel (Q)', role: 'popup-launcher', popupName: 'quickAccess', controls: 'quick-access-popup' },
+            { id: 'layer-transform-tool', textIcon: 'V', title: 'レイヤー変形 (V)', role: 'temporary-mode' },
             { separator: true },
-            { id: 'gif-animation-tool', icon: 'animation', title: 'アニメテーブル (A)' },
+            { id: 'gif-animation-tool', icon: 'animation', title: 'アニメテーブル (A)', role: 'popup-launcher', popupName: 'animationTable', controls: 'animation-table-popup' },
             { separator: true },
-            { id: 'settings-tool', icon: 'settings', title: '設定 (S)' }
+            { id: 'settings-tool', icon: 'settings', title: '設定 (S)', role: 'popup-launcher', popupName: 'settings', controls: 'settings-popup' }
         ];
 
         tools.forEach(tool => {
@@ -84,18 +84,27 @@ export const DOMBuilder = (function() {
                     ? `<span class="tool-button-text-icon">${tool.textIcon}</span>`
                     : ICONS[tool.icon];
 
-                const btn = createElement(tool.action ? 'button' : 'div', {
+                const isPopupLauncher = tool.role === 'popup-launcher';
+                const isTemporaryMode = tool.role === 'temporary-mode';
+                const btn = createElement('button', {
                     className: [
                         'tool-button',
                         tool.active ? 'active' : '',
-                        tool.action ? 'sidebar-action-button' : ''
+                        'sidebar-action-button'
                     ].filter(Boolean).join(' '),
                     id: tool.id,
                     innerHTML: iconHtml || '',
                     attributes: {
                         'aria-label': tool.title,
-                        ...(tool.action ? {
-                            type: 'button',
+                        type: 'button',
+                        'data-sidebar-role': tool.role,
+                        ...(isPopupLauncher ? {
+                            'data-popup-name': tool.popupName,
+                            'aria-controls': tool.controls,
+                            'aria-expanded': 'false',
+                            'aria-haspopup': 'dialog'
+                        } : {}),
+                        ...(isTemporaryMode ? {
                             'aria-pressed': 'false'
                         } : {})
                     }

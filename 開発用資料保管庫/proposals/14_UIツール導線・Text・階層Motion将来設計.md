@@ -1,6 +1,6 @@
 # UIツール導線・Text・階層Motion将来設計
 
-更新日: 2026-08-11
+更新日: 2026-08-24
 
 ## 位置づけ
 
@@ -62,6 +62,20 @@ Plan Cのユーザー自由カスタムrailは、Plan A / Bの実制作検証後
 
 Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる余地を残す。常時文字Qだけで分かりにくい場合のPlan Bであり、別のtool正本は作らない。
 
+### QTP Painter's Palette / Surface Gate（Phase 8l）
+
+- QTPは通常描画の`Painter's Palette`、sidebarはLibrary / import / resize / Animation Table / Settings等の大分類・管理・recovery入口とする。両方へ描画toolを重複常設しない。
+- visual iconとinteractive hit areaを分離する。通常controlは透明または弱いsurface、hover / active / focus時だけ明確な面差・境界を出し、clickabilityを失わない。
+- `quick-access-position`の自由位置保存を維持し、Preset配置は既存x / yを明示座標へ揃える補助として後続比較する。Project schemaや第二position正本を作らない。
+- QTP FULL / COMPACT / HIDDEN、左右上下Preset、borderless / restrained-depthは同時実装しない。まずsemantic token bridge、次にQTP一箇所のvisual prototype、Owner受入後に配置・densityの順で開く。
+- 比較は1280×720 / 720×720、Browser 100%、明暗art、mouse / pen / coarse pointer、Q close / reopen、current tool、shortcut `Q`、Canvas遮蔽、到達段数、復帰costを固定する。
+- Concepts / Procreate / Callipeg / Fresco / CSP Simple / ToonSquidは外観模倣でなく、movable palette、身体到達性、animation ergonomics、Canvas中心、初心者継続、高機能progressive disclosureの役割別fixtureとして参照する。
+- Phase 8l Stage CではCurrent / borderless / restrained-depthを同一fixtureで比較し、完全borderlessは淡いCanvasでpopup境界が消えるため棄却した。QTP外殻だけへ弱い境界・gradient・shadowを残し、通常tool cellは低刺激、hover / activeで面を出すrestrained-depthを採用した。sidebarは現行railを維持した。
+- Phase 8vはPreset / densityのうちPosition Presetだけを独立Gate化し、Gate 1=`GO — B`で技術closeした。headerの四隅deckを既存自由drag、共有viewport clamp、保存x / yへ限定接続し、Preset ID、利き手flag、Dock / edge snapを追加しなかった。全97 verifier / build / Browser、SOL final review=`A`を通過した。
+- Phase 8wは残したQTP全体densityだけを独立比較し、Gate 1=`GO — B`を選定した。Pen / Eraser / Airbrushの6 preset直接性を維持し、Preset非対応toolだけsectionをruntime退避した。Position deck、Text utility、保存正本を変えず全98 verifier / build / Browser、生成物清掃、SOL final review=`A`で技術closeした。
+- Phase 8xはshortcut learningを独立Gateとし、Settingsのstatic listを全global actionのcanonical projectionへ置き換え、QTP Pen一controlへ平常密度を増やさないhintを接続した。Phase 8yは同じcanonical patternをQTP内7 toolへ展開し、全99 verifier / build / Browser、SOL final review=`A`で技術closeした。
+- Phase 8zはtouch到達性を別Gateとした。QTP toolは`pointerdown`で即時実行するためlong pressは通常tap遅延または意図しないtool変更となり棄却した。headerの明示`?`からread-only 7-tool shortcut deckを開き、198px viewport clamp、coarse 24px hit、deck内drag遮断を実装した。通常tap、Canvas gesture、保存state、component-local commandは変更せず、全100 verifier / build / Browser、SOL final review=`A`で技術closeした。Owner制作確認は台帳へ分離する。
+
 ### UI密度の後続監査
 
 - オーナーは現在Browser 80%表示を常用している。後続UI整理では、Browser 100%のままsidebar icon、Layer Panel、popup、文字、余白を現状80%相当の視覚密度へ縮小することを目標にする。
@@ -78,6 +92,65 @@ Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる
 - wrapperはruntime stateを持たず、既存ID / event / shortcut / History / model正本を維持する。header通常wheelのTimeline zoom、Lane列wheelの上下、Timeline grid wheelの左右キー相当Frame±1、header空白dragも既存listenerを共有する。Timeline gridの横位置調整はSpace + dragを使う。
 - Browser 1280px相当ではpanel `960×266px`、viewport約202px、狭幅実操作では`460×266px`、row内wrap、controlはみ出し0件。実wheel `80% → 87%`、close / reopen、favicon取得を除くconsole warning / error 0件、全51 verifier、buildを通過した。
 - Setup青 / Frame作業橙とTable高266pxは維持した。Phase 7lは2026-08-12にSOL技術closeし、coarse pointer、制作Projectでのpopup重なり、pen / touchはOwner確認台帳で継続監視する。
+
+### Animation Table Progressive Exposure Gate（Phase 8m）
+
+Phase 7lの二段headerは機能順序とwheel領域を固定する仮設であり、最終的な情報露出量を確定したものではない。SCOPE、LOOP、END、IN / OUT、Clip copy / paste / group / deleteが常時横一列に見えるため、初見では「全てを今理解する必要がある」ように見える。機能自体を削らず、次の三層へ分ける。
+
+1. **Glance layer**: 現在SCOPE、LOOP状態、PREVIEW、onion、Playなど、再生前に状態を即読できる最小表示。
+2. **Choice layer**: SCOPE三択、終端基準、IN / OUT等、押した時だけ比較する設定。現在値buttonからanchored popoverを開く。
+3. **Context action layer**: Clipのcopy / duplicate / group / delete等。Clip選択時だけAction Panelを出し、対象との因果を空間的に示す。
+
+SCOPEは`ALL / LANE / SET`を順送りするbuttonだけにはしない。三状態を覚えないと目的値へ到達できず、現在値以外を比較できないためである。第一案は`SCOPE: ALL ▾`の一buttonを残し、click / Enterで三候補と一行説明を持つanchored popoverを開く。Owner提案の「大きい選択肢をこちらから届ける」Focus Deckは、通常のmenu semantics、Escape、矢印key、外側click close、pointer targetを維持した上で、選択肢の面積と説明量だけを通常menuより強める比較案とする。全面modalや不均一な意味順にはしない。
+
+LOOPは再生結果へ直結し現在状態を常時知る価値が高いため、単独toggleをGlance layerへ残す。詳細modeや範囲はchevron / hold / secondary popoverへ送れる。ENDとIN / OUTはTimeline上のmarker表示と組み合わせ、再生範囲buttonからChoice layerへまとめる案を比較する。markerを隠したり、holdだけを唯一の入口にしない。
+
+Clip actionは選択時だけ上部または選択Clip近傍へAction Panelを出す案を第一候補とする。Callipegはsheet / clip選択時にTimeline上部へ内容依存Action Panelを出し、Adobe Frescoは選択frameをtapするとduplicate / copy / deleteを表示する。ToonSquidも選択Drawingへretiming handleを出し、timeline toolbarとtap / holdの追加操作を併用する。Tegakiでは既にClip本体pointerdownが移動、左右端がretiming、Ctrl / Cmdが複数選択の正本なので、long pressを主入口へ直結するとpen移動と競合する。右click / long pressは将来の補助入口とし、最初は通常選択でAction Panelが現れる形を比較する。
+
+Pasteは選択Clipへ従属しない場合があるため、Action Panelへ完全吸収しない。keyboard paste、空cellのsecondary action、または現在Frameのclipboard affordanceを最低一つ維持する。Top barのcopy / paste / deleteを消すのは、mouse / pen / touch / keyboardで同じactionへ到達でき、selection解除時とTable再open後の復帰をBrowser固定fixtureで確認した後だけとする。
+
+実装順:
+
+1. 現行state / event / Historyを変えない静的wireframeで`現行 / compact current-state / Focus Deck`を比較する。
+2. SCOPE一button＋anchored popoverだけを限定実装し、既存三button IDまたは同一setterへのadapterを維持する。
+3. Clip選択Action Panelを別Sliceで追加し、move / retime / multi-selectの3px threshold、pointercancel、pen / touchを固定する。
+4. Owner受入後だけ旧top bar actionの常時露出を段階的に減らす。長押し専用、全面header再構築、保存state追加は行わない。
+
+2026-08-22のPhase 8m Stage B / Cでは、同一fixtureの1280×720 / 720×720比較でFocus Deckを選び、SCOPEだけをproductionへ限定接続した。閉状態は現在値一button、開状態は既存三ID / `playbackScope` setterを使う`menuitemradio`三択とし、Arrow / Home / End、Enter / Space、Escape / Tab、再click / focusout / outside pointer close、History 0を固定した。全88 verifier / build / Browser / console 0件、SOL final review=`A`で技術closeした。Owner制作確認は台帳へ分離し、実装順3のClip Action Panel、Playback Range Choice、long press補助は本Sliceへ混ぜていない。
+
+### Playback Glance icon / marker semantics（Phase 8n）
+
+- SCOPEのMonitorはcategory iconであり、`ALL / LANE / SET`現在値の代替にしない。閉状態の第一案は`Monitor＋現在値＋chevron`で、Phase 8mのFocus DeckをChoice layerとして維持する。
+- LOOPのRepeat / Repeat Offは形状差を増やす補助として採用可能。active surface、状態title、`aria-pressed`を併用し、斜線または色だけへ依存しない。
+- `I / O` chipはTimeline range markerの省スペース表現として比較する。IN / OUT文字、左右位置、title / aria-label、active状態を併用し、palette外の白を直書きしない。
+- onionは現状「前後N」の単一設定で、過去 / 未来を独立操作する保存正本を持たない。青 / 橙の過去未来squareをrange marker色へ流用せず、別設定を導入するPhaseまでvisual proposalとして保留する。
+- Gate 1は`GO — B: icon＋現在値のHybrid semantic compact`。icon / color only案を棄却し、Monitor＋現在SCOPE、Repeat / Repeat Off、`I / O` marker chip、ghost＋countをproductionへ限定接続した。1280×720 / 720×720、keyboard、Loop / marker / onion実操作、全89 verifier / build、SOL final review=`A`でPhase 8nを技術closeした。Owner制作確認は台帳へ分離する。
+
+公式比較資料:
+
+- Callipeg Timeline: https://callipeg.com/learn-timeline/
+- Adobe Fresco animation timeline: https://helpx.adobe.com/uk/fresco/using/apply-motion-to-artwork.html
+- ToonSquid Timeline: https://toonsquid.com/handbook/interface/timeline/
+
+### Selected Clip Context Action Gate（Phase 8o）
+
+- 第一比較案は通常選択後だけCopy / Group / Deleteをheaderまたは選択Clip近傍へ出すAction Panel。対象未選択時のContext actionをGlance layerから外す一方、既存top barはGate中に削除しない。
+- Pasteは選択Clipへ完全従属しないため、clipboardあり＋current Frame / empty cellから到達できる入口を別に維持する。
+- long pressはClip move / retime / pen gestureと競合するため唯一の入口にしない。通常選択Action Panelが成立した後の補助候補に限定する。
+- 最初は`selectedCelId / selectedCelIds`、group、既存四button、History、shortcut、3px move threshold、pointercancelをread-only監査し、1280×720 / 720×720の静的三案比較から始める。
+
+Gate 1は`GO — B: header内Selected Clip Action strip`。選択中だけ対象名 / Frameまたは選択数とCopy / Group / Delete Clipを投影し、PasteとLane deleteは別context、旧button / handlerは互換入口として維持した。Clip DOM、retime、Ctrl / Cmd multi-select、4px超move threshold、clipboard / History / saveを変更せず、全90 verifier / build / Browser、SOL final review=`A`でPhase 8oを技術closeした。Owner制作確認は台帳へ分離する。
+
+### Playback Range Choice Gate（Phase 8p）
+
+- 保存正本は既存`TimelineModel.playback.endMode / inFrame / outFrame`。`getPlaybackRange()`、scope別Last Clip、`clampPlaybackSettings()`、既存Historyを変更しない。
+- Phase 8pでは閉状態で終端sourceとIN / OUT設定値を要約し、開状態でTimeline / Last Clip / OUT marker三択とcurrent Frameへのmarker設定を比較できる`RANGE summary＋anchored Focus Deck`を採用した。Phase 8sではOwner制作所見を受け、略号`C`を全称`LAST CLIP`へ、I / Oを閉状態の同一outlined groupへ直接投影する。
+- IN / OUTを完全に隠さず、icon / colorだけにも依存しない。未設定OUTで`out-marker`を選んだ状態を誤読しない文言とARIAを持つ。
+- Timeline上の直接range handleはFrame seek / Clip move / retimeとのhit authorityと新gestureを要するためPhase 8pの最初のSliceから外す。Loop / SCOPE / onionも同時変更しない。
+- Gate 1=`GO — B`。閉状態は`C / L / O · I… O…` summary、開状態はTimeline / Last Clip / OUT markerとIN / OUT設定を同一Focus Deckへ置いた。既存Playback正本 / History / range計算、Loop / SCOPE / onion、Timeline gestureを維持し、OUT未設定警告、keyboard / outside close、narrowを含む全91 verifier / build / Browser、SOL final review=`A`でPhase 8pを技術closeした。Timeline直接handleは別Gateへ残す。
+- Phase 8s Gate 1=`GO — B: full end label＋inline I / O`。Repeat隣を`LAST CLIP ▾ | I— | O—`のSetup群とし、終端sourceは三値とも全称、I / Oは現在Frameへの設定・同Frame解除を既存setterへ直接接続した。Focus Deckは三終端比較だけを維持し、全94 verifier / build / Browser、SOL final review=`A`で技術closeした。
+- Phase 8t Gate 1=`GO — B`として、常設`DURATION:`を単一かつ非Grouped ClipのSelected Clip Action strip内`- / <n>F / +`へ限定移設した。Clip edge drag、retime / History / 隣接push、LIB独立入口を維持し、全95 verifier / build / Browser、SOL final review=`A`で技術closeした。
+- Phase 8u Gate 1=`GO — B: Asset iconのcompact直接入口`。残した`LIB`を既存共通Asset Library iconへ置き換え、tooltip / aria-label / 開状態と一操作到達を維持した。Asset Library内容 / ClipAsset正本を変えず、全96 verifier / build / Browser、SOL final review=`A`で技術closeした。
 
 ### Pixel Selection / CAF状態共通化（後続候補）
 
@@ -109,6 +182,35 @@ Q buttonは現在toolのiconまたは小さなstatus indicatorを併記できる
 - generic Sans / Serif / Mono、8〜256px、bold、現在のmain color、日本語 / ASCII / 複数行だけを受け、確定後は文字列 / optionを保存しない。通常Raster pixelが唯一の正本である。
 - viewport中心を既存CameraでProject座標へ戻し、tight raster boundsの新規通常LayerへLayer作成 + pixelを1 Historyで確定する。Animation Tableのworking Layerでは理由付き拒否する。
 - local font access / file import、再編集可能Text、CAF内Text、outline / shadow / vertical textはPhase 7kへ含めない。Phase 7kは2026-08-12にSOL技術closeし、Owner制作確認は別紙で追跡する。
+
+### Text入口 / panel再設計Gate（Owner feedback 2026-08-22）
+
+- 現行のfull-width `T / TEXT TO RASTER`はPhase 7kのone-shot入口を明示する仮設であり、使用頻度に対して常時占有が大きい。active drawing toolではないため、現時点で既存6-tool gridへ通常toolとして混ぜない。
+- 第一比較案は、`6-tool grid → pen slots → SIZE / OPACITY`の連続性を維持し、その後へ小型の`T` SVG launcherを置く形とする。押すとText panelを開き、確定後は元のdrawing contextへ戻る。Text / 吹き出しがCanvas上で継続編集するpersistent modeへ発展した場合だけ、通常tool gridまたは専用slotへの昇格を再評価する。
+- 現行panelのFONT / SIZE labelは狭い幅で重なって見える。次のvisual redesignでは単一列または明示した二段rowへ分け、font family selectorの横に将来の`SYSTEM FONTS` / file import affordanceを置ける余白を確保する。現在のproduction DOMをこのメモだけで変更しない。
+- 縦書きは単純なCSS `writing-mode`追加ではなく、Canvas2D raster確定器の別Gateとする。horizontal / vertical mode、日本語句読点・括弧の向き、Latin回転、縦中横、行送り、tight bounds、History / Project / export一致を固定してから実装する。
+- Windows登録fontは既存方針どおり明示操作＋権限付き`window.queryLocalFonts()`を第一候補とし、path走査しない。非対応 / 拒否時のbundled / generic / file import fallbackと、選択中font・fallback状態をpanel内で読めることをAcceptance Criteriaに含める。
+
+Phase 8qはこの入口を独立Gateとして技術closeした。`6-tool grid → pen slots → SIZE → OPACITY → compact T / TEXT utility`を採用し、persistent drawing toolの列へ混ぜず、open stateだけをsemantic active surface / ARIAで示す。既存Text Raster service、DOM ID / handler、Ctrl / Cmd+Enter、通常Raster Layer＋1 Historyを維持し、FONTとSIZE / BOLD / current colorを二段fieldへした。全92 verifier / build / Browser、SOL final review=`A`を通過した。vertical text、local font、再編集可能Text、QTP全体densityは未実装の別Gateである。
+
+### QTP Pen Preset / Density Gate（Phase 8r）
+
+- Pen / Eraser / Airbrush別6 presetのtool別active slot、SIZE / OPACITY同期、adjacent循環、localStorageを正本として固定し、現行6値同時露出、6 size ring＋active / focus summary、3×2 larger cardを136px / coarse 170pxで比較した。Gate 1は`GO — B`。
+- LUNA限定Sliceでは6 slotを番号＋size ringへ圧縮し、activeのsize / opacityを既存`qa-preset-status`へ集約した。非active slotはkeyboard focus時だけ同じsummaryへpreviewし、blurでactiveへ戻る。opacity値DOM、既存click / setter / storage、非対応tool disabledを維持し、QTP全体position / density、Text、COLOR、brush engineへ広げない。
+- `verify-qtp-preset-density.mjs`、既存Text verifier、全93 verifier / build / Browserでcompact高さ、slot切替、SIZE / OPACITY同期、Fill disabled、focus preview / blur復帰、console error / warning 0件を確認した。SOL final review=`A`で技術closeし、Owner制作確認は台帳へ分離した。Preset位置、long press / Focus Deck化、brush parameter再設計は別Gateへ残す。
+
+### Animation Table / QTP visual hierarchy follow-up（Owner feedback 2026-08-24）
+
+- Animation Tableの再生 / 停止を視覚中央の第一actionとするconceptは維持する。Phase 9eでは専用一行を廃止し、DOMを変えずCSS order＋左右auto marginで第一header row内へ戻した。Phase 9fのOwner follow-upで通常28×24px / coarse 44×38px、maroon fill＋Futaba background抜き、playing橙を確定した。
+- Phase 9fはinactive controlを文字 / icon＋淡いsurface、hover / active / focusでborderという三段へ限定整理した。header全面dark化はCanvas・Clip・Setup青・警告との競争が増すためHOLD。Selected Clip / Delete / closeはcontextual / destructive境界としてflat化しない。次はQTP一componentでPalette swatch / tool / presetへ同じ考えをそのまま当てず、現在色・現在tool・現在presetの識別をfixture比較する。
+- Phase 9gはQTP Palette color / tool / preset cellへ、transparent resting border、cream色の薄い内側contrast、selected橙ring、focus-visible橙outlineを限定適用した。Main / Sub swatch、slider、Text / Help / Position、pressure、preset schemaは維持した。次はSidebar rail一componentで、utility / mode入口の役割差とpopup close後active同期を先に監査してから同じ三段を比較する。
+- Phase 9hはSidebar railでGate 0=`GO — B: Quiet Resting＋Hover Surface＋Active Ring`を採用し、resting borderをtransparentへ下げ、hover / focus / active / disabledをsemantic surfaceへ限定した。30 / 38px hitと既存tool順を維持し、static appearanceをcomponent CSSへ一正本化した。監査で再現したAnimation Table内部×後のA stale active、Q / Vだけbutton＋ARIAである差はPhase 9iのrole / close sync Gateへ分離し、CSSの疑似activeで隠さない。
+- SCOPEは`ALL / LANE`だけへ減らす案があるが、現行`SET`は「目の表示」と同義ではない可能性がある。`playbackScope=set`の選択集合・保存・range評価を監査し、完全同義を証明できるまで削除しない。LOOPの一押し切替は既存toggleと整合する。
+- Range sourceは現在値を常時読めるまま、`OUT MARKER`選択時だけI / O設定を展開する案を比較する。keyboard `I / O`、Timeline marker、未設定警告、既存保存正本を隠さない。Timeline zoomのfooter移動は、header / Lane / gridの三領域wheel契約とpen操作入口を維持できる別Gateとする。
+- QTP color swatchはsolidでborderless寄りにできるが、選択 / focus /淡色swatchの識別をringまたはsurfaceで残す。Pen presetの左上番号を外す案も、keyboard順・6 slot識別・active summaryを同一fixtureで比較してから行う。
+- Pen / Eraserの筆圧ON / OFFはFill modifierの見た目だけを流用せず、現行Brush settings / preset保存shape / shortcut / disabled理由を監査する独立Gateとする。小さい線形toggleを広いsquare hitへする案はvisualとhitboxを分離して評価する。
+- Text utilityは左端`T`＋横書き / 縦書き切替を将来候補とする。縦書きはlauncher skinではなくRaster確定器、句読点・Latin回転・縦中横・bounds・History / exportまでを含む別Phaseであり、Phase 9dへ混ぜない。
+- 公式比較の採用点は外観模倣ではない。CallipegはTimelineをCanvas確保のため隠せ、選択中sheet / clipへAction Panelを出す。CLIP STUDIO Simple ModeはCanvas面積と直接操作を優先する。Tegakiではこの二点を`主要actionの常時直接性`と`低頻度 / context actionの段階露出`へ翻訳する。
 
 ## 4. CAF内部Folderの階層Motion
 
