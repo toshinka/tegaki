@@ -1,0 +1,314 @@
+/*
+ * Phase 9m Animation Table utility placement and Clip visual LOD.
+ * Runtime action, wheel, pointer, model, History and save authority remain in animation-table-popup.js.
+ */
+
+.animation-table-panel .anim-table-header-row--playback {
+    position: relative;
+    min-height: 28px;
+}
+
+.animation-table-panel .anim-table-header {
+    padding-block: 4px;
+    border-bottom: 0;
+}
+
+.animation-table-panel.popup-panel--translucent {
+    min-width: min(460px, 100vw);
+}
+
+.animation-table-panel .anim-playback-primary-slot {
+    position: static;
+    z-index: 3;
+    margin: 0;
+    transform: none;
+}
+
+.animation-table-panel #anim-table-close-btn {
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    transform: translateY(-50%);
+    z-index: 2;
+}
+
+.animation-table-panel .anim-table-header-row--playback > .anim-table-header-left {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    padding-inline: 24px;
+}
+
+.animation-table-panel .anim-table-playback-cluster {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.animation-table-panel .anim-table-playback-cluster--leading {
+    order: 10;
+    justify-self: start;
+}
+
+.animation-table-panel .anim-table-playback-cluster--trailing {
+    order: 30;
+    justify-self: end;
+}
+
+.animation-table-panel.is-narrow .anim-table-header-row--playback #anim-table-close-btn {
+    right: 2px;
+}
+
+.animation-table-panel .anim-table-utility-row {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 4px 8px;
+    border-top: 0;
+    border-bottom: 0;
+    background: color-mix(in srgb, var(--futaba-cream) 42%, transparent);
+    color: var(--futaba-maroon);
+    cursor: default;
+    touch-action: manipulation;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-table-header-center {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    gap: 3px;
+}
+
+.animation-table-panel.is-narrow .anim-table-header-row.anim-table-utility-row {
+    flex-wrap: nowrap;
+    gap: 3px;
+    padding-inline: 4px;
+}
+
+.animation-table-panel.is-narrow .anim-table-header-row--playback > .anim-table-header-left {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 3px;
+    padding-inline: 2px 18px;
+}
+
+.animation-table-panel.popup-panel--translucent.is-narrow .anim-table-header-row--playback {
+    flex-wrap: nowrap;
+}
+
+.animation-table-panel.is-narrow .anim-table-playback-cluster {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    gap: 2px;
+}
+
+.animation-table-panel.is-narrow .anim-table-playback-cluster--leading {
+    width: 100%;
+    justify-content: flex-start;
+    justify-self: start;
+}
+
+.animation-table-panel.is-narrow .anim-table-playback-cluster--trailing {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    justify-self: end;
+}
+
+.animation-table-panel.is-narrow .anim-playback-primary-slot {
+    order: 20;
+}
+
+.animation-table-panel.popup-panel--translucent.is-narrow .anim-table-header {
+    padding: 4px;
+}
+
+.animation-table-panel.is-narrow .anim-timeline-settings {
+    gap: 2px;
+    padding-inline: 3px;
+}
+
+.animation-table-panel.is-narrow .anim-setting-field {
+    gap: 0;
+    font-size: 0;
+}
+
+.animation-table-panel.is-narrow .anim-setting-field input {
+    font-size: 9px;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-table-header-right:empty {
+    display: none;
+}
+
+/*
+ * Selected Clip context is already identified by the solid active Clip in the
+ * Timeline. Keep this projection discoverable without framing the same
+ * selection a second time. Behavior and action projection stay in JS.
+ */
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-actions {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--active-border) 9%, var(--futaba-background));
+    box-shadow: none;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-actions::before {
+    content: '';
+    width: 4px;
+    height: 4px;
+    flex: 0 0 4px;
+    border-radius: 50%;
+    background: var(--active-border);
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-actions[hidden] {
+    display: none;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-target {
+    max-width: 94px;
+    padding: 0 2px 0 0;
+    overflow: hidden;
+    color: var(--futaba-maroon);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    text-overflow: ellipsis;
+    text-wrap: nowrap;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 1px;
+    padding-left: 2px;
+    border-left: 0;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration[hidden],
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn[hidden] {
+    display: none;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration-btn {
+    width: 18px;
+    min-width: 18px;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration-value {
+    min-width: 20px;
+    color: var(--futaba-maroon);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    text-wrap: nowrap;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn {
+    width: auto;
+    min-width: 34px;
+    padding: 0 5px;
+    font-size: 7px;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn--icon {
+    width: 22px;
+    min-width: 22px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    font-size: 0;
+    line-height: 1;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn--icon svg {
+    width: 12px;
+    height: 12px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration-btn,
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration-btn:hover:not(:disabled),
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn:hover:not(:disabled) {
+    border-color: transparent;
+    background: var(--ui-surface-control-hover);
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration-btn:focus-visible,
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn:focus-visible {
+    border-color: transparent;
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+    box-shadow: none;
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration-btn:active:not(:disabled),
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn:active:not(:disabled),
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn.active {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-background));
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn--delete {
+    border-color: transparent;
+    color: var(--futaba-maroon);
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn--delete:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--futaba-light-maroon) 14%, var(--futaba-background));
+}
+
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-duration-btn:disabled,
+.animation-table-panel .anim-table-utility-row .anim-selected-clip-action-btn:disabled {
+    border-color: transparent;
+    background: transparent;
+}
+
+.animation-table-panel .anim-timeline-row .anim-cel-block:not(.selected):not(.primary-selected):not(.multi-selected):not(.moving):not(.retiming):not(.editing) {
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--futaba-medium) 68%, var(--futaba-cream));
+    box-shadow: none;
+}
+
+.animation-table-panel .anim-timeline-row .anim-cel-block.primary-selected {
+    border: 0;
+    border-radius: 4px;
+    background: var(--active-border);
+    box-shadow: none;
+    transform: none;
+}
+
+.animation-table-panel.timeline-handle-quiet .anim-cel-resize-grip {
+    opacity: 0.34;
+}
+
+.animation-table-panel.timeline-handle-hidden .anim-cel-resize-grip {
+    opacity: 0;
+}
+
+@media (pointer: coarse) {
+    .animation-table-panel .anim-table-utility-row {
+        min-height: 42px;
+    }
+}

@@ -34,7 +34,11 @@ assert.match(playbackCss, /\.anim-assets-toggle-btn,[\s\S]*?\.anim-group-btn\s*\
 assert.doesNotMatch(playbackCss, /\.anim-selected-clip-action-btn--delete[\s\S]*?border-color:\s*transparent;/,
     'contextual destructive action is not flattened by the phase 9f slice');
 
-assert.match(source, /timelineHeader\?\.addEventListener\('wheel',[\s\S]*?_handleTimelineHeaderWheel/);
+assert.match(
+    source,
+    /\[timelineHeader, timelineUtility\]\.forEach\(wheelSurface[\s\S]*?_handleTimelineHeaderWheel/,
+    'Header and Bottom utility share the existing timeline zoom wheel authority'
+);
 assert.match(source, /header\.addEventListener\('pointerdown',[\s\S]*?\.anim-playback-controls/);
 assert.match(source, /id="anim-scope-current-btn"[\s\S]*?id="anim-play-toggle-btn"/);
 

@@ -16,6 +16,8 @@
  *   既存transformKeyframes / deformer / rigMotionへ原子的に反映する。Graph値dragも同じ選択を
  *   同一ClipのMotion keyへだけ投影し、active一channelのdisplay deltaを原子的に反映する。
  *   選択状態をProjectへ保存しない。
+ * Playback marker shortcut: handlePlaybackMarkerShortcutKeyDown()はKeyboardHandlerから
+ *   Animation Table visible / OUT MARKER / modifierなしのI・Oだけを既存marker setterへ渡す。
  * 設定済みFolder / BoneのLane選択はlast-used RIG / MOTION / WARP tabを変更しない。
  *   RIGへ強制遷移するのは未設定Folderの初回Setupと明示的なRIG操作だけに限定する。
  * CAF内部Folderの選択はUI正本であり、代表animation working Layerのactive同期で上書きしない。
@@ -236,6 +238,7 @@ import { UI_ICONS } from './ui-icons.js';
 const ANIMATION_TABLE_UI_STORAGE_KEY = 'tegaki_animation_table_ui_v1';
 const ANIMATION_TABLE_UI_DENSITY_VERSION = 2;
 const ANIMATION_TABLE_DEFAULT_HEIGHT = 266;
+const ANIMATION_TABLE_HEADER_COMPACT_WIDTH = 620;
 const TIMELINE_ZOOM_STEPS = [10, 12, 14, 18, 22, 24, 26, 30, 36, 44];
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_ENTRIES = 96;
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_BYTES = 512 * 1024 * 1024;
@@ -592,7 +595,6 @@ export class AnimationTablePopup {
         this.activePlaybackLaneIds = null; // Set<string> | null
         this.includedLaneIds = new Set();
         this._scopeFocusDeckOpen = false;
-        this._playbackRangeFocusDeckOpen = false;
         this.timelineCellWidth = 24;
 
         // アセットライブラリ関連 (Phase 4z4)
@@ -689,7 +691,6 @@ export class AnimationTablePopup {
         if (!this.panel) return;
         const wasVisible = this.isVisible === true;
         this._setScopeFocusDeckOpen(false);
-        this._setPlaybackRangeFocusDeckOpen(false);
         this._cancelMotionEditPreviewRefresh();
         if (this._rigMeshVertexEditGesture) {
             if (!rigSkinWeightOverlay.cancelVertexDrag('table-close')) {
@@ -914,14 +915,13 @@ export class AnimationTablePopup {
         if (!this.panel) return;
         const playBtn = this.panel.querySelector('#anim-play-toggle-btn');
         if (playBtn) {
+            playBtn.textContent = '';
             if (this.isPlaying) {
-                playBtn.textContent = '■';
                 playBtn.classList.add('playing');
                 playBtn.title = 'Stop';
                 playBtn.setAttribute('aria-label', 'Stop');
                 playBtn.setAttribute('aria-pressed', 'true');
             } else {
-                playBtn.textContent = '▶';
                 playBtn.classList.remove('playing');
                 playBtn.title = 'Play';
                 playBtn.setAttribute('aria-label', 'Play');
@@ -16490,6 +16490,8 @@ export class AnimationTablePopup {
         this.panel.style.setProperty('--anim-cell-width', `${this.timelineCellWidth}px`);
         this.panel.style.setProperty('--anim-cel-inset', '6px');
         this.panel.classList.toggle('timeline-compact-labels', this.timelineCellWidth < 18);
+        this.panel.classList.toggle('timeline-handle-quiet', this.timelineCellWidth < 18 && this.timelineCellWidth > 10);
+        this.panel.classList.toggle('timeline-handle-hidden', this.timelineCellWidth <= 10);
         
         // 【重要】モデルを LayerSystem と同期（暫定接続）
         const layers = this.layerSystem?.getLayers() || [];
@@ -16586,9 +16588,9 @@ export class AnimationTablePopup {
                 : 'Loop OFF: 終端Frameで停止する';
         }
 
+        const endMode = this.model.playback.endMode || 'timeline';
         const endModeBtn = this.panel.querySelector('#anim-end-mode-btn');
         if (endModeBtn) {
-            const endMode = this.model.playback.endMode || 'timeline';
             const labelMap = {
                 timeline: 'TIMELINE',
                 'last-clip': 'LAST CLIP',
@@ -16599,34 +16601,33 @@ export class AnimationTablePopup {
                 'last-clip': '終端: 再生Scope内の最後のCAF',
                 'out-marker': '終端: OUT marker'
             };
+            const modes = ['timeline', 'last-clip', 'out-marker'];
+            const currentIndex = Math.max(0, modes.indexOf(endMode));
+            const nextMode = modes[(currentIndex + 1) % modes.length];
             const inFrame = this.model.playback.inFrame;
             const outFrame = this.model.playback.outFrame;
             const summary = endModeBtn.querySelector('.anim-playback-range-summary');
             if (summary) {
                 summary.textContent = labelMap[endMode] || labelMap.timeline;
+                summary.hidden = endMode === 'out-marker';
             }
             const outMissing = endMode === 'out-marker' && !(Number.isInteger(outFrame) && outFrame >= 0);
             endModeBtn.classList.toggle('needs-out-marker', outMissing);
-            endModeBtn.setAttribute('aria-label', `再生範囲。${titleMap[endMode] || titleMap.timeline}。IN ${Number.isInteger(inFrame) ? `F${inFrame + 1}` : '未設定'}、OUT ${Number.isInteger(outFrame) ? `F${outFrame + 1}` : '未設定'}。設定を開く`);
+            endModeBtn.dataset.endMode = endMode;
+            endModeBtn.setAttribute('aria-label', `再生終端。${titleMap[endMode] || titleMap.timeline}。押すと${labelMap[nextMode]}へ切替`);
             endModeBtn.title = outMissing
-                ? '終端はOUT markerですが、OUTが未設定です。再生範囲設定を開く'
-                : `${titleMap[endMode] || titleMap.timeline}。再生範囲設定を開く`;
-
-            for (const option of this.panel.querySelectorAll('.anim-playback-end-option')) {
-                const active = option.dataset.playbackEndMode === endMode;
-                option.classList.toggle('active', active);
-                option.setAttribute('aria-checked', active ? 'true' : 'false');
-                option.tabIndex = active ? 0 : -1;
-            }
-
-            const currentFrame = this.model.playback.currentFrame;
-            const deckCurrent = this.panel.querySelector('.anim-playback-range-current-frame');
-            if (deckCurrent) deckCurrent.textContent = `現在 F${currentFrame + 1}`;
+                ? `終端はOUT markerですがOUT未設定。押すと${labelMap[nextMode]}へ切替`
+                : `${titleMap[endMode] || titleMap.timeline}。押すと${labelMap[nextMode]}へ切替`;
         }
 
         const inBtn = this.panel.querySelector('#anim-set-in-btn');
         const outBtn = this.panel.querySelector('#anim-set-out-btn');
+        const showMarkers = endMode === 'out-marker';
+        const rangeControls = this.panel.querySelector('.anim-playback-range-controls');
+        rangeControls?.classList.toggle('shows-markers', showMarkers);
         if (inBtn) {
+            inBtn.hidden = !showMarkers;
+            inBtn.tabIndex = showMarkers ? 0 : -1;
             const inFrame = this.model.playback.inFrame;
             const hasInMarker = Number.isInteger(inFrame) && inFrame >= 0;
             const isCurrentIn = this.model.playback.inFrame === this.model.playback.currentFrame;
@@ -16642,12 +16643,14 @@ export class AnimationTablePopup {
                 ? `IN marker: F${inFrame + 1}。現在Frame${isCurrentIn ? 'から解除' : 'へ設定'}`
                 : 'IN marker未設定。現在Frameへ設定');
             inBtn.title = isCurrentIn
-                ? '現在FrameのIN markerを解除'
+                ? 'I: 現在FrameのIN markerを解除'
                 : (hasInMarker
-                    ? `IN marker: F${inFrame + 1}。現在Frameへ変更`
-                    : '現在FrameをIN markerに設定');
+                    ? `I: IN marker: F${inFrame + 1}。現在Frameへ変更`
+                    : 'I: 現在FrameをIN markerに設定');
         }
         if (outBtn) {
+            outBtn.hidden = !showMarkers;
+            outBtn.tabIndex = showMarkers ? 0 : -1;
             const outFrame = this.model.playback.outFrame;
             const hasOutMarker = Number.isInteger(outFrame) && outFrame >= 0;
             const isCurrentOut = this.model.playback.outFrame === this.model.playback.currentFrame;
@@ -16663,12 +16666,11 @@ export class AnimationTablePopup {
                 ? `OUT marker: F${outFrame + 1}。現在Frame${isCurrentOut ? 'から解除' : 'へ設定'}`
                 : 'OUT marker未設定。現在Frameへ設定');
             outBtn.title = isCurrentOut
-                ? '現在FrameのOUT markerを解除'
+                ? 'O: 現在FrameのOUT markerを解除'
                 : (hasOutMarker
-                    ? `OUT marker: F${outFrame + 1}。現在Frameへ変更`
-                    : '現在FrameをOUT markerに設定');
+                    ? `O: OUT marker: F${outFrame + 1}。現在Frameへ変更`
+                    : 'O: 現在FrameをOUT markerに設定');
         }
-        this._syncPlaybackRangeFocusDeckState();
 
         // ASSETSボタンの状態
         const assetsBtn = this.panel.querySelector('#anim-assets-toggle-btn');
@@ -17692,6 +17694,10 @@ export class AnimationTablePopup {
                 if (projectedCopyBtn) {
                     projectedCopyBtn.disabled = copyBtn?.disabled ?? true;
                     projectedCopyBtn.title = copyBtn?.title || '選択CAFをコピー (Ctrl+C)';
+                    projectedCopyBtn.setAttribute(
+                        'aria-label',
+                        `Copy ${selectedIds.length} selected CAF${selectedIds.length === 1 ? '' : 's'} (Ctrl+C)`
+                    );
                 }
                 const projectedGroupBtn = selectedClipActions.querySelector('#anim-selected-clip-group-btn');
                 if (projectedGroupBtn) {
@@ -17747,87 +17753,71 @@ export class AnimationTablePopup {
             <div class="anim-table-header">
                 <div class="anim-table-header-row anim-table-header-row--playback">
                     <div class="anim-table-header-left">
-                        <div class="anim-timeline-settings" title="Timeline settings">
-                            <label class="anim-setting-field">FPS
-                                <input type="number" id="anim-fps-input" min="1" max="60" step="1" value="${this.model.fps}">
-                            </label>
-                            <label class="anim-setting-field">FRAMES
-                                <input type="number" id="anim-total-frames-input" min="1" max="240" step="1" value="${this.model.totalFrames}">
-                            </label>
-                        </div>
-                        <div class="anim-scope-controls">
-                            <button class="anim-scope-current-btn" id="anim-scope-current-btn" type="button"
-                                aria-haspopup="menu" aria-expanded="false" aria-controls="anim-scope-focus-deck">
-                                <span class="anim-scope-current-icon" aria-hidden="true">${UI_ICONS.monitor}</span>
-                                <span class="anim-scope-current-label">SCOPE:</span>
-                                <span class="anim-scope-current-value">ALL</span>
-                                <span class="anim-scope-chevron" aria-hidden="true">▾</span>
-                            </button>
-                            <div class="anim-scope-focus-deck" id="anim-scope-focus-deck" role="menu"
-                                aria-label="プレビューと再生の対象Lane" hidden>
-                                <span class="anim-scope-deck-title">再生するLane</span>
-                                <button class="anim-scope-btn" id="anim-scope-all-btn" type="button"
-                                    role="menuitemradio" aria-checked="true" data-playback-scope="all">
-                                    <span class="anim-scope-option-label">ALL</span>
-                                    <span class="anim-scope-option-description">すべてのLane</span>
-                                </button>
-                                <button class="anim-scope-btn" id="anim-scope-lane-btn" type="button"
-                                    role="menuitemradio" aria-checked="false" data-playback-scope="activeLane">
-                                    <span class="anim-scope-option-label">LANE</span>
-                                    <span class="anim-scope-option-description">アクティブLaneのみ</span>
-                                </button>
-                                <button class="anim-scope-btn" id="anim-scope-set-btn" type="button"
-                                    role="menuitemradio" aria-checked="false" data-playback-scope="includedLanes">
-                                    <span class="anim-scope-option-label">SET</span>
-                                    <span class="anim-scope-option-description">チェックLane（空なら全Lane）</span>
-                                </button>
+                        <div class="anim-table-playback-cluster anim-table-playback-cluster--leading">
+                            <div class="anim-timeline-settings" title="Timeline settings">
+                                <label class="anim-setting-field">FPS
+                                    <input type="number" id="anim-fps-input" min="1" max="60" step="1" value="${this.model.fps}">
+                                </label>
+                                <label class="anim-setting-field">FRAMES
+                                    <input type="number" id="anim-total-frames-input" min="1" max="240" step="1" value="${this.model.totalFrames}">
+                                </label>
                             </div>
-                        </div>
-                        <div class="anim-playback-controls" title="再生範囲・終端・ループ">
-                            <button class="anim-playback-btn anim-playback-icon-btn" id="anim-loop-toggle-btn" type="button" title="Loop ON/OFF" aria-label="Loop ON" aria-pressed="true">${UI_ICONS.repeat}</button>
-                            <div class="anim-playback-range-controls">
-                                <button class="anim-playback-btn anim-playback-range-current-btn" id="anim-end-mode-btn" type="button"
-                                    aria-haspopup="dialog" aria-expanded="false" aria-controls="anim-playback-range-focus-deck">
-                                    <span class="anim-playback-range-summary">LAST CLIP</span>
-                                    <span class="anim-playback-range-chevron" aria-hidden="true">▾</span>
+                            <div class="anim-scope-controls">
+                                <button class="anim-scope-current-btn" id="anim-scope-current-btn" type="button"
+                                    aria-haspopup="menu" aria-expanded="false" aria-controls="anim-scope-focus-deck">
+                                    <span class="anim-scope-current-icon" aria-hidden="true">${UI_ICONS.monitor}</span>
+                                    <span class="anim-scope-current-label">SCOPE:</span>
+                                    <span class="anim-scope-current-value">ALL</span>
+                                    <span class="anim-scope-chevron" aria-hidden="true">▾</span>
                                 </button>
-                                <button class="anim-playback-btn anim-playback-marker-btn anim-playback-marker-btn--in" id="anim-set-in-btn" type="button" title="現在FrameをIN markerに設定" aria-label="IN marker未設定。現在Frameへ設定" aria-pressed="false">
-                                    <span class="anim-playback-marker-chip-label">I</span><span class="anim-playback-marker-chip-value" hidden></span>
-                                </button>
-                                <button class="anim-playback-btn anim-playback-marker-btn anim-playback-marker-btn--out" id="anim-set-out-btn" type="button" title="現在FrameをOUT markerに設定" aria-label="OUT marker未設定。現在Frameへ設定" aria-pressed="false">
-                                    <span class="anim-playback-marker-chip-label">O</span><span class="anim-playback-marker-chip-value" hidden></span>
-                                </button>
-                                <div class="anim-playback-range-focus-deck" id="anim-playback-range-focus-deck" role="dialog"
-                                    aria-label="再生範囲設定" hidden>
-                                    <div class="anim-playback-range-deck-title">
-                                        <span>再生終端</span>
-                                        <span class="anim-playback-range-current-frame">現在 F1</span>
-                                    </div>
-                                    <div class="anim-playback-end-options" role="radiogroup" aria-label="再生終端">
-                                        <button class="anim-playback-end-option" type="button" role="radio" aria-checked="false" data-playback-end-mode="timeline">
-                                            <span>TIMELINE</span><small>Timeline末尾</small>
-                                        </button>
-                                        <button class="anim-playback-end-option" type="button" role="radio" aria-checked="true" data-playback-end-mode="last-clip">
-                                            <span>LAST CLIP</span><small>Scope内の最後のCAF</small>
-                                        </button>
-                                        <button class="anim-playback-end-option" type="button" role="radio" aria-checked="false" data-playback-end-mode="out-marker">
-                                            <span>OUT MARKER</span><small>設定したOUTまで</small>
-                                        </button>
-                                    </div>
+                                <div class="anim-scope-focus-deck" id="anim-scope-focus-deck" role="menu"
+                                    aria-label="プレビューと再生の対象Lane" hidden>
+                                    <span class="anim-scope-deck-title">再生するLane</span>
+                                    <button class="anim-scope-btn" id="anim-scope-all-btn" type="button"
+                                        role="menuitemradio" aria-checked="true" data-playback-scope="all">
+                                        <span class="anim-scope-option-label">ALL</span>
+                                        <span class="anim-scope-option-description">すべてのLane</span>
+                                    </button>
+                                    <button class="anim-scope-btn" id="anim-scope-lane-btn" type="button"
+                                        role="menuitemradio" aria-checked="false" data-playback-scope="activeLane">
+                                        <span class="anim-scope-option-label">LANE</span>
+                                        <span class="anim-scope-option-description">アクティブLaneのみ</span>
+                                    </button>
+                                    <button class="anim-scope-btn" id="anim-scope-set-btn" type="button"
+                                        role="menuitemradio" aria-checked="false" data-playback-scope="includedLanes">
+                                        <span class="anim-scope-option-label">SET</span>
+                                        <span class="anim-scope-option-description">チェックLane（空なら全Lane）</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                        <button class="anim-preview-toggle" id="anim-preview-toggle-btn" title="PREVIEW OFF: 通常Layer表示を優先" aria-pressed="false">PREVIEW</button>
-                        <button class="anim-onion-toggle" id="anim-onion-toggle-btn" title="Timeline onion: off">
-                            <span class="anim-onion-icon">${UI_ICONS.onionSkin}</span>
-                            <span class="anim-onion-count">0</span>
-                        </button>
                         <div class="anim-playback-primary-slot" role="group" aria-label="Playback">
-                            <button class="anim-tool-btn anim-play-btn" id="anim-play-toggle-btn" title="Play" aria-label="Play" aria-pressed="false">▶</button>
+                            <button class="anim-tool-btn anim-play-btn" id="anim-play-toggle-btn" title="Play" aria-label="Play" aria-pressed="false"></button>
+                        </div>
+                        <div class="anim-table-playback-cluster anim-table-playback-cluster--trailing">
+                            <div class="anim-playback-controls" title="再生範囲・終端・ループ">
+                                <button class="anim-playback-btn anim-playback-icon-btn" id="anim-loop-toggle-btn" type="button" title="Loop ON/OFF" aria-label="Loop ON" aria-pressed="true">${UI_ICONS.repeat}</button>
+                                <div class="anim-playback-range-controls">
+                                    <button class="anim-playback-btn anim-playback-range-current-btn" id="anim-end-mode-btn" type="button">
+                                        <span class="anim-playback-range-summary" aria-live="polite">LAST CLIP</span>
+                                    </button>
+                                    <button class="anim-playback-btn anim-playback-marker-btn anim-playback-marker-btn--in" id="anim-set-in-btn" type="button" aria-keyshortcuts="I" title="I: 現在FrameをIN markerに設定" aria-label="IN marker未設定。現在Frameへ設定" aria-pressed="false" hidden>
+                                        <span class="anim-playback-marker-chip-label">I</span><span class="anim-playback-marker-chip-value" hidden></span>
+                                    </button>
+                                    <button class="anim-playback-btn anim-playback-marker-btn anim-playback-marker-btn--out" id="anim-set-out-btn" type="button" aria-keyshortcuts="O" title="O: 現在FrameをOUT markerに設定" aria-label="OUT marker未設定。現在Frameへ設定" aria-pressed="false" hidden>
+                                        <span class="anim-playback-marker-chip-label">O</span><span class="anim-playback-marker-chip-value" hidden></span>
+                                    </button>
+                                </div>
+                            </div>
+                            <button class="anim-preview-toggle" id="anim-preview-toggle-btn" title="PREVIEW OFF: 通常Layer表示を優先" aria-pressed="false">PREVIEW</button>
+                            <button class="anim-onion-toggle" id="anim-onion-toggle-btn" title="Timeline onion: off">
+                                <span class="anim-onion-icon">${UI_ICONS.onionSkin}</span>
+                                <span class="anim-onion-count">0</span>
+                            </button>
                         </div>
                     </div>
                 </div>
-                <div class="anim-table-header-row anim-table-header-row--clip">
+                <div class="anim-table-header-row anim-table-header-row--clip anim-table-utility-row">
                     <div class="anim-table-header-center">
                         <div class="anim-zoom-controls" title="Timeline zoom">
                             <button class="anim-zoom-btn" id="anim-zoom-out-btn" aria-label="Zoom out timeline">-</button>
@@ -17861,9 +17851,9 @@ export class AnimationTablePopup {
                                 <span class="anim-selected-clip-duration-value" id="anim-selected-clip-duration-value">1F</span>
                                 <button class="anim-tool-btn anim-selected-clip-duration-btn" id="anim-duration-inc" type="button" title="Increase Duration" aria-label="Increase selected Clip Duration">+</button>
                             </span>
-                            <button class="anim-tool-btn anim-selected-clip-action-btn" id="anim-selected-clip-copy-btn" type="button">COPY</button>
+                            <button class="anim-tool-btn anim-selected-clip-action-btn anim-selected-clip-action-btn--icon" id="anim-selected-clip-copy-btn" type="button" title="選択CAFをコピー (Ctrl+C)" aria-label="Copy selected CAF (Ctrl+C)"><span aria-hidden="true">${UI_ICONS.duplicate}</span></button>
                             <button class="anim-tool-btn anim-selected-clip-action-btn" id="anim-selected-clip-group-btn" type="button" hidden>GROUP</button>
-                            <button class="anim-tool-btn anim-selected-clip-action-btn anim-selected-clip-action-btn--delete" id="anim-selected-clip-delete-btn" type="button">DELETE</button>
+                            <button class="anim-tool-btn anim-selected-clip-action-btn anim-selected-clip-action-btn--delete anim-selected-clip-action-btn--icon" id="anim-selected-clip-delete-btn" type="button" title="選択CAFを削除 (Alt+Delete / Alt+Backspace)" aria-label="Delete selected CAF (Alt+Delete / Alt+Backspace)"><span aria-hidden="true">${UI_ICONS.trash}</span></button>
                         </div>
                     </div>
                     <div class="anim-table-header-right">
@@ -17886,6 +17876,7 @@ export class AnimationTablePopup {
         `;
         
         document.body.appendChild(this.panel);
+        this._mountAnimationTableUtilityRow();
         this._ensureMotionPanel();
         this.panel.addEventListener('contextmenu', (e) => {
             if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
@@ -17894,6 +17885,21 @@ export class AnimationTablePopup {
         });
         
         this._setupPanelEvents();
+    }
+
+    _mountAnimationTableUtilityRow() {
+        const header = this.panel?.querySelector('.anim-table-header');
+        const playbackRow = header?.querySelector('.anim-table-header-row--playback');
+        const utilityRow = header?.querySelector('.anim-table-utility-row');
+        const viewport = this.panel?.querySelector('.anim-table-viewport');
+        const closeButton = utilityRow?.querySelector('#anim-table-close-btn');
+        if (!playbackRow || !utilityRow || !viewport || !closeButton) return false;
+
+        playbackRow.appendChild(closeButton);
+        viewport.after(utilityRow);
+        utilityRow.setAttribute('role', 'toolbar');
+        utilityRow.setAttribute('aria-label', 'Timeline and selected Clip utility');
+        return true;
     }
 
     _ensureMotionPanel() {
@@ -19477,9 +19483,12 @@ export class AnimationTablePopup {
         }
 
         const timelineHeader = this.panel.querySelector('.anim-table-header');
-        timelineHeader?.addEventListener('wheel', (event) => {
-            this._handleTimelineHeaderWheel(event);
-        }, { passive: false });
+        const timelineUtility = this.panel.querySelector('.anim-table-utility-row');
+        [timelineHeader, timelineUtility].forEach(wheelSurface => {
+            wheelSurface?.addEventListener('wheel', (event) => {
+                this._handleTimelineHeaderWheel(event);
+            }, { passive: false });
+        });
 
         const timelineViewport = this.panel.querySelector('.anim-table-viewport');
         if (timelineViewport) {
@@ -19527,7 +19536,6 @@ export class AnimationTablePopup {
         const scopeDeck = this.panel.querySelector('#anim-scope-focus-deck');
         const scopeOptions = [...(scopeDeck?.querySelectorAll('.anim-scope-btn') || [])];
         scopeCurrentBtn?.addEventListener('click', () => {
-            this._setPlaybackRangeFocusDeckOpen(false);
             this._setScopeFocusDeckOpen(!this._scopeFocusDeckOpen, { focusSelected: true });
         });
         scopeCurrentBtn?.addEventListener('keydown', event => {
@@ -19570,40 +19578,9 @@ export class AnimationTablePopup {
         if (endModeBtn) {
             endModeBtn.addEventListener('click', () => {
                 this._setScopeFocusDeckOpen(false);
-                this._setPlaybackRangeFocusDeckOpen(!this._playbackRangeFocusDeckOpen, { focusSelected: true });
-            });
-            endModeBtn.addEventListener('keydown', event => {
-                if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) return;
-                const nextOpen = event.key === 'Enter' || event.key === ' '
-                    ? !this._playbackRangeFocusDeckOpen
-                    : true;
-                this._setScopeFocusDeckOpen(false);
-                this._setPlaybackRangeFocusDeckOpen(nextOpen, { focusSelected: nextOpen });
-                event.preventDefault();
-                event.stopPropagation();
+                this._cyclePlaybackEndMode();
             });
         }
-
-        const rangeControls = this.panel.querySelector('.anim-playback-range-controls');
-        const rangeDeck = this.panel.querySelector('#anim-playback-range-focus-deck');
-        for (const option of rangeDeck?.querySelectorAll('.anim-playback-end-option') || []) {
-            option.addEventListener('click', () => {
-                const endMode = option.dataset.playbackEndMode;
-                if (!['timeline', 'last-clip', 'out-marker'].includes(endMode)) return;
-                this._setPlaybackEndMode(endMode);
-            });
-        }
-        rangeControls?.addEventListener('focusout', () => {
-            queueMicrotask(() => {
-                if (this._playbackRangeFocusDeckOpen && !rangeControls.contains(document.activeElement)) {
-                    this._setPlaybackRangeFocusDeckOpen(false);
-                }
-            });
-        });
-        document.addEventListener('pointerdown', event => {
-            if (!this._playbackRangeFocusDeckOpen || rangeControls?.contains(event.target)) return;
-            this._setPlaybackRangeFocusDeckOpen(false);
-        }, true);
 
         const setInBtn = this.panel.querySelector('#anim-set-in-btn');
         if (setInBtn) {
@@ -20777,62 +20754,6 @@ export class AnimationTablePopup {
         }
     }
 
-    _syncPlaybackRangeFocusDeckState() {
-        if (!this.panel) return;
-        const controls = this.panel.querySelector('.anim-playback-range-controls');
-        const currentBtn = this.panel.querySelector('#anim-end-mode-btn');
-        const deck = this.panel.querySelector('#anim-playback-range-focus-deck');
-        const chevron = currentBtn?.querySelector('.anim-playback-range-chevron');
-        const open = this._playbackRangeFocusDeckOpen === true && this.isVisible === true;
-        controls?.classList.toggle('is-open', open);
-        if (currentBtn) currentBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        if (deck) deck.hidden = !open;
-        if (chevron) chevron.textContent = open ? '▴' : '▾';
-    }
-
-    _setPlaybackRangeFocusDeckOpen(open, { focusSelected = false, restoreFocus = false } = {}) {
-        const nextOpen = open === true && this.isVisible === true;
-        this._playbackRangeFocusDeckOpen = nextOpen;
-        this._syncPlaybackRangeFocusDeckState();
-
-        if (nextOpen && focusSelected) {
-            queueMicrotask(() => {
-                this.panel?.querySelector('#anim-playback-range-focus-deck .anim-playback-end-option.active')?.focus({ preventScroll: true });
-            });
-        } else if (!nextOpen && restoreFocus) {
-            this.panel?.querySelector('#anim-end-mode-btn')?.focus({ preventScroll: true });
-        }
-    }
-
-    _handlePlaybackRangeFocusDeckKeyDown(event) {
-        if (!this.isVisible || !this._playbackRangeFocusDeckOpen || !this.panel) return false;
-        const deck = this.panel.querySelector('#anim-playback-range-focus-deck');
-        if (!deck) return false;
-        const options = [...deck.querySelectorAll('.anim-playback-end-option:not(:disabled)')];
-
-        if (event.key === 'Escape') {
-            this._setPlaybackRangeFocusDeckOpen(false, { restoreFocus: true });
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return true;
-        }
-        if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
-            || !options.includes(document.activeElement)) {
-            return false;
-        }
-
-        const focusedIndex = options.indexOf(document.activeElement);
-        let nextIndex = focusedIndex;
-        if (event.key === 'Home') nextIndex = 0;
-        else if (event.key === 'End') nextIndex = options.length - 1;
-        else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = (focusedIndex + 1) % options.length;
-        else nextIndex = focusedIndex <= 0 ? options.length - 1 : focusedIndex - 1;
-        options[nextIndex]?.focus({ preventScroll: true });
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return true;
-    }
-
     _handleScopeFocusDeckKeyDown(event) {
         if (!this.isVisible || !this._scopeFocusDeckOpen || !this.panel) return false;
         const deck = this.panel.querySelector('#anim-scope-focus-deck');
@@ -20878,7 +20799,10 @@ export class AnimationTablePopup {
         const width = renderedWidth > 0
             ? (preferredWidth > 0 ? Math.min(preferredWidth, renderedWidth) : renderedWidth)
             : preferredWidth;
-        this.panel.classList.toggle('is-narrow', width > 0 && width <= 760);
+        this.panel.classList.toggle(
+            'is-narrow',
+            width > 0 && width <= ANIMATION_TABLE_HEADER_COMPACT_WIDTH
+        );
     }
 
     _adjustSelectedCelDuration(delta) {
@@ -21232,16 +21156,6 @@ export class AnimationTablePopup {
         });
     }
 
-    _setPlaybackEndMode(endMode) {
-        if (!['timeline', 'last-clip', 'out-marker'].includes(endMode)) return false;
-        return this._applyPlaybackSetting((playback) => {
-            playback.endMode = endMode;
-        }, 'caf-playback-end-mode', {
-            type: 'caf-playback-end-mode',
-            endMode
-        });
-    }
-
     _togglePlaybackMarker(markerKey) {
         if (markerKey !== 'inFrame' && markerKey !== 'outFrame') return false;
         const historyName = markerKey === 'inFrame' ? 'caf-playback-in-marker' : 'caf-playback-out-marker';
@@ -21252,6 +21166,24 @@ export class AnimationTablePopup {
             type: historyName,
             marker: markerKey
         });
+    }
+
+    handlePlaybackMarkerShortcutKeyDown(event) {
+        if (!event || !this.isVisible || !this.panel
+            || this.model?.playback?.endMode !== 'out-marker'
+            || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+            return false;
+        }
+
+        const markerKey = event.code === 'KeyI'
+            ? 'inFrame'
+            : (event.code === 'KeyO' ? 'outFrame' : null);
+        if (!markerKey) return false;
+
+        if (!event.repeat) {
+            this._togglePlaybackMarker(markerKey);
+        }
+        return true;
     }
 
     _adjustTimelineZoom(delta) {
@@ -21412,38 +21344,6 @@ export class AnimationTablePopup {
                 box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 24%, transparent);
             }
 
-            .anim-preview-toggle {
-                margin-left: 3px;
-                height: 19px;
-                min-width: 50px;
-                padding: 0 6px;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                border: 1px solid var(--futaba-light-medium);
-                border-radius: 5px;
-                background: transparent;
-                color: var(--futaba-maroon);
-                font-size: 8px;
-                font-weight: 700;
-                cursor: pointer;
-                opacity: 0.72;
-                user-select: none;
-                transition: background 0.2s, border-color 0.2s, opacity 0.2s;
-            }
-
-            .anim-preview-toggle:hover {
-                background: rgba(128, 0, 0, 0.08);
-                opacity: 0.95;
-            }
-
-            .anim-preview-toggle.active {
-                background: rgba(255, 102, 0, 0.18);
-                border-color: var(--futaba-salmon);
-                color: var(--futaba-maroon);
-                opacity: 1;
-            }
-
             .anim-onion-toggle {
                 margin-left: 4px;
                 height: 19px;
@@ -21509,37 +21409,6 @@ export class AnimationTablePopup {
                 user-select: none;
             }
 
-            .anim-setting-field input {
-                width: 28px;
-                height: 16px;
-                box-sizing: border-box;
-                border: 1px solid rgba(128, 0, 0, 0.22);
-                border-radius: 4px;
-                background: color-mix(in srgb, var(--futaba-background) 78%, transparent);
-                color: var(--futaba-maroon);
-                font-size: 9px;
-                font-weight: 700;
-                text-align: center;
-                padding: 0 2px;
-                outline: none;
-                appearance: textfield;
-                -moz-appearance: textfield;
-            }
-
-            .anim-setting-field input::-webkit-inner-spin-button,
-            .anim-setting-field input::-webkit-outer-spin-button {
-                margin: 0;
-                appearance: none;
-                -webkit-appearance: none;
-            }
-
-            .anim-setting-field input:focus,
-            .anim-setting-field input:focus-visible {
-                border-color: var(--active-border);
-                box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-border) 18%, transparent);
-                background: var(--futaba-background);
-            }
-
             .anim-capture-controls {
                 margin-left: 9px;
                 display: flex;
@@ -21566,18 +21435,6 @@ export class AnimationTablePopup {
                 display: none;
             }
 
-            .anim-selected-clip-actions {
-                min-width: 0;
-                display: flex;
-                align-items: center;
-                gap: 3px;
-                padding: 2px 3px;
-                border: 1px solid var(--ui-border-active);
-                border-radius: var(--ui-radius-control);
-                background: var(--ui-surface-control-active);
-                box-shadow: var(--ui-shadow-control-active);
-            }
-
             .anim-selected-clip-actions[hidden] {
                 display: none;
             }
@@ -21587,59 +21444,8 @@ export class AnimationTablePopup {
                 display: none;
             }
 
-            .anim-selected-clip-target {
-                max-width: 94px;
-                padding: 0 2px;
-                overflow: hidden;
-                color: var(--futaba-maroon);
-                font-size: 8px;
-                font-weight: 700;
-                line-height: 1;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-
-            .anim-selected-clip-duration {
-                display: flex;
-                align-items: center;
-                gap: 2px;
-                padding-left: 3px;
-                border-left: 1px solid var(--ui-border-active);
-            }
-
             .anim-selected-clip-duration[hidden] {
                 display: none;
-            }
-
-            .anim-selected-clip-duration-btn {
-                width: 18px;
-                min-width: 18px;
-            }
-
-            .anim-selected-clip-duration-value {
-                min-width: 20px;
-                color: var(--futaba-maroon);
-                font-size: 8px;
-                font-weight: 700;
-                line-height: 1;
-                text-align: center;
-                white-space: nowrap;
-            }
-
-            .anim-selected-clip-action-btn {
-                width: auto;
-                min-width: 34px;
-                padding: 0 5px;
-                font-size: 7px;
-            }
-
-            .anim-selected-clip-action-btn.active {
-                border-color: var(--ui-border-active);
-                background: var(--ui-surface-control-hover);
-            }
-
-            .anim-selected-clip-action-btn--delete {
-                border-color: var(--futaba-medium);
             }
 
             .animation-table-panel.is-narrow .anim-table-header {
@@ -23366,13 +23172,24 @@ export class AnimationTablePopup {
             const hasAnimationContext = (this.model.tracks?.length || 0) > 0 || (this.model.clipAssets?.length || 0) > 0;
             if (!this.isVisible && !hasAnimationContext) return;
             if (this._handleScopeFocusDeckKeyDown(e)) return;
-            if (this._handlePlaybackRangeFocusDeckKeyDown(e)) return;
             
             // 入力欄編集中は無視
             const isInput = e.target.tagName === 'INPUT' ||
                            e.target.tagName === 'TEXTAREA' ||
                            e.target.isContentEditable;
             if (isInput) return;
+
+            if (e.key === 'Escape' && this.isVisible) {
+                // 各sub-modeのEscape cancelを先に通す。未処理のEscapeだけをTable closeへ使う。
+                if (this._motionGraphGesture
+                    || this._motionGraphAddPointMode
+                    || this._rigMeshVertexEditGesture
+                    || this._rigSkinWeightBrushGesture) return;
+                this.hide();
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+            }
 
             if (e.code === 'Space') {
                 this._timelineSpacePressed = true;

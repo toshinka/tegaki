@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 9l Right Layer / CAF Focus Responsibility Gate</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  --futaba-maroon: #800000;
+  --futaba-light-maroon: #9c3835;
+  --futaba-medium: #b8706b;
+  --futaba-light-medium: #d4a8a0;
+  --futaba-cream: #f0e0d6;
+  --futaba-background: #ffffee;
+  --text-primary: #2c1810;
+  --text-secondary: #5d4037;
+  --active-border: #ff8c42;
+  --setup-blue: #2f67a8;
+  --surface-quiet: rgba(240, 224, 214, .52);
+  --surface-panel: rgba(255, 255, 238, .94);
+  --surface-selected: rgba(255, 140, 66, .13);
+}
+body {
+  margin: 0;
+  padding: 18px;
+  color: var(--text-primary);
+  background: var(--futaba-background);
+  font: 14px/1.45 system-ui, sans-serif;
+}
+button { color: var(--futaba-maroon); font: inherit; }
+h1 { margin: 0 0 4px; color: var(--futaba-maroon); font-size: 20px; }
+.lead { margin: 0 0 14px; color: var(--futaba-light-maroon); }
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--futaba-light-medium);
+  border-radius: 10px;
+  background: var(--futaba-cream);
+}
+.control-group { display: flex; gap: 4px; align-items: center; }
+.control-label { margin-right: 3px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.controls button {
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(255, 255, 238, .62);
+}
+.controls button[aria-pressed="true"] {
+  border-color: var(--active-border);
+  background: var(--surface-selected);
+  font-weight: 700;
+}
+.comparison-shell {
+  width: min(100%, 980px);
+  min-height: 520px;
+  margin: 0 auto;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--futaba-cream);
+  transition: width .15s ease;
+}
+.comparison-shell[data-viewport="narrow"] { width: 430px; max-width: 100%; }
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) 286px;
+  gap: 20px;
+  align-items: center;
+  min-height: 430px;
+}
+.comparison-shell[data-viewport="narrow"] .workspace { grid-template-columns: 1fr; }
+.canvas {
+  display: grid;
+  place-items: center;
+  min-height: 360px;
+  border-radius: 8px;
+  color: var(--futaba-light-maroon);
+  background: var(--futaba-background);
+}
+.art {
+  display: grid;
+  place-items: center;
+  width: 230px;
+  height: 230px;
+  border: 3px solid var(--futaba-medium);
+  border-radius: 48% 48% 42% 42%;
+  background: rgba(212, 168, 160, .28);
+  font-weight: 700;
+}
+.right-context { min-width: 0; }
+.fixture-heading { margin-bottom: 8px; color: var(--futaba-maroon); font-weight: 800; }
+.fixture-heading .mode-name { color: var(--active-border); }
+.context-panel {
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--surface-panel);
+}
+.identity-strip,
+.frame-context-strip,
+.caf-context-strip,
+.caf-header,
+.target-card,
+.peer-row,
+.secondary-caf,
+.table-handoff {
+  color: var(--futaba-maroon);
+}
+.identity-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 5px 7px;
+  border-bottom: 1px solid rgba(184, 112, 107, .38);
+  font-weight: 700;
+}
+.identity-strip .frame { margin-left: auto; color: var(--text-secondary); font-size: 11px; }
+.frame-context-strip,
+.caf-context-strip {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 6px;
+  color: var(--futaba-maroon);
+}
+.frame-context-strip { justify-content: center; gap: 9px; }
+.caf-context-strip {
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(184, 112, 107, .38);
+  font-weight: 800;
+}
+.context-step,
+.onion-axis {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 5px;
+  background: var(--surface-quiet);
+}
+.onion-axis.is-current {
+  color: var(--futaba-background);
+  background: var(--futaba-light-maroon);
+}
+.caf-header {
+  display: grid;
+  grid-template-columns: 22px 1fr 30px;
+  gap: 6px;
+  align-items: center;
+  padding: 7px;
+  border: 2px solid var(--active-border);
+  border-radius: 7px;
+  background: rgba(255, 140, 66, .08);
+}
+.caf-title { font-weight: 800; }
+.caf-meta { color: var(--text-secondary); font-size: 10px; }
+.visibility { text-align: center; }
+.rows { display: grid; gap: 4px; margin-top: 5px; }
+.target-card,
+.peer-row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  min-height: 37px;
+  padding: 4px 6px;
+  border: 1px solid var(--futaba-light-medium);
+  border-radius: 6px;
+  background: var(--futaba-background);
+}
+.target-card {
+  border: 2px solid var(--active-border);
+  background: var(--surface-selected);
+}
+.target-card .thumb,
+.peer-row .thumb {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--futaba-light-medium);
+  border-radius: 4px;
+  background: var(--futaba-cream);
+}
+.row-name { font-weight: 700; }
+.row-meta { display: block; color: var(--text-secondary); font-size: 9px; font-weight: 400; }
+.rig-chip {
+  padding: 1px 4px;
+  border: 1px solid var(--setup-blue);
+  border-radius: 5px;
+  color: var(--setup-blue);
+  font-size: 9px;
+  font-weight: 700;
+}
+.peer-row.depth-1 { margin-left: 15px; }
+.peer-row.is-quiet { background: var(--surface-quiet); opacity: .78; }
+.secondary-caf {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface-quiet);
+  font-size: 12px;
+}
+.table-handoff {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  padding: 7px;
+  border-top: 1px solid rgba(184, 112, 107, .38);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.table-handoff button {
+  margin-left: auto;
+  padding: 3px 7px;
+  border: 1px solid var(--futaba-light-medium);
+  border-radius: 5px;
+  background: var(--futaba-background);
+}
+.table-state {
+  margin-top: 8px;
+  padding: 5px 7px;
+  border-left: 3px solid var(--active-border);
+  color: var(--text-secondary);
+  background: var(--surface-quiet);
+  font-size: 11px;
+}
+.comparison-shell[data-table="open"] .table-state::after { content: "OPEN — CAF順序 / 階層 / Clip操作はTable側"; }
+.comparison-shell[data-table="closed"] .table-state::after { content: "CLOSED — 右Panelで現在CAF / 描画targetを維持"; }
+.compact-view,
+.handoff-view,
+.flat-view { display: none; }
+.comparison-shell[data-candidate="compact"] .current-view,
+.comparison-shell[data-candidate="handoff"] .current-view,
+.comparison-shell[data-candidate="flat"] .current-view { display: none; }
+.comparison-shell[data-candidate="compact"] .compact-view { display: block; }
+.comparison-shell[data-candidate="handoff"] .handoff-view { display: block; }
+.comparison-shell[data-candidate="flat"] .flat-view { display: block; }
+.comparison-shell[data-density="few"] .density-extra,
+.comparison-shell[data-caf-count="one"] .secondary-caf { display: none; }
+.comparison-shell[data-candidate="compact"] .peer-row { min-height: 29px; }
+.comparison-shell[data-candidate="handoff"] .target-card { margin-top: 6px; }
+.comparison-shell[data-candidate="flat"] .target-card {
+  border-color: transparent;
+  border-radius: 4px;
+  color: var(--futaba-maroon);
+  background: var(--active-border);
+}
+.comparison-shell[data-candidate="flat"] .target-card .row-meta { color: var(--futaba-maroon); }
+.comparison-shell[data-candidate="flat"] .peer-row { border-color: transparent; }
+.gate-note {
+  width: min(100%, 980px);
+  margin: 14px auto 0;
+  padding: 9px 11px;
+  border-left: 4px solid var(--active-border);
+  color: var(--futaba-maroon);
+  background: var(--surface-quiet);
+}
+</style>
+</head>
+<body>
+<h1>Phase 9l — Right Layer / CAF Focus Responsibility Gate</h1>
+<p class="lead">一つのstateをA / B / C / Dへ投影し、Table open / closedと密度を切り替える。production adapterは変更しない。</p>
+<div class="controls" aria-label="Fixture controls">
+  <div class="control-group" data-control="candidate"><span class="control-label">Candidate</span><button data-value="current" aria-pressed="true">A Current</button><button data-value="compact" aria-pressed="false">B Compact</button><button data-value="handoff" aria-pressed="false">C Handoff</button><button data-value="flat" aria-pressed="false">D Flat CAF</button></div>
+  <div class="control-group" data-control="table"><span class="control-label">Table</span><button data-value="closed" aria-pressed="true">CLOSED</button><button data-value="open" aria-pressed="false">OPEN</button></div>
+  <div class="control-group" data-control="density"><span class="control-label">Internal</span><button data-value="few" aria-pressed="false">FEW</button><button data-value="many" aria-pressed="true">MANY</button></div>
+  <div class="control-group" data-control="caf-count"><span class="control-label">CAF</span><button data-value="one" aria-pressed="false">1</button><button data-value="multi" aria-pressed="true">MULTI</button></div>
+  <div class="control-group" data-control="viewport"><span class="control-label">Viewport</span><button data-value="wide" aria-pressed="true">WIDE</button><button data-value="narrow" aria-pressed="false">NARROW</button></div>
+</div>
+<article class="comparison-shell" data-candidate="current" data-table="closed" data-density="many" data-caf-count="multi" data-viewport="wide">
+  <div class="workspace">
+    <div class="canvas"><div class="art">Canvas / F12</div></div>
+    <aside class="right-context">
+      <div class="fixture-heading">Right Layer — <span class="mode-name">A Current stack</span></div>
+      <div class="context-panel">
+        <section class="current-view">
+          <div class="caf-header"><span>⌄</span><span><span class="caf-title">CAF 1</span><span class="caf-meta">Lane 1 · F12</span></span><span class="visibility">◉</span></div>
+          <div class="rows">
+            <div class="target-card"><span class="thumb"></span><span><span class="row-name">顔</span><span class="row-meta">Folder · current target</span></span><span class="rig-chip">RIG</span></div>
+            <div class="peer-row depth-1"><span class="thumb"></span><span><span class="row-name">線画</span><span class="row-meta">100% · Normal</span></span><span>◉</span></div>
+            <div class="peer-row depth-1 density-extra"><span class="thumb"></span><span><span class="row-name">色</span><span class="row-meta">100% · Multiply</span></span><span>◉</span></div>
+            <div class="peer-row density-extra"><span class="thumb"></span><span><span class="row-name">体</span><span class="row-meta">Folder · 5 Layers</span></span><span>◉</span></div>
+          </div>
+          <div class="secondary-caf">CAF 2 · Lane 2 · collapsed</div>
+        </section>
+        <section class="compact-view">
+          <div class="identity-strip"><span>▱</span><span>CAF 1 · Lane 1</span><span class="frame">F12</span></div>
+          <div class="rows">
+            <div class="target-card"><span class="thumb"></span><span><span class="row-name">顔</span><span class="row-meta">現在の描画target · Folder</span></span><span class="rig-chip">RIG</span></div>
+            <div class="peer-row is-quiet depth-1"><span class="thumb"></span><span>線画</span><span>◉</span></div>
+            <div class="peer-row is-quiet depth-1 density-extra"><span class="thumb"></span><span>色</span><span>◉</span></div>
+            <div class="peer-row is-quiet density-extra"><span class="thumb"></span><span>体 · 5 Layers</span><span>◉</span></div>
+          </div>
+          <div class="secondary-caf">＋1 CAF · Tableで管理</div>
+        </section>
+        <section class="handoff-view">
+          <div class="identity-strip"><span>▱</span><span>CAF 1 · Lane 1</span><span class="frame">F12</span></div>
+          <div class="target-card"><span class="thumb"></span><span><span class="row-name">顔</span><span class="row-meta">現在の描画target · Folder</span></span><span class="rig-chip">RIG</span></div>
+          <div class="table-handoff"><span>CAF順序・階層・複数管理</span><button type="button">TABLEを開く</button></div>
+        </section>
+        <section class="flat-view">
+          <div class="frame-context-strip" aria-label="Frame and horizontal onion context"><span class="context-step">‹</span><strong>F12</strong><span class="context-step">›</span><span class="onion-axis">◌</span></div>
+          <div class="caf-context-strip"><span>⌃ CAF 1 ⌄</span><span class="onion-axis is-current" title="CAF / Layer onion context">◉</span></div>
+          <div class="rows">
+            <div class="target-card"><span class="thumb"></span><span><span class="row-name">顔</span><span class="row-meta">現在の描画target · Folder</span></span><span class="rig-chip">RIG</span></div>
+            <div class="peer-row"><span class="thumb"></span><span><span class="row-name">線画</span><span class="row-meta">100% · Normal</span></span><span>◉</span></div>
+            <div class="peer-row density-extra"><span class="thumb"></span><span><span class="row-name">色</span><span class="row-meta">100% · Multiply</span></span><span>◉</span></div>
+            <div class="peer-row density-extra"><span class="thumb"></span><span><span class="row-name">体</span><span class="row-meta">Folder · 5 Layers</span></span><span>◉</span></div>
+          </div>
+          <div class="secondary-caf">CAF 2は右Panelへ積まずTableで選択</div>
+          <div class="table-handoff"><span>CAF順序・階層・内部Layer D&amp;D</span><button type="button">TABLEで管理</button></div>
+        </section>
+      </div>
+      <div class="table-state" aria-live="polite"></div>
+    </aside>
+  </div>
+</article>
+<div class="gate-note"><strong>Gate 0:</strong> CAF identity、現在描画target、visibility、Table閉鎖中contextを失わない案だけをproduction候補へ進める。CAF mutation正本は増やさない。</div>
+<script>
+const shell = document.querySelector('.comparison-shell');
+const modeName = document.querySelector('.mode-name');
+const labels = { current: 'A Current stack', compact: 'B Compact identity + focused mirror', handoff: 'C Context handoff', flat: 'D Flat CAF context + unified layer list' };
+document.querySelectorAll('.control-group').forEach(group => {
+  group.addEventListener('click', event => {
+    const button = event.target.closest('button[data-value]');
+    if (!button) return;
+    const key = group.dataset.control;
+    shell.setAttribute(`data-${key}`, button.dataset.value);
+    group.querySelectorAll('button').forEach(candidate => candidate.setAttribute('aria-pressed', String(candidate === button)));
+    if (key === 'candidate') modeName.textContent = labels[button.dataset.value];
+  });
+});
+</script>
+</body>
+</html>

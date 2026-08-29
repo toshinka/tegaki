@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 9m Animation Table Utility / LOD Gate</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  --futaba-maroon: #800000;
+  --futaba-light-maroon: #9c3835;
+  --futaba-medium: #b8706b;
+  --futaba-light-medium: #d4a8a0;
+  --futaba-cream: #f0e0d6;
+  --futaba-background: #ffffee;
+  --futaba-orange: #ff8c42;
+  --futaba-orange-deep: #ff6600;
+  --text-primary: #2c1810;
+  --text-secondary: #5d4037;
+  --surface-panel: rgba(255, 255, 238, .92);
+  --surface-quiet: rgba(240, 224, 214, .62);
+  --surface-medium: rgba(184, 112, 107, .64);
+  --surface-selected: rgba(255, 140, 66, .88);
+  --frame-width: 36px;
+}
+body {
+  margin: 0;
+  padding: 18px;
+  color: var(--text-primary);
+  background: var(--futaba-background);
+  font: 14px/1.4 system-ui, sans-serif;
+}
+button { color: var(--futaba-maroon); font: inherit; }
+h1 { margin: 0 0 4px; color: var(--futaba-maroon); font-size: 20px; }
+.lead { margin: 0 0 14px; color: var(--futaba-light-maroon); }
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--futaba-light-medium);
+  border-radius: 10px;
+  background: var(--futaba-cream);
+}
+.control-group { display: flex; gap: 4px; align-items: center; }
+.control-label { margin-right: 3px; color: var(--text-secondary); font-size: 12px; font-weight: 800; }
+.controls button {
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(255, 255, 238, .64);
+}
+.controls button[aria-pressed="true"] {
+  border-color: var(--futaba-orange);
+  background: rgba(255, 140, 66, .16);
+  font-weight: 800;
+}
+.comparison-shell {
+  width: min(100%, 1280px);
+  margin: 0 auto;
+  transition: width .15s ease;
+}
+.comparison-shell[data-viewport="square"] { width: min(100%, 720px); }
+.comparison-shell[data-viewport="narrow"] { width: min(100%, 420px); }
+.animation-table {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 390px;
+  overflow: hidden;
+  border: 1px solid var(--futaba-light-maroon);
+  border-radius: 12px;
+  background: rgba(255, 255, 238, .78);
+}
+.playback-header {
+  position: relative;
+  order: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 46px;
+  padding: 7px 10px;
+  color: var(--futaba-maroon);
+  background: rgba(255, 255, 238, .76);
+}
+.header-side { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.header-side--end { justify-content: flex-end; }
+.setting-pair,
+.quiet-control,
+.range-control,
+.preview-control,
+.onion-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--surface-quiet);
+  font-weight: 700;
+}
+.setting-pair span { padding: 0 5px; border-radius: 4px; background: var(--futaba-background); }
+.scope-control { border-color: var(--futaba-orange); }
+.play-slot { display: grid; place-items: center; min-width: 70px; }
+.play-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--futaba-maroon);
+  border-radius: 7px;
+  color: var(--futaba-background);
+  background: var(--futaba-maroon);
+  font-size: 18px;
+  font-weight: 900;
+}
+.onion-control { min-width: 30px; justify-content: center; }
+.utility-row {
+  order: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 5px 9px;
+  border-top: 1px solid rgba(212, 168, 160, .58);
+  border-bottom: 1px solid rgba(212, 168, 160, .58);
+  color: var(--futaba-maroon);
+  background: rgba(240, 224, 214, .48);
+}
+.utility-spacer { flex: 1; min-width: 8px; }
+.utility-group,
+.selected-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: rgba(255, 255, 238, .72);
+}
+.utility-group button,
+.selected-actions button {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: var(--surface-quiet);
+}
+.zoom-value,
+.clip-target { padding: 0 5px; font-weight: 800; }
+.selected-actions { border: 1px solid var(--futaba-orange); }
+.selected-actions .delete { color: var(--futaba-light-maroon); }
+.timeline-content { order: 3; min-height: 302px; overflow: hidden; }
+.comparison-shell[data-candidate="bottom"] .timeline-content,
+.comparison-shell[data-candidate="clip-lod"] .timeline-content,
+.comparison-shell[data-candidate="low-zoom"] .timeline-content { order: 2; }
+.comparison-shell[data-candidate="bottom"] .utility-row,
+.comparison-shell[data-candidate="clip-lod"] .utility-row,
+.comparison-shell[data-candidate="low-zoom"] .utility-row {
+  order: 3;
+  border-top-color: rgba(156, 56, 53, .34);
+  border-bottom: 0;
+  background: rgba(240, 224, 214, .38);
+}
+.timeline-ruler,
+.lane-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  min-width: 0;
+}
+.track-heading,
+.lane-label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 9px;
+  border-right: 1px solid var(--futaba-light-medium);
+  color: var(--futaba-maroon);
+  background: rgba(240, 224, 214, .46);
+}
+.track-heading { height: 32px; font-weight: 800; }
+.lane-label { height: 52px; gap: 6px; border-top: 1px solid rgba(212, 168, 160, .56); }
+.lane-label strong { overflow: hidden; text-overflow: ellipsis; }
+.lane-eye { margin-left: auto; color: var(--futaba-light-maroon); }
+.timeline-scroller { min-width: 0; overflow: hidden; }
+.frame-ruler,
+.lane-grid {
+  position: relative;
+  width: calc(var(--frame-width) * 24);
+  min-width: 100%;
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(212, 168, 160, .64) 0,
+    rgba(212, 168, 160, .64) 1px,
+    transparent 1px,
+    transparent var(--frame-width)
+  );
+}
+.frame-ruler { height: 32px; color: var(--futaba-light-maroon); background-color: rgba(255, 255, 238, .46); }
+.lane-grid { height: 52px; border-top: 1px solid rgba(212, 168, 160, .56); background-color: rgba(255, 255, 238, .34); }
+.frame-number { position: absolute; top: 6px; left: calc(var(--frame-width) * var(--frame)); font-size: 10px; }
+.clip {
+  position: absolute;
+  top: 8px;
+  left: calc(var(--frame-width) * var(--start));
+  width: calc(var(--frame-width) * var(--duration));
+  min-width: 8px;
+  height: 36px;
+  border: 2px solid var(--futaba-maroon);
+  border-radius: 8px;
+  color: var(--futaba-maroon);
+  background: var(--surface-medium);
+}
+.clip.primary { z-index: 2; }
+.comparison-shell[data-selection="selected"] .clip.primary {
+  border-color: var(--futaba-orange-deep);
+  box-shadow: 0 0 0 2px rgba(128, 0, 0, .58);
+  background: rgba(255, 140, 66, .7);
+}
+.clip-direction {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+  font-size: 10px;
+  opacity: .76;
+  pointer-events: none;
+}
+.clip-hit-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 4;
+}
+.clip-hit-zone--left { left: -4px; }
+.clip-hit-zone--right { right: -4px; }
+.clip-handle-visual {
+  position: absolute;
+  top: 9px;
+  width: 3px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--futaba-background);
+  pointer-events: none;
+}
+.clip-handle-visual--left { left: 1px; }
+.clip-handle-visual--right { right: 1px; }
+.key-marker {
+  position: absolute;
+  top: 4px;
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  background: var(--futaba-maroon);
+}
+.key-marker--one { left: 34%; }
+.key-marker--two { left: 62%; }
+.comparison-shell[data-clips="single"] .multi-clip,
+.comparison-shell[data-selection="unselected"] .selected-actions { display: none; }
+.comparison-shell[data-candidate="clip-lod"] .clip,
+.comparison-shell[data-candidate="low-zoom"] .clip { border-color: transparent; border-radius: 4px; background: var(--surface-medium); }
+.comparison-shell[data-candidate="clip-lod"][data-selection="selected"] .clip.primary,
+.comparison-shell[data-candidate="low-zoom"][data-selection="selected"] .clip.primary {
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--futaba-maroon);
+  background: var(--surface-selected);
+}
+.comparison-shell[data-candidate="clip-lod"] .clip-direction,
+.comparison-shell[data-candidate="low-zoom"] .clip-direction { display: none; }
+.comparison-shell[data-zoom="120"] { --frame-width: 36px; }
+.comparison-shell[data-zoom="50"] { --frame-width: 15px; }
+.comparison-shell[data-zoom="33"] { --frame-width: 10px; }
+.comparison-shell[data-zoom="25"] { --frame-width: 8px; }
+.comparison-shell[data-zoom="50"] .key-marker,
+.comparison-shell[data-zoom="33"] .key-marker,
+.comparison-shell[data-zoom="25"] .key-marker { display: none; }
+.comparison-shell[data-candidate="clip-lod"][data-zoom="50"] .clip-handle-visual,
+.comparison-shell[data-candidate="low-zoom"][data-zoom="50"] .clip-handle-visual { opacity: .28; }
+.comparison-shell[data-candidate="clip-lod"][data-zoom="33"] .clip-handle-visual,
+.comparison-shell[data-candidate="clip-lod"][data-zoom="25"] .clip-handle-visual,
+.comparison-shell[data-candidate="low-zoom"][data-zoom="33"] .clip-handle-visual,
+.comparison-shell[data-candidate="low-zoom"][data-zoom="25"] .clip-handle-visual { opacity: 0; }
+.comparison-shell[data-candidate="low-zoom"][data-zoom="33"] .frame-ruler,
+.comparison-shell[data-candidate="low-zoom"][data-zoom="33"] .lane-grid,
+.comparison-shell[data-candidate="low-zoom"][data-zoom="25"] .frame-ruler,
+.comparison-shell[data-candidate="low-zoom"][data-zoom="25"] .lane-grid {
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(184, 112, 107, .48) 0,
+    rgba(184, 112, 107, .48) 1px,
+    transparent 1px,
+    transparent calc(var(--frame-width) * 4)
+  );
+}
+.comparison-shell:not([data-candidate="low-zoom"]) .zoom-25-control { opacity: .42; }
+.status-strip {
+  order: 4;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 9px;
+  border-top: 1px solid rgba(212, 168, 160, .48);
+  color: var(--text-secondary);
+  background: rgba(240, 224, 214, .34);
+  font-size: 11px;
+}
+.status-strip strong { color: var(--futaba-maroon); }
+.hit-contract { margin-left: auto; }
+.gate-note {
+  width: min(100%, 1280px);
+  margin: 14px auto 0;
+  padding: 9px 11px;
+  border-left: 4px solid var(--futaba-orange);
+  color: var(--futaba-maroon);
+  background: var(--surface-quiet);
+}
+.comparison-shell[data-viewport="narrow"] .playback-header { padding-inline: 5px; }
+.comparison-shell[data-viewport="narrow"] .header-side { gap: 3px; }
+.comparison-shell[data-viewport="narrow"] .setting-pair { display: none; }
+.comparison-shell[data-viewport="narrow"] .quiet-control,
+.comparison-shell[data-viewport="narrow"] .range-control,
+.comparison-shell[data-viewport="narrow"] .preview-control { padding-inline: 5px; }
+.comparison-shell[data-viewport="narrow"] .preview-text,
+.comparison-shell[data-viewport="narrow"] .range-text,
+.comparison-shell[data-viewport="narrow"] .scope-text { display: none; }
+.comparison-shell[data-viewport="narrow"] .play-slot { min-width: 48px; }
+.comparison-shell[data-viewport="narrow"] .play-button { width: 28px; height: 26px; }
+.comparison-shell[data-viewport="narrow"] .timeline-ruler,
+.comparison-shell[data-viewport="narrow"] .lane-row { grid-template-columns: 82px minmax(0, 1fr); }
+.comparison-shell[data-viewport="narrow"] .track-heading,
+.comparison-shell[data-viewport="narrow"] .lane-label { padding-inline: 6px; }
+.comparison-shell[data-viewport="narrow"] .utility-row { gap: 4px; padding-inline: 5px; }
+.comparison-shell[data-viewport="narrow"] .asset-label,
+.comparison-shell[data-viewport="narrow"] .clip-target { display: none; }
+.comparison-shell[data-viewport="narrow"] .utility-spacer { min-width: 0; }
+</style>
+</head>
+<body>
+<h1>Phase 9m — Animation Table Utility / Low-Zoom LOD Gate</h1>
+<p class="lead">同じheader・Lane・Clip・hit zoneをA〜Dへ投影する。見た目だけを比較し、productionのevent / model / Historyは変更しない。</p>
+<div class="controls" aria-label="Fixture controls">
+  <div class="control-group" data-control="candidate"><span class="control-label">Candidate</span><button data-value="current" aria-pressed="true">A Current</button><button data-value="bottom" aria-pressed="false">B Bottom utility</button><button data-value="clip-lod" aria-pressed="false">C Clip LOD</button><button data-value="low-zoom" aria-pressed="false">D Low-zoom LOD</button></div>
+  <div class="control-group" data-control="viewport"><span class="control-label">Viewport</span><button data-value="wide" aria-pressed="true">1280</button><button data-value="square" aria-pressed="false">720</button><button data-value="narrow" aria-pressed="false">420</button></div>
+  <div class="control-group" data-control="zoom"><span class="control-label">Zoom</span><button data-value="120" aria-pressed="true">120%</button><button data-value="50" aria-pressed="false">50%</button><button data-value="33" aria-pressed="false">33%</button><button class="zoom-25-control" data-value="25" aria-pressed="false">25%</button></div>
+  <div class="control-group" data-control="selection"><span class="control-label">Clip</span><button data-value="selected" aria-pressed="true">SELECTED</button><button data-value="unselected" aria-pressed="false">REST</button></div>
+  <div class="control-group" data-control="clips"><span class="control-label">Count</span><button data-value="single" aria-pressed="false">SINGLE</button><button data-value="multi" aria-pressed="true">MULTI</button></div>
+</div>
+<article class="comparison-shell" data-candidate="current" data-viewport="wide" data-zoom="120" data-selection="selected" data-clips="multi">
+  <section class="animation-table">
+    <header class="playback-header">
+      <div class="header-side">
+        <span class="setting-pair">FPS <span>8</span> FRAMES <span>24</span></span>
+        <button class="quiet-control scope-control" type="button" title="Playback scope"><span aria-hidden="true">▣</span><span class="scope-text">SCOPE: ALL</span></button>
+      </div>
+      <div class="play-slot"><button class="play-button" type="button" aria-label="Play">▶</button></div>
+      <div class="header-side header-side--end">
+        <button class="range-control" type="button" title="Loop and range"><span aria-hidden="true">↻</span><span class="range-text">LAST CLIP</span><span>I</span><span>O</span></button>
+        <button class="preview-control" type="button"><span class="preview-text">PREVIEW</span><span aria-hidden="true">P</span></button>
+        <button class="onion-control" type="button" title="Timeline onion: off" aria-pressed="false"><span aria-hidden="true">◌</span></button>
+      </div>
+    </header>
+    <div class="utility-row" aria-label="Timeline and selected Clip utility">
+      <div class="utility-group"><button type="button">−</button><span class="zoom-value">120%</span><button type="button">＋</button></div>
+      <div class="utility-group"><button type="button" aria-label="Asset Library">▥</button><span class="asset-label">ASSET</span></div>
+      <div class="utility-spacer"></div>
+      <div class="selected-actions" aria-label="Selected Clip actions"><span class="clip-target">Lane 1 · F1</span><button type="button">−</button><strong>6F</strong><button type="button">＋</button><button type="button">COPY</button><button class="delete" type="button">DELETE</button></div>
+    </div>
+    <div class="timeline-content">
+      <div class="timeline-ruler">
+        <div class="track-heading">＋&nbsp; Lanes</div>
+        <div class="timeline-scroller"><div class="frame-ruler"><span class="frame-number" style="--frame:0">F1</span><span class="frame-number" style="--frame:4">F5</span><span class="frame-number" style="--frame:8">F9</span><span class="frame-number" style="--frame:12">F13</span><span class="frame-number" style="--frame:16">F17</span><span class="frame-number" style="--frame:20">F21</span></div></div>
+      </div>
+      <div class="lane-row">
+        <div class="lane-label"><strong>Lane 1</strong><span class="lane-eye">◉</span></div>
+        <div class="timeline-scroller"><div class="lane-grid">
+          <div class="clip primary" style="--start:0;--duration:6" aria-current="true">
+            <span class="clip-hit-zone clip-hit-zone--left" data-authority="retime" aria-label="Left retime hit"></span>
+            <span class="clip-hit-zone clip-hit-zone--right" data-authority="retime" aria-label="Right retime hit"></span>
+            <span class="clip-handle-visual clip-handle-visual--left"></span><span class="clip-handle-visual clip-handle-visual--right"></span>
+            <span class="clip-direction"><span>←</span><span>→</span></span><span class="key-marker key-marker--one"></span><span class="key-marker key-marker--two"></span>
+          </div>
+          <div class="clip multi-clip" style="--start:8;--duration:4"><span class="clip-hit-zone clip-hit-zone--left" data-authority="retime"></span><span class="clip-hit-zone clip-hit-zone--right" data-authority="retime"></span><span class="clip-handle-visual clip-handle-visual--left"></span><span class="clip-handle-visual clip-handle-visual--right"></span></div>
+        </div></div>
+      </div>
+      <div class="lane-row multi-clip">
+        <div class="lane-label"><strong>Lane 2</strong><span class="lane-eye">◉</span></div>
+        <div class="timeline-scroller"><div class="lane-grid"><div class="clip" style="--start:2;--duration:5"><span class="clip-hit-zone clip-hit-zone--left" data-authority="retime"></span><span class="clip-hit-zone clip-hit-zone--right" data-authority="retime"></span><span class="clip-handle-visual clip-handle-visual--left"></span><span class="clip-handle-visual clip-handle-visual--right"></span></div></div></div>
+      </div>
+      <div class="lane-row">
+        <div class="lane-label"><strong>Lane 3</strong><span class="lane-eye">◉</span></div>
+        <div class="timeline-scroller"><div class="lane-grid"></div></div>
+      </div>
+    </div>
+    <div class="status-strip"><strong class="candidate-name">A Current</strong><span class="placement-note">Utility: top row / current Clip appearance</span><span class="hit-contract">Frame seek · body move · edge retime hit = fixed</span></div>
+  </section>
+</article>
+<div class="gate-note"><strong>Gate 0:</strong> B〜Dはutilityの視覚位置とLODだけを変える。Dの25%はfixture専用で、論理Frame幅・wheel・Clip move / retimeを固定できるまでproductionへ入れない。</div>
+<script>
+const shell = document.querySelector('.comparison-shell');
+const candidateName = document.querySelector('.candidate-name');
+const placementNote = document.querySelector('.placement-note');
+const zoomValue = document.querySelector('.zoom-value');
+const primaryClip = document.querySelector('.clip.primary');
+const labels = {
+  current: ['A Current', 'Utility: top row / current Clip appearance'],
+  bottom: ['B Bottom utility', 'Utility: bottom / current Clip appearance'],
+  'clip-lod': ['C Clip LOD', 'Bottom utility / solid selected Clip / handle LOD'],
+  'low-zoom': ['D Low-zoom LOD', 'C + fixture-only 25% / major grid LOD']
+};
+document.querySelectorAll('.control-group').forEach(group => {
+  group.addEventListener('click', event => {
+    const button = event.target.closest('button[data-value]');
+    if (!button) return;
+    const key = group.dataset.control;
+    shell.setAttribute(`data-${key}`, button.dataset.value);
+    group.querySelectorAll('button').forEach(candidate => candidate.setAttribute('aria-pressed', String(candidate === button)));
+    if (key === 'candidate') {
+      candidateName.textContent = labels[button.dataset.value][0];
+      placementNote.textContent = labels[button.dataset.value][1];
+    }
+    if (key === 'zoom') zoomValue.textContent = `${button.dataset.value}%`;
+    if (key === 'selection') primaryClip.setAttribute('aria-current', String(button.dataset.value === 'selected'));
+  });
+});
+</script>
+</body>
+</html>

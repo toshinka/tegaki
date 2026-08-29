@@ -434,7 +434,8 @@ export class LayerPanelRenderer {
         return [
             {
                 variant: this._getLayerPanelCardVariantConfig('clip-layer-mirror'),
-                options: this._getClipLayerMirrorCardDragOptions()
+                options: this._getClipLayerMirrorCardDragOptions(),
+                disabled: () => !this._hasAnimationContext()
             },
             {
                 variant: this._getLayerPanelCardVariantConfig('legacy-layer-card'),
@@ -596,6 +597,26 @@ export class LayerPanelRenderer {
             },
             toggleFolder: ({ assetId, layerId } = {}) => {
                 if (!assetId || !layerId) return false;
+                const table = window.PopupManager?.get?.('animationTable');
+                const asset = table?.model?.getClipAsset?.(assetId) || null;
+                const selectedLayerId = table?.selectedInternalLayerId || '';
+                const willCollapse = !this._isClipInternalFolderCollapsed(assetId, layerId);
+                if (
+                    willCollapse
+                    && selectedLayerId
+                    && this._isClipAssetInternalLayerDescendantOf(asset, selectedLayerId, layerId)
+                ) {
+                    const variant = this._getLayerPanelCardVariantConfig('clip-layer-mirror');
+                    const folderRow = this.container?.querySelector(
+                        `${variant.rowSelector}[data-asset-id="${CSS.escape(assetId)}"]` +
+                        `[data-internal-layer-id="${CSS.escape(layerId)}"]`
+                    );
+                    this._selectClipLayerMirrorRowDirect(folderRow, {
+                        syncWorkingLayer: true,
+                        renderAnimationTable: true,
+                        requestLayerPanelUpdate: false
+                    });
+                }
                 this._toggleClipInternalFolder(assetId, layerId);
                 this.requestUpdate({ force: true });
                 return true;
@@ -1391,6 +1412,7 @@ export class LayerPanelRenderer {
             isActive,
             isSelected,
             isFolder,
+            isCollapsed: isFolder && layer?.layerData?.folderExpanded !== true,
             isHidden: layer?.layerData?.visible === false,
             extraClasses: [
                 'layer-item',
@@ -1421,34 +1443,13 @@ export class LayerPanelRenderer {
 
     _createLegacyLayerCardRowStyleState({
         rowWidth = 160,
-        leftOffset = 0,
-        isActive = false,
-        isSelected = false,
-        isFolder = false,
-        isExpanded = false,
-        isBackground = false
+        leftOffset = 0
     } = {}) {
-        const bgColor = isFolder
-            ? (isExpanded ? '#e9c2ba' : '#cf9c97')
-            : '#ffffee';
-        const borderColor = isActive && !isBackground
-            ? '#ff6600'
-            : (isSelected && !isBackground ? 'rgba(255, 140, 66, 0.6)' : '');
-        const borderWidth = isActive && !isBackground ? '2px' : '';
         return {
             '--card-row-width': `${rowWidth}px`,
             '--card-row-margin-left': `${leftOffset}px`,
-            '--card-row-bg': bgColor,
-            '--card-row-border-color': borderColor,
-            '--card-row-border-width': borderWidth,
-            '--card-row-active-border-color': borderColor,
-            '--card-row-active-border-width': borderWidth,
-            '--card-row-active-bg': bgColor,
             '--legacy-card-width': `${rowWidth}px`,
-            '--legacy-card-margin-left': `${leftOffset}px`,
-            '--legacy-card-bg': bgColor,
-            '--legacy-card-border-color': borderColor,
-            '--legacy-card-border-width': borderWidth
+            '--legacy-card-margin-left': `${leftOffset}px`
         };
     }
 
@@ -3546,8 +3547,19 @@ export class LayerPanelRenderer {
         });
     }
 
+    _resolveFocusedCafProjectionGroup(tree, animationTable) {
+        const groups = Array.isArray(tree?.groups) ? tree.groups : [];
+        if (groups.length === 0) return null;
+
+        const selectedCelId = animationTable?.selectedCelId || '';
+        const selectedAssetId = animationTable?.selectedAssetId || '';
+        return groups.find(group => group.clips?.some(clip => clip.clipId === selectedCelId))
+            || groups.find(group => group.clips?.some(clip => clip.assetId === selectedAssetId))
+            || groups[0];
+    }
+
     /**
-     * 現在フレームの使用アセットを表示する読み取り専用ヘッダーを作成 (Phase 4z15/4z16)
+     * 選択中CAFとその内部LayerをFlat projectionとして表示する (Phase 9l)
      */
     createCafReadonlyHeader() {
         const animationTable = window.PopupManager?.get?.('animationTable');
@@ -3557,30 +3569,26 @@ export class LayerPanelRenderer {
         const tree = animationTable.model.getFrameAssetTree(undefined, treeOptions);
         if (!tree || tree.groups.length === 0) return null;
 
+        const focusedGroup = this._resolveFocusedCafProjectionGroup(tree, animationTable);
+        if (!focusedGroup) return null;
+
         const header = document.createElement('div');
-        header.className = 'caf-simple-header';
+        header.className = 'caf-simple-header caf-simple-header--flat';
 
         const selectedCelId = animationTable.selectedCelId;
-
-        tree.groups.forEach((group, groupIndex) => {
+        [focusedGroup].forEach((group) => {
+            const groupIndex = tree.groups.indexOf(group);
             const folderName = group.folderName === 'Uncategorized' ? `CAF${groupIndex + 1}` : group.folderName;
             const firstClip = group.clips[0];
             const selectedClipEntry = group.clips.find(clip => clip.clipId === selectedCelId) || null;
             const primaryClipEntry = selectedClipEntry || firstClip;
-            const isExpanded = !this._collapsedCafClipIds.has(firstClip?.clipId)
-                && (!!selectedClipEntry || this._expandedCafClipIds.has(firstClip?.clipId));
             const groupStateClasses = this._createLayerPanelStateClassNames({
-                'is-selected': selectedClipEntry,
-                'is-expanded': isExpanded,
-                'is-collapsed': !isExpanded
+                'is-selected': true,
+                'is-expanded': true
             });
             const laneLabel = primaryClipEntry?.laneName || (Number.isInteger(primaryClipEntry?.laneIndex) ? `Lane ${primaryClipEntry.laneIndex + 1}` : '');
             const clipEntry = primaryClipEntry?.clipId ? animationTable.model.findClipEntry(primaryClipEntry.clipId) : null;
             const isClipVisible = clipEntry?.clip?.visible !== false;
-            const toggleButtonHtml = this._createCafHeaderToggleButtonHtml({
-                clipId: firstClip?.clipId || '',
-                isExpanded
-            });
             const visibilityButtonHtml = this._createCafHeaderVisibilityButtonHtml({
                 clipId: primaryClipEntry?.clipId || '',
                 isVisible: isClipVisible
@@ -3595,42 +3603,28 @@ export class LayerPanelRenderer {
             const laneNameHtml = this._createCafHeaderTextHtml('caf-simple-lane', laneLabel, {
                 'data-lane-id': primaryClipEntry?.laneId || ''
             });
-            let groupContent = this._createCafHeaderGroupTitleHtml({
-                className: this._createLayerPanelClassName('caf-simple-group-title', groupStateClasses),
+            const contextIconHtml = `<span class="caf-simple-icon caf-simple-context-icon" aria-hidden="true">${UI_ICONS.animation}</span>`;
+            const groupContent = this._createCafHeaderGroupTitleHtml({
+                className: this._createLayerPanelClassName(
+                    'caf-simple-group-title caf-simple-group-title--flat',
+                    groupStateClasses
+                ),
                 clipId: primaryClipEntry?.clipId || '',
                 assetId: primaryClipEntry?.assetId || '',
                 content: `
-                    ${toggleButtonHtml}
+                    ${contextIconHtml}
                     ${folderNameHtml}
                     ${laneNameHtml}
                     ${visibilityButtonHtml}
                 `
             });
 
-            group.clips.forEach(clipEntry => {
-                const isSelected = selectedCelId === clipEntry.clipId;
-                const isClipVisible = clipEntry.visible !== false;
-                const assetClassName = this._createLayerPanelClassName(
-                    'caf-simple-asset',
-                    this._createLayerPanelStateClassNames({
-                        'is-selected': isSelected,
-                        'is-hidden': !isClipVisible
-                    })
-                );
-                groupContent += this._createCafHeaderAssetHtml({
-                    className: assetClassName,
-                    clipId: clipEntry.clipId,
-                    assetId: clipEntry.assetId,
-                    assetName: clipEntry.assetName
-                });
-            });
-
             const groupElement = this._createLayerPanelCardPart('div', this._createLayerPanelClassName(
-                'caf-simple-group',
+                'caf-simple-group caf-simple-group--flat',
                 groupStateClasses
             ));
             groupElement.innerHTML = groupContent;
-            if (isExpanded && mirrorAsset) {
+            if (mirrorAsset) {
                 groupElement.appendChild(
                     this._createClipAssetLayerMirrorElement(
                         mirrorAsset,
@@ -4223,6 +4217,20 @@ export class LayerPanelRenderer {
         });
 
         return depths;
+    }
+
+    _isClipAssetInternalLayerDescendantOf(asset, layerId, ancestorLayerId) {
+        if (!asset || !layerId || !ancestorLayerId || layerId === ancestorLayerId) return false;
+        const byId = new Map((asset.internalLayers || []).map(layer => [layer.id, layer]));
+        let parentId = byId.get(layerId)?.parentLayerId || null;
+        const visited = new Set();
+
+        while (parentId && !visited.has(parentId)) {
+            if (parentId === ancestorLayerId) return true;
+            visited.add(parentId);
+            parentId = byId.get(parentId)?.parentLayerId || null;
+        }
+        return false;
     }
 
     _getHiddenClipAssetInternalLayerIds(asset) {

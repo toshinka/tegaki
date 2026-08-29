@@ -111,6 +111,16 @@ PointerEvent
 キャンバスを主役にし、大きな常設windowを増やさない。
 popup、Layer Panel、Timelineは液タブのペン操作で成立させる。
 
+### 8.1 認知・注目・意志の焦点
+
+- 外部toolは「水平参照」に使い、採用判断はTegakiの制作頻度、pen操作、既存state正本、Owner文化へ戻して行う。新しい、人気がある、多数が同じ配置という事実だけを設計正本にしない。公式資料と認知研究を時折更新し、外観ではなく、何を常設し、何を選択後へ遅延し、どこでmodeを明示するかという文法を比較する。
+- 比較対象は製品の総合順位でなく、描画、pen / touch animation、Rig、長時間軸、property / Graph、段階露出という役割別watchlistで管理する。各Gateは主比較対象と反例を指定し、公式資料の確認日と正式version名を残す。支持の多さはOwnerの定性的な優先度として重視するが、計測していない市場占有率として断定しない。
+- 注目度は有限の予算として扱う。色、明度差、contrast、面積、位置、動き、余白、反復、選択履歴、現在taskは相互に作用するため、「明るい」「大きい」「中央」だけで優先度を決めない。contrast基準は可読性の下限であり、望ましい注目順位そのものではない。
+- 高い注目度は常に善ではない。最頻action、現在地、破壊的警告、結果確認に必要な分だけ割り当て、休止中の低頻度controlがCanvas、Timeline、選択Clipから視線を奪わないようにする。実装前後で、最初に見える場所、目的controlの再発見、誤操作、作業後にCanvasへ視線を戻せるかを確認する。
+- popup、Workspace、Timeline subview、mode切替は「意志の焦点・レンズ」である。通常selectionと深い編集への進入を暗黙に同一化せず、明示入口、現在modeの持続表示、breadcrumbまたは同等の復帰路、Escape / close後の予測可能な状態を一組で設計する。modeは表示・入力adapterを切り替えても、model / History / saveの第二正本を作らない。
+- 同じ情報量削減でも、別window、in-place切替、split overview/detailは意志の拡散量が異なる。triggerと結果の距離、同時に競合するaction群、Canvas / overview保持、戻るcost、mouse / pen / touch到達を一DOM fixtureで比較してから選ぶ。
+- ふたば☆ちゃんねるpaletteは単なる懐古的skinでなく、Ownerが在籍ユーザーとして持つ文化・識別・安心感の哲学である。Tegaki固有性は奇抜さで作らず、Futaba茶系の連続性、Canvas-first、quiet resting、明示focusを組み合わせる。dark surfaceもneutral black / grayへ逃げずFutaba familyから導出し、意味と周辺surfaceを実画面で確認する。
+
 icon、記号、文字、背景へ黒・白・neutral grayを安易に使うことを禁止し、原則として次のCSS変数を使う。色未指定のbuttonやUnicode記号がbrowser既定の黒へ戻る状態も不適合とする。
 
 ```text
@@ -141,6 +151,8 @@ icon、記号、文字、背景へ黒・白・neutral grayを安易に使うこ�
 - 実際のimport、export、EventBus検索結果を依存関係の正本とする。
 - 新規fileは責務と公開APIが分かる短いJSDocを付ける。
 - 既存headerがあるfileは、責務・公開API・event契約が変わった時に更新する。
+- file分割と一正本化は行数ではなく、human / AIが一つの変更理由を追うための推論範囲で判断する。強く結合したstate・event・projectionを細片化せず、責務、公開API、data / History / save authority、No-go、対応verifierが安定した境界だけを段階抽出する。
+- context windowが短いAIでも誤改修しにくいよう、主要file headerは現在の責務、外部入口、正本、変更禁止境界、検証入口を短く残す。完了Phaseの履歴や変更日誌を積み上げず、古くなったheaderは追加説明で覆わず現行契約へ更新する。
 - 「被依存」一覧を毎回完全手動同期することや、全fileへ長い定型headerを追加することは必須にしない。
 - headerがコードと矛盾する場合はコードを推測せず、headerを修正する。
 

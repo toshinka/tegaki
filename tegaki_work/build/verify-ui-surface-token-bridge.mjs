@@ -10,7 +10,7 @@ const quickAccessCss = fs.readFileSync(path.join(workDir, 'styles/components/qui
 const quickAccessSource = fs.readFileSync(path.join(workDir, 'ui/quick-access-popup.js'), 'utf8');
 
 const expectedTokens = new Map([
-    ['--ui-surface-rail', 'rgba(240, 224, 214, 0.42)'],
+    ['--ui-surface-rail', 'var(--ui-rail-surface-dark)'],
     ['--ui-surface-control', 'rgba(255, 255, 238, 0.12)'],
     ['--ui-surface-control-hover', 'rgba(255, 255, 238, 0.72)'],
     ['--ui-surface-control-active', 'rgba(255, 245, 222, 0.92)'],

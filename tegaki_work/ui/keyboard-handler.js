@@ -36,6 +36,13 @@ export const KeyboardHandler = (function() {
         );
     }
 
+    function shouldYieldSidebarButtonActivation(e) {
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return false;
+        if (e.key !== 'Enter' && e.key !== ' ' && e.code !== 'Space') return false;
+        const activeElement = document.activeElement;
+        return activeElement?.matches?.('.sidebar .tool-button') === true;
+    }
+
     function confirmActiveTransformsForToolSwitch(nextTool) {
         const selectionApi = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
         if (nextTool !== 'selection' && selectionApi?.getState?.()?.transformSessionActive) {
@@ -61,10 +68,19 @@ export const KeyboardHandler = (function() {
         
         if (!eventBus || !keymap) return;
         if (isInputFocused()) return;
+        // Sidebarはnative buttonがclickを一元発火する。Enter / Spaceをglobal shortcutへ
+        // 横取りさせず、pointerと同じUIController actionへ到達させる。
+        if (shouldYieldSidebarButtonActivation(e)) return;
 
         const animationTable = window.PopupManager?.get?.('animationTable')
             || window.coreEngine?.popupManager?.get?.('animationTable');
         if (animationTable?.handleWarpBrushShortcutKeyDown?.(e)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
+        }
+        if (shortcutContext === 'animation'
+            && animationTable?.handlePlaybackMarkerShortcutKeyDown?.(e)) {
             e.preventDefault();
             e.stopImmediatePropagation();
             return;

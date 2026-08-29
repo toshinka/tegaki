@@ -19,7 +19,7 @@ for (const selector of [
     'anim-playback-primary-slot',
     'anim-playback-controls',
     'anim-playback-range-controls',
-    'anim-playback-range-focus-deck',
+    'anim-playback-range-current-btn',
     'anim-playback-marker-btn'
 ]) {
     assert.match(playbackCss, new RegExp(`\\.animation-table-panel(?:\\.is-narrow)? \\.${selector}`),
