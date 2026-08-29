@@ -10,6 +10,7 @@ const [
     quickAccessPopup,
     animationTablePopup,
     settingsPopup,
+    keyboardHandler,
     fixture,
     phase
 ] = await Promise.all([
@@ -21,8 +22,9 @@ const [
     readFile(new URL('../ui/quick-access-popup.js', import.meta.url), 'utf8'),
     readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
     readFile(new URL('../ui/settings-popup.js', import.meta.url), 'utf8'),
+    readFile(new URL('../ui/keyboard-handler.js', import.meta.url), 'utf8'),
     readFile(new URL('./phase9i-sidebar-action-semantics-fixture.html', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9i.md', import.meta.url), 'utf8')
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9i.md', import.meta.url), 'utf8')
 ]);
 
 const popupLaunchers = [
@@ -52,6 +54,15 @@ assert.match(uiPanels, /popup:hidden[\s\S]*?setSidebarPopupExpanded\(name, false
 assert.match(uiPanels, /setSidebarPopupExpanded\(popupName, expanded\)[\s\S]*?aria-expanded[\s\S]*?classList\.remove\('active'\)/u,
     'internal close clears both semantic and legacy Animation Table active projections');
 assert.match(uiPanels, /setSidebarModePressed\(buttonId, pressed\)[\s\S]*?aria-pressed/u);
+assert.match(uiPanels, /querySelector\('\.sidebar'\)\?\.addEventListener\('keydown'[\s\S]*?e\.key !== 'Enter'[\s\S]*?toolButton\.click\(\)/u,
+    'Sidebar Enter / Space explicitly delegates to the same click action');
+assert.match(uiPanels, /handleToolClick\(toolButton\)[\s\S]*?if \(e\.detail > 0\) toolButton\.blur\(\)/u,
+    'pointer and pen activation release Sidebar focus so plain Space returns to the Canvas');
+assert.match(keyboardHandler, /shouldYieldSidebarButtonActivation\(e\)[\s\S]*?\.sidebar \.tool-button/u,
+    'Sidebar native button owns unmodified Enter / Space activation');
+assert.match(keyboardHandler, /if \(shouldYieldSidebarButtonActivation\(e\)\) return;/u);
+assert.match(animationTablePopup, /if \(e\.key === 'Escape' && this\.isVisible\)[\s\S]*?this\.hide\(\)[\s\S]*?stopImmediatePropagation\(\)/u,
+    'unhandled Animation Table Escape closes through the same visibility authority');
 
 const popupSources = [
     ['album', albumPopup],

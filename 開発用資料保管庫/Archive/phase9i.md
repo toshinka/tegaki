@@ -2,7 +2,7 @@
 
 作成日: 2026-08-24
 
-状態: ACTIVE — Gate 0 GO（B Role-aware semantic normalization）
+状態: CLOSED — Gate 0 GO（B Role-aware semantic normalization）、SOL final review=`A`
 
 ## 1. 目的
 
@@ -81,3 +81,18 @@ read-onlyで次を固定する。
 - role分類、event / close path監査、ARIA判断、Gate 0、final review / close: SOL / XHigh。
 - Gate後に対象file、既存event、element role、Acceptance Criteriaが固定された一つのDOM / sync限定Sliceだけ: LUNA / MAXへ委譲可。
 - PopupManager Architectureや新state正本が必要になった場合、LUNAは変更せず`BLOCKED`でSOLへ返す。
+
+## 7. Stage B / C 実施結果（2026-08-26）
+
+- Sidebar 8入口をnative `button`へ揃え、popup launcher 6件は`aria-expanded`、一時mode `V`だけ`aria-pressed`、one-shot Importは状態属性なしへ正規化した。
+- 各popup自身の`isVisible`を正本とし、既存`popup:shown / popup:hidden`からSidebarへopen状態を投影した。PopupManagerやSidebarへ第二のvisibility stateは追加していない。
+- Animation Table内部×、Sidebar再click、別popup表示、instance直`hide()`、Escapeのcloseを同じ`hide()`経路へ揃え、legacy `.active`とsemantic `.is-active / aria-expanded`を同時解除した。
+- Sidebar focus中のEnter / Spaceはglobal shortcutへ渡さず、pointerと同じclick actionへ明示委譲した。Q / V / A / Settings等の既存shortcut割当は維持した。
+- 固定比較は`build/phase9i-sidebar-action-semantics-fixture.html`、検証は`build/verify-sidebar-action-semantics.mjs`へ置いた。
+
+## 8. Close判定
+
+- `node --check`、全108 `build/verify-*.mjs`、`npm.cmd run build`を通過した。
+- Browser wide / narrowでA内部×、A→Export、Q再click、Settings内部×、V再click、Enter / Space、Escape、console error 0件を確認した。
+- tool順、icon、30 / 38px hit、popup排他、Canvas input、History / save / modelへ変更はない。build生成差分は追跡済み基準と個別生成assetだけを限定清掃した。
+- SOL final review=`A`。Owner制作確認をclose条件にせず技術closeし、長期制作確認は`OWNER_VERIFICATION_BACKLOG.md`へ分離する。

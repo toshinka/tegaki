@@ -1,10 +1,10 @@
 # Tegaki Progress
 
-更新日: 2026-08-24
+更新日: 2026-08-29
 
 ## 現在地
 
-- Phase 5a〜9hを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存し、Owner制作確認の残りは`OWNER_VERIFICATION_BACKLOG.md`へ分離している。
+- Phase 5a〜9lを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存し、Owner制作確認の残りは`OWNER_VERIFICATION_BACKLOG.md`へ分離している。
 - Phase 9bはUI Design Authority / Animation Table Style Boundary Gate。palette / semantic token / component static style / runtime geometry / behavior正本を`UI_DESIGN_AUTHORITY_MAP.md`へ固定し、Phase 9a Playback headerの静的appearanceだけを`styles/components/animation-table-playback.css`へ限定抽出した。DOM / event / ARIA / model / History / save / runtime geometryを維持し、全102 verifier / build / Browser narrow実表示 / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
 - Phase 9cはCanvas-first Visual Language / Skin Baseline Comparison Gate。Gate 1=`GO — B: Warm Canvas-first`とし、最初のproduction componentをAnimation Table Playbackだけへ限定した。中央playを通常32×28px / coarse 44×38pxへ強め、Playback / Range群の枠競争を抑え、設定済みOUTと再生中Playを橙背景＋Futaba茶へ補正した。DOM / event / ARIA / History / save / wheel / runtime geometryを維持し、全103 verifier / build / Browser 1280×720・480×800 / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。QTP / Layer Panelのproduction skinは別Phaseへ分離する。
 - Phase 9dはQTP Canvas-first Surface / Component Style Boundary Gate。narrow再表示のfadeIn scale不整合をlayout寸法 / 座標へ限定補修し、QTP root / header static appearanceだけを`styles/components/quick-access-popup.css`へ一正本化した。geometry / DOM / event / ARIA / storageとPalette / tool / preset / slider / Text / Help / Positionを維持し、全104 verifier / build / Browser 1280×720・480×800 / Q・Position・Help・Text・tool・preset / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
@@ -12,7 +12,11 @@
 - Phase 9fはAnimation Table Attention Hierarchy / Inactive Border Gate。Gate 0=`GO — B: Quiet Resting`として、休止中のSCOPE / PREVIEW / Onion / zoom / 非破壊補助actionだけをtransparent border＋淡いsurfaceへ下げ、hover / open / focus / activeでsemantic borderを戻した。Selected Clip / Delete / close、hit area、DOM / event / ARIA / model / History / save / wheel / dragは維持した。全105 verifier / build / Browser fixture・wide・700px narrow / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
 - Phase 9gはQTP Palette / Tool Slot Attention Hierarchy Gate。Gate 0=`GO — B: Borderless Resting＋Selected Ring`としてPalette color / tool / preset cellだけをtransparent borderへ下げ、cream色は14%内側contrast、selectedは橙ring、focus-visibleは2px橙outlineとした。Main / Sub、slider、Text、event / storage / Canvas inputは維持した。全106 verifier / build / Browser fixture・production / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
 - Phase 9hはSidebar Rail Attention Hierarchy / Active Surface Gate。Gate 0=`GO — B: Quiet Resting＋Hover Surface＋Active Ring`として休止中borderをtransparentへ下げ、hover / focus / active / disabledのsurfaceを`styles/components/sidebar-rail.css`へ一正本化した。30 / 38px hit、tool順、icon、event / shortcutを維持し、全107 verifier / build / Browser wide・700px narrow / console 0件、SOL final review=`A`で技術closeした。
-- 現行Phase 9iはSidebar Action Semantics / Close Sync Gate。Phase 9hで再現したAnimation Table内部×後のA stale activeと、Q / Vだけbutton＋ARIA、他入口はgeneric elementである役割差をread-only監査する。command / popup launcher / temporary modeを一括toggleにせず、既存eventからの投影をGate 0で比較する。
+- Phase 9iはSidebar Action Semantics / Close Sync Gate。8入口を6 popup launcher / 1 one-shot command / 1 temporary modeへ分類し、native button、popupの`aria-expanded`、Vの`aria-pressed`、Importの状態属性なしを既存visibility / mode正本へ投影した。内部close、別popup、Escape、Enter / Spaceを同じaction / hide経路へ揃え、全108 verifier / build / Browser wide・narrow / console 0件、SOL final review=`A`で技術closeした。
+- Phase 9jはRight Layer Panel Theme Surface / Static Authority Gate。現行computed valueを`--ui-layer-*`と`styles/components/layer-panel-surface.css`へ一正本化し、rendererのinline styleをwidth / indentだけへ限定した。通常Layer / Folder / D&DとCAF header / internal mirror / Folder開閉、全109 verifier / build、console 0件を確認し、Current warm維持、SOL final review=`A`で技術closeした。
+- Phase 9kはIntegrated Outer Shell Luminance / Theme Comparison Gate。Owner Gate 0=`GO — D: Floating dark rails`として左右operation railだけをFutaba light-maroon 98→88% gradient、shadowなし、不透明on-dark trash橙`#ffb87e`へ限定接続した。関連4 verifier / 全111 verifier / production build / Browser / console 0件を通過し、Owner visual受入、SOL final review=`A`でcloseした。同じ数値の橙・grayでも周辺明度で知覚が変わる同時対比をStyle Guideへ記録し、actual surface比較と数値contrastを併用する。長時間制作、mouse / pen / touchのSpace＋dragはOwner確認台帳へ分離した。
+- Phase 9lはGate 0=`GO — D: Flat CAF context＋unified layer list`としてcloseした。右Panelは選択CAF一件の薄いcontextとそのinternal Layer / Folderだけを投影し、current targetを橙surface一つで示す。CAF asset列挙とinternal Layer Pointer D&Dを右Panelから外し、CAF順序・階層・複数CAF切替・D&DをAnimation Tableへ寄せた。Folder collapse時の選択focus、visibility / clipping、複数CAF切替、Table close / reopen、全113 verifier、build、Browser、console 0件を通過し、SOL final review=`A`。`1 UI engine / 2 data adapter`、TimelineModel / ClipAsset / DrawingSnapshot、History / saveは維持した。
+- 現行Phase 9mはAnimation Table Utility Split / Low-Zoom LOD Comparison Gate。Stage B `C first`、Playback End、Bottom utility、Clip visual LOD、一行headerをproduction接続した。760pxで三行化したbreakpointは620px境界＋三列grid / trailing局所wrapへ限定修正済み。Owner画像follow-upでは、Playback Rangeをdesktop 80px / coarse 116pxへ固定して三mode切替時の後続移動を止め、OUT summaryを隠してI / Oだけを表示、I / OキーをAnimation Table contextへ限定した。FPS / FRAMESとPREVIEWはresting borderを除き、Bottom COPY / DELETEは中央`UI_ICONS.duplicate / trash`の22×18px buttonへ置換した。Selected Clip contextは低差Futaba面＋4px橙dot、hover面、2px focus outlineを維持する。Browserでrange / PREVIEW位置不変、I / O設定・解除とCanvas I非干渉、COPY実操作、SVG寸法 / currentColorを確認し、全118 verifier、変更JSの`node --check`、build、生成物清掃を通過した。Attention / Clip Focusはselected CAFの明示`FOCUS`から同じTableをin-place modeへ切り替えるC案を第一候補とするが、dark top / bottom、Lane濃淡、外枠削減とは独立Gate。Ownerが今回のstable header / Bottom iconを再確認するまでPhaseをOPENとし、受入後にclose / 次Phase選定を行う。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -138,8 +142,8 @@
 2. `TEGAKI.md`
 3. 本書
 4. `tegaki_work/NEXT_CHAT_HANDOFF.md`
-5. `task-codex/phase9i.md`
-6. `開発用資料保管庫/Archive/phase9h.md`
+5. `task-codex/phase9m.md`
+6. `開発用資料保管庫/Archive/phase9l.md`
 7. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
 8. `開発用資料保管庫/proposals/00_計画索引.md`
 9. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
@@ -149,7 +153,7 @@
 13. `開発用資料保管庫/proposals/UI_CSSスタイルガイド.md`
 14. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
 
-Phase 7i〜9hはclose済み。Owner制作実操作の未確認項目は確認台帳へ分離した。Phase 9iはStage A inventory前で、最初にSidebar 8入口のrole、全close path、ARIA / state投影を固定する。
+Phase 7i〜9lはclose済み。現行Phase 9mはStage B C-first、一行header、固定幅Playback Range、OUT限定I / O＋context shortcut、borderless FPS / FRAMES / PREVIEW、Bottom Lucide COPY / DELETEまで全118 verifier / build / Browserの技術checkpoint済み。次の入口はOwner実画面でstable header / Bottom iconを再確認し、受入ならPhase 9m closeと次Phase選定、NGなら該当controlだけを限定補正すること。Clip Focus、dark top / bottom、Lane濃淡、外枠border inventory、25% / major grid、SCOPE SET、Timeline model、Clip gesture、History / saveを並走実装しない。
 
 ## 資料
 
@@ -239,5 +243,9 @@ Phase 7i〜9hはclose済み。Owner制作実操作の未確認項目は確認台
 - Phase 9f完了: `開発用資料保管庫/Archive/phase9f.md`
 - Phase 9g完了: `開発用資料保管庫/Archive/phase9g.md`
 - Phase 9h完了: `開発用資料保管庫/Archive/phase9h.md`
+- Phase 9i完了: `開発用資料保管庫/Archive/phase9i.md`
+- Phase 9j完了: `開発用資料保管庫/Archive/phase9j.md`
+- Phase 9k完了: `開発用資料保管庫/Archive/phase9k.md`
+- Phase 9l完了: `開発用資料保管庫/Archive/phase9l.md`
 - 次チャット引き継ぎ: `tegaki_work/NEXT_CHAT_HANDOFF.md`
-- 現行Phase: `task-codex/phase9i.md`（Sidebar Action Semantics / Close Sync Gate / Stage A前）
+- 現行Phase: `task-codex/phase9m.md`（Animation Table Utility Split / Low-Zoom LOD Comparison Gate / 一行header＋Attention / Clip Focus調査checkpoint完了・Owner visual再確認待ち）

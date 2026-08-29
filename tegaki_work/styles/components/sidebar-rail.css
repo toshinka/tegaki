@@ -5,10 +5,10 @@
  */
 
 .sidebar .tool-button {
-    border: 1px solid var(--ui-border-subtle);
+    border: 1px solid transparent;
     border-radius: var(--ui-radius-control);
-    background: var(--ui-surface-control);
-    color: var(--futaba-maroon);
+    background: var(--ui-rail-control-rest);
+    color: var(--ui-rail-foreground);
     transition:
         background-color 0.16s ease,
         border-color 0.16s ease,
@@ -22,8 +22,7 @@
 
 @media (hover: hover) {
     .sidebar .tool-button:hover:not(.active):not(.is-active):not([aria-pressed="true"]):not(:disabled):not(.is-disabled):not([aria-disabled="true"]) {
-        border-color: var(--ui-border-hover);
-        background: var(--ui-surface-control-hover);
+        background: var(--ui-rail-control-hover);
         transform: scale(1.03);
     }
 }
@@ -32,15 +31,17 @@
     border-color: var(--active-border);
     outline: 2px solid var(--active-border);
     outline-offset: 1px;
-    background: var(--ui-surface-control-hover);
+    background: var(--ui-rail-control-hover);
 }
 
 .sidebar .tool-button.active,
 .sidebar .tool-button.is-active,
-.sidebar .tool-button[aria-pressed="true"] {
-    border: 2px solid var(--ui-border-active);
-    background: var(--ui-surface-control-active);
-    box-shadow: var(--ui-shadow-control-active);
+.sidebar .tool-button[aria-pressed="true"],
+.sidebar .tool-button[aria-expanded="true"] {
+    border: 1px solid var(--ui-border-active);
+    background: var(--ui-rail-control-active);
+    color: var(--ui-rail-control-active-foreground);
+    box-shadow: none;
 }
 
 .sidebar .tool-button:disabled,

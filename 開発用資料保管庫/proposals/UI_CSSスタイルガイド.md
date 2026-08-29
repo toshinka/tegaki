@@ -1,6 +1,6 @@
 # Tegaki UI / CSS スタイルガイド
 
-更新日: 2026-08-24
+更新日: 2026-08-29
 
 ## 役割
 
@@ -102,7 +102,24 @@ rg -n "対象component|--futaba-|ui-scrollbar|ui-icon-button|popup-panel" tegaki
 - Phase 8l Stage Cの比較では完全borderlessを棄却し、QTP floating surfaceだけに弱い境界・gradient・shadowを残すrestrained-depthを採用した。通常controlはほぼ透明、hover / activeで面差を出し、sidebar railは現行restrained surfaceを維持する。この値を全popupへ一括横展開しない。
 - QTPの静的CSSは現在JS注入と`main.css`に重複がある。全面移動は行わず、Phaseで触るruleだけ正本を一つへ寄せ、selector / injection順 / coarse media queryを固定verifierで確認する。
 - Phase 9hではSidebar railのresting / hover / focus / active / disabledだけを`styles/components/sidebar-rail.css`へ抽出し、旧`ui-panels.js`注入styleを除去した。geometryとnormal 30px / coarse 38px hitは`main.css` token、state class / ARIAはJavaScriptを正本とする。panel close同期やelement roleをskin CSSへ持ち込まない。
+- Phase 9k以降、dark floating railのproduction surfaceは既存Futaba palette（maroon / light-maroon / medium）から導出し、独立neutral gray / umberをproduction tokenにしない。現行値はlight-maroon 98→88% gradient、外側shadowなし。透過はrail backgroundだけへ限定し、glyph / SVGへ親opacityを掛けない。restingは淡色glyph、hoverはborderなしの小面積surface、active / popup-openは橙surface＋淡色glyph、enabled destructiveは不透明on-dark橙`#ffb87e`を第一案とし、focus-visibleはkeyboard位置を失わない範囲で別に残す。半透明railはart上で通常 / Setup / Motion / destructiveが最低3:1を満たす両端alphaをverifierで固定し、現行下端は88%を下限とする。
+- 数値contrastは安全下限であり、知覚上の同じ強さを保証しない。同時対比により、同じ橙は暗色surround上で沈んで見え、同じgrayは淡色surround上で暗く・暗色surround上で明るく見えることがある。semantic色は実際のon-light / on-dark surfaceと明暗art上で比較し、必要なら役割を維持した別tokenへ分ける。錯視だけへstateを依存させず、surface / outline / icon shape / labelを併用し、自動art samplingや保存theme stateは別Gateまで導入しない。
 - 個別panelのヘッダーへ準拠宣言を書かない。共通class / tokenを使っていることを実コードとverifierで確認する。
+
+### 4B. Attention Budget / Intent Lens
+
+- visual hierarchyは「強い順」だけでなく、現在taskへ必要な時だけ強くなる時間軸を持つ。resting / hover / selected / active / playing / warningを同一強度へしない。
+- 注目度はcontrast比、色、面積、中央配置の単独値で決めない。taskとの関連、surround、選択履歴、scene内の位置、同時に強いsurfaceの数を同じfixtureで見る。WCAG contrastは可読性Gateであり、第一注目の指定ではない。
+- 意志の拡散量は、常時見えるaction group数、高contrast面数、triggerから結果までの距離、同時window / mode数、戻る操作数、selectionとmode進入の兼用数で監査する。数値を疑似科学的な総合点へせず、同じtaskの比較表と実操作時間・誤操作で判断する。
+- focus lensは`trigger / active context / detail / exit`を一組で見せる。通常clickがselection、drag、retimeを持つ対象では、同じclickへ深いmode進入を重ねない。明示context actionとkeyboard入口を第一候補とし、double click / double tapは補助入口に留める。
+- mode切替は色だけで知らせず、mode名、対象名、breadcrumb / Back、ARIA、Escape契約を残す。強いdark frameをmode標識へ使う案も、文字と構造による表示を省略しない。
+- 水平参照した外部toolの配置はそのまま移植せず、常設、選択後、mode内、popover内のどの深度へ置いたかを抽出する。Tegaki固有案は同じDOM / stateで比較し、人気と独自性のどちらも自動的な採用理由にしない。
+
+### 4C. SVG iconの参照順序とcustom policy
+
+- 既存iconは `UI_ICONS`、`開発用資料保管庫/資料_svg`、公式Lucideの順に検索する。
+- 完全一致がない場合だけLucide風のcustom SVGを許可する。customは公式Lucideと称せず、`viewBox="0 0 24 24"`、`currentColor`、`fill="none"`、round cap / join、strokeを揃え、通常 / hover / active / disabledのpalette・state・ARIA / titleを明示する。
+- 再利用するcustom iconはinline複製せず `UI_ICONS` へ集約し、利用箇所は共通icon classで寸法・strokeを管理する。
 
 ## 5. scrollbar
 
@@ -147,6 +164,7 @@ JSが扱ってよい:
 - 共通overlay mount helperを使う。
 - 固定装飾はCSS、drag後の動的位置はJS。
 - BasePopup classは、複数popupに実在するlife-cycle重複を削減できる時だけ導入する。
+- popupをfocus lensとして使う場合、元のoverviewを保持できる利点と、Canvas上のwindow競合、triggerからdetailへの視線移動、popup stacking、close後のfocus復帰をin-place mode / split viewと比較する。別windowであること自体を明示性の根拠にしない。
 
 ## 8. button・form
 
@@ -163,6 +181,7 @@ JSが扱ってよい:
 - interactive hit areaとvisible icon / borderを分離する。borderlessはhit areaを消す意味ではない。
 - 通常時はpanel surfaceとspacingでgroupを示し、hover / active / selected / focus時だけcontrol surfaceを強める。
 - Animation Tableのような常設headerでは、休止中の非破壊controlをtransparent border＋淡いsurface、hover / open / focus / activeをsemantic borderとする段階整理を許可する。ただしSelected Clip / Delete / close等のcontextual / destructive actionまで機械的にflat化せず、一componentのfixtureとhit area確認を通してから横展開する。
+- Phase 9mのSelected Clip contextでは、Timeline本体の橙single surfaceがselectionの主表示であることを前提に、Bottom projectionの重複外枠 / shadow / Duration separatorを除いた。contextは低差Futaba面＋4px橙dot、子actionはresting transparent / hover面 / focus-visible 2px橙outline、Deleteは栗色textで維持する。これは「新しいほど枠なし」という一般則ではなく、同じstateを示す枠の重複だけを落としたcomponent判断である。Timeline cell / grid、focus、selected、D&D等の構造・状態境界は別のborder inventoryで判定する。
 - desktopの最小targetは24×24 CSS pxを監査線とし、coarse pointerは既存38px rail / 24px QTPを下限として実pen / touchで比較する。見えるicon自体をtarget寸法へ拡大する必要はない。
 - disabledはopacityだけへ依存せず、必要ならpalette tooltip / statusで理由を返す。
 - 半透明はfloating palette / railへ限定し、input / tooltip / warning / modalは背景art上でも文字・iconが読める不透明度を持つ。
@@ -180,6 +199,14 @@ JSが扱ってよい:
 - name、meta、thumbnail、action、folder line、D&D stateは共通部品を優先する。
 - CAF containerとfolder cardの背景は同色に固定せず、階層が読める薄い差を許容する。
 - D&Dのghost、drop line、押しのけanimationは共通engineと共通state classを使う。
+- Phase 9j以降、right control rail、CAF group、mirror card、normal Layer / Folder card、selected / activeのstatic appearanceは`styles/components/layer-panel-surface.css`を正本とする。paletteと現行appearance値は`main.css`の`--ui-layer-*`、rowのruntime inline styleはwidth / indentだけを持つ。
+- theme比較は同じDOM / class / data adapterへtokenだけを差し替える。Layer renderer、Project / localStorage theme flag、appearance専用model stateを増やさない。
+- Canvasと中心視Panelを淡色に保ったまま外周を濃くする案は、左Sidebar / 右rail / 外周背景を一体で比較する。右rail単独の反転、大面積maroon / pure black、広範囲blurをcomponent移行のついでに入れない。
+- CAF / Layer Panelの情報量を減らす場合はappearance変更の続きとしてDOMやadapterを削らない。CAF identity / current contextをLayer Panelへどこまで残すか、CAF順序・階層をAnimation Tableへ寄せるか、CAF間cut / copy / pasteをどう明示するかを同じfixtureで比較し、`1 UI engine / 2 data adapter`と保存正本を維持した別Gateで扱う。
+- Phase 9m Owner follow-up以降のcompact baselineはvisual row 30px、thumbnail hit 20px、内側content 16px相当、名称gap 5px。thumbnail上下の橙余白とFolder縦線の3px insetを確保し、背景rowを含む同一context内で高さを揃える。active rowのthumbnail contentは`--ui-layer-surface-thumb-protect`を`content-box`へ限定して橙の色被りを避ける。coarse hit areaはcontent寸法へ縮めず外側hit box / media ruleで維持する。
+- current targetの橙surfaceはrow外周へ連続させ、thumbnail contentだけを2px insetの磨りガラスcontent-boxで保護する。選択面積が大きいLayer rowではactive orangeを54%まで透過し、元Raster / Folder情報と実際のCanvas / 周辺surface上で知覚contrastを確認する。
+- Frame control、CAF identity、internal Layer / Folder、背景は同じ`--ui-layer-context-*` surface / backdrop-filterを使う二段stackとして扱い、dark operation rail導入後はLayer context shadowを足さない。Timeline frame / onionのbehavior所有は`TimelineUI`に残す。
+- Table表示中のright-panel D&D入口を置く場合も、clip mirror adapterから既存Animation Table mutation / History正本を呼ぶ。Layer Panel専用の並べ替えmodelや保存stateを作らない。
 
 ## 10. Timeline
 
@@ -199,6 +226,10 @@ JSが扱ってよい:
 - Playback headerを省スペース化する場合も、category iconだけで現在値を隠さない。SCOPEは`Monitor＋ALL / LANE / SET`、LOOPはRepeat / Repeat Off＋surface / ARIA、三mode ENDは`END:T / C / O`等の現在値を残す。
 - IN / OUT等のrange markerは文字、左右位置、設定済みsurface、現在Frame ring、title / ARIAを併用する。onion等の参照Frame設定と色semanticを混同せず、palette外の白直書きで文字抜きを作らない。
 - 保存済みpopup希望幅とviewport制約後の実表示幅が異なる場合、responsive classは実表示幅も含めて判定する。視覚的に畳むlabelはARIAの現在値を失わせない。
+- top header / Bottom utilityのdark化は、Timelineを上下から挟んで主面を狭く見せる危険と、transport / context境界を明示する利点を分けて比較する。`current warm / dark top / dark bottom / dark bothまたはFocus時だけ`をFutaba-derived surfaceで一DOM比較し、neutral black、全面dark、色だけのmode表示をproductionへ直入れしない。
+- Lane交互濃淡は長い横行追跡を助ける可能性がある一方、実験上の速度改善は強くなく、偶奇へ存在しない意味を感じさせ得る。`均一＋subtle divider / 低差Futaba zebra / Folder・group等のsemantic band`を比較し、selected / current / hidden / onion / drop targetの意味surfaceが必ず上位に読めることをGateにする。偶奇を保存stateやLane identityにしない。
+- Clip通常clickはselection / move / retimeの入口として維持し、深い編集を自動openしない。第一候補はselected CAFだけに現れる明示`FOCUS` action＋keyboard入口から、同じAnimation Table bodyを`Lane overview → Clip Focus`へin-place切替し、breadcrumbで戻る構成。Dope Sheet / Motion GraphはFocus内subviewとし、別Timeline / selection / History / saveを作らない。
+- Clip Focusの比較には、`A current auto detail / B anchored window / C in-place Table mode / D split overview＋detail`を含める。Cを第一候補とするが、Owner visual、wide / narrow、mouse / pen / touch、close / reopen、誤進入、戻りやすさを固定fixtureで比較するまでproduction採用しない。
 
 ## 11. 監査チェック
 

@@ -1,6 +1,6 @@
 # UIツール導線・Text・階層Motion将来設計
 
-更新日: 2026-08-24
+更新日: 2026-08-29
 
 ## 位置づけ
 
@@ -206,11 +206,106 @@ Phase 8qはこの入口を独立Gateとして技術closeした。`6-tool grid �
 - Phase 9gはQTP Palette color / tool / preset cellへ、transparent resting border、cream色の薄い内側contrast、selected橙ring、focus-visible橙outlineを限定適用した。Main / Sub swatch、slider、Text / Help / Position、pressure、preset schemaは維持した。次はSidebar rail一componentで、utility / mode入口の役割差とpopup close後active同期を先に監査してから同じ三段を比較する。
 - Phase 9hはSidebar railでGate 0=`GO — B: Quiet Resting＋Hover Surface＋Active Ring`を採用し、resting borderをtransparentへ下げ、hover / focus / active / disabledをsemantic surfaceへ限定した。30 / 38px hitと既存tool順を維持し、static appearanceをcomponent CSSへ一正本化した。監査で再現したAnimation Table内部×後のA stale active、Q / Vだけbutton＋ARIAである差はPhase 9iのrole / close sync Gateへ分離し、CSSの疑似activeで隠さない。
 - SCOPEは`ALL / LANE`だけへ減らす案があるが、現行`SET`は「目の表示」と同義ではない可能性がある。`playbackScope=set`の選択集合・保存・range評価を監査し、完全同義を証明できるまで削除しない。LOOPの一押し切替は既存toggleと整合する。
-- Range sourceは現在値を常時読めるまま、`OUT MARKER`選択時だけI / O設定を展開する案を比較する。keyboard `I / O`、Timeline marker、未設定警告、既存保存正本を隠さない。Timeline zoomのfooter移動は、header / Lane / gridの三領域wheel契約とpen操作入口を維持できる別Gateとする。
+- Range sourceは現在値を常時読めるまま、`OUT MARKER`選択時だけI / O設定を展開する。Phase 9m Owner follow-upでは三候補popoverより直接cycleの方が状態と操作の一致を明示できると判定し、`TIMELINE → LAST CLIP → OUT MARKER`を既存Playback / History setterへ接続した。keyboard `I / O`、Timeline marker、未設定警告、既存保存正本を隠さない。Timeline zoomのfooter移動は、header / Lane / gridの三領域wheel契約とpen操作入口を維持できる別Gateとする。
+- Ownerの2026-08-27ポンチ絵はこの別Gateを補強する。headerは一行、playを中央主action、zoom / Asset Library / Selected Clip actionをBottom utilityへ分離する。選択Clipは橙solid一面、非選択はFutaba中間surfaceとし、多重outlineを避ける。
+- Clip端handle / 矢印は45〜50%付近から段階的に弱め、低倍率では隠す。33%未満を開放する場合はTimeline縦grid線をmajor intervalまたは非表示へ落とすLODと、frame hit / wheel / drag / retimeの最低幅を先にfixed fixtureで検証する。
+- SCOPE削除はLane visibilityとの同義性を証明してから判断する。CAF内部子行のauto-expand ON / OFFは別の表示policyであり、既存SCOPEへ別意味を上書きしない。
+- Phase 9lはAnimation TableをCAF管理 / internal Layer D&Dの正本として維持し、右Layer PanelだけをD Flat CAF contextへ限定整理してcloseした。これによりTable側のCAF切替・順序・階層・D&Dの到達性をBottom utility / LODと同時に削らないことがPhase 9mの前提となる。
+- Phase 9m Owner follow-up Stage 0 compact refinementでは、right-panel internal Layer D&Dを新しい正本として戻さず、既存clip mirror adapterからAnimation Table mutation / History正本へ到達する補助入口として維持した。Frame＋CAF contextを128px幅の上下接続surface、internal / 背景を28px row / 20px thumbnail hit / borderless row actionへ揃え、54%橙focus、Frame矢印wheelはproductionへ限定接続した。DOM / state正本は統合せず、後続の三行header未受入とも切り分けて維持する。
+- Phase 9m Stage AでA Current / B Bottom utility / C Bottom utility＋Clip LOD / D Low-zoom LODを一DOM static fixtureへ固定し、Gate 0=`GO — C first / D staged HOLD`とした。最初のproduction候補はBottom utility、selected Clip single surface、resting Clip Futaba中間surface、33%までのvisual handle LOD。Dの25% / major gridはlogical hit / wheel / gestureをproductionで固定する次GateまでHOLDし、SCOPE SET、History / saveは変更しない。
+- Phase 9m Stage BはCだけをproductionへ限定接続した。既存第二header rowを同じbutton ID / listener / ARIAのままTimeline後の34px Bottom utilityへ移し、closeを第一行へ戻した。selected Clip、resting Clip、47 / 33% visual handle LOD、wheel / hitの技術checkpointは維持する。Owner実画面の三行化は760px compact境界と三cluster 100%幅の不連続として再現し、620px境界の三列grid＋trailing局所wrapへ限定修正した。Owner visual再確認まではPhase 9mをcloseしない。
+- Folder / CAF thumbnailは将来の情報密度Gateへ積む。通常Folder / CAF内部Folderの既存icon投影は維持し、Folderは現行内部Layer内容、CAFはcurrent / representative Frameの既存描画結果から導出する。更新時機、stale表示、visibility / clipping、長いProjectの再生成負荷を固定入力で比較し、保存bitmap、`hasThumbnail`等の新しいflag、第二snapshot正本は作らない。
+- Phase 9m Owner playback follow-upでは、OUT選択後も閉表示が`LAST CLIP`へ見え、Oを越える実機症状を受け、終端Focus Deckを直接cycleへ置換した。OUT時だけI / Oを隣接表示し、F9–F18の非loop停止 / loop復帰 / Project round-tripを固定した。再生 / 停止は通常28×24px / coarse 44×38px hitを維持し、visible面だけ26×24px / 30×28pxへ下げ、font glyphを中央CSS triangle / squareへ変更した。左右同幅grid clusterでplayを中央列へ置き、Playback End / I / Oへoverlayしない。全117 verifier / build / Browser、console 0件を通過した。一行header follow-up後も技術checkpointを維持し、Owner visual再確認まではOPENとする。
+- ToonSquid / CLIP STUDIOの公式UIではplay / loop / onionがTimelineの常設再生群にあり、Live2DはPlayback群とDope Sheet / Graph Editorを明示分離する。PREVIEWはTegaki固有のCanvas / Timeline表示連動なので、低頻度表示utilityとして`header quiet / Bottom zoom隣 / right Frame-onion context隣`を次の一DOM fixtureで比較する。onionは描画と再生確認の両方で触るためplayback近傍を第一候補とする。
+- Timeline zoomはBottom右が絶対的標準とはせず、右下resize gripとの競合を含めて`現行左 / right-end手前 / view utility group`を比較する。既存header / Bottom wheelとpen用明示buttonは全案で維持する。
+- SCOPEはLane見出しへの移設候補を追加する。eye iconは各Lane visibilityと誤読し得るため、`Monitor / Focus icon＋ALL / ACTIVE / SET`と比較する。ACTIVE時の他Lane低alpha化はdisplay-only projectionとし、Canvas visibility / model / saveへ逆流させない。SETは複数Lane指定の利用実態を監査するまで削除しない。
+- CAF内部Layer / BONE / Motion trackは通常Timelineへ常時自動展開せず、選択Clipから明示的な`Clip Focus`へ入りbreadcrumbで戻る案を第一候補とする。同じTimeline UIをLane / Clip-internal data adapterで切り替え、Dope Sheet / Motion Graphをsubview化する。rigged / motion付き素材の蓄積とD&Dは既存Asset Library / ClipAssetを拡張し、第二Stock modelを作らない。
+- 現行productionは選択CAFのLane直後へ全Folder targetを投影し、複数Bone groupもruntime collapsed setが空なら既定展開するため、全体編集時にRIG / Motion情報が一気に露出する。この挙動は`Clip Focus`の代替として受入れず、次Gateでは`全体Lane概要 → 明示Clip Focus → internal / BONE / Motion subview`の視線深度を比較する。単に全groupを既定collapseへ変えるだけではsingleton / Folder行と作業文脈を解決しない。
 - QTP color swatchはsolidでborderless寄りにできるが、選択 / focus /淡色swatchの識別をringまたはsurfaceで残す。Pen presetの左上番号を外す案も、keyboard順・6 slot識別・active summaryを同一fixtureで比較してから行う。
 - Pen / Eraserの筆圧ON / OFFはFill modifierの見た目だけを流用せず、現行Brush settings / preset保存shape / shortcut / disabled理由を監査する独立Gateとする。小さい線形toggleを広いsquare hitへする案はvisualとhitboxを分離して評価する。
 - Text utilityは左端`T`＋横書き / 縦書き切替を将来候補とする。縦書きはlauncher skinではなくRaster確定器、句読点・Latin回転・縦中横・bounds・History / exportまでを含む別Phaseであり、Phase 9dへ混ぜない。
 - 公式比較の採用点は外観模倣ではない。CallipegはTimelineをCanvas確保のため隠せ、選択中sheet / clipへAction Panelを出す。CLIP STUDIO Simple ModeはCanvas面積と直接操作を優先する。Tegakiではこの二点を`主要actionの常時直接性`と`低頻度 / context actionの段階露出`へ翻訳する。
+
+### Phase 9m Attention / Clip Focus 水平調査checkpoint（2026-08-29）
+
+水平調査は現行公式manualが継続更新され、Tegakiと同じくTimeline、Clip、property key、touch / penのいずれかを持つtoolを優先した。支持例の共通配置を多数決で採用せず、深度文法だけを抽出する。
+
+#### 役割別 priority watchlist（公式資料確認 2026-08-29）
+
+以下はOwnerの定性的な支持・重要度評価を比較優先度へ反映したwatchlistであり、市場占有率の主張ではない。一つの製品を総合的なUI正本にせず、Gateごとに「主比較対象 / 専門的な反例 / Tegaki固有制約」を指定する。
+
+| 観測役 | 優先比較対象 | Tegakiで問う文法 |
+|---|---|---|
+| modern drawing / 段階露出 | Adobe Fresco、CLIP STUDIO PAINT Simple Mode | Canvas面積、layer-scoped motion、最頻描画actionの直接性、高機能engineへ戻れる明示mode切替 |
+| pen / touch animation | Callipeg Studio、ToonSquid 2.0、Procreate Dreams 2 | sheet / Clipの選択と深い編集の距離、gestureと明示controlの両立、Timeline / Stage / Canvas比、mode feedback、nested contextの復帰路 |
+| character Rig / property密度 | Live2D Cubism、Spine | hierarchyとselectionに応じたproperty絞り込み、Dope SheetとGraphの分業、Setup / Animateの分離、長いRigでの焦点維持 |
+| video / motion / 長時間軸 | Adobe After Effects、Adobe Premiere | workspace / panel切替、長時間軸でのClip overview、contextual Properties、property keyとGraphの段階露出 |
+| 補助反例 | Rive、Adobe Animate | Selected-only property focus。Animateはframe / span文法だけを参照し、2026-06-09時点でmaintenance modeのため現行モダン化の先行例には置かない |
+
+運用規則:
+
+1. 各UI Gateの開始時に、該当する観測役の公式manual / release noteを再確認し、確認日と正式な製品世代を更新する。`ToonSquid 2.0`と`Procreate Dreams 2`は今回公式表記を確認済み。Callipeg Studioのdesktop固有配置はmobile版Callipegの旧manualから推定せず、Studioの現行公式画面・manualで確認できる範囲だけを採る。
+2. 配置、色、大小、上下左右、window / in-place / splitは同じstateの一DOM fixtureで比較する。文章manualだけからtoneやpixel寸法を推定せず、公式画面、実機、TegakiのFutaba surfaceで再確認する。
+3. 比較結果は「真似る要素」ではなく、常設、selection後、mode内、別workspaceのどこへ遅延するか、triggerと結果の距離、復帰cost、誤進入として記録する。
+4. 新しい製品や支持変化はwatchlistを更新する理由になるが、既存model / History / save境界を飛ばしてproductionへ入れる理由にはしない。
+
+- ToonSquidはTimeline playback toolbarを常設し、nested animation Clipを開いた時はCanvas左上breadcrumbでscene / Clipを往復する。keyframing modeでは選択Layerのproperty / keyだけを展開できる。通常Clip選択とnested編集の深度を分けている。
+- Procreate DreamsはCompose / Perform / Keyframeを明示modeとして同じTimelineへ投影し、Keyframe trackは必要なmodeだけに出す。これは強いfocusに有効だが、mode feedbackが弱いと誤操作を生むため、Tegakiはmode名・対象名・breadcrumbを常時残す。
+- Adobe Frescoは選択Layerへframe-by-frame / motion pathを投影し、CLIP STUDIO PAINT Simple ModeはCanvas優先の最小UIとStudio Modeへの随時切替を両立する。高機能を捨てず、現在taskに必要な面だけを露出する比較対象とする。
+- Callipeg Studioはframe-by-frame drawingとkeyframe animationを同じ製品導線に置く。ToonSquid 2.0とProcreate Dreams 2を合わせ、pen / touch前提のsheet / Clip、Timeline mode、gesture、context復帰を三者同格で比較する。
+- Live2D Cubism、Spine、CLIP STUDIO PAINTはDope Sheet / Graphまたはproperty timing / valueの役割を明示分離する。Riveは`Show Only Selected`で多数propertyを選択対象へ絞る。別windowを増やすことより、同じ時間軸surfaceのadapter / subview切替が現在の主要文法である。
+- After Effectsはproperty key / Graphとtask別workspace、PremiereはTimeline選択に応じるcontextual Propertiesを持つ。Tegakiは長時間軸のoverview、Clip選択からproperty編集までの距離、workspaceを増やした時の意志拡散をAdobe動画系から比較する。
+- 公式manualからdark top / bottomやzebra Laneを普遍文法とは判定できない。安定しているのは「PlaybackはTimeline近傍」「Graphは明示切替」「詳細はselection / modeへ遅延」「現在contextと復帰路を見せる」という役割配置であり、toneはFutaba哲学からTegaki独自に決める。
+
+認知研究からの設計判断:
+
+- Guided Search 6.0では注意priorityは物理salienceだけでなく、task goal、選択履歴、価値、scene意味の合成で変化する。したがって「大きい／明るい／中央＝重要」と固定せず、現在taskで必要な場所を再発見でき、不要時は視線を奪わない時間変化を設計する。
+- 物理contrastと知覚salienceは線形でなく、contrast基準は読み取れる下限にすぎない。強調surface数を増やすほど意志が複数箇所へ拡散するため、橙、dark bar、large buttonを同時に重ねて重要度を表現しない。
+- mode error研究ではmode状態の感覚feedbackが誤りを減らす。Tegakiは色だけでなく、`CLIP FOCUS · CAF名`、breadcrumb、Back / Escape、同じ位置のtransportをmode feedbackにする。
+- zebra stripingはlarge tableで主観的好みが得られてもtask速度を改善しない結果がある。Animation Laneではselected / current / Folder groupという本来のsemanticを上書きし得るため、低差Futaba stripeを自明の改善とせず比較に留める。
+- choice数増加は反応時間を伸ばし得るが、action削減を目的化しない。常設buttonを減らしてもlong pressや隠れmenuへ深く埋めれば発見とpen到達が悪化するため、選択後のcontextual actionで意志を段階化する。
+
+#### 次の一DOM比較matrix
+
+| 軸 | A | B | C | D | 第一判断 |
+|---|---|---|---|---|---|
+| Clip detail面 | 現行の選択後auto detail | anchored Clip window | Animation Table全体をin-place `CLIP FOCUS` | Lane overview＋detail split | Cを第一候補、Aはbaseline、B / Dは比較 |
+| 進入 | 通常single clickで自動 | selected Clipの明示`FOCUS` | 明示`FOCUS`＋Enter、double clickは補助候補 | global Clip mode toggle | single click自動進入は棄却。selection / move / retimeを維持 |
+| subview | Timelineへ全行展開 | window内Inspector | Focus内`DOPE / MOTION GRAPH`切替 | overviewとGraph同時表示 | 同じ時間軸・transport・selection projectionを共有 |
+| tone | current warm | dark top | dark bottom | dark both / Focus時だけframe | Futaba-derivedで独立比較。dark量をfocusの代用品にしない |
+| Lane面 | uniform＋divider | 低差Futaba zebra | semantic Folder / group band | selected周辺だけfocus attenuation | parity自体に意味を持たせずB / C / Dを実測 |
+
+`C in-place CLIP FOCUS`の初期契約:
+
+1. 通常clickは選択だけ。Clip body move / retime / multi-selectとの競合を増やさない。
+2. selected CAFのBottom contextual actionに明示`FOCUS`を一件だけ置き、keyboard `Enter`を同じ入口へ接続する。double click / double tapを唯一の入口にしない。
+3. Focus時は同じAnimation Table bodyをLane adapterからClip-internal adapterへ切り替え、`LANES / CAF名 / DOPE|MOTION` breadcrumb、Back / Escape、現在mode名を常時表示する。
+4. Playback header、Frame、range、wheel三領域は同じ位置と既存authorityを維持する。Focus表示stateをProjectへ保存せず、ClipAsset / ClipInstance / TimelineModel / Historyの第二正本を作らない。
+5. Table close / reopenでFocusをresumeするかLane overviewへ戻るかは、mode errorと制作継続性を同じfixtureで比較してOwner Gateで決める。
+
+比較Acceptanceは、wide / 620 / 460 / 420、mouse / pen / touchで、通常Clip selection、move / retime、Focus進入、DOPE / MOTION切替、breadcrumb / Escape復帰、Table close / reopen、current Clip / mode識別、Canvasへ視線を戻せること、誤進入0を確認する。Ownerの一行header visual受入前はfixture / productionへ進めず、本checkpointは設計境界だけを固定する。
+
+調査正本:
+
+- Adobe Fresco Motion: https://helpx.adobe.com/ie/fresco/desktop/draw-paint-animate-and-share/apply-motion-to-artwork.html
+- Callipeg Studio / Timeline: https://callipeg.com/ / https://callipeg.com/learn-mini-timeline/
+- CLIP STUDIO Simple / Studio Mode: https://help.clip-studio.com/en-us/manual_en/090_tablet/Simple_Mode_and_Studio_Mode.htm
+- ToonSquid 2.0 release: https://toonsquid.com/updates/ToonSquid-2/
+- ToonSquid Timeline / Keyframes: https://toonsquid.com/handbook/interface/timeline/ / https://toonsquid.com/handbook/keyframes/keyframes/
+- Procreate Dreams 2: https://help.procreate.com/articles/8AzGf-procreate-dreams-2-update-at-a-glance
+- Procreate Dreams Timeline and Modes: https://help.procreate.com/dreams/handbook/interface-and-gestures/timeline
+- Rive Timeline: https://rive.app/docs/editor/animate-mode/timeline
+- Live2D Timeline / Graph Editor: https://docs.live2d.com/en/cubism-editor-manual/timeline-basic-operation-timelinepalette/ / https://docs.live2d.com/en/cubism-editor-manual/grapheditor/
+- Spine Dopesheet / Graph: https://us.esotericsoftware.com/spine-dopesheet / https://us.esotericsoftware.com/spine-graph
+- CLIP STUDIO Timeline Palette: https://help.clip-studio.com/en-us/manual_en/600_animation/Timeline_Palette.htm
+- After Effects Animation / Workspaces: https://helpx.adobe.com/after-effects/using/animation-basics.html / https://helpx.adobe.com/after-effects/using/workspaces-panels-viewers.html
+- Premiere contextual Properties / keyframe Graph: https://helpx.adobe.com/premiere/desktop/edit-projects/intro-to-editing/edit-video-using-the-properties-panel.html / https://helpx.adobe.com/premiere/desktop/add-video-effects/control-effects-and-transitions-using-keyframes/keyframes-and-graphs-in-panels.html
+- Adobe Animate maintenance / frame-span reference: https://helpx.adobe.com/animate/desktop/animation/frames-keyframes.html
+- Wolfe, Guided Search 6.0: https://pmc.ncbi.nlm.nih.gov/articles/PMC8965574/
+- Sellen et al., mode error feedback: https://www.microsoft.com/en-us/research/publication/the-prevention-of-mode-errors-through-sensory-feedback/
+- Adobe Research, mobile table formatting / zebra striping: https://research.adobe.com/publication/web-table-formatting-affects-readability-on-mobile-devices/
+- Hick's Law model review: https://pmc.ncbi.nlm.nih.gov/articles/PMC3031137/
+- Focus+context comparative evaluation: https://www.ischool.berkeley.edu/research/publications/2002/keeping-things-context-comparative-evaluation-focus-plus-context-screens
 
 ## 4. CAF内部Folderの階層Motion
 
@@ -225,11 +320,11 @@ Phase 8qはこの入口を独立Gateとして技術closeした。`6-tool grid �
 
 ### UI案
 
-- Animation TableのLaneは親CAF行を開閉し、選択Clipの内部Motion partだけを子行として投影する。子行は新しいCAFや独立Laneではなく、同じClipInstance内trackの編集UIとする。
+- Animation Tableの内部Motion partは新しいCAFや独立Laneではなく、同じClipInstance内trackの編集UIとする。2026-08-28以降は親CAF選択だけの自動展開を第一候補とせず、明示`Clip Focus`内で必要なtrackだけを投影する。
 - 通常Folderへ`Motion part`属性を明示付与する方式を第一候補とし、別種類のFolderを増やさない。属性を外してもRaster階層は失わず、Motion trackの保持／削除を確認する。
 - 親Folder Motionは子・孫の評価済みtransformへ継承する。循環禁止DAG、親欠損時、channel別inherit、anchor / rest poseを明示し、暗黙にLane縦順へ依存しない。
 
-第一候補はAnimation Tableの親CAF行を開閉し、Part trackを子行として表示する方式。小規模RigでMotion keyと構造を同じ場所に見せやすい。
+第一候補は選択Clipから明示`Clip Focus`へ入り、同じTimeline UIをClip-internal adapterへ切り替えてPart / BONE / Motion trackを表示する方式。breadcrumbで全体Laneへ戻る。小規模Rig向けにはFocus内のgroup開閉を残すが、全体Timelineへ自動展開しない。
 
 Plan Bは専用Rig Inspector / treeへ構造編集を分離し、Timelineには選択trackだけを表示する方式。子行が増えてTimelineが狭くなる、SetupとAnimateが混同される、BONE / Weight / Collider設定が行内に収まらない場合に切り替える。どちらも同じ正本から投影し、UI方式をProject schemaへ保存しない。
 

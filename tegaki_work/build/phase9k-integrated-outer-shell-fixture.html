@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 9k Integrated Outer Shell Comparison</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  --futaba-maroon: #800000;
+  --futaba-light-maroon: #9c3835;
+  --futaba-medium: #b8706b;
+  --futaba-light-medium: #d4a8a0;
+  --futaba-cream: #f0e0d6;
+  --futaba-background: #ffffee;
+  --active-orange: #ff8c42;
+  --setup-blue: #2f67a8;
+  --motion-orange: #d86228;
+  --destructive-red: #a63a32;
+  --setup-on-dark: #9fc6f2;
+  --motion-on-dark: #ffc08a;
+  --danger-on-dark: #f3aaa2;
+  --candidate-umber: #60463f;
+  --candidate-warm-mid: #b9aaa0;
+  --fixture-panel: rgba(255, 255, 238, .96);
+  --fixture-panel-soft: rgba(240, 224, 214, .94);
+  --fixture-canvas: #ffffee;
+  --fixture-border: #d4a8a0;
+}
+body {
+  margin: 0;
+  padding: 20px;
+  color: var(--futaba-maroon);
+  background: var(--futaba-background);
+  font: 14px/1.4 system-ui, sans-serif;
+}
+button { font: inherit; }
+h1 { margin: 0 0 4px; font-size: 20px; }
+.lead { margin: 0 0 14px; color: var(--futaba-light-maroon); }
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--fixture-border);
+  border-radius: 10px;
+  background: var(--fixture-panel-soft);
+}
+.control-group { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.control-group strong { margin-right: 3px; font-size: 12px; }
+.controls button {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--futaba-maroon);
+  background: rgba(255, 255, 238, .74);
+}
+.controls button[aria-pressed="true"] {
+  border-color: var(--active-orange);
+  box-shadow: 0 0 0 1px var(--active-orange);
+}
+.controls button:disabled { opacity: .38; }
+.viewport-scroll {
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--fixture-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(156, 56, 53, .18), transparent 35%),
+    repeating-linear-gradient(45deg, var(--futaba-cream) 0 20px, #ead4c9 20px 40px);
+}
+.viewport-shell {
+  --fixture-width: 1280px;
+  --fixture-height: 720px;
+  --shell-outer-bg: var(--futaba-background);
+  --shell-rail-bg: rgba(240, 224, 214, .78);
+  --shell-rail-color: var(--futaba-maroon);
+  --setup-on-shell: var(--setup-blue);
+  --motion-on-shell: var(--motion-orange);
+  --danger-on-shell: var(--destructive-red);
+  --shell-divider: var(--futaba-light-medium);
+  --shell-blur: 0px;
+  --shell-frame-border: var(--shell-divider);
+  --shell-frame-shadow: 0 12px 28px rgba(128, 0, 0, .12);
+  --rail-border: color-mix(in srgb, var(--shell-divider) 80%, transparent);
+  --rail-shadow: none;
+  position: relative;
+  width: var(--fixture-width);
+  height: var(--fixture-height);
+  overflow: hidden;
+  border: 2px solid var(--shell-frame-border);
+  border-radius: 16px;
+  color: var(--futaba-maroon);
+  background: var(--shell-outer-bg);
+  backdrop-filter: blur(var(--shell-blur));
+  box-shadow: var(--shell-frame-shadow);
+  transition: background-color 160ms ease;
+}
+.viewport-shell[data-theme="opaque-umber"] {
+  --shell-outer-bg: var(--candidate-umber);
+  --shell-rail-bg: color-mix(in srgb, var(--candidate-umber) 88%, var(--futaba-cream));
+  --shell-rail-color: var(--futaba-background);
+  --setup-on-shell: var(--setup-on-dark);
+  --motion-on-shell: var(--motion-on-dark);
+  --danger-on-shell: var(--danger-on-dark);
+  --shell-divider: color-mix(in srgb, var(--candidate-umber) 68%, var(--futaba-light-medium));
+}
+.viewport-shell[data-theme="translucent-umber"] {
+  --shell-outer-alpha: .70;
+  --shell-rail-alpha: .82;
+  --shell-outer-bg: rgb(96 70 63 / var(--shell-outer-alpha));
+  --shell-rail-bg: rgb(86 61 55 / var(--shell-rail-alpha));
+  --shell-rail-color: var(--futaba-background);
+  --setup-on-shell: var(--setup-on-dark);
+  --motion-on-shell: var(--motion-on-dark);
+  --danger-on-shell: var(--danger-on-dark);
+  --shell-divider: rgba(212, 168, 160, .78);
+}
+.viewport-shell[data-theme="floating-dark"] {
+  --shell-outer-bg: var(--futaba-background);
+  --shell-rail-bg: var(--candidate-umber);
+  --shell-rail-color: var(--futaba-background);
+  --setup-on-shell: var(--setup-on-dark);
+  --motion-on-shell: var(--motion-on-dark);
+  --danger-on-shell: var(--danger-on-dark);
+  --shell-divider: transparent;
+  --rail-border: rgba(240, 224, 214, .28);
+  --rail-shadow: 0 7px 18px rgba(128, 0, 0, .22);
+}
+.viewport-shell[data-theme="warm-mid-light"] {
+  --shell-outer-bg: var(--candidate-warm-mid);
+  --shell-rail-bg: rgba(255, 255, 238, .94);
+  --shell-rail-color: var(--futaba-maroon);
+  --setup-on-shell: var(--setup-blue);
+  --motion-on-shell: var(--motion-orange);
+  --danger-on-shell: var(--destructive-red);
+  --shell-divider: rgba(156, 56, 53, .30);
+  --rail-border: rgba(156, 56, 53, .22);
+  --rail-shadow: 0 7px 18px rgba(96, 70, 63, .20);
+}
+.viewport-shell[data-theme="translucent-umber"][data-opacity="soft"] { --shell-outer-alpha: .56; --shell-rail-alpha: .72; }
+.viewport-shell[data-theme="translucent-umber"][data-opacity="mid"] { --shell-outer-alpha: .70; --shell-rail-alpha: .82; }
+.viewport-shell[data-theme="translucent-umber"][data-opacity="deep"] { --shell-outer-alpha: .82; --shell-rail-alpha: .90; }
+.viewport-shell[data-theme="translucent-umber"][data-blur="small"] { --shell-blur: 6px; }
+.viewport-shell[data-frame="gap"] {
+  --shell-frame-border: transparent;
+  --shell-frame-shadow: none;
+  border-radius: 0;
+}
+.viewport-shell[data-size="square"] { --fixture-width: 720px; --fixture-height: 720px; }
+.viewport-shell[data-size="narrow"] { --fixture-width: 420px; --fixture-height: 720px; }
+.shell-status {
+  position: absolute;
+  z-index: 8;
+  top: 8px;
+  left: 62px;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  color: var(--futaba-maroon);
+  background: var(--fixture-panel-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+.workspace {
+  position: absolute;
+  inset: 0;
+  padding: 48px 58px 20px 58px;
+}
+.canvas-wrap {
+  position: absolute;
+  inset: 48px 58px 20px;
+  display: grid;
+  place-items: center;
+}
+.canvas {
+  position: relative;
+  width: min(54vh, 480px);
+  max-width: 56%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--fixture-border);
+  background: var(--fixture-canvas);
+  box-shadow: 0 8px 20px rgba(128, 0, 0, .14);
+}
+.art { display: none; width: 100%; height: 100%; }
+.viewport-shell[data-art="light"] .art-light,
+.viewport-shell[data-art="dark"] .art-dark,
+.viewport-shell[data-art="vivid"] .art-vivid { display: block; }
+.tool-rail,
+.control-rail {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--rail-border);
+  border-radius: 11px;
+  color: var(--shell-rail-color);
+  background: var(--shell-rail-bg);
+  backdrop-filter: blur(var(--shell-blur));
+  box-shadow: var(--rail-shadow);
+}
+.tool-rail { top: 42px; left: 8px; }
+.control-rail { top: 168px; right: 8px; }
+.rail-button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  font-weight: 800;
+}
+.rail-button.is-hover { background: rgba(255, 255, 238, .18); }
+.rail-button.is-active {
+  border-color: var(--active-orange);
+  color: var(--futaba-maroon);
+  background: var(--futaba-background);
+  box-shadow: 0 0 0 1px var(--active-orange);
+}
+.rail-button.is-setup { color: var(--setup-on-shell); }
+.rail-button.is-motion { color: var(--motion-on-shell); }
+.rail-button.is-danger { color: var(--danger-on-shell); }
+.rail-button:disabled { opacity: .34; }
+.panel {
+  position: absolute;
+  z-index: 7;
+  border: 1px solid var(--fixture-border);
+  border-radius: 11px;
+  color: var(--futaba-maroon);
+  background: var(--fixture-panel);
+  box-shadow: 0 10px 22px rgba(128, 0, 0, .13);
+}
+.panel-title { font-weight: 800; }
+.qtp-panel {
+  top: 88px;
+  left: 66px;
+  width: 178px;
+  padding: 10px;
+}
+.qtp-tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 8px 0; }
+.qtp-swatch { height: 27px; border: 1px solid var(--fixture-border); border-radius: 5px; background: var(--futaba-light-maroon); }
+.qtp-swatch:nth-child(2) { background: var(--active-orange); }
+.qtp-swatch:nth-child(3) { background: var(--setup-blue); }
+.qtp-swatch:nth-child(4) { background: var(--futaba-cream); }
+.qtp-slider { height: 7px; border-radius: 6px; background: var(--futaba-light-medium); }
+.layer-panel {
+  top: 92px;
+  right: 60px;
+  width: 194px;
+  padding: 10px;
+}
+.layer-card {
+  display: grid;
+  grid-template-columns: 30px 1fr 18px;
+  gap: 6px;
+  align-items: center;
+  min-height: 40px;
+  margin-top: 6px;
+  padding: 4px;
+  border: 1px solid var(--fixture-border);
+  border-radius: 6px;
+  background: var(--futaba-background);
+}
+.layer-card.is-selected { border: 2px solid var(--active-orange); }
+.layer-thumb { width: 28px; height: 28px; border-radius: 4px; background: var(--futaba-cream); }
+.layer-meta { display: block; color: var(--futaba-light-maroon); font-size: 9px; }
+.animation-table {
+  right: 278px;
+  bottom: 18px;
+  left: 92px;
+  display: flex;
+  flex-direction: column;
+  min-height: 204px;
+  padding: 9px;
+}
+.table-header { order: 1; display: flex; gap: 8px; align-items: center; min-height: 34px; }
+.table-play {
+  width: 38px;
+  height: 32px;
+  border: 1px solid var(--futaba-maroon);
+  border-radius: 7px;
+  color: var(--futaba-background);
+  background: var(--futaba-maroon);
+}
+.table-chip {
+  min-height: 29px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--futaba-maroon);
+  background: var(--futaba-cream);
+}
+.table-chip.is-setup { color: var(--setup-blue); }
+.table-chip.is-motion { color: var(--motion-orange); }
+.table-utility {
+  order: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 7px;
+  border-top: 1px solid var(--fixture-border);
+}
+.table-utility-label { margin-right: auto; color: var(--futaba-light-maroon); font-size: 11px; font-weight: 700; }
+.table-utility button {
+  min-height: 27px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--futaba-maroon);
+  background: var(--futaba-cream);
+}
+.viewport-shell[data-table-tools="header"] .table-utility {
+  order: 2;
+  margin-top: 5px;
+  padding-top: 0;
+  padding-bottom: 6px;
+  border-top: 0;
+  border-bottom: 1px solid var(--fixture-border);
+}
+.timeline { order: 2; display: grid; grid-template-columns: 70px repeat(10, 1fr); margin-top: 7px; border-top: 1px solid var(--fixture-border); border-left: 1px solid var(--fixture-border); }
+.viewport-shell[data-table-tools="header"] .timeline { order: 3; }
+.timeline > span { min-height: 34px; padding: 6px; border-right: 1px solid var(--fixture-border); border-bottom: 1px solid var(--fixture-border); }
+.timeline .clip { grid-column: 2 / 7; margin: 4px; min-height: 25px; border: 2px solid var(--futaba-maroon); border-radius: 7px; background: var(--active-orange); }
+.state-key {
+  position: absolute;
+  right: 62px;
+  bottom: 18px;
+  z-index: 9;
+  width: 200px;
+  padding: 9px;
+  border-radius: 9px;
+  color: var(--futaba-maroon);
+  background: var(--fixture-panel-soft);
+  font-size: 11px;
+}
+.state-row { display: flex; gap: 5px; align-items: center; margin-top: 5px; }
+.state-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--active-orange); }
+.state-dot.setup { background: var(--setup-blue); }
+.state-dot.motion { background: var(--motion-orange); }
+.state-dot.danger { background: var(--destructive-red); }
+.viewport-shell[data-size="square"] .animation-table { right: 60px; }
+.viewport-shell[data-size="square"] .state-key { display: none; }
+.viewport-shell[data-size="narrow"] .shell-status { left: 56px; right: 56px; overflow: hidden; white-space: nowrap; }
+.viewport-shell[data-size="narrow"] .canvas-wrap { inset: 44px 48px 16px; }
+.viewport-shell[data-size="narrow"] .canvas { width: 330px; max-width: 100%; }
+.viewport-shell[data-size="narrow"] .qtp-panel { top: 74px; left: 52px; width: 142px; }
+.viewport-shell[data-size="narrow"] .layer-panel { top: 120px; right: 52px; width: 152px; }
+.viewport-shell[data-size="narrow"] .animation-table { right: 52px; bottom: 12px; left: 52px; min-height: 190px; }
+.viewport-shell[data-size="narrow"] .table-header { flex-wrap: wrap; }
+.viewport-shell[data-size="narrow"] .table-utility-label { flex-basis: 100%; }
+.viewport-shell[data-size="narrow"] .timeline { grid-template-columns: 55px repeat(6, 1fr); }
+.viewport-shell[data-size="narrow"] .timeline > span:nth-child(n+8) { display: none; }
+.viewport-shell[data-size="narrow"] .state-key { display: none; }
+.note { margin-top: 14px; padding: 10px 12px; border-left: 4px solid var(--active-orange); background: var(--fixture-panel-soft); }
+</style>
+</head>
+<body>
+<h1>Phase 9k — Integrated Outer Shell Luminance Gate</h1>
+<p class="lead">Canvasと中心視Panelは固定し、暗色外周・暗色floating rail・中間外周＋淡色railとTable utilityの情報階層を同じDOMで切り替える。</p>
+<div class="controls" aria-label="比較条件">
+  <div class="control-group" data-control="theme"><strong>Theme</strong><button type="button" data-value="current-warm" aria-pressed="true">A Current</button><button type="button" data-value="opaque-umber" aria-pressed="false">B Opaque umber</button><button type="button" data-value="translucent-umber" aria-pressed="false">C Translucent</button><button type="button" data-value="floating-dark" aria-pressed="false">D Floating dark</button><button type="button" data-value="warm-mid-light" aria-pressed="false">E Warm mid + light</button></div>
+  <div class="control-group" data-control="size"><strong>Viewport</strong><button type="button" data-value="wide" aria-pressed="true">1280×720</button><button type="button" data-value="square" aria-pressed="false">720×720</button><button type="button" data-value="narrow" aria-pressed="false">Narrow 420</button></div>
+  <div class="control-group" data-control="art"><strong>Art</strong><button type="button" data-value="light" aria-pressed="true">Light</button><button type="button" data-value="dark" aria-pressed="false">Dark</button><button type="button" data-value="vivid" aria-pressed="false">Vivid</button></div>
+  <div class="control-group" data-control="opacity"><strong>C Alpha</strong><button type="button" data-value="soft" aria-pressed="false" disabled>Soft 56%</button><button type="button" data-value="mid" aria-pressed="true" disabled>Mid 70%</button><button type="button" data-value="deep" aria-pressed="false" disabled>Deep 82%</button></div>
+  <div class="control-group"><strong>Blur</strong><button type="button" id="blur-toggle" aria-pressed="false" disabled>Small 6px: OFF</button></div>
+  <div class="control-group" data-control="frame"><strong>Outer frame</strong><button type="button" data-value="gap" aria-pressed="true">Gap only</button><button type="button" data-value="guide" aria-pressed="false">Outline guide</button></div>
+  <div class="control-group" data-control="tableTools"><strong>Table utility</strong><button type="button" data-value="header" aria-pressed="false">Top stack</button><button type="button" data-value="bottom" aria-pressed="true">Bottom split</button></div>
+</div>
+<div class="viewport-scroll">
+  <section id="fixture-shell" class="viewport-shell" data-theme="current-warm" data-size="wide" data-art="light" data-opacity="mid" data-blur="off" data-frame="gap" data-table-tools="bottom" aria-label="統合外周テーマ比較">
+    <div class="shell-status"><span>TEGAKI</span><span>Canvas 400×400</span><span>F1</span></div>
+    <nav class="tool-rail" aria-label="左ツールrail">
+      <button class="rail-button is-active" type="button" aria-label="ペン">P</button>
+      <button class="rail-button is-hover" type="button" aria-label="消しゴム">E</button>
+      <button class="rail-button is-setup" type="button" aria-label="Rig Setup">R</button>
+      <button class="rail-button is-motion" type="button" aria-label="Animation Table">M</button>
+      <button class="rail-button" type="button" aria-label="選択">S</button>
+      <button class="rail-button" type="button" aria-label="設定" disabled>G</button>
+    </nav>
+    <main class="workspace">
+      <div class="canvas-wrap"><div class="canvas" aria-label="作品Canvas">
+        <svg class="art art-light" viewBox="0 0 400 400" aria-label="明るい絵"><rect width="400" height="400" fill="#fff6d8"/><circle cx="200" cy="110" r="58" fill="#f0e0d6" stroke="#9c3835" stroke-width="15"/><path d="M200 168 C135 175 112 238 130 320 M200 168 C265 175 288 238 270 320 M154 205 L72 250 M246 205 L328 250" fill="none" stroke="#9c3835" stroke-width="18" stroke-linecap="round"/></svg>
+        <svg class="art art-dark" viewBox="0 0 400 400" aria-label="暗い絵"><rect width="400" height="400" fill="#4b302d"/><circle cx="200" cy="108" r="62" fill="#60463f" stroke="#f0e0d6" stroke-width="13"/><path d="M200 170 C138 178 115 238 132 323 M200 170 C262 178 285 238 268 323 M155 205 L70 252 M245 205 L330 252" fill="none" stroke="#d4a8a0" stroke-width="19" stroke-linecap="round"/><circle cx="177" cy="105" r="7" fill="#ff8c42"/><circle cx="223" cy="105" r="7" fill="#ff8c42"/></svg>
+        <svg class="art art-vivid" viewBox="0 0 400 400" aria-label="高彩度の絵"><rect width="400" height="400" fill="#f0b44e"/><path d="M52 328 C82 180 154 68 238 70 C318 74 366 170 334 328 Z" fill="#2f829d"/><circle cx="218" cy="135" r="65" fill="#f6d7a3" stroke="#a63a32" stroke-width="14"/><path d="M150 220 Q210 172 285 226 M135 278 Q210 240 305 290" fill="none" stroke="#ffffee" stroke-width="20" stroke-linecap="round"/></svg>
+      </div></div>
+      <section class="panel qtp-panel" aria-label="Quick Tool Presets"><span class="panel-title">Quick</span><div class="qtp-tools"><span class="qtp-swatch"></span><span class="qtp-swatch"></span><span class="qtp-swatch"></span><span class="qtp-swatch"></span></div><span>SIZE 12px</span><div class="qtp-slider"></div></section>
+      <section class="panel layer-panel" aria-label="Layer Panel"><span class="panel-title">CAF 1</span><div class="layer-card is-selected"><span class="layer-thumb"></span><span>レイヤー 1<span class="layer-meta">100% · RIG</span></span><span>◉</span></div><div class="layer-card"><span class="layer-thumb"></span><span>Folder<span class="layer-meta">2 Layers</span></span><span>◉</span></div></section>
+      <section class="panel animation-table" aria-label="Animation Table"><div class="table-header"><button type="button" class="table-play" aria-label="再生">▶</button><button type="button" class="table-chip">SCOPE: ALL</button><button type="button" class="table-chip is-setup">RIG</button><button type="button" class="table-chip is-motion">MOTION</button></div><div class="timeline"><span>Lane 1</span><span class="clip"></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="table-utility" aria-label="TimelineとClip操作"><span class="table-utility-label">TIMELINE 47% · SELECTED CLIP F1–F13</span><button type="button" aria-label="Timeline縮小">−</button><button type="button" aria-label="Timeline拡大">＋</button><button type="button">COPY</button><button type="button">DELETE</button></div></section>
+    </main>
+    <aside class="control-rail" aria-label="右control rail"><button class="rail-button" type="button">＋</button><button class="rail-button is-hover" type="button">▱</button><button class="rail-button is-setup" type="button">R</button><button class="rail-button is-danger" type="button">⌫</button></aside>
+    <aside class="state-key" aria-label="状態色"><strong>Rest / Hover / Active</strong><div class="state-row"><span class="state-dot setup"></span>Setup blue</div><div class="state-row"><span class="state-dot motion"></span>Motion orange</div><div class="state-row"><span class="state-dot danger"></span>Destructive red</div></aside>
+  </section>
+</div>
+<div class="note"><strong>Gate 0:</strong> A〜Eは同じDOM。B/Cは外周とrailを暗くし、Dは左右railだけを暗色floating surfaceにする。Eは暖色中間外周＋淡色rail。Canvas、QTP、Layer Panel、Animation Table contentは淡色warmを維持する。外枠はGap onlyを基準とし、Table utilityはTop stack / Bottom splitを比較する。</div>
+<script>
+const shell = document.querySelector('#fixture-shell');
+const blurToggle = document.querySelector('#blur-toggle');
+
+function selectControl(group, value) {
+  group.querySelectorAll('button[data-value]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.value === value));
+  });
+}
+
+document.querySelectorAll('.control-group[data-control]').forEach((group) => {
+  group.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-value]');
+    if (!button) return;
+    const control = group.dataset.control;
+    shell.dataset[control] = button.dataset.value;
+    selectControl(group, button.dataset.value);
+    if (control === 'theme') {
+      const canBlur = button.dataset.value === 'translucent-umber';
+      blurToggle.disabled = !canBlur;
+      document.querySelectorAll('.control-group[data-control="opacity"] button').forEach((opacityButton) => {
+        opacityButton.disabled = !canBlur;
+      });
+      if (!canBlur) {
+        shell.dataset.blur = 'off';
+        blurToggle.setAttribute('aria-pressed', 'false');
+        blurToggle.textContent = 'Small 6px: OFF';
+      }
+    }
+  });
+});
+
+blurToggle.addEventListener('click', () => {
+  const enabled = shell.dataset.blur !== 'small';
+  shell.dataset.blur = enabled ? 'small' : 'off';
+  blurToggle.setAttribute('aria-pressed', String(enabled));
+  blurToggle.textContent = `Small 6px: ${enabled ? 'ON' : 'OFF'}`;
+});
+</script>
+</body>
+</html>

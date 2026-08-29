@@ -810,15 +810,20 @@
             
             layerContainer.insertBefore(frameIndicator, layerContainer.firstChild);
             
-            document.getElementById('frame-prev-btn')?.addEventListener('click', () => this.goToPreviousFrameSafe());
-            document.getElementById('frame-next-btn')?.addEventListener('click', () => this.goToNextFrameSafe());
-            document.getElementById('frame-display')?.addEventListener('wheel', (event) => {
+            const framePrevBtn = document.getElementById('frame-prev-btn');
+            const frameNextBtn = document.getElementById('frame-next-btn');
+            framePrevBtn?.addEventListener('click', () => this.goToPreviousFrameSafe());
+            frameNextBtn?.addEventListener('click', () => this.goToNextFrameSafe());
+            const handleFrameWheel = (event) => {
                 if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
                 event.preventDefault();
                 event.stopPropagation();
                 if (event.deltaY < 0) this.goToPreviousFrameSafe();
                 else this.goToNextFrameSafe();
-            }, { passive: false });
+            };
+            document.getElementById('frame-display')?.addEventListener('wheel', handleFrameWheel, { passive: false });
+            framePrevBtn?.addEventListener('wheel', handleFrameWheel, { passive: false });
+            frameNextBtn?.addEventListener('wheel', handleFrameWheel, { passive: false });
             document.getElementById('frame-play-toggle-btn')?.addEventListener('click', () => {
                 const animTable = (window.coreEngine?.popupManager || window.PopupManager)?.get?.('animationTable');
                 animTable?.togglePlayback?.();

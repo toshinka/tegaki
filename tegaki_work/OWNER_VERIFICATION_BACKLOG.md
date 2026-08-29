@@ -1,7 +1,7 @@
 # Owner実機確認バックログ
 
-更新日: 2026-08-24
-状態: ACTIVE — Phase 7i〜9hはclose済み、Owner制作環境では未確認項目あり
+更新日: 2026-08-28
+状態: ACTIVE — Phase 7i〜9lはclose済み、Owner制作環境では未確認項目あり
 
 ## 目的
 
@@ -12,6 +12,32 @@ SOLの実装監査・固定verifier・Browser確認でcloseした機能につい
 - 既存Projectを破壊し得る確認は複製Projectで行う。
 
 ## 未確認項目
+
+### Phase 9m — Layer Panel frosted compact / Animation Table utility follow-up（技術checkpoint・Phase open）
+
+- 明るい絵 / 暗い絵、wide / narrowで、Frame control＋CAF / Lane contextが128px幅の一つの上下接続stackとして読め、28px row / 20px thumbnail、shadowなしの磨りガラスsurfaceがCanvasを過度に隠さないことを確認する。
+- current Layerの54%橙surfaceが攻撃的すぎず、橙がthumbnail上下へ連続しながら20px hit内の18px contentは無着色であること。0pxのmeta/name gap、3pxのrow列間、outlineを外したclip / visibility action、背景rowとのcompact基準が読め、Folder子の縦線がrow端で半端に切れないこと。
+- Table表示中にinternal Layerをthumbnail側から並べ替え、Folderへ投入し、Undo / Redo、Folder開閉、Table close / reopen、Project reload後も順序・depth・active targetが一致すること。通常modeのLayer / Folder D&Dも退行しないこと。
+- Frame左右矢印上のwheel、Timeline onion、Lane onionをmouse / pen / touchで確認する。CAF / Lane上下移動の意味は未確定のため、現段階では新しい矢印controlを追加していない。
+- 通常Folder / CAF内部Folderのicon投影は現存する。内容合成Folder / CAF thumbnailは未実装であり、将来Gateで内容導出、更新時機、stale表示、性能、visibility / clippingとの関係を決め、保存用thumbnail flagは作らない。
+- Playback Endは`TIMELINE → LAST CLIP → OUT MARKER`の直接循環となり、OUT MARKER時だけ隣接するI / Oが現れる。制作環境でF9〜F18等の短い範囲を設定し、非LoopがOで停止、LoopがIへ戻り、Table close / reopen後もOUT MARKERとI / O表示が一致することを確認する。
+- 第一行のPlay / Stopはhit areaを維持したまま可視面を抑え、三分割gridの中央へ置いた。wide / narrow、mouse / pen / touchでPlayとStop glyphが同じ中心に見え、header / Bottom境界線が二重barに見えず、Playback controlsへ重ならないことを確認する。
+- 2026-08-28のOwner実画面では、十分な横幅でもheaderが設定 / Play / Playbackの三行へ分裂し、Timeline / Laneより面積を取るためvisual NGとなった。次の限定修正後に、一行header、最小高Bottom、Play / Stop中心、OUT時I / O、Timeline開始位置を再確認する。CAF選択だけでRIG / Motion詳細が一気に展開されないことは後続`Clip Focus` Gateで確認する。
+- BrowserではFrame / CAF / row / 背景=128px、right-panel=172px、row=28px、20px hit / 1px padding / 18px content / 0px details gap / 3px列間 / action border transparentを確認した。thumbnailからFolder投入、Undo / Redo、Frame wheel F1↔F2、Lane onion反転色＋ARIA、OUT MARKER F9〜F18停止・close / reopen復帰、console warning / error 0件まで確認済み。全117 verifier / production buildを通過したが、上記visual NGによりPhaseはcloseしない。
+
+### Phase 9l — Right Layer / CAF Focus D Flat projection（技術close後）
+
+- 多数CAFと長い内部Layer / Folderを持つ制作Projectで、右Panelが選択CAF一件だけへ追従し、CAF名 / Lane名、現在internal target、peer、visibility、clipping、RIG chipを迷わず読めることを確認する。
+- Animation TableでCAF切替、内部Layer順序変更、CAF copy / pasteを反復し、右PanelへCAF asset cardや第二D&D正本が復活せず、橙current targetが常に一件であること。Table close / reopen後も同じ`selectedCelId / selectedAssetId / selectedInternalLayerId`へ戻ること。
+- 内部Folderの開閉、選択子Layerを含むFolder collapse、mouse / pen / touch、narrow / low viewportを確認する。問題時はPhase 9lを再OPENせず、projection / selection focus / Table D&Dのどれかへ再現条件を分けた限定bug fix Gateを立てる。
+- 全113 verifier / production build / Browserの追加・選択・visibility・clipping・Folder collapse・複数CAF・Table close / reopen / console warning・error 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
+
+### Phase 9k — Integrated Outer Shell / Floating dark rails（技術close後）
+
+- Ownerの短時間visual確認ではFutaba light-maroon 98→88% gradient、shadowなし、enabled trashの不透明on-dark橙`#ffb87e`を受入済み。制作Projectの明色 / 暗色 / 高彩度artで、左右railのgradientが汚れや壁に見えず、cream glyph、Setup青、Motion橙、delete橙が沈みすぎないことを長時間確認する。
+- 同じ数値の橙・grayでもsurround明度で知覚が変わるため、数値contrastだけでなくactual surface上のrest / hover / active / popup-open / disabledを比較する。色だけで状態を読む必要がなく、surface / outline / icon形状も同時に読めること。
+- Sidebar toolをmouse / pen / touchで開いた直後のSpace＋dragがCanvas panへ戻り、keyboard focus中のEnter / Spaceは従来どおりbuttonを操作することを確認する。問題時はPhase 9kを再OPENせず、rail visualまたはfocus復帰の限定bug fix Gateへ分離する。
+- 関連4 verifier / 全111 verifier / production build / Browser computed style / console warning・error 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
 
 ### Phase 9h — Sidebar Quiet Resting / Active Ring（技術close後）
 

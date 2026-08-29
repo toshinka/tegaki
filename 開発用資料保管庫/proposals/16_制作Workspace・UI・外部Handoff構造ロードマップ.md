@@ -1,7 +1,7 @@
 # 制作Workspace・UI・外部Handoff構造ロードマップ
 
-更新日: 2026-08-24
-状態: Phase 9h Sidebar Rail Attention Hierarchy / Active Surface GateをSOL final review=`A`でclose。Phase 9i Sidebar Action Semantics / Close Sync Gateを開始
+更新日: 2026-08-29
+状態: Phase 9l Right Layer / CAF FocusをGate 0=`GO — D`、SOL final review=`A`でclose。現行Phase 9mはAnimation Table Utility Split / Low-Zoom LOD Comparison Gate、一行header技術checkpoint済み・Owner visual再確認待ち
 
 ## 1. 位置づけ
 
@@ -12,6 +12,8 @@ Tegakiの中心は描画、セルアニメーション、Rig / Mesh Setup、Moti
 ## 2. 採用する原則
 
 - Canvas Firstとprogressive disclosureを維持し、通常描画時に高度なRig / Graph / export UIを常設しない。
+- 外部toolは水平参照に使うが、人気・新しさ・共通配置をそのまま正本にしない。Tegakiの制作頻度、pen操作、Futaba文化、既存model / History / save境界へ戻して、常設 / contextual / mode内の深度文法だけを採否判断する。
+- Workspace / popup / Timeline subviewは意志の焦点lensとして、明示入口、現在mode / 対象、breadcrumb / Back、予測可能なclose / reopenを一組で比較する。通常selectionを深いmode進入へ暗黙転用しない。
 - `Q` / `V` / `H`、Space + drag、header / Lane / Timeline gridのwheel三領域、半透明popup、既存Panel位置保存を互換契約とする。
 - Setup青はstatic設定、橙はFrame作業 / 実行に限定する。一般buttonを意味なく青・橙へ塗り分けない。
 - Rig Workspaceを開く場合も、保存正本は既存`ClipAsset.rigDefinition / meshDefinitions / skinBindings`、Frame正本は既存`ClipInstance.rigMotion`とする。Workspace専用Rig、Mesh、selection、Historyを保存しない。
@@ -19,6 +21,7 @@ Tegakiの中心は描画、セルアニメーション、Rig / Mesh Setup、Moti
 - `animation-table-popup.js`の全面分割は行わない。pure projection、overlay、gesture planの境界が固定したものだけを段階抽出する。
 - QTPを通常描画の`Painter's Palette`、sidebarを大分類 / 管理 / recoveryのperipheral railとして扱い、両方を同格のtoolboxへ戻さない。
 - hit areaと見えるsurfaceを分離し、通常はpanel surfaceとspacing、hover / active / focus時だけcontrol surfaceを強める。色だけでclickabilityやSetup / Motion状態を伝えない。
+- Canvasと中心視で扱うQTP / Layer Panel / Animation Tableは現行の淡色warm surfaceを基準とする。外周を濃くする場合は左右railと背景を一体で比較し、大面積maroon / pure blackを避けた低彩度umberを候補とする。半透明 / blurはnarrow体感・可読性・描画負荷を測るまで決め打ちしない。
 - 半透明はCanvasとの連続性を示すfloating surfaceへ限定し、input / tooltip / warning / modalは必要な不透明度を保つ。全面glass化しない。
 - UI複雑さはcontrol総数だけでなく、到達段数、Canvas遮蔽、close / reopen復帰、pointer種別ごとのhit areaで比較する。
 - Brush / Eraser / Selection / Layer / Timeline等の一般概念は学習転移を優先し、独自化はQTP、Rig / Mesh / Perform等で制作上の利益が説明できる場合に限定する。
@@ -129,12 +132,26 @@ PixiJS 8.19互換更新は完了済み。WebGPU renderer、GPU Skin、GPU paint�
 - Phase 9fで採用: Gate 0=`GO — B: Quiet Resting`。通常playを28×24pxへ一回り縮小し、休止中のSCOPE / PREVIEW / Onion / zoom / 非破壊補助actionだけをtransparent border＋淡いsurfaceへ下げ、hover / open / focus / activeでsemantic borderを戻した。header dark案はHOLD、Selected Clip / Delete / closeと全behaviorを維持し、全105 verifier / build / Browser、SOL final review=`A`でcloseした。
 - Phase 9gで採用: Gate 0=`GO — B: Borderless Resting＋Selected Ring`。Palette color / tool / preset cellだけをtransparent borderへ下げ、cream色は薄い内側contrast、selectedは橙ring、focus-visibleは2px橙outlineとした。Main / Sub、slider、Text / deck、event / storage / Canvas inputを維持し、全106 verifier / build / Browser、SOL final review=`A`でcloseした。
 - Phase 9hで採用: Gate 0=`GO — B: Quiet Resting＋Hover Surface＋Active Ring`。resting borderをtransparentへ下げ、hover / focus / active / disabledをsemantic surfaceで戻し、30 / 38px hitを維持した。static appearanceは`styles/components/sidebar-rail.css`へ一正本化し、全107 verifier / build / Browser、SOL final review=`A`でcloseした。
-- 次Gate: Phase 9iでSidebar 8入口をcommand / popup launcher / temporary modeへ分類し、Animation Table内部×後のA stale active、keyboard / ARIA、PopupManagerとinstance直closeの差を既存eventから整理する。全popupを一律persistent activeにせず、tool構成、icon、shortcut、内部skinへ同時展開しない。
+- Phase 9iで採用: Sidebar 8入口を6 popup launcher / 1 one-shot command / 1 temporary modeへ分類し、native button、popupの`aria-expanded`、Vの`aria-pressed`、Importの状態属性なしを既存stateへ投影した。内部close / 別popup / Escape / Enter / Spaceを同じaction / hide経路へ揃え、全108 verifier / build / Browser、SOL final review=`A`でcloseした。
+- Phase 9jで採用: Layer / Folder / CAF cardの現行appearanceを`--ui-layer-*`＋`styles/components/layer-panel-surface.css`へ一正本化し、rendererのinline styleをwidth / indentへ限定した。通常Layer / Folder / D&D、CAF header / internal mirror / Folder開閉、全109 verifier / buildを通過し、Current warm維持、SOL final review=`A`でcloseした。
+- Phase 9k close: Owner Gate 0=`GO — D: Floating dark rails`。左右operation railだけをFutaba light-maroon 98→88% gradient、shadowなし、不透明on-dark trash橙`#ffb87e`へ限定接続し、Owner visual受入、全111 verifier / build / Browser、SOL final review=`A`でcloseした。同じ数値の橙・grayでもsurround明度で知覚が変わる同時対比をStyle Guideへ記録し、actual surface比較と数値contrastを併用する。Settings rail切替、自動sampling、全面dark化、Table Bottom splitは凍結 / 別Gateを維持する。
+- Phase 9l close: Gate 0=`GO — D: Flat CAF context＋unified layer list`。右Panelは選択CAF一件の薄いcontextとそのinternal Layer / Folderだけを投影し、current targetを橙surface一件で示す。CAF asset列挙とinternal Layer Pointer D&Dを右Panelから外し、CAF管理とD&DをAnimation Tableへ寄せた。通常Layer D&D、Table内移動、`1 UI engine / 2 data adapter`、TimelineModel / ClipAsset / DrawingSnapshot、History / saveを維持し、全113 verifier / build / Browser、SOL final review=`A`でcloseした。
+- Phase 9m Stage 0 / A / B: right Layer Panelのcompact磨りガラスsurface、Bottom utility、Clip surface / visual LOD、Playback End直接cycle、OUT限定I / O、一行header follow-upは技術checkpoint済み。三行化は760px compact境界と三cluster 100%幅が作る不連続と再現し、620px境界の三列grid＋trailing局所wrapへ限定修正した。Attention / Clip Focus水平調査では通常clickをselectionへ残し、明示`FOCUS`から同じTableをin-place modeへ切り替え、Dope Sheet / Motion Graphをsubview化する案を第一候補とした。比較はFresco / CSP Simple、Callipeg Studio / ToonSquid 2.0 / Procreate Dreams 2、Live2D / Spine、After Effects / Premiereの役割別watchlistで継続し、公式資料の鮮度を各Gateで確認する。dark top / bottomとLane濃淡は独立appearance軸として比較する。Owner header Gateと独立したappearance SliceではSelected Clip contextの重複外枠 / shadow / separator / resting button枠だけを落とし、Futaba面＋橙dot、hover、keyboard focusを維持した。Owner header visual再確認まではClip Focus fixture / productionへ進まない。全118 verifier / build / Browserを通過し、25% / major gridは引き続き保留する。
+
+### Animation Table低倍率・Bottom utilityポンチ絵（Owner知見 2026-08-27）
+
+- headerは一行に収め、第一actionのplayを中央へ置く。Timeline zoom、Asset Library、Selected Clipのduration / copy / delete等はBottom utilityへ分離し、header / Lane / Timeline gridのwheel三領域は維持する。
+- 選択Clipは多重outlineと端矢印を重ねず、橙の単一solid block＋小さい角丸を第一案、非選択ClipはFutaba中間色surfaceを第一案とする。resize handle / 左右矢印は45〜50%前後から段階的に弱め、それ以下では隠す比較を行う。
+- 現行33%未満のzoom開放は、cell width、frame hit、wheel frame-step、Clip drag / retime、key読取の最低幅を先に監査する。低倍率ではTimeline縦grid線をmajor intervalだけ、さらに低倍率では省略するLODをfixed fixtureで比較する。
+- `SCOPE`はLane visibilityと同義と証明できるまで削除しない。現行`playbackScope=set`の選択集合・保存・range評価を監査する。CAF内部子行はCAF選択だけで自動展開せず、全体Lane概要から明示`Clip Focus`へ入り、breadcrumbで戻る表示policyを第一候補とする。SCOPEを別意味へ暗黙転用しない。
+- Phase 9m Stage Aの一DOM static fixtureとfixed verifierを完了し、Gate 0=`GO — C first / D staged HOLD`とした。Stage Bは33%下限のCだけをproductionへ接続し、Browser 1280 / 420、header / Bottom zoom、grid F1→F2、Duration 1F→2F→1F、console 0件、全116 verifier / build / 生成物清掃を通過した。これはStage B時点の技術checkpointであり、後続のOwner visual follow-upで三行headerを未受入としたためcloseしない。Dの25% / major gridはFrame hit / wheel / move / retime / key gesture固定までHOLDし、SCOPE SET、History / saveは変更しない。Folder / CAF thumbnailは既存内容から導出する別の情報密度Gateとして保存bitmap / flagを増やさない。
+- Phase 9m Owner playback follow-upは、Playback Endを`TIMELINE → LAST CLIP → OUT MARKER`の直接cycleへ変更し、OUT時だけI / Oを隣接展開した。F9–F18の非loop停止 / loop復帰 / Project round-tripを固定し、再生 / 停止はhitを維持したままvisible面と中央CSS glyphを小さく揃えた。左右同幅grid clusterでplayを中央列へ置き、I / Oをoverlayで分断せず、header / Bottom separatorをframelessへ下げた。全117 verifier / build / Browser、console 0件を通過。次GateはPREVIEW配置、Bottom zoom左右、Lane見出しSCOPEのdisplay-only focus、明示`Clip Focus`＋Dope Sheet / Motion Graph切替を一DOMで比較する。SCOPE SET、Lane visibility、ClipAsset / History / saveを暗黙統合せず、素材棚は既存Asset Libraryを拡張する。
+- Owner visual follow-upで未受入だった三行headerは、760px / 762px境界のBrowser再現を経て620px compact境界、三列grid、trailing局所wrapへ限定修正した。Timeline / Lane stackを主面、header / Bottomを最小高の操作lens、Playを反転色とglyphで強調して専用行を作らない方針を維持する。Owner再確認後の別Sliceで、CAF選択時のFolder / BONE / Motion既定露出を`Clip Focus`へ分離する。
 - 別Gateへ保留: 小utility統合、Auto Line実受理率 / 再生成History実測、Raster / Bake上限、CPU Skin / Raster profiling、Project-local Rig参照schema、GPU Skin、動画編集統合、AI自動化。
 - 保留: Animation Table全面dock、常設Inspector、Callipeg式CLIP操作標準化、Simple / Expert二重UI、自由custom rail。固定fixtureで現行popup / Canvas-first shellより優位と確認できるまで採用しない。
 - 棄却: 保存正本をWorkspace / UIへ複製する案、外部proposalを実コード照合なしでPhase契約にする案、`animation-table-popup.js`の一括分割。
 
-2026-08-20のStage B後にClaudeReview 4本を再読した。UIレビューは主要項目が既に反映済み、file整理レビューは段階抽出だけ採用、PixiJS / resource診断は未計測仮説として維持する。旧main snapshotの行番号やPhase状態は現行判断へ持ち込まない。
+2026-08-20のStage B後にClaudeReview 4本を再読した。UIレビューは主要項目が既に反映済み、file整理レビューは段階抽出だけ採用、PixiJS / resource診断は未計測仮説として維持する。2026-08-26には`gui-skin-redesign-revision-2026-08-25.md`と`color-philosophy-background-panel-icon-balance.md`を現行codeへ照合し、Layer Panelのtoken境界と「中心Panelは淡色、外周だけを統合比較」の順序を採用した。旧main snapshotの行番号やPhase状態は現行判断へ持ち込まない。
 
 ## 6. Phase化条件
 

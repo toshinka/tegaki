@@ -33,13 +33,17 @@ assert.match(mainCss, /--ui-rail-control-size:\s*30px;/u,
 assert.match(mainCss, /@media \(pointer:\s*coarse\)[\s\S]*?--ui-rail-control-size:\s*38px;/u,
     'coarse pointer hit dimension stays 38px');
 
-assert.match(sidebarCss, /\.sidebar \.tool-button\s*\{[\s\S]*?border:\s*1px solid var\(--ui-border-subtle\)/u,
+assert.match(sidebarCss, /\.sidebar \.tool-button\s*\{[\s\S]*?border:\s*1px solid transparent/u,
     'resting controls keep a transparent layout border');
-assert.match(sidebarCss, /background:\s*var\(--ui-surface-control\)/u);
-assert.match(sidebarCss, /\.sidebar \.tool-button:hover[^\{]*\{[\s\S]*?border-color:\s*var\(--ui-border-hover\)[\s\S]*?background:\s*var\(--ui-surface-control-hover\)/u,
-    'hover restores both surface and boundary');
-assert.match(sidebarCss, /\.sidebar \.tool-button\.active,[\s\S]*?\.sidebar \.tool-button\[aria-pressed="true"\][\s\S]*?border:\s*2px solid var\(--ui-border-active\)[\s\S]*?box-shadow:\s*var\(--ui-shadow-control-active\)/u,
-    'active class and pressed state share the accepted ring');
+assert.match(sidebarCss, /background:\s*var\(--ui-rail-control-rest\)/u);
+assert.match(sidebarCss, /color:\s*var\(--ui-rail-foreground\)/u);
+const hoverRule = sidebarCss.match(/\.sidebar \.tool-button:hover[^\{]*\{[\s\S]*?\}/u)?.[0] || '';
+assert.match(hoverRule, /background:\s*var\(--ui-rail-control-hover\)/u,
+    'hover restores a quiet on-dark surface');
+assert.doesNotMatch(hoverRule, /border-color/u,
+    'hover does not add a competing frame');
+assert.match(sidebarCss, /\.sidebar \.tool-button\.active,[\s\S]*?\.sidebar \.tool-button\[aria-pressed="true"\],[\s\S]*?\.sidebar \.tool-button\[aria-expanded="true"\][\s\S]*?border:\s*1px solid var\(--ui-border-active\)[\s\S]*?background:\s*var\(--ui-rail-control-active\)[\s\S]*?color:\s*var\(--ui-rail-control-active-foreground\)[\s\S]*?box-shadow:\s*none/u,
+    'active class, pressed state and popup-open state share one orange active surface');
 assert.match(sidebarCss, /\.sidebar \.tool-button:focus-visible\s*\{[\s\S]*?outline:\s*2px solid var\(--active-border\)/u,
     'keyboard focus remains explicit');
 assert.match(sidebarCss, /\.sidebar \.tool-button:disabled,[\s\S]*?\[aria-disabled="true"\][\s\S]*?opacity:\s*var\(--ui-opacity-disabled\)/u,

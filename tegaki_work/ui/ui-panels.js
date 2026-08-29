@@ -253,10 +253,22 @@ export class UIController {
     }
     
     setupEventDelegation() {
+        document.querySelector('.sidebar')?.addEventListener('keydown', (e) => {
+            const toolButton = e.target.closest('.tool-button');
+            if (!toolButton || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+            if (e.key !== 'Enter' && e.key !== ' ' && e.code !== 'Space') return;
+            e.preventDefault();
+            e.stopPropagation();
+            toolButton.click();
+        });
+
         document.addEventListener('click', (e) => {
             const toolButton = e.target.closest('.tool-button');
             if (toolButton) {
                 this.handleToolClick(toolButton);
+                // Pointer / pen activation must return Space to the Canvas camera.
+                // Keyboard-triggered click has detail=0 and intentionally keeps focus.
+                if (e.detail > 0) toolButton.blur();
                 return;
             }
 
