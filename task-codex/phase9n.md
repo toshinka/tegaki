@@ -1,9 +1,9 @@
 # Phase 9n — RIG / Motion Responsibility / Contextual Right RIG Inspector Gate
 
 作成日: 2026-08-29
-更新日: 2026-08-30
+更新日: 2026-08-31
 
-状態: ACTIVE — Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`。Stage A / B / C1 / C2 / C3 / C4 / C5 / C6 checkpoint完了、次はStage D Animation Table static RIG cleanup Gate
+状態: ACTIVE — Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`。Stage A / B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2 checkpoint完了、次はStage D3 static RIG editor host ownership Gate
 
 ## 1. 目的
 
@@ -205,15 +205,49 @@ Checkpoint（2026-08-30）:
 
 Checkpoint（2026-08-30）:
 
-- 右RIGはruntime focusが現在の`selectedAssetId / selectedInternalLayerId / selectedRigBoneId / internal raster scope`と全一致し、root Raster・Partなし・Meshなし・unbound Bone実在をfreshに確認できる時だけ`曲げRIG 準備中`と`BONE候補 / MESH未生成 / WEIGHT未接続`を表示する。Project / History / Rig定義へfocusを保存しない。
+- 右RIGはruntime-only view lensとして、runtime focusが現在の`selectedAssetId / selectedInternalLayerId / selectedRigBoneId / internal raster scope`と全一致し、root Raster・Partなし・Meshなし・unbound Bone実在をfreshに確認できる時だけ`曲げRIG 準備中`と`BONE候補 / MESH未生成 / WEIGHT未接続`を表示する。Projectへownerやmode flagを保存しない。Project / History / Rig定義へfocusを保存しない。
 - Layer Panel行、別Clip / CAF、Folder、Mesh生成、Rigid化、Bone消失でtokenを破棄する。Mesh前Rasterを開く時は同じtokenのBoneだけを復帰し、global unbound Boneを別Rasterへ一意候補として自動継承しない。Mesh生成後のSkin接続済みBone復帰は従来どおり。
 - 明示Bone選択後の右Panel同期漏れと、Table閉鎖後handoffでlast-used MOTION tabへ戻る不整合をBrowserで検出した。既存Layer Panel syncを追加し、右RIGのstatic Setup handoffだけ既存RIG tabをopen後に再確定する。Bone / Mesh mutation、History semantic、save schemaは変更していない。
 - 全126 verifier、対象JSの`node --check`、production buildを通過した。BrowserでBone追加直後、別Raster非漏出、元Rasterへの非自動復帰、明示Bone選択での復帰、Table閉鎖中、`Meshを作成`からRIG tab復帰、AUTO GRID 1 History、生成後の`BONE接続 / GRID設定済み / WEIGHT接続済み`、480×800のaction下端433.75px / Table上端434px・document横overflow 0、console warning / error 0件を確認した。
 
+## 7.7 Stage D1 — Motion static Setup action cleanup Gate（checkpoint完了）
+
+- inventoryでは、`#anim-rig-context`がBone作成、Mesh生成、親接続、Weight / Brush / Mesh Editというstatic setup mutationを持ち、`#anim-part-motion-context`がBone / Part key、IK、Frame poseとread-only Weight表示を持つ。現時点の右RIGは進捗と既存editorへのhandoffを所有するが、static mutationの同等editorをまだ所有しない。
+- したがってAnimation TableのRIG editor全撤去は`NO-GO`とする。右RIGから到達できる既存editorは維持し、Bone / Mesh / Weight / parent controlを一括削除しない。
+- Motion側にだけ重複していた未接続Rasterの`AUTO GRIDを作成`は、時間文脈からstatic Meshを直接mutationするため撤去候補とする。同じ位置へ`RIGを設定 >`を置き、既存RIG tabへ切り替えるだけの無履歴handoffへ変更する。
+- MotionのKEY / IK / Frame transform / read-only `WEIGHT表示`、RIG tabのBone / Mesh / Weight / parent、Canvas direct manipulation、ClipAsset / ClipInstance / History / save正本は維持する。
+- wide / 480×800、Table open / closed、未接続Bone、handoff前後のHistory件数、RIG editorでのAUTO GRID 1 History、Motion復帰後のkey編集、console errorを固定してからcheckpoint化する。
+
+Checkpoint（2026-08-31）:
+
+- Motion未接続Rasterの直接`AUTO GRIDを作成`を撤去し、同じquietな位置へ`RIGを設定 >`を置いた。actionは既存`_setMotionTimelineKeyKind('rig', { remember: true })`だけを呼び、Mesh / ClipAsset / Historyを変更しない。
+- 専用RIG editorの`1. BONE追加 / 2. AUTO GRID / AUTO SHAPE / AUTO LINE / WEIGHT / BRUSH / MESH EDIT / 親`は維持した。MotionはKEY / IK / transform / read-only WEIGHTを維持し、接続後に通常のKEY編集へ戻れる。
+- 全127 verifier、対象JS / verifierの`node --check`、production buildを通過した。BrowserでBone追加後に旧action非表示、新handoffのHistory `3 -> 3`、RIG editor AUTO GRID `3 -> 4`、Motion KEY追加 `4 -> 5`、Undo後のhandoff復帰、480×800でhit可能・document横overflow 0、console warning / error 0件を確認した。
+
+## 7.8 Stage D2 — Lane / CLIP MOTION target entry parity Gate（checkpoint完了）
+
+- inventoryでは、未設定Laneの`RIG設定 / +RIG` button、同じLane行、Timeline cellのdouble-clickがstatic RIG editorを開き、Folder buttonだけはPIVOT / Boneまで直接mutationしていた。右RIGの方式選択・段階Setupと重複し、Animation Tableの時間責務から外れる。
+- CLIP MOTIONのtarget stripは、開いているeditor内でCAF / Folder / Rasterを切り替え、Mesh前Bone targetへ`RIGを設定 >`を投影するfocus lensである。static Setup entryではないため維持する。
+- production Sliceは未設定LaneからSetup buttonとclick / double-clickによるeditor起動・mutationを外す。Lane名、PIVOT未設定indicator、borderlessな`未設定`status、Frame / target選択は維持し、右Panelを`LAYERS`表示中でも共有`selectedInternalLayerId`だけを更新する。
+- Raster candidateは`_selectRigRasterProjectionTarget()`、Folder / rigid Raster candidateは`_selectRigFolderProjectionTarget()`をselection adapterとして再利用するが、`focusRig / openInspector`はfalse、Historyは0件とする。右RIGからの曲げ / 全体 / 親子Setup、CLIP MOTION handoff、設定済みBone row / keyは維持する。
+- Folder / Raster、right `LAYERS / RIG`、Table open / closed、行 / Timeline cellのsingle / double-click、History、CLIP MOTION target切替、wide / 480×800、console errorを固定してからcheckpoint化する。
+
+Checkpoint（2026-08-31）:
+
+- 未設定Raster / Folder Laneの`RIG設定 / +RIG` buttonを撤去し、PIVOT未設定indicatorと枠なしの`RIG未設定: 未設`statusだけを残した。行とTimeline cellのsingle / double-clickはFrame / target選択だけを行い、RIG tab、static editor、Historyを開かない。
+- Rasterは`_selectRigRasterProjectionTarget()`、Folder / rigid Rasterは`_selectRigFolderProjectionTarget()`の既存adapterを`focusRig: false / openInspector: false`で再利用した。右RIGの曲げ / 全体 / 親子Setup、CLIP MOTION target strip、Mesh前Boneの`RIGを設定 >`、設定済みBone row / keyは維持した。
+- 全128 verifier、対象JS / verifierの`node --check`、production buildを通過した。BrowserでRaster / Folderの行とcellの単 / double-click前後History不変、Motion非open、右RIGの曲げRIG / 親子RIG入口、CLIP target切替、Table close / reopen、480×800のdocument横overflow 0、console warning / error 0件を確認した。
+
+## 7.9 Stage D3 — Static RIG editor host ownership Gate（次task）
+
+- 右RIGのprogress / Setup handoffとAnimation Table内の既存static RIG editorが、同一選択target・open / close・return pathを保ったまま一hostへ寄せられるかをinventoryする。
+- 最初はDOM / event / Popup stacking / Canvas overlay / Historyの所有関係を確定し、右dockへの移設とTable外別windowのどちらが既存editor一つを再利用できるか比較する。同等のMesh / Weight / parent / reject / Undoが揃う前にTable内editorを撤去しない。
+- 設定済みBone row / key、Motion / easing / temporal WARP、CLIP target lens、Canvas direct manipulationは時間・操作責務として維持する。
+
 ## 8. 後続Stage
 
 - Stage C: C1のRIG対象登録から、既存Animation Table external adapterを再利用してsetup mutationのsurfaceだけを右RIGへ一操作ずつ移す。model logicを一括移動しない。
-- Stage D（次task）: 右経路がproductionで成立したため、Animation Table内のstatic RIG DOMとtemporal Motion DOMを先にinventory化する。右経路で代替済みと実操作で確認できた一surfaceずつ段階撤去し、Motionと`RIGを設定 >` handoffを残す。inventory / parity確認前に削除しない。
+- Stage D: D1でMotion内の直接static setupだけを無履歴`RIGを設定 >`へ置換し、D2で未設定Lane入口を選択専用にした。D3は残るstatic editorのhost所有と右RIGからのreturn pathを確定する。同等editorの到達性と受入を確認する前に専用RIG editorを消さない。
 - WARP: Bind / GRID / topology / child pivot bindingはRIG、key / interpolation / current Frame poseはAnimation Table。
 
 ## 9. 非対象 / STOP
@@ -241,7 +275,7 @@ UI Sliceではnormal drawing / CAF、Folder parent / Raster bend / Raster whole 
 ## 11. model分担
 
 - Gate、left / right判断、projection contract、Phase closeはSOL / MAX。
-- Stage B / C1 / C2 / C3 / C4 / C5 / C6はcheckpoint完了。Stage Dのstatic / temporal DOM inventory、右経路parity、撤去単位、Phase close判断はSOL / MAX。
+- Stage B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2はcheckpoint完了。Stage D3のstatic editor host ownership、return path、移設単位、Phase close判断はSOL / MAX。
 - mutation、History、selection、schema判断が必要になったらLUNAは変更せずSOLへ返す。
 
 ## 12. Owner UI follow-up / 後続Gateへ保留

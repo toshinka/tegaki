@@ -20,15 +20,9 @@ assert.match(popup, /data-rig-raster-to-mesh hidden>曲げBONEへ切替</);
 assert.match(popup, /folder\.targetKind === 'raster' && !folder\.part && !folder\.bone\) return;/,
     '未設定Root Raster targetを初期BONEのようにCanvas表示しない');
 
-const laneHandlerStart = popup.indexOf("const rigFolderSetup = e.target.closest('.anim-rig-folder-setup')");
-const laneHandlerEnd = popup.indexOf("const boneKeyToggle = e.target.closest('.anim-bone-key-toggle')", laneHandlerStart);
-assert.ok(laneHandlerStart >= 0 && laneHandlerEnd > laneHandlerStart);
-const laneHandler = popup.slice(laneHandlerStart, laneHandlerEnd);
-const rasterEntryEnd = laneHandler.indexOf('const beforeState');
-const rasterEntry = laneHandler.slice(0, rasterEntryEnd);
-assert.match(rasterEntry, /context\.targetKind === 'raster'/);
-assert.match(rasterEntry, /_selectRigRasterProjectionTarget/);
-assert.doesNotMatch(rasterEntry, /_ensureFolderRigPivot/, 'RasterのLane入口は保存正本を作らない');
+assert.match(popup, /anim-rig-lane-status[^>]*aria-label="RIG未設定">未設定</);
+assert.doesNotMatch(popup, /anim-rig-folder-setup(?=["'`${\s])/,
+    'Laneの未設定targetからstatic Setupを開始しない');
 
 assert.match(popup, /_createSelectedRasterRigidPivot\(\)/);
 assert.match(popup, /_switchSelectedRasterPartToMesh\(\)/);
@@ -37,7 +31,8 @@ assert.match(popup, /removeClipAssetRigidRasterTarget/);
 assert.match(model, /removeClipAssetRigidRasterTarget\(assetId, layerId\)/);
 assert.match(model, /removeRigMotionTargets\(clip\.rigMotion, removal\)/);
 
-assert.match(css, /\.anim-rig-folder-setup\.is-raster-entry/);
+assert.match(css, /\.anim-rig-lane-status/);
+assert.doesNotMatch(css, /\.anim-rig-folder-setup(?=[:.,{\s])/);
 assert.match(css, /\.anim-rig-open-setup-btn:not\(:disabled\)/);
 assert.match(css, /\.anim-rig-mesh-generate-btn\.is-primary:not\(:disabled\)/);
 assert.match(css, /border-width: 2px/);

@@ -5413,29 +5413,13 @@ button.anim-motion-graph-legend-item.is-primary {
     font-size: 9px;
 }
 
-.anim-rig-folder-setup {
-    min-width: 14px;
-    height: 14px;
-    padding: 0 3px;
-    border: 1px solid var(--futaba-light-medium);
-    border-radius: 3px;
-    color: var(--futaba-maroon);
-    background: color-mix(in srgb, var(--futaba-background) 82%, transparent);
+.anim-rig-lane-status {
+    flex: 0 0 auto;
+    color: var(--futaba-medium);
     font-size: 7px;
     font-weight: 700;
     line-height: 1;
-}
-
-.anim-rig-folder-setup:disabled {
-    color: var(--futaba-medium);
-    opacity: 0.48;
-}
-
-.anim-rig-folder-setup.is-raster-entry {
-    min-width: 33px;
-    color: var(--deformer-bind-point);
-    border-color: var(--deformer-bind-line);
-    background: color-mix(in srgb, var(--deformer-bind-line) 12%, var(--futaba-background));
+    opacity: 0.72;
 }
 
 .anim-rig-folder-cell-slot.is-outside-clip {

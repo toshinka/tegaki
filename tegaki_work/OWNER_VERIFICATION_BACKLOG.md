@@ -204,7 +204,7 @@ Owner制作環境で追加確認すること:
 
 ### Phase 8d Stage B — 一枚Raster RIG onboarding
 
-- 1 Frame CAFと伸ばしたCAFの両方で、Laneの`RIG設定`が正本やHistoryを増やさずSetupを開くこと。
+- 1 Frame CAFと伸ばしたCAFの両方で、未設定Laneの`RIG未設定: 未設`行 / cellがHistoryを増やさずtarget / Frame選択だけを行い、右RIGの`曲げRIG / 全体PIVOT / 親子RIG`またはCLIP MOTION内の明示`RIGを設定 >`からSetupへ入れること。
 - 曲げる場合は`1. BONE追加 → 2. AUTO GRID → MOTION`だけで絵が追従し、未接続中は対象絵が通常濃度、key / Canvas dragは拒否、非対象絵だけが半透明になること。AUTO SHAPE / LINEで接続済みの場合もMotion可能であること。
 - 絵を曲げない場合だけ`全体PIVOT`を使え、曲げBONE / Meshがある時は併用できないこと。
 - 既存mixed stateを複製Projectで開き、`曲げBONEへ切替`の確認acceptで対象Raster Part / rigid Bone / 対応Motionだけが消え、未接続Mesh Boneが残ること。cancel、外部child接続中の拒否も確認する。
@@ -216,7 +216,7 @@ Owner制作環境で追加確認すること:
 
 - Mesh未生成のRasterで、仮の青いLayer名PIVOTがCanvasへ出ず、`1. BONE追加`で作成した明示BONEだけが表示されること。自動初期BONEやHistoryが増えないこと。
 - BONE追加後は`2. AUTO GRID`だけが太いSetup青境界で強調され、`2. 絵へ接続`という別actionに見える文言がないこと。AUTO SHAPE / LINEは選択肢として残ること。
-- 未接続Motionの`AUTO GRIDを作成`からSkin接続でき、Bone dragで絵が追従すること。Shape / Lineで接続済みの場合もMotionが阻害されないこと。
+- 未接続Motionの`RIGを設定 >`がHistoryを増やさずRIG Setupへ移り、そこで`2. AUTO GRID`からSkin接続でき、Motionへ戻ってBone dragで絵が追従すること。Shape / Lineで接続済みの場合もMotionが阻害されないこと。
 - 接続済みMotionの`WEIGHT確認`で、選択Boneを維持してRIGのWEIGHT診断へ戻れること。GRID人体fixtureで脚Boneが手へ与える微小weightを発見できること。
 - Undo / Redo、Table close / reopen、Project reload、console error、可能ならpen / touchを確認すること。自由Weight brushとMesh point編集は本項の受入条件にしない。
 
