@@ -6,7 +6,7 @@ const [mainCss, componentCss, renderer, timelineUi, phase] = await Promise.all([
     readFile(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8'),
     readFile(new URL('../ui/layer-panel-renderer.js', import.meta.url), 'utf8'),
     readFile(new URL('../ui/timeline-ui.js', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9m.md', import.meta.url), 'utf8')
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9m.md', import.meta.url), 'utf8')
 ]);
 
 for (const token of [
@@ -29,8 +29,14 @@ assert.match(mainCss, /\.frame-indicator\s*\{[\s\S]*?background:\s*var\(--ui-lay
     'the Frame and reference strip uses the shared frosted surface');
 assert.match(mainCss, /\.frame-indicator\s*\{[\s\S]*?border-radius:\s*8px 8px 0 0[\s\S]*?margin:\s*0 2px/u,
     'the Frame strip is the top half of the aligned 128px context stack');
-assert.match(mainCss, /\.frame-lane-reference-btn\.is-active\s*\{[\s\S]*?background:\s*var\(--futaba-light-maroon\)[\s\S]*?color:\s*var\(--futaba-background\)/u,
-    'vertical Lane onion is an inverse Futaba surface when active');
+assert.match(mainCss, /\.frame-lane-reference-btn\s*\{[\s\S]*?border:\s*none[\s\S]*?color:\s*var\(--futaba-maroon\)/u,
+    'vertical Lane onion stays dark brown and borderless even while off');
+assert.match(mainCss, /\.frame-timeline-onion-btn\s*\{[\s\S]*?border:\s*none[\s\S]*?color:\s*var\(--futaba-medium\)/u,
+    'horizontal Timeline onion stays pale and borderless while off');
+assert.match(mainCss, /\.frame-lane-reference-btn\.is-active\s*\{[\s\S]*?background:\s*var\(--ui-layer-surface-focus\)[\s\S]*?color:\s*var\(--futaba-maroon\)/u,
+    'vertical Lane onion uses the shared orange panel surface when active');
+assert.match(mainCss, /\.frame-timeline-onion-btn\.is-active\s*\{[\s\S]*?background:\s*var\(--ui-layer-surface-focus\)[\s\S]*?color:\s*var\(--futaba-maroon\)/u,
+    'horizontal Timeline onion uses the same orange panel surface when active');
 
 assert.match(componentCss, /\.caf-simple-group-title--flat\s*\{[\s\S]*?background:\s*var\(--ui-layer-context-surface\)[\s\S]*?backdrop-filter:\s*var\(--ui-layer-context-backdrop\)/u,
     'CAF identity consumes the same frosted surface');

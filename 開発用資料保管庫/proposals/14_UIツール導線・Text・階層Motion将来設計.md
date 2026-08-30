@@ -285,6 +285,17 @@ Phase 8qはこの入口を独立Gateとして技術closeした。`6-tool grid �
 
 比較Acceptanceは、wide / 620 / 460 / 420、mouse / pen / touchで、通常Clip selection、move / retime、Focus進入、DOPE / MOTION切替、breadcrumb / Escape復帰、Table close / reopen、current Clip / mode識別、Canvasへ視線を戻せること、誤進入0を確認する。Ownerの一行header visual受入前はfixture / productionへ進めず、本checkpointは設計境界だけを固定する。
 
+#### CAF / Lane contextとTimelineの知覚的連続性（後続Gate）
+
+Phase 9nで右dockに`LAYERS / RIG`切替を置いた結果、右の`Frame + Timeline onion + Lane onion`と`CAF / Lane identity`はまとまった一方、Animation Table本体とは上下・左右に分かれ、同じ時間文脈が別Panelに見える懸念がOwner確認で残った。RIG責務再配置中は構造を動かさず、後続UI/UX Gateで次を比較する。
+
+1. 現行分離をbaselineとして、右context stackとAnimation Tableのalignment / connector band / context labelだけで連続性を補う。
+2. CAF / Lane identityの投影先をTable側へ寄せる。ただし`selectedCelId / selectedInternalLayerId`、Frame、Lane、TimelineModelの第二stateを作らない。
+3. `Clip Focus`時だけ同じcontext headerをTableへin-place投影し、通常Lane overviewでは右stackを維持する。
+4. wide / 620 / 480 / Table closeで、CAF名・Lane名・current Frame・二軸onion・Timelineの関連を一視線で再発見できるか、Canvas幅とpen移動を実測する。
+
+選ばれなかった案も再試行用に保持し、見た目の接続だけを理由にLayer / CAF / Timelineのdata authorityを統合しない。
+
 調査正本:
 
 - Adobe Fresco Motion: https://helpx.adobe.com/ie/fresco/desktop/draw-paint-animate-and-share/apply-motion-to-artwork.html

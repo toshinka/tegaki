@@ -2,11 +2,18 @@
 
 作成日: 2026-08-28
 
-状態: ACTIVE — Stage B `C first`＋一行header＋stable Playback Range / borderless resting / Bottom Lucide icon follow-upの技術checkpoint完了。Owner実画面での最終再確認待ちでvisual未受入、Clip Focus比較fixture / productionはHOLDする
+状態: CLOSED — Stage B `C first`＋一行header＋stable Playback Range / borderless resting / Bottom Lucide icon follow-upをOwnerが2026-08-29に実画面受入。全118 verifier / build / Browser checkpoint、SOL final review=`A`をclose根拠とし、Clip Focusは未着手の別候補として保持する
 
 ## 1. 目的
 
 Phase 9a〜9fで固定した中央playとquiet resting、Phase 8m〜8uで固定したGlance / Choice / Context action、Phase 9lで確定したCAF管理責務を維持しながら、Animation Tableの情報を`Playback header / Timeline content / Bottom utility`へ分ける。最初にOwner follow-upとして、右Panel上段のFrame・Timeline onion・Lane onionを時間軸／参照軸barの一正本として維持し、CAF identity / internal Layer projectionへ共通の磨りガラスsurfaceと低圧active surfaceを限定接続する。
+
+## 0. Close判定
+
+- Ownerが2026-08-29にproduction実画面を確認し「9mはこれでクローズで良い」と明示した。
+- stable一行header、固定幅Playback Range、OUT時I / O、borderless FPS / FRAMES / PREVIEW、Bottom duplicate / trash iconを受入対象とする。
+- 直前checkpointの全118 verifier、変更JSの`node --check`、production build、Browserのrange位置不変 / I・O / COPY / SVG / console 0件を維持し、SOL final review=`A`でcloseする。
+- Clip Focus、dark top / bottom、Lane濃淡、Animation Table外枠削減、25% zoomはPhase 9mへ戻さず別Gate候補として保持する。
 
 Ownerポンチ絵を入口に、一行header、中央play、Bottom utility、選択Clipの単一solid surface、低倍率時のhandle / grid LODを同一DOM・同一stateで比較する。productionへ入れる前に、wheel三領域、Frame hit、Clip move / retime、SCOPE、range、History / saveの不変境界を固定する。
 

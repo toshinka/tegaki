@@ -1,5 +1,5 @@
 /*
- * Phase 9j Layer Panel static surface authority.
+ * Phase 9j Layer Panel static surface authority and Phase 9n contextual RIG shell.
  * Geometry, D&D, data adapters and runtime width / indent remain in main.css
  * and layer-panel-renderer.js. Theme variants override the root tokens only.
  */
@@ -41,6 +41,199 @@
 
 .right-panel .layer-panel-card-group {
     color: var(--ui-layer-text);
+}
+
+.right-panel .layer-panel-context-view-switch {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2px;
+    box-sizing: border-box;
+    padding: 2px;
+    color: var(--ui-layer-text);
+    background: var(--ui-layer-context-surface);
+    -webkit-backdrop-filter: var(--ui-layer-context-backdrop);
+    backdrop-filter: var(--ui-layer-context-backdrop);
+}
+
+.right-panel .layer-panel-context-view-button {
+    min-width: 0;
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 2px 3px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--ui-layer-text);
+    background: transparent;
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.right-panel .layer-panel-context-view-button:hover {
+    background: var(--ui-layer-surface-hover);
+}
+
+.right-panel .layer-panel-context-view-button.is-active,
+.right-panel .layer-panel-context-view-button[aria-pressed="true"] {
+    color: var(--futaba-maroon);
+    background: var(--ui-layer-surface-accent-selected);
+    box-shadow: inset 0 -2px 0 var(--active-border);
+}
+
+.right-panel .layer-panel-context-view-button:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: -2px;
+}
+
+.right-panel .layer-panel-context-view-button svg {
+    flex: 0 0 auto;
+    stroke: currentColor;
+}
+
+.right-panel .context-rig-inspector {
+    box-sizing: border-box;
+    min-height: 142px;
+    padding: 9px 8px 10px;
+    color: var(--ui-layer-text);
+    background: var(--ui-layer-context-surface);
+    -webkit-backdrop-filter: var(--ui-layer-context-backdrop);
+    backdrop-filter: var(--ui-layer-context-backdrop);
+}
+
+.right-panel .context-rig-inspector-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 18px;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+}
+
+.right-panel .context-rig-inspector-icon svg {
+    display: block;
+    stroke: currentColor;
+}
+
+.right-panel .context-rig-inspector-target {
+    margin-top: 8px;
+    overflow: hidden;
+    color: var(--futaba-maroon);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+}
+
+.right-panel .context-rig-inspector-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+.right-panel .context-rig-inspector-kind,
+.right-panel .context-rig-inspector-status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 16px;
+    box-sizing: border-box;
+    padding: 2px 4px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.right-panel .context-rig-inspector-kind {
+    color: var(--ui-layer-text);
+    background: var(--ui-layer-surface-hover);
+}
+
+.right-panel .context-rig-inspector-status {
+    color: var(--deformer-bind-point);
+    border-color: var(--deformer-bind-line);
+    background: color-mix(in srgb, var(--deformer-bind-line) 14%, var(--futaba-cream));
+}
+
+.right-panel .context-rig-inspector-status[data-rig-status="none"] {
+    color: var(--ui-layer-text);
+    border-color: transparent;
+    background: var(--ui-layer-surface-hover);
+}
+
+.right-panel .context-rig-inspector-status[data-rig-status="stale"],
+.right-panel .context-rig-inspector-status[data-rig-status="conflict"] {
+    color: var(--futaba-maroon);
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-cream));
+}
+
+.right-panel .context-rig-inspector-description,
+.right-panel .context-rig-inspector-handoff {
+    margin: 7px 0 0;
+    color: var(--ui-layer-text);
+    font-size: 9px;
+    line-height: 1.45;
+}
+
+.right-panel .context-rig-inspector-handoff {
+    opacity: 0.68;
+}
+
+.right-panel .context-rig-register-button {
+    min-height: 26px;
+    margin-top: 7px;
+    padding: 4px 6px;
+    border: none;
+    border-radius: 5px;
+    color: var(--deformer-bind-point);
+    background: color-mix(in srgb, var(--deformer-bind-line) 18%, var(--futaba-cream));
+    font-size: 9px;
+    font-weight: 850;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.right-panel .context-rig-register-button:hover {
+    background: color-mix(in srgb, var(--deformer-bind-line) 28%, var(--futaba-cream));
+}
+
+.right-panel .context-rig-register-button:focus-visible {
+    outline: 2px solid var(--deformer-bind-point);
+    outline-offset: -2px;
+}
+
+.right-panel .context-rig-register-button:disabled {
+    cursor: default;
+    opacity: var(--ui-opacity-disabled);
+}
+
+.right-panel .context-rig-inspector-result {
+    margin: 5px 0 0;
+    color: var(--futaba-maroon);
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+@media (pointer: coarse) {
+    .right-panel .layer-panel-context-view-button {
+        min-height: 38px;
+        font-size: 10px;
+    }
+
+    .right-panel .context-rig-register-button {
+        min-height: 38px;
+    }
+
 }
 
 .right-panel .caf-simple-group {

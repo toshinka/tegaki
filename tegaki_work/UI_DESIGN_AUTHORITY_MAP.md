@@ -1,6 +1,6 @@
 # Tegaki UI Design Authority Map
 
-更新日: 2026-08-29
+更新日: 2026-08-30
 
 ## 1. 目的
 
@@ -59,7 +59,7 @@ runtime注入が後になる間、抽出selectorはcomponent rootでscopeし、�
 - Phase 9eのvisual orderはCSS `order`だけで`FPS / FRAMES → SCOPE → Play → Range / Loop → PREVIEW → Onion`へ投影する。DOM順、ID、event、ARIA、playback model、wheel / dragは`animation-table-popup.js`から移さない。
 - Phase 9fのAttention Hierarchyは、休止中SCOPE / PREVIEW / Onion / zoom / 非破壊補助actionをtransparent border＋淡いsurface、hover / open / focus / activeをsemantic borderとする。Selected Clip / Delete / closeはcontextual / destructive境界としてflat化しない。比較正本は`build/phase9f-animation-table-attention-hierarchy-fixture.html`、検証正本は`build/verify-animation-table-attention-hierarchy.mjs`。
 - Phase 9mはPlayback header / Timeline content / Bottom utilityと低倍率Clip LODの責務比較Gate。A〜D一DOM fixtureのGate 0=`GO — C first / D staged HOLD`に従い、CだけをStage B productionへ接続した。既存utility actionのBottom投影、selected Clip single surface、resting Clip Futaba中間surface、47 / 33% visual handle LODを表示正本とする。SCOPE SET、wheel三領域、Clip body move / edge retime、History / save、33% zoom下限を維持し、Dの25% / major gridはgesture固定までHOLDする。
-- Phase 9m Owner実画面の三行headerは、BrowserでTable幅760pxの`.is-narrow=true`と三cluster 100% wrap、762pxのclass解除 / 36px一行として再現した。compact static正本は620px以下の三列grid、leading / Play nowrap、必要時だけtrailing内部の局所wrapとする。760 / 762 / wideと620px OUT、460px通常は36px一行を維持し、Play / Stop hit、Playback End直接cycle、OUT限定I / O、wheel三領域を変更しない。Owner visual再確認まではPhaseをOPENとする。
+- Phase 9m Owner実画面の三行headerは、BrowserでTable幅760pxの`.is-narrow=true`と三cluster 100% wrap、762pxのclass解除 / 36px一行として再現した。compact static正本は620px以下の三列grid、leading / Play nowrap、必要時だけtrailing内部の局所wrapとする。760 / 762 / wideと620px OUT、460px通常は36px一行を維持し、Play / Stop hit、Playback End直接cycle、OUT限定I / O、wheel三領域を変更しない。修正後のproduction実画面をOwnerが受入れ、Phase 9mはcloseした。
 - 選択CAFのinternal Folder / BONE / Motion trackはglobal Timelineの常設情報ではない。既定はLane / Clip概要、明示`Clip Focus`時だけ詳細adapterを投影する案を第一候補とし、collapseはFocus内の局所密度制御とする。UI modeをProject schemaへ保存せず、TimelineModel / ClipAsset / Historyの第二正本を作らない。
 
 `animation-table-popup.js`全体を一度に分割しない。次に抽出するcomponentは、DOM / event / state selector、外部参照、load順、fixed fixtureを一Phaseで固定できる場合だけ選ぶ。
@@ -104,6 +104,9 @@ runtime注入が後になる間、抽出selectorはcomponent rootでscopeし、�
 - Phase 9m Stage A比較正本は`build/phase9m-animation-table-utility-lod-fixture.html`、検証正本は`build/verify-animation-table-utility-lod-fixture.mjs`。一つのheader / utility / Lane / Clip DOMで1280 / 720 / 420、120 / 50 / 33 / 25%、selected / unselected、single / multiを切り替える。visual handleと8px logical edge hitを分離し、fixture stateをproductionへ持ち込まない。
 - Phase 9m Stage B static appearance正本は`styles/components/animation-table-utility-lod.css`、DOM / event / ARIA正本は既存`ui/animation-table-popup.js`、固定検証は`build/verify-animation-table-utility-lod-production.mjs`。既存第二header rowをmount時にTimeline後へ移し、closeを第一行へ戻すが、button ID / listener / disabled・hidden projectionは再作成しない。headerとBottomは同じzoom handler、Timeline gridは既存Frame wheel authorityを維持する。play中心、620px compact境界、三列grid / trailing局所wrap、420px幅、34px Bottom、Clip surface、visual handle LODだけをcomponent CSSが所有する。
 - Selected Clip contextのstatic appearanceも`styles/components/animation-table-utility-lod.css`を正本とする。Timelineのprimary selected Clipをselectionの主surfaceとし、Bottom projectionは低差Futaba面＋4px橙dot、outer border / shadowなし、Duration separatorなし、child actionはresting transparent / hover surface / focus-visible 2px橙outlineとする。COPY / DELETEは中央`UI_ICONS.duplicate / trash`の22×18px icon buttonで可視textを増やさず、件数・shortcut・destructive意味はtitle / ARIAへ残す。Deleteのmutation意味、button ID / listener / hidden・disabled投影、Duration / clipboard / delete action authorityは`ui/animation-table-popup.js`の既存経路を維持する。固定検証は`build/verify-animation-table-selected-clip-actions.mjs`。
+- Phase 9nの責務は`Layer = 対象`、同じ右dockの`RIG = static構造`、`Animation Table = temporal Motion`、`Canvas = 直接操作`とする。右へ第二列を常設せず、CAF editing context時に`LAYERS / RIG`を切り替える。RIG viewは親子 / 曲げ / 全体PIVOT / Bone / Mesh / Weight / WARP Bindを扱い、Tableはkey / easing / current Frame pose / temporal WARPを維持する。
+- Stage Aの表示正本は`system/animation/rig-authoring-status-projection.js`。ClipAssetとcaller導出済みMesh鮮度から`none / parent / bend / whole / conflict / stale`をpure投影し、Layer mirror badgeへ`親子 / 曲げ / 全体 / 要更新 / 競合`を渡す。Project、History、selection、ClipInstance.rigMotion、solver、Table visibilityを第二正本にしない。
+- Stage BのDOM / runtime view lens / ARIA正本は`ui/layer-panel-renderer.js`、static appearanceは`styles/components/layer-panel-surface.css`、fixed geometry / rail visibilityは`styles/main.css`。CAF選択時だけ同じ132px columnへ`LAYERS / RIG`を出し、`selectedCelId / selectedInternalLayerId`とStage A projectionからread-only bodyを再導出する。RIG viewでLayer mutation railを隠しても172px footprintを畳まない。normal drawingではswitchを出さず、Table open / closedをauthorityにしない。固定検証は`build/verify-right-rig-inspector-shell.mjs`。
 
 ## 9. 変更時チェック
 
