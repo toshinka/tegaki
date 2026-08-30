@@ -38,7 +38,7 @@ assert.match(model, /removeClipAssetRigidRasterTarget\(assetId, layerId\)/);
 assert.match(model, /removeRigMotionTargets\(clip\.rigMotion, removal\)/);
 
 assert.match(css, /\.anim-rig-folder-setup\.is-raster-entry/);
-assert.match(css, /\.anim-rig-connect-art-btn:not\(:disabled\)/);
+assert.match(css, /\.anim-rig-open-setup-btn:not\(:disabled\)/);
 assert.match(css, /\.anim-rig-mesh-generate-btn\.is-primary:not\(:disabled\)/);
 assert.match(css, /border-width: 2px/);
 assert.match(css, /var\(--deformer-bind-line\)/);

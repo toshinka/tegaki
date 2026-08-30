@@ -7,7 +7,7 @@
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
 > URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
 
-## 0. 現在地（Phase 5a〜9m close、Phase 9n RIG / Motion責務再配置Stage A / B checkpoint完了）
+## 0. 現在地（Phase 5a〜9m close、Phase 9n RIG / Motion責務再配置Stage A / B / C1 / C2 checkpoint完了）
 
 - Phase 7i〜7qは各Gate=`GO`、実装Stage、最終SOL review=`A`、関連Browser確認を通過し、2026-08-12のOwner指示に基づきSOL技術closeした。完了記録は`Archive/phase7i.md`〜`phase7q.md`。
 - Phase 7i LINE / Ribbon、7j Deformer三形状SELECT、7k Text to Raster、7l Table二段header、7m read-only Motion Graph、7n Resize直接framing、7o Motion Easing 12 presetの保存・History境界を維持する。
@@ -40,7 +40,7 @@
 - Phase 8rはQTP Pen Preset / Density、Phase 8sはPlayback Range Inline Controlをproductionへ限定接続した。Phase 8tは常設`DURATION:`をSelected Clip contextへ移し、Phase 8uは`LIB`をAsset Library iconへ置き換えた。Phase 8vはQTP Position Preset、Phase 8wはQTP Progressive Density、Phase 8x / 8yはcanonical shortcut学習導線、Phase 8zは明示`?`からのread-only shortcut deckを限定接続した。Phase 9a〜9kでAnimation Table / QTP / Sidebar / Layer Panelの情報階層、static CSS authority、Canvas-first外周文化を段階整理した。
 - Phase 9lはGate 0=`GO — D: Flat CAF context＋unified layer list`として、右Panelを選択CAF一件の薄いcontextとinternal Layer / Folder listへ限定整理した。current targetは橙surface一件、CAF管理 / internal Layer D&DはAnimation Tableへ寄せ、全113 verifier / build / Browser、SOL final review=`A`でcloseした。
 - Phase 9mはstable一行header、固定幅Playback Range、OUT限定I / O、borderless FPS / FRAMES / PREVIEW、Bottom Lucide COPY / DELETEを全118 verifier / build / Browser checkpointとOwner実画面受入でcloseした。
-- 現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gate。Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`。Layer=対象、右RIG同一dock=static構造、Animation Table=時間、Canvas=直接操作とする。Stage A shared projection、Stage B read-only `LAYERS / RIG` shell、Stage C1 Folder親子RIG / Raster全体PIVOT登録は全121 verifier / build / Browser checkpointで完了。次は一枚Rasterの曲げRIG / 全体PIVOT入口を分けるStage C2。左RIG / Layer統合 / 現行Table案はproposal 17へ再試行条件付きで保持する。
+- 現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gate。Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`。Layer=対象、右RIG同一dock=static構造、Animation Table=時間、Canvas=直接操作とする。Stage A / B / C1 / C2 / C3 / C4 / C5は全125 verifier / build / Browser checkpointで完了。Folder / Raster root PIVOT、親接続要約に続き、一枚Raster曲げRIGの枠なし`BONE / MESH / WEIGHT`進捗・STALE・既存編集handoffを右RIGへ接続した。次はPre-Mesh Bone候補を別Rasterへ誤帰属させずruntime表示できるかを監査するStage C6。左RIG / Layer統合 / 現行Table案はproposal 17へ再試行条件付きで保持する。
 
 このナビゲーション自身:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
@@ -60,6 +60,10 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **Phase 9n shared RIG status verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-authoring-status-projection.mjs
 - **Phase 9n right read-only RIG Inspector shell verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-right-rig-inspector-shell.mjs
 - **Phase 9n right RIG Setup action verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-right-rig-setup-action.mjs
+- **Phase 9n Raster method fork verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-right-rig-raster-method-fork.mjs
+- **Phase 9n Folder / Raster root PIVOT completion verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-right-rig-root-pivot-action.mjs
+- **Phase 9n Bone hierarchy / parent-link handoff verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-right-rig-parent-link-handoff.mjs
+- **Phase 9n Raster bend setup progress verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-right-rig-bend-setup-progress.mjs
 - **Phase 9m完了記録（Animation Table Utility Split / Low-Zoom LOD）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9m.md
 - **Phase 9m Layer Panel frosted compact follow-up verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-layer-panel-frosted-focus-followup.mjs
 - **Phase 9m Animation Table Utility / LOD比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9m-animation-table-utility-lod-fixture.html

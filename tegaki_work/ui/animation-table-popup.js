@@ -33,6 +33,8 @@
  *   ClipInstance.rigMotionだけが所有する。RIG / MOTIONのRaster targetとCanvas PIVOTはadapterであり、
  *   evaluated vertex、UI selection、alpha scan cacheを保存しない。clipping参加Rasterとactive Folder
  *   WARP / rigid islandの重複は初期proofではunsupportedとし、無言fallbackや第二Mesh正本を作らない。
+ * Pre-Mesh Bone focus境界: unbound Boneへ保存ownerを追加せず、明示選択したasset / Raster / Boneの
+ *   runtime tokenだけを右RIGへ公開する。別Layer / CAF、Mesh生成、Rigid化でtokenを破棄する。
  * ============================================================================
  */
 
@@ -534,6 +536,10 @@ export class AnimationTablePopup {
         // `selectedInternalLayerId`はworking Raster同期でも変わるため、CLIP MOTION内の
         // Folder / Raster target種別だけをruntime UI状態として別に保持する。
         this._motionInspectorTargetKind = 'caf';
+        // Mesh生成前Boneには保存上のRaster ownerがない。右RIGへ誤帰属させないため、
+        // 明示的にBoneを追加・選択した時のasset / Raster / Boneだけをruntime focusとして保持する。
+        // Project / History / Rig正本には保存せず、選択不一致やMesh生成後はresolverが破棄する。
+        this._rigRasterCandidateFocus = null;
         // Bone名は密集時に選択対象だけ表示する。全表示はruntime UI toggleでのみ切り替える。
         this._rigBoneLabelsExpanded = false;
         // 選択Raster / Mesh / Boneのweight診断はruntime表示だけを持ち、Projectへ保存しない。
@@ -2563,6 +2569,7 @@ export class AnimationTablePopup {
 
     _selectRigFolderProjectionTarget(context, options = {}) {
         if (!context?.layer?.id || !context.asset) return false;
+        this._rigRasterCandidateFocus = null;
         this.selectedAssetId = context.asset.id;
         this.selectedAssetFolderId = context.asset.folderId || null;
         this.selectedInternalLayerId = context.layer.id;
@@ -2574,14 +2581,24 @@ export class AnimationTablePopup {
             ? 'raster'
             : 'folder';
         this._requestLayerPanelSync();
-        if (options.focusRig === true) this._setMotionTimelineKeyKind('rig');
+        if (options.focusRig === true) this._setMotionTimelineKeyKind('rig', { render: false });
         if (options.openInspector === true) this.setMotionWindowOpen(true);
+        // setMotionWindowOpen()は通常再開時にlast-used tabを復元するため、
+        // static Setupからの明示handoffでは開いた後もRIGを再確定する。
+        if (options.focusRig === true && options.openInspector === true) {
+            this._setMotionTimelineKeyKind('rig', { render: false });
+        }
         if (options.render !== false) this.render();
         return true;
     }
 
     _selectRigRasterProjectionTarget(context, options = {}) {
         if (!context?.layer?.id || context.layer.type !== 'raster' || !context.asset) return false;
+        const retainedCandidateFocus = this._rigRasterCandidateFocus?.assetId === context.asset.id
+            && this._rigRasterCandidateFocus?.layerId === context.layer.id
+            ? this._rigRasterCandidateFocus
+            : null;
+        if (!retainedCandidateFocus || context.mesh) this._rigRasterCandidateFocus = null;
         this.selectedAssetId = context.asset.id;
         this.selectedAssetFolderId = context.asset.folderId || null;
         this.selectedInternalLayerId = context.layer.id;
@@ -2592,9 +2609,15 @@ export class AnimationTablePopup {
         const meshBoneIds = connectedBoneIds.size > 0 || context.mesh
             ? connectedBoneIds
             : new Set((projection?.meshBones || []).map(bone => bone?.boneId).filter(Boolean));
-        if (!meshBoneIds.has(this.selectedRigBoneId)) {
+        const isPreMeshCandidate = connectedBoneIds.size === 0 && !context.mesh;
+        if (isPreMeshCandidate) {
+            // unbound Boneを別Rasterへ自動継承しない。同じruntime focusを指す場合だけ復帰する。
+            const focusedBoneId = retainedCandidateFocus?.boneId || null;
+            this.selectedRigBoneId = focusedBoneId && meshBoneIds.has(focusedBoneId)
+                ? focusedBoneId
+                : null;
+        } else if (!meshBoneIds.has(this.selectedRigBoneId)) {
             // Skin接続が一意なら、target再選択だけで対応Boneへ復帰する。
-            // 未生成時も一意なら復帰し、複数Bone時は明示選択を要求する。
             this.selectedRigBoneId = meshBoneIds.size === 1
                 ? [...meshBoneIds][0]
                 : null;
@@ -2602,10 +2625,61 @@ export class AnimationTablePopup {
         this._motionInspectorScope = 'internal';
         this._motionInspectorTargetKind = 'raster';
         this._requestLayerPanelSync();
-        if (options.focusRig === true) this._setMotionTimelineKeyKind('rig');
+        if (options.focusRig === true) this._setMotionTimelineKeyKind('rig', { render: false });
         if (options.openInspector === true) this.setMotionWindowOpen(true);
+        if (options.focusRig === true && options.openInspector === true) {
+            this._setMotionTimelineKeyKind('rig', { render: false });
+        }
         if (options.render !== false) this.render();
         return true;
+    }
+
+    _setRigRasterCandidateFocus(assetId, layerId, boneId) {
+        if (!assetId || !layerId || !boneId) {
+            this._rigRasterCandidateFocus = null;
+            return null;
+        }
+        this._rigRasterCandidateFocus = { assetId, layerId, boneId };
+        return this._rigRasterCandidateFocus;
+    }
+
+    clearRigRasterCandidateFocusForExternal() {
+        this._rigRasterCandidateFocus = null;
+    }
+
+    /**
+     * 右RIGがMesh生成前候補を表示するためのruntime-only lens。
+     * unbound Boneをstatic Rig正本のRaster ownerとして扱わず、現在選択との一致だけを返す。
+     */
+    getRigRasterCandidateFocusForExternal() {
+        const focus = this._rigRasterCandidateFocus;
+        if (!focus) return null;
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const asset = entry?.clip?.assetId === focus.assetId
+            ? this.model.getClipAsset(focus.assetId)
+            : null;
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === focus.layerId) || null;
+        const projection = asset && layer
+            ? this._getSelectedCafRigProjection()
+            : null;
+        const bone = projection?.meshBones?.find(candidate => candidate?.boneId === focus.boneId) || null;
+        const hasPart = (asset?.rigDefinition?.parts || [])
+            .some(part => part?.partId === focus.layerId);
+        const hasMesh = (asset?.meshDefinitions || [])
+            .some(mesh => mesh?.targetInternalLayerId === focus.layerId);
+        const isCurrent = this.selectedAssetId === focus.assetId
+            && this.selectedInternalLayerId === focus.layerId
+            && this.selectedRigBoneId === focus.boneId
+            && this._motionInspectorScope === 'internal'
+            && this._motionInspectorTargetKind === 'raster';
+        const isEligibleRaster = layer?.type === 'raster'
+            && layer.parentLayerId == null
+            && layer.isBackground !== true;
+        if (!isCurrent || !isEligibleRaster || hasPart || hasMesh || !bone) {
+            this._rigRasterCandidateFocus = null;
+            return null;
+        }
+        return { ...focus, asset, layer, bone };
     }
 
     _openSelectedRigInspector(context) {
@@ -2623,8 +2697,10 @@ export class AnimationTablePopup {
                 this._selectRigFolderProjectionTarget(context, { render: false });
             }
         }
-        this._setMotionTimelineKeyKind('rig');
-        return this.setMotionWindowOpen(true);
+        this._setMotionTimelineKeyKind('rig', { render: false });
+        const opened = this.setMotionWindowOpen(true);
+        if (opened) this._setMotionTimelineKeyKind('rig');
+        return opened;
     }
 
     _selectRootBoneTimelineTarget(context, options = {}) {
@@ -2637,9 +2713,112 @@ export class AnimationTablePopup {
         this._motionInspectorTargetKind = context.targetKind === 'raster' || !context.part
             ? 'raster'
             : 'folder';
+        if (this._motionInspectorTargetKind === 'raster' && context.layer?.type === 'raster') {
+            this._setRigRasterCandidateFocus(context.asset.id, context.layer.id, context.bone.boneId);
+        } else {
+            this._rigRasterCandidateFocus = null;
+        }
         this._requestLayerPanelSync();
         if (options.render !== false) this.render();
         return true;
+    }
+
+    openInternalRasterRigSetupFromExternal(assetId, layerId, options = {}) {
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        if (!asset) return { ok: false, changed: false, reason: 'asset-not-found' };
+        if (!layer) return { ok: false, changed: false, reason: 'layer-not-found' };
+        if (layer.type !== 'raster') {
+            return { ok: false, changed: false, reason: 'part-target-type-unsupported' };
+        }
+        if (layer.isBackground === true) {
+            return { ok: false, changed: false, reason: 'part-target-background-unsupported' };
+        }
+        if (layer.parentLayerId != null) {
+            return { ok: false, changed: false, reason: 'raster-part-root-required' };
+        }
+        if ((asset.rigDefinition?.parts || []).some(part => part?.partId === layer.id)) {
+            return { ok: false, changed: false, reason: 'rig-mode-conflict' };
+        }
+
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (entry?.clip?.assetId !== asset.id) {
+            return { ok: false, changed: false, reason: 'clip-selection-mismatch' };
+        }
+        const projection = this._getSelectedCafRigProjection();
+        const context = this._getRasterRigProjectionContext(
+            projection,
+            layer.id,
+            this.selectedRigBoneId
+        );
+        if (!context || context.targetKind !== 'raster') {
+            return { ok: false, changed: false, reason: 'rig-target-context-not-found' };
+        }
+
+        if (!this.isVisible) {
+            this.show();
+            if (!this.isVisible) {
+                return { ok: false, changed: false, reason: 'animation-table-open-pending' };
+            }
+        }
+        const opened = this._selectRigRasterProjectionTarget(context, {
+            focusRig: true,
+            openInspector: true
+        });
+        return opened
+            ? { ok: true, changed: false, reason: null, asset, layer, source: options.source || 'unknown' }
+            : { ok: false, changed: false, reason: 'rig-inspector-open-failed' };
+    }
+
+    openInternalRigidHierarchyFromExternal(assetId, layerId, options = {}) {
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        if (!asset) return { ok: false, changed: false, reason: 'asset-not-found' };
+        if (!layer) return { ok: false, changed: false, reason: 'layer-not-found' };
+        if (!['folder', 'raster'].includes(layer.type) || layer.isBackground === true) {
+            return { ok: false, changed: false, reason: 'part-target-type-unsupported' };
+        }
+
+        const part = (asset.rigDefinition?.parts || [])
+            .find(candidate => candidate?.partId === layer.id) || null;
+        const binding = part
+            ? (asset.rigDefinition?.rigidBindings || [])
+                .find(candidate => candidate?.partId === part.partId) || null
+            : null;
+        const bone = binding
+            ? (asset.rigDefinition?.bones || [])
+                .find(candidate => candidate?.boneId === binding.boneId) || null
+            : null;
+        if (!part) return { ok: false, changed: false, reason: 'part-not-found' };
+        if (!bone) return { ok: false, changed: false, reason: 'root-bone-not-found' };
+
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (entry?.clip?.assetId !== asset.id) {
+            return { ok: false, changed: false, reason: 'clip-selection-mismatch' };
+        }
+        const projection = this._getSelectedCafRigProjection();
+        const context = projection?.folders?.find(candidate => (
+            candidate?.layer?.id === layer.id
+            && candidate?.part?.partId === part.partId
+            && candidate?.bone?.boneId === bone.boneId
+        )) || null;
+        if (!context) {
+            return { ok: false, changed: false, reason: 'rig-target-context-not-found' };
+        }
+
+        if (!this.isVisible) {
+            this.show();
+            if (!this.isVisible) {
+                return { ok: false, changed: false, reason: 'animation-table-open-pending' };
+            }
+        }
+        const opened = this._selectRigFolderProjectionTarget(context, {
+            focusRig: true,
+            openInspector: true
+        });
+        return opened
+            ? { ok: true, changed: false, reason: null, asset, layer, part, bone, source: options.source || 'unknown' }
+            : { ok: false, changed: false, reason: 'rig-inspector-open-failed' };
     }
 
     registerInternalRigPartFromExternal(assetId, layerId, options = {}) {
@@ -2808,6 +2987,7 @@ export class AnimationTablePopup {
         this.selectedInternalLayerId = layer.id;
         this._motionInspectorScope = 'internal';
         this._motionInspectorTargetKind = 'raster';
+        this._setRigRasterCandidateFocus(asset.id, layer.id, result.bone.boneId);
         this._invalidateSnapshotTextureCache();
         if (options.deferUi !== true) {
             this.render();
@@ -3085,6 +3265,7 @@ export class AnimationTablePopup {
             this._motionInspectorScope = 'caf';
             this._motionInspectorTargetKind = 'caf';
             this.selectedRigBoneId = null;
+            this._rigRasterCandidateFocus = null;
         }
         this._motionTimelineKeyKind = this._motionEditorMode === 'motion' && nextScope === 'internal'
             ? 'rig'
@@ -4125,7 +4306,7 @@ export class AnimationTablePopup {
         const targetKind = panel.querySelector('[data-rig-target-kind]');
         const status = panel.querySelector('[data-rig-status]');
         const keyButton = panel.querySelector('#anim-rig-key-btn');
-        const connectArtButton = panel.querySelector('[data-rig-connect-art]');
+        const openSetupButton = panel.querySelector('[data-rig-open-setup]');
         const openWeightButton = panel.querySelector('[data-rig-open-weight]');
         const ikButton = panel.querySelector('#anim-rig-ik-toggle-btn');
         const ikFlipButton = panel.querySelector('#anim-rig-ik-flip-btn');
@@ -4135,9 +4316,9 @@ export class AnimationTablePopup {
             if (targetName) targetName.textContent = 'CAF内にFolderがありません';
             if (targetKind) targetKind.textContent = 'NO TARGET';
             if (status) status.textContent = 'Layer PanelでCAF内部Folderを作成してください';
-            [keyButton, connectArtButton, openWeightButton, ikButton, ikFlipButton, ...controls]
+            [keyButton, openSetupButton, openWeightButton, ikButton, ikFlipButton, ...controls]
                 .forEach(control => { if (control) control.disabled = true; });
-            if (connectArtButton) connectArtButton.hidden = true;
+            if (openSetupButton) openSetupButton.hidden = true;
             if (openWeightButton) openWeightButton.hidden = true;
             if (ikStatus) ikStatus.textContent = 'IK対象なし';
             return false;
@@ -4170,13 +4351,13 @@ export class AnimationTablePopup {
             keyButton.setAttribute('aria-pressed', String(!!key));
             keyButton.textContent = key ? '◆ KEY削除' : '◇ KEY追加';
         }
-        if (connectArtButton) {
-            const showConnect = context.targetKind === 'raster'
+        if (openSetupButton) {
+            const showSetupHandoff = context.targetKind === 'raster'
                 && !isRigidRasterTarget
                 && isBone
                 && !artFocus.targetConnected;
-            connectArtButton.hidden = !showConnect;
-            connectArtButton.disabled = !showConnect || this.isPlaying;
+            openSetupButton.hidden = !showSetupHandoff;
+            openSetupButton.disabled = !showSetupHandoff || this.isPlaying;
         }
         if (openWeightButton) {
             const showWeight = context.targetKind === 'raster'
@@ -4261,7 +4442,7 @@ export class AnimationTablePopup {
         });
         if (status) {
             status.textContent = isBone && !artFocus.targetConnected
-                ? `${folder.bone.name || 'BONE 1'} · AUTO GRID未作成。作成するとMotionできます`
+                ? `${folder.bone.name || 'BONE 1'} · RIG設定でMeshを作成するとMotionできます`
                 : isBone
                 ? `${folder.bone.name || 'BONE 1'} · ${context.targetKind === 'raster'
                     ? (isRigidRasterTarget ? 'Raster Part Bone' : 'Mesh Bone')
@@ -15573,6 +15754,7 @@ export class AnimationTablePopup {
         }
         this.isLaneOnlySelected = false;
         const changedClip = this.selectedCelId !== entry.clip.id;
+        if (changedClip) this._rigRasterCandidateFocus = null;
         if (changedClip && (this._visibilityPreviewApplied || this.isDrawingPreviewSuspended)) {
             this.isDrawingPreviewSuspended = false;
             this._drawingPreviewCompositeKey = null;
@@ -16335,6 +16517,7 @@ export class AnimationTablePopup {
         if (clip) {
             const previousSelectedInternalLayerId = this.selectedInternalLayerId || null;
             const changedClip = this.selectedCelId !== clip.id;
+            if (changedClip) this._rigRasterCandidateFocus = null;
             this.isLaneOnlySelected = false;
             this.selectedCelId = clip.id;
             this.selectedAssetId = clip.assetId || null;
@@ -16350,6 +16533,7 @@ export class AnimationTablePopup {
         }
 
         this.isLaneOnlySelected = false;
+        this._rigRasterCandidateFocus = null;
         this.selectedCelId = null;
         this.selectedAssetId = null;
         this.selectedInternalLayerId = null;
@@ -18044,7 +18228,7 @@ export class AnimationTablePopup {
                 <div class="anim-rig-target-row">
                     <span class="anim-rig-target-name" data-rig-target-name>Folder</span>
                     <span class="anim-rig-target-kind" data-rig-target-kind>FOLDER MOTION</span>
-                    <button class="anim-rig-key-btn anim-rig-connect-art-btn" type="button" data-rig-connect-art hidden>AUTO GRIDを作成</button>
+                    <button class="anim-rig-key-btn anim-rig-open-setup-btn" type="button" data-rig-open-setup hidden>RIGを設定 &gt;</button>
                     <button class="anim-rig-key-btn anim-rig-setup-action anim-rig-weight-toggle ui-help-tooltip" type="button" data-rig-open-weight aria-pressed="false" hidden>WEIGHT表示</button>
                     <button class="anim-rig-key-btn" id="anim-rig-key-btn" type="button" aria-pressed="false">◇ KEY追加</button>
                     <button class="anim-rig-target-switch anim-rig-ik-btn ui-help-tooltip" id="anim-rig-ik-toggle-btn" type="button" aria-pressed="false">IK追従</button>
@@ -19182,8 +19366,9 @@ export class AnimationTablePopup {
             motionControls.querySelector('[data-rig-raster-to-mesh]')?.addEventListener('click', () => {
                 this._switchSelectedRasterPartToMesh();
             });
-            motionControls.querySelector('[data-rig-connect-art]')?.addEventListener('click', () => {
-                this._generateSelectedRasterBoneSetup('alpha-fit-grid');
+            motionControls.querySelector('[data-rig-open-setup]')?.addEventListener('click', () => {
+                if (this.isPlaying) return;
+                this._setMotionTimelineKeyKind('rig', { remember: true });
             });
             motionControls.querySelector('[data-rig-open-weight]')?.addEventListener('click', () => {
                 if (this.isPlaying) return;
@@ -19213,7 +19398,13 @@ export class AnimationTablePopup {
                 const boneId = event.currentTarget.value || null;
                 if (context?.targetKind !== 'raster') return;
                 this.selectedRigBoneId = boneId;
+                this._setRigRasterCandidateFocus(
+                    context.projection?.asset?.id,
+                    context.folder?.layer?.id,
+                    boneId
+                );
                 this.render();
+                this._flushLayerPanelSync();
             });
             motionControls.querySelectorAll('[data-rig-param]').forEach(input => {
                 this._bindNumberInputWheel(input, () => this._setSelectedRigInspectorKeyFromControls());

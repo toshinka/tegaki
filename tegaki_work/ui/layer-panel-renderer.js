@@ -15,6 +15,8 @@
  * - Animation Tableを閉じてもCAF編集contextは継続する。Table visibilityを正本切替に使わない。
  * - animation working Layerは表示・入力adapterであり、Panel順や保存階層の正本にしない。
  * - RIG badgeはClipAssetのstatic正本からpure導出した表示であり、第二RIG stateやMotion authorityを持たない。
+ * - 右RIG viewのSetup actionはAnimationTablePopupのexternal adapterへ委譲し、本fileでRig / Historyを直接mutationしない。
+ * - Mesh前Bone候補はAnimationTablePopupのruntime focus一致時だけ表示し、static Rig ownerとして保存しない。
  * ============================================================================
  */
 
@@ -84,6 +86,21 @@ export class LayerPanelRenderer {
 
         // Layer PanelカードとCAFヘッダーのクリックイベント（共通委譲）
         this.container.addEventListener('click', (e) => {
+            const rigHierarchyButton = e.target.closest('.context-rig-hierarchy-open-button');
+            if (rigHierarchyButton && this.container.contains(rigHierarchyButton)) {
+                this._openContextRigHierarchy(rigHierarchyButton);
+                return;
+            }
+            const rigRootPivotButton = e.target.closest('.context-rig-root-pivot-button');
+            if (rigRootPivotButton && this.container.contains(rigRootPivotButton)) {
+                this._registerContextRigRootPivot(rigRootPivotButton);
+                return;
+            }
+            const rigBendButton = e.target.closest('.context-rig-open-bend-button');
+            if (rigBendButton && this.container.contains(rigBendButton)) {
+                this._openContextRasterRigSetup(rigBendButton);
+                return;
+            }
             const rigRegisterButton = e.target.closest('.context-rig-register-button');
             if (rigRegisterButton && this.container.contains(rigRegisterButton)) {
                 this._registerContextRigTarget(rigRegisterButton);
@@ -737,6 +754,7 @@ export class LayerPanelRenderer {
         const asset = assetId && animationTable.model
             ? animationTable.model.getClipAsset(assetId)
             : null;
+        if (selectionChanged) animationTable.clearRigRasterCandidateFocusForExternal?.();
         animationTable.selectedAssetId = assetId || animationTable.selectedAssetId;
         animationTable.selectedAssetFolderId = asset?.folderId || null;
         animationTable.selectedInternalLayerId = layerId;
@@ -3626,6 +3644,120 @@ export class LayerPanelRenderer {
         return result;
     }
 
+    _openContextRasterRigSetup(button) {
+        const context = this._resolveCafRigInspectorContext();
+        const matchesCurrentTarget = context?.targetLayer?.type === 'raster'
+            && context.asset?.id === button?.dataset.assetId
+            && context.targetLayer.id === button?.dataset.internalLayerId;
+        const result = matchesCurrentTarget
+            ? context.animationTable?.openInternalRasterRigSetupFromExternal?.(
+                context.asset.id,
+                context.targetLayer.id,
+                { source: 'right-rig-inspector' }
+            )
+            : { ok: false, reason: 'layer-not-found' };
+
+        if (result?.ok) return result;
+        const label = result?.reason === 'animation-table-open-pending'
+            ? 'Tableを確認'
+            : this._getRigPartRegistrationFailureLabel(result?.reason);
+        button.textContent = label;
+        button.title = result?.reason || '曲げRIG設定を開けません';
+        button.disabled = true;
+        const feedback = button.closest('.context-rig-inspector')
+            ?.querySelector('.context-rig-inspector-result');
+        if (feedback) {
+            feedback.hidden = false;
+            feedback.textContent = label;
+        }
+        return result;
+    }
+
+    _getRigRootPivotFailureMessage(reason, targetKind) {
+        if (reason === 'empty-part') {
+            return targetKind === 'folder'
+                ? 'Folder内に描画が必要です'
+                : 'Rasterに描画が必要です';
+        }
+        return {
+            'asset-not-found': 'CAFを確認してください',
+            'layer-not-found': '対象を再選択してください',
+            'part-not-found': 'RIG対象を再登録してください',
+            'part-target-type-unsupported': 'Folder / RasterのみPIVOTを作成できます'
+        }[reason] || 'PIVOTを作成できません';
+    }
+
+    _registerContextRigRootPivot(button) {
+        const context = this._resolveCafRigInspectorContext();
+        const projection = context?.rigProjection || null;
+        const matchesCurrentTarget = !!context?.targetLayer
+            && context.asset?.id === button?.dataset.assetId
+            && context.targetLayer.id === button?.dataset.internalLayerId
+            && ['folder', 'raster'].includes(projection?.targetKind)
+            && ['parent', 'whole'].includes(projection?.status)
+            && projection?.hasPart === true
+            && projection?.hasRootBoneBinding !== true;
+        const result = matchesCurrentTarget
+            ? context.animationTable?.registerInternalRootBoneFromExternal?.(
+                context.asset.id,
+                context.targetLayer.id,
+                { source: 'right-rig-inspector' }
+            )
+            : { ok: false, reason: 'layer-not-found' };
+
+        if (result?.ok) {
+            this.requestUpdate({ force: true });
+            return result;
+        }
+
+        const message = this._getRigRootPivotFailureMessage(
+            result?.reason,
+            projection?.targetKind
+        );
+        button.textContent = result?.reason === 'empty-part' ? '描画が必要' : '作成できません';
+        button.title = message;
+        button.disabled = true;
+        const feedback = button.closest('.context-rig-inspector')
+            ?.querySelector('.context-rig-inspector-result');
+        if (feedback) {
+            feedback.hidden = false;
+            feedback.textContent = message;
+        }
+        return result;
+    }
+
+    _openContextRigHierarchy(button) {
+        const context = this._resolveCafRigInspectorContext();
+        const projection = context?.rigProjection || null;
+        const matchesCurrentTarget = !!context?.targetLayer
+            && context.asset?.id === button?.dataset.assetId
+            && context.targetLayer.id === button?.dataset.internalLayerId
+            && ['parent', 'whole'].includes(projection?.status)
+            && projection?.hasRootBoneBinding === true;
+        const result = matchesCurrentTarget
+            ? context.animationTable?.openInternalRigidHierarchyFromExternal?.(
+                context.asset.id,
+                context.targetLayer.id,
+                { source: 'right-rig-inspector' }
+            )
+            : { ok: false, changed: false, reason: 'layer-not-found' };
+
+        if (result?.ok) return result;
+        const label = result?.reason === 'animation-table-open-pending'
+            ? 'Tableを確認'
+            : '開けません';
+        button.textContent = label;
+        button.title = result?.reason || '親子接続設定を開けません';
+        button.disabled = true;
+        const feedback = button.closest('.context-rig-inspector')
+            ?.querySelector('.context-rig-inspector-result');
+        if (feedback) {
+            feedback.hidden = false;
+            feedback.textContent = label;
+        }
+        return result;
+    }
+
     _handleContextDockViewKeydown(e) {
         if (!['Enter', ' ', 'Spacebar'].includes(e.key)) return;
         const button = e.target.closest?.('.layer-panel-context-view-button');
@@ -3651,13 +3783,18 @@ export class LayerPanelRenderer {
         const rigProjection = targetLayer
             ? createRigAuthoringStatusProjection(asset, targetLayer.id, { meshStatus })
             : null;
+        const candidateFocus = animationTable.getRigRasterCandidateFocusForExternal?.() || null;
         return {
             animationTable,
             entry,
             asset,
             selectedInternalLayerId,
             targetLayer,
-            rigProjection
+            rigProjection,
+            candidateFocus: candidateFocus?.assetId === asset.id
+                && candidateFocus?.layerId === targetLayer?.id
+                ? candidateFocus
+                : null
         };
     }
 
@@ -3697,25 +3834,116 @@ export class LayerPanelRenderer {
         return group;
     }
 
+    _createContextRigHierarchyElement(projection) {
+        const bone = projection?.boundBone || projection?.rootBone || null;
+        if (!bone) return null;
+        const parentState = projection?.parentLinkState || 'root';
+        const hierarchy = document.createElement('dl');
+        hierarchy.className = 'context-rig-hierarchy';
+        hierarchy.dataset.parentState = parentState;
+        hierarchy.setAttribute('aria-label', 'PIVOT接続済み');
+
+        const appendRow = (label, value, title = value) => {
+            const row = document.createElement('div');
+            row.className = 'context-rig-hierarchy-row';
+            const term = document.createElement('dt');
+            term.textContent = label;
+            const detail = document.createElement('dd');
+            detail.textContent = value;
+            detail.title = title;
+            row.append(term, detail);
+            hierarchy.appendChild(row);
+        };
+        const boneLabel = bone.name || projection?.layer?.name || 'PIVOT';
+        const parentLabel = parentState === 'root'
+            ? 'なし（ROOT）'
+            : (parentState === 'linked'
+                ? (projection?.parentLayer?.name || projection?.parentBone?.name || 'BONE')
+                : '接続不明');
+        appendRow('PIVOT', boneLabel);
+        appendRow('PARENT', parentLabel);
+        return hierarchy;
+    }
+
+    _createContextRigBendProgressElement(projection) {
+        const setup = projection?.bendSetup || null;
+        if (!setup) return null;
+        const progress = document.createElement('dl');
+        progress.className = 'context-rig-bend-progress';
+        progress.dataset.setupState = setup.state || 'unknown';
+        progress.setAttribute('aria-label', '曲げRIG設定進捗');
+
+        const appendRow = (label, value) => {
+            const row = document.createElement('div');
+            row.className = 'context-rig-bend-progress-row';
+            const term = document.createElement('dt');
+            term.textContent = label;
+            const detail = document.createElement('dd');
+            detail.textContent = value;
+            detail.title = value;
+            row.append(term, detail);
+            progress.appendChild(row);
+        };
+        const boneLabel = setup.boneState === 'candidate'
+            ? `${setup.boneCount}本 候補`
+            : (setup.boneState === 'connected'
+                ? `${setup.boneCount}本 接続`
+                : (setup.boneState === 'broken' ? '要確認' : '未作成'));
+        const meshLabel = setup.meshState === 'missing'
+            ? '未生成'
+            : (setup.meshState === 'stale'
+                ? `${setup.meshGeneratorLabel} 要更新`
+                : `${setup.meshGeneratorLabel} 設定済み`);
+        const weightLabel = setup.weightState === 'connected'
+            ? '接続済み'
+            : (setup.weightState === 'broken' ? '要確認' : '未接続');
+        appendRow('BONE', boneLabel);
+        appendRow('MESH', meshLabel);
+        appendRow('WEIGHT', weightLabel);
+        return progress;
+    }
+
     _createCafRigInspectorElement(context = {}) {
         const projection = context.rigProjection || null;
         const targetLayer = context.targetLayer || null;
         const isEligibleTarget = projection?.isEligibleTarget === true;
+        const hasPreMeshCandidateFocus = projection?.targetKind === 'raster'
+            && projection?.status === 'none'
+            && projection?.bendSetup?.state === 'bone-ready'
+            && context.candidateFocus?.layerId === targetLayer?.id;
         const kindLabel = projection?.targetKind === 'folder'
             ? 'FOLDER'
             : (projection?.targetKind === 'raster' ? 'RASTER' : 'NO TARGET');
         const statusLabel = !targetLayer
             ? '対象未選択'
-            : (isEligibleTarget ? projection.label : 'RIG 対象外');
-        const description = !targetLayer
+            : (hasPreMeshCandidateFocus
+                ? '曲げRIG 準備中'
+                : (isEligibleTarget ? projection.label : 'RIG 対象外'));
+        const isRigidPartStatus = ['parent', 'whole'].includes(projection?.status)
+            && projection?.hasPart === true;
+        const canCreateRootPivot = !!targetLayer
+            && isEligibleTarget
+            && isRigidPartStatus
+            && projection?.hasRootBoneBinding !== true;
+        const hasRootPivot = isRigidPartStatus
+            && projection?.hasRootBoneBinding === true;
+        const hasBendProgress = projection?.targetKind === 'raster'
+            && (hasPreMeshCandidateFocus || ['bend', 'stale', 'conflict'].includes(projection?.status))
+            && !!projection?.bendSetup;
+        const canOpenBendSetup = hasBendProgress
+            && projection?.status !== 'conflict'
+            && projection?.hasPart !== true;
+        let description = !targetLayer
             ? 'LAYERSまたはAnimation TableでFolder / Rasterを選択してください。'
             : (isEligibleTarget
                 ? projection.tooltip
                 : 'この内部LayerはRIG authoring対象ではありません。');
+        if (canCreateRootPivot) description += ' PIVOTは未作成です。';
 
         const inspector = document.createElement('section');
         inspector.className = 'context-rig-inspector';
         inspector.dataset.rigStatus = projection?.status || 'none';
+        inspector.dataset.rigFocus = hasPreMeshCandidateFocus ? 'pre-mesh' : 'none';
         inspector.dataset.targetKind = projection?.targetKind || 'none';
         inspector.dataset.targetInternalLayerId = targetLayer?.id || '';
         inspector.setAttribute('role', 'region');
@@ -3740,25 +3968,80 @@ export class LayerPanelRenderer {
         const status = document.createElement('span');
         status.className = 'context-rig-inspector-status';
         status.dataset.rigStatus = projection?.status || 'none';
+        status.dataset.rigFocus = hasPreMeshCandidateFocus ? 'pre-mesh' : 'none';
         status.textContent = statusLabel;
         meta.append(kind, status);
         inspector.appendChild(meta);
 
         const canRegisterTarget = !!targetLayer
             && isEligibleTarget
-            && projection?.status === 'none';
-        if (canRegisterTarget) {
+            && projection?.status === 'none'
+            && !hasPreMeshCandidateFocus;
+        if (canRegisterTarget || canCreateRootPivot || hasRootPivot || canOpenBendSetup) {
             const isFolderTarget = projection?.targetKind === 'folder';
-            const setupButton = document.createElement('button');
-            setupButton.type = 'button';
-            setupButton.className = 'context-rig-register-button';
-            setupButton.dataset.assetId = context.asset?.id || '';
-            setupButton.dataset.internalLayerId = targetLayer.id;
-            setupButton.textContent = isFolderTarget ? '親子RIGを開始' : '全体PIVOTを開始';
-            setupButton.title = isFolderTarget
-                ? '選択中のFolderを親子RIG対象へ登録'
-                : '選択中のRasterを変形しない全体PIVOT対象へ登録';
-            inspector.appendChild(setupButton);
+            const actions = document.createElement('div');
+            actions.className = 'context-rig-method-actions';
+            actions.dataset.methodCount = canCreateRootPivot || hasRootPivot || canOpenBendSetup || isFolderTarget ? '1' : '2';
+            actions.setAttribute('role', 'group');
+            actions.setAttribute('aria-label', hasRootPivot
+                ? 'BONE接続の編集'
+                : (canCreateRootPivot
+                    ? 'RIG PIVOTの設定'
+                    : (canOpenBendSetup
+                        ? '曲げRIG設定を続ける'
+                        : (isFolderTarget ? '親子RIGの設定' : '一枚RasterのRIG方式'))));
+            if (canCreateRootPivot) {
+                const pivotButton = document.createElement('button');
+                pivotButton.type = 'button';
+                pivotButton.className = 'context-rig-method-button context-rig-root-pivot-button';
+                pivotButton.dataset.assetId = context.asset?.id || '';
+                pivotButton.dataset.internalLayerId = targetLayer.id;
+                pivotButton.textContent = 'PIVOTを作成';
+                pivotButton.title = isFolderTarget
+                    ? 'Folder内の描画範囲中央へ親PIVOTを作成'
+                    : 'Rasterの描画範囲中央へ全体PIVOTを作成';
+                actions.appendChild(pivotButton);
+            } else if (hasRootPivot) {
+                const hierarchyButton = document.createElement('button');
+                hierarchyButton.type = 'button';
+                hierarchyButton.className = 'context-rig-handoff-button context-rig-hierarchy-open-button';
+                hierarchyButton.dataset.assetId = context.asset?.id || '';
+                hierarchyButton.dataset.internalLayerId = targetLayer.id;
+                hierarchyButton.textContent = '接続を編集';
+                hierarchyButton.title = 'Animation TableのRIG設定で親BONEとPIVOT位置を編集';
+                actions.appendChild(hierarchyButton);
+            } else if (canOpenBendSetup) {
+                const bendProgressButton = document.createElement('button');
+                bendProgressButton.type = 'button';
+                bendProgressButton.className = 'context-rig-handoff-button context-rig-open-bend-button';
+                bendProgressButton.dataset.assetId = context.asset?.id || '';
+                bendProgressButton.dataset.internalLayerId = targetLayer.id;
+                bendProgressButton.textContent = projection.bendSetup.nextActionLabel;
+                bendProgressButton.title = 'Animation TableのRIG設定でBone / Mesh / Weightを確認';
+                actions.appendChild(bendProgressButton);
+            } else if (!isFolderTarget) {
+                const bendButton = document.createElement('button');
+                bendButton.type = 'button';
+                bendButton.className = 'context-rig-method-button context-rig-open-bend-button';
+                bendButton.dataset.assetId = context.asset?.id || '';
+                bendButton.dataset.internalLayerId = targetLayer.id;
+                bendButton.textContent = '曲げRIG';
+                bendButton.title = 'BONEとMeshで一枚絵を曲げるRIG設定を開く';
+                actions.appendChild(bendButton);
+            }
+            if (canRegisterTarget) {
+                const setupButton = document.createElement('button');
+                setupButton.type = 'button';
+                setupButton.className = 'context-rig-method-button context-rig-register-button';
+                setupButton.dataset.assetId = context.asset?.id || '';
+                setupButton.dataset.internalLayerId = targetLayer.id;
+                setupButton.textContent = isFolderTarget ? '親子RIGを開始' : '全体PIVOT';
+                setupButton.title = isFolderTarget
+                    ? '選択中のFolderを親子RIG対象へ登録'
+                    : '選択中のRasterを変形しない全体PIVOT対象へ登録';
+                actions.appendChild(setupButton);
+            }
+            inspector.appendChild(actions);
 
             const result = document.createElement('p');
             result.className = 'context-rig-inspector-result';
@@ -3768,19 +4051,37 @@ export class LayerPanelRenderer {
             inspector.appendChild(result);
         }
 
-        const body = document.createElement('p');
-        body.className = 'context-rig-inspector-description';
-        body.textContent = description;
-        inspector.appendChild(body);
+        if (hasRootPivot) {
+            const hierarchy = this._createContextRigHierarchyElement(projection);
+            if (hierarchy) inspector.appendChild(hierarchy);
+        } else if (hasBendProgress) {
+            const progress = this._createContextRigBendProgressElement(projection);
+            if (progress) inspector.appendChild(progress);
+            if (projection?.status === 'conflict') {
+                const handoff = document.createElement('p');
+                handoff.className = 'context-rig-inspector-handoff';
+                handoff.textContent = 'Animation Tableで全体PIVOTとMeshの重複を確認してください。';
+                inspector.appendChild(handoff);
+            }
+        } else {
+            const body = document.createElement('p');
+            body.className = 'context-rig-inspector-description';
+            body.textContent = description;
+            inspector.appendChild(body);
 
-        const handoff = document.createElement('p');
-        handoff.className = 'context-rig-inspector-handoff';
-        handoff.textContent = canRegisterTarget
-            ? (projection?.targetKind === 'raster'
-                ? '曲げRIGは現在のAnimation Table > RIG設定から行います。'
-                : '登録後の親子設定は現在のAnimation Table > RIGで行います。')
-            : '設定は現在のAnimation Table > RIGで行います。';
-        inspector.appendChild(handoff);
+            const handoff = document.createElement('p');
+            handoff.className = 'context-rig-inspector-handoff';
+            handoff.textContent = canCreateRootPivot
+                ? (projection?.targetKind === 'folder'
+                    ? 'Folder内の描画範囲中央へ親PIVOTを作ります。'
+                    : '描画範囲中央へ全体PIVOTを作ります。')
+                : (canRegisterTarget
+                    ? (projection?.targetKind === 'raster'
+                    ? '曲げはBONE / Mesh、全体は一枚のまま動かします。'
+                    : '登録後の親子設定は現在のAnimation Table > RIGで行います。')
+                    : '設定は現在のAnimation Table > RIGで行います。');
+            inspector.appendChild(handoff);
+        }
         return inspector;
     }
 

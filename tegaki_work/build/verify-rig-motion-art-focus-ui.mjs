@@ -11,10 +11,15 @@ assert.match(source, /skinNode\.alpha = opacity \* focusAlpha/);
 assert.match(source, /sprite\.alpha = opacity \* focusAlpha/);
 assert.match(source, /artFocus\.targetConnected\s*&&\s*!!sampled/, '選択中の絵へ未接続のBone Poseを記録させない');
 assert.match(source, /reason: 'raster-bone-unconnected'/, 'Canvas / Timelineからも未接続Bone keyを作らせない');
-assert.match(source, /AUTO GRID未作成。作成するとMotionできます/);
-assert.match(source, /data-rig-connect-art/);
-assert.match(source, /data-rig-connect-art[^>]*>AUTO GRIDを作成</);
-assert.match(source, /querySelector\('\[data-rig-connect-art\]'\)[\s\S]*?_generateSelectedRasterBoneSetup\('alpha-fit-grid'\)/);
+assert.match(source, /RIG設定でMeshを作成するとMotionできます/);
+assert.match(source, /data-rig-open-setup/);
+assert.match(source, /data-rig-open-setup[^>]*>RIGを設定 &gt;</);
+const setupHandoff = source.match(
+    /querySelector\('\[data-rig-open-setup\]'\)[\s\S]*?\n            \}\);/u
+)?.[0] || '';
+assert.match(setupHandoff, /_setMotionTimelineKeyKind\('rig', \{ remember: true \}\)/);
+assert.doesNotMatch(setupHandoff, /_generateSelectedRasterBoneSetup|_recordInternalLayerHistory/,
+    'MotionのRIG handoffはstatic Mesh mutationを直接実行しない');
 assert.match(source, /data-rig-open-weight[^>]*>WEIGHT表示</);
 const weightHandlerStart = source.indexOf("motionControls.querySelector('[data-rig-open-weight]')");
 const weightHandlerEnd = source.indexOf(

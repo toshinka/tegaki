@@ -15,14 +15,14 @@ assert.match(
 );
 assert.match(
     renderer,
-    /if \(canRegisterTarget\) \{[\s\S]*?inspector\.appendChild\(result\);[\s\S]*?context-rig-inspector-description/u,
+    /if \(canRegisterTarget \|\| canCreateRootPivot \|\| hasRootPivot \|\| canOpenBendSetup\) \{[\s\S]*?inspector\.appendChild\(result\);[\s\S]*?if \(hasRootPivot\)[\s\S]*?else if \(hasBendProgress\)[\s\S]*?else \{[\s\S]*?context-rig-inspector-description/u,
     'the interactive Setup action stays above descriptive copy at narrow Table overlap'
 );
 for (const token of [
     'context-rig-register-button',
     "setupButton.type = 'button'",
-    "setupButton.textContent = isFolderTarget ? '親子RIGを開始' : '全体PIVOTを開始'",
-    '曲げRIGは現在のAnimation Table > RIG設定',
+    "setupButton.textContent = isFolderTarget ? '親子RIGを開始' : '全体PIVOT'",
+    '曲げはBONE / Mesh、全体は一枚のまま動かします',
     "result.setAttribute('role', 'status')",
     "result.setAttribute('aria-live', 'polite')",
     "{ source: 'right-rig-inspector' }",
@@ -42,11 +42,11 @@ assert.doesNotMatch(
 );
 
 for (const token of [
-    '.right-panel .context-rig-register-button',
+    '.right-panel .context-rig-method-button',
     'border: none',
     'color: var(--deformer-bind-point)',
     'background: color-mix(in srgb, var(--deformer-bind-line) 18%, var(--futaba-cream))',
-    '.right-panel .context-rig-register-button:focus-visible',
+    '.right-panel .context-rig-method-button:focus-visible',
     'min-height: 38px'
 ]) {
     assert.ok(css.includes(token), `Setup blue action CSS must include ${token}`);
