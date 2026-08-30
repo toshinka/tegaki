@@ -238,11 +238,16 @@ Checkpoint（2026-08-31）:
 - Rasterは`_selectRigRasterProjectionTarget()`、Folder / rigid Rasterは`_selectRigFolderProjectionTarget()`の既存adapterを`focusRig: false / openInspector: false`で再利用した。右RIGの曲げ / 全体 / 親子Setup、CLIP MOTION target strip、Mesh前Boneの`RIGを設定 >`、設定済みBone row / keyは維持した。
 - 全128 verifier、対象JS / verifierの`node --check`、production buildを通過した。BrowserでRaster / Folderの行とcellの単 / double-click前後History不変、Motion非open、右RIGの曲げRIG / 親子RIG入口、CLIP target切替、Table close / reopen、480×800のdocument横overflow 0、console warning / error 0件を確認した。
 
-## 7.9 Stage D3 — Static RIG editor host ownership Gate（次task）
+## 7.9 Stage D3 — Static RIG editor host ownership Gate（限定契約）
 
 - 右RIGのprogress / Setup handoffとAnimation Table内の既存static RIG editorが、同一選択target・open / close・return pathを保ったまま一hostへ寄せられるかをinventoryする。
 - 最初はDOM / event / Popup stacking / Canvas overlay / Historyの所有関係を確定し、右dockへの移設とTable外別windowのどちらが既存editor一つを再利用できるか比較する。同等のMesh / Weight / parent / reject / Undoが揃う前にTable内editorを撤去しない。
 - 設定済みBone row / key、Motion / easing / temporal WARP、CLIP target lens、Canvas direct manipulationは時間・操作責務として維持する。
+- inventoryでは`#anim-rig-context`はAnimation Table panelの子ではなく、`#animation-motion-window`の一modeとして`mountPopupAtOverlayRoot()`へmountされている。drag / viewport clamp / target strip / Canvas overlay / event / Historyはこの一DOMと`AnimationTablePopup`の既存adapterを共有する。
+- 右dockは132pxの対象・方式・進捗・次操作のoverview / handoffに限定する。Bone / Mesh generator / Weight / Correction / Brush / Mesh Edit / parentを右dockへ複製する案は、第二editorと狭幅のnested scrollを作るため`NO-GO`。
+- static authoring hostはTable外の既存single floating windowを`RIG WORKSPACE`として再利用する案を`GO`とする。同じwindowのmodeがMotionなら`CLIP MOTION`、WARPなら`WARP WORKSPACE`と投影し、tabで戻る。window / editor / selection / Historyを複製しない。
+- production Sliceはmodeから導出するtitle、dialog label、target label、help / close labelと、右RIGのuser-facing handoff文言だけを一致させる。ID、mount先、drag、window位置、tab event、mutation、History、save、Canvas overlayは変更しない。
+- right RIGからRIG modeを開く、`MOTION`へ戻る、`WARP`へ切り替える、close / reopen、Tableを閉じた状態から再入場する、wide / 480×800、History不変、console errorを固定する。Table closeとRIG WORKSPACEのlifecycle完全分離は、現行`hide()`のoverlay / preview cleanup境界を安全に分ける後続Gateまで実装しない。
 
 ## 8. 後続Stage
 

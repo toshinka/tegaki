@@ -22,6 +22,9 @@
  *   RIGへ強制遷移するのは右RIGやCLIP MOTION handoff等の明示的なRIG操作だけに限定する。
  * 未設定RIGのLane / Timeline行は対象選択だけを行い、static Setup開始は右RIGまたは
  *   CLIP MOTION内の明示handoffへ委譲する。行・セルのclick / double-clickでRigやHistoryを変更しない。
+ * RIG editor host境界: 右dockは対象・方式・進捗・handoffだけを所有し、static authoringは
+ *   overlay root上の単一#animation-motion-windowをRIG WORKSPACE modeとして再利用する。
+ *   MOTION / WARPも同じwindowとselection adapterを共有し、第二editor・History・保存stateを作らない。
  * CAF内部Folderの選択はUI正本であり、代表animation working Layerのactive同期で上書きしない。
  *   working LayerはFolder変形・描画入力のadapterなので、明示的なRaster行選択時だけRasterへ切り替える。
  * Frame / Table表示同期では、同じAsset内に残るselectedInternalLayerIdを維持してからworking Layerへ写像する。
@@ -13630,6 +13633,54 @@ export class AnimationTablePopup {
         });
     }
 
+    _getMotionWorkspaceHostIdentity() {
+        if (this._motionEditorMode === 'rig') {
+            return {
+                mode: 'rig',
+                title: 'RIG WORKSPACE',
+                targetLabel: 'RIG target',
+                helpLabel: 'RIG WORKSPACE 操作ヘルプ',
+                closeLabel: 'Close RIG Workspace',
+                helpNote: 'RIG WORKSPACEを閉じるまでCanvasはRIG操作を優先します。'
+            };
+        }
+        if (this._motionEditorMode === 'warp') {
+            return {
+                mode: 'warp',
+                title: 'WARP WORKSPACE',
+                targetLabel: 'WARP target',
+                helpLabel: 'WARP WORKSPACE 操作ヘルプ',
+                closeLabel: 'Close Warp Workspace',
+                helpNote: 'WARP WORKSPACEを閉じるまでCanvasはWARP操作を優先します。'
+            };
+        }
+        return {
+            mode: 'motion',
+            title: 'CLIP MOTION',
+            targetLabel: 'CLIP MOTION target',
+            helpLabel: 'CLIP MOTION 操作ヘルプ',
+            closeLabel: 'Close Clip Motion',
+            helpNote: 'CLIP MOTIONを閉じるまでCanvasへの描画入力は無効です。'
+        };
+    }
+
+    _syncMotionWorkspaceHostIdentity() {
+        const root = this.motionPanel;
+        if (!root) return null;
+        const identity = this._getMotionWorkspaceHostIdentity();
+        root.dataset.workspaceMode = identity.mode;
+        root.querySelector('[data-workspace-title]')?.replaceChildren(identity.title);
+        root.querySelector('[data-motion-target-strip]')
+            ?.setAttribute('aria-label', identity.targetLabel);
+        root.querySelector('#anim-motion-help-btn')
+            ?.setAttribute('aria-label', identity.helpLabel);
+        root.querySelector('#anim-motion-close-btn')
+            ?.setAttribute('aria-label', identity.closeLabel);
+        root.querySelector('[data-workspace-help-note]')
+            ?.replaceChildren(identity.helpNote);
+        return identity;
+    }
+
     _clampMotionPanelPlacement() {
         if (!this.motionPanel || this.motionPanel.style.display === 'none') return false;
         const rect = this.motionPanel.getBoundingClientRect();
@@ -13709,6 +13760,7 @@ export class AnimationTablePopup {
             this._motionAnchorClip = null;
         }
         this._motionEditorMode = nextKind;
+        this._syncMotionWorkspaceHostIdentity();
         if (nextKind !== 'rig' && this._rigSkinWeightCorrectionActive) {
             this._rigSkinWeightCorrectionActive = false;
             this._rigSkinWeightSelectedVertexIds.clear();
@@ -18105,8 +18157,8 @@ export class AnimationTablePopup {
             </optgroup>`).join('');
         this.motionPanel.innerHTML = `
             <div class="anim-motion-window-header transform-popup-header">
-                <span class="transform-popup-title">CLIP MOTION</span>
-                <div class="anim-motion-mode-switch" role="tablist" aria-label="Clip Motion editor mode">
+                <span class="transform-popup-title" id="anim-workspace-title" data-workspace-title>CLIP MOTION</span>
+                <div class="anim-motion-mode-switch" role="tablist" aria-label="Workspace mode">
                     <button class="anim-motion-mode-tab ui-help-tooltip" id="anim-rig-focus-btn" type="button" role="tab" aria-selected="false" aria-controls="anim-rig-context" aria-label="Rig Setupへ切り替え" data-tooltip="最初にPIVOT・PART・BONEのstatic Setupを行います"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="17" r="2"/><circle cx="17" cy="7" r="2"/><path d="m8.5 15.5 7-7"/><path d="M5 5h6v6"/></svg><span>RIG</span><span class="anim-motion-mode-count" data-rig-folder-count>0</span></button>
                     <button class="anim-motion-mode-tab ui-help-tooltip active" id="anim-motion-focus-btn" type="button" role="tab" aria-selected="true" aria-controls="anim-motion-fields" aria-label="Motion編集へ切り替え" data-tooltip="RIG後にCAFまたは選択FolderのFrame-local Motion keyを編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M17 12h-2l-2 5-2-10-2 5H7"/></svg><span>MOTION</span><span class="anim-motion-mode-count" data-motion-key-count>0</span></button>
                     <button class="anim-motion-mode-tab ui-help-tooltip" id="anim-warp-focus-btn" type="button" role="tab" aria-selected="false" aria-controls="anim-warp-context" aria-label="Warp編集へ切り替え" data-tooltip="現行はCAF全体へWarp GRIDを作成してFrame Poseを編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>WARP</span><span class="anim-motion-mode-count" data-warp-key-count>0</span></button>
@@ -18137,7 +18189,7 @@ export class AnimationTablePopup {
                 <div class="anim-motion-help-section anim-motion-help-section--rig"><strong>RIG</strong><span>中心drag: PIVOT配置</span><span>中心長押し→別PIVOT: 親子接続 / 空所: 解除</span><span>接続線drag: 親の付け替え</span><span>楔drag / 楔上wheel: 初期角度</span></div>
                 <div class="anim-motion-help-section anim-motion-help-section--motion"><strong>MOTION</strong><span>CAF drag: 移動 / Shift+横: 回転 / Shift+縦: 拡縮</span><span>BONE中心drag: 移動 / 楔drag: 回転</span><span>wheel: 拡縮 / Shift+wheel: 回転</span></div>
                 <div class="anim-motion-help-section anim-motion-help-section--warp"><strong>WARP</strong><span>GRID / LENS / POINT / BRUSHを選び、Canvas上で編集</span><span>B: Brush幅 / N: 強さ</span></div>
-                <span class="anim-motion-help-note">CLIP MOTIONを閉じるまでCanvasへの描画入力は無効です。</span>
+                <span class="anim-motion-help-note" data-workspace-help-note>CLIP MOTIONを閉じるまでCanvasへの描画入力は無効です。</span>
             </div>
             <div class="anim-motion-target-strip" data-motion-target-strip aria-label="CLIP MOTION target">
                 <span class="anim-motion-target-label">対象</span>
@@ -18322,6 +18374,9 @@ export class AnimationTablePopup {
             element.removeAttribute('title');
         });
         mountPopupAtOverlayRoot(this.motionPanel);
+        this.motionPanel.setAttribute('role', 'dialog');
+        this.motionPanel.setAttribute('aria-labelledby', 'anim-workspace-title');
+        this._syncMotionWorkspaceHostIdentity();
         this.motionPanelDragCleanup?.();
         this.motionPanelDragCleanup = attachPopupDrag(this.motionPanel);
         this.motionPanelViewportCleanup?.();

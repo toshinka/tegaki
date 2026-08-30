@@ -16,6 +16,8 @@
  * - animation working Layerは表示・入力adapterであり、Panel順や保存階層の正本にしない。
  * - RIG badgeはClipAssetのstatic正本からpure導出した表示であり、第二RIG stateやMotion authorityを持たない。
  * - 右RIG viewのSetup actionはAnimationTablePopupのexternal adapterへ委譲し、本fileでRig / Historyを直接mutationしない。
+ * - 右RIG viewは対象・方式・進捗・handoffのoverviewであり、static controlsを複製しない。
+ *   authoringはoverlay root上の単一RIG WORKSPACEへ委譲し、同じtarget / History adapterを使う。
  * - Mesh前Bone候補はAnimationTablePopupのruntime focus一致時だけ表示し、static Rig ownerとして保存しない。
  * ============================================================================
  */
@@ -4008,7 +4010,7 @@ export class LayerPanelRenderer {
                 hierarchyButton.dataset.assetId = context.asset?.id || '';
                 hierarchyButton.dataset.internalLayerId = targetLayer.id;
                 hierarchyButton.textContent = '接続を編集';
-                hierarchyButton.title = 'Animation TableのRIG設定で親BONEとPIVOT位置を編集';
+                hierarchyButton.title = 'RIG WORKSPACEで親BONEとPIVOT位置を編集';
                 actions.appendChild(hierarchyButton);
             } else if (canOpenBendSetup) {
                 const bendProgressButton = document.createElement('button');
@@ -4017,7 +4019,7 @@ export class LayerPanelRenderer {
                 bendProgressButton.dataset.assetId = context.asset?.id || '';
                 bendProgressButton.dataset.internalLayerId = targetLayer.id;
                 bendProgressButton.textContent = projection.bendSetup.nextActionLabel;
-                bendProgressButton.title = 'Animation TableのRIG設定でBone / Mesh / Weightを確認';
+                bendProgressButton.title = 'RIG WORKSPACEでBone / Mesh / Weightを確認';
                 actions.appendChild(bendProgressButton);
             } else if (!isFolderTarget) {
                 const bendButton = document.createElement('button');
@@ -4060,7 +4062,7 @@ export class LayerPanelRenderer {
             if (projection?.status === 'conflict') {
                 const handoff = document.createElement('p');
                 handoff.className = 'context-rig-inspector-handoff';
-                handoff.textContent = 'Animation Tableで全体PIVOTとMeshの重複を確認してください。';
+                handoff.textContent = 'RIG WORKSPACEで全体PIVOTとMeshの重複を確認してください。';
                 inspector.appendChild(handoff);
             }
         } else {
@@ -4078,8 +4080,8 @@ export class LayerPanelRenderer {
                 : (canRegisterTarget
                     ? (projection?.targetKind === 'raster'
                     ? '曲げはBONE / Mesh、全体は一枚のまま動かします。'
-                    : '登録後の親子設定は現在のAnimation Table > RIGで行います。')
-                    : '設定は現在のAnimation Table > RIGで行います。');
+                    : '登録後の親子設定はRIG WORKSPACEで行います。')
+                    : '設定はRIG WORKSPACEで行います。');
             inspector.appendChild(handoff);
         }
         return inspector;
