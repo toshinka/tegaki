@@ -1,13 +1,13 @@
 # Tegaki RIG / Motion 責務再配置 提案書
 ## Animation Table から RIG authoring を分離する Architecture Gate
 
-更新日: 2026-08-30  
+更新日: 2026-08-31
 用途: CODEX 比較 fixture / Architecture Gate 用  
 前提: 既存 Phase 8d / 9l の正本・History・save schema・solver を維持し、UI責務だけを比較する。
 
 保管方針: Phase 9n Gate 0はDを第一採用したが、A / B / Cを削除しない。production評価で右dock切替に不満が出た場合、left配置を含む再比較の原案として本書へ戻る。現行の限定実装契約は`task-codex/phase9n.md`を優先する。
 
-進捗: Stage A shared projection、Stage B read-only `LAYERS / RIG` shell、Stage C1 RIG対象登録、Stage C2 Raster method fork、Stage C3 Rigid Part root PIVOT completion、Stage C4 Bone hierarchy / parent-link handoff、Stage C5 Raster bend setup progressは2026-08-30にcheckpoint完了。C5はunbound Bone候補とSkin接続済みBoneをpure projectionで分離し、右RIGへ枠なし`BONE / MESH / WEIGHT`進捗、STALE、既存Raster RIGへの無履歴handoffを接続した。次はStage C6としてPre-Mesh Bone候補を別Rasterへ誤帰属させずruntime focusで表示できるかを監査する。保存owner、第二setup state、Mesh / Weight algorithm、新しいmutationは同時実装しない。Phase 9n close時は`GitHubURL.txt`を、外部Web AIが最終RIG導線、D案と保留3案、再試行条件、実装・検証入口、評価論点を単独追跡できるreview indexへ更新する。
+進捗: Stage A / B / C1〜C6 / D1 / D2はcheckpoint完了。右RIGへFolder親子、Raster全体PIVOT / 曲げ、PIVOT / PARENT、BONE / MESH / WEIGHT / STALE、Mesh前runtime focusと既存editor handoffを接続した。D1はMotionの直接`AUTO GRIDを作成`だけを無履歴`RIGを設定 >`へ置換し、D2は未設定Raster / Folder Laneからstatic Setup起動とmutationを外し、target / Frame選択と枠なし`RIG未設定: 未設`だけを残した。CLIP MOTION target stripはfocus lens、右RIGはstatic Setup入口として維持する。次はD3として残るstatic RIG editorのhost所有と右RIG return pathを監査する。保存owner、第二setup state、Mesh / Weight algorithm、新しいmutationは同時実装しない。Phase 9n close時は`GitHubURL.txt`を、外部Web AIが最終RIG導線、D案と保留3案、再試行条件、実装・検証入口、評価論点を単独追跡できるreview indexへ更新する。
 
 ---
 
@@ -760,7 +760,11 @@ RIG setup DOMを削るのは最後。
 
 Motion handoffのみ残す。
 
-次はstatic / temporal DOM inventoryと右経路parityを先に固定する。`BONE追加 / AUTO GRID / Weight / Mesh Edit / parent接続`を一括削除せず、右RIGで同じ到達性・拒否・Historyが成立した一surfaceだけを一Sliceとして撤去する。
+Stage D1 checkpoint（2026-08-31）では、右RIGがまだstatic mutationの同等editorを所有しないため専用RIG editor全撤去を`NO-GO`とした。Motion未接続Rasterに重複していた直接`AUTO GRIDを作成`だけを無履歴`RIGを設定 >`へ置換し、Bone / Mesh / Weight / parentは既存RIG editor、KEY / IK / Frame pose / read-only WEIGHTはMotionへ維持した。
+
+D2 checkpoint（2026-08-31）では、未設定Raster / Folder Laneの`RIG設定 / +RIG`と行 / Timeline cellのstatic editor起動を撤去した。Laneは枠なし`RIG未設定: 未設`、target / Frame選択のみとし、Historyは増やさない。CLIP MOTION target stripはeditor内focus lens、右RIGは曲げ / 全体 / 親子Setup入口として維持した。
+
+次のD3は残るstatic RIG editorのhost所有を監査する。DOM / event / Popup stacking / Canvas overlay / return path / Historyを対応付け、右dockへの移設とTable外別windowを比較する。Bone / Mesh / Weight / parent / reject / Undoが同一editorで成立する前にTable内editorを撤去しない。
 
 ---
 

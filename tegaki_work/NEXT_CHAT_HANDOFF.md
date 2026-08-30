@@ -1,8 +1,8 @@
 # Tegaki 次チャット引き継ぎ
 
-更新日: 2026-08-30
+更新日: 2026-08-31
 
-状態: Phase 9mまでclose。現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gate。Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`、Stage A / B / C1 / C2 / C3 / C4 / C5 / C6はcheckpoint完了。次はStage D Animation Table static RIG cleanup Gate。
+状態: Phase 9mまでclose。現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gate。Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`、Stage A / B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2はcheckpoint完了。次はStage D3 static RIG editor host ownership Gate。
 
 ## 1. 最初に読む順序
 
@@ -48,23 +48,25 @@ git status --short --untracked-files=all -- tegaki_work task-codex 開発用資�
 - Stage C4はRigid Partのbinding先BoneとRig全体ROOTを分離し、親接続後もPIVOT済み状態を維持するpure projectionへ補正した。右RIGには枠なし`PIVOT / PARENT`要約と、既存Animation Table RIG inspectorを開く無履歴`接続を編集`を追加した。全124 verifier / build、BrowserのFolder2→Folder1接続1 History、Undo / Redo、ROOT / linked、Table閉鎖、480×800非重複・横overflowなしでcheckpoint完了した。
 - Stage C5はRaster曲げRIGへ枠なし`BONE / MESH / WEIGHT`進捗と状態別handoffを追加した。unbound Bone候補とSkin接続済みBoneをpure projectionで分離し、Mesh生成後にTable閉鎖handoffが失敗する既存resolverをRaster専用経路へ補正した。全125 verifier / build、BrowserのBONE / AUTO GRID各1 History、STALE、無履歴`Weightを確認 / Meshを更新`、480×800非重複・横overflowなし、Vite error overlayなしでcheckpoint完了した。
 - Stage C6はMesh前unbound Boneを保存owner化せず、明示選択した`asset / Raster / Bone`三点だけのruntime focusで右RIGへ`曲げRIG 準備中 / BONE候補 / MESH未生成 / WEIGHT未接続`を投影した。Layer / CAF / Folder / Mesh生成で破棄し、別Rasterへglobal候補を自動継承しない。全126 verifier / build、Browserの複数Raster非漏出、元Raster非自動復帰、明示Bone復帰、Table閉鎖、RIG tab復帰、AUTO GRID 1 History、480×800 action非重複・document横overflow 0、console 0件でcheckpoint完了した。
+- Stage D1はstatic / temporal DOM inventoryから専用RIG editor全撤去を`NO-GO`とした。Motion未接続Rasterの直接`AUTO GRIDを作成`だけを`RIGを設定 >`へ置換し、既存RIG tabへ切り替える無履歴handoffにした。RIG editorのBone / Mesh / Weight / parent、MotionのKEY / IK / Frame pose / read-only WEIGHTは維持する。全127 verifier / build、Browserのhandoff History `3 -> 3`、RIG AUTO GRID `3 -> 4`、Motion KEY `4 -> 5`、Undo復帰、480×800・横overflow 0、console 0件でcheckpoint完了した。
+- Stage D2は未設定Raster / Folder Laneの`RIG設定 / +RIG` buttonと行 / Timeline cellのstatic editor起動を外し、枠なし`RIG未設定: 未設`とtarget / Frame選択だけへ整理した。右RIGの曲げ / 全体 / 親子Setup、CLIP MOTION target stripとMesh前Boneの`RIGを設定 >`、設定済みBone row / keyは維持する。全128 verifier / build、BrowserのRaster / Folder行・cellのHistory不変、Motion非open、右RIG入口、CLIP target切替、480×800・横overflow 0、console 0件でcheckpoint完了した。
 - selection正本、History、save、solver / evaluator、ClipInstance.rigMotion、Table open / closed authorityは変更していない。runtime focusはProjectへ保存しない。
 - Owner指示として、Phase 9n close時は`GitHubURL.txt`を外部Web AI向けRIG導線review indexへ再編集する。最終導線、D案と保留3案、再試行条件、実装・verifier・Browser acceptance、評価依頼論点へraw URLで到達できることをclose条件とする。
 
 ## 4. 次のtask
 
-Phase 9n Stage Dとして、Animation Table内のstatic RIG Setup DOMを段階撤去できるかのGateを行う。
+Phase 9n Stage D3として、残るstatic RIG editorのhost所有と右RIG return path Gateを行う。
 
-1. `animation-table-popup.js`のRIG tabを、static Setup、temporal Motion/key、Canvas direct manipulation、既存right handoffに分類し、DOM / event / adapter / reject / Historyの対応表を先に作る。
-2. 右RIGで代替済みと実操作で確認できたcontrolだけを撤去候補とする。`BONE追加 / AUTO GRID / Weight / Mesh Edit / parent接続`を一括削除しない。
-3. 最初のSliceはentry重複やread-only要約など、mutation authorityを動かさず撤去できる最小単位を選ぶ。Motion key、easing、temporal WARP、Canvas gestureは残す。
-4. 右RIGから既存editorへ到達する`RIGを設定 >` handoffと、Table close / reopen、narrow、History、拒否理由を固定してから実装する。
+1. `#anim-rig-context`のBone / Mesh / Weight / parent、Canvas overlay、open / close / return pathをDOM / event / selection / reject / Historyで対応付ける。
+2. 右dock内で既存editorをhostする案と、Table外の別windowで同一editorをhostする案を比較する。第二のRig state / History / save ownerは作らない。
+3. Folder / Raster、Mesh前 / 接続後 / stale、Table open / closed、right `LAYERS / RIG`、wide / narrowで同一targetと復帰先が保てるか固定する。
+4. 同等editorのBone / Mesh / Weight / parent / reject / Undoが成立する前にTable内RIG editorを削除しない。Motion key、easing、temporal WARP、CLIP target lens、Canvas gestureは維持する。
 5. Clip Focus、dark top / bottom、Lane濃淡、外枠削減、CAF / LaneとTableの分断改善を並走しない。
 6. Phase close時の`GitHubURL.txt`外部Web AI向け再編集は`task-codex/phase9n.md`第13節に従う。Stage D途中ではclose扱いにしない。
 
 ## 5. model分担
 
-- Stage D contract、static / temporal inventory、右経路parity、撤去単位、Gate / Phase判断、最終監査はSOL / MAX。
+- Stage D contract、static editor host ownership、return path、移設単位、Gate / Phase判断、最終監査はSOL / MAX。
 - 対象DOM / event / Acceptance Criteria固定後の限定removalだけLUNA / MAX候補。
 - selection、mutation、History、schema判断へ触れる場合、LUNAは変更せずSOLへ返す。
 
@@ -73,14 +75,14 @@ Phase 9n Stage Dとして、Animation Table内のstatic RIG Setup DOMを段階�
 ```text
 D:\GitHub\tegaki の作業を継続してください。
 
-Phase 9mまでclose済みです。現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gateです。Gate 0はD Dedicated Right RIG + Motion handoffを選定し、Stage A / B / C1 / C2 / C3 / C4 / C5 / C6はcheckpoint完了、次はStage D Animation Table static RIG cleanup Gateです。
+Phase 9mまでclose済みです。現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gateです。Gate 0はD Dedicated Right RIG + Motion handoffを選定し、Stage A / B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2はcheckpoint完了、次はStage D3 static RIG editor host ownership Gateです。
 
 最初にAGENTS.md、TEGAKI.md、tegaki_work/PROGRESS.md、tegaki_work/NEXT_CHAT_HANDOFF.md、task-codex/phase9n.md、開発用資料保管庫/proposals/17_RIG・Motion責務再配置Architecture Gate.md、Archive/phase9m.md、Archive/phase9l.md、Archive/phase8d.md、proposal 15 / 16、system/animation/rig-authoring-status-projection.js、ui/layer-panel-renderer.js、ui/animation-table-popup.jsを順に読んでください。
 
 git status --short --untracked-files=all -- tegaki_work task-codex 開発用資料保管庫/proposals 開発用資料保管庫/Archive
 を最初に確認し、既存変更をすべて維持してください。Backup/、PastFiles/、開発用資料保管庫/Backup-tegaki_work/は調査・編集しないでください。
 
-責務はLayer=対象、右RIG同一dock=static構造、Animation Table=時間、Canvas=直接操作です。左RIG / Layer統合 / 現行Table案はproposal 17へ再試行候補として残しています。最初のtaskはAnimation Table RIG tabのstatic Setup / temporal Motion / Canvas gesture / right handoff inventoryです。右経路parityを確認できた一surfaceだけを撤去候補とし、BONE / Mesh / Weight / parent controlsを一括削除しないでください。保存owner、第二state、Mesh / Weight algorithm変更、Clip Focus、dark top / bottom、Lane濃淡、枠削減、CAF / LaneとTableの分断改善を並走しないでください。
+責務はLayer=対象、右RIG同一dock=static構造、Animation Table=時間、Canvas=直接操作です。左RIG / Layer統合 / 現行Table案はproposal 17へ再試行候補として残しています。Stage D1はMotion内の直接AUTO GRIDだけを無履歴`RIGを設定 >`へ置換し、D2は未設定Raster / Folder Laneの`RIG設定 / +RIG`と行 / cellのstatic editor起動を外してtarget / Frame選択専用にしました。最初のtaskは残るstatic RIG editorのDOM / event / Popup stacking / Canvas overlay / return path / History所有をinventoryし、右dock hostとTable外別window hostを比較することです。同等editorが成立する前にBONE / Mesh / Weight / parent controlsを削除しないでください。保存owner、第二state、Mesh / Weight algorithm変更、Clip Focus、dark top / bottom、Lane濃淡、枠削減、CAF / LaneとTableの分断改善を並走しないでください。
 
-次作業予告はPhase 9n Stage D Animation Table static RIG cleanup Gateです。inventory / parity / 撤去単位 / 最終監査はSOL / MAX、契約確定後の限定removalだけLUNA / MAX候補です。
+次作業予告はPhase 9n Stage D3 static RIG editor host ownership Gateです。host / return path / 移設単位 / 最終監査はSOL / MAX、契約確定後の限定SliceだけLUNA / MAX候補です。
 ```

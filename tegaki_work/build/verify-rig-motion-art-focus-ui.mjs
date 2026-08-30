@@ -14,9 +14,15 @@ assert.match(source, /reason: 'raster-bone-unconnected'/, 'Canvas / Timelineか�
 assert.match(source, /RIG設定でMeshを作成するとMotionできます/);
 assert.match(source, /data-rig-open-setup/);
 assert.match(source, /data-rig-open-setup[^>]*>RIGを設定 &gt;</);
-const setupHandoff = source.match(
-    /querySelector\('\[data-rig-open-setup\]'\)[\s\S]*?\n            \}\);/u
-)?.[0] || '';
+const setupHandoffStart = source.indexOf(
+    "motionControls.querySelector('[data-rig-open-setup]')?.addEventListener('click'"
+);
+const setupHandoffEnd = source.indexOf(
+    "motionControls.querySelector('[data-rig-open-weight]')",
+    setupHandoffStart
+);
+assert.ok(setupHandoffStart >= 0 && setupHandoffEnd > setupHandoffStart);
+const setupHandoff = source.slice(setupHandoffStart, setupHandoffEnd);
 assert.match(setupHandoff, /_setMotionTimelineKeyKind\('rig', \{ remember: true \}\)/);
 assert.doesNotMatch(setupHandoff, /_generateSelectedRasterBoneSetup|_recordInternalLayerHistory/,
     'MotionのRIG handoffはstatic Mesh mutationを直接実行しない');
@@ -39,4 +45,4 @@ assert.doesNotMatch(
     '別Rasterを含む全Mesh Bone数へfallbackしない'
 );
 
-console.log('verify-rig-motion-art-focus-ui: cache / selected clip / dim / AUTO GRID gate and Motion WEIGHT toggle OK');
+console.log('verify-rig-motion-art-focus-ui: cache / selected clip / dim / RIG handoff and Motion WEIGHT toggle OK');

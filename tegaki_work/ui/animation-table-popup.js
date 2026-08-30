@@ -19,7 +19,9 @@
  * Playback marker shortcut: handlePlaybackMarkerShortcutKeyDown()はKeyboardHandlerから
  *   Animation Table visible / OUT MARKER / modifierなしのI・Oだけを既存marker setterへ渡す。
  * 設定済みFolder / BoneのLane選択はlast-used RIG / MOTION / WARP tabを変更しない。
- *   RIGへ強制遷移するのは未設定Folderの初回Setupと明示的なRIG操作だけに限定する。
+ *   RIGへ強制遷移するのは右RIGやCLIP MOTION handoff等の明示的なRIG操作だけに限定する。
+ * 未設定RIGのLane / Timeline行は対象選択だけを行い、static Setup開始は右RIGまたは
+ *   CLIP MOTION内の明示handoffへ委譲する。行・セルのclick / double-clickでRigやHistoryを変更しない。
  * CAF内部Folderの選択はUI正本であり、代表animation working Layerのactive同期で上書きしない。
  *   working LayerはFolder変形・描画入力のadapterなので、明示的なRaster行選択時だけRasterへ切り替える。
  * Frame / Table表示同期では、同じAsset内に残るselectedInternalLayerIdを維持してからworking Layerへ写像する。
@@ -17016,9 +17018,10 @@ export class AnimationTablePopup {
                     </div>`;
                 if (selectedCafRigProjection?.entry?.lane?.id === track.id) {
                     selectedCafRigProjection.folders.forEach(rigFolder => {
-                        const boneSelected = !!rigFolder.bone
-                            && this.selectedRigBoneId === rigFolder.bone.boneId
-                            && this.selectedInternalLayerId === rigFolder.layer.id;
+                        const targetSelected = this.selectedInternalLayerId === rigFolder.layer.id
+                            && (rigFolder.bone
+                                ? this.selectedRigBoneId === rigFolder.bone.boneId
+                                : !this.selectedRigBoneId);
                         const boneKeyTitle = !rigFolder.isFrameInClip
                             ? '現在Frameは選択CAFの範囲外です'
                             : (rigFolder.boneKey
@@ -17032,11 +17035,9 @@ export class AnimationTablePopup {
                                 type="button" aria-pressed="${rigFolder.boneKey ? 'true' : 'false'}"
                                 title="${boneKeyTitle}"
                                 ${rigFolder.isFrameInClip && !this.isPlaying ? '' : 'disabled'}>◆</button>`
-                            : `<button class="anim-rig-folder-setup${rigFolder.targetKind === 'raster' ? ' is-raster-entry' : ''}" type="button"
-                                aria-label="${rigFolder.targetKind === 'raster' ? 'このRasterのRIG設定を開く' : 'このFolderへPIVOTとBONEを設定'}"
-                                ${this.isPlaying ? 'disabled' : ''}>${rigFolder.targetKind === 'raster' ? 'RIG設定' : '+RIG'}</button>`;
+                            : `<span class="anim-rig-lane-status" aria-label="RIG未設定">未設定</span>`;
                         trackHtml += `
-                            <div class="anim-track-item anim-rig-folder-track-item${rowClasses}${boneSelected ? ' is-selected' : ''}"
+                            <div class="anim-track-item anim-rig-folder-track-item${rowClasses}${targetSelected ? ' is-selected' : ''}"
                                 data-track-id="${track.id}"
                                 data-clip-id="${rigFolder.entry.clip.id}"
                                 data-folder-id="${rigFolder.layer.id}"
@@ -19809,54 +19810,6 @@ export class AnimationTablePopup {
                     return;
                 }
 
-                const rigFolderSetup = e.target.closest('.anim-rig-folder-setup');
-                if (rigFolderSetup) {
-                    const row = rigFolderSetup.closest('.anim-rig-folder-track-item');
-                    const projection = this._getSelectedCafRigProjection();
-                    const context = projection?.folders.find(candidate => candidate.layer.id === row?.dataset.folderId);
-                    if (context && !rigFolderSetup.disabled) {
-                        if (context.targetKind === 'raster') {
-                            if (context.part) {
-                                this._selectRigFolderProjectionTarget(context, {
-                                    focusRig: true,
-                                    openInspector: true
-                                });
-                            } else {
-                                this._selectRigRasterProjectionTarget(context, {
-                                    focusRig: true,
-                                    openInspector: true
-                                });
-                            }
-                            e.stopPropagation();
-                            return;
-                        }
-                        const beforeState = this._captureInternalLayerHistoryState(context.asset);
-                        const configured = this._ensureFolderRigPivot(context, beforeState);
-                        if (configured?.bone) {
-                            this._recordInternalLayerHistory(
-                                configured.asset,
-                                beforeState,
-                                'caf-rig-folder-register',
-                                {
-                                    type: 'caf-rig-folder-register',
-                                    assetId: configured.asset.id,
-                                    folderId: configured.layer.id,
-                                    boneId: configured.bone.boneId
-                                }
-                            );
-                            const active = this._getSelectedCafRigProjection()?.folders
-                                .find(candidate => candidate.layer.id === context.layer.id);
-                            this._openSelectedRigInspector(active);
-                        } else {
-                            showFeedbackToast(context.targetKind === 'raster'
-                                ? 'このRoot RasterへRIGを設定できません'
-                                : 'このFolderへRIGを設定できません');
-                        }
-                    }
-                    e.stopPropagation();
-                    return;
-                }
-
                 const boneKeyToggle = e.target.closest('.anim-bone-key-toggle');
                 if (boneKeyToggle) {
                     const row = boneKeyToggle.closest('.anim-bone-track-item');
@@ -19921,11 +19874,19 @@ export class AnimationTablePopup {
                     const projection = this._getSelectedCafRigProjection();
                     const context = projection?.folders.find(candidate => candidate.layer.id === rigFolderItem.dataset.folderId);
                     if (context) {
-                        this._selectRigFolderProjectionTarget(context, {
-                            focusRig: !context.bone,
-                            openInspector: e.detail >= 2,
-                            render: e.detail < 2
-                        });
+                        if (context.targetKind === 'raster' && !context.part) {
+                            this._selectRigRasterProjectionTarget(context, {
+                                focusRig: false,
+                                openInspector: false,
+                                render: true
+                            });
+                        } else {
+                            this._selectRigFolderProjectionTarget(context, {
+                                focusRig: false,
+                                openInspector: false,
+                                render: true
+                            });
+                        }
                     }
                     e.stopPropagation();
                     return;
@@ -20100,11 +20061,19 @@ export class AnimationTablePopup {
                     this._syncWorkingLayersForCurrentFrame();
                     const activeProjection = this._getSelectedCafRigProjection(frameIndex);
                     const active = activeProjection?.folders.find(candidate => candidate.layer.id === slot.dataset.folderId);
-                    this._selectRigFolderProjectionTarget(active, {
-                        focusRig: !active?.bone,
-                        openInspector: e.detail >= 2,
-                        render: e.detail < 2
-                    });
+                    if (active?.targetKind === 'raster' && !active.part) {
+                        this._selectRigRasterProjectionTarget(active, {
+                            focusRig: false,
+                            openInspector: false,
+                            render: true
+                        });
+                    } else {
+                        this._selectRigFolderProjectionTarget(active, {
+                            focusRig: false,
+                            openInspector: false,
+                            render: true
+                        });
+                    }
                     e.preventDefault();
                     e.stopPropagation();
                     return;

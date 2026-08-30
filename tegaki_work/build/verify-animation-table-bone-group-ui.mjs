@@ -13,7 +13,7 @@ assert.match(popupSource, /anim-rig-bone-group-timeline-row/);
 assert.match(popupSource, /selectedKeyCountByBoneId/, 'collapse headerへ選択keyを投影する');
 assert.match(popupSource, /\$\{activeIndicator\}\$\{selectedKeyIndicator\}/, 'active Boneと選択keyを同時に通知する');
 
-const toggleBlock = popupSource.match(/const rigBoneGroupToggle[\s\S]*?const rigFolderSetup/)?.[0] || '';
+const toggleBlock = popupSource.match(/const rigBoneGroupToggle[\s\S]*?const boneKeyToggle/)?.[0] || '';
 assert.match(toggleBlock, /_rigBoneGroupCollapsed\.(has|add|delete)/);
 assert.doesNotMatch(toggleBlock, /_clearMotionTimelineKeySelection|setClipRigMotion|history/i, 'collapseは選択・Rig・Historyを変更しない');
 
