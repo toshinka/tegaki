@@ -3,7 +3,7 @@
 作成日: 2026-08-29
 更新日: 2026-08-31
 
-状態: ACTIVE — Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`。Stage A / B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2 checkpoint完了、次はStage D3 static RIG editor host ownership Gate
+状態: CLOSED — Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`。Stage A / B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2 / D3 checkpoint完了。次はPhase 9o Layer Transform Interaction Grammar / Focus Lens Gate
 
 ## 1. 目的
 
@@ -238,7 +238,7 @@ Checkpoint（2026-08-31）:
 - Rasterは`_selectRigRasterProjectionTarget()`、Folder / rigid Rasterは`_selectRigFolderProjectionTarget()`の既存adapterを`focusRig: false / openInspector: false`で再利用した。右RIGの曲げ / 全体 / 親子Setup、CLIP MOTION target strip、Mesh前Boneの`RIGを設定 >`、設定済みBone row / keyは維持した。
 - 全128 verifier、対象JS / verifierの`node --check`、production buildを通過した。BrowserでRaster / Folderの行とcellの単 / double-click前後History不変、Motion非open、右RIGの曲げRIG / 親子RIG入口、CLIP target切替、Table close / reopen、480×800のdocument横overflow 0、console warning / error 0件を確認した。
 
-## 7.9 Stage D3 — Static RIG editor host ownership Gate（限定契約）
+## 7.9 Stage D3 — Static RIG editor host ownership Gate（checkpoint完了）
 
 - 右RIGのprogress / Setup handoffとAnimation Table内の既存static RIG editorが、同一選択target・open / close・return pathを保ったまま一hostへ寄せられるかをinventoryする。
 - 最初はDOM / event / Popup stacking / Canvas overlay / Historyの所有関係を確定し、右dockへの移設とTable外別windowのどちらが既存editor一つを再利用できるか比較する。同等のMesh / Weight / parent / reject / Undoが揃う前にTable内editorを撤去しない。
@@ -249,11 +249,19 @@ Checkpoint（2026-08-31）:
 - production Sliceはmodeから導出するtitle、dialog label、target label、help / close labelと、右RIGのuser-facing handoff文言だけを一致させる。ID、mount先、drag、window位置、tab event、mutation、History、save、Canvas overlayは変更しない。
 - right RIGからRIG modeを開く、`MOTION`へ戻る、`WARP`へ切り替える、close / reopen、Tableを閉じた状態から再入場する、wide / 480×800、History不変、console errorを固定する。Table closeとRIG WORKSPACEのlifecycle完全分離は、現行`hide()`のoverlay / preview cleanup境界を安全に分ける後続Gateまで実装しない。
 
-## 8. 後続Stage
+Checkpoint（2026-08-31）:
+
+- `#animation-motion-window`を唯一のauthoring hostとして維持し、modeから`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`のtitle、dialog / target / help / close labelだけを導出した。右RIGはoverview / next action / handoffのままで、第二editor、第二selection、第二Historyを作っていない。
+- right RIG → RIG WORKSPACE、RIG → Motion → Warp → RIG、close / reopen、Table closedからの再入場をBrowserで確認した。mode切替とhandoffはHistory `1/500`を維持し、window DOMは常に一つだった。
+- 480×800でdocument横overflow 0、1280×720復帰後もoverflow 0、console warning / error 0件を確認した。全129 verifierとproduction buildを通過した。
+- 現RIG WORKSPACEの横長content hierarchy、常設数値欄、button density、`RIG / MOTION / WARP`上位tab、floating / vertical inspector選択は最終UX受入ではない。Phase 9o以降のTransform-first / Focus Lens Gateで再評価する。
+
+## 8. 後続Stage / close判断
 
 - Stage C: C1のRIG対象登録から、既存Animation Table external adapterを再利用してsetup mutationのsurfaceだけを右RIGへ一操作ずつ移す。model logicを一括移動しない。
-- Stage D: D1でMotion内の直接static setupだけを無履歴`RIGを設定 >`へ置換し、D2で未設定Lane入口を選択専用にした。D3は残るstatic editorのhost所有と右RIGからのreturn pathを確定する。同等editorの到達性と受入を確認する前に専用RIG editorを消さない。
+- Stage D: D1でMotion内の直接static setupだけを無履歴`RIGを設定 >`へ置換し、D2で未設定Lane入口を選択専用にした。D3で残るstatic editorのhost所有と右RIGからのreturn pathを確定した。
 - WARP: Bind / GRID / topology / child pivot bindingはRIG、key / interpolation / current Frame poseはAnimation Table。
+- Owner方針変更により、現RIG WORKSPACEをこのPhase内で完成形へ育てずD3 minimal checkpointでcloseする。次は`普通の絵を掴む → 同じ変形へ時間を付ける → 必要時にRIGへ昇格する`順序を検討するPhase 9oを優先する。
 
 ## 9. 非対象 / STOP
 
@@ -280,7 +288,7 @@ UI Sliceではnormal drawing / CAF、Folder parent / Raster bend / Raster whole 
 ## 11. model分担
 
 - Gate、left / right判断、projection contract、Phase closeはSOL / MAX。
-- Stage B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2はcheckpoint完了。Stage D3のstatic editor host ownership、return path、移設単位、Phase close判断はSOL / MAX。
+- Stage B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2 / D3はcheckpoint完了。Phase close判断とPhase 9oへの境界移行はSOL / MAX。
 - mutation、History、selection、schema判断が必要になったらLUNAは変更せずSOLへ返す。
 
 ## 12. Owner UI follow-up / 後続Gateへ保留
@@ -296,3 +304,10 @@ UI Sliceではnormal drawing / CAF、Folder parent / Raster bend / Raster whole 
 - 第一採用D案だけでなく、proposal 17に保存したA current / B Layer統合 / C left RIGと再試行条件、CAF / Lane情報とTable分断の後続懸念、Phase 9nで触らなかった範囲も示す。
 - 現行Phase Archive、proposal 17、projection、right renderer、external adapter、主要verifier、Browser acceptance記録へraw GitHub URLで到達可能にし、Web AIへ評価してほしい論点（入口発見性、誤操作、focus、right / left配置、熟練移行、複数Raster）を明記する。
 - `verify-github-url-index.mjs`で重複・欠損を確認し、外部AIが古いPhase記述を現行仕様と誤認しないことをclose条件とする。
+
+## 14. Close
+
+- Phase 9nはRIG入口の責務再配置、right overview、single static authoring host、Motion return pathを固定してcloseする。
+- schema / solver / evaluator / History semantic / save authorityは変更していない。
+- Table closeとRIG WORKSPACE lifecycle完全分離、現RIG WORKSPACE layoutの磨き込み、TEST POSEはHOLD。Phase 9oのTransform-first Gateへ混ぜない。
+- 外部Web AI reviewは`tegaki_work/GitHubURL.txt`のPhase 9n review indexから、採用D案、保留A / B / C、実装・verifier・未受入UXを追跡する。

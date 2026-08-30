@@ -24,6 +24,7 @@ import {
     resolveDirectionalTransformDragMode
 } from './transform-math.js';
 import { transformAnchorSite } from '../ui/transform-anchor-site.js';
+import { layerTransformBasicOverlay } from '../ui/layer-transform-basic-overlay.js';
 
 export class LayerTransform {
     constructor(config, coordAPI) {
@@ -54,6 +55,7 @@ export class LayerTransform {
         this.onSliderChange = null;
         this.onRebuildRequired = null;
         this.onGetActiveLayer = null;
+        this.onGetTransformWorldCorners = null;
         
         this._lastEmitTime = 0;
         this._emitTimer = null;
@@ -156,6 +158,7 @@ export class LayerTransform {
         this._updateCursor();
         this._initializeTransformForActiveLayer();
         this._showAnchorSite(false);
+        this.syncBasicOverlay();
         document.getElementById('layer-transform-context-note')?.classList.toggle(
             'show',
             this._hasAnimationLayerContext() && this._canTransformActiveAnimationWorkingLayer()
@@ -177,6 +180,7 @@ export class LayerTransform {
             this.transformPanel.classList.remove('show');
         }
         transformAnchorSite.deactivate('layer-transform');
+        layerTransformBasicOverlay.deactivate();
         document.getElementById('layer-transform-anchor-btn')?.classList.remove('active');
         document.getElementById('layer-transform-context-note')?.classList.remove('show');
         
@@ -700,6 +704,18 @@ export class LayerTransform {
         return activated;
     }
 
+    syncBasicOverlay() {
+        if (!this.isVKeyPressed || typeof this.onGetTransformWorldCorners !== 'function') {
+            layerTransformBasicOverlay.deactivate();
+            return false;
+        }
+        return layerTransformBasicOverlay.activate({
+            coordinateSystem: this.coordinateSystem,
+            getWorldCorners: () => this.onGetTransformWorldCorners?.() || [],
+            shouldDisplay: () => this.isVKeyPressed
+        });
+    }
+
     _setupSlider(sliderId, property, min, max, initial, formatCallback) {
         const container = document.getElementById(sliderId);
         if (!container) return;
@@ -902,7 +918,8 @@ export class LayerTransform {
                 e.target.closest('.slider-value') ||
                 e.target.closest('input') ||
                 e.target.closest('.flip-button') ||
-                e.target.closest('button')) {
+                e.target.closest('button') ||
+                e.target.closest('summary')) {
                 return;
             }
             
@@ -1258,6 +1275,7 @@ export class LayerTransform {
             }
         }
         this._sliderInstances.clear();
+        layerTransformBasicOverlay.deactivate();
         
         this.transforms.clear();
     }

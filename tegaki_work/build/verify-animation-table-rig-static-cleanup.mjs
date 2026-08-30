@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../styles/main.css', import.meta.url), 'utf8');
-const phase = readFileSync(new URL('../../task-codex/phase9n.md', import.meta.url), 'utf8');
+const phase = readFileSync(new URL('../../開発用資料保管庫/Archive/phase9n.md', import.meta.url), 'utf8');
 
 const rigSetupStart = source.indexOf('id="anim-rig-context"');
 const motionStart = source.indexOf('id="anim-part-motion-context"', rigSetupStart);

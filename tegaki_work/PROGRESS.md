@@ -4,7 +4,7 @@
 
 ## 現在地
 
-- Phase 5a〜9mを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存し、Owner制作確認の残りは`OWNER_VERIFICATION_BACKLOG.md`へ分離している。
+- Phase 5a〜9nを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存し、Owner制作確認の残りは`OWNER_VERIFICATION_BACKLOG.md`へ分離している。
 - Phase 9bはUI Design Authority / Animation Table Style Boundary Gate。palette / semantic token / component static style / runtime geometry / behavior正本を`UI_DESIGN_AUTHORITY_MAP.md`へ固定し、Phase 9a Playback headerの静的appearanceだけを`styles/components/animation-table-playback.css`へ限定抽出した。DOM / event / ARIA / model / History / save / runtime geometryを維持し、全102 verifier / build / Browser narrow実表示 / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
 - Phase 9cはCanvas-first Visual Language / Skin Baseline Comparison Gate。Gate 1=`GO — B: Warm Canvas-first`とし、最初のproduction componentをAnimation Table Playbackだけへ限定した。中央playを通常32×28px / coarse 44×38pxへ強め、Playback / Range群の枠競争を抑え、設定済みOUTと再生中Playを橙背景＋Futaba茶へ補正した。DOM / event / ARIA / History / save / wheel / runtime geometryを維持し、全103 verifier / build / Browser 1280×720・480×800 / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。QTP / Layer Panelのproduction skinは別Phaseへ分離する。
 - Phase 9dはQTP Canvas-first Surface / Component Style Boundary Gate。narrow再表示のfadeIn scale不整合をlayout寸法 / 座標へ限定補修し、QTP root / header static appearanceだけを`styles/components/quick-access-popup.css`へ一正本化した。geometry / DOM / event / ARIA / storageとPalette / tool / preset / slider / Text / Help / Positionを維持し、全104 verifier / build / Browser 1280×720・480×800 / Q・Position・Help・Text・tool・preset / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
@@ -17,7 +17,8 @@
 - Phase 9kはIntegrated Outer Shell Luminance / Theme Comparison Gate。Owner Gate 0=`GO — D: Floating dark rails`として左右operation railだけをFutaba light-maroon 98→88% gradient、shadowなし、不透明on-dark trash橙`#ffb87e`へ限定接続した。関連4 verifier / 全111 verifier / production build / Browser / console 0件を通過し、Owner visual受入、SOL final review=`A`でcloseした。同じ数値の橙・grayでも周辺明度で知覚が変わる同時対比をStyle Guideへ記録し、actual surface比較と数値contrastを併用する。長時間制作、mouse / pen / touchのSpace＋dragはOwner確認台帳へ分離した。
 - Phase 9lはGate 0=`GO — D: Flat CAF context＋unified layer list`としてcloseした。右Panelは選択CAF一件の薄いcontextとそのinternal Layer / Folderだけを投影し、current targetを橙surface一つで示す。CAF asset列挙とinternal Layer Pointer D&Dを右Panelから外し、CAF順序・階層・複数CAF切替・D&DをAnimation Tableへ寄せた。Folder collapse時の選択focus、visibility / clipping、複数CAF切替、Table close / reopen、全113 verifier、build、Browser、console 0件を通過し、SOL final review=`A`。`1 UI engine / 2 data adapter`、TimelineModel / ClipAsset / DrawingSnapshot、History / saveは維持した。
 - Phase 9mはAnimation Table Utility Split / Low-Zoom LOD Comparison Gate。Stage B `C first`、Playback End、Bottom utility、Clip visual LOD、一行header、固定幅Playback Range、OUT限定I / O、borderless FPS / FRAMES / PREVIEW、Bottom Lucide COPY / DELETEをproduction接続した。Browserのrange / PREVIEW位置不変、I / O設定・解除とCanvas I非干渉、COPY、SVGを確認し、全118 verifier、`node --check`、build、生成物清掃を通過。Ownerが2026-08-29に実画面受入し、SOL final review=`A`でcloseした。Clip Focus、dark top / bottom、Lane濃淡、外枠削減は独立候補として保持する。
-- 現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gate。Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`、Stage A / B / C1〜C6 / D1 / D2はcheckpoint完了した。D1はMotionの直接`AUTO GRIDを作成`を無履歴`RIGを設定 >`へ置換し、D2は未設定Raster / Folder Laneの`RIG設定 / +RIG`と行 / cellのeditor起動を外し、枠なし`RIG未設定: 未設`とtarget / Frame選択だけへ整理した。右RIGの曲げ / 全体 / 親子Setup、CLIP MOTION target lens、Mesh前Boneのhandoff、設定済みBone keyは維持する。全128 verifier、`node --check`、build、BrowserのRaster / Folder行・cellのHistory不変、右RIG到達、480×800・横overflow 0・console 0件を確認した。次はStage D3でstatic RIG editorのhost所有と右RIG return pathをinventoryする。schema / solver / History / save authorityは変更していない。
+- Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gateとしてcloseした。D3で右RIGをoverview / next action / handoff、既存single floating windowをmode別`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`とするhost ownershipを固定した。right RIGからのopen、mode往復、close / reopen、Table closed再入場、History不変、480×800横overflow 0、console 0件、全129 verifier、buildを通過した。schema / solver / History / save authorityは変更していない。現RIG WORKSPACE layoutと上位tab分類は最終UX受入ではない。
+- 現行Phase 9oはLayer Transform Interaction Grammar / Focus Lens Gate。OwnerがGate 1=`GO — D: Tegaki hybrid`を選定した。Stage B1でproduction panelを`BASIC / DISTORT / WARP`とpreciseの`詳細`に整理し、Raster alphaのruntime-only tight boundsと既存matrixからpointer非参加の4 corner + rotate overlayを接続した。DISTORT / WARPはdisabled、既存Move / Shift Rotate / Scale、Anchor、confirm / cancel / Reset、normal / CAF History、save境界は維持する。1280×720のMove / confirm / cancel / Undo / Redo、480×800初期起動の横overflow 0、console 0件を確認し、Stage B1技術proof完了。Owner production visual acceptance待ちで、承認後はinteractive Uniform Scale handleの一Sliceだけへ進む。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -143,18 +144,21 @@
 2. `TEGAKI.md`
 3. 本書
 4. `tegaki_work/NEXT_CHAT_HANDOFF.md`
-5. `task-codex/phase9n.md`
-6. `開発用資料保管庫/proposals/17_RIG・Motion責務再配置Architecture Gate.md`
-7. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
-8. `開発用資料保管庫/proposals/00_計画索引.md`
-9. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
-10. `開発用資料保管庫/proposals/16_制作Workspace・UI・外部Handoff構造ロードマップ.md`
-11. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
-12. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
-13. `開発用資料保管庫/proposals/UI_CSSスタイルガイド.md`
-14. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
+5. `task-codex/phase9o.md`
+6. `開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md`
+7. `開発用資料保管庫/Archive/phase9n.md`
+8. `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`
+9. `開発用資料保管庫/proposals/17_RIG・Motion責務再配置Architecture Gate.md`
+10. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
+11. `開発用資料保管庫/proposals/00_計画索引.md`
+12. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
+13. `開発用資料保管庫/proposals/16_制作Workspace・UI・外部Handoff構造ロードマップ.md`
+14. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
+15. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
+16. `開発用資料保管庫/proposals/UI_CSSスタイルガイド.md`
+17. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
 
-Phase 7i〜9mはclose済み。現行Phase 9nのStage A / B / C1〜C6 / D1 / D2はcheckpoint完了。Owner follow-upとして右Frame stripの二軸ghostをOFF時からTimeline淡色 / Lane茶色、ON時は枠なし橙surfaceへ整理した。CAF / Lane contextとAnimation Tableの知覚的分断はproposal 14の後続UI/UX Gateへ保留する。D2は未設定Raster / Folder Laneを無履歴のtarget / Frame選択と枠なし`RIG未設定: 未設`へ整理し、static Setup入口を右RIGとCLIP MOTIONの明示handoffへ絞った。次はStage D3 static RIG editor host ownership Gateとして、右RIGとTable内editorのDOM / event / return path / History所有を監査する。同等editorが成立する前にTable内RIG editorを削除しない。Clip Focus、dark top / bottom、Lane濃淡、外枠削減を並走実装しない。
+Phase 7i〜9nはclose済み。Phase 9n D3はright overview + single floating authoring hostを固定し、現RIG WORKSPACE layoutを最終UX受入しない条件でcloseした。現行Phase 9oはTransform-first / Focus Lens Gate。Gate 1=`GO — D: Tegaki hybrid`、Stage B1 BASIC shell + read-only overlayの技術proofは完了した。次はOwner production visual acceptance、承認後はinteractive Uniform Scale handleの一Slice。A / B / Cは不満時の再試行fixtureとして保持し、schema、Drawing Warp、Animation bridge、RIG再配置を並走しない。
 
 ## 資料
 
@@ -249,5 +253,7 @@ Phase 7i〜9mはclose済み。現行Phase 9nのStage A / B / C1〜C6 / D1 / D2�
 - Phase 9k完了: `開発用資料保管庫/Archive/phase9k.md`
 - Phase 9l完了: `開発用資料保管庫/Archive/phase9l.md`
 - Phase 9m完了: `開発用資料保管庫/Archive/phase9m.md`
+- Phase 9n完了: `開発用資料保管庫/Archive/phase9n.md`
+- Transform / Warp / Animation / RIG Focus Lens提案: `開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md`
 - 次チャット引き継ぎ: `tegaki_work/NEXT_CHAT_HANDOFF.md`
-- 現行Phase: `task-codex/phase9n.md`（RIG / Motion Responsibility / Contextual Right RIG Inspector Gate / Stage A・B・C1・C2・C3・C4・C5 checkpoint完了、次はStage C6 Pre-Mesh Bone candidate focus / Raster onboarding Gate）
+- 現行Phase: `task-codex/phase9o.md`（Gate 1=`GO — D: Tegaki hybrid` / Stage B1 BASIC read-only overlay技術proof完了 / Owner production visual acceptance待ち）

@@ -5,9 +5,9 @@
 用途: CODEX 比較 fixture / Architecture Gate 用  
 前提: 既存 Phase 8d / 9l の正本・History・save schema・solver を維持し、UI責務だけを比較する。
 
-保管方針: Phase 9n Gate 0はDを第一採用したが、A / B / Cを削除しない。production評価で右dock切替に不満が出た場合、left配置を含む再比較の原案として本書へ戻る。現行の限定実装契約は`task-codex/phase9n.md`を優先する。
+保管方針: Phase 9n Gate 0はDを第一採用したが、A / B / Cを削除しない。production評価で右dock切替に不満が出た場合、left配置を含む再比較の原案として本書へ戻る。Phase 9nの完了契約は`開発用資料保管庫/Archive/phase9n.md`、現行判断は`task-codex/phase9o.md`を優先する。
 
-進捗: Stage A / B / C1〜C6 / D1 / D2はcheckpoint完了。右RIGへFolder親子、Raster全体PIVOT / 曲げ、PIVOT / PARENT、BONE / MESH / WEIGHT / STALE、Mesh前runtime focusと既存editor handoffを接続した。D1はMotionの直接`AUTO GRIDを作成`だけを無履歴`RIGを設定 >`へ置換し、D2は未設定Raster / Folder Laneからstatic Setup起動とmutationを外し、target / Frame選択と枠なし`RIG未設定: 未設`だけを残した。CLIP MOTION target stripはfocus lens、右RIGはstatic Setup入口として維持する。次はD3として残るstatic RIG editorのhost所有と右RIG return pathを監査する。保存owner、第二setup state、Mesh / Weight algorithm、新しいmutationは同時実装しない。Phase 9n close時は`GitHubURL.txt`を、外部Web AIが最終RIG導線、D案と保留3案、再試行条件、実装・検証入口、評価論点を単独追跡できるreview indexへ更新する。
+進捗: Phase 9nはStage A / B / C1〜C6 / D1〜D3をcheckpointし、2026-08-31にcloseした。右RIGへFolder親子、Raster全体PIVOT / 曲げ、PIVOT / PARENT、BONE / MESH / WEIGHT / STALE、Mesh前runtime focusと既存editor handoffを接続した。D1はMotionの直接`AUTO GRIDを作成`だけを無履歴`RIGを設定 >`へ置換し、D2は未設定Raster / Folder Laneからstatic Setup起動とmutationを外した。D3は右RIGをoverview / handoff、既存single floating windowをmode別`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`とするhost ownershipを固定した。現RIG WORKSPACEのlayoutと上位tab分類は最終UX受入ではなく、Phase 9o Transform-first / Focus Lens Gateで再評価する。`GitHubURL.txt`は外部Web AIが最終RIG導線、D案と保留3案、実装・検証入口、未受入UXを単独追跡できるreview indexへ更新した。
 
 ---
 
@@ -764,7 +764,9 @@ Stage D1 checkpoint（2026-08-31）では、右RIGがまだstatic mutationの同
 
 D2 checkpoint（2026-08-31）では、未設定Raster / Folder Laneの`RIG設定 / +RIG`と行 / Timeline cellのstatic editor起動を撤去した。Laneは枠なし`RIG未設定: 未設`、target / Frame選択のみとし、Historyは増やさない。CLIP MOTION target stripはeditor内focus lens、右RIGは曲げ / 全体 / 親子Setup入口として維持した。
 
-次のD3は残るstatic RIG editorのhost所有を監査する。DOM / event / Popup stacking / Canvas overlay / return path / Historyを対応付け、右dockへの移設とTable外別windowを比較する。Bone / Mesh / Weight / parent / reject / Undoが同一editorで成立する前にTable内editorを撤去しない。
+D3 checkpoint（2026-08-31）では、`#anim-rig-context`がTable panelの子ではなくoverlay rootへmountされた`#animation-motion-window`の一modeであることを固定した。右dockへのfull editor複製は第二authoring surfaceとnested scrollを生むため`NO-GO`。既存single windowを`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`へmode投影し、右RIGはoverview / next action / handoffに限定した。全129 verifier、build、right RIGからのopen、mode往復、close / reopen、Table closed再入場、History不変、480×800 overflow 0、console 0件を通過した。
+
+Owner方針変更により、D3 minimal host ownershipでPhase 9nをcloseした。Table closeとworkspace lifecycle完全分離、現RIG WORKSPACEの横長layout / 数値欄 / button density / top-level tabsの磨き込みは行わず、Phase 9oのTransform-first / Focus Lens比較後に必要性から再評価する。
 
 ---
 

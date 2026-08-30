@@ -5,7 +5,7 @@ const [renderer, css, table, phase] = await Promise.all([
     readFile(new URL('../ui/layer-panel-renderer.js', import.meta.url), 'utf8'),
     readFile(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8'),
     readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9n.md', import.meta.url), 'utf8')
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9n.md', import.meta.url), 'utf8')
 ]);
 
 assert.match(

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const popup = readFileSync(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8');
 const renderer = readFileSync(new URL('../ui/layer-panel-renderer.js', import.meta.url), 'utf8');
-const phase = readFileSync(new URL('../../task-codex/phase9n.md', import.meta.url), 'utf8');
+const phase = readFileSync(new URL('../../開発用資料保管庫/Archive/phase9n.md', import.meta.url), 'utf8');
 
 assert.equal((popup.match(/this\.motionPanel\.id = 'animation-motion-window'/g) || []).length, 1,
     'RIG / Motion / WARPは一つのfloating editor DOMを共有する');

@@ -386,6 +386,35 @@ export const DOMBuilder = (function() {
         header.appendChild(flipGroup);
         panel.appendChild(header);
 
+        const modeStrip = createElement('div', {
+            className: 'layer-transform-mode-strip',
+            attributes: { role: 'tablist', 'aria-label': 'レイヤー変形モード' }
+        });
+        modeStrip.appendChild(createElement('button', {
+            className: 'layer-transform-mode-btn active',
+            textContent: 'BASIC',
+            attributes: { type: 'button', role: 'tab', 'aria-selected': 'true' }
+        }));
+        modeStrip.appendChild(createElement('button', {
+            className: 'layer-transform-mode-btn',
+            textContent: 'DISTORT',
+            title: 'BASIC Transform受入後の後続Stage',
+            attributes: { type: 'button', role: 'tab', 'aria-selected': 'false', disabled: '' }
+        }));
+        modeStrip.appendChild(createElement('button', {
+            className: 'layer-transform-mode-btn',
+            textContent: 'WARP',
+            title: 'BASIC Transform受入後の後続Stage。Rig Meshとは別のLayer Warp',
+            attributes: { type: 'button', role: 'tab', 'aria-selected': 'false', disabled: '' }
+        }));
+        panel.appendChild(modeStrip);
+
+        const preciseDetails = createElement('details', {
+            className: 'layer-transform-precise'
+        });
+        preciseDetails.appendChild(createElement('summary', {
+            textContent: '詳細 — 数値で正確に調整'
+        }));
         const sections = createElement('div', { className: 'panel-sections' });
 
         const posSection = createElement('div', { className: 'panel-section' });
@@ -436,7 +465,8 @@ export const DOMBuilder = (function() {
         transSection.appendChild(transGroup);
         sections.appendChild(transSection);
 
-        panel.appendChild(sections);
+        preciseDetails.appendChild(sections);
+        panel.appendChild(preciseDetails);
         return panel;
     }
 
