@@ -981,6 +981,13 @@ canvas {
     stroke: currentColor;
 }
 
+.clip-layer-mirror-rig-badge[data-rig-status="stale"],
+.clip-layer-mirror-rig-badge[data-rig-status="conflict"] {
+    color: var(--futaba-maroon);
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-cream));
+}
+
 .layer-panel-inline-name-input {
     min-width: 0;
     width: 100%;
@@ -1131,8 +1138,8 @@ canvas {
 }
 
 .frame-lane-reference-btn.is-active {
-    background: var(--futaba-light-maroon);
-    color: var(--futaba-background);
+    background: var(--ui-layer-surface-focus);
+    color: var(--futaba-maroon);
 }
 
 .frame-lane-reference-btn svg {
@@ -1147,16 +1154,16 @@ canvas {
     align-items: center;
     justify-content: center;
     background: rgba(255, 244, 230, 0.62);
-    border: 1px solid rgba(255, 140, 66, 0.52);
+    border: none;
     border-radius: 6px;
-    color: #9a5a26;
+    color: var(--futaba-medium);
     cursor: pointer;
     transition: all 0.15s;
     position: relative;
 }
 
 .frame-timeline-onion-btn:hover { background: rgba(231, 177, 111, 0.38); transform: scale(1.08); }
-.frame-timeline-onion-btn.is-active { background: rgba(255, 140, 66, 0.20); border-color: var(--active-border); color: var(--futaba-maroon); }
+.frame-timeline-onion-btn.is-active { background: var(--ui-layer-surface-focus); color: var(--futaba-maroon); }
 .frame-timeline-onion-btn svg { width: var(--ui-frame-icon-size); height: var(--ui-frame-icon-size); }
 .frame-onion-count {
     display: none;
@@ -1283,6 +1290,41 @@ canvas {
     padding-top: 0;
 }
 
+.layer-panel-context-view-switch {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    width: 100%;
+}
+
+.layer-panel-context-view-button svg {
+    width: 12px;
+    height: 12px;
+}
+
+.context-rig-inspector {
+    width: 100%;
+}
+
+.context-rig-register-button {
+    width: 100%;
+}
+
+.context-rig-inspector-target {
+    white-space: nowrap;
+}
+
+.context-rig-inspector-icon,
+.context-rig-inspector-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.layer-panel-container.layer-panel-container--rig-view .layer-controls-row {
+    visibility: hidden;
+    pointer-events: none;
+}
+
 .layer-panel-items.layer-panel-items--scrollable {
     padding-right: 11px; /* スクロールバーの幅に合わせて調整 */
     scrollbar-gutter: stable;
@@ -1357,6 +1399,11 @@ canvas {
         --ui-transform-slider-group-height: 46px;
         --ui-transform-slider-row-height: 22px;
         --ui-transform-slider-width: 80px;
+    }
+
+    .layer-panel-context-view-button svg {
+        width: 16px;
+        height: 16px;
     }
 
     .sidebar {

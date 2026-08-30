@@ -7,7 +7,7 @@ const [renderer, mainCss, componentCss, table, phase, followupPhase] = await Pro
     readFile(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8'),
     readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
     readFile(new URL('../../開発用資料保管庫/Archive/phase9l.md', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9m.md', import.meta.url), 'utf8')
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9m.md', import.meta.url), 'utf8')
 ]);
 
 const focusedProjectionStart = renderer.indexOf('_resolveFocusedCafProjectionGroup(');

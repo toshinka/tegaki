@@ -13,7 +13,7 @@ const [tegaki, styleGuide, proposal, phase, authorityMap] = await Promise.all([
     readFile(new URL('../../TEGAKI.md', import.meta.url), 'utf8'),
     readFile(new URL('../../開発用資料保管庫/proposals/UI_CSSスタイルガイド.md', import.meta.url), 'utf8'),
     readFile(new URL('../../開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9m.md', import.meta.url), 'utf8'),
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9m.md', import.meta.url), 'utf8'),
     readFile(new URL('../UI_DESIGN_AUTHORITY_MAP.md', import.meta.url), 'utf8')
 ]);
 

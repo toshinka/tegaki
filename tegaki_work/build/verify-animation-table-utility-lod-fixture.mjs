@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 const [fixture, phase, table, wheelHelper, selectedActions, githubUrls] = await Promise.all([
     readFile(new URL('./phase9m-animation-table-utility-lod-fixture.html', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9m.md', import.meta.url), 'utf8'),
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9m.md', import.meta.url), 'utf8'),
     readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
     readFile(new URL('../system/animation/timeline-wheel-routing.js', import.meta.url), 'utf8'),
     readFile(new URL('./verify-animation-table-selected-clip-actions.mjs', import.meta.url), 'utf8'),
