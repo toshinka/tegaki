@@ -25,10 +25,12 @@ import {
     summarizeRasterSnapshotMemory
 } from './raster-snapshot-memory.js';
 import {
+    calculateOpaqueRasterBounds,
     normalizeRasterBounds,
     normalizeRasterSnapshot,
     resolveCanvasResizeOffset,
     translateRasterBounds,
+    unionRasterBounds,
     validateRasterSurfaceSize
 } from './raster-bounds.js';
 import {
@@ -36,6 +38,7 @@ import {
     applyTransformMatrix,
     createCenteredTransformMatrix
 } from './transform-math.js';
+import { createTransformBoundsWorldCorners } from './transform-overlay-geometry.js';
 import {
     CLIPPING_MODES,
     applyClippingMode,
@@ -2982,6 +2985,9 @@ export class LayerSystem {
         this.transform.onGetActiveLayer = () => {
             return this.getActiveLayer();
         };
+        this.transform.onGetTransformWorldCorners = () => {
+            return this._getLayerTransformWorldCorners();
+        };
         this.transform.onRebuildRequired = (layer, paths) => {
             this.safeRebuildLayer(layer, paths);
         };
@@ -3091,9 +3097,46 @@ export class LayerSystem {
         this._layerTransformSession = {
             layerId,
             transform: structuredClone(transform),
+            sourceBounds: this._resolveLayerTransformSourceBounds(activeLayer),
             targetLayerTransforms: this._captureFolderTargetTransformState(activeLayer)
         };
         this.transform.enterMoveMode();
+        this.transform.syncBasicOverlay?.();
+    }
+
+    _getRasterTransformSourceBounds(layer) {
+        const renderTexture = layer?.layerData?.renderTexture;
+        if (!renderTexture) return null;
+        const fallback = normalizeRasterBounds(layer.layerData.rasterBounds, {
+            width: renderTexture.width,
+            height: renderTexture.height
+        });
+        const snapshot = this.createLayerRasterSnapshot(layer);
+        return calculateOpaqueRasterBounds(snapshot) || fallback;
+    }
+
+    _resolveLayerTransformSourceBounds(layer) {
+        if (!layer?.layerData) return null;
+        if (!layer.layerData.isFolder) return this._getRasterTransformSourceBounds(layer);
+        return unionRasterBounds(
+            this._getFolderRasterLayers(layer).map(target => (
+                this._getRasterTransformSourceBounds(target)
+            ))
+        );
+    }
+
+    _getLayerTransformWorldCorners() {
+        const session = this._layerTransformSession;
+        if (!session?.sourceBounds || !session.layerId) return [];
+        const transform = this.transform?.getTransform?.(session.layerId) || session.transform;
+        return createTransformBoundsWorldCorners(
+            session.sourceBounds,
+            transform,
+            {
+                width: this.config?.canvas?.width,
+                height: this.config?.canvas?.height
+            }
+        );
     }
 
     _isFolderWithRasterTargets(folderLayer) {

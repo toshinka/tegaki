@@ -1,7 +1,7 @@
 # Owner実機確認バックログ
 
-更新日: 2026-08-28
-状態: ACTIVE — Phase 7i〜9lはclose済み、Owner制作環境では未確認項目あり
+更新日: 2026-08-31
+状態: ACTIVE — Phase 7i〜9nはclose済み、Owner制作環境では未確認項目あり
 
 ## 目的
 
@@ -13,7 +13,22 @@ SOLの実装監査・固定verifier・Browser確認でcloseした機能につい
 
 ## 未確認項目
 
-### Phase 9m — Layer Panel frosted compact / Animation Table utility follow-up（技術checkpoint・Phase open）
+### Phase 9o — Layer Transform D / BASIC production visual acceptance
+
+- OwnerはStage A1でD Tegaki hybridを選定し、Gate 1=`GO — D: Tegaki hybrid`。productionで`V`を開き、絵がpanelより主役に見え、content-tight box / 4 corner / rotate / Anchorの役割と存在感が過剰でないかを確認する。
+- `BASIC / DISTORT / WARP`の注意水位、preciseの初期closed `詳細`、disabledのDISTORT / WARPが未実装操作を過剰に約束せず、BASICの焦点を強めるかを評価する。
+- mouse / pen / touch相当で既存Move / Shift Rotate / Scale / Anchor、confirm / cancel / Resetを操作し、read-only overlayが邪魔しないことを確認する。
+- A / B / Cも再試行候補としてfixtureと`task-codex/phase9o.md`へ保持した。D選定後に不満が出た場合は、同じ比較条件へ戻して再評価する。
+- SOL Browserでは1280×720のMove / confirm / cancel / Undo / Redo、480×800初期起動、横overflow 0、console 0件を確認した。この技術proofはOwnerの注意量・遮蔽・触り心地のvisual acceptanceを代替しない。
+- Owner acceptance後の次Sliceはinteractive Uniform Scale handleだけ。Rotate / Anchor gesture、DISTORT / WARP、Animation bridgeは並走しない。
+
+### Phase 9n — RIG / Motion responsibility / single RIG WORKSPACE（技術close後）
+
+- SOL Browserではright RIG → `RIG WORKSPACE`、RIG / Motion / Warp往復、close / reopen、Table closed再入場、History不変、480×800横overflow 0、console 0件、全129 verifier / buildを確認した。
+- Owner / 外部Web AIは、right RIG overviewからstatic authoring hostへ迷わず移れるか、LayerとRIG切替回数、left / right配置、複数Raster時の対象理解、Motionへ戻る手掛かりを評価する。
+- current RIG WORKSPACEの横長layout、常設数値欄、button density、`RIG / MOTION / WARP`上位tab、floating / vertical inspector選択は最終UX受入ではない。Phase 9o Transform-first / Focus Lens比較前に作り込まない。
+
+### Phase 9m — Layer Panel frosted compact / Animation Table utility follow-up（技術close後）
 
 - 明るい絵 / 暗い絵、wide / narrowで、Frame control＋CAF / Lane contextが128px幅の一つの上下接続stackとして読め、28px row / 20px thumbnail、shadowなしの磨りガラスsurfaceがCanvasを過度に隠さないことを確認する。
 - current Layerの54%橙surfaceが攻撃的すぎず、橙がthumbnail上下へ連続しながら20px hit内の18px contentは無着色であること。0pxのmeta/name gap、3pxのrow列間、outlineを外したclip / visibility action、背景rowとのcompact基準が読め、Folder子の縦線がrow端で半端に切れないこと。

@@ -6,7 +6,7 @@ const [renderer, css, mainCss, domBuilder, phase] = await Promise.all([
     readFile(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8'),
     readFile(new URL('../styles/main.css', import.meta.url), 'utf8'),
     readFile(new URL('../ui/dom-builder.js', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9n.md', import.meta.url), 'utf8')
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9n.md', import.meta.url), 'utf8')
 ]);
 
 for (const token of [
@@ -22,7 +22,7 @@ for (const token of [
     "inspector.setAttribute('role', 'region')",
     'context-rig-inspector-target',
     'context-rig-inspector-status',
-    'Animation Table > RIG'
+    'RIG WORKSPACE'
 ]) {
     assert.ok(renderer.includes(token), `right RIG shell must include ${token}`);
 }
@@ -41,6 +41,11 @@ assert.doesNotMatch(
     renderer,
     /_rigSelected(?:Asset|Layer|Clip)|localStorage|sessionStorage/u,
     'Stage B must not create a second target selection or saved view state'
+);
+assert.doesNotMatch(
+    renderer,
+    /Animation TableのRIG設定/u,
+    'right RIG handoff copy must name the single RIG WORKSPACE host'
 );
 
 for (const token of [

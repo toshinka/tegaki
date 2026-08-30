@@ -6,7 +6,7 @@ const [renderer, table, componentCss, mainCss, phase] = await Promise.all([
     readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
     readFile(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8'),
     readFile(new URL('../styles/main.css', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9n.md', import.meta.url), 'utf8')
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9n.md', import.meta.url), 'utf8')
 ]);
 
 for (const token of [

@@ -5,7 +5,7 @@ import { createRigAuthoringStatusProjection } from '../system/animation/rig-auth
 const [table, renderer, phase] = await Promise.all([
     readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
     readFile(new URL('../ui/layer-panel-renderer.js', import.meta.url), 'utf8'),
-    readFile(new URL('../../task-codex/phase9n.md', import.meta.url), 'utf8')
+    readFile(new URL('../../開発用資料保管庫/Archive/phase9n.md', import.meta.url), 'utf8')
 ]);
 
 const asset = {

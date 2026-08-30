@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 9o Layer Transform Interaction Grammar Comparison</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #7b1717;
+      --ink-strong: #5f1010;
+      --ink-soft: #a34b43;
+      --paper: #ffffee;
+      --paper-warm: #fff7df;
+      --surface: #f6e7d5;
+      --surface-deep: #ead1bf;
+      --surface-dark: #9a3d36;
+      --surface-dark-deep: #7b1717;
+      --line: #dca79a;
+      --line-soft: #edd4c8;
+      --orange: #ff7a32;
+      --orange-soft: #ffd0a7;
+      --orange-pale: #fff0da;
+      --setup: #3477a8;
+      --setup-soft: #d8eaf4;
+      --success: #52784d;
+      --canvas: #fffbea;
+      --shadow: rgba(123, 23, 23, 0.14);
+      --wash: rgba(255, 255, 238, 0.74);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", sans-serif;
+    }
+
+    button,
+    summary {
+      font: inherit;
+    }
+
+    button {
+      color: var(--ink);
+      background: var(--paper-warm);
+      border: 1px solid var(--line);
+    }
+
+    button:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid var(--orange);
+      outline-offset: 2px;
+    }
+
+    .phase-page {
+      width: min(1540px, 100%);
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .page-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .eyebrow,
+    .candidate-code,
+    .micro-label {
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    .eyebrow {
+      margin: 0 0 4px;
+      color: var(--orange);
+      font-size: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--ink-strong);
+      font-size: clamp(20px, 2.1vw, 32px);
+      line-height: 1.12;
+    }
+
+    .page-lead {
+      margin: 7px 0 0;
+      max-width: 920px;
+      color: var(--ink-soft);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .fixture-status {
+      display: grid;
+      justify-items: end;
+      gap: 4px;
+      color: var(--ink-soft);
+      font-size: 11px;
+      text-align: right;
+    }
+
+    .fixture-status strong {
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: var(--orange-pale);
+      color: var(--ink);
+    }
+
+    .task-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      background: var(--surface-dark-deep);
+      color: var(--paper);
+      font-size: 12px;
+    }
+
+    .task-strip strong {
+      color: var(--orange-soft);
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(260px, 1fr));
+      gap: 10px;
+    }
+
+    .candidate {
+      min-width: 0;
+      overflow: hidden;
+      border-radius: 14px;
+      background: var(--surface);
+      box-shadow: 0 6px 18px var(--shadow);
+    }
+
+    .candidate-header {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 9px;
+      align-items: center;
+      min-height: 62px;
+      padding: 9px 10px;
+      background: var(--paper-warm);
+    }
+
+    .candidate-code {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--surface-dark);
+      color: var(--paper);
+      font-size: 15px;
+    }
+
+    .candidate[data-option="tegaki-hybrid"] .candidate-code {
+      background: var(--orange);
+      color: var(--ink-strong);
+    }
+
+    .candidate-title {
+      margin: 0;
+      color: var(--ink-strong);
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .candidate-summary {
+      margin: 3px 0 0;
+      color: var(--ink-soft);
+      font-size: 10px;
+      line-height: 1.3;
+    }
+
+    .transform-workspace {
+      position: relative;
+      min-height: 304px;
+      padding: 9px;
+      background: var(--surface-deep);
+    }
+
+    .canvas {
+      position: relative;
+      height: 188px;
+      overflow: hidden;
+      border-radius: 9px;
+      background-color: var(--canvas);
+      background-image:
+        linear-gradient(rgba(220, 167, 154, 0.24) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(220, 167, 154, 0.24) 1px, transparent 1px);
+      background-size: 24px 24px;
+      touch-action: none;
+    }
+
+    .canvas-task {
+      position: absolute;
+      top: 7px;
+      left: 8px;
+      z-index: 9;
+      margin: 0;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: var(--wash);
+      color: var(--ink-soft);
+      font-size: 9px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    .transform-target {
+      position: absolute;
+      left: 50%;
+      top: 54%;
+      width: 96px;
+      height: 112px;
+      translate: -50% -50%;
+      transform: rotate(-4deg);
+      transform-origin: 50% 58%;
+    }
+
+    .artwork {
+      position: absolute;
+      inset: 5px 9px 7px;
+      overflow: hidden;
+      border-radius: 46% 46% 34% 34%;
+      background: var(--orange-soft);
+      box-shadow: inset 0 -18px 0 #db8b77;
+    }
+
+    .artwork::before {
+      content: "";
+      position: absolute;
+      left: 21px;
+      top: 13px;
+      width: 38px;
+      height: 38px;
+      border-radius: 48% 48% 43% 43%;
+      background: #f1c2a5;
+      box-shadow: 0 -8px 0 #8a3631;
+    }
+
+    .artwork::after {
+      content: "";
+      position: absolute;
+      left: 27px;
+      top: 31px;
+      width: 25px;
+      height: 8px;
+      border-bottom: 2px solid var(--ink);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 4px 1px, var(--ink) 0 2px, transparent 2.5px),
+        radial-gradient(circle at 21px 1px, var(--ink) 0 2px, transparent 2.5px);
+    }
+
+    .transform-box {
+      position: absolute;
+      inset: 0;
+      border: 1px solid var(--orange);
+      pointer-events: none;
+    }
+
+    .handle {
+      position: absolute;
+      z-index: 4;
+      width: 12px;
+      height: 12px;
+      padding: 0;
+      border: 2px solid var(--ink);
+      border-radius: 50%;
+      background: var(--paper);
+      color: var(--ink);
+      translate: -50% -50%;
+      pointer-events: auto;
+    }
+
+    .handle::before,
+    .rotate-handle::before,
+    .anchor-handle::before {
+      content: "";
+      position: absolute;
+      inset: -13px;
+    }
+
+    .handle[data-handle="north-west"] { left: 0; top: 0; }
+    .handle[data-handle="north"] { left: 50%; top: 0; }
+    .handle[data-handle="north-east"] { left: 100%; top: 0; }
+    .handle[data-handle="east"] { left: 100%; top: 50%; }
+    .handle[data-handle="south-east"] { left: 100%; top: 100%; }
+    .handle[data-handle="south"] { left: 50%; top: 100%; }
+    .handle[data-handle="south-west"] { left: 0; top: 100%; }
+    .handle[data-handle="west"] { left: 0; top: 50%; }
+
+    .rotate-handle {
+      position: absolute;
+      left: 50%;
+      top: -25px;
+      z-index: 4;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 1px solid var(--orange);
+      border-radius: 50%;
+      background: var(--orange-pale);
+      color: var(--ink);
+      translate: -50% -50%;
+      pointer-events: auto;
+    }
+
+    .rotate-handle::after {
+      content: "↻";
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 100%;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .rotate-stem {
+      position: absolute;
+      left: 50%;
+      top: -16px;
+      width: 1px;
+      height: 16px;
+      background: var(--orange);
+      translate: -50% 0;
+    }
+
+    .anchor-handle {
+      position: absolute;
+      left: 50%;
+      top: 58%;
+      z-index: 5;
+      width: 16px;
+      height: 16px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background:
+        linear-gradient(var(--setup), var(--setup)) center / 2px 100% no-repeat,
+        linear-gradient(90deg, var(--setup), var(--setup)) center / 100% 2px no-repeat;
+      color: var(--setup);
+      translate: -50% -50%;
+      pointer-events: auto;
+    }
+
+    .anchor-handle::after {
+      content: "";
+      position: absolute;
+      inset: 3px;
+      border: 1px solid var(--setup);
+      border-radius: 50%;
+    }
+
+    .current-site {
+      position: absolute;
+      left: 50%;
+      top: 58%;
+      width: 22px;
+      height: 22px;
+      border: 1px solid var(--setup);
+      border-radius: 50%;
+      background: var(--setup-soft);
+      color: var(--setup);
+      translate: -50% -50%;
+    }
+
+    .current-site::before,
+    .current-site::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      background: var(--setup);
+      translate: -50% -50%;
+    }
+
+    .current-site::before { width: 14px; height: 2px; }
+    .current-site::after { width: 2px; height: 14px; }
+
+    .gesture-pill {
+      position: absolute;
+      right: 7px;
+      bottom: 7px;
+      z-index: 8;
+      padding: 4px 6px;
+      border-radius: 6px;
+      background: var(--surface-dark-deep);
+      color: var(--paper);
+      font-size: 9px;
+      line-height: 1.35;
+      text-align: right;
+    }
+
+    .mode-strip {
+      display: flex;
+      gap: 3px;
+      padding: 6px 0 7px;
+      overflow-x: auto;
+      scrollbar-color: var(--line) var(--surface-deep);
+    }
+
+    .mode-button {
+      flex: 1 0 auto;
+      min-height: 28px;
+      padding: 4px 6px;
+      border-color: transparent;
+      border-radius: 7px;
+      background: var(--paper-warm);
+      color: var(--ink-soft);
+      font-size: 10px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .mode-button:hover {
+      background: var(--orange-pale);
+      color: var(--ink);
+    }
+
+    .mode-button[aria-selected="true"] {
+      background: var(--orange);
+      color: var(--ink-strong);
+    }
+
+    .control-panel {
+      min-height: 98px;
+      padding: 8px;
+      border-radius: 0 0 9px 9px;
+      background: var(--paper-warm);
+    }
+
+    .control-panel.with-strip {
+      padding-top: 0;
+    }
+
+    .value-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px;
+    }
+
+    .value-control {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      padding: 5px 6px;
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink-soft);
+      font-size: 9px;
+    }
+
+    .value-control output {
+      color: var(--ink);
+      font-weight: 800;
+    }
+
+    .secondary-actions,
+    .mode-help {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      align-items: center;
+      margin-top: 6px;
+      color: var(--ink-soft);
+      font-size: 9px;
+    }
+
+    .quiet-button {
+      min-height: 25px;
+      padding: 3px 7px;
+      border-color: transparent;
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    details.precise-controls {
+      margin-top: 5px;
+      border-radius: 7px;
+      background: var(--surface);
+    }
+
+    details.precise-controls summary {
+      min-height: 27px;
+      padding: 6px 8px;
+      color: var(--ink);
+      font-size: 9px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    details.precise-controls .value-grid {
+      padding: 0 6px 7px;
+    }
+
+    .attention-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 7px;
+      align-items: center;
+      margin-top: 7px;
+      color: var(--ink-soft);
+      font-size: 9px;
+    }
+
+    .attention-track {
+      height: 5px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: var(--line-soft);
+    }
+
+    .attention-track span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--orange);
+    }
+
+    [data-option="current"] .attention-track span { width: 56%; }
+    [data-option="csp-like"] .attention-track span { width: 70%; }
+    [data-option="procreate-like"] .attention-track span { width: 84%; }
+    [data-option="tegaki-hybrid"] .attention-track span { width: 64%; }
+
+    .warp-grid {
+      position: absolute;
+      inset: 0;
+      display: none;
+      background-image:
+        linear-gradient(rgba(255, 122, 50, 0.72) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 122, 50, 0.72) 1px, transparent 1px);
+      background-size: 33.333% 33.333%;
+      pointer-events: none;
+    }
+
+    .distort-corner {
+      display: none;
+    }
+
+    [data-transform-mode="distort"] .distort-corner {
+      display: block;
+      border-radius: 2px;
+      background: var(--setup-soft);
+      border-color: var(--setup);
+    }
+
+    [data-transform-mode="warp"] .warp-grid {
+      display: block;
+    }
+
+    [data-transform-mode="warp"] .handle,
+    [data-transform-mode="warp"] .rotate-handle,
+    [data-transform-mode="warp"] .rotate-stem,
+    [data-transform-mode="warp"] .anchor-handle {
+      display: none;
+    }
+
+    [data-option="procreate-like"] .warp-grid {
+      display: none;
+    }
+
+    [data-option="procreate-like"][data-transform-mode="warp"] .warp-grid {
+      display: block;
+    }
+
+    .mode-specific {
+      display: none;
+      margin-top: 5px;
+      padding: 6px;
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink-soft);
+      font-size: 9px;
+    }
+
+    [data-option="tegaki-hybrid"][data-transform-mode="warp"] [data-mode-panel="warp"],
+    [data-option="tegaki-hybrid"][data-transform-mode="distort"] [data-mode-panel="distort"] {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .candidate-notes {
+      min-height: 68px;
+      padding: 8px 10px 10px;
+      background: var(--surface);
+      color: var(--ink-soft);
+      font-size: 9px;
+      line-height: 1.45;
+    }
+
+    .candidate-notes strong {
+      color: var(--ink);
+    }
+
+    .candidate-notes p {
+      margin: 0;
+    }
+
+    .candidate-notes p + p {
+      margin-top: 3px;
+    }
+
+    .authority-section {
+      margin-top: 13px;
+      padding: 12px;
+      border-radius: 12px;
+      background: var(--paper-warm);
+      box-shadow: 0 4px 14px var(--shadow);
+    }
+
+    .authority-heading {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px 14px;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .authority-heading h2 {
+      margin: 0;
+      color: var(--ink-strong);
+      font-size: 15px;
+    }
+
+    .authority-heading p {
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: 10px;
+    }
+
+    .boundary-callout {
+      padding: 5px 8px;
+      border-radius: 7px;
+      background: var(--setup-soft);
+      color: var(--setup);
+      font-weight: 800;
+    }
+
+    .authority-table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 820px;
+      border-collapse: collapse;
+      color: var(--ink);
+      font-size: 10px;
+    }
+
+    th,
+    td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--line-soft);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface);
+      color: var(--ink-strong);
+      font-weight: 800;
+    }
+
+    td:first-child {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .gate-footer {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px 16px;
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 9px;
+      background: var(--surface-dark-deep);
+      color: var(--paper);
+      font-size: 10px;
+    }
+
+    .gate-footer strong {
+      color: var(--orange-soft);
+    }
+
+    @media (max-width: 1180px) {
+      .comparison-grid {
+        grid-template-columns: repeat(2, minmax(260px, 1fr));
+      }
+    }
+
+    @media (max-width: 680px) {
+      .phase-page {
+        padding: 10px;
+      }
+
+      .page-header {
+        grid-template-columns: 1fr;
+      }
+
+      .fixture-status {
+        justify-items: start;
+        text-align: left;
+      }
+
+      .comparison-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .candidate-header,
+      .candidate-notes {
+        min-height: 0;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .phase-page {
+        padding: 8px;
+      }
+
+      .task-strip {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .transform-workspace {
+        min-height: 294px;
+      }
+
+      .canvas {
+        height: 178px;
+      }
+
+      .mode-button {
+        font-size: 9px;
+      }
+    }
+
+    @media (pointer: coarse) {
+      .mode-button,
+      .quiet-button,
+      details.precise-controls summary {
+        min-height: 38px;
+      }
+
+      .handle::before,
+      .rotate-handle::before,
+      .anchor-handle::before {
+        inset: -13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="phase-page" data-phase9o-fixture>
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Phase 9o / Stage A1 / production-disconnected fixture</p>
+        <h1>Layer Transform Interaction Grammar</h1>
+        <p class="page-lead">同じ対象を「少し右へ移動し、30°回転する」時の入口・Canvas占有・注意水位を比較する。第一仮説Dを自動採用せず、Owner visual selectionをGate 1とする。</p>
+      </div>
+      <div class="fixture-status">
+        <strong>Gate 1: OWNER SELECT PENDING</strong>
+        <span>EventBus / History / save / production module 非接続</span>
+      </div>
+    </header>
+
+    <div class="task-strip" aria-label="比較条件">
+      <strong>共通課題</strong>
+      <span>絵を右へ移動 → 30°回転 → Anchor位置を確認</span>
+      <span>Wide / 480×800</span>
+      <span>Mouse / pen / touch hit</span>
+      <span>主役はCanvas上の絵</span>
+    </div>
+
+    <section class="comparison-grid" aria-label="4案比較">
+      <article class="candidate" data-option="current" data-transform-mode="basic">
+        <header class="candidate-header">
+          <span class="candidate-code">A</span>
+          <div>
+            <h2 class="candidate-title">Current</h2>
+            <p class="candidate-summary">数値panel＋Canvas drag / Shift modifier</p>
+          </div>
+        </header>
+        <div class="transform-workspace">
+          <div class="canvas" data-canvas="current">
+            <p class="canvas-task">絵を直接drag / Shift+drag</p>
+            <div class="transform-target" data-scene="transform-target">
+              <div class="artwork" aria-hidden="true"></div>
+              <span class="current-site" aria-label="Anchor site"></span>
+            </div>
+            <span class="gesture-pill">drag = MOVE<br>Shift horizontal = ROTATE<br>Shift vertical = SCALE</span>
+          </div>
+          <div class="control-panel" aria-label="Current precise controls">
+            <div class="value-grid">
+              <span class="value-control">X <output>+24 px</output></span>
+              <span class="value-control">Y <output>0 px</output></span>
+              <span class="value-control">Rotation <output>30°</output></span>
+              <span class="value-control">Scale <output>100%</output></span>
+            </div>
+            <div class="secondary-actions">
+              <button class="quiet-button" type="button">ANCHOR</button>
+              <button class="quiet-button" type="button">RESET</button>
+            </div>
+            <div class="attention-row"><span>注意量</span><span class="attention-track"><span></span></span><strong>中</strong></div>
+          </div>
+        </div>
+        <div class="candidate-notes">
+          <p><strong>強み:</strong> precise値と現行契約が明白。</p>
+          <p><strong>懸念:</strong> 初見で対象を掴める場所とShift文法を推測しにくい。</p>
+        </div>
+      </article>
+
+      <article class="candidate" data-option="csp-like" data-transform-mode="basic">
+        <header class="candidate-header">
+          <span class="candidate-code">B</span>
+          <div>
+            <h2 class="candidate-title">CSP-like</h2>
+            <p class="candidate-summary">共通bounding box＋handles、modeは二次水位</p>
+          </div>
+        </header>
+        <div class="transform-workspace">
+          <div class="canvas" data-canvas="csp-like">
+            <p class="canvas-task">inside = MOVE / corner = SCALE</p>
+            <div class="transform-target" data-scene="transform-target">
+              <div class="artwork" aria-hidden="true"></div>
+              <div class="transform-box" aria-label="Transform bounding box">
+                <button class="handle" data-handle="north-west" type="button" aria-label="Scale north west"></button>
+                <button class="handle" data-handle="north" type="button" aria-label="Scale north"></button>
+                <button class="handle" data-handle="north-east" type="button" aria-label="Scale north east"></button>
+                <button class="handle" data-handle="east" type="button" aria-label="Scale east"></button>
+                <button class="handle" data-handle="south-east" type="button" aria-label="Scale south east"></button>
+                <button class="handle" data-handle="south" type="button" aria-label="Scale south"></button>
+                <button class="handle" data-handle="south-west" type="button" aria-label="Scale south west"></button>
+                <button class="handle" data-handle="west" type="button" aria-label="Scale west"></button>
+                <span class="rotate-stem"></span>
+                <button class="rotate-handle" type="button" aria-label="Rotate"></button>
+                <button class="anchor-handle" type="button" aria-label="Move anchor"></button>
+              </div>
+            </div>
+            <span class="gesture-pill">box内 = MOVE<br>corner = UNIFORM SCALE<br>top = ROTATE</span>
+          </div>
+          <div class="control-panel">
+            <div class="mode-help"><strong>操作をCanvasへ集約</strong><span>数値・mode ▾</span></div>
+            <div class="secondary-actions">
+              <button class="quiet-button" type="button">変形方法</button>
+              <button class="quiet-button" type="button">詳細</button>
+              <button class="quiet-button" type="button">RESET</button>
+            </div>
+            <div class="attention-row"><span>注意量</span><span class="attention-track"><span></span></span><strong>中〜高</strong></div>
+          </div>
+        </div>
+        <div class="candidate-notes">
+          <p><strong>強み:</strong> desktop制作toolの学習済み文法を再利用。</p>
+          <p><strong>懸念:</strong> handles常設と二次mode増加でCanvasが混みやすい。</p>
+        </div>
+      </article>
+
+      <article class="candidate" data-option="procreate-like" data-transform-mode="uniform">
+        <header class="candidate-header">
+          <span class="candidate-code">C</span>
+          <div>
+            <h2 class="candidate-title">Procreate-like</h2>
+            <p class="candidate-summary">Canvas-first mode stripで変形系列を横並び</p>
+          </div>
+        </header>
+        <div class="transform-workspace">
+          <div class="canvas" data-canvas="procreate-like">
+            <p class="canvas-task">選択modeをCanvasへ即時反映</p>
+            <div class="transform-target" data-scene="transform-target">
+              <div class="artwork" aria-hidden="true"></div>
+              <div class="transform-box" aria-label="Mode transform box">
+                <button class="handle" data-handle="north-west" type="button" aria-label="Transform north west"></button>
+                <button class="handle" data-handle="north-east" type="button" aria-label="Transform north east"></button>
+                <button class="handle" data-handle="south-east" type="button" aria-label="Transform south east"></button>
+                <button class="handle" data-handle="south-west" type="button" aria-label="Transform south west"></button>
+                <span class="rotate-stem"></span>
+                <button class="rotate-handle" type="button" aria-label="Rotate"></button>
+                <button class="anchor-handle" type="button" aria-label="Move anchor"></button>
+                <span class="warp-grid" aria-hidden="true"></span>
+              </div>
+            </div>
+            <span class="gesture-pill">modeを先に選ぶ<br>Canvas上で直接操作</span>
+          </div>
+          <div class="control-panel with-strip">
+            <div class="mode-strip" role="tablist" aria-label="Procreate-like transform mode">
+              <button class="mode-button" type="button" role="tab" data-mode="uniform" aria-selected="true">UNIFORM</button>
+              <button class="mode-button" type="button" role="tab" data-mode="freeform" aria-selected="false">FREEFORM</button>
+              <button class="mode-button" type="button" role="tab" data-mode="distort" aria-selected="false">DISTORT</button>
+              <button class="mode-button" type="button" role="tab" data-mode="warp" aria-selected="false">WARP</button>
+            </div>
+            <div class="mode-help"><span>Snapping</span><span>Reset</span><span>Commit</span></div>
+            <div class="attention-row"><span>注意量</span><span class="attention-track"><span></span></span><strong>高</strong></div>
+          </div>
+        </div>
+        <div class="candidate-notes">
+          <p><strong>強み:</strong> touch主体でもmodeの全体像が見える。</p>
+          <p><strong>懸念:</strong> 初手から4分類が等価に主張し、目的よりmode選択が先行。</p>
+        </div>
+      </article>
+
+      <article class="candidate" data-option="tegaki-hybrid" data-transform-mode="basic">
+        <header class="candidate-header">
+          <span class="candidate-code">D</span>
+          <div>
+            <h2 class="candidate-title">Tegaki hybrid</h2>
+            <p class="candidate-summary">BASICをFocus Lens、DISTORT / WARPは選択時だけ</p>
+          </div>
+        </header>
+        <div class="transform-workspace">
+          <div class="canvas" data-canvas="tegaki-hybrid">
+            <p class="canvas-task">BASIC: inside / corner / top / anchor</p>
+            <div class="transform-target" data-scene="transform-target">
+              <div class="artwork" aria-hidden="true"></div>
+              <div class="transform-box" aria-label="Tegaki hybrid transform box">
+                <button class="handle" data-handle="north-west" type="button" aria-label="Uniform scale north west"></button>
+                <button class="handle" data-handle="north-east" type="button" aria-label="Uniform scale north east"></button>
+                <button class="handle" data-handle="south-east" type="button" aria-label="Uniform scale south east"></button>
+                <button class="handle" data-handle="south-west" type="button" aria-label="Uniform scale south west"></button>
+                <span class="rotate-stem"></span>
+                <button class="rotate-handle" type="button" aria-label="Rotate"></button>
+                <button class="anchor-handle" type="button" aria-label="Move anchor"></button>
+                <span class="warp-grid" aria-hidden="true"></span>
+              </div>
+            </div>
+            <span class="gesture-pill">絵 = MOVE<br>corner = SCALE<br>top = ROTATE</span>
+          </div>
+          <div class="control-panel with-strip">
+            <div class="mode-strip" role="tablist" aria-label="Tegaki transform mode">
+              <button class="mode-button" type="button" role="tab" data-mode="basic" aria-selected="true">BASIC</button>
+              <button class="mode-button" type="button" role="tab" data-mode="distort" aria-selected="false">DISTORT</button>
+              <button class="mode-button" type="button" role="tab" data-mode="warp" aria-selected="false">WARP</button>
+            </div>
+            <div class="mode-specific" data-mode-panel="distort"><strong>DISTORT</strong><span>4 cornerを独立操作</span></div>
+            <div class="mode-specific" data-mode-panel="warp"><strong>GRID 3 × 3</strong><button class="quiet-button" type="button">RESET GRID</button></div>
+            <details class="precise-controls" data-precise-controls>
+              <summary>詳細 — 数値で正確に調整</summary>
+              <div class="value-grid">
+                <span class="value-control">X <output>+24 px</output></span>
+                <span class="value-control">Y <output>0 px</output></span>
+                <span class="value-control">Rotation <output>30°</output></span>
+                <span class="value-control">Scale <output>100%</output></span>
+              </div>
+            </details>
+            <div class="attention-row"><span>注意量</span><span class="attention-track"><span></span></span><strong>中</strong></div>
+          </div>
+        </div>
+        <div class="candidate-notes">
+          <p><strong>強み:</strong> common handlesと段階開示を両立し、precise値は必要時だけ。</p>
+          <p><strong>懸念:</strong> BASIC名とWarp入口がTegaki内で十分に学習可能か要Owner評価。</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="authority-section" aria-labelledby="authority-title">
+      <div class="authority-heading">
+        <div>
+          <h2 id="authority-title">接続時の既存Authority Matrix</h2>
+          <p>fixtureは未接続。どの案を選んでも下記の保存・History境界を変えない。</p>
+        </div>
+        <p class="boundary-callout">Layer Warp Grid ≠ Rig Mesh</p>
+      </div>
+      <div class="authority-table-wrap">
+        <table>
+          <thead>
+            <tr><th>対象</th><th>Preview / 操作adapter</th><th>Confirm / History authority</th><th>Stage A1での約束</th></tr>
+          </thead>
+          <tbody>
+            <tr data-authority="normal-raster"><td>normal Raster</td><td>Pixi Container transform</td><td>一度だけRaster bake＋normal History 1件</td><td>同じCanvas grammarへ接続可能か評価</td></tr>
+            <tr data-authority="folder"><td>Folder</td><td>既存child Raster adapter</td><td>LayerSystemの既存confirm境界</td><td>第二transform modelを作らない</td></tr>
+            <tr data-authority="caf-working"><td>CAF working Layer</td><td>animation working Layer</td><td>caf-internal-layer-transform</td><td>通常Layer Historyへ混ぜない</td></tr>
+            <tr data-authority="selection"><td>Pixel Selection</td><td>既存selection bounds / mask / snapshot</td><td>selection adapterの既存confirm</td><td>操作数学だけ共通化候補</td></tr>
+            <tr data-authority="svg-path"><td>SVG / path</td><td>明示SVG object authorityは現行不在</td><td>import後Raster / path metadataを監査</td><td>vector parityを先約束しない</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <footer class="gate-footer">
+        <span><strong>Gate 1:</strong> A / B / C / DからOwnerがvisual selection</span>
+        <span><strong>選定後:</strong> BASICだけをread-only overlay → Move → Scale → Rotate → Anchor順に限定検討</span>
+        <span><strong>非対象:</strong> Drawing Warp / Timeline key / Anchor animation / RIG model / TEST POSE</span>
+      </footer>
+    </section>
+  </main>
+
+  <script>
+    document.querySelectorAll('[data-option] .mode-button[data-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const candidate = button.closest('[data-option]');
+        if (!candidate) return;
+        candidate.dataset.transformMode = button.dataset.mode;
+        candidate.querySelectorAll('.mode-button[data-mode]').forEach((peer) => {
+          peer.setAttribute('aria-selected', String(peer === button));
+        });
+      });
+    });
+  </script>
+</body>
+</html>

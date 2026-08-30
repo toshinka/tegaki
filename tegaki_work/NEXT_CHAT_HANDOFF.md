@@ -2,7 +2,7 @@
 
 更新日: 2026-08-31
 
-状態: Phase 9mまでclose。現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gate。Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`、Stage A / B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2はcheckpoint完了。次はStage D3 static RIG editor host ownership Gate。
+状態: Phase 9nまでclose。現行Phase 9oはGate 1=`GO — D: Tegaki hybrid`。Stage B1 BASIC shell + read-only overlayは技術proof完了、Owner production visual acceptance待ち。
 
 ## 1. 最初に読む順序
 
@@ -10,16 +10,19 @@
 2. `TEGAKI.md`
 3. `tegaki_work/PROGRESS.md`
 4. 本書
-5. `task-codex/phase9n.md`
-6. `開発用資料保管庫/proposals/17_RIG・Motion責務再配置Architecture Gate.md`
-7. `開発用資料保管庫/Archive/phase9m.md`
-8. `開発用資料保管庫/Archive/phase9l.md`
-9. `開発用資料保管庫/Archive/phase8d.md`
-10. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
-11. `開発用資料保管庫/proposals/16_制作Workspace・UI・外部Handoff構造ロードマップ.md`
-12. `tegaki_work/system/animation/rig-authoring-status-projection.js`
-13. `tegaki_work/ui/layer-panel-renderer.js`
-14. `tegaki_work/ui/animation-table-popup.js`
+5. `task-codex/phase9o.md`
+6. `開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md`
+7. `開発用資料保管庫/Archive/phase9n.md`
+8. `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`
+9. `tegaki_work/system/layer-transform.js`
+10. `tegaki_work/system/transform-math.js`
+11. `tegaki_work/system/transform-overlay-geometry.js`
+12. `tegaki_work/ui/layer-transform-basic-overlay.js`
+13. `tegaki_work/styles/components/layer-transform-basic.css`
+14. `tegaki_work/system/layer-system.js`
+15. `tegaki_work/ui/transform-anchor-site.js`
+16. `tegaki_work/ui/dom-builder.js`
+17. `tegaki_work/build/verify-phase9o-basic-transform-production.mjs`
 
 ## 2. 作業開始時の確認
 
@@ -27,62 +30,52 @@
 git status --short --untracked-files=all -- tegaki_work task-codex 開発用資料保管庫/proposals 開発用資料保管庫/Archive
 ```
 
-- 既存差分を維持し、`restore` / `reset` / `checkout`で巻き戻さない。
-- `Backup/`、`PastFiles/`、`開発用資料保管庫/Backup-tegaki_work/`は調査・編集しない。
-- `dist/`と`node_modules/.vite/`は追跡済み基準を持つため、build生成差分だけを限定清掃する。
+既存差分を維持する。`Backup/`、`PastFiles/`、`開発用資料保管庫/Backup-tegaki_work/`は調査・編集しない。
 
 ## 3. 現在地
 
-- Phase 9mはOwnerがproduction実画面を受入れた。stable一行header、固定幅Playback Range、OUT限定I / O、borderless FPS / FRAMES / PREVIEW、Bottom Lucide COPY / DELETEを全118 verifier / build / Browser checkpoint、SOL final review=`A`でcloseし、`Archive/phase9m.md`へ移した。
-- RIG入口は現在、Animation TableのFolder `+RIG` / Raster `RIG設定` / BONE / Mesh / Weight / WARPと、右Layer属性Popupの`+RIG` / `ROOT BONEを作成`へ分散している。右側mutationも実体はAnimation Table external adapterへ委譲される。
-- static正本は`ClipAsset.rigDefinition / meshDefinitions / skinBindings`、temporal正本は`ClipInstance.rigMotion`。UIもこの分離へ合わせる。
-- Gate 0はDを選定した。右Layer Panelは対象・構造・visibility・RIG状態・handoff。同じ右dockのRIG viewは親子 / 曲げ / 全体PIVOT / Bone / Mesh / Weight / WARP Bind。Animation Tableはplayback / Frame / key / easing / temporal WARP。Canvasは直接操作。
-- 左RIG案はPlan Bとしてproposal 17へ保存した。right dock切替回数、Layer同時参照、narrowでの手の遮蔽が問題化した時に再比較する。A current / B Layer統合も削除しない。
-- SpineのSetup / Animate、Live2DのModeling / Animation、ToonSquidのLayer→Inspector→Canvas→Timeline keyを2026-08-29に公式資料で再確認した。Adobe AnimateのTimeline parentingは`Layer = Timeline row`が一致する場合の反例として保持する。
-- Stage Aは`system/animation/rig-authoring-status-projection.js`を新設し、`none / parent / bend / whole / conflict / stale`をpure導出する。Layer mirror badgeを従来の一律`RIG`から`親子 / 曲げ / 全体 / 要更新 / 競合`へ投影した。全119 verifier、対象JSの`node --check`、build、Browser whole / Table open・closed / 480×800 / console 0件、生成物清掃でcheckpoint完了。
-- Stage Bは既存132px columnへCAF context限定の`LAYERS / RIG`を実装した。runtime-only view lens、共有`selectedCelId / selectedInternalLayerId`、対象 / kind / status / methodのread-only表示、RIG中のLayer rail非表示を固定し、全120 verifier / build、Browserのnormal非露出 / pointer・Enter・Space / Table close / 480×800 / console 0件でcheckpoint完了。
-- Owner follow-upとして二軸ghostはOFF時からTimeline淡色 / Lane茶色、ON時は共通の枠なし橙surfaceへ整理した。CAF / Lane情報とAnimation Table本体の知覚的分断はproposal 14へ後続UI/UX Gateとして記録し、Phase 9nでは配置を動かさない。
-- Stage C1はRIG未設定だけへSetup青actionを置き、Folder=`親子RIGを開始`、Raster=`全体PIVOTを開始`と方法を明示した。既存adapter委譲、1 History、Undo / Redo、Table閉鎖、480×800、console 0件を確認し、全121 verifier / buildでcheckpoint完了した。空Folderは既存model契約どおり登録可能で、新しい拒否を追加していない。
-- Stage C2はRIG未設定Rasterへ`曲げRIG / 全体PIVOT`を二等分し、曲げを既存RIG Setupへ開く`changed: false` adapter、全体を既存1 History登録へ接続した。Table閉鎖からの復帰、Undo / Redo、480×800の非重複hit、console 0件、全122 verifier / buildでcheckpoint完了した。
-- Stage C3はC1 / C2がRigid Part登録まででroot Bone未作成だったことを監査し、`parent / whole`かつPartあり・root BoneなしのFolder / Rasterへ共通`PIVOTを作成`を追加した。既存`registerInternalRootBoneFromExternal()`だけへ委譲し、描画済みは各1 History、空対象は`allowEmptyTarget`なしで`描画が必要`、接続後はactionを消す。全123 verifier / build、BrowserのFolder / Raster成功、空対象、Table閉鎖、Undo / Redo、480×800非重複、console 0件でcheckpoint完了した。
-- Stage C4はRigid Partのbinding先BoneとRig全体ROOTを分離し、親接続後もPIVOT済み状態を維持するpure projectionへ補正した。右RIGには枠なし`PIVOT / PARENT`要約と、既存Animation Table RIG inspectorを開く無履歴`接続を編集`を追加した。全124 verifier / build、BrowserのFolder2→Folder1接続1 History、Undo / Redo、ROOT / linked、Table閉鎖、480×800非重複・横overflowなしでcheckpoint完了した。
-- Stage C5はRaster曲げRIGへ枠なし`BONE / MESH / WEIGHT`進捗と状態別handoffを追加した。unbound Bone候補とSkin接続済みBoneをpure projectionで分離し、Mesh生成後にTable閉鎖handoffが失敗する既存resolverをRaster専用経路へ補正した。全125 verifier / build、BrowserのBONE / AUTO GRID各1 History、STALE、無履歴`Weightを確認 / Meshを更新`、480×800非重複・横overflowなし、Vite error overlayなしでcheckpoint完了した。
-- Stage C6はMesh前unbound Boneを保存owner化せず、明示選択した`asset / Raster / Bone`三点だけのruntime focusで右RIGへ`曲げRIG 準備中 / BONE候補 / MESH未生成 / WEIGHT未接続`を投影した。Layer / CAF / Folder / Mesh生成で破棄し、別Rasterへglobal候補を自動継承しない。全126 verifier / build、Browserの複数Raster非漏出、元Raster非自動復帰、明示Bone復帰、Table閉鎖、RIG tab復帰、AUTO GRID 1 History、480×800 action非重複・document横overflow 0、console 0件でcheckpoint完了した。
-- Stage D1はstatic / temporal DOM inventoryから専用RIG editor全撤去を`NO-GO`とした。Motion未接続Rasterの直接`AUTO GRIDを作成`だけを`RIGを設定 >`へ置換し、既存RIG tabへ切り替える無履歴handoffにした。RIG editorのBone / Mesh / Weight / parent、MotionのKEY / IK / Frame pose / read-only WEIGHTは維持する。全127 verifier / build、Browserのhandoff History `3 -> 3`、RIG AUTO GRID `3 -> 4`、Motion KEY `4 -> 5`、Undo復帰、480×800・横overflow 0、console 0件でcheckpoint完了した。
-- Stage D2は未設定Raster / Folder Laneの`RIG設定 / +RIG` buttonと行 / Timeline cellのstatic editor起動を外し、枠なし`RIG未設定: 未設`とtarget / Frame選択だけへ整理した。右RIGの曲げ / 全体 / 親子Setup、CLIP MOTION target stripとMesh前Boneの`RIGを設定 >`、設定済みBone row / keyは維持する。全128 verifier / build、BrowserのRaster / Folder行・cellのHistory不変、Motion非open、右RIG入口、CLIP target切替、480×800・横overflow 0、console 0件でcheckpoint完了した。
-- selection正本、History、save、solver / evaluator、ClipInstance.rigMotion、Table open / closed authorityは変更していない。runtime focusはProjectへ保存しない。
-- Owner指示として、Phase 9n close時は`GitHubURL.txt`を外部Web AI向けRIG導線review indexへ再編集する。最終導線、D案と保留3案、再試行条件、実装・verifier・Browser acceptance、評価依頼論点へraw URLで到達できることをclose条件とする。
+- Phase 9nはright RIGをoverview / next action / handoff、既存single floating windowをmode別`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`とするhost ownershipをD3で固定してcloseした。
+- 全129 verifier、build、right RIGからのopen、RIG / Motion / Warp往復、close / reopen、Table closed再入場、History不変、480×800横overflow 0、console warning / error 0件を通過した。
+- current RIG WORKSPACEの横長layout、数値欄、button density、`RIG / MOTION / WARP`上位tab、floating / vertical inspector選択は最終UX受入ではない。Table closeとのlifecycle分離、TEST POSEもHOLD。
+- Owner方針により、次はRIGをさらに磨く前に既存`V` Layer Transformを「絵の共通変形語彙」へできるか比較する。
+- skill ladderは`DRAW → TRANSFORM → ANIMATE → RIG → RIG MESH / WEIGHT`。RIGは最初の入口ではなく、反復する直接操作を構造化する上位段階とする。
+- Stage 0では既存Vのnormal Raster / Folder / CAF working Layer / selection、Pixi preview、Raster bake、path / clipping、通常 / CAF History、save前commit、Clip Motion bridgeをinventoryした。
+- 現行VはCanvas drag=Move、Shift+横drag=Rotate、Shift+縦drag=Uniform Scale、Canvas Anchor site、floating X / Y / Rotation / Scale sliderを持つ。bounding box / 8方向handle / Distort / Drawing Warp Gridはまだ無い。
+- 明示的SVG object Layer authorityは確認できない。SVG対応を前提にせず、import後Raster / path metadataの実態をfixtureで明示する。
+- Stage A1比較fixture `tegaki_work/build/phase9o-layer-transform-interaction-grammar-fixture.html`と固定verifierを追加した。A Current / B CSP-like / C Procreate-like / D Tegaki hybridを同じ絵・課題・Canvas面積で比較できる。
+- Browserではdefault 1280×720で4案同列、480×800で一列stack、横overflow 0、C DISTORT / D WARP / D詳細の表示同期、console 0件を確認した。全130 verifier、buildを通過し、生成物差分は残していない。
+- Ownerが第一候補Dを選定し、Gate 1=`GO — D: Tegaki hybrid`。A / B / CはDへの不満時に同じ比較条件へ戻れる再試行案としてfixtureとPhase書へ保持した。
+- Stage B1はproduction panelを`BASIC / DISTORT / WARP`とpreciseの`詳細`に整理し、BASICだけをactive、DISTORT / WARPはdisabledとした。Raster alphaのruntime-only tight bounds、既存matrix、coordinate systemからpointer非参加の4 corner + rotate overlayを接続し、既存Anchor siteを維持した。
+- Browser 1280×720でMove preview、`詳細`、Escape cancel、V confirm、Undo / Redo後のbounds復元とHistory 1→2、480×800初期起動でbox / 4 corner / rotate / Anchor / 210px panel、横overflow 0、console 0件を確認した。途中viewport resizeでCanvasごと位置を維持するのは既存camera挙動で、overlay独自のずれではない。
 
 ## 4. 次のtask
 
-Phase 9n Stage D3として、残るstatic RIG editorのhost所有と右RIG return path Gateを行う。
+Phase 9o Stage B1のOwner production visual acceptance。
 
-1. `#anim-rig-context`のBone / Mesh / Weight / parent、Canvas overlay、open / close / return pathをDOM / event / selection / reject / Historyで対応付ける。
-2. 右dock内で既存editorをhostする案と、Table外の別windowで同一editorをhostする案を比較する。第二のRig state / History / save ownerは作らない。
-3. Folder / Raster、Mesh前 / 接続後 / stale、Table open / closed、right `LAYERS / RIG`、wide / narrowで同一targetと復帰先が保てるか固定する。
-4. 同等editorのBone / Mesh / Weight / parent / reject / Undoが成立する前にTable内RIG editorを削除しない。Motion key、easing、temporal WARP、CLIP target lens、Canvas gestureは維持する。
-5. Clip Focus、dark top / bottom、Lane濃淡、外枠削減、CAF / LaneとTableの分断改善を並走しない。
-6. Phase close時の`GitHubURL.txt`外部Web AI向け再編集は`task-codex/phase9n.md`第13節に従う。Stage D途中ではclose扱いにしない。
+1. `V`でBASICへ入った時、絵がpanelより主役に見え、content-tight box / 4 corner / rotate / Anchorの役割と優先度が過剰でないかを見る。
+2. preciseの`詳細`は初期closed、DISTORT / WARPは後続としてdisabled。初心者と熟練者の注意をBASICに集められるかを見る。
+3. A / B / Cは再試行候補として保持。Dの実画面に不満があれば同一fixtureの比較条件へ戻る。
+4. Owner acceptance後の次Sliceはinteractive Uniform Scale handleだけ。Rotate / Anchor gesture、DISTORT / WARP、Drawing Warp、Timeline key、RIG再配置を並走しない。
 
 ## 5. model分担
 
-- Stage D contract、static editor host ownership、return path、移設単位、Gate / Phase判断、最終監査はSOL / MAX。
-- 対象DOM / event / Acceptance Criteria固定後の限定removalだけLUNA / MAX候補。
-- selection、mutation、History、schema判断へ触れる場合、LUNAは変更せずSOLへ返す。
+- interaction grammar、Focus Lens、比較軸、Gate判定はSOL / MAX。
+- pure geometry / fixtureの契約が確定した一つの限定SliceだけLUNA / MAX候補。
+- History、CAF adapter、save、schema、Warp topology、RIG境界判断をLUNAへ委譲しない。
 
 ## 6. 新チャットへ貼る文面
 
 ```text
 D:\GitHub\tegaki の作業を継続してください。
 
-Phase 9mまでclose済みです。現行Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gateです。Gate 0はD Dedicated Right RIG + Motion handoffを選定し、Stage A / B / C1 / C2 / C3 / C4 / C5 / C6 / D1 / D2はcheckpoint完了、次はStage D3 static RIG editor host ownership Gateです。
+Phase 9nまでclose済みです。現行Phase 9oはGate 1=`GO — D: Tegaki hybrid`です。Stage B1 BASIC shell + read-only overlayは技術proof完了、Owner production visual acceptance待ちです。
 
-最初にAGENTS.md、TEGAKI.md、tegaki_work/PROGRESS.md、tegaki_work/NEXT_CHAT_HANDOFF.md、task-codex/phase9n.md、開発用資料保管庫/proposals/17_RIG・Motion責務再配置Architecture Gate.md、Archive/phase9m.md、Archive/phase9l.md、Archive/phase8d.md、proposal 15 / 16、system/animation/rig-authoring-status-projection.js、ui/layer-panel-renderer.js、ui/animation-table-popup.jsを順に読んでください。
+最初にAGENTS.md、TEGAKI.md、tegaki_work/PROGRESS.md、tegaki_work/NEXT_CHAT_HANDOFF.md、task-codex/phase9o.md、開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md、Archive/phase9n.md、tegaki_work/TRANSFORM_SESSION_BOUNDARY.md、system/layer-transform.js、system/transform-math.js、system/transform-overlay-geometry.js、ui/layer-transform-basic-overlay.js、styles/components/layer-transform-basic.css、system/layer-system.js、ui/transform-anchor-site.js、ui/dom-builder.js、build/verify-phase9o-basic-transform-production.mjsを順に読んでください。
 
 git status --short --untracked-files=all -- tegaki_work task-codex 開発用資料保管庫/proposals 開発用資料保管庫/Archive
 を最初に確認し、既存変更をすべて維持してください。Backup/、PastFiles/、開発用資料保管庫/Backup-tegaki_work/は調査・編集しないでください。
 
-責務はLayer=対象、右RIG同一dock=static構造、Animation Table=時間、Canvas=直接操作です。左RIG / Layer統合 / 現行Table案はproposal 17へ再試行候補として残しています。Stage D1はMotion内の直接AUTO GRIDだけを無履歴`RIGを設定 >`へ置換し、D2は未設定Raster / Folder Laneの`RIG設定 / +RIG`と行 / cellのstatic editor起動を外してtarget / Frame選択専用にしました。最初のtaskは残るstatic RIG editorのDOM / event / Popup stacking / Canvas overlay / return path / History所有をinventoryし、右dock hostとTable外別window hostを比較することです。同等editorが成立する前にBONE / Mesh / Weight / parent controlsを削除しないでください。保存owner、第二state、Mesh / Weight algorithm変更、Clip Focus、dark top / bottom、Lane濃淡、枠削減、CAF / LaneとTableの分断改善を並走しないでください。
+中心仮説はDRAW → TRANSFORM → ANIMATE → RIG → RIG MESH / WEIGHTです。OwnerがD Tegaki hybridを選び、productionにBASIC shell、preciseの詳細開示、runtime-only tight boundsのread-only 4 corner + rotate overlayを接続しました。DISTORT / WARPはdisabledで、既存Move / Shift Rotate / Scale、Anchor、confirm / cancel / Reset、History / save境界は維持しています。次はOwner production visual acceptanceです。A / B / Cは不満時の再試行fixtureとして保持し、Drawing Warp、Timeline key、Anchor animation、RIG再配置を並走しないでください。
 
-次作業予告はPhase 9n Stage D3 static RIG editor host ownership Gateです。host / return path / 移設単位 / 最終監査はSOL / MAX、契約確定後の限定SliceだけLUNA / MAX候補です。
+次作業予告はPhase 9o Stage B1 Owner production visual acceptanceです。承認後はinteactive Uniform Scale handleの一Slice、作業担当はSOL / MAXです。
 ```
