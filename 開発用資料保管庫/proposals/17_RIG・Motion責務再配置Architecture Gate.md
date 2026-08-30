@@ -7,7 +7,7 @@
 
 保管方針: Phase 9n Gate 0はDを第一採用したが、A / B / Cを削除しない。production評価で右dock切替に不満が出た場合、left配置を含む再比較の原案として本書へ戻る。現行の限定実装契約は`task-codex/phase9n.md`を優先する。
 
-進捗: Stage A shared projection、Stage B read-only `LAYERS / RIG` shell、Stage C1 RIG対象登録は2026-08-30にcheckpoint完了。C1はFolder=`親子RIGを開始`、Raster=`全体PIVOTを開始`と結果の方法を明示し、既存adapterへ委譲した。次はStage C2 Raster method fork Gateとして、一枚Rasterの`曲げRIG / 全体PIVOT`入口を同じ右RIG面で分ける。新しいMesh / Bone mutationは同時実装しない。
+進捗: Stage A shared projection、Stage B read-only `LAYERS / RIG` shell、Stage C1 RIG対象登録、Stage C2 Raster method fork、Stage C3 Rigid Part root PIVOT completion、Stage C4 Bone hierarchy / parent-link handoff、Stage C5 Raster bend setup progressは2026-08-30にcheckpoint完了。C5はunbound Bone候補とSkin接続済みBoneをpure projectionで分離し、右RIGへ枠なし`BONE / MESH / WEIGHT`進捗、STALE、既存Raster RIGへの無履歴handoffを接続した。次はStage C6としてPre-Mesh Bone候補を別Rasterへ誤帰属させずruntime focusで表示できるかを監査する。保存owner、第二setup state、Mesh / Weight algorithm、新しいmutationは同時実装しない。Phase 9n close時は`GitHubURL.txt`を、外部Web AIが最終RIG導線、D案と保留3案、再試行条件、実装・検証入口、評価論点を単独追跡できるreview indexへ更新する。
 
 ---
 
@@ -744,6 +744,8 @@ mutation implementationは既存adapterを再利用。
 
 `animation-table-popup.js`からmodel logicを一括移動しない。
 
+Phase 9n Stage C1〜C6でproduction checkpoint済み。Folder親子 / Raster全体PIVOT / Raster曲げRIG、PIVOT / PARENT、BONE / MESH / WEIGHT / STALE、Mesh前runtime focusと既存Animation Table editor handoffを右RIGへ接続した。Mesh前Bone focusはProjectへownerを増やさず、明示選択した`asset / Raster / Bone`三点だけのruntime tokenとし、別対象・Mesh生成で破棄する。
+
 ## Stage D — Animation Table cleanup
 
 RIG setup DOMを削るのは最後。
@@ -757,6 +759,8 @@ RIG setup DOMを削るのは最後。
 を段階的に撤去。
 
 Motion handoffのみ残す。
+
+次はstatic / temporal DOM inventoryと右経路parityを先に固定する。`BONE追加 / AUTO GRID / Weight / Mesh Edit / parent接続`を一括削除せず、右RIGで同じ到達性・拒否・Historyが成立した一surfaceだけを一Sliceとして撤去する。
 
 ---
 

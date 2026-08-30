@@ -1306,8 +1306,29 @@ canvas {
     width: 100%;
 }
 
-.context-rig-register-button {
+.context-rig-method-actions {
     width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    margin-top: 7px;
+}
+
+.context-rig-method-actions[data-method-count="2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.context-rig-method-button,
+.context-rig-handoff-button {
+    width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+    .context-rig-method-actions {
+        margin-top: 0;
+    }
 }
 
 .context-rig-inspector-target {
@@ -4473,14 +4494,14 @@ canvas {
 
 .anim-rig-setup-action:not(:disabled),
 .anim-rig-raster-mode-btn:not(:disabled),
-.anim-rig-connect-art-btn:not(:disabled) {
+.anim-rig-open-setup-btn:not(:disabled) {
     color: var(--deformer-bind-point);
     border-color: var(--deformer-bind-line);
     background: color-mix(in srgb, var(--deformer-bind-line) 14%, var(--futaba-cream));
 }
 
 .anim-rig-mesh-generate-btn.is-primary:not(:disabled),
-.anim-rig-connect-art-btn:not(:disabled) {
+.anim-rig-open-setup-btn:not(:disabled) {
     border-width: 2px;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--deformer-bind-line) 42%, transparent);
     background: color-mix(in srgb, var(--deformer-bind-line) 22%, var(--futaba-cream));
@@ -4488,10 +4509,10 @@ canvas {
 
 .anim-rig-setup-action:not(:disabled):hover,
 .anim-rig-raster-mode-btn:not(:disabled):hover,
-.anim-rig-connect-art-btn:not(:disabled):hover,
+.anim-rig-open-setup-btn:not(:disabled):hover,
 .anim-rig-setup-action:not(:disabled):focus-visible,
 .anim-rig-raster-mode-btn:not(:disabled):focus-visible,
-.anim-rig-connect-art-btn:not(:disabled):focus-visible {
+.anim-rig-open-setup-btn:not(:disabled):focus-visible {
     border-color: var(--deformer-bind-point);
     background: color-mix(in srgb, var(--deformer-bind-line) 22%, var(--futaba-cream));
 }
