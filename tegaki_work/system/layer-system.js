@@ -40,6 +40,11 @@ import {
 } from './transform-math.js';
 import { createTransformBoundsWorldCorners } from './transform-overlay-geometry.js';
 import {
+    captureLayerTransformPreviewSampling,
+    restoreLayerTransformPreviewSampling,
+    updateLayerTransformPreviewSampling
+} from './layer-transform-preview-sampling.js';
+import {
     CLIPPING_MODES,
     applyClippingMode,
     cycleClippingMode,
@@ -2959,6 +2964,10 @@ export class LayerSystem {
             }
         };
         this.transform.onTransformUpdate = (layer, transform) => {
+            updateLayerTransformPreviewSampling(
+                this._layerTransformSession?.previewSampling,
+                transform
+            );
             if (layer?.layerData?.isFolder) {
                 this._applyFolderPreviewTransform(layer, transform);
                 return;
@@ -2987,6 +2996,10 @@ export class LayerSystem {
         };
         this.transform.onGetTransformWorldCorners = () => {
             return this._getLayerTransformWorldCorners();
+        };
+        this.transform.onGetTransformSourceBounds = () => {
+            const bounds = this._layerTransformSession?.sourceBounds;
+            return bounds ? { ...bounds } : null;
         };
         this.transform.onRebuildRequired = (layer, paths) => {
             this.safeRebuildLayer(layer, paths);
@@ -3094,11 +3107,15 @@ export class LayerSystem {
         const layerId = activeLayer.layerData.id;
         const transform = this.transform.getTransform(layerId)
             || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+        const previewLayers = activeLayer.layerData.isFolder
+            ? this._getFolderRasterLayers(activeLayer)
+            : [activeLayer];
         this._layerTransformSession = {
             layerId,
             transform: structuredClone(transform),
             sourceBounds: this._resolveLayerTransformSourceBounds(activeLayer),
-            targetLayerTransforms: this._captureFolderTargetTransformState(activeLayer)
+            targetLayerTransforms: this._captureFolderTargetTransformState(activeLayer),
+            previewSampling: captureLayerTransformPreviewSampling(previewLayers)
         };
         this.transform.enterMoveMode();
         this.transform.syncBasicOverlay?.();
@@ -3248,6 +3265,8 @@ export class LayerSystem {
         let transformConfirmed = false;
 
         try {
+            // 確定Bakeは元のsamplingで一度だけ行う。preview用nearestを持ち込まない。
+            restoreLayerTransformPreviewSampling(this._layerTransformSession?.previewSampling);
             if (cancelled) {
                 this._restoreLayerTransformSession(activeLayer);
             } else {

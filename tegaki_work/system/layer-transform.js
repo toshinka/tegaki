@@ -23,8 +23,19 @@ import {
     rebaseTransformAnchor,
     resolveDirectionalTransformDragMode
 } from './transform-math.js';
+import {
+    createAxisScaleTransformFromScreenProjection,
+    createRotationTransformFromScreenAngleDelta,
+    createUniformScaleTransformFromScreenDistance,
+    normalizeScreenAngleDelta,
+    resolveScreenBasisCoordinates,
+    resolveTransformContentCenterAnchor
+} from './transform-overlay-geometry.js';
 import { transformAnchorSite } from '../ui/transform-anchor-site.js';
 import { layerTransformBasicOverlay } from '../ui/layer-transform-basic-overlay.js';
+
+// Canvas handleは一本線まで潰せるようにする。exact zeroだけを避け、slider / wheelの下限は変更しない。
+const BASIC_HANDLE_SCALE_EPSILON = 0.0001;
 
 export class LayerTransform {
     constructor(config, coordAPI) {
@@ -56,10 +67,15 @@ export class LayerTransform {
         this.onRebuildRequired = null;
         this.onGetActiveLayer = null;
         this.onGetTransformWorldCorners = null;
+        this.onGetTransformSourceBounds = null;
+        this.basicOverlayScaleGesture = null;
+        this.basicOverlayAxisScaleGesture = null;
+        this.basicOverlayRotationGesture = null;
         
         this._lastEmitTime = 0;
         this._emitTimer = null;
         this._sliderInstances = new Map();
+        this._syncingLayerTransformPanel = false;
         this._syncingSelectionPanel = false;
     }
 
@@ -170,6 +186,9 @@ export class LayerTransform {
         
         this.isVKeyPressed = false;
         this.isDragging = false;
+        this.basicOverlayScaleGesture = null;
+        this.basicOverlayAxisScaleGesture = null;
+        this.basicOverlayRotationGesture = null;
         
         if (this.cameraSystem?.setVKeyPressed) {
             this.cameraSystem.setVKeyPressed(false);
@@ -201,11 +220,21 @@ export class LayerTransform {
         if (!activeLayer?.layerData) return;
         
         const layerId = activeLayer.layerData.id;
-        if (!this.transforms.has(layerId)) {
-            this.transforms.set(layerId, {
-                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-            });
+        const current = this.transforms.get(layerId) || {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+        };
+        let initialized = current;
+        if (!Number.isFinite(current.anchorX) || !Number.isFinite(current.anchorY)) {
+            const anchor = this._getContentCenterAnchor() || { x: 0.5, y: 0.5 };
+            initialized = rebaseTransformAnchor(
+                current,
+                anchor.x,
+                anchor.y,
+                this.config.canvas.width,
+                this.config.canvas.height
+            );
         }
+        this.transforms.set(layerId, initialized);
         
         this.updateTransformPanelValues(activeLayer);
         this.updateFlipButtons(activeLayer);
@@ -217,9 +246,12 @@ export class LayerTransform {
         if (!activeLayer?.layerData) return;
         
         const layerId = activeLayer.layerData.id;
-        this.transforms.set(layerId, {
-            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-        });
+        const anchor = this._getContentCenterAnchor() || { x: 0.5, y: 0.5 };
+        const resetTransform = {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1,
+            anchorX: anchor.x, anchorY: anchor.y
+        };
+        this.transforms.set(layerId, resetTransform);
         
         activeLayer.position.set(0, 0);
         activeLayer.rotation = 0;
@@ -229,6 +261,7 @@ export class LayerTransform {
         this.updateTransformPanelValues(activeLayer);
         this.updateFlipButtons(activeLayer);
         this._emitTransformUpdated(layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, resetTransform);
     }
 
     updateTransform(layer, property, value) {
@@ -625,7 +658,18 @@ export class LayerTransform {
         if (flipVerticalBtn) {
             flipVerticalBtn.removeAttribute('disabled');
         }
-        anchorBtn?.addEventListener('click', () => this._toggleAnchorSite());
+        anchorBtn?.addEventListener('click', event => {
+            if (event.detail > 1) return;
+            this._toggleAnchorSite();
+        });
+        anchorBtn?.addEventListener('dblclick', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (this._resetAnchorToContentCenter()) {
+                transformAnchorSite.setEditable('layer-transform', true);
+                anchorBtn.classList.add('active');
+            }
+        });
         
         this._setupPanelDrag();
     }
@@ -652,16 +696,26 @@ export class LayerTransform {
         if (!Number.isFinite(transform.anchorX)) transform.anchorX = 0.5;
         if (!Number.isFinite(transform.anchorY)) transform.anchorY = 0.5;
         this.transforms.set(layerId, transform);
+        const getCurrentTransform = () => {
+            const current = this.transforms.get(layerId) || transform;
+            if (!Number.isFinite(current.anchorX)) current.anchorX = 0.5;
+            if (!Number.isFinite(current.anchorY)) current.anchorY = 0.5;
+            return current;
+        };
         const activated = transformAnchorSite.activate('layer-transform', {
             editable: editable === true,
-            hint: '中心をドラッグ / ボタン再押下で終了',
+            hint: '中心をドラッグ / 上の中心ボタンをダブルクリック',
             coordinateSystem: this.coordinateSystem,
             width: this.config.canvas.width,
             height: this.config.canvas.height,
-            getAnchor: () => ({ x: transform.anchorX, y: transform.anchorY }),
+            getAnchor: () => {
+                const current = getCurrentTransform();
+                return { x: current.anchorX, y: current.anchorY };
+            },
             getWorldPosition: anchor => {
+                const current = getCurrentTransform();
                 const matrix = createCenteredTransformMatrix(
-                    transform,
+                    current,
                     this.config.canvas.width / 2,
                     this.config.canvas.height / 2
                 );
@@ -672,8 +726,9 @@ export class LayerTransform {
                 );
             },
             worldToAnchor: point => {
+                const current = getCurrentTransform();
                 const matrix = createCenteredTransformMatrix(
-                    transform,
+                    current,
                     this.config.canvas.width / 2,
                     this.config.canvas.height / 2
                 );
@@ -681,19 +736,22 @@ export class LayerTransform {
                 return local ? {
                     x: local.x / this.config.canvas.width,
                     y: local.y / this.config.canvas.height
-                } : { x: transform.anchorX, y: transform.anchorY };
+                } : { x: current.anchorX, y: current.anchorY };
             },
             onChange: anchor => {
-                Object.assign(transform, rebaseTransformAnchor(
-                    transform,
+                const current = getCurrentTransform();
+                const rebased = rebaseTransformAnchor(
+                    current,
                     anchor.x,
                     anchor.y,
                     this.config.canvas.width,
                     this.config.canvas.height
-                ));
-                this.applyTransform(activeLayer, transform, this.config.canvas.width / 2, this.config.canvas.height / 2);
+                );
+                this.transforms.set(layerId, rebased);
+                this.applyTransform(activeLayer, rebased, this.config.canvas.width / 2, this.config.canvas.height / 2);
+                this.updateTransformPanelValues(activeLayer);
                 this._emitTransformUpdated(layerId, activeLayer);
-                this.onTransformUpdate?.(activeLayer, transform);
+                this.onTransformUpdate?.(activeLayer, rebased);
             }
         });
         if (activated) {
@@ -704,6 +762,38 @@ export class LayerTransform {
         return activated;
     }
 
+    _resetAnchorToContentCenter() {
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!this.isVKeyPressed || !activeLayer?.layerData) return false;
+        const anchor = this._getContentCenterAnchor();
+        if (!anchor) return false;
+
+        const layerId = activeLayer.layerData.id;
+        const current = this.transforms.get(layerId) || {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5
+        };
+        const next = rebaseTransformAnchor(
+            current,
+            anchor.x,
+            anchor.y,
+            this.config.canvas.width,
+            this.config.canvas.height
+        );
+        this.transforms.set(layerId, next);
+        this.applyTransform(activeLayer, next, this.config.canvas.width / 2, this.config.canvas.height / 2);
+        this.updateTransformPanelValues(activeLayer);
+        this._emitTransformUpdated(layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, next);
+        return true;
+    }
+
+    _getContentCenterAnchor() {
+        return resolveTransformContentCenterAnchor(
+            this.onGetTransformSourceBounds?.(),
+            { width: this.config.canvas.width, height: this.config.canvas.height }
+        );
+    }
+
     syncBasicOverlay() {
         if (!this.isVKeyPressed || typeof this.onGetTransformWorldCorners !== 'function') {
             layerTransformBasicOverlay.deactivate();
@@ -712,8 +802,356 @@ export class LayerTransform {
         return layerTransformBasicOverlay.activate({
             coordinateSystem: this.coordinateSystem,
             getWorldCorners: () => this.onGetTransformWorldCorners?.() || [],
-            shouldDisplay: () => this.isVKeyPressed
+            shouldDisplay: () => this.isVKeyPressed,
+            onUniformScaleStart: gesture => this._startBasicUniformScaleGesture(gesture),
+            onUniformScaleMove: gesture => this._updateBasicUniformScaleGesture(gesture),
+            onUniformScaleEnd: gesture => this._finishBasicUniformScaleGesture(gesture),
+            onAxisScaleStart: gesture => this._startBasicAxisScaleGesture(gesture),
+            onAxisScaleMove: gesture => this._updateBasicAxisScaleGesture(gesture),
+            onAxisScaleEnd: gesture => this._finishBasicAxisScaleGesture(gesture),
+            onRotationStart: gesture => this._startBasicRotationGesture(gesture),
+            onRotationMove: gesture => this._updateBasicRotationGesture(gesture),
+            onRotationEnd: gesture => this._finishBasicRotationGesture(gesture)
         });
+    }
+
+    _getBasicTransformAnchorScreenPosition(transform) {
+        const anchorX = Number.isFinite(transform?.anchorX) ? transform.anchorX : 0.5;
+        const anchorY = Number.isFinite(transform?.anchorY) ? transform.anchorY : 0.5;
+        const matrix = createCenteredTransformMatrix(
+            transform || {},
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        const world = applyTransformMatrix(
+            matrix,
+            anchorX * this.config.canvas.width,
+            anchorY * this.config.canvas.height
+        );
+        const screen = this.coordinateSystem.worldToScreenImmediate?.(world.x, world.y)
+            || this.coordinateSystem.worldToScreen?.(world.x, world.y);
+        if (!screen || !Number.isFinite(screen.clientX) || !Number.isFinite(screen.clientY)) {
+            return null;
+        }
+        const worldXAxis = this.coordinateSystem.worldToScreenImmediate?.(world.x + 1, world.y)
+            || this.coordinateSystem.worldToScreen?.(world.x + 1, world.y);
+        const worldYAxis = this.coordinateSystem.worldToScreenImmediate?.(world.x, world.y + 1)
+            || this.coordinateSystem.worldToScreen?.(world.x, world.y + 1);
+        const determinant = worldXAxis && worldYAxis
+            ? (worldXAxis.clientX - screen.clientX) * (worldYAxis.clientY - screen.clientY)
+                - (worldXAxis.clientY - screen.clientY) * (worldYAxis.clientX - screen.clientX)
+            : 1;
+        return {
+            x: screen.clientX,
+            y: screen.clientY,
+            orientation: Number.isFinite(determinant) && determinant < 0 ? -1 : 1
+        };
+    }
+
+    _startBasicUniformScaleGesture(gesture) {
+        if (!this.isVKeyPressed
+            || this.basicOverlayScaleGesture
+            || this.basicOverlayAxisScaleGesture
+            || this.basicOverlayRotationGesture) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData) return false;
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        if (!transform) return false;
+        const anchorScreen = this._getBasicTransformAnchorScreenPosition(transform);
+        if (!anchorScreen) return false;
+        const geometry = layerTransformBasicOverlay.getScreenGeometry();
+        const handlePoint = geometry?.corners?.[gesture.cornerIndex];
+        if (!handlePoint) return false;
+        const startVector = {
+            x: handlePoint.x - anchorScreen.x,
+            y: handlePoint.y - anchorScreen.y
+        };
+        const startDistance = Math.hypot(
+            startVector.x,
+            startVector.y
+        );
+        if (!Number.isFinite(startDistance) || startDistance < 1) return false;
+
+        this.basicOverlayScaleGesture = {
+            pointerId: gesture.pointerId,
+            layerId,
+            startTransform: { ...transform },
+            anchorScreen,
+            startDistance,
+            startVector,
+            startPointer: {
+                x: Number(gesture.clientX),
+                y: Number(gesture.clientY)
+            }
+        };
+        this.cameraSystem?.hideGuideLines?.();
+        return true;
+    }
+
+    _updateBasicUniformScaleGesture(gesture) {
+        const state = this.basicOverlayScaleGesture;
+        if (!state || state.pointerId !== gesture.pointerId || !this.isVKeyPressed) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const currentVector = {
+            x: state.startVector.x + Number(gesture.clientX) - state.startPointer.x,
+            y: state.startVector.y + Number(gesture.clientY) - state.startPointer.y
+        };
+        const currentDistance = Math.hypot(currentVector.x, currentVector.y);
+        const direction = state.startVector.x * currentVector.x
+            + state.startVector.y * currentVector.y < 0
+            ? -1
+            : 1;
+        const next = createUniformScaleTransformFromScreenDistance(
+            state.startTransform,
+            state.startDistance,
+            currentDistance,
+            {
+                minScale: BASIC_HANDLE_SCALE_EPSILON,
+                maxScale: this.config.layer.maxScale,
+                direction
+            }
+        );
+        this.transforms.set(state.layerId, next);
+        this.applyTransform(
+            activeLayer,
+            next,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, next);
+        return true;
+    }
+
+    _finishBasicUniformScaleGesture(gesture) {
+        const state = this.basicOverlayScaleGesture;
+        if (!state || state.pointerId !== gesture.pointerId) return false;
+        this.basicOverlayScaleGesture = null;
+        if (gesture.cancelled !== true) return true;
+
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const restored = { ...state.startTransform };
+        this.transforms.set(state.layerId, restored);
+        this.applyTransform(
+            activeLayer,
+            restored,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, restored);
+        return true;
+    }
+
+    _startBasicAxisScaleGesture(gesture) {
+        if (!this.isVKeyPressed
+            || this.basicOverlayScaleGesture
+            || this.basicOverlayAxisScaleGesture
+            || this.basicOverlayRotationGesture
+            || (gesture.axis !== 'x' && gesture.axis !== 'y')) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData) return false;
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        if (!transform) return false;
+        const anchorScreen = this._getBasicTransformAnchorScreenPosition(transform);
+        const geometry = layerTransformBasicOverlay.getScreenGeometry();
+        if (!anchorScreen || !geometry?.corners?.length) return false;
+        const xAxis = {
+            x: geometry.corners[1].x - geometry.corners[0].x,
+            y: geometry.corners[1].y - geometry.corners[0].y
+        };
+        const yAxis = {
+            x: geometry.corners[3].x - geometry.corners[0].x,
+            y: geometry.corners[3].y - geometry.corners[0].y
+        };
+        const handlePoint = geometry.sideMidpoints?.[gesture.sideIndex];
+        const handleCoordinates = resolveScreenBasisCoordinates(
+            anchorScreen,
+            handlePoint,
+            xAxis,
+            yAxis
+        );
+        const pointerCoordinates = resolveScreenBasisCoordinates(
+            anchorScreen,
+            { x: Number(gesture.clientX), y: Number(gesture.clientY) },
+            xAxis,
+            yAxis
+        );
+        const startProjection = handleCoordinates?.[gesture.axis];
+        const startPointerProjection = pointerCoordinates?.[gesture.axis];
+        if (!Number.isFinite(startProjection) || Math.abs(startProjection) < 0.000001) return false;
+        if (!Number.isFinite(startPointerProjection)) return false;
+
+        this.basicOverlayAxisScaleGesture = {
+            pointerId: gesture.pointerId,
+            layerId,
+            axis: gesture.axis,
+            startTransform: { ...transform },
+            anchorScreen,
+            xAxis,
+            yAxis,
+            startProjection,
+            startPointerProjection
+        };
+        this.cameraSystem?.hideGuideLines?.();
+        return true;
+    }
+
+    _updateBasicAxisScaleGesture(gesture) {
+        const state = this.basicOverlayAxisScaleGesture;
+        if (!state || state.pointerId !== gesture.pointerId || !this.isVKeyPressed) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const coordinates = resolveScreenBasisCoordinates(
+            state.anchorScreen,
+            { x: Number(gesture.clientX), y: Number(gesture.clientY) },
+            state.xAxis,
+            state.yAxis
+        );
+        if (!coordinates) return false;
+        const currentProjection = state.startProjection
+            + coordinates[state.axis]
+            - state.startPointerProjection;
+        const next = createAxisScaleTransformFromScreenProjection(
+            state.startTransform,
+            state.axis,
+            state.startProjection,
+            currentProjection,
+            {
+                minScale: BASIC_HANDLE_SCALE_EPSILON,
+                maxScale: this.config.layer.maxScale
+            }
+        );
+        this.transforms.set(state.layerId, next);
+        this.applyTransform(
+            activeLayer,
+            next,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, next);
+        return true;
+    }
+
+    _finishBasicAxisScaleGesture(gesture) {
+        const state = this.basicOverlayAxisScaleGesture;
+        if (!state || state.pointerId !== gesture.pointerId) return false;
+        this.basicOverlayAxisScaleGesture = null;
+        if (gesture.cancelled !== true) return true;
+
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const restored = { ...state.startTransform };
+        this.transforms.set(state.layerId, restored);
+        this.applyTransform(
+            activeLayer,
+            restored,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, restored);
+        return true;
+    }
+
+    _startBasicRotationGesture(gesture) {
+        if (!this.isVKeyPressed
+            || this.basicOverlayScaleGesture
+            || this.basicOverlayAxisScaleGesture
+            || this.basicOverlayRotationGesture) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData) return false;
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        if (!transform) return false;
+        const anchorScreen = this._getBasicTransformAnchorScreenPosition(transform);
+        if (!anchorScreen) return false;
+        const dx = Number(gesture.clientX) - anchorScreen.x;
+        const dy = Number(gesture.clientY) - anchorScreen.y;
+        if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.hypot(dx, dy) < 1) return false;
+
+        this.basicOverlayRotationGesture = {
+            pointerId: gesture.pointerId,
+            layerId,
+            startTransform: { ...transform },
+            anchorScreen,
+            lastPointerAngle: Math.atan2(dy, dx),
+            screenAngleDelta: 0
+        };
+        this.cameraSystem?.hideGuideLines?.();
+        return true;
+    }
+
+    _updateBasicRotationGesture(gesture) {
+        const state = this.basicOverlayRotationGesture;
+        if (!state || state.pointerId !== gesture.pointerId || !this.isVKeyPressed) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const dx = Number(gesture.clientX) - state.anchorScreen.x;
+        const dy = Number(gesture.clientY) - state.anchorScreen.y;
+        if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.hypot(dx, dy) < 1) return false;
+        const currentPointerAngle = Math.atan2(dy, dx);
+        state.screenAngleDelta += normalizeScreenAngleDelta(
+            state.lastPointerAngle,
+            currentPointerAngle
+        );
+        state.lastPointerAngle = currentPointerAngle;
+        const next = createRotationTransformFromScreenAngleDelta(
+            state.startTransform,
+            state.screenAngleDelta,
+            {
+                direction: state.anchorScreen.orientation,
+                rotationLoop: this.config.layer.rotationLoop,
+                minRotation: this.config.layer.minRotation * Math.PI / 180,
+                maxRotation: this.config.layer.maxRotation * Math.PI / 180
+            }
+        );
+        this.transforms.set(state.layerId, next);
+        this.applyTransform(
+            activeLayer,
+            next,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, next);
+        return true;
+    }
+
+    _finishBasicRotationGesture(gesture) {
+        const state = this.basicOverlayRotationGesture;
+        if (!state || state.pointerId !== gesture.pointerId) return false;
+        this.basicOverlayRotationGesture = null;
+        if (gesture.cancelled !== true) return true;
+
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const restored = { ...state.startTransform };
+        this.transforms.set(state.layerId, restored);
+        this.applyTransform(
+            activeLayer,
+            restored,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, restored);
+        return true;
     }
 
     _setupSlider(sliderId, property, min, max, initial, formatCallback) {
@@ -727,6 +1165,7 @@ export class LayerTransform {
             initial: initial,
             momentum: false,
             onChange: (value) => {
+                if (this._syncingLayerTransformPanel) return;
                 if (property === 'rotation' && this.config.layer.rotationLoop) {
                     while (value > max) value -= (max - min);
                     while (value < min) value += (max - min);
@@ -1152,29 +1591,34 @@ export class LayerTransform {
         const rotationSlider = this._sliderInstances.get('layer-rotation-slider');
         const scaleSlider = this._sliderInstances.get('layer-scale-slider');
         
-        if (xSlider) {
-            xSlider.setValue(transform.x);
-        }
-        
-        if (ySlider) {
-            ySlider.setValue(transform.y);
-        }
-        
-        if (rotationSlider) {
-            let rotationDeg = transform.rotation * 180 / Math.PI;
-            
-            if (this.config.layer.rotationLoop) {
-                const min = this.config.layer.minRotation;
-                const max = this.config.layer.maxRotation;
-                while (rotationDeg > max) rotationDeg -= (max - min);
-                while (rotationDeg < min) rotationDeg += (max - min);
+        this._syncingLayerTransformPanel = true;
+        try {
+            if (xSlider) {
+                xSlider.setValue(transform.x);
             }
-            
-            rotationSlider.setValue(rotationDeg);
-        }
-        
-        if (scaleSlider) {
-            scaleSlider.setValue(Math.abs(transform.scaleX));
+
+            if (ySlider) {
+                ySlider.setValue(transform.y);
+            }
+
+            if (rotationSlider) {
+                let rotationDeg = transform.rotation * 180 / Math.PI;
+
+                if (this.config.layer.rotationLoop) {
+                    const min = this.config.layer.minRotation;
+                    const max = this.config.layer.maxRotation;
+                    while (rotationDeg > max) rotationDeg -= (max - min);
+                    while (rotationDeg < min) rotationDeg += (max - min);
+                }
+
+                rotationSlider.setValue(rotationDeg);
+            }
+
+            if (scaleSlider) {
+                scaleSlider.setValue(Math.abs(transform.scaleX));
+            }
+        } finally {
+            this._syncingLayerTransformPanel = false;
         }
     }
 
