@@ -7,6 +7,18 @@
     padding: 3px 8px 5px;
 }
 
+/* Anchorはshortcutのない高頻度操作。反転群から少し離し、左端へ固定する。 */
+.layer-transform-panel .transform-anchor-toggle {
+    margin-right: 4px;
+    border-color: color-mix(in srgb, var(--active-border) 46%, var(--futaba-light-medium));
+    background: color-mix(in srgb, var(--active-border) 12%, var(--futaba-background));
+}
+
+.layer-transform-panel .transform-anchor-toggle:hover:not([disabled]) {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 22%, var(--futaba-background));
+}
+
 .layer-transform-mode-btn {
     min-height: 24px;
     padding: 3px 7px;
@@ -78,6 +90,7 @@
 }
 
 .layer-transform-basic-overlay__corner,
+.layer-transform-basic-overlay__side,
 .layer-transform-basic-overlay__rotation {
     fill: var(--futaba-cream);
     stroke: var(--futaba-maroon);
@@ -85,15 +98,94 @@
     vector-effect: non-scaling-stroke;
 }
 
+.layer-transform-basic-overlay__corner,
+.layer-transform-basic-overlay__side {
+    pointer-events: none;
+    transition: fill 90ms ease, stroke 90ms ease;
+}
+
+.layer-transform-basic-overlay__corner.is-hovered,
+.layer-transform-basic-overlay__corner.is-active,
+.layer-transform-basic-overlay__side.is-hovered,
+.layer-transform-basic-overlay__side.is-active {
+    fill: color-mix(in srgb, var(--active-border) 72%, var(--futaba-cream));
+    stroke: var(--futaba-maroon);
+}
+
+.layer-transform-basic-overlay__corner-hit {
+    fill: transparent;
+    stroke: transparent;
+    pointer-events: all;
+    touch-action: none;
+}
+
+.layer-transform-basic-overlay__side-hit {
+    fill: transparent;
+    stroke: transparent;
+    pointer-events: all;
+    touch-action: none;
+}
+
+.layer-transform-basic-overlay__side-hit.is-horizontal-axis {
+    cursor: ew-resize;
+}
+
+.layer-transform-basic-overlay__side-hit.is-vertical-axis {
+    cursor: ns-resize;
+}
+
+.layer-transform-basic-overlay__side-hit.is-diagonal-main {
+    cursor: nwse-resize;
+}
+
+.layer-transform-basic-overlay__side-hit.is-diagonal-cross {
+    cursor: nesw-resize;
+}
+
+.layer-transform-basic-overlay__corner-hit.is-diagonal-main {
+    cursor: nwse-resize;
+}
+
+.layer-transform-basic-overlay__corner-hit.is-diagonal-cross {
+    cursor: nesw-resize;
+}
+
 .layer-transform-basic-overlay__rotation {
-    fill: color-mix(in srgb, var(--active-border) 26%, var(--futaba-cream));
-    stroke: var(--active-border);
+    fill: var(--futaba-cream);
+    stroke: var(--futaba-maroon);
+    pointer-events: none;
+    transition: fill 90ms ease, stroke 90ms ease;
+}
+
+.layer-transform-basic-overlay__rotation.is-hovered,
+.layer-transform-basic-overlay__rotation.is-active {
+    fill: color-mix(in srgb, var(--active-border) 72%, var(--futaba-cream));
+    stroke: var(--futaba-maroon);
+}
+
+.layer-transform-basic-overlay__rotation-hit {
+    fill: transparent;
+    stroke: transparent;
+    pointer-events: all;
+    touch-action: none;
+    cursor: grab;
+}
+
+.layer-transform-basic-overlay.is-rotating .layer-transform-basic-overlay__rotation-hit {
+    cursor: grabbing;
 }
 
 .layer-transform-basic-overlay__rotation-stem {
-    stroke: var(--active-border);
+    stroke: var(--futaba-maroon);
     stroke-width: 1.5;
+    opacity: 0.76;
     vector-effect: non-scaling-stroke;
+    transition: stroke 90ms ease, opacity 90ms ease;
+}
+
+.layer-transform-basic-overlay.is-rotating .layer-transform-basic-overlay__rotation-stem {
+    stroke: var(--active-border);
+    opacity: 1;
 }
 
 @media (pointer: coarse) {
@@ -101,5 +193,11 @@
     .layer-transform-precise > summary {
         min-height: 38px;
         font-size: 10px;
+    }
+
+    .layer-transform-basic-overlay__corner-hit,
+    .layer-transform-basic-overlay__side-hit,
+    .layer-transform-basic-overlay__rotation-hit {
+        r: 18px;
     }
 }

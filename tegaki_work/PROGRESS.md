@@ -1,6 +1,6 @@
 # Tegaki Progress
 
-更新日: 2026-08-31
+更新日: 2026-09-01
 
 ## 現在地
 
@@ -18,7 +18,7 @@
 - Phase 9lはGate 0=`GO — D: Flat CAF context＋unified layer list`としてcloseした。右Panelは選択CAF一件の薄いcontextとそのinternal Layer / Folderだけを投影し、current targetを橙surface一つで示す。CAF asset列挙とinternal Layer Pointer D&Dを右Panelから外し、CAF順序・階層・複数CAF切替・D&DをAnimation Tableへ寄せた。Folder collapse時の選択focus、visibility / clipping、複数CAF切替、Table close / reopen、全113 verifier、build、Browser、console 0件を通過し、SOL final review=`A`。`1 UI engine / 2 data adapter`、TimelineModel / ClipAsset / DrawingSnapshot、History / saveは維持した。
 - Phase 9mはAnimation Table Utility Split / Low-Zoom LOD Comparison Gate。Stage B `C first`、Playback End、Bottom utility、Clip visual LOD、一行header、固定幅Playback Range、OUT限定I / O、borderless FPS / FRAMES / PREVIEW、Bottom Lucide COPY / DELETEをproduction接続した。Browserのrange / PREVIEW位置不変、I / O設定・解除とCanvas I非干渉、COPY、SVGを確認し、全118 verifier、`node --check`、build、生成物清掃を通過。Ownerが2026-08-29に実画面受入し、SOL final review=`A`でcloseした。Clip Focus、dark top / bottom、Lane濃淡、外枠削減は独立候補として保持する。
 - Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gateとしてcloseした。D3で右RIGをoverview / next action / handoff、既存single floating windowをmode別`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`とするhost ownershipを固定した。right RIGからのopen、mode往復、close / reopen、Table closed再入場、History不変、480×800横overflow 0、console 0件、全129 verifier、buildを通過した。schema / solver / History / save authorityは変更していない。現RIG WORKSPACE layoutと上位tab分類は最終UX受入ではない。
-- 現行Phase 9oはLayer Transform Interaction Grammar / Focus Lens Gate。OwnerがGate 1=`GO — D: Tegaki hybrid`を選定した。Stage B1でproduction panelを`BASIC / DISTORT / WARP`とpreciseの`詳細`に整理し、Raster alphaのruntime-only tight boundsと既存matrixからpointer非参加の4 corner + rotate overlayを接続した。DISTORT / WARPはdisabled、既存Move / Shift Rotate / Scale、Anchor、confirm / cancel / Reset、normal / CAF History、save境界は維持する。1280×720のMove / confirm / cancel / Undo / Redo、480×800初期起動の横overflow 0、console 0件を確認し、Stage B1技術proof完了。Owner production visual acceptance待ちで、承認後はinteractive Uniform Scale handleの一Sliceだけへ進む。
+- 現行Phase 9oはLayer Transform Interaction Grammar / Focus Lens Gate。Gate 1=`GO — D: Tegaki hybrid`、Stage B1〜B3はOwner acceptance済み。Stage B4のquiet 4辺中点はone-axis Scaleへ接続済みで、Owner correctionとしてAnchorの現行session追従、左端へ分離した中心button、double clickのruntime content-center復帰、corner / sideのAnchor越えflip、拡大preview限定exact-pixel samplingを追加した。既存default / ResetはCanvas中心、samplingはcancel / confirmのBake前に元へ戻し、schema / History / source Raster / exportを変更しない。wideでAnchorとboxのMoveが`+90 / +30px`一致、side flip、preview History不変、V confirm 1 History、480×800の210px panel・横overflow 0、全131 verifier、build、通常scaleのconsole 0件を通過した。意図的な巨大scale確定stressでは既存max-texture guard warning 1件だけを確認した。side midpointなし案と永続Canvas / content-center切替案は再試行候補として保持する。次はStage B4 Owner再確認後、切替modeの要否またはBASIC close条件をGate判断する。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -146,19 +146,21 @@
 4. `tegaki_work/NEXT_CHAT_HANDOFF.md`
 5. `task-codex/phase9o.md`
 6. `開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md`
-7. `開発用資料保管庫/Archive/phase9n.md`
-8. `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`
-9. `開発用資料保管庫/proposals/17_RIG・Motion責務再配置Architecture Gate.md`
-10. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
-11. `開発用資料保管庫/proposals/00_計画索引.md`
-12. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
-13. `開発用資料保管庫/proposals/16_制作Workspace・UI・外部Handoff構造ロードマップ.md`
-14. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
-15. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
-16. `開発用資料保管庫/proposals/UI_CSSスタイルガイド.md`
-17. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
+7. `開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md`
+8. `開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_REVISED_2026-08-31.md`
+9. `開発用資料保管庫/Archive/phase9n.md`
+10. `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`
+11. `開発用資料保管庫/proposals/17_RIG・Motion責務再配置Architecture Gate.md`
+12. `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`
+13. `開発用資料保管庫/proposals/00_計画索引.md`
+14. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
+15. `開発用資料保管庫/proposals/16_制作Workspace・UI・外部Handoff構造ロードマップ.md`
+16. `開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`
+17. `開発用資料保管庫/proposals/15_キャラクターRig・Mesh・Perform統合ロードマップ.md`
+18. `開発用資料保管庫/proposals/UI_CSSスタイルガイド.md`
+19. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
 
-Phase 7i〜9nはclose済み。Phase 9n D3はright overview + single floating authoring hostを固定し、現RIG WORKSPACE layoutを最終UX受入しない条件でcloseした。現行Phase 9oはTransform-first / Focus Lens Gate。Gate 1=`GO — D: Tegaki hybrid`、Stage B1 BASIC shell + read-only overlayの技術proofは完了した。次はOwner production visual acceptance、承認後はinteractive Uniform Scale handleの一Slice。A / B / Cは不満時の再試行fixtureとして保持し、schema、Drawing Warp、Animation bridge、RIG再配置を並走しない。
+Phase 7i〜9nはclose済み。Phase 9n D3はright overview + single floating authoring hostを固定し、現RIG WORKSPACE layoutを最終UX受入しない条件でcloseした。現行Phase 9oはTransform-first / Focus Lens Gate。Gate 1=`GO — D: Tegaki hybrid`、Stage B1〜B3はOwner acceptance済み。Stage B4はquiet 4辺中点をproductionへ接続し、回転済み対象を含むone-axis Scale、slider feedback遮断、preview / confirm / cancel / History境界の技術proofを完了してOwner操作確認待ち。side midpointなし案とA / B / Cは不満時の再試行条件として保持し、schema、Drawing Warp、Interaction Context / Animation bridge、RIG再配置を並走しない。
 
 ## 資料
 
@@ -255,5 +257,6 @@ Phase 7i〜9nはclose済み。Phase 9n D3はright overview + single floating aut
 - Phase 9m完了: `開発用資料保管庫/Archive/phase9m.md`
 - Phase 9n完了: `開発用資料保管庫/Archive/phase9n.md`
 - Transform / Warp / Animation / RIG Focus Lens提案: `開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md`
+- Transform / RIG Authoring Interaction追補: `開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md`
 - 次チャット引き継ぎ: `tegaki_work/NEXT_CHAT_HANDOFF.md`
-- 現行Phase: `task-codex/phase9o.md`（Gate 1=`GO — D: Tegaki hybrid` / Stage B1 BASIC read-only overlay技術proof完了 / Owner production visual acceptance待ち）
+- 現行Phase: `task-codex/phase9o.md`（Gate 1=`GO — D: Tegaki hybrid` / Stage B1〜B3 Owner acceptance済み / Stage B4 side midpoint技術proof完了・Owner操作確認待ち）
