@@ -193,7 +193,7 @@
         renderSummaryList();
     }
 
-    // メインプロンプト欄へのテンプレート挿入 (v3.7.2: 5chunk N+2構造)
+    // メインプロンプト欄へのテンプレート挿入 (v3.7.3: Diagnostic N+2構造)
     window.mangaPrompterInsertTemplateToMainPrompt = function () {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -201,12 +201,11 @@
         if (!mainPromptEl) return;
 
         const sorted = [...state.panels].sort((a, b) => (a.index || 0) - (b.index || 0));
-        const numPanels = sorted.length;
         let curVal = mainPromptEl.value.trim();
 
         const chunks = curVal.split(/\bBREAK\b/i).map(c => c.trim()).filter(c => c.length > 0);
-        let pagePart = chunks.length > 0 ? chunks[0] : `${numPanels}koma, manga page, comic strip, comic panel`;
-        let stylePart = chunks.length > 1 ? chunks[1] : 'masterpiece, best quality, monochrome, manga ink, clean lineart';
+        let pagePart = chunks.length > 0 ? chunks[0] : `multiple scene composition`;
+        let stylePart = chunks.length > 1 ? chunks[1] : 'clean illustration, clear subjects, simple composition';
 
         let templateLines = [
             pagePart,
@@ -903,7 +902,7 @@
         // 1. ページ構造 (第1chunk)
         const pageBox = document.createElement('div');
         pageBox.className = 'manga-summary-base-box';
-        const pageSnippet = state.parsedPrompt.page ? state.parsedPrompt.page : '(未入力 - 3koma, manga page, comic strip 等の全体コマ構造)';
+        const pageSnippet = state.parsedPrompt.page ? state.parsedPrompt.page : '(未入力 - multiple scene composition 等の全体構造)';
         pageBox.innerHTML = `
             <div class="manga-summary-base-title">🧭 [ページ構造 - 第1chunk]</div>
             <div class="manga-summary-prompt-text ${state.parsedPrompt.page ? '' : 'empty'}">${escapeHtml(pageSnippet)}</div>
@@ -914,7 +913,7 @@
         const styleBox = document.createElement('div');
         styleBox.className = 'manga-summary-base-box';
         styleBox.style.marginTop = '6px';
-        const styleSnippet = state.parsedPrompt.style ? state.parsedPrompt.style : '(未入力 - masterpiece, monochrome, manga ink 等の全体共通画風)';
+        const styleSnippet = state.parsedPrompt.style ? state.parsedPrompt.style : '(未入力 - clean illustration, monochrome 等の全体共通画風)';
         styleBox.innerHTML = `
             <div class="manga-summary-base-title">🎨 [全体画風・品質 - 第2chunk]</div>
             <div class="manga-summary-prompt-text ${state.parsedPrompt.style ? '' : 'empty'}">${escapeHtml(styleSnippet)}</div>

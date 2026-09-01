@@ -17,38 +17,33 @@ Stable Diffusion（特に SDXL / Illustrious 系モデル）において、1ペ�
 ### ① プロンプト構文とモデルの解釈特性
 | プロンプト構造 | モデルの挙動 (SDXL/Illustrious) | 分析・知見 |
 | :--- | :--- | :--- |
-| `3koma manga... BREAK sky... BREAK 1boy...` | **3コマ漫画として分離（初期成功）** | チャンク数＝コマ数が一致し、全体構図と被写体が素直に解釈された。 |
 | `3koma...` を全コマに自動結合（Common Prepend） | **1枚絵に崩壊（女の子1人のみ）** | 各コマの狭い空間マスクの中で「3コマ漫画全体を描け」という矛盾命令になり破綻。 |
-| **v3.7.2: PAGE と STYLE の分離 (N + 2 構造)** | **全体構図とコマ別被写体の干渉を根絶** | `3koma`（PAGE）はメインコンディショニングにのみ渡し、各コマには `STYLE`（画風）＋被写体のみを注入。 |
-
-### ② ControlNet（線画・コマ枠）との併用実験
-| 設定 | 出力結果 | メカニズム分析 |
-| :--- | :--- | :--- |
-| **拡張OFF ＋ ControlNet ON** | **キャンバス通りのコマ割り（上1・下2）が100%完璧に出力** | ControlNet（AnyTest/Lineart）がForgeの `ModelPatcher` を通じて正常に機能し、線画枠線を完全固定。 |
-| **旧拡張ON ＋ ControlNet ON** | **コマ割りが破壊され、5コマの女の子の顔が増殖** | 旧拡張が `CrossAttention.forward` を直接モンキーパッチしたため、ControlNetの制御信号を破壊。 |
-| **v3.7.2 ON (ModelPatcher Native + GLOBAL Split)** | **ControlNet完全共存 ＋ コマ別プロンプト完全分離** | Forge公式 `ModelPatcher` API + main conditioning 縮小により、全画面への被写体漏れを遮断。 |
+| **v3.7.2: base_mask = 0 のみ** | **コマ割りが消え、1枚絵の足元に崩壊** | 全画面の全体構造（`PAGE`）の寄与がゼロになり、第1コマのプロンプトが画面全体を支配した。 |
+| **v3.7.3: Global Effect (cond_1, mask_1) 独立注入** | **全体構造（約20%）とコマ別被写体（約80%）が協調** | 全画面マスクで `PAGE + STYLE` を弱く下敷きにし、各コママスクで被写体を独立注入。 |
 
 ---
 
-## 3. v3.7.2 確定プロンプト文法（N + 2 構造）
-
-3コマの場合、メインPositive Promptは以下の **5 chunk** で構成されます：
+## 3. v3.7.3 確定アーキテクチャ（Global Effect Branch 方式）
 
 ```text
-3koma, manga page, comic strip, comic panel               ← chunk 0: PAGE STRUCTURE (全体コマ構造)
-BREAK
-masterpiece, best quality, monochrome, manga ink, lineart ← chunk 1: GLOBAL STYLE (全体共通画風)
-BREAK
-koma 1: close-up, 1girl, standing                        ← chunk 2: REGION 1 (コマ1の被写体)
-BREAK
-koma 2: wide shot, sky, ocean                            ← chunk 3: REGION 2 (コマ2の被写体)
-BREAK
-koma 4: medium shot, 1boy, sitting                       ← chunk 4: REGION 3 (コマ3の被写体)
+┌─────────────────────────────────────────────────────────────┐
+│ 1. ユーザー入力（N + 2 chunk 構造）                        │
+│    chunk 0: PAGE STRUCTURE (例: multiple scene composition)  │
+│    BREAK                                                    │
+│    chunk 1: GLOBAL STYLE (例: clean illustration...)         │
+│    BREAK                                                    │
+│    chunk 2: REGION 1 (例: koma 1: red sports car)           │
+│    BREAK                                                    │
+│    chunk 3: REGION 2 (例: koma 2: blue ocean)               │
+├─────────────────────────────────────────────────────────────┤
+│ 2. Attention Couple Branch 構成                             │
+│    ・BASE (k_target): mask_weight = 0 (未使用)               │
+│    ・GLOBAL EFFECT (cond_1): PAGE+STYLE, mask=全画面*0.25    │
+│    ・REGION 1 (cond_2): STYLE+R1, mask=Region1マスク*1.0     │
+│    ・REGION 2 (cond_3): STYLE+R2, mask=Region2マスク*1.0     │
+├─────────────────────────────────────────────────────────────┤
+│ 3. 正規化後の効き具合                                       │
+│    ・全体構造/画風: 約 20%                                   │
+│    ・各コマ固有内容: 約 80%                                 │
+└─────────────────────────────────────────────────────────────┘
 ```
-
-### 【内部ディスパッチの仕組み】
-- **WebUI Main Conditioning**: `PAGE STRUCTURE, GLOBAL STYLE` のみ（Region本文は除去され、全画面への漏れを防止）。
-- **Region 1 Conditioning**: `GLOBAL STYLE, close-up, 1girl, standing`（PAGEは入れない）。
-- **Region 2 Conditioning**: `GLOBAL STYLE, wide shot, sky, ocean`（PAGEは入れない）。
-- **Region 3 Conditioning**: `GLOBAL STYLE, medium shot, 1boy, sitting`（PAGEは入れない）。
-- **base_mask**: 強制 `0`（ゼロ）。
