@@ -1,7 +1,7 @@
 """
-EasyReforge Manga Prompter
-メインスクリプト & Gradio UI
-Forge ModelPatcher ネイティブエンジン (v3.6 Clean Condition Dispatch)
+EasyReforge Manga Prompter - Main Script & Gradio UI
+Version: v3.7.1 Diagnostic Reset (EasyReforge Fixed Environment)
+Golden Reference: sd-forge-couple v4.0.2
 """
 
 import os
@@ -20,10 +20,10 @@ if cur_dir not in sys.path:
 
 try:
     from manga_spatial_engine import MangaSpatialEngine
-    from manga_attention import MangaModelPatcherHook
+    from manga_attention import MangaModelPatcherHook, DIAGNOSTIC_OUTPUT_SCALE
 except Exception:
     from scripts.manga_spatial_engine import MangaSpatialEngine
-    from scripts.manga_attention import MangaModelPatcherHook
+    from scripts.manga_attention import MangaModelPatcherHook, DIAGNOSTIC_OUTPUT_SCALE
 
 def empty_tensor(h: int, w: int):
     return torch.zeros((h, w)).unsqueeze(0)
@@ -32,8 +32,9 @@ class MangaPrompterScript(scripts.Script):
     def __init__(self):
         super().__init__()
         self.patcher_hook = MangaModelPatcherHook()
-        self.active_unet = None
-        self.original_prompt = None
+        self.resolved_prompts = []
+        self.valid = False
+        self.sorted_panels = []
 
     def title(self):
         return "Manga Region Prompter (EasyReforge)"
@@ -45,7 +46,7 @@ class MangaPrompterScript(scripts.Script):
         with gr.Accordion("🎨 Manga Region Prompter (漫画コマ割りプロンプター)", open=True, elem_id="manga-prompter-accordion"):
             with gr.Row():
                 is_enabled = gr.Checkbox(label="有効化 (Enable)", value=False, elem_id="manga-prompter-enabled")
-                base_weight = gr.Slider(label="全体画風の強度 (Base Style Weight)", minimum=0.0, maximum=0.5, step=0.05, value=0.1, info="全体プロンプト（1行目）を全コマの下地に敷く割合")
+                base_weight = gr.Slider(label="全体画風の強度 (Base Style Weight)", minimum=0.0, maximum=0.5, step=0.05, value=0.0, info="v3.7診断中は各コマへGLOBALテキストが自動prefixされます")
 
             manga_html = gr.HTML(value="""
             <div id="manga-prompter-root">
@@ -112,94 +113,90 @@ class MangaPrompterScript(scripts.Script):
 
         return [is_enabled, base_weight, json_bridge]
 
-    def process(self, p, is_enabled, base_weight, json_bridge):
-        """生成前処理: 全体ベースプロンプトを抽出してグローバル汚染を防止"""
+    def after_extra_networks_activate(self, p, is_enabled, base_weight, json_bridge, *args, **kwargs):
+        """Forge Couple同等のライフサイクルでプロンプトを厳密解析 (p.prompt は一切書き換えない)"""
+        self.valid = False
+        self.resolved_prompts = []
+        self.sorted_panels = []
+
         if not is_enabled:
+            print(f"[MangaPrompter] after_extra_networks_activate: enabled=False")
             return
 
         panels = MangaSpatialEngine.parse_panels_json(json_bridge)
         if not panels or len(panels) <= 1:
+            print(f"[MangaPrompter] パネル数が2未満のためバイパスします (panels={len(panels) if panels else 0})")
             return
 
-        prompt_text = p.prompt if isinstance(p.prompt, str) else (p.prompt[0] if len(p.prompt) > 0 else "")
-        if not prompt_text:
+        self.sorted_panels = sorted(panels, key=lambda x: x.get('index', 0))
+        num_panels = len(self.sorted_panels)
+
+        # Forgeが解決した prompt を取得
+        resolved_prompt_str = kwargs.get("prompts", [p.prompt])[0] if "prompts" in kwargs else (p.prompt if isinstance(p.prompt, str) else p.prompt[0])
+        raw_chunks = [c.strip() for c in re.split(r'BREAK', resolved_prompt_str, flags=re.IGNORECASE) if c.strip()]
+
+        expected_chunks = num_panels + 1
+        if len(raw_chunks) != expected_chunks:
+            print(f"[MangaPrompter][ERROR] Prompt chunk mismatch: expected {expected_chunks} chunks (GLOBAL + {num_panels} panels), got {len(raw_chunks)}.")
+            print(f"[MangaPrompter][ERROR] Regional patch was NOT applied. Please ensure format: GLOBAL BREAK koma 1: ... BREAK koma 2: ...")
             return
 
-        self.original_prompt = prompt_text
-        raw_chunks = [c.strip() for c in re.split(r'BREAK', prompt_text, flags=re.IGNORECASE) if c.strip()]
-        if len(raw_chunks) > 1:
-            # メインプロンプトには1行目の全体スタイルのみを渡して、全領域への混ざり（リーク）を防止
-            base_style = raw_chunks[0]
-            if isinstance(p.prompt, list):
-                p.prompt = [base_style] * len(p.prompt)
-            else:
-                p.prompt = base_style
+        global_text = raw_chunks[0]
+        tag_regex = re.compile(r'^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*', re.IGNORECASE)
+
+        print(f"[MangaPrompter][RESOLVED PROMPTS] Global='{global_text[:40]}...', Panels={num_panels}:")
+        for i, panel in enumerate(self.sorted_panels):
+            raw_c = raw_chunks[i + 1]
+            clean_c = tag_regex.sub('', raw_c).strip()
+            # GLOBALテキストを各領域プロンプトの先頭にprefix結合
+            merged_text = f"{global_text}, {clean_c}" if global_text else clean_c
+            self.resolved_prompts.append({
+                'panel_index': i + 1,
+                'clean_text': clean_c,
+                'resolved_text': merged_text,
+                'weight': float(panel.get('weight', 1.0))
+            })
+            print(f"  - Region {i + 1} (Panel {panel.get('name', i+1)}): '{merged_text[:60]}...'")
+
+        self.valid = True
 
     def process_before_every_sampling(self, p, is_enabled, base_weight, json_bridge, *args, **kwargs):
         """Forgeのサンプリング直前に ModelPatcher フックを注入"""
-        if not is_enabled:
+        if (not is_enabled) or (not self.valid) or (not self.resolved_prompts):
             return
 
         try:
-            panels = MangaSpatialEngine.parse_panels_json(json_bridge)
-            if not panels or len(panels) <= 1:
-                return
-
-            sorted_panels = sorted(panels, key=lambda x: x.get('index', 0))
-            num_panels = len(sorted_panels)
-
-            prompt_text = self.original_prompt or (p.prompt if isinstance(p.prompt, str) else (p.prompt[0] if len(p.prompt) > 0 else ""))
-            if not prompt_text:
-                return
-
-            raw_chunks = [c.strip() for c in re.split(r'BREAK', prompt_text, flags=re.IGNORECASE) if c.strip()]
-            if len(raw_chunks) <= 1:
-                return
-
-            has_base = (len(raw_chunks) >= num_panels + 1)
-            start_chunk_idx = 1 if has_base else 0
-
-            tag_regex = re.compile(r'^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*', re.IGNORECASE)
-
-            # UNet のクローンを取得 (Forge ModelPatcher)
             if not hasattr(p.sd_model, "forge_objects") or not hasattr(p.sd_model.forge_objects, "unet"):
+                print("[MangaPrompter][ERROR] p.sd_model.forge_objects.unet not found!")
                 return
 
             unet = p.sd_model.forge_objects.unet.clone()
             is_sdxl = getattr(p.sd_model, "is_sdxl", True)
 
+            # MangaSpatialEngine でマスクを一元生成
+            device = 'cpu'
+            spatial_regions = MangaSpatialEngine.generate_spatial_masks(
+                self.sorted_panels, height=p.height, width=p.width, device=device
+            )
+
             fc_args = {}
+            for i, r_info in enumerate(self.resolved_prompts):
+                resolved_text = r_info['resolved_text']
+                w_val = r_info['weight']
 
-            print(f"[MangaPrompter] Forge ModelPatcher 領域パッチ生成 ({num_panels}コマ, ベース強度={base_weight}):")
-            for i, r in enumerate(sorted_panels):
-                chunk_pos = start_chunk_idx + i
-                if chunk_pos < len(raw_chunks):
-                    raw_c = raw_chunks[chunk_pos]
-                    clean_c = tag_regex.sub('', raw_c).strip()
-                else:
-                    clean_c = ""
-
-                # プロンプトのエンコード
-                texts = SdConditioning([clean_c if clean_c else " "], False, p.width, p.height, None)
+                # テキストコンディショニングをエンコード
+                texts = SdConditioning([resolved_text if resolved_text else " "], False, p.width, p.height, None)
                 cond = p.sd_model.get_learned_conditioning(texts)
                 pos_cond = [[cond["crossattn"]]] if is_sdxl else [[cond]]
                 fc_args[f"cond_{i + 1}"] = pos_cond
 
-                # 空間マスクの作成 [1, H, W]
-                rect = r.get('rect', {'x': 0, 'y': 0, 'w': 1, 'h': 1})
-                x1 = max(0, min(p.width - 1, int(rect['x'] * p.width)))
-                y1 = max(0, min(p.height - 1, int(rect['y'] * p.height)))
-                x2 = max(x1 + 1, min(p.width, int((rect['x'] + rect['w']) * p.width)))
-                y2 = max(y1 + 1, min(p.height, int((rect['y'] + rect['h']) * p.height)))
+                # マスク [1, H, W]
+                # spatial_regions[i]['mask'] は [1, 1, H, W] なので squeeze(1)
+                mask_2d = spatial_regions[i]['mask'].squeeze(0).squeeze(0) * w_val
+                fc_args[f"mask_{i + 1}"] = mask_2d.unsqueeze(0)
 
-                w_val = float(r.get('weight', 1.0))
-                mask = torch.zeros((p.height, p.width), dtype=torch.float32)
-                mask[y1:y2, x1:x2] = w_val
-                fc_args[f"mask_{i + 1}"] = mask.unsqueeze(0)
-
-                print(f"  - コマ {i + 1} (領域: [{x1}:{x2}, {y1}:{y2}], 重み={w_val:.2f}): {clean_c[:50]}")
-
-            base_mask = (torch.ones((p.height, p.width), dtype=torch.float32) * float(base_weight)).unsqueeze(0)
+            # base_mask は強制 ZERO (GLOBAL は各領域に prefix 済みのため、ベースブランチは0にする)
+            base_mask = empty_tensor(p.height, p.width)
 
             patched_unet = self.patcher_hook.patch_unet(
                 model=unet,
@@ -209,18 +206,20 @@ class MangaPrompterScript(scripts.Script):
                 height=p.height,
             )
 
-            if patched_unet is not None:
-                p.sd_model.forge_objects.unet = patched_unet
-                self.active_unet = patched_unet
-                print(f"[MangaPrompter] Forge ModelPatcher パッチ適用成功 (ControlNet完全共存)")
+            if patched_unet is None:
+                print(f"[MangaPrompter][ERROR] patch_unet failed. Generation will continue unpatched.")
+                return
+
+            p.sd_model.forge_objects.unet = patched_unet
+            print(f"[MangaPrompter] Forge ModelPatcher パッチ登録成功 (Sentinel={DIAGNOSTIC_OUTPUT_SCALE})")
 
         except Exception as e:
-            print(f"[MangaPrompter] パッチ適用エラー: {e}")
+            print(f"[MangaPrompter] パッチ適用例外エラー: {e}")
             traceback.print_exc()
 
     def postprocess(self, p, processed, is_enabled, base_weight, json_bridge):
-        """生成後処理: 元のプロンプトを復元"""
-        if self.original_prompt is not None:
-            p.prompt = self.original_prompt
-            self.original_prompt = None
-        self.active_unet = None
+        """生成後処理: 診断サマリーを出力"""
+        if is_enabled and self.valid:
+            print(f"[MangaPrompter][SUMMARY] attn2_patch_calls={self.patcher_hook.attn2_patch_calls}, attn2_output_patch_calls={self.patcher_hook.attn2_output_patch_calls}")
+        self.valid = False
+        self.resolved_prompts = []
