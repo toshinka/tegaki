@@ -1,0 +1,71 @@
+# GitHubURL — EasyReforge Manga Prompter 読解用 Raw URL ナビゲーション ＆ セカンドオピニオン依頼書
+
+更新日: 2026-09-02
+リポジトリ: toshinka/tegaki (EasyReforgeExtension)
+
+> **外部AI (Web版Claude / ChatGPT / Gemini 等) 向けガイド**
+> 本ファイルは、Stable Diffusion WebUI Forge (reForge) 向け拡張機能「EasyReforge Manga Prompter」の構造・コード・実験知見をGitHub Raw URLから直接読み込み、**技術的なセカンドオピニオン（原因診断・改善提案）** を提供していただくためのナビゲーションです。
+> まずは **「1. プロジェクトの背景・現在地・相談内容」** および **「2. 最優先必読ファイル (Core)」** をお読みいただき、UNet ModelPatcher Attention Hook の設計に対する助言をお願いいたします。
+
+---
+
+## 1. プロジェクトの背景・現在地・相談内容
+
+### 【開発の目的】
+- **EasyReforge (SD WebUI Forge / reForge)** 上で、1ページの漫画（3〜5コマ）を生成するための拡張機能。
+- **2大要件**:
+  1. **レイアウトの完全固定**: キャンバスで描いたコマ枠線を ControlNet（AnyTest / Lineart等）で100%固定。
+  2. **中身の完全分離**: コマ1＝女の子、コマ2＝空と海、コマ3＝男の子 といった各コマのプロンプトを混ざり（リーク）なく独立描画。
+
+### 【これまでの実験経緯と判明した事実】
+1. **A1111由来のモンキーパッチ方式（旧方式）**:
+   - `CrossAttention.forward` を直接上書きしていたため、Forgeの `ModelPatcher` パイプラインと衝突し、**ControlNetの制御信号を破壊**してコマ割りが崩壊した（画像3）。
+2. **Forge Couple / ComfyUI Attention Couple 方式（現行方式 v3.6）**:
+   - Forge公式の `unet.set_model_attn2_patch` および `unet.set_model_attn2_output_patch` を採用。
+   - ControlNetの枠線は100%綺麗に機能するようになったが、**各コマのプロンプトの領域分離がまだ弱く、画像全体に要素が混ざる／変化が薄い** 現象が発生している。
+
+### 【セカンドオピニオンとして相談したい技術論点】
+1. **Forge / ComfyUI の `ModelPatcher` における Attention Hook の正確な動作**:
+   - `set_model_attn2_patch`（q, k, v のバッチ拡張）と `set_model_attn2_output_patch`（マスクによるダウンサンプリング合成）において、SDXL / Illustrious の CrossAttention を確実に領域分離するためのベストプラクティスは何か？
+2. **メインプロンプト（WebUI本体）と各領域コンディショニングの競合回避**:
+   - WebUIが標準で渡すベースコンディショニング（`k_target`）と、各領域の個別コンディショニング（`cond_1`, `cond_2`, `cond_3`）が干渉して全体にプロンプトがリークするのを防ぐための最適な手法は何か？
+3. **ControlNet と Regional Prompter / Attention Couple の完全な協調設計**:
+   - ControlNet の残差（Residual）テンソルを活かしつつ、各コマのプロンプトを確実にマスク内に閉じ込めるためのアーキテクチャ。
+
+---
+
+## 2. 最優先必読ファイル (Core Specifications & Code)
+
+### ① アーキテクチャ設計書 ＆ 実験知見アーカイブ（正本）
+これまでの全実験履歴、成功と失敗のメカニズム、先行拡張との比較が体系的に記録されています。
+- **知見アーカイブ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/docs/ARCHITECTURE_AND_KNOWLEDGE_BASE.md
+
+### ② バックエンド・アテンションフック実装
+Forge ModelPatcher を用いた Attention Hook（`attn2_patch` / `attn2_output_patch`）の実装です。
+- **Attention Hook エンジン**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
+- **メインスクリプト (Gradio & Pipeline)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_prompter.py
+- **空間マスク生成エンジン**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_spatial_engine.py
+
+### ③ フロントエンド UI / Canvas
+ユーザーがコマ割りを直感的にスライス・変形し、メインプロンプトとリアルタイム連動するUIです。
+- **フロントエンド Canvas JS**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/javascript/manga_canvas.js
+- **UI スタイルシート (CSS)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/style.css
+
+---
+
+## 3. 外部AIへのレビュープロンプト例（コピペ用）
+
+```text
+以下のGitHub Raw URLにある「EasyReforge Manga Prompter (Forge ModelPatcher Native)」のコードと知見書を読み、技術的な診断とセカンドオピニオンをお願いします。
+
+1. ナビゲーション＆知見書:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/GitHubURL.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/docs/ARCHITECTURE_AND_KNOWLEDGE_BASE.md
+
+2. 主要コード:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_prompter.py
+
+【相談内容】
+Forge (reForge) において、ControlNet（線画枠線）と共存させつつ、各コマ（領域）のプロンプトを確実に分離して描画するための Attention Hook の設計について、コード上の改善点やベストなアプローチを提案してください。
+```
