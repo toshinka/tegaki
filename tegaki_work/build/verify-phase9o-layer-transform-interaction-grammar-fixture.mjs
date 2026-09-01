@@ -7,7 +7,7 @@ const buildDir = path.dirname(fileURLToPath(import.meta.url));
 const workDir = path.resolve(buildDir, '..');
 const repoDir = path.resolve(workDir, '..');
 const fixturePath = path.join(buildDir, 'phase9o-layer-transform-interaction-grammar-fixture.html');
-const phasePath = path.join(repoDir, 'task-codex', 'phase9o.md');
+const phasePath = path.join(repoDir, '開発用資料保管庫', 'Archive', 'phase9o.md');
 
 const fixture = fs.readFileSync(fixturePath, 'utf8');
 const phase = fs.readFileSync(phasePath, 'utf8');

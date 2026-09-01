@@ -54,6 +54,7 @@ import {
     isLayerPanelDiagnosticsEnabled,
     recordLayerClippingRefresh
 } from './layer-panel-diagnostics.js';
+import { TRANSFORM_EDIT_TRANSACTION_TARGET } from './animation/transform-edit-transaction.js';
 
 export class LayerSystem {
     constructor() {
@@ -74,6 +75,7 @@ export class LayerSystem {
         this.checkerPattern = null;
         this._checkerTileScale = null;
         this._layerTransformSession = null;
+        this._transformEditAdapter = null;
         this._transformInteractionFrame = null;
         this._pendingTransformInteraction = null;
         this._clippingMaskSpritePool = [];
@@ -161,6 +163,32 @@ export class LayerSystem {
             this._emitPanelUpdateRequest();
             this._emitStatusUpdateRequest();
         }, 100);
+    }
+
+    setTransformEditAdapter(adapter = null) {
+        this._transformEditAdapter = adapter
+            && typeof adapter.begin === 'function'
+            && typeof adapter.preview === 'function'
+            && typeof adapter.finish === 'function'
+            ? adapter
+            : null;
+        return this._transformEditAdapter !== null;
+    }
+
+    canStartTransformEditSession() {
+        const activeLayer = this.getActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return false;
+        if (!this._transformEditAdapter?.canStart) return true;
+        const result = this._transformEditAdapter.canStart({
+            layerId: activeLayer.layerData.id,
+            isFolder: activeLayer.layerData.isFolder === true
+        });
+        return result?.ok === true;
+    }
+
+    getActiveTransformEditTarget() {
+        return this._layerTransformSession?.transaction?.target
+            || TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
     }
 
     /**
@@ -2968,6 +2996,11 @@ export class LayerSystem {
                 this._layerTransformSession?.previewSampling,
                 transform
             );
+            if (this._layerTransformSession?.transaction?.target
+                === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+                this._applyClipTransformKeyPreview(transform);
+                return;
+            }
             if (layer?.layerData?.isFolder) {
                 this._applyFolderPreviewTransform(layer, transform);
                 return;
@@ -2994,6 +3027,7 @@ export class LayerSystem {
         this.transform.onGetActiveLayer = () => {
             return this.getActiveLayer();
         };
+        this.transform.onCanEnterMoveMode = () => this._layerTransformSession !== null;
         this.transform.onGetTransformWorldCorners = () => {
             return this._getLayerTransformWorldCorners();
         };
@@ -3099,26 +3133,73 @@ export class LayerSystem {
     }
 
     enterLayerMoveMode() {
-        if (!this.transform) return;
+        if (!this.transform) return false;
         const activeLayer = this.getActiveLayer();
-        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return;
-        if (activeLayer.layerData.isFolder && !this._isFolderWithRasterTargets(activeLayer)) return;
+        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return false;
+        if (activeLayer.layerData.isFolder && !this._isFolderWithRasterTargets(activeLayer)) return false;
 
         const layerId = activeLayer.layerData.id;
-        const transform = this.transform.getTransform(layerId)
+        const sourceTransform = this.transform.getTransform(layerId)
             || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
-        const previewLayers = activeLayer.layerData.isFolder
+        const adapterStart = this._transformEditAdapter?.begin?.({
+            layerId,
+            isFolder: activeLayer.layerData.isFolder === true
+        }) || {
+            ok: true,
+            transaction: {
+                target: TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE,
+                layerId
+            },
+            projection: null
+        };
+        if (adapterStart.ok !== true) return false;
+
+        const isClipKey = adapterStart.transaction?.target
+            === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY;
+        const targetLayerIds = new Set(adapterStart.targetLayerIds || []);
+        const previewLayers = isClipKey
+            ? this.getLayers().filter(layer => targetLayerIds.has(layer?.layerData?.id))
+            : (activeLayer.layerData.isFolder
             ? this._getFolderRasterLayers(activeLayer)
-            : [activeLayer];
+            : [activeLayer]);
+        if (isClipKey && (previewLayers.length === 0 || !targetLayerIds.has(layerId))) {
+            this._transformEditAdapter?.finish?.({
+                transaction: adapterStart.transaction,
+                cancelled: true
+            });
+            return false;
+        }
+
+        const transform = isClipKey
+            ? structuredClone(adapterStart.initialTransform)
+            : structuredClone(sourceTransform);
         this._layerTransformSession = {
             layerId,
-            transform: structuredClone(transform),
-            sourceBounds: this._resolveLayerTransformSourceBounds(activeLayer),
-            targetLayerTransforms: this._captureFolderTargetTransformState(activeLayer),
+            transform,
+            transaction: adapterStart.transaction,
+            sourceBounds: isClipKey
+                ? unionRasterBounds(previewLayers.map(layer => this._getRasterTransformSourceBounds(layer)))
+                : this._resolveLayerTransformSourceBounds(activeLayer),
+            targetLayerTransforms: isClipKey
+                ? this._captureTransformTargetState(previewLayers)
+                : this._captureFolderTargetTransformState(activeLayer),
+            previewLayerIds: previewLayers.map(layer => layer.layerData.id),
             previewSampling: captureLayerTransformPreviewSampling(previewLayers)
         };
+
+        if (isClipKey) {
+            const centerX = this.config.canvas.width / 2;
+            const centerY = this.config.canvas.height / 2;
+            previewLayers.forEach(layer => {
+                this.transform.setTransform(layer.layerData.id, structuredClone(transform));
+                this.transform.applyTransform(layer, transform, centerX, centerY);
+            });
+            this.coordAPI?.clearCache?.();
+        }
+        this.transform.setEditContextProjection?.(adapterStart.projection || null);
         this.transform.enterMoveMode();
         this.transform.syncBasicOverlay?.();
+        return true;
     }
 
     _getRasterTransformSourceBounds(layer) {
@@ -3171,8 +3252,14 @@ export class LayerSystem {
 
     _captureFolderTargetTransformState(folderLayer) {
         if (!folderLayer?.layerData?.isFolder) return [];
-        const layers = [folderLayer, ...this._getFolderRasterLayers(folderLayer)];
-        return layers.map(layer => ({
+        return this._captureTransformTargetState([
+            folderLayer,
+            ...this._getFolderRasterLayers(folderLayer)
+        ]);
+    }
+
+    _captureTransformTargetState(layers = []) {
+        return layers.filter(layer => layer?.layerData?.id).map(layer => ({
             layerId: layer.layerData.id,
             transform: structuredClone(
                 this.transform?.getTransform?.(layer.layerData.id)
@@ -3191,6 +3278,10 @@ export class LayerSystem {
     }
 
     _restoreFolderTargetTransformState(records = []) {
+        return this._restoreTransformTargetState(records);
+    }
+
+    _restoreTransformTargetState(records = []) {
         if (!Array.isArray(records) || records.length === 0) return;
         const byId = new Map(
             this.getLayers()
@@ -3239,6 +3330,33 @@ export class LayerSystem {
         return true;
     }
 
+    _applyClipTransformKeyPreview(transform) {
+        const session = this._layerTransformSession;
+        if (!session || session.transaction?.target !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+            return false;
+        }
+        const targetIds = new Set(session.previewLayerIds || []);
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        this.getLayers().forEach(layer => {
+            if (!targetIds.has(layer?.layerData?.id)) return;
+            const next = structuredClone(transform);
+            this.transform.setTransform(layer.layerData.id, next);
+            this.transform.applyTransform(layer, next, centerX, centerY);
+        });
+        this.coordAPI?.clearCache?.();
+        const preview = this._transformEditAdapter?.preview?.({
+            transaction: session.transaction,
+            layerStart: session.transform,
+            layerCurrent: structuredClone(transform)
+        });
+        if (preview?.projection) {
+            this.transform.setEditContextProjection?.(preview.projection);
+        }
+        session.previewResult = preview || null;
+        return preview?.ok === true;
+    }
+
     exitLayerMoveMode(options = {}) {
         if (!this.transform) return;
         const cancelled = options.cancelled === true;
@@ -3246,7 +3364,10 @@ export class LayerSystem {
             ? this.getLayers().find(layer => layer.layerData?.id === this._layerTransformSession.layerId)
             : null;
         const activeLayer = sessionLayer || this.getActiveLayer();
-        if (!cancelled && !options.deferredForBusyIndicator && !this._folderTransformConfirmDeferred && activeLayer?.layerData?.isFolder) {
+        const transformTarget = this._layerTransformSession?.transaction?.target
+            || TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
+        const isClipKey = transformTarget === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY;
+        if (!isClipKey && !cancelled && !options.deferredForBusyIndicator && !this._folderTransformConfirmDeferred && activeLayer?.layerData?.isFolder) {
             const targetCount = this._getFolderRasterLayers(activeLayer).length;
             if (targetCount > 1) {
                 this._folderTransformConfirmDeferred = true;
@@ -3267,7 +3388,14 @@ export class LayerSystem {
         try {
             // 確定Bakeは元のsamplingで一度だけ行う。preview用nearestを持ち込まない。
             restoreLayerTransformPreviewSampling(this._layerTransformSession?.previewSampling);
-            if (cancelled) {
+            if (isClipKey) {
+                this._restoreTransformTargetState(this._layerTransformSession?.targetLayerTransforms);
+                const result = this._transformEditAdapter?.finish?.({
+                    transaction: this._layerTransformSession?.transaction,
+                    cancelled
+                });
+                transformConfirmed = result?.commit === true;
+            } else if (cancelled) {
                 this._restoreLayerTransformSession(activeLayer);
             } else {
                 transformConfirmed = this.confirmLayerTransform() === true;
@@ -3280,7 +3408,7 @@ export class LayerSystem {
                 this.cameraSystem.setVKeyPressed(false);
             }
             const layerIndex = this.getLayerIndex(activeLayer);
-            if (layerIndex !== -1) {
+            if (!isClipKey && layerIndex !== -1) {
                 this.requestThumbnailUpdate(layerIndex, true);
             }
             if (this.coordAPI) {
@@ -3290,11 +3418,13 @@ export class LayerSystem {
                 this.eventBus.emit('layer:transform-exit', {
                     layerId: activeLayer?.layerData?.id || null,
                     confirmed: transformConfirmed,
-                    cancelled
+                    cancelled,
+                    target: transformTarget
                 });
                 this._emitPanelUpdateRequest();
             }
             this._layerTransformSession = null;
+            this.transform.setEditContextProjection?.(null);
             this._folderTransformConfirmDeferred = false;
             this._hideOperationIndicator();
         }
@@ -3440,6 +3570,8 @@ export class LayerSystem {
         const layerIndex = this.activeLayerIndex;
         const centerX = this.config.canvas.width / 2;
         const centerY = this.config.canvas.height / 2;
+        const isClipKey = this._layerTransformSession?.transaction?.target
+            === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY;
         const createDefaultTransform = () => ({ x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
         const applyFlipState = (transformState) => {
             const nextState = structuredClone(transformState);
@@ -3454,6 +3586,10 @@ export class LayerSystem {
                     console.warn('[LayerSystem] Immediate flip render failed:', error);
                 }
             }
+            if (isClipKey) {
+                this._applyClipTransformKeyPreview(nextState);
+                return;
+            }
             this.requestThumbnailUpdate(layerIndex, true);
 
             if (this.eventBus) {
@@ -3465,7 +3601,7 @@ export class LayerSystem {
             }
         };
 
-        if (historyManager && !historyManager.isApplying) {
+        if (!isClipKey && historyManager && !historyManager.isApplying) {
             const transformBefore = structuredClone(this.transform.getTransform(layerId) || createDefaultTransform());
 
             const transform = structuredClone(transformBefore);
@@ -3509,7 +3645,10 @@ export class LayerSystem {
                 const transform = this.transform.getTransform(activeLayer.layerData.id);
                 this._applyFolderPreviewTransform(activeLayer, transform);
             }
-            this.requestThumbnailUpdate(this.activeLayerIndex);
+            if (this._layerTransformSession?.transaction?.target
+                !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+                this.requestThumbnailUpdate(this.activeLayerIndex);
+            }
         }
     }
 
@@ -3526,7 +3665,10 @@ export class LayerSystem {
             const transform = this.transform.getTransform(activeLayer.layerData.id);
             this._applyFolderPreviewTransform(activeLayer, transform);
         }
-        this.requestThumbnailUpdate(this.activeLayerIndex);
+        if (this._layerTransformSession?.transaction?.target
+            !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+            this.requestThumbnailUpdate(this.activeLayerIndex);
+        }
     }
 
     confirmLayerTransform(layerOverride = null) {
@@ -3852,7 +3994,13 @@ export class LayerSystem {
             this._applyFolderPreviewTransform(activeLayer, transform);
         } else {
             this.transform.applyTransform(activeLayer, transform, centerX, centerY);
-            this._scheduleTransformInteractionUpdate(layerId, transform);
+            if (this._layerTransformSession?.transaction?.target
+                === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+                this.transform.updateTransformPanelValues?.(activeLayer);
+                this._applyClipTransformKeyPreview(transform);
+            } else {
+                this._scheduleTransformInteractionUpdate(layerId, transform);
+            }
         }
     }
 
@@ -4222,6 +4370,12 @@ export class LayerSystem {
 
         window.addEventListener('blur', () => {
             if (this.vKeyPressed) {
+                if (this._layerTransformSession?.transaction?.target
+                    === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+                    // Browser / app focus移動だけでTimeline keyを確定しない。
+                    // pointer gesture側のcancel契約を使い、V sessionは明示confirm / Escapeまで維持する。
+                    return;
+                }
                 this.exitLayerMoveMode();
             }
         });

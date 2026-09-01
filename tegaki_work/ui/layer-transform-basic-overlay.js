@@ -123,7 +123,9 @@ export class LayerTransformBasicOverlay {
                 this._startCornerGesture(event, index, hitHandle);
             });
             hitHandle.addEventListener('lostpointercapture', event => {
-                this._finishCornerGesture(event, index, true, false);
+                // capture喪失は入力transportの終了であり、ユーザーの取消ではない。
+                // pen / 一部mouse環境で現在previewを開始値へ巻き戻さない。
+                this._finishCornerGesture(event, index, false, false);
             });
             svg.appendChild(hitHandle);
             this.cornerHitHandles.push(hitHandle);
@@ -157,7 +159,7 @@ export class LayerTransformBasicOverlay {
                 this._startAxisScaleGesture(event, index, axis, hitHandle);
             });
             hitHandle.addEventListener('lostpointercapture', event => {
-                this._finishAxisScaleGesture(event, index, true, false);
+                this._finishAxisScaleGesture(event, index, false, false);
             });
             svg.appendChild(hitHandle);
             this.sideHitHandles.push(hitHandle);
@@ -183,7 +185,7 @@ export class LayerTransformBasicOverlay {
             this._startRotationGesture(event, this.rotationHitHandle);
         });
         this.rotationHitHandle.addEventListener('lostpointercapture', event => {
-            this._finishRotationGesture(event, true, false);
+            this._finishRotationGesture(event, false, false);
         });
         svg.appendChild(this.rotationHitHandle);
 

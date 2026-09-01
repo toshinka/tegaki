@@ -57,6 +57,20 @@ import {
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
 import {
+    projectTransformEditContext,
+    TRANSFORM_EDIT_AUTHORITY,
+    TRANSFORM_EDIT_CONTEXT_MODE
+} from '../system/animation/transform-edit-context.js';
+import { planClipTransformKeyUpsert } from '../system/animation/clip-transform-key-upsert.js';
+import {
+    planTransformEditTransactionFinish,
+    planTransformEditTransactionPreview,
+    planTransformEditTransactionStart,
+    TRANSFORM_EDIT_TRANSACTION_ACTION,
+    TRANSFORM_EDIT_TRANSACTION_INTENT,
+    TRANSFORM_EDIT_TRANSACTION_TARGET
+} from '../system/animation/transform-edit-transaction.js';
+import {
     createMotionGraphViewModel,
     MOTION_GRAPH_GROUPS,
     normalizeMotionGraphGroup
@@ -596,6 +610,9 @@ export class AnimationTablePopup {
         this.isTransformPreviewSuspended = false;
         this._transformHistoryBeforeState = null;
         this._transformWorkingLayerBeforeSignature = null;
+        this._transformPreviewAuthority = null;
+        this._layerTransformBridgeSession = null;
+        this._layerTransformBridgeRenderFrame = null;
         this.isDrawingPreviewSuspended = false;
         this._attributePreviewSyncFrame = null;
         this._drawingHistoryBeforeStates = new Map();
@@ -701,6 +718,12 @@ export class AnimationTablePopup {
     hide() {
         if (!this.panel) return;
         const wasVisible = this.isVisible === true;
+        if (this.isTransformPreviewSuspended
+            && this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY) {
+            // Table closeはWHEN contextの消失なので、Clip key previewだけを先にcancelする。
+            // SOURCE transformの既存confirm gateには触れない。
+            this.layerSystem?.exitLayerMoveMode?.({ cancelled: true });
+        }
         this._setScopeFocusDeckOpen(false);
         this._cancelMotionEditPreviewRefresh();
         if (this._rigMeshVertexEditGesture) {
@@ -1035,16 +1058,25 @@ export class AnimationTablePopup {
         this.render();
     }
 
-    _enterTransformEditPreviewMode() {
+    _enterTransformEditPreviewMode(options = {}) {
         // Tableを閉じた標準表示でもCAF working Layerは編集adapterとして生きている。
         // Folder代表Layerだけへ縮退させず、開Table時と同じpreview / History境界を使う。
         if (!this.selectedCelId || this.isTransformPreviewSuspended) return;
 
-        const asset = this._getSelectedAssetForInspector();
-        this._transformHistoryBeforeState = asset
-            ? this._captureInternalLayerHistoryState(asset)
-            : null;
-        this._transformWorkingLayerBeforeSignature = this._captureWorkingLayerTransformSignature();
+        const authority = options.authority || TRANSFORM_EDIT_AUTHORITY.LAYER_SOURCE;
+        this._transformPreviewAuthority = authority;
+        if (authority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY) {
+            // Clip key bridgeではRaster sourceのHistory/signatureを取らない。
+            // LayerSystemがworking raster群を表示proxyとして使い、Timelineだけをownerにする。
+            this._transformHistoryBeforeState = null;
+            this._transformWorkingLayerBeforeSignature = null;
+        } else {
+            const asset = this._getSelectedAssetForInspector();
+            this._transformHistoryBeforeState = asset
+                ? this._captureInternalLayerHistoryState(asset)
+                : null;
+            this._transformWorkingLayerBeforeSignature = this._captureWorkingLayerTransformSignature();
+        }
         this._previewBeforeTransform = this.isPreviewActive;
         this.isTransformPreviewSuspended = true;
         this._restoreVisibility();
@@ -1060,6 +1092,7 @@ export class AnimationTablePopup {
         this.isTransformPreviewSuspended = false;
         this._transformHistoryBeforeState = null;
         this._transformWorkingLayerBeforeSignature = null;
+        this._transformPreviewAuthority = null;
         this._clearInternalFolderTransformContext();
         if (this._previewBeforeTransform !== null) {
             this.isPreviewActive = this._previewBeforeTransform;
@@ -2443,21 +2476,28 @@ export class AnimationTablePopup {
             }, totalFrames, currentFrame, showCurrentFrame);
         }
         const clip = context.entry.clip;
-        const selectedClass = !this.selectedRigBoneId
-            && this.selectedInternalLayerId === context.layer.id
-            ? ' is-selected'
-            : '';
+        const isSelected = !this.selectedRigBoneId
+            && this.selectedInternalLayerId === context.layer.id;
+        const selectedClass = isSelected ? ' is-selected' : '';
         let html = `<div class="anim-timeline-row anim-rig-folder-timeline-row${selectedClass}"
             data-clip-id="${clip.id}" data-folder-id="${context.layer.id}">`;
         for (let frame = 0; frame < totalFrames; frame++) {
             const localFrame = frame - clip.startFrame;
             const isInside = localFrame >= 0 && localFrame < Math.max(1, clip.duration || 1);
             const isCurrent = showCurrentFrame && frame === currentFrame ? ' current-col' : '';
+            const hasCafMotionKey = isSelected && isInside
+                && (clip.transformKeyframes || []).some(key => key?.frame === localFrame);
             html += `<div class="anim-cell-slot anim-rig-folder-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}"
                 data-track-id="${context.entry.lane.id}"
                 data-clip-id="${clip.id}"
                 data-folder-id="${context.layer.id}"
-                data-frame-index="${frame}"></div>`;
+                data-frame-index="${frame}">
+                ${hasCafMotionKey ? `<span class="anim-caf-motion-key-projection"
+                    data-caf-motion-key-frame="${localFrame}"
+                    role="img"
+                    aria-label="CAF Motion key: Frame ${frame + 1}"
+                    title="CAF Motion key · F${frame + 1}（Layer行への表示）"></span>` : ''}
+            </div>`;
         }
         return `${html}</div>`;
     }
@@ -10887,6 +10927,219 @@ export class AnimationTablePopup {
         return this._updateClipMotionMetadataFromExternal('transformKeyframes', clipId, keyframes, options);
     }
 
+    /**
+     * Layer Transform bridge用の読み取り専用runtime projection。
+     * key / History / working Layerは変更せず、書込先候補と曖昧理由だけを返す。
+     */
+    getTransformEditContext() {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const selectedClipCount = this.selectedCelIds instanceof Set
+            ? Math.max(this.selectedCelIds.size, entry?.clip ? 1 : 0)
+            : (entry?.clip ? 1 : 0);
+        return projectTransformEditContext({
+            tableVisible: this.isVisible,
+            isPlaying: this.isPlaying,
+            selectedClip: entry?.clip || null,
+            selectedClipCount,
+            timelineFrame: this.model.playback?.currentFrame
+        });
+    }
+
+    /**
+     * LayerSystemへ注入する同期adapter。LayerSystemはpointer sessionとworking Layer表示だけ、
+     * 本adapterはClip key preview / rollback / Timeline Historyだけを所有する。
+     */
+    createLayerTransformEditAdapter() {
+        return {
+            canStart: request => this._projectLayerTransformBridgeStart(request),
+            begin: request => this._beginLayerTransformBridge(request),
+            preview: request => this._previewLayerTransformBridge(request),
+            finish: request => this._finishLayerTransformBridge(request)
+        };
+    }
+
+    _projectLayerTransformBridgeStart({ layerId, isFolder = false } = {}) {
+        const context = this.getTransformEditContext();
+        const motionState = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
+            ? this._getSelectedClipMotionFrame()
+            : null;
+        if (motionState) {
+            if (isFolder) {
+                return { ok: false, blocked: true, reason: 'clip-root-raster-proxy-required' };
+            }
+            if (!this.canEditSelectedWorkingLayer(layerId)) {
+                return { ok: false, blocked: true, reason: 'selected-clip-working-layer-required' };
+            }
+        }
+
+        const transaction = planTransformEditTransactionStart({
+            context,
+            layerId,
+            activeTransaction: this._layerTransformBridgeSession?.transaction || null,
+            clipSample: motionState?.sampled || null,
+            keyframes: motionState?.entry?.clip?.transformKeyframes || [],
+            duration: motionState?.entry?.clip?.duration ?? null
+        });
+        if (!transaction.ok) return transaction;
+
+        const animate = transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY;
+        const targetLayerIds = animate
+            ? [...(this._getWorkingLayerIdsForClipAsset(motionState.entry.clip.assetId) || [])]
+            : [];
+        if (animate && targetLayerIds.length === 0) {
+            return { ok: false, blocked: true, reason: 'clip-working-layers-required' };
+        }
+
+        const state = context.mode === TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_KEYED
+            ? 'keyed'
+            : (context.mode === TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_READY ? 'ready' : 'source');
+        const label = animate
+            ? `ANIMATE · F${context.timelineFrame + 1} ${state === 'keyed' ? 'KEYED' : 'READY'}`
+            : 'SOURCE · 原画';
+        return {
+            ok: true,
+            blocked: false,
+            transaction,
+            targetLayerIds,
+            initialTransform: animate ? { ...transaction.baselineTransform } : null,
+            projection: {
+                state,
+                label,
+                allowAnchorEdit: !animate
+            }
+        };
+    }
+
+    _beginLayerTransformBridge(request = {}) {
+        const start = this._projectLayerTransformBridgeStart(request);
+        if (!start.ok) return start;
+        if (start.transaction.target !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+            return start;
+        }
+
+        this._layerTransformBridgeSession = {
+            transaction: start.transaction,
+            beforeState: this._captureTimelineHistoryState(),
+            changed: false,
+            previewApplied: false,
+            invalidated: false
+        };
+        return start;
+    }
+
+    _scheduleLayerTransformBridgeRender() {
+        if (this._layerTransformBridgeRenderFrame !== null) return;
+        const schedule = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : callback => setTimeout(callback, 0);
+        this._layerTransformBridgeRenderFrame = schedule(() => {
+            this._layerTransformBridgeRenderFrame = null;
+            this._animationPreviewKey = null;
+            this.render();
+        });
+    }
+
+    _restoreLayerTransformBridgePreview(session = this._layerTransformBridgeSession) {
+        const transaction = session?.transaction;
+        const entry = transaction?.clipId ? this.model.findClipEntry(transaction.clipId) : null;
+        if (!entry?.clip) return false;
+        entry.clip.transformKeyframes = structuredClone(transaction.baselineKeyframes || []);
+        this._animationPreviewKey = null;
+        return true;
+    }
+
+    _previewLayerTransformBridge({ transaction, layerStart, layerCurrent } = {}) {
+        const session = this._layerTransformBridgeSession;
+        if (!session || session.transaction !== transaction) {
+            return { ok: false, blocked: true, reason: 'transform-bridge-session-required' };
+        }
+        const plan = planTransformEditTransactionPreview({
+            transaction,
+            context: this.getTransformEditContext(),
+            layerStart,
+            layerCurrent
+        });
+        if (!plan.ok) {
+            if (session.previewApplied) {
+                this._restoreLayerTransformBridgePreview(session);
+            }
+            session.changed = false;
+            session.previewApplied = false;
+            session.invalidated = true;
+            return plan;
+        }
+
+        const entry = this.model.findClipEntry(transaction.clipId);
+        if (!entry?.clip) {
+            session.invalidated = true;
+            return { ok: false, blocked: true, reason: 'clip-target-missing' };
+        }
+        if (plan.action === TRANSFORM_EDIT_TRANSACTION_ACTION.PREVIEW_ANIMATE) {
+            entry.clip.transformKeyframes = structuredClone(plan.keyframes);
+            session.changed = plan.changed === true;
+            session.previewApplied = true;
+            this._scheduleLayerTransformBridgeRender();
+        } else if (plan.action === TRANSFORM_EDIT_TRANSACTION_ACTION.PREVIEW_ANIMATE_NOOP) {
+            session.changed = false;
+            if (session.previewApplied) {
+                entry.clip.transformKeyframes = structuredClone(plan.keyframes);
+                this._scheduleLayerTransformBridgeRender();
+            }
+        }
+        const context = this.getTransformEditContext();
+        const keyed = context.mode === TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_KEYED;
+        return {
+            ...plan,
+            projection: {
+                state: keyed ? 'keyed' : 'ready',
+                label: `ANIMATE · F${transaction.timelineFrame + 1} ${keyed ? 'KEYED' : 'READY'}`,
+                allowAnchorEdit: false
+            }
+        };
+    }
+
+    _finishLayerTransformBridge({ transaction, cancelled = false } = {}) {
+        const session = this._layerTransformBridgeSession;
+        if (!session || session.transaction !== transaction) {
+            return { ok: false, blocked: true, reason: 'transform-bridge-session-required', commit: false };
+        }
+        const finish = planTransformEditTransactionFinish({
+            transaction,
+            context: this.getTransformEditContext(),
+            intent: cancelled
+                ? TRANSFORM_EDIT_TRANSACTION_INTENT.CANCEL
+                : TRANSFORM_EDIT_TRANSACTION_INTENT.CONFIRM,
+            changed: session.changed,
+            previewApplied: session.previewApplied
+        });
+        const rollback = !finish.ok
+            || finish.action === TRANSFORM_EDIT_TRANSACTION_ACTION.ROLLBACK_ANIMATE;
+        if (rollback) {
+            this._restoreLayerTransformBridgePreview(session);
+        } else if (finish.commit === true) {
+            this._recordTimelineHistory(
+                session.beforeState,
+                this._captureTimelineHistoryState(),
+                'caf-clip-transform-layer-bridge',
+                {
+                    type: 'caf-clip-transform-layer-bridge',
+                    clipId: transaction.clipId,
+                    frameIndex: transaction.timelineFrame,
+                    localFrame: transaction.localFrame
+                }
+            );
+        }
+
+        this._layerTransformBridgeSession = null;
+        this._animationPreviewKey = null;
+        this.render();
+        return {
+            ...finish,
+            commit: finish.ok === true && finish.commit === true,
+            target: TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY
+        };
+    }
+
     updateClipDeformerFromExternal(clipId, deformer = null, options = {}) {
         return this._updateClipMotionMetadataFromExternal('deformer', clipId, deformer, options);
     }
@@ -14389,24 +14642,14 @@ export class AnimationTablePopup {
     _upsertSelectedMotionKey(transform, options = {}) {
         const state = this._getSelectedClipMotionFrame();
         if (!state) return false;
-        const previous = state.key || {};
-        const key = {
+        const plan = planClipTransformKeyUpsert({
+            keyframes: state.entry.clip.transformKeyframes,
             frame: state.localFrame,
-            interpolation: previous.interpolation === 'hold' ? 'hold' : 'linear',
-            ...(previous.easing ? { easing: { ...previous.easing } } : {}),
-            x: transform.x,
-            y: transform.y,
-            scaleX: transform.scaleX,
-            scaleY: transform.scaleY,
-            opacity: transform.opacity,
-            blendMode: transform.blendMode,
-            blendStrength: transform.blendStrength,
-            rotation: transform.rotation
-        };
-        state.entry.clip.transformKeyframes = (state.entry.clip.transformKeyframes || [])
-            .filter(item => item?.frame !== state.localFrame);
-        state.entry.clip.transformKeyframes.push(key);
-        state.entry.clip.transformKeyframes.sort((a, b) => a.frame - b.frame);
+            duration: state.entry.clip.duration,
+            transform
+        });
+        if (!plan.ok) return false;
+        state.entry.clip.transformKeyframes = plan.keyframes;
         this._animationPreviewKey = null;
         if (options.deferPreview === true) {
             this._scheduleMotionEditPreviewRefresh();
@@ -23230,17 +23473,35 @@ export class AnimationTablePopup {
         });
         
         // アニメーション系
-        this.eventBus.on('animation:frame-changed', () => this.requestUpdate());
+        this.eventBus.on('animation:frame-changed', () => {
+            if (this.isTransformPreviewSuspended
+                && this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY) {
+                // Frame変更は新targetへのretargetではない。現在sessionをrollbackし、
+                // ユーザーが選んだ新Frame自体は維持する。
+                this.layerSystem?.exitLayerMoveMode?.({ cancelled: true });
+            }
+            this.requestUpdate();
+        });
         this.eventBus.on('history:changed', (data = {}) => {
             this._handleHistoryChanged(data);
         });
         this.eventBus.on('keyboard:vkey-state-changed', ({ pressed } = {}) => {
             if (pressed) {
-                this._enterTransformEditPreviewMode();
+                const target = this.layerSystem?.getActiveTransformEditTarget?.();
+                this._enterTransformEditPreviewMode({
+                    authority: target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY
+                        ? TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
+                        : TRANSFORM_EDIT_AUTHORITY.LAYER_SOURCE
+                });
                 return;
             }
             if (!this.isTransformPreviewSuspended) {
                 this._clearInternalFolderTransformContext();
+                return;
+            }
+            if (this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY) {
+                // Clip key bridgeはlayer:transform-exit payloadをterminal signalにする。
+                // Raster source capture / CAF internal Historyへは入れない。
                 return;
             }
             requestAnimationFrame(() => {
@@ -23275,7 +23536,16 @@ export class AnimationTablePopup {
                 this._exitTransformEditPreviewMode();
             });
         });
-        this.eventBus.on('layer:transform-exit', ({ layerId, confirmed = false, cancelled = false } = {}) => {
+        this.eventBus.on('layer:transform-exit', ({
+            layerId,
+            confirmed = false,
+            cancelled = false,
+            target = TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE
+        } = {}) => {
+            if (target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+                requestAnimationFrame(() => this._exitTransformEditPreviewMode());
+                return;
+            }
             const shouldSave = layerId && this._isAnimationWorkingLayerId(layerId);
             const folderTransformContext = shouldSave && confirmed && !cancelled
                 ? this._getSelectedInternalFolderTransformTargets()
@@ -23399,7 +23669,8 @@ export class AnimationTablePopup {
                 if (this._motionGraphGesture
                     || this._motionGraphAddPointMode
                     || this._rigMeshVertexEditGesture
-                    || this._rigSkinWeightBrushGesture) return;
+                    || this._rigSkinWeightBrushGesture
+                    || this.isTransformPreviewSuspended) return;
                 this.hide();
                 e.preventDefault();
                 e.stopImmediatePropagation();

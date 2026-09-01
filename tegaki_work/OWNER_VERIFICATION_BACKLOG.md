@@ -1,7 +1,7 @@
 # Owner実機確認バックログ
 
 更新日: 2026-09-01
-状態: ACTIVE — Phase 7i〜9nはclose済み、Owner制作環境では未確認項目あり
+状態: ACTIVE — Phase 7i〜9oはclose済み、Owner制作環境では未確認項目あり
 
 ## 目的
 
@@ -11,19 +11,11 @@ SOLの実装監査・固定verifier・Browser確認でcloseした機能につい
 - 問題が見つかった場合は、閉じたPhaseを暗黙に再OPENせず、再現条件に応じたbug fixまたは新しい限定Phaseを立てる。
 - 既存Projectを破壊し得る確認は複製Projectで行う。
 
+## 完了項目
+
+- Phase 9o Layer Transform D / BASIC Stage B4 Owner correction 3は、Ownerが2026-09-01に問題解決として受入した。詳細は`開発用資料保管庫/Archive/phase9o.md`へ保存した。
+
 ## 未確認項目
-
-### Phase 9o — Layer Transform D / BASIC Stage B4 Owner correction再確認
-
-- OwnerはStage A1でD Tegaki hybridを選定し、Gate 1=`GO — D: Tegaki hybrid`。Stage B1 production画面、Stage B2 corner Uniform Scale、Stage B3 Rotate handleを2026-08-31に確認・承認した。
-- Stage B4でquiet 4辺中点だけをone-axis Scaleへ接続した。mouse / penで可視10px＋透明28px hit（coarse 36px）がcornerと取り違えず掴め、上 / 下=`scaleY`、左 / 右=`scaleX`、回転後local axisへ追従するかを確認する。corner / sideをAnchor越しへ動かした時は中央で止まらず、期待どおり水平 / 垂直 / 両軸flipへ連続することを見る。
-- 4 corner + 4 side + Rotate + Anchorが静止中に絵へ過剰な注意を奪わず、hover / drag時だけFutaba cream + 茶から橙へ上がるかを見る。煩雑なら、実装前比較で保持したside midpointなし案へ戻す。
-- 左端へ分離した中心buttonが押しやすく、single clickで明示Anchor編集、double clickで現描画範囲中央へ見た目を跳ばさず復帰すること、そこからCanvas Move / handle操作してもAnchorがboxへ追従することを確認する。既存ResetはCanvas中心へ戻る。
-- 拡大previewで短いdabや細線がlinear blurによる途切れに見えず、exact-pixel表示として読めること、V confirm後は元samplingで一回だけBakeされることを見る。pixel edgeはvector化ではなく原Raster忠実表示である。
-- V confirm、Escape cancel、既存Canvas Move / Shift Rotate / Scale / Anchor / precise Uniform Scaleのfallbackが衝突しないことを確認する。
-- A / B / Cも再試行候補としてfixtureと`task-codex/phase9o.md`へ保持した。D選定後に不満が出た場合は、同じ比較条件へ戻して再評価する。
-- SOL Browserではwideの横 / 縦分離、約45°回転後local axis、Anchor / boxのMove `+90 / +30px`一致、side Anchor越えflip、preview History不変、V confirm 1、Undo / Redo、Escape復元を確認した。480×800の4 side hit、中心button、210px panel、横overflow 0、全131 verifier、build、通常scaleのconsole 0件も通過した。意図的な巨大scale確定stressでは既存max-texture guard warning 1件だけを確認した。この技術proofはOwnerの掴み心地、注意量、previewの見え方を代替しない。
-- Owner acceptance後はStage B5で永続的なCanvas中心 / 描画範囲中心の明示切替が必要かをGate判断し、不要ならBASIC close条件を選定する。DISTORT / WARP、Interaction Context / Animation bridgeは並走しない。
 
 ### Phase 9n — RIG / Motion responsibility / single RIG WORKSPACE（技術close後）
 

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 9p Transform Edit Target Placement Comparison</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #800000;
+      --ink-strong: #621414;
+      --ink-soft: #a34b43;
+      --paper: #ffffee;
+      --paper-warm: #fff7df;
+      --cream: #f0e0d6;
+      --surface: #f7e9dc;
+      --surface-deep: #e9cec1;
+      --line: #d4a8a0;
+      --orange: #ff7a32;
+      --orange-soft: #ffd0a7;
+      --orange-pale: #fff0da;
+      --setup: #3477a8;
+      --setup-soft: #d8eaf4;
+      --shadow: rgba(128, 0, 0, 0.14);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", sans-serif;
+    }
+    button { font: inherit; color: inherit; }
+    button:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+
+    .page { width: min(1480px, 100%); margin: 0 auto; padding: 18px; }
+    .page-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: end; }
+    .eyebrow { margin: 0 0 4px; color: var(--orange); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+    h1 { margin: 0; color: var(--ink-strong); font-size: clamp(20px, 2.4vw, 32px); }
+    .lead { max-width: 900px; margin: 7px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+    .gate { padding: 7px 10px; border-radius: 999px; background: var(--orange-pale); font-size: 11px; font-weight: 800; }
+
+    .state-switcher { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 10px; }
+    .state-switcher button {
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--cream) 72%, transparent);
+      font-size: 10px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .state-switcher button:hover { background: var(--cream); }
+    .state-switcher button[aria-pressed="true"] { border-color: var(--orange); background: var(--orange-soft); }
+
+    .comparison { display: grid; grid-template-columns: repeat(4, minmax(250px, 1fr)); gap: 10px; }
+    .candidate { min-width: 0; overflow: hidden; border-radius: 14px; background: var(--surface); box-shadow: 0 6px 18px var(--shadow); }
+    .candidate.is-recommended { box-shadow: 0 0 0 2px var(--orange), 0 8px 22px var(--shadow); }
+    .candidate-head { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 8px; align-items: center; min-height: 58px; padding: 9px 10px; background: var(--paper-warm); }
+    .code { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: #9c3835; color: var(--paper); font-weight: 800; }
+    .is-recommended .code { background: var(--orange); color: var(--ink-strong); }
+    .candidate h2 { margin: 0; color: var(--ink-strong); font-size: 13px; }
+    .candidate-summary { margin: 3px 0 0; color: var(--ink-soft); font-size: 9px; line-height: 1.35; }
+
+    .mock { padding: 8px; background: var(--surface-deep); }
+    .topbar { display: flex; align-items: center; gap: 5px; height: 28px; padding: 4px 7px; border-radius: 8px 8px 0 0; background: #8f3431; color: var(--paper); }
+    .topbar-tool { width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--paper) 20%, transparent); }
+    .topbar-spacer { flex: 1; }
+    .canvas { position: relative; height: 170px; overflow: hidden; background: #fffbea; }
+    .art { position: absolute; left: 50%; top: 56%; width: 82px; height: 96px; translate: -50% -50%; border-radius: 50% 48% 40% 42%; background: var(--orange-soft); box-shadow: inset 0 -17px #d88773; transform: rotate(-5deg); }
+    .box { position: absolute; left: 50%; top: 56%; width: 104px; height: 116px; translate: -50% -50%; border: 2px solid var(--orange); transform: rotate(-5deg); }
+    .handle { position: absolute; width: 10px; height: 10px; border: 2px solid var(--ink); border-radius: 50%; background: var(--cream); }
+    .handle.tl { left: -6px; top: -6px; }
+    .handle.tr { right: -6px; top: -6px; }
+    .handle.bl { left: -6px; bottom: -6px; }
+    .handle.br { right: -6px; bottom: -6px; }
+
+    .transform-panel { position: absolute; top: 9px; left: 9px; width: min(224px, calc(100% - 18px)); border-radius: 10px; background: color-mix(in srgb, var(--cream) 91%, transparent); box-shadow: 0 5px 14px var(--shadow); }
+    .transform-head { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 5px 7px; }
+    .transform-title { color: var(--ink-strong); font-size: 10px; font-weight: 800; white-space: nowrap; }
+    .transform-spacer { flex: 1; }
+    .icon { width: 20px; height: 20px; border-radius: 6px; background: var(--paper-warm); box-shadow: inset 0 0 0 1px var(--line); }
+    .mode-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 2px 7px 6px; }
+    .mode { min-height: 22px; display: grid; place-items: center; border-radius: 6px; background: color-mix(in srgb, var(--cream) 72%, transparent); color: var(--ink-soft); font-size: 8px; font-weight: 800; }
+    .mode.active { background: var(--orange-soft); color: var(--ink-strong); }
+    .timeline { display: grid; grid-template-columns: 52px repeat(6, 1fr); height: 34px; background: var(--paper-warm); }
+    .timeline > span { display: grid; place-items: center; font-size: 8px; color: var(--ink-soft); }
+    .timeline > span:first-child { color: var(--ink); font-weight: 800; }
+    .timeline .selected { margin: 5px 2px; border-radius: 4px; background: var(--orange); color: var(--ink-strong); }
+
+    .context {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      min-height: 18px;
+      max-width: 138px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: var(--ink);
+      background: var(--orange-pale);
+      font-size: 8px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .context::before { content: ""; flex: 0 0 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--orange); }
+    .context[data-state="blocked"] { color: var(--ink-soft); background: var(--cream); }
+    .context[data-state="blocked"]::before { background: var(--ink-soft); }
+    .context[data-state="source"] { background: color-mix(in srgb, var(--cream) 78%, transparent); font-weight: 700; }
+    .context[data-state="source"]::before { background: var(--line); }
+    .context[data-state="keyed"] { background: var(--orange-soft); }
+
+    .candidate[data-option="topbar"] .context-top,
+    .candidate[data-option="panel"] .context-panel,
+    .candidate[data-option="dual"] .context-top,
+    .candidate[data-option="dual"] .context-panel,
+    .candidate[data-option="canvas"] .context-canvas { display: inline-flex; }
+    .candidate[data-option="dual"] .context-panel { max-width: 74px; overflow: hidden; }
+    .context-canvas { position: absolute; right: 8px; bottom: 8px; box-shadow: 0 3px 10px var(--shadow); }
+
+    .assessment { min-height: 112px; padding: 9px 11px 12px; }
+    .assessment strong { display: block; margin-bottom: 4px; color: var(--ink-strong); font-size: 10px; }
+    .assessment p { margin: 0; color: var(--ink-soft); font-size: 9px; line-height: 1.45; }
+    .verdict { margin-top: 7px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--ink); font-size: 9px; font-weight: 800; }
+
+    @media (max-width: 1100px) { .comparison { grid-template-columns: repeat(2, minmax(250px, 1fr)); } }
+    @media (max-width: 600px) {
+      .page { padding: 10px; }
+      .page-header { grid-template-columns: 1fr; }
+      .gate { justify-self: start; }
+      .comparison { grid-template-columns: minmax(0, 1fr); }
+      .canvas { height: 184px; }
+    }
+    @media (pointer: coarse) { .state-switcher button { min-height: 40px; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Phase 9p · Stage A2 · one DOM comparison</p>
+        <h1>Edit Targetはどこで読ませるか</h1>
+        <p class="lead">同じCanvas、Transform、Timelineで配置だけを比較する。Contextはread-only。READYやKEYEDを表示してもAuto Keyやkey mutationは起こさない。</p>
+      </div>
+      <div class="gate">Gate候補: B Transform-local</div>
+    </header>
+
+    <nav class="state-switcher" aria-label="Interaction Context state">
+      <button type="button" data-set-state="source" aria-pressed="false">SOURCE</button>
+      <button type="button" data-set-state="ready" aria-pressed="true">ANIMATE READY</button>
+      <button type="button" data-set-state="keyed" aria-pressed="false">ANIMATE KEYED</button>
+      <button type="button" data-set-state="blocked" aria-pressed="false">BLOCKED</button>
+    </nav>
+
+    <section class="comparison" data-current-state="ready">
+      <article class="candidate" data-option="topbar">
+        <header class="candidate-head"><span class="code">A</span><div><h2>Global Top Bar</h2><p class="candidate-summary">常時見えるが、Canvas操作から遠い</p></div></header>
+        <div class="mock">
+          <div class="topbar"><i class="topbar-tool"></i><i class="topbar-tool"></i><span class="topbar-spacer"></span><span class="context context-top"></span></div>
+          <div class="canvas"><div class="art"></div><div class="box"><i class="handle tl"></i><i class="handle tr"></i><i class="handle bl"></i><i class="handle br"></i></div><div class="transform-panel"><div class="transform-head"><span class="transform-title">LAYER TRANSFORM</span><span class="transform-spacer"></span><i class="icon"></i><i class="icon"></i></div><div class="mode-strip"><span class="mode active">BASIC</span><span class="mode">DISTORT</span><span class="mode">WARP</span></div></div></div>
+          <div class="timeline"><span>TABLE</span><span>9</span><span>10</span><span class="selected">11</span><span>12</span><span>13</span><span>14</span></div>
+        </div>
+        <div class="assessment"><strong>持続性は高い</strong><p>Transformを閉じてもcontextが見える一方、app全体のmodeに見えやすく、他toolまでANIMATE化したような誤読を生む。</p><div class="verdict">保留: 将来global authoring modeが必要な時</div></div>
+      </article>
+
+      <article class="candidate is-recommended" data-option="panel">
+        <header class="candidate-head"><span class="code">B</span><div><h2>Transform-local</h2><p class="candidate-summary">HOWの中でWHENをquietに明示</p></div></header>
+        <div class="mock">
+          <div class="topbar"><i class="topbar-tool"></i><i class="topbar-tool"></i><span class="topbar-spacer"></span><span class="context context-top"></span></div>
+          <div class="canvas"><div class="art"></div><div class="box"><i class="handle tl"></i><i class="handle tr"></i><i class="handle bl"></i><i class="handle br"></i></div><div class="transform-panel"><div class="transform-head"><span class="transform-title">LAYER TRANSFORM</span><span class="context context-panel"></span><span class="transform-spacer"></span><i class="icon"></i><i class="icon"></i></div><div class="mode-strip"><span class="mode active">BASIC</span><span class="mode">DISTORT</span><span class="mode">WARP</span></div></div></div>
+          <div class="timeline"><span>TABLE</span><span>9</span><span>10</span><span class="selected">11</span><span>12</span><span>13</span><span>14</span></div>
+        </div>
+        <div class="assessment"><strong>意味と操作が近い</strong><p>Transformを触る時だけ読め、既存context noteの場所を再利用できる。Canvasを隠さず、global mode誤読も起こしにくい。</p><div class="verdict">第一候補: production projectionへ限定接続</div></div>
+      </article>
+
+      <article class="candidate" data-option="dual">
+        <header class="candidate-head"><span class="code">C</span><div><h2>Dual Echo</h2><p class="candidate-summary">Global stateとFrame detailを二段投影</p></div></header>
+        <div class="mock">
+          <div class="topbar"><i class="topbar-tool"></i><i class="topbar-tool"></i><span class="topbar-spacer"></span><span class="context context-top"></span></div>
+          <div class="canvas"><div class="art"></div><div class="box"><i class="handle tl"></i><i class="handle tr"></i><i class="handle bl"></i><i class="handle br"></i></div><div class="transform-panel"><div class="transform-head"><span class="transform-title">LAYER TRANSFORM</span><span class="context context-panel"></span><span class="transform-spacer"></span><i class="icon"></i><i class="icon"></i></div><div class="mode-strip"><span class="mode active">BASIC</span><span class="mode">DISTORT</span><span class="mode">WARP</span></div></div></div>
+          <div class="timeline"><span>TABLE</span><span>9</span><span>10</span><span class="selected">11</span><span>12</span><span>13</span><span>14</span></div>
+        </div>
+        <div class="assessment"><strong>見落としにくい</strong><p>同じstateが二箇所で競合し、注意と同期責務が増える。Auto Keyの強い危険表示が必要になるまでは過剰。</p><div class="verdict">NO-GO: 二重projectionを先に作らない</div></div>
+      </article>
+
+      <article class="candidate" data-option="canvas">
+        <header class="candidate-head"><span class="code">D</span><div><h2>Canvas Badge</h2><p class="candidate-summary">対象へ最も近いが、絵を覆う</p></div></header>
+        <div class="mock">
+          <div class="topbar"><i class="topbar-tool"></i><i class="topbar-tool"></i><span class="topbar-spacer"></span><span class="context context-top"></span></div>
+          <div class="canvas"><div class="art"></div><div class="box"><i class="handle tl"></i><i class="handle tr"></i><i class="handle bl"></i><i class="handle br"></i></div><div class="transform-panel"><div class="transform-head"><span class="transform-title">LAYER TRANSFORM</span><span class="transform-spacer"></span><i class="icon"></i><i class="icon"></i></div><div class="mode-strip"><span class="mode active">BASIC</span><span class="mode">DISTORT</span><span class="mode">WARP</span></div></div><span class="context context-canvas"></span></div>
+          <div class="timeline"><span>TABLE</span><span>9</span><span>10</span><span class="selected">11</span><span>12</span><span>13</span><span>14</span></div>
+        </div>
+        <div class="assessment"><strong>対象関係は強い</strong><p>handle、Anchor、絵と注意を奪い合い、動く対象の近くで狩猟的注意を増やす。BLOCKED説明も収まりにくい。</p><div class="verdict">NO-GO: Canvasは直接操作へ譲る</div></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const labels = {
+      source: 'SOURCE · 原画',
+      ready: 'ANIMATE · F11 READY',
+      keyed: 'ANIMATE · F11 KEYED',
+      blocked: 'BLOCKED · CLIP REQUIRED'
+    };
+    const comparison = document.querySelector('.comparison');
+    const controls = [...document.querySelectorAll('[data-set-state]')];
+
+    function setState(state) {
+      if (!labels[state]) return;
+      comparison.dataset.currentState = state;
+      document.querySelectorAll('.context').forEach(node => {
+        node.dataset.state = state;
+        node.textContent = labels[state];
+      });
+      controls.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.setState === state)));
+    }
+
+    controls.forEach(button => button.addEventListener('click', () => setState(button.dataset.setState)));
+    setState('ready');
+  </script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 更新日: 2026-09-01
 
-状態: Phase 9nまでclose。現行Phase 9oはGate 1=`GO — D: Tegaki hybrid`。Stage B1〜B3はOwner acceptance済み。Stage B4 Owner correction（Anchor追従 / 中心復帰 / Anchor越えflip / preview品質）はproduction技術proof完了、Owner再確認待ち。
+状態: Phase 9oまでclose。現行Phase 9pはTransform-to-Clip Key Bridge / Interaction Context Gate。Gate 0=`GO — C`、Gate 1=`GO — B: Transform-local indicator`、Gate 2=`GO — B: split owner + synchronous adapter`、Stage B4進行中。
 
 ## 1. 最初に読む順序
 
@@ -10,22 +10,28 @@
 2. `TEGAKI.md`
 3. `tegaki_work/PROGRESS.md`
 4. 本書
-5. `task-codex/phase9o.md`
-6. `開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md`
-7. `開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md`
+5. `task-codex/phase9p.md`
+6. `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`
+7. `開発用資料保管庫/proposals/Tegaki_Transform_Centric_Flow_Purification_Addendum_2026-09-01.md`
 8. `開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_REVISED_2026-08-31.md`
-9. `開発用資料保管庫/Archive/phase9n.md`
-10. `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`
-11. `tegaki_work/system/layer-transform.js`
-12. `tegaki_work/system/transform-math.js`
-13. `tegaki_work/system/transform-overlay-geometry.js`
-14. `tegaki_work/ui/layer-transform-basic-overlay.js`
-15. `tegaki_work/styles/components/layer-transform-basic.css`
-16. `tegaki_work/system/layer-system.js`
-17. `tegaki_work/ui/transform-anchor-site.js`
-18. `tegaki_work/ui/dom-builder.js`
-19. `tegaki_work/system/layer-transform-preview-sampling.js`
-20. `tegaki_work/build/verify-phase9o-basic-transform-production.mjs`
+9. `開発用資料保管庫/Archive/phase9o.md`
+10. `tegaki_work/system/animation/transform-edit-context.js`
+11. `tegaki_work/system/animation/clip-transform-key-upsert.js`
+12. `tegaki_work/system/animation/clip-transform-layer-gesture.js`
+13. `tegaki_work/system/animation/transform-edit-transaction.js`
+14. `tegaki_work/system/animation/clip-transform-sampler.js`
+15. `tegaki_work/system/animation/animation-data-model.js`
+16. `tegaki_work/ui/animation-table-popup.js`
+17. `tegaki_work/system/layer-system.js`
+18. `tegaki_work/system/layer-transform.js`
+19. `tegaki_work/ui/keyboard-handler.js`
+20. `tegaki_work/core-engine.js`
+21. `tegaki_work/build/phase9p-transform-edit-target-placement-fixture.html`
+22. `tegaki_work/build/verify-phase9p-transform-edit-context.mjs`
+23. `tegaki_work/build/verify-clip-transform-key-upsert.mjs`
+24. `tegaki_work/build/verify-clip-transform-layer-gesture.mjs`
+25. `tegaki_work/build/verify-phase9p-transform-edit-transaction.mjs`
+26. `tegaki_work/build/verify-phase9p-transform-bridge-production.mjs`
 
 ## 2. 作業開始時の確認
 
@@ -37,60 +43,58 @@ git status --short --untracked-files=all -- tegaki_work task-codex 開発用資�
 
 ## 3. 現在地
 
-- Phase 9nはright RIGをoverview / next action / handoff、既存single floating windowをmode別`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`とするhost ownershipをD3で固定してcloseした。
-- 全129 verifier、build、right RIGからのopen、RIG / Motion / Warp往復、close / reopen、Table closed再入場、History不変、480×800横overflow 0、console warning / error 0件を通過した。
-- current RIG WORKSPACEの横長layout、数値欄、button density、`RIG / MOTION / WARP`上位tab、floating / vertical inspector選択は最終UX受入ではない。Table closeとのlifecycle分離、TEST POSEもHOLD。
-- Owner方針により、次はRIGをさらに磨く前に既存`V` Layer Transformを「絵の共通変形語彙」へできるか比較する。
-- skill ladderは`DRAW → TRANSFORM → ANIMATE → RIG → RIG MESH / WEIGHT`。RIGは最初の入口ではなく、反復する直接操作を構造化する上位段階とする。
-- Stage 0では既存Vのnormal Raster / Folder / CAF working Layer / selection、Pixi preview、Raster bake、path / clipping、通常 / CAF History、save前commit、Clip Motion bridgeをinventoryした。
-- 現行VはCanvas drag=Move、Shift+横drag=Rotate、Shift+縦drag=Uniform Scale、Canvas Anchor site、floating X / Y / Rotation / Scale sliderを持つ。bounding box / 8方向handle / Distort / Drawing Warp Gridはまだ無い。
-- 明示的SVG object Layer authorityは確認できない。SVG対応を前提にせず、import後Raster / path metadataの実態をfixtureで明示する。
-- Stage A1比較fixture `tegaki_work/build/phase9o-layer-transform-interaction-grammar-fixture.html`と固定verifierを追加した。A Current / B CSP-like / C Procreate-like / D Tegaki hybridを同じ絵・課題・Canvas面積で比較できる。
-- Browserではdefault 1280×720で4案同列、480×800で一列stack、横overflow 0、C DISTORT / D WARP / D詳細の表示同期、console 0件を確認した。全130 verifier、buildを通過し、生成物差分は残していない。
-- Ownerが第一候補Dを選定し、Gate 1=`GO — D: Tegaki hybrid`。A / B / CはDへの不満時に同じ比較条件へ戻れる再試行案としてfixtureとPhase書へ保持した。
-- Stage B1はproduction panelを`BASIC / DISTORT / WARP`とpreciseの`詳細`に整理し、BASICだけをactive、DISTORT / WARPはdisabledとした。Raster alphaのruntime-only tight bounds、既存matrix、coordinate systemからpointer非参加の4 corner + rotate overlayを接続し、既存Anchor siteを維持した。
-- Browser 1280×720でMove preview、`詳細`、Escape cancel、V confirm、Undo / Redo後のbounds復元とHistory 1→2、480×800初期起動でbox / 4 corner / rotate / Anchor / 210px panel、横overflow 0、console 0件を確認した。全131 verifier、build、生成物清掃を通過。途中viewport resizeでCanvasごと位置を維持するのは既存camera挙動で、overlay独自のずれではない。
-- Transform / RIG Authoring Addendumをproposalへ格納した。quiet rotation、明示Origin編集、visual / hit分離、DISTORT / WARP分離は評価軸へ採用。改訂追補のInteraction Context / Instant Animation / Lazy Lane DisclosureはAnimation Bridge前のArchitecture Gate候補として保持し、現行Transform Sliceへ一括接続しない。
-- OwnerはStage B1のproduction実画面を確認・承認した。Adobe Animateは最新trendの正本でなく、長年磨かれたonboarding文法を抽出してTegakiへ再構成する参照とする。最新toolや多数派も絶対視せず、横断分析とOwner実使用でTegaki案が優れる場合は独自案を優先する。
-- Stage B2は四隅だけをinteractive Uniform Scaleへ接続し、Ownerが2026-08-31に操作確認・承認した。可視12pxと通常28px / coarse 36px hit、既存Anchor基準、反転符号 / 縦横比、preview History 0、V confirm 1、Escape復元を固定している。
-- Stage B3は上部Rotate handleだけをinteractive化した。可視14pxと通常28px / coarse 36px hitを分離し、既存Anchorからのscreen最短角差を累積する。±π境界とcamera反転方向を補正し、x / y、scale、Anchor、History / save正本を変更しない。
-- 1280×720でhandle終点追従、preview History不変、V confirm 1件、Undo / Redo、Escape復元と再入場bounds一致を確認した。480×800でもrotation操作、210px panel、横overflow 0、console warning / error 0件、全131 verifier、buildを確認した。box外drag / side midpoint / Origin gesture、DISTORT / WARP、numeric scrub、Animation / RIGは未接続。
-- Ownerは2026-08-31にStage B3 Rotate handleをproduction実画面で操作確認・承認した。
-- Stage B4はside midpointなし案とquiet 4辺中点案を比較し、後者を`GO`とした。可視10px、通常28px / coarse 36px hit、通常cream + 茶、hover / drag時だけ橙。A案は4辺が煩雑な場合のfallbackとしてPhase書へ保持した。
-- 上 / 下は`scaleY`だけ、左 / 右は`scaleX`だけを既存Anchor基準のscreen box二軸projectionで変更する。回転済み対象へ追従し、反対軸、x / y、rotation、Anchorを維持する。初期proofのAnchor越えclampはOwner期待と不一致だったため、corner / sideともzero近傍だけ安定化して符号反転するflipへ改訂した。
-- 初回wide操作でpanel更新→Scale slider `onChange`→両軸uniform化のfeedbackを検出し、programmatic panel同期だけをsilent化した。single Scale sliderの明示操作は従来どおりUniform Scaleで、transform / History / save正本を増やしていない。
-- Anchor siteのcallbackが古いTransform objectを保持する参照世代ずれを修正し、常に現行session値を読むようにした。中心buttonを左端へ分離し、single clickは従来Anchor編集、double clickはruntime content-tight bounds中央へ見た目を跳ばさず復帰する。既存default / ResetのCanvas中心、schema / Historyは維持する。
-- 拡大preview中だけunique textureのsamplingをexact-pixelへ切り替え、cancel / confirmのBake前に元filterへ戻すdisplay-only helperを追加した。半ベクターstroke replay、source Raster再生成、export変更は行わない。
-- BrowserではwideのAnchor / box Moveが`+90 / +30px`一致、side Anchor越えflip、preview History不変、V confirm 1を確認した。480×800でも中心button、4 side hit、210px panel、横overflow 0。全131 verifier、build、通常scaleのconsole warning / error 0件を通過した。意図的な巨大scale確定stressでは既存max-texture guard warning 1件だけを確認した。
+- Phase 9oはOwnerがD hybridとStage B1〜B4を受入し、2026-09-01にcloseした。Layer TransformのMove / corner Scale / Rotate / side Scale / content-center Anchor / flip / last-touched入力 / capture喪失transaction / exact-pixel previewを固定した。
+- Phase 9pの時間変形正本は既存`ClipInstance.transformKeyframes`、Historyは既存Timeline History。第二key schema / Historyは作らない。
+- Layer TransformのSOURCEは従来どおりpreview後にRaster sourceをBakeする。ANIMATEだけをStage B3の同期adapterがBake前にClip keyへ分岐する。
+- Gate 0比較はA=現行CLIP MOTIONのみ、B=Table OPENを無条件ANIMATE、C=eligible primary Clip / current Frameから明示projection、D=Transform panel Add Key。CをGOとした。A / Dはfallback、Bは現段階NO-GO。
+- Stage A1で`projectTransformEditContext()`を追加した。Table閉=`SOURCE`。Table開かつ一つのClip、duration > 1、範囲内Frame、停止中なら`ANIMATE READY / KEYED`。再生中、未選択、複数選択、duration 1、範囲外は`BLOCKED`。
+- `AnimationTablePopup.getTransformEditContext()`は既存`selectedCelId / selectedCelIds / playback.currentFrame / isVisible / isPlaying`をprojectionへ渡すread-only API。
+- ContextはProject / localStorage / Historyへ保存しない。Clip / key / working Layer / EventBusを変更しない。
+- `animate-ready`への入場だけではkeyを作らない。最初の実gestureだけが固定baselineからpreview keyを作る。
+- Stage A2はTop Bar / Transform-local / Dual / Canvasを比較し、B Transform-localを選定した。Stage B3で実transactionと同時に`SOURCE · 原画 / ANIMATE · F# READY|KEYED`をproduction接続した。
+- Stage B0で現CLIP MOTIONのfull composite key upsertをpure plannerへ抽出した。同一Frame末尾keyのhold / easing継承、full key shape、入力不変を将来Bridgeと共有する。baseline keyは作らない。
+- Stage B1でLayer Transform開始→現在のx / y / rotation加算差分と符号付きscale比率だけをsampled Clip transformへ合成するpure plannerを追加した。source Layerの絶対値やRasterはkeyへ混ぜず、Anchor edit / context不一致は理由付き拒否する。
+- 任意matrix分解は、非等方scale＋回転でClip schemaにないshearを生み得るため採用しない。Anchorはstatic / global authoring候補として後続へ送る。
+- Stage B2 Gate 2=`GO — B: split owner + synchronous adapter`。LayerSystemはinput / SOURCE、AnimationTablePopupはANIMATE preview / Timeline rollback / Historyを所有する。Raster Bake後の`layer:transform-exit`へANIMATEを後付けしない。
+- ANIMATE開始時のsampled Clip transform / keyframes / duration / Clip・Frame identityをclone固定し、各previewは同じbaselineからB1→B0を再計算する。READY→KEYEDは許可し、Clip / Frame / authority変更はretargetせずrollbackする。
+- V confirmは変更ありでTimeline History 1、Escape /開始位置復帰はrollbackでHistory 0。handle pointercancelはhandle gestureだけを戻してV sessionは維持する。
+- Stage B3はPopup初期化後にoptional adapterをLayerSystemへ注入し、選択Clipのworking Raster群をroot Clip表示proxyとして扱う。SOURCEのRaster / CAF source Historyは変更しない。
+- ANIMATEのMove / corner・one-axis Scale / Rotate / flip、V確定1 History、Escape、Frame変更、Table close、Undo / RedoをBrowserで確認した。rollbackは対象Clip keyだけを戻すため、新しく選んだFrameを巻き戻さない。ANIMATE Anchorはstatic Clip authorityを維持してdisabled。
+- Stage B4の最初に、選択中のCAF内部Layer行へ既存Clip Motion keyを同一Frameの丸として読み取り専用投影した。親CAF帯と同じ`ClipInstance.transformKeyframes`のechoで、Layer固有key / click action / schema / Historyは増やしていない。F2作成、Undoで消失、Redoで復帰、console 0件をBrowser確認した。
+- 全137 verifier、production build、Browser fixture / production、console 0件、生成物清掃を通過した。
 
 ## 4. 次のtask
 
-Phase 9o Stage B4 Owner correctionのOwner再確認。
+Phase 9p Stage B4のproduction hardening / close Gate。
 
-1. 中心buttonのsingle / double click、content-center復帰、Canvas Move / Scale / Rotate中のAnchor追従をmouse / penで見る。
-2. corner / sideをAnchor越しへdragして水平 / 垂直 / 両軸flipが自然に連続するか、zero近傍で暴れないかを見る。
-3. 拡大previewのexact-pixel表示とV確定後の元samplingを比較し、確定前に原画が劣化したように見えないかを見る。V confirm、Escape、Historyも確認する。
-4. 8 handle全体が煩雑ならside midpointなし案へ戻す。Owner acceptance後はStage B5で永続的なCanvas中心 / 描画範囲中心切替の必要性をGate判断し、不要ならBASIC close条件を選定する。DISTORT / WARP、Drawing Warp、Interaction Context / Timeline key、RIG再配置を並走しない。
+1. 既存explicit key更新、READY no-op、開始位置復帰を固定する。
+2. 複数Clip選択、playback、duration 1、範囲外をBLOCKEDのままmutation 0で確認する。
+3. normal Layer / CAF SOURCEのMove / Scale / Rotate / flip、confirm / Escape / Historyを退行監査する。
+4. Clip keyのProject save / reloadとcompositor / Timeline marker一致を確認する。
+5. 全Gate通過後にPhase 9p close可否を判定し、外部Web AIが`GitHubURL.txt`から導線を精査できる状態へ整える。
+6. 次Phase候補はLayer Transform内のDrawing WARP。static RIG parent relationはその後に分離する。
+
+Auto Key、baseline永続化、Drawing WARP、static RIG ownership、閉じる／決定button、virtual grid / Motion Pathは開始しない。
 
 ## 5. model分担
 
-- interaction grammar、Focus Lens、比較軸、Gate判定はSOL / MAX。
-- pure geometry / fixtureの契約が確定した一つの限定SliceだけLUNA / MAX候補。
-- History、CAF adapter、save、schema、Warp topology、RIG境界判断をLUNAへ委譲しない。
+- Gate判断、History / CAF / save境界、Phase closeはSOL / MAX。
+- pure projection / fixtureの契約が確定した一つの限定SliceだけLUNA / MAX候補。
+- 現Stageは小さく、並走しない。
 
 ## 6. 新チャットへ貼る文面
 
 ```text
 D:\GitHub\tegaki の作業を継続してください。
 
-Phase 9nまでclose済みです。現行Phase 9oはGate 1=`GO — D: Tegaki hybrid`です。Stage B1〜B3はOwner acceptance済み、Stage B4 Owner correction（Anchor追従 / 中心復帰 / Anchor越えflip / preview品質）はproduction技術proof完了、Owner再確認待ちです。
+Phase 9oまでclose済みです。現行Phase 9pはTransform-to-Clip Key Bridge / Interaction Context Gate、Gate 0=`GO — C`、Gate 1=`GO — B: Transform-local indicator`、Gate 2=`GO — B: split owner + synchronous adapter`、Stage B4進行中です。
 
-最初にAGENTS.md、TEGAKI.md、tegaki_work/PROGRESS.md、tegaki_work/NEXT_CHAT_HANDOFF.md、task-codex/phase9o.md、開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md、開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md、開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_REVISED_2026-08-31.md、Archive/phase9n.md、tegaki_work/TRANSFORM_SESSION_BOUNDARY.md、system/layer-transform.js、system/transform-math.js、system/transform-overlay-geometry.js、ui/layer-transform-basic-overlay.js、styles/components/layer-transform-basic.css、system/layer-system.js、ui/transform-anchor-site.js、ui/dom-builder.js、system/layer-transform-preview-sampling.js、build/verify-phase9o-basic-transform-production.mjsを順に読んでください。
+最初にAGENTS.md、TEGAKI.md、tegaki_work/PROGRESS.md、tegaki_work/NEXT_CHAT_HANDOFF.md、task-codex/phase9p.md、tegaki_work/TRANSFORM_SESSION_BOUNDARY.md、開発用資料保管庫/proposals/Tegaki_Transform_Centric_Flow_Purification_Addendum_2026-09-01.md、開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_REVISED_2026-08-31.md、開発用資料保管庫/Archive/phase9o.md、system/animation/transform-edit-context.js、system/animation/clip-transform-key-upsert.js、system/animation/clip-transform-layer-gesture.js、system/animation/transform-edit-transaction.js、system/animation/clip-transform-sampler.js、system/animation/animation-data-model.js、ui/animation-table-popup.js、system/layer-system.js、system/layer-transform.js、ui/keyboard-handler.js、core-engine.js、build/phase9p-transform-edit-target-placement-fixture.html、build/verify-phase9p-transform-edit-context.mjs、build/verify-clip-transform-key-upsert.mjs、build/verify-clip-transform-layer-gesture.mjs、build/verify-phase9p-transform-edit-transaction.mjs、build/verify-phase9p-transform-bridge-production.mjsを順に読んでください。
 
 git status --short --untracked-files=all -- tegaki_work task-codex 開発用資料保管庫/proposals 開発用資料保管庫/Archive
-を最初に確認し、既存変更をすべて維持してください。Backup/、PastFiles/、開発用資料保管庫/Backup-tegaki_work/は調査・編集しないでください。
+を最初に確認し、既存変更を維持してください。Backup/、PastFiles/、開発用資料保管庫/Backup-tegaki_work/は調査・編集しないでください。
 
-中心仮説はDRAW → TRANSFORM → ANIMATE → RIG → RIG MESH / WEIGHTです。OwnerがD Tegaki hybridとStage B1〜B3を承認しました。Stage B4はquiet 4辺中点のinteractive一軸Scaleに加え、現行sessionへ追従するAnchor、左端の中心button、double click content-center復帰、corner / side Anchor越えflip、拡大中だけのexact-pixel previewを固定しています。既存default / ResetはCanvas中心、samplingはBake前に元へ戻し、schema / History / source Raster / exportは変更していません。side midpointなし案と永続的なCanvas / content-center切替は再試行候補です。改訂追補のInteraction Context / Instant Animation / Lazy Lane Disclosureは次のArchitecture Gate候補であり、現Sliceへ接続していません。Adobe Animateはtrend正本でなく長年の良いonboarding文法を抽出・再構成する参照で、最新toolや多数派も絶対視しません。A / B / Cも不満時の再試行fixtureとして保持し、Drawing Warp、Timeline key、Anchor animation、RIG再配置を並走しないでください。
+Stage A1はTable / primary Clip / current FrameからSOURCE / ANIMATE READY / ANIMATE KEYED / BLOCKEDを保存しないpure projectionにしました。Stage A2はB Transform-local表示、Stage B0はshared Clip key upsert、B1はLayer gesture delta、B2はsplit owner transactionを固定しました。Stage B3でoptional同期adapterをproduction接続し、ANIMATEだけをRaster Bake前に既存ClipInstance.transformKeyframes / Timeline Historyへ分岐しました。入場だけではkeyを作らず、Move / Scale / Rotate / flip、確定、Escape、Frame変更、Table close、Undo / Redoを通過しています。Stage B4の最初に、選択CAF内部Layer行へ既存Clip Motion keyを読み取り専用の丸で同一Frame投影しました。
 
-次作業予告はPhase 9o Stage B4 Owner再確認です。承認後はStage B5で永続的なCanvas中心 / 描画範囲中心切替の要否をGate判断し、不要ならBASIC close条件を選定します。作業担当はSOL / MAXです。
+次作業予告はStage B4の既存key更新 / no-op / BLOCKED監査です。作業担当はSOL / MAXです。その後にnormal Layer / CAF SOURCE、Project save / reloadを順に固定し、Phase close可否と次PhaseのDrawing WARP入口を選定してください。Drawing WARP実装、static RIG、global Auto Key、baseline永続化はこのStageへ並走しないでください。
 ```

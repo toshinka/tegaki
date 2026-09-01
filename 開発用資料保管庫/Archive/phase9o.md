@@ -3,7 +3,7 @@
 作成日: 2026-08-31
 更新日: 2026-09-01
 
-状態: ACTIVE — Gate 1=`GO — D: Tegaki hybrid`。Stage B1〜B3はOwner acceptance済み。Stage B4 Owner correction 2（描画範囲中央Anchor / 一本線Scale / 重なりhandle優先）はproduction技術proof完了、Owner再確認待ち
+状態: ACTIVE — Gate 1=`GO — D: Tegaki hybrid`。Stage B1〜B3はOwner acceptance済み。Stage B4 Owner correction 3（描画範囲中央Anchor / 一本線Scale / 重なりhandle優先 / capture喪失時preview維持）はproduction技術proof完了、Owner再確認待ち
 
 ## 1. 目的
 
@@ -218,7 +218,7 @@ Ownerは2026-08-31にStage B1のproduction実画面を確認し、visual accepta
 2. pointer開始時の既存Anchorとtransformを固定し、Anchorからpointerまでのscreen距離比を`scaleX / scaleY`へ同倍率で掛ける。camera zoomに依存せず、反転符号と既存の縦横比を保つ。
 3. scaleは既存`TEGAKI_CONFIG.layer.minScale / maxScale`へclampする。cornerをAnchorの反対側へ越えてflipする機能は本Sliceへ入れない。
 4. overlayはpointer captureとDOM入力だけを扱い、transform正本、Pixi preview、History、confirm、saveを所有しない。`LayerTransform`が既存session transformへ適用する。
-5. pointerupはpreviewを終えるだけでHistoryを作らない。V再入力confirmで既存1 History、Escapeでsession開始前へ復元する。pointercancel / lost captureはそのcorner gesture開始値へ戻す。
+5. pointerupはpreviewを終えるだけでHistoryを作らない。V再入力confirmで既存1 History、Escapeでsession開始前へ復元する。明示`pointercancel`はそのcorner gesture開始値へ戻す。`lostpointercapture`は入力transportの喪失であり取消意志ではないため、喪失時点のpreviewを維持する。
 6. Canvas drag Move、Shift directional Rotate / Scale、wheel、arrow、slider、flip、Anchor、normal / Folder / CAF confirm経路をfallbackとして維持する。Pixel Selectionは既存adapterのまま非対象。
 
 Stage B2技術proof（2026-08-31）:
@@ -241,7 +241,7 @@ Ownerは2026-08-31にStage B2 corner Uniform Scaleをproduction実画面で操�
 2. pointer開始時の既存Anchor、transform、screen上のpointer角を固定し、移動ごとの最短角差を累積してrotationへ適用する。±π境界で逆回転へ跳ばず、camera水平 / 垂直反転時もhandleがscreen上のpointerへ追従する向きを保つ。
 3. rotationは既存`minRotation / maxRotation / rotationLoop`へ従い、x / y、scaleX / scaleY、Anchorを変更しない。Shift snapや別のrotation保存値を追加しない。
 4. overlayはpointer captureとDOM入力だけを扱い、transform正本、Pixi preview、History、confirm、saveを所有しない。`LayerTransform`が既存session transformへ適用する。
-5. pointerupはpreviewを終えるだけでHistoryを作らない。V再入力confirmで既存1 History、Escapeでsession開始前へ復元する。pointercancel / lost captureはrotation gesture開始値へ戻す。
+5. pointerupはpreviewを終えるだけでHistoryを作らない。V再入力confirmで既存1 History、Escapeでsession開始前へ復元する。明示`pointercancel`はrotation gesture開始値へ戻し、`lostpointercapture`は喪失時点のpreviewを維持する。
 6. Canvas drag Move、Shift directional Rotate / Scale、wheel、arrow、slider、flip、Anchor、normal / Folder / CAF confirm経路をfallbackとして維持する。Pixel Selectionは既存adapterのまま非対象。
 
 Stage B3技術proof（2026-08-31）:
@@ -271,7 +271,7 @@ Ownerは2026-08-31にStage B3 Rotate handleをproduction実画面で操作確認
 2. 上 / 下は`scaleY`だけ、左 / 右は`scaleX`だけを変更する。pointer開始時の既存Anchor、transform、screen上のbox二軸を固定し、回転済み対象でもlocal axis projection比でhandleがpointerへ追従する。
 3. x / y、rotation、反対軸scale、Anchorを変更しない。初期proofでは既存反転符号を保ち、Anchor越えを`minScale`で止めたが、Owner操作で学習済みのflip期待と不一致になったため、後述7.5で符号反転へ改訂した。
 4. overlayはpointer captureとDOM入力だけを扱い、transform正本、Pixi preview、History、confirm、saveを所有しない。`LayerTransform`が既存session transformへ適用する。
-5. pointerupはpreviewを終えるだけでHistoryを作らない。V再入力confirmで既存1 History、Escapeでsession開始前へ復元する。pointercancel / lost captureはそのside gesture開始値へ戻す。
+5. pointerupはpreviewを終えるだけでHistoryを作らない。V再入力confirmで既存1 History、Escapeでsession開始前へ復元する。明示`pointercancel`はそのside gesture開始値へ戻し、`lostpointercapture`は喪失時点のpreviewを維持する。
 6. precise panel同期はsliderの`onChange`を再発火させず、one-axis値をuniformへ戻さない。single Scale slider自体は従来どおり明示操作時のUniform Scaleとして維持する。
 7. Canvas drag Move、Shift directional Rotate / Scale、wheel、arrow、slider、flip、Anchor、normal / Folder / CAF confirm経路をfallbackとして維持する。Pixel Selectionは既存adapterのまま非対象。
 
@@ -315,15 +315,30 @@ Ownerの2026-09-01再操作では、Canvas中心より絵／変形枠の中心�
 - 1280×720の新規sessionで描画範囲box中心と初期Anchorがともに`596 / 326.5px`となることを確認した。
 - 右side handleをAnchorへdragし、box幅が`172px → 0.0172px`まで縮小した。重なり時のDOM / hit最前面は最後に触れた右side `index=1`。
 - 重なった右handleを中心から6px外側で掴んで反対側へdragし、符号反転したboxが幅約`202px`まで自然に再展開した。hit半径由来の縮小停滞はない。
-- Owner visual acceptanceは未完了。一本線近傍のhandle密度、最後に触れた側の理解、mouse / penの再展開感はOwner確認を要する。
+- Ownerは2026-09-01に補正後の実画面を確認し、問題解決としてStage B4を受入した。一本線近傍のhandle密度、last-touched入力、mouse / penの再展開、capture喪失時preview維持をPhase 9oのclose条件として承認した。
 
 後続案として、Canvas中心や任意整列を必要とする場合は、永続Anchor位置toggleより先にvirtual grid / snapを比較する。格子間隔を数値指定し、線／交点へ吸着する任意modeとし、将来のfreehand／放物線Motion Pathでも同じ投影候補を再利用できる。ただしTransform sessionとTimeline keyの保存・History正本は統合しない。この案はBASIC直接操作とMotion Pathの各Gate後に検討し、Phase 9oでは実装しない。
 
-## 7.7 Transform / RIG Authoring Addendumの採否
+## 7.7 Stage B4 Owner correction 3 — capture loss transaction
+
+Ownerの2026-09-01操作では、keyboard / wheelは安定する一方、mouse / penのCanvas handleが一度動いた直後に開始値へ戻る場合があった。通常mouseをSOL Browserで常時再現はできなかったが、全handleの`lostpointercapture`が無条件に`cancelled=true`を通知し、OS / device側のcapture喪失まで取消へ変換する経路を確認した。
+
+1. 明示`pointercancel`だけを現在gestureのrollbackとする。`lostpointercapture`は入力transportが失われた時点でgestureを終了するが、そこまでのpreviewを維持する。
+2. `pointerup`、V再入力confirm、Escape、History、save、Layer / CAF authorityは変更しない。V内のgesture完了は引き続きHistory 0、V confirmだけが既存1 Historyを作る。
+3. Layer Transformへの独立した閉じる／決定buttonは今回追加しない。現行V再入力／shortcut確定を維持し、大きなpopup GUI再編時に入口の明示性とbutton密度を比較するHOLD案とする。
+
+技術proof（2026-09-01）:
+
+- corner / side / rotationの3 capture喪失経路をpreview維持へ統一し、明示`pointercancel` rollbackを分離したproduction契約verifierを追加した。
+- SOL Browserの通常mouseでは修正前から常時巻戻りを再現しなかった。修正後はside drag直後にframeが`131px → 271px`へ反映され、入力toolがpage focusを保持する間は開始値へ戻らないことを確認した。pen固有のcapture喪失と実機mouseの掴み心地はOwner再確認を要する。
+
+## 7.8 Transform / RIG Authoring Addendumの採否
 
 `開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md`はWorking Addendumであり、一括実装契約にしない。現行codeと照合し、次のように分類する。
 
 改訂追補`開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_REVISED_2026-08-31.md`では、Interaction Context、Instant Animation、Lazy Lane Disclosureが追加された。これは現行Transformのstatic preview / confirm契約を上書きせず、次のAnimation Bridge Gateで優先比較するWorking Proposalとして保持する。
+
+導線純化追補`開発用資料保管庫/proposals/Tegaki_Transform_Centric_Flow_Purification_Addendum_2026-09-01.md`は、`WHAT=Layer / HOW=Transform / WHEN=Animation Table / DO=Canvas`を次Architecture Gateの評価軸として採用する。現行BASICを中断せず、BASIC close後はまずBasic Transform→Clip key bridgeとInteraction Contextを比較する。現行VはCAF working Rasterのstatic sourceをBakeするため、Animation Table openだけで意味を暗黙に切り替えず、Edit Target、既存key更新 / 新規key生成、baseline、cancel / confirm、通常HistoryとCAF Historyの所有者を先に固定する。その後にDrawing Warpのbase topology / temporal key分離、最後にC first=`Layer RIG badge + Transform authoring`を含むstatic RIG ownershipを比較する。効率と既存authority再利用により順序はGateで修正できるが、RIG / WARP画面の一括移植を先行させない。
 
 2026-08-31にAdobe Animate / CLIP STUDIO PAINT / Procreate / Live2D / ToonSquid / Riveの公式資料を照合し、Root / Joint連続配置、Auto Mesh、corner / midpoint / rotation handle、Distort / Warp分離、Auto / Manual Meshの記述を確認した。Adobe Animateはmaintenance modeのため最新トレンドの正本にはしないが、長年磨かれたonboarding patternを捨てる理由にもならない。良い文法を抽出してTegakiのFocus Lensへ再構成し、外見や古い全体構造は模倣しない。最新toolの支持や多数派も絶対視せず、比較根拠とOwner実使用でTegakiの分析がより良い場合は独自案を優先する。
 
@@ -360,7 +375,7 @@ Phase 9oの評価軸へ採用:
 
 ## 9. 検証
 
-Stage A1ではfixture verifier、wide / 480×800 Browser、keyboard / pointer / pen相当hit、document overflow、console warning / errorを確認する。Stage B1ではpure geometry / production shell契約verifier、wide / 480×800初期起動、Move / confirm / cancel / Undo / Redo、History、consoleを追加する。Stage B2ではcorner拡大 / 縮小、反転符号 / clamp、pointer cancel、preview History 0、V confirm 1、Escape復元、Undo / Redo、wide / 480px overflowを追加する。Stage B3では±π境界、camera反転方向、rotation pointer追従、preview History 0、V confirm 1、Escape復元、Undo / Redo、wide / 480px overflowを追加する。Stage B4ではx / y分離、回転後のlocal axis projection、slider feedback遮断、Anchor越えflip、Anchor現行session追従、初期 / Reset / double clickのcontent-center、Scale`0.0001`、重なりhandleのlast-touched優先、hit位置非依存の再展開、preview sampling復帰、preview History 0、V confirm 1、Escape復元、Undo / Redo、wide / 480px overflowを追加する。
+Stage A1ではfixture verifier、wide / 480×800 Browser、keyboard / pointer / pen相当hit、document overflow、console warning / errorを確認する。Stage B1ではpure geometry / production shell契約verifier、wide / 480×800初期起動、Move / confirm / cancel / Undo / Redo、History、consoleを追加する。Stage B2ではcorner拡大 / 縮小、反転符号 / clamp、pointer cancel、preview History 0、V confirm 1、Escape復元、Undo / Redo、wide / 480px overflowを追加する。Stage B3では±π境界、camera反転方向、rotation pointer追従、preview History 0、V confirm 1、Escape復元、Undo / Redo、wide / 480px overflowを追加する。Stage B4ではx / y分離、回転後のlocal axis projection、slider feedback遮断、Anchor越えflip、Anchor現行session追従、初期 / Reset / double clickのcontent-center、Scale`0.0001`、重なりhandleのlast-touched優先、hit位置非依存の再展開、`pointercancel` rollback / capture喪失時preview維持、preview sampling復帰、preview History 0、V confirm 1、Escape復元、Undo / Redo、wide / 480px overflowを追加する。
 
 production Sliceへ進んだ場合だけ、変更対象`node --check`、全verifier、`npm.cmd run build`、生成物差分清掃、実操作のconfirm / cancel / Undo / Redo / save前commitを追加する。
 
@@ -372,4 +387,13 @@ production Sliceへ進んだ場合だけ、変更対象`node --check`、全verif
 
 ## 11. 次作業予告
 
-Phase 9o Stage B4 Owner correction 2は技術proof完了。次taskはOwnerが初期 / Reset / double clickの描画範囲中央Anchor、一本線までのside縮小、重なり時のlast-touched入力、反転後の再展開をmouse / penで再確認すること。併せて従来のAnchor追従と拡大previewも見る。受入後はStage B4を閉じ、BASIC close条件の選定へ進む。virtual grid / numeric spacing / line・intersection snapとfreehand / 放物線Motion Path連携は後続Gate候補として保持し、今は実装しない。作業担当はSOL / MAX。DISTORT / WARP、Interaction Context / Animation bridgeは並走しない。
+Phase 9oは2026-09-01にOwner受入を得てcloseする。次taskはPhase 9p Transform-to-Clip Key Bridge / Interaction Context GateのStage A1で、Animation Table表示、primary Clip選択、現在Frameから`SOURCE / ANIMATE READY / ANIMATE KEYED / BLOCKED`を保存しないruntime projectionとして固定する。Auto Key、baseline生成、Layer Transform confirmのkey書込への切替は、projectionとHistory境界の技術proof後まで行わない。作業担当はSOL / MAX。Drawing WARP、static RIG ownership、独立した閉じる／決定button、virtual grid / snapは並走しない。
+
+## 12. Closeout
+
+- close日: 2026-09-01
+- Owner acceptance: Gate 1=`GO — D: Tegaki hybrid`、Stage B1〜B4を実画面確認。Owner correction 3のmouse / pen handle巻戻り問題は解決済み。
+- 技術検証: 全131 verifier、production build、wide / 480×800 Browser、console 0件、生成物清掃。
+- 維持した正本: LayerTransform session、Raster preview / Bake、通常 / CAF History、save前commit。schema / export / source Rasterは変更なし。
+- 再試行候補: A / B / C比較、side midpointなし案、独立した閉じる／決定button、virtual grid / numeric spacing / snap。
+- 後続: Phase 9pでTransform-to-Clip Key Bridge / Interaction Context、以後Drawing WARP、static RIG ownershipの順にGate化する。
