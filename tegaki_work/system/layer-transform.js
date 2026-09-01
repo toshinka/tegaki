@@ -66,8 +66,10 @@ export class LayerTransform {
         this.onSliderChange = null;
         this.onRebuildRequired = null;
         this.onGetActiveLayer = null;
+        this.onCanEnterMoveMode = null;
         this.onGetTransformWorldCorners = null;
         this.onGetTransformSourceBounds = null;
+        this._editContextProjection = null;
         this.basicOverlayScaleGesture = null;
         this.basicOverlayAxisScaleGesture = null;
         this.basicOverlayRotationGesture = null;
@@ -90,6 +92,40 @@ export class LayerTransform {
         this._setupEventListeners();
     }
 
+    setEditContextProjection(projection = null) {
+        this._editContextProjection = projection ? { ...projection } : null;
+        this._syncEditContextProjection();
+    }
+
+    _syncEditContextProjection() {
+        const note = typeof document !== 'undefined'
+            ? document.getElementById('layer-transform-context-note')
+            : null;
+        const projection = this._editContextProjection;
+        if (!note) return;
+        if (!projection?.label) {
+            note.classList.remove('show');
+            note.removeAttribute('data-context-state');
+        } else {
+            note.textContent = projection.label;
+            note.dataset.contextState = projection.state || 'source';
+            note.classList.toggle('show', this.isVKeyPressed);
+        }
+
+        const anchorButton = document.getElementById('layer-transform-anchor-btn');
+        const anchorEditable = projection?.allowAnchorEdit !== false;
+        anchorButton?.classList.toggle('is-context-disabled', !anchorEditable);
+        anchorButton?.setAttribute('aria-disabled', anchorEditable ? 'false' : 'true');
+        if (!anchorEditable) {
+            transformAnchorSite.setEditable('layer-transform', false);
+            anchorButton?.classList.remove('active');
+        }
+    }
+
+    _canEditTransformAnchor() {
+        return this._editContextProjection?.allowAnchorEdit !== false;
+    }
+
     _setupEventListeners() {
         if (!this.eventBus) return;
         
@@ -100,6 +136,7 @@ export class LayerTransform {
                 return;
             }
             if (pressed) {
+                if (this.onCanEnterMoveMode?.() === false) return;
                 this.enterMoveMode();
             } else {
                 const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
@@ -175,10 +212,7 @@ export class LayerTransform {
         this._initializeTransformForActiveLayer();
         this._showAnchorSite(false);
         this.syncBasicOverlay();
-        document.getElementById('layer-transform-context-note')?.classList.toggle(
-            'show',
-            this._hasAnimationLayerContext() && this._canTransformActiveAnimationWorkingLayer()
-        );
+        this._syncEditContextProjection();
     }
     
     exitMoveMode(activeLayer) {
@@ -201,7 +235,9 @@ export class LayerTransform {
         transformAnchorSite.deactivate('layer-transform');
         layerTransformBasicOverlay.deactivate();
         document.getElementById('layer-transform-anchor-btn')?.classList.remove('active');
-        document.getElementById('layer-transform-context-note')?.classList.remove('show');
+        const contextNote = document.getElementById('layer-transform-context-note');
+        contextNote?.classList.remove('show');
+        contextNote?.removeAttribute('data-context-state');
         
         this._updateCursor();
     }
@@ -246,7 +282,13 @@ export class LayerTransform {
         if (!activeLayer?.layerData) return;
         
         const layerId = activeLayer.layerData.id;
-        const anchor = this._getContentCenterAnchor() || { x: 0.5, y: 0.5 };
+        const current = this.transforms.get(layerId) || {};
+        const anchor = this._canEditTransformAnchor()
+            ? (this._getContentCenterAnchor() || { x: 0.5, y: 0.5 })
+            : {
+                x: Number.isFinite(current.anchorX) ? current.anchorX : 0.5,
+                y: Number.isFinite(current.anchorY) ? current.anchorY : 0.5
+            };
         const resetTransform = {
             x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1,
             anchorX: anchor.x, anchorY: anchor.y
@@ -665,6 +707,7 @@ export class LayerTransform {
         anchorBtn?.addEventListener('dblclick', event => {
             event.preventDefault();
             event.stopPropagation();
+            if (!this._canEditTransformAnchor()) return;
             if (this._resetAnchorToContentCenter()) {
                 transformAnchorSite.setEditable('layer-transform', true);
                 anchorBtn.classList.add('active');
@@ -675,6 +718,7 @@ export class LayerTransform {
     }
 
     _toggleAnchorSite() {
+        if (!this._canEditTransformAnchor()) return false;
         const button = document.getElementById('layer-transform-anchor-btn');
         if (transformAnchorSite.isActive('layer-transform')) {
             const editable = !transformAnchorSite.isEditable('layer-transform');
@@ -763,6 +807,7 @@ export class LayerTransform {
     }
 
     _resetAnchorToContentCenter() {
+        if (!this._canEditTransformAnchor()) return false;
         const activeLayer = this.onGetActiveLayer?.();
         if (!this.isVKeyPressed || !activeLayer?.layerData) return false;
         const anchor = this._getContentCenterAnchor();

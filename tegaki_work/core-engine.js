@@ -363,6 +363,10 @@ export class CoreEngine {
 
         // 15. ポップアップの初期化実行
         this.popupManager.initializeAll();
+        const animationTable = this.popupManager.get('animationTable');
+        this.layerSystem.setTransformEditAdapter(
+            animationTable?.createLayerTransformEditAdapter?.() || null
+        );
 
         // 16. レイヤーパネルレンダラーの初期化
         const layerListContainer = document.getElementById('layer-list');

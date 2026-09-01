@@ -374,7 +374,7 @@ export const DOMBuilder = (function() {
         heading.appendChild(createElement('span', {
             className: 'layer-transform-context-note',
             id: 'layer-transform-context-note',
-            textContent: 'CAF原画編集 / Motion非表示'
+            textContent: 'SOURCE · 原画'
         }));
 
         const flipGroup = createElement('div', { className: 'flip-section transform-popup-actions' });

@@ -16,6 +16,7 @@ import { TEGAKI_KEYMAP } from '../config.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { Container } from 'pixi.js';
+import { TRANSFORM_EDIT_TRANSACTION_TARGET } from '../system/animation/transform-edit-transaction.js';
 
 export const KeyboardHandler = (function() {
     'use strict';
@@ -802,14 +803,15 @@ export const KeyboardHandler = (function() {
         const activeLayer = layerManager?.getActiveLayer?.();
         const layerData = activeLayer?.layerData;
         if (hasAnimationLayerContext(animationTable)) {
-            return !!(layerData && layerData.isAnimationWorkingLayer === true);
+            if (!(layerData && layerData.isAnimationWorkingLayer === true)) return false;
+            return layerManager?.canStartTransformEditSession?.() !== false;
         }
         if (!layerData || layerData.isBackground) return false;
         if (layerData.isFolder) {
             const targets = layerManager?.getFolderSelectionTargets?.(layerData.id);
             return targets?.entries?.some(entry => entry.type === 'raster') === true;
         }
-        return true;
+        return layerManager?.canStartTransformEditSession?.() !== false;
     }
 
     function toggleLayerTransform(source = 'transform-control') {
@@ -1157,6 +1159,13 @@ export const KeyboardHandler = (function() {
                 || window.coreEngine?.popupManager?.get?.('animationTable');
             animationTable?.cancelWarpBrushShortcutControl?.();
             if (vKeyPressed) {
+                const layerManager = window.layerManager || window.drawingApp?.layerManager;
+                if (layerManager?.getActiveTransformEditTarget?.()
+                    === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+                    // Clip key transactionはapp/browser境界のfocus移動で確定しない。
+                    // 明示V toggleまたはEscapeだけがsession terminalを所有する。
+                    return;
+                }
                 vKeyPressed = false;
                 if (TegakiEventBus) {
                     TegakiEventBus.emit('keyboard:vkey-state-changed', { pressed: false });

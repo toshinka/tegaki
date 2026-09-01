@@ -5432,6 +5432,18 @@ button.anim-motion-graph-legend-item.is-primary {
     background: color-mix(in srgb, var(--futaba-light) 8%, transparent);
 }
 
+.anim-caf-motion-key-projection {
+    width: 7px;
+    height: 7px;
+    margin: auto;
+    border: 1px solid var(--futaba-background);
+    border-radius: 50%;
+    background: var(--futaba-maroon);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--active-border) 38%, transparent);
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
 .animation-table-panel .anim-part-track-item.is-selected {
     box-shadow: inset 3px 0 0 var(--active-border);
     background: color-mix(in srgb, var(--futaba-background) 72%, var(--futaba-light-medium) 28%);
@@ -5871,14 +5883,50 @@ button.anim-motion-graph-legend-item.is-primary {
 
 .layer-transform-context-note {
     display: none;
+    align-items: center;
+    gap: 4px;
+    min-height: 18px;
+    padding: 2px 7px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--futaba-cream) 78%, transparent);
     color: var(--text-secondary);
     font-size: 9px;
-    font-weight: 500;
+    font-weight: 700;
     white-space: nowrap;
 }
 
 .layer-transform-context-note.show {
-    display: block;
+    display: inline-flex;
+}
+
+.layer-transform-context-note::before {
+    content: '';
+    flex: 0 0 5px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--futaba-medium);
+}
+
+.layer-transform-context-note[data-context-state="ready"] {
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--active-border) 16%, var(--futaba-cream));
+}
+
+.layer-transform-context-note[data-context-state="keyed"] {
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--active-border) 28%, var(--futaba-cream));
+}
+
+.layer-transform-context-note[data-context-state="ready"]::before,
+.layer-transform-context-note[data-context-state="keyed"]::before {
+    background: var(--active-border);
+}
+
+#layer-transform-anchor-btn.is-context-disabled {
+    color: var(--text-secondary);
+    opacity: 0.55;
+    cursor: default;
 }
 
 .transform-anchor-site::before,

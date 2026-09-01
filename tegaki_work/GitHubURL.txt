@@ -7,7 +7,7 @@
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
 > URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
 
-## 0. 現在地（Phase 5a〜9n close、Phase 9o D / BASIC Stage B4 Owner correction技術proof完了）
+## 0. 現在地（Phase 5a〜9o close、Phase 9p Stage B4進行中）
 
 - Phase 7i〜7qは各Gate=`GO`、実装Stage、最終SOL review=`A`、関連Browser確認を通過し、2026-08-12のOwner指示に基づきSOL技術closeした。完了記録は`Archive/phase7i.md`〜`phase7q.md`。
 - Phase 7i LINE / Ribbon、7j Deformer三形状SELECT、7k Text to Raster、7l Table二段header、7m read-only Motion Graph、7n Resize直接framing、7o Motion Easing 12 presetの保存・History境界を維持する。
@@ -42,7 +42,8 @@
 - Phase 9mはstable一行header、固定幅Playback Range、OUT限定I / O、borderless FPS / FRAMES / PREVIEW、Bottom Lucide COPY / DELETEを全118 verifier / build / Browser checkpointとOwner実画面受入でcloseした。
 - Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gateとしてcloseした。Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`。Layer=対象、右RIG=static overview / next action / handoff、Animation Table=時間、Canvas=直接操作とし、既存single floating windowをmode別`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`とする。全129 verifier、build、right RIGからのopen、mode往復、close / reopen、Table closed再入場、History不変、480×800横overflow 0、console 0件を通過した。左RIG / Layer統合 / 現行Table案はproposal 17へ再試行条件付きで保持する。
 - Phase 9nの外部Web AI reviewでは、入口発見性、誤操作、Layer / RIG切替回数、right / left配置、複数Rasterの対象理解、Motion return pathを評価する。current RIG WORKSPACEの横長layout、常設数値欄、button density、`RIG / MOTION / WARP`上位tabは最終UX受入ではないため、host ownershipの採否とlayoutの好みを混同しない。
-- 現行Phase 9oはLayer Transform Interaction Grammar / Focus Lens Gate。OwnerがGate 1=`GO — D: Tegaki hybrid`とStage B1〜B3を承認した。Stage B4はside midpointなし案をfallbackに保持し、quiet 4辺中点をone-axis Scaleへ接続した。Owner correctionで、古いTransform objectを保持していたAnchor callbackを現行session参照へ直し、左端へ分離した中心buttonのdouble clickをruntime content-center復帰へ接続した。既存default / ResetはCanvas中心で、永続toggle / schemaは追加しない。corner / sideはAnchor越えで水平 / 垂直 / 両軸flipし、zero近傍だけを安定化する。拡大previewはunique textureのsamplingだけをexact-pixelへ一時変更し、cancel / confirmのBake前に元filterへ戻すため、source Raster / History / exportを変更しない。wideのAnchor / box Move `+90 / +30px`一致、side flip、preview History不変、V confirm 1、480×800の中心button・4 side hit・210px panel・横overflow 0、全131 verifier、build、通常scaleのconsole 0件を通過した。意図的な巨大scale確定stressでは既存max-texture guard warning 1件だけを確認した。DISTORT / WARP、numeric scrub、Interaction Context / Instant Animation / Lazy Lane Disclosure、RIGは未接続。改訂追補のAnimation案と永続Canvas / content-center切替は後続Gate候補として保持する。
+- Phase 9oはLayer Transform Interaction Grammar / Focus Lens Gate。Gate 1=`GO — D: Tegaki hybrid`としてMove / corner Scale / Rotate / side Scale / content-center Anchor / flip / last-touched入力 / capture喪失transaction / exact-pixel previewを固定した。Ownerは2026-09-01に問題解決としてStage B4を受入し、全131 verifier / build / Browser / 生成物清掃を通過してcloseした。A / B / C、side midpointなし、閉じる／決定button、virtual grid / snapは`Archive/phase9o.md`へ保持する。
+- 現行Phase 9pはTransform-to-Clip Key Bridge / Interaction Context Gate。Gate 0=`GO — C`、Gate 1=`GO — B: Transform-local indicator`、Gate 2=`GO — B: split owner + synchronous adapter`。Stage B3でANIMATEだけをRaster Bake前に既存`ClipInstance.transformKeyframes` / Timeline Historyへproduction接続した。Stage B4では選択中のCAF内部Layer行へ既存Clip Motion keyを同一Frameの丸として読み取り専用投影し、Layer固有key / 第二schemaを作らず設定済み状態を可視化した。F2作成、Undo / Redo、console 0件をBrowser確認済み。次は既存key / no-op / BLOCKED、SOURCE退行、Project save / reloadを監査してclose可否を判定する。
 
 このナビゲーション自身:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
@@ -56,10 +57,23 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **技術方針・禁止事項（正本）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 - **最新開発進捗・現在地**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
 - **次チャット引き継ぎ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/NEXT_CHAT_HANDOFF.md
-- **現行Phase 9o（Layer Transform Interaction Grammar / Focus Lens Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase9o.md
+- **現行Phase 9p（Transform-to-Clip Key Bridge / Interaction Context Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase9p.md
+- **Phase 9p read-only Transform Edit Context projection**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/transform-edit-context.js
+- **Phase 9p Transform Edit Context verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9p-transform-edit-context.mjs
+- **Phase 9p Edit Target配置比較fixture（Top Bar / Transform-local / Dual / Canvas）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9p-transform-edit-target-placement-fixture.html
+- **Phase 9p Edit Target配置比較verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9p-transform-edit-target-placement-fixture.mjs
+- **Phase 9p shared Clip transform key upsert planner**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-transform-key-upsert.js
+- **Phase 9p shared Clip transform key upsert verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-clip-transform-key-upsert.mjs
+- **Phase 9p Layer gesture delta → sampled Clip transform planner**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-transform-layer-gesture.js
+- **Phase 9p Layer gesture delta mapping verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-clip-transform-layer-gesture.mjs
+- **Phase 9p Transform transaction ownership / preview planner**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/transform-edit-transaction.js
+- **Phase 9p Transform transaction verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9p-transform-edit-transaction.mjs
+- **Phase 9p production Transform bridge verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9p-transform-bridge-production.mjs
+- **Phase 9o完了記録（Layer Transform Interaction Grammar / Focus Lens）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9o.md
 - **Phase 9o Transform / Warp / Animation / RIG Focus Lens提案**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md
 - **Phase 9o Transform / RIG Authoring Interaction追補（Working Addendum）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md
 - **Phase 9o Transform / RIG Authoring改訂追補（Interaction Context / Instant Animation / Lazy Lane Disclosure）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_REVISED_2026-08-31.md
+- **Phase 9o後 Transform-centric導線純化追補（WHAT / HOW / WHEN / DO）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/Tegaki_Transform_Centric_Flow_Purification_Addendum_2026-09-01.md
 - **Phase 9o Layer Transform A / B / C / D比較fixture**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9o-layer-transform-interaction-grammar-fixture.html
 - **Phase 9o Layer Transform比較fixture verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9o-layer-transform-interaction-grammar-fixture.mjs
 - **Phase 9o BASIC production geometry**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/transform-overlay-geometry.js
@@ -310,8 +324,6 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/debug-utils.js
 
 ### レイヤー・キャンバス・変形・選択系
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/layer-system.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/layer-transform.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/pixel-selection-system.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing-clipboard.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/history.js

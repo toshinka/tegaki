@@ -247,13 +247,17 @@ const previewSamplingSource = read('system/layer-transform-preview-sampling.js')
 const overlay = read('ui/layer-transform-basic-overlay.js');
 const css = read('styles/components/layer-transform-basic.css');
 const fixture = read('build/phase9o-layer-transform-interaction-grammar-fixture.html');
-const phase = fs.readFileSync(path.join(repoDir, 'task-codex', 'phase9o.md'), 'utf8');
+const phase = fs.readFileSync(path.join(repoDir, '開発用資料保管庫', 'Archive', 'phase9o.md'), 'utf8');
 const addendum = fs.readFileSync(
     path.join(repoDir, '開発用資料保管庫', 'proposals', 'Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md'),
     'utf8'
 );
 const revisedAddendum = fs.readFileSync(
     path.join(repoDir, '開発用資料保管庫', 'proposals', 'Tegaki_Transform_Rig_Authoring_Interaction_Addendum_REVISED_2026-08-31.md'),
+    'utf8'
+);
+const transformCentricAddendum = fs.readFileSync(
+    path.join(repoDir, '開発用資料保管庫', 'proposals', 'Tegaki_Transform_Centric_Flow_Purification_Addendum_2026-09-01.md'),
     'utf8'
 );
 
@@ -272,7 +276,7 @@ assert.ok(
 
 assert.match(layerSystem, /calculateOpaqueRasterBounds/);
 assert.match(layerSystem, /unionRasterBounds/);
-assert.match(layerSystem, /sourceBounds: this\._resolveLayerTransformSourceBounds\(activeLayer\)/);
+assert.match(layerSystem, /sourceBounds:[\s\S]*?this\._resolveLayerTransformSourceBounds\(activeLayer\)/);
 assert.match(layerSystem, /createTransformBoundsWorldCorners/);
 assert.match(layerSystem, /this\.transform\.syncBasicOverlay\?\.\(\)/);
 assert.match(layerSystem, /captureLayerTransformPreviewSampling/);
@@ -296,6 +300,9 @@ assert.match(overlay, /onRotationStart/);
 assert.match(overlay, /onAxisScaleStart/);
 assert.match(overlay, /setPointerCapture/);
 assert.match(overlay, /document\.addEventListener\('pointermove'/);
+assert.match(overlay, /_documentPointerCancel[\s\S]*?_finishPointerGesture\(event, true\)/);
+assert.equal((overlay.match(/lostpointercapture/g) || []).length, 3);
+assert.equal((overlay.match(/lostpointercapture'[\s\S]{0,180}?_finish(?:CornerGesture|AxisScaleGesture|RotationGesture)\(event, (?:index, )?false, false\)/g) || []).length, 3);
 assert.match(overlay, /_removePointerGestureListeners/);
 assert.match(overlay, /_raiseInteractiveHandle\('corner', cornerIndex\)/);
 assert.match(overlay, /_raiseInteractiveHandle\('side', sideIndex\)/);
@@ -338,7 +345,7 @@ assert.match(phase, /read-only BASIC overlay/);
 assert.match(phase, /DISTORT.*WARP.*後続Stage/s);
 assert.match(phase, /Addendumの採否/);
 assert.match(phase, /side midpoint.*別Slice/s);
-assert.match(phase, /bounds-center Origin.*0\.5 \/ 0\.5/s);
+assert.match(phase, /bounds-center Origin.*初期値 \/ Reset.*runtime content-bounds中央/s);
 assert.match(phase, /現PhaseでHOLD:[\s\S]*Root-first Joint authoring/);
 assert.match(phase, /Stage B2 — corner Uniform Scale/);
 assert.match(phase, /pointerupはpreviewを終えるだけでHistoryを作らない/);
@@ -354,6 +361,16 @@ assert.match(phase, /Stage B4 Owner correction — Anchor \/ flip \/ preview qua
 assert.match(phase, /double click.*runtime content-tight bounds中央/s);
 assert.match(phase, /corner \/ side handleがAnchorを越えた時[\s\S]*?符号/);
 assert.match(phase, /拡大中だけ`nearest`[\s\S]*?Bake前に必ず元filterへ戻す/);
+assert.match(phase, /Stage B4 Owner correction 2 — content-center default \/ collapsed handle priority/);
+assert.match(phase, /V開始時にAnchor値が未設定なら[\s\S]*?runtime content-tight bounds中央/);
+assert.match(phase, /Scale下限を非特異行列を保つ`0\.0001`/);
+assert.match(phase, /最後にpointerdownされたvisual \+ transparent hit pairをSVG末尾へ移し/);
+assert.match(phase, /実handle中心をScale基準[\s\S]*?pointerの掴みずれはdelta/);
+assert.match(phase, /virtual grid \/ snap[\s\S]*?freehand／放物線Motion Path/);
+assert.match(phase, /Stage B4 Owner correction 3 — capture loss transaction/);
+assert.match(phase, /明示`pointercancel`だけを現在gestureのrollback[\s\S]*?`lostpointercapture`[\s\S]*?previewを維持/);
+assert.match(phase, /独立した閉じる／決定button[\s\S]*?HOLD案/);
+assert.match(phase, /WHAT=Layer \/ HOW=Transform \/ WHEN=Animation Table \/ DO=Canvas/);
 assert.match(addendum, /Working Addendum。実装契約ではない/);
 assert.match(addendum, /Root-first RIG \/ AutoMesh-first \/ TEST POSE.*後続Gate/s);
 assert.match(addendum, /長年磨かれた良い文法.*TegakiのFocus Lens/s);
@@ -361,5 +378,9 @@ assert.match(revisedAddendum, /Interaction Context/);
 assert.match(revisedAddendum, /Instant Animation/);
 assert.match(revisedAddendum, /Lazy Lane Disclosure/);
 assert.match(revisedAddendum, /Auto Key、baseline生成、Top Bar indicator、Lane materializationは実装しない/);
+assert.match(transformCentricAddendum, /Phase 9oを中断する実装指示ではない/);
+assert.match(transformCentricAddendum, /WHAT[\s\S]*Layer Panel[\s\S]*HOW[\s\S]*Transform[\s\S]*WHEN[\s\S]*Animation Table/);
+assert.match(transformCentricAddendum, /Drawing static transform[\s\S]*ClipInstance\.transformKeyframes/);
+assert.match(transformCentricAddendum, /RECOMMEND — C first, B second/);
 
 console.log('verify-phase9o-basic-transform-production: D shell, corner/axis scale, rotate handle and authority isolation OK');
