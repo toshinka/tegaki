@@ -1,7 +1,7 @@
 """
 EasyReforge Manga Prompter - Main Script & Gradio UI
-Version: v3.7.2 GLOBAL Split (Page Structure vs Global Style Separation)
-Golden Reference: sd-forge-couple v4.0.2 / v3.7.2 GLOBAL Split Specification
+Version: v3.7.3 Global Effect / Base Branch 復活・段階Oracle版
+Golden Reference: sd-forge-couple v4.0.2 / v3.7.3 Global Effect Specification
 """
 
 import os
@@ -49,7 +49,14 @@ class MangaPrompterScript(scripts.Script):
         with gr.Accordion("🎨 Manga Region Prompter (漫画コマ割りプロンプター)", open=True, elem_id="manga-prompter-accordion"):
             with gr.Row():
                 is_enabled = gr.Checkbox(label="有効化 (Enable)", value=False, elem_id="manga-prompter-enabled")
-                base_weight = gr.Slider(label="全体画風の強度 (Base Style Weight - v3.7.2では未使用)", minimum=0.0, maximum=0.5, step=0.05, value=0.0, interactive=False, info="v3.7.2では第2chunkのSTYLEが各コマへ独立prefixされます")
+                global_effect_weight = gr.Slider(
+                    label="ページ全体効果 (Global Effect Weight)", 
+                    minimum=0.0, 
+                    maximum=1.0, 
+                    step=0.05, 
+                    value=0.25, 
+                    info="PAGE + STYLE を全画面へ弱く混ぜる強度 (初期推奨: 0.25)"
+                )
 
             manga_html = gr.HTML(value="""
             <div id="manga-prompter-root">
@@ -114,10 +121,10 @@ class MangaPrompterScript(scripts.Script):
                 visible=False
             )
 
-        return [is_enabled, base_weight, json_bridge]
+        return [is_enabled, global_effect_weight, json_bridge]
 
-    def after_extra_networks_activate(self, p, is_enabled, base_weight, json_bridge, *args, **kwargs):
-        """v3.7.2: PAGEとSTYLEを分離し、main conditioningからRegion本文を除去"""
+    def after_extra_networks_activate(self, p, is_enabled, global_effect_weight, json_bridge, *args, **kwargs):
+        """v3.7.3: PAGEとSTYLEを分離し、main conditioningからRegion本文を除去"""
         self.valid = False
         self.resolved_prompts = []
         self.sorted_panels = []
@@ -137,7 +144,7 @@ class MangaPrompterScript(scripts.Script):
 
         prompts = kwargs.get("prompts")
         if not isinstance(prompts, list) or len(prompts) != 1:
-            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.2 diagnostic.")
+            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.3 diagnostic.")
             return
 
         resolved_full_prompt = prompts[0]
@@ -157,13 +164,13 @@ class MangaPrompterScript(scripts.Script):
         self.page_text = page_text
         self.style_text = style_text
 
-        # WebUI main conditioning を PAGE + STYLE のみに縮小（Region本文の全画面漏れを遮断）
+        # WebUI main conditioning を PAGE + STYLE のみに縮小
         main_conditioning_prompt = ", ".join(x for x in (page_text, style_text) if x)
         prompts[0] = main_conditioning_prompt
 
         tag_regex = re.compile(r'^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*', re.IGNORECASE)
 
-        print("[MangaPrompter][v3.7.2 GLOBAL SPLIT]")
+        print("[MangaPrompter][v3.7.3 GLOBAL EFFECT]")
         print(f"  PAGE STRUCTURE    = {page_text!r}")
         print(f"  GLOBAL STYLE      = {style_text!r}")
         print(f"  MAIN CONDITIONING = {main_conditioning_prompt!r}")
@@ -187,12 +194,10 @@ class MangaPrompterScript(scripts.Script):
                 "weight": float(panel.get("weight", 1.0)),
             })
 
-            print(f"  REGION {i + 1} (Panel {panel.get('name', i+1)}): weight={panel.get('weight', 1.0)}, prompt={resolved_region!r}")
-
         self.valid = True
 
-    def process_before_every_sampling(self, p, is_enabled, base_weight, json_bridge, *args, **kwargs):
-        """Forgeのサンプリング直前に ModelPatcher フックを注入"""
+    def process_before_every_sampling(self, p, is_enabled, global_effect_weight, json_bridge, *args, **kwargs):
+        """Forgeのサンプリング直前に Global Effect (cond_1) + 各Region (cond_2..) を注入"""
         if (not is_enabled) or (not self.valid) or (not self.resolved_prompts):
             return
 
@@ -211,19 +216,39 @@ class MangaPrompterScript(scripts.Script):
             )
 
             fc_args = {}
-            for i, r_info in enumerate(self.resolved_prompts):
-                resolved_text = r_info['resolved_text']
-                w_val = r_info['weight']
 
-                # テキストコンディショニングをエンコード
+            # 1. Global Effect branch (cond_1, mask_1 = 全画面 * global_effect_weight)
+            global_effect_text = ", ".join(x for x in (self.page_text, self.style_text) if x)
+            texts_global = SdConditioning([global_effect_text if global_effect_text else " "], False, p.width, p.height, None)
+            cond_global_raw = p.sd_model.get_learned_conditioning(texts_global)
+            global_cond = [[cond_global_raw["crossattn"]]] if is_sdxl else [[cond_global_raw]]
+
+            fc_args["cond_1"] = global_cond
+            fc_args["mask_1"] = torch.ones((1, p.height, p.width), dtype=torch.float32) * float(global_effect_weight)
+
+            # 2. Canvas Regions (cond_2.., mask_2..)
+            for i, r_info in enumerate(self.resolved_prompts):
+                cond_index = i + 2
+                resolved_text = r_info['resolved_text']
+                region_weight = r_info['weight']
+
                 texts = SdConditioning([resolved_text if resolved_text else " "], False, p.width, p.height, None)
-                cond = p.sd_model.get_learned_conditioning(texts)
-                pos_cond = [[cond["crossattn"]]] if is_sdxl else [[cond]]
-                fc_args[f"cond_{i + 1}"] = pos_cond
+                cond_raw = p.sd_model.get_learned_conditioning(texts)
+                pos_cond = [[cond_raw["crossattn"]]] if is_sdxl else [[cond_raw]]
+
+                fc_args[f"cond_{cond_index}"] = pos_cond
 
                 # マスク [1, H, W]
-                mask_2d = spatial_regions[i]['mask'].squeeze(0).squeeze(0) * w_val
-                fc_args[f"mask_{i + 1}"] = mask_2d.unsqueeze(0)
+                region_mask = spatial_regions[i]['mask'].squeeze(0).squeeze(0) * float(region_weight)
+                fc_args[f"mask_{cond_index}"] = region_mask.unsqueeze(0)
+
+            # ログ: Branch Mapping
+            print("[MangaPrompter][BRANCH MAP]")
+            print(f"  BASE:     mask_weight=0, content=k_target (unused positive base)")
+            print(f"  GLOBAL:   cond_1, mask_1=fullscreen * {global_effect_weight:.2f}, prompt={global_effect_text!r}")
+            for i, r_info in enumerate(self.resolved_prompts):
+                cond_index = i + 2
+                print(f"  REGION {i + 1}: cond_{cond_index}, mask_{cond_index}, panel_index={i+1}, weight={r_info['weight']:.2f}, prompt={r_info['resolved_text']!r}")
 
             # base_mask は強制 ZERO
             base_mask = empty_tensor(p.height, p.width)
@@ -241,13 +266,13 @@ class MangaPrompterScript(scripts.Script):
                 return
 
             p.sd_model.forge_objects.unet = patched_unet
-            print(f"[MangaPrompter] Forge ModelPatcher パッチ登録成功 (Sentinel={DIAGNOSTIC_OUTPUT_SCALE})")
+            print(f"[MangaPrompter] Forge ModelPatcher パッチ登録成功 (Global Effect={global_effect_weight:.2f}, Sentinel={DIAGNOSTIC_OUTPUT_SCALE})")
 
         except Exception as e:
             print(f"[MangaPrompter] パッチ適用例外エラー: {e}")
             traceback.print_exc()
 
-    def postprocess(self, p, processed, is_enabled, base_weight, json_bridge):
+    def postprocess(self, p, processed, is_enabled, global_effect_weight, json_bridge):
         """生成後処理: 診断サマリーを出力"""
         if is_enabled and self.valid:
             print(f"[MangaPrompter][SUMMARY] attn2_patch_calls={self.patcher_hook.attn2_patch_calls}, attn2_output_patch_calls={self.patcher_hook.attn2_output_patch_calls}")
