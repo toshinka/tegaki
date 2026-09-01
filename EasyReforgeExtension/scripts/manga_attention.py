@@ -1,7 +1,7 @@
 """
-EasyReforge Manga Prompter - Forge ModelPatcher Native Attention Engine (v3.5)
-Credit: sd-forge-couple (Haoming02) / ComfyUI Attention Couple (laksjdjf)
-ControlNet 100%完全共存 ＆ 完全実績検証済みアルゴリズム
+EasyReforge Manga Prompter - Forge ModelPatcher Native Attention Engine (v3.7.1 Diagnostic Reset)
+Golden Reference: sd-forge-couple v4.0.2 (Haoming02) / ComfyUI Attention Couple (laksjdjf)
+診断カウンター ＆ Sentinelデバッグ ＆ fail-closed マスク検証
 """
 
 import math
@@ -11,6 +11,9 @@ from typing import Callable
 import torch
 from torch.nn.functional import interpolate
 from modules.devices import device as default_device, dtype_inference
+
+# 診断用 Sentinel 定数 (通常は必ず 1.0, テスト時のみ 0.0 にして Hook の生存を証明)
+DIAGNOSTIC_OUTPUT_SCALE = 1.0
 
 def repeat_div(value: int, iterations: int) -> int:
     for _ in range(iterations):
@@ -46,6 +49,17 @@ class MangaModelPatcherHook:
         self.patches: dict[str, Callable] = {}
         self.manual: dict[str, list] = {}
         self.checked: bool = False
+        
+        # 診断カウンター
+        self.attn2_patch_calls: int = 0
+        self.attn2_output_patch_calls: int = 0
+        self.first_call_logged: bool = False
+
+    def reset_counters(self):
+        self.attn2_patch_calls = 0
+        self.attn2_output_patch_calls = 0
+        self.first_call_logged = False
+        self.checked = False
 
     @torch.inference_mode()
     def patch_unet(
@@ -57,14 +71,21 @@ class MangaModelPatcherHook:
         width: int,
         height: int,
     ):
+        self.reset_counters()
         num_conds = len(kwargs) // 2 + 1
 
         mask = [base_mask] + [kwargs[f"mask_{i}"] for i in range(1, num_conds)]
         mask = torch.stack(mask, dim=0).to(default_device, dtype=dtype_inference)
 
-        if mask.sum(dim=0).min().item() <= 0.0:
-            mask = mask + 1e-4
+        coverage = mask.sum(dim=0)
+        cov_min = coverage.min().item()
+        cov_max = coverage.max().item()
 
+        if cov_min <= 0.0:
+            print(f"[MangaPrompter][ERROR] Mask coverage validation failed! min={cov_min:.4f} <= 0.0. Image must contain positive weights on all pixels.")
+            return None
+
+        # マスク正規化
         mask = mask / mask.sum(dim=0, keepdim=True)
 
         conds = [
@@ -79,8 +100,11 @@ class MangaModelPatcherHook:
         }
         self.checked = False
 
+        print(f"[MangaPrompter][MASK STATS] Regions={num_conds-1}, Shape={list(mask.shape)}, Coverage min={cov_min:.4f}, max={cov_max:.4f}")
+
         @torch.inference_mode()
         def attn2_patch(q, k, v, extra_options=None):
+            self.attn2_patch_calls += 1
             assert torch.allclose(k, v), "k and v should be the same"
             if extra_options is None:
                 if not self.checked:
@@ -96,6 +120,10 @@ class MangaModelPatcherHook:
             q_chunks = q.chunk(num_chunks, dim=0)
             k_chunks = k.chunk(num_chunks, dim=0)
             lcm_tokens = lcm_for_list(num_tokens + [k.shape[1]])
+
+            if not self.first_call_logged:
+                print(f"[MangaPrompter][ATTN2 FIRST CALL] q={list(q.shape)}, k={list(k.shape)}, cond_or_uncond={cond_or_unconds}, original_shape={extra_options.get('original_shape')}, lcm_tokens={lcm_tokens}")
+                self.first_call_logged = True
             
             conds_tensor = torch.cat(
                 [
@@ -108,10 +136,10 @@ class MangaModelPatcherHook:
             qs, ks = [], []
             for i, cond_or_uncond in enumerate(cond_or_unconds):
                 k_target = k_chunks[i].repeat(1, lcm_tokens // k.shape[1], 1).to(device=k.device, dtype=k.dtype)
-                if cond_or_uncond == 1:  # uncond
+                if cond_or_uncond == 1:  # uncond (ネガティブ)
                     qs.append(q_chunks[i])
                     ks.append(k_target)
-                else:  # cond
+                else:  # cond (ポジティブ)
                     qs.append(q_chunks[i].repeat(num_conds, 1, 1))
                     ks.append(torch.cat([k_target, conds_tensor], dim=0))
 
@@ -128,6 +156,7 @@ class MangaModelPatcherHook:
 
         @torch.inference_mode()
         def attn2_output_patch(out, extra_options=None):
+            self.attn2_output_patch_calls += 1
             if extra_options is None:
                 self.checked = False
                 extra_options = self.manual
@@ -149,7 +178,11 @@ class MangaModelPatcherHook:
                     masked_output = masked_output.sum(dim=0)
                     outputs.append(masked_output)
                     pos += num_conds * self.batch_size
-            return torch.cat(outputs, dim=0)
+            
+            result = torch.cat(outputs, dim=0)
+            if DIAGNOSTIC_OUTPUT_SCALE != 1.0:
+                result = result * DIAGNOSTIC_OUTPUT_SCALE
+            return result
 
         model.set_model_attn2_patch(attn2_patch)
         model.set_model_attn2_output_patch(attn2_output_patch)
