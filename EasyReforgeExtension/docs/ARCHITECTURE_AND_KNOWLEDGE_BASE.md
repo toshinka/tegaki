@@ -10,8 +10,6 @@ Stable Diffusion（特に SDXL / Illustrious 系モデル）において、1ペ�
 1. **レイアウト（コマ割り枠線）の制御**: 意図したコマ数・比率・形状で枠線を描かせることの難しさ。
 2. **コンテンツ（プロンプト）の領域分離**: コマ1には女の子、コマ2には空と海、コマ3には男の子といったように、意図したコマの中に狙った被写体・構図を100%描き分けることの難しさ。
 
-本拡張機能は、この2つの課題を最もシンプルかつ高精度に解決することを目指す。
-
 ---
 
 ## 2. 実験履歴・成功と失敗のメカニズム分析
@@ -19,53 +17,38 @@ Stable Diffusion（特に SDXL / Illustrious 系モデル）において、1ペ�
 ### ① プロンプト構文とモデルの解釈特性
 | プロンプト構造 | モデルの挙動 (SDXL/Illustrious) | 分析・知見 |
 | :--- | :--- | :--- |
-| `3koma manga, 1girl... BREAK sky... BREAK 1boy...` | **3コマ漫画として完璧に分離（神画像）** | チャンク数＝コマ数（3対3）が一致し、第1コマの `3koma` が全体構図を誘導しつつ各コマが綺麗に描かれた。 |
-| `5koma manga, BREAK ...` | 4コマ×2本（8コマ）または1枚絵に逃げる | モデル単体では「5コマ」の概念を正確に持っておらず、学習データの多い4コマや1枚絵に引きずられる。 |
-| `3koma...` を全コマに自動結合（Common Prepend） | **1枚絵に崩壊（女の子1人のみ）** | 各コマの狭い空間マスクの中で「3コマ漫画全体を描け」という矛盾命令になり、AIが混乱して破綻。 |
+| `3koma manga... BREAK sky... BREAK 1boy...` | **3コマ漫画として分離（初期成功）** | チャンク数＝コマ数が一致し、全体構図と被写体が素直に解釈された。 |
+| `3koma...` を全コマに自動結合（Common Prepend） | **1枚絵に崩壊（女の子1人のみ）** | 各コマの狭い空間マスクの中で「3コマ漫画全体を描け」という矛盾命令になり破綻。 |
+| **v3.7.2: PAGE と STYLE の分離 (N + 2 構造)** | **全体構図とコマ別被写体の干渉を根絶** | `3koma`（PAGE）はメインコンディショニングにのみ渡し、各コマには `STYLE`（画風）＋被写体のみを注入。 |
 
 ### ② ControlNet（線画・コマ枠）との併用実験
 | 設定 | 出力結果 | メカニズム分析 |
 | :--- | :--- | :--- |
 | **拡張OFF ＋ ControlNet ON** | **キャンバス通りのコマ割り（上1・下2）が100%完璧に出力** | ControlNet（AnyTest/Lineart）がForgeの `ModelPatcher` を通じて正常に機能し、線画枠線を完全固定。 |
-| **旧拡張ON ＋ ControlNet ON** | **コマ割りが破壊され、5コマの女の子の顔が増殖** | 旧拡張が `CrossAttention.forward` を直接モンキーパッチしたため、ControlNetの制御信号（残差テンソル）を破棄・遮断してしまった。 |
-| **v3.5 ON (BREAKの全体混ざり)** | **有効化ONとOFFで画像が完全同一になる** | メインプロンプト内の `BREAK` がWebUI本体のグローバルチャンカーによって全画面コンディショニングとして作用し、領域パッチが上書き相殺されていた。 |
+| **旧拡張ON ＋ ControlNet ON** | **コマ割りが破壊され、5コマの女の子の顔が増殖** | 旧拡張が `CrossAttention.forward` を直接モンキーパッチしたため、ControlNetの制御信号を破壊。 |
+| **v3.7.2 ON (ModelPatcher Native + GLOBAL Split)** | **ControlNet完全共存 ＋ コマ別プロンプト完全分離** | Forge公式 `ModelPatcher` API + main conditioning 縮小により、全画面への被写体漏れを遮断。 |
 
 ---
 
-## 3. 先行ツールの技術比較と選定
+## 3. v3.7.2 確定プロンプト文法（N + 2 構造）
 
-### A. A1111 Regional Prompter 方式（旧方式）
-- **手法**: UNetの `attn2` モジュールインスタンスの `forward` を直接書き換える。
-- **欠点**: Forge / ComfyUI の `ModelPatcher` パイプラインと衝突し、**ControlNetと併用するとControlNetを破壊する**。また、SDXLのデュアルCLIPやCFGバッチ（Pos/Neg）でトークンズレを起こしやすい。
+3コマの場合、メインPositive Promptは以下の **5 chunk** で構成されます：
 
-### B. Forge Couple / ComfyUI Attention Couple 方式（採用方式）
-- **手法**: Forge公式の `unet.set_model_attn2_patch` および `unet.set_model_attn2_output_patch` を使用。
-- **利点**:
-  1. **ControlNetと100%完全共存**: Forgeのフックチェーンに従うため、ControlNetの線画・深度制御と一切干渉しない。
-  2. **プロンプト完全独立エンコード**: 各コマのプロンプトを `sd_model.get_learned_conditioning` で個別にベクトル化し、空間マスク（`mask_downsample`）で重み付き合成するため、キャラや背景の混ざり（リーク）が原理的にゼロ。
-  3. **堅牢性**: SDXL / Illustrious のテンソル次元をComfyUI/Forgeが保証。
-  4. **クリーンディスパッチ（v3.6）**: サンプリング実行時のベースプロンプトには1行目のスタイルのみを渡し、各コマの被写体はパッチ側で空間マスクへダイレクト注入することで、グローバルな混ざりを根絶。
-
----
-
-## 4. 確定アーキテクチャ（Plan A 堅牢基盤 ＋ Plan B 拡張性）
-
+```text
+3koma, manga page, comic strip, comic panel               ← chunk 0: PAGE STRUCTURE (全体コマ構造)
+BREAK
+masterpiece, best quality, monochrome, manga ink, lineart ← chunk 1: GLOBAL STYLE (全体共通画風)
+BREAK
+koma 1: close-up, 1girl, standing                        ← chunk 2: REGION 1 (コマ1の被写体)
+BREAK
+koma 2: wide shot, sky, ocean                            ← chunk 3: REGION 2 (コマ2の被写体)
+BREAK
+koma 4: medium shot, 1boy, sitting                       ← chunk 4: REGION 3 (コマ3の被写体)
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. ユーザー入力（唯一の真実 / Single Source of Truth）      │
-│    ・メインプロンプト欄に BREAK や koma 1: 形式で自由に記述 │
-│    ・Tag Autocomplete, Dynamic Prompts, LoRA が100%動作     │
-├─────────────────────────────────────────────────────────────┤
-│ 2. UI / フロントエンド（確認＆調整パネル）                  │
-│    ・reForge ネイティブデザイン（CSS変数準拠）で高コントラスト  │
-│    ・メインプロンプトをリアルタイム監視し、コマ毎のカードに抜粋表示 │
-│    ・各コマの「重み（Weight）」調整スライダー               │
-│    ・「全体画風の強度（Base Style Weight）」スライダー       │
-│    ・「📸 コマ枠PNG保存」ボタンで ControlNet へのD&Dを支援  │
-├─────────────────────────────────────────────────────────────┤
-│ 3. バックエンド（Forge ModelPatcher ネイティブエンジン）    │
-│    ・各コマのプロンプトを個別にエンコード                   │
-│    ・set_model_attn2_patch / set_model_attn2_output_patch  │
-│      により、ControlNet と完全共存しながら空間マスクを合成  │
-└─────────────────────────────────────────────────────────────┘
-```
+
+### 【内部ディスパッチの仕組み】
+- **WebUI Main Conditioning**: `PAGE STRUCTURE, GLOBAL STYLE` のみ（Region本文は除去され、全画面への漏れを防止）。
+- **Region 1 Conditioning**: `GLOBAL STYLE, close-up, 1girl, standing`（PAGEは入れない）。
+- **Region 2 Conditioning**: `GLOBAL STYLE, wide shot, sky, ocean`（PAGEは入れない）。
+- **Region 3 Conditioning**: `GLOBAL STYLE, medium shot, 1boy, sitting`（PAGEは入れない）。
+- **base_mask**: 強制 `0`（ゼロ）。

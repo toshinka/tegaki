@@ -29,7 +29,8 @@
         width: 832,
         height: 1216,
         parsedPrompt: {
-            base: '',
+            page: '',
+            style: '',
             regions: {}
         }
     };
@@ -153,7 +154,7 @@
         });
     }
 
-    // メインプロンプト欄のリアルタイム解析
+    // メインプロンプト欄のリアルタイム解析 (v3.7.2: PAGE + STYLE + REGIONS)
     function parseMainPrompt() {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -162,21 +163,22 @@
 
         const text = mainPromptEl.value.trim();
         if (!text) {
-            state.parsedPrompt = { base: '', regions: {} };
+            state.parsedPrompt = { page: '', style: '', regions: {} };
             renderSummaryList();
             return;
         }
 
-        const chunks = text.split(/BREAK/i).map(c => c.trim()).filter(c => c.length > 0);
-        const base = chunks.length > 0 ? chunks[0] : '';
+        const chunks = text.split(/\bBREAK\b/i).map(c => c.trim()).filter(c => c.length > 0);
+        const page = chunks.length > 0 ? chunks[0] : '';
+        const style = chunks.length > 1 ? chunks[1] : '';
         const regions = {};
 
         const tagRegex = /^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*/i;
 
-        for (let i = 1; i < chunks.length; i++) {
+        for (let i = 2; i < chunks.length; i++) {
             const chunk = chunks[i];
             const match = chunk.match(tagRegex);
-            let pNum = i;
+            let pNum = i - 1;
             let cleanText = chunk;
 
             if (match) {
@@ -187,11 +189,11 @@
             regions[pNum] = cleanText;
         }
 
-        state.parsedPrompt = { base, regions };
+        state.parsedPrompt = { page, style, regions };
         renderSummaryList();
     }
 
-    // メインプロンプト欄へのテンプレート挿入
+    // メインプロンプト欄へのテンプレート挿入 (v3.7.2: 5chunk N+2構造)
     window.mangaPrompterInsertTemplateToMainPrompt = function () {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -199,14 +201,19 @@
         if (!mainPromptEl) return;
 
         const sorted = [...state.panels].sort((a, b) => (a.index || 0) - (b.index || 0));
+        const numPanels = sorted.length;
         let curVal = mainPromptEl.value.trim();
 
-        let basePart = curVal.split(/BREAK/i)[0].trim();
-        if (!basePart) {
-            basePart = '<lora:...> 3koma manga, monochrome, comic strip, comic panel, ';
-        }
+        const chunks = curVal.split(/\bBREAK\b/i).map(c => c.trim()).filter(c => c.length > 0);
+        let pagePart = chunks.length > 0 ? chunks[0] : `${numPanels}koma, manga page, comic strip, comic panel`;
+        let stylePart = chunks.length > 1 ? chunks[1] : 'masterpiece, best quality, monochrome, manga ink, clean lineart';
 
-        let templateLines = [basePart];
+        let templateLines = [
+            pagePart,
+            'BREAK',
+            stylePart
+        ];
+
         sorted.forEach(p => {
             templateLines.push(`BREAK\nkoma ${p.index}: `);
         });
@@ -893,17 +900,28 @@
 
         container.innerHTML = '';
 
-        // 1. 全体ベースプロンプトのプレビュー表示
-        const baseBox = document.createElement('div');
-        baseBox.className = 'manga-summary-base-box';
-        const baseSnippet = state.parsedPrompt.base ? state.parsedPrompt.base : '(未入力 - 3koma manga, monochrome 等の全体共通画風をメイン欄に記入)';
-        baseBox.innerHTML = `
-            <div class="manga-summary-base-title">🌐 [全体/ベース - 1行目]</div>
-            <div class="manga-summary-prompt-text ${state.parsedPrompt.base ? '' : 'empty'}">${escapeHtml(baseSnippet)}</div>
+        // 1. ページ構造 (第1chunk)
+        const pageBox = document.createElement('div');
+        pageBox.className = 'manga-summary-base-box';
+        const pageSnippet = state.parsedPrompt.page ? state.parsedPrompt.page : '(未入力 - 3koma, manga page, comic strip 等の全体コマ構造)';
+        pageBox.innerHTML = `
+            <div class="manga-summary-base-title">🧭 [ページ構造 - 第1chunk]</div>
+            <div class="manga-summary-prompt-text ${state.parsedPrompt.page ? '' : 'empty'}">${escapeHtml(pageSnippet)}</div>
         `;
-        container.appendChild(baseBox);
+        container.appendChild(pageBox);
 
-        // 2. 各コマの一覧表示
+        // 2. 全体画風・品質 (第2chunk)
+        const styleBox = document.createElement('div');
+        styleBox.className = 'manga-summary-base-box';
+        styleBox.style.marginTop = '6px';
+        const styleSnippet = state.parsedPrompt.style ? state.parsedPrompt.style : '(未入力 - masterpiece, monochrome, manga ink 等の全体共通画風)';
+        styleBox.innerHTML = `
+            <div class="manga-summary-base-title">🎨 [全体画風・品質 - 第2chunk]</div>
+            <div class="manga-summary-prompt-text ${state.parsedPrompt.style ? '' : 'empty'}">${escapeHtml(styleSnippet)}</div>
+        `;
+        container.appendChild(styleBox);
+
+        // 3. 各コマの一覧表示
         const sortedList = [...state.panels].sort((a, b) => (a.index || 0) - (b.index || 0));
 
         sortedList.forEach(p => {

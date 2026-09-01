@@ -11,7 +11,8 @@
 
 ## 1. 最優先必読ドキュメント (Core Specifications & Diagnostics)
 
-### ① v3.7.1 診断リセット改修指示書（正本）
+### ① v3.7.2 GLOBAL 分離版 改修指示書（正本）
+- **v3.7.2 改修指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.2_GLOBAL_Split.md
 - **v3.7.1 診断指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.1_Diagnostic_Reset_EasyReforge.md
 
 ### ② アーキテクチャ設計書 ＆ 実験知見アーカイブ
@@ -23,26 +24,10 @@
 ## 2. 主要ソースコード (Source Code)
 
 ### ① バックエンド・アテンションフック実装
-- **Attention Hook エンジン (v3.7.1)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
-- **メインスクリプト (Gradio & Pipeline v3.7.1)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_prompter.py
+- **Attention Hook エンジン (v3.7.2)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
+- **メインスクリプト (Gradio & Pipeline v3.7.2)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_prompter.py
 - **空間マスク生成エンジン**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_spatial_engine.py
 
 ### ② フロントエンド UI / Canvas
-- **フロントエンド Canvas JS**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/javascript/manga_canvas.js
+- **フロントエンド Canvas JS (v3.7.2)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/javascript/manga_canvas.js
 - **UI スタイルシート (CSS)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/style.css
-
----
-
-## 3. 外部AIへのレビュープロンプト例（コピペ用）
-
-```text
-以下のGitHub Raw URLにある「EasyReforge Manga Prompter (Forge ModelPatcher Native v3.7.1)」のコードと指示書を読み、技術的な診断とセカンドオピニオンをお願いします。
-
-1. ナビゲーション＆指示書:
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/GitHubURL_ERE.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.1_Diagnostic_Reset_EasyReforge.md
-
-2. 主要コード:
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_prompter.py
-```

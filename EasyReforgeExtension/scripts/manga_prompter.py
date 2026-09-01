@@ -1,7 +1,7 @@
 """
 EasyReforge Manga Prompter - Main Script & Gradio UI
-Version: v3.7.1 Diagnostic Reset (EasyReforge Fixed Environment)
-Golden Reference: sd-forge-couple v4.0.2
+Version: v3.7.2 GLOBAL Split (Page Structure vs Global Style Separation)
+Golden Reference: sd-forge-couple v4.0.2 / v3.7.2 GLOBAL Split Specification
 """
 
 import os
@@ -35,6 +35,9 @@ class MangaPrompterScript(scripts.Script):
         self.resolved_prompts = []
         self.valid = False
         self.sorted_panels = []
+        self.original_resolved_prompt = None
+        self.page_text = ""
+        self.style_text = ""
 
     def title(self):
         return "Manga Region Prompter (EasyReforge)"
@@ -46,7 +49,7 @@ class MangaPrompterScript(scripts.Script):
         with gr.Accordion("🎨 Manga Region Prompter (漫画コマ割りプロンプター)", open=True, elem_id="manga-prompter-accordion"):
             with gr.Row():
                 is_enabled = gr.Checkbox(label="有効化 (Enable)", value=False, elem_id="manga-prompter-enabled")
-                base_weight = gr.Slider(label="全体画風の強度 (Base Style Weight)", minimum=0.0, maximum=0.5, step=0.05, value=0.0, info="v3.7診断中は各コマへGLOBALテキストが自動prefixされます")
+                base_weight = gr.Slider(label="全体画風の強度 (Base Style Weight - v3.7.2では未使用)", minimum=0.0, maximum=0.5, step=0.05, value=0.0, interactive=False, info="v3.7.2では第2chunkのSTYLEが各コマへ独立prefixされます")
 
             manga_html = gr.HTML(value="""
             <div id="manga-prompter-root">
@@ -71,7 +74,7 @@ class MangaPrompterScript(scripts.Script):
                     <button type="button" class="manga-btn" id="manga-btn-draw-rect" onclick="window.mangaPrompterToggleDrawRect()" title="キャンバス上をドラッグして自由な四角形コマを作成">＋ 矩形ドラッグ作成</button>
                     <button type="button" class="manga-btn" onclick="window.mangaPrompterAddInset()" title="選択中のコマ内にカットイン小ゴマを配置">🔲 カットイン(入れ子)</button>
                     <button type="button" class="manga-btn" id="manga-btn-merge" onclick="window.mangaPrompterMerge()" title="選択中の複数コマまたは隣接コマを合体">🔗 コマを結合</button>
-                    <button type="button" class="manga-btn manga-btn-highlight" onclick="window.mangaPrompterInsertTemplateToMainPrompt()" title="メインプロンプト欄に現在のコマ割りに合わせたBREAKテンプレートを挿入">📝 メインプロンプト欄にテンプレ枠を挿入</button>
+                    <button type="button" class="manga-btn manga-btn-highlight" onclick="window.mangaPrompterInsertTemplateToMainPrompt()" title="メインプロンプト欄に現在のコマ割りに合わせた5chunk(PAGE+STYLE+各コマ)テンプレートを挿入">📝 メインプロンプト欄にテンプレ枠を挿入</button>
                 </div>
 
                 <!-- プリセットバー -->
@@ -114,49 +117,77 @@ class MangaPrompterScript(scripts.Script):
         return [is_enabled, base_weight, json_bridge]
 
     def after_extra_networks_activate(self, p, is_enabled, base_weight, json_bridge, *args, **kwargs):
-        """Forge Couple同等のライフサイクルでプロンプトを厳密解析 (p.prompt は一切書き換えない)"""
+        """v3.7.2: PAGEとSTYLEを分離し、main conditioningからRegion本文を除去"""
         self.valid = False
         self.resolved_prompts = []
         self.sorted_panels = []
+        self.original_resolved_prompt = None
+        self.page_text = ""
+        self.style_text = ""
 
         if not is_enabled:
-            print(f"[MangaPrompter] after_extra_networks_activate: enabled=False")
             return
 
         panels = MangaSpatialEngine.parse_panels_json(json_bridge)
         if not panels or len(panels) <= 1:
-            print(f"[MangaPrompter] パネル数が2未満のためバイパスします (panels={len(panels) if panels else 0})")
             return
 
         self.sorted_panels = sorted(panels, key=lambda x: x.get('index', 0))
         num_panels = len(self.sorted_panels)
 
-        # Forgeが解決した prompt を取得
-        resolved_prompt_str = kwargs.get("prompts", [p.prompt])[0] if "prompts" in kwargs else (p.prompt if isinstance(p.prompt, str) else p.prompt[0])
-        raw_chunks = [c.strip() for c in re.split(r'BREAK', resolved_prompt_str, flags=re.IGNORECASE) if c.strip()]
-
-        expected_chunks = num_panels + 1
-        if len(raw_chunks) != expected_chunks:
-            print(f"[MangaPrompter][ERROR] Prompt chunk mismatch: expected {expected_chunks} chunks (GLOBAL + {num_panels} panels), got {len(raw_chunks)}.")
-            print(f"[MangaPrompter][ERROR] Regional patch was NOT applied. Please ensure format: GLOBAL BREAK koma 1: ... BREAK koma 2: ...")
+        prompts = kwargs.get("prompts")
+        if not isinstance(prompts, list) or len(prompts) != 1:
+            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.2 diagnostic.")
             return
 
-        global_text = raw_chunks[0]
+        resolved_full_prompt = prompts[0]
+        raw_chunks = [c.strip() for c in re.split(r'\bBREAK\b', resolved_full_prompt, flags=re.IGNORECASE) if c.strip()]
+
+        expected_chunks = num_panels + 2
+        if len(raw_chunks) != expected_chunks:
+            print(f"[MangaPrompter][ERROR] Expected {expected_chunks} chunks (PAGE + STYLE + {num_panels} regions), got {len(raw_chunks)}.")
+            print(f"[MangaPrompter][ERROR] Please ensure format: PAGE_STRUCTURE BREAK GLOBAL_STYLE BREAK koma 1:... BREAK koma 2:...")
+            return
+
+        page_text = raw_chunks[0]
+        style_text = raw_chunks[1]
+        region_chunks = raw_chunks[2:]
+
+        self.original_resolved_prompt = resolved_full_prompt
+        self.page_text = page_text
+        self.style_text = style_text
+
+        # WebUI main conditioning を PAGE + STYLE のみに縮小（Region本文の全画面漏れを遮断）
+        main_conditioning_prompt = ", ".join(x for x in (page_text, style_text) if x)
+        prompts[0] = main_conditioning_prompt
+
         tag_regex = re.compile(r'^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*', re.IGNORECASE)
 
-        print(f"[MangaPrompter][RESOLVED PROMPTS] Global='{global_text[:40]}...', Panels={num_panels}:")
+        print("[MangaPrompter][v3.7.2 GLOBAL SPLIT]")
+        print(f"  PAGE STRUCTURE    = {page_text!r}")
+        print(f"  GLOBAL STYLE      = {style_text!r}")
+        print(f"  MAIN CONDITIONING = {main_conditioning_prompt!r}")
+
         for i, panel in enumerate(self.sorted_panels):
-            raw_c = raw_chunks[i + 1]
-            clean_c = tag_regex.sub('', raw_c).strip()
-            # GLOBALテキストを各領域プロンプトの先頭にprefix結合
-            merged_text = f"{global_text}, {clean_c}" if global_text else clean_c
+            raw_region = region_chunks[i]
+            clean_region = tag_regex.sub("", raw_region).strip()
+
+            # STYLE + 各コマ本文 (PAGEは入れない！)
+            if style_text and clean_region:
+                resolved_region = f"{style_text}, {clean_region}"
+            elif style_text:
+                resolved_region = style_text
+            else:
+                resolved_region = clean_region
+
             self.resolved_prompts.append({
-                'panel_index': i + 1,
-                'clean_text': clean_c,
-                'resolved_text': merged_text,
-                'weight': float(panel.get('weight', 1.0))
+                "panel_index": i + 1,
+                "clean_text": clean_region,
+                "resolved_text": resolved_region,
+                "weight": float(panel.get("weight", 1.0)),
             })
-            print(f"  - Region {i + 1} (Panel {panel.get('name', i+1)}): '{merged_text[:60]}...'")
+
+            print(f"  REGION {i + 1} (Panel {panel.get('name', i+1)}): weight={panel.get('weight', 1.0)}, prompt={resolved_region!r}")
 
         self.valid = True
 
@@ -191,11 +222,10 @@ class MangaPrompterScript(scripts.Script):
                 fc_args[f"cond_{i + 1}"] = pos_cond
 
                 # マスク [1, H, W]
-                # spatial_regions[i]['mask'] は [1, 1, H, W] なので squeeze(1)
                 mask_2d = spatial_regions[i]['mask'].squeeze(0).squeeze(0) * w_val
                 fc_args[f"mask_{i + 1}"] = mask_2d.unsqueeze(0)
 
-            # base_mask は強制 ZERO (GLOBAL は各領域に prefix 済みのため、ベースブランチは0にする)
+            # base_mask は強制 ZERO
             base_mask = empty_tensor(p.height, p.width)
 
             patched_unet = self.patcher_hook.patch_unet(
