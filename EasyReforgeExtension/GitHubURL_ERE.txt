@@ -9,13 +9,16 @@
 
 ---
 
-## 1. 最優先必読ドキュメント (Core Specifications & Diagnostics)
+## 1. 最優先必読ドキュメント (Core Specifications, Reports & Diagnostics)
 
-### ① v3.7.2 GLOBAL 分離版 改修指示書（正本）
-- **v3.7.2 改修指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.2_GLOBAL_Split.md
+### ① 改修完了報告書（最新）
+- **v3.7.2 改修完了報告書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.2_Implementation_Report.md
+
+### ② 指示書・仕様書（正本）
+- **v3.7.2 GLOBAL 分離版 改修指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.2_GLOBAL_Split.md
 - **v3.7.1 診断指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.1_Diagnostic_Reset_EasyReforge.md
 
-### ② アーキテクチャ設計書 ＆ 実験知見アーカイブ
+### ③ アーキテクチャ設計書 ＆ 実験知見アーカイブ
 - **知見アーカイブ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/docs/ARCHITECTURE_AND_KNOWLEDGE_BASE.md
 - **固定環境リファレンス**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/docs/V37_LOCAL_REFERENCE.md
 
@@ -31,3 +34,20 @@
 ### ② フロントエンド UI / Canvas
 - **フロントエンド Canvas JS (v3.7.2)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/javascript/manga_canvas.js
 - **UI スタイルシート (CSS)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/style.css
+
+---
+
+## 3. 外部AIへのレビュープロンプト例（コピペ用）
+
+```text
+以下のGitHub Raw URLにある「EasyReforge Manga Prompter (v3.7.2 GLOBAL Split)」のコード・指示書・改修完了報告書を読み、技術的な診断とセカンドオピニオンをお願いします。
+
+1. ナビゲーション＆報告書:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/GitHubURL_ERE.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.2_Implementation_Report.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.2_GLOBAL_Split.md
+
+2. 主要コード:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_prompter.py
+```
