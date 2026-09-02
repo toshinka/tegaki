@@ -32,4 +32,5 @@ Architecture: Candidate B — Alternating Patch Materialization
 > Wait for user visual validation results and external AI review.
 
 ## Latest Commit:
-UPDATE_AFTER_PUSH
+https://github.com/toshinka/tegaki/commit/b8a2de67443d63d4ff373eca2237d0c6a69ec24d
+(`b8a2de67`)

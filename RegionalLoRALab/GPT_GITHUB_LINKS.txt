@@ -80,28 +80,28 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALa
 ## 3. Commit-Pinned Review Snapshot
 
 Pinned implementation commit:
-UPDATE_AFTER_PUSH
+b8a2de67443d63d4ff373eca2237d0c6a69ec24d
 
 Pinned CURRENT STATUS:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/CURRENT_STATUS.md
+https://raw.githubusercontent.com/toshinka/tegaki/b8a2de67443d63d4ff373eca2237d0c6a69ec24d/RegionalLoRALab/CURRENT_STATUS.md
 
 Pinned PHASE 1 REPORT:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/reports/PHASE_01_REPORT.md
+https://raw.githubusercontent.com/toshinka/tegaki/b8a2de67443d63d4ff373eca2237d0c6a69ec24d/RegionalLoRALab/reports/PHASE_01_REPORT.md
 
 Pinned PHASE 1 FROZEN SPEC:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/docs/PHASE_01_MULTIPASS_POC.md
+https://raw.githubusercontent.com/toshinka/tegaki/b8a2de67443d63d4ff373eca2237d0c6a69ec24d/RegionalLoRALab/docs/PHASE_01_MULTIPASS_POC.md
 
 Pinned PHASE 0.5 REPORT:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
+https://raw.githubusercontent.com/toshinka/tegaki/b8a2de67443d63d4ff373eca2237d0c6a69ec24d/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
 
 Pinned PHASE 0.5 PROBE DOC:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md
+https://raw.githubusercontent.com/toshinka/tegaki/b8a2de67443d63d4ff373eca2237d0c6a69ec24d/RegionalLoRALab/docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md
 
 Pinned REFORGE LORA FLOW:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
+https://raw.githubusercontent.com/toshinka/tegaki/b8a2de67443d63d4ff373eca2237d0c6a69ec24d/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
 
 Pinned MAIN SCRIPT:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/scripts/regional_lora_lab.py
+https://raw.githubusercontent.com/toshinka/tegaki/b8a2de67443d63d4ff373eca2237d0c6a69ec24d/RegionalLoRALab/scripts/regional_lora_lab.py
 
 ---
 
