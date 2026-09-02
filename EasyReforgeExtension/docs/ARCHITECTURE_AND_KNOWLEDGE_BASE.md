@@ -17,29 +17,33 @@ Stable Diffusion（特に SDXL / Illustrious 系モデル）において、1ペ�
 ### ① プロンプト構文とモデルの解釈特性
 | プロンプト構造 | モデルの挙動 (SDXL/Illustrious) | 分析・知見 |
 | :--- | :--- | :--- |
-| **上下2分割 (v3.7.3)** | **上：車、下：りんごが完璧に分離して生成** | 上下方向のアテンションマスク制御と重み付けが極めて強力に機能することを確認。 |
-| **左右2分割 (v3.7.3)** | 車の上にりんごが乗る（1つの構図に吸収） | モデルの左右方向への semantic isolation の弱さ。左右分離の強化が必要。 |
-| **v3.7.4: Exclusive vs Overlap モード** | **別コマ（くり抜き）と同一シーン（ブレンド）の共存** | Z-Indexくり抜き有無を制御可能にし、漫画の別コマ分離と人物近接の両方に対応。 |
+| **上下2分割 (v3.7.3/v3.7.4)** | **上：車、下：りんごが完璧に分離して生成** | 上下方向のアテンションマスク制御と重み付けが極めて強力に機能することを確認。 |
+| **左右2分割** | 車の上にりんごが乗る（1つの構図に吸収） | モデルの左右方向への semantic isolation の弱さ。 |
+| **v3.7.5: 物理領域 ＆ 論理コマ番号の分離** | **ドラッグ＆ドロップでコマ番号・適用先を即座に再割当** | 矩形形状を崩すことなく、任意の物理領域に対して任意のコマ番号（プロンプト・色）を自由に割り当て可能。 |
 
 ---
 
-## 3. v3.7.4 確定アーキテクチャ（Exclusive ⇄ Overlap ＆ CSP Panel Editor）
+## 3. v3.7.5 確定アーキテクチャ（Logical Koma Reassignment ＆ Style-First Ordering）
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. ツールモード (CLIP STUDIO PAINT 思想)                    │
-│    ・🖱 選択・編集 (Select): 選択、共通境界ドラッグ、8方向リサイズ│
-│    ・✂ スライス (Slice): Liang-Barsky 交差判定による直線切断  │
-│    ・▭ 矩形コマ (DrawRect): ドラッグによる自由四角形作成     │
+│ 1. 物理領域（Region Geometry）と論理コマ番号（Logical Koma）│
+│    ・Region: stable_id (不変ID), x, y, w, h                 │
+│    ・Assignment: stable_id ↔ logical_koma_number (1..N)     │
+│    ・Color: PANEL_COLORS[(logical_koma_number - 1) % 8]     │
+│    ・ドラッグ＆ドロップでコマ番号を自在にスワップ再割当可能 │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. 領域関係モード (Interaction Mode)                        │
+│ 2. プロンプト順序（STYLE 先頭・固定ラベル廃止）             │
+│    chunk 0: GLOBAL STYLE (例: clean illustration...)        │
+│    BREAK                                                    │
+│    chunk 1: PAGE STRUCTURE (例: 4koma manga)                │
+│    BREAK                                                    │
+│    chunk 2: REGION 1 (例: koma 1: red sports car...)        │
+│    BREAK                                                    │
+│    chunk 3: REGION 2 (例: koma 2: green apple...)           │
+├─────────────────────────────────────────────────────────────┤
+│ 3. 領域関係モード (Interaction Mode)                        │
 │    ・🔗 コマ連結 (Exclusive): Z-Indexくり抜きあり・別コマ用  │
 │    ・◫ 重なり許可 (Overlap): Z-Indexくり抜きなし・共存ブレンド用 │
-├─────────────────────────────────────────────────────────────┤
-│ 3. Attention Couple Branch 構成                             │
-│    ・BASE (k_target): mask_weight = 0 (未使用)               │
-│    ・GLOBAL EFFECT (cond_1): PAGE+STYLE, mask=全画面*0.25    │
-│    ・REGION 1 (cond_2): STYLE+R1, mask=Region1マスク*1.0     │
-│    ・REGION 2 (cond_3): STYLE+R2, mask=Region2マスク*1.0     │
 └─────────────────────────────────────────────────────────────┘
 ```

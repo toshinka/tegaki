@@ -1,4 +1,5 @@
-/* EasyReforge Manga Prompter - Main Prompt Live Sync & CSP-Style Panel Editor (v3.7.4) */
+/* EasyReforge Manga Prompter - Main Prompt Live Sync & CSP-Style Panel Editor (v3.7.5)
+   Logical Koma Reassignment & Style-First Ordering */
 
 (function () {
     'use strict';
@@ -14,6 +15,11 @@
         '#D81B60', // ピンク (コマ8)
     ];
 
+    function colorForKomaNumber(num) {
+        const idx = Math.max(1, parseInt(num, 10) || 1) - 1;
+        return PANEL_COLORS[idx % PANEL_COLORS.length];
+    }
+
     const state = {
         panels: [],
         selectedIds: new Set(),
@@ -25,15 +31,15 @@
         sliceCandidate: null,
         drawRectBox: null,
         isDragging: false,
-        activeHandle: null, // Overlap mode resize handle
+        draggedKomaIndex: null, // コマ番号ドラッグ＆ドロップ用
         history: [],
         historyIndex: -1,
         aspectRatio: 1216 / 832,
         width: 832,
         height: 1216,
         parsedPrompt: {
-            page: '',
             style: '',
+            page: '',
             regions: {}
         }
     };
@@ -66,7 +72,6 @@
             const snap = JSON.parse(state.history[state.historyIndex]);
             state.panels = snap.panels;
             if (snap.interactionMode) state.interactionMode = snap.interactionMode;
-            sortAndAssignPanels();
             updateInteractionModeUI();
             render();
             syncToGradio();
@@ -80,7 +85,6 @@
             const snap = JSON.parse(state.history[state.historyIndex]);
             state.panels = snap.panels;
             if (snap.interactionMode) state.interactionMode = snap.interactionMode;
-            sortAndAssignPanels();
             updateInteractionModeUI();
             render();
             syncToGradio();
@@ -109,7 +113,7 @@
 
         if (hintEl) {
             if (tool === 'select') {
-                hintEl.innerHTML = '💡 <span>[選択モード] コマ選択 / 共通境界ドラッグ / ハンドルで伸縮 / DELキーで削除</span>';
+                hintEl.innerHTML = '💡 <span>[選択モード] コマ選択 / 共通境界ドラッグ / ハンドル伸縮 / 右側☷でコマ番号入替</span>';
             } else if (tool === 'slice') {
                 hintEl.innerHTML = '💡 <span>[スライスモード] コマ上を直線ドラッグで切断 (クリスタ風 枠線分割)</span>';
             } else if (tool === 'drawRect') {
@@ -149,16 +153,25 @@
         }
     }
 
-    // 表示モード切り替え（カラー ⇄ 白黒線画）
+    // 表示モード切り替え（カラー ⇄ 白黒線画）「押したら何になるか」を表示
     window.mangaPrompterToggleViewMode = function () {
         state.viewMode = (state.viewMode === 'color') ? 'lineart' : 'color';
-        const btn = document.getElementById('manga-btn-viewmode');
-        if (btn) {
-            btn.textContent = (state.viewMode === 'color') ? '🎨 カラー表示' : '⬛ 白黒線画表示';
-            btn.title = (state.viewMode === 'color') ? '白黒線画モードに切替（ControlNet用）' : 'カラー確認モードに切替';
-        }
+        updateViewModeUI();
         render();
     };
+
+    function updateViewModeUI() {
+        const btn = document.getElementById('manga-btn-viewmode');
+        if (btn) {
+            if (state.viewMode === 'color') {
+                btn.textContent = '⬛ 白黒表示へ';
+                btn.title = '白黒線画モードに切替（ControlNet用）';
+            } else {
+                btn.textContent = '🎨 カラー表示へ';
+                btn.title = 'カラー確認モードに切替';
+            }
+        }
+    }
 
     // コマ枠線画のPNGエクスポート（ControlNet用）
     window.mangaPrompterExportLineart = function () {
@@ -192,8 +205,8 @@
         link.click();
     };
 
-    // 日本式MANGA読み順ソート（右上 → 左上 → 右下）
-    function sortAndAssignPanels() {
+    // 初期作成・プリセット時のみの自動読み順ソート（右上 → 左上 → 右下）
+    function autoAssignPanelsByReadingOrder() {
         if (state.panels.length === 0) return;
         const tolerance = 0.08;
 
@@ -210,18 +223,37 @@
         });
 
         sorted.forEach((p, idx) => {
-            const original = state.panels.find(item => item.id === p.id);
-            if (original) {
-                original.index = idx + 1;
-                original.name = `コマ ${idx + 1}` + (original.zIndex > 0 ? ' (重なり)' : '');
-                original.color = PANEL_COLORS[idx % PANEL_COLORS.length];
-                if (original.weight === undefined) original.weight = 1.0;
-                original.interactionMode = state.interactionMode;
-            }
+            p.index = idx + 1;
+            p.name = `コマ ${idx + 1}` + (p.zIndex > 0 ? ' (重なり)' : '');
+            p.color = colorForKomaNumber(idx + 1);
+            if (p.weight === undefined) p.weight = 1.0;
+            p.interactionMode = state.interactionMode;
         });
     }
 
-    // メインプロンプト欄のリアルタイム解析 (v3.7.4: PAGE + STYLE + REGIONS)
+    // --- コマ番号スワップ（論理コマ番号の再割当） ---
+    window.mangaPrompterSwapKomaNumbers = function (komaA, komaB) {
+        if (komaA === komaB) return;
+        const panelA = state.panels.find(p => p.index === komaA);
+        const panelB = state.panels.find(p => p.index === komaB);
+
+        if (!panelA || !panelB) return;
+
+        // 物理矩形 (x, y, w, h) や stable ID はそのまま、論理番号 (index) と 色のみをスワップ
+        panelA.index = komaB;
+        panelB.index = komaA;
+        panelA.color = colorForKomaNumber(panelA.index);
+        panelB.color = colorForKomaNumber(panelB.index);
+        panelA.name = `コマ ${panelA.index}` + (panelA.zIndex > 0 ? ' (重なり)' : '');
+        panelB.name = `コマ ${panelB.index}` + (panelB.zIndex > 0 ? ' (重なり)' : '');
+
+        pushHistory();
+        render();
+        renderSummaryList();
+        syncToGradio();
+    };
+
+    // メインプロンプト欄のリアルタイム解析 (v3.7.5: STYLE -> PAGE -> REGIONS)
     function parseMainPrompt() {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -230,14 +262,14 @@
 
         const text = mainPromptEl.value.trim();
         if (!text) {
-            state.parsedPrompt = { page: '', style: '', regions: {} };
+            state.parsedPrompt = { style: '', page: '', regions: {} };
             renderSummaryList();
             return;
         }
 
         const chunks = text.split(/\bBREAK\b/i).map(c => c.trim()).filter(c => c.length > 0);
-        const page = chunks.length > 0 ? chunks[0] : '';
-        const style = chunks.length > 1 ? chunks[1] : '';
+        const style = chunks.length > 0 ? chunks[0] : '';
+        const page = chunks.length > 1 ? chunks[1] : '';
         const regions = {};
 
         const tagRegex = /^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*/i;
@@ -256,11 +288,11 @@
             regions[pNum] = cleanText;
         }
 
-        state.parsedPrompt = { page, style, regions };
+        state.parsedPrompt = { style, page, regions };
         renderSummaryList();
     }
 
-    // メインプロンプト欄へのテンプレート挿入 (v3.7.4: Diagnostic N+2構造)
+    // メインプロンプト欄へのテンプレート挿入 (v3.7.5: STYLE -> PAGE -> koma 1..N)
     window.mangaPrompterInsertTemplateToMainPrompt = function () {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -268,16 +300,17 @@
         if (!mainPromptEl) return;
 
         const sorted = [...state.panels].sort((a, b) => (a.index || 0) - (b.index || 0));
+        const numPanels = sorted.length;
         let curVal = mainPromptEl.value.trim();
 
         const chunks = curVal.split(/\bBREAK\b/i).map(c => c.trim()).filter(c => c.length > 0);
-        let pagePart = chunks.length > 0 ? chunks[0] : `multiple scene composition`;
-        let stylePart = chunks.length > 1 ? chunks[1] : 'clean illustration, clear subjects, simple composition';
+        let stylePart = chunks.length > 0 ? chunks[0] : 'clean illustration, clear subjects, simple composition';
+        let pagePart = chunks.length > 1 ? chunks[1] : `${numPanels}koma manga`;
 
         let templateLines = [
-            pagePart,
+            stylePart,
             'BREAK',
-            stylePart
+            pagePart
         ];
 
         sorted.forEach(p => {
@@ -309,12 +342,14 @@
         }
 
         target.rect = newRect1;
+        const newIndex = state.panels.length + 1;
         const newPanel = {
             id: generateId(),
             rect: newRect2,
             zIndex: target.zIndex || 0,
-            color: '#888888',
-            name: '新規コマ',
+            index: newIndex,
+            color: colorForKomaNumber(newIndex),
+            name: `コマ ${newIndex}`,
             weight: target.weight || 1.0,
             interactionMode: state.interactionMode
         };
@@ -324,7 +359,6 @@
         state.selectedIds.add(newPanel.id);
         state.primarySelectedId = newPanel.id;
 
-        sortAndAssignPanels();
         pushHistory();
         render();
         syncToGradio();
@@ -353,7 +387,12 @@
             state.selectedIds.add(keepPanel.id);
             state.primarySelectedId = keepPanel.id;
 
-            sortAndAssignPanels();
+            // 連番の再正規化 (1..N)
+            state.panels.sort((a, b) => a.index - b.index).forEach((p, i) => {
+                p.index = i + 1;
+                p.color = colorForKomaNumber(p.index);
+            });
+
             pushHistory();
             render();
             syncToGradio();
@@ -399,7 +438,10 @@
         if (bestNeighbor && mergedRect) {
             target.rect = mergedRect;
             state.panels = state.panels.filter(p => p.id !== bestNeighbor.id);
-            sortAndAssignPanels();
+            state.panels.sort((a, b) => a.index - b.index).forEach((p, i) => {
+                p.index = i + 1;
+                p.color = colorForKomaNumber(p.index);
+            });
             pushHistory();
             render();
             syncToGradio();
@@ -416,7 +458,12 @@
             state.selectedIds.add(state.primarySelectedId);
         }
 
-        sortAndAssignPanels();
+        // コマ番号を 1..N に再連番化
+        state.panels.sort((a, b) => a.index - b.index).forEach((p, i) => {
+            p.index = i + 1;
+            p.color = colorForKomaNumber(p.index);
+        });
+
         pushHistory();
         render();
         syncToGradio();
@@ -494,7 +541,7 @@
         state.selectedIds.clear();
         state.selectedIds.add(state.panels[0].id);
         state.primarySelectedId = state.panels[0].id;
-        sortAndAssignPanels();
+        autoAssignPanelsByReadingOrder();
         pushHistory();
         render();
         syncToGradio();
@@ -525,7 +572,7 @@
 
         for (let i = 0; i < 4; i++) {
             if (p[i] === 0) {
-                if (q[i] < 0) return null; // 平行で外側
+                if (q[i] < 0) return null;
             } else {
                 const r = q[i] / p[i];
                 if (p[i] < 0) {
@@ -603,12 +650,14 @@
         }
 
         target.rect = newRect1;
+        const newIndex = state.panels.length + 1;
         const newPanel = {
             id: generateId(),
             rect: newRect2,
             zIndex: target.zIndex || 0,
-            color: '#888888',
-            name: '新規コマ',
+            index: newIndex,
+            color: colorForKomaNumber(newIndex),
+            name: `コマ ${newIndex}`,
             weight: target.weight || 1.0,
             interactionMode: state.interactionMode
         };
@@ -618,7 +667,6 @@
         state.selectedIds.add(newPanel.id);
         state.primarySelectedId = newPanel.id;
 
-        sortAndAssignPanels();
         pushHistory();
         render();
         syncToGradio();
@@ -675,18 +723,20 @@
             rect.setAttribute('width', Math.max(0, pw - 6));
             rect.setAttribute('height', Math.max(0, ph - 6));
 
+            const curColor = p.color || colorForKomaNumber(p.index);
+
             if (isLineart) {
                 rect.setAttribute('fill', '#ffffff');
                 rect.setAttribute('stroke', isSelected ? '#3b82f6' : '#000000');
                 rect.setAttribute('stroke-width', isSelected ? '6' : '4');
             } else {
-                rect.setAttribute('fill', p.color + (isSelected ? '33' : '18'));
+                rect.setAttribute('fill', curColor + (isSelected ? '33' : '18'));
                 if (isSliceCandidate) {
                     rect.setAttribute('stroke', '#ea580c');
                     rect.setAttribute('stroke-width', '4');
                     rect.setAttribute('stroke-dasharray', '6 3');
                 } else {
-                    rect.setAttribute('stroke', isSelected ? '#2563eb' : p.color);
+                    rect.setAttribute('stroke', isSelected ? '#2563eb' : curColor);
                     rect.setAttribute('stroke-width', isSelected ? '3.5' : '2');
                 }
             }
@@ -731,7 +781,7 @@
             textBg.setAttribute('width', Math.min(pw - 16, 75));
             textBg.setAttribute('height', '22');
             textBg.setAttribute('rx', '3');
-            textBg.setAttribute('fill', isLineart ? '#e5e7eb' : p.color);
+            textBg.setAttribute('fill', isLineart ? '#e5e7eb' : curColor);
             g.appendChild(textBg);
 
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -812,7 +862,6 @@
         const onUp = () => {
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
-            sortAndAssignPanels();
             pushHistory();
             syncToGradio();
         };
@@ -892,7 +941,6 @@
         const onUp = () => {
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
-            sortAndAssignPanels();
             pushHistory();
             syncToGradio();
         };
@@ -912,7 +960,6 @@
                 const pA = state.panels[i];
                 const pB = state.panels[j];
 
-                // pA の右端 ≒ pB の左端
                 if (Math.abs((pA.rect.x + pA.rect.w) - pB.rect.x) < tol) {
                     const yStart = Math.max(pA.rect.y, pB.rect.y);
                     const yEnd = Math.min(pA.rect.y + pA.rect.h, pB.rect.y + pB.rect.h);
@@ -926,9 +973,7 @@
                             rightPanels: [pB]
                         });
                     }
-                }
-                // pB の右端 ≒ pA の左端
-                else if (Math.abs((pB.rect.x + pB.rect.w) - pA.rect.x) < tol) {
+                } else if (Math.abs((pB.rect.x + pB.rect.w) - pA.rect.x) < tol) {
                     const yStart = Math.max(pA.rect.y, pB.rect.y);
                     const yEnd = Math.min(pA.rect.y + pA.rect.h, pB.rect.y + pB.rect.h);
                     if (yEnd - yStart > 0.02) {
@@ -943,7 +988,6 @@
                     }
                 }
 
-                // 水平境界: pA の下端 ≒ pB の上端
                 if (Math.abs((pA.rect.y + pA.rect.h) - pB.rect.y) < tol) {
                     const xStart = Math.max(pA.rect.x, pB.rect.x);
                     const xEnd = Math.min(pA.rect.x + pA.rect.w, pB.rect.x + pB.rect.w);
@@ -957,9 +1001,7 @@
                             bottomPanels: [pB]
                         });
                     }
-                }
-                // pB の下端 ≒ pA の上端
-                else if (Math.abs((pB.rect.y + pB.rect.h) - pA.rect.y) < tol) {
+                } else if (Math.abs((pB.rect.y + pB.rect.h) - pA.rect.y) < tol) {
                     const xStart = Math.max(pA.rect.x, pB.rect.x);
                     const xEnd = Math.min(pA.rect.x + pA.rect.w, pB.rect.x + pB.rect.w);
                     if (xEnd - xStart > 0.02) {
@@ -1016,7 +1058,7 @@
 
             line.setAttribute('stroke', '#3b82f6');
             line.setAttribute('stroke-width', '10');
-            line.setAttribute('stroke-opacity', '0.01'); // 透明当たり判定
+            line.setAttribute('stroke-opacity', '0.01');
             line.setAttribute('class', 'manga-gutter-line');
 
             line.addEventListener('pointerenter', () => line.setAttribute('stroke-opacity', '0.6'));
@@ -1049,7 +1091,6 @@
             const deltaY = curY - startY;
 
             if (group.type === 'v') {
-                // 安全クランプ判定 (5% 最小幅)
                 let valid = true;
                 origLefts.forEach(item => { if (item.r.w + deltaX < 0.05) valid = false; });
                 origRights.forEach(item => { if (item.r.w - deltaX < 0.05) valid = false; });
@@ -1145,12 +1186,14 @@
                     state.drawRectBox = null;
 
                     if (bw > 0.05 && bh > 0.05) {
+                        const newIndex = state.panels.length + 1;
                         const newPanel = {
                             id: generateId(),
                             rect: { x: bx, y: by, w: bw, h: bh },
                             zIndex: state.panels.length,
-                            color: '#888888',
-                            name: '新規コマ',
+                            index: newIndex,
+                            color: colorForKomaNumber(newIndex),
+                            name: `コマ ${newIndex}`,
                             weight: 1.0,
                             interactionMode: state.interactionMode
                         };
@@ -1158,7 +1201,6 @@
                         state.selectedIds.clear();
                         state.selectedIds.add(newPanel.id);
                         state.primarySelectedId = newPanel.id;
-                        sortAndAssignPanels();
                         pushHistory();
                         render();
                         syncToGradio();
@@ -1183,50 +1225,52 @@
         });
     }
 
-    // --- 右サイドバーのコマ一覧サマリー表示 ---
+    // --- 右サイドバーのコマ一覧サマリー表示 ＆ コマ番号ドラッグ入替 ---
     function renderSummaryList() {
         const container = document.getElementById('manga-panels-summary-container');
         if (!container) return;
 
         container.innerHTML = '';
 
-        // 1. ページ構造 (第1chunk)
-        const pageBox = document.createElement('div');
-        pageBox.className = 'manga-summary-base-box';
-        const pageSnippet = state.parsedPrompt.page ? state.parsedPrompt.page : '(未入力 - multiple scene composition 等の全体構造)';
-        pageBox.innerHTML = `
-            <div class="manga-summary-base-title">🧭 [ページ構造 - 第1chunk]</div>
-            <div class="manga-summary-prompt-text ${state.parsedPrompt.page ? '' : 'empty'}">${escapeHtml(pageSnippet)}</div>
-        `;
-        container.appendChild(pageBox);
-
-        // 2. 全体画風・品質 (第2chunk)
+        // 1. 全体画風・品質 (第1chunk)
         const styleBox = document.createElement('div');
         styleBox.className = 'manga-summary-base-box';
-        styleBox.style.marginTop = '6px';
         const styleSnippet = state.parsedPrompt.style ? state.parsedPrompt.style : '(未入力 - clean illustration, monochrome 等の全体共通画風)';
         styleBox.innerHTML = `
-            <div class="manga-summary-base-title">🎨 [全体画風・品質 - 第2chunk]</div>
+            <div class="manga-summary-base-title">🎨 [全体画風・品質 - 第1chunk]</div>
             <div class="manga-summary-prompt-text ${state.parsedPrompt.style ? '' : 'empty'}">${escapeHtml(styleSnippet)}</div>
         `;
         container.appendChild(styleBox);
 
-        // 3. 各コマの一覧表示
+        // 2. ページ構造 (第2chunk)
+        const pageBox = document.createElement('div');
+        pageBox.className = 'manga-summary-base-box';
+        pageBox.style.marginTop = '6px';
+        const pageSnippet = state.parsedPrompt.page ? state.parsedPrompt.page : '(未入力 - 4koma manga 等の全体構造)';
+        pageBox.innerHTML = `
+            <div class="manga-summary-base-title">🧭 [ページ構造 - 第2chunk]</div>
+            <div class="manga-summary-prompt-text ${state.parsedPrompt.page ? '' : 'empty'}">${escapeHtml(pageSnippet)}</div>
+        `;
+        container.appendChild(pageBox);
+
+        // 3. 各コマの一覧表示 (論理コマ番号順 1..N)
         const sortedList = [...state.panels].sort((a, b) => (a.index || 0) - (b.index || 0));
 
         sortedList.forEach(p => {
             const isSelected = state.selectedIds.has(p.id);
             const item = document.createElement('div');
             item.className = `manga-summary-item ${isSelected ? 'selected' : ''}`;
-            item.style.borderLeft = `5px solid ${p.color}`;
+            item.style.borderLeft = `5px solid ${p.color || colorForKomaNumber(p.index)}`;
+            item.setAttribute('data-koma-index', p.index);
 
             const regionText = state.parsedPrompt.regions[p.index];
             const promptSnippet = regionText ? regionText : `(メイン欄の koma ${p.index}: にプロンプトを記入)`;
             const curWeight = (p.weight !== undefined ? p.weight : 1.0).toFixed(2);
+            const curColor = p.color || colorForKomaNumber(p.index);
 
             item.innerHTML = `
                 <div class="manga-summary-header-row">
-                    <span class="manga-summary-tag" style="background: ${p.color}; color: #ffffff;">[コマ${p.index}]</span>
+                    <span class="manga-summary-tag manga-drag-handle" style="background: ${curColor}; color: #ffffff; cursor: grab;" title="ドラッグして他のコマと番号・適用領域を交換" draggable="true">☷ [コマ${p.index}]</span>
                     <span class="manga-summary-title">${p.name || `コマ ${p.index}`}</span>
                     <button type="button" class="manga-card-del-btn" title="コマ削除" onclick="window.mangaPrompterDelete('${p.id}')">×</button>
                 </div>
@@ -1236,6 +1280,41 @@
                     <input type="range" class="manga-summary-weight-slider" min="0.1" max="2.0" step="0.05" value="${curWeight}" data-id="${p.id}">
                 </div>
             `;
+
+            // コマ番号ドラッグ＆ドロップ再割当イベント
+            const dragHandle = item.querySelector('.manga-drag-handle');
+            dragHandle.addEventListener('dragstart', (e) => {
+                e.stopPropagation();
+                state.draggedKomaIndex = p.index;
+                e.dataTransfer.setData('text/plain', p.index.toString());
+                e.dataTransfer.effectAllowed = 'move';
+                item.style.opacity = '0.5';
+            });
+
+            dragHandle.addEventListener('dragend', () => {
+                state.draggedKomaIndex = null;
+                item.style.opacity = '1.0';
+            });
+
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                item.classList.add('drag-over');
+            });
+
+            item.addEventListener('dragleave', () => {
+                item.classList.remove('drag-over');
+            });
+
+            item.addEventListener('drop', (e) => {
+                e.preventDefault();
+                item.classList.remove('drag-over');
+                const srcIndex = state.draggedKomaIndex || parseInt(e.dataTransfer.getData('text/plain'), 10);
+                const dstIndex = p.index;
+                if (srcIndex && dstIndex && srcIndex !== dstIndex) {
+                    window.mangaPrompterSwapKomaNumbers(srcIndex, dstIndex);
+                }
+            });
 
             const slider = item.querySelector('.manga-summary-weight-slider');
             const badge = item.querySelector(`#manga-w-val-${p.id}`);
@@ -1247,7 +1326,7 @@
             });
 
             item.addEventListener('click', (e) => {
-                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') {
+                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT' && !e.target.classList.contains('manga-drag-handle')) {
                     state.selectedIds.clear();
                     state.selectedIds.add(p.id);
                     state.primarySelectedId = p.id;
@@ -1312,6 +1391,8 @@
         if (!isInitialized) {
             isInitialized = true;
             mangaPrompterReset();
+            updateViewModeUI();
+            updateInteractionModeUI();
             setupResolutionWatcher();
             setupCanvasDragInteraction();
             setupPromptWatcher();
