@@ -1,5 +1,5 @@
-/* EasyReforge Manga Prompter - Main Prompt Live Sync & CSP-Style Panel Editor (v3.7.6)
-   Internal Consistency, Slot-Preserving Parser & LoRA Scope Diagnostics */
+/* EasyReforge Manga Prompter - Main Prompt Live Sync & CSP-Style Panel Editor (v3.7.7)
+   Final Consistency, Strict Slot Authority & Preflight Diagnostics */
 
 (function () {
     'use strict';
@@ -42,7 +42,8 @@
             page: '',
             regions: {},
             rawSlotsCount: 0,
-            loraScopes: { style: [], page: [], regions: {} }
+            loraScopes: { style: [], page: [], regions: {} },
+            labelDiagnostics: {}
         }
     };
 
@@ -275,7 +276,7 @@
         syncToGradio();
     };
 
-    // メインプロンプト欄のリアルタイム解析 (v3.7.6: 位置保持型スロットパース & LoRAスコープ検出)
+    // メインプロンプト欄のリアルタイム解析 (v3.7.7: 厳格なスロット位置準拠 & ラベル不一致診断)
     function parseMainPrompt() {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -284,7 +285,14 @@
 
         const text = mainPromptEl.value;
         if (!text.trim()) {
-            state.parsedPrompt = { style: '', page: '', regions: {}, rawSlotsCount: 0, loraScopes: { style: [], page: [], regions: {} } };
+            state.parsedPrompt = {
+                style: '',
+                page: '',
+                regions: {},
+                rawSlotsCount: 0,
+                loraScopes: { style: [], page: [], regions: {} },
+                labelDiagnostics: {}
+            };
             renderSummaryList();
             return;
         }
@@ -295,6 +303,7 @@
         const page = rawSlots.length > 1 ? rawSlots[1] : '';
         const regions = {};
         const loraScopes = { style: [], page: [], regions: {} };
+        const labelDiagnostics = {};
 
         const loraRegex = /<lora:[^>]+>/gi;
         if (style) loraScopes.style = style.match(loraRegex) || [];
@@ -304,22 +313,31 @@
 
         for (let i = 2; i < rawSlots.length; i++) {
             const chunk = rawSlots[i];
-            let pNum = i - 1; // スロット位置準拠 (1, 2, 3...)
+            const expectedKoma = i - 1; // スロット位置が唯一のSource of Truth (1, 2, 3...)
+            let declaredKoma = null;
             let cleanText = chunk;
 
             const match = chunk.match(tagRegex);
             if (match) {
                 const numStr = match[3] || match[4];
-                if (numStr) pNum = parseInt(numStr, 10);
+                if (numStr) declaredKoma = parseInt(numStr, 10);
                 cleanText = chunk.replace(tagRegex, '').trim();
             }
 
             const loras = chunk.match(loraRegex) || [];
             if (loras.length > 0) {
-                loraScopes.regions[pNum] = loras;
+                loraScopes.regions[expectedKoma] = loras;
             }
 
-            regions[pNum] = cleanText;
+            // スロット位置をキーとして確実に登録
+            regions[expectedKoma] = cleanText;
+
+            // ラベル整合性診断
+            labelDiagnostics[expectedKoma] = {
+                expected: expectedKoma,
+                declared: declaredKoma,
+                mismatch: declaredKoma !== null && declaredKoma !== expectedKoma
+            };
         }
 
         state.parsedPrompt = {
@@ -327,12 +345,13 @@
             page,
             regions,
             rawSlotsCount: rawSlots.length,
-            loraScopes
+            loraScopes,
+            labelDiagnostics
         };
         renderSummaryList();
     }
 
-    // メインプロンプト欄へのテンプレート挿入 (v3.7.6: STYLE -> PAGE -> koma 1..N)
+    // メインプロンプト欄へのテンプレート挿入 (v3.7.7: 空スロット保持・STYLE昇格バグ修正)
     window.mangaPrompterInsertTemplateToMainPrompt = function () {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -341,11 +360,12 @@
 
         const sorted = [...state.panels].sort((a, b) => (a.index || 0) - (b.index || 0));
         const numPanels = sorted.length;
-        let curVal = mainPromptEl.value.trim();
+        let curVal = mainPromptEl.value;
 
-        const chunks = curVal.split(/\bBREAK\b/i).map(c => c.trim()).filter(c => c.length > 0);
-        let stylePart = chunks.length > 0 ? chunks[0] : 'clean illustration, clear subjects, simple composition';
-        let pagePart = chunks.length > 1 ? chunks[1] : `${numPanels}koma manga`;
+        // 空スロットを保持して位置契約を守る (.filter(...) を使わない！)
+        const rawSlots = curVal ? curVal.split(/\bBREAK\b/i).map(c => c.trim()) : [];
+        let stylePart = (rawSlots.length > 0 && rawSlots[0]) ? rawSlots[0] : 'clean illustration, clear subjects, simple composition';
+        let pagePart = (rawSlots.length > 1 && rawSlots[1]) ? rawSlots[1] : `${numPanels}koma manga`;
 
         let templateLines = [
             stylePart,
@@ -552,12 +572,12 @@
                 { rect: { x: 0.5, y: 0.35, w: 0.5, h: 0.35 }, zIndex: 0 },
                 { rect: { x: 0, y: 0.35, w: 0.5, h: 0.35 }, zIndex: 0 },
                 { rect: { x: 0.5, y: 0.7, w: 0.5, h: 0.3 }, zIndex: 0 },
-                { rect: { x: 0, y: 0.7, w: 0.5, h: 0.3 }, zIndex: 0 },
+                { rect: { x: 0.5, y: 0.7, w: 0.5, h: 0.3 }, zIndex: 0 },
             ],
             '6panel': [
                 { rect: { x: 0.5, y: 0, w: 0.5, h: 0.333 }, zIndex: 0 },
                 { rect: { x: 0, y: 0, w: 0.5, h: 0.333 }, zIndex: 0 },
-                { rect: { x: 0.5, y: 0.333, w: 0.5, h: 0.333 }, zIndex: 0 },
+                { rect: { x: 0, y: 0.333, w: 0.5, h: 0.333 }, zIndex: 0 },
                 { rect: { x: 0, y: 0.333, w: 0.5, h: 0.333 }, zIndex: 0 },
                 { rect: { x: 0, y: 0.666, w: 0.5, h: 0.334 }, zIndex: 0 },
                 { rect: { x: 0, y: 0.666, w: 0.5, h: 0.334 }, zIndex: 0 },
@@ -1273,19 +1293,24 @@
         const numPanels = state.panels.length;
         const expectedSlots = numPanels + 2;
         const actualSlots = state.parsedPrompt.rawSlotsCount || 0;
+        const labelDiags = state.parsedPrompt.labelDiagnostics || {};
+        const mismatches = Object.values(labelDiags).filter(d => d.mismatch);
 
-        // Preflight ステータスバッジの更新
+        // Preflight ステータスバッジの更新 (スロット数 & ラベル診断)
         const badgeEl = document.getElementById('manga-preflight-status-badge');
         if (badgeEl) {
             if (actualSlots === 0) {
                 badgeEl.textContent = '未入力 (テンプレ挿入推奨)';
                 badgeEl.className = 'manga-preflight-badge warn';
-            } else if (actualSlots === expectedSlots) {
-                badgeEl.textContent = `✓ 整合性OK (${numPanels}コマ / ${actualSlots}スロット)`;
-                badgeEl.className = 'manga-preflight-badge ok';
-            } else {
+            } else if (actualSlots !== expectedSlots) {
                 badgeEl.textContent = `⚠ スロット数不一致 (必要:${expectedSlots} / 現在:${actualSlots})`;
                 badgeEl.className = 'manga-preflight-badge error';
+            } else if (mismatches.length > 0) {
+                badgeEl.textContent = `⚠ ラベル不一致あり (${mismatches.length}箇所 - スロット位置順で適用)`;
+                badgeEl.className = 'manga-preflight-badge warn';
+            } else {
+                badgeEl.textContent = `✓ 整合性OK (${numPanels}コマ / ${actualSlots}スロット)`;
+                badgeEl.className = 'manga-preflight-badge ok';
             }
         }
 
@@ -1321,9 +1346,20 @@
             item.setAttribute('data-koma-index', p.index);
 
             const regionText = state.parsedPrompt.regions[p.index];
-            const promptSnippet = regionText ? regionText : `(メイン欄の koma ${p.index}: にプロンプトを記入)`;
+            const promptSnippet = regionText ? regionText : `(メイン欄の第${p.index + 2}スロットにプロンプトを記入)`;
             const curWeight = (p.weight !== undefined ? p.weight : 1.0).toFixed(2);
             const curColor = p.color || colorForKomaNumber(p.index);
+
+            // ラベル不一致の警告
+            const diag = labelDiags[p.index];
+            let labelWarnHtml = '';
+            if (diag && diag.mismatch) {
+                labelWarnHtml = `
+                    <div class="manga-label-mismatch-warn" title="スロット位置順が優先され、このコマ（コマ${p.index}）として適用されます">
+                        ⚠ ラベル記述: <code>koma ${diag.declared}:</code> (※スロット位置順に従い「コマ${p.index}」として適用)
+                    </div>
+                `;
+            }
 
             // LoRA スコープ警告の検出
             const detectedLoras = state.parsedPrompt.loraScopes.regions[p.index] || [];
@@ -1343,6 +1379,7 @@
                     <span class="manga-summary-title">${p.name || `コマ ${p.index}`}</span>
                     <button type="button" class="manga-card-del-btn" title="コマ削除" onclick="window.mangaPrompterDelete('${p.id}')">×</button>
                 </div>
+                ${labelWarnHtml}
                 <div class="manga-summary-prompt-text ${regionText ? '' : 'empty'}">${escapeHtml(promptSnippet)}</div>
                 ${loraWarnHtml}
                 <div class="manga-summary-weight-row">

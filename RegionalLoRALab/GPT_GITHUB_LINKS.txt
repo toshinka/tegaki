@@ -1,0 +1,39 @@
+Regional LoRA Lab - GPT Review Links
+
+Repository:
+https://github.com/toshinka/tegaki
+
+RegionalLoRALab folder:
+https://github.com/toshinka/tegaki/tree/main/RegionalLoRALab
+
+RegionalLoRALab commit history:
+https://github.com/toshinka/tegaki/commits/main/RegionalLoRALab
+
+README:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/README.md
+
+MASTER PLAN:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/MASTER_PLAN.md
+
+CURRENT STATUS:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/CURRENT_STATUS.md
+
+ARCHITECTURE NOTES:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/ARCHITECTURE_NOTES.md
+
+REFORGE LORA FLOW:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
+
+LATEST PHASE REPORT (Phase 0):
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/reports/PHASE_00_REPORT.md
+
+MAIN SCRIPT:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/scripts/regional_lora_lab.py
+
+Latest verified commit:
+UPDATE_AFTER_PUSH
+
+Cache-busting example:
+Append ?v=YYYYMMDD-HHMMSS to a raw URL when checking the newest pushed content.
+Example:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/CURRENT_STATUS.md?v=20260902-223000
