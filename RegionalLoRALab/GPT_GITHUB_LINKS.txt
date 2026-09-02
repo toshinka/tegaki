@@ -76,19 +76,19 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALa
 ## 3. Commit-Pinned Review Snapshot
 
 Pinned review commit:
-UPDATE_AFTER_PUSH
+1e2ecc9b32802b8f5e4cd426112b081b8aa8ca03
 
 Pinned CURRENT STATUS:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/CURRENT_STATUS.md
+https://raw.githubusercontent.com/toshinka/tegaki/1e2ecc9b32802b8f5e4cd426112b081b8aa8ca03/RegionalLoRALab/CURRENT_STATUS.md
 
 Pinned PHASE REPORT (Phase 0.5):
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
+https://raw.githubusercontent.com/toshinka/tegaki/1e2ecc9b32802b8f5e4cd426112b081b8aa8ca03/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
 
 Pinned REFORGE LORA FLOW:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
+https://raw.githubusercontent.com/toshinka/tegaki/1e2ecc9b32802b8f5e4cd426112b081b8aa8ca03/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
 
 Pinned MAIN SCRIPT:
-https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/scripts/regional_lora_lab.py
+https://raw.githubusercontent.com/toshinka/tegaki/1e2ecc9b32802b8f5e4cd426112b081b8aa8ca03/RegionalLoRALab/scripts/regional_lora_lab.py
 
 ---
 
