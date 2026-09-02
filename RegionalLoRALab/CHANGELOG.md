@@ -1,5 +1,18 @@
 # Regional LoRA Lab - Changelog
 
+## [Phase 1 Implementation] - 2026-09-03
+
+### Added
+- Implemented Phase 1: 2-Region Multi-Pass Oracle PoC (Candidate B: Alternating Patch Materialization).
+- Added independent UNet LoRA A/B branch loaders bypassing WebUI Extra Networks (Text Encoder multiplier = 0).
+- Added per-step alternating patch materialization inside `model_function_wrapper` (`clone_A.patch_model()` -> forward -> `clone_A.unpatch_model()` -> `clone_B.patch_model()` -> forward -> `clone_B.unpatch_model()`).
+- Added hard binary left/right spatial denoiser-output blending (`mask_A + mask_B == 1.0`).
+- Fixed Safety Gate Errata: `restore_success` failure latch preservation, stale wrapper previous-wrapper object metadata recovery, unconditional try/finally unpatch.
+- Added Phase 1 preflight and fail-closed guards: prompt `<lora:...>` tag stripping, clean base patch state check, existing wrapper fail-closed check.
+- Added runtime step-by-step timing aggregation and mask invariant diagnostics.
+- Created `reports/PHASE_01_REPORT.md` (Status: IMPLEMENTED / AWAITING VISUAL VALIDATION).
+- Updated `CURRENT_STATUS.md` and `GPT_GITHUB_LINKS.txt`.
+
 ## [Phase 1 Ready / Safety Gate PASS] - 2026-09-03
 
 ### Added
@@ -24,16 +37,6 @@
 - Created `docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md` documenting patch materialization lifecycle and timing feasibility.
 - Created `reports/PHASE_00_5_REPORT.md` for Phase 0.5 completion.
 - Implemented `Phase 0.5: Patcher Residency Probe` in `scripts/regional_lora_lab.py` (Identity probe, registration isolation, materialization & restoration verification, repatch timing measurement, wrapper chaining probe).
-
-### Changed
-- Revised `reports/PHASE_00_REPORT.md` to be strictly objective and distinguish source inspection from empirical validation.
-- Updated `docs/REFORGE_LORA_FLOW.md` with explicit details on `add_patches()` vs `patch_model()` / `unpatch_model()` and extra-network parsing responsibility.
-- Revised `docs/ARCHITECTURE_NOTES.md` defining Oracle as reference baseline and accurately describing target LoRA layers.
-- Revised `docs/PHASE_01_MULTIPASS_POC.md` clarifying candidate A/B/C and restricting Phase 1 to UNet LoRA only (TE mult = 0).
-- Enhanced `docs/TEST_PROTOCOL.md` with deterministic reference mode.
-- Enhanced `docs/RESEARCH_REFERENCES.md` with complete repo URLs, licenses, borrowed concepts, and forbidden copy items.
-- Enhanced `GPT_GITHUB_LINKS.txt` with external AI reading order, self-referencing navigation, commit-pinned URLs, and copy-paste review prompt.
-- Updated `CURRENT_STATUS.md`.
 
 ## [Phase 0] - 2026-09-02
 

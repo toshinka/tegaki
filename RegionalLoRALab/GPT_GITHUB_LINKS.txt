@@ -1,14 +1,14 @@
 Regional LoRA Lab — GPT Review Navigation
 
 Updated:
-2026-09-03 04:15 JST
+2026-09-03 05:25 JST
 
 Purpose:
 This file is the entry point for an external AI technical review (Second Opinion).
 
 Read in this order:
-1. CURRENT_STATUS.md (Safety Gate: PASS / Phase 1 Ready)
-2. latest PHASE report (PHASE_00_5_REPORT.md)
+1. CURRENT_STATUS.md (Phase 1 Implemented / Validation Pending)
+2. latest PHASE report (PHASE_01_REPORT.md)
 3. frozen Phase 1 spec (PHASE_01_MULTIPASS_POC.md)
 4. REFORGE_LORA_FLOW.md
 5. ARCHITECTURE_NOTES.md
@@ -39,7 +39,10 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALa
 CURRENT STATUS:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/CURRENT_STATUS.md
 
-LATEST PHASE REPORT (Phase 0.5 Final Freeze):
+LATEST PHASE REPORT (Phase 1 Multi-Pass Oracle):
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/reports/PHASE_01_REPORT.md
+
+PHASE 0.5 REPORT:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
 
 PHASE 0 REPORT:
@@ -77,37 +80,41 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALa
 ## 3. Commit-Pinned Review Snapshot
 
 Pinned implementation commit:
-a061d65f56e07bba034adf80fef10b10e825e060
+UPDATE_AFTER_PUSH
 
 Pinned CURRENT STATUS:
-https://raw.githubusercontent.com/toshinka/tegaki/a061d65f56e07bba034adf80fef10b10e825e060/RegionalLoRALab/CURRENT_STATUS.md
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/CURRENT_STATUS.md
 
-Pinned PHASE REPORT (Phase 0.5 Final):
-https://raw.githubusercontent.com/toshinka/tegaki/a061d65f56e07bba034adf80fef10b10e825e060/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
+Pinned PHASE 1 REPORT:
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/reports/PHASE_01_REPORT.md
 
 Pinned PHASE 1 FROZEN SPEC:
-https://raw.githubusercontent.com/toshinka/tegaki/a061d65f56e07bba034adf80fef10b10e825e060/RegionalLoRALab/docs/PHASE_01_MULTIPASS_POC.md
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/docs/PHASE_01_MULTIPASS_POC.md
+
+Pinned PHASE 0.5 REPORT:
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
 
 Pinned PHASE 0.5 PROBE DOC:
-https://raw.githubusercontent.com/toshinka/tegaki/a061d65f56e07bba034adf80fef10b10e825e060/RegionalLoRALab/docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md
 
 Pinned REFORGE LORA FLOW:
-https://raw.githubusercontent.com/toshinka/tegaki/a061d65f56e07bba034adf80fef10b10e825e060/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
 
 Pinned MAIN SCRIPT:
-https://raw.githubusercontent.com/toshinka/tegaki/a061d65f56e07bba034adf80fef10b10e825e060/RegionalLoRALab/scripts/regional_lora_lab.py
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/scripts/regional_lora_lab.py
 
 ---
 
 ## 4. External AI Review Prompt (コピペ用プロンプト)
 
 ```text
-以下の CURRENT_STATUS、最新Phase報告書、PHASE_01_MULTIPASS_POC、
-REFORGE_LORA_FLOW、ARCHITECTURE_NOTES、実装コードを読み、
+以下の CURRENT_STATUS、最新Phase報告書 (PHASE_01_REPORT.md)、
+PHASE_01_MULTIPASS_POC、REFORGE_LORA_FLOW、ARCHITECTURE_NOTES、
+実装コードを読み、
 1. 文書とコードの矛盾
 2. 未検証なのに成功扱いしている箇所
-3. reForge model patch state の安全性（Safety Gate）
-4. Phase 1 Multi-Pass Oracle 仕様の整合性
+3. Multi-Pass Oracle (Candidate B) 実装の安全性と整合性
+4. ユーザー視覚テスト結果の評価基準
 をレビューしてください。
 
 MASTER_PLAN の方針を尊重し、
