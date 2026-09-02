@@ -21,4 +21,5 @@ Previous Phase (Phase 0): SUCCESS (Revised)
 - Determine Phase 1 Multi-Pass Oracle strategy based on Phase 0.5 results
 
 ## Latest Commit:
-b55b0ec2a0e563735d6e804bc209b3c094f8cc99
+https://github.com/toshinka/tegaki/commit/1e2ecc9b32802b8f5e4cd426112b081b8aa8ca03
+(`1e2ecc9b`)
