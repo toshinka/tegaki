@@ -272,6 +272,13 @@
     box-shadow: 0 0 0 1px var(--primary-500, #3b82f6);
 }
 
+.manga-summary-item.drag-over {
+    border-color: #ea580c !important;
+    background: #fff7ed !important;
+    box-shadow: 0 0 0 2px #ea580c;
+    transform: scale(1.02);
+}
+
 .manga-summary-header-row {
     display: flex;
     align-items: center;

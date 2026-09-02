@@ -1,7 +1,7 @@
 """
 EasyReforge Manga Prompter - Main Script & Gradio UI
-Version: v3.7.4 Regional Core + CSP-Style Panel Editor
-Golden Reference: sd-forge-couple v4.0.2 / v3.7.4 Specification
+Version: v3.7.5 Regional Core & CSP-Style Panel Editor (Logical Koma Reassignment & Style-First Ordering)
+Golden Reference: sd-forge-couple v4.0.2 / v3.7.5 Specification
 """
 
 import os
@@ -36,8 +36,8 @@ class MangaPrompterScript(scripts.Script):
         self.valid = False
         self.sorted_panels = []
         self.original_resolved_prompt = None
-        self.page_text = ""
         self.style_text = ""
+        self.page_text = ""
 
     def title(self):
         return "Manga Region Prompter (EasyReforge)"
@@ -55,7 +55,7 @@ class MangaPrompterScript(scripts.Script):
                     maximum=1.0, 
                     step=0.05, 
                     value=0.25, 
-                    info="PAGE + STYLE を全画面へ弱く混ぜる強度 (初期推奨: 0.25)"
+                    info="STYLE + PAGE を全画面へ弱く混ぜる強度 (初期推奨: 0.25)"
                 )
 
             manga_html = gr.HTML(value="""
@@ -66,7 +66,7 @@ class MangaPrompterScript(scripts.Script):
                         <span class="manga-res-badge" id="manga-res-display">832 × 1216 (自動同期中)</span>
                     </div>
                     <div class="manga-toolbar">
-                        <button type="button" class="manga-btn" id="manga-btn-viewmode" onclick="window.mangaPrompterToggleViewMode()" title="カラー確認と白黒線画（ControlNet用）の表示切替">🎨 カラー表示</button>
+                        <button type="button" class="manga-btn" id="manga-btn-viewmode" onclick="window.mangaPrompterToggleViewMode()" title="白黒線画（ControlNet用）とカラー確認の表示切替">⬛ 白黒表示へ</button>
                         <button type="button" class="manga-btn manga-btn-highlight" onclick="window.mangaPrompterExportLineart()" title="現在のコマ枠を綺麗な白黒PNG画像として保存（ControlNetにD&D用）">📸 コマ枠PNG保存</button>
                         <button type="button" class="manga-btn" id="manga-btn-undo" onclick="window.mangaPrompterUndo()" title="元に戻す (Ctrl+Z)">↶ 戻す</button>
                         <button type="button" class="manga-btn" id="manga-btn-redo" onclick="window.mangaPrompterRedo()" title="やり直す (Ctrl+Y)">↷ やり直す</button>
@@ -125,7 +125,7 @@ class MangaPrompterScript(scripts.Script):
                     </div>
 
                     <div class="manga-sidebar-pane">
-                        <div class="manga-sidebar-header">📋 メインプロンプト連動プレビュー＆重み設定</div>
+                        <div class="manga-sidebar-header">📋 メインプロンプト連動プレビュー＆番号再割当</div>
                         <div class="manga-panels-summary" id="manga-panels-summary-container">
                             <!-- JSでリアルタイムパース＆プレビューを表示 -->
                         </div>
@@ -143,13 +143,13 @@ class MangaPrompterScript(scripts.Script):
         return [is_enabled, global_effect_weight, json_bridge]
 
     def after_extra_networks_activate(self, p, is_enabled, global_effect_weight, json_bridge, *args, **kwargs):
-        """v3.7.4: PAGEとSTYLEを分離し、main conditioningからRegion本文を除去"""
+        """v3.7.5: STYLE(画風) -> PAGE(構造) -> REGIONS の順序でパースし、main conditioningを縮小"""
         self.valid = False
         self.resolved_prompts = []
         self.sorted_panels = []
         self.original_resolved_prompt = None
-        self.page_text = ""
         self.style_text = ""
+        self.page_text = ""
 
         if not is_enabled:
             return
@@ -158,12 +158,13 @@ class MangaPrompterScript(scripts.Script):
         if not panels or len(panels) <= 1:
             return
 
+        # 論理コマ番号 (logical_koma_number / index) 順にソート
         self.sorted_panels = sorted(panels, key=lambda x: x.get('index', 0))
         num_panels = len(self.sorted_panels)
 
         prompts = kwargs.get("prompts")
         if not isinstance(prompts, list) or len(prompts) != 1:
-            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.4 diagnostic.")
+            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.5 diagnostic.")
             return
 
         resolved_full_prompt = prompts[0]
@@ -171,27 +172,27 @@ class MangaPrompterScript(scripts.Script):
 
         expected_chunks = num_panels + 2
         if len(raw_chunks) != expected_chunks:
-            print(f"[MangaPrompter][ERROR] Expected {expected_chunks} chunks (PAGE + STYLE + {num_panels} regions), got {len(raw_chunks)}.")
-            print(f"[MangaPrompter][ERROR] Please ensure format: PAGE_STRUCTURE BREAK GLOBAL_STYLE BREAK koma 1:... BREAK koma 2:...")
+            print(f"[MangaPrompter][ERROR] Expected {expected_chunks} chunks (STYLE + PAGE + {num_panels} regions), got {len(raw_chunks)}.")
+            print(f"[MangaPrompter][ERROR] Please ensure format: GLOBAL_STYLE BREAK PAGE_STRUCTURE BREAK koma 1:... BREAK koma 2:...")
             return
 
-        page_text = raw_chunks[0]
-        style_text = raw_chunks[1]
+        style_text = raw_chunks[0]
+        page_text = raw_chunks[1]
         region_chunks = raw_chunks[2:]
 
         self.original_resolved_prompt = resolved_full_prompt
-        self.page_text = page_text
         self.style_text = style_text
+        self.page_text = page_text
 
-        # WebUI main conditioning を PAGE + STYLE のみに縮小
-        main_conditioning_prompt = ", ".join(x for x in (page_text, style_text) if x)
+        # WebUI main conditioning を STYLE + PAGE のみに縮小
+        main_conditioning_prompt = ", ".join(x for x in (style_text, page_text) if x)
         prompts[0] = main_conditioning_prompt
 
         tag_regex = re.compile(r'^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*', re.IGNORECASE)
 
-        print("[MangaPrompter][v3.7.4 GLOBAL EFFECT]")
-        print(f"  PAGE STRUCTURE    = {page_text!r}")
+        print("[MangaPrompter][v3.7.5 GLOBAL EFFECT]")
         print(f"  GLOBAL STYLE      = {style_text!r}")
+        print(f"  PAGE STRUCTURE    = {page_text!r}")
         print(f"  MAIN CONDITIONING = {main_conditioning_prompt!r}")
 
         for i, panel in enumerate(self.sorted_panels):
@@ -207,7 +208,8 @@ class MangaPrompterScript(scripts.Script):
                 resolved_region = clean_region
 
             self.resolved_prompts.append({
-                "panel_index": i + 1,
+                "panel_index": panel.get('index', i + 1),
+                "stable_region_id": panel.get('id'),
                 "clean_text": clean_region,
                 "resolved_text": resolved_region,
                 "weight": float(panel.get("weight", 1.0)),
@@ -228,7 +230,7 @@ class MangaPrompterScript(scripts.Script):
             unet = p.sd_model.forge_objects.unet.clone()
             is_sdxl = getattr(p.sd_model, "is_sdxl", True)
 
-            # MangaSpatialEngine でマスクを一元生成 (interactionMode対応)
+            # MangaSpatialEngine でマスクを一元生成 (sorted_panels順)
             device = 'cpu'
             spatial_regions = MangaSpatialEngine.generate_spatial_masks(
                 self.sorted_panels, height=p.height, width=p.width, device=device
@@ -239,7 +241,7 @@ class MangaPrompterScript(scripts.Script):
             fc_args = {}
 
             # 1. Global Effect branch (cond_1, mask_1 = 全画面 * global_effect_weight)
-            global_effect_text = ", ".join(x for x in (self.page_text, self.style_text) if x)
+            global_effect_text = ", ".join(x for x in (self.style_text, self.page_text) if x)
             texts_global = SdConditioning([global_effect_text if global_effect_text else " "], False, p.width, p.height, None)
             cond_global_raw = p.sd_model.get_learned_conditioning(texts_global)
             global_cond = [[cond_global_raw["crossattn"]]] if is_sdxl else [[cond_global_raw]]
@@ -271,7 +273,7 @@ class MangaPrompterScript(scripts.Script):
             for i, r_info in enumerate(self.resolved_prompts):
                 cond_index = i + 2
                 panel_rect = self.sorted_panels[i].get('rect', {})
-                print(f"  REGION {i + 1}: cond_{cond_index}, mask_{cond_index}, panel_index={i+1}, rect={panel_rect}, weight={r_info['weight']:.2f}, prompt={r_info['resolved_text']!r}")
+                print(f"  REGION {i + 1}: cond_{cond_index}, mask_{cond_index}, koma={r_info['panel_index']}, id={r_info.get('stable_region_id')}, rect={panel_rect}, weight={r_info['weight']:.2f}, prompt={r_info['resolved_text']!r}")
 
             # base_mask は強制 ZERO
             base_mask = empty_tensor(p.height, p.width)
