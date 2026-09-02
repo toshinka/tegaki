@@ -86,4 +86,5 @@ Phase 1 の Multi-Pass 実装方針は **「毎ステップで unpatch -> 次の
 ---
 
 ## Latest Commit
-UPDATE_AFTER_PUSH
+https://github.com/toshinka/tegaki/commit/ae0db12f25d0bfe21141313915ed6fe707dfafc2
+(`ae0db12f`)

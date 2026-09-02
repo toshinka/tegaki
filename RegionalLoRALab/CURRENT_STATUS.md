@@ -27,4 +27,5 @@ Status: SUCCESS
 - Ordinary prompt `<lora:...>` tags disabled for test
 
 ## Latest Commit:
-UPDATE_AFTER_PUSH
+https://github.com/toshinka/tegaki/commit/ae0db12f25d0bfe21141313915ed6fe707dfafc2
+(`ae0db12f`)
