@@ -109,4 +109,5 @@ Phase 0 は完全成功。次フェーズ（Phase 1: 2-Region Multi-Pass Oracle�
 ---
 
 ## Latest Commit
-UPDATE_AFTER_PUSH
+https://github.com/toshinka/tegaki/commit/b55b0ec2a0e563735d6e804bc209b3c094f8cc99
+(`b55b0ec2`)
