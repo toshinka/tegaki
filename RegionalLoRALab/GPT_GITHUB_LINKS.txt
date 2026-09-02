@@ -31,7 +31,7 @@ MAIN SCRIPT:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/scripts/regional_lora_lab.py
 
 Latest verified commit:
-UPDATE_AFTER_PUSH
+https://github.com/toshinka/tegaki/commit/b55b0ec2a0e563735d6e804bc209b3c094f8cc99
 
 Cache-busting example:
 Append ?v=YYYYMMDD-HHMMSS to a raw URL when checking the newest pushed content.
